@@ -77,16 +77,59 @@ export function mergeUpdatedVisibleMessageTags(
   return changed ? nextItems : current;
 }
 
-export function mergeUpdatedDutyFeedMessageTags<T extends MessageFeedWithItems>(
-  currentFeeds: T[],
+function mergeUpdatedDutyFeedItems(
+  currentItems: MessageItem[],
+  requestedMessageIds: ReadonlySet<number>,
   updates: MessageItem[],
-  options?: MessageTagMergeOptions,
-): T[] {
-  if (currentFeeds.length === 0 || updates.length === 0) return currentFeeds;
+): MessageItem[] {
+  if (currentItems.length === 0 || requestedMessageIds.size === 0) {
+    return currentItems;
+  }
+
+  const updatesById = new Map<number, InboxMessage>();
+  updates.forEach(([messageId, message]) => {
+    updatesById.set(messageId, message);
+  });
 
   let changed = false;
+  const nextItems: MessageItem[] = [];
+  currentItems.forEach(([messageId, message]) => {
+    if (!requestedMessageIds.has(messageId)) {
+      nextItems.push([messageId, message]);
+      return;
+    }
+
+    const refreshedMessage = updatesById.get(messageId);
+    if (refreshedMessage == null) {
+      changed = true;
+      return;
+    }
+
+    if (refreshedMessage === message) {
+      nextItems.push([messageId, message]);
+      return;
+    }
+
+    changed = true;
+    nextItems.push([messageId, refreshedMessage]);
+  });
+
+  return changed ? nextItems : currentItems;
+}
+
+export function mergeUpdatedDutyFeedMessages<T extends MessageFeedWithItems & { id: string }>(
+  currentFeeds: T[],
+  feedId: string,
+  requestedMessageIds: number[],
+  updates: MessageItem[],
+): T[] {
+  if (currentFeeds.length === 0 || requestedMessageIds.length === 0) return currentFeeds;
+
+  const requestedIds = new Set(requestedMessageIds);
+  let changed = false;
   const nextFeeds = currentFeeds.map((feed) => {
-    const nextItems = mergeUpdatedVisibleMessageTags(feed.items, updates, options);
+    if (feed.id !== feedId) return feed;
+    const nextItems = mergeUpdatedDutyFeedItems(feed.items, requestedIds, updates);
     if (nextItems === feed.items) return feed;
     changed = true;
     return { ...feed, items: nextItems };

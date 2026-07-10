@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { InboxMessage } from '../../../../../Bindings';
 import {
-  mergeUpdatedDutyFeedMessageTags,
+  mergeUpdatedDutyFeedMessages,
   mergeUpdatedVisibleMessageTags,
 } from './message-card-message-updates';
 
@@ -110,20 +110,30 @@ describe('mergeUpdatedVisibleMessageTags', () => {
   });
 });
 
-describe('mergeUpdatedDutyFeedMessageTags', () => {
-  it('merges tag fields into every feed that contains the fetched message id', () => {
+describe('mergeUpdatedDutyFeedMessages', () => {
+  it('replaces refreshed messages and preserves feed metadata', () => {
     const first = inboxMessage({ text: 'one' });
-    const second = inboxMessage({ text: 'two' });
-    const nextMessage = inboxMessage({ text: 'two-updated' });
+    const second = inboxMessage({
+      text: 'two',
+      textMarked: [{ CNTextC: { text: 'old marked' } }] as never,
+      keywordTokens: [{ text: 'old keyword' }] as never,
+      pointTokens: [{ text: 'old point', etalon: 'old-point' }] as never,
+    });
+    const refreshedSecond = inboxMessage({
+      text: 'two-updated',
+      textMarked: [{ CNTextC: { text: 'new marked' } }] as never,
+      keywordTokens: [{ text: 'new keyword' }] as never,
+      pointTokens: [{ text: 'new point', etalon: 'new-point' }] as never,
+    });
     const feeds = [
       {
         id: 'a',
+        unreadCount: 3,
+        readIds: new Set<number>([1]),
         items: [
           [1, first],
           [2, second],
         ] as Array<[number, InboxMessage]>,
-        unreadCount: 3,
-        readIds: new Set<number>([1]),
       },
       {
         id: 'b',
@@ -133,29 +143,37 @@ describe('mergeUpdatedDutyFeedMessageTags', () => {
       },
     ];
 
-    const next = mergeUpdatedDutyFeedMessageTags(feeds, [[2, nextMessage]]);
+    const next = mergeUpdatedDutyFeedMessages(feeds, 'a', [2], [[2, refreshedSecond]]);
 
     expect(next[0].items).toEqual([
       [1, first],
-      [2, second],
+      [2, refreshedSecond],
     ]);
     expect(next[1].items).toEqual([[2, second]]);
     expect(next[0].unreadCount).toBe(3);
     expect(next[0].readIds).toBe(feeds[0].readIds);
+    expect(next[0].items[1]?.[1].textMarked).toBe(refreshedSecond.textMarked);
+    expect(next[0].items[1]?.[1].keywordTokens).toBe(refreshedSecond.keywordTokens);
+    expect(next[0].items[1]?.[1].pointTokens).toBe(refreshedSecond.pointTokens);
   });
 
-  it('keeps the same feed array when no visible feed contains the fetched message id', () => {
+  it('removes a requested message id when the backend no longer returns it for the feed', () => {
     const feeds = [
       {
         id: 'a',
-        items: [[1, inboxMessage({ text: 'one' })]] as Array<[number, InboxMessage]>,
+        items: [
+          [1, inboxMessage({ text: 'one' })],
+          [2, inboxMessage({ text: 'two' })],
+        ] as Array<[number, InboxMessage]>,
         unreadCount: 0,
         readIds: new Set<number>(),
       },
     ];
 
-    expect(mergeUpdatedDutyFeedMessageTags(feeds, [[2, inboxMessage({ text: 'two' })]])).toBe(
-      feeds,
-    );
+    const next = mergeUpdatedDutyFeedMessages(feeds, 'a', [2], []);
+
+    expect(next[0].items).toEqual([[1, feeds[0].items[0][1]]]);
+    expect(next[0].unreadCount).toBe(0);
+    expect(next[0].readIds).toBe(feeds[0].readIds);
   });
 });

@@ -4,14 +4,14 @@ import { fetchOrganismKeywordSets } from '../../services/api/organism-keyword-se
 import { fetchAnalysisCallsignInfos } from '../../services/api/analysis';
 import { fetchMessagesByIds } from '../../services/api/inbox-messages';
 import { currentSystemSettings } from '../../services/api/system-settings';
-import { mergeUpdatedDutyFeedMessageTags } from '../shared/message-card/message-card-message-updates';
+import { mergeUpdatedDutyFeedMessages } from '../shared/message-card/message-card-message-updates';
 import { attachDutyNotificationAudioPrimingListeners } from './notifications';
 import { isNullOrUndefined, sortFrequenciesNumerically } from '../../utils/misc';
 import { normalizeCallsignLookupValue } from '../../utils/callsign-normalization';
 import { useRerDutyFeedState } from './useRerDutyFeedState';
 import { useRerDutyFilterOptions } from './useRerDutyFilterOptions';
 import { useRerDutyMessageActions } from './useRerDutyMessageActions';
-import { collectUniqueCallsignsFromMessages } from './utils';
+import { collectUniqueCallsignsFromMessages, messageMatchesDutyFeed } from './utils';
 import { useDutySettings } from '../../hooks/use-duty-settings';
 import { useInboxChangedMessageIds } from '../shared/useInboxChangedMessageIds';
 
@@ -134,6 +134,30 @@ export function useRerDutyFeeds(authUserName: string | null) {
     onFeedRemoved: filterOpts.pruneSavedFilterUiState,
   });
   const setFeedError = feedState.setError;
+  const restoreDutyFeedRuntimeState = useCallback(
+    (feedId: string, snapshot: (typeof feedState.messageFeeds)[number]) => {
+      feedState.setMessageFeeds((current) =>
+        current.map((feed) =>
+          feed.id === feedId
+            ? {
+                ...feed,
+                readIds: snapshot.readIds,
+                unreadCount: snapshot.unreadCount,
+                firstItemIndex: snapshot.firstItemIndex,
+                referenceTimeMs: snapshot.referenceTimeMs,
+                loading: false,
+                loadingOlder: snapshot.loadingOlder,
+                hasReachedStart: snapshot.hasReachedStart,
+                adjacentFreqsRange: snapshot.adjacentFreqsRange,
+                highlightSignalsEnabled: snapshot.highlightSignalsEnabled,
+                onlyMyUnitTagsEnabled: snapshot.onlyMyUnitTagsEnabled,
+              }
+            : feed,
+        ),
+      );
+    },
+    [feedState.setMessageFeeds],
+  );
   useEffect(() => {
     let cancelled = false;
     fetchOrganismKeywordSets()
@@ -186,28 +210,64 @@ export function useRerDutyFeeds(authUserName: string | null) {
 
   useInboxChangedMessageIds({
     onMessageIds: async (messageIds) => {
-      const visibleMessageIds = new Set<number>();
-      feedState.messageFeeds.forEach((feed) => {
-        feed.items.forEach(([messageId]) => {
-          visibleMessageIds.add(messageId);
-        });
+      const refreshes = feedState.messageFeeds.flatMap((feed) => {
+        const visibleMessageIds = new Set(feed.items.map(([messageId]) => messageId));
+        const visibleChangedMessageIds = Array.from(
+          new Set(messageIds.filter((messageId) => visibleMessageIds.has(messageId))),
+        );
+        if (visibleChangedMessageIds.length === 0) return [];
+        return [
+          {
+            feedId: feed.id,
+            messageIds: visibleChangedMessageIds,
+            inboxReq: feedState.buildReqForFeed(feed, { loadLatest: true }),
+          },
+        ];
       });
 
-      const visibleChangedMessageIds = messageIds.filter((messageId) =>
-        visibleMessageIds.has(messageId),
-      );
-      if (visibleChangedMessageIds.length === 0) return;
+      if (refreshes.length === 0) return;
 
-      try {
-        const nextMessages = await fetchMessagesByIds(visibleChangedMessageIds);
-        if (nextMessages.length === 0) return;
-        feedState.setMessageFeeds((current) =>
-          mergeUpdatedDutyFeedMessageTags(current, nextMessages),
-        );
-      } catch (loadError) {
-        feedState.setError(loadError instanceof Error ? loadError.message : String(loadError));
-        console.error(loadError);
-      }
+      await Promise.all(
+        refreshes.map(async ({ feedId, messageIds: visibleChangedMessageIds, inboxReq }) => {
+          const feed = feedState.messageFeeds.find((item) => item.id === feedId);
+          if (!feed) return;
+          try {
+            const nextMessages = await fetchMessagesByIds(visibleChangedMessageIds, inboxReq);
+            const nextMessagesById = new Map(nextMessages);
+            const matchedMessages: typeof nextMessages = [];
+            let needsReload = false;
+
+            for (const messageId of visibleChangedMessageIds) {
+              const nextMessage = nextMessagesById.get(messageId);
+              if (nextMessage == null) continue;
+              const dutyMatch = messageMatchesDutyFeed(nextMessage, feed, filterOpts.freqs);
+              if (dutyMatch === null) {
+                needsReload = true;
+                break;
+              }
+              if (dutyMatch) matchedMessages.push([messageId, nextMessage]);
+            }
+
+            if (needsReload) {
+              await feedState.loadFeedInitialMessages(feedId);
+              restoreDutyFeedRuntimeState(feedId, feed);
+              return;
+            }
+
+            feedState.setMessageFeeds((current) =>
+              mergeUpdatedDutyFeedMessages(
+                current,
+                feedId,
+                visibleChangedMessageIds,
+                matchedMessages,
+              ),
+            );
+          } catch (loadError) {
+            feedState.setError(loadError instanceof Error ? loadError.message : String(loadError));
+            console.error(loadError);
+          }
+        }),
+      );
     },
   });
 

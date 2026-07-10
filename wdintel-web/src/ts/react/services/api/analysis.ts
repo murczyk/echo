@@ -28,6 +28,7 @@ import type {
   GroupStatsRsp,
   InboxMessagesReq,
   InboxMessage,
+  MessageIdsReq,
   MessageIdsRsp,
   MapPointsRsp,
   MetadataStatsRsp,
@@ -356,7 +357,10 @@ export async function fetchMessagesByIds(
   messageIds: number[],
   inboxReq?: Partial<InboxMessagesReq> | null,
 ): Promise<Array<[number, InboxMessage]>> {
-  const req = inboxReq == null ? { messageIds } : { messageIds, inboxReq };
+  const req: MessageIdsReq = {
+    messageIds,
+    inboxReq: inboxReq == null ? null : (inboxReq as InboxMessagesReq),
+  };
   const raw = await postJson<unknown>(
     '/api/rer-importer/messages-by-id',
     transformCamelToSnake(req),

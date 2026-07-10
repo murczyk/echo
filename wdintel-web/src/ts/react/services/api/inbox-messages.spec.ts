@@ -20,7 +20,30 @@ describe('fetchMessagesByIds', () => {
 
     expect(apiMocks.postJson).toHaveBeenCalledWith(
       '/api/rer-importer/messages-by-id',
-      { message_ids: [7, 8] },
+      { message_ids: [7, 8], inbox_req: null },
+      undefined,
+    );
+  });
+
+  it('sends inbox request context when provided', async () => {
+    apiMocks.postJson.mockResolvedValueOnce({ messages: [] });
+
+    await fetchMessagesByIds([7], {
+      highlightPoints: true,
+      highlightKeywords: true,
+      search: 'needle',
+    } as never);
+
+    expect(apiMocks.postJson).toHaveBeenCalledWith(
+      '/api/rer-importer/messages-by-id',
+      {
+        message_ids: [7],
+        inbox_req: {
+          highlight_points: true,
+          highlight_keywords: true,
+          search: 'needle',
+        },
+      },
       undefined,
     );
   });

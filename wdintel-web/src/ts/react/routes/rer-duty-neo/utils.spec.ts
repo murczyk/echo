@@ -24,6 +24,7 @@ import {
   getShortStateIdFromUrl,
   isMessageEntityExcluded,
   messageHasPalitraTag,
+  messageMatchesDutyFeed,
   normalizeFeed,
   uniquePointEtalonsForMapSearch,
   parseStateFromUrl,
@@ -202,6 +203,83 @@ describe('rer-duty utils', () => {
     } as Record<number, Unit>;
 
     expect(createMasterUnitText(network, unitsMap)).toBe('р/м Alpha Unit One, Unit Two (KYIV)');
+  });
+
+  it('matches duty feed filters locally and defers uncertain unit matching', () => {
+    const feed = {
+      filter: {
+        ...emptyFilter(),
+        freqsSelected: ['100.0'],
+        freqsDenied: ['200.0'],
+        groupsSelected: ['group-a'],
+        groupsDenied: ['group-b'],
+        sendersSelected: ['sender-a'],
+        deniedSenders: ['sender-b'],
+        postsSelected: ['post-a'],
+        postsDenied: ['post-b'],
+        unitsSelected: ['unit-a'],
+        unitsDenied: ['unit-b'],
+        unitsExactMatchOnly: true,
+      },
+      adjacentFreqsRange: 0,
+    };
+
+    expect(
+      messageMatchesDutyFeed(
+        {
+          freq: '100.0',
+          groupMasterKey: 'group-a',
+          post: 'post-a',
+          sender: 'sender-a',
+          unit: 'unit-a',
+        },
+        feed,
+        ['100.0'],
+      ),
+    ).toBe(true);
+    expect(
+      messageMatchesDutyFeed(
+        {
+          freq: '100.0',
+          groupMasterKey: 'group-b',
+          post: 'post-a',
+          sender: 'sender-a',
+          unit: 'unit-a',
+        },
+        feed,
+        ['100.0'],
+      ),
+    ).toBe(false);
+    expect(
+      messageMatchesDutyFeed(
+        {
+          freq: '100.0',
+          groupMasterKey: 'group-a',
+          post: 'post-a',
+          sender: 'sender-a',
+          unit: 'unit-a',
+        },
+        { ...feed, filter: { ...feed.filter, unitsExactMatchOnly: false } },
+        ['100.0'],
+      ),
+    ).toBe(null);
+  });
+
+  it('expands denied duty frequencies before local matching', () => {
+    const feed = {
+      filter: {
+        ...emptyFilter(),
+        freqsDenied: ['100.000'],
+      },
+      adjacentFreqsRange: 0.002,
+    };
+
+    expect(
+      messageMatchesDutyFeed({ freq: '100.001' }, feed, ['100.000', '100.001', '100.003']),
+    ).toBe(false);
+    expect(
+      messageMatchesDutyFeed({ freq: '100.003' }, feed, ['100.000', '100.001', '100.003']),
+    ).toBe(true);
   });
 
   it('builds analysis deep links with combined datetime params', () => {

@@ -15,6 +15,7 @@ const hoisted = vi.hoisted(() => ({
   USER_SETTINGS_UPDATED_EVENT: 'user-settings-updated',
   currentSystemSettings: vi.fn(),
   attachDutyNotificationAudioPrimingListeners: vi.fn(),
+  loadFeedInitialMessages: vi.fn(),
   mergeResolvedCallsigns: vi.fn(),
   setFeedErrorMock: vi.fn(),
   applyFilterMock: vi.fn(),
@@ -128,6 +129,26 @@ vi.mock('./useRerDutyFeedState', () => ({
     const [inboxCallsignInfoMap, setInboxCallsignInfoMap] = React.useState<
       Record<string, { callsign: string; res: unknown[] }>
     >(hoisted.initialInboxCallsignInfoMap);
+    hoisted.loadFeedInitialMessages.mockImplementation((feedId: string) => {
+      setMessageFeeds((current) =>
+        current.map((feed) =>
+          feed.id === feedId
+            ? {
+                ...feed,
+                items: [[2, { text: 'reloaded', unit: 'reloaded-unit' } as never]],
+                readIds: new Set<number>(),
+                unreadCount: 0,
+                firstItemIndex: 0,
+                referenceTimeMs: 0,
+                loading: false,
+                loadingOlder: false,
+                hasReachedStart: false,
+              }
+            : feed,
+        ),
+      );
+      return Promise.resolve();
+    });
 
     return {
       messageFeeds,
@@ -153,13 +174,29 @@ vi.mock('./useRerDutyFeedState', () => ({
       error: null,
       createMessageFeed: vi.fn(),
       removeMessageFeed: vi.fn(),
-      loadFeedInitialMessages: vi.fn(),
+      loadFeedInitialMessages: hoisted.loadFeedInitialMessages,
       loadFeedOlderMessages: vi.fn(),
       applyFilter: hoisted.applyFilterMock,
       toggleGroup: vi.fn(),
       selectAllGroups: vi.fn(),
       loadFeedNewerMessages: vi.fn(),
-      buildReqForFeed: vi.fn(),
+      buildReqForFeed: vi.fn(
+        (
+          feed: {
+            id: string;
+            filter: Record<string, unknown>;
+            highlightSignalsEnabled?: boolean;
+            onlyMyUnitTagsEnabled?: boolean;
+          },
+          opts: { loadLatest?: boolean },
+        ) => ({
+          feedId: feed.id,
+          filter: feed.filter,
+          loadLatest: opts?.loadLatest ?? null,
+          highlightSignals: feed.highlightSignalsEnabled ?? false,
+          reportTagsOnlyThisUnit: feed.onlyMyUnitTagsEnabled ? true : null,
+        }),
+      ),
       showArrowResult: vi.fn(),
       setLoadingNewerFeedId: vi.fn(),
       watchModeByFeedId: {},
@@ -268,6 +305,7 @@ describe('useRerDutyFeeds', () => {
     vi.clearAllMocks();
     latest = null;
     hoisted.onInboxChangedMessageIds = vi.fn();
+    hoisted.loadFeedInitialMessages.mockReset();
     hoisted.initialCallsignInfoMap = {};
     hoisted.initialInboxCallsignInfoMap = {};
     hoisted.messageFeeds = [
@@ -493,13 +531,14 @@ describe('useRerDutyFeeds inbox refreshes', () => {
     }
   });
 
-  it('updates only tag fields on every visible feed copy', async () => {
+  it('refreshes visible message copies with feed request context', async () => {
     const localContainer = document.createElement('div');
     const localRoot = createRoot(localContainer);
     const currentMessage = {
       text: 'current',
       textMarked: [{ CNTextC: { text: 'marked' } }],
       keywordTokens: [{ text: 'keyword' }],
+      pointTokens: [{ text: 'point', etalon: 'point-old' }],
       tags: [1],
       inboxTags: [{ id: 1, tagId: 1, confidence: 1, login: null, model: null, organismId: null }],
     } as never;
@@ -507,6 +546,7 @@ describe('useRerDutyFeeds inbox refreshes', () => {
       text: 'other',
       textMarked: [{ CNTextC: { text: 'other marked' } }],
       keywordTokens: [{ text: 'other keyword' }],
+      pointTokens: [{ text: 'other point', etalon: 'other-point' }],
       tags: [1],
       inboxTags: [{ id: 1, tagId: 1, confidence: 1, login: null, model: null, organismId: null }],
     } as never;
@@ -514,6 +554,7 @@ describe('useRerDutyFeeds inbox refreshes', () => {
       text: 'updated',
       textMarked: [{ CNTextC: { text: 'new marked' } }],
       keywordTokens: [{ text: 'new keyword' }],
+      pointTokens: [{ text: 'new point', etalon: 'point-new' }],
       tags: [2],
       inboxTags: [{ id: 2, tagId: 2, confidence: 1, login: null, model: null, organismId: null }],
     } as never;
@@ -525,6 +566,8 @@ describe('useRerDutyFeeds inbox refreshes', () => {
           [2, currentMessage],
         ],
         filter: {},
+        highlightSignalsEnabled: true,
+        onlyMyUnitTagsEnabled: true,
         unreadCount: 4,
         readIds: new Set<number>([1]),
       },
@@ -536,7 +579,7 @@ describe('useRerDutyFeeds inbox refreshes', () => {
         readIds: new Set<number>(),
       },
     ] as never;
-    hoisted.fetchMessagesByIds.mockResolvedValueOnce([[2, updatedMessage]]);
+    hoisted.fetchMessagesByIds.mockResolvedValue([[2, updatedMessage]]);
 
     document.body.appendChild(localContainer);
     try {
@@ -550,19 +593,114 @@ describe('useRerDutyFeeds inbox refreshes', () => {
         await hoisted.onInboxChangedMessageIds([2]);
       });
 
-      expect(hoisted.fetchMessagesByIds).toHaveBeenCalledWith([2]);
-      expect(latest?.messageFeeds[0].items[1]?.[1].text).toBe('current');
+      expect(hoisted.fetchMessagesByIds).toHaveBeenCalledWith(
+        [2],
+        expect.objectContaining({
+          feedId: 'mf-0',
+          loadLatest: true,
+          highlightSignals: true,
+          reportTagsOnlyThisUnit: true,
+        }),
+      );
+      expect(latest?.messageFeeds[0].items[1]?.[1].text).toBe('updated');
       expect(latest?.messageFeeds[0].items[1]?.[1].tags).toEqual([2]);
       expect(latest?.messageFeeds[0].items[1]?.[1].inboxTags).toEqual([
         { id: 2, tagId: 2, confidence: 1, login: null, model: null, organismId: null },
       ]);
       expect(latest?.messageFeeds[0].items[1]?.[1].keywordTokens).toBe(
-        currentMessage.keywordTokens,
+        updatedMessage.keywordTokens,
       );
-      expect(latest?.messageFeeds[0].items[1]?.[1].textMarked).toBe(currentMessage.textMarked);
+      expect(latest?.messageFeeds[0].items[1]?.[1].textMarked).toBe(updatedMessage.textMarked);
+      expect(latest?.messageFeeds[0].items[1]?.[1].pointTokens).toBe(updatedMessage.pointTokens);
+      expect(latest?.messageFeeds[1].items[0]?.[1].text).toBe('updated');
       expect(latest?.messageFeeds[1].items[0]?.[1].tags).toEqual([2]);
       expect(latest?.messageFeeds[0].unreadCount).toBe(4);
       expect(latest?.messageFeeds[0].readIds).toBe(hoisted.messageFeeds[0].readIds);
+    } finally {
+      await act(async () => {
+        localRoot.unmount();
+      });
+      localContainer.remove();
+    }
+  });
+
+  it('reloads a feed when unit matching is uncertain and preserves runtime state', async () => {
+    const localContainer = document.createElement('div');
+    const localRoot = createRoot(localContainer);
+    hoisted.messageFeeds = [
+      {
+        id: 'mf-0',
+        items: [
+          [
+            2,
+            {
+              text: 'current',
+              unit: '1-й танк',
+              tags: [1],
+              inboxTags: [
+                { id: 1, tagId: 1, confidence: 1, login: null, model: null, organismId: null },
+              ],
+            },
+          ],
+        ],
+        filter: {
+          unitsSelected: ['1-й танк'],
+          unitsDenied: null,
+          unitsExactMatchOnly: false,
+        },
+        unreadCount: 4,
+        readIds: new Set<number>([2]),
+        firstItemIndex: 123,
+        referenceTimeMs: 456,
+        loadingOlder: true,
+        hasReachedStart: true,
+        adjacentFreqsRange: 0,
+        highlightSignalsEnabled: true,
+        onlyMyUnitTagsEnabled: true,
+      },
+    ] as never;
+    hoisted.fetchMessagesByIds.mockResolvedValueOnce([
+      [
+        2,
+        {
+          text: 'updated',
+          unit: '1-й танк',
+          tags: [2],
+          inboxTags: [
+            { id: 2, tagId: 2, confidence: 1, login: null, model: null, organismId: null },
+          ],
+        },
+      ],
+    ] as never);
+
+    document.body.appendChild(localContainer);
+    try {
+      await act(async () => {
+        localRoot.render(React.createElement(TestHarness));
+      });
+      await act(async () => {
+        await flushMicrotasks();
+      });
+      await act(async () => {
+        await hoisted.onInboxChangedMessageIds([2]);
+      });
+
+      expect(hoisted.fetchMessagesByIds).toHaveBeenCalledWith(
+        [2],
+        expect.objectContaining({
+          loadLatest: true,
+        }),
+      );
+      expect(hoisted.loadFeedInitialMessages).toHaveBeenCalledWith('mf-0');
+      expect(latest?.messageFeeds[0].items[0]?.[1].text).toBe('reloaded');
+      expect(latest?.messageFeeds[0].readIds).toEqual(new Set<number>([2]));
+      expect(latest?.messageFeeds[0].unreadCount).toBe(4);
+      expect(latest?.messageFeeds[0].firstItemIndex).toBe(123);
+      expect(latest?.messageFeeds[0].referenceTimeMs).toBe(456);
+      expect(latest?.messageFeeds[0].loadingOlder).toBe(true);
+      expect(latest?.messageFeeds[0].hasReachedStart).toBe(true);
+      expect(latest?.messageFeeds[0].highlightSignalsEnabled).toBe(true);
+      expect(latest?.messageFeeds[0].onlyMyUnitTagsEnabled).toBe(true);
     } finally {
       await act(async () => {
         localRoot.unmount();

@@ -6,6 +6,7 @@ import type {
   InboxMessageMetadata,
   InboxMessageTag,
   InboxMessagesReq,
+  MessageIdsReq,
   InboxMessagesRsp,
   InterseptionKind,
   MessageMediaInfo,
@@ -175,11 +176,16 @@ export function normalizeInboxMessageMetadata(
 
 export async function fetchMessagesByIds(
   messageIds: number[],
+  inboxReq?: Partial<InboxMessagesReq> | null,
   options?: RequestOptions,
 ): Promise<Array<[number, InboxMessageType]>> {
+  const req: MessageIdsReq = {
+    messageIds,
+    inboxReq: inboxReq == null ? null : (inboxReq as InboxMessagesReq),
+  };
   const raw = await postJson<unknown>(
     '/api/rer-importer/messages-by-id',
-    transformCamelToSnake({ messageIds }),
+    transformCamelToSnake(req),
     options,
   );
   return transformSnakeToCamel<MessageIdsRsp>(raw).messages ?? [];
