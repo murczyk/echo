@@ -20,6 +20,16 @@ const hoisted = vi.hoisted(() => ({
   setFeedErrorMock: vi.fn(),
   applyFilterMock: vi.fn(),
   onInboxChangedMessageIds: vi.fn(),
+  setMessageFeeds: null as null | React.Dispatch<
+    React.SetStateAction<
+      Array<{
+        id: string;
+        items: Array<[number, { textMarked?: Array<{ CNCallsignC?: { text?: string } }> }]>;
+        filter: Record<string, unknown>;
+      }>
+    >
+  >,
+  feedLoadGenerations: {} as Record<string, number>,
   messageFeeds: [] as Array<{
     id: string;
     items: Array<[number, { textMarked?: Array<{ CNCallsignC?: { text?: string } }> }]>;
@@ -149,6 +159,7 @@ vi.mock('./useRerDutyFeedState', () => ({
       );
       return Promise.resolve();
     });
+    hoisted.setMessageFeeds = setMessageFeeds;
 
     return {
       messageFeeds,
@@ -167,7 +178,9 @@ vi.mock('./useRerDutyFeedState', () => ({
       },
       setError: hoisted.setFeedErrorMock,
       setWatchModeByFeedId: vi.fn(),
-      setMessageFeeds,
+      setMessageFeeds: (next) => {
+        setMessageFeeds(next);
+      },
       nearBottomByFeedIdRef: { current: {} },
       atBottomByFeedIdRef: { current: {} },
       columnRefsRef: { current: {} },
@@ -180,6 +193,7 @@ vi.mock('./useRerDutyFeedState', () => ({
       toggleGroup: vi.fn(),
       selectAllGroups: vi.fn(),
       loadFeedNewerMessages: vi.fn(),
+      getFeedLoadGeneration: (feedId: string) => hoisted.feedLoadGenerations[feedId] ?? 0,
       buildReqForFeed: vi.fn(
         (
           feed: {
@@ -306,6 +320,7 @@ describe('useRerDutyFeeds', () => {
     latest = null;
     hoisted.onInboxChangedMessageIds = vi.fn();
     hoisted.loadFeedInitialMessages.mockReset();
+    hoisted.feedLoadGenerations = {};
     hoisted.initialCallsignInfoMap = {};
     hoisted.initialInboxCallsignInfoMap = {};
     hoisted.messageFeeds = [
@@ -617,6 +632,117 @@ describe('useRerDutyFeeds inbox refreshes', () => {
       expect(hoisted.loadFeedInitialMessages).not.toHaveBeenCalled();
       expect(latest?.messageFeeds[0].unreadCount).toBe(4);
       expect(latest?.messageFeeds[0].readIds).toBe(hoisted.messageFeeds[0].readIds);
+    } finally {
+      await act(async () => {
+        localRoot.unmount();
+      });
+      localContainer.remove();
+    }
+  });
+
+  it('skips a stale refresh response when the feed request signature changed', async () => {
+    const localContainer = document.createElement('div');
+    const localRoot = createRoot(localContainer);
+    let resolveFetch!: (value: never) => void;
+    hoisted.messageFeeds = [
+      {
+        id: 'mf-0',
+        items: [[2, { text: 'current', tags: [1], inboxTags: [] }]],
+        filter: {
+          highlightKeywordSetId: null,
+        },
+      },
+    ] as never;
+    hoisted.fetchMessagesByIds.mockImplementationOnce(
+      () =>
+        new Promise<never>((resolve) => {
+          resolveFetch = resolve;
+        }),
+    );
+
+    document.body.appendChild(localContainer);
+    try {
+      await act(async () => {
+        localRoot.render(React.createElement(TestHarness));
+      });
+      await act(async () => {
+        await flushMicrotasks();
+      });
+
+      const refreshPromise = act(async () => {
+        await hoisted.onInboxChangedMessageIds([2]);
+      });
+
+      await act(async () => {
+        hoisted.setMessageFeeds?.((current) =>
+          current.map((feed) =>
+            feed.id === 'mf-0'
+              ? {
+                  ...feed,
+                  filter: { ...feed.filter, highlightKeywordSetId: 7 },
+                }
+              : feed,
+          ),
+        );
+      });
+
+      await act(async () => {
+        resolveFetch([] as never);
+        await flushMicrotasks();
+      });
+      await refreshPromise;
+
+      expect(latest?.messageFeeds[0].filter).toMatchObject({ highlightKeywordSetId: 7 });
+      expect(latest?.messageFeeds[0].items[0]?.[1].text).toBe('current');
+    } finally {
+      await act(async () => {
+        localRoot.unmount();
+      });
+      localContainer.remove();
+    }
+  });
+
+  it('skips a stale refresh response when the feed load generation changed', async () => {
+    const localContainer = document.createElement('div');
+    const localRoot = createRoot(localContainer);
+    let resolveFetch!: (value: never) => void;
+    hoisted.messageFeeds = [
+      {
+        id: 'mf-0',
+        items: [[2, { text: 'current', tags: [1], inboxTags: [] }]],
+        filter: {},
+      },
+    ] as never;
+    hoisted.feedLoadGenerations = { 'mf-0': 1 };
+    hoisted.fetchMessagesByIds.mockImplementationOnce(
+      () =>
+        new Promise<never>((resolve) => {
+          resolveFetch = resolve;
+        }),
+    );
+
+    document.body.appendChild(localContainer);
+    try {
+      await act(async () => {
+        localRoot.render(React.createElement(TestHarness));
+      });
+      await act(async () => {
+        await flushMicrotasks();
+      });
+
+      const refreshPromise = act(async () => {
+        await hoisted.onInboxChangedMessageIds([2]);
+      });
+
+      hoisted.feedLoadGenerations = { 'mf-0': 2 };
+
+      await act(async () => {
+        resolveFetch([[2, { text: 'stale', tags: [2], inboxTags: [] }]] as never);
+        await flushMicrotasks();
+      });
+      await refreshPromise;
+
+      expect(latest?.messageFeeds[0].items[0]?.[1].text).toBe('current');
     } finally {
       await act(async () => {
         localRoot.unmount();

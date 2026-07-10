@@ -11,7 +11,7 @@ import { normalizeCallsignLookupValue } from '../../utils/callsign-normalization
 import { useRerDutyFeedState } from './useRerDutyFeedState';
 import { useRerDutyFilterOptions } from './useRerDutyFilterOptions';
 import { useRerDutyMessageActions } from './useRerDutyMessageActions';
-import { collectUniqueCallsignsFromMessages } from './utils';
+import { collectUniqueCallsignsFromMessages, stableStringify } from './utils';
 import { useDutySettings } from '../../hooks/use-duty-settings';
 import { useInboxChangedMessageIds } from '../shared/useInboxChangedMessageIds';
 
@@ -192,11 +192,14 @@ export function useRerDutyFeeds(authUserName: string | null) {
           new Set(messageIds.filter((messageId) => visibleMessageIds.has(messageId))),
         );
         if (visibleChangedMessageIds.length === 0) return [];
+        const inboxReq = feedState.buildReqForFeed(feed, { loadLatest: true });
         return [
           {
             feedId: feed.id,
             messageIds: visibleChangedMessageIds,
-            inboxReq: feedState.buildReqForFeed(feed, { loadLatest: true }),
+            inboxReq,
+            requestSignature: stableStringify(inboxReq),
+            loadGeneration: feedState.getFeedLoadGeneration(feed.id),
           },
         ];
       });
@@ -204,17 +207,41 @@ export function useRerDutyFeeds(authUserName: string | null) {
       if (refreshes.length === 0) return;
 
       await Promise.all(
-        refreshes.map(async ({ feedId, messageIds: visibleChangedMessageIds, inboxReq }) => {
-          try {
-            const nextMessages = await fetchMessagesByIds(visibleChangedMessageIds, inboxReq);
-            feedState.setMessageFeeds((current) =>
-              mergeUpdatedDutyFeedMessages(current, feedId, visibleChangedMessageIds, nextMessages),
-            );
-          } catch (loadError) {
-            feedState.setError(loadError instanceof Error ? loadError.message : String(loadError));
-            console.error(loadError);
-          }
-        }),
+        refreshes.map(
+          async ({
+            feedId,
+            messageIds: visibleChangedMessageIds,
+            inboxReq,
+            requestSignature,
+            loadGeneration,
+          }) => {
+            try {
+              const nextMessages = await fetchMessagesByIds(visibleChangedMessageIds, inboxReq);
+              feedState.setMessageFeeds((current) =>
+                (() => {
+                  const currentFeed = current.find((feed) => feed.id === feedId);
+                  if (currentFeed == null) return current;
+                  if (feedState.getFeedLoadGeneration(feedId) !== loadGeneration) return current;
+                  const currentSignature = stableStringify(
+                    feedState.buildReqForFeed(currentFeed, { loadLatest: true }),
+                  );
+                  if (currentSignature !== requestSignature) return current;
+                  return mergeUpdatedDutyFeedMessages(
+                    current,
+                    feedId,
+                    visibleChangedMessageIds,
+                    nextMessages,
+                  );
+                })(),
+              );
+            } catch (loadError) {
+              feedState.setError(
+                loadError instanceof Error ? loadError.message : String(loadError),
+              );
+              console.error(loadError);
+            }
+          },
+        ),
       );
     },
   });
