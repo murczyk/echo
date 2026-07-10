@@ -351,8 +351,6 @@ export function buildInboxReq(opts: {
   };
 }
 
-const DUTY_UNIT_FILTER_UNSET_LABEL = 'Не визначено';
-
 function normalizeDutyFilterValue(value: string | null | undefined): string | null {
   const trimmed = value?.trim() ?? '';
   return trimmed === '' ? null : trimmed;
@@ -377,20 +375,13 @@ function matchesDutyStringFilter(
 }
 
 function matchesDutyUnitFilter(
-  unit: string | null | undefined,
   selectedValues: readonly string[] | null | undefined,
   deniedValues: readonly string[] | null | undefined,
-  exactMatchOnly: boolean,
 ): boolean | null {
   const normalizedSelected = normalizeFilterValues(selectedValues);
   const normalizedDenied = normalizeFilterValues(deniedValues);
   if (normalizedSelected.length === 0 && normalizedDenied.length === 0) return true;
-  if (!exactMatchOnly) return null;
-
-  const normalizedUnit = normalizeDutyFilterValue(unit) ?? DUTY_UNIT_FILTER_UNSET_LABEL;
-  if (normalizedDenied.includes(normalizedUnit)) return false;
-  if (normalizedSelected.length > 0 && !normalizedSelected.includes(normalizedUnit)) return false;
-  return true;
+  return null;
 }
 
 export function normalizeFeed(raw: Record<string, unknown>): RerDutyFeedFilterState {
@@ -454,12 +445,7 @@ export function messageMatchesDutyFeed(
     return false;
   }
 
-  const unitMatch = matchesDutyUnitFilter(
-    message.unit,
-    feed.filter.unitsSelected,
-    feed.filter.unitsDenied,
-    feed.filter.unitsExactMatchOnly ?? false,
-  );
+  const unitMatch = matchesDutyUnitFilter(feed.filter.unitsSelected, feed.filter.unitsDenied);
   if (unitMatch !== true) return unitMatch;
 
   return true;

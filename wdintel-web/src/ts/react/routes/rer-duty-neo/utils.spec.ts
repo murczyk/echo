@@ -205,7 +205,7 @@ describe('rer-duty utils', () => {
     expect(createMasterUnitText(network, unitsMap)).toBe('р/м Alpha Unit One, Unit Two (KYIV)');
   });
 
-  it('matches duty feed filters locally and defers uncertain unit matching', () => {
+  it('matches duty feed filters locally and reloads on any unit filter', () => {
     const feed = {
       filter: {
         ...emptyFilter(),
@@ -217,8 +217,6 @@ describe('rer-duty utils', () => {
         deniedSenders: ['sender-b'],
         postsSelected: ['post-a'],
         postsDenied: ['post-b'],
-        unitsSelected: ['unit-a'],
-        unitsDenied: ['unit-b'],
         unitsExactMatchOnly: true,
       },
       adjacentFreqsRange: 0,
@@ -250,6 +248,11 @@ describe('rer-duty utils', () => {
         ['100.0'],
       ),
     ).toBe(false);
+
+    const exactUnitSelected = {
+      ...feed,
+      filter: { ...feed.filter, unitsSelected: ['unit-a'] },
+    };
     expect(
       messageMatchesDutyFeed(
         {
@@ -259,7 +262,41 @@ describe('rer-duty utils', () => {
           sender: 'sender-a',
           unit: 'unit-a',
         },
-        { ...feed, filter: { ...feed.filter, unitsExactMatchOnly: false } },
+        exactUnitSelected,
+        ['100.0'],
+      ),
+    ).toBe(null);
+
+    const exactUnitDenied = {
+      ...feed,
+      filter: { ...feed.filter, unitsDenied: ['unit-b'] },
+    };
+    expect(
+      messageMatchesDutyFeed(
+        {
+          freq: '100.0',
+          groupMasterKey: 'group-a',
+          post: 'post-a',
+          sender: 'sender-a',
+          unit: 'unit-b',
+        },
+        exactUnitDenied,
+        ['100.0'],
+      ),
+    ).toBe(null);
+    expect(
+      messageMatchesDutyFeed(
+        {
+          freq: '100.0',
+          groupMasterKey: 'group-a',
+          post: 'post-a',
+          sender: 'sender-a',
+          unit: 'unit-a',
+        },
+        {
+          ...feed,
+          filter: { ...feed.filter, unitsSelected: ['unit-a'], unitsExactMatchOnly: false },
+        },
         ['100.0'],
       ),
     ).toBe(null);
