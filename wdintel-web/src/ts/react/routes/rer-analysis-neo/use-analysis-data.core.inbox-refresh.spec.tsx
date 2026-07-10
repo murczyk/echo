@@ -451,11 +451,15 @@ describe('useAnalysisData inbox refreshes', () => {
   it('uses partial refresh when only a client-checkable date range is active', async () => {
     const currentMessage = inboxMessage({
       text: 'current',
-      timestamp: Date.UTC(2026, 0, 16, 12),
+      date: '2026-01-16',
+      time: '12:00:00',
+      timestamp: Date.UTC(2026, 0, 18, 12),
     });
     const updatedMessage = inboxMessage({
       text: 'updated',
-      timestamp: Date.UTC(2026, 0, 16, 13),
+      date: '2026-01-16',
+      time: '13:00:30',
+      timestamp: Date.UTC(2026, 0, 18, 13),
     });
     hoisted.messages = [[1, currentMessage]];
     hoisted.mapOpenMessages = [[1, currentMessage]];
@@ -479,11 +483,15 @@ describe('useAnalysisData inbox refreshes', () => {
   it('removes refreshed visible ids outside the active date range', async () => {
     const currentMessage = inboxMessage({
       text: 'current',
+      date: '2026-01-16',
+      time: '12:00:00',
       timestamp: Date.UTC(2026, 0, 16, 12),
     });
     const updatedMessage = inboxMessage({
       text: 'updated',
-      timestamp: Date.UTC(2026, 0, 18, 12),
+      date: '2026-01-18',
+      time: '12:00:00',
+      timestamp: Date.UTC(2026, 0, 16, 12),
     });
     hoisted.messages = [[1, currentMessage]];
     hoisted.mapOpenMessages = [[1, currentMessage]];

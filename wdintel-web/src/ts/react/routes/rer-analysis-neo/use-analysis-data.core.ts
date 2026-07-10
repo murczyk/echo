@@ -2,7 +2,7 @@ import { useCallback, useMemo, useRef, useState } from 'react';
 
 import type { InboxMessage, InboxMessageTag } from '../../../../Bindings';
 import { fetchMessagesByIds } from '../../services/api/analysis';
-import { combineDateTimeInputToMs } from '../../utils/misc';
+import { combineDateTimeInputToMs, combineDateTimeToMs } from '../../utils/misc';
 import { buildInboxReq, queryStateReloadKey } from './helpers';
 import { useAnalysisFilterSections } from './use-analysis-data-filter-sections';
 import { useLoadMissingNetworksForMessages } from './use-analysis-data.support';
@@ -140,15 +140,31 @@ function getClientCheckableDateRange(
   return { sinceDateInclusiveMs, tillDateNoninclusiveMs };
 }
 
+function messageInboxDateTimeMs(message: InboxMessage): number | null {
+  if (message.date == null || message.time == null) return null;
+
+  const timeMatch = message.time.match(/^(\d{2}:\d{2})(?::(\d{2}))?$/);
+  if (timeMatch == null) return null;
+
+  const baseMs = combineDateTimeToMs(message.date, timeMatch[1]);
+  if (baseMs == null) return null;
+
+  const seconds = timeMatch[2] == null ? 0 : Number(timeMatch[2]);
+  if (!Number.isInteger(seconds) || seconds < 0 || seconds > 59) return null;
+
+  return baseMs + seconds * 1000;
+}
+
 function messageMatchesDateRange(message: InboxMessage, queryState: AnalysisQueryState): boolean {
   const dateRange = getClientCheckableDateRange(queryState);
   if (dateRange === null) return true;
   if (dateRange === undefined) return false;
-  if (message.timestamp == null) return false;
+  const inboxDateTimeMs = messageInboxDateTimeMs(message);
+  if (inboxDateTimeMs == null) return false;
 
   return (
-    message.timestamp >= dateRange.sinceDateInclusiveMs &&
-    message.timestamp < dateRange.tillDateNoninclusiveMs
+    inboxDateTimeMs >= dateRange.sinceDateInclusiveMs &&
+    inboxDateTimeMs <= dateRange.tillDateNoninclusiveMs
   );
 }
 
