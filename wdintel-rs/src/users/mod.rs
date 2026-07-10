@@ -1527,6 +1527,7 @@ async fn inactive_users_worker_1(
 ) -> anyhow::Result<()> {
     let threshold = Utc::now().naive_utc()
         - Duration::days(INACTIVE_USERS_DEACTIVATE_AFTER_DAYS);
+    let txn = dbx.begin().await.c(h!())?;
 
     // Find all active users whose last_active_at is older than threshold
     let inactive_users = login::Entity::find()
@@ -1542,20 +1543,29 @@ async fn inactive_users_worker_1(
             "NOT (roles @> $1::jsonb)",
             vec![r#"["NoAutoLogout"]"#.to_string()],
         ))
-        .all(dbx)
+        .all(&txn)
         .await
         .c(h!())?;
 
+    let deactivated_any = !inactive_users.is_empty();
     for user in inactive_users {
         let login_name = user.login.clone();
         let mut model = user.into_active_model();
         model.deleted = Set(true);
         model.deactivation_reason =
             Set(Some(sea_orm_active_enums::DeactivationReasonEnum::Inactive));
-        model.update(dbx).await.c(h!())?;
+        model.update(&txn).await.c(h!())?;
 
         info!("> Deactivating user {login_name} due to inactivity");
     }
+
+    if deactivated_any {
+        crate::sigint::zone::bl::refresh_secret_group_memberships(&txn)
+            .await
+            .c(h!())?;
+    }
+
+    txn.commit().await.c(h!())?;
     debug!("inactive_users_worker completed");
     Ok(())
 }
@@ -1582,7 +1592,9 @@ pub async fn update_last_active_at(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::functest::tests::cleanup;
+    use crate::functest::tests::{
+        cleanup, mk_login, mk_organism, mk_signal_group,
+    };
     use serial_test::serial;
 
     static TEST_LOCK: tokio::sync::Mutex<()> =
@@ -1880,5 +1892,92 @@ mod tests {
             .unwrap()
             .unwrap();
         assert!(login.deleted_permanently);
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn inactive_users_worker_refreshes_secret_group_memberships() {
+        let _guard = TEST_LOCK.lock().await;
+        let env = cleanup().await.unwrap();
+        let organism = mk_organism(
+            &env.dbx,
+            organism::ActiveModel {
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let login = mk_login(
+            &env.dbx,
+            login::ActiveModel {
+                login: Set("inactive-secret-group-user".to_string()),
+                organism_id: Set(Some(organism.id)),
+                last_active_at: Set(Some(
+                    Utc::now().naive_utc()
+                        - Duration::days(
+                            INACTIVE_USERS_DEACTIVATE_AFTER_DAYS + 1,
+                        ),
+                )),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let group = mk_signal_group(
+            &env.dbx,
+            signal_group::ActiveModel {
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let txn = env.dbx.begin().await.unwrap();
+        crate::sigint::zone::bl::update_signal_group_access_and_admins(
+            vec![],
+            vec![organism.id],
+            vec![],
+            true,
+            &group.master_key,
+            &txn,
+        )
+        .await
+        .unwrap();
+        txn.commit().await.unwrap();
+
+        let derived_count = secret_group_user::Entity::find()
+            .filter(
+                secret_group_user::Column::MasterKey
+                    .eq(group.master_key.clone()),
+            )
+            .filter(secret_group_user::Column::Login.eq(login.login.clone()))
+            .filter(
+                secret_group_user::Column::SecretGroupOrganismId.is_not_null(),
+            )
+            .count(&env.dbx)
+            .await
+            .unwrap();
+        assert_eq!(derived_count, 1);
+
+        inactive_users_worker_1(&env.dbx).await.unwrap();
+
+        let login = login::Entity::find_by_id(login.login.clone())
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(login.deleted);
+        let derived_count = secret_group_user::Entity::find()
+            .filter(
+                secret_group_user::Column::MasterKey
+                    .eq(group.master_key.clone()),
+            )
+            .filter(secret_group_user::Column::Login.eq(login.login))
+            .filter(
+                secret_group_user::Column::SecretGroupOrganismId.is_not_null(),
+            )
+            .count(&env.dbx)
+            .await
+            .unwrap();
+        assert_eq!(derived_count, 0);
     }
 }
