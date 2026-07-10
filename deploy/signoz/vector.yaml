@@ -10,7 +10,7 @@ sources:
   postgresql:
     type: file
     include:
-      - /var/lib/postgresql/14/main/log/postgresql-*.log
+      - /var/lib/postgresql/18/main/log/postgresql-*.log
     read_from: end
     ignore_older_secs: 3600
     glob_minimum_cooldown_ms: 10000
@@ -32,7 +32,7 @@ transforms:
 
       .source_type = "postgresql_file"
       .SYSLOG_IDENTIFIER = "postgresql"
-      ._SYSTEMD_UNIT = "postgresql@14-main.service"
+      ._SYSTEMD_UNIT = "postgresql@18-main.service"
 
       pg_re = r'^(?P<pg_timestamp>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d+ [A-Z]+) \[(?P<postgresql_pid>\d+)\] (?P<postgresql_session>[^ ]*) (?P<postgresql_level>[A-Z]+):\s+(?P<postgresql_message>.*)$'
       if match(msg, pg_re) {

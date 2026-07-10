@@ -63,15 +63,16 @@ sudo sysctl -w fs.file-max=1000000
 ## postgresql
 
 This is older instruction for jvln/wd database. For ECHO, see [[server.md]] PostgreSQL instructions.
+Enable the PGDG apt repository as described in [POSTGRESQL.md](../docs/POSTGRESQL.md) first.
 
 ```
-sudo apt install postgresql-14
+sudo apt install postgresql-18
 sudo -u postgres psql
 postgres=# create database wd;
 postgres=# CREATE USER wd WITH SUPERUSER PASSWORD 'fee_-_-_-FnoeKFBeebu87bf';
 ```
 
-Edit `/etc/postgresql/14/main/pg_hba.conf` (`sudo nano`), change:
+Edit `/etc/postgresql/18/main/pg_hba.conf` (`sudo nano`), change:
 
 ```
 local   all             all                                     peer

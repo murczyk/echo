@@ -87,7 +87,7 @@ sudo echo-install-utils setup-postgresql --db-name wd --db-user wd --password 'f
 This also configures PostgreSQL systemd OOM policy; see
 [POSTGRESQL.md](../docs/POSTGRESQL.md) for repair/check commands.
 
-`sudo nano /etc/postgresql/14/main/pg_hba.conf` change (if not already):
+`sudo nano /etc/postgresql/18/main/pg_hba.conf` change (if not already):
 
 ```
 local   all             all                                     peer
@@ -102,7 +102,7 @@ local   all             all                                     md5
 **performance**
 
 ```
-echo-install-utils ssh-sync-file deploy/postgresql/20-performance $server:/etc/postgresql/14/main/conf.d/20-performance.conf
+echo-install-utils ssh-sync-file deploy/postgresql/20-performance $server:/etc/postgresql/18/main/conf.d/20-performance.conf
 ```
 
 **rest of the setup**

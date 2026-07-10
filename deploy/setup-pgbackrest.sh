@@ -121,7 +121,7 @@ set -euo pipefail
 
 stanza=""
 
-pg_conf=/etc/postgresql/14/main/conf.d/90-pgbackrest.conf
+pg_conf=/etc/postgresql/18/main/conf.d/90-pgbackrest.conf
 if [[ -f "${pg_conf}" ]]; then
   stanza="$(
     sed -nE "s/^[[:space:]]*archive_command[[:space:]]*=[[:space:]]*'.*--stanza=([^[:space:]']+).*'$/\\1/p" "${pg_conf}" \
@@ -192,10 +192,10 @@ if [[ "${SERVER}" == "${BACKUP_NAME}" ]]; then
 
 
 
-  echo "==> [server=${SERVER} backup-name=${BACKUP_NAME}] ensure /etc/postgresql/14/main/conf.d/90-pgbackrest.conf"
+  echo "==> [server=${SERVER} backup-name=${BACKUP_NAME}] ensure /etc/postgresql/18/main/conf.d/90-pgbackrest.conf"
   CONF_CHANGED="false"
   set +e
-  "${ECHO_INSTALL_UTILS_BIN}" ssh-sync-file --take-a --exit-code "${TMP_90}" "${SERVER}:/etc/postgresql/14/main/conf.d/90-pgbackrest.conf"
+  "${ECHO_INSTALL_UTILS_BIN}" ssh-sync-file --take-a --exit-code "${TMP_90}" "${SERVER}:/etc/postgresql/18/main/conf.d/90-pgbackrest.conf"
   RC="$?"
   set -e
   if [[ "${RC}" -eq 2 ]]; then
@@ -205,11 +205,11 @@ if [[ "${SERVER}" == "${BACKUP_NAME}" ]]; then
     exit "${RC}"
   fi
 
-  ssh "${SERVER}" "sudo chown root:root /etc/postgresql/14/main/conf.d/90-pgbackrest.conf && sudo chmod 0644 /etc/postgresql/14/main/conf.d/90-pgbackrest.conf"
+  ssh "${SERVER}" "sudo chown root:root /etc/postgresql/18/main/conf.d/90-pgbackrest.conf && sudo chmod 0644 /etc/postgresql/18/main/conf.d/90-pgbackrest.conf"
 
   if [[ "${CONF_CHANGED}" == "true" ]]; then
-    echo "==> [server=${SERVER} backup-name=${BACKUP_NAME}] postgres config changed, restarting cluster 14/main"
-    ssh "${SERVER}" "sudo pg_ctlcluster 14 main restart"
+    echo "==> [server=${SERVER} backup-name=${BACKUP_NAME}] postgres config changed, restarting cluster 18/main"
+    ssh "${SERVER}" "sudo pg_ctlcluster 18 main restart"
   else
     echo "==> [server=${SERVER} backup-name=${BACKUP_NAME}] postgres config unchanged, restart skipped"
   fi
@@ -220,9 +220,9 @@ if [[ "${SERVER}" == "${BACKUP_NAME}" ]]; then
 set -euo pipefail
 
 local_system_id=""
-if [[ -x /usr/lib/postgresql/14/bin/pg_controldata ]]; then
+if [[ -x /usr/lib/postgresql/18/bin/pg_controldata ]]; then
   local_system_id="\$(
-    /usr/lib/postgresql/14/bin/pg_controldata /var/lib/postgresql/14/main 2>/dev/null \
+    /usr/lib/postgresql/18/bin/pg_controldata /var/lib/postgresql/18/main 2>/dev/null \
       | sed -nE 's/^Database system identifier:[[:space:]]*([0-9]+).*$/\1/p' \
       | head -n 1 || true
   )"
