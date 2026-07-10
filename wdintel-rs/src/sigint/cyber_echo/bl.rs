@@ -875,7 +875,6 @@ mod tests {
             created_at: Set(Utc::now().naive_utc()),
             name: Set("Foreign same datasource".to_string()),
             deleted: Set(false),
-            ..Default::default()
         }
         .insert(&env.dbx)
         .await
