@@ -1417,6 +1417,7 @@ function AdminDirectionsNeoPageBody() {
   const [orphanGroups, setOrphanGroups] = useState<OrphanSignalGroupEntry[]>([]);
   const [archivedGroups, setArchivedGroups] = useState<OrphanSignalGroupEntry[]>([]);
   const [aors, setAors] = useState<AreaOfResponsibility[]>([]);
+  const [organisms, setOrganisms] = useState<Organism[]>([]);
 
   const [editDialog, setEditDialog] = useState<GroupEditState | null>(null);
   const [orphanEditDialog, setOrphanEditDialog] = useState<OrphanEditState | null>(null);
@@ -1431,6 +1432,14 @@ function AdminDirectionsNeoPageBody() {
   const [supportNonRerInterceptions, setSupportNonRerInterceptions] = useState(false);
 
   const datasourceById = useMemo(() => new Map(datasources), [datasources]);
+  const organismById = useMemo(
+    () => new Map(organisms.map((organism) => [organism.id, organism])),
+    [organisms],
+  );
+  const activeOrganismOptions = useMemo(
+    () => organisms.filter((organism) => organism.enabled),
+    [organisms],
+  );
   const aorOptions = useMemo(() => aors, [aors]);
   const aorFilterOptions = useMemo(() => buildAorFilterOptions(aors), [aors]);
   const directionTabs = useMemo<DirectionsTab[]>(() => {
@@ -1525,6 +1534,7 @@ function AdminDirectionsNeoPageBody() {
               zoneId={zoneId}
               rows={filteredRows}
               datasourceById={datasourceById}
+              organismById={organismById}
               groupInfos={groupInfos}
               aorFilterOptions={aorFilterOptions}
               onEdit={openEditDialog}
@@ -1560,6 +1570,7 @@ function AdminDirectionsNeoPageBody() {
     archivedGroups,
     datasourceById,
     groupInfos,
+    organismById,
     orphanGroups,
     unarchiveInFlightMasterKey,
     zoneDatasourceIds,
@@ -1587,13 +1598,14 @@ function AdminDirectionsNeoPageBody() {
     setStatus('loading');
     setError(null);
     try {
-      const [datasourceList, zoneList, orphanList, archivedList, aorList, settings] =
+      const [datasourceList, zoneList, orphanList, archivedList, aorList, organismList, settings] =
         await Promise.all([
           listDatasources(),
           listSigintZones(),
           listOrphanSignalGroups(),
           listArchivedSignalGroups(),
           listAors({ sortBy: null }),
+          listOrganisms({ sortBy: null }),
           currentSystemSettings(),
         ]);
 
@@ -1602,6 +1614,7 @@ function AdminDirectionsNeoPageBody() {
       setOrphanGroups(orphanList);
       setArchivedGroups(archivedList);
       setAors(aorList);
+      setOrganisms(organismList);
       setSupportNonRerInterceptions(settings.supportNonRerInterceptions);
 
       const zoneDatasourceEntries = await Promise.all(
@@ -1674,6 +1687,7 @@ function AdminDirectionsNeoPageBody() {
       interseptionKind: group.interseptionKind,
       disableNetworkAssignment: group.disableNetworkAssignment,
       selectedUsers: group.allowedUsers,
+      selectedOrganismIds: group.allowedOrganismIds,
       selectedAdmins: group.adminLogins,
       shortNote: group.shortNote ?? '',
       longNote: group.longNote ?? '',
@@ -1709,6 +1723,7 @@ function AdminDirectionsNeoPageBody() {
       interseptionKind: group.interseptionKind,
       disableNetworkAssignment: group.disableNetworkAssignment,
       selectedUsers: [],
+      selectedOrganismIds: [],
       selectedAdmins: [],
       isSaving: false,
       error: null,
@@ -1783,12 +1798,14 @@ function AdminDirectionsNeoPageBody() {
     setEditDialog({ ...editDialog, isSaving: true, error: null });
 
     const selectedUsers = editDialog.isSecret ? editDialog.selectedUsers : [];
+    const selectedOrganismIds = editDialog.isSecret ? editDialog.selectedOrganismIds : [];
     const req: ZoneDatasourceGroupUpdateReq = {
       id: editDialog.group.sigintZoneDatasourceId,
       isSecret: editDialog.isSecret,
       interseptionKind: supportNonRerInterceptions ? editDialog.interseptionKind : null,
       disableNetworkAssignment: editDialog.disableNetworkAssignment,
       userLogins: selectedUsers,
+      organismIds: selectedOrganismIds,
       adminLogins: editDialog.selectedAdmins,
       shortNote: editDialog.shortNote.trim() ? editDialog.shortNote.trim() : null,
       longNote: editDialog.longNote.trim() ? editDialog.longNote.trim() : null,
@@ -1892,6 +1909,7 @@ function AdminDirectionsNeoPageBody() {
 
     const datasourceId = assignDialog.group.datasourceId;
     const selectedUsers = assignDialog.isSecret ? assignDialog.selectedUsers : [];
+    const selectedOrganismIds = assignDialog.isSecret ? assignDialog.selectedOrganismIds : [];
     const requests: ZoneDatasourceGroupAddReq[] = assignDialog.selectedZones.map(([zoneId]) => ({
       zoneId,
       datasourceId,
@@ -1899,6 +1917,7 @@ function AdminDirectionsNeoPageBody() {
       isSecret: assignDialog.isSecret,
       interseptionKind: supportNonRerInterceptions ? assignDialog.interseptionKind : null,
       userLogins: selectedUsers,
+      organismIds: selectedOrganismIds,
       adminLogins: assignDialog.selectedAdmins,
       shortNote: assignDialog.group.groupAdminData?.shortNote ?? null,
       longNote: assignDialog.group.groupAdminData?.longNote ?? null,
@@ -2149,6 +2168,31 @@ function AdminDirectionsNeoPageBody() {
                 editDialog && setEditDialog({ ...editDialog, selectedUsers: value })
               }
               renderInput={(params) => <TextField {...params} label="Користувачі" />}
+            />
+          ) : null}
+          {editDialog?.isSecret ? (
+            <Autocomplete
+              multiple
+              options={activeOrganismOptions}
+              getOptionLabel={(option) => option.name}
+              value={selectedOrganisms(editDialog.selectedOrganismIds, activeOrganismOptions)}
+              onChange={(_, value) =>
+                editDialog &&
+                setEditDialog({
+                  ...editDialog,
+                  selectedOrganismIds: value.map((organism) => organism.id),
+                })
+              }
+              renderOption={(props, option) => {
+                const { key: _unusedKey, ...optionProps } = props;
+                return (
+                  <Box component="li" {...optionProps} key={option.id}>
+                    {option.name}
+                  </Box>
+                );
+              }}
+              renderInput={(params) => <TextField {...params} label="Організми" />}
+              isOptionEqualToValue={(option, value) => option.id === value.id}
             />
           ) : null}
           <Autocomplete
@@ -2406,6 +2450,31 @@ function AdminDirectionsNeoPageBody() {
                 assignDialog && setAssignDialog({ ...assignDialog, selectedUsers: value })
               }
               renderInput={(params) => <TextField {...params} label="Користувачі" />}
+            />
+          ) : null}
+          {assignDialog?.isSecret ? (
+            <Autocomplete
+              multiple
+              options={activeOrganismOptions}
+              getOptionLabel={(option) => option.name}
+              value={selectedOrganisms(assignDialog.selectedOrganismIds, activeOrganismOptions)}
+              onChange={(_, value) =>
+                assignDialog &&
+                setAssignDialog({
+                  ...assignDialog,
+                  selectedOrganismIds: value.map((organism) => organism.id),
+                })
+              }
+              renderOption={(props, option) => {
+                const { key: _unusedKey, ...optionProps } = props;
+                return (
+                  <Box component="li" {...optionProps} key={option.id}>
+                    {option.name}
+                  </Box>
+                );
+              }}
+              renderInput={(params) => <TextField {...params} label="Організми" />}
+              isOptionEqualToValue={(option, value) => option.id === value.id}
             />
           ) : null}
           <Autocomplete

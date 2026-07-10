@@ -271,7 +271,11 @@ describe('SettingsNeoPage', () => {
     updateMyAdminGroupMock.mockReset();
     updateMyAdminGroupMock.mockResolvedValue(undefined);
     fetchMyAdminGroupEditReferenceMock.mockReset();
-    fetchMyAdminGroupEditReferenceMock.mockResolvedValue({ logins: [], areasOfResponsibility: [] });
+    fetchMyAdminGroupEditReferenceMock.mockResolvedValue({
+      logins: [],
+      organisms: [],
+      areasOfResponsibility: [],
+    });
     container = document.createElement('div');
     document.body.appendChild(container);
     root = createRoot(container);
@@ -441,6 +445,7 @@ describe('SettingsNeoPage', () => {
           isGroupSecret: false,
           disableNetworkAssignment: false,
           allowedUsers: [],
+          allowedOrganismIds: [],
           adminLogins: [{ login: 'DeltaUser', deltaLogin: null }],
           areasOfResponsibility: null,
         },
@@ -489,6 +494,7 @@ describe('SettingsNeoPage', () => {
             { login: 'user-a', deltaLogin: 'DeltaUserA' },
             { login: 'user-b', deltaLogin: 'USER-B' },
           ],
+          allowedOrganismIds: [],
           adminLogins: [{ login: 'DeltaUser', deltaLogin: 'AdminDelta' }],
           areasOfResponsibility: [{ id: 1, name: 'AOR 1' }],
         },
@@ -529,6 +535,7 @@ describe('SettingsNeoPage', () => {
           isGroupSecret: true,
           disableNetworkAssignment: false,
           allowedUsers: [{ login: 'user-a', deltaLogin: null }],
+          allowedOrganismIds: [],
           adminLogins: [{ login: 'admin-a', deltaLogin: null }],
           areasOfResponsibility: [{ id: 1, name: 'AOR 1' }],
         },
@@ -536,6 +543,7 @@ describe('SettingsNeoPage', () => {
     });
     fetchMyAdminGroupEditReferenceMock.mockResolvedValue({
       logins: ['admin-a', 'user-a'],
+      organisms: [],
       areasOfResponsibility: [{ id: 1, name: 'AOR 1' }],
     });
 
@@ -576,6 +584,75 @@ describe('SettingsNeoPage', () => {
     expect(container.textContent).not.toContain('Довга нотатка');
   });
 
+  it('sends organism ids when saving my group edits', async () => {
+    fetchServerInfoMock.mockResolvedValueOnce({ version: '1.0.0', featureMyAdminGroupsEdit: true });
+    listMyAdminGroupsMock.mockResolvedValue({
+      groups: [
+        {
+          masterKey: 'signal:group-1',
+          name: 'Group 1',
+          datasourceName: null,
+          datasourceKind: 'signal',
+          isGroupSecret: true,
+          disableNetworkAssignment: false,
+          allowedUsers: [],
+          allowedOrganismIds: [7],
+          adminLogins: [{ login: 'admin-a', deltaLogin: null }],
+          areasOfResponsibility: null,
+        },
+      ],
+    });
+    fetchMyAdminGroupEditReferenceMock.mockResolvedValue({
+      logins: ['admin-a'],
+      organisms: [{ id: 7, name: 'Own Org' }],
+      areasOfResponsibility: [],
+    });
+
+    await act(async () => {
+      root.render(<SettingsNeoPage section="myGroups" />);
+    });
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    const actionsButton = Array.from(container.querySelectorAll('button')).find((button) =>
+      button.getAttribute('aria-label')?.includes('Дії'),
+    );
+    await act(async () => {
+      actionsButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+
+    const editButton = Array.from(container.querySelectorAll('button')).find((button) =>
+      button.textContent?.includes('Редагувати'),
+    );
+    await act(async () => {
+      editButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await new Promise((resolve) => window.setTimeout(resolve, 0));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    const saveButton = Array.from(container.querySelectorAll('button')).find((button) =>
+      button.textContent?.includes('Зберегти'),
+    );
+    await act(async () => {
+      saveButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await Promise.resolve();
+    });
+
+    expect(updateMyAdminGroupMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        masterKey: 'signal:group-1',
+        isSecret: true,
+        userLogins: [],
+        organismIds: [7],
+        adminLogins: ['admin-a'],
+      }),
+    );
+  });
+
   it('does not save my group edits without admins', async () => {
     fetchServerInfoMock.mockResolvedValueOnce({ version: '1.0.0', featureMyAdminGroupsEdit: true });
     listMyAdminGroupsMock.mockResolvedValue({
@@ -588,6 +665,7 @@ describe('SettingsNeoPage', () => {
           isGroupSecret: false,
           disableNetworkAssignment: false,
           allowedUsers: [],
+          allowedOrganismIds: [],
           adminLogins: [],
           areasOfResponsibility: null,
         },
@@ -595,6 +673,7 @@ describe('SettingsNeoPage', () => {
     });
     fetchMyAdminGroupEditReferenceMock.mockResolvedValue({
       logins: ['admin-a'],
+      organisms: [],
       areasOfResponsibility: [],
     });
 

@@ -792,19 +792,14 @@ pub async fn bl_szd_groups_list(
         ),
     >::new();
     for row in rows {
-        if !res.contains_key(&row.group_master_key) {
-            res.insert(
-                row.group_master_key,
-                (
-                    row.is_secret,
-                    row.interseption_kind.into(),
-                    row.disable_network_assignment,
-                    row.id,
-                    row.short_note,
-                    row.long_note,
-                ),
-            );
-        }
+        res.entry(row.group_master_key).or_insert((
+            row.is_secret,
+            row.interseption_kind.into(),
+            row.disable_network_assignment,
+            row.id,
+            row.short_note,
+            row.long_note,
+        ));
     }
 
     let keys = res.keys().cloned().collect::<Vec<_>>();

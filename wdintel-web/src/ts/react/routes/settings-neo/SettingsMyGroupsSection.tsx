@@ -26,6 +26,7 @@ import type { MouseEvent } from 'react';
 import type {
   AreaOfResponsibility,
   MyAdminSignalGroup,
+  MyOrganism,
   SignalGroupLogin,
 } from '../../../../Bindings';
 import { ELLIPSIS } from '../../utils/misc';
@@ -83,6 +84,7 @@ type MyGroupEditState = {
   isSecret: boolean;
   disableNetworkAssignment: boolean;
   selectedUsers: string[];
+  selectedOrganismIds: number[];
   selectedAdmins: string[];
   selectedAorIds: number[];
   isSaving: boolean;
@@ -110,13 +112,29 @@ function formatGroupLogins(logins: SignalGroupLogin[]): string {
   return logins.map(formatGroupLogin).join(', ');
 }
 
+function formatOrganismIds(organismIds: number[]): string {
+  if (organismIds.length === 0) return '—';
+  return organismIds.map((id) => `#${id}`).join(', ');
+}
+
 function formatAllowedUsers(group: MyAdminSignalGroup): string {
   if (!group.isGroupSecret) return 'без обмежень';
-  return formatGroupLogins(group.allowedUsers);
+  const parts: string[] = [];
+  if (group.allowedUsers.length > 0) parts.push(formatGroupLogins(group.allowedUsers));
+  if (group.allowedOrganismIds.length > 0) {
+    parts.push(`Організми: ${formatOrganismIds(group.allowedOrganismIds)}`);
+  }
+  return parts.length > 0 ? parts.join('; ') : '—';
 }
 
 function groupLoginValues(logins: SignalGroupLogin[]): string[] {
   return logins.map((login) => login.login);
+}
+
+function selectedOrganisms(selectedIds: number[], options: MyOrganism[]) {
+  return selectedIds
+    .map((id) => options.find((organism) => organism.id === id))
+    .filter(Boolean) as MyOrganism[];
 }
 
 function DisableNetworkAssignmentLabel() {
@@ -307,6 +325,7 @@ function MyGroupEditDialog(props: {
   editDialog: MyGroupEditState | null;
   setEditDialog: (editDialog: MyGroupEditState | null) => void;
   logins: string[];
+  organisms: MyOrganism[];
   aorOptions: AreaOfResponsibility[];
   referenceDataStatus: ReferenceDataStatus;
   onSave: () => void;
@@ -368,6 +387,31 @@ function MyGroupEditDialog(props: {
               editDialog && setEditDialog({ ...editDialog, selectedUsers: value })
             }
             renderInput={(params) => <TextField {...params} label="Користувачі" />}
+          />
+        ) : null}
+        {editDialog?.isSecret ? (
+          <Autocomplete
+            multiple
+            options={props.organisms}
+            getOptionLabel={(option) => option.name}
+            value={selectedOrganisms(editDialog.selectedOrganismIds, props.organisms)}
+            onChange={(_, value) =>
+              editDialog &&
+              setEditDialog({
+                ...editDialog,
+                selectedOrganismIds: value.map((organism) => organism.id),
+              })
+            }
+            renderOption={(optionProps, option) => {
+              const { key: _unusedKey, ...restOptionProps } = optionProps;
+              return (
+                <Box component="li" {...restOptionProps} key={option.id}>
+                  {option.name}
+                </Box>
+              );
+            }}
+            renderInput={(params) => <TextField {...params} label="Організми" />}
+            isOptionEqualToValue={(option, value) => option.id === value.id}
           />
         ) : null}
         <Autocomplete
@@ -437,6 +481,7 @@ export function SettingsMyGroupsSection({
   const hasGroups = groups.length > 0;
   const [editDialog, setEditDialog] = useState<MyGroupEditState | null>(null);
   const [logins, setLogins] = useState<string[]>([]);
+  const [organisms, setOrganisms] = useState<MyOrganism[]>([]);
   const [aorOptions, setAorOptions] = useState<AreaOfResponsibility[]>([]);
   const [referenceDataStatus, setReferenceDataStatus] = useState<ReferenceDataStatus>('idle');
 
@@ -447,6 +492,7 @@ export function SettingsMyGroupsSection({
     try {
       const reference = await fetchMyAdminGroupEditReference(masterKey);
       setLogins(reference.logins);
+      setOrganisms(reference.organisms);
       setAorOptions(reference.areasOfResponsibility);
       setReferenceDataStatus('success');
     } catch {
@@ -468,6 +514,7 @@ export function SettingsMyGroupsSection({
       isSecret: group.isGroupSecret,
       disableNetworkAssignment: group.disableNetworkAssignment,
       selectedUsers: groupLoginValues(group.allowedUsers),
+      selectedOrganismIds: group.allowedOrganismIds,
       selectedAdmins: groupLoginValues(group.adminLogins),
       selectedAorIds: (group.areasOfResponsibility ?? []).map((aor) => aor.id),
       isSaving: false,
@@ -497,6 +544,7 @@ export function SettingsMyGroupsSection({
         isSecret: editDialog.isSecret,
         disableNetworkAssignment: editDialog.disableNetworkAssignment,
         userLogins: editDialog.isSecret ? editDialog.selectedUsers : [],
+        organismIds: editDialog.isSecret ? editDialog.selectedOrganismIds : [],
         adminLogins: selectedAdmins,
         areaOfResponsibilityIds:
           editDialog.selectedAorIds.length > 0 ? editDialog.selectedAorIds : null,
@@ -606,6 +654,7 @@ export function SettingsMyGroupsSection({
         editDialog={editDialog}
         setEditDialog={setEditDialog}
         logins={logins}
+        organisms={organisms}
         aorOptions={aorOptions}
         referenceDataStatus={referenceDataStatus}
         onSave={handleSaveGroupEdit}
