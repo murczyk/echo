@@ -1144,6 +1144,7 @@ async fn promote_oldest_deleted_original_duplicate(
                 txn,
                 duplicate_inbox_message.id,
                 datasource_group_id,
+                group_master_key,
             )
             .await
             .c(h!())?;
@@ -1265,18 +1266,37 @@ async fn load_promotable_duplicate_signal_message(
     txn: &DatabaseTransaction,
     duplicate_inbox_id: i32,
     datasource_group_id: i64,
+    group_master_key: &str,
 ) -> anyhow::Result<Option<signal_message::Model>> {
-    signal_message::Entity::find()
+    let messages = signal_message::Entity::find()
+        .find_with_related(signal_message_group::Entity)
         .filter(
             signal_message::Column::EchoInboxMessageId
                 .eq(i64::from(duplicate_inbox_id)),
         )
-        .filter(
-            signal_message::Column::DatasourceGroupId.eq(datasource_group_id),
-        )
-        .one(txn)
+        .order_by_asc(signal_message::Column::CreatedAt)
+        .order_by_asc(signal_message::Column::Id)
+        .all(txn)
         .await
-        .c(h!())
+        .c(h!())?;
+    let mut visible_message = None;
+    let mut fallback_message = None;
+    for (message, groups) in messages {
+        if message.datasource_group_id == Some(datasource_group_id) {
+            return Ok(Some(message));
+        }
+        let is_visible = groups.iter().any(|group| {
+            group.datasource_group_id == Some(datasource_group_id)
+                || group.group_master_key.as_deref() == Some(group_master_key)
+        });
+        if visible_message.is_none() && is_visible {
+            visible_message = Some(message.clone());
+        }
+        if fallback_message.is_none() {
+            fallback_message = Some(message);
+        }
+    }
+    Ok(visible_message.or(fallback_message))
 }
 
 async fn load_echo_attachments(
@@ -2168,6 +2188,152 @@ mod tests {
             .unwrap();
         assert!(missing_message.is_resolved);
         assert_eq!(missing_message.status, EchoMissingMessageStatus::Resolved);
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn delete_event_promotes_duplicate_trace_from_other_datasource_group()
+    {
+        let env = cleanup().await.unwrap();
+        let datasource =
+            mk_datasource(&env.dbx, Default::default()).await.unwrap();
+        let duplicate_datasource =
+            mk_datasource(&env.dbx, Default::default()).await.unwrap();
+        let echo_account = mk_test_echo_account(&env.dbx).await;
+        let echo_group = mk_test_echo_group(
+            &env.dbx,
+            echo_account.id,
+            "cross-datasource-dupe-group",
+        )
+        .await;
+        let datasource_group_id =
+            crate::messenger::group::ensure_datasource_group_id(
+                &env.dbx,
+                echo_group.group_id.clone(),
+                datasource.id,
+            )
+            .await
+            .unwrap();
+        let duplicate_datasource_group_id =
+            crate::messenger::group::ensure_datasource_group_id(
+                &env.dbx,
+                echo_group.group_id.clone(),
+                duplicate_datasource.id,
+            )
+            .await
+            .unwrap();
+        assert_ne!(datasource_group_id, duplicate_datasource_group_id);
+        let ts = Utc::now().naive_utc();
+        let original_inbox = mk_test_echo_inbox_message(
+            &env.dbx,
+            echo_account.id,
+            echo_group.id,
+            "cross datasource duplicate promotion",
+            ts,
+            None,
+            true,
+        )
+        .await;
+        let duplicate_inbox = mk_test_echo_inbox_message(
+            &env.dbx,
+            echo_account.id,
+            echo_group.id,
+            &original_inbox.body,
+            ts + chrono::TimeDelta::seconds(1),
+            Some(original_inbox.id),
+            false,
+        )
+        .await;
+        let original_signal_message = mk_test_signal_message(
+            &env.dbx,
+            datasource_group_id,
+            &original_inbox.body,
+            ts,
+            false,
+            Some(i64::from(original_inbox.id)),
+            Some("uid-cross-datasource-original".to_string()),
+        )
+        .await;
+        mk_test_signal_message_group(
+            &env.dbx,
+            original_signal_message.id,
+            &echo_group.group_id,
+            duplicate_datasource_group_id,
+            original_signal_message.message_uid.clone(),
+        )
+        .await;
+        let duplicate_signal_message = mk_test_signal_message(
+            &env.dbx,
+            duplicate_datasource_group_id,
+            &original_inbox.body,
+            ts,
+            true,
+            Some(i64::from(duplicate_inbox.id)),
+            Some("duplicate-trace-cross-datasource".to_string()),
+        )
+        .await;
+        let resources = ReceiveWorkerResources {
+            settlements: env.settlements.clone(),
+            rq: env.rq.clone(),
+            s3: env.s3.clone(),
+        };
+        let mut redis = env.redis.clone();
+        let mut changed_inbox_item_ids = vec![];
+        let txn = env.dbx.begin().await.unwrap();
+
+        mark_message_deleted(
+            &env.config,
+            &resources,
+            &mut redis,
+            datasource.id,
+            i64::from(original_inbox.id),
+            &txn,
+            &mut changed_inbox_item_ids,
+        )
+        .await
+        .unwrap();
+        txn.commit().await.unwrap();
+
+        let original_signal_message =
+            signal_message::Entity::find_by_id(original_signal_message.id)
+                .one(&env.dbx)
+                .await
+                .unwrap()
+                .unwrap();
+        let duplicate_signal_message =
+            signal_message::Entity::find_by_id(duplicate_signal_message.id)
+                .one(&env.dbx)
+                .await
+                .unwrap()
+                .unwrap();
+        let promoted_group = signal_message_group::Entity::find()
+            .filter(
+                signal_message_group::Column::SignalMessageId
+                    .eq(duplicate_signal_message.id),
+            )
+            .filter(
+                signal_message_group::Column::GroupMasterKey
+                    .eq(Some(echo_group.group_id)),
+            )
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert!(original_signal_message.deleted);
+        assert!(!duplicate_signal_message.deleted);
+        assert_eq!(
+            duplicate_signal_message.datasource_group_id,
+            Some(duplicate_datasource_group_id)
+        );
+        assert_eq!(
+            promoted_group.datasource_group_id,
+            Some(duplicate_datasource_group_id)
+        );
+        assert!(
+            changed_inbox_item_ids.contains(&duplicate_signal_message.id),
+            "{changed_inbox_item_ids:?}"
+        );
     }
 
     #[tokio::test]
