@@ -439,6 +439,26 @@ pub async fn find_duplicate_of(
                 });
             if let Some((message, _group)) = &original {
                 if message.deleted {
+                    if let Some(duplicate) =
+                        find_active_split_child_for_deleted_message(
+                            txn, message,
+                        )
+                        .await
+                        .c(h!())?
+                    {
+                        if replace_signal_message_dedupe_key_if_value(
+                            manager,
+                            &key,
+                            original_id,
+                            duplicate.0.id,
+                        )
+                        .await
+                        .c(h!())?
+                        {
+                            return Ok(Some(duplicate));
+                        }
+                        continue 'redis_key_loop;
+                    }
                     warn!(
                         "redis duplicate key {key} pointed to deleted signal_message id={original_id}; repairing canonical"
                     );
@@ -506,6 +526,37 @@ pub async fn find_duplicate_of(
         m_timestamp,
     )
     .await
+}
+
+async fn find_active_split_child_for_deleted_message(
+    txn: &DatabaseTransaction,
+    deleted_message: &signal_message::Model,
+) -> Result<Option<(signal_message::Model, datasource_group::Model)>, AppError>
+{
+    let split_filter = if let Some(echo_inbox_message_id) =
+        deleted_message.echo_inbox_message_id
+    {
+        signal_message::Column::EchoInboxMessageId.eq(echo_inbox_message_id)
+    } else if let Some(message_uid) = &deleted_message.message_uid {
+        signal_message::Column::MessageUid.eq(message_uid.clone())
+    } else {
+        return Ok(None);
+    };
+    Ok(signal_message::Entity::find()
+        .find_with_related(datasource_group::Entity)
+        .filter(split_filter)
+        .filter(signal_message::Column::Id.ne(deleted_message.id))
+        .filter(signal_message::Column::Deleted.eq(false))
+        .order_by_asc(signal_message::Column::CreatedAt)
+        .order_by_asc(signal_message::Column::Id)
+        .all(txn)
+        .await
+        .c(h!())?
+        .into_iter()
+        .flat_map(|(message, groups)| {
+            groups.into_iter().next().map(|group| (message, group))
+        })
+        .next())
 }
 
 async fn find_duplicate_in_db(
@@ -1072,6 +1123,103 @@ mod tests {
 
         assert_eq!(duplicate.0.id, active_message.id);
         assert_eq!(stored_signal_message_id, active_message.id.to_string());
+        txn.rollback().await.unwrap();
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn deleted_split_container_dedupe_key_uses_active_child() {
+        let env = cleanup().await.unwrap();
+        let datasource_group = mk_datasource_group(
+            &env.dbx,
+            datasource_group::ActiveModel {
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let body = format!(
+            "03.04, 05:45:53\n{}03.04, 05:46:53\n{}",
+            "split stale child line\n".repeat(180),
+            "split stale child line\n".repeat(180)
+        );
+        let child_body = "03.04, 05:45:53\nsplit stale child line";
+        let ts = Utc::now().naive_utc();
+        let echo_inbox_message_id = 9_090_001;
+        let deleted_container = mk_signal_message(
+            &env.dbx,
+            signal_message::ActiveModel {
+                body: Set(Some(body.clone())),
+                datasource_group_id: Set(Some(datasource_group.id)),
+                created_at: Set(ts - chrono::TimeDelta::seconds(2)),
+                timestamp: Set(Some(ts)),
+                deleted: Set(true),
+                echo_inbox_message_id: Set(Some(echo_inbox_message_id)),
+                message_uid: Set(Some("split-container-deleted".to_string())),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let active_child = mk_signal_message(
+            &env.dbx,
+            signal_message::ActiveModel {
+                body: Set(Some(child_body.to_string())),
+                datasource_group_id: Set(Some(datasource_group.id)),
+                created_at: Set(ts - chrono::TimeDelta::seconds(1)),
+                timestamp: Set(Some(ts)),
+                deleted: Set(false),
+                echo_inbox_message_id: Set(Some(echo_inbox_message_id)),
+                message_uid: Set(Some("split-container-deleted".to_string())),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let staged_message = mk_signal_message(
+            &env.dbx,
+            signal_message::ActiveModel {
+                body: Set(Some(body.clone())),
+                datasource_group_id: Set(Some(datasource_group.id)),
+                created_at: Set(ts),
+                timestamp: Set(Some(ts)),
+                deleted: Set(true),
+                echo_inbox_message_id: Set(Some(echo_inbox_message_id + 1)),
+                message_uid: Set(Some("split-container-staged".to_string())),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let key =
+            crate::messenger::dedupe::redis_key_for_body_for_dedupe(&body);
+        let mut redis = env.redis.clone();
+        redis::cmd("SET")
+            .arg(&key)
+            .arg(deleted_container.id)
+            .arg("EX")
+            .arg(REDIS_MGS_ID_TTL)
+            .query_async::<()>(&mut redis)
+            .await
+            .unwrap();
+        let txn = env.dbx.begin().await.unwrap();
+
+        let duplicate = find_duplicate_of(
+            &txn,
+            &body,
+            &body,
+            None,
+            Some(ts),
+            staged_message.id,
+            &mut redis,
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        let stored_signal_message_id: String = redis.get(&key).await.unwrap();
+
+        assert_eq!(duplicate.0.id, active_child.id);
+        assert_eq!(stored_signal_message_id, active_child.id.to_string());
         txn.rollback().await.unwrap();
     }
 

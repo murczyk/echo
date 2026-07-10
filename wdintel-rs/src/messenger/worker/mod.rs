@@ -1049,6 +1049,7 @@ async fn mark_message_deleted(
         .or_else(|| messages.iter().min_by_key(|message| message.created_at))
         .cloned()
         .c(h!())?;
+    let deleted_signal_messages = messages.clone();
     for message in messages {
         let mut message_am = message.into_active_model();
         message_am.deleted = Set(true);
@@ -1062,6 +1063,7 @@ async fn mark_message_deleted(
             txn,
             &inbox_message,
             &canonical_deleted_message,
+            &deleted_signal_messages,
             datasource_group_id,
             &group_master_key,
         )
@@ -1082,6 +1084,8 @@ async fn load_active_messages_for_deleted_inbox(
             signal_message::Column::DatasourceGroupId.eq(datasource_group_id),
         )
         .filter(signal_message::Column::EchoInboxMessageId.eq(inbox_message_id))
+        .order_by_asc(signal_message::Column::CreatedAt)
+        .order_by_asc(signal_message::Column::Id)
         .all(txn)
         .await
         .c(h!())?;
@@ -1106,6 +1110,8 @@ async fn load_active_messages_for_deleted_inbox(
         .filter(
             signal_message::Column::Body.eq(Some(inbox_message.body.clone())),
         )
+        .order_by_asc(signal_message::Column::CreatedAt)
+        .order_by_asc(signal_message::Column::Id)
         .all(txn)
         .await
         .c(h!())
@@ -1118,6 +1124,7 @@ async fn promote_oldest_deleted_original_duplicate(
     txn: &DatabaseTransaction,
     deleted_inbox_message: &echo_inbox_message::Model,
     deleted_signal_message: &signal_message::Model,
+    deleted_signal_messages: &[signal_message::Model],
     datasource_group_id: i64,
     group_master_key: &str,
 ) -> anyhow::Result<Vec<i64>> {
@@ -1225,26 +1232,33 @@ async fn promote_oldest_deleted_original_duplicate(
         )
         .await
         .c(h!())?;
-        let annotation_target_ids = if changed_inbox_item_ids.is_empty() {
+        let promoted_signal_message_ids = if changed_inbox_item_ids.is_empty() {
             vec![promoted_signal_message.id]
         } else {
             changed_inbox_item_ids.clone()
         };
-        copy_deleted_message_annotations(
+        copy_deleted_messages_annotations(
             txn,
-            deleted_signal_message.id,
-            &annotation_target_ids,
+            deleted_signal_messages,
+            &promoted_signal_message_ids,
         )
         .await
         .c(h!())?;
         resolve_duplicate_missing_message(txn, duplicate_inbox_message.id)
             .await
             .c(h!())?;
+        let dedupe_signal_message_id = promoted_dedupe_signal_message_id(
+            txn,
+            promoted_signal_message.id,
+            &changed_inbox_item_ids,
+        )
+        .await
+        .c(h!())?;
         set_signal_message_dedupe_key(
             redis,
             &promoted_signal_message.body.clone().unwrap_or_default(),
             promoted_signal_message.attachments_hash.as_deref(),
-            promoted_signal_message.id,
+            dedupe_signal_message_id,
         )
         .await
         .c(h!())?;
@@ -1485,6 +1499,99 @@ async fn ensure_promoted_inbox_item(
     .await
     .c(h!())?;
     Ok(changed_inbox_item_ids)
+}
+
+async fn promoted_dedupe_signal_message_id(
+    txn: &DatabaseTransaction,
+    promoted_signal_message_id: i64,
+    changed_inbox_item_ids: &[i64],
+) -> anyhow::Result<i64> {
+    if changed_inbox_item_ids.is_empty() {
+        return Ok(promoted_signal_message_id);
+    }
+    Ok(signal_message::Entity::find()
+        .filter(
+            signal_message::Column::Id.is_in(changed_inbox_item_ids.to_vec()),
+        )
+        .filter(signal_message::Column::Deleted.eq(false))
+        .order_by_asc(signal_message::Column::CreatedAt)
+        .order_by_asc(signal_message::Column::Id)
+        .one(txn)
+        .await
+        .c(h!())?
+        .map(|message| message.id)
+        .unwrap_or(promoted_signal_message_id))
+}
+
+async fn copy_deleted_messages_annotations(
+    txn: &DatabaseTransaction,
+    deleted_signal_messages: &[signal_message::Model],
+    promoted_signal_message_ids: &[i64],
+) -> anyhow::Result<()> {
+    if deleted_signal_messages.len() <= 1
+        || promoted_signal_message_ids.len() <= 1
+    {
+        for deleted_signal_message in deleted_signal_messages {
+            copy_deleted_message_annotations(
+                txn,
+                deleted_signal_message.id,
+                promoted_signal_message_ids,
+            )
+            .await
+            .c(h!())?;
+        }
+        return Ok(());
+    }
+
+    let promoted_signal_messages = signal_message::Entity::find()
+        .filter(
+            signal_message::Column::Id
+                .is_in(promoted_signal_message_ids.to_vec()),
+        )
+        .order_by_asc(signal_message::Column::CreatedAt)
+        .order_by_asc(signal_message::Column::Id)
+        .all(txn)
+        .await
+        .c(h!())?;
+    if deleted_signal_messages.len() == promoted_signal_messages.len() {
+        for (deleted_signal_message, promoted_signal_message) in
+            deleted_signal_messages
+                .iter()
+                .zip(promoted_signal_messages.iter())
+        {
+            copy_deleted_message_annotations(
+                txn,
+                deleted_signal_message.id,
+                &[promoted_signal_message.id],
+            )
+            .await
+            .c(h!())?;
+        }
+        return Ok(());
+    }
+
+    for deleted_signal_message in deleted_signal_messages {
+        let matching_target_ids = promoted_signal_messages
+            .iter()
+            .filter(|promoted_signal_message| {
+                promoted_signal_message.body == deleted_signal_message.body
+            })
+            .map(|promoted_signal_message| promoted_signal_message.id)
+            .collect::<Vec<_>>();
+        let target_ids = if matching_target_ids.is_empty() {
+            promoted_signal_message_ids
+        } else {
+            matching_target_ids.as_slice()
+        };
+        copy_deleted_message_annotations(
+            txn,
+            deleted_signal_message.id,
+            target_ids,
+        )
+        .await
+        .c(h!())?;
+    }
+    Ok(())
 }
 
 async fn copy_deleted_message_annotations(
@@ -2825,22 +2932,22 @@ mod tests {
 
         assert!(!changed_inbox_item_ids.is_empty());
         assert!(!changed_inbox_item_ids.contains(&duplicate_signal_message.id));
-        for changed_inbox_item_id in changed_inbox_item_ids {
+        for changed_inbox_item_id in &changed_inbox_item_ids {
             assert!(sigint_inbox_item::Entity::find_by_id(
-                changed_inbox_item_id
+                *changed_inbox_item_id
             )
             .one(&env.dbx)
             .await
             .unwrap()
             .is_some());
             assert_eq!(
-                annotation_counts(&env.dbx, changed_inbox_item_id).await,
+                annotation_counts(&env.dbx, *changed_inbox_item_id).await,
                 (1, 1, 1)
             );
             assert_eq!(
                 manual_tag_count(
                     &env.dbx,
-                    changed_inbox_item_id,
+                    *changed_inbox_item_id,
                     original_tag.tag_id,
                 )
                 .await,
@@ -2855,6 +2962,226 @@ mod tests {
                 .unwrap()
                 .deleted
         );
+        let dedupe_key =
+            crate::messenger::dedupe::redis_key_for_body_with_attachments_hash(
+                &duplicate_signal_message.body.clone().unwrap_or_default(),
+                duplicate_signal_message.attachments_hash.as_deref(),
+            );
+        let stored_signal_message_id: String =
+            redis.get(&dedupe_key).await.unwrap();
+        let stored_signal_message_id =
+            stored_signal_message_id.parse::<i64>().unwrap();
+        assert_ne!(stored_signal_message_id, duplicate_signal_message.id);
+        assert!(changed_inbox_item_ids.contains(&stored_signal_message_id));
+        assert!(
+            !signal_message::Entity::find_by_id(stored_signal_message_id)
+                .one(&env.dbx)
+                .await
+                .unwrap()
+                .unwrap()
+                .deleted
+        );
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn delete_event_copies_split_source_annotations_by_child() {
+        let env = cleanup().await.unwrap();
+        let datasource =
+            mk_datasource(&env.dbx, Default::default()).await.unwrap();
+        let echo_account = mk_test_echo_account(&env.dbx).await;
+        let echo_group = mk_test_echo_group(
+            &env.dbx,
+            echo_account.id,
+            "split-source-annotation-group",
+        )
+        .await;
+        let datasource_group_id =
+            crate::messenger::group::ensure_datasource_group_id(
+                &env.dbx,
+                echo_group.group_id.clone(),
+                datasource.id,
+            )
+            .await
+            .unwrap();
+        let body = split_promoted_body();
+        let ts = Utc::now().naive_utc();
+        let original_inbox = mk_test_echo_inbox_message(
+            &env.dbx,
+            echo_account.id,
+            echo_group.id,
+            &body,
+            ts,
+            None,
+            true,
+        )
+        .await;
+        let duplicate_inbox = mk_test_echo_inbox_message(
+            &env.dbx,
+            echo_account.id,
+            echo_group.id,
+            &body,
+            ts + chrono::TimeDelta::seconds(1),
+            Some(original_inbox.id),
+            false,
+        )
+        .await;
+        let original_signal_message = mk_test_signal_message(
+            &env.dbx,
+            datasource_group_id,
+            &body,
+            ts,
+            false,
+            Some(i64::from(original_inbox.id)),
+            Some("uid-split-source-original".to_string()),
+        )
+        .await;
+        let resources = ReceiveWorkerResources {
+            settlements: env.settlements.clone(),
+            rq: env.rq.clone(),
+            s3: env.s3.clone(),
+        };
+        let source_child_ids =
+            crate::rer_importer::bgworker::process_message_to_inbox_nofail(
+                resources.settlements.clone(),
+                &env.dbx,
+                &resources.rq,
+                &env.config,
+                original_signal_message.id,
+                None,
+            )
+            .await;
+        assert!(source_child_ids.len() > 1);
+        let source_children = signal_message::Entity::find()
+            .filter(signal_message::Column::Id.is_in(source_child_ids.clone()))
+            .order_by_asc(signal_message::Column::CreatedAt)
+            .order_by_asc(signal_message::Column::Id)
+            .all(&env.dbx)
+            .await
+            .unwrap();
+        let mut source_tag_ids = vec![];
+        for (idx, source_child) in source_children.iter().enumerate() {
+            let login = format!("split-source-user-{idx}");
+            mk_login(
+                &env.dbx,
+                login::ActiveModel {
+                    login: Set(login.clone()),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+            mk_sigint_comment(
+                &env.dbx,
+                sigint_comment::ActiveModel {
+                    login: Set(login.clone()),
+                    signal_message_id: Set(source_child.id),
+                    comment: Set(format!("split source comment {idx}")),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+            mk_sigint_bookmark(
+                &env.dbx,
+                sigint_bookmark::ActiveModel {
+                    user_id: Set(login.clone()),
+                    signal_message_id: Set(source_child.id),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+            mk_sigint_important(
+                &env.dbx,
+                sigint_important::ActiveModel {
+                    user_id: Set(Some(login.clone())),
+                    signal_message_id: Set(source_child.id),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+            let source_tag = mk_sigint_inbox_item_tag(
+                &env.dbx,
+                sigint_inbox_item_tag::ActiveModel {
+                    sigint_inbox_item_id: Set(source_child.id),
+                    login: Set(Some(login)),
+                    model: Set(None),
+                    confidence: Set(0.8),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+            source_tag_ids.push(source_tag.tag_id);
+        }
+        let duplicate_signal_message = mk_test_signal_message(
+            &env.dbx,
+            datasource_group_id,
+            &body,
+            ts,
+            true,
+            Some(i64::from(duplicate_inbox.id)),
+            Some("duplicate-trace-split-source".to_string()),
+        )
+        .await;
+        let mut redis = env.redis.clone();
+        let mut changed_inbox_item_ids = vec![];
+        let txn = env.dbx.begin().await.unwrap();
+
+        mark_message_deleted(
+            &env.config,
+            &resources,
+            &mut redis,
+            datasource.id,
+            i64::from(original_inbox.id),
+            &txn,
+            &mut changed_inbox_item_ids,
+        )
+        .await
+        .unwrap();
+        txn.commit().await.unwrap();
+
+        assert!(!changed_inbox_item_ids.contains(&duplicate_signal_message.id));
+        assert_eq!(changed_inbox_item_ids.len(), source_children.len());
+        let promoted_children = signal_message::Entity::find()
+            .filter(
+                signal_message::Column::Id
+                    .is_in(changed_inbox_item_ids.clone()),
+            )
+            .order_by_asc(signal_message::Column::CreatedAt)
+            .order_by_asc(signal_message::Column::Id)
+            .all(&env.dbx)
+            .await
+            .unwrap();
+        for (idx, promoted_child) in promoted_children.iter().enumerate() {
+            assert_eq!(
+                annotation_counts(&env.dbx, promoted_child.id).await,
+                (1, 1, 1)
+            );
+            let comments = sigint_comment::Entity::find()
+                .filter(
+                    sigint_comment::Column::SignalMessageId
+                        .eq(promoted_child.id),
+                )
+                .all(&env.dbx)
+                .await
+                .unwrap();
+            assert_eq!(comments.len(), 1);
+            assert_eq!(
+                comments[0].comment,
+                format!("split source comment {idx}")
+            );
+            for (tag_idx, tag_id) in source_tag_ids.iter().enumerate() {
+                let expected_count = if tag_idx == idx { 1 } else { 0 };
+                assert_eq!(
+                    manual_tag_count(&env.dbx, promoted_child.id, *tag_id)
+                        .await,
+                    expected_count
+                );
+            }
+        }
     }
 
     #[tokio::test]
