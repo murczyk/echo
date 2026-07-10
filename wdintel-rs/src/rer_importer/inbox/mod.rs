@@ -326,8 +326,14 @@ async fn messages_by_id(
         .await
         .context(h!())?;
 
+    let default_req = InboxMessagesReq {
+        highlight_points: Some(true),
+        ..Default::default()
+    };
+    let inbox_req = req.inbox_req.as_ref().unwrap_or(&default_req);
     let messages =
-        messages_by_id_bl(&login, &logins, &env, &req.message_ids).await?;
+        messages_by_id_bl(&login, &logins, &env, &req.message_ids, inbox_req)
+            .await?;
     Ok(Json(MessageIdsRsp { messages }))
 }
 
@@ -336,6 +342,7 @@ async fn messages_by_id_bl(
     logins: &Vec<String>,
     env: &Env,
     message_ids: &[i64],
+    req: &InboxMessagesReq,
 ) -> Result<Vec<(i64, InboxMessage)>, AppError> {
     let sigint_groups =
         crate::messenger::group::get_identity_sigint_groups(&env.dbx, login)
@@ -470,12 +477,8 @@ async fn messages_by_id_bl(
     .all(&env.dbx)
     .await
     .context(h!())?;
-    let req = InboxMessagesReq {
-        highlight_points: Some(true),
-        ..Default::default()
-    };
     let messages =
-        aggregate_to_inbox_messages(login, messages, logins, &&req, &env)
+        aggregate_to_inbox_messages(login, messages, logins, &req, &env)
             .await
             .context(h!())?;
     Ok(messages)
@@ -2217,6 +2220,13 @@ mod tests {
             .collect()
     }
 
+    fn messages_by_id_default_req() -> InboxMessagesReq {
+        InboxMessagesReq {
+            highlight_points: Some(true),
+            ..Default::default()
+        }
+    }
+
     fn generic_submit_req() -> InboxSubmitItem {
         let now = Utc::now().naive_utc();
         InboxSubmitItem {
@@ -3209,10 +3219,15 @@ mod tests {
                 .await
                 .unwrap();
 
-        let messages =
-            messages_by_id_bl(&login.login, &logins, &env, &[message.id])
-                .await
-                .unwrap();
+        let messages = messages_by_id_bl(
+            &login.login,
+            &logins,
+            &env,
+            &[message.id],
+            &messages_by_id_default_req(),
+        )
+        .await
+        .unwrap();
 
         assert_eq!(messages.len(), 1);
         let inbox_tags = messages[0]
@@ -3264,20 +3279,30 @@ mod tests {
             crate::users::get_organism_logins_by_login(&env.dbx, &login.login)
                 .await
                 .unwrap();
-        let messages =
-            messages_by_id_bl(&login.login, &logins, &env, &[message.id])
-                .await
-                .unwrap();
+        let messages = messages_by_id_bl(
+            &login.login,
+            &logins,
+            &env,
+            &[message.id],
+            &messages_by_id_default_req(),
+        )
+        .await
+        .unwrap();
         assert_eq!(messages[0].1.point_tokens.as_ref().unwrap().len(), 1);
 
         let mut palitra = palitra.into_active_model();
         palitra.is_archived = Set(true);
         palitra.update(&env.dbx).await.unwrap();
 
-        let messages =
-            messages_by_id_bl(&login.login, &logins, &env, &[message.id])
-                .await
-                .unwrap();
+        let messages = messages_by_id_bl(
+            &login.login,
+            &logins,
+            &env,
+            &[message.id],
+            &messages_by_id_default_req(),
+        )
+        .await
+        .unwrap();
         assert!(messages[0]
             .1
             .point_tokens

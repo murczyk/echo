@@ -280,6 +280,18 @@ function inboxMessage(overrides: Partial<InboxMessage> = {}): InboxMessage {
   } as InboxMessage;
 }
 
+function expectFetchMessagesByIdsCalledWith(messageIds: number[]) {
+  expect(hoisted.fetchMessagesByIds).toHaveBeenCalledWith(
+    messageIds,
+    expect.objectContaining({
+      highlightCallsigns: true,
+      highlightKeywords: true,
+      highlightPoints: true,
+      highlightSearchres: true,
+    }),
+  );
+}
+
 beforeEach(() => {
   container = document.createElement('div');
   document.body.appendChild(container);
@@ -361,7 +373,7 @@ describe('useAnalysisData inbox refreshes', () => {
       await hoisted.onInboxChangedMessageIds([2]);
     });
 
-    expect(hoisted.fetchMessagesByIds).toHaveBeenCalledWith([2]);
+    expectFetchMessagesByIdsCalledWith([2]);
     expect(latest?.messages).toEqual([
       [1, currentMessage],
       [2, updatedMessage],
@@ -400,7 +412,7 @@ describe('useAnalysisData inbox refreshes', () => {
       await hoisted.onInboxChangedMessageIds([2]);
     });
 
-    expect(hoisted.fetchMessagesByIds).toHaveBeenCalledWith([2]);
+    expectFetchMessagesByIdsCalledWith([2]);
     expect(latest?.messages).toEqual([[1, unchangedMessage]]);
     expect(latest?.mapAttrs.messages).toEqual([[3, unchangedMapMessage]]);
     expect(hoisted.loadMessageComments).toHaveBeenCalledWith([], true);
@@ -474,7 +486,7 @@ describe('useAnalysisData inbox refreshes', () => {
     });
 
     expect(hoisted.reload).not.toHaveBeenCalled();
-    expect(hoisted.fetchMessagesByIds).toHaveBeenCalledWith([1]);
+    expectFetchMessagesByIdsCalledWith([1]);
     expect(latest?.messages).toEqual([[1, updatedMessage]]);
     expect(latest?.mapAttrs.messages).toEqual([[1, updatedMessage]]);
     expect(hoisted.loadMessageComments).toHaveBeenCalledWith([[1, updatedMessage]], true);
@@ -506,13 +518,13 @@ describe('useAnalysisData inbox refreshes', () => {
     });
 
     expect(hoisted.reload).not.toHaveBeenCalled();
-    expect(hoisted.fetchMessagesByIds).toHaveBeenCalledWith([1]);
+    expectFetchMessagesByIdsCalledWith([1]);
     expect(latest?.messages).toEqual([]);
     expect(latest?.mapAttrs.messages).toEqual([]);
     expect(hoisted.loadMessageComments).toHaveBeenCalledWith([], true);
   });
 
-  it('removes refreshed visible ids at the non-inclusive date range end', async () => {
+  it('keeps refreshed visible ids at the inclusive date range end', async () => {
     const currentMessage = inboxMessage({
       text: 'current',
       date: '2026-01-16',
@@ -538,10 +550,10 @@ describe('useAnalysisData inbox refreshes', () => {
     });
 
     expect(hoisted.reload).not.toHaveBeenCalled();
-    expect(hoisted.fetchMessagesByIds).toHaveBeenCalledWith([1]);
-    expect(latest?.messages).toEqual([]);
-    expect(latest?.mapAttrs.messages).toEqual([]);
-    expect(hoisted.loadMessageComments).toHaveBeenCalledWith([], true);
+    expectFetchMessagesByIdsCalledWith([1]);
+    expect(latest?.messages).toEqual([[1, updatedMessage]]);
+    expect(latest?.mapAttrs.messages).toEqual([[1, updatedMessage]]);
+    expect(hoisted.loadMessageComments).toHaveBeenCalledWith([[1, updatedMessage]], true);
   });
 
   it('reloads instead of partially merging when server-only filters are active', async () => {

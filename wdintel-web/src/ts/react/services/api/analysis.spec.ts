@@ -3,9 +3,9 @@
  */
 import { describe, expect, it, vi } from 'vitest';
 
-import type { InboxMessage } from '../../../../Bindings';
-import { postVoid } from './client';
-import { submitAnalysisInboxMessages } from './analysis';
+import type { InboxMessage, InboxMessagesReq } from '../../../../Bindings';
+import { postJson, postVoid } from './client';
+import { fetchMessagesByIds, submitAnalysisInboxMessages } from './analysis';
 
 vi.mock('./client', () => ({
   postJson: vi.fn(),
@@ -13,8 +13,32 @@ vi.mock('./client', () => ({
 }));
 
 const postVoidMock = vi.mocked(postVoid);
+const postJsonMock = vi.mocked(postJson);
 
-describe('analysis API submit', () => {
+describe('analysis API', () => {
+  it('sends highlight context when fetching messages by id', async () => {
+    postJsonMock.mockResolvedValueOnce({ messages: [] });
+
+    await fetchMessagesByIds([7], {
+      highlightCallsigns: true,
+      highlightKeywords: true,
+      highlightPoints: true,
+      highlightSearchres: true,
+      search: 'needle',
+    } as Partial<InboxMessagesReq>);
+
+    expect(postJsonMock).toHaveBeenCalledWith('/api/rer-importer/messages-by-id', {
+      message_ids: [7],
+      inbox_req: {
+        highlight_callsigns: true,
+        highlight_keywords: true,
+        highlight_points: true,
+        highlight_searchres: true,
+        search: 'needle',
+      },
+    });
+  });
+
   it('preserves ContentNode variants when submitting inbox messages', async () => {
     const message = {
       text: 'hello',

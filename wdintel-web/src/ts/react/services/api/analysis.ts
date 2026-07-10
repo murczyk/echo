@@ -26,6 +26,7 @@ import type {
   FreqDailyActivityCount,
   FreqStatsReq,
   GroupStatsRsp,
+  InboxMessagesReq,
   InboxMessage,
   MapPointsRsp,
   MetadataStatsRsp,
@@ -353,10 +354,12 @@ export async function fetchAnalysisMapPoints(
 
 export async function fetchMessagesByIds(
   messageIds: number[],
+  inboxReq?: Partial<InboxMessagesReq> | null,
 ): Promise<Array<[number, InboxMessage]>> {
+  const req = inboxReq == null ? { messageIds } : { messageIds, inboxReq };
   const raw = await postJson<unknown>(
     '/api/rer-importer/messages-by-id',
-    transformCamelToSnake({ messageIds }),
+    transformCamelToSnake(req),
   );
   return transformSnakeToCamel<MessageIdsRsp>(raw).messages ?? [];
 }

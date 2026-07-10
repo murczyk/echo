@@ -1167,7 +1167,7 @@ update user shared route msg model =
 
                         else
                             ( model
-                            , E.getMessagesByIds InboxMessagesUpdated { messageIds = ids }
+                            , E.getMessagesByIds InboxMessagesUpdated { messageIds = ids, inboxReq = Nothing }
                             )
                    )
 
@@ -3975,7 +3975,7 @@ update user shared route msg model =
                 m2 =
                     { model | mapOpenMessages = Loading, mapOpenMessagesLoadRequestId = requestId }
             in
-            ( m2, E.getMessagesByIds (GotMessagesForMap requestId) { messageIds = ids } )
+            ( m2, E.getMessagesByIds (GotMessagesForMap requestId) { messageIds = ids, inboxReq = Nothing } )
 
         GotMessagesForMap requestId (Ok rsp) ->
             if requestId /= model.mapOpenMessagesLoadRequestId then

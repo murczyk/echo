@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
 
-import type { InboxMessage, InboxMessageTag } from '../../../../Bindings';
+import type { InboxMessage, InboxMessagesReq, InboxMessageTag } from '../../../../Bindings';
 import { fetchMessagesByIds } from '../../services/api/analysis';
 import { combineDateTimeInputToMs, combineDateTimeToMs } from '../../utils/misc';
 import { buildInboxReq, queryStateReloadKey } from './helpers';
@@ -164,8 +164,27 @@ function messageMatchesDateRange(message: InboxMessage, queryState: AnalysisQuer
 
   return (
     inboxDateTimeMs >= dateRange.sinceDateInclusiveMs &&
-    inboxDateTimeMs < dateRange.tillDateNoninclusiveMs
+    inboxDateTimeMs <= dateRange.tillDateNoninclusiveMs
   );
+}
+
+function buildLiveRefreshInboxReq(
+  queryState: AnalysisQueryState,
+  allFrequencies: string[],
+): Partial<InboxMessagesReq> {
+  const inboxReq = buildInboxReq(queryState, allFrequencies);
+  if (inboxReq != null) return inboxReq;
+
+  return {
+    highlightCallsigns: true,
+    highlightKeywords: true,
+    highlightKeywordSetId: null,
+    highlightSearchres: true,
+    highlightSignals: null,
+    highlightPoints: true,
+    search: hasSearchText(queryState.search) ? queryState.search.trim() : null,
+    withoutModelTags: queryState.withoutModelTags,
+  };
 }
 
 function messageMatchesLiveRefreshFilters(
@@ -431,7 +450,10 @@ export function useAnalysisData({
           return;
         }
 
-        const refreshedMessageItems = await fetchMessagesByIds(messageIds);
+        const refreshedMessageItems = await fetchMessagesByIds(
+          messageIds,
+          buildLiveRefreshInboxReq(queryState, optionsFreqValues),
+        );
         const refreshedMessages = new Map(
           refreshedMessageItems.map(([id, message]) => [id, message]),
         );
