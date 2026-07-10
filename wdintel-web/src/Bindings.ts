@@ -1438,6 +1438,7 @@ export type Login = {
   deltaLogin: string | null;
   lastActiveAt: number | null;
   deactivationReason: DeactivationReasonType | null;
+  description: string | null;
 };
 
 export type ListLoginsSortBy =
@@ -1460,6 +1461,7 @@ export type CreateLoginReq = {
   roles: Array<string>;
   sigintZoneId: number | null;
   organismId: number;
+  description: string | null;
 };
 
 export type UpdateLoginReq = {
@@ -1471,6 +1473,7 @@ export type UpdateLoginReq = {
   password: string | null;
   deltaLogin: string | null;
   deactivationReason: DeactivationReasonType | null;
+  description: string | null;
 };
 
 export type SigintGroupsReq = {

@@ -3744,6 +3744,7 @@ type alias Login =
     , deltaLogin : Maybe (String)
     , lastActiveAt : Maybe (Int)
     , deactivationReason : Maybe (DeactivationReasonType)
+    , description : Maybe (String)
     }
 
 
@@ -3762,6 +3763,7 @@ loginEncoder struct =
         , ( "delta_login", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.deltaLogin )
         , ( "last_active_at", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.lastActiveAt )
         , ( "deactivation_reason", (Maybe.withDefault Json.Encode.null << Maybe.map (deactivationReasonTypeEncoder)) struct.deactivationReason )
+        , ( "description", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.description )
         ]
 
 
@@ -3810,6 +3812,7 @@ type alias CreateLoginReq =
     , roles : List (String)
     , sigintZoneId : Maybe (Int)
     , organismId : Int
+    , description : Maybe (String)
     }
 
 
@@ -3821,6 +3824,7 @@ createLoginReqEncoder struct =
         , ( "roles", (Json.Encode.list (Json.Encode.string)) struct.roles )
         , ( "sigint_zone_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.sigintZoneId )
         , ( "organism_id", (Json.Encode.int) struct.organismId )
+        , ( "description", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.description )
         ]
 
 
@@ -3833,6 +3837,7 @@ type alias UpdateLoginReq =
     , password : Maybe (String)
     , deltaLogin : Maybe (String)
     , deactivationReason : Maybe (DeactivationReasonType)
+    , description : Maybe (String)
     }
 
 
@@ -3847,6 +3852,7 @@ updateLoginReqEncoder struct =
         , ( "password", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.password )
         , ( "delta_login", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.deltaLogin )
         , ( "deactivation_reason", (Maybe.withDefault Json.Encode.null << Maybe.map (deactivationReasonTypeEncoder)) struct.deactivationReason )
+        , ( "description", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.description )
         ]
 
 
@@ -10941,6 +10947,7 @@ loginDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "delta_login" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "last_active_at" (Json.Decode.nullable (Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "deactivation_reason" (Json.Decode.nullable (deactivationReasonTypeDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "description" (Json.Decode.nullable (Json.Decode.string))))
 
 
 listLoginsSortByDecoder : Json.Decode.Decoder ListLoginsSortBy
@@ -10987,6 +10994,7 @@ createLoginReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "roles" (Json.Decode.list (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sigint_zone_id" (Json.Decode.nullable (Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "organism_id" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "description" (Json.Decode.nullable (Json.Decode.string))))
 
 
 updateLoginReqDecoder : Json.Decode.Decoder UpdateLoginReq
@@ -11000,6 +11008,7 @@ updateLoginReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "password" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "delta_login" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "deactivation_reason" (Json.Decode.nullable (deactivationReasonTypeDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "description" (Json.Decode.nullable (Json.Decode.string))))
 
 
 sigintGroupsReqDecoder : Json.Decode.Decoder SigintGroupsReq
