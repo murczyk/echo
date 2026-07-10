@@ -43,9 +43,6 @@ where
     C: ConnectionTrait,
 {
     let search_phrase = req.search.trim();
-    if search_phrase.is_empty() {
-        return Ok(DeviceNameSearchRsp { devices: vec![] });
-    }
 
     let devices = query::search(dbx, search_phrase)
         .await

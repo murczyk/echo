@@ -1,4 +1,4 @@
-use crate::config::COMPUTER_NAME_SEARCH_LIMIT;
+use crate::config::DEVICE_NAME_SEARCH_LIMIT;
 use crate::entities::device_name;
 use crate::error::AppError;
 use crate::types::*;
@@ -72,17 +72,22 @@ pub async fn search<C>(
 where
     C: ConnectionTrait,
 {
-    Ok(select_device_name()
-        .filter(device_name::Column::Name.is_not_null())
-        .filter(Expr::cust_with_values(
+    let mut query =
+        select_device_name().filter(device_name::Column::Name.is_not_null());
+
+    if !search_phrase.is_empty() {
+        query = query.filter(Expr::cust_with_values(
             "search_tsv @@ websearch_to_tsquery('simple', $1) OR lower(\"device_name\".\"name\") LIKE lower($2) ESCAPE '\\'",
             vec![
                 search_phrase.to_string(),
                 format!("%{}%", escape_like(search_phrase)),
             ],
-        ))
+        ));
+    }
+
+    Ok(query
         .order_by_asc(device_name::Column::Name)
-        .limit(COMPUTER_NAME_SEARCH_LIMIT)
+        .limit(DEVICE_NAME_SEARCH_LIMIT)
         .into_tuple::<(i64, Option<String>)>()
         .all(dbx)
         .await

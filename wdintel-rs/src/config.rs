@@ -163,7 +163,10 @@ pub const STATS_5MIN_MAX_NUM_DAYS: i64 = 2000; // FIXME change to 2
 pub const FEATURE_GROUP_STATS_AGGREGATED_DEFAULT: bool = true;
 pub const FEATURE_DELETE_UPLOADED_ATTACHMENT_DEFAULT: bool = true;
 pub const FEATURE_ACCESS_LOG_DEFAULT: bool = false;
-pub const COMPUTER_NAME_SEARCH_LIMIT: u64 = 20;
+pub const FEATURE_SIGINT_COMMENT_PARSING_DEFAULT: bool = false;
+pub const FEATURE_SIGINT_COMMENT_PARSING_ENV: &str =
+    "ECHO_FEATURE_SIGINT_COMMENT_PARSING";
+pub const DEVICE_NAME_SEARCH_LIMIT: u64 = 20;
 pub const SETTLEMENTS_LEGACY_FILE: &str = "settlements.json";
 pub const SETTLEMENTS_REGIONS_DIR: &str = "settlements_json";
 pub const SETTLEMENTS_REGION_FILE_EXTENSION: &str = "json";
