@@ -614,93 +614,9 @@ describe('useRerDutyFeeds inbox refreshes', () => {
       expect(latest?.messageFeeds[0].items[1]?.[1].pointTokens).toBe(updatedMessage.pointTokens);
       expect(latest?.messageFeeds[1].items[0]?.[1].text).toBe('updated');
       expect(latest?.messageFeeds[1].items[0]?.[1].tags).toEqual([2]);
+      expect(hoisted.loadFeedInitialMessages).not.toHaveBeenCalled();
       expect(latest?.messageFeeds[0].unreadCount).toBe(4);
       expect(latest?.messageFeeds[0].readIds).toBe(hoisted.messageFeeds[0].readIds);
-    } finally {
-      await act(async () => {
-        localRoot.unmount();
-      });
-      localContainer.remove();
-    }
-  });
-
-  it('reloads a feed when unit matching is uncertain and preserves runtime state', async () => {
-    const localContainer = document.createElement('div');
-    const localRoot = createRoot(localContainer);
-    hoisted.messageFeeds = [
-      {
-        id: 'mf-0',
-        items: [
-          [
-            2,
-            {
-              text: 'current',
-              unit: '1-й танк',
-              tags: [1],
-              inboxTags: [
-                { id: 1, tagId: 1, confidence: 1, login: null, model: null, organismId: null },
-              ],
-            },
-          ],
-        ],
-        filter: {
-          unitsSelected: ['1-й танк'],
-          unitsDenied: null,
-          unitsExactMatchOnly: false,
-        },
-        unreadCount: 4,
-        readIds: new Set<number>([2]),
-        firstItemIndex: 123,
-        referenceTimeMs: 456,
-        loadingOlder: true,
-        hasReachedStart: true,
-        adjacentFreqsRange: 0,
-        highlightSignalsEnabled: true,
-        onlyMyUnitTagsEnabled: true,
-      },
-    ] as never;
-    hoisted.fetchMessagesByIds.mockResolvedValueOnce([
-      [
-        2,
-        {
-          text: 'updated',
-          unit: '1-й танк',
-          tags: [2],
-          inboxTags: [
-            { id: 2, tagId: 2, confidence: 1, login: null, model: null, organismId: null },
-          ],
-        },
-      ],
-    ] as never);
-
-    document.body.appendChild(localContainer);
-    try {
-      await act(async () => {
-        localRoot.render(React.createElement(TestHarness));
-      });
-      await act(async () => {
-        await flushMicrotasks();
-      });
-      await act(async () => {
-        await hoisted.onInboxChangedMessageIds([2]);
-      });
-
-      expect(hoisted.fetchMessagesByIds).toHaveBeenCalledWith(
-        [2],
-        expect.objectContaining({
-          loadLatest: true,
-        }),
-      );
-      expect(hoisted.loadFeedInitialMessages).toHaveBeenCalledWith('mf-0');
-      expect(latest?.messageFeeds[0].items[0]?.[1].text).toBe('reloaded');
-      expect(latest?.messageFeeds[0].readIds).toEqual(new Set<number>([2]));
-      expect(latest?.messageFeeds[0].unreadCount).toBe(4);
-      expect(latest?.messageFeeds[0].firstItemIndex).toBe(123);
-      expect(latest?.messageFeeds[0].referenceTimeMs).toBe(456);
-      expect(latest?.messageFeeds[0].loadingOlder).toBe(true);
-      expect(latest?.messageFeeds[0].hasReachedStart).toBe(true);
-      expect(latest?.messageFeeds[0].highlightSignalsEnabled).toBe(true);
-      expect(latest?.messageFeeds[0].onlyMyUnitTagsEnabled).toBe(true);
     } finally {
       await act(async () => {
         localRoot.unmount();

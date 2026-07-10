@@ -157,7 +157,7 @@ describe('mergeUpdatedDutyFeedMessages', () => {
     expect(next[0].items[1]?.[1].pointTokens).toBe(refreshedSecond.pointTokens);
   });
 
-  it('removes a requested message id when the backend no longer returns it for the feed', () => {
+  it('keeps requested items unchanged when the backend omits them', () => {
     const feeds = [
       {
         id: 'a',
@@ -173,8 +173,8 @@ describe('mergeUpdatedDutyFeedMessages', () => {
 
     const next = mergeUpdatedDutyFeedMessages(feeds, 'a', [2, 3], []);
 
-    expect(next[0].items).toEqual([[1, feeds[0].items[0][1]]]);
-    expect(next[0].unreadCount).toBe(1);
-    expect(next[0].readIds).toEqual(new Set<number>([1]));
+    expect(next[0].items).toEqual(feeds[0].items);
+    expect(next[0].unreadCount).toBe(2);
+    expect(next[0].readIds).toEqual(new Set<number>([1, 3]));
   });
 });

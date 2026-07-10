@@ -24,7 +24,6 @@ import {
   getShortStateIdFromUrl,
   isMessageEntityExcluded,
   messageHasPalitraTag,
-  messageMatchesDutyFeed,
   normalizeFeed,
   uniquePointEtalonsForMapSearch,
   parseStateFromUrl,
@@ -203,120 +202,6 @@ describe('rer-duty utils', () => {
     } as Record<number, Unit>;
 
     expect(createMasterUnitText(network, unitsMap)).toBe('р/м Alpha Unit One, Unit Two (KYIV)');
-  });
-
-  it('matches duty feed filters locally and reloads on any unit filter', () => {
-    const feed = {
-      filter: {
-        ...emptyFilter(),
-        freqsSelected: ['100.0'],
-        freqsDenied: ['200.0'],
-        groupsSelected: ['group-a'],
-        groupsDenied: ['group-b'],
-        sendersSelected: ['sender-a'],
-        deniedSenders: ['sender-b'],
-        postsSelected: ['post-a'],
-        postsDenied: ['post-b'],
-        unitsExactMatchOnly: true,
-      },
-      adjacentFreqsRange: 0,
-    };
-
-    expect(
-      messageMatchesDutyFeed(
-        {
-          freq: '100.0',
-          groupMasterKey: 'group-a',
-          post: 'post-a',
-          sender: 'sender-a',
-          unit: 'unit-a',
-        },
-        feed,
-        ['100.0'],
-      ),
-    ).toBe(true);
-    expect(
-      messageMatchesDutyFeed(
-        {
-          freq: '100.0',
-          groupMasterKey: 'group-b',
-          post: 'post-a',
-          sender: 'sender-a',
-          unit: 'unit-a',
-        },
-        feed,
-        ['100.0'],
-      ),
-    ).toBe(false);
-
-    const exactUnitSelected = {
-      ...feed,
-      filter: { ...feed.filter, unitsSelected: ['unit-a'] },
-    };
-    expect(
-      messageMatchesDutyFeed(
-        {
-          freq: '100.0',
-          groupMasterKey: 'group-a',
-          post: 'post-a',
-          sender: 'sender-a',
-          unit: 'unit-a',
-        },
-        exactUnitSelected,
-        ['100.0'],
-      ),
-    ).toBe(null);
-
-    const exactUnitDenied = {
-      ...feed,
-      filter: { ...feed.filter, unitsDenied: ['unit-b'] },
-    };
-    expect(
-      messageMatchesDutyFeed(
-        {
-          freq: '100.0',
-          groupMasterKey: 'group-a',
-          post: 'post-a',
-          sender: 'sender-a',
-          unit: 'unit-b',
-        },
-        exactUnitDenied,
-        ['100.0'],
-      ),
-    ).toBe(null);
-    expect(
-      messageMatchesDutyFeed(
-        {
-          freq: '100.0',
-          groupMasterKey: 'group-a',
-          post: 'post-a',
-          sender: 'sender-a',
-          unit: 'unit-a',
-        },
-        {
-          ...feed,
-          filter: { ...feed.filter, unitsSelected: ['unit-a'], unitsExactMatchOnly: false },
-        },
-        ['100.0'],
-      ),
-    ).toBe(null);
-  });
-
-  it('expands denied duty frequencies before local matching', () => {
-    const feed = {
-      filter: {
-        ...emptyFilter(),
-        freqsDenied: ['100.000'],
-      },
-      adjacentFreqsRange: 0.002,
-    };
-
-    expect(
-      messageMatchesDutyFeed({ freq: '100.001' }, feed, ['100.000', '100.001', '100.003']),
-    ).toBe(false);
-    expect(
-      messageMatchesDutyFeed({ freq: '100.003' }, feed, ['100.000', '100.001', '100.003']),
-    ).toBe(true);
   });
 
   it('builds analysis deep links with combined datetime params', () => {

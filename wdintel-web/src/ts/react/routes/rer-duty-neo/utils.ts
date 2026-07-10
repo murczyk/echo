@@ -259,21 +259,6 @@ export function findAllAdjacentFreqs(
   );
 }
 
-function expandedDutyFreqs(
-  values: readonly string[] | null | undefined,
-  allFrequencies: readonly string[],
-  adjacentFreqsRange: number,
-): string[] | null {
-  const normalizedValues = emptyArrToNull(values == null ? values : [...values]);
-  if (normalizedValues == null) return null;
-  if (adjacentFreqsRange <= 0) return normalizedValues;
-
-  return [
-    ...normalizedValues,
-    ...findAllAdjacentFreqs([...allFrequencies], normalizedValues, adjacentFreqsRange),
-  ];
-}
-
 export function buildInboxReq(opts: {
   loadLatest?: boolean;
   beforeIdNoninclusive?: number | null;
@@ -351,39 +336,6 @@ export function buildInboxReq(opts: {
   };
 }
 
-function normalizeDutyFilterValue(value: string | null | undefined): string | null {
-  const trimmed = value?.trim() ?? '';
-  return trimmed === '' ? null : trimmed;
-}
-
-function matchesDutyStringFilter(
-  value: string | null | undefined,
-  selectedValues: readonly string[] | null | undefined,
-  deniedValues: readonly string[] | null | undefined,
-): boolean {
-  const normalizedValue = normalizeDutyFilterValue(value);
-  const normalizedSelected = normalizeFilterValues(selectedValues);
-  const normalizedDenied = normalizeFilterValues(deniedValues);
-
-  if (normalizedValue == null) {
-    return normalizedSelected.length === 0;
-  }
-
-  if (normalizedDenied.includes(normalizedValue)) return false;
-  if (normalizedSelected.length > 0 && !normalizedSelected.includes(normalizedValue)) return false;
-  return true;
-}
-
-function matchesDutyUnitFilter(
-  selectedValues: readonly string[] | null | undefined,
-  deniedValues: readonly string[] | null | undefined,
-): boolean | null {
-  const normalizedSelected = normalizeFilterValues(selectedValues);
-  const normalizedDenied = normalizeFilterValues(deniedValues);
-  if (normalizedSelected.length === 0 && normalizedDenied.length === 0) return true;
-  return null;
-}
-
 export function normalizeFeed(raw: Record<string, unknown>): RerDutyFeedFilterState {
   return {
     groupsSelected: readFilterValues(raw, ['groupsSelected', 'groups_selected']),
@@ -406,49 +358,6 @@ export function normalizeFeed(raw: Record<string, unknown>): RerDutyFeedFilterSt
     highlightKeywordSetId: (raw.highlightKeywordSetId ?? raw.highlight_keyword_set_id ?? null) as
       number | null,
   };
-}
-
-export function messageMatchesDutyFeed(
-  message: Pick<InboxMessage, 'freq' | 'groupMasterKey' | 'post' | 'sender' | 'unit'>,
-  feed: Pick<MessageFeedState, 'filter' | 'adjacentFreqsRange'>,
-  allFrequencies: readonly string[],
-): boolean | null {
-  const selectedFreqs = expandedDutyFreqs(
-    feed.filter.freqsSelected,
-    allFrequencies,
-    feed.adjacentFreqsRange,
-  );
-  const deniedFreqs = expandedDutyFreqs(
-    feed.filter.freqsDenied,
-    allFrequencies,
-    feed.adjacentFreqsRange,
-  );
-
-  if (!matchesDutyStringFilter(message.freq, selectedFreqs, deniedFreqs)) {
-    return false;
-  }
-  if (
-    !matchesDutyStringFilter(
-      message.groupMasterKey,
-      feed.filter.groupsSelected,
-      feed.filter.groupsDenied,
-    )
-  ) {
-    return false;
-  }
-  if (!matchesDutyStringFilter(message.post, feed.filter.postsSelected, feed.filter.postsDenied)) {
-    return false;
-  }
-  if (
-    !matchesDutyStringFilter(message.sender, feed.filter.sendersSelected, feed.filter.deniedSenders)
-  ) {
-    return false;
-  }
-
-  const unitMatch = matchesDutyUnitFilter(feed.filter.unitsSelected, feed.filter.unitsDenied);
-  if (unitMatch !== true) return unitMatch;
-
-  return true;
 }
 
 export function parseStateFromUrl(): RerDutyState {

@@ -11,7 +11,7 @@ import { normalizeCallsignLookupValue } from '../../utils/callsign-normalization
 import { useRerDutyFeedState } from './useRerDutyFeedState';
 import { useRerDutyFilterOptions } from './useRerDutyFilterOptions';
 import { useRerDutyMessageActions } from './useRerDutyMessageActions';
-import { collectUniqueCallsignsFromMessages, messageMatchesDutyFeed } from './utils';
+import { collectUniqueCallsignsFromMessages } from './utils';
 import { useDutySettings } from '../../hooks/use-duty-settings';
 import { useInboxChangedMessageIds } from '../shared/useInboxChangedMessageIds';
 
@@ -134,30 +134,6 @@ export function useRerDutyFeeds(authUserName: string | null) {
     onFeedRemoved: filterOpts.pruneSavedFilterUiState,
   });
   const setFeedError = feedState.setError;
-  const restoreDutyFeedRuntimeState = useCallback(
-    (feedId: string, snapshot: (typeof feedState.messageFeeds)[number]) => {
-      feedState.setMessageFeeds((current) =>
-        current.map((feed) =>
-          feed.id === feedId
-            ? {
-                ...feed,
-                readIds: snapshot.readIds,
-                unreadCount: snapshot.unreadCount,
-                firstItemIndex: snapshot.firstItemIndex,
-                referenceTimeMs: snapshot.referenceTimeMs,
-                loading: false,
-                loadingOlder: snapshot.loadingOlder,
-                hasReachedStart: snapshot.hasReachedStart,
-                adjacentFreqsRange: snapshot.adjacentFreqsRange,
-                highlightSignalsEnabled: snapshot.highlightSignalsEnabled,
-                onlyMyUnitTagsEnabled: snapshot.onlyMyUnitTagsEnabled,
-              }
-            : feed,
-        ),
-      );
-    },
-    [feedState.setMessageFeeds],
-  );
   useEffect(() => {
     let cancelled = false;
     fetchOrganismKeywordSets()
@@ -229,38 +205,10 @@ export function useRerDutyFeeds(authUserName: string | null) {
 
       await Promise.all(
         refreshes.map(async ({ feedId, messageIds: visibleChangedMessageIds, inboxReq }) => {
-          const feed = feedState.messageFeeds.find((item) => item.id === feedId);
-          if (!feed) return;
           try {
             const nextMessages = await fetchMessagesByIds(visibleChangedMessageIds, inboxReq);
-            const nextMessagesById = new Map(nextMessages);
-            const matchedMessages: typeof nextMessages = [];
-            let needsReload = false;
-
-            for (const messageId of visibleChangedMessageIds) {
-              const nextMessage = nextMessagesById.get(messageId);
-              if (nextMessage == null) continue;
-              const dutyMatch = messageMatchesDutyFeed(nextMessage, feed, filterOpts.freqs);
-              if (dutyMatch === null) {
-                needsReload = true;
-                break;
-              }
-              if (dutyMatch) matchedMessages.push([messageId, nextMessage]);
-            }
-
-            if (needsReload) {
-              await feedState.loadFeedInitialMessages(feedId);
-              restoreDutyFeedRuntimeState(feedId, feed);
-              return;
-            }
-
             feedState.setMessageFeeds((current) =>
-              mergeUpdatedDutyFeedMessages(
-                current,
-                feedId,
-                visibleChangedMessageIds,
-                matchedMessages,
-              ),
+              mergeUpdatedDutyFeedMessages(current, feedId, visibleChangedMessageIds, nextMessages),
             );
           } catch (loadError) {
             feedState.setError(loadError instanceof Error ? loadError.message : String(loadError));
