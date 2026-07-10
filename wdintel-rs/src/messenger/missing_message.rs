@@ -6,7 +6,7 @@ use crate::types::{Env, ShortContext};
 use actix_identity::Identity;
 use actix_web::post;
 use actix_web::web::Json;
-use chrono::{NaiveDateTime, Utc};
+use chrono::{DateTime, NaiveDateTime, TimeDelta, Utc};
 use elm_rs::{Elm, ElmDecode, ElmEncode};
 use log::debug;
 use sea_orm::{
@@ -17,6 +17,9 @@ use sea_orm::{
 use serde::{Deserialize, Serialize};
 
 pub const SYSTEM_SCHEDULED_BY: &str = "system";
+const MAX_MISSING_MESSAGE_ROWS: i64 = 1000;
+const MAX_MISSING_MESSAGE_COUNT_DAYS: i64 = 120;
+const APP_TIME_ZONE_SQL: &str = "Europe/Kiev";
 
 #[derive(Debug, Clone, Serialize, Deserialize, Elm, ElmEncode, ElmDecode)]
 pub struct EchoMissingMessageRow {
@@ -38,6 +41,30 @@ pub struct EchoMissingMessageListRsp {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Elm, ElmEncode, ElmDecode)]
+pub struct EchoMissingMessageListReq {
+    pub since: String,
+    pub till: String,
+    pub limit: Option<i64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Elm, ElmEncode, ElmDecode)]
+pub struct EchoMissingMessageCountsReq {
+    pub since: String,
+    pub till: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Elm, ElmEncode, ElmDecode)]
+pub struct EchoMissingMessageDayCount {
+    pub day: String,
+    pub count: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Elm, ElmEncode, ElmDecode)]
+pub struct EchoMissingMessageCountsRsp {
+    pub items: Vec<EchoMissingMessageDayCount>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Elm, ElmEncode, ElmDecode)]
 pub struct EchoMissingMessageResolveReq {
     pub id: i64,
 }
@@ -54,6 +81,12 @@ struct EchoMissingMessageJoinedRow {
     scheduled_by: Option<String>,
     status: String,
     error: Option<String>,
+}
+
+#[derive(Debug, FromQueryResult)]
+struct EchoMissingMessageDayCountRow {
+    day: String,
+    count: i64,
 }
 
 impl EchoMissingMessageJoinedRow {
@@ -73,6 +106,15 @@ impl EchoMissingMessageJoinedRow {
             scheduled_by: self.scheduled_by,
             status: self.status,
             error,
+        }
+    }
+}
+
+impl From<EchoMissingMessageDayCountRow> for EchoMissingMessageDayCount {
+    fn from(row: EchoMissingMessageDayCountRow) -> Self {
+        EchoMissingMessageDayCount {
+            day: row.day,
+            count: row.count,
         }
     }
 }
@@ -260,7 +302,13 @@ pub async fn schedule_missing_message_by_id(
 
 pub(crate) async fn list_missing_messages(
     dbx: &DatabaseConnection,
+    req: EchoMissingMessageListReq,
 ) -> Result<Vec<EchoMissingMessageRow>, AppError> {
+    let (since, till) = parse_time_range(&req.since, &req.till, None)?;
+    let limit = req
+        .limit
+        .unwrap_or(MAX_MISSING_MESSAGE_ROWS)
+        .clamp(1, MAX_MISSING_MESSAGE_ROWS);
     let sql = r#"
         select
             emm.id,
@@ -284,33 +332,92 @@ pub(crate) async fn list_missing_messages(
             join echo_group eg on eg.id = eim_group.group_id
             where eim_group.id = emm.message_id
         ) echo_groups on true
+        where emm.created_at >= $1 and emm.created_at < $2
         order by emm.is_resolved asc, emm.created_at desc, emm.id desc
+        limit $3
     "#;
-    Ok(
-        EchoMissingMessageJoinedRow::find_by_statement(Statement::from_string(
+    Ok(EchoMissingMessageJoinedRow::find_by_statement(
+        Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
-            sql.to_string(),
-        ))
-        .all(dbx)
-        .await
-        .c(h!())?
-        .into_iter()
-        .map(EchoMissingMessageJoinedRow::into_api_row)
-        .collect(),
+            sql,
+            vec![since.into(), till.into(), limit.into()],
+        ),
     )
+    .all(dbx)
+    .await
+    .c(h!())?
+    .into_iter()
+    .map(EchoMissingMessageJoinedRow::into_api_row)
+    .collect())
+}
+
+pub(crate) async fn count_missing_messages_by_day(
+    dbx: &DatabaseConnection,
+    req: EchoMissingMessageCountsReq,
+) -> Result<Vec<EchoMissingMessageDayCount>, AppError> {
+    let (since, till) = parse_time_range(
+        &req.since,
+        &req.till,
+        Some(MAX_MISSING_MESSAGE_COUNT_DAYS),
+    )?;
+    let sql = format!(
+        r#"
+        select
+            to_char(
+                (((created_at at time zone 'UTC') at time zone '{APP_TIME_ZONE_SQL}')::date),
+                'YYYY-MM-DD'
+            ) as day,
+            count(*)::bigint as count
+        from echo_missing_message
+        where created_at >= $1 and created_at < $2
+        group by 1
+        order by 1
+        "#
+    );
+
+    Ok(EchoMissingMessageDayCountRow::find_by_statement(
+        Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            &sql,
+            [since.into(), till.into()],
+        ),
+    )
+    .all(dbx)
+    .await
+    .c(h!())?
+    .into_iter()
+    .map(EchoMissingMessageDayCount::from)
+    .collect())
 }
 
 #[post("/api/admin/echo-missing-message/list")]
 pub async fn echo_missing_message_list(
     user: Identity,
     env: actix_web::web::Data<Env>,
+    req: Json<EchoMissingMessageListReq>,
 ) -> Result<Json<EchoMissingMessageListRsp>, AppError> {
     let login = user.id().c(h!())?;
     crate::users::has_role(&env.dbx, &login, "Admin")
         .await
         .c(h!())?;
     Ok(Json(EchoMissingMessageListRsp {
-        items: list_missing_messages(&env.dbx).await?,
+        items: list_missing_messages(&env.dbx, req.into_inner()).await?,
+    }))
+}
+
+#[post("/api/admin/echo-missing-message/counts")]
+pub async fn echo_missing_message_counts(
+    user: Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<EchoMissingMessageCountsReq>,
+) -> Result<Json<EchoMissingMessageCountsRsp>, AppError> {
+    let login = user.id().c(h!())?;
+    crate::users::has_role(&env.dbx, &login, "Admin")
+        .await
+        .c(h!())?;
+    Ok(Json(EchoMissingMessageCountsRsp {
+        items: count_missing_messages_by_day(&env.dbx, req.into_inner())
+            .await?,
     }))
 }
 
@@ -376,6 +483,42 @@ fn format_dt(dt: NaiveDateTime) -> String {
     dt.and_utc().to_rfc3339()
 }
 
+fn parse_time_range(
+    since: &str,
+    till: &str,
+    max_days: Option<i64>,
+) -> Result<(NaiveDateTime, NaiveDateTime), AppError> {
+    let since = parse_utc_rfc3339(since, "since")?;
+    let till = parse_utc_rfc3339(till, "till")?;
+
+    if till <= since {
+        return Err(AppError::BL {
+            msg: "till must be after since".to_string(),
+        });
+    }
+
+    if let Some(max_days) = max_days {
+        if till - since > TimeDelta::days(max_days) {
+            return Err(AppError::BL {
+                msg: format!("range must be {max_days} days or less"),
+            });
+        }
+    }
+
+    Ok((since, till))
+}
+
+fn parse_utc_rfc3339(
+    value: &str,
+    field_name: &str,
+) -> Result<NaiveDateTime, AppError> {
+    DateTime::parse_from_rfc3339(value)
+        .map(|dt| dt.with_timezone(&Utc).naive_utc())
+        .map_err(|_| AppError::BL {
+            msg: format!("{field_name} must be RFC3339 datetime"),
+        })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -402,7 +545,9 @@ mod tests {
             .await
             .unwrap();
 
-        let rows = list_missing_messages(&env.dbx).await.unwrap();
+        let rows = list_missing_messages(&env.dbx, test_list_req())
+            .await
+            .unwrap();
 
         let row = rows
             .into_iter()
@@ -430,7 +575,9 @@ mod tests {
             .await
             .unwrap();
 
-        let rows = list_missing_messages(&env.dbx).await.unwrap();
+        let rows = list_missing_messages(&env.dbx, test_list_req())
+            .await
+            .unwrap();
 
         let row = rows
             .into_iter()
@@ -461,7 +608,9 @@ mod tests {
             missing_message.update(&env.dbx).await.unwrap();
         }
 
-        let rows = list_missing_messages(&env.dbx).await.unwrap();
+        let rows = list_missing_messages(&env.dbx, test_list_req())
+            .await
+            .unwrap();
 
         let terminal_rows = rows
             .into_iter()
@@ -538,5 +687,13 @@ mod tests {
         .insert(dbx)
         .await
         .unwrap()
+    }
+
+    fn test_list_req() -> EchoMissingMessageListReq {
+        EchoMissingMessageListReq {
+            since: "1970-01-01T00:00:00Z".to_string(),
+            till: "2999-01-01T00:00:00Z".to_string(),
+            limit: None,
+        }
     }
 }

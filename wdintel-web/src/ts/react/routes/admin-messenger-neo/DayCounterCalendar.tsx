@@ -38,8 +38,13 @@ export function appDayKey(date: Dayjs): string {
 }
 
 export function utcDateTimeToAppDayKey(value: string | null | undefined): string | null {
+  const date = utcDateTimeToAppDay(value);
+  return date ? appDayKey(date) : null;
+}
+
+export function utcDateTimeToAppDay(value: string | null | undefined): Dayjs | null {
   const date = parseUtcDateTime(value);
-  return date ? dayjs(date).tz(APP_TIME_ZONE).format('YYYY-MM-DD') : null;
+  return date ? dayjs(date).tz(APP_TIME_ZONE).startOf('day') : null;
 }
 
 export function countRowsByAppDay<T>(rows: T[], getDateTime: (row: T) => string): DayCountMap {

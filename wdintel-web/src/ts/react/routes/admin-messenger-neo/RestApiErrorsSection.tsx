@@ -8,25 +8,31 @@ import type { SignalRestapiErrorRow } from '../../../../Bindings';
 import { PowerAlert } from '../../components/PowerAlert';
 import { TableStateProvider } from '../../components/mui-customized/table/table-state-provider';
 import {
+  loadLatestSignalRestapiErrorCreatedAt,
   listSignalRestapiErrorCounts,
   listSignalRestapiErrors,
 } from '../../services/api/signal-restapi-error';
 import { parseUtcDateTime } from '../../services/api/report-history';
 import { SettingsNeoTable } from '../settings-neo/SettingsNeoTable';
 import {
+  appDayKey,
   appDayUtcRange,
   appMonthUtcRange,
   type DayCountMap,
   DayCounterCalendar,
   todayInAppTimeZone,
+  utcDateTimeToAppDay,
 } from './DayCounterCalendar';
 
 const TRANSLATIONS = {
   refresh: 'Оновити',
   id: 'ID',
   createdAt: 'Створено',
+  source: 'Джерело',
+  clientName: 'Клієнт',
   responseText: 'Текст відповіді',
   responseJson: 'JSON відповіді',
+  discordSentAt: 'Discord',
 } as const;
 
 function formatErrorMessage(error: unknown): string {
@@ -88,6 +94,17 @@ function RestApiErrorsTable({
         Cell: ({ cell }) => formatDateTime(cell.getValue<string>()),
       },
       {
+        accessorKey: 'source',
+        header: TRANSLATIONS.source,
+        size: 120,
+      },
+      {
+        accessorKey: 'clientName',
+        header: TRANSLATIONS.clientName,
+        size: 180,
+        Cell: ({ cell }) => cell.getValue<string | null>() ?? '',
+      },
+      {
         accessorKey: 'responseText',
         header: TRANSLATIONS.responseText,
         size: 520,
@@ -99,14 +116,29 @@ function RestApiErrorsTable({
         size: 520,
         Cell: ({ cell }) => clippedText(cell.getValue<string | null>()),
       },
+      {
+        accessorKey: 'discordSentAt',
+        header: TRANSLATIONS.discordSentAt,
+        size: 180,
+        Cell: ({ cell }) => formatDateTime(cell.getValue<string | null>()),
+      },
     ],
     [],
   );
 
   return (
     <TableStateProvider
-      tableId="admin-signal-restapi-errors-v1"
-      defaultColumnOrder={['mrt-row-numbers', 'id', 'createdAt', 'responseText', 'responseJson']}
+      tableId="admin-echo-restapi-errors-v1"
+      defaultColumnOrder={[
+        'mrt-row-numbers',
+        'id',
+        'createdAt',
+        'source',
+        'clientName',
+        'responseText',
+        'responseJson',
+        'discordSentAt',
+      ]}
       defaultSorting={[{ id: 'createdAt', desc: true }]}
       defaultColumnVisibility={{}}
     >
@@ -146,7 +178,8 @@ export function RestApiErrorsSection() {
   const [countsByDay, setCountsByDay] = useState<DayCountMap>({});
   const [loadError, setLoadError] = useState<string | null>(null);
   const [selectedDate, setSelectedDate] = useState(todayInAppTimeZone);
-  const selectedMonthKey = selectedDate.format('YYYY-MM');
+  const [latestDateLoaded, setLatestDateLoaded] = useState(false);
+  const selectedMonthKey = appDayKey(selectedDate).slice(0, 7);
 
   const loadRows = useCallback(async (date: Dayjs) => {
     setRowsLoading(true);
@@ -181,14 +214,44 @@ export function RestApiErrorsSection() {
   }, []);
 
   useEffect(() => {
-    loadRows(selectedDate);
-  }, [loadRows, selectedDate]);
+    let ignore = false;
+
+    async function loadLatestDate() {
+      try {
+        const latestCreatedAt = await loadLatestSignalRestapiErrorCreatedAt();
+        const latestDate = utcDateTimeToAppDay(latestCreatedAt);
+        if (!ignore && latestDate) {
+          setSelectedDate(latestDate);
+        }
+      } catch (error) {
+        setLoadError(
+          `Помилка завантаження останньої REST API помилки: ${formatErrorMessage(error)}`,
+        );
+      } finally {
+        if (!ignore) {
+          setLatestDateLoaded(true);
+        }
+      }
+    }
+
+    loadLatestDate();
+
+    return () => {
+      ignore = true;
+    };
+  }, []);
 
   useEffect(() => {
-    loadCounts(selectedDate);
-  }, [loadCounts, selectedMonthKey]);
+    if (!latestDateLoaded) return;
+    loadRows(selectedDate);
+  }, [latestDateLoaded, loadRows, selectedDate]);
 
-  const loading = rowsLoading || countsLoading;
+  useEffect(() => {
+    if (!latestDateLoaded) return;
+    loadCounts(selectedDate);
+  }, [latestDateLoaded, loadCounts, selectedMonthKey]);
+
+  const loading = !latestDateLoaded || rowsLoading || countsLoading;
 
   return (
     <Stack spacing={2} sx={{ height: '100%', minHeight: 0 }}>

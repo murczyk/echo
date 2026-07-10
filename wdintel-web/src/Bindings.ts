@@ -3258,6 +3258,26 @@ export type EchoMissingMessageListRsp = {
   items: Array<EchoMissingMessageRow>;
 };
 
+export type EchoMissingMessageListReq = {
+  since: string;
+  till: string;
+  limit: number | null;
+};
+
+export type EchoMissingMessageCountsReq = {
+  since: string;
+  till: string;
+};
+
+export type EchoMissingMessageDayCount = {
+  day: string;
+  count: number;
+};
+
+export type EchoMissingMessageCountsRsp = {
+  items: Array<EchoMissingMessageDayCount>;
+};
+
 export type EchoMissingMessageResolveReq = {
   id: number;
 };
@@ -3271,8 +3291,11 @@ export type SignalRestapiErrorListReq = {
 export type SignalRestapiErrorRow = {
   id: number;
   createdAt: string;
+  source: string;
+  clientName: string | null;
   responseText: string;
   responseJson: string | null;
+  discordSentAt: string | null;
 };
 
 export type SignalRestapiErrorListRsp = {
@@ -3291,6 +3314,10 @@ export type SignalRestapiErrorDayCount = {
 
 export type SignalRestapiErrorCountsRsp = {
   items: Array<SignalRestapiErrorDayCount>;
+};
+
+export type SignalRestapiErrorLatestRsp = {
+  createdAt: string | null;
 };
 
 export type DeltaLoginUrl = {

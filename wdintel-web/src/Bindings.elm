@@ -8430,6 +8430,62 @@ echoMissingMessageListRspEncoder struct =
         ]
 
 
+type alias EchoMissingMessageListReq =
+    { since : String
+    , till : String
+    , limit : Maybe (Int)
+    }
+
+
+echoMissingMessageListReqEncoder : EchoMissingMessageListReq -> Json.Encode.Value
+echoMissingMessageListReqEncoder struct =
+    Json.Encode.object
+        [ ( "since", (Json.Encode.string) struct.since )
+        , ( "till", (Json.Encode.string) struct.till )
+        , ( "limit", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.limit )
+        ]
+
+
+type alias EchoMissingMessageCountsReq =
+    { since : String
+    , till : String
+    }
+
+
+echoMissingMessageCountsReqEncoder : EchoMissingMessageCountsReq -> Json.Encode.Value
+echoMissingMessageCountsReqEncoder struct =
+    Json.Encode.object
+        [ ( "since", (Json.Encode.string) struct.since )
+        , ( "till", (Json.Encode.string) struct.till )
+        ]
+
+
+type alias EchoMissingMessageDayCount =
+    { day : String
+    , count : Int
+    }
+
+
+echoMissingMessageDayCountEncoder : EchoMissingMessageDayCount -> Json.Encode.Value
+echoMissingMessageDayCountEncoder struct =
+    Json.Encode.object
+        [ ( "day", (Json.Encode.string) struct.day )
+        , ( "count", (Json.Encode.int) struct.count )
+        ]
+
+
+type alias EchoMissingMessageCountsRsp =
+    { items : List (EchoMissingMessageDayCount)
+    }
+
+
+echoMissingMessageCountsRspEncoder : EchoMissingMessageCountsRsp -> Json.Encode.Value
+echoMissingMessageCountsRspEncoder struct =
+    Json.Encode.object
+        [ ( "items", (Json.Encode.list (echoMissingMessageDayCountEncoder)) struct.items )
+        ]
+
+
 type alias EchoMissingMessageResolveReq =
     { id : Int
     }
@@ -8461,8 +8517,11 @@ signalRestapiErrorListReqEncoder struct =
 type alias SignalRestapiErrorRow =
     { id : Int
     , createdAt : String
+    , source : String
+    , clientName : Maybe (String)
     , responseText : String
     , responseJson : Maybe (String)
+    , discordSentAt : Maybe (String)
     }
 
 
@@ -8471,8 +8530,11 @@ signalRestapiErrorRowEncoder struct =
     Json.Encode.object
         [ ( "id", (Json.Encode.int) struct.id )
         , ( "created_at", (Json.Encode.string) struct.createdAt )
+        , ( "source", (Json.Encode.string) struct.source )
+        , ( "client_name", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.clientName )
         , ( "response_text", (Json.Encode.string) struct.responseText )
         , ( "response_json", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.responseJson )
+        , ( "discord_sent_at", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.discordSentAt )
         ]
 
 
@@ -8525,6 +8587,18 @@ signalRestapiErrorCountsRspEncoder : SignalRestapiErrorCountsRsp -> Json.Encode.
 signalRestapiErrorCountsRspEncoder struct =
     Json.Encode.object
         [ ( "items", (Json.Encode.list (signalRestapiErrorDayCountEncoder)) struct.items )
+        ]
+
+
+type alias SignalRestapiErrorLatestRsp =
+    { createdAt : Maybe (String)
+    }
+
+
+signalRestapiErrorLatestRspEncoder : SignalRestapiErrorLatestRsp -> Json.Encode.Value
+signalRestapiErrorLatestRspEncoder struct =
+    Json.Encode.object
+        [ ( "created_at", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.createdAt )
         ]
 
 
@@ -14050,6 +14124,34 @@ echoMissingMessageListRspDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "items" (Json.Decode.list (echoMissingMessageRowDecoder))))
 
 
+echoMissingMessageListReqDecoder : Json.Decode.Decoder EchoMissingMessageListReq
+echoMissingMessageListReqDecoder =
+    Json.Decode.succeed EchoMissingMessageListReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "since" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "till" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "limit" (Json.Decode.nullable (Json.Decode.int))))
+
+
+echoMissingMessageCountsReqDecoder : Json.Decode.Decoder EchoMissingMessageCountsReq
+echoMissingMessageCountsReqDecoder =
+    Json.Decode.succeed EchoMissingMessageCountsReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "since" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "till" (Json.Decode.string)))
+
+
+echoMissingMessageDayCountDecoder : Json.Decode.Decoder EchoMissingMessageDayCount
+echoMissingMessageDayCountDecoder =
+    Json.Decode.succeed EchoMissingMessageDayCount
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "day" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "count" (Json.Decode.int)))
+
+
+echoMissingMessageCountsRspDecoder : Json.Decode.Decoder EchoMissingMessageCountsRsp
+echoMissingMessageCountsRspDecoder =
+    Json.Decode.succeed EchoMissingMessageCountsRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "items" (Json.Decode.list (echoMissingMessageDayCountDecoder))))
+
+
 echoMissingMessageResolveReqDecoder : Json.Decode.Decoder EchoMissingMessageResolveReq
 echoMissingMessageResolveReqDecoder =
     Json.Decode.succeed EchoMissingMessageResolveReq
@@ -14069,8 +14171,11 @@ signalRestapiErrorRowDecoder =
     Json.Decode.succeed SignalRestapiErrorRow
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "created_at" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "source" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "client_name" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "response_text" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "response_json" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "discord_sent_at" (Json.Decode.nullable (Json.Decode.string))))
 
 
 signalRestapiErrorListRspDecoder : Json.Decode.Decoder SignalRestapiErrorListRsp
@@ -14097,6 +14202,12 @@ signalRestapiErrorCountsRspDecoder : Json.Decode.Decoder SignalRestapiErrorCount
 signalRestapiErrorCountsRspDecoder =
     Json.Decode.succeed SignalRestapiErrorCountsRsp
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "items" (Json.Decode.list (signalRestapiErrorDayCountDecoder))))
+
+
+signalRestapiErrorLatestRspDecoder : Json.Decode.Decoder SignalRestapiErrorLatestRsp
+signalRestapiErrorLatestRspDecoder =
+    Json.Decode.succeed SignalRestapiErrorLatestRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "created_at" (Json.Decode.nullable (Json.Decode.string))))
 
 
 inboxByGroupDigestRspDecoder : Json.Decode.Decoder InboxByGroupDigestRsp

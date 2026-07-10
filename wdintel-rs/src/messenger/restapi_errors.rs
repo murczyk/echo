@@ -1,4 +1,3 @@
-use crate::entities::signal_restapi_error;
 use crate::error::AppError;
 use crate::h;
 use crate::types::{Env, ShortContext};
@@ -8,12 +7,11 @@ use actix_web::web::Json;
 use chrono::{DateTime, NaiveDateTime, TimeDelta, Utc};
 use elm_rs::{Elm, ElmDecode, ElmEncode};
 use sea_orm::{
-    ColumnTrait, DatabaseBackend, DatabaseConnection, EntityTrait,
-    FromQueryResult, QueryFilter, QueryOrder, QuerySelect, Statement,
+    DatabaseBackend, DatabaseConnection, FromQueryResult, Statement,
 };
 use serde::{Deserialize, Serialize};
 
-const MAX_RESTAPI_ERROR_ROWS: u64 = 1000;
+const MAX_RESTAPI_ERROR_ROWS: i64 = 1000;
 const MAX_RESTAPI_ERROR_COUNT_DAYS: i64 = 120;
 const APP_TIME_ZONE_SQL: &str = "Europe/Kiev";
 
@@ -28,8 +26,11 @@ pub struct SignalRestapiErrorListReq {
 pub struct SignalRestapiErrorRow {
     pub id: i64,
     pub created_at: String,
+    pub source: String,
+    pub client_name: Option<String>,
     pub response_text: String,
     pub response_json: Option<String>,
+    pub discord_sent_at: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Elm, ElmEncode, ElmDecode)]
@@ -54,21 +55,43 @@ pub struct SignalRestapiErrorCountsRsp {
     pub items: Vec<SignalRestapiErrorDayCount>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, Elm, ElmEncode, ElmDecode)]
+pub struct SignalRestapiErrorLatestRsp {
+    pub created_at: Option<String>,
+}
+
+#[derive(Debug, FromQueryResult)]
+struct SignalRestapiErrorSqlRow {
+    id: i64,
+    created_at: NaiveDateTime,
+    source: String,
+    client_name: Option<String>,
+    response_text: String,
+    response_json: Option<String>,
+    discord_sent_at: Option<NaiveDateTime>,
+}
+
 #[derive(Debug, FromQueryResult)]
 struct SignalRestapiErrorDayCountRow {
     day: String,
     count: i64,
 }
 
-impl From<signal_restapi_error::Model> for SignalRestapiErrorRow {
-    fn from(error: signal_restapi_error::Model) -> Self {
+#[derive(Debug, FromQueryResult)]
+struct SignalRestapiErrorLatestRow {
+    created_at: NaiveDateTime,
+}
+
+impl From<SignalRestapiErrorSqlRow> for SignalRestapiErrorRow {
+    fn from(error: SignalRestapiErrorSqlRow) -> Self {
         SignalRestapiErrorRow {
             id: error.id,
             created_at: format_dt(error.created_at),
-            response_text: error.res_txt,
-            response_json: error
-                .res
-                .and_then(|value| serde_json::to_string_pretty(&value).ok()),
+            source: error.source,
+            client_name: error.client_name,
+            response_text: error.response_text,
+            response_json: error.response_json,
+            discord_sent_at: error.discord_sent_at.map(format_dt),
         }
     }
 }
@@ -89,21 +112,36 @@ pub async fn list_signal_restapi_errors(
     let (since, till) = parse_time_range(&req.since, &req.till, None)?;
     let limit = req
         .limit
-        .unwrap_or(MAX_RESTAPI_ERROR_ROWS as i64)
-        .clamp(1, MAX_RESTAPI_ERROR_ROWS as i64) as u64;
+        .unwrap_or(MAX_RESTAPI_ERROR_ROWS)
+        .clamp(1, MAX_RESTAPI_ERROR_ROWS);
+    let sql = r#"
+        select
+            id::bigint as id,
+            created_at,
+            source::text as source,
+            client_name,
+            res_txt as response_text,
+            case when res is null then null else jsonb_pretty(res) end as response_json,
+            discord_sent_at
+        from echo_restapi_error
+        where created_at >= $1 and created_at < $2
+        order by created_at desc, id desc
+        limit $3
+    "#;
 
-    Ok(signal_restapi_error::Entity::find()
-        .filter(signal_restapi_error::Column::CreatedAt.gte(since))
-        .filter(signal_restapi_error::Column::CreatedAt.lt(till))
-        .order_by_desc(signal_restapi_error::Column::CreatedAt)
-        .order_by_desc(signal_restapi_error::Column::Id)
-        .limit(limit)
-        .all(dbx)
-        .await
-        .c(h!())?
-        .into_iter()
-        .map(SignalRestapiErrorRow::from)
-        .collect())
+    Ok(SignalRestapiErrorSqlRow::find_by_statement(
+        Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            sql,
+            vec![since.into(), till.into(), limit.into()],
+        ),
+    )
+    .all(dbx)
+    .await
+    .c(h!())?
+    .into_iter()
+    .map(SignalRestapiErrorRow::from)
+    .collect())
 }
 
 pub async fn count_signal_restapi_errors_by_day(
@@ -123,7 +161,7 @@ pub async fn count_signal_restapi_errors_by_day(
                 'YYYY-MM-DD'
             ) as day,
             count(*)::bigint as count
-        from signal_restapi_error
+        from echo_restapi_error
         where created_at >= $1 and created_at < $2
         group by 1
         order by 1
@@ -145,6 +183,27 @@ pub async fn count_signal_restapi_errors_by_day(
     .collect())
 }
 
+pub async fn latest_signal_restapi_error_created_at(
+    dbx: &DatabaseConnection,
+) -> Result<Option<String>, AppError> {
+    let sql = r#"
+        select created_at
+        from echo_restapi_error
+        order by created_at desc, id desc
+        limit 1
+    "#;
+    Ok(
+        SignalRestapiErrorLatestRow::find_by_statement(Statement::from_string(
+            DatabaseBackend::Postgres,
+            sql.to_string(),
+        ))
+        .one(dbx)
+        .await
+        .c(h!())?
+        .map(|row| format_dt(row.created_at)),
+    )
+}
+
 #[post("/api/admin/signal-restapi-error/list")]
 pub async fn signal_restapi_error_list(
     user: Identity,
@@ -157,6 +216,20 @@ pub async fn signal_restapi_error_list(
         .c(h!())?;
     Ok(Json(SignalRestapiErrorListRsp {
         items: list_signal_restapi_errors(&env.dbx, req.into_inner()).await?,
+    }))
+}
+
+#[post("/api/admin/signal-restapi-error/latest")]
+pub async fn signal_restapi_error_latest(
+    user: Identity,
+    env: actix_web::web::Data<Env>,
+) -> Result<Json<SignalRestapiErrorLatestRsp>, AppError> {
+    let login = user.id().c(h!())?;
+    crate::users::has_role(&env.dbx, &login, "Admin")
+        .await
+        .c(h!())?;
+    Ok(Json(SignalRestapiErrorLatestRsp {
+        created_at: latest_signal_restapi_error_created_at(&env.dbx).await?,
     }))
 }
 
