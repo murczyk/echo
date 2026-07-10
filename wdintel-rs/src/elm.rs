@@ -451,6 +451,12 @@ pub fn main_gen_elm() -> Result<(), AppError> {
             crate::messenger::missing_message::EchoMissingMessageRow,
             crate::messenger::missing_message::EchoMissingMessageListRsp,
             crate::messenger::missing_message::EchoMissingMessageResolveReq,
+            crate::messenger::restapi_errors::SignalRestapiErrorListReq,
+            crate::messenger::restapi_errors::SignalRestapiErrorRow,
+            crate::messenger::restapi_errors::SignalRestapiErrorListRsp,
+            crate::messenger::restapi_errors::SignalRestapiErrorCountsReq,
+            crate::messenger::restapi_errors::SignalRestapiErrorDayCount,
+            crate::messenger::restapi_errors::SignalRestapiErrorCountsRsp,
             crate::delta::login::DeltaLoginUrl,
             crate::sigint::types::ZoneDatasourceGroupAddRsp,
             crate::event_stream::types::EventType,
@@ -883,6 +889,12 @@ pub fn main_gen_elm() -> Result<(), AppError> {
             crate::messenger::missing_message::EchoMissingMessageRow,
             crate::messenger::missing_message::EchoMissingMessageListRsp,
             crate::messenger::missing_message::EchoMissingMessageResolveReq,
+            crate::messenger::restapi_errors::SignalRestapiErrorListReq,
+            crate::messenger::restapi_errors::SignalRestapiErrorRow,
+            crate::messenger::restapi_errors::SignalRestapiErrorListRsp,
+            crate::messenger::restapi_errors::SignalRestapiErrorCountsReq,
+            crate::messenger::restapi_errors::SignalRestapiErrorDayCount,
+            crate::messenger::restapi_errors::SignalRestapiErrorCountsRsp,
             crate::rer_importer::types::InboxByGroupDigestRsp,
             crate::messenger::group::types::GroupAdminData,
             crate::sigint::aor::types::AreaOfResponsibility,
@@ -928,6 +940,7 @@ pub fn main_gen_elm() -> Result<(), AppError> {
     let output = String::from_utf8(target).context(h!())?;
     println!("> patching...");
     let output = patch_generated_elm(output);
+    let output = format!("{}\n", output.trim_end());
     std::fs::write("../wdintel-web/src/Bindings.elm", output)?;
     Ok(())
 }

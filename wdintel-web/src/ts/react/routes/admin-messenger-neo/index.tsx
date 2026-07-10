@@ -15,6 +15,8 @@ import {
   Drawer,
   MenuItem,
   Stack,
+  Tab,
+  Tabs,
   TextField,
   Tooltip,
   Typography,
@@ -73,8 +75,58 @@ import {
 } from '../../services/api/messenger';
 import { PowerAlert } from '../../components/PowerAlert';
 import { GroupStatsTimelineCell } from '../admin-directions-neo/GroupStatsTimelineCell';
+import { AdminEchoMissingMessagesSection } from '../admin-echo-missing-messages';
+import { RestApiErrorsSection } from './RestApiErrorsSection';
 
 type LoadingStatus = 'idle' | 'loading' | 'success' | 'error';
+type AdminMessengerTab = 'accounts' | 'missingEchoIm' | 'restApiErrors';
+
+const ADMIN_MESSENGER_TAB_QUERY_PARAM = 'tab';
+const TABLE_QUERY_PARAM_NAMES = ['globalFilter', 'sorting', 'columnFilters', 'date'];
+
+function parseAdminMessengerTab(value: string | null | undefined): AdminMessengerTab {
+  if (value === 'missing-echo-im') return 'missingEchoIm';
+  if (value === 'rest-api-errors') return 'restApiErrors';
+  return 'accounts';
+}
+
+function serializeAdminMessengerTab(tab: AdminMessengerTab): string {
+  if (tab === 'missingEchoIm') return 'missing-echo-im';
+  if (tab === 'restApiErrors') return 'rest-api-errors';
+  return 'accounts';
+}
+
+function replaceAdminMessengerUrl(tab: AdminMessengerTab) {
+  const searchParams = new URLSearchParams(window.location.search);
+  for (const paramName of TABLE_QUERY_PARAM_NAMES) {
+    searchParams.delete(paramName);
+  }
+
+  if (tab === 'accounts') {
+    searchParams.delete(ADMIN_MESSENGER_TAB_QUERY_PARAM);
+  } else {
+    searchParams.set(ADMIN_MESSENGER_TAB_QUERY_PARAM, serializeAdminMessengerTab(tab));
+  }
+
+  const next = searchParams.toString();
+  window.history.replaceState(
+    window.history.state,
+    '',
+    `${window.location.pathname}${next ? `?${next}` : ''}${window.location.hash}`,
+  );
+}
+
+function readInitialAdminMessengerTab(): AdminMessengerTab {
+  const tab = parseAdminMessengerTab(
+    new URLSearchParams(window.location.search).get(ADMIN_MESSENGER_TAB_QUERY_PARAM),
+  );
+
+  if (tab !== 'accounts') {
+    replaceAdminMessengerUrl(tab);
+  }
+
+  return tab;
+}
 
 type PhoneForm = {
   messengerType: string;
@@ -766,7 +818,7 @@ function MessengerAccountsTable(props: MessengerAccountsTableProps) {
   return <MaterialReactTable table={table} />;
 }
 
-function AdminMessengerNeoPageBody() {
+function AdminMessengerAccountsSection() {
   const [accounts, setAccounts] = useState<EchoAccountF1[]>([]);
   const [accountsStatus, setAccountsStatus] = useState<LoadingStatus>('idle');
   const [accountsError, setAccountsError] = useState<string | null>(null);
@@ -1497,14 +1549,110 @@ function AdminMessengerNeoPageBody() {
 }
 
 export function AdminMessengerNeoPage() {
+  const [activeTab, setActiveTab] = useState<AdminMessengerTab>(readInitialAdminMessengerTab);
+
+  function handleTabChange(_: unknown, value: AdminMessengerTab) {
+    if (value === activeTab) return;
+    replaceAdminMessengerUrl(value);
+    setActiveTab(value);
+  }
+
   return (
-    <TableStateProvider
-      tableId="admin-messenger"
-      defaultColumnOrder={DEFAULT_COLUMN_ORDER}
-      defaultColumnVisibility={DEFAULT_COLUMNS_VISIBILITY}
-      defaultEnableColumnOrdering={false}
+    <Box
+      className="w-full"
+      sx={{
+        height: { xs: 'auto', lg: '100%' },
+        minHeight: 0,
+        overflow: { xs: 'visible', lg: 'hidden' },
+      }}
     >
-      <AdminMessengerNeoPageBody />
-    </TableStateProvider>
+      <Stack
+        spacing={2}
+        useFlexGap
+        sx={{
+          height: { xs: 'auto', lg: '100%' },
+          minHeight: 0,
+          overflow: { xs: 'visible', lg: 'hidden' },
+        }}
+      >
+        <Tabs
+          value={activeTab}
+          onChange={handleTabChange}
+          variant="scrollable"
+          allowScrollButtonsMobile
+          sx={{
+            minHeight: 48,
+            borderBottom: 1,
+            borderColor: 'divider',
+            flexShrink: 0,
+            '& .MuiTab-root': {
+              minHeight: 48,
+              alignItems: 'center',
+              textAlign: 'center',
+            },
+          }}
+        >
+          <Tab
+            value="accounts"
+            label="Акаунти"
+            id="admin-messenger-tab-accounts"
+            aria-controls="admin-messenger-panel-accounts"
+          />
+          <Tab
+            value="missingEchoIm"
+            label="Відсутні Echo IM"
+            id="admin-messenger-tab-missing-echo-im"
+            aria-controls="admin-messenger-panel-missing-echo-im"
+          />
+          <Tab
+            value="restApiErrors"
+            label="Rest API Errors"
+            id="admin-messenger-tab-rest-api-errors"
+            aria-controls="admin-messenger-panel-rest-api-errors"
+          />
+        </Tabs>
+
+        <Box sx={{ flex: 1, minHeight: 0, minWidth: 0 }}>
+          <Box
+            id="admin-messenger-panel-accounts"
+            role="tabpanel"
+            hidden={activeTab !== 'accounts'}
+            aria-labelledby="admin-messenger-tab-accounts"
+            sx={{ height: '100%', minHeight: 0 }}
+          >
+            {activeTab === 'accounts' ? (
+              <TableStateProvider
+                tableId="admin-messenger"
+                defaultColumnOrder={DEFAULT_COLUMN_ORDER}
+                defaultColumnVisibility={DEFAULT_COLUMNS_VISIBILITY}
+                defaultEnableColumnOrdering={false}
+              >
+                <AdminMessengerAccountsSection />
+              </TableStateProvider>
+            ) : null}
+          </Box>
+
+          <Box
+            id="admin-messenger-panel-missing-echo-im"
+            role="tabpanel"
+            hidden={activeTab !== 'missingEchoIm'}
+            aria-labelledby="admin-messenger-tab-missing-echo-im"
+            sx={{ height: '100%', minHeight: 0 }}
+          >
+            {activeTab === 'missingEchoIm' ? <AdminEchoMissingMessagesSection /> : null}
+          </Box>
+
+          <Box
+            id="admin-messenger-panel-rest-api-errors"
+            role="tabpanel"
+            hidden={activeTab !== 'restApiErrors'}
+            aria-labelledby="admin-messenger-tab-rest-api-errors"
+            sx={{ height: '100%', minHeight: 0 }}
+          >
+            {activeTab === 'restApiErrors' ? <RestApiErrorsSection /> : null}
+          </Box>
+        </Box>
+      </Stack>
+    </Box>
   );
 }

@@ -195,12 +195,6 @@ export const adminSubs: Menu[] = [
   },
   {
     type: 'item',
-    link: { type: 'internal', path: '/admin/echo-missing-messages' },
-    activeName: 'echo-missing-messages',
-    label: 'Відсутні Echo IM',
-  },
-  {
-    type: 'item',
     link: { type: 'internal', path: '/admin/goi-integrations-neo' },
     activeName: 'goi-integrations-neo',
     label: 'ГОІ',

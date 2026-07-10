@@ -610,6 +610,8 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::system_settings::activate_system_settings)
             .service(crate::messenger::missing_message::echo_missing_message_list)
             .service(crate::messenger::missing_message::echo_missing_message_resolve)
+            .service(crate::messenger::restapi_errors::signal_restapi_error_list)
+            .service(crate::messenger::restapi_errors::signal_restapi_error_counts)
             .service(crate::users::user_login)
             .service(crate::users::user_test_api_login)
             .service(crate::users::api_user)
