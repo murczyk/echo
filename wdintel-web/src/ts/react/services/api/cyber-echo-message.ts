@@ -54,26 +54,51 @@ export async function createComputerName(
   return result.computer;
 }
 
+export type SubmitNetwork = {
+  signal_name?: string;
+  cc?: number;
+  name?: string;
+};
+
+export type SubmitCoordinates = {
+  lat: number;
+  lon: number;
+};
+
 export type CreateCyberEchoMessageRequest = {
-  body: string;
+  message_uid?: string;
+  body?: string;
+  text?: string;
+  freq?: string;
+  coords?: SubmitCoordinates[];
+  from_callsign?: string;
+  to_callsigns?: string[];
+  tags?: string[];
+  timestamp?: string;
+  full_body?: string;
+  post?: string;
+  unit?: string;
+  locations?: string[];
+  network?: SubmitNetwork;
   signal_group_master_key: string;
-  computer_name_id: number;
-  upload_urls: string[] | null;
+  device_name_id: number;
+  upload_urls?: string[] | null;
+  delete_media_ids?: string[];
 };
 
 export type CreateCyberEchoMessageResponse = {
   signal_message_id: number;
-  message_uid: string;
+  message_uid?: string;
   inbox_item_id: number;
   media_ids: string[];
 };
 
-export async function createCyberEchoMessage(
+export async function submitCyberEchoMessage(
   req: CreateCyberEchoMessageRequest,
   options?: RequestOptions,
 ): Promise<CreateCyberEchoMessageResponse> {
   return await postJson<CreateCyberEchoMessageResponse>(
-    '/api/sigint/cyber-echo/message/create',
+    '/api/sigint/cyber-echo/message/submit',
     req,
     options,
   );
