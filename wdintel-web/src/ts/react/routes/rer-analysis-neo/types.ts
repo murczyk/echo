@@ -240,6 +240,7 @@ export type AnalysisPageActions = {
     messageId: number,
     updater: (message: InboxMessage) => InboxMessage,
   ) => void;
+  onPrependLocalMessage: (messageId: number, message: InboxMessage) => void;
   closeReport: () => void;
   downloadGeojson: () => void;
   downloadKmz: () => void;

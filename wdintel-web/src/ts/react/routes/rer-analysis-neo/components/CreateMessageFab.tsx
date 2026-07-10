@@ -13,9 +13,18 @@ export function CreateMessageFab({ onClick }: Props) {
       onClick={onClick}
       sx={{
         position: 'absolute',
-        bottom: 24,
-        right: 24,
+        right: { xs: 'max(12px, env(safe-area-inset-right, 0px))', sm: 12 },
+        bottom: { xs: 'max(12px, env(safe-area-inset-bottom, 0px))', sm: 12 },
         zIndex: 1000,
+        width: 35,
+        minWidth: 35,
+        height: 35,
+        minHeight: 35,
+        boxShadow: 'none',
+        '&:hover': {
+          boxShadow: 'none',
+        },
+        '& .MuiSvgIcon-root': { fontSize: 20 },
       }}
     >
       <AddIcon />

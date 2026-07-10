@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
@@ -11,15 +11,19 @@ import {
   IconButton,
   CircularProgress,
   Alert,
+  Box,
+  List,
+  ListItem,
+  ListItemText,
+  ListItemSecondaryAction,
 } from '@mui/material';
 import CloseIcon from '@mui/icons-material/Close';
+import DeleteIcon from '@mui/icons-material/Delete';
+import UploadFileIcon from '@mui/icons-material/UploadFile';
 
 import Uppy from '@uppy/core';
+import type { UppyFile } from '@uppy/core';
 import Tus from '@uppy/tus';
-import { Dashboard } from '@uppy/react';
-
-// Using regular import. In a real environment if uppy styling fails to resolve,
-// Vite can handle direct imports from node_modules or CSS strings.
 import '@uppy/core/dist/style.min.css';
 import '@uppy/dashboard/dist/style.min.css';
 
@@ -29,10 +33,11 @@ import {
 } from '../../../services/api/inbox-reference-data';
 import {
   searchComputerName,
+  searchComputerNames,
   createComputerName,
   createCyberEchoMessage,
 } from '../../../services/api/cyber-echo-message';
-import type { SignalGroupEntry } from '../../../../Bindings';
+import type { SignalGroupEntry } from '../../../../../Bindings';
 
 const messageSchema = z.object({
   body: z.string().min(1, 'Повідомлення не може бути порожнім'),
@@ -45,13 +50,38 @@ type MessageFormData = z.infer<typeof messageSchema>;
 type Props = {
   open: boolean;
   onClose: () => void;
+  onSuccess?: (inboxItemId: number) => void;
 };
 
-export function CreateMessageDrawer({ open, onClose }: Props) {
+export function CreateMessageDrawer({ open, onClose, onSuccess }: Props) {
   const [signalGroups, setSignalGroups] = useState<SignalGroupEntry[]>([]);
   const [groupsLoading, setGroupsLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  const [computerNameOptions, setComputerNameOptions] = useState<string[]>([]);
+  const [computerNamesLoading, setComputerNamesLoading] = useState(false);
+  const [computerNameInput, setComputerNameInput] = useState('');
+
+  useEffect(() => {
+    let active = true;
+
+    setComputerNamesLoading(true);
+    searchComputerNames(computerNameInput)
+      .then((results) => {
+        if (active) {
+          setComputerNameOptions(results.map((c) => c.name));
+        }
+      })
+      .catch(console.error)
+      .finally(() => {
+        if (active) setComputerNamesLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [computerNameInput]);
 
   const [uppy] = useState(() =>
     new Uppy({
@@ -66,6 +96,58 @@ export function CreateMessageDrawer({ open, onClose }: Props) {
       limit: 3,
     }),
   );
+
+  const [uppyFiles, setUppyFiles] = useState<UppyFile<any, any>[]>([]);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    const updateFiles = () => setUppyFiles(uppy.getFiles());
+    uppy.on('file-added', updateFiles);
+    uppy.on('file-removed', updateFiles);
+    return () => {
+      uppy.off('file-added', updateFiles);
+      uppy.off('file-removed', updateFiles);
+    };
+  }, [uppy]);
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files) {
+      Array.from(e.target.files).forEach((file) => {
+        try {
+          uppy.addFile({
+            name: file.name,
+            type: file.type,
+            data: file,
+          });
+        } catch (err: any) {
+          setErrorMsg(err.message || 'Error adding file');
+        }
+      });
+    }
+    // reset input so the same file can be selected again if removed
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
+  const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      Array.from(e.dataTransfer.files).forEach((file) => {
+        try {
+          uppy.addFile({
+            name: file.name,
+            type: file.type,
+            data: file,
+          });
+        } catch (err: any) {
+          setErrorMsg(err.message || 'Error adding file');
+        }
+      });
+      e.dataTransfer.clearData();
+    }
+  };
 
   const {
     control,
@@ -142,11 +224,14 @@ export function CreateMessageDrawer({ open, onClose }: Props) {
 
       if (files.length > 0) {
         const uploadResult = await uppy.upload();
-        if (uploadResult.failed.length > 0) {
+        if (!uploadResult) {
+          throw new Error('Помилка завантаження файлів (no result)');
+        }
+        if ((uploadResult.failed || []).length > 0) {
           throw new Error('Помилка завантаження файлів');
         }
 
-        for (const file of uploadResult.successful) {
+        for (const file of uploadResult.successful || []) {
           // In Tus, the Location header is stored as uploadURL
           const url = file.tus?.uploadUrl || file.uploadURL || file.response?.uploadURL;
           if (url) {
@@ -158,14 +243,14 @@ export function CreateMessageDrawer({ open, onClose }: Props) {
       }
 
       // 3. Create message
-      await createCyberEchoMessage({
+      const response = await createCyberEchoMessage({
         body: data.body,
         signal_group_master_key: data.signalGroupMasterKey,
         computer_name_id: computerNameId,
         upload_urls: uploadUrls.length > 0 ? uploadUrls : null,
       });
 
-      // Success
+      onSuccess?.(response.inbox_item_id);
       handleDrawerClose();
     } catch (e: any) {
       console.error('Error creating message', e);
@@ -176,16 +261,24 @@ export function CreateMessageDrawer({ open, onClose }: Props) {
   };
 
   return (
-    <Drawer anchor="right" open={open} onClose={handleDrawerClose} sx={{ zIndex: 1200 }}>
-      <div className="flex flex-col h-full w-[100vw] sm:w-[500px]">
-        <div className="flex items-center justify-between p-4 border-b border-gray-200">
+    <Drawer
+      anchor="right"
+      open={open}
+      onClose={handleDrawerClose}
+      sx={{ zIndex: 1200 }}
+      slotProps={{
+        paper: { sx: { width: { xs: '100%', sm: 500 }, maxWidth: '100vw', display: 'flex' } },
+      }}
+    >
+      <div className="flex flex-col h-full flex-1 min-h-0">
+        <div className="flex items-center justify-between p-[20px] border-b border-white/10">
           <Typography variant="h6">Створити повідомлення</Typography>
           <IconButton onClick={handleDrawerClose} disabled={submitting}>
             <CloseIcon />
           </IconButton>
         </div>
 
-        <div className="flex-1 p-4 overflow-y-auto">
+        <div className="flex-1 p-[20px] overflow-y-auto">
           {errorMsg && (
             <Alert severity="error" sx={{ mb: 2 }}>
               {errorMsg}
@@ -199,15 +292,19 @@ export function CreateMessageDrawer({ open, onClose }: Props) {
               render={({ field }) => (
                 <Autocomplete
                   freeSolo
-                  options={[]}
-                  loading={false}
+                  forcePopupIcon
+                  options={computerNameOptions}
+                  loading={computerNamesLoading}
                   value={field.value}
-                  onInputChange={(_, newValue) => field.onChange(newValue)}
+                  onInputChange={(_, newValue) => {
+                    setComputerNameInput(newValue);
+                    field.onChange(newValue);
+                  }}
                   onChange={(_, newValue) => field.onChange(newValue || '')}
                   renderInput={(params) => (
                     <TextField
                       {...params}
-                      label="Computer Name"
+                      label="Назва комп'ютера"
                       margin="normal"
                       fullWidth
                       error={!!errors.computerName}
@@ -241,7 +338,7 @@ export function CreateMessageDrawer({ open, onClose }: Props) {
                   renderInput={(params) => (
                     <TextField
                       {...params}
-                      label="Signal Group"
+                      label="Signal група"
                       margin="normal"
                       fullWidth
                       error={!!errors.signalGroupMasterKey}
@@ -272,7 +369,7 @@ export function CreateMessageDrawer({ open, onClose }: Props) {
                   margin="normal"
                   fullWidth
                   multiline
-                  rows={4}
+                  rows={12}
                   error={!!errors.body}
                   helperText={errors.body?.message}
                   disabled={submitting}
@@ -284,18 +381,54 @@ export function CreateMessageDrawer({ open, onClose }: Props) {
               <Typography variant="subtitle2" sx={{ mb: 1 }}>
                 Вкладення (Макс 20, до 2GB)
               </Typography>
-              <Dashboard
-                uppy={uppy}
-                hideUploadButton // We trigger upload programmatically on form submit
-                width="100%"
-                height={300}
-                proudlyDisplayPoweredByUppy={false}
-              />
+              <div
+                className={`border-2 border-dashed border-gray-500 rounded-md p-6 text-center cursor-pointer transition-colors ${submitting ? 'opacity-50 cursor-not-allowed' : 'hover:bg-white/5 hover:border-blue-400'}`}
+                onClick={() => !submitting && fileInputRef.current?.click()}
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                }}
+                onDrop={submitting ? undefined : handleDrop}
+              >
+                <input
+                  type="file"
+                  multiple
+                  className="hidden"
+                  ref={fileInputRef}
+                  onChange={handleFileSelect}
+                  disabled={submitting}
+                />
+                <Typography variant="body2" color="textSecondary">
+                  Натисніть тут або перетягніть файли (до 20 файлів, до 2GB)
+                </Typography>
+              </div>
+
+              {uppyFiles.length > 0 && (
+                <div className="mt-4 flex flex-col gap-2">
+                  {uppyFiles.map((f) => (
+                    <div
+                      key={f.id}
+                      className="flex items-center justify-between p-2 border border-gray-600 rounded-md bg-white/5"
+                    >
+                      <Typography variant="body2" noWrap sx={{ flex: 1, mr: 2 }} title={f.name}>
+                        {f.name}
+                      </Typography>
+                      <IconButton
+                        size="small"
+                        onClick={() => uppy.removeFile(f.id)}
+                        disabled={submitting}
+                      >
+                        <CloseIcon fontSize="small" />
+                      </IconButton>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </form>
         </div>
 
-        <div className="flex justify-end gap-2 p-4 border-t border-gray-200">
+        <div className="flex justify-end gap-2 p-[20px] border-t border-white/10">
           <Button onClick={handleDrawerClose} disabled={submitting}>
             Скасувати
           </Button>

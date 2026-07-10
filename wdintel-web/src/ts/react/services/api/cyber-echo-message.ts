@@ -18,6 +18,18 @@ export type CreateComputerNameResponse = {
   computer: ComputerNameResponse;
 };
 
+export async function searchComputerNames(
+  search: string,
+  options?: RequestOptions,
+): Promise<ComputerNameResponse[]> {
+  const result = await postJson<ComputerNameSearchResponse>(
+    '/api/sigint/computer-name/search',
+    { search },
+    options,
+  );
+  return result?.computers || [];
+}
+
 export async function searchComputerName(
   search: string,
   options?: RequestOptions,
