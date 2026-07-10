@@ -26,7 +26,7 @@ also takes the database down.
 Fresh installs get the fix from:
 
 ```
-sudo echo-install-utils setup-postgresql ...
+sudo echo-install-utils setup-postgresql --pg-version 18 ...
 ```
 
 Existing installs can repair only the drop-in:

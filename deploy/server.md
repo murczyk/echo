@@ -81,7 +81,7 @@ sudo timedatectl set-timezone UTC
 <details>
 
 ```
-sudo echo-install-utils setup-postgresql --db-name wd --db-user wd --password 'fee_-_-_-FnoeKFBeebu87bf' --install-pg-uuidv7 --install-pg-repack --install-postgis --setup-slowlog
+sudo echo-install-utils setup-postgresql --pg-version 18 --db-name wd --db-user wd --password 'fee_-_-_-FnoeKFBeebu87bf' --install-pg-uuidv7 --install-pg-repack --install-postgis --setup-slowlog
 ```
 
 This also configures PostgreSQL systemd OOM policy; see
