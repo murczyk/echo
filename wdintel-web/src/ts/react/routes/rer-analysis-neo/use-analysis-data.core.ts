@@ -164,7 +164,7 @@ function messageMatchesDateRange(message: InboxMessage, queryState: AnalysisQuer
 
   return (
     inboxDateTimeMs >= dateRange.sinceDateInclusiveMs &&
-    inboxDateTimeMs <= dateRange.tillDateNoninclusiveMs
+    inboxDateTimeMs < dateRange.tillDateNoninclusiveMs
   );
 }
 
