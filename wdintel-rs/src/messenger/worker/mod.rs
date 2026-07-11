@@ -12,6 +12,7 @@ use ::serde::{Deserialize, Serialize};
 use chrono::*;
 use redis::AsyncCommands;
 use sea_orm::*;
+use std::collections::HashSet;
 use std::sync::atomic::{AtomicBool, Ordering};
 use tokio::runtime::*;
 use tokio::time::{sleep, Duration};
@@ -822,21 +823,15 @@ async fn notify_private_messages(
 fn coalesce_latest_inbox_states(
     updates: Vec<echo_im::types::MessageF1>,
 ) -> Vec<echo_im::types::MessageF1> {
-    let mut latest = HashMap::new();
-    let mut order = vec![];
-    for update in updates {
-        let internal_id = update.internal_id;
-        if latest.insert(internal_id, update).is_some() {
-            order.retain(|ordered_internal_id| {
-                *ordered_internal_id != internal_id
-            });
+    let mut seen = HashSet::new();
+    let mut result = vec![];
+    for update in updates.into_iter().rev() {
+        if seen.insert(update.internal_id) {
+            result.push(update);
         }
-        order.push(internal_id);
     }
-    order
-        .into_iter()
-        .filter_map(|internal_id| latest.remove(&internal_id))
-        .collect()
+    result.reverse();
+    result
 }
 
 async fn upsert_signal_message_queue_snapshot(

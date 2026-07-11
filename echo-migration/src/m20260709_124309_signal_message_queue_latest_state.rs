@@ -19,9 +19,9 @@ impl MigrationTrait for Migration {
                             partition by datasource_id, internal_id
                             order by
                                 created_at desc,
-                                id desc,
                                 case when group_id is not null then 0 else 1 end,
-                                case when body <> '' then 0 else 1 end
+                                case when body <> '' then 0 else 1 end,
+                                id desc
                         ) as rn
                     from signal_message_queue
                 )

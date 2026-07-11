@@ -189,7 +189,7 @@ pub async fn process_signal_message_queue_item_with_options(
 
     if !skip_process_inbox_item {
         let processed_inbox_item_ids =
-            crate::rer_importer::bgworker::process_message_to_inbox_nofail(
+            crate::rer_importer::bgworker::process_message_to_inbox(
                 settlements.clone(),
                 txn,
                 rq,
@@ -197,20 +197,15 @@ pub async fn process_signal_message_queue_item_with_options(
                 signal_message.id,
                 None,
             )
-            .await;
+            .await
+            .c(h!())?;
         for processed_inbox_item_id in &processed_inbox_item_ids {
-            if let Err(err) =
-                crate::sigint::worker::incoming_message_after_insert(
-                    txn,
-                    *processed_inbox_item_id,
-                )
-                .await
-            {
-                error!(
-                    "failed to index inbox item after queue import: {:?}",
-                    err
-                );
-            }
+            crate::sigint::worker::incoming_message_after_insert(
+                txn,
+                *processed_inbox_item_id,
+            )
+            .await
+            .c(h!())?;
         }
         changed_inbox_item_ids.extend(processed_inbox_item_ids);
     }

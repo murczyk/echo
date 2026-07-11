@@ -21,15 +21,30 @@ pub struct ReconcileResult {
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
-pub struct DedupeRedisUpdate {
-    body: String,
-    attachments_hash: Option<String>,
-    signal_message_id: i64,
+pub enum DedupeRedisUpdate {
+    Set {
+        body: String,
+        attachments_hash: Option<String>,
+        signal_message_id: i64,
+    },
+    ClearIfValue {
+        body: String,
+        attachments_hash: Option<String>,
+        signal_message_id: i64,
+    },
 }
 
 impl DedupeRedisUpdate {
-    fn from_signal_message(signal_message: &signal_message::Model) -> Self {
-        Self {
+    fn set_signal_message(signal_message: &signal_message::Model) -> Self {
+        Self::Set {
+            body: signal_message.body.clone().unwrap_or_default(),
+            attachments_hash: signal_message.attachments_hash.clone(),
+            signal_message_id: signal_message.id,
+        }
+    }
+
+    fn clear_signal_message(signal_message: &signal_message::Model) -> Self {
+        Self::ClearIfValue {
             body: signal_message.body.clone().unwrap_or_default(),
             attachments_hash: signal_message.attachments_hash.clone(),
             signal_message_id: signal_message.id,
@@ -131,6 +146,8 @@ pub async fn reconcile_deleted_message(
             continue;
         }
         let original_message = signal_message.clone();
+        pending_dedupe_updates
+            .push(DedupeRedisUpdate::clear_signal_message(&original_message));
         let mut signal_message = signal_message.into_active_model();
         signal_message.deleted = Set(true);
         signal_message.update(txn).await.c(h!())?;
@@ -260,7 +277,7 @@ async fn promote_duplicate_trace_for_deleted_original(
     .c(h!())?;
     Ok(DuplicatePromotionResult {
         changed_inbox_item_ids,
-        pending_dedupe_updates: vec![DedupeRedisUpdate::from_signal_message(
+        pending_dedupe_updates: vec![DedupeRedisUpdate::set_signal_message(
             &promoted_message,
         )],
     })
@@ -357,6 +374,7 @@ async fn copy_manual_annotations_to_promoted_message(
                     and existing.login = c.login
                     and existing.comment = c.comment
                     and existing.created_at = c.created_at
+                    and existing.sigint_post_id is not distinct from c.sigint_post_id
               )
         "#,
     )
@@ -759,6 +777,38 @@ async fn load_legacy_active_linked_messages(
     Ok(linked_messages)
 }
 
+async fn effective_active_group_id(
+    txn: &DatabaseTransaction,
+    datasource_id: i64,
+    snapshot: &MessageF1,
+    source_message: &signal_message::Model,
+) -> anyhow::Result<String> {
+    if let Some(group_id) = snapshot.group_id.clone() {
+        return Ok(group_id);
+    }
+    let Some(datasource_group_id) = source_message.datasource_group_id else {
+        anyhow::bail!(
+            "active inbox edit has no group: datasource_id={} echo_inbox_message_id={}",
+            datasource_id,
+            snapshot.internal_id
+        );
+    };
+    let Some(datasource_group) =
+        datasource_group::Entity::find_by_id(datasource_group_id)
+            .one(txn)
+            .await
+            .c(h!())?
+    else {
+        anyhow::bail!(
+            "active inbox edit source group is missing: datasource_id={} echo_inbox_message_id={} datasource_group_id={}",
+            datasource_id,
+            snapshot.internal_id,
+            datasource_group_id
+        );
+    };
+    Ok(datasource_group.group_master_key)
+}
+
 pub async fn reconcile_active_message(
     txn: &DatabaseTransaction,
     redis: &mut ConnectionManager,
@@ -770,16 +820,17 @@ pub async fn reconcile_active_message(
     snapshot: &MessageF1,
     linked_messages: Vec<signal_message::Model>,
 ) -> anyhow::Result<ReconcileResult> {
-    let Some(group_id) = snapshot.group_id.clone() else {
-        anyhow::bail!(
-            "active inbox edit has no group: datasource_id={} echo_inbox_message_id={}",
-            datasource_id,
-            snapshot.internal_id
-        );
-    };
     let Some(source_message) = linked_messages.first().cloned() else {
         return Ok(ReconcileResult::default());
     };
+    let group_id = effective_active_group_id(
+        txn,
+        datasource_id,
+        snapshot,
+        &source_message,
+    )
+    .await
+    .c(h!())?;
     let source_message_before_edit = source_message.clone();
     let source_message_id = source_message.id;
     let source_message_was_duplicate_trace = is_duplicate_trace_message(
@@ -1403,17 +1454,39 @@ pub async fn apply_pending_dedupe_updates(
     updates: Vec<DedupeRedisUpdate>,
 ) -> anyhow::Result<()> {
     for update in updates {
-        redis::cmd("SET")
-            .arg(dedupe::redis_key_for_body_with_attachments_hash(
-                &update.body,
-                update.attachments_hash.as_deref(),
-            ))
-            .arg(update.signal_message_id.to_string())
-            .arg("EX")
-            .arg(REDIS_MGS_ID_TTL)
-            .query_async::<()>(redis)
-            .await
-            .c(h!())?;
+        match update {
+            DedupeRedisUpdate::Set {
+                body,
+                attachments_hash,
+                signal_message_id,
+            } => {
+                redis::cmd("SET")
+                    .arg(dedupe::redis_key_for_body_with_attachments_hash(
+                        &body,
+                        attachments_hash.as_deref(),
+                    ))
+                    .arg(signal_message_id.to_string())
+                    .arg("EX")
+                    .arg(REDIS_MGS_ID_TTL)
+                    .query_async::<()>(redis)
+                    .await
+                    .c(h!())?;
+            }
+            DedupeRedisUpdate::ClearIfValue {
+                body,
+                attachments_hash,
+                signal_message_id,
+            } => {
+                clear_current_dedupe_key_if_source(
+                    redis,
+                    signal_message_id,
+                    &body,
+                    attachments_hash.as_deref(),
+                )
+                .await
+                .c(h!())?;
+            }
+        }
     }
     Ok(())
 }
@@ -1735,6 +1808,91 @@ mod tests {
         .await
         .unwrap();
         trace
+    }
+
+    #[tokio::test]
+    async fn copied_comments_distinguish_sigint_post_id() {
+        let (env, _guard) = cleanup_locked().await.unwrap();
+        let txn = env.dbx.begin().await.unwrap();
+        let login_value = format!("comment-post-{}", Uuid::new_v4());
+        mk_login(
+            &txn,
+            login::ActiveModel {
+                login: Set(login_value.clone()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let post_a = sigint_post::ActiveModel {
+            name: Set(format!("post-a-{}", Uuid::new_v4())),
+            ..Default::default()
+        }
+        .insert(&txn)
+        .await
+        .unwrap();
+        let post_b = sigint_post::ActiveModel {
+            name: Set(format!("post-b-{}", Uuid::new_v4())),
+            ..Default::default()
+        }
+        .insert(&txn)
+        .await
+        .unwrap();
+        let original =
+            mk_signal_message(&txn, Default::default()).await.unwrap();
+        let promoted =
+            mk_signal_message(&txn, Default::default()).await.unwrap();
+        let created_at = Utc::now().naive_utc();
+        let comment = format!("same text {}", Uuid::new_v4());
+        mk_sigint_comment(
+            &txn,
+            sigint_comment::ActiveModel {
+                signal_message_id: Set(original.id),
+                login: Set(login_value.clone()),
+                comment: Set(comment.clone()),
+                created_at: Set(created_at),
+                sigint_post_id: Set(Some(post_a.id)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        mk_sigint_comment(
+            &txn,
+            sigint_comment::ActiveModel {
+                signal_message_id: Set(promoted.id),
+                login: Set(login_value.clone()),
+                comment: Set(comment.clone()),
+                created_at: Set(created_at),
+                sigint_post_id: Set(Some(post_b.id)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+        copy_manual_annotations_to_promoted_message(
+            &txn,
+            original.id,
+            promoted.id,
+        )
+        .await
+        .unwrap();
+
+        let post_ids = sigint_comment::Entity::find()
+            .filter(sigint_comment::Column::SignalMessageId.eq(promoted.id))
+            .filter(sigint_comment::Column::Login.eq(&login_value))
+            .filter(sigint_comment::Column::Comment.eq(&comment))
+            .all(&txn)
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|comment| comment.sigint_post_id)
+            .sorted()
+            .collect_vec();
+        assert_eq!(post_ids, vec![Some(post_a.id), Some(post_b.id)]);
+
+        txn.rollback().await.unwrap();
     }
 
     #[tokio::test]
@@ -2362,7 +2520,7 @@ mod tests {
             result.changed_inbox_item_ids,
             vec![original.id, duplicate_a.id]
         );
-        assert_eq!(result.pending_dedupe_updates.len(), 1);
+        assert_eq!(result.pending_dedupe_updates.len(), 2);
         apply_pending_dedupe_updates(
             &mut redis,
             result.pending_dedupe_updates.clone(),
@@ -2647,6 +2805,105 @@ mod tests {
             .unwrap()
             .is_none());
 
+        txn.rollback().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn delete_original_without_promotion_clears_stale_dedupe_key() {
+        let (env, _guard) = cleanup_locked().await.unwrap();
+        let txn = env.dbx.begin().await.unwrap();
+        let mut redis = env.redis.clone();
+        let group_id = format!("delete-clear-dedupe-{}", Uuid::new_v4());
+        let datasource = mk_datasource(&txn, Default::default()).await.unwrap();
+        mk_signal_group(
+            &txn,
+            signal_group::ActiveModel {
+                master_key: Set(group_id.clone()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let datasource_group = mk_datasource_group(
+            &txn,
+            datasource_group::ActiveModel {
+                group_master_key: Set(group_id.clone()),
+                datasource_id: Set(datasource.id),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let timestamp = Utc::now().naive_utc();
+        let body = format!("delete stale dedupe {}", Uuid::new_v4());
+        let original = mk_signal_message(
+            &txn,
+            signal_message::ActiveModel {
+                body: Set(Some(body.clone())),
+                datasource_group_id: Set(Some(datasource_group.id)),
+                timestamp: Set(Some(timestamp)),
+                deleted: Set(false),
+                echo_inbox_message_id: Set(Some(4944)),
+                message_uid: Set(Some(format!("uid-{}", Uuid::new_v4()))),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let body_key =
+            dedupe::redis_key_for_body_with_attachments_hash(&body, None);
+        redis::cmd("SET")
+            .arg(&body_key)
+            .arg(original.id.to_string())
+            .query_async::<()>(&mut redis)
+            .await
+            .unwrap();
+        let snapshot = MessageF1 {
+            id: Some("external-4944".to_string()),
+            text: body,
+            sender: None,
+            sender_phone_number: None,
+            group_id: Some(group_id),
+            attachments: vec![],
+            message_source: echo_im::types::MessageSource::Signal,
+            timestamp,
+            internal_id: 4944,
+            reply_to: None,
+            deleted: true,
+        };
+
+        let result = reconcile_deleted_message(
+            &txn,
+            env.settlements.clone(),
+            &env.rq,
+            &env.config,
+            datasource.id,
+            &snapshot,
+        )
+        .await
+        .unwrap();
+        assert_eq!(result.pending_dedupe_updates.len(), 1);
+        apply_pending_dedupe_updates(
+            &mut redis,
+            result.pending_dedupe_updates.clone(),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(
+            redis::cmd("GET")
+                .arg(&body_key)
+                .query_async::<Option<String>>(&mut redis)
+                .await
+                .unwrap(),
+            None
+        );
+
+        redis::cmd("DEL")
+            .arg(&body_key)
+            .query_async::<i64>(&mut redis)
+            .await
+            .unwrap();
         txn.rollback().await.unwrap();
     }
 
@@ -3212,6 +3469,119 @@ mod tests {
             .unwrap();
         assert_eq!(group_link.sender.as_deref(), Some(sender_id.as_str()));
 
+        txn.rollback().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn active_edit_preserves_media_when_snapshot_has_no_attachments() {
+        let (env, _guard) = cleanup_locked().await.unwrap();
+        let txn = env.dbx.begin().await.unwrap();
+        let mut redis = env.redis.clone();
+        let group_id = format!("edit-preserve-media-{}", Uuid::new_v4());
+        let datasource = mk_datasource(&txn, Default::default()).await.unwrap();
+        mk_signal_group(
+            &txn,
+            signal_group::ActiveModel {
+                master_key: Set(group_id.clone()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let datasource_group = mk_datasource_group(
+            &txn,
+            datasource_group::ActiveModel {
+                group_master_key: Set(group_id),
+                datasource_id: Set(datasource.id),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let timestamp = Utc::now().naive_utc();
+        let previous_attachments_hash =
+            format!("previous-attachments-{}", Uuid::new_v4());
+        let source_message = mk_signal_message(
+            &txn,
+            signal_message::ActiveModel {
+                body: Set(Some(format!("before media {}", Uuid::new_v4()))),
+                datasource_group_id: Set(Some(datasource_group.id)),
+                timestamp: Set(Some(timestamp)),
+                deleted: Set(false),
+                echo_inbox_message_id: Set(Some(4747)),
+                attachments_hash: Set(Some(previous_attachments_hash.clone())),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let media_id = Uuid::now_v7();
+        signal_message_media::ActiveModel {
+            id: Set(media_id),
+            signal_message_id: Set(source_message.id),
+            content_type: Set("text/plain".to_string()),
+            file_ext: Set(Some("txt".to_string())),
+            file_name: Set(Some("old.txt".to_string())),
+            size_bytes: Set(3),
+            created_at: NotSet,
+        }
+        .insert(&txn)
+        .await
+        .unwrap();
+        let body = format!("after media {}", Uuid::new_v4());
+        let snapshot = MessageF1 {
+            id: Some("external-4747".to_string()),
+            text: body.clone(),
+            sender: None,
+            sender_phone_number: None,
+            group_id: None,
+            attachments: vec![],
+            message_source: echo_im::types::MessageSource::Signal,
+            timestamp,
+            internal_id: 4747,
+            reply_to: None,
+            deleted: false,
+        };
+
+        let result = reconcile_active_message(
+            &txn,
+            &mut redis,
+            env.settlements.clone(),
+            &env.rq,
+            &env.config,
+            &env.s3,
+            datasource.id,
+            &snapshot,
+            vec![source_message.clone()],
+        )
+        .await
+        .unwrap();
+
+        assert!(result.superseded_media_ids.is_empty());
+        assert!(signal_message_media::Entity::find_by_id(media_id)
+            .one(&txn)
+            .await
+            .unwrap()
+            .is_some());
+        let source_message =
+            signal_message::Entity::find_by_id(source_message.id)
+                .one(&txn)
+                .await
+                .unwrap()
+                .unwrap();
+        assert_eq!(
+            source_message.attachments_hash,
+            Some(previous_attachments_hash.clone())
+        );
+
+        redis::cmd("DEL")
+            .arg(dedupe::redis_key_for_body_with_attachments_hash(
+                &body,
+                Some(&previous_attachments_hash),
+            ))
+            .query_async::<i64>(&mut redis)
+            .await
+            .unwrap();
         txn.rollback().await.unwrap();
     }
 
