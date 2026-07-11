@@ -11,6 +11,7 @@ import ContentCopyOutlinedIcon from '@mui/icons-material/ContentCopyOutlined';
 import EditIcon from '@mui/icons-material/Edit';
 import DeskIcon from '@mui/icons-material/Desk';
 import DeskOutlinedIcon from '@mui/icons-material/DeskOutlined';
+import GpsFixedOutlinedIcon from '@mui/icons-material/GpsFixedOutlined';
 import GraphicEqIcon from '@mui/icons-material/GraphicEq';
 import GraphicEqOutlinedIcon from '@mui/icons-material/GraphicEqOutlined';
 import FlagIcon from '@mui/icons-material/Flag';
@@ -259,17 +260,8 @@ function ActionIconsRow({
   const hasCopyTextWithNetworkAndNote = isPresent(onCopyTextWithNetworkAndNote);
   const hasEtalonCopy = isPresent(onCopyEtalon);
   const canShowLocationCopy =
-    etalonDisplayModel.primaryKind === 'location' && isPresent(onCopyLocation);
+    etalonDisplayModel.copyLocationValue != null && isPresent(onCopyLocation);
   const overflowMenuItems = [
-    isPresent(onEditDetails)
-      ? {
-          key: 'edit-details',
-          title: 'Редагувати додаткові поля та позивні',
-          icon: <EditIcon fontSize="small" />,
-          selected: false,
-          onClick: onEditDetails,
-        }
-      : null,
     isPresent(onDelete)
       ? {
           key: 'delete',
@@ -398,6 +390,14 @@ function ActionIconsRow({
         'aria-expanded': copyMenuAnchorPosition ? 'true' : undefined,
       }}
     />,
+    isPresent(onEditDetails) ? (
+      <ActionIconButton
+        key="edit"
+        title="Редагувати"
+        icon={<EditIcon fontSize="inherit" />}
+        onClick={onEditDetails}
+      />
+    ) : null,
     canShowNavigationMenu ? (
       <ActionIconButton
         key="navigate"
@@ -1082,8 +1082,12 @@ export function MessageCardHeader({
     analysisHref,
   );
   const locationDisplayValue = etalonDisplayModel.locationDisplayValue;
+  // The location renders in the row's dedicated right slot whenever it is not
+  // itself the primary content — i.e. alongside a network or a unit.
   const showTopGridLocation =
-    etalonDisplayModel.primaryKind === 'network' && locationDisplayValue != null;
+    etalonDisplayModel.primaryKind !== 'location' && locationDisplayValue != null;
+  const coordsDisplayValue =
+    isPresent(msg.coords) && msg.coords.trim() !== '' ? msg.coords.trim() : null;
   const dateTimeBlock = (
     <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap" alignItems="center">
       <Stack direction="row" spacing={0.75} alignItems="center">
@@ -1240,6 +1244,13 @@ export function MessageCardHeader({
                 —
               </Typography>
             )}
+            {coordsDisplayValue != null ? (
+              <MetaLine
+                icon={<GpsFixedOutlinedIcon sx={{ fontSize: 18 }} />}
+                title="Координати"
+                text={coordsDisplayValue}
+              />
+            ) : null}
           </Stack>
         </Box>
         <Box
@@ -1428,6 +1439,13 @@ export function MessageCardHeader({
               —
             </Typography>
           )}
+          {coordsDisplayValue != null ? (
+            <MetaLine
+              icon={<GpsFixedOutlinedIcon sx={{ fontSize: 18 }} />}
+              title="Координати"
+              text={coordsDisplayValue}
+            />
+          ) : null}
         </Stack>
       </Box>
       <Box
