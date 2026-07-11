@@ -17,6 +17,7 @@ type SystemSettingsItemRaw = {
   default_neo_analysis?: boolean;
   autofix_echoim_missing_messages?: boolean;
   cyber_echo_enabled?: boolean;
+  sigint_comment_parsing_enabled?: boolean;
   peleng_bounds_enabled?: boolean;
   peleng_bounds_top_left_lat?: number | null;
   peleng_bounds_top_left_lng?: number | null;
@@ -38,6 +39,7 @@ type SystemSettingsCurrentRspRaw = {
   default_neo_analysis?: boolean;
   autofix_echoim_missing_messages?: boolean;
   cyber_echo_enabled?: boolean;
+  sigint_comment_parsing_enabled?: boolean;
   peleng_bounds_enabled?: boolean;
   peleng_bounds_top_left_lat?: number | null;
   peleng_bounds_top_left_lng?: number | null;
@@ -61,6 +63,7 @@ type CreateSystemSettingsReqRaw = {
   default_neo_analysis: boolean;
   autofix_echoim_missing_messages: boolean;
   cyber_echo_enabled: boolean;
+  sigint_comment_parsing_enabled: boolean;
   peleng_bounds_enabled: boolean;
   peleng_bounds_top_left_lat: number | null;
   peleng_bounds_top_left_lng: number | null;
@@ -90,6 +93,7 @@ export type SystemSettingsItem = {
   defaultNeoAnalysis: boolean;
   autofixEchoimMissingMessages: boolean;
   cyberEchoEnabled: boolean;
+  sigintCommentParsingEnabled: boolean;
   pelengBoundsEnabled: boolean;
   pelengBoundsTopLeftLat: number | null;
   pelengBoundsTopLeftLng: number | null;
@@ -111,6 +115,7 @@ export type SystemSettingsCurrent = {
   defaultNeoAnalysis: boolean;
   autofixEchoimMissingMessages: boolean;
   cyberEchoEnabled: boolean;
+  sigintCommentParsingEnabled: boolean;
   pelengBoundsEnabled: boolean;
   pelengBoundsTopLeftLat: number | null;
   pelengBoundsTopLeftLng: number | null;
@@ -130,6 +135,7 @@ export type CreateSystemSettingsInput = {
   defaultNeoAnalysis: boolean;
   autofixEchoimMissingMessages: boolean;
   cyberEchoEnabled: boolean;
+  sigintCommentParsingEnabled: boolean;
   pelengBoundsEnabled: boolean;
   pelengBoundsTopLeftLat: number | null;
   pelengBoundsTopLeftLng: number | null;
@@ -156,6 +162,7 @@ function normalizeItem(raw: SystemSettingsItemRaw): SystemSettingsItem {
     defaultNeoAnalysis: raw.default_neo_analysis ?? false,
     autofixEchoimMissingMessages: raw.autofix_echoim_missing_messages ?? false,
     cyberEchoEnabled: raw.cyber_echo_enabled ?? false,
+    sigintCommentParsingEnabled: raw.sigint_comment_parsing_enabled ?? true,
     pelengBoundsEnabled: raw.peleng_bounds_enabled ?? false,
     pelengBoundsTopLeftLat: raw.peleng_bounds_top_left_lat ?? null,
     pelengBoundsTopLeftLng: raw.peleng_bounds_top_left_lng ?? null,
@@ -179,6 +186,7 @@ function normalizeCurrent(raw: SystemSettingsCurrentRspRaw): SystemSettingsCurre
     defaultNeoAnalysis: raw.default_neo_analysis ?? false,
     autofixEchoimMissingMessages: raw.autofix_echoim_missing_messages ?? false,
     cyberEchoEnabled: raw.cyber_echo_enabled ?? false,
+    sigintCommentParsingEnabled: raw.sigint_comment_parsing_enabled ?? true,
     pelengBoundsEnabled: raw.peleng_bounds_enabled ?? false,
     pelengBoundsTopLeftLat: raw.peleng_bounds_top_left_lat ?? null,
     pelengBoundsTopLeftLng: raw.peleng_bounds_top_left_lng ?? null,
@@ -207,6 +215,7 @@ export async function createSystemSettings(
     default_neo_analysis: input.defaultNeoAnalysis,
     autofix_echoim_missing_messages: input.autofixEchoimMissingMessages,
     cyber_echo_enabled: input.cyberEchoEnabled,
+    sigint_comment_parsing_enabled: input.sigintCommentParsingEnabled,
     peleng_bounds_enabled: input.pelengBoundsEnabled,
     peleng_bounds_top_left_lat: input.pelengBoundsTopLeftLat,
     peleng_bounds_top_left_lng: input.pelengBoundsTopLeftLng,

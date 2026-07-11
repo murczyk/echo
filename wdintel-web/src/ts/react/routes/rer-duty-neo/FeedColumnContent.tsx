@@ -282,8 +282,7 @@ export function FeedColumnContent({ column, virtuosoRef }: FeedColumnContentProp
               senderName={labels.senderName}
               copiedFeedbackId={copiedFeedbackId}
               networkDisplayMap={networkDisplayMap}
-              /* Duty shows only `msg.extendedForm`; peer/post comments belong to analysis. */
-              messageComments={[]}
+              messageComments={msg.messageComments ?? []}
               networkMap={networkMap}
               unitsMap={unitsMap}
               callsignInfoMap={callsignInfoMap}

@@ -85,6 +85,7 @@ fn map_system_settings_item(
         cyber_echo_enabled: settings.cyber_echo_enabled,
         echo_restapi_error_discord_webhook_url: settings
             .echo_restapi_error_discord_webhook_url,
+        sigint_comment_parsing_enabled: settings.sigint_comment_parsing_enabled,
     })
 }
 
@@ -262,6 +263,18 @@ where
         .unwrap_or(false))
 }
 
+pub async fn sigint_comment_parsing_enabled<C>(
+    dbx: &C,
+) -> Result<bool, AppError>
+where
+    C: ConnectionTrait,
+{
+    let settings = get_active_system_settings(dbx).await.c(h!())?;
+    Ok(settings
+        .map(|settings| settings.sigint_comment_parsing_enabled)
+        .unwrap_or(true))
+}
+
 pub async fn ensure_cyber_echo_enabled<C>(dbx: &C) -> Result<(), AppError>
 where
     C: ConnectionTrait,
@@ -413,6 +426,7 @@ fn system_settings_active_model(
                 req.echo_restapi_error_discord_webhook_url.as_deref(),
             ),
         ),
+        sigint_comment_parsing_enabled: Set(req.sigint_comment_parsing_enabled),
     }
 }
 
@@ -522,6 +536,8 @@ pub async fn current_system_settings(
             peleng_bounds_bottom_right_lng: settings
                 .peleng_bounds_bottom_right_lng,
             cyber_echo_enabled: settings.cyber_echo_enabled,
+            sigint_comment_parsing_enabled: settings
+                .sigint_comment_parsing_enabled,
         },
         None => SystemSettingsCurrentRsp {
             id: None,
@@ -541,6 +557,7 @@ pub async fn current_system_settings(
             peleng_bounds_bottom_right_lat: None,
             peleng_bounds_bottom_right_lng: None,
             cyber_echo_enabled: false,
+            sigint_comment_parsing_enabled: true,
         },
     }))
 }
@@ -764,6 +781,7 @@ mod tests {
             peleng_bounds_bottom_right_lat: None,
             peleng_bounds_bottom_right_lng: None,
             echo_restapi_error_discord_webhook_url: None,
+            sigint_comment_parsing_enabled: true,
         }
     }
 
@@ -815,6 +833,7 @@ mod tests {
             autofix_echoim_missing_messages: Set(false),
             cyber_echo_enabled: Set(false),
             echo_restapi_error_discord_webhook_url: Set(None),
+            sigint_comment_parsing_enabled: Set(true),
         }
         .insert(dbx)
         .await

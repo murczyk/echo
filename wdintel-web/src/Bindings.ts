@@ -391,6 +391,7 @@ export type InboxMessage = {
   groupMasterKey: string | null;
   sender: string | null;
   extendedForm: string | null;
+  messageComments: Array<MessageComment>;
   post: string | null;
   postId: number | null;
   unit: string | null;

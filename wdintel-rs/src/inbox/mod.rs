@@ -120,7 +120,10 @@ where
     );
     let checked = freq.is_some();
     let reviewed = false;
-    let comment_parsing_enabled = config.sigint_comment_parsing_enabled()?;
+    let comment_parsing_enabled =
+        crate::system_settings::sigint_comment_parsing_enabled(txn)
+            .await
+            .c(h!())?;
     let body_noheader = match &meow_format {
         Some(meow_format) => meow_format.body_noheader.clone(),
         None if comment_parsing_enabled => {

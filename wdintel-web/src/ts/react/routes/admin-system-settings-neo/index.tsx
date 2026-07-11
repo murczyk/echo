@@ -41,6 +41,7 @@ type SystemSettingsForm = {
   shortUrlEnabled: boolean;
   autofixEchoimMissingMessages: boolean;
   cyberEchoEnabled: boolean;
+  sigintCommentParsingEnabled: boolean;
   pelengBoundsEnabled: boolean;
   pelengBoundsTopLeftLat: string;
   pelengBoundsTopLeftLng: string;
@@ -63,6 +64,7 @@ type SystemSettingsPayload = {
   shortUrlEnabled: boolean;
   autofixEchoimMissingMessages: boolean;
   cyberEchoEnabled: boolean;
+  sigintCommentParsingEnabled: boolean;
   pelengBoundsEnabled: boolean;
   pelengBoundsTopLeftLat: number | null;
   pelengBoundsTopLeftLng: number | null;
@@ -83,6 +85,7 @@ const EMPTY_FORM: SystemSettingsForm = {
   shortUrlEnabled: false,
   autofixEchoimMissingMessages: false,
   cyberEchoEnabled: false,
+  sigintCommentParsingEnabled: true,
   pelengBoundsEnabled: false,
   pelengBoundsTopLeftLat: '',
   pelengBoundsTopLeftLng: '',
@@ -118,6 +121,7 @@ function formFromSettings(item: SystemSettingsItem | undefined): SystemSettingsF
     shortUrlEnabled: item?.rerShortUrlEnabled ?? false,
     autofixEchoimMissingMessages: item?.autofixEchoimMissingMessages ?? false,
     cyberEchoEnabled: item?.cyberEchoEnabled ?? false,
+    sigintCommentParsingEnabled: item?.sigintCommentParsingEnabled ?? true,
     pelengBoundsEnabled: item?.pelengBoundsEnabled ?? false,
     pelengBoundsTopLeftLat: coordinateToInput(item?.pelengBoundsTopLeftLat ?? null),
     pelengBoundsTopLeftLng: coordinateToInput(item?.pelengBoundsTopLeftLng ?? null),
@@ -140,6 +144,7 @@ function formsEqual(a: SystemSettingsForm, b: SystemSettingsForm): boolean {
     a.shortUrlEnabled === b.shortUrlEnabled &&
     a.autofixEchoimMissingMessages === b.autofixEchoimMissingMessages &&
     a.cyberEchoEnabled === b.cyberEchoEnabled &&
+    a.sigintCommentParsingEnabled === b.sigintCommentParsingEnabled &&
     a.pelengBoundsEnabled === b.pelengBoundsEnabled &&
     a.pelengBoundsTopLeftLat === b.pelengBoundsTopLeftLat &&
     a.pelengBoundsTopLeftLng === b.pelengBoundsTopLeftLng &&
@@ -210,6 +215,7 @@ function formToPayload(form: SystemSettingsForm): SystemSettingsPayload {
     shortUrlEnabled: form.shortUrlEnabled,
     autofixEchoimMissingMessages: form.autofixEchoimMissingMessages,
     cyberEchoEnabled: form.cyberEchoEnabled,
+    sigintCommentParsingEnabled: form.sigintCommentParsingEnabled,
     pelengBoundsEnabled: form.pelengBoundsEnabled,
     pelengBoundsTopLeftLat: coordinateToPayload(form.pelengBoundsTopLeftLat),
     pelengBoundsTopLeftLng: coordinateToPayload(form.pelengBoundsTopLeftLng),
@@ -340,6 +346,18 @@ function MainSettingsSection({
           />
         }
         label="Використовувати новий аналіз за замовчуванням"
+      />
+
+      <FormControlLabel
+        control={
+          <Switch
+            checked={form.sigintCommentParsingEnabled}
+            onChange={(_, checked) => {
+              patchForm({ sigintCommentParsingEnabled: checked });
+            }}
+          />
+        }
+        label="Парсити коментарі"
       />
     </>
   );
@@ -644,6 +662,7 @@ export function AdminSystemSettingsNeoPage() {
         defaultNeoAnalysis: payload.defaultNeoAnalysis,
         autofixEchoimMissingMessages: payload.autofixEchoimMissingMessages,
         cyberEchoEnabled: payload.cyberEchoEnabled,
+        sigintCommentParsingEnabled: payload.sigintCommentParsingEnabled,
         pelengBoundsEnabled: payload.pelengBoundsEnabled,
         pelengBoundsTopLeftLat: payload.pelengBoundsTopLeftLat,
         pelengBoundsTopLeftLng: payload.pelengBoundsTopLeftLng,

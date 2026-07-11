@@ -213,6 +213,7 @@ function normalizeInboxMessage(
     network_ids?: number[] | null;
     location?: string | null;
     extended_form?: string | null;
+    message_comments?: InboxMessageType['messageComments'] | null;
     inbox_tags?: InboxMessageTagRaw[] | null;
     metadata?: InboxMessageMetadataRaw[] | null;
     text_marked?: InboxMessageType['textMarked'];
@@ -224,6 +225,9 @@ function normalizeInboxMessage(
   const networkIds = (m.networkIds ?? raw.network_ids ?? null) as number[] | null;
   const location = (m.location ?? raw.location ?? null) as string | null;
   const extendedForm = (m.extendedForm ?? raw.extended_form ?? null) as string | null;
+  const messageComments = (m.messageComments ??
+    raw.message_comments ??
+    []) as InboxMessageType['messageComments'];
   const rawInboxTags = (raw.inbox_tags ?? m.inboxTags ?? null) as
     InboxMessageTagRaw[] | null | undefined;
   const inboxTags: InboxMessageType['inboxTags'] =
@@ -254,6 +258,7 @@ function normalizeInboxMessage(
     networkIds,
     location,
     extendedForm,
+    messageComments: Array.isArray(messageComments) ? messageComments : [],
     inboxTags,
     metadata,
     textMarked,
