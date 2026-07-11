@@ -101,9 +101,33 @@ export type DirectSubmitResponse = {
   signal_message_id: number;
 };
 
+export type DirectSubmitParseRequest = {
+  full_body: string;
+  signal_group_master_key: string;
+};
+
+export type DirectSubmitParseResponse = {
+  text: string;
+  freq?: string;
+  coords: SubmitCoordinates[];
+  to: string[];
+  timestamp?: string;
+  comment?: string;
+  post?: string;
+  unit?: string;
+  locations: string[];
+};
+
 export async function submitDirect(
   req: DirectSubmitRequest,
   options?: RequestOptions,
 ): Promise<DirectSubmitResponse> {
   return await postJson<DirectSubmitResponse>('/api/1.1/submit-direct', req, options);
+}
+
+export async function parseDirectSubmit(
+  req: DirectSubmitParseRequest,
+  options?: RequestOptions,
+): Promise<DirectSubmitParseResponse> {
+  return await postJson<DirectSubmitParseResponse>('/api/1.1/submit-direct/parse', req, options);
 }

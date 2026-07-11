@@ -33,6 +33,7 @@ import {
   searchComputerName,
   searchComputerNames,
   createComputerName,
+  parseDirectSubmit,
   submitDirect,
 } from '../../../services/api/direct-submit';
 import type { SignalGroupEntry, User } from '../../../../../Bindings';
@@ -167,6 +168,7 @@ export function CreateMessageDrawer({
   const [signalGroups, setSignalGroups] = useState<SignalGroupEntry[]>([]);
   const [groupsLoading, setGroupsLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [parsing, setParsing] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   const [tagOptions, setTagOptions] = useState<string[]>([]);
@@ -260,13 +262,6 @@ export function CreateMessageDrawer({
     }
   };
 
-  // Placeholder: the backend parsing endpoint is not ready yet. Once it lands,
-  // this should call the parse API with the raw text and populate the form via
-  // reset()/setValue so every parsed field becomes editable.
-  const handleParse = () => {
-    // no-op for now
-  };
-
   const handleDropzoneKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
     if (submitting) return;
     if (e.key === 'Enter' || e.key === ' ') {
@@ -277,8 +272,10 @@ export function CreateMessageDrawer({
 
   const {
     control,
+    getValues,
     handleSubmit,
     reset,
+    setValue,
     formState: { errors },
   } = useForm<MessageFormData>({
     resolver: zodResolver(messageSchema),
@@ -304,6 +301,51 @@ export function CreateMessageDrawer({
       network_name: '',
     },
   });
+
+  const handleParse = async () => {
+    if (parsing || submitting) return;
+    const fullBody = getValues('full_body')?.trim();
+    const signalGroupMasterKey = getValues('signalGroupMasterKey')?.trim();
+    if (!fullBody) {
+      setErrorMsg('Введіть текст повідомлення');
+      return;
+    }
+    if (!signalGroupMasterKey) {
+      setErrorMsg('Оберіть групу');
+      return;
+    }
+
+    setParsing(true);
+    setErrorMsg(null);
+    try {
+      const parsed = await parseDirectSubmit({
+        full_body: fullBody,
+        signal_group_master_key: signalGroupMasterKey,
+      });
+      const timestamp = parsed.timestamp ? dayjs(parsed.timestamp) : null;
+      setValue('text', parsed.text, { shouldDirty: true, shouldValidate: true });
+      setValue('freq', parsed.freq ?? '', { shouldDirty: true, shouldValidate: true });
+      setValue('coords', parsed.coords.map(({ lat, lon }) => `${lat}, ${lon}`).join('\n'), {
+        shouldDirty: true,
+        shouldValidate: true,
+      });
+      setValue('callsigns', parsed.to, { shouldDirty: true, shouldValidate: true });
+      setValue('comment', parsed.comment ?? '', { shouldDirty: true });
+      setValue('post', parsed.post ?? '', { shouldDirty: true });
+      setValue('unit', parsed.unit ?? '', { shouldDirty: true });
+      setValue('locations', parsed.locations, { shouldDirty: true });
+      if (timestamp?.isValid()) {
+        setValue('date', timestamp, { shouldDirty: true });
+        setValue('time', timestamp, { shouldDirty: true });
+      }
+      setShowAdvanced(true);
+    } catch (error: any) {
+      console.error('Error parsing message', error);
+      setErrorMsg(error.message || 'Не вдалося розпарсити повідомлення');
+    } finally {
+      setParsing(false);
+    }
+  };
 
   useEffect(() => {
     if (!open) return;
@@ -540,10 +582,10 @@ export function CreateMessageDrawer({
                 onClick={handleParse}
                 variant="outlined"
                 startIcon={<AutoFixHighIcon />}
-                disabled={submitting}
+                disabled={submitting || parsing}
                 sx={{ alignSelf: 'flex-start' }}
               >
-                Розпарсити
+                {parsing ? 'Розбір…' : 'Розпарсити'}
               </Button>
 
               {/* Attachments */}

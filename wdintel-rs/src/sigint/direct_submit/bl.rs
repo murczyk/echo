@@ -1,11 +1,108 @@
 use super::query;
-use super::types::{DirectSubmitPayload, DirectSubmitRsp};
+use super::types::{
+    DirectSubmitParsePayload, DirectSubmitParseRsp, DirectSubmitPayload,
+    DirectSubmitRsp,
+};
 use crate::config::FEATURE_DELETE_UPLOADED_ATTACHMENT_DEFAULT;
 use crate::error::AppError;
 use crate::rer_importer::types::InboxSubmitItem;
 use crate::types::*;
+use chrono::TimeZone;
 use chrono::{SecondsFormat, Utc};
-use sea_orm::TransactionTrait;
+use sea_orm::{ConnectionTrait, TransactionTrait};
+
+pub async fn parse_signal_message(
+    login: &str,
+    env: &Env,
+    payload: DirectSubmitParsePayload,
+) -> Result<DirectSubmitParseRsp, AppError> {
+    let body = payload.full_body.trim().replace("\r\n", "\n");
+    if body.is_empty() {
+        return Err(AppError::BL {
+            msg: "full_body cannot be empty".to_string(),
+        });
+    }
+    query::find_available_signal_group(
+        &env.dbx,
+        login,
+        &payload.signal_group_master_key,
+    )
+    .await?;
+    let aor_id =
+        query::resolve_group_aor_id(&env.dbx, &payload.signal_group_master_key)
+            .await
+            .c(h!())?;
+
+    parse_signal_message_body(env, &env.dbx, &body, aor_id).await
+}
+
+async fn parse_signal_message_body<C>(
+    env: &Env,
+    dbx: &C,
+    body: &str,
+    aor_id: Option<i64>,
+) -> Result<DirectSubmitParseRsp, AppError>
+where
+    C: ConnectionTrait,
+{
+    let callsign_tokens =
+        crate::rer_importer::callsigns::find_known_callsigns(&env.rq, body)
+            .await
+            .c(h!())?;
+    let callsigns = crate::utils::uniq_via_btreeset(
+        &callsign_tokens
+            .iter()
+            .map(|callsign| callsign.etalon.clone())
+            .collect::<Vec<_>>(),
+    );
+    let coords = crate::rer_importer::coordinates::extract_coords(body).await;
+    let coords =
+        crate::location::peleng::filter_allowed_peleng_coords(coords, dbx)
+            .await
+            .c(h!())?;
+    let unit_and_location = crate::unit::parser::extract_unit_with_aor(
+        env.settlements.clone(),
+        body,
+        callsigns.clone(),
+        aor_id,
+    )
+    .c(h!())?;
+    let text = if env.config.sigint_comment_parsing_enabled()? {
+        crate::sigint::parser::extract_text_without_top_comment(body)?
+    } else {
+        crate::rer_importer::body_noheader::extract_text(body)?
+    };
+    let timezone = crate::config::get_tz();
+    let local_now = chrono::Local::now().with_timezone(&timezone);
+    let timestamp =
+        crate::rer_importer::datetime::extract_datetime(local_now, body)?
+            .and_then(|datetime| {
+                timezone.from_local_datetime(&datetime).single()
+            })
+            .map(|datetime| {
+                datetime.to_rfc3339_opts(SecondsFormat::Secs, true)
+            });
+    let comments = crate::sigint::parser::parse_comments(body);
+
+    Ok(DirectSubmitParseRsp {
+        text: text.body,
+        freq: crate::rer_importer::frequency::extract_freq(body)?
+            .map(|freq| crate::rer_importer::frequency::etalon(&freq)),
+        coords: coords
+            .into_iter()
+            .map(|coords| crate::rer_importer::types::SubmitCoordinates {
+                lat: coords.lat,
+                lon: coords.lng,
+            })
+            .collect(),
+        to: callsigns,
+        timestamp,
+        comment: comments.bottom.or(comments.top),
+        post: crate::rer_importer::post::extract_post(body)?,
+        unit: unit_and_location.unit,
+        locations: unit_and_location.locality.into_iter().collect(),
+    })
+}
 
 pub async fn submit_signal_message(
     login: &str,
@@ -166,6 +263,8 @@ fn direct_submit_payload_to_item(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::functest::tests::cleanup;
+    use serial_test::serial;
 
     #[test]
     fn direct_submit_maps_explicit_fields_without_parsing() {
@@ -191,5 +290,21 @@ mod tests {
         assert_eq!(item.from_callsign.as_deref(), Some("ALPHA"));
         assert_eq!(item.to, vec!["BRAVO"]);
         assert!(!item.parse_body_coordinates);
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn direct_submit_parse_suggests_inbox_fields() {
+        let env = cleanup().await.unwrap();
+        let body = "01.04.2023_15:00 F=411,7500(МГЦ)\n49.12345, 37.12345\nТекст повідомлення";
+
+        let parsed = parse_signal_message_body(&env, &env.dbx, body, None)
+            .await
+            .unwrap();
+
+        assert_eq!(parsed.freq.as_deref(), Some("411.7500"));
+        assert_eq!(parsed.coords.len(), 1);
+        assert!(parsed.text.contains("Текст повідомлення"));
+        assert!(parsed.timestamp.is_some());
     }
 }

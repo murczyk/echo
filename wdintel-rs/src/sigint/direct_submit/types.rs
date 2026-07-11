@@ -45,3 +45,22 @@ pub struct DirectSubmitPayload {
 pub struct DirectSubmitRsp {
     pub signal_message_id: i64,
 }
+
+#[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
+pub struct DirectSubmitParsePayload {
+    pub full_body: String,
+    pub signal_group_master_key: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
+pub struct DirectSubmitParseRsp {
+    pub text: String,
+    pub freq: Option<String>,
+    pub coords: Vec<SubmitCoordinates>,
+    pub to: Vec<String>,
+    pub timestamp: Option<String>,
+    pub comment: Option<String>,
+    pub post: Option<String>,
+    pub unit: Option<String>,
+    pub locations: Vec<String>,
+}
