@@ -33,8 +33,8 @@ import {
   searchComputerName,
   searchComputerNames,
   createComputerName,
-  submitCyberEchoMessage,
-} from '../../../services/api/cyber-echo-message';
+  submitDirect,
+} from '../../../services/api/direct-submit';
 import type { SignalGroupEntry, User } from '../../../../../Bindings';
 import { PowerDatePicker } from '../../../components/PowerDateTimePicker';
 import { PowerAlert } from '../../../components/PowerAlert';
@@ -78,7 +78,6 @@ const messageSchema = z
     text: z.string().optional(),
     signalGroupMasterKey: z.string().trim().min(1, 'Оберіть групу'),
     computerName: z.string().optional(),
-    message_uid: z.string().optional(),
     freq: z
       .string()
       .optional()
@@ -91,6 +90,7 @@ const messageSchema = z
     date: z.any().optional(),
     time: z.any().optional(),
     full_body: z.string().optional(),
+    comment: z.string().optional(),
     post: z.string().optional(),
     unit: z.string().optional(),
     locations: z.array(z.string()).optional(),
@@ -140,11 +140,10 @@ type MessageFormData = z.infer<typeof messageSchema>;
 
 type Props = {
   open: boolean;
-  /** Cyber Echo mode (system setting). When true, the "Назва комп'ютера" field is shown. */
   cyberEchoEnabled: boolean;
   currentUser: User | null;
   onClose: () => void;
-  onSuccess?: (inboxItemId: number) => void;
+  onSuccess?: () => void;
 };
 
 function FormSection({ title, children }: { title: string; children: ReactNode }) {
@@ -204,7 +203,7 @@ export function CreateMessageDrawer({
       },
       autoProceed: false,
     }).use(Tus, {
-      endpoint: '/api/sigint/cyber-echo/tus',
+      endpoint: '/api/sigint/file-upload/tus',
       chunkSize: 5 * 1024 * 1024,
       limit: 3,
     }),
@@ -289,7 +288,6 @@ export function CreateMessageDrawer({
       text: '',
       signalGroupMasterKey: '',
       computerName: '',
-      message_uid: '',
       freq: '',
       coords: '',
       callsigns: [],
@@ -297,6 +295,7 @@ export function CreateMessageDrawer({
       date: null,
       time: null,
       full_body: '',
+      comment: '',
       post: '',
       unit: '',
       locations: [],
@@ -364,7 +363,7 @@ export function CreateMessageDrawer({
     setErrorMsg(null);
 
     try {
-      // 1. Resolve computer name (Cyber Echo only; optional otherwise)
+      // 1. Resolve optional device name
       let computerNameId: number | undefined;
       const computerName = data.computerName?.trim();
       if (computerName) {
@@ -434,26 +433,25 @@ export function CreateMessageDrawer({
       }
 
       // 3. Create message
-      const response = await submitCyberEchoMessage({
+      await submitDirect({
+        full_body: data.full_body?.trim() || undefined,
         text: data.text?.trim() || undefined,
-        message_uid: data.message_uid || undefined,
+        comment: data.comment?.trim() || undefined,
         signal_group_master_key: data.signalGroupMasterKey,
         device_name_id: computerNameId,
         upload_urls: uploadUrls.length > 0 ? uploadUrls : null,
-        delete_media_ids: [], // Not supporting editing existing media from UI right now
         freq: data.freq || undefined,
         coords: coordsResult,
-        to_callsigns: data.callsigns || [],
+        to: data.callsigns || [],
         tags: data.tags || [],
         timestamp,
-        full_body: data.full_body || undefined,
         post: data.post || undefined,
         unit: data.unit || undefined,
         locations: data.locations || [],
         network: networkObj,
       });
 
-      onSuccess?.(response.inbox_item_id);
+      onSuccess?.();
       handleDrawerClose();
     } catch (e: any) {
       console.error('Error creating message', e);
@@ -794,14 +792,16 @@ export function CreateMessageDrawer({
 
                 {showAdvanced && (
                   <Controller
-                    name="message_uid"
+                    name="comment"
                     control={control}
                     render={({ field }) => (
                       <TextField
                         {...field}
-                        label="Зовнішній ідентифікатор"
+                        label="Коментар"
                         size="small"
                         fullWidth
+                        multiline
+                        minRows={2}
                         disabled={submitting}
                       />
                     )}

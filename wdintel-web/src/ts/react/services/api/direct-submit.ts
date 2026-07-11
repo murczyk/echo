@@ -65,41 +65,45 @@ export type SubmitCoordinates = {
   lon: number;
 };
 
-export type CreateCyberEchoMessageRequest = {
-  message_uid?: string;
-  body?: string;
+export type SubmitDmrMetadata = {
+  timestamp: string;
+  cc?: number;
+  freq: string;
+  signal_name: string;
+  sender_id?: number;
+  sender_name?: string;
+  call_group_id?: number;
+  call_group_name?: string;
+  hash_id?: string;
+};
+
+export type DirectSubmitRequest = {
+  full_body?: string;
   text?: string;
+  comment?: string;
   freq?: string;
   coords?: SubmitCoordinates[];
-  from_callsign?: string;
-  to_callsigns?: string[];
+  from?: string;
+  to?: string[];
   tags?: string[];
   timestamp?: string;
-  full_body?: string;
   post?: string;
   unit?: string;
   locations?: string[];
   network?: SubmitNetwork;
+  dmr?: SubmitDmrMetadata[];
   signal_group_master_key: string;
   device_name_id?: number;
   upload_urls?: string[] | null;
-  delete_media_ids?: string[];
 };
 
-export type CreateCyberEchoMessageResponse = {
+export type DirectSubmitResponse = {
   signal_message_id: number;
-  message_uid?: string;
-  inbox_item_id: number;
-  media_ids: string[];
 };
 
-export async function submitCyberEchoMessage(
-  req: CreateCyberEchoMessageRequest,
+export async function submitDirect(
+  req: DirectSubmitRequest,
   options?: RequestOptions,
-): Promise<CreateCyberEchoMessageResponse> {
-  return await postJson<CreateCyberEchoMessageResponse>(
-    '/api/sigint/cyber-echo/message/submit',
-    req,
-    options,
-  );
+): Promise<DirectSubmitResponse> {
+  return await postJson<DirectSubmitResponse>('/api/1.1/submit-direct', req, options);
 }

@@ -15,7 +15,6 @@ import { CreateMessageDrawer } from './components/CreateMessageDrawer';
 import { getAnalysisCenterTabs } from './types';
 import { useMinDurationBusy } from './use-min-duration-busy';
 import { useRerAnalysisNeoPage } from './use-rer-analysis-neo-page';
-import { fetchMessagesByIds } from '../../services/api/analysis';
 
 export type RerAnalysisNeoPageProps = {
   authUserName?: string | null;
@@ -153,19 +152,9 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
         cyberEchoEnabled={page.cyberEchoEnabled}
         currentUser={page.currentUser}
         onClose={() => setCreateMessageOpen(false)}
-        onSuccess={async (inboxItemId) => {
+        onSuccess={() => {
           setCreateMessageOpen(false);
-          try {
-            const fetched = await fetchMessagesByIds([inboxItemId]);
-            if (fetched && fetched.length > 0) {
-              page.onPrependLocalMessage(inboxItemId, fetched[0][1]);
-            } else {
-              page.reload();
-            }
-          } catch (e) {
-            console.error(e);
-            page.reload();
-          }
+          page.reload();
         }}
       />
     </Box>
