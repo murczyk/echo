@@ -228,7 +228,7 @@ where
             serde_json::to_value(callsign_tokens).c(h!())?,
         )),
         keyword_tokens: Set(None),
-        nominatimres_id: NotSet,
+        nominatimres_id: Set(None),
         location: Set(location),
         location_v2: Set(location_v2),
         body_noheader: Set(Some(serde_json::to_value(&body_noheader).c(h!())?)),
@@ -245,10 +245,16 @@ where
         computer_name_id: Set(None),
         unit_v2: Set(unit_v2),
         parsed_unit_v2: Set(true),
-    }
-    .insert(txn)
-    .await
-    .c(h!())?;
+    };
+    let result = sigint_inbox_item::Entity::insert(result)
+        .on_conflict(
+            sea_query::OnConflict::column(sigint_inbox_item::Column::Id)
+                .update_columns(reprocessed_inbox_item_update_columns())
+                .to_owned(),
+        )
+        .exec_with_returning(txn)
+        .await
+        .c(h!())?;
 
     crate::rer_importer::inbox::metadata::refresh_metadata_for_body(
         result.id,
@@ -334,6 +340,34 @@ where
     .c(h!())?;
 
     Ok(ConstructInboxItemResult::changed(message.id))
+}
+
+fn reprocessed_inbox_item_update_columns() -> [sigint_inbox_item::Column; 23] {
+    [
+        sigint_inbox_item::Column::Date,
+        sigint_inbox_item::Column::Time,
+        sigint_inbox_item::Column::Freq,
+        sigint_inbox_item::Column::Coords,
+        sigint_inbox_item::Column::Lat,
+        sigint_inbox_item::Column::Lng,
+        sigint_inbox_item::Column::Callsigns,
+        sigint_inbox_item::Column::Checked,
+        sigint_inbox_item::Column::Reviewed,
+        sigint_inbox_item::Column::Unit,
+        sigint_inbox_item::Column::CallsignTokens,
+        sigint_inbox_item::Column::KeywordTokens,
+        sigint_inbox_item::Column::NominatimresId,
+        sigint_inbox_item::Column::Location,
+        sigint_inbox_item::Column::LocationV2,
+        sigint_inbox_item::Column::BodyNoheader,
+        sigint_inbox_item::Column::CallsignsAlg1,
+        sigint_inbox_item::Column::CallsignsAlg2,
+        sigint_inbox_item::Column::SignalTokens,
+        sigint_inbox_item::Column::PostId,
+        sigint_inbox_item::Column::ComputerNameId,
+        sigint_inbox_item::Column::UnitV2,
+        sigint_inbox_item::Column::ParsedUnitV2,
+    ]
 }
 
 fn extract_message_datetime(
@@ -653,6 +687,25 @@ mod tests {
         let (date, time) = format_date_time_fields(dt_utc);
         assert_eq!(date, "2025-11-20");
         assert_eq!(time, "12:29:18");
+    }
+
+    #[test]
+    fn reprocessed_inbox_item_update_columns_reset_reviewed() {
+        assert!(reprocessed_inbox_item_update_columns()
+            .iter()
+            .any(|column| {
+                matches!(column, sigint_inbox_item::Column::Reviewed)
+            }));
+        assert!(reprocessed_inbox_item_update_columns()
+            .iter()
+            .any(|column| {
+                matches!(column, sigint_inbox_item::Column::ComputerNameId)
+            }));
+        assert!(reprocessed_inbox_item_update_columns()
+            .iter()
+            .all(|column| {
+                !matches!(column, sigint_inbox_item::Column::Datetime)
+            }));
     }
 
     #[test]

@@ -27,6 +27,7 @@ pub mod media_wave;
 pub mod missing_message;
 pub(crate) mod oneoff;
 pub mod ops;
+pub mod reconcile;
 pub mod restapi_errors;
 #[cfg(test)]
 pub mod tests;

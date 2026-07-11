@@ -31,12 +31,6 @@ struct UnlinkedDatasourceNotificationState {
     consecutive_failures: usize,
 }
 
-struct ReceiveWorkerResources {
-    settlements: Arc<RwLock<crate::location::SettlementsDataConfig>>,
-    rq: reqwest::Client,
-    s3: Option<opendal::Operator>,
-}
-
 /// Receive thread for all datasources (messengers)
 ///
 /// - queries echo-im for signal/whatsapp
@@ -309,9 +303,6 @@ async fn run_new_worker(
 ) -> anyhow::Result<()> {
     info!("spawning new worker: {worker_name}");
     let dbx = new_pg_pool_from_mode(mode).await.c(h!())?;
-    let resources = build_receive_worker_resources(mode, &config, &dbx)
-        .await
-        .c(h!())?;
     info!("{worker_name}: started processing");
     let result = async {
         loop {
@@ -337,8 +328,7 @@ async fn run_new_worker(
                 return Ok(());
             }
             let sync_result =
-                sync_client_once(&config, &resources, cli, &dbx, &mut redis)
-                    .await;
+                sync_client_once(&config, cli, &dbx, &mut redis).await;
             if !sync_result.is_healthy {
                 sleep(Duration::from_millis(MESSENGER_WORKER_LONG_SLEEP_MS))
                     .await;
@@ -352,37 +342,8 @@ async fn run_new_worker(
     result
 }
 
-async fn build_receive_worker_resources(
-    mode: Mode,
-    config: &Config,
-    dbx: &DatabaseConnection,
-) -> anyhow::Result<ReceiveWorkerResources> {
-    let settlement_paths = config.settlement_paths().c(h!())?;
-    let settlements = Arc::new(RwLock::new(
-        crate::location::load_settlements_data_config(settlement_paths, mode)
-            .c(h!())?,
-    ));
-    crate::location::aor_config::init_aor_location_config(
-        dbx,
-        settlements.clone(),
-    )
-    .await
-    .c(h!())?;
-    let rq = reqwest::Client::builder()
-        .timeout(core::time::Duration::from_secs(crate::config::RQ_TIMEOUT))
-        .build()
-        .c(h!())?;
-    let s3 = mk_s3(config).c(h!())?;
-    Ok(ReceiveWorkerResources {
-        settlements,
-        rq,
-        s3,
-    })
-}
-
 async fn sync_client_once(
     config: &Config,
-    resources: &ReceiveWorkerResources,
     cli: EchoAccountF1,
     dbx: &DatabaseConnection,
     redis: &mut redis::aio::ConnectionManager,
@@ -419,8 +380,6 @@ async fn sync_client_once(
         BTreeMap::<String, NaiveDateTime>::new();
     let num_synced_inbox_messages = receive_thread(
         config,
-        resources,
-        redis,
         &client_name,
         &mut client_groups_sync_ts_map,
         dbx,
@@ -635,8 +594,6 @@ async fn is_datasource_offline(dbx: &DatabaseConnection, id: i64) -> bool {
 
 async fn receive_thread(
     config: &Config,
-    resources: &ReceiveWorkerResources,
-    redis: &mut redis::aio::ConnectionManager,
     client_name: &str,
     client_groups_sync_ts_map: &mut BTreeMap<String, NaiveDateTime>,
     dbx: &DatabaseConnection,
@@ -673,10 +630,9 @@ async fn receive_thread(
         .await
         .c(h!())?;
     txn.commit().await.c(h!())?;
-    let items_synced =
-        sync_inbox(config, resources, redis, Utc::now(), dbx, client_name)
-            .await
-            .c(h!())?;
+    let items_synced = sync_inbox(config, Utc::now(), dbx, client_name)
+        .await
+        .c(h!())?;
 
     let mut model = datasource.into_active_model();
     model.last_sync_at = Set(Some(Utc::now().naive_utc()));
@@ -720,8 +676,6 @@ fn sources_eq(
 
 async fn sync_inbox(
     config: &Config,
-    resources: &ReceiveWorkerResources,
-    redis: &mut redis::aio::ConnectionManager,
     inbox_sync_at: DateTime<Utc>,
     db: &DatabaseConnection,
     client_name: &str,
@@ -738,18 +692,7 @@ async fn sync_inbox(
         echo_im::list_updates_since(client_name, time.naive_utc(), &txn)
             .await
             .c(h!())?;
-    let mut changed_inbox_item_ids = vec![];
-    apply_inbox_updates(
-        config,
-        resources,
-        redis,
-        datasource.id,
-        &inbox_updates,
-        &txn,
-        &mut changed_inbox_item_ids,
-    )
-    .await
-    .c(h!())?;
+    let inbox_updates = coalesce_latest_inbox_states(inbox_updates);
     let inbox_messages =
         echo_im::list_inbox_since(client_name, time.naive_utc(), &txn)
             .await
@@ -805,35 +748,42 @@ async fn sync_inbox(
     }
     let senders = inbox_messages
         .iter()
+        .chain(inbox_updates.iter().filter(|message| !message.deleted))
         .flat_map(|m| m.sender.clone())
         .map(|s| (s.uuid.clone(), s.clone()))
         .collect::<BTreeMap<_, _>>();
 
-    let items = inbox_messages
-        .into_iter()
-        .map(|m| (m, datasource.id))
-        .collect_vec();
-    let inbox_num = items.len();
+    let synced_item_count = inbox_messages.len() + inbox_updates.len();
     let mut ids = vec![];
-    for (item, datasource_id) in items {
+    for item in &inbox_messages {
         ids.push(item.internal_id);
-        write_to_signal_message_queue(item, datasource_id, &txn)
-            .await
-            .c(h!())?;
+        upsert_signal_message_queue_snapshot(
+            item,
+            datasource.id,
+            datasource.echo_client_lock_id,
+            &txn,
+        )
+        .await
+        .c(h!())?;
+    }
+    for update in &inbox_updates {
+        upsert_signal_message_queue_snapshot(
+            update,
+            datasource.id,
+            datasource.echo_client_lock_id,
+            &txn,
+        )
+        .await
+        .c(h!())?;
     }
     echo_im::mark_inbox_as_seen(client_name, ids, &txn)
         .await
         .c(h!())?;
     txn.commit().await.c(h!())?;
-    if let Err(err) =
-        crate::inbox::fanout_inbox_changes(redis, changed_inbox_item_ids).await
-    {
-        error!("failed to fanout restored inbox changes: {:?}", err);
-    }
 
     notify_private_messages(config, client_name, private_message_bodies).await;
     sync_senders(db, senders).await.c(h!())?;
-    Ok(inbox_num)
+    Ok(synced_item_count)
 }
 
 async fn notify_private_messages(
@@ -869,33 +819,134 @@ async fn notify_private_messages(
     }
 }
 
-async fn write_to_signal_message_queue(
-    item: echo_im::types::MessageF1,
+fn coalesce_latest_inbox_states(
+    updates: Vec<echo_im::types::MessageF1>,
+) -> Vec<echo_im::types::MessageF1> {
+    let mut latest = HashMap::new();
+    let mut order = vec![];
+    for update in updates {
+        let internal_id = update.internal_id;
+        if latest.insert(internal_id, update).is_some() {
+            order.retain(|ordered_internal_id| {
+                *ordered_internal_id != internal_id
+            });
+        }
+        order.push(internal_id);
+    }
+    order
+        .into_iter()
+        .filter_map(|internal_id| latest.remove(&internal_id))
+        .collect()
+}
+
+async fn upsert_signal_message_queue_snapshot(
+    item: &echo_im::types::MessageF1,
     datasource_id: i64,
+    echo_client_lock_id: Option<i64>,
     txn: &DatabaseTransaction,
 ) -> anyhow::Result<()> {
-    let attachments = item.attachments.clone();
+    let effective_attachments = effective_queue_snapshot_attachments(
+        item,
+        datasource_id,
+        echo_client_lock_id,
+        txn,
+    )
+    .await
+    .c(h!())?;
+    if let Some((existing_item, existing_attachments)) =
+        load_signal_message_queue_snapshot(txn, datasource_id, item.internal_id)
+            .await
+            .c(h!())?
+    {
+        if queue_snapshot_matches(
+            &existing_item,
+            &existing_attachments,
+            item,
+            &effective_attachments,
+        ) {
+            trace!(
+                "skipped unchanged inbox snapshot: queue_id={} datasource_id={} inbox_message_id={}",
+                existing_item.id,
+                datasource_id,
+                item.internal_id
+            );
+            return Ok(());
+        }
+    }
+
     let signal_message_queue_item = signal_message_queue::ActiveModel {
         id: NotSet,
         datasource_id: Set(datasource_id),
         internal_id: Set(item.internal_id as i64),
-        external_id: Set(item.id),
+        external_id: Set(item.id.clone()),
         body: Set(item.text.clone()),
-        sender_name: Set(item.sender.clone().and_then(|x| x.name)),
+        sender_name: Set(item.sender.as_ref().and_then(|x| x.name.clone())),
         sender_id: Set(item
             .sender
-            .clone()
-            .map(|x| x.uuid)
+            .as_ref()
+            .map(|x| x.uuid.clone())
             .map(|id| clear_messenger_login_string(&id))),
-        sender_phone_number: Set(item.sender.and_then(|x| x.phone_number)),
+        sender_phone_number: Set(item
+            .sender
+            .as_ref()
+            .and_then(|x| x.phone_number.clone())),
         group_id: Set(item.group_id.clone()),
         timestamp: Set(item.timestamp),
         created_at: NotSet,
+        deleted: Set(item.deleted),
+    };
+    signal_message_queue::Entity::insert(signal_message_queue_item)
+        .on_conflict(
+            sea_query::OnConflict::columns([
+                signal_message_queue::Column::DatasourceId,
+                signal_message_queue::Column::InternalId,
+            ])
+            .update_columns([
+                signal_message_queue::Column::ExternalId,
+                signal_message_queue::Column::Body,
+                signal_message_queue::Column::SenderName,
+                signal_message_queue::Column::SenderId,
+                signal_message_queue::Column::SenderPhoneNumber,
+                signal_message_queue::Column::GroupId,
+                signal_message_queue::Column::Timestamp,
+                signal_message_queue::Column::CreatedAt,
+                signal_message_queue::Column::Deleted,
+            ])
+            .to_owned(),
+        )
+        .exec(txn)
+        .await
+        .c(h!())?;
+
+    let signal_message_queue_item = signal_message_queue::Entity::find()
+        .filter(signal_message_queue::Column::DatasourceId.eq(datasource_id))
+        .filter(
+            signal_message_queue::Column::InternalId
+                .eq(item.internal_id as i64),
+        )
+        .one(txn)
+        .await
+        .c(h!())?
+        .c(h!())?;
+
+    signal_message_queue_attachment::Entity::delete_many()
+        .filter(
+            signal_message_queue_attachment::Column::MessageId
+                .eq(signal_message_queue_item.id),
+        )
+        .exec(txn)
+        .await
+        .c(h!())?;
+
+    if item.deleted {
+        info!(
+            "queued inbox tombstone: queue_id={} datasource_id={} inbox_message_id={}",
+            signal_message_queue_item.id, datasource_id, item.internal_id
+        );
+        return Ok(());
     }
-    .insert(txn)
-    .await
-    .c(h!())?;
-    for attachment in &attachments {
+
+    for attachment in &effective_attachments {
         signal_message_queue_attachment::ActiveModel {
             id: NotSet,
             message_id: Set(signal_message_queue_item.id),
@@ -907,1020 +958,148 @@ async fn write_to_signal_message_queue(
         .await
         .c(h!())?;
     }
-    let attachment_paths: Vec<_> =
-        item.attachments.iter().map(|a| a.path.clone()).collect();
+    let attachment_paths: Vec<_> = effective_attachments
+        .iter()
+        .map(|a| a.path.clone())
+        .collect();
     info!(
-        "enqueued message to signal queue: queue_id={} datasource_id={} attachments_count={} attachment_paths={:?}",
+        "queued inbox snapshot: queue_id={} datasource_id={} inbox_message_id={} attachments_count={} attachment_paths={:?}",
         signal_message_queue_item.id,
         datasource_id,
+        item.internal_id,
         attachment_paths.len(),
         attachment_paths
     );
     Ok(())
 }
 
-async fn apply_inbox_updates(
-    config: &Config,
-    resources: &ReceiveWorkerResources,
-    redis: &mut redis::aio::ConnectionManager,
+async fn effective_queue_snapshot_attachments(
+    item: &echo_im::types::MessageF1,
     datasource_id: i64,
-    updates: &[echo_im::types::MessageF1],
+    echo_client_lock_id: Option<i64>,
     txn: &DatabaseTransaction,
-    changed_inbox_item_ids: &mut Vec<i64>,
-) -> anyhow::Result<()> {
-    for update in updates {
-        if update.deleted {
-            mark_message_deleted(
-                config,
-                resources,
-                redis,
-                datasource_id,
-                update.internal_id as i64,
-                txn,
-                changed_inbox_item_ids,
-            )
-            .await
-            .c(h!())?;
-        }
-    }
-    Ok(())
-}
-
-async fn mark_message_deleted(
-    config: &Config,
-    resources: &ReceiveWorkerResources,
-    redis: &mut redis::aio::ConnectionManager,
-    datasource_id: i64,
-    inbox_message_id: i64,
-    txn: &DatabaseTransaction,
-    changed_inbox_item_ids: &mut Vec<i64>,
-) -> anyhow::Result<()> {
-    let queue_items = signal_message_queue::Entity::find()
-        .filter(signal_message_queue::Column::DatasourceId.eq(datasource_id))
-        .filter(signal_message_queue::Column::InternalId.eq(inbox_message_id))
-        .all(txn)
-        .await
-        .c(h!())?;
-    if !queue_items.is_empty() {
-        let queue_ids: Vec<i64> = queue_items.iter().map(|q| q.id).collect();
-        signal_message_queue_attachment::Entity::delete_many()
-            .filter(
-                signal_message_queue_attachment::Column::MessageId
-                    .is_in(queue_ids.clone()),
-            )
-            .exec(txn)
-            .await
-            .c(h!())?;
-        signal_message_queue::Entity::delete_many()
-            .filter(signal_message_queue::Column::Id.is_in(queue_ids))
-            .exec(txn)
-            .await
-            .c(h!())?;
-        info!(
-            "removed {} pending queue items for deleted inbox_message_id={}",
-            queue_items.len(),
-            inbox_message_id
-        );
-    }
-
-    let inbox_id_i32 = match i32::try_from(inbox_message_id) {
-        Ok(v) => v,
-        Err(e) => {
-            warn!(
-                "failed to convert inbox_message_id={inbox_message_id} to i32: {e}; skipping delete"
-            );
-            return Ok(());
-        }
-    };
-    let inbox_message = echo_inbox_message::Entity::find_by_id(inbox_id_i32)
-        .one(txn)
-        .await
-        .c(h!())?
-        .c(h!())?;
-    let Some(group_id) = inbox_message.group_id else {
-        // private chat, nothing to map into signal_message
-        return Ok(());
-    };
-    let Some(echo_group) = echo_group::Entity::find_by_id(group_id)
-        .one(txn)
-        .await
-        .c(h!())?
-    else {
-        warn!(
-                "no echo_group found for id={group_id} while deleting inbox_message_id={inbox_message_id}"
-            );
-        return Ok(());
-    };
-    let group_master_key = echo_group.group_id;
-    let datasource_group = datasource_group::Entity::find()
-        .filter(datasource_group::Column::DatasourceId.eq(datasource_id))
-        .filter(
-            datasource_group::Column::GroupMasterKey
-                .eq(group_master_key.clone()),
-        )
-        .one(txn)
-        .await
-        .c(h!())?;
-    let Some(datasource_group_id) = datasource_group.map(|g| g.id) else {
-        warn!(
-            "no datasource_group found for datasource_id={datasource_id} group_master_key={group_master_key}"
-        );
-        return Ok(());
-    };
-    let messages = load_active_messages_for_deleted_inbox(
-        datasource_group_id,
-        inbox_message_id,
-        &inbox_message,
-        txn,
-    )
-    .await
-    .c(h!())?;
-    if messages.is_empty() {
-        if queue_items.is_empty() {
-            warn!(
-                "no signal_message found to delete: inbox_message_id={inbox_message_id} datasource_id={datasource_id}"
-            );
-        }
-        return Ok(());
-    }
-    let canonical_deleted_message = messages
-        .iter()
-        .find(|message| message.echo_inbox_message_id == Some(inbox_message_id))
-        .or_else(|| messages.iter().min_by_key(|message| message.created_at))
-        .cloned()
-        .c(h!())?;
-    let deleted_signal_messages = messages.clone();
-    for message in messages {
-        let mut message_am = message.into_active_model();
-        message_am.deleted = Set(true);
-        message_am.update(txn).await.c(h!())?;
-    }
-    changed_inbox_item_ids.extend(
-        promote_oldest_deleted_original_duplicate(
-            config,
-            resources,
-            redis,
-            txn,
-            &inbox_message,
-            &canonical_deleted_message,
-            &deleted_signal_messages,
-            datasource_group_id,
-            &group_master_key,
-        )
-        .await
-        .c(h!())?,
-    );
-    Ok(())
-}
-
-async fn load_active_messages_for_deleted_inbox(
-    datasource_group_id: i64,
-    inbox_message_id: i64,
-    inbox_message: &echo_inbox_message::Model,
-    txn: &DatabaseTransaction,
-) -> anyhow::Result<Vec<signal_message::Model>> {
-    let exact = signal_message::Entity::find()
-        .filter(
-            signal_message::Column::DatasourceGroupId.eq(datasource_group_id),
-        )
-        .filter(signal_message::Column::EchoInboxMessageId.eq(inbox_message_id))
-        .order_by_asc(signal_message::Column::CreatedAt)
-        .order_by_asc(signal_message::Column::Id)
-        .all(txn)
-        .await
-        .c(h!())?;
-    let active_exact = exact
-        .iter()
-        .filter(|message| !message.deleted)
-        .cloned()
-        .collect::<Vec<_>>();
-    if !active_exact.is_empty() {
-        return Ok(active_exact);
-    }
-    if !exact.is_empty() && inbox_message.duplicate_of.is_none() {
+) -> anyhow::Result<Vec<echo_im::types::MessageAttachmentF1>> {
+    if item.deleted {
         return Ok(vec![]);
     }
-
-    signal_message::Entity::find()
-        .filter(
-            signal_message::Column::DatasourceGroupId.eq(datasource_group_id),
-        )
-        .filter(signal_message::Column::Timestamp.eq(inbox_message.timestamp))
-        .filter(signal_message::Column::Deleted.eq(false))
-        .filter(
-            signal_message::Column::Body.eq(Some(inbox_message.body.clone())),
-        )
-        .order_by_asc(signal_message::Column::CreatedAt)
-        .order_by_asc(signal_message::Column::Id)
-        .all(txn)
-        .await
-        .c(h!())
-}
-
-async fn promote_oldest_deleted_original_duplicate(
-    config: &Config,
-    resources: &ReceiveWorkerResources,
-    redis: &mut redis::aio::ConnectionManager,
-    txn: &DatabaseTransaction,
-    deleted_inbox_message: &echo_inbox_message::Model,
-    deleted_signal_message: &signal_message::Model,
-    deleted_signal_messages: &[signal_message::Model],
-    datasource_group_id: i64,
-    group_master_key: &str,
-) -> anyhow::Result<Vec<i64>> {
-    let duplicate_root_id = deleted_inbox_message
-        .duplicate_of
-        .unwrap_or(deleted_inbox_message.id);
-    let duplicate_inbox_messages = echo_inbox_message::Entity::find()
-        .filter(echo_inbox_message::Column::DuplicateOf.eq(duplicate_root_id))
-        .filter(echo_inbox_message::Column::Id.ne(deleted_inbox_message.id))
-        .filter(echo_inbox_message::Column::Deleted.eq(false))
-        .filter(
-            echo_inbox_message::Column::GroupId
-                .eq(deleted_inbox_message.group_id),
-        )
-        .order_by_asc(echo_inbox_message::Column::CreatedAt)
-        .order_by_asc(echo_inbox_message::Column::Id)
-        .all(txn)
-        .await
-        .c(h!())?;
-
-    for duplicate_inbox_message in duplicate_inbox_messages {
-        let duplicate_signal_message =
-            load_promotable_duplicate_signal_message(
-                txn,
-                duplicate_inbox_message.id,
-                datasource_group_id,
-                group_master_key,
-            )
-            .await
-            .c(h!())?;
-        let Some(duplicate_signal_message) = duplicate_signal_message else {
-            continue;
-        };
-        if !duplicate_signal_message.deleted {
-            return Ok(vec![]);
-        }
-
-        let echo_attachments =
-            load_echo_attachments(txn, duplicate_inbox_message.id)
-                .await
-                .c(h!())?;
-        let body = duplicate_signal_message.body.clone().unwrap_or_default();
-        let is_media_only = body.trim().is_empty();
-        if is_media_only
-            && !can_restore_media_only_duplicate(config, &echo_attachments)
-                .await
-        {
-            warn!(
-                "skipping media-only duplicate restore: deleted_inbox_id={} duplicate_inbox_id={} duplicate_signal_message_id={}",
-                deleted_inbox_message.id,
-                duplicate_inbox_message.id,
-                duplicate_signal_message.id,
-            );
-            continue;
-        }
-
-        if is_media_only
-            && !store_promoted_duplicate_media(
-                config,
-                &resources.s3,
-                txn,
-                duplicate_signal_message.id,
-                &echo_attachments,
-            )
+    if !item.attachments.is_empty() {
+        return Ok(item.attachments.clone());
+    }
+    let Some(echo_client_lock_id) = echo_client_lock_id else {
+        return Ok(vec![]);
+    };
+    let Some(echo_client_lock) =
+        echo_client_lock::Entity::find_by_id(echo_client_lock_id as i32)
+            .one(txn)
             .await
             .c(h!())?
-        {
-            continue;
-        }
-
-        let promoted_signal_message = restore_duplicate_signal_message(
-            config,
-            txn,
-            duplicate_signal_message,
-            group_master_key,
-        )
-        .await
-        .c(h!())?;
-
-        if !is_media_only
-            && !echo_attachments.is_empty()
-            && !store_promoted_duplicate_media(
-                config,
-                &resources.s3,
-                txn,
-                promoted_signal_message.id,
-                &echo_attachments,
-            )
-            .await
-            .c(h!())?
-        {
-            warn!(
-                "restored text duplicate without media: deleted_inbox_id={} duplicate_inbox_id={} duplicate_signal_message_id={}",
-                deleted_inbox_message.id,
-                duplicate_inbox_message.id,
-                promoted_signal_message.id,
-            );
-        }
-
-        let changed_inbox_item_ids = ensure_promoted_inbox_item(
-            config,
-            resources,
-            txn,
-            promoted_signal_message.id,
-        )
-        .await
-        .c(h!())?;
-        let promoted_signal_message_ids = if changed_inbox_item_ids.is_empty() {
-            vec![promoted_signal_message.id]
-        } else {
-            changed_inbox_item_ids.clone()
-        };
-        copy_deleted_messages_annotations(
-            txn,
-            deleted_signal_messages,
-            &promoted_signal_message_ids,
-        )
-        .await
-        .c(h!())?;
-        resolve_duplicate_missing_message(txn, duplicate_inbox_message.id)
-            .await
-            .c(h!())?;
-        let dedupe_signal_message_id = promoted_dedupe_signal_message_id(
-            txn,
-            promoted_signal_message.id,
-            &changed_inbox_item_ids,
-        )
-        .await
-        .c(h!())?;
-        set_signal_message_dedupe_key(
-            redis,
-            &promoted_signal_message.body.clone().unwrap_or_default(),
-            promoted_signal_message.attachments_hash.as_deref(),
-            dedupe_signal_message_id,
-        )
-        .await
-        .c(h!())?;
-        return Ok(changed_inbox_item_ids);
-    }
-
-    clear_signal_message_dedupe_key(
-        redis,
-        &deleted_signal_message.body.clone().unwrap_or_default(),
-        deleted_signal_message.attachments_hash.as_deref(),
-        deleted_signal_message.id,
-    )
-    .await
-    .c(h!())?;
-    Ok(vec![])
-}
-
-async fn load_promotable_duplicate_signal_message(
-    txn: &DatabaseTransaction,
-    duplicate_inbox_id: i32,
-    datasource_group_id: i64,
-    group_master_key: &str,
-) -> anyhow::Result<Option<signal_message::Model>> {
-    let messages = signal_message::Entity::find()
-        .find_with_related(signal_message_group::Entity)
+    else {
+        return Ok(vec![]);
+    };
+    let attachments = echo_attachment::Entity::find()
+        .filter(echo_attachment::Column::MessageId.eq(item.internal_id))
         .filter(
-            signal_message::Column::EchoInboxMessageId
-                .eq(i64::from(duplicate_inbox_id)),
+            echo_attachment::Column::AccountId.eq(echo_client_lock.account_id),
         )
-        .order_by_asc(signal_message::Column::CreatedAt)
-        .order_by_asc(signal_message::Column::Id)
+        .order_by_asc(echo_attachment::Column::Id)
         .all(txn)
         .await
-        .c(h!())?;
-    let mut visible_message = None;
-    let mut fallback_message = None;
-    for (message, groups) in messages {
-        if message.datasource_group_id == Some(datasource_group_id) {
-            return Ok(Some(message));
-        }
-        let is_visible = groups.iter().any(|group| {
-            group.datasource_group_id == Some(datasource_group_id)
-                || group.group_master_key.as_deref() == Some(group_master_key)
-        });
-        if visible_message.is_none() && is_visible {
-            visible_message = Some(message.clone());
-        }
-        if fallback_message.is_none() {
-            fallback_message = Some(message);
-        }
-    }
-    Ok(visible_message.or(fallback_message))
-}
-
-async fn load_echo_attachments(
-    txn: &DatabaseTransaction,
-    inbox_message_id: i32,
-) -> anyhow::Result<Vec<echo_attachment::Model>> {
-    echo_attachment::Entity::find()
-        .filter(echo_attachment::Column::MessageId.eq(inbox_message_id))
-        .all(txn)
-        .await
-        .c(h!())
-}
-
-async fn can_restore_media_only_duplicate(
-    config: &Config,
-    echo_attachments: &[echo_attachment::Model],
-) -> bool {
-    if echo_attachments.is_empty() || config.s3_config.is_none() {
-        return false;
-    }
-    for attachment in echo_attachments {
-        if tokio::fs::metadata(&attachment.path).await.is_err() {
-            return false;
-        }
-    }
-    true
-}
-
-async fn restore_duplicate_signal_message(
-    config: &Config,
-    txn: &DatabaseTransaction,
-    signal_message: signal_message::Model,
-    group_master_key: &str,
-) -> anyhow::Result<signal_message::Model> {
-    let mut signal_message = signal_message.into_active_model();
-    signal_message.deleted = Set(false);
-    let signal_message = signal_message.update(txn).await.c(h!())?;
-    let signal_message = crate::messenger::id::update_message_with_uid(
-        txn,
-        config,
-        signal_message,
-    )
-    .await
-    .c(h!())?;
-    ensure_promoted_signal_message_group(
-        txn,
-        &signal_message,
-        group_master_key,
-    )
-    .await
-    .c(h!())?;
-    Ok(signal_message)
-}
-
-async fn ensure_promoted_signal_message_group(
-    txn: &DatabaseTransaction,
-    signal_message: &signal_message::Model,
-    group_master_key: &str,
-) -> anyhow::Result<()> {
-    let existing = signal_message_group::Entity::find()
-        .filter(
-            signal_message_group::Column::SignalMessageId.eq(signal_message.id),
-        )
-        .filter(
-            signal_message_group::Column::GroupMasterKey
-                .eq(Some(group_master_key.to_string())),
-        )
-        .one(txn)
-        .await
-        .c(h!())?;
-
-    match existing {
-        Some(existing) => {
-            let mut existing = existing.into_active_model();
-            existing.sender = Set(signal_message.sender.clone());
-            existing.message_uid = Set(signal_message.message_uid.clone());
-            existing.datasource_group_id =
-                Set(signal_message.datasource_group_id);
-            existing.update(txn).await.c(h!())?;
-        }
-        None => {
-            signal_message_group::ActiveModel {
-                id: NotSet,
-                signal_message_id: Set(signal_message.id),
-                group_master_key: Set(Some(group_master_key.to_string())),
-                sender: Set(signal_message.sender.clone()),
-                message_uid: Set(signal_message.message_uid.clone()),
-                datasource_group_id: Set(signal_message.datasource_group_id),
-                created_at: Set(signal_message.created_at),
-            }
-            .insert(txn)
-            .await
-            .c(h!())?;
-        }
-    }
-    Ok(())
-}
-
-async fn store_promoted_duplicate_media(
-    config: &Config,
-    s3: &Option<opendal::Operator>,
-    txn: &DatabaseTransaction,
-    signal_message_id: i64,
-    echo_attachments: &[echo_attachment::Model],
-) -> anyhow::Result<bool> {
-    if echo_attachments.is_empty() {
-        return Ok(true);
-    }
-    cleanup_promoted_duplicate_media_rows(txn, signal_message_id)
-        .await
-        .c(h!())?;
-    let upload_inputs = echo_attachments
-        .iter()
-        .map(|attachment| crate::messenger::media::MediaUploadInput {
-            path: attachment.path.clone(),
-            name: attachment.name.clone(),
-            content_type: None,
+        .c(h!())?
+        .into_iter()
+        .map(|attachment| echo_im::types::MessageAttachmentF1 {
+            path: attachment.path,
+            name: attachment.name,
         })
-        .collect_vec();
-    match crate::messenger::media::store_media_attachments(
-        &upload_inputs,
-        signal_message_id,
-        config,
-        s3,
-        txn,
-        false,
-    )
-    .await
-    {
-        Ok(_) => Ok(true),
-        Err(err) => {
-            cleanup_promoted_duplicate_media_rows(txn, signal_message_id)
-                .await
-                .c(h!())?;
-            warn!(
-                "failed to store promoted duplicate media for signal_message_id={signal_message_id}: {:?}",
-                err
-            );
-            Ok(false)
-        }
-    }
-}
-
-async fn cleanup_promoted_duplicate_media_rows(
-    txn: &DatabaseTransaction,
-    signal_message_id: i64,
-) -> anyhow::Result<()> {
-    signal_message_media::Entity::delete_many()
-        .filter(
-            signal_message_media::Column::SignalMessageId.eq(signal_message_id),
-        )
-        .exec(txn)
-        .await
-        .c(h!())?;
-    Ok(())
-}
-
-async fn ensure_promoted_inbox_item(
-    config: &Config,
-    resources: &ReceiveWorkerResources,
-    txn: &DatabaseTransaction,
-    signal_message_id: i64,
-) -> anyhow::Result<Vec<i64>> {
-    if sigint_inbox_item::Entity::find_by_id(signal_message_id)
-        .one(txn)
-        .await
-        .c(h!())?
-        .is_some()
-    {
-        return Ok(vec![signal_message_id]);
-    }
-    let changed_inbox_item_ids =
-        crate::rer_importer::bgworker::process_message_to_inbox_nofail(
-            resources.settlements.clone(),
-            txn,
-            &resources.rq,
-            config,
-            signal_message_id,
-            None,
-        )
-        .await;
-    index_promoted_inbox_items(txn, signal_message_id, &changed_inbox_item_ids)
-        .await
-        .c(h!())?;
-    Ok(changed_inbox_item_ids)
-}
-
-async fn index_promoted_inbox_items(
-    txn: &DatabaseTransaction,
-    signal_message_id: i64,
-    changed_inbox_item_ids: &[i64],
-) -> anyhow::Result<()> {
-    if changed_inbox_item_ids.is_empty() {
-        crate::sigint::worker::incoming_message_after_insert(
-            txn,
-            signal_message_id,
-        )
-        .await
-        .c(h!())?;
-        return Ok(());
-    }
-    for changed_inbox_item_id in changed_inbox_item_ids {
-        crate::sigint::worker::incoming_message_after_insert(
-            txn,
-            *changed_inbox_item_id,
-        )
-        .await
-        .c(h!())?;
-    }
-    Ok(())
-}
-
-async fn promoted_dedupe_signal_message_id(
-    txn: &DatabaseTransaction,
-    promoted_signal_message_id: i64,
-    changed_inbox_item_ids: &[i64],
-) -> anyhow::Result<i64> {
-    if changed_inbox_item_ids.is_empty() {
-        return Ok(promoted_signal_message_id);
-    }
-    Ok(signal_message::Entity::find()
-        .filter(
-            signal_message::Column::Id.is_in(changed_inbox_item_ids.to_vec()),
-        )
-        .filter(signal_message::Column::Deleted.eq(false))
-        .order_by_asc(signal_message::Column::CreatedAt)
-        .order_by_asc(signal_message::Column::Id)
-        .one(txn)
-        .await
-        .c(h!())?
-        .map(|message| message.id)
-        .unwrap_or(promoted_signal_message_id))
-}
-
-async fn copy_deleted_messages_annotations(
-    txn: &DatabaseTransaction,
-    deleted_signal_messages: &[signal_message::Model],
-    promoted_signal_message_ids: &[i64],
-) -> anyhow::Result<()> {
-    if deleted_signal_messages.len() <= 1
-        || promoted_signal_message_ids.len() <= 1
-    {
-        for deleted_signal_message in deleted_signal_messages {
-            copy_deleted_message_annotations(
-                txn,
-                deleted_signal_message.id,
-                promoted_signal_message_ids,
-            )
-            .await
-            .c(h!())?;
-        }
-        return Ok(());
-    }
-
-    let promoted_signal_messages = signal_message::Entity::find()
-        .filter(
-            signal_message::Column::Id
-                .is_in(promoted_signal_message_ids.to_vec()),
-        )
-        .order_by_asc(signal_message::Column::CreatedAt)
-        .order_by_asc(signal_message::Column::Id)
-        .all(txn)
-        .await
-        .c(h!())?;
-    if deleted_signal_messages.len() == promoted_signal_messages.len() {
-        for (deleted_signal_message, promoted_signal_message) in
-            deleted_signal_messages
-                .iter()
-                .zip(promoted_signal_messages.iter())
-        {
-            copy_deleted_message_annotations(
-                txn,
-                deleted_signal_message.id,
-                &[promoted_signal_message.id],
-            )
-            .await
-            .c(h!())?;
-        }
-        return Ok(());
-    }
-
-    for deleted_signal_message in deleted_signal_messages {
-        let matching_target_ids = promoted_signal_messages
-            .iter()
-            .filter(|promoted_signal_message| {
-                promoted_signal_message.body == deleted_signal_message.body
-            })
-            .map(|promoted_signal_message| promoted_signal_message.id)
-            .collect::<Vec<_>>();
-        let target_ids = if matching_target_ids.is_empty() {
-            promoted_signal_message_ids
-        } else {
-            matching_target_ids.as_slice()
-        };
-        copy_deleted_message_annotations(
-            txn,
-            deleted_signal_message.id,
-            target_ids,
-        )
-        .await
-        .c(h!())?;
-    }
-    Ok(())
-}
-
-async fn copy_deleted_message_annotations(
-    txn: &DatabaseTransaction,
-    deleted_signal_message_id: i64,
-    promoted_signal_message_ids: &[i64],
-) -> anyhow::Result<()> {
-    for promoted_signal_message_id in promoted_signal_message_ids {
-        copy_deleted_message_comments(
-            txn,
-            deleted_signal_message_id,
-            *promoted_signal_message_id,
-        )
-        .await
-        .c(h!())?;
-        copy_deleted_message_bookmarks(
-            txn,
-            deleted_signal_message_id,
-            *promoted_signal_message_id,
-        )
-        .await
-        .c(h!())?;
-        copy_deleted_message_important_marks(
-            txn,
-            deleted_signal_message_id,
-            *promoted_signal_message_id,
-        )
-        .await
-        .c(h!())?;
-        copy_deleted_message_tags(
-            txn,
-            deleted_signal_message_id,
-            *promoted_signal_message_id,
-        )
-        .await
-        .c(h!())?;
-    }
-    Ok(())
-}
-
-async fn copy_deleted_message_comments(
-    txn: &DatabaseTransaction,
-    deleted_signal_message_id: i64,
-    promoted_signal_message_id: i64,
-) -> anyhow::Result<()> {
-    let comments = sigint_comment::Entity::find()
-        .filter(
-            sigint_comment::Column::SignalMessageId
-                .eq(deleted_signal_message_id),
-        )
-        .all(txn)
-        .await
-        .c(h!())?;
-    let existing = sigint_comment::Entity::find()
-        .filter(
-            sigint_comment::Column::SignalMessageId
-                .eq(promoted_signal_message_id),
-        )
-        .all(txn)
-        .await
-        .c(h!())?;
-    for comment in comments {
-        let exists = existing.iter().any(|existing| {
-            existing.login == comment.login
-                && existing.comment == comment.comment
-                && existing.sigint_post_id == comment.sigint_post_id
-        });
-        if exists {
-            continue;
-        }
-        sigint_comment::ActiveModel {
-            id: NotSet,
-            login: Set(comment.login),
-            signal_message_id: Set(promoted_signal_message_id),
-            comment: Set(comment.comment),
-            created_at: Set(comment.created_at),
-            sigint_post_id: Set(comment.sigint_post_id),
-        }
-        .insert(txn)
-        .await
-        .c(h!())?;
-    }
-    Ok(())
-}
-
-async fn copy_deleted_message_bookmarks(
-    txn: &DatabaseTransaction,
-    deleted_signal_message_id: i64,
-    promoted_signal_message_id: i64,
-) -> anyhow::Result<()> {
-    let bookmarks = sigint_bookmark::Entity::find()
-        .filter(
-            sigint_bookmark::Column::SignalMessageId
-                .eq(deleted_signal_message_id),
-        )
-        .all(txn)
-        .await
-        .c(h!())?;
-    let existing_user_ids = sigint_bookmark::Entity::find()
-        .select_only()
-        .column(sigint_bookmark::Column::UserId)
-        .filter(
-            sigint_bookmark::Column::SignalMessageId
-                .eq(promoted_signal_message_id),
-        )
-        .into_tuple::<String>()
-        .all(txn)
-        .await
-        .c(h!())?
-        .into_iter()
-        .collect::<HashSet<_>>();
-    for bookmark in bookmarks {
-        if existing_user_ids.contains(&bookmark.user_id) {
-            continue;
-        }
-        sigint_bookmark::ActiveModel {
-            id: NotSet,
-            user_id: Set(bookmark.user_id),
-            signal_message_id: Set(promoted_signal_message_id),
-            created_at: Set(bookmark.created_at),
-            deleted: Set(bookmark.deleted),
-        }
-        .insert(txn)
-        .await
-        .c(h!())?;
-    }
-    Ok(())
-}
-
-async fn copy_deleted_message_important_marks(
-    txn: &DatabaseTransaction,
-    deleted_signal_message_id: i64,
-    promoted_signal_message_id: i64,
-) -> anyhow::Result<()> {
-    let marks = sigint_important::Entity::find()
-        .filter(
-            sigint_important::Column::SignalMessageId
-                .eq(deleted_signal_message_id),
-        )
-        .all(txn)
-        .await
-        .c(h!())?;
-    let existing_user_ids = sigint_important::Entity::find()
-        .select_only()
-        .column(sigint_important::Column::UserId)
-        .filter(
-            sigint_important::Column::SignalMessageId
-                .eq(promoted_signal_message_id),
-        )
-        .into_tuple::<Option<String>>()
-        .all(txn)
-        .await
-        .c(h!())?
-        .into_iter()
-        .collect::<HashSet<_>>();
-    for mark in marks {
-        if existing_user_ids.contains(&mark.user_id) {
-            continue;
-        }
-        sigint_important::ActiveModel {
-            id: NotSet,
-            user_id: Set(mark.user_id),
-            signal_message_id: Set(promoted_signal_message_id),
-            created_at: Set(mark.created_at),
-            deleted: Set(mark.deleted),
-        }
-        .insert(txn)
-        .await
-        .c(h!())?;
-    }
-    Ok(())
-}
-
-async fn copy_deleted_message_tags(
-    txn: &DatabaseTransaction,
-    deleted_signal_message_id: i64,
-    promoted_signal_message_id: i64,
-) -> anyhow::Result<()> {
-    if sigint_inbox_item::Entity::find_by_id(promoted_signal_message_id)
-        .one(txn)
-        .await
-        .c(h!())?
-        .is_none()
-    {
-        warn!(
-            "skipping promoted tag copy without sigint_inbox_item: deleted_signal_message_id={} promoted_signal_message_id={}",
-            deleted_signal_message_id,
-            promoted_signal_message_id,
+        .collect::<Vec<_>>();
+    if !attachments.is_empty() {
+        info!(
+            "using echo attachment fallback for queued inbox snapshot: datasource_id={} echo_inbox_message_id={} attachments_count={}",
+            datasource_id,
+            item.internal_id,
+            attachments.len()
         );
-        return Ok(());
     }
-    let tags = sigint_inbox_item_tag::Entity::find()
-        .filter(
-            sigint_inbox_item_tag::Column::SigintInboxItemId
-                .eq(deleted_signal_message_id),
-        )
-        .filter(sigint_inbox_item_tag::Column::Model.is_null())
-        .all(txn)
-        .await
-        .c(h!())?;
-    let existing = sigint_inbox_item_tag::Entity::find()
-        .filter(
-            sigint_inbox_item_tag::Column::SigintInboxItemId
-                .eq(promoted_signal_message_id),
-        )
-        .all(txn)
-        .await
-        .c(h!())?;
-    for tag in tags {
-        let exists = existing.iter().any(|existing| {
-            existing.tag_id == tag.tag_id
-                && existing.login == tag.login
-                && existing.model == tag.model
-        });
-        if exists {
-            continue;
-        }
-        sigint_inbox_item_tag::ActiveModel {
-            id: NotSet,
-            sigint_inbox_item_id: Set(promoted_signal_message_id),
-            tag_id: Set(tag.tag_id),
-            confidence: Set(tag.confidence),
-            login: Set(tag.login),
-            model: Set(tag.model),
-        }
-        .insert(txn)
-        .await
-        .c(h!())?;
-    }
-    Ok(())
+    Ok(attachments)
 }
 
-async fn resolve_duplicate_missing_message(
+async fn load_signal_message_queue_snapshot(
     txn: &DatabaseTransaction,
-    duplicate_inbox_id: i32,
-) -> anyhow::Result<()> {
-    let Some(missing_message) = echo_missing_message::Entity::find()
-        .filter(echo_missing_message::Column::MessageId.eq(duplicate_inbox_id))
-        .filter(
-            echo_missing_message::Column::Status
-                .eq(EchoMissingMessageStatus::Duplicate),
-        )
+    datasource_id: i64,
+    internal_id: i32,
+) -> anyhow::Result<
+    Option<(
+        signal_message_queue::Model,
+        Vec<signal_message_queue_attachment::Model>,
+    )>,
+> {
+    let Some(queue_item) = signal_message_queue::Entity::find()
+        .filter(signal_message_queue::Column::DatasourceId.eq(datasource_id))
+        .filter(signal_message_queue::Column::InternalId.eq(internal_id as i64))
         .one(txn)
         .await
         .c(h!())?
     else {
-        return Ok(());
+        return Ok(None);
     };
-    crate::messenger::missing_message::mark_missing_message_resolved(
-        txn,
-        missing_message,
-    )
-    .await
-    .c(h!())?;
-    Ok(())
-}
-
-async fn clear_signal_message_dedupe_key(
-    redis: &mut redis::aio::ConnectionManager,
-    body: &str,
-    attachments_hash: Option<&str>,
-    signal_message_id: i64,
-) -> anyhow::Result<()> {
-    let key =
-        crate::messenger::dedupe::redis_key_for_body_with_attachments_hash(
-            body,
-            attachments_hash,
-        );
-    redis::cmd("EVAL")
-        .arg(
-            r#"
-if redis.call("GET", KEYS[1]) == ARGV[1] then
-    redis.call("DEL", KEYS[1])
-    return 1
-end
-return 0
-"#,
+    let attachments = signal_message_queue_attachment::Entity::find()
+        .filter(
+            signal_message_queue_attachment::Column::MessageId
+                .eq(queue_item.id),
         )
-        .arg(1)
-        .arg(key)
-        .arg(signal_message_id.to_string())
-        .query_async::<i32>(redis)
+        .order_by_asc(signal_message_queue_attachment::Column::Id)
+        .all(txn)
         .await
         .c(h!())?;
-    Ok(())
+    Ok(Some((queue_item, attachments)))
 }
 
-async fn set_signal_message_dedupe_key(
-    redis: &mut redis::aio::ConnectionManager,
-    body: &str,
-    attachments_hash: Option<&str>,
-    signal_message_id: i64,
-) -> anyhow::Result<()> {
-    let key =
-        crate::messenger::dedupe::redis_key_for_body_with_attachments_hash(
-            body,
-            attachments_hash,
-        );
-    redis::cmd("SET")
-        .arg(key)
-        .arg(signal_message_id.to_string())
-        .arg("EX")
-        .arg(REDIS_MGS_ID_TTL)
-        .query_async::<()>(redis)
-        .await
-        .c(h!())?;
-    Ok(())
+fn queue_snapshot_matches(
+    existing_item: &signal_message_queue::Model,
+    existing_attachments: &[signal_message_queue_attachment::Model],
+    item: &echo_im::types::MessageF1,
+    effective_attachments: &[echo_im::types::MessageAttachmentF1],
+) -> bool {
+    existing_item.external_id == item.id
+        && existing_item.body == item.text
+        && existing_item.sender_name
+            == item.sender.as_ref().and_then(|sender| sender.name.clone())
+        && existing_item.sender_id
+            == item
+                .sender
+                .as_ref()
+                .map(|sender| clear_messenger_login_string(&sender.uuid))
+        && existing_item.sender_phone_number
+            == item
+                .sender
+                .as_ref()
+                .and_then(|sender| sender.phone_number.clone())
+        && existing_item.group_id == item.group_id
+        && existing_item.timestamp == item.timestamp
+        && existing_item.deleted == item.deleted
+        && queue_attachment_snapshot(existing_attachments)
+            == message_attachment_snapshot(effective_attachments)
+}
+
+fn queue_attachment_snapshot(
+    attachments: &[signal_message_queue_attachment::Model],
+) -> Vec<(String, Option<String>)> {
+    let mut snapshot = attachments
+        .iter()
+        .map(|attachment| (attachment.path.clone(), attachment.name.clone()))
+        .collect::<Vec<_>>();
+    snapshot.sort();
+    snapshot
+}
+
+fn message_attachment_snapshot(
+    attachments: &[echo_im::types::MessageAttachmentF1],
+) -> Vec<(String, Option<String>)> {
+    let mut snapshot = attachments
+        .iter()
+        .map(|attachment| (attachment.path.clone(), attachment.name.clone()))
+        .collect::<Vec<_>>();
+    snapshot.sort();
+    snapshot
 }
 
 async fn list_clients(
@@ -2067,1618 +1246,12 @@ pub fn clear_messenger_login_string(input: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::functest::tests::{
-        cleanup, mk_datasource, mk_login, mk_sigint_bookmark,
-        mk_sigint_comment, mk_sigint_important, mk_sigint_inbox_item,
-        mk_sigint_inbox_item_tag,
+    use crate::entities::sea_orm_active_enums::{
+        AccountStatus, EchoMessageSource,
     };
-
-    #[tokio::test]
-    #[serial_test::serial]
-    async fn delete_event_promotes_oldest_duplicate_and_creates_inbox_item() {
-        let env = cleanup().await.unwrap();
-        let datasource =
-            mk_datasource(&env.dbx, Default::default()).await.unwrap();
-        let echo_account = mk_test_echo_account(&env.dbx).await;
-        let echo_group =
-            mk_test_echo_group(&env.dbx, echo_account.id, "delete-dupe-group")
-                .await;
-        let datasource_group_id =
-            crate::messenger::group::ensure_datasource_group_id(
-                &env.dbx,
-                echo_group.group_id.clone(),
-                datasource.id,
-            )
-            .await
-            .unwrap();
-        let ts = Utc::now().naive_utc();
-        let original_inbox = mk_test_echo_inbox_message(
-            &env.dbx,
-            echo_account.id,
-            echo_group.id,
-            "plain delete duplicate message",
-            ts,
-            None,
-            true,
-        )
-        .await;
-        let duplicate_inbox = mk_test_echo_inbox_message(
-            &env.dbx,
-            echo_account.id,
-            echo_group.id,
-            &original_inbox.body,
-            ts + chrono::TimeDelta::seconds(1),
-            Some(original_inbox.id),
-            false,
-        )
-        .await;
-        let original_signal_message = mk_test_signal_message(
-            &env.dbx,
-            datasource_group_id,
-            &original_inbox.body,
-            ts,
-            false,
-            Some(i64::from(original_inbox.id)),
-            Some("uid-original".to_string()),
-        )
-        .await;
-        mk_test_signal_message_group(
-            &env.dbx,
-            original_signal_message.id,
-            &echo_group.group_id,
-            datasource_group_id,
-            original_signal_message.message_uid.clone(),
-        )
-        .await;
-        mk_sigint_inbox_item(
-            &env.dbx,
-            sigint_inbox_item::ActiveModel {
-                id: Set(original_signal_message.id),
-                ..Default::default()
-            },
-        )
-        .await
-        .unwrap();
-        let duplicate_signal_message = mk_test_signal_message(
-            &env.dbx,
-            datasource_group_id,
-            &original_inbox.body,
-            ts,
-            true,
-            Some(i64::from(duplicate_inbox.id)),
-            Some("duplicate-trace-test".to_string()),
-        )
-        .await;
-        mk_login(
-            &env.dbx,
-            login::ActiveModel {
-                login: Set("delete-dupe-user".to_string()),
-                ..Default::default()
-            },
-        )
-        .await
-        .unwrap();
-        mk_sigint_comment(
-            &env.dbx,
-            sigint_comment::ActiveModel {
-                login: Set("delete-dupe-user".to_string()),
-                signal_message_id: Set(original_signal_message.id),
-                comment: Set("keep comment".to_string()),
-                ..Default::default()
-            },
-        )
-        .await
-        .unwrap();
-        mk_sigint_bookmark(
-            &env.dbx,
-            sigint_bookmark::ActiveModel {
-                user_id: Set("delete-dupe-user".to_string()),
-                signal_message_id: Set(original_signal_message.id),
-                ..Default::default()
-            },
-        )
-        .await
-        .unwrap();
-        mk_sigint_important(
-            &env.dbx,
-            sigint_important::ActiveModel {
-                user_id: Set(Some("delete-dupe-user".to_string())),
-                signal_message_id: Set(original_signal_message.id),
-                ..Default::default()
-            },
-        )
-        .await
-        .unwrap();
-        let original_tag = mk_sigint_inbox_item_tag(
-            &env.dbx,
-            sigint_inbox_item_tag::ActiveModel {
-                sigint_inbox_item_id: Set(original_signal_message.id),
-                login: Set(Some("delete-dupe-user".to_string())),
-                model: Set(None),
-                confidence: Set(0.75),
-                ..Default::default()
-            },
-        )
-        .await
-        .unwrap();
-        crate::messenger::missing_message::record_duplicate_missing_message(
-            &env.dbx,
-            duplicate_inbox.id,
-        )
-        .await
-        .unwrap();
-        let resources = ReceiveWorkerResources {
-            settlements: env.settlements.clone(),
-            rq: env.rq.clone(),
-            s3: env.s3.clone(),
-        };
-        let mut redis = env.redis.clone();
-        let mut changed_inbox_item_ids = vec![];
-        let txn = env.dbx.begin().await.unwrap();
-
-        mark_message_deleted(
-            &env.config,
-            &resources,
-            &mut redis,
-            datasource.id,
-            i64::from(original_inbox.id),
-            &txn,
-            &mut changed_inbox_item_ids,
-        )
-        .await
-        .unwrap();
-        txn.commit().await.unwrap();
-
-        let original_signal_message =
-            signal_message::Entity::find_by_id(original_signal_message.id)
-                .one(&env.dbx)
-                .await
-                .unwrap()
-                .unwrap();
-        let duplicate_signal_message =
-            signal_message::Entity::find_by_id(duplicate_signal_message.id)
-                .one(&env.dbx)
-                .await
-                .unwrap()
-                .unwrap();
-        assert!(original_signal_message.deleted);
-        assert!(!duplicate_signal_message.deleted);
-        assert_ne!(
-            duplicate_signal_message.message_uid.as_deref(),
-            Some("duplicate-trace-test")
-        );
-        assert_ne!(
-            duplicate_signal_message.message_uid,
-            original_signal_message.message_uid
-        );
-        assert!(changed_inbox_item_ids.contains(&duplicate_signal_message.id));
-        assert!(sigint_inbox_item::Entity::find_by_id(
-            duplicate_signal_message.id
-        )
-        .one(&env.dbx)
-        .await
-        .unwrap()
-        .is_some());
-        let promoted_group = signal_message_group::Entity::find()
-            .filter(
-                signal_message_group::Column::SignalMessageId
-                    .eq(duplicate_signal_message.id),
-            )
-            .one(&env.dbx)
-            .await
-            .unwrap()
-            .unwrap();
-        assert_eq!(
-            promoted_group.message_uid,
-            duplicate_signal_message.message_uid
-        );
-        assert_eq!(
-            annotation_counts(&env.dbx, duplicate_signal_message.id).await,
-            (1, 1, 1)
-        );
-        assert_eq!(
-            manual_tag_count(
-                &env.dbx,
-                duplicate_signal_message.id,
-                original_tag.tag_id,
-            )
-            .await,
-            1
-        );
-        let mut repeated_changed_inbox_item_ids = vec![];
-        let txn = env.dbx.begin().await.unwrap();
-        mark_message_deleted(
-            &env.config,
-            &resources,
-            &mut redis,
-            datasource.id,
-            i64::from(original_inbox.id),
-            &txn,
-            &mut repeated_changed_inbox_item_ids,
-        )
-        .await
-        .unwrap();
-        txn.commit().await.unwrap();
-        let duplicate_signal_message =
-            signal_message::Entity::find_by_id(duplicate_signal_message.id)
-                .one(&env.dbx)
-                .await
-                .unwrap()
-                .unwrap();
-        assert!(!duplicate_signal_message.deleted);
-        assert!(repeated_changed_inbox_item_ids.is_empty());
-        let missing_message = echo_missing_message::Entity::find()
-            .filter(
-                echo_missing_message::Column::MessageId.eq(duplicate_inbox.id),
-            )
-            .one(&env.dbx)
-            .await
-            .unwrap()
-            .unwrap();
-        assert!(missing_message.is_resolved);
-        assert_eq!(missing_message.status, EchoMissingMessageStatus::Resolved);
-    }
-
-    #[tokio::test]
-    #[serial_test::serial]
-    async fn delete_event_promotes_duplicate_trace_from_other_datasource_group()
-    {
-        let env = cleanup().await.unwrap();
-        let datasource =
-            mk_datasource(&env.dbx, Default::default()).await.unwrap();
-        let duplicate_datasource =
-            mk_datasource(&env.dbx, Default::default()).await.unwrap();
-        let echo_account = mk_test_echo_account(&env.dbx).await;
-        let echo_group = mk_test_echo_group(
-            &env.dbx,
-            echo_account.id,
-            "cross-datasource-dupe-group",
-        )
-        .await;
-        let datasource_group_id =
-            crate::messenger::group::ensure_datasource_group_id(
-                &env.dbx,
-                echo_group.group_id.clone(),
-                datasource.id,
-            )
-            .await
-            .unwrap();
-        let duplicate_datasource_group_id =
-            crate::messenger::group::ensure_datasource_group_id(
-                &env.dbx,
-                echo_group.group_id.clone(),
-                duplicate_datasource.id,
-            )
-            .await
-            .unwrap();
-        assert_ne!(datasource_group_id, duplicate_datasource_group_id);
-        let ts = Utc::now().naive_utc();
-        let original_inbox = mk_test_echo_inbox_message(
-            &env.dbx,
-            echo_account.id,
-            echo_group.id,
-            "cross datasource duplicate promotion",
-            ts,
-            None,
-            true,
-        )
-        .await;
-        let duplicate_inbox = mk_test_echo_inbox_message(
-            &env.dbx,
-            echo_account.id,
-            echo_group.id,
-            &original_inbox.body,
-            ts + chrono::TimeDelta::seconds(1),
-            Some(original_inbox.id),
-            false,
-        )
-        .await;
-        let original_signal_message = mk_test_signal_message(
-            &env.dbx,
-            datasource_group_id,
-            &original_inbox.body,
-            ts,
-            false,
-            Some(i64::from(original_inbox.id)),
-            Some("uid-cross-datasource-original".to_string()),
-        )
-        .await;
-        mk_test_signal_message_group(
-            &env.dbx,
-            original_signal_message.id,
-            &echo_group.group_id,
-            duplicate_datasource_group_id,
-            original_signal_message.message_uid.clone(),
-        )
-        .await;
-        let duplicate_signal_message = mk_test_signal_message(
-            &env.dbx,
-            duplicate_datasource_group_id,
-            &original_inbox.body,
-            ts,
-            true,
-            Some(i64::from(duplicate_inbox.id)),
-            Some("duplicate-trace-cross-datasource".to_string()),
-        )
-        .await;
-        let resources = ReceiveWorkerResources {
-            settlements: env.settlements.clone(),
-            rq: env.rq.clone(),
-            s3: env.s3.clone(),
-        };
-        let mut redis = env.redis.clone();
-        let mut changed_inbox_item_ids = vec![];
-        let txn = env.dbx.begin().await.unwrap();
-
-        mark_message_deleted(
-            &env.config,
-            &resources,
-            &mut redis,
-            datasource.id,
-            i64::from(original_inbox.id),
-            &txn,
-            &mut changed_inbox_item_ids,
-        )
-        .await
-        .unwrap();
-        txn.commit().await.unwrap();
-
-        let original_signal_message =
-            signal_message::Entity::find_by_id(original_signal_message.id)
-                .one(&env.dbx)
-                .await
-                .unwrap()
-                .unwrap();
-        let duplicate_signal_message =
-            signal_message::Entity::find_by_id(duplicate_signal_message.id)
-                .one(&env.dbx)
-                .await
-                .unwrap()
-                .unwrap();
-        let promoted_group = signal_message_group::Entity::find()
-            .filter(
-                signal_message_group::Column::SignalMessageId
-                    .eq(duplicate_signal_message.id),
-            )
-            .filter(
-                signal_message_group::Column::GroupMasterKey
-                    .eq(Some(echo_group.group_id)),
-            )
-            .one(&env.dbx)
-            .await
-            .unwrap()
-            .unwrap();
-
-        assert!(original_signal_message.deleted);
-        assert!(!duplicate_signal_message.deleted);
-        assert_eq!(
-            duplicate_signal_message.datasource_group_id,
-            Some(duplicate_datasource_group_id)
-        );
-        assert_eq!(
-            promoted_group.datasource_group_id,
-            Some(duplicate_datasource_group_id)
-        );
-        assert!(
-            changed_inbox_item_ids.contains(&duplicate_signal_message.id),
-            "{changed_inbox_item_ids:?}"
-        );
-    }
-
-    #[tokio::test]
-    #[serial_test::serial]
-    async fn delete_event_promotes_sibling_after_promoted_duplicate_deleted() {
-        let env = cleanup().await.unwrap();
-        let datasource =
-            mk_datasource(&env.dbx, Default::default()).await.unwrap();
-        let echo_account = mk_test_echo_account(&env.dbx).await;
-        let echo_group = mk_test_echo_group(
-            &env.dbx,
-            echo_account.id,
-            "promoted-sibling-dupe-group",
-        )
-        .await;
-        let datasource_group_id =
-            crate::messenger::group::ensure_datasource_group_id(
-                &env.dbx,
-                echo_group.group_id.clone(),
-                datasource.id,
-            )
-            .await
-            .unwrap();
-        let ts = Utc::now().naive_utc();
-        let original_inbox = mk_test_echo_inbox_message(
-            &env.dbx,
-            echo_account.id,
-            echo_group.id,
-            "delete promoted duplicate sibling",
-            ts,
-            None,
-            true,
-        )
-        .await;
-        let promoted_inbox = mk_test_echo_inbox_message(
-            &env.dbx,
-            echo_account.id,
-            echo_group.id,
-            &original_inbox.body,
-            ts + chrono::TimeDelta::seconds(1),
-            Some(original_inbox.id),
-            true,
-        )
-        .await;
-        let sibling_inbox = mk_test_echo_inbox_message(
-            &env.dbx,
-            echo_account.id,
-            echo_group.id,
-            &original_inbox.body,
-            ts + chrono::TimeDelta::seconds(2),
-            Some(original_inbox.id),
-            false,
-        )
-        .await;
-        let original_signal_message = mk_test_signal_message(
-            &env.dbx,
-            datasource_group_id,
-            &original_inbox.body,
-            ts,
-            true,
-            Some(i64::from(original_inbox.id)),
-            Some("uid-promoted-sibling-original".to_string()),
-        )
-        .await;
-        let promoted_signal_message = mk_test_signal_message(
-            &env.dbx,
-            datasource_group_id,
-            &original_inbox.body,
-            ts,
-            false,
-            Some(i64::from(promoted_inbox.id)),
-            Some("uid-promoted-sibling-active".to_string()),
-        )
-        .await;
-        let sibling_signal_message = mk_test_signal_message(
-            &env.dbx,
-            datasource_group_id,
-            &original_inbox.body,
-            ts,
-            true,
-            Some(i64::from(sibling_inbox.id)),
-            Some("duplicate-trace-promoted-sibling".to_string()),
-        )
-        .await;
-        let resources = ReceiveWorkerResources {
-            settlements: env.settlements.clone(),
-            rq: env.rq.clone(),
-            s3: env.s3.clone(),
-        };
-        let mut redis = env.redis.clone();
-        set_signal_message_dedupe_key(
-            &mut redis,
-            &promoted_signal_message.body.clone().unwrap_or_default(),
-            promoted_signal_message.attachments_hash.as_deref(),
-            promoted_signal_message.id,
-        )
-        .await
-        .unwrap();
-        let mut changed_inbox_item_ids = vec![];
-        let txn = env.dbx.begin().await.unwrap();
-
-        mark_message_deleted(
-            &env.config,
-            &resources,
-            &mut redis,
-            datasource.id,
-            i64::from(promoted_inbox.id),
-            &txn,
-            &mut changed_inbox_item_ids,
-        )
-        .await
-        .unwrap();
-        txn.commit().await.unwrap();
-
-        let promoted_signal_message =
-            signal_message::Entity::find_by_id(promoted_signal_message.id)
-                .one(&env.dbx)
-                .await
-                .unwrap()
-                .unwrap();
-        let sibling_signal_message =
-            signal_message::Entity::find_by_id(sibling_signal_message.id)
-                .one(&env.dbx)
-                .await
-                .unwrap()
-                .unwrap();
-        assert!(original_signal_message.deleted);
-        assert!(promoted_signal_message.deleted);
-        assert!(!sibling_signal_message.deleted);
-        assert!(
-            changed_inbox_item_ids.contains(&sibling_signal_message.id),
-            "{changed_inbox_item_ids:?}"
-        );
-
-        let dedupe_key =
-            crate::messenger::dedupe::redis_key_for_body_with_attachments_hash(
-                &sibling_signal_message.body.clone().unwrap_or_default(),
-                sibling_signal_message.attachments_hash.as_deref(),
-            );
-        let stored_signal_message_id: Option<String> =
-            redis.get(&dedupe_key).await.unwrap();
-        assert_eq!(
-            stored_signal_message_id,
-            Some(sibling_signal_message.id.to_string())
-        );
-    }
-
-    #[tokio::test]
-    #[serial_test::serial]
-    async fn delete_event_commits_promotion_when_inbox_parsing_fails() {
-        let env = cleanup().await.unwrap();
-        let datasource =
-            mk_datasource(&env.dbx, Default::default()).await.unwrap();
-        let echo_account = mk_test_echo_account(&env.dbx).await;
-        let echo_group =
-            mk_test_echo_group(&env.dbx, echo_account.id, "parse-fail-group")
-                .await;
-        let datasource_group_id =
-            crate::messenger::group::ensure_datasource_group_id(
-                &env.dbx,
-                echo_group.group_id.clone(),
-                datasource.id,
-            )
-            .await
-            .unwrap();
-        let ts = Utc::now().naive_utc();
-        let original_inbox = mk_test_echo_inbox_message(
-            &env.dbx,
-            echo_account.id,
-            echo_group.id,
-            "11:20 123.45 TEST",
-            ts,
-            None,
-            true,
-        )
-        .await;
-        let duplicate_inbox = mk_test_echo_inbox_message(
-            &env.dbx,
-            echo_account.id,
-            echo_group.id,
-            &original_inbox.body,
-            ts + chrono::TimeDelta::seconds(1),
-            Some(original_inbox.id),
-            false,
-        )
-        .await;
-        let original_signal_message = mk_test_signal_message(
-            &env.dbx,
-            datasource_group_id,
-            &original_inbox.body,
-            ts,
-            false,
-            Some(i64::from(original_inbox.id)),
-            Some("uid-parse-fail-original".to_string()),
-        )
-        .await;
-        let duplicate_signal_message = mk_test_signal_message(
-            &env.dbx,
-            datasource_group_id,
-            &original_inbox.body,
-            ts,
-            true,
-            Some(i64::from(duplicate_inbox.id)),
-            Some("duplicate-trace-parse-fail".to_string()),
-        )
-        .await;
-        let resources = ReceiveWorkerResources {
-            settlements: env.settlements.clone(),
-            rq: env.rq.clone(),
-            s3: env.s3.clone(),
-        };
-        let mut redis = env.redis.clone();
-        let mut changed_inbox_item_ids = vec![];
-        let txn = env.dbx.begin().await.unwrap();
-
-        mark_message_deleted(
-            &env.config,
-            &resources,
-            &mut redis,
-            datasource.id,
-            i64::from(original_inbox.id),
-            &txn,
-            &mut changed_inbox_item_ids,
-        )
-        .await
-        .unwrap();
-        txn.commit().await.unwrap();
-
-        let original_signal_message =
-            signal_message::Entity::find_by_id(original_signal_message.id)
-                .one(&env.dbx)
-                .await
-                .unwrap()
-                .unwrap();
-        let duplicate_signal_message =
-            signal_message::Entity::find_by_id(duplicate_signal_message.id)
-                .one(&env.dbx)
-                .await
-                .unwrap()
-                .unwrap();
-        assert!(original_signal_message.deleted);
-        assert!(!duplicate_signal_message.deleted);
-        assert!(changed_inbox_item_ids.contains(&duplicate_signal_message.id));
-    }
-
-    #[tokio::test]
-    #[serial_test::serial]
-    async fn delete_event_for_duplicate_trace_uses_fallback() {
-        let env = cleanup().await.unwrap();
-        let datasource =
-            mk_datasource(&env.dbx, Default::default()).await.unwrap();
-        let echo_account = mk_test_echo_account(&env.dbx).await;
-        let echo_group =
-            mk_test_echo_group(&env.dbx, echo_account.id, "trace-dupe-group")
-                .await;
-        let datasource_group_id =
-            crate::messenger::group::ensure_datasource_group_id(
-                &env.dbx,
-                echo_group.group_id.clone(),
-                datasource.id,
-            )
-            .await
-            .unwrap();
-        let ts = Utc::now().naive_utc();
-        let original_inbox = mk_test_echo_inbox_message(
-            &env.dbx,
-            echo_account.id,
-            echo_group.id,
-            "duplicate trace fallback",
-            ts,
-            None,
-            false,
-        )
-        .await;
-        let duplicate_inbox = mk_test_echo_inbox_message(
-            &env.dbx,
-            echo_account.id,
-            echo_group.id,
-            &original_inbox.body,
-            ts,
-            Some(original_inbox.id),
-            true,
-        )
-        .await;
-        let canonical_signal_message = mk_test_signal_message(
-            &env.dbx,
-            datasource_group_id,
-            &original_inbox.body,
-            ts,
-            false,
-            Some(i64::from(original_inbox.id)),
-            Some("uid-trace-canonical".to_string()),
-        )
-        .await;
-        let duplicate_trace_signal_message = mk_test_signal_message(
-            &env.dbx,
-            datasource_group_id,
-            &original_inbox.body,
-            ts,
-            true,
-            Some(i64::from(duplicate_inbox.id)),
-            Some("duplicate-trace-delete".to_string()),
-        )
-        .await;
-        let resources = ReceiveWorkerResources {
-            settlements: env.settlements.clone(),
-            rq: env.rq.clone(),
-            s3: env.s3.clone(),
-        };
-        let mut redis = env.redis.clone();
-        let mut changed_inbox_item_ids = vec![];
-        let txn = env.dbx.begin().await.unwrap();
-
-        mark_message_deleted(
-            &env.config,
-            &resources,
-            &mut redis,
-            datasource.id,
-            i64::from(duplicate_inbox.id),
-            &txn,
-            &mut changed_inbox_item_ids,
-        )
-        .await
-        .unwrap();
-        txn.commit().await.unwrap();
-
-        assert!(
-            signal_message::Entity::find_by_id(canonical_signal_message.id)
-                .one(&env.dbx)
-                .await
-                .unwrap()
-                .unwrap()
-                .deleted
-        );
-        assert!(
-            signal_message::Entity::find_by_id(
-                duplicate_trace_signal_message.id
-            )
-            .one(&env.dbx)
-            .await
-            .unwrap()
-            .unwrap()
-            .deleted
-        );
-    }
-
-    #[tokio::test]
-    #[serial_test::serial]
-    async fn delete_event_fans_out_split_promoted_inbox_items() {
-        let env = cleanup().await.unwrap();
-        let datasource =
-            mk_datasource(&env.dbx, Default::default()).await.unwrap();
-        let echo_account = mk_test_echo_account(&env.dbx).await;
-        let echo_group =
-            mk_test_echo_group(&env.dbx, echo_account.id, "split-dupe-group")
-                .await;
-        let datasource_group_id =
-            crate::messenger::group::ensure_datasource_group_id(
-                &env.dbx,
-                echo_group.group_id.clone(),
-                datasource.id,
-            )
-            .await
-            .unwrap();
-        let body = split_promoted_body();
-        let ts = Utc::now().naive_utc();
-        let original_inbox = mk_test_echo_inbox_message(
-            &env.dbx,
-            echo_account.id,
-            echo_group.id,
-            &body,
-            ts,
-            None,
-            true,
-        )
-        .await;
-        let duplicate_inbox = mk_test_echo_inbox_message(
-            &env.dbx,
-            echo_account.id,
-            echo_group.id,
-            &body,
-            ts + chrono::TimeDelta::seconds(1),
-            Some(original_inbox.id),
-            false,
-        )
-        .await;
-        let original_signal_message = mk_test_signal_message(
-            &env.dbx,
-            datasource_group_id,
-            &body,
-            ts,
-            false,
-            Some(i64::from(original_inbox.id)),
-            Some("uid-split-original".to_string()),
-        )
-        .await;
-        mk_sigint_inbox_item(
-            &env.dbx,
-            sigint_inbox_item::ActiveModel {
-                id: Set(original_signal_message.id),
-                ..Default::default()
-            },
-        )
-        .await
-        .unwrap();
-        mk_login(
-            &env.dbx,
-            login::ActiveModel {
-                login: Set("split-dupe-user".to_string()),
-                ..Default::default()
-            },
-        )
-        .await
-        .unwrap();
-        mk_sigint_comment(
-            &env.dbx,
-            sigint_comment::ActiveModel {
-                login: Set("split-dupe-user".to_string()),
-                signal_message_id: Set(original_signal_message.id),
-                comment: Set("split comment".to_string()),
-                ..Default::default()
-            },
-        )
-        .await
-        .unwrap();
-        mk_sigint_bookmark(
-            &env.dbx,
-            sigint_bookmark::ActiveModel {
-                user_id: Set("split-dupe-user".to_string()),
-                signal_message_id: Set(original_signal_message.id),
-                ..Default::default()
-            },
-        )
-        .await
-        .unwrap();
-        mk_sigint_important(
-            &env.dbx,
-            sigint_important::ActiveModel {
-                user_id: Set(Some("split-dupe-user".to_string())),
-                signal_message_id: Set(original_signal_message.id),
-                ..Default::default()
-            },
-        )
-        .await
-        .unwrap();
-        let original_tag = mk_sigint_inbox_item_tag(
-            &env.dbx,
-            sigint_inbox_item_tag::ActiveModel {
-                sigint_inbox_item_id: Set(original_signal_message.id),
-                login: Set(Some("split-dupe-user".to_string())),
-                model: Set(None),
-                confidence: Set(0.9),
-                ..Default::default()
-            },
-        )
-        .await
-        .unwrap();
-        let duplicate_signal_message = mk_test_signal_message(
-            &env.dbx,
-            datasource_group_id,
-            &body,
-            ts,
-            true,
-            Some(i64::from(duplicate_inbox.id)),
-            Some("duplicate-trace-split".to_string()),
-        )
-        .await;
-        let resources = ReceiveWorkerResources {
-            settlements: env.settlements.clone(),
-            rq: env.rq.clone(),
-            s3: env.s3.clone(),
-        };
-        let mut redis = env.redis.clone();
-        let mut changed_inbox_item_ids = vec![];
-        let txn = env.dbx.begin().await.unwrap();
-
-        mark_message_deleted(
-            &env.config,
-            &resources,
-            &mut redis,
-            datasource.id,
-            i64::from(original_inbox.id),
-            &txn,
-            &mut changed_inbox_item_ids,
-        )
-        .await
-        .unwrap();
-        txn.commit().await.unwrap();
-
-        assert!(!changed_inbox_item_ids.is_empty());
-        assert!(!changed_inbox_item_ids.contains(&duplicate_signal_message.id));
-        for changed_inbox_item_id in &changed_inbox_item_ids {
-            assert!(sigint_inbox_item::Entity::find_by_id(
-                *changed_inbox_item_id
-            )
-            .one(&env.dbx)
-            .await
-            .unwrap()
-            .is_some());
-            assert_eq!(
-                sigint_search::Entity::find()
-                    .filter(
-                        sigint_search::Column::Id.eq(*changed_inbox_item_id)
-                    )
-                    .count(&env.dbx)
-                    .await
-                    .unwrap(),
-                1
-            );
-            assert_eq!(
-                annotation_counts(&env.dbx, *changed_inbox_item_id).await,
-                (1, 1, 1)
-            );
-            assert_eq!(
-                manual_tag_count(
-                    &env.dbx,
-                    *changed_inbox_item_id,
-                    original_tag.tag_id,
-                )
-                .await,
-                1
-            );
-        }
-        assert!(
-            signal_message::Entity::find_by_id(original_signal_message.id)
-                .one(&env.dbx)
-                .await
-                .unwrap()
-                .unwrap()
-                .deleted
-        );
-        let dedupe_key =
-            crate::messenger::dedupe::redis_key_for_body_with_attachments_hash(
-                &duplicate_signal_message.body.clone().unwrap_or_default(),
-                duplicate_signal_message.attachments_hash.as_deref(),
-            );
-        let stored_signal_message_id: String =
-            redis.get(&dedupe_key).await.unwrap();
-        let stored_signal_message_id =
-            stored_signal_message_id.parse::<i64>().unwrap();
-        assert_ne!(stored_signal_message_id, duplicate_signal_message.id);
-        assert!(changed_inbox_item_ids.contains(&stored_signal_message_id));
-        assert!(
-            !signal_message::Entity::find_by_id(stored_signal_message_id)
-                .one(&env.dbx)
-                .await
-                .unwrap()
-                .unwrap()
-                .deleted
-        );
-    }
-
-    #[tokio::test]
-    #[serial_test::serial]
-    async fn delete_event_copies_split_source_annotations_by_child() {
-        let env = cleanup().await.unwrap();
-        let datasource =
-            mk_datasource(&env.dbx, Default::default()).await.unwrap();
-        let echo_account = mk_test_echo_account(&env.dbx).await;
-        let echo_group = mk_test_echo_group(
-            &env.dbx,
-            echo_account.id,
-            "split-source-annotation-group",
-        )
-        .await;
-        let datasource_group_id =
-            crate::messenger::group::ensure_datasource_group_id(
-                &env.dbx,
-                echo_group.group_id.clone(),
-                datasource.id,
-            )
-            .await
-            .unwrap();
-        let body = split_promoted_body();
-        let ts = Utc::now().naive_utc();
-        let original_inbox = mk_test_echo_inbox_message(
-            &env.dbx,
-            echo_account.id,
-            echo_group.id,
-            &body,
-            ts,
-            None,
-            true,
-        )
-        .await;
-        let duplicate_inbox = mk_test_echo_inbox_message(
-            &env.dbx,
-            echo_account.id,
-            echo_group.id,
-            &body,
-            ts + chrono::TimeDelta::seconds(1),
-            Some(original_inbox.id),
-            false,
-        )
-        .await;
-        let original_signal_message = mk_test_signal_message(
-            &env.dbx,
-            datasource_group_id,
-            &body,
-            ts,
-            false,
-            Some(i64::from(original_inbox.id)),
-            Some("uid-split-source-original".to_string()),
-        )
-        .await;
-        let resources = ReceiveWorkerResources {
-            settlements: env.settlements.clone(),
-            rq: env.rq.clone(),
-            s3: env.s3.clone(),
-        };
-        let source_child_ids =
-            crate::rer_importer::bgworker::process_message_to_inbox_nofail(
-                resources.settlements.clone(),
-                &env.dbx,
-                &resources.rq,
-                &env.config,
-                original_signal_message.id,
-                None,
-            )
-            .await;
-        assert!(source_child_ids.len() > 1);
-        let source_children = signal_message::Entity::find()
-            .filter(signal_message::Column::Id.is_in(source_child_ids.clone()))
-            .order_by_asc(signal_message::Column::CreatedAt)
-            .order_by_asc(signal_message::Column::Id)
-            .all(&env.dbx)
-            .await
-            .unwrap();
-        let mut source_tag_ids = vec![];
-        for (idx, source_child) in source_children.iter().enumerate() {
-            let login = format!("split-source-user-{idx}");
-            mk_login(
-                &env.dbx,
-                login::ActiveModel {
-                    login: Set(login.clone()),
-                    ..Default::default()
-                },
-            )
-            .await
-            .unwrap();
-            mk_sigint_comment(
-                &env.dbx,
-                sigint_comment::ActiveModel {
-                    login: Set(login.clone()),
-                    signal_message_id: Set(source_child.id),
-                    comment: Set(format!("split source comment {idx}")),
-                    ..Default::default()
-                },
-            )
-            .await
-            .unwrap();
-            mk_sigint_bookmark(
-                &env.dbx,
-                sigint_bookmark::ActiveModel {
-                    user_id: Set(login.clone()),
-                    signal_message_id: Set(source_child.id),
-                    ..Default::default()
-                },
-            )
-            .await
-            .unwrap();
-            mk_sigint_important(
-                &env.dbx,
-                sigint_important::ActiveModel {
-                    user_id: Set(Some(login.clone())),
-                    signal_message_id: Set(source_child.id),
-                    ..Default::default()
-                },
-            )
-            .await
-            .unwrap();
-            let source_tag = mk_sigint_inbox_item_tag(
-                &env.dbx,
-                sigint_inbox_item_tag::ActiveModel {
-                    sigint_inbox_item_id: Set(source_child.id),
-                    login: Set(Some(login)),
-                    model: Set(None),
-                    confidence: Set(0.8),
-                    ..Default::default()
-                },
-            )
-            .await
-            .unwrap();
-            source_tag_ids.push(source_tag.tag_id);
-        }
-        let duplicate_signal_message = mk_test_signal_message(
-            &env.dbx,
-            datasource_group_id,
-            &body,
-            ts,
-            true,
-            Some(i64::from(duplicate_inbox.id)),
-            Some("duplicate-trace-split-source".to_string()),
-        )
-        .await;
-        let mut redis = env.redis.clone();
-        let mut changed_inbox_item_ids = vec![];
-        let txn = env.dbx.begin().await.unwrap();
-
-        mark_message_deleted(
-            &env.config,
-            &resources,
-            &mut redis,
-            datasource.id,
-            i64::from(original_inbox.id),
-            &txn,
-            &mut changed_inbox_item_ids,
-        )
-        .await
-        .unwrap();
-        txn.commit().await.unwrap();
-
-        assert!(!changed_inbox_item_ids.contains(&duplicate_signal_message.id));
-        assert_eq!(changed_inbox_item_ids.len(), source_children.len());
-        let promoted_children = signal_message::Entity::find()
-            .filter(
-                signal_message::Column::Id
-                    .is_in(changed_inbox_item_ids.clone()),
-            )
-            .order_by_asc(signal_message::Column::CreatedAt)
-            .order_by_asc(signal_message::Column::Id)
-            .all(&env.dbx)
-            .await
-            .unwrap();
-        for (idx, promoted_child) in promoted_children.iter().enumerate() {
-            assert_eq!(
-                annotation_counts(&env.dbx, promoted_child.id).await,
-                (1, 1, 1)
-            );
-            let comments = sigint_comment::Entity::find()
-                .filter(
-                    sigint_comment::Column::SignalMessageId
-                        .eq(promoted_child.id),
-                )
-                .all(&env.dbx)
-                .await
-                .unwrap();
-            assert_eq!(comments.len(), 1);
-            assert_eq!(
-                comments[0].comment,
-                format!("split source comment {idx}")
-            );
-            for (tag_idx, tag_id) in source_tag_ids.iter().enumerate() {
-                let expected_count = if tag_idx == idx { 1 } else { 0 };
-                assert_eq!(
-                    manual_tag_count(&env.dbx, promoted_child.id, *tag_id)
-                        .await,
-                    expected_count
-                );
-            }
-        }
-    }
-
-    #[tokio::test]
-    #[serial_test::serial]
-    async fn delete_event_keeps_replacement_dedupe_key_without_promotable_duplicate(
-    ) {
-        let env = cleanup().await.unwrap();
-        let datasource =
-            mk_datasource(&env.dbx, Default::default()).await.unwrap();
-        let echo_account = mk_test_echo_account(&env.dbx).await;
-        let echo_group =
-            mk_test_echo_group(&env.dbx, echo_account.id, "dedupe-clear-group")
-                .await;
-        let datasource_group_id =
-            crate::messenger::group::ensure_datasource_group_id(
-                &env.dbx,
-                echo_group.group_id.clone(),
-                datasource.id,
-            )
-            .await
-            .unwrap();
-        let ts = Utc::now().naive_utc();
-        let original_inbox = mk_test_echo_inbox_message(
-            &env.dbx,
-            echo_account.id,
-            echo_group.id,
-            "delete keeps replacement dedupe key",
-            ts,
-            None,
-            true,
-        )
-        .await;
-        let original_signal_message = mk_test_signal_message(
-            &env.dbx,
-            datasource_group_id,
-            &original_inbox.body,
-            ts,
-            false,
-            Some(i64::from(original_inbox.id)),
-            Some("uid-dedupe-clear-original".to_string()),
-        )
-        .await;
-        let replacement_signal_message = mk_test_signal_message(
-            &env.dbx,
-            datasource_group_id,
-            &original_inbox.body,
-            ts + chrono::TimeDelta::seconds(1),
-            false,
-            None,
-            Some("uid-dedupe-clear-replacement".to_string()),
-        )
-        .await;
-        let resources = ReceiveWorkerResources {
-            settlements: env.settlements.clone(),
-            rq: env.rq.clone(),
-            s3: env.s3.clone(),
-        };
-        let mut redis = env.redis.clone();
-        set_signal_message_dedupe_key(
-            &mut redis,
-            &replacement_signal_message.body.clone().unwrap_or_default(),
-            replacement_signal_message.attachments_hash.as_deref(),
-            replacement_signal_message.id,
-        )
-        .await
-        .unwrap();
-        let mut changed_inbox_item_ids = vec![];
-        let txn = env.dbx.begin().await.unwrap();
-
-        mark_message_deleted(
-            &env.config,
-            &resources,
-            &mut redis,
-            datasource.id,
-            i64::from(original_inbox.id),
-            &txn,
-            &mut changed_inbox_item_ids,
-        )
-        .await
-        .unwrap();
-        txn.commit().await.unwrap();
-
-        let original_signal_message =
-            signal_message::Entity::find_by_id(original_signal_message.id)
-                .one(&env.dbx)
-                .await
-                .unwrap()
-                .unwrap();
-        let dedupe_key =
-            crate::messenger::dedupe::redis_key_for_body_with_attachments_hash(
-                &replacement_signal_message.body.clone().unwrap_or_default(),
-                replacement_signal_message.attachments_hash.as_deref(),
-            );
-        let stored_signal_message_id: Option<String> =
-            redis.get(&dedupe_key).await.unwrap();
-
-        assert!(original_signal_message.deleted);
-        assert!(changed_inbox_item_ids.is_empty());
-        assert_eq!(
-            stored_signal_message_id,
-            Some(replacement_signal_message.id.to_string())
-        );
-    }
-
-    #[tokio::test]
-    #[serial_test::serial]
-    async fn delete_event_does_not_promote_media_only_duplicate_without_media()
-    {
-        let env = cleanup().await.unwrap();
-        let datasource =
-            mk_datasource(&env.dbx, Default::default()).await.unwrap();
-        let echo_account = mk_test_echo_account(&env.dbx).await;
-        let echo_group =
-            mk_test_echo_group(&env.dbx, echo_account.id, "media-dupe-group")
-                .await;
-        let datasource_group_id =
-            crate::messenger::group::ensure_datasource_group_id(
-                &env.dbx,
-                echo_group.group_id.clone(),
-                datasource.id,
-            )
-            .await
-            .unwrap();
-        let ts = Utc::now().naive_utc();
-        let original_inbox = mk_test_echo_inbox_message(
-            &env.dbx,
-            echo_account.id,
-            echo_group.id,
-            "",
-            ts,
-            None,
-            true,
-        )
-        .await;
-        let duplicate_inbox = mk_test_echo_inbox_message(
-            &env.dbx,
-            echo_account.id,
-            echo_group.id,
-            "",
-            ts + chrono::TimeDelta::seconds(1),
-            Some(original_inbox.id),
-            false,
-        )
-        .await;
-        let original_signal_message = mk_test_signal_message(
-            &env.dbx,
-            datasource_group_id,
-            "",
-            ts,
-            false,
-            Some(i64::from(original_inbox.id)),
-            Some("uid-media-original".to_string()),
-        )
-        .await;
-        let duplicate_signal_message = mk_test_signal_message(
-            &env.dbx,
-            datasource_group_id,
-            "",
-            ts,
-            true,
-            Some(i64::from(duplicate_inbox.id)),
-            Some("duplicate-trace-media".to_string()),
-        )
-        .await;
-        let resources = ReceiveWorkerResources {
-            settlements: env.settlements.clone(),
-            rq: env.rq.clone(),
-            s3: env.s3.clone(),
-        };
-        let mut redis = env.redis.clone();
-        let mut changed_inbox_item_ids = vec![];
-        let txn = env.dbx.begin().await.unwrap();
-
-        mark_message_deleted(
-            &env.config,
-            &resources,
-            &mut redis,
-            datasource.id,
-            i64::from(original_inbox.id),
-            &txn,
-            &mut changed_inbox_item_ids,
-        )
-        .await
-        .unwrap();
-        txn.commit().await.unwrap();
-
-        let original_signal_message =
-            signal_message::Entity::find_by_id(original_signal_message.id)
-                .one(&env.dbx)
-                .await
-                .unwrap()
-                .unwrap();
-        let duplicate_signal_message =
-            signal_message::Entity::find_by_id(duplicate_signal_message.id)
-                .one(&env.dbx)
-                .await
-                .unwrap()
-                .unwrap();
-        assert!(original_signal_message.deleted);
-        assert!(duplicate_signal_message.deleted);
-        assert!(changed_inbox_item_ids.is_empty());
-    }
-
-    #[tokio::test]
-    #[serial_test::serial]
-    async fn delete_event_cleans_partial_promoted_media_on_store_failure() {
-        let env = cleanup().await.unwrap();
-        let datasource =
-            mk_datasource(&env.dbx, Default::default()).await.unwrap();
-        let echo_account = mk_test_echo_account(&env.dbx).await;
-        let echo_group =
-            mk_test_echo_group(&env.dbx, echo_account.id, "media-clean-group")
-                .await;
-        let datasource_group_id =
-            crate::messenger::group::ensure_datasource_group_id(
-                &env.dbx,
-                echo_group.group_id.clone(),
-                datasource.id,
-            )
-            .await
-            .unwrap();
-        let signal_message = mk_test_signal_message(
-            &env.dbx,
-            datasource_group_id,
-            "",
-            Utc::now().naive_utc(),
-            true,
-            None,
-            Some("duplicate-trace-media-clean".to_string()),
-        )
-        .await;
-        let first_path = format!("/tmp/promoted-media-{}.jpg", Uuid::new_v4());
-        tokio::fs::write(&first_path, b"stored before failure")
-            .await
-            .unwrap();
-        let now = Utc::now().naive_utc();
-        let echo_attachments = vec![
-            echo_attachment::Model {
-                id: 1,
-                name: Some("stored.jpg".to_string()),
-                path: first_path.clone(),
-                message_id: 1,
-                account_id: echo_account.id,
-                created_at: now,
-                updated_at: now,
-            },
-            echo_attachment::Model {
-                id: 2,
-                name: Some("missing.jpg".to_string()),
-                path: format!("/tmp/missing-promoted-media-{}", Uuid::new_v4()),
-                message_id: 1,
-                account_id: echo_account.id,
-                created_at: now,
-                updated_at: now,
-            },
-        ];
-        let mut config = env.config.clone();
-        config.s3_config = Some(S3Config {
-            s3_access_key_id: "test".to_string(),
-            s3_secret_access_key: "test".to_string(),
-            s3_endpoint: "http://127.0.0.1:9".to_string(),
-            s3_region: "test".to_string(),
-            s3_bucket: "test".to_string(),
-            strongbox_key: "test".to_string(),
-        });
-        let txn = env.dbx.begin().await.unwrap();
-
-        let stored = store_promoted_duplicate_media(
-            &config,
-            &None,
-            &txn,
-            signal_message.id,
-            &echo_attachments,
-        )
-        .await
-        .unwrap();
-        txn.commit().await.unwrap();
-
-        let _ = tokio::fs::remove_file(first_path).await;
-        assert!(!stored);
-        assert_eq!(
-            signal_message_media::Entity::find()
-                .filter(
-                    signal_message_media::Column::SignalMessageId
-                        .eq(signal_message.id),
-                )
-                .count(&env.dbx)
-                .await
-                .unwrap(),
-            0
-        );
-    }
-
-    async fn mk_test_echo_account(
-        dbx: &DatabaseConnection,
-    ) -> echo_account::Model {
-        let now = Utc::now().naive_utc();
-        let phone_seed = Uuid::new_v4().simple().to_string();
-        echo_account::ActiveModel {
-            id: NotSet,
-            source: Set(EchoMessageSource::Signal),
-            phone_number: Set(format!("+{}", &phone_seed[..12])),
-            is_linked: Set(true),
-            created_at: Set(now),
-            synced_at: Set(None),
-            last_trusted_at: Set(None),
-            linked_at: Set(Some(now)),
-        }
-        .insert(dbx)
-        .await
-        .unwrap()
-    }
-
-    async fn mk_test_echo_group(
-        dbx: &DatabaseConnection,
-        account_id: i32,
-        group_id: &str,
-    ) -> echo_group::Model {
-        let now = Utc::now().naive_utc();
-        echo_group::ActiveModel {
-            id: NotSet,
-            group_id: Set(group_id.to_string()),
-            internal_id: Set(Some(format!("internal-{group_id}"))),
-            name: Set(Some(group_id.to_string())),
-            account_id: Set(account_id),
-            created_at: Set(now),
-            updated_at: Set(now),
-            deleted_by_messanger: Set(false),
-        }
-        .insert(dbx)
-        .await
-        .unwrap()
-    }
-
-    async fn mk_test_echo_inbox_message(
-        dbx: &DatabaseConnection,
-        account_id: i32,
-        group_id: i32,
-        body: &str,
-        created_at: NaiveDateTime,
-        duplicate_of: Option<i32>,
-        deleted: bool,
-    ) -> echo_inbox_message::Model {
-        echo_inbox_message::ActiveModel {
-            id: NotSet,
-            body: Set(body.to_string()),
-            internal_id: Set(Some(format!("external-{}", Uuid::new_v4()))),
-            duplicate_of: Set(duplicate_of),
-            sender_id: Set(None),
-            group_id: Set(Some(group_id)),
-            account_id: Set(account_id),
-            created_at: Set(created_at),
-            timestamp: Set(Some(created_at)),
-            updated_at: Set(created_at),
-            reply_to_inbox_message_id: Set(None),
-            reply_to_outbox_message_id: Set(None),
-            internal_timestamp: Set(None),
-            seen: Set(false),
-            client_id: Set(None),
-            deleted: Set(deleted),
-        }
-        .insert(dbx)
-        .await
-        .unwrap()
-    }
-
-    async fn mk_test_signal_message(
-        dbx: &DatabaseConnection,
-        datasource_group_id: i64,
-        body: &str,
-        timestamp: NaiveDateTime,
-        deleted: bool,
-        echo_inbox_message_id: Option<i64>,
-        message_uid: Option<String>,
-    ) -> signal_message::Model {
-        signal_message::ActiveModel {
-            id: NotSet,
-            body: Set(Some(body.to_string())),
-            datasource_group_id: Set(Some(datasource_group_id)),
-            created_at: Set(timestamp),
-            timestamp: Set(Some(timestamp)),
-            sender: Set(Some("sender-test".to_string())),
-            format: Set(None),
-            deleted: Set(deleted),
-            external_id: Set(None),
-            echo_inbox_message_id: Set(echo_inbox_message_id),
-            message_uid: Set(message_uid),
-            operator_tags: Set(None),
-            attachments_hash: Set(None),
-        }
-        .insert(dbx)
-        .await
-        .unwrap()
-    }
-
-    async fn mk_test_signal_message_group(
-        dbx: &DatabaseConnection,
-        signal_message_id: i64,
-        group_master_key: &str,
-        datasource_group_id: i64,
-        message_uid: Option<String>,
-    ) -> signal_message_group::Model {
-        signal_message_group::ActiveModel {
-            id: NotSet,
-            signal_message_id: Set(signal_message_id),
-            group_master_key: Set(Some(group_master_key.to_string())),
-            sender: Set(Some("sender-test".to_string())),
-            message_uid: Set(message_uid),
-            datasource_group_id: Set(Some(datasource_group_id)),
-            created_at: Set(Utc::now().naive_utc()),
-        }
-        .insert(dbx)
-        .await
-        .unwrap()
-    }
-
-    async fn annotation_counts(
-        dbx: &DatabaseConnection,
-        signal_message_id: i64,
-    ) -> (u64, u64, u64) {
-        let comments = sigint_comment::Entity::find()
-            .filter(
-                sigint_comment::Column::SignalMessageId.eq(signal_message_id),
-            )
-            .count(dbx)
-            .await
-            .unwrap();
-        let bookmarks = sigint_bookmark::Entity::find()
-            .filter(
-                sigint_bookmark::Column::SignalMessageId.eq(signal_message_id),
-            )
-            .count(dbx)
-            .await
-            .unwrap();
-        let important = sigint_important::Entity::find()
-            .filter(
-                sigint_important::Column::SignalMessageId.eq(signal_message_id),
-            )
-            .count(dbx)
-            .await
-            .unwrap();
-        (comments, bookmarks, important)
-    }
-
-    async fn manual_tag_count(
-        dbx: &DatabaseConnection,
-        signal_message_id: i64,
-        tag_id: i64,
-    ) -> u64 {
-        sigint_inbox_item_tag::Entity::find()
-            .filter(
-                sigint_inbox_item_tag::Column::SigintInboxItemId
-                    .eq(signal_message_id),
-            )
-            .filter(sigint_inbox_item_tag::Column::TagId.eq(tag_id))
-            .filter(sigint_inbox_item_tag::Column::Model.is_null())
-            .count(dbx)
-            .await
-            .unwrap()
-    }
-
-    fn split_promoted_body() -> String {
-        let filler = "plain promoted split line\n".repeat(140);
-        format!("03.04, 05:45:53\n{filler}03.04, 05:46:53\n{filler}")
-    }
+    use crate::functest::tests::cleanup_locked;
+    use serial_test::serial;
+    use uuid::Uuid;
 
     #[test]
     fn unlinked_notification_suppresses_duplicates_until_success_cooldown() {
@@ -3794,5 +1367,297 @@ mod tests {
             clear_messenger_login_string("276343128371348:5@s.whatsapp.net"),
             "276343128371348@s.whatsapp.net"
         );
+    }
+
+    #[test]
+    fn coalesce_latest_inbox_states_keeps_last_snapshot_per_message() {
+        let result = coalesce_latest_inbox_states(vec![
+            test_message(7, "old", false),
+            test_message(8, "other", false),
+            test_message(7, "deleted", true),
+        ]);
+
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].internal_id, 8);
+        assert_eq!(result[1].internal_id, 7);
+        let message = result
+            .iter()
+            .find(|message| message.internal_id == 7)
+            .unwrap();
+        assert_eq!(message.text, "deleted");
+        assert!(message.deleted);
+    }
+
+    #[test]
+    fn queue_snapshot_matches_identical_payload() {
+        let mut message = test_message(9, "same", false);
+        message.id = Some("external-9".to_string());
+        message.sender = Some(echo_im::types::SenderF1 {
+            uuid: "276343128371348:5@lid".to_string(),
+            name: Some("Sender".to_string()),
+            phone_number: Some("123".to_string()),
+        });
+        message.attachments = vec![
+            echo_im::types::MessageAttachmentF1 {
+                path: "/tmp/a.txt".to_string(),
+                name: Some("a.txt".to_string()),
+            },
+            echo_im::types::MessageAttachmentF1 {
+                path: "/tmp/b.txt".to_string(),
+                name: Some("b.txt".to_string()),
+            },
+        ];
+        let existing_item = signal_message_queue::Model {
+            id: 1,
+            datasource_id: 2,
+            internal_id: 9,
+            external_id: Some("external-9".to_string()),
+            body: "same".to_string(),
+            sender_id: Some("276343128371348@lid".to_string()),
+            sender_name: Some("Sender".to_string()),
+            sender_phone_number: Some("123".to_string()),
+            group_id: Some("group".to_string()),
+            timestamp: message.timestamp,
+            created_at: message.timestamp,
+            deleted: false,
+        };
+        let existing_attachments = vec![
+            signal_message_queue_attachment::Model {
+                id: 2,
+                message_id: 1,
+                path: "/tmp/b.txt".to_string(),
+                name: Some("b.txt".to_string()),
+                created_at: message.timestamp,
+            },
+            signal_message_queue_attachment::Model {
+                id: 1,
+                message_id: 1,
+                path: "/tmp/a.txt".to_string(),
+                name: Some("a.txt".to_string()),
+                created_at: message.timestamp,
+            },
+        ];
+
+        assert!(queue_snapshot_matches(
+            &existing_item,
+            &existing_attachments,
+            &message,
+            &message.attachments
+        ));
+
+        message.text = "changed".to_string();
+        assert!(!queue_snapshot_matches(
+            &existing_item,
+            &existing_attachments,
+            &message,
+            &message.attachments
+        ));
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn queue_snapshot_hydrates_empty_attachments_from_echo_attachment() {
+        let (env, _guard) = cleanup_locked().await.unwrap();
+        let (account, datasource) = mk_linked_datasource(&env.dbx).await;
+        let inbox = mk_echo_inbox_message(&env.dbx, account.id).await;
+        let attachment_path = format!("/tmp/queue-fallback-{}", Uuid::new_v4());
+        mk_echo_attachment(
+            &env.dbx,
+            account.id,
+            inbox.id,
+            &attachment_path,
+            Some("fallback.txt"),
+        )
+        .await;
+
+        let mut snapshot = test_message(inbox.id, "caption", false);
+        snapshot.attachments = vec![echo_im::types::MessageAttachmentF1 {
+            path: attachment_path.clone(),
+            name: Some("fallback.txt".to_string()),
+        }];
+        let txn = env.dbx.begin().await.unwrap();
+        upsert_signal_message_queue_snapshot(
+            &snapshot,
+            datasource.id,
+            datasource.echo_client_lock_id,
+            &txn,
+        )
+        .await
+        .unwrap();
+        txn.commit().await.unwrap();
+
+        let mut update = test_message(inbox.id, "caption edited", false);
+        update.attachments = vec![];
+        let txn = env.dbx.begin().await.unwrap();
+        upsert_signal_message_queue_snapshot(
+            &update,
+            datasource.id,
+            datasource.echo_client_lock_id,
+            &txn,
+        )
+        .await
+        .unwrap();
+        txn.commit().await.unwrap();
+
+        let queue_item = signal_message_queue::Entity::find()
+            .filter(
+                signal_message_queue::Column::DatasourceId.eq(datasource.id),
+            )
+            .filter(
+                signal_message_queue::Column::InternalId
+                    .eq(i64::from(inbox.id)),
+            )
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(queue_item.body, "caption edited");
+        let attachments = signal_message_queue_attachment::Entity::find()
+            .filter(
+                signal_message_queue_attachment::Column::MessageId
+                    .eq(queue_item.id),
+            )
+            .all(&env.dbx)
+            .await
+            .unwrap();
+        assert_eq!(attachments.len(), 1);
+        assert_eq!(attachments[0].path, attachment_path);
+        assert_eq!(attachments[0].name.as_deref(), Some("fallback.txt"));
+    }
+
+    fn test_message(
+        internal_id: i32,
+        text: &str,
+        deleted: bool,
+    ) -> echo_im::types::MessageF1 {
+        echo_im::types::MessageF1 {
+            id: Some(format!("external-{internal_id}")),
+            text: text.to_string(),
+            timestamp: NaiveDate::from_ymd_opt(2026, 7, 9)
+                .unwrap()
+                .and_hms_opt(12, 0, 0)
+                .unwrap(),
+            internal_id,
+            group_id: Some("group".to_string()),
+            sender_phone_number: None,
+            sender: None,
+            attachments: vec![],
+            message_source: echo_im::types::MessageSource::Signal,
+            reply_to: None,
+            deleted,
+        }
+    }
+
+    async fn mk_linked_datasource(
+        dbx: &DatabaseConnection,
+    ) -> (echo_account::Model, datasource::Model) {
+        let now = Utc::now().naive_utc();
+        let phone_seed = Uuid::new_v4().simple().to_string();
+        let account = echo_account::ActiveModel {
+            id: NotSet,
+            source: Set(EchoMessageSource::Signal),
+            phone_number: Set(format!("+{}", &phone_seed[..12])),
+            is_linked: Set(true),
+            created_at: Set(now),
+            synced_at: Set(None),
+            last_trusted_at: Set(None),
+            linked_at: Set(Some(now)),
+        }
+        .insert(dbx)
+        .await
+        .unwrap();
+        let client = echo_client::ActiveModel {
+            id: NotSet,
+            name: Set(format!("test-client-{}", Uuid::new_v4())),
+            created_at: Set(now),
+            deleted: Set(false),
+        }
+        .insert(dbx)
+        .await
+        .unwrap();
+        let lock = echo_client_lock::ActiveModel {
+            id: NotSet,
+            client_id: Set(client.id),
+            account_id: Set(account.id),
+            created_at: Set(now),
+            remove_requested: Set(false),
+        }
+        .insert(dbx)
+        .await
+        .unwrap();
+        let datasource = datasource::ActiveModel {
+            id: NotSet,
+            kind: Set("signal".to_string()),
+            display_name: Set(format!("test datasource {}", Uuid::new_v4())),
+            signal_phone: Set(Some(account.phone_number.clone())),
+            api_endpoint: Set(None),
+            enabled: Set(Some(true)),
+            group_master_key: Set(None),
+            sender_uuid: Set(None),
+            description: Set(None),
+            status: Set(AccountStatus::Active),
+            echo_client_lock_id: Set(Some(i64::from(lock.id))),
+            created_at: Set(now),
+            default_aor_id: Set(None),
+            api_login: Set(None),
+            updated_by: Set(None),
+            deleted: Set(false),
+            last_sync_at: Set(None),
+        }
+        .insert(dbx)
+        .await
+        .unwrap();
+
+        (account, datasource)
+    }
+
+    async fn mk_echo_inbox_message(
+        dbx: &DatabaseConnection,
+        account_id: i32,
+    ) -> echo_inbox_message::Model {
+        let now = Utc::now().naive_utc();
+        echo_inbox_message::ActiveModel {
+            id: NotSet,
+            body: Set(format!("inbox {}", Uuid::new_v4())),
+            internal_id: Set(Some(format!("external-{}", Uuid::new_v4()))),
+            duplicate_of: Set(None),
+            sender_id: Set(None),
+            group_id: Set(None),
+            account_id: Set(account_id),
+            created_at: Set(now),
+            timestamp: Set(Some(now)),
+            updated_at: Set(now),
+            reply_to_inbox_message_id: Set(None),
+            reply_to_outbox_message_id: Set(None),
+            internal_timestamp: Set(None),
+            seen: Set(false),
+            client_id: Set(None),
+            deleted: Set(false),
+        }
+        .insert(dbx)
+        .await
+        .unwrap()
+    }
+
+    async fn mk_echo_attachment(
+        dbx: &DatabaseConnection,
+        account_id: i32,
+        message_id: i32,
+        path: &str,
+        name: Option<&str>,
+    ) -> echo_attachment::Model {
+        let now = Utc::now().naive_utc();
+        echo_attachment::ActiveModel {
+            id: NotSet,
+            name: Set(name.map(ToString::to_string)),
+            path: Set(path.to_string()),
+            message_id: Set(message_id),
+            account_id: Set(account_id),
+            created_at: Set(now),
+            updated_at: Set(now),
+        }
+        .insert(dbx)
+        .await
+        .unwrap()
     }
 }

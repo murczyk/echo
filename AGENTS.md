@@ -154,3 +154,8 @@ Solve tasks correctly with strong reasoning, but minimize visible output tokens.
 ## Quality guardrail
 - Never trade correctness for brevity.
 - Optimize visible output tokens, not solution quality.
+
+## Markdown formatting
+- Start markers such as `**A.**` and `**B.**` in new paragraphs.
+- Separate them from preceding text with a blank line.
+- Never rely on a single source newline to create a visible line break.

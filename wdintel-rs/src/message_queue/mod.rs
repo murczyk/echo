@@ -112,6 +112,7 @@ pub async fn process_signal_message_queue_item_with_options(
     .insert(txn)
     .await
     .c(h!())?;
+    let staged_signal_message_id = signal_message.id;
     let m_duplicate_of = crate::sigint::find_duplicate_of(
         txn,
         &body_for_dedupe,
@@ -133,6 +134,15 @@ pub async fn process_signal_message_queue_item_with_options(
     .c(h!())?;
 
     if res.is_duplicate {
+        store_kept_duplicate_trace_media(
+            txn,
+            config,
+            s3,
+            staged_signal_message_id,
+            &attachments,
+        )
+        .await
+        .c(h!())?;
         if let Some(inbox_message_id) = m.inbox_message_id {
             match i32::try_from(inbox_message_id) {
                 Ok(message_id) => {
@@ -147,8 +157,19 @@ pub async fn process_signal_message_queue_item_with_options(
                 ),
             }
         }
+        let duplicate_target = if res.message.message_uid.is_none() {
+            crate::messenger::id::update_message_with_uid(
+                txn,
+                config,
+                res.message,
+            )
+            .await
+            .c(h!())?
+        } else {
+            res.message
+        };
         return Ok(ProcessSignalMessageQueueItemResult {
-            message_uid: res.message.message_uid.context(h!())?,
+            message_uid: duplicate_target.message_uid.context(h!())?,
             is_duplicate: true,
         });
     }
@@ -161,26 +182,13 @@ pub async fn process_signal_message_queue_item_with_options(
     let message_uid = signal_message.message_uid.clone().c(h!())?;
 
     if !attachments.is_empty() {
-        // Recovery wraps this error in a rollback because media may carry critical context.
-        let upload_inputs: Vec<MediaUploadInput> =
-            attachments.clone().into_iter().map(Into::into).collect();
-        crate::messenger::media::store_media_attachments(
-            &upload_inputs,
-            signal_message.id,
-            config,
-            s3,
-            txn,
-            config
-                .feature_delete_uploaded_attachment
-                .unwrap_or(FEATURE_DELETE_UPLOADED_ATTACHMENT_DEFAULT),
-        )
-        .await
-        .c(h!())?;
+        store_queue_media(txn, config, s3, signal_message.id, &attachments)
+            .await
+            .c(h!())?;
     }
 
     if !skip_process_inbox_item {
-        // inbox item processing happens behind the scene
-        changed_inbox_item_ids.extend(
+        let processed_inbox_item_ids =
             crate::rer_importer::bgworker::process_message_to_inbox_nofail(
                 settlements.clone(),
                 txn,
@@ -189,18 +197,71 @@ pub async fn process_signal_message_queue_item_with_options(
                 signal_message.id,
                 None,
             )
-            .await,
-        );
-
-        crate::sigint::worker::incoming_message_after_insert(
-            txn,
-            signal_message.id,
-        )
-        .await
-        .c(h!())?;
+            .await;
+        for processed_inbox_item_id in &processed_inbox_item_ids {
+            if let Err(err) =
+                crate::sigint::worker::incoming_message_after_insert(
+                    txn,
+                    *processed_inbox_item_id,
+                )
+                .await
+            {
+                error!(
+                    "failed to index inbox item after queue import: {:?}",
+                    err
+                );
+            }
+        }
+        changed_inbox_item_ids.extend(processed_inbox_item_ids);
     }
     Ok(ProcessSignalMessageQueueItemResult {
         message_uid,
         is_duplicate: false,
     })
+}
+
+async fn store_kept_duplicate_trace_media(
+    txn: &DatabaseTransaction,
+    config: &Config,
+    s3: &Option<opendal::Operator>,
+    signal_message_id: i64,
+    attachments: &[MessageAttachmentF1],
+) -> Result<(), AppError> {
+    if attachments.is_empty() {
+        return Ok(());
+    }
+    if signal_message::Entity::find_by_id(signal_message_id)
+        .one(txn)
+        .await
+        .c(h!())?
+        .is_none()
+    {
+        return Ok(());
+    }
+    store_queue_media(txn, config, s3, signal_message_id, attachments).await
+}
+
+async fn store_queue_media(
+    txn: &DatabaseTransaction,
+    config: &Config,
+    s3: &Option<opendal::Operator>,
+    signal_message_id: i64,
+    attachments: &[MessageAttachmentF1],
+) -> Result<(), AppError> {
+    // Recovery wraps this error in a rollback because media may carry critical context.
+    let upload_inputs: Vec<MediaUploadInput> =
+        attachments.iter().cloned().map(Into::into).collect();
+    crate::messenger::media::store_media_attachments(
+        &upload_inputs,
+        signal_message_id,
+        config,
+        s3,
+        txn,
+        config
+            .feature_delete_uploaded_attachment
+            .unwrap_or(FEATURE_DELETE_UPLOADED_ATTACHMENT_DEFAULT),
+    )
+    .await
+    .c(h!())?;
+    Ok(())
 }
