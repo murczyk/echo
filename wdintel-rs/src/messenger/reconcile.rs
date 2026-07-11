@@ -841,10 +841,14 @@ pub async fn reconcile_active_message(
     let previous_attachments_hash = source_message.attachments_hash.clone();
 
     let body = snapshot.text.replace("\r\n", "\n");
-    let snapshot_attachments =
-        effective_snapshot_attachments(txn, datasource_id, snapshot)
-            .await
-            .c(h!())?;
+    let snapshot_attachments = effective_snapshot_attachments(
+        txn,
+        datasource_id,
+        snapshot,
+        source_message_id,
+    )
+    .await
+    .c(h!())?;
     let attachments_hash =
         dedupe::attachments_hash(&snapshot_attachments).await;
     let attachments_hash = effective_edit_attachments_hash(
@@ -1135,52 +1139,65 @@ async fn effective_snapshot_attachments(
     txn: &DatabaseTransaction,
     datasource_id: i64,
     snapshot: &MessageF1,
+    source_message_id: i64,
 ) -> anyhow::Result<Vec<MessageAttachmentF1>> {
-    if !snapshot.attachments.is_empty() {
-        return Ok(snapshot.attachments.clone());
-    }
-    let Some(datasource) = datasource::Entity::find_by_id(datasource_id)
-        .one(txn)
-        .await
-        .c(h!())?
-    else {
-        return Ok(vec![]);
-    };
-    let Some(echo_client_lock_id) = datasource.echo_client_lock_id else {
-        return Ok(vec![]);
-    };
-    let Some(echo_client_lock) =
-        echo_client_lock::Entity::find_by_id(echo_client_lock_id as i32)
-            .one(txn)
-            .await
-            .c(h!())?
-    else {
-        return Ok(vec![]);
-    };
-    let attachments = echo_attachment::Entity::find()
-        .filter(echo_attachment::Column::MessageId.eq(snapshot.internal_id))
+    let previous_attachment_count = signal_message_media::Entity::find()
         .filter(
-            echo_attachment::Column::AccountId.eq(echo_client_lock.account_id),
+            signal_message_media::Column::SignalMessageId.eq(source_message_id),
         )
-        .order_by_asc(echo_attachment::Column::Id)
-        .all(txn)
+        .count(txn)
         .await
-        .c(h!())?
-        .into_iter()
-        .map(|attachment| MessageAttachmentF1 {
-            path: attachment.path,
-            name: attachment.name,
-        })
-        .collect_vec();
-    if !attachments.is_empty() {
-        info!(
-            "using echo attachment fallback for active inbox edit: datasource_id={} echo_inbox_message_id={} attachments_count={}",
+        .c(h!())? as usize;
+    if let Some(attachments) =
+        crate::messenger::attachments::load_latest_echo_attachment_batch(
+            txn,
             datasource_id,
             snapshot.internal_id,
-            attachments.len()
+        )
+        .await
+        .c(h!())?
+    {
+        return Ok(trim_echo_attachment_batch_for_edit(
+            attachments,
+            previous_attachment_count,
+            datasource_id,
+            snapshot.internal_id,
+        ));
+    }
+    if !snapshot.attachments.is_empty() {
+        return Ok(trim_echo_attachment_batch_for_edit(
+            snapshot.attachments.clone(),
+            previous_attachment_count,
+            datasource_id,
+            snapshot.internal_id,
+        ));
+    }
+    Ok(vec![])
+}
+
+fn trim_echo_attachment_batch_for_edit(
+    attachments: Vec<MessageAttachmentF1>,
+    previous_attachment_count: usize,
+    datasource_id: i64,
+    echo_inbox_message_id: i32,
+) -> Vec<MessageAttachmentF1> {
+    let original_attachment_count = attachments.len();
+    let attachments =
+        crate::messenger::attachments::latest_attachment_batch_by_expected_count(
+            attachments,
+            previous_attachment_count,
+        );
+    if !attachments.is_empty() {
+        info!(
+            "using echo attachment batch for active inbox edit: datasource_id={} echo_inbox_message_id={} attachments_count={} previous_attachment_count={} original_attachment_count={}",
+            datasource_id,
+            echo_inbox_message_id,
+            attachments.len(),
+            previous_attachment_count,
+            original_attachment_count
         );
     }
-    Ok(attachments)
+    attachments
 }
 
 async fn retire_obsolete_linked_messages(
