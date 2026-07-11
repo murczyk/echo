@@ -85,9 +85,6 @@ fn latest_attachment_batch_size(
     {
         return None;
     }
-    if attachments.len().is_multiple_of(previous_attachment_count) {
-        return Some(previous_attachment_count);
-    }
     (1..=previous_attachment_count.min(attachments.len() / 2))
         .filter(|batch_size| {
             previous_attachment_count.is_multiple_of(*batch_size)
@@ -173,5 +170,20 @@ mod tests {
         );
 
         assert_eq!(attachments.len(), 5);
+    }
+
+    #[test]
+    fn keeps_distinct_attachments_when_count_is_exact_multiple() {
+        let attachments = latest_attachment_batch_by_expected_count(
+            vec![
+                attachment("a.gif"),
+                attachment("b.gif"),
+                attachment("c.gif"),
+                attachment("d.gif"),
+            ],
+            2,
+        );
+
+        assert_eq!(attachments.len(), 4);
     }
 }

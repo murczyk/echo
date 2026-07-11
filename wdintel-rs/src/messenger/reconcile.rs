@@ -849,13 +849,13 @@ pub async fn reconcile_active_message(
     )
     .await
     .c(h!())?;
-    let attachments_hash =
+    let snapshot_attachments_hash =
         dedupe::attachments_hash(&snapshot_attachments).await;
     let attachments_hash = effective_edit_attachments_hash(
         txn,
         source_message_id,
         previous_attachments_hash.clone(),
-        attachments_hash,
+        snapshot_attachments_hash.clone(),
         &snapshot_attachments,
     )
     .await
@@ -904,10 +904,11 @@ pub async fn reconcile_active_message(
     )
     .await
     .c(h!())?;
-    let duplicate_of = match find_duplicate(
+    let duplicate_of = match find_duplicate_for_edit(
         txn,
         redis,
         &body,
+        snapshot_attachments_hash.as_deref(),
         attachments_hash.as_deref(),
         snapshot.timestamp,
         source_message.id,
@@ -916,10 +917,11 @@ pub async fn reconcile_active_message(
     {
         Ok(duplicate_of) => duplicate_of,
         Err(err) => {
-            clear_current_dedupe_key_if_source_best_effort(
+            clear_current_edit_dedupe_keys_best_effort(
                 redis,
                 source_message_id,
                 &body,
+                snapshot_attachments_hash.as_deref(),
                 attachments_hash.as_deref(),
             )
             .await;
@@ -1062,10 +1064,11 @@ pub async fn reconcile_active_message(
     match result {
         Ok(result) => Ok(result),
         Err(err) => {
-            clear_current_dedupe_key_if_source_best_effort(
+            clear_current_edit_dedupe_keys_best_effort(
                 redis,
                 source_message_id,
                 &body,
+                snapshot_attachments_hash.as_deref(),
                 attachments_hash.as_deref(),
             )
             .await;
@@ -1325,6 +1328,48 @@ async fn find_duplicate(
     .c(h!())
 }
 
+async fn find_duplicate_for_edit(
+    txn: &DatabaseTransaction,
+    redis: &mut ConnectionManager,
+    body: &str,
+    snapshot_attachments_hash: Option<&str>,
+    attachments_hash: Option<&str>,
+    timestamp: NaiveDateTime,
+    signal_message_id: i64,
+) -> anyhow::Result<Option<(signal_message::Model, datasource_group::Model)>> {
+    let duplicate_of = find_duplicate(
+        txn,
+        redis,
+        body,
+        snapshot_attachments_hash,
+        timestamp,
+        signal_message_id,
+    )
+    .await
+    .c(h!())?;
+    if duplicate_of.is_some() || snapshot_attachments_hash == attachments_hash {
+        return Ok(duplicate_of);
+    }
+    clear_current_dedupe_key_if_source(
+        redis,
+        signal_message_id,
+        body,
+        snapshot_attachments_hash,
+    )
+    .await
+    .c(h!())?;
+    find_duplicate(
+        txn,
+        redis,
+        body,
+        attachments_hash,
+        timestamp,
+        signal_message_id,
+    )
+    .await
+    .c(h!())
+}
+
 async fn clear_previous_dedupe_key_if_changed(
     redis: &mut ConnectionManager,
     signal_message_id: i64,
@@ -1436,6 +1481,32 @@ async fn clear_current_dedupe_key_if_source_best_effort(
             signal_message_id, err
         );
     }
+}
+
+async fn clear_current_edit_dedupe_keys_best_effort(
+    redis: &mut ConnectionManager,
+    signal_message_id: i64,
+    body: &str,
+    snapshot_attachments_hash: Option<&str>,
+    attachments_hash: Option<&str>,
+) {
+    clear_current_dedupe_key_if_source_best_effort(
+        redis,
+        signal_message_id,
+        body,
+        snapshot_attachments_hash,
+    )
+    .await;
+    if snapshot_attachments_hash == attachments_hash {
+        return;
+    }
+    clear_current_dedupe_key_if_source_best_effort(
+        redis,
+        signal_message_id,
+        body,
+        attachments_hash,
+    )
+    .await;
 }
 
 async fn clear_current_dedupe_key_if_source(
