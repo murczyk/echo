@@ -11,11 +11,11 @@ export type ComputerNameResponse = {
 };
 
 export type ComputerNameSearchResponse = {
-  computers: ComputerNameResponse[];
+  devices: ComputerNameResponse[];
 };
 
 export type CreateComputerNameResponse = {
-  computer: ComputerNameResponse;
+  device: ComputerNameResponse;
 };
 
 export async function searchComputerNames(
@@ -23,11 +23,11 @@ export async function searchComputerNames(
   options?: RequestOptions,
 ): Promise<ComputerNameResponse[]> {
   const result = await postJson<ComputerNameSearchResponse>(
-    '/api/sigint/computer-name/search',
+    '/api/sigint/device-name/search',
     { search },
     options,
   );
-  return result?.computers || [];
+  return result?.devices || [];
 }
 
 export async function searchComputerName(
@@ -35,11 +35,11 @@ export async function searchComputerName(
   options?: RequestOptions,
 ): Promise<ComputerNameResponse | null> {
   const result = await postJson<ComputerNameSearchResponse>(
-    '/api/sigint/computer-name/search',
+    '/api/sigint/device-name/search',
     { search },
     options,
   );
-  return result?.computers && result.computers.length > 0 ? result.computers[0] : null;
+  return result?.devices && result.devices.length > 0 ? result.devices[0] : null;
 }
 
 export async function createComputerName(
@@ -47,11 +47,11 @@ export async function createComputerName(
   options?: RequestOptions,
 ): Promise<ComputerNameResponse> {
   const result = await postJson<CreateComputerNameResponse>(
-    '/api/sigint/computer-name/create',
+    '/api/sigint/device-name/create',
     { name },
     options,
   );
-  return result.computer;
+  return result.device;
 }
 
 export type SubmitNetwork = {

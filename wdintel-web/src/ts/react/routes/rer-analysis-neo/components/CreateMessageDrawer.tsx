@@ -56,10 +56,13 @@ function normalizeMultiValue(values: string[]): string[] {
   const seen = new Set<string>();
   const result: string[] = [];
   for (const raw of values) {
-    const trimmed = raw.trim();
-    if (!trimmed || seen.has(trimmed)) continue;
-    seen.add(trimmed);
-    result.push(trimmed);
+    // Split comma-separated free-text so "дождь, синий" becomes two chips.
+    for (const part of raw.split(',')) {
+      const trimmed = part.trim();
+      if (!trimmed || seen.has(trimmed)) continue;
+      seen.add(trimmed);
+      result.push(trimmed);
+    }
   }
   return result;
 }
@@ -77,8 +80,7 @@ const messageSchema = z
         message: 'Невірний формат частоти (напр. 149.5000)',
       }),
     coords: z.string().optional(),
-    from_callsign: z.string().optional(),
-    to_callsigns: z.array(z.string()).optional(),
+    callsigns: z.array(z.string()).optional(),
     tags: z.array(z.string()).optional(),
     timestamp: z.any().optional(),
     full_body: z.string().optional(),
@@ -265,8 +267,7 @@ export function CreateMessageDrawer({ open, onClose, onSuccess }: Props) {
       message_uid: '',
       freq: '',
       coords: '',
-      from_callsign: '',
-      to_callsigns: [],
+      callsigns: [],
       tags: [],
       timestamp: null,
       full_body: '',
@@ -398,15 +399,14 @@ export function CreateMessageDrawer({ open, onClose, onSuccess }: Props) {
         upload_urls: uploadUrls.length > 0 ? uploadUrls : null,
         delete_media_ids: [], // Not supporting editing existing media from UI right now
         freq: data.freq || undefined,
-        coords: coordsResult.length > 0 ? coordsResult : undefined,
-        from_callsign: data.from_callsign || undefined,
-        to_callsigns: data.to_callsigns?.length ? data.to_callsigns : undefined,
-        tags: data.tags?.length ? data.tags : undefined,
+        coords: coordsResult,
+        to_callsigns: data.callsigns || [],
+        tags: data.tags || [],
         timestamp: data.timestamp ? (data.timestamp as Dayjs).toISOString() : undefined,
         full_body: data.full_body || undefined,
         post: data.post || undefined,
         unit: data.unit || undefined,
-        locations: data.locations?.length ? data.locations : undefined,
+        locations: data.locations || [],
         network: networkObj,
       });
 
@@ -489,11 +489,21 @@ export function CreateMessageDrawer({ open, onClose, onSuccess }: Props) {
                       options={computerNameOptions}
                       loading={computerNamesLoading}
                       value={field.value}
-                      onInputChange={(_, newValue) => {
+                      onInputChange={(_, newValue, reason) => {
+                        // MUI also fires this with reason "reset"/"clear" whenever
+                        // `value` changes programmatically (e.g. RHF's reset() after
+                        // submit, or when an option is picked from the list) — forwarding
+                        // those into field.onChange re-triggers validation and leaves a
+                        // stale "required" error visible after the drawer is reopened.
+                        if (reason !== 'input') return;
                         setComputerNameInput(newValue);
                         field.onChange(newValue);
                       }}
-                      onChange={(_, newValue) => field.onChange(newValue || '')}
+                      onChange={(_, newValue) => {
+                        const resolved = newValue || '';
+                        setComputerNameInput(resolved);
+                        field.onChange(resolved);
+                      }}
                       renderInput={(params) => (
                         <TextField
                           {...params}
@@ -753,43 +763,31 @@ export function CreateMessageDrawer({ open, onClose, onSuccess }: Props) {
                 />
               </Box>
 
-              <Box
-                sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, gap: 2 }}
-              >
-                <Controller
-                  name="from_callsign"
-                  control={control}
-                  render={({ field }) => (
-                    <TextField
-                      {...field}
-                      label="Від кого (позивний)"
-                      size="small"
-                      fullWidth
-                      disabled={submitting}
-                    />
-                  )}
-                />
-
-                <Controller
-                  name="to_callsigns"
-                  control={control}
-                  render={({ field }) => (
-                    <Autocomplete
-                      multiple
-                      freeSolo
-                      options={[]}
-                      value={field.value}
-                      onChange={(_, newValue) =>
-                        field.onChange(normalizeMultiValue(newValue as string[]))
-                      }
-                      renderInput={(params) => (
-                        <TextField {...params} label="Кому (позивні)" size="small" />
-                      )}
-                      disabled={submitting}
-                    />
-                  )}
-                />
-              </Box>
+              <Controller
+                name="callsigns"
+                control={control}
+                render={({ field }) => (
+                  <Autocomplete
+                    multiple
+                    freeSolo
+                    autoSelect
+                    options={[]}
+                    value={field.value}
+                    onChange={(_, newValue) =>
+                      field.onChange(normalizeMultiValue(newValue as string[]))
+                    }
+                    renderInput={(params) => (
+                      <TextField
+                        {...params}
+                        label="Позивні"
+                        size="small"
+                        placeholder="Розділяйте комою або Enter"
+                      />
+                    )}
+                    disabled={submitting}
+                  />
+                )}
+              />
             </FormSection>
 
             {/* Locations */}
@@ -801,6 +799,7 @@ export function CreateMessageDrawer({ open, onClose, onSuccess }: Props) {
                   <Autocomplete
                     multiple
                     freeSolo
+                    autoSelect
                     options={[]}
                     value={field.value}
                     onChange={(_, newValue) =>
