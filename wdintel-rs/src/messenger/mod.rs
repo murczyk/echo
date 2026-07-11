@@ -18,6 +18,7 @@ use regex::Regex;
 use sea_orm::*;
 use std::collections::{BTreeMap, HashMap, HashSet};
 
+pub mod attachments;
 pub mod bl;
 pub mod dedupe;
 pub mod group;

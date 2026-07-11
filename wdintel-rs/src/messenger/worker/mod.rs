@@ -758,24 +758,14 @@ async fn sync_inbox(
     let mut ids = vec![];
     for item in &inbox_messages {
         ids.push(item.internal_id);
-        upsert_signal_message_queue_snapshot(
-            item,
-            datasource.id,
-            datasource.echo_client_lock_id,
-            &txn,
-        )
-        .await
-        .c(h!())?;
+        upsert_signal_message_queue_snapshot(item, datasource.id, &txn)
+            .await
+            .c(h!())?;
     }
     for update in &inbox_updates {
-        upsert_signal_message_queue_snapshot(
-            update,
-            datasource.id,
-            datasource.echo_client_lock_id,
-            &txn,
-        )
-        .await
-        .c(h!())?;
+        upsert_signal_message_queue_snapshot(update, datasource.id, &txn)
+            .await
+            .c(h!())?;
     }
     echo_im::mark_inbox_as_seen(client_name, ids, &txn)
         .await
@@ -837,22 +827,27 @@ fn coalesce_latest_inbox_states(
 async fn upsert_signal_message_queue_snapshot(
     item: &echo_im::types::MessageF1,
     datasource_id: i64,
-    echo_client_lock_id: Option<i64>,
     txn: &DatabaseTransaction,
 ) -> anyhow::Result<()> {
+    let existing_snapshot = load_signal_message_queue_snapshot(
+        txn,
+        datasource_id,
+        item.internal_id,
+    )
+    .await
+    .c(h!())?;
     let effective_attachments = effective_queue_snapshot_attachments(
         item,
         datasource_id,
-        echo_client_lock_id,
+        existing_snapshot
+            .as_ref()
+            .map(|(_, attachments)| attachments.len())
+            .unwrap_or(0),
         txn,
     )
     .await
     .c(h!())?;
-    if let Some((existing_item, existing_attachments)) =
-        load_signal_message_queue_snapshot(txn, datasource_id, item.internal_id)
-            .await
-            .c(h!())?
-    {
+    if let Some((existing_item, existing_attachments)) = existing_snapshot {
         if queue_snapshot_matches(
             &existing_item,
             &existing_attachments,
@@ -971,50 +966,62 @@ async fn upsert_signal_message_queue_snapshot(
 async fn effective_queue_snapshot_attachments(
     item: &echo_im::types::MessageF1,
     datasource_id: i64,
-    echo_client_lock_id: Option<i64>,
+    previous_attachment_count: usize,
     txn: &DatabaseTransaction,
 ) -> anyhow::Result<Vec<echo_im::types::MessageAttachmentF1>> {
     if item.deleted {
         return Ok(vec![]);
     }
-    if !item.attachments.is_empty() {
-        return Ok(item.attachments.clone());
-    }
-    let Some(echo_client_lock_id) = echo_client_lock_id else {
-        return Ok(vec![]);
-    };
-    let Some(echo_client_lock) =
-        echo_client_lock::Entity::find_by_id(echo_client_lock_id as i32)
-            .one(txn)
-            .await
-            .c(h!())?
-    else {
-        return Ok(vec![]);
-    };
-    let attachments = echo_attachment::Entity::find()
-        .filter(echo_attachment::Column::MessageId.eq(item.internal_id))
-        .filter(
-            echo_attachment::Column::AccountId.eq(echo_client_lock.account_id),
-        )
-        .order_by_asc(echo_attachment::Column::Id)
-        .all(txn)
-        .await
-        .c(h!())?
-        .into_iter()
-        .map(|attachment| echo_im::types::MessageAttachmentF1 {
-            path: attachment.path,
-            name: attachment.name,
-        })
-        .collect::<Vec<_>>();
-    if !attachments.is_empty() {
-        info!(
-            "using echo attachment fallback for queued inbox snapshot: datasource_id={} echo_inbox_message_id={} attachments_count={}",
+    if let Some(attachments) =
+        crate::messenger::attachments::load_latest_echo_attachment_batch(
+            txn,
             datasource_id,
             item.internal_id,
-            attachments.len()
+        )
+        .await
+        .c(h!())?
+    {
+        return Ok(trim_echo_attachment_batch_for_queue(
+            attachments,
+            previous_attachment_count,
+            datasource_id,
+            item.internal_id,
+        ));
+    }
+    if item.attachments.is_empty() {
+        return Ok(vec![]);
+    }
+    Ok(trim_echo_attachment_batch_for_queue(
+        item.attachments.clone(),
+        previous_attachment_count,
+        datasource_id,
+        item.internal_id,
+    ))
+}
+
+fn trim_echo_attachment_batch_for_queue(
+    attachments: Vec<echo_im::types::MessageAttachmentF1>,
+    previous_attachment_count: usize,
+    datasource_id: i64,
+    echo_inbox_message_id: i32,
+) -> Vec<echo_im::types::MessageAttachmentF1> {
+    let original_attachment_count = attachments.len();
+    let attachments =
+        crate::messenger::attachments::latest_attachment_batch_by_expected_count(
+            attachments,
+            previous_attachment_count,
+        );
+    if !attachments.is_empty() {
+        info!(
+            "using echo attachment batch for queued inbox snapshot: datasource_id={} echo_inbox_message_id={} attachments_count={} previous_attachment_count={} original_attachment_count={}",
+            datasource_id,
+            echo_inbox_message_id,
+            attachments.len(),
+            previous_attachment_count,
+            original_attachment_count
         );
     }
-    Ok(attachments)
+    attachments
 }
 
 async fn load_signal_message_queue_snapshot(
@@ -1471,27 +1478,17 @@ mod tests {
             name: Some("fallback.txt".to_string()),
         }];
         let txn = env.dbx.begin().await.unwrap();
-        upsert_signal_message_queue_snapshot(
-            &snapshot,
-            datasource.id,
-            datasource.echo_client_lock_id,
-            &txn,
-        )
-        .await
-        .unwrap();
+        upsert_signal_message_queue_snapshot(&snapshot, datasource.id, &txn)
+            .await
+            .unwrap();
         txn.commit().await.unwrap();
 
         let mut update = test_message(inbox.id, "caption edited", false);
         update.attachments = vec![];
         let txn = env.dbx.begin().await.unwrap();
-        upsert_signal_message_queue_snapshot(
-            &update,
-            datasource.id,
-            datasource.echo_client_lock_id,
-            &txn,
-        )
-        .await
-        .unwrap();
+        upsert_signal_message_queue_snapshot(&update, datasource.id, &txn)
+            .await
+            .unwrap();
         txn.commit().await.unwrap();
 
         let queue_item = signal_message_queue::Entity::find()

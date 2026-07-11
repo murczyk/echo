@@ -841,17 +841,21 @@ pub async fn reconcile_active_message(
     let previous_attachments_hash = source_message.attachments_hash.clone();
 
     let body = snapshot.text.replace("\r\n", "\n");
-    let snapshot_attachments =
-        effective_snapshot_attachments(txn, datasource_id, snapshot)
-            .await
-            .c(h!())?;
-    let attachments_hash =
+    let snapshot_attachments = effective_snapshot_attachments(
+        txn,
+        datasource_id,
+        snapshot,
+        source_message_id,
+    )
+    .await
+    .c(h!())?;
+    let snapshot_attachments_hash =
         dedupe::attachments_hash(&snapshot_attachments).await;
     let attachments_hash = effective_edit_attachments_hash(
         txn,
         source_message_id,
         previous_attachments_hash.clone(),
-        attachments_hash,
+        snapshot_attachments_hash.clone(),
         &snapshot_attachments,
     )
     .await
@@ -900,10 +904,11 @@ pub async fn reconcile_active_message(
     )
     .await
     .c(h!())?;
-    let duplicate_of = match find_duplicate(
+    let duplicate_of = match find_duplicate_for_edit(
         txn,
         redis,
         &body,
+        snapshot_attachments_hash.as_deref(),
         attachments_hash.as_deref(),
         snapshot.timestamp,
         source_message.id,
@@ -912,10 +917,11 @@ pub async fn reconcile_active_message(
     {
         Ok(duplicate_of) => duplicate_of,
         Err(err) => {
-            clear_current_dedupe_key_if_source_best_effort(
+            clear_current_edit_dedupe_keys_best_effort(
                 redis,
                 source_message_id,
                 &body,
+                snapshot_attachments_hash.as_deref(),
                 attachments_hash.as_deref(),
             )
             .await;
@@ -1058,10 +1064,11 @@ pub async fn reconcile_active_message(
     match result {
         Ok(result) => Ok(result),
         Err(err) => {
-            clear_current_dedupe_key_if_source_best_effort(
+            clear_current_edit_dedupe_keys_best_effort(
                 redis,
                 source_message_id,
                 &body,
+                snapshot_attachments_hash.as_deref(),
                 attachments_hash.as_deref(),
             )
             .await;
@@ -1135,52 +1142,65 @@ async fn effective_snapshot_attachments(
     txn: &DatabaseTransaction,
     datasource_id: i64,
     snapshot: &MessageF1,
+    source_message_id: i64,
 ) -> anyhow::Result<Vec<MessageAttachmentF1>> {
-    if !snapshot.attachments.is_empty() {
-        return Ok(snapshot.attachments.clone());
-    }
-    let Some(datasource) = datasource::Entity::find_by_id(datasource_id)
-        .one(txn)
-        .await
-        .c(h!())?
-    else {
-        return Ok(vec![]);
-    };
-    let Some(echo_client_lock_id) = datasource.echo_client_lock_id else {
-        return Ok(vec![]);
-    };
-    let Some(echo_client_lock) =
-        echo_client_lock::Entity::find_by_id(echo_client_lock_id as i32)
-            .one(txn)
-            .await
-            .c(h!())?
-    else {
-        return Ok(vec![]);
-    };
-    let attachments = echo_attachment::Entity::find()
-        .filter(echo_attachment::Column::MessageId.eq(snapshot.internal_id))
+    let previous_attachment_count = signal_message_media::Entity::find()
         .filter(
-            echo_attachment::Column::AccountId.eq(echo_client_lock.account_id),
+            signal_message_media::Column::SignalMessageId.eq(source_message_id),
         )
-        .order_by_asc(echo_attachment::Column::Id)
-        .all(txn)
+        .count(txn)
         .await
-        .c(h!())?
-        .into_iter()
-        .map(|attachment| MessageAttachmentF1 {
-            path: attachment.path,
-            name: attachment.name,
-        })
-        .collect_vec();
-    if !attachments.is_empty() {
-        info!(
-            "using echo attachment fallback for active inbox edit: datasource_id={} echo_inbox_message_id={} attachments_count={}",
+        .c(h!())? as usize;
+    if let Some(attachments) =
+        crate::messenger::attachments::load_latest_echo_attachment_batch(
+            txn,
             datasource_id,
             snapshot.internal_id,
-            attachments.len()
+        )
+        .await
+        .c(h!())?
+    {
+        return Ok(trim_echo_attachment_batch_for_edit(
+            attachments,
+            previous_attachment_count,
+            datasource_id,
+            snapshot.internal_id,
+        ));
+    }
+    if !snapshot.attachments.is_empty() {
+        return Ok(trim_echo_attachment_batch_for_edit(
+            snapshot.attachments.clone(),
+            previous_attachment_count,
+            datasource_id,
+            snapshot.internal_id,
+        ));
+    }
+    Ok(vec![])
+}
+
+fn trim_echo_attachment_batch_for_edit(
+    attachments: Vec<MessageAttachmentF1>,
+    previous_attachment_count: usize,
+    datasource_id: i64,
+    echo_inbox_message_id: i32,
+) -> Vec<MessageAttachmentF1> {
+    let original_attachment_count = attachments.len();
+    let attachments =
+        crate::messenger::attachments::latest_attachment_batch_by_expected_count(
+            attachments,
+            previous_attachment_count,
+        );
+    if !attachments.is_empty() {
+        info!(
+            "using echo attachment batch for active inbox edit: datasource_id={} echo_inbox_message_id={} attachments_count={} previous_attachment_count={} original_attachment_count={}",
+            datasource_id,
+            echo_inbox_message_id,
+            attachments.len(),
+            previous_attachment_count,
+            original_attachment_count
         );
     }
-    Ok(attachments)
+    attachments
 }
 
 async fn retire_obsolete_linked_messages(
@@ -1308,6 +1328,48 @@ async fn find_duplicate(
     .c(h!())
 }
 
+async fn find_duplicate_for_edit(
+    txn: &DatabaseTransaction,
+    redis: &mut ConnectionManager,
+    body: &str,
+    snapshot_attachments_hash: Option<&str>,
+    attachments_hash: Option<&str>,
+    timestamp: NaiveDateTime,
+    signal_message_id: i64,
+) -> anyhow::Result<Option<(signal_message::Model, datasource_group::Model)>> {
+    let duplicate_of = find_duplicate(
+        txn,
+        redis,
+        body,
+        snapshot_attachments_hash,
+        timestamp,
+        signal_message_id,
+    )
+    .await
+    .c(h!())?;
+    if duplicate_of.is_some() || snapshot_attachments_hash == attachments_hash {
+        return Ok(duplicate_of);
+    }
+    clear_current_dedupe_key_if_source(
+        redis,
+        signal_message_id,
+        body,
+        snapshot_attachments_hash,
+    )
+    .await
+    .c(h!())?;
+    find_duplicate(
+        txn,
+        redis,
+        body,
+        attachments_hash,
+        timestamp,
+        signal_message_id,
+    )
+    .await
+    .c(h!())
+}
+
 async fn clear_previous_dedupe_key_if_changed(
     redis: &mut ConnectionManager,
     signal_message_id: i64,
@@ -1419,6 +1481,32 @@ async fn clear_current_dedupe_key_if_source_best_effort(
             signal_message_id, err
         );
     }
+}
+
+async fn clear_current_edit_dedupe_keys_best_effort(
+    redis: &mut ConnectionManager,
+    signal_message_id: i64,
+    body: &str,
+    snapshot_attachments_hash: Option<&str>,
+    attachments_hash: Option<&str>,
+) {
+    clear_current_dedupe_key_if_source_best_effort(
+        redis,
+        signal_message_id,
+        body,
+        snapshot_attachments_hash,
+    )
+    .await;
+    if snapshot_attachments_hash == attachments_hash {
+        return;
+    }
+    clear_current_dedupe_key_if_source_best_effort(
+        redis,
+        signal_message_id,
+        body,
+        attachments_hash,
+    )
+    .await;
 }
 
 async fn clear_current_dedupe_key_if_source(
