@@ -302,6 +302,7 @@ pub async fn get_inbox_messages_report(
                     group_master_key: None,
                     sender: m.sender.clone(),
                     extended_form: None,
+                    message_comments: vec![],
                     unit: m.unit.clone(),
                     callsign_tokens: None,
                     point_tokens: None,

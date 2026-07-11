@@ -254,9 +254,7 @@ export function MessageCard({
     metadataTrigger,
     excludeMenuOptions,
   };
-  // Duty cards intentionally hide peer/post comments. The editable duty comment
-  // remains visible via `msg.extendedForm` in `MessageCardContent`.
-  const visibleMessageComments = displayMode === 'analysis' ? messageComments : [];
+  const visibleMessageComments = messageComments;
 
   return (
     <Box

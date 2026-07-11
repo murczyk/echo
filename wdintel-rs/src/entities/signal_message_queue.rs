@@ -26,6 +26,7 @@ pub struct Model {
     pub group_id: Option<String>,
     pub timestamp: DateTime,
     pub created_at: DateTime,
+    pub deleted: bool,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

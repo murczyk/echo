@@ -18,6 +18,7 @@ use regex::Regex;
 use sea_orm::*;
 use std::collections::{BTreeMap, HashMap, HashSet};
 
+pub mod attachments;
 pub mod bl;
 pub mod dedupe;
 pub mod group;
@@ -27,6 +28,7 @@ pub mod media_wave;
 pub mod missing_message;
 pub(crate) mod oneoff;
 pub mod ops;
+pub mod reconcile;
 pub mod restapi_errors;
 #[cfg(test)]
 pub mod tests;

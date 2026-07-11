@@ -288,9 +288,11 @@ mod m20260708_083252_add_cyber_echo_enabled_to_settings;
 mod m20260708_130958_add_computer_name;
 mod m20260708_143111_add_computer_name_search_indexes;
 mod m20260709_092435_add_system_settings_notifications;
+mod m20260709_124309_signal_message_queue_latest_state;
 mod m20260710_091610_organism_secret_group_invites;
 mod m20260710_095803_echo_missing_message_created_at_idx;
 mod m20260710_102248_add_login_description;
+mod m20260711_120000_add_sigint_comment_parsing_to_system_settings;
 
 pub struct Migrator;
 
@@ -603,12 +605,18 @@ impl MigratorTrait for Migrator {
                 m20260709_092435_add_system_settings_notifications::Migration,
             ),
             Box::new(
+                m20260709_124309_signal_message_queue_latest_state::Migration,
+            ),
+            Box::new(
                 m20260710_091610_organism_secret_group_invites::Migration,
             ),
             Box::new(
                 m20260710_095803_echo_missing_message_created_at_idx::Migration,
             ),
             Box::new(m20260710_102248_add_login_description::Migration),
+            Box::new(
+                m20260711_120000_add_sigint_comment_parsing_to_system_settings::Migration,
+            ),
         ]
     }
 }

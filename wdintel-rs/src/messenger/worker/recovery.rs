@@ -9,20 +9,19 @@ use crate::message_queue::{
 };
 use crate::messenger::bl::list_echo_accounts;
 use crate::messenger::missing_message::{
-    load_scheduled_missing_messages, mark_missing_message_deleted,
-    mark_missing_message_duplicate, mark_missing_message_error,
-    mark_missing_message_resolved, record_deleted_missing_message,
-    record_duplicate_missing_message, record_missing_message,
-    schedule_missing_message, SYSTEM_SCHEDULED_BY,
+    mark_missing_message_deleted, mark_missing_message_duplicate,
+    mark_missing_message_error, mark_missing_message_resolved,
+    record_deleted_missing_message, record_duplicate_missing_message,
+    record_missing_message, schedule_missing_message, SYSTEM_SCHEDULED_BY,
 };
 use crate::messenger::types::{EchoAccountF1, Message};
 use crate::types::*;
 use echo_im::types::MessageAttachmentF1;
 use redis::aio::ConnectionManager;
 use sea_orm::{
-    ActiveEnum, ActiveModelTrait, ActiveValue::Set, ColumnTrait, Condition,
-    DatabaseConnection, DatabaseTransaction, EntityTrait, QueryFilter,
-    QueryOrder, QuerySelect, TransactionTrait,
+    sea_query::Query, ActiveEnum, ActiveModelTrait, ActiveValue::Set,
+    ColumnTrait, Condition, DatabaseConnection, DatabaseTransaction,
+    EntityTrait, QueryFilter, QueryOrder, QuerySelect, TransactionTrait,
 };
 
 pub struct EchoImSyncRecoveryDeps<'a> {
@@ -34,7 +33,7 @@ pub struct EchoImSyncRecoveryDeps<'a> {
 
 struct RecoveryMaps {
     existing_signal_ids: HashSet<i64>,
-    queue_items: BTreeMap<i64, signal_message_queue::Model>,
+    queue_items: BTreeMap<(i64, i64), signal_message_queue::Model>,
     groups: BTreeMap<i32, echo_group::Model>,
     senders: BTreeMap<i32, echo_sender::Model>,
     attachments: HashMap<i32, Vec<echo_attachment::Model>>,
@@ -52,6 +51,21 @@ pub async fn run_echo_im_sync_recovery_once(
 ) -> anyhow::Result<usize> {
     let datasources =
         active_linked_datasources_by_account(dbx).await.c(h!())?;
+    run_echo_im_sync_recovery_once_for_datasources(
+        dbx,
+        redis,
+        deps,
+        datasources,
+    )
+    .await
+}
+
+async fn run_echo_im_sync_recovery_once_for_datasources(
+    dbx: &DatabaseConnection,
+    redis: &mut ConnectionManager,
+    deps: &EchoImSyncRecoveryDeps<'_>,
+    datasources: BTreeMap<i32, EchoAccountF1>,
+) -> anyhow::Result<usize> {
     if datasources.is_empty() {
         return Ok(0);
     }
@@ -105,6 +119,48 @@ pub async fn run_echo_im_sync_recovery_once(
     }
 
     Ok(scheduled_count + result.missing_count)
+}
+
+async fn load_scheduled_missing_messages_for_accounts(
+    dbx: &DatabaseConnection,
+    account_ids: &[i32],
+    limit: u64,
+) -> anyhow::Result<Vec<echo_missing_message::Model>> {
+    let active_inbox_subquery = Query::select()
+        .column(echo_inbox_message::Column::Id)
+        .from(echo_inbox_message::Entity)
+        .and_where(
+            echo_inbox_message::Column::AccountId.is_in(account_ids.to_vec()),
+        )
+        .to_owned();
+    let existing_inbox_subquery = Query::select()
+        .column(echo_inbox_message::Column::Id)
+        .from(echo_inbox_message::Entity)
+        .to_owned();
+
+    echo_missing_message::Entity::find()
+        .filter(echo_missing_message::Column::IsResolved.eq(false))
+        .filter(
+            echo_missing_message::Column::Status
+                .eq(crate::entities::sea_orm_active_enums::EchoMissingMessageStatus::Scheduled),
+        )
+        .filter(
+            Condition::any()
+                .add(
+                    echo_missing_message::Column::MessageId
+                        .in_subquery(active_inbox_subquery),
+                )
+                .add(
+                    echo_missing_message::Column::MessageId
+                        .not_in_subquery(existing_inbox_subquery),
+                ),
+        )
+        .order_by_asc(echo_missing_message::Column::CreatedAt)
+        .order_by_asc(echo_missing_message::Column::Id)
+        .limit(limit)
+        .all(dbx)
+        .await
+        .c(h!())
 }
 
 async fn active_linked_datasources_by_account(
@@ -206,6 +262,7 @@ async fn load_recovery_maps(
     .await
     .c(h!())?;
 
+    let datasource_ids = datasources.values().map(|d| d.id).collect_vec();
     let queue_items_vec = if inbox_ids_i64.is_empty() {
         vec![]
     } else {
@@ -213,6 +270,10 @@ async fn load_recovery_maps(
             .filter(
                 signal_message_queue::Column::InternalId
                     .is_in(inbox_ids_i64.clone()),
+            )
+            .filter(
+                signal_message_queue::Column::DatasourceId
+                    .is_in(datasource_ids),
             )
             .order_by_asc(signal_message_queue::Column::CreatedAt)
             .all(dbx)
@@ -222,7 +283,10 @@ async fn load_recovery_maps(
     let mut queue_items = BTreeMap::new();
     for queue_item in queue_items_vec {
         queue_items
-            .entry(queue_item.internal_id)
+            .entry(recovery_queue_key(
+                queue_item.datasource_id,
+                queue_item.internal_id,
+            ))
             .or_insert(queue_item);
     }
 
@@ -320,6 +384,9 @@ fn signal_message_matches_echo_inbox(
     if datasource_group.datasource_id != datasource.id {
         return false;
     }
+    if datasource_group.group_master_key == IMPORT_DIRECTION_FINDING_UUID {
+        return true;
+    }
     let Some(group_id) = inbox_message.group_id else {
         return false;
     };
@@ -327,6 +394,22 @@ fn signal_message_matches_echo_inbox(
         return false;
     };
     datasource_group.group_master_key == group.group_id
+}
+
+fn recovery_queue_key(datasource_id: i64, inbox_message_id: i64) -> (i64, i64) {
+    (datasource_id, inbox_message_id)
+}
+
+fn queue_item_for_inbox<'a>(
+    maps: &'a RecoveryMaps,
+    datasources: &BTreeMap<i32, EchoAccountF1>,
+    inbox_message: &echo_inbox_message::Model,
+) -> Option<&'a signal_message_queue::Model> {
+    let datasource_id = datasources.get(&inbox_message.account_id)?.id;
+    maps.queue_items.get(&recovery_queue_key(
+        datasource_id,
+        i64::from(inbox_message.id),
+    ))
 }
 
 async fn process_candidates(
@@ -353,7 +436,9 @@ async fn process_candidates(
                 Some(echo_im_sync_cursor_for_message(inbox_message));
             continue;
         }
-        if let Some(queue_item) = maps.queue_items.get(&inbox_id) {
+        if let Some(queue_item) =
+            queue_item_for_inbox(maps, datasources, inbox_message)
+        {
             log_queued_inbox(inbox_message, queue_item);
             break;
         }
@@ -433,10 +518,14 @@ async fn process_scheduled_missing_messages(
     deps: &EchoImSyncRecoveryDeps<'_>,
     datasources: &BTreeMap<i32, EchoAccountF1>,
 ) -> anyhow::Result<usize> {
-    let missing_messages =
-        load_scheduled_missing_messages(dbx, ECHO_IM_SYNC_RECOVERY_BATCH_SIZE)
-            .await
-            .c(h!())?;
+    let account_ids = datasources.keys().cloned().collect_vec();
+    let missing_messages = load_scheduled_missing_messages_for_accounts(
+        dbx,
+        &account_ids,
+        ECHO_IM_SYNC_RECOVERY_BATCH_SIZE,
+    )
+    .await
+    .c(h!())?;
     if missing_messages.is_empty() {
         return Ok(0);
     }
@@ -499,18 +588,16 @@ async fn process_missing_message_recovery(
     inbox_message: &echo_inbox_message::Model,
 ) -> anyhow::Result<()> {
     let inbox_id = i64::from(inbox_message.id);
-    let datasource_id = recovery_datasource_id(
-        inbox_message,
-        datasources,
-        maps.queue_items.get(&inbox_id),
-    );
+    let queue_item = queue_item_for_inbox(maps, datasources, inbox_message);
+    let datasource_id =
+        recovery_datasource_id(inbox_message, datasources, queue_item);
     if maps.existing_signal_ids.contains(&inbox_id) {
         mark_missing_message_resolved(dbx, missing_message)
             .await
             .c(h!())?;
         return Ok(());
     }
-    if let Some(queue_item) = maps.queue_items.get(&inbox_id) {
+    if let Some(queue_item) = queue_item {
         log_queued_inbox(inbox_message, queue_item);
         mark_missing_message_error(
             dbx,
@@ -965,7 +1052,7 @@ mod tests {
     use crate::entities::sea_orm_active_enums::{
         AccountStatus, EchoMessageSource, EchoMissingMessageStatus,
     };
-    use crate::functest::tests::cleanup;
+    use crate::functest::tests::cleanup_locked;
     use sea_orm::*;
     use serial_test::serial;
     use tempfile::NamedTempFile;
@@ -973,6 +1060,19 @@ mod tests {
 
     static TEST_LOCK: tokio::sync::Mutex<()> =
         tokio::sync::Mutex::const_new(());
+
+    struct RecoveryEnv {
+        env: Arc<Env>,
+        _cleanup_guard: tokio::sync::MutexGuard<'static, ()>,
+    }
+
+    impl std::ops::Deref for RecoveryEnv {
+        type Target = Env;
+
+        fn deref(&self) -> &Self::Target {
+            self.env.as_ref()
+        }
+    }
 
     #[tokio::test]
     #[serial]
@@ -1069,12 +1169,24 @@ mod tests {
         let env = recovery_env().await;
         let (account, datasource) =
             mk_linked_datasource(&env.dbx, AccountStatus::Active, true).await;
+        let (other_account, other_datasource) =
+            mk_linked_datasource(&env.dbx, AccountStatus::Active, true).await;
         let group = mk_echo_group(&env.dbx, account.id, "map-group").await;
+        let other_group =
+            mk_echo_group(&env.dbx, other_account.id, "other-map-group").await;
         let sender = mk_echo_sender(&env.dbx, account.id).await;
         let base = old_ts();
         let existing_inbox =
             mk_inbox_message(&env.dbx, account.id, Some(group.id), base).await;
         let existing_inbox_id = existing_inbox.id;
+        let direction_inbox = mk_inbox_message(
+            &env.dbx,
+            account.id,
+            Some(group.id),
+            base + chrono::TimeDelta::seconds(30),
+        )
+        .await;
+        let direction_inbox_id = direction_inbox.id;
         let queue_inbox = mk_inbox_message(
             &env.dbx,
             account.id,
@@ -1091,6 +1203,14 @@ mod tests {
             base,
         )
         .await;
+        let other_queue_item = mk_queue_item(
+            &env.dbx,
+            other_datasource.id,
+            i64::from(queue_inbox.id),
+            &other_group.group_id,
+            base - chrono::TimeDelta::minutes(1),
+        )
+        .await;
         mk_echo_attachment(&env.dbx, account.id, queue_inbox.id, "/tmp/echo")
             .await;
         let mut queue_inbox = queue_inbox.into_active_model();
@@ -1103,6 +1223,20 @@ mod tests {
             &group.group_id,
         )
         .await;
+        let direction_datasource_group_id =
+            crate::messenger::group::ensure_datasource_group_id(
+                &env.dbx,
+                IMPORT_DIRECTION_FINDING_UUID.to_string(),
+                datasource.id,
+            )
+            .await
+            .unwrap();
+        mk_existing_signal_for_inbox_with_datasource_group(
+            &env.dbx,
+            direction_inbox.id,
+            direction_datasource_group_id,
+        )
+        .await;
 
         let datasources = active_linked_datasources_by_account(&env.dbx)
             .await
@@ -1110,7 +1244,7 @@ mod tests {
         let maps = load_recovery_maps(
             &env.dbx,
             &datasources,
-            &[existing_inbox, queue_inbox],
+            &[existing_inbox, direction_inbox, queue_inbox.clone()],
         )
         .await
         .unwrap();
@@ -1118,9 +1252,24 @@ mod tests {
         assert!(maps
             .existing_signal_ids
             .contains(&i64::from(existing_inbox_id)));
+        assert!(maps
+            .existing_signal_ids
+            .contains(&i64::from(direction_inbox_id)));
         assert_eq!(
-            maps.queue_items.get(&queue_item.internal_id).unwrap().id,
+            queue_item_for_inbox(&maps, &datasources, &queue_inbox)
+                .unwrap()
+                .id,
             queue_item.id
+        );
+        assert_eq!(
+            maps.queue_items
+                .get(&recovery_queue_key(
+                    other_datasource.id,
+                    other_queue_item.internal_id
+                ))
+                .unwrap()
+                .id,
+            other_queue_item.id
         );
         assert_eq!(maps.groups[&group.id].group_id, "map-group");
         assert_eq!(maps.senders[&sender.id].uuid, sender.uuid);
@@ -1171,7 +1320,7 @@ mod tests {
             inbox.update(&env.dbx).await.unwrap();
         }
 
-        let missing_count = run_recovery(&env).await;
+        let missing_count = run_recovery(&env, &[account.id]).await;
 
         assert_eq!(missing_count, ECHO_IM_SYNC_RECOVERY_BATCH_SIZE as usize);
         assert_eq!(
@@ -1206,7 +1355,7 @@ mod tests {
             inbox_ids.push(inbox.id);
         }
 
-        let first_count = run_recovery(&env).await;
+        let first_count = run_recovery(&env, &[account.id]).await;
         let cursor_after_first =
             crate::system_settings::get_echo_im_sync_cursor(&env.dbx)
                 .await
@@ -1219,7 +1368,7 @@ mod tests {
             inbox_ids[ECHO_IM_SYNC_RECOVERY_BATCH_SIZE as usize - 1]
         );
 
-        let second_count = run_recovery(&env).await;
+        let second_count = run_recovery(&env, &[account.id]).await;
         let cursor_after_second =
             crate::system_settings::get_echo_im_sync_cursor(&env.dbx)
                 .await
@@ -1304,7 +1453,7 @@ mod tests {
         update_inbox_flags(&env.dbx, duplicate.id, false, Some(original.id))
             .await;
 
-        let missing_count = run_recovery(&env).await;
+        let missing_count = run_recovery(&env, &[account.id]).await;
 
         assert_eq!(missing_count, 3);
         assert_eq!(
@@ -1360,7 +1509,7 @@ mod tests {
         inbox.timestamp = Set(Some(cursor + chrono::TimeDelta::minutes(2)));
         let inbox = inbox.update(&env.dbx).await.unwrap();
 
-        let missing_count = run_recovery(&env).await;
+        let missing_count = run_recovery(&env, &[account.id]).await;
 
         assert_eq!(missing_count, 1);
         let signal_message =
@@ -1407,7 +1556,7 @@ mod tests {
         )
         .await;
 
-        let missing_count = run_recovery(&env).await;
+        let missing_count = run_recovery(&env, &[account.id]).await;
 
         assert_eq!(missing_count, 1);
         assert!(signal_message_by_echo_inbox_message_id(&env.dbx, inbox.id)
@@ -1448,7 +1597,7 @@ mod tests {
         .await;
         update_inbox_flags(&env.dbx, inbox.id, true, None).await;
 
-        let missing_count = run_recovery(&env).await;
+        let missing_count = run_recovery(&env, &[account.id]).await;
 
         assert_eq!(missing_count, 1);
         assert!(signal_message_by_echo_inbox_message_id(&env.dbx, inbox.id)
@@ -1493,7 +1642,7 @@ mod tests {
                 .await
                 .unwrap();
 
-        let missing_count = run_recovery(&env).await;
+        let missing_count = run_recovery(&env, &[account.id]).await;
 
         assert_eq!(missing_count, 1);
         let missing_message =
@@ -1545,7 +1694,7 @@ mod tests {
                 .await
                 .unwrap();
 
-        let missing_count = run_recovery(&env).await;
+        let missing_count = run_recovery(&env, &[account.id]).await;
 
         assert_eq!(missing_count, 1);
         let missing_message =
@@ -1567,18 +1716,25 @@ mod tests {
     #[serial]
     async fn scheduled_caption_media_duplicate_is_marked_duplicate() {
         let _guard = TEST_LOCK.lock().await;
-        assert_caption_media_duplicate_is_marked_duplicate(Some(format!(
-            "[attachment sha256:{}]",
-            sha256::digest(b"payload")
-        )))
+        assert_caption_media_duplicate_is_marked_duplicate(
+            Some(format!(
+                "[attachment sha256:{}]",
+                sha256::digest(b"payload")
+            )),
+            EchoMissingMessageStatus::Duplicate,
+        )
         .await;
     }
 
     #[tokio::test]
     #[serial]
-    async fn scheduled_legacy_caption_media_duplicate_is_marked_duplicate() {
+    async fn scheduled_null_hash_caption_media_is_recovered_as_new_message() {
         let _guard = TEST_LOCK.lock().await;
-        assert_caption_media_duplicate_is_marked_duplicate(None).await;
+        assert_caption_media_duplicate_is_marked_duplicate(
+            None,
+            EchoMissingMessageStatus::Resolved,
+        )
+        .await;
     }
 
     #[tokio::test]
@@ -1649,7 +1805,7 @@ mod tests {
                 .await
                 .unwrap();
 
-        let missing_count = run_recovery(&env).await;
+        let missing_count = run_recovery(&env, &[account.id]).await;
 
         assert_eq!(missing_count, 1);
         assert!(signal_message_by_echo_inbox_message_id(&env.dbx, inbox.id)
@@ -1668,6 +1824,7 @@ mod tests {
 
     async fn assert_caption_media_duplicate_is_marked_duplicate(
         existing_attachments_hash: Option<String>,
+        expected_status: EchoMissingMessageStatus,
     ) {
         let env = recovery_env().await;
         let (account, datasource) =
@@ -1737,7 +1894,7 @@ mod tests {
                 .await
                 .unwrap();
 
-        let missing_count = run_recovery(&env).await;
+        let missing_count = run_recovery(&env, &[account.id]).await;
 
         assert_eq!(missing_count, 1);
         let missing_message =
@@ -1747,7 +1904,7 @@ mod tests {
                 .unwrap()
                 .unwrap();
         assert!(missing_message.is_resolved);
-        assert_eq!(missing_message.status, EchoMissingMessageStatus::Duplicate);
+        assert_eq!(missing_message.status, expected_status);
         assert_eq!(missing_message.error, None);
     }
 
@@ -1778,7 +1935,7 @@ mod tests {
             .await
             .unwrap();
 
-        let missing_count = run_recovery(&env).await;
+        let missing_count = run_recovery(&env, &[account.id]).await;
 
         assert_eq!(missing_count, 1);
         let missing_message =
@@ -1815,7 +1972,7 @@ mod tests {
         .await;
         mk_staged_signal_for_inbox(&env.dbx, inbox.id).await;
 
-        let missing_count = run_recovery(&env).await;
+        let missing_count = run_recovery(&env, &[account.id]).await;
 
         assert_eq!(missing_count, 1);
         let missing_message = missing_message_by_message_id(&env.dbx, inbox.id)
@@ -1861,7 +2018,7 @@ mod tests {
         )
         .await;
 
-        let missing_count = run_recovery(&env).await;
+        let missing_count = run_recovery(&env, &[account.id]).await;
 
         assert_eq!(missing_count, 1);
         let missing_message = missing_message_by_message_id(&env.dbx, inbox.id)
@@ -1910,7 +2067,7 @@ mod tests {
         )
         .await;
 
-        let missing_count = run_recovery(&env).await;
+        let missing_count = run_recovery(&env, &[account.id]).await;
 
         assert_eq!(missing_count, 1);
         let missing_message = missing_message_by_message_id(&env.dbx, inbox.id)
@@ -1983,7 +2140,7 @@ mod tests {
         .await
         .unwrap();
 
-        let missing_count = run_recovery(&env).await;
+        let missing_count = run_recovery(&env, &[account.id]).await;
 
         assert_eq!(missing_count, 1);
         assert!(signal_message_by_echo_inbox_message_id(&env.dbx, inbox.id)
@@ -2044,7 +2201,7 @@ mod tests {
         .await;
         mk_queue_attachment(&env.dbx, queue_item.id, "/tmp/no-s3-needed").await;
 
-        let missing_count = run_recovery(&env).await;
+        let missing_count = run_recovery(&env, &[account.id]).await;
 
         assert_eq!(missing_count, 0);
         assert!(signal_message_by_echo_inbox_message_id(&env.dbx, inbox.id)
@@ -2122,7 +2279,7 @@ mod tests {
                 .await
                 .unwrap();
 
-        let missing_count = run_recovery(&env).await;
+        let missing_count = run_recovery(&env, &[account.id]).await;
 
         assert_eq!(missing_count, 1);
         assert!(signal_message_by_echo_inbox_message_id(&env.dbx, inbox.id)
@@ -2165,10 +2322,30 @@ mod tests {
             .contains("normal queue worker owns processing"));
     }
 
-    async fn recovery_env() -> Arc<Env> {
-        let env = cleanup().await.unwrap();
+    async fn recovery_env() -> RecoveryEnv {
+        let (env, cleanup_guard) = cleanup_locked().await.unwrap();
         cleanup_recovery_tables(&env.dbx).await;
-        env
+        cleanup_recovery_redis(&mut env.redis.clone()).await;
+        RecoveryEnv {
+            env,
+            _cleanup_guard: cleanup_guard,
+        }
+    }
+
+    async fn cleanup_recovery_redis(redis: &mut ConnectionManager) {
+        let keys: Vec<String> = redis::cmd("KEYS")
+            .arg("signal_message:*")
+            .query_async(redis)
+            .await
+            .unwrap();
+        if keys.is_empty() {
+            return;
+        }
+        redis::cmd("DEL")
+            .arg(keys)
+            .query_async::<i64>(redis)
+            .await
+            .unwrap();
     }
 
     async fn cleanup_recovery_tables(dbx: &DatabaseConnection) {
@@ -2222,7 +2399,7 @@ mod tests {
             .unwrap();
     }
 
-    async fn run_recovery(env: &Arc<Env>) -> usize {
+    async fn run_recovery(env: &Env, account_ids: &[i32]) -> usize {
         let mut redis = env.redis.clone();
         let deps = EchoImSyncRecoveryDeps {
             config: &env.config,
@@ -2230,9 +2407,18 @@ mod tests {
             rq: &env.rq,
             s3: &env.s3,
         };
-        run_echo_im_sync_recovery_once(&env.dbx, &mut redis, &deps)
+        let mut datasources = active_linked_datasources_by_account(&env.dbx)
             .await
-            .unwrap()
+            .unwrap();
+        datasources.retain(|account_id, _| account_ids.contains(account_id));
+        run_echo_im_sync_recovery_once_for_datasources(
+            &env.dbx,
+            &mut redis,
+            &deps,
+            datasources,
+        )
+        .await
+        .unwrap()
     }
 
     fn old_ts() -> NaiveDateTime {
@@ -2425,6 +2611,7 @@ mod tests {
             group_id: Set(Some(group_id.to_string())),
             timestamp: Set(created_at + chrono::TimeDelta::seconds(1)),
             created_at: Set(created_at),
+            deleted: Set(false),
         }
         .insert(dbx)
         .await
@@ -2589,6 +2776,7 @@ mod tests {
             ),
             cyber_echo_enabled: Set(false),
             echo_restapi_error_discord_webhook_url: Set(None),
+            sigint_comment_parsing_enabled: Set(true),
         }
         .insert(dbx)
         .await

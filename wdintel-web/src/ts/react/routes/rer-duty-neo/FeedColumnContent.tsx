@@ -4,6 +4,7 @@ import { forwardRef, useCallback, useEffect, useRef, useState } from 'react';
 import type { ComponentProps, Ref, RefObject } from 'react';
 import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso';
 import { ELLIPSIS, isNullOrUndefined, isPresent } from '../../utils/misc';
+import type { MessageComment } from '../../../../Bindings';
 import type { FeedColumnModel } from './FeedColumn';
 import { DutyMessageCard } from '../shared/message-card/MessageCard';
 import { PowerChip } from '../../components/PowerChip';
@@ -21,6 +22,16 @@ const LOAD_OLDER_BUFFER_ITEMS = 10;
 const DUTY_FEED_AT_BOTTOM_THRESHOLD_PX = 25;
 /** After loading older, don't trigger again until the user scrolls back up so the visible range is at least this far from the bottom. */
 const LOAD_OLDER_RESET_MARGIN = 20;
+
+function filterOwnMessageComments(
+  messageComments: MessageComment[] | null | undefined,
+  authUserName: string | null,
+): MessageComment[] {
+  if (!messageComments) return [];
+  const activeLogin = authUserName?.trim();
+  if (!activeLogin) return messageComments;
+  return messageComments.filter((comment) => comment.login.trim() !== activeLogin);
+}
 
 const FeedScroller = forwardRef<HTMLDivElement, ComponentProps<'div'>>(function FeedScroller(
   { style, className, ...props },
@@ -260,6 +271,7 @@ export function FeedColumnContent({ column, virtuosoRef }: FeedColumnContentProp
         }}
         className="m-0 list-none rer-duty pt-2"
         itemContent={(_index, [id, msg]) => {
+          const messageComments = filterOwnMessageComments(msg.messageComments, authUserName);
           const labels = buildMessageCardDisplayLabels(msg, { groupInfos, profiles });
           const etalonDisplayModel = resolveMessageCardEtalonDisplayModel(msg, {
             featureStrictNetworks,
@@ -282,8 +294,7 @@ export function FeedColumnContent({ column, virtuosoRef }: FeedColumnContentProp
               senderName={labels.senderName}
               copiedFeedbackId={copiedFeedbackId}
               networkDisplayMap={networkDisplayMap}
-              /* Duty shows only `msg.extendedForm`; peer/post comments belong to analysis. */
-              messageComments={[]}
+              messageComments={messageComments}
               networkMap={networkMap}
               unitsMap={unitsMap}
               callsignInfoMap={callsignInfoMap}

@@ -207,6 +207,44 @@ describe('inbox API normalization', () => {
       },
     ]);
   });
+
+  it('normalizes nested message comments from snake_case', async () => {
+    postJsonMock.mockResolvedValueOnce({
+      inbox_items: [
+        [
+          10,
+          buildRawMessage({
+            message_comments: [
+              {
+                id: 11,
+                message_id: 10,
+                comment: 'system note',
+                login: 'system',
+                sigint_post_name: 'Post Alpha',
+              },
+            ],
+          }),
+        ],
+      ],
+      callsigns: [],
+      signal_profiles: {},
+      signal_groups: [],
+      freq_pelengs_summary: null,
+    });
+
+    const response = await fetchInboxMessages({} as Parameters<typeof fetchInboxMessages>[0]);
+    const message = response.inboxItems[0]?.[1];
+
+    expect(message?.messageComments).toEqual([
+      {
+        id: 11,
+        messageId: 10,
+        comment: 'system note',
+        login: 'system',
+        sigintPostName: 'Post Alpha',
+      },
+    ]);
+  });
 });
 
 describe('normalizeMessageMediaInfo', () => {
