@@ -16,13 +16,70 @@ describe('fetchMessagesByIds', () => {
       messages: [[7, { id: 7, text: 'updated' }]],
     });
 
-    await expect(fetchMessagesByIds([7, 8])).resolves.toEqual([[7, { id: 7, text: 'updated' }]]);
+    await expect(fetchMessagesByIds([7, 8])).resolves.toEqual([
+      [
+        7,
+        expect.objectContaining({
+          id: 7,
+          text: 'updated',
+        }),
+      ],
+    ]);
 
     expect(apiMocks.postJson).toHaveBeenCalledWith(
       '/api/rer-importer/messages-by-id',
       { message_ids: [7, 8], inbox_req: null },
       undefined,
     );
+  });
+
+  it('normalizes by-id messages the same way as inbox loading', async () => {
+    apiMocks.postJson.mockResolvedValueOnce({
+      messages: [
+        [
+          7,
+          {
+            id: 7,
+            text: 'updated',
+            text_marked: [
+              { CNHighlightC: { text: '' } },
+              { CNHighlightC: { text: 'keep' } },
+              { CNPointC: { text: '', etalon: 'point-1' } },
+              { CNPointC: { text: 'Point text', etalon: '   ' } },
+              { CNPointC: { text: 'Point text', etalon: 'etalon-1' } },
+              'CNNewlineC',
+            ],
+            point_tokens: [
+              { text: 'bad', etalon: '' },
+              { text: 'good', etalon: 'etalon-1' },
+            ],
+            inbox_tags: [
+              { id: 1, tag_id: 5, confidence: 1, login: null, model: null, organism_id: null },
+            ],
+          },
+        ],
+      ],
+    });
+
+    await expect(fetchMessagesByIds([7])).resolves.toEqual([
+      [
+        7,
+        expect.objectContaining({
+          id: 7,
+          text: 'updated',
+          textMarked: [
+            { CNHighlightC: { text: 'keep' } },
+            { CNTextC: { text: 'Point text' } },
+            { CNPointC: { text: 'Point text', etalon: 'etalon-1' } },
+            'CNNewlineC',
+          ],
+          pointTokens: [{ text: 'good', etalon: 'etalon-1' }],
+          inboxTags: [
+            { id: 1, tagId: 5, confidence: 1, login: null, model: null, organismId: null },
+          ],
+        }),
+      ],
+    ]);
   });
 
   it('sends inbox request context when provided', async () => {

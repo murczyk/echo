@@ -188,7 +188,8 @@ export async function fetchMessagesByIds(
     transformCamelToSnake(req),
     options,
   );
-  return transformSnakeToCamel<MessageIdsRsp>(raw).messages ?? [];
+  const messages = transformSnakeToCamel<MessageIdsRsp>(raw).messages ?? [];
+  return messages.map(([id, message]) => [id, normalizeInboxMessage(message)]);
 }
 
 function normalizeContentNode(node: unknown): InboxTextMarkedNode | null {
