@@ -15,7 +15,7 @@ import Html.Events exposing (..)
 import Html.Extra as HtmlX
 import List.Extra as ListX
 import Maybe exposing (withDefault)
-import Maybe.Extra as MaybeX exposing (isJust)
+import Maybe.Extra as MaybeX
 import Pages_.RerAnalysis.Utils
 import Route exposing (Route)
 import Set exposing (Set)
@@ -131,26 +131,6 @@ type OutSignal
     | OutDeleteMessage Int
     | OutSelectFreqAndShowMap String
     | OutOpenSidebarEdit Int
-
-
-isOurOrganism : B.User -> Dict String (Maybe B.User) -> String -> Bool
-isOurOrganism user users login =
-    if user.name == login then
-        True
-
-    else
-        case Dict.get login users of
-            Nothing ->
-                False
-
-            Just (Just user2) ->
-                isJust user.organismId
-                    && isJust user2.organismId
-                    && user2.organismId
-                    == user.organismId
-
-            _ ->
-                False
 
 
 isPostAuthoredComment : B.MessageComment -> Bool
@@ -1583,8 +1563,9 @@ renderRow vps _ model ( i_, ( msgId, message ) ) =
                 |> List.filter
                     (\x ->
                         isPostAuthoredComment x
-                            || not (isOurOrganism vps.user vps.users x.login)
-                )
+                            || trim x.login
+                            /= trim vps.user.name
+                    )
                 |> List.map renderOtherComment
 
         signalMessageSenderLabel =
