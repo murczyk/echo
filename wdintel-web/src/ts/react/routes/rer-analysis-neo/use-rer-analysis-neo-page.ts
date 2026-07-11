@@ -51,6 +51,7 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
     null,
   );
   const [supportNonRerInterceptions, setSupportNonRerInterceptions] = useState(false);
+  const [cyberEchoEnabled, setCyberEchoEnabled] = useState(false);
   const [lastResetState, setLastResetState] = useState<AnalysisQueryState>(() =>
     hasMeaningfulUiFiltersBeyondDateRange(initialQueryState)
       ? createResetQueryState()
@@ -164,6 +165,7 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
         if (abortController.signal.aborted) return;
         setUnitsExactMatchOnlyDefault(settings.rerAnalysisUnitsExactMatchOnlyDefault);
         setSupportNonRerInterceptions(settings.supportNonRerInterceptions);
+        setCyberEchoEnabled(settings.cyberEchoEnabled);
       })
       .catch(() => {
         if (abortController.signal.aborted) return;
@@ -568,6 +570,7 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
     toggleReportTaskRunLogs: report.toggleReportTaskRunLogs,
     unitsExactMatchOnlyDefault,
     supportNonRerInterceptions,
+    cyberEchoEnabled,
     updateReport: report.updateReport,
     updateExisting: savedFilters.updateExisting,
     updateQueryState,

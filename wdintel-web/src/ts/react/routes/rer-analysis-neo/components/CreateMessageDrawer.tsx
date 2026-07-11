@@ -16,6 +16,7 @@ import {
   Stack,
 } from '@mui/material';
 import CloseIcon from '@mui/icons-material/Close';
+import AutoFixHighIcon from '@mui/icons-material/AutoFixHigh';
 
 import Uppy from '@uppy/core';
 import type { UppyFile } from '@uppy/core';
@@ -34,11 +35,16 @@ import {
   createComputerName,
   submitCyberEchoMessage,
 } from '../../../services/api/cyber-echo-message';
-import type { SignalGroupEntry } from '../../../../../Bindings';
-import { PowerDateTimePicker } from '../../../components/PowerDateTimePicker';
+import type { SignalGroupEntry, User } from '../../../../../Bindings';
+import { PowerDatePicker } from '../../../components/PowerDateTimePicker';
 import { PowerAlert } from '../../../components/PowerAlert';
 import { PowerForm } from '../../../components/PowerForm';
 import { pageDrawerBackdropSx } from '../../../components/loadingOverlayStyles';
+import { hasRole } from '../../../utils/roles';
+import { TimePicker } from '@mui/x-date-pickers/TimePicker';
+import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs';
+import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
+import dayjs from 'dayjs';
 
 const FREQ_FORMAT_REGEX = /^\d+([.,]\d+)?$/;
 
@@ -69,9 +75,9 @@ function normalizeMultiValue(values: string[]): string[] {
 
 const messageSchema = z
   .object({
-    text: z.string().trim().min(1, 'Повідомлення не може бути порожнім'),
+    text: z.string().optional(),
     signalGroupMasterKey: z.string().trim().min(1, 'Оберіть групу'),
-    computerName: z.string().trim().min(1, "Введіть або оберіть комп'ютер"),
+    computerName: z.string().optional(),
     message_uid: z.string().optional(),
     freq: z
       .string()
@@ -82,7 +88,8 @@ const messageSchema = z
     coords: z.string().optional(),
     callsigns: z.array(z.string()).optional(),
     tags: z.array(z.string()).optional(),
-    timestamp: z.any().optional(),
+    date: z.any().optional(),
+    time: z.any().optional(),
     full_body: z.string().optional(),
     post: z.string().optional(),
     unit: z.string().optional(),
@@ -133,6 +140,9 @@ type MessageFormData = z.infer<typeof messageSchema>;
 
 type Props = {
   open: boolean;
+  /** Cyber Echo mode (system setting). When true, the "Назва комп'ютера" field is shown. */
+  cyberEchoEnabled: boolean;
+  currentUser: User | null;
   onClose: () => void;
   onSuccess?: (inboxItemId: number) => void;
 };
@@ -146,7 +156,15 @@ function FormSection({ title, children }: { title: string; children: ReactNode }
   );
 }
 
-export function CreateMessageDrawer({ open, onClose, onSuccess }: Props) {
+export function CreateMessageDrawer({
+  open,
+  cyberEchoEnabled,
+  currentUser,
+  onClose,
+  onSuccess,
+}: Props) {
+  const isAdmin = hasRole(currentUser?.roles, 'Admin');
+  const [showAdvanced, setShowAdvanced] = useState(false);
   const [signalGroups, setSignalGroups] = useState<SignalGroupEntry[]>([]);
   const [groupsLoading, setGroupsLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -243,6 +261,13 @@ export function CreateMessageDrawer({ open, onClose, onSuccess }: Props) {
     }
   };
 
+  // Placeholder: the backend parsing endpoint is not ready yet. Once it lands,
+  // this should call the parse API with the raw text and populate the form via
+  // reset()/setValue so every parsed field becomes editable.
+  const handleParse = () => {
+    // no-op for now
+  };
+
   const handleDropzoneKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
     if (submitting) return;
     if (e.key === 'Enter' || e.key === ' ') {
@@ -269,7 +294,8 @@ export function CreateMessageDrawer({ open, onClose, onSuccess }: Props) {
       coords: '',
       callsigns: [],
       tags: [],
-      timestamp: null,
+      date: null,
+      time: null,
       full_body: '',
       post: '',
       unit: '',
@@ -327,6 +353,7 @@ export function CreateMessageDrawer({ open, onClose, onSuccess }: Props) {
     uppy.cancelAll();
     reset();
     setComputerNameInput('');
+    setShowAdvanced(false);
     setErrorMsg(null);
     onClose();
   };
@@ -337,14 +364,17 @@ export function CreateMessageDrawer({ open, onClose, onSuccess }: Props) {
     setErrorMsg(null);
 
     try {
-      // 1. Resolve computer name
-      let computerNameId: number;
-      const searchRes = await searchComputerName(data.computerName);
-      if (searchRes) {
-        computerNameId = searchRes.id;
-      } else {
-        const createRes = await createComputerName(data.computerName);
-        computerNameId = createRes.id;
+      // 1. Resolve computer name (Cyber Echo only; optional otherwise)
+      let computerNameId: number | undefined;
+      const computerName = data.computerName?.trim();
+      if (computerName) {
+        const searchRes = await searchComputerName(computerName);
+        if (searchRes) {
+          computerNameId = searchRes.id;
+        } else {
+          const createRes = await createComputerName(computerName);
+          computerNameId = createRes.id;
+        }
       }
 
       // 2. Upload files if any
@@ -380,6 +410,19 @@ export function CreateMessageDrawer({ open, onClose, onSuccess }: Props) {
         }
       }
 
+      // Merge separate date + time UI fields into a single ISO timestamp.
+      // Either field alone is enough; the missing part falls back to the start of day.
+      const dateValue = data.date as Dayjs | null;
+      const timeValue = data.time as Dayjs | null;
+      let timestamp: string | undefined;
+      if (dateValue || timeValue) {
+        const base = (dateValue ?? dayjs()).startOf('day');
+        const merged = timeValue
+          ? base.hour(timeValue.hour()).minute(timeValue.minute()).second(timeValue.second())
+          : base;
+        timestamp = merged.toISOString();
+      }
+
       // Build network object
       let networkObj: any = undefined;
       if (data.network_signal_name || data.network_cc || data.network_name) {
@@ -392,7 +435,7 @@ export function CreateMessageDrawer({ open, onClose, onSuccess }: Props) {
 
       // 3. Create message
       const response = await submitCyberEchoMessage({
-        text: data.text,
+        text: data.text?.trim() || undefined,
         message_uid: data.message_uid || undefined,
         signal_group_master_key: data.signalGroupMasterKey,
         device_name_id: computerNameId,
@@ -402,7 +445,7 @@ export function CreateMessageDrawer({ open, onClose, onSuccess }: Props) {
         coords: coordsResult,
         to_callsigns: data.callsigns || [],
         tags: data.tags || [],
-        timestamp: data.timestamp ? (data.timestamp as Dayjs).toISOString() : undefined,
+        timestamp,
         full_body: data.full_body || undefined,
         post: data.post || undefined,
         unit: data.unit || undefined,
@@ -434,7 +477,7 @@ export function CreateMessageDrawer({ open, onClose, onSuccess }: Props) {
       slotProps={{
         paper: {
           sx: {
-            width: { xs: '100%', sm: 680 },
+            width: { xs: '100%', sm: 720, md: 1040 },
             maxWidth: '100vw',
             display: 'flex',
             backgroundColor: 'background.default',
@@ -472,469 +515,545 @@ export function CreateMessageDrawer({ open, onClose, onSuccess }: Props) {
             noValidate
             onSubmit={handleSubmit(onSubmit)}
             canSubmit={!submitting}
-            sx={{ display: 'flex', flexDirection: 'column', gap: 2.5 }}
+            sx={{
+              display: 'grid',
+              gridTemplateColumns: { xs: '1fr', md: 'minmax(0, 1fr) minmax(0, 1fr)' },
+              gap: 3,
+              alignItems: 'start',
+            }}
           >
-            {/* System / Required */}
-            <FormSection title="Системні (обов'язково)">
-              <Box
-                sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, gap: 2 }}
-              >
-                <Controller
-                  name="computerName"
-                  control={control}
-                  render={({ field }) => (
-                    <Autocomplete
-                      freeSolo
-                      forcePopupIcon
-                      options={computerNameOptions}
-                      loading={computerNamesLoading}
-                      value={field.value}
-                      onInputChange={(_, newValue, reason) => {
-                        // MUI also fires this with reason "reset"/"clear" whenever
-                        // `value` changes programmatically (e.g. RHF's reset() after
-                        // submit, or when an option is picked from the list) — forwarding
-                        // those into field.onChange re-triggers validation and leaves a
-                        // stale "required" error visible after the drawer is reopened.
-                        if (reason !== 'input') return;
-                        setComputerNameInput(newValue);
-                        field.onChange(newValue);
-                      }}
-                      onChange={(_, newValue) => {
-                        const resolved = newValue || '';
-                        setComputerNameInput(resolved);
-                        field.onChange(resolved);
-                      }}
-                      renderInput={(params) => (
-                        <TextField
-                          {...params}
-                          label="Назва комп'ютера"
-                          size="small"
-                          fullWidth
-                          required
-                          error={!!errors.computerName}
-                          helperText={errors.computerName?.message}
-                          disabled={submitting}
-                        />
-                      )}
-                    />
-                  )}
-                />
-
-                <Controller
-                  name="signalGroupMasterKey"
-                  control={control}
-                  render={({ field }) => (
-                    <Autocomplete
-                      options={signalGroups}
-                      getOptionLabel={(option) => option.name || option.masterKey}
-                      isOptionEqualToValue={(option, value) => option.masterKey === value.masterKey}
-                      renderOption={(props, option) => {
-                        const { key, ...restProps } = props as any;
-                        return (
-                          <li key={option.masterKey} {...restProps}>
-                            {option.name || option.masterKey}
-                          </li>
-                        );
-                      }}
-                      loading={groupsLoading}
-                      value={signalGroups.find((g) => g.masterKey === field.value) || null}
-                      onChange={(_, newValue) => field.onChange(newValue?.masterKey || '')}
-                      renderInput={(params) => (
-                        <TextField
-                          {...params}
-                          label="Сигнальна група"
-                          size="small"
-                          fullWidth
-                          required
-                          error={!!errors.signalGroupMasterKey}
-                          helperText={errors.signalGroupMasterKey?.message}
-                          disabled={submitting || groupsLoading}
-                          slotProps={{
-                            input: {
-                              ...params.InputProps,
-                              endAdornment: (
-                                <>
-                                  {groupsLoading ? (
-                                    <CircularProgress color="inherit" size={20} />
-                                  ) : null}
-                                  {params.InputProps.endAdornment}
-                                </>
-                              ),
-                            },
-                          }}
-                        />
-                      )}
-                    />
-                  )}
-                />
-              </Box>
-            </FormSection>
-
-            {/* Content */}
-            <FormSection title="Зміст (текст повідомлення)">
-              <Controller
-                name="text"
-                control={control}
-                render={({ field }) => (
-                  <TextField
-                    {...field}
-                    label="Текст повідомлення"
-                    required
-                    fullWidth
-                    multiline
-                    rows={6}
-                    error={!!errors.text}
-                    helperText={errors.text?.message}
-                    disabled={submitting}
-                  />
-                )}
-              />
+            {/* LEFT COLUMN: raw message text, parse action, attachments */}
+            <Stack spacing={2}>
               <Controller
                 name="full_body"
                 control={control}
                 render={({ field }) => (
                   <TextField
                     {...field}
-                    label="Повна форма повідомлення (опційно)"
+                    label="Текст повідомлення"
                     fullWidth
                     multiline
-                    rows={4}
+                    minRows={12}
                     disabled={submitting}
                   />
                 )}
               />
-            </FormSection>
-
-            {/* Meta */}
-            <FormSection title="Метадані повідомлення">
-              <Box
-                sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, gap: 2 }}
+              <Button
+                onClick={handleParse}
+                variant="outlined"
+                startIcon={<AutoFixHighIcon />}
+                disabled={submitting}
+                sx={{ alignSelf: 'flex-start' }}
               >
-                <Controller
-                  name="timestamp"
-                  control={control}
-                  render={({ field }) => (
-                    <PowerDateTimePicker
-                      label="Час перехоплення"
-                      value={field.value}
-                      allowEmpty
-                      onChange={(newValue) => field.onChange(newValue)}
-                      disabled={submitting}
-                      slotProps={{ textField: { size: 'small', fullWidth: true } }}
-                    />
-                  )}
-                />
+                Розпарсити
+              </Button>
 
-                <Controller
-                  name="message_uid"
-                  control={control}
-                  render={({ field }) => (
-                    <TextField
-                      {...field}
-                      label="Зовнішній ідентифікатор"
-                      size="small"
-                      fullWidth
-                      disabled={submitting}
-                    />
-                  )}
-                />
-              </Box>
-
-              <Box
-                sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, gap: 2 }}
-              >
-                <Controller
-                  name="post"
-                  control={control}
-                  render={({ field }) => (
-                    <TextField
-                      {...field}
-                      label="Пост"
-                      size="small"
-                      fullWidth
-                      disabled={submitting}
-                    />
-                  )}
-                />
-
-                <Controller
-                  name="unit"
-                  control={control}
-                  render={({ field }) => (
-                    <TextField
-                      {...field}
-                      label="Підрозділ"
-                      size="small"
-                      fullWidth
-                      disabled={submitting}
-                    />
-                  )}
-                />
-              </Box>
-
-              <Controller
-                name="tags"
-                control={control}
-                render={({ field }) => (
-                  <Autocomplete
+              {/* Attachments */}
+              <FormSection title={`Вкладення (${uppyFiles.length})`}>
+                <Box
+                  role="button"
+                  tabIndex={submitting ? -1 : 0}
+                  aria-disabled={submitting}
+                  aria-label="Додати файли"
+                  onClick={() => !submitting && fileInputRef.current?.click()}
+                  onKeyDown={handleDropzoneKeyDown}
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                  }}
+                  onDrop={submitting ? undefined : handleDrop}
+                  sx={{
+                    border: '2px dashed',
+                    borderColor: 'divider',
+                    borderRadius: 1.5,
+                    p: 3,
+                    textAlign: 'center',
+                    cursor: submitting ? 'not-allowed' : 'pointer',
+                    opacity: submitting ? 0.5 : 1,
+                    transition: 'background-color 150ms ease, border-color 150ms ease',
+                    '&:hover': submitting
+                      ? undefined
+                      : { bgcolor: 'action.hover', borderColor: 'primary.main' },
+                    '&:focus-visible': {
+                      outline: '2px solid',
+                      outlineColor: 'primary.main',
+                      outlineOffset: 2,
+                    },
+                  }}
+                >
+                  <input
+                    type="file"
                     multiple
-                    options={tagOptions}
-                    value={field.value}
-                    onChange={(_, newValue) =>
-                      field.onChange(normalizeMultiValue(newValue as string[]))
-                    }
-                    renderInput={(params) => <TextField {...params} label="Теги" size="small" />}
+                    className="hidden"
+                    ref={fileInputRef}
+                    onChange={handleFileSelect}
                     disabled={submitting}
                   />
+                  <Typography variant="body2" color="text.secondary">
+                    Натисніть тут або перетягніть файли (до 20 файлів, до 2GB)
+                  </Typography>
+                </Box>
+
+                {uppyFiles.length > 0 && (
+                  <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                    {uppyFiles.map((f) => (
+                      <Box
+                        key={f.id}
+                        sx={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          p: 1,
+                          border: '1px solid',
+                          borderColor: 'divider',
+                          borderRadius: 1,
+                          bgcolor: 'action.hover',
+                        }}
+                      >
+                        <Typography variant="body2" noWrap sx={{ flex: 1, mr: 2 }} title={f.name}>
+                          {f.name}
+                        </Typography>
+                        <IconButton
+                          size="small"
+                          onClick={() => uppy.removeFile(f.id)}
+                          disabled={submitting}
+                        >
+                          <CloseIcon fontSize="small" />
+                        </IconButton>
+                      </Box>
+                    ))}
+                  </Box>
                 )}
-              />
-            </FormSection>
+              </FormSection>
+            </Stack>
 
-            {/* Network */}
-            <FormSection title="Мережа та радіо">
-              <Box
-                sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, gap: 2 }}
-              >
-                <Controller
-                  name="freq"
-                  control={control}
-                  render={({ field }) => (
-                    <TextField
-                      {...field}
-                      label="Частота (МГц)"
-                      placeholder="напр. 149.5000"
-                      size="small"
-                      fullWidth
-                      error={!!errors.freq}
-                      helperText={errors.freq?.message}
-                      disabled={submitting}
+            {/* RIGHT COLUMN: structured fields (populated by parsing) */}
+            <Stack spacing={2.5}>
+              {/* System / Required */}
+              <FormSection title="Системні">
+                <Box
+                  sx={{
+                    display: 'grid',
+                    gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' },
+                    gap: 2,
+                  }}
+                >
+                  {cyberEchoEnabled && (
+                    <Controller
+                      name="computerName"
+                      control={control}
+                      render={({ field }) => (
+                        <Autocomplete
+                          freeSolo
+                          forcePopupIcon
+                          options={computerNameOptions}
+                          loading={computerNamesLoading}
+                          value={field.value ?? ''}
+                          onInputChange={(_, newValue, reason) => {
+                            // MUI also fires this with reason "reset"/"clear" whenever
+                            // `value` changes programmatically (e.g. RHF's reset() after
+                            // submit, or when an option is picked from the list) — forwarding
+                            // those into field.onChange re-triggers validation and leaves a
+                            // stale "required" error visible after the drawer is reopened.
+                            if (reason !== 'input') return;
+                            setComputerNameInput(newValue);
+                            field.onChange(newValue);
+                          }}
+                          onChange={(_, newValue) => {
+                            const resolved = newValue || '';
+                            setComputerNameInput(resolved);
+                            field.onChange(resolved);
+                          }}
+                          renderInput={(params) => (
+                            <TextField
+                              {...params}
+                              label="Назва комп'ютера"
+                              size="small"
+                              fullWidth
+                              disabled={submitting}
+                            />
+                          )}
+                        />
+                      )}
                     />
                   )}
-                />
-                <Controller
-                  name="network_cc"
-                  control={control}
-                  render={({ field }) => (
-                    <TextField
-                      {...field}
-                      label="Колірний код (CC)"
-                      placeholder="0–15"
-                      size="small"
-                      type="number"
-                      fullWidth
-                      error={!!errors.network_cc}
-                      helperText={errors.network_cc?.message}
-                      disabled={submitting}
-                    />
-                  )}
-                />
-              </Box>
 
-              <Box
-                sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, gap: 2 }}
-              >
-                <Controller
-                  name="network_signal_name"
-                  control={control}
-                  render={({ field }) => (
-                    <TextField
-                      {...field}
-                      label="Назва сигналу мережі"
-                      size="small"
-                      fullWidth
-                      error={!!errors.network_signal_name}
-                      helperText={errors.network_signal_name?.message}
-                      disabled={submitting}
-                    />
-                  )}
-                />
-                <Controller
-                  name="network_name"
-                  control={control}
-                  render={({ field }) => (
-                    <TextField
-                      {...field}
-                      label="Назва мережі"
-                      size="small"
-                      fullWidth
-                      disabled={submitting}
-                    />
-                  )}
-                />
-              </Box>
-
-              <Controller
-                name="callsigns"
-                control={control}
-                render={({ field }) => (
-                  <Autocomplete
-                    multiple
-                    freeSolo
-                    autoSelect
-                    options={[]}
-                    value={field.value}
-                    onChange={(_, newValue) =>
-                      field.onChange(normalizeMultiValue(newValue as string[]))
-                    }
-                    renderInput={(params) => (
-                      <TextField
-                        {...params}
-                        label="Позивні"
-                        size="small"
-                        placeholder="Розділяйте комою або Enter"
+                  <Controller
+                    name="signalGroupMasterKey"
+                    control={control}
+                    render={({ field }) => (
+                      <Autocomplete
+                        options={signalGroups}
+                        getOptionLabel={(option) => option.name || option.masterKey}
+                        isOptionEqualToValue={(option, value) =>
+                          option.masterKey === value.masterKey
+                        }
+                        renderOption={(props, option) => {
+                          const { key, ...restProps } = props as any;
+                          return (
+                            <li key={option.masterKey} {...restProps}>
+                              {option.name || option.masterKey}
+                            </li>
+                          );
+                        }}
+                        loading={groupsLoading}
+                        value={signalGroups.find((g) => g.masterKey === field.value) || null}
+                        onChange={(_, newValue) => field.onChange(newValue?.masterKey || '')}
+                        renderInput={(params) => (
+                          <TextField
+                            {...params}
+                            label="Група"
+                            size="small"
+                            fullWidth
+                            required
+                            error={!!errors.signalGroupMasterKey}
+                            helperText={errors.signalGroupMasterKey?.message}
+                            disabled={submitting || groupsLoading}
+                            slotProps={{
+                              input: {
+                                ...params.InputProps,
+                                endAdornment: (
+                                  <>
+                                    {groupsLoading ? (
+                                      <CircularProgress color="inherit" size={20} />
+                                    ) : null}
+                                    {params.InputProps.endAdornment}
+                                  </>
+                                ),
+                              },
+                            }}
+                          />
+                        )}
                       />
                     )}
-                    disabled={submitting}
                   />
-                )}
-              />
-            </FormSection>
-
-            {/* Locations */}
-            <FormSection title="Локації та координати">
-              <Controller
-                name="locations"
-                control={control}
-                render={({ field }) => (
-                  <Autocomplete
-                    multiple
-                    freeSolo
-                    autoSelect
-                    options={[]}
-                    value={field.value}
-                    onChange={(_, newValue) =>
-                      field.onChange(normalizeMultiValue(newValue as string[]))
-                    }
-                    renderInput={(params) => (
-                      <TextField {...params} label="Назви локацій" size="small" />
-                    )}
-                    disabled={submitting}
-                  />
-                )}
-              />
-
-              <Controller
-                name="coords"
-                control={control}
-                render={({ field }) => (
-                  <TextField
-                    {...field}
-                    label="Координати (lat, lon) по одній на рядок"
-                    multiline
-                    rows={3}
-                    fullWidth
-                    error={!!errors.coords}
-                    helperText={errors.coords?.message}
-                    disabled={submitting}
-                    placeholder="49.12345, 37.12345&#10;49.54321, 37.54321"
-                  />
-                )}
-              />
-            </FormSection>
-
-            {/* Attachments */}
-            <FormSection title={`Вкладення (${uppyFiles.length})`}>
-              <Box
-                role="button"
-                tabIndex={submitting ? -1 : 0}
-                aria-disabled={submitting}
-                aria-label="Додати файли"
-                onClick={() => !submitting && fileInputRef.current?.click()}
-                onKeyDown={handleDropzoneKeyDown}
-                onDragOver={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                }}
-                onDrop={submitting ? undefined : handleDrop}
-                sx={{
-                  border: '2px dashed',
-                  borderColor: 'divider',
-                  borderRadius: 1.5,
-                  p: 3,
-                  textAlign: 'center',
-                  cursor: submitting ? 'not-allowed' : 'pointer',
-                  opacity: submitting ? 0.5 : 1,
-                  transition: 'background-color 150ms ease, border-color 150ms ease',
-                  '&:hover': submitting
-                    ? undefined
-                    : { bgcolor: 'action.hover', borderColor: 'primary.main' },
-                  '&:focus-visible': {
-                    outline: '2px solid',
-                    outlineColor: 'primary.main',
-                    outlineOffset: 2,
-                  },
-                }}
-              >
-                <input
-                  type="file"
-                  multiple
-                  className="hidden"
-                  ref={fileInputRef}
-                  onChange={handleFileSelect}
-                  disabled={submitting}
-                />
-                <Typography variant="body2" color="text.secondary">
-                  Натисніть тут або перетягніть файли (до 20 файлів, до 2GB)
-                </Typography>
-              </Box>
-
-              {uppyFiles.length > 0 && (
-                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-                  {uppyFiles.map((f) => (
-                    <Box
-                      key={f.id}
-                      sx={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
-                        p: 1,
-                        border: '1px solid',
-                        borderColor: 'divider',
-                        borderRadius: 1,
-                        bgcolor: 'action.hover',
-                      }}
-                    >
-                      <Typography variant="body2" noWrap sx={{ flex: 1, mr: 2 }} title={f.name}>
-                        {f.name}
-                      </Typography>
-                      <IconButton
-                        size="small"
-                        onClick={() => uppy.removeFile(f.id)}
-                        disabled={submitting}
-                      >
-                        <CloseIcon fontSize="small" />
-                      </IconButton>
-                    </Box>
-                  ))}
                 </Box>
+              </FormSection>
+
+              {/* Short message (advanced) */}
+              {showAdvanced && (
+                <Controller
+                  name="text"
+                  control={control}
+                  render={({ field }) => (
+                    <TextField
+                      {...field}
+                      label="Коротке повідомлення"
+                      fullWidth
+                      multiline
+                      rows={4}
+                      error={!!errors.text}
+                      helperText={errors.text?.message}
+                      disabled={submitting}
+                    />
+                  )}
+                />
               )}
-            </FormSection>
+
+              {/* Meta */}
+              <FormSection title="Метадані повідомлення">
+                <Box
+                  sx={{
+                    display: 'grid',
+                    gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' },
+                    gap: 2,
+                  }}
+                >
+                  <Controller
+                    name="date"
+                    control={control}
+                    render={({ field }) => (
+                      <PowerDatePicker
+                        label="Дата перехоплення"
+                        value={field.value}
+                        allowEmpty
+                        onChange={(newValue) => field.onChange(newValue)}
+                        disabled={submitting}
+                        slotProps={{ textField: { size: 'small', fullWidth: true } }}
+                      />
+                    )}
+                  />
+
+                  <Controller
+                    name="time"
+                    control={control}
+                    render={({ field }) => (
+                      <LocalizationProvider dateAdapter={AdapterDayjs} adapterLocale="uk">
+                        <TimePicker
+                          label="Час перехоплення"
+                          value={field.value ?? null}
+                          ampm={false}
+                          onChange={(newValue) => field.onChange(newValue)}
+                          disabled={submitting}
+                          slotProps={{ textField: { size: 'small', fullWidth: true } }}
+                        />
+                      </LocalizationProvider>
+                    )}
+                  />
+                </Box>
+
+                {showAdvanced && (
+                  <Controller
+                    name="message_uid"
+                    control={control}
+                    render={({ field }) => (
+                      <TextField
+                        {...field}
+                        label="Зовнішній ідентифікатор"
+                        size="small"
+                        fullWidth
+                        disabled={submitting}
+                      />
+                    )}
+                  />
+                )}
+
+                <Box
+                  sx={{
+                    display: 'grid',
+                    gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' },
+                    gap: 2,
+                  }}
+                >
+                  <Controller
+                    name="post"
+                    control={control}
+                    render={({ field }) => (
+                      <TextField
+                        {...field}
+                        label="Пост"
+                        size="small"
+                        fullWidth
+                        disabled={submitting}
+                      />
+                    )}
+                  />
+
+                  <Controller
+                    name="unit"
+                    control={control}
+                    render={({ field }) => (
+                      <TextField
+                        {...field}
+                        label="Підрозділ"
+                        size="small"
+                        fullWidth
+                        disabled={submitting}
+                      />
+                    )}
+                  />
+                </Box>
+
+                <Controller
+                  name="tags"
+                  control={control}
+                  render={({ field }) => (
+                    <Autocomplete
+                      multiple
+                      options={tagOptions}
+                      value={field.value}
+                      onChange={(_, newValue) =>
+                        field.onChange(normalizeMultiValue(newValue as string[]))
+                      }
+                      renderInput={(params) => <TextField {...params} label="Теги" size="small" />}
+                      disabled={submitting}
+                    />
+                  )}
+                />
+              </FormSection>
+
+              {/* Network */}
+              <FormSection title="Мережа та радіо">
+                <Box
+                  sx={{
+                    display: 'grid',
+                    gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' },
+                    gap: 2,
+                  }}
+                >
+                  <Controller
+                    name="freq"
+                    control={control}
+                    render={({ field }) => (
+                      <TextField
+                        {...field}
+                        label="Частота (МГц)"
+                        placeholder="напр. 149.5000"
+                        size="small"
+                        fullWidth
+                        error={!!errors.freq}
+                        helperText={errors.freq?.message}
+                        disabled={submitting}
+                      />
+                    )}
+                  />
+                  <Controller
+                    name="network_cc"
+                    control={control}
+                    render={({ field }) => (
+                      <TextField
+                        {...field}
+                        label="Колірний код (CC)"
+                        placeholder="0–15"
+                        size="small"
+                        type="number"
+                        fullWidth
+                        error={!!errors.network_cc}
+                        helperText={errors.network_cc?.message}
+                        disabled={submitting}
+                      />
+                    )}
+                  />
+                </Box>
+
+                <Box
+                  sx={{
+                    display: 'grid',
+                    gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' },
+                    gap: 2,
+                  }}
+                >
+                  {showAdvanced && (
+                    <Controller
+                      name="network_signal_name"
+                      control={control}
+                      render={({ field }) => (
+                        <TextField
+                          {...field}
+                          label="Назва сигналу мережі"
+                          size="small"
+                          fullWidth
+                          error={!!errors.network_signal_name}
+                          helperText={errors.network_signal_name?.message}
+                          disabled={submitting}
+                        />
+                      )}
+                    />
+                  )}
+                  <Controller
+                    name="network_name"
+                    control={control}
+                    render={({ field }) => (
+                      <TextField
+                        {...field}
+                        label="Назва мережі"
+                        size="small"
+                        fullWidth
+                        disabled={submitting}
+                      />
+                    )}
+                  />
+                </Box>
+
+                <Controller
+                  name="callsigns"
+                  control={control}
+                  render={({ field }) => (
+                    <Autocomplete
+                      multiple
+                      freeSolo
+                      autoSelect
+                      options={[]}
+                      value={field.value}
+                      onChange={(_, newValue) =>
+                        field.onChange(normalizeMultiValue(newValue as string[]))
+                      }
+                      renderInput={(params) => (
+                        <TextField
+                          {...params}
+                          label="Позивні"
+                          size="small"
+                          placeholder="Розділяйте комою або Enter"
+                        />
+                      )}
+                      disabled={submitting}
+                    />
+                  )}
+                />
+              </FormSection>
+
+              {/* Locations */}
+              <FormSection title="Локації та координати">
+                <Controller
+                  name="locations"
+                  control={control}
+                  render={({ field }) => (
+                    <Autocomplete
+                      multiple
+                      freeSolo
+                      autoSelect
+                      options={[]}
+                      value={field.value}
+                      onChange={(_, newValue) =>
+                        field.onChange(normalizeMultiValue(newValue as string[]))
+                      }
+                      renderInput={(params) => (
+                        <TextField {...params} label="Назви локацій" size="small" />
+                      )}
+                      disabled={submitting}
+                    />
+                  )}
+                />
+
+                <Controller
+                  name="coords"
+                  control={control}
+                  render={({ field }) => (
+                    <TextField
+                      {...field}
+                      label="Координати (lat, lon) по одній на рядок"
+                      multiline
+                      rows={3}
+                      fullWidth
+                      error={!!errors.coords}
+                      helperText={errors.coords?.message}
+                      disabled={submitting}
+                      placeholder="49.12345, 37.12345&#10;49.54321, 37.54321"
+                    />
+                  )}
+                />
+              </FormSection>
+            </Stack>
           </PowerForm>
         </Box>
 
         <Box
           sx={{
             display: 'flex',
-            justifyContent: 'flex-end',
+            alignItems: 'center',
+            justifyContent: 'space-between',
             gap: 2,
             p: 2.5,
             borderTop: '1px solid',
             borderColor: 'divider',
           }}
         >
-          <Button onClick={handleDrawerClose} disabled={submitting}>
-            Скасувати
-          </Button>
-          <Button
-            type="submit"
-            form="create-message-form"
-            variant="contained"
-            color="primary"
-            disabled={submitting}
-            startIcon={submitting && <CircularProgress size={20} color="inherit" />}
-          >
-            {submitting ? 'Збереження...' : 'Створити'}
-          </Button>
+          <Box sx={{ display: 'flex' }}>
+            {isAdmin && (
+              <Button
+                onClick={() => setShowAdvanced((prev) => !prev)}
+                disabled={submitting}
+                color="inherit"
+              >
+                {showAdvanced ? 'Приховати розширені поля' : 'Розширені поля'}
+              </Button>
+            )}
+          </Box>
+          <Box sx={{ display: 'flex', gap: 2 }}>
+            <Button onClick={handleDrawerClose} disabled={submitting}>
+              Скасувати
+            </Button>
+            <Button
+              type="submit"
+              form="create-message-form"
+              variant="contained"
+              color="primary"
+              disabled={submitting}
+              startIcon={submitting && <CircularProgress size={20} color="inherit" />}
+            >
+              {submitting ? 'Збереження...' : 'Створити'}
+            </Button>
+          </Box>
         </Box>
       </div>
     </Drawer>

@@ -81,7 +81,7 @@ export type CreateCyberEchoMessageRequest = {
   locations?: string[];
   network?: SubmitNetwork;
   signal_group_master_key: string;
-  device_name_id: number;
+  device_name_id?: number;
   upload_urls?: string[] | null;
   delete_media_ids?: string[];
 };

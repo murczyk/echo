@@ -150,6 +150,8 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
       <CreateMessageFab onClick={() => setCreateMessageOpen(true)} />
       <CreateMessageDrawer
         open={createMessageOpen}
+        cyberEchoEnabled={page.cyberEchoEnabled}
+        currentUser={page.currentUser}
         onClose={() => setCreateMessageOpen(false)}
         onSuccess={async (inboxItemId) => {
           setCreateMessageOpen(false);
