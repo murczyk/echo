@@ -490,7 +490,6 @@ pub struct InboxSubmitMessageRsp {
 
 #[derive(Debug, Default, Serialize, Deserialize, PartialEq, Clone)]
 pub struct GenericInboxSubmitRsp {
-    pub message_uid: String,
     pub warnings: Vec<InboxSubmitWarning>,
 }
 
@@ -498,8 +497,11 @@ pub struct GenericInboxSubmitRsp {
 #[serde(deny_unknown_fields)]
 pub struct InboxSubmitItem {
     #[serde(default)]
-    pub message_uid: Option<String>,
-    pub text: String,
+    pub full_body: Option<String>,
+    #[serde(default)]
+    pub text: Option<String>,
+    #[serde(default)]
+    pub comment: Option<String>,
     #[serde(default)]
     pub freq: Option<String>,
     #[serde(default)]
@@ -515,8 +517,6 @@ pub struct InboxSubmitItem {
     #[serde(default)]
     pub sender: Option<String>,
     #[serde(default)]
-    pub full_body: Option<String>,
-    #[serde(default)]
     pub post: Option<String>,
     #[serde(default)]
     pub unit: Option<String>,
@@ -528,13 +528,20 @@ pub struct InboxSubmitItem {
     pub network: Option<SubmitNetwork>,
     #[serde(default)]
     pub dmr: Vec<SubmitDmrMetadata>,
+    #[serde(skip, default = "default_parse_body_coordinates")]
+    pub parse_body_coordinates: bool,
+}
+
+fn default_parse_body_coordinates() -> bool {
+    true
 }
 
 impl Default for InboxSubmitItem {
     fn default() -> Self {
         Self {
-            message_uid: None,
-            text: String::new(),
+            full_body: None,
+            text: None,
+            comment: None,
             freq: None,
             coords: vec![],
             from_callsign: None,
@@ -542,13 +549,13 @@ impl Default for InboxSubmitItem {
             tags: None,
             timestamp: "1970-01-01T00:00:00Z".to_string(),
             sender: None,
-            full_body: None,
             post: None,
             unit: None,
             locations: vec![],
             group_names: None,
             network: None,
             dmr: vec![],
+            parse_body_coordinates: true,
         }
     }
 }
@@ -1641,7 +1648,6 @@ mod tests {
     #[test]
     fn inbox_submit_item_flattens_v11_payload_fields() {
         let item_json = json!({
-            "message_uid": "msg-a1208-6734-2879",
             "text": "рос абонент ЯРУС викликав СВЕТЛЫЙ на 145.026",
             "freq": "145.0260",
             "coords": [{ "lat": 49.12345, "lon": 37.12345 }],
@@ -1649,7 +1655,8 @@ mod tests {
             "to": ["светлый"],
             "tags": ["БпЛА", "Втрати"],
             "timestamp": "2026-06-25T12:34:56Z",
-            "full_body": "Сигнали: dmr",
+            "full_body": "Повне повідомлення",
+            "comment": "Сигнали: dmr",
             "locations": ["ЛИМАН ПЕРШИЙ", "КОПАНІ"],
             "group_names": ["SC1"],
             "network": {
@@ -1672,8 +1679,10 @@ mod tests {
 
         let item: InboxSubmitItem = serde_json::from_value(item_json).unwrap();
 
-        assert_eq!(item.message_uid.as_deref(), Some("msg-a1208-6734-2879"));
-        assert_eq!(item.text, "рос абонент ЯРУС викликав СВЕТЛЫЙ на 145.026");
+        assert_eq!(
+            item.text.as_deref(),
+            Some("рос абонент ЯРУС викликав СВЕТЛЫЙ на 145.026")
+        );
         assert_eq!(item.freq.as_deref(), Some("145.0260"));
         assert_eq!(
             item.tags,
@@ -1688,7 +1697,8 @@ mod tests {
                 lon: 37.12345,
             }]
         );
-        assert_eq!(item.full_body.as_deref(), Some("Сигнали: dmr"));
+        assert_eq!(item.full_body.as_deref(), Some("Повне повідомлення"));
+        assert_eq!(item.comment.as_deref(), Some("Сигнали: dmr"));
         assert_eq!(
             item.locations,
             vec!["ЛИМАН ПЕРШИЙ".to_string(), "КОПАНІ".to_string()]
@@ -1705,10 +1715,7 @@ mod tests {
             encoded.get("text"),
             Some(&json!("рос абонент ЯРУС викликав СВЕТЛЫЙ на 145.026"))
         );
-        assert_eq!(
-            encoded.get("message_uid"),
-            Some(&json!("msg-a1208-6734-2879"))
-        );
+        assert!(encoded.get("message_uid").is_none());
         assert!(encoded.get("message_id").is_none());
         assert!(encoded.get("source").is_none());
         assert!(encoded.get("integration").is_none());
@@ -1816,9 +1823,8 @@ mod tests {
     }
 
     #[test]
-    fn generic_inbox_submit_rsp_uses_single_message_uid_and_warnings() {
+    fn generic_inbox_submit_rsp_uses_warnings() {
         let rsp = GenericInboxSubmitRsp {
-            message_uid: "msg-a1208-6734-2879".to_string(),
             warnings: vec![InboxSubmitWarning {
                 code: "dmr_network_cc_conflict".to_string(),
                 message: "using primary color code".to_string(),
@@ -1827,7 +1833,7 @@ mod tests {
 
         let rsp = serde_json::to_value(rsp).unwrap();
 
-        assert_eq!(rsp["message_uid"], json!("msg-a1208-6734-2879"));
+        assert!(rsp.get("message_uid").is_none());
         assert_eq!(
             rsp["warnings"][0]["code"],
             json!("dmr_network_cc_conflict")
@@ -1883,7 +1889,10 @@ mod tests {
         }))
         .unwrap();
 
-        assert_eq!(req.text, "рос абонент ЯРУС викликав СВЕТЛЫЙ");
+        assert_eq!(
+            req.text.as_deref(),
+            Some("рос абонент ЯРУС викликав СВЕТЛЫЙ")
+        );
         assert_eq!(req.from_callsign.as_deref(), Some("ярус"));
         assert_eq!(req.to, vec!["светлый".to_string()]);
         assert_eq!(req.group_names, Some(vec!["SC1".into()]));

@@ -762,9 +762,17 @@ fn validate_generic_submit_item(
 fn validate_submit_item_content(
     item: &InboxSubmitItem,
 ) -> Result<(), AppError> {
-    if item.text.trim().is_empty() {
+    if item
+        .full_body
+        .as_deref()
+        .is_none_or(|body| body.trim().is_empty())
+        && item
+            .text
+            .as_deref()
+            .is_none_or(|body| body.trim().is_empty())
+    {
         return Err(AppError::BL {
-            msg: "Inbox submit requires message text".to_string(),
+            msg: "Inbox submit requires full_body or text".to_string(),
         });
     }
     validate_submit_network(item.network.as_ref())?;
@@ -779,9 +787,20 @@ fn generic_submit_item_to_inbox_message(
     let timestamp =
         parse_submit_rfc3339_timestamp("timestamp", &item.timestamp)?;
     let (date, time) = format_submit_date_time_fields(timestamp);
+    let full_body = normalized_optional_string(item.full_body.as_deref())
+        .or_else(|| normalized_optional_string(item.text.as_deref()))
+        .c(h!())?;
+    let no_headers_body =
+        normalized_optional_string(item.text.as_deref()).map(|body| {
+            crate::rer_importer::body_noheader::NoHeadersBody {
+                end: body.len(),
+                body,
+                start: 0,
+            }
+        });
     let message = InboxMessage {
         message_uid: None,
-        text: item.text.clone(),
+        text: full_body,
         media: vec![],
         images: vec![],
         image_recognized: vec![],
@@ -797,7 +816,7 @@ fn generic_submit_item_to_inbox_message(
         timestamp: Some(timestamp.and_utc().timestamp_millis()),
         group_master_key: None,
         sender: item.sender.clone(),
-        extended_form: item.full_body.clone(),
+        extended_form: item.comment.clone(),
         message_comments: vec![],
         post: item.post.clone(),
         post_id: None,
@@ -805,7 +824,7 @@ fn generic_submit_item_to_inbox_message(
         callsign_tokens: None,
         signal_tokens: None,
         point_tokens: None,
-        no_headers_body: None,
+        no_headers_body,
         keyword_tokens: None,
         text_marked: None,
         datasource_id: None,
@@ -1122,30 +1141,6 @@ async fn upsert_submit_signal_message(
     .await
 }
 
-async fn upsert_submit_signal_message_create_missing_uid(
-    txn: &DatabaseTransaction,
-    config: &Config,
-    datasource_id: i64,
-    message_uid: Option<&str>,
-    message: &InboxMessage,
-    timestamp: Option<NaiveDateTime>,
-    operator_tags: Option<serde_json::Value>,
-    groups: &[(String, i64)],
-) -> Result<signal_message::Model, AppError> {
-    upsert_submit_signal_message_inner(
-        txn,
-        config,
-        datasource_id,
-        message_uid,
-        message,
-        timestamp,
-        operator_tags,
-        groups,
-        true,
-    )
-    .await
-}
-
 async fn upsert_submit_signal_message_inner(
     txn: &DatabaseTransaction,
     config: &Config,
@@ -1301,10 +1296,6 @@ fn prepare_submit_body_for_coordinate_extraction(
     message: &mut InboxMessage,
 ) -> Result<(), AppError> {
     message.coords = normalized_optional_string(message.coords.as_deref());
-    if message.coords.is_some() {
-        message.no_headers_body = None;
-        return Ok(());
-    }
     if message.no_headers_body.is_none() {
         message.no_headers_body = Some(
             crate::rer_importer::body_noheader::extract_text(&message.text)
@@ -1831,6 +1822,7 @@ async fn submit_legacy_inbox_messages(
                 login,
                 logins,
                 InboxLocationSubmitMode::PreserveTyped,
+                true,
             )
             .await
             .c(h!())?;
@@ -2180,8 +2172,7 @@ mod tests {
     fn generic_submit_req() -> InboxSubmitItem {
         let now = Utc::now().naive_utc();
         InboxSubmitItem {
-            message_uid: None,
-            text: "generic datasource gate".to_string(),
+            text: Some("generic datasource gate".to_string()),
             timestamp: submit_timestamp(now),
             sender: Some("generic submit".to_string()),
             post: Some("SC1".to_string()),
@@ -2308,7 +2299,9 @@ mod tests {
     #[test]
     fn validate_generic_submit_item_requires_group_names() {
         let item = InboxSubmitItem {
-            text: "рос абонент ЯРУС викликав СВЕТЛЫЙ".to_string(),
+            full_body: Some("Повне повідомлення".to_string()),
+            text: Some("рос абонент ЯРУС викликав СВЕТЛЫЙ".to_string()),
+            comment: Some("Коментар".to_string()),
             group_names: Some(vec![" ".to_string()]),
             ..Default::default()
         };
@@ -2319,7 +2312,7 @@ mod tests {
     #[test]
     fn validate_generic_submit_item_rejects_missing_message_text() {
         let item = InboxSubmitItem {
-            text: " ".to_string(),
+            text: Some(" ".to_string()),
             group_names: Some(vec!["SC1".to_string()]),
             ..Default::default()
         };
@@ -2330,7 +2323,7 @@ mod tests {
     #[test]
     fn generic_submit_item_to_inbox_message_uses_array_fields() {
         let item = InboxSubmitItem {
-            text: "рос абонент ЯРУС викликав СВЕТЛЫЙ".to_string(),
+            text: Some("рос абонент ЯРУС викликав СВЕТЛЫЙ".to_string()),
             timestamp: "2026-06-25T12:34:56Z".to_string(),
             coords: vec![
                 SubmitCoordinates {
@@ -2363,6 +2356,15 @@ mod tests {
                 .unwrap()
         );
         assert_eq!(message.coords.as_deref(), Some("49.12345, 37.12345"));
+        assert_eq!(message.text, "Повне повідомлення");
+        assert_eq!(message.extended_form.as_deref(), Some("Коментар"));
+        assert_eq!(
+            message
+                .no_headers_body
+                .as_ref()
+                .map(|body| body.body.as_str()),
+            Some("рос абонент ЯРУС викликав СВЕТЛЫЙ")
+        );
         assert_eq!(message.location.as_deref(), Some("ЛИМАН ПЕРШИЙ, КОПАНІ"));
         assert_eq!(
             message.callsigns,
@@ -2371,8 +2373,7 @@ mod tests {
     }
 
     #[test]
-    fn prepare_submit_body_for_coordinate_extraction_skips_body_when_coords_present(
-    ) {
+    fn prepare_submit_body_for_coordinate_extraction_preserves_explicit_body() {
         let mut message = InboxMessage::from(InboxInsertPayload {
             text: "Отримано з поста \"SC1\"\nТекст повідомлення".to_string(),
             coords: Some(" 49.12345, 37.12345 ".to_string()),
@@ -2388,7 +2389,13 @@ mod tests {
         prepare_submit_body_for_coordinate_extraction(&mut message).unwrap();
 
         assert_eq!(message.coords.as_deref(), Some("49.12345, 37.12345"));
-        assert_eq!(message.no_headers_body, None);
+        assert_eq!(
+            message
+                .no_headers_body
+                .as_ref()
+                .map(|body| body.body.as_str()),
+            Some("47.11111, 37.22222")
+        );
     }
 
     #[test]
@@ -2638,6 +2645,7 @@ mod tests {
             &login.login,
             &logins,
             InboxLocationSubmitMode::PreserveTyped,
+            true,
         )
         .await
         .unwrap();
@@ -2860,8 +2868,9 @@ mod tests {
         let operator_tags =
             vec![tag_label.clone(), "missing-submit-tag".to_string()];
         let item = InboxSubmitItem {
-            message_uid: None,
-            text: "рос абонент ЯРУС викликав СВЕТЛЫЙ".to_string(),
+            full_body: Some("рос абонент ЯРУС викликав СВЕТЛЫЙ".to_string()),
+            text: Some("рос абонент ЯРУС викликав СВЕТЛЫЙ".to_string()),
+            comment: Some("Сигнали: dmr".to_string()),
             freq: Some("145.02678".to_string()),
             coords: vec![SubmitCoordinates {
                 lat: 49.12345,
@@ -2871,7 +2880,6 @@ mod tests {
             to: vec!["СВЕТЛЫЙ".to_string()],
             timestamp: submit_timestamp(now),
             sender: Some("generic submit".to_string()),
-            full_body: Some("Сигнали: dmr".to_string()),
             post: Some("SC1".to_string()),
             tags: Some(operator_tags.clone()),
             locations: vec!["ЛИМАН ПЕРШИЙ".to_string(), "КОПАНІ".to_string()],
@@ -2907,15 +2915,12 @@ mod tests {
             warning_codes(&submitted.warnings),
             vec!["dmr_network_cc_conflict", "dmr_metadata_cc_conflict"]
         );
-        let message = signal_message::Entity::find()
-            .filter(
-                signal_message::Column::MessageUid
-                    .eq(submitted.message_uid.clone()),
-            )
-            .one(&env.dbx)
-            .await
-            .unwrap()
-            .unwrap();
+        let message =
+            signal_message::Entity::find_by_id(submitted.signal_message_id)
+                .one(&env.dbx)
+                .await
+                .unwrap()
+                .unwrap();
         assert_eq!(
             message.body.as_deref(),
             Some("рос абонент ЯРУС викликав СВЕТЛЫЙ")
@@ -2929,9 +2934,9 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(groups.len(), 2);
-        assert!(groups.iter().all(|group| {
-            group.message_uid.as_deref() == Some(submitted.message_uid.as_str())
-        }));
+        assert!(groups
+            .iter()
+            .all(|group| { group.message_uid == message.message_uid }));
         let inbox_item =
             sigint_inbox_item::Entity::find_by_id(submitted.inbox_id)
                 .one(&env.dbx)

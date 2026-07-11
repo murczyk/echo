@@ -955,6 +955,7 @@ pub async fn submit_upsert_inbox_item(
     login: &str,
     logins: &Vec<String>,
     location_mode: InboxLocationSubmitMode,
+    parse_body_coordinates: bool,
 ) -> Result<i64, AppError> {
     let m_existing = SigintInboxItem::find_by_id(id).one(txn).await.c(h!())?;
     if let Some(existing) = m_existing {
@@ -974,12 +975,15 @@ pub async fn submit_upsert_inbox_item(
 
     let coords_s = parse_submitted_coords(message.coords.as_deref()).await;
 
-    let mut coords_vec = match &message.no_headers_body.clone().map(|n| n.body)
-    {
-        Some(body) => {
-            crate::rer_importer::coordinates::extract_coords(body).await
+    let mut coords_vec = if parse_body_coordinates {
+        match &message.no_headers_body.clone().map(|n| n.body) {
+            Some(body) => {
+                crate::rer_importer::coordinates::extract_coords(body).await
+            }
+            None => vec![],
         }
-        None => vec![],
+    } else {
+        vec![]
     };
     if let Some(c1) = &coords_s {
         if !coords_vec.iter().any(|c| c.text.eq(&c1.text)) {

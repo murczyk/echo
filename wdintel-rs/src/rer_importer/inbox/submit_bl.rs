@@ -8,7 +8,6 @@ use sea_orm::*;
 
 #[derive(Debug)]
 pub(crate) struct SubmittedInboxItem {
-    pub(crate) message_uid: String,
     pub(crate) signal_message_id: i64,
     pub(crate) inbox_id: i64,
     pub(crate) warnings: Vec<InboxSubmitWarning>,
@@ -33,7 +32,6 @@ pub(crate) async fn submit_generic_inbox(
     let submitted =
         submit_generic_inbox_message(env, &login, &logins, item).await?;
     Ok(GenericInboxSubmitRsp {
-        message_uid: submitted.message_uid,
         warnings: submitted.warnings,
     })
 }
@@ -110,29 +108,6 @@ pub(crate) async fn submit_inbox_item_with_groups(
         login,
         logins,
         item,
-        false,
-    )
-    .await
-}
-
-pub(crate) async fn submit_inbox_item_with_groups_create_missing_uid(
-    env: &Env,
-    txn: &DatabaseTransaction,
-    datasource_id: i64,
-    groups: &[(String, i64)],
-    login: &str,
-    logins: &Vec<String>,
-    item: InboxSubmitItem,
-) -> Result<SubmittedInboxItem, AppError> {
-    submit_inbox_item_with_groups_inner(
-        env,
-        txn,
-        datasource_id,
-        groups,
-        login,
-        logins,
-        item,
-        true,
     )
     .await
 }
@@ -145,7 +120,6 @@ async fn submit_inbox_item_with_groups_inner(
     login: &str,
     logins: &Vec<String>,
     item: InboxSubmitItem,
-    create_missing_uid: bool,
 ) -> Result<SubmittedInboxItem, AppError> {
     super::validate_submit_item_content(&item)?;
     let tag_ids =
@@ -165,34 +139,18 @@ async fn submit_inbox_item_with_groups_inner(
     message.post_id = post_id;
     super::prepare_submit_body_for_coordinate_extraction(&mut message)?;
 
-    let signal_message = if create_missing_uid {
-        super::upsert_submit_signal_message_create_missing_uid(
-            txn,
-            &env.config,
-            datasource_id,
-            item.message_uid.as_deref(),
-            &message,
-            Some(timestamp),
-            operator_tags,
-            groups,
-        )
-        .await
-        .c(h!())?
-    } else {
-        super::upsert_submit_signal_message(
-            txn,
-            &env.config,
-            datasource_id,
-            item.message_uid.as_deref(),
-            &message,
-            Some(timestamp),
-            operator_tags,
-            groups,
-        )
-        .await
-        .c(h!())?
-    };
-    let message_uid = signal_message.message_uid.clone().c(h!())?;
+    let signal_message = super::upsert_submit_signal_message(
+        txn,
+        &env.config,
+        datasource_id,
+        None,
+        &message,
+        Some(timestamp),
+        operator_tags,
+        groups,
+    )
+    .await
+    .c(h!())?;
     let inbox_id = super::submit_upsert_inbox_item(
         env.settlements.clone(),
         txn,
@@ -201,6 +159,7 @@ async fn submit_inbox_item_with_groups_inner(
         login,
         logins,
         super::InboxLocationSubmitMode::Parse,
+        item.parse_body_coordinates,
     )
     .await
     .c(h!())?;
@@ -214,7 +173,6 @@ async fn submit_inbox_item_with_groups_inner(
             .c(h!())?;
 
     Ok(SubmittedInboxItem {
-        message_uid,
         signal_message_id: signal_message.id,
         inbox_id,
         warnings,

@@ -14,7 +14,7 @@ use std::time::{Duration, SystemTime};
 use tokio::io::{AsyncSeekExt, AsyncWriteExt};
 use uuid::Uuid;
 
-const BASE_UPLOAD_DIR: &str = "cyber_echo_tus_upload";
+const BASE_UPLOAD_DIR: &str = "file_upload_tus";
 const PENDING_DIR: &str = "pending";
 const COMPLETED_DIR: &str = "completed";
 const METADATA_EXT: &str = "json";
