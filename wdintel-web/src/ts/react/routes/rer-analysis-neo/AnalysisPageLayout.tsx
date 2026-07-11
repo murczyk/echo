@@ -4,6 +4,7 @@ import { useMediaQuery } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
 
 import { PowerAlert } from '../../components/PowerAlert';
+import { isPresent } from '../../utils/misc';
 import { AnalysisPageHeader } from './AnalysisPageHeader';
 import { AnalysisLeftPanel } from './AnalysisLeftPanel';
 import { AnalysisLoadingSkeletons } from './AnalysisLoadingSkeletons';
@@ -148,10 +149,19 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
 
       <CreateMessageFab onClick={() => setCreateMessageOpen(true)} />
       <CreateMessageDrawer
-        open={createMessageOpen}
+        open={createMessageOpen || isPresent(page.editorMessage)}
         cyberEchoEnabled={page.cyberEchoEnabled}
         currentUser={page.currentUser}
-        onClose={() => setCreateMessageOpen(false)}
+        editTarget={page.editorMessage}
+        editSaveInFlight={page.editorSaveInFlight}
+        onClose={() => {
+          if (isPresent(page.editorMessage)) {
+            page.closeEditor();
+          } else {
+            setCreateMessageOpen(false);
+          }
+        }}
+        onSubmitEdit={(_id, message) => page.saveEditor(message)}
         onSuccess={() => {
           setCreateMessageOpen(false);
           page.reload();

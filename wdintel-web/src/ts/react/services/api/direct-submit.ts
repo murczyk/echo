@@ -103,7 +103,7 @@ export type DirectSubmitResponse = {
 
 export type DirectSubmitParseRequest = {
   full_body: string;
-  signal_group_master_key: string;
+  signal_group_master_key?: string;
 };
 
 export type DirectSubmitParseResponse = {

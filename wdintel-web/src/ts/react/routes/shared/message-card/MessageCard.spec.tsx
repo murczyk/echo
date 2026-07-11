@@ -768,6 +768,23 @@ describe('MessageCard', () => {
       copyEtalonValue: '1-й танк',
       copyLocationValue: null,
       showInlineLocationTooltip: false,
+      locationDisplayValue: null,
+    });
+    // Unit and location present together: the unit is the primary, but the
+    // location is still surfaced (shown in the row's location slot), not dropped.
+    expect(
+      resolveMessageCardEtalonDisplayModel(
+        buildMessage({ networkIds: [], unit: ' 1-й танк ', location: '  ПІЩАНКА  ' }),
+        {
+          featureStrictNetworks: false,
+        },
+      ),
+    ).toMatchObject({
+      primaryKind: 'unit',
+      displayValue: '1-й танк',
+      copyEtalonValue: '1-й танк',
+      copyLocationValue: 'Піщанка',
+      locationDisplayValue: 'Піщанка',
     });
     expect(
       resolveMessageCardEtalonDisplayModel(
@@ -1226,6 +1243,7 @@ describe('MessageCard', () => {
       'Позначити як важливе',
       'Додати в закладки',
       COPY_TITLE,
+      'Редагувати',
       NAVIGATE_TITLE,
       'Більше дій',
     ]);
@@ -1351,22 +1369,23 @@ describe('MessageCard', () => {
     expect(document.activeElement).not.toBe(commentButton);
   });
 
-  it('shows only edit and delete in the overflow menu when those handlers exist', async () => {
+  it('shows the edit action in the toolbar and only delete in the overflow menu', async () => {
     const view = await renderCard({
+      displayMode: 'analysis',
       onEditDetails: vi.fn(),
       onDelete: vi.fn(),
     });
     rendered.push(view);
+
+    expect(view.container.querySelector('button[aria-label="Редагувати"]')).not.toBeNull();
 
     const overflowButton = view.container.querySelector('button[aria-label="Більше дій"]');
     if (!(overflowButton instanceof HTMLButtonElement))
       throw new Error('overflow button not found');
     await click(overflowButton);
 
-    expect(view.container.textContent).toContain('Редагувати додаткові поля та позивні');
+    expect(view.container.textContent).not.toContain('Редагувати додаткові поля та позивні');
     expect(view.container.textContent).toContain('Видалити');
-    expect(view.container.textContent).not.toContain('Позначити як важливе');
-    expect(view.container.textContent).not.toContain('Додати в закладки');
   });
 
   it('anchors the overflow menu by position instead of a button element', async () => {
@@ -1466,6 +1485,7 @@ describe('MessageCard', () => {
     const onEditDetails = vi.fn();
     const onDelete = vi.fn();
     const view = await renderCard({
+      displayMode: 'analysis',
       onImportant,
       onBookmark,
       onEditDetails,
@@ -1491,8 +1511,9 @@ describe('MessageCard', () => {
     await click(bookmarkButton);
     expect(onBookmark).toHaveBeenCalledTimes(1);
 
-    await click(overflowButton);
-    await click(getButton(view.container, 'Редагувати додаткові поля та позивні'));
+    const editButton = view.container.querySelector('button[aria-label="Редагувати"]');
+    if (!(editButton instanceof HTMLButtonElement)) throw new Error('edit button not found');
+    await click(editButton);
     expect(onEditDetails).toHaveBeenCalledTimes(1);
 
     await click(overflowButton);
@@ -1505,7 +1526,7 @@ describe('MessageCard', () => {
     rendered.push(view);
 
     expect(view.container.querySelector('button[aria-label="Більше дій"]')).toBeNull();
-    expect(view.container.textContent).not.toContain('Редагувати додаткові поля та позивні');
+    expect(view.container.querySelector('button[aria-label="Редагувати"]')).toBeNull();
     expect(view.container.textContent).not.toContain('Видалити');
   });
 
