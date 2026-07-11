@@ -1716,18 +1716,25 @@ mod tests {
     #[serial]
     async fn scheduled_caption_media_duplicate_is_marked_duplicate() {
         let _guard = TEST_LOCK.lock().await;
-        assert_caption_media_duplicate_is_marked_duplicate(Some(format!(
-            "[attachment sha256:{}]",
-            sha256::digest(b"payload")
-        )))
+        assert_caption_media_duplicate_is_marked_duplicate(
+            Some(format!(
+                "[attachment sha256:{}]",
+                sha256::digest(b"payload")
+            )),
+            EchoMissingMessageStatus::Duplicate,
+        )
         .await;
     }
 
     #[tokio::test]
     #[serial]
-    async fn scheduled_legacy_caption_media_duplicate_is_marked_duplicate() {
+    async fn scheduled_null_hash_caption_media_is_recovered_as_new_message() {
         let _guard = TEST_LOCK.lock().await;
-        assert_caption_media_duplicate_is_marked_duplicate(None).await;
+        assert_caption_media_duplicate_is_marked_duplicate(
+            None,
+            EchoMissingMessageStatus::Resolved,
+        )
+        .await;
     }
 
     #[tokio::test]
@@ -1817,6 +1824,7 @@ mod tests {
 
     async fn assert_caption_media_duplicate_is_marked_duplicate(
         existing_attachments_hash: Option<String>,
+        expected_status: EchoMissingMessageStatus,
     ) {
         let env = recovery_env().await;
         let (account, datasource) =
@@ -1896,7 +1904,7 @@ mod tests {
                 .unwrap()
                 .unwrap();
         assert!(missing_message.is_resolved);
-        assert_eq!(missing_message.status, EchoMissingMessageStatus::Duplicate);
+        assert_eq!(missing_message.status, expected_status);
         assert_eq!(missing_message.error, None);
     }
 
