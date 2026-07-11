@@ -93,7 +93,7 @@ pub struct CreateSystemSettingsReq {
 }
 
 fn default_sigint_comment_parsing_enabled() -> bool {
-    true
+    false
 }
 
 #[derive(
@@ -101,4 +101,26 @@ fn default_sigint_comment_parsing_enabled() -> bool {
 )]
 pub struct ActivateSystemSettingsReq {
     pub id: i64,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::CreateSystemSettingsReq;
+    use serde_json::json;
+
+    #[test]
+    fn missing_sigint_comment_parsing_enabled_defaults_to_false() {
+        let req: CreateSystemSettingsReq = serde_json::from_value(json!({
+            "rer_analysis_units_exact_match_only_default": true,
+            "rer_duty_test_enabled": false,
+            "rer_duty_insert_historical_interceptions": false,
+            "rer_duty_test_since_ms": 0,
+            "rer_duty_test_limit": 1,
+            "rer_duty_poll_interval_sec": 1,
+            "short_url_enabled": false
+        }))
+        .unwrap();
+
+        assert!(!req.sigint_comment_parsing_enabled);
+    }
 }

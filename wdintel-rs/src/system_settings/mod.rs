@@ -272,7 +272,7 @@ where
     let settings = get_active_system_settings(dbx).await.c(h!())?;
     Ok(settings
         .map(|settings| settings.sigint_comment_parsing_enabled)
-        .unwrap_or(true))
+        .unwrap_or(false))
 }
 
 pub async fn ensure_cyber_echo_enabled<C>(dbx: &C) -> Result<(), AppError>
@@ -557,7 +557,7 @@ pub async fn current_system_settings(
             peleng_bounds_bottom_right_lat: None,
             peleng_bounds_bottom_right_lng: None,
             cyber_echo_enabled: false,
-            sigint_comment_parsing_enabled: true,
+            sigint_comment_parsing_enabled: false,
         },
     }))
 }
