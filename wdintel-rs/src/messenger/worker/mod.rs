@@ -972,6 +972,14 @@ async fn effective_queue_snapshot_attachments(
     if item.deleted {
         return Ok(vec![]);
     }
+    if !item.attachments.is_empty() {
+        return Ok(trim_echo_attachment_batch_for_queue(
+            item.attachments.clone(),
+            previous_attachment_count,
+            datasource_id,
+            item.internal_id,
+        ));
+    }
     if let Some(attachments) =
         crate::messenger::attachments::load_latest_echo_attachment_batch(
             txn,
@@ -988,15 +996,7 @@ async fn effective_queue_snapshot_attachments(
             item.internal_id,
         ));
     }
-    if item.attachments.is_empty() {
-        return Ok(vec![]);
-    }
-    Ok(trim_echo_attachment_batch_for_queue(
-        item.attachments.clone(),
-        previous_attachment_count,
-        datasource_id,
-        item.internal_id,
-    ))
+    Ok(vec![])
 }
 
 fn trim_echo_attachment_batch_for_queue(
@@ -1013,7 +1013,7 @@ fn trim_echo_attachment_batch_for_queue(
         );
     if !attachments.is_empty() {
         info!(
-            "using echo attachment batch for queued inbox snapshot: datasource_id={} echo_inbox_message_id={} attachments_count={} previous_attachment_count={} original_attachment_count={}",
+            "using attachment batch for queued inbox snapshot: datasource_id={} echo_inbox_message_id={} attachments_count={} previous_attachment_count={} original_attachment_count={}",
             datasource_id,
             echo_inbox_message_id,
             attachments.len(),
@@ -1517,6 +1517,68 @@ mod tests {
         assert_eq!(attachments[0].name.as_deref(), Some("fallback.txt"));
     }
 
+    #[tokio::test]
+    #[serial]
+    async fn queue_snapshot_prefers_non_empty_snapshot_attachments() {
+        let (env, _guard) = cleanup_locked().await.unwrap();
+        let (account, datasource) = mk_linked_datasource(&env.dbx).await;
+        let inbox = mk_echo_inbox_message(&env.dbx, account.id).await;
+        let created_at = Utc::now().naive_utc();
+        mk_echo_attachment_at(
+            &env.dbx,
+            account.id,
+            inbox.id,
+            "/tmp/stale-a.jpg",
+            Some("a.jpg"),
+            created_at,
+        )
+        .await;
+        mk_echo_attachment_at(
+            &env.dbx,
+            account.id,
+            inbox.id,
+            "/tmp/stale-b.jpg",
+            Some("b.jpg"),
+            created_at,
+        )
+        .await;
+
+        let mut snapshot = test_message(inbox.id, "caption edited", false);
+        snapshot.attachments = vec![echo_im::types::MessageAttachmentF1 {
+            path: "/tmp/current-b.jpg".to_string(),
+            name: Some("b.jpg".to_string()),
+        }];
+        let txn = env.dbx.begin().await.unwrap();
+        upsert_signal_message_queue_snapshot(&snapshot, datasource.id, &txn)
+            .await
+            .unwrap();
+        txn.commit().await.unwrap();
+
+        let queue_item = signal_message_queue::Entity::find()
+            .filter(
+                signal_message_queue::Column::DatasourceId.eq(datasource.id),
+            )
+            .filter(
+                signal_message_queue::Column::InternalId
+                    .eq(i64::from(inbox.id)),
+            )
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        let attachments = signal_message_queue_attachment::Entity::find()
+            .filter(
+                signal_message_queue_attachment::Column::MessageId
+                    .eq(queue_item.id),
+            )
+            .all(&env.dbx)
+            .await
+            .unwrap();
+        assert_eq!(attachments.len(), 1);
+        assert_eq!(attachments[0].path, "/tmp/current-b.jpg");
+        assert_eq!(attachments[0].name.as_deref(), Some("b.jpg"));
+    }
+
     fn test_message(
         internal_id: i32,
         text: &str,
@@ -1638,15 +1700,33 @@ mod tests {
         path: &str,
         name: Option<&str>,
     ) -> echo_attachment::Model {
-        let now = Utc::now().naive_utc();
+        mk_echo_attachment_at(
+            dbx,
+            account_id,
+            message_id,
+            path,
+            name,
+            Utc::now().naive_utc(),
+        )
+        .await
+    }
+
+    async fn mk_echo_attachment_at(
+        dbx: &DatabaseConnection,
+        account_id: i32,
+        message_id: i32,
+        path: &str,
+        name: Option<&str>,
+        created_at: NaiveDateTime,
+    ) -> echo_attachment::Model {
         echo_attachment::ActiveModel {
             id: NotSet,
             name: Set(name.map(ToString::to_string)),
             path: Set(path.to_string()),
             message_id: Set(message_id),
             account_id: Set(account_id),
-            created_at: Set(now),
-            updated_at: Set(now),
+            created_at: Set(created_at),
+            updated_at: Set(created_at),
         }
         .insert(dbx)
         .await

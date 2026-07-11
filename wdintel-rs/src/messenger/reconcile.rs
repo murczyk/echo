@@ -1151,6 +1151,14 @@ async fn effective_snapshot_attachments(
         .count(txn)
         .await
         .c(h!())? as usize;
+    if !snapshot.attachments.is_empty() {
+        return Ok(trim_echo_attachment_batch_for_edit(
+            snapshot.attachments.clone(),
+            previous_attachment_count,
+            datasource_id,
+            snapshot.internal_id,
+        ));
+    }
     if let Some(attachments) =
         crate::messenger::attachments::load_latest_echo_attachment_batch(
             txn,
@@ -1162,14 +1170,6 @@ async fn effective_snapshot_attachments(
     {
         return Ok(trim_echo_attachment_batch_for_edit(
             attachments,
-            previous_attachment_count,
-            datasource_id,
-            snapshot.internal_id,
-        ));
-    }
-    if !snapshot.attachments.is_empty() {
-        return Ok(trim_echo_attachment_batch_for_edit(
-            snapshot.attachments.clone(),
             previous_attachment_count,
             datasource_id,
             snapshot.internal_id,
@@ -1192,7 +1192,7 @@ fn trim_echo_attachment_batch_for_edit(
         );
     if !attachments.is_empty() {
         info!(
-            "using echo attachment batch for active inbox edit: datasource_id={} echo_inbox_message_id={} attachments_count={} previous_attachment_count={} original_attachment_count={}",
+            "using attachment batch for active inbox edit: datasource_id={} echo_inbox_message_id={} attachments_count={} previous_attachment_count={} original_attachment_count={}",
             datasource_id,
             echo_inbox_message_id,
             attachments.len(),
@@ -3674,6 +3674,124 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn active_edit_prefers_non_empty_snapshot_attachments() {
+        let (env, _guard) = cleanup_locked().await.unwrap();
+        let txn = env.dbx.begin().await.unwrap();
+        let mut redis = env.redis.clone();
+        let group_id = format!("edit-current-media-{}", Uuid::new_v4());
+        let datasource = mk_datasource(&txn, Default::default()).await.unwrap();
+        let account = link_datasource_to_echo_account(&txn, &datasource).await;
+        let inbox_message = insert_echo_inbox_message(&txn, account.id).await;
+        mk_signal_group(
+            &txn,
+            signal_group::ActiveModel {
+                master_key: Set(group_id.clone()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let datasource_group = mk_datasource_group(
+            &txn,
+            datasource_group::ActiveModel {
+                group_master_key: Set(group_id.clone()),
+                datasource_id: Set(datasource.id),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let timestamp = Utc::now().naive_utc();
+        let source_message = mk_signal_message(
+            &txn,
+            signal_message::ActiveModel {
+                body: Set(Some(format!("before media {}", Uuid::new_v4()))),
+                datasource_group_id: Set(Some(datasource_group.id)),
+                timestamp: Set(Some(timestamp)),
+                deleted: Set(false),
+                echo_inbox_message_id: Set(Some(i64::from(inbox_message.id))),
+                attachments_hash: Set(Some("previous-attachments".to_string())),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        signal_message_media::ActiveModel {
+            id: Set(Uuid::now_v7()),
+            signal_message_id: Set(source_message.id),
+            content_type: Set("image/jpeg".to_string()),
+            file_ext: Set(Some("jpg".to_string())),
+            file_name: Set(Some("a.jpg".to_string())),
+            size_bytes: Set(3),
+            created_at: NotSet,
+        }
+        .insert(&txn)
+        .await
+        .unwrap();
+        let stale_created_at = Utc::now().naive_utc();
+        insert_echo_attachment(
+            &txn,
+            account.id,
+            inbox_message.id,
+            "/tmp/stale-a.jpg",
+            Some("a.jpg"),
+            stale_created_at,
+        )
+        .await;
+        insert_echo_attachment(
+            &txn,
+            account.id,
+            inbox_message.id,
+            "/tmp/stale-b.jpg",
+            Some("b.jpg"),
+            stale_created_at,
+        )
+        .await;
+        let snapshot = MessageF1 {
+            id: Some(format!("external-{}", inbox_message.id)),
+            text: format!("after media {}", Uuid::new_v4()),
+            sender: None,
+            sender_phone_number: None,
+            group_id: Some(group_id),
+            attachments: vec![MessageAttachmentF1 {
+                path: "/tmp/current-b.jpg".to_string(),
+                name: Some("b.jpg".to_string()),
+            }],
+            message_source: echo_im::types::MessageSource::Signal,
+            timestamp,
+            internal_id: inbox_message.id,
+            reply_to: None,
+            deleted: false,
+        };
+        let expected_attachments_hash =
+            dedupe::attachments_hash(&snapshot.attachments).await;
+
+        reconcile_active_message(
+            &txn,
+            &mut redis,
+            env.settlements.clone(),
+            &env.rq,
+            &env.config,
+            &env.s3,
+            datasource.id,
+            &snapshot,
+            vec![source_message.clone()],
+        )
+        .await
+        .unwrap();
+
+        let source_message =
+            signal_message::Entity::find_by_id(source_message.id)
+                .one(&txn)
+                .await
+                .unwrap()
+                .unwrap();
+        assert_eq!(source_message.attachments_hash, expected_attachments_hash);
+
+        txn.rollback().await.unwrap();
+    }
+
+    #[tokio::test]
     async fn active_edit_regenerates_search_for_split_children() {
         let (env, _guard) = cleanup_locked().await.unwrap();
         let txn = env.dbx.begin().await.unwrap();
@@ -5115,5 +5233,102 @@ mod tests {
         assert_eq!(tags[0].id, manual_tag.id);
 
         txn.commit().await.unwrap();
+    }
+
+    async fn link_datasource_to_echo_account(
+        txn: &DatabaseTransaction,
+        datasource: &datasource::Model,
+    ) -> echo_account::Model {
+        let now = Utc::now().naive_utc();
+        let phone_seed = Uuid::new_v4().simple().to_string();
+        let account = echo_account::ActiveModel {
+            id: NotSet,
+            source: Set(
+                crate::entities::sea_orm_active_enums::EchoMessageSource::Signal,
+            ),
+            phone_number: Set(format!("+{}", &phone_seed[..12])),
+            is_linked: Set(true),
+            created_at: Set(now),
+            synced_at: Set(None),
+            last_trusted_at: Set(None),
+            linked_at: Set(Some(now)),
+        }
+        .insert(txn)
+        .await
+        .unwrap();
+        let client = echo_client::ActiveModel {
+            id: NotSet,
+            name: Set(format!("test-client-{}", Uuid::new_v4())),
+            created_at: Set(now),
+            deleted: Set(false),
+        }
+        .insert(txn)
+        .await
+        .unwrap();
+        let echo_client_lock = echo_client_lock::ActiveModel {
+            id: NotSet,
+            client_id: Set(client.id),
+            account_id: Set(account.id),
+            created_at: Set(now),
+            remove_requested: Set(false),
+        }
+        .insert(txn)
+        .await
+        .unwrap();
+        let mut datasource = datasource.clone().into_active_model();
+        datasource.echo_client_lock_id =
+            Set(Some(i64::from(echo_client_lock.id)));
+        datasource.update(txn).await.unwrap();
+        account
+    }
+
+    async fn insert_echo_attachment(
+        txn: &DatabaseTransaction,
+        account_id: i32,
+        message_id: i32,
+        path: &str,
+        name: Option<&str>,
+        created_at: NaiveDateTime,
+    ) -> echo_attachment::Model {
+        echo_attachment::ActiveModel {
+            id: NotSet,
+            name: Set(name.map(ToString::to_string)),
+            path: Set(path.to_string()),
+            message_id: Set(message_id),
+            account_id: Set(account_id),
+            created_at: Set(created_at),
+            updated_at: Set(created_at),
+        }
+        .insert(txn)
+        .await
+        .unwrap()
+    }
+
+    async fn insert_echo_inbox_message(
+        txn: &DatabaseTransaction,
+        account_id: i32,
+    ) -> echo_inbox_message::Model {
+        let now = Utc::now().naive_utc();
+        echo_inbox_message::ActiveModel {
+            id: NotSet,
+            body: Set(format!("inbox {}", Uuid::new_v4())),
+            internal_id: Set(Some(format!("external-{}", Uuid::new_v4()))),
+            duplicate_of: Set(None),
+            sender_id: Set(None),
+            group_id: Set(None),
+            account_id: Set(account_id),
+            created_at: Set(now),
+            timestamp: Set(Some(now)),
+            updated_at: Set(now),
+            reply_to_inbox_message_id: Set(None),
+            reply_to_outbox_message_id: Set(None),
+            internal_timestamp: Set(None),
+            seen: Set(false),
+            client_id: Set(None),
+            deleted: Set(false),
+        }
+        .insert(txn)
+        .await
+        .unwrap()
     }
 }
