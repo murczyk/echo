@@ -867,6 +867,7 @@ fn generic_submit_item_to_inbox_message(
         group_master_key: None,
         sender: item.sender.clone(),
         extended_form: item.full_body.clone(),
+        message_comments: vec![],
         post: item.post.clone(),
         post_id: None,
         unit: item.unit.clone(),

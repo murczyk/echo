@@ -292,6 +292,7 @@ mod m20260709_124309_signal_message_queue_latest_state;
 mod m20260710_091610_organism_secret_group_invites;
 mod m20260710_095803_echo_missing_message_created_at_idx;
 mod m20260710_102248_add_login_description;
+mod m20260711_120000_add_sigint_comment_parsing_to_system_settings;
 
 pub struct Migrator;
 
@@ -613,6 +614,9 @@ impl MigratorTrait for Migrator {
                 m20260710_095803_echo_missing_message_created_at_idx::Migration,
             ),
             Box::new(m20260710_102248_add_login_description::Migration),
+            Box::new(
+                m20260711_120000_add_sigint_comment_parsing_to_system_settings::Migration,
+            ),
         ]
     }
 }

@@ -99,6 +99,20 @@ pub async fn aggregate_to_inbox_messages(
     let dbx_raw = env.dbx.get_postgres_connection_pool();
 
     let message_ids: Vec<i64> = messages.iter().map(|m| m.id).collect();
+    let message_comments =
+        crate::rer_importer::analysis::batch_message_comments_bl(
+            &env.dbx,
+            login,
+            &message_ids,
+        )
+        .await
+        .c(h!())?;
+    let message_comments_by_id: HashMap<i64, Vec<MessageComment>> =
+        message_comments
+            .data
+            .into_iter()
+            .map(|entry| (entry.message_id, entry.comments))
+            .collect();
     let important_ids = sigint_important::Entity::find()
         .filter(
             sigint_important::Column::SignalMessageId
@@ -237,7 +251,9 @@ pub async fn aggregate_to_inbox_messages(
     };
 
     let comment_parsing_enabled =
-        env.config.sigint_comment_parsing_enabled()?;
+        crate::system_settings::sigint_comment_parsing_enabled(&env.dbx)
+            .await
+            .c(h!())?;
 
     for message in messages {
         // for message in messages {
@@ -396,6 +412,10 @@ pub async fn aggregate_to_inbox_messages(
                     .and_then(|(entry, _)| entry.group_master_key.clone()),
                 sender,
                 extended_form: m_comment.as_ref().map(|x| x.comment.clone()),
+                message_comments: message_comments_by_id
+                    .get(&message.id)
+                    .cloned()
+                    .unwrap_or_default(),
                 unit: message.unit_v2.clone(),
                 no_headers_body: Some(no_headers_body),
                 callsign_tokens: m_callsign_tokens,

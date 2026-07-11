@@ -960,10 +960,10 @@ pub async fn reconcile_active_message(
                 delete_media_for_message(txn, source_message_id)
                     .await
                     .c(h!())?;
-            retired_inbox_item_ids.push(source_message_id);
-            if !retired_inbox_item_ids.contains(&unstage_result.message.id) {
-                retired_inbox_item_ids.push(unstage_result.message.id);
-            }
+            push_unique_inbox_item_ids(
+                &mut retired_inbox_item_ids,
+                vec![source_message_id, unstage_result.message.id],
+            );
             push_unique_inbox_item_ids(
                 &mut retired_inbox_item_ids,
                 changed_group_link_message_ids,
@@ -4310,7 +4310,7 @@ mod tests {
                 datasource_group_id: Set(Some(datasource_group.id)),
                 timestamp: Set(Some(timestamp)),
                 deleted: Set(false),
-                attachments_hash: Set(None),
+                attachments_hash: Set(Some("old-attachments".to_string())),
                 ..Default::default()
             },
         )
