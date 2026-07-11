@@ -10,7 +10,7 @@ impl MigrationTrait for Migration {
         db.execute_unprepared(
             r#"
                 alter table system_settings
-                    add column if not exists sigint_comment_parsing_enabled bool not null default true;
+                    add column if not exists sigint_comment_parsing_enabled bool not null default false;
             "#,
         )
         .await?;
