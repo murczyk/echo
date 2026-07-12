@@ -146,7 +146,7 @@ pub async fn create_signal_message(
         signal_message_id: signal_message.id,
         message_uid: signal_message.message_uid,
         inbox_item_id,
-        media_ids: media.into_iter().map(|media| media.id).collect(),
+        media_ids: media.media.into_iter().map(|media| media.id).collect(),
     })
 }
 

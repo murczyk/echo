@@ -1627,7 +1627,7 @@ async fn replace_media_if_changed(
         .cloned()
         .map(MediaUploadInput::from)
         .collect_vec();
-    crate::messenger::media::store_media_attachments(
+    let upload_result = crate::messenger::media::store_media_attachments(
         &upload_inputs,
         signal_message.id,
         config,
@@ -1639,6 +1639,21 @@ async fn replace_media_if_changed(
     )
     .await
     .c(h!())?;
+    if upload_result.skipped_missing {
+        let uploaded_media_ids = upload_result
+            .media
+            .into_iter()
+            .map(|media| media.id)
+            .collect_vec();
+        delete_old_media(txn, uploaded_media_ids.clone()).await?;
+        update_attachments_hash(
+            txn,
+            signal_message.id,
+            previous_attachments_hash,
+        )
+        .await?;
+        return Ok(uploaded_media_ids);
+    }
     delete_old_media(txn, old_media_ids).await
 }
 
