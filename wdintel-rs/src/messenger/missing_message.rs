@@ -240,6 +240,89 @@ pub async fn mark_missing_message_duplicate(
     Ok(missing_message.update(dbx).await.c(h!())?)
 }
 
+pub async fn delete_missing_message(
+    dbx: &impl ConnectionTrait,
+    missing_message: echo_missing_message::Model,
+) -> Result<(), AppError> {
+    echo_missing_message::Entity::delete_by_id(missing_message.id)
+        .exec(dbx)
+        .await
+        .c(h!())?;
+    Ok(())
+}
+
+pub async fn delete_duplicate_missing_messages(
+    dbx: &impl ConnectionTrait,
+) -> Result<u64, AppError> {
+    Ok(echo_missing_message::Entity::delete_many()
+        .filter(
+            echo_missing_message::Column::Status
+                .eq(EchoMissingMessageStatus::Duplicate),
+        )
+        .exec(dbx)
+        .await
+        .c(h!())?
+        .rows_affected)
+}
+
+pub async fn delete_duplicate_missing_message_by_message_id(
+    dbx: &impl ConnectionTrait,
+    message_id: i32,
+) -> Result<(), AppError> {
+    echo_missing_message::Entity::delete_many()
+        .filter(echo_missing_message::Column::MessageId.eq(message_id))
+        .filter(
+            echo_missing_message::Column::Status
+                .eq(EchoMissingMessageStatus::Duplicate),
+        )
+        .exec(dbx)
+        .await
+        .c(h!())?;
+    Ok(())
+}
+
+pub async fn delete_missing_message_by_message_id(
+    dbx: &impl ConnectionTrait,
+    message_id: i32,
+) -> Result<(), AppError> {
+    echo_missing_message::Entity::delete_many()
+        .filter(echo_missing_message::Column::MessageId.eq(message_id))
+        .exec(dbx)
+        .await
+        .c(h!())?;
+    Ok(())
+}
+
+pub async fn record_or_delete_duplicate_missing_message(
+    dbx: &impl ConnectionTrait,
+    message_id: i32,
+    do_not_store_duplicate_echoim_failures: bool,
+) -> Result<Option<echo_missing_message::Model>, AppError> {
+    if do_not_store_duplicate_echoim_failures {
+        delete_missing_message_by_message_id(dbx, message_id).await?;
+        Ok(None)
+    } else {
+        record_duplicate_missing_message(dbx, message_id)
+            .await
+            .map(Some)
+    }
+}
+
+pub async fn mark_or_delete_duplicate_missing_message(
+    dbx: &impl ConnectionTrait,
+    missing_message: echo_missing_message::Model,
+    do_not_store_duplicate_echoim_failures: bool,
+) -> Result<Option<echo_missing_message::Model>, AppError> {
+    if do_not_store_duplicate_echoim_failures {
+        delete_missing_message(dbx, missing_message).await?;
+        Ok(None)
+    } else {
+        mark_missing_message_duplicate(dbx, missing_message)
+            .await
+            .map(Some)
+    }
+}
+
 pub async fn mark_missing_message_error(
     dbx: &impl ConnectionTrait,
     missing_message: echo_missing_message::Model,
@@ -524,7 +607,7 @@ mod tests {
     use super::*;
     use crate::entities::sea_orm_active_enums::EchoMessageSource;
     use crate::functest::tests::cleanup;
-    use sea_orm::ActiveValue::NotSet;
+    use sea_orm::{ActiveValue::NotSet, PaginatorTrait};
     use serial_test::serial;
     use uuid::Uuid;
 
@@ -618,6 +701,44 @@ mod tests {
             .collect::<Vec<_>>();
         assert_eq!(terminal_rows.len(), 2);
         assert!(terminal_rows.iter().all(|row| row.error.is_none()));
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn delete_duplicate_missing_messages_keeps_other_statuses() {
+        let _guard = TEST_LOCK.lock().await;
+        let env = cleanup().await.unwrap();
+        echo_missing_message::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .unwrap();
+        record_missing_message(&env.dbx, -12348, None)
+            .await
+            .unwrap();
+        record_duplicate_missing_message(&env.dbx, -12349)
+            .await
+            .unwrap();
+
+        let deleted_count =
+            delete_duplicate_missing_messages(&env.dbx).await.unwrap();
+
+        assert_eq!(deleted_count, 1);
+        assert_eq!(
+            echo_missing_message::Entity::find()
+                .filter(echo_missing_message::Column::MessageId.eq(-12348))
+                .count(&env.dbx)
+                .await
+                .unwrap(),
+            1
+        );
+        assert_eq!(
+            echo_missing_message::Entity::find()
+                .filter(echo_missing_message::Column::MessageId.eq(-12349))
+                .count(&env.dbx)
+                .await
+                .unwrap(),
+            0
+        );
     }
 
     async fn mk_echo_account(dbx: &DatabaseConnection) -> echo_account::Model {

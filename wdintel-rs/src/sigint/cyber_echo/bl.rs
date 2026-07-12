@@ -205,6 +205,7 @@ mod tests {
             cyber_echo_enabled: Set(enabled),
             echo_restapi_error_discord_webhook_url: Set(None),
             sigint_comment_parsing_enabled: Set(true),
+            do_not_store_duplicate_echoim_failures: Set(false),
         }
         .insert(dbx)
         .await

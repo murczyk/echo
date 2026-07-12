@@ -42,6 +42,7 @@ type SystemSettingsForm = {
   autofixEchoimMissingMessages: boolean;
   cyberEchoEnabled: boolean;
   sigintCommentParsingEnabled: boolean;
+  doNotStoreDuplicateEchoimFailures: boolean;
   pelengBoundsEnabled: boolean;
   pelengBoundsTopLeftLat: string;
   pelengBoundsTopLeftLng: string;
@@ -65,6 +66,7 @@ type SystemSettingsPayload = {
   autofixEchoimMissingMessages: boolean;
   cyberEchoEnabled: boolean;
   sigintCommentParsingEnabled: boolean;
+  doNotStoreDuplicateEchoimFailures: boolean;
   pelengBoundsEnabled: boolean;
   pelengBoundsTopLeftLat: number | null;
   pelengBoundsTopLeftLng: number | null;
@@ -86,6 +88,7 @@ const EMPTY_FORM: SystemSettingsForm = {
   autofixEchoimMissingMessages: false,
   cyberEchoEnabled: false,
   sigintCommentParsingEnabled: true,
+  doNotStoreDuplicateEchoimFailures: false,
   pelengBoundsEnabled: false,
   pelengBoundsTopLeftLat: '',
   pelengBoundsTopLeftLng: '',
@@ -122,6 +125,7 @@ function formFromSettings(item: SystemSettingsItem | undefined): SystemSettingsF
     autofixEchoimMissingMessages: item?.autofixEchoimMissingMessages ?? false,
     cyberEchoEnabled: item?.cyberEchoEnabled ?? false,
     sigintCommentParsingEnabled: item?.sigintCommentParsingEnabled ?? true,
+    doNotStoreDuplicateEchoimFailures: item?.doNotStoreDuplicateEchoimFailures ?? false,
     pelengBoundsEnabled: item?.pelengBoundsEnabled ?? false,
     pelengBoundsTopLeftLat: coordinateToInput(item?.pelengBoundsTopLeftLat ?? null),
     pelengBoundsTopLeftLng: coordinateToInput(item?.pelengBoundsTopLeftLng ?? null),
@@ -145,6 +149,7 @@ function formsEqual(a: SystemSettingsForm, b: SystemSettingsForm): boolean {
     a.autofixEchoimMissingMessages === b.autofixEchoimMissingMessages &&
     a.cyberEchoEnabled === b.cyberEchoEnabled &&
     a.sigintCommentParsingEnabled === b.sigintCommentParsingEnabled &&
+    a.doNotStoreDuplicateEchoimFailures === b.doNotStoreDuplicateEchoimFailures &&
     a.pelengBoundsEnabled === b.pelengBoundsEnabled &&
     a.pelengBoundsTopLeftLat === b.pelengBoundsTopLeftLat &&
     a.pelengBoundsTopLeftLng === b.pelengBoundsTopLeftLng &&
@@ -216,6 +221,7 @@ function formToPayload(form: SystemSettingsForm): SystemSettingsPayload {
     autofixEchoimMissingMessages: form.autofixEchoimMissingMessages,
     cyberEchoEnabled: form.cyberEchoEnabled,
     sigintCommentParsingEnabled: form.sigintCommentParsingEnabled,
+    doNotStoreDuplicateEchoimFailures: form.doNotStoreDuplicateEchoimFailures,
     pelengBoundsEnabled: form.pelengBoundsEnabled,
     pelengBoundsTopLeftLat: coordinateToPayload(form.pelengBoundsTopLeftLat),
     pelengBoundsTopLeftLng: coordinateToPayload(form.pelengBoundsTopLeftLng),
@@ -358,6 +364,18 @@ function MainSettingsSection({
           />
         }
         label="Парсити коментарі"
+      />
+
+      <FormControlLabel
+        control={
+          <Switch
+            checked={form.doNotStoreDuplicateEchoimFailures}
+            onChange={(_, checked) => {
+              patchForm({ doNotStoreDuplicateEchoimFailures: checked });
+            }}
+          />
+        }
+        label="Не зберігати дублікати помилок Echo IM"
       />
     </>
   );
@@ -663,6 +681,7 @@ export function AdminSystemSettingsNeoPage() {
         autofixEchoimMissingMessages: payload.autofixEchoimMissingMessages,
         cyberEchoEnabled: payload.cyberEchoEnabled,
         sigintCommentParsingEnabled: payload.sigintCommentParsingEnabled,
+        doNotStoreDuplicateEchoimFailures: payload.doNotStoreDuplicateEchoimFailures,
         pelengBoundsEnabled: payload.pelengBoundsEnabled,
         pelengBoundsTopLeftLat: payload.pelengBoundsTopLeftLat,
         pelengBoundsTopLeftLng: payload.pelengBoundsTopLeftLng,

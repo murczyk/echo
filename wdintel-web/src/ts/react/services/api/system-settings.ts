@@ -18,6 +18,7 @@ type SystemSettingsItemRaw = {
   autofix_echoim_missing_messages?: boolean;
   cyber_echo_enabled?: boolean;
   sigint_comment_parsing_enabled?: boolean;
+  do_not_store_duplicate_echoim_failures?: boolean;
   peleng_bounds_enabled?: boolean;
   peleng_bounds_top_left_lat?: number | null;
   peleng_bounds_top_left_lng?: number | null;
@@ -40,6 +41,7 @@ type SystemSettingsCurrentRspRaw = {
   autofix_echoim_missing_messages?: boolean;
   cyber_echo_enabled?: boolean;
   sigint_comment_parsing_enabled?: boolean;
+  do_not_store_duplicate_echoim_failures?: boolean;
   peleng_bounds_enabled?: boolean;
   peleng_bounds_top_left_lat?: number | null;
   peleng_bounds_top_left_lng?: number | null;
@@ -64,6 +66,7 @@ type CreateSystemSettingsReqRaw = {
   autofix_echoim_missing_messages: boolean;
   cyber_echo_enabled: boolean;
   sigint_comment_parsing_enabled: boolean;
+  do_not_store_duplicate_echoim_failures: boolean;
   peleng_bounds_enabled: boolean;
   peleng_bounds_top_left_lat: number | null;
   peleng_bounds_top_left_lng: number | null;
@@ -94,6 +97,7 @@ export type SystemSettingsItem = {
   autofixEchoimMissingMessages: boolean;
   cyberEchoEnabled: boolean;
   sigintCommentParsingEnabled: boolean;
+  doNotStoreDuplicateEchoimFailures: boolean;
   pelengBoundsEnabled: boolean;
   pelengBoundsTopLeftLat: number | null;
   pelengBoundsTopLeftLng: number | null;
@@ -116,6 +120,7 @@ export type SystemSettingsCurrent = {
   autofixEchoimMissingMessages: boolean;
   cyberEchoEnabled: boolean;
   sigintCommentParsingEnabled: boolean;
+  doNotStoreDuplicateEchoimFailures: boolean;
   pelengBoundsEnabled: boolean;
   pelengBoundsTopLeftLat: number | null;
   pelengBoundsTopLeftLng: number | null;
@@ -136,6 +141,7 @@ export type CreateSystemSettingsInput = {
   autofixEchoimMissingMessages: boolean;
   cyberEchoEnabled: boolean;
   sigintCommentParsingEnabled: boolean;
+  doNotStoreDuplicateEchoimFailures: boolean;
   pelengBoundsEnabled: boolean;
   pelengBoundsTopLeftLat: number | null;
   pelengBoundsTopLeftLng: number | null;
@@ -163,6 +169,7 @@ function normalizeItem(raw: SystemSettingsItemRaw): SystemSettingsItem {
     autofixEchoimMissingMessages: raw.autofix_echoim_missing_messages ?? false,
     cyberEchoEnabled: raw.cyber_echo_enabled ?? false,
     sigintCommentParsingEnabled: raw.sigint_comment_parsing_enabled ?? false,
+    doNotStoreDuplicateEchoimFailures: raw.do_not_store_duplicate_echoim_failures ?? false,
     pelengBoundsEnabled: raw.peleng_bounds_enabled ?? false,
     pelengBoundsTopLeftLat: raw.peleng_bounds_top_left_lat ?? null,
     pelengBoundsTopLeftLng: raw.peleng_bounds_top_left_lng ?? null,
@@ -187,6 +194,7 @@ function normalizeCurrent(raw: SystemSettingsCurrentRspRaw): SystemSettingsCurre
     autofixEchoimMissingMessages: raw.autofix_echoim_missing_messages ?? false,
     cyberEchoEnabled: raw.cyber_echo_enabled ?? false,
     sigintCommentParsingEnabled: raw.sigint_comment_parsing_enabled ?? false,
+    doNotStoreDuplicateEchoimFailures: raw.do_not_store_duplicate_echoim_failures ?? false,
     pelengBoundsEnabled: raw.peleng_bounds_enabled ?? false,
     pelengBoundsTopLeftLat: raw.peleng_bounds_top_left_lat ?? null,
     pelengBoundsTopLeftLng: raw.peleng_bounds_top_left_lng ?? null,
@@ -216,6 +224,7 @@ export async function createSystemSettings(
     autofix_echoim_missing_messages: input.autofixEchoimMissingMessages,
     cyber_echo_enabled: input.cyberEchoEnabled,
     sigint_comment_parsing_enabled: input.sigintCommentParsingEnabled,
+    do_not_store_duplicate_echoim_failures: input.doNotStoreDuplicateEchoimFailures,
     peleng_bounds_enabled: input.pelengBoundsEnabled,
     peleng_bounds_top_left_lat: input.pelengBoundsTopLeftLat,
     peleng_bounds_top_left_lng: input.pelengBoundsTopLeftLng,

@@ -3193,6 +3193,8 @@ export type SystemSettingsCurrentRsp = {
   pelengBoundsBottomRightLat: number | null;
   pelengBoundsBottomRightLng: number | null;
   cyberEchoEnabled: boolean;
+  sigintCommentParsingEnabled: boolean;
+  doNotStoreDuplicateEchoimFailures: boolean;
 };
 
 export type SystemSettingsItem = {
@@ -3218,6 +3220,8 @@ export type SystemSettingsItem = {
   pelengBoundsBottomRightLng: number | null;
   cyberEchoEnabled: boolean;
   echoRestapiErrorDiscordWebhookUrl: string | null;
+  sigintCommentParsingEnabled: boolean;
+  doNotStoreDuplicateEchoimFailures: boolean;
 };
 
 export type SystemSettingsListRsp = {
@@ -3242,6 +3246,8 @@ export type CreateSystemSettingsReq = {
   pelengBoundsBottomRightLng: number | null;
   cyberEchoEnabled: boolean;
   echoRestapiErrorDiscordWebhookUrl: string | null;
+  sigintCommentParsingEnabled: boolean;
+  doNotStoreDuplicateEchoimFailures: boolean;
 };
 
 export type ActivateSystemSettingsReq = {
