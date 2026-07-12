@@ -988,7 +988,7 @@ pub async fn reconcile_active_message(
         )
         .await
         .c(h!())?;
-        let superseded_media_ids = replace_media_if_changed(
+        let media_replacement = replace_media_if_changed(
             txn,
             config,
             s3,
@@ -999,6 +999,19 @@ pub async fn reconcile_active_message(
         )
         .await
         .c(h!())?;
+        if media_replacement.preserved_previous {
+            restore_edit_dedupe_after_media_fallback(
+                redis,
+                source_message_id,
+                previous_attachments_hash.as_deref(),
+                &body,
+                snapshot_attachments_hash.as_deref(),
+                attachments_hash.as_deref(),
+            )
+            .await
+            .c(h!())?;
+        }
+        let superseded_media_ids = media_replacement.superseded_media_ids;
         reset_machine_derived_inbox_data(txn, signal_message.id)
             .await
             .c(h!())?;
@@ -1509,6 +1522,47 @@ async fn clear_current_edit_dedupe_keys_best_effort(
     .await;
 }
 
+async fn restore_edit_dedupe_after_media_fallback(
+    redis: &mut ConnectionManager,
+    signal_message_id: i64,
+    previous_attachments_hash: Option<&str>,
+    body: &str,
+    snapshot_attachments_hash: Option<&str>,
+    attachments_hash: Option<&str>,
+) -> anyhow::Result<()> {
+    clear_current_dedupe_key_if_source(
+        redis,
+        signal_message_id,
+        body,
+        snapshot_attachments_hash,
+    )
+    .await
+    .c(h!())?;
+    if snapshot_attachments_hash != attachments_hash {
+        clear_current_dedupe_key_if_source(
+            redis,
+            signal_message_id,
+            body,
+            attachments_hash,
+        )
+        .await
+        .c(h!())?;
+    }
+    redis::cmd("SET")
+        .arg(dedupe::redis_key_for_body_with_attachments_hash(
+            body,
+            previous_attachments_hash,
+        ))
+        .arg(signal_message_id.to_string())
+        .arg("NX")
+        .arg("EX")
+        .arg(REDIS_MGS_ID_TTL)
+        .query_async::<()>(redis)
+        .await
+        .c(h!())?;
+    Ok(())
+}
+
 async fn clear_current_dedupe_key_if_source(
     redis: &mut ConnectionManager,
     signal_message_id: i64,
@@ -1585,6 +1639,11 @@ fn dedupe_redis_key(body_for_dedupe: &str) -> String {
     format!("signal_message:{body_base64}")
 }
 
+struct MediaReplacementResult {
+    superseded_media_ids: Vec<Uuid>,
+    preserved_previous: bool,
+}
+
 async fn replace_media_if_changed(
     txn: &DatabaseTransaction,
     config: &Config,
@@ -1593,7 +1652,7 @@ async fn replace_media_if_changed(
     previous_attachments_hash: Option<String>,
     attachments_hash: Option<String>,
     attachments: &[MessageAttachmentF1],
-) -> anyhow::Result<Vec<Uuid>> {
+) -> anyhow::Result<MediaReplacementResult> {
     let old_media = signal_message_media::Entity::find()
         .filter(
             signal_message_media::Column::SignalMessageId.eq(signal_message.id),
@@ -1604,11 +1663,17 @@ async fn replace_media_if_changed(
     let old_media_ids = old_media.iter().map(|media| media.id).collect_vec();
 
     if previous_attachments_hash == attachments_hash {
-        return Ok(vec![]);
+        return Ok(MediaReplacementResult {
+            superseded_media_ids: vec![],
+            preserved_previous: false,
+        });
     }
 
     if attachments.is_empty() {
-        return Ok(vec![]);
+        return Ok(MediaReplacementResult {
+            superseded_media_ids: vec![],
+            preserved_previous: false,
+        });
     }
 
     if should_preserve_unavailable_media(&old_media, attachments).await {
@@ -1619,7 +1684,10 @@ async fn replace_media_if_changed(
         )
         .await
         .c(h!())?;
-        return Ok(vec![]);
+        return Ok(MediaReplacementResult {
+            superseded_media_ids: vec![],
+            preserved_previous: true,
+        });
     }
 
     let upload_inputs = attachments
@@ -1652,9 +1720,15 @@ async fn replace_media_if_changed(
             previous_attachments_hash,
         )
         .await?;
-        return Ok(uploaded_media_ids);
+        return Ok(MediaReplacementResult {
+            superseded_media_ids: uploaded_media_ids,
+            preserved_previous: true,
+        });
     }
-    delete_old_media(txn, old_media_ids).await
+    Ok(MediaReplacementResult {
+        superseded_media_ids: delete_old_media(txn, old_media_ids).await?,
+        preserved_previous: false,
+    })
 }
 
 async fn effective_edit_attachments_hash(
