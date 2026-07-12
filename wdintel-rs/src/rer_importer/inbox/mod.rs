@@ -800,6 +800,7 @@ async fn submit_generic_inbox_item(
         &message,
         login,
         logins,
+        InboxLocationSubmitMode::Parse,
     )
     .await
     .c(h!())?;
@@ -1896,6 +1897,7 @@ async fn submit_legacy_inbox_messages(
                 &message,
                 login,
                 logins,
+                InboxLocationSubmitMode::PreserveTyped,
             )
             .await
             .c(h!())?;
@@ -2531,6 +2533,102 @@ mod tests {
 
     #[serial]
     #[tokio::test]
+    async fn test_legacy_submit_preserves_typed_location_v2() {
+        let env = cleanup().await.unwrap();
+        let login = find_test_login(&env.dbx).await.unwrap();
+        let now = Utc::now().naive_utc();
+        let message = mk_signal_message(
+            &env.dbx,
+            signal_message::ActiveModel {
+                body: Set(Some("legacy typed location".to_string())),
+                created_at: Set(now),
+                timestamp: Set(Some(now)),
+                sender: Set(Some("legacy typed sender".to_string())),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let inbox_message = InboxMessage::from(InboxInsertPayload {
+            text: "legacy typed location".to_string(),
+            location: Some("Робоботине".to_string()),
+            ..Default::default()
+        });
+        let logins = vec![login.login.clone()];
+        let txn = env.dbx.begin().await.unwrap();
+
+        submit_upsert_inbox_item(
+            env.settlements.clone(),
+            &txn,
+            message.id,
+            &inbox_message,
+            &login.login,
+            &logins,
+            InboxLocationSubmitMode::PreserveTyped,
+        )
+        .await
+        .unwrap();
+        txn.commit().await.unwrap();
+
+        let inbox_item = sigint_inbox_item::Entity::find_by_id(message.id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(inbox_item.location.as_deref(), Some("Робоботине"));
+        assert_eq!(inbox_item.location_v2.as_deref(), Some("|Робоботине|"));
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn test_submit_parse_location_v2_keeps_parser_behavior() {
+        let env = cleanup().await.unwrap();
+        let login = find_test_login(&env.dbx).await.unwrap();
+        let now = Utc::now().naive_utc();
+        let message = mk_signal_message(
+            &env.dbx,
+            signal_message::ActiveModel {
+                body: Set(Some("generic parsed location".to_string())),
+                created_at: Set(now),
+                timestamp: Set(Some(now)),
+                sender: Set(Some("generic parsed sender".to_string())),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let inbox_message = InboxMessage::from(InboxInsertPayload {
+            text: "generic parsed location".to_string(),
+            location: Some("Робоботине".to_string()),
+            ..Default::default()
+        });
+        let logins = vec![login.login.clone()];
+        let txn = env.dbx.begin().await.unwrap();
+
+        submit_upsert_inbox_item(
+            env.settlements.clone(),
+            &txn,
+            message.id,
+            &inbox_message,
+            &login.login,
+            &logins,
+            InboxLocationSubmitMode::Parse,
+        )
+        .await
+        .unwrap();
+        txn.commit().await.unwrap();
+
+        let inbox_item = sigint_inbox_item::Entity::find_by_id(message.id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(inbox_item.location.as_deref(), Some("Робоботине"));
+        assert_eq!(inbox_item.location_v2.as_deref(), Some("|РОБОТИНЕ|"));
+    }
+
+    #[serial]
+    #[tokio::test]
     async fn test_submit_upsert_extended_form_does_not_update_peer_comment() {
         let env = cleanup().await.unwrap();
         let login = find_test_login(&env.dbx).await.unwrap();
@@ -2592,6 +2690,7 @@ mod tests {
             &inbox_message,
             &login.login,
             &logins,
+            InboxLocationSubmitMode::PreserveTyped,
         )
         .await
         .unwrap();
