@@ -59,8 +59,23 @@ vi.mock('@mui/material', () => ({
       {children}
     </button>
   ),
-  Chip: ({ label, children }: { label?: ReactNode; children?: ReactNode }) => (
-    <span>{label ?? children}</span>
+  Chip: ({
+    label,
+    children,
+    onDelete,
+  }: {
+    label?: ReactNode;
+    children?: ReactNode;
+    onDelete?: () => void;
+  }) => (
+    <span>
+      {label ?? children}
+      {onDelete ? (
+        <button type="button" onClick={onDelete}>
+          delete
+        </button>
+      ) : null}
+    </span>
   ),
   Drawer: ({
     children,
@@ -230,9 +245,10 @@ describe('AnalysisMessageEditDrawer', () => {
     root.unmount();
   });
 
-  it('submits location changes from enter when saving is allowed', async () => {
+  it('submits multiple location changes from the save button', async () => {
+    const message = { ...buildMessage(), location: 'Київ, Харків' };
     const { container, onSave, root } = renderDrawer({
-      message: { id: 1, message: buildMessage() },
+      message: { id: 1, message },
       saveInFlight: false,
     });
 
@@ -240,24 +256,33 @@ describe('AnalysisMessageEditDrawer', () => {
       'input[aria-label="Локація"]',
     ) as HTMLInputElement;
     expect(locationInput).toBeTruthy();
+    expect(container.textContent).toContain('Київ');
+    expect(container.textContent).toContain('Харків');
 
     act(() => {
-      changeTextField('Локація', 'Київ');
+      changeTextField('Локація', 'Одеса, Львів');
     });
 
     await act(async () => {
-      locationInput.dispatchEvent(
-        new KeyboardEvent('keydown', {
-          key: 'Enter',
-          bubbles: true,
-          cancelable: true,
-        }),
-      );
+      textFieldPropsByLabel.get('Локація')?.onKeyDown?.({
+        key: 'Enter',
+        preventDefault: vi.fn(),
+        stopPropagation: vi.fn(),
+      } as never);
+    });
+
+    expect(onSave).not.toHaveBeenCalled();
+
+    const saveButton = container.querySelector('button[type="submit"]') as HTMLButtonElement | null;
+    expect(saveButton).toBeTruthy();
+
+    await act(async () => {
+      saveButton?.click();
     });
 
     expect(onSave).toHaveBeenCalledWith(
       expect.objectContaining({
-        location: 'Київ',
+        location: 'Київ, Харків, Одеса, Львів',
       }),
     );
     root.unmount();
