@@ -3772,6 +3772,7 @@ pub async fn batch_message_comments_bl(
     message_ids: &[i64],
 ) -> Result<MessageComments, AppError> {
     let message_ids = accessible_message_ids(dbx, login, message_ids).await?;
+    let editable_comment_logins = editable_comment_logins(dbx, login).await?;
     let comments = sigint_comment::Entity::find()
         .find_also_related(sigint_post::Entity)
         .filter(sigint_comment::Column::SignalMessageId.eq_any(message_ids))
@@ -3781,6 +3782,13 @@ pub async fn batch_message_comments_bl(
         .c(h!())?;
     let mut res: BTreeMap<i64, Vec<MessageComment>> = BTreeMap::new();
     for (comment, sigint_post) in comments {
+        if is_editable_comment_for_logins(
+            &comment,
+            &sigint_post,
+            &editable_comment_logins,
+        ) {
+            continue;
+        }
         let message_id = comment.signal_message_id;
         res.entry(message_id)
             .or_default()
@@ -3794,6 +3802,27 @@ pub async fn batch_message_comments_bl(
         })
         .collect();
     Ok(MessageComments { data })
+}
+
+async fn editable_comment_logins(
+    dbx: &DatabaseConnection,
+    login: &str,
+) -> Result<HashSet<String>, AppError> {
+    let mut logins = crate::users::get_organism_logins_by_login(dbx, login)
+        .await
+        .c(h!())?
+        .into_iter()
+        .collect::<HashSet<_>>();
+    logins.insert(login.to_string());
+    Ok(logins)
+}
+
+fn is_editable_comment_for_logins(
+    comment: &sigint_comment::Model,
+    sigint_post: &Option<sigint_post::Model>,
+    logins: &HashSet<String>,
+) -> bool {
+    sigint_post.is_none() && logins.contains(&comment.login)
 }
 
 fn message_comment_from_model(
@@ -3848,7 +3877,8 @@ pub async fn message_comments(
     env: actix_web::web::Data<Env>,
     req: Json<MessageCommentsReq>,
 ) -> Result<Json<Vec<MessageComment>>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
+    let login = user.id().c(h!())?;
+    crate::users::has_role(&env.dbx, &login, "Rer")
         .await
         .c(h!())?;
     signal_message::Entity::find_by_id(req.message_id)
@@ -3864,8 +3894,17 @@ pub async fn message_comments(
         .all(&env.dbx)
         .await
         .c(h!())?;
+    let editable_comment_logins =
+        editable_comment_logins(&env.dbx, &login).await?;
     let mut res = vec![];
     for (comment, sigint_post) in comments {
+        if is_editable_comment_for_logins(
+            &comment,
+            &sigint_post,
+            &editable_comment_logins,
+        ) {
+            continue;
+        }
         res.push(message_comment_from_model(comment, sigint_post));
     }
     Ok(Json(res))

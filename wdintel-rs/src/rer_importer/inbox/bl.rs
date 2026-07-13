@@ -97,7 +97,7 @@ pub async fn get_inbox_map_items(
 pub async fn aggregate_to_inbox_messages(
     login: &str,
     messages: Vec<InboxMessageDesc>,
-    _logins: &Vec<String>,
+    logins: &Vec<String>,
     req: &&InboxMessagesReq,
     env: &&Env,
 ) -> Result<Vec<(i64, InboxMessage)>, AppError> {
@@ -382,12 +382,11 @@ pub async fn aggregate_to_inbox_messages(
                 highlight_searchres: req.highlight_searchres,
             },
         )?;
-        // `extended_form` is the editable duty comment, so it must come only
-        // from the active login; peer comments are shown only in analysis.
-        let m_comment = find_sigint_comment_by_signal_message_id_and_login(
-            env, message.id, login,
-        )
-        .await?;
+        let m_comment =
+            find_editable_sigint_comment_by_signal_message_id_and_logins(
+                &env.dbx, message.id, login, logins,
+            )
+            .await?;
         let location_v2 = match message.location_v2.clone() {
             None => None,
             Some(location) => Some(to_location_list(&location).join(", ")),
@@ -456,19 +455,155 @@ pub async fn aggregate_to_inbox_messages(
     Ok(res)
 }
 
-pub(crate) async fn find_sigint_comment_by_signal_message_id_and_login(
-    env: &Env,
+fn comment_ownership_logins(login: &str, logins: &[String]) -> Vec<String> {
+    let mut res = vec![login.to_string()];
+    for login in logins {
+        if !res.contains(login) {
+            res.push(login.clone());
+        }
+    }
+    res
+}
+
+pub(crate) async fn find_editable_sigint_comments_by_signal_message_id_and_logins<
+    'a,
+    'async_trait,
+    C,
+>(
+    db: &'a C,
     item_id: i64,
     login: &str,
-) -> Result<Option<sigint_comment::Model>, AppError> {
-    let m_comment = sigint_comment::Entity::find()
+    logins: &[String],
+) -> Result<Vec<sigint_comment::Model>, AppError>
+where
+    C: ConnectionTrait + 'async_trait,
+{
+    let owner_logins = comment_ownership_logins(login, logins);
+    let mut comments = sigint_comment::Entity::find()
         .filter(sigint_comment::Column::SignalMessageId.eq(item_id))
-        .filter(sigint_comment::Column::Login.eq(login))
-        .one(&env.dbx)
+        .filter(sigint_comment::Column::Login.eq_any(owner_logins))
+        .filter(sigint_comment::Column::SigintPostId.is_null())
+        .all(db)
         .await
         .c(h!())?;
 
-    Ok(m_comment)
+    comments.sort_by(|a, b| {
+        let a_rank = if a.login == login { 0 } else { 1 };
+        let b_rank = if b.login == login { 0 } else { 1 };
+        a_rank
+            .cmp(&b_rank)
+            .then(a.created_at.cmp(&b.created_at))
+            .then(a.id.cmp(&b.id))
+    });
+
+    Ok(comments)
+}
+
+pub(crate) async fn find_editable_sigint_comment_by_signal_message_id_and_logins<
+    'a,
+    'async_trait,
+    C,
+>(
+    db: &'a C,
+    item_id: i64,
+    login: &str,
+    logins: &[String],
+) -> Result<Option<sigint_comment::Model>, AppError>
+where
+    C: ConnectionTrait + 'async_trait,
+{
+    Ok(
+        find_editable_sigint_comments_by_signal_message_id_and_logins(
+            db, item_id, login, logins,
+        )
+        .await?
+        .into_iter()
+        .next(),
+    )
+}
+
+pub(crate) async fn upsert_editable_sigint_comment<'a, 'async_trait, C>(
+    db: &'a C,
+    item_id: i64,
+    login: &str,
+    logins: &[String],
+    comment: &str,
+) -> Result<(), AppError>
+where
+    C: ConnectionTrait + 'async_trait,
+{
+    let mut comments =
+        find_editable_sigint_comments_by_signal_message_id_and_logins(
+            db, item_id, login, logins,
+        )
+        .await?;
+    let Some(comment_to_update) = comments.first().cloned() else {
+        sigint_comment::ActiveModel {
+            id: NotSet,
+            signal_message_id: Set(item_id),
+            login: Set(login.to_string()),
+            comment: Set(comment.to_string()),
+            created_at: NotSet,
+            sigint_post_id: NotSet,
+        }
+        .insert(db)
+        .await
+        .c(h!())?;
+        return Ok(());
+    };
+
+    sigint_comment::ActiveModel {
+        id: Set(comment_to_update.id),
+        signal_message_id: Set(item_id),
+        login: Set(comment_to_update.login),
+        comment: Set(comment.to_string()),
+        created_at: NotSet,
+        sigint_post_id: NotSet,
+    }
+    .update(db)
+    .await
+    .c(h!())?;
+
+    comments.remove(0);
+    delete_sigint_comments(db, comments).await
+}
+
+pub(crate) async fn delete_editable_sigint_comments<'a, 'async_trait, C>(
+    db: &'a C,
+    item_id: i64,
+    login: &str,
+    logins: &[String],
+) -> Result<(), AppError>
+where
+    C: ConnectionTrait + 'async_trait,
+{
+    let comments =
+        find_editable_sigint_comments_by_signal_message_id_and_logins(
+            db, item_id, login, logins,
+        )
+        .await?;
+    delete_sigint_comments(db, comments).await
+}
+
+async fn delete_sigint_comments<'a, 'async_trait, C>(
+    db: &'a C,
+    comments: Vec<sigint_comment::Model>,
+) -> Result<(), AppError>
+where
+    C: ConnectionTrait + 'async_trait,
+{
+    let comment_ids =
+        comments.into_iter().map(|comment| comment.id).collect_vec();
+    if comment_ids.is_empty() {
+        return Ok(());
+    }
+
+    sigint_comment::Entity::delete_many()
+        .filter(sigint_comment::Column::Id.eq_any(comment_ids))
+        .exec(db)
+        .await
+        .c(h!())?;
+    Ok(())
 }
 
 pub(crate) async fn find_sigint_comment_by_signal_message_id_and_logins(
@@ -476,14 +611,11 @@ pub(crate) async fn find_sigint_comment_by_signal_message_id_and_logins(
     item_id: i64,
     logins: &[String],
 ) -> Result<Option<sigint_comment::Model>, AppError> {
-    let m_comment = sigint_comment::Entity::find()
-        .filter(sigint_comment::Column::SignalMessageId.eq(item_id))
-        .filter(sigint_comment::Column::Login.eq_any(logins.to_vec()))
-        .one(&env.dbx)
-        .await
-        .c(h!())?;
-
-    Ok(m_comment)
+    let login = logins.first().map(String::as_str).unwrap_or_default();
+    find_editable_sigint_comment_by_signal_message_id_and_logins(
+        &env.dbx, item_id, login, logins,
+    )
+    .await
 }
 
 pub async fn fill_callsigns(
@@ -813,7 +945,7 @@ pub async fn submit_upsert_inbox_item(
     id: i64,
     message: &InboxMessage,
     login: &str,
-    _logins: &Vec<String>,
+    logins: &Vec<String>,
     location_mode: InboxLocationSubmitMode,
 ) -> Result<i64, AppError> {
     let m_existing = SigintInboxItem::find_by_id(id).one(txn).await.c(h!())?;
@@ -870,50 +1002,9 @@ pub async fn submit_upsert_inbox_item(
         .map(|x| crate::rer_importer::frequency::etalon(x));
     // upsert sigint_comment
     if let Some(extended_form) = message.extended_form.as_ref() {
-        // Inbox/detail submits carry the current user's editable comment only;
-        // never reuse a same-organism peer comment row for this update.
-        let m_comment = sigint_comment::Entity::find()
-            .filter(sigint_comment::Column::SignalMessageId.eq(id))
-            .filter(sigint_comment::Column::Login.eq(login))
-            .one(txn)
+        upsert_editable_sigint_comment(txn, id, login, logins, extended_form)
             .await
             .c(h!())?;
-        match m_comment {
-            None => {
-                debug!("> creating comment for message {id} by {login}: {extended_form}");
-                sigint_comment::ActiveModel {
-                    id: NotSet,
-                    signal_message_id: Set(id),
-                    login: Set(login.to_string()),
-                    comment: Set(extended_form.clone()),
-                    created_at: NotSet,
-                    sigint_post_id: NotSet,
-                }
-                .insert(txn)
-                .await
-                .c(h!())?;
-            }
-            Some(comment) => {
-                debug!(
-                    "> updating comment for message {} by {}: old: {}, new: {}",
-                    comment.signal_message_id,
-                    login,
-                    comment.comment,
-                    extended_form
-                );
-                sigint_comment::ActiveModel {
-                    id: Set(comment.id),
-                    signal_message_id: Set(id),
-                    login: Set(login.to_string()),
-                    comment: Set(extended_form.clone()),
-                    created_at: NotSet,
-                    sigint_post_id: NotSet,
-                }
-                .update(txn)
-                .await
-                .c(h!())?;
-            }
-        }
     }
 
     let location = message
