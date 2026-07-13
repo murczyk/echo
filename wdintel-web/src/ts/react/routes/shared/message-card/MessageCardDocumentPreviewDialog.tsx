@@ -140,6 +140,7 @@ export function MessageCardDocumentPreviewDialog({
         ariaLabel="Перегляд документа"
         onClose={handleDialogClose}
         layout="document"
+        disableRestoreFocus
         stage={<Typography variant="body2">Документ недоступний</Typography>}
       />
     );
@@ -152,6 +153,7 @@ export function MessageCardDocumentPreviewDialog({
       ariaLabel="Перегляд документа"
       onClose={handleDialogClose}
       layout="document"
+      disableRestoreFocus
       stage={
         <MessageCardDocumentPreviewStage
           documents={documents}

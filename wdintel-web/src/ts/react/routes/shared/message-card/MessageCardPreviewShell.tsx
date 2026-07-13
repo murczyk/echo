@@ -12,6 +12,7 @@ export function MessageCardPreviewShell({
   onClose,
   layout,
   disableEscapeKeyDown,
+  disableRestoreFocus,
   stage,
   controls,
   actions,
@@ -23,6 +24,7 @@ export function MessageCardPreviewShell({
   onClose: (event: unknown, reason: 'backdropClick' | 'escapeKeyDown') => void;
   layout: MessageCardPreviewLayout;
   disableEscapeKeyDown?: boolean;
+  disableRestoreFocus: boolean;
   stage: ReactNode;
   controls?: ReactNode;
   actions?: ReactNode;
@@ -56,7 +58,7 @@ export function MessageCardPreviewShell({
       maxWidth={false}
       fullScreen={isFullscreen}
       disableEscapeKeyDown={disableEscapeKeyDown}
-      disableRestoreFocus
+      disableRestoreFocus={disableRestoreFocus}
       aria-label={ariaLabel}
       PaperProps={{
         sx: {

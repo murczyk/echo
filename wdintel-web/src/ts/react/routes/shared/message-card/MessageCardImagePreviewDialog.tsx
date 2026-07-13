@@ -367,6 +367,7 @@ export function MessageImagePreviewDialog({
       onClose={closeDialog}
       layout="media"
       disableEscapeKeyDown={isFullscreen}
+      disableRestoreFocus
       stage={
         <MessageCardImagePreviewStage
           ref={setStageNode}
