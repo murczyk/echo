@@ -275,8 +275,6 @@ export function buildInboxReq(opts: {
 }): InboxMessagesReq {
   const f = opts.filter;
   // send empty arrays as null (backend treats null/undefined vs [] differently)
-  const selectedFreqs = emptyArrToNull(opts.expandedFreqsSelected ?? f.freqsSelected ?? null);
-  const deniedFreqs = emptyArrToNull(opts.expandedFreqsDenied ?? f.freqsDenied ?? null);
   return {
     sinceIdNoninclusive: opts.sinceIdNoninclusive ?? null,
     beforeIdNoninclusive: opts.beforeIdNoninclusive ?? null,
@@ -288,10 +286,10 @@ export function buildInboxReq(opts: {
     deniedGroups: emptyArrToNull(f.groupsDenied),
     selectedSenders: emptyArrToNull(f.sendersSelected),
     deniedSenders: emptyArrToNull(f.deniedSenders),
-    selectedFreqs,
+    selectedFreqs: emptyArrToNull(opts.expandedFreqsSelected ?? f.freqsSelected ?? null),
     selectedPosts: emptyArrToNull(f.postsSelected),
     deniedPosts: emptyArrToNull(f.postsDenied),
-    deniedFreqs,
+    deniedFreqs: emptyArrToNull(opts.expandedFreqsDenied ?? f.freqsDenied ?? null),
     selectedCallsigns: null,
     selectedUnits: emptyArrToNull(f.unitsSelected ?? null),
     deniedUnits: emptyArrToNull(f.unitsDenied ?? null),

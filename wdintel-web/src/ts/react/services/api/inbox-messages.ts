@@ -6,10 +6,12 @@ import type {
   InboxMessageMetadata,
   InboxMessageTag,
   InboxMessagesReq,
+  MessageIdsReq,
   InboxMessagesRsp,
   InterseptionKind,
   MessageComment,
   MessageMediaInfo,
+  MessageIdsRsp,
   SignalGroupEntry,
   SignalGroupStats,
   SignalProfilesRsp,
@@ -18,6 +20,7 @@ import { transformSnakeToCamel } from '../../../snake-to-camel';
 import { emptyArrToNull, isNullOrUndefined, isPresent } from '../../utils/misc';
 import { postJson } from './client';
 import type { RequestOptions } from './client';
+import { transformCamelToSnake, transformSnakeToCamel } from '../../../snake-to-camel';
 
 const defaultGroupStats: SignalGroupStats = {
   activityLastDay: 0,
@@ -171,6 +174,24 @@ export function normalizeInboxMessageMetadata(
     hashIdEndIndex: (metadata.hashIdEndIndex ?? metadata.hash_id_end_index ?? null) as
       number | null,
   };
+}
+
+export async function fetchMessagesByIds(
+  messageIds: number[],
+  inboxReq?: Partial<InboxMessagesReq> | null,
+  options?: RequestOptions,
+): Promise<Array<[number, InboxMessageType]>> {
+  const req: MessageIdsReq = {
+    messageIds,
+    inboxReq: inboxReq == null ? null : (inboxReq as InboxMessagesReq),
+  };
+  const raw = await postJson<unknown>(
+    '/api/rer-importer/messages-by-id',
+    transformCamelToSnake(req),
+    options,
+  );
+  const messages = transformSnakeToCamel<MessageIdsRsp>(raw).messages ?? [];
+  return messages.map(([id, message]) => [id, normalizeInboxMessage(message)]);
 }
 
 function normalizeContentNode(node: unknown): InboxTextMarkedNode | null {

@@ -137,6 +137,10 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
     };
     pendingReloadFeedIdsRef.current = new Set([...pendingReloadFeedIdsRef.current, feedId]);
   }, []);
+  const getFeedLoadGeneration = useCallback(
+    (feedId: string) => loadGenerationByFeedIdRef.current[feedId] ?? 0,
+    [],
+  );
 
   useEffect(() => {
     if (shortStateReady) return;
@@ -679,6 +683,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
     createMessageFeed: crud.createMessageFeed,
     removeMessageFeed: crud.removeMessageFeed,
     buildReqForFeed,
+    getFeedLoadGeneration,
     networkDisplayMap,
     networkMap,
     unitsMap,

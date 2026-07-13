@@ -28,6 +28,8 @@ import type {
   GroupStatsRsp,
   InboxMessagesReq,
   InboxMessage,
+  MessageIdsReq,
+  MessageIdsRsp,
   MapPointsRsp,
   MetadataStatsRsp,
   NetJsonGraphAndMeta,
@@ -84,7 +86,6 @@ type AreaOfResponsibilityStatsRsp = {
   aors: AnalysisStatsAor[];
   aorNames: AreaOfResponsibilityEntry[];
 };
-type MessageIdsRsp = { messages: Array<[number, InboxMessage]> };
 type CallsignInfoBatchRaw = Array<CallsignInfoRes>;
 const CONTENT_NODE_VARIANT_KEY_MAP: Record<string, string> = {
   _c_n_text_c: 'CNTextC',
@@ -356,7 +357,10 @@ export async function fetchMessagesByIds(
   messageIds: number[],
   inboxReq?: Partial<InboxMessagesReq> | null,
 ): Promise<Array<[number, InboxMessage]>> {
-  const req = inboxReq == null ? { messageIds } : { messageIds, inboxReq };
+  const req: MessageIdsReq = {
+    messageIds,
+    inboxReq: inboxReq == null ? null : (inboxReq as InboxMessagesReq),
+  };
   const raw = await postJson<unknown>(
     '/api/rer-importer/messages-by-id',
     transformCamelToSnake(req),
