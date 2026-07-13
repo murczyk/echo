@@ -136,7 +136,7 @@ pub async fn import_signed_frequencies(
     require_basic_auth(&http_req, &state.config)?;
     validate_xlsx_body(body.as_ref())?;
 
-    let path = PathBuf::from(state.config.frequencies_xlsx_path());
+    let path = state.config.preferred_frequencies_xlsx_path();
     replace_xlsx_file(&path, body.as_ref())
         .await
         .with_context(|| format!("replacing {}", path.display()))
