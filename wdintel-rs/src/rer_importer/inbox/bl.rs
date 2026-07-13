@@ -1208,11 +1208,7 @@ fn format_manual_location_v2(
 }
 
 fn format_unvalidated_manual_location_v2(location: String) -> String {
-    let locations = location
-        .split(',')
-        .map(|location| location.trim().to_string())
-        .filter(|location| !location.is_empty())
-        .collect::<Vec<_>>();
+    let locations = split_manual_locations(&location);
     if locations.is_empty() {
         return utils::format_locations_list(vec![location]);
     }
@@ -1223,14 +1219,31 @@ fn format_inbox_message_location(
     location: Option<String>,
     location_v2: Option<String>,
 ) -> Option<String> {
+    let location_v2 = location_v2
+        .as_deref()
+        .map(to_location_list)
+        .unwrap_or_default();
+    if !location_v2.is_empty() {
+        return Some(location_v2.join(", "));
+    }
+
+    let location = location
+        .as_deref()
+        .map(split_manual_locations)
+        .unwrap_or_default();
+    if location.is_empty() {
+        None
+    } else {
+        Some(location.join(", "))
+    }
+}
+
+fn split_manual_locations(location: &str) -> Vec<String> {
     location
+        .split(',')
         .map(|location| location.trim().to_string())
         .filter(|location| !location.is_empty())
-        .or_else(|| {
-            location_v2
-                .map(|location| to_location_list(&location).join(", "))
-                .filter(|location| !location.is_empty())
-        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -1264,6 +1277,16 @@ mod tests {
     }
 
     #[test]
+    fn format_unvalidated_manual_location_v2_does_not_fix_typos() {
+        assert_eq!(
+            format_unvalidated_manual_location_v2(
+                "Запоріжя, Хирсон".to_string()
+            ),
+            "|Запоріжя|Хирсон|"
+        );
+    }
+
+    #[test]
     fn format_manual_location_v2_uses_parsed_location_when_present() {
         assert_eq!(
             format_manual_location_v2(
@@ -1278,19 +1301,43 @@ mod tests {
     }
 
     #[test]
-    fn format_inbox_message_location_prefers_typed_location() {
+    fn format_inbox_message_location_prefers_location_v2() {
         assert_eq!(
             format_inbox_message_location(
                 Some("Робоботине".to_string()),
                 Some("|РОБОТИНЕ|".to_string()),
             )
             .as_deref(),
-            Some("Робоботине")
+            Some("РОБОТИНЕ")
         );
     }
 
     #[test]
-    fn format_inbox_message_location_falls_back_to_location_v2() {
+    fn format_inbox_message_location_keeps_worker_appended_locations() {
+        assert_eq!(
+            format_inbox_message_location(
+                Some("Робоботине".to_string()),
+                Some("|Робоботине|НОВОПРОКОПІВКА|".to_string()),
+            )
+            .as_deref(),
+            Some("Робоботине, НОВОПРОКОПІВКА")
+        );
+    }
+
+    #[test]
+    fn format_inbox_message_location_uses_location_v2_without_raw_merge() {
+        assert_eq!(
+            format_inbox_message_location(
+                Some("ручний район".to_string()),
+                Some("|НОВОПРОКОПІВКА|".to_string()),
+            )
+            .as_deref(),
+            Some("НОВОПРОКОПІВКА")
+        );
+    }
+
+    #[test]
+    fn format_inbox_message_location_formats_location_v2() {
         assert_eq!(
             format_inbox_message_location(
                 None,
@@ -1298,6 +1345,18 @@ mod tests {
             )
             .as_deref(),
             Some("КУП'ЯНСЬК, СЕНЬКОВЕ")
+        );
+    }
+
+    #[test]
+    fn format_inbox_message_location_falls_back_to_raw_location() {
+        assert_eq!(
+            format_inbox_message_location(
+                Some("Запоріжя, Хирсон".to_string()),
+                None,
+            )
+            .as_deref(),
+            Some("Запоріжя, Хирсон")
         );
     }
 
