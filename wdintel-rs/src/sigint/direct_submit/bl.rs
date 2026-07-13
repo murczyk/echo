@@ -22,16 +22,20 @@ pub async fn parse_signal_message(
             msg: "full_body cannot be empty".to_string(),
         });
     }
-    query::find_available_signal_group(
-        &env.dbx,
-        login,
-        &payload.signal_group_master_key,
-    )
-    .await?;
-    let aor_id =
-        query::resolve_group_aor_id(&env.dbx, &payload.signal_group_master_key)
+    let master_key = payload
+        .signal_group_master_key
+        .as_deref()
+        .map(str::trim)
+        .filter(|key| !key.is_empty());
+    // The group only refines unit/location extraction; parsing works without it.
+    let aor_id = if let Some(master_key) = master_key {
+        query::find_available_signal_group(&env.dbx, login, master_key).await?;
+        query::resolve_group_aor_id(&env.dbx, master_key)
             .await
-            .c(h!())?;
+            .c(h!())?
+    } else {
+        None
+    };
 
     parse_signal_message_body(env, &env.dbx, &body, aor_id).await
 }
@@ -100,7 +104,15 @@ where
         comment: comments.bottom.or(comments.top),
         post: crate::rer_importer::post::extract_post(body)?,
         unit: unit_and_location.unit,
-        locations: unit_and_location.locality.into_iter().collect(),
+        locations: unit_and_location
+            .locality
+            .map(|l| {
+                l.split(',')
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty())
+                    .collect()
+            })
+            .unwrap_or_default(),
     })
 }
 
@@ -109,20 +121,6 @@ pub async fn submit_signal_message(
     env: &Env,
     payload: DirectSubmitPayload,
 ) -> Result<DirectSubmitRsp, AppError> {
-    if payload
-        .full_body
-        .as_deref()
-        .is_none_or(|body| body.trim().is_empty())
-        && payload
-            .text
-            .as_deref()
-            .is_none_or(|body| body.trim().is_empty())
-    {
-        return Err(AppError::BL {
-            msg: "full_body or text cannot be empty".to_string(),
-        });
-    }
-
     let upload_urls = payload.upload_urls.clone().unwrap_or_default();
     if !upload_urls.is_empty()
         && (env.config.s3_config.is_none() || env.s3.is_none())

@@ -1,0 +1,88 @@
+import { useState, useEffect, useRef } from 'react';
+import Uppy from '@uppy/core';
+import type { UppyFile } from '@uppy/core';
+import Tus from '@uppy/tus';
+
+export function useMessageUppy(busy: boolean, setErrorMsg: (msg: string | null) => void) {
+  const [uppy] = useState(() =>
+    new Uppy({
+      restrictions: {
+        maxNumberOfFiles: 20,
+        maxFileSize: 2 * 1024 * 1024 * 1024, // 2GB
+      },
+      autoProceed: false,
+    }).use(Tus, {
+      endpoint: '/api/sigint/file-upload/tus',
+      chunkSize: 5 * 1024 * 1024,
+      limit: 3,
+    }),
+  );
+
+  const [uppyFiles, setUppyFiles] = useState<UppyFile<any, any>[]>([]);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    const updateFiles = () => setUppyFiles(uppy.getFiles());
+    uppy.on('file-added', updateFiles);
+    uppy.on('file-removed', updateFiles);
+    return () => {
+      uppy.off('file-added', updateFiles);
+      uppy.off('file-removed', updateFiles);
+    };
+  }, [uppy]);
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files) {
+      Array.from(e.target.files).forEach((file) => {
+        try {
+          uppy.addFile({
+            name: file.name,
+            type: file.type,
+            data: file,
+          });
+        } catch (err: any) {
+          setErrorMsg(err.message || 'Error adding file');
+        }
+      });
+    }
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
+  const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      Array.from(e.dataTransfer.files).forEach((file) => {
+        try {
+          uppy.addFile({
+            name: file.name,
+            type: file.type,
+            data: file,
+          });
+        } catch (err: any) {
+          setErrorMsg(err.message || 'Error adding file');
+        }
+      });
+      e.dataTransfer.clearData();
+    }
+  };
+
+  const handleDropzoneKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (busy) return;
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      fileInputRef.current?.click();
+    }
+  };
+
+  return {
+    uppy,
+    uppyFiles,
+    fileInputRef,
+    handleFileSelect,
+    handleDrop,
+    handleDropzoneKeyDown,
+  };
+}

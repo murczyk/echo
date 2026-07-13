@@ -762,19 +762,6 @@ fn validate_generic_submit_item(
 fn validate_submit_item_content(
     item: &InboxSubmitItem,
 ) -> Result<(), AppError> {
-    if item
-        .full_body
-        .as_deref()
-        .is_none_or(|body| body.trim().is_empty())
-        && item
-            .text
-            .as_deref()
-            .is_none_or(|body| body.trim().is_empty())
-    {
-        return Err(AppError::BL {
-            msg: "Inbox submit requires full_body or text".to_string(),
-        });
-    }
     validate_submit_network(item.network.as_ref())?;
     validate_submit_dmr_signal_names(&item.dmr)?;
     validate_submit_dmr_timestamps(&item.dmr)?;
@@ -789,7 +776,7 @@ fn generic_submit_item_to_inbox_message(
     let (date, time) = format_submit_date_time_fields(timestamp);
     let full_body = normalized_optional_string(item.full_body.as_deref())
         .or_else(|| normalized_optional_string(item.text.as_deref()))
-        .c(h!())?;
+        .unwrap_or_default();
     let no_headers_body =
         normalized_optional_string(item.text.as_deref()).map(|body| {
             crate::rer_importer::body_noheader::NoHeadersBody {

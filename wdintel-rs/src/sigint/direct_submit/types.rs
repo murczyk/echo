@@ -49,7 +49,8 @@ pub struct DirectSubmitRsp {
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
 pub struct DirectSubmitParsePayload {
     pub full_body: String,
-    pub signal_group_master_key: String,
+    #[serde(default)]
+    pub signal_group_master_key: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
