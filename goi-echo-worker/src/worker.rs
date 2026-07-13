@@ -16,6 +16,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct FileFingerprint {
+    path: PathBuf,
     modified_ms: u128,
     len: u64,
 }
@@ -29,11 +30,14 @@ struct FileState {
 
 pub async fn ensure_xlsx_files_exist(config: &Config) -> Result<()> {
     for (kind, path) in [
-        ("associations", config.associations_xlsx_path()),
-        ("knowledge", config.knowledge_xlsx_path()),
-        ("frequencies", config.frequencies_xlsx_path()),
+        (
+            "associations",
+            PathBuf::from(config.associations_xlsx_path()),
+        ),
+        ("knowledge", config.preferred_knowledge_xlsx_path()),
+        ("frequencies", config.preferred_frequencies_xlsx_path()),
     ] {
-        ensure_xlsx_file_exists(&PathBuf::from(path), kind).await?;
+        ensure_xlsx_file_exists(&path, kind).await?;
     }
     Ok(())
 }
@@ -102,7 +106,7 @@ async fn knowledge_worker_step(
     config: &Config,
     state: &mut FileState,
 ) -> Result<()> {
-    let path = PathBuf::from(config.knowledge_xlsx_path());
+    let path = config.preferred_knowledge_xlsx_path();
     let Some(fingerprint) = file_fingerprint(&path, state, "knowledge").await?
     else {
         return Ok(());
@@ -167,6 +171,7 @@ async fn file_fingerprint(
         .unwrap_or_default()
         .as_millis();
     Ok(Some(FileFingerprint {
+        path: path.clone(),
         modified_ms,
         len: metadata.len(),
     }))
