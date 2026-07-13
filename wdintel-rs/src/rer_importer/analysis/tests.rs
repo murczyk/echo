@@ -3892,6 +3892,165 @@ async fn rer_duty_unit_filter_includes_child_units_in_fuzzy_mode() {
 
 #[tokio::test]
 #[serial]
+async fn rer_analysis_unit_filter_includes_child_units_by_name_suffix_in_fuzzy_mode(
+) {
+    let fixture = mk_aor_filter_fixture().await.unwrap();
+    let db = &fixture.env.dbx;
+    let _parent_unit = mk_sigint_unit(
+        db,
+        sigint_unit::ActiveModel {
+            name: Set("100 pbr".to_string()),
+            created_by: Set("Tester".to_string()),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let child_unit = mk_sigint_unit(
+        db,
+        sigint_unit::ActiveModel {
+            name: Set("1 pdb 100 pbr".to_string()),
+            created_by: Set("Tester".to_string()),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let other_unit = mk_sigint_unit(
+        db,
+        sigint_unit::ActiveModel {
+            name: Set("1 pdb 200 pbr".to_string()),
+            created_by: Set("Tester".to_string()),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let child_network = mk_network_fixture(
+        db,
+        "Child Unit Name Network",
+        "944.8",
+        fixture.aor_a.id,
+        fixture.created_at,
+    )
+    .await
+    .unwrap();
+    let other_network = mk_network_fixture(
+        db,
+        "Other Unit Name Network",
+        "944.9",
+        fixture.aor_a.id,
+        fixture.created_at,
+    )
+    .await
+    .unwrap();
+    mk_sigint_network_unit(
+        db,
+        sigint_network_unit::ActiveModel {
+            network_id: Set(child_network.network.id),
+            unit_id: Set(child_unit.id),
+            created_at: Set(fixture.created_at),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    mk_sigint_network_unit(
+        db,
+        sigint_network_unit::ActiveModel {
+            network_id: Set(other_network.network.id),
+            unit_id: Set(other_unit.id),
+            created_at: Set(fixture.created_at),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+
+    let msg_child = mk_analysis_message(
+        db,
+        "msg-child-unit-name-suffix",
+        "944.8",
+        test_dt(2026, 3, 2, 10, 7),
+        &[&fixture.group_x],
+        &[child_network.network.id],
+        false,
+    )
+    .await
+    .unwrap();
+    set_message_unit(db, msg_child.id, Some("Header Noise"))
+        .await
+        .unwrap();
+    let msg_other = mk_analysis_message(
+        db,
+        "msg-other-unit-name-suffix",
+        "944.9",
+        test_dt(2026, 3, 2, 10, 8),
+        &[&fixture.group_x],
+        &[other_network.network.id],
+        false,
+    )
+    .await
+    .unwrap();
+    set_message_unit(db, msg_other.id, Some("Header Noise"))
+        .await
+        .unwrap();
+
+    let test_identity = mk_test_identity().await.unwrap();
+    let base_req = crate::rer_importer::types::InboxMessagesReq {
+        since_date_inclusive_ms: Some(fixture.since_date_inclusive_ms),
+        till_date_inclusive_ms: Some(fixture.till_date_noninclusive_ms),
+        selected_units: Some(vec!["100 pbr".to_string()]),
+        units_exact_match_only: Some(false),
+        nolimit: Some(true),
+        ..Default::default()
+    };
+    let items = crate::rer_importer::inbox::bl::get_inbox_map_items(
+        &test_identity.login,
+        &fixture.env,
+        &base_req,
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        items.iter().map(|item| item.id).collect_vec(),
+        vec![msg_child.id]
+    );
+
+    let req = crate::rer_importer::types::InboxMessagesReq {
+        units_exact_match_only: Some(true),
+        ..base_req.clone()
+    };
+    let items = crate::rer_importer::inbox::bl::get_inbox_map_items(
+        &test_identity.login,
+        &fixture.env,
+        &req,
+    )
+    .await
+    .unwrap();
+    assert!(items.is_empty());
+
+    let req = crate::rer_importer::types::InboxMessagesReq {
+        selected_units: None,
+        denied_units: Some(vec!["100 pbr".to_string()]),
+        units_exact_match_only: Some(false),
+        ..base_req
+    };
+    let items = crate::rer_importer::inbox::bl::get_inbox_map_items(
+        &test_identity.login,
+        &fixture.env,
+        &req,
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        items.iter().map(|item| item.id).collect_vec(),
+        vec![msg_other.id]
+    );
+}
+
+#[tokio::test]
+#[serial]
 async fn rer_analysis_freq_stats_follow_group_and_network_filters() {
     let fixture = mk_rer_analysis_fixture().await.unwrap();
     let env = Data::from(fixture.env.clone());
