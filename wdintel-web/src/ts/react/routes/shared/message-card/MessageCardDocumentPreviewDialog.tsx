@@ -3,6 +3,7 @@ import { Box, Dialog, DialogContent, Typography, useTheme } from '@mui/material'
 import type { MouseEvent } from 'react';
 
 import type { MessageCardDocument } from './document-preview.types';
+import { getDocumentPreviewCapabilities } from './document-preview-capabilities';
 import {
   clamp,
   DOCUMENT_PREVIEW_ZOOM_MAX,
@@ -48,6 +49,12 @@ export function MessageCardDocumentPreviewDialog({
   const [isFullscreen, setIsFullscreen] = useState(false);
 
   const infoOpen = infoAnchorEl !== null;
+  const currentDocumentCapabilities =
+    currentDocument == null ? null : getDocumentPreviewCapabilities(currentDocument.kind);
+  const canZoom = currentDocumentCapabilities?.zoomable === true;
+  const canFullscreen = currentDocumentCapabilities?.fullscreen === true;
+  const dialogIsFullscreen = canFullscreen && isFullscreen;
+  const dialogZoom = canZoom ? zoom : 100;
   const previewFileName = useMemo(
     () =>
       currentDocument != null
@@ -82,6 +89,16 @@ export function MessageCardDocumentPreviewDialog({
   }, [open]);
 
   useEffect(() => {
+    if (currentDocument == null) return;
+    if (!canZoom && zoom !== 100) {
+      setZoom(100);
+    }
+    if (!canFullscreen && isFullscreen) {
+      setIsFullscreen(false);
+    }
+  }, [canFullscreen, canZoom, currentDocument, isFullscreen, zoom]);
+
+  useEffect(() => {
     if (!open || !hasCarousel) return;
 
     const handleWindowKeyDown = (event: globalThis.KeyboardEvent) => {
@@ -111,21 +128,21 @@ export function MessageCardDocumentPreviewDialog({
     setInfoAnchorEl(event.currentTarget);
   };
 
-  const dialogWidth = isFullscreen ? '100vw' : '92vw';
-  const dialogHeight = isFullscreen ? '100vh' : '92svh';
+  const dialogWidth = dialogIsFullscreen ? '100vw' : '92vw';
+  const dialogHeight = dialogIsFullscreen ? '100vh' : '92svh';
 
   return (
     <Dialog
       open={open && documentCount > 0}
       onClose={(_, reason) => {
-        if (reason === 'escapeKeyDown' && isFullscreen) {
+        if (reason === 'escapeKeyDown' && dialogIsFullscreen) {
           setIsFullscreen(false);
           return;
         }
         closeDialog();
       }}
       maxWidth={false}
-      fullScreen={isFullscreen}
+      fullScreen={dialogIsFullscreen}
       disableRestoreFocus
       PaperProps={{
         sx: {
@@ -134,7 +151,7 @@ export function MessageCardDocumentPreviewDialog({
           maxWidth: dialogWidth,
           maxHeight: dialogHeight,
           margin: 0,
-          ...getMessageCardPreviewDialogPaperSx(isFullscreen),
+          ...getMessageCardPreviewDialogPaperSx(dialogIsFullscreen),
         },
       }}
       BackdropProps={{
@@ -145,8 +162,8 @@ export function MessageCardDocumentPreviewDialog({
         sx={{
           display: 'flex',
           flexDirection: 'column',
-          px: isFullscreen ? 0 : 2,
-          pt: isFullscreen ? 0 : 2,
+          px: dialogIsFullscreen ? 0 : 2,
+          pt: dialogIsFullscreen ? 0 : 2,
           pb: 0,
           gap: 0,
           minHeight: 0,
@@ -160,18 +177,18 @@ export function MessageCardDocumentPreviewDialog({
               minHeight: 0,
               display: 'flex',
               flexDirection: 'column',
-              borderRadius: isFullscreen ? 0 : 1.5,
+              borderRadius: dialogIsFullscreen ? 0 : 1.5,
               overflow: 'hidden',
               backgroundColor: 'background.paper',
-              border: isFullscreen ? 'none' : 1,
+              border: dialogIsFullscreen ? 'none' : 1,
               borderColor: 'divider',
             }}
           >
             <MessageCardDocumentPreviewStage
               documents={documents}
               currentIndex={resolvedIndex}
-              zoom={zoom}
-              isFullscreen={isFullscreen}
+              zoom={dialogZoom}
+              isFullscreen={dialogIsFullscreen}
             />
             <Box
               sx={{
@@ -181,12 +198,15 @@ export function MessageCardDocumentPreviewDialog({
               }}
             >
               <Box sx={{ width: '100%', maxWidth: 800 }}>
-                <MessageCardDocumentPreviewControls
-                  zoom={zoom}
-                  isFullscreen={isFullscreen}
-                  onSetPreviewZoom={setPreviewZoom}
-                  onToggleFullscreen={() => setIsFullscreen((value) => !value)}
-                />
+                {canZoom ? (
+                  <MessageCardDocumentPreviewControls
+                    zoom={zoom}
+                    isFullscreen={isFullscreen}
+                    canFullscreen={canFullscreen}
+                    onSetPreviewZoom={setPreviewZoom}
+                    onToggleFullscreen={() => setIsFullscreen((value) => !value)}
+                  />
+                ) : null}
               </Box>
             </Box>
           </Box>
@@ -204,7 +224,7 @@ export function MessageCardDocumentPreviewDialog({
           fileSize={currentDocument.sizeBytes ?? null}
         />
       ) : null}
-      {currentDocument != null && !isFullscreen ? (
+      {currentDocument != null && !dialogIsFullscreen ? (
         <MessageCardDocumentPreviewActions
           currentHref={currentDocument.href}
           downloadFileName={downloadFileName}

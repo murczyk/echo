@@ -10,6 +10,8 @@ type MessageMediaInfoRaw = MessageMediaInfo & {
 
 const DOCUMENT_DOWNLOAD_EXTENSION_RE = /\.(pdf|docx?|xlsx?)(\?|#|$)/i;
 const LEGACY_SPREADSHEET_CONTENT_TYPES = new Set(['application/vnd.ms-excel']);
+const TEXT_CONTENT_TYPES = new Set(['text/plain']);
+const MARKDOWN_CONTENT_TYPES = new Set(['text/markdown', 'text/x-markdown']);
 
 function mediaAttachmentDisplayName(m: MessageMediaInfo): string {
   const raw = m as MessageMediaInfoRaw;
@@ -45,6 +47,21 @@ function getDocumentKind(m: MessageMediaInfo): MessageCardDocumentKind {
   ) {
     return 'xlsx';
   }
+  if (
+    fileName.endsWith('.md') ||
+    fileName.endsWith('.markdown') ||
+    /\.md(\?|#|$)/i.test(href) ||
+    /\.markdown(\?|#|$)/i.test(href) ||
+    MARKDOWN_CONTENT_TYPES.has(contentType)
+  ) {
+    return 'md';
+  }
+  if (
+    fileName.endsWith('.txt') ||
+    /\.txt(\?|#|$)/i.test(href) ||
+    TEXT_CONTENT_TYPES.has(contentType)
+  )
+    return 'txt';
   return 'unsupported';
 }
 
@@ -58,6 +75,14 @@ export function isDocxAttachment(m: MessageMediaInfo): boolean {
 
 export function isXlsxAttachment(m: MessageMediaInfo): boolean {
   return getDocumentKind(m) === 'xlsx';
+}
+
+export function isTxtAttachment(m: MessageMediaInfo): boolean {
+  return getDocumentKind(m) === 'txt';
+}
+
+export function isMarkdownAttachment(m: MessageMediaInfo): boolean {
+  return getDocumentKind(m) === 'md';
 }
 
 export function isDocumentPreviewAttachment(m: MessageMediaInfo): boolean {

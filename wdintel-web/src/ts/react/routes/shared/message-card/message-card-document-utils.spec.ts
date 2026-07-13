@@ -8,9 +8,11 @@ import {
   collectMessageDocuments,
   deriveDocumentDownloadName,
   deriveDocumentFileName,
+  isMarkdownAttachment,
   isDocxAttachment,
   isDocumentPreviewAttachment,
   isPdfAttachment,
+  isTxtAttachment,
   isXlsxAttachment,
 } from './message-card-document-utils';
 
@@ -45,7 +47,19 @@ describe('message-card document utils', () => {
         href: 'https://example.test/report.txt',
         contentType: 'text/plain',
       } as MessageMediaInfo),
-    ).toBe(false);
+    ).toBe(true);
+    expect(
+      isTxtAttachment({
+        href: 'https://example.test/report.txt?download=1',
+        contentType: 'application/octet-stream',
+      } as MessageMediaInfo),
+    ).toBe(true);
+    expect(
+      isMarkdownAttachment({
+        href: 'https://example.test/report.markdown',
+        contentType: 'text/x-markdown',
+      } as MessageMediaInfo),
+    ).toBe(true);
   });
 
   it('collects supported documents and derives stable file names', () => {
@@ -72,14 +86,37 @@ describe('message-card document utils', () => {
           fileName: 'legacy.xls',
           sizeBytes: 4096,
         },
+        {
+          id: 'txt-1',
+          href: 'https://example.test/files/notes.txt',
+          contentType: 'text/plain',
+          fileName: 'notes.txt',
+          sizeBytes: 512,
+        },
+        {
+          id: 'md-1',
+          href: 'https://example.test/files/readme.markdown',
+          contentType: 'text/markdown',
+          fileName: 'readme.markdown',
+          sizeBytes: 256,
+        },
       ] as InboxMessage['media'],
     } as InboxMessage;
 
     const documents = collectMessageDocuments(msg);
 
-    expect(documents).toHaveLength(3);
+    expect(documents).toHaveLength(5);
     expect(deriveDocumentFileName(documents[0]!, 0)).toBe('report.pdf');
     expect(deriveDocumentDownloadName(documents[1]!, 1)).toBe('sheet.xlsx');
     expect(documents[2]?.kind).toBe('unsupported');
+    expect(documents[3]?.kind).toBe('txt');
+    expect(documents[4]?.kind).toBe('md');
+    expect(documents.map((document) => document.kind)).toEqual([
+      'pdf',
+      'xlsx',
+      'unsupported',
+      'txt',
+      'md',
+    ]);
   });
 });

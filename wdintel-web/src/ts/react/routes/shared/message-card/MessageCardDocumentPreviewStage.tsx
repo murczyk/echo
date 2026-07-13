@@ -7,6 +7,7 @@ import { DocxDocumentPreview } from './renderers/DocxDocumentPreview';
 import { PdfDocumentPreview } from './renderers/PdfDocumentPreview';
 import { UnsupportedDocumentPreview } from './renderers/UnsupportedDocumentPreview';
 import { XlsxDocumentPreview } from './renderers/XlsxDocumentPreview';
+import { MarkdownDocumentPreview, TxtDocumentPreview } from './text-document-preview';
 import { getMessageCardPreviewStageSx } from './message-card-preview-shell';
 
 export const MessageCardDocumentPreviewStage = forwardRef<
@@ -20,7 +21,6 @@ export const MessageCardDocumentPreviewStage = forwardRef<
 >(function MessageCardDocumentPreviewStage({ documents, currentIndex, zoom, isFullscreen }, ref) {
   const theme = useTheme();
   const currentDocument = documents[currentIndex] ?? null;
-  const hasCarousel = documents.length > 1;
 
   return (
     <Box
@@ -61,6 +61,16 @@ export const MessageCardDocumentPreviewStage = forwardRef<
           <XlsxDocumentPreview
             href={currentDocument.href}
             zoom={zoom}
+            sizeBytes={currentDocument.sizeBytes ?? null}
+          />
+        ) : currentDocument.kind === 'txt' ? (
+          <TxtDocumentPreview
+            href={currentDocument.href}
+            sizeBytes={currentDocument.sizeBytes ?? null}
+          />
+        ) : currentDocument.kind === 'md' ? (
+          <MarkdownDocumentPreview
+            href={currentDocument.href}
             sizeBytes={currentDocument.sizeBytes ?? null}
           />
         ) : (
