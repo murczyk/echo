@@ -48,6 +48,7 @@ pub struct InboxMessageDesc {
     pub signal_tokens: Option<serde_json::Value>,
     #[allow(dead_code)]
     pub keyword_tokens: Option<serde_json::Value>,
+    pub location: Option<String>,
     pub location_v2: Option<String>,
     pub date: Option<String>,
     pub time: Option<String>,
@@ -387,10 +388,10 @@ pub async fn aggregate_to_inbox_messages(
                 &env.dbx, message.id, login, logins,
             )
             .await?;
-        let location_v2 = match message.location_v2.clone() {
-            None => None,
-            Some(location) => Some(to_location_list(&location).join(", ")),
-        };
+        let location = format_inbox_message_location(
+            message.location,
+            message.location_v2,
+        );
         let network_ids = messages_networks.get(&message.id).cloned();
 
         res.push((
@@ -434,7 +435,7 @@ pub async fn aggregate_to_inbox_messages(
                     .as_ref()
                     .and_then(|(_, datasource_group)| datasource_group.as_ref())
                     .map(|dg| dg.datasource_id),
-                location: location_v2,
+                location,
                 tags: inbox_tag_ids,
                 callsigns_alg2: from_m_val_vec(message.callsigns_alg2.clone())?,
                 network_ids,
@@ -1218,6 +1219,20 @@ fn format_unvalidated_manual_location_v2(location: String) -> String {
     utils::format_locations_list(locations)
 }
 
+fn format_inbox_message_location(
+    location: Option<String>,
+    location_v2: Option<String>,
+) -> Option<String> {
+    location
+        .map(|location| location.trim().to_string())
+        .filter(|location| !location.is_empty())
+        .or_else(|| {
+            location_v2
+                .map(|location| to_location_list(&location).join(", "))
+                .filter(|location| !location.is_empty())
+        })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1259,6 +1274,30 @@ mod tests {
                 }],
             ),
             "|РОБОТИНЕ|"
+        );
+    }
+
+    #[test]
+    fn format_inbox_message_location_prefers_typed_location() {
+        assert_eq!(
+            format_inbox_message_location(
+                Some("Робоботине".to_string()),
+                Some("|РОБОТИНЕ|".to_string()),
+            )
+            .as_deref(),
+            Some("Робоботине")
+        );
+    }
+
+    #[test]
+    fn format_inbox_message_location_falls_back_to_location_v2() {
+        assert_eq!(
+            format_inbox_message_location(
+                None,
+                Some("|КУП'ЯНСЬК|СЕНЬКОВЕ|".to_string()),
+            )
+            .as_deref(),
+            Some("КУП'ЯНСЬК, СЕНЬКОВЕ")
         );
     }
 
