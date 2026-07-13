@@ -54,8 +54,8 @@ export function MessageCardPreviewShell({
       fullScreen={isFullscreen}
       disableEscapeKeyDown={isFullscreen && config.disableEscapeKeyDownInFullscreen}
       disableRestoreFocus={config.disableRestoreFocus}
-      aria-label={ariaLabel}
       PaperProps={{
+        'aria-label': ariaLabel,
         sx: {
           ...getMessageCardPreviewDialogPaperSx(isFullscreen),
           ...paperSx,

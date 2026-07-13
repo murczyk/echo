@@ -6,21 +6,25 @@ description: Run mandatory frontend regression safety checks for API contract co
 # Frontend Regression Safety
 
 ## Short description (for triggering)
+
 Use at the end of any task that changes frontend behavior, API calls, UI states, or route flows.
 
 ## When to use / When NOT to use
+
 - Use: Any Elm/React/UI behavior change.
 - Use: Any edit in `wdintel-web/src` that touches network calls or interactions.
 - Do not use: Pure docs-only changes.
 - Do not use: Pure commit message drafting with no code change.
 
 ## Inputs the agent should request or derive
+
 - Derive changed endpoints from diffs in Elm effects or `services/api/*`.
 - Derive impacted screens/routes from changed components/pages.
 - Derive available test/build scripts from `justfile` and `wdintel-web/package.json`.
 - Derive whether touched UI state is URL-backed, localStorage-backed, or user-settings-backed.
 
 ## Procedure (checklist)
+
 - REST API contract checks:
 - Confirm endpoint paths and methods unchanged unless explicitly intended.
 - Confirm request body keys and response parsing still match backend shape.
@@ -44,9 +48,13 @@ Use at the end of any task that changes frontend behavior, API calls, UI states,
 - `just build-front`
 - For Elm-heavy changes: `cd wdintel-web && elm make <touched>.elm --output=/dev/null`
 - For TS-heavy changes when feasible: `cd wdintel-web && npm run test:ts`
+- For message-card preview E2E changes, including shared preview shell/config/capabilities, preview dialogs/stages/actions/controls, `MessageCardContent`, and attachment-preview classification, run `cd wdintel-web && npx playwright test tests/e2e/message-card-media-preview.spec.ts`, and keep the smoke cases tagged `@smoke`.
+- If Chromium is unavailable, report the exact failure and request approval before running `cd wdintel-web && npm run e2e:install`; rerun the focused spec after installation.
+- If the local server or browser still cannot run, report the exact blocker and do not claim full E2E verification.
 - If tests are missing for changed logic, add or extend unit/component tests where feasible in same change.
 
 ## Definition of Done (checklist)
+
 - API contract compatibility verified or intentionally migrated.
 - UX regression checks completed across breakpoints and states.
 - Relevant URL/localStorage/user-settings persistence behavior is verified.
@@ -55,16 +63,19 @@ Use at the end of any task that changes frontend behavior, API calls, UI states,
 - No silent handling regressions for API errors.
 
 ## Tiny examples
+
 ```txt
 Changed /api/palitra/update/:id body?
 -> Update request mapper + response normalizer + related tests in same change.
 ```
 
 ## Self-check
+
 - Re-open diff and list each changed endpoint/method.
 - Re-open diff and list each changed interactive UI state.
 - Confirm every list item is either validated or intentionally changed and documented.
 - Confirm no unrelated files were modified.
 
 ## Assumptions
+
 - Manual visual verification is acceptable when automated UI tests are absent.

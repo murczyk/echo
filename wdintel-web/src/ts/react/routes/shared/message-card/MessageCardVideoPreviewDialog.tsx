@@ -49,6 +49,7 @@ export function MessageCardVideoPreviewDialog({
   const previewConfig = getMessageCardPreviewShellConfig('video');
   const canFullscreen = previewConfig.supportsFullscreen;
   const dialogIsFullscreen = canFullscreen && playerState.isFullscreen;
+  const openHref = typeof video?.source === 'string' ? video.source : null;
 
   useEffect(() => {
     if (!open || !video) return;
@@ -289,6 +290,7 @@ export function MessageCardVideoPreviewDialog({
         !dialogIsFullscreen ? (
           <MessageCardVideoPreviewActions
             video={video}
+            openHref={openHref}
             onClose={handleClose}
             hasCarousel={hasCarousel}
             resolvedIndex={resolvedIndex}

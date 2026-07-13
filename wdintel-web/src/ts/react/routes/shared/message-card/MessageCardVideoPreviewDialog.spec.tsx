@@ -55,6 +55,7 @@ let latestActionProps: {
   hasCarousel: boolean;
   resolvedIndex: number;
   videoCount: number;
+  openHref?: string | null;
   onGoToPrevious?: () => void;
   onGoToNext?: () => void;
   onInfoClick?: (event: ReactMouseEvent<HTMLButtonElement>) => void;
@@ -243,6 +244,7 @@ vi.mock('./MessageCardVideoPreviewActions', () => ({
   },
   MessageCardVideoPreviewActions: ({
     video,
+    openHref,
     hasCarousel,
     resolvedIndex,
     videoCount,
@@ -252,6 +254,7 @@ vi.mock('./MessageCardVideoPreviewActions', () => ({
     onClose,
   }: {
     video: VideoPreviewSource;
+    openHref?: string | null;
     hasCarousel: boolean;
     resolvedIndex: number;
     videoCount: number;
@@ -261,6 +264,7 @@ vi.mock('./MessageCardVideoPreviewActions', () => ({
     onClose: () => void;
   }) => {
     latestActionProps = {
+      openHref,
       hasCarousel,
       resolvedIndex,
       videoCount,
@@ -273,6 +277,9 @@ vi.mock('./MessageCardVideoPreviewActions', () => ({
     return (
       <div data-actions>
         <button aria-label="Інформація" onClick={onInfoClick} />
+        {typeof openHref === 'string' && openHref.trim() !== '' ? (
+          <a aria-label="Відкрити в новій вкладці" href={openHref} />
+        ) : null}
         <button aria-label="Завантажити" />
         {hasCarousel ? <button aria-label="Попереднє" onClick={onGoToPrevious} /> : null}
         {hasCarousel ? (
