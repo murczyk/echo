@@ -60,6 +60,19 @@ describe('message-card document utils', () => {
         contentType: 'text/x-markdown',
       } as MessageMediaInfo),
     ).toBe(true);
+    expect(
+      isPdfAttachment({
+        href: 'https://example.test/report',
+        contentType: 'application/pdf; charset=utf-8',
+      } as MessageMediaInfo),
+    ).toBe(true);
+    expect(
+      isDocxAttachment({
+        href: 'https://example.test/report',
+        contentType:
+          'application/vnd.openxmlformats-officedocument.wordprocessingml.document; charset=utf-8',
+      } as MessageMediaInfo),
+    ).toBe(true);
   });
 
   it('collects supported documents and derives stable file names', () => {
@@ -118,5 +131,47 @@ describe('message-card document utils', () => {
       'txt',
       'md',
     ]);
+  });
+
+  it('recognizes extensionless attachments from parameterized MIME types', () => {
+    expect(
+      isTxtAttachment({
+        href: 'https://example.test/files/plain',
+        contentType: 'text/plain; charset=utf-8',
+      } as MessageMediaInfo),
+    ).toBe(true);
+    expect(
+      isMarkdownAttachment({
+        href: 'https://example.test/files/markdown',
+        contentType: 'text/markdown; charset=utf-8',
+      } as MessageMediaInfo),
+    ).toBe(true);
+
+    const msg = {
+      media: [
+        {
+          id: 'txt-1',
+          href: 'https://example.test/files/plain',
+          contentType: 'text/plain; charset=utf-8',
+          sizeBytes: 128,
+        },
+        {
+          id: 'md-1',
+          href: 'https://example.test/files/markdown',
+          contentType: 'text/markdown; charset=utf-8',
+          sizeBytes: 256,
+        },
+        {
+          id: 'pdf-1',
+          href: 'https://example.test/files/report',
+          contentType: 'application/pdf; charset=utf-8',
+          sizeBytes: 512,
+        },
+      ] as InboxMessage['media'],
+    } as InboxMessage;
+
+    const documents = collectMessageDocuments(msg);
+
+    expect(documents.map((document) => document.kind)).toEqual(['txt', 'md', 'pdf']);
   });
 });
