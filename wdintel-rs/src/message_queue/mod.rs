@@ -146,8 +146,16 @@ pub async fn process_signal_message_queue_item_with_options(
         if let Some(inbox_message_id) = m.inbox_message_id {
             match i32::try_from(inbox_message_id) {
                 Ok(message_id) => {
-                    crate::messenger::missing_message::record_duplicate_missing_message(
-                        txn, message_id,
+                    let do_not_store_duplicate_echoim_failures =
+                        crate::system_settings::do_not_store_duplicate_echoim_failures_enabled(
+                            txn,
+                        )
+                        .await
+                        .c(h!())?;
+                    crate::messenger::missing_message::record_or_delete_duplicate_missing_message(
+                        txn,
+                        message_id,
+                        do_not_store_duplicate_echoim_failures,
                     )
                     .await
                     .c(h!())?;

@@ -23,6 +23,7 @@ pub struct SystemSettingsCurrentRsp {
     pub peleng_bounds_bottom_right_lng: Option<f64>,
     pub cyber_echo_enabled: bool,
     pub sigint_comment_parsing_enabled: bool,
+    pub do_not_store_duplicate_echoim_failures: bool,
 }
 
 #[derive(
@@ -52,6 +53,7 @@ pub struct SystemSettingsItem {
     pub cyber_echo_enabled: bool,
     pub echo_restapi_error_discord_webhook_url: Option<String>,
     pub sigint_comment_parsing_enabled: bool,
+    pub do_not_store_duplicate_echoim_failures: bool,
 }
 
 #[derive(
@@ -90,6 +92,8 @@ pub struct CreateSystemSettingsReq {
     pub echo_restapi_error_discord_webhook_url: Option<String>,
     #[serde(default = "default_sigint_comment_parsing_enabled")]
     pub sigint_comment_parsing_enabled: bool,
+    #[serde(default)]
+    pub do_not_store_duplicate_echoim_failures: bool,
 }
 
 fn default_sigint_comment_parsing_enabled() -> bool {

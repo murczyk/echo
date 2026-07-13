@@ -9,10 +9,11 @@ use crate::message_queue::{
 };
 use crate::messenger::bl::list_echo_accounts;
 use crate::messenger::missing_message::{
-    mark_missing_message_deleted, mark_missing_message_duplicate,
+    delete_duplicate_missing_messages, mark_missing_message_deleted,
     mark_missing_message_error, mark_missing_message_resolved,
-    record_deleted_missing_message, record_duplicate_missing_message,
-    record_missing_message, schedule_missing_message, SYSTEM_SCHEDULED_BY,
+    mark_or_delete_duplicate_missing_message, record_deleted_missing_message,
+    record_missing_message, record_or_delete_duplicate_missing_message,
+    schedule_missing_message, SYSTEM_SCHEDULED_BY,
 };
 use crate::messenger::types::{EchoAccountF1, Message};
 use crate::types::*;
@@ -66,14 +67,29 @@ async fn run_echo_im_sync_recovery_once_for_datasources(
     deps: &EchoImSyncRecoveryDeps<'_>,
     datasources: BTreeMap<i32, EchoAccountF1>,
 ) -> anyhow::Result<usize> {
+    let do_not_store_duplicate_echoim_failures =
+        crate::system_settings::do_not_store_duplicate_echoim_failures_enabled(
+            dbx,
+        )
+        .await
+        .c(h!())?;
+    if do_not_store_duplicate_echoim_failures {
+        delete_duplicate_missing_messages(dbx).await.c(h!())?;
+    }
+
     if datasources.is_empty() {
         return Ok(0);
     }
 
-    let scheduled_count =
-        process_scheduled_missing_messages(dbx, redis, deps, &datasources)
-            .await
-            .c(h!())?;
+    let scheduled_count = process_scheduled_missing_messages(
+        dbx,
+        redis,
+        deps,
+        &datasources,
+        do_not_store_duplicate_echoim_failures,
+    )
+    .await
+    .c(h!())?;
 
     let sync_cursor = crate::system_settings::get_echo_im_sync_cursor(dbx)
         .await
@@ -108,6 +124,7 @@ async fn run_echo_im_sync_recovery_once_for_datasources(
         &maps,
         &inbox_messages,
         autofix_enabled,
+        do_not_store_duplicate_echoim_failures,
     )
     .await
     .c(h!())?;
@@ -420,6 +437,7 @@ async fn process_candidates(
     maps: &RecoveryMaps,
     inbox_messages: &[echo_inbox_message::Model],
     autofix_enabled: bool,
+    do_not_store_duplicate_echoim_failures: bool,
 ) -> anyhow::Result<ProcessCandidatesResult> {
     let mut result = ProcessCandidatesResult {
         missing_count: 0,
@@ -462,9 +480,13 @@ async fn process_candidates(
                         .c(h!())?;
                 }
                 SkippedInboxReason::Duplicate => {
-                    record_duplicate_missing_message(dbx, inbox_message.id)
-                        .await
-                        .c(h!())?;
+                    record_or_delete_duplicate_missing_message(
+                        dbx,
+                        inbox_message.id,
+                        do_not_store_duplicate_echoim_failures,
+                    )
+                    .await
+                    .c(h!())?;
                 }
                 SkippedInboxReason::Private => {}
             }
@@ -495,6 +517,7 @@ async fn process_candidates(
                 maps,
                 missing_message,
                 inbox_message,
+                do_not_store_duplicate_echoim_failures,
             )
             .await
             .c(h!())?;
@@ -517,6 +540,7 @@ async fn process_scheduled_missing_messages(
     redis: &mut ConnectionManager,
     deps: &EchoImSyncRecoveryDeps<'_>,
     datasources: &BTreeMap<i32, EchoAccountF1>,
+    do_not_store_duplicate_echoim_failures: bool,
 ) -> anyhow::Result<usize> {
     let account_ids = datasources.keys().cloned().collect_vec();
     let missing_messages = load_scheduled_missing_messages_for_accounts(
@@ -570,6 +594,7 @@ async fn process_scheduled_missing_messages(
             &maps,
             missing_message,
             inbox_message,
+            do_not_store_duplicate_echoim_failures,
         )
         .await
         .c(h!())?;
@@ -586,6 +611,7 @@ async fn process_missing_message_recovery(
     maps: &RecoveryMaps,
     missing_message: echo_missing_message::Model,
     inbox_message: &echo_inbox_message::Model,
+    do_not_store_duplicate_echoim_failures: bool,
 ) -> anyhow::Result<()> {
     let inbox_id = i64::from(inbox_message.id);
     let queue_item = queue_item_for_inbox(maps, datasources, inbox_message);
@@ -618,9 +644,13 @@ async fn process_missing_message_recovery(
                     .c(h!())?;
             }
             SkippedInboxReason::Duplicate => {
-                mark_missing_message_duplicate(dbx, missing_message)
-                    .await
-                    .c(h!())?;
+                mark_or_delete_duplicate_missing_message(
+                    dbx,
+                    missing_message,
+                    do_not_store_duplicate_echoim_failures,
+                )
+                .await
+                .c(h!())?;
             }
             SkippedInboxReason::Private => {
                 mark_missing_message_error(
@@ -653,9 +683,13 @@ async fn process_missing_message_recovery(
                 &result.message_uid,
             );
             if result.is_duplicate {
-                mark_missing_message_duplicate(dbx, missing_message)
-                    .await
-                    .c(h!())?;
+                mark_or_delete_duplicate_missing_message(
+                    dbx,
+                    missing_message,
+                    do_not_store_duplicate_echoim_failures,
+                )
+                .await
+                .c(h!())?;
             } else {
                 mark_missing_message_resolved(dbx, missing_message)
                     .await
@@ -1610,6 +1644,53 @@ mod tests {
         assert_eq!(missing_message.status, EchoMissingMessageStatus::Deleted);
         assert_eq!(missing_message.error, None);
         assert_eq!(missing_message.scheduled_by, None);
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn recovery_does_not_store_duplicate_missing_messages_when_enabled() {
+        let _guard = TEST_LOCK.lock().await;
+        let env = recovery_env().await;
+        let (account, _datasource) =
+            mk_linked_datasource(&env.dbx, AccountStatus::Active, true).await;
+        let group =
+            mk_echo_group(&env.dbx, account.id, "duplicate-skip-group").await;
+        let cursor = old_ts();
+        insert_system_settings_with_duplicate_failure_storage(
+            &env.dbx, cursor, true,
+        )
+        .await;
+        crate::messenger::missing_message::record_duplicate_missing_message(
+            &env.dbx, -12350,
+        )
+        .await
+        .unwrap();
+        let original = mk_inbox_message(
+            &env.dbx,
+            account.id,
+            Some(group.id),
+            cursor - chrono::TimeDelta::minutes(1),
+        )
+        .await;
+        let duplicate = mk_inbox_message(
+            &env.dbx,
+            account.id,
+            Some(group.id),
+            cursor + chrono::TimeDelta::minutes(1),
+        )
+        .await;
+        update_inbox_flags(&env.dbx, duplicate.id, false, Some(original.id))
+            .await;
+
+        let missing_count = run_recovery(&env, &[account.id]).await;
+
+        assert_eq!(missing_count, 1);
+        assert!(missing_message_by_message_id(&env.dbx, duplicate.id)
+            .await
+            .is_none());
+        assert!(missing_message_by_message_id(&env.dbx, -12350)
+            .await
+            .is_none());
     }
 
     #[tokio::test]
@@ -2777,10 +2858,24 @@ mod tests {
             cyber_echo_enabled: Set(false),
             echo_restapi_error_discord_webhook_url: Set(None),
             sigint_comment_parsing_enabled: Set(true),
+            do_not_store_duplicate_echoim_failures: Set(false),
         }
         .insert(dbx)
         .await
         .unwrap()
+    }
+
+    async fn insert_system_settings_with_duplicate_failure_storage(
+        dbx: &DatabaseConnection,
+        echo_im_sync_since: NaiveDateTime,
+        do_not_store_duplicate_echoim_failures: bool,
+    ) -> system_settings::Model {
+        let settings =
+            insert_system_settings(dbx, echo_im_sync_since, false).await;
+        let mut settings: system_settings::ActiveModel = settings.into();
+        settings.do_not_store_duplicate_echoim_failures =
+            Set(do_not_store_duplicate_echoim_failures);
+        settings.update(dbx).await.unwrap()
     }
 
     async fn update_inbox_flags(
