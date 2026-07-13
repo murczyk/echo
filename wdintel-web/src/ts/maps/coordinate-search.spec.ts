@@ -24,4 +24,14 @@ describe('parseCoordinateInput', () => {
     expect(parsed!.lat).toBeGreaterThan(0);
     expect(parsed!.lng).toBeGreaterThan(0);
   });
+
+  it('parses MGRS coordinates used in analysis search', () => {
+    const parsed = parseCoordinateInput('11T XT 11111 11111');
+
+    expect(parsed).not.toBeNull();
+    expect(parsed!.lat).toBeGreaterThanOrEqual(-90);
+    expect(parsed!.lat).toBeLessThanOrEqual(90);
+    expect(parsed!.lng).toBeGreaterThanOrEqual(-180);
+    expect(parsed!.lng).toBeLessThanOrEqual(180);
+  });
 });

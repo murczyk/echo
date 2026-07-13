@@ -125,6 +125,24 @@ class AnalysisMap extends HTMLElement {
       this._palitraManager?.setSearchQuery(value);
     }
   };
+  private _searchSubmitHandler = (e: CustomEvent<string>) => {
+    if (this._isSearchInteractionLocked()) {
+      return;
+    }
+
+    const value = (e.detail ?? '').trim();
+    const coords = parseCoordinateInput(value);
+    if (coords) {
+      this._flyToCoordinate(coords);
+      this._searchControl?.updateSearchLoading(false);
+      this._searchControl?.updateResultsCount(null);
+      this._palitraManager?.setSearchQuery('');
+      return;
+    }
+
+    this._clearCoordinateMarker();
+    this._palitraManager?.setSearchQuery(value);
+  };
   private _escapeHandler = (event: KeyboardEvent) => {
     if (event.key === 'Escape' && this._isFullscreen) {
       event.preventDefault();
@@ -143,11 +161,13 @@ class AnalysisMap extends HTMLElement {
     );
     this._isDateRangeLoading = this._parseBooleanAttribute(this.getAttribute('daterange-loading'));
     this.addEventListener('search-points', this._searchPointsHandler);
+    this.addEventListener('search-submit', this._searchSubmitHandler);
     window.addEventListener('keydown', this._escapeHandler);
   }
 
   disconnectedCallback() {
     this.removeEventListener('search-points', this._searchPointsHandler);
+    this.removeEventListener('search-submit', this._searchSubmitHandler);
     window.removeEventListener('keydown', this._escapeHandler);
     this._map?.off('zoomend', this._handleMapViewChanged);
     this._map?.off('moveend', this._handleMapViewChanged);

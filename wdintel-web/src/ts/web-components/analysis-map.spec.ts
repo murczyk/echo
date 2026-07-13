@@ -3,9 +3,39 @@
  */
 import { describe, expect, it, vi } from 'vitest';
 
+import { parseCoordinateInput } from '../maps/coordinate-search';
 import './analysis-map';
 
 describe('analysis-map', () => {
+  function createAnalysisMap() {
+    const element = document.createElement('analysis-map') as unknown as {
+      _searchSubmitHandler: (event: CustomEvent<string>) => void;
+      _searchControl: {
+        updateSearchLoading: (isLoading: boolean) => void;
+        updateResultsCount: (count: number | null) => void;
+      } | null;
+      _palitraManager: {
+        setSearchQuery: (query: string) => void;
+      } | null;
+      _flyToCoordinate: (coords: { lat: number; lng: number }) => void;
+      _isDateRangeLoading: boolean;
+      _palitrasLoadState: string;
+    };
+
+    element._searchControl = {
+      updateSearchLoading: vi.fn(),
+      updateResultsCount: vi.fn(),
+    };
+    element._palitraManager = {
+      setSearchQuery: vi.fn(),
+    };
+    element._flyToCoordinate = vi.fn();
+    element._isDateRangeLoading = false;
+    element._palitrasLoadState = 'success';
+
+    return element;
+  }
+
   it('does not clear popup state when the messages payload becomes empty before loading finishes', () => {
     const element = Object.create(
       (customElements.get('analysis-map') as CustomElementConstructor).prototype,
@@ -75,5 +105,51 @@ describe('analysis-map', () => {
     expect(analysisMap._messagesPopupOpenRetryCount).toBe(0);
     expect(analysisMap._clickedPoint).toBeNull();
     expect(analysisMap._clickedLatLng).toBeNull();
+  });
+
+  it('flies to coordinates on search-submit even when the value was submitted before', () => {
+    const analysisMap = createAnalysisMap();
+
+    analysisMap._searchSubmitHandler(
+      new CustomEvent('search-submit', { detail: '47.42135, 35.62197' }),
+    );
+    analysisMap._searchSubmitHandler(
+      new CustomEvent('search-submit', { detail: '47.42135, 35.62197' }),
+    );
+
+    expect(analysisMap._flyToCoordinate).toHaveBeenCalledTimes(2);
+    expect(analysisMap._flyToCoordinate).toHaveBeenNthCalledWith(1, {
+      lat: 47.42135,
+      lng: 35.62197,
+    });
+    expect(analysisMap._flyToCoordinate).toHaveBeenNthCalledWith(2, {
+      lat: 47.42135,
+      lng: 35.62197,
+    });
+    expect(analysisMap._palitraManager?.setSearchQuery).toHaveBeenCalledWith('');
+    expect(analysisMap._searchControl?.updateSearchLoading).toHaveBeenCalledWith(false);
+    expect(analysisMap._searchControl?.updateResultsCount).toHaveBeenCalledWith(null);
+  });
+
+  it('clears the palette query on coordinate submit', () => {
+    const analysisMap = createAnalysisMap();
+    const coords = parseCoordinateInput('11T XT 11111 11111');
+    expect(coords).not.toBeNull();
+
+    analysisMap._searchSubmitHandler(
+      new CustomEvent('search-submit', { detail: '11T XT 11111 11111' }),
+    );
+
+    expect(analysisMap._flyToCoordinate).toHaveBeenCalledWith(coords);
+    expect(analysisMap._palitraManager?.setSearchQuery).toHaveBeenCalledWith('');
+  });
+
+  it('delegates non-coordinate search-submit values to palette search', () => {
+    const analysisMap = createAnalysisMap();
+
+    analysisMap._searchSubmitHandler(new CustomEvent('search-submit', { detail: 'точка 12' }));
+
+    expect(analysisMap._flyToCoordinate).not.toHaveBeenCalled();
+    expect(analysisMap._palitraManager?.setSearchQuery).toHaveBeenCalledWith('точка 12');
   });
 });
