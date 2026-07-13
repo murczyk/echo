@@ -6,6 +6,7 @@ import {
   MessageCardVideoPreviewControls,
 } from './MessageCardVideoPreviewActions';
 import { MessageCardVideoPreviewInfoPopover } from './MessageCardVideoPreviewInfoPopover';
+import { getMessageCardPreviewShellConfig } from './message-card-preview-config';
 import { MessageCardPreviewShell } from './MessageCardPreviewShell';
 
 export function MessageCardVideoPreviewDialog({
@@ -45,6 +46,9 @@ export function MessageCardVideoPreviewDialog({
     playbackRate: 1,
     isFullscreen: false,
   });
+  const previewConfig = getMessageCardPreviewShellConfig('video');
+  const canFullscreen = previewConfig.supportsFullscreen;
+  const dialogIsFullscreen = canFullscreen && playerState.isFullscreen;
 
   useEffect(() => {
     if (!open || !video) return;
@@ -120,7 +124,7 @@ export function MessageCardVideoPreviewDialog({
   }, [resolvedIndex, open]);
 
   useEffect(() => {
-    if (!playerState.isFullscreen) return;
+    if (!dialogIsFullscreen) return;
     const handleFullscreenEscape = (event: globalThis.KeyboardEvent) => {
       if (event.key !== 'Escape') return;
       event.preventDefault();
@@ -129,12 +133,12 @@ export function MessageCardVideoPreviewDialog({
     };
     window.addEventListener('keydown', handleFullscreenEscape, true);
     return () => window.removeEventListener('keydown', handleFullscreenEscape, true);
-  }, [playerState.isFullscreen]);
+  }, [dialogIsFullscreen]);
 
   useEffect(() => {
     if (!open) return;
     const handleKeyDown = (event: globalThis.KeyboardEvent) => {
-      if (playerState.isFullscreen && event.key === 'Escape') {
+      if (dialogIsFullscreen && event.key === 'Escape') {
         event.preventDefault();
         event.stopPropagation();
         setPlayerState((s) => ({ ...s, isFullscreen: false }));
@@ -153,7 +157,7 @@ export function MessageCardVideoPreviewDialog({
     };
     window.addEventListener('keydown', handleKeyDown, true);
     return () => window.removeEventListener('keydown', handleKeyDown, true);
-  }, [hasCarousel, playerState.isFullscreen, open, resolvedIndex, onIndexChange]);
+  }, [dialogIsFullscreen, hasCarousel, open, resolvedIndex, onIndexChange]);
 
   const handlePlayPause = useCallback(() => {
     const v = videoRef.current;
@@ -198,8 +202,9 @@ export function MessageCardVideoPreviewDialog({
   }, []);
 
   const handleToggleFullscreen = useCallback(() => {
+    if (!canFullscreen) return;
     setPlayerState((s) => ({ ...s, isFullscreen: !s.isFullscreen }));
-  }, []);
+  }, [canFullscreen]);
 
   const handleClose = useCallback(() => {
     const v = videoRef.current;
@@ -212,12 +217,10 @@ export function MessageCardVideoPreviewDialog({
   return (
     <MessageCardPreviewShell
       open={open}
-      isFullscreen={playerState.isFullscreen}
+      isFullscreen={dialogIsFullscreen}
       ariaLabel="Перегляд відео"
       onClose={handleClose}
-      layout="media"
-      disableEscapeKeyDown={playerState.isFullscreen}
-      disableRestoreFocus={false}
+      config={previewConfig}
       stage={
         <MessageCardVideoPreviewStage
           videoRef={videoRef}
@@ -271,6 +274,7 @@ export function MessageCardVideoPreviewDialog({
       controls={
         <MessageCardVideoPreviewControls
           playerState={playerState}
+          canFullscreen={canFullscreen}
           videoRef={videoRef}
           onPlayPause={handlePlayPause}
           onStop={handleStop}
@@ -282,7 +286,7 @@ export function MessageCardVideoPreviewDialog({
         />
       }
       actions={
-        !playerState.isFullscreen ? (
+        !dialogIsFullscreen ? (
           <MessageCardVideoPreviewActions
             video={video}
             onClose={handleClose}

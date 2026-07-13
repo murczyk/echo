@@ -28,6 +28,7 @@ import { MessageCardImagePreviewInfoPopover } from './MessageCardImagePreviewInf
 import { MessageCardImagePreviewStage } from './MessageCardImagePreviewStage';
 import { canCopyImageToClipboard, copyImageToClipboard } from './copy-image-to-clipboard';
 import { blurActivePreviewDialogElement } from './message-card-preview-shell';
+import { getMessageCardPreviewShellConfig } from './message-card-preview-config';
 import { MessageCardPreviewShell } from './MessageCardPreviewShell';
 
 type StageSize = {
@@ -97,6 +98,9 @@ export function MessageImagePreviewDialog({
   const stageBackground = stagePalette
     ? `linear-gradient(135deg, ${stagePalette.start} 0%, ${stagePalette.end} 100%)`
     : 'none';
+  const previewConfig = getMessageCardPreviewShellConfig('image');
+  const canFullscreen = previewConfig.supportsFullscreen;
+  const dialogIsFullscreen = canFullscreen && isFullscreen;
   const removePointerListeners = useCallback(() => {
     const listeners = pointerListenersRef.current;
     if (listeners === null) return;
@@ -215,7 +219,7 @@ export function MessageImagePreviewDialog({
   }, [open, resetPreviewState]);
 
   useEffect(() => {
-    if (!isFullscreen) return;
+    if (!dialogIsFullscreen) return;
 
     const handleFullscreenEscape = (event: globalThis.KeyboardEvent) => {
       if (event.key !== 'Escape') return;
@@ -228,13 +232,13 @@ export function MessageImagePreviewDialog({
     return () => {
       window.removeEventListener('keydown', handleFullscreenEscape as EventListener, true);
     };
-  }, [isFullscreen]);
+  }, [dialogIsFullscreen]);
 
   useEffect(() => {
     if (!open) return;
 
     const handleWindowKeyDown = (event: globalThis.KeyboardEvent) => {
-      if (isFullscreen && event.key === 'Escape') {
+      if (dialogIsFullscreen && event.key === 'Escape') {
         event.preventDefault();
         event.stopPropagation();
         setIsFullscreen(false);
@@ -258,7 +262,7 @@ export function MessageImagePreviewDialog({
     return () => {
       window.removeEventListener('keydown', handleWindowKeyDown, true);
     };
-  }, [hasCarousel, isFullscreen, open, resolvedIndex]);
+  }, [dialogIsFullscreen, hasCarousel, open, resolvedIndex]);
 
   useEffect(() => {
     if (!open || stageEl === null) return;
@@ -328,6 +332,11 @@ export function MessageImagePreviewDialog({
     }
   };
 
+  const handleToggleFullscreen = () => {
+    if (!canFullscreen) return;
+    setIsFullscreen((value) => !value);
+  };
+
   const startPan = (event: ReactPointerEvent<HTMLDivElement>) => {
     if (isInteractivePreviewTarget(event.target)) return;
     if (zoom === ZOOM_MIN) return;
@@ -362,12 +371,10 @@ export function MessageImagePreviewDialog({
   return (
     <MessageCardPreviewShell
       open={open}
-      isFullscreen={isFullscreen}
+      isFullscreen={dialogIsFullscreen}
       ariaLabel="Перегляд зображення"
       onClose={closeDialog}
-      layout="media"
-      disableEscapeKeyDown={isFullscreen}
-      disableRestoreFocus
+      config={previewConfig}
       stage={
         <MessageCardImagePreviewStage
           ref={setStageNode}
@@ -381,24 +388,27 @@ export function MessageImagePreviewDialog({
           failedHref={failedHref}
           imageSize={imageSize}
           stageBackground={stageBackground}
-          isFullscreen={isFullscreen}
+          isFullscreen={dialogIsFullscreen}
           onImageLoad={handleImageLoad}
           onImageError={handleImageError}
           onStartPan={startPan}
           onStopPan={stopPan}
-          onExitFullscreen={() => setIsFullscreen(false)}
+          onExitFullscreen={() => {
+            if (canFullscreen) setIsFullscreen(false);
+          }}
         />
       }
       controls={
         <MessageCardImagePreviewControls
           zoom={zoom}
-          isFullscreen={isFullscreen}
+          isFullscreen={dialogIsFullscreen}
+          canFullscreen={canFullscreen}
           onSetPreviewZoom={setPreviewZoom}
-          onToggleFullscreen={() => setIsFullscreen((value) => !value)}
+          onToggleFullscreen={handleToggleFullscreen}
         />
       }
       actions={
-        !isFullscreen ? (
+        !dialogIsFullscreen ? (
           <MessageCardImagePreviewActions
             currentHref={currentHref}
             downloadFileName={downloadFileName}

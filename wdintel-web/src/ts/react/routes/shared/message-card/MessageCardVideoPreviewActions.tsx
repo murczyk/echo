@@ -17,6 +17,7 @@ import {
 
 export function MessageCardVideoPreviewControls({
   playerState,
+  canFullscreen,
   onPlayPause,
   onStop,
   onVolumeChange,
@@ -27,6 +28,7 @@ export function MessageCardVideoPreviewControls({
   videoRef,
 }: {
   playerState: VideoPlayerState;
+  canFullscreen: boolean;
   onPlayPause: () => void;
   onStop: () => void;
   onVolumeChange: (volume: number) => void;
@@ -96,14 +98,16 @@ export function MessageCardVideoPreviewControls({
         <SpeedSelect playbackRate={playbackRate} onRateChange={onRateChange} />
       </Box>
 
-      <Tooltip
-        title={isFullscreen ? 'Вийти з повноекранного режиму' : 'Повноекранний режим'}
-        enterDelay={300}
-      >
-        <IconButton size="small" onClick={onToggleFullscreen} sx={{ color: 'inherit' }}>
-          {isFullscreen ? <FullscreenExitIcon /> : <FullscreenIcon />}
-        </IconButton>
-      </Tooltip>
+      {canFullscreen ? (
+        <Tooltip
+          title={isFullscreen ? 'Вийти з повноекранного режиму' : 'Повноекранний режим'}
+          enterDelay={300}
+        >
+          <IconButton size="small" onClick={onToggleFullscreen} sx={{ color: 'inherit' }}>
+            {isFullscreen ? <FullscreenExitIcon /> : <FullscreenIcon />}
+          </IconButton>
+        </Tooltip>
+      ) : null}
     </Box>
   );
 }

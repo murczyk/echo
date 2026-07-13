@@ -2,17 +2,14 @@ import { Dialog, DialogContent, Box } from '@mui/material';
 import type { ReactNode } from 'react';
 
 import { getMessageCardPreviewDialogPaperSx } from './message-card-preview-shell';
-
-export type MessageCardPreviewLayout = 'document' | 'media';
+import type { MessageCardPreviewShellConfig } from './message-card-preview-config';
 
 export function MessageCardPreviewShell({
   open,
   isFullscreen,
   ariaLabel,
   onClose,
-  layout,
-  disableEscapeKeyDown,
-  disableRestoreFocus,
+  config,
   stage,
   controls,
   actions,
@@ -22,16 +19,14 @@ export function MessageCardPreviewShell({
   isFullscreen: boolean;
   ariaLabel: string;
   onClose: (event: unknown, reason: 'backdropClick' | 'escapeKeyDown') => void;
-  layout: MessageCardPreviewLayout;
-  disableEscapeKeyDown?: boolean;
-  disableRestoreFocus: boolean;
+  config: MessageCardPreviewShellConfig;
   stage: ReactNode;
   controls?: ReactNode;
   actions?: ReactNode;
   infoPopover?: ReactNode;
 }) {
   const paperSx: Record<string, unknown> =
-    layout === 'media'
+    config.layout === 'media'
       ? {
           display: 'flex',
           flexDirection: 'column',
@@ -57,8 +52,8 @@ export function MessageCardPreviewShell({
       }}
       maxWidth={false}
       fullScreen={isFullscreen}
-      disableEscapeKeyDown={disableEscapeKeyDown}
-      disableRestoreFocus={disableRestoreFocus}
+      disableEscapeKeyDown={isFullscreen && config.disableEscapeKeyDownInFullscreen}
+      disableRestoreFocus={config.disableRestoreFocus}
       aria-label={ariaLabel}
       PaperProps={{
         sx: {

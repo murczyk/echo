@@ -17,8 +17,15 @@ type DialogRecord = {
 };
 
 const dialogProps: DialogRecord[] = [];
+let previewConfig = {
+  layout: 'media' as const,
+  disableRestoreFocus: false,
+  supportsFullscreen: true,
+  disableEscapeKeyDownInFullscreen: true,
+};
 let latestControlsProps: {
   playerState: VideoPlayerState;
+  canFullscreen: boolean;
   onPlayPause: () => void;
   onStop: () => void;
   onVolumeChange: (volume: number) => void;
@@ -118,6 +125,10 @@ vi.mock('@mui/material', () => ({
   Typography: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
 }));
 
+vi.mock('./message-card-preview-config', () => ({
+  getMessageCardPreviewShellConfig: () => previewConfig,
+}));
+
 vi.mock('./MessageCardVideoPreviewStage', () => ({
   MessageCardVideoPreviewStage: ({
     src,
@@ -182,6 +193,7 @@ vi.mock('./MessageCardVideoPreviewStage', () => ({
 vi.mock('./MessageCardVideoPreviewActions', () => ({
   MessageCardVideoPreviewControls: ({
     playerState,
+    canFullscreen,
     onPlayPause,
     onStop,
     onVolumeChange,
@@ -191,6 +203,7 @@ vi.mock('./MessageCardVideoPreviewActions', () => ({
     onToggleFullscreen,
   }: {
     playerState: VideoPlayerState;
+    canFullscreen: boolean;
     onPlayPause: () => void;
     onStop: () => void;
     onVolumeChange: (volume: number) => void;
@@ -201,6 +214,7 @@ vi.mock('./MessageCardVideoPreviewActions', () => ({
   }) => {
     latestControlsProps = {
       playerState,
+      canFullscreen,
       onPlayPause,
       onStop,
       onVolumeChange,
@@ -223,7 +237,7 @@ vi.mock('./MessageCardVideoPreviewActions', () => ({
         <button aria-label="play-pause" onClick={onPlayPause} />
         <button aria-label="stop" onClick={onStop} />
         <button aria-label="mute" onClick={onMuteToggle} />
-        <button aria-label="fullscreen" onClick={onToggleFullscreen} />
+        {canFullscreen ? <button aria-label="fullscreen" onClick={onToggleFullscreen} /> : null}
       </div>
     );
   },
@@ -284,6 +298,12 @@ import { MessageCardVideoPreviewDialog } from './MessageCardVideoPreviewDialog';
 describe('MessageCardVideoPreviewDialog', () => {
   afterEach(() => {
     dialogProps.splice(0);
+    previewConfig = {
+      layout: 'media',
+      disableRestoreFocus: false,
+      supportsFullscreen: true,
+      disableEscapeKeyDownInFullscreen: true,
+    };
     latestControlsProps = null;
     latestVideoProps = null;
     latestActionProps = null;
@@ -526,6 +546,40 @@ describe('MessageCardVideoPreviewDialog', () => {
 
     expect(onClose).toHaveBeenCalledTimes(1);
     expect(pauseSpy).toHaveBeenCalled();
+  });
+
+  it('does not enter fullscreen when the config disables it', async () => {
+    previewConfig = {
+      layout: 'media',
+      disableRestoreFocus: false,
+      supportsFullscreen: false,
+      disableEscapeKeyDownInFullscreen: true,
+    };
+
+    const onClose = vi.fn();
+    renderDialog({
+      onClose,
+      videos: [{ id: 'video-1', name: 'video.mp4', source: '/video.mp4' }],
+    });
+
+    expect(latestControlsProps?.canFullscreen).toBe(false);
+    expect(document.body.querySelector('[aria-label="fullscreen"]')).toBeNull();
+    expect(dialogProps.at(-1)?.fullScreen).toBe(false);
+    expect(dialogProps.at(-1)?.disableEscapeKeyDown).toBe(false);
+    expect(document.body.querySelector('[data-actions]')).not.toBeNull();
+
+    await act(async () => {
+      latestControlsProps?.onToggleFullscreen();
+    });
+
+    expect(latestControlsProps?.playerState.isFullscreen).toBe(false);
+    expect(dialogProps.at(-1)?.fullScreen).toBe(false);
+
+    await act(async () => {
+      dialogProps.at(-1)?.onClose?.({} as never, 'escapeKeyDown');
+    });
+
+    expect(onClose).toHaveBeenCalledTimes(1);
   });
 
   it('keeps carousel arrows, counter, and info/download actions intact', async () => {

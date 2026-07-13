@@ -19,6 +19,7 @@ import {
 import { MessageCardDocumentPreviewInfoPopover } from './MessageCardDocumentPreviewInfoPopover';
 import { MessageCardDocumentPreviewStage } from './MessageCardDocumentPreviewStage';
 import { MessageCardPreviewShell } from './MessageCardPreviewShell';
+import { getMessageCardPreviewShellConfig } from './message-card-preview-config';
 import { blurActivePreviewDialogElement } from './message-card-preview-shell';
 
 export function MessageCardDocumentPreviewDialog({
@@ -45,10 +46,12 @@ export function MessageCardDocumentPreviewDialog({
   const [isFullscreen, setIsFullscreen] = useState(false);
 
   const infoOpen = infoAnchorEl !== null;
+  const currentDocumentKind = currentDocument?.kind ?? 'unsupported';
+  const previewConfig = getMessageCardPreviewShellConfig(currentDocumentKind);
   const currentDocumentCapabilities =
     currentDocument == null ? null : getDocumentPreviewCapabilities(currentDocument.kind);
   const canZoom = currentDocumentCapabilities?.zoomable === true;
-  const canFullscreen = currentDocumentCapabilities?.fullscreen === true;
+  const canFullscreen = previewConfig.supportsFullscreen;
   const dialogIsFullscreen = canFullscreen && isFullscreen;
   const dialogZoom = canZoom ? zoom : 100;
   const previewFileName = useMemo(
@@ -139,8 +142,7 @@ export function MessageCardDocumentPreviewDialog({
         isFullscreen={dialogIsFullscreen}
         ariaLabel="Перегляд документа"
         onClose={handleDialogClose}
-        layout="document"
-        disableRestoreFocus
+        config={previewConfig}
         stage={<Typography variant="body2">Документ недоступний</Typography>}
       />
     );
@@ -152,8 +154,7 @@ export function MessageCardDocumentPreviewDialog({
       isFullscreen={dialogIsFullscreen}
       ariaLabel="Перегляд документа"
       onClose={handleDialogClose}
-      layout="document"
-      disableRestoreFocus
+      config={previewConfig}
       stage={
         <MessageCardDocumentPreviewStage
           documents={documents}

@@ -19,6 +19,12 @@ type DialogRecord = {
 };
 
 const dialogProps: DialogRecord[] = [];
+let previewConfig = {
+  layout: 'media' as const,
+  disableRestoreFocus: true,
+  supportsFullscreen: true,
+  disableEscapeKeyDownInFullscreen: true,
+};
 let latestActionProps: {
   copyStatus: 'idle' | 'copying' | 'copied' | 'error';
   canCopyImage: boolean;
@@ -27,6 +33,7 @@ let latestActionProps: {
 let latestControlsProps: {
   zoom: number;
   isFullscreen: boolean;
+  canFullscreen: boolean;
   onSetPreviewZoom: (zoom: number) => void;
   onToggleFullscreen: () => void;
 } | null = null;
@@ -81,6 +88,10 @@ vi.mock('@mui/material', () => ({
   }),
 }));
 
+vi.mock('./message-card-preview-config', () => ({
+  getMessageCardPreviewShellConfig: () => previewConfig,
+}));
+
 vi.mock('./MessageCardImagePreviewActions', () => ({
   MessageCardImagePreviewActions: ({
     currentHref,
@@ -126,22 +137,32 @@ vi.mock('./MessageCardImagePreviewActions', () => ({
   MessageCardImagePreviewControls: ({
     zoom,
     isFullscreen,
+    canFullscreen,
     onSetPreviewZoom,
     onToggleFullscreen,
   }: {
     zoom: number;
     isFullscreen: boolean;
+    canFullscreen: boolean;
     onSetPreviewZoom: (zoom: number) => void;
     onToggleFullscreen: () => void;
   }) => {
-    latestControlsProps = { zoom, isFullscreen, onSetPreviewZoom, onToggleFullscreen };
+    latestControlsProps = {
+      zoom,
+      isFullscreen,
+      canFullscreen,
+      onSetPreviewZoom,
+      onToggleFullscreen,
+    };
     return (
       <div data-controls data-zoom={zoom} data-fullscreen={String(isFullscreen)}>
         <button aria-label="Збільшити" onClick={() => onSetPreviewZoom(zoom + 10)} />
-        <button
-          aria-label={isFullscreen ? 'Вийти з повноекранного режиму' : 'Повноекранний режим'}
-          onClick={onToggleFullscreen}
-        />
+        {canFullscreen ? (
+          <button
+            aria-label={isFullscreen ? 'Вийти з повноекранного режиму' : 'Повноекранний режим'}
+            onClick={onToggleFullscreen}
+          />
+        ) : null}
       </div>
     );
   },
@@ -199,6 +220,12 @@ import { copyImageToClipboard } from './copy-image-to-clipboard';
 describe('MessageImagePreviewDialog', () => {
   afterEach(() => {
     dialogProps.splice(0);
+    previewConfig = {
+      layout: 'media',
+      disableRestoreFocus: true,
+      supportsFullscreen: true,
+      disableEscapeKeyDownInFullscreen: true,
+    };
     latestActionProps = null;
     latestControlsProps = null;
     latestStageProps = null;
@@ -281,6 +308,51 @@ describe('MessageImagePreviewDialog', () => {
     expect(document.body.querySelector('[data-controls]')?.getAttribute('data-fullscreen')).toBe(
       'false',
     );
+    root.unmount();
+  });
+
+  it('does not enter fullscreen when the config disables it', async () => {
+    previewConfig = {
+      layout: 'media',
+      disableRestoreFocus: true,
+      supportsFullscreen: false,
+      disableEscapeKeyDownInFullscreen: true,
+    };
+
+    const onClose = vi.fn();
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <MessageImagePreviewDialog
+          imageHrefs={[{ href: 'https://example.test/image.png' } as never]}
+          open
+          onClose={onClose}
+          onIndexChange={vi.fn()}
+        />,
+      );
+    });
+
+    expect(latestControlsProps?.canFullscreen).toBe(false);
+    expect(document.body.querySelector('[aria-label="Повноекранний режим"]')).toBeNull();
+    expect(dialogProps.at(-1)?.fullScreen).toBe(false);
+    expect(dialogProps.at(-1)?.disableEscapeKeyDown).toBe(false);
+    expect(document.body.querySelector('[data-actions]')).not.toBeNull();
+
+    await act(async () => {
+      latestControlsProps?.onToggleFullscreen();
+    });
+
+    expect(latestControlsProps?.isFullscreen).toBe(false);
+    expect(dialogProps.at(-1)?.fullScreen).toBe(false);
+
+    await act(async () => {
+      dialogProps.at(-1)?.onClose?.({} as never, 'escapeKeyDown');
+    });
+
+    expect(onClose).toHaveBeenCalledTimes(1);
     root.unmount();
   });
 
