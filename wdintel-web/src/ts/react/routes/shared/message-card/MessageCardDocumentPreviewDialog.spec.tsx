@@ -153,18 +153,19 @@ describe('MessageCardDocumentPreviewDialog', () => {
       fullscreenButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     });
 
-    expect(
-      document.body.querySelector('button[aria-label="Вийти з повноекранного режиму"]'),
-    ).not.toBeNull();
+    const fullscreenExitButton = document.body.querySelector(
+      'button[aria-label="Вийти з повноекранного режиму"]',
+    ) as HTMLButtonElement | null;
+    expect(fullscreenExitButton).not.toBeNull();
+    fullscreenExitButton?.focus();
+    expect(document.activeElement).toBe(fullscreenExitButton);
 
     await act(async () => {
       document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
     });
 
     expect(document.body.querySelector('button[aria-label="Повноекранний режим"]')).not.toBeNull();
-    expect(
-      document.body.querySelector('button[aria-label="Вийти з повноекранного режиму"]'),
-    ).toBeNull();
+    expect(document.activeElement).toBe(fullscreenExitButton);
     expect(onClose).not.toHaveBeenCalled();
 
     await act(async () => {
