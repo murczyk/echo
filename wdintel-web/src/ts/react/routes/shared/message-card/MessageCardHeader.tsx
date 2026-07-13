@@ -139,80 +139,6 @@ function ActionIconButton({
   );
 }
 
-function CenteredInfoRow({
-  icon,
-  text,
-  trailing,
-}: {
-  icon: JSX.Element;
-  text: JSX.Element;
-  trailing?: JSX.Element | null;
-}) {
-  return (
-    <Box
-      sx={{
-        width: '100%',
-        display: 'flex',
-        justifyContent: 'center',
-        alignItems: 'center',
-      }}
-    >
-      <Box
-        sx={{
-          display: 'grid',
-          gridTemplateColumns: trailing ? '30px minmax(0, auto) 30px' : '30px minmax(0, auto)',
-          alignItems: 'center',
-          columnGap: 0.5,
-          minHeight: 30,
-          maxWidth: '100%',
-        }}
-      >
-        <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center' }}>{icon}</Box>
-        <Box
-          sx={{
-            minWidth: 0,
-            maxWidth: '100%',
-            display: 'flex',
-            justifyContent: 'center',
-            alignItems: 'center',
-          }}
-        >
-          {text}
-        </Box>
-        {trailing ? (
-          <Box
-            sx={{
-              width: 30,
-              minWidth: 30,
-              height: 30,
-              display: 'flex',
-              justifyContent: 'center',
-              alignItems: 'center',
-            }}
-          >
-            {trailing}
-          </Box>
-        ) : null}
-      </Box>
-    </Box>
-  );
-}
-
-function CenteredTextOnlyRow({ text }: { text: JSX.Element }) {
-  return (
-    <Box
-      sx={{
-        width: '100%',
-        justifyContent: 'center',
-        display: 'flex',
-        alignItems: 'center',
-      }}
-    >
-      {text}
-    </Box>
-  );
-}
-
 function ActionIconsRow({
   id,
   msg,
@@ -928,7 +854,7 @@ function NetworkEtalonSection({
                 wordBreak: 'break-word',
               }}
             >
-              <Typography component="strong" variant="body2" sx={{ fontWeight: 700 }}>
+              <Typography component="strong" variant="body2">
                 {label}
               </Typography>
               {badge ? (
@@ -956,7 +882,6 @@ function NetworkEtalonSection({
         sx={{
           minWidth: 0,
           overflowWrap: 'anywhere',
-          fontWeight: 700,
           display: 'inline-flex',
           alignItems: 'center',
         }}
@@ -1109,67 +1034,183 @@ export function MessageCardHeader({
     onAddFrequencyToFilter?.(String(msg.freq ?? '').trim());
   }
 
-  const freqBlock = isPresent(msg.freq) ? (
-    <CenteredInfoRow
-      icon={
-        <SettingsInputAntennaOutlinedIcon
-          sx={{ color: MESSAGE_CARD_ACTION_COLOR, fontSize: 18 }}
-          titleAccess="Частота"
+  const freqRowItem = isPresent(msg.freq) ? (
+    <Stack direction="row" spacing={0.75} alignItems="center" sx={{ minWidth: 0 }}>
+      <SettingsInputAntennaOutlinedIcon
+        sx={{ color: MESSAGE_CARD_ACTION_COLOR, fontSize: 18, flexShrink: 0 }}
+        titleAccess="Частота"
+      />
+      <Typography variant="caption" sx={{ whiteSpace: 'nowrap' }}>
+        {msg.freq}
+      </Typography>
+      {hasFrequencyFilter ? (
+        <ActionIconButton
+          title="В фільтр"
+          icon={<FilterAltOutlinedIcon fontSize="inherit" />}
+          onClick={handleAddFrequencyToFilterClick}
         />
-      }
-      text={
-        <Box sx={{ minWidth: 0 }}>
-          <Typography variant="caption" sx={{ fontWeight: 700, whiteSpace: 'nowrap' }}>
-            {msg.freq}
-          </Typography>
-        </Box>
-      }
-      trailing={
-        hasFrequencyFilter ? (
-          <ActionIconButton
-            title="В фільтр"
-            icon={<FilterAltOutlinedIcon fontSize="inherit" />}
-            onClick={handleAddFrequencyToFilterClick}
-          />
-        ) : null
-      }
-    />
+      ) : null}
+    </Stack>
   ) : null;
+
+  // All secondary metadata (group, sender, frequency, coords, network/etalon
+  // binding, location) rendered as a single horizontal wrapping row instead of
+  // being pinned to separate grid cells.
+  const metadataRow = (
+    <Stack
+      direction="row"
+      spacing={2}
+      rowGap={1}
+      useFlexGap
+      flexWrap="wrap"
+      alignItems="center"
+      sx={{ minWidth: 0, width: '100%' }}
+    >
+      {isPresent(groupName) ? (
+        <MetaLine
+          icon={<GraphicEqOutlinedIcon sx={{ fontSize: 18 }} />}
+          title="Група"
+          text={groupName}
+        />
+      ) : null}
+      {isPresent(senderName) ? (
+        <MetaLine
+          icon={<AccountCircleOutlinedIcon sx={{ fontSize: 18 }} />}
+          title="Відправник"
+          text={senderName}
+        />
+      ) : null}
+      {freqRowItem}
+      {coordsDisplayValue != null ? (
+        <MetaLine
+          icon={<GpsFixedOutlinedIcon sx={{ fontSize: 18 }} />}
+          title="Координати"
+          text={coordsDisplayValue}
+        />
+      ) : null}
+      <NetworkEtalonSection etalonDisplayModel={etalonDisplayModel} />
+      {showTopGridLocation ? (
+        <MetaLine
+          icon={<PlaceOutlinedIcon sx={{ fontSize: 18 }} />}
+          title="Локація"
+          text={locationDisplayValue}
+        />
+      ) : null}
+    </Stack>
+  );
 
   if (compact) {
     return (
       <Box
         data-message-header-grid="true"
         sx={{
-          display: 'grid',
-          gridTemplateColumns: 'minmax(0, 1fr) auto minmax(0, 1fr)',
-          gridTemplateRows: `repeat(3, minmax(${MESSAGE_CARD_HEADER_ROW_MIN_HEIGHT_PX}px, auto))`,
+          display: 'flex',
+          flexDirection: 'column',
           width: '100%',
-          alignItems: 'center',
-          columnGap: 2,
           rowGap: 1,
           pb: 1,
           borderBottom: '1px solid',
           borderColor: 'divider',
         }}
       >
-        <Box sx={{ minWidth: 0, display: 'flex', alignItems: 'center', gridColumn: 1, gridRow: 1 }}>
-          {dateTimeBlock}
-        </Box>
         <Box
           sx={{
-            minWidth: 0,
             display: 'flex',
             alignItems: 'center',
-            justifyContent: 'center',
-            gridColumn: 2,
-            gridRow: 1,
+            columnGap: 2,
+            width: '100%',
+            minHeight: MESSAGE_CARD_HEADER_ROW_MIN_HEIGHT_PX,
           }}
         >
+          <Box sx={{ minWidth: 0, display: 'flex', alignItems: 'center', flex: '1 1 0' }}>
+            {dateTimeBlock}
+          </Box>
+          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <ActionIconsRow
+              id={id}
+              msg={msg}
+              compact
+              displayMode={displayMode}
+              excludeMenuOptions={excludeMenuOptions}
+              etalonDisplayModel={etalonDisplayModel}
+              copiedFeedbackId={copiedFeedbackId}
+              navigationMenuItems={navigationMenuItems}
+              onBookmark={onBookmark}
+              onImportant={onImportant}
+              onComment={onComment}
+              onCopyText={onCopyText}
+              onCopyFreq={onCopyFreq}
+              onCopyTextWithNetwork={onCopyTextWithNetwork}
+              onCopyTextWithNetworkAndNote={onCopyTextWithNetworkAndNote}
+              onCopyEtalon={onCopyEtalon}
+              onCopyLocation={onCopyLocation}
+              onDelete={onDelete}
+              onEditDetails={onEditDetails}
+              onExcludeMessageEntity={onExcludeMessageEntity}
+            />
+          </Box>
+          <Box
+            sx={{
+              minWidth: 0,
+              pr: `${rightInsetPx}px`,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'flex-end',
+              flex: '1 1 0',
+            }}
+          >
+            {topRight ?? <Box sx={{ minHeight: 28 }} />}
+          </Box>
+        </Box>
+        <Box sx={{ display: 'flex', alignItems: 'flex-start', columnGap: 1, width: '100%' }}>
+          <Box sx={{ minWidth: 0, flex: 1, display: 'flex', alignItems: 'center' }}>
+            {metadataRow}
+          </Box>
+          {metadataTrigger ? (
+            <Box
+              sx={{
+                pr: `${rightInsetPx}px`,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'flex-end',
+                flexShrink: 0,
+              }}
+            >
+              {metadataTrigger}
+            </Box>
+          ) : null}
+        </Box>
+      </Box>
+    );
+  }
+
+  return (
+    <Box
+      data-message-header-grid="true"
+      sx={{
+        display: 'flex',
+        flexDirection: 'column',
+        width: '100%',
+        rowGap: 0.75,
+      }}
+    >
+      <Box
+        sx={{
+          display: 'flex',
+          alignItems: 'center',
+          columnGap: 4,
+          width: '100%',
+          minHeight: MESSAGE_CARD_HEADER_ROW_MIN_HEIGHT_PX,
+        }}
+      >
+        <Box sx={{ minWidth: 0, display: 'flex', alignItems: 'center', flex: '1 1 0' }}>
+          {dateTimeBlock}
+        </Box>
+        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <ActionIconsRow
             id={id}
             msg={msg}
-            compact
+            compact={compact}
             displayMode={displayMode}
             excludeMenuOptions={excludeMenuOptions}
             etalonDisplayModel={etalonDisplayModel}
@@ -1196,333 +1237,28 @@ export function MessageCardHeader({
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'flex-end',
-            gridColumn: 3,
-            gridRow: 1,
+            flex: '1 1 0',
           }}
         >
-          {topRight ?? (
-            <Box
-              sx={{
-                minHeight: 28,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'flex-end',
-              }}
-            />
-          )}
+          {topRight ?? <Box sx={{ minHeight: 28 }} />}
         </Box>
-        <Box
-          sx={{ minWidth: 0, display: 'flex', alignItems: 'flex-start', gridColumn: 1, gridRow: 2 }}
-        >
-          <Stack
-            direction="row"
-            spacing={1.5}
-            useFlexGap
-            flexWrap="wrap"
-            alignItems="center"
-            sx={{ minWidth: 0 }}
-          >
-            {isPresent(groupName) ? (
-              <MetaLine
-                icon={<GraphicEqOutlinedIcon sx={{ fontSize: 18 }} />}
-                title="Група"
-                text={groupName}
-              />
-            ) : (
-              <Typography variant="caption" color="text.secondary">
-                —
-              </Typography>
-            )}
-            {isPresent(senderName) ? (
-              <MetaLine
-                icon={<AccountCircleOutlinedIcon sx={{ fontSize: 18 }} />}
-                title="Відправник"
-                text={senderName}
-              />
-            ) : (
-              <Typography variant="caption" color="text.secondary">
-                —
-              </Typography>
-            )}
-            {coordsDisplayValue != null ? (
-              <MetaLine
-                icon={<GpsFixedOutlinedIcon sx={{ fontSize: 18 }} />}
-                title="Координати"
-                text={coordsDisplayValue}
-              />
-            ) : null}
-          </Stack>
+      </Box>
+      <Box sx={{ display: 'flex', alignItems: 'flex-start', columnGap: 1, width: '100%' }}>
+        <Box sx={{ minWidth: 0, flex: 1, display: 'flex', alignItems: 'center' }}>
+          {metadataRow}
         </Box>
-        <Box
-          sx={{
-            minWidth: 0,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gridColumn: 2,
-            gridRow: 2,
-          }}
-        >
-          {freqBlock ?? (
-            <Typography variant="caption" color="text.secondary">
-              —
-            </Typography>
-          )}
-        </Box>
-        <Box
-          sx={{
-            minWidth: 0,
-            pr: `${rightInsetPx}px`,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'flex-end',
-            gridColumn: 3,
-            gridRow: 2,
-          }}
-        >
+        {metadataTrigger ? (
           <Box
             sx={{
-              minHeight: 28,
+              pr: `${rightInsetPx}px`,
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'flex-end',
+              flexShrink: 0,
             }}
           >
-            {metadataTrigger ?? <Box sx={{ minHeight: 28, minWidth: 28 }} />}
+            {metadataTrigger}
           </Box>
-        </Box>
-        <Box
-          sx={{
-            minWidth: 0,
-            display: 'flex',
-            alignItems: 'center',
-            gridColumn: '1 / 3',
-            gridRow: 3,
-            columnGap: 1,
-            pr: `${rightInsetPx}px`,
-          }}
-        >
-          <Box
-            sx={{
-              flex: `0 1 ${networkRowContentWidthPct}%`,
-              minWidth: 0,
-              maxWidth: `${networkRowContentWidthPct}%`,
-            }}
-          >
-            <NetworkEtalonSection etalonDisplayModel={etalonDisplayModel} />
-          </Box>
-        </Box>
-        <Box
-          sx={{
-            minWidth: 0,
-            pr: `${rightInsetPx}px`,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'flex-end',
-            gridColumn: 3,
-            gridRow: 3,
-          }}
-        >
-          {showTopGridLocation ? (
-            <MetaLine
-              icon={<PlaceOutlinedIcon sx={{ fontSize: 18 }} />}
-              title="Локація"
-              text={locationDisplayValue}
-            />
-          ) : null}
-        </Box>
-      </Box>
-    );
-  }
-
-  return (
-    <Box
-      data-message-header-grid="true"
-      sx={{
-        display: 'grid',
-        gridTemplateColumns: 'minmax(0, 1fr) auto minmax(0, 1fr)',
-        gridTemplateRows: `repeat(3, minmax(${MESSAGE_CARD_HEADER_ROW_MIN_HEIGHT_PX}px, auto))`,
-        width: '100%',
-        alignItems: 'center',
-        columnGap: 4,
-        rowGap: 0.75,
-      }}
-    >
-      <Box sx={{ minWidth: 0, display: 'flex', alignItems: 'center', gridColumn: 1, gridRow: 1 }}>
-        {dateTimeBlock}
-      </Box>
-      <Box
-        sx={{
-          minWidth: 0,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          gridColumn: 2,
-          gridRow: 1,
-        }}
-      >
-        <ActionIconsRow
-          id={id}
-          msg={msg}
-          compact={compact}
-          displayMode={displayMode}
-          excludeMenuOptions={excludeMenuOptions}
-          etalonDisplayModel={etalonDisplayModel}
-          copiedFeedbackId={copiedFeedbackId}
-          navigationMenuItems={navigationMenuItems}
-          onBookmark={onBookmark}
-          onImportant={onImportant}
-          onComment={onComment}
-          onCopyText={onCopyText}
-          onCopyFreq={onCopyFreq}
-          onCopyTextWithNetwork={onCopyTextWithNetwork}
-          onCopyTextWithNetworkAndNote={onCopyTextWithNetworkAndNote}
-          onCopyEtalon={onCopyEtalon}
-          onCopyLocation={onCopyLocation}
-          onDelete={onDelete}
-          onEditDetails={onEditDetails}
-          onExcludeMessageEntity={onExcludeMessageEntity}
-        />
-      </Box>
-      <Box
-        sx={{
-          minWidth: 0,
-          pr: `${rightInsetPx}px`,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'flex-end',
-          gridColumn: 3,
-          gridRow: 1,
-        }}
-      >
-        {topRight ?? (
-          <Box
-            sx={{
-              minHeight: 28,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'flex-end',
-            }}
-          />
-        )}
-      </Box>
-      <Box
-        sx={{ minWidth: 0, display: 'flex', alignItems: 'flex-start', gridColumn: 1, gridRow: 2 }}
-      >
-        <Stack
-          direction="row"
-          spacing={1.5}
-          useFlexGap
-          flexWrap="wrap"
-          alignItems="center"
-          sx={{ minWidth: 0 }}
-        >
-          {isPresent(groupName) ? (
-            <MetaLine
-              icon={<GraphicEqOutlinedIcon sx={{ fontSize: 18 }} />}
-              title="Група"
-              text={groupName}
-            />
-          ) : (
-            <Typography variant="caption" color="text.secondary">
-              —
-            </Typography>
-          )}
-          {isPresent(senderName) ? (
-            <MetaLine
-              icon={<AccountCircleOutlinedIcon sx={{ fontSize: 18 }} />}
-              title="Відправник"
-              text={senderName}
-            />
-          ) : (
-            <Typography variant="caption" color="text.secondary">
-              —
-            </Typography>
-          )}
-          {coordsDisplayValue != null ? (
-            <MetaLine
-              icon={<GpsFixedOutlinedIcon sx={{ fontSize: 18 }} />}
-              title="Координати"
-              text={coordsDisplayValue}
-            />
-          ) : null}
-        </Stack>
-      </Box>
-      <Box
-        sx={{
-          minWidth: 0,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          gridColumn: 2,
-          gridRow: 2,
-        }}
-      >
-        {freqBlock ?? (
-          <CenteredTextOnlyRow
-            text={
-              <Typography variant="caption" color="text.secondary">
-                —
-              </Typography>
-            }
-          />
-        )}
-      </Box>
-      <Box
-        sx={{
-          minWidth: 0,
-          pr: `${rightInsetPx}px`,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'flex-end',
-          gridColumn: 3,
-          gridRow: 2,
-        }}
-      >
-        <Box
-          sx={{ minHeight: 28, display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}
-        >
-          {metadataTrigger ?? <Box sx={{ minHeight: 28, minWidth: 28 }} />}
-        </Box>
-      </Box>
-      <Box
-        sx={{
-          minWidth: 0,
-          display: 'flex',
-          alignItems: 'center',
-          gridColumn: '1 / 3',
-          gridRow: 3,
-          columnGap: 1,
-          pr: `${rightInsetPx}px`,
-        }}
-      >
-        <Box
-          sx={{
-            flex: `0 1 ${networkRowContentWidthPct}%`,
-            minWidth: 0,
-            maxWidth: `${networkRowContentWidthPct}%`,
-          }}
-        >
-          <NetworkEtalonSection etalonDisplayModel={etalonDisplayModel} />
-        </Box>
-      </Box>
-      <Box
-        sx={{
-          minWidth: 0,
-          pr: `${rightInsetPx}px`,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'flex-end',
-          gridColumn: 3,
-          gridRow: 3,
-        }}
-      >
-        {showTopGridLocation ? (
-          <MetaLine
-            icon={<PlaceOutlinedIcon sx={{ fontSize: 18 }} />}
-            title="Локація"
-            text={locationDisplayValue}
-          />
         ) : null}
       </Box>
     </Box>

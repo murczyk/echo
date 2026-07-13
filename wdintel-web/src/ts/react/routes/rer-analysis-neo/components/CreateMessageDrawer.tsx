@@ -409,19 +409,17 @@ export function CreateMessageDrawer({
         ...(signalGroupMasterKey ? { signal_group_master_key: signalGroupMasterKey } : {}),
       });
       const timestamp = parsed.timestamp ? dayjs(parsed.timestamp) : null;
-      // Parsing only fills fields the user left blank — it never overwrites or
-      // clears values entered manually.
+      // Parsing overwrites fields with the freshly parsed values every time it
+      // runs, so re-parsing after editing the source text updates the form.
       const fillText = (
         name: 'text' | 'freq' | 'coords' | 'comment' | 'post' | 'unit',
         value: string,
       ) => {
         if (!value) return;
-        if (getValues(name)?.trim()) return;
         setValue(name, value, { shouldDirty: true, shouldValidate: true });
       };
       const fillList = (name: 'callsigns' | 'locations', value: string[]) => {
         if (value.length === 0) return;
-        if ((getValues(name) ?? []).length > 0) return;
         setValue(name, value, { shouldDirty: true, shouldValidate: true });
       };
       fillText('text', parsed.text);
@@ -436,8 +434,8 @@ export function CreateMessageDrawer({
       fillList('callsigns', parsed.to);
       fillList('locations', parsed.locations);
       if (timestamp?.isValid()) {
-        if (!getValues('date')) setValue('date', timestamp, { shouldDirty: true });
-        if (!getValues('time')) setValue('time', timestamp, { shouldDirty: true });
+        setValue('date', timestamp, { shouldDirty: true });
+        setValue('time', timestamp, { shouldDirty: true });
       }
     } catch (error: any) {
       console.error('Error parsing message', error);
@@ -780,10 +778,16 @@ export function CreateMessageDrawer({
                       onClick={handleParse}
                       variant="outlined"
                       size="small"
-                      startIcon={<AutoFixHighIcon />}
+                      startIcon={
+                        parsing ? (
+                          <CircularProgress size={16} color="inherit" />
+                        ) : (
+                          <AutoFixHighIcon />
+                        )
+                      }
                       disabled={busy || parsing}
                     >
-                      {parsing ? 'Розбір…' : 'Розпарсити'}
+                      Розпарсити
                     </Button>
                   )
                 }
@@ -797,7 +801,7 @@ export function CreateMessageDrawer({
                       label="Текст повідомлення"
                       fullWidth
                       multiline
-                      minRows={12}
+                      rows={12}
                       disabled={busy}
                     />
                   )}
@@ -1091,24 +1095,6 @@ export function CreateMessageDrawer({
                   />
                 </Box>
 
-                {(isEditMode || showAdvanced) && (
-                  <Controller
-                    name="comment"
-                    control={control}
-                    render={({ field }) => (
-                      <TextField
-                        {...field}
-                        label="Коментар"
-                        size="small"
-                        fullWidth
-                        multiline
-                        minRows={2}
-                        disabled={busy}
-                      />
-                    )}
-                  />
-                )}
-
                 <Box
                   sx={{
                     display: 'grid',
@@ -1395,6 +1381,25 @@ export function CreateMessageDrawer({
                       }
                       disabled={busy}
                       placeholder="49.12345, 37.12345"
+                    />
+                  )}
+                />
+              </FormSection>
+
+              {/* Comment (last field in the list) */}
+              <FormSection title="Коментар">
+                <Controller
+                  name="comment"
+                  control={control}
+                  render={({ field }) => (
+                    <TextField
+                      {...field}
+                      label="Коментар"
+                      size="small"
+                      fullWidth
+                      multiline
+                      minRows={2}
+                      disabled={busy}
                     />
                   )}
                 />

@@ -1578,7 +1578,6 @@ describe('MessageCard', () => {
     expect(view.container.textContent).toContain('Копіювати повідомлення');
     expect(view.container.textContent).not.toContain('Копіювати частоту');
     expect(view.container.textContent).not.toContain("Копіювати прив'язку");
-    expect(view.container.textContent).toContain('—');
     expect(view.container.textContent).not.toContain('Не встановлена');
   });
 
