@@ -30,6 +30,8 @@ pub struct InboxMessage {
     pub group_master_key: Option<String>,
     pub sender: Option<String>,
     pub extended_form: Option<String>,
+    #[serde(default)]
+    pub message_comments: Vec<MessageComment>,
     pub post: Option<String>,
     pub post_id: Option<i64>,
     pub unit: Option<String>,
@@ -149,6 +151,7 @@ impl From<InboxInsertPayload> for InboxMessage {
             group_master_key: payload.group_master_key,
             sender: payload.sender,
             extended_form: payload.extended_form,
+            message_comments: vec![],
             post: payload.post,
             post_id: payload.post_id,
             unit: payload.unit,
@@ -1626,6 +1629,7 @@ mod tests {
         let expected_omitted_keys = BTreeSet::from([
             "callsign_tokens".to_string(),
             "keyword_tokens".to_string(),
+            "message_comments".to_string(),
             "message_uid".to_string(),
             "signal_tokens".to_string(),
             "text_marked".to_string(),

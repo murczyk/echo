@@ -12,6 +12,7 @@ use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseConnection,
     EntityTrait, NotSet, QueryFilter, QuerySelect, Set,
 };
+use std::io::ErrorKind;
 use std::path::Path;
 use tokio::fs;
 use uuid::Uuid;
@@ -21,6 +22,11 @@ pub struct MediaUploadInput {
     pub path: String,
     pub name: Option<String>,
     pub content_type: Option<String>,
+}
+
+pub struct StoreMediaAttachmentsResult {
+    pub media: Vec<signal_message_media::Model>,
+    pub skipped_missing: bool,
 }
 
 impl From<MessageAttachmentF1> for MediaUploadInput {
@@ -68,6 +74,19 @@ fn detect_content_type(name: Option<&str>, path: &Path, data: &[u8]) -> String {
     "application/octet-stream".to_string()
 }
 
+async fn read_attachment_data(path: &str) -> Result<Option<Vec<u8>>, AppError> {
+    match fs::read(path).await {
+        Ok(data) => Ok(Some(data)),
+        Err(error) if error.kind() == ErrorKind::NotFound => {
+            warn!(
+                "attachment file disappeared before upload, skipping: {path}"
+            );
+            Ok(None)
+        }
+        Err(error) => Err(anyhow::Error::from(error).context(h!()).into()),
+    }
+}
+
 pub async fn store_media_attachments(
     attachments: &[MediaUploadInput],
     signal_message_id: i64,
@@ -75,19 +94,29 @@ pub async fn store_media_attachments(
     s3: &Option<Operator>,
     txn: &impl ConnectionTrait,
     delete_uploaded: bool,
-) -> Result<Vec<signal_message_media::Model>, AppError> {
+) -> Result<StoreMediaAttachmentsResult, AppError> {
     if attachments.is_empty() {
-        return Ok(vec![]);
+        return Ok(StoreMediaAttachmentsResult {
+            media: vec![],
+            skipped_missing: false,
+        });
     }
     let Some(config) = config.s3_config.as_ref() else {
         warn!("S3 is not configured, cannot store attachment!");
-        return Ok(vec![]);
+        return Ok(StoreMediaAttachmentsResult {
+            media: vec![],
+            skipped_missing: false,
+        });
     };
     let s3_config = storage::S3Config::from(config);
     let strongbox_key = &config.strongbox_key;
     let mut stored = Vec::with_capacity(attachments.len());
+    let mut skipped_missing = false;
     for attachment in attachments {
-        let data = fs::read(&attachment.path).await.c(h!())?;
+        let Some(data) = read_attachment_data(&attachment.path).await? else {
+            skipped_missing = true;
+            continue;
+        };
         let ct = attachment.content_type.clone().unwrap_or_else(|| {
             detect_content_type(
                 attachment.name.as_deref(),
@@ -137,7 +166,10 @@ pub async fn store_media_attachments(
     if delete_uploaded {
         delete_uploaded_attachment_files(attachments).await;
     }
-    Ok(stored)
+    Ok(StoreMediaAttachmentsResult {
+        media: stored,
+        skipped_missing,
+    })
 }
 
 pub async fn delete_uploaded_attachment_files(
@@ -145,6 +177,9 @@ pub async fn delete_uploaded_attachment_files(
 ) {
     for attachment in attachments {
         if let Err(e) = tokio::fs::remove_file(&attachment.path).await {
+            if e.kind() == ErrorKind::NotFound {
+                continue;
+            }
             error!(
                 "failed to delete attachment file {}: {:?}",
                 attachment.path, e
@@ -296,4 +331,16 @@ pub async fn store_asset(
     .c(h!())?;
 
     Ok(object_key)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn missing_attachment_data_is_skipped() {
+        let path = format!("/tmp/echo-missing-attachment-{}", Uuid::new_v4());
+
+        assert!(read_attachment_data(&path).await.unwrap().is_none());
+    }
 }

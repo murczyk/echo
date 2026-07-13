@@ -9,6 +9,7 @@ services:
       - ./../wdintel-web/public:/etc/nginx/public
     network_mode: host
   postgres:
+    # PostgreSQL 14 volumes require an explicit reset or migration; see README.md.
     build:
       context: ./postgres
       dockerfile: Dockerfile

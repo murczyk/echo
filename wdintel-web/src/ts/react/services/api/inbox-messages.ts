@@ -9,12 +9,14 @@ import type {
   MessageIdsReq,
   InboxMessagesRsp,
   InterseptionKind,
+  MessageComment,
   MessageMediaInfo,
   MessageIdsRsp,
   SignalGroupEntry,
   SignalGroupStats,
   SignalProfilesRsp,
 } from '../../../../Bindings';
+import { transformSnakeToCamel } from '../../../snake-to-camel';
 import { emptyArrToNull, isNullOrUndefined, isPresent } from '../../utils/misc';
 import { postJson } from './client';
 import type { RequestOptions } from './client';
@@ -234,6 +236,7 @@ function normalizeInboxMessage(
     network_ids?: number[] | null;
     location?: string | null;
     extended_form?: string | null;
+    message_comments?: InboxMessageType['messageComments'] | null;
     inbox_tags?: InboxMessageTagRaw[] | null;
     metadata?: InboxMessageMetadataRaw[] | null;
     text_marked?: InboxMessageType['textMarked'];
@@ -245,6 +248,10 @@ function normalizeInboxMessage(
   const networkIds = (m.networkIds ?? raw.network_ids ?? null) as number[] | null;
   const location = (m.location ?? raw.location ?? null) as string | null;
   const extendedForm = (m.extendedForm ?? raw.extended_form ?? null) as string | null;
+  const rawMessageComments = m.messageComments ?? raw.message_comments ?? [];
+  const messageComments = Array.isArray(rawMessageComments)
+    ? transformSnakeToCamel<MessageComment[]>(rawMessageComments)
+    : [];
   const rawInboxTags = (raw.inbox_tags ?? m.inboxTags ?? null) as
     InboxMessageTagRaw[] | null | undefined;
   const inboxTags: InboxMessageType['inboxTags'] =
@@ -275,6 +282,7 @@ function normalizeInboxMessage(
     networkIds,
     location,
     extendedForm,
+    messageComments,
     inboxTags,
     metadata,
     textMarked,

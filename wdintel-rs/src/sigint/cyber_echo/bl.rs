@@ -146,7 +146,7 @@ pub async fn create_signal_message(
         signal_message_id: signal_message.id,
         message_uid: signal_message.message_uid,
         inbox_item_id,
-        media_ids: media.into_iter().map(|media| media.id).collect(),
+        media_ids: media.media.into_iter().map(|media| media.id).collect(),
     })
 }
 
@@ -204,6 +204,8 @@ mod tests {
             echo_im_sync_since_inbox_message_id: Set(0),
             cyber_echo_enabled: Set(enabled),
             echo_restapi_error_discord_webhook_url: Set(None),
+            sigint_comment_parsing_enabled: Set(true),
+            do_not_store_duplicate_echoim_failures: Set(false),
         }
         .insert(dbx)
         .await

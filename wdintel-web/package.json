@@ -29,7 +29,7 @@
     "@dnd-kit/core": "^6.3.1",
     "@dnd-kit/sortable": "^10.0.0",
     "@dnd-kit/utilities": "^3.2.2",
-    "@echoua/echo-audio-player": "git+ssh://git@github.com/echoua/milgeo-rs.git#973cfbaf55adbbcc5d25930ad125f139cc719a25",
+    "@echoua/echo-audio-player": "git+ssh://git@github.com/echoua/milgeo-rs.git#476649127b41ef45f7b11ba993dfacaa2b6cb6cd",
     "@emotion/react": "^11.13.3",
     "@emotion/styled": "^11.13.0",
     "@floating-ui/dom": "^1.7.3",

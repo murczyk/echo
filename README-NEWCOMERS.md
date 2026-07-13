@@ -9,9 +9,15 @@ Use `admin` and the password `fee_-_-_-FnoeKFBeebu87bf` (same as the DB default 
 ## Setup base system (Ubuntu 22.04)
 
 ```bash
-# adjust postgresql-14 to postgresql-16 if using a newer version of Ubuntu
-sudo apt install pkg-config libssl-dev libsqlite3-dev sqlite3 curl \
-    python3-pip ca-certificates cmake build-essential python3-venv python3-virtualenv postgresql-14 postgis postgresql-14-postgis-3 \
+sudo apt install curl ca-certificates gnupg lsb-release
+sudo install -d -m 0755 /etc/apt/keyrings
+curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo gpg --dearmor -o /etc/apt/keyrings/pgdg.gpg
+sudo chmod 0644 /etc/apt/keyrings/pgdg.gpg
+echo "deb [signed-by=/etc/apt/keyrings/pgdg.gpg] http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" | sudo tee /etc/apt/sources.list.d/pgdg.list
+sudo apt update
+sudo apt install pkg-config libssl-dev libsqlite3-dev sqlite3 \
+    python3-pip cmake build-essential python3-venv python3-virtualenv postgresql-18 \
+    postgresql-18-postgis-3 postgresql-18-postgis-3-scripts \
     git git-lfs nginx
 
 # Install rustup
@@ -37,8 +43,8 @@ sudo systemctl start redis-server
 # ensure the following line is above peer auth method in postgres
 # local   all             all                                     scram-sha-256
 # local   replication     all                                     scram-sha-256
-sudo vim /etc/postgresql/14/main/pg_hba.conf
-sudo systemctl reload postgresql@14-main.service
+sudo vim /etc/postgresql/18/main/pg_hba.conf
+sudo systemctl reload postgresql@18-main.service
 ```
 
 ## Clone the repository

@@ -26,14 +26,14 @@ also takes the database down.
 Fresh installs get the fix from:
 
 ```
-sudo echo-install-utils setup-postgresql ...
+sudo echo-install-utils setup-postgresql --pg-version 18 ...
 ```
 
 Existing installs can repair only the drop-in:
 
 ```
-sudo echo-install-utils setup-postgresql-oom-policy --pg-version 14
-systemctl show postgresql@14-main.service -p OOMPolicy -p Restart -p RestartUSec -p DropInPaths
+sudo echo-install-utils setup-postgresql-oom-policy --pg-version 18
+systemctl show postgresql@18-main.service -p OOMPolicy -p Restart -p RestartUSec -p DropInPaths
 ```
 
 Requires `echo-install-utils >= 0.1.1-rc.202606250929` (`ee9dea2`).
@@ -73,7 +73,7 @@ Put stanza config (for example, `/etc/pgbackrest/conf.d/pgbackrest-wd-staging.co
 
 ```
 [wd-staging]
-pg1-path=/var/lib/postgresql/14/main
+pg1-path=/var/lib/postgresql/18/main
 
 [global]
 repo1-retention-full=10
@@ -114,7 +114,7 @@ sudo chmod 750 /var/spool/pgbackrest
 sudo chown postgres:postgres /var/spool/pgbackrest
 ```
 
-In a file like /etc/postgresql/14/main/conf.d/90-pgbackrest.conf drop:
+In a file like /etc/postgresql/18/main/conf.d/90-pgbackrest.conf drop:
 
 ```
 # pgBackRest WAL archiving
@@ -127,7 +127,7 @@ archive_timeout = 60
 Then:
 
 ```
-sudo pg_ctlcluster 14 main restart
+sudo pg_ctlcluster 18 main restart
 ```
 
 Stanza:
@@ -163,7 +163,7 @@ sudo systemctl start postgresql
 STANZA=wd-staging
 sudo systemctl stop postgresql
 
-PGDATA=/var/lib/postgresql/14/main
+PGDATA=/var/lib/postgresql/18/main
 sudo mv "$PGDATA" "${PGDATA}.bak.$(date +%Y%m%d_%H%M%S)"
 sudo mkdir -p "$PGDATA"
 sudo chown -R postgres:postgres "$PGDATA"

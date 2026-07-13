@@ -1764,6 +1764,7 @@ mod tests {
             group_master_key: None,
             sender: None,
             extended_form: None,
+            message_comments: vec![],
             post: None,
             post_id: None,
             unit: None,
