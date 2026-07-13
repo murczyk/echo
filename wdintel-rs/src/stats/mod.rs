@@ -455,7 +455,7 @@ pub async fn read_group_stats_aggregated(
         .map(|b| (b.id, batch_key_to_group_keys(b.group_master_keys)))
         .collect::<HashMap<i64, Vec<_>>>();
 
-    let stats: HashMap<String, i64> = stats_group_5min::Entity::find()
+    let mut stats: HashMap<String, i64> = stats_group_5min::Entity::find()
         .filter(interval_5mins_filter)
         .filter(
             stats_group_5min::Column::SignalGroupBatchId
@@ -484,7 +484,7 @@ pub async fn read_group_stats_aggregated(
             let filter = stats_group_day::Column::Dt.eq(d);
             interval_day_filter = interval_day_filter.add(filter);
         }
-        stats_group_day::Entity::find()
+        let day_stats = stats_group_day::Entity::find()
             .filter(interval_day_filter)
             .filter(
                 stats_group_day::Column::SignalGroupBatchId
@@ -501,11 +501,13 @@ pub async fn read_group_stats_aggregated(
                     &allowed_keys,
                     m,
                 )
-            })
-            .fold(HashMap::new(), |mut acc, (s, key)| {
-                *acc.entry(key).or_insert(0) += s.quantity as i64;
-                acc
             });
+        add_group_stats(
+            &mut stats,
+            day_stats
+                .into_iter()
+                .map(|(s, key)| (s.quantity as i64, key)),
+        );
     };
     let mut result = vec![];
     for (master_key, count) in stats {
@@ -3480,6 +3482,15 @@ fn collect_group_keys_for_batch_filtered<T: Clone>(
     result
 }
 
+fn add_group_stats(
+    stats: &mut HashMap<String, i64>,
+    rows: impl IntoIterator<Item = (i64, String)>,
+) {
+    for (quantity, key) in rows {
+        *stats.entry(key).or_insert(0) += quantity;
+    }
+}
+
 async fn ensure_batch_key(
     dbx: &DatabaseTransaction,
     batches_map: &mut HashMap<String, i64>,
@@ -3841,6 +3852,24 @@ mod tests {
             .map(|entry| entry.master_key)
             .collect::<HashSet<_>>();
         assert_eq!(keys, HashSet::from([allowed_group.master_key]));
+    }
+
+    #[test]
+    fn test_add_group_stats_merges_daily_rows() {
+        let mut stats = HashMap::from([("existing".to_string(), 2)]);
+
+        add_group_stats(
+            &mut stats,
+            vec![(4, "existing".to_string()), (3, "daily-only".to_string())],
+        );
+
+        assert_eq!(
+            stats,
+            HashMap::from([
+                ("existing".to_string(), 6),
+                ("daily-only".to_string(), 3),
+            ])
+        );
     }
 
     fn ndt(
