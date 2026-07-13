@@ -28,6 +28,7 @@ messageStub =
     , imageRecognized = []
     , images = []
     , media = []
+    , messageComments = []
     , keywordTokens = Just []
     , location = Just "КАМ'ЯНКА-ДНІПРОВСЬКА"
     , noHeadersBody = Just { body = "НВ\nКОЛЬЦО 22\n— Кольцо, 22, 22, Штиль 1, Штиль 1.", end = 74, start = 0 }
