@@ -3,11 +3,15 @@ import type { ReactNode } from 'react';
 
 import { getMessageCardPreviewDialogPaperSx } from './message-card-preview-shell';
 
+export type MessageCardPreviewLayout = 'document' | 'media';
+
 export function MessageCardPreviewShell({
   open,
   isFullscreen,
   ariaLabel,
   onClose,
+  layout,
+  disableEscapeKeyDown,
   stage,
   controls,
   actions,
@@ -17,13 +21,31 @@ export function MessageCardPreviewShell({
   isFullscreen: boolean;
   ariaLabel: string;
   onClose: (event: unknown, reason: 'backdropClick' | 'escapeKeyDown') => void;
+  layout: MessageCardPreviewLayout;
+  disableEscapeKeyDown?: boolean;
   stage: ReactNode;
   controls?: ReactNode;
   actions?: ReactNode;
   infoPopover?: ReactNode;
 }) {
-  const dialogWidth = isFullscreen ? '100vw' : '92vw';
-  const dialogHeight = isFullscreen ? '100vh' : '92svh';
+  const paperSx: Record<string, unknown> =
+    layout === 'media'
+      ? {
+          display: 'flex',
+          flexDirection: 'column',
+          width: isFullscreen ? '100vw' : { xs: '96vw', sm: '92vw' },
+          height: isFullscreen ? '100svh' : '92svh',
+          maxWidth: isFullscreen ? '100vw' : 'min(92vw, 1280px)',
+          maxHeight: isFullscreen ? '100svh' : '92svh',
+          m: 0,
+        }
+      : {
+          width: isFullscreen ? '100vw' : '92vw',
+          height: isFullscreen ? '100vh' : '92svh',
+          maxWidth: isFullscreen ? '100vw' : '92vw',
+          maxHeight: isFullscreen ? '100vh' : '92svh',
+          margin: 0,
+        };
 
   return (
     <Dialog
@@ -33,16 +55,13 @@ export function MessageCardPreviewShell({
       }}
       maxWidth={false}
       fullScreen={isFullscreen}
+      disableEscapeKeyDown={disableEscapeKeyDown}
       disableRestoreFocus
       aria-label={ariaLabel}
       PaperProps={{
         sx: {
-          width: dialogWidth,
-          height: dialogHeight,
-          maxWidth: dialogWidth,
-          maxHeight: dialogHeight,
-          margin: 0,
           ...getMessageCardPreviewDialogPaperSx(isFullscreen),
+          ...paperSx,
         },
       }}
       BackdropProps={{

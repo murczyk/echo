@@ -139,6 +139,7 @@ export function MessageCardDocumentPreviewDialog({
         isFullscreen={dialogIsFullscreen}
         ariaLabel="Перегляд документа"
         onClose={handleDialogClose}
+        layout="document"
         stage={<Typography variant="body2">Документ недоступний</Typography>}
       />
     );
@@ -150,6 +151,7 @@ export function MessageCardDocumentPreviewDialog({
       isFullscreen={dialogIsFullscreen}
       ariaLabel="Перегляд документа"
       onClose={handleDialogClose}
+      layout="document"
       stage={
         <MessageCardDocumentPreviewStage
           documents={documents}
