@@ -40,7 +40,7 @@ type SystemSettingsForm = {
   dutyPollIntervalSec: number;
   shortUrlEnabled: boolean;
   autofixEchoimMissingMessages: boolean;
-  cyberEchoEnabled: boolean;
+  devicesSectionEnabled: boolean;
   sigintCommentParsingEnabled: boolean;
   doNotStoreDuplicateEchoimFailures: boolean;
   pelengBoundsEnabled: boolean;
@@ -64,7 +64,7 @@ type SystemSettingsPayload = {
   dutyPollIntervalSec: number;
   shortUrlEnabled: boolean;
   autofixEchoimMissingMessages: boolean;
-  cyberEchoEnabled: boolean;
+  devicesSectionEnabled: boolean;
   sigintCommentParsingEnabled: boolean;
   doNotStoreDuplicateEchoimFailures: boolean;
   pelengBoundsEnabled: boolean;
@@ -86,7 +86,7 @@ const EMPTY_FORM: SystemSettingsForm = {
   dutyPollIntervalSec: 1,
   shortUrlEnabled: false,
   autofixEchoimMissingMessages: false,
-  cyberEchoEnabled: false,
+  devicesSectionEnabled: false,
   sigintCommentParsingEnabled: true,
   doNotStoreDuplicateEchoimFailures: false,
   pelengBoundsEnabled: false,
@@ -123,7 +123,7 @@ function formFromSettings(item: SystemSettingsItem | undefined): SystemSettingsF
     dutyPollIntervalSec: item?.rerDutyPollIntervalSec ?? 1,
     shortUrlEnabled: item?.rerShortUrlEnabled ?? false,
     autofixEchoimMissingMessages: item?.autofixEchoimMissingMessages ?? false,
-    cyberEchoEnabled: item?.cyberEchoEnabled ?? false,
+    devicesSectionEnabled: item?.devicesSectionEnabled ?? false,
     sigintCommentParsingEnabled: item?.sigintCommentParsingEnabled ?? true,
     doNotStoreDuplicateEchoimFailures: item?.doNotStoreDuplicateEchoimFailures ?? false,
     pelengBoundsEnabled: item?.pelengBoundsEnabled ?? false,
@@ -147,7 +147,7 @@ function formsEqual(a: SystemSettingsForm, b: SystemSettingsForm): boolean {
     a.dutyPollIntervalSec === b.dutyPollIntervalSec &&
     a.shortUrlEnabled === b.shortUrlEnabled &&
     a.autofixEchoimMissingMessages === b.autofixEchoimMissingMessages &&
-    a.cyberEchoEnabled === b.cyberEchoEnabled &&
+    a.devicesSectionEnabled === b.devicesSectionEnabled &&
     a.sigintCommentParsingEnabled === b.sigintCommentParsingEnabled &&
     a.doNotStoreDuplicateEchoimFailures === b.doNotStoreDuplicateEchoimFailures &&
     a.pelengBoundsEnabled === b.pelengBoundsEnabled &&
@@ -219,7 +219,7 @@ function formToPayload(form: SystemSettingsForm): SystemSettingsPayload {
     dutyPollIntervalSec: form.dutyPollIntervalSec,
     shortUrlEnabled: form.shortUrlEnabled,
     autofixEchoimMissingMessages: form.autofixEchoimMissingMessages,
-    cyberEchoEnabled: form.cyberEchoEnabled,
+    devicesSectionEnabled: form.devicesSectionEnabled,
     sigintCommentParsingEnabled: form.sigintCommentParsingEnabled,
     doNotStoreDuplicateEchoimFailures: form.doNotStoreDuplicateEchoimFailures,
     pelengBoundsEnabled: form.pelengBoundsEnabled,
@@ -357,6 +357,18 @@ function MainSettingsSection({
       <FormControlLabel
         control={
           <Switch
+            checked={form.devicesSectionEnabled}
+            onChange={(_, checked) => {
+              patchForm({ devicesSectionEnabled: checked });
+            }}
+          />
+        }
+        label="Увімкнути розділ Пристрої"
+      />
+
+      <FormControlLabel
+        control={
+          <Switch
             checked={form.sigintCommentParsingEnabled}
             onChange={(_, checked) => {
               patchForm({ sigintCommentParsingEnabled: checked });
@@ -463,18 +475,6 @@ function DutySettingsSection({
           />
         }
         label="Автоматично відновлювати відсутні Echo IM повідомлення"
-      />
-
-      <FormControlLabel
-        control={
-          <Switch
-            checked={form.cyberEchoEnabled}
-            onChange={(_, checked) => {
-              patchForm({ cyberEchoEnabled: checked });
-            }}
-          />
-        }
-        label="Увімкнути режим Cyber Echo"
       />
 
       <Typography component="h2" variant="subtitle1" sx={{ m: 0, fontWeight: 600 }}>
@@ -679,7 +679,7 @@ export function AdminSystemSettingsNeoPage() {
         supportNonRerInterceptions: payload.supportNonRerInterceptions,
         defaultNeoAnalysis: payload.defaultNeoAnalysis,
         autofixEchoimMissingMessages: payload.autofixEchoimMissingMessages,
-        cyberEchoEnabled: payload.cyberEchoEnabled,
+        devicesSectionEnabled: payload.devicesSectionEnabled,
         sigintCommentParsingEnabled: payload.sigintCommentParsingEnabled,
         doNotStoreDuplicateEchoimFailures: payload.doNotStoreDuplicateEchoimFailures,
         pelengBoundsEnabled: payload.pelengBoundsEnabled,

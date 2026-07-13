@@ -14,7 +14,7 @@ pub async fn create_signal_message(
     env: &Env,
     payload: CreateCyberEchoSignalMessagePayload,
 ) -> Result<CreateCyberEchoSignalMessageRsp, AppError> {
-    crate::system_settings::ensure_cyber_echo_enabled(&env.dbx)
+    crate::system_settings::ensure_devices_section_enabled(&env.dbx)
         .await
         .c(h!())?;
 
@@ -202,7 +202,7 @@ mod tests {
             echo_im_sync_since: Set(now),
             autofix_echoim_missing_messages: Set(false),
             echo_im_sync_since_inbox_message_id: Set(0),
-            cyber_echo_enabled: Set(enabled),
+            devices_section_enabled: Set(enabled),
             echo_restapi_error_discord_webhook_url: Set(None),
             sigint_comment_parsing_enabled: Set(true),
             do_not_store_duplicate_echoim_failures: Set(false),
