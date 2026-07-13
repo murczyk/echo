@@ -58,6 +58,7 @@ export function MessageCardMessageBody({
   networks,
   unitsMap,
   messageComments = [],
+  signalMessageSenderLabel,
   searchText,
 }: {
   compact?: boolean;
@@ -75,6 +76,7 @@ export function MessageCardMessageBody({
   networks?: Network[];
   unitsMap?: Record<number, Unit>;
   messageComments?: MessageComment[];
+  signalMessageSenderLabel?: string | null;
   searchText?: string | null;
 }) {
   const images = collectMessageImages(msg);
@@ -246,7 +248,10 @@ export function MessageCardMessageBody({
         </div>
       ) : null}
       {messageComments.length > 0 ? (
-        <MessageCardComments messageComments={messageComments} />
+        <MessageCardComments
+          messageComments={messageComments}
+          signalMessageSenderLabel={signalMessageSenderLabel}
+        />
       ) : null}
       {tagsLoading ? (
         <div className="pt-[2px] min-h-[34px] flex items-center" aria-label="Завантаження тегів">

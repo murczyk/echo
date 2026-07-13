@@ -6,7 +6,7 @@ import type { ReactNode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { SettingsMyReportsSection } from './SettingsMyReportsSection';
+import { ReportHistoryTableSection, SettingsMyReportsSection } from './SettingsMyReportsSection';
 import { isCancelledReportHistory } from '../../services/api/report-history';
 
 const sampleRunningRow = {
@@ -204,6 +204,51 @@ describe('SettingsMyReportsSection', () => {
     expect(capturedDangerDialogProps?.cancelLabel).toBe('СКАСУВАТИ');
     expect(capturedDangerDialogProps?.confirmLabel).toBe('СКАСУВАТИ ЗВІТ');
     expect(capturedDangerDialogProps?.description).toBe('Звіт буде скасовано і прибрано з черги.');
+
+    act(() => {
+      root.unmount();
+    });
+    container.remove();
+  });
+
+  it('adds execution time for author report tables', async () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <ReportHistoryTableSection
+          active
+          title="Всі звіти"
+          tableId="admin-all-reports-v2"
+          includeAuthor
+          loadReportHistory={async () => []}
+        />,
+      );
+    });
+
+    const columns = (capturedSettingsNeoTableProps?.columns as Array<Record<string, any>>) ?? [];
+    const executionTimeColumn = columns.find((column) => column.id === 'executionTime');
+    const completedRow = {
+      ...sampleRunningRow,
+      status: 'done',
+      hasFile: true,
+      createdAt: '2026-06-26 16:45:00',
+      startedAt: '2026-06-26 17:00:37',
+      completedAt: '2026-06-26 17:01:21',
+    };
+
+    expect(executionTimeColumn?.header).toBe('Час виконання');
+    expect(executionTimeColumn?.enableSorting).toBe(false);
+    expect(executionTimeColumn?.enableColumnFilter).toBe(false);
+    expect(executionTimeColumn?.accessorFn?.(completedRow)).toBe(
+      'очікування 15хв 37с, виконання 44с',
+    );
+    expect(capturedTableStateProviderProps?.defaultColumnOrder).toContain('executionTime');
+    expect(capturedTableStateProviderProps?.defaultColumnVisibility).toMatchObject({
+      executionTime: true,
+    });
 
     act(() => {
       root.unmount();

@@ -68,6 +68,8 @@ pub enum Relation {
     OrganismKeywordSet,
     #[sea_orm(has_many = "super::palitra_access_organism::Entity")]
     PalitraAccessOrganism,
+    #[sea_orm(has_many = "super::secret_group_organism::Entity")]
+    SecretGroupOrganism,
     #[sea_orm(has_many = "super::sigint_network_encryption_key::Entity")]
     SigintNetworkEncryptionKey,
     #[sea_orm(has_many = "super::tag::Entity")]
@@ -131,6 +133,12 @@ impl Related<super::organism_keyword_set::Entity> for Entity {
 impl Related<super::palitra_access_organism::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::PalitraAccessOrganism.def()
+    }
+}
+
+impl Related<super::secret_group_organism::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::SecretGroupOrganism.def()
     }
 }
 

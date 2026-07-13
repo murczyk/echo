@@ -40,6 +40,79 @@ lazy_static! {
         Regex::new(r"^[\p{L}\p{N}_]+$").unwrap();
 }
 
+fn escape_like_fragment(input: &str, keep_percent_wildcards: bool) -> String {
+    input
+        .chars()
+        .flat_map(|ch| match ch {
+            '\\' => "\\\\".chars().collect::<Vec<_>>(),
+            '_' => "\\_".chars().collect::<Vec<_>>(),
+            '%' if !keep_percent_wildcards => "\\%".chars().collect(),
+            _ => vec![ch],
+        })
+        .collect()
+}
+
+fn contains_pattern(value: &str, keep_percent_wildcards: bool) -> String {
+    let value = escape_like_fragment(value, keep_percent_wildcards);
+    if !value.starts_with('%') && !value.ends_with('%') {
+        format!("%{value}%")
+    } else if !value.starts_with('%') {
+        format!("%{value}")
+    } else if !value.ends_with('%') {
+        format!("{value}%")
+    } else {
+        value
+    }
+}
+
+fn trim_documented_inert_chars(value: &str) -> &str {
+    value.trim_matches(|ch| ch == '+' || ch == '*' || ch == '(' || ch == ')')
+}
+
+fn has_inner_dot(value: &str) -> bool {
+    value.char_indices().any(|(idx, ch)| {
+        ch == '.' && idx > 0 && idx + ch.len_utf8() < value.len()
+    })
+}
+
+fn extract_dotted_literals(inp: &str) -> (String, Vec<String>, Vec<String>) {
+    let mut rest = vec![];
+    let mut ilike = vec![];
+    let mut not_ilike = vec![];
+
+    for original_token in inp.split_whitespace() {
+        let (negated, token) = match original_token.strip_prefix('-') {
+            Some(token) => (true, token),
+            None => (false, original_token),
+        };
+        let literal = trim_documented_inert_chars(token);
+        if has_inner_dot(literal) {
+            let pattern = contains_pattern(literal, false);
+            if negated {
+                not_ilike.push(pattern);
+            } else {
+                ilike.push(pattern);
+            }
+        } else {
+            rest.push(original_token);
+        }
+    }
+
+    (rest.join(" "), ilike, not_ilike)
+}
+
+fn normalize_ts_query(inp: &str) -> String {
+    inp.chars()
+        .map(|ch| match ch {
+            '+' | '*' | '(' | ')' => ' ',
+            _ => ch,
+        })
+        .collect::<String>()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
 pub fn parse_search_parts(inp: &str) -> anyhow::Result<SearchParts> {
     let mut inp = inp.to_string();
     //extract message UIDs
@@ -55,15 +128,7 @@ pub fn parse_search_parts(inp: &str) -> anyhow::Result<SearchParts> {
         .captures_iter(&inp)
         .map(|cap| {
             let value = cap[1].to_string();
-            if !value.starts_with('%') && !value.ends_with('%') {
-                format!("%{value}%")
-            } else if !value.starts_with('%') {
-                format!("%{value}")
-            } else if !value.ends_with('%') {
-                format!("{value}%")
-            } else {
-                value
-            }
+            contains_pattern(&value, true)
         })
         .collect();
 
@@ -75,15 +140,7 @@ pub fn parse_search_parts(inp: &str) -> anyhow::Result<SearchParts> {
         .captures_iter(&without_neg)
         .map(|cap| {
             let value = cap[1].to_string();
-            if !value.starts_with('%') && !value.ends_with('%') {
-                format!("%{value}%")
-            } else if !value.starts_with('%') {
-                format!("%{value}")
-            } else if !value.ends_with('%') {
-                format!("{value}%")
-            } else {
-                value
-            }
+            contains_pattern(&value, true)
         })
         .collect();
 
@@ -124,18 +181,18 @@ pub fn parse_search_parts(inp: &str) -> anyhow::Result<SearchParts> {
     // Remove freq
     let without_freq = RE_FREQ.replace_all(&without_neg_freq, "");
 
+    let (without_dotted_literals, dotted_ilike, dotted_not_ilike) =
+        extract_dotted_literals(&without_freq);
+
     // Remove standalone "and" words.
-    let without_and = RE_AND.replace_all(&without_freq, "");
+    let without_and = RE_AND.replace_all(&without_dotted_literals, "");
+    let ts_query = normalize_ts_query(&without_and);
     // Collapse multiple spaces.
-    let ts_query = trim_ts_query(
-        &without_and.split_whitespace().collect::<Vec<_>>().join(" "),
-    )
-    .context(h!())?
-    .unwrap_or(String::new());
+    let ts_query = trim_ts_query(&ts_query).context(h!())?.unwrap_or_default();
     Ok(SearchParts {
         ts_query,
-        ilike,
-        not_ilike,
+        ilike: ilike.into_iter().chain(dotted_ilike).collect(),
+        not_ilike: not_ilike.into_iter().chain(dotted_not_ilike).collect(),
         freq,
         not_freq,
         message_uids,
@@ -212,7 +269,7 @@ mod tests {
     fn test_complex() {
         let input = r#"(foo or bar) and "BA%Z" or -wazz"#;
         let expected = SearchParts {
-            ts_query: "(foo or bar) or -wazz".to_string(),
+            ts_query: "foo or bar or -wazz".to_string(),
             ilike: vec!["%BA%Z%".to_string()],
             not_ilike: vec![],
             freq: vec![],
@@ -249,6 +306,35 @@ mod tests {
         assert_eq!(ts_prefix_query("42"), None);
     }
 
+    #[test]
+    fn test_documented_inert_chars() {
+        let result = parse_search_parts("+танк").unwrap();
+        assert_eq!(result.ts_query, "танк");
+
+        let result = parse_search_parts("танк*").unwrap();
+        assert_eq!(result.ts_query, "танк");
+
+        let result = parse_search_parts("(танк or бмп) посадка").unwrap();
+        assert_eq!(result.ts_query, "танк or бмп посадка");
+    }
+
+    #[test]
+    fn test_dotted_text_handling() {
+        let result = parse_search_parts("abc.def танк -н.п.").unwrap();
+        assert_eq!(result.ts_query, "танк");
+        assert_eq!(result.ilike, vec!["%abc.def%".to_string()]);
+        assert_eq!(result.not_ilike, vec!["%н.п.%".to_string()]);
+        assert_eq!(result.freq, Vec::<String>::new());
+    }
+
+    #[test]
+    fn test_dotted_text_does_not_capture_freqs() {
+        let result = parse_search_parts("abc.def 165.25").unwrap();
+        assert_eq!(result.ts_query, "");
+        assert_eq!(result.ilike, vec!["%abc.def%".to_string()]);
+        assert_eq!(result.freq, vec!["165.2500".to_string()]);
+    }
+
     // Add new test for % handling
     #[test]
     fn test_percent_handling() {
@@ -263,6 +349,12 @@ mod tests {
             let result = parse_search_parts(input).unwrap();
             assert_eq!(result.ilike[0], expected);
         }
+    }
+
+    #[test]
+    fn test_quoted_literal_escapes_underscore() {
+        let result = parse_search_parts(r#""a_b""#).unwrap();
+        assert_eq!(result.ilike, vec!["%a\\_b%".to_string()]);
     }
 
     // Add new test for not_ilike handling

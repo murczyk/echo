@@ -15,7 +15,7 @@ import Html.Events exposing (..)
 import Html.Extra as HtmlX
 import List.Extra as ListX
 import Maybe exposing (withDefault)
-import Maybe.Extra as MaybeX exposing (isJust)
+import Maybe.Extra as MaybeX
 import Pages_.RerAnalysis.Utils
 import Route exposing (Route)
 import Set exposing (Set)
@@ -133,26 +133,6 @@ type OutSignal
     | OutOpenSidebarEdit Int
 
 
-isOurOrganism : B.User -> Dict String (Maybe B.User) -> String -> Bool
-isOurOrganism user users login =
-    if user.name == login then
-        True
-
-    else
-        case Dict.get login users of
-            Nothing ->
-                False
-
-            Just (Just user2) ->
-                isJust user.organismId
-                    && isJust user2.organismId
-                    && user2.organismId
-                    == user.organismId
-
-            _ ->
-                False
-
-
 isPostAuthoredComment : B.MessageComment -> Bool
 isPostAuthoredComment comment =
     comment.sigintPostName
@@ -161,19 +141,39 @@ isPostAuthoredComment comment =
         |> (/=) ""
 
 
-commentAuthorLabel : B.MessageComment -> String
-commentAuthorLabel comment =
-    comment.sigintPostName
+systemCommentLogin : String
+systemCommentLogin =
+    "system"
+
+
+nonEmptyTrimmed : Maybe String -> Maybe String
+nonEmptyTrimmed value =
+    value
         |> Maybe.map trim
         |> Maybe.andThen
-            (\sigintPostName ->
-                if sigintPostName == "" then
+            (\trimmedValue ->
+                if trimmedValue == "" then
                     Nothing
 
                 else
-                    Just sigintPostName
+                    Just trimmedValue
             )
-        |> Maybe.withDefault comment.login
+
+
+commentAuthorLabel : Maybe String -> B.MessageComment -> String
+commentAuthorLabel signalMessageSenderLabel comment =
+    case nonEmptyTrimmed comment.sigintPostName of
+        Just sigintPostName ->
+            sigintPostName
+
+        Nothing ->
+            if trim comment.login == systemCommentLogin then
+                signalMessageSenderLabel
+                    |> nonEmptyTrimmed
+                    |> Maybe.withDefault comment.login
+
+            else
+                comment.login
 
 
 addCallsign :
@@ -1563,14 +1563,19 @@ renderRow vps _ model ( i_, ( msgId, message ) ) =
                 |> List.filter
                     (\x ->
                         isPostAuthoredComment x
-                            || not (isOurOrganism vps.user vps.users x.login)
+                            || trim x.login
+                            /= trim vps.user.name
                     )
                 |> List.map renderOtherComment
+
+        signalMessageSenderLabel =
+            message.sender
+                |> Maybe.map (getProfileName vps.profiles)
 
         renderOtherComment comment =
             div
                 []
-                [ strong [] [ text (commentAuthorLabel comment) ]
+                [ strong [] [ text (commentAuthorLabel signalMessageSenderLabel comment) ]
                 , text ": "
                 , text comment.comment
                 ]

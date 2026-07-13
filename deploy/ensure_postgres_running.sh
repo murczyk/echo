@@ -42,8 +42,8 @@ run_pg_ctlcluster_action() {
         return
     fi
 
-    # Fallback to historical default if cluster discovery is unavailable.
-    run_with_optional_sudo pg_ctlcluster 14 main "$action"
+    # Fallback to the project default if cluster discovery is unavailable.
+    run_with_optional_sudo pg_ctlcluster 18 main "$action"
 }
 
 check_query_ready() {

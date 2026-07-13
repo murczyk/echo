@@ -275,8 +275,6 @@ export function buildInboxReq(opts: {
 }): InboxMessagesReq {
   const f = opts.filter;
   // send empty arrays as null (backend treats null/undefined vs [] differently)
-  const selectedFreqs = emptyArrToNull(opts.expandedFreqsSelected ?? f.freqsSelected ?? null);
-  const deniedFreqs = emptyArrToNull(opts.expandedFreqsDenied ?? f.freqsDenied ?? null);
   return {
     sinceIdNoninclusive: opts.sinceIdNoninclusive ?? null,
     beforeIdNoninclusive: opts.beforeIdNoninclusive ?? null,
@@ -288,10 +286,10 @@ export function buildInboxReq(opts: {
     deniedGroups: emptyArrToNull(f.groupsDenied),
     selectedSenders: emptyArrToNull(f.sendersSelected),
     deniedSenders: emptyArrToNull(f.deniedSenders),
-    selectedFreqs,
+    selectedFreqs: emptyArrToNull(opts.expandedFreqsSelected ?? f.freqsSelected ?? null),
     selectedPosts: emptyArrToNull(f.postsSelected),
     deniedPosts: emptyArrToNull(f.postsDenied),
-    deniedFreqs,
+    deniedFreqs: emptyArrToNull(opts.expandedFreqsDenied ?? f.freqsDenied ?? null),
     selectedCallsigns: null,
     selectedUnits: emptyArrToNull(f.unitsSelected ?? null),
     deniedUnits: emptyArrToNull(f.unitsDenied ?? null),
@@ -351,17 +349,14 @@ export function normalizeFeed(raw: Record<string, unknown>): RerDutyFeedFilterSt
     unitsSelected: readFilterValues(raw, ['unitsSelected', 'units_selected']),
     unitsDenied: readFilterValues(raw, ['unitsDenied', 'units_denied']),
     unitsExactMatchOnly: (raw.unitsExactMatchOnly ?? raw.units_exact_match_only ?? false) as
-      | boolean
-      | null,
+      boolean | null,
     lastViewedMessageId: (raw.lastViewedMessageId ?? raw.last_viewed_message_id ?? null) as
-      | number
-      | null,
+      number | null,
     highlightKeywordsEnabled: (raw.highlightKeywordsEnabled ??
       raw.highlight_keywords_enabled ??
       null) as boolean | null,
     highlightKeywordSetId: (raw.highlightKeywordSetId ?? raw.highlight_keyword_set_id ?? null) as
-      | number
-      | null,
+      number | null,
   };
 }
 

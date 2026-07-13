@@ -83,6 +83,7 @@ pub mod restream;
 pub mod restream_setup;
 pub mod sea_orm_active_enums;
 pub mod seaql_im_migrations;
+pub mod secret_group_organism;
 pub mod secret_group_user;
 pub mod settlement;
 pub mod sigint_bookmark;

@@ -2,15 +2,18 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { OrganismKeywordSetDto } from '../../../../Bindings';
 import { fetchOrganismKeywordSets } from '../../services/api/organism-keyword-sets';
 import { fetchAnalysisCallsignInfos } from '../../services/api/analysis';
+import { fetchMessagesByIds } from '../../services/api/inbox-messages';
 import { currentSystemSettings } from '../../services/api/system-settings';
+import { mergeUpdatedDutyFeedMessages } from '../shared/message-card/message-card-message-updates';
 import { attachDutyNotificationAudioPrimingListeners } from './notifications';
 import { isNullOrUndefined, sortFrequenciesNumerically } from '../../utils/misc';
 import { normalizeCallsignLookupValue } from '../../utils/callsign-normalization';
 import { useRerDutyFeedState } from './useRerDutyFeedState';
 import { useRerDutyFilterOptions } from './useRerDutyFilterOptions';
 import { useRerDutyMessageActions } from './useRerDutyMessageActions';
-import { collectUniqueCallsignsFromMessages } from './utils';
+import { collectUniqueCallsignsFromMessages, stableStringify } from './utils';
 import { useDutySettings } from '../../hooks/use-duty-settings';
+import { useInboxChangedMessageIds } from '../shared/useInboxChangedMessageIds';
 
 const MAX_MESSAGE_FEEDS = 4;
 const CALLSIGN_LOOKUP_RETRY_BACKOFF_MS = 30_000;
@@ -180,6 +183,68 @@ export function useRerDutyFeeds(authUserName: string | null) {
   useEffect(() => {
     if (dutySettings.disableAutoScroll) feedState.setWatchModeByFeedId({});
   }, [dutySettings.disableAutoScroll, feedState.setWatchModeByFeedId]);
+
+  useInboxChangedMessageIds({
+    onMessageIds: async (messageIds) => {
+      const refreshes = feedState.messageFeeds.flatMap((feed) => {
+        const visibleMessageIds = new Set(feed.items.map(([messageId]) => messageId));
+        const visibleChangedMessageIds = Array.from(
+          new Set(messageIds.filter((messageId) => visibleMessageIds.has(messageId))),
+        );
+        if (visibleChangedMessageIds.length === 0) return [];
+        const inboxReq = feedState.buildReqForFeed(feed, { loadLatest: true });
+        return [
+          {
+            feedId: feed.id,
+            messageIds: visibleChangedMessageIds,
+            inboxReq,
+            requestSignature: stableStringify(inboxReq),
+            loadGeneration: feedState.getFeedLoadGeneration(feed.id),
+          },
+        ];
+      });
+
+      if (refreshes.length === 0) return;
+
+      await Promise.all(
+        refreshes.map(
+          async ({
+            feedId,
+            messageIds: visibleChangedMessageIds,
+            inboxReq,
+            requestSignature,
+            loadGeneration,
+          }) => {
+            try {
+              const nextMessages = await fetchMessagesByIds(visibleChangedMessageIds, inboxReq);
+              feedState.setMessageFeeds((current) =>
+                (() => {
+                  const currentFeed = current.find((feed) => feed.id === feedId);
+                  if (currentFeed == null) return current;
+                  if (feedState.getFeedLoadGeneration(feedId) !== loadGeneration) return current;
+                  const currentSignature = stableStringify(
+                    feedState.buildReqForFeed(currentFeed, { loadLatest: true }),
+                  );
+                  if (currentSignature !== requestSignature) return current;
+                  return mergeUpdatedDutyFeedMessages(
+                    current,
+                    feedId,
+                    visibleChangedMessageIds,
+                    nextMessages,
+                  );
+                })(),
+              );
+            } catch (loadError) {
+              feedState.setError(
+                loadError instanceof Error ? loadError.message : String(loadError),
+              );
+              console.error(loadError);
+            }
+          },
+        ),
+      );
+    },
+  });
 
   useEffect(() => {
     const nowMs = Date.now();

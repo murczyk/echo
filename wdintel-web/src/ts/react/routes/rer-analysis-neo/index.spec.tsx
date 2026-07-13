@@ -241,7 +241,6 @@ function buildPage() {
     topLocations: [],
     topUnits: [],
     unitsMap: {},
-    users: {},
     validationError: null,
     openEditor: vi.fn(),
     closeEditor: vi.fn(),

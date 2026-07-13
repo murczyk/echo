@@ -83,7 +83,19 @@ fn map_system_settings_item(
         peleng_bounds_bottom_right_lat: settings.peleng_bounds_bottom_right_lat,
         peleng_bounds_bottom_right_lng: settings.peleng_bounds_bottom_right_lng,
         cyber_echo_enabled: settings.cyber_echo_enabled,
+        echo_restapi_error_discord_webhook_url: settings
+            .echo_restapi_error_discord_webhook_url,
+        sigint_comment_parsing_enabled: settings.sigint_comment_parsing_enabled,
+        do_not_store_duplicate_echoim_failures: settings
+            .do_not_store_duplicate_echoim_failures,
     })
+}
+
+fn normalize_optional_setting(value: Option<&str>) -> Option<String> {
+    value
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToOwned::to_owned)
 }
 
 pub async fn get_active_system_settings<C>(
@@ -107,6 +119,22 @@ where
     C: ConnectionTrait,
 {
     Ok(get_echo_im_sync_cursor(dbx).await?.created_at)
+}
+
+pub async fn get_echo_restapi_error_discord_webhook_url<C>(
+    dbx: &C,
+) -> Result<Option<String>, AppError>
+where
+    C: ConnectionTrait,
+{
+    Ok(get_active_system_settings(dbx)
+        .await
+        .c(h!())?
+        .and_then(|settings| {
+            normalize_optional_setting(
+                settings.echo_restapi_error_discord_webhook_url.as_deref(),
+            )
+        }))
 }
 
 pub async fn get_echo_im_sync_cursor<C>(
@@ -188,6 +216,18 @@ where
         .unwrap_or(false))
 }
 
+pub async fn do_not_store_duplicate_echoim_failures_enabled<C>(
+    dbx: &C,
+) -> Result<bool, AppError>
+where
+    C: ConnectionTrait,
+{
+    let settings = get_active_system_settings(dbx).await.c(h!())?;
+    Ok(settings
+        .map(|settings| settings.do_not_store_duplicate_echoim_failures)
+        .unwrap_or(false))
+}
+
 pub async fn get_rer_analysis_units_exact_match_only_default<C>(
     dbx: &C,
 ) -> Result<bool, AppError>
@@ -234,6 +274,18 @@ where
     let settings = get_active_system_settings(dbx).await.c(h!())?;
     Ok(settings
         .map(|settings| settings.cyber_echo_enabled)
+        .unwrap_or(false))
+}
+
+pub async fn sigint_comment_parsing_enabled<C>(
+    dbx: &C,
+) -> Result<bool, AppError>
+where
+    C: ConnectionTrait,
+{
+    let settings = get_active_system_settings(dbx).await.c(h!())?;
+    Ok(settings
+        .map(|settings| settings.sigint_comment_parsing_enabled)
         .unwrap_or(false))
 }
 
@@ -383,6 +435,15 @@ fn system_settings_active_model(
         peleng_bounds_bottom_right_lat: Set(req.peleng_bounds_bottom_right_lat),
         peleng_bounds_bottom_right_lng: Set(req.peleng_bounds_bottom_right_lng),
         cyber_echo_enabled: Set(req.cyber_echo_enabled),
+        echo_restapi_error_discord_webhook_url: Set(
+            normalize_optional_setting(
+                req.echo_restapi_error_discord_webhook_url.as_deref(),
+            ),
+        ),
+        sigint_comment_parsing_enabled: Set(req.sigint_comment_parsing_enabled),
+        do_not_store_duplicate_echoim_failures: Set(
+            req.do_not_store_duplicate_echoim_failures
+        ),
     }
 }
 
@@ -427,6 +488,13 @@ async fn create_system_settings_for_login(
         .insert(&txn)
         .await
         .c(h!())?;
+    if created.do_not_store_duplicate_echoim_failures {
+        crate::messenger::missing_message::delete_duplicate_missing_messages(
+            &txn,
+        )
+        .await
+        .c(h!())?;
+    }
     txn.commit().await.c(h!())?;
 
     Ok(created)
@@ -455,6 +523,13 @@ async fn activate_system_settings_for_login(
     settings.echo_im_sync_since_inbox_message_id =
         Set(echo_im_sync_cursor.inbox_message_id);
     let settings = settings.update(&txn).await.c(h!())?;
+    if settings.do_not_store_duplicate_echoim_failures {
+        crate::messenger::missing_message::delete_duplicate_missing_messages(
+            &txn,
+        )
+        .await
+        .c(h!())?;
+    }
     txn.commit().await.c(h!())?;
 
     Ok(settings)
@@ -492,6 +567,10 @@ pub async fn current_system_settings(
             peleng_bounds_bottom_right_lng: settings
                 .peleng_bounds_bottom_right_lng,
             cyber_echo_enabled: settings.cyber_echo_enabled,
+            sigint_comment_parsing_enabled: settings
+                .sigint_comment_parsing_enabled,
+            do_not_store_duplicate_echoim_failures: settings
+                .do_not_store_duplicate_echoim_failures,
         },
         None => SystemSettingsCurrentRsp {
             id: None,
@@ -511,6 +590,8 @@ pub async fn current_system_settings(
             peleng_bounds_bottom_right_lat: None,
             peleng_bounds_bottom_right_lng: None,
             cyber_echo_enabled: false,
+            sigint_comment_parsing_enabled: false,
+            do_not_store_duplicate_echoim_failures: false,
         },
     }))
 }
@@ -575,6 +656,8 @@ pub async fn activate_system_settings(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::entities::echo_missing_message;
+    use crate::entities::sea_orm_active_enums::EchoMissingMessageStatus;
     use crate::functest::tests::cleanup;
     use sea_orm::*;
     use serial_test::serial;
@@ -706,6 +789,55 @@ mod tests {
         );
     }
 
+    #[tokio::test]
+    #[serial]
+    async fn create_settings_deletes_duplicate_missing_messages_when_enabled() {
+        let _guard = TEST_LOCK.lock().await;
+        let env = cleanup().await.unwrap();
+        system_settings::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .unwrap();
+        echo_missing_message::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .unwrap();
+        insert_missing_message(
+            &env.dbx,
+            -1,
+            EchoMissingMessageStatus::Duplicate,
+        )
+        .await;
+        insert_missing_message(&env.dbx, -2, EchoMissingMessageStatus::Pending)
+            .await;
+        let mut req = settings_req(false);
+        req.do_not_store_duplicate_echoim_failures = true;
+
+        create_system_settings_for_login(&env.dbx, "Tester", &req)
+            .await
+            .unwrap();
+
+        assert_eq!(
+            echo_missing_message::Entity::find()
+                .filter(
+                    echo_missing_message::Column::Status
+                        .eq(EchoMissingMessageStatus::Duplicate)
+                )
+                .count(&env.dbx)
+                .await
+                .unwrap(),
+            0
+        );
+        assert_eq!(
+            echo_missing_message::Entity::find()
+                .filter(echo_missing_message::Column::MessageId.eq(-2))
+                .count(&env.dbx)
+                .await
+                .unwrap(),
+            1
+        );
+    }
+
     fn old_ts() -> chrono::NaiveDateTime {
         chrono::DateTime::<chrono::Utc>::from_timestamp_micros(
             Utc::now().timestamp_micros(),
@@ -733,6 +865,9 @@ mod tests {
             peleng_bounds_top_left_lng: None,
             peleng_bounds_bottom_right_lat: None,
             peleng_bounds_bottom_right_lng: None,
+            echo_restapi_error_discord_webhook_url: None,
+            sigint_comment_parsing_enabled: true,
+            do_not_store_duplicate_echoim_failures: false,
         }
     }
 
@@ -783,6 +918,39 @@ mod tests {
             default_neo_analysis: Set(false),
             autofix_echoim_missing_messages: Set(false),
             cyber_echo_enabled: Set(false),
+            echo_restapi_error_discord_webhook_url: Set(None),
+            sigint_comment_parsing_enabled: Set(true),
+            do_not_store_duplicate_echoim_failures: Set(false),
+        }
+        .insert(dbx)
+        .await
+        .unwrap()
+    }
+
+    async fn insert_missing_message(
+        dbx: &DatabaseConnection,
+        message_id: i32,
+        status: EchoMissingMessageStatus,
+    ) -> echo_missing_message::Model {
+        let is_resolved = matches!(
+            status,
+            EchoMissingMessageStatus::Resolved
+                | EchoMissingMessageStatus::Deleted
+                | EchoMissingMessageStatus::Duplicate
+        );
+        echo_missing_message::ActiveModel {
+            id: NotSet,
+            message_id: Set(message_id),
+            created_at: Set(Utc::now().naive_utc()),
+            is_resolved: Set(is_resolved),
+            resolved_at: Set(if is_resolved {
+                Some(Utc::now().naive_utc())
+            } else {
+                None
+            }),
+            scheduled_by: Set(None),
+            status: Set(status),
+            error: Set(None),
         }
         .insert(dbx)
         .await

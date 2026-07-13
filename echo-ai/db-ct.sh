@@ -1,8 +1,10 @@
+#!/usr/bin/env bash
+
 # Allows echo-ai-train to connect to remote postgresql over tailscale
 # Example:
 # ssh echo@ct-echo-kherson2-dev.alpines-banded.ts.net "bash -s" -- < db-ct.sh $(tailscale ip -4)
-PG_HBA_CONF="/etc/postgresql/14/main/pg_hba.conf"
-POSTGRES_CONF="/etc/postgresql/14/main/postgresql.conf"
+PG_HBA_CONF="/etc/postgresql/18/main/pg_hba.conf"
+POSTGRES_CONF="/etc/postgresql/18/main/postgresql.conf"
 TRAIN_IP="$1"
 
 if [ -z "${TRAIN_IP}" ];
@@ -20,7 +22,7 @@ if ! grep -q '^listen_addresses' "$POSTGRES_CONF"; then
     DOMAIN=$(tailscale status --json | jq -r ".CertDomains[0]")
     echo "setting listen_addresses to localhost and $DOMAIN"
     sudo sed -i "s/^#listen_addresses.*/listen_addresses = 'localhost, $DOMAIN'/" "$POSTGRES_CONF"
-    sudo systemctl restart postgresql@14-main.service
+    sudo systemctl restart postgresql@18-main.service
 fi
 
 if ! sudo grep -q echo-ai-train "$PG_HBA_CONF"; then
@@ -29,7 +31,7 @@ if ! sudo grep -q echo-ai-train "$PG_HBA_CONF"; then
 # echo-ai-train
 host    wd              wd              ${TRAIN_IP}/32            scram-sha-256
 EOF
-   sudo systemctl reload postgresql@14-main.service
+   sudo systemctl reload postgresql@18-main.service
 fi
 
 
@@ -50,7 +52,7 @@ if [[ -z "${STANZA}" ]]; then
   exit 2
 fi
 
-PG_VERSION="${ECHO_PGBACKREST_RESTORE_PG_VERSION:-14}"
+PG_VERSION="${ECHO_PGBACKREST_RESTORE_PG_VERSION:-18}"
 PG_CLUSTER="${ECHO_PGBACKREST_RESTORE_PG_CLUSTER:-main}"
 PGDATA="${ECHO_PGBACKREST_RESTORE_PGDATA:-/var/lib/postgresql/${PG_VERSION}/${PG_CLUSTER}}"
 PGDATA_NEXT="${ECHO_PGBACKREST_RESTORE_PGDATA_NEXT:-${PGDATA}.next}"

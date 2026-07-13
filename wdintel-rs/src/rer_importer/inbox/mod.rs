@@ -326,8 +326,14 @@ async fn messages_by_id(
         .await
         .context(h!())?;
 
+    let default_req = InboxMessagesReq {
+        highlight_points: Some(true),
+        ..Default::default()
+    };
+    let inbox_req = req.inbox_req.as_ref().unwrap_or(&default_req);
     let messages =
-        messages_by_id_bl(&login, &logins, &env, &req.message_ids).await?;
+        messages_by_id_bl(&login, &logins, &env, &req.message_ids, inbox_req)
+            .await?;
     Ok(Json(MessageIdsRsp { messages }))
 }
 
@@ -336,6 +342,7 @@ async fn messages_by_id_bl(
     logins: &Vec<String>,
     env: &Env,
     message_ids: &[i64],
+    req: &InboxMessagesReq,
 ) -> Result<Vec<(i64, InboxMessage)>, AppError> {
     let sigint_groups =
         crate::messenger::group::get_identity_sigint_groups(&env.dbx, login)
@@ -470,12 +477,8 @@ async fn messages_by_id_bl(
     .all(&env.dbx)
     .await
     .context(h!())?;
-    let req = InboxMessagesReq {
-        highlight_points: Some(true),
-        ..Default::default()
-    };
     let messages =
-        aggregate_to_inbox_messages(login, messages, logins, &&req, &env)
+        aggregate_to_inbox_messages(login, messages, logins, &req, &env)
             .await
             .context(h!())?;
     Ok(messages)
@@ -797,6 +800,7 @@ async fn submit_generic_inbox_item(
         &message,
         login,
         logins,
+        InboxLocationSubmitMode::Parse,
     )
     .await
     .c(h!())?;
@@ -864,6 +868,7 @@ fn generic_submit_item_to_inbox_message(
         group_master_key: None,
         sender: item.sender.clone(),
         extended_form: item.full_body.clone(),
+        message_comments: vec![],
         post: item.post.clone(),
         post_id: None,
         unit: item.unit.clone(),
@@ -1723,53 +1728,22 @@ async fn comment_save(
     ensure_comment_save_access(&env, &login, &sigint_groups, req.message_id)
         .await?;
 
+    let logins = crate::users::get_organism_logins_by_login(&env.dbx, &login)
+        .await
+        .c(h!())?;
     let txn = env.dbx.begin().await.c(h!())?;
     let message_ids =
         find_all_duplicates(&txn, req.message_id).await.c(h!())?;
     let comment = req.comment.as_ref().map(|c| c.trim()).unwrap_or("");
     for id in &message_ids {
         if comment.is_empty() {
-            sigint_comment::Entity::delete_many()
-                .filter(sigint_comment::Column::SignalMessageId.eq(*id))
-                .filter(sigint_comment::Column::Login.eq(login.clone()))
-                .exec(&txn)
+            delete_editable_sigint_comments(&txn, *id, &login, &logins)
                 .await
                 .c(h!())?;
         } else {
-            let m_comment = sigint_comment::Entity::find()
-                .filter(sigint_comment::Column::SignalMessageId.eq(*id))
-                .filter(sigint_comment::Column::Login.eq(login.clone()))
-                .one(&txn)
+            upsert_editable_sigint_comment(&txn, *id, &login, &logins, comment)
                 .await
                 .c(h!())?;
-            match m_comment {
-                None => {
-                    sigint_comment::ActiveModel {
-                        id: NotSet,
-                        signal_message_id: Set(*id),
-                        login: Set(login.clone()),
-                        comment: Set(comment.to_string()),
-                        created_at: NotSet,
-                        sigint_post_id: NotSet,
-                    }
-                    .insert(&txn)
-                    .await
-                    .c(h!())?;
-                }
-                Some(comment_model) => {
-                    sigint_comment::ActiveModel {
-                        id: Set(comment_model.id),
-                        signal_message_id: Set(*id),
-                        login: Set(login.clone()),
-                        comment: Set(comment.to_string()),
-                        created_at: NotSet,
-                        sigint_post_id: NotSet,
-                    }
-                    .update(&txn)
-                    .await
-                    .c(h!())?;
-                }
-            }
         }
     }
     txn.commit().await.c(h!())?;
@@ -1892,6 +1866,7 @@ async fn submit_legacy_inbox_messages(
                 &message,
                 login,
                 logins,
+                InboxLocationSubmitMode::PreserveTyped,
             )
             .await
             .c(h!())?;
@@ -2217,6 +2192,13 @@ mod tests {
             .collect()
     }
 
+    fn messages_by_id_default_req() -> InboxMessagesReq {
+        InboxMessagesReq {
+            highlight_points: Some(true),
+            ..Default::default()
+        }
+    }
+
     fn generic_submit_req() -> InboxSubmitItem {
         let now = Utc::now().naive_utc();
         InboxSubmitItem {
@@ -2516,6 +2498,357 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(inbox_item.freq.as_deref(), Some("123.4500"));
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn test_legacy_submit_preserves_typed_location_v2() {
+        let env = cleanup().await.unwrap();
+        let login = find_test_login(&env.dbx).await.unwrap();
+        let now = Utc::now().naive_utc();
+        let message = mk_signal_message(
+            &env.dbx,
+            signal_message::ActiveModel {
+                body: Set(Some("legacy typed location".to_string())),
+                created_at: Set(now),
+                timestamp: Set(Some(now)),
+                sender: Set(Some("legacy typed sender".to_string())),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let inbox_message = InboxMessage::from(InboxInsertPayload {
+            text: "legacy typed location".to_string(),
+            location: Some("Робоботине".to_string()),
+            ..Default::default()
+        });
+        let logins = vec![login.login.clone()];
+        let txn = env.dbx.begin().await.unwrap();
+
+        submit_upsert_inbox_item(
+            env.settlements.clone(),
+            &txn,
+            message.id,
+            &inbox_message,
+            &login.login,
+            &logins,
+            InboxLocationSubmitMode::PreserveTyped,
+        )
+        .await
+        .unwrap();
+        txn.commit().await.unwrap();
+
+        let inbox_item = sigint_inbox_item::Entity::find_by_id(message.id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(inbox_item.location.as_deref(), Some("Робоботине"));
+        assert_eq!(inbox_item.location_v2.as_deref(), Some("|Робоботине|"));
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn test_submit_parse_location_v2_keeps_parser_behavior() {
+        let env = cleanup().await.unwrap();
+        let login = find_test_login(&env.dbx).await.unwrap();
+        let now = Utc::now().naive_utc();
+        let message = mk_signal_message(
+            &env.dbx,
+            signal_message::ActiveModel {
+                body: Set(Some("generic parsed location".to_string())),
+                created_at: Set(now),
+                timestamp: Set(Some(now)),
+                sender: Set(Some("generic parsed sender".to_string())),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let inbox_message = InboxMessage::from(InboxInsertPayload {
+            text: "generic parsed location".to_string(),
+            location: Some("Робоботине".to_string()),
+            ..Default::default()
+        });
+        let logins = vec![login.login.clone()];
+        let txn = env.dbx.begin().await.unwrap();
+
+        submit_upsert_inbox_item(
+            env.settlements.clone(),
+            &txn,
+            message.id,
+            &inbox_message,
+            &login.login,
+            &logins,
+            InboxLocationSubmitMode::Parse,
+        )
+        .await
+        .unwrap();
+        txn.commit().await.unwrap();
+
+        let inbox_item = sigint_inbox_item::Entity::find_by_id(message.id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(inbox_item.location.as_deref(), Some("Робоботине"));
+        assert_eq!(inbox_item.location_v2.as_deref(), Some("|РОБОТИНЕ|"));
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn test_submit_upsert_extended_form_updates_same_organism_comment() {
+        let env = cleanup().await.unwrap();
+        let login = find_test_login(&env.dbx).await.unwrap();
+        let peer_login = mk_login(
+            &env.dbx,
+            login::ActiveModel {
+                login: Set("LegacySubmitPeer".to_string()),
+                organism_id: Set(login.organism_id),
+                sigint_zone_id: Set(login.sigint_zone_id),
+                created_at: Set(Utc::now().naive_utc()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let datasource_group =
+            find_test_datasource_group(&env.dbx).await.unwrap();
+        let now = Utc::now().naive_utc();
+        let message = mk_signal_message(
+            &env.dbx,
+            signal_message::ActiveModel {
+                body: Set(Some("legacy submit peer comment".to_string())),
+                created_at: Set(now),
+                timestamp: Set(Some(now)),
+                sender: Set(Some("legacy peer sender".to_string())),
+                message_uid: Set(None),
+                datasource_group_id: Set(Some(datasource_group.id)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        mk_sigint_comment(
+            &env.dbx,
+            sigint_comment::ActiveModel {
+                login: Set(peer_login.login.clone()),
+                signal_message_id: Set(message.id),
+                comment: Set("peer comment must stay".to_string()),
+                created_at: Set(Utc::now().naive_utc()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let inbox_message = InboxMessage::from(InboxInsertPayload {
+            text: "legacy submit current comment".to_string(),
+            extended_form: Some("current user comment".to_string()),
+            group_master_key: Some(datasource_group.group_master_key.clone()),
+            sender: Some("legacy peer sender".to_string()),
+            ..Default::default()
+        });
+        let logins = vec![login.login.clone(), peer_login.login.clone()];
+        let txn = env.dbx.begin().await.unwrap();
+
+        submit_upsert_inbox_item(
+            env.settlements.clone(),
+            &txn,
+            message.id,
+            &inbox_message,
+            &login.login,
+            &logins,
+            InboxLocationSubmitMode::PreserveTyped,
+        )
+        .await
+        .unwrap();
+        txn.commit().await.unwrap();
+
+        let peer_comment = sigint_comment::Entity::find()
+            .filter(sigint_comment::Column::SignalMessageId.eq(message.id))
+            .filter(sigint_comment::Column::Login.eq(peer_login.login.clone()))
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(peer_comment.comment, "current user comment");
+
+        let current_comment_count = sigint_comment::Entity::find()
+            .filter(sigint_comment::Column::SignalMessageId.eq(message.id))
+            .filter(sigint_comment::Column::Login.eq(login.login.clone()))
+            .count(&env.dbx)
+            .await
+            .unwrap();
+        assert_eq!(current_comment_count, 0);
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn test_upsert_editable_comment_merges_same_organism_duplicates() {
+        let env = cleanup().await.unwrap();
+        let login = find_test_login(&env.dbx).await.unwrap();
+        let peer_login = mk_login(
+            &env.dbx,
+            login::ActiveModel {
+                login: Set(format!("CommentMergePeer{}", Uuid::new_v4())),
+                organism_id: Set(login.organism_id),
+                sigint_zone_id: Set(login.sigint_zone_id),
+                created_at: Set(Utc::now().naive_utc()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let now = Utc::now().naive_utc();
+        let message = mk_signal_message(
+            &env.dbx,
+            signal_message::ActiveModel {
+                body: Set(Some("merge same organism comments".to_string())),
+                created_at: Set(now),
+                timestamp: Set(Some(now)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+        mk_sigint_comment(
+            &env.dbx,
+            sigint_comment::ActiveModel {
+                login: Set(peer_login.login.clone()),
+                signal_message_id: Set(message.id),
+                comment: Set("peer old".to_string()),
+                created_at: Set(now - Duration::minutes(2)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        mk_sigint_comment(
+            &env.dbx,
+            sigint_comment::ActiveModel {
+                login: Set(login.login.clone()),
+                signal_message_id: Set(message.id),
+                comment: Set("current old".to_string()),
+                created_at: Set(now - Duration::minutes(1)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+        let logins = vec![login.login.clone(), peer_login.login.clone()];
+        upsert_editable_sigint_comment(
+            &env.dbx,
+            message.id,
+            &login.login,
+            &logins,
+            "merged comment",
+        )
+        .await
+        .unwrap();
+
+        let comments = sigint_comment::Entity::find()
+            .filter(sigint_comment::Column::SignalMessageId.eq(message.id))
+            .all(&env.dbx)
+            .await
+            .unwrap();
+        assert_eq!(comments.len(), 1);
+        assert_eq!(comments[0].login, login.login);
+        assert_eq!(comments[0].comment, "merged comment");
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn test_delete_editable_comments_removes_same_organism_duplicates_only(
+    ) {
+        let env = cleanup().await.unwrap();
+        let login = find_test_login(&env.dbx).await.unwrap();
+        let peer_login = mk_login(
+            &env.dbx,
+            login::ActiveModel {
+                login: Set(format!("CommentDeletePeer{}", Uuid::new_v4())),
+                organism_id: Set(login.organism_id),
+                sigint_zone_id: Set(login.sigint_zone_id),
+                created_at: Set(Utc::now().naive_utc()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let other_organism = mk_organism(
+            &env.dbx,
+            organism::ActiveModel {
+                name: Set(format!("CommentDeleteOtherOrg{}", Uuid::new_v4())),
+                enabled: Set(true),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let other_login = mk_login(
+            &env.dbx,
+            login::ActiveModel {
+                login: Set(format!("CommentDeleteOther{}", Uuid::new_v4())),
+                organism_id: Set(Some(other_organism.id)),
+                sigint_zone_id: Set(login.sigint_zone_id),
+                created_at: Set(Utc::now().naive_utc()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let now = Utc::now().naive_utc();
+        let message = mk_signal_message(
+            &env.dbx,
+            signal_message::ActiveModel {
+                body: Set(Some("delete same organism comments".to_string())),
+                created_at: Set(now),
+                timestamp: Set(Some(now)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+        for (login_value, comment) in [
+            (login.login.clone(), "current comment"),
+            (peer_login.login.clone(), "peer comment"),
+            (other_login.login.clone(), "other comment"),
+        ] {
+            mk_sigint_comment(
+                &env.dbx,
+                sigint_comment::ActiveModel {
+                    login: Set(login_value),
+                    signal_message_id: Set(message.id),
+                    comment: Set(comment.to_string()),
+                    created_at: Set(now),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+        }
+
+        let logins = vec![login.login.clone(), peer_login.login.clone()];
+        delete_editable_sigint_comments(
+            &env.dbx,
+            message.id,
+            &login.login,
+            &logins,
+        )
+        .await
+        .unwrap();
+
+        let comments = sigint_comment::Entity::find()
+            .filter(sigint_comment::Column::SignalMessageId.eq(message.id))
+            .all(&env.dbx)
+            .await
+            .unwrap();
+        assert_eq!(comments.len(), 1);
+        assert_eq!(comments[0].login, other_login.login);
+        assert_eq!(comments[0].comment, "other comment");
     }
 
     #[serial]
@@ -3122,10 +3455,15 @@ mod tests {
                 .await
                 .unwrap();
 
-        let messages =
-            messages_by_id_bl(&login.login, &logins, &env, &[message.id])
-                .await
-                .unwrap();
+        let messages = messages_by_id_bl(
+            &login.login,
+            &logins,
+            &env,
+            &[message.id],
+            &messages_by_id_default_req(),
+        )
+        .await
+        .unwrap();
 
         assert_eq!(messages.len(), 1);
         let inbox_tags = messages[0]
@@ -3177,20 +3515,30 @@ mod tests {
             crate::users::get_organism_logins_by_login(&env.dbx, &login.login)
                 .await
                 .unwrap();
-        let messages =
-            messages_by_id_bl(&login.login, &logins, &env, &[message.id])
-                .await
-                .unwrap();
+        let messages = messages_by_id_bl(
+            &login.login,
+            &logins,
+            &env,
+            &[message.id],
+            &messages_by_id_default_req(),
+        )
+        .await
+        .unwrap();
         assert_eq!(messages[0].1.point_tokens.as_ref().unwrap().len(), 1);
 
         let mut palitra = palitra.into_active_model();
         palitra.is_archived = Set(true);
         palitra.update(&env.dbx).await.unwrap();
 
-        let messages =
-            messages_by_id_bl(&login.login, &logins, &env, &[message.id])
-                .await
-                .unwrap();
+        let messages = messages_by_id_bl(
+            &login.login,
+            &logins,
+            &env,
+            &[message.id],
+            &messages_by_id_default_req(),
+        )
+        .await
+        .unwrap();
         assert!(messages[0]
             .1
             .point_tokens
@@ -3282,6 +3630,266 @@ mod tests {
                     && t.organism_id == Some(other_org.id)),
             "expected tag from other login with its organism id"
         );
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn test_get_inbox_messages_uses_current_organism_extended_form() {
+        let env = cleanup().await.unwrap();
+        let login = find_test_login(&env.dbx).await.unwrap();
+        let peer_login = mk_login(
+            &env.dbx,
+            login::ActiveModel {
+                login: Set("PeerTester".to_string()),
+                organism_id: Set(login.organism_id),
+                sigint_zone_id: Set(login.sigint_zone_id),
+                created_at: Set(Utc::now().naive_utc()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let datasource_group =
+            find_test_datasource_group(&env.dbx).await.unwrap();
+
+        let current_message = mk_signal_message(
+            &env.dbx,
+            signal_message::ActiveModel {
+                body: Set(Some("current login comment".to_string())),
+                created_at: Set(Utc::now().naive_utc()),
+                timestamp: Set(Some(Utc::now().naive_utc())),
+                sender: Set(Some("sender-current".to_string())),
+                message_uid: Set(Some("uid-current".to_string())),
+                datasource_group_id: Set(Some(datasource_group.id)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        mk_signal_message_group(
+            &env.dbx,
+            signal_message_group::ActiveModel {
+                signal_message_id: Set(current_message.id),
+                group_master_key: Set(Some(
+                    datasource_group.group_master_key.clone(),
+                )),
+                sender: Set(Some("sender-current".to_string())),
+                message_uid: Set(current_message.message_uid.clone()),
+                datasource_group_id: Set(Some(datasource_group.id)),
+                created_at: Set(Utc::now().naive_utc()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        mk_sigint_inbox_item(
+            &env.dbx,
+            sigint_inbox_item::ActiveModel {
+                id: Set(current_message.id),
+                freq: Set(Some("100.100".to_string())),
+                date: Set(Some(Utc::now().date_naive().to_string())),
+                time: Set(Some(
+                    Utc::now().time().format("%H:%M:%S").to_string(),
+                )),
+                reviewed: Set(Some(true)),
+                parsed_unit_v2: Set(false),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        mk_sigint_comment(
+            &env.dbx,
+            sigint_comment::ActiveModel {
+                login: Set(login.login.clone()),
+                signal_message_id: Set(current_message.id),
+                comment: Set("my editable comment".to_string()),
+                created_at: Set(Utc::now().naive_utc()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        mk_sigint_comment(
+            &env.dbx,
+            sigint_comment::ActiveModel {
+                login: Set(peer_login.login.clone()),
+                signal_message_id: Set(current_message.id),
+                comment: Set("peer comment".to_string()),
+                created_at: Set(Utc::now().naive_utc()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+        let peer_only_message = mk_signal_message(
+            &env.dbx,
+            signal_message::ActiveModel {
+                body: Set(Some("peer only comment".to_string())),
+                created_at: Set(Utc::now().naive_utc()),
+                timestamp: Set(Some(Utc::now().naive_utc())),
+                sender: Set(Some("sender-peer-only".to_string())),
+                message_uid: Set(Some("uid-peer-only".to_string())),
+                datasource_group_id: Set(Some(datasource_group.id)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        mk_signal_message_group(
+            &env.dbx,
+            signal_message_group::ActiveModel {
+                signal_message_id: Set(peer_only_message.id),
+                group_master_key: Set(Some(
+                    datasource_group.group_master_key.clone(),
+                )),
+                sender: Set(Some("sender-peer-only".to_string())),
+                message_uid: Set(peer_only_message.message_uid.clone()),
+                datasource_group_id: Set(Some(datasource_group.id)),
+                created_at: Set(Utc::now().naive_utc()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        mk_sigint_inbox_item(
+            &env.dbx,
+            sigint_inbox_item::ActiveModel {
+                id: Set(peer_only_message.id),
+                freq: Set(Some("100.200".to_string())),
+                date: Set(Some(Utc::now().date_naive().to_string())),
+                time: Set(Some(
+                    Utc::now().time().format("%H:%M:%S").to_string(),
+                )),
+                reviewed: Set(Some(true)),
+                parsed_unit_v2: Set(false),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        mk_sigint_comment(
+            &env.dbx,
+            sigint_comment::ActiveModel {
+                login: Set(peer_login.login.clone()),
+                signal_message_id: Set(peer_only_message.id),
+                comment: Set("peer only editable comment".to_string()),
+                created_at: Set(Utc::now().naive_utc()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+        let logins = vec![login.login.clone(), peer_login.login.clone()];
+        let req = InboxMessagesReq {
+            nolimit: Some(true),
+            ..Default::default()
+        };
+        let messages = get_inbox_messages(&login.login, &logins, &env, &req)
+            .await
+            .unwrap();
+
+        let current_entry = messages
+            .iter()
+            .find(|(id, _)| *id == current_message.id)
+            .expect("current message must be returned");
+        assert_eq!(
+            current_entry.1.extended_form.as_deref(),
+            Some("my editable comment")
+        );
+        assert!(current_entry.1.message_comments.is_empty());
+
+        let peer_only_entry = messages
+            .iter()
+            .find(|(id, _)| *id == peer_only_message.id)
+            .expect("peer only message must be returned");
+        assert_eq!(
+            peer_only_entry.1.extended_form.as_deref(),
+            Some("peer only editable comment")
+        );
+        assert!(peer_only_entry.1.message_comments.is_empty());
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn test_find_sigint_comment_by_signal_message_id_and_logins_uses_organism_logins(
+    ) {
+        let env = cleanup().await.unwrap();
+        let login = find_test_login(&env.dbx).await.unwrap();
+        let peer_login = mk_login(
+            &env.dbx,
+            login::ActiveModel {
+                login: Set("PeerTester".to_string()),
+                organism_id: Set(login.organism_id),
+                sigint_zone_id: Set(login.sigint_zone_id),
+                created_at: Set(Utc::now().naive_utc()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let datasource_group =
+            find_test_datasource_group(&env.dbx).await.unwrap();
+        let message = mk_signal_message(
+            &env.dbx,
+            signal_message::ActiveModel {
+                body: Set(Some("kmz peer comment".to_string())),
+                created_at: Set(Utc::now().naive_utc()),
+                timestamp: Set(Some(Utc::now().naive_utc())),
+                sender: Set(Some("sender-kmz".to_string())),
+                message_uid: Set(Some("uid-kmz".to_string())),
+                datasource_group_id: Set(Some(datasource_group.id)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        mk_sigint_inbox_item(
+            &env.dbx,
+            sigint_inbox_item::ActiveModel {
+                id: Set(message.id),
+                freq: Set(Some("100.300".to_string())),
+                date: Set(Some(Utc::now().date_naive().to_string())),
+                time: Set(Some(
+                    Utc::now().time().format("%H:%M:%S").to_string(),
+                )),
+                reviewed: Set(Some(true)),
+                parsed_unit_v2: Set(false),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        mk_sigint_comment(
+            &env.dbx,
+            sigint_comment::ActiveModel {
+                login: Set(peer_login.login.clone()),
+                signal_message_id: Set(message.id),
+                comment: Set("peer visible comment".to_string()),
+                created_at: Set(Utc::now().naive_utc()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+        let organism_logins =
+            crate::users::get_organism_logins_by_login(&env.dbx, &login.login)
+                .await
+                .unwrap();
+        let comment = find_sigint_comment_by_signal_message_id_and_logins(
+            &env,
+            message.id,
+            &organism_logins,
+        )
+        .await
+        .unwrap()
+        .expect("organism login lookup must return peer comment");
+
+        assert_eq!(comment.login, peer_login.login);
+        assert_eq!(comment.comment, "peer visible comment");
     }
 
     #[serial]

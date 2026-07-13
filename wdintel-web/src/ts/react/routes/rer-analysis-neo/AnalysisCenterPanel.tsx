@@ -199,7 +199,6 @@ export function AnalysisCenterPanel({
             onToggleMessageTag={page.onToggleMessageTag}
             onAddFrequencyToFilter={page.addFrequencyToFilter}
             profiles={page.profiles}
-            users={page.users}
             tagsMap={page.tagsMap}
             tagsOrder={page.tagsOrder}
             tagsLoading={page.filtersLoading && Object.keys(page.tagsMap).length === 0}

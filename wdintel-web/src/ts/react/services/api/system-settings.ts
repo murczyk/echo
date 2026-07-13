@@ -17,11 +17,14 @@ type SystemSettingsItemRaw = {
   default_neo_analysis?: boolean;
   autofix_echoim_missing_messages?: boolean;
   cyber_echo_enabled?: boolean;
+  sigint_comment_parsing_enabled?: boolean;
+  do_not_store_duplicate_echoim_failures?: boolean;
   peleng_bounds_enabled?: boolean;
   peleng_bounds_top_left_lat?: number | null;
   peleng_bounds_top_left_lng?: number | null;
   peleng_bounds_bottom_right_lat?: number | null;
   peleng_bounds_bottom_right_lng?: number | null;
+  echo_restapi_error_discord_webhook_url?: string | null;
 };
 
 type SystemSettingsCurrentRspRaw = {
@@ -37,6 +40,8 @@ type SystemSettingsCurrentRspRaw = {
   default_neo_analysis?: boolean;
   autofix_echoim_missing_messages?: boolean;
   cyber_echo_enabled?: boolean;
+  sigint_comment_parsing_enabled?: boolean;
+  do_not_store_duplicate_echoim_failures?: boolean;
   peleng_bounds_enabled?: boolean;
   peleng_bounds_top_left_lat?: number | null;
   peleng_bounds_top_left_lng?: number | null;
@@ -60,11 +65,14 @@ type CreateSystemSettingsReqRaw = {
   default_neo_analysis: boolean;
   autofix_echoim_missing_messages: boolean;
   cyber_echo_enabled: boolean;
+  sigint_comment_parsing_enabled: boolean;
+  do_not_store_duplicate_echoim_failures: boolean;
   peleng_bounds_enabled: boolean;
   peleng_bounds_top_left_lat: number | null;
   peleng_bounds_top_left_lng: number | null;
   peleng_bounds_bottom_right_lat: number | null;
   peleng_bounds_bottom_right_lng: number | null;
+  echo_restapi_error_discord_webhook_url: string | null;
 };
 
 type ActivateSystemSettingsReqRaw = {
@@ -88,11 +96,14 @@ export type SystemSettingsItem = {
   defaultNeoAnalysis: boolean;
   autofixEchoimMissingMessages: boolean;
   cyberEchoEnabled: boolean;
+  sigintCommentParsingEnabled: boolean;
+  doNotStoreDuplicateEchoimFailures: boolean;
   pelengBoundsEnabled: boolean;
   pelengBoundsTopLeftLat: number | null;
   pelengBoundsTopLeftLng: number | null;
   pelengBoundsBottomRightLat: number | null;
   pelengBoundsBottomRightLng: number | null;
+  echoRestapiErrorDiscordWebhookUrl: string | null;
 };
 
 export type SystemSettingsCurrent = {
@@ -108,6 +119,8 @@ export type SystemSettingsCurrent = {
   defaultNeoAnalysis: boolean;
   autofixEchoimMissingMessages: boolean;
   cyberEchoEnabled: boolean;
+  sigintCommentParsingEnabled: boolean;
+  doNotStoreDuplicateEchoimFailures: boolean;
   pelengBoundsEnabled: boolean;
   pelengBoundsTopLeftLat: number | null;
   pelengBoundsTopLeftLng: number | null;
@@ -127,11 +140,14 @@ export type CreateSystemSettingsInput = {
   defaultNeoAnalysis: boolean;
   autofixEchoimMissingMessages: boolean;
   cyberEchoEnabled: boolean;
+  sigintCommentParsingEnabled: boolean;
+  doNotStoreDuplicateEchoimFailures: boolean;
   pelengBoundsEnabled: boolean;
   pelengBoundsTopLeftLat: number | null;
   pelengBoundsTopLeftLng: number | null;
   pelengBoundsBottomRightLat: number | null;
   pelengBoundsBottomRightLng: number | null;
+  echoRestapiErrorDiscordWebhookUrl: string | null;
 };
 
 function normalizeItem(raw: SystemSettingsItemRaw): SystemSettingsItem {
@@ -152,11 +168,14 @@ function normalizeItem(raw: SystemSettingsItemRaw): SystemSettingsItem {
     defaultNeoAnalysis: raw.default_neo_analysis ?? false,
     autofixEchoimMissingMessages: raw.autofix_echoim_missing_messages ?? false,
     cyberEchoEnabled: raw.cyber_echo_enabled ?? false,
+    sigintCommentParsingEnabled: raw.sigint_comment_parsing_enabled ?? false,
+    doNotStoreDuplicateEchoimFailures: raw.do_not_store_duplicate_echoim_failures ?? false,
     pelengBoundsEnabled: raw.peleng_bounds_enabled ?? false,
     pelengBoundsTopLeftLat: raw.peleng_bounds_top_left_lat ?? null,
     pelengBoundsTopLeftLng: raw.peleng_bounds_top_left_lng ?? null,
     pelengBoundsBottomRightLat: raw.peleng_bounds_bottom_right_lat ?? null,
     pelengBoundsBottomRightLng: raw.peleng_bounds_bottom_right_lng ?? null,
+    echoRestapiErrorDiscordWebhookUrl: raw.echo_restapi_error_discord_webhook_url ?? null,
   };
 }
 
@@ -174,6 +193,8 @@ function normalizeCurrent(raw: SystemSettingsCurrentRspRaw): SystemSettingsCurre
     defaultNeoAnalysis: raw.default_neo_analysis ?? false,
     autofixEchoimMissingMessages: raw.autofix_echoim_missing_messages ?? false,
     cyberEchoEnabled: raw.cyber_echo_enabled ?? false,
+    sigintCommentParsingEnabled: raw.sigint_comment_parsing_enabled ?? false,
+    doNotStoreDuplicateEchoimFailures: raw.do_not_store_duplicate_echoim_failures ?? false,
     pelengBoundsEnabled: raw.peleng_bounds_enabled ?? false,
     pelengBoundsTopLeftLat: raw.peleng_bounds_top_left_lat ?? null,
     pelengBoundsTopLeftLng: raw.peleng_bounds_top_left_lng ?? null,
@@ -202,11 +223,14 @@ export async function createSystemSettings(
     default_neo_analysis: input.defaultNeoAnalysis,
     autofix_echoim_missing_messages: input.autofixEchoimMissingMessages,
     cyber_echo_enabled: input.cyberEchoEnabled,
+    sigint_comment_parsing_enabled: input.sigintCommentParsingEnabled,
+    do_not_store_duplicate_echoim_failures: input.doNotStoreDuplicateEchoimFailures,
     peleng_bounds_enabled: input.pelengBoundsEnabled,
     peleng_bounds_top_left_lat: input.pelengBoundsTopLeftLat,
     peleng_bounds_top_left_lng: input.pelengBoundsTopLeftLng,
     peleng_bounds_bottom_right_lat: input.pelengBoundsBottomRightLat,
     peleng_bounds_bottom_right_lng: input.pelengBoundsBottomRightLng,
+    echo_restapi_error_discord_webhook_url: input.echoRestapiErrorDiscordWebhookUrl,
   };
   const data = await postJson<SystemSettingsItemRaw>('/api/admin/system-settings/create', req);
   return normalizeItem(data);

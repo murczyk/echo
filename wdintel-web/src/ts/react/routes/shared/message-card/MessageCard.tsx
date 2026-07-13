@@ -1,4 +1,4 @@
-import { Box, Tooltip, Typography } from '@mui/material';
+import { Tooltip, Typography } from '@mui/material';
 import dayjs from 'dayjs';
 import customParseFormat from 'dayjs/plugin/customParseFormat';
 import { memo, useMemo } from 'react';
@@ -279,8 +279,7 @@ function MessageCardComponent({
     metadataTrigger,
     excludeMenuOptions,
   };
-  const visibleMessageComments =
-    displayMode === 'analysis' ? messageComments : EMPTY_MESSAGE_COMMENTS;
+  const visibleMessageComments = messageComments;
 
   return (
     <li
@@ -316,6 +315,7 @@ function MessageCardComponent({
           networks={networks}
           unitsMap={unitsMap}
           messageComments={visibleMessageComments}
+          signalMessageSenderLabel={senderName?.trim() ? senderName : msg.sender}
           searchText={searchText}
         />
       </div>

@@ -13,6 +13,7 @@ import {
 import type {
   CallsignInfoRes,
   InboxMessage,
+  MessageComment,
   Network,
   RerDutyQueryStateWf as RerDutyFeedFilterState,
   SignalGroupEntry,
@@ -44,7 +45,18 @@ const DUTY_FEED_AT_BOTTOM_THRESHOLD_PX = 25;
 
 // Hoisted stable empty array: passing `[]` inline as a prop would allocate a fresh reference
 // every render, defeating React.memo / useMemo bailouts downstream in MessageCard.
-const EMPTY_MESSAGE_COMMENTS: never[] = [];
+const EMPTY_MESSAGE_COMMENTS: MessageComment[] = [];
+
+function filterOwnMessageComments(
+  messageComments: MessageComment[] | null | undefined,
+  authUserName: string | null,
+): MessageComment[] {
+  if (!messageComments || messageComments.length === 0) return EMPTY_MESSAGE_COMMENTS;
+  const activeLogin = authUserName?.trim();
+  if (!activeLogin) return messageComments;
+  const filtered = messageComments.filter((comment) => comment.login.trim() !== activeLogin);
+  return filtered.length === 0 ? EMPTY_MESSAGE_COMMENTS : filtered;
+}
 
 export type FeedColumnContentHandle = {
   scrollToBottom: (behavior?: ScrollBehavior) => void;
@@ -135,6 +147,11 @@ const DutyMessageCardItem = memo(function DutyMessageCardItem({
     networks,
   });
 
+  const messageComments = useMemo(
+    () => filterOwnMessageComments(msg.messageComments, authUserName),
+    [msg.messageComments, authUserName],
+  );
+
   return (
     <DutyMessageCard
       id={id}
@@ -150,7 +167,7 @@ const DutyMessageCardItem = memo(function DutyMessageCardItem({
       senderName={labels.senderName}
       copiedFeedbackId={copiedFeedbackId}
       networkDisplayMap={networkDisplayMap}
-      messageComments={EMPTY_MESSAGE_COMMENTS}
+      messageComments={messageComments}
       networkMap={networkMap}
       unitsMap={unitsMap}
       callsignInfoMap={callsignInfoMap}

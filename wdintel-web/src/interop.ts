@@ -785,6 +785,16 @@ export const onReady = ({ app, env }) => {
     });
   }
 
+  if (app.ports && app.ports.shared_dispatchInboxChanged) {
+    app.ports.shared_dispatchInboxChanged.subscribe((messageIds: number[]) => {
+      window.dispatchEvent(
+        new CustomEvent('echo-inbox-changed', {
+          detail: { messageIds },
+        }),
+      );
+    });
+  }
+
   if (app.ports && app.ports.shared_getLocation && app.ports.shared_getLocationRes) {
     app.ports.shared_getLocation.subscribe(() => {
       let loc = window.location;

@@ -10,13 +10,26 @@ import { useRerDutyFeeds } from './useRerDutyFeeds';
 
 const hoisted = vi.hoisted(() => ({
   fetchAnalysisCallsignInfos: vi.fn(),
+  fetchMessagesByIds: vi.fn(),
   fetchUserSettings: vi.fn(),
   USER_SETTINGS_UPDATED_EVENT: 'user-settings-updated',
   currentSystemSettings: vi.fn(),
   attachDutyNotificationAudioPrimingListeners: vi.fn(),
+  loadFeedInitialMessages: vi.fn(),
   mergeResolvedCallsigns: vi.fn(),
   setFeedErrorMock: vi.fn(),
   applyFilterMock: vi.fn(),
+  onInboxChangedMessageIds: vi.fn(),
+  setMessageFeeds: null as null | React.Dispatch<
+    React.SetStateAction<
+      Array<{
+        id: string;
+        items: Array<[number, { textMarked?: Array<{ CNCallsignC?: { text?: string } }> }]>;
+        filter: Record<string, unknown>;
+      }>
+    >
+  >,
+  feedLoadGenerations: {} as Record<string, number>,
   messageFeeds: [] as Array<{
     id: string;
     items: Array<[number, { textMarked?: Array<{ CNCallsignC?: { text?: string } }> }]>;
@@ -103,17 +116,53 @@ vi.mock('./useRerDutyMessageActions', () => ({
   }),
 }));
 
+vi.mock('../shared/useInboxChangedMessageIds', () => ({
+  useInboxChangedMessageIds: ({
+    onMessageIds,
+  }: {
+    onMessageIds: (messageIds: number[]) => void | Promise<void>;
+  }) => {
+    hoisted.onInboxChangedMessageIds = onMessageIds;
+  },
+}));
+
+vi.mock('../../services/api/inbox-messages', () => ({
+  fetchMessagesByIds: hoisted.fetchMessagesByIds,
+}));
+
 vi.mock('./useRerDutyFeedState', () => ({
   useRerDutyFeedState: () => {
+    const [messageFeeds, setMessageFeeds] = React.useState(hoisted.messageFeeds);
     const [callsignInfoMap, setCallsignInfoMap] = React.useState<
       Record<string, { callsign: string; res: unknown[] }>
     >(hoisted.initialCallsignInfoMap);
     const [inboxCallsignInfoMap, setInboxCallsignInfoMap] = React.useState<
       Record<string, { callsign: string; res: unknown[] }>
     >(hoisted.initialInboxCallsignInfoMap);
+    hoisted.loadFeedInitialMessages.mockImplementation((feedId: string) => {
+      setMessageFeeds((current) =>
+        current.map((feed) =>
+          feed.id === feedId
+            ? {
+                ...feed,
+                items: [[2, { text: 'reloaded', unit: 'reloaded-unit' } as never]],
+                readIds: new Set<number>(),
+                unreadCount: 0,
+                firstItemIndex: 0,
+                referenceTimeMs: 0,
+                loading: false,
+                loadingOlder: false,
+                hasReachedStart: false,
+              }
+            : feed,
+        ),
+      );
+      return Promise.resolve();
+    });
+    hoisted.setMessageFeeds = setMessageFeeds;
 
     return {
-      messageFeeds: hoisted.messageFeeds,
+      messageFeeds,
       inboxCallsignInfoMap,
       callsignInfoMap,
       mergeResolvedCallsigns: (items: Array<{ callsign: string; res: unknown[] }>) => {
@@ -129,20 +178,39 @@ vi.mock('./useRerDutyFeedState', () => ({
       },
       setError: hoisted.setFeedErrorMock,
       setWatchModeByFeedId: vi.fn(),
-      setMessageFeeds: vi.fn(),
+      setMessageFeeds: (next) => {
+        setMessageFeeds(next);
+      },
       nearBottomByFeedIdRef: { current: {} },
       atBottomByFeedIdRef: { current: {} },
       columnRefsRef: { current: {} },
       error: null,
       createMessageFeed: vi.fn(),
       removeMessageFeed: vi.fn(),
-      loadFeedInitialMessages: vi.fn(),
+      loadFeedInitialMessages: hoisted.loadFeedInitialMessages,
       loadFeedOlderMessages: vi.fn(),
       applyFilter: hoisted.applyFilterMock,
       toggleGroup: vi.fn(),
       selectAllGroups: vi.fn(),
       loadFeedNewerMessages: vi.fn(),
-      buildReqForFeed: vi.fn(),
+      getFeedLoadGeneration: (feedId: string) => hoisted.feedLoadGenerations[feedId] ?? 0,
+      buildReqForFeed: vi.fn(
+        (
+          feed: {
+            id: string;
+            filter: Record<string, unknown>;
+            highlightSignalsEnabled?: boolean;
+            onlyMyUnitTagsEnabled?: boolean;
+          },
+          opts: { loadLatest?: boolean },
+        ) => ({
+          feedId: feed.id,
+          filter: feed.filter,
+          loadLatest: opts?.loadLatest ?? null,
+          highlightSignals: feed.highlightSignalsEnabled ?? false,
+          reportTagsOnlyThisUnit: feed.onlyMyUnitTagsEnabled ? true : null,
+        }),
+      ),
       showArrowResult: vi.fn(),
       setLoadingNewerFeedIds: vi.fn(),
       watchModeByFeedId: {},
@@ -250,6 +318,9 @@ describe('useRerDutyFeeds', () => {
     vi.useFakeTimers();
     vi.clearAllMocks();
     latest = null;
+    hoisted.onInboxChangedMessageIds = vi.fn();
+    hoisted.loadFeedInitialMessages.mockReset();
+    hoisted.feedLoadGenerations = {};
     hoisted.initialCallsignInfoMap = {};
     hoisted.initialInboxCallsignInfoMap = {};
     hoisted.messageFeeds = [
@@ -266,6 +337,7 @@ describe('useRerDutyFeeds', () => {
         filter: {},
       },
     ];
+    hoisted.fetchMessagesByIds.mockReset();
     hoisted.fetchAnalysisCallsignInfos.mockReset();
     hoisted.applyFilterMock.mockReset();
     hoisted.fetchUserSettings.mockResolvedValue({ disableAutoScroll: false });
@@ -438,5 +510,278 @@ describe('useRerDutyFeeds', () => {
 
     expect(hoisted.fetchAnalysisCallsignInfos).toHaveBeenCalledTimes(2);
     expect(hoisted.fetchAnalysisCallsignInfos).toHaveBeenNthCalledWith(2, ['борода']);
+  });
+});
+
+describe('useRerDutyFeeds inbox refreshes', () => {
+  it('skips fetching when no visible ids overlap', async () => {
+    const localContainer = document.createElement('div');
+    const localRoot = createRoot(localContainer);
+    hoisted.messageFeeds = [
+      {
+        id: 'mf-0',
+        items: [[1, { textMarked: [], tags: [1], inboxTags: [] }]],
+        filter: {},
+      },
+    ] as never;
+
+    document.body.appendChild(localContainer);
+    try {
+      await act(async () => {
+        localRoot.render(React.createElement(TestHarness));
+      });
+      await act(async () => {
+        await flushMicrotasks();
+      });
+      await act(async () => {
+        await hoisted.onInboxChangedMessageIds([9]);
+      });
+
+      expect(hoisted.fetchMessagesByIds).not.toHaveBeenCalled();
+    } finally {
+      await act(async () => {
+        localRoot.unmount();
+      });
+      localContainer.remove();
+    }
+  });
+
+  it('refreshes visible message copies with feed request context', async () => {
+    const localContainer = document.createElement('div');
+    const localRoot = createRoot(localContainer);
+    const currentMessage = {
+      text: 'current',
+      textMarked: [{ CNTextC: { text: 'marked' } }],
+      keywordTokens: [{ text: 'keyword' }],
+      pointTokens: [{ text: 'point', etalon: 'point-old' }],
+      tags: [1],
+      inboxTags: [{ id: 1, tagId: 1, confidence: 1, login: null, model: null, organismId: null }],
+    } as never;
+    const currentOtherMessage = {
+      text: 'other',
+      textMarked: [{ CNTextC: { text: 'other marked' } }],
+      keywordTokens: [{ text: 'other keyword' }],
+      pointTokens: [{ text: 'other point', etalon: 'other-point' }],
+      tags: [1],
+      inboxTags: [{ id: 1, tagId: 1, confidence: 1, login: null, model: null, organismId: null }],
+    } as never;
+    const updatedMessage = {
+      text: 'updated',
+      textMarked: [{ CNTextC: { text: 'new marked' } }],
+      keywordTokens: [{ text: 'new keyword' }],
+      pointTokens: [{ text: 'new point', etalon: 'point-new' }],
+      tags: [2],
+      inboxTags: [{ id: 2, tagId: 2, confidence: 1, login: null, model: null, organismId: null }],
+    } as never;
+    hoisted.messageFeeds = [
+      {
+        id: 'mf-0',
+        items: [
+          [1, currentOtherMessage],
+          [2, currentMessage],
+        ],
+        filter: {},
+        highlightSignalsEnabled: true,
+        onlyMyUnitTagsEnabled: true,
+        unreadCount: 4,
+        readIds: new Set<number>([1]),
+      },
+      {
+        id: 'mf-1',
+        items: [[2, currentMessage]],
+        filter: {},
+        unreadCount: 1,
+        readIds: new Set<number>(),
+      },
+    ] as never;
+    hoisted.fetchMessagesByIds.mockResolvedValue([[2, updatedMessage]]);
+
+    document.body.appendChild(localContainer);
+    try {
+      await act(async () => {
+        localRoot.render(React.createElement(TestHarness));
+      });
+      await act(async () => {
+        await flushMicrotasks();
+      });
+      await act(async () => {
+        await hoisted.onInboxChangedMessageIds([2]);
+      });
+
+      expect(hoisted.fetchMessagesByIds).toHaveBeenCalledWith(
+        [2],
+        expect.objectContaining({
+          feedId: 'mf-0',
+          loadLatest: true,
+          highlightSignals: true,
+          reportTagsOnlyThisUnit: true,
+        }),
+      );
+      expect(latest?.messageFeeds[0].items[1]?.[1].text).toBe('updated');
+      expect(latest?.messageFeeds[0].items[1]?.[1].tags).toEqual([2]);
+      expect(latest?.messageFeeds[0].items[1]?.[1].inboxTags).toEqual([
+        { id: 2, tagId: 2, confidence: 1, login: null, model: null, organismId: null },
+      ]);
+      expect(latest?.messageFeeds[0].items[1]?.[1].keywordTokens).toBe(
+        updatedMessage.keywordTokens,
+      );
+      expect(latest?.messageFeeds[0].items[1]?.[1].textMarked).toBe(updatedMessage.textMarked);
+      expect(latest?.messageFeeds[0].items[1]?.[1].pointTokens).toBe(updatedMessage.pointTokens);
+      expect(latest?.messageFeeds[1].items[0]?.[1].text).toBe('updated');
+      expect(latest?.messageFeeds[1].items[0]?.[1].tags).toEqual([2]);
+      expect(hoisted.loadFeedInitialMessages).not.toHaveBeenCalled();
+      expect(latest?.messageFeeds[0].unreadCount).toBe(4);
+      expect(latest?.messageFeeds[0].readIds).toBe(hoisted.messageFeeds[0].readIds);
+    } finally {
+      await act(async () => {
+        localRoot.unmount();
+      });
+      localContainer.remove();
+    }
+  });
+
+  it('skips a stale refresh response when the feed request signature changed', async () => {
+    const localContainer = document.createElement('div');
+    const localRoot = createRoot(localContainer);
+    let resolveFetch!: (value: never) => void;
+    hoisted.messageFeeds = [
+      {
+        id: 'mf-0',
+        items: [[2, { text: 'current', tags: [1], inboxTags: [] }]],
+        filter: {
+          highlightKeywordSetId: null,
+        },
+      },
+    ] as never;
+    hoisted.fetchMessagesByIds.mockImplementationOnce(
+      () =>
+        new Promise<never>((resolve) => {
+          resolveFetch = resolve;
+        }),
+    );
+
+    document.body.appendChild(localContainer);
+    try {
+      await act(async () => {
+        localRoot.render(React.createElement(TestHarness));
+      });
+      await act(async () => {
+        await flushMicrotasks();
+      });
+
+      const refreshPromise = act(async () => {
+        await hoisted.onInboxChangedMessageIds([2]);
+      });
+
+      await act(async () => {
+        hoisted.setMessageFeeds?.((current) =>
+          current.map((feed) =>
+            feed.id === 'mf-0'
+              ? {
+                  ...feed,
+                  filter: { ...feed.filter, highlightKeywordSetId: 7 },
+                }
+              : feed,
+          ),
+        );
+      });
+
+      await act(async () => {
+        resolveFetch([] as never);
+        await flushMicrotasks();
+      });
+      await refreshPromise;
+
+      expect(latest?.messageFeeds[0].filter).toMatchObject({ highlightKeywordSetId: 7 });
+      expect(latest?.messageFeeds[0].items[0]?.[1].text).toBe('current');
+    } finally {
+      await act(async () => {
+        localRoot.unmount();
+      });
+      localContainer.remove();
+    }
+  });
+
+  it('skips a stale refresh response when the feed load generation changed', async () => {
+    const localContainer = document.createElement('div');
+    const localRoot = createRoot(localContainer);
+    let resolveFetch!: (value: never) => void;
+    hoisted.messageFeeds = [
+      {
+        id: 'mf-0',
+        items: [[2, { text: 'current', tags: [1], inboxTags: [] }]],
+        filter: {},
+      },
+    ] as never;
+    hoisted.feedLoadGenerations = { 'mf-0': 1 };
+    hoisted.fetchMessagesByIds.mockImplementationOnce(
+      () =>
+        new Promise<never>((resolve) => {
+          resolveFetch = resolve;
+        }),
+    );
+
+    document.body.appendChild(localContainer);
+    try {
+      await act(async () => {
+        localRoot.render(React.createElement(TestHarness));
+      });
+      await act(async () => {
+        await flushMicrotasks();
+      });
+
+      const refreshPromise = act(async () => {
+        await hoisted.onInboxChangedMessageIds([2]);
+      });
+
+      hoisted.feedLoadGenerations = { 'mf-0': 2 };
+
+      await act(async () => {
+        resolveFetch([[2, { text: 'stale', tags: [2], inboxTags: [] }]] as never);
+        await flushMicrotasks();
+      });
+      await refreshPromise;
+
+      expect(latest?.messageFeeds[0].items[0]?.[1].text).toBe('current');
+    } finally {
+      await act(async () => {
+        localRoot.unmount();
+      });
+      localContainer.remove();
+    }
+  });
+
+  it('surfaces fetch failures and leaves feed state unchanged', async () => {
+    const localContainer = document.createElement('div');
+    const localRoot = createRoot(localContainer);
+    hoisted.messageFeeds = [
+      {
+        id: 'mf-0',
+        items: [[1, { text: 'current', tags: [1], inboxTags: [] }]],
+        filter: {},
+      },
+    ] as never;
+    hoisted.fetchMessagesByIds.mockRejectedValueOnce(new Error('boom'));
+
+    document.body.appendChild(localContainer);
+    try {
+      await act(async () => {
+        localRoot.render(React.createElement(TestHarness));
+      });
+      await act(async () => {
+        await flushMicrotasks();
+      });
+      await act(async () => {
+        await hoisted.onInboxChangedMessageIds([1]);
+      });
+
+      expect(hoisted.setFeedErrorMock).toHaveBeenCalledWith('boom');
+      expect(latest?.messageFeeds[0].items[0]?.[1].text).toBe('current');
+    } finally {
+      await act(async () => {
+        localRoot.unmount();
+      });
+      localContainer.remove();
+    }
   });
 });

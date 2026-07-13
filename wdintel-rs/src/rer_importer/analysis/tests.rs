@@ -1084,6 +1084,54 @@ async fn rer_analysis_search_matches_plain_prefix() {
 
 #[tokio::test]
 #[serial]
+async fn rer_analysis_search_matches_dotted_body_text() {
+    let fixture = mk_rer_analysis_fixture().await.unwrap();
+    mk_analysis_message(
+        &fixture.env.dbx,
+        r#"Отримано з поста "DOT.HEADER"
+--------------------------------------
+16.02, 22:44:57
+432.1500
+УКХ р/м
+
+BODY.DOT передали координати"#,
+        "999.9",
+        test_dt(2026, 3, 1, 10, 9),
+        &[&fixture.alpha],
+        &[],
+        false,
+    )
+    .await
+    .unwrap();
+
+    let mut req = analysis_stats_req0(&fixture);
+    req.search = Some("BODY.DOT".to_string());
+    assert_eq!(
+        fetch_selected_count_for_req(&fixture.env, &req)
+            .await
+            .unwrap(),
+        1
+    );
+
+    req.search = Some(r#""BODY.DOT""#.to_string());
+    assert_eq!(
+        fetch_selected_count_for_req(&fixture.env, &req)
+            .await
+            .unwrap(),
+        1
+    );
+
+    req.search = Some(r#""DOT.HEADER""#.to_string());
+    assert_eq!(
+        fetch_selected_count_for_req(&fixture.env, &req)
+            .await
+            .unwrap(),
+        0
+    );
+}
+
+#[tokio::test]
+#[serial]
 async fn rer_analysis_group_stats_hide_unrelated_and_secret_groups() {
     let fixture = mk_rer_analysis_fixture().await.unwrap();
     let counts = fetch_group_counts_with_secret_for_req(
@@ -2334,6 +2382,78 @@ async fn rer_analysis_comments_api_returns_other_organism_comment_for_accessible
     assert_eq!(entry.comments[0].login, other_org_login.login);
     assert_eq!(entry.comments[0].comment, "other organism visible comment");
     assert_eq!(entry.comments[0].sigint_post_name, None);
+}
+
+#[tokio::test]
+#[serial]
+async fn rer_analysis_comments_api_hides_same_organism_editable_comment() {
+    let fixture = mk_rer_analysis_fixture().await.unwrap();
+    let db = &fixture.env.dbx;
+    let login = find_test_login(db).await.unwrap();
+    let same_org_login = mk_login(
+        db,
+        login::ActiveModel {
+            login: Set("CommenterSameOrg".to_string()),
+            organism_id: Set(login.organism_id),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let message = mk_analysis_message(
+        db,
+        "msg-same-org-comment-api",
+        "940.8",
+        test_dt(2026, 3, 1, 10, 5),
+        &[&fixture.alpha],
+        &[],
+        false,
+    )
+    .await
+    .unwrap();
+    mk_sigint_comment(
+        db,
+        sigint_comment::ActiveModel {
+            login: Set(same_org_login.login.clone()),
+            signal_message_id: Set(message.id),
+            comment: Set("same organism editable comment".to_string()),
+            created_at: Set(test_dt(2026, 3, 1, 10, 6)),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+
+    let logins = crate::users::get_organism_logins_by_login(db, &login.login)
+        .await
+        .unwrap();
+    let messages = crate::rer_importer::inbox::get_inbox_messages(
+        &login.login,
+        &logins,
+        &fixture.env,
+        &crate::rer_importer::types::InboxMessagesReq {
+            since_date_inclusive_ms: Some(fixture.since_date_inclusive_ms),
+            till_date_inclusive_ms: Some(fixture.till_date_noninclusive_ms),
+            or_with_extended_form: Some(true),
+            nolimit: Some(true),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let entry = messages
+        .iter()
+        .find(|(id, _)| *id == message.id)
+        .expect("message must be visible");
+    assert_eq!(
+        entry.1.extended_form.as_deref(),
+        Some("same organism editable comment")
+    );
+
+    let comments = batch_message_comments_bl(db, &login.login, &[message.id])
+        .await
+        .unwrap();
+    assert!(comments.data.is_empty());
 }
 
 #[tokio::test]

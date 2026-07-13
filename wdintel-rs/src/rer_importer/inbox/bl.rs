@@ -27,6 +27,12 @@ use sea_orm::*;
 use sea_query::Expr;
 use sqlx::Row;
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum InboxLocationSubmitMode {
+    PreserveTyped,
+    Parse,
+}
+
 #[derive(Debug, FromQueryResult)]
 pub struct InboxMessageDesc {
     pub id: i64,
@@ -42,6 +48,7 @@ pub struct InboxMessageDesc {
     pub signal_tokens: Option<serde_json::Value>,
     #[allow(dead_code)]
     pub keyword_tokens: Option<serde_json::Value>,
+    pub location: Option<String>,
     pub location_v2: Option<String>,
     pub date: Option<String>,
     pub time: Option<String>,
@@ -99,6 +106,20 @@ pub async fn aggregate_to_inbox_messages(
     let dbx_raw = env.dbx.get_postgres_connection_pool();
 
     let message_ids: Vec<i64> = messages.iter().map(|m| m.id).collect();
+    let message_comments =
+        crate::rer_importer::analysis::batch_message_comments_bl(
+            &env.dbx,
+            login,
+            &message_ids,
+        )
+        .await
+        .c(h!())?;
+    let message_comments_by_id: HashMap<i64, Vec<MessageComment>> =
+        message_comments
+            .data
+            .into_iter()
+            .map(|entry| (entry.message_id, entry.comments))
+            .collect();
     let important_ids = sigint_important::Entity::find()
         .filter(
             sigint_important::Column::SignalMessageId
@@ -237,7 +258,9 @@ pub async fn aggregate_to_inbox_messages(
     };
 
     let comment_parsing_enabled =
-        env.config.sigint_comment_parsing_enabled()?;
+        crate::system_settings::sigint_comment_parsing_enabled(&env.dbx)
+            .await
+            .c(h!())?;
 
     for message in messages {
         // for message in messages {
@@ -360,14 +383,15 @@ pub async fn aggregate_to_inbox_messages(
                 highlight_searchres: req.highlight_searchres,
             },
         )?;
-        let m_comment = find_sigint_comment_by_signal_message_id_and_logins(
-            env, message.id, logins,
-        )
-        .await?;
-        let location_v2 = match message.location_v2.clone() {
-            None => None,
-            Some(location) => Some(to_location_list(&location).join(", ")),
-        };
+        let m_comment =
+            find_editable_sigint_comment_by_signal_message_id_and_logins(
+                &env.dbx, message.id, login, logins,
+            )
+            .await?;
+        let location = format_inbox_message_location(
+            message.location,
+            message.location_v2,
+        );
         let network_ids = messages_networks.get(&message.id).cloned();
 
         res.push((
@@ -394,6 +418,10 @@ pub async fn aggregate_to_inbox_messages(
                     .and_then(|(entry, _)| entry.group_master_key.clone()),
                 sender,
                 extended_form: m_comment.as_ref().map(|x| x.comment.clone()),
+                message_comments: message_comments_by_id
+                    .get(&message.id)
+                    .cloned()
+                    .unwrap_or_default(),
                 unit: message.unit_v2.clone(),
                 no_headers_body: Some(no_headers_body),
                 callsign_tokens: m_callsign_tokens,
@@ -407,7 +435,7 @@ pub async fn aggregate_to_inbox_messages(
                     .as_ref()
                     .and_then(|(_, datasource_group)| datasource_group.as_ref())
                     .map(|dg| dg.datasource_id),
-                location: location_v2,
+                location,
                 tags: inbox_tag_ids,
                 callsigns_alg2: from_m_val_vec(message.callsigns_alg2.clone())?,
                 network_ids,
@@ -428,19 +456,167 @@ pub async fn aggregate_to_inbox_messages(
     Ok(res)
 }
 
-pub(crate) async fn find_sigint_comment_by_signal_message_id_and_logins(
-    env: &Env,
+fn comment_ownership_logins(login: &str, logins: &[String]) -> Vec<String> {
+    let mut res = vec![login.to_string()];
+    for login in logins {
+        if !res.contains(login) {
+            res.push(login.clone());
+        }
+    }
+    res
+}
+
+pub(crate) async fn find_editable_sigint_comments_by_signal_message_id_and_logins<
+    'a,
+    'async_trait,
+    C,
+>(
+    db: &'a C,
     item_id: i64,
-    logins: &Vec<String>,
-) -> Result<Option<sigint_comment::Model>, AppError> {
-    let m_comment = sigint_comment::Entity::find()
+    login: &str,
+    logins: &[String],
+) -> Result<Vec<sigint_comment::Model>, AppError>
+where
+    C: ConnectionTrait + 'async_trait,
+{
+    let owner_logins = comment_ownership_logins(login, logins);
+    let mut comments = sigint_comment::Entity::find()
         .filter(sigint_comment::Column::SignalMessageId.eq(item_id))
-        .filter(sigint_comment::Column::Login.eq_any(logins.clone()))
-        .one(&env.dbx)
+        .filter(sigint_comment::Column::Login.eq_any(owner_logins))
+        .filter(sigint_comment::Column::SigintPostId.is_null())
+        .all(db)
         .await
         .c(h!())?;
 
-    Ok(m_comment)
+    comments.sort_by(|a, b| {
+        let a_rank = if a.login == login { 0 } else { 1 };
+        let b_rank = if b.login == login { 0 } else { 1 };
+        a_rank
+            .cmp(&b_rank)
+            .then(a.created_at.cmp(&b.created_at))
+            .then(a.id.cmp(&b.id))
+    });
+
+    Ok(comments)
+}
+
+pub(crate) async fn find_editable_sigint_comment_by_signal_message_id_and_logins<
+    'a,
+    'async_trait,
+    C,
+>(
+    db: &'a C,
+    item_id: i64,
+    login: &str,
+    logins: &[String],
+) -> Result<Option<sigint_comment::Model>, AppError>
+where
+    C: ConnectionTrait + 'async_trait,
+{
+    Ok(
+        find_editable_sigint_comments_by_signal_message_id_and_logins(
+            db, item_id, login, logins,
+        )
+        .await?
+        .into_iter()
+        .next(),
+    )
+}
+
+pub(crate) async fn upsert_editable_sigint_comment<'a, 'async_trait, C>(
+    db: &'a C,
+    item_id: i64,
+    login: &str,
+    logins: &[String],
+    comment: &str,
+) -> Result<(), AppError>
+where
+    C: ConnectionTrait + 'async_trait,
+{
+    let mut comments =
+        find_editable_sigint_comments_by_signal_message_id_and_logins(
+            db, item_id, login, logins,
+        )
+        .await?;
+    let Some(comment_to_update) = comments.first().cloned() else {
+        sigint_comment::ActiveModel {
+            id: NotSet,
+            signal_message_id: Set(item_id),
+            login: Set(login.to_string()),
+            comment: Set(comment.to_string()),
+            created_at: NotSet,
+            sigint_post_id: NotSet,
+        }
+        .insert(db)
+        .await
+        .c(h!())?;
+        return Ok(());
+    };
+
+    sigint_comment::ActiveModel {
+        id: Set(comment_to_update.id),
+        signal_message_id: Set(item_id),
+        login: Set(comment_to_update.login),
+        comment: Set(comment.to_string()),
+        created_at: NotSet,
+        sigint_post_id: NotSet,
+    }
+    .update(db)
+    .await
+    .c(h!())?;
+
+    comments.remove(0);
+    delete_sigint_comments(db, comments).await
+}
+
+pub(crate) async fn delete_editable_sigint_comments<'a, 'async_trait, C>(
+    db: &'a C,
+    item_id: i64,
+    login: &str,
+    logins: &[String],
+) -> Result<(), AppError>
+where
+    C: ConnectionTrait + 'async_trait,
+{
+    let comments =
+        find_editable_sigint_comments_by_signal_message_id_and_logins(
+            db, item_id, login, logins,
+        )
+        .await?;
+    delete_sigint_comments(db, comments).await
+}
+
+async fn delete_sigint_comments<'a, 'async_trait, C>(
+    db: &'a C,
+    comments: Vec<sigint_comment::Model>,
+) -> Result<(), AppError>
+where
+    C: ConnectionTrait + 'async_trait,
+{
+    let comment_ids =
+        comments.into_iter().map(|comment| comment.id).collect_vec();
+    if comment_ids.is_empty() {
+        return Ok(());
+    }
+
+    sigint_comment::Entity::delete_many()
+        .filter(sigint_comment::Column::Id.eq_any(comment_ids))
+        .exec(db)
+        .await
+        .c(h!())?;
+    Ok(())
+}
+
+pub(crate) async fn find_sigint_comment_by_signal_message_id_and_logins(
+    env: &Env,
+    item_id: i64,
+    logins: &[String],
+) -> Result<Option<sigint_comment::Model>, AppError> {
+    let login = logins.first().map(String::as_str).unwrap_or_default();
+    find_editable_sigint_comment_by_signal_message_id_and_logins(
+        &env.dbx, item_id, login, logins,
+    )
+    .await
 }
 
 pub async fn fill_callsigns(
@@ -771,6 +947,7 @@ pub async fn submit_upsert_inbox_item(
     message: &InboxMessage,
     login: &str,
     logins: &Vec<String>,
+    location_mode: InboxLocationSubmitMode,
 ) -> Result<i64, AppError> {
     let m_existing = SigintInboxItem::find_by_id(id).one(txn).await.c(h!())?;
     if let Some(existing) = m_existing {
@@ -826,48 +1003,9 @@ pub async fn submit_upsert_inbox_item(
         .map(|x| crate::rer_importer::frequency::etalon(x));
     // upsert sigint_comment
     if let Some(extended_form) = message.extended_form.as_ref() {
-        let m_comment = sigint_comment::Entity::find()
-            .filter(sigint_comment::Column::SignalMessageId.eq(id))
-            .filter(sigint_comment::Column::Login.eq_any(logins.clone()))
-            .one(txn)
+        upsert_editable_sigint_comment(txn, id, login, logins, extended_form)
             .await
             .c(h!())?;
-        match m_comment {
-            None => {
-                debug!("> creating comment for message {id} by {login}: {extended_form}");
-                sigint_comment::ActiveModel {
-                    id: NotSet,
-                    signal_message_id: Set(id),
-                    login: Set(login.to_string()),
-                    comment: Set(extended_form.clone()),
-                    created_at: NotSet,
-                    sigint_post_id: NotSet,
-                }
-                .insert(txn)
-                .await
-                .c(h!())?;
-            }
-            Some(comment) => {
-                debug!(
-                    "> updating comment for message {} by {}: old: {}, new: {}",
-                    comment.signal_message_id,
-                    login,
-                    comment.comment,
-                    extended_form
-                );
-                sigint_comment::ActiveModel {
-                    id: Set(comment.id),
-                    signal_message_id: Set(id),
-                    login: Set(login.to_string()),
-                    comment: Set(extended_form.clone()),
-                    created_at: NotSet,
-                    sigint_post_id: NotSet,
-                }
-                .update(txn)
-                .await
-                .c(h!())?;
-            }
-        }
     }
 
     let location = message
@@ -875,35 +1013,15 @@ pub async fn submit_upsert_inbox_item(
         .clone()
         .map(|location| location.trim().to_string())
         .filter(|location| !location.is_empty());
-    let m_aor_id = match message.group_master_key.clone() {
-        Some(group_master_key) => signal_group_aor::Entity::find()
-            .join(
-                JoinType::InnerJoin,
-                signal_group_aor::Relation::AreaOfResponsibility.def(),
-            )
-            .filter(signal_group_aor::Column::MasterKey.eq(group_master_key))
-            .filter(area_of_responsibility::Column::Deleted.eq(false))
-            .order_by_asc(signal_group_aor::Column::Id)
-            .select_only()
-            .column(signal_group_aor::Column::AorId)
-            .into_tuple::<i64>()
-            .one(txn)
-            .await
-            .c(h!())?,
-        None => None,
-    };
-    let location_v2 = match location.clone() {
-        Some(location) => {
-            let locations = crate::location::parse_location_with_aor(
-                settlements.clone(),
-                location.clone(),
-                m_aor_id,
-            )
-            .context(h!())?;
-            Some(format_manual_location_v2(location, locations))
-        }
-        None => None,
-    };
+    let location_v2 = resolve_manual_location_v2(
+        settlements,
+        txn,
+        message,
+        location.clone(),
+        location_mode,
+    )
+    .await
+    .c(h!())?;
 
     let insert_res =
         sigint_inbox_item::Entity::insert(sigint_inbox_item::ActiveModel {
@@ -1003,6 +1121,46 @@ pub async fn submit_upsert_inbox_item(
     Ok(inbox_id)
 }
 
+async fn resolve_manual_location_v2(
+    settlements: Arc<RwLock<crate::location::SettlementsDataConfig>>,
+    txn: &DatabaseTransaction,
+    message: &InboxMessage,
+    location: Option<String>,
+    location_mode: InboxLocationSubmitMode,
+) -> Result<Option<String>, AppError> {
+    let Some(location) = location else {
+        return Ok(None);
+    };
+    if location_mode == InboxLocationSubmitMode::PreserveTyped {
+        return Ok(Some(format_unvalidated_manual_location_v2(location)));
+    }
+
+    let m_aor_id = match message.group_master_key.clone() {
+        Some(group_master_key) => signal_group_aor::Entity::find()
+            .join(
+                JoinType::InnerJoin,
+                signal_group_aor::Relation::AreaOfResponsibility.def(),
+            )
+            .filter(signal_group_aor::Column::MasterKey.eq(group_master_key))
+            .filter(area_of_responsibility::Column::Deleted.eq(false))
+            .order_by_asc(signal_group_aor::Column::Id)
+            .select_only()
+            .column(signal_group_aor::Column::AorId)
+            .into_tuple::<i64>()
+            .one(txn)
+            .await
+            .c(h!())?,
+        None => None,
+    };
+    let locations = crate::location::parse_location_with_aor(
+        settlements,
+        location.clone(),
+        m_aor_id,
+    )
+    .context(h!())?;
+    Ok(Some(format_manual_location_v2(location, locations)))
+}
+
 async fn parse_submitted_coords(coords: Option<&str>) -> Option<Coords> {
     let coords = coords?.trim();
     if coords.is_empty() {
@@ -1049,6 +1207,45 @@ fn format_manual_location_v2(
     }
 }
 
+fn format_unvalidated_manual_location_v2(location: String) -> String {
+    let locations = split_manual_locations(&location);
+    if locations.is_empty() {
+        return utils::format_locations_list(vec![location]);
+    }
+    utils::format_locations_list(locations)
+}
+
+fn format_inbox_message_location(
+    location: Option<String>,
+    location_v2: Option<String>,
+) -> Option<String> {
+    let location_v2 = location_v2
+        .as_deref()
+        .map(to_location_list)
+        .unwrap_or_default();
+    if !location_v2.is_empty() {
+        return Some(location_v2.join(", "));
+    }
+
+    let location = location
+        .as_deref()
+        .map(split_manual_locations)
+        .unwrap_or_default();
+    if location.is_empty() {
+        None
+    } else {
+        Some(location.join(", "))
+    }
+}
+
+fn split_manual_locations(location: &str) -> Vec<String> {
+    location
+        .split(',')
+        .map(|location| location.trim().to_string())
+        .filter(|location| !location.is_empty())
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1058,6 +1255,108 @@ mod tests {
         assert_eq!(
             format_manual_location_v2("район 1".to_string(), vec![]),
             "|район 1|"
+        );
+    }
+
+    #[test]
+    fn format_unvalidated_manual_location_v2_preserves_typed_location() {
+        assert_eq!(
+            format_unvalidated_manual_location_v2("Робоботине".to_string()),
+            "|Робоботине|"
+        );
+    }
+
+    #[test]
+    fn format_unvalidated_manual_location_v2_keeps_round_tripped_locations() {
+        assert_eq!(
+            format_unvalidated_manual_location_v2(
+                "КУП'ЯНСЬК, СЕНЬКОВЕ".to_string()
+            ),
+            "|КУП'ЯНСЬК|СЕНЬКОВЕ|"
+        );
+    }
+
+    #[test]
+    fn format_unvalidated_manual_location_v2_does_not_fix_typos() {
+        assert_eq!(
+            format_unvalidated_manual_location_v2(
+                "Запоріжя, Хирсон".to_string()
+            ),
+            "|Запоріжя|Хирсон|"
+        );
+    }
+
+    #[test]
+    fn format_manual_location_v2_uses_parsed_location_when_present() {
+        assert_eq!(
+            format_manual_location_v2(
+                "Робоботине".to_string(),
+                vec![crate::location::SettlementDetails {
+                    name: "РОБОТИНЕ".to_string(),
+                    ..Default::default()
+                }],
+            ),
+            "|РОБОТИНЕ|"
+        );
+    }
+
+    #[test]
+    fn format_inbox_message_location_prefers_location_v2() {
+        assert_eq!(
+            format_inbox_message_location(
+                Some("Робоботине".to_string()),
+                Some("|РОБОТИНЕ|".to_string()),
+            )
+            .as_deref(),
+            Some("РОБОТИНЕ")
+        );
+    }
+
+    #[test]
+    fn format_inbox_message_location_keeps_worker_appended_locations() {
+        assert_eq!(
+            format_inbox_message_location(
+                Some("Робоботине".to_string()),
+                Some("|Робоботине|НОВОПРОКОПІВКА|".to_string()),
+            )
+            .as_deref(),
+            Some("Робоботине, НОВОПРОКОПІВКА")
+        );
+    }
+
+    #[test]
+    fn format_inbox_message_location_uses_location_v2_without_raw_merge() {
+        assert_eq!(
+            format_inbox_message_location(
+                Some("ручний район".to_string()),
+                Some("|НОВОПРОКОПІВКА|".to_string()),
+            )
+            .as_deref(),
+            Some("НОВОПРОКОПІВКА")
+        );
+    }
+
+    #[test]
+    fn format_inbox_message_location_formats_location_v2() {
+        assert_eq!(
+            format_inbox_message_location(
+                None,
+                Some("|КУП'ЯНСЬК|СЕНЬКОВЕ|".to_string()),
+            )
+            .as_deref(),
+            Some("КУП'ЯНСЬК, СЕНЬКОВЕ")
+        );
+    }
+
+    #[test]
+    fn format_inbox_message_location_falls_back_to_raw_location() {
+        assert_eq!(
+            format_inbox_message_location(
+                Some("Запоріжя, Хирсон".to_string()),
+                None,
+            )
+            .as_deref(),
+            Some("Запоріжя, Хирсон")
         );
     }
 
