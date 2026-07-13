@@ -288,6 +288,32 @@ describe('AnalysisMessageEditDrawer', () => {
     root.unmount();
   });
 
+  it('submits a pending location draft from the save button', async () => {
+    const message = { ...buildMessage(), location: 'Київ' };
+    const { container, onSave, root } = renderDrawer({
+      message: { id: 1, message },
+      saveInFlight: false,
+    });
+
+    act(() => {
+      changeTextField('Локація', 'Одеса');
+    });
+
+    const saveButton = container.querySelector('button[type="submit"]') as HTMLButtonElement | null;
+    expect(saveButton).toBeTruthy();
+
+    await act(async () => {
+      saveButton?.click();
+    });
+
+    expect(onSave).toHaveBeenCalledWith(
+      expect.objectContaining({
+        location: 'Київ, Одеса',
+      }),
+    );
+    root.unmount();
+  });
+
   it('does not submit location changes while save is in flight', async () => {
     const { container, onSave, root } = renderDrawer({
       message: { id: 1, message: buildMessage() },

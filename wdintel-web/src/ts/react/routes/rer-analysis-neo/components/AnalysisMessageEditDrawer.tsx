@@ -44,6 +44,29 @@ function formatLocationList(locations: string[]): string | null {
   return nextLocations.length > 0 ? nextLocations.join(', ') : null;
 }
 
+function mergeLocationDraft(locations: string[], locationDraft: string): string[] {
+  const nextLocations = splitLocationList(locationDraft);
+  if (nextLocations.length === 0) return locations;
+  const existingLocations = new Set(locations.map(normalizeLocationKey));
+  const mergedLocations = [...locations];
+  nextLocations.forEach((location) => {
+    const locationKey = normalizeLocationKey(location);
+    if (existingLocations.has(locationKey)) return;
+    mergedLocations.push(location);
+    existingLocations.add(locationKey);
+  });
+  return mergedLocations;
+}
+
+function applyLocationDraft(
+  message: InboxMessage,
+  locations: string[],
+  locationDraft: string,
+): InboxMessage {
+  if (splitLocationList(locationDraft).length === 0) return message;
+  return { ...message, location: formatLocationList(mergeLocationDraft(locations, locationDraft)) };
+}
+
 function AnalysisMessageEditDrawerComponent({
   message,
   open,
@@ -119,17 +142,11 @@ function AnalysisMessageEditDrawerComponent({
 
   const addLocation = () => {
     if (isNullOrUndefined(currentMessage)) return;
-    const nextLocations = splitLocationList(locationDraft);
-    if (nextLocations.length === 0) return;
-    const existingLocations = new Set(currentLocations.map(normalizeLocationKey));
-    const locations = [...currentLocations];
-    nextLocations.forEach((location) => {
-      const locationKey = normalizeLocationKey(location);
-      if (existingLocations.has(locationKey)) return;
-      locations.push(location);
-      existingLocations.add(locationKey);
-    });
-    updateDraftField('location', formatLocationList(locations));
+    if (splitLocationList(locationDraft).length === 0) return;
+    updateDraftField(
+      'location',
+      formatLocationList(mergeLocationDraft(currentLocations, locationDraft)),
+    );
     setLocationDraft('');
   };
 
@@ -147,7 +164,7 @@ function AnalysisMessageEditDrawerComponent({
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!canSave || isNullOrUndefined(currentMessage)) return;
-    onSave(currentMessage);
+    onSave(applyLocationDraft(currentMessage, currentLocations, locationDraft));
   };
 
   return (
