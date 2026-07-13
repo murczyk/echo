@@ -995,6 +995,22 @@ async fn set_message_unit(
     Ok(())
 }
 
+async fn set_message_datetime(
+    db: &DatabaseConnection,
+    signal_message_id: i64,
+    datetime: NaiveDateTime,
+) -> Result<(), AppError> {
+    let inbox_item = sigint_inbox_item::Entity::find_by_id(signal_message_id)
+        .one(db)
+        .await
+        .context(h!())?
+        .context(h!())?;
+    let mut inbox_item = inbox_item.into_active_model();
+    inbox_item.datetime = Set(Some(datetime));
+    inbox_item.update(db).await.context(h!())?;
+    Ok(())
+}
+
 async fn set_message_post(
     db: &DatabaseConnection,
     signal_message_id: i64,
@@ -3967,11 +3983,12 @@ async fn rer_analysis_unit_filter_includes_child_units_by_name_suffix_in_fuzzy_m
     .await
     .unwrap();
 
+    let msg_child_dt = test_dt(2026, 3, 2, 8, 7);
     let msg_child = mk_analysis_message(
         db,
         "msg-child-unit-name-suffix",
         "944.8",
-        test_dt(2026, 3, 2, 8, 7),
+        msg_child_dt,
         &[&fixture.group_x],
         &[child_network.network.id],
         false,
@@ -3981,11 +3998,15 @@ async fn rer_analysis_unit_filter_includes_child_units_by_name_suffix_in_fuzzy_m
     set_message_unit(db, msg_child.id, Some("Header Noise"))
         .await
         .unwrap();
+    set_message_datetime(db, msg_child.id, msg_child_dt)
+        .await
+        .unwrap();
+    let msg_other_dt = test_dt(2026, 3, 2, 8, 8);
     let msg_other = mk_analysis_message(
         db,
         "msg-other-unit-name-suffix",
         "944.9",
-        test_dt(2026, 3, 2, 8, 8),
+        msg_other_dt,
         &[&fixture.group_x],
         &[other_network.network.id],
         false,
@@ -3993,6 +4014,9 @@ async fn rer_analysis_unit_filter_includes_child_units_by_name_suffix_in_fuzzy_m
     .await
     .unwrap();
     set_message_unit(db, msg_other.id, Some("Header Noise"))
+        .await
+        .unwrap();
+    set_message_datetime(db, msg_other.id, msg_other_dt)
         .await
         .unwrap();
 
