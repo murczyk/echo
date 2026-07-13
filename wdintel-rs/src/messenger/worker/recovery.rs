@@ -2855,7 +2855,7 @@ mod tests {
             autofix_echoim_missing_messages: Set(
                 autofix_echoim_missing_messages,
             ),
-            cyber_echo_enabled: Set(false),
+            devices_section_enabled: Set(false),
             echo_restapi_error_discord_webhook_url: Set(None),
             sigint_comment_parsing_enabled: Set(true),
             do_not_store_duplicate_echoim_failures: Set(false),

@@ -21,7 +21,7 @@ pub struct SystemSettingsCurrentRsp {
     pub peleng_bounds_top_left_lng: Option<f64>,
     pub peleng_bounds_bottom_right_lat: Option<f64>,
     pub peleng_bounds_bottom_right_lng: Option<f64>,
-    pub cyber_echo_enabled: bool,
+    pub devices_section_enabled: bool,
     pub sigint_comment_parsing_enabled: bool,
     pub do_not_store_duplicate_echoim_failures: bool,
 }
@@ -50,7 +50,7 @@ pub struct SystemSettingsItem {
     pub peleng_bounds_top_left_lng: Option<f64>,
     pub peleng_bounds_bottom_right_lat: Option<f64>,
     pub peleng_bounds_bottom_right_lng: Option<f64>,
-    pub cyber_echo_enabled: bool,
+    pub devices_section_enabled: bool,
     pub echo_restapi_error_discord_webhook_url: Option<String>,
     pub sigint_comment_parsing_enabled: bool,
     pub do_not_store_duplicate_echoim_failures: bool,
@@ -87,7 +87,7 @@ pub struct CreateSystemSettingsReq {
     pub peleng_bounds_bottom_right_lat: Option<f64>,
     pub peleng_bounds_bottom_right_lng: Option<f64>,
     #[serde(default)]
-    pub cyber_echo_enabled: bool,
+    pub devices_section_enabled: bool,
     #[serde(default)]
     pub echo_restapi_error_discord_webhook_url: Option<String>,
     #[serde(default = "default_sigint_comment_parsing_enabled")]
