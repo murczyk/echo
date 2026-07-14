@@ -16,10 +16,12 @@ describe('analysis-map', () => {
       } | null;
       _palitraManager: {
         setSearchQuery: (query: string) => void;
+        fitVisiblePalitras: () => void;
       } | null;
       _flyToCoordinate: (coords: { lat: number; lng: number }) => void;
       _isDateRangeLoading: boolean;
       _palitrasLoadState: string;
+      _handleFocusVisiblePalitrasRequest: () => void;
     };
 
     element._searchControl = {
@@ -28,10 +30,14 @@ describe('analysis-map', () => {
     };
     element._palitraManager = {
       setSearchQuery: vi.fn(),
+      fitVisiblePalitras: vi.fn(),
     };
     element._flyToCoordinate = vi.fn();
     element._isDateRangeLoading = false;
     element._palitrasLoadState = 'success';
+    element._handleFocusVisiblePalitrasRequest = vi.fn(function (this: typeof element) {
+      this._palitraManager?.fitVisiblePalitras();
+    });
 
     return element;
   }
@@ -151,5 +157,13 @@ describe('analysis-map', () => {
 
     expect(analysisMap._flyToCoordinate).not.toHaveBeenCalled();
     expect(analysisMap._palitraManager?.setSearchQuery).toHaveBeenCalledWith('точка 12');
+  });
+
+  it('routes explicit palette focus requests to the palitra manager', () => {
+    const analysisMap = createAnalysisMap();
+
+    analysisMap._handleFocusVisiblePalitrasRequest();
+
+    expect(analysisMap._palitraManager?.fitVisiblePalitras).toHaveBeenCalledTimes(1);
   });
 });

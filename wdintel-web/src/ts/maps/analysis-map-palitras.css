@@ -264,6 +264,13 @@
   align-items: center;
   gap: 8px;
   flex: 1;
+}
+
+.palitras-header-select-all {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
   cursor: pointer;
 }
 

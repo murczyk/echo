@@ -1,4 +1,5 @@
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import FitScreenIcon from '@mui/icons-material/FitScreen';
 import FolderIcon from '@mui/icons-material/Folder';
 import PaletteIcon from '@mui/icons-material/Palette';
 import {
@@ -40,6 +41,7 @@ type PalitrasOverlayProps = {
   interactionDisabled: boolean;
   forceCollapsed?: boolean;
   onVisibleIdsChange: (visibleIds: number[]) => void;
+  onFocusVisiblePalitras: () => void;
 };
 
 const COLLAPSE_STORAGE_KEY = 'palitras-control-collapsed';
@@ -132,6 +134,26 @@ function perimeterPointsCount(palitraDetails: PalitraDetails): number {
   const ringCount = geometry.perimeter_linear_ring?.length ?? 0;
   const linePoints = geometry.line_strings?.reduce((acc, line) => acc + line.length, 0) ?? 0;
   return ringCount + linePoints;
+}
+
+function hasRenderableGeometry(palitraDetails: PalitraDetails): boolean {
+  const geometry = palitraDetails.palitra.geometry;
+  if (!geometry) {
+    return false;
+  }
+
+  if ((geometry.perimeter_linear_ring?.length ?? 0) >= 3) {
+    return true;
+  }
+
+  return geometry.line_strings?.some((line) => line.length >= 2) ?? false;
+}
+
+function hasVisibleGeometry(palitras: PalitraDetails[], visibleIdsSet: Set<number>): boolean {
+  return palitras.some(
+    (palitraDetails) =>
+      visibleIdsSet.has(palitraDetails.palitra.id) && hasRenderableGeometry(palitraDetails),
+  );
 }
 
 type PalitraGroupRowProps = {
@@ -386,6 +408,7 @@ function PalitrasOverlay(props: PalitrasOverlayProps) {
     interactionDisabled,
     forceCollapsed,
     onVisibleIdsChange,
+    onFocusVisiblePalitras,
   } = props;
   const controlRef = useRef<HTMLDivElement | null>(null);
   const [isCollapsed, setCollapsed] = useState<boolean>(() => {
@@ -469,6 +492,10 @@ function PalitrasOverlay(props: PalitrasOverlayProps) {
 
   const allSelected = allColorIds.length > 0 && allColorIds.every((id) => visibleIdsSet.has(id));
   const someSelected = allColorIds.some((id) => visibleIdsSet.has(id));
+  const hasVisibleSelectedGeometry = useMemo(
+    () => hasVisibleGeometry(palitras, visibleIdsSet),
+    [palitras, visibleIdsSet],
+  );
 
   const toggleCollapsed = useCallback(() => {
     setCollapsed((prev) => {
@@ -685,29 +712,45 @@ function PalitrasOverlay(props: PalitrasOverlayProps) {
           </IconButton>
         ) : (
           <>
-            <Box className="palitras-header-row" onClick={toggleSelectAll}>
-              <Checkbox
-                className="palitra-checkbox"
-                checked={allSelected}
-                indeterminate={!allSelected && someSelected}
-                disabled={interactionDisabled}
-                onClick={(event) => {
-                  event.stopPropagation();
-                }}
-                onChange={toggleSelectAll}
+            <Box className="palitras-header-row">
+              <Box className="palitras-header-select-all" onClick={toggleSelectAll}>
+                <Checkbox
+                  className="palitra-checkbox"
+                  checked={allSelected}
+                  indeterminate={!allSelected && someSelected}
+                  disabled={interactionDisabled}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                  }}
+                  onChange={toggleSelectAll}
+                  size="small"
+                />
+                <Typography className="palitras-control-title">Палітри</Typography>
+              </Box>
+              {hasVisibleSelectedGeometry ? (
+                <IconButton
+                  className="palitras-focus-button"
+                  onClick={() => {
+                    onFocusVisiblePalitras();
+                  }}
+                  aria-label="Показати обрані палітри"
+                  title="Показати обрані палітри"
+                  size="small"
+                  disabled={interactionDisabled}
+                >
+                  <FitScreenIcon fontSize="small" />
+                </IconButton>
+              ) : null}
+              <IconButton
+                className="palitras-toggle-button"
+                onClick={toggleCollapsed}
+                aria-label="Згорнути список палітр"
+                title="Згорнути список палітр"
                 size="small"
-              />
-              <Typography className="palitras-control-title">Палітри</Typography>
+              >
+                <ExpandMoreIcon fontSize="small" />
+              </IconButton>
             </Box>
-            <IconButton
-              className="palitras-toggle-button"
-              onClick={toggleCollapsed}
-              aria-label="Згорнути список палітр"
-              title="Згорнути список палітр"
-              size="small"
-            >
-              <ExpandMoreIcon fontSize="small" />
-            </IconButton>
           </>
         )}
       </Box>
@@ -820,6 +863,15 @@ class AnalysisMapPalitrasElement extends HTMLElement {
     this.renderComponent();
   }
 
+  private handleFocusVisiblePalitras() {
+    this.dispatchEvent(
+      new CustomEvent('palitras-focus-visible-request', {
+        bubbles: true,
+        composed: true,
+      }),
+    );
+  }
+
   private renderComponent() {
     if (!this.root) {
       return;
@@ -840,6 +892,9 @@ class AnalysisMapPalitrasElement extends HTMLElement {
               composed: true,
             }),
           );
+        }}
+        onFocusVisiblePalitras={() => {
+          this.handleFocusVisiblePalitras();
         }}
       />,
     );

@@ -109,6 +109,9 @@ class AnalysisMap extends HTMLElement {
   private _handleMapViewChanged = () => {
     this._renderPelengLabelGroups();
   };
+  private _handleFocusVisiblePalitrasRequest = () => {
+    this._palitraManager?.fitVisiblePalitras();
+  };
   private _searchPointsHandler = (e: CustomEvent<string>) => {
     if (this._isSearchInteractionLocked()) {
       return;
@@ -573,6 +576,7 @@ class AnalysisMap extends HTMLElement {
       onFeatureToggle: (feature, enabled) => this._setFeatureEnabled(feature, enabled),
       onPelengLabelsPermanentChange: (show) => this._setPelengLabelsPermanent(show),
       onVisiblePalitraIdsChange: (visibleIds) => this._handleVisiblePalitraIdsChange(visibleIds),
+      onFocusVisiblePalitras: () => this._handleFocusVisiblePalitrasRequest(),
     });
 
     this._searchControl = result.searchControl;

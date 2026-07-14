@@ -35,6 +35,7 @@ export function createPalitrasControl(
   palitras: PalitraDetails[],
   visibleIds: number[],
   onVisibleIdsChange: (visibleIds: number[]) => void,
+  onFocusVisiblePalitras: () => void,
 ): PalitrasControl {
   const PalitrasControlClass = L.Control.extend({
     _palitras: palitras,
@@ -63,6 +64,13 @@ export function createPalitrasControl(
         const normalizedIds = normalizeVisibleIds(ids);
         this._visibleIds = normalizedIds;
         onVisibleIdsChange(normalizedIds);
+      });
+
+      palitrasElement.addEventListener('palitras-focus-visible-request', () => {
+        if (this._interactionDisabled) {
+          return;
+        }
+        onFocusVisiblePalitras();
       });
 
       L.DomEvent.disableClickPropagation(this._container);
