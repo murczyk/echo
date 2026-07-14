@@ -17,6 +17,7 @@ import {
   searchCallsignNames,
   searchFreqs,
 } from '../../../services/api/direct-submit';
+import { getNetworksByIds } from '../../../services/api/networks';
 import type { InboxMessage, SignalGroupEntry, Tag, User } from '../../../../../Bindings';
 import { mapInboxMessageToForm } from './manage-message-drawer.mappers';
 import { useRecentValues } from './useRecentValues';
@@ -82,9 +83,9 @@ export function useManageMessageDrawer({
   const [networkNameLoading, setNetworkNameLoading] = useState(false);
   const [networkNameInput, setNetworkNameInput] = useState('');
 
-  const [signalNameOptions, setSignalNameOptions] = useState<string[]>([]);
-  const [signalNameLoading, setSignalNameLoading] = useState(false);
-  const [signalNameInput, setSignalNameInput] = useState('');
+  const signalNameOptions = ['DMR'];
+  const signalNameLoading = false;
+  const setSignalNameInput = () => {};
 
   const [callsignOptions, setCallsignOptions] = useState<string[]>([]);
   const [callsignLoading, setCallsignLoading] = useState(false);
@@ -177,26 +178,6 @@ export function useManageMessageDrawer({
   useEffect(() => {
     let active = true;
 
-    setSignalNameLoading(true);
-    searchSignalNames(signalNameInput)
-      .then((results) => {
-        if (active) {
-          setSignalNameOptions(results.map((s) => s.name));
-        }
-      })
-      .catch(console.error)
-      .finally(() => {
-        if (active) setSignalNameLoading(false);
-      });
-
-    return () => {
-      active = false;
-    };
-  }, [signalNameInput]);
-
-  useEffect(() => {
-    let active = true;
-
     setCallsignLoading(true);
     searchCallsignNames(callsignInput)
       .then((results) => {
@@ -234,8 +215,16 @@ export function useManageMessageDrawer({
     };
   }, [freqInput]);
 
-  const { uppy, uppyFiles, fileInputRef, handleFileSelect, handleDrop, handleDropzoneKeyDown } =
-    useMessageUppy(busy, setErrorMsg);
+  const {
+    uppy,
+    uppyFiles,
+    fileInputRef,
+    handleFileSelect,
+    handleDrop,
+    handleDropzoneKeyDown,
+    attachmentErrorMsg,
+    setAttachmentErrorMsg,
+  } = useMessageUppy(busy);
 
   const resolver = useMemo(() => zodResolver(makeMessageSchema(isEditMode)), [isEditMode]);
 
@@ -299,19 +288,20 @@ export function useManageMessageDrawer({
     setShowAdvanced(false);
     setErrorMsg(null);
     if (isEditMode && editTarget) {
+      const meta = editTarget.message.metadata?.[0];
       reset({
         ...mapInboxMessageToForm(editTarget.message, tagsMap),
         text: editTarget.message.text ?? '',
         signalGroupMasterKey: editTarget.message.groupMasterKey ?? '',
         computerName: '',
-        network_signal_name: '',
-        network_cc: '',
+        network_signal_name: meta || editTarget.message.networkIds?.length ? 'DMR' : '',
+        network_cc: meta?.colorCode ?? '',
         network_name: '',
-        dmr_sender_id: '',
-        dmr_sender_name: '',
-        dmr_call_group_id: '',
-        dmr_call_group_name: '',
-        dmr_hash_id: '',
+        dmr_sender_id: meta?.senderId ?? '',
+        dmr_sender_name: meta?.senderName ?? '',
+        dmr_call_group_id: meta?.callGroupId ?? '',
+        dmr_call_group_name: meta?.callGroupName ?? '',
+        dmr_hash_id: meta?.hashId ?? '',
       });
     } else {
       reset({
@@ -330,6 +320,24 @@ export function useManageMessageDrawer({
       setValue('tags', seededTags, { shouldDirty: false });
     }
   }, [open, isEditMode, editTarget?.id, tagsMap]);
+
+  useEffect(() => {
+    if (!open || !isEditMode || !editTarget) return;
+    const nIds = editTarget.message.networkIds;
+    if (nIds && nIds.length > 0) {
+      getNetworksByIds(nIds)
+        .then((networks) => {
+          if (networks.length > 0) {
+            setValue('network_name', networks[0].name, {
+              shouldDirty: false,
+              shouldValidate: true,
+            });
+            setValue('network_signal_name', 'DMR', { shouldDirty: false, shouldValidate: true });
+          }
+        })
+        .catch(console.error);
+    }
+  }, [open, isEditMode, editTarget?.id]);
 
   const handleDrawerClose = () => {
     if (busy) return;
@@ -411,6 +419,8 @@ export function useManageMessageDrawer({
     handleFileSelect,
     handleDrop,
     handleDropzoneKeyDown,
+    attachmentErrorMsg,
+    setAttachmentErrorMsg,
     methods,
     handleParse,
     handleDrawerClose,

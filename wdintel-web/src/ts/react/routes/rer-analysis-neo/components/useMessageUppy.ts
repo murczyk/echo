@@ -3,7 +3,17 @@ import Uppy from '@uppy/core';
 import type { UppyFile } from '@uppy/core';
 import Tus from '@uppy/tus';
 
-export function useMessageUppy(busy: boolean, setErrorMsg: (msg: string | null) => void) {
+export function useMessageUppy(busy: boolean) {
+  const [attachmentErrorMsg, setAttachmentErrorMsg] = useState<string | null>(null);
+
+  const translateError = (msg: string) => {
+    if (msg.toLowerCase().includes('duplicate')) return 'Цей файл вже додано';
+    if (msg.toLowerCase().includes('exceeds maximum allowed size'))
+      return 'Файл занадто великий (максимум 2 ГБ)';
+    if (msg.toLowerCase().includes('exceeds maximum number of files'))
+      return 'Перевищено максимальну кількість файлів (20)';
+    return msg;
+  };
   const [uppy] = useState(() =>
     new Uppy({
       restrictions: {
@@ -22,16 +32,32 @@ export function useMessageUppy(busy: boolean, setErrorMsg: (msg: string | null) 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    const updateFiles = () => setUppyFiles(uppy.getFiles());
+    const updateFiles = () => {
+      setUppyFiles(uppy.getFiles());
+      setAttachmentErrorMsg(null);
+    };
     uppy.on('file-added', updateFiles);
     uppy.on('file-removed', updateFiles);
     return () => {
       uppy.off('file-added', updateFiles);
       uppy.off('file-removed', updateFiles);
+      uppy.off('restriction-failed', (file, error) => {
+        setAttachmentErrorMsg(translateError(error.message));
+      });
+    };
+  }, [uppy]);
+
+  useEffect(() => {
+    uppy.on('restriction-failed', (file, error) => {
+      setAttachmentErrorMsg(translateError(error.message));
+    });
+    return () => {
+      // handled above
     };
   }, [uppy]);
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setAttachmentErrorMsg(null);
     if (e.target.files) {
       Array.from(e.target.files).forEach((file) => {
         try {
@@ -41,7 +67,7 @@ export function useMessageUppy(busy: boolean, setErrorMsg: (msg: string | null) 
             data: file,
           });
         } catch (err: any) {
-          setErrorMsg(err.message || 'Error adding file');
+          setAttachmentErrorMsg(translateError(err.message || 'Помилка додавання файлу'));
         }
       });
     }
@@ -53,6 +79,7 @@ export function useMessageUppy(busy: boolean, setErrorMsg: (msg: string | null) 
   const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     e.stopPropagation();
+    setAttachmentErrorMsg(null);
     if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
       Array.from(e.dataTransfer.files).forEach((file) => {
         try {
@@ -62,7 +89,7 @@ export function useMessageUppy(busy: boolean, setErrorMsg: (msg: string | null) 
             data: file,
           });
         } catch (err: any) {
-          setErrorMsg(err.message || 'Error adding file');
+          setAttachmentErrorMsg(translateError(err.message || 'Помилка додавання файлу'));
         }
       });
       e.dataTransfer.clearData();
@@ -84,5 +111,7 @@ export function useMessageUppy(busy: boolean, setErrorMsg: (msg: string | null) 
     handleFileSelect,
     handleDrop,
     handleDropzoneKeyDown,
+    attachmentErrorMsg,
+    setAttachmentErrorMsg,
   };
 }

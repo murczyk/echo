@@ -99,7 +99,7 @@ export function useMessageSubmit({
       let networkObj: any = undefined;
       if (data.network_signal_name || data.network_cc || data.network_name) {
         networkObj = {
-          signal_name: data.network_signal_name || undefined,
+          signal_name: data.network_signal_name || '',
           cc: data.network_cc ? parseInt(data.network_cc, 10) : undefined,
           name: data.network_name || undefined,
         };

@@ -124,6 +124,14 @@ export function makeMessageSchema(isEditMode: boolean) {
         });
       }
 
+      if (data.network_name?.trim() && !data.network_signal_name?.trim()) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['network_signal_name'],
+          message: "Поле обов'язкове, якщо обрана мережа",
+        });
+      }
+
       const isDmr = !!(
         data.network_signal_name?.trim().toLowerCase() === 'dmr' ||
         data.dmr_sender_id?.trim() ||

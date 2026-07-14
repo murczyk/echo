@@ -11,9 +11,6 @@ type Props = {
   networkNameOptions: string[];
   networkNameLoading: boolean;
   setNetworkNameInput: (val: string) => void;
-  signalNameOptions: string[];
-  signalNameLoading: boolean;
-  setSignalNameInput: (val: string) => void;
   freqOptions: string[];
   freqLoading: boolean;
   setFreqInput: (val: string) => void;
@@ -26,9 +23,6 @@ export function NetworkSection({
   networkNameOptions,
   networkNameLoading,
   setNetworkNameInput,
-  signalNameOptions,
-  signalNameLoading,
-  setSignalNameInput,
   freqOptions,
   freqLoading,
   setFreqInput,
@@ -36,6 +30,7 @@ export function NetworkSection({
   const {
     control,
     trigger,
+    setValue,
     formState: { errors },
   } = useFormContext<MessageFormData>();
 
@@ -53,6 +48,7 @@ export function NetworkSection({
           control={control}
           render={({ field }) => (
             <Autocomplete
+              freeSolo
               forcePopupIcon
               noOptionsText="Немає варіантів"
               options={Array.from(new Set([...(recentValues?.freq || []), ...freqOptions]))}
@@ -87,6 +83,7 @@ export function NetworkSection({
           control={control}
           render={({ field }) => (
             <Autocomplete
+              freeSolo
               forcePopupIcon
               noOptionsText="Немає варіантів"
               options={Array.from(
@@ -99,10 +96,16 @@ export function NetworkSection({
                 if (reason === 'input') {
                   setNetworkNameInput(newValue);
                   field.onChange(newValue);
+                  if (newValue) {
+                    setValue('network_signal_name', 'DMR', { shouldValidate: true });
+                  }
                 }
               }}
               onChange={(_, newValue) => {
                 field.onChange(newValue || '');
+                if (newValue) {
+                  setValue('network_signal_name', 'DMR', { shouldValidate: true });
+                }
               }}
               renderInput={(params) => (
                 <TextField {...params} label="Мережа" size="small" fullWidth disabled={busy} />

@@ -27,7 +27,7 @@ import { NetworkSection } from './drawer-sections/NetworkSection';
 import { DmrSection } from './drawer-sections/DmrSection';
 import { LocationsSection } from './drawer-sections/LocationsSection';
 import { CommentSection } from './drawer-sections/CommentSection';
-import { ShortMessageSection } from './drawer-sections/ShortMessageSection';
+import { AdvancedFieldsSection } from './drawer-sections/AdvancedFieldsSection';
 
 export type Props = {
   open: boolean;
@@ -186,6 +186,7 @@ export function ManageMessageDrawer(props: Props) {
                   existingMedia={
                     isEditMode && props.editTarget ? props.editTarget.message.media : []
                   }
+                  errorMsg={drawerState.attachmentErrorMsg}
                 />
               </Stack>
 
@@ -229,9 +230,6 @@ export function ManageMessageDrawer(props: Props) {
                   networkNameOptions={drawerState.networkNameOptions}
                   networkNameLoading={drawerState.networkNameLoading}
                   setNetworkNameInput={drawerState.setNetworkNameInput}
-                  signalNameOptions={drawerState.signalNameOptions}
-                  signalNameLoading={drawerState.signalNameLoading}
-                  setSignalNameInput={drawerState.setSignalNameInput}
                   freqOptions={drawerState.freqOptions}
                   freqLoading={drawerState.freqLoading}
                   setFreqInput={drawerState.setFreqInput}
@@ -248,7 +246,14 @@ export function ManageMessageDrawer(props: Props) {
                   recentValues={recentValues}
                 />
 
-                <ShortMessageSection showAdvanced={showAdvanced} busy={busy} />
+                <AdvancedFieldsSection
+                  showAdvanced={showAdvanced}
+                  busy={busy}
+                  recentValues={recentValues}
+                  signalNameOptions={drawerState.signalNameOptions}
+                  signalNameLoading={drawerState.signalNameLoading}
+                  setSignalNameInput={drawerState.setSignalNameInput}
+                />
               </Stack>
             </PowerForm>
           </FormProvider>

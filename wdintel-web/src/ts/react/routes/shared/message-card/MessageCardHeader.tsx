@@ -1011,8 +1011,14 @@ export function MessageCardHeader({
   // itself the primary content — i.e. alongside a network or a unit.
   const showTopGridLocation =
     etalonDisplayModel.primaryKind !== 'location' && locationDisplayValue != null;
-  const coordsDisplayValue =
-    isPresent(msg.coords) && msg.coords.trim() !== '' ? msg.coords.trim() : null;
+  let coordsDisplayValue: string | null = null;
+  if (isPresent(msg.coords) && msg.coords.trim() !== '') {
+    coordsDisplayValue = msg.coords.trim();
+    const match = coordsDisplayValue.match(/^([+-]?\d+(?:\.\d+)?)\s*,\s*([+-]?\d+(?:\.\d+)?)$/);
+    if (match) {
+      coordsDisplayValue = `${Number(parseFloat(match[1]).toFixed(5))}, ${Number(parseFloat(match[2]).toFixed(5))}`;
+    }
+  }
   const dateTimeBlock = (
     <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap" alignItems="center">
       <Stack direction="row" spacing={0.75} alignItems="center">

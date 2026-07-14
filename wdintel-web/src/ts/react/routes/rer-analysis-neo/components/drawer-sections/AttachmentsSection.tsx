@@ -22,6 +22,7 @@ type Props = {
   handleDropzoneKeyDown: (e: React.KeyboardEvent<HTMLDivElement>) => void;
   busy: boolean;
   existingMedia?: MessageMediaInfo[];
+  errorMsg?: string | null;
 };
 
 export function AttachmentsSection({
@@ -33,6 +34,7 @@ export function AttachmentsSection({
   handleDropzoneKeyDown,
   busy,
   existingMedia = [],
+  errorMsg,
 }: Props) {
   const { watch, setValue } = useFormContext<MessageFormData>();
   const deletedMediaIds = watch('deleted_media_ids') || [];
@@ -92,6 +94,12 @@ export function AttachmentsSection({
           </Typography>
         </Box>
       </Box>
+
+      {errorMsg && (
+        <Typography variant="caption" color="error" sx={{ px: 1, mt: 0.5 }}>
+          {errorMsg}
+        </Typography>
+      )}
 
       {totalFiles > 0 && (
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.75 }}>
