@@ -31,7 +31,7 @@ export function useMessageParser(
       });
       const timestamp = parsed.timestamp ? dayjs(parsed.timestamp) : null;
       const fillText = (
-        name: 'text' | 'freq' | 'coords' | 'comment' | 'post' | 'unit',
+        name: 'text' | 'freq' | 'coords' | 'comment' | 'post' | 'unit' | 'network_name',
         value: string | null | undefined,
       ) => {
         if (!value) return;
@@ -51,7 +51,8 @@ export function useMessageParser(
       );
       fillText('comment', parsed.comment ?? '');
       fillText('post', parsed.post ?? '');
-      fillText('unit', parsed.unit ?? '');
+      fillText('network_name', parsed.unit ?? '');
+      fillText('unit', parsed.unit_v2 ?? '');
       fillList('callsigns', parsed.to);
       fillList('locations', parsed.locations);
       if (timestamp?.isValid()) {
