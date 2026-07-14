@@ -917,17 +917,20 @@ pub async fn units_search(
         .c(h!())?;
 
     let search_phrase = req.search.trim();
-    if search_phrase.is_empty() {
-        return Ok(Json(ListUnitsByIdRsp { units: vec![] }));
+    let mut q = sigint_unit::Entity::find()
+        .filter(sigint_unit::Column::Deleted.eq(false));
+
+    if !search_phrase.is_empty() {
+        q = q.filter(Expr::cust_with_values(
+            "search_tsv::tsvector @@ websearch_to_tsquery('russian', $1) OR lower(\"sigint_unit\".\"name\") LIKE lower($2) ESCAPE '\\'",
+            vec![
+                search_phrase.to_string(),
+                format!("%{}%", search_phrase.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_")),
+            ],
+        ));
     }
 
-    let q = sigint_unit::Entity::find()
-        .filter(sigint_unit::Column::Deleted.eq(false))
-        .filter(Expr::cust_with_values(
-            "search_tsv::tsvector @@ websearch_to_tsquery('russian', $1)",
-            vec![search_phrase.to_string()],
-        ))
-        .order_by_desc(sigint_unit::Column::Name);
+    q = q.order_by_asc(sigint_unit::Column::Name).limit(50);
 
     // debug!(
     //     ">find units query: {}",
