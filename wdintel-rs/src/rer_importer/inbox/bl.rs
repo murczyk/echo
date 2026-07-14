@@ -956,6 +956,7 @@ pub async fn submit_upsert_inbox_item(
     logins: &Vec<String>,
     location_mode: InboxLocationSubmitMode,
     parse_body_coordinates: bool,
+    invalidate_body_derived_fields: bool,
 ) -> Result<i64, AppError> {
     let m_existing = SigintInboxItem::find_by_id(id).one(txn).await.c(h!())?;
     if let Some(existing) = m_existing {
@@ -1038,6 +1039,10 @@ pub async fn submit_upsert_inbox_item(
     )
     .await
     .c(h!())?;
+
+    if invalidate_body_derived_fields {
+        clear_body_derived_fields(txn, id).await.c(h!())?;
+    }
 
     let insert_res =
         sigint_inbox_item::Entity::insert(sigint_inbox_item::ActiveModel {
@@ -1181,6 +1186,62 @@ async fn resolve_manual_location_v2(
     )
     .context(h!())?;
     Ok(Some(format_manual_location_v2(location, locations)))
+}
+
+async fn clear_body_derived_fields(
+    txn: &DatabaseTransaction,
+    inbox_id: i64,
+) -> Result<(), AppError> {
+    sigint_inbox_item::Entity::update_many()
+        .col_expr(
+            sigint_inbox_item::Column::CallsignsAlg1,
+            Expr::value(Option::<serde_json::Value>::None),
+        )
+        .col_expr(
+            sigint_inbox_item::Column::CallsignsAlg2,
+            Expr::value(Option::<serde_json::Value>::None),
+        )
+        .col_expr(
+            sigint_inbox_item::Column::SignalTokens,
+            Expr::value(Option::<serde_json::Value>::None),
+        )
+        .filter(sigint_inbox_item::Column::Id.eq(inbox_id))
+        .exec(txn)
+        .await
+        .c(h!())?;
+    sigint_inbox_item_point_token::Entity::delete_many()
+        .filter(
+            sigint_inbox_item_point_token::Column::SigintInboxItemId
+                .eq(inbox_id),
+        )
+        .exec(txn)
+        .await
+        .c(h!())?;
+    sigint_inbox_item_tag::Entity::delete_many()
+        .filter(sigint_inbox_item_tag::Column::SigintInboxItemId.eq(inbox_id))
+        .filter(sigint_inbox_item_tag::Column::Model.is_not_null())
+        .exec(txn)
+        .await
+        .c(h!())?;
+    tag_suggestion_worker_queue::Entity::insert(
+        tag_suggestion_worker_queue::ActiveModel {
+            sigint_inbox_item_id: Set(inbox_id),
+        },
+    )
+    .on_conflict_do_nothing()
+    .exec(txn)
+    .await
+    .c(h!())?;
+    palitra_highlight_worker_job::Entity::insert(
+        palitra_highlight_worker_job::ActiveModel {
+            sigint_inbox_item_id: Set(inbox_id),
+        },
+    )
+    .on_conflict_do_nothing()
+    .exec(txn)
+    .await
+    .c(h!())?;
+    Ok(())
 }
 
 async fn parse_submitted_coords(coords: Option<&str>) -> Option<Coords> {

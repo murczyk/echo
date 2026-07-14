@@ -1,4 +1,4 @@
-use crate::entities::datasource;
+use crate::entities::{datasource, sigint_comment};
 use crate::error::AppError;
 use crate::rer_importer::types::*;
 use crate::types::*;
@@ -108,6 +108,30 @@ pub(crate) async fn submit_inbox_item_with_groups(
         login,
         logins,
         item,
+        None,
+    )
+    .await
+}
+
+pub(crate) async fn edit_inbox_item_with_groups(
+    env: &Env,
+    txn: &DatabaseTransaction,
+    signal_message_id: i64,
+    datasource_id: i64,
+    groups: &[(String, i64)],
+    login: &str,
+    logins: &Vec<String>,
+    item: InboxSubmitItem,
+) -> Result<SubmittedInboxItem, AppError> {
+    submit_inbox_item_with_groups_inner(
+        env,
+        txn,
+        datasource_id,
+        groups,
+        login,
+        logins,
+        item,
+        Some(signal_message_id),
     )
     .await
 }
@@ -120,52 +144,70 @@ async fn submit_inbox_item_with_groups_inner(
     login: &str,
     logins: &Vec<String>,
     item: InboxSubmitItem,
+    signal_message_id: Option<i64>,
 ) -> Result<SubmittedInboxItem, AppError> {
-    super::validate_submit_item_content(&item)?;
-    let tag_ids =
-        super::resolve_submit_tag_ids(txn, item.tags.as_deref()).await?;
-    let operator_tags = super::submit_operator_tags(item.tags.as_deref())?;
-    let (mut message, timestamp) =
-        super::generic_submit_item_to_inbox_message(&item)?;
-    let post = super::normalized_optional_string(message.post.as_deref());
-    let post_id = match message.post_id {
-        Some(post_id) => Some(post_id),
-        None => crate::sigint::post::get_or_create_post_id(txn, &post)
-            .await
-            .c(h!())?,
-    };
-    message.group_master_key = groups.first().map(|(key, _)| key.clone());
-    message.post = post;
-    message.post_id = post_id;
-    super::prepare_submit_body_for_coordinate_extraction(&mut message)?;
+    let mut prepared = prepare_inbox_submit_item(txn, groups, &item).await?;
 
-    let signal_message = super::upsert_submit_signal_message(
-        txn,
-        &env.config,
-        datasource_id,
-        None,
-        &message,
-        Some(timestamp),
-        operator_tags,
-        groups,
-    )
-    .await
-    .c(h!())?;
+    if let Some(signal_message_id) = signal_message_id {
+        delete_cleared_edit_comment(
+            txn,
+            signal_message_id,
+            login,
+            &mut prepared.message,
+        )
+        .await?;
+    }
+
+    let signal_message = match signal_message_id {
+        Some(signal_message_id) => super::update_submit_signal_message(
+            txn,
+            &env.config,
+            signal_message_id,
+            &prepared.message,
+            prepared.timestamp,
+            prepared.operator_tags,
+            groups,
+        )
+        .await
+        .c(h!())?,
+        None => super::upsert_submit_signal_message(
+            txn,
+            &env.config,
+            datasource_id,
+            None,
+            &prepared.message,
+            Some(prepared.timestamp),
+            prepared.operator_tags,
+            groups,
+        )
+        .await
+        .c(h!())?,
+    };
     let inbox_id = super::submit_upsert_inbox_item(
         env.settlements.clone(),
         txn,
         signal_message.id,
-        &message,
+        &prepared.message,
         login,
         logins,
         super::InboxLocationSubmitMode::Parse,
         item.parse_body_coordinates,
+        signal_message_id.is_some(),
     )
     .await
     .c(h!())?;
-    super::add_submit_tags(txn, inbox_id, login, tag_ids)
-        .await
-        .c(h!())?;
+    match signal_message_id {
+        Some(_) => {
+            super::replace_submit_tags(txn, inbox_id, login, prepared.tag_ids)
+                .await
+                .c(h!())?;
+        }
+        None => {
+            super::add_submit_tags(txn, inbox_id, login, prepared.tag_ids)
+                .await
+                .c(h!())?;
+        }
+    }
     let InboxSubmitItem { network, dmr, .. } = item;
     let warnings =
         super::save_submit_dmr_metadata(inbox_id, network.as_ref(), dmr, txn)
@@ -176,5 +218,64 @@ async fn submit_inbox_item_with_groups_inner(
         signal_message_id: signal_message.id,
         inbox_id,
         warnings,
+    })
+}
+
+async fn delete_cleared_edit_comment(
+    txn: &DatabaseTransaction,
+    signal_message_id: i64,
+    login: &str,
+    message: &mut InboxMessage,
+) -> Result<(), AppError> {
+    if message
+        .extended_form
+        .as_deref()
+        .is_some_and(|comment| !comment.trim().is_empty())
+    {
+        return Ok(());
+    }
+    sigint_comment::Entity::delete_many()
+        .filter(sigint_comment::Column::SignalMessageId.eq(signal_message_id))
+        .filter(sigint_comment::Column::Login.eq(login))
+        .exec(txn)
+        .await
+        .c(h!())?;
+    message.extended_form = None;
+    Ok(())
+}
+
+struct PreparedInboxSubmitItem {
+    message: InboxMessage,
+    timestamp: chrono::NaiveDateTime,
+    tag_ids: Option<Vec<i64>>,
+    operator_tags: Option<serde_json::Value>,
+}
+
+async fn prepare_inbox_submit_item(
+    txn: &DatabaseTransaction,
+    groups: &[(String, i64)],
+    item: &InboxSubmitItem,
+) -> Result<PreparedInboxSubmitItem, AppError> {
+    super::validate_submit_item_content(item)?;
+    let tag_ids =
+        super::resolve_submit_tag_ids(txn, item.tags.as_deref()).await?;
+    let operator_tags = super::submit_operator_tags(item.tags.as_deref())?;
+    let (mut message, timestamp) =
+        super::generic_submit_item_to_inbox_message(item)?;
+    let post = super::normalized_optional_string(message.post.as_deref());
+    message.post_id = match message.post_id {
+        Some(post_id) => Some(post_id),
+        None => crate::sigint::post::get_or_create_post_id(txn, &post)
+            .await
+            .c(h!())?,
+    };
+    message.group_master_key = groups.first().map(|(key, _)| key.clone());
+    message.post = post;
+    super::prepare_submit_body_for_coordinate_extraction(&mut message)?;
+    Ok(PreparedInboxSubmitItem {
+        message,
+        timestamp,
+        tag_ids,
+        operator_tags,
     })
 }

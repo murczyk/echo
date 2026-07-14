@@ -1,6 +1,7 @@
 use crate::entities::{
     area_of_responsibility, datasource_group, device_name, sigint_inbox_item,
-    signal_group, signal_group_aor, signal_message_media, signal_profile,
+    signal_group, signal_group_aor, signal_message, signal_message_group,
+    signal_message_media, signal_profile,
 };
 use crate::error::AppError;
 use crate::types::*;
@@ -35,6 +36,30 @@ where
     }
 
     Ok(signal_group)
+}
+
+pub async fn find_editable_signal_message<C>(
+    dbx: &C,
+    signal_message_id: i64,
+    signal_group_master_key: &str,
+) -> Result<signal_message::Model, AppError>
+where
+    C: ConnectionTrait,
+{
+    signal_message::Entity::find_by_id(signal_message_id)
+        .join(
+            JoinType::InnerJoin,
+            signal_message::Relation::SignalMessageGroup.def(),
+        )
+        .filter(signal_message::Column::Deleted.eq(false))
+        .filter(
+            signal_message_group::Column::GroupMasterKey
+                .eq(signal_group_master_key),
+        )
+        .one(dbx)
+        .await
+        .c(h!())?
+        .ok_or(AppError::NotFound)
 }
 
 pub async fn ensure_current_user_sender<C>(
@@ -84,7 +109,7 @@ where
 pub async fn set_inbox_items_device_name<C>(
     dbx: &C,
     inbox_item_ids: Vec<i64>,
-    device_name_id: i64,
+    device_name_id: Option<i64>,
 ) -> Result<(), AppError>
 where
     C: ConnectionTrait,

@@ -924,6 +924,27 @@ async fn add_submit_tags(
     Ok(())
 }
 
+async fn replace_submit_tags(
+    txn: &DatabaseTransaction,
+    inbox_id: i64,
+    login: &str,
+    tag_ids: Option<Vec<i64>>,
+) -> Result<(), AppError> {
+    let Some(tag_ids) = tag_ids else {
+        return Ok(());
+    };
+    sigint_inbox_item_tag::Entity::delete_many()
+        .filter(sigint_inbox_item_tag::Column::SigintInboxItemId.eq(inbox_id))
+        .filter(
+            sigint_inbox_item_tag::Column::Login.eq(Some(login.to_string())),
+        )
+        .filter(sigint_inbox_item_tag::Column::Model.is_null())
+        .exec(txn)
+        .await
+        .c(h!())?;
+    add_submit_tags(txn, inbox_id, login, Some(tag_ids)).await
+}
+
 fn format_submit_coordinates(coords: &[SubmitCoordinates]) -> Option<String> {
     coords
         .first()
@@ -1126,6 +1147,40 @@ async fn upsert_submit_signal_message(
         false,
     )
     .await
+}
+
+async fn update_submit_signal_message(
+    txn: &DatabaseTransaction,
+    config: &Config,
+    signal_message_id: i64,
+    message: &InboxMessage,
+    timestamp: NaiveDateTime,
+    operator_tags: Option<serde_json::Value>,
+    groups: &[(String, i64)],
+) -> Result<signal_message::Model, AppError> {
+    let (_group_master_key, datasource_group_id) =
+        groups.first().cloned().c(h!())?;
+    let signal_message = SignalMessage::find_by_id(signal_message_id)
+        .filter(signal_message::Column::Deleted.eq(false))
+        .one(txn)
+        .await
+        .c(h!())?
+        .ok_or(AppError::NotFound)?;
+    let mut signal_message = signal_message.into_active_model();
+    signal_message.body = Set(Some(message.text.clone()));
+    signal_message.datasource_group_id = Set(Some(datasource_group_id));
+    signal_message.timestamp = Set(Some(timestamp));
+    signal_message.sender = Set(message.sender.clone());
+    if operator_tags.is_some() {
+        signal_message.operator_tags = Set(operator_tags);
+    }
+    let signal_message = signal_message.update(txn).await.c(h!())?;
+    let signal_message =
+        ensure_signal_message_model_uid(txn, config, signal_message)
+            .await
+            .c(h!())?;
+    ensure_submit_signal_message_groups(txn, &signal_message, groups).await?;
+    Ok(signal_message)
 }
 
 async fn upsert_submit_signal_message_inner(
@@ -1810,6 +1865,7 @@ async fn submit_legacy_inbox_messages(
                 logins,
                 InboxLocationSubmitMode::PreserveTyped,
                 true,
+                false,
             )
             .await
             .c(h!())?;
@@ -2633,6 +2689,7 @@ mod tests {
             &logins,
             InboxLocationSubmitMode::PreserveTyped,
             true,
+            false,
         )
         .await
         .unwrap();
