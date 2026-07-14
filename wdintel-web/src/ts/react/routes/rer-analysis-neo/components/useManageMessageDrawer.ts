@@ -16,6 +16,7 @@ import {
   searchSignalNames,
   searchCallsignNames,
   searchFreqs,
+  type NetworkSearchResult,
 } from '../../../services/api/direct-submit';
 import { getNetworksByIds } from '../../../services/api/networks';
 import type { InboxMessage, SignalGroupEntry, Tag, User } from '../../../../../Bindings';
@@ -79,7 +80,7 @@ export function useManageMessageDrawer({
   const [unitLoading, setUnitLoading] = useState(false);
   const [unitInput, setUnitInput] = useState('');
 
-  const [networkNameOptions, setNetworkNameOptions] = useState<string[]>([]);
+  const [networkNameOptions, setNetworkNameOptions] = useState<NetworkSearchResult[]>([]);
   const [networkNameLoading, setNetworkNameLoading] = useState(false);
   const [networkNameInput, setNetworkNameInput] = useState('');
 
@@ -96,6 +97,7 @@ export function useManageMessageDrawer({
   const [freqInput, setFreqInput] = useState('');
 
   useEffect(() => {
+    if (!open) return;
     let active = true;
 
     setComputerNamesLoading(true);
@@ -113,9 +115,10 @@ export function useManageMessageDrawer({
     return () => {
       active = false;
     };
-  }, [computerNameInput]);
+  }, [computerNameInput, open]);
 
   useEffect(() => {
+    if (!open) return;
     let active = true;
 
     setPostLoading(true);
@@ -133,9 +136,10 @@ export function useManageMessageDrawer({
     return () => {
       active = false;
     };
-  }, [postInput]);
+  }, [postInput, open]);
 
   useEffect(() => {
+    if (!open) return;
     let active = true;
 
     setUnitLoading(true);
@@ -153,16 +157,17 @@ export function useManageMessageDrawer({
     return () => {
       active = false;
     };
-  }, [unitInput]);
+  }, [unitInput, open]);
 
   useEffect(() => {
+    if (!open) return;
     let active = true;
 
     setNetworkNameLoading(true);
     searchNetworkNames(networkNameInput)
       .then((results) => {
         if (active) {
-          setNetworkNameOptions(results.map((n) => n.name));
+          setNetworkNameOptions(results);
         }
       })
       .catch(console.error)
@@ -173,9 +178,10 @@ export function useManageMessageDrawer({
     return () => {
       active = false;
     };
-  }, [networkNameInput]);
+  }, [networkNameInput, open]);
 
   useEffect(() => {
+    if (!open) return;
     let active = true;
 
     setCallsignLoading(true);
@@ -193,9 +199,10 @@ export function useManageMessageDrawer({
     return () => {
       active = false;
     };
-  }, [callsignInput]);
+  }, [callsignInput, open]);
 
   useEffect(() => {
+    if (!open) return;
     let active = true;
 
     setFreqLoading(true);
@@ -213,7 +220,7 @@ export function useManageMessageDrawer({
     return () => {
       active = false;
     };
-  }, [freqInput]);
+  }, [freqInput, open]);
 
   const {
     uppy,
@@ -285,6 +292,11 @@ export function useManageMessageDrawer({
   useEffect(() => {
     if (!open) return;
     setComputerNameInput('');
+    setPostInput('');
+    setUnitInput('');
+    setNetworkNameInput('');
+    setCallsignInput('');
+    setFreqInput('');
     setShowAdvanced(false);
     setErrorMsg(null);
     if (isEditMode && editTarget) {

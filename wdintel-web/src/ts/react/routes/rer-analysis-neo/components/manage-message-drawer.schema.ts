@@ -140,11 +140,11 @@ export function makeMessageSchema(isEditMode: boolean) {
         data.dmr_call_group_name?.trim() ||
         data.dmr_hash_id?.trim()
       );
-      if (isDmr && (!data.freq || !data.freq.trim())) {
+      if (isDmr && !data.network_name?.trim() && (!data.freq || !data.freq.trim())) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
           path: ['freq'],
-          message: "Частота є обов'язковою для DMR метаданих",
+          message: "Частота є обов'язковою для DMR метаданих (якщо не вказана мережа)",
         });
       }
     });

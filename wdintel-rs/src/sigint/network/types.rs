@@ -719,6 +719,8 @@ pub struct NetworkSearchReq {
 pub struct NetworkSearchResult {
     pub id: i64,
     pub name: String,
+    pub unit_ids: Option<Vec<i64>>,
+    pub freqs: Vec<NetworkFreq>,
 }
 
 #[derive(

@@ -93,17 +93,21 @@ export async function searchUnitNames(
   return result?.units || [];
 }
 
-export type NetworkResponse = {
+import type { NetworkFreq } from '../../../../Bindings';
+
+export type NetworkSearchResult = {
   id: number;
   name: string;
+  unit_ids: number[] | null;
+  freqs: NetworkFreq[];
 };
 
 export async function searchNetworkNames(
   search: string,
   options?: RequestOptions,
-): Promise<NetworkResponse[]> {
-  const result = await postJson<{ networks: NetworkResponse[] }>(
-    '/api/sigint/network-name/search',
+): Promise<NetworkSearchResult[]> {
+  const result = await postJson<{ networks: NetworkSearchResult[] }>(
+    '/api/sigint/network/search',
     { search },
     options,
   );

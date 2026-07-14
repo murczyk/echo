@@ -41,6 +41,20 @@ export function useMessageSubmit({
   const onSubmit = async (data: MessageFormData) => {
     if (busy) return;
 
+    const hasTextContent = !!(data.text?.trim() || data.full_body?.trim());
+    const uppyFiles = uppy.getFiles();
+    const hasNewFiles = uppyFiles.length > 0;
+
+    // In edit mode, check if there are existing media files that are not deleted
+    const deletedCount = data.deleted_media_ids?.length ?? 0;
+    const existingMediaCount = isEditMode && editTarget ? editTarget.message.media.length : 0;
+    const hasExistingMedia = existingMediaCount > deletedCount;
+
+    if (!hasTextContent && !hasNewFiles && !hasExistingMedia) {
+      setErrorMsg("Текст повідомлення або вкладення є обов'язковими");
+      return;
+    }
+
     setSubmitting(true);
     setErrorMsg(null);
 

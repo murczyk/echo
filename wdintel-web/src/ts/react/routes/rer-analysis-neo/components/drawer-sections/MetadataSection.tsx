@@ -132,6 +132,7 @@ export function MetadataSection({
             control={control}
             render={({ field }) => (
               <Autocomplete
+                freeSolo
                 forcePopupIcon
                 noOptionsText="Немає варіантів"
                 options={Array.from(new Set([...(recentValues?.unit || []), ...unitOptions]))}

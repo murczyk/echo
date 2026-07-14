@@ -744,7 +744,7 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::sigint::network::update_network)
             .service(crate::sigint::network::report_networks_goi_task_launch)
             .service(crate::sigint::network::restore_network)
-            .service(crate::sigint::network::network_name_search)
+            .service(crate::sigint::network::network_search)
             .service(crate::sigint::network::network_callsigns)
             .service(crate::sigint::network::network_callsigns_list)
             .service(crate::sigint::network::relations::network_callsigns_relations)

@@ -4452,8 +4452,8 @@ fn kind_from_modulation(modulation: &str) -> SigintNetworkKind {
     }
 }
 
-#[post("/api/sigint/network-name/search")]
-pub async fn network_name_search(
+#[post("/api/sigint/network/search")]
+pub async fn network_search(
     user: actix_identity::Identity,
     env: actix_web::web::Data<Env>,
     req: Json<NetworkSearchReq>,
@@ -4471,16 +4471,23 @@ pub async fn network_name_search(
         query = query.filter(Expr::col(sigint_network::Column::Name).ilike(format!("%{}%", search_phrase)));
     }
 
-    let networks = query
+    let networks_db = query
         .order_by(sigint_network::Column::Name, Order::Asc)
         .limit(50)
         .all(&env.dbx)
         .await
-        .context(h!())?
+        .context(h!())?;
+
+    let login = user.id().c(h!())?;
+    let networks_full = bl::render_networks(networks_db, &env.dbx, &login).await?;
+
+    let networks = networks_full
         .into_iter()
         .map(|network| NetworkSearchResult {
             id: network.id,
             name: network.name,
+            unit_ids: network.unit_ids,
+            freqs: network.freqs,
         })
         .collect();
 
