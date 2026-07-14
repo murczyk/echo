@@ -170,7 +170,7 @@ describe('useAnalysisReloadOrchestrator', () => {
     expect(reloadAnalysisDataMock.reloadAnalysisData).toHaveBeenCalledTimes(1);
   });
 
-  it('loads map palitras for direct coordinate searches', async () => {
+  it('loads map palitras for search queries', async () => {
     const params = buildParams({
       queryState: { ...buildQueryState(), search: '47.42135, 35.62197' },
     });

@@ -1,19 +1,23 @@
 import 'leaflet/dist/leaflet.css';
 
+import LayersOutlinedIcon from '@mui/icons-material/LayersOutlined';
 import FullscreenExitIcon from '@mui/icons-material/FullscreenExit';
 import FullscreenIcon from '@mui/icons-material/Fullscreen';
+import MapOutlinedIcon from '@mui/icons-material/MapOutlined';
 import {
   Box,
   Button,
-  ButtonGroup,
+  CircularProgress,
   DialogActions,
   IconButton,
+  ToggleButton,
+  ToggleButtonGroup,
   Tooltip,
   Typography,
 } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
 import * as L from 'leaflet';
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { getTileLayers } from '../../../../web-components/analysis-map/tile-layers';
 import type { CoordinatePreviewResult } from './message-coordinate-preview';
@@ -26,6 +30,7 @@ import {
 } from './message-card-preview-shell';
 
 type BaseLayerId = 'googleHybrid' | 'openStreetMap';
+type MapInitState = 'loading' | 'ready' | 'error';
 
 type Props = {
   coordinate: CoordinatePreviewResult['point'];
@@ -34,33 +39,43 @@ type Props = {
 };
 
 const PREVIEW_ZOOM = 13;
+const MAP_INIT_TIMEOUT_MS = 2000;
+const MAP_HOST_MIN_SIZE_PX = 48;
 
 export function MessageCardCoordinateMapDialog({ coordinate, open, onClose }: Props) {
   const theme = useTheme();
-  const mapContainerRef = useRef<HTMLDivElement | null>(null);
+  const [mapHostEl, setMapHostEl] = useState<HTMLDivElement | null>(null);
   const mapRef = useRef<L.Map | null>(null);
   const markerRef = useRef<L.CircleMarker | null>(null);
   const layerRef = useRef<L.TileLayer | null>(null);
   const tileLayersRef = useRef<ReturnType<typeof getTileLayers> | null>(null);
   const initFrameRef = useRef<number | null>(null);
   const invalidateFrameRef = useRef<number | null>(null);
-  const previousFullscreenRef = useRef<boolean | null>(null);
-  const initialLayerIdRef = useRef<BaseLayerId>('googleHybrid');
+  const initTimeoutRef = useRef<number | null>(null);
+  const baseLayerIdRef = useRef<BaseLayerId>('googleHybrid');
   const [baseLayerId, setBaseLayerId] = useState<BaseLayerId>('googleHybrid');
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [mapInitState, setMapInitState] = useState<MapInitState>('loading');
+  const [retryToken, setRetryToken] = useState(0);
   const previewConfig = getMessageCardPreviewShellConfig('coordinate-map');
   const canFullscreen = previewConfig.supportsFullscreen;
   const dialogIsFullscreen = canFullscreen && isFullscreen;
 
   useEffect(() => {
+    baseLayerIdRef.current = baseLayerId;
+  }, [baseLayerId]);
+
+  useEffect(() => {
     if (!open) {
       setBaseLayerId('googleHybrid');
       setIsFullscreen(false);
+      setMapInitState('loading');
       return;
     }
 
-    initialLayerIdRef.current = 'googleHybrid';
     setBaseLayerId('googleHybrid');
+    setIsFullscreen(false);
+    setMapInitState('loading');
   }, [open, coordinate.lat, coordinate.lng]);
 
   useEffect(() => {
@@ -85,23 +100,27 @@ export function MessageCardCoordinateMapDialog({ coordinate, open, onClose }: Pr
   }, [baseLayerId, open]);
 
   useEffect(() => {
+    if (!dialogIsFullscreen) {
+      return;
+    }
+
+    const handleFullscreenEscape = (event: globalThis.KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      event.preventDefault();
+      event.stopPropagation();
+      setIsFullscreen(false);
+    };
+
+    window.addEventListener('keydown', handleFullscreenEscape as EventListener, true);
+    return () => {
+      window.removeEventListener('keydown', handleFullscreenEscape as EventListener, true);
+    };
+  }, [dialogIsFullscreen]);
+
+  useEffect(() => {
     if (!open || mapRef.current == null) {
-      if (!open) {
-        previousFullscreenRef.current = null;
-      }
       return;
     }
-
-    if (previousFullscreenRef.current === null) {
-      previousFullscreenRef.current = dialogIsFullscreen;
-      return;
-    }
-
-    if (previousFullscreenRef.current === dialogIsFullscreen) {
-      return;
-    }
-
-    previousFullscreenRef.current = dialogIsFullscreen;
 
     if (invalidateFrameRef.current !== null) {
       window.cancelAnimationFrame(invalidateFrameRef.current);
@@ -109,8 +128,8 @@ export function MessageCardCoordinateMapDialog({ coordinate, open, onClose }: Pr
     }
 
     invalidateFrameRef.current = window.requestAnimationFrame(() => {
-      mapRef.current?.invalidateSize();
       invalidateFrameRef.current = null;
+      mapRef.current?.invalidateSize();
     });
 
     return () => {
@@ -121,29 +140,64 @@ export function MessageCardCoordinateMapDialog({ coordinate, open, onClose }: Pr
     };
   }, [dialogIsFullscreen, open]);
 
-  useLayoutEffect(() => {
-    if (!open) {
-      return;
-    }
-
-    const container = mapContainerRef.current;
-    if (!container) {
+  useEffect(() => {
+    if (!open || mapHostEl == null) {
+      if (!open) {
+        if (initFrameRef.current !== null) {
+          window.cancelAnimationFrame(initFrameRef.current);
+          initFrameRef.current = null;
+        }
+        if (initTimeoutRef.current !== null) {
+          window.clearTimeout(initTimeoutRef.current);
+          initTimeoutRef.current = null;
+        }
+        markerRef.current?.remove();
+        markerRef.current = null;
+        layerRef.current?.remove();
+        layerRef.current = null;
+        tileLayersRef.current = null;
+        mapRef.current?.remove();
+        mapRef.current = null;
+      }
       return;
     }
 
     let cancelled = false;
-    const initMap = () => {
-      if (cancelled || mapRef.current || mapContainerRef.current !== container) {
+    const currentHost = mapHostEl;
+
+    const clearPendingInvalidate = () => {
+      if (invalidateFrameRef.current === null) {
         return;
       }
+      window.cancelAnimationFrame(invalidateFrameRef.current);
+      invalidateFrameRef.current = null;
+    };
 
-      const rect = container.getBoundingClientRect();
-      if (rect.width < 48 || rect.height < 48) {
-        initFrameRef.current = window.requestAnimationFrame(initMap);
+    const scheduleInvalidate = () => {
+      if (invalidateFrameRef.current !== null || cancelled || mapRef.current == null) {
         return;
       }
+      invalidateFrameRef.current = window.requestAnimationFrame(() => {
+        invalidateFrameRef.current = null;
+        mapRef.current?.invalidateSize();
+      });
+    };
 
-      const map = L.map(container, {
+    const initializeMap = () => {
+      if (cancelled || mapRef.current != null || mapHostEl !== currentHost) {
+        return false;
+      }
+
+      if (!currentHost.isConnected) {
+        return false;
+      }
+
+      const rect = currentHost.getBoundingClientRect();
+      if (rect.width < MAP_HOST_MIN_SIZE_PX || rect.height < MAP_HOST_MIN_SIZE_PX) {
+        return false;
+      }
+
+      const map = L.map(currentHost, {
         zoomControl: true,
         attributionControl: false,
         dragging: true,
@@ -160,7 +214,7 @@ export function MessageCardCoordinateMapDialog({ coordinate, open, onClose }: Pr
       const tileLayers = getTileLayers();
       tileLayersRef.current = tileLayers;
       const baseLayer =
-        initialLayerIdRef.current === 'googleHybrid'
+        baseLayerIdRef.current === 'googleHybrid'
           ? tileLayers.googleHybrid
           : tileLayers.openStreetMap;
       baseLayer.addTo(map);
@@ -176,26 +230,52 @@ export function MessageCardCoordinateMapDialog({ coordinate, open, onClose }: Pr
       mapRef.current = map;
       markerRef.current = marker;
       layerRef.current = baseLayer;
+      setMapInitState('ready');
+      scheduleInvalidate();
 
-      invalidateFrameRef.current = window.requestAnimationFrame(() => {
-        if (!cancelled) {
-          map.invalidateSize();
-        }
-      });
+      return true;
     };
 
-    initFrameRef.current = window.requestAnimationFrame(initMap);
+    const resizeObserver =
+      typeof ResizeObserver === 'undefined'
+        ? null
+        : new ResizeObserver(() => {
+            if (cancelled) {
+              return;
+            }
+
+            if (mapRef.current == null) {
+              initializeMap();
+              return;
+            }
+
+            scheduleInvalidate();
+          });
+
+    resizeObserver?.observe(currentHost);
+    initTimeoutRef.current = window.setTimeout(() => {
+      if (!cancelled && mapRef.current == null) {
+        setMapInitState('error');
+      }
+    }, MAP_INIT_TIMEOUT_MS);
+
+    initFrameRef.current = window.requestAnimationFrame(() => {
+      initFrameRef.current = null;
+      initializeMap();
+    });
 
     return () => {
       cancelled = true;
+      resizeObserver?.disconnect();
       if (initFrameRef.current !== null) {
         window.cancelAnimationFrame(initFrameRef.current);
         initFrameRef.current = null;
       }
-      if (invalidateFrameRef.current !== null) {
-        window.cancelAnimationFrame(invalidateFrameRef.current);
-        invalidateFrameRef.current = null;
+      if (initTimeoutRef.current !== null) {
+        window.clearTimeout(initTimeoutRef.current);
+        initTimeoutRef.current = null;
       }
+      clearPendingInvalidate();
       markerRef.current?.remove();
       markerRef.current = null;
       layerRef.current?.remove();
@@ -204,7 +284,7 @@ export function MessageCardCoordinateMapDialog({ coordinate, open, onClose }: Pr
       mapRef.current?.remove();
       mapRef.current = null;
     };
-  }, [coordinate.lat, coordinate.lng, open]);
+  }, [coordinate.lat, coordinate.lng, mapHostEl, open, retryToken]);
 
   const handleClose = useCallback(() => {
     blurActivePreviewDialogElement();
@@ -214,6 +294,11 @@ export function MessageCardCoordinateMapDialog({ coordinate, open, onClose }: Pr
   const handleShellClose = useCallback(() => {
     handleClose();
   }, [handleClose]);
+
+  const handleRetry = useCallback(() => {
+    setMapInitState('loading');
+    setRetryToken((value) => value + 1);
+  }, []);
 
   return (
     <MessageCardPreviewShell
@@ -235,7 +320,7 @@ export function MessageCardCoordinateMapDialog({ coordinate, open, onClose }: Pr
           }}
         >
           <Box
-            ref={mapContainerRef}
+            ref={setMapHostEl}
             sx={{
               position: 'absolute',
               inset: 0,
@@ -245,15 +330,81 @@ export function MessageCardCoordinateMapDialog({ coordinate, open, onClose }: Pr
               },
             }}
           />
+          {mapInitState === 'ready' ? null : (
+            <Box
+              sx={{
+                position: 'absolute',
+                inset: 0,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                pointerEvents: 'auto',
+                backgroundColor: 'rgba(10, 13, 18, 0.08)',
+              }}
+            >
+              {mapInitState === 'loading' ? (
+                <Box
+                  sx={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 1,
+                    px: 1.5,
+                    py: 1,
+                    borderRadius: 999,
+                    bgcolor: 'rgba(10, 13, 18, 0.72)',
+                    color: 'common.white',
+                  }}
+                >
+                  <CircularProgress size={18} color="inherit" />
+                  <Typography variant="caption" sx={{ fontWeight: 700 }}>
+                    Завантаження мапи…
+                  </Typography>
+                </Box>
+              ) : (
+                <Box
+                  sx={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    gap: 1.25,
+                    px: 2,
+                    py: 1.5,
+                    borderRadius: 2,
+                    bgcolor: 'rgba(10, 13, 18, 0.78)',
+                    color: 'common.white',
+                  }}
+                >
+                  <Typography variant="body2" sx={{ fontWeight: 700 }}>
+                    Не вдалося відкрити мапу
+                  </Typography>
+                  <Button
+                    aria-label="Повторити"
+                    size="small"
+                    variant="contained"
+                    onClick={handleRetry}
+                  >
+                    Повторити
+                  </Button>
+                </Box>
+              )}
+            </Box>
+          )}
           <Box
+            style={{
+              right: '12px',
+              top: '12px',
+              zIndex: 1200,
+              pointerEvents: 'none',
+            }}
             sx={{
               position: 'absolute',
-              left: 12,
               right: 12,
+              left: 'auto',
               top: 12,
+              zIndex: 1200,
               display: 'flex',
               alignItems: 'flex-start',
-              justifyContent: 'space-between',
+              justifyContent: 'flex-end',
               gap: 1,
               pointerEvents: 'none',
             }}
@@ -272,7 +423,7 @@ export function MessageCardCoordinateMapDialog({ coordinate, open, onClose }: Pr
                 overflow: 'hidden',
                 textOverflow: 'ellipsis',
                 whiteSpace: 'nowrap',
-                maxWidth: '100%',
+                maxWidth: 'min(100%, calc(100vw - 120px))',
               }}
             >
               {coordinate.label}
@@ -286,32 +437,71 @@ export function MessageCardCoordinateMapDialog({ coordinate, open, onClose }: Pr
             display: 'flex',
             justifyContent: 'center',
             width: '100%',
-            px: 2,
-            pt: 1.5,
-            pb: 0.5,
+            px: 3,
+            py: 1.5,
+            backgroundColor: 'background.paper',
           }}
         >
-          <ButtonGroup size="small" variant="outlined">
-            <Button
-              onClick={() => setBaseLayerId('googleHybrid')}
-              variant={baseLayerId === 'googleHybrid' ? 'contained' : 'outlined'}
+          <ToggleButtonGroup
+            exclusive
+            size="small"
+            value={baseLayerId}
+            onChange={(_, nextLayerId: BaseLayerId | null) => {
+              if (nextLayerId != null) {
+                setBaseLayerId(nextLayerId);
+              }
+            }}
+            sx={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              flexWrap: 'wrap',
+              gap: 0.5,
+              backgroundColor: 'background.paper',
+              '& .MuiToggleButtonGroup-grouped': {
+                border: 0,
+                borderRadius: 1.5,
+                minWidth: 30,
+                width: 30,
+                height: 30,
+                padding: 0,
+                color: 'text.secondary',
+                backgroundColor: 'transparent',
+                '&:hover': {
+                  backgroundColor: 'action.hover',
+                },
+                '&.Mui-selected': {
+                  color: 'primary.main',
+                  backgroundColor: 'action.selected',
+                },
+                '&.Mui-selected:hover': {
+                  backgroundColor: 'action.selected',
+                },
+              },
+            }}
+          >
+            <Tooltip title="Супутник" enterDelay={300}>
+              <ToggleButton aria-label="Супутник" value="googleHybrid">
+                <LayersOutlinedIcon fontSize="small" />
+              </ToggleButton>
+            </Tooltip>
+            <Tooltip title="OpenStreetMap" enterDelay={300}>
+              <ToggleButton aria-label="OpenStreetMap" value="openStreetMap">
+                <MapOutlinedIcon fontSize="small" />
+              </ToggleButton>
+            </Tooltip>
+          </ToggleButtonGroup>
+          {canFullscreen ? (
+            <Box
+              sx={{
+                display: 'flex',
+                alignItems: 'center',
+                ml: 0.5,
+                pl: 0.5,
+                borderLeft: 1,
+                borderColor: 'divider',
+              }}
             >
-              Супутник
-            </Button>
-            <Button
-              onClick={() => setBaseLayerId('openStreetMap')}
-              variant={baseLayerId === 'openStreetMap' ? 'contained' : 'outlined'}
-            >
-              OpenStreetMap
-            </Button>
-          </ButtonGroup>
-        </Box>
-      }
-      actions={
-        <DialogActions sx={getMessageCardPreviewActionBarSx(theme)}>
-          <Box />
-          <Box sx={{ justifySelf: 'center' }}>
-            {canFullscreen ? (
               <Tooltip
                 title={dialogIsFullscreen ? 'Вийти з повноекранного режиму' : 'Повноекранний режим'}
                 enterDelay={300}
@@ -322,15 +512,23 @@ export function MessageCardCoordinateMapDialog({ coordinate, open, onClose }: Pr
                   }
                   size="small"
                   onClick={() => setIsFullscreen((current) => !current)}
-                  sx={{ color: 'text.secondary' }}
+                  sx={{
+                    color: 'text.secondary',
+                  }}
                 >
                   {dialogIsFullscreen ? <FullscreenExitIcon /> : <FullscreenIcon />}
                 </IconButton>
               </Tooltip>
-            ) : null}
-          </Box>
+            </Box>
+          ) : null}
+        </Box>
+      }
+      actions={
+        <DialogActions sx={getMessageCardPreviewActionBarSx(theme)}>
+          <Box />
+          <Box />
           <Box sx={{ justifySelf: 'end' }}>
-            <Button onClick={handleClose} variant="contained">
+            <Button aria-label="Закрити" onClick={handleClose} variant="contained">
               Закрити
             </Button>
           </Box>
