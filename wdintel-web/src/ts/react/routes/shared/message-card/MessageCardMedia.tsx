@@ -35,6 +35,7 @@ type MessageMediaInfoRaw = MessageMediaInfo & {
 export function mediaAttachmentContentType(m: MessageMediaInfo): string {
   const raw = m as MessageMediaInfoRaw;
   return String(m.contentType ?? raw.content_type ?? '')
+    .split(';', 1)[0]
     .trim()
     .toLowerCase();
 }
