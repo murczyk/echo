@@ -299,7 +299,11 @@ describe('MessageCardCoordinateMapDialog', () => {
     const dialog = document.body.querySelector('[role="dialog"]') as HTMLElement | null;
     const actionBar = dialog?.lastElementChild as HTMLElement | null;
     expect(actionBar?.children.length).toBe(3);
-    expect(actionBar?.children[2]?.querySelector('button[aria-label="Закрити"]')).not.toBeNull();
+    const closeSlotButton = actionBar?.children[2]?.querySelector(
+      'button[aria-label="Закрити"]',
+    ) as HTMLButtonElement | null;
+    expect(closeSlotButton).not.toBeNull();
+    expect(closeSlotButton?.getAttribute('data-variant')).toBe('');
 
     await act(async () => {
       hostRect = { width: 800, height: 600 };
@@ -452,6 +456,7 @@ describe('MessageCardCoordinateMapDialog', () => {
       'button[aria-label="Закрити"]',
     ) as HTMLButtonElement | null;
     expect(closeButton).not.toBeNull();
+    expect(closeButton?.getAttribute('data-variant')).toBe('');
     closeButton?.focus();
 
     await act(async () => {

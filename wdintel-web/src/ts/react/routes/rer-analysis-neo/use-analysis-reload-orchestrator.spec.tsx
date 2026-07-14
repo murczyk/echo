@@ -170,7 +170,7 @@ describe('useAnalysisReloadOrchestrator', () => {
     expect(reloadAnalysisDataMock.reloadAnalysisData).toHaveBeenCalledTimes(1);
   });
 
-  it('loads map palitras for search queries', async () => {
+  it('loads map palitras on initial eligible load', async () => {
     const params = buildParams({
       queryState: { ...buildQueryState(), search: '47.42135, 35.62197' },
     });
@@ -178,6 +178,35 @@ describe('useAnalysisReloadOrchestrator', () => {
     await renderHook(params);
 
     expect(params.loadMapPalitras).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not reload map palitras when only the search query changes', async () => {
+    const params = buildParams();
+
+    await renderHook(params);
+    expect(params.loadMapPalitras).toHaveBeenCalledTimes(1);
+
+    await rerenderHook({
+      ...params,
+      queryState: { ...params.queryState, search: '47.42135, 35.62197' },
+    });
+
+    expect(params.loadMapPalitras).toHaveBeenCalledTimes(1);
+  });
+
+  it('reloads map palitras when the callback changes', async () => {
+    const params = buildParams();
+
+    await renderHook(params);
+    expect(params.loadMapPalitras).toHaveBeenCalledTimes(1);
+
+    const nextLoadMapPalitras = vi.fn().mockResolvedValue(undefined);
+    await rerenderHook({
+      ...params,
+      loadMapPalitras: nextLoadMapPalitras,
+    });
+
+    expect(nextLoadMapPalitras).toHaveBeenCalledTimes(1);
   });
 
   it('debounces rapid reload trigger updates and keeps only the latest reload', async () => {

@@ -528,7 +528,7 @@ export function MessageCardCoordinateMapDialog({ coordinate, open, onClose }: Pr
           <Box />
           <Box />
           <Box sx={{ justifySelf: 'end' }}>
-            <Button aria-label="Закрити" onClick={handleClose} variant="contained">
+            <Button aria-label="Закрити" onClick={handleClose} sx={{ flexShrink: 0, ml: 1 }}>
               Закрити
             </Button>
           </Box>

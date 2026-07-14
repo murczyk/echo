@@ -391,7 +391,7 @@ export function useAnalysisReloadOrchestrator(params: Params): UseAnalysisReload
   useEffect(() => {
     if (deferInitialLoad) return;
     void loadMapPalitras();
-  }, [deferInitialLoad, loadMapPalitras, queryState.search]);
+  }, [deferInitialLoad, loadMapPalitras]);
 
   useEffect(() => {
     return () => {
