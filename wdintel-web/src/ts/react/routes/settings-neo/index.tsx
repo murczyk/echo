@@ -1,3 +1,4 @@
+import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import { Box, Card, FormControlLabel, Stack, Switch, Tab, Tabs, Typography } from '@mui/material';
 import { useCallback, useEffect, useState } from 'react';
 import type { SyntheticEvent } from 'react';
@@ -9,7 +10,6 @@ import { SettingsMyGroupsSection } from './SettingsMyGroupsSection';
 import { SettingsMyOrganismSection } from './SettingsMyOrganismSection';
 import { SettingsDutySection } from './SettingsDutySection';
 import { SettingsSharedTagsLayoutCard } from './SettingsSharedTagsLayoutCard';
-import { SettingsMyReportsSection } from './SettingsMyReportsSection';
 import { useGlobalSetting } from './use-global-settings';
 import { useDutySettings } from '../../hooks/use-duty-settings';
 import { listMyAdminGroups } from '../../services/api/zones';
@@ -22,6 +22,7 @@ type SettingsNeoPageProps = {
 };
 
 const SETTINGS_SECTION_QUERY_PARAM = 'section';
+const MY_REPORTS_PATH = '/my-reports';
 
 function serializeSettingsSection(section: SettingsSection): string {
   if (section === 'myGroups') return 'my-groups';
@@ -59,34 +60,23 @@ function buildSettingsSectionUrl(section: SettingsSection): string {
   return url.pathname + url.search + url.hash;
 }
 
+function navigateToMyReports(replace = false) {
+  if (replace) {
+    window.history.replaceState(window.history.state, '', MY_REPORTS_PATH);
+  } else {
+    window.history.pushState(window.history.state, '', MY_REPORTS_PATH);
+  }
+  window.dispatchEvent(new PopStateEvent('popstate'));
+}
+
 function renderMyReportsTabLabel() {
   return (
     <Box
       component="span"
       sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5, whiteSpace: 'nowrap' }}
     >
-      <span>Мої звіти</span>
-      <Box
-        component="span"
-        sx={(theme) => ({
-          display: 'inline-flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          px: 0.5,
-          py: 0.15,
-          borderRadius: 9999,
-          border: 1,
-          borderColor: theme.palette.mode === 'dark' ? 'var(--ochre-normal)' : '#d28b1d',
-          bgcolor: theme.palette.mode === 'dark' ? 'var(--ochre-dark)' : '#f0c97a',
-          color: theme.palette.mode === 'dark' ? 'var(--ochre-light)' : '#8a4f00',
-          fontSize: '0.65rem',
-          fontWeight: 600,
-          lineHeight: 1,
-          minHeight: 22,
-        })}
-      >
-        BETA
-      </Box>
+      <span>Мої Звіти</span>
+      <OpenInNewIcon sx={{ fontSize: 16 }} aria-hidden="true" />
     </Box>
   );
 }
@@ -125,12 +115,28 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
 
   useEffect(() => {
     if (isNullOrUndefined(section)) return;
-    setSettingsSection(parseSettingsSection(section));
+    const nextSection = parseSettingsSection(section);
+    if (nextSection === 'myReports') {
+      navigateToMyReports(true);
+      return;
+    }
+    setSettingsSection(nextSection);
   }, [section]);
 
   useEffect(() => {
+    if (settingsSection === 'myReports') {
+      navigateToMyReports(true);
+    }
+  }, [settingsSection]);
+
+  useEffect(() => {
     const handlePopState = () => {
-      setSettingsSection(readSettingsSectionFromUrl());
+      const nextSection = readSettingsSectionFromUrl();
+      if (nextSection === 'myReports') {
+        navigateToMyReports(true);
+        return;
+      }
+      setSettingsSection(nextSection);
     };
 
     window.addEventListener('popstate', handlePopState);
@@ -151,6 +157,11 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
 
   function handleTabChange(_: SyntheticEvent, value: SettingsSection) {
     if (value === settingsSection) return;
+
+    if (value === 'myReports') {
+      navigateToMyReports();
+      return;
+    }
 
     setSettingsSection(value);
     window.history.pushState(window.history.state, '', buildSettingsSectionUrl(value));
@@ -215,7 +226,6 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
               value="myReports"
               label={renderMyReportsTabLabel()}
               id="settings-neo-tab-my-reports"
-              aria-controls="settings-neo-panel-my-reports"
             />
           </Tabs>
 
@@ -340,10 +350,6 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
                 </Stack>
               </Box>
             </Box>
-          ) : null}
-
-          {settingsSection === 'myReports' ? (
-            <SettingsMyReportsSection active={settingsSection === 'myReports'} />
           ) : null}
         </Card>
       </Stack>
