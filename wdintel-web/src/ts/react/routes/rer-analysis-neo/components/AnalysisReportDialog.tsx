@@ -47,7 +47,7 @@ import type { AnalysisAorEntry, AnalysisReportTaskRun } from '../types';
 const FORMING_TEXT = `Формується${ELLIPSIS}`;
 const PREPARING_TEXT = `Готуємо${ELLIPSIS}`;
 const QUEUED_TEXT = 'Очікує запуску';
-const REPORT_HISTORY_URL = '/settings-neo?section=my-reports';
+const REPORT_HISTORY_URL = '/my-reports';
 
 type Props = {
   aors: AnalysisAorEntry[];
@@ -363,7 +363,7 @@ export function AnalysisReportDialog({
                   '&:hover': { textDecoration: 'underline' },
                 }}
               >
-                Налаштування &gt; Мої звіти
+                Мої Звіти
               </Box>
             </Typography>
 
@@ -742,7 +742,7 @@ export function AnalysisReportDialog({
               historyRow?.createdAt != null &&
               Date.now() - parseUtcDateTime(historyRow.createdAt)!.getTime() >= 5 * 60 * 1000 ? (
                 <Alert severity="warning">
-                  Звіт ще не стартував. Перевірте його стан у Налаштування &gt; Мої звіти.
+                  Звіт ще не стартував. Перевірте його стан у Мої Звіти.
                 </Alert>
               ) : null}
 

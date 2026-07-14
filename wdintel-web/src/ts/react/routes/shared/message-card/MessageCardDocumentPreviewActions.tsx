@@ -31,11 +31,13 @@ import { getMessageCardPreviewActionBarSx } from './message-card-preview-shell';
 export function MessageCardDocumentPreviewControls({
   zoom,
   isFullscreen,
+  canFullscreen = true,
   onSetPreviewZoom,
   onToggleFullscreen,
 }: {
   zoom: number;
   isFullscreen: boolean;
+  canFullscreen?: boolean;
   onSetPreviewZoom: (zoom: number) => void;
   onToggleFullscreen: () => void;
 }) {
@@ -131,19 +133,21 @@ export function MessageCardDocumentPreviewControls({
         {Math.round(zoom)}%
       </Typography>
 
-      <Tooltip
-        title={isFullscreen ? 'Вийти з повноекранного режиму' : 'Повноекранний режим'}
-        enterDelay={300}
-      >
-        <IconButton
-          aria-label={isFullscreen ? 'Вийти з повноекранного режиму' : 'Повноекранний режим'}
-          size="small"
-          onClick={onToggleFullscreen}
-          sx={{ color: 'text.secondary' }}
+      {canFullscreen ? (
+        <Tooltip
+          title={isFullscreen ? 'Вийти з повноекранного режиму' : 'Повноекранний режим'}
+          enterDelay={300}
         >
-          {isFullscreen ? <FullscreenExitIcon /> : <FullscreenIcon />}
-        </IconButton>
-      </Tooltip>
+          <IconButton
+            aria-label={isFullscreen ? 'Вийти з повноекранного режиму' : 'Повноекранний режим'}
+            size="small"
+            onClick={onToggleFullscreen}
+            sx={{ color: 'text.secondary' }}
+          >
+            {isFullscreen ? <FullscreenExitIcon /> : <FullscreenIcon />}
+          </IconButton>
+        </Tooltip>
+      ) : null}
     </Box>
   );
 }

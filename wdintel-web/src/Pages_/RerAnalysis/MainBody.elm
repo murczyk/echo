@@ -1050,10 +1050,10 @@ view user model shared route =
                     |> Button.withDisabled (model.reportDownloadInProgress || isSposobUnitNameMissing)
                     |> Button.view
                 , a
-                    [ href "/settings-neo?section=my-reports"
+                    [ href "/my-reports"
                     , class "text-sm"
                     ]
-                    [ text "Переглядайте свої звіти в Налаштування > Мої звіти" ]
+                    [ text "Мої Звіти" ]
                 ]
             ]
 

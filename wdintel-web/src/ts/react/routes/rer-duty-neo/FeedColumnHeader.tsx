@@ -314,15 +314,14 @@ export function FeedColumnHeader({
               icon={<SpellcheckIcon />}
               expanded={showKeywordsPanel}
               onClick={onToggleKeywordsPanel}
-              borderLeft
             />
           </Box>
         </Box>
         {canRemove ? (
-          <Tooltip title="Закрити колонку">
+          <Tooltip title="Закрити стрічку">
             <IconButton
               size="small"
-              aria-label="Закрити колонку"
+              aria-label="Закрити стрічку"
               onClick={onRemoveColumn}
               sx={{
                 ...dutyTopActionButtonSx,

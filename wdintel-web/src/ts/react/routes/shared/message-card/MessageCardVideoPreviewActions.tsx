@@ -2,6 +2,7 @@ import DownloadIcon from '@mui/icons-material/Download';
 import InfoIcon from '@mui/icons-material/Info';
 import FullscreenExitIcon from '@mui/icons-material/FullscreenExit';
 import FullscreenIcon from '@mui/icons-material/Fullscreen';
+import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import { Box, Button, DialogActions, IconButton, Tooltip, Typography } from '@mui/material';
@@ -17,6 +18,7 @@ import {
 
 export function MessageCardVideoPreviewControls({
   playerState,
+  canFullscreen,
   onPlayPause,
   onStop,
   onVolumeChange,
@@ -27,6 +29,7 @@ export function MessageCardVideoPreviewControls({
   videoRef,
 }: {
   playerState: VideoPlayerState;
+  canFullscreen: boolean;
   onPlayPause: () => void;
   onStop: () => void;
   onVolumeChange: (volume: number) => void;
@@ -96,20 +99,23 @@ export function MessageCardVideoPreviewControls({
         <SpeedSelect playbackRate={playbackRate} onRateChange={onRateChange} />
       </Box>
 
-      <Tooltip
-        title={isFullscreen ? 'Вийти з повноекранного режиму' : 'Повноекранний режим'}
-        enterDelay={300}
-      >
-        <IconButton size="small" onClick={onToggleFullscreen} sx={{ color: 'inherit' }}>
-          {isFullscreen ? <FullscreenExitIcon /> : <FullscreenIcon />}
-        </IconButton>
-      </Tooltip>
+      {canFullscreen ? (
+        <Tooltip
+          title={isFullscreen ? 'Вийти з повноекранного режиму' : 'Повноекранний режим'}
+          enterDelay={300}
+        >
+          <IconButton size="small" onClick={onToggleFullscreen} sx={{ color: 'inherit' }}>
+            {isFullscreen ? <FullscreenExitIcon /> : <FullscreenIcon />}
+          </IconButton>
+        </Tooltip>
+      ) : null}
     </Box>
   );
 }
 
 export function MessageCardVideoPreviewActions({
   video,
+  openHref,
   onClose,
   hasCarousel,
   resolvedIndex,
@@ -119,6 +125,7 @@ export function MessageCardVideoPreviewActions({
   onInfoClick,
 }: {
   video: VideoPreviewSource;
+  openHref?: string | null;
   onClose: () => void;
   hasCarousel: boolean;
   resolvedIndex: number;
@@ -147,12 +154,33 @@ export function MessageCardVideoPreviewActions({
         }}
       >
         <Tooltip title="Інформація" enterDelay={300}>
-          <IconButton size="small" onClick={onInfoClick} sx={{ color: 'text.secondary' }}>
+          <IconButton
+            aria-label="Інформація"
+            size="small"
+            onClick={onInfoClick}
+            sx={{ color: 'text.secondary' }}
+          >
             <InfoIcon />
           </IconButton>
         </Tooltip>
+        {typeof openHref === 'string' && openHref.trim() !== '' ? (
+          <Tooltip title="Відкрити в новій вкладці" enterDelay={300}>
+            <IconButton
+              component="a"
+              href={openHref}
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label="Відкрити в новій вкладці"
+              size="small"
+              sx={{ color: 'text.secondary' }}
+            >
+              <OpenInNewIcon />
+            </IconButton>
+          </Tooltip>
+        ) : null}
         <Tooltip title="Завантажити" enterDelay={300}>
           <IconButton
+            aria-label="Завантажити"
             size="small"
             onClick={() => downloadOriginalVideo(video)}
             sx={{ color: 'text.secondary' }}

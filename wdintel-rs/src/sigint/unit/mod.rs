@@ -1,4 +1,6 @@
 use self::types::*;
+use crate::config::SIGINT_UNIT_AUTO_CYBER_NETWORK_NAME;
+use crate::entities::sea_orm_active_enums::ChangelogActionEnum;
 use crate::entities::*;
 use crate::error::AppError;
 use crate::event_stream::fanout;
@@ -187,13 +189,110 @@ pub async fn create_unit(
     env: actix_web::web::Data<Env>,
     req: Json<CreateUnitReq>,
 ) -> Result<Json<Unit>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
+    let login = user.id().c(h!())?.to_string();
+    crate::users::has_role(&env.dbx, &login, "Rer")
         .await
         .c(h!())?;
-    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "UnitsEditor")
+    crate::users::has_role(&env.dbx, &login, "UnitsEditor")
         .await
         .c(h!())?;
 
+    let req = req.into_inner();
+    let unit = insert_unit_with_changelog(&env.dbx, &login, &req).await?;
+
+    fanout_unit_changed(&env).await?;
+
+    Ok(Json(render_unit(&unit)?))
+}
+
+#[post("/api/sigint/unit/create-with-auto-network")]
+pub async fn create_unit_with_auto_network(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<CreateUnitWithAutoNetworkReq>,
+) -> Result<Json<CreateUnitWithAutoNetworkRsp>, AppError> {
+    let login = user.id().c(h!())?.to_string();
+    crate::users::has_role(&env.dbx, &login, "Rer")
+        .await
+        .c(h!())?;
+    crate::users::has_role(&env.dbx, &login, "UnitsEditor")
+        .await
+        .c(h!())?;
+
+    Ok(Json(
+        create_unit_with_auto_network_for_login(&login, &env, req.into_inner())
+            .await
+            .c(h!())?,
+    ))
+}
+
+pub async fn create_unit_with_auto_network_for_login(
+    login: &str,
+    env: &Env,
+    req: CreateUnitWithAutoNetworkReq,
+) -> Result<CreateUnitWithAutoNetworkRsp, AppError> {
+    crate::system_settings::ensure_devices_section_enabled(&env.dbx)
+        .await
+        .c(h!())?;
+
+    let txn = env.dbx.begin().await.context(h!())?;
+    let unit = insert_unit_with_changelog(&txn, login, &req.unit)
+        .await
+        .c(h!())?;
+    let network = if req.skip_network_creation {
+        None
+    } else {
+        let locations = normalize_network_locations(req.locations.clone());
+        if locations.is_empty() {
+            return Err(AppError::BL {
+                msg: "network locations are required".to_string(),
+            });
+        }
+        Some(
+            insert_auto_cyber_network(&txn, login, &req, unit.id, locations)
+                .await
+                .c(h!())?,
+        )
+    };
+    txn.commit().await.context(h!())?;
+
+    fanout_unit_changed_data(env).await?;
+
+    if let Some(network) = network.clone() {
+        fanout_network_changed_data(env).await.c(h!())?;
+        crate::sigint::network::etalon_calc::invalidate_network_inbox(
+            network.clone(),
+            vec![],
+            &env.dbx,
+            format!("created cyber network {}", network.id),
+        )
+        .await
+        .c(h!())?;
+        if !crate::sigint::unit_tag::sigint_network_unit_mask(&network)
+            .is_empty()
+        {
+            crate::sigint::unit_tag::enqueue_recent_non_rer_unit_tag_recalculation(
+                &env.dbx,
+            )
+            .await
+            .c(h!())?;
+        }
+    }
+
+    Ok(CreateUnitWithAutoNetworkRsp {
+        unit: render_unit(&unit)?,
+        network_id: network.map(|network| network.id),
+    })
+}
+
+async fn insert_unit_with_changelog<'a, 'async_trait, C>(
+    dbx: &'a C,
+    login: &str,
+    req: &CreateUnitReq,
+) -> Result<sigint_unit::Model, AppError>
+where
+    C: ConnectionTrait + 'async_trait,
+{
     let unit = sigint_unit::ActiveModel {
         id: NotSet,
         company: Set(req.company.clone()),
@@ -203,44 +302,157 @@ pub async fn create_unit(
         army: Set(req.army.clone()),
         active: Set(req.active),
         created_at: NotSet,
-        created_by: Set(user.id().c(h!())?.to_string()),
+        created_by: Set(login.to_string()),
         comment: Set(req.comment.clone()),
-        name: Set(unit_name_req(&req)),
+        name: Set(unit_name_req(req)),
         deleted: Set(false),
         sigint_origin_id: NotSet,
         original_id: NotSet,
     }
-    .insert(&env.dbx)
+    .insert(dbx)
     .await
     .context(h!())?;
 
     let unit_json = sigint_unit::Entity::find_by_id(unit.id)
         .into_json()
-        .one(&env.dbx)
+        .one(dbx)
         .await
         .c(h!())?
         .ok_or(AppError::NotFound)?;
     let _changelog = sigint_unit_changelog::ActiveModel {
         id: NotSet,
         sigint_unit_id: Set(unit.id),
-        login: Set(user.id().c(h!())?.to_string()),
+        login: Set(login.to_string()),
         action: Set("create".to_string()),
         created_at: NotSet,
         new_value: Set(Some(unit_json)),
         old_value: NotSet,
-        req: Set(Some(serde_json::to_value(&req).context(h!())?)),
+        req: Set(Some(serde_json::to_value(req).context(h!())?)),
     }
-    .insert(&env.dbx)
+    .insert(dbx)
     .await
     .context(h!())?;
-    unit_after_insert_update(&env.dbx, unit.id)
+    unit_after_insert_update(dbx, unit.id).await.context(h!())?;
+
+    Ok(unit)
+}
+
+async fn insert_auto_cyber_network<'a, 'async_trait, C>(
+    txn: &'a C,
+    login: &str,
+    req: &CreateUnitWithAutoNetworkReq,
+    unit_id: i64,
+    locations: Vec<String>,
+) -> Result<sigint_network::Model, AppError>
+where
+    C: ConnectionTrait + 'async_trait,
+{
+    let unit_mask =
+        crate::sigint::unit_tag::normalize_unit_mask(req.unit_mask.clone())
+            .c(h!())?;
+    let network = sigint_network::ActiveModel {
+        id: NotSet,
+        name: Set(SIGINT_UNIT_AUTO_CYBER_NETWORK_NAME.to_string()),
+        location: Set(locations.join(", ")),
+        deleted: Set(false),
+        created_at: NotSet,
+        updated_by: Set(Some(login.to_string())),
+        updated_at: NotSet,
+        radio_station: Set(None),
+        purpose: Set(None),
+        operation_mode: Set(None),
+        operation_type: Set(None),
+        operation_period: Set(None),
+        merged_to: NotSet,
+        active_from: Set(None),
+        active_to: Set(None),
+        do_not_archive: Set(true),
+        unit_mask: Set(serde_json::to_value(unit_mask).context(h!())?),
+        sigint_origin_id: NotSet,
+        original_id: NotSet,
+    }
+    .insert(txn)
+    .await
+    .context(h!())?;
+
+    let network_json = sigint_network::Entity::find_by_id(network.id)
+        .into_json()
+        .one(txn)
         .await
-        .context(h!())?;
+        .context(h!())?
+        .ok_or(AppError::NotFound)?;
+    sigint_network_changelog::ActiveModel {
+        id: NotSet,
+        sigint_network_id: Set(network.id),
+        login: Set(login.to_string()),
+        action: Set(ChangelogActionEnum::Create),
+        created_at: NotSet,
+        new_value: Set(Some(network_json)),
+        old_value: NotSet,
+        req: Set(Some(serde_json::to_value(req).context(h!())?)),
+        sigint_origin_id: NotSet,
+        original_id: NotSet,
+    }
+    .insert(txn)
+    .await
+    .context(h!())?;
 
+    sigint_network_unit::ActiveModel {
+        id: NotSet,
+        network_id: Set(network.id),
+        unit_id: Set(unit_id),
+        created_at: NotSet,
+        sigint_origin_id: NotSet,
+        original_id: NotSet,
+    }
+    .insert(txn)
+    .await
+    .context(h!())?;
+
+    Ok(network)
+}
+
+fn normalize_network_locations(locations: Vec<String>) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut keys = Vec::new();
+    for location in locations {
+        for location in location.split(',') {
+            let location = location.trim().to_string();
+            if location.is_empty() {
+                continue;
+            }
+            let key = location.to_lowercase();
+            if keys.contains(&key) {
+                continue;
+            }
+            keys.push(key);
+            out.push(location);
+        }
+    }
+    out
+}
+
+async fn fanout_unit_changed(
+    env: &actix_web::web::Data<Env>,
+) -> Result<(), AppError> {
+    let mut redis = env.redis.clone();
     let event = EventMsg::new(EventType::ETUnitChanged);
-    fanout(&mut env.redis.clone(), event).await.context(h!())?;
+    fanout(&mut redis, event).await.context(h!())?;
+    Ok(())
+}
 
-    Ok(Json(render_unit(&unit)?))
+async fn fanout_unit_changed_data(env: &Env) -> Result<(), AppError> {
+    let mut redis = env.redis.clone();
+    let event = EventMsg::new(EventType::ETUnitChanged);
+    fanout(&mut redis, event).await.context(h!())?;
+    Ok(())
+}
+
+async fn fanout_network_changed_data(env: &Env) -> Result<(), AppError> {
+    let mut redis = env.redis.clone();
+    let event = EventMsg::new(EventType::ETNetworkChanged);
+    fanout(&mut redis, event).await.context(h!())?;
+    Ok(())
 }
 
 #[post("/api/sigint/unit/update")]
@@ -729,4 +941,207 @@ pub async fn units_search(
         res.push(render_unit(&unit)?);
     }
     Ok(Json(ListUnitsByIdRsp { units: res }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::entities::{
+        sigint_network, sigint_network_unit, system_settings,
+    };
+    use crate::functest::tests::cleanup;
+    use chrono::Utc;
+    use sea_orm::{
+        ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, NotSet,
+        PaginatorTrait, QueryFilter, Set,
+    };
+    use serial_test::serial;
+
+    const TEST_LOGIN: &str = "Tester";
+
+    fn unit_req() -> CreateUnitReq {
+        CreateUnitReq {
+            company: "2 шр".to_string(),
+            battalion: "3 ошб".to_string(),
+            regiment: "44 осбр".to_string(),
+            division: String::new(),
+            army: String::new(),
+            active: true,
+            comment: "main section".to_string(),
+        }
+    }
+
+    fn auto_req(
+        skip_network_creation: bool,
+        locations: Vec<&str>,
+        unit_mask: Vec<&str>,
+    ) -> CreateUnitWithAutoNetworkReq {
+        CreateUnitWithAutoNetworkReq {
+            unit: unit_req(),
+            skip_network_creation,
+            locations: locations.into_iter().map(str::to_string).collect(),
+            unit_mask: unit_mask.into_iter().map(str::to_string).collect(),
+        }
+    }
+
+    async fn insert_settings(dbx: &DatabaseConnection, enabled: bool) {
+        let now = Utc::now().naive_utc();
+        system_settings::ActiveModel {
+            id: NotSet,
+            rer_analysis_units_exact_match_only_default: Set(false),
+            created_at: Set(now),
+            updated_at: Set(now),
+            updated_by: Set(None),
+            deleted: Set(false),
+            rer_duty_test_enabled: Set(false),
+            rer_duty_test_since_ms: Set(0),
+            rer_duty_test_limit: Set(0),
+            rer_duty_poll_interval_sec: Set(0),
+            rer_duty_insert_historical_interceptions: Set(false),
+            short_url_enabled: Set(false),
+            support_non_rer_interceptions: Set(false),
+            peleng_bounds_enabled: Set(false),
+            peleng_bounds_top_left_lat: Set(None),
+            peleng_bounds_top_left_lng: Set(None),
+            peleng_bounds_bottom_right_lat: Set(None),
+            peleng_bounds_bottom_right_lng: Set(None),
+            default_neo_analysis: Set(false),
+            echo_im_sync_since: Set(now),
+            autofix_echoim_missing_messages: Set(false),
+            echo_im_sync_since_inbox_message_id: Set(0),
+            devices_section_enabled: Set(enabled),
+            echo_restapi_error_discord_webhook_url: Set(None),
+            sigint_comment_parsing_enabled: Set(true),
+            do_not_store_duplicate_echoim_failures: Set(false),
+        }
+        .insert(dbx)
+        .await
+        .unwrap();
+    }
+
+    async fn network_count(dbx: &DatabaseConnection) -> u64 {
+        sigint_network::Entity::find().count(dbx).await.unwrap()
+    }
+
+    async fn unit_count(dbx: &DatabaseConnection) -> u64 {
+        sigint_unit::Entity::find().count(dbx).await.unwrap()
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn create_unit_with_auto_network_rejects_when_setting_missing() {
+        let env = cleanup().await.unwrap();
+
+        let err = create_unit_with_auto_network_for_login(
+            TEST_LOGIN,
+            &env,
+            auto_req(false, vec!["Роботине"], vec!["2 шр"]),
+        )
+        .await
+        .unwrap_err();
+
+        assert!(matches!(err, AppError::Forbidden(_)));
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn create_unit_with_auto_network_rejects_when_setting_disabled() {
+        let env = cleanup().await.unwrap();
+        insert_settings(&env.dbx, false).await;
+
+        let err = create_unit_with_auto_network_for_login(
+            TEST_LOGIN,
+            &env,
+            auto_req(false, vec!["Роботине"], vec!["2 шр"]),
+        )
+        .await
+        .unwrap_err();
+
+        assert!(matches!(err, AppError::Forbidden(_)));
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn create_unit_with_auto_network_can_skip_network_creation() {
+        let env = cleanup().await.unwrap();
+        insert_settings(&env.dbx, true).await;
+
+        let rsp = create_unit_with_auto_network_for_login(
+            TEST_LOGIN,
+            &env,
+            auto_req(true, vec![], vec![]),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(rsp.unit.name, "2 шр 3 ошб 44 осбр");
+        assert_eq!(rsp.network_id, None);
+        assert_eq!(unit_count(&env.dbx).await, 1);
+        assert_eq!(network_count(&env.dbx).await, 0);
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn create_unit_with_auto_network_rejects_missing_locations() {
+        let env = cleanup().await.unwrap();
+        insert_settings(&env.dbx, true).await;
+
+        let err = create_unit_with_auto_network_for_login(
+            TEST_LOGIN,
+            &env,
+            auto_req(false, vec![" ", ","], vec!["2 шр"]),
+        )
+        .await
+        .unwrap_err();
+
+        assert!(matches!(err, AppError::BL { .. }));
+        assert_eq!(unit_count(&env.dbx).await, 0);
+        assert_eq!(network_count(&env.dbx).await, 0);
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn create_unit_with_auto_network_persists_network_details() {
+        let env = cleanup().await.unwrap();
+        insert_settings(&env.dbx, true).await;
+
+        let rsp = create_unit_with_auto_network_for_login(
+            TEST_LOGIN,
+            &env,
+            auto_req(
+                false,
+                vec![" Роботине ", "Копані, Роботине"],
+                vec![
+                    "2 шр 3 ошб 44 осбр",
+                    "44 осбр 3 ошб 2 шр",
+                    "2 шр 3 ошб 44 осбр",
+                ],
+            ),
+        )
+        .await
+        .unwrap();
+        let network_id = rsp.network_id.unwrap();
+
+        let network = sigint_network::Entity::find_by_id(network_id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(network.name, SIGINT_UNIT_AUTO_CYBER_NETWORK_NAME);
+        assert_eq!(network.location, "Роботине, Копані");
+        assert!(network.do_not_archive);
+        assert!(!network.deleted);
+        assert_eq!(network.active_to, None);
+        let unit_mask: Vec<String> =
+            serde_json::from_value(network.unit_mask.clone()).unwrap();
+        assert_eq!(unit_mask, vec!["2 шр 3 ошб 44 осбр", "44 осбр 3 ошб 2 шр"]);
+
+        let relation = sigint_network_unit::Entity::find()
+            .filter(sigint_network_unit::Column::NetworkId.eq(network_id))
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(relation.unit_id, rsp.unit.id);
+    }
 }

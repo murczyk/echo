@@ -2098,6 +2098,18 @@ export type CreateUnitReq = {
   comment: string;
 };
 
+export type CreateUnitWithAutoNetworkReq = {
+  unit: CreateUnitReq;
+  skipNetworkCreation: boolean;
+  locations: Array<string>;
+  unitMask: Array<string>;
+};
+
+export type CreateUnitWithAutoNetworkRsp = {
+  unit: Unit;
+  networkId: number | null;
+};
+
 export type DeleteUnitDuplicateReq = {
   cloneToDeleteId: number;
   originalId: number;
