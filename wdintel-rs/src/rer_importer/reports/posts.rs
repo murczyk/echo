@@ -1,6 +1,7 @@
+use crate::entities::*;
 use crate::error::AppError;
 use crate::h;
-use crate::rer_importer::inbox::get_inbox_messages_with_conn;
+use crate::rer_importer::reports::inbox_light::blank_inbox_message;
 use crate::rer_importer::reports::types::ReportPreviewReq;
 use crate::rer_importer::types::InboxMessage;
 use crate::types::{Env, ShortContext};
@@ -9,8 +10,10 @@ use anyhow::Context;
 use chrono::{DateTime, Datelike, TimeZone};
 use chrono_tz::Tz;
 use docx_rs::*;
+use itertools::Itertools;
 use once_cell::sync::Lazy;
 use regex::Regex;
+use sea_orm::*;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
@@ -36,6 +39,14 @@ struct PostStats {
     reference_networks: BTreeSet<NetworkKey>,
 }
 
+#[derive(Debug, FromQueryResult)]
+struct PostReportMessageRow {
+    id: i64,
+    freq: Option<String>,
+    unit: Option<String>,
+    post: Option<String>,
+}
+
 fn collect_reference_network_keys(
     message: &InboxMessage,
 ) -> BTreeSet<NetworkKey> {
@@ -56,9 +67,6 @@ pub async fn report_docx_kind_posts(
 ) -> Result<(), AppError> {
     let read_db = env.replica();
     let login = user_login.to_string();
-    let logins = crate::users::get_organism_logins_by_login(&read_db, &login)
-        .await
-        .c(h!())?;
     let mut current_req = req.req.clone();
     current_req.report_tags_only_this_unit = req.report_tags_only_this_unit;
     let Some(since_date_inclusive_ms) = current_req.since_date_inclusive_ms
@@ -72,26 +80,16 @@ pub async fn report_docx_kind_posts(
 
     current_req.return_duplicates = Some(false);
 
-    let current_messages = get_inbox_messages_with_conn(
-        &read_db,
-        &login,
-        &logins,
-        env,
-        &current_req,
-    )
-    .await
-    .c(h!())?;
+    let current_messages =
+        load_post_report_messages(&read_db, &login, env, &current_req)
+            .await
+            .c(h!())?;
 
     let previous_req = build_shifted_req(&current_req, -DAY_MS)?;
-    let previous_messages = get_inbox_messages_with_conn(
-        &read_db,
-        &login,
-        &logins,
-        env,
-        &previous_req,
-    )
-    .await
-    .c(h!())?;
+    let previous_messages =
+        load_post_report_messages(&read_db, &login, env, &previous_req)
+            .await
+            .c(h!())?;
 
     let strict_networks = env.config.feature_strict_networks.unwrap_or(false);
 
@@ -176,6 +174,48 @@ pub async fn report_docx_kind_posts(
     );
 
     build_docx_kind_posts(outpath, doc)
+}
+
+async fn load_post_report_messages(
+    dbx: &DatabaseConnection,
+    login: &str,
+    env: &Env,
+    req: &crate::rer_importer::types::InboxMessagesReq,
+) -> Result<Vec<(i64, InboxMessage)>, AppError> {
+    let rows = crate::rer_importer::inbox::query::build_filtered_inbox_query(
+        dbx, login, env, req,
+    )
+    .await
+    .c(h!())?
+    .select_only()
+    .column_as(signal_message::Column::Id, "id")
+    .column_as(sigint_inbox_item::Column::Freq, "freq")
+    .column_as(sigint_inbox_item::Column::UnitV2, "unit")
+    .column_as(sigint_post::Column::Name, "post")
+    .into_model::<PostReportMessageRow>()
+    .all(dbx)
+    .await
+    .context(h!())?;
+    let message_ids = rows.iter().map(|row| row.id).collect_vec();
+    let mut networks_by_message =
+        crate::rer_importer::inbox::load_message_networks_by_ids(
+            dbx,
+            &message_ids,
+        )
+        .await
+        .context(h!())?;
+
+    Ok(rows
+        .into_iter()
+        .map(|row| {
+            let mut message = blank_inbox_message();
+            message.freq = row.freq;
+            message.unit = row.unit;
+            message.post = row.post;
+            message.network_ids = networks_by_message.remove(&row.id);
+            (row.id, message)
+        })
+        .collect())
 }
 
 fn get_freq_range(freq_values: Vec<f64>) -> Option<(f64, f64)> {
@@ -534,6 +574,7 @@ where
     let month = months
         .get(month_idx)
         .unwrap_or(&"невідомого місяця")
+        .to_owned()
         .to_string();
     let date = format!("{} {} {} року", dt.day(), month, dt.year());
     let time = dt.format("%H:%M").to_string();

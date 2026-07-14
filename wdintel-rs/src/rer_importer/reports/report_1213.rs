@@ -1,11 +1,14 @@
 use crate::entities::{
-    datasource, sigint_inbox_item, sigint_network,
+    datasource, sigint_inbox_item, sigint_inbox_item_metadata, sigint_network,
     sigint_network::Entity as SigintNetwork, sigint_peleng, signal_group_aor,
+    signal_message,
 };
 use crate::error::AppError;
-use crate::rer_importer::inbox::get_inbox_messages_with_conn;
+use crate::rer_importer::reports::inbox_light::{
+    blank_inbox_message, load_message_group_info,
+};
 use crate::rer_importer::reports::types::ReportPreviewReq;
-use crate::rer_importer::types::InboxMessage;
+use crate::rer_importer::types::{InboxMessage, InboxMessageMetadata};
 use crate::types::*;
 use crate::utils::dt_zoned_from_millis;
 use crate::utils::orm::ArrayColumnOps;
@@ -210,6 +213,16 @@ struct Report1213ActivityRanges {
     fuzzy: BTreeMap<(String, Option<i64>), Report1213ActivityRange>,
 }
 
+#[derive(Debug, FromQueryResult)]
+struct Report1213MessageRow {
+    id: i64,
+    timestamp: Option<NaiveDateTime>,
+    freq: Option<String>,
+    date: Option<String>,
+    time: Option<String>,
+    unit: Option<String>,
+}
+
 pub async fn report_docx_kind_report_1213(
     user_login: &str,
     env: &Env,
@@ -245,9 +258,7 @@ async fn collect_report_1213_data(
     inbox_req.report_tags_only_this_unit = Some(false);
 
     let messages =
-        get_inbox_messages_with_conn(dbx, login, logins, env, &inbox_req)
-            .await
-            .c(h!())?;
+        load_report_1213_messages(dbx, login, env, &inbox_req).await?;
     let own_datasource_ids = if req.report_tags_only_this_unit == Some(true) {
         Some(load_report_1213_datasource_ids(dbx, logins).await?)
     } else {
@@ -301,6 +312,122 @@ async fn collect_report_1213_data(
         .till_date_inclusive_ms
         .and_then(DateTime::from_timestamp_millis);
     Ok(report_data)
+}
+
+async fn load_report_1213_messages(
+    dbx: &DatabaseConnection,
+    login: &str,
+    env: &Env,
+    req: &crate::rer_importer::types::InboxMessagesReq,
+) -> Result<Vec<(i64, InboxMessage)>, AppError> {
+    let rows = crate::rer_importer::inbox::query::build_filtered_inbox_query(
+        dbx, login, env, req,
+    )
+    .await
+    .c(h!())?
+    .select_only()
+    .column_as(signal_message::Column::Id, "id")
+    .column_as(signal_message::Column::Timestamp, "timestamp")
+    .column_as(sigint_inbox_item::Column::Freq, "freq")
+    .column_as(sigint_inbox_item::Column::Date, "date")
+    .column_as(sigint_inbox_item::Column::Time, "time")
+    .column_as(sigint_inbox_item::Column::UnitV2, "unit")
+    .into_model::<Report1213MessageRow>()
+    .all(dbx)
+    .await
+    .context(h!())?;
+    let message_ids = rows.iter().map(|row| row.id).collect_vec();
+    let mut groups_by_message =
+        load_message_group_info(dbx, login, req, &message_ids)
+            .await
+            .context(h!())?;
+    let mut networks_by_message =
+        crate::rer_importer::inbox::load_message_networks_by_ids(
+            dbx,
+            &message_ids,
+        )
+        .await
+        .context(h!())?;
+    let mut metadata_by_message =
+        load_report_1213_metadata(dbx, &message_ids).await?;
+
+    Ok(rows
+        .into_iter()
+        .map(|row| {
+            let group_info = groups_by_message.remove(&row.id);
+            let mut message = blank_inbox_message();
+            message.timestamp = row
+                .timestamp
+                .map(|timestamp| timestamp.and_utc().timestamp_millis());
+            message.freq = row.freq;
+            message.date = row.date;
+            message.time = row.time;
+            message.unit = row.unit;
+            message.group_master_key = group_info
+                .as_ref()
+                .and_then(|group| group.group_master_key.clone());
+            message.datasource_id =
+                group_info.and_then(|group| group.datasource_id);
+            message.network_ids = networks_by_message.remove(&row.id);
+            message.metadata =
+                metadata_by_message.remove(&row.id).unwrap_or_default();
+            (row.id, message)
+        })
+        .collect())
+}
+
+async fn load_report_1213_metadata(
+    dbx: &DatabaseConnection,
+    message_ids: &[i64],
+) -> Result<BTreeMap<i64, Vec<InboxMessageMetadata>>, AppError> {
+    if message_ids.is_empty() {
+        return Ok(BTreeMap::new());
+    }
+
+    let mut metadata_by_message = BTreeMap::new();
+    for ids in message_ids.chunks(20000) {
+        for metadata in sigint_inbox_item_metadata::Entity::find()
+            .filter(
+                sigint_inbox_item_metadata::Column::SigintInboxItemId
+                    .eq_any(ids.to_vec()),
+            )
+            .order_by_asc(sigint_inbox_item_metadata::Column::Id)
+            .all(dbx)
+            .await
+            .c(h!())?
+        {
+            metadata_by_message
+                .entry(metadata.sigint_inbox_item_id)
+                .or_insert_with(Vec::new)
+                .push(report_1213_metadata_from_model(metadata));
+        }
+    }
+    Ok(metadata_by_message)
+}
+
+fn report_1213_metadata_from_model(
+    metadata: sigint_inbox_item_metadata::Model,
+) -> InboxMessageMetadata {
+    InboxMessageMetadata {
+        color_code: metadata.color_code,
+        color_code_start_index: metadata.color_code_start_index,
+        color_code_end_index: metadata.color_code_end_index,
+        call_group_id: metadata.call_group_id,
+        call_group_id_start_index: metadata.call_group_id_start_index,
+        call_group_id_end_index: metadata.call_group_id_end_index,
+        call_group_name: metadata.call_group_name,
+        call_group_name_start_index: metadata.call_group_name_start_index,
+        call_group_name_end_index: metadata.call_group_name_end_index,
+        sender_id: metadata.sender_id,
+        sender_id_start_index: metadata.sender_id_start_index,
+        sender_id_end_index: metadata.sender_id_end_index,
+        sender_name: metadata.sender_name,
+        sender_name_start_index: metadata.sender_name_start_index,
+        sender_name_end_index: metadata.sender_name_end_index,
+        hash_id: metadata.hash_id,
+        hash_id_start_index: metadata.hash_id_start_index,
+        hash_id_end_index: metadata.hash_id_end_index,
+    }
 }
 
 async fn load_report_1213_message_datetimes(
