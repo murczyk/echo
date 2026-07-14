@@ -208,7 +208,7 @@ vi.mock('@mui/material', () => ({
   ),
 }));
 
-import { CreateMessageDrawer } from './CreateMessageDrawer';
+import { ManageMessageDrawer } from './ManageMessageDrawer';
 
 function buildMessage(overrides: Partial<InboxMessage> = {}): InboxMessage {
   return {
@@ -249,7 +249,7 @@ function buildMessage(overrides: Partial<InboxMessage> = {}): InboxMessage {
   } as InboxMessage;
 }
 
-describe('CreateMessageDrawer edit mode', () => {
+describe('ManageMessageDrawer edit mode', () => {
   afterEach(() => {
     textFieldPropsByLabel.clear();
     document.body.innerHTML = '';
@@ -263,7 +263,7 @@ describe('CreateMessageDrawer edit mode', () => {
     const root = createRoot(container);
     await act(async () => {
       root.render(
-        <CreateMessageDrawer
+        <ManageMessageDrawer
           open
           cyberEchoEnabled={false}
           currentUser={null}
@@ -337,7 +337,7 @@ describe('CreateMessageDrawer edit mode', () => {
     const root = createRoot(container);
     await act(async () => {
       root.render(
-        <CreateMessageDrawer
+        <ManageMessageDrawer
           open
           cyberEchoEnabled={false}
           currentUser={null}
@@ -391,7 +391,7 @@ describe('CreateMessageDrawer edit mode', () => {
     const root = createRoot(container);
     await act(async () => {
       root.render(
-        <CreateMessageDrawer
+        <ManageMessageDrawer
           open
           cyberEchoEnabled={false}
           currentUser={null}
@@ -438,7 +438,7 @@ describe('CreateMessageDrawer edit mode', () => {
     const originalTags = [7, 9];
     await act(async () => {
       root.render(
-        <CreateMessageDrawer
+        <ManageMessageDrawer
           open
           cyberEchoEnabled={false}
           currentUser={null}
@@ -469,7 +469,7 @@ describe('CreateMessageDrawer edit mode', () => {
     // 1. Open in edit mode — the form is seeded from the existing message.
     await act(async () => {
       root.render(
-        <CreateMessageDrawer
+        <ManageMessageDrawer
           open
           cyberEchoEnabled={false}
           currentUser={null}
@@ -488,7 +488,7 @@ describe('CreateMessageDrawer edit mode', () => {
     // 2. Close the drawer (edit-save / closeEditor flips `open`, bypassing handleDrawerClose).
     await act(async () => {
       root.render(
-        <CreateMessageDrawer
+        <ManageMessageDrawer
           open={false}
           cyberEchoEnabled={false}
           currentUser={null}
@@ -502,7 +502,7 @@ describe('CreateMessageDrawer edit mode', () => {
     // 3. Reopen in create mode (no editTarget). Fields must be empty, not the edited message.
     await act(async () => {
       root.render(
-        <CreateMessageDrawer
+        <ManageMessageDrawer
           open
           cyberEchoEnabled={false}
           currentUser={null}

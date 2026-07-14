@@ -11,7 +11,7 @@ use crate::rer_importer::types::InboxSubmitItem;
 use crate::types::*;
 use chrono::TimeZone;
 use chrono::{SecondsFormat, Utc};
-use sea_orm::{ConnectionTrait, DatabaseTransaction, TransactionTrait};
+use sea_orm::{ConnectionTrait, DatabaseTransaction, TransactionTrait, EntityTrait, QueryFilter, ColumnTrait};
 
 pub async fn parse_signal_message(
     login: &str,
@@ -145,6 +145,7 @@ async fn save_signal_message(
     let upload_urls = payload.upload_urls.clone().unwrap_or_default();
     let uploads =
         resolve_direct_submit_uploads(env, login, &upload_urls).await?;
+    let deleted_media_ids = payload.deleted_media_ids.clone().unwrap_or_default();
     let delete_uploaded_attachments = env
         .config
         .feature_delete_uploaded_attachment
@@ -197,7 +198,7 @@ async fn save_signal_message(
         submit_item,
     )
     .await?;
-    finish_direct_submit(
+    let mut rsp = finish_direct_submit(
         env,
         txn,
         submitted,
@@ -205,7 +206,52 @@ async fn save_signal_message(
         &uploads,
         delete_uploaded_attachments,
     )
-    .await
+    .await?;
+
+    if !deleted_media_ids.is_empty() {
+        if let Some(signal_message_id) = signal_message_id {
+            let txn2 = env.dbx.begin().await.c(h!())?;
+            let media_to_delete = crate::entities::signal_message_media::Entity::find()
+                .filter(crate::entities::signal_message_media::Column::SignalMessageId.eq(signal_message_id))
+                .filter(crate::entities::signal_message_media::Column::Id.is_in(deleted_media_ids.clone()))
+                .all(&txn2)
+                .await
+                .c(h!())?;
+
+            if !media_to_delete.is_empty() {
+                crate::messenger::media::delete_stored_media_files(
+                    &media_to_delete,
+                    &env.config,
+                    &env.s3,
+                ).await;
+
+                let _delete_result = crate::entities::signal_message_media::Entity::delete_many()
+                    .filter(crate::entities::signal_message_media::Column::Id.is_in(deleted_media_ids))
+                    .exec(&txn2)
+                    .await
+                    .c(h!())?;
+            }
+            txn2.commit().await.c(h!())?;
+        }
+    }
+
+    let req = crate::rer_importer::types::InboxMessagesReq {
+        highlight_points: Some(true),
+        ..Default::default()
+    };
+    let messages = crate::rer_importer::inbox::messages_by_id_bl(
+        login,
+        &logins,
+        env,
+        &[rsp.signal_message_id],
+        &req,
+    )
+    .await?;
+    if let Some((_, message)) = messages.into_iter().next() {
+        rsp.message = Some(message);
+    }
+
+    Ok(rsp)
 }
 
 fn validate_direct_submit_payload(
@@ -353,7 +399,7 @@ async fn finish_direct_submit(
         .await
         .c(h!())?;
 
-    Ok(DirectSubmitRsp { signal_message_id })
+    Ok(DirectSubmitRsp { signal_message_id, message: None })
 }
 
 fn direct_submit_payload_to_item(
@@ -430,6 +476,7 @@ mod tests {
             signal_group_master_key: TEST_SIGNAL_GROUP_KEY.to_string(),
             device_name_id: None,
             upload_urls: None,
+            deleted_media_ids: None,
         }
     }
 

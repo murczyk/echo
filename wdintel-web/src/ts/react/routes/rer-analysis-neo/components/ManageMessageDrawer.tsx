@@ -18,7 +18,7 @@ import { PowerAlert } from '../../../components/PowerAlert';
 import { PowerForm } from '../../../components/PowerForm';
 import { pageDrawerBackdropSx } from '../../../components/loadingOverlayStyles';
 
-import { useCreateMessageDrawer } from './useCreateMessageDrawer';
+import { useManageMessageDrawer } from './useManageMessageDrawer';
 import { FormSectionWrapper } from './drawer-sections/FormSectionWrapper';
 import { AttachmentsSection } from './drawer-sections/AttachmentsSection';
 import { SystemSection } from './drawer-sections/SystemSection';
@@ -27,6 +27,7 @@ import { NetworkSection } from './drawer-sections/NetworkSection';
 import { DmrSection } from './drawer-sections/DmrSection';
 import { LocationsSection } from './drawer-sections/LocationsSection';
 import { CommentSection } from './drawer-sections/CommentSection';
+import { ShortMessageSection } from './drawer-sections/ShortMessageSection';
 
 export type Props = {
   open: boolean;
@@ -39,8 +40,8 @@ export type Props = {
   onSubmitEdit?: (id: number, message: InboxMessage) => void | Promise<void>;
 };
 
-export function CreateMessageDrawer(props: Props) {
-  const drawerState = useCreateMessageDrawer(props);
+export function ManageMessageDrawer(props: Props) {
+  const drawerState = useManageMessageDrawer(props);
 
   const {
     isAdmin,
@@ -174,17 +175,18 @@ export function CreateMessageDrawer(props: Props) {
                   />
                 </FormSectionWrapper>
 
-                {!isEditMode && (
-                  <AttachmentsSection
-                    uppy={uppy}
-                    uppyFiles={uppyFiles}
-                    fileInputRef={fileInputRef}
-                    handleFileSelect={handleFileSelect}
-                    handleDrop={handleDrop}
-                    handleDropzoneKeyDown={handleDropzoneKeyDown}
-                    busy={busy}
-                  />
-                )}
+                <AttachmentsSection
+                  uppy={uppy}
+                  uppyFiles={uppyFiles}
+                  fileInputRef={fileInputRef}
+                  handleFileSelect={handleFileSelect}
+                  handleDrop={handleDrop}
+                  handleDropzoneKeyDown={handleDropzoneKeyDown}
+                  busy={busy}
+                  existingMedia={
+                    isEditMode && props.editTarget ? props.editTarget.message.media : []
+                  }
+                />
               </Stack>
 
               {/* RIGHT COLUMN */}
@@ -213,27 +215,31 @@ export function CreateMessageDrawer(props: Props) {
                   unitOptions={drawerState.unitOptions}
                   unitLoading={drawerState.unitLoading}
                   setUnitInput={drawerState.setUnitInput}
+                  getProposedCallsigns={getProposedCallsigns}
+                  addSuggestedCallsign={addSuggestedCallsign}
+                  callsignOptions={drawerState.callsignOptions}
+                  callsignLoading={drawerState.callsignLoading}
+                  setCallsignInput={drawerState.setCallsignInput}
                 />
 
                 <NetworkSection
                   isEditMode={isEditMode}
                   busy={busy}
                   recentValues={recentValues}
-                  getProposedCallsigns={getProposedCallsigns}
-                  addSuggestedCallsign={addSuggestedCallsign}
                   networkNameOptions={drawerState.networkNameOptions}
                   networkNameLoading={drawerState.networkNameLoading}
                   setNetworkNameInput={drawerState.setNetworkNameInput}
                   signalNameOptions={drawerState.signalNameOptions}
                   signalNameLoading={drawerState.signalNameLoading}
                   setSignalNameInput={drawerState.setSignalNameInput}
-                  callsignOptions={drawerState.callsignOptions}
-                  callsignLoading={drawerState.callsignLoading}
-                  setCallsignInput={drawerState.setCallsignInput}
                   freqOptions={drawerState.freqOptions}
                   freqLoading={drawerState.freqLoading}
                   setFreqInput={drawerState.setFreqInput}
                 />
+
+                <LocationsSection busy={busy} recentValues={recentValues} />
+
+                <CommentSection busy={busy} />
 
                 <DmrSection
                   isEditMode={isEditMode}
@@ -242,9 +248,7 @@ export function CreateMessageDrawer(props: Props) {
                   recentValues={recentValues}
                 />
 
-                <LocationsSection busy={busy} recentValues={recentValues} />
-
-                <CommentSection busy={busy} />
+                <ShortMessageSection showAdvanced={showAdvanced} busy={busy} />
               </Stack>
             </PowerForm>
           </FormProvider>
@@ -262,15 +266,13 @@ export function CreateMessageDrawer(props: Props) {
           }}
         >
           <Box sx={{ display: 'flex' }}>
-            {isAdmin && !isEditMode && (
-              <Button
-                onClick={() => setShowAdvanced((prev) => !prev)}
-                disabled={busy}
-                color="inherit"
-              >
-                {showAdvanced ? 'Приховати розширені поля' : 'Розширені поля'}
-              </Button>
-            )}
+            <Button
+              onClick={() => setShowAdvanced((prev) => !prev)}
+              disabled={busy}
+              color="inherit"
+            >
+              {showAdvanced ? 'Приховати розширені поля' : 'Розширені поля'}
+            </Button>
           </Box>
           <Box sx={{ display: 'flex', gap: 2 }}>
             <Button onClick={handleDrawerClose} disabled={busy}>

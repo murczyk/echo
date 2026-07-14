@@ -340,7 +340,7 @@ async fn messages_by_id(
     Ok(Json(MessageIdsRsp { messages }))
 }
 
-async fn messages_by_id_bl(
+pub(crate) async fn messages_by_id_bl(
     login: &str,
     logins: &Vec<String>,
     env: &Env,

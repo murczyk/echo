@@ -5,7 +5,7 @@ import {
   mapFormToInboxMessage,
   mapInboxMessageToForm,
   type MessageFormValues,
-} from './create-message-drawer.mappers';
+} from './manage-message-drawer.mappers';
 
 function buildMessage(overrides: Partial<InboxMessage> = {}): InboxMessage {
   return {

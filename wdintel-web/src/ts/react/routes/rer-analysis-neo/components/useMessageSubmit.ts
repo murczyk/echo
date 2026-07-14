@@ -7,9 +7,9 @@ import {
   searchComputerName,
   createComputerName,
   submitDirect,
+  editDirectSubmit,
 } from '../../../services/api/direct-submit';
-import { mapFormToInboxMessage } from './create-message-drawer.mappers';
-import { parseCoordLine, type MessageFormData } from './create-message-drawer.schema';
+import { parseCoordLine, type MessageFormData } from './manage-message-drawer.schema';
 
 type SubmitOptions = {
   busy: boolean;
@@ -41,34 +41,6 @@ export function useMessageSubmit({
   const onSubmit = async (data: MessageFormData) => {
     if (busy) return;
 
-    if (isEditMode && editTarget && onSubmitEdit) {
-      const labelToTagId = new Map(
-        Object.entries(tagsMap).map(([id, tag]) => [tag.label, Number(id)]),
-      );
-      const merged = mapFormToInboxMessage(
-        editTarget.message,
-        {
-          full_body: data.full_body ?? '',
-          comment: data.comment ?? '',
-          date: (data.date as Dayjs | null) ?? null,
-          time: (data.time as Dayjs | null) ?? null,
-          freq: data.freq ?? '',
-          coords: data.coords ?? '',
-          callsigns: data.callsigns ?? [],
-          post: data.post ?? '',
-          unit: data.unit ?? '',
-          locations: data.locations ?? [],
-          tags: data.tags ?? [],
-        },
-        labelToTagId,
-      );
-      if (Object.keys(tagsMap).length === 0) {
-        merged.tags = editTarget.message.tags;
-      }
-      await onSubmitEdit(editTarget.id, merged);
-      return;
-    }
-
     setSubmitting(true);
     setErrorMsg(null);
 
@@ -97,7 +69,7 @@ export function useMessageSubmit({
           throw new Error('Помилка завантаження файлів');
         }
 
-        for (const file of uploadResult.successful || []) {
+        for (const file of uppy.getFiles()) {
           const url = file.tus?.uploadUrl || file.uploadURL || file.response?.uploadURL;
           if (url) {
             uploadUrls.push(url);
@@ -160,7 +132,7 @@ export function useMessageSubmit({
         ];
       }
 
-      await submitDirect({
+      const payload = {
         full_body: data.full_body?.trim() || undefined,
         text: data.text?.trim() || undefined,
         comment: data.comment?.trim() || undefined,
@@ -177,7 +149,17 @@ export function useMessageSubmit({
         locations: data.locations || [],
         network: networkObj,
         dmr: dmrArr,
-      });
+        deleted_media_ids: data.deleted_media_ids || [],
+      };
+
+      if (isEditMode && editTarget) {
+        const res = await editDirectSubmit(editTarget.id, payload);
+        if (onSubmitEdit && res.message) {
+          await onSubmitEdit(editTarget.id, res.message);
+        }
+      } else {
+        await submitDirect(payload);
+      }
 
       addValues({
         group: data.signalGroupMasterKey ? [data.signalGroupMasterKey] : [],

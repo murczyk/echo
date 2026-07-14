@@ -39,11 +39,15 @@ pub struct DirectSubmitPayload {
     pub device_name_id: Option<i64>,
     #[serde(default)]
     pub upload_urls: Option<Vec<String>>,
+    #[serde(default)]
+    pub deleted_media_ids: Option<Vec<uuid::Uuid>>,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
 pub struct DirectSubmitRsp {
     pub signal_message_id: i64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub message: Option<crate::rer_importer::types::InboxMessage>,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]

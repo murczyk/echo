@@ -3,7 +3,7 @@ import type { UseFormReturn } from 'react-hook-form';
 import dayjs from 'dayjs';
 
 import { parseDirectSubmit } from '../../../services/api/direct-submit';
-import type { MessageFormData } from './create-message-drawer.schema';
+import type { MessageFormData } from './manage-message-drawer.schema';
 
 export function useMessageParser(
   methods: UseFormReturn<MessageFormData>,

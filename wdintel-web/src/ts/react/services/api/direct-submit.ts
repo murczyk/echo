@@ -1,5 +1,6 @@
 import { postJson } from './client';
 import type { RequestOptions } from './client';
+import type { InboxMessage } from '../../../../Bindings';
 
 export type ComputerNameSearchRequest = {
   search: string;
@@ -201,10 +202,12 @@ export type DirectSubmitRequest = {
   signal_group_master_key: string;
   device_name_id?: number;
   upload_urls?: string[] | null;
+  deleted_media_ids?: string[];
 };
 
 export type DirectSubmitResponse = {
   signal_message_id: number;
+  message?: InboxMessage;
 };
 
 export type DirectSubmitParseRequest = {
@@ -229,6 +232,14 @@ export async function submitDirect(
   options?: RequestOptions,
 ): Promise<DirectSubmitResponse> {
   return await postJson<DirectSubmitResponse>('/api/1.1/submit-direct', req, options);
+}
+
+export async function editDirectSubmit(
+  id: number,
+  req: DirectSubmitRequest,
+  options?: RequestOptions,
+): Promise<DirectSubmitResponse> {
+  return await postJson<DirectSubmitResponse>(`/api/1.1/message/${id}/edit`, req, options);
 }
 
 export async function parseDirectSubmit(

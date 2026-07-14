@@ -111,6 +111,7 @@ export function makeMessageSchema(isEditMode: boolean) {
       dmr_call_group_id: z.string().optional(),
       dmr_call_group_name: z.string().optional(),
       dmr_hash_id: z.string().optional(),
+      deleted_media_ids: z.array(z.string()).optional(),
     })
     .superRefine((data, ctx) => {
       if (isEditMode) return;
@@ -166,4 +167,5 @@ export const EMPTY_FORM_VALUES: MessageFormData = {
   dmr_call_group_id: '',
   dmr_call_group_name: '',
   dmr_hash_id: '',
+  deleted_media_ids: [],
 };

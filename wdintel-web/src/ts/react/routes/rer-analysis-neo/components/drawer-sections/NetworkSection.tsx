@@ -1,24 +1,19 @@
 import React from 'react';
-import { Box, TextField, Autocomplete, Stack, Typography, Chip } from '@mui/material';
+import { Box, TextField, Autocomplete } from '@mui/material';
 import { useFormContext, Controller } from 'react-hook-form';
 import { FormSectionWrapper } from './FormSectionWrapper';
-import { normalizeMultiValue, type MessageFormData } from '../create-message-drawer.schema';
+import { type MessageFormData } from '../manage-message-drawer.schema';
 
 type Props = {
   isEditMode: boolean;
   busy: boolean;
   recentValues: any;
-  getProposedCallsigns: (current: string[]) => string[];
-  addSuggestedCallsign: (callsign: string) => void;
   networkNameOptions: string[];
   networkNameLoading: boolean;
   setNetworkNameInput: (val: string) => void;
   signalNameOptions: string[];
   signalNameLoading: boolean;
   setSignalNameInput: (val: string) => void;
-  callsignOptions: string[];
-  callsignLoading: boolean;
-  setCallsignInput: (val: string) => void;
   freqOptions: string[];
   freqLoading: boolean;
   setFreqInput: (val: string) => void;
@@ -28,17 +23,12 @@ export function NetworkSection({
   isEditMode,
   busy,
   recentValues,
-  getProposedCallsigns,
-  addSuggestedCallsign,
   networkNameOptions,
   networkNameLoading,
   setNetworkNameInput,
   signalNameOptions,
   signalNameLoading,
   setSignalNameInput,
-  callsignOptions,
-  callsignLoading,
-  setCallsignInput,
   freqOptions,
   freqLoading,
   setFreqInput,
@@ -92,93 +82,35 @@ export function NetworkSection({
           )}
         />
 
-        {!isEditMode && (
-          <Controller
-            name="network_name"
-            control={control}
-            render={({ field }) => (
-              <Autocomplete
-                forcePopupIcon
-                noOptionsText="Немає варіантів"
-                options={Array.from(
-                  new Set([...(recentValues?.network_name || []), ...networkNameOptions]),
-                )}
-                value={field.value ?? ''}
-                loading={networkNameLoading}
-                disabled={busy}
-                onInputChange={(_, newValue, reason) => {
-                  if (reason === 'input') {
-                    setNetworkNameInput(newValue);
-                    field.onChange(newValue);
-                  }
-                }}
-                onChange={(_, newValue) => {
-                  field.onChange(newValue || '');
-                }}
-                renderInput={(params) => (
-                  <TextField {...params} label="Мережа" size="small" fullWidth disabled={busy} />
-                )}
-              />
-            )}
-          />
-        )}
-      </Box>
-
-      <Controller
-        name="callsigns"
-        control={control}
-        render={({ field }) => (
-          <Stack spacing={1}>
+        <Controller
+          name="network_name"
+          control={control}
+          render={({ field }) => (
             <Autocomplete
-              multiple
-              freeSolo
-              autoSelect
+              forcePopupIcon
               noOptionsText="Немає варіантів"
               options={Array.from(
-                new Set([...(recentValues?.callsigns || []), ...callsignOptions]),
+                new Set([...(recentValues?.network_name || []), ...networkNameOptions]),
               )}
-              value={field.value || []}
-              loading={callsignLoading}
+              value={field.value ?? ''}
+              loading={networkNameLoading}
+              disabled={busy}
               onInputChange={(_, newValue, reason) => {
                 if (reason === 'input') {
-                  setCallsignInput(newValue);
+                  setNetworkNameInput(newValue);
+                  field.onChange(newValue);
                 }
               }}
-              onChange={(_, newValue) => field.onChange(normalizeMultiValue(newValue as string[]))}
+              onChange={(_, newValue) => {
+                field.onChange(newValue || '');
+              }}
               renderInput={(params) => (
-                <TextField
-                  {...params}
-                  label="Позивні"
-                  size="small"
-                  placeholder="Розділяйте комою або Enter"
-                />
+                <TextField {...params} label="Мережа" size="small" fullWidth disabled={busy} />
               )}
-              disabled={busy}
             />
-            {isEditMode &&
-              (() => {
-                const proposed = getProposedCallsigns(field.value ?? []);
-                return proposed.length > 0 ? (
-                  <Stack spacing={0.75}>
-                    <Typography variant="caption" color="text.secondary">
-                      Запропоновані позивні
-                    </Typography>
-                    <Stack direction="row" gap={1} flexWrap="wrap">
-                      {proposed.map((callsign) => (
-                        <Chip
-                          key={callsign}
-                          label={callsign}
-                          onClick={busy ? undefined : () => addSuggestedCallsign(callsign)}
-                          variant="filled"
-                        />
-                      ))}
-                    </Stack>
-                  </Stack>
-                ) : null;
-              })()}
-          </Stack>
-        )}
-      />
+          )}
+        />
+      </Box>
     </FormSectionWrapper>
   );
 }

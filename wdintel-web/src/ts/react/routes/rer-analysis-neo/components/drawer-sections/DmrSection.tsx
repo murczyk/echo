@@ -2,7 +2,7 @@ import React from 'react';
 import { Box, TextField, Autocomplete } from '@mui/material';
 import { useFormContext, Controller } from 'react-hook-form';
 import { FormSectionWrapper } from './FormSectionWrapper';
-import type { MessageFormData } from '../create-message-drawer.schema';
+import type { MessageFormData } from '../manage-message-drawer.schema';
 
 type Props = {
   isEditMode: boolean;
@@ -51,45 +51,43 @@ export function DmrSection({ isEditMode, showAdvanced, busy, recentValues }: Pro
           gap: 2,
         }}
       >
-        {!isEditMode && (
-          <Controller
-            name="network_cc"
-            control={control}
-            render={({ field }) => (
-              <Autocomplete
-                freeSolo
-                forcePopupIcon
-                noOptionsText="Немає варіантів"
-                options={recentValues?.network_cc || []}
-                value={field.value ?? ''}
-                disabled={busy}
-                onInputChange={(_, newValue, reason) => {
-                  if (reason === 'input') {
-                    field.onChange(newValue);
-                    void trigger('network_signal_name');
-                  }
-                }}
-                onChange={(_, newValue) => {
-                  field.onChange(newValue || '');
+        <Controller
+          name="network_cc"
+          control={control}
+          render={({ field }) => (
+            <Autocomplete
+              freeSolo
+              forcePopupIcon
+              noOptionsText="Немає варіантів"
+              options={recentValues?.network_cc || []}
+              value={field.value ?? ''}
+              disabled={busy}
+              onInputChange={(_, newValue, reason) => {
+                if (reason === 'input') {
+                  field.onChange(newValue);
                   void trigger('network_signal_name');
-                }}
-                renderInput={(params) => (
-                  <TextField
-                    {...params}
-                    label="Колірний код (CC)"
-                    placeholder="0–15"
-                    size="small"
-                    type="number"
-                    fullWidth
-                    error={!!errors.network_cc}
-                    helperText={errors.network_cc?.message}
-                    disabled={busy}
-                  />
-                )}
-              />
-            )}
-          />
-        )}
+                }
+              }}
+              onChange={(_, newValue) => {
+                field.onChange(newValue || '');
+                void trigger('network_signal_name');
+              }}
+              renderInput={(params) => (
+                <TextField
+                  {...params}
+                  label="Колірний код (CC)"
+                  placeholder="0–15"
+                  size="small"
+                  type="number"
+                  fullWidth
+                  error={!!errors.network_cc}
+                  helperText={errors.network_cc?.message}
+                  disabled={busy}
+                />
+              )}
+            />
+          )}
+        />
         <Controller
           name="dmr_sender_id"
           control={control}

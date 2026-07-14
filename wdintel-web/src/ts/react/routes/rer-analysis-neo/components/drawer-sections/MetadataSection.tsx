@@ -1,18 +1,23 @@
 import React from 'react';
-import { Box, TextField, Autocomplete } from '@mui/material';
+import { Box, TextField, Autocomplete, Stack, Typography, Chip } from '@mui/material';
 import { useFormContext, Controller } from 'react-hook-form';
 import { TimePicker } from '@mui/x-date-pickers/TimePicker';
 import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import { PowerDatePicker } from '../../../../components/PowerDateTimePicker';
 import { FormSectionWrapper } from './FormSectionWrapper';
-import { normalizeMultiValue, type MessageFormData } from '../create-message-drawer.schema';
+import { normalizeMultiValue, type MessageFormData } from '../manage-message-drawer.schema';
 
 type Props = {
   isEditMode: boolean;
   showAdvanced: boolean;
   busy: boolean;
   recentValues: any;
+  getProposedCallsigns: (current: string[]) => string[];
+  addSuggestedCallsign: (callsign: string) => void;
+  callsignOptions: string[];
+  callsignLoading: boolean;
+  setCallsignInput: (val: string) => void;
   tagOptions: string[];
   postOptions: string[];
   postLoading: boolean;
@@ -27,6 +32,11 @@ export function MetadataSection({
   showAdvanced,
   busy,
   recentValues,
+  getProposedCallsigns,
+  addSuggestedCallsign,
+  callsignOptions,
+  callsignLoading,
+  setCallsignInput,
   tagOptions,
   postOptions,
   postLoading,
@@ -42,28 +52,8 @@ export function MetadataSection({
 
   return (
     <>
-      {/* Short message (advanced, create-only) */}
-      {!isEditMode && showAdvanced && (
-        <Controller
-          name="text"
-          control={control}
-          render={({ field }) => (
-            <TextField
-              {...field}
-              label="Коротке повідомлення"
-              fullWidth
-              multiline
-              rows={4}
-              error={!!errors.text}
-              helperText={errors.text?.message}
-              disabled={busy}
-            />
-          )}
-        />
-      )}
-
       {/* Meta */}
-      <FormSectionWrapper title="Метадані повідомлення">
+      <FormSectionWrapper title="Дані повідомлення">
         <Box
           sx={{
             display: 'grid',
@@ -176,6 +166,63 @@ export function MetadataSection({
               renderInput={(params) => <TextField {...params} label="Теги" size="small" />}
               disabled={busy}
             />
+          )}
+        />
+        <Controller
+          name="callsigns"
+          control={control}
+          render={({ field }) => (
+            <Stack spacing={1}>
+              <Autocomplete
+                multiple
+                freeSolo
+                autoSelect
+                noOptionsText="Немає варіантів"
+                options={Array.from(
+                  new Set([...(recentValues?.callsigns || []), ...callsignOptions]),
+                )}
+                value={field.value || []}
+                loading={callsignLoading}
+                onInputChange={(_, newValue, reason) => {
+                  if (reason === 'input') {
+                    setCallsignInput(newValue);
+                  }
+                }}
+                onChange={(_, newValue) =>
+                  field.onChange(normalizeMultiValue(newValue as string[]))
+                }
+                renderInput={(params) => (
+                  <TextField
+                    {...params}
+                    label="Позивні"
+                    size="small"
+                    placeholder="Розділяйте комою або Enter"
+                  />
+                )}
+                disabled={busy}
+              />
+              {isEditMode &&
+                (() => {
+                  const proposed = getProposedCallsigns(field.value ?? []);
+                  return proposed.length > 0 ? (
+                    <Stack spacing={0.75}>
+                      <Typography variant="caption" color="text.secondary">
+                        Запропоновані позивні
+                      </Typography>
+                      <Stack direction="row" gap={1} flexWrap="wrap">
+                        {proposed.map((callsign) => (
+                          <Chip
+                            key={callsign}
+                            label={callsign}
+                            onClick={busy ? undefined : () => addSuggestedCallsign(callsign)}
+                            variant="filled"
+                          />
+                        ))}
+                      </Stack>
+                    </Stack>
+                  ) : null;
+                })()}
+            </Stack>
           )}
         />
       </FormSectionWrapper>

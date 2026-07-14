@@ -2,7 +2,7 @@ import React from 'react';
 import { TextField, Autocomplete } from '@mui/material';
 import { useFormContext, Controller } from 'react-hook-form';
 import { FormSectionWrapper } from './FormSectionWrapper';
-import { normalizeMultiValue, type MessageFormData } from '../create-message-drawer.schema';
+import { normalizeMultiValue, type MessageFormData } from '../manage-message-drawer.schema';
 
 type Props = {
   busy: boolean;

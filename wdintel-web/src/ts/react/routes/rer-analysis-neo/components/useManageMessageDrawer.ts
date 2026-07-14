@@ -18,7 +18,7 @@ import {
   searchFreqs,
 } from '../../../services/api/direct-submit';
 import type { InboxMessage, SignalGroupEntry, Tag, User } from '../../../../../Bindings';
-import { mapInboxMessageToForm } from './create-message-drawer.mappers';
+import { mapInboxMessageToForm } from './manage-message-drawer.mappers';
 import { useRecentValues } from './useRecentValues';
 import { hasRole } from '../../../utils/roles';
 import { isPresent } from '../../../utils/misc';
@@ -27,12 +27,12 @@ import {
   EMPTY_FORM_VALUES,
   normalizeCallsign,
   type MessageFormData,
-} from './create-message-drawer.schema';
+} from './manage-message-drawer.schema';
 import { useMessageUppy } from './useMessageUppy';
 import { useMessageParser } from './useMessageParser';
 import { useMessageSubmit } from './useMessageSubmit';
 
-export type UseCreateMessageDrawerProps = {
+export type UseManageMessageDrawerProps = {
   open: boolean;
   currentUser: User | null;
   onClose: () => void;
@@ -42,7 +42,7 @@ export type UseCreateMessageDrawerProps = {
   onSubmitEdit?: (id: number, message: InboxMessage) => void | Promise<void>;
 };
 
-export function useCreateMessageDrawer({
+export function useManageMessageDrawer({
   open,
   currentUser,
   onClose,
@@ -50,7 +50,7 @@ export function useCreateMessageDrawer({
   editTarget = null,
   editSaveInFlight,
   onSubmitEdit,
-}: UseCreateMessageDrawerProps) {
+}: UseManageMessageDrawerProps) {
   const isAdmin = hasRole(currentUser?.roles, 'Admin');
   const isEditMode = isPresent(editTarget);
   const [showAdvanced, setShowAdvanced] = useState(false);

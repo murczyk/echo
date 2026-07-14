@@ -12,7 +12,7 @@ import { AnalysisCenterPanel } from './AnalysisCenterPanel';
 import { AnalysisRightPanel } from './AnalysisRightPanel';
 import { AnalysisReportDialog } from './components/AnalysisReportDialog';
 import { CreateMessageFab } from './components/CreateMessageFab';
-import { CreateMessageDrawer } from './components/CreateMessageDrawer';
+import { ManageMessageDrawer } from './components/ManageMessageDrawer';
 import { getAnalysisCenterTabs } from './types';
 import { useMinDurationBusy } from './use-min-duration-busy';
 import { useRerAnalysisNeoPage } from './use-rer-analysis-neo-page';
@@ -148,7 +148,7 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
       />
 
       <CreateMessageFab onClick={() => setCreateMessageOpen(true)} />
-      <CreateMessageDrawer
+      <ManageMessageDrawer
         open={createMessageOpen || isPresent(page.editorMessage)}
         cyberEchoEnabled={page.cyberEchoEnabled}
         currentUser={page.currentUser}

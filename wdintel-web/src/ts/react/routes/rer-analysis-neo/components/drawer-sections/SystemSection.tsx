@@ -3,7 +3,7 @@ import { Box, TextField, Autocomplete, CircularProgress } from '@mui/material';
 import { useFormContext, Controller } from 'react-hook-form';
 import { FormSectionWrapper } from './FormSectionWrapper';
 import type { SignalGroupEntry } from '../../../../../../Bindings';
-import type { MessageFormData } from '../create-message-drawer.schema';
+import type { MessageFormData } from '../manage-message-drawer.schema';
 
 type Props = {
   signalGroups: SignalGroupEntry[];
@@ -116,7 +116,7 @@ export function SystemSection({
                 options={computerNameOptions}
                 loading={computerNamesLoading}
                 value={field.value ?? ''}
-                disabled={busy || isEditMode}
+                disabled={busy}
                 onInputChange={(_, newValue, reason) => {
                   if (reason !== 'input') return;
                   setComputerNameInput(newValue);
@@ -130,10 +130,10 @@ export function SystemSection({
                 renderInput={(params) => (
                   <TextField
                     {...params}
-                    label="Назва комп'ютера"
+                    label="Назва машини"
                     size="small"
                     fullWidth
-                    disabled={busy || isEditMode}
+                    disabled={busy}
                   />
                 )}
               />
