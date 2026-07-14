@@ -53,7 +53,11 @@ function emptyInboxResponse() {
   };
 }
 
-function loadedInboxResponse() {
+export function createEmptyInboxResponse(): InboxMessagesRspRaw {
+  return emptyInboxResponse();
+}
+
+export function createLoadedInboxResponse(): InboxMessagesRspRaw {
   return {
     inbox_items: [
       [
@@ -284,7 +288,7 @@ export async function installAnalysisNeoApiMocks(
     }
 
     if (pathname === '/api/rer-importer/get-inbox') {
-      await fulfillJson(route, options.inboxResponse ?? loadedInboxResponse());
+      await fulfillJson(route, options.inboxResponse ?? createEmptyInboxResponse());
       return;
     }
 

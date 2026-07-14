@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-import { installAnalysisNeoApiMocks } from './analysis-neo.fixtures';
+import { createLoadedInboxResponse, installAnalysisNeoApiMocks } from './analysis-neo.fixtures';
 
 async function setupAnalysisNeoPage(
   page: Parameters<typeof installAnalysisNeoApiMocks>[0],
@@ -11,7 +11,7 @@ async function setupAnalysisNeoPage(
 
 test.describe('@smoke', () => {
   test('analysis neo summary flow loads a known row', async ({ page }) => {
-    await setupAnalysisNeoPage(page);
+    await setupAnalysisNeoPage(page, { inboxResponse: createLoadedInboxResponse() });
     await page.goto('/rer-analysis-neo');
 
     await expect(page).toHaveTitle('РЕР-аналіз');
