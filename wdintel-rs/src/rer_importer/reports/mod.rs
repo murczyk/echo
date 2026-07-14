@@ -19,15 +19,16 @@ use std::str::FromStr;
 mod active_networks;
 pub mod babak;
 mod digest;
+mod inbox_light;
 pub mod interception;
 pub mod mouse;
 mod naushnom;
 mod network_frequencies;
 mod posts;
+mod reo;
 mod report_1213;
 mod report_xlsx_kind_pelengs;
 mod rer;
-mod revo;
 mod senders;
 pub mod tag;
 pub mod types;
@@ -259,7 +260,7 @@ pub(crate) async fn report_docx_generate_file(
         .await
         .c(h!())?;
     } else if req.kind == kinds::REO {
-        self::revo::report_docx_kind_revo(&user_login, env, &req, &outpath)
+        self::reo::report_docx_kind_reo(&user_login, env, &req, &outpath)
             .await
             .c(h!())?;
     } else if req.kind == kinds::DIGEST {
