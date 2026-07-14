@@ -71,6 +71,10 @@ function buildUtf16BeChunk(text: string): Uint8Array {
   return bytes;
 }
 
+function buildWindows1251PrivetChunk(): Uint8Array {
+  return new Uint8Array([0xcf, 0xf0, 0xe8, 0xe2, 0xe5, 0xf2]);
+}
+
 describe('text-document-preview', () => {
   afterEach(() => {
     document.body.innerHTML = '';
@@ -209,5 +213,134 @@ describe('text-document-preview', () => {
 
     expect(secondContainer.textContent).toContain(text);
     secondRoot.unmount();
+  });
+
+  it('renders windows-1251 TXT and Markdown fixtures from extensionless URLs', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch');
+    const text = 'Привет';
+
+    fetchSpy.mockResolvedValueOnce(
+      new Response(buildWindows1251PrivetChunk(), {
+        headers: { 'content-type': 'text/plain; charset=windows-1251' },
+      }),
+    );
+
+    const txtContainer = document.createElement('div');
+    document.body.appendChild(txtContainer);
+    const txtRoot = createRoot(txtContainer);
+
+    await act(async () => {
+      txtRoot.render(<TxtDocumentPreview href="https://example.test/files/plain" />);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(txtContainer.textContent).toContain(text);
+    txtRoot.unmount();
+
+    fetchSpy.mockResolvedValueOnce(
+      new Response(buildWindows1251PrivetChunk(), {
+        headers: { 'content-type': 'text/markdown; charset=windows-1251' },
+      }),
+    );
+
+    const markdownContainer = document.createElement('div');
+    document.body.appendChild(markdownContainer);
+    const markdownRoot = createRoot(markdownContainer);
+
+    await act(async () => {
+      markdownRoot.render(<MarkdownDocumentPreview href="https://example.test/files/readme" />);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(markdownContainer.textContent).toContain(text);
+    markdownRoot.unmount();
+  });
+
+  it('honors case-variant charset parameters', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(buildWindows1251PrivetChunk(), {
+        headers: { 'content-type': 'TEXT/PLAIN; CHARSET="WiNdOwS-1251"' },
+      }),
+    );
+
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(<TxtDocumentPreview href="https://example.test/files/plain" />);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(container.textContent).toContain('Привет');
+    root.unmount();
+  });
+
+  it('falls back to UTF-8 for unsupported charset labels', async () => {
+    const text = 'Привіт UTF-8';
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(buildTextChunk(text), {
+        headers: { 'content-type': 'text/plain; charset=x-unsupported-charset' },
+      }),
+    );
+
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(<TxtDocumentPreview href="https://example.test/files/plain" />);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(container.textContent).toContain(text);
+    root.unmount();
+  });
+
+  it('prefers BOM over a contradictory declared charset', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(buildUtf16LeChunk('Привіт UTF-16'), {
+        headers: { 'content-type': 'text/plain; charset=windows-1251' },
+      }),
+    );
+
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(<TxtDocumentPreview href="https://example.test/files/plain" />);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(container.textContent).toContain('Привіт UTF-16');
+    root.unmount();
+  });
+
+  it('rejects binary payloads with a declared legacy charset', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(new Uint8Array([0xcf, 0x00, 0xf0, 0x00]), {
+        headers: { 'content-type': 'text/plain; charset=windows-1251' },
+      }),
+    );
+
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(<TxtDocumentPreview href="https://example.test/files/plain" />);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(container.textContent).toContain('не текстовий файл');
+    root.unmount();
   });
 });

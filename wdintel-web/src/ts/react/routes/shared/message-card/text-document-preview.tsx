@@ -9,7 +9,12 @@ const UTF8_BOM = '\uFEFF';
 const UTF16_BE_BOM_BYTES = [0xfe, 0xff] as const;
 const UTF16_LE_BOM_BYTES = [0xff, 0xfe] as const;
 
-type TextEncoding = 'utf-8' | 'utf-16le' | 'utf-16be';
+type ResolvedTextEncoding = {
+  decoder: TextDecoder;
+  encoding: string;
+  bomLength: number;
+  skipBinaryHeuristic: boolean;
+};
 
 type TextDocumentPreviewProps = {
   href: string;
@@ -51,46 +56,75 @@ function startsWithBytes(bytes: Uint8Array, prefix: readonly number[]): boolean 
   return prefix.every((value, index) => bytes[index] === value);
 }
 
-function detectTextEncoding(
-  bytes: Uint8Array,
-  contentType: string | null,
-): {
-  encoding: TextEncoding;
-  bomLength: number;
-} {
+function createTextDecoder(encoding: string): TextDecoder | null {
+  try {
+    return new TextDecoder(encoding);
+  } catch {
+    return null;
+  }
+}
+
+function resolveTextEncoding(bytes: Uint8Array, contentType: string | null): ResolvedTextEncoding {
   if (startsWithBytes(bytes, UTF16_LE_BOM_BYTES)) {
-    return { encoding: 'utf-16le', bomLength: 2 };
+    return {
+      decoder: new TextDecoder('utf-16le'),
+      encoding: 'utf-16le',
+      bomLength: 2,
+      skipBinaryHeuristic: true,
+    };
   }
   if (startsWithBytes(bytes, UTF16_BE_BOM_BYTES)) {
-    return { encoding: 'utf-16be', bomLength: 2 };
+    return {
+      decoder: new TextDecoder('utf-16be'),
+      encoding: 'utf-16be',
+      bomLength: 2,
+      skipBinaryHeuristic: true,
+    };
   }
   if (bytes.length >= 3 && bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf) {
-    return { encoding: 'utf-8', bomLength: 3 };
+    return {
+      decoder: new TextDecoder('utf-8'),
+      encoding: 'utf-8',
+      bomLength: 3,
+      skipBinaryHeuristic: false,
+    };
   }
 
   const declaredCharset = normalizeCharset(parseCharset(contentType));
   if (declaredCharset === 'utf-16le' || declaredCharset === 'utf-16') {
-    return { encoding: 'utf-16le', bomLength: 0 };
+    return {
+      decoder: new TextDecoder('utf-16le'),
+      encoding: 'utf-16le',
+      bomLength: 0,
+      skipBinaryHeuristic: true,
+    };
   }
   if (declaredCharset === 'utf-16be') {
-    return { encoding: declaredCharset, bomLength: 0 };
+    return {
+      decoder: new TextDecoder('utf-16be'),
+      encoding: declaredCharset,
+      bomLength: 0,
+      skipBinaryHeuristic: true,
+    };
+  }
+  if (declaredCharset != null) {
+    const decoder = createTextDecoder(declaredCharset);
+    if (decoder != null) {
+      return {
+        decoder,
+        encoding: declaredCharset,
+        bomLength: 0,
+        skipBinaryHeuristic: false,
+      };
+    }
   }
 
-  return { encoding: 'utf-8', bomLength: 0 };
-}
-
-function decodeTextBytes(bytes: Uint8Array, encoding: TextEncoding, bomLength: number): string {
-  const decoder = createTextDecoder(encoding);
-  const decoded = decoder.decode(bytes.subarray(bomLength));
-  return decoded.startsWith(UTF8_BOM) ? decoded.slice(1) : decoded;
-}
-
-function createTextDecoder(encoding: TextEncoding): TextDecoder {
-  try {
-    return new TextDecoder(encoding);
-  } catch {
-    return new TextDecoder('utf-8');
-  }
+  return {
+    decoder: new TextDecoder('utf-8'),
+    encoding: 'utf-8',
+    bomLength: 0,
+    skipBinaryHeuristic: false,
+  };
 }
 
 function isProbablyBinary(bytes: Uint8Array): boolean {
@@ -120,11 +154,15 @@ async function readBoundedTextResponse(
     const arrayBuffer = await response.arrayBuffer();
     if (arrayBuffer.byteLength > maxBytes) throw new Error('TEXT_FILE_TOO_LARGE');
     const bytes = new Uint8Array(arrayBuffer);
-    const { encoding, bomLength } = detectTextEncoding(bytes, response.headers.get('content-type'));
-    if (encoding === 'utf-8' && isProbablyBinary(bytes.subarray(bomLength))) {
+    const { decoder, bomLength, skipBinaryHeuristic } = resolveTextEncoding(
+      bytes,
+      response.headers.get('content-type'),
+    );
+    if (!skipBinaryHeuristic && isProbablyBinary(bytes.subarray(bomLength))) {
       throw new Error('TEXT_FILE_BINARY');
     }
-    return decodeTextBytes(bytes, encoding, bomLength);
+    const decoded = decoder.decode(bytes.subarray(bomLength));
+    return decoded.startsWith(UTF8_BOM) ? decoded.slice(1) : decoded;
   }
 
   const reader = body.getReader();
@@ -161,11 +199,15 @@ async function readBoundedTextResponse(
     offset += chunk.byteLength;
   }
 
-  const { encoding, bomLength } = detectTextEncoding(bytes, response.headers.get('content-type'));
-  if (encoding === 'utf-8' && isProbablyBinary(bytes.subarray(bomLength))) {
+  const { decoder, bomLength, skipBinaryHeuristic } = resolveTextEncoding(
+    bytes,
+    response.headers.get('content-type'),
+  );
+  if (!skipBinaryHeuristic && isProbablyBinary(bytes.subarray(bomLength))) {
     throw new Error('TEXT_FILE_BINARY');
   }
-  return decodeTextBytes(bytes, encoding, bomLength);
+  const decoded = decoder.decode(bytes.subarray(bomLength));
+  return decoded.startsWith(UTF8_BOM) ? decoded.slice(1) : decoded;
 }
 
 export function isSafeMarkdownHref(href: string): boolean {
