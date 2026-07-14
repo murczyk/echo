@@ -51,4 +51,8 @@ export type MessageActionsDeps = {
   saveFilterNameByFeedId: Record<string, string>;
   setSaveFilterNameByFeedId: Dispatch<SetStateAction<Record<string, string>>>;
   dutyDisableAutoScroll: boolean;
+  openPointsOnMap?: (
+    etalons: string[],
+    message: import('../../../../Bindings').InboxMessage,
+  ) => void;
 };

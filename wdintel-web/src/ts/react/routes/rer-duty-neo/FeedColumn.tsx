@@ -64,6 +64,14 @@ export type FeedColumnModel = {
     botTagAction: MessageCardBotTagAction | null;
     onCancelBotTagAction: () => void;
     onMarkBotTagWrong: (messageId: number, tagId: number) => void | Promise<void>;
+    onOpenPointsOnMap?: (
+      etalons: string[],
+      message: import('../../../../Bindings').InboxMessage,
+    ) => void;
+    onOpenMapSearch?: (
+      mapSearch: string,
+      message: import('../../../../Bindings').InboxMessage,
+    ) => void;
   };
   actions: {
     onLoadOlder: () => void;

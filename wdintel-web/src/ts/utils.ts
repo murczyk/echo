@@ -80,3 +80,32 @@ export function td_wgs84_to_usk2000(p) {
   }
   return res;
 }
+
+const UTM_LATITUDE_BANDS = 'CDEFGHJKLMNPQRSTUVWX';
+
+function isSouthernUtmBand(band: string): boolean {
+  return UTM_LATITUDE_BANDS.indexOf(band.toUpperCase()) < UTM_LATITUDE_BANDS.indexOf('N');
+}
+
+export function utmToWgs84(p: { zone: number; band: string; easting: number; northing: number }) {
+  const zone = Math.trunc(p.zone);
+  if (!Number.isInteger(zone) || zone < 1 || zone > 60) {
+    return null;
+  }
+
+  const band = String(p.band ?? '')
+    .trim()
+    .toUpperCase();
+  if (!UTM_LATITUDE_BANDS.includes(band)) {
+    return null;
+  }
+
+  const proj = proj4(
+    `+proj=utm +zone=${zone}${isSouthernUtmBand(band) ? ' +south' : ''} +datum=WGS84 +units=m +no_defs`,
+  );
+  const res = proj.inverse({ x: p.easting, y: p.northing });
+  if (!Number.isFinite(res?.x) || !Number.isFinite(res?.y)) {
+    return null;
+  }
+  return { lat: res.y, lng: res.x };
+}

@@ -103,6 +103,8 @@ export type MessageCardProps = {
   onEditDetails?: () => void;
   onExcludeMessageEntity?: (entity: MessageEntityFilterKind, value: string) => void;
   onToggleTag: (tagId: number) => void;
+  onOpenPointsOnMap?: (etalons: string[], message: InboxMessage) => void;
+  onOpenMapSearch?: (mapSearch: string, message: InboxMessage) => void;
   botTagAction?: MessageCardBotTagAction | null;
   onCancelBotTagAction?: () => void;
   onMarkBotTagWrong?: (messageId: number, tagId: number) => void | Promise<void>;
@@ -147,6 +149,8 @@ export function MessageCard({
   onEditDetails,
   onExcludeMessageEntity,
   onToggleTag,
+  onOpenPointsOnMap,
+  onOpenMapSearch,
   botTagAction = null,
   onCancelBotTagAction,
   onMarkBotTagWrong,
@@ -319,6 +323,7 @@ export function MessageCard({
           messageComments={visibleMessageComments}
           signalMessageSenderLabel={senderName?.trim() ? senderName : msg.sender}
           searchText={searchText}
+          onOpenPointsOnMap={onOpenPointsOnMap}
         />
       </Box>
     </Box>

@@ -97,6 +97,8 @@ type Props = {
   onMarkBotTagWrong?: (messageId: number, tagId: number) => void;
   onLoadMoreMessages: () => void;
   onOpenEditor: (messageId: number) => void;
+  onOpenPointsOnMap: (etalons: string[], message: InboxMessage) => void;
+  onOpenMapSearch?: (mapSearch: string, message: InboxMessage) => void;
   onSaveEditor: (message: InboxMessage) => void;
   onSaveMessageUpdate: (
     messageId: number,
@@ -131,6 +133,8 @@ type AnalysisMessageCardItemProps = {
   onCommentOpen: (id: number, message: InboxMessage) => void;
   onCopyFeedback: (value: string) => void;
   onDeleteOpen: (messageId: number) => void;
+  onOpenPointsOnMap: (etalons: string[], message: InboxMessage) => void;
+  onOpenMapSearch?: (mapSearch: string, message: InboxMessage) => void;
   onCancelBotTagAction?: () => void;
   onMarkBotTagWrong?: (messageId: number, tagId: number) => void;
   onOpenEditor: (messageId: number) => void;
@@ -167,6 +171,8 @@ const AnalysisMessageCardItem = memo(function AnalysisMessageCardItem({
   onCommentOpen,
   onCopyFeedback,
   onDeleteOpen,
+  onOpenPointsOnMap,
+  onOpenMapSearch,
   onCancelBotTagAction,
   onMarkBotTagWrong,
   onOpenEditor,
@@ -213,6 +219,8 @@ const AnalysisMessageCardItem = memo(function AnalysisMessageCardItem({
       tagsLoading={tagsLoading}
       tagsLayout={tagsLayout}
       searchText={searchText}
+      onOpenPointsOnMap={onOpenPointsOnMap}
+      onOpenMapSearch={onOpenMapSearch}
       callsignInfoMap={callsignInfoMap}
       networks={networks}
       unitsMap={unitsMap}
@@ -340,6 +348,8 @@ function AnalysisMessagesPaneComponent({
   onMarkBotTagWrong,
   onLoadMoreMessages,
   onOpenEditor,
+  onOpenPointsOnMap,
+  onOpenMapSearch,
   onSaveEditor,
   onSaveMessageUpdate,
   onSaveMessageComment,
@@ -449,6 +459,8 @@ function AnalysisMessagesPaneComponent({
               onCommentOpen={handleCommentOpen}
               onCopyFeedback={showCopiedFeedback}
               onDeleteOpen={handleDeleteOpen}
+              onOpenPointsOnMap={onOpenPointsOnMap}
+              onOpenMapSearch={onOpenMapSearch}
               onCancelBotTagAction={onCancelBotTagAction}
               onMarkBotTagWrong={onMarkBotTagWrong}
               onOpenEditor={handleOpenEditor}

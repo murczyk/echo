@@ -191,6 +191,8 @@ export function AnalysisCenterPanel({
             onMarkBotTagWrong={page.onMarkBotTagWrong}
             onLoadMoreMessages={page.loadMoreMessages}
             onOpenEditor={page.openEditor}
+            onOpenPointsOnMap={page.openPointsOnMap}
+            onOpenMapSearch={page.openMapSearch}
             onSaveEditor={page.saveEditor}
             onSaveMessageUpdate={page.saveMessageUpdate}
             onSaveMessageComment={page.onSaveMessageComment}
