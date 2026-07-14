@@ -232,12 +232,6 @@ vi.mock('./SettingsSharedTagsLayoutCard', () => ({
   SettingsSharedTagsLayoutCard: () => <div />,
 }));
 
-vi.mock('./SettingsMyReportsSection', () => ({
-  SettingsMyReportsSection: ({ active }: { active: boolean }) => (
-    <div>{active ? 'reports-active' : 'reports-inactive'}</div>
-  ),
-}));
-
 vi.mock('./SettingsMyOrganismSection', () => ({
   SettingsMyOrganismSection: () => <div>my-organism-active</div>,
 }));
@@ -381,7 +375,7 @@ describe('SettingsNeoPage', () => {
     expect(container.textContent).toContain('Мої групи');
   });
 
-  it('renders the my reports tab with a beta badge', async () => {
+  it('renders the my reports tab as a redirect', async () => {
     await act(async () => {
       root.render(<SettingsNeoPage section="my-groups" />);
     });
@@ -390,12 +384,12 @@ describe('SettingsNeoPage', () => {
       await Promise.resolve();
     });
 
-    expect(container.textContent).toContain('Мої звіти');
-    expect(container.textContent).toContain('BETA');
-    expect(container.textContent).not.toContain('(бета)');
+    expect(container.textContent).toContain('Мої Звіти');
+    expect(container.textContent).not.toContain('BETA');
+    expect(container.querySelector('[data-testid=OpenInNewIcon]')).not.toBeNull();
   });
 
-  it('accepts canonical kebab-case section values', async () => {
+  it('redirects the canonical my reports section to the dedicated page', async () => {
     await act(async () => {
       root.render(<SettingsNeoPage section="my-reports" />);
     });
@@ -404,8 +398,8 @@ describe('SettingsNeoPage', () => {
       await Promise.resolve();
     });
 
-    expect(container.textContent).toContain('reports-active');
-    expect(container.textContent).not.toContain('Груп не знайдено');
+    expect(window.location.pathname).toBe('/my-reports');
+    expect(container.textContent).not.toContain('reports-active');
   });
 
   it('accepts the my organism section and shows its tab', async () => {

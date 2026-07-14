@@ -999,6 +999,10 @@ export function ReportHistoryTableSection({
                     toolbarFullScreenEnabled
                     manualFiltering={loadReportHistoryBatch !== undefined}
                     manualSorting={loadReportHistoryBatch !== undefined}
+                    tablePaperSx={fullHeight ? REPORTS_FULL_HEIGHT_BATCH_TABLE_PAPER_SX : undefined}
+                    tableContainerSx={
+                      fullHeight ? REPORTS_FULL_HEIGHT_BATCH_TABLE_CONTAINER_SX : undefined
+                    }
                     onQueryStateChange={loadReportHistoryBatch ? handleQueryStateChange : undefined}
                   />
                 </Box>

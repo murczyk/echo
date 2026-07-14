@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Box, Dialog, DialogContent, Typography, useTheme } from '@mui/material';
+import { Box, Typography } from '@mui/material';
 import type { MouseEvent } from 'react';
 
 import type { MessageCardDocument } from './document-preview.types';
+import { getDocumentPreviewCapabilities } from './document-preview-capabilities';
 import {
   clamp,
   DOCUMENT_PREVIEW_ZOOM_MAX,
@@ -17,11 +18,9 @@ import {
 } from './MessageCardDocumentPreviewActions';
 import { MessageCardDocumentPreviewInfoPopover } from './MessageCardDocumentPreviewInfoPopover';
 import { MessageCardDocumentPreviewStage } from './MessageCardDocumentPreviewStage';
-import {
-  blurActivePreviewDialogElement,
-  getMessageCardPreviewCounterSx,
-  getMessageCardPreviewDialogPaperSx,
-} from './message-card-preview-shell';
+import { MessageCardPreviewShell } from './MessageCardPreviewShell';
+import { getMessageCardPreviewShellConfig } from './message-card-preview-config';
+import { blurActivePreviewDialogElement } from './message-card-preview-shell';
 
 export function MessageCardDocumentPreviewDialog({
   documents,
@@ -38,7 +37,6 @@ export function MessageCardDocumentPreviewDialog({
   onClose: () => void;
   onIndexChange: (index: number) => void;
 }) {
-  const theme = useTheme();
   const documentCount = documents.length;
   const hasCarousel = documentCount > 1;
   const resolvedIndex = normalizePreviewIndex(currentIndex ?? initialIndex, documentCount);
@@ -48,6 +46,14 @@ export function MessageCardDocumentPreviewDialog({
   const [isFullscreen, setIsFullscreen] = useState(false);
 
   const infoOpen = infoAnchorEl !== null;
+  const currentDocumentKind = currentDocument?.kind ?? 'unsupported';
+  const previewConfig = getMessageCardPreviewShellConfig(currentDocumentKind);
+  const currentDocumentCapabilities =
+    currentDocument == null ? null : getDocumentPreviewCapabilities(currentDocument.kind);
+  const canZoom = currentDocumentCapabilities?.zoomable === true;
+  const canFullscreen = previewConfig.supportsFullscreen;
+  const dialogIsFullscreen = canFullscreen && isFullscreen;
+  const dialogZoom = canZoom ? zoom : 100;
   const previewFileName = useMemo(
     () =>
       currentDocument != null
@@ -82,6 +88,16 @@ export function MessageCardDocumentPreviewDialog({
   }, [open]);
 
   useEffect(() => {
+    if (currentDocument == null) return;
+    if (!canZoom && zoom !== 100) {
+      setZoom(100);
+    }
+    if (!canFullscreen && isFullscreen) {
+      setIsFullscreen(false);
+    }
+  }, [canFullscreen, canZoom, currentDocument, isFullscreen, zoom]);
+
+  useEffect(() => {
     if (!open || !hasCarousel) return;
 
     const handleWindowKeyDown = (event: globalThis.KeyboardEvent) => {
@@ -111,90 +127,73 @@ export function MessageCardDocumentPreviewDialog({
     setInfoAnchorEl(event.currentTarget);
   };
 
-  const dialogWidth = isFullscreen ? '100vw' : '92vw';
-  const dialogHeight = isFullscreen ? '100vh' : '92svh';
+  const handleDialogClose = (_event: unknown, reason: 'backdropClick' | 'escapeKeyDown') => {
+    if (reason === 'escapeKeyDown' && dialogIsFullscreen) {
+      setIsFullscreen(false);
+      return;
+    }
+    closeDialog();
+  };
+
+  if (currentDocument == null) {
+    return (
+      <MessageCardPreviewShell
+        open={open && documentCount > 0}
+        isFullscreen={dialogIsFullscreen}
+        ariaLabel="Перегляд документа"
+        onClose={handleDialogClose}
+        config={previewConfig}
+        stage={<Typography variant="body2">Документ недоступний</Typography>}
+      />
+    );
+  }
 
   return (
-    <Dialog
+    <MessageCardPreviewShell
       open={open && documentCount > 0}
-      onClose={(_, reason) => {
-        if (reason === 'escapeKeyDown' && isFullscreen) {
-          setIsFullscreen(false);
-          return;
-        }
-        closeDialog();
-      }}
-      maxWidth={false}
-      fullScreen={isFullscreen}
-      disableRestoreFocus
-      PaperProps={{
-        sx: {
-          width: dialogWidth,
-          height: dialogHeight,
-          maxWidth: dialogWidth,
-          maxHeight: dialogHeight,
-          margin: 0,
-          ...getMessageCardPreviewDialogPaperSx(isFullscreen),
-        },
-      }}
-      BackdropProps={{
-        sx: { backgroundColor: 'rgba(0, 0, 0, 0.8)' },
-      }}
-    >
-      <DialogContent
-        sx={{
-          display: 'flex',
-          flexDirection: 'column',
-          px: isFullscreen ? 0 : 2,
-          pt: isFullscreen ? 0 : 2,
-          pb: 0,
-          gap: 0,
-          minHeight: 0,
-          overflow: 'hidden',
-        }}
-      >
-        {currentDocument != null ? (
-          <Box
-            sx={{
-              flex: 1,
-              minHeight: 0,
-              display: 'flex',
-              flexDirection: 'column',
-              borderRadius: isFullscreen ? 0 : 1.5,
-              overflow: 'hidden',
-              backgroundColor: 'background.paper',
-              border: isFullscreen ? 'none' : 1,
-              borderColor: 'divider',
-            }}
-          >
-            <MessageCardDocumentPreviewStage
-              documents={documents}
-              currentIndex={resolvedIndex}
-              zoom={zoom}
-              isFullscreen={isFullscreen}
-            />
-            <Box
-              sx={{
-                display: 'flex',
-                justifyContent: 'center',
-                width: '100%',
-              }}
-            >
-              <Box sx={{ width: '100%', maxWidth: 800 }}>
-                <MessageCardDocumentPreviewControls
-                  zoom={zoom}
-                  isFullscreen={isFullscreen}
-                  onSetPreviewZoom={setPreviewZoom}
-                  onToggleFullscreen={() => setIsFullscreen((value) => !value)}
-                />
-              </Box>
-            </Box>
-          </Box>
-        ) : (
-          <Typography variant="body2">Документ недоступний</Typography>
-        )}
-      </DialogContent>
-      {currentDocument != null ? (
+      isFullscreen={dialogIsFullscreen}
+      ariaLabel="Перегляд документа"
+      onClose={handleDialogClose}
+      config={previewConfig}
+      stage={
+        <MessageCardDocumentPreviewStage
+          documents={documents}
+          currentIndex={resolvedIndex}
+          zoom={dialogZoom}
+          isFullscreen={dialogIsFullscreen}
+        />
+      }
+      controls={
+        canZoom ? (
+          <MessageCardDocumentPreviewControls
+            zoom={zoom}
+            isFullscreen={isFullscreen}
+            canFullscreen={canFullscreen}
+            onSetPreviewZoom={setPreviewZoom}
+            onToggleFullscreen={() => setIsFullscreen((value) => !value)}
+          />
+        ) : null
+      }
+      actions={
+        dialogIsFullscreen ? null : (
+          <MessageCardDocumentPreviewActions
+            currentHref={currentDocument.href}
+            downloadFileName={downloadFileName}
+            hasCarousel={hasCarousel}
+            resolvedIndex={resolvedIndex}
+            documentCount={documentCount}
+            onGoToPrevious={() =>
+              onIndexChange(normalizePreviewIndex(resolvedIndex - 1, documentCount))
+            }
+            onGoToNext={() =>
+              onIndexChange(normalizePreviewIndex(resolvedIndex + 1, documentCount))
+            }
+            onInfoClick={handleInfoClick}
+            onClose={closeDialog}
+          />
+        )
+      }
+      infoPopover={
         <MessageCardDocumentPreviewInfoPopover
           open={infoOpen}
           anchorEl={infoAnchorEl}
@@ -203,22 +202,7 @@ export function MessageCardDocumentPreviewDialog({
           fileName={previewFileName}
           fileSize={currentDocument.sizeBytes ?? null}
         />
-      ) : null}
-      {currentDocument != null && !isFullscreen ? (
-        <MessageCardDocumentPreviewActions
-          currentHref={currentDocument.href}
-          downloadFileName={downloadFileName}
-          hasCarousel={hasCarousel}
-          resolvedIndex={resolvedIndex}
-          documentCount={documentCount}
-          onGoToPrevious={() =>
-            onIndexChange(normalizePreviewIndex(resolvedIndex - 1, documentCount))
-          }
-          onGoToNext={() => onIndexChange(normalizePreviewIndex(resolvedIndex + 1, documentCount))}
-          onInfoClick={handleInfoClick}
-          onClose={closeDialog}
-        />
-      ) : null}
-    </Dialog>
+      }
+    />
   );
 }
