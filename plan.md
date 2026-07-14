@@ -10,6 +10,9 @@ Put any blocking or review-needed questions in `QnA`; add your suggested answers
 - [ ] Locate the existing `Мої Звіти` implementation under `Налаштування` and identify the route/component that renders it.
 - [ ] Create or expose a dedicated `Мої Звіти` page route outside settings.
 - [ ] Add `Мої Звіти` to the top-right login/user dropdown next to `Налаштування`, with `Налаштування` immediately after it.
+- [ ] Remove any UI copy or badge that presents `Мої Звіти` as beta functionality.
+- [ ] Keep the `Мої Звіти` tab visible at `/settings-neo`, but make selecting it redirect to the new dedicated page.
+- [ ] Add a hyperlink/external-link icon at the end of the `Мої Звіти` settings tab label so it is clear the tab opens another page.
 - [ ] Update links from `Налаштування -> Мої Звіти` to point to the new dedicated page and display the hyperlink text as `Мої Звіти`.
 - [ ] Add a legacy redirect from `/settings-neo?section=my-reports` to the new `Мої Звіти` page route.
 - [ ] Adjust the dedicated page layout so the reports table uses space similarly to `/admin/all-reports`, including page width, table height, `Мої Звіти` title, and title counter.
