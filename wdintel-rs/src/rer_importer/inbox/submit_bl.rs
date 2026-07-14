@@ -87,6 +87,7 @@ pub(crate) async fn submit_generic_inbox_item(
         login,
         logins,
         item,
+        false,
     )
     .await
 }
@@ -99,6 +100,7 @@ pub(crate) async fn submit_inbox_item_with_groups(
     login: &str,
     logins: &Vec<String>,
     item: InboxSubmitItem,
+    allow_empty_content: bool,
 ) -> Result<SubmittedInboxItem, AppError> {
     submit_inbox_item_with_groups_inner(
         env,
@@ -109,6 +111,7 @@ pub(crate) async fn submit_inbox_item_with_groups(
         logins,
         item,
         None,
+        allow_empty_content,
     )
     .await
 }
@@ -122,6 +125,7 @@ pub(crate) async fn edit_inbox_item_with_groups(
     login: &str,
     logins: &Vec<String>,
     item: InboxSubmitItem,
+    allow_empty_content: bool,
 ) -> Result<SubmittedInboxItem, AppError> {
     submit_inbox_item_with_groups_inner(
         env,
@@ -132,6 +136,7 @@ pub(crate) async fn edit_inbox_item_with_groups(
         logins,
         item,
         Some(signal_message_id),
+        allow_empty_content,
     )
     .await
 }
@@ -145,8 +150,11 @@ async fn submit_inbox_item_with_groups_inner(
     logins: &Vec<String>,
     item: InboxSubmitItem,
     signal_message_id: Option<i64>,
+    allow_empty_content: bool,
 ) -> Result<SubmittedInboxItem, AppError> {
-    let mut prepared = prepare_inbox_submit_item(txn, groups, &item).await?;
+    let mut prepared =
+        prepare_inbox_submit_item(txn, groups, &item, allow_empty_content)
+            .await?;
 
     if let Some(signal_message_id) = signal_message_id {
         delete_cleared_edit_comment(
@@ -255,13 +263,16 @@ async fn prepare_inbox_submit_item(
     txn: &DatabaseTransaction,
     groups: &[(String, i64)],
     item: &InboxSubmitItem,
+    allow_empty_content: bool,
 ) -> Result<PreparedInboxSubmitItem, AppError> {
-    super::validate_submit_item_content(item)?;
+    if !allow_empty_content {
+        super::validate_submit_item_content(item)?;
+    }
     let tag_ids =
         super::resolve_submit_tag_ids(txn, item.tags.as_deref()).await?;
     let operator_tags = super::submit_operator_tags(item.tags.as_deref())?;
     let (mut message, timestamp) =
-        super::generic_submit_item_to_inbox_message(item)?;
+        super::generic_submit_item_to_inbox_message(item, allow_empty_content)?;
     let post = super::normalized_optional_string(message.post.as_deref());
     message.post_id = match message.post_id {
         Some(post_id) => Some(post_id),

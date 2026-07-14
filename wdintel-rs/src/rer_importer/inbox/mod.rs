@@ -770,13 +770,15 @@ fn validate_submit_item_content(
 
 fn generic_submit_item_to_inbox_message(
     item: &InboxSubmitItem,
+    allow_empty_content: bool,
 ) -> Result<(InboxMessage, NaiveDateTime), AppError> {
     let timestamp =
         parse_submit_rfc3339_timestamp("timestamp", &item.timestamp)?;
     let (date, time) = format_submit_date_time_fields(timestamp);
     let full_body = normalized_optional_string(item.full_body.as_deref())
         .or_else(|| normalized_optional_string(item.text.as_deref()))
-        .unwrap_or_default();
+        .or_else(|| allow_empty_content.then(String::new))
+        .c(h!())?;
     let no_headers_body =
         normalized_optional_string(item.text.as_deref()).map(|body| {
             crate::rer_importer::body_noheader::NoHeadersBody {
@@ -2389,7 +2391,7 @@ mod tests {
         };
 
         let (message, timestamp) =
-            generic_submit_item_to_inbox_message(&item).unwrap();
+            generic_submit_item_to_inbox_message(&item, false).unwrap();
 
         assert_eq!(
             timestamp,

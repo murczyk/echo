@@ -196,6 +196,7 @@ async fn save_signal_message(
         login,
         &logins,
         submit_item,
+        !uploads.is_empty(),
     )
     .await?;
     let mut rsp = finish_direct_submit(
@@ -258,20 +259,12 @@ fn validate_direct_submit_payload(
     env: &Env,
     payload: &DirectSubmitPayload,
 ) -> Result<(), AppError> {
-    if payload
-        .full_body
-        .as_deref()
-        .is_none_or(|body| body.trim().is_empty())
-        && payload
-            .text
-            .as_deref()
-            .is_none_or(|body| body.trim().is_empty())
-    {
+    let upload_urls = payload.upload_urls.as_deref().unwrap_or_default();
+    if !has_direct_submit_content(payload) {
         return Err(AppError::BL {
-            msg: "full_body or text cannot be empty".to_string(),
+            msg: "full_body, text, or upload_urls cannot be empty".to_string(),
         });
     }
-    let upload_urls = payload.upload_urls.as_deref().unwrap_or_default();
     if !upload_urls.is_empty()
         && (env.config.s3_config.is_none() || env.s3.is_none())
     {
@@ -280,6 +273,21 @@ fn validate_direct_submit_payload(
         });
     }
     Ok(())
+}
+
+fn has_direct_submit_content(payload: &DirectSubmitPayload) -> bool {
+    payload
+        .full_body
+        .as_deref()
+        .is_some_and(|body| !body.trim().is_empty())
+        || payload
+            .text
+            .as_deref()
+            .is_some_and(|body| !body.trim().is_empty())
+        || payload
+            .upload_urls
+            .as_ref()
+            .is_some_and(|upload_urls| !upload_urls.is_empty())
 }
 
 async fn resolve_direct_submit_uploads(
@@ -305,6 +313,7 @@ async fn persist_direct_submit_item(
     login: &str,
     logins: &Vec<String>,
     submit_item: InboxSubmitItem,
+    allow_empty_content: bool,
 ) -> Result<SubmittedInboxItem, AppError> {
     let datasource_id = signal_group.datasource_id.unwrap_or(
         query::resolve_datasource_id_for_group(txn, &signal_group.master_key)
@@ -331,6 +340,7 @@ async fn persist_direct_submit_item(
                 login,
                 logins,
                 submit_item,
+                allow_empty_content,
             )
             .await
             .c(h!())?
@@ -344,6 +354,7 @@ async fn persist_direct_submit_item(
                 login,
                 logins,
                 submit_item,
+                allow_empty_content,
             )
             .await
             .c(h!())?
@@ -504,6 +515,14 @@ mod tests {
         assert_eq!(item.from_callsign.as_deref(), Some("ALPHA"));
         assert_eq!(item.to, vec!["BRAVO"]);
         assert!(!item.parse_body_coordinates);
+    }
+
+    #[test]
+    fn direct_submit_accepts_attachment_without_text() {
+        let mut payload = direct_submit_payload("");
+        payload.upload_urls = Some(vec!["attachment-url".to_string()]);
+
+        assert!(has_direct_submit_content(&payload));
     }
 
     #[tokio::test]
