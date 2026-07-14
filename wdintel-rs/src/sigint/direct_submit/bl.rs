@@ -73,6 +73,11 @@ where
         aor_id,
     )
     .c(h!())?;
+    let unit: Option<String> = unit_and_location.unit;
+    let unit_v2 = match &unit {
+        Some(unit) => crate::inbox::parse_unit_v2(dbx, unit).await.c(h!())?,
+        None => None,
+    };
     let text = if env.config.sigint_comment_parsing_enabled()? {
         crate::sigint::parser::extract_text_without_top_comment(body)?
     } else {
@@ -105,7 +110,8 @@ where
         timestamp,
         comment: comments.bottom.or(comments.top),
         post: crate::rer_importer::post::extract_post(body)?,
-        unit: unit_and_location.unit,
+        unit,
+        unit_v2,
         locations: unit_and_location
             .locality
             .map(|l| {

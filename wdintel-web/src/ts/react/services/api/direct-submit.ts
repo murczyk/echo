@@ -228,6 +228,7 @@ export type DirectSubmitParseResponse = {
   comment?: string;
   post?: string;
   unit?: string;
+  unit_v2?: string;
   locations: string[];
 };
 

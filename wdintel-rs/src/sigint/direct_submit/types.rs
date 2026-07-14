@@ -67,5 +67,6 @@ pub struct DirectSubmitParseRsp {
     pub comment: Option<String>,
     pub post: Option<String>,
     pub unit: Option<String>,
+    pub unit_v2: Option<String>,
     pub locations: Vec<String>,
 }

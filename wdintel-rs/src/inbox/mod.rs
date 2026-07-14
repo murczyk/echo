@@ -554,15 +554,25 @@ where
     };
     let mut cached_m_unit = cache.get(unit).cloned();
     if cached_m_unit.is_none() {
-        let parsed_unit = crate::unit::parse_unit(unit, txn)
-            .await
-            .c(h!())?
-            .unwrap_or("".to_string());
+        let parsed_unit = parse_unit_v2(txn, unit).await?.unwrap_or_default();
         cache.put(unit.clone(), parsed_unit.clone());
         cached_m_unit = Some(parsed_unit);
     }
     let m_unit = cached_m_unit.filter(|u| !u.is_empty());
     Ok(m_unit)
+}
+
+pub(crate) async fn parse_unit_v2<C>(
+    dbx: &C,
+    unit: &String,
+) -> Result<Option<String>, AppError>
+where
+    C: ConnectionTrait,
+{
+    Ok(crate::unit::parse_unit(unit, dbx)
+        .await
+        .c(h!())?
+        .filter(|unit| !unit.is_empty()))
 }
 
 pub async fn resolve_message_aor_ids_by_group<'a, 'async_trait, C>(
