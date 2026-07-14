@@ -691,6 +691,18 @@ sigint_unit_create toMsg req =
         }
 
 
+sigint_unit_create_with_auto_network :
+    (Result ApiError CreateUnitWithAutoNetworkRsp -> msg)
+    -> CreateUnitWithAutoNetworkReq
+    -> Cmd msg
+sigint_unit_create_with_auto_network toMsg req =
+    Http.post
+        { url = "/api/sigint/unit/create-with-auto-network"
+        , body = Http.jsonBody (createUnitWithAutoNetworkReqEncoder req)
+        , expect = leExpectJson toMsg createUnitWithAutoNetworkRspDecoder
+        }
+
+
 sigint_unit_update :
     (Result ApiError Unit -> msg)
     -> Unit
