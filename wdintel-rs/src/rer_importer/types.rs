@@ -570,7 +570,8 @@ pub struct SubmitCoordinates {
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
 #[serde(deny_unknown_fields)]
 pub struct SubmitNetwork {
-    pub signal_name: String,
+    #[serde(default)]
+    pub signal_name: Option<String>,
     #[serde(default)]
     pub cc: Option<i32>,
     #[serde(default)]
@@ -1781,6 +1782,21 @@ mod tests {
         }));
 
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn inbox_submit_item_accepts_network_without_signal_name() {
+        let item = serde_json::from_value::<InboxSubmitItem>(json!({
+            "text": "Повідомлення",
+            "timestamp": "2026-06-25T12:34:56Z",
+            "network": {
+                "cc": 5,
+                "name": "УКХ мережа"
+            }
+        }))
+        .unwrap();
+
+        assert_eq!(item.network.and_then(|network| network.signal_name), None);
     }
 
     #[test]

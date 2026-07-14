@@ -1557,8 +1557,10 @@ fn normalize_submit_dmr_metadata(
 fn validate_submit_network(
     network: Option<&SubmitNetwork>,
 ) -> Result<(), AppError> {
-    if let Some(network) = network {
-        validate_submit_signal_name(&network.signal_name)?;
+    if let Some(signal_name) =
+        network.and_then(|network| network.signal_name.as_deref())
+    {
+        validate_submit_signal_name(signal_name)?;
     }
     Ok(())
 }
@@ -2278,7 +2280,7 @@ mod tests {
     #[test]
     fn normalize_submit_dmr_metadata_warns_on_network_cc_conflict() {
         let network = SubmitNetwork {
-            signal_name: "dmr".to_string(),
+            signal_name: Some("dmr".to_string()),
             cc: Some(7),
             name: Some(
                 "УКХ р/м управління 3 мсб 291 мсп 42 мсд 58 А".to_string(),
@@ -2934,7 +2936,7 @@ mod tests {
                 "Чумак DMR Резерв".to_string(),
             ]),
             network: Some(SubmitNetwork {
-                signal_name: "dmr".to_string(),
+                signal_name: Some("dmr".to_string()),
                 cc: Some(9),
                 name: Some(
                     "УКХ р/м управління 3 мсб 291 мсп 42 мсд 58 А".to_string(),
