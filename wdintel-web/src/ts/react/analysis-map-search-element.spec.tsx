@@ -47,6 +47,12 @@ async function typeInput(input: HTMLInputElement, value: string): Promise<void> 
   });
 }
 
+async function pressEnter(input: HTMLInputElement): Promise<void> {
+  await act(async () => {
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+  });
+}
+
 describe('AnalysisMapSearchElement', () => {
   let container: HTMLElement;
 
@@ -116,6 +122,70 @@ describe('AnalysisMapSearchElement', () => {
       expect(events).toEqual(['abc']);
 
       vi.useRealTimers();
+    });
+
+    it('emits search-submit immediately with the current value when Enter is pressed', async () => {
+      vi.useFakeTimers();
+      const el = createElement();
+      await connectElement(el, container);
+      const searchEvents: string[] = [];
+      const submitEvents: string[] = [];
+      el.addEventListener('search-points', (e: Event) =>
+        searchEvents.push((e as CustomEvent).detail),
+      );
+      el.addEventListener('search-submit', (e: Event) =>
+        submitEvents.push((e as CustomEvent).detail),
+      );
+      const input = getInput(el);
+
+      await typeInput(input, 'abc');
+      await pressEnter(input);
+
+      expect(submitEvents).toEqual(['abc']);
+      expect(searchEvents).toEqual([]);
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(DEBOUNCE_MS + 1);
+      });
+      expect(searchEvents).toEqual([]);
+
+      vi.useRealTimers();
+    });
+
+    it('emits search-submit for an unchanged value without waiting for debounce', async () => {
+      vi.useFakeTimers();
+      const el = createElement();
+      await connectElement(el, container);
+      const submitEvents: string[] = [];
+      el.addEventListener('search-submit', (e: Event) =>
+        submitEvents.push((e as CustomEvent).detail),
+      );
+      const input = getInput(el);
+
+      await typeInput(input, '11T XT 11111 11111');
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(DEBOUNCE_MS + 1);
+      });
+      submitEvents.length = 0;
+
+      await pressEnter(input);
+      expect(submitEvents).toEqual(['11T XT 11111 11111']);
+
+      vi.useRealTimers();
+    });
+
+    it('does not submit when disabled', async () => {
+      const el = createElement();
+      el.setAttribute('disabled', 'true');
+      await connectElement(el, container);
+      const submitEvents: string[] = [];
+      el.addEventListener('search-submit', (e: Event) =>
+        submitEvents.push((e as CustomEvent).detail),
+      );
+      const input = getInput(el);
+
+      await pressEnter(input);
+      expect(submitEvents).toEqual([]);
     });
   });
 });

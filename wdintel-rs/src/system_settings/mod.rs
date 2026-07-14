@@ -82,7 +82,7 @@ fn map_system_settings_item(
         peleng_bounds_top_left_lng: settings.peleng_bounds_top_left_lng,
         peleng_bounds_bottom_right_lat: settings.peleng_bounds_bottom_right_lat,
         peleng_bounds_bottom_right_lng: settings.peleng_bounds_bottom_right_lng,
-        cyber_echo_enabled: settings.cyber_echo_enabled,
+        devices_section_enabled: settings.devices_section_enabled,
         echo_restapi_error_discord_webhook_url: settings
             .echo_restapi_error_discord_webhook_url,
         sigint_comment_parsing_enabled: settings.sigint_comment_parsing_enabled,
@@ -267,13 +267,13 @@ where
     }
 }
 
-pub async fn cyber_echo_enabled<C>(dbx: &C) -> Result<bool, AppError>
+pub async fn devices_section_enabled<C>(dbx: &C) -> Result<bool, AppError>
 where
     C: ConnectionTrait,
 {
     let settings = get_active_system_settings(dbx).await.c(h!())?;
     Ok(settings
-        .map(|settings| settings.cyber_echo_enabled)
+        .map(|settings| settings.devices_section_enabled)
         .unwrap_or(false))
 }
 
@@ -289,15 +289,15 @@ where
         .unwrap_or(false))
 }
 
-pub async fn ensure_cyber_echo_enabled<C>(dbx: &C) -> Result<(), AppError>
+pub async fn ensure_devices_section_enabled<C>(dbx: &C) -> Result<(), AppError>
 where
     C: ConnectionTrait,
 {
-    if cyber_echo_enabled(dbx).await.c(h!())? {
+    if devices_section_enabled(dbx).await.c(h!())? {
         Ok(())
     } else {
         Err(AppError::Forbidden(
-            "cyber_echo_enabled is disabled".to_string(),
+            "devices_section_enabled is disabled".to_string(),
         ))
     }
 }
@@ -434,7 +434,7 @@ fn system_settings_active_model(
         peleng_bounds_top_left_lng: Set(req.peleng_bounds_top_left_lng),
         peleng_bounds_bottom_right_lat: Set(req.peleng_bounds_bottom_right_lat),
         peleng_bounds_bottom_right_lng: Set(req.peleng_bounds_bottom_right_lng),
-        cyber_echo_enabled: Set(req.cyber_echo_enabled),
+        devices_section_enabled: Set(req.devices_section_enabled),
         echo_restapi_error_discord_webhook_url: Set(
             normalize_optional_setting(
                 req.echo_restapi_error_discord_webhook_url.as_deref(),
@@ -566,7 +566,7 @@ pub async fn current_system_settings(
                 .peleng_bounds_bottom_right_lat,
             peleng_bounds_bottom_right_lng: settings
                 .peleng_bounds_bottom_right_lng,
-            cyber_echo_enabled: settings.cyber_echo_enabled,
+            devices_section_enabled: settings.devices_section_enabled,
             sigint_comment_parsing_enabled: settings
                 .sigint_comment_parsing_enabled,
             do_not_store_duplicate_echoim_failures: settings
@@ -589,7 +589,7 @@ pub async fn current_system_settings(
             peleng_bounds_top_left_lng: None,
             peleng_bounds_bottom_right_lat: None,
             peleng_bounds_bottom_right_lng: None,
-            cyber_echo_enabled: false,
+            devices_section_enabled: false,
             sigint_comment_parsing_enabled: false,
             do_not_store_duplicate_echoim_failures: false,
         },
@@ -859,7 +859,7 @@ mod tests {
             support_non_rer_interceptions: false,
             default_neo_analysis: false,
             autofix_echoim_missing_messages: false,
-            cyber_echo_enabled: false,
+            devices_section_enabled: false,
             peleng_bounds_enabled: false,
             peleng_bounds_top_left_lat: None,
             peleng_bounds_top_left_lng: None,
@@ -917,7 +917,7 @@ mod tests {
             peleng_bounds_bottom_right_lng: Set(None),
             default_neo_analysis: Set(false),
             autofix_echoim_missing_messages: Set(false),
-            cyber_echo_enabled: Set(false),
+            devices_section_enabled: Set(false),
             echo_restapi_error_discord_webhook_url: Set(None),
             sigint_comment_parsing_enabled: Set(true),
             do_not_store_duplicate_echoim_failures: Set(false),

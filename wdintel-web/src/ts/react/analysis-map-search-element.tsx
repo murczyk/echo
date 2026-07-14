@@ -51,15 +51,17 @@ class AnalysisMapSearchElement extends HTMLElement {
     }
 
     const onSearch = (value: string) => {
-      this.dispatchEvent(
-        new CustomEvent('search-points', { detail: value, bubbles: true, composed: true }),
-      );
+      this.dispatchSearchEvent('search-points', value);
+    };
+    const onSubmit = (value: string) => {
+      this.dispatchSearchEvent('search-submit', value);
     };
 
     this.root.render(
       <MapSearchInput
         placeholder={this.placeholder}
         onSearch={onSearch}
+        onSubmit={onSubmit}
         resultsCount={this.resultsCount}
         isSearchLoading={this.isSearchLoading}
         isInputLoading={this.isDisabled}
@@ -68,6 +70,10 @@ class AnalysisMapSearchElement extends HTMLElement {
         initialValue={this.initialQuery}
       />,
     );
+  }
+
+  private dispatchSearchEvent(type: 'search-points' | 'search-submit', value: string): void {
+    this.dispatchEvent(new CustomEvent(type, { detail: value, bubbles: true, composed: true }));
   }
 
   attributeChangedCallback(name: string, _oldValue: string | null, newValue: string | null) {

@@ -14,6 +14,7 @@ export type SearchInputProps = {
   initialValue?: string;
   placeholder?: string;
   onSearch: (value: string) => void;
+  onSubmit?: (value: string) => void;
   className?: string;
   resultsCount?: number | null;
   isSearchLoading?: boolean;
@@ -30,6 +31,7 @@ export function SearchInput(props: SearchInputProps) {
     initialValue,
     placeholder = SEARCH_TEXT,
     onSearch,
+    onSubmit,
     className,
     resultsCount = null,
     isSearchLoading = false,
@@ -81,6 +83,20 @@ export function SearchInput(props: SearchInputProps) {
 
   const handleKeyDown = useCallback(
     (event: KeyboardEvent<HTMLInputElement>) => {
+      if (event.key === 'Enter') {
+        if (!onSubmit || disabled || isSearchLoading || isInputLoading) {
+          return;
+        }
+        event.preventDefault();
+        event.stopPropagation();
+        if (timerRef.current !== null) {
+          clearTimeout(timerRef.current);
+          timerRef.current = null;
+        }
+        onSubmit(value);
+        return;
+      }
+
       if (!clearOnEscape || event.key !== 'Escape') {
         return;
       }
@@ -91,7 +107,7 @@ export function SearchInput(props: SearchInputProps) {
       event.stopPropagation();
       handleClear();
     },
-    [clearOnEscape, handleClear, value],
+    [clearOnEscape, disabled, handleClear, isInputLoading, isSearchLoading, onSubmit, value],
   );
 
   useEffect(() => {

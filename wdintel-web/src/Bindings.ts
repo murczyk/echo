@@ -3192,7 +3192,7 @@ export type SystemSettingsCurrentRsp = {
   pelengBoundsTopLeftLng: number | null;
   pelengBoundsBottomRightLat: number | null;
   pelengBoundsBottomRightLng: number | null;
-  cyberEchoEnabled: boolean;
+  devicesSectionEnabled: boolean;
   sigintCommentParsingEnabled: boolean;
   doNotStoreDuplicateEchoimFailures: boolean;
 };
@@ -3218,7 +3218,7 @@ export type SystemSettingsItem = {
   pelengBoundsTopLeftLng: number | null;
   pelengBoundsBottomRightLat: number | null;
   pelengBoundsBottomRightLng: number | null;
-  cyberEchoEnabled: boolean;
+  devicesSectionEnabled: boolean;
   echoRestapiErrorDiscordWebhookUrl: string | null;
   sigintCommentParsingEnabled: boolean;
   doNotStoreDuplicateEchoimFailures: boolean;
@@ -3244,7 +3244,7 @@ export type CreateSystemSettingsReq = {
   pelengBoundsTopLeftLng: number | null;
   pelengBoundsBottomRightLat: number | null;
   pelengBoundsBottomRightLng: number | null;
-  cyberEchoEnabled: boolean;
+  devicesSectionEnabled: boolean;
   echoRestapiErrorDiscordWebhookUrl: string | null;
   sigintCommentParsingEnabled: boolean;
   doNotStoreDuplicateEchoimFailures: boolean;
@@ -3564,3 +3564,4 @@ export type UserDutySettingsDto = {
   disableAutoScroll: boolean;
   analysisMapInSidebar: boolean;
 };
+

@@ -16,7 +16,7 @@ type SystemSettingsItemRaw = {
   support_non_rer_interceptions?: boolean;
   default_neo_analysis?: boolean;
   autofix_echoim_missing_messages?: boolean;
-  cyber_echo_enabled?: boolean;
+  devices_section_enabled?: boolean;
   sigint_comment_parsing_enabled?: boolean;
   do_not_store_duplicate_echoim_failures?: boolean;
   peleng_bounds_enabled?: boolean;
@@ -39,7 +39,7 @@ type SystemSettingsCurrentRspRaw = {
   support_non_rer_interceptions?: boolean;
   default_neo_analysis?: boolean;
   autofix_echoim_missing_messages?: boolean;
-  cyber_echo_enabled?: boolean;
+  devices_section_enabled?: boolean;
   sigint_comment_parsing_enabled?: boolean;
   do_not_store_duplicate_echoim_failures?: boolean;
   peleng_bounds_enabled?: boolean;
@@ -64,7 +64,7 @@ type CreateSystemSettingsReqRaw = {
   support_non_rer_interceptions: boolean;
   default_neo_analysis: boolean;
   autofix_echoim_missing_messages: boolean;
-  cyber_echo_enabled: boolean;
+  devices_section_enabled: boolean;
   sigint_comment_parsing_enabled: boolean;
   do_not_store_duplicate_echoim_failures: boolean;
   peleng_bounds_enabled: boolean;
@@ -95,7 +95,7 @@ export type SystemSettingsItem = {
   supportNonRerInterceptions: boolean;
   defaultNeoAnalysis: boolean;
   autofixEchoimMissingMessages: boolean;
-  cyberEchoEnabled: boolean;
+  devicesSectionEnabled: boolean;
   sigintCommentParsingEnabled: boolean;
   doNotStoreDuplicateEchoimFailures: boolean;
   pelengBoundsEnabled: boolean;
@@ -118,7 +118,7 @@ export type SystemSettingsCurrent = {
   supportNonRerInterceptions: boolean;
   defaultNeoAnalysis: boolean;
   autofixEchoimMissingMessages: boolean;
-  cyberEchoEnabled: boolean;
+  devicesSectionEnabled: boolean;
   sigintCommentParsingEnabled: boolean;
   doNotStoreDuplicateEchoimFailures: boolean;
   pelengBoundsEnabled: boolean;
@@ -139,7 +139,7 @@ export type CreateSystemSettingsInput = {
   supportNonRerInterceptions: boolean;
   defaultNeoAnalysis: boolean;
   autofixEchoimMissingMessages: boolean;
-  cyberEchoEnabled: boolean;
+  devicesSectionEnabled: boolean;
   sigintCommentParsingEnabled: boolean;
   doNotStoreDuplicateEchoimFailures: boolean;
   pelengBoundsEnabled: boolean;
@@ -167,7 +167,7 @@ function normalizeItem(raw: SystemSettingsItemRaw): SystemSettingsItem {
     supportNonRerInterceptions: raw.support_non_rer_interceptions ?? false,
     defaultNeoAnalysis: raw.default_neo_analysis ?? false,
     autofixEchoimMissingMessages: raw.autofix_echoim_missing_messages ?? false,
-    cyberEchoEnabled: raw.cyber_echo_enabled ?? false,
+    devicesSectionEnabled: raw.devices_section_enabled ?? false,
     sigintCommentParsingEnabled: raw.sigint_comment_parsing_enabled ?? false,
     doNotStoreDuplicateEchoimFailures: raw.do_not_store_duplicate_echoim_failures ?? false,
     pelengBoundsEnabled: raw.peleng_bounds_enabled ?? false,
@@ -192,7 +192,7 @@ function normalizeCurrent(raw: SystemSettingsCurrentRspRaw): SystemSettingsCurre
     supportNonRerInterceptions: raw.support_non_rer_interceptions ?? false,
     defaultNeoAnalysis: raw.default_neo_analysis ?? false,
     autofixEchoimMissingMessages: raw.autofix_echoim_missing_messages ?? false,
-    cyberEchoEnabled: raw.cyber_echo_enabled ?? false,
+    devicesSectionEnabled: raw.devices_section_enabled ?? false,
     sigintCommentParsingEnabled: raw.sigint_comment_parsing_enabled ?? false,
     doNotStoreDuplicateEchoimFailures: raw.do_not_store_duplicate_echoim_failures ?? false,
     pelengBoundsEnabled: raw.peleng_bounds_enabled ?? false,
@@ -222,7 +222,7 @@ export async function createSystemSettings(
     support_non_rer_interceptions: input.supportNonRerInterceptions,
     default_neo_analysis: input.defaultNeoAnalysis,
     autofix_echoim_missing_messages: input.autofixEchoimMissingMessages,
-    cyber_echo_enabled: input.cyberEchoEnabled,
+    devices_section_enabled: input.devicesSectionEnabled,
     sigint_comment_parsing_enabled: input.sigintCommentParsingEnabled,
     do_not_store_duplicate_echoim_failures: input.doNotStoreDuplicateEchoimFailures,
     peleng_bounds_enabled: input.pelengBoundsEnabled,
