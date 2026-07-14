@@ -1,3 +1,4 @@
+import AddIcon from '@mui/icons-material/Add';
 import { Box, CircularProgress, Fab, Paper, Typography } from '@mui/material';
 import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward';
 import { forwardRef, useCallback, useEffect, useRef, useState } from 'react';
@@ -14,7 +15,7 @@ import {
   buildCopyTextWithNetworkName,
 } from '../shared/message-card/message-card.utils';
 import { buildMessageCardDisplayLabels } from '../shared/message-card/message-card-labels';
-import { dutyTopScrollButtonSx } from './top-action-styles';
+import { dutyTopAddFabSx, dutyTopScrollButtonSx } from './top-action-styles';
 
 /** When the visible range enters this many items from the bottom (oldest at top, newest at bottom), load 20 older messages to keep scroll position and unread count. */
 const LOAD_OLDER_BUFFER_ITEMS = 10;
@@ -22,6 +23,14 @@ const LOAD_OLDER_BUFFER_ITEMS = 10;
 const DUTY_FEED_AT_BOTTOM_THRESHOLD_PX = 25;
 /** After loading older, don't trigger again until the user scrolls back up so the visible range is at least this far from the bottom. */
 const LOAD_OLDER_RESET_MARGIN = 20;
+const DUTY_FLOATING_ACTION_GAP_PX = 12;
+const DUTY_FLOATING_ACTION_SIZE_PX = 35;
+const DUTY_FLOATING_ACTION_STACK_HEIGHT_PX =
+  DUTY_FLOATING_ACTION_SIZE_PX * 2 + DUTY_FLOATING_ACTION_GAP_PX * 3;
+const DUTY_FLOATING_ACTION_BOTTOM_PX = 'max(12px, env(safe-area-inset-bottom, 0px))';
+const DUTY_FLOATING_SCROLL_BOTTOM_PX = `calc(${DUTY_FLOATING_ACTION_BOTTOM_PX} + ${
+  DUTY_FLOATING_ACTION_SIZE_PX + DUTY_FLOATING_ACTION_GAP_PX
+}px)`;
 
 function filterOwnMessageComments(
   messageComments: MessageComment[] | null | undefined,
@@ -123,6 +132,7 @@ export function FeedColumnContent({ column, virtuosoRef }: FeedColumnContentProp
     onAtBottomChange,
     onArrowClick,
     onVisibleMessageIds,
+    onCreateMessageFeed,
   } = actions;
   const [isAtBottom, setIsAtBottom] = useState(true);
   const loadOlderTriggeredRef = useRef(false);
@@ -192,11 +202,13 @@ export function FeedColumnContent({ column, virtuosoRef }: FeedColumnContentProp
   return (
     <Paper
       variant="outlined"
+      data-duty-feed-content-root
       className="flex-1 overflow-hidden min-h-0 p-0 flex flex-col h-full"
       sx={{
         mt: '-1px',
         borderTopLeftRadius: 0,
         borderTopRightRadius: 0,
+        position: 'relative',
       }}
     >
       <Virtuoso
@@ -269,6 +281,17 @@ export function FeedColumnContent({ column, virtuosoRef }: FeedColumnContentProp
             </Typography>
           ),
           List: FeedList,
+          Footer: () =>
+            narrowScreen && isPresent(onCreateMessageFeed) ? (
+              <Box
+                data-duty-feed-footer-spacer
+                data-duty-bottom-offset={`calc(${DUTY_FLOATING_ACTION_BOTTOM_PX} + ${DUTY_FLOATING_ACTION_STACK_HEIGHT_PX}px)`}
+                sx={{
+                  height: `calc(${DUTY_FLOATING_ACTION_BOTTOM_PX} + ${DUTY_FLOATING_ACTION_STACK_HEIGHT_PX}px)`,
+                  flexShrink: 0,
+                }}
+              />
+            ) : null,
         }}
         className="m-0 list-none rer-duty pt-2"
         itemContent={(_index, [id, msg]) => {
@@ -360,11 +383,44 @@ export function FeedColumnContent({ column, virtuosoRef }: FeedColumnContentProp
           );
         }}
       />
+      {narrowScreen && isPresent(onCreateMessageFeed) ? (
+        <Box
+          data-duty-feed-create-button
+          data-duty-bottom-offset={DUTY_FLOATING_ACTION_BOTTOM_PX}
+          style={{
+            position: 'absolute',
+            bottom: DUTY_FLOATING_ACTION_BOTTOM_PX,
+          }}
+          sx={{
+            right: { xs: 12, sm: 20 },
+            display: 'flex',
+            pointerEvents: 'none',
+            zIndex: 1,
+          }}
+        >
+          <Fab
+            color="primary"
+            size="small"
+            aria-label="Додати стрічку"
+            onClick={onCreateMessageFeed}
+            sx={{ ...dutyTopAddFabSx, pointerEvents: 'auto' }}
+          >
+            <AddIcon />
+          </Fab>
+        </Box>
+      ) : null}
       {isPresent(onArrowClick) && (!isAtBottom || loadingNewer || unreadCount > 0) && (
         <Box
-          sx={{
+          data-duty-feed-scroll-button
+          data-duty-bottom-offset={
+            narrowScreen && isPresent(onCreateMessageFeed) ? DUTY_FLOATING_SCROLL_BOTTOM_PX : '12px'
+          }
+          style={{
             position: 'absolute',
-            bottom: { xs: 'max(12px, env(safe-area-inset-bottom, 0px))', sm: 12 },
+            bottom:
+              narrowScreen && isPresent(onCreateMessageFeed) ? DUTY_FLOATING_SCROLL_BOTTOM_PX : 12,
+          }}
+          sx={{
             right: { xs: 12, sm: 20 },
             display: 'flex',
             alignItems: 'center',

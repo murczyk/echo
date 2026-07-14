@@ -394,11 +394,6 @@ export function RerDutyNeoPage({
         isInitialLoading={isInitialLoading}
         messageFeeds={messageFeeds}
         narrowScreen={narrowScreen}
-        onRemoveActiveFeed={
-          isPresent(activeFeedIdSafe) && messageFeeds.length > 1
-            ? () => removeMessageFeed(activeFeedIdSafe)
-            : undefined
-        }
         onSelectFeed={setActiveFeedId}
         showLoadingBackdrop={showLoadingBackdrop}
       />
