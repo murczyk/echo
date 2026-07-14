@@ -195,17 +195,20 @@ async fn load_tag_report_candidates(
     env: &Env,
     req: &crate::rer_importer::types::InboxMessagesReq,
 ) -> Result<Vec<TagReportMessageCandidate>, AppError> {
-    let query = crate::rer_importer::inbox::query::build_inbox_query_with_conn(
-        txn, login, env, req,
-    )
-    .await
-    .context(h!())?;
-    let messages = TagReportMessageCandidate::find_by_statement(
-        Statement::from_string(DatabaseBackend::Postgres, query),
-    )
-    .all(txn)
-    .await
-    .context(h!())?;
+    let messages =
+        crate::rer_importer::inbox::query::build_filtered_inbox_query(
+            txn, login, env, req,
+        )
+        .await
+        .context(h!())?
+        .select_only()
+        .column_as(signal_message::Column::Id, "id")
+        .column_as(sigint_inbox_item::Column::Freq, "freq")
+        .column_as(sigint_inbox_item::Column::Datetime, "datetime")
+        .into_model::<TagReportMessageCandidate>()
+        .all(txn)
+        .await
+        .context(h!())?;
     Ok(messages)
 }
 

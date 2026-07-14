@@ -1,9 +1,11 @@
 import type { Page, Route } from '@playwright/test';
+import type { InboxMessagesRspRaw } from '../../src/ts/react/services/api/inbox-messages';
 import { networkSettingsResponse } from './fixture-responses';
 
 type ShortStateFixtureOptions = {
   shortStateId?: string;
   shortState?: unknown;
+  inboxResponse?: InboxMessagesRspRaw | null;
 };
 
 type ShortStateFixtureHandle = {
@@ -241,7 +243,7 @@ export async function installRerDutyShortStateMocks(
 
     if (pathname === '/api/rer-importer/get-inbox') {
       lastInboxRequest = request.postDataJSON();
-      await fulfillJson(route, emptyDutyInboxResponse());
+      await fulfillJson(route, options.inboxResponse ?? emptyDutyInboxResponse());
       return;
     }
 

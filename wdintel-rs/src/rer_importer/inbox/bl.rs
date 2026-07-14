@@ -701,11 +701,18 @@ pub async fn load_messages_networks(
     dbx: &DatabaseConnection,
 ) -> Result<HashMap<i64, Vec<i64>>, AppError> {
     let message_ids = messages.iter().map(|m| m.id).collect_vec();
+    load_messages_networks_by_ids(&message_ids, dbx).await
+}
+
+pub async fn load_messages_networks_by_ids(
+    message_ids: &[i64],
+    dbx: &DatabaseConnection,
+) -> Result<HashMap<i64, Vec<i64>>, AppError> {
     if message_ids.is_empty() {
         return Ok(HashMap::new());
     }
 
-    let result = backfill_missing_messages_networks(&message_ids, dbx)
+    let result = backfill_missing_messages_networks(message_ids, dbx)
         .await
         .context(h!())?;
     Ok(result)
@@ -1215,7 +1222,7 @@ fn format_unvalidated_manual_location_v2(location: String) -> String {
     utils::format_locations_list(locations)
 }
 
-fn format_inbox_message_location(
+pub(crate) fn format_inbox_message_location(
     location: Option<String>,
     location_v2: Option<String>,
 ) -> Option<String> {

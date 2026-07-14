@@ -28,6 +28,7 @@ import Task
 import Time
 import Utils.Api.ErrorHandling
 import Utils.Time
+import Utils.Utils as UtilsU
 import View exposing (View)
 
 
@@ -71,6 +72,7 @@ type alias Model =
     , filterRegiment : String
     , filterBattalion : String
     , filterCompany : String
+    , addUnitConfirmation : Maybe AddUnitConfirmation
     }
 
 
@@ -78,6 +80,17 @@ type RemovingDuplicateProcess
     = NotStarted
     | UnitSelected Int
     | UnitDuplicateSelected Int Int
+
+
+type alias AddUnitConfirmation =
+    { skipNetworkCreation : Bool
+    , locations : List String
+    , locationDraft : String
+    , unitMask : List String
+    , unitMaskDraft : String
+    , validationError : Maybe String
+    , saving : Bool
+    }
 
 
 loadUnits : Effect Msg
@@ -111,6 +124,7 @@ init _ =
       , filterRegiment = ""
       , filterBattalion = ""
       , filterCompany = ""
+      , addUnitConfirmation = Nothing
       }
     , E.batch
         [ loadUnits
@@ -125,8 +139,20 @@ type Msg
     | InpRegiment String
     | InpDivision String
     | InpArmy String
-    | AddUnit
+    | AddUnit (Maybe Bool)
     | AddUnitDone (Result ApiError B.Unit)
+    | CloseAddUnitConfirmation
+    | AddUnitSkipNetwork Bool
+    | AddUnitLocationDraftChanged String
+    | AddUnitLocationKeyDown Int
+    | AddUnitLocationCommit
+    | AddUnitLocationRemove String
+    | AddUnitMaskDraftChanged String
+    | AddUnitMaskKeyDown Int
+    | AddUnitMaskCommit
+    | AddUnitMaskRemove String
+    | AddUnitConfirm
+    | AddUnitWithAutoNetworkDone (Result ApiError B.CreateUnitWithAutoNetworkRsp)
     | InpComment String
     | InpActive Bool
     | EditUnit Int
@@ -209,19 +235,21 @@ update msg model =
         InpComment v ->
             ( { model | inpComment = v }, E.none )
 
-        AddUnit ->
-            ( model
-            , E.sendCmd <|
-                Api.sigint_unit_create AddUnitDone
-                    { company = String.trim model.inpCompany
-                    , battalion = String.trim model.inpBattalion
-                    , regiment = String.trim model.inpRegiment
-                    , division = String.trim model.inpDivision
-                    , army = String.trim model.inpArmy
-                    , active = model.inpActive
-                    , comment = String.trim model.inpComment
-                    }
-            )
+        AddUnit maybeDevicesSectionEnabled ->
+            case maybeDevicesSectionEnabled of
+                Just True ->
+                    ( { model | addUnitConfirmation = Just (initAddUnitConfirmation model) }
+                    , E.none
+                    )
+
+                Just False ->
+                    ( model
+                    , E.sendCmd <|
+                        Api.sigint_unit_create AddUnitDone (createUnitReqFromInputs model)
+                    )
+
+                Nothing ->
+                    ( model, E.none )
 
         AddUnitDone (Err err) ->
             ( model
@@ -229,10 +257,145 @@ update msg model =
             )
 
         AddUnitDone (Ok _) ->
-            ( { model
-                | inpCompany = ""
-                , inpComment = ""
-              }
+            ( clearUnitInputs model
+            , loadUnits
+            )
+
+        CloseAddUnitConfirmation ->
+            ( { model | addUnitConfirmation = Nothing }, E.none )
+
+        AddUnitSkipNetwork v ->
+            ( updateAddUnitConfirmation
+                (\confirmation ->
+                    { confirmation
+                        | skipNetworkCreation = v
+                        , validationError = Nothing
+                    }
+                )
+                model
+            , E.none
+            )
+
+        AddUnitLocationDraftChanged v ->
+            ( updateAddUnitConfirmation
+                (\confirmation ->
+                    if String.contains "," v then
+                        { confirmation
+                            | locations = commitChipDraft confirmation.locations v
+                            , locationDraft = ""
+                            , validationError = Nothing
+                        }
+
+                    else
+                        { confirmation | locationDraft = v, validationError = Nothing }
+                )
+                model
+            , E.none
+            )
+
+        AddUnitLocationKeyDown keyCode ->
+            if keyCode == 13 then
+                update AddUnitLocationCommit model
+
+            else
+                ( model, E.none )
+
+        AddUnitLocationCommit ->
+            ( updateAddUnitConfirmation commitLocationDraft model
+            , E.none
+            )
+
+        AddUnitLocationRemove location ->
+            ( updateAddUnitConfirmation
+                (\confirmation ->
+                    { confirmation
+                        | locations = List.filter ((/=) location) confirmation.locations
+                        , validationError = Nothing
+                    }
+                )
+                model
+            , E.none
+            )
+
+        AddUnitMaskDraftChanged v ->
+            ( updateAddUnitConfirmation
+                (\confirmation -> { confirmation | unitMaskDraft = v })
+                model
+            , E.none
+            )
+
+        AddUnitMaskKeyDown keyCode ->
+            if keyCode == 13 then
+                update AddUnitMaskCommit model
+
+            else
+                ( model, E.none )
+
+        AddUnitMaskCommit ->
+            ( updateAddUnitConfirmation commitUnitMaskDraft model
+            , E.none
+            )
+
+        AddUnitMaskRemove unitMask ->
+            ( updateAddUnitConfirmation
+                (\confirmation ->
+                    { confirmation | unitMask = List.filter ((/=) unitMask) confirmation.unitMask }
+                )
+                model
+            , E.none
+            )
+
+        AddUnitConfirm ->
+            case model.addUnitConfirmation of
+                Nothing ->
+                    ( model, E.none )
+
+                Just confirmation ->
+                    let
+                        confirmation2 =
+                            confirmation
+                                |> commitLocationDraft
+                                |> commitUnitMaskDraft
+                    in
+                    if not confirmation2.skipNetworkCreation && List.isEmpty confirmation2.locations then
+                        ( { model
+                            | addUnitConfirmation =
+                                Just
+                                    { confirmation2
+                                        | validationError = Just "Додайте принаймні одну локацію або увімкніть пропуск створення мережі"
+                                    }
+                          }
+                        , E.none
+                        )
+
+                    else
+                        ( { model
+                            | addUnitConfirmation =
+                                Just
+                                    { confirmation2
+                                        | validationError = Nothing
+                                        , saving = True
+                                    }
+                          }
+                        , E.sendCmd <|
+                            Api.sigint_unit_create_with_auto_network
+                                AddUnitWithAutoNetworkDone
+                                { unit = createUnitReqFromInputs model
+                                , skipNetworkCreation = confirmation2.skipNetworkCreation
+                                , locations = confirmation2.locations
+                                , unitMask = confirmation2.unitMask
+                                }
+                        )
+
+        AddUnitWithAutoNetworkDone (Err err) ->
+            ( updateAddUnitConfirmation
+                (\confirmation -> { confirmation | saving = False })
+                model
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка створення підрозділу" err
+            )
+
+        AddUnitWithAutoNetworkDone (Ok _) ->
+            ( clearUnitInputs model
             , loadUnits
             )
 
@@ -346,6 +509,7 @@ update msg model =
                 , inpArmy = ""
                 , inpComment = ""
                 , inpActive = True
+                , addUnitConfirmation = Nothing
               }
             , E.none
             )
@@ -481,6 +645,132 @@ update msg model =
             ( { model | filterActive = False, filterDivision = "", filterArmy = "", filterRegiment = "", filterBattalion = "", filterCompany = "" }, E.none )
 
 
+createUnitReqFromInputs : Model -> B.CreateUnitReq
+createUnitReqFromInputs model =
+    { company = String.trim model.inpCompany
+    , battalion = String.trim model.inpBattalion
+    , regiment = String.trim model.inpRegiment
+    , division = String.trim model.inpDivision
+    , army = String.trim model.inpArmy
+    , active = model.inpActive
+    , comment = String.trim model.inpComment
+    }
+
+
+clearUnitInputs : Model -> Model
+clearUnitInputs model =
+    { model
+        | inpCompany = ""
+        , inpBattalion = ""
+        , inpRegiment = ""
+        , inpDivision = ""
+        , inpArmy = ""
+        , inpComment = ""
+        , inpActive = True
+        , addUnitConfirmation = Nothing
+    }
+
+
+updateAddUnitConfirmation : (AddUnitConfirmation -> AddUnitConfirmation) -> Model -> Model
+updateAddUnitConfirmation updateConfirmation model =
+    { model | addUnitConfirmation = Maybe.map updateConfirmation model.addUnitConfirmation }
+
+
+initAddUnitConfirmation : Model -> AddUnitConfirmation
+initAddUnitConfirmation model =
+    { skipNetworkCreation = False
+    , locations = []
+    , locationDraft = ""
+    , unitMask = defaultUnitMask (createUnitReqFromInputs model)
+    , unitMaskDraft = ""
+    , validationError = Nothing
+    , saving = False
+    }
+
+
+unitNamePartsFromReq : B.CreateUnitReq -> List String
+unitNamePartsFromReq req =
+    [ req.company
+    , req.battalion
+    , req.regiment
+    , req.division
+    , req.army
+    ]
+        |> List.map String.trim
+        |> List.filter (not << String.isEmpty)
+
+
+unitNameFromReq : B.CreateUnitReq -> String
+unitNameFromReq req =
+    req
+        |> unitNamePartsFromReq
+        |> String.join " "
+
+
+defaultUnitMask : B.CreateUnitReq -> List String
+defaultUnitMask req =
+    let
+        parts =
+            unitNamePartsFromReq req
+
+        forward =
+            String.join " " parts
+
+        reverse =
+            parts
+                |> List.reverse
+                |> String.join " "
+    in
+    dedupeTrimmedCaseInsensitive [ forward, reverse ]
+
+
+dedupeTrimmedCaseInsensitive : List String -> List String
+dedupeTrimmedCaseInsensitive items =
+    items
+        |> List.foldl
+            (\item acc ->
+                let
+                    trimmed =
+                        String.trim item
+
+                    key =
+                        String.toLower trimmed
+                in
+                if String.isEmpty trimmed || List.member key (List.map String.toLower acc) then
+                    acc
+
+                else
+                    acc ++ [ trimmed ]
+            )
+            []
+
+
+commitChipDraft : List String -> String -> List String
+commitChipDraft current draft =
+    draft
+        |> String.split ","
+        |> dedupeTrimmedCaseInsensitive
+        |> (++) current
+        |> dedupeTrimmedCaseInsensitive
+
+
+commitLocationDraft : AddUnitConfirmation -> AddUnitConfirmation
+commitLocationDraft confirmation =
+    { confirmation
+        | locations = commitChipDraft confirmation.locations confirmation.locationDraft
+        , locationDraft = ""
+        , validationError = Nothing
+    }
+
+
+commitUnitMaskDraft : AddUnitConfirmation -> AddUnitConfirmation
+commitUnitMaskDraft confirmation =
+    { confirmation
+        | unitMask = commitChipDraft confirmation.unitMask confirmation.unitMaskDraft
+        , unitMaskDraft = ""
+    }
+
+
 filteredUnits : Model -> List B.Unit
 filteredUnits model =
     model.units
@@ -589,6 +879,219 @@ removeDuplicateConfirmationText unit unitToRemove =
             ""
 
 
+addUnitConfirmationModal : Model -> Html Msg
+addUnitConfirmationModal model =
+    case model.addUnitConfirmation of
+        Nothing ->
+            text ""
+
+        Just confirmation ->
+            let
+                req =
+                    createUnitReqFromInputs model
+
+                unitName =
+                    unitNameFromReq req
+
+                unitNamePreview =
+                    if String.isEmpty unitName then
+                        "Без назви"
+
+                    else
+                        unitName
+
+                finalLocations =
+                    commitChipDraft confirmation.locations confirmation.locationDraft
+
+                confirmDisabled =
+                    confirmation.saving
+                        || (not confirmation.skipNetworkCreation && List.isEmpty finalLocations)
+
+                chipView onRemove isDisabled chipText =
+                    span
+                        [ class "badge text-bg-secondary d-inline-flex align-items-center gap-1"
+                        , style "font-size" "0.85rem"
+                        , style "white-space" "normal"
+                        , style "text-align" "left"
+                        ]
+                        [ span [] [ text chipText ]
+                        , button
+                            [ class "btn-close btn-close-white"
+                            , style "font-size" "0.55rem"
+                            , type_ "button"
+                            , Attr.disabled isDisabled
+                            , onClick (onRemove chipText)
+                            ]
+                            []
+                        ]
+
+                chipEditor labelText placeholderText items draft onDraftChanged onKeyDownMsg onCommitMsg onRemoveMsg isDisabled =
+                    div [ class "mb-3" ]
+                        [ label [ class "form-label fw-semibold" ] [ text labelText ]
+                        , div [ class "d-flex flex-wrap gap-2 mb-2" ]
+                            (if List.isEmpty items then
+                                [ span [ class "text-muted small" ] [ text "Немає" ] ]
+
+                             else
+                                List.map (chipView onRemoveMsg isDisabled) items
+                            )
+                        , div [ class "input-group" ]
+                            [ input
+                                [ class "form-control"
+                                , type_ "text"
+                                , placeholder placeholderText
+                                , value draft
+                                , onInput onDraftChanged
+                                , UtilsU.onKeyDown onKeyDownMsg
+                                , Attr.disabled isDisabled
+                                ]
+                                []
+                            , button
+                                [ class "btn btn-outline-secondary"
+                                , type_ "button"
+                                , Attr.disabled isDisabled
+                                , onClick onCommitMsg
+                                ]
+                                [ i [ class "bi bi-plus-lg" ] [] ]
+                            ]
+                        ]
+
+                networkFieldsDisabled =
+                    confirmation.saving || confirmation.skipNetworkCreation
+            in
+            div
+                [ class "modal fade show d-block"
+                , attribute "tabindex" "-1"
+                , attribute "role" "dialog"
+                , style "background-color" "rgba(0, 0, 0, 0.5)"
+                , style "z-index" "1055"
+                ]
+                [ div
+                    [ class "modal-dialog modal-lg modal-dialog-scrollable"
+                    , attribute "role" "document"
+                    ]
+                    [ div [ class "modal-content" ]
+                        [ div [ class "modal-header" ]
+                            [ h5 [ class "modal-title" ] [ text "Створення підрозділу" ]
+                            , button
+                                [ class "btn-close"
+                                , type_ "button"
+                                , Attr.disabled confirmation.saving
+                                , onClick CloseAddUnitConfirmation
+                                ]
+                                []
+                            ]
+                        , div [ class "modal-body" ]
+                            [ div [ class "mb-3" ]
+                                [ label [ class "form-label fw-semibold" ] [ text "Підрозділ" ]
+                                , div
+                                    [ class "form-control"
+                                    , style "min-height" "38px"
+                                    , style "background-color" "var(--bs-secondary-bg)"
+                                    ]
+                                    [ text unitNamePreview ]
+                                ]
+                            , div [ class "mb-4" ]
+                                [ label [ class "form-label fw-semibold" ] [ text "Коментар" ]
+                                , div
+                                    [ class "form-control"
+                                    , style "min-height" "38px"
+                                    , style "white-space" "pre-wrap"
+                                    , style "background-color" "var(--bs-secondary-bg)"
+                                    ]
+                                    [ text
+                                        (if String.isEmpty req.comment then
+                                            "Немає"
+
+                                         else
+                                            req.comment
+                                        )
+                                    ]
+                                ]
+                            , div [ class "border-top pt-3" ]
+                                [ h6 [ class "fw-bold" ] [ text "Радіомережа" ]
+                                , p [ class "text-muted small mb-3" ]
+                                    [ text "Разом з підрозділом буде створена SIGINT мережа, яку можна редагувати у База Даних - Мережі." ]
+                                , div [ class "form-check mb-2" ]
+                                    [ input
+                                        [ class "form-check-input"
+                                        , type_ "checkbox"
+                                        , checked confirmation.skipNetworkCreation
+                                        , Attr.disabled confirmation.saving
+                                        , onCheck AddUnitSkipNetwork
+                                        , id "skipNetworkCreation"
+                                        ]
+                                        []
+                                    , label [ class "form-check-label", for "skipNetworkCreation" ]
+                                        [ text "Пропустити створення мережі?" ]
+                                    ]
+                                , div [ class "text-muted small mb-3" ]
+                                    [ text "Якщо пропустити створення мережі, вхідні повідомлення не будуть автоматично зіставлятися з цим підрозділом." ]
+                                , div [ class "mb-3" ]
+                                    [ label [ class "form-label fw-semibold" ] [ text "Назва майбутньої мережі" ]
+                                    , div
+                                        [ class "form-control"
+                                        , style "min-height" "38px"
+                                        , style "background-color" "var(--bs-secondary-bg)"
+                                        ]
+                                        [ text ("р/м 💻 " ++ unitNamePreview) ]
+                                    ]
+                                , chipEditor
+                                    "Локації"
+                                    "Додати локацію"
+                                    confirmation.locations
+                                    confirmation.locationDraft
+                                    AddUnitLocationDraftChanged
+                                    AddUnitLocationKeyDown
+                                    AddUnitLocationCommit
+                                    AddUnitLocationRemove
+                                    networkFieldsDisabled
+                                , div [ class "form-text mb-3" ]
+                                    [ text "Якщо текст сигналу містить одну з цих назв, повідомлення буде позначено як повідомлення від цього підрозділу." ]
+                                , chipEditor
+                                    "Маски підрозділу"
+                                    "Додати маску"
+                                    confirmation.unitMask
+                                    confirmation.unitMaskDraft
+                                    AddUnitMaskDraftChanged
+                                    AddUnitMaskKeyDown
+                                    AddUnitMaskCommit
+                                    AddUnitMaskRemove
+                                    networkFieldsDisabled
+                                , case confirmation.validationError of
+                                    Nothing ->
+                                        text ""
+
+                                    Just validationError ->
+                                        div [ class "alert alert-danger mb-0" ] [ text validationError ]
+                                ]
+                            ]
+                        , div [ class "modal-footer" ]
+                            [ button
+                                [ class "btn btn-secondary"
+                                , type_ "button"
+                                , Attr.disabled confirmation.saving
+                                , onClick CloseAddUnitConfirmation
+                                ]
+                                [ text "Відмінити" ]
+                            , button
+                                [ class "btn btn-primary"
+                                , type_ "button"
+                                , Attr.disabled confirmDisabled
+                                , onClick AddUnitConfirm
+                                ]
+                                [ if confirmation.saving then
+                                    span [ class "spinner-border spinner-border-sm" ] []
+
+                                  else
+                                    text "Підтвердити"
+                                ]
+                            ]
+                        ]
+                    ]
+                ]
+
+
 contentBlock : Shared.Model -> Model -> Html Msg
 contentBlock shared model =
     let
@@ -602,6 +1105,20 @@ contentBlock shared model =
 
         isEditing =
             not (Dict.isEmpty model.editUnit)
+
+        devicesSectionEnabled =
+            Maybe.map .devicesSectionEnabled shared.systemSettings
+
+        addUnitDisabled =
+            not hasEditorOrAdminRole || devicesSectionEnabled == Nothing
+
+        addUnitButtonLabel =
+            case devicesSectionEnabled of
+                Nothing ->
+                    "Завантаження..."
+
+                Just _ ->
+                    "Додати"
 
         renderUnitTrView : B.Unit -> Html Msg
         renderUnitTrView unit =
@@ -1029,8 +1546,8 @@ contentBlock shared model =
                         |> Button.withDisabled (not hasEditorOrAdminRole)
                         |> Button.withStyleSecondary
                         |> Button.view
-                    , Button.new { label = "Додати", onClick = AddUnit }
-                        |> Button.withDisabled (not hasEditorOrAdminRole)
+                    , Button.new { label = addUnitButtonLabel, onClick = AddUnit devicesSectionEnabled }
+                        |> Button.withDisabled addUnitDisabled
                         |> Button.view
                     ]
                 ]
@@ -1262,6 +1779,7 @@ contentBlock shared model =
     div []
         [ deleteConfirmationModal
         , removeDuplicateConfirmationModal
+        , addUnitConfirmationModal model
         , mainContent
         ]
 

@@ -28,6 +28,11 @@ const latestMenuProps: Array<{
   open?: boolean;
   id?: string;
 }> = [];
+const latestDocumentDialogProps: Array<{
+  currentIndex?: number;
+  open?: boolean;
+  documents?: Array<{ kind: string; href: string }>;
+}> = [];
 
 type PrimitiveProps = { children?: ReactNode; component?: string } & Record<string, unknown>;
 
@@ -79,8 +84,24 @@ vi.mock('@mui/icons-material/ExpandLess', () => ({
 }));
 
 vi.mock('./MessageCardDocumentPreviewDialog', () => ({
-  MessageCardDocumentPreviewDialog: ({ open }: { open: boolean }) =>
-    open ? <div role="dialog">document-dialog</div> : null,
+  MessageCardDocumentPreviewDialog: ({
+    currentIndex,
+    documents,
+    open,
+  }: {
+    currentIndex?: number;
+    documents?: Array<{ kind: string; href: string }>;
+    open: boolean;
+  }) => {
+    if (open) {
+      latestDocumentDialogProps.push({
+        currentIndex,
+        open,
+        documents: documents?.map((document) => ({ kind: document.kind, href: document.href })),
+      });
+    }
+    return open ? <div role="dialog">document-dialog</div> : null;
+  },
 }));
 
 vi.mock('./MessageCardWatermark', () => ({
@@ -668,6 +689,7 @@ describe('MessageCard', () => {
   afterEach(() => {
     resizeObserverCallbacks.splice(0);
     latestMenuProps.splice(0);
+    latestDocumentDialogProps.splice(0);
     if (typeof window.localStorage?.clear === 'function') {
       window.localStorage.clear();
     }
@@ -2002,6 +2024,58 @@ describe('MessageCard', () => {
     expect(downloadLink?.getAttribute('href')).toBe('https://example.test/files/report.pdf');
     expect(downloadLink?.getAttribute('download')).toBe('report.pdf');
     expect(view.container.querySelector('button[aria-label="Попередній перегляд"]')).toBeNull();
+  });
+
+  it('opens mixed previewable documents in the clicked position and preserves order', async () => {
+    const view = await renderCard({
+      msg: {
+        ...buildMessage(),
+        media: [
+          {
+            id: 'pdf-1',
+            href: 'https://example.test/files/report.pdf',
+            contentType: 'application/pdf',
+            fileName: 'report.pdf',
+            sizeBytes: 2048,
+          },
+          {
+            id: 'txt-1',
+            href: 'https://example.test/files/notes.txt',
+            contentType: 'text/plain',
+            fileName: 'notes.txt',
+            sizeBytes: 1024,
+          },
+          {
+            id: 'md-1',
+            href: 'https://example.test/files/readme.md',
+            contentType: 'text/markdown',
+            fileName: 'readme.md',
+            sizeBytes: 512,
+          },
+        ] as InboxMessage['media'],
+      },
+    });
+    rendered.push(view);
+
+    const documentButtons = Array.from(view.container.querySelectorAll('button')).filter((button) =>
+      button.textContent?.includes('.'),
+    );
+    expect(documentButtons).toHaveLength(3);
+    expect(documentButtons.map((button) => button.textContent?.trim())).toEqual([
+      'report.pdf',
+      'notes.txt',
+      'readme.md',
+    ]);
+
+    await click(documentButtons[2] as HTMLButtonElement);
+
+    expect(latestDocumentDialogProps.at(-1)?.open).toBe(true);
+    expect(latestDocumentDialogProps.at(-1)?.currentIndex).toBe(2);
+    expect(latestDocumentDialogProps.at(-1)?.documents?.map((document) => document.kind)).toEqual([
+      'pdf',
+      'txt',
+      'md',
+    ]);
   });
 
   it('shows selected tags first and can reveal the rest on demand', async () => {

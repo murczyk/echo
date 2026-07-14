@@ -18,7 +18,7 @@ use chrono::*;
 use echo_migration::{Expr, Order, PostgresQueryBuilder};
 use itertools::Itertools;
 use sea_orm::*;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 pub(crate) mod bl;
 pub mod metadata;
@@ -2022,6 +2022,20 @@ pub async fn get_inbox_messages_with_conn(
         .await
         .context(h!())?;
     Ok(res)
+}
+
+pub async fn load_message_networks_by_ids(
+    dbx: &DatabaseConnection,
+    message_ids: &[i64],
+) -> Result<HashMap<i64, Vec<i64>>, AppError> {
+    bl::load_messages_networks_by_ids(message_ids, dbx).await
+}
+
+pub(crate) fn format_inbox_message_location(
+    location: Option<String>,
+    location_v2: Option<String>,
+) -> Option<String> {
+    bl::format_inbox_message_location(location, location_v2)
 }
 
 async fn get_inbox_messages_limited(

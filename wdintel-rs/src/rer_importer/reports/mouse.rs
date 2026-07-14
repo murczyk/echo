@@ -2,6 +2,9 @@ use super::super::types::*;
 use crate::config::*;
 use crate::entities::*;
 use crate::error::AppError;
+use crate::rer_importer::reports::inbox_light::{
+    blank_inbox_message, parse_optional_json_vec,
+};
 use crate::types::*;
 use crate::utils::*;
 use anyhow::Context;
@@ -24,6 +27,29 @@ use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
+#[derive(Debug, FromQueryResult)]
+struct MouseReportMessageRow {
+    id: i64,
+    timestamp: Option<NaiveDateTime>,
+    freq: Option<String>,
+    coords: Option<String>,
+    callsigns: Option<serde_json::Value>,
+    date: Option<String>,
+    time: Option<String>,
+    unit: Option<String>,
+}
+
+#[derive(Debug, FromQueryResult)]
+struct MouseInboxTagRow {
+    sigint_inbox_item_id: i64,
+    id: i64,
+    tag_id: i64,
+    confidence: f64,
+    login: Option<String>,
+    model: Option<String>,
+    organism_id: Option<i64>,
+}
+
 pub async fn report_docx_kind_mouse(
     user_login: &str,
     env: &Env,
@@ -42,12 +68,10 @@ pub async fn report_docx_kind_mouse(
     let width_unit = 1870;
     let mut inbox_req = req.req.clone();
     inbox_req.report_tags_only_this_unit = req.report_tags_only_this_unit;
-    let messages: Vec<(i64, InboxMessage)> =
-        crate::rer_importer::inbox::get_inbox_messages_with_conn(
-            &read_db, &login, &logins, env, &inbox_req,
-        )
-        .await
-        .c(h!())?;
+    let messages =
+        load_mouse_report_messages(&read_db, &login, env, &inbox_req, true)
+            .await
+            .c(h!())?;
     let Some(since_date_inclusive_ms) = inbox_req.since_date_inclusive_ms
     else {
         return Err("Since date must be specified".into());
@@ -1087,6 +1111,126 @@ pub async fn report_docx_kind_mouse(
     Ok(())
 }
 
+async fn load_mouse_report_messages(
+    dbx: &DatabaseConnection,
+    login: &str,
+    env: &Env,
+    req: &InboxMessagesReq,
+    include_tags: bool,
+) -> Result<Vec<(i64, InboxMessage)>, AppError> {
+    let rows = crate::rer_importer::inbox::query::build_filtered_inbox_query(
+        dbx, login, env, req,
+    )
+    .await
+    .c(h!())?
+    .select_only()
+    .column_as(signal_message::Column::Id, "id")
+    .column_as(signal_message::Column::Timestamp, "timestamp")
+    .column_as(sigint_inbox_item::Column::Freq, "freq")
+    .column_as(sigint_inbox_item::Column::Coords, "coords")
+    .column_as(sigint_inbox_item::Column::Callsigns, "callsigns")
+    .column_as(sigint_inbox_item::Column::Date, "date")
+    .column_as(sigint_inbox_item::Column::Time, "time")
+    .column_as(sigint_inbox_item::Column::UnitV2, "unit")
+    .into_model::<MouseReportMessageRow>()
+    .all(dbx)
+    .await
+    .context(h!())?;
+    let message_ids = rows.iter().map(|row| row.id).collect::<Vec<_>>();
+    let mut tags_by_message = if include_tags {
+        load_mouse_inbox_tags(dbx, login, req, &message_ids).await?
+    } else {
+        BTreeMap::new()
+    };
+
+    rows.into_iter()
+        .map(|row| {
+            let mut message = blank_inbox_message();
+            message.timestamp = row
+                .timestamp
+                .map(|timestamp| timestamp.and_utc().timestamp_millis());
+            message.freq = row.freq;
+            message.coords = row.coords;
+            message.callsigns = parse_optional_json_vec(row.callsigns)?;
+            message.date = row.date;
+            message.time = row.time;
+            message.unit = row.unit;
+            message.inbox_tags = tags_by_message.remove(&row.id);
+            Ok((row.id, message))
+        })
+        .collect()
+}
+
+async fn load_mouse_inbox_tags(
+    dbx: &DatabaseConnection,
+    login: &str,
+    req: &InboxMessagesReq,
+    message_ids: &[i64],
+) -> Result<BTreeMap<i64, Vec<InboxMessageTag>>, AppError> {
+    if message_ids.is_empty() {
+        return Ok(BTreeMap::new());
+    }
+
+    let owner_organism_id =
+        crate::tags::query::current_user_organism_id(dbx, login)
+            .await
+            .context(h!())?;
+    let without_model_tags = req.without_model_tags.unwrap_or(false);
+    let mut tags_by_message = BTreeMap::new();
+    for ids in message_ids.chunks(20000) {
+        let rows = sigint_inbox_item_tag::Entity::find()
+            .select_only()
+            .join(
+                JoinType::InnerJoin,
+                sigint_inbox_item_tag::Relation::Tag.def(),
+            )
+            .join(
+                JoinType::LeftJoin,
+                sigint_inbox_item_tag::Relation::Login.def(),
+            )
+            .filter(
+                sigint_inbox_item_tag::Column::SigintInboxItemId
+                    .eq_any(ids.to_vec()),
+            )
+            .filter(
+                sigint_inbox_item_tag::Column::Confidence
+                    .gte(TAG_MINIMUM_CONFIDENCE),
+            )
+            .filter(crate::tags::query::accessible_tag_condition(
+                owner_organism_id,
+            ))
+            .apply_if(without_model_tags.then_some(()), |query, _| {
+                query.filter(sigint_inbox_item_tag::Column::Model.is_null())
+            })
+            .column(sigint_inbox_item_tag::Column::SigintInboxItemId)
+            .column(sigint_inbox_item_tag::Column::Id)
+            .column(sigint_inbox_item_tag::Column::TagId)
+            .column(sigint_inbox_item_tag::Column::Confidence)
+            .column(sigint_inbox_item_tag::Column::Login)
+            .column(sigint_inbox_item_tag::Column::Model)
+            .column_as(login::Column::OrganismId, "organism_id")
+            .into_model::<MouseInboxTagRow>()
+            .all(dbx)
+            .await
+            .context(h!())?;
+
+        for row in rows {
+            tags_by_message
+                .entry(row.sigint_inbox_item_id)
+                .or_insert_with(Vec::new)
+                .push(InboxMessageTag {
+                    id: row.id,
+                    tag_id: row.tag_id,
+                    confidence: row.confidence,
+                    login: row.login,
+                    model: row.model,
+                    organism_id: row.organism_id,
+                });
+        }
+    }
+    Ok(tags_by_message)
+}
+
 // report_xlsx_kind_pelengs
 pub async fn report_xlsx_kind_pelengs(
     user_login: &str,
@@ -1096,17 +1240,12 @@ pub async fn report_xlsx_kind_pelengs(
 ) -> Result<(), AppError> {
     let read_db = env.replica();
     let login = user_login.to_string();
-    let logins = crate::users::get_organism_logins_by_login(&read_db, &login)
-        .await
-        .c(h!())?;
     let mut inbox_req = req.req.clone();
     inbox_req.report_tags_only_this_unit = req.report_tags_only_this_unit;
-    let messages: Vec<(i64, InboxMessage)> =
-        crate::rer_importer::inbox::get_inbox_messages_with_conn(
-            &read_db, &login, &logins, env, &inbox_req,
-        )
-        .await
-        .c(h!())?;
+    let messages =
+        load_mouse_report_messages(&read_db, &login, env, &inbox_req, false)
+            .await
+            .c(h!())?;
     let messages: Vec<(i64, InboxMessage)> = messages
         .iter()
         .filter(|(_, m)| m.coords.is_some())

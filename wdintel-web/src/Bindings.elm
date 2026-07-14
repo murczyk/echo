@@ -5457,6 +5457,38 @@ createUnitReqEncoder struct =
         ]
 
 
+type alias CreateUnitWithAutoNetworkReq =
+    { unit : CreateUnitReq
+    , skipNetworkCreation : Bool
+    , locations : List (String)
+    , unitMask : List (String)
+    }
+
+
+createUnitWithAutoNetworkReqEncoder : CreateUnitWithAutoNetworkReq -> Json.Encode.Value
+createUnitWithAutoNetworkReqEncoder struct =
+    Json.Encode.object
+        [ ( "unit", (createUnitReqEncoder) struct.unit )
+        , ( "skip_network_creation", (Json.Encode.bool) struct.skipNetworkCreation )
+        , ( "locations", (Json.Encode.list (Json.Encode.string)) struct.locations )
+        , ( "unit_mask", (Json.Encode.list (Json.Encode.string)) struct.unitMask )
+        ]
+
+
+type alias CreateUnitWithAutoNetworkRsp =
+    { unit : Unit
+    , networkId : Maybe (Int)
+    }
+
+
+createUnitWithAutoNetworkRspEncoder : CreateUnitWithAutoNetworkRsp -> Json.Encode.Value
+createUnitWithAutoNetworkRspEncoder struct =
+    Json.Encode.object
+        [ ( "unit", (unitEncoder) struct.unit )
+        , ( "network_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.networkId )
+        ]
+
+
 type alias DeleteUnitDuplicateReq =
     { cloneToDeleteId : Int
     , originalId : Int
@@ -12262,6 +12294,22 @@ createUnitReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "army" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "active" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "comment" (Json.Decode.string)))
+
+
+createUnitWithAutoNetworkReqDecoder : Json.Decode.Decoder CreateUnitWithAutoNetworkReq
+createUnitWithAutoNetworkReqDecoder =
+    Json.Decode.succeed CreateUnitWithAutoNetworkReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unit" (createUnitReqDecoder)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "skip_network_creation" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "locations" (Json.Decode.list (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unit_mask" (Json.Decode.list (Json.Decode.string))))
+
+
+createUnitWithAutoNetworkRspDecoder : Json.Decode.Decoder CreateUnitWithAutoNetworkRsp
+createUnitWithAutoNetworkRspDecoder =
+    Json.Decode.succeed CreateUnitWithAutoNetworkRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unit" (unitDecoder)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "network_id" (Json.Decode.nullable (Json.Decode.int))))
 
 
 unitSearchReqDecoder : Json.Decode.Decoder UnitSearchReq

@@ -9,6 +9,12 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 let latestDialogOnClose: ((event: Event, reason: string) => void) | null = null;
 let dialogEscapeListenerInstalled = false;
 const dialogProps: Array<{ disableRestoreFocus?: boolean }> = [];
+let latestStageProps: {
+  currentIndex: number;
+  documents: Array<{ kind: string }>;
+  isFullscreen: boolean;
+  zoom: number;
+} | null = null;
 
 vi.mock('@mui/material', () => {
   const passthrough =
@@ -78,10 +84,29 @@ vi.mock('@mui/material', () => {
 });
 
 vi.mock('./MessageCardDocumentPreviewStage', () => ({
-  MessageCardDocumentPreviewStage: () => <div data-document-stage />,
+  MessageCardDocumentPreviewStage: ({
+    currentIndex,
+    documents,
+    isFullscreen,
+    zoom,
+  }: {
+    currentIndex: number;
+    documents: Array<{ kind: string }>;
+    isFullscreen: boolean;
+    zoom: number;
+  }) => {
+    latestStageProps = { currentIndex, documents, isFullscreen, zoom };
+    const currentKind = documents[currentIndex]?.kind ?? 'missing';
+    return (
+      <div data-document-stage data-document-kind={currentKind}>
+        {currentKind === 'txt' || currentKind === 'md' ? <div>Помилка перегляду</div> : null}
+      </div>
+    );
+  },
 }));
 
 import { MessageCardDocumentPreviewDialog } from './MessageCardDocumentPreviewDialog';
+import { MessageCardDocumentPreviewControls } from './MessageCardDocumentPreviewActions';
 
 describe('MessageCardDocumentPreviewDialog', () => {
   afterEach(() => {
@@ -89,6 +114,7 @@ describe('MessageCardDocumentPreviewDialog', () => {
     latestDialogOnClose = null;
     dialogEscapeListenerInstalled = false;
     dialogProps.splice(0);
+    latestStageProps = null;
   });
 
   it('exits fullscreen on Escape before closing the dialog', async () => {
@@ -127,18 +153,19 @@ describe('MessageCardDocumentPreviewDialog', () => {
       fullscreenButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     });
 
-    expect(
-      document.body.querySelector('button[aria-label="Вийти з повноекранного режиму"]'),
-    ).not.toBeNull();
+    const fullscreenExitButton = document.body.querySelector(
+      'button[aria-label="Вийти з повноекранного режиму"]',
+    ) as HTMLButtonElement | null;
+    expect(fullscreenExitButton).not.toBeNull();
+    fullscreenExitButton?.focus();
+    expect(document.activeElement).toBe(fullscreenExitButton);
 
     await act(async () => {
       document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
     });
 
     expect(document.body.querySelector('button[aria-label="Повноекранний режим"]')).not.toBeNull();
-    expect(
-      document.body.querySelector('button[aria-label="Вийти з повноекранного режиму"]'),
-    ).toBeNull();
+    expect(document.activeElement).toBe(fullscreenExitButton);
     expect(onClose).not.toHaveBeenCalled();
 
     await act(async () => {
@@ -190,6 +217,210 @@ describe('MessageCardDocumentPreviewDialog', () => {
     });
 
     expect(onIndexChange).not.toHaveBeenCalled();
+    root.unmount();
+  });
+
+  it('renders txt and markdown previews without zoom or fullscreen controls', async () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <MessageCardDocumentPreviewDialog
+          documents={[
+            {
+              href: 'https://example.test/files/report.pdf',
+              fileName: 'report.pdf',
+              sizeBytes: 1024,
+              contentType: 'application/pdf',
+              kind: 'pdf',
+            },
+            {
+              href: 'https://example.test/files/notes.txt',
+              fileName: 'notes.txt',
+              sizeBytes: 256,
+              contentType: 'text/plain',
+              kind: 'txt',
+            },
+            {
+              href: 'https://example.test/files/readme.md',
+              fileName: 'readme.md',
+              sizeBytes: 128,
+              contentType: 'text/markdown',
+              kind: 'md',
+            },
+          ]}
+          currentIndex={1}
+          open
+          onClose={vi.fn()}
+          onIndexChange={vi.fn()}
+        />,
+      );
+    });
+
+    expect(document.body.textContent).toContain('2 / 3');
+    expect(document.body.querySelector('button[aria-label="Зменшити"]')).toBeNull();
+    expect(document.body.querySelector('button[aria-label="Збільшити"]')).toBeNull();
+    expect(document.body.querySelector('button[aria-label="Повноекранний режим"]')).toBeNull();
+    expect(
+      document.body.querySelector('button[aria-label="Вийти з повноекранного режиму"]'),
+    ).toBeNull();
+    expect(document.body.querySelector('button[aria-label="Інформація"]')).not.toBeNull();
+    expect(
+      document.body.querySelector('button[aria-label="Відкрити в новій вкладці"]'),
+    ).not.toBeNull();
+    expect(document.body.querySelector('button[aria-label="Завантажити"]')).not.toBeNull();
+    expect(document.body.querySelectorAll('button')).toHaveLength(6);
+    root.unmount();
+  });
+
+  it('leaves fullscreen when switching from pdf to txt previews', async () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <MessageCardDocumentPreviewDialog
+          documents={[
+            {
+              href: 'https://example.test/files/report.pdf',
+              fileName: 'report.pdf',
+              sizeBytes: 1024,
+              contentType: 'application/pdf',
+              kind: 'pdf',
+            },
+            {
+              href: 'https://example.test/files/notes.txt',
+              fileName: 'notes.txt',
+              sizeBytes: 256,
+              contentType: 'text/plain',
+              kind: 'txt',
+            },
+          ]}
+          currentIndex={0}
+          open
+          onClose={vi.fn()}
+          onIndexChange={vi.fn()}
+        />,
+      );
+    });
+
+    const fullscreenButton = document.body.querySelector(
+      'button[aria-label="Повноекранний режим"]',
+    );
+    expect(fullscreenButton).not.toBeNull();
+
+    await act(async () => {
+      fullscreenButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+
+    expect(
+      document.body.querySelector('button[aria-label="Вийти з повноекранного режиму"]'),
+    ).not.toBeNull();
+
+    await act(async () => {
+      root.render(
+        <MessageCardDocumentPreviewDialog
+          documents={[
+            {
+              href: 'https://example.test/files/report.pdf',
+              fileName: 'report.pdf',
+              sizeBytes: 1024,
+              contentType: 'application/pdf',
+              kind: 'pdf',
+            },
+            {
+              href: 'https://example.test/files/notes.txt',
+              fileName: 'notes.txt',
+              sizeBytes: 256,
+              contentType: 'text/plain',
+              kind: 'txt',
+            },
+          ]}
+          currentIndex={1}
+          open
+          onClose={vi.fn()}
+          onIndexChange={vi.fn()}
+        />,
+      );
+    });
+
+    expect(document.body.querySelector('button[aria-label="Повноекранний режим"]')).toBeNull();
+    expect(
+      document.body.querySelector('button[aria-label="Вийти з повноекранного режиму"]'),
+    ).toBeNull();
+    root.unmount();
+  });
+
+  it('keeps dialog actions visible when a text preview errors', async () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <MessageCardDocumentPreviewDialog
+          documents={[
+            {
+              href: 'https://example.test/files/report.pdf',
+              fileName: 'report.pdf',
+              sizeBytes: 1024,
+              contentType: 'application/pdf',
+              kind: 'pdf',
+            },
+            {
+              href: 'https://example.test/files/notes.txt',
+              fileName: 'notes.txt',
+              sizeBytes: 256,
+              contentType: 'text/plain',
+              kind: 'txt',
+            },
+          ]}
+          currentIndex={1}
+          open
+          onClose={vi.fn()}
+          onIndexChange={vi.fn()}
+        />,
+      );
+    });
+
+    expect(latestStageProps?.currentIndex).toBe(1);
+    expect(document.body.textContent).toContain('Помилка перегляду');
+    expect(document.body.querySelector('button[aria-label="Інформація"]')).not.toBeNull();
+    expect(
+      document.body.querySelector('button[aria-label="Відкрити в новій вкладці"]'),
+    ).not.toBeNull();
+    expect(document.body.querySelector('button[aria-label="Завантажити"]')).not.toBeNull();
+    expect(document.body.querySelector('button[aria-label="Закрити"]')).not.toBeNull();
+    root.unmount();
+  });
+
+  it('hides fullscreen controls when the capability disables fullscreen but keeps zoom controls', async () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <MessageCardDocumentPreviewControls
+          zoom={150}
+          isFullscreen={false}
+          canFullscreen={false}
+          onSetPreviewZoom={vi.fn()}
+          onToggleFullscreen={vi.fn()}
+        />,
+      );
+    });
+
+    expect(document.body.querySelector('button[aria-label="Зменшити"]')).not.toBeNull();
+    expect(document.body.querySelector('button[aria-label="Збільшити"]')).not.toBeNull();
+    expect(document.body.querySelector('input[type="range"]')).not.toBeNull();
+    expect(document.body.querySelector('button[aria-label="Повноекранний режим"]')).toBeNull();
+    expect(
+      document.body.querySelector('button[aria-label="Вийти з повноекранного режиму"]'),
+    ).toBeNull();
     root.unmount();
   });
 });

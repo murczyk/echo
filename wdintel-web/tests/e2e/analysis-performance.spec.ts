@@ -1,6 +1,6 @@
 import { expect, test, type Browser } from '@playwright/test';
 
-import { installAnalysisNeoApiMocks } from './analysis-neo.fixtures';
+import { createEmptyInboxResponse, installAnalysisNeoApiMocks } from './analysis-neo.fixtures';
 
 type LoadResult = {
   titleMs: number;
@@ -19,6 +19,7 @@ test.describe('@perf', () => {
       await installAnalysisNeoApiMocks(page, {
         summaryDelayMs: 1_500,
         sidebarDelayMs: 1_500,
+        inboxResponse: createEmptyInboxResponse(),
       });
 
       const startedAt = performance.now();
@@ -63,6 +64,7 @@ test.describe('@perf', () => {
     await installAnalysisNeoApiMocks(page, {
       summaryDelayMs: 1_500,
       sidebarDelayMs: 1_500,
+      inboxResponse: createEmptyInboxResponse(),
     });
 
     const startedAt = performance.now();
