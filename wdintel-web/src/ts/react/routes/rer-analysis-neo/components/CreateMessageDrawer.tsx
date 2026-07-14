@@ -198,6 +198,7 @@ export function CreateMessageDrawer(props: Props) {
                   computerNameOptions={computerNameOptions}
                   computerNamesLoading={computerNamesLoading}
                   setComputerNameInput={setComputerNameInput}
+                  recentValues={recentValues}
                 />
 
                 <MetadataSection
@@ -206,6 +207,12 @@ export function CreateMessageDrawer(props: Props) {
                   busy={busy}
                   recentValues={recentValues}
                   tagOptions={tagOptions}
+                  postOptions={drawerState.postOptions}
+                  postLoading={drawerState.postLoading}
+                  setPostInput={drawerState.setPostInput}
+                  unitOptions={drawerState.unitOptions}
+                  unitLoading={drawerState.unitLoading}
+                  setUnitInput={drawerState.setUnitInput}
                 />
 
                 <NetworkSection
@@ -214,6 +221,18 @@ export function CreateMessageDrawer(props: Props) {
                   recentValues={recentValues}
                   getProposedCallsigns={getProposedCallsigns}
                   addSuggestedCallsign={addSuggestedCallsign}
+                  networkNameOptions={drawerState.networkNameOptions}
+                  networkNameLoading={drawerState.networkNameLoading}
+                  setNetworkNameInput={drawerState.setNetworkNameInput}
+                  signalNameOptions={drawerState.signalNameOptions}
+                  signalNameLoading={drawerState.signalNameLoading}
+                  setSignalNameInput={drawerState.setSignalNameInput}
+                  callsignOptions={drawerState.callsignOptions}
+                  callsignLoading={drawerState.callsignLoading}
+                  setCallsignInput={drawerState.setCallsignInput}
+                  freqOptions={drawerState.freqOptions}
+                  freqLoading={drawerState.freqLoading}
+                  setFreqInput={drawerState.setFreqInput}
                 />
 
                 <DmrSection

@@ -282,3 +282,27 @@ pub struct FreqGroupsMessageCountByDay {
     pub group: String,
     pub day: i64,
 }
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct FreqSearchReq {
+    pub search: String,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone, FromQueryResult
+)]
+pub struct FreqSearchResult {
+    pub id: i64,
+    pub name: String,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct FreqSearchRsp {
+    pub freqs: Vec<FreqSearchResult>,
+}
+
+

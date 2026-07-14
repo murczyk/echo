@@ -14,6 +14,7 @@ type Props = {
   computerNameOptions: string[];
   computerNamesLoading: boolean;
   setComputerNameInput: (value: string) => void;
+  recentValues: any;
 };
 
 export function SystemSection({
@@ -25,11 +26,26 @@ export function SystemSection({
   computerNameOptions,
   computerNamesLoading,
   setComputerNameInput,
+  recentValues,
 }: Props) {
   const {
     control,
     formState: { errors },
   } = useFormContext<MessageFormData>();
+
+  const sortedSignalGroups = React.useMemo(() => {
+    if (!recentValues?.group || recentValues.group.length === 0) return signalGroups;
+
+    return [...signalGroups].sort((a, b) => {
+      let indexA = recentValues.group.indexOf(a.masterKey);
+      let indexB = recentValues.group.indexOf(b.masterKey);
+
+      if (indexA === -1) indexA = Infinity;
+      if (indexB === -1) indexB = Infinity;
+
+      return indexA - indexB;
+    });
+  }, [signalGroups, recentValues?.group]);
 
   return (
     <FormSectionWrapper title="Системні">
@@ -45,7 +61,8 @@ export function SystemSection({
           control={control}
           render={({ field }) => (
             <Autocomplete
-              options={signalGroups}
+              options={sortedSignalGroups}
+              noOptionsText="Немає варіантів"
               getOptionLabel={(option) => option.name || option.masterKey}
               isOptionEqualToValue={(option, value) => option.masterKey === value.masterKey}
               renderOption={(props, option) => {
@@ -95,6 +112,7 @@ export function SystemSection({
               <Autocomplete
                 freeSolo
                 forcePopupIcon
+                noOptionsText="Немає варіантів"
                 options={computerNameOptions}
                 loading={computerNamesLoading}
                 value={field.value ?? ''}

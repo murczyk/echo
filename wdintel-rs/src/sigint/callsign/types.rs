@@ -331,3 +331,25 @@ pub struct CallsignActivityItem {
     pub last_datetime: Option<i64>,
     pub freqs: Option<Vec<String>>,
 }
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct CallsignSearchReq {
+    pub search: String,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct CallsignSearchResult {
+    pub id: i64,
+    pub name: String,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct CallsignSearchRsp {
+    pub callsigns: Vec<CallsignSearchResult>,
+}

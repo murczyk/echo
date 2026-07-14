@@ -43,10 +43,7 @@ export function LocationsSection({ busy, recentValues }: Props) {
             label="Координати (lat, lon або MGRS)"
             fullWidth
             error={!!errors.coords}
-            helperText={
-              errors.coords?.message ??
-              'Десяткові градуси (49.12345, 37.12345) або MGRS (37U DR 05997 22279)'
-            }
+            helperText={errors.coords?.message ?? null}
             disabled={busy}
             placeholder="49.12345, 37.12345"
           />

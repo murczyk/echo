@@ -22,7 +22,7 @@ use sea_orm::*;
 use sea_orm::{
     ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QuerySelect,
 };
-use sea_query::{Alias, Expr, Query};
+use sea_query::{extension::postgres::PgExpr, Alias, Expr, Query};
 use serde_json;
 use sqlx::FromRow;
 use std::collections::{BTreeSet, HashMap, HashSet};
@@ -4450,6 +4450,41 @@ fn kind_from_modulation(modulation: &str) -> SigintNetworkKind {
         "NFM" | "AM" | "" => SigintNetworkKind::Vhf,
         _ => SigintNetworkKind::Dmr,
     }
+}
+
+#[post("/api/sigint/network-name/search")]
+pub async fn network_name_search(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<NetworkSearchReq>,
+) -> Result<Json<NetworkSearchRsp>, AppError> {
+    crate::users::has_any_role(&env.dbx, &user.id().c(h!())?, vec!["Rer"])
+        .await
+        .c(h!())?;
+
+    let search_phrase = req.search.trim();
+
+    let mut query = sigint_network::Entity::find()
+        .filter(sigint_network::Column::Deleted.eq(false));
+
+    if !search_phrase.is_empty() {
+        query = query.filter(Expr::col(sigint_network::Column::Name).ilike(format!("%{}%", search_phrase)));
+    }
+
+    let networks = query
+        .order_by(sigint_network::Column::Name, Order::Asc)
+        .limit(50)
+        .all(&env.dbx)
+        .await
+        .context(h!())?
+        .into_iter()
+        .map(|network| NetworkSearchResult {
+            id: network.id,
+            name: network.name,
+        })
+        .collect();
+
+    Ok(Json(NetworkSearchRsp { networks }))
 }
 
 #[cfg(test)]

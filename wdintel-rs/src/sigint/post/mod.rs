@@ -213,3 +213,38 @@ pub async fn delete_post(
     post_model.update(&env.dbx).await.context(h!())?;
     Ok(Json(()))
 }
+
+#[post("/api/sigint/post-name/search")]
+pub async fn post_name_search(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<PostSearchReq>,
+) -> Result<Json<PostSearchRsp>, AppError> {
+    crate::users::has_any_role(&env.dbx, &user.id().c(h!())?, vec!["Rer"])
+        .await
+        .c(h!())?;
+
+    let search_phrase = req.search.trim();
+
+    let mut query = sigint_post::Entity::find()
+        .filter(sigint_post::Column::Deleted.eq(false));
+
+    if !search_phrase.is_empty() {
+        query = query.filter(Expr::col(sigint_post::Column::Name).ilike(format!("%{}%", search_phrase)));
+    }
+
+    let posts = query
+        .order_by(sigint_post::Column::Name, Order::Asc)
+        .limit(50)
+        .all(&env.dbx)
+        .await
+        .context(h!())?
+        .into_iter()
+        .map(|post| PostSearchResult {
+            id: post.id,
+            name: post.name,
+        })
+        .collect();
+
+    Ok(Json(PostSearchRsp { posts }))
+}

@@ -12,7 +12,14 @@ type Props = {
 };
 
 export function DmrSection({ isEditMode, showAdvanced, busy, recentValues }: Props) {
-  const { control, watch } = useFormContext<MessageFormData>();
+  const {
+    control,
+    watch,
+    trigger,
+    formState: { errors },
+  } = useFormContext<MessageFormData>();
+
+  const networkCc = watch('network_cc');
 
   const networkSignalName = watch('network_signal_name');
   const dmrSenderId = watch('dmr_sender_id');
@@ -22,6 +29,7 @@ export function DmrSection({ isEditMode, showAdvanced, busy, recentValues }: Pro
   const dmrHashId = watch('dmr_hash_id');
 
   const isDmr = !!(
+    (networkCc !== null && networkCc !== undefined && String(networkCc).trim() !== '') ||
     networkSignalName?.trim().toLowerCase() === 'dmr' ||
     dmrSenderId?.trim() ||
     dmrSenderName?.trim() ||
@@ -35,7 +43,7 @@ export function DmrSection({ isEditMode, showAdvanced, busy, recentValues }: Pro
   }
 
   return (
-    <FormSectionWrapper title="DMR (Digital Mobile Radio)">
+    <FormSectionWrapper title="DMR">
       <Box
         sx={{
           display: 'grid',
@@ -43,6 +51,45 @@ export function DmrSection({ isEditMode, showAdvanced, busy, recentValues }: Pro
           gap: 2,
         }}
       >
+        {!isEditMode && (
+          <Controller
+            name="network_cc"
+            control={control}
+            render={({ field }) => (
+              <Autocomplete
+                freeSolo
+                forcePopupIcon
+                noOptionsText="Немає варіантів"
+                options={recentValues?.network_cc || []}
+                value={field.value ?? ''}
+                disabled={busy}
+                onInputChange={(_, newValue, reason) => {
+                  if (reason === 'input') {
+                    field.onChange(newValue);
+                    void trigger('network_signal_name');
+                  }
+                }}
+                onChange={(_, newValue) => {
+                  field.onChange(newValue || '');
+                  void trigger('network_signal_name');
+                }}
+                renderInput={(params) => (
+                  <TextField
+                    {...params}
+                    label="Колірний код (CC)"
+                    placeholder="0–15"
+                    size="small"
+                    type="number"
+                    fullWidth
+                    error={!!errors.network_cc}
+                    helperText={errors.network_cc?.message}
+                    disabled={busy}
+                  />
+                )}
+              />
+            )}
+          />
+        )}
         <Controller
           name="dmr_sender_id"
           control={control}
@@ -60,7 +107,7 @@ export function DmrSection({ isEditMode, showAdvanced, busy, recentValues }: Pro
               renderInput={(params) => (
                 <TextField
                   {...params}
-                  label="ID відправника (DMR)"
+                  label="ID відправника"
                   size="small"
                   fullWidth
                   disabled={busy}
@@ -86,7 +133,7 @@ export function DmrSection({ isEditMode, showAdvanced, busy, recentValues }: Pro
               renderInput={(params) => (
                 <TextField
                   {...params}
-                  label="Ім'я відправника (DMR)"
+                  label="Ім'я відправника"
                   size="small"
                   fullWidth
                   disabled={busy}
@@ -112,7 +159,7 @@ export function DmrSection({ isEditMode, showAdvanced, busy, recentValues }: Pro
               renderInput={(params) => (
                 <TextField
                   {...params}
-                  label="ID групи виклику (DMR)"
+                  label="ID групи виклику"
                   size="small"
                   fullWidth
                   disabled={busy}
@@ -138,7 +185,7 @@ export function DmrSection({ isEditMode, showAdvanced, busy, recentValues }: Pro
               renderInput={(params) => (
                 <TextField
                   {...params}
-                  label="Ім'я групи виклику (DMR)"
+                  label="Ім'я групи виклику"
                   size="small"
                   fullWidth
                   disabled={busy}
@@ -162,13 +209,7 @@ export function DmrSection({ isEditMode, showAdvanced, busy, recentValues }: Pro
               }}
               onChange={(_, newValue) => field.onChange(newValue || '')}
               renderInput={(params) => (
-                <TextField
-                  {...params}
-                  label="Hash ID (DMR)"
-                  size="small"
-                  fullWidth
-                  disabled={busy}
-                />
+                <TextField {...params} label="Hash ID" size="small" fullWidth disabled={busy} />
               )}
             />
           )}

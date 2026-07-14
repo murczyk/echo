@@ -14,6 +14,12 @@ type Props = {
   busy: boolean;
   recentValues: any;
   tagOptions: string[];
+  postOptions: string[];
+  postLoading: boolean;
+  setPostInput: (val: string) => void;
+  unitOptions: string[];
+  unitLoading: boolean;
+  setUnitInput: (val: string) => void;
 };
 
 export function MetadataSection({
@@ -22,6 +28,12 @@ export function MetadataSection({
   busy,
   recentValues,
   tagOptions,
+  postOptions,
+  postLoading,
+  setPostInput,
+  unitOptions,
+  unitLoading,
+  setUnitInput,
 }: Props) {
   const {
     control,
@@ -106,11 +118,16 @@ export function MetadataSection({
               <Autocomplete
                 freeSolo
                 forcePopupIcon
-                options={recentValues?.post || []}
+                noOptionsText="Немає варіантів"
+                options={Array.from(new Set([...(recentValues?.post || []), ...postOptions]))}
                 value={field.value ?? ''}
+                loading={postLoading}
                 disabled={busy}
                 onInputChange={(_, newValue, reason) => {
-                  if (reason === 'input') field.onChange(newValue);
+                  if (reason === 'input') {
+                    setPostInput(newValue);
+                    field.onChange(newValue);
+                  }
                 }}
                 onChange={(_, newValue) => field.onChange(newValue || '')}
                 renderInput={(params) => (
@@ -125,13 +142,17 @@ export function MetadataSection({
             control={control}
             render={({ field }) => (
               <Autocomplete
-                freeSolo
                 forcePopupIcon
-                options={recentValues?.unit || []}
+                noOptionsText="Немає варіантів"
+                options={Array.from(new Set([...(recentValues?.unit || []), ...unitOptions]))}
                 value={field.value ?? ''}
+                loading={unitLoading}
                 disabled={busy}
                 onInputChange={(_, newValue, reason) => {
-                  if (reason === 'input') field.onChange(newValue);
+                  if (reason === 'input') {
+                    setUnitInput(newValue);
+                    field.onChange(newValue);
+                  }
                 }}
                 onChange={(_, newValue) => field.onChange(newValue || '')}
                 renderInput={(params) => (
@@ -148,6 +169,7 @@ export function MetadataSection({
           render={({ field }) => (
             <Autocomplete
               multiple
+              noOptionsText="Немає варіантів"
               options={tagOptions}
               value={field.value || []}
               onChange={(_, newValue) => field.onChange(normalizeMultiValue(newValue as string[]))}

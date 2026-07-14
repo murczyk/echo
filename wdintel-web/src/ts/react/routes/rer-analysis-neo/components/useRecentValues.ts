@@ -17,6 +17,7 @@ export type RecentValues = {
   dmr_call_group_id: string[];
   dmr_call_group_name: string[];
   dmr_hash_id: string[];
+  group: string[];
 };
 
 const DEFAULT_VALUES: RecentValues = {
@@ -33,6 +34,7 @@ const DEFAULT_VALUES: RecentValues = {
   dmr_call_group_id: [],
   dmr_call_group_name: [],
   dmr_hash_id: [],
+  group: [],
 };
 
 export function useRecentValues() {

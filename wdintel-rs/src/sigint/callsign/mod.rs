@@ -15,7 +15,7 @@ use sea_orm::*;
 use sea_orm::{DbBackend, Statement};
 use sea_query::types::IntoColumnRef;
 use sea_query::Alias;
-use sea_query::{Expr, SimpleExpr};
+use sea_query::{extension::postgres::PgExpr, Expr, SimpleExpr};
 
 pub mod bl;
 pub mod bl_network_callsign;
@@ -1216,6 +1216,41 @@ pub async fn load_whitelist_from_file(
         .into_iter()
         .collect();
     Ok(callsigns)
+}
+
+#[post("/api/sigint/callsign-name/search")]
+pub async fn callsign_name_search(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<CallsignSearchReq>,
+) -> Result<Json<CallsignSearchRsp>, AppError> {
+    crate::users::has_any_role(&env.dbx, &user.id().c(h!())?, vec!["Rer"])
+        .await
+        .c(h!())?;
+
+    let search_phrase = req.search.trim();
+
+    let mut query = sigint_callsign::Entity::find()
+        .filter(sigint_callsign::Column::Deleted.eq(false));
+
+    if !search_phrase.is_empty() {
+        query = query.filter(Expr::col(sigint_callsign::Column::Callsign).ilike(format!("%{}%", search_phrase)));
+    }
+
+    let callsigns = query
+        .order_by(sigint_callsign::Column::Callsign, Order::Asc)
+        .limit(50)
+        .all(&env.dbx)
+        .await
+        .context(h!())?
+        .into_iter()
+        .map(|callsign| CallsignSearchResult {
+            id: callsign.id,
+            name: callsign.callsign,
+        })
+        .collect();
+
+    Ok(Json(CallsignSearchRsp { callsigns }))
 }
 
 #[cfg(test)]

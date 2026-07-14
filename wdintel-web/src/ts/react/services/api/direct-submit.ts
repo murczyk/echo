@@ -54,6 +54,112 @@ export async function createComputerName(
   return result.device;
 }
 
+export type PostResponse = {
+  id: number;
+  name: string;
+};
+
+export type PostSearchResponse = {
+  posts: PostResponse[];
+};
+
+export async function searchPostNames(
+  search: string,
+  options?: RequestOptions,
+): Promise<PostResponse[]> {
+  const result = await postJson<{ posts: PostResponse[] }>(
+    '/api/sigint/post-name/search',
+    { search },
+    options,
+  );
+  return result?.posts || [];
+}
+
+export type UnitResponse = {
+  id: number;
+  name: string;
+};
+
+export async function searchUnitNames(
+  search: string,
+  options?: RequestOptions,
+): Promise<UnitResponse[]> {
+  const result = await postJson<{ units: UnitResponse[] }>(
+    '/api/sigint/unit/search',
+    { search },
+    options,
+  );
+  return result?.units || [];
+}
+
+export type NetworkResponse = {
+  id: number;
+  name: string;
+};
+
+export async function searchNetworkNames(
+  search: string,
+  options?: RequestOptions,
+): Promise<NetworkResponse[]> {
+  const result = await postJson<{ networks: NetworkResponse[] }>(
+    '/api/sigint/network-name/search',
+    { search },
+    options,
+  );
+  return result?.networks || [];
+}
+
+export type SignalResponse = {
+  id: number;
+  name: string;
+};
+
+export async function searchSignalNames(
+  search: string,
+  options?: RequestOptions,
+): Promise<SignalResponse[]> {
+  const result = await postJson<{ signals: SignalResponse[] }>(
+    '/api/sigint/signal-name/search',
+    { search },
+    options,
+  );
+  return result?.signals || [];
+}
+
+export type CallsignResponse = {
+  id: number;
+  name: string;
+};
+
+export async function searchCallsignNames(
+  search: string,
+  options?: RequestOptions,
+): Promise<CallsignResponse[]> {
+  const result = await postJson<{ callsigns: CallsignResponse[] }>(
+    '/api/sigint/callsign-name/search',
+    { search },
+    options,
+  );
+  return result?.callsigns || [];
+}
+
+export type FreqResponse = {
+  id: number;
+  name: string;
+};
+
+export async function searchFreqs(
+  search: string,
+  options?: RequestOptions,
+): Promise<FreqResponse[]> {
+  const result = await postJson<{ freqs: FreqResponse[] }>(
+    '/api/sigint/freq/search',
+    { search },
+    options,
+  );
+  return result?.freqs || [];
+}
+
 export type SubmitNetwork = {
   signal_name?: string;
   cc?: number;

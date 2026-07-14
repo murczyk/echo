@@ -10,6 +10,18 @@ type Props = {
   recentValues: any;
   getProposedCallsigns: (current: string[]) => string[];
   addSuggestedCallsign: (callsign: string) => void;
+  networkNameOptions: string[];
+  networkNameLoading: boolean;
+  setNetworkNameInput: (val: string) => void;
+  signalNameOptions: string[];
+  signalNameLoading: boolean;
+  setSignalNameInput: (val: string) => void;
+  callsignOptions: string[];
+  callsignLoading: boolean;
+  setCallsignInput: (val: string) => void;
+  freqOptions: string[];
+  freqLoading: boolean;
+  setFreqInput: (val: string) => void;
 };
 
 export function NetworkSection({
@@ -18,6 +30,18 @@ export function NetworkSection({
   recentValues,
   getProposedCallsigns,
   addSuggestedCallsign,
+  networkNameOptions,
+  networkNameLoading,
+  setNetworkNameInput,
+  signalNameOptions,
+  signalNameLoading,
+  setSignalNameInput,
+  callsignOptions,
+  callsignLoading,
+  setCallsignInput,
+  freqOptions,
+  freqLoading,
+  setFreqInput,
 }: Props) {
   const {
     control,
@@ -39,13 +63,17 @@ export function NetworkSection({
           control={control}
           render={({ field }) => (
             <Autocomplete
-              freeSolo
               forcePopupIcon
-              options={recentValues?.freq || []}
+              noOptionsText="Немає варіантів"
+              options={Array.from(new Set([...(recentValues?.freq || []), ...freqOptions]))}
               value={field.value ?? ''}
+              loading={freqLoading}
               disabled={busy}
               onInputChange={(_, newValue, reason) => {
-                if (reason === 'input') field.onChange(newValue);
+                if (reason === 'input') {
+                  setFreqInput(newValue);
+                  field.onChange(newValue);
+                }
               }}
               onChange={(_, newValue) => field.onChange(newValue || '')}
               renderInput={(params) => (
@@ -63,116 +91,38 @@ export function NetworkSection({
             />
           )}
         />
+
         {!isEditMode && (
           <Controller
-            name="network_cc"
+            name="network_name"
             control={control}
             render={({ field }) => (
               <Autocomplete
-                freeSolo
                 forcePopupIcon
-                options={recentValues?.network_cc || []}
+                noOptionsText="Немає варіантів"
+                options={Array.from(
+                  new Set([...(recentValues?.network_name || []), ...networkNameOptions]),
+                )}
                 value={field.value ?? ''}
+                loading={networkNameLoading}
                 disabled={busy}
                 onInputChange={(_, newValue, reason) => {
                   if (reason === 'input') {
+                    setNetworkNameInput(newValue);
                     field.onChange(newValue);
-                    void trigger('network_signal_name');
                   }
                 }}
                 onChange={(_, newValue) => {
                   field.onChange(newValue || '');
-                  void trigger('network_signal_name');
                 }}
                 renderInput={(params) => (
-                  <TextField
-                    {...params}
-                    label="Колірний код (CC)"
-                    placeholder="0–15"
-                    size="small"
-                    type="number"
-                    fullWidth
-                    error={!!errors.network_cc}
-                    helperText={errors.network_cc?.message}
-                    disabled={busy}
-                  />
+                  <TextField {...params} label="Мережа" size="small" fullWidth disabled={busy} />
                 )}
               />
             )}
           />
         )}
       </Box>
-
-      {!isEditMode && (
-        <Box
-          sx={{
-            display: 'grid',
-            gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' },
-            gap: 2,
-          }}
-        >
-          <Controller
-            name="network_signal_name"
-            control={control}
-            render={({ field }) => (
-              <Autocomplete
-                freeSolo
-                forcePopupIcon
-                options={recentValues?.network_signal_name || []}
-                value={field.value ?? ''}
-                disabled={busy}
-                onInputChange={(_, newValue, reason) => {
-                  if (reason === 'input') field.onChange(newValue);
-                }}
-                onChange={(_, newValue) => field.onChange(newValue || '')}
-                renderInput={(params) => (
-                  <TextField
-                    {...params}
-                    label="Назва сигналу мережі"
-                    size="small"
-                    fullWidth
-                    error={!!errors.network_signal_name}
-                    helperText={errors.network_signal_name?.message}
-                    disabled={busy}
-                  />
-                )}
-              />
-            )}
-          />
-          <Controller
-            name="network_name"
-            control={control}
-            render={({ field }) => (
-              <Autocomplete
-                freeSolo
-                forcePopupIcon
-                options={recentValues?.network_name || []}
-                value={field.value ?? ''}
-                disabled={busy}
-                onInputChange={(_, newValue, reason) => {
-                  if (reason === 'input') {
-                    field.onChange(newValue);
-                    void trigger('network_signal_name');
-                  }
-                }}
-                onChange={(_, newValue) => {
-                  field.onChange(newValue || '');
-                  void trigger('network_signal_name');
-                }}
-                renderInput={(params) => (
-                  <TextField
-                    {...params}
-                    label="Назва мережі"
-                    size="small"
-                    fullWidth
-                    disabled={busy}
-                  />
-                )}
-              />
-            )}
-          />
-        </Box>
-      )}
 
       <Controller
         name="callsigns"
@@ -183,8 +133,17 @@ export function NetworkSection({
               multiple
               freeSolo
               autoSelect
-              options={recentValues?.callsigns || []}
+              noOptionsText="Немає варіантів"
+              options={Array.from(
+                new Set([...(recentValues?.callsigns || []), ...callsignOptions]),
+              )}
               value={field.value || []}
+              loading={callsignLoading}
+              onInputChange={(_, newValue, reason) => {
+                if (reason === 'input') {
+                  setCallsignInput(newValue);
+                }
+              }}
               onChange={(_, newValue) => field.onChange(normalizeMultiValue(newValue as string[]))}
               renderInput={(params) => (
                 <TextField

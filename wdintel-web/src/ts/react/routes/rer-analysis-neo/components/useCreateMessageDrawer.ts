@@ -8,7 +8,15 @@ import {
   getGroupInfosBatch,
   getTagsForDisplay,
 } from '../../../services/api/inbox-reference-data';
-import { searchComputerNames } from '../../../services/api/direct-submit';
+import {
+  searchComputerNames,
+  searchPostNames,
+  searchUnitNames,
+  searchNetworkNames,
+  searchSignalNames,
+  searchCallsignNames,
+  searchFreqs,
+} from '../../../services/api/direct-submit';
 import type { InboxMessage, SignalGroupEntry, Tag, User } from '../../../../../Bindings';
 import { mapInboxMessageToForm } from './create-message-drawer.mappers';
 import { useRecentValues } from './useRecentValues';
@@ -62,6 +70,30 @@ export function useCreateMessageDrawer({
   const [computerNamesLoading, setComputerNamesLoading] = useState(false);
   const [computerNameInput, setComputerNameInput] = useState('');
 
+  const [postOptions, setPostOptions] = useState<string[]>([]);
+  const [postLoading, setPostLoading] = useState(false);
+  const [postInput, setPostInput] = useState('');
+
+  const [unitOptions, setUnitOptions] = useState<string[]>([]);
+  const [unitLoading, setUnitLoading] = useState(false);
+  const [unitInput, setUnitInput] = useState('');
+
+  const [networkNameOptions, setNetworkNameOptions] = useState<string[]>([]);
+  const [networkNameLoading, setNetworkNameLoading] = useState(false);
+  const [networkNameInput, setNetworkNameInput] = useState('');
+
+  const [signalNameOptions, setSignalNameOptions] = useState<string[]>([]);
+  const [signalNameLoading, setSignalNameLoading] = useState(false);
+  const [signalNameInput, setSignalNameInput] = useState('');
+
+  const [callsignOptions, setCallsignOptions] = useState<string[]>([]);
+  const [callsignLoading, setCallsignLoading] = useState(false);
+  const [callsignInput, setCallsignInput] = useState('');
+
+  const [freqOptions, setFreqOptions] = useState<string[]>([]);
+  const [freqLoading, setFreqLoading] = useState(false);
+  const [freqInput, setFreqInput] = useState('');
+
   useEffect(() => {
     let active = true;
 
@@ -81,6 +113,126 @@ export function useCreateMessageDrawer({
       active = false;
     };
   }, [computerNameInput]);
+
+  useEffect(() => {
+    let active = true;
+
+    setPostLoading(true);
+    searchPostNames(postInput)
+      .then((results) => {
+        if (active) {
+          setPostOptions(results.map((p) => p.name));
+        }
+      })
+      .catch(console.error)
+      .finally(() => {
+        if (active) setPostLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [postInput]);
+
+  useEffect(() => {
+    let active = true;
+
+    setUnitLoading(true);
+    searchUnitNames(unitInput)
+      .then((results) => {
+        if (active) {
+          setUnitOptions(results.map((u) => u.name));
+        }
+      })
+      .catch(console.error)
+      .finally(() => {
+        if (active) setUnitLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [unitInput]);
+
+  useEffect(() => {
+    let active = true;
+
+    setNetworkNameLoading(true);
+    searchNetworkNames(networkNameInput)
+      .then((results) => {
+        if (active) {
+          setNetworkNameOptions(results.map((n) => n.name));
+        }
+      })
+      .catch(console.error)
+      .finally(() => {
+        if (active) setNetworkNameLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [networkNameInput]);
+
+  useEffect(() => {
+    let active = true;
+
+    setSignalNameLoading(true);
+    searchSignalNames(signalNameInput)
+      .then((results) => {
+        if (active) {
+          setSignalNameOptions(results.map((s) => s.name));
+        }
+      })
+      .catch(console.error)
+      .finally(() => {
+        if (active) setSignalNameLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [signalNameInput]);
+
+  useEffect(() => {
+    let active = true;
+
+    setCallsignLoading(true);
+    searchCallsignNames(callsignInput)
+      .then((results) => {
+        if (active) {
+          setCallsignOptions(results.map((c) => c.name));
+        }
+      })
+      .catch(console.error)
+      .finally(() => {
+        if (active) setCallsignLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [callsignInput]);
+
+  useEffect(() => {
+    let active = true;
+
+    setFreqLoading(true);
+    searchFreqs(freqInput)
+      .then((results) => {
+        if (active) {
+          setFreqOptions(results.map((f) => f.name));
+        }
+      })
+      .catch(console.error)
+      .finally(() => {
+        if (active) setFreqLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [freqInput]);
 
   const { uppy, uppyFiles, fileInputRef, handleFileSelect, handleDrop, handleDropzoneKeyDown } =
     useMessageUppy(busy, setErrorMsg);
@@ -229,10 +381,30 @@ export function useCreateMessageDrawer({
     errorMsg,
     setErrorMsg,
     tagOptions,
+    tagsMap,
+    setTagsMap,
     computerNameOptions,
     computerNamesLoading,
     computerNameInput,
     setComputerNameInput,
+    postOptions,
+    postLoading,
+    setPostInput,
+    unitOptions,
+    unitLoading,
+    setUnitInput,
+    networkNameOptions,
+    networkNameLoading,
+    setNetworkNameInput,
+    signalNameOptions,
+    signalNameLoading,
+    setSignalNameInput,
+    callsignOptions,
+    callsignLoading,
+    setCallsignInput,
+    freqOptions,
+    freqLoading,
+    setFreqInput,
     uppy,
     uppyFiles,
     fileInputRef,

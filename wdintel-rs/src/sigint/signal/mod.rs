@@ -400,3 +400,38 @@ pub fn render_signal(
         created_at: signal.created_at.and_utc().timestamp_millis(),
     }
 }
+
+#[post("/api/sigint/signal-name/search")]
+pub async fn signal_name_search(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<SignalSearchReq>,
+) -> Result<Json<SignalSearchRsp>, AppError> {
+    crate::users::has_any_role(&env.dbx, &user.id().c(h!())?, vec!["Rer"])
+        .await
+        .c(h!())?;
+
+    let search_phrase = req.search.trim();
+
+    let mut query = sigint_signal::Entity::find()
+        .filter(sigint_signal::Column::Deleted.eq(false));
+
+    if !search_phrase.is_empty() {
+        query = query.filter(Expr::col(sigint_signal::Column::Text).ilike(format!("%{}%", search_phrase)));
+    }
+
+    let signals = query
+        .order_by(sigint_signal::Column::Text, Order::Asc)
+        .limit(50)
+        .all(&env.dbx)
+        .await
+        .context(h!())?
+        .into_iter()
+        .map(|signal| SignalSearchResult {
+            id: signal.id,
+            name: signal.text,
+        })
+        .collect();
+
+    Ok(Json(SignalSearchRsp { signals }))
+}

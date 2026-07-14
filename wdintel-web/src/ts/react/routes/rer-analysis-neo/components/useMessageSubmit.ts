@@ -180,8 +180,9 @@ export function useMessageSubmit({
       });
 
       addValues({
-        freq: data.freq ? [data.freq] : [],
+        group: data.signalGroupMasterKey ? [data.signalGroupMasterKey] : [],
         post: data.post ? [data.post] : [],
+        freq: data.freq ? [data.freq] : [],
         unit: data.unit ? [data.unit] : [],
         network_cc: data.network_cc ? [data.network_cc] : [],
         network_signal_name: data.network_signal_name ? [data.network_signal_name] : [],
