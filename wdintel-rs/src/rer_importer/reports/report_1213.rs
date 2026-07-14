@@ -341,9 +341,10 @@ async fn load_report_1213_messages(
         load_message_group_info(dbx, login, req, &message_ids)
             .await
             .context(h!())?;
+    // Network cache backfill may write, so keep it off read replicas.
     let mut networks_by_message =
         crate::rer_importer::inbox::load_message_networks_by_ids(
-            dbx,
+            &env.dbx,
             &message_ids,
         )
         .await

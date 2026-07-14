@@ -197,9 +197,10 @@ async fn load_post_report_messages(
     .await
     .context(h!())?;
     let message_ids = rows.iter().map(|row| row.id).collect_vec();
+    // Network cache backfill may write, so keep it off read replicas.
     let mut networks_by_message =
         crate::rer_importer::inbox::load_message_networks_by_ids(
-            dbx,
+            &env.dbx,
             &message_ids,
         )
         .await
