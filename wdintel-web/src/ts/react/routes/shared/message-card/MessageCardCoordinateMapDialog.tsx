@@ -1,22 +1,28 @@
 import 'leaflet/dist/leaflet.css';
 
+import FullscreenExitIcon from '@mui/icons-material/FullscreenExit';
+import FullscreenIcon from '@mui/icons-material/Fullscreen';
 import {
   Box,
   Button,
   ButtonGroup,
-  Dialog,
   DialogActions,
-  DialogContent,
+  IconButton,
+  Tooltip,
   Typography,
 } from '@mui/material';
+import { useTheme } from '@mui/material/styles';
 import * as L from 'leaflet';
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 
 import { getTileLayers } from '../../../../web-components/analysis-map/tile-layers';
 import type { CoordinatePreviewResult } from './message-coordinate-preview';
+import { MessageCardPreviewShell } from './MessageCardPreviewShell';
+import { getMessageCardPreviewShellConfig } from './message-card-preview-config';
 import {
   blurActivePreviewDialogElement,
-  getMessageCardPreviewDialogPaperSx,
+  getMessageCardPreviewActionBarSx,
+  getMessageCardPreviewStageSx,
 } from './message-card-preview-shell';
 
 type BaseLayerId = 'googleHybrid' | 'openStreetMap';
@@ -30,25 +36,32 @@ type Props = {
 const PREVIEW_ZOOM = 13;
 
 export function MessageCardCoordinateMapDialog({ coordinate, open, onClose }: Props) {
+  const theme = useTheme();
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<L.Map | null>(null);
   const markerRef = useRef<L.CircleMarker | null>(null);
   const layerRef = useRef<L.TileLayer | null>(null);
   const tileLayersRef = useRef<ReturnType<typeof getTileLayers> | null>(null);
   const initFrameRef = useRef<number | null>(null);
+  const invalidateFrameRef = useRef<number | null>(null);
+  const previousFullscreenRef = useRef<boolean | null>(null);
+  const initialLayerIdRef = useRef<BaseLayerId>('googleHybrid');
   const [baseLayerId, setBaseLayerId] = useState<BaseLayerId>('googleHybrid');
-
-  useEffect(() => {
-    if (open) {
-      setBaseLayerId('googleHybrid');
-    }
-  }, [coordinate.lat, coordinate.lng, open]);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const previewConfig = getMessageCardPreviewShellConfig('coordinate-map');
+  const canFullscreen = previewConfig.supportsFullscreen;
+  const dialogIsFullscreen = canFullscreen && isFullscreen;
 
   useEffect(() => {
     if (!open) {
       setBaseLayerId('googleHybrid');
+      setIsFullscreen(false);
+      return;
     }
-  }, [open]);
+
+    initialLayerIdRef.current = 'googleHybrid';
+    setBaseLayerId('googleHybrid');
+  }, [open, coordinate.lat, coordinate.lng]);
 
   useEffect(() => {
     if (!open || mapRef.current == null) {
@@ -59,6 +72,7 @@ export function MessageCardCoordinateMapDialog({ coordinate, open, onClose }: Pr
     if (tileLayers == null) {
       return;
     }
+
     const nextLayer =
       baseLayerId === 'googleHybrid' ? tileLayers.googleHybrid : tileLayers.openStreetMap;
     if (layerRef.current === nextLayer) {
@@ -69,6 +83,43 @@ export function MessageCardCoordinateMapDialog({ coordinate, open, onClose }: Pr
     nextLayer.addTo(mapRef.current);
     layerRef.current = nextLayer;
   }, [baseLayerId, open]);
+
+  useEffect(() => {
+    if (!open || mapRef.current == null) {
+      if (!open) {
+        previousFullscreenRef.current = null;
+      }
+      return;
+    }
+
+    if (previousFullscreenRef.current === null) {
+      previousFullscreenRef.current = dialogIsFullscreen;
+      return;
+    }
+
+    if (previousFullscreenRef.current === dialogIsFullscreen) {
+      return;
+    }
+
+    previousFullscreenRef.current = dialogIsFullscreen;
+
+    if (invalidateFrameRef.current !== null) {
+      window.cancelAnimationFrame(invalidateFrameRef.current);
+      invalidateFrameRef.current = null;
+    }
+
+    invalidateFrameRef.current = window.requestAnimationFrame(() => {
+      mapRef.current?.invalidateSize();
+      invalidateFrameRef.current = null;
+    });
+
+    return () => {
+      if (invalidateFrameRef.current !== null) {
+        window.cancelAnimationFrame(invalidateFrameRef.current);
+        invalidateFrameRef.current = null;
+      }
+    };
+  }, [dialogIsFullscreen, open]);
 
   useLayoutEffect(() => {
     if (!open) {
@@ -109,7 +160,9 @@ export function MessageCardCoordinateMapDialog({ coordinate, open, onClose }: Pr
       const tileLayers = getTileLayers();
       tileLayersRef.current = tileLayers;
       const baseLayer =
-        baseLayerId === 'googleHybrid' ? tileLayers.googleHybrid : tileLayers.openStreetMap;
+        initialLayerIdRef.current === 'googleHybrid'
+          ? tileLayers.googleHybrid
+          : tileLayers.openStreetMap;
       baseLayer.addTo(map);
 
       const marker = L.circleMarker([coordinate.lat, coordinate.lng], {
@@ -124,7 +177,7 @@ export function MessageCardCoordinateMapDialog({ coordinate, open, onClose }: Pr
       markerRef.current = marker;
       layerRef.current = baseLayer;
 
-      window.requestAnimationFrame(() => {
+      invalidateFrameRef.current = window.requestAnimationFrame(() => {
         if (!cancelled) {
           map.invalidateSize();
         }
@@ -139,6 +192,10 @@ export function MessageCardCoordinateMapDialog({ coordinate, open, onClose }: Pr
         window.cancelAnimationFrame(initFrameRef.current);
         initFrameRef.current = null;
       }
+      if (invalidateFrameRef.current !== null) {
+        window.cancelAnimationFrame(invalidateFrameRef.current);
+        invalidateFrameRef.current = null;
+      }
       markerRef.current?.remove();
       markerRef.current = null;
       layerRef.current?.remove();
@@ -149,45 +206,32 @@ export function MessageCardCoordinateMapDialog({ coordinate, open, onClose }: Pr
     };
   }, [coordinate.lat, coordinate.lng, open]);
 
-  const closeDialog = () => {
+  const handleClose = useCallback(() => {
     blurActivePreviewDialogElement();
     onClose();
-  };
+  }, [onClose]);
+
+  const handleShellClose = useCallback(() => {
+    handleClose();
+  }, [handleClose]);
 
   return (
-    <Dialog
+    <MessageCardPreviewShell
       open={open}
-      onClose={closeDialog}
-      fullWidth
-      maxWidth={false}
-      disableRestoreFocus
-      PaperProps={{
-        sx: {
-          width: 'min(94vw, 1280px)',
-          height: '92svh',
-          m: 0,
-          display: 'flex',
-          flexDirection: 'column',
-          overflow: 'hidden',
-          ...getMessageCardPreviewDialogPaperSx(false),
-        },
-      }}
-      aria-label="Карта координат"
-    >
-      <DialogContent
-        sx={{
-          p: 0,
-          flex: '1 1 auto',
-          minHeight: 0,
-          position: 'relative',
-          overflow: 'hidden',
-          bgcolor: 'background.paper',
-        }}
-      >
+      isFullscreen={dialogIsFullscreen}
+      ariaLabel="Карта координат"
+      onClose={handleShellClose}
+      config={previewConfig}
+      stage={
         <Box
           sx={{
-            position: 'absolute',
-            inset: 0,
+            position: 'relative',
+            flex: 1,
+            minHeight: 0,
+            overflow: 'hidden',
+            borderRadius: dialogIsFullscreen ? 0 : 1.5,
+            backgroundColor: 'background.paper',
+            ...getMessageCardPreviewStageSx(theme, dialogIsFullscreen),
           }}
         >
           <Box
@@ -208,8 +252,8 @@ export function MessageCardCoordinateMapDialog({ coordinate, open, onClose }: Pr
               right: 12,
               top: 12,
               display: 'flex',
-              justifyContent: 'space-between',
               alignItems: 'flex-start',
+              justifyContent: 'space-between',
               gap: 1,
               pointerEvents: 'none',
             }}
@@ -228,32 +272,70 @@ export function MessageCardCoordinateMapDialog({ coordinate, open, onClose }: Pr
                 overflow: 'hidden',
                 textOverflow: 'ellipsis',
                 whiteSpace: 'nowrap',
+                maxWidth: '100%',
               }}
             >
               {coordinate.label}
             </Typography>
-            <ButtonGroup size="small" variant="outlined" sx={{ pointerEvents: 'auto' }}>
-              <Button
-                onClick={() => setBaseLayerId('openStreetMap')}
-                variant={baseLayerId === 'openStreetMap' ? 'contained' : 'outlined'}
-              >
-                OSM
-              </Button>
-              <Button
-                onClick={() => setBaseLayerId('googleHybrid')}
-                variant={baseLayerId === 'googleHybrid' ? 'contained' : 'outlined'}
-              >
-                Hybrid
-              </Button>
-            </ButtonGroup>
           </Box>
         </Box>
-      </DialogContent>
-      <DialogActions sx={{ px: 2, py: 1.5 }}>
-        <Button onClick={closeDialog} variant="contained">
-          Закрити
-        </Button>
-      </DialogActions>
-    </Dialog>
+      }
+      controls={
+        <Box
+          sx={{
+            display: 'flex',
+            justifyContent: 'center',
+            width: '100%',
+            px: 2,
+            pt: 1.5,
+            pb: 0.5,
+          }}
+        >
+          <ButtonGroup size="small" variant="outlined">
+            <Button
+              onClick={() => setBaseLayerId('googleHybrid')}
+              variant={baseLayerId === 'googleHybrid' ? 'contained' : 'outlined'}
+            >
+              Супутник
+            </Button>
+            <Button
+              onClick={() => setBaseLayerId('openStreetMap')}
+              variant={baseLayerId === 'openStreetMap' ? 'contained' : 'outlined'}
+            >
+              OpenStreetMap
+            </Button>
+          </ButtonGroup>
+        </Box>
+      }
+      actions={
+        <DialogActions sx={getMessageCardPreviewActionBarSx(theme)}>
+          <Box />
+          <Box sx={{ justifySelf: 'center' }}>
+            {canFullscreen ? (
+              <Tooltip
+                title={dialogIsFullscreen ? 'Вийти з повноекранного режиму' : 'Повноекранний режим'}
+                enterDelay={300}
+              >
+                <IconButton
+                  aria-label={
+                    dialogIsFullscreen ? 'Вийти з повноекранного режиму' : 'Повноекранний режим'
+                  }
+                  size="small"
+                  onClick={() => setIsFullscreen((current) => !current)}
+                  sx={{ color: 'text.secondary' }}
+                >
+                  {dialogIsFullscreen ? <FullscreenExitIcon /> : <FullscreenIcon />}
+                </IconButton>
+              </Tooltip>
+            ) : null}
+          </Box>
+          <Box sx={{ justifySelf: 'end' }}>
+            <Button onClick={handleClose} variant="contained">
+              Закрити
+            </Button>
+          </Box>
+        </DialogActions>
+      }
+    />
   );
 }

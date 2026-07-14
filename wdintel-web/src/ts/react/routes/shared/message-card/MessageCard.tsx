@@ -104,7 +104,6 @@ export type MessageCardProps = {
   onExcludeMessageEntity?: (entity: MessageEntityFilterKind, value: string) => void;
   onToggleTag: (tagId: number) => void;
   onOpenPointsOnMap?: (etalons: string[], message: InboxMessage) => void;
-  onOpenMapSearch?: (mapSearch: string, message: InboxMessage) => void;
   botTagAction?: MessageCardBotTagAction | null;
   onCancelBotTagAction?: () => void;
   onMarkBotTagWrong?: (messageId: number, tagId: number) => void | Promise<void>;
@@ -150,7 +149,6 @@ export function MessageCard({
   onExcludeMessageEntity,
   onToggleTag,
   onOpenPointsOnMap,
-  onOpenMapSearch,
   botTagAction = null,
   onCancelBotTagAction,
   onMarkBotTagWrong,

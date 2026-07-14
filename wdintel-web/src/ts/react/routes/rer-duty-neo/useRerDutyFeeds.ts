@@ -439,7 +439,6 @@ export function useRerDutyFeeds(authUserName: string | null) {
     handleMessageBookmark: actions.handleMessageBookmark,
     handleMessageImportant: actions.handleMessageImportant,
     handleMessageCopy: actions.handleMessageCopy,
-    handleOpenMapSearch: actions.handleOpenMapSearch,
     handleOpenPointsOnMap: actions.handleOpenPointsOnMap,
     handleDeleteConfirm: actions.handleDeleteConfirm,
     setDeleteConfirmId: actions.setDeleteConfirmId,

@@ -95,7 +95,6 @@ describe('MessageCardCoordinatePreview', () => {
     vi.mocked(resolveMessageCoordinatePreview).mockResolvedValue({
       source: 'direct',
       point: { lat: 50.45044, lng: 30.52355, label: '50.45044, 30.52355' },
-      mapSearch: '50.45044,30.52355',
       etalons: [],
       pointCount: 1,
     });
@@ -142,7 +141,6 @@ describe('MessageCardCoordinatePreview', () => {
     vi.mocked(resolveMessageCoordinatePreview).mockResolvedValue({
       source: 'palitra',
       point: { lat: 50.45, lng: 30.52, label: 'BRAVO' },
-      mapSearch: 'ALPHA,BRAVO',
       etalons: ['ALPHA', 'BRAVO'],
       pointCount: 2,
     });

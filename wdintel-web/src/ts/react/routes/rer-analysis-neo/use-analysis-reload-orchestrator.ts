@@ -21,7 +21,6 @@ import type {
   AnalysisQueryState,
   AnalysisSidebarTab,
 } from './types';
-import { parseCoordinateInput } from '../../../maps/coordinate-search';
 
 type FetchAnalysisNetworks = typeof import('../../services/api/analysis').fetchAnalysisNetworks;
 
@@ -391,7 +390,6 @@ export function useAnalysisReloadOrchestrator(params: Params): UseAnalysisReload
 
   useEffect(() => {
     if (deferInitialLoad) return;
-    if (parseCoordinateInput(queryState.search) != null) return;
     void loadMapPalitras();
   }, [deferInitialLoad, loadMapPalitras, queryState.search]);
 

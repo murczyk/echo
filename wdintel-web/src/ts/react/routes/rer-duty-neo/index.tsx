@@ -195,7 +195,6 @@ export function RerDutyNeoPage({
       onCancelBotTagAction,
       onMarkBotTagWrong,
       onOpenPointsOnMap: handleOpenPointsOnMap,
-      onOpenMapSearch: handleOpenMapSearch,
     },
     actions: {
       onLoadOlder: () => loadFeedOlderMessages(feed.id),
@@ -260,7 +259,6 @@ export function RerDutyNeoPage({
     handleMessageBookmark,
     handleMessageImportant,
     handleOpenPointsOnMap,
-    handleOpenMapSearch,
     addFrequencyToFilter,
     handleMessageCopy,
     handleDeleteConfirm,

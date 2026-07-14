@@ -260,7 +260,6 @@ export type AnalysisPageActions = {
   toggleRightPanel: () => void;
   selectOnlyFreq: (freq: string) => void;
   openPointsOnMap: (etalons: string[], message: InboxMessage) => void;
-  openMapSearch?: (mapSearch: string, message: InboxMessage) => void;
   setSavedFilterName: (name: string) => void;
   addFrequencyToFilter: (freq: string) => void;
   showFreqOnMap: (freq: string) => void;

@@ -263,12 +263,6 @@ export function useRerDutyMessageItemActions(params: Params) {
     window.location.assign(buildAnalysisMapHrefWithSearch(search, message));
   }, []);
 
-  const handleOpenMapSearch = useCallback((mapSearch: string, message: InboxMessage) => {
-    const search = mapSearch.trim();
-    if (search === '') return;
-    window.location.assign(buildAnalysisMapHrefWithSearch(search, message));
-  }, []);
-
   return {
     handleMessageBookmark,
     handleMessageImportant,
@@ -292,6 +286,5 @@ export function useRerDutyMessageItemActions(params: Params) {
     deleteConfirmFeedId,
     copiedFeedbackId,
     handleOpenPointsOnMap,
-    handleOpenMapSearch,
   };
 }

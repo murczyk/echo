@@ -23,6 +23,15 @@ describe('message-card-preview-config', () => {
       },
     ],
     [
+      'coordinate-map',
+      {
+        layout: 'media',
+        disableRestoreFocus: true,
+        supportsFullscreen: true,
+        disableEscapeKeyDownInFullscreen: false,
+      },
+    ],
+    [
       'pdf',
       {
         layout: 'document',

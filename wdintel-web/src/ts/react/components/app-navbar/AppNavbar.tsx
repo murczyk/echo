@@ -413,7 +413,7 @@ export function AppNavbar({
 
             {supportsFullscreenToggle && (
               <button
-                className="flex appearance-none items-center border-0 px-2 py-2 text-white transition-all duration-200 hover:bg-black/10"
+                className="flex appearance-none items-center rounded border-0 px-2 py-2 text-white transition-all duration-200 hover:bg-black/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/70 focus-visible:ring-offset-1"
                 onClick={onNavbarVisibilityChange}
                 title={isNavbarVisible ? 'Повноекранний режим' : 'Звичайний режим'}
                 aria-label={isNavbarVisible ? 'Повноекранний режим' : 'Звичайний режим'}

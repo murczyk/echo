@@ -22,12 +22,13 @@ export type CoordinatePreviewResult = {
     lng: number;
     label: string;
   };
-  mapSearch: string;
   etalons: string[];
   pointCount: number;
 };
 
 const AVAILABLE_PALITRA_IDS_KEY = 'coordinate-preview-available-palitras';
+const UTM_CANDIDATE_PATTERN =
+  /(^|[^A-Za-z0-9])((?:[1-9]|[1-5]\d|60)[C-HJ-NP-X]\s+\d{6}\s+\d{7})(?=$|[^A-Za-z0-9])/g;
 
 let availablePalitraIds: number[] | null = null;
 let availablePalitraIdsPromise: Promise<number[]> | null = null;
@@ -74,12 +75,24 @@ function normalizeCoordinateSourceText(value: string): string {
     .trim();
 }
 
-function formatDirectCoordinateLabel(lat: number, lng: number): string {
-  return `${renderWgsFloat(lat)}, ${renderWgsFloat(lng)}`;
+function extractCoordinateInputs(text: string): string[] {
+  const normalizedText = normalizeCoordinateSourceText(text);
+  if (normalizedText === '') {
+    return [];
+  }
+
+  const candidates = new Set<string>();
+  candidates.add(normalizedText);
+
+  for (const match of normalizedText.matchAll(UTM_CANDIDATE_PATTERN)) {
+    candidates.add(match[2]);
+  }
+
+  return [...candidates];
 }
 
-function formatDirectCoordinateSearch(lat: number, lng: number): string {
-  return `${renderWgsFloat(lat)},${renderWgsFloat(lng)}`;
+function formatDirectCoordinateLabel(lat: number, lng: number): string {
+  return `${renderWgsFloat(lat)}, ${renderWgsFloat(lng)}`;
 }
 
 function createDirectCoordinateResult(lat: number, lng: number): CoordinatePreviewResult {
@@ -90,7 +103,6 @@ function createDirectCoordinateResult(lat: number, lng: number): CoordinatePrevi
       lng,
       label: formatDirectCoordinateLabel(lat, lng),
     },
-    mapSearch: formatDirectCoordinateSearch(lat, lng),
     etalons: [],
     pointCount: 1,
   };
@@ -99,42 +111,47 @@ function createDirectCoordinateResult(lat: number, lng: number): CoordinatePrevi
 function resolveDirectCoordinateFromCoordinateText(
   rawText: string,
 ): CoordinatePreviewResult | null {
-  const cacheKey = normalizeCoordinateSourceText(rawText);
-  if (cacheKey === '') {
-    return null;
-  }
-  if (directCoordinateCache.has(cacheKey)) {
-    return directCoordinateCache.get(cacheKey) ?? null;
-  }
-
-  const parsed = parseCoordinateInput(cacheKey);
-  if (parsed) {
-    const result = createDirectCoordinateResult(parsed.lat, parsed.lng);
-    directCoordinateCache.set(cacheKey, result);
-    return result;
-  }
-
-  for (const coord of extractCoordinates(cacheKey)) {
-    if (coord.kind === 'dms') {
+  for (const candidate of extractCoordinateInputs(rawText)) {
+    if (directCoordinateCache.has(candidate)) {
+      const cached = directCoordinateCache.get(candidate);
+      if (cached != null) {
+        return cached;
+      }
       continue;
     }
 
-    const latLng = convertCoordinateToWgs84(coord);
-    if (!latLng) {
-      continue;
+    const parsed = parseCoordinateInput(candidate);
+    if (parsed) {
+      const result = createDirectCoordinateResult(parsed.lat, parsed.lng);
+      directCoordinateCache.set(candidate, result);
+      return result;
     }
 
-    const result = createDirectCoordinateResult(latLng.lat, latLng.lng);
-    directCoordinateCache.set(cacheKey, result);
-    return result;
-  }
+    for (const coord of extractCoordinates(candidate)) {
+      if (coord.kind === 'dms') {
+        continue;
+      }
 
-  directCoordinateCache.set(cacheKey, null);
+      const latLng = convertCoordinateToWgs84(coord);
+      if (!latLng) {
+        continue;
+      }
+
+      const result = createDirectCoordinateResult(latLng.lat, latLng.lng);
+      directCoordinateCache.set(candidate, result);
+      return result;
+    }
+
+    directCoordinateCache.set(candidate, null);
+  }
   return null;
 }
 
 function collectDirectCoordinateCandidates(message: InboxMessage): string[] {
-  return [message.coords ?? '', message.text ?? ''];
+  return [
+    ...extractCoordinateInputs(message.coords ?? ''),
+    ...extractCoordinateInputs(message.text ?? ''),
+  ];
 }
 
 export function hasCoordinatePreviewCandidate(message: InboxMessage): boolean {
@@ -211,7 +228,6 @@ async function resolvePointForEtalon(
             lng: point.coords.lng,
             label: pointLabel,
           },
-          mapSearch: normalizeEtalon(etalon),
           etalons: [normalizeEtalon(etalon)],
           pointCount: 1,
         };
@@ -263,7 +279,6 @@ export async function resolveMessageCoordinatePreview(
 
     return {
       ...point,
-      mapSearch: etalons.join(','),
       etalons,
       pointCount: etalons.length,
     };

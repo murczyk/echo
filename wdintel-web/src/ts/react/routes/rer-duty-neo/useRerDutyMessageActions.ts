@@ -122,7 +122,6 @@ export function useRerDutyMessageActions(deps: MessageActionsDeps) {
     onMarkBotTagWrong: messageItemActions.onMarkBotTagWrong,
     handleArrowClick: feedInteractionActions.handleArrowClick,
     handleVisibleMessageIds: feedInteractionActions.handleVisibleMessageIds,
-    handleOpenMapSearch: messageItemActions.handleOpenMapSearch,
     commentMessageId: messageItemActions.commentMessageId,
     commentText: messageItemActions.commentText,
     setCommentText: messageItemActions.setCommentText,

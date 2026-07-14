@@ -170,14 +170,14 @@ describe('useAnalysisReloadOrchestrator', () => {
     expect(reloadAnalysisDataMock.reloadAnalysisData).toHaveBeenCalledTimes(1);
   });
 
-  it('skips loading map palitras for direct coordinate searches', async () => {
+  it('loads map palitras for direct coordinate searches', async () => {
     const params = buildParams({
       queryState: { ...buildQueryState(), search: '47.42135, 35.62197' },
     });
 
     await renderHook(params);
 
-    expect(params.loadMapPalitras).not.toHaveBeenCalled();
+    expect(params.loadMapPalitras).toHaveBeenCalledTimes(1);
   });
 
   it('debounces rapid reload trigger updates and keeps only the latest reload', async () => {

@@ -106,7 +106,6 @@ export function FeedColumnContent({ column, virtuosoRef }: FeedColumnContentProp
     onCancelBotTagAction,
     onMarkBotTagWrong,
     onOpenPointsOnMap,
-    onOpenMapSearch,
   } = messageCard;
   const {
     onLoadOlder,
@@ -291,7 +290,6 @@ export function FeedColumnContent({ column, virtuosoRef }: FeedColumnContentProp
               onCancelBotTagAction={onCancelBotTagAction}
               onMarkBotTagWrong={onMarkBotTagWrong}
               onOpenPointsOnMap={onOpenPointsOnMap}
-              onOpenMapSearch={onOpenMapSearch}
               referenceTimeMs={feed.referenceTimeMs}
               authUserName={authUserName}
               groupName={labels.groupName}

@@ -68,10 +68,6 @@ export type FeedColumnModel = {
       etalons: string[],
       message: import('../../../../Bindings').InboxMessage,
     ) => void;
-    onOpenMapSearch?: (
-      mapSearch: string,
-      message: import('../../../../Bindings').InboxMessage,
-    ) => void;
   };
   actions: {
     onLoadOlder: () => void;

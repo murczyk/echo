@@ -78,7 +78,6 @@ describe('message coordinate preview resolver', () => {
         lng: 30.52355,
         label: '50.45044, 30.52355',
       },
-      mapSearch: '50.45044,30.52355',
       etalons: [],
       pointCount: 1,
     });
@@ -93,7 +92,6 @@ describe('message coordinate preview resolver', () => {
 
     expect(result?.source).toBe('direct');
     expect(result?.point.label).toBe('50.45044, 30.52355');
-    expect(result?.mapSearch).toBe('50.45044,30.52355');
     expect(listMapPalitrasV2).not.toHaveBeenCalled();
     expect(searchPalitraPoints).not.toHaveBeenCalled();
   });
@@ -116,9 +114,6 @@ describe('message coordinate preview resolver', () => {
     expect(result?.point.label).toBe(
       `${renderWgsFloat(expected!.lat)}, ${renderWgsFloat(expected!.lng)}`,
     );
-    expect(result?.mapSearch).toBe(
-      `${renderWgsFloat(expected!.lat)},${renderWgsFloat(expected!.lng)}`,
-    );
     expect(listMapPalitrasV2).not.toHaveBeenCalled();
     expect(searchPalitraPoints).not.toHaveBeenCalled();
   });
@@ -135,6 +130,93 @@ describe('message coordinate preview resolver', () => {
 
     expect(result?.source).toBe('direct');
     expect(result?.point).toMatchObject(expected!);
+    expect(listMapPalitrasV2).not.toHaveBeenCalled();
+    expect(searchPalitraPoints).not.toHaveBeenCalled();
+  });
+
+  it('resolves embedded UTM coordinates from message text', async () => {
+    const expected = parseCoordinateInput('33T 292332 4642055');
+    expect(expected).not.toBeNull();
+
+    const result = await resolveMessageCoordinatePreview({
+      message: createMessage({
+        text: 'ROME\n33T 292332 4642055',
+      }),
+    });
+
+    expect(result?.source).toBe('direct');
+    expect(result?.point).toMatchObject(expected!);
+    expect(listMapPalitrasV2).not.toHaveBeenCalled();
+    expect(searchPalitraPoints).not.toHaveBeenCalled();
+  });
+
+  it('resolves embedded UTM coordinates after a label prefix', async () => {
+    const expected = parseCoordinateInput('33T 292332 4642055');
+    expect(expected).not.toBeNull();
+
+    const result = await resolveMessageCoordinatePreview({
+      message: createMessage({
+        text: 'Coordinates: 33T 292332 4642055',
+      }),
+    });
+
+    expect(result?.source).toBe('direct');
+    expect(result?.point).toMatchObject(expected!);
+    expect(listMapPalitrasV2).not.toHaveBeenCalled();
+    expect(searchPalitraPoints).not.toHaveBeenCalled();
+  });
+
+  it('does not resolve UTM embedded inside an alphanumeric token', async () => {
+    const result = await resolveMessageCoordinatePreview({
+      message: createMessage({
+        text: 'A33T 292332 4642055B',
+      }),
+    });
+
+    expect(result).toBeNull();
+    expect(listMapPalitrasV2).not.toHaveBeenCalled();
+    expect(searchPalitraPoints).not.toHaveBeenCalled();
+  });
+
+  it('does not resolve malformed embedded UTM coordinates', async () => {
+    const result = await resolveMessageCoordinatePreview({
+      message: createMessage({
+        text: '33T 29233 4642055',
+      }),
+    });
+
+    expect(result).toBeNull();
+    expect(listMapPalitrasV2).not.toHaveBeenCalled();
+    expect(searchPalitraPoints).not.toHaveBeenCalled();
+  });
+
+  it('keeps embedded UTM coordinates ahead of palitra tokens', async () => {
+    const expected = parseCoordinateInput('33T 292332 4642055');
+    expect(expected).not.toBeNull();
+
+    const result = await resolveMessageCoordinatePreview({
+      message: createMessage({
+        text: 'ROME\n33T 292332 4642055',
+        textMarked: [{ CNPointC: { text: 'BRAVO', etalon: 'BRAVO' } } as ContentNode],
+      }),
+    });
+
+    expect(result?.source).toBe('direct');
+    expect(result?.point).toMatchObject(expected!);
+    expect(result?.etalons).toEqual([]);
+    expect(listMapPalitrasV2).not.toHaveBeenCalled();
+    expect(searchPalitraPoints).not.toHaveBeenCalled();
+  });
+
+  it('resolves embedded UTM coordinates after the eligibility guard has cached a miss', async () => {
+    const message = createMessage({
+      text: 'ROME\n33T 292332 4642055',
+    });
+
+    expect(hasCoordinatePreviewCandidate(message)).toBe(true);
+    expect(await resolveMessageCoordinatePreview({ message })).toMatchObject({
+      source: 'direct',
+    });
     expect(listMapPalitrasV2).not.toHaveBeenCalled();
     expect(searchPalitraPoints).not.toHaveBeenCalled();
   });
@@ -166,7 +248,6 @@ describe('message coordinate preview resolver', () => {
         lng: 30.52,
         label: 'BRAVO',
       },
-      mapSearch: 'BRAVO',
       etalons: ['BRAVO'],
       pointCount: 1,
     });
@@ -241,6 +322,26 @@ describe('hasCoordinatePreviewCandidate', () => {
       label: 'UTM text',
       message: createMessage({ text: '33T 292332 4642055' }),
       expected: true,
+    },
+    {
+      label: 'embedded UTM text',
+      message: createMessage({ text: 'ROME\n33T 292332 4642055' }),
+      expected: true,
+    },
+    {
+      label: 'prefixed UTM text',
+      message: createMessage({ text: 'Coordinates: 33T 292332 4642055' }),
+      expected: true,
+    },
+    {
+      label: 'UTM in alphanumeric token',
+      message: createMessage({ text: 'A33T 292332 4642055B' }),
+      expected: false,
+    },
+    {
+      label: 'malformed embedded UTM',
+      message: createMessage({ text: '33T 29233 4642055' }),
+      expected: false,
     },
     {
       label: 'USK-2000 text',

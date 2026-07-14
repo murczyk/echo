@@ -408,32 +408,6 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
     [data.invalidateFilterSectionLoadsForPatch, dutySettings.analysisMapInSidebar],
   );
 
-  const openMapSearch = useCallback(
-    (mapSearch: string, _message: import('../../../../Bindings').InboxMessage) => {
-      const search = mapSearch.trim();
-      if (search === '') {
-        return;
-      }
-
-      startCenterTabTransition(() => {
-        data.invalidateFilterSectionLoadsForPatch({
-          search,
-        });
-        if (dutySettings.analysisMapInSidebar) {
-          setRightPanelOpen(true);
-          setRightSidebarTab('map');
-        } else {
-          setCenterTabState('map');
-        }
-        setQueryState((current) => ({
-          ...current,
-          search,
-        }));
-      });
-    },
-    [data.invalidateFilterSectionLoadsForPatch, dutySettings.analysisMapInSidebar],
-  );
-
   const toggleLeftPanel = useCallback(() => {
     leftPanelTouchedRef.current = true;
     setLeftPanelOpen((current) => !current);
@@ -583,7 +557,6 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
     setSavedFilterName: savedFilters.setSavedFilterName,
     addFrequencyToFilter,
     showFreqOnMap,
-    openMapSearch,
     toggleLeftPanel,
     toggleRightPanel,
     toggleUnitFromMap,
