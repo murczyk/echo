@@ -21,7 +21,7 @@ pub async fn parse_signal_message(
     let body = payload.full_body.trim().replace("\r\n", "\n");
     if body.is_empty() {
         return Err(AppError::BL {
-            msg: "full_body cannot be empty".to_string(),
+            msg: "Введіть текст повідомлення.".to_string(),
         });
     }
     let master_key = payload
@@ -262,14 +262,16 @@ fn validate_direct_submit_payload(
     let upload_urls = payload.upload_urls.as_deref().unwrap_or_default();
     if !has_direct_submit_content(payload) {
         return Err(AppError::BL {
-            msg: "full_body, text, or upload_urls cannot be empty".to_string(),
+            msg: "Додайте текст повідомлення або хоча б один медіафайл."
+                .to_string(),
         });
     }
     if !upload_urls.is_empty()
         && (env.config.s3_config.is_none() || env.s3.is_none())
     {
         return Err(AppError::BL {
-            msg: "s3 config is required for attachment upload".to_string(),
+            msg: "Завантаження медіафайлів зараз недоступне. Збережіть повідомлення без них або зверніться до адміністратора."
+                .to_string(),
         });
     }
     Ok(())

@@ -1,4 +1,4 @@
-import { postJson } from './client';
+import { HttpRequestError, postJson } from './client';
 import type { RequestOptions } from './client';
 import type { InboxMessage } from '../../../../Bindings';
 
@@ -230,6 +230,21 @@ export type DirectSubmitParseResponse = {
   unit?: string;
   locations: string[];
 };
+
+export function formatDirectSubmitError(error: unknown, action: 'parse' | 'save'): string {
+  const fallback =
+    action === 'parse'
+      ? 'Не вдалося розпізнати повідомлення. Спробуйте ще раз.'
+      : 'Не вдалося зберегти повідомлення. Спробуйте ще раз.';
+
+  if (!(error instanceof HttpRequestError)) {
+    return error instanceof Error && error.message.trim() ? error.message : fallback;
+  }
+
+  if (error.status === 0) return error.message;
+  if (error.message.trim() && error.message !== 'Internal server error') return error.message;
+  return `${fallback} Якщо помилка повторюється, зверніться до адміністратора.`;
+}
 
 export async function submitDirect(
   req: DirectSubmitRequest,
