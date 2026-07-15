@@ -48,6 +48,7 @@ messageStub =
     , messageUid = Nothing
     , metadata = []
     , networkName = Nothing
+    , deviceName = Nothing
     }
 
 

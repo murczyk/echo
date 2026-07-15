@@ -269,6 +269,7 @@ function buildMessage(overrides: Partial<InboxMessage> = {}): InboxMessage {
     networkIds: null,
     inboxTags: null,
     metadata: [],
+    deviceName: null,
     ...overrides,
   } as InboxMessage;
 }
