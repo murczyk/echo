@@ -1,4 +1,4 @@
-use crate::entities::{datasource, sigint_comment};
+use crate::entities::datasource;
 use crate::error::AppError;
 use crate::rer_importer::types::*;
 use crate::types::*;
@@ -161,6 +161,7 @@ async fn submit_inbox_item_with_groups_inner(
             txn,
             signal_message_id,
             login,
+            logins,
             &mut prepared.message,
         )
         .await?;
@@ -233,6 +234,7 @@ async fn delete_cleared_edit_comment(
     txn: &DatabaseTransaction,
     signal_message_id: i64,
     login: &str,
+    logins: &[String],
     message: &mut InboxMessage,
 ) -> Result<(), AppError> {
     if message
@@ -242,12 +244,14 @@ async fn delete_cleared_edit_comment(
     {
         return Ok(());
     }
-    sigint_comment::Entity::delete_many()
-        .filter(sigint_comment::Column::SignalMessageId.eq(signal_message_id))
-        .filter(sigint_comment::Column::Login.eq(login))
-        .exec(txn)
-        .await
-        .c(h!())?;
+    super::delete_editable_sigint_comments(
+        txn,
+        signal_message_id,
+        login,
+        logins,
+    )
+    .await
+    .c(h!())?;
     message.extended_form = None;
     Ok(())
 }

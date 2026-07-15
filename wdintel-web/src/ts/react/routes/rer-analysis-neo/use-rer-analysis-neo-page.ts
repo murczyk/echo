@@ -165,7 +165,7 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
         if (abortController.signal.aborted) return;
         setUnitsExactMatchOnlyDefault(settings.rerAnalysisUnitsExactMatchOnlyDefault);
         setSupportNonRerInterceptions(settings.supportNonRerInterceptions);
-        setCyberEchoEnabled(settings.cyberEchoEnabled);
+        setCyberEchoEnabled(settings.devicesSectionEnabled);
       })
       .catch(() => {
         if (abortController.signal.aborted) return;

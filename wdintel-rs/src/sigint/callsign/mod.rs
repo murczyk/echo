@@ -1234,7 +1234,10 @@ pub async fn callsign_name_search(
         .filter(sigint_callsign::Column::Deleted.eq(false));
 
     if !search_phrase.is_empty() {
-        query = query.filter(Expr::col(sigint_callsign::Column::Callsign).ilike(format!("%{}%", search_phrase)));
+        query = query.filter(
+            Expr::col(sigint_callsign::Column::Callsign)
+                .ilike(format!("%{}%", search_phrase)),
+        );
     }
 
     let callsigns = query

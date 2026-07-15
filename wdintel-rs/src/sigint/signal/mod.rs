@@ -417,7 +417,10 @@ pub async fn signal_name_search(
         .filter(sigint_signal::Column::Deleted.eq(false));
 
     if !search_phrase.is_empty() {
-        query = query.filter(Expr::col(sigint_signal::Column::Text).ilike(format!("%{}%", search_phrase)));
+        query = query.filter(
+            Expr::col(sigint_signal::Column::Text)
+                .ilike(format!("%{}%", search_phrase)),
+        );
     }
 
     let signals = query

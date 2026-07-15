@@ -11,7 +11,7 @@ import {
   formatFileSize,
   type MessageFormData,
 } from '../manage-message-drawer.schema';
-import type { MessageMediaInfo } from '../../../../../Bindings';
+import type { MessageMediaInfo } from '../../../../../../Bindings';
 
 type Props = {
   uppy: Uppy;
@@ -152,7 +152,7 @@ export function AttachmentsSection({
           {visibleMedia.map((m) => {
             const fileName = m.fileName ?? 'Unnamed file';
             const FileIcon = attachmentIcon(fileName, m.contentType);
-            const ext = m.fileExt || fileExtension(fileName);
+            const ext = fileExtension(fileName);
             const size = formatFileSize(m.sizeBytes);
             const meta = [ext, size].filter(Boolean).join(' · ');
             return (

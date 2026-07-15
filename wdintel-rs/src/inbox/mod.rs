@@ -367,7 +367,7 @@ fn reprocessed_inbox_item_update_columns() -> [sigint_inbox_item::Column; 23] {
         sigint_inbox_item::Column::CallsignsAlg2,
         sigint_inbox_item::Column::SignalTokens,
         sigint_inbox_item::Column::PostId,
-        sigint_inbox_item::Column::ComputerNameId,
+        sigint_inbox_item::Column::DeviceNameId,
         sigint_inbox_item::Column::UnitV2,
         sigint_inbox_item::Column::ParsedUnitV2,
     ]
@@ -712,7 +712,7 @@ mod tests {
         assert!(reprocessed_inbox_item_update_columns()
             .iter()
             .any(|column| {
-                matches!(column, sigint_inbox_item::Column::ComputerNameId)
+                matches!(column, sigint_inbox_item::Column::DeviceNameId)
             }));
         assert!(reprocessed_inbox_item_update_columns()
             .iter()

@@ -16,7 +16,8 @@ use sea_orm::{
     ColumnTrait, Condition, EntityTrait, QueryFilter, QuerySelect, Statement,
 };
 use sea_query::{
-    extension::postgres::PgExpr, Alias, CommonTableExpression, Expr, IntoCondition, Order, Query, SimpleExpr,
+    extension::postgres::PgExpr, Alias, CommonTableExpression, Expr,
+    IntoCondition, Order, Query, SimpleExpr,
 };
 use std::collections::{BTreeSet, HashMap};
 
@@ -1592,7 +1593,10 @@ pub async fn freq_search(
         .filter(sigint_network_freq::Column::Deleted.eq(false));
 
     if !search_phrase.is_empty() {
-        query = query.filter(Expr::col(sigint_network_freq::Column::Freq).ilike(format!("%{}%", search_phrase)));
+        query = query.filter(
+            Expr::col(sigint_network_freq::Column::Freq)
+                .ilike(format!("%{}%", search_phrase)),
+        );
     }
 
     let freqs: Vec<FreqSearchResult> = query

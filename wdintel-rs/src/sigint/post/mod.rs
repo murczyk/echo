@@ -230,7 +230,10 @@ pub async fn post_name_search(
         .filter(sigint_post::Column::Deleted.eq(false));
 
     if !search_phrase.is_empty() {
-        query = query.filter(Expr::col(sigint_post::Column::Name).ilike(format!("%{}%", search_phrase)));
+        query = query.filter(
+            Expr::col(sigint_post::Column::Name)
+                .ilike(format!("%{}%", search_phrase)),
+        );
     }
 
     let posts = query

@@ -11,7 +11,10 @@ use crate::rer_importer::types::InboxSubmitItem;
 use crate::types::*;
 use chrono::TimeZone;
 use chrono::{SecondsFormat, Utc};
-use sea_orm::{ConnectionTrait, DatabaseTransaction, TransactionTrait, EntityTrait, QueryFilter, ColumnTrait};
+use sea_orm::{
+    ColumnTrait, ConnectionTrait, DatabaseTransaction, EntityTrait,
+    QueryFilter, TransactionTrait,
+};
 
 pub async fn parse_signal_message(
     login: &str,
@@ -78,11 +81,15 @@ where
         Some(unit) => crate::inbox::parse_unit_v2(dbx, unit).await.c(h!())?,
         None => None,
     };
-    let text = if env.config.sigint_comment_parsing_enabled()? {
-        crate::sigint::parser::extract_text_without_top_comment(body)?
-    } else {
-        crate::rer_importer::body_noheader::extract_text(body)?
-    };
+    let text =
+        if crate::system_settings::sigint_comment_parsing_enabled(&env.dbx)
+            .await
+            .c(h!())?
+        {
+            crate::sigint::parser::extract_text_without_top_comment(body)?
+        } else {
+            crate::rer_importer::body_noheader::extract_text(body)?
+        };
     let timezone = crate::config::get_tz();
     let local_now = chrono::Local::now().with_timezone(&timezone);
     let timestamp =
@@ -151,7 +158,8 @@ async fn save_signal_message(
     let upload_urls = payload.upload_urls.clone().unwrap_or_default();
     let uploads =
         resolve_direct_submit_uploads(env, login, &upload_urls).await?;
-    let deleted_media_ids = payload.deleted_media_ids.clone().unwrap_or_default();
+    let deleted_media_ids =
+        payload.deleted_media_ids.clone().unwrap_or_default();
     let delete_uploaded_attachments = env
         .config
         .feature_delete_uploaded_attachment
@@ -230,10 +238,16 @@ async fn save_signal_message(
                     &media_to_delete,
                     &env.config,
                     &env.s3,
-                ).await;
+                )
+                .await;
 
-                let _delete_result = crate::entities::signal_message_media::Entity::delete_many()
-                    .filter(crate::entities::signal_message_media::Column::Id.is_in(deleted_media_ids))
+                let _delete_result =
+                    crate::entities::signal_message_media::Entity::delete_many(
+                    )
+                    .filter(
+                        crate::entities::signal_message_media::Column::Id
+                            .is_in(deleted_media_ids),
+                    )
                     .exec(&txn2)
                     .await
                     .c(h!())?;
@@ -418,7 +432,10 @@ async fn finish_direct_submit(
         .await
         .c(h!())?;
 
-    Ok(DirectSubmitRsp { signal_message_id, message: None })
+    Ok(DirectSubmitRsp {
+        signal_message_id,
+        message: None,
+    })
 }
 
 fn direct_submit_payload_to_item(

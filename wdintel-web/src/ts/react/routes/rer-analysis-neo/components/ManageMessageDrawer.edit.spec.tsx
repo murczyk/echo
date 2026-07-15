@@ -10,6 +10,9 @@ import type { InboxMessage } from '../../../../../Bindings';
 const referenceDataMocks = vi.hoisted(() => ({
   getTagsForDisplay: vi.fn().mockResolvedValue({ tagsMap: {}, tagsOrder: [] }),
 }));
+const directSubmitMocks = vi.hoisted(() => ({
+  editDirectSubmit: vi.fn(),
+}));
 
 vi.mock('../../../services/api/inbox-reference-data', () => ({
   getUserSigintGroups: vi.fn().mockResolvedValue([]),
@@ -19,9 +22,19 @@ vi.mock('../../../services/api/inbox-reference-data', () => ({
 vi.mock('../../../services/api/direct-submit', () => ({
   searchComputerName: vi.fn().mockResolvedValue(null),
   searchComputerNames: vi.fn().mockResolvedValue([]),
+  searchPostNames: vi.fn().mockResolvedValue([]),
+  searchUnitNames: vi.fn().mockResolvedValue([]),
+  searchNetworkNames: vi.fn().mockResolvedValue([]),
+  searchSignalNames: vi.fn().mockResolvedValue([]),
+  searchCallsignNames: vi.fn().mockResolvedValue([]),
+  searchFreqs: vi.fn().mockResolvedValue([]),
   createComputerName: vi.fn().mockResolvedValue({ id: 1 }),
   parseDirectSubmit: vi.fn(),
   submitDirect: vi.fn().mockResolvedValue({ signal_message_id: 1 }),
+  editDirectSubmit: directSubmitMocks.editDirectSubmit,
+}));
+vi.mock('../../../services/api/networks', () => ({
+  getNetworksByIds: vi.fn().mockResolvedValue([]),
 }));
 vi.mock('@uppy/core', () => {
   class FakeUppy {
@@ -72,6 +85,7 @@ type TextFieldMockProps = {
 };
 
 const textFieldPropsByLabel = new Map<string | undefined, TextFieldMockProps>();
+const autocompleteOnChangeByLabel = new Map<string, (event: unknown, value: unknown) => void>();
 
 vi.mock('@mui/material', () => ({
   Box: ({
@@ -200,12 +214,19 @@ vi.mock('@mui/material', () => ({
     onChange?: (event: unknown, value: unknown) => void;
     options?: unknown[];
     loading?: boolean;
-  }) => (
-    <div data-testid="autocomplete" data-value={JSON.stringify(value)}>
-      {Array.isArray(value) ? value.map((v) => <span key={String(v)}>{String(v)}</span>) : null}
-      {renderInput ? renderInput({ InputProps: {} } as never) : null}
-    </div>
-  ),
+  }) => {
+    const input = renderInput?.({ InputProps: {} } as never);
+    const label = (input as { props?: { label?: unknown } } | undefined)?.props?.label;
+    if (typeof label === 'string' && onChange) {
+      autocompleteOnChangeByLabel.set(label, onChange);
+    }
+    return (
+      <div data-testid="autocomplete" data-value={JSON.stringify(value)}>
+        {Array.isArray(value) ? value.map((v) => <span key={String(v)}>{String(v)}</span>) : null}
+        {input ?? null}
+      </div>
+    );
+  },
 }));
 
 import { ManageMessageDrawer } from './ManageMessageDrawer';
@@ -252,12 +273,18 @@ function buildMessage(overrides: Partial<InboxMessage> = {}): InboxMessage {
 describe('ManageMessageDrawer edit mode', () => {
   afterEach(() => {
     textFieldPropsByLabel.clear();
+    autocompleteOnChangeByLabel.clear();
+    directSubmitMocks.editDirectSubmit.mockReset();
     document.body.innerHTML = '';
     referenceDataMocks.getTagsForDisplay.mockResolvedValue({ tagsMap: {}, tagsOrder: [] });
   });
 
   it('renders the edit title and calls onSubmitEdit with a merged message on save', async () => {
     const onSubmitEdit = vi.fn();
+    directSubmitMocks.editDirectSubmit.mockResolvedValue({
+      signal_message_id: 42,
+      message: buildMessage({ callsigns: ['ALFA', 'CHARLIE'] }),
+    });
     const container = document.createElement('div');
     document.body.appendChild(container);
     const root = createRoot(container);
@@ -287,19 +314,8 @@ describe('ManageMessageDrawer edit mode', () => {
     expect(container.textContent).toContain('BRAVO');
 
     // Add a callsign via Enter in the ported callsign editor.
-    const callsignInput = container.querySelector(
-      'input[aria-label="Позивний"]',
-    ) as HTMLInputElement;
-    expect(callsignInput).toBeTruthy();
     act(() => {
-      textFieldPropsByLabel.get('Позивний')?.onChange?.({ target: { value: 'charlie' } });
-    });
-    await act(async () => {
-      textFieldPropsByLabel.get('Позивний')?.onKeyDown?.({
-        key: 'Enter',
-        preventDefault: vi.fn(),
-        stopPropagation: vi.fn(),
-      } as never);
+      autocompleteOnChangeByLabel.get('Позивні')?.(null, ['ALFA', 'charlie']);
     });
     expect(container.textContent).toContain('CHARLIE');
 
@@ -332,6 +348,10 @@ describe('ManageMessageDrawer edit mode', () => {
     );
 
     const onSubmitEdit = vi.fn();
+    directSubmitMocks.editDirectSubmit.mockResolvedValue({
+      signal_message_id: 55,
+      message: buildMessage({ extendedForm: 'edited comment', tags: [7] }),
+    });
     const container = document.createElement('div');
     document.body.appendChild(container);
     const root = createRoot(container);
@@ -386,6 +406,10 @@ describe('ManageMessageDrawer edit mode', () => {
 
   it('saves an existing message with a missing group and free-form coords/freq (regression: create-only zod rules must not gate edit saves)', async () => {
     const onSubmitEdit = vi.fn();
+    directSubmitMocks.editDirectSubmit.mockResolvedValue({
+      signal_message_id: 77,
+      message: buildMessage({ coords: 'somewhere near the ridge', freq: 'unknown freq' }),
+    });
     const container = document.createElement('div');
     document.body.appendChild(container);
     const root = createRoot(container);
@@ -436,6 +460,10 @@ describe('ManageMessageDrawer edit mode', () => {
     document.body.appendChild(container);
     const root = createRoot(container);
     const originalTags = [7, 9];
+    directSubmitMocks.editDirectSubmit.mockResolvedValue({
+      signal_message_id: 88,
+      message: buildMessage({ tags: originalTags }),
+    });
     await act(async () => {
       root.render(
         <ManageMessageDrawer

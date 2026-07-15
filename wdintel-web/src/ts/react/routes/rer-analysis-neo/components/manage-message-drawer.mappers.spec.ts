@@ -37,7 +37,7 @@ function buildMessage(overrides: Partial<InboxMessage> = {}): InboxMessage {
     keywordTokens: null,
     textMarked: null,
     datasourceId: null,
-    location: 'Київ',
+    location: 'Київ, Харків',
     tags: [7],
     networkIds: [3],
     inboxTags: null,
@@ -68,7 +68,7 @@ describe('mapInboxMessageToForm', () => {
     expect(values.post).toBe('post-1');
     expect(values.unit).toBe('unit-1');
     expect(values.callsigns).toEqual(['ALFA']);
-    expect(values.locations).toEqual(['Київ']);
+    expect(values.locations).toEqual(['Київ', 'Харків']);
     expect(values.tags).toEqual(['арта']);
     expect(values.date?.format('YYYY-MM-DD')).toBe('2026-07-01');
     expect(values.time?.format('HH:mm')).toBe('13:45');

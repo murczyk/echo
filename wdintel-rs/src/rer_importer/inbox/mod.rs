@@ -2566,6 +2566,8 @@ mod tests {
             &login.login,
             &logins,
             InboxLocationSubmitMode::PreserveTyped,
+            true,
+            false,
         )
         .await
         .unwrap();
@@ -2614,6 +2616,8 @@ mod tests {
             &login.login,
             &logins,
             InboxLocationSubmitMode::Parse,
+            true,
+            false,
         )
         .await
         .unwrap();

@@ -6,7 +6,11 @@ import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import { PowerDatePicker } from '../../../../components/PowerDateTimePicker';
 import { FormSectionWrapper } from './FormSectionWrapper';
-import { normalizeMultiValue, type MessageFormData } from '../manage-message-drawer.schema';
+import {
+  normalizeCallsign,
+  normalizeMultiValue,
+  type MessageFormData,
+} from '../manage-message-drawer.schema';
 
 type Props = {
   isEditMode: boolean;
@@ -190,7 +194,7 @@ export function MetadataSection({
                   }
                 }}
                 onChange={(_, newValue) =>
-                  field.onChange(normalizeMultiValue(newValue as string[]))
+                  field.onChange(normalizeMultiValue(newValue as string[]).map(normalizeCallsign))
                 }
                 renderInput={(params) => (
                   <TextField

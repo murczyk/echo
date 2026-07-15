@@ -291,7 +291,15 @@ pub struct FreqSearchReq {
 }
 
 #[derive(
-    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone, FromQueryResult
+    Elm,
+    ElmEncode,
+    ElmDecode,
+    Debug,
+    Serialize,
+    Deserialize,
+    PartialEq,
+    Clone,
+    FromQueryResult,
 )]
 pub struct FreqSearchResult {
     pub id: i64,
@@ -304,5 +312,3 @@ pub struct FreqSearchResult {
 pub struct FreqSearchRsp {
     pub freqs: Vec<FreqSearchResult>,
 }
-
-

@@ -30,6 +30,13 @@ function nullableTrim(value: string): string | null {
   return trimmed === '' ? null : trimmed;
 }
 
+function splitLocations(value: string | null): string[] {
+  return (value ?? '')
+    .split(',')
+    .map((location) => location.trim())
+    .filter(Boolean);
+}
+
 export function mapInboxMessageToForm(
   message: InboxMessage,
   tagsMap: Record<number, Tag>,
@@ -44,7 +51,7 @@ export function mapInboxMessageToForm(
     callsigns: message.callsigns ?? [],
     post: message.post ?? '',
     unit: message.unit ?? '',
-    locations: message.location ? [message.location] : [],
+    locations: splitLocations(message.location),
     tags: (message.tags ?? [])
       .map((id) => tagsMap[id]?.label)
       .filter((label): label is string => Boolean(label)),

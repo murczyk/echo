@@ -4468,7 +4468,10 @@ pub async fn network_search(
         .filter(sigint_network::Column::Deleted.eq(false));
 
     if !search_phrase.is_empty() {
-        query = query.filter(Expr::col(sigint_network::Column::Name).ilike(format!("%{}%", search_phrase)));
+        query = query.filter(
+            Expr::col(sigint_network::Column::Name)
+                .ilike(format!("%{}%", search_phrase)),
+        );
     }
 
     let networks_db = query
@@ -4479,7 +4482,8 @@ pub async fn network_search(
         .context(h!())?;
 
     let login = user.id().c(h!())?;
-    let networks_full = bl::render_networks(networks_db, &env.dbx, &login).await?;
+    let networks_full =
+        bl::render_networks(networks_db, &env.dbx, &login).await?;
 
     let networks = networks_full
         .into_iter()
