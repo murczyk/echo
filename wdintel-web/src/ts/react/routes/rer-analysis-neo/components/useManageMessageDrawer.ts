@@ -18,7 +18,7 @@ import {
   searchFreqs,
   type NetworkSearchResult,
 } from '../../../services/api/direct-submit';
-import { getNetworksByIds } from '../../../services/api/networks';
+import { getUnitsByIds } from '../../../services/api/units';
 import type { InboxMessage, SignalGroupEntry, Tag, User } from '../../../../../Bindings';
 import { mapInboxMessageToForm } from './manage-message-drawer.mappers';
 import { useRecentValues } from './useRecentValues';
@@ -311,8 +311,11 @@ export function useManageMessageDrawer({
         text: editTarget.message.noHeadersBody?.body ?? editTarget.message.text ?? '',
         signalGroupMasterKey: editTarget.message.groupMasterKey ?? '',
         deviceName: '',
-        network_signal_name: metadata.length || editTarget.message.networkIds?.length ? 'DMR' : '',
-        network_name: '',
+        network_signal_name:
+          metadata.length || editTarget.message.networkIds?.length || editTarget.message.networkName
+            ? 'DMR'
+            : '',
+        network_name: editTarget.message.networkName ?? '',
         dmr: metadata.map((item) => ({
           cc: item.colorCode ?? '',
           sender_id: item.senderId ?? '',
@@ -342,20 +345,24 @@ export function useManageMessageDrawer({
 
   useEffect(() => {
     if (!open || !isEditMode || !editTarget) return;
-    const nIds = editTarget.message.networkIds;
-    if (nIds && nIds.length > 0) {
-      getNetworksByIds(nIds)
-        .then((networks) => {
-          if (networks.length > 0) {
-            setValue('network_name', networks[0].name, {
-              shouldDirty: false,
-              shouldValidate: true,
-            });
-            setValue('network_signal_name', 'DMR', { shouldDirty: false, shouldValidate: true });
-          }
-        })
-        .catch(console.error);
-    }
+    const name = editTarget.message.networkName?.trim();
+    if (!name) return;
+    // Resolve the named network to lock its unit(s), mirroring the create flow.
+    searchNetworkNames(name)
+      .then(async (results) => {
+        const match = results.find((n) => n.name === name);
+        const unitIds = match?.unit_ids ?? [];
+        if (unitIds.length === 0) return;
+        const units = await getUnitsByIds(unitIds);
+        if (units.length > 0) {
+          setValue('unit', units.map((u) => u.name).join(', '), {
+            shouldDirty: false,
+            shouldValidate: true,
+          });
+          setUnitLocked(true);
+        }
+      })
+      .catch(console.error);
   }, [open, isEditMode, editTarget?.id]);
 
   const handleDrawerClose = () => {

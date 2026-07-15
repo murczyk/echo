@@ -233,6 +233,7 @@ function normalizeInboxMessage(
   m: InboxMessageType & {
     group_master_key?: string | null;
     network_ids?: number[] | null;
+    network_name?: string | null;
     location?: string | null;
     extended_form?: string | null;
     message_comments?: InboxMessageType['messageComments'] | null;
@@ -245,6 +246,7 @@ function normalizeInboxMessage(
   const raw = m as Record<string, unknown>;
   const groupMasterKey = (m.groupMasterKey ?? raw.group_master_key ?? null) as string | null;
   const networkIds = (m.networkIds ?? raw.network_ids ?? null) as number[] | null;
+  const networkName = (m.networkName ?? raw.network_name ?? null) as string | null;
   const location = (m.location ?? raw.location ?? null) as string | null;
   const extendedForm = (m.extendedForm ?? raw.extended_form ?? null) as string | null;
   const rawMessageComments = m.messageComments ?? raw.message_comments ?? [];
@@ -279,6 +281,7 @@ function normalizeInboxMessage(
     ...m,
     groupMasterKey,
     networkIds,
+    networkName,
     location,
     extendedForm,
     messageComments,
