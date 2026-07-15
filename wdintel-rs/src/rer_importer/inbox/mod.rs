@@ -756,6 +756,14 @@ fn validate_generic_submit_item(
             msg: "Inbox submit requires at least one group name".to_string(),
         });
     }
+    if normalized_optional_string(item.full_body.as_deref()).is_none()
+        && normalized_optional_string(item.text.as_deref()).is_none()
+    {
+        return Err(AppError::Form(BTreeMap::from([(
+            "text".to_string(),
+            "Inbox submit requires message text".to_string(),
+        )])));
+    }
     validate_submit_item_content(item)
 }
 
@@ -2364,7 +2372,14 @@ mod tests {
             ..Default::default()
         };
 
-        assert!(validate_generic_submit_item(&item).is_err());
+        let err = validate_generic_submit_item(&item).unwrap_err();
+        let AppError::Form(errors) = err else {
+            panic!("expected form error");
+        };
+        assert_eq!(
+            errors.get("text").map(String::as_str),
+            Some("Inbox submit requires message text")
+        );
     }
 
     #[test]
