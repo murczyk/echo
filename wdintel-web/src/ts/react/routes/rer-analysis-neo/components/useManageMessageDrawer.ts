@@ -310,7 +310,7 @@ export function useManageMessageDrawer({
         ...mapInboxMessageToForm(editTarget.message, tagsMap),
         text: editTarget.message.noHeadersBody?.body ?? editTarget.message.text ?? '',
         signalGroupMasterKey: editTarget.message.groupMasterKey ?? '',
-        deviceName: '',
+        deviceName: editTarget.message.deviceName ?? '',
         network_signal_name:
           metadata.length || editTarget.message.networkIds?.length || editTarget.message.networkName
             ? 'DMR'
