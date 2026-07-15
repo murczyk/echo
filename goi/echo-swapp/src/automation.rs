@@ -1,0 +1,2116 @@
+use crate::error::ShortContext;
+use crate::h;
+use crate::messenger::{self, MessengerKind};
+use anyhow::{bail, Context, Result};
+use base64::{engine::general_purpose, Engine};
+use chrono::{Duration as ChronoDuration, NaiveDateTime, Utc};
+use regex::Regex;
+use sea_orm::{
+    prelude::Json, ConnectionTrait, DatabaseBackend, DatabaseConnection,
+    FromQueryResult, Statement,
+};
+use serde::{Deserialize, Serialize};
+use std::collections::BTreeSet;
+use std::sync::OnceLock;
+
+const OWNED_CLIENT_PREFIX: &str = "echo-swapp-";
+const WORKER_MESSAGE_LIMIT: i64 = 100;
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SaveAutomationReq {
+    pub name: Option<String>,
+    pub source_account_id: i32,
+    pub source_group_id: i32,
+    pub target_account_id: i32,
+    pub target_group_id: i32,
+    pub keyword_tokens: Vec<String>,
+    pub frequency_tokens: Vec<String>,
+    pub stale_message_cutoff_minutes: i32,
+    pub resend_attachments: bool,
+    pub coordinate_presence_mode: Option<String>,
+    pub polygon_filter_mode: Option<String>,
+    pub polygon_coordinates: Option<Vec<String>>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PauseAutomationReq {
+    pub is_paused: bool,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UsageCounters {
+    pub last_24h: i64,
+    pub last_7d: i64,
+    pub all_time: i64,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AutomationView {
+    pub id: i64,
+    pub name: String,
+    pub source_account_id: i32,
+    pub source_account_name: String,
+    pub source_account_phone: String,
+    pub source_account_is_linked: bool,
+    pub source_group_id: i32,
+    pub source_group_name: String,
+    pub source_messenger_kind: String,
+    pub target_account_id: i32,
+    pub target_account_name: String,
+    pub target_account_phone: String,
+    pub target_account_is_linked: bool,
+    pub target_group_id: i32,
+    pub target_group_name: String,
+    pub target_messenger_kind: String,
+    pub keyword_tokens: Vec<String>,
+    pub frequency_tokens: Vec<String>,
+    pub stale_message_cutoff_minutes: i32,
+    pub resend_attachments: bool,
+    pub coordinate_presence_mode: String,
+    pub polygon_filter_mode: String,
+    pub polygon_coordinates: Vec<String>,
+    pub is_paused: bool,
+    pub status: String,
+    pub last_error: Option<String>,
+    pub checkpoint_at: i64,
+    pub usage: UsageCounters,
+    pub created_at: i64,
+    pub updated_at: i64,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GroupOptionView {
+    pub id: i32,
+    pub account_id: i32,
+    pub group_id: String,
+    pub name: String,
+    pub messenger_name: String,
+    pub messenger_kind: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AccountOptionView {
+    pub id: i32,
+    pub name: String,
+    pub messenger_kind: String,
+    pub phone: String,
+    pub is_linked: bool,
+}
+
+#[derive(Clone, Debug, FromQueryResult)]
+struct AutomationListRow {
+    id: i64,
+    name: String,
+    source_account_id: i32,
+    source_account_name: String,
+    source_account_phone: String,
+    source_account_is_linked: bool,
+    source_group_id: i32,
+    source_group_name: String,
+    source_messenger_kind: String,
+    target_account_id: i32,
+    target_account_name: String,
+    target_account_phone: String,
+    target_account_is_linked: bool,
+    target_group_id: i32,
+    target_group_name: String,
+    target_messenger_kind: String,
+    keyword_tokens: Json,
+    frequency_tokens: Json,
+    stale_message_cutoff_minutes: i32,
+    resend_attachments: bool,
+    coordinate_presence_mode: String,
+    polygon_filter_mode: String,
+    polygon_coordinates: Option<Json>,
+    is_paused: bool,
+    status: String,
+    last_error: Option<String>,
+    usage_24h: i64,
+    usage_7d: i64,
+    usage_all: i64,
+    checkpoint_at: NaiveDateTime,
+    created_at: NaiveDateTime,
+    updated_at: NaiveDateTime,
+}
+
+#[derive(Clone, Debug, FromQueryResult)]
+struct AutomationWorkerRow {
+    id: i64,
+    source_account_id: i32,
+    source_group_id: i32,
+    target_account_id: i32,
+    target_group_id: i32,
+    keyword_tokens: Json,
+    frequency_tokens: Json,
+    stale_message_cutoff_minutes: i32,
+    resend_attachments: bool,
+    coordinate_presence_mode: String,
+    polygon_filter_mode: String,
+    polygon_coordinates: Option<Json>,
+    checkpoint_at: NaiveDateTime,
+    last_processed_inbox_message_id: i32,
+}
+
+#[derive(Debug, FromQueryResult)]
+struct InboxMessageRow {
+    id: i32,
+    internal_id: Option<String>,
+    body: String,
+    account_id: i32,
+    message_at: NaiveDateTime,
+}
+
+#[derive(Debug, FromQueryResult)]
+struct SendTargetRow {
+    group_id: String,
+    kind: String,
+    client_name: String,
+}
+
+#[derive(Debug, FromQueryResult)]
+struct AccountHealthRow {
+    source_is_linked: bool,
+    target_is_linked: bool,
+}
+
+#[derive(Debug, FromQueryResult)]
+struct AttachmentRow {
+    path: String,
+}
+
+#[derive(Debug)]
+struct LoadedAttachments {
+    content_base64: Vec<String>,
+    warning: Option<String>,
+}
+
+#[derive(Debug, FromQueryResult)]
+struct GroupOptionRow {
+    id: i32,
+    account_id: i32,
+    group_id: String,
+    name: String,
+    messenger_name: String,
+    messenger_kind: String,
+}
+
+#[derive(Debug, FromQueryResult)]
+struct AccountOptionRow {
+    id: i32,
+    name: String,
+    messenger_kind: String,
+    phone: String,
+    is_linked: bool,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum CoordinatePresenceMode {
+    Any,
+    SkipWithCoordinates,
+    SkipWithoutCoordinates,
+}
+
+impl CoordinatePresenceMode {
+    fn parse(value: &str) -> Result<Self> {
+        match value {
+            "any" => Ok(Self::Any),
+            "skip_with_coordinates" => Ok(Self::SkipWithCoordinates),
+            "skip_without_coordinates" => Ok(Self::SkipWithoutCoordinates),
+            _ => bail!("unknown coordinate presence mode: {value}"),
+        }
+    }
+
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Any => "any",
+            Self::SkipWithCoordinates => "skip_with_coordinates",
+            Self::SkipWithoutCoordinates => "skip_without_coordinates",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum PolygonFilterMode {
+    None,
+    Inside,
+    Outside,
+}
+
+impl PolygonFilterMode {
+    fn parse(value: &str) -> Result<Self> {
+        match value {
+            "none" => Ok(Self::None),
+            "inside" => Ok(Self::Inside),
+            "outside" => Ok(Self::Outside),
+            _ => bail!("unknown polygon filter mode: {value}"),
+        }
+    }
+
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::None => "none",
+            Self::Inside => "inside",
+            Self::Outside => "outside",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct Point {
+    lat: f64,
+    lng: f64,
+}
+
+#[derive(Debug)]
+struct NormalizedAutomation {
+    name: String,
+    source_account_id: i32,
+    source_group_id: i32,
+    target_account_id: i32,
+    target_group_id: i32,
+    keyword_tokens: Vec<String>,
+    frequency_tokens: Vec<String>,
+    stale_message_cutoff_minutes: i32,
+    resend_attachments: bool,
+    coordinate_presence_mode: CoordinatePresenceMode,
+    polygon_filter_mode: PolygonFilterMode,
+    polygon_coordinates: Vec<String>,
+}
+
+#[derive(Debug, Eq, PartialEq)]
+enum MatchDecision {
+    Send,
+    Skip(&'static str),
+}
+
+pub async fn list(db: &DatabaseConnection) -> Result<Vec<AutomationView>> {
+    let rows = AutomationListRow::find_by_statement(Statement::from_string(
+        DatabaseBackend::Postgres,
+        list_sql().to_string(),
+    ))
+    .all(db)
+    .await
+    .c(h!())?;
+    Ok(rows.into_iter().map(automation_view).collect())
+}
+
+pub async fn group_options(
+    db: &DatabaseConnection,
+) -> Result<Vec<GroupOptionView>> {
+    let rows = GroupOptionRow::find_by_statement(Statement::from_string(
+        DatabaseBackend::Postgres,
+        r#"
+        select
+            eg.id,
+            eg.account_id,
+            eg.group_id,
+            coalesce(nullif(eg.name, ''), eg.group_id) as name,
+            regexp_replace(ec.name, '^echo-swapp-', '') as messenger_name,
+            ea.source::text as messenger_kind
+        from echo_group eg
+        join echo_account ea on ea.id = eg.account_id
+        join echo_client_lock ecl on ecl.account_id = ea.id
+        join echo_client ec on ec.id = ecl.client_id
+        where ec.deleted = false
+            and ec.name like 'echo-swapp-%'
+            and eg.deleted_by_messanger = false
+        order by messenger_kind, messenger_name, name
+        "#,
+    ))
+    .all(db)
+    .await
+    .c(h!())?;
+    Ok(rows
+        .into_iter()
+        .map(|row| GroupOptionView {
+            id: row.id,
+            account_id: row.account_id,
+            group_id: row.group_id,
+            name: row.name,
+            messenger_name: row.messenger_name,
+            messenger_kind: row.messenger_kind,
+        })
+        .collect())
+}
+
+pub async fn account_options(
+    db: &DatabaseConnection,
+) -> Result<Vec<AccountOptionView>> {
+    let rows = AccountOptionRow::find_by_statement(Statement::from_string(
+        DatabaseBackend::Postgres,
+        r#"
+        select
+            ea.id,
+            regexp_replace(ec.name, '^echo-swapp-', '') as name,
+            ea.source::text as messenger_kind,
+            ea.phone_number as phone,
+            ea.is_linked
+        from echo_account ea
+        join echo_client_lock ecl on ecl.account_id = ea.id
+        join echo_client ec on ec.id = ecl.client_id
+        where ec.deleted = false
+            and ec.name like 'echo-swapp-%'
+        order by messenger_kind, name, phone
+        "#,
+    ))
+    .all(db)
+    .await
+    .c(h!())?;
+    Ok(rows
+        .into_iter()
+        .map(|row| AccountOptionView {
+            id: row.id,
+            name: row.name,
+            messenger_kind: row.messenger_kind,
+            phone: row.phone,
+            is_linked: row.is_linked,
+        })
+        .collect())
+}
+
+pub async fn create(
+    db: &DatabaseConnection,
+    req: SaveAutomationReq,
+) -> Result<AutomationView> {
+    let automation = normalize_req(req).await.c(h!())?;
+    validate_group_accounts(db, &automation).await.c(h!())?;
+    let row = db
+        .query_one(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            r#"
+            insert into echo_automation (
+                name,
+                source_account_id,
+                source_group_id,
+                target_account_id,
+                target_group_id,
+                keyword_tokens,
+                frequency_tokens,
+                stale_message_cutoff_minutes,
+                resend_attachments,
+                coordinate_presence_mode,
+                polygon_filter_mode,
+                polygon_coordinates,
+                updated_at
+            )
+            values ($1, $2, $3, $4, $5, $6::jsonb, $7::jsonb, $8, $9, $10, $11, $12::jsonb, now() at time zone 'utc')
+            returning id
+            "#,
+            vec![
+                automation.name.into(),
+                automation.source_account_id.into(),
+                automation.source_group_id.into(),
+                automation.target_account_id.into(),
+                automation.target_group_id.into(),
+                serde_json::to_string(&automation.keyword_tokens)
+                    .c(h!())?
+                    .into(),
+                serde_json::to_string(&automation.frequency_tokens)
+                    .c(h!())?
+                    .into(),
+                automation.stale_message_cutoff_minutes.into(),
+                automation.resend_attachments.into(),
+                automation.coordinate_presence_mode.as_str().into(),
+                automation.polygon_filter_mode.as_str().into(),
+                optional_json_string(&automation.polygon_coordinates)
+                    .c(h!())?
+                    .into(),
+            ],
+        ))
+        .await
+        .c(h!())?
+        .context("automation insert did not return id")
+        .c(h!())?;
+    load_view(db, row.try_get("", "id").c(h!())?).await.c(h!())
+}
+
+pub async fn update(
+    db: &DatabaseConnection,
+    id: i64,
+    req: SaveAutomationReq,
+) -> Result<AutomationView> {
+    let automation = normalize_req(req).await.c(h!())?;
+    validate_group_accounts(db, &automation).await.c(h!())?;
+    db.execute(Statement::from_sql_and_values(
+        DatabaseBackend::Postgres,
+        r#"
+        update echo_automation
+        set
+            name = $2,
+            source_account_id = $3,
+            source_group_id = $4,
+            target_account_id = $5,
+            target_group_id = $6,
+            keyword_tokens = $7::jsonb,
+            frequency_tokens = $8::jsonb,
+            stale_message_cutoff_minutes = $9,
+            resend_attachments = $10,
+            coordinate_presence_mode = $11,
+            polygon_filter_mode = $12,
+            polygon_coordinates = $13::jsonb,
+            updated_at = now() at time zone 'utc'
+        where id = $1
+        "#,
+        vec![
+            id.into(),
+            automation.name.into(),
+            automation.source_account_id.into(),
+            automation.source_group_id.into(),
+            automation.target_account_id.into(),
+            automation.target_group_id.into(),
+            serde_json::to_string(&automation.keyword_tokens)
+                .c(h!())?
+                .into(),
+            serde_json::to_string(&automation.frequency_tokens)
+                .c(h!())?
+                .into(),
+            automation.stale_message_cutoff_minutes.into(),
+            automation.resend_attachments.into(),
+            automation.coordinate_presence_mode.as_str().into(),
+            automation.polygon_filter_mode.as_str().into(),
+            optional_json_string(&automation.polygon_coordinates)
+                .c(h!())?
+                .into(),
+        ],
+    ))
+    .await
+    .c(h!())?;
+    load_view(db, id).await.c(h!())
+}
+
+pub async fn delete(db: &DatabaseConnection, id: i64) -> Result<()> {
+    db.execute(Statement::from_sql_and_values(
+        DatabaseBackend::Postgres,
+        "delete from echo_automation where id = $1",
+        [id.into()],
+    ))
+    .await
+    .c(h!())?;
+    Ok(())
+}
+
+pub async fn set_paused(
+    db: &DatabaseConnection,
+    id: i64,
+    is_paused: bool,
+) -> Result<AutomationView> {
+    db.execute(Statement::from_sql_and_values(
+        DatabaseBackend::Postgres,
+        r#"
+        update echo_automation
+        set is_paused = $2, updated_at = now() at time zone 'utc'
+        where id = $1
+        "#,
+        [id.into(), is_paused.into()],
+    ))
+    .await
+    .c(h!())?;
+    load_view(db, id).await.c(h!())
+}
+
+pub async fn worker_tick(db: &DatabaseConnection) -> Result<()> {
+    let automations =
+        AutomationWorkerRow::find_by_statement(Statement::from_string(
+            DatabaseBackend::Postgres,
+            r#"
+            select
+                id,
+                source_account_id,
+                source_group_id,
+                target_account_id,
+                target_group_id,
+                keyword_tokens,
+                frequency_tokens,
+                stale_message_cutoff_minutes,
+                resend_attachments,
+                coordinate_presence_mode,
+                polygon_filter_mode,
+                polygon_coordinates,
+                checkpoint_at,
+                last_processed_inbox_message_id
+            from echo_automation
+            where is_paused = false
+            order by id
+            "#,
+        ))
+        .all(db)
+        .await
+        .c(h!())?;
+    for automation in automations {
+        if let Err(err) = process_automation(db, automation.clone()).await {
+            set_error(db, automation.id, &err.to_string())
+                .await
+                .c(h!())?;
+            log::error!(
+                "echo-swapp automation {} failed: {err:#}",
+                automation.id
+            );
+        }
+    }
+    Ok(())
+}
+
+async fn load_view(db: &DatabaseConnection, id: i64) -> Result<AutomationView> {
+    let rows =
+        AutomationListRow::find_by_statement(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            format!("{} where a.id = $1 {}", list_sql_head(), list_sql_tail()),
+            [id.into()],
+        ))
+        .all(db)
+        .await
+        .c(h!())?;
+    rows.into_iter()
+        .next()
+        .map(automation_view)
+        .with_context(|| format!("automation not found: {id}"))
+        .c(h!())
+}
+
+async fn normalize_req(req: SaveAutomationReq) -> Result<NormalizedAutomation> {
+    if req.source_account_id <= 0 {
+        bail!("source account is required");
+    }
+    if req.source_group_id <= 0 {
+        bail!("source group is required");
+    }
+    if req.target_account_id <= 0 {
+        bail!("target account is required");
+    }
+    if req.target_group_id <= 0 {
+        bail!("target group is required");
+    }
+    if req.stale_message_cutoff_minutes < 0 {
+        bail!("stale message cutoff must not be negative");
+    }
+    let keyword_tokens = normalize_tokens(req.keyword_tokens);
+    let frequency_tokens = normalize_tokens(req.frequency_tokens);
+    if keyword_tokens.is_empty() && frequency_tokens.is_empty() {
+        bail!("at least one keyword or frequency token is required");
+    }
+    let coordinate_presence_mode = CoordinatePresenceMode::parse(
+        req.coordinate_presence_mode
+            .as_deref()
+            .unwrap_or(CoordinatePresenceMode::Any.as_str()),
+    )
+    .c(h!())?;
+    let polygon_filter_mode = PolygonFilterMode::parse(
+        req.polygon_filter_mode
+            .as_deref()
+            .unwrap_or(PolygonFilterMode::None.as_str()),
+    )
+    .c(h!())?;
+    if coordinate_presence_mode == CoordinatePresenceMode::SkipWithCoordinates
+        && polygon_filter_mode != PolygonFilterMode::None
+    {
+        bail!("polygon filter is not allowed when messages with coordinates are ignored");
+    }
+    let polygon_coordinates =
+        normalize_tokens(req.polygon_coordinates.unwrap_or_default());
+    if polygon_filter_mode != PolygonFilterMode::None {
+        if polygon_coordinates.len() < 3 {
+            bail!("polygon filter requires at least 3 coordinates");
+        }
+        let polygon = parse_polygon(&polygon_coordinates).await.c(h!())?;
+        if polygon.len() < 3 {
+            bail!("polygon filter requires at least 3 valid coordinates");
+        }
+    }
+    Ok(NormalizedAutomation {
+        name: req.name.unwrap_or_default().trim().to_string(),
+        source_account_id: req.source_account_id,
+        source_group_id: req.source_group_id,
+        target_account_id: req.target_account_id,
+        target_group_id: req.target_group_id,
+        keyword_tokens,
+        frequency_tokens,
+        stale_message_cutoff_minutes: req.stale_message_cutoff_minutes,
+        resend_attachments: req.resend_attachments,
+        coordinate_presence_mode,
+        polygon_filter_mode,
+        polygon_coordinates,
+    })
+}
+
+async fn validate_group_accounts(
+    db: &DatabaseConnection,
+    automation: &NormalizedAutomation,
+) -> Result<()> {
+    let row = db
+        .query_one(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            r#"
+            select
+                exists (
+                    select 1
+                    from echo_group
+                    where id = $1
+                        and account_id = $2
+                        and deleted_by_messanger = false
+                ) as source_ok,
+                exists (
+                    select 1
+                    from echo_group
+                    where id = $3
+                        and account_id = $4
+                        and deleted_by_messanger = false
+                ) as target_ok
+            "#,
+            vec![
+                automation.source_group_id.into(),
+                automation.source_account_id.into(),
+                automation.target_group_id.into(),
+                automation.target_account_id.into(),
+            ],
+        ))
+        .await
+        .c(h!())?
+        .context("group-account validation did not return a row")
+        .c(h!())?;
+    let source_ok: bool = row.try_get("", "source_ok").c(h!())?;
+    if !source_ok {
+        bail!("source group does not belong to selected source account");
+    }
+    let target_ok: bool = row.try_get("", "target_ok").c(h!())?;
+    if !target_ok {
+        bail!("target group does not belong to selected target account");
+    }
+    Ok(())
+}
+
+async fn process_automation(
+    db: &DatabaseConnection,
+    automation: AutomationWorkerRow,
+) -> Result<()> {
+    set_status(db, automation.id, "running", None)
+        .await
+        .c(h!())?;
+    if let Some(warning) =
+        account_health_warning(db, &automation).await.c(h!())?
+    {
+        set_status(db, automation.id, "warning", Some(&warning))
+            .await
+            .c(h!())?;
+        return Ok(());
+    }
+    record_edit_warnings(db, &automation).await.c(h!())?;
+    let messages = load_candidate_messages(db, &automation).await.c(h!())?;
+    for message in messages {
+        process_message(db, &automation, &message).await.c(h!())?;
+        update_checkpoint(db, automation.id, message.id, message.message_at)
+            .await
+            .c(h!())?;
+    }
+    set_status(db, automation.id, "idle", None).await.c(h!())?;
+    Ok(())
+}
+
+async fn account_health_warning(
+    db: &DatabaseConnection,
+    automation: &AutomationWorkerRow,
+) -> Result<Option<String>> {
+    let rows =
+        AccountHealthRow::find_by_statement(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            r#"
+        select
+            source_account.is_linked as source_is_linked,
+            target_account.is_linked as target_is_linked
+        from echo_automation automation
+        join echo_account source_account
+            on source_account.id = automation.source_account_id
+        join echo_account target_account
+            on target_account.id = automation.target_account_id
+        where automation.id = $1
+        "#,
+            [automation.id.into()],
+        ))
+        .all(db)
+        .await
+        .c(h!())?;
+    let row = rows
+        .into_iter()
+        .next()
+        .with_context(|| {
+            format!("automation accounts not found: {}", automation.id)
+        })
+        .c(h!())?;
+    let mut warnings = Vec::new();
+    if !row.source_is_linked {
+        warnings.push("source account is not linked");
+    }
+    if !row.target_is_linked {
+        warnings.push("target account is not linked");
+    }
+    if warnings.is_empty() {
+        Ok(None)
+    } else {
+        Ok(Some(warnings.join("; ")))
+    }
+}
+
+async fn process_message(
+    db: &DatabaseConnection,
+    automation: &AutomationWorkerRow,
+    message: &InboxMessageRow,
+) -> Result<()> {
+    if already_sent(db, automation.id, message).await.c(h!())? {
+        return Ok(());
+    }
+    let coords = extract_points(&message.body).await;
+    let polygon_coordinates = json_vec(automation.polygon_coordinates.as_ref());
+    let polygon = if automation.polygon_filter_mode == "none" {
+        Vec::new()
+    } else {
+        parse_polygon(&polygon_coordinates).await.c(h!())?
+    };
+    let decision = message_matches_filters(
+        &AutomationFilter {
+            keyword_tokens: json_vec(Some(&automation.keyword_tokens)),
+            frequency_tokens: json_vec(Some(&automation.frequency_tokens)),
+            stale_message_cutoff_minutes: automation
+                .stale_message_cutoff_minutes,
+            coordinate_presence_mode: CoordinatePresenceMode::parse(
+                &automation.coordinate_presence_mode,
+            )
+            .c(h!())?,
+            polygon_filter_mode: PolygonFilterMode::parse(
+                &automation.polygon_filter_mode,
+            )
+            .c(h!())?,
+            polygon,
+        },
+        &message.body,
+        message.message_at,
+        Utc::now().naive_utc(),
+        &coords,
+    );
+    match decision {
+        MatchDecision::Skip(reason) => {
+            record_delivery(
+                db,
+                automation.id,
+                message,
+                "skipped",
+                Some(reason),
+                false,
+            )
+            .await
+            .c(h!())?;
+            Ok(())
+        }
+        MatchDecision::Send => {
+            send_matching_message(db, automation, message).await.c(h!())
+        }
+    }
+}
+
+async fn send_matching_message(
+    db: &DatabaseConnection,
+    automation: &AutomationWorkerRow,
+    message: &InboxMessageRow,
+) -> Result<()> {
+    let target = load_send_target(
+        db,
+        automation.target_account_id,
+        automation.target_group_id,
+    )
+    .await
+    .c(h!())?;
+    let kind = messenger_kind_from_db(&target.kind).c(h!())?;
+    let attachments = if automation.resend_attachments {
+        load_attachment_base64(db, message).await.c(h!())?
+    } else {
+        LoadedAttachments {
+            content_base64: Vec::new(),
+            warning: None,
+        }
+    };
+    messenger::send(
+        db,
+        &public_client_name(&target.client_name),
+        kind,
+        vec![target.group_id],
+        vec![],
+        message.body.clone(),
+        attachments.content_base64,
+    )
+    .await
+    .c(h!())?;
+    record_delivery(
+        db,
+        automation.id,
+        message,
+        "sent",
+        attachments.warning.as_deref(),
+        true,
+    )
+    .await
+    .c(h!())?;
+    if let Some(warning) = attachments.warning {
+        set_status(db, automation.id, "warning", Some(&warning))
+            .await
+            .c(h!())?;
+    }
+    Ok(())
+}
+
+async fn load_candidate_messages(
+    db: &DatabaseConnection,
+    automation: &AutomationWorkerRow,
+) -> Result<Vec<InboxMessageRow>> {
+    InboxMessageRow::find_by_statement(Statement::from_sql_and_values(
+        DatabaseBackend::Postgres,
+        r#"
+            select
+                id,
+                internal_id,
+                body,
+                account_id,
+                coalesce(timestamp, created_at) as message_at
+            from echo_inbox_message
+            where group_id = $1
+                and account_id = $5
+                and deleted = false
+                and (
+                    coalesce(timestamp, created_at) > $2
+                    or (
+                        coalesce(timestamp, created_at) = $2
+                        and id > $3
+                    )
+                )
+            order by coalesce(timestamp, created_at), id
+            limit $4
+            "#,
+        vec![
+            automation.source_group_id.into(),
+            automation.checkpoint_at.into(),
+            automation.last_processed_inbox_message_id.into(),
+            WORKER_MESSAGE_LIMIT.into(),
+            automation.source_account_id.into(),
+        ],
+    ))
+    .all(db)
+    .await
+    .c(h!())
+}
+
+async fn load_send_target(
+    db: &DatabaseConnection,
+    target_account_id: i32,
+    target_group_id: i32,
+) -> Result<SendTargetRow> {
+    let rows =
+        SendTargetRow::find_by_statement(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            r#"
+        select
+            eg.group_id,
+            ea.source::text as kind,
+            ec.name as client_name
+        from echo_group eg
+        join echo_account ea on ea.id = eg.account_id
+        join echo_client_lock ecl on ecl.account_id = ea.id
+        join echo_client ec on ec.id = ecl.client_id
+        where eg.id = $1
+            and eg.account_id = $2
+            and ec.deleted = false
+        limit 1
+        "#,
+            [target_group_id.into(), target_account_id.into()],
+        ))
+        .all(db)
+        .await
+        .c(h!())?;
+    rows.into_iter()
+        .next()
+        .with_context(|| {
+            format!(
+                "target group not found for selected target account: {target_group_id}"
+            )
+        })
+        .c(h!())
+}
+
+async fn load_attachment_base64(
+    db: &DatabaseConnection,
+    message: &InboxMessageRow,
+) -> Result<LoadedAttachments> {
+    let rows =
+        AttachmentRow::find_by_statement(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            r#"
+        select path
+        from echo_attachment
+        where message_id = $1 and account_id = $2
+        order by id
+        "#,
+            [message.id.into(), message.account_id.into()],
+        ))
+        .all(db)
+        .await
+        .c(h!())?;
+    let mut attachments = Vec::new();
+    let mut missing = Vec::new();
+    for row in rows {
+        match tokio::fs::read(&row.path).await {
+            Ok(bytes) => {
+                attachments.push(general_purpose::STANDARD.encode(bytes))
+            }
+            Err(err) => missing.push(format!("{}: {err}", row.path)),
+        }
+    }
+    let warning = if missing.is_empty() {
+        None
+    } else {
+        Some(format!(
+            "some attachments are unavailable: {}",
+            missing.join("; ")
+        ))
+    };
+    Ok(LoadedAttachments {
+        content_base64: attachments,
+        warning,
+    })
+}
+
+async fn record_edit_warnings(
+    db: &DatabaseConnection,
+    automation: &AutomationWorkerRow,
+) -> Result<()> {
+    const DESCRIPTION: &str =
+        "source message was edited after this automation forwarded it";
+    let result = db
+        .execute(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            r#"
+        insert into echo_automation_warning (
+            automation_id,
+            source_inbox_message_id,
+            event_at,
+            description
+        )
+        select
+            $1,
+            changed.message_id,
+            changed.created_at,
+            $3
+        from echo_inbox_message_changed changed
+        join echo_inbox_message message on message.id = changed.message_id
+        join echo_automation_delivery delivery
+            on delivery.automation_id = $1
+            and delivery.source_inbox_message_id = changed.message_id
+            and delivery.status = 'sent'
+        where message.group_id = $2
+            and not exists (
+                select 1
+                from echo_automation_warning warning
+                where warning.automation_id = $1
+                    and warning.source_inbox_message_id = changed.message_id
+                    and warning.description = $3
+            )
+        "#,
+            vec![
+                automation.id.into(),
+                automation.source_group_id.into(),
+                DESCRIPTION.into(),
+            ],
+        ))
+        .await
+        .c(h!())?;
+    if result.rows_affected() > 0 {
+        log::warn!(
+            "recorded {} edited-message automation warnings for automation {}",
+            result.rows_affected(),
+            automation.id
+        );
+    }
+    Ok(())
+}
+
+async fn record_delivery(
+    db: &DatabaseConnection,
+    automation_id: i64,
+    message: &InboxMessageRow,
+    status: &str,
+    error: Option<&str>,
+    is_sent: bool,
+) -> Result<()> {
+    db.execute(Statement::from_sql_and_values(
+        DatabaseBackend::Postgres,
+        r#"
+        insert into echo_automation_delivery (
+            automation_id,
+            source_inbox_message_id,
+            source_internal_id,
+            source_message_at,
+            status,
+            error,
+            sent_at,
+            updated_at
+        )
+        values ($1, $2, $3, $4, $5, $6, case when $7 then now() at time zone 'utc' else null end, now() at time zone 'utc')
+        on conflict (automation_id, source_inbox_message_id) do update set
+            source_internal_id = excluded.source_internal_id,
+            source_message_at = excluded.source_message_at,
+            status = excluded.status,
+            error = excluded.error,
+            sent_at = coalesce(excluded.sent_at, echo_automation_delivery.sent_at),
+            updated_at = excluded.updated_at
+        "#,
+        vec![
+            automation_id.into(),
+            message.id.into(),
+            message.internal_id.clone().into(),
+            message.message_at.into(),
+            status.into(),
+            error.map(str::to_string).into(),
+            is_sent.into(),
+        ],
+    ))
+    .await
+    .c(h!())?;
+    Ok(())
+}
+
+async fn already_sent(
+    db: &DatabaseConnection,
+    automation_id: i64,
+    message: &InboxMessageRow,
+) -> Result<bool> {
+    let row = db
+        .query_one(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            r#"
+            select exists (
+                select 1
+                from echo_automation_delivery
+                where automation_id = $1
+                    and status = 'sent'
+                    and (
+                        source_inbox_message_id = $2
+                        or (
+                            $3 is not null
+                            and source_internal_id = $3
+                        )
+                    )
+            ) as already_sent
+            "#,
+            vec![
+                automation_id.into(),
+                message.id.into(),
+                message.internal_id.clone().into(),
+            ],
+        ))
+        .await
+        .c(h!())?
+        .context("already-sent query did not return a row")
+        .c(h!())?;
+    row.try_get("", "already_sent").c(h!())
+}
+
+async fn update_checkpoint(
+    db: &DatabaseConnection,
+    automation_id: i64,
+    inbox_message_id: i32,
+    message_at: NaiveDateTime,
+) -> Result<()> {
+    db.execute(Statement::from_sql_and_values(
+        DatabaseBackend::Postgres,
+        r#"
+        update echo_automation
+        set
+            checkpoint_at = $3,
+            last_processed_inbox_message_id = $2,
+            last_processed_at = now() at time zone 'utc',
+            updated_at = now() at time zone 'utc'
+        where id = $1
+        "#,
+        [
+            automation_id.into(),
+            inbox_message_id.into(),
+            message_at.into(),
+        ],
+    ))
+    .await
+    .c(h!())?;
+    Ok(())
+}
+
+async fn set_status(
+    db: &DatabaseConnection,
+    automation_id: i64,
+    status: &str,
+    error: Option<&str>,
+) -> Result<()> {
+    db.execute(Statement::from_sql_and_values(
+        DatabaseBackend::Postgres,
+        r#"
+        update echo_automation
+        set
+            status = $2,
+            last_error = $3,
+            updated_at = now() at time zone 'utc'
+        where id = $1
+        "#,
+        vec![
+            automation_id.into(),
+            status.into(),
+            error.map(str::to_string).into(),
+        ],
+    ))
+    .await
+    .c(h!())?;
+    Ok(())
+}
+
+async fn set_error(
+    db: &DatabaseConnection,
+    automation_id: i64,
+    error: &str,
+) -> Result<()> {
+    set_status(db, automation_id, "error", Some(error))
+        .await
+        .c(h!())
+}
+
+struct AutomationFilter {
+    keyword_tokens: Vec<String>,
+    frequency_tokens: Vec<String>,
+    stale_message_cutoff_minutes: i32,
+    coordinate_presence_mode: CoordinatePresenceMode,
+    polygon_filter_mode: PolygonFilterMode,
+    polygon: Vec<Point>,
+}
+
+fn message_matches_filters(
+    automation: &AutomationFilter,
+    body: &str,
+    message_at: NaiveDateTime,
+    now: NaiveDateTime,
+    coords: &[Point],
+) -> MatchDecision {
+    if is_stale(message_at, now, automation.stale_message_cutoff_minutes) {
+        return MatchDecision::Skip("message is older than cutoff");
+    }
+    if !matches_any_token(
+        body,
+        &automation.keyword_tokens,
+        &automation.frequency_tokens,
+    ) {
+        return MatchDecision::Skip("keyword/frequency filters did not match");
+    }
+    let has_coords = !coords.is_empty();
+    match automation.coordinate_presence_mode {
+        CoordinatePresenceMode::Any => {}
+        CoordinatePresenceMode::SkipWithCoordinates if has_coords => {
+            return MatchDecision::Skip("message has coordinates");
+        }
+        CoordinatePresenceMode::SkipWithoutCoordinates if !has_coords => {
+            return MatchDecision::Skip("message has no coordinates");
+        }
+        _ => {}
+    }
+    match automation.polygon_filter_mode {
+        PolygonFilterMode::None => MatchDecision::Send,
+        PolygonFilterMode::Inside => {
+            if !has_coords {
+                return MatchDecision::Skip(
+                    "polygon filter requires coordinates",
+                );
+            }
+            if coords
+                .iter()
+                .any(|point| point_in_polygon(*point, &automation.polygon))
+            {
+                MatchDecision::Skip("message coordinates are inside polygon")
+            } else {
+                MatchDecision::Send
+            }
+        }
+        PolygonFilterMode::Outside => {
+            if !has_coords {
+                return MatchDecision::Skip(
+                    "polygon filter requires coordinates",
+                );
+            }
+            if coords
+                .iter()
+                .any(|point| point_in_polygon(*point, &automation.polygon))
+            {
+                MatchDecision::Send
+            } else {
+                MatchDecision::Skip("message coordinates are outside polygon")
+            }
+        }
+    }
+}
+
+fn is_stale(
+    message_at: NaiveDateTime,
+    now: NaiveDateTime,
+    cutoff_minutes: i32,
+) -> bool {
+    cutoff_minutes > 0
+        && message_at < now - ChronoDuration::minutes(i64::from(cutoff_minutes))
+}
+
+fn matches_any_token(
+    body: &str,
+    keyword_tokens: &[String],
+    frequency_tokens: &[String],
+) -> bool {
+    let body = normalize_text(body);
+    keyword_tokens
+        .iter()
+        .chain(frequency_tokens.iter())
+        .any(|token| body.contains(token))
+}
+
+async fn extract_points(body: &str) -> Vec<Point> {
+    let body = prepare_body_for_coords(body);
+    milgeo_rs::coordinates::rer_extract_coords(&body)
+        .await
+        .into_iter()
+        .map(|coords| Point {
+            lat: coords.lat,
+            lng: coords.lng,
+        })
+        .collect()
+}
+
+async fn parse_polygon(tokens: &[String]) -> Result<Vec<Point>> {
+    let mut points = Vec::new();
+    for token in tokens {
+        let mut coords =
+            milgeo_rs::coordinates::rer_extract_coords(token).await;
+        if coords.is_empty() {
+            bail!("invalid polygon coordinate: {token}");
+        }
+        let coords = coords.remove(0);
+        points.push(Point {
+            lat: coords.lat,
+            lng: coords.lng,
+        });
+    }
+    Ok(points)
+}
+
+fn point_in_polygon(point: Point, polygon: &[Point]) -> bool {
+    if polygon.len() < 3 {
+        return false;
+    }
+    let mut inside = false;
+    let mut j = polygon.len() - 1;
+    for i in 0..polygon.len() {
+        let pi = polygon[i];
+        let pj = polygon[j];
+        let intersects = ((pi.lat > point.lat) != (pj.lat > point.lat))
+            && (point.lng
+                < (pj.lng - pi.lng) * (point.lat - pi.lat) / (pj.lat - pi.lat)
+                    + pi.lng);
+        if intersects {
+            inside = !inside;
+        }
+        j = i;
+    }
+    inside
+}
+
+fn prepare_body_for_coords(body: &str) -> String {
+    let mut result = String::with_capacity(body.len());
+    for line in body.lines() {
+        if !is_non_coordinate_header_line(line) {
+            result.push_str(line);
+        }
+        result.push('\n');
+    }
+    result
+}
+
+fn is_non_coordinate_header_line(line: &str) -> bool {
+    if line_mentions_coordinates(line) {
+        return false;
+    }
+    is_dmr_metadata_line(line)
+        || is_callsign_map_line(line)
+        || is_received_from_post_line(line)
+}
+
+fn line_mentions_coordinates(line: &str) -> bool {
+    let line = line.to_lowercase();
+    line.contains("координат")
+        || line.contains("coordinate")
+        || line.contains("coords")
+        || line.contains("mgrs")
+        || line.contains("wgs")
+}
+
+fn is_dmr_metadata_line(line: &str) -> bool {
+    static RE_CC: OnceLock<Regex> = OnceLock::new();
+    static RE_ID: OnceLock<Regex> = OnceLock::new();
+    static RE_CG: OnceLock<Regex> = OnceLock::new();
+    RE_CC
+        .get_or_init(|| {
+            Regex::new(r#"(?i)^\s*(?:[cс]{2}\s*:?\s*|код\s+кольору\s*:?\s*)"#)
+                .unwrap()
+        })
+        .is_match(line)
+        || RE_ID
+            .get_or_init(|| {
+                Regex::new(
+                    r#"(?i)^\s*(?:[iі]d\s*➡️?|source\s+id|[iі]d\s+відправника|[iі]d)\s*:?\s+"#,
+                )
+                .unwrap()
+            })
+            .is_match(line)
+        || RE_CG
+            .get_or_init(|| {
+                Regex::new(
+                    r#"(?i)^\s*(?:[iі]d\s*\(\s*[cс]g\s*\)\s*⬅️?|[iі]d\s*⬅️?(?:\s*\(\s*[cс]g\s*\))?|[iі]d\s+отримувача|group\s+id|код\s+групи|[cс]g)\s*:?\s+"#,
+                )
+                .unwrap()
+            })
+            .is_match(line)
+}
+
+fn is_callsign_map_line(line: &str) -> bool {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    RE.get_or_init(|| {
+        Regex::new(r#"(?i)^\s*(?:позивні|позывные|callsigns?)\s*:"#).unwrap()
+    })
+    .is_match(line)
+}
+
+fn is_received_from_post_line(line: &str) -> bool {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    RE.get_or_init(|| Regex::new(r#"(?i)^\s*отримано\s+з\s+поста\s+"#).unwrap())
+        .is_match(line)
+}
+
+fn normalize_tokens(tokens: Vec<String>) -> Vec<String> {
+    tokens
+        .into_iter()
+        .map(|token| normalize_text(&token))
+        .filter(|token| !token.is_empty())
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect()
+}
+
+fn normalize_text(value: &str) -> String {
+    value.trim().to_lowercase()
+}
+
+fn json_vec(value: Option<&Json>) -> Vec<String> {
+    value
+        .cloned()
+        .and_then(|value| serde_json::from_value(value).ok())
+        .unwrap_or_default()
+}
+
+fn optional_json_string(tokens: &[String]) -> Result<Option<String>> {
+    if tokens.is_empty() {
+        Ok(None)
+    } else {
+        Ok(Some(serde_json::to_string(tokens).c(h!())?))
+    }
+}
+
+fn messenger_kind_from_db(kind: &str) -> Result<MessengerKind> {
+    match kind {
+        "signal" => Ok(MessengerKind::Signal),
+        "whatsapp" => Ok(MessengerKind::Whatsapp),
+        _ => bail!("unsupported messenger kind: {kind}"),
+    }
+}
+
+fn public_client_name(client_name: &str) -> String {
+    client_name
+        .strip_prefix(OWNED_CLIENT_PREFIX)
+        .unwrap_or(client_name)
+        .to_string()
+}
+
+fn automation_view(row: AutomationListRow) -> AutomationView {
+    AutomationView {
+        id: row.id,
+        name: row.name,
+        source_account_id: row.source_account_id,
+        source_account_name: row.source_account_name,
+        source_account_phone: row.source_account_phone,
+        source_account_is_linked: row.source_account_is_linked,
+        source_group_id: row.source_group_id,
+        source_group_name: row.source_group_name,
+        source_messenger_kind: row.source_messenger_kind,
+        target_account_id: row.target_account_id,
+        target_account_name: row.target_account_name,
+        target_account_phone: row.target_account_phone,
+        target_account_is_linked: row.target_account_is_linked,
+        target_group_id: row.target_group_id,
+        target_group_name: row.target_group_name,
+        target_messenger_kind: row.target_messenger_kind,
+        keyword_tokens: json_vec(Some(&row.keyword_tokens)),
+        frequency_tokens: json_vec(Some(&row.frequency_tokens)),
+        stale_message_cutoff_minutes: row.stale_message_cutoff_minutes,
+        resend_attachments: row.resend_attachments,
+        coordinate_presence_mode: row.coordinate_presence_mode,
+        polygon_filter_mode: row.polygon_filter_mode,
+        polygon_coordinates: json_vec(row.polygon_coordinates.as_ref()),
+        is_paused: row.is_paused,
+        status: row.status,
+        last_error: row.last_error,
+        checkpoint_at: row.checkpoint_at.and_utc().timestamp_millis(),
+        usage: UsageCounters {
+            last_24h: row.usage_24h,
+            last_7d: row.usage_7d,
+            all_time: row.usage_all,
+        },
+        created_at: row.created_at.and_utc().timestamp_millis(),
+        updated_at: row.updated_at.and_utc().timestamp_millis(),
+    }
+}
+
+fn list_sql_head() -> &'static str {
+    r#"
+    select
+        a.id,
+        a.name,
+        a.source_account_id,
+        regexp_replace(source_client.name, '^echo-swapp-', '') as source_account_name,
+        source_account.phone_number as source_account_phone,
+        source_account.is_linked as source_account_is_linked,
+        a.source_group_id,
+        coalesce(nullif(source_group.name, ''), source_group.group_id) as source_group_name,
+        source_account.source::text as source_messenger_kind,
+        a.target_account_id,
+        regexp_replace(target_client.name, '^echo-swapp-', '') as target_account_name,
+        target_account.phone_number as target_account_phone,
+        target_account.is_linked as target_account_is_linked,
+        a.target_group_id,
+        coalesce(nullif(target_group.name, ''), target_group.group_id) as target_group_name,
+        target_account.source::text as target_messenger_kind,
+        a.keyword_tokens,
+        a.frequency_tokens,
+        a.stale_message_cutoff_minutes,
+        a.resend_attachments,
+        a.coordinate_presence_mode,
+        a.polygon_filter_mode,
+        a.polygon_coordinates,
+        a.is_paused,
+        a.status,
+        a.last_error,
+        count(delivery.id) filter (
+            where delivery.status = 'sent'
+                and delivery.sent_at >= (now() at time zone 'utc') - interval '24 hours'
+        )::bigint as usage_24h,
+        count(delivery.id) filter (
+            where delivery.status = 'sent'
+                and delivery.sent_at >= (now() at time zone 'utc') - interval '7 days'
+        )::bigint as usage_7d,
+        count(delivery.id) filter (where delivery.status = 'sent')::bigint as usage_all,
+        a.checkpoint_at,
+        a.created_at,
+        a.updated_at
+    from echo_automation a
+    join echo_account source_account on source_account.id = a.source_account_id
+    join echo_client_lock source_lock on source_lock.account_id = source_account.id
+    join echo_client source_client
+        on source_client.id = source_lock.client_id
+        and source_client.deleted = false
+    join echo_group source_group
+        on source_group.id = a.source_group_id
+        and source_group.account_id = source_account.id
+    join echo_account target_account on target_account.id = a.target_account_id
+    join echo_client_lock target_lock on target_lock.account_id = target_account.id
+    join echo_client target_client
+        on target_client.id = target_lock.client_id
+        and target_client.deleted = false
+    join echo_group target_group
+        on target_group.id = a.target_group_id
+        and target_group.account_id = target_account.id
+    left join echo_automation_delivery delivery
+        on delivery.automation_id = a.id
+    "#
+}
+
+fn list_sql_tail() -> &'static str {
+    r#"
+    group by
+        a.id,
+        source_account.id,
+        source_client.id,
+        source_group.id,
+        target_account.id,
+        target_client.id,
+        target_group.id
+    order by a.created_at desc, a.id desc
+    "#
+}
+
+fn list_sql() -> String {
+    format!("{} {}", list_sql_head(), list_sql_tail())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sea_orm::{Database, Value};
+
+    static DB_TEST_LOCK: tokio::sync::Mutex<()> =
+        tokio::sync::Mutex::const_new(());
+    const DEFAULT_TEST_DATABASE_URL: &str =
+        "postgres://wd:fee_-_-_-FnoeKFBeebu87bf@localhost:5432/wd";
+
+    struct TestFixture {
+        namespace: String,
+        phone_number: String,
+        account_id: i32,
+        source_group_id: i32,
+        target_group_id: i32,
+        automation_id: i64,
+    }
+
+    fn filter() -> AutomationFilter {
+        AutomationFilter {
+            keyword_tokens: vec!["alpha".to_string()],
+            frequency_tokens: vec![],
+            stale_message_cutoff_minutes: 60,
+            coordinate_presence_mode: CoordinatePresenceMode::Any,
+            polygon_filter_mode: PolygonFilterMode::None,
+            polygon: vec![],
+        }
+    }
+
+    async fn test_db() -> Result<DatabaseConnection> {
+        let url = std::env::var("ECHO_SWAPP_TEST_DATABASE_URL")
+            .unwrap_or_else(|_| DEFAULT_TEST_DATABASE_URL.to_string());
+        Database::connect(url).await.c(h!())
+    }
+
+    fn test_namespace() -> String {
+        let suffix = Utc::now()
+            .timestamp_nanos_opt()
+            .unwrap_or_else(|| Utc::now().timestamp_micros())
+            % 1_000_000_000_000;
+        format!("swapp-test-{}", suffix.abs())
+    }
+
+    async fn cleanup_test_namespace(
+        db: &DatabaseConnection,
+        namespace: &str,
+        phone_number: &str,
+    ) -> Result<()> {
+        execute_test_sql(
+            db,
+            "delete from echo_automation where name = $1",
+            vec![namespace.to_string().into()],
+        )
+        .await
+        .c(h!())?;
+        execute_test_sql(
+            db,
+            "delete from echo_inbox_message where internal_id like ($1 || ':%')",
+            vec![namespace.to_string().into()],
+        )
+        .await
+        .c(h!())?;
+        execute_test_sql(
+            db,
+            "delete from echo_group where group_id like ($1 || ':%')",
+            vec![namespace.to_string().into()],
+        )
+        .await
+        .c(h!())?;
+        execute_test_sql(
+            db,
+            r#"
+            delete from echo_client_lock
+            where client_id in (
+                select id from echo_client where name = $1
+            )
+            "#,
+            vec![namespace.to_string().into()],
+        )
+        .await
+        .c(h!())?;
+        execute_test_sql(
+            db,
+            "delete from echo_account where phone_number = $1",
+            vec![phone_number.to_string().into()],
+        )
+        .await
+        .c(h!())?;
+        execute_test_sql(
+            db,
+            "delete from echo_client where name = $1",
+            vec![namespace.to_string().into()],
+        )
+        .await
+        .c(h!())?;
+        Ok(())
+    }
+
+    async fn execute_test_sql(
+        db: &DatabaseConnection,
+        sql: &str,
+        values: Vec<Value>,
+    ) -> Result<()> {
+        db.execute(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            sql,
+            values,
+        ))
+        .await
+        .c(h!())?;
+        Ok(())
+    }
+
+    async fn query_i32(
+        db: &DatabaseConnection,
+        sql: &str,
+        values: Vec<Value>,
+    ) -> Result<i32> {
+        let row = db
+            .query_one(Statement::from_sql_and_values(
+                DatabaseBackend::Postgres,
+                sql,
+                values,
+            ))
+            .await
+            .c(h!())?
+            .context("query did not return a row")
+            .c(h!())?;
+        row.try_get("", "id").c(h!())
+    }
+
+    async fn query_i64(
+        db: &DatabaseConnection,
+        sql: &str,
+        values: Vec<Value>,
+    ) -> Result<i64> {
+        let row = db
+            .query_one(Statement::from_sql_and_values(
+                DatabaseBackend::Postgres,
+                sql,
+                values,
+            ))
+            .await
+            .c(h!())?
+            .context("query did not return a row")
+            .c(h!())?;
+        row.try_get("", "id").c(h!())
+    }
+
+    async fn create_fixture(db: &DatabaseConnection) -> Result<TestFixture> {
+        let namespace = test_namespace();
+        let phone_number = format!(
+            "+{}",
+            namespace
+                .rsplit('-')
+                .next()
+                .context("test namespace has no suffix")
+                .c(h!())?
+        );
+        cleanup_test_namespace(db, &namespace, &phone_number)
+            .await
+            .c(h!())?;
+        let account_id = query_i32(
+            db,
+            r#"
+            insert into echo_account (source, phone_number, is_linked)
+            values ('signal'::echo_message_source, $1, true)
+            returning id
+            "#,
+            vec![phone_number.clone().into()],
+        )
+        .await
+        .c(h!())?;
+        let client_id = query_i32(
+            db,
+            "insert into echo_client (name) values ($1) returning id",
+            vec![namespace.clone().into()],
+        )
+        .await
+        .c(h!())?;
+        execute_test_sql(
+            db,
+            r#"
+            insert into echo_client_lock (client_id, account_id)
+            values ($1, $2)
+            "#,
+            vec![client_id.into(), account_id.into()],
+        )
+        .await
+        .c(h!())?;
+        let source_group_id =
+            insert_group(db, &namespace, account_id, "source")
+                .await
+                .c(h!())?;
+        let target_group_id =
+            insert_group(db, &namespace, account_id, "target")
+                .await
+                .c(h!())?;
+        let automation_id = query_i64(
+            db,
+            r#"
+            insert into echo_automation (
+                name,
+                source_account_id,
+                source_group_id,
+                target_account_id,
+                target_group_id,
+                keyword_tokens,
+                frequency_tokens
+            )
+            values ($1, $2, $3, $4, $5, '["alpha"]'::jsonb, '[]'::jsonb)
+            returning id
+            "#,
+            vec![
+                namespace.clone().into(),
+                account_id.into(),
+                source_group_id.into(),
+                account_id.into(),
+                target_group_id.into(),
+            ],
+        )
+        .await
+        .c(h!())?;
+        Ok(TestFixture {
+            namespace,
+            phone_number,
+            account_id,
+            source_group_id,
+            target_group_id,
+            automation_id,
+        })
+    }
+
+    async fn insert_group(
+        db: &DatabaseConnection,
+        namespace: &str,
+        account_id: i32,
+        label: &str,
+    ) -> Result<i32> {
+        let group_id = format!("{namespace}:{label}");
+        query_i32(
+            db,
+            r#"
+            insert into echo_group (group_id, internal_id, name, account_id)
+            values ($1, $1, $2, $3)
+            returning id
+            "#,
+            vec![
+                group_id.into(),
+                format!("{namespace} {label}").into(),
+                account_id.into(),
+            ],
+        )
+        .await
+        .c(h!())
+    }
+
+    async fn insert_message(
+        db: &DatabaseConnection,
+        fixture: &TestFixture,
+        internal_id: &str,
+        message_at: NaiveDateTime,
+    ) -> Result<InboxMessageRow> {
+        let internal_id = format!("{}:{internal_id}", fixture.namespace);
+        let id = query_i32(
+            db,
+            r#"
+            insert into echo_inbox_message (
+                body,
+                internal_id,
+                group_id,
+                account_id,
+                "timestamp",
+                created_at,
+                updated_at
+            )
+            values ('alpha', $1, $2, $3, $4, $4, $4)
+            returning id
+            "#,
+            vec![
+                internal_id.clone().into(),
+                fixture.source_group_id.into(),
+                fixture.account_id.into(),
+                message_at.into(),
+            ],
+        )
+        .await
+        .c(h!())?;
+        Ok(InboxMessageRow {
+            id,
+            internal_id: Some(internal_id),
+            body: "alpha".to_string(),
+            account_id: fixture.account_id,
+            message_at,
+        })
+    }
+
+    async fn insert_sent_delivery(
+        db: &DatabaseConnection,
+        fixture: &TestFixture,
+        message: &InboxMessageRow,
+        sent_at: NaiveDateTime,
+    ) -> Result<()> {
+        execute_test_sql(
+            db,
+            r#"
+            insert into echo_automation_delivery (
+                automation_id,
+                source_inbox_message_id,
+                source_internal_id,
+                source_message_at,
+                status,
+                sent_at
+            )
+            values ($1, $2, $3, $4, 'sent', $5)
+            "#,
+            vec![
+                fixture.automation_id.into(),
+                message.id.into(),
+                message.internal_id.clone().into(),
+                message.message_at.into(),
+                sent_at.into(),
+            ],
+        )
+        .await
+        .c(h!())
+    }
+
+    #[test]
+    fn normalizes_tokens() {
+        assert_eq!(
+            normalize_tokens(vec![
+                " Alpha ".to_string(),
+                "alpha".to_string(),
+                "".to_string(),
+                "BRAVO".to_string(),
+            ]),
+            vec!["alpha".to_string(), "bravo".to_string()]
+        );
+    }
+
+    #[test]
+    fn matches_keywords_case_insensitively() {
+        let decision = message_matches_filters(
+            &filter(),
+            "Contact ALPHA reported",
+            Utc::now().naive_utc(),
+            Utc::now().naive_utc(),
+            &[],
+        );
+        assert_eq!(decision, MatchDecision::Send);
+    }
+
+    #[test]
+    fn skips_stale_messages() {
+        let now = Utc::now().naive_utc();
+        let decision = message_matches_filters(
+            &filter(),
+            "alpha",
+            now - ChronoDuration::minutes(61),
+            now,
+            &[],
+        );
+        assert_eq!(
+            decision,
+            MatchDecision::Skip("message is older than cutoff")
+        );
+    }
+
+    #[test]
+    fn skips_messages_without_required_coordinates() {
+        let automation = AutomationFilter {
+            coordinate_presence_mode:
+                CoordinatePresenceMode::SkipWithoutCoordinates,
+            ..filter()
+        };
+        let now = Utc::now().naive_utc();
+        let decision =
+            message_matches_filters(&automation, "alpha", now, now, &[]);
+        assert_eq!(decision, MatchDecision::Skip("message has no coordinates"));
+    }
+
+    #[test]
+    fn skips_inside_polygon_when_configured() {
+        let automation = AutomationFilter {
+            polygon_filter_mode: PolygonFilterMode::Inside,
+            polygon: vec![
+                Point { lat: 0.0, lng: 0.0 },
+                Point {
+                    lat: 0.0,
+                    lng: 10.0,
+                },
+                Point {
+                    lat: 10.0,
+                    lng: 10.0,
+                },
+                Point {
+                    lat: 10.0,
+                    lng: 0.0,
+                },
+            ],
+            ..filter()
+        };
+        let now = Utc::now().naive_utc();
+        let decision = message_matches_filters(
+            &automation,
+            "alpha",
+            now,
+            now,
+            &[Point { lat: 5.0, lng: 5.0 }],
+        );
+        assert_eq!(
+            decision,
+            MatchDecision::Skip("message coordinates are inside polygon")
+        );
+    }
+
+    #[test]
+    fn sends_inside_polygon_when_outside_is_skipped() {
+        let automation = AutomationFilter {
+            polygon_filter_mode: PolygonFilterMode::Outside,
+            polygon: vec![
+                Point { lat: 0.0, lng: 0.0 },
+                Point {
+                    lat: 0.0,
+                    lng: 10.0,
+                },
+                Point {
+                    lat: 10.0,
+                    lng: 10.0,
+                },
+                Point {
+                    lat: 10.0,
+                    lng: 0.0,
+                },
+            ],
+            ..filter()
+        };
+        let now = Utc::now().naive_utc();
+        let decision = message_matches_filters(
+            &automation,
+            "alpha",
+            now,
+            now,
+            &[Point { lat: 5.0, lng: 5.0 }],
+        );
+        assert_eq!(decision, MatchDecision::Send);
+    }
+
+    #[tokio::test]
+    async fn already_sent_matches_original_internal_id() -> Result<()> {
+        let _guard = DB_TEST_LOCK.lock().await;
+        let db = test_db().await.c(h!())?;
+        let fixture = create_fixture(&db).await.c(h!())?;
+        let result = async {
+            let now = Utc::now().naive_utc();
+            let message = insert_message(&db, &fixture, "original", now)
+                .await
+                .c(h!())?;
+            insert_sent_delivery(&db, &fixture, &message, now)
+                .await
+                .c(h!())?;
+
+            assert!(already_sent(&db, fixture.automation_id, &message)
+                .await
+                .c(h!())?);
+
+            let duplicate_message = insert_message(
+                &db,
+                &fixture,
+                "original",
+                now + ChronoDuration::seconds(1),
+            )
+            .await
+            .c(h!())?;
+            assert!(already_sent(
+                &db,
+                fixture.automation_id,
+                &duplicate_message
+            )
+            .await
+            .c(h!())?);
+
+            let unrelated_message =
+                insert_message(&db, &fixture, "unrelated", now)
+                    .await
+                    .c(h!())?;
+            assert!(!already_sent(
+                &db,
+                fixture.automation_id,
+                &unrelated_message
+            )
+            .await
+            .c(h!())?);
+            Ok(())
+        }
+        .await;
+        cleanup_test_namespace(&db, &fixture.namespace, &fixture.phone_number)
+            .await
+            .c(h!())?;
+        result
+    }
+
+    #[tokio::test]
+    async fn list_counts_sent_delivery_windows() -> Result<()> {
+        let _guard = DB_TEST_LOCK.lock().await;
+        let db = test_db().await.c(h!())?;
+        let fixture = create_fixture(&db).await.c(h!())?;
+        let result = async {
+            let now = Utc::now().naive_utc();
+            let message_24h =
+                insert_message(&db, &fixture, "24h", now).await.c(h!())?;
+            let message_7d =
+                insert_message(&db, &fixture, "7d", now).await.c(h!())?;
+            let message_old =
+                insert_message(&db, &fixture, "old", now).await.c(h!())?;
+            insert_sent_delivery(
+                &db,
+                &fixture,
+                &message_24h,
+                now - ChronoDuration::hours(1),
+            )
+            .await
+            .c(h!())?;
+            insert_sent_delivery(
+                &db,
+                &fixture,
+                &message_7d,
+                now - ChronoDuration::days(2),
+            )
+            .await
+            .c(h!())?;
+            insert_sent_delivery(
+                &db,
+                &fixture,
+                &message_old,
+                now - ChronoDuration::days(8),
+            )
+            .await
+            .c(h!())?;
+
+            let view = load_view(&db, fixture.automation_id).await.c(h!())?;
+            assert_eq!(view.usage.last_24h, 1);
+            assert_eq!(view.usage.last_7d, 2);
+            assert_eq!(view.usage.all_time, 3);
+            assert_eq!(view.target_group_id, fixture.target_group_id);
+            Ok(())
+        }
+        .await;
+        cleanup_test_namespace(&db, &fixture.namespace, &fixture.phone_number)
+            .await
+            .c(h!())?;
+        result
+    }
+}
