@@ -2,7 +2,7 @@
  * @vitest-environment happy-dom
  */
 import { createRoot, type Root } from 'react-dom/client';
-import { useState, act } from 'react';
+import { useRef, useState, act } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 
@@ -32,6 +32,12 @@ const hoisted = vi.hoisted(() => ({
   savedFilterRename: vi.fn(),
   savedFilterUpsert: vi.fn(),
   copyTextToClipboard: vi.fn(),
+  requestValidatedInboxCount: vi.fn(),
+  loadFeedNewerMessages: vi.fn(() => Promise.resolve()),
+  loadFeedInitialMessages: vi.fn(() => Promise.resolve()),
+  showArrowResult: vi.fn(),
+  setWatchModeByFeedId: vi.fn(),
+  setLoadingNewerFeedIds: vi.fn(),
 }));
 
 vi.mock('../../services/api/inbox', () => ({
@@ -150,6 +156,9 @@ function TestHarness(props: {
   initialFeeds?: MessageFeedState[];
   initialSavedFilters?: SavedFilterDuty[];
   authUserName?: string | null;
+  columnRefsRef?: MutableRefObject<
+    Record<string, { scrollToEnd: (behavior?: ScrollBehavior) => void } | null>
+  >;
 }) {
   const [messageFeeds, setMessageFeeds] = useState<MessageFeedState[]>(
     props.initialFeeds ?? [buildFeed()],
@@ -161,18 +170,22 @@ function TestHarness(props: {
     Record<string, number | null>
   >({});
   const [saveFilterNameByFeedId, setSaveFilterNameByFeedId] = useState<Record<string, string>>({});
+  const fallbackColumnRefsRef = useRef<
+    Record<string, { scrollToEnd: (behavior?: ScrollBehavior) => void } | null>
+  >({});
+  const columnRefsRef = props.columnRefsRef ?? fallbackColumnRefsRef;
   const actions = useRerDutyMessageActions({
     messageFeeds,
     setMessageFeeds,
     setError: vi.fn(),
     applyFilter: vi.fn(),
-    loadFeedInitialMessages: vi.fn(() => Promise.resolve()),
-    loadFeedNewerMessages: vi.fn(() => Promise.resolve()),
-    buildReqForFeed,
-    columnRefsRef: { current: {} },
-    showArrowResult: vi.fn(),
-    setWatchModeByFeedId: vi.fn(),
-    setLoadingNewerFeedIds: vi.fn(),
+    loadFeedInitialMessages: hoisted.loadFeedInitialMessages,
+    loadFeedNewerMessages: hoisted.loadFeedNewerMessages,
+    showArrowResult: hoisted.showArrowResult,
+    columnRefsRef,
+    setWatchModeByFeedId: hoisted.setWatchModeByFeedId,
+    setLoadingNewerFeedIds: hoisted.setLoadingNewerFeedIds,
+    requestValidatedInboxCount: hoisted.requestValidatedInboxCount,
     authUserName: props.authUserName ?? null,
     profiles: {
       'sender-1': { givenName: 'BBC', familyName: 'SPORT' },
@@ -234,6 +247,15 @@ describe('useRerDutyMessageActions', () => {
     hoisted.deleteMessage.mockResolvedValue(undefined);
     hoisted.fetchInboxCount.mockResolvedValue({ quantity: 0, firstElementTs: null });
     hoisted.inboxMessageTagsModelError.mockResolvedValue(undefined);
+    hoisted.requestValidatedInboxCount.mockResolvedValue({
+      feedId: 'mf-0',
+      quantity: 0,
+      cursorId: 10,
+      hasItems: true,
+    });
+    hoisted.loadFeedNewerMessages.mockResolvedValue(undefined);
+    hoisted.loadFeedInitialMessages.mockResolvedValue(undefined);
+    hoisted.showArrowResult.mockReset();
     container = document.createElement('div');
     document.body.appendChild(container);
     root = createRoot(container);
@@ -249,6 +271,89 @@ describe('useRerDutyMessageActions', () => {
   });
 
   it('uses the last message id cursor when loading newer mail from the arrow button', async () => {
+    hoisted.requestValidatedInboxCount.mockResolvedValueOnce({
+      feedId: 'mf-0',
+      quantity: 3,
+      cursorId: 10,
+      hasItems: true,
+    });
+    const columnRefsRef: MutableRefObject<
+      Record<string, { scrollToEnd: (behavior?: ScrollBehavior) => void } | null>
+    > = {
+      current: {
+        'mf-0': { scrollToEnd: vi.fn() },
+      },
+    };
+    const apiRef: MutableRefObject<HarnessApi | null> = { current: null };
+    await act(async () => {
+      root.render(
+        <TestHarness
+          apiRef={apiRef}
+          columnRefsRef={columnRefsRef}
+          initialFeeds={[buildFeed({ items: [[10, minimalInboxMessage({ timestamp: null })]] })]}
+        />,
+      );
+    });
+    await act(async () => {
+      await flushMicrotasks();
+    });
+
+    await act(async () => {
+      await apiRef.current!.handleArrowClick('mf-0');
+    });
+
+    expect(hoisted.requestValidatedInboxCount).toHaveBeenCalledTimes(1);
+    expect(hoisted.requestValidatedInboxCount).toHaveBeenCalledWith('mf-0');
+    expect(hoisted.fetchInboxCount).not.toHaveBeenCalled();
+    expect(columnRefsRef.current['mf-0']?.scrollToEnd).not.toHaveBeenCalled();
+    expect(hoisted.loadFeedNewerMessages).toHaveBeenCalledTimes(1);
+    expect(hoisted.loadFeedNewerMessages).toHaveBeenCalledWith(
+      'mf-0',
+      expect.objectContaining({ scrollToEndAfterLoad: true }),
+    );
+  });
+
+  it('scrolls to the existing bottom once for a valid zero-count arrow result', async () => {
+    hoisted.requestValidatedInboxCount.mockResolvedValueOnce({
+      feedId: 'mf-0',
+      quantity: 0,
+      cursorId: 10,
+      hasItems: true,
+    });
+    const columnRefsRef: MutableRefObject<
+      Record<string, { scrollToEnd: (behavior?: ScrollBehavior) => void } | null>
+    > = {
+      current: {
+        'mf-0': { scrollToEnd: vi.fn() },
+      },
+    };
+    const apiRef: MutableRefObject<HarnessApi | null> = { current: null };
+    await act(async () => {
+      root.render(
+        <TestHarness
+          apiRef={apiRef}
+          columnRefsRef={columnRefsRef}
+          initialFeeds={[buildFeed({ items: [[10, minimalInboxMessage({ timestamp: null })]] })]}
+        />,
+      );
+    });
+    await act(async () => {
+      await flushMicrotasks();
+    });
+
+    await act(async () => {
+      await apiRef.current!.handleArrowClick('mf-0');
+    });
+
+    expect(columnRefsRef.current['mf-0']?.scrollToEnd).toHaveBeenCalledTimes(1);
+    expect(columnRefsRef.current['mf-0']?.scrollToEnd).toHaveBeenCalledWith('auto');
+    expect(hoisted.showArrowResult).toHaveBeenCalledWith('mf-0', 'Немає нових повідомлень');
+    expect(hoisted.loadFeedNewerMessages).not.toHaveBeenCalled();
+  });
+
+  it('stops silently when the shared count request resolves stale for the arrow button', async () => {
+    hoisted.requestValidatedInboxCount.mockResolvedValueOnce(null);
+
     const apiRef: MutableRefObject<HarnessApi | null> = { current: null };
     await act(async () => {
       root.render(
@@ -266,14 +371,35 @@ describe('useRerDutyMessageActions', () => {
       await apiRef.current!.handleArrowClick('mf-0');
     });
 
-    expect(hoisted.fetchInboxCount).toHaveBeenCalledTimes(1);
-    expect(hoisted.fetchInboxCount.mock.calls[0]?.[0]).toEqual(
-      expect.objectContaining({
-        sinceIdNoninclusive: 10,
-        sinceDateInclusiveMs: null,
-        nolimit: true,
-      }),
-    );
+    expect(hoisted.requestValidatedInboxCount).toHaveBeenCalledTimes(1);
+    expect(hoisted.fetchInboxCount).not.toHaveBeenCalled();
+    expect(hoisted.showArrowResult).not.toHaveBeenCalled();
+    expect(hoisted.loadFeedNewerMessages).not.toHaveBeenCalled();
+  });
+
+  it('shows the existing failure chip when the shared count request fails for the arrow button', async () => {
+    hoisted.requestValidatedInboxCount.mockRejectedValueOnce(new Error('count failed'));
+
+    const apiRef: MutableRefObject<HarnessApi | null> = { current: null };
+    await act(async () => {
+      root.render(
+        <TestHarness
+          apiRef={apiRef}
+          initialFeeds={[buildFeed({ items: [[10, minimalInboxMessage({ timestamp: null })]] })]}
+        />,
+      );
+    });
+    await act(async () => {
+      await flushMicrotasks();
+    });
+
+    await act(async () => {
+      await apiRef.current!.handleArrowClick('mf-0');
+    });
+
+    expect(hoisted.requestValidatedInboxCount).toHaveBeenCalledTimes(1);
+    expect(hoisted.showArrowResult).toHaveBeenCalledWith('mf-0', 'Немає нових повідомлень');
+    expect(hoisted.loadFeedNewerMessages).not.toHaveBeenCalled();
   });
 
   it('decrements unreadCount by newly visible ids and clears it at bottom', async () => {

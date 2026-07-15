@@ -1,27 +1,14 @@
 import { useCallback } from 'react';
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 
-import { fetchInboxCount } from '../../services/api/inbox';
-import { buildInboxReq } from './utils';
 import type { MessageFeedState } from './utils';
 
 type Params = {
   messageFeeds: MessageFeedState[];
-  buildReqForFeed: (
-    feed: MessageFeedState,
-    opts: Omit<
-      Parameters<typeof buildInboxReq>[0],
-      | 'filter'
-      | 'expandedFreqsSelected'
-      | 'expandedFreqsDenied'
-      | 'highlightSignals'
-      | 'reportTagsOnlyThisUnit'
-    >,
-  ) => ReturnType<typeof buildInboxReq>;
+  showArrowResult: (feedId: string, message: string) => void;
   columnRefsRef: MutableRefObject<
     Record<string, { scrollToEnd: (behavior?: ScrollBehavior) => void } | null>
   >;
-  showArrowResult: (feedId: string, message: string) => void;
   setWatchModeByFeedId: Dispatch<SetStateAction<Record<string, boolean>>>;
   setLoadingNewerFeedIds: Dispatch<SetStateAction<Set<string>>>;
   loadFeedInitialMessages: (feedId: string) => Promise<void>;
@@ -29,6 +16,12 @@ type Params = {
     feedId: string,
     opts?: { nolimit?: boolean; scrollToEndAfterLoad?: boolean; markAllReadAfterAppend?: boolean },
   ) => Promise<void>;
+  requestValidatedInboxCount: (feedId: string) => Promise<{
+    feedId: string;
+    quantity: number;
+    cursorId: number | null;
+    hasItems: boolean;
+  } | null>;
   dutyDisableAutoScroll: boolean;
   setMessageFeeds: Dispatch<SetStateAction<MessageFeedState[]>>;
 };
@@ -36,13 +29,13 @@ type Params = {
 export function useRerDutyFeedInteractionActions(params: Params) {
   const {
     messageFeeds,
-    buildReqForFeed,
-    columnRefsRef,
     showArrowResult,
+    columnRefsRef,
     setWatchModeByFeedId,
     setLoadingNewerFeedIds,
     loadFeedInitialMessages,
     loadFeedNewerMessages,
+    requestValidatedInboxCount,
     dutyDisableAutoScroll,
     setMessageFeeds,
   } = params;
@@ -54,23 +47,13 @@ export function useRerDutyFeedInteractionActions(params: Params) {
       if (!dutyDisableAutoScroll) {
         setWatchModeByFeedId((prev) => ({ ...prev, [feedId]: true }));
       }
-      const refs = columnRefsRef.current;
-      const scrollToEnd = () => {
-        requestAnimationFrame(() => requestAnimationFrame(() => refs[feedId]?.scrollToEnd()));
-      };
-      scrollToEnd();
-      setLoadingNewerFeedIds((prev) => {
-        const next = new Set(prev);
-        next.add(feedId);
-        return next;
-      });
       try {
         if (feed.items.length > 0) {
-          const lastItem = feed.items[feed.items.length - 1];
-          const { quantity } = await fetchInboxCount(
-            buildReqForFeed(feed, { sinceIdNoninclusive: lastItem[0], nolimit: true }),
-          );
+          const result = await requestValidatedInboxCount(feedId);
+          if (!result) return;
+          const { quantity } = result;
           if (quantity === 0) {
+            columnRefsRef.current[feedId]?.scrollToEnd('auto');
             showArrowResult(feedId, 'Немає нових повідомлень');
             return;
           }
@@ -79,14 +62,20 @@ export function useRerDutyFeedInteractionActions(params: Params) {
               f.id === feedId ? { ...f, unreadCount: Math.max(f.unreadCount, quantity) } : f,
             ),
           );
+          setLoadingNewerFeedIds((prev) => {
+            const next = new Set(prev);
+            next.add(feedId);
+            return next;
+          });
           await loadFeedNewerMessages(feedId, {
             nolimit: true,
             scrollToEndAfterLoad: true,
           });
+          showArrowResult(feedId, 'Завантажено нові повідомлення');
         } else if (!feed.loading) {
           await loadFeedInitialMessages(feedId);
+          showArrowResult(feedId, 'Завантажено нові повідомлення');
         }
-        showArrowResult(feedId, 'Завантажено нові повідомлення');
       } catch {
         showArrowResult(feedId, 'Немає нових повідомлень');
       } finally {
@@ -102,12 +91,12 @@ export function useRerDutyFeedInteractionActions(params: Params) {
       messageFeeds,
       loadFeedNewerMessages,
       loadFeedInitialMessages,
-      buildReqForFeed,
       showArrowResult,
       columnRefsRef,
       setWatchModeByFeedId,
       setLoadingNewerFeedIds,
       setMessageFeeds,
+      requestValidatedInboxCount,
       dutyDisableAutoScroll,
     ],
   );

@@ -308,7 +308,7 @@ const DutyMessageList = memo(function DutyMessageList({
       ref={listRef}
       data-duty-feed-list="true"
       className="m-0 list-none rer-duty pt-2"
-      style={{ paddingRight: '12px', boxSizing: 'border-box' }}
+      style={{ boxSizing: 'border-box' }}
     >
       {items.map(([id, msg]) => (
         <div key={id} ref={setItemRef(id)} data-duty-message-id={id}>

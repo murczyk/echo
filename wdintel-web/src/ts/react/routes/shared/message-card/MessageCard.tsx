@@ -284,11 +284,11 @@ function MessageCardComponent({
   return (
     <li
       ref={messageRootRef as React.RefObject<HTMLLIElement>}
-      className="list-none flex flex-col px-0 pb-3 mb-0 text-[14px]"
+      className="list-none flex flex-col px-0 pb-3 mb-0"
       style={{ contentVisibility: 'auto' }}
     >
       <div
-        className="relative flex flex-col w-full px-[12px] py-[10px] rounded bg-(--color-card) overflow-hidden text-[14px] [&_.MuiTypography-root]:text-[14px] [&_a]:text-[14px]"
+        className="message-card-root relative flex flex-col w-full px-[12px] py-[10px] rounded bg-(--color-card) overflow-hidden"
         style={{ gap: compactLayout ? '10px' : '12px' }}
       >
         {watermarkUserName !== '' && (

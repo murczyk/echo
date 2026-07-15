@@ -1,0 +1,5 @@
+.message-card-root,
+.message-card-root .MuiTypography-root,
+.message-card-root a {
+  font-size: 14px;
+}
