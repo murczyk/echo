@@ -879,6 +879,19 @@ async fn load_candidate_messages(
                 and account_id = $5
                 and deleted = false
                 and (
+                    $8 = 0
+                    or coalesce(timestamp, created_at) >= (now() at time zone 'utc') - make_interval(mins => $8)
+                )
+                and exists (
+                    select 1
+                    from (
+                        select jsonb_array_elements_text($6::jsonb) as token
+                        union all
+                        select jsonb_array_elements_text($7::jsonb) as token
+                    ) tokens
+                    where position(token in lower(body)) > 0
+                )
+                and (
                     coalesce(timestamp, created_at) > $2
                     or (
                         coalesce(timestamp, created_at) = $2
@@ -894,6 +907,9 @@ async fn load_candidate_messages(
             automation.last_processed_inbox_message_id.into(),
             WORKER_MESSAGE_LIMIT.into(),
             automation.source_account_id.into(),
+            automation.keyword_tokens.to_string().into(),
+            automation.frequency_tokens.to_string().into(),
+            automation.stale_message_cutoff_minutes.into(),
         ],
     ))
     .all(db)
@@ -1822,6 +1838,18 @@ mod tests {
         internal_id: &str,
         message_at: NaiveDateTime,
     ) -> Result<InboxMessageRow> {
+        insert_message_with_body(db, fixture, internal_id, message_at, "alpha")
+            .await
+            .c(h!())
+    }
+
+    async fn insert_message_with_body(
+        db: &DatabaseConnection,
+        fixture: &TestFixture,
+        internal_id: &str,
+        message_at: NaiveDateTime,
+        body: &str,
+    ) -> Result<InboxMessageRow> {
         let internal_id = format!("{}:{internal_id}", fixture.namespace);
         let id = query_i32(
             db,
@@ -1835,10 +1863,11 @@ mod tests {
                 created_at,
                 updated_at
             )
-            values ('alpha', $1, $2, $3, $4, $4, $4)
+            values ($1, $2, $3, $4, $5, $5, $5)
             returning id
             "#,
             vec![
+                body.to_string().into(),
                 internal_id.clone().into(),
                 fixture.source_group_id.into(),
                 fixture.account_id.into(),
@@ -1850,7 +1879,7 @@ mod tests {
         Ok(InboxMessageRow {
             id,
             internal_id: Some(internal_id),
-            body: "alpha".to_string(),
+            body: body.to_string(),
             account_id: fixture.account_id,
             message_at,
         })
@@ -1907,6 +1936,23 @@ mod tests {
             "Contact ALPHA reported",
             Utc::now().naive_utc(),
             Utc::now().naive_utc(),
+            &[],
+        );
+        assert_eq!(decision, MatchDecision::Send);
+    }
+
+    #[test]
+    fn matches_keyword_inside_word() {
+        let automation = AutomationFilter {
+            keyword_tokens: vec!["apple".to_string()],
+            ..filter()
+        };
+        let now = Utc::now().naive_utc();
+        let decision = message_matches_filters(
+            &automation,
+            "I love apples.",
+            now,
+            now,
             &[],
         );
         assert_eq!(decision, MatchDecision::Send);
@@ -2105,6 +2151,67 @@ mod tests {
             assert_eq!(view.usage.last_7d, 2);
             assert_eq!(view.usage.all_time, 3);
             assert_eq!(view.target_group_id, fixture.target_group_id);
+            Ok(())
+        }
+        .await;
+        cleanup_test_namespace(&db, &fixture.namespace, &fixture.phone_number)
+            .await
+            .c(h!())?;
+        result
+    }
+
+    #[tokio::test]
+    async fn candidate_messages_filter_by_tokens_before_limit() -> Result<()> {
+        let _guard = DB_TEST_LOCK.lock().await;
+        let db = test_db().await.c(h!())?;
+        let fixture = create_fixture(&db).await.c(h!())?;
+        let result = async {
+            let now = Utc::now().naive_utc();
+            for index in 0..(WORKER_MESSAGE_LIMIT + 1) {
+                insert_message_with_body(
+                    &db,
+                    &fixture,
+                    &format!("non-match-{index}"),
+                    now + ChronoDuration::seconds(index),
+                    "banana",
+                )
+                .await
+                .c(h!())?;
+            }
+            let apple = insert_message_with_body(
+                &db,
+                &fixture,
+                "apple",
+                now + ChronoDuration::seconds(WORKER_MESSAGE_LIMIT + 2),
+                "I love apples.",
+            )
+            .await
+            .c(h!())?;
+            let automation = AutomationWorkerRow {
+                id: fixture.automation_id,
+                source_account_id: fixture.account_id,
+                source_group_id: fixture.source_group_id,
+                target_account_id: fixture.account_id,
+                target_group_id: fixture.target_group_id,
+                keyword_tokens: serde_json::json!(["apple"]),
+                frequency_tokens: serde_json::json!([]),
+                stale_message_cutoff_minutes: 0,
+                resend_attachments: false,
+                coordinate_presence_mode: CoordinatePresenceMode::Any
+                    .as_str()
+                    .to_string(),
+                polygon_filter_mode: PolygonFilterMode::None
+                    .as_str()
+                    .to_string(),
+                polygon_coordinates: None,
+                checkpoint_at: now - ChronoDuration::seconds(1),
+                last_processed_inbox_message_id: 0,
+            };
+
+            let messages =
+                load_candidate_messages(&db, &automation).await.c(h!())?;
+            assert_eq!(messages.len(), 1);
+            assert_eq!(messages[0].id, apple.id);
             Ok(())
         }
         .await;
