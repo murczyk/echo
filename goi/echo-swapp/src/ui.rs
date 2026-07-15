@@ -78,13 +78,16 @@ const INDEX_HTML: &str = r#"<!doctype html>
       </section>
     </section>
 
-    <section id="automationsTab" class="hidden grid gap-4 lg:grid-cols-[360px_1fr_280px]">
+    <section id="automationsTab" class="hidden grid gap-4 lg:grid-cols-[360px_1fr]">
       <form id="automationForm" class="rounded-lg border border-zinc-800 bg-zinc-900/70 p-4">
+        <p class="mb-4 rounded-md border border-zinc-800 bg-zinc-800/70 p-3 text-sm text-zinc-300">
+          Автоматизація пересилає нові повідомлення з вибраної групи у цільову, якщо текст містить задані ключові слова або частоти. Можна враховувати координати, полігон, вік повідомлення та вкладення.
+        </p>
         <h2 class="text-base font-medium">Нова автоматизація</h2>
         <div class="mt-4 grid gap-3">
           <label class="grid gap-1 text-sm">
             <span class="text-zinc-400">Назва</span>
-            <input id="automationNameInput" class="h-10 rounded-md border border-zinc-700 bg-zinc-950 px-3 text-zinc-100 outline-none focus:border-sky-500" placeholder="координати у штаб" />
+            <input id="automationNameInput" class="h-10 rounded-md border border-zinc-700 bg-zinc-950 px-3 text-zinc-100 outline-none focus:border-sky-500" placeholder="Висновки 3 АК" />
           </label>
           <label class="grid gap-1 text-sm">
             <span class="text-zinc-400">Акаунт читання</span>
@@ -152,9 +155,6 @@ const INDEX_HTML: &str = r#"<!doctype html>
         <div id="automationList" class="grid gap-3 p-4"></div>
       </section>
 
-      <aside class="rounded-lg border border-zinc-800 bg-zinc-900/70 p-4 text-sm text-zinc-300">
-        Автоматизація пересилає нові повідомлення з вибраної групи у цільову, якщо текст містить задані ключові слова або частоти. Можна враховувати координати, полігон, вік повідомлення та вкладення.
-      </aside>
     </section>
   </main>
 
@@ -289,9 +289,9 @@ const INDEX_HTML: &str = r#"<!doctype html>
     function renderAccountSelect(select) {
       const current = Number(select.value);
       select.innerHTML = '<option value="">Оберіть акаунт</option>' + automationAccounts.map(account => {
-        const icon = account.messengerKind === 'signal' ? '●' : '◆';
         const linked = account.isLinked ? '' : ' · не підключено';
-        return `<option value="${account.id}">${icon} ${account.name} · ${account.phone}${linked}</option>`;
+        const style = account.isLinked ? '' : ' style="color:#71717a"';
+        return `<option value="${account.id}"${style}>${account.name} · ${account.phone}${linked}</option>`;
       }).join('');
       if (automationAccounts.some(account => account.id === current)) {
         select.value = String(current);
@@ -304,8 +304,7 @@ const INDEX_HTML: &str = r#"<!doctype html>
       const current = select.value;
       const groups = automationGroups.filter(group => group.accountId === accountId);
       select.innerHTML = '<option value="">Оберіть групу</option>' + groups.map(group => {
-        const icon = group.messengerKind === 'signal' ? '●' : '◆';
-        return `<option value="${group.id}">${icon} ${group.name} · ${group.messengerName}</option>`;
+        return `<option value="${group.id}">${group.name} · ${group.messengerName}</option>`;
       }).join('');
       if (groups.some(group => String(group.id) === current)) {
         select.value = current;
