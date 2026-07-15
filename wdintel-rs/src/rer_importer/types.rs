@@ -52,6 +52,7 @@ pub struct InboxMessage {
     pub location: Option<String>,
     pub tags: Option<Vec<i64>>,
     pub network_ids: Option<Vec<i64>>,
+    pub network_name: Option<String>,
     pub inbox_tags: Option<Vec<InboxMessageTag>>,
     pub metadata: Vec<InboxMessageMetadata>,
 }
@@ -165,6 +166,7 @@ impl From<InboxInsertPayload> for InboxMessage {
             location: payload.location,
             tags: payload.tags,
             network_ids: payload.network_ids,
+            network_name: None,
             inbox_tags: payload.inbox_tags,
             metadata: payload.metadata,
         }

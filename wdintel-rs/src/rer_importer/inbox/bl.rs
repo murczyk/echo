@@ -54,6 +54,7 @@ pub struct InboxMessageDesc {
     pub time: Option<String>,
     pub checked: Option<bool>,
     pub unit_v2: Option<String>,
+    pub network: Option<String>,
     pub post_id: Option<i64>,
     pub post_name: Option<String>,
     #[allow(dead_code)]
@@ -439,6 +440,7 @@ pub async fn aggregate_to_inbox_messages(
                 tags: inbox_tag_ids,
                 callsigns_alg2: from_m_val_vec(message.callsigns_alg2.clone())?,
                 network_ids,
+                network_name: message.network,
                 inbox_tags: m_inbox_tags,
                 metadata,
             },
@@ -1088,6 +1090,7 @@ pub async fn submit_upsert_inbox_item(
             device_name_id: Set(None),
             unit_v2: Set(message.unit.clone()),
             parsed_unit_v2: Set(true),
+            network: Set(None),
         })
         .on_conflict(
             sea_query::OnConflict::column(sigint_inbox_item::Column::Id)

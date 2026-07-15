@@ -1058,6 +1058,7 @@ type alias InboxMessage =
     , location : Maybe (String)
     , tags : Maybe (List (Int))
     , networkIds : Maybe (List (Int))
+    , networkName : Maybe (String)
     , inboxTags : Maybe (List (InboxMessageTag))
     , metadata : List (InboxMessageMetadata)
     }
@@ -1098,6 +1099,7 @@ inboxMessageEncoder struct =
         , ( "location", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.location )
         , ( "tags", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.int))) struct.tags )
         , ( "network_ids", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.int))) struct.networkIds )
+        , ( "network_name", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.networkName )
         , ( "inbox_tags", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (inboxMessageTagEncoder))) struct.inboxTags )
         , ( "metadata", (Json.Encode.list (inboxMessageMetadataEncoder)) struct.metadata )
         ]
@@ -7826,6 +7828,44 @@ postEncoder struct =
         ]
 
 
+type alias PostSearchReq =
+    { search : String
+    }
+
+
+postSearchReqEncoder : PostSearchReq -> Json.Encode.Value
+postSearchReqEncoder struct =
+    Json.Encode.object
+        [ ( "search", (Json.Encode.string) struct.search )
+        ]
+
+
+type alias PostSearchResult =
+    { id : Int
+    , name : String
+    }
+
+
+postSearchResultEncoder : PostSearchResult -> Json.Encode.Value
+postSearchResultEncoder struct =
+    Json.Encode.object
+        [ ( "id", (Json.Encode.int) struct.id )
+        , ( "name", (Json.Encode.string) struct.name )
+        ]
+
+
+type alias PostSearchRsp =
+    { posts : List (PostSearchResult)
+    }
+
+
+postSearchRspEncoder : PostSearchRsp -> Json.Encode.Value
+postSearchRspEncoder struct =
+    Json.Encode.object
+        [ ( "posts", (Json.Encode.list (postSearchResultEncoder)) struct.posts )
+        ]
+
+
 type ListPostsSortBy
     = PostNameDesc
     | PostNameAsc
@@ -7999,6 +8039,162 @@ deleteNetworkDescriptionReqEncoder struct =
     Json.Encode.object
         [ ( "network_id", (Json.Encode.int) struct.networkId )
         , ( "description_id", (Json.Encode.int) struct.descriptionId )
+        ]
+
+
+type alias NetworkSearchReq =
+    { search : String
+    }
+
+
+networkSearchReqEncoder : NetworkSearchReq -> Json.Encode.Value
+networkSearchReqEncoder struct =
+    Json.Encode.object
+        [ ( "search", (Json.Encode.string) struct.search )
+        ]
+
+
+type alias NetworkSearchResult =
+    { id : Int
+    , name : String
+    , unitIds : Maybe (List (Int))
+    , freqs : List (NetworkFreq)
+    }
+
+
+networkSearchResultEncoder : NetworkSearchResult -> Json.Encode.Value
+networkSearchResultEncoder struct =
+    Json.Encode.object
+        [ ( "id", (Json.Encode.int) struct.id )
+        , ( "name", (Json.Encode.string) struct.name )
+        , ( "unit_ids", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.int))) struct.unitIds )
+        , ( "freqs", (Json.Encode.list (networkFreqEncoder)) struct.freqs )
+        ]
+
+
+type alias NetworkSearchRsp =
+    { networks : List (NetworkSearchResult)
+    }
+
+
+networkSearchRspEncoder : NetworkSearchRsp -> Json.Encode.Value
+networkSearchRspEncoder struct =
+    Json.Encode.object
+        [ ( "networks", (Json.Encode.list (networkSearchResultEncoder)) struct.networks )
+        ]
+
+
+type alias FreqSearchReq =
+    { search : String
+    }
+
+
+freqSearchReqEncoder : FreqSearchReq -> Json.Encode.Value
+freqSearchReqEncoder struct =
+    Json.Encode.object
+        [ ( "search", (Json.Encode.string) struct.search )
+        ]
+
+
+type alias FreqSearchResult =
+    { id : Int
+    , name : String
+    }
+
+
+freqSearchResultEncoder : FreqSearchResult -> Json.Encode.Value
+freqSearchResultEncoder struct =
+    Json.Encode.object
+        [ ( "id", (Json.Encode.int) struct.id )
+        , ( "name", (Json.Encode.string) struct.name )
+        ]
+
+
+type alias FreqSearchRsp =
+    { freqs : List (FreqSearchResult)
+    }
+
+
+freqSearchRspEncoder : FreqSearchRsp -> Json.Encode.Value
+freqSearchRspEncoder struct =
+    Json.Encode.object
+        [ ( "freqs", (Json.Encode.list (freqSearchResultEncoder)) struct.freqs )
+        ]
+
+
+type alias SignalSearchReq =
+    { search : String
+    }
+
+
+signalSearchReqEncoder : SignalSearchReq -> Json.Encode.Value
+signalSearchReqEncoder struct =
+    Json.Encode.object
+        [ ( "search", (Json.Encode.string) struct.search )
+        ]
+
+
+type alias SignalSearchResult =
+    { id : Int
+    , name : String
+    }
+
+
+signalSearchResultEncoder : SignalSearchResult -> Json.Encode.Value
+signalSearchResultEncoder struct =
+    Json.Encode.object
+        [ ( "id", (Json.Encode.int) struct.id )
+        , ( "name", (Json.Encode.string) struct.name )
+        ]
+
+
+type alias SignalSearchRsp =
+    { signals : List (SignalSearchResult)
+    }
+
+
+signalSearchRspEncoder : SignalSearchRsp -> Json.Encode.Value
+signalSearchRspEncoder struct =
+    Json.Encode.object
+        [ ( "signals", (Json.Encode.list (signalSearchResultEncoder)) struct.signals )
+        ]
+
+
+type alias CallsignSearchReq =
+    { search : String
+    }
+
+
+callsignSearchReqEncoder : CallsignSearchReq -> Json.Encode.Value
+callsignSearchReqEncoder struct =
+    Json.Encode.object
+        [ ( "search", (Json.Encode.string) struct.search )
+        ]
+
+
+type alias CallsignSearchResult =
+    { id : Int
+    , name : String
+    }
+
+
+callsignSearchResultEncoder : CallsignSearchResult -> Json.Encode.Value
+callsignSearchResultEncoder struct =
+    Json.Encode.object
+        [ ( "id", (Json.Encode.int) struct.id )
+        , ( "name", (Json.Encode.string) struct.name )
+        ]
+
+
+type alias CallsignSearchRsp =
+    { callsigns : List (CallsignSearchResult)
+    }
+
+
+callsignSearchRspEncoder : CallsignSearchRsp -> Json.Encode.Value
+callsignSearchRspEncoder struct =
+    Json.Encode.object
+        [ ( "callsigns", (Json.Encode.list (callsignSearchResultEncoder)) struct.callsigns )
         ]
 
 
@@ -9727,6 +9923,7 @@ inboxMessageDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "location" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "tags" (Json.Decode.nullable (Json.Decode.list (Json.Decode.int)))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "network_ids" (Json.Decode.nullable (Json.Decode.list (Json.Decode.int)))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "network_name" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "inbox_tags" (Json.Decode.nullable (Json.Decode.list (inboxMessageTagDecoder)))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "metadata" (Json.Decode.list (inboxMessageMetadataDecoder))))
 
@@ -13871,6 +14068,25 @@ postDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "description" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "deleted" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "created_at" (Json.Decode.int)))
+
+
+postSearchReqDecoder : Json.Decode.Decoder PostSearchReq
+postSearchReqDecoder =
+    Json.Decode.succeed PostSearchReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "search" (Json.Decode.string)))
+
+
+postSearchResultDecoder : Json.Decode.Decoder PostSearchResult
+postSearchResultDecoder =
+    Json.Decode.succeed PostSearchResult
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" (Json.Decode.string)))
+
+
+postSearchRspDecoder : Json.Decode.Decoder PostSearchRsp
+postSearchRspDecoder =
+    Json.Decode.succeed PostSearchRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "posts" (Json.Decode.list (postSearchResultDecoder))))
 
 
 listPostsSortByDecoder : Json.Decode.Decoder ListPostsSortBy

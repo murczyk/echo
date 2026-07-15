@@ -53,6 +53,8 @@ pub struct Model {
     pub parsed_unit_v2: bool,
     pub post_id: Option<i64>,
     pub device_name_id: Option<i64>,
+    #[sea_orm(column_type = "Text", nullable)]
+    pub network: Option<String>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

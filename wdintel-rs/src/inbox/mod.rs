@@ -248,6 +248,7 @@ where
         device_name_id: Set(None),
         unit_v2: Set(unit_v2),
         parsed_unit_v2: Set(true),
+        network: Set(None),
     };
     let result = sigint_inbox_item::Entity::insert(result)
         .on_conflict(

@@ -248,6 +248,16 @@ async fn save_signal_message(
         keep_timestamp_missing,
     )
     .await?;
+    let network = payload
+        .network
+        .as_ref()
+        .and_then(|network| network.name.as_deref())
+        .map(str::trim)
+        .filter(|network| !network.is_empty())
+        .map(str::to_string);
+    query::set_inbox_item_network(&txn, submitted.inbox_id, network)
+        .await
+        .c(h!())?;
     let mut rsp = finish_direct_submit(
         env,
         txn,
@@ -690,9 +700,23 @@ mod tests {
         create_payload.freq = Some("145.025".to_string());
         create_payload.device_name_id = Some(device_name_id);
         create_payload.comment = Some("old comment".to_string());
+        create_payload.network = Some(
+            crate::rer_importer::types::SubmitNetwork {
+                signal_name: None,
+                cc: None,
+                name: Some("original network".to_string()),
+            },
+        );
         let created = submit_signal_message(TEST_LOGIN, &env, create_payload)
             .await
             .unwrap();
+        assert_eq!(
+            created
+                .message
+                .as_ref()
+                .and_then(|message| message.network_name.as_deref()),
+            Some("original network")
+        );
 
         let inbox_item =
             sigint_inbox_item::Entity::find_by_id(created.signal_message_id)
@@ -701,6 +725,7 @@ mod tests {
                 .unwrap()
                 .unwrap();
         assert_eq!(inbox_item.device_name_id, Some(device_name_id));
+        assert_eq!(inbox_item.network.as_deref(), Some("original network"));
         let mut inbox_item = inbox_item.into_active_model();
         inbox_item.callsigns_alg1 =
             Set(Some(serde_json::json!(["OLD_CALLSIGN_1"])));
@@ -745,6 +770,13 @@ mod tests {
 
         let mut edit_payload = direct_submit_payload("updated body");
         edit_payload.freq = Some("146.125".to_string());
+        edit_payload.network = Some(
+            crate::rer_importer::types::SubmitNetwork {
+                signal_name: None,
+                cc: None,
+                name: Some("updated network".to_string()),
+            },
+        );
         let edited = edit_signal_message(
             TEST_LOGIN,
             &env,
@@ -755,6 +787,13 @@ mod tests {
         .unwrap();
 
         assert_eq!(edited.signal_message_id, created.signal_message_id);
+        assert_eq!(
+            edited
+                .message
+                .as_ref()
+                .and_then(|message| message.network_name.as_deref()),
+            Some("updated network")
+        );
         let signal_message =
             signal_message::Entity::find_by_id(created.signal_message_id)
                 .one(&env.dbx)
@@ -779,6 +818,7 @@ mod tests {
                 .unwrap();
         assert_eq!(inbox_item.freq.as_deref(), Some("146.1250"));
         assert_eq!(inbox_item.device_name_id, Some(device_name_id));
+        assert_eq!(inbox_item.network.as_deref(), Some("updated network"));
         assert_eq!(inbox_item.callsigns_alg1, None);
         assert_eq!(inbox_item.callsigns_alg2, None);
         assert_eq!(inbox_item.signal_tokens, None);

@@ -129,6 +129,23 @@ where
     Ok(())
 }
 
+pub async fn set_inbox_item_network<C>(
+    dbx: &C,
+    inbox_item_id: i64,
+    network: Option<String>,
+) -> Result<(), AppError>
+where
+    C: ConnectionTrait,
+{
+    sigint_inbox_item::Entity::update_many()
+        .col_expr(sigint_inbox_item::Column::Network, Expr::value(network))
+        .filter(sigint_inbox_item::Column::Id.eq(inbox_item_id))
+        .exec(dbx)
+        .await
+        .c(h!())?;
+    Ok(())
+}
+
 pub async fn resolve_datasource_id_for_group<C>(
     dbx: &C,
     signal_group_master_key: &str,

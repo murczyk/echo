@@ -1780,6 +1780,7 @@ mod tests {
             location: None,
             tags: None,
             network_ids: None,
+            network_name: None,
             inbox_tags: None,
             metadata: vec![],
         }

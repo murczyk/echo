@@ -828,6 +828,7 @@ fn generic_submit_item_to_inbox_message(
         location: format_submit_locations(&item.locations),
         tags: None,
         network_ids: None,
+        network_name: None,
         inbox_tags: None,
         metadata: vec![],
     };
