@@ -16,6 +16,8 @@ type Props = {
   freqOptions: string[];
   freqLoading: boolean;
   setFreqInput: (val: string) => void;
+  unitLocked: boolean;
+  setUnitLocked: (val: boolean) => void;
 };
 
 export function NetworkSection({
@@ -28,6 +30,8 @@ export function NetworkSection({
   freqOptions,
   freqLoading,
   setFreqInput,
+  unitLocked,
+  setUnitLocked,
 }: Props) {
   const {
     control,
@@ -127,6 +131,7 @@ export function NetworkSection({
                   if (reason === 'input') {
                     setNetworkNameInput(newValue);
                     field.onChange(newValue);
+                    setUnitLocked(false);
                     if (newValue) {
                       setValue('network_signal_name', 'DMR', { shouldValidate: true });
                     }
@@ -140,23 +145,24 @@ export function NetworkSection({
                     setValue('network_signal_name', 'DMR', { shouldValidate: true });
                   }
 
-                  if (network) {
-                    // Autofill frequency
-                    if (network.freqs && network.freqs.length > 0) {
-                      setValue('freq', network.freqs[0].freq, { shouldValidate: true });
-                    }
-
-                    // Autofill unit
-                    if (network.unit_ids && network.unit_ids.length > 0) {
-                      try {
-                        const units = await getUnitsByIds(network.unit_ids);
-                        if (units.length > 0) {
-                          setValue('unit', units[0].name, { shouldValidate: true });
-                        }
-                      } catch (e) {
-                        console.error('Failed to fetch units for network', e);
+                  if (network && network.unit_ids && network.unit_ids.length > 0) {
+                    // Autofill and lock unit(s) from the selected network
+                    try {
+                      const units = await getUnitsByIds(network.unit_ids);
+                      if (units.length > 0) {
+                        setValue('unit', units.map((u) => u.name).join(', '), {
+                          shouldValidate: true,
+                        });
+                        setUnitLocked(true);
+                      } else {
+                        setUnitLocked(false);
                       }
+                    } catch (e) {
+                      console.error('Failed to fetch units for network', e);
+                      setUnitLocked(false);
                     }
+                  } else {
+                    setUnitLocked(false);
                   }
                 }}
                 renderInput={(params) => (

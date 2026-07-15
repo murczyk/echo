@@ -29,6 +29,7 @@ type Props = {
   unitOptions: string[];
   unitLoading: boolean;
   setUnitInput: (val: string) => void;
+  unitLocked: boolean;
 };
 
 export function MetadataSection({
@@ -48,6 +49,7 @@ export function MetadataSection({
   unitOptions,
   unitLoading,
   setUnitInput,
+  unitLocked,
 }: Props) {
   const {
     control,
@@ -142,7 +144,7 @@ export function MetadataSection({
                 options={Array.from(new Set([...(recentValues?.unit || []), ...unitOptions]))}
                 value={field.value ?? ''}
                 loading={unitLoading}
-                disabled={busy}
+                disabled={busy || unitLocked}
                 onInputChange={(_, newValue, reason) => {
                   if (reason === 'input') {
                     setUnitInput(newValue);
@@ -151,7 +153,13 @@ export function MetadataSection({
                 }}
                 onChange={(_, newValue) => field.onChange(newValue || '')}
                 renderInput={(params) => (
-                  <TextField {...params} label="Підрозділ" size="small" fullWidth disabled={busy} />
+                  <TextField
+                    {...params}
+                    label="Підрозділ"
+                    size="small"
+                    fullWidth
+                    disabled={busy || unitLocked}
+                  />
                 )}
               />
             )}

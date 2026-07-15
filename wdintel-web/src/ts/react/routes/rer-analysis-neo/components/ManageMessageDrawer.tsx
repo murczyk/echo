@@ -55,9 +55,9 @@ export function ManageMessageDrawer(props: Props) {
     errorMsg,
     setErrorMsg,
     tagOptions,
-    computerNameOptions,
-    computerNamesLoading,
-    setComputerNameInput,
+    deviceNameOptions,
+    deviceNamesLoading,
+    setDeviceNameInput,
     uppy,
     uppyFiles,
     fileInputRef,
@@ -198,9 +198,9 @@ export function ManageMessageDrawer(props: Props) {
                   busy={busy}
                   isEditMode={isEditMode}
                   cyberEchoEnabled={props.cyberEchoEnabled}
-                  computerNameOptions={computerNameOptions}
-                  computerNamesLoading={computerNamesLoading}
-                  setComputerNameInput={setComputerNameInput}
+                  deviceNameOptions={deviceNameOptions}
+                  deviceNamesLoading={deviceNamesLoading}
+                  setDeviceNameInput={setDeviceNameInput}
                   recentValues={recentValues}
                 />
 
@@ -216,6 +216,7 @@ export function ManageMessageDrawer(props: Props) {
                   unitOptions={drawerState.unitOptions}
                   unitLoading={drawerState.unitLoading}
                   setUnitInput={drawerState.setUnitInput}
+                  unitLocked={drawerState.unitLocked}
                   getProposedCallsigns={getProposedCallsigns}
                   addSuggestedCallsign={addSuggestedCallsign}
                   callsignOptions={drawerState.callsignOptions}
@@ -233,6 +234,8 @@ export function ManageMessageDrawer(props: Props) {
                   freqOptions={drawerState.freqOptions}
                   freqLoading={drawerState.freqLoading}
                   setFreqInput={drawerState.setFreqInput}
+                  unitLocked={drawerState.unitLocked}
+                  setUnitLocked={drawerState.setUnitLocked}
                 />
 
                 <LocationsSection busy={busy} recentValues={recentValues} />

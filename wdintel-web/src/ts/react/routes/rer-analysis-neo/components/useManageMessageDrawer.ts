@@ -9,7 +9,7 @@ import {
   getTagsForDisplay,
 } from '../../../services/api/inbox-reference-data';
 import {
-  searchComputerNames,
+  searchDeviceNames,
   searchPostNames,
   searchUnitNames,
   searchNetworkNames,
@@ -69,9 +69,9 @@ export function useManageMessageDrawer({
   const [tagsMap, setTagsMap] = useState<Record<number, Tag>>({});
   const [tagsLoaded, setTagsLoaded] = useState(false);
 
-  const [computerNameOptions, setComputerNameOptions] = useState<string[]>([]);
-  const [computerNamesLoading, setComputerNamesLoading] = useState(false);
-  const [computerNameInput, setComputerNameInput] = useState('');
+  const [deviceNameOptions, setDeviceNameOptions] = useState<string[]>([]);
+  const [deviceNamesLoading, setDeviceNamesLoading] = useState(false);
+  const [deviceNameInput, setDeviceNameInput] = useState('');
 
   const [postOptions, setPostOptions] = useState<string[]>([]);
   const [postLoading, setPostLoading] = useState(false);
@@ -84,6 +84,7 @@ export function useManageMessageDrawer({
   const [networkNameOptions, setNetworkNameOptions] = useState<NetworkSearchResult[]>([]);
   const [networkNameLoading, setNetworkNameLoading] = useState(false);
   const [networkNameInput, setNetworkNameInput] = useState('');
+  const [unitLocked, setUnitLocked] = useState(false);
 
   const signalNameOptions = ['DMR'];
   const signalNameLoading = false;
@@ -101,22 +102,22 @@ export function useManageMessageDrawer({
     if (!open) return;
     let active = true;
 
-    setComputerNamesLoading(true);
-    searchComputerNames(computerNameInput)
+    setDeviceNamesLoading(true);
+    searchDeviceNames(deviceNameInput)
       .then((results) => {
         if (active) {
-          setComputerNameOptions(results.map((c) => c.name));
+          setDeviceNameOptions(results.map((c) => c.name));
         }
       })
       .catch(console.error)
       .finally(() => {
-        if (active) setComputerNamesLoading(false);
+        if (active) setDeviceNamesLoading(false);
       });
 
     return () => {
       active = false;
     };
-  }, [computerNameInput, open]);
+  }, [deviceNameInput, open]);
 
   useEffect(() => {
     if (!open) return;
@@ -294,7 +295,7 @@ export function useManageMessageDrawer({
 
   useEffect(() => {
     if (!open) return;
-    setComputerNameInput('');
+    setDeviceNameInput('');
     setPostInput('');
     setUnitInput('');
     setNetworkNameInput('');
@@ -302,13 +303,14 @@ export function useManageMessageDrawer({
     setFreqInput('');
     setShowAdvanced(false);
     setErrorMsg(null);
+    setUnitLocked(false);
     if (isEditMode && editTarget) {
       const metadata = editTarget.message.metadata ?? [];
       reset({
         ...mapInboxMessageToForm(editTarget.message, tagsMap),
         text: editTarget.message.noHeadersBody?.body ?? editTarget.message.text ?? '',
         signalGroupMasterKey: editTarget.message.groupMasterKey ?? '',
-        computerName: '',
+        deviceName: '',
         network_signal_name: metadata.length || editTarget.message.networkIds?.length ? 'DMR' : '',
         network_name: '',
         dmr: metadata.map((item) => ({
@@ -360,7 +362,7 @@ export function useManageMessageDrawer({
     if (busy) return;
     uppy.cancelAll();
     reset();
-    setComputerNameInput('');
+    setDeviceNameInput('');
     setShowAdvanced(false);
     setErrorMsg(null);
     onClose();
@@ -408,10 +410,10 @@ export function useManageMessageDrawer({
     tagOptions,
     tagsMap,
     setTagsMap,
-    computerNameOptions,
-    computerNamesLoading,
-    computerNameInput,
-    setComputerNameInput,
+    deviceNameOptions,
+    deviceNamesLoading,
+    deviceNameInput,
+    setDeviceNameInput,
     postOptions,
     postLoading,
     setPostInput,
@@ -421,6 +423,8 @@ export function useManageMessageDrawer({
     networkNameOptions,
     networkNameLoading,
     setNetworkNameInput,
+    unitLocked,
+    setUnitLocked,
     signalNameOptions,
     signalNameLoading,
     setSignalNameInput,

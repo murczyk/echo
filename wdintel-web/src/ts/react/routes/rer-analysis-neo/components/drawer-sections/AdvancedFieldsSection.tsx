@@ -1,8 +1,9 @@
 import React from 'react';
-import { Box, TextField, Autocomplete } from '@mui/material';
+import { Box, Divider, TextField, Autocomplete } from '@mui/material';
 import { useFormContext, Controller } from 'react-hook-form';
 import type { MessageFormData } from '../manage-message-drawer.schema';
 import { FormSectionWrapper } from './FormSectionWrapper';
+import { DmrSection } from './DmrSection';
 
 type Props = {
   showAdvanced: boolean;
@@ -87,6 +88,10 @@ export function AdvancedFieldsSection({
             />
           )}
         />
+
+        <Divider />
+
+        <DmrSection showAdvanced={showAdvanced} busy={busy} recentValues={recentValues} embedded />
       </Box>
     </FormSectionWrapper>
   );

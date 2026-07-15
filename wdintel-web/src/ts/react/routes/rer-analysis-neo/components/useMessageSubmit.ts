@@ -3,7 +3,7 @@ import type { InboxMessage } from '../../../../../Bindings';
 import type Uppy from '@uppy/core';
 
 import {
-  createComputerName,
+  createDeviceName,
   submitDirect,
   editDirectSubmit,
   formatDirectSubmitError,
@@ -66,11 +66,11 @@ export function useMessageSubmit({
     setErrorMsg(null);
 
     try {
-      let computerNameId: number | undefined;
-      const computerName = data.computerName?.trim();
-      if (computerName) {
-        const device = await createComputerName(computerName);
-        computerNameId = device.id;
+      let deviceNameId: number | undefined;
+      const deviceName = data.deviceName?.trim();
+      if (deviceName) {
+        const device = await createDeviceName(deviceName);
+        deviceNameId = device.id;
       }
 
       const files = uppy.getFiles();
@@ -143,7 +143,7 @@ export function useMessageSubmit({
         text: shortBodyForSubmit(data, isEditMode ? editTarget : null),
         comment: data.comment?.trim() || undefined,
         signal_group_master_key: data.signalGroupMasterKey,
-        device_name_id: computerNameId,
+        device_name_id: deviceNameId,
         upload_urls: uploadUrls.length > 0 ? uploadUrls : null,
         freq: data.freq || undefined,
         coords: coordsResult,
@@ -190,6 +190,7 @@ export function useMessageSubmit({
         dmr_hash_id: dmrRows.flatMap((metadata) => (metadata.hash_id ? [metadata.hash_id] : [])),
         locations: data.locations ?? [],
         callsigns: data.callsigns ?? [],
+        deviceName: data.deviceName ? [data.deviceName] : [],
       });
 
       onSuccess?.();

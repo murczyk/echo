@@ -11,9 +11,9 @@ type Props = {
   busy: boolean;
   isEditMode: boolean;
   cyberEchoEnabled: boolean;
-  computerNameOptions: string[];
-  computerNamesLoading: boolean;
-  setComputerNameInput: (value: string) => void;
+  deviceNameOptions: string[];
+  deviceNamesLoading: boolean;
+  setDeviceNameInput: (value: string) => void;
   recentValues: any;
 };
 
@@ -23,9 +23,9 @@ export function SystemSection({
   busy,
   isEditMode,
   cyberEchoEnabled,
-  computerNameOptions,
-  computerNamesLoading,
-  setComputerNameInput,
+  deviceNameOptions,
+  deviceNamesLoading,
+  setDeviceNameInput,
   recentValues,
 }: Props) {
   const {
@@ -106,31 +106,33 @@ export function SystemSection({
 
         {cyberEchoEnabled && (
           <Controller
-            name="computerName"
+            name="deviceName"
             control={control}
             render={({ field }) => (
               <Autocomplete
                 freeSolo
                 forcePopupIcon
                 noOptionsText="Немає варіантів"
-                options={computerNameOptions}
-                loading={computerNamesLoading}
+                options={Array.from(
+                  new Set([...(recentValues?.deviceName || []), ...deviceNameOptions]),
+                )}
+                loading={deviceNamesLoading}
                 value={field.value ?? ''}
                 disabled={busy}
                 onInputChange={(_, newValue, reason) => {
                   if (reason !== 'input') return;
-                  setComputerNameInput(newValue);
+                  setDeviceNameInput(newValue);
                   field.onChange(newValue);
                 }}
                 onChange={(_, newValue) => {
                   const resolved = newValue || '';
-                  setComputerNameInput(resolved);
+                  setDeviceNameInput(resolved);
                   field.onChange(resolved);
                 }}
                 renderInput={(params) => (
                   <TextField
                     {...params}
-                    label="Назва машини"
+                    label="Назва пристрою"
                     size="small"
                     fullWidth
                     disabled={busy}

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Autocomplete, Box, Button, IconButton, TextField, Typography } from '@mui/material';
+import { Autocomplete, Box, Button, IconButton, Stack, TextField, Typography } from '@mui/material';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import { Controller, useFieldArray, useFormContext } from 'react-hook-form';
 import { FormSectionWrapper } from './FormSectionWrapper';
@@ -9,6 +9,8 @@ type Props = {
   showAdvanced: boolean;
   busy: boolean;
   recentValues: any;
+  /** Render as a nested subsection (no own section header/divider) inside a parent wrapper. */
+  embedded?: boolean;
 };
 
 type DmrFieldName =
@@ -41,7 +43,7 @@ const DMR_FIELDS: Array<{
   { name: 'hash_id', label: 'Hash ID', recentKey: 'dmr_hash_id' },
 ];
 
-export function DmrSection({ showAdvanced, busy, recentValues }: Props) {
+export function DmrSection({ showAdvanced, busy, recentValues, embedded }: Props) {
   const {
     control,
     watch,
@@ -51,34 +53,57 @@ export function DmrSection({ showAdvanced, busy, recentValues }: Props) {
   const metadata = watch('dmr');
   const hasMetadata = metadata.some((item) => Object.values(item).some((value) => value?.trim()));
 
-  if (!showAdvanced && !hasMetadata) return null;
+  // Standalone usage (embedded=false) is a fallback: it shows existing DMR data
+  // (e.g. when editing an imported message) while advanced fields are collapsed, so
+  // the data isn't hidden from the user. Once advanced fields expand, the embedded
+  // instance inside AdvancedFieldsSection takes over and this one hides to avoid a
+  // duplicate "DMR метадані" block. Embedded instances are only ever mounted while
+  // advanced fields are already expanded, so they always render.
+  if (!embedded && (!hasMetadata || showAdvanced)) return null;
 
-  return (
-    <FormSectionWrapper
-      title="DMR метадані"
-      action={
-        <Button size="small" onClick={() => append({ ...EMPTY_DMR_METADATA })} disabled={busy}>
-          Додати запис
-        </Button>
-      }
-    >
-      {fields.length === 0 ? (
-        <Typography variant="body2" color="text.secondary">
-          Немає DMR метаданих
-        </Typography>
-      ) : (
-        fields.map((field, index) => (
+  const addButton = (
+    <Button size="small" onClick={() => append({ ...EMPTY_DMR_METADATA })} disabled={busy}>
+      Додати запис
+    </Button>
+  );
+
+  const content =
+    fields.length === 0 ? (
+      <Typography variant="body2" color="text.secondary">
+        Немає DMR метаданих
+      </Typography>
+    ) : (
+      fields.map((field, index) => (
+        <Box
+          key={field.id}
+          sx={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 1.5,
+            p: 1.5,
+            border: '1px solid',
+            borderColor: 'divider',
+            borderRadius: 1,
+          }}
+        >
+          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <Typography variant="caption" color="text.secondary">
+              Запис {index + 1}
+            </Typography>
+            <IconButton
+              aria-label={`Видалити DMR запис ${index + 1}`}
+              onClick={() => remove(index)}
+              disabled={busy}
+              size="small"
+            >
+              <DeleteOutlineIcon fontSize="small" />
+            </IconButton>
+          </Box>
           <Box
-            key={field.id}
             sx={{
               display: 'grid',
               gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' },
               gap: 2,
-              p: 1.5,
-              border: '1px solid',
-              borderColor: 'divider',
-              borderRadius: 1,
-              position: 'relative',
             }}
           >
             {DMR_FIELDS.map((definition) => (
@@ -113,18 +138,28 @@ export function DmrSection({ showAdvanced, busy, recentValues }: Props) {
                 )}
               />
             ))}
-            <IconButton
-              aria-label={`Видалити DMR запис ${index + 1}`}
-              onClick={() => remove(index)}
-              disabled={busy}
-              size="small"
-              sx={{ position: 'absolute', top: 4, right: 4 }}
-            >
-              <DeleteOutlineIcon fontSize="small" />
-            </IconButton>
           </Box>
-        ))
-      )}
+        </Box>
+      ))
+    );
+
+  if (embedded) {
+    return (
+      <Stack spacing={1.5}>
+        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <Typography variant="body2" color="text.secondary">
+            DMR метадані
+          </Typography>
+          {addButton}
+        </Box>
+        {content}
+      </Stack>
+    );
+  }
+
+  return (
+    <FormSectionWrapper title="DMR метадані" action={addButton}>
+      {content}
     </FormSectionWrapper>
   );
 }

@@ -18,6 +18,7 @@ export type RecentValues = {
   dmr_call_group_name: string[];
   dmr_hash_id: string[];
   group: string[];
+  deviceName: string[];
 };
 
 const DEFAULT_VALUES: RecentValues = {
@@ -35,6 +36,7 @@ const DEFAULT_VALUES: RecentValues = {
   dmr_call_group_name: [],
   dmr_hash_id: [],
   group: [],
+  deviceName: [],
 };
 
 export function useRecentValues() {

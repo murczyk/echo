@@ -20,15 +20,15 @@ vi.mock('../../../services/api/inbox-reference-data', () => ({
   getTagsForDisplay: referenceDataMocks.getTagsForDisplay,
 }));
 vi.mock('../../../services/api/direct-submit', () => ({
-  searchComputerName: vi.fn().mockResolvedValue(null),
-  searchComputerNames: vi.fn().mockResolvedValue([]),
+  searchDeviceName: vi.fn().mockResolvedValue(null),
+  searchDeviceNames: vi.fn().mockResolvedValue([]),
   searchPostNames: vi.fn().mockResolvedValue([]),
   searchUnitNames: vi.fn().mockResolvedValue([]),
   searchNetworkNames: vi.fn().mockResolvedValue([]),
   searchSignalNames: vi.fn().mockResolvedValue([]),
   searchCallsignNames: vi.fn().mockResolvedValue([]),
   searchFreqs: vi.fn().mockResolvedValue([]),
-  createComputerName: vi.fn().mockResolvedValue({ id: 1 }),
+  createDeviceName: vi.fn().mockResolvedValue({ id: 1 }),
   parseDirectSubmit: vi.fn(),
   submitDirect: vi.fn().mockResolvedValue({ signal_message_id: 1 }),
   editDirectSubmit: directSubmitMocks.editDirectSubmit,

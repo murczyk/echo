@@ -2,28 +2,28 @@ import { HttpRequestError, postJson } from './client';
 import type { RequestOptions } from './client';
 import type { InboxMessage } from '../../../../Bindings';
 
-export type ComputerNameSearchRequest = {
+export type DeviceNameSearchRequest = {
   search: string;
 };
 
-export type ComputerNameResponse = {
+export type DeviceNameResponse = {
   id: number;
   name: string;
 };
 
-export type ComputerNameSearchResponse = {
-  devices: ComputerNameResponse[];
+export type DeviceNameSearchResponse = {
+  devices: DeviceNameResponse[];
 };
 
-export type CreateComputerNameResponse = {
-  device: ComputerNameResponse;
+export type CreateDeviceNameResponse = {
+  device: DeviceNameResponse;
 };
 
-export async function searchComputerNames(
+export async function searchDeviceNames(
   search: string,
   options?: RequestOptions,
-): Promise<ComputerNameResponse[]> {
-  const result = await postJson<ComputerNameSearchResponse>(
+): Promise<DeviceNameResponse[]> {
+  const result = await postJson<DeviceNameSearchResponse>(
     '/api/sigint/device-name/search',
     { search },
     options,
@@ -31,11 +31,11 @@ export async function searchComputerNames(
   return result?.devices || [];
 }
 
-export async function searchComputerName(
+export async function searchDeviceName(
   search: string,
   options?: RequestOptions,
-): Promise<ComputerNameResponse | null> {
-  const result = await postJson<ComputerNameSearchResponse>(
+): Promise<DeviceNameResponse | null> {
+  const result = await postJson<DeviceNameSearchResponse>(
     '/api/sigint/device-name/search',
     { search },
     options,
@@ -43,11 +43,11 @@ export async function searchComputerName(
   return result?.devices && result.devices.length > 0 ? result.devices[0] : null;
 }
 
-export async function createComputerName(
+export async function createDeviceName(
   name: string,
   options?: RequestOptions,
-): Promise<ComputerNameResponse> {
-  const result = await postJson<CreateComputerNameResponse>(
+): Promise<DeviceNameResponse> {
+  const result = await postJson<CreateDeviceNameResponse>(
     '/api/sigint/device-name/create',
     { name },
     options,

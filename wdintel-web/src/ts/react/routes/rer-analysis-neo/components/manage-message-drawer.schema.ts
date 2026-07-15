@@ -85,16 +85,12 @@ const dmrMetadataSchema = z.object({
   hash_id: optionalDmrText,
 });
 
-function hasDmrMetadataValue(metadata: z.infer<typeof dmrMetadataSchema>): boolean {
-  return Object.values(metadata).some((value) => value?.trim());
-}
-
 export function makeMessageSchema(isEditMode: boolean) {
   return z
     .object({
       text: z.string().optional(),
       signalGroupMasterKey: z.string().trim().min(1, 'Оберіть групу'),
-      computerName: z.string().optional(),
+      deviceName: z.string().optional(),
       freq: z
         .string()
         .optional()
@@ -117,19 +113,11 @@ export function makeMessageSchema(isEditMode: boolean) {
       deleted_media_ids: z.array(z.string()).optional(),
     })
     .superRefine((data, ctx) => {
-      if (!isEditMode && data.coords?.trim() && !parseCoordLine(data.coords)) {
+      if (data.coords?.trim() && !parseCoordLine(data.coords)) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
           path: ['coords'],
           message: 'Невірний формат координат (очікується "lat, lon" або MGRS)',
-        });
-      }
-
-      if (data.dmr.some(hasDmrMetadataValue) && !data.freq?.trim()) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ['freq'],
-          message: "Частота є обов'язковою для DMR метаданих",
         });
       }
     });
@@ -140,7 +128,7 @@ export type MessageFormData = z.infer<ReturnType<typeof makeMessageSchema>>;
 export const EMPTY_FORM_VALUES: MessageFormData = {
   text: '',
   signalGroupMasterKey: '',
-  computerName: '',
+  deviceName: '',
   freq: '',
   coords: '',
   callsigns: [],
