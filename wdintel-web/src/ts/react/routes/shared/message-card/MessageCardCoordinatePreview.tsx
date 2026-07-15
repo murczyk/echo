@@ -1,6 +1,6 @@
 import 'leaflet/dist/leaflet.css';
 
-import { Box, ButtonBase, Skeleton, Tooltip, Typography } from '@mui/material';
+import { Box, Button, ButtonBase, Skeleton, Tooltip, Typography } from '@mui/material';
 import * as L from 'leaflet';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 
@@ -16,6 +16,10 @@ type Props = {
   msg: InboxMessage;
 };
 
+type CoordinatePreviewError = Error & {
+  cause?: unknown;
+};
+
 const PREVIEW_HEIGHT_PX = 120;
 const PREVIEW_MAX_WIDTH_PX = 180;
 const PREVIEW_ROOT_MARGIN = '160px 0px';
@@ -27,13 +31,18 @@ export function MessageCardCoordinatePreview({ msg }: Props) {
   const mapRef = useRef<L.Map | null>(null);
   const markerRef = useRef<L.CircleMarker | null>(null);
   const resolveRequestIdRef = useRef(0);
+  const pendingPreviewLoadRef = useRef(false);
   const [isNearViewport, setIsNearViewport] = useState(false);
   const [preview, setPreview] = useState<CoordinatePreviewResult | null | undefined>(undefined);
+  const [previewError, setPreviewError] = useState<CoordinatePreviewError | null>(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
 
   useEffect(() => {
     setPreview(undefined);
+    setPreviewError(null);
     setIsDialogOpen(false);
+    pendingPreviewLoadRef.current = false;
+    resolveRequestIdRef.current += 1;
   }, [msg]);
 
   useEffect(() => {
@@ -56,20 +65,44 @@ export function MessageCardCoordinatePreview({ msg }: Props) {
   }, []);
 
   useEffect(() => {
-    if (!isNearViewport || preview !== undefined) {
+    if (
+      !isNearViewport ||
+      preview !== undefined ||
+      previewError !== null ||
+      pendingPreviewLoadRef.current
+    ) {
       return;
     }
 
     const requestId = resolveRequestIdRef.current + 1;
     resolveRequestIdRef.current = requestId;
+    pendingPreviewLoadRef.current = true;
+    setPreview(undefined);
+    setPreviewError(null);
 
-    void resolveMessageCoordinatePreview({ message: msg }).then((result) => {
-      if (resolveRequestIdRef.current !== requestId) {
-        return;
-      }
-      setPreview(result);
-    });
-  }, [isNearViewport, msg, preview]);
+    void resolveMessageCoordinatePreview({ message: msg })
+      .then((result) => {
+        if (resolveRequestIdRef.current !== requestId) {
+          return;
+        }
+        pendingPreviewLoadRef.current = false;
+        setPreview(result);
+        setPreviewError(null);
+      })
+      .catch((error: unknown) => {
+        if (resolveRequestIdRef.current !== requestId) {
+          return;
+        }
+        pendingPreviewLoadRef.current = false;
+        const lookupError =
+          error instanceof Error ? error : new Error(typeof error === 'string' ? error : 'Error');
+        if (!('cause' in lookupError)) {
+          (lookupError as CoordinatePreviewError).cause = error;
+        }
+        setPreview(null);
+        setPreviewError(lookupError as CoordinatePreviewError);
+      });
+  }, [isNearViewport, msg, preview, previewError]);
 
   useLayoutEffect(() => {
     const previewPoint = preview?.point;
@@ -139,10 +172,69 @@ export function MessageCardCoordinatePreview({ msg }: Props) {
   }, [preview]);
 
   if (preview === null) {
+    if (previewError !== null) {
+      return (
+        <Box
+          ref={hostRef}
+          style={{ width: '180px', maxWidth: '100%' }}
+          sx={{
+            width: '100%',
+            maxWidth: `${PREVIEW_MAX_WIDTH_PX}px`,
+            alignSelf: 'flex-start',
+          }}
+        >
+          <Box
+            sx={{
+              width: '100%',
+              maxWidth: `${PREVIEW_MAX_WIDTH_PX}px`,
+              height: PREVIEW_HEIGHT_PX,
+              borderRadius: 2,
+              border: '1px solid',
+              borderColor: 'divider',
+              bgcolor: 'background.paper',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 1,
+              px: 2,
+              textAlign: 'center',
+              overflow: 'hidden',
+            }}
+            title={
+              previewError.cause instanceof Error
+                ? previewError.cause.message
+                : typeof previewError.cause === 'string'
+                  ? previewError.cause
+                  : previewError.message
+            }
+          >
+            <Typography variant="body2" sx={{ color: 'text.primary', fontWeight: 600 }}>
+              Не вдалося завантажити точку мапи
+            </Typography>
+            <Button
+              type="button"
+              variant="text"
+              aria-label="Повторити"
+              onClick={() => {
+                pendingPreviewLoadRef.current = false;
+                resolveRequestIdRef.current += 1;
+                setPreview(undefined);
+                setPreviewError(null);
+              }}
+              sx={{ flexShrink: 0 }}
+            >
+              Повторити
+            </Button>
+          </Box>
+        </Box>
+      );
+    }
+
     return null;
   }
 
-  const isLoading = preview === undefined;
+  const isLoading = preview === undefined && previewError === null;
   const resolvedPreview = isLoading ? null : (preview as CoordinatePreviewResult);
   const label = resolvedPreview?.point.label ?? '';
   const extraPointCount = Math.max((resolvedPreview?.pointCount ?? 1) - 1, 0);

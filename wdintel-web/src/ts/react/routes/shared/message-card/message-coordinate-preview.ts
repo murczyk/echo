@@ -15,6 +15,21 @@ export type CoordinatePreviewInput = {
   message: InboxMessage;
 };
 
+export type CoordinatePreviewLookupErrorKind = 'palette-list' | 'point-search';
+
+export class CoordinatePreviewLookupError extends Error {
+  readonly kind: CoordinatePreviewLookupErrorKind;
+
+  readonly cause: unknown;
+
+  constructor(kind: CoordinatePreviewLookupErrorKind, cause: unknown) {
+    super('Не вдалося завантажити точку мапи');
+    this.name = 'CoordinatePreviewLookupError';
+    this.kind = kind;
+    this.cause = cause;
+  }
+}
+
 export type CoordinatePreviewResult = {
   source: CoordinatePreviewSource;
   point: {
@@ -207,9 +222,8 @@ async function loadAvailablePalitraIds(): Promise<number[]> {
       return availablePalitraIds;
     })
     .catch((error) => {
-      console.error('Failed to load map palitras for coordinate preview', error);
       availablePalitraIds = null;
-      return [];
+      throw new CoordinatePreviewLookupError('palette-list', error);
     })
     .finally(() => {
       availablePalitraIdsPromise = null;
@@ -260,8 +274,7 @@ async function resolvePointForEtalon(
       return null;
     })
     .catch((error) => {
-      console.error('Failed to resolve coordinate preview point', error);
-      return null;
+      throw new CoordinatePreviewLookupError('point-search', error);
     })
     .finally(() => {
       pendingResolvedPointRequests.delete(cacheKey);

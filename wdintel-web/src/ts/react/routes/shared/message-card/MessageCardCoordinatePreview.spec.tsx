@@ -69,6 +69,16 @@ vi.mock('leaflet', () => {
   };
 });
 
+function createDeferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((promiseResolve, promiseReject) => {
+    resolve = promiseResolve;
+    reject = promiseReject;
+  });
+  return { promise, resolve, reject };
+}
+
 describe('MessageCardCoordinatePreview', () => {
   let container: HTMLElement;
   let root: Root;
@@ -169,5 +179,132 @@ describe('MessageCardCoordinatePreview', () => {
     expect(document.body.querySelector('[data-popper-placement="top"]')).not.toBeNull();
     expect(document.body.textContent).toContain('Відкрити на мапі');
     expect(container.textContent).toContain('+1');
+  });
+
+  it('renders an inline retry error when the resolver rejects for a palette list failure', async () => {
+    const msg = { pointTokens: [] } as InboxMessage;
+    vi.mocked(resolveMessageCoordinatePreview)
+      .mockRejectedValueOnce(new Error('palette list failed'))
+      .mockResolvedValueOnce({
+        source: 'palitra',
+        point: { lat: 50.45, lng: 30.52, label: 'BRAVO' },
+        etalons: ['BRAVO'],
+        pointCount: 1,
+      });
+
+    await act(async () => {
+      root.render(<MessageCardCoordinatePreview msg={msg} />);
+    });
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(container.textContent).toContain('Не вдалося завантажити точку мапи');
+    const retry = container.querySelector('button[aria-label="Повторити"]') as HTMLButtonElement;
+    expect(retry).not.toBeNull();
+
+    await act(async () => {
+      retry.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(container.querySelector('button[aria-label="Open BRAVO on map"]')).not.toBeNull();
+  });
+
+  it('renders an inline retry error when the resolver rejects for a point lookup failure', async () => {
+    const msg = { pointTokens: [] } as InboxMessage;
+    vi.mocked(resolveMessageCoordinatePreview)
+      .mockRejectedValueOnce(new Error('point search failed'))
+      .mockResolvedValueOnce({
+        source: 'palitra',
+        point: { lat: 50.45, lng: 30.52, label: 'BRAVO' },
+        etalons: ['BRAVO'],
+        pointCount: 1,
+      });
+
+    await act(async () => {
+      root.render(<MessageCardCoordinatePreview msg={msg} />);
+    });
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(container.textContent).toContain('Не вдалося завантажити точку мапи');
+
+    const retry = container.querySelector('button[aria-label="Повторити"]') as HTMLButtonElement;
+    await act(async () => {
+      retry.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(container.querySelector('button[aria-label="Open BRAVO on map"]')).not.toBeNull();
+  });
+
+  it('stays silent for a genuine preview miss', async () => {
+    const msg = { pointTokens: [] } as InboxMessage;
+    vi.mocked(resolveMessageCoordinatePreview).mockResolvedValue(null);
+
+    await act(async () => {
+      root.render(<MessageCardCoordinatePreview msg={msg} />);
+    });
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(container.textContent).toBe('');
+  });
+
+  it('ignores stale async errors after the message changes', async () => {
+    const first = createDeferred<never>();
+    const second = createDeferred<{
+      source: 'palitra';
+      point: { lat: number; lng: number; label: string };
+      etalons: string[];
+      pointCount: number;
+    } | null>();
+
+    vi.mocked(resolveMessageCoordinatePreview)
+      .mockImplementationOnce(() => first.promise)
+      .mockImplementationOnce(() => second.promise);
+
+    const firstMsg = { pointTokens: [] } as InboxMessage;
+    const secondMsg = { pointTokens: [] } as InboxMessage;
+
+    await act(async () => {
+      root.render(<MessageCardCoordinatePreview msg={firstMsg} />);
+    });
+
+    await act(async () => {
+      root.render(<MessageCardCoordinatePreview msg={secondMsg} />);
+    });
+
+    await act(async () => {
+      first.reject(new Error('stale failure'));
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      second.resolve({
+        source: 'palitra',
+        point: { lat: 50.45, lng: 30.52, label: 'BRAVO' },
+        etalons: ['BRAVO'],
+        pointCount: 1,
+      });
+      await Promise.resolve();
+    });
+
+    expect(container.textContent).not.toContain('Не вдалося завантажити точку мапи');
+    expect(container.querySelector('button[aria-label="Open BRAVO on map"]')).not.toBeNull();
   });
 });

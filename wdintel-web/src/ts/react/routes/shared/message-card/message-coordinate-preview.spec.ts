@@ -400,7 +400,10 @@ describe('message coordinate preview resolver', () => {
       pointTokens: [{ etalon: 'BRAVO' }],
     });
 
-    expect(await resolveMessageCoordinatePreview({ message })).toBeNull();
+    await expect(resolveMessageCoordinatePreview({ message })).rejects.toMatchObject({
+      name: 'CoordinatePreviewLookupError',
+      kind: 'palette-list',
+    });
     expect(await resolveMessageCoordinatePreview({ message })).toEqual({
       source: 'palitra',
       point: {
@@ -435,7 +438,10 @@ describe('message coordinate preview resolver', () => {
       pointTokens: [{ etalon: 'BRAVO' }],
     });
 
-    expect(await resolveMessageCoordinatePreview({ message })).toBeNull();
+    await expect(resolveMessageCoordinatePreview({ message })).rejects.toMatchObject({
+      name: 'CoordinatePreviewLookupError',
+      kind: 'point-search',
+    });
     expect(await resolveMessageCoordinatePreview({ message })).toEqual({
       source: 'palitra',
       point: {
