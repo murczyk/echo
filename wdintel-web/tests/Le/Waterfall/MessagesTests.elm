@@ -47,6 +47,7 @@ messageStub =
     , inboxTags = Nothing
     , messageUid = Nothing
     , metadata = []
+    , networkName = Nothing
     }
 
 

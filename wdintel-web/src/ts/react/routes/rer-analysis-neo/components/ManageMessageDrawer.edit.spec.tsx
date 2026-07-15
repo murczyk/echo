@@ -337,7 +337,7 @@ describe('ManageMessageDrawer edit mode', () => {
       42,
       expect.objectContaining({
         network: {
-          signal_name: undefined,
+          signal_name: 'DMR',
           cc: undefined,
           name: 'Network Alpha',
         },
