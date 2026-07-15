@@ -2391,7 +2391,9 @@ mod tests {
     #[test]
     fn generic_submit_item_to_inbox_message_uses_array_fields() {
         let item = InboxSubmitItem {
+            full_body: Some("Повне повідомлення".to_string()),
             text: Some("рос абонент ЯРУС викликав СВЕТЛЫЙ".to_string()),
+            comment: Some("Коментар".to_string()),
             timestamp: "2026-06-25T12:34:56Z".to_string(),
             coords: vec![
                 SubmitCoordinates {
@@ -2446,10 +2448,11 @@ mod tests {
             text: "Отримано з поста \"SC1\"\nТекст повідомлення".to_string(),
             coords: Some(" 49.12345, 37.12345 ".to_string()),
             no_headers_body: Some(
-                crate::rer_importer::body_noheader::extract_text(
-                    "47.11111, 37.22222",
-                )
-                .unwrap(),
+                crate::rer_importer::body_noheader::NoHeadersBody {
+                    body: "47.11111, 37.22222".to_string(),
+                    start: 0,
+                    end: 18,
+                },
             ),
             ..Default::default()
         });
