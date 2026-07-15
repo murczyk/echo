@@ -1,5 +1,4 @@
 import AddIcon from '@mui/icons-material/Add';
-import CloseIcon from '@mui/icons-material/Close';
 import {
   Backdrop,
   Box,
@@ -16,7 +15,7 @@ import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 import { FeedColumn, type FeedColumnHandle } from './FeedColumn';
 import type { FeedColumnModel } from './types';
 import { DUTY_ICON_ONLY_FEED_TAB_MIN_FEEDS } from './FeedColumnHeader';
-import { dutyTopActionButtonSx, dutyTopAddFabSx } from './top-action-styles';
+import { dutyTopAddFabSx } from './top-action-styles';
 import type { MessageFeedState } from './utils';
 import { MAX_MESSAGE_FEEDS } from './useRerDutyFeeds';
 
@@ -164,7 +163,6 @@ type RerDutyNeoWorkspaceProps = {
   isInitialLoading: boolean;
   messageFeeds: MessageFeedState[];
   narrowScreen: boolean;
-  onRemoveActiveFeed?: () => void;
   onSelectFeed: Dispatch<SetStateAction<string | null>>;
   showLoadingBackdrop: boolean;
 };
@@ -177,7 +175,6 @@ export function RerDutyNeoWorkspace({
   isInitialLoading,
   messageFeeds,
   narrowScreen,
-  onRemoveActiveFeed,
   onSelectFeed,
   showLoadingBackdrop,
 }: RerDutyNeoWorkspaceProps) {
@@ -186,7 +183,6 @@ export function RerDutyNeoWorkspace({
     : -1;
   const showAddButton = messageFeeds.length < MAX_MESSAGE_FEEDS;
   const compactFeedTabs = messageFeeds.length >= DUTY_ICON_ONLY_FEED_TAB_MIN_FEEDS;
-  const showMobileTabClose = narrowScreen && messageFeeds.length > 1 && onRemoveActiveFeed != null;
 
   return (
     <Box className="flex flex-1 min-h-0 w-full overflow-hidden">
@@ -196,7 +192,7 @@ export function RerDutyNeoWorkspace({
         <Box
           className="h-full min-h-0 w-full overflow-hidden flex gap-2"
           sx={{
-            pr: showAddButton ? 6 : 0,
+            pr: !narrowScreen && showAddButton ? 6 : 0,
             position: 'relative',
           }}
         >
@@ -217,7 +213,7 @@ export function RerDutyNeoWorkspace({
               >
                 <Box
                   role="tablist"
-                  aria-label="Потоки"
+                  aria-label="Стрічки"
                   sx={{
                     flex: '1 1 auto',
                     minWidth: 0,
@@ -318,34 +314,17 @@ export function RerDutyNeoWorkspace({
                     />
                   )}
                 </Box>
-                {showMobileTabClose ? (
-                  <Tooltip title="Закрити стрічку">
-                    <IconButton
-                      size="small"
-                      aria-label="Закрити стрічку"
-                      onClick={onRemoveActiveFeed}
-                      sx={{
-                        ...dutyTopActionButtonSx,
-                        flexShrink: 0,
-                        alignSelf: 'stretch',
-                        borderLeft: '1px solid',
-                        borderLeftColor: 'divider',
-                        borderRadius: 0,
-                      }}
-                    >
-                      <CloseIcon />
-                    </IconButton>
-                  </Tooltip>
-                ) : null}
               </Box>
             )}
             <Box sx={{ flex: 1, minHeight: 0, overflow: 'hidden', position: 'relative' }}>
               {narrowScreen ? (
                 messageFeeds.map((feed) => {
                   const isActive = feed.id === activeFeedId;
+                  const column = buildFeedColumnModel(feed);
                   return (
                     <Box
                       key={feed.id}
+                      data-duty-feed-column-active={isActive ? 'true' : undefined}
                       sx={{
                         position: 'absolute',
                         inset: 0,
@@ -358,7 +337,14 @@ export function RerDutyNeoWorkspace({
                         ref={(el) => {
                           columnRefsRef.current[feed.id] = el;
                         }}
-                        column={buildFeedColumnModel(feed)}
+                        column={{
+                          ...column,
+                          actions: {
+                            ...column.actions,
+                            onCreateMessageFeed:
+                              isActive && showAddButton ? createMessageFeed : undefined,
+                          },
+                        }}
                       />
                     </Box>
                   );
@@ -377,22 +363,20 @@ export function RerDutyNeoWorkspace({
                         : `repeat(${messageFeeds.length}, minmax(0, 1fr))`,
                   }}
                 >
-                  {messageFeeds.map((feed) => {
-                    return (
-                      <FeedColumn
-                        key={feed.id}
-                        ref={(el) => {
-                          columnRefsRef.current[feed.id] = el;
-                        }}
-                        column={buildFeedColumnModel(feed)}
-                      />
-                    );
-                  })}
+                  {messageFeeds.map((feed) => (
+                    <FeedColumn
+                      key={feed.id}
+                      ref={(el) => {
+                        columnRefsRef.current[feed.id] = el;
+                      }}
+                      column={buildFeedColumnModel(feed)}
+                    />
+                  ))}
                 </Box>
               )}
             </Box>
           </Box>
-          {showAddButton && (
+          {!narrowScreen && showAddButton && (
             <Box
               sx={{
                 position: 'absolute',
@@ -407,7 +391,7 @@ export function RerDutyNeoWorkspace({
             >
               <Fab
                 color="primary"
-                aria-label="Додати колонку"
+                aria-label="Додати стрічку"
                 onClick={createMessageFeed}
                 sx={{ ...dutyTopAddFabSx, pointerEvents: 'auto' }}
               >

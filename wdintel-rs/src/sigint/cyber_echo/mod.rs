@@ -89,7 +89,7 @@ async fn ensure_tus_request_allowed(
     crate::users::has_role(&env.dbx, login, "Rer")
         .await
         .c(h!())?;
-    crate::system_settings::ensure_cyber_echo_enabled(&env.dbx)
+    crate::system_settings::ensure_devices_section_enabled(&env.dbx)
         .await
         .c(h!())?;
     if env.config.s3_config.is_none() {

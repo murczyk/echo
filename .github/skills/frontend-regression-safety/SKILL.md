@@ -44,6 +44,9 @@ Use at the end of any task that changes frontend behavior, API calls, UI states,
 - `just build-front`
 - For Elm-heavy changes: `cd wdintel-web && elm make <touched>.elm --output=/dev/null`
 - For TS-heavy changes when feasible: `cd wdintel-web && npm run test:ts`
+- For message-card preview E2E changes, including shared preview shell/config/capabilities, preview dialogs/stages/actions/controls, `MessageCardContent`, and attachment-preview classification, run `cd wdintel-web && npx playwright test tests/e2e/message-card-media-preview.spec.ts`, and keep the smoke cases tagged `@smoke`.
+- If Chromium is unavailable, report the exact failure and request approval before running `cd wdintel-web && npm run e2e:install`; rerun the focused spec after installation.
+- If the local server or browser still cannot run, report the exact blocker and do not claim full E2E verification.
 - If tests are missing for changed logic, add or extend unit/component tests where feasible in same change.
 
 ## Definition of Done (checklist)

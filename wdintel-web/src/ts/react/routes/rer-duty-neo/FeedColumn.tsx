@@ -1,19 +1,6 @@
 import { Box } from '@mui/material';
 import { forwardRef, useCallback, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import type { MouseEvent } from 'react';
-
-import type {
-  CallsignInfoRes,
-  Network,
-  OrganismKeywordSetDto,
-  RerDutyQueryStateWf as RerDutyFeedFilterState,
-  SignalGroupEntry,
-  SignalProfileEntry,
-  Tag,
-  Unit,
-} from '../../../../Bindings';
-import type { MessageEntityFilterKind, TagsLayoutVariant, MessageFeedState } from './utils';
-import type { FeedFilterPanelModel } from './FeedFilterPanel';
 import {
   getStoredDutyNotificationSettingsForFeed,
   requestBrowserNotificationPermission,
@@ -23,7 +10,6 @@ import {
 import { FeedColumnHeader } from './FeedColumnHeader';
 import { FeedColumnContent, type FeedColumnContentHandle } from './FeedColumnContent';
 import { useDocumentClickAway } from '../../hooks/use-document-click-away';
-import type { MessageCardBotTagAction } from '../shared/message-card/message-card.types';
 import type { FeedColumnModel } from './types';
 
 export type FeedColumnProps = {

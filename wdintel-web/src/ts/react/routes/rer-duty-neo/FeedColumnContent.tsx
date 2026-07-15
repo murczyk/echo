@@ -1,3 +1,4 @@
+import AddIcon from '@mui/icons-material/Add';
 import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward';
 import { Box, CircularProgress, Fab, Paper, Typography } from '@mui/material';
 import {
@@ -33,7 +34,7 @@ import {
   resolveMessageCardEtalonDisplayModel,
 } from '../shared/message-card/message-card.utils';
 import type { MessageEntityFilterKind, TagsLayoutVariant } from './utils';
-import { dutyTopScrollButtonSx } from './top-action-styles';
+import { dutyTopAddFabSx, dutyTopScrollButtonSx } from './top-action-styles';
 import { useWindowedFeedScroll } from './useWindowedFeedScroll';
 
 /** Start loading older messages when the user scrolls close to the top of the DOM list. */
@@ -42,10 +43,18 @@ const LOAD_OLDER_BUFFER_PX = 160;
 const LOAD_NEWER_NEAR_BOTTOM_BUFFER_PX = 800;
 /** Consider "at bottom" when within this many pixels of the scroll end (watch mode / read-state). */
 const DUTY_FEED_AT_BOTTOM_THRESHOLD_PX = 25;
-
 // Hoisted stable empty array: passing `[]` inline as a prop would allocate a fresh reference
 // every render, defeating React.memo / useMemo bailouts downstream in MessageCard.
 const EMPTY_MESSAGE_COMMENTS: MessageComment[] = [];
+
+const DUTY_FLOATING_ACTION_GAP_PX = 12;
+const DUTY_FLOATING_ACTION_SIZE_PX = 35;
+const DUTY_FLOATING_ACTION_STACK_HEIGHT_PX =
+  DUTY_FLOATING_ACTION_SIZE_PX * 2 + DUTY_FLOATING_ACTION_GAP_PX * 3;
+const DUTY_FLOATING_ACTION_BOTTOM_PX = 'max(12px, env(safe-area-inset-bottom, 0px))';
+const DUTY_FLOATING_SCROLL_BOTTOM_PX = `calc(${DUTY_FLOATING_ACTION_BOTTOM_PX} + ${
+  DUTY_FLOATING_ACTION_SIZE_PX + DUTY_FLOATING_ACTION_GAP_PX
+}px)`;
 
 function filterOwnMessageComments(
   messageComments: MessageComment[] | null | undefined,
@@ -527,12 +536,59 @@ export const FeedColumnContent = memo(
               listRef={scroll.listRef}
             />
           )}
+          {narrowScreen && isPresent(actions.onCreateMessageFeed) ? (
+            <Box
+              data-duty-feed-footer-spacer
+              data-duty-bottom-offset={`calc(${DUTY_FLOATING_ACTION_BOTTOM_PX} + ${DUTY_FLOATING_ACTION_STACK_HEIGHT_PX}px)`}
+              sx={{
+                height: `calc(${DUTY_FLOATING_ACTION_BOTTOM_PX} + ${DUTY_FLOATING_ACTION_STACK_HEIGHT_PX}px)`,
+                flexShrink: 0,
+              }}
+            />
+          ) : null}
         </Box>
-        {isPresent(onArrowClick) && (!isAtBottom || loadingNewer || unreadCount > 0) && (
+        {narrowScreen && isPresent(actions.onCreateMessageFeed) ? (
           <Box
-            sx={{
+            data-duty-feed-create-button
+            data-duty-bottom-offset={DUTY_FLOATING_ACTION_BOTTOM_PX}
+            style={{
               position: 'absolute',
-              bottom: { xs: 'max(12px, env(safe-area-inset-bottom, 0px))', sm: 12 },
+              bottom: DUTY_FLOATING_ACTION_BOTTOM_PX,
+            }}
+            sx={{
+              right: { xs: 12, sm: 20 },
+              display: 'flex',
+              pointerEvents: 'none',
+              zIndex: 1,
+            }}
+          >
+            <Fab
+              color="primary"
+              size="small"
+              aria-label="Додати стрічку"
+              onClick={actions.onCreateMessageFeed}
+              sx={{ ...dutyTopAddFabSx, pointerEvents: 'auto' }}
+            >
+              <AddIcon />
+            </Fab>
+          </Box>
+        ) : null}
+        {isPresent(actions.onArrowClick) && (!isAtBottom || loadingNewer || unreadCount > 0) && (
+          <Box
+            data-duty-feed-scroll-button
+            data-duty-bottom-offset={
+              narrowScreen && isPresent(actions.onCreateMessageFeed)
+                ? DUTY_FLOATING_SCROLL_BOTTOM_PX
+                : '12px'
+            }
+            style={{
+              position: 'absolute',
+              bottom:
+                narrowScreen && isPresent(actions.onCreateMessageFeed)
+                  ? DUTY_FLOATING_SCROLL_BOTTOM_PX
+                  : 12,
+            }}
+            sx={{
               right: { xs: 12, sm: 20 },
               display: 'flex',
               alignItems: 'center',

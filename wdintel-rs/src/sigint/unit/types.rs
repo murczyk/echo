@@ -74,6 +74,24 @@ pub struct CreateUnitReq {
 #[derive(
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
+pub struct CreateUnitWithAutoNetworkReq {
+    pub unit: CreateUnitReq,
+    pub skip_network_creation: bool,
+    pub locations: Vec<String>,
+    pub unit_mask: Vec<String>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct CreateUnitWithAutoNetworkRsp {
+    pub unit: Unit,
+    pub network_id: Option<i64>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
 pub struct DeleteUnitDuplicateReq {
     pub clone_to_delete_id: i64,
     pub original_id: i64,

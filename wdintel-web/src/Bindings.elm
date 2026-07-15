@@ -5457,6 +5457,38 @@ createUnitReqEncoder struct =
         ]
 
 
+type alias CreateUnitWithAutoNetworkReq =
+    { unit : CreateUnitReq
+    , skipNetworkCreation : Bool
+    , locations : List (String)
+    , unitMask : List (String)
+    }
+
+
+createUnitWithAutoNetworkReqEncoder : CreateUnitWithAutoNetworkReq -> Json.Encode.Value
+createUnitWithAutoNetworkReqEncoder struct =
+    Json.Encode.object
+        [ ( "unit", (createUnitReqEncoder) struct.unit )
+        , ( "skip_network_creation", (Json.Encode.bool) struct.skipNetworkCreation )
+        , ( "locations", (Json.Encode.list (Json.Encode.string)) struct.locations )
+        , ( "unit_mask", (Json.Encode.list (Json.Encode.string)) struct.unitMask )
+        ]
+
+
+type alias CreateUnitWithAutoNetworkRsp =
+    { unit : Unit
+    , networkId : Maybe (Int)
+    }
+
+
+createUnitWithAutoNetworkRspEncoder : CreateUnitWithAutoNetworkRsp -> Json.Encode.Value
+createUnitWithAutoNetworkRspEncoder struct =
+    Json.Encode.object
+        [ ( "unit", (unitEncoder) struct.unit )
+        , ( "network_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.networkId )
+        ]
+
+
 type alias DeleteUnitDuplicateReq =
     { cloneToDeleteId : Int
     , originalId : Int
@@ -8253,7 +8285,7 @@ type alias SystemSettingsCurrentRsp =
     , pelengBoundsTopLeftLng : Maybe (Float)
     , pelengBoundsBottomRightLat : Maybe (Float)
     , pelengBoundsBottomRightLng : Maybe (Float)
-    , cyberEchoEnabled : Bool
+    , devicesSectionEnabled : Bool
     , sigintCommentParsingEnabled : Bool
     , doNotStoreDuplicateEchoimFailures : Bool
     }
@@ -8278,7 +8310,7 @@ systemSettingsCurrentRspEncoder struct =
         , ( "peleng_bounds_top_left_lng", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.float)) struct.pelengBoundsTopLeftLng )
         , ( "peleng_bounds_bottom_right_lat", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.float)) struct.pelengBoundsBottomRightLat )
         , ( "peleng_bounds_bottom_right_lng", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.float)) struct.pelengBoundsBottomRightLng )
-        , ( "cyber_echo_enabled", (Json.Encode.bool) struct.cyberEchoEnabled )
+        , ( "devices_section_enabled", (Json.Encode.bool) struct.devicesSectionEnabled )
         , ( "sigint_comment_parsing_enabled", (Json.Encode.bool) struct.sigintCommentParsingEnabled )
         , ( "do_not_store_duplicate_echoim_failures", (Json.Encode.bool) struct.doNotStoreDuplicateEchoimFailures )
         ]
@@ -8305,7 +8337,7 @@ type alias SystemSettingsItem =
     , pelengBoundsTopLeftLng : Maybe (Float)
     , pelengBoundsBottomRightLat : Maybe (Float)
     , pelengBoundsBottomRightLng : Maybe (Float)
-    , cyberEchoEnabled : Bool
+    , devicesSectionEnabled : Bool
     , echoRestapiErrorDiscordWebhookUrl : Maybe (String)
     , sigintCommentParsingEnabled : Bool
     , doNotStoreDuplicateEchoimFailures : Bool
@@ -8335,7 +8367,7 @@ systemSettingsItemEncoder struct =
         , ( "peleng_bounds_top_left_lng", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.float)) struct.pelengBoundsTopLeftLng )
         , ( "peleng_bounds_bottom_right_lat", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.float)) struct.pelengBoundsBottomRightLat )
         , ( "peleng_bounds_bottom_right_lng", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.float)) struct.pelengBoundsBottomRightLng )
-        , ( "cyber_echo_enabled", (Json.Encode.bool) struct.cyberEchoEnabled )
+        , ( "devices_section_enabled", (Json.Encode.bool) struct.devicesSectionEnabled )
         , ( "echo_restapi_error_discord_webhook_url", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.echoRestapiErrorDiscordWebhookUrl )
         , ( "sigint_comment_parsing_enabled", (Json.Encode.bool) struct.sigintCommentParsingEnabled )
         , ( "do_not_store_duplicate_echoim_failures", (Json.Encode.bool) struct.doNotStoreDuplicateEchoimFailures )
@@ -8370,7 +8402,7 @@ type alias CreateSystemSettingsReq =
     , pelengBoundsTopLeftLng : Maybe (Float)
     , pelengBoundsBottomRightLat : Maybe (Float)
     , pelengBoundsBottomRightLng : Maybe (Float)
-    , cyberEchoEnabled : Bool
+    , devicesSectionEnabled : Bool
     , echoRestapiErrorDiscordWebhookUrl : Maybe (String)
     , sigintCommentParsingEnabled : Bool
     , doNotStoreDuplicateEchoimFailures : Bool
@@ -8395,7 +8427,7 @@ createSystemSettingsReqEncoder struct =
         , ( "peleng_bounds_top_left_lng", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.float)) struct.pelengBoundsTopLeftLng )
         , ( "peleng_bounds_bottom_right_lat", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.float)) struct.pelengBoundsBottomRightLat )
         , ( "peleng_bounds_bottom_right_lng", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.float)) struct.pelengBoundsBottomRightLng )
-        , ( "cyber_echo_enabled", (Json.Encode.bool) struct.cyberEchoEnabled )
+        , ( "devices_section_enabled", (Json.Encode.bool) struct.devicesSectionEnabled )
         , ( "echo_restapi_error_discord_webhook_url", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.echoRestapiErrorDiscordWebhookUrl )
         , ( "sigint_comment_parsing_enabled", (Json.Encode.bool) struct.sigintCommentParsingEnabled )
         , ( "do_not_store_duplicate_echoim_failures", (Json.Encode.bool) struct.doNotStoreDuplicateEchoimFailures )
@@ -12264,6 +12296,22 @@ createUnitReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "comment" (Json.Decode.string)))
 
 
+createUnitWithAutoNetworkReqDecoder : Json.Decode.Decoder CreateUnitWithAutoNetworkReq
+createUnitWithAutoNetworkReqDecoder =
+    Json.Decode.succeed CreateUnitWithAutoNetworkReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unit" (createUnitReqDecoder)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "skip_network_creation" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "locations" (Json.Decode.list (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unit_mask" (Json.Decode.list (Json.Decode.string))))
+
+
+createUnitWithAutoNetworkRspDecoder : Json.Decode.Decoder CreateUnitWithAutoNetworkRsp
+createUnitWithAutoNetworkRspDecoder =
+    Json.Decode.succeed CreateUnitWithAutoNetworkRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unit" (unitDecoder)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "network_id" (Json.Decode.nullable (Json.Decode.int))))
+
+
 unitSearchReqDecoder : Json.Decode.Decoder UnitSearchReq
 unitSearchReqDecoder =
     Json.Decode.succeed UnitSearchReq
@@ -14072,7 +14120,7 @@ systemSettingsCurrentRspDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "peleng_bounds_top_left_lng" (Json.Decode.nullable (Json.Decode.float))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "peleng_bounds_bottom_right_lat" (Json.Decode.nullable (Json.Decode.float))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "peleng_bounds_bottom_right_lng" (Json.Decode.nullable (Json.Decode.float))))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "cyber_echo_enabled" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "devices_section_enabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sigint_comment_parsing_enabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "do_not_store_duplicate_echoim_failures" (Json.Decode.bool)))
 
@@ -14100,7 +14148,7 @@ systemSettingsItemDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "peleng_bounds_top_left_lng" (Json.Decode.nullable (Json.Decode.float))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "peleng_bounds_bottom_right_lat" (Json.Decode.nullable (Json.Decode.float))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "peleng_bounds_bottom_right_lng" (Json.Decode.nullable (Json.Decode.float))))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "cyber_echo_enabled" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "devices_section_enabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "echo_restapi_error_discord_webhook_url" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sigint_comment_parsing_enabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "do_not_store_duplicate_echoim_failures" (Json.Decode.bool)))
@@ -14130,7 +14178,7 @@ createSystemSettingsReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "peleng_bounds_top_left_lng" (Json.Decode.nullable (Json.Decode.float))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "peleng_bounds_bottom_right_lat" (Json.Decode.nullable (Json.Decode.float))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "peleng_bounds_bottom_right_lng" (Json.Decode.nullable (Json.Decode.float))))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "cyber_echo_enabled" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "devices_section_enabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "echo_restapi_error_discord_webhook_url" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sigint_comment_parsing_enabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "do_not_store_duplicate_echoim_failures" (Json.Decode.bool)))

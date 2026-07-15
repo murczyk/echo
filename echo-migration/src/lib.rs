@@ -294,6 +294,7 @@ mod m20260710_095803_echo_missing_message_created_at_idx;
 mod m20260710_102248_add_login_description;
 mod m20260711_120000_add_sigint_comment_parsing_to_system_settings;
 mod m20260712_204007_add_do_not_store_duplicate_echoim_failures;
+mod m20260713_152932_rename_cyber_echo_enabled_to_devices_section_enabled;
 
 pub struct Migrator;
 
@@ -620,6 +621,9 @@ impl MigratorTrait for Migrator {
             ),
             Box::new(
                 m20260712_204007_add_do_not_store_duplicate_echoim_failures::Migration,
+            ),
+            Box::new(
+                m20260713_152932_rename_cyber_echo_enabled_to_devices_section_enabled::Migration,
             ),
         ]
     }

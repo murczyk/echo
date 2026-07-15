@@ -120,7 +120,9 @@ pub(super) async fn sync_goi_callsigns_knowledge(
     integration: &goi_integration::Model,
 ) -> Result<(), AppError> {
     let ssh_req = goi_ssh_req_from_integration(integration)?;
-    let remote_paths = goi_remote_data_paths(integration);
+    let remote_paths = goi_remote_data_paths(ssh_req.clone(), integration)
+        .await
+        .c(h!())?;
     let integration_label = goi_integration_log_label(integration);
     let sync_timestamp = goi_sync_timestamp_kyiv();
     info!(
@@ -308,13 +310,43 @@ fn goi_ssh_req_from_integration(
     })
 }
 
-fn goi_remote_data_paths(
+async fn goi_remote_data_paths(
+    ssh_req: CheckOrganismGoiConnectionReq,
     integration: &goi_integration::Model,
-) -> GoiRemoteDataPaths {
+) -> Result<GoiRemoteDataPaths, AppError> {
     let data_dir = goi_remote_data_dir(&integration.path);
-    GoiRemoteDataPaths {
-        knowledge_xlsx: format!("{data_dir}/xlsx/knowledge.xlsx"),
+    let knowledge_xlsx = goi_remote_readonly_xlsx_path_if_exists(
+        ssh_req,
+        format!("{data_dir}/xlsx/knowledge.xlsx"),
+    )
+    .await
+    .c(h!())?;
+    Ok(GoiRemoteDataPaths { knowledge_xlsx })
+}
+
+async fn goi_remote_readonly_xlsx_path_if_exists(
+    ssh_req: CheckOrganismGoiConnectionReq,
+    path: String,
+) -> Result<String, AppError> {
+    let readonly_path = readonly_xlsx_path(&path);
+    if readonly_path != path
+        && super::goi_file_exists(ssh_req, readonly_path.clone())
+            .await
+            .c(h!())?
+    {
+        Ok(readonly_path)
+    } else {
+        Ok(path)
     }
+}
+
+fn readonly_xlsx_path(path: &str) -> String {
+    if path.ends_with("-readonly.xlsx") {
+        return path.to_string();
+    }
+    path.strip_suffix(".xlsx")
+        .map(|path| format!("{path}-readonly.xlsx"))
+        .unwrap_or_else(|| path.to_string())
 }
 
 fn goi_remote_data_dir(path: &str) -> String {
@@ -1743,6 +1775,22 @@ mod tests {
             unit_name: None,
             sc_unit_name: Some("fallback unit".to_string()),
         }
+    }
+
+    #[test]
+    fn readonly_xlsx_path_rewrites_standard_xlsx_path() {
+        assert_eq!(
+            readonly_xlsx_path("/etc/goi/data/xlsx/knowledge.xlsx"),
+            "/etc/goi/data/xlsx/knowledge-readonly.xlsx"
+        );
+    }
+
+    #[test]
+    fn readonly_xlsx_path_keeps_readonly_xlsx_path() {
+        assert_eq!(
+            readonly_xlsx_path("/etc/goi/data/xlsx/knowledge-readonly.xlsx"),
+            "/etc/goi/data/xlsx/knowledge-readonly.xlsx"
+        );
     }
 
     #[test]

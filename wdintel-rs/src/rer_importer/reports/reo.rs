@@ -1,9 +1,10 @@
-use super::super::types::*;
 use super::types::*;
 use crate::entities::*;
 use crate::error::AppError;
+use crate::rer_importer::highlight::CNCallsign;
 use crate::rer_importer::reports::util;
 use crate::rer_importer::reports::util::*;
+use crate::rer_importer::types::InboxMessagesReq;
 use crate::types::*;
 use crate::utils::orm::ArrayColumnOps;
 use anyhow::Context;
@@ -14,6 +15,7 @@ use rust_xlsxwriter::{
 };
 use sea_orm::sea_query::{Expr, SimpleExpr};
 use sea_orm::*;
+use serde::de::DeserializeOwned;
 use std::collections::*;
 use std::path::Path;
 use std::time::Instant;
@@ -107,6 +109,35 @@ struct CommentSummary {
     pub comment: String,
 }
 
+#[derive(Debug, Clone)]
+struct ReoInboxMessage {
+    pub timestamp: Option<i64>,
+    pub freq: Option<String>,
+    pub coords: Option<String>,
+    pub callsigns: Vec<String>,
+    pub callsigns_alg2: Vec<String>,
+    pub callsign_tokens: Vec<CNCallsign>,
+    pub network_ids: Option<Vec<i64>>,
+    pub group_master_key: Option<String>,
+}
+
+#[derive(Debug, FromQueryResult)]
+struct ReoInboxMessageRow {
+    pub id: i64,
+    pub timestamp: Option<NaiveDateTime>,
+    pub freq: Option<String>,
+    pub coords: Option<String>,
+    pub callsigns: Option<serde_json::Value>,
+    pub callsigns_alg2: Option<serde_json::Value>,
+    pub callsign_tokens: Option<serde_json::Value>,
+}
+
+#[derive(Debug, FromQueryResult)]
+struct ReoGroupKeyRow {
+    pub signal_message_id: i64,
+    pub group_master_key: Option<String>,
+}
+
 fn non_empty_comment_filter() -> SimpleExpr {
     Expr::cust_with_expr(
         "length(trim($1)) > 0",
@@ -114,14 +145,14 @@ fn non_empty_comment_filter() -> SimpleExpr {
     )
 }
 
-pub async fn report_docx_kind_revo(
+pub async fn report_docx_kind_reo(
     user_login: &str,
     env: &Env,
     req: &super::types::ReportPreviewReq,
     outpath: &Path,
 ) -> Result<(), AppError> {
     let start_total = Instant::now();
-    info!("report_docx_kind_revo started");
+    info!("report_docx_kind_reo started");
 
     let start = Instant::now();
     let read_db = env.dbx.clone();
@@ -136,18 +167,11 @@ pub async fn report_docx_kind_revo(
         req.report_tags_only_this_unit.unwrap_or(false);
     let mut current_req = req.req.clone();
     current_req.report_tags_only_this_unit = Some(false);
-    let messages: Vec<(i64, InboxMessage)> =
-        crate::rer_importer::inbox::get_inbox_messages_with_conn(
-            &read_db,
-            &login,
-            &logins,
-            env,
-            &current_req,
-        )
+    let messages = load_reo_inbox_messages(&read_db, &login, env, &current_req)
         .await
         .context(h!())?;
     info!(
-        "get_inbox_messages_with_conn took: {:?}, messages count: {}",
+        "load_reo_inbox_messages took: {:?}, messages count: {}",
         start.elapsed(),
         messages.len()
     );
@@ -197,14 +221,14 @@ pub async fn report_docx_kind_revo(
 
     let result = match req.report_type {
         Some(ReportType::Reo(_, ReoReportFileType::Xlsx)) => {
-            generate_xlsx_kind_revo(
+            generate_xlsx_kind_reo(
                 report,
                 network_summary,
                 outpath,
                 no_comments,
             )
         }
-        _ => generate_docx_kind_revo(
+        _ => generate_docx_kind_reo(
             report,
             network_summary,
             outpath,
@@ -213,14 +237,149 @@ pub async fn report_docx_kind_revo(
     };
 
     info!(
-        "report_docx_kind_revo completed in total: {:?}",
+        "report_docx_kind_reo completed in total: {:?}",
         start_total.elapsed()
     );
 
     result
 }
 
-fn generate_xlsx_kind_revo(
+async fn load_reo_inbox_messages(
+    dbx: &DatabaseConnection,
+    login: &str,
+    env: &Env,
+    req: &InboxMessagesReq,
+) -> Result<Vec<(i64, ReoInboxMessage)>, AppError> {
+    let rows = crate::rer_importer::inbox::query::build_filtered_inbox_query(
+        dbx, login, env, req,
+    )
+    .await
+    .context(h!())?
+    .select_only()
+    .column_as(signal_message::Column::Id, "id")
+    .column_as(signal_message::Column::Timestamp, "timestamp")
+    .column_as(sigint_inbox_item::Column::Freq, "freq")
+    .column_as(sigint_inbox_item::Column::Coords, "coords")
+    .column_as(sigint_inbox_item::Column::Callsigns, "callsigns")
+    .column_as(sigint_inbox_item::Column::CallsignsAlg2, "callsigns_alg2")
+    .column_as(sigint_inbox_item::Column::CallsignTokens, "callsign_tokens")
+    .into_model::<ReoInboxMessageRow>()
+    .all(dbx)
+    .await
+    .context(h!())?;
+    let message_ids = rows.iter().map(|row| row.id).collect_vec();
+    let mut network_ids_by_message =
+        crate::rer_importer::inbox::load_message_networks_by_ids(
+            dbx,
+            &message_ids,
+        )
+        .await
+        .context(h!())?;
+    let mut group_keys_by_message =
+        load_reo_group_master_keys(dbx, login, req, &message_ids)
+            .await
+            .context(h!())?;
+
+    rows.into_iter()
+        .map(|row| {
+            let id = row.id;
+            Ok((
+                id,
+                ReoInboxMessage {
+                    timestamp: row.timestamp.map(|timestamp| {
+                        timestamp.and_utc().timestamp_millis()
+                    }),
+                    freq: row.freq,
+                    coords: row.coords,
+                    callsigns: parse_optional_json_vec(row.callsigns)?,
+                    callsigns_alg2: parse_optional_json_vec(
+                        row.callsigns_alg2,
+                    )?,
+                    callsign_tokens: parse_optional_json_vec(
+                        row.callsign_tokens,
+                    )?,
+                    network_ids: network_ids_by_message.remove(&id),
+                    group_master_key: group_keys_by_message
+                        .remove(&id)
+                        .unwrap_or_default(),
+                },
+            ))
+        })
+        .collect()
+}
+
+async fn load_reo_group_master_keys(
+    dbx: &DatabaseConnection,
+    login: &str,
+    req: &InboxMessagesReq,
+    message_ids: &[i64],
+) -> Result<HashMap<i64, Option<String>>, AppError> {
+    if message_ids.is_empty() {
+        return Ok(HashMap::new());
+    }
+    let sigint_groups =
+        crate::messenger::group::get_identity_sigint_groups(dbx, login)
+            .await
+            .context(h!())?;
+    let mut group_keys = HashMap::new();
+    for ids in message_ids.chunks(20000) {
+        let mut query = signal_message_group::Entity::find()
+            .filter(
+                signal_message_group::Column::SignalMessageId
+                    .is_in(ids.to_vec()),
+            )
+            .filter(
+                signal_message_group::Column::GroupMasterKey
+                    .eq_any(sigint_groups.clone()),
+            );
+        if let Some(selected_groups) = req.selected_groups.as_ref() {
+            if !selected_groups.is_empty() {
+                query = query.filter(
+                    signal_message_group::Column::GroupMasterKey
+                        .eq_any(selected_groups.clone()),
+                );
+            }
+        }
+        if let Some(selected_senders) = req.selected_senders.as_ref() {
+            if !selected_senders.is_empty() {
+                query = query.filter(
+                    signal_message_group::Column::Sender
+                        .eq_any(selected_senders.clone()),
+                );
+            }
+        }
+        let rows = query
+            .select_only()
+            .column(signal_message_group::Column::SignalMessageId)
+            .column(signal_message_group::Column::GroupMasterKey)
+            .order_by_asc(signal_message_group::Column::SignalMessageId)
+            .order_by_asc(signal_message_group::Column::Id)
+            .into_model::<ReoGroupKeyRow>()
+            .all(dbx)
+            .await
+            .context(h!())?;
+        for row in rows {
+            group_keys
+                .entry(row.signal_message_id)
+                .or_insert(row.group_master_key);
+        }
+    }
+    Ok(group_keys)
+}
+
+fn parse_optional_json_vec<T>(
+    value: Option<serde_json::Value>,
+) -> Result<Vec<T>, AppError>
+where
+    T: DeserializeOwned,
+{
+    match value {
+        Some(value) => Ok(serde_json::from_value(value).context(h!())?),
+        None => Ok(vec![]),
+    }
+}
+
+fn generate_xlsx_kind_reo(
     report: Report,
     network_summary: String,
     outpath: &Path,
@@ -474,7 +633,7 @@ fn generate_networks_sheet<'a>(
     Ok(sheet)
 }
 
-fn generate_docx_kind_revo(
+fn generate_docx_kind_reo(
     report: Report,
     network_summary: String,
     outpath: &Path,
@@ -645,7 +804,7 @@ fn get_processed_correspondence(
 }
 
 async fn collect_report(
-    messages: Vec<(i64, InboxMessage)>,
+    messages: Vec<(i64, ReoInboxMessage)>,
     logins: Vec<String>,
     env: &Env,
     dbx: &DatabaseConnection,
@@ -798,8 +957,8 @@ async fn collect_report(
     let mut messages = messages;
     messages.sort_by_key(|(_, v)| v.freq.clone().unwrap_or("0.0".to_string()));
     for (id, message) in messages {
-        let is_pure_peleng = message.coords.is_some()
-            && message.callsign_tokens.unwrap_or(vec![]).is_empty();
+        let is_pure_peleng =
+            message.coords.is_some() && message.callsign_tokens.is_empty();
         if is_pure_peleng {
             continue;
         }
@@ -1048,7 +1207,7 @@ async fn collect_report(
 }
 
 async fn collect_message_networks(
-    messages: &Vec<(i64, InboxMessage)>,
+    messages: &Vec<(i64, ReoInboxMessage)>,
     range_khz: f64,
     db: &DatabaseConnection,
 ) -> anyhow::Result<NetworkSummaryData> {
@@ -1196,7 +1355,7 @@ async fn collect_message_networks(
 
 fn process_messages_without_networks(
     range_khz: f64,
-    messages_without_networks: &mut HashMap<i64, InboxMessage>,
+    messages_without_networks: &mut HashMap<i64, ReoInboxMessage>,
 ) -> anyhow::Result<(
     HashMap<NetworkSummaryKey, NetworkSummary>,
     HashMap<i64, Vec<NetworkSummaryKey>>,
