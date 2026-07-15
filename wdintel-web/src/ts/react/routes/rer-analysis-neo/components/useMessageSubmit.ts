@@ -10,6 +10,7 @@ import {
 } from '../../../services/api/direct-submit';
 import { parseCoordLine, type MessageFormData } from './manage-message-drawer.schema';
 import { combineDateTimeToMs, formatDateInputValueInTimeZone } from '../../../utils/misc';
+import { MAX_MESSAGE_ATTACHMENTS } from './useMessageUppy';
 
 type SubmitOptions = {
   busy: boolean;
@@ -47,12 +48,17 @@ export function useMessageSubmit({
 
     // In edit mode, check if there are existing media files that are not deleted
     const deletedMediaIds = new Set(data.deleted_media_ids ?? []);
-    const hasExistingMedia = Boolean(
-      isEditMode && editTarget?.message.media.some((media) => !deletedMediaIds.has(media.id)),
-    );
+    const retainedMediaCount = isEditMode
+      ? (editTarget?.message.media.filter((media) => !deletedMediaIds.has(media.id)).length ?? 0)
+      : 0;
+    const hasExistingMedia = retainedMediaCount > 0;
 
     if (!hasTextContent && !hasNewFiles && !hasExistingMedia) {
       setErrorMsg("Текст повідомлення або вкладення є обов'язковими");
+      return;
+    }
+    if (retainedMediaCount + uppyFiles.length > MAX_MESSAGE_ATTACHMENTS) {
+      setErrorMsg(`Кількість вкладень не може перевищувати ${MAX_MESSAGE_ATTACHMENTS}`);
       return;
     }
 
@@ -134,7 +140,7 @@ export function useMessageSubmit({
 
       const payload = {
         full_body: data.full_body?.trim() || undefined,
-        text: data.text?.trim() || undefined,
+        text: shortBodyForSubmit(data, isEditMode ? editTarget : null),
         comment: data.comment?.trim() || undefined,
         signal_group_master_key: data.signalGroupMasterKey,
         device_name_id: computerNameId,
@@ -204,4 +210,19 @@ function optionalInteger(value: string | null | undefined): number | undefined {
   if (!trimmed) return undefined;
   const parsed = Number.parseInt(trimmed, 10);
   return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function shortBodyForSubmit(
+  data: MessageFormData,
+  editTarget: SubmitOptions['editTarget'],
+): string | undefined {
+  const shortBody = data.text?.trim() || undefined;
+  if (!editTarget) return shortBody;
+
+  const originalFullBody = editTarget.message.text?.trim() ?? '';
+  const fullBody = data.full_body?.trim() ?? '';
+  const originalShortBody =
+    (editTarget.message.noHeadersBody?.body ?? editTarget.message.text ?? '').trim() || undefined;
+  if (fullBody !== originalFullBody && shortBody === originalShortBody) return undefined;
+  return shortBody;
 }

@@ -50,6 +50,7 @@ pub const IDENTITY_DURATION_HOURS: u64 = 12;
 pub const IDENTITY_SALT: &str = "IUBwdub783736#";
 pub const ROLE_ADMIN: &str = "Admin";
 pub const SIGINT_SIGNAL_TIMEOUT_MS: u64 = 1000;
+pub const SIGINT_MESSAGE_MAX_ATTACHMENTS: usize = 20;
 pub const CLEANUP_REPORT_DAYS: u64 = 30;
 pub const RER_REPORT_ERROR_CODE_HEADER_NAME: &str = "x-echo-error-code";
 pub const RER_REPORT_PERMISSION_DENIED_ERROR_CODE: &str = "8125378";

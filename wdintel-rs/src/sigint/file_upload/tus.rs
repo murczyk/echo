@@ -1,3 +1,4 @@
+use crate::config::SIGINT_MESSAGE_MAX_ATTACHMENTS;
 use crate::error::AppError;
 use crate::messenger::media::MediaUploadInput;
 use crate::types::*;
@@ -18,8 +19,6 @@ const BASE_UPLOAD_DIR: &str = "file_upload_tus";
 const PENDING_DIR: &str = "pending";
 const COMPLETED_DIR: &str = "completed";
 const METADATA_EXT: &str = "json";
-pub const MAX_COMPLETED_UPLOADS: usize = 20;
-
 const HEADER_NAME_TUS_VERSION: HeaderName =
     HeaderName::from_static("tus-version");
 const HEADER_VALUE_TUS_VERSION: HeaderValue = HeaderValue::from_static("1.0.0");
@@ -164,10 +163,10 @@ impl TusHandler {
         login: &str,
         upload_urls: &[String],
     ) -> Result<Vec<MediaUploadInput>, AppError> {
-        if upload_urls.len() > MAX_COMPLETED_UPLOADS {
+        if upload_urls.len() > SIGINT_MESSAGE_MAX_ATTACHMENTS {
             return Err(AppError::BL {
                 msg: format!(
-                    "too many attachments: maximum is {MAX_COMPLETED_UPLOADS}"
+                    "too many attachments: maximum is {SIGINT_MESSAGE_MAX_ATTACHMENTS}"
                 ),
             });
         }

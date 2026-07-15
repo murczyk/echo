@@ -1156,7 +1156,7 @@ async fn update_submit_signal_message(
     config: &Config,
     signal_message_id: i64,
     message: &InboxMessage,
-    timestamp: NaiveDateTime,
+    timestamp: Option<NaiveDateTime>,
     operator_tags: Option<serde_json::Value>,
     groups: &[(String, i64)],
 ) -> Result<signal_message::Model, AppError> {
@@ -1171,7 +1171,7 @@ async fn update_submit_signal_message(
     let mut signal_message = signal_message.into_active_model();
     signal_message.body = Set(Some(message.text.clone()));
     signal_message.datasource_group_id = Set(Some(datasource_group_id));
-    signal_message.timestamp = Set(Some(timestamp));
+    signal_message.timestamp = Set(timestamp);
     signal_message.sender = Set(message.sender.clone());
     if operator_tags.is_some() {
         signal_message.operator_tags = Set(operator_tags);

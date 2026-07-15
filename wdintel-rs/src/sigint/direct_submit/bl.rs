@@ -3,7 +3,9 @@ use super::types::{
     DirectSubmitParsePayload, DirectSubmitParseRsp, DirectSubmitPayload,
     DirectSubmitRsp,
 };
-use crate::config::FEATURE_DELETE_UPLOADED_ATTACHMENT_DEFAULT;
+use crate::config::{
+    FEATURE_DELETE_UPLOADED_ATTACHMENT_DEFAULT, SIGINT_MESSAGE_MAX_ATTACHMENTS,
+};
 use crate::error::AppError;
 use crate::messenger::media::MediaUploadInput;
 use crate::rer_importer::inbox::submit_bl::SubmittedInboxItem;
@@ -194,6 +196,10 @@ async fn save_signal_message(
         None => (0, vec![]),
     };
     validate_direct_submit_content(&payload, retained_media_count)?;
+    validate_direct_submit_attachment_count(
+        retained_media_count,
+        uploads.len(),
+    )?;
     let sender = match signal_message
         .as_ref()
         .and_then(|signal_message| signal_message.sender.clone())
@@ -224,6 +230,9 @@ async fn save_signal_message(
         .c(h!())?;
     let previous_timestamp =
         signal_message.and_then(|signal_message| signal_message.timestamp);
+    let keep_timestamp_missing = signal_message_id.is_some()
+        && payload.timestamp.is_none()
+        && previous_timestamp.is_none();
     let submit_item =
         direct_submit_payload_to_item(&payload, sender, previous_timestamp)
             .c(h!())?;
@@ -236,6 +245,7 @@ async fn save_signal_message(
         &logins,
         submit_item,
         !uploads.is_empty() || retained_media_count > 0,
+        keep_timestamp_missing,
     )
     .await?;
     let mut rsp = finish_direct_submit(
@@ -310,6 +320,22 @@ fn validate_direct_submit_content(
     })
 }
 
+fn validate_direct_submit_attachment_count(
+    retained_media_count: usize,
+    new_media_count: usize,
+) -> Result<(), AppError> {
+    if retained_media_count.saturating_add(new_media_count)
+        <= SIGINT_MESSAGE_MAX_ATTACHMENTS
+    {
+        return Ok(());
+    }
+    Err(AppError::BL {
+        msg: format!(
+            "Кількість вкладень не може перевищувати {SIGINT_MESSAGE_MAX_ATTACHMENTS}."
+        ),
+    })
+}
+
 fn has_direct_submit_content(payload: &DirectSubmitPayload) -> bool {
     payload
         .full_body
@@ -371,6 +397,7 @@ async fn persist_direct_submit_item(
     logins: &Vec<String>,
     submit_item: InboxSubmitItem,
     allow_empty_content: bool,
+    keep_timestamp_missing: bool,
 ) -> Result<SubmittedInboxItem, AppError> {
     let datasource_id = signal_group.datasource_id.unwrap_or(
         query::resolve_datasource_id_for_group(txn, &signal_group.master_key)
@@ -398,6 +425,7 @@ async fn persist_direct_submit_item(
                 logins,
                 submit_item,
                 allow_empty_content,
+                keep_timestamp_missing,
             )
             .await
             .c(h!())?
@@ -614,6 +642,12 @@ mod tests {
     }
 
     #[test]
+    fn direct_edit_limits_retained_and_new_attachments_together() {
+        assert!(validate_direct_submit_attachment_count(19, 1).is_ok());
+        assert!(validate_direct_submit_attachment_count(20, 1).is_err());
+    }
+
+    #[test]
     fn direct_submit_requires_signal_group() {
         assert!(matches!(
             validate_signal_group_master_key(" "),
@@ -804,5 +838,61 @@ mod tests {
                 .unwrap(),
             1
         );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn direct_edit_preserves_missing_timestamp() {
+        let env = cleanup().await.unwrap();
+        let mut create_payload = direct_submit_payload("original body");
+        create_payload.timestamp = Some("2026-07-11T12:34:56Z".to_string());
+        let created = submit_signal_message(TEST_LOGIN, &env, create_payload)
+            .await
+            .unwrap();
+
+        let signal_message =
+            signal_message::Entity::find_by_id(created.signal_message_id)
+                .one(&env.dbx)
+                .await
+                .unwrap()
+                .unwrap();
+        let mut signal_message = signal_message.into_active_model();
+        signal_message.timestamp = Set(None);
+        signal_message.update(&env.dbx).await.unwrap();
+        let inbox_item =
+            sigint_inbox_item::Entity::find_by_id(created.signal_message_id)
+                .one(&env.dbx)
+                .await
+                .unwrap()
+                .unwrap();
+        let mut inbox_item = inbox_item.into_active_model();
+        inbox_item.date = Set(None);
+        inbox_item.time = Set(None);
+        inbox_item.update(&env.dbx).await.unwrap();
+
+        edit_signal_message(
+            TEST_LOGIN,
+            &env,
+            created.signal_message_id,
+            direct_submit_payload("updated body"),
+        )
+        .await
+        .unwrap();
+
+        let signal_message =
+            signal_message::Entity::find_by_id(created.signal_message_id)
+                .one(&env.dbx)
+                .await
+                .unwrap()
+                .unwrap();
+        assert_eq!(signal_message.timestamp, None);
+        let inbox_item =
+            sigint_inbox_item::Entity::find_by_id(created.signal_message_id)
+                .one(&env.dbx)
+                .await
+                .unwrap()
+                .unwrap();
+        assert_eq!(inbox_item.date, None);
+        assert_eq!(inbox_item.time, None);
     }
 }

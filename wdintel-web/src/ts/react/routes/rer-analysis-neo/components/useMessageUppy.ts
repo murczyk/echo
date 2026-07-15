@@ -3,6 +3,8 @@ import Uppy from '@uppy/core';
 import type { UppyFile } from '@uppy/core';
 import Tus from '@uppy/tus';
 
+export const MAX_MESSAGE_ATTACHMENTS = 20;
+
 export function useMessageUppy(busy: boolean) {
   const [attachmentErrorMsg, setAttachmentErrorMsg] = useState<string | null>(null);
 
@@ -11,13 +13,13 @@ export function useMessageUppy(busy: boolean) {
     if (msg.toLowerCase().includes('exceeds maximum allowed size'))
       return 'Файл занадто великий (максимум 2 ГБ)';
     if (msg.toLowerCase().includes('exceeds maximum number of files'))
-      return 'Перевищено максимальну кількість файлів (20)';
+      return `Перевищено максимальну кількість файлів (${MAX_MESSAGE_ATTACHMENTS})`;
     return msg;
   };
   const [uppy] = useState(() =>
     new Uppy({
       restrictions: {
-        maxNumberOfFiles: 20,
+        maxNumberOfFiles: MAX_MESSAGE_ATTACHMENTS,
         maxFileSize: 2 * 1024 * 1024 * 1024, // 2GB
       },
       autoProceed: false,

@@ -525,6 +525,49 @@ describe('ManageMessageDrawer edit mode', () => {
     root.unmount();
   });
 
+  it('omits the stale parsed body when the full source changes', async () => {
+    directSubmitMocks.editDirectSubmit.mockResolvedValue({
+      signal_message_id: 90,
+      message: buildMessage(),
+    });
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    await act(async () => {
+      root.render(
+        <ManageMessageDrawer
+          open
+          cyberEchoEnabled={false}
+          currentUser={null}
+          onClose={vi.fn()}
+          editTarget={{
+            id: 90,
+            message: buildMessage({
+              text: 'header\nold body',
+              noHeadersBody: { start: 7, end: 15, body: 'old body' },
+            }),
+          }}
+        />,
+      );
+    });
+
+    await act(async () => {
+      textFieldPropsByLabel
+        .get('Текст повідомлення')
+        ?.onChange?.({ target: { value: 'header\nnew body' } });
+    });
+    const form = container.querySelector('form') as HTMLFormElement;
+    await act(async () => {
+      form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    });
+
+    expect(directSubmitMocks.editDirectSubmit.mock.calls[0][1]).toMatchObject({
+      full_body: 'header\nnew body',
+      text: undefined,
+    });
+    root.unmount();
+  });
+
   it('preserves every DMR metadata row in the edit payload', async () => {
     directSubmitMocks.editDirectSubmit.mockResolvedValue({
       signal_message_id: 91,

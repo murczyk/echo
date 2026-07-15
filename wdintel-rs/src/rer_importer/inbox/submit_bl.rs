@@ -112,6 +112,7 @@ pub(crate) async fn submit_inbox_item_with_groups(
         item,
         None,
         allow_empty_content,
+        false,
     )
     .await
 }
@@ -126,6 +127,7 @@ pub(crate) async fn edit_inbox_item_with_groups(
     logins: &Vec<String>,
     item: InboxSubmitItem,
     allow_empty_content: bool,
+    keep_timestamp_missing: bool,
 ) -> Result<SubmittedInboxItem, AppError> {
     submit_inbox_item_with_groups_inner(
         env,
@@ -137,6 +139,7 @@ pub(crate) async fn edit_inbox_item_with_groups(
         item,
         Some(signal_message_id),
         allow_empty_content,
+        keep_timestamp_missing,
     )
     .await
 }
@@ -151,10 +154,16 @@ async fn submit_inbox_item_with_groups_inner(
     item: InboxSubmitItem,
     signal_message_id: Option<i64>,
     allow_empty_content: bool,
+    keep_timestamp_missing: bool,
 ) -> Result<SubmittedInboxItem, AppError> {
-    let mut prepared =
-        prepare_inbox_submit_item(txn, groups, &item, allow_empty_content)
-            .await?;
+    let mut prepared = prepare_inbox_submit_item(
+        txn,
+        groups,
+        &item,
+        allow_empty_content,
+        keep_timestamp_missing,
+    )
+    .await?;
 
     if let Some(signal_message_id) = signal_message_id {
         delete_cleared_edit_comment(
@@ -185,7 +194,7 @@ async fn submit_inbox_item_with_groups_inner(
             datasource_id,
             None,
             &prepared.message,
-            Some(prepared.timestamp),
+            prepared.timestamp,
             prepared.operator_tags,
             groups,
         )
@@ -258,7 +267,7 @@ async fn delete_cleared_edit_comment(
 
 struct PreparedInboxSubmitItem {
     message: InboxMessage,
-    timestamp: chrono::NaiveDateTime,
+    timestamp: Option<chrono::NaiveDateTime>,
     tag_ids: Option<Vec<i64>>,
     operator_tags: Option<serde_json::Value>,
 }
@@ -268,6 +277,7 @@ async fn prepare_inbox_submit_item(
     groups: &[(String, i64)],
     item: &InboxSubmitItem,
     allow_empty_content: bool,
+    keep_timestamp_missing: bool,
 ) -> Result<PreparedInboxSubmitItem, AppError> {
     super::validate_submit_item_content(item)?;
     let tag_ids =
@@ -275,6 +285,13 @@ async fn prepare_inbox_submit_item(
     let operator_tags = super::submit_operator_tags(item.tags.as_deref())?;
     let (mut message, timestamp) =
         super::generic_submit_item_to_inbox_message(item, allow_empty_content)?;
+    let timestamp = if keep_timestamp_missing {
+        message.date = None;
+        message.time = None;
+        None
+    } else {
+        Some(timestamp)
+    };
     let post = super::normalized_optional_string(message.post.as_deref());
     message.post_id = match message.post_id {
         Some(post_id) => Some(post_id),
