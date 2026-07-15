@@ -550,7 +550,7 @@ describe('rer-duty utils', () => {
     ]);
   });
 
-  it('uses loaded unread items for feed and tab unread totals', () => {
+  it('uses the tracked unread count for feed and tab unread totals', () => {
     const feed: MessageFeedState = {
       id: 'mf-1',
       filter: emptyFilter(),
@@ -570,10 +570,13 @@ describe('rer-duty utils', () => {
       onlyMyUnitTagsEnabled: false,
     };
 
-    expect(feedUnreadDisplayCount(feed)).toBe(2);
-    expect(feedsUnreadDisplayTotal([feed, { ...feed, readIds: new Set<number>([1, 2, 3]) }])).toBe(
-      2,
-    );
+    expect(feedUnreadDisplayCount(feed)).toBe(69980);
+    expect(
+      feedsUnreadDisplayTotal([
+        feed,
+        { ...feed, unreadCount: 4, readIds: new Set<number>([1, 2, 3]) },
+      ]),
+    ).toBe(69984);
   });
 
   it('windows initial messages to the newest items after sorting and dedupe', () => {

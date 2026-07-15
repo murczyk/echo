@@ -832,7 +832,7 @@ export type MessageFeedState = {
 
 /** Single source of truth for displayed unread count on a feed. */
 export function feedUnreadDisplayCount(feed: MessageFeedState): number {
-  return Math.max(0, feed.items.filter(([id]) => !feed.readIds.has(id)).length);
+  return Math.max(0, feed.unreadCount);
 }
 
 /** Sum of {@link feedUnreadDisplayCount} across all feeds. */

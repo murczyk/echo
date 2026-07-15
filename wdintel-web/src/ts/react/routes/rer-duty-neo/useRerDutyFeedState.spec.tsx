@@ -427,6 +427,7 @@ describe('useRerDutyFeedState — loading', () => {
     });
 
     expect(apiRef.current!.messageFeeds[0].items.at(-1)?.[0]).toBe(40);
+    expect(apiRef.current!.messageFeeds[0].unreadCount).toBe(5);
 
     hoisted.fetchInboxCount.mockResolvedValueOnce({ quantity: 25, firstElementTs: null });
     await act(async () => {
