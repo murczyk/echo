@@ -363,7 +363,7 @@ async fn replay_source_message(
         parsed_unit_v2: Set(source.inbox_item.parsed_unit_v2),
         post_id: Set(source.inbox_item.post_id),
         device_name_id: Set(source.inbox_item.device_name_id),
-        network: Set(None),
+        network: Set(source.inbox_item.network.clone()),
     }
     .insert(&txn)
     .await

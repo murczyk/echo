@@ -700,13 +700,12 @@ mod tests {
         create_payload.freq = Some("145.025".to_string());
         create_payload.device_name_id = Some(device_name_id);
         create_payload.comment = Some("old comment".to_string());
-        create_payload.network = Some(
-            crate::rer_importer::types::SubmitNetwork {
+        create_payload.network =
+            Some(crate::rer_importer::types::SubmitNetwork {
                 signal_name: None,
                 cc: None,
                 name: Some("original network".to_string()),
-            },
-        );
+            });
         let created = submit_signal_message(TEST_LOGIN, &env, create_payload)
             .await
             .unwrap();
@@ -770,13 +769,12 @@ mod tests {
 
         let mut edit_payload = direct_submit_payload("updated body");
         edit_payload.freq = Some("146.125".to_string());
-        edit_payload.network = Some(
-            crate::rer_importer::types::SubmitNetwork {
+        edit_payload.network =
+            Some(crate::rer_importer::types::SubmitNetwork {
                 signal_name: None,
                 cc: None,
                 name: Some("updated network".to_string()),
-            },
-        );
+            });
         let edited = edit_signal_message(
             TEST_LOGIN,
             &env,

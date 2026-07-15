@@ -298,7 +298,7 @@ describe('ManageMessageDrawer edit mode', () => {
           cyberEchoEnabled={false}
           currentUser={null}
           onClose={vi.fn()}
-          editTarget={{ id: 42, message: buildMessage() }}
+          editTarget={{ id: 42, message: buildMessage({ networkName: 'Network Alpha' }) }}
           editSaveInFlight={false}
           onSubmitEdit={onSubmitEdit}
         />,
@@ -333,6 +333,16 @@ describe('ManageMessageDrawer edit mode', () => {
       text: 'existing body',
       callsigns: ['ALFA', 'CHARLIE'],
     });
+    expect(directSubmitMocks.editDirectSubmit).toHaveBeenCalledWith(
+      42,
+      expect.objectContaining({
+        network: {
+          signal_name: undefined,
+          cc: undefined,
+          name: 'Network Alpha',
+        },
+      }),
+    );
 
     root.unmount();
   });
