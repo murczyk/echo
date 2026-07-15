@@ -701,6 +701,9 @@ async fn process_automation(
     }
     record_edit_warnings(db, &automation).await.c(h!())?;
     let messages = load_candidate_messages(db, &automation).await.c(h!())?;
+    if messages.is_empty() {
+        advance_empty_checkpoint(db, &automation).await.c(h!())?;
+    }
     for message in messages {
         process_message(db, &automation, &message).await.c(h!())?;
         update_checkpoint(db, automation.id, message.id, message.message_at)
@@ -879,17 +882,8 @@ async fn load_candidate_messages(
                 and account_id = $5
                 and deleted = false
                 and (
-                    $8 = 0
-                    or coalesce(timestamp, created_at) >= (now() at time zone 'utc') - make_interval(mins => $8)
-                )
-                and exists (
-                    select 1
-                    from (
-                        select jsonb_array_elements_text($6::jsonb) as token
-                        union all
-                        select jsonb_array_elements_text($7::jsonb) as token
-                    ) tokens
-                    where position(token in lower(body)) > 0
+                    $6 = 0
+                    or coalesce(timestamp, created_at) >= (now() at time zone 'utc') - make_interval(mins => $6)
                 )
                 and (
                     coalesce(timestamp, created_at) > $2
@@ -907,14 +901,45 @@ async fn load_candidate_messages(
             automation.last_processed_inbox_message_id.into(),
             WORKER_MESSAGE_LIMIT.into(),
             automation.source_account_id.into(),
-            automation.keyword_tokens.to_string().into(),
-            automation.frequency_tokens.to_string().into(),
             automation.stale_message_cutoff_minutes.into(),
         ],
     ))
     .all(db)
     .await
     .c(h!())
+}
+
+async fn advance_empty_checkpoint(
+    db: &DatabaseConnection,
+    automation: &AutomationWorkerRow,
+) -> Result<()> {
+    if automation.stale_message_cutoff_minutes <= 0 {
+        return Ok(());
+    }
+    let checkpoint_at = Utc::now().naive_utc()
+        - ChronoDuration::minutes(i64::from(
+            automation.stale_message_cutoff_minutes,
+        ));
+    if checkpoint_at <= automation.checkpoint_at {
+        return Ok(());
+    }
+    db.execute(Statement::from_sql_and_values(
+        DatabaseBackend::Postgres,
+        r#"
+        update echo_automation
+        set
+            checkpoint_at = $2,
+            last_processed_inbox_message_id = 0,
+            last_processed_at = now() at time zone 'utc',
+            updated_at = now() at time zone 'utc'
+        where id = $1
+            and checkpoint_at < $2
+        "#,
+        [automation.id.into(), checkpoint_at.into()],
+    ))
+    .await
+    .c(h!())?;
+    Ok(())
 }
 
 async fn load_send_target(
@@ -2161,7 +2186,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn candidate_messages_filter_by_tokens_before_limit() -> Result<()> {
+    async fn candidate_messages_advance_through_non_matching_backlog(
+    ) -> Result<()> {
         let _guard = DB_TEST_LOCK.lock().await;
         let db = test_db().await.c(h!())?;
         let fixture = create_fixture(&db).await.c(h!())?;
@@ -2187,7 +2213,7 @@ mod tests {
             )
             .await
             .c(h!())?;
-            let automation = AutomationWorkerRow {
+            let mut automation = AutomationWorkerRow {
                 id: fixture.automation_id,
                 source_account_id: fixture.account_id,
                 source_group_id: fixture.source_group_id,
@@ -2210,8 +2236,65 @@ mod tests {
 
             let messages =
                 load_candidate_messages(&db, &automation).await.c(h!())?;
-            assert_eq!(messages.len(), 1);
-            assert_eq!(messages[0].id, apple.id);
+            assert_eq!(messages.len(), WORKER_MESSAGE_LIMIT as usize);
+            assert!(messages.iter().all(|message| message.body == "banana"));
+
+            let last_message =
+                messages.last().context("first batch is empty").c(h!())?;
+            update_checkpoint(
+                &db,
+                automation.id,
+                last_message.id,
+                last_message.message_at,
+            )
+            .await
+            .c(h!())?;
+            automation.checkpoint_at = last_message.message_at;
+            automation.last_processed_inbox_message_id = last_message.id;
+
+            let messages =
+                load_candidate_messages(&db, &automation).await.c(h!())?;
+            assert!(messages.iter().any(|message| message.id == apple.id));
+            Ok(())
+        }
+        .await;
+        cleanup_test_namespace(&db, &fixture.namespace, &fixture.phone_number)
+            .await
+            .c(h!())?;
+        result
+    }
+
+    #[tokio::test]
+    async fn empty_scan_advances_checkpoint_to_stale_boundary() -> Result<()> {
+        let _guard = DB_TEST_LOCK.lock().await;
+        let db = test_db().await.c(h!())?;
+        let fixture = create_fixture(&db).await.c(h!())?;
+        let result = async {
+            let automation = AutomationWorkerRow {
+                id: fixture.automation_id,
+                source_account_id: fixture.account_id,
+                source_group_id: fixture.source_group_id,
+                target_account_id: fixture.account_id,
+                target_group_id: fixture.target_group_id,
+                keyword_tokens: serde_json::json!(["apple"]),
+                frequency_tokens: serde_json::json!([]),
+                stale_message_cutoff_minutes: 60,
+                resend_attachments: false,
+                coordinate_presence_mode: CoordinatePresenceMode::Any
+                    .as_str()
+                    .to_string(),
+                polygon_filter_mode: PolygonFilterMode::None
+                    .as_str()
+                    .to_string(),
+                polygon_coordinates: None,
+                checkpoint_at: chrono::DateTime::UNIX_EPOCH.naive_utc(),
+                last_processed_inbox_message_id: 0,
+            };
+
+            advance_empty_checkpoint(&db, &automation).await.c(h!())?;
+
+            let view = load_view(&db, fixture.automation_id).await.c(h!())?;
+            assert!(view.checkpoint_at > 0);
             Ok(())
         }
         .await;
