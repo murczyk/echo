@@ -266,11 +266,11 @@ const INDEX_HTML: &str = r#"<!doctype html>
     let automations = [];
     let automationAccounts = [];
     let automationGroups = [];
-    let keywordTokens = [];
-    let frequencyTokens = [];
+    const keywordTokens = [];
+    const frequencyTokens = [];
     let editAutomationId = null;
-    let editKeywordTokens = [];
-    let editFrequencyTokens = [];
+    const editKeywordTokens = [];
+    const editFrequencyTokens = [];
 
     function appBasePath() {
       const path = window.location.pathname;
@@ -408,6 +408,10 @@ const INDEX_HTML: &str = r#"<!doctype html>
       tokens.splice(0, tokens.length, ...unique);
       input.value = '';
       renderToken(containerId, tokens, removePrefix);
+    }
+
+    function replaceTokens(tokens, values) {
+      tokens.splice(0, tokens.length, ...values);
     }
 
     function bindTokenInput(inputId, tokens, containerId, removePrefix) {
@@ -680,8 +684,8 @@ const INDEX_HTML: &str = r#"<!doctype html>
       selectOption('editTargetAccountInput', item.targetAccountId);
       renderGroupSelect(document.getElementById('editTargetGroupInput'), item.targetAccountId);
       selectOption('editTargetGroupInput', item.targetGroupId);
-      editKeywordTokens = [...item.keywordTokens];
-      editFrequencyTokens = [...item.frequencyTokens];
+      replaceTokens(editKeywordTokens, item.keywordTokens);
+      replaceTokens(editFrequencyTokens, item.frequencyTokens);
       renderToken('editKeywordTokens', editKeywordTokens, 'edit-keyword');
       renderToken('editFrequencyTokens', editFrequencyTokens, 'edit-frequency');
       document.getElementById('editStaleMinutesInput').value = item.staleMessageCutoffMinutes;
@@ -725,8 +729,8 @@ const INDEX_HTML: &str = r#"<!doctype html>
         });
         automationFormMsg.textContent = 'Створено.';
         event.target.reset();
-        keywordTokens = [];
-        frequencyTokens = [];
+        replaceTokens(keywordTokens, []);
+        replaceTokens(frequencyTokens, []);
         renderToken('keywordTokens', keywordTokens, 'keyword');
         renderToken('frequencyTokens', frequencyTokens, 'frequency');
         updatePolygonAvailability();
