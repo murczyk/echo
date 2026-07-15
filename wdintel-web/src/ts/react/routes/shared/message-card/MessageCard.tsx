@@ -219,13 +219,13 @@ function MessageCardComponent({
       isPresent(timeDistance) ? (
         <div className="flex-1 min-w-0 flex justify-end">
           {tooltipTime === NO_DATA_LABEL ? (
-            <Typography variant="caption" sx={{ color: 'text.secondary', whiteSpace: 'nowrap' }}>
+            <Typography variant="body2" sx={{ color: 'text.secondary', whiteSpace: 'nowrap' }}>
               {timeDistance}
             </Typography>
           ) : (
             <Tooltip title={tooltipTime} placement="top" enterDelay={300}>
               <Typography
-                variant="caption"
+                variant="body2"
                 sx={{ color: 'text.secondary', whiteSpace: 'nowrap', cursor: 'default' }}
               >
                 {timeDistance}

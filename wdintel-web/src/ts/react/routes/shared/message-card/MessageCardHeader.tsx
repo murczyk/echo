@@ -746,7 +746,7 @@ function MetaLine({ icon, title, text }: { icon: JSX.Element; title: string; tex
       <div className="text-[var(--color-action)] leading-none shrink-0" title={title}>
         {icon}
       </div>
-      <Typography variant="caption" sx={{ minWidth: 0 }} noWrap>
+      <Typography variant="body2" sx={{ minWidth: 0 }} noWrap>
         {text}
       </Typography>
     </div>
@@ -924,12 +924,12 @@ function MessageCardHeaderComponent({
     <div className="flex flex-row gap-2 flex-wrap items-center">
       <div className="flex flex-row gap-[6px] items-center">
         <ScheduleOutlinedIcon sx={{ color: MESSAGE_CARD_ACTION_COLOR, fontSize: 18 }} />
-        <Typography variant="caption">{formatTime(msg.time)}</Typography>
+        <Typography variant="body2">{formatTime(msg.time)}</Typography>
       </div>
       {isPresent(msg.date) ? (
         <div className="flex flex-row gap-[6px] items-center">
           <CalendarTodayOutlinedIcon sx={{ color: MESSAGE_CARD_ACTION_COLOR, fontSize: 18 }} />
-          <Typography variant="caption">{formatDateNoYear(msg.date)}</Typography>
+          <Typography variant="body2">{formatDateNoYear(msg.date)}</Typography>
         </div>
       ) : null}
     </div>
@@ -951,7 +951,7 @@ function MessageCardHeaderComponent({
       }
       text={
         <div className="min-w-0">
-          <Typography variant="caption" sx={{ fontWeight: 700, whiteSpace: 'nowrap' }}>
+          <Typography variant="body2" sx={{ fontWeight: 700, whiteSpace: 'nowrap' }}>
             {msg.freq}
           </Typography>
         </div>
@@ -1020,7 +1020,7 @@ function MessageCardHeaderComponent({
                 text={groupName}
               />
             ) : (
-              <Typography variant="caption" color="text.secondary">
+              <Typography variant="body2" color="text.secondary">
                 —
               </Typography>
             )}
@@ -1031,7 +1031,7 @@ function MessageCardHeaderComponent({
                 text={senderName}
               />
             ) : (
-              <Typography variant="caption" color="text.secondary">
+              <Typography variant="body2" color="text.secondary">
                 —
               </Typography>
             )}
@@ -1039,7 +1039,7 @@ function MessageCardHeaderComponent({
         </div>
         <div className="min-w-0 flex items-center justify-center col-start-2 row-start-2">
           {freqBlock ?? (
-            <Typography variant="caption" color="text.secondary">
+            <Typography variant="body2" color="text.secondary">
               —
             </Typography>
           )}
@@ -1133,7 +1133,7 @@ function MessageCardHeaderComponent({
               text={groupName}
             />
           ) : (
-            <Typography variant="caption" color="text.secondary">
+            <Typography variant="body2" color="text.secondary">
               —
             </Typography>
           )}
@@ -1144,7 +1144,7 @@ function MessageCardHeaderComponent({
               text={senderName}
             />
           ) : (
-            <Typography variant="caption" color="text.secondary">
+            <Typography variant="body2" color="text.secondary">
               —
             </Typography>
           )}
@@ -1154,7 +1154,7 @@ function MessageCardHeaderComponent({
         {freqBlock ?? (
           <CenteredTextOnlyRow
             text={
-              <Typography variant="caption" color="text.secondary">
+              <Typography variant="body2" color="text.secondary">
                 —
               </Typography>
             }
