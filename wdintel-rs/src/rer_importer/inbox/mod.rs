@@ -367,6 +367,10 @@ pub(crate) async fn messages_by_id_bl(
         .join(
             JoinType::LeftJoin,
             sigint_inbox_item::Relation::SigintPost.def(),
+        )
+        .join(
+            JoinType::LeftJoin,
+            sigint_inbox_item::Relation::DeviceName.def(),
         );
 
     messages = add_inbox_message_columns(messages);
@@ -829,6 +833,7 @@ fn generic_submit_item_to_inbox_message(
         tags: None,
         network_ids: None,
         network_name: None,
+        device_name: None,
         inbox_tags: None,
         metadata: vec![],
     };

@@ -716,6 +716,13 @@ mod tests {
                 .and_then(|message| message.network_name.as_deref()),
             Some("original network")
         );
+        assert_eq!(
+            created
+                .message
+                .as_ref()
+                .and_then(|message| message.device_name.as_deref()),
+            Some("edit-test-device")
+        );
 
         let inbox_item =
             sigint_inbox_item::Entity::find_by_id(created.signal_message_id)
@@ -791,6 +798,13 @@ mod tests {
                 .as_ref()
                 .and_then(|message| message.network_name.as_deref()),
             Some("updated network")
+        );
+        assert_eq!(
+            edited
+                .message
+                .as_ref()
+                .and_then(|message| message.device_name.as_deref()),
+            Some("edit-test-device")
         );
         let signal_message =
             signal_message::Entity::find_by_id(created.signal_message_id)

@@ -55,6 +55,7 @@ pub struct InboxMessageDesc {
     pub checked: Option<bool>,
     pub unit_v2: Option<String>,
     pub network: Option<String>,
+    pub device_name: Option<String>,
     pub post_id: Option<i64>,
     pub post_name: Option<String>,
     #[allow(dead_code)]
@@ -441,6 +442,7 @@ pub async fn aggregate_to_inbox_messages(
                 callsigns_alg2: from_m_val_vec(message.callsigns_alg2.clone())?,
                 network_ids,
                 network_name: message.network,
+                device_name: message.device_name,
                 inbox_tags: m_inbox_tags,
                 metadata,
             },

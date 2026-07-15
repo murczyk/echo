@@ -53,6 +53,7 @@ pub struct InboxMessage {
     pub tags: Option<Vec<i64>>,
     pub network_ids: Option<Vec<i64>>,
     pub network_name: Option<String>,
+    pub device_name: Option<String>,
     pub inbox_tags: Option<Vec<InboxMessageTag>>,
     pub metadata: Vec<InboxMessageMetadata>,
 }
@@ -167,6 +168,7 @@ impl From<InboxInsertPayload> for InboxMessage {
             tags: payload.tags,
             network_ids: payload.network_ids,
             network_name: None,
+            device_name: None,
             inbox_tags: payload.inbox_tags,
             metadata: payload.metadata,
         }
@@ -1638,9 +1640,11 @@ mod tests {
             .collect::<BTreeSet<_>>();
         let expected_omitted_keys = BTreeSet::from([
             "callsign_tokens".to_string(),
+            "device_name".to_string(),
             "keyword_tokens".to_string(),
             "message_comments".to_string(),
             "message_uid".to_string(),
+            "network_name".to_string(),
             "signal_tokens".to_string(),
             "text_marked".to_string(),
         ]);

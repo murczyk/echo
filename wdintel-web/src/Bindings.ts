@@ -406,6 +406,7 @@ export type InboxMessage = {
   tags: Array<number> | null;
   networkIds: Array<number> | null;
   networkName: string | null;
+  deviceName: string | null;
   inboxTags: Array<InboxMessageTag> | null;
   metadata: Array<InboxMessageMetadata>;
 };
