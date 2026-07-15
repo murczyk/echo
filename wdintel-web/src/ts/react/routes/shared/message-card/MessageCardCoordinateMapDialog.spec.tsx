@@ -2,7 +2,7 @@
  * @vitest-environment happy-dom
  */
 import type { ReactNode } from 'react';
-import { act, Children, cloneElement, forwardRef, isValidElement } from 'react';
+import { act, Children, cloneElement, forwardRef, isValidElement, useState } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -38,6 +38,7 @@ const leafletMock = vi.hoisted(() => {
   };
   const map = {
     setView: vi.fn(() => map),
+    getZoom: vi.fn(() => 13),
     getContainer() {
       return container;
     },
@@ -46,6 +47,7 @@ const leafletMock = vi.hoisted(() => {
   };
   const marker = {
     addTo: vi.fn(() => marker),
+    setLatLng: vi.fn(() => marker),
     remove: vi.fn(),
   };
 
@@ -54,6 +56,10 @@ const leafletMock = vi.hoisted(() => {
     circleMarker: vi.fn(() => marker),
   };
 });
+
+const clipboardMock = vi.hoisted(() => ({
+  copyTextToClipboard: vi.fn(),
+}));
 
 class ResizeObserverMock {
   observe = vi.fn();
@@ -70,11 +76,29 @@ class ResizeObserverMock {
 
 vi.mock('@mui/material', () => ({
   Box: forwardRef<HTMLDivElement, { children?: ReactNode } & Record<string, unknown>>(function Box(
-    { children, ...props },
+    { children, sx, style, ...props },
     ref,
   ) {
+    const computedStyle: Record<string, string> = {};
+    if (sx != null && typeof sx === 'object' && !Array.isArray(sx)) {
+      if (typeof sx.width === 'number' || typeof sx.width === 'string') {
+        computedStyle.width = typeof sx.width === 'number' ? `${sx.width}px` : String(sx.width);
+      }
+      if (typeof sx.height === 'number' || typeof sx.height === 'string') {
+        computedStyle.height = typeof sx.height === 'number' ? `${sx.height}px` : String(sx.height);
+      }
+      if (typeof sx.minHeight === 'number' || typeof sx.minHeight === 'string') {
+        computedStyle.minHeight =
+          typeof sx.minHeight === 'number' ? `${sx.minHeight}px` : String(sx.minHeight);
+      }
+    }
+
     return (
-      <div ref={ref} {...props}>
+      <div
+        ref={ref}
+        style={{ ...(style as Record<string, string> | undefined), ...computedStyle }}
+        {...props}
+      >
         {children}
       </div>
     );
@@ -98,16 +122,40 @@ vi.mock('@mui/material', () => ({
     children,
     onClick,
     'aria-label': ariaLabel,
+    sx,
+    style,
     ...props
   }: {
     children?: ReactNode;
     onClick?: () => void;
     'aria-label'?: string;
-  } & Record<string, unknown>) => (
-    <button aria-label={ariaLabel} onClick={onClick} {...props}>
-      {children}
-    </button>
-  ),
+    sx?: Record<string, unknown>;
+    style?: Record<string, string>;
+  } & Record<string, unknown>) => {
+    const computedStyle: Record<string, string> = {};
+    if (sx != null && typeof sx === 'object' && !Array.isArray(sx)) {
+      if (typeof sx.bgcolor === 'string') {
+        computedStyle.backgroundColor = sx.bgcolor;
+      }
+      if (typeof sx.width === 'number' || typeof sx.width === 'string') {
+        computedStyle.width = typeof sx.width === 'number' ? `${sx.width}px` : String(sx.width);
+      }
+      if (typeof sx.height === 'number' || typeof sx.height === 'string') {
+        computedStyle.height = typeof sx.height === 'number' ? `${sx.height}px` : String(sx.height);
+      }
+    }
+
+    return (
+      <button
+        aria-label={ariaLabel}
+        onClick={onClick}
+        style={{ ...(style ?? {}), ...computedStyle }}
+        {...props}
+      >
+        {children}
+      </button>
+    );
+  },
   CircularProgress: () => <div data-progress />,
   Tooltip: ({ children }: { children?: ReactNode }) => <>{children}</>,
   ToggleButtonGroup: ({
@@ -176,7 +224,42 @@ vi.mock('@mui/material', () => ({
       {children}
     </button>
   ),
-  Typography: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
+  Typography: ({
+    children,
+    sx,
+    style,
+    ...props
+  }: {
+    children?: ReactNode;
+    sx?: Record<string, unknown>;
+    style?: Record<string, string>;
+  } & Record<string, unknown>) => {
+    const computedStyle: Record<string, string> = {};
+    if (sx != null && typeof sx === 'object' && !Array.isArray(sx)) {
+      if (typeof sx.fontSize === 'number' || typeof sx.fontSize === 'string') {
+        computedStyle.fontSize =
+          typeof sx.fontSize === 'number' ? `${sx.fontSize}px` : String(sx.fontSize);
+      }
+      if (typeof sx.lineHeight === 'number' || typeof sx.lineHeight === 'string') {
+        computedStyle.lineHeight = String(sx.lineHeight);
+      }
+      if (typeof sx.fontWeight === 'number' || typeof sx.fontWeight === 'string') {
+        computedStyle.fontWeight = String(sx.fontWeight);
+      }
+      if (typeof sx.fontVariantNumeric === 'string') {
+        computedStyle.fontVariantNumeric = sx.fontVariantNumeric;
+      }
+      if (typeof sx.height === 'number' || typeof sx.height === 'string') {
+        computedStyle.height = typeof sx.height === 'number' ? `${sx.height}px` : String(sx.height);
+      }
+    }
+
+    return (
+      <div style={{ ...(style ?? {}), ...computedStyle }} {...props}>
+        {children}
+      </div>
+    );
+  },
   useTheme: () => ({
     palette: { divider: '#000', text: { secondary: '#666' }, background: { paper: '#fff' } },
   }),
@@ -187,6 +270,8 @@ vi.mock('../../../../web-components/analysis-map/tile-layers', () => ({
 }));
 
 vi.mock('leaflet', () => leafletMock);
+
+vi.mock('../../../../copy-to-clipboard', () => clipboardMock);
 
 vi.mock('./MessageCardPreviewShell', () => ({
   MessageCardPreviewShell: ({
@@ -276,13 +361,19 @@ describe('MessageCardCoordinateMapDialog', () => {
 
   it('renders through the shared preview shell and initializes once the host is measurable', async () => {
     const onClose = vi.fn();
+    const points = [
+      { lat: 50.45044, lng: 30.52355, label: '50.45044, 30.52355', source: 'direct' as const },
+      { lat: 50.5, lng: 30.6, label: '50.50000, 30.60000', source: 'direct' as const },
+    ];
 
     await act(async () => {
       root.render(
         <MessageCardCoordinateMapDialog
           open
-          coordinate={{ lat: 50.45044, lng: 30.52355, label: '50.45044, 30.52355' }}
+          points={points}
+          currentIndex={0}
           onClose={onClose}
+          onIndexChange={vi.fn()}
         />,
       );
       await Promise.resolve();
@@ -313,14 +404,83 @@ describe('MessageCardCoordinateMapDialog', () => {
 
     expect(tileLayers.googleHybrid.addTo).toHaveBeenCalledTimes(1);
     expect(tileLayers.openStreetMap.addTo).not.toHaveBeenCalled();
+    expect(document.body.querySelectorAll('[data-wgs84-text]').length).toBe(1);
     expect(document.body.querySelector('button[aria-label="Супутник"]')).not.toBeNull();
     expect(document.body.querySelector('button[aria-label="OpenStreetMap"]')).not.toBeNull();
+    expect(document.body.querySelector('button[aria-label="Копіювати MGRS"]')).not.toBeNull();
+    expect(document.body.querySelectorAll('[data-mgrs-text]').length).toBe(1);
+    const panel = document.body.querySelector(
+      '[data-coordinate-panel="true"]',
+    ) as HTMLElement | null;
+    expect(panel).not.toBeNull();
+    expect(panel?.style.display).toBe('inline-flex');
+    expect(panel?.style.flexDirection).toBe('column');
+    expect(panel?.style.alignItems).toBe('flex-start');
+    expect(panel?.style.gap).toBe('6px');
+    expect(panel?.style.padding).toBe('12px');
+    expect(document.body.textContent).toContain('WGS84');
+    expect(document.body.textContent).toContain('MGRS');
+    const wgsLabel = document.body.querySelector(
+      '[data-coordinate-label="wgs84"]',
+    ) as HTMLElement | null;
+    const mgrsLabel = document.body.querySelector(
+      '[data-coordinate-label="mgrs"]',
+    ) as HTMLElement | null;
+    const wgsValue = document.body.querySelector('[data-wgs84-text]') as HTMLElement | null;
+    const mgrsValue = document.body.querySelector('[data-mgrs-text]') as HTMLElement | null;
+    expect(wgsLabel).not.toBeNull();
+    expect(mgrsLabel).not.toBeNull();
+    expect(wgsValue?.style.fontSize).toBe('14px');
+    expect(mgrsValue?.style.fontSize).toBe('14px');
+    expect(wgsValue?.style.lineHeight).toBe('1');
+    expect(mgrsValue?.style.lineHeight).toBe('1');
+    expect(wgsLabel?.style.fontSize).toBe('12px');
+    expect(mgrsLabel?.style.fontSize).toBe('12px');
+    expect(wgsLabel?.style.lineHeight).toBe('1');
+    expect(mgrsLabel?.style.lineHeight).toBe('1');
+    expect(wgsValue?.style.fontVariantNumeric).toBe('tabular-nums');
+    expect(mgrsValue?.style.fontVariantNumeric).toBe('tabular-nums');
+    expect(panel?.children.length).toBe(2);
+    const wgsRow = document.body.querySelector(
+      '[data-coordinate-row="wgs84"]',
+    ) as HTMLElement | null;
+    const mgrsRow = document.body.querySelector(
+      '[data-coordinate-row="mgrs"]',
+    ) as HTMLElement | null;
+    expect(wgsRow?.style.display).toBe('flex');
+    expect(wgsRow?.style.alignItems).toBe('center');
+    expect(wgsRow?.style.height).toBe('24px');
+    expect(mgrsRow?.style.display).toBe('flex');
+    expect(mgrsRow?.style.alignItems).toBe('center');
+    expect(mgrsRow?.style.height).toBe('24px');
+    expect(wgsLabel?.style.width).toBe('56px');
+    expect(mgrsLabel?.style.width).toBe('56px');
+    const mgrsContent = document.body.querySelector(
+      '[data-coordinate-row="mgrs-content"]',
+    ) as HTMLElement | null;
+    expect(mgrsContent).not.toBeNull();
+    expect(mgrsContent?.style.display).toBe('grid');
+    expect(mgrsContent?.style.alignItems).toBe('center');
+    expect(mgrsContent?.style.height).toBe('24px');
+    expect(mgrsContent?.style.width).toBe('100%');
+    expect(mgrsContent?.style.gridTemplateColumns).toBe('minmax(0, 1fr) 24px');
+    expect(mgrsContent?.querySelector('[data-mgrs-text]')).not.toBeNull();
+    const copyButton = mgrsContent?.querySelector(
+      'button[aria-label="Копіювати MGRS"]',
+    ) as HTMLButtonElement | null;
+    expect(copyButton).not.toBeNull();
+    expect(copyButton?.style.width).toBe('24px');
+    expect(copyButton?.style.height).toBe('24px');
+    expect(wgsValue?.style.flex).toBe('1 1 auto');
+    expect(wgsValue?.style.minWidth).toBe('0');
+    expect(mgrsValue?.style.width).toBe('100%');
 
     const leaflet = await import('leaflet');
     expect(leaflet.map).toHaveBeenCalledTimes(1);
     expect(leaflet.map().setView).toHaveBeenCalledWith([50.45044, 30.52355], 13);
     expect(leaflet.circleMarker).toHaveBeenCalledWith([50.45044, 30.52355], expect.any(Object));
     expect(leaflet.map().invalidateSize).toHaveBeenCalledTimes(1);
+    expect(leaflet.circleMarker().setLatLng).not.toHaveBeenCalled();
 
     const setViewCallsBeforeLayerSwitch = leaflet.map().setView.mock.calls.length;
     const invalidateCallsBeforeLayerSwitch = leaflet.map().invalidateSize.mock.calls.length;
@@ -364,12 +524,28 @@ describe('MessageCardCoordinateMapDialog', () => {
     ).toBe('true');
 
     await act(async () => {
+      root.render(
+        <MessageCardCoordinateMapDialog
+          open
+          points={points}
+          currentIndex={1}
+          onClose={onClose}
+          onIndexChange={vi.fn()}
+        />,
+      );
+      await Promise.resolve();
+    });
+
+    expect(leaflet.map().setView).toHaveBeenCalledWith([50.5, 30.6], 13);
+    expect(leaflet.circleMarker().setLatLng).toHaveBeenCalledWith([50.5, 30.6]);
+
+    await act(async () => {
       resizeObserverInstances.at(-1)?.trigger();
       await Promise.resolve();
     });
 
     expect(leaflet.map().invalidateSize.mock.calls.length).toBe(
-      invalidateCallsBeforeLayerSwitch + 1,
+      invalidateCallsBeforeLayerSwitch + 2,
     );
 
     const fullscreenButton = document.body.querySelector(
@@ -388,8 +564,158 @@ describe('MessageCardCoordinateMapDialog', () => {
       config: getMessageCardPreviewShellConfig('coordinate-map'),
     });
     expect(leaflet.map().invalidateSize).toHaveBeenCalledTimes(
-      invalidateCallsBeforeLayerSwitch + 2,
+      invalidateCallsBeforeLayerSwitch + 3,
     );
+  });
+
+  it('wraps keyboard carousel navigation and updates the map point without reinitializing Leaflet', async () => {
+    const onClose = vi.fn();
+    const onIndexChange = vi.fn();
+    const points = [
+      { lat: 50.45044, lng: 30.52355, label: '50.45044, 30.52355', source: 'direct' as const },
+      { lat: 50.5, lng: 30.6, label: '50.50000, 30.60000', source: 'direct' as const },
+    ];
+
+    function Harness() {
+      const [currentIndex, setCurrentIndex] = useState(0);
+      return (
+        <MessageCardCoordinateMapDialog
+          open
+          points={points}
+          currentIndex={currentIndex}
+          onClose={onClose}
+          onIndexChange={(nextIndex) => {
+            onIndexChange(nextIndex);
+            setCurrentIndex(nextIndex);
+          }}
+        />
+      );
+    }
+
+    await act(async () => {
+      root.render(<Harness />);
+      await Promise.resolve();
+    });
+
+    hostRect = { width: 800, height: 600 };
+    await act(async () => {
+      resizeObserverInstances.at(-1)?.trigger();
+      await Promise.resolve();
+    });
+
+    const leaflet = await import('leaflet');
+    expect(leaflet.map).toHaveBeenCalledTimes(1);
+    const mapInstance = leaflet.map.mock.results[0]?.value as {
+      setView: ReturnType<typeof vi.fn>;
+      invalidateSize: ReturnType<typeof vi.fn>;
+    };
+    const markerInstance = leaflet.circleMarker.mock.results[0]?.value as {
+      setLatLng: ReturnType<typeof vi.fn>;
+    };
+
+    await act(async () => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true }));
+      await Promise.resolve();
+    });
+
+    expect(onIndexChange).toHaveBeenCalledWith(1);
+    expect(leaflet.map).toHaveBeenCalledTimes(1);
+    expect(mapInstance.setView).toHaveBeenLastCalledWith([50.5, 30.6], 13);
+    expect(markerInstance.setLatLng).toHaveBeenLastCalledWith([50.5, 30.6]);
+
+    await act(async () => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+      await Promise.resolve();
+    });
+
+    expect(onIndexChange).toHaveBeenLastCalledWith(0);
+    expect(leaflet.map).toHaveBeenCalledTimes(1);
+    expect(mapInstance.setView).toHaveBeenLastCalledWith([50.45044, 30.52355], 13);
+    expect(markerInstance.setLatLng).toHaveBeenLastCalledWith([50.45044, 30.52355]);
+  });
+
+  it('ignores arrow navigation from editable and slider targets', async () => {
+    const onClose = vi.fn();
+    const onIndexChange = vi.fn();
+
+    await act(async () => {
+      root.render(
+        <MessageCardCoordinateMapDialog
+          open
+          points={[
+            { lat: 50.45044, lng: 30.52355, label: '50.45044, 30.52355', source: 'direct' },
+            { lat: 50.5, lng: 30.6, label: '50.50000, 30.60000', source: 'direct' },
+          ]}
+          currentIndex={0}
+          onClose={onClose}
+          onIndexChange={onIndexChange}
+        />,
+      );
+      await Promise.resolve();
+    });
+
+    hostRect = { width: 800, height: 600 };
+    await act(async () => {
+      resizeObserverInstances.at(-1)?.trigger();
+      await Promise.resolve();
+    });
+
+    const targets = [
+      document.createElement('input'),
+      document.createElement('textarea'),
+      document.createElement('select'),
+      (() => {
+        const element = document.createElement('div');
+        element.setAttribute('contenteditable', 'true');
+        return element;
+      })(),
+      (() => {
+        const element = document.createElement('div');
+        element.setAttribute('role', 'slider');
+        return element;
+      })(),
+    ];
+
+    for (const target of targets) {
+      document.body.appendChild(target);
+      await act(async () => {
+        target.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+        await Promise.resolve();
+      });
+      expect(onIndexChange).not.toHaveBeenCalled();
+      target.remove();
+    }
+  });
+
+  it('does not intercept arrow navigation when only one point is available', async () => {
+    const onClose = vi.fn();
+    const onIndexChange = vi.fn();
+
+    await act(async () => {
+      root.render(
+        <MessageCardCoordinateMapDialog
+          open
+          points={[{ lat: 50.45044, lng: 30.52355, label: '50.45044, 30.52355', source: 'direct' }]}
+          currentIndex={0}
+          onClose={onClose}
+          onIndexChange={onIndexChange}
+        />,
+      );
+      await Promise.resolve();
+    });
+
+    hostRect = { width: 800, height: 600 };
+    await act(async () => {
+      resizeObserverInstances.at(-1)?.trigger();
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+      await Promise.resolve();
+    });
+
+    expect(onIndexChange).not.toHaveBeenCalled();
   });
 
   it('shows retry UI when the host stays unmeasurable and reinitializes after retry', async () => {
@@ -400,8 +726,10 @@ describe('MessageCardCoordinateMapDialog', () => {
       root.render(
         <MessageCardCoordinateMapDialog
           open
-          coordinate={{ lat: 50.45044, lng: 30.52355, label: '50.45044, 30.52355' }}
+          points={[{ lat: 50.45044, lng: 30.52355, label: '50.45044, 30.52355', source: 'direct' }]}
+          currentIndex={0}
           onClose={onClose}
+          onIndexChange={vi.fn()}
         />,
       );
       await Promise.resolve();
@@ -439,8 +767,10 @@ describe('MessageCardCoordinateMapDialog', () => {
       root.render(
         <MessageCardCoordinateMapDialog
           open
-          coordinate={{ lat: 50.45044, lng: 30.52355, label: '50.45044, 30.52355' }}
+          points={[{ lat: 50.45044, lng: 30.52355, label: '50.45044, 30.52355', source: 'direct' }]}
+          currentIndex={0}
           onClose={onClose}
+          onIndexChange={vi.fn()}
         />,
       );
       await Promise.resolve();
@@ -478,8 +808,10 @@ describe('MessageCardCoordinateMapDialog', () => {
       root.render(
         <MessageCardCoordinateMapDialog
           open={false}
-          coordinate={{ lat: 50.45044, lng: 30.52355, label: '50.45044, 30.52355' }}
+          points={[{ lat: 50.45044, lng: 30.52355, label: '50.45044, 30.52355', source: 'direct' }]}
+          currentIndex={0}
           onClose={onClose}
+          onIndexChange={vi.fn()}
         />,
       );
       await Promise.resolve();
@@ -491,8 +823,10 @@ describe('MessageCardCoordinateMapDialog', () => {
       root.render(
         <MessageCardCoordinateMapDialog
           open
-          coordinate={{ lat: 50.45044, lng: 30.52355, label: '50.45044, 30.52355' }}
+          points={[{ lat: 50.45044, lng: 30.52355, label: '50.45044, 30.52355', source: 'direct' }]}
+          currentIndex={0}
           onClose={onClose}
+          onIndexChange={vi.fn()}
         />,
       );
       await Promise.resolve();
@@ -507,15 +841,24 @@ describe('MessageCardCoordinateMapDialog', () => {
     expect(leafletMock.map.mock.calls.length).toBeGreaterThanOrEqual(2);
   });
 
-  it('keeps the coordinate label stacked above the Leaflet surface without blocking controls', async () => {
+  it('keeps the coordinate panel stacked above the Leaflet surface without blocking controls', async () => {
     const onClose = vi.fn();
 
     await act(async () => {
       root.render(
         <MessageCardCoordinateMapDialog
           open
-          coordinate={{ lat: 50.45044, lng: 30.52355, label: 'very long coordinate label' }}
+          points={[
+            {
+              lat: 50.45044,
+              lng: 30.52355,
+              label: 'very long coordinate label',
+              source: 'direct',
+            },
+          ]}
+          currentIndex={0}
           onClose={onClose}
+          onIndexChange={vi.fn()}
         />,
       );
       await Promise.resolve();
@@ -527,11 +870,124 @@ describe('MessageCardCoordinateMapDialog', () => {
       await Promise.resolve();
     });
 
-    const label = document.body.querySelector('div[style*="pointer-events: none"]');
-    expect(label).not.toBeNull();
-    expect(label?.textContent).toContain('very long coordinate label');
-    expect(label?.getAttribute('style')).toContain('right: 12px');
-    expect(label?.getAttribute('style')).toContain('top: 12px');
-    expect(label?.getAttribute('style')).toContain('z-index: 1200');
+    const panel = document.body.querySelector('div[style*="pointer-events: none"]');
+    expect(panel).not.toBeNull();
+    expect(panel?.textContent).toContain('WGS84');
+    expect(panel?.textContent).toContain('MGRS');
+    expect(document.body.querySelector('[data-wgs84-text]')?.textContent).toBe(
+      '50.45044, 30.52355',
+    );
+    expect(document.body.querySelector('[data-mgrs-text]')?.textContent).not.toBe(
+      'MGRS недоступні',
+    );
+    expect(panel?.getAttribute('style')).toContain('right: 12px');
+    expect(panel?.getAttribute('style')).toContain('top: 12px');
+    expect(panel?.getAttribute('style')).toContain('z-index: 1200');
+  });
+
+  it('keeps the copy status idle without an empty pill and shows success feedback briefly', async () => {
+    vi.useFakeTimers();
+    clipboardMock.copyTextToClipboard.mockResolvedValue(undefined);
+
+    await act(async () => {
+      root.render(
+        <MessageCardCoordinateMapDialog
+          open
+          points={[{ lat: 50.45044, lng: 30.52355, label: '50.45044, 30.52355', source: 'direct' }]}
+          currentIndex={0}
+          onClose={vi.fn()}
+          onIndexChange={vi.fn()}
+        />,
+      );
+      await Promise.resolve();
+    });
+
+    hostRect = { width: 800, height: 600 };
+    await act(async () => {
+      resizeObserverInstances.at(-1)?.trigger();
+      await Promise.resolve();
+    });
+
+    const copyButton = document.body.querySelector(
+      'button[aria-label="Копіювати MGRS"]',
+    ) as HTMLButtonElement | null;
+    expect(copyButton).not.toBeNull();
+    expect(copyButton?.disabled).toBe(false);
+    expect(copyButton?.style.backgroundColor).toBe('transparent');
+    expect(copyButton?.getAttribute('data-copy-status')).toBe('idle');
+    expect(copyButton?.getAttribute('title')).toBe('Копіювати MGRS');
+    expect(document.body.textContent).not.toContain('Скопійовано');
+    expect(document.body.textContent).not.toContain('Не вдалося скопіювати');
+
+    await act(async () => {
+      copyButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await Promise.resolve();
+    });
+
+    expect(clipboardMock.copyTextToClipboard).toHaveBeenCalledTimes(1);
+    expect(clipboardMock.copyTextToClipboard).toHaveBeenCalledWith(expect.any(String));
+    expect(copyButton?.getAttribute('data-copy-status')).toBe('copied');
+    expect(copyButton?.getAttribute('title')).toBe('Скопійовано');
+    expect(copyButton?.querySelector('svg')).not.toBeNull();
+    expect(document.body.textContent).not.toContain('Скопійовано');
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1200);
+    });
+
+    expect(copyButton?.getAttribute('data-copy-status')).toBe('idle');
+    expect(copyButton?.getAttribute('title')).toBe('Копіювати MGRS');
+    expect(document.body.textContent).not.toContain('Скопійовано');
+    expect(document.body.textContent).not.toContain('Не вдалося скопіювати');
+  });
+
+  it('shows failure feedback briefly when MGRS copying fails', async () => {
+    vi.useFakeTimers();
+    clipboardMock.copyTextToClipboard.mockRejectedValue(new Error('clipboard denied'));
+
+    await act(async () => {
+      root.render(
+        <MessageCardCoordinateMapDialog
+          open
+          points={[{ lat: 50.45044, lng: 30.52355, label: '50.45044, 30.52355', source: 'direct' }]}
+          currentIndex={0}
+          onClose={vi.fn()}
+          onIndexChange={vi.fn()}
+        />,
+      );
+      await Promise.resolve();
+    });
+
+    hostRect = { width: 800, height: 600 };
+    await act(async () => {
+      resizeObserverInstances.at(-1)?.trigger();
+      await Promise.resolve();
+    });
+
+    const copyButton = document.body.querySelector(
+      'button[aria-label="Копіювати MGRS"]',
+    ) as HTMLButtonElement | null;
+    expect(copyButton).not.toBeNull();
+    expect(copyButton?.disabled).toBe(false);
+    expect(copyButton?.getAttribute('data-copy-status')).toBe('idle');
+
+    await act(async () => {
+      copyButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await Promise.resolve();
+    });
+
+    expect(clipboardMock.copyTextToClipboard).toHaveBeenCalledTimes(1);
+    expect(copyButton?.getAttribute('data-copy-status')).toBe('error');
+    expect(copyButton?.getAttribute('title')).toBe('Не вдалося скопіювати');
+    expect(document.body.textContent).not.toContain('Не вдалося скопіювати');
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1200);
+    });
+
+    expect(copyButton?.getAttribute('data-copy-status')).toBe('idle');
+    expect(copyButton?.getAttribute('title')).toBe('Копіювати MGRS');
+    expect(document.body.textContent).not.toContain('Скопійовано');
+    expect(document.body.textContent).not.toContain('Не вдалося скопіювати');
   });
 });

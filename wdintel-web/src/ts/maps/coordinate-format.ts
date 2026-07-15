@@ -20,10 +20,21 @@ export function getCoordinateText(
     return formatMgrs(mgrsCoords);
   }
 
+  return getCoordinateMgrsText(coords) ?? formatWgs84(coords);
+}
+
+export function getCoordinateMgrsText(
+  coords: Wgs84Coords,
+  mgrsCoords?: string | null,
+): string | null {
+  if (mgrsCoords) {
+    return formatMgrs(mgrsCoords);
+  }
+
   try {
     return formatMgrs(forward([coords.lng, coords.lat]));
   } catch (_error) {
-    return formatWgs84(coords);
+    return null;
   }
 }
 

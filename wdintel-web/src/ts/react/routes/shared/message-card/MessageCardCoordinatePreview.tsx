@@ -1,46 +1,33 @@
-import 'leaflet/dist/leaflet.css';
+import { Box, Button, Skeleton, Typography } from '@mui/material';
+import { useEffect, useRef, useState } from 'react';
 
-import { Box, Button, ButtonBase, Skeleton, Tooltip, Typography } from '@mui/material';
-import * as L from 'leaflet';
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-
-import { getTileLayers } from '../../../../web-components/analysis-map/tile-layers';
 import type { InboxMessage } from '../../../../../Bindings';
 import {
+  CoordinatePreviewLookupError,
   resolveMessageCoordinatePreview,
   type CoordinatePreviewResult,
 } from './message-coordinate-preview';
 import { MessageCardCoordinateMapDialog } from './MessageCardCoordinateMapDialog';
+import { MessageCardCoordinatePreviewTile } from './MessageCardCoordinatePreviewTile';
 
 type Props = {
   msg: InboxMessage;
 };
 
-type CoordinatePreviewError = Error & {
-  cause?: unknown;
-};
-
 const PREVIEW_HEIGHT_PX = 120;
-const PREVIEW_MAX_WIDTH_PX = 180;
 const PREVIEW_ROOT_MARGIN = '160px 0px';
-const PREVIEW_ZOOM = 13;
 
 export function MessageCardCoordinatePreview({ msg }: Props) {
   const hostRef = useRef<HTMLDivElement | null>(null);
-  const mapContainerRef = useRef<HTMLDivElement | null>(null);
-  const mapRef = useRef<L.Map | null>(null);
-  const markerRef = useRef<L.CircleMarker | null>(null);
   const resolveRequestIdRef = useRef(0);
   const pendingPreviewLoadRef = useRef(false);
   const [isNearViewport, setIsNearViewport] = useState(false);
   const [preview, setPreview] = useState<CoordinatePreviewResult | null | undefined>(undefined);
-  const [previewError, setPreviewError] = useState<CoordinatePreviewError | null>(null);
-  const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [dialogIndex, setDialogIndex] = useState<number | null>(null);
 
   useEffect(() => {
     setPreview(undefined);
-    setPreviewError(null);
-    setIsDialogOpen(false);
+    setDialogIndex(null);
     pendingPreviewLoadRef.current = false;
     resolveRequestIdRef.current += 1;
   }, [msg]);
@@ -65,307 +52,196 @@ export function MessageCardCoordinatePreview({ msg }: Props) {
   }, []);
 
   useEffect(() => {
-    if (
-      !isNearViewport ||
-      preview !== undefined ||
-      previewError !== null ||
-      pendingPreviewLoadRef.current
-    ) {
+    if (!isNearViewport || preview !== undefined || pendingPreviewLoadRef.current) {
       return;
     }
 
     const requestId = resolveRequestIdRef.current + 1;
     resolveRequestIdRef.current = requestId;
     pendingPreviewLoadRef.current = true;
-    setPreview(undefined);
-    setPreviewError(null);
 
     void resolveMessageCoordinatePreview({ message: msg })
       .then((result) => {
         if (resolveRequestIdRef.current !== requestId) {
           return;
         }
+
         pendingPreviewLoadRef.current = false;
         setPreview(result);
-        setPreviewError(null);
       })
       .catch((error: unknown) => {
         if (resolveRequestIdRef.current !== requestId) {
           return;
         }
+
         pendingPreviewLoadRef.current = false;
         const lookupError =
-          error instanceof Error ? error : new Error(typeof error === 'string' ? error : 'Error');
-        if (!('cause' in lookupError)) {
-          (lookupError as CoordinatePreviewError).cause = error;
-        }
-        setPreview(null);
-        setPreviewError(lookupError as CoordinatePreviewError);
+          error instanceof CoordinatePreviewLookupError
+            ? error
+            : new CoordinatePreviewLookupError('point-search', error);
+        setPreview({
+          points: [],
+          etalons: [],
+          lookupError,
+        });
       });
-  }, [isNearViewport, msg, preview, previewError]);
+  }, [isNearViewport, msg, preview]);
 
-  useLayoutEffect(() => {
-    const previewPoint = preview?.point;
-    const container = mapContainerRef.current;
-    if (!previewPoint || !container || mapRef.current) {
-      return;
-    }
+  const points = preview?.points ?? [];
+  const visiblePoints = points.slice(0, 3);
+  const hiddenPointCount = Math.max(points.length - visiblePoints.length, 0);
+  const lookupError = preview?.lookupError ?? null;
+  const currentIndex =
+    dialogIndex == null ? 0 : Math.min(Math.max(dialogIndex, 0), Math.max(points.length - 1, 0));
+  const isDialogOpen = dialogIndex != null && points.length > 0;
 
-    let cancelled = false;
-    let frameId = 0;
-    const initMap = () => {
-      if (cancelled || mapRef.current || mapContainerRef.current !== container) {
-        return;
-      }
-      const rect = container.getBoundingClientRect();
-      if (rect.width < 48 || rect.height < 48) {
-        frameId = window.requestAnimationFrame(initMap);
-        return;
-      }
-
-      const map = L.map(container, {
-        zoomControl: false,
-        attributionControl: false,
-        dragging: false,
-        scrollWheelZoom: false,
-        doubleClickZoom: false,
-        touchZoom: false,
-        boxZoom: false,
-        keyboard: false,
-        preferCanvas: true,
-        minZoom: 2,
-        maxZoom: 17,
-      }).setView([previewPoint.lat, previewPoint.lng], PREVIEW_ZOOM);
-
-      const tileLayers = getTileLayers();
-      tileLayers.googleHybrid.addTo(map);
-
-      const marker = L.circleMarker([previewPoint.lat, previewPoint.lng], {
-        radius: 8,
-        color: '#ffffff',
-        weight: 3,
-        fillColor: '#ff4d2d',
-        fillOpacity: 1,
-      }).addTo(map);
-
-      map.getContainer().style.pointerEvents = 'none';
-      mapRef.current = map;
-      markerRef.current = marker;
-
-      window.requestAnimationFrame(() => {
-        if (!cancelled) {
-          map.invalidateSize();
-        }
-      });
-    };
-
-    frameId = window.requestAnimationFrame(initMap);
-
-    return () => {
-      cancelled = true;
-      window.cancelAnimationFrame(frameId);
-      markerRef.current?.remove();
-      markerRef.current = null;
-      mapRef.current?.remove();
-      mapRef.current = null;
-    };
-  }, [preview]);
-
-  if (preview === null) {
-    if (previewError !== null) {
-      return (
-        <Box
-          ref={hostRef}
-          style={{ width: '180px', maxWidth: '100%' }}
-          sx={{
-            width: '100%',
-            maxWidth: `${PREVIEW_MAX_WIDTH_PX}px`,
-            alignSelf: 'flex-start',
-          }}
-        >
-          <Box
-            sx={{
-              width: '100%',
-              maxWidth: `${PREVIEW_MAX_WIDTH_PX}px`,
-              height: PREVIEW_HEIGHT_PX,
-              borderRadius: 2,
-              border: '1px solid',
-              borderColor: 'divider',
-              bgcolor: 'background.paper',
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: 1,
-              px: 2,
-              textAlign: 'center',
-              overflow: 'hidden',
-            }}
-            title={
-              previewError.cause instanceof Error
-                ? previewError.cause.message
-                : typeof previewError.cause === 'string'
-                  ? previewError.cause
-                  : previewError.message
-            }
-          >
-            <Typography variant="body2" sx={{ color: 'text.primary', fontWeight: 600 }}>
-              Не вдалося завантажити точку мапи
-            </Typography>
-            <Button
-              type="button"
-              variant="text"
-              aria-label="Повторити"
-              onClick={() => {
-                pendingPreviewLoadRef.current = false;
-                resolveRequestIdRef.current += 1;
-                setPreview(undefined);
-                setPreviewError(null);
-              }}
-              sx={{ flexShrink: 0 }}
-            >
-              Повторити
-            </Button>
-          </Box>
-        </Box>
-      );
-    }
-
+  if (preview === null && lookupError == null) {
     return null;
   }
 
-  const isLoading = preview === undefined && previewError === null;
-  const resolvedPreview = isLoading ? null : (preview as CoordinatePreviewResult);
-  const label = resolvedPreview?.point.label ?? '';
-  const extraPointCount = Math.max((resolvedPreview?.pointCount ?? 1) - 1, 0);
+  const handleRetry = () => {
+    pendingPreviewLoadRef.current = false;
+    resolveRequestIdRef.current += 1;
+    setPreview(undefined);
+  };
 
   return (
     <Box
       ref={hostRef}
-      style={{ width: '180px', maxWidth: '100%' }}
+      style={{ width: '100%' }}
       sx={{
         width: '100%',
-        maxWidth: `${PREVIEW_MAX_WIDTH_PX}px`,
+        minWidth: 0,
         alignSelf: 'flex-start',
       }}
     >
-      {isLoading ? (
+      {preview === undefined ? (
         <Skeleton
           variant="rounded"
           height={PREVIEW_HEIGHT_PX}
           animation="wave"
-          sx={{ width: '100%', maxWidth: `${PREVIEW_MAX_WIDTH_PX}px` }}
+          sx={{ width: '100%', minWidth: 0 }}
         />
-      ) : (
-        <>
-          <Tooltip title="Відкрити на мапі" placement="top" enterDelay={0} enterNextDelay={0}>
-            <ButtonBase
-              type="button"
-              onClick={() => setIsDialogOpen(true)}
-              aria-label={`Open ${label} on map`}
-              style={{ width: '100%', height: '120px', maxWidth: '100%' }}
-              sx={{
-                position: 'relative',
-                width: '100%',
-                maxWidth: `${PREVIEW_MAX_WIDTH_PX}px`,
-                height: PREVIEW_HEIGHT_PX,
-                overflow: 'hidden',
-                borderRadius: 2,
-                border: '1px solid',
-                borderColor: 'divider',
-                bgcolor: 'background.paper',
-                color: 'common.white',
-                textAlign: 'left',
-                display: 'block',
-                '&:focus-visible': {
-                  outline: 'none',
-                  boxShadow: '0 0 0 3px rgba(25, 118, 210, 0.32)',
-                },
-              }}
-            >
-              <Box
-                ref={mapContainerRef}
-                aria-hidden="true"
-                sx={{
-                  position: 'absolute',
-                  inset: 0,
-                  '& .leaflet-container': {
-                    width: '100%',
-                    height: '100%',
-                  },
-                }}
+      ) : points.length > 0 ? (
+        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1, minWidth: 0 }}>
+          <Box
+            sx={{
+              display: 'flex',
+              flexDirection: 'row',
+              flexWrap: 'nowrap',
+              gap: 0.75,
+              minWidth: 0,
+              overflowX: 'auto',
+              overflowY: 'hidden',
+              pb: 0.25,
+            }}
+          >
+            {visiblePoints.map((point, index) => (
+              <MessageCardCoordinatePreviewTile
+                key={`${point.lat}:${point.lng}:${point.label}:${index}`}
+                point={point}
+                onOpen={() => setDialogIndex(index)}
               />
-              <Box
-                sx={{
-                  position: 'absolute',
-                  inset: 0,
-                  background:
-                    'linear-gradient(180deg, rgba(10, 13, 18, 0.08), rgba(10, 13, 18, 0.36) 80%)',
-                  pointerEvents: 'none',
-                }}
-              />
-              <Box
-                sx={{
-                  position: 'absolute',
-                  left: 8,
-                  right: 8,
-                  top: 8,
-                  display: 'flex',
-                  alignItems: 'flex-start',
-                  justifyContent: 'space-between',
-                  gap: 0.75,
-                  pointerEvents: 'none',
-                }}
+            ))}
+            {hiddenPointCount > 0 ? (
+              <Button
+                type="button"
+                variant="text"
+                onClick={() => setDialogIndex(visiblePoints.length)}
+                sx={{ alignSelf: 'flex-start', flexShrink: 0, whiteSpace: 'nowrap' }}
               >
-                <Typography
-                  variant="caption"
-                  sx={{
-                    px: 0.75,
-                    py: 0.5,
-                    borderRadius: 1.5,
-                    bgcolor: 'rgba(10, 13, 18, 0.7)',
-                    color: 'common.white',
-                    fontWeight: 700,
-                    lineHeight: 1.2,
-                    backdropFilter: 'blur(6px)',
-                    maxWidth: '100%',
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap',
-                  }}
-                >
-                  {label}
-                </Typography>
-                {extraPointCount > 0 ? (
-                  <Typography
-                    variant="caption"
-                    sx={{
-                      px: 0.75,
-                      py: 0.5,
-                      borderRadius: 1.5,
-                      bgcolor: 'rgba(10, 13, 18, 0.7)',
-                      color: 'common.white',
-                      fontWeight: 700,
-                      lineHeight: 1.2,
-                      backdropFilter: 'blur(6px)',
-                      flex: '0 0 auto',
-                    }}
-                  >
-                    +{extraPointCount}
-                  </Typography>
-                ) : null}
-              </Box>
-            </ButtonBase>
-          </Tooltip>
-          {resolvedPreview != null ? (
-            <MessageCardCoordinateMapDialog
-              open={isDialogOpen}
-              coordinate={resolvedPreview.point}
-              onClose={() => setIsDialogOpen(false)}
-            />
+                +{hiddenPointCount}
+              </Button>
+            ) : null}
+          </Box>
+          {lookupError != null ? (
+            <RetryTile compact error={lookupError} onRetry={handleRetry} />
           ) : null}
-        </>
-      )}
+        </Box>
+      ) : lookupError != null ? (
+        <RetryTile error={lookupError} onRetry={handleRetry} />
+      ) : null}
+
+      {isDialogOpen ? (
+        <MessageCardCoordinateMapDialog
+          open={isDialogOpen}
+          points={points}
+          currentIndex={currentIndex}
+          onIndexChange={(index) => setDialogIndex(index)}
+          onClose={() => setDialogIndex(null)}
+        />
+      ) : null}
+    </Box>
+  );
+}
+
+function RetryTile({
+  error,
+  onRetry,
+  compact = false,
+}: {
+  error: CoordinatePreviewLookupError;
+  onRetry: () => void;
+  compact?: boolean;
+}) {
+  if (compact) {
+    return (
+      <Box
+        sx={{
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 0.5,
+          p: 1.25,
+          borderRadius: 2,
+          border: '1px solid',
+          borderColor: 'divider',
+          bgcolor: 'background.paper',
+        }}
+        title={error.cause instanceof Error ? error.cause.message : error.message}
+      >
+        <Typography variant="caption" sx={{ fontWeight: 700 }}>
+          Не вдалося завантажити точку мапи
+        </Typography>
+        <Button type="button" variant="text" aria-label="Повторити" onClick={onRetry} sx={{ p: 0 }}>
+          Повторити
+        </Button>
+      </Box>
+    );
+  }
+
+  return (
+    <Box
+      sx={{
+        width: '100%',
+        minWidth: 0,
+        height: PREVIEW_HEIGHT_PX,
+        borderRadius: 2,
+        border: '1px solid',
+        borderColor: 'divider',
+        bgcolor: 'background.paper',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 1,
+        px: 2,
+        textAlign: 'center',
+        overflow: 'hidden',
+      }}
+      title={error.cause instanceof Error ? error.cause.message : error.message}
+    >
+      <Typography variant="body2" sx={{ color: 'text.primary', fontWeight: 600 }}>
+        Не вдалося завантажити точку мапи
+      </Typography>
+      <Button
+        type="button"
+        variant="text"
+        aria-label="Повторити"
+        onClick={onRetry}
+        sx={{ flexShrink: 0 }}
+      >
+        Повторити
+      </Button>
     </Box>
   );
 }

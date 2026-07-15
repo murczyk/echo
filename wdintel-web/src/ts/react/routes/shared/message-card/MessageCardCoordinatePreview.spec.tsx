@@ -8,26 +8,36 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { InboxMessage } from '../../../../../Bindings';
 import { MessageCardCoordinatePreview } from './MessageCardCoordinatePreview';
-import { resolveMessageCoordinatePreview } from './message-coordinate-preview';
+import {
+  CoordinatePreviewLookupError,
+  resolveMessageCoordinatePreview,
+} from './message-coordinate-preview';
 
-vi.mock('./message-coordinate-preview', () => ({
-  resolveMessageCoordinatePreview: vi.fn(),
-}));
+vi.mock('./message-coordinate-preview', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./message-coordinate-preview')>();
+  return {
+    ...actual,
+    resolveMessageCoordinatePreview: vi.fn(),
+  };
+});
 
 vi.mock('./MessageCardCoordinateMapDialog', () => ({
   MessageCardCoordinateMapDialog: ({
     open,
-    coordinate,
+    points,
+    currentIndex,
   }: {
     open: boolean;
-    coordinate: { lat: number; lng: number; label: string };
+    points: { lat: number; lng: number; label: string }[];
+    currentIndex: number;
   }) =>
-    open ? (
+    open && points[currentIndex] != null ? (
       <div
         role="dialog"
-        data-lat={coordinate.lat}
-        data-lng={coordinate.lng}
-        data-label={coordinate.label}
+        data-lat={points[currentIndex].lat}
+        data-lng={points[currentIndex].lng}
+        data-label={points[currentIndex].label}
+        data-index={String(currentIndex)}
       >
         coordinate-dialog
       </div>
@@ -103,10 +113,9 @@ describe('MessageCardCoordinatePreview', () => {
   it('shows a direct preview and opens the coordinate dialog', async () => {
     const msg = { pointTokens: [] } as InboxMessage;
     vi.mocked(resolveMessageCoordinatePreview).mockResolvedValue({
-      source: 'direct',
-      point: { lat: 50.45044, lng: 30.52355, label: '50.45044, 30.52355' },
+      points: [{ source: 'direct', lat: 50.45044, lng: 30.52355, label: '50.45044, 30.52355' }],
       etalons: [],
-      pointCount: 1,
+      lookupError: null,
     });
 
     await act(async () => {
@@ -121,9 +130,12 @@ describe('MessageCardCoordinatePreview', () => {
       'button[aria-label="Open 50.45044, 30.52355 on map"]',
     ) as HTMLButtonElement | null;
     expect(button).not.toBeNull();
-    expect(container.firstElementChild?.getAttribute('style')).toContain('width: 180px');
-    expect(container.firstElementChild?.getAttribute('style')).toContain('max-width: 100%');
+    expect(button?.getAttribute('style')).toContain('width: 180px');
     expect(button?.getAttribute('style')).toContain('height: 120px');
+    expect(button?.getAttribute('style')).toContain('max-width: none');
+    expect(button?.getAttribute('style')).toContain('flex-grow: 0');
+    expect(button?.getAttribute('style')).toContain('flex-shrink: 0');
+    expect(button?.getAttribute('style')).toContain('flex-basis: 180px');
     expect(container.textContent).not.toContain('+');
 
     await act(async () => {
@@ -146,13 +158,17 @@ describe('MessageCardCoordinatePreview', () => {
     expect(dialog?.getAttribute('data-lng')).toBe('30.52355');
   });
 
-  it('keeps the palitra badge and search string for palitra previews', async () => {
+  it('shows the hidden-count action for palitra previews', async () => {
     const msg = { pointTokens: [] } as InboxMessage;
     vi.mocked(resolveMessageCoordinatePreview).mockResolvedValue({
-      source: 'palitra',
-      point: { lat: 50.45, lng: 30.52, label: 'BRAVO' },
-      etalons: ['ALPHA', 'BRAVO'],
-      pointCount: 2,
+      points: [
+        { source: 'palitra', lat: 50.45, lng: 30.52, label: 'BRAVO' },
+        { source: 'palitra', lat: 50.46, lng: 30.53, label: 'CHARLIE' },
+        { source: 'palitra', lat: 50.47, lng: 30.54, label: 'DELTA' },
+        { source: 'palitra', lat: 50.48, lng: 30.55, label: 'ECHO' },
+      ],
+      etalons: ['ALPHA', 'BRAVO', 'CHARLIE', 'DELTA'],
+      lookupError: null,
     });
 
     await act(async () => {
@@ -163,12 +179,16 @@ describe('MessageCardCoordinatePreview', () => {
       await Promise.resolve();
     });
 
+    expect(container.querySelectorAll('button[aria-label^="Open "]')).toHaveLength(3);
     expect(container.textContent).toContain('+1');
     const button = container.querySelector('button[aria-label="Open BRAVO on map"]');
     expect(button).not.toBeNull();
-    expect(container.firstElementChild?.getAttribute('style')).toContain('width: 180px');
-    expect(container.firstElementChild?.getAttribute('style')).toContain('max-width: 100%');
+    expect(button?.getAttribute('style')).toContain('width: 180px');
     expect(button?.getAttribute('style')).toContain('height: 120px');
+    expect(button?.getAttribute('style')).toContain('max-width: none');
+    expect(button?.getAttribute('style')).toContain('flex-grow: 0');
+    expect(button?.getAttribute('style')).toContain('flex-shrink: 0');
+    expect(button?.getAttribute('style')).toContain('flex-basis: 180px');
 
     await act(async () => {
       button?.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
@@ -179,6 +199,15 @@ describe('MessageCardCoordinatePreview', () => {
     expect(document.body.querySelector('[data-popper-placement="top"]')).not.toBeNull();
     expect(document.body.textContent).toContain('Відкрити на мапі');
     expect(container.textContent).toContain('+1');
+
+    await act(async () => {
+      Array.from(container.querySelectorAll('button'))
+        .find((element) => element.textContent?.trim() === '+1')
+        ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await Promise.resolve();
+    });
+
+    expect(container.querySelector('[role="dialog"]')?.getAttribute('data-index')).toBe('3');
   });
 
   it('renders an inline retry error when the resolver rejects for a palette list failure', async () => {
@@ -186,10 +215,9 @@ describe('MessageCardCoordinatePreview', () => {
     vi.mocked(resolveMessageCoordinatePreview)
       .mockRejectedValueOnce(new Error('palette list failed'))
       .mockResolvedValueOnce({
-        source: 'palitra',
-        point: { lat: 50.45, lng: 30.52, label: 'BRAVO' },
+        points: [{ source: 'palitra', lat: 50.45, lng: 30.52, label: 'BRAVO' }],
         etalons: ['BRAVO'],
-        pointCount: 1,
+        lookupError: null,
       });
 
     await act(async () => {
@@ -221,10 +249,9 @@ describe('MessageCardCoordinatePreview', () => {
     vi.mocked(resolveMessageCoordinatePreview)
       .mockRejectedValueOnce(new Error('point search failed'))
       .mockResolvedValueOnce({
-        source: 'palitra',
-        point: { lat: 50.45, lng: 30.52, label: 'BRAVO' },
+        points: [{ source: 'palitra', lat: 50.45, lng: 30.52, label: 'BRAVO' }],
         etalons: ['BRAVO'],
-        pointCount: 1,
+        lookupError: null,
       });
 
     await act(async () => {
@@ -250,6 +277,30 @@ describe('MessageCardCoordinatePreview', () => {
     expect(container.querySelector('button[aria-label="Open BRAVO on map"]')).not.toBeNull();
   });
 
+  it('shows working previews alongside a compact retry tile for partial lookup errors', async () => {
+    const msg = { pointTokens: [] } as InboxMessage;
+    vi.mocked(resolveMessageCoordinatePreview).mockResolvedValue({
+      points: [{ source: 'palitra', lat: 50.45, lng: 30.52, label: 'BRAVO' }],
+      etalons: ['BRAVO', 'CHARLIE'],
+      lookupError: new CoordinatePreviewLookupError(
+        'point-search',
+        new Error('point search failed'),
+      ),
+    });
+
+    await act(async () => {
+      root.render(<MessageCardCoordinatePreview msg={msg} />);
+    });
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(container.querySelector('button[aria-label="Open BRAVO on map"]')).not.toBeNull();
+    expect(container.textContent).toContain('Не вдалося завантажити точку мапи');
+    expect(container.querySelector('button[aria-label="Повторити"]')).not.toBeNull();
+  });
+
   it('stays silent for a genuine preview miss', async () => {
     const msg = { pointTokens: [] } as InboxMessage;
     vi.mocked(resolveMessageCoordinatePreview).mockResolvedValue(null);
@@ -268,10 +319,9 @@ describe('MessageCardCoordinatePreview', () => {
   it('ignores stale async errors after the message changes', async () => {
     const first = createDeferred<never>();
     const second = createDeferred<{
-      source: 'palitra';
-      point: { lat: number; lng: number; label: string };
+      points: { source: 'palitra'; lat: number; lng: number; label: string }[];
       etalons: string[];
-      pointCount: number;
+      lookupError: null;
     } | null>();
 
     vi.mocked(resolveMessageCoordinatePreview)
@@ -296,10 +346,9 @@ describe('MessageCardCoordinatePreview', () => {
 
     await act(async () => {
       second.resolve({
-        source: 'palitra',
-        point: { lat: 50.45, lng: 30.52, label: 'BRAVO' },
+        points: [{ source: 'palitra', lat: 50.45, lng: 30.52, label: 'BRAVO' }],
         etalons: ['BRAVO'],
-        pointCount: 1,
+        lookupError: null,
       });
       await Promise.resolve();
     });

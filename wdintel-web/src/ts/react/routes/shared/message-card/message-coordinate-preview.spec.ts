@@ -73,14 +73,16 @@ describe('message coordinate preview resolver', () => {
     });
 
     expect(result).toEqual({
-      source: 'direct',
-      point: {
-        lat: 50.45044,
-        lng: 30.52355,
-        label: '50.45044, 30.52355',
-      },
+      points: [
+        {
+          source: 'direct',
+          lat: 50.45044,
+          lng: 30.52355,
+          label: '50.45044, 30.52355',
+        },
+      ],
       etalons: [],
-      pointCount: 1,
+      lookupError: null,
     });
     expect(listMapPalitrasV2).not.toHaveBeenCalled();
     expect(searchPalitraPoints).not.toHaveBeenCalled();
@@ -91,30 +93,242 @@ describe('message coordinate preview resolver', () => {
       message: createMessage({ text: '50.45044, 30.52355' }),
     });
 
-    expect(result?.source).toBe('direct');
-    expect(result?.point.label).toBe('50.45044, 30.52355');
+    expect(result?.points[0].source).toBe('direct');
+    expect(result?.points[0].label).toBe('50.45044, 30.52355');
     expect(listMapPalitrasV2).not.toHaveBeenCalled();
     expect(searchPalitraPoints).not.toHaveBeenCalled();
   });
 
-  it('resolves direct USK-2000 coordinates and converts them to WGS84', async () => {
+  it('resolves a compact preview USK pair and converts it to WGS84', async () => {
     const expected = convertCoordinateToWgs84({
       kind: 'usk2000',
-      x: 5012345,
-      y: 5034567,
+      x: 5268241,
+      y: 6676046,
     } satisfies ImporterCoordinate);
     expect(expected).not.toBeNull();
 
     const result = await resolveMessageCoordinatePreview({
       message: createMessage({
-        text: 'X=5012345\nY=5034567',
+        text: '52-68241 66-76046',
       }),
     });
 
-    expect(result?.source).toBe('direct');
-    expect(result?.point.label).toBe(
-      `${renderWgsFloat(expected!.lat)}, ${renderWgsFloat(expected!.lng)}`,
+    expect(result?.lookupError).toBeNull();
+    expect(result?.etalons).toEqual([]);
+    expect(result?.points).toEqual([
+      {
+        source: 'direct',
+        lat: expected!.lat,
+        lng: expected!.lng,
+        label: `${renderWgsFloat(expected!.lat)}, ${renderWgsFloat(expected!.lng)}`,
+      },
+    ]);
+    expect(listMapPalitrasV2).not.toHaveBeenCalled();
+    expect(searchPalitraPoints).not.toHaveBeenCalled();
+  });
+
+  it('resolves an exact labeled preview USK pair and converts it to WGS84', async () => {
+    const expected = convertCoordinateToWgs84({
+      kind: 'usk2000',
+      x: 5285002,
+      y: 6682922,
+    } satisfies ImporterCoordinate);
+    expect(expected).not.toBeNull();
+
+    const result = await resolveMessageCoordinatePreview({
+      message: createMessage({
+        text: 'X = 5285002 Y = 6682922',
+      }),
+    });
+
+    expect(result?.lookupError).toBeNull();
+    expect(result?.etalons).toEqual([]);
+    expect(result?.points).toEqual([
+      {
+        source: 'direct',
+        lat: expected!.lat,
+        lng: expected!.lng,
+        label: `${renderWgsFloat(expected!.lat)}, ${renderWgsFloat(expected!.lng)}`,
+      },
+    ]);
+    expect(listMapPalitrasV2).not.toHaveBeenCalled();
+    expect(searchPalitraPoints).not.toHaveBeenCalled();
+  });
+
+  it('resolves three preview USK pairs from a single message in source order', async () => {
+    const points = [
+      { x: 5268241, y: 6676046 },
+      { x: 5268389, y: 6676122 },
+      { x: 5268455, y: 6676062 },
+    ] as const;
+    const expectedPoints = points.map((point) => {
+      const converted = convertCoordinateToWgs84({
+        kind: 'usk2000',
+        x: point.x,
+        y: point.y,
+      } satisfies ImporterCoordinate);
+      expect(converted).not.toBeNull();
+      return converted!;
+    });
+
+    const result = await resolveMessageCoordinatePreview({
+      message: createMessage({
+        text: points.map((point) => `${point.x} ${point.y}`).join('\n'),
+      }),
+    });
+
+    expect(result?.lookupError).toBeNull();
+    expect(result?.etalons).toEqual([]);
+    expect(result?.points).toHaveLength(3);
+    expect(result?.points.map((point) => [point.lat, point.lng])).toEqual(
+      expectedPoints.map((point) => [point.lat, point.lng]),
     );
+    expect(listMapPalitrasV2).not.toHaveBeenCalled();
+    expect(searchPalitraPoints).not.toHaveBeenCalled();
+  });
+
+  it('does not reparse a matched preview USK span as another point', async () => {
+    const primary = convertCoordinateToWgs84({
+      kind: 'usk2000',
+      x: 5268241,
+      y: 6676046,
+    } satisfies ImporterCoordinate);
+    const secondary = convertCoordinateToWgs84({
+      kind: 'usk2000',
+      x: 5268389,
+      y: 6676122,
+    } satisfies ImporterCoordinate);
+    expect(primary).not.toBeNull();
+    expect(secondary).not.toBeNull();
+
+    const result = await resolveMessageCoordinatePreview({
+      message: createMessage({
+        text: 'X=5268241 Y=6676046\n5268389 6676122',
+      }),
+    });
+
+    expect(result?.lookupError).toBeNull();
+    expect(result?.etalons).toEqual([]);
+    expect(result?.points).toHaveLength(2);
+    expect(result?.points.map((point) => [point.lat, point.lng])).toEqual([
+      [primary!.lat, primary!.lng],
+      [secondary!.lat, secondary!.lng],
+    ]);
+    expect(listMapPalitrasV2).not.toHaveBeenCalled();
+    expect(searchPalitraPoints).not.toHaveBeenCalled();
+  });
+
+  it('resolves a bare preview USK pair followed by a labeled preview pair', async () => {
+    const bare = convertCoordinateToWgs84({
+      kind: 'usk2000',
+      x: 5283234,
+      y: 6682213,
+    } satisfies ImporterCoordinate);
+    const labeled = convertCoordinateToWgs84({
+      kind: 'usk2000',
+      x: 5285002,
+      y: 6682922,
+    } satisfies ImporterCoordinate);
+    expect(bare).not.toBeNull();
+    expect(labeled).not.toBeNull();
+
+    const result = await resolveMessageCoordinatePreview({
+      message: createMessage({
+        text: '5283234 6682213\nX = 5285002 Y = 6682922',
+      }),
+    });
+
+    expect(result?.lookupError).toBeNull();
+    expect(result?.etalons).toEqual([]);
+    expect(result?.points).toHaveLength(2);
+    expect(result?.points.map((point) => [point.lat, point.lng])).toEqual([
+      [bare!.lat, bare!.lng],
+      [labeled!.lat, labeled!.lng],
+    ]);
+    expect(listMapPalitrasV2).not.toHaveBeenCalled();
+    expect(searchPalitraPoints).not.toHaveBeenCalled();
+  });
+
+  it('resolves a slash-delimited labeled preview USK pair', async () => {
+    const expected = convertCoordinateToWgs84({
+      kind: 'usk2000',
+      x: 5285002,
+      y: 6682922,
+    } satisfies ImporterCoordinate);
+    expect(expected).not.toBeNull();
+
+    const result = await resolveMessageCoordinatePreview({
+      message: createMessage({
+        text: 'X-5285002 / y-6682922',
+      }),
+    });
+
+    expect(result?.lookupError).toBeNull();
+    expect(result?.etalons).toEqual([]);
+    expect(result?.points).toEqual([
+      {
+        source: 'direct',
+        lat: expected!.lat,
+        lng: expected!.lng,
+        label: `${renderWgsFloat(expected!.lat)}, ${renderWgsFloat(expected!.lng)}`,
+      },
+    ]);
+    expect(listMapPalitrasV2).not.toHaveBeenCalled();
+    expect(searchPalitraPoints).not.toHaveBeenCalled();
+  });
+
+  it('resolves a Cyrillic-labeled preview USK pair', async () => {
+    const expected = convertCoordinateToWgs84({
+      kind: 'usk2000',
+      x: 5285002,
+      y: 6682922,
+    } satisfies ImporterCoordinate);
+    expect(expected).not.toBeNull();
+
+    const result = await resolveMessageCoordinatePreview({
+      message: createMessage({
+        text: 'Х = 5285002 У = 6682922',
+      }),
+    });
+
+    expect(result?.lookupError).toBeNull();
+    expect(result?.etalons).toEqual([]);
+    expect(result?.points).toEqual([
+      {
+        source: 'direct',
+        lat: expected!.lat,
+        lng: expected!.lng,
+        label: `${renderWgsFloat(expected!.lat)}, ${renderWgsFloat(expected!.lng)}`,
+      },
+    ]);
+    expect(listMapPalitrasV2).not.toHaveBeenCalled();
+    expect(searchPalitraPoints).not.toHaveBeenCalled();
+  });
+
+  it('resolves a two-line bare preview USK pair', async () => {
+    const expected = convertCoordinateToWgs84({
+      kind: 'usk2000',
+      x: 5268241,
+      y: 6676046,
+    } satisfies ImporterCoordinate);
+    expect(expected).not.toBeNull();
+
+    const result = await resolveMessageCoordinatePreview({
+      message: createMessage({
+        text: '5268241\n6676046',
+      }),
+    });
+
+    expect(result?.lookupError).toBeNull();
+    expect(result?.etalons).toEqual([]);
+    expect(result?.points).toEqual([
+      {
+        source: 'direct',
+        lat: expected!.lat,
+        lng: expected!.lng,
+        label: `${renderWgsFloat(expected!.lat)}, ${renderWgsFloat(expected!.lng)}`,
+      },
+    ]);
     expect(listMapPalitrasV2).not.toHaveBeenCalled();
     expect(searchPalitraPoints).not.toHaveBeenCalled();
   });
@@ -133,8 +347,8 @@ describe('message coordinate preview resolver', () => {
       }),
     });
 
-    expect(result?.source).toBe('direct');
-    expect(result?.point).toMatchObject({
+    expect(result?.points[0].source).toBe('direct');
+    expect(result?.points[0]).toMatchObject({
       lat: expected!.lat,
       lng: expected!.lng,
     });
@@ -156,8 +370,8 @@ describe('message coordinate preview resolver', () => {
       }),
     });
 
-    expect(result?.source).toBe('direct');
-    expect(result?.point).toMatchObject({
+    expect(result?.points[0].source).toBe('direct');
+    expect(result?.points[0]).toMatchObject({
       lat: expected!.lat,
       lng: expected!.lng,
     });
@@ -175,8 +389,8 @@ describe('message coordinate preview resolver', () => {
       }),
     });
 
-    expect(result?.source).toBe('direct');
-    expect(result?.point).toMatchObject(expected!);
+    expect(result?.points[0].source).toBe('direct');
+    expect(result?.points[0]).toMatchObject(expected!);
     expect(listMapPalitrasV2).not.toHaveBeenCalled();
     expect(searchPalitraPoints).not.toHaveBeenCalled();
   });
@@ -191,8 +405,8 @@ describe('message coordinate preview resolver', () => {
       }),
     });
 
-    expect(result?.source).toBe('direct');
-    expect(result?.point).toMatchObject(expected!);
+    expect(result?.points[0].source).toBe('direct');
+    expect(result?.points[0]).toMatchObject(expected!);
     expect(listMapPalitrasV2).not.toHaveBeenCalled();
     expect(searchPalitraPoints).not.toHaveBeenCalled();
   });
@@ -207,8 +421,8 @@ describe('message coordinate preview resolver', () => {
       }),
     });
 
-    expect(result?.source).toBe('direct');
-    expect(result?.point).toMatchObject(expected!);
+    expect(result?.points[0].source).toBe('direct');
+    expect(result?.points[0]).toMatchObject(expected!);
     expect(listMapPalitrasV2).not.toHaveBeenCalled();
     expect(searchPalitraPoints).not.toHaveBeenCalled();
   });
@@ -296,9 +510,71 @@ describe('message coordinate preview resolver', () => {
       }),
     });
 
-    expect(result?.source).toBe('direct');
-    expect(result?.point).toMatchObject(expected!);
+    expect(result?.points[0].source).toBe('direct');
+    expect(result?.points[0]).toMatchObject(expected!);
     expect(result?.etalons).toEqual([]);
+    expect(listMapPalitrasV2).not.toHaveBeenCalled();
+    expect(searchPalitraPoints).not.toHaveBeenCalled();
+  });
+
+  it('uses direct coordinates from text exclusively when text and coords both contain points', async () => {
+    const textPoints = [
+      { x: 5268241, y: 6676046 },
+      { x: 5268389, y: 6676122 },
+      { x: 5268455, y: 6676062 },
+    ] as const;
+    const expectedPoints = textPoints.map((point) => {
+      const converted = convertCoordinateToWgs84({
+        kind: 'usk2000',
+        x: point.x,
+        y: point.y,
+      } satisfies ImporterCoordinate);
+      expect(converted).not.toBeNull();
+      return converted!;
+    });
+
+    const result = await resolveMessageCoordinatePreview({
+      message: createMessage({
+        coords: '50.45044, 30.52355',
+        text: textPoints.map((point) => `X=${point.x} Y=${point.y}`).join('\n'),
+      }),
+    });
+
+    expect(result?.lookupError).toBeNull();
+    expect(result?.etalons).toEqual([]);
+    expect(result?.points).toHaveLength(3);
+    expect(result?.points.map((point) => [point.lat, point.lng])).toEqual(
+      expectedPoints.map((point) => [point.lat, point.lng]),
+    );
+    expect(listMapPalitrasV2).not.toHaveBeenCalled();
+    expect(searchPalitraPoints).not.toHaveBeenCalled();
+  });
+
+  it('uses direct coordinates from text even when coords contains a different valid point', async () => {
+    const expected = convertCoordinateToWgs84({
+      kind: 'usk2000',
+      x: 5268241,
+      y: 6676046,
+    } satisfies ImporterCoordinate);
+    expect(expected).not.toBeNull();
+
+    const result = await resolveMessageCoordinatePreview({
+      message: createMessage({
+        coords: '49.12345, 31.54321',
+        text: 'X=5268241 Y=6676046',
+      }),
+    });
+
+    expect(result?.lookupError).toBeNull();
+    expect(result?.etalons).toEqual([]);
+    expect(result?.points).toEqual([
+      {
+        source: 'direct',
+        lat: expected!.lat,
+        lng: expected!.lng,
+        label: `${renderWgsFloat(expected!.lat)}, ${renderWgsFloat(expected!.lng)}`,
+      },
+    ]);
     expect(listMapPalitrasV2).not.toHaveBeenCalled();
     expect(searchPalitraPoints).not.toHaveBeenCalled();
   });
@@ -310,10 +586,103 @@ describe('message coordinate preview resolver', () => {
 
     expect(hasCoordinatePreviewCandidate(message)).toBe(true);
     expect(await resolveMessageCoordinatePreview({ message })).toMatchObject({
-      source: 'direct',
+      points: [expect.objectContaining({ source: 'direct' })],
+      lookupError: null,
     });
     expect(listMapPalitrasV2).not.toHaveBeenCalled();
     expect(searchPalitraPoints).not.toHaveBeenCalled();
+  });
+
+  it('resolves multiple palitra tokens in order and omits genuine misses', async () => {
+    vi.mocked(listMapPalitrasV2).mockResolvedValue([createPalitra(7)] as never);
+    vi.mocked(searchPalitraPoints)
+      .mockResolvedValueOnce([
+        {
+          points: [
+            {
+              label: 'ALPHA',
+              coords: { lat: 50.11, lng: 30.11 },
+            },
+          ],
+        },
+      ] as never)
+      .mockResolvedValueOnce([] as never)
+      .mockResolvedValueOnce([
+        {
+          points: [
+            {
+              label: 'CHARLIE',
+              coords: { lat: 50.33, lng: 30.33 },
+            },
+          ],
+        },
+      ] as never);
+
+    const result = await resolveMessageCoordinatePreview({
+      message: createMessage({
+        text: 'routine',
+        pointTokens: [{ etalon: 'ALPHA' }, { etalon: 'BRAVO' }, { etalon: 'CHARLIE' }],
+      }),
+    });
+
+    expect(result).toEqual({
+      points: [
+        {
+          source: 'palitra',
+          lat: 50.11,
+          lng: 30.11,
+          label: 'ALPHA',
+        },
+        {
+          source: 'palitra',
+          lat: 50.33,
+          lng: 30.33,
+          label: 'CHARLIE',
+        },
+      ],
+      etalons: ['ALPHA', 'BRAVO', 'CHARLIE'],
+      lookupError: null,
+    });
+    expect(listMapPalitrasV2).toHaveBeenCalledTimes(1);
+    expect(searchPalitraPoints).toHaveBeenCalledTimes(3);
+  });
+
+  it('retains successful palitra points when a later lookup fails', async () => {
+    vi.mocked(listMapPalitrasV2).mockResolvedValue([createPalitra(7)] as never);
+    vi.mocked(searchPalitraPoints)
+      .mockResolvedValueOnce([
+        {
+          points: [
+            {
+              label: 'ALPHA',
+              coords: { lat: 50.11, lng: 30.11 },
+            },
+          ],
+        },
+      ] as never)
+      .mockRejectedValueOnce(new Error('point search failed'));
+
+    const result = await resolveMessageCoordinatePreview({
+      message: createMessage({
+        text: 'routine',
+        pointTokens: [{ etalon: 'ALPHA' }, { etalon: 'BRAVO' }],
+      }),
+    });
+
+    expect(result?.points).toEqual([
+      {
+        source: 'palitra',
+        lat: 50.11,
+        lng: 30.11,
+        label: 'ALPHA',
+      },
+    ]);
+    expect(result?.lookupError).toMatchObject({
+      name: 'CoordinatePreviewLookupError',
+      kind: 'point-search',
+    });
+    expect(listMapPalitrasV2).toHaveBeenCalledTimes(1);
+    expect(searchPalitraPoints).toHaveBeenCalledTimes(2);
   });
 
   it('falls back to palitra lookup when direct parsing fails', async () => {
@@ -331,20 +700,23 @@ describe('message coordinate preview resolver', () => {
 
     const result = await resolveMessageCoordinatePreview({
       message: createMessage({
+        text: 'invalid direct text',
         coords: 'X=12\nY=abc',
         textMarked: [{ CNPointC: { text: 'BRAVO', etalon: 'BRAVO' } } as ContentNode],
       }),
     });
 
     expect(result).toEqual({
-      source: 'palitra',
-      point: {
-        lat: 50.45,
-        lng: 30.52,
-        label: 'BRAVO',
-      },
+      points: [
+        {
+          source: 'palitra',
+          lat: 50.45,
+          lng: 30.52,
+          label: 'BRAVO',
+        },
+      ],
       etalons: ['BRAVO'],
-      pointCount: 1,
+      lookupError: null,
     });
     expect(listMapPalitrasV2).toHaveBeenCalledTimes(1);
     expect(searchPalitraPoints).toHaveBeenCalledTimes(1);
@@ -358,7 +730,7 @@ describe('message coordinate preview resolver', () => {
       }),
     });
 
-    expect(result?.source).toBe('direct');
+    expect(result?.points[0].source).toBe('direct');
     expect(result?.etalons).toEqual([]);
     expect(listMapPalitrasV2).not.toHaveBeenCalled();
     expect(searchPalitraPoints).not.toHaveBeenCalled();
@@ -400,19 +772,25 @@ describe('message coordinate preview resolver', () => {
       pointTokens: [{ etalon: 'BRAVO' }],
     });
 
-    await expect(resolveMessageCoordinatePreview({ message })).rejects.toMatchObject({
-      name: 'CoordinatePreviewLookupError',
-      kind: 'palette-list',
-    });
-    expect(await resolveMessageCoordinatePreview({ message })).toEqual({
-      source: 'palitra',
-      point: {
-        lat: 50.45,
-        lng: 30.52,
-        label: 'BRAVO',
-      },
+    expect(await resolveMessageCoordinatePreview({ message })).toMatchObject({
+      points: [],
       etalons: ['BRAVO'],
-      pointCount: 1,
+      lookupError: {
+        name: 'CoordinatePreviewLookupError',
+        kind: 'palette-list',
+      },
+    });
+    expect(await resolveMessageCoordinatePreview({ message })).toMatchObject({
+      points: [
+        {
+          source: 'palitra',
+          lat: 50.45,
+          lng: 30.52,
+          label: 'BRAVO',
+        },
+      ],
+      etalons: ['BRAVO'],
+      lookupError: null,
     });
     expect(listMapPalitrasV2).toHaveBeenCalledTimes(2);
     expect(searchPalitraPoints).toHaveBeenCalledTimes(1);
@@ -438,19 +816,25 @@ describe('message coordinate preview resolver', () => {
       pointTokens: [{ etalon: 'BRAVO' }],
     });
 
-    await expect(resolveMessageCoordinatePreview({ message })).rejects.toMatchObject({
-      name: 'CoordinatePreviewLookupError',
-      kind: 'point-search',
-    });
-    expect(await resolveMessageCoordinatePreview({ message })).toEqual({
-      source: 'palitra',
-      point: {
-        lat: 50.45,
-        lng: 30.52,
-        label: 'BRAVO',
-      },
+    expect(await resolveMessageCoordinatePreview({ message })).toMatchObject({
+      points: [],
       etalons: ['BRAVO'],
-      pointCount: 1,
+      lookupError: {
+        name: 'CoordinatePreviewLookupError',
+        kind: 'point-search',
+      },
+    });
+    expect(await resolveMessageCoordinatePreview({ message })).toMatchObject({
+      points: [
+        {
+          source: 'palitra',
+          lat: 50.45,
+          lng: 30.52,
+          label: 'BRAVO',
+        },
+      ],
+      etalons: ['BRAVO'],
+      lookupError: null,
     });
     expect(listMapPalitrasV2).toHaveBeenCalledTimes(1);
     expect(searchPalitraPoints).toHaveBeenCalledTimes(2);
@@ -590,9 +974,9 @@ describe('hasCoordinatePreviewCandidate', () => {
       expected: true,
     },
     {
-      label: 'non-empty coords',
+      label: 'non-empty coords without a direct parse',
       message: createMessage({ coords: 'not empty' }),
-      expected: true,
+      expected: false,
     },
     {
       label: 'malformed X/Y without Palitra token',
