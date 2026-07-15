@@ -40,7 +40,12 @@ const INDEX_HTML: &str = r#"<!doctype html>
       </div>
     </header>
 
-    <section class="grid gap-4 lg:grid-cols-[360px_1fr]">
+    <nav class="flex gap-2 border-b border-zinc-800" aria-label="Розділи">
+      <button id="integrationsTabBtn" class="border-b-2 border-sky-400 px-3 py-2 text-sm text-zinc-100" type="button">Інтеграції</button>
+      <button id="automationsTabBtn" class="border-b-2 border-transparent px-3 py-2 text-sm text-zinc-400 hover:text-zinc-100" type="button">Автоматизації</button>
+    </nav>
+
+    <section id="integrationsTab" class="grid gap-4 lg:grid-cols-[360px_1fr]">
       <form id="createForm" class="rounded-lg border border-zinc-800 bg-zinc-900/70 p-4">
         <h2 class="text-base font-medium">Новий месенджер</h2>
         <div class="mt-4 grid gap-3">
@@ -72,6 +77,85 @@ const INDEX_HTML: &str = r#"<!doctype html>
         <div id="list" class="grid gap-3 p-4"></div>
       </section>
     </section>
+
+    <section id="automationsTab" class="hidden grid gap-4 lg:grid-cols-[360px_1fr]">
+      <form id="automationForm" class="rounded-lg border border-zinc-800 bg-zinc-900/70 p-4">
+        <p class="mb-4 rounded-md border border-zinc-800 bg-zinc-800/70 p-3 text-sm text-zinc-300">
+          Автоматизація пересилає нові повідомлення з вибраної групи у цільову, якщо текст містить задані ключові слова або частоти. Можна враховувати координати, полігон, вік повідомлення та вкладення.
+        </p>
+        <h2 class="text-base font-medium">Нова автоматизація</h2>
+        <div class="mt-4 grid gap-3">
+          <label class="grid gap-1 text-sm">
+            <span class="text-zinc-400">Назва</span>
+            <input id="automationNameInput" class="h-10 rounded-md border border-zinc-700 bg-zinc-950 px-3 text-zinc-100 outline-none focus:border-sky-500" placeholder="Висновки 3 АК" />
+          </label>
+          <label class="grid gap-1 text-sm">
+            <span class="text-zinc-400">Акаунт читання</span>
+            <select id="sourceAccountInput" class="h-10 rounded-md border border-zinc-700 bg-zinc-950 px-3 text-zinc-100 outline-none focus:border-sky-500" required></select>
+          </label>
+          <label class="grid gap-1 text-sm">
+            <span class="text-zinc-400">Група-джерело</span>
+            <select id="sourceGroupInput" class="h-10 rounded-md border border-zinc-700 bg-zinc-950 px-3 text-zinc-100 outline-none focus:border-sky-500" required></select>
+          </label>
+          <label class="grid gap-1 text-sm">
+            <span class="text-zinc-400">Акаунт надсилання</span>
+            <select id="targetAccountInput" class="h-10 rounded-md border border-zinc-700 bg-zinc-950 px-3 text-zinc-100 outline-none focus:border-sky-500" required></select>
+          </label>
+          <label class="grid gap-1 text-sm">
+            <span class="text-zinc-400">Група-призначення</span>
+            <select id="targetGroupInput" class="h-10 rounded-md border border-zinc-700 bg-zinc-950 px-3 text-zinc-100 outline-none focus:border-sky-500" required></select>
+          </label>
+          <label class="grid gap-1 text-sm">
+            <span class="text-zinc-400">Ключові слова</span>
+            <input id="keywordTokenInput" class="h-10 rounded-md border border-zinc-700 bg-zinc-950 px-3 text-zinc-100 outline-none focus:border-sky-500" placeholder="слово, Enter" />
+            <div id="keywordTokens" class="flex min-h-7 flex-wrap gap-1"></div>
+          </label>
+          <label class="grid gap-1 text-sm">
+            <span class="text-zinc-400">Частоти</span>
+            <input id="frequencyTokenInput" class="h-10 rounded-md border border-zinc-700 bg-zinc-950 px-3 text-zinc-100 outline-none focus:border-sky-500" placeholder="149.200, Enter" />
+            <div id="frequencyTokens" class="flex min-h-7 flex-wrap gap-1"></div>
+          </label>
+          <label class="grid gap-1 text-sm">
+            <span class="text-zinc-400">Ігнорувати повідомлення старші за, хв</span>
+            <input id="staleMinutesInput" type="number" min="0" value="60" class="h-10 rounded-md border border-zinc-700 bg-zinc-950 px-3 text-zinc-100 outline-none focus:border-sky-500" required />
+          </label>
+          <label class="grid gap-1 text-sm">
+            <span class="text-zinc-400">Повідомлення із координатами</span>
+            <select id="coordinatePresenceInput" class="h-10 rounded-md border border-zinc-700 bg-zinc-950 px-3 text-zinc-100 outline-none focus:border-sky-500">
+              <option value="any" style="color:#71717a">--</option>
+              <option value="skip_with_coordinates">Ігнорувати повідомлення із координатами</option>
+              <option value="skip_without_coordinates">Ігнорувати повідомлення без координат</option>
+            </select>
+          </label>
+          <label class="grid gap-1 text-sm">
+            <span class="text-zinc-400">Полігон</span>
+            <select id="polygonModeInput" class="h-10 rounded-md border border-zinc-700 bg-zinc-950 px-3 text-zinc-100 outline-none focus:border-sky-500">
+              <option value="none" style="color:#71717a">Не фільтрувати</option>
+              <option value="inside">Ігнорувати всередині</option>
+              <option value="outside">Ігнорувати зовні</option>
+            </select>
+          </label>
+          <label class="grid gap-1 text-sm">
+            <span class="text-zinc-400">Координати полігону</span>
+            <textarea id="polygonCoordinatesInput" class="min-h-24 rounded-md border border-zinc-700 bg-zinc-950 px-3 py-2 text-zinc-100 outline-none focus:border-sky-500" placeholder="37U DR 05997 22279&#10;37U DR 06020 22340&#10;37U DR 06090 22270"></textarea>
+          </label>
+          <label class="flex items-center gap-2 text-sm text-zinc-300">
+            <input id="resendAttachmentsInput" type="checkbox" class="h-4 w-4 rounded border-zinc-700 bg-zinc-950" />
+            Пересилати вкладення
+          </label>
+          <button class="mt-2 h-10 rounded-md bg-sky-500 px-4 text-sm font-medium text-zinc-950 hover:bg-sky-400" type="submit">Створити</button>
+          <p id="automationFormMsg" class="min-h-5 text-sm text-zinc-400"></p>
+        </div>
+      </form>
+
+      <section class="rounded-lg border border-zinc-800 bg-zinc-900/50">
+        <div class="border-b border-zinc-800 px-4 py-3">
+          <h2 class="text-base font-medium">Автоматизації</h2>
+        </div>
+        <div id="automationList" class="grid gap-3 p-4"></div>
+      </section>
+
+    </section>
   </main>
 
   <dialog id="qrDialog" class="w-[min(92vw,420px)] rounded-lg border border-zinc-800 bg-zinc-950 p-0 text-zinc-100 backdrop:bg-black/70">
@@ -88,9 +172,87 @@ const INDEX_HTML: &str = r#"<!doctype html>
     </div>
   </dialog>
 
+  <dialog id="automationEditDialog" class="w-[min(92vw,520px)] rounded-lg border border-zinc-800 bg-zinc-950 p-0 text-zinc-100 backdrop:bg-black/70">
+    <form id="automationEditForm">
+      <div class="flex items-center justify-between border-b border-zinc-800 px-4 py-3">
+        <h2 class="text-base font-medium">Редагувати автоматизацію</h2>
+        <button id="closeAutomationEdit" class="inline-flex h-9 w-9 items-center justify-center rounded-md border border-zinc-700 text-zinc-200 hover:bg-zinc-900" type="button" aria-label="Закрити" title="Закрити">×</button>
+      </div>
+      <div class="grid max-h-[75vh] gap-3 overflow-y-auto p-4">
+        <label class="grid gap-1 text-sm">
+          <span class="text-zinc-400">Назва</span>
+          <input id="editAutomationNameInput" class="h-10 rounded-md border border-zinc-700 bg-zinc-950 px-3 text-zinc-100 outline-none focus:border-sky-500" placeholder="Висновки 3 АК" />
+        </label>
+        <label class="grid gap-1 text-sm">
+          <span class="text-zinc-400">Акаунт читання</span>
+          <select id="editSourceAccountInput" class="h-10 rounded-md border border-zinc-700 bg-zinc-950 px-3 text-zinc-100 outline-none focus:border-sky-500" required></select>
+        </label>
+        <label class="grid gap-1 text-sm">
+          <span class="text-zinc-400">Група-джерело</span>
+          <select id="editSourceGroupInput" class="h-10 rounded-md border border-zinc-700 bg-zinc-950 px-3 text-zinc-100 outline-none focus:border-sky-500" required></select>
+        </label>
+        <label class="grid gap-1 text-sm">
+          <span class="text-zinc-400">Акаунт надсилання</span>
+          <select id="editTargetAccountInput" class="h-10 rounded-md border border-zinc-700 bg-zinc-950 px-3 text-zinc-100 outline-none focus:border-sky-500" required></select>
+        </label>
+        <label class="grid gap-1 text-sm">
+          <span class="text-zinc-400">Група-призначення</span>
+          <select id="editTargetGroupInput" class="h-10 rounded-md border border-zinc-700 bg-zinc-950 px-3 text-zinc-100 outline-none focus:border-sky-500" required></select>
+        </label>
+        <label class="grid gap-1 text-sm">
+          <span class="text-zinc-400">Ключові слова</span>
+          <input id="editKeywordTokenInput" class="h-10 rounded-md border border-zinc-700 bg-zinc-950 px-3 text-zinc-100 outline-none focus:border-sky-500" placeholder="слово, Enter" />
+          <div id="editKeywordTokens" class="flex min-h-7 flex-wrap gap-1"></div>
+        </label>
+        <label class="grid gap-1 text-sm">
+          <span class="text-zinc-400">Частоти</span>
+          <input id="editFrequencyTokenInput" class="h-10 rounded-md border border-zinc-700 bg-zinc-950 px-3 text-zinc-100 outline-none focus:border-sky-500" placeholder="149.200, Enter" />
+          <div id="editFrequencyTokens" class="flex min-h-7 flex-wrap gap-1"></div>
+        </label>
+        <label class="grid gap-1 text-sm">
+          <span class="text-zinc-400">Ігнорувати повідомлення старші за, хв</span>
+          <input id="editStaleMinutesInput" type="number" min="0" value="60" class="h-10 rounded-md border border-zinc-700 bg-zinc-950 px-3 text-zinc-100 outline-none focus:border-sky-500" required />
+        </label>
+        <label class="grid gap-1 text-sm">
+          <span class="text-zinc-400">Повідомлення із координатами</span>
+          <select id="editCoordinatePresenceInput" class="h-10 rounded-md border border-zinc-700 bg-zinc-950 px-3 text-zinc-100 outline-none focus:border-sky-500">
+            <option value="any" style="color:#71717a">--</option>
+            <option value="skip_with_coordinates">Ігнорувати повідомлення із координатами</option>
+            <option value="skip_without_coordinates">Ігнорувати повідомлення без координат</option>
+          </select>
+        </label>
+        <label class="grid gap-1 text-sm">
+          <span class="text-zinc-400">Полігон</span>
+          <select id="editPolygonModeInput" class="h-10 rounded-md border border-zinc-700 bg-zinc-950 px-3 text-zinc-100 outline-none focus:border-sky-500">
+            <option value="none" style="color:#71717a">Не фільтрувати</option>
+            <option value="inside">Ігнорувати всередині</option>
+            <option value="outside">Ігнорувати зовні</option>
+          </select>
+        </label>
+        <label class="grid gap-1 text-sm">
+          <span class="text-zinc-400">Координати полігону</span>
+          <textarea id="editPolygonCoordinatesInput" class="min-h-24 rounded-md border border-zinc-700 bg-zinc-950 px-3 py-2 text-zinc-100 outline-none focus:border-sky-500" placeholder="37U DR 05997 22279&#10;37U DR 06020 22340&#10;37U DR 06090 22270"></textarea>
+        </label>
+        <label class="flex items-center gap-2 text-sm text-zinc-300">
+          <input id="editResendAttachmentsInput" type="checkbox" class="h-4 w-4 rounded border-zinc-700 bg-zinc-950" />
+          Пересилати вкладення
+        </label>
+        <p id="automationEditFormMsg" class="min-h-5 text-sm text-zinc-400"></p>
+      </div>
+      <div class="flex justify-end gap-2 border-t border-zinc-800 px-4 py-3">
+        <button class="h-10 rounded-md border border-zinc-700 px-4 text-sm text-zinc-200 hover:bg-zinc-900" type="button" data-edit-cancel>Скасувати</button>
+        <button class="h-10 rounded-md bg-sky-500 px-4 text-sm font-medium text-zinc-950 hover:bg-sky-400" type="submit">Зберегти</button>
+      </div>
+    </form>
+  </dialog>
+
   <script>
     const list = document.getElementById('list');
+    const automationList = document.getElementById('automationList');
     const formMsg = document.getElementById('formMsg');
+    const automationFormMsg = document.getElementById('automationFormMsg');
+    const automationEditDialog = document.getElementById('automationEditDialog');
+    const automationEditFormMsg = document.getElementById('automationEditFormMsg');
     const qrDialog = document.getElementById('qrDialog');
     const qrBox = document.getElementById('qrBox');
     const qrTitle = document.getElementById('qrTitle');
@@ -100,6 +262,15 @@ const INDEX_HTML: &str = r#"<!doctype html>
     let pollTimer = null;
     let globalPaused = false;
     let currentQrName = null;
+    let activeTab = 'integrations';
+    let automations = [];
+    let automationAccounts = [];
+    let automationGroups = [];
+    const keywordTokens = [];
+    const frequencyTokens = [];
+    let editAutomationId = null;
+    const editKeywordTokens = [];
+    const editFrequencyTokens = [];
 
     function appBasePath() {
       const path = window.location.pathname;
@@ -128,6 +299,9 @@ const INDEX_HTML: &str = r#"<!doctype html>
 
     async function load() {
       await loadGlobalPause();
+      await loadAutomationAccounts();
+      await loadAutomationGroups();
+      await loadAutomations();
       list.innerHTML = '<div class="p-4 text-sm text-zinc-400">Завантаження...</div>';
       try {
         const data = await request(appUrl('/ui-api/messengers'));
@@ -140,6 +314,115 @@ const INDEX_HTML: &str = r#"<!doctype html>
       } catch (err) {
         list.innerHTML = `<div class="p-4 text-sm text-red-400">${err.message}</div>`;
       }
+    }
+
+    function setActiveTab(tab) {
+      activeTab = tab;
+      document.getElementById('integrationsTab').classList.toggle('hidden', tab !== 'integrations');
+      document.getElementById('automationsTab').classList.toggle('hidden', tab !== 'automations');
+      document.getElementById('integrationsTabBtn').className = tab === 'integrations'
+        ? 'border-b-2 border-sky-400 px-3 py-2 text-sm text-zinc-100'
+        : 'border-b-2 border-transparent px-3 py-2 text-sm text-zinc-400 hover:text-zinc-100';
+      document.getElementById('automationsTabBtn').className = tab === 'automations'
+        ? 'border-b-2 border-sky-400 px-3 py-2 text-sm text-zinc-100'
+        : 'border-b-2 border-transparent px-3 py-2 text-sm text-zinc-400 hover:text-zinc-100';
+    }
+
+    async function loadAutomationGroups() {
+      automationGroups = await request(appUrl('/ui-api/automation-groups'));
+      renderAutomationFormSelects();
+    }
+
+    async function loadAutomationAccounts() {
+      automationAccounts = await request(appUrl('/ui-api/automation-accounts'));
+      renderAutomationFormSelects();
+    }
+
+    async function loadAutomations() {
+      automationList.innerHTML = '<div class="p-4 text-sm text-zinc-400">Завантаження...</div>';
+      try {
+        const data = await request(appUrl('/ui-api/automations'));
+        automations = data;
+        if (data.length === 0) {
+          automationList.innerHTML = '<div class="p-4 text-sm text-zinc-400">Автоматизацій ще немає.</div>';
+          return;
+        }
+        automationList.innerHTML = '';
+        data.forEach(renderAutomationRow);
+      } catch (err) {
+        automationList.innerHTML = `<div class="p-4 text-sm text-red-400">${err.message}</div>`;
+      }
+    }
+
+    function renderAutomationFormSelects() {
+      renderAccountSelect(document.getElementById('sourceAccountInput'));
+      renderAccountSelect(document.getElementById('targetAccountInput'));
+      renderGroupSelect(
+        document.getElementById('sourceGroupInput'),
+        Number(document.getElementById('sourceAccountInput').value),
+      );
+      renderGroupSelect(
+        document.getElementById('targetGroupInput'),
+        Number(document.getElementById('targetAccountInput').value),
+      );
+    }
+
+    function renderAccountSelect(select) {
+      const current = Number(select.value);
+      select.innerHTML = '<option value="" disabled style="color:#71717a">Оберіть акаунт</option>' + automationAccounts.map(account => {
+        const linked = account.isLinked ? '' : ' · не підключено';
+        const style = account.isLinked ? '' : ' style="color:#71717a"';
+        return `<option value="${account.id}"${style}>${account.name} · ${account.phone}${linked}</option>`;
+      }).join('');
+      if (automationAccounts.some(account => account.id === current)) {
+        select.value = String(current);
+      } else if (automationAccounts.length > 0) {
+        select.value = String(automationAccounts[0].id);
+      }
+    }
+
+    function renderGroupSelect(select, accountId) {
+      const current = select.value;
+      const groups = automationGroups.filter(group => group.accountId === accountId);
+      select.innerHTML = '<option value="" disabled style="color:#71717a">Оберіть групу</option>' + groups.map(group => {
+        return `<option value="${group.id}">${group.name} · ${group.messengerName}</option>`;
+      }).join('');
+      if (groups.some(group => String(group.id) === current)) {
+        select.value = current;
+      } else if (groups.length > 0) {
+        select.value = String(groups[0].id);
+      }
+    }
+
+    function renderToken(containerId, tokens, removePrefix) {
+      const container = document.getElementById(containerId);
+      container.innerHTML = tokens.map((token, index) => `
+        <button data-${removePrefix}-token="${index}" class="rounded bg-zinc-800 px-2 py-1 text-xs text-zinc-200 hover:bg-zinc-700" type="button">${token} ×</button>
+      `).join('');
+    }
+
+    function addToken(input, tokens, containerId, removePrefix) {
+      const parts = input.value.split(',').map(token => token.trim().toLowerCase()).filter(Boolean);
+      tokens.push(...parts);
+      const unique = [...new Set(tokens)].sort();
+      tokens.splice(0, tokens.length, ...unique);
+      input.value = '';
+      renderToken(containerId, tokens, removePrefix);
+    }
+
+    function replaceTokens(tokens, values) {
+      tokens.splice(0, tokens.length, ...values);
+    }
+
+    function bindTokenInput(inputId, tokens, containerId, removePrefix) {
+      const input = document.getElementById(inputId);
+      input.addEventListener('keydown', event => {
+        if (event.key === 'Enter' || event.key === ',') {
+          event.preventDefault();
+          addToken(input, tokens, containerId, removePrefix);
+        }
+      });
+      input.addEventListener('blur', () => addToken(input, tokens, containerId, removePrefix));
     }
 
     function copyIcon() {
@@ -199,6 +482,15 @@ const INDEX_HTML: &str = r#"<!doctype html>
       `;
     }
 
+    function pencilIcon() {
+      return `
+        <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M12 20h9"></path>
+          <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"></path>
+        </svg>
+      `;
+    }
+
     function updateGlobalPauseButton() {
       globalPauseBtn.innerHTML = globalPaused ? playIcon() : pauseIcon();
       globalPauseBtn.setAttribute('aria-label', globalPaused ? 'Відновити всю синхронізацію' : 'Зупинити всю синхронізацію');
@@ -242,6 +534,169 @@ const INDEX_HTML: &str = r#"<!doctype html>
       list.appendChild(row);
     }
 
+    function automationStatusLabel(item) {
+      if (item.isPaused) return 'пауза';
+      const labels = {
+        idle: 'очікує',
+        running: 'обробляє',
+        warning: 'попередження',
+        error: 'помилка',
+      };
+      return labels[item.status] || item.status;
+    }
+
+    function automationStatusClass(item) {
+      if (item.isPaused) return 'text-amber-300';
+      if (item.status === 'error') return 'text-red-400';
+      if (item.status === 'warning') return 'text-amber-300';
+      if (item.status === 'running') return 'text-sky-300';
+      return 'text-emerald-400';
+    }
+
+    function automationField(label, value) {
+      return `
+        <p class="mt-1 text-xs text-zinc-400">
+          <span class="mr-1 text-zinc-500">${label}:</span>${value || '-'}
+        </p>
+      `;
+    }
+
+    function usageChip(value, label) {
+      return `
+        <span class="inline-flex items-center gap-1 rounded bg-zinc-900 px-2 py-1 text-xs text-zinc-200">
+          <span class="rounded bg-zinc-800 px-1.5 py-0.5 text-[10px] text-zinc-400">${label}</span>
+          ${value}
+        </span>
+      `;
+    }
+
+    function renderAutomationRow(item) {
+      const row = document.createElement('article');
+      row.className = 'grid gap-3 rounded-md border border-zinc-800 bg-zinc-950 p-4';
+      const usage = item.usage || { last24h: 0, last7d: 0, allTime: 0 };
+      const checkpoint = item.checkpointAt > 0
+        ? new Date(item.checkpointAt).toLocaleString('uk-UA')
+        : 'ще не синхронізовано';
+      const filters = [...item.keywordTokens, ...item.frequencyTokens].join(', ');
+      const warnings = [];
+      if (!item.isPaused && !item.sourceAccountIsLinked) {
+        warnings.push('Акаунт читання не підключено: нові повідомлення не синхронізуються.');
+      }
+      if (!item.isPaused && !item.targetAccountIsLinked) {
+        warnings.push('Акаунт надсилання не підключено: повідомлення не пересилаються.');
+      }
+      row.innerHTML = `
+        <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div class="min-w-0">
+            <div class="flex flex-wrap items-center gap-2">
+              <h3 class="truncate text-base font-medium">${item.name || `${item.sourceGroupName} → ${item.targetGroupName}`}</h3>
+              <span class="rounded bg-zinc-800 px-2 py-0.5 text-xs text-zinc-300">${item.sourceMessengerKind} → ${item.targetMessengerKind}</span>
+              <span class="${automationStatusClass(item)} text-sm">${automationStatusLabel(item)}</span>
+            </div>
+            <div class="mt-2">
+              ${automationField('Звідки', `${item.sourceAccountName} / ${item.sourceGroupName}`)}
+              ${automationField('Куди', `${item.targetAccountName} / ${item.targetGroupName}`)}
+              ${automationField('Фільтри', filters)}
+              ${automationField('Синхронізовано до', checkpoint)}
+            </div>
+            ${warnings.map(warning => `<p class="mt-1 text-xs text-amber-300">${warning}</p>`).join('')}
+            ${item.lastError ? `<p class="mt-1 text-xs text-red-400">${item.lastError}</p>` : ''}
+          </div>
+          <div class="flex shrink-0 items-center gap-2">
+            <div class="flex flex-wrap justify-end gap-1">
+              ${usageChip(usage.last24h, 'день')}
+              ${usageChip(usage.last7d, 'тиждень')}
+              ${usageChip(usage.allTime, 'весь час')}
+            </div>
+            <button data-automation-edit="${item.id}" class="inline-flex h-9 w-9 items-center justify-center rounded-md border border-zinc-700 text-zinc-200 hover:bg-zinc-900" type="button" aria-label="Редагувати автоматизацію" title="Редагувати автоматизацію">${pencilIcon()}</button>
+            <button data-automation-pause="${item.id}" data-paused="${item.isPaused}" class="inline-flex h-9 w-9 items-center justify-center rounded-md border ${item.isPaused ? 'border-amber-700 text-amber-300 hover:bg-amber-950/40' : 'border-zinc-700 text-zinc-200 hover:bg-zinc-900'}" type="button" aria-label="${item.isPaused ? 'Запустити автоматизацію' : 'Зупинити автоматизацію'}" title="${item.isPaused ? 'Запустити автоматизацію' : 'Зупинити автоматизацію'}">${item.isPaused ? playIcon() : pauseIcon()}</button>
+            <button data-automation-delete="${item.id}" class="inline-flex h-9 w-9 items-center justify-center rounded-md bg-red-600 text-white hover:bg-red-500" type="button" aria-label="Видалити автоматизацію" title="Видалити автоматизацію">${deleteIcon()}</button>
+          </div>
+        </div>
+      `;
+      automationList.appendChild(row);
+    }
+
+    function polygonCoordinates() {
+      return document.getElementById('polygonCoordinatesInput').value
+        .split('\n')
+        .map(value => value.trim())
+        .filter(Boolean);
+    }
+
+    function editPolygonCoordinates() {
+      return document.getElementById('editPolygonCoordinatesInput').value
+        .split('\n')
+        .map(value => value.trim())
+        .filter(Boolean);
+    }
+
+    function automationPayload() {
+      return {
+        name: document.getElementById('automationNameInput').value.trim(),
+        sourceAccountId: Number(document.getElementById('sourceAccountInput').value),
+        sourceGroupId: Number(document.getElementById('sourceGroupInput').value),
+        targetAccountId: Number(document.getElementById('targetAccountInput').value),
+        targetGroupId: Number(document.getElementById('targetGroupInput').value),
+        keywordTokens,
+        frequencyTokens,
+        staleMessageCutoffMinutes: Number(document.getElementById('staleMinutesInput').value),
+        resendAttachments: document.getElementById('resendAttachmentsInput').checked,
+        coordinatePresenceMode: document.getElementById('coordinatePresenceInput').value,
+        polygonFilterMode: document.getElementById('polygonModeInput').value,
+        polygonCoordinates: polygonCoordinates(),
+      };
+    }
+
+    function editAutomationPayload() {
+      return {
+        name: document.getElementById('editAutomationNameInput').value.trim(),
+        sourceAccountId: Number(document.getElementById('editSourceAccountInput').value),
+        sourceGroupId: Number(document.getElementById('editSourceGroupInput').value),
+        targetAccountId: Number(document.getElementById('editTargetAccountInput').value),
+        targetGroupId: Number(document.getElementById('editTargetGroupInput').value),
+        keywordTokens: editKeywordTokens,
+        frequencyTokens: editFrequencyTokens,
+        staleMessageCutoffMinutes: Number(document.getElementById('editStaleMinutesInput').value),
+        resendAttachments: document.getElementById('editResendAttachmentsInput').checked,
+        coordinatePresenceMode: document.getElementById('editCoordinatePresenceInput').value,
+        polygonFilterMode: document.getElementById('editPolygonModeInput').value,
+        polygonCoordinates: editPolygonCoordinates(),
+      };
+    }
+
+    function selectOption(selectId, value) {
+      const select = document.getElementById(selectId);
+      select.value = String(value);
+    }
+
+    function openAutomationEdit(id) {
+      const item = automations.find(automation => automation.id === Number(id));
+      if (!item) return;
+      editAutomationId = item.id;
+      automationEditFormMsg.textContent = '';
+      document.getElementById('editAutomationNameInput').value = item.name || '';
+      renderAccountSelect(document.getElementById('editSourceAccountInput'));
+      selectOption('editSourceAccountInput', item.sourceAccountId);
+      renderGroupSelect(document.getElementById('editSourceGroupInput'), item.sourceAccountId);
+      selectOption('editSourceGroupInput', item.sourceGroupId);
+      renderAccountSelect(document.getElementById('editTargetAccountInput'));
+      selectOption('editTargetAccountInput', item.targetAccountId);
+      renderGroupSelect(document.getElementById('editTargetGroupInput'), item.targetAccountId);
+      selectOption('editTargetGroupInput', item.targetGroupId);
+      replaceTokens(editKeywordTokens, item.keywordTokens);
+      replaceTokens(editFrequencyTokens, item.frequencyTokens);
+      renderToken('editKeywordTokens', editKeywordTokens, 'edit-keyword');
+      renderToken('editFrequencyTokens', editFrequencyTokens, 'edit-frequency');
+      document.getElementById('editStaleMinutesInput').value = item.staleMessageCutoffMinutes;
+      document.getElementById('editResendAttachmentsInput').checked = item.resendAttachments;
+      document.getElementById('editCoordinatePresenceInput').value = item.coordinatePresenceMode;
+      document.getElementById('editPolygonModeInput').value = item.polygonFilterMode;
+      document.getElementById('editPolygonCoordinatesInput').value = item.polygonCoordinates.join('\n');
+      updateEditPolygonAvailability();
+      automationEditDialog.showModal();
+    }
+
     document.getElementById('createForm').addEventListener('submit', async (event) => {
       event.preventDefault();
       formMsg.textContent = 'Створення...';
@@ -259,6 +714,109 @@ const INDEX_HTML: &str = r#"<!doctype html>
         await load();
       } catch (err) {
         formMsg.textContent = err.message;
+      }
+    });
+
+    document.getElementById('automationForm').addEventListener('submit', async (event) => {
+      event.preventDefault();
+      addToken(document.getElementById('keywordTokenInput'), keywordTokens, 'keywordTokens', 'keyword');
+      addToken(document.getElementById('frequencyTokenInput'), frequencyTokens, 'frequencyTokens', 'frequency');
+      automationFormMsg.textContent = 'Створення...';
+      try {
+        await request(appUrl('/ui-api/automations'), {
+          method: 'POST',
+          body: JSON.stringify(automationPayload()),
+        });
+        automationFormMsg.textContent = 'Створено.';
+        event.target.reset();
+        replaceTokens(keywordTokens, []);
+        replaceTokens(frequencyTokens, []);
+        renderToken('keywordTokens', keywordTokens, 'keyword');
+        renderToken('frequencyTokens', frequencyTokens, 'frequency');
+        updatePolygonAvailability();
+        renderAutomationFormSelects();
+        await loadAutomations();
+      } catch (err) {
+        automationFormMsg.textContent = err.message;
+      }
+    });
+
+    document.getElementById('sourceAccountInput').addEventListener('change', () => {
+      renderGroupSelect(
+        document.getElementById('sourceGroupInput'),
+        Number(document.getElementById('sourceAccountInput').value),
+      );
+    });
+
+    document.getElementById('targetAccountInput').addEventListener('change', () => {
+      renderGroupSelect(
+        document.getElementById('targetGroupInput'),
+        Number(document.getElementById('targetAccountInput').value),
+      );
+    });
+
+    document.getElementById('editSourceAccountInput').addEventListener('change', () => {
+      renderGroupSelect(
+        document.getElementById('editSourceGroupInput'),
+        Number(document.getElementById('editSourceAccountInput').value),
+      );
+    });
+
+    document.getElementById('editTargetAccountInput').addEventListener('change', () => {
+      renderGroupSelect(
+        document.getElementById('editTargetGroupInput'),
+        Number(document.getElementById('editTargetAccountInput').value),
+      );
+    });
+
+    document.getElementById('keywordTokens').addEventListener('click', event => {
+      const button = event.target.closest('button');
+      if (!button?.dataset.keywordToken) return;
+      keywordTokens.splice(Number(button.dataset.keywordToken), 1);
+      renderToken('keywordTokens', keywordTokens, 'keyword');
+    });
+
+    document.getElementById('frequencyTokens').addEventListener('click', event => {
+      const button = event.target.closest('button');
+      if (!button?.dataset.frequencyToken) return;
+      frequencyTokens.splice(Number(button.dataset.frequencyToken), 1);
+      renderToken('frequencyTokens', frequencyTokens, 'frequency');
+    });
+
+    document.getElementById('editKeywordTokens').addEventListener('click', event => {
+      const button = event.target.closest('button');
+      if (!button?.dataset.editKeywordToken) return;
+      editKeywordTokens.splice(Number(button.dataset.editKeywordToken), 1);
+      renderToken('editKeywordTokens', editKeywordTokens, 'edit-keyword');
+    });
+
+    document.getElementById('editFrequencyTokens').addEventListener('click', event => {
+      const button = event.target.closest('button');
+      if (!button?.dataset.editFrequencyToken) return;
+      editFrequencyTokens.splice(Number(button.dataset.editFrequencyToken), 1);
+      renderToken('editFrequencyTokens', editFrequencyTokens, 'edit-frequency');
+    });
+
+    automationList.addEventListener('click', async (event) => {
+      const button = event.target.closest('button');
+      if (!button) return;
+      const editId = button.dataset.automationEdit;
+      const pauseId = button.dataset.automationPause;
+      const deleteId = button.dataset.automationDelete;
+      if (editId) {
+        openAutomationEdit(editId);
+      }
+      if (pauseId) {
+        await request(appUrl(`/ui-api/automations/${pauseId}/pause`), {
+          method: 'POST',
+          body: JSON.stringify({ isPaused: button.dataset.paused !== 'true' }),
+        });
+        await loadAutomations();
+      }
+      if (deleteId) {
+        if (!confirm('Видалити автоматизацію?')) return;
+        await request(appUrl(`/ui-api/automations/${deleteId}`), { method: 'DELETE' });
+        await loadAutomations();
       }
     });
 
@@ -296,6 +854,47 @@ const INDEX_HTML: &str = r#"<!doctype html>
       }
       if (linkName) openQr(linkName);
     });
+
+    function updatePolygonAvailability() {
+      const disabled = document.getElementById('coordinatePresenceInput').value === 'skip_with_coordinates';
+      document.getElementById('polygonModeInput').disabled = disabled;
+      document.getElementById('polygonCoordinatesInput').disabled = disabled;
+      if (disabled) {
+        document.getElementById('polygonModeInput').value = 'none';
+        document.getElementById('polygonCoordinatesInput').value = '';
+      }
+    }
+
+    function updateEditPolygonAvailability() {
+      const disabled = document.getElementById('editCoordinatePresenceInput').value === 'skip_with_coordinates';
+      document.getElementById('editPolygonModeInput').disabled = disabled;
+      document.getElementById('editPolygonCoordinatesInput').disabled = disabled;
+      if (disabled) {
+        document.getElementById('editPolygonModeInput').value = 'none';
+        document.getElementById('editPolygonCoordinatesInput').value = '';
+      }
+    }
+
+    document.getElementById('automationEditForm').addEventListener('submit', async (event) => {
+      event.preventDefault();
+      addToken(document.getElementById('editKeywordTokenInput'), editKeywordTokens, 'editKeywordTokens', 'edit-keyword');
+      addToken(document.getElementById('editFrequencyTokenInput'), editFrequencyTokens, 'editFrequencyTokens', 'edit-frequency');
+      automationEditFormMsg.textContent = 'Збереження...';
+      try {
+        await request(appUrl(`/ui-api/automations/${editAutomationId}`), {
+          method: 'PUT',
+          body: JSON.stringify(editAutomationPayload()),
+        });
+        automationEditFormMsg.textContent = 'Збережено.';
+        automationEditDialog.close();
+        await loadAutomations();
+      } catch (err) {
+        automationEditFormMsg.textContent = err.message;
+      }
+    });
+
+    document.getElementById('closeAutomationEdit').addEventListener('click', () => automationEditDialog.close());
+    document.querySelector('[data-edit-cancel]').addEventListener('click', () => automationEditDialog.close());
 
     async function openQr(name) {
       currentQrName = name;
@@ -345,6 +944,16 @@ const INDEX_HTML: &str = r#"<!doctype html>
       await load();
     });
     document.getElementById('refreshBtn').addEventListener('click', load);
+    document.getElementById('integrationsTabBtn').addEventListener('click', () => setActiveTab('integrations'));
+    document.getElementById('automationsTabBtn').addEventListener('click', () => setActiveTab('automations'));
+    document.getElementById('coordinatePresenceInput').addEventListener('change', updatePolygonAvailability);
+    document.getElementById('editCoordinatePresenceInput').addEventListener('change', updateEditPolygonAvailability);
+    bindTokenInput('keywordTokenInput', keywordTokens, 'keywordTokens', 'keyword');
+    bindTokenInput('frequencyTokenInput', frequencyTokens, 'frequencyTokens', 'frequency');
+    bindTokenInput('editKeywordTokenInput', editKeywordTokens, 'editKeywordTokens', 'edit-keyword');
+    bindTokenInput('editFrequencyTokenInput', editFrequencyTokens, 'editFrequencyTokens', 'edit-frequency');
+    updatePolygonAvailability();
+    updateEditPolygonAvailability();
     load();
   </script>
 </body>
