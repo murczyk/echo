@@ -406,6 +406,7 @@ export const FeedColumnContent = memo(
     const itemIds = useMemo(() => feed.items.map(([id]) => id), [feed.items]);
     const scroll = useWindowedFeedScroll({
       itemIds,
+      isWatchMode,
       loadingOlder: feed.loadingOlder,
       loadingNewer,
       hasReachedStart: feed.hasReachedStart,
@@ -450,6 +451,7 @@ export const FeedColumnContent = memo(
 
     return (
       <Paper
+        data-duty-feed-content-root
         variant="outlined"
         className="flex-1 overflow-hidden min-h-0 p-0 flex flex-col h-full"
         sx={{

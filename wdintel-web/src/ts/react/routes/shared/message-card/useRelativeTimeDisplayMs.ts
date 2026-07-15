@@ -75,6 +75,16 @@ export function useRelativeTimeDisplayMs(
       elementCallbacks.delete(el);
       visibleElements.delete(el);
       observer.unobserve(el);
+      if (elementCallbacks.size === 0) {
+        if (globalTickInterval !== null) {
+          window.clearInterval(globalTickInterval);
+          globalTickInterval = null;
+        }
+        if (globalObserver !== null) {
+          globalObserver.disconnect();
+          globalObserver = null;
+        }
+      }
     };
   }, [messageTimestamp]);
 

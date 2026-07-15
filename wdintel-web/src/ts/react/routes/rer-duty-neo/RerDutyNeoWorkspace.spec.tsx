@@ -1,7 +1,7 @@
 /**
  * @vitest-environment happy-dom
  */
-import { act, forwardRef } from 'react';
+import { act } from 'react';
 import type { ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -9,24 +9,6 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { FeedColumnModel } from './types';
 import { RerDutyNeoWorkspace } from './RerDutyNeoWorkspace';
 import type { MessageFeedState } from './utils';
-
-vi.mock('react-virtuoso', () => ({
-  Virtuoso: forwardRef<
-    HTMLDivElement,
-    {
-      data?: Array<[number, unknown]>;
-      itemContent?: (index: number, item: [number, unknown]) => ReactNode;
-    }
-  >(function Virtuoso({ data, itemContent }, ref) {
-    return (
-      <div ref={ref} data-testid="virtuoso">
-        {(data ?? []).map((item, index) => (
-          <div key={String(index)}>{itemContent?.(index, item)}</div>
-        ))}
-      </div>
-    );
-  }),
-}));
 
 function buildFeed(id: string): MessageFeedState {
   return {

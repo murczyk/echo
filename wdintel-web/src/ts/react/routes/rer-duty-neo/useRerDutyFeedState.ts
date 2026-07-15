@@ -334,7 +334,6 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
               ...windowed.addedItems.map(([id]) => id),
             ]);
             return {
-              messageFeedsRef,
               ...x,
               items: windowed.items,
               readIds: readIdsWithOlder,
@@ -416,7 +415,6 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
               delete newestExhaustedCursorByFeedIdRef.current[feedId];
               delete lastServerCountByFeedIdRef.current[feedId];
               return {
-                messageFeedsRef,
                 ...x,
                 items: windowed.items,
                 readIds,
@@ -488,7 +486,6 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
       messageFeedsRef.current.map(async (w) => {
         if (loadNewerInFlightRef.current.has(w.id) || countInFlightByFeedIdRef.current.has(w.id)) {
           return {
-            messageFeedsRef,
             feedId: w.id,
             quantity: null as number | null,
             hasItems: w.items.length > 0,
@@ -506,7 +503,6 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
             buildReqForFeed(w, { sinceIdNoninclusive: cursorId, nolimit: true }),
           );
           return {
-            messageFeedsRef,
             feedId: w.id,
             quantity,
             hasItems,
@@ -516,7 +512,6 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
           };
         } catch {
           return {
-            messageFeedsRef,
             feedId: w.id,
             quantity: 0,
             hasItems: w.items.length > 0,
@@ -540,7 +535,6 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
         if (nextUnread === f.unreadCount) return f;
         changed = true;
         return {
-          messageFeedsRef,
           ...f,
           unreadCount: nextUnread,
         };

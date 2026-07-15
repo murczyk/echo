@@ -1,42 +1,12 @@
 /**
  * @vitest-environment happy-dom
  */
-import { act, createElement, forwardRef, type ReactNode } from 'react';
-import type { ComponentType } from 'react';
+import { act, type ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { FeedColumnProps } from './FeedColumn';
 import { minimalInboxMessage } from './inbox-message-mocks';
-
-vi.mock('react-virtuoso', () => ({
-  Virtuoso: forwardRef<
-    HTMLDivElement,
-    {
-      data?: Array<[number, unknown]>;
-      itemContent?: (index: number, item: [number, unknown]) => ReactNode;
-      components?: {
-        List?: ComponentType<any>;
-        Footer?: ComponentType<any>;
-      };
-    }
-  >(function Virtuoso({ data, itemContent, components }, ref) {
-    const List = components?.List ?? 'div';
-    const Footer = components?.Footer;
-    return (
-      <div ref={ref} data-testid="virtuoso">
-        {Footer ? createElement(Footer) : null}
-        {createElement(
-          List,
-          { ref: vi.fn(), 'data-testid': 'virtuoso-list' },
-          (data ?? []).map((item, index) => (
-            <div key={String(index)}>{itemContent?.(index, item)}</div>
-          )),
-        )}
-      </div>
-    );
-  }),
-}));
 
 vi.mock('./FeedFilterPanel', () => ({
   FeedFilterPanel: () => <div data-testid="feed-filter-panel" />,

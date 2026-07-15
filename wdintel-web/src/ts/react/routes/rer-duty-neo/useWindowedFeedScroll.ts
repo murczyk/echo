@@ -41,6 +41,7 @@ export type UseWindowedFeedScrollOptions = {
   bottomLoadBufferPx?: number;
   atBottomThresholdPx?: number;
   resetKey?: string | number | null;
+  isWatchMode?: boolean;
 };
 
 export type WindowedFeedScrollHandle = {
@@ -78,6 +79,7 @@ export function useWindowedFeedScroll({
   bottomLoadBufferPx = DEFAULT_BOTTOM_LOAD_BUFFER_PX,
   atBottomThresholdPx = DEFAULT_AT_BOTTOM_THRESHOLD_PX,
   resetKey = null,
+  isWatchMode = true,
 }: UseWindowedFeedScrollOptions): WindowedFeedScrollHandle {
   const callbacksRef = useRef({
     onLoadOlder,
@@ -120,6 +122,8 @@ export function useWindowedFeedScroll({
   const bottomSettleResizeObserverRef = useRef<ResizeObserver | null>(null);
   const previousItemIdsRef = useRef<readonly number[]>([]);
   const previousResetKeyRef = useRef<string | number | null>(resetKey);
+  const isWatchModeRef = useRef<boolean>(isWatchMode);
+  isWatchModeRef.current = isWatchMode;
   const wasAtBottomBeforeRender = atBottomRef.current;
 
   const itemIdsRef = useRef<readonly number[]>(itemIds);
@@ -442,7 +446,7 @@ export function useWindowedFeedScroll({
 
     const itemsChanged = !areNumberArraysEqual(previousItemIdsRef.current, currentItemIds);
     if (itemsChanged) {
-      if (wasAtBottomBeforeRender === true) {
+      if (wasAtBottomBeforeRender === true && isWatchModeRef.current !== false) {
         scrollToBottom('auto');
         startBottomSettle();
       } else {
