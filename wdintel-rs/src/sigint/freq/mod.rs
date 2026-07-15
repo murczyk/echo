@@ -1580,10 +1580,14 @@ pub async fn list_freqs_for_period(
 
 #[post("/api/sigint/freq/search")]
 pub async fn freq_search(
-    _user: actix_identity::Identity,
+    user: actix_identity::Identity,
     env: actix_web::web::Data<Env>,
     req: Json<FreqSearchReq>,
 ) -> Result<Json<FreqSearchRsp>, AppError> {
+    crate::users::has_any_role(&env.dbx, &user.id().c(h!())?, vec!["Rer"])
+        .await
+        .c(h!())?;
+
     let search_phrase = req.search.trim().to_lowercase();
 
     let mut query = sigint_network_freq::Entity::find()

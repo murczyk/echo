@@ -15,6 +15,8 @@ use sea_orm::{
     ColumnTrait, ConnectionTrait, DatabaseTransaction, EntityTrait,
     QueryFilter, TransactionTrait,
 };
+use std::collections::{BTreeMap, HashSet};
+use uuid::Uuid;
 
 pub async fn parse_signal_message(
     login: &str,
@@ -158,8 +160,6 @@ async fn save_signal_message(
     let upload_urls = payload.upload_urls.clone().unwrap_or_default();
     let uploads =
         resolve_direct_submit_uploads(env, login, &upload_urls).await?;
-    let deleted_media_ids =
-        payload.deleted_media_ids.clone().unwrap_or_default();
     let delete_uploaded_attachments = env
         .config
         .feature_delete_uploaded_attachment
@@ -182,6 +182,18 @@ async fn save_signal_message(
         ),
         None => None,
     };
+    let (retained_media_count, media_to_delete) = match signal_message_id {
+        Some(signal_message_id) => {
+            load_edit_media(
+                &txn,
+                signal_message_id,
+                payload.deleted_media_ids.as_deref().unwrap_or_default(),
+            )
+            .await?
+        }
+        None => (0, vec![]),
+    };
+    validate_direct_submit_content(&payload, retained_media_count)?;
     let sender = match signal_message
         .as_ref()
         .and_then(|signal_message| signal_message.sender.clone())
@@ -191,7 +203,20 @@ async fn save_signal_message(
             .await
             .c(h!())?,
     };
-    if let Some(device_name_id) = payload.device_name_id {
+    let existing_device_name_id = match signal_message_id {
+        Some(signal_message_id) => {
+            crate::entities::sigint_inbox_item::Entity::find_by_id(
+                signal_message_id,
+            )
+            .one(&txn)
+            .await
+            .c(h!())?
+            .and_then(|item| item.device_name_id)
+        }
+        None => None,
+    };
+    let device_name_id = payload.device_name_id.or(existing_device_name_id);
+    if let Some(device_name_id) = device_name_id {
         query::validate_device_name_id(&txn, device_name_id).await?;
     }
     let logins = crate::users::get_organism_logins_by_login(&txn, login)
@@ -210,51 +235,19 @@ async fn save_signal_message(
         login,
         &logins,
         submit_item,
-        !uploads.is_empty(),
+        !uploads.is_empty() || retained_media_count > 0,
     )
     .await?;
     let mut rsp = finish_direct_submit(
         env,
         txn,
         submitted,
-        payload.device_name_id,
+        device_name_id,
         &uploads,
+        &media_to_delete,
         delete_uploaded_attachments,
     )
     .await?;
-
-    if !deleted_media_ids.is_empty() {
-        if let Some(signal_message_id) = signal_message_id {
-            let txn2 = env.dbx.begin().await.c(h!())?;
-            let media_to_delete = crate::entities::signal_message_media::Entity::find()
-                .filter(crate::entities::signal_message_media::Column::SignalMessageId.eq(signal_message_id))
-                .filter(crate::entities::signal_message_media::Column::Id.is_in(deleted_media_ids.clone()))
-                .all(&txn2)
-                .await
-                .c(h!())?;
-
-            if !media_to_delete.is_empty() {
-                crate::messenger::media::delete_stored_media_files(
-                    &media_to_delete,
-                    &env.config,
-                    &env.s3,
-                )
-                .await;
-
-                let _delete_result =
-                    crate::entities::signal_message_media::Entity::delete_many(
-                    )
-                    .filter(
-                        crate::entities::signal_message_media::Column::Id
-                            .is_in(deleted_media_ids),
-                    )
-                    .exec(&txn2)
-                    .await
-                    .c(h!())?;
-            }
-            txn2.commit().await.c(h!())?;
-        }
-    }
 
     let req = crate::rer_importer::types::InboxMessagesReq {
         highlight_points: Some(true),
@@ -280,12 +273,7 @@ fn validate_direct_submit_payload(
     payload: &DirectSubmitPayload,
 ) -> Result<(), AppError> {
     let upload_urls = payload.upload_urls.as_deref().unwrap_or_default();
-    if !has_direct_submit_content(payload) {
-        return Err(AppError::BL {
-            msg: "Додайте текст повідомлення або хоча б один медіафайл."
-                .to_string(),
-        });
-    }
+    validate_signal_group_master_key(&payload.signal_group_master_key)?;
     if !upload_urls.is_empty()
         && (env.config.s3_config.is_none() || env.s3.is_none())
     {
@@ -295,6 +283,31 @@ fn validate_direct_submit_payload(
         });
     }
     Ok(())
+}
+
+fn validate_signal_group_master_key(
+    signal_group_master_key: &str,
+) -> Result<(), AppError> {
+    if signal_group_master_key.trim().is_empty() {
+        return Err(AppError::Form(BTreeMap::from([(
+            "signal_group_master_key".to_string(),
+            "Оберіть групу.".to_string(),
+        )])));
+    }
+    Ok(())
+}
+
+fn validate_direct_submit_content(
+    payload: &DirectSubmitPayload,
+    retained_media_count: usize,
+) -> Result<(), AppError> {
+    if has_direct_submit_content(payload) || retained_media_count > 0 {
+        return Ok(());
+    }
+    Err(AppError::BL {
+        msg: "Додайте текст повідомлення або хоча б один медіафайл."
+            .to_string(),
+    })
 }
 
 fn has_direct_submit_content(payload: &DirectSubmitPayload) -> bool {
@@ -310,6 +323,28 @@ fn has_direct_submit_content(payload: &DirectSubmitPayload) -> bool {
             .upload_urls
             .as_ref()
             .is_some_and(|upload_urls| !upload_urls.is_empty())
+}
+
+async fn load_edit_media(
+    txn: &DatabaseTransaction,
+    signal_message_id: i64,
+    deleted_media_ids: &[Uuid],
+) -> Result<(usize, Vec<crate::entities::signal_message_media::Model>), AppError>
+{
+    let media = crate::entities::signal_message_media::Entity::find()
+        .filter(
+            crate::entities::signal_message_media::Column::SignalMessageId
+                .eq(signal_message_id),
+        )
+        .all(txn)
+        .await
+        .c(h!())?;
+    let deleted_media_ids =
+        deleted_media_ids.iter().copied().collect::<HashSet<_>>();
+    let (media_to_delete, retained_media): (Vec<_>, Vec<_>) = media
+        .into_iter()
+        .partition(|media| deleted_media_ids.contains(&media.id));
+    Ok((retained_media.len(), media_to_delete))
 }
 
 async fn resolve_direct_submit_uploads(
@@ -390,6 +425,7 @@ async fn finish_direct_submit(
     submitted: SubmittedInboxItem,
     device_name_id: Option<i64>,
     uploads: &[MediaUploadInput],
+    media_to_delete: &[crate::entities::signal_message_media::Model],
     delete_uploaded_attachments: bool,
 ) -> Result<DirectSubmitRsp, AppError> {
     let signal_message_id = submitted.signal_message_id;
@@ -414,6 +450,17 @@ async fn finish_direct_submit(
     .await
     .c(h!())?;
 
+    if !media_to_delete.is_empty() {
+        crate::entities::signal_message_media::Entity::delete_many()
+            .filter(
+                crate::entities::signal_message_media::Column::Id
+                    .is_in(media_to_delete.iter().map(|media| media.id)),
+            )
+            .exec(&txn)
+            .await
+            .c(h!())?;
+    }
+
     crate::sigint::worker::incoming_message_after_insert(
         &txn,
         signal_message_id,
@@ -426,6 +473,14 @@ async fn finish_direct_submit(
     if delete_uploaded_attachments {
         crate::messenger::media::delete_uploaded_attachment_files(uploads)
             .await;
+    }
+    if !media_to_delete.is_empty() {
+        crate::messenger::media::delete_stored_media_files(
+            media_to_delete,
+            &env.config,
+            &env.s3,
+        )
+        .await;
     }
     let mut redis = env.redis.clone();
     crate::inbox::fanout_inbox_changes(&mut redis, vec![inbox_item_id])
@@ -548,6 +603,22 @@ mod tests {
         payload.upload_urls = Some(vec!["attachment-url".to_string()]);
 
         assert!(has_direct_submit_content(&payload));
+    }
+
+    #[test]
+    fn direct_edit_accepts_retained_attachment_without_text() {
+        let payload = direct_submit_payload("");
+
+        assert!(validate_direct_submit_content(&payload, 1).is_ok());
+        assert!(validate_direct_submit_content(&payload, 0).is_err());
+    }
+
+    #[test]
+    fn direct_submit_requires_signal_group() {
+        assert!(matches!(
+            validate_signal_group_master_key(" "),
+            Err(AppError::Form(_))
+        ));
     }
 
     #[tokio::test]
@@ -673,7 +744,7 @@ mod tests {
                 .unwrap()
                 .unwrap();
         assert_eq!(inbox_item.freq.as_deref(), Some("146.1250"));
-        assert_eq!(inbox_item.device_name_id, None);
+        assert_eq!(inbox_item.device_name_id, Some(device_name_id));
         assert_eq!(inbox_item.callsigns_alg1, None);
         assert_eq!(inbox_item.callsigns_alg2, None);
         assert_eq!(inbox_item.signal_tokens, None);

@@ -32,6 +32,8 @@ vi.mock('../../../services/api/direct-submit', () => ({
   parseDirectSubmit: vi.fn(),
   submitDirect: vi.fn().mockResolvedValue({ signal_message_id: 1 }),
   editDirectSubmit: directSubmitMocks.editDirectSubmit,
+  formatDirectSubmitError: (error: unknown) =>
+    error instanceof Error ? error.message : 'save failed',
 }));
 vi.mock('../../../services/api/networks', () => ({
   getNetworksByIds: vi.fn().mockResolvedValue([]),
@@ -56,6 +58,7 @@ vi.mock('@uppy/core', () => {
   return { default: FakeUppy };
 });
 vi.mock('@uppy/tus', () => ({ default: class {} }));
+vi.mock('@mui/icons-material/DeleteOutline', () => ({ default: () => <span /> }));
 
 vi.mock('../../../components/PowerDateTimePicker', () => ({
   PowerDatePicker: ({ label }: { label?: string }) => <div>{label}</div>,
@@ -404,7 +407,7 @@ describe('ManageMessageDrawer edit mode', () => {
     root.unmount();
   });
 
-  it('saves an existing message with a missing group and free-form coords/freq (regression: create-only zod rules must not gate edit saves)', async () => {
+  it('rejects an existing message with a missing group', async () => {
     const onSubmitEdit = vi.fn();
     directSubmitMocks.editDirectSubmit.mockResolvedValue({
       signal_message_id: 77,
@@ -439,14 +442,8 @@ describe('ManageMessageDrawer edit mode', () => {
       form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
     });
 
-    // Before the fix, the create-mode zod rules (required group, strict coords, strict
-    // freq format) would fail validation and onSubmitEdit would never be called.
-    expect(onSubmitEdit).toHaveBeenCalledTimes(1);
-    expect(onSubmitEdit.mock.calls[0][0]).toBe(77);
-    expect(onSubmitEdit.mock.calls[0][1]).toMatchObject({
-      coords: 'somewhere near the ridge',
-      freq: 'unknown freq',
-    });
+    expect(directSubmitMocks.editDirectSubmit).not.toHaveBeenCalled();
+    expect(onSubmitEdit).not.toHaveBeenCalled();
 
     root.unmount();
   });
@@ -485,7 +482,104 @@ describe('ManageMessageDrawer edit mode', () => {
 
     expect(onSubmitEdit).toHaveBeenCalledTimes(1);
     expect(onSubmitEdit.mock.calls[0][1]).toMatchObject({ tags: originalTags });
+    expect(directSubmitMocks.editDirectSubmit.mock.calls[0][1].tags).toBeUndefined();
 
+    root.unmount();
+  });
+
+  it('submits the parsed body separately from the full source', async () => {
+    directSubmitMocks.editDirectSubmit.mockResolvedValue({
+      signal_message_id: 90,
+      message: buildMessage(),
+    });
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    await act(async () => {
+      root.render(
+        <ManageMessageDrawer
+          open
+          cyberEchoEnabled={false}
+          currentUser={null}
+          onClose={vi.fn()}
+          editTarget={{
+            id: 90,
+            message: buildMessage({
+              text: 'header\nbody only',
+              noHeadersBody: { start: 7, end: 16, body: 'body only' },
+            }),
+          }}
+        />,
+      );
+    });
+
+    const form = container.querySelector('form') as HTMLFormElement;
+    await act(async () => {
+      form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    });
+
+    expect(directSubmitMocks.editDirectSubmit.mock.calls[0][1]).toMatchObject({
+      full_body: 'header\nbody only',
+      text: 'body only',
+    });
+    root.unmount();
+  });
+
+  it('preserves every DMR metadata row in the edit payload', async () => {
+    directSubmitMocks.editDirectSubmit.mockResolvedValue({
+      signal_message_id: 91,
+      message: buildMessage(),
+    });
+    const metadataBase = {
+      colorCodeStartIndex: null,
+      colorCodeEndIndex: null,
+      callGroupId: null,
+      callGroupIdStartIndex: null,
+      callGroupIdEndIndex: null,
+      callGroupName: null,
+      callGroupNameStartIndex: null,
+      callGroupNameEndIndex: null,
+      senderIdStartIndex: null,
+      senderIdEndIndex: null,
+      senderName: null,
+      senderNameStartIndex: null,
+      senderNameEndIndex: null,
+      hashId: null,
+      hashIdStartIndex: null,
+      hashIdEndIndex: null,
+    };
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    await act(async () => {
+      root.render(
+        <ManageMessageDrawer
+          open
+          cyberEchoEnabled={false}
+          currentUser={null}
+          onClose={vi.fn()}
+          editTarget={{
+            id: 91,
+            message: buildMessage({
+              metadata: [
+                { ...metadataBase, colorCode: '3', senderId: '101' },
+                { ...metadataBase, colorCode: '3', senderId: '202' },
+              ],
+            }),
+          }}
+        />,
+      );
+    });
+
+    const form = container.querySelector('form') as HTMLFormElement;
+    await act(async () => {
+      form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    });
+
+    expect(directSubmitMocks.editDirectSubmit.mock.calls[0][1].dmr).toMatchObject([
+      { cc: 3, sender_id: 101, signal_name: 'DMR' },
+      { cc: 3, sender_id: 202, signal_name: 'DMR' },
+    ]);
     root.unmount();
   });
 

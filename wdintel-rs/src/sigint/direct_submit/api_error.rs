@@ -30,6 +30,10 @@ impl DirectSubmitApiError {
     fn code_and_message(&self) -> (&'static str, String) {
         match &self.source {
             AppError::BL { msg } => ("validation_error", msg.clone()),
+            AppError::Form(errors) => (
+                "validation_error",
+                errors.values().cloned().collect::<Vec<_>>().join(" "),
+            ),
             AppError::NotFound => (
                 "not_found",
                 match self.action {

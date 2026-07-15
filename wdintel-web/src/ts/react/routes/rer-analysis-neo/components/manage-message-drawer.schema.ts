@@ -68,14 +68,32 @@ export function formatFileSize(bytes: number | null | undefined): string {
   return `${rounded} ${units[unitIndex]}`;
 }
 
+const optionalDmrText = z.string().optional();
+const dmrMetadataSchema = z.object({
+  cc: optionalDmrText.refine(
+    (value) => {
+      if (!value?.trim()) return true;
+      const parsed = Number(value.trim());
+      return Number.isInteger(parsed) && parsed >= 0 && parsed <= 15;
+    },
+    { message: 'Color Code має бути цілим числом від 0 до 15' },
+  ),
+  sender_id: optionalDmrText,
+  sender_name: optionalDmrText,
+  call_group_id: optionalDmrText,
+  call_group_name: optionalDmrText,
+  hash_id: optionalDmrText,
+});
+
+function hasDmrMetadataValue(metadata: z.infer<typeof dmrMetadataSchema>): boolean {
+  return Object.values(metadata).some((value) => value?.trim());
+}
+
 export function makeMessageSchema(isEditMode: boolean) {
   return z
     .object({
       text: z.string().optional(),
-      signalGroupMasterKey: z
-        .string()
-        .trim()
-        .refine((value) => isEditMode || value.length > 0, { message: 'Оберіть групу' }),
+      signalGroupMasterKey: z.string().trim().min(1, 'Оберіть групу'),
       computerName: z.string().optional(),
       freq: z
         .string()
@@ -94,29 +112,12 @@ export function makeMessageSchema(isEditMode: boolean) {
       unit: z.string().optional(),
       locations: z.array(z.string()).optional(),
       network_signal_name: z.string().optional(),
-      network_cc: z
-        .string()
-        .optional()
-        .refine(
-          (value) => {
-            if (!value?.trim()) return true;
-            const parsed = Number(value.trim());
-            return Number.isInteger(parsed) && parsed >= 0 && parsed <= 15;
-          },
-          { message: 'Color Code має бути цілим числом від 0 до 15' },
-        ),
       network_name: z.string().optional(),
-      dmr_sender_id: z.string().optional(),
-      dmr_sender_name: z.string().optional(),
-      dmr_call_group_id: z.string().optional(),
-      dmr_call_group_name: z.string().optional(),
-      dmr_hash_id: z.string().optional(),
+      dmr: z.array(dmrMetadataSchema),
       deleted_media_ids: z.array(z.string()).optional(),
     })
     .superRefine((data, ctx) => {
-      if (isEditMode) return;
-
-      if (data.coords?.trim() && !parseCoordLine(data.coords)) {
+      if (!isEditMode && data.coords?.trim() && !parseCoordLine(data.coords)) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
           path: ['coords'],
@@ -124,27 +125,11 @@ export function makeMessageSchema(isEditMode: boolean) {
         });
       }
 
-      if (data.network_name?.trim() && !data.network_signal_name?.trim()) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ['network_signal_name'],
-          message: "Поле обов'язкове, якщо обрана мережа",
-        });
-      }
-
-      const isDmr = !!(
-        data.network_signal_name?.trim().toLowerCase() === 'dmr' ||
-        data.dmr_sender_id?.trim() ||
-        data.dmr_sender_name?.trim() ||
-        data.dmr_call_group_id?.trim() ||
-        data.dmr_call_group_name?.trim() ||
-        data.dmr_hash_id?.trim()
-      );
-      if (isDmr && !data.network_name?.trim() && (!data.freq || !data.freq.trim())) {
+      if (data.dmr.some(hasDmrMetadataValue) && !data.freq?.trim()) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
           path: ['freq'],
-          message: "Частота є обов'язковою для DMR метаданих (якщо не вказана мережа)",
+          message: "Частота є обов'язковою для DMR метаданих",
         });
       }
     });
@@ -168,12 +153,7 @@ export const EMPTY_FORM_VALUES: MessageFormData = {
   unit: '',
   locations: [],
   network_signal_name: '',
-  network_cc: '',
   network_name: '',
-  dmr_sender_id: '',
-  dmr_sender_name: '',
-  dmr_call_group_id: '',
-  dmr_call_group_name: '',
-  dmr_hash_id: '',
+  dmr: [],
   deleted_media_ids: [],
 };

@@ -98,6 +98,20 @@ describe('mapInboxMessageToForm', () => {
     const values = mapInboxMessageToForm(buildMessage({ tags: [7, 99] }), tagsMap);
     expect(values.tags).toEqual(['арта']);
   });
+
+  it('converts the UTC timestamp to Kyiv date and time', () => {
+    const values = mapInboxMessageToForm(
+      buildMessage({
+        timestamp: Date.parse('2026-07-01T10:45:00Z'),
+        date: '2000-01-01',
+        time: '00:00',
+      }),
+      tagsMap,
+    );
+
+    expect(values.date?.format('YYYY-MM-DD')).toBe('2026-07-01');
+    expect(values.time?.format('HH:mm')).toBe('13:45');
+  });
 });
 
 describe('mapFormToInboxMessage', () => {

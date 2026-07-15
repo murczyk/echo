@@ -269,9 +269,7 @@ async fn prepare_inbox_submit_item(
     item: &InboxSubmitItem,
     allow_empty_content: bool,
 ) -> Result<PreparedInboxSubmitItem, AppError> {
-    if !allow_empty_content {
-        super::validate_submit_item_content(item)?;
-    }
+    super::validate_submit_item_content(item)?;
     let tag_ids =
         super::resolve_submit_tag_ids(txn, item.tags.as_deref()).await?;
     let operator_tags = super::submit_operator_tags(item.tags.as_deref())?;

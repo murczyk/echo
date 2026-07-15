@@ -23,7 +23,6 @@ export function AdvancedFieldsSection({
 }: Props) {
   const {
     control,
-    trigger,
     formState: { errors },
   } = useFormContext<MessageFormData>();
 
@@ -52,12 +51,10 @@ export function AdvancedFieldsSection({
                 if (reason === 'input') {
                   setSignalNameInput(newValue);
                   field.onChange(newValue);
-                  void trigger('network_cc');
                 }
               }}
               onChange={(_, newValue) => {
                 field.onChange(newValue || '');
-                void trigger('network_cc');
               }}
               renderInput={(params) => (
                 <TextField

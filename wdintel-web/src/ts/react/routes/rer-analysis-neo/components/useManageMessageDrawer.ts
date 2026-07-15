@@ -67,6 +67,7 @@ export function useManageMessageDrawer({
 
   const [tagOptions, setTagOptions] = useState<string[]>([]);
   const [tagsMap, setTagsMap] = useState<Record<number, Tag>>({});
+  const [tagsLoaded, setTagsLoaded] = useState(false);
 
   const [computerNameOptions, setComputerNameOptions] = useState<string[]>([]);
   const [computerNamesLoading, setComputerNamesLoading] = useState(false);
@@ -272,10 +273,12 @@ export function useManageMessageDrawer({
 
     fetchGroups();
 
+    setTagsLoaded(false);
     getTagsForDisplay()
       .then(({ tagsMap, tagsOrder }) => {
         if (!active) return;
         setTagsMap(tagsMap);
+        setTagsLoaded(true);
         setTagOptions(
           tagsOrder
             .map((tagId) => tagsMap[tagId]?.label)
@@ -300,20 +303,22 @@ export function useManageMessageDrawer({
     setShowAdvanced(false);
     setErrorMsg(null);
     if (isEditMode && editTarget) {
-      const meta = editTarget.message.metadata?.[0];
+      const metadata = editTarget.message.metadata ?? [];
       reset({
         ...mapInboxMessageToForm(editTarget.message, tagsMap),
-        text: editTarget.message.text ?? '',
+        text: editTarget.message.noHeadersBody?.body ?? editTarget.message.text ?? '',
         signalGroupMasterKey: editTarget.message.groupMasterKey ?? '',
         computerName: '',
-        network_signal_name: meta || editTarget.message.networkIds?.length ? 'DMR' : '',
-        network_cc: meta?.colorCode ?? '',
+        network_signal_name: metadata.length || editTarget.message.networkIds?.length ? 'DMR' : '',
         network_name: '',
-        dmr_sender_id: meta?.senderId ?? '',
-        dmr_sender_name: meta?.senderName ?? '',
-        dmr_call_group_id: meta?.callGroupId ?? '',
-        dmr_call_group_name: meta?.callGroupName ?? '',
-        dmr_hash_id: meta?.hashId ?? '',
+        dmr: metadata.map((item) => ({
+          cc: item.colorCode ?? '',
+          sender_id: item.senderId ?? '',
+          sender_name: item.senderName ?? '',
+          call_group_id: item.callGroupId ?? '',
+          call_group_name: item.callGroupName ?? '',
+          hash_id: item.hashId ?? '',
+        })),
       });
     } else {
       reset({
@@ -380,7 +385,7 @@ export function useManageMessageDrawer({
     isEditMode,
     editTarget,
     onSubmitEdit,
-    tagsMap,
+    tagsLoaded,
     setSubmitting,
     setErrorMsg,
     uppy,

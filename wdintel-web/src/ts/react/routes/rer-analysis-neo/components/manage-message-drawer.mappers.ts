@@ -1,9 +1,14 @@
 import dayjs from 'dayjs';
 import type { Dayjs } from 'dayjs';
 import customParseFormat from 'dayjs/plugin/customParseFormat';
+import timezone from 'dayjs/plugin/timezone';
+import utc from 'dayjs/plugin/utc';
 import type { InboxMessage, Tag } from '../../../../../Bindings';
+import { APP_TIME_ZONE } from '../../../utils/misc';
 
 dayjs.extend(customParseFormat);
+dayjs.extend(utc);
+dayjs.extend(timezone);
 
 export type MessageFormValues = {
   full_body: string;
@@ -41,11 +46,12 @@ export function mapInboxMessageToForm(
   message: InboxMessage,
   tagsMap: Record<number, Tag>,
 ): MessageFormValues {
+  const timestamp = message.timestamp == null ? null : dayjs(message.timestamp).tz(APP_TIME_ZONE);
   return {
     full_body: message.text ?? '',
     comment: message.extendedForm ?? '',
-    date: parseDay(message.date, 'YYYY-MM-DD'),
-    time: parseDay(message.time, 'HH:mm'),
+    date: timestamp?.isValid() ? timestamp : parseDay(message.date, 'YYYY-MM-DD'),
+    time: timestamp?.isValid() ? timestamp : parseDay(message.time, 'HH:mm'),
     freq: message.freq ?? '',
     coords: message.coords ?? '',
     callsigns: message.callsigns ?? [],

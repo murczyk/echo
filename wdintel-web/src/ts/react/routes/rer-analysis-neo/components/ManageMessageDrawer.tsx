@@ -239,12 +239,7 @@ export function ManageMessageDrawer(props: Props) {
 
                 <CommentSection busy={busy} />
 
-                <DmrSection
-                  isEditMode={isEditMode}
-                  showAdvanced={showAdvanced}
-                  busy={busy}
-                  recentValues={recentValues}
-                />
+                <DmrSection showAdvanced={showAdvanced} busy={busy} recentValues={recentValues} />
 
                 <AdvancedFieldsSection
                   showAdvanced={showAdvanced}

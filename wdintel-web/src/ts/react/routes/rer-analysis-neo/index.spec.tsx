@@ -127,6 +127,14 @@ vi.mock('./components/AnalysisSummaryTableCard', () => ({
   AnalysisSummaryTableCard: () => <div data-testid="summary-card" />,
 }));
 
+vi.mock('./components/CreateMessageFab', () => ({
+  CreateMessageFab: () => <button type="button">create message</button>,
+}));
+
+vi.mock('./components/ManageMessageDrawer', () => ({
+  ManageMessageDrawer: () => <div data-testid="manage-message-drawer" />,
+}));
+
 vi.mock('./use-min-duration-busy', () => ({
   useMinDurationBusy: (value: boolean) => value,
 }));
