@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ContentNode, InboxMessage, PalitraReadV2 } from '../../../../../Bindings';
 import {
   convertCoordinateToWgs84,
+  extractCoordinates,
   renderWgsFloat,
   type ImporterCoordinate,
 } from '../../importer-beta/coordinates';
@@ -118,6 +119,52 @@ describe('message coordinate preview resolver', () => {
     expect(searchPalitraPoints).not.toHaveBeenCalled();
   });
 
+  it('resolves valid DMS coordinates from message text without loading palitras', async () => {
+    const dmsCoordinate = extractCoordinates("50°27'13 30°31'24").find(
+      (coordinate) => coordinate.kind === 'dms',
+    );
+    expect(dmsCoordinate?.kind).toBe('dms');
+    const expected = convertCoordinateToWgs84(dmsCoordinate!);
+    expect(expected).not.toBeNull();
+
+    const result = await resolveMessageCoordinatePreview({
+      message: createMessage({
+        text: "50°27'13 30°31'24",
+      }),
+    });
+
+    expect(result?.source).toBe('direct');
+    expect(result?.point).toMatchObject({
+      lat: expected!.lat,
+      lng: expected!.lng,
+    });
+    expect(listMapPalitrasV2).not.toHaveBeenCalled();
+    expect(searchPalitraPoints).not.toHaveBeenCalled();
+  });
+
+  it('resolves valid DMS coordinates from msg.coords without loading palitras', async () => {
+    const dmsCoordinate = extractCoordinates("50°27'13 30°31'24").find(
+      (coordinate) => coordinate.kind === 'dms',
+    );
+    expect(dmsCoordinate?.kind).toBe('dms');
+    const expected = convertCoordinateToWgs84(dmsCoordinate!);
+    expect(expected).not.toBeNull();
+
+    const result = await resolveMessageCoordinatePreview({
+      message: createMessage({
+        coords: "50°27'13 30°31'24",
+      }),
+    });
+
+    expect(result?.source).toBe('direct');
+    expect(result?.point).toMatchObject({
+      lat: expected!.lat,
+      lng: expected!.lng,
+    });
+    expect(listMapPalitrasV2).not.toHaveBeenCalled();
+    expect(searchPalitraPoints).not.toHaveBeenCalled();
+  });
+
   it('resolves direct UTM coordinates and converts them to WGS84', async () => {
     const expected = parseCoordinateInput('33T 292332 4642055');
     expect(expected).not.toBeNull();
@@ -182,6 +229,54 @@ describe('message coordinate preview resolver', () => {
     const result = await resolveMessageCoordinatePreview({
       message: createMessage({
         text: '33T 29233 4642055',
+      }),
+    });
+
+    expect(result).toBeNull();
+    expect(listMapPalitrasV2).not.toHaveBeenCalled();
+    expect(searchPalitraPoints).not.toHaveBeenCalled();
+  });
+
+  it('does not resolve invalid DMS coordinates', async () => {
+    const result = await resolveMessageCoordinatePreview({
+      message: createMessage({
+        text: "50°61'13 30°31'24",
+      }),
+    });
+
+    expect(result).toBeNull();
+    expect(listMapPalitrasV2).not.toHaveBeenCalled();
+    expect(searchPalitraPoints).not.toHaveBeenCalled();
+  });
+
+  it('does not resolve DMS coordinates with seconds >= 60', async () => {
+    const result = await resolveMessageCoordinatePreview({
+      message: createMessage({
+        text: "50°27'60 30°31'24",
+      }),
+    });
+
+    expect(result).toBeNull();
+    expect(listMapPalitrasV2).not.toHaveBeenCalled();
+    expect(searchPalitraPoints).not.toHaveBeenCalled();
+  });
+
+  it('does not resolve DMS coordinates with latitude degrees above 90', async () => {
+    const result = await resolveMessageCoordinatePreview({
+      message: createMessage({
+        text: "91°00'00 30°31'24",
+      }),
+    });
+
+    expect(result).toBeNull();
+    expect(listMapPalitrasV2).not.toHaveBeenCalled();
+    expect(searchPalitraPoints).not.toHaveBeenCalled();
+  });
+
+  it('does not resolve DMS coordinates with longitude degrees above 180', async () => {
+    const result = await resolveMessageCoordinatePreview({
+      message: createMessage({
+        text: "50°27'13 181°00'00",
       }),
     });
 
@@ -347,6 +442,31 @@ describe('hasCoordinatePreviewCandidate', () => {
       label: 'USK-2000 text',
       message: createMessage({ text: 'X=5012345\nY=5034567' }),
       expected: true,
+    },
+    {
+      label: 'DMS text',
+      message: createMessage({ text: "50°27'13 30°31'24" }),
+      expected: true,
+    },
+    {
+      label: 'invalid DMS text',
+      message: createMessage({ text: "50°61'13 30°31'24" }),
+      expected: false,
+    },
+    {
+      label: 'seconds >= 60',
+      message: createMessage({ text: "50°27'60 30°31'24" }),
+      expected: false,
+    },
+    {
+      label: 'latitude degrees above 90',
+      message: createMessage({ text: "91°00'00 30°31'24" }),
+      expected: false,
+    },
+    {
+      label: 'longitude degrees above 180',
+      message: createMessage({ text: "50°27'13 181°00'00" }),
+      expected: false,
     },
     {
       label: 'Palitra token',

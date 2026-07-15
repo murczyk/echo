@@ -91,6 +91,27 @@ function extractCoordinateInputs(text: string): string[] {
   return [...candidates];
 }
 
+function isValidPreviewDmsValue(value: { deg: number; min: number; sec: number }, maxDeg: number) {
+  return (
+    Number.isFinite(value.deg) &&
+    Number.isFinite(value.min) &&
+    Number.isFinite(value.sec) &&
+    value.deg >= 0 &&
+    value.deg <= maxDeg &&
+    value.min >= 0 &&
+    value.min < 60 &&
+    value.sec >= 0 &&
+    value.sec < 60
+  );
+}
+
+function isValidPreviewDmsCoordinate(coord: {
+  lat: { deg: number; min: number; sec: number };
+  lng: { deg: number; min: number; sec: number };
+}) {
+  return isValidPreviewDmsValue(coord.lat, 90) && isValidPreviewDmsValue(coord.lng, 180);
+}
+
 function formatDirectCoordinateLabel(lat: number, lng: number): string {
   return `${renderWgsFloat(lat)}, ${renderWgsFloat(lng)}`;
 }
@@ -128,7 +149,7 @@ function resolveDirectCoordinateFromCoordinateText(
     }
 
     for (const coord of extractCoordinates(candidate)) {
-      if (coord.kind === 'dms') {
+      if (coord.kind === 'dms' && !isValidPreviewDmsCoordinate(coord)) {
         continue;
       }
 
