@@ -40,7 +40,12 @@ const INDEX_HTML: &str = r#"<!doctype html>
       </div>
     </header>
 
-    <section class="grid gap-4 lg:grid-cols-[360px_1fr]">
+    <nav class="flex gap-2 border-b border-zinc-800" aria-label="Розділи">
+      <button id="integrationsTabBtn" class="border-b-2 border-sky-400 px-3 py-2 text-sm text-zinc-100" type="button">Інтеграції</button>
+      <button id="automationsTabBtn" class="border-b-2 border-transparent px-3 py-2 text-sm text-zinc-400 hover:text-zinc-100" type="button">Автоматизації</button>
+    </nav>
+
+    <section id="integrationsTab" class="grid gap-4 lg:grid-cols-[360px_1fr]">
       <form id="createForm" class="rounded-lg border border-zinc-800 bg-zinc-900/70 p-4">
         <h2 class="text-base font-medium">Новий месенджер</h2>
         <div class="mt-4 grid gap-3">
@@ -72,6 +77,85 @@ const INDEX_HTML: &str = r#"<!doctype html>
         <div id="list" class="grid gap-3 p-4"></div>
       </section>
     </section>
+
+    <section id="automationsTab" class="hidden grid gap-4 lg:grid-cols-[360px_1fr_280px]">
+      <form id="automationForm" class="rounded-lg border border-zinc-800 bg-zinc-900/70 p-4">
+        <h2 class="text-base font-medium">Нова автоматизація</h2>
+        <div class="mt-4 grid gap-3">
+          <label class="grid gap-1 text-sm">
+            <span class="text-zinc-400">Назва</span>
+            <input id="automationNameInput" class="h-10 rounded-md border border-zinc-700 bg-zinc-950 px-3 text-zinc-100 outline-none focus:border-sky-500" placeholder="координати у штаб" />
+          </label>
+          <label class="grid gap-1 text-sm">
+            <span class="text-zinc-400">Акаунт читання</span>
+            <select id="sourceAccountInput" class="h-10 rounded-md border border-zinc-700 bg-zinc-950 px-3 text-zinc-100 outline-none focus:border-sky-500" required></select>
+          </label>
+          <label class="grid gap-1 text-sm">
+            <span class="text-zinc-400">Група-джерело</span>
+            <select id="sourceGroupInput" class="h-10 rounded-md border border-zinc-700 bg-zinc-950 px-3 text-zinc-100 outline-none focus:border-sky-500" required></select>
+          </label>
+          <label class="grid gap-1 text-sm">
+            <span class="text-zinc-400">Акаунт надсилання</span>
+            <select id="targetAccountInput" class="h-10 rounded-md border border-zinc-700 bg-zinc-950 px-3 text-zinc-100 outline-none focus:border-sky-500" required></select>
+          </label>
+          <label class="grid gap-1 text-sm">
+            <span class="text-zinc-400">Група-призначення</span>
+            <select id="targetGroupInput" class="h-10 rounded-md border border-zinc-700 bg-zinc-950 px-3 text-zinc-100 outline-none focus:border-sky-500" required></select>
+          </label>
+          <label class="grid gap-1 text-sm">
+            <span class="text-zinc-400">Ключові слова</span>
+            <input id="keywordTokenInput" class="h-10 rounded-md border border-zinc-700 bg-zinc-950 px-3 text-zinc-100 outline-none focus:border-sky-500" placeholder="слово, Enter" />
+            <div id="keywordTokens" class="flex min-h-7 flex-wrap gap-1"></div>
+          </label>
+          <label class="grid gap-1 text-sm">
+            <span class="text-zinc-400">Частоти</span>
+            <input id="frequencyTokenInput" class="h-10 rounded-md border border-zinc-700 bg-zinc-950 px-3 text-zinc-100 outline-none focus:border-sky-500" placeholder="149.200, Enter" />
+            <div id="frequencyTokens" class="flex min-h-7 flex-wrap gap-1"></div>
+          </label>
+          <label class="grid gap-1 text-sm">
+            <span class="text-zinc-400">Ігнорувати повідомлення старші за, хв</span>
+            <input id="staleMinutesInput" type="number" min="0" value="60" class="h-10 rounded-md border border-zinc-700 bg-zinc-950 px-3 text-zinc-100 outline-none focus:border-sky-500" required />
+          </label>
+          <label class="grid gap-1 text-sm">
+            <span class="text-zinc-400">Повідомлення із координатами</span>
+            <select id="coordinatePresenceInput" class="h-10 rounded-md border border-zinc-700 bg-zinc-950 px-3 text-zinc-100 outline-none focus:border-sky-500">
+              <option value="any">--</option>
+              <option value="skip_with_coordinates">Ігнорувати повідомлення із координатами</option>
+              <option value="skip_without_coordinates">Ігнорувати повідомлення без координат</option>
+            </select>
+          </label>
+          <label class="grid gap-1 text-sm">
+            <span class="text-zinc-400">Полігон</span>
+            <select id="polygonModeInput" class="h-10 rounded-md border border-zinc-700 bg-zinc-950 px-3 text-zinc-100 outline-none focus:border-sky-500">
+              <option value="none">Не фільтрувати</option>
+              <option value="inside">Ігнорувати всередині</option>
+              <option value="outside">Ігнорувати зовні</option>
+            </select>
+          </label>
+          <label class="grid gap-1 text-sm">
+            <span class="text-zinc-400">Координати полігону</span>
+            <textarea id="polygonCoordinatesInput" class="min-h-24 rounded-md border border-zinc-700 bg-zinc-950 px-3 py-2 text-zinc-100 outline-none focus:border-sky-500" placeholder="37U DR 05997 22279&#10;37U DR 06020 22340&#10;37U DR 06090 22270"></textarea>
+          </label>
+          <label class="flex items-center gap-2 text-sm text-zinc-300">
+            <input id="resendAttachmentsInput" type="checkbox" class="h-4 w-4 rounded border-zinc-700 bg-zinc-950" />
+            Пересилати вкладення
+          </label>
+          <button class="mt-2 h-10 rounded-md bg-sky-500 px-4 text-sm font-medium text-zinc-950 hover:bg-sky-400" type="submit">Створити</button>
+          <p id="automationFormMsg" class="min-h-5 text-sm text-zinc-400"></p>
+        </div>
+      </form>
+
+      <section class="rounded-lg border border-zinc-800 bg-zinc-900/50">
+        <div class="border-b border-zinc-800 px-4 py-3">
+          <h2 class="text-base font-medium">Автоматизації</h2>
+        </div>
+        <div id="automationList" class="grid gap-3 p-4"></div>
+      </section>
+
+      <aside class="rounded-lg border border-zinc-800 bg-zinc-900/70 p-4 text-sm text-zinc-300">
+        Автоматизація пересилає нові повідомлення з вибраної групи у цільову, якщо текст містить задані ключові слова або частоти. Можна враховувати координати, полігон, вік повідомлення та вкладення.
+      </aside>
+    </section>
   </main>
 
   <dialog id="qrDialog" class="w-[min(92vw,420px)] rounded-lg border border-zinc-800 bg-zinc-950 p-0 text-zinc-100 backdrop:bg-black/70">
@@ -90,7 +174,9 @@ const INDEX_HTML: &str = r#"<!doctype html>
 
   <script>
     const list = document.getElementById('list');
+    const automationList = document.getElementById('automationList');
     const formMsg = document.getElementById('formMsg');
+    const automationFormMsg = document.getElementById('automationFormMsg');
     const qrDialog = document.getElementById('qrDialog');
     const qrBox = document.getElementById('qrBox');
     const qrTitle = document.getElementById('qrTitle');
@@ -100,6 +186,11 @@ const INDEX_HTML: &str = r#"<!doctype html>
     let pollTimer = null;
     let globalPaused = false;
     let currentQrName = null;
+    let activeTab = 'integrations';
+    let automationAccounts = [];
+    let automationGroups = [];
+    let keywordTokens = [];
+    let frequencyTokens = [];
 
     function appBasePath() {
       const path = window.location.pathname;
@@ -128,6 +219,9 @@ const INDEX_HTML: &str = r#"<!doctype html>
 
     async function load() {
       await loadGlobalPause();
+      await loadAutomationAccounts();
+      await loadAutomationGroups();
+      await loadAutomations();
       list.innerHTML = '<div class="p-4 text-sm text-zinc-400">Завантаження...</div>';
       try {
         const data = await request(appUrl('/ui-api/messengers'));
@@ -140,6 +234,111 @@ const INDEX_HTML: &str = r#"<!doctype html>
       } catch (err) {
         list.innerHTML = `<div class="p-4 text-sm text-red-400">${err.message}</div>`;
       }
+    }
+
+    function setActiveTab(tab) {
+      activeTab = tab;
+      document.getElementById('integrationsTab').classList.toggle('hidden', tab !== 'integrations');
+      document.getElementById('automationsTab').classList.toggle('hidden', tab !== 'automations');
+      document.getElementById('integrationsTabBtn').className = tab === 'integrations'
+        ? 'border-b-2 border-sky-400 px-3 py-2 text-sm text-zinc-100'
+        : 'border-b-2 border-transparent px-3 py-2 text-sm text-zinc-400 hover:text-zinc-100';
+      document.getElementById('automationsTabBtn').className = tab === 'automations'
+        ? 'border-b-2 border-sky-400 px-3 py-2 text-sm text-zinc-100'
+        : 'border-b-2 border-transparent px-3 py-2 text-sm text-zinc-400 hover:text-zinc-100';
+    }
+
+    async function loadAutomationGroups() {
+      automationGroups = await request(appUrl('/ui-api/automation-groups'));
+      renderAutomationFormSelects();
+    }
+
+    async function loadAutomationAccounts() {
+      automationAccounts = await request(appUrl('/ui-api/automation-accounts'));
+      renderAutomationFormSelects();
+    }
+
+    async function loadAutomations() {
+      automationList.innerHTML = '<div class="p-4 text-sm text-zinc-400">Завантаження...</div>';
+      try {
+        const data = await request(appUrl('/ui-api/automations'));
+        if (data.length === 0) {
+          automationList.innerHTML = '<div class="p-4 text-sm text-zinc-400">Автоматизацій ще немає.</div>';
+          return;
+        }
+        automationList.innerHTML = '';
+        data.forEach(renderAutomationRow);
+      } catch (err) {
+        automationList.innerHTML = `<div class="p-4 text-sm text-red-400">${err.message}</div>`;
+      }
+    }
+
+    function renderAutomationFormSelects() {
+      renderAccountSelect(document.getElementById('sourceAccountInput'));
+      renderAccountSelect(document.getElementById('targetAccountInput'));
+      renderGroupSelect(
+        document.getElementById('sourceGroupInput'),
+        Number(document.getElementById('sourceAccountInput').value),
+      );
+      renderGroupSelect(
+        document.getElementById('targetGroupInput'),
+        Number(document.getElementById('targetAccountInput').value),
+      );
+    }
+
+    function renderAccountSelect(select) {
+      const current = Number(select.value);
+      select.innerHTML = '<option value="">Оберіть акаунт</option>' + automationAccounts.map(account => {
+        const icon = account.messengerKind === 'signal' ? '●' : '◆';
+        const linked = account.isLinked ? '' : ' · не підключено';
+        return `<option value="${account.id}">${icon} ${account.name} · ${account.phone}${linked}</option>`;
+      }).join('');
+      if (automationAccounts.some(account => account.id === current)) {
+        select.value = String(current);
+      } else if (automationAccounts.length > 0) {
+        select.value = String(automationAccounts[0].id);
+      }
+    }
+
+    function renderGroupSelect(select, accountId) {
+      const current = select.value;
+      const groups = automationGroups.filter(group => group.accountId === accountId);
+      select.innerHTML = '<option value="">Оберіть групу</option>' + groups.map(group => {
+        const icon = group.messengerKind === 'signal' ? '●' : '◆';
+        return `<option value="${group.id}">${icon} ${group.name} · ${group.messengerName}</option>`;
+      }).join('');
+      if (groups.some(group => String(group.id) === current)) {
+        select.value = current;
+      } else if (groups.length > 0) {
+        select.value = String(groups[0].id);
+      }
+    }
+
+    function renderToken(containerId, tokens, removePrefix) {
+      const container = document.getElementById(containerId);
+      container.innerHTML = tokens.map((token, index) => `
+        <button data-${removePrefix}-token="${index}" class="rounded bg-zinc-800 px-2 py-1 text-xs text-zinc-200 hover:bg-zinc-700" type="button">${token} ×</button>
+      `).join('');
+    }
+
+    function addToken(input, tokens, containerId, removePrefix) {
+      const parts = input.value.split(',').map(token => token.trim().toLowerCase()).filter(Boolean);
+      tokens.push(...parts);
+      const unique = [...new Set(tokens)].sort();
+      tokens.splice(0, tokens.length, ...unique);
+      input.value = '';
+      renderToken(containerId, tokens, removePrefix);
+    }
+
+    function bindTokenInput(inputId, tokens, containerId, removePrefix) {
+      const input = document.getElementById(inputId);
+      input.addEventListener('keydown', event => {
+        if (event.key === 'Enter' || event.key === ',') {
+          event.preventDefault();
+          addToken(input, tokens, containerId, removePrefix);
+        }
+      });
+      input.addEventListener('blur', () => addToken(input, tokens, containerId, removePrefix));
     }
 
     function copyIcon() {
@@ -242,6 +441,68 @@ const INDEX_HTML: &str = r#"<!doctype html>
       list.appendChild(row);
     }
 
+    function renderAutomationRow(item) {
+      const row = document.createElement('article');
+      row.className = 'grid gap-3 rounded-md border border-zinc-800 bg-zinc-950 p-4';
+      const usage = item.usage || { last24h: 0, last7d: 0, allTime: 0 };
+      const checkpoint = item.checkpointAt > 0
+        ? new Date(item.checkpointAt).toLocaleString('uk-UA')
+        : 'ще не синхронізовано';
+      const warnings = [];
+      if (!item.isPaused && !item.sourceAccountIsLinked) {
+        warnings.push('Акаунт читання не підключено: нові повідомлення не синхронізуються.');
+      }
+      if (!item.isPaused && !item.targetAccountIsLinked) {
+        warnings.push('Акаунт надсилання не підключено: повідомлення не пересилаються.');
+      }
+      row.innerHTML = `
+        <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div class="min-w-0">
+            <div class="flex flex-wrap items-center gap-2">
+              <h3 class="truncate text-base font-medium">${item.name || `${item.sourceGroupName} → ${item.targetGroupName}`}</h3>
+              <span class="rounded bg-zinc-800 px-2 py-0.5 text-xs text-zinc-300">${item.sourceMessengerKind} → ${item.targetMessengerKind}</span>
+              <span class="${item.status === 'error' ? 'text-red-400' : item.isPaused ? 'text-amber-300' : 'text-emerald-400'} text-sm">${item.isPaused ? 'пауза' : item.status}</span>
+            </div>
+            <p class="mt-1 text-sm text-zinc-400">${item.sourceAccountName} / ${item.sourceGroupName} → ${item.targetAccountName} / ${item.targetGroupName}</p>
+            <p class="mt-1 text-xs text-zinc-500">${[...item.keywordTokens, ...item.frequencyTokens].join(', ')}</p>
+            <p class="mt-1 text-xs text-zinc-500">Синхронізовано до: ${checkpoint}</p>
+            ${warnings.map(warning => `<p class="mt-1 text-xs text-amber-300">${warning}</p>`).join('')}
+            ${item.lastError ? `<p class="mt-1 text-xs text-red-400">${item.lastError}</p>` : ''}
+          </div>
+          <div class="flex shrink-0 items-center gap-2">
+            <span class="rounded bg-zinc-900 px-2 py-1 text-xs text-zinc-300">${usage.last24h}/${usage.last7d}/${usage.allTime}</span>
+            <button data-automation-pause="${item.id}" data-paused="${item.isPaused}" class="inline-flex h-9 w-9 items-center justify-center rounded-md border ${item.isPaused ? 'border-amber-700 text-amber-300 hover:bg-amber-950/40' : 'border-zinc-700 text-zinc-200 hover:bg-zinc-900'}" type="button" aria-label="${item.isPaused ? 'Запустити автоматизацію' : 'Зупинити автоматизацію'}" title="${item.isPaused ? 'Запустити автоматизацію' : 'Зупинити автоматизацію'}">${item.isPaused ? playIcon() : pauseIcon()}</button>
+            <button data-automation-delete="${item.id}" class="inline-flex h-9 w-9 items-center justify-center rounded-md bg-red-600 text-white hover:bg-red-500" type="button" aria-label="Видалити автоматизацію" title="Видалити автоматизацію">${deleteIcon()}</button>
+          </div>
+        </div>
+      `;
+      automationList.appendChild(row);
+    }
+
+    function polygonCoordinates() {
+      return document.getElementById('polygonCoordinatesInput').value
+        .split('\n')
+        .map(value => value.trim())
+        .filter(Boolean);
+    }
+
+    function automationPayload() {
+      return {
+        name: document.getElementById('automationNameInput').value.trim(),
+        sourceAccountId: Number(document.getElementById('sourceAccountInput').value),
+        sourceGroupId: Number(document.getElementById('sourceGroupInput').value),
+        targetAccountId: Number(document.getElementById('targetAccountInput').value),
+        targetGroupId: Number(document.getElementById('targetGroupInput').value),
+        keywordTokens,
+        frequencyTokens,
+        staleMessageCutoffMinutes: Number(document.getElementById('staleMinutesInput').value),
+        resendAttachments: document.getElementById('resendAttachmentsInput').checked,
+        coordinatePresenceMode: document.getElementById('coordinatePresenceInput').value,
+        polygonFilterMode: document.getElementById('polygonModeInput').value,
+        polygonCoordinates: polygonCoordinates(),
+      };
+    }
+
     document.getElementById('createForm').addEventListener('submit', async (event) => {
       event.preventDefault();
       formMsg.textContent = 'Створення...';
@@ -259,6 +520,77 @@ const INDEX_HTML: &str = r#"<!doctype html>
         await load();
       } catch (err) {
         formMsg.textContent = err.message;
+      }
+    });
+
+    document.getElementById('automationForm').addEventListener('submit', async (event) => {
+      event.preventDefault();
+      addToken(document.getElementById('keywordTokenInput'), keywordTokens, 'keywordTokens', 'keyword');
+      addToken(document.getElementById('frequencyTokenInput'), frequencyTokens, 'frequencyTokens', 'frequency');
+      automationFormMsg.textContent = 'Створення...';
+      try {
+        await request(appUrl('/ui-api/automations'), {
+          method: 'POST',
+          body: JSON.stringify(automationPayload()),
+        });
+        automationFormMsg.textContent = 'Створено.';
+        event.target.reset();
+        keywordTokens = [];
+        frequencyTokens = [];
+        renderToken('keywordTokens', keywordTokens, 'keyword');
+        renderToken('frequencyTokens', frequencyTokens, 'frequency');
+        updatePolygonAvailability();
+        renderAutomationFormSelects();
+        await loadAutomations();
+      } catch (err) {
+        automationFormMsg.textContent = err.message;
+      }
+    });
+
+    document.getElementById('sourceAccountInput').addEventListener('change', () => {
+      renderGroupSelect(
+        document.getElementById('sourceGroupInput'),
+        Number(document.getElementById('sourceAccountInput').value),
+      );
+    });
+
+    document.getElementById('targetAccountInput').addEventListener('change', () => {
+      renderGroupSelect(
+        document.getElementById('targetGroupInput'),
+        Number(document.getElementById('targetAccountInput').value),
+      );
+    });
+
+    document.getElementById('keywordTokens').addEventListener('click', event => {
+      const button = event.target.closest('button');
+      if (!button?.dataset.keywordToken) return;
+      keywordTokens.splice(Number(button.dataset.keywordToken), 1);
+      renderToken('keywordTokens', keywordTokens, 'keyword');
+    });
+
+    document.getElementById('frequencyTokens').addEventListener('click', event => {
+      const button = event.target.closest('button');
+      if (!button?.dataset.frequencyToken) return;
+      frequencyTokens.splice(Number(button.dataset.frequencyToken), 1);
+      renderToken('frequencyTokens', frequencyTokens, 'frequency');
+    });
+
+    automationList.addEventListener('click', async (event) => {
+      const button = event.target.closest('button');
+      if (!button) return;
+      const pauseId = button.dataset.automationPause;
+      const deleteId = button.dataset.automationDelete;
+      if (pauseId) {
+        await request(appUrl(`/ui-api/automations/${pauseId}/pause`), {
+          method: 'POST',
+          body: JSON.stringify({ isPaused: button.dataset.paused !== 'true' }),
+        });
+        await loadAutomations();
+      }
+      if (deleteId) {
+        if (!confirm('Видалити автоматизацію?')) return;
+        await request(appUrl(`/ui-api/automations/${deleteId}`), { method: 'DELETE' });
+        await loadAutomations();
       }
     });
 
@@ -296,6 +628,16 @@ const INDEX_HTML: &str = r#"<!doctype html>
       }
       if (linkName) openQr(linkName);
     });
+
+    function updatePolygonAvailability() {
+      const disabled = document.getElementById('coordinatePresenceInput').value === 'skip_with_coordinates';
+      document.getElementById('polygonModeInput').disabled = disabled;
+      document.getElementById('polygonCoordinatesInput').disabled = disabled;
+      if (disabled) {
+        document.getElementById('polygonModeInput').value = 'none';
+        document.getElementById('polygonCoordinatesInput').value = '';
+      }
+    }
 
     async function openQr(name) {
       currentQrName = name;
@@ -345,6 +687,12 @@ const INDEX_HTML: &str = r#"<!doctype html>
       await load();
     });
     document.getElementById('refreshBtn').addEventListener('click', load);
+    document.getElementById('integrationsTabBtn').addEventListener('click', () => setActiveTab('integrations'));
+    document.getElementById('automationsTabBtn').addEventListener('click', () => setActiveTab('automations'));
+    document.getElementById('coordinatePresenceInput').addEventListener('change', updatePolygonAvailability);
+    bindTokenInput('keywordTokenInput', keywordTokens, 'keywordTokens', 'keyword');
+    bindTokenInput('frequencyTokenInput', frequencyTokens, 'frequencyTokens', 'frequency');
+    updatePolygonAvailability();
     load();
   </script>
 </body>
