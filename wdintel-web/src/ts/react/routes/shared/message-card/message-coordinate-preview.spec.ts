@@ -379,6 +379,105 @@ describe('message coordinate preview resolver', () => {
     expect(listMapPalitrasV2).toHaveBeenCalledTimes(1);
     expect(searchPalitraPoints).toHaveBeenCalledTimes(1);
   });
+
+  it('retries palette loading after a failed request and then resolves a palitra preview', async () => {
+    vi.mocked(listMapPalitrasV2)
+      .mockRejectedValueOnce(new Error('palette list failed'))
+      .mockResolvedValueOnce([createPalitra(7)] as never);
+    vi.mocked(searchPalitraPoints).mockResolvedValue([
+      {
+        points: [
+          {
+            label: 'BRAVO',
+            coords: { lat: 50.45, lng: 30.52 },
+          },
+        ],
+      },
+    ] as never);
+
+    const message = createMessage({
+      text: 'routine',
+      pointTokens: [{ etalon: 'BRAVO' }],
+    });
+
+    expect(await resolveMessageCoordinatePreview({ message })).toBeNull();
+    expect(await resolveMessageCoordinatePreview({ message })).toEqual({
+      source: 'palitra',
+      point: {
+        lat: 50.45,
+        lng: 30.52,
+        label: 'BRAVO',
+      },
+      etalons: ['BRAVO'],
+      pointCount: 1,
+    });
+    expect(listMapPalitrasV2).toHaveBeenCalledTimes(2);
+    expect(searchPalitraPoints).toHaveBeenCalledTimes(1);
+  });
+
+  it('retries point search after a failed request and then resolves a palitra preview', async () => {
+    vi.mocked(listMapPalitrasV2).mockResolvedValue([createPalitra(7)] as never);
+    vi.mocked(searchPalitraPoints)
+      .mockRejectedValueOnce(new Error('point search failed'))
+      .mockResolvedValueOnce([
+        {
+          points: [
+            {
+              label: 'BRAVO',
+              coords: { lat: 50.45, lng: 30.52 },
+            },
+          ],
+        },
+      ] as never);
+
+    const message = createMessage({
+      text: 'routine',
+      pointTokens: [{ etalon: 'BRAVO' }],
+    });
+
+    expect(await resolveMessageCoordinatePreview({ message })).toBeNull();
+    expect(await resolveMessageCoordinatePreview({ message })).toEqual({
+      source: 'palitra',
+      point: {
+        lat: 50.45,
+        lng: 30.52,
+        label: 'BRAVO',
+      },
+      etalons: ['BRAVO'],
+      pointCount: 1,
+    });
+    expect(listMapPalitrasV2).toHaveBeenCalledTimes(1);
+    expect(searchPalitraPoints).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps a genuine empty palette list cached', async () => {
+    vi.mocked(listMapPalitrasV2).mockResolvedValue([] as never);
+
+    const message = createMessage({
+      text: 'routine',
+      pointTokens: [{ etalon: 'BRAVO' }],
+    });
+
+    expect(await resolveMessageCoordinatePreview({ message })).toBeNull();
+    expect(await resolveMessageCoordinatePreview({ message })).toBeNull();
+    expect(listMapPalitrasV2).toHaveBeenCalledTimes(1);
+    expect(searchPalitraPoints).not.toHaveBeenCalled();
+  });
+
+  it('keeps a genuine point miss cached', async () => {
+    vi.mocked(listMapPalitrasV2).mockResolvedValue([createPalitra(7)] as never);
+    vi.mocked(searchPalitraPoints).mockResolvedValue([] as never);
+
+    const message = createMessage({
+      text: 'routine',
+      pointTokens: [{ etalon: 'BRAVO' }],
+    });
+
+    expect(await resolveMessageCoordinatePreview({ message })).toBeNull();
+    expect(await resolveMessageCoordinatePreview({ message })).toBeNull();
+    expect(listMapPalitrasV2).toHaveBeenCalledTimes(1);
+    expect(searchPalitraPoints).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe('hasCoordinatePreviewCandidate', () => {

@@ -208,8 +208,8 @@ async function loadAvailablePalitraIds(): Promise<number[]> {
     })
     .catch((error) => {
       console.error('Failed to load map palitras for coordinate preview', error);
-      availablePalitraIds = [];
-      return availablePalitraIds;
+      availablePalitraIds = null;
+      return [];
     })
     .finally(() => {
       availablePalitraIdsPromise = null;
@@ -261,7 +261,6 @@ async function resolvePointForEtalon(
     })
     .catch((error) => {
       console.error('Failed to resolve coordinate preview point', error);
-      resolvedPointCache.set(cacheKey, null);
       return null;
     })
     .finally(() => {
