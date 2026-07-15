@@ -506,9 +506,51 @@ pub fn read_from_path<T>(path: PathBuf) -> Result<T, AppError>
 where
     T: for<'a> Deserialize<'a>,
 {
-    let config = std::fs::read_to_string(path)?;
-    let config: T = toml::from_str(&config).context(h!())?;
+    let config = std::fs::read_to_string(&path)?;
+    let (config, unused_keys) = deserialize_config(&config).context(h!())?;
+    warn_about_unused_config_keys(&path, &unused_keys);
     Ok(config)
+}
+
+fn deserialize_config<'de, T>(
+    config: &'de str,
+) -> std::result::Result<(T, Vec<String>), toml::de::Error>
+where
+    T: Deserialize<'de>,
+{
+    let mut unused_keys = Vec::new();
+    let deserializer = toml::Deserializer::parse(config)?;
+    let config = serde_ignored::deserialize(deserializer, |path| {
+        unused_keys.push(path.to_string())
+    })?;
+    unused_keys.sort();
+    unused_keys.dedup();
+    Ok((config, unused_keys))
+}
+
+fn warn_about_unused_config_keys(path: &Path, unused_keys: &[String]) {
+    if unused_keys.is_empty() {
+        return;
+    }
+    warn!("{}", unused_config_warning(path, unused_keys));
+}
+
+fn unused_config_warning(path: &Path, unused_keys: &[String]) -> String {
+    let keys = unused_keys
+        .iter()
+        .map(|key| format!("  - {key}"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    format!(
+        "\n\
+================================================================================\n\
+WARNING: UNUSED CONFIG KEYS IN {}\n\
+{}\n\
+These keys are not used anymore. Remove them from config.toml. Their settings were either removed or migrated to the database.\n\
+================================================================================",
+        path.display(),
+        keys,
+    )
 }
 
 pub fn m_unit_to_unidenfitied(unit: Option<String>) -> String {
@@ -629,4 +671,51 @@ pub fn check_is_worker_night_shift(config: &Config) -> bool {
         .unwrap_or(WORKER_NIGHT_SHIFT_END_HOUR);
     let now = Utc::now().with_timezone(&get_tz());
     !(shift_end..shift_start).contains(&now.hour())
+}
+
+#[cfg(test)]
+mod config_tests {
+    use super::*;
+
+    #[derive(Debug, Deserialize, PartialEq)]
+    struct TestConfig {
+        active: String,
+        nested: TestNestedConfig,
+    }
+
+    #[derive(Debug, Deserialize, PartialEq)]
+    struct TestNestedConfig {
+        parsed: bool,
+    }
+
+    #[test]
+    fn deserialize_config_reports_unused_keys() {
+        let input = r#"
+active = "yes"
+removed = 1
+
+[nested]
+parsed = true
+migrated = "database"
+"#;
+
+        let (config, unused_keys) =
+            deserialize_config::<TestConfig>(input).unwrap();
+
+        assert_eq!(config.active, "yes");
+        assert!(config.nested.parsed);
+        assert_eq!(unused_keys, ["nested.migrated", "removed"]);
+    }
+
+    #[test]
+    fn unused_config_warning_is_prominent_and_actionable() {
+        let warning = unused_config_warning(
+            Path::new("/etc/echo/config.toml"),
+            &["removed".to_string()],
+        );
+
+        assert!(warning.contains("WARNING: UNUSED CONFIG KEYS"));
+        assert!(warning.contains("  - removed"));
+        assert!(warning.contains("removed or migrated to the database"));
+    }
 }
