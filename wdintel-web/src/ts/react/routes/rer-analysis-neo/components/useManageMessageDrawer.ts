@@ -326,10 +326,15 @@ export function useManageMessageDrawer({
         })),
       });
     } else {
+      // Pre-fill the last-used values (MRU head) so repeated message creation
+      // doesn't require re-entering the same group/device/unit each time.
       reset({
         ...EMPTY_FORM_VALUES,
         date: dayjs(),
         time: dayjs(),
+        signalGroupMasterKey: recentValues.group[0] ?? '',
+        deviceName: recentValues.deviceName[0] ?? '',
+        unit: recentValues.unit[0] ?? '',
       });
     }
   }, [open, isEditMode, editTarget?.id]);
