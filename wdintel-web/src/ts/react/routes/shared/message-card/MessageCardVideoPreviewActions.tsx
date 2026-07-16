@@ -46,26 +46,32 @@ export function MessageCardVideoPreviewControls({
     <Box
       sx={{
         display: 'flex',
+        flexWrap: 'wrap',
         alignItems: 'center',
-        gap: 1,
+        gap: { xs: 0.5, sm: 1 },
         flex: 1,
         minWidth: 0,
         backgroundColor: 'background.paper',
-        py: 1.5,
-        px: 3,
-        borderRadius: 2,
+        py: { xs: 1, sm: 1.5 },
+        px: { xs: 1, sm: 3 },
+        borderRadius: { xs: 0, sm: 2 },
       }}
     >
       <PlayPauseButton isPlaying={isPlaying} onPlayPause={onPlayPause} />
-      <StopButton onStop={onStop} />
+
+      <Box sx={{ display: { xs: 'none', sm: 'block' } }}>
+        <StopButton onStop={onStop} />
+      </Box>
 
       <Box
         sx={{
-          flex: 1,
-          mx: { xs: 1, sm: 2 },
+          flex: { xs: '1 1 100%', sm: 1 },
+          mx: { xs: 0, sm: 2 },
+          mb: { xs: 1, sm: 0 },
           minWidth: 100,
           display: 'flex',
           alignItems: 'center',
+          order: { xs: -1, sm: 0 },
         }}
       >
         <VideoProgressSlider
@@ -82,7 +88,8 @@ export function MessageCardVideoPreviewControls({
           color: 'text.secondary',
           whiteSpace: 'nowrap',
           fontFamily: 'monospace',
-          mr: { xs: 1, sm: 1 },
+          mr: { xs: 'auto', sm: 1 },
+          ml: { xs: 1, sm: 0 },
         }}
       >
         {formatVideoTime(currentTime)} / {formatVideoTime(duration)}

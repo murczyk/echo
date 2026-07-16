@@ -56,8 +56,8 @@ export function VolumeControl({
       sx={{
         display: 'flex',
         alignItems: 'center',
-        width: { xs: 80, sm: 120 },
-        gap: 1,
+        width: { xs: 'auto', sm: 120 },
+        gap: { xs: 0, sm: 1 },
       }}
     >
       <Tooltip title={muted || volume === 0 ? 'Увімкнути звук' : 'Вимкнути звук'} enterDelay={300}>
@@ -77,7 +77,9 @@ export function VolumeControl({
         value={muted ? 0 : volume}
         onChange={(_, val) => onVolumeChange(val as number)}
         sx={{
+          display: { xs: 'none', sm: 'block' },
           color: 'primary.light',
+          padding: '8px 0',
           '& .MuiSlider-thumb': {
             width: 12,
             height: 12,
@@ -167,7 +169,7 @@ export function VideoProgressSlider({
       disabled={!duration}
       sx={{
         color: 'primary.main',
-        padding: '0',
+        padding: '8px 0',
         height: 4,
         '& .MuiSlider-track': {
           transition: isDragging.current ? 'none' : 'width 0.25s linear, left 0.25s linear',
