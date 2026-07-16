@@ -6,6 +6,9 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useWindowedFeedScroll } from './useWindowedFeedScroll';
 
+const renderedItemRefs = new Map<number, (node: HTMLDivElement | null) => void>();
+let latestScrollHandle: ReturnType<typeof useWindowedFeedScroll> | null = null;
+
 function TestScroller(props: {
   ids: number[];
   onLoadOlder?: () => void;
@@ -31,6 +34,7 @@ function TestScroller(props: {
     bottomLoadBufferPx: 80,
     atBottomThresholdPx: 10,
   });
+  latestScrollHandle = scroll;
 
   return (
     <div
@@ -39,11 +43,15 @@ function TestScroller(props: {
       onScroll={scroll.handleScroll}
       style={{ height: 100, overflowY: 'auto' }}
     >
-      {props.ids.map((id) => (
-        <div key={id} ref={scroll.setItemRef(id)} data-testid={`item-${id}`} style={{ height: 50 }}>
-          item {id}
-        </div>
-      ))}
+      {props.ids.map((id) => {
+        const itemRef = scroll.setItemRef(id);
+        renderedItemRefs.set(id, itemRef);
+        return (
+          <div key={id} ref={itemRef} data-testid={`item-${id}`} style={{ height: 50 }}>
+            item {id}
+          </div>
+        );
+      })}
       <button type="button" data-testid="scroll-bottom" onClick={() => scroll.scrollToBottom()}>
         bottom
       </button>
@@ -75,12 +83,16 @@ describe('useWindowedFeedScroll', () => {
   let root: Root;
 
   beforeEach(() => {
+    renderedItemRefs.clear();
+    latestScrollHandle = null;
     container = document.createElement('div');
     document.body.appendChild(container);
     root = createRoot(container);
   });
 
   afterEach(() => {
+    renderedItemRefs.clear();
+    latestScrollHandle = null;
     vi.useRealTimers();
     act(() => {
       root.unmount();
@@ -534,5 +546,40 @@ describe('useWindowedFeedScroll', () => {
     });
 
     expect(scroller.scrollTop).toBe(290);
+  });
+
+  it('reuses callbacks for active ids and recreates callbacks after an id leaves the window', async () => {
+    const makeIds = (start: number) => Array.from({ length: 40 }, (_, index) => start + index);
+
+    await act(async () => {
+      root.render(<TestScroller ids={makeIds(1)} />);
+    });
+
+    const initialItem1 = renderedItemRefs.get(1);
+    const initialItem2 = renderedItemRefs.get(2);
+    expect(initialItem1).toBeDefined();
+    expect(initialItem2).toBeDefined();
+
+    await act(async () => {
+      root.render(<TestScroller ids={makeIds(2)} />);
+    });
+
+    expect(renderedItemRefs.get(2)).toBe(initialItem2);
+    expect(latestScrollHandle?.setItemRef(1)).not.toBe(initialItem1);
+
+    await act(async () => {
+      root.render(<TestScroller ids={makeIds(41)} />);
+    });
+
+    await act(async () => {
+      root.render(<TestScroller ids={makeIds(81)} />);
+    });
+
+    await act(async () => {
+      root.render(<TestScroller ids={makeIds(1)} />);
+    });
+
+    expect(renderedItemRefs.get(1)).not.toBe(initialItem1);
+    expect(latestScrollHandle?.setItemRef(1)).toBe(renderedItemRefs.get(1));
   });
 });

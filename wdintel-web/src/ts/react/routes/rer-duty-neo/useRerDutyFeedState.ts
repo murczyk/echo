@@ -504,27 +504,38 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
         const newestCursor = latestWindowed.items.at(-1)?.[0] ?? null;
         const markAllRead =
           opts?.scrollToEndAfterLoad === true || opts?.markAllReadAfterAppend === true;
+        if (markAllRead && newestCursor != null) {
+          advanceFeedReadCursor(feedId, newestCursor, 0);
+        }
         if (addedCount > 0) {
           delete newestExhaustedCursorByFeedIdRef.current[feedId];
-          if (markAllRead && newestCursor != null) {
-            advanceFeedReadCursor(feedId, newestCursor, 0);
-          }
         } else {
           newestExhaustedCursorByFeedIdRef.current[feedId] = lastId;
         }
-        if (addedCount > 0 && opts?.scrollToEndAfterLoad === true) {
+        if (opts?.scrollToEndAfterLoad === true) {
           scrollToEndAfterNewerRef.current.add(feedId);
           nearBottomByFeedIdRef.current = {
             ...nearBottomByFeedIdRef.current,
             [feedId]: true,
           };
         }
-        if (addedCount > 0) {
+        if (addedCount > 0 || markAllRead || opts?.scrollToEndAfterLoad === true) {
           setMessageFeeds((prev) =>
             prev.map((x) => {
               if (x.id !== feedId) return x;
               const windowed = appendWindowedMessageItems(x.items, rsp.inboxItems);
-              if (windowed.addedItems.length === 0) return x;
+              if (windowed.addedItems.length === 0) {
+                if (markAllRead) {
+                  const readIds = new Set<number>([...x.readIds, ...x.items.map(([id]) => id)]);
+                  return {
+                    ...x,
+                    readIds,
+                    unreadCount: 0,
+                  };
+                }
+                if (opts?.scrollToEndAfterLoad === true) return { ...x };
+                return x;
+              }
               const unreadAddedCount = windowed.addedItems.filter(
                 ([id]) => !x.readIds.has(id),
               ).length;

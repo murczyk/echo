@@ -998,12 +998,12 @@ describe('useRerDutyFeedState — loading', () => {
     expect(apiRef.current!.messageFeeds[0].items.at(-1)?.[0]).toBe(81);
   });
 
-  it('enqueues exactly one follow-scroll after newer load when requested', async () => {
+  it('completes the down-arrow path when newer loading returns no rows', async () => {
     hoisted.fetchInboxMessages.mockResolvedValueOnce(
       inboxRsp(
-        Array.from({ length: DUTY_FEED_MESSAGE_WINDOW_LIMIT }, (_, index) => [
-          index + 21,
-          minimalInboxMessage({ timestamp: (index + 21) * 100 }),
+        Array.from({ length: 10 }, (_, index) => [
+          index + 1,
+          minimalInboxMessage({ timestamp: (index + 1) * 100 }),
         ]),
       ),
     );
@@ -1018,49 +1018,112 @@ describe('useRerDutyFeedState — loading', () => {
       await flushMicrotasks();
     });
 
-    const scrollToEnd = vi.fn();
-    apiRef.current!.columnRefsRef.current['mf-0'] = { scrollToEnd };
-
-    const newerResponse = deferred<InboxMessagesRsp>();
-    hoisted.fetchInboxMessages.mockImplementationOnce(() => newerResponse.promise);
-
-    let loadPromise!: Promise<void>;
+    hoisted.fetchInboxCount.mockImplementation((req: any) => ({
+      quantity: req.sinceIdNoninclusive === 10 ? 5 : req.sinceIdNoninclusive === 15 ? 0 : 0,
+      firstElementTs: null,
+    }));
     await act(async () => {
-      loadPromise = apiRef.current!.loadFeedNewerMessages('mf-0', {
-        scrollToEndAfterLoad: true,
-      });
+      await vi.advanceTimersByTimeAsync(1000);
     });
     await act(async () => {
-      newerResponse.resolve(
-        inboxRsp(
-          Array.from({ length: 20 }, (_, index) => [
-            DUTY_FEED_MESSAGE_WINDOW_LIMIT + 20 + index + 1,
-            minimalInboxMessage({
-              timestamp: (DUTY_FEED_MESSAGE_WINDOW_LIMIT + 20 + index + 1) * 100,
-            }),
-          ]),
+      await flushMicrotasks();
+    });
+    expect(apiRef.current!.messageFeeds[0].unreadCount).toBe(5);
+    hoisted.notifyDutyNewMessages.mockReset();
+
+    hoisted.fetchInboxMessages.mockResolvedValueOnce(
+      inboxRsp([
+        [11, minimalInboxMessage({ timestamp: 1100 })],
+        [12, minimalInboxMessage({ timestamp: 1200 })],
+        [13, minimalInboxMessage({ timestamp: 1300 })],
+        [14, minimalInboxMessage({ timestamp: 1400 })],
+        [15, minimalInboxMessage({ timestamp: 1500 })],
+      ]),
+    );
+    await act(async () => {
+      await apiRef.current!.loadFeedNewerMessages('mf-0');
+    });
+
+    expect(apiRef.current!.messageFeeds[0].items.at(-1)?.[0]).toBe(15);
+    expect(apiRef.current!.messageFeeds[0].unreadCount).toBe(5);
+    expect(hoisted.fetchInboxCount.mock.calls.at(-1)?.[0]).toEqual(
+      expect.objectContaining({ sinceIdNoninclusive: 10 }),
+    );
+
+    hoisted.fetchInboxCount.mockImplementation((req: any) => ({
+      quantity: req.sinceIdNoninclusive === 10 ? 7 : req.sinceIdNoninclusive === 15 ? 0 : 0,
+      firstElementTs: null,
+    }));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000);
+    });
+    await act(async () => {
+      await flushMicrotasks();
+    });
+
+    expect(apiRef.current!.messageFeeds[0].unreadCount).toBe(7);
+    expect(hoisted.fetchInboxCount.mock.calls.at(-1)?.[0]).toEqual(
+      expect.objectContaining({ sinceIdNoninclusive: 10 }),
+    );
+    expect(hoisted.notifyDutyNewMessages).toHaveBeenCalledTimes(1);
+    expect(hoisted.notifyDutyNewMessages).toHaveBeenLastCalledWith('mf-0', 2);
+
+    // Historical read state can live outside the fixed window and must survive the zero-row path.
+    const historicalId = -1;
+    expect(apiRef.current!.messageFeeds[0].items.some(([id]) => id === historicalId)).toBe(false);
+    await act(async () => {
+      apiRef.current!.setMessageFeeds((prev) =>
+        prev.map((feed) =>
+          feed.id === 'mf-0'
+            ? {
+                ...feed,
+                readIds: new Set([...feed.readIds, historicalId]),
+              }
+            : feed,
         ),
       );
       await flushMicrotasks();
     });
-    await act(async () => {
-      await loadPromise;
-    });
-    await act(async () => {
-      await flushMicrotasks();
-    });
+    expect(apiRef.current!.messageFeeds[0].readIds.has(historicalId)).toBe(true);
 
-    const feedAfterAppend = apiRef.current!.messageFeeds[0];
-    expect(feedAfterAppend.items.at(-1)?.[0]).toBe(80);
-    expect(feedAfterAppend.unreadCount).toBe(0);
-    expect(feedAfterAppend.readIds.has(80)).toBe(true);
+    const scrollToEnd = vi.fn();
+    apiRef.current!.columnRefsRef.current['mf-0'] = { scrollToEnd };
+    hoisted.fetchInboxMessages.mockResolvedValueOnce(inboxRsp([]));
 
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(50);
+      await apiRef.current!.loadFeedNewerMessages('mf-0', { scrollToEndAfterLoad: true });
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(32);
       await flushMicrotasks();
     });
 
     expect(scrollToEnd).toHaveBeenCalledTimes(1);
+    expect(apiRef.current!.messageFeeds[0].items.map(([id]) => id)).toEqual([
+      1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
+    ]);
+    expect(apiRef.current!.messageFeeds[0].readIds.has(historicalId)).toBe(true);
+    expect(apiRef.current!.messageFeeds[0].readIds.has(11)).toBe(true);
+    expect(apiRef.current!.messageFeeds[0].readIds.has(15)).toBe(true);
+    expect(apiRef.current!.messageFeeds[0].unreadCount).toBe(0);
+
+    const callsBeforeSkip = hoisted.fetchInboxMessages.mock.calls.length;
+    hoisted.fetchInboxMessages.mockResolvedValueOnce(inboxRsp([]));
+    await act(async () => {
+      await apiRef.current!.loadFeedNewerMessages('mf-0', { skipIfNewestExhausted: true });
+    });
+    expect(hoisted.fetchInboxMessages).toHaveBeenCalledTimes(callsBeforeSkip);
+
+    hoisted.fetchInboxCount.mockResolvedValueOnce({ quantity: 0, firstElementTs: null });
+    const countResult = await apiRef.current!.requestValidatedInboxCount('mf-0');
+    expect(countResult).toEqual(
+      expect.objectContaining({ feedId: 'mf-0', cursorId: 15, quantity: 0 }),
+    );
+    expect(hoisted.fetchInboxCount.mock.calls.at(-1)?.[0]).toEqual(
+      expect.objectContaining({ sinceIdNoninclusive: 15 }),
+    );
+    expect(hoisted.notifyDutyNewMessages).toHaveBeenCalledTimes(1);
+    expect(hoisted.notifyDutyNewMessages).toHaveBeenLastCalledWith('mf-0', 2);
   });
 
   it('retains the unread cursor for unread newer appends and lets polling correct the count', async () => {
@@ -1128,6 +1191,68 @@ describe('useRerDutyFeedState — loading', () => {
     expect(apiRef.current?.messageFeeds[0]?.unreadCount).toBe(7);
     expect(hoisted.notifyDutyNewMessages).toHaveBeenCalledTimes(1);
     expect(hoisted.notifyDutyNewMessages).toHaveBeenLastCalledWith('mf-0', 2);
+  });
+
+  it('marks the current window read on a zero-row markAllRead append without scrolling', async () => {
+    hoisted.fetchInboxMessages.mockResolvedValueOnce(
+      inboxRsp(
+        Array.from({ length: 10 }, (_, index) => [
+          index + 1,
+          minimalInboxMessage({ timestamp: (index + 1) * 100 }),
+        ]),
+      ),
+    );
+    const apiRef: React.MutableRefObject<ReturnType<typeof useRerDutyFeedState> | null> = {
+      current: null,
+    };
+
+    await act(async () => {
+      root.render(<TestHarness apiRef={apiRef} />);
+    });
+    await act(async () => {
+      await flushMicrotasks();
+    });
+
+    hoisted.fetchInboxCount.mockResolvedValueOnce({ quantity: 5, firstElementTs: null });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000);
+    });
+    await act(async () => {
+      await flushMicrotasks();
+    });
+
+    hoisted.fetchInboxMessages.mockResolvedValueOnce(
+      inboxRsp([
+        [11, minimalInboxMessage({ timestamp: 1100 })],
+        [12, minimalInboxMessage({ timestamp: 1200 })],
+        [13, minimalInboxMessage({ timestamp: 1300 })],
+        [14, minimalInboxMessage({ timestamp: 1400 })],
+        [15, minimalInboxMessage({ timestamp: 1500 })],
+      ]),
+    );
+    await act(async () => {
+      await apiRef.current!.loadFeedNewerMessages('mf-0');
+    });
+
+    hoisted.fetchInboxMessages.mockResolvedValueOnce(inboxRsp([]));
+    const scrollToEnd = vi.fn();
+    apiRef.current!.columnRefsRef.current['mf-0'] = { scrollToEnd };
+    await act(async () => {
+      await apiRef.current!.loadFeedNewerMessages('mf-0', { markAllReadAfterAppend: true });
+    });
+
+    const feed = apiRef.current!.messageFeeds[0];
+    expect(feed.items.at(-1)?.[0]).toBe(15);
+    expect(feed.unreadCount).toBe(0);
+    expect(feed.readIds.has(11)).toBe(true);
+    expect(feed.readIds.has(15)).toBe(true);
+    expect(scrollToEnd).not.toHaveBeenCalled();
+
+    hoisted.fetchInboxCount.mockResolvedValueOnce({ quantity: 0, firstElementTs: null });
+    const countResult = await apiRef.current!.requestValidatedInboxCount('mf-0');
+    expect(countResult).toEqual(
+      expect.objectContaining({ feedId: 'mf-0', cursorId: 15, quantity: 0 }),
+    );
   });
 
   it('advances the unread cursor through committed read ids after partial scrolling', async () => {

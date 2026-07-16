@@ -134,6 +134,15 @@ export function useWindowedFeedScroll({
 
   const itemIdsRef = useRef<readonly number[]>(itemIds);
   itemIdsRef.current = itemIds;
+  useLayoutEffect(() => {
+    const activeIds = new Set(itemIds);
+    for (const id of refCacheRef.current.keys()) {
+      if (!activeIds.has(id)) refCacheRef.current.delete(id);
+    }
+    for (const id of itemRefsRef.current.keys()) {
+      if (!activeIds.has(id)) itemRefsRef.current.delete(id);
+    }
+  }, [itemIds]);
 
   useEffect(() => {
     if (!loadingOlder) loadOlderTriggeredRef.current = false;
