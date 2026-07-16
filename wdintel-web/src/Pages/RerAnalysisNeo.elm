@@ -61,7 +61,7 @@ view : Model -> View Msg
 view _ =
     { title = "РЕР-аналіз"
     , body =
-        [ div [ class "app-shell-fill-height box-border min-h-0 px-6 py-4 w-full flex flex-col gap-6 overflow-visible lg:overflow-hidden" ]
+        [ div [ class "app-shell-fill-height box-border min-h-0 w-full flex flex-col overflow-visible lg:overflow-hidden" ]
             [ div [ class "flex-1 min-h-0 w-full" ]
                 [ node "rer-analysis-neo"
                     [ class "block w-full h-full" ]
