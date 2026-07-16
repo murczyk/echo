@@ -1004,6 +1004,80 @@ deploy-from-local _server_pos="" server:
     '
     RESTART_BGWORKER_ON_FAILURE=0
 
+[arg('server', long='server')]
+deploy-docs-from-local _server_pos="" server:
+    #!/bin/bash
+    set -euo pipefail
+    if [[ "${DEBUG:-0}" == "1" || "${TRACE:-0}" == "1" ]]; then
+      set -x
+    fi
+    if [[ "{{ _server_pos }}" != "" && "{{ server }}" != "" ]]; then
+      echo "pass either positional server or --server, not both." >&2
+      exit 1
+    fi
+
+    if [[ "{{ _server_pos }}" != "" ]]; then
+      SERVER="{{ _server_pos }}"
+    elif [[ "{{ server }}" != "" ]]; then
+      SERVER="{{ server }}"
+    else
+      just _print-servers; exit 1;
+    fi
+
+    DEB_DIR="{{ justfile_directory() }}/docs/echo-docs/target/debian"
+    DEB_PATH=""
+    REMOTE_DEB_PATH=""
+
+    printf "\n📚📚📚 deploying docs %s from local .deb 📚📚📚\n\n" "$SERVER"
+
+    echo "Building docs site..."
+    (cd "{{ justfile_directory() }}" && just docs)
+
+    echo "Building local echo-docs deb package..."
+    mkdir -p "$DEB_DIR"
+    find "$DEB_DIR" -maxdepth 1 -type f -name 'echo-docs_*.deb' -delete
+    (cd "{{ justfile_directory() }}/docs/echo-docs" && cargo deb --fast)
+
+    DEB_PATH="$(ls -1t "$DEB_DIR"/echo-docs_*_*.deb | head -n 1)"
+    if [[ -z "$DEB_PATH" ]]; then
+      echo "Failed to find built echo-docs .deb in $DEB_DIR" >&2
+      exit 1
+    fi
+    DEB_NAME="$(basename "$DEB_PATH")"
+    REMOTE_DEB_NAME="${DEB_NAME%.deb}-local-$(date -u +%Y%m%d%H%M%S)-$$.deb"
+    REMOTE_DEB_PATH="/var/tmp/${REMOTE_DEB_NAME}"
+
+    cleanup() {
+      local status=$?
+      trap - EXIT
+
+      if [[ -n "$REMOTE_DEB_PATH" ]]; then
+        ssh "$SERVER" "rm -f -- '$REMOTE_DEB_PATH'" >/dev/null 2>&1 || true
+      fi
+
+      exit "$status"
+    }
+    trap cleanup EXIT
+
+    echo "Uploading ${DEB_NAME} to ${SERVER}:${REMOTE_DEB_PATH}..."
+    scp "$DEB_PATH" "${SERVER}:${REMOTE_DEB_PATH}"
+
+    echo "Installing ${DEB_NAME} on ${SERVER}..."
+    ssh "$SERVER" "set -euo pipefail
+      export DEBIAN_FRONTEND=noninteractive
+      cd /var/tmp
+      if ! sudo env DEBIAN_FRONTEND=noninteractive apt-get -o Dpkg::Lock::Timeout=120 -y -qq install --reinstall --allow-downgrades './${REMOTE_DEB_NAME}'; then
+        echo 'Initial local package install failed; updating APT indexes and retrying...'
+        sudo apt-get -o Dpkg::Lock::Timeout=120 -qq update
+        sudo env DEBIAN_FRONTEND=noninteractive apt-get -o Dpkg::Lock::Timeout=120 -y -qq install --reinstall --allow-downgrades './${REMOTE_DEB_NAME}'
+      fi
+      rm -f './${REMOTE_DEB_NAME}'
+
+      installed=\$(dpkg-query -W -f=\${Version} echo-docs)
+      echo "✅✅✅ docs deploy OK on \$HOSTNAME: echo-docs \$installed ✅✅✅"
+    "
+    REMOTE_DEB_PATH=""
+
 collect-ip-loop:
     #!/bin/bash
     set -euxo pipefail
