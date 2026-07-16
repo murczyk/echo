@@ -7,7 +7,7 @@
     "test": "tests"
   },
   "scripts": {
-    "build": "elm-land build",
+    "build": "rm -rf dist && elm-land build",
     "format:all": "node scripts/format-files.mjs all",
     "format:staged": "node scripts/format-files.mjs staged",
     "postinstall": "node scripts/strip-use-client.mjs",

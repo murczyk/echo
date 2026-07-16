@@ -885,7 +885,7 @@ deploy-from-local _server_pos="" server:
     (cd "{{ justfile_directory() }}" && just build-front)
 
     echo "Building local wdintel-rs deb package..."
-    (cd "{{ justfile_directory() }}" && cargo deb -p wdintel-rs)
+    (cd "{{ justfile_directory() }}" && cargo deb -p wdintel-rs --fast)
 
     DEB_PATH="$(ls -1t "{{ justfile_directory() }}"/target/debian/wdintel-rs_*_*.deb | head -n 1)"
     if [[ -z "$DEB_PATH" ]]; then
@@ -893,10 +893,32 @@ deploy-from-local _server_pos="" server:
       exit 1
     fi
     DEB_NAME="$(basename "$DEB_PATH")"
+    REMOTE_DEB_NAME="${DEB_NAME%.deb}-local-$(date -u +%Y%m%d%H%M%S)-$$.deb"
+    REMOTE_DEB_PATH="/var/tmp/${REMOTE_DEB_NAME}"
+    RESTART_BGWORKER_ON_FAILURE=0
 
-    echo "Uploading ${DEB_NAME} to ${SERVER}..."
-    scp "$DEB_PATH" "${SERVER}:/var/tmp/${DEB_NAME}"
+    cleanup() {
+      local status=$?
+      trap - EXIT
 
+      if [[ -n "$REMOTE_DEB_PATH" ]]; then
+        ssh "$SERVER" "rm -f -- '$REMOTE_DEB_PATH'" >/dev/null 2>&1 || true
+      fi
+      if [[ $status -ne 0 && $RESTART_BGWORKER_ON_FAILURE -eq 1 ]]; then
+        echo "Deployment failed; restarting wdintel-rs-bgworker.service..." >&2
+        if ! ssh "$SERVER" 'sudo systemctl start wdintel-rs-bgworker.service'; then
+          echo "Failed to restart wdintel-rs-bgworker.service after deployment failure." >&2
+        fi
+      fi
+
+      exit "$status"
+    }
+    trap cleanup EXIT
+
+    echo "Uploading ${DEB_NAME} to ${SERVER}:${REMOTE_DEB_PATH}..."
+    scp "$DEB_PATH" "${SERVER}:${REMOTE_DEB_PATH}"
+
+    RESTART_BGWORKER_ON_FAILURE=1
     ssh "$SERVER" 'set -euo pipefail
       if systemctl cat wdintel-rs-bgworker.service >/dev/null 2>&1; then
         echo "Stopping wdintel-rs-bgworker.service and waiting up to 120 seconds..."
@@ -919,11 +941,15 @@ deploy-from-local _server_pos="" server:
     echo "Installing ${DEB_NAME} on ${SERVER}..."
     ssh "$SERVER" "set -euo pipefail
       export DEBIAN_FRONTEND=noninteractive
-      sudo apt-get -o Dpkg::Lock::Timeout=120 -qq update
       cd /var/tmp
-      sudo env DEBIAN_FRONTEND=noninteractive apt-get -o Dpkg::Lock::Timeout=120 -y -qq install --reinstall --allow-downgrades './${DEB_NAME}'
-      rm -f './${DEB_NAME}'
+      if ! sudo env DEBIAN_FRONTEND=noninteractive apt-get -o Dpkg::Lock::Timeout=120 -y -qq install --reinstall --allow-downgrades './${REMOTE_DEB_NAME}'; then
+        echo 'Initial local package install failed; updating APT indexes and retrying...'
+        sudo apt-get -o Dpkg::Lock::Timeout=120 -qq update
+        sudo env DEBIAN_FRONTEND=noninteractive apt-get -o Dpkg::Lock::Timeout=120 -y -qq install --reinstall --allow-downgrades './${REMOTE_DEB_NAME}'
+      fi
+      rm -f './${REMOTE_DEB_NAME}'
     "
+    REMOTE_DEB_PATH=""
 
     ssh "$SERVER" '
       set -euo pipefail
@@ -976,6 +1002,7 @@ deploy-from-local _server_pos="" server:
 
       echo "✅✅✅ deploy OK on $HOSTNAME: wdintel-rs.socket, wdintel-rs-bgworker.service, 8081 via systemd ✅✅✅"
     '
+    RESTART_BGWORKER_ON_FAILURE=0
 
 collect-ip-loop:
     #!/bin/bash
@@ -1417,11 +1444,11 @@ _echo-generic-deploy:
 
 _echo-generic-deploy-front:
     ssh {{ builder }} '(cd workspace/echo && git fetch origin && git clean -df && git checkout {{ branch }} && git pull)'
-    ssh {{ builder }} '(cd workspace/echo/wdintel-web && . ~/.nvm/nvm.sh && npx npm ci && npx elm-land build)'
+    ssh {{ builder }} '(cd workspace/echo/wdintel-web && . ~/.nvm/nvm.sh && npx npm ci && npm run build)'
 
 _echo-generic-build-rs:
     ssh {{ builder }} '(cd workspace/echo && git fetch origin && git clean -df && git checkout {{ branch }} && git pull)'
-    ssh {{ builder }} '(cd workspace/echo && touch wdintel-rs/build.rs && $HOME/.cargo/bin/cargo deb -p wdintel-rs)'
+    ssh {{ builder }} '(cd workspace/echo && touch wdintel-rs/build.rs && $HOME/.cargo/bin/cargo deb -p wdintel-rs --fast)'
 
     # TODO: determine version from Cargo.toml
     rsync --progress {{ builder }}:workspace/echo/target/debian/wdintel-rs_0.1.0-1_amd64.deb /tmp
@@ -2134,11 +2161,11 @@ deploy-stg:
         git pull && \
         . ~/.nvm/nvm.sh && \
         npx npm ci && \
-        npx elm-land build && \
+        npm run build && \
         cd .. && \
         \$HOME/.cargo/bin/cargo clean && \
         touch wdintel-rs/build.rs && \
-        \$HOME/.cargo/bin/cargo deb -p wdintel-rs"
+        \$HOME/.cargo/bin/cargo deb -p wdintel-rs --fast"
     scp echo-build-main:~/workspace/krab/echo-feature/echo/target/debian/wdintel-rs*.deb "echo-staging":/var/tmp
     ssh echo-build-main 'rm ~/workspace/krab/echo-feature/echo/target/debian/wdintel-rs*.deb'
     ssh "echo-staging" 'cd /var/tmp/ && sudo apt install -y --reinstall --allow-downgrades ./wdintel-rs*.deb'
