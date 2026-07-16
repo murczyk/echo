@@ -402,6 +402,20 @@ export function resolveMessageCardEtalonDisplayModel(
     };
   }
 
+  // Unit takes the primary slot; when a location is also present it renders
+  // alongside in the row's location slot (both are shown, not one or the other).
+  if (etalonBindingValue.copyValue != null) {
+    return {
+      primaryKind: 'unit',
+      displayValue: etalonBindingValue.displayValue,
+      copyEtalonValue: etalonBindingValue.copyValue,
+      copyLocationValue: locationDisplayValue,
+      renderedNetworks,
+      showInlineLocationTooltip: false,
+      locationDisplayValue,
+    };
+  }
+
   if (locationDisplayValue != null) {
     return {
       primaryKind: 'location',
@@ -411,18 +425,6 @@ export function resolveMessageCardEtalonDisplayModel(
       renderedNetworks,
       showInlineLocationTooltip: false,
       locationDisplayValue,
-    };
-  }
-
-  if (etalonBindingValue.copyValue != null) {
-    return {
-      primaryKind: 'unit',
-      displayValue: etalonBindingValue.displayValue,
-      copyEtalonValue: etalonBindingValue.copyValue,
-      copyLocationValue: null,
-      renderedNetworks,
-      showInlineLocationTooltip: false,
-      locationDisplayValue: null,
     };
   }
 

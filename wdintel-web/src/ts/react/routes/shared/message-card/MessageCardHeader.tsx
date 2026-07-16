@@ -11,6 +11,7 @@ import ContentCopyOutlinedIcon from '@mui/icons-material/ContentCopyOutlined';
 import EditIcon from '@mui/icons-material/Edit';
 import DeskIcon from '@mui/icons-material/Desk';
 import DeskOutlinedIcon from '@mui/icons-material/DeskOutlined';
+import GpsFixedOutlinedIcon from '@mui/icons-material/GpsFixedOutlined';
 import GraphicEqIcon from '@mui/icons-material/GraphicEq';
 import GraphicEqOutlinedIcon from '@mui/icons-material/GraphicEqOutlined';
 import FlagIcon from '@mui/icons-material/Flag';
@@ -27,18 +28,7 @@ import RemoveIcon from '@mui/icons-material/Remove';
 import ScheduleOutlinedIcon from '@mui/icons-material/ScheduleOutlined';
 import SettingsInputAntennaIcon from '@mui/icons-material/SettingsInputAntenna';
 import SettingsInputAntennaOutlinedIcon from '@mui/icons-material/SettingsInputAntennaOutlined';
-import {
-  Box,
-  Button,
-  ButtonGroup,
-  Menu,
-  MenuItem,
-  Stack,
-  Tooltip,
-  Typography,
-  type SxProps,
-  type Theme,
-} from '@mui/material';
+import { Button, ButtonGroup, Menu, MenuItem, Tooltip, Typography } from '@mui/material';
 import { memo, useId, useLayoutEffect, useRef, useState } from 'react';
 import type { ComponentProps, MouseEvent, ReactNode } from 'react';
 import { ELLIPSIS, isPresent } from '../../../utils/misc';
@@ -61,7 +51,6 @@ const NAVIGATE_TITLE = `Перейти${ELLIPSIS}`;
 const EXCLUDE_TITLE = `Виключити${ELLIPSIS}`;
 const MESSAGE_CARD_HEADER_ROW_MIN_HEIGHT_PX = 30;
 
-/** Where the card is shown: both modes use a 3-column stacked action grid when the toolbar wraps. */
 export type MessageCardDisplayMode = 'duty' | 'analysis';
 
 type ActionIconsRowProps = {
@@ -85,7 +74,6 @@ type ActionIconsRowProps = {
   onDelete?: () => void;
   onEditDetails?: () => void;
   onExcludeMessageEntity?: (entity: MessageEntityFilterKind, value: string) => void;
-  sx?: SxProps<Theme>;
 };
 
 type MenuAnchorPosition = {
@@ -138,37 +126,25 @@ function ActionIconButton({
   );
 }
 
-function CenteredInfoRow({
-  icon,
-  text,
-  trailing,
-}: {
-  icon: JSX.Element;
-  text: JSX.Element;
-  trailing?: JSX.Element | null;
-}) {
+function MenuRow({ icon, children }: { icon: JSX.Element; children: ReactNode }) {
   return (
-    <div className="w-full flex justify-center items-center">
-      <div
-        className="grid items-center gap-x-1 min-h-[30px] max-w-full"
-        style={{
-          gridTemplateColumns: trailing ? '30px minmax(0, auto) 30px' : '30px minmax(0, auto)',
-        }}
+    <span
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: '10px',
+        minWidth: 0,
+        width: '100%',
+      }}
+    >
+      {icon}
+      <span
+        style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
       >
-        <div className="flex justify-center items-center">{icon}</div>
-        <div className="min-w-0 max-w-full flex justify-center items-center">{text}</div>
-        {trailing ? (
-          <div className="w-[30px] min-w-[30px] h-[30px] flex justify-center items-center">
-            {trailing}
-          </div>
-        ) : null}
-      </div>
-    </div>
+        {children}
+      </span>
+    </span>
   );
-}
-
-function CenteredTextOnlyRow({ text }: { text: JSX.Element }) {
-  return <div className="w-full flex justify-center items-center">{text}</div>;
 }
 
 function ActionIconsRow({
@@ -192,7 +168,6 @@ function ActionIconsRow({
   onDelete,
   onEditDetails,
   onExcludeMessageEntity,
-  sx,
 }: ActionIconsRowProps) {
   const rootRef = useRef<HTMLDivElement | null>(null);
   const excludeMenuId = useId();
@@ -218,17 +193,8 @@ function ActionIconsRow({
   const hasCopyTextWithNetworkAndNote = isPresent(onCopyTextWithNetworkAndNote);
   const hasEtalonCopy = isPresent(onCopyEtalon);
   const canShowLocationCopy =
-    etalonDisplayModel.primaryKind === 'location' && isPresent(onCopyLocation);
+    etalonDisplayModel.copyLocationValue != null && isPresent(onCopyLocation);
   const overflowMenuItems = [
-    isPresent(onEditDetails)
-      ? {
-          key: 'edit-details',
-          title: 'Редагувати додаткові поля та позивні',
-          icon: <EditIcon fontSize="small" />,
-          selected: false,
-          onClick: onEditDetails,
-        }
-      : null,
     isPresent(onDelete)
       ? {
           key: 'delete',
@@ -357,6 +323,14 @@ function ActionIconsRow({
         'aria-expanded': copyMenuAnchorPosition ? 'true' : undefined,
       }}
     />,
+    isPresent(onEditDetails) ? (
+      <ActionIconButton
+        key="edit"
+        title="Редагувати"
+        icon={<EditIcon fontSize="inherit" />}
+        onClick={onEditDetails}
+      />
+    ) : null,
     canShowNavigationMenu ? (
       <ActionIconButton
         key="navigate"
@@ -396,7 +370,7 @@ function ActionIconsRow({
         }}
       />
     ) : null,
-  ].filter(Boolean);
+  ].filter((button): button is JSX.Element => button != null);
 
   const actionGridColumns = 3;
   const lastRowButtonCount =
@@ -452,265 +426,225 @@ function ActionIconsRow({
     };
   }, [buttons.length, compact]);
 
-  return (
-    <>
-      <div ref={rootRef} style={{ width: '100%', display: 'flex', justifyContent: 'center' }}>
-        {stackedLayout ? (
-          <Box
-            role="group"
-            aria-label="Дії повідомлення"
-            data-action-grid-columns={actionGridColumns}
-            sx={[
-              {
-                display: 'grid',
-                gridTemplateColumns: `repeat(${actionGridColumns}, 30px)`,
-                gridAutoRows: '30px',
-                width: 'fit-content',
-                marginInline: 'auto',
-                border: '1px solid',
-                borderColor: 'divider',
-                borderRadius: 1,
-                color: 'var(--color-action)',
-                overflow: 'hidden',
-                '& .MuiButton-root': {
-                  color: 'var(--color-action)',
-                  borderColor: 'divider',
-                  borderRadius: 0,
-                  borderRight: '1px solid',
-                  borderBottom: '1px solid',
-                  borderRightColor: 'divider',
-                  borderBottomColor: 'divider',
-                },
-                [`& .MuiButton-root:nth-of-type(${actionGridColumns}n)`]: {
-                  borderRight: 'none',
-                },
-                ...(lastRowButtonCount > 0
-                  ? {
-                      [`& .MuiButton-root:nth-last-of-type(-n+${lastRowButtonCount})`]: {
-                        borderBottom: 'none',
-                      },
-                    }
-                  : {}),
-                '& .MuiButton-root:hover': {
-                  borderColor: 'divider',
-                  backgroundColor: 'action.hover',
-                },
+  const buttonGroupSx = stackedLayout
+    ? {
+        display: 'grid',
+        gridTemplateColumns: `repeat(${actionGridColumns}, 30px)`,
+        gridAutoRows: '30px',
+        width: 'fit-content',
+        marginInline: 'auto',
+        border: '1px solid',
+        borderColor: 'var(--color-divider)',
+        borderRadius: 1,
+        color: 'var(--color-action)',
+        overflow: 'hidden',
+        '& .MuiButton-root': {
+          color: 'var(--color-action)',
+          borderColor: 'var(--color-divider)',
+          borderRadius: 0,
+          borderRight: '1px solid',
+          borderBottom: '1px solid',
+          borderRightColor: 'divider',
+          borderBottomColor: 'divider',
+        },
+        [`& .MuiButton-root:nth-of-type(${actionGridColumns}n)`]: {
+          borderRight: 'none',
+        },
+        ...(lastRowButtonCount > 0
+          ? {
+              [`& .MuiButton-root:nth-last-of-type(-n+${lastRowButtonCount})`]: {
+                borderBottom: 'none',
               },
-              ...(Array.isArray(sx) ? sx : sx ? [sx] : []),
-            ]}
+            }
+          : {}),
+        '& .MuiButton-root:hover': {
+          borderColor: 'var(--color-divider)',
+          backgroundColor: 'action.hover',
+        },
+      }
+    : {
+        flexWrap: 'nowrap',
+        alignItems: 'center',
+        borderRadius: 1,
+        '& .MuiButton-root': {
+          borderColor: 'var(--color-divider)',
+          borderRadius: 0,
+        },
+        '& .MuiButton-root:first-of-type': {
+          borderTopLeftRadius: 4,
+          borderBottomLeftRadius: 4,
+        },
+        '& .MuiButton-root:last-of-type': {
+          borderTopRightRadius: 4,
+          borderBottomRightRadius: 4,
+        },
+        '& .MuiButton-root:hover': {
+          borderColor: 'var(--color-divider)',
+          backgroundColor: 'action.hover',
+        },
+      };
+
+  const overflowMenu =
+    isPresent(overflowMenuAnchorPosition) && canShowOverflowMenu ? (
+      <Menu
+        id={overflowMenuId}
+        anchorReference="anchorPosition"
+        anchorPosition={overflowMenuAnchorPosition ?? undefined}
+        open
+        onClose={closeOverflowMenu}
+        MenuListProps={{ 'aria-label': 'Додаткові дії повідомлення' }}
+      >
+        {overflowMenuItems.map((item) => (
+          <MenuItem
+            key={item.key}
+            selected={item.selected}
+            onClick={() => handleOverflowMenuItemClick(item.onClick)}
           >
-            {buttons}
-          </Box>
-        ) : (
-          <ButtonGroup
-            size="small"
-            variant="outlined"
-            aria-label="Дії повідомлення"
-            sx={[
-              {
-                flexWrap: 'nowrap',
-                alignItems: 'center',
-                borderRadius: 1,
-                '& .MuiButton-root': {
-                  borderColor: 'divider',
-                  borderRadius: 0,
-                },
-                '& .MuiButton-root:first-of-type': {
-                  borderTopLeftRadius: (theme) => `${theme.shape.borderRadius}px`,
-                  borderBottomLeftRadius: (theme) => `${theme.shape.borderRadius}px`,
-                },
-                '& .MuiButton-root:last-of-type': {
-                  borderTopRightRadius: (theme) => `${theme.shape.borderRadius}px`,
-                  borderBottomRightRadius: (theme) => `${theme.shape.borderRadius}px`,
-                },
-                '& .MuiButton-root:hover': {
-                  borderColor: 'divider',
-                  backgroundColor: 'action.hover',
-                },
-              },
-              ...(Array.isArray(sx) ? sx : sx ? [sx] : []),
-            ]}
-          >
-            {buttons}
-          </ButtonGroup>
-        )}
-      </div>
-      {isPresent(overflowMenuAnchorPosition) && canShowOverflowMenu && (
-        <Menu
-          id={overflowMenuId}
-          anchorReference="anchorPosition"
-          anchorPosition={overflowMenuAnchorPosition ?? undefined}
-          open={true}
-          onClose={closeOverflowMenu}
-          MenuListProps={{ 'aria-label': 'Додаткові дії повідомлення' }}
-        >
-          {overflowMenuItems.map((item) => (
-            <MenuItem
-              key={item.key}
-              selected={item.selected}
-              onClick={() => handleOverflowMenuItemClick(item.onClick)}
-            >
-              <span className="inline-flex items-center gap-[10px]">
-                {item.icon}
-                <span>{item.title}</span>
-              </span>
-            </MenuItem>
-          ))}
-        </Menu>
-      )}
-      {isPresent(copyMenuAnchorPosition) && (
-        <Menu
-          id={copyMenuId}
-          anchorReference="anchorPosition"
-          anchorPosition={copyMenuAnchorPosition ?? undefined}
-          open={isPresent(copyMenuAnchorPosition)}
-          onClose={closeCopyMenu}
-          MenuListProps={{ 'aria-label': 'Копіювання повідомлення' }}
-        >
-          <MenuItem onClick={() => handleCopyMenuItemClick(onCopyText)}>
-            <span className="inline-flex items-center gap-[10px]">
-              <MessageIcon fontSize="small" />
-              <span>Копіювати повідомлення</span>
-            </span>
+            <MenuRow icon={item.icon}>{item.title}</MenuRow>
           </MenuItem>
-          {hasCopyTextWithNetwork ? (
-            <MenuItem onClick={() => handleCopyMenuItemClick(onCopyTextWithNetwork!)}>
-              <span className="inline-flex items-center gap-[10px]">
-                <PeopleIcon fontSize="small" />
-                <span>Копіювати повідомлення з назвою мережі</span>
-              </span>
-            </MenuItem>
-          ) : null}
-          {hasCopyTextWithNetworkAndNote ? (
-            <MenuItem onClick={() => handleCopyMenuItemClick(onCopyTextWithNetworkAndNote!)}>
-              <span className="inline-flex items-center gap-[10px]">
-                <ChatBubbleOutlineOutlinedIcon fontSize="small" />
-                <span>Копіювати повідомлення з мережею та коментарем</span>
-              </span>
-            </MenuItem>
-          ) : null}
-          {hasFrequencyCopy ? (
-            <MenuItem onClick={() => handleCopyMenuItemClick(onCopyFreq)}>
-              <span className="inline-flex items-center gap-[10px]">
-                <SettingsInputAntennaIcon fontSize="small" />
-                <span>Копіювати частоту</span>
-              </span>
-            </MenuItem>
-          ) : null}
-          {canShowLocationCopy ? (
-            <MenuItem onClick={() => handleCopyMenuItemClick(onCopyLocation!)}>
-              <span className="inline-flex items-center gap-[10px]">
-                <PlaceIcon fontSize="small" />
-                <span>Копіювати локацію</span>
-              </span>
-            </MenuItem>
-          ) : null}
-          {hasEtalonCopy ? (
-            <MenuItem onClick={() => handleCopyMenuItemClick(onCopyEtalon!)}>
-              <span className="inline-flex items-center gap-[10px]">
-                <PeopleIcon fontSize="small" />
-                <span>Копіювати прив&apos;язку</span>
-              </span>
-            </MenuItem>
-          ) : null}
-        </Menu>
-      )}
-      {isPresent(navigationMenuAnchorPosition) && canShowNavigationMenu && (
-        <Menu
-          id={navigationMenuId}
-          anchorReference="anchorPosition"
-          anchorPosition={navigationMenuAnchorPosition ?? undefined}
-          open={true}
-          onClose={closeNavigationMenu}
-          MenuListProps={{ 'aria-label': 'Перехід по повідомленню' }}
-          slotProps={{
-            paper: {
-              sx: {
-                maxWidth: 320,
-                minWidth: navigationMenuHasNetwork ? undefined : 140,
-                width: navigationMenuHasNetwork ? '100%' : 'fit-content',
-              },
+        ))}
+      </Menu>
+    ) : null;
+
+  const copyMenu = isPresent(copyMenuAnchorPosition) ? (
+    <Menu
+      id={copyMenuId}
+      anchorReference="anchorPosition"
+      anchorPosition={copyMenuAnchorPosition ?? undefined}
+      open
+      onClose={closeCopyMenu}
+      MenuListProps={{ 'aria-label': 'Копіювання повідомлення' }}
+    >
+      <MenuItem onClick={() => handleCopyMenuItemClick(onCopyText)}>
+        <MenuRow icon={<MessageIcon fontSize="small" />}>Копіювати повідомлення</MenuRow>
+      </MenuItem>
+      {hasCopyTextWithNetwork ? (
+        <MenuItem onClick={() => handleCopyMenuItemClick(onCopyTextWithNetwork!)}>
+          <MenuRow icon={<PeopleIcon fontSize="small" />}>
+            Копіювати повідомлення з назвою мережі
+          </MenuRow>
+        </MenuItem>
+      ) : null}
+      {hasCopyTextWithNetworkAndNote ? (
+        <MenuItem onClick={() => handleCopyMenuItemClick(onCopyTextWithNetworkAndNote!)}>
+          <MenuRow icon={<ChatBubbleOutlineOutlinedIcon fontSize="small" />}>
+            Копіювати повідомлення з мережею та коментарем
+          </MenuRow>
+        </MenuItem>
+      ) : null}
+      {hasFrequencyCopy ? (
+        <MenuItem onClick={() => handleCopyMenuItemClick(onCopyFreq)}>
+          <MenuRow icon={<SettingsInputAntennaIcon fontSize="small" />}>Копіювати частоту</MenuRow>
+        </MenuItem>
+      ) : null}
+      {canShowLocationCopy ? (
+        <MenuItem onClick={() => handleCopyMenuItemClick(onCopyLocation!)}>
+          <MenuRow icon={<PlaceIcon fontSize="small" />}>Копіювати локацію</MenuRow>
+        </MenuItem>
+      ) : null}
+      {hasEtalonCopy ? (
+        <MenuItem onClick={() => handleCopyMenuItemClick(onCopyEtalon!)}>
+          <MenuRow icon={<PeopleIcon fontSize="small" />}>Копіювати прив&apos;язку</MenuRow>
+        </MenuItem>
+      ) : null}
+    </Menu>
+  ) : null;
+
+  const navigationMenu =
+    isPresent(navigationMenuAnchorPosition) && canShowNavigationMenu ? (
+      <Menu
+        id={navigationMenuId}
+        anchorReference="anchorPosition"
+        anchorPosition={navigationMenuAnchorPosition ?? undefined}
+        open
+        onClose={closeNavigationMenu}
+        MenuListProps={{ 'aria-label': 'Перехід по повідомленню' }}
+        slotProps={{
+          paper: {
+            sx: {
+              maxWidth: 320,
+              minWidth: navigationMenuHasNetwork ? undefined : 140,
+              width: navigationMenuHasNetwork ? '100%' : 'fit-content',
             },
-          }}
-        >
-          {navigationMenuItems.map((item) =>
-            item.kind === 'network' ? (
-              <MenuItem
-                key={`${item.kind}:${item.href}`}
-                component="a"
-                href={item.href}
-                target="_blank"
-                rel="noopener noreferrer"
-                title={item.networkLabel}
-                onClick={closeNavigationMenu}
-                sx={{ maxWidth: 320, overflow: 'hidden' }}
-              >
-                <span className="flex items-center gap-[10px] min-w-0 w-full">
-                  <PeopleIcon fontSize="small" />
-                  <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">
-                    В мережу <strong className="font-bold">{item.networkLabel}</strong>
-                    {item.badge ? (
-                      <span className="badge badge-no-unit-sm ml-[0.35em] align-middle relative -top-[0.06em]">
-                        в дорозвідці
-                      </span>
-                    ) : null}
-                  </span>
-                </span>
-              </MenuItem>
-            ) : item.kind === 'map' ? (
-              <MenuItem
-                key={`${item.kind}:${item.href}`}
-                component="a"
-                href={item.href}
-                target="_blank"
-                rel="noopener noreferrer"
-                onClick={closeNavigationMenu}
-                sx={{ maxWidth: 320, overflow: 'hidden' }}
-              >
-                <span className="flex items-center gap-[10px] min-w-0 w-full">
-                  <MapIcon fontSize="small" />
-                  <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">
-                    {item.label ?? 'На мапу'}
-                  </span>
-                </span>
-              </MenuItem>
-            ) : (
-              <MenuItem
-                key={`${item.kind}:${item.href}`}
-                component="a"
-                href={item.href}
-                target="_blank"
-                rel="noopener noreferrer"
-                onClick={closeNavigationMenu}
-                sx={{ maxWidth: 320, overflow: 'hidden' }}
-              >
-                <span className="flex items-center gap-[10px] min-w-0 w-full">
-                  <BarChartIcon fontSize="small" />
-                  <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">
-                    {item.label ?? 'В аналіз'}
-                  </span>
-                </span>
-              </MenuItem>
-            ),
-          )}
-        </Menu>
-      )}
-      {isPresent(excludeMenuAnchorPosition) && canShowExcludeMenu && (
-        <Menu
-          id={excludeMenuId}
-          anchorReference="anchorPosition"
-          anchorPosition={excludeMenuAnchorPosition ?? undefined}
-          open={true}
-          onClose={closeExcludeMenu}
-          MenuListProps={{ 'aria-label': 'Виключення з фільтрів' }}
-        >
-          {excludeMenuOptions.map((option) => (
+          },
+        }}
+      >
+        {navigationMenuItems.map((item) =>
+          item.kind === 'network' ? (
             <MenuItem
-              key={`${option.entity}:${option.value}`}
-              onClick={() => handleExcludeMenuItemClick(option)}
+              key={`${item.kind}:${item.href}`}
+              component="a"
+              href={item.href}
+              target="_blank"
+              rel="noopener noreferrer"
+              title={item.networkLabel}
+              onClick={closeNavigationMenu}
+              sx={{ maxWidth: 320, overflow: 'hidden' }}
             >
-              <span className="inline-flex items-center gap-[10px]">
-                {option.entity === 'group' ? (
+              <MenuRow icon={<PeopleIcon fontSize="small" />}>
+                В мережу <strong>{item.networkLabel}</strong>
+                {item.badge ? (
+                  <span
+                    className="badge badge-no-unit-sm"
+                    style={{
+                      marginLeft: '0.35em',
+                      verticalAlign: 'middle',
+                      position: 'relative',
+                      top: '-0.06em',
+                    }}
+                  >
+                    в дорозвідці
+                  </span>
+                ) : null}
+              </MenuRow>
+            </MenuItem>
+          ) : item.kind === 'map' ? (
+            <MenuItem
+              key={`${item.kind}:${item.href}`}
+              component="a"
+              href={item.href}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={closeNavigationMenu}
+              sx={{ maxWidth: 320, overflow: 'hidden' }}
+            >
+              <MenuRow icon={<MapIcon fontSize="small" />}>{item.label ?? 'На мапу'}</MenuRow>
+            </MenuItem>
+          ) : (
+            <MenuItem
+              key={`${item.kind}:${item.href}`}
+              component="a"
+              href={item.href}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={closeNavigationMenu}
+              sx={{ maxWidth: 320, overflow: 'hidden' }}
+            >
+              <MenuRow icon={<BarChartIcon fontSize="small" />}>{item.label ?? 'В аналіз'}</MenuRow>
+            </MenuItem>
+          ),
+        )}
+      </Menu>
+    ) : null;
+
+  const excludeMenu =
+    isPresent(excludeMenuAnchorPosition) && canShowExcludeMenu ? (
+      <Menu
+        id={excludeMenuId}
+        anchorReference="anchorPosition"
+        anchorPosition={excludeMenuAnchorPosition ?? undefined}
+        open
+        onClose={closeExcludeMenu}
+        MenuListProps={{ 'aria-label': 'Виключення з фільтрів' }}
+      >
+        {excludeMenuOptions.map((option) => (
+          <MenuItem
+            key={`${option.entity}:${option.value}`}
+            onClick={() => handleExcludeMenuItemClick(option)}
+          >
+            <MenuRow
+              icon={
+                option.entity === 'group' ? (
                   <GraphicEqIcon fontSize="small" />
                 ) : option.entity === 'sender' ? (
                   <AccountCircleIcon fontSize="small" />
@@ -718,22 +652,41 @@ function ActionIconsRow({
                   <SettingsInputAntennaIcon fontSize="small" />
                 ) : (
                   <DeskIcon fontSize="small" />
-                )}
-                <span>
-                  {option.entity === 'group'
-                    ? 'Виключити групу'
-                    : option.entity === 'sender'
-                      ? 'Виключити відправника'
-                      : option.entity === 'freq'
-                        ? 'Виключити частоту'
-                        : 'Виключити пост'}{' '}
-                  <strong>{option.label}</strong>
-                </span>
-              </span>
-            </MenuItem>
-          ))}
-        </Menu>
-      )}
+                )
+              }
+            >
+              {option.entity === 'group'
+                ? 'Виключити групу'
+                : option.entity === 'sender'
+                  ? 'Виключити відправника'
+                  : option.entity === 'freq'
+                    ? 'Виключити частоту'
+                    : 'Виключити пост'}{' '}
+              <strong>{option.label}</strong>
+            </MenuRow>
+          </MenuItem>
+        ))}
+      </Menu>
+    ) : null;
+
+  return (
+    <>
+      <div ref={rootRef} style={{ width: '100%', display: 'flex', justifyContent: 'center' }}>
+        <ButtonGroup
+          size="small"
+          variant="outlined"
+          aria-label="Дії повідомлення"
+          role={stackedLayout ? 'group' : undefined}
+          data-action-grid-columns={stackedLayout ? actionGridColumns : undefined}
+          sx={buttonGroupSx}
+        >
+          {buttons}
+        </ButtonGroup>
+      </div>
+      {overflowMenu}
+      {copyMenu}
+      {navigationMenu}
+      {excludeMenu}
     </>
   );
 }
@@ -742,11 +695,14 @@ const MESSAGE_CARD_ACTION_COLOR = 'var(--color-action)';
 
 function MetaLine({ icon, title, text }: { icon: JSX.Element; title: string; text: string }) {
   return (
-    <div className="flex flex-row gap-1.5 items-center min-w-0" title={text}>
-      <div className="text-[var(--color-action)] leading-none shrink-0" title={title}>
+    <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, minWidth: 0 }} title={text}>
+      <span
+        style={{ color: MESSAGE_CARD_ACTION_COLOR, lineHeight: 0, flexShrink: 0 }}
+        title={title}
+      >
         {icon}
-      </div>
-      <Typography variant="body2" sx={{ minWidth: 0 }} noWrap>
+      </span>
+      <Typography variant="caption" sx={{ minWidth: 0, display: 'inline-block' }} noWrap>
         {text}
       </Typography>
     </div>
@@ -772,7 +728,20 @@ function NetworkEtalonSection({
       <Tooltip title={locationDisplayValue} placement="top">
         <span
           aria-label={`Локація: ${locationDisplayValue}`}
-          className="inline-flex items-center justify-center box-border w-6 h-6 p-0 border border-transparent rounded-full shrink-0 self-center text-[var(--color-action)] hover:text-[var(--color-action)]"
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            boxSizing: 'border-box',
+            width: 24,
+            height: 24,
+            padding: 0,
+            border: '1px solid transparent',
+            borderRadius: '50%',
+            color: MESSAGE_CARD_ACTION_COLOR,
+            flexShrink: 0,
+            alignSelf: 'center',
+          }}
         >
           <PlaceOutlinedIcon aria-hidden sx={{ fontSize: 16, lineHeight: 1 }} />
         </span>
@@ -781,18 +750,50 @@ function NetworkEtalonSection({
 
   const networkContent =
     primaryKind === 'network' ? (
-      <div className="min-w-0 max-w-full flex flex-col gap-y-1 items-start">
+      <div
+        style={{
+          minWidth: 0,
+          maxWidth: '100%',
+          display: 'flex',
+          flexDirection: 'column',
+          rowGap: 2,
+          alignItems: 'flex-start',
+        }}
+      >
         {renderedNetworks.map(({ networkId, label, badge }) => (
           <div
             key={networkId}
-            className="min-w-0 max-w-full flex items-center gap-1 flex-nowrap leading-[1.1]"
+            style={{
+              minWidth: 0,
+              maxWidth: '100%',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 4,
+              flexWrap: 'nowrap',
+              lineHeight: 1.1,
+            }}
           >
-            <span className="inline-flex items-center max-w-full align-top break-words [overflow-wrap:anywhere]">
-              <Typography component="strong" variant="body2" sx={{ fontWeight: 700 }}>
-                {label}
-              </Typography>
+            <span
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                maxWidth: '100%',
+                verticalAlign: 'top',
+                overflowWrap: 'anywhere',
+                wordBreak: 'break-word',
+              }}
+            >
+              <strong>{label}</strong>
               {badge ? (
-                <span className="badge badge-no-unit-sm ml-[0.35em] align-middle relative -top-[0.06em]">
+                <span
+                  className="badge badge-no-unit-sm"
+                  style={{
+                    marginLeft: '0.35em',
+                    verticalAlign: 'middle',
+                    position: 'relative',
+                    top: '-0.06em',
+                  }}
+                >
                   в дорозвідці
                 </span>
               ) : null}
@@ -802,12 +803,10 @@ function NetworkEtalonSection({
       </div>
     ) : (
       <Typography
-        component="span"
         variant="body2"
         sx={{
           minWidth: 0,
           overflowWrap: 'anywhere',
-          fontWeight: 700,
           display: 'inline-flex',
           alignItems: 'center',
         }}
@@ -842,9 +841,28 @@ function NetworkEtalonSection({
     );
 
   return (
-    <div className="flex flex-row gap-1.5 items-center min-w-0 max-w-full w-fit">
+    <div
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 6,
+        minWidth: 0,
+        maxWidth: '100%',
+        width: 'fit-content',
+      }}
+    >
       {primaryIcon}
-      <div className="min-w-0 flex flex-col gap-y-1 items-start">{networkContent}</div>
+      <div
+        style={{
+          minWidth: 0,
+          display: 'flex',
+          flexDirection: 'column',
+          rowGap: 2,
+          alignItems: 'flex-start',
+        }}
+      >
+        {networkContent}
+      </div>
       {geoButton}
     </div>
   );
@@ -854,8 +872,6 @@ export type MessageCardHeaderProps = {
   compact?: boolean;
   displayMode: MessageCardDisplayMode;
   excludeMenuOptions?: MessageEntityExcludeMenuOption[];
-  /** Width % of the bottom header row for the network / etalon block. */
-  networkRowContentWidthPct?: number;
   id: number;
   msg: InboxMessage;
   copiedFeedbackId: string | null;
@@ -886,7 +902,6 @@ function MessageCardHeaderComponent({
   compact = false,
   displayMode,
   excludeMenuOptions = [],
-  networkRowContentWidthPct = 80,
   id,
   msg,
   copiedFeedbackId,
@@ -919,17 +934,25 @@ function MessageCardHeaderComponent({
   );
   const locationDisplayValue = etalonDisplayModel.locationDisplayValue;
   const showTopGridLocation =
-    etalonDisplayModel.primaryKind === 'network' && locationDisplayValue != null;
+    etalonDisplayModel.primaryKind !== 'location' && locationDisplayValue != null;
+  let coordsDisplayValue: string | null = null;
+  if (isPresent(msg.coords) && msg.coords.trim() !== '') {
+    coordsDisplayValue = msg.coords.trim();
+    const match = coordsDisplayValue.match(/^([+-]?\d+(?:\.\d+)?)\s*,\s*([+-]?\d+(?:\.\d+)?)$/);
+    if (match) {
+      coordsDisplayValue = `${Number(parseFloat(match[1]).toFixed(5))}, ${Number(parseFloat(match[2]).toFixed(5))}`;
+    }
+  }
   const dateTimeBlock = (
-    <div className="flex flex-row gap-2 flex-wrap items-center">
-      <div className="flex flex-row gap-[6px] items-center">
+    <div style={{ display: 'inline-flex', flexWrap: 'wrap', alignItems: 'center', gap: 8 }}>
+      <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
         <ScheduleOutlinedIcon sx={{ color: MESSAGE_CARD_ACTION_COLOR, fontSize: 18 }} />
-        <Typography variant="body2">{formatTime(msg.time)}</Typography>
+        <Typography variant="caption">{formatTime(msg.time)}</Typography>
       </div>
       {isPresent(msg.date) ? (
-        <div className="flex flex-row gap-[6px] items-center">
+        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
           <CalendarTodayOutlinedIcon sx={{ color: MESSAGE_CARD_ACTION_COLOR, fontSize: 18 }} />
-          <Typography variant="body2">{formatDateNoYear(msg.date)}</Typography>
+          <Typography variant="caption">{formatDateNoYear(msg.date)}</Typography>
         </div>
       ) : null}
     </div>
@@ -941,160 +964,84 @@ function MessageCardHeaderComponent({
     onAddFrequencyToFilter?.(String(msg.freq ?? '').trim());
   }
 
-  const freqBlock = isPresent(msg.freq) ? (
-    <CenteredInfoRow
-      icon={
-        <SettingsInputAntennaOutlinedIcon
-          sx={{ color: MESSAGE_CARD_ACTION_COLOR, fontSize: 18 }}
-          titleAccess="Частота"
+  const freqRowItem = isPresent(msg.freq) ? (
+    <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+      <SettingsInputAntennaOutlinedIcon
+        sx={{ color: MESSAGE_CARD_ACTION_COLOR, fontSize: 18, flexShrink: 0 }}
+        titleAccess="Частота"
+      />
+      <Typography variant="caption" sx={{ whiteSpace: 'nowrap' }}>
+        {msg.freq}
+      </Typography>
+      {hasFrequencyFilter ? (
+        <ActionIconButton
+          title="В фільтр"
+          icon={<FilterAltOutlinedIcon fontSize="inherit" />}
+          onClick={handleAddFrequencyToFilterClick}
         />
-      }
-      text={
-        <div className="min-w-0">
-          <Typography variant="body2" sx={{ fontWeight: 700, whiteSpace: 'nowrap' }}>
-            {msg.freq}
-          </Typography>
-        </div>
-      }
-      trailing={
-        hasFrequencyFilter ? (
-          <ActionIconButton
-            title="В фільтр"
-            icon={<FilterAltOutlinedIcon fontSize="inherit" />}
-            onClick={handleAddFrequencyToFilterClick}
-          />
-        ) : null
-      }
-    />
+      ) : null}
+    </div>
   ) : null;
 
-  if (compact) {
-    return (
-      <div
-        data-message-header-grid="true"
-        className="grid items-center w-full pb-2 border-b border-divider"
-        style={{
-          gridTemplateColumns: 'minmax(0, 1fr) auto minmax(0, 1fr)',
-          gridTemplateRows: `repeat(3, minmax(${MESSAGE_CARD_HEADER_ROW_MIN_HEIGHT_PX}px, auto))`,
-          columnGap: '16px',
-          rowGap: '8px',
-        }}
-      >
-        <div className="min-w-0 flex items-center col-start-1 row-start-1">{dateTimeBlock}</div>
-        <div className="min-w-0 flex items-center justify-center col-start-2 row-start-1">
-          <ActionIconsRow
-            id={id}
-            msg={msg}
-            compact
-            displayMode={displayMode}
-            excludeMenuOptions={excludeMenuOptions}
-            etalonDisplayModel={etalonDisplayModel}
-            copiedFeedbackId={copiedFeedbackId}
-            navigationMenuItems={navigationMenuItems}
-            onBookmark={onBookmark}
-            onImportant={onImportant}
-            onComment={onComment}
-            onCopyText={onCopyText}
-            onCopyFreq={onCopyFreq}
-            onCopyTextWithNetwork={onCopyTextWithNetwork}
-            onCopyTextWithNetworkAndNote={onCopyTextWithNetworkAndNote}
-            onCopyEtalon={onCopyEtalon}
-            onCopyLocation={onCopyLocation}
-            onDelete={onDelete}
-            onEditDetails={onEditDetails}
-            onExcludeMessageEntity={onExcludeMessageEntity}
-          />
-        </div>
-        <div
-          className="min-w-0 flex items-center justify-end col-start-3 row-start-1"
-          style={{ paddingRight: rightInsetPx }}
-        >
-          {topRight ?? <div className="min-h-[28px] flex items-center justify-end" />}
-        </div>
-        <div className="min-w-0 flex items-start col-start-1 row-start-2">
-          <div className="flex flex-row gap-3 flex-wrap items-center min-w-0">
-            {isPresent(groupName) ? (
-              <MetaLine
-                icon={<GraphicEqOutlinedIcon sx={{ fontSize: 18 }} />}
-                title="Група"
-                text={groupName}
-              />
-            ) : (
-              <Typography variant="body2" color="text.secondary">
-                —
-              </Typography>
-            )}
-            {isPresent(senderName) ? (
-              <MetaLine
-                icon={<AccountCircleOutlinedIcon sx={{ fontSize: 18 }} />}
-                title="Відправник"
-                text={senderName}
-              />
-            ) : (
-              <Typography variant="body2" color="text.secondary">
-                —
-              </Typography>
-            )}
-          </div>
-        </div>
-        <div className="min-w-0 flex items-center justify-center col-start-2 row-start-2">
-          {freqBlock ?? (
-            <Typography variant="body2" color="text.secondary">
-              —
-            </Typography>
-          )}
-        </div>
-        <div
-          className="min-w-0 flex items-center justify-end col-start-3 row-start-2"
-          style={{ paddingRight: rightInsetPx }}
-        >
-          <div className="min-h-[28px] flex items-center justify-end">
-            {metadataTrigger ?? <div className="min-h-[28px] min-w-[28px]" />}
-          </div>
-        </div>
-        <div
-          className="min-w-0 flex items-center col-start-1 col-end-3 row-start-3 gap-2"
-          style={{ paddingRight: rightInsetPx }}
-        >
-          <div
-            className="min-w-0"
-            style={{
-              flex: `0 1 ${networkRowContentWidthPct}%`,
-              maxWidth: `${networkRowContentWidthPct}%`,
-            }}
-          >
-            <NetworkEtalonSection etalonDisplayModel={etalonDisplayModel} />
-          </div>
-        </div>
-        <div
-          className="min-w-0 flex items-center justify-end col-start-3 row-start-3"
-          style={{ paddingRight: rightInsetPx }}
-        >
-          {showTopGridLocation ? (
-            <MetaLine
-              icon={<PlaceOutlinedIcon sx={{ fontSize: 18 }} />}
-              title="Локація"
-              text={locationDisplayValue}
-            />
-          ) : null}
-        </div>
-      </div>
-    );
-  }
-
-  return (
+  const metadataRow = (
     <div
-      data-message-header-grid="true"
-      className="grid items-center w-full"
       style={{
-        gridTemplateColumns: 'minmax(0, 1fr) auto minmax(0, 1fr)',
-        gridTemplateRows: `repeat(3, minmax(${MESSAGE_CARD_HEADER_ROW_MIN_HEIGHT_PX}px, auto))`,
-        columnGap: '32px',
-        rowGap: '6px',
+        display: 'flex',
+        flexWrap: 'wrap',
+        alignItems: 'center',
+        columnGap: 16,
+        rowGap: 8,
+        minWidth: 0,
+        width: '100%',
       }}
     >
-      <div className="min-w-0 flex items-center col-start-1 row-start-1">{dateTimeBlock}</div>
-      <div className="min-w-0 flex items-center justify-center col-start-2 row-start-1">
+      {isPresent(groupName) ? (
+        <MetaLine
+          icon={<GraphicEqOutlinedIcon sx={{ fontSize: 18 }} />}
+          title="Група"
+          text={groupName}
+        />
+      ) : null}
+      {isPresent(senderName) ? (
+        <MetaLine
+          icon={<AccountCircleOutlinedIcon sx={{ fontSize: 18 }} />}
+          title="Відправник"
+          text={senderName}
+        />
+      ) : null}
+      {freqRowItem}
+      {coordsDisplayValue != null ? (
+        <MetaLine
+          icon={<GpsFixedOutlinedIcon sx={{ fontSize: 18 }} />}
+          title="Координати"
+          text={coordsDisplayValue}
+        />
+      ) : null}
+      <NetworkEtalonSection etalonDisplayModel={etalonDisplayModel} />
+      {showTopGridLocation ? (
+        <MetaLine
+          icon={<PlaceOutlinedIcon sx={{ fontSize: 18 }} />}
+          title="Локація"
+          text={locationDisplayValue}
+        />
+      ) : null}
+    </div>
+  );
+
+  const row1 = (
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        columnGap: compact ? 16 : 32,
+        width: '100%',
+        minHeight: MESSAGE_CARD_HEADER_ROW_MIN_HEIGHT_PX,
+      }}
+    >
+      <div style={{ minWidth: 0, display: 'flex', alignItems: 'center', flex: '1 1 0' }}>
+        {dateTimeBlock}
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
         <ActionIconsRow
           id={id}
           msg={msg}
@@ -1119,82 +1066,73 @@ function MessageCardHeaderComponent({
         />
       </div>
       <div
-        className="min-w-0 flex items-center justify-end col-start-3 row-start-1"
-        style={{ paddingRight: rightInsetPx }}
+        style={{
+          minWidth: 0,
+          paddingRight: `${rightInsetPx}px`,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'flex-end',
+          flex: '1 1 0',
+        }}
       >
-        {topRight ?? <div className="min-h-[28px] flex items-center justify-end" />}
+        {topRight ?? <div style={{ minHeight: 28 }} />}
       </div>
-      <div className="min-w-0 flex items-start col-start-1 row-start-2">
-        <div className="flex flex-row gap-3 flex-wrap items-center min-w-0">
-          {isPresent(groupName) ? (
-            <MetaLine
-              icon={<GraphicEqOutlinedIcon sx={{ fontSize: 18 }} />}
-              title="Група"
-              text={groupName}
-            />
-          ) : (
-            <Typography variant="body2" color="text.secondary">
-              —
-            </Typography>
-          )}
-          {isPresent(senderName) ? (
-            <MetaLine
-              icon={<AccountCircleOutlinedIcon sx={{ fontSize: 18 }} />}
-              title="Відправник"
-              text={senderName}
-            />
-          ) : (
-            <Typography variant="body2" color="text.secondary">
-              —
-            </Typography>
-          )}
-        </div>
+    </div>
+  );
+
+  const row2 = (
+    <div style={{ display: 'flex', alignItems: 'flex-start', columnGap: 8, width: '100%' }}>
+      <div style={{ minWidth: 0, flex: 1, display: 'flex', alignItems: 'center' }}>
+        {metadataRow}
       </div>
-      <div className="min-w-0 flex items-center justify-center col-start-2 row-start-2">
-        {freqBlock ?? (
-          <CenteredTextOnlyRow
-            text={
-              <Typography variant="body2" color="text.secondary">
-                —
-              </Typography>
-            }
-          />
-        )}
-      </div>
-      <div
-        className="min-w-0 flex items-center justify-end col-start-3 row-start-2"
-        style={{ paddingRight: rightInsetPx }}
-      >
-        <div className="min-h-[28px] flex items-center justify-end">
-          {metadataTrigger ?? <div className="min-h-[28px] min-w-[28px]" />}
-        </div>
-      </div>
-      <div
-        className="min-w-0 flex items-center col-start-1 col-end-3 row-start-3 gap-2"
-        style={{ paddingRight: rightInsetPx }}
-      >
+      {metadataTrigger ? (
         <div
-          className="min-w-0"
           style={{
-            flex: `0 1 ${networkRowContentWidthPct}%`,
-            maxWidth: `${networkRowContentWidthPct}%`,
+            paddingRight: `${rightInsetPx}px`,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'flex-end',
+            flexShrink: 0,
           }}
         >
-          <NetworkEtalonSection etalonDisplayModel={etalonDisplayModel} />
+          {metadataTrigger}
         </div>
-      </div>
+      ) : null}
+    </div>
+  );
+
+  if (compact) {
+    return (
       <div
-        className="min-w-0 flex items-center justify-end col-start-3 row-start-3"
-        style={{ paddingRight: rightInsetPx }}
+        data-message-header-grid="true"
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          width: '100%',
+          rowGap: 8,
+          paddingBottom: 8,
+          borderBottom: '1px solid',
+          borderColor: 'var(--color-divider)',
+        }}
       >
-        {showTopGridLocation ? (
-          <MetaLine
-            icon={<PlaceOutlinedIcon sx={{ fontSize: 18 }} />}
-            title="Локація"
-            text={locationDisplayValue}
-          />
-        ) : null}
+        {row1}
+        {row2}
       </div>
+    );
+  }
+
+  return (
+    <div
+      data-message-header-grid="true"
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        width: '100%',
+        rowGap: 6,
+      }}
+    >
+      {row1}
+      {row2}
     </div>
   );
 }

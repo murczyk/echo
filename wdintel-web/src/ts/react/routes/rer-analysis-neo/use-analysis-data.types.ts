@@ -99,6 +99,7 @@ export type UseAnalysisDataResult = {
     messageId: number,
     updater: (message: InboxMessage) => InboxMessage,
   ) => void;
+  onPrependLocalMessage: (messageId: number, message: InboxMessage) => void;
   onDeleteMessage: (messageId: number) => Promise<void>;
   onSaveMessageComment: (messageId: number, comment: string | null) => Promise<void>;
   onCancelBotTagAction: () => void;

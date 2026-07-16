@@ -23,6 +23,9 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 pub(crate) mod bl;
 pub mod metadata;
 pub mod query;
+pub(crate) mod submit_bl;
+
+use submit_bl::*;
 
 async fn apply_test_inbox_settings(
     env: &Env,
@@ -337,7 +340,7 @@ async fn messages_by_id(
     Ok(Json(MessageIdsRsp { messages }))
 }
 
-async fn messages_by_id_bl(
+pub(crate) async fn messages_by_id_bl(
     login: &str,
     logins: &Vec<String>,
     env: &Env,
@@ -364,6 +367,10 @@ async fn messages_by_id_bl(
         .join(
             JoinType::LeftJoin,
             sigint_inbox_item::Relation::SigintPost.def(),
+        )
+        .join(
+            JoinType::LeftJoin,
+            sigint_inbox_item::Relation::DeviceName.def(),
         );
 
     messages = add_inbox_message_columns(messages);
@@ -741,93 +748,9 @@ async fn inbox_submit_v11(
     }
 }
 
-#[derive(Debug)]
-struct SubmittedInboxItem {
-    message_uid: String,
-    inbox_id: i64,
-    warnings: Vec<InboxSubmitWarning>,
-}
-
-async fn submit_generic_inbox_item(
-    env: &Data<Env>,
-    txn: &DatabaseTransaction,
-    datasource: &datasource::Model,
-    login: &str,
-    logins: &Vec<String>,
-    item: InboxSubmitItem,
-) -> Result<SubmittedInboxItem, AppError> {
-    validate_generic_submit_item(&item)?;
-    let groups = ensure_submit_groups(
-        txn,
-        datasource,
-        login,
-        item.group_names.as_deref().unwrap_or(&[]),
-    )
-    .await
-    .c(h!())?;
-    let tag_ids = resolve_submit_tag_ids(txn, item.tags.as_deref()).await?;
-    let operator_tags = submit_operator_tags(item.tags.as_deref())?;
-    let (mut message, timestamp) = generic_submit_item_to_inbox_message(&item)?;
-    let post = normalized_optional_string(message.post.as_deref());
-    let post_id = match message.post_id {
-        Some(post_id) => Some(post_id),
-        None => crate::sigint::post::get_or_create_post_id(txn, &post)
-            .await
-            .c(h!())?,
-    };
-    message.group_master_key = groups.first().map(|(key, _)| key.clone());
-    message.post = post;
-    message.post_id = post_id;
-    prepare_submit_body_for_coordinate_extraction(&mut message)?;
-
-    let signal_message = upsert_submit_signal_message(
-        txn,
-        &env.config,
-        datasource.id,
-        item.message_uid.as_deref(),
-        &message,
-        Some(timestamp),
-        operator_tags,
-        &groups,
-    )
-    .await
-    .c(h!())?;
-    let message_uid = signal_message.message_uid.clone().c(h!())?;
-    let inbox_id = submit_upsert_inbox_item(
-        env.settlements.clone(),
-        txn,
-        signal_message.id,
-        &message,
-        login,
-        logins,
-        InboxLocationSubmitMode::Parse,
-    )
-    .await
-    .c(h!())?;
-    add_submit_tags(txn, inbox_id, login, tag_ids)
-        .await
-        .c(h!())?;
-    let InboxSubmitItem { network, dmr, .. } = item;
-    let warnings =
-        save_submit_dmr_metadata(inbox_id, network.as_ref(), dmr, txn)
-            .await
-            .c(h!())?;
-
-    Ok(SubmittedInboxItem {
-        message_uid,
-        inbox_id,
-        warnings,
-    })
-}
-
 fn validate_generic_submit_item(
     item: &InboxSubmitItem,
 ) -> Result<(), AppError> {
-    if item.text.trim().is_empty() {
-        return Err(AppError::BL {
-            msg: "Inbox submit requires message text".to_string(),
-        });
-    }
     if item
         .group_names
         .as_ref()
@@ -837,6 +760,20 @@ fn validate_generic_submit_item(
             msg: "Inbox submit requires at least one group name".to_string(),
         });
     }
+    if normalized_optional_string(item.full_body.as_deref()).is_none()
+        && normalized_optional_string(item.text.as_deref()).is_none()
+    {
+        return Err(AppError::Form(BTreeMap::from([(
+            "text".to_string(),
+            "Inbox submit requires message text".to_string(),
+        )])));
+    }
+    validate_submit_item_content(item)
+}
+
+fn validate_submit_item_content(
+    item: &InboxSubmitItem,
+) -> Result<(), AppError> {
     validate_submit_network(item.network.as_ref())?;
     validate_submit_dmr_signal_names(&item.dmr)?;
     validate_submit_dmr_timestamps(&item.dmr)?;
@@ -845,13 +782,26 @@ fn validate_generic_submit_item(
 
 fn generic_submit_item_to_inbox_message(
     item: &InboxSubmitItem,
+    allow_empty_content: bool,
 ) -> Result<(InboxMessage, NaiveDateTime), AppError> {
     let timestamp =
         parse_submit_rfc3339_timestamp("timestamp", &item.timestamp)?;
     let (date, time) = format_submit_date_time_fields(timestamp);
+    let full_body = normalized_optional_string(item.full_body.as_deref())
+        .or_else(|| normalized_optional_string(item.text.as_deref()))
+        .or_else(|| allow_empty_content.then(String::new))
+        .c(h!())?;
+    let no_headers_body =
+        normalized_optional_string(item.text.as_deref()).map(|body| {
+            crate::rer_importer::body_noheader::NoHeadersBody {
+                end: body.len(),
+                body,
+                start: 0,
+            }
+        });
     let message = InboxMessage {
         message_uid: None,
-        text: item.text.clone(),
+        text: full_body,
         media: vec![],
         images: vec![],
         image_recognized: vec![],
@@ -867,7 +817,7 @@ fn generic_submit_item_to_inbox_message(
         timestamp: Some(timestamp.and_utc().timestamp_millis()),
         group_master_key: None,
         sender: item.sender.clone(),
-        extended_form: item.full_body.clone(),
+        extended_form: item.comment.clone(),
         message_comments: vec![],
         post: item.post.clone(),
         post_id: None,
@@ -875,13 +825,15 @@ fn generic_submit_item_to_inbox_message(
         callsign_tokens: None,
         signal_tokens: None,
         point_tokens: None,
-        no_headers_body: None,
+        no_headers_body,
         keyword_tokens: None,
         text_marked: None,
         datasource_id: None,
         location: format_submit_locations(&item.locations),
         tags: None,
         network_ids: None,
+        network_name: None,
+        device_name: None,
         inbox_tags: None,
         metadata: vec![],
     };
@@ -986,6 +938,27 @@ async fn add_submit_tags(
         .c(h!())?;
     }
     Ok(())
+}
+
+async fn replace_submit_tags(
+    txn: &DatabaseTransaction,
+    inbox_id: i64,
+    login: &str,
+    tag_ids: Option<Vec<i64>>,
+) -> Result<(), AppError> {
+    let Some(tag_ids) = tag_ids else {
+        return Ok(());
+    };
+    sigint_inbox_item_tag::Entity::delete_many()
+        .filter(sigint_inbox_item_tag::Column::SigintInboxItemId.eq(inbox_id))
+        .filter(
+            sigint_inbox_item_tag::Column::Login.eq(Some(login.to_string())),
+        )
+        .filter(sigint_inbox_item_tag::Column::Model.is_null())
+        .exec(txn)
+        .await
+        .c(h!())?;
+    add_submit_tags(txn, inbox_id, login, Some(tag_ids)).await
 }
 
 fn format_submit_coordinates(coords: &[SubmitCoordinates]) -> Option<String> {
@@ -1178,8 +1151,71 @@ async fn upsert_submit_signal_message(
     operator_tags: Option<serde_json::Value>,
     groups: &[(String, i64)],
 ) -> Result<signal_message::Model, AppError> {
+    upsert_submit_signal_message_inner(
+        txn,
+        config,
+        datasource_id,
+        message_uid,
+        message,
+        timestamp,
+        operator_tags,
+        groups,
+        false,
+    )
+    .await
+}
+
+async fn update_submit_signal_message(
+    txn: &DatabaseTransaction,
+    config: &Config,
+    signal_message_id: i64,
+    message: &InboxMessage,
+    timestamp: Option<NaiveDateTime>,
+    operator_tags: Option<serde_json::Value>,
+    groups: &[(String, i64)],
+) -> Result<signal_message::Model, AppError> {
     let (_group_master_key, datasource_group_id) =
         groups.first().cloned().c(h!())?;
+    let signal_message = SignalMessage::find_by_id(signal_message_id)
+        .filter(signal_message::Column::Deleted.eq(false))
+        .one(txn)
+        .await
+        .c(h!())?
+        .ok_or(AppError::NotFound)?;
+    let mut signal_message = signal_message.into_active_model();
+    signal_message.body = Set(Some(message.text.clone()));
+    signal_message.datasource_group_id = Set(Some(datasource_group_id));
+    signal_message.timestamp = Set(timestamp);
+    signal_message.sender = Set(message.sender.clone());
+    if operator_tags.is_some() {
+        signal_message.operator_tags = Set(operator_tags);
+    }
+    let signal_message = signal_message.update(txn).await.c(h!())?;
+    let signal_message =
+        ensure_signal_message_model_uid(txn, config, signal_message)
+            .await
+            .c(h!())?;
+    ensure_submit_signal_message_groups(txn, &signal_message, groups).await?;
+    Ok(signal_message)
+}
+
+async fn upsert_submit_signal_message_inner(
+    txn: &DatabaseTransaction,
+    config: &Config,
+    datasource_id: i64,
+    message_uid: Option<&str>,
+    message: &InboxMessage,
+    timestamp: Option<NaiveDateTime>,
+    operator_tags: Option<serde_json::Value>,
+    groups: &[(String, i64)],
+    create_missing_uid: bool,
+) -> Result<signal_message::Model, AppError> {
+    let (_group_master_key, datasource_group_id) =
+        groups.first().cloned().c(h!())?;
+    let group_master_keys = groups
+        .iter()
+        .map(|(group_master_key, _)| group_master_key.clone())
+        .collect::<Vec<_>>();
     let signal_message = match normalized_optional_string(message_uid) {
         Some(message_uid) => {
             let signal_message = SignalMessage::find()
@@ -1187,23 +1223,54 @@ async fn upsert_submit_signal_message(
                     JoinType::InnerJoin,
                     signal_message::Relation::DatasourceGroup.def(),
                 )
-                .filter(signal_message::Column::MessageUid.eq(message_uid))
+                .join(
+                    JoinType::InnerJoin,
+                    signal_message::Relation::SignalMessageGroup.def(),
+                )
+                .filter(signal_message::Column::MessageUid.eq(&message_uid))
                 .filter(signal_message::Column::Deleted.eq(false))
                 .filter(
                     datasource_group::Column::DatasourceId.eq(datasource_id),
                 )
+                .filter(
+                    signal_message_group::Column::GroupMasterKey
+                        .is_in(group_master_keys),
+                )
                 .one(txn)
                 .await
-                .c(h!())?
-                .ok_or(AppError::NotFound)?;
-            let mut signal_message = signal_message.into_active_model();
-            signal_message.body = Set(Some(message.text.clone()));
-            signal_message.datasource_group_id = Set(Some(datasource_group_id));
-            signal_message.timestamp = Set(timestamp);
-            signal_message.sender = Set(message.sender.clone());
-            signal_message.operator_tags = Set(operator_tags);
-            signal_message.deleted = Set(false);
-            signal_message.update(txn).await.c(h!())?
+                .c(h!())?;
+            match signal_message {
+                Some(signal_message) => {
+                    let mut signal_message = signal_message.into_active_model();
+                    signal_message.body = Set(Some(message.text.clone()));
+                    signal_message.datasource_group_id =
+                        Set(Some(datasource_group_id));
+                    signal_message.timestamp = Set(timestamp);
+                    signal_message.sender = Set(message.sender.clone());
+                    signal_message.operator_tags = Set(operator_tags);
+                    signal_message.deleted = Set(false);
+                    signal_message.update(txn).await.c(h!())?
+                }
+                None if create_missing_uid => signal_message::ActiveModel {
+                    id: NotSet,
+                    body: Set(Some(message.text.clone())),
+                    datasource_group_id: Set(Some(datasource_group_id)),
+                    created_at: NotSet,
+                    timestamp: Set(timestamp),
+                    sender: Set(message.sender.clone()),
+                    format: NotSet,
+                    deleted: Set(false),
+                    external_id: Set(None),
+                    echo_inbox_message_id: Set(None),
+                    message_uid: Set(Some(message_uid)),
+                    operator_tags: Set(operator_tags),
+                    attachments_hash: Set(None),
+                }
+                .insert(txn)
+                .await
+                .c(h!())?,
+                None => return Err(AppError::NotFound),
+            }
         }
         None => signal_message::ActiveModel {
             id: NotSet,
@@ -1287,10 +1354,6 @@ fn prepare_submit_body_for_coordinate_extraction(
     message: &mut InboxMessage,
 ) -> Result<(), AppError> {
     message.coords = normalized_optional_string(message.coords.as_deref());
-    if message.coords.is_some() {
-        message.no_headers_body = None;
-        return Ok(());
-    }
     if message.no_headers_body.is_none() {
         message.no_headers_body = Some(
             crate::rer_importer::body_noheader::extract_text(&message.text)
@@ -1508,8 +1571,10 @@ fn normalize_submit_dmr_metadata(
 fn validate_submit_network(
     network: Option<&SubmitNetwork>,
 ) -> Result<(), AppError> {
-    if let Some(network) = network {
-        validate_submit_signal_name(&network.signal_name)?;
+    if let Some(signal_name) =
+        network.and_then(|network| network.signal_name.as_deref())
+    {
+        validate_submit_signal_name(signal_name)?;
     }
     Ok(())
 }
@@ -1775,56 +1840,6 @@ async fn submit_legacy_inbox(
     submit_legacy_inbox_messages(env, &login, &logins, req).await
 }
 
-async fn submit_generic_inbox(
-    user: Identity,
-    env: &Data<Env>,
-    item: InboxSubmitItem,
-) -> Result<GenericInboxSubmitRsp, AppError> {
-    let login = user.id().c(h!())?;
-    crate::users::has_any_role(
-        &env.dbx,
-        &login,
-        vec!["Rer", "Api", "ApiAgent"],
-    )
-    .await
-    .c(h!())?;
-    let logins = crate::users::get_organism_logins(&env.dbx, user)
-        .await
-        .context(h!())?;
-    let submitted =
-        submit_generic_inbox_message(env, &login, &logins, item).await?;
-    Ok(GenericInboxSubmitRsp {
-        message_uid: submitted.message_uid,
-        warnings: submitted.warnings,
-    })
-}
-
-async fn submit_generic_inbox_message(
-    env: &Data<Env>,
-    login: &str,
-    logins: &Vec<String>,
-    item: InboxSubmitItem,
-) -> Result<SubmittedInboxItem, AppError> {
-    let txn = env.dbx.begin().await.c(h!())?;
-    let datasource = datasource::Entity::find()
-        .filter(datasource::Column::ApiLogin.eq(login))
-        .filter(datasource::Column::Enabled.eq(true))
-        .filter(datasource::Column::Deleted.eq(false))
-        .one(&txn)
-        .await
-        .c(h!())?
-        .ok_or(AppError::NotFound)?;
-    let submitted =
-        submit_generic_inbox_item(env, &txn, &datasource, login, logins, item)
-            .await
-            .c(h!())?;
-    let inbox_id = submitted.inbox_id;
-
-    txn.commit().await.c(h!())?;
-    fanout_inbox_changed(env, vec![inbox_id]).await;
-    Ok(submitted)
-}
-
 async fn submit_legacy_inbox_messages(
     env: &Data<Env>,
     login: &str,
@@ -1867,6 +1882,8 @@ async fn submit_legacy_inbox_messages(
                 login,
                 logins,
                 InboxLocationSubmitMode::PreserveTyped,
+                true,
+                false,
             )
             .await
             .c(h!())?;
@@ -2216,8 +2233,7 @@ mod tests {
     fn generic_submit_req() -> InboxSubmitItem {
         let now = Utc::now().naive_utc();
         InboxSubmitItem {
-            message_uid: None,
-            text: "generic datasource gate".to_string(),
+            text: Some("generic datasource gate".to_string()),
             timestamp: submit_timestamp(now),
             sender: Some("generic submit".to_string()),
             post: Some("SC1".to_string()),
@@ -2278,7 +2294,7 @@ mod tests {
     #[test]
     fn normalize_submit_dmr_metadata_warns_on_network_cc_conflict() {
         let network = SubmitNetwork {
-            signal_name: "dmr".to_string(),
+            signal_name: Some("dmr".to_string()),
             cc: Some(7),
             name: Some(
                 "УКХ р/м управління 3 мсб 291 мсп 42 мсд 58 А".to_string(),
@@ -2344,7 +2360,9 @@ mod tests {
     #[test]
     fn validate_generic_submit_item_requires_group_names() {
         let item = InboxSubmitItem {
-            text: "рос абонент ЯРУС викликав СВЕТЛЫЙ".to_string(),
+            full_body: Some("Повне повідомлення".to_string()),
+            text: Some("рос абонент ЯРУС викликав СВЕТЛЫЙ".to_string()),
+            comment: Some("Коментар".to_string()),
             group_names: Some(vec![" ".to_string()]),
             ..Default::default()
         };
@@ -2355,18 +2373,27 @@ mod tests {
     #[test]
     fn validate_generic_submit_item_rejects_missing_message_text() {
         let item = InboxSubmitItem {
-            text: " ".to_string(),
+            text: Some(" ".to_string()),
             group_names: Some(vec!["SC1".to_string()]),
             ..Default::default()
         };
 
-        assert!(validate_generic_submit_item(&item).is_err());
+        let err = validate_generic_submit_item(&item).unwrap_err();
+        let AppError::Form(errors) = err else {
+            panic!("expected form error");
+        };
+        assert_eq!(
+            errors.get("text").map(String::as_str),
+            Some("Inbox submit requires message text")
+        );
     }
 
     #[test]
     fn generic_submit_item_to_inbox_message_uses_array_fields() {
         let item = InboxSubmitItem {
-            text: "рос абонент ЯРУС викликав СВЕТЛЫЙ".to_string(),
+            full_body: Some("Повне повідомлення".to_string()),
+            text: Some("рос абонент ЯРУС викликав СВЕТЛЫЙ".to_string()),
+            comment: Some("Коментар".to_string()),
             timestamp: "2026-06-25T12:34:56Z".to_string(),
             coords: vec![
                 SubmitCoordinates {
@@ -2389,7 +2416,7 @@ mod tests {
         };
 
         let (message, timestamp) =
-            generic_submit_item_to_inbox_message(&item).unwrap();
+            generic_submit_item_to_inbox_message(&item, false).unwrap();
 
         assert_eq!(
             timestamp,
@@ -2399,6 +2426,15 @@ mod tests {
                 .unwrap()
         );
         assert_eq!(message.coords.as_deref(), Some("49.12345, 37.12345"));
+        assert_eq!(message.text, "Повне повідомлення");
+        assert_eq!(message.extended_form.as_deref(), Some("Коментар"));
+        assert_eq!(
+            message
+                .no_headers_body
+                .as_ref()
+                .map(|body| body.body.as_str()),
+            Some("рос абонент ЯРУС викликав СВЕТЛЫЙ")
+        );
         assert_eq!(message.location.as_deref(), Some("ЛИМАН ПЕРШИЙ, КОПАНІ"));
         assert_eq!(
             message.callsigns,
@@ -2407,16 +2443,16 @@ mod tests {
     }
 
     #[test]
-    fn prepare_submit_body_for_coordinate_extraction_skips_body_when_coords_present(
-    ) {
+    fn prepare_submit_body_for_coordinate_extraction_preserves_explicit_body() {
         let mut message = InboxMessage::from(InboxInsertPayload {
             text: "Отримано з поста \"SC1\"\nТекст повідомлення".to_string(),
             coords: Some(" 49.12345, 37.12345 ".to_string()),
             no_headers_body: Some(
-                crate::rer_importer::body_noheader::extract_text(
-                    "47.11111, 37.22222",
-                )
-                .unwrap(),
+                crate::rer_importer::body_noheader::NoHeadersBody {
+                    body: "47.11111, 37.22222".to_string(),
+                    start: 0,
+                    end: 18,
+                },
             ),
             ..Default::default()
         });
@@ -2424,7 +2460,13 @@ mod tests {
         prepare_submit_body_for_coordinate_extraction(&mut message).unwrap();
 
         assert_eq!(message.coords.as_deref(), Some("49.12345, 37.12345"));
-        assert_eq!(message.no_headers_body, None);
+        assert_eq!(
+            message
+                .no_headers_body
+                .as_ref()
+                .map(|body| body.body.as_str()),
+            Some("47.11111, 37.22222")
+        );
     }
 
     #[test]
@@ -2548,6 +2590,8 @@ mod tests {
             &login.login,
             &logins,
             InboxLocationSubmitMode::PreserveTyped,
+            true,
+            false,
         )
         .await
         .unwrap();
@@ -2596,6 +2640,8 @@ mod tests {
             &login.login,
             &logins,
             InboxLocationSubmitMode::Parse,
+            true,
+            false,
         )
         .await
         .unwrap();
@@ -2674,6 +2720,8 @@ mod tests {
             &login.login,
             &logins,
             InboxLocationSubmitMode::PreserveTyped,
+            true,
+            false,
         )
         .await
         .unwrap();
@@ -2896,8 +2944,9 @@ mod tests {
         let operator_tags =
             vec![tag_label.clone(), "missing-submit-tag".to_string()];
         let item = InboxSubmitItem {
-            message_uid: None,
-            text: "рос абонент ЯРУС викликав СВЕТЛЫЙ".to_string(),
+            full_body: Some("рос абонент ЯРУС викликав СВЕТЛЫЙ".to_string()),
+            text: Some("рос абонент ЯРУС викликав СВЕТЛЫЙ".to_string()),
+            comment: Some("Сигнали: dmr".to_string()),
             freq: Some("145.02678".to_string()),
             coords: vec![SubmitCoordinates {
                 lat: 49.12345,
@@ -2907,7 +2956,6 @@ mod tests {
             to: vec!["СВЕТЛЫЙ".to_string()],
             timestamp: submit_timestamp(now),
             sender: Some("generic submit".to_string()),
-            full_body: Some("Сигнали: dmr".to_string()),
             post: Some("SC1".to_string()),
             tags: Some(operator_tags.clone()),
             locations: vec!["ЛИМАН ПЕРШИЙ".to_string(), "КОПАНІ".to_string()],
@@ -2916,7 +2964,7 @@ mod tests {
                 "Чумак DMR Резерв".to_string(),
             ]),
             network: Some(SubmitNetwork {
-                signal_name: "dmr".to_string(),
+                signal_name: Some("dmr".to_string()),
                 cc: Some(9),
                 name: Some(
                     "УКХ р/м управління 3 мсб 291 мсп 42 мсд 58 А".to_string(),
@@ -2943,15 +2991,12 @@ mod tests {
             warning_codes(&submitted.warnings),
             vec!["dmr_network_cc_conflict", "dmr_metadata_cc_conflict"]
         );
-        let message = signal_message::Entity::find()
-            .filter(
-                signal_message::Column::MessageUid
-                    .eq(submitted.message_uid.clone()),
-            )
-            .one(&env.dbx)
-            .await
-            .unwrap()
-            .unwrap();
+        let message =
+            signal_message::Entity::find_by_id(submitted.signal_message_id)
+                .one(&env.dbx)
+                .await
+                .unwrap()
+                .unwrap();
         assert_eq!(
             message.body.as_deref(),
             Some("рос абонент ЯРУС викликав СВЕТЛЫЙ")
@@ -2965,9 +3010,9 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(groups.len(), 2);
-        assert!(groups.iter().all(|group| {
-            group.message_uid.as_deref() == Some(submitted.message_uid.as_str())
-        }));
+        assert!(groups
+            .iter()
+            .all(|group| { group.message_uid == message.message_uid }));
         let inbox_item =
             sigint_inbox_item::Entity::find_by_id(submitted.inbox_id)
                 .one(&env.dbx)

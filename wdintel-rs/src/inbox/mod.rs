@@ -245,9 +245,10 @@ where
         datetime: NotSet,
         signal_tokens: Set(Some(serde_json::to_value(signal_tokens).c(h!())?)),
         post_id: Set(post_id),
-        computer_name_id: Set(None),
+        device_name_id: Set(None),
         unit_v2: Set(unit_v2),
         parsed_unit_v2: Set(true),
+        network: Set(None),
     };
     let result = sigint_inbox_item::Entity::insert(result)
         .on_conflict(
@@ -367,7 +368,7 @@ fn reprocessed_inbox_item_update_columns() -> [sigint_inbox_item::Column; 23] {
         sigint_inbox_item::Column::CallsignsAlg2,
         sigint_inbox_item::Column::SignalTokens,
         sigint_inbox_item::Column::PostId,
-        sigint_inbox_item::Column::ComputerNameId,
+        sigint_inbox_item::Column::DeviceNameId,
         sigint_inbox_item::Column::UnitV2,
         sigint_inbox_item::Column::ParsedUnitV2,
     ]
@@ -554,15 +555,25 @@ where
     };
     let mut cached_m_unit = cache.get(unit).cloned();
     if cached_m_unit.is_none() {
-        let parsed_unit = crate::unit::parse_unit(unit, txn)
-            .await
-            .c(h!())?
-            .unwrap_or("".to_string());
+        let parsed_unit = parse_unit_v2(txn, unit).await?.unwrap_or_default();
         cache.put(unit.clone(), parsed_unit.clone());
         cached_m_unit = Some(parsed_unit);
     }
     let m_unit = cached_m_unit.filter(|u| !u.is_empty());
     Ok(m_unit)
+}
+
+pub(crate) async fn parse_unit_v2<C>(
+    dbx: &C,
+    unit: &String,
+) -> Result<Option<String>, AppError>
+where
+    C: ConnectionTrait,
+{
+    Ok(crate::unit::parse_unit(unit, dbx)
+        .await
+        .c(h!())?
+        .filter(|unit| !unit.is_empty()))
 }
 
 pub async fn resolve_message_aor_ids_by_group<'a, 'async_trait, C>(
@@ -702,7 +713,7 @@ mod tests {
         assert!(reprocessed_inbox_item_update_columns()
             .iter()
             .any(|column| {
-                matches!(column, sigint_inbox_item::Column::ComputerNameId)
+                matches!(column, sigint_inbox_item::Column::DeviceNameId)
             }));
         assert!(reprocessed_inbox_item_update_columns()
             .iter()

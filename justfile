@@ -46,7 +46,7 @@ default:
 [arg('server', long='server')]
 setup-pgbackrest server backup_name="" daily_restore="false":
     #!/bin/bash
-    set -euo pipefail
+    set -euxo pipefail
     args=(--server "{{ server }}")
     if [[ "{{ backup_name }}" != "" ]]; then
         args+=(--backup-name "{{ backup_name }}")
@@ -57,7 +57,7 @@ setup-pgbackrest server backup_name="" daily_restore="false":
     bash deploy/setup-pgbackrest.sh "${args[@]}"
 
 _print-servers:
-    @echo "❌ Server parameter not recognized. Can be one of: echo-zaporizhzha, echo-kherson, echo-donetsk, echo-soledar. Value: {{ server }}"
+    @echo "❌ Server parameter not recognized. Value: {{ server }}"
 
 evaluate:
     @just --evaluate
@@ -1022,48 +1022,34 @@ _update-nginx:
     ssh -t {{ server }}  'sudo mv ~/{{ server }} /etc/nginx/sites-enabled && sudo systemctl restart nginx'
     ssh -t {{ server }}  'sudo rm ~/_{{ server }}-nginx-bkp'
 
-copy-db:
+[arg('server', long='server')]
+copy-db server:
     #!/bin/bash
     set -euxo pipefail
 
-    if [[ "{{ server }}" == "echo-zaporizhzha" ]]; then \
-        just server={{ server }} _copy-db; \
-    elif [[ "{{ server }}" == "jvln" ]]; then \
-        just _jvln-copy-db; \
-    elif [[ "{{ server }}" == "echo-kherson" ]]; then \
-        just server={{ server }} _copy-db; \
-    elif [[ "{{ server }}" == "echo-donetsk2" ]]; then \
-        just server={{ server }} _copy-db; \
-    elif [[ "{{ server }}" == "echo-soledar" ]]; then \
-        just server={{ server }} _copy-db; \
-    elif [[ "{{ server }}" == "echo-soledarnist" ]]; then \
-        just server={{ server }} _copy-db; \
-    elif [[ "{{ server }}" == "echo-lyman" ]]; then \
-        just server={{ server }} _copy-db; \
-    elif [[ "{{ server }}" == "echo-kharkiv" ]]; then \
-        just server={{ server }} _copy-db; \
-    elif [[ "{{ server }}" == "echo-siversk" ]]; then \
-        just server={{ server }} _copy-db; \
-    elif [[ "{{ server }}" == "echo-kherson2" ]]; then \
-        just server={{ server }} _copy-db; \
-    elif [[ "{{ server }}" == "echo-volyn2" ]]; then \
-        just server={{ server }} _copy-db; \
-    elif [[ "{{ server }}" == "echo-pivnich" ]]; then \
-        just server={{ server }} _copy-db; \
-    elif [[ "{{ server }}" == "echo-pivnich-dev" ]]; then \
-        just server={{ server }} _copy-db; \
-    elif [[ "{{ server }}" == "echo-skhid" ]]; then \
-        just server={{ server }} _copy-db; \
-    elif [[ "{{ server }}" == "echo-kupiansk" ]]; then \
-        just server={{ server }} _copy-db; \
-    elif [[ "{{ server }}" == "echo-zp2" ]]; then \
-        just server={{ server }} _copy-db; \
-    elif [[ "{{ server }}" == "echo-staging" ]]; then \
-        just server={{ server }} _copy-db; \
-    else \
-        just _print-servers; exit 1; \
-    fi
-    echo "⭐ You can disable messengers and GOI sync by running: cargo run -p wdintel-rs -- --mode=debug oneoff-disable-im-and-goi"
+    case "{{ server }}" in
+        jvln)
+            just _jvln-copy-db
+            ;;
+        echo-zaporizhzha|echo-kherson|echo-donetsk2|echo-soledar|echo-soledarnist|echo-lyman|echo-kharkiv|echo-siversk|echo-kherson2|echo-volyn2|echo-pivnich|echo-pivnich-dev|echo-skhid|echo-kupiansk|echo-zp2|echo-staging|echo-cbr)
+            just server="{{ server }}" dt1="{{ dt1 }}" _copy-db
+            ;;
+        *)
+            just server="{{ server }}" _print-servers
+            exit 1
+            ;;
+    esac
+    { set +x; } 2>/dev/null
+    cat <<'COMMANDS'
+
+    # Restore database; optionally disable messengers and GOI sync afterward
+    sudo -u postgres dropdb --force wd
+    sudo -u postgres psql postgres -c "CREATE DATABASE wd"
+    sudo -u postgres pg_restore -d wd /var/tmp/wd-{{ dt1 }}.pgrestore
+
+    cargo run -p wdintel-rs -- --mode=debug oneoff-disable-im-and-goi
+
+    COMMANDS
 
 # _jvln-copy-db:
 #     ssh -t jvln '(cd /fast/kon/Downloads && PGPASSWORD="{{ pgpwd }}" pg_dump --user wd -Fc wd > wd-{{ dt1 }}.pgrestore && ls -lah wd-{{ dt1 }}.pgrestore)'
@@ -1077,14 +1063,9 @@ _copy-db:
     #!/bin/bash
     set -euxo pipefail
 
-    ssh -t {{ server }} '(cd /var/tmp && PGPASSWORD="{{ pgpwd }}" pg_dump --user wd -Fc wd > wd-{{ dt1 }}.pgrestore && ls -lah wd-{{ dt1 }}.pgrestore)'
+    ssh -t {{ server }} '(cd /var/tmp && PGPASSWORD="{{ pgpwd }}" pg_dump --host 127.0.0.1 --user wd -Fc wd > wd-{{ dt1 }}.pgrestore && ls -lah wd-{{ dt1 }}.pgrestore)'
     scp {{ server }}:/var/tmp/wd-{{ dt1 }}.pgrestore /var/tmp/
     ssh -t {{ server }} 'rm /var/tmp/wd-{{ dt1 }}.pgrestore'
-    set +x
-    echo "Run: sudo -u postgres dropdb --force wd"
-    echo "Run: sudo -u postgres psql postgres -c \"CREATE DATABASE wd\""
-    echo "Run: sudo -u postgres pg_restore -d wd /var/tmp/wd-{{ dt1 }}.pgrestore"
-    set -x
 
 ai-sync-from-cloud:
     #!/bin/bash

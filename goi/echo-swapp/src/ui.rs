@@ -81,7 +81,7 @@ const INDEX_HTML: &str = r#"<!doctype html>
     <section id="automationsTab" class="hidden grid gap-4 lg:grid-cols-[360px_1fr]">
       <form id="automationForm" class="rounded-lg border border-zinc-800 bg-zinc-900/70 p-4">
         <p class="mb-4 rounded-md border border-zinc-800 bg-zinc-800/70 p-3 text-sm text-zinc-300">
-          Автоматизація пересилає нові повідомлення з вибраної групи у цільову, якщо текст містить задані ключові слова або частоти. Можна враховувати координати, полігон, вік повідомлення та вкладення.
+          Автоматизація пересилає нові повідомлення з вибраної групи у цільову, якщо текст містить задані ключові слова або частоти. Можна враховувати координати, район інтересу, вік повідомлення та вкладення.
         </p>
         <h2 class="text-base font-medium">Нова автоматизація</h2>
         <div class="mt-4 grid gap-3">
@@ -128,15 +128,16 @@ const INDEX_HTML: &str = r#"<!doctype html>
             </select>
           </label>
           <label class="grid gap-1 text-sm">
-            <span class="text-zinc-400">Полігон</span>
+            <span class="text-zinc-400">Район Інтересу</span>
             <select id="polygonModeInput" class="h-10 rounded-md border border-zinc-700 bg-zinc-950 px-3 text-zinc-100 outline-none focus:border-sky-500">
               <option value="none" style="color:#71717a">Не фільтрувати</option>
               <option value="inside">Ігнорувати всередині</option>
               <option value="outside">Ігнорувати зовні</option>
             </select>
+            <span class="text-xs text-zinc-500">Набір координат; область усередині вважаємо зоною інтересу, яку можна включати або виключати фільтром.</span>
           </label>
           <label class="grid gap-1 text-sm">
-            <span class="text-zinc-400">Координати полігону</span>
+            <span class="text-zinc-400">Координати району інтересу</span>
             <textarea id="polygonCoordinatesInput" class="min-h-24 rounded-md border border-zinc-700 bg-zinc-950 px-3 py-2 text-zinc-100 outline-none focus:border-sky-500" placeholder="37U DR 05997 22279&#10;37U DR 06020 22340&#10;37U DR 06090 22270"></textarea>
           </label>
           <label class="flex items-center gap-2 text-sm text-zinc-300">
@@ -222,15 +223,16 @@ const INDEX_HTML: &str = r#"<!doctype html>
           </select>
         </label>
         <label class="grid gap-1 text-sm">
-          <span class="text-zinc-400">Полігон</span>
+          <span class="text-zinc-400">Район Інтересу</span>
           <select id="editPolygonModeInput" class="h-10 rounded-md border border-zinc-700 bg-zinc-950 px-3 text-zinc-100 outline-none focus:border-sky-500">
             <option value="none" style="color:#71717a">Не фільтрувати</option>
             <option value="inside">Ігнорувати всередині</option>
             <option value="outside">Ігнорувати зовні</option>
           </select>
+          <span class="text-xs text-zinc-500">Набір координат; область усередині вважаємо зоною інтересу, яку можна включати або виключати фільтром.</span>
         </label>
         <label class="grid gap-1 text-sm">
-          <span class="text-zinc-400">Координати полігону</span>
+          <span class="text-zinc-400">Координати району інтересу</span>
           <textarea id="editPolygonCoordinatesInput" class="min-h-24 rounded-md border border-zinc-700 bg-zinc-950 px-3 py-2 text-zinc-100 outline-none focus:border-sky-500" placeholder="37U DR 05997 22279&#10;37U DR 06020 22340&#10;37U DR 06090 22270"></textarea>
         </label>
         <label class="flex items-center gap-2 text-sm text-zinc-300">

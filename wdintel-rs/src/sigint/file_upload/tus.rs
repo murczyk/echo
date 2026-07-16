@@ -1,3 +1,4 @@
+use crate::config::SIGINT_MESSAGE_MAX_ATTACHMENTS;
 use crate::error::AppError;
 use crate::messenger::media::MediaUploadInput;
 use crate::types::*;
@@ -14,12 +15,10 @@ use std::time::{Duration, SystemTime};
 use tokio::io::{AsyncSeekExt, AsyncWriteExt};
 use uuid::Uuid;
 
-const BASE_UPLOAD_DIR: &str = "cyber_echo_tus_upload";
+const BASE_UPLOAD_DIR: &str = "file_upload_tus";
 const PENDING_DIR: &str = "pending";
 const COMPLETED_DIR: &str = "completed";
 const METADATA_EXT: &str = "json";
-pub const MAX_COMPLETED_UPLOADS: usize = 100;
-
 const HEADER_NAME_TUS_VERSION: HeaderName =
     HeaderName::from_static("tus-version");
 const HEADER_VALUE_TUS_VERSION: HeaderValue = HeaderValue::from_static("1.0.0");
@@ -88,7 +87,7 @@ enum WriteResult {
 impl Default for TusConfig {
     fn default() -> TusConfig {
         TusConfig {
-            max_size: Some(100 * 1024 * 1024),
+            max_size: Some(2 * 1024 * 1024 * 1024),
             pending_expires_in: Duration::from_secs(4 * 3600),
             completed_expires_in: Duration::from_secs(8 * 3600),
         }
@@ -164,10 +163,10 @@ impl TusHandler {
         login: &str,
         upload_urls: &[String],
     ) -> Result<Vec<MediaUploadInput>, AppError> {
-        if upload_urls.len() > MAX_COMPLETED_UPLOADS {
+        if upload_urls.len() > SIGINT_MESSAGE_MAX_ATTACHMENTS {
             return Err(AppError::BL {
                 msg: format!(
-                    "too many attachments: maximum is {MAX_COMPLETED_UPLOADS}"
+                    "too many attachments: maximum is {SIGINT_MESSAGE_MAX_ATTACHMENTS}"
                 ),
             });
         }

@@ -709,6 +709,30 @@ pub struct FindLiveNetworksReq {
 #[derive(
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
+pub struct NetworkSearchReq {
+    pub search: String,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct NetworkSearchResult {
+    pub id: i64,
+    pub name: String,
+    pub unit_ids: Option<Vec<i64>>,
+    pub freqs: Vec<NetworkFreq>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct NetworkSearchRsp {
+    pub networks: Vec<NetworkSearchResult>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
 pub struct FindLiveNetworksRsp {
     pub networks: Vec<FindLiveNetwork>,
 }

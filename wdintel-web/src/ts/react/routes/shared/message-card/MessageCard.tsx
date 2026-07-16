@@ -36,9 +36,6 @@ import {
 } from '../../rer-duty-neo/utils';
 import { resolveMessageCardEtalonDisplayModel } from './message-card.utils';
 
-/** Share of the header row (network vs relative time) reserved for etalon / network block. */
-export const MESSAGE_CARD_HEADER_NETWORK_ROW_WIDTH_PCT = 90;
-
 dayjs.extend(customParseFormat);
 
 // Hoisted so repeated renders (e.g. every message card in a scrolling feed) share a single
@@ -254,7 +251,6 @@ function MessageCardComponent({
   const headerProps: MessageCardHeaderProps = {
     compact: compactLayout,
     displayMode,
-    networkRowContentWidthPct: MESSAGE_CARD_HEADER_NETWORK_ROW_WIDTH_PCT,
     id,
     msg,
     copiedFeedbackId,

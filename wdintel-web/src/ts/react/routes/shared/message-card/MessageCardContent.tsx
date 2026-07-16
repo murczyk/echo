@@ -6,9 +6,9 @@ import type {
   Tag,
   Unit,
 } from '../../../../../Bindings';
-import { Box, CircularProgress, Stack, Typography } from '@mui/material';
+import { CircularProgress, Typography } from '@mui/material';
 import ChatBubbleOutlineOutlinedIcon from '@mui/icons-material/ChatBubbleOutlineOutlined';
-import { memo, useState, useMemo } from 'react';
+import { memo, useMemo, useState } from 'react';
 import { isPresent } from '../../../utils/misc';
 import {
   getPointEtalonsFromMessage,
@@ -30,7 +30,6 @@ import {
   MessageMediaAudioPlayer,
   MessageMediaDownloadLink,
 } from './MessageCardMedia';
-import { MessageCardVideoThumb } from './MessageCardVideoThumb';
 import { MessageImagePreviewDialog } from './MessageCardImagePreviewDialog';
 import { MessageCardVideoPreviewDialog } from './MessageCardVideoPreviewDialog';
 import { collectMessageImages } from './message-card-image-utils';
@@ -102,11 +101,9 @@ export function MessageCardMessageBody({
     return !/\.(jpe?g|png|gif|webp|bmp|svg)(\?|#|$)/i.test(href);
   });
   const audioAttachments = attachmentMedia.filter(isAudioMediaAttachment);
-
   const videoAttachments = attachmentMedia.filter(
     (attachment) => isVideoMediaAttachment(attachment) && !isAudioMediaAttachment(attachment),
   );
-
   const downloadAttachments = attachmentMedia.filter(
     (attachment) => !isAudioMediaAttachment(attachment) && !isVideoMediaAttachment(attachment),
   );
@@ -118,7 +115,6 @@ export function MessageCardMessageBody({
         id: a.id ?? '',
         name: mediaAttachmentDisplayName(a),
         source: String(a.href ?? ''),
-        // Preserve normalized video metadata
         mimeType: raw.contentType ?? raw.content_type ?? undefined,
         sizeBytes: raw.sizeBytes ?? raw.size_bytes ?? undefined,
       };
@@ -143,16 +139,18 @@ export function MessageCardMessageBody({
 
   return (
     <div className="flex flex-col min-w-0" style={{ gap: compact ? '12px' : '10px' }}>
-      {images.length > 0 ? (
+      {images.length > 0 || videoAttachments.length > 0 ? (
         <MessageCardImageList
           images={images}
+          videos={videoAttachments}
           onOpen={(index) => {
             blurActiveElement();
             setImagePreviewIndex(index);
           }}
+          onOpenVideo={(index) => setVideoPreviewIndex(index)}
         />
       ) : null}
-      {imagePreviewIndex != null && images.length > 0 && (
+      {imagePreviewIndex != null && images.length > 0 ? (
         <MessageImagePreviewDialog
           imageHrefs={images}
           initialIndex={imagePreviewIndex ?? 0}
@@ -161,8 +159,8 @@ export function MessageCardMessageBody({
           onClose={() => setImagePreviewIndex(null)}
           onIndexChange={(index) => setImagePreviewIndex(index)}
         />
-      )}
-      {documentPreviewIndex != null && previewableDocuments.length > 0 && (
+      ) : null}
+      {documentPreviewIndex != null && previewableDocuments.length > 0 ? (
         <MessageCardDocumentPreviewDialog
           documents={previewableDocuments}
           initialIndex={documentPreviewIndex ?? 0}
@@ -171,12 +169,16 @@ export function MessageCardMessageBody({
           onClose={() => setDocumentPreviewIndex(null)}
           onIndexChange={(index) => setDocumentPreviewIndex(index)}
         />
-      )}
-      {documents.length > 0 ||
-      audioAttachments.length > 0 ||
-      videoAttachments.length > 0 ||
-      downloadAttachments.length > 0 ? (
+      ) : null}
+      {audioAttachments.length > 0 ? (
         <div className="mt-1 flex flex-col items-start w-full">
+          {audioAttachments.map((attachment) => (
+            <MessageMediaAudioPlayer key={attachment.id} attachment={attachment} />
+          ))}
+        </div>
+      ) : null}
+      {documents.length > 0 || downloadAttachments.length > 0 ? (
+        <div className="mt-1 flex flex-wrap items-start gap-2 w-full">
           {documents.map((document, index) => {
             const previewIndex = previewableDocuments.findIndex(
               (previewableDocument) => previewableDocument.href === document.href,
@@ -197,27 +199,12 @@ export function MessageCardMessageBody({
               />
             );
           })}
-          {audioAttachments.map((attachment) => (
-            <MessageMediaAudioPlayer key={attachment.id} attachment={attachment} />
-          ))}
-          {videoAttachments.length > 0 && (
-            <div className="flex flex-wrap gap-2 mt-2 mb-1">
-              {videoAttachments.map((attachment, idx) => (
-                <MessageCardVideoThumb
-                  key={attachment.id}
-                  attachment={attachment}
-                  index={idx}
-                  onOpen={(idx) => setVideoPreviewIndex(idx)}
-                />
-              ))}
-            </div>
-          )}
           {downloadAttachments.map((attachment) => (
             <MessageMediaDownloadLink key={attachment.id} attachment={attachment} />
           ))}
         </div>
       ) : null}
-      {videoPreviewIndex !== null && (
+      {videoPreviewIndex !== null ? (
         <MessageCardVideoPreviewDialog
           open={true}
           onClose={() => setVideoPreviewIndex(null)}
@@ -225,7 +212,7 @@ export function MessageCardMessageBody({
           currentIndex={videoPreviewIndex ?? 0}
           onIndexChange={(idx) => setVideoPreviewIndex(idx)}
         />
-      )}
+      ) : null}
       {hasTextPrimary ? (
         <div
           className={

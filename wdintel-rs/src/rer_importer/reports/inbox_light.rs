@@ -49,6 +49,8 @@ pub(crate) fn blank_inbox_message() -> InboxMessage {
         location: None,
         tags: None,
         network_ids: None,
+        network_name: None,
+        device_name: None,
         inbox_tags: None,
         metadata: vec![],
     }

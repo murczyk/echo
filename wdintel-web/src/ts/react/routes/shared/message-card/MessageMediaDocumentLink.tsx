@@ -27,9 +27,8 @@ export function MessageMediaDocumentLink({
   return (
     <Box
       sx={{
-        mb: 0.5,
-        width: '100%',
-        maxWidth: 520,
+        width: 'fit-content',
+        maxWidth: '100%',
         minWidth: 0,
         display: 'flex',
         alignItems: 'center',

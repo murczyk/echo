@@ -188,6 +188,35 @@ pub async fn delete_uploaded_attachment_files(
     }
 }
 
+pub async fn delete_stored_media_files(
+    media: &[signal_message_media::Model],
+    config: &Config,
+    s3: &Option<Operator>,
+) {
+    if media.is_empty() {
+        return;
+    }
+    let Some(config) = config.s3_config.as_ref() else {
+        warn!("S3 is not configured, cannot delete attachment files!");
+        return;
+    };
+    let s3_config = storage::S3Config::from(config);
+    let Some(s3) = s3 else {
+        warn!("S3 is not configured, cannot delete attachment files!");
+        return;
+    };
+    for media in media {
+        let object_key = storage::nested_object_key(&media.id);
+        let remote_key = s3_config.prefixed_key(&object_key);
+        if let Err(e) = s3.delete(&remote_key).await {
+            error!(
+                "failed to delete stored attachment file {}: {:?}",
+                remote_key, e
+            );
+        }
+    }
+}
+
 pub(crate) async fn ensure_media_access(
     dbx: &DatabaseConnection,
     login: &str,
