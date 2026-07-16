@@ -1073,7 +1073,7 @@ deploy-docs-from-local _server_pos="" server:
       fi
       rm -f './${REMOTE_DEB_NAME}'
 
-      installed=\$(dpkg-query -W -f=\${Version} echo-docs)
+      installed=\$(dpkg-query -W -f='\${Version}' echo-docs)
       echo "✅✅✅ docs deploy OK on \$HOSTNAME: echo-docs \$installed ✅✅✅"
     "
     REMOTE_DEB_PATH=""
