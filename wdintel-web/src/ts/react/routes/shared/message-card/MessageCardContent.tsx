@@ -237,7 +237,7 @@ export function MessageCardMessageBody({
             sx={{ fontSize: 13, color: 'var(--color-action)', flexShrink: 0 }}
             titleAccess="Коментар"
           />
-          <Typography variant="caption" sx={{ fontWeight: 700, overflowWrap: 'anywhere' }}>
+          <Typography variant="body2" sx={{ fontWeight: 700, overflowWrap: 'anywhere' }}>
             {msg.extendedForm}
           </Typography>
         </div>

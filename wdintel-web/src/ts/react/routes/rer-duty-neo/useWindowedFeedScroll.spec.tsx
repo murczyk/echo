@@ -246,34 +246,185 @@ describe('useWindowedFeedScroll', () => {
     expect(onVisibleMessageIds).toHaveBeenLastCalledWith(4, { atBottom: true });
   });
 
-  it('preserves scroll position when hiding and reopening an already-used feed', async () => {
+  it('restores bottom state when reopening an unchanged feed without scrolling', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(1000);
+
+    const onNearBottomChange = vi.fn();
+    const onAtBottomChange = vi.fn();
+    const onVisibleMessageIds = vi.fn();
+    const onLoadOlder = vi.fn();
+    const onLoadNewer = vi.fn();
+
     await act(async () => {
-      root.render(<TestScroller ids={[1, 2, 3, 4]} />);
+      root.render(
+        <TestScroller
+          ids={[]}
+          onNearBottomChange={onNearBottomChange}
+          onAtBottomChange={onAtBottomChange}
+          onVisibleMessageIds={onVisibleMessageIds}
+          onLoadOlder={onLoadOlder}
+          onLoadNewer={onLoadNewer}
+        />,
+      );
     });
 
     const scroller = container.querySelector('[data-testid="scroller"]') as HTMLElement;
     setScrollMetrics(scroller, { scrollTop: 0, clientHeight: 100, scrollHeight: 240 });
 
     await act(async () => {
-      root.render(<TestScroller ids={[1, 2, 3, 4]} />);
+      root.render(
+        <TestScroller
+          ids={[1, 2, 3, 4]}
+          onNearBottomChange={onNearBottomChange}
+          onAtBottomChange={onAtBottomChange}
+          onVisibleMessageIds={onVisibleMessageIds}
+          onLoadOlder={onLoadOlder}
+          onLoadNewer={onLoadNewer}
+        />,
+      );
     });
 
     expect(scroller.scrollTop).toBe(240);
+    expect(onAtBottomChange).toHaveBeenCalledWith(true);
+    expect(onNearBottomChange).toHaveBeenCalledWith(true);
+    expect(onVisibleMessageIds).toHaveBeenCalledWith(4, { atBottom: true });
 
-    setScrollMetrics(scroller, { scrollTop: 60, clientHeight: 100, scrollHeight: 240 });
+    await act(async () => {
+      root.render(
+        <TestScroller
+          ids={[1, 2, 3, 4]}
+          enabled={false}
+          onNearBottomChange={onNearBottomChange}
+          onAtBottomChange={onAtBottomChange}
+          onVisibleMessageIds={onVisibleMessageIds}
+          onLoadOlder={onLoadOlder}
+          onLoadNewer={onLoadNewer}
+        />,
+      );
+    });
+
+    expect(onAtBottomChange).toHaveBeenCalledWith(false);
+    expect(onNearBottomChange).toHaveBeenCalledWith(false);
+
+    onNearBottomChange.mockClear();
+    onAtBottomChange.mockClear();
+    onVisibleMessageIds.mockClear();
+    await vi.advanceTimersByTimeAsync(250);
+
+    await act(async () => {
+      root.render(
+        <TestScroller
+          ids={[1, 2, 3, 4]}
+          onNearBottomChange={onNearBottomChange}
+          onAtBottomChange={onAtBottomChange}
+          onVisibleMessageIds={onVisibleMessageIds}
+          onLoadOlder={onLoadOlder}
+          onLoadNewer={onLoadNewer}
+        />,
+      );
+    });
+
+    expect(scroller.scrollTop).toBe(240);
+    expect(onAtBottomChange).toHaveBeenCalledWith(true);
+    expect(onNearBottomChange).toHaveBeenCalledWith(true);
+    expect(onVisibleMessageIds).toHaveBeenCalledWith(4, { atBottom: true });
+    expect(onLoadOlder).not.toHaveBeenCalled();
+    expect(onLoadNewer).not.toHaveBeenCalled();
+  });
+
+  it('restores near-bottom reporting when reopening an unchanged feed at a mid-scroll position', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(1000);
+
+    const onNearBottomChange = vi.fn();
+    const onAtBottomChange = vi.fn();
+    const onVisibleMessageIds = vi.fn();
+    const onLoadOlder = vi.fn();
+    const onLoadNewer = vi.fn();
+
+    await act(async () => {
+      root.render(
+        <TestScroller
+          ids={[]}
+          onNearBottomChange={onNearBottomChange}
+          onAtBottomChange={onAtBottomChange}
+          onVisibleMessageIds={onVisibleMessageIds}
+          onLoadOlder={onLoadOlder}
+          onLoadNewer={onLoadNewer}
+        />,
+      );
+    });
+
+    const scroller = container.querySelector('[data-testid="scroller"]') as HTMLElement;
+    setScrollMetrics(scroller, { scrollTop: 0, clientHeight: 100, scrollHeight: 240 });
+
+    await act(async () => {
+      root.render(
+        <TestScroller
+          ids={[1, 2, 3, 4]}
+          onNearBottomChange={onNearBottomChange}
+          onAtBottomChange={onAtBottomChange}
+          onVisibleMessageIds={onVisibleMessageIds}
+          onLoadOlder={onLoadOlder}
+          onLoadNewer={onLoadNewer}
+        />,
+      );
+    });
+
+    setScrollMetrics(scroller, { scrollTop: 120, clientHeight: 100, scrollHeight: 240 });
     await act(async () => {
       scroller.dispatchEvent(new Event('scroll', { bubbles: true }));
-      await waitForAnimationFrame();
+      await vi.advanceTimersByTimeAsync(250);
     });
 
+    expect(onNearBottomChange).toHaveBeenCalledWith(true);
+    expect(onAtBottomChange).toHaveBeenCalledWith(false);
+    expect(onVisibleMessageIds).toHaveBeenCalledWith(4, { atBottom: false });
+
     await act(async () => {
-      root.render(<TestScroller ids={[1, 2, 3, 4]} enabled={false} />);
-    });
-    await act(async () => {
-      root.render(<TestScroller ids={[1, 2, 3, 4]} />);
+      root.render(
+        <TestScroller
+          ids={[1, 2, 3, 4]}
+          enabled={false}
+          onNearBottomChange={onNearBottomChange}
+          onAtBottomChange={onAtBottomChange}
+          onVisibleMessageIds={onVisibleMessageIds}
+          onLoadOlder={onLoadOlder}
+          onLoadNewer={onLoadNewer}
+        />,
+      );
     });
 
-    expect(scroller.scrollTop).toBe(60);
+    expect(scroller.scrollTop).toBe(120);
+    expect(onNearBottomChange).toHaveBeenCalledWith(false);
+    expect(onAtBottomChange).toHaveBeenCalledWith(false);
+    onLoadOlder.mockClear();
+    onLoadNewer.mockClear();
+
+    onNearBottomChange.mockClear();
+    onAtBottomChange.mockClear();
+    onVisibleMessageIds.mockClear();
+    await vi.advanceTimersByTimeAsync(250);
+
+    await act(async () => {
+      root.render(
+        <TestScroller
+          ids={[1, 2, 3, 4]}
+          onNearBottomChange={onNearBottomChange}
+          onAtBottomChange={onAtBottomChange}
+          onVisibleMessageIds={onVisibleMessageIds}
+          onLoadOlder={onLoadOlder}
+          onLoadNewer={onLoadNewer}
+        />,
+      );
+    });
+
+    expect(scroller.scrollTop).toBe(120);
+    expect(onNearBottomChange).toHaveBeenCalledWith(true);
+    expect(onVisibleMessageIds).toHaveBeenCalledWith(4, { atBottom: false });
+    expect(onLoadOlder).not.toHaveBeenCalled();
+    expect(onLoadNewer).not.toHaveBeenCalled();
   });
 
   it('calls onLoadOlder when the scroller enters the top load buffer', async () => {

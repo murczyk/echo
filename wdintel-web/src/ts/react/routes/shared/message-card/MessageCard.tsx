@@ -1,4 +1,5 @@
 import { Tooltip, Typography } from '@mui/material';
+import { styled } from '@mui/material/styles';
 import dayjs from 'dayjs';
 import customParseFormat from 'dayjs/plugin/customParseFormat';
 import { memo, useMemo } from 'react';
@@ -44,6 +45,10 @@ dayjs.extend(customParseFormat);
 const EMPTY_FILTER: RerDutyFeedFilterState = emptyFilter();
 const EMPTY_MESSAGE_COMMENTS: MessageComment[] = [];
 const EMPTY_EXCLUDE_OPTIONS: MessageEntityExcludeMenuOption[] = [];
+
+const MessageCardRoot = styled('div')(({ theme }) => ({
+  ...theme.typography.body2,
+}));
 
 export function formatMessageCardTooltipTime(
   msg: Pick<InboxMessage, 'time' | 'timestamp'>,
@@ -287,7 +292,7 @@ function MessageCardComponent({
       className="list-none flex flex-col px-0 pb-3 mb-0"
       style={{ contentVisibility: 'auto' }}
     >
-      <div
+      <MessageCardRoot
         className="message-card-root relative flex flex-col w-full px-[12px] py-[10px] rounded bg-(--color-card) overflow-hidden"
         style={{ gap: compactLayout ? '10px' : '12px' }}
       >
@@ -316,7 +321,7 @@ function MessageCardComponent({
           searchText={searchText}
           onOpenPointsOnMap={onOpenPointsOnMap}
         />
-      </div>
+      </MessageCardRoot>
     </li>
   );
 }

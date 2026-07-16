@@ -128,6 +128,7 @@ export function useWindowedFeedScroll({
   // Narrow-screen feeds remain mounted while hidden. Disabled tracking must not
   // report visibility, bottom state, loads, or read-state side effects.
   const enabledRef = useRef<boolean>(enabled);
+  const enabledBeforeRender = enabledRef.current;
   isWatchModeRef.current = isWatchMode;
   const wasAtBottomBeforeRender = atBottomRef.current;
 
@@ -287,10 +288,9 @@ export function useWindowedFeedScroll({
   }, []);
 
   useLayoutEffect(() => {
-    const wasEnabled = enabledRef.current;
     enabledRef.current = enabled;
 
-    if (wasEnabled && !enabled) {
+    if (enabledBeforeRender && !enabled) {
       cancelPendingScrollProcessing();
       stopBottomSettle();
       const { onAtBottomChange, onNearBottomChange } = callbacksRef.current;
@@ -498,9 +498,19 @@ export function useWindowedFeedScroll({
       updateScrollState({ allowLoadOlder: false, allowTopReached: false });
       captureAnchorSnapshot();
       previousItemIdsRef.current = currentItemIds;
+      return;
+    }
+
+    if (!enabledBeforeRender && enabled) {
+      updateScrollState({
+        allowLoadOlder: false,
+        allowTopReached: false,
+      });
+      captureAnchorSnapshot();
     }
   }, [
     captureAnchorSnapshot,
+    enabledBeforeRender,
     enabled,
     resetKey,
     restoreAnchorAfterItemsChange,

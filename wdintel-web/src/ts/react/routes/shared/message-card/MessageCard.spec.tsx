@@ -419,9 +419,26 @@ vi.mock('@mui/material', () => ({
       />
     </label>
   ),
-  Typography: ({ children, component, ...props }: PrimitiveProps) => {
+  Typography: ({ children, component, variant, sx, style, ...props }: PrimitiveProps) => {
     const Component = component ?? 'div';
-    return <Component {...omitMuiLayoutProps(props)}>{children}</Component>;
+    const typographyStyle = {
+      ...(style as Record<string, unknown> | undefined),
+      ...(sx != null && typeof sx === 'object' && !Array.isArray(sx)
+        ? {
+            fontWeight: (sx as { fontWeight?: unknown }).fontWeight,
+          }
+        : {}),
+    };
+    if (typographyStyle.fontWeight == null) delete typographyStyle.fontWeight;
+    return (
+      <Component
+        data-mui-variant={variant ?? 'body1'}
+        style={Object.keys(typographyStyle).length > 0 ? typographyStyle : undefined}
+        {...omitMuiLayoutProps(props)}
+      >
+        {children}
+      </Component>
+    );
   },
 }));
 
@@ -652,6 +669,16 @@ function getTagButtonLabels(container: HTMLElement): string[] {
     .filter((label) => tagLabels.has(label));
 }
 
+function getMuiTypographyElementByText(container: HTMLElement, text: string): HTMLElement {
+  const element = Array.from(container.querySelectorAll('[data-mui-variant]')).find(
+    (node) => node.textContent?.trim() === text,
+  );
+  if (!(element instanceof HTMLElement)) {
+    throw new Error(`Typography element not found for text: ${text}`);
+  }
+  return element;
+}
+
 async function click(element: HTMLElement): Promise<void> {
   await act(async () => {
     element.dispatchEvent(new MouseEvent('click', { bubbles: true }));
@@ -850,36 +877,63 @@ describe('MessageCard', () => {
     expect((MessageCardContent as { type?: unknown }).type).toBeTypeOf('function');
   });
 
-  it('renders metadata in the required order with normalized coordinates and unit plus location', async () => {
-    const view = await renderHeader({
-      msg: buildMessage({
-        coords: '12.3456789, -98.7654321',
-        networkIds: [],
-        unit: ' 1-й танк ',
-        location: '  ХАРКІВ  ',
-      }),
-      groupName: 'Група A',
-      senderName: 'Відправник B',
+  it.each(['duty', 'analysis'] as const)(
+    'renders operational header values as body2 in %s mode',
+    async (displayMode) => {
+      const view = await renderHeader({
+        displayMode,
+        msg: buildMessage({
+          coords: '12.3456789, -98.7654321',
+          networkIds: [],
+          unit: ' 1-й танк ',
+          location: '  ХАРКІВ  ',
+        }),
+        groupName: 'Група A',
+        senderName: 'Відправник B',
+      });
+      rendered.push(view);
+
+      const headerText = view.container.querySelector(
+        '[data-message-header-grid="true"]',
+      )?.textContent;
+      if (headerText == null) throw new Error('header text not found');
+
+      const expectedValues = [
+        '02:45',
+        '23.03',
+        '153.6250',
+        'Група A',
+        'Відправник B',
+        '12.34568, -98.76543',
+        'Харків',
+      ] as const;
+      for (const value of expectedValues) {
+        const typographyElement = getMuiTypographyElementByText(view.container, value);
+        expect(typographyElement.getAttribute('data-mui-variant')).toBe('body2');
+        expect(headerText).toContain(value);
+      }
+
+      expect(headerText.indexOf('Група A')).toBeLessThan(headerText.indexOf('Відправник B'));
+      expect(headerText.indexOf('Відправник B')).toBeLessThan(headerText.indexOf('153.6250'));
+      expect(headerText.indexOf('153.6250')).toBeLessThan(
+        headerText.indexOf('12.34568, -98.76543'),
+      );
+      expect(headerText.indexOf('12.34568, -98.76543')).toBeLessThan(
+        headerText.indexOf('1-й танк'),
+      );
+      expect(headerText.indexOf('1-й танк')).toBeLessThan(headerText.indexOf('Харків'));
+    },
+  );
+
+  it('renders the extended form as bold body2 text', async () => {
+    const view = await renderCard({
+      msg: buildMessage({ extendedForm: 'Коментар' }),
     });
     rendered.push(view);
 
-    const headerText = view.container.querySelector(
-      '[data-message-header-grid="true"]',
-    )?.textContent;
-    if (headerText == null) throw new Error('header text not found');
-
-    expect(headerText).toContain('Група A');
-    expect(headerText).toContain('Відправник B');
-    expect(headerText).toContain('153.6250');
-    expect(headerText).toContain('12.34568, -98.76543');
-    expect(headerText).toContain('1-й танк');
-    expect(headerText).toContain('Харків');
-
-    expect(headerText.indexOf('Група A')).toBeLessThan(headerText.indexOf('Відправник B'));
-    expect(headerText.indexOf('Відправник B')).toBeLessThan(headerText.indexOf('153.6250'));
-    expect(headerText.indexOf('153.6250')).toBeLessThan(headerText.indexOf('12.34568, -98.76543'));
-    expect(headerText.indexOf('12.34568, -98.76543')).toBeLessThan(headerText.indexOf('1-й танк'));
-    expect(headerText.indexOf('1-й танк')).toBeLessThan(headerText.indexOf('Харків'));
+    const extendedForm = getMuiTypographyElementByText(view.container, 'Коментар');
+    expect(extendedForm.getAttribute('data-mui-variant')).toBe('body2');
+    expect(window.getComputedStyle(extendedForm).fontWeight).toBe('700');
   });
 
   it('linkifies plain message text URLs in the body', async () => {
@@ -1243,6 +1297,11 @@ describe('MessageCard', () => {
     expect(view.container.querySelector('button[aria-label="Виключити"]')).toBeNull();
     expect(view.container.querySelector('button[aria-label="Мінус"]')).toBeNull();
     expect(view.container.querySelector(`button[aria-label="${NAVIGATE_TITLE}"]`)).not.toBeNull();
+    const proposedCallsignsLabel = getMuiTypographyElementByText(
+      view.container,
+      'Запропоновані позивні',
+    );
+    expect(proposedCallsignsLabel.getAttribute('data-mui-variant')).toBe('caption');
     expect(view.container.textContent).toContain('Запропоновані позивні');
     expect(view.container.querySelector('input[placeholder="Позивний"]')).not.toBeNull();
     expect(view.container.textContent).toContain('ALPHA');
@@ -1726,6 +1785,11 @@ describe('MessageCard', () => {
     });
     rendered.push(view);
 
+    const author = getMuiTypographyElementByText(view.container, 'peer-login');
+    const body = getMuiTypographyElementByText(view.container, 'peer comment');
+    expect(author.getAttribute('data-mui-variant')).toBe('body2');
+    expect(body.getAttribute('data-mui-variant')).toBe('body2');
+    expect(author).not.toBe(body);
     expect(view.container.textContent).toContain('peer-login');
     expect(view.container.textContent).toContain('peer comment');
     expect(view.container.textContent).toContain('hidden comment');

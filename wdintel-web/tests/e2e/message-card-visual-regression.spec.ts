@@ -112,7 +112,7 @@ async function installVisualFixture(
 
 test.describe('message card visual regression', () => {
   for (const viewportWidth of [360, 768, 1023, 1025, 1280]) {
-    test(`keeps nested typography at 14px at ${viewportWidth}px`, async ({ page }) => {
+    test(`keeps theme-relative typography at ${viewportWidth}px`, async ({ page }) => {
       await page.setViewportSize({ width: viewportWidth, height: 960 });
       await installRerDutyShortStateMocks(page, {
         inboxCountResponseForRequest: () => ({ quantity: 0, first_element_ts: null }),
@@ -124,18 +124,29 @@ test.describe('message card visual regression', () => {
       const card = page.locator('.message-card-root').first();
       await expect(card).toBeVisible();
 
-      const typographySizes = await card
-        .locator('.MuiTypography-root')
-        .evaluateAll((nodes) => nodes.map((node) => getComputedStyle(node).fontSize));
-      expect(typographySizes.length).toBeGreaterThan(0);
-      expect([...new Set(typographySizes)]).toEqual(['14px']);
+      const cardRootFontSize = await card.evaluate((node) => getComputedStyle(node).fontSize);
+      expect(cardRootFontSize).toBe('14px');
+      await expect(card.locator('.MuiTypography-caption')).toHaveCount(0);
 
       const link = card.locator('a').first();
       await expect(link).toBeVisible();
       await expect(link).toHaveText(/https:\/\/example\.test\/cards\/41/);
-      await expect(link).toHaveCSS('font-size', '14px');
+      await expect(link).toHaveCSS('font-size', cardRootFontSize);
 
-      await expect(card).toHaveCSS('font-size', '14px');
+      const visibleContentChecks = [
+        ['time', card.getByText('12:34')],
+        ['date', card.getByText('13.07.2026')],
+        ['frequency', card.getByText('123.4')],
+        ['location', card.getByText('Location 41')],
+        ['extended form', card.getByText('EXT-41')],
+        ['comment author', card.getByText('peer-41')],
+        ['comment body', card.getByText('Comment 41')],
+        ['message body', card.getByText(/Card 41/)],
+      ] as const;
+      for (const [, locator] of visibleContentChecks) {
+        await expect(locator).toBeVisible();
+        await expect(locator).toHaveCSS('font-size', '14px');
+      }
     });
   }
 

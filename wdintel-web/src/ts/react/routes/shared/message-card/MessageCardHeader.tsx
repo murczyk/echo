@@ -702,7 +702,7 @@ function MetaLine({ icon, title, text }: { icon: JSX.Element; title: string; tex
       >
         {icon}
       </span>
-      <Typography variant="caption" sx={{ minWidth: 0, display: 'inline-block' }} noWrap>
+      <Typography variant="body2" sx={{ minWidth: 0, display: 'inline-block' }} noWrap>
         {text}
       </Typography>
     </div>
@@ -949,12 +949,12 @@ function MessageCardHeaderComponent({
     <div style={{ display: 'inline-flex', flexWrap: 'wrap', alignItems: 'center', gap: 8 }}>
       <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
         <ScheduleOutlinedIcon sx={{ color: MESSAGE_CARD_ACTION_COLOR, fontSize: 18 }} />
-        <Typography variant="caption">{formatTime(msg.time)}</Typography>
+        <Typography variant="body2">{formatTime(msg.time)}</Typography>
       </div>
       {isPresent(msg.date) ? (
         <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
           <CalendarTodayOutlinedIcon sx={{ color: MESSAGE_CARD_ACTION_COLOR, fontSize: 18 }} />
-          <Typography variant="caption">{formatDateNoYear(msg.date)}</Typography>
+          <Typography variant="body2">{formatDateNoYear(msg.date)}</Typography>
         </div>
       ) : null}
     </div>
@@ -972,7 +972,7 @@ function MessageCardHeaderComponent({
         sx={{ color: MESSAGE_CARD_ACTION_COLOR, fontSize: 18, flexShrink: 0 }}
         titleAccess="Частота"
       />
-      <Typography variant="caption" sx={{ whiteSpace: 'nowrap' }}>
+      <Typography variant="body2" sx={{ whiteSpace: 'nowrap' }}>
         {msg.freq}
       </Typography>
       {hasFrequencyFilter ? (
