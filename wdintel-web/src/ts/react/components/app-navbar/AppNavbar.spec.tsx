@@ -124,6 +124,7 @@ describe('AppNavbar', () => {
     // Find the fullscreen toggle button
     const toggleButton = container.querySelector('button[title="Повноекранний режим"]');
     expect(toggleButton).not.toBeNull();
+    expect(toggleButton?.className).toContain('rounded');
 
     act(() => {
       toggleButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));

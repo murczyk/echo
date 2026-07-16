@@ -21,13 +21,14 @@ import {
   shouldOpenAnalysisMapFromSearchParams,
   parseNewestFirstFromWindow,
 } from './helpers';
-import type { User } from '../../../../Bindings';
+import type { InboxMessage, User } from '../../../../Bindings';
 import type { AnalysisPageViewModel, AnalysisQueryState } from './types';
 import { useAnalysisData } from './use-analysis-data';
 import { useAnalysisMessageEditor } from './use-analysis-message-editor';
 import { useAnalysisReport } from './use-analysis-report';
 import { useAnalysisSavedFilters } from './use-analysis-saved-filters';
 import { useDutySettings } from '../../hooks/use-duty-settings';
+import { uniquePointEtalonsForMapSearch } from '../rer-duty-neo/utils';
 import { getAnalysisSidebarTabs, type AnalysisCenterTab, type AnalysisSidebarTab } from './types';
 
 function initState(): AnalysisQueryState {
@@ -381,6 +382,32 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
     [data.invalidateFilterSectionLoadsForPatch, dutySettings.analysisMapInSidebar],
   );
 
+  const openPointsOnMap = useCallback(
+    (etalons: string[], _message: InboxMessage) => {
+      const search = uniquePointEtalonsForMapSearch(etalons).join(',');
+      if (search === '') {
+        return;
+      }
+
+      startCenterTabTransition(() => {
+        data.invalidateFilterSectionLoadsForPatch({
+          search,
+        });
+        if (dutySettings.analysisMapInSidebar) {
+          setRightPanelOpen(true);
+          setRightSidebarTab('map');
+        } else {
+          setCenterTabState('map');
+        }
+        setQueryState((current) => ({
+          ...current,
+          search,
+        }));
+      });
+    },
+    [data.invalidateFilterSectionLoadsForPatch, dutySettings.analysisMapInSidebar],
+  );
+
   const toggleLeftPanel = useCallback(() => {
     leftPanelTouchedRef.current = true;
     setLeftPanelOpen((current) => !current);
@@ -523,6 +550,7 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
     saveAsNew: savedFilters.saveAsNew,
     setIncludeOnlyNewFreqs,
     selectOnlyFreq,
+    openPointsOnMap,
     setCenterTab,
     setNewestFirst,
     setRightSidebarTab,

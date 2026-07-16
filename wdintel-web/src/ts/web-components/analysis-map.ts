@@ -114,16 +114,11 @@ class AnalysisMap extends HTMLElement {
       return;
     }
     const value = (e.detail ?? '').trim();
-    const coords = parseCoordinateInput(value);
-    if (coords && this._map) {
-      this._flyToCoordinate(coords);
-      this._searchControl?.updateSearchLoading(false);
-      this._searchControl?.updateResultsCount(null);
-      this._palitraManager?.setSearchQuery('');
-    } else {
-      this._clearCoordinateMarker();
-      this._palitraManager?.setSearchQuery(value);
+    if (this._applyDirectCoordinateSearch(value)) {
+      return;
     }
+    this._clearCoordinateMarker();
+    this._palitraManager?.setSearchQuery(value);
   };
   private _searchSubmitHandler = (e: CustomEvent<string>) => {
     if (this._isSearchInteractionLocked()) {
@@ -131,12 +126,7 @@ class AnalysisMap extends HTMLElement {
     }
 
     const value = (e.detail ?? '').trim();
-    const coords = parseCoordinateInput(value);
-    if (coords) {
-      this._flyToCoordinate(coords);
-      this._searchControl?.updateSearchLoading(false);
-      this._searchControl?.updateResultsCount(null);
-      this._palitraManager?.setSearchQuery('');
+    if (this._applyDirectCoordinateSearch(value)) {
       return;
     }
 
@@ -202,6 +192,28 @@ class AnalysisMap extends HTMLElement {
     });
     marker.addTo(this._map);
     this._coordinateSearchMarker = marker;
+  }
+
+  private _applyDirectCoordinateSearch(query: string): boolean {
+    const trimmed = query.trim();
+    if (trimmed === '') {
+      return false;
+    }
+
+    const coords = parseCoordinateInput(trimmed);
+    if (!coords) {
+      return false;
+    }
+
+    if (!this._map) {
+      return true;
+    }
+
+    this._flyToCoordinate(coords);
+    this._searchControl?.updateSearchLoading(false);
+    this._searchControl?.updateResultsCount(null);
+    this._palitraManager?.setSearchQuery('');
+    return true;
   }
 
   private _closePointContextMenu(): void {
@@ -420,12 +432,17 @@ class AnalysisMap extends HTMLElement {
   private _handleSearchAttributeChanged(newValue: string): void {
     const query = newValue.trim();
     this._applySearchQuery(query);
-    if (!this._palitraManager) {
+    if (query === '') {
+      this._clearCoordinateMarker();
+      this._palitraManager?.setSearchQuery('');
       return;
     }
 
-    if (!query) {
-      this._palitraManager.setSearchQuery('');
+    if (this._applyDirectCoordinateSearch(query)) {
+      return;
+    }
+
+    if (!this._palitraManager) {
       return;
     }
 
@@ -438,6 +455,9 @@ class AnalysisMap extends HTMLElement {
   private _runSearchQueryIfSet() {
     const query = this._getEffectiveSearchQuery();
     if (!query || !this._palitraManager) return;
+    if (this._applyDirectCoordinateSearch(query)) {
+      return;
+    }
     this._palitraManager.setSearchQuery(query);
   }
 
@@ -536,7 +556,13 @@ class AnalysisMap extends HTMLElement {
 
       // Set search input from URL; run search once when palitras are ready (palitras-load-state handler)
       this._applySearchQuery();
-      if (this._palitrasLoadState === 'success' || this._palitrasLoadState === 'error') {
+      const directSearchHandled = this._applyDirectCoordinateSearch(
+        this._getEffectiveSearchQuery(),
+      );
+      if (
+        !directSearchHandled &&
+        (this._palitrasLoadState === 'success' || this._palitrasLoadState === 'error')
+      ) {
         this._runSearchQueryIfSet();
       }
 

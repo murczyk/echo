@@ -10,8 +10,10 @@ import {
   PalitraDetails,
   PalitraGeometryDetails,
   PalitraReadV2,
+  PalitraPoints,
   User,
 } from '../../../../Bindings';
+import { transformSnakeToCamel } from '../../../snake-to-camel';
 
 import { listAors } from './aor';
 import {
@@ -414,6 +416,17 @@ export async function listMapPalitrasV2(): Promise<PalitraReadV2[]> {
   const data = await postJson<PalitraReadV2Like[]>('/api/palitra/v2/list-map');
 
   return (data ?? []).map((entry) => normalizePalitraReadV2(entry));
+}
+
+export async function searchPalitraPoints(
+  palitraIds: number[],
+  pointLabels: string[],
+): Promise<PalitraPoints[]> {
+  const raw = await postJson<unknown>('/api/palitra/points/search', {
+    palitra_ids: palitraIds,
+    point_labels: pointLabels,
+  });
+  return transformSnakeToCamel<PalitraPoints[]>(raw) ?? [];
 }
 
 export async function readPalitraV2(palitraId: number): Promise<PalitraReadV2> {
