@@ -215,6 +215,16 @@ pub struct OneoffReprocessInboxMetadataPs {
 }
 
 #[derive(clap::Parser, Debug)]
+pub struct OneoffReprocessUnitNamesPs {
+    /// Start datetime in UTC (inclusive). Example: `2026-07-16T05:45:00Z`
+    #[arg(long)]
+    pub since_ts: Option<String>,
+    /// Only reprocess messages whose datasource group corresponds to this signal_group.master_key.
+    #[arg(long)]
+    pub only_group_master_key: Option<String>,
+}
+
+#[derive(clap::Parser, Debug)]
 pub struct OneoffReviewParsedSigintCommentsPs {
     /// Start datetime (inclusive). Example: `2023-04-17T00:00:00`
     #[arg(long)]
@@ -662,7 +672,7 @@ enum Cmd {
     ),
     OneoffGenDatasetCallsigns,
     OneoffReprocessCoords(OneoffReprocessCoordsPs),
-    OneoffReprocessUnitNames,
+    OneoffReprocessUnitNames(OneoffReprocessUnitNamesPs),
     OneoffReprocessSearchIndex(OneoffReprocessSearchIndexPs),
     OneoffNominalizeFreq,
     OneoffRoundFreq,
@@ -989,8 +999,8 @@ async fn async_main(
         Cmd::OneoffReprocessCoords(ps) => {
             sigint::oneoff_reprocess_coords(mode, &ps).await
         }
-        Cmd::OneoffReprocessUnitNames => {
-            rer_importer::oneoff_reprocess_unit_names(mode).await
+        Cmd::OneoffReprocessUnitNames(ps) => {
+            rer_importer::oneoff_reprocess_unit_names(mode, &ps).await
         }
         Cmd::OneoffReprocessSearchIndex(ps) => {
             rer_importer::search::oneoff_reprocess_search_index(mode, &ps).await

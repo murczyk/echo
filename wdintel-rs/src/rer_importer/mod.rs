@@ -781,8 +781,11 @@ fn parse_start_day_to_utc(start_day: &str) -> Result<NaiveDateTime, AppError> {
     Ok(zoned.to_utc().naive_utc())
 }
 
-pub async fn oneoff_reprocess_unit_names(mode: Mode) -> Result<(), AppError> {
-    println!("> oneoff_reprocess_coords");
+pub async fn oneoff_reprocess_unit_names(
+    mode: Mode,
+    ps: &crate::OneoffReprocessUnitNamesPs,
+) -> Result<(), AppError> {
+    println!("> oneoff_reprocess_unit_names {ps:?}");
     let dbx = crate::new_pg_pool_from_mode(mode).await.c(h!())?;
     let config = crate::config::read_config(mode)?;
     let settlements = Arc::new(RwLock::new(
@@ -799,17 +802,32 @@ pub async fn oneoff_reprocess_unit_names(mode: Mode) -> Result<(), AppError> {
     .await
     .c(h!())?;
 
-    let q = sigint_inbox_item::Entity::find()
+    let since_ts =
+        parse_oneoff_reprocess_unit_names_since_ts(ps.since_ts.as_deref())?
+            .unwrap_or_else(|| {
+                (Utc::now() - chrono::Duration::days(10)).naive_utc()
+            });
+
+    let mut q = sigint_inbox_item::Entity::find()
         .join(
             JoinType::InnerJoin,
             sigint_inbox_item::Relation::SignalMessage.def(),
         )
-        .filter(
-            sigint_inbox_item::Column::Datetime
-                .gte(Utc::now() - chrono::Duration::days(10)),
-        )
+        .filter(sigint_inbox_item::Column::Datetime.gte(since_ts))
         .filter(signal_message::Column::Deleted.eq(false))
         .order_by_asc(sigint_inbox_item::Column::Id);
+    if let Some(master_key) = ps.only_group_master_key.as_deref() {
+        q = q
+            .join(
+                JoinType::InnerJoin,
+                signal_message::Relation::DatasourceGroup.def(),
+            )
+            .join(
+                JoinType::InnerJoin,
+                datasource_group::Relation::SignalGroup.def(),
+            )
+            .filter(signal_group::Column::MasterKey.eq(master_key));
+    }
     // let count = q.clone().count(&dbx).await
     let mut inbox_items = q.stream(&dbx).await.c(h!())?;
     // let pb = ProgressBar::new(count);
@@ -873,6 +891,20 @@ pub async fn oneoff_reprocess_unit_names(mode: Mode) -> Result<(), AppError> {
         }
     }
     Ok(())
+}
+
+fn parse_oneoff_reprocess_unit_names_since_ts(
+    value: Option<&str>,
+) -> Result<Option<NaiveDateTime>, AppError> {
+    let Some(value) = value else {
+        return Ok(None);
+    };
+    if let Ok(ts) = DateTime::parse_from_rfc3339(value) {
+        return Ok(Some(ts.naive_utc()));
+    }
+    Ok(Some(
+        NaiveDateTime::parse_from_str(value, "%Y-%m-%dT%H:%M:%S").c(h!())?,
+    ))
 }
 
 async fn resolve_message_aor_id(
@@ -1018,7 +1050,10 @@ where
 
 #[cfg(test)]
 mod messenger_media_tests {
-    use super::parse_single_byte_range;
+    use super::{
+        parse_oneoff_reprocess_unit_names_since_ts, parse_single_byte_range,
+    };
+    use chrono::NaiveDate;
 
     #[test]
     fn parse_byte_range_from_start() {
@@ -1044,5 +1079,37 @@ mod messenger_media_tests {
     #[test]
     fn parse_byte_range_rejects_out_of_bounds() {
         assert_eq!(parse_single_byte_range("bytes=1000-1100", 1000), None);
+    }
+
+    #[test]
+    fn parse_unit_names_since_ts_accepts_utc_rfc3339() {
+        assert_eq!(
+            parse_oneoff_reprocess_unit_names_since_ts(Some(
+                "2026-07-16T05:45:00Z"
+            ))
+            .unwrap(),
+            Some(
+                NaiveDate::from_ymd_opt(2026, 7, 16)
+                    .unwrap()
+                    .and_hms_opt(5, 45, 0)
+                    .unwrap()
+            )
+        );
+    }
+
+    #[test]
+    fn parse_unit_names_since_ts_accepts_naive_utc() {
+        assert_eq!(
+            parse_oneoff_reprocess_unit_names_since_ts(Some(
+                "2026-07-16T05:45:00"
+            ))
+            .unwrap(),
+            Some(
+                NaiveDate::from_ymd_opt(2026, 7, 16)
+                    .unwrap()
+                    .and_hms_opt(5, 45, 0)
+                    .unwrap()
+            )
+        );
     }
 }

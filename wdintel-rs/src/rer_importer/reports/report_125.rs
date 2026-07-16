@@ -310,9 +310,20 @@ fn report_125_rls_type(message: &Report125Message) -> String {
     if non_empty_text(message.unit_v2.as_deref()).is_some() {
         return String::new();
     }
-    non_empty_text(message.unit.as_deref())
-        .map(ToString::to_string)
-        .unwrap_or_default()
+    let Some(unit) = non_empty_text(message.unit.as_deref()) else {
+        return String::new();
+    };
+    if report_125_unit_is_not_rls_type(unit) {
+        return String::new();
+    }
+    unit.to_string()
+}
+
+fn report_125_unit_is_not_rls_type(unit: &str) -> bool {
+    let unit = unit.to_lowercase();
+    ["dmr", "укх", "р/м", "mhz", "мгц"]
+        .iter()
+        .any(|marker| unit.contains(marker))
 }
 
 fn report_125_mgrs(peleng: &sigint_peleng::Model) -> Option<String> {
@@ -711,6 +722,49 @@ mod tests {
         .unwrap();
 
         assert!(report_data.rows.is_empty());
+    }
+
+    #[test]
+    fn report_125_rls_type_blanks_non_rls_unit_markers() {
+        for unit in [
+            "DMR мережа",
+            "УКХ р/м управління",
+            "р/м управління",
+            "141.715 MHz",
+            "141.715 МГц",
+        ] {
+            assert_eq!(report_125_rls_type(&message_with_unit(unit, None)), "");
+        }
+        assert_eq!(
+            report_125_rls_type(&message_with_unit(
+                "А-50 (А-50У) РЛС з РТК «Шмєль-М»",
+                None,
+            )),
+            "А-50 (А-50У) РЛС з РТК «Шмєль-М»"
+        );
+        assert_eq!(
+            report_125_rls_type(&message_with_unit(
+                "Should be hidden",
+                Some("linked unit")
+            )),
+            ""
+        );
+    }
+
+    fn message_with_unit(
+        unit: &str,
+        unit_v2: Option<&str>,
+    ) -> Report125Message {
+        Report125Message {
+            id: 1,
+            timestamp: None,
+            date: None,
+            time: None,
+            datetime: None,
+            unit: Some(unit.to_string()),
+            unit_v2: unit_v2.map(ToString::to_string),
+            datasource_id: None,
+        }
     }
 
     #[test]
