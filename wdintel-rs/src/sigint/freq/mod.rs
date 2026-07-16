@@ -16,7 +16,8 @@ use sea_orm::{
     ColumnTrait, Condition, EntityTrait, QueryFilter, QuerySelect, Statement,
 };
 use sea_query::{
-    Alias, CommonTableExpression, Expr, IntoCondition, Order, Query, SimpleExpr,
+    extension::postgres::PgExpr, Alias, CommonTableExpression, Expr,
+    IntoCondition, Order, Query, SimpleExpr,
 };
 use std::collections::{BTreeSet, HashMap};
 
@@ -1575,6 +1576,43 @@ pub async fn list_freqs_for_period(
         .collect();
 
     Ok(Json(ListFreqsForPeriodRsp { freqs }))
+}
+
+#[post("/api/sigint/freq/search")]
+pub async fn freq_search(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<FreqSearchReq>,
+) -> Result<Json<FreqSearchRsp>, AppError> {
+    crate::users::has_any_role(&env.dbx, &user.id().c(h!())?, vec!["Rer"])
+        .await
+        .c(h!())?;
+
+    let search_phrase = req.search.trim().to_lowercase();
+
+    let mut query = sigint_network_freq::Entity::find()
+        .select_only()
+        .column_as(sigint_network_freq::Column::Freq, "name")
+        .column_as(sigint_network_freq::Column::Id.min(), "id")
+        .filter(sigint_network_freq::Column::Deleted.eq(false));
+
+    if !search_phrase.is_empty() {
+        query = query.filter(
+            Expr::col(sigint_network_freq::Column::Freq)
+                .ilike(format!("%{}%", search_phrase)),
+        );
+    }
+
+    let freqs: Vec<FreqSearchResult> = query
+        .group_by(sigint_network_freq::Column::Freq)
+        .order_by_asc(sigint_network_freq::Column::Freq)
+        .limit(50)
+        .into_model()
+        .all(&env.dbx)
+        .await
+        .c(h!())?;
+
+    Ok(Json(FreqSearchRsp { freqs }))
 }
 
 #[cfg(test)]

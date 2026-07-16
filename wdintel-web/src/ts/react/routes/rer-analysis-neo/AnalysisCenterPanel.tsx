@@ -175,8 +175,6 @@ export function AnalysisCenterPanel({
             authUserName={page.authUserName}
             currentUser={page.currentUser}
             copiedFeedbackId={page.copiedFeedbackId}
-            editorMessage={page.editorMessage}
-            editorSaveInFlight={page.editorSaveInFlight}
             groupInfos={page.groupInfos}
             loading={messagesPaneLoading}
             paginationLoading={page.messagesPaging}
@@ -185,13 +183,12 @@ export function AnalysisCenterPanel({
             messages={page.messages}
             networkDisplayMap={page.networkDisplayMap}
             noMoreToLoad={page.noMoreToLoad}
-            onCloseEditor={page.closeEditor}
             onDeleteMessage={page.onDeleteMessage}
             onCancelBotTagAction={page.onCancelBotTagAction}
             onMarkBotTagWrong={page.onMarkBotTagWrong}
             onLoadMoreMessages={page.loadMoreMessages}
             onOpenEditor={page.openEditor}
-            onSaveEditor={page.saveEditor}
+            onOpenPointsOnMap={page.openPointsOnMap}
             onSaveMessageUpdate={page.saveMessageUpdate}
             onSaveMessageComment={page.onSaveMessageComment}
             onToggleMessageBookmark={page.onToggleMessageBookmark}

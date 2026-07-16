@@ -19,6 +19,10 @@ export type LatLng = {
   lng: number;
 };
 
+export function isValidUsk2000Component(value: number): boolean {
+  return Number.isFinite(value) && value >= 3000000 && value < 9000000;
+}
+
 function isFiniteLatLng(latLng: LatLng | null | undefined): latLng is LatLng {
   return Number.isFinite(latLng?.lat) && Number.isFinite(latLng?.lng);
 }
@@ -133,7 +137,7 @@ function parseUskRegexMatches(matches: RegExpMatchArray[]): ImporterCoordinate[]
   return matches.flatMap((match) => {
     const x = Number((match[1] ?? '').replace(/\D/g, ''));
     const y = Number((match[2] ?? '').replace(/\D/g, ''));
-    if (!Number.isFinite(x) || !Number.isFinite(y)) return [];
+    if (!isValidUsk2000Component(x) || !isValidUsk2000Component(y)) return [];
     return [{ kind: 'usk2000', x, y } satisfies ImporterCoordinate];
   });
 }
@@ -164,7 +168,7 @@ function parseXyPartAt(input: string, index: number): ParsedInt | null {
   const first = parseIntAt(input, index);
   if (!first) return null;
 
-  if (first.value >= 3000000 && first.value < 9000000) return first;
+  if (isValidUsk2000Component(first.value)) return first;
   if (first.value < 30 || first.value >= 90) return null;
 
   const separator = input.slice(first.end).match(/^(?:[-\s]*)/);

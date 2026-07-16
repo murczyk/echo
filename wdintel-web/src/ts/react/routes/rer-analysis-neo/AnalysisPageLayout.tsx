@@ -1,15 +1,18 @@
 import { Box } from '@mui/material';
-import { useId } from 'react';
+import { useId, useState } from 'react';
 import { useMediaQuery } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
 
 import { PowerAlert } from '../../components/PowerAlert';
+import { isPresent } from '../../utils/misc';
 import { AnalysisPageHeader } from './AnalysisPageHeader';
 import { AnalysisLeftPanel } from './AnalysisLeftPanel';
 import { AnalysisLoadingSkeletons } from './AnalysisLoadingSkeletons';
 import { AnalysisCenterPanel } from './AnalysisCenterPanel';
 import { AnalysisRightPanel } from './AnalysisRightPanel';
 import { AnalysisReportDialog } from './components/AnalysisReportDialog';
+import { CreateMessageFab } from './components/CreateMessageFab';
+import { ManageMessageDrawer } from './components/ManageMessageDrawer';
 import { getAnalysisCenterTabs } from './types';
 import { useMinDurationBusy } from './use-min-duration-busy';
 import { useRerAnalysisNeoPage } from './use-rer-analysis-neo-page';
@@ -21,6 +24,7 @@ export type RerAnalysisNeoPageProps = {
 export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPageProps = {}) {
   const page = useRerAnalysisNeoPage(authUserName);
   const theme = useTheme();
+  const [createMessageOpen, setCreateMessageOpen] = useState(false);
   const isMobileLayout = useMediaQuery(theme.breakpoints.down('sm'));
   const centerTabsId = useId().replace(/:/g, '-');
   const messagesTabId = `${centerTabsId}-messages-tab`;
@@ -141,6 +145,27 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
         onSetProgressExpanded={page.setReportProgressExpanded}
         onToggleTaskRunLogs={page.toggleReportTaskRunLogs}
         onUpdate={page.updateReport}
+      />
+
+      <CreateMessageFab onClick={() => setCreateMessageOpen(true)} />
+      <ManageMessageDrawer
+        open={createMessageOpen || isPresent(page.editorMessage)}
+        cyberEchoEnabled={page.cyberEchoEnabled}
+        currentUser={page.currentUser}
+        editTarget={page.editorMessage}
+        editSaveInFlight={page.editorSaveInFlight}
+        onClose={() => {
+          if (isPresent(page.editorMessage)) {
+            page.closeEditor();
+          } else {
+            setCreateMessageOpen(false);
+          }
+        }}
+        onSubmitEdit={(_id, message) => page.saveEditor(message)}
+        onSuccess={() => {
+          setCreateMessageOpen(false);
+          page.reload();
+        }}
       />
     </Box>
   );

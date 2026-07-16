@@ -1,0 +1,460 @@
+import { useState, useEffect, useMemo } from 'react';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import dayjs from 'dayjs';
+
+import {
+  getUserSigintGroups,
+  getGroupInfosBatch,
+  getTagsForDisplay,
+} from '../../../services/api/inbox-reference-data';
+import {
+  searchDeviceNames,
+  searchPostNames,
+  searchUnitNames,
+  searchNetworkNames,
+  searchSignalNames,
+  searchCallsignNames,
+  searchFreqs,
+  type NetworkSearchResult,
+} from '../../../services/api/direct-submit';
+import { getUnitsByIds } from '../../../services/api/units';
+import type { InboxMessage, SignalGroupEntry, Tag, User } from '../../../../../Bindings';
+import { mapInboxMessageToForm } from './manage-message-drawer.mappers';
+import { useRecentValues } from './useRecentValues';
+import { hasRole } from '../../../utils/roles';
+import { isPresent } from '../../../utils/misc';
+import {
+  makeMessageSchema,
+  EMPTY_FORM_VALUES,
+  normalizeCallsign,
+  type MessageFormData,
+} from './manage-message-drawer.schema';
+import { useMessageUppy } from './useMessageUppy';
+import { useMessageParser } from './useMessageParser';
+import { useMessageSubmit } from './useMessageSubmit';
+
+export type UseManageMessageDrawerProps = {
+  open: boolean;
+  currentUser: User | null;
+  onClose: () => void;
+  onSuccess?: () => void;
+  editTarget?: { id: number; message: InboxMessage } | null;
+  editSaveInFlight?: boolean;
+  onSubmitEdit?: (id: number, message: InboxMessage) => void | Promise<void>;
+};
+
+export function useManageMessageDrawer({
+  open,
+  currentUser,
+  onClose,
+  onSuccess,
+  editTarget = null,
+  editSaveInFlight,
+  onSubmitEdit,
+}: UseManageMessageDrawerProps) {
+  const isAdmin = hasRole(currentUser?.roles, 'Admin');
+  const isEditMode = isPresent(editTarget);
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [signalGroups, setSignalGroups] = useState<SignalGroupEntry[]>([]);
+  const [groupsLoading, setGroupsLoading] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  const { recentValues, addValues } = useRecentValues();
+
+  const busy = submitting || (isEditMode && Boolean(editSaveInFlight));
+
+  const [tagOptions, setTagOptions] = useState<string[]>([]);
+  const [tagsMap, setTagsMap] = useState<Record<number, Tag>>({});
+  const [tagsLoaded, setTagsLoaded] = useState(false);
+
+  const [deviceNameOptions, setDeviceNameOptions] = useState<string[]>([]);
+  const [deviceNamesLoading, setDeviceNamesLoading] = useState(false);
+  const [deviceNameInput, setDeviceNameInput] = useState('');
+
+  const [postOptions, setPostOptions] = useState<string[]>([]);
+  const [postLoading, setPostLoading] = useState(false);
+  const [postInput, setPostInput] = useState('');
+
+  const [unitOptions, setUnitOptions] = useState<string[]>([]);
+  const [unitLoading, setUnitLoading] = useState(false);
+  const [unitInput, setUnitInput] = useState('');
+
+  const [networkNameOptions, setNetworkNameOptions] = useState<NetworkSearchResult[]>([]);
+  const [networkNameLoading, setNetworkNameLoading] = useState(false);
+  const [networkNameInput, setNetworkNameInput] = useState('');
+  const [unitLocked, setUnitLocked] = useState(false);
+
+  const signalNameOptions = ['DMR'];
+  const signalNameLoading = false;
+  const setSignalNameInput = () => {};
+
+  const [callsignOptions, setCallsignOptions] = useState<string[]>([]);
+  const [callsignLoading, setCallsignLoading] = useState(false);
+  const [callsignInput, setCallsignInput] = useState('');
+
+  const [freqOptions, setFreqOptions] = useState<string[]>([]);
+  const [freqLoading, setFreqLoading] = useState(false);
+  const [freqInput, setFreqInput] = useState('');
+
+  useEffect(() => {
+    if (!open) return;
+    let active = true;
+
+    setDeviceNamesLoading(true);
+    searchDeviceNames(deviceNameInput)
+      .then((results) => {
+        if (active) {
+          setDeviceNameOptions(results.map((c) => c.name));
+        }
+      })
+      .catch(console.error)
+      .finally(() => {
+        if (active) setDeviceNamesLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [deviceNameInput, open]);
+
+  useEffect(() => {
+    if (!open) return;
+    let active = true;
+
+    setPostLoading(true);
+    searchPostNames(postInput)
+      .then((results) => {
+        if (active) {
+          setPostOptions(results.map((p) => p.name));
+        }
+      })
+      .catch(console.error)
+      .finally(() => {
+        if (active) setPostLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [postInput, open]);
+
+  useEffect(() => {
+    if (!open) return;
+    let active = true;
+
+    setUnitLoading(true);
+    searchUnitNames(unitInput)
+      .then((results) => {
+        if (active) {
+          setUnitOptions(results.map((u) => u.name));
+        }
+      })
+      .catch(console.error)
+      .finally(() => {
+        if (active) setUnitLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [unitInput, open]);
+
+  useEffect(() => {
+    if (!open) return;
+    let active = true;
+
+    setNetworkNameLoading(true);
+    searchNetworkNames(networkNameInput)
+      .then((results) => {
+        if (active) {
+          setNetworkNameOptions(results);
+        }
+      })
+      .catch(console.error)
+      .finally(() => {
+        if (active) setNetworkNameLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [networkNameInput, open]);
+
+  useEffect(() => {
+    if (!open) return;
+    let active = true;
+
+    setCallsignLoading(true);
+    searchCallsignNames(callsignInput)
+      .then((results) => {
+        if (active) {
+          setCallsignOptions(results.map((c) => c.name));
+        }
+      })
+      .catch(console.error)
+      .finally(() => {
+        if (active) setCallsignLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [callsignInput, open]);
+
+  useEffect(() => {
+    if (!open) return;
+    let active = true;
+
+    setFreqLoading(true);
+    searchFreqs(freqInput)
+      .then((results) => {
+        if (active) {
+          setFreqOptions(results.map((f) => f.name));
+        }
+      })
+      .catch(console.error)
+      .finally(() => {
+        if (active) setFreqLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [freqInput, open]);
+
+  const {
+    uppy,
+    uppyFiles,
+    fileInputRef,
+    handleFileSelect,
+    handleDrop,
+    handleDropzoneKeyDown,
+    attachmentErrorMsg,
+    setAttachmentErrorMsg,
+  } = useMessageUppy(busy);
+
+  const resolver = useMemo(() => zodResolver(makeMessageSchema(isEditMode)), [isEditMode]);
+
+  const methods = useForm<MessageFormData>({
+    resolver,
+    mode: 'onTouched',
+    reValidateMode: 'onChange',
+    defaultValues: EMPTY_FORM_VALUES,
+  });
+
+  const { getValues, setValue, reset } = methods;
+
+  const { parsing, handleParse } = useMessageParser(methods, busy, setErrorMsg);
+
+  useEffect(() => {
+    if (!open) return;
+    let active = true;
+
+    const fetchGroups = async () => {
+      setGroupsLoading(true);
+      try {
+        const keys = await getUserSigintGroups(null);
+        if (!active) return;
+        const infos = await getGroupInfosBatch(keys);
+        if (!active) return;
+        setSignalGroups(
+          infos.filter((g) => {
+            const adminData = g.adminData as any;
+            return !adminData?.deleted;
+          }),
+        );
+      } catch (e) {
+        console.error('Failed to load groups', e);
+      } finally {
+        if (active) setGroupsLoading(false);
+      }
+    };
+
+    fetchGroups();
+
+    setTagsLoaded(false);
+    getTagsForDisplay()
+      .then(({ tagsMap, tagsOrder }) => {
+        if (!active) return;
+        setTagsMap(tagsMap);
+        setTagsLoaded(true);
+        setTagOptions(
+          tagsOrder
+            .map((tagId) => tagsMap[tagId]?.label)
+            .filter((label): label is string => !!label),
+        );
+      })
+      .catch((e) => console.error('Failed to load tags', e));
+
+    return () => {
+      active = false;
+    };
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    setDeviceNameInput('');
+    setPostInput('');
+    setUnitInput('');
+    setNetworkNameInput('');
+    setCallsignInput('');
+    setFreqInput('');
+    setShowAdvanced(false);
+    setErrorMsg(null);
+    setUnitLocked(false);
+    if (isEditMode && editTarget) {
+      const metadata = editTarget.message.metadata ?? [];
+      reset({
+        ...mapInboxMessageToForm(editTarget.message, tagsMap),
+        text: editTarget.message.noHeadersBody?.body ?? editTarget.message.text ?? '',
+        signalGroupMasterKey: editTarget.message.groupMasterKey ?? '',
+        deviceName: editTarget.message.deviceName ?? '',
+        network_signal_name:
+          metadata.length || editTarget.message.networkIds?.length || editTarget.message.networkName
+            ? 'DMR'
+            : '',
+        network_name: editTarget.message.networkName ?? '',
+        dmr: metadata.map((item) => ({
+          cc: item.colorCode ?? '',
+          sender_id: item.senderId ?? '',
+          sender_name: item.senderName ?? '',
+          call_group_id: item.callGroupId ?? '',
+          call_group_name: item.callGroupName ?? '',
+          hash_id: item.hashId ?? '',
+        })),
+      });
+    } else {
+      reset({
+        ...EMPTY_FORM_VALUES,
+        date: dayjs(),
+        time: dayjs(),
+      });
+    }
+  }, [open, isEditMode, editTarget?.id]);
+
+  useEffect(() => {
+    if (!open || !isEditMode || !editTarget) return;
+    if ((getValues('tags') ?? []).length > 0) return;
+    const seededTags = mapInboxMessageToForm(editTarget.message, tagsMap).tags;
+    if (seededTags.length > 0) {
+      setValue('tags', seededTags, { shouldDirty: false });
+    }
+  }, [open, isEditMode, editTarget?.id, tagsMap]);
+
+  useEffect(() => {
+    if (!open || !isEditMode || !editTarget) return;
+    const name = editTarget.message.networkName?.trim();
+    if (!name) return;
+    // Resolve the named network to lock its unit(s), mirroring the create flow.
+    searchNetworkNames(name)
+      .then(async (results) => {
+        const match = results.find((n) => n.name === name);
+        const unitIds = match?.unit_ids ?? [];
+        if (unitIds.length === 0) return;
+        const units = await getUnitsByIds(unitIds);
+        if (units.length > 0) {
+          setValue('unit', units.map((u) => u.name).join(', '), {
+            shouldDirty: false,
+            shouldValidate: true,
+          });
+          setUnitLocked(true);
+        }
+      })
+      .catch(console.error);
+  }, [open, isEditMode, editTarget?.id]);
+
+  const handleDrawerClose = () => {
+    if (busy) return;
+    uppy.cancelAll();
+    reset();
+    setDeviceNameInput('');
+    setShowAdvanced(false);
+    setErrorMsg(null);
+    onClose();
+  };
+
+  const getProposedCallsigns = (current: string[]): string[] => {
+    const present = new Set(current.map(normalizeCallsign));
+    return (editTarget?.message.callsignsAlg2 ?? [])
+      .map(normalizeCallsign)
+      .filter((item) => item.length > 0 && item.length <= 12 && !present.has(item))
+      .filter((item, index, list) => list.indexOf(item) === index);
+  };
+
+  const addSuggestedCallsign = (callsign: string) => {
+    const current = getValues('callsigns') ?? [];
+    if (current.some((item) => normalizeCallsign(item) === callsign)) return;
+    setValue('callsigns', [...current, callsign], { shouldDirty: true });
+  };
+
+  const { onSubmit } = useMessageSubmit({
+    busy,
+    isEditMode,
+    editTarget,
+    onSubmitEdit,
+    tagsLoaded,
+    setSubmitting,
+    setErrorMsg,
+    uppy,
+    addValues,
+    onSuccess,
+    handleDrawerClose,
+  });
+
+  return {
+    isAdmin,
+    isEditMode,
+    showAdvanced,
+    setShowAdvanced,
+    signalGroups,
+    groupsLoading,
+    busy,
+    parsing,
+    errorMsg,
+    setErrorMsg,
+    tagOptions,
+    tagsMap,
+    setTagsMap,
+    deviceNameOptions,
+    deviceNamesLoading,
+    deviceNameInput,
+    setDeviceNameInput,
+    postOptions,
+    postLoading,
+    setPostInput,
+    unitOptions,
+    unitLoading,
+    setUnitInput,
+    networkNameOptions,
+    networkNameLoading,
+    setNetworkNameInput,
+    unitLocked,
+    setUnitLocked,
+    signalNameOptions,
+    signalNameLoading,
+    setSignalNameInput,
+    callsignOptions,
+    callsignLoading,
+    setCallsignInput,
+    freqOptions,
+    freqLoading,
+    setFreqInput,
+    uppy,
+    uppyFiles,
+    fileInputRef,
+    handleFileSelect,
+    handleDrop,
+    handleDropzoneKeyDown,
+    attachmentErrorMsg,
+    setAttachmentErrorMsg,
+    methods,
+    handleParse,
+    handleDrawerClose,
+    getProposedCallsigns,
+    addSuggestedCallsign,
+    onSubmit,
+    recentValues,
+  };
+}

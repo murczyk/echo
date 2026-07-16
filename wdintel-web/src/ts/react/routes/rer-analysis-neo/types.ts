@@ -186,6 +186,7 @@ export type AnalysisPageState = {
   newestFirst: boolean;
   unitsExactMatchOnlyDefault: boolean | null;
   supportNonRerInterceptions: boolean;
+  cyberEchoEnabled: boolean;
   options: AnalysisFilterOptions;
   profiles: Record<string, SignalProfileEntry | null>;
   queryState: AnalysisQueryState;
@@ -240,6 +241,7 @@ export type AnalysisPageActions = {
     messageId: number,
     updater: (message: InboxMessage) => InboxMessage,
   ) => void;
+  onPrependLocalMessage: (messageId: number, message: InboxMessage) => void;
   closeReport: () => void;
   downloadGeojson: () => void;
   downloadKmz: () => void;
@@ -259,6 +261,7 @@ export type AnalysisPageActions = {
   toggleLeftPanel: () => void;
   toggleRightPanel: () => void;
   selectOnlyFreq: (freq: string) => void;
+  openPointsOnMap: (etalons: string[], message: InboxMessage) => void;
   setSavedFilterName: (name: string) => void;
   addFrequencyToFilter: (freq: string) => void;
   showFreqOnMap: (freq: string) => void;

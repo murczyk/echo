@@ -21,13 +21,14 @@ import {
   shouldOpenAnalysisMapFromSearchParams,
   parseNewestFirstFromWindow,
 } from './helpers';
-import type { User } from '../../../../Bindings';
+import type { InboxMessage, User } from '../../../../Bindings';
 import type { AnalysisPageViewModel, AnalysisQueryState } from './types';
 import { useAnalysisData } from './use-analysis-data';
 import { useAnalysisMessageEditor } from './use-analysis-message-editor';
 import { useAnalysisReport } from './use-analysis-report';
 import { useAnalysisSavedFilters } from './use-analysis-saved-filters';
 import { useDutySettings } from '../../hooks/use-duty-settings';
+import { uniquePointEtalonsForMapSearch } from '../rer-duty-neo/utils';
 import { getAnalysisSidebarTabs, type AnalysisCenterTab, type AnalysisSidebarTab } from './types';
 
 function initState(): AnalysisQueryState {
@@ -50,6 +51,7 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
     null,
   );
   const [supportNonRerInterceptions, setSupportNonRerInterceptions] = useState(false);
+  const [cyberEchoEnabled, setCyberEchoEnabled] = useState(false);
   const [lastResetState, setLastResetState] = useState<AnalysisQueryState>(() =>
     hasMeaningfulUiFiltersBeyondDateRange(initialQueryState)
       ? createResetQueryState()
@@ -163,6 +165,7 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
         if (abortController.signal.aborted) return;
         setUnitsExactMatchOnlyDefault(settings.rerAnalysisUnitsExactMatchOnlyDefault);
         setSupportNonRerInterceptions(settings.supportNonRerInterceptions);
+        setCyberEchoEnabled(settings.devicesSectionEnabled);
       })
       .catch(() => {
         if (abortController.signal.aborted) return;
@@ -381,6 +384,32 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
     [data.invalidateFilterSectionLoadsForPatch, dutySettings.analysisMapInSidebar],
   );
 
+  const openPointsOnMap = useCallback(
+    (etalons: string[], _message: InboxMessage) => {
+      const search = uniquePointEtalonsForMapSearch(etalons).join(',');
+      if (search === '') {
+        return;
+      }
+
+      startCenterTabTransition(() => {
+        data.invalidateFilterSectionLoadsForPatch({
+          search,
+        });
+        if (dutySettings.analysisMapInSidebar) {
+          setRightPanelOpen(true);
+          setRightSidebarTab('map');
+        } else {
+          setCenterTabState('map');
+        }
+        setQueryState((current) => ({
+          ...current,
+          search,
+        }));
+      });
+    },
+    [data.invalidateFilterSectionLoadsForPatch, dutySettings.analysisMapInSidebar],
+  );
+
   const toggleLeftPanel = useCallback(() => {
     leftPanelTouchedRef.current = true;
     setLeftPanelOpen((current) => !current);
@@ -469,6 +498,7 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
     onToggleMessageBookmark: data.onToggleMessageBookmark,
     onToggleMessageImportant: data.onToggleMessageImportant,
     onToggleMessageTag: data.onToggleMessageTag,
+    onPrependLocalMessage: data.onPrependLocalMessage,
     onUpdateLocalMessage: data.onUpdateLocalMessage,
     openEditor: editor.openEditor,
     profiles: data.profiles,
@@ -523,6 +553,7 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
     saveAsNew: savedFilters.saveAsNew,
     setIncludeOnlyNewFreqs,
     selectOnlyFreq,
+    openPointsOnMap,
     setCenterTab,
     setNewestFirst,
     setRightSidebarTab,
@@ -539,6 +570,7 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
     toggleReportTaskRunLogs: report.toggleReportTaskRunLogs,
     unitsExactMatchOnlyDefault,
     supportNonRerInterceptions,
+    cyberEchoEnabled,
     updateReport: report.updateReport,
     updateExisting: savedFilters.updateExisting,
     updateQueryState,

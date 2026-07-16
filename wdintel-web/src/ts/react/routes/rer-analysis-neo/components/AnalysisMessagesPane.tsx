@@ -21,7 +21,6 @@ import {
   buildCopyTextWithNetworkAndNote,
   buildCopyTextWithNetworkName,
 } from '../../shared/message-card/message-card.utils';
-import { AnalysisMessageEditDrawer } from './AnalysisMessageEditDrawer';
 import { buildMessageCardDisplayLabels } from '../../shared/message-card/message-card-labels';
 import { blurActiveElement } from '../../../utils/focus';
 import { copyMessageValue } from '../message-utils';
@@ -89,15 +88,12 @@ type Props = {
   messages: Array<[number, InboxMessage]>;
   networkDisplayMap: Record<number, string>;
   noMoreToLoad: boolean;
-  editorMessage: { id: number; message: InboxMessage } | null;
-  editorSaveInFlight: boolean;
-  onCloseEditor: () => void;
   onDeleteMessage: (messageId: number) => void;
   onCancelBotTagAction?: () => void;
   onMarkBotTagWrong?: (messageId: number, tagId: number) => void;
   onLoadMoreMessages: () => void;
   onOpenEditor: (messageId: number) => void;
-  onSaveEditor: (message: InboxMessage) => void;
+  onOpenPointsOnMap: (etalons: string[], message: InboxMessage) => void;
   onSaveMessageUpdate: (
     messageId: number,
     updater: (message: InboxMessage) => InboxMessage,
@@ -131,6 +127,7 @@ type AnalysisMessageCardItemProps = {
   onCommentOpen: (id: number, message: InboxMessage) => void;
   onCopyFeedback: (value: string) => void;
   onDeleteOpen: (messageId: number) => void;
+  onOpenPointsOnMap: (etalons: string[], message: InboxMessage) => void;
   onCancelBotTagAction?: () => void;
   onMarkBotTagWrong?: (messageId: number, tagId: number) => void;
   onOpenEditor: (messageId: number) => void;
@@ -167,6 +164,7 @@ const AnalysisMessageCardItem = memo(function AnalysisMessageCardItem({
   onCommentOpen,
   onCopyFeedback,
   onDeleteOpen,
+  onOpenPointsOnMap,
   onCancelBotTagAction,
   onMarkBotTagWrong,
   onOpenEditor,
@@ -213,6 +211,7 @@ const AnalysisMessageCardItem = memo(function AnalysisMessageCardItem({
       tagsLoading={tagsLoading}
       tagsLayout={tagsLayout}
       searchText={searchText}
+      onOpenPointsOnMap={onOpenPointsOnMap}
       callsignInfoMap={callsignInfoMap}
       networks={networks}
       unitsMap={unitsMap}
@@ -325,8 +324,6 @@ function AnalysisMessagesPaneComponent({
   currentUser,
   copiedFeedbackId: copiedFeedbackIdProp,
   botTagAction,
-  editorMessage,
-  editorSaveInFlight,
   groupInfos,
   loading,
   paginationLoading,
@@ -334,13 +331,12 @@ function AnalysisMessagesPaneComponent({
   messages,
   networkDisplayMap,
   noMoreToLoad,
-  onCloseEditor,
   onDeleteMessage,
   onCancelBotTagAction,
   onMarkBotTagWrong,
   onLoadMoreMessages,
   onOpenEditor,
-  onSaveEditor,
+  onOpenPointsOnMap,
   onSaveMessageUpdate,
   onSaveMessageComment,
   onToggleMessageBookmark,
@@ -449,6 +445,7 @@ function AnalysisMessagesPaneComponent({
               onCommentOpen={handleCommentOpen}
               onCopyFeedback={showCopiedFeedback}
               onDeleteOpen={handleDeleteOpen}
+              onOpenPointsOnMap={onOpenPointsOnMap}
               onCancelBotTagAction={onCancelBotTagAction}
               onMarkBotTagWrong={onMarkBotTagWrong}
               onOpenEditor={handleOpenEditor}
@@ -512,14 +509,6 @@ function AnalysisMessagesPaneComponent({
           onDeleteMessage(deleteMessageId);
           setDeleteMessageId(null);
         }}
-      />
-
-      <AnalysisMessageEditDrawer
-        message={editorMessage}
-        open={isPresent(editorMessage)}
-        saveInFlight={editorSaveInFlight}
-        onClose={onCloseEditor}
-        onSave={onSaveEditor}
       />
     </Box>
   );

@@ -54,6 +54,8 @@ pub struct InboxMessageDesc {
     pub time: Option<String>,
     pub checked: Option<bool>,
     pub unit_v2: Option<String>,
+    pub network: Option<String>,
+    pub device_name: Option<String>,
     pub post_id: Option<i64>,
     pub post_name: Option<String>,
     #[allow(dead_code)]
@@ -309,7 +311,7 @@ pub async fn aggregate_to_inbox_messages(
             .or_else(|| message.sender.clone());
         let m_callsign_tokens: Option<Vec<CNCallsign>> =
             match message.callsign_tokens {
-                None => None,
+                None | Some(serde_json::Value::Null) => None,
                 Some(jv) => Some(serde_json::from_value(jv).context(h!())?),
             };
         let without_model_tags = req.without_model_tags.unwrap_or(false);
@@ -439,6 +441,8 @@ pub async fn aggregate_to_inbox_messages(
                 tags: inbox_tag_ids,
                 callsigns_alg2: from_m_val_vec(message.callsigns_alg2.clone())?,
                 network_ids,
+                network_name: message.network,
+                device_name: message.device_name,
                 inbox_tags: m_inbox_tags,
                 metadata,
             },
@@ -955,6 +959,8 @@ pub async fn submit_upsert_inbox_item(
     login: &str,
     logins: &Vec<String>,
     location_mode: InboxLocationSubmitMode,
+    parse_body_coordinates: bool,
+    invalidate_body_derived_fields: bool,
 ) -> Result<i64, AppError> {
     let m_existing = SigintInboxItem::find_by_id(id).one(txn).await.c(h!())?;
     if let Some(existing) = m_existing {
@@ -974,12 +980,15 @@ pub async fn submit_upsert_inbox_item(
 
     let coords_s = parse_submitted_coords(message.coords.as_deref()).await;
 
-    let mut coords_vec = match &message.no_headers_body.clone().map(|n| n.body)
-    {
-        Some(body) => {
-            crate::rer_importer::coordinates::extract_coords(body).await
+    let mut coords_vec = if parse_body_coordinates {
+        match &message.no_headers_body.clone().map(|n| n.body) {
+            Some(body) => {
+                crate::rer_importer::coordinates::extract_coords(body).await
+            }
+            None => vec![],
         }
-        None => vec![],
+    } else {
+        vec![]
     };
     if let Some(c1) = &coords_s {
         if !coords_vec.iter().any(|c| c.text.eq(&c1.text)) {
@@ -1008,6 +1017,11 @@ pub async fn submit_upsert_inbox_item(
         .freq
         .as_ref()
         .map(|x| crate::rer_importer::frequency::etalon(x));
+    let body_noheader = match message.no_headers_body.clone() {
+        Some(body_noheader) => body_noheader,
+        None => crate::rer_importer::body_noheader::extract_text(&message.text)
+            .c(h!())?,
+    };
     // upsert sigint_comment
     if let Some(extended_form) = message.extended_form.as_ref() {
         upsert_editable_sigint_comment(txn, id, login, logins, extended_form)
@@ -1030,6 +1044,10 @@ pub async fn submit_upsert_inbox_item(
     .await
     .c(h!())?;
 
+    if invalidate_body_derived_fields {
+        clear_body_derived_fields(txn, id).await.c(h!())?;
+    }
+
     let insert_res =
         sigint_inbox_item::Entity::insert(sigint_inbox_item::ActiveModel {
             id: Set(id),
@@ -1050,9 +1068,12 @@ pub async fn submit_upsert_inbox_item(
             checked: Set(Some(message.checked)),
             reviewed: Set(Some(true)),
             unit: Set(message.unit.clone()),
-            callsign_tokens: Set(Some(
-                serde_json::to_value(&message.callsign_tokens).context(h!())?,
-            )),
+            callsign_tokens: Set(message
+                .callsign_tokens
+                .as_ref()
+                .map(serde_json::to_value)
+                .transpose()
+                .context(h!())?),
             keyword_tokens: Set(None),
             lat: Set(lat),
             lng: Set(lng),
@@ -1064,11 +1085,14 @@ pub async fn submit_upsert_inbox_item(
             callsigns_alg2: NotSet,
             signal_tokens: NotSet,
             datetime: NotSet,
-            body_noheader: NotSet,
+            body_noheader: Set(Some(
+                serde_json::to_value(&body_noheader).context(h!())?,
+            )),
             post_id: Set(message.post_id),
-            computer_name_id: Set(None),
+            device_name_id: Set(None),
             unit_v2: Set(message.unit.clone()),
             parsed_unit_v2: Set(true),
+            network: Set(None),
         })
         .on_conflict(
             sea_query::OnConflict::column(sigint_inbox_item::Column::Id)
@@ -1089,6 +1113,7 @@ pub async fn submit_upsert_inbox_item(
                     sigint_inbox_item::Column::Lng,
                     sigint_inbox_item::Column::Location,
                     sigint_inbox_item::Column::LocationV2,
+                    sigint_inbox_item::Column::BodyNoheader,
                     sigint_inbox_item::Column::PostId,
                 ])
                 .to_owned(),
@@ -1166,6 +1191,62 @@ async fn resolve_manual_location_v2(
     )
     .context(h!())?;
     Ok(Some(format_manual_location_v2(location, locations)))
+}
+
+async fn clear_body_derived_fields(
+    txn: &DatabaseTransaction,
+    inbox_id: i64,
+) -> Result<(), AppError> {
+    sigint_inbox_item::Entity::update_many()
+        .col_expr(
+            sigint_inbox_item::Column::CallsignsAlg1,
+            Expr::value(Option::<serde_json::Value>::None),
+        )
+        .col_expr(
+            sigint_inbox_item::Column::CallsignsAlg2,
+            Expr::value(Option::<serde_json::Value>::None),
+        )
+        .col_expr(
+            sigint_inbox_item::Column::SignalTokens,
+            Expr::value(Option::<serde_json::Value>::None),
+        )
+        .filter(sigint_inbox_item::Column::Id.eq(inbox_id))
+        .exec(txn)
+        .await
+        .c(h!())?;
+    sigint_inbox_item_point_token::Entity::delete_many()
+        .filter(
+            sigint_inbox_item_point_token::Column::SigintInboxItemId
+                .eq(inbox_id),
+        )
+        .exec(txn)
+        .await
+        .c(h!())?;
+    sigint_inbox_item_tag::Entity::delete_many()
+        .filter(sigint_inbox_item_tag::Column::SigintInboxItemId.eq(inbox_id))
+        .filter(sigint_inbox_item_tag::Column::Model.is_not_null())
+        .exec(txn)
+        .await
+        .c(h!())?;
+    tag_suggestion_worker_queue::Entity::insert(
+        tag_suggestion_worker_queue::ActiveModel {
+            sigint_inbox_item_id: Set(inbox_id),
+        },
+    )
+    .on_conflict_do_nothing()
+    .exec(txn)
+    .await
+    .c(h!())?;
+    palitra_highlight_worker_job::Entity::insert(
+        palitra_highlight_worker_job::ActiveModel {
+            sigint_inbox_item_id: Set(inbox_id),
+        },
+    )
+    .on_conflict_do_nothing()
+    .exec(txn)
+    .await
+    .c(h!())?;
+    Ok(())
 }
 
 async fn parse_submitted_coords(coords: Option<&str>) -> Option<Coords> {

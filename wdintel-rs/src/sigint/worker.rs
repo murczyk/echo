@@ -87,7 +87,9 @@ where
         r#"insert into sigint_search (id, search_tsv)
                 select sii.id, to_tsvector('russian', sii.body_noheader->>'body')
                 from sigint_inbox_item sii
-                where sii.id = $1"#,
+                where sii.id = $1
+                on conflict (id) do update
+                set search_tsv = excluded.search_tsv"#,
         [db_message_id.into()],
     );
     txn.execute(statement).await.c(h!())?;

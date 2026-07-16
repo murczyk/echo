@@ -7,10 +7,11 @@ use echo_im::entities::sea_orm_active_enums::{
 };
 use echo_im::entities::{
     echo_account, echo_client, echo_client_config, echo_client_lock,
-    echo_sender,
+    echo_qr_code, echo_sender,
 };
 use echo_im::types::{MessageSource, OutboxAttachmentInput, SendMessageReq};
 use regex::Regex;
+use std::process::Command;
 use std::time::Duration;
 
 use sea_orm::{
@@ -212,7 +213,13 @@ pub async fn link(
 ) -> Result<QrRsp> {
     let client_name = owned_client_name(name);
     let messenger = load(db, name).await.c(h!())?;
+    erase_stale_qr_codes(db, &client_name, messenger.kind)
+        .await
+        .c(h!())?;
     start_client(config, messenger.kind, &client_name, messenger.signal_port)
+        .await
+        .c(h!())?;
+    restart_client_process(config, messenger.kind, &client_name)
         .await
         .c(h!())?;
     wait_for_signal_client(messenger.kind, messenger.signal_port)
@@ -536,6 +543,26 @@ where
     Ok(account)
 }
 
+async fn erase_stale_qr_codes<C>(
+    db: &C,
+    name: &str,
+    kind: MessengerKind,
+) -> Result<()>
+where
+    C: ConnectionTrait,
+{
+    let Some(account) = load_account(db, name, kind).await.c(h!())? else {
+        return Ok(());
+    };
+    echo_qr_code::Entity::delete_many()
+        .filter(echo_qr_code::Column::AccountId.eq(account.id))
+        .filter(echo_qr_code::Column::Source.eq(kind.echo_source()))
+        .exec(db)
+        .await
+        .c(h!())?;
+    Ok(())
+}
+
 async fn persist_is_linked<C>(
     db: &C,
     name: &str,
@@ -637,6 +664,42 @@ async fn stop_client(
             .c(h!())?;
         }
     }
+    Ok(())
+}
+
+async fn restart_client_process(
+    config: &Config,
+    kind: MessengerKind,
+    name: &str,
+) -> Result<()> {
+    if kind != MessengerKind::Whatsapp {
+        return Ok(());
+    }
+
+    let unit_name = format!("{}@{}", config.whatsapp_unit_name(), name);
+    log::info!("restarting WhatsApp process {unit_name}");
+
+    let sudo_status = Command::new("sudo")
+        .args(["-S", "-n", "true"])
+        .status()
+        .c(h!())?;
+    if !sudo_status.success() {
+        log::warn!(
+            "cannot restart WhatsApp process {unit_name}: sudo is unavailable"
+        );
+        return Ok(());
+    }
+
+    let restart_status = Command::new("sudo")
+        .args(["-S", "systemctl", "restart", &unit_name])
+        .status()
+        .c(h!())?;
+    if !restart_status.success() {
+        log::warn!(
+            "failed to restart WhatsApp process {unit_name}: {restart_status}"
+        );
+    }
+
     Ok(())
 }
 

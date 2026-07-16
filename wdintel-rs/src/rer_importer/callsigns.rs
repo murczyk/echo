@@ -138,7 +138,9 @@ fn push_if_unique_callsign(
     }
 }
 
-fn extract_callsigns(body: &str) -> Result<Vec<CNCallsign>, AppError> {
+pub(crate) fn extract_callsigns(
+    body: &str,
+) -> Result<Vec<CNCallsign>, AppError> {
     let body = &demoji::demoji(body);
     let mut res: Vec<CNCallsign> = vec![];
     for callsign in extract_kazhanchik_callsigns(body)? {
@@ -1778,6 +1780,8 @@ mod tests {
             location: None,
             tags: None,
             network_ids: None,
+            network_name: None,
+            device_name: None,
             inbox_tags: None,
             metadata: vec![],
         }
