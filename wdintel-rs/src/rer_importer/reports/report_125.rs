@@ -522,7 +522,6 @@ mod tests {
                 freq: Set(Some("3330".to_string())),
                 date: Set(Some(seen_at.date().to_string())),
                 time: Set(Some(seen_at.time().format("%H:%M:%S").to_string())),
-                datetime: Set(Some(seen_at)),
                 unit: Set(unit.map(ToString::to_string)),
                 unit_v2: Set(unit_v2.map(ToString::to_string)),
                 reviewed: Set(Some(true)),
