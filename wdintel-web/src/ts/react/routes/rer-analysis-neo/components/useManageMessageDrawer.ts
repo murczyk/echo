@@ -230,10 +230,17 @@ export function useManageMessageDrawer({
     fileInputRef,
     handleFileSelect,
     handleDrop,
+    handlePaste,
     handleDropzoneKeyDown,
     attachmentErrorMsg,
     setAttachmentErrorMsg,
   } = useMessageUppy(busy);
+
+  useEffect(() => {
+    if (!open) return;
+    window.addEventListener('paste', handlePaste);
+    return () => window.removeEventListener('paste', handlePaste);
+  }, [open, handlePaste]);
 
   const resolver = useMemo(() => zodResolver(makeMessageSchema(isEditMode)), [isEditMode]);
 
@@ -451,6 +458,7 @@ export function useManageMessageDrawer({
     fileInputRef,
     handleFileSelect,
     handleDrop,
+    handlePaste,
     handleDropzoneKeyDown,
     attachmentErrorMsg,
     setAttachmentErrorMsg,
