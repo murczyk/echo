@@ -482,16 +482,33 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
           });
           setGroupInfos((prev) => ({ ...prev, ...map }));
         }
-        let addedCount = 0;
-        if (rsp.inboxItems.length > 0) {
+        const latestFeed = messageFeedsRef.current.find((x) => x.id === feedId);
+        if (!latestFeed) return;
+        const latestWindowed = appendWindowedMessageItems(latestFeed.items, rsp.inboxItems);
+        const addedCount = latestWindowed.addedItems.length;
+        const newestCursor = latestWindowed.items.at(-1)?.[0] ?? null;
+        const markAllRead =
+          opts?.scrollToEndAfterLoad === true || opts?.markAllReadAfterAppend === true;
+        if (addedCount > 0 && newestCursor != null) {
+          setFeedUnreadCursor(feedId, newestCursor);
+          delete newestExhaustedCursorByFeedIdRef.current[feedId];
+          delete lastServerCountByFeedIdRef.current[feedId];
+        } else {
+          newestExhaustedCursorByFeedIdRef.current[feedId] = lastId;
+        }
+        if (addedCount > 0 && opts?.scrollToEndAfterLoad === true) {
+          scrollToEndAfterNewerRef.current.add(feedId);
+          nearBottomByFeedIdRef.current = {
+            ...nearBottomByFeedIdRef.current,
+            [feedId]: true,
+          };
+        }
+        if (addedCount > 0) {
           setMessageFeeds((prev) =>
             prev.map((x) => {
               if (x.id !== feedId) return x;
               const windowed = appendWindowedMessageItems(x.items, rsp.inboxItems);
               if (windowed.addedItems.length === 0) return x;
-              addedCount = windowed.addedItems.length;
-              const markAllRead =
-                opts?.scrollToEndAfterLoad === true || opts?.markAllReadAfterAppend === true;
               const unreadAddedCount = windowed.addedItems.filter(
                 ([id]) => !x.readIds.has(id),
               ).length;
@@ -499,9 +516,6 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
                 ? new Set<number>([...x.readIds, ...windowed.items.map(([id]) => id)])
                 : x.readIds;
               const unreadCount = markAllRead ? 0 : Math.max(x.unreadCount, unreadAddedCount);
-              setFeedUnreadCursor(feedId, windowed.items.at(-1)?.[0] ?? null);
-              delete newestExhaustedCursorByFeedIdRef.current[feedId];
-              delete lastServerCountByFeedIdRef.current[feedId];
               return {
                 ...x,
                 items: windowed.items,
@@ -511,16 +525,6 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
               };
             }),
           );
-        }
-        if (addedCount === 0) {
-          newestExhaustedCursorByFeedIdRef.current[feedId] = lastId;
-        }
-        if (addedCount > 0 && opts?.scrollToEndAfterLoad === true) {
-          scrollToEndAfterNewerRef.current.add(feedId);
-          nearBottomByFeedIdRef.current = {
-            ...nearBottomByFeedIdRef.current,
-            [feedId]: true,
-          };
         }
       } catch {
         // ignore single failure to keep polling and prev messages
