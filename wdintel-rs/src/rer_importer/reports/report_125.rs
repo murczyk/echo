@@ -36,8 +36,8 @@ const CELL_NUM_WIDTH: usize = 600;
 const CELL_DATETIME_WIDTH: usize = 2100;
 const CELL_MGRS_WIDTH: usize = 2200;
 const CELL_TYPE_WIDTH: usize = 3000;
-const CELL_RECON_WIDTH: usize = 2100;
-const CELL_STRIKE_WIDTH: usize = 2100;
+const CELL_RECON_WIDTH: usize = 1400;
+const CELL_STRIKE_WIDTH: usize = 1400;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct Report125Data {
@@ -358,7 +358,7 @@ fn build_report_125_docx(report_data: &Report125Data) -> Docx {
                 .top(DOCX_PAGE_MARGIN)
                 .bottom(DOCX_PAGE_MARGIN),
         )
-        .add_paragraph(left_paragraph(REPORT_125_FORM, false))
+        .add_paragraph(right_paragraph(REPORT_125_FORM, false))
         .add_paragraph(center_paragraph(REPORT_125_TITLE, true))
         .add_paragraph(Paragraph::new())
         .add_paragraph(center_paragraph(REPORT_125_SECTION_TITLE, false))
@@ -411,6 +411,12 @@ fn left_paragraph(text: &str, bold: bool) -> Paragraph {
     Paragraph::new()
         .add_run(text_run(text, bold))
         .align(AlignmentType::Left)
+}
+
+fn right_paragraph(text: &str, bold: bool) -> Paragraph {
+    Paragraph::new()
+        .add_run(text_run(text, bold))
+        .align(AlignmentType::Right)
 }
 
 fn center_paragraph(text: &str, bold: bool) -> Paragraph {
@@ -722,6 +728,7 @@ mod tests {
 
         let xml = document_xml(tmp.path());
         assert!(xml.contains(REPORT_125_FORM));
+        assert!(xml.contains(r#"<w:jc w:val="right""#));
         assert!(xml.contains(REPORT_125_TITLE));
         assert!(xml.contains(REPORT_125_SECTION_TITLE));
         assert!(xml.contains("Дата/час"));
