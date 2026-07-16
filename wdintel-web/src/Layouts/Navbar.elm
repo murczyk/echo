@@ -280,6 +280,7 @@ view user activeName shared route { toContentMsg, model, content } =
                                             , ( "showClassicDuty", Encode.bool settings.showClassicDuty )
                                             , ( "showClassicAnalysis", Encode.bool settings.showClassicAnalysis )
                                             , ( "supportNonRerInterceptions", Encode.bool settings.supportNonRerInterceptions )
+                                            , ( "devicesSectionEnabled", Encode.bool settings.devicesSectionEnabled )
                                             ]
                                     Nothing ->
                                         Encode.null

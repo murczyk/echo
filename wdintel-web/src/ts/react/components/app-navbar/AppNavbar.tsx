@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react';
 import {
   Link,
   Menu,
@@ -40,7 +40,7 @@ export interface AppNavbarProps {
       enableAudioTranscription: boolean;
       showClassicDuty: boolean;
       showClassicAnalysis: boolean;
-      supportNonRerInterceptions: boolean;
+      devicesSectionEnabled: boolean;
     } | null;
   };
   activeName: string;
@@ -79,9 +79,9 @@ export function AppNavbar({
   );
   const [userShowClassicDuty, setUserShowClassicDuty] = useState(false);
   const [userShowClassicAnalysis, setUserShowClassicAnalysis] = useState(false);
-  const [loadedSupportNonRerInterceptions, setLoadedSupportNonRerInterceptions] = useState<
-    boolean | null
-  >(shared?.systemSettings ? shared.systemSettings.supportNonRerInterceptions : null);
+  const [loadedDevicesSectionEnabled, setLoadedDevicesSectionEnabled] = useState<boolean | null>(
+    shared?.systemSettings ? shared.systemSettings.devicesSectionEnabled : null,
+  );
   const navbarRef = useRef<HTMLElement>(null);
 
   useEffect(() => {
@@ -92,8 +92,8 @@ export function AppNavbar({
       setLoadedAudioTranscription(shared.systemSettings.enableAudioTranscription);
       setLoadedShowClassicDuty(shared.systemSettings.showClassicDuty);
       setLoadedShowClassicAnalysis(shared.systemSettings.showClassicAnalysis);
-      setLoadedSupportNonRerInterceptions((prev) =>
-        prev === null ? shared.systemSettings!.supportNonRerInterceptions : prev,
+      setLoadedDevicesSectionEnabled((prev) =>
+        prev === null ? shared.systemSettings!.devicesSectionEnabled : prev,
       );
     }
   }, [shared?.systemSettings]);
@@ -109,7 +109,7 @@ export function AppNavbar({
             setLoadedAudioTranscription(settings.enableAudioTranscription);
             setLoadedShowClassicDuty(settings.showClassicDuty);
             setLoadedShowClassicAnalysis(settings.showClassicAnalysis);
-            setLoadedSupportNonRerInterceptions(settings.supportNonRerInterceptions);
+            setLoadedDevicesSectionEnabled(settings.devicesSectionEnabled);
           }
         })
         .catch(() => {});
@@ -157,7 +157,7 @@ export function AppNavbar({
     return () => document.removeEventListener('click', handleOutsideClick);
   }, []);
 
-  const handleDropdownToggle = (e: React.MouseEvent, key: string) => {
+  const handleDropdownToggle = (e: ReactMouseEvent, key: string) => {
     setOpenDropdown(openDropdown === key ? null : key);
   };
 
@@ -165,7 +165,7 @@ export function AppNavbar({
     setOpenDropdown(null);
   };
 
-  const handleMobileNavToggle = (e: React.MouseEvent) => {
+  const handleMobileNavToggle = (e: ReactMouseEvent) => {
     setMobileNavOpen(!mobileNavOpen);
   };
 
@@ -176,7 +176,7 @@ export function AppNavbar({
   const isRer = hasRole(user?.roles, 'Rer');
   const canReadDevices = hasRole(user?.roles, 'Cyber') || hasRole(user?.roles, 'DevicesEditor');
   const devicesMenuIsVisible =
-    serverModeIsLive && loadedSupportNonRerInterceptions === true && canReadDevices;
+    serverModeIsLive && loadedDevicesSectionEnabled === true && canReadDevices;
   const databaseMenuSubs = getDatabaseSubs({
     includeRerItems: serverModeIsLive && isRer,
     includeDevicesItem: devicesMenuIsVisible,
@@ -251,7 +251,7 @@ export function AppNavbar({
     return <span className="inline-flex items-center gap-2">{item.label}</span>;
   };
 
-  const handleInternalLinkClick = (e: React.MouseEvent<HTMLAnchorElement>, path: string) => {
+  const handleInternalLinkClick = (e: ReactMouseEvent<HTMLAnchorElement>, path: string) => {
     if (e.button === 0 && !e.ctrlKey && !e.metaKey && !e.shiftKey && !e.altKey) {
       e.preventDefault();
       window.history.pushState({}, '', path);

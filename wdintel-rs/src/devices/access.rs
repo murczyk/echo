@@ -1,7 +1,7 @@
 use crate::config::{ROLE_CYBER, ROLE_DEVICES_EDITOR};
 use crate::error::AppError;
 use crate::h;
-use crate::system_settings::ensure_support_non_rer_interceptions_enabled;
+use crate::system_settings::ensure_devices_section_enabled;
 use crate::types::ShortContext;
 use actix_identity::Identity;
 use sea_orm::DatabaseConnection;
@@ -12,9 +12,7 @@ pub async fn ensure_device_reader(
     user: &Identity,
 ) -> Result<String, AppError> {
     let login = user.id().c(h!())?;
-    ensure_support_non_rer_interceptions_enabled(dbx)
-        .await
-        .c(h!())?;
+    ensure_devices_section_enabled(dbx).await.c(h!())?;
     crate::users::has_any_role(
         dbx,
         &login,
@@ -31,9 +29,7 @@ pub async fn ensure_device_editor(
     user: &Identity,
 ) -> Result<String, AppError> {
     let login = user.id().c(h!())?;
-    ensure_support_non_rer_interceptions_enabled(dbx)
-        .await
-        .c(h!())?;
+    ensure_devices_section_enabled(dbx).await.c(h!())?;
     crate::users::has_role(dbx, &login, ROLE_DEVICES_EDITOR)
         .await
         .c(h!())?;

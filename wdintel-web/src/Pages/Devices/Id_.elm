@@ -87,7 +87,7 @@ devicesBody user shared deviceId =
                 if not (canReadDevices user) then
                     div [] []
 
-                else if not settings.supportNonRerInterceptions then
+                else if not settings.devicesSectionEnabled then
                     div [ class "p-6 text-sm text-[var(--color-text-muted)]" ]
                         [ text "Пристрої вимкнені в налаштуваннях системи." ]
 

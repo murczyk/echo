@@ -31,6 +31,7 @@ beforeEach(() => {
     showClassicDuty: true,
     showClassicAnalysis: true,
     supportNonRerInterceptions: false,
+    devicesSectionEnabled: false,
   });
   fetchUserSettingsMock.mockReset().mockResolvedValue({
     showClassicDuty: false,
@@ -208,6 +209,7 @@ describe('AppNavbar', () => {
           showClassicDuty: true,
           showClassicAnalysis: true,
           supportNonRerInterceptions: false,
+          devicesSectionEnabled: false,
         },
       },
     });
@@ -219,6 +221,7 @@ describe('AppNavbar', () => {
       showClassicDuty: true,
       showClassicAnalysis: true,
       supportNonRerInterceptions: false,
+      devicesSectionEnabled: false,
     });
     const enabled = renderComponent({
       ...defaultProps,
@@ -231,6 +234,7 @@ describe('AppNavbar', () => {
           showClassicDuty: true,
           showClassicAnalysis: true,
           supportNonRerInterceptions: false,
+          devicesSectionEnabled: false,
         },
       },
     });
@@ -252,6 +256,7 @@ describe('AppNavbar', () => {
           showClassicDuty: true,
           showClassicAnalysis: true,
           supportNonRerInterceptions: false,
+          devicesSectionEnabled: false,
         },
       },
     };
@@ -280,7 +285,7 @@ describe('AppNavbar', () => {
     expect(container.textContent).not.toContain('Echo GPU Сервери');
   });
 
-  it('renders Devices in the database menu for non-RER Devices readers when enabled', () => {
+  it('renders Devices in the database menu when the Devices section is enabled', () => {
     const { container } = renderComponent({
       ...defaultProps,
       user: { ...defaultProps.user, roles: ['Cyber'] },
@@ -291,7 +296,8 @@ describe('AppNavbar', () => {
           enableAudioTranscription: false,
           showClassicDuty: true,
           showClassicAnalysis: true,
-          supportNonRerInterceptions: true,
+          supportNonRerInterceptions: false,
+          devicesSectionEnabled: true,
         },
       },
     });
@@ -302,7 +308,7 @@ describe('AppNavbar', () => {
     expect(content).not.toContain('Мережі');
   });
 
-  it('hides Devices without the feature gate or Devices read role', () => {
+  it('hides Devices when the Devices section is disabled or read role is missing', () => {
     const disabledGate = renderComponent({
       ...defaultProps,
       user: { ...defaultProps.user, roles: ['DevicesEditor'] },
@@ -313,7 +319,8 @@ describe('AppNavbar', () => {
           enableAudioTranscription: false,
           showClassicDuty: true,
           showClassicAnalysis: true,
-          supportNonRerInterceptions: false,
+          supportNonRerInterceptions: true,
+          devicesSectionEnabled: false,
         },
       },
     });
@@ -330,6 +337,7 @@ describe('AppNavbar', () => {
           showClassicDuty: true,
           showClassicAnalysis: true,
           supportNonRerInterceptions: true,
+          devicesSectionEnabled: true,
         },
       },
     });
@@ -347,7 +355,8 @@ describe('AppNavbar', () => {
           enableAudioTranscription: false,
           showClassicDuty: true,
           showClassicAnalysis: true,
-          supportNonRerInterceptions: true,
+          supportNonRerInterceptions: false,
+          devicesSectionEnabled: true,
         },
       },
     });
@@ -365,14 +374,16 @@ describe('AppNavbar', () => {
         enableAudioTranscription: false,
         showClassicDuty: true,
         showClassicAnalysis: true,
-        supportNonRerInterceptions: false,
+        supportNonRerInterceptions: true,
+        devicesSectionEnabled: false,
       })
       .mockResolvedValueOnce({
         defaultNeoAnalysis: false,
         enableAudioTranscription: false,
         showClassicDuty: true,
         showClassicAnalysis: true,
-        supportNonRerInterceptions: true,
+        supportNonRerInterceptions: false,
+        devicesSectionEnabled: true,
       });
 
     const { container } = renderComponent({
@@ -385,7 +396,8 @@ describe('AppNavbar', () => {
           enableAudioTranscription: false,
           showClassicDuty: true,
           showClassicAnalysis: true,
-          supportNonRerInterceptions: false,
+          supportNonRerInterceptions: true,
+          devicesSectionEnabled: false,
         },
       },
     });
