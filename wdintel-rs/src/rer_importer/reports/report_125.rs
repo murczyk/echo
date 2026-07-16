@@ -33,11 +33,11 @@ const REPORT_125_SECTION_TITLE: &str =
 const REPORT_125_FOOTER: &str = "Начальник ОВУР";
 
 const CELL_NUM_WIDTH: usize = 600;
-const CELL_DATETIME_WIDTH: usize = 2100;
-const CELL_MGRS_WIDTH: usize = 2200;
-const CELL_TYPE_WIDTH: usize = 3000;
-const CELL_RECON_WIDTH: usize = 2100;
-const CELL_STRIKE_WIDTH: usize = 2100;
+const CELL_DATETIME_WIDTH: usize = 2380;
+const CELL_MGRS_WIDTH: usize = 2620;
+const CELL_TYPE_WIDTH: usize = 2020;
+const CELL_RECON_WIDTH: usize = 1540;
+const CELL_STRIKE_WIDTH: usize = 1540;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct Report125Data {
@@ -358,10 +358,12 @@ fn build_report_125_docx(report_data: &Report125Data) -> Docx {
                 .top(DOCX_PAGE_MARGIN)
                 .bottom(DOCX_PAGE_MARGIN),
         )
-        .add_paragraph(left_paragraph(REPORT_125_FORM, false))
+        .add_paragraph(right_paragraph(REPORT_125_FORM, false))
+        .add_paragraph(Paragraph::new())
         .add_paragraph(center_paragraph(REPORT_125_TITLE, true))
         .add_paragraph(Paragraph::new())
         .add_paragraph(center_paragraph(REPORT_125_SECTION_TITLE, false))
+        .add_paragraph(Paragraph::new())
         .add_table(build_report_125_table(report_data));
 
     for _ in 0..7 {
@@ -411,6 +413,12 @@ fn left_paragraph(text: &str, bold: bool) -> Paragraph {
     Paragraph::new()
         .add_run(text_run(text, bold))
         .align(AlignmentType::Left)
+}
+
+fn right_paragraph(text: &str, bold: bool) -> Paragraph {
+    Paragraph::new()
+        .add_run(text_run(text, bold))
+        .align(AlignmentType::Right)
 }
 
 fn center_paragraph(text: &str, bold: bool) -> Paragraph {
@@ -514,7 +522,6 @@ mod tests {
                 freq: Set(Some("3330".to_string())),
                 date: Set(Some(seen_at.date().to_string())),
                 time: Set(Some(seen_at.time().format("%H:%M:%S").to_string())),
-                datetime: Set(Some(seen_at)),
                 unit: Set(unit.map(ToString::to_string)),
                 unit_v2: Set(unit_v2.map(ToString::to_string)),
                 reviewed: Set(Some(true)),
@@ -722,6 +729,7 @@ mod tests {
 
         let xml = document_xml(tmp.path());
         assert!(xml.contains(REPORT_125_FORM));
+        assert!(xml.contains(r#"<w:jc w:val="right""#));
         assert!(xml.contains(REPORT_125_TITLE));
         assert!(xml.contains(REPORT_125_SECTION_TITLE));
         assert!(xml.contains("Дата/час"));

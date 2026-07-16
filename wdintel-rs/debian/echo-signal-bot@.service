@@ -10,6 +10,7 @@ RestartSec=5s
 EnvironmentFile=/etc/echo/signal-cli-data/%i/%i.env
 Environment=MODE=$MODE
 Environment=PORT=$PORT
+Environment=PATH=/usr/local/bin:/usr/bin:/bin
 Environment=SIGNAL_CLI_VERBOSE=true
 Environment=BIND_IP=127.0.0.1
 Environment=TRUSTED_PROXIES=127.0.0.1

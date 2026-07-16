@@ -355,7 +355,7 @@ async fn replay_source_message(
         tags: Set(source.inbox_item.tags.clone()),
         callsigns_alg2: Set(source.inbox_item.callsigns_alg2.clone()),
         callsigns_alg1: Set(source.inbox_item.callsigns_alg1.clone()),
-        datetime: Set(Some(replay_ts)),
+        datetime: NotSet,
         signal_tokens: Set(source.inbox_item.signal_tokens.clone()),
         body_noheader: Set(source.inbox_item.body_noheader.clone()),
         location_v2: Set(source.inbox_item.location_v2.clone()),
