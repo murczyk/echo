@@ -13,6 +13,9 @@ export const DEVICE_TAGS_MAX_COUNT = 50;
 export const DEVICE_TAG_LABEL_MAX_CHARS = 128;
 export const DEVICE_TAG_VALUE_MAX_CHARS = 4096;
 export const DEVICE_EXTERNAL_URL_MAX_CHARS = 4096;
+export const DEVICE_HOSTNAME_MAX_CHARS = 255;
+export const DEVICE_SSH_PORT_MIN = 1;
+export const DEVICE_SSH_PORT_MAX = 65_535;
 export const DEVICE_FILE_CREATE_BATCH_MAX_COUNT = 100;
 export const DEVICE_FILE_ORIGINAL_NAME_MAX_CHARS = 1024;
 export const DEVICE_FILE_ORIGINAL_ABSOLUTE_PATH_MAX_CHARS = 4096;
@@ -43,6 +46,8 @@ export type DeviceUpsertForm = {
   aorIds: number[];
   unitId: number | null;
   externalUrl: string;
+  hostname: string;
+  sshPort: string;
   tags: DeviceTagDraft[];
   files: DeviceFileDraft[];
 };
@@ -63,6 +68,8 @@ export type DeviceFileDraftError = {
 export type DeviceUpsertValidationErrors = {
   name?: string;
   externalUrl?: string;
+  hostname?: string;
+  sshPort?: string;
   tags?: string;
   files?: string;
   tagRows: Record<string, DeviceTagDraftError>;
@@ -74,6 +81,8 @@ export type DeviceServerFieldErrors = Partial<{
   aorIds: string;
   unitId: string;
   externalUrl: string;
+  hostname: string;
+  sshPort: string;
   tags: string;
   files: string;
 }>;
@@ -106,6 +115,8 @@ export function createDefaultDeviceUpsertForm(): DeviceUpsertForm {
     aorIds: [],
     unitId: null,
     externalUrl: '',
+    hostname: '',
+    sshPort: '',
     tags: [],
     files: [],
   };
@@ -117,6 +128,8 @@ export function deviceDetailsToUpsertForm(device: DeviceDetails): DeviceUpsertFo
     aorIds: device.aorIds,
     unitId: device.unitId,
     externalUrl: device.externalUrl ?? '',
+    hostname: device.hostname ?? '',
+    sshPort: device.sshPort?.toString() ?? '',
     tags: device.tags.map((field) => createDeviceTagDraft(field)),
     files: [],
   };
@@ -126,6 +139,8 @@ function isValidationErrorsEmpty(errors: DeviceUpsertValidationErrors): boolean 
   return (
     errors.name === undefined &&
     errors.externalUrl === undefined &&
+    errors.hostname === undefined &&
+    errors.sshPort === undefined &&
     errors.tags === undefined &&
     errors.files === undefined &&
     Object.keys(errors.tagRows).length === 0 &&
@@ -157,6 +172,27 @@ function validateExternalUrl(value: string): string | undefined {
     }
   } catch (_) {
     return 'Посилання має бути абсолютним URL';
+  }
+
+  return undefined;
+}
+
+function validateHostname(value: string): string | undefined {
+  const trimmed = value.trim();
+  if (trimmed === '') return undefined;
+  return validateMaxChars(trimmed, DEVICE_HOSTNAME_MAX_CHARS);
+}
+
+function validateSshPort(value: string): string | undefined {
+  const trimmed = value.trim();
+  if (trimmed === '') return undefined;
+
+  const sshPort = Number(trimmed);
+  if (!Number.isInteger(sshPort)) {
+    return `SSH-порт має бути цілим числом від ${DEVICE_SSH_PORT_MIN} до ${DEVICE_SSH_PORT_MAX}`;
+  }
+  if (sshPort < DEVICE_SSH_PORT_MIN || sshPort > DEVICE_SSH_PORT_MAX) {
+    return `SSH-порт має бути від ${DEVICE_SSH_PORT_MIN} до ${DEVICE_SSH_PORT_MAX}`;
   }
 
   return undefined;
@@ -269,6 +305,12 @@ export function validateDeviceUpsertForm(
   const externalUrlError = validateExternalUrl(form.externalUrl);
   if (externalUrlError) errors.externalUrl = externalUrlError;
 
+  const hostnameError = validateHostname(form.hostname);
+  if (hostnameError) errors.hostname = hostnameError;
+
+  const sshPortError = validateSshPort(form.sshPort);
+  if (sshPortError) errors.sshPort = sshPortError;
+
   const tagErrors = validateDeviceTags(form.tags);
   errors.tags = tagErrors.tags;
   errors.tagRows = tagErrors.tagRows;
@@ -304,6 +346,16 @@ function normalizeExternalUrl(value: string): string | null {
   return trimmed === '' ? null : trimmed;
 }
 
+function normalizeHostname(value: string): string | null {
+  const trimmed = value.trim();
+  return trimmed === '' ? null : trimmed;
+}
+
+function normalizeSshPort(value: string): number | null {
+  const trimmed = value.trim();
+  return trimmed === '' ? null : Number(trimmed);
+}
+
 export function buildCreateDeviceReq(form: DeviceUpsertForm): CreateDeviceReq {
   const files = normalizeDeviceFileRows(form.files);
   return {
@@ -312,6 +364,8 @@ export function buildCreateDeviceReq(form: DeviceUpsertForm): CreateDeviceReq {
     unitId: form.unitId,
     tags: normalizeDeviceTags(form.tags),
     externalUrl: normalizeExternalUrl(form.externalUrl),
+    hostname: normalizeHostname(form.hostname),
+    sshPort: normalizeSshPort(form.sshPort),
     files: files.length > 0 ? files : null,
   };
 }
@@ -345,12 +399,16 @@ export function buildUpdateDevicePatch(
   const tags = normalizeDeviceTags(form.tags);
   const externalUrl = normalizeExternalUrl(form.externalUrl);
   const files = normalizeDeviceFileRows(form.files);
+  const hostname = normalizeHostname(form.hostname);
+  const sshPort = normalizeSshPort(form.sshPort);
 
   if (name !== device.name) req.name = name;
   if (!numberArraysEqual(form.aorIds, device.aorIds)) req.aorIds = form.aorIds;
   if (form.unitId !== device.unitId) req.unitId = form.unitId;
   if (externalUrl !== device.externalUrl) req.externalUrl = externalUrl;
   if (!tagsEqual(tags, device.tags)) req.tags = tags;
+  if (hostname !== device.hostname) req.hostname = hostname;
+  if (sshPort !== device.sshPort) req.sshPort = sshPort;
   if (files.length > 0) req.files = files;
 
   return req;
@@ -363,6 +421,8 @@ export function hasDeviceUpdatePatchChanges(patch: DeviceUpdatePatchInput): bool
     patch.unitId !== undefined ||
     patch.tags !== undefined ||
     patch.externalUrl !== undefined ||
+    patch.hostname !== undefined ||
+    patch.sshPort !== undefined ||
     (patch.files !== undefined && patch.files.length > 0)
   );
 }
@@ -377,6 +437,10 @@ function fieldNameFromBackend(field: string): keyof DeviceServerFieldErrors | nu
       return 'unitId';
     case 'external_url':
       return 'externalUrl';
+    case 'hostname':
+      return 'hostname';
+    case 'ssh_port':
+      return 'sshPort';
     case 'tags':
       return 'tags';
     case 'files':
@@ -405,10 +469,6 @@ export function parseDeviceServerFieldErrors(error: unknown): DeviceServerFieldE
     }
   } catch (_) {
     // keep fallback below
-  }
-
-  if (result.name === undefined && message.includes('Пристрій з такою назвою вже існує')) {
-    result.name = 'Пристрій з такою назвою вже існує';
   }
 
   return result;

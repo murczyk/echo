@@ -87,6 +87,8 @@ pub struct DeviceListItem {
     pub unit_id: Option<i64>,
     pub unit_name: Option<String>,
     pub external_url: Option<String>,
+    pub hostname: Option<String>,
+    pub ssh_port: Option<i32>,
     pub archived: bool,
     pub created_at_ms: i64,
     pub updated_at_ms: i64,
@@ -106,6 +108,8 @@ pub struct DeviceDetails {
     pub unit_name: Option<String>,
     pub tags: Vec<DeviceTag>,
     pub external_url: Option<String>,
+    pub hostname: Option<String>,
+    pub ssh_port: Option<i32>,
     pub archived: bool,
     pub created_at_ms: i64,
     pub updated_at_ms: i64,
@@ -196,6 +200,8 @@ pub struct CreateDeviceReq {
     #[serde(default)]
     pub tags: Vec<DeviceTag>,
     pub external_url: Option<String>,
+    pub hostname: Option<String>,
+    pub ssh_port: Option<i32>,
     pub files: Option<Vec<CreateDeviceFileItem>>,
 }
 
@@ -399,6 +405,16 @@ pub struct UpdateDeviceReq {
         skip_serializing_if = "DeviceUpdateNullableField::is_missing"
     )]
     pub external_url: DeviceUpdateNullableField<String>,
+    #[serde(
+        default,
+        skip_serializing_if = "DeviceUpdateNullableField::is_missing"
+    )]
+    pub hostname: DeviceUpdateNullableField<String>,
+    #[serde(
+        default,
+        skip_serializing_if = "DeviceUpdateNullableField::is_missing"
+    )]
+    pub ssh_port: DeviceUpdateNullableField<i32>,
     pub files: Option<Vec<CreateDeviceFileItem>>,
 }
 
@@ -486,7 +502,9 @@ mod tests {
             "device_id": "018f0000-0000-7000-8000-000000000000",
             "aor_ids": [],
             "unit_id": 7,
-            "external_url": null
+            "external_url": null,
+            "hostname": "device.example",
+            "ssh_port": null,
         }))
         .unwrap();
 
@@ -496,6 +514,10 @@ mod tests {
         );
         assert!(matches!(req.unit_id, DeviceUpdateNullableField::Value(7)));
         assert!(matches!(req.external_url, DeviceUpdateNullableField::Null));
+        assert!(
+            matches!(&req.hostname, DeviceUpdateNullableField::Value(hostname) if hostname == "device.example")
+        );
+        assert!(matches!(req.ssh_port, DeviceUpdateNullableField::Null));
         assert!(matches!(req.tags, DeviceUpdateRequiredField::Missing));
     }
 

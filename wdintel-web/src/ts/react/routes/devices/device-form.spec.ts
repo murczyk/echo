@@ -28,6 +28,8 @@ function buildDevice(overrides: Partial<DeviceDetails> = {}): DeviceDetails {
     unitName: 'Unit',
     tags: [{ label: 'Serial', value: '123' }],
     externalUrl: 'https://example.test/device',
+    hostname: null,
+    sshPort: null,
     archived: false,
     createdAtMs: 10,
     updatedAtMs: 20,
@@ -43,6 +45,8 @@ describe('device form helpers', () => {
     form.aorIds = [10, 20];
     form.unitId = null;
     form.externalUrl = '  https://example.test/beta  ';
+    form.hostname = '  device.example  ';
+    form.sshPort = '2222';
     form.tags = [createDeviceTagDraft({ label: ' Serial ', value: ' 123 ' })];
     form.files = [
       createDeviceFileDraft({
@@ -60,6 +64,8 @@ describe('device form helpers', () => {
       unitId: null,
       tags: [{ label: 'Serial', value: '123' }],
       externalUrl: 'https://example.test/beta',
+      hostname: 'device.example',
+      sshPort: 2222,
     });
     expect(req.files).toHaveLength(1);
     expect(req.files?.[0].originalName).toBe('scan.pdf');
@@ -77,17 +83,21 @@ describe('device form helpers', () => {
       unitId: null,
       tags: [],
       externalUrl: null,
+      hostname: null,
+      sshPort: null,
       files: null,
     });
   });
 
   it('builds update patch with only dirty fields and explicit null clears', () => {
-    const device = buildDevice();
+    const device = buildDevice({ hostname: 'device.example', sshPort: 22 });
     const form = deviceDetailsToUpsertForm(device);
     form.name = ' Device Alpha Prime ';
     form.aorIds = [];
     form.unitId = null;
     form.externalUrl = ' ';
+    form.hostname = ' ';
+    form.sshPort = '';
     form.tags = [];
     form.files = [createDeviceFileDraft({ originalAbsolutePath: '/tmp/new.bin' })];
 
@@ -98,6 +108,8 @@ describe('device form helpers', () => {
       unitId: null,
       tags: [],
       externalUrl: null,
+      hostname: null,
+      sshPort: null,
       files: [
         {
           originalName: null,
@@ -110,7 +122,7 @@ describe('device form helpers', () => {
   });
 
   it('detects no-op update patches', () => {
-    const device = buildDevice();
+    const device = buildDevice({ hostname: 'device.example', sshPort: 22 });
     const patch = buildUpdateDevicePatch(device, deviceDetailsToUpsertForm(device));
 
     expect(patch).toEqual({ deviceId: DEVICE_ID });
@@ -121,6 +133,8 @@ describe('device form helpers', () => {
     const form = createDefaultDeviceUpsertForm();
     form.name = 'Device';
     form.externalUrl = '/relative';
+    form.hostname = 'x'.repeat(256);
+    form.sshPort = '65536';
     form.tags = [
       createDeviceTagDraft({ id: 'a', label: 'Serial', value: '1' }),
       createDeviceTagDraft({ id: 'b', label: ' Serial ', value: '2' }),
@@ -130,6 +144,8 @@ describe('device form helpers', () => {
     const errors = validateDeviceUpsertForm(form);
 
     expect(errors?.externalUrl).toBe('Посилання має бути абсолютним URL');
+    expect(errors?.hostname).toBe('Значення занадто довге');
+    expect(errors?.sshPort).toBe('SSH-порт має бути від 1 до 65535');
     expect(errors?.tagRows.b.label).toBe('Тег з такою назвою вже існує.');
     expect(errors?.fileRows.f.row).toBe('Потрібна назва файлу або абсолютний шлях.');
     expect(errors?.fileRows.f.originalCreatedAt).toBe('Некоректний час файлу.');
@@ -155,12 +171,20 @@ describe('device form helpers', () => {
     });
   });
 
-  it('maps backend form errors to fields including duplicate name', () => {
-    expect(parseDeviceServerFieldErrors(new Error('[["name","duplicate"]]'))).toEqual({
-      name: 'duplicate',
+  it('maps backend form errors to fields', () => {
+    expect(parseDeviceServerFieldErrors(new Error('[["name","invalid"]]'))).toEqual({
+      name: 'invalid',
     });
-    expect(parseDeviceServerFieldErrors(new Error('Пристрій з такою назвою вже існує'))).toEqual({
-      name: 'Пристрій з такою назвою вже існує',
+    expect(
+      parseDeviceServerFieldErrors(
+        new Error('[["hostname","invalid host"],["ssh_port","invalid port"]]'),
+      ),
+    ).toEqual({
+      hostname: 'invalid host',
+      sshPort: 'invalid port',
     });
+    expect(parseDeviceServerFieldErrors(new Error('Пристрій з такою назвою вже існує'))).toEqual(
+      {},
+    );
   });
 });

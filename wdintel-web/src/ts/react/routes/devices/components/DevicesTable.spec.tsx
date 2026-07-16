@@ -52,6 +52,8 @@ function buildDeviceRow(): DeviceRowView {
     unitId: null,
     unitName: null,
     externalUrl: null,
+    hostname: null,
+    sshPort: null,
     archived: false,
     createdAtMs: 1,
     updatedAtMs: 2,

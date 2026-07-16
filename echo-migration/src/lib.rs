@@ -281,12 +281,12 @@ mod m20260705_230242_operator_datasource_group_perf;
 mod m20260706_142937_add_goi_integration_pause_worker;
 mod m20260706_153312_tag_unique_enabled_organism_label;
 mod m20260707_081900_create_devices;
+mod m20260707_095504_echo_missing_message_deleted_status;
 mod m20260707_132105_create_device_aor;
 mod m20260707_135501_drop_device_aor_id;
-mod m20260707_180541_rename_device_tags_archive;
-mod m20260707_095504_echo_missing_message_deleted_status;
 mod m20260707_164344_echo_missing_message_duplicate_status;
 mod m20260707_170000_signal_message_attachments_hash;
+mod m20260707_180541_rename_device_tags_archive;
 mod m20260707_212500_echo_missing_message_duplicate_backfill;
 mod m20260708_083252_add_cyber_echo_enabled_to_settings;
 mod m20260708_130958_add_computer_name;
@@ -301,6 +301,7 @@ mod m20260711_120000_add_sigint_comment_parsing_to_system_settings;
 mod m20260712_204007_add_do_not_store_duplicate_echoim_failures;
 mod m20260713_152932_rename_cyber_echo_enabled_to_devices_section_enabled;
 mod m20260715_092901_add_sigint_inbox_item_network;
+mod m20260716_101007_device_hostname_ssh_port_and_drop_name_uniqueness;
 mod m20260716_161040_login_uuid_v7;
 mod m20260717_111121_goi_palitra_sync_changelog_source;
 mod m20260720_100029_analysis_stats_query_indexes;
@@ -635,10 +636,6 @@ impl MigratorTrait for Migrator {
             Box::new(
                 m20260706_153312_tag_unique_enabled_organism_label::Migration,
             ),
-            Box::new(m20260707_081900_create_devices::Migration),
-            Box::new(m20260707_132105_create_device_aor::Migration),
-            Box::new(m20260707_135501_drop_device_aor_id::Migration),
-            Box::new(m20260707_180541_rename_device_tags_archive::Migration),
             Box::new(
                 m20260707_095504_echo_missing_message_deleted_status::Migration,
             ),
@@ -766,6 +763,13 @@ impl MigratorTrait for Migrator {
             Box::new(m20260731_234500_orbit_unit_search_indexes::Migration),
             Box::new(
                 m20260801_085538_suppress_deleted_orbit_links::Migration,
+            ),
+            Box::new(m20260707_081900_create_devices::Migration),
+            Box::new(m20260707_132105_create_device_aor::Migration),
+            Box::new(m20260707_135501_drop_device_aor_id::Migration),
+            Box::new(m20260707_180541_rename_device_tags_archive::Migration),
+            Box::new(
+                m20260716_101007_device_hostname_ssh_port_and_drop_name_uniqueness::Migration,
             ),
             Box::new(m20260802_174927_rer_duty_test_replay::Migration),
             Box::new(m20260803_093803_echo_automation_send_log::Migration),

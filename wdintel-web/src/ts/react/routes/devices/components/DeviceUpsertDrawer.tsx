@@ -20,6 +20,9 @@ import { pageDrawerBackdropSx } from '../../../components/loadingOverlayStyles';
 import type { DeviceLookupOption } from '../helpers';
 import {
   validateDeviceUpsertForm,
+  DEVICE_HOSTNAME_MAX_CHARS,
+  DEVICE_SSH_PORT_MAX,
+  DEVICE_SSH_PORT_MIN,
   type DeviceTagDraftError,
   type DeviceFileDraftError,
   type DeviceServerFieldErrors,
@@ -47,7 +50,7 @@ type Props = {
   onSave: (form: DeviceUpsertForm) => void;
 };
 
-type TouchedField = 'name' | 'externalUrl';
+type TouchedField = 'name' | 'externalUrl' | 'hostname' | 'sshPort';
 
 function selectedLookupOptions(options: DeviceLookupOption[], ids: number[]): DeviceLookupOption[] {
   const optionsById = new Map(options.map((option) => [option.id, option]));
@@ -107,9 +110,9 @@ export function DeviceUpsertDrawer({
 
   const showFieldError = (field: TouchedField) => submitted || touched[field] === true;
   const fieldError = (field: TouchedField): string | undefined => {
-    const local = field === 'name' ? validation?.name : validation?.externalUrl;
+    const local = validation?.[field];
     if (showFieldError(field) && local !== undefined) return local;
-    return field === 'name' ? serverFieldErrors.name : serverFieldErrors.externalUrl;
+    return serverFieldErrors[field];
   };
 
   const handleAorChange = (_event: SyntheticEvent, next: DeviceLookupOption[]) => {
@@ -123,7 +126,7 @@ export function DeviceUpsertDrawer({
   const handleSave = () => {
     if (form === null || formBlocked) return;
     setSubmitted(true);
-    setTouched({ name: true, externalUrl: true });
+    setTouched({ name: true, externalUrl: true, hostname: true, sshPort: true });
     if (validation !== null) return;
     onSave(form);
   };
@@ -250,6 +253,40 @@ export function DeviceUpsertDrawer({
                 size="small"
                 error={fieldError('externalUrl') !== undefined}
                 helperText={fieldError('externalUrl') ?? 'HTTP/HTTPS URL або порожнє значення.'}
+              />
+
+              <TextField
+                label="Хостнейм"
+                value={form.hostname}
+                onChange={(event) => patchForm({ hostname: event.target.value })}
+                onBlur={() => setTouched((current) => ({ ...current, hostname: true }))}
+                disabled={formBlocked}
+                fullWidth
+                size="small"
+                inputProps={{ maxLength: DEVICE_HOSTNAME_MAX_CHARS }}
+                error={fieldError('hostname') !== undefined}
+                helperText={fieldError('hostname') ?? 'Необов’язковий, до 255 символів.'}
+              />
+
+              <TextField
+                label="SSH-порт"
+                type="number"
+                value={form.sshPort}
+                onChange={(event) => patchForm({ sshPort: event.target.value })}
+                onBlur={() => setTouched((current) => ({ ...current, sshPort: true }))}
+                disabled={formBlocked}
+                fullWidth
+                size="small"
+                inputProps={{
+                  min: DEVICE_SSH_PORT_MIN,
+                  max: DEVICE_SSH_PORT_MAX,
+                  step: 1,
+                }}
+                error={fieldError('sshPort') !== undefined}
+                helperText={
+                  fieldError('sshPort') ??
+                  `Ціле число від ${DEVICE_SSH_PORT_MIN} до ${DEVICE_SSH_PORT_MAX} або порожнє значення.`
+                }
               />
 
               <Divider />

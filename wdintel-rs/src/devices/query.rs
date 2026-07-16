@@ -49,6 +49,8 @@ fn render_device_list_item(
             .and_then(|unit_id| unit_names.get(&unit_id).cloned()),
         unit_id: device.unit_id,
         external_url: device.external_url,
+        hostname: device.hostname,
+        ssh_port: device.ssh_port,
         archived: device.archived,
         created_at_ms: datetime_ms(device.created_at),
         updated_at_ms: datetime_ms(device.updated_at),
@@ -78,6 +80,8 @@ fn render_device_details(
         unit_id: device.unit_id,
         tags,
         external_url: device.external_url,
+        hostname: device.hostname,
+        ssh_port: device.ssh_port,
         archived: device.archived,
         created_at_ms: datetime_ms(device.created_at),
         updated_at_ms: datetime_ms(device.updated_at),
@@ -582,6 +586,8 @@ mod tests {
             unit_id: Some(7),
             tags: json!([{ "label": "Serial", "value": "123" }]),
             external_url: None,
+            hostname: Some("device.example".to_string()),
+            ssh_port: Some(22),
             archived: false,
             archived_at: None,
             created_at: now,
@@ -646,6 +652,8 @@ mod tests {
 
         assert_eq!(row.aor_ids, vec![10, 20]);
         assert_eq!(row.aor_names, vec!["Alpha", ""]);
+        assert_eq!(row.hostname.as_deref(), Some("device.example"));
+        assert_eq!(row.ssh_port, Some(22));
     }
 
     #[test]
@@ -670,5 +678,7 @@ mod tests {
 
         assert_eq!(details.aor_ids, vec![10, 20]);
         assert_eq!(details.aor_names, vec!["Alpha", "Bravo"]);
+        assert_eq!(details.hostname.as_deref(), Some("device.example"));
+        assert_eq!(details.ssh_port, Some(22));
     }
 }

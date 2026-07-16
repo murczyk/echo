@@ -128,6 +128,8 @@ export function deviceDetailsToListItem(device: DeviceDetails): DeviceListItem {
     unitId: device.unitId,
     unitName: device.unitName,
     externalUrl: device.externalUrl,
+    hostname: device.hostname,
+    sshPort: device.sshPort,
     archived: device.archived,
     createdAtMs: device.createdAtMs,
     updatedAtMs: device.updatedAtMs,

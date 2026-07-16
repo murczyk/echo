@@ -28,6 +28,8 @@ export type DeviceUpdatePatchInput = {
   unitId?: number | null;
   tags?: DeviceTag[];
   externalUrl?: string | null;
+  hostname?: string | null;
+  sshPort?: number | null;
   files?: CreateDeviceFileItem[];
 };
 
@@ -38,6 +40,8 @@ type DeviceUpdatePatchReq = {
   unitId?: number | null;
   tags?: DeviceTag[];
   externalUrl?: string | null;
+  hostname?: string | null;
+  sshPort?: number | null;
   files?: CreateDeviceFileItem[];
 };
 
@@ -61,6 +65,12 @@ export function toDeviceUpdatePatchReq(input: DeviceUpdatePatchInput): DeviceUpd
   }
   if (input.externalUrl !== undefined) {
     req.externalUrl = input.externalUrl;
+  }
+  if (input.hostname !== undefined) {
+    req.hostname = input.hostname;
+  }
+  if (input.sshPort !== undefined) {
+    req.sshPort = input.sshPort;
   }
   if (Array.isArray(input.files) && input.files.length > 0) {
     req.files = input.files;

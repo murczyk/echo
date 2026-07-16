@@ -23,6 +23,9 @@ pub struct Model {
     pub archived_at: Option<DateTime>,
     pub created_at: DateTime,
     pub updated_at: DateTime,
+    #[sea_orm(column_type = "Text", nullable)]
+    pub hostname: Option<String>,
+    pub ssh_port: Option<i32>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

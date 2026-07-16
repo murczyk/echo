@@ -8,16 +8,14 @@ use crate::devices::types::{
     RestoreDeviceReq, UpdateDeviceReq,
 };
 use crate::devices::validation::{
-    normalize_device_name, normalize_external_url,
-    normalize_optional_file_create_items, normalize_tags,
-    normalized_device_name_key, parse_device_id, validate_aor_ids,
-    validate_unit_id,
+    normalize_device_name, normalize_external_url, normalize_hostname,
+    normalize_optional_file_create_items, normalize_tags, parse_device_id,
+    validate_aor_ids, validate_ssh_port, validate_unit_id,
 };
 use crate::entities::{device, device_aor};
 use crate::h;
-use crate::types::{AppError, BTreeMap, ShortContext, ShortContextErr, Uuid};
+use crate::types::{AppError, BTreeMap, ShortContext, Uuid};
 use chrono::{NaiveDateTime, Utc};
-use sea_orm::sea_query::Expr;
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait,
     IntoActiveModel, NotSet, QueryFilter, Set, TransactionTrait,
@@ -29,16 +27,19 @@ struct NormalizedCreateDevice {
     unit_id: Option<i64>,
     tags: Vec<crate::devices::types::DeviceTag>,
     external_url: Option<String>,
+    hostname: Option<String>,
+    ssh_port: Option<i32>,
     files: Vec<CreateDeviceFileItem>,
 }
 
 struct NormalizedUpdateDevice {
-    device_id: Uuid,
     name: Option<String>,
     aor_ids: Option<Vec<i64>>,
     unit_id: Option<Option<i64>>,
     tags: Option<Vec<crate::devices::types::DeviceTag>>,
     external_url: Option<Option<String>>,
+    hostname: Option<Option<String>>,
+    ssh_port: Option<Option<i32>>,
     files: Vec<CreateDeviceFileItem>,
 }
 
@@ -49,20 +50,7 @@ pub async fn create_device(
 ) -> Result<DeviceDetails, AppError> {
     validate_created_by(created_by)?;
     let req = normalize_create_device(dbx, req).await?;
-    ensure_device_name_available(
-        dbx,
-        &normalized_device_name_key(&req.name)?,
-        None,
-    )
-    .await?;
-
     let txn = dbx.begin().await.c(h!())?;
-    ensure_device_name_available(
-        &txn,
-        &normalized_device_name_key(&req.name)?,
-        None,
-    )
-    .await?;
 
     let now = Utc::now().naive_utc();
     let device_id = Uuid::now_v7();
@@ -74,6 +62,8 @@ pub async fn create_device(
         unit_id: Set(req.unit_id),
         tags: Set(tags),
         external_url: Set(req.external_url),
+        hostname: Set(req.hostname),
+        ssh_port: Set(req.ssh_port),
         archived: Set(false),
         archived_at: Set(None),
         created_at: Set(now),
@@ -81,7 +71,7 @@ pub async fn create_device(
     }
     .insert(&txn)
     .await
-    .map_err(map_device_write_error)?;
+    .c(h!())?;
 
     replace_device_aors(&txn, device_id, &req.aor_ids).await?;
     insert_device_file_rows(&txn, device_id, req.files, now).await?;
@@ -95,13 +85,10 @@ pub async fn update_device(
     req: UpdateDeviceReq,
 ) -> Result<DeviceDetails, AppError> {
     let device_id = parse_device_id(&req.device_id)?;
-    let device = find_update_target(dbx, device_id).await?;
-    let req = normalize_update_device(dbx, device_id, req).await?;
-    precheck_update_device_name(dbx, &device, &req).await?;
+    let req = normalize_update_device(dbx, req).await?;
 
     let txn = dbx.begin().await.c(h!())?;
     let device = find_update_target(&txn, device_id).await?;
-    precheck_update_device_name(&txn, &device, &req).await?;
 
     let device_changes = collect_device_changes(&device, &req)?;
     let has_device_changes = !device_changes.is_empty();
@@ -175,22 +162,24 @@ async fn normalize_create_device(
         unit_id: validate_unit_id(dbx, req.unit_id).await?,
         tags: normalize_tags(req.tags)?,
         external_url: normalize_external_url(req.external_url)?,
+        hostname: normalize_hostname(req.hostname)?,
+        ssh_port: validate_ssh_port(req.ssh_port)?,
         files: normalize_optional_file_create_items(req.files)?,
     })
 }
 
 async fn normalize_update_device(
     dbx: &DatabaseConnection,
-    device_id: Uuid,
     req: UpdateDeviceReq,
 ) -> Result<NormalizedUpdateDevice, AppError> {
     Ok(NormalizedUpdateDevice {
-        device_id,
         name: normalize_update_name(req.name)?,
         aor_ids: normalize_update_aor_ids(dbx, req.aor_ids).await?,
         unit_id: normalize_update_unit_id(dbx, req.unit_id).await?,
         tags: normalize_update_tags(req.tags)?,
         external_url: normalize_update_external_url(req.external_url)?,
+        hostname: normalize_update_hostname(req.hostname)?,
+        ssh_port: normalize_update_ssh_port(req.ssh_port)?,
         files: normalize_optional_file_create_items(req.files)?,
     })
 }
@@ -254,28 +243,28 @@ fn normalize_update_external_url(
     }
 }
 
-async fn precheck_update_device_name<C>(
-    db: &C,
-    device: &device::Model,
-    req: &NormalizedUpdateDevice,
-) -> Result<(), AppError>
-where
-    C: sea_orm::ConnectionTrait,
-{
-    let Some(name) = &req.name else {
-        return Ok(());
-    };
-    if normalized_device_name_key(&device.name)?
-        == normalized_device_name_key(name)?
-    {
-        return Ok(());
+fn normalize_update_hostname(
+    hostname: DeviceUpdateNullableField<String>,
+) -> Result<Option<Option<String>>, AppError> {
+    match hostname {
+        DeviceUpdateNullableField::Missing => Ok(None),
+        DeviceUpdateNullableField::Null => Ok(Some(None)),
+        DeviceUpdateNullableField::Value(hostname) => {
+            Ok(Some(normalize_hostname(Some(hostname))?))
+        }
     }
-    ensure_device_name_available(
-        db,
-        &normalized_device_name_key(name)?,
-        Some(req.device_id),
-    )
-    .await
+}
+
+fn normalize_update_ssh_port(
+    ssh_port: DeviceUpdateNullableField<i32>,
+) -> Result<Option<Option<i32>>, AppError> {
+    match ssh_port {
+        DeviceUpdateNullableField::Missing => Ok(None),
+        DeviceUpdateNullableField::Null => Ok(Some(None)),
+        DeviceUpdateNullableField::Value(ssh_port) => {
+            Ok(Some(validate_ssh_port(Some(ssh_port))?))
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -285,6 +274,8 @@ struct DeviceChanges {
     unit_id: Option<Option<i64>>,
     tags: Option<Vec<crate::devices::types::DeviceTag>>,
     external_url: Option<Option<String>>,
+    hostname: Option<Option<String>>,
+    ssh_port: Option<Option<i32>>,
 }
 
 impl DeviceChanges {
@@ -294,6 +285,8 @@ impl DeviceChanges {
             && self.unit_id.is_none()
             && self.tags.is_none()
             && self.external_url.is_none()
+            && self.hostname.is_none()
+            && self.ssh_port.is_none()
     }
 }
 
@@ -314,6 +307,11 @@ fn collect_device_changes(
             req.external_url.clone(),
             device.external_url.clone(),
         ),
+        hostname: changed_nullable(
+            req.hostname.clone(),
+            device.hostname.clone(),
+        ),
+        ssh_port: changed_nullable(req.ssh_port, device.ssh_port),
     })
 }
 
@@ -369,8 +367,14 @@ where
     if let Some(external_url) = changes.external_url {
         device.external_url = Set(external_url);
     }
+    if let Some(hostname) = changes.hostname {
+        device.hostname = Set(hostname);
+    }
+    if let Some(ssh_port) = changes.ssh_port {
+        device.ssh_port = Set(ssh_port);
+    }
     device.updated_at = Set(now);
-    device.update(db).await.map_err(map_device_write_error)
+    Ok(device.update(db).await.c(h!())?)
 }
 
 async fn replace_device_aors<C>(
@@ -432,27 +436,6 @@ async fn set_device_archived(
     get_device_details(dbx, &device_detail_req(device_id, true)).await
 }
 
-async fn ensure_device_name_available<C>(
-    db: &C,
-    normalized_name_key: &str,
-    except_device_id: Option<Uuid>,
-) -> Result<(), AppError>
-where
-    C: sea_orm::ConnectionTrait,
-{
-    let mut query = device::Entity::find().filter(Expr::cust_with_values(
-        r#"lower(btrim("device"."name")) = $1"#,
-        vec![normalized_name_key.to_string()],
-    ));
-    if let Some(except_device_id) = except_device_id {
-        query = query.filter(device::Column::Id.ne(except_device_id));
-    }
-    if query.one(db).await.c(h!())?.is_some() {
-        return Err(duplicate_name_error());
-    }
-    Ok(())
-}
-
 fn validate_created_by(created_by: &str) -> Result<(), AppError> {
     if created_by.trim().is_empty() {
         return Err(form_error("created_by", "Користувача не визначено"));
@@ -470,26 +453,9 @@ fn device_detail_req(
     }
 }
 
-fn duplicate_name_error() -> AppError {
-    form_error("name", "Пристрій з такою назвою вже існує")
-}
-
 fn form_error(field: &str, message: &str) -> AppError {
     AppError::Form(BTreeMap::from_iter([(
         field.to_string(),
         message.to_string(),
     )]))
-}
-
-fn map_device_write_error(err: sea_orm::DbErr) -> AppError {
-    if is_duplicate_device_name_error(&err) {
-        return duplicate_name_error();
-    }
-    AppError::from(err).c(h!())
-}
-
-fn is_duplicate_device_name_error(err: &sea_orm::DbErr) -> bool {
-    let msg = err.to_string();
-    msg.contains("device_lower_trimmed_name_unique_idx")
-        || (msg.contains("duplicate key") && msg.contains("device"))
 }

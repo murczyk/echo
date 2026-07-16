@@ -54,6 +54,8 @@ function mockDeviceDetailsResponse() {
     unit_name: 'Unit',
     tags: [{ label: 'Serial', value: '123' }],
     external_url: 'https://example.test/device',
+    hostname: 'device.example',
+    ssh_port: 2222,
     archived: false,
     created_at_ms: 10,
     updated_at_ms: 20,
@@ -73,6 +75,8 @@ function mockListDevicesResponse() {
         unit_id: 7,
         unit_name: 'Unit',
         external_url: null,
+        hostname: null,
+        ssh_port: null,
         archived: false,
         created_at_ms: 10,
         updated_at_ms: 20,
@@ -163,6 +167,7 @@ describe('devices API service routes', () => {
       sort_by: ['updated_at_desc'],
     });
     expect(rsp.list[0].createdBy).toBe('operator');
+    expect(rsp.list[0].hostname).toBeNull();
     expect(rsp.statusCounts).toEqual({ active: 3, archived: 1 });
     expect(rsp.hasMore).toBe(false);
   });
@@ -185,6 +190,7 @@ describe('devices API service routes', () => {
     expect(fetchMock()).toHaveBeenCalledWith('/api/device/detail', expect.any(Object));
     expect(requestBody()).toEqual({ device_id: DEVICE_ID, include_archived: true });
     expect(rsp.createdAtMs).toBe(10);
+    expect(rsp.sshPort).toBe(2222);
   });
 
   it('createDevice uses /api/device/create', async () => {
@@ -194,6 +200,8 @@ describe('devices API service routes', () => {
       unitId: 7,
       tags: [{ label: 'Serial', value: '123' }],
       externalUrl: null,
+      hostname: 'device.example',
+      sshPort: 2222,
       files: null,
     });
 
@@ -204,15 +212,30 @@ describe('devices API service routes', () => {
       unit_id: 7,
       tags: [{ label: 'Serial', value: '123' }],
       external_url: null,
+      hostname: 'device.example',
+      ssh_port: 2222,
       files: null,
     });
   });
 
   it('updateDevice uses /api/device/update and serialized patch body', async () => {
-    await updateDevice({ deviceId: DEVICE_ID, aorIds: [], unitId: 7, files: [] });
+    await updateDevice({
+      deviceId: DEVICE_ID,
+      aorIds: [],
+      unitId: 7,
+      hostname: null,
+      sshPort: 2222,
+      files: [],
+    });
 
     expect(fetchMock()).toHaveBeenCalledWith('/api/device/update', expect.any(Object));
-    expect(requestBody()).toEqual({ device_id: DEVICE_ID, aor_ids: [], unit_id: 7 });
+    expect(requestBody()).toEqual({
+      device_id: DEVICE_ID,
+      aor_ids: [],
+      unit_id: 7,
+      hostname: null,
+      ssh_port: 2222,
+    });
   });
 
   it('archiveDevice uses /api/device/archive', async () => {
@@ -311,6 +334,8 @@ describe('DeviceUpdatePatchInput serialization', () => {
         unitId: null,
         tags: undefined,
         externalUrl: null,
+        hostname: null,
+        sshPort: 2222,
         files: [],
       }),
     ).toEqual({
@@ -318,6 +343,8 @@ describe('DeviceUpdatePatchInput serialization', () => {
       aorIds: [],
       unitId: null,
       externalUrl: null,
+      hostname: null,
+      sshPort: 2222,
     });
   });
 

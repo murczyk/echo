@@ -17,7 +17,7 @@ type FieldConfig = {
 };
 
 function DeviceDetailsLeftPanelSkeleton() {
-  const rowHeights = [36, 36, 36, 36, 36, 36, 36, 36];
+  const rowHeights = [36, 36, 36, 36, 36, 36, 36, 36, 36, 36];
 
   return (
     <Box
@@ -197,6 +197,27 @@ function buildMainFields(device: DeviceDetails): FieldConfig[] {
   ];
 }
 
+function buildDeviceFields(device: DeviceDetails): FieldConfig[] {
+  const hostname = device.hostname?.trim();
+
+  return [
+    {
+      key: 'hostname',
+      label: 'Хостнейм',
+      value: <DeviceTextValue muted={!hostname}>{hostname || '—'}</DeviceTextValue>,
+    },
+    {
+      key: 'sshPort',
+      label: 'SSH-порт',
+      value: (
+        <DeviceTextValue muted={device.sshPort === null}>
+          {device.sshPort?.toString() ?? '—'}
+        </DeviceTextValue>
+      ),
+    },
+  ];
+}
+
 function buildAdditionalFields(device: DeviceDetails): FieldConfig[] {
   return [
     {
@@ -249,6 +270,8 @@ function DeviceLeftPanelContent({ device }: { device: DeviceDetails }) {
   return (
     <>
       <DeviceSection title="Основне" fields={buildMainFields(device)} />
+      <Divider />
+      <DeviceSection title="Пристрій" fields={buildDeviceFields(device)} />
       <Divider />
       <DeviceSection title="Додатково" fields={buildAdditionalFields(device)} />
       <Divider />

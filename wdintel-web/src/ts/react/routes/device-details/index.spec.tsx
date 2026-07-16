@@ -47,6 +47,8 @@ const activeDevice: DeviceDetails = {
   unitName: 'Unit Seven',
   tags: [{ label: 'IP', value: '10.0.0.1' }],
   externalUrl: 'https://example.test/device-alpha',
+  hostname: 'device.example',
+  sshPort: 22,
   archived: false,
   createdAtMs: 1_700_000_000_000,
   updatedAtMs: 1_700_000_010_000,
@@ -196,6 +198,11 @@ describe('DeviceDetailsPage layout', () => {
     expect(leftPanelText).toContain('Теги');
     expect(leftPanelText).toContain('IP');
     expect(leftPanelText).toContain('10.0.0.1');
+    expect(leftPanelText).toContain('Пристрій');
+    expect(leftPanelText).toContain('Хостнейм');
+    expect(leftPanelText).toContain('device.example');
+    expect(leftPanelText).toContain('SSH-порт');
+    expect(leftPanelText).toContain('22');
     expect(container?.textContent).not.toContain('Зовнішнє посилання');
     expect(container?.textContent).not.toContain('Оновити');
     expect(container?.textContent).not.toContain('Редагувати');
@@ -204,10 +211,15 @@ describe('DeviceDetailsPage layout', () => {
     expect(container?.querySelector('button[aria-label="Дії з пристроєм"]')).not.toBeNull();
     expect(deviceNameLink?.getAttribute('href')).toBe(activeDevice.externalUrl);
     expect(deviceNameLink?.getAttribute('target')).toBe('_blank');
+    expect((leftPanelText ?? '').indexOf('Основне')).toBeLessThan(
+      (leftPanelText ?? '').indexOf('Пристрій'),
+    );
+    expect((leftPanelText ?? '').indexOf('Пристрій')).toBeLessThan(
+      (leftPanelText ?? '').indexOf('Додатково'),
+    );
     expect((leftPanelText ?? '').indexOf('Додатково')).toBeLessThan(
       (leftPanelText ?? '').indexOf('Теги'),
     );
-
     const tabs = Array.from(container?.querySelectorAll('[role="tab"]') ?? []).map((element) =>
       element.textContent?.trim(),
     );

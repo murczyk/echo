@@ -1615,6 +1615,8 @@ export type DeviceListItem = {
   unitId: number | null;
   unitName: string | null;
   externalUrl: string | null;
+  hostname: string | null;
+  sshPort: number | null;
   archived: boolean;
   createdAtMs: number;
   updatedAtMs: number;
@@ -1631,6 +1633,8 @@ export type DeviceDetails = {
   unitName: string | null;
   tags: Array<DeviceTag>;
   externalUrl: string | null;
+  hostname: string | null;
+  sshPort: number | null;
   archived: boolean;
   createdAtMs: number;
   updatedAtMs: number;
@@ -1694,6 +1698,8 @@ export type CreateDeviceReq = {
   unitId: number | null;
   tags: Array<DeviceTag>;
   externalUrl: string | null;
+  hostname: string | null;
+  sshPort: number | null;
   files: Array<CreateDeviceFileItem> | null;
 };
 
@@ -1704,6 +1710,8 @@ export type UpdateDeviceReq = {
   unitId: number | null;
   tags: Array<DeviceTag> | null;
   externalUrl: string | null;
+  hostname: string | null;
+  sshPort: number | null;
   files: Array<CreateDeviceFileItem> | null;
 };
 

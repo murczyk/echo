@@ -33,6 +33,8 @@ beforeEach(() => {
           unit_name: null,
           tags: [],
           external_url: null,
+          hostname: null,
+          ssh_port: null,
           archived: false,
           created_at_ms: 10,
           updated_at_ms: 20,

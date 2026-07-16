@@ -4,8 +4,9 @@ use crate::config::{
     DEVICE_EXTERNAL_URL_MAX_CHARS, DEVICE_FILE_CREATE_BATCH_MAX_COUNT,
     DEVICE_FILE_LIST_DEFAULT_LIMIT, DEVICE_FILE_LIST_MAX_LIMIT,
     DEVICE_FILE_ORIGINAL_ABSOLUTE_PATH_MAX_CHARS,
-    DEVICE_FILE_ORIGINAL_NAME_MAX_CHARS, DEVICE_LIST_DEFAULT_LIMIT,
-    DEVICE_LIST_MAX_LIMIT, DEVICE_NAME_MAX_CHARS, DEVICE_TAGS_MAX_COUNT,
+    DEVICE_FILE_ORIGINAL_NAME_MAX_CHARS, DEVICE_HOSTNAME_MAX_CHARS,
+    DEVICE_LIST_DEFAULT_LIMIT, DEVICE_LIST_MAX_LIMIT, DEVICE_NAME_MAX_CHARS,
+    DEVICE_SSH_PORT_MAX, DEVICE_SSH_PORT_MIN, DEVICE_TAGS_MAX_COUNT,
     DEVICE_TAG_LABEL_MAX_CHARS, DEVICE_TAG_VALUE_MAX_CHARS,
 };
 use crate::devices::types::{CreateDeviceFileItem, DeviceTag};
@@ -46,10 +47,6 @@ pub fn normalize_device_name(name: &str) -> Result<String, AppError> {
     }
     validate_max_chars("name", &name, DEVICE_NAME_MAX_CHARS)?;
     Ok(name)
-}
-
-pub fn normalized_device_name_key(name: &str) -> Result<String, AppError> {
-    Ok(normalize_device_name(name)?.to_lowercase())
 }
 
 pub fn normalize_tags(
@@ -127,6 +124,34 @@ pub fn normalize_external_url(
         DEVICE_EXTERNAL_URL_MAX_CHARS,
     )?;
     Ok(Some(external_url))
+}
+
+pub fn normalize_hostname(
+    hostname: Option<String>,
+) -> Result<Option<String>, AppError> {
+    let Some(hostname) = hostname else {
+        return Ok(None);
+    };
+
+    let hostname = hostname.trim().to_string();
+    if hostname.is_empty() {
+        return Ok(None);
+    }
+    validate_max_chars("hostname", &hostname, DEVICE_HOSTNAME_MAX_CHARS)?;
+    Ok(Some(hostname))
+}
+
+pub fn validate_ssh_port(
+    ssh_port: Option<i32>,
+) -> Result<Option<i32>, AppError> {
+    let Some(ssh_port) = ssh_port else {
+        return Ok(None);
+    };
+
+    if !(DEVICE_SSH_PORT_MIN..=DEVICE_SSH_PORT_MAX).contains(&ssh_port) {
+        return Err(form_error("ssh_port", "SSH-порт має бути від 1 до 65535"));
+    }
+    Ok(Some(ssh_port))
 }
 
 pub async fn validate_aor_ids<C>(
@@ -359,14 +384,6 @@ mod tests {
     }
 
     #[test]
-    fn normalized_device_name_key_is_trimmed_and_lowercase() {
-        assert_eq!(
-            normalized_device_name_key("  Device Alpha  ").unwrap(),
-            "device alpha"
-        );
-    }
-
-    #[test]
     fn tags_are_trimmed_and_duplicate_labels_are_rejected() {
         let fields = normalize_tags(vec![DeviceTag {
             label: "  Serial  ".to_string(),
@@ -407,6 +424,29 @@ mod tests {
         assert_form_field(
             normalize_external_url(Some("/relative".to_string())).unwrap_err(),
             "external_url",
+        );
+    }
+
+    #[test]
+    fn hostname_is_trimmed_and_ssh_port_is_validated() {
+        assert_eq!(
+            normalize_hostname(Some("  device.example  ".to_string()))
+                .unwrap()
+                .as_deref(),
+            Some("device.example")
+        );
+        assert_eq!(normalize_hostname(Some("   ".to_string())).unwrap(), None);
+        assert_form_field(
+            normalize_hostname(Some("x".repeat(256))).unwrap_err(),
+            "hostname",
+        );
+
+        assert_eq!(validate_ssh_port(Some(1)).unwrap(), Some(1));
+        assert_eq!(validate_ssh_port(Some(65_535)).unwrap(), Some(65_535));
+        assert_form_field(validate_ssh_port(Some(0)).unwrap_err(), "ssh_port");
+        assert_form_field(
+            validate_ssh_port(Some(65_536)).unwrap_err(),
+            "ssh_port",
         );
     }
 
