@@ -1,85 +1,71 @@
 import { useEffect, useRef } from 'react';
 
-import type { EventMsg, LongPollRsp } from '../../../../Bindings';
-import { transformSnakeToCamel } from '../../../snake-to-camel';
-import { isAbortError, postJson } from '../../services/api/client';
-
 type Params = {
   onMessageIds: (messageIds: number[]) => void | Promise<void>;
 };
 
-const EVENT_POLL_RETRY_MS = 1000;
-
-async function pollEvents(lastEventId: string | null, signal: AbortSignal): Promise<LongPollRsp> {
-  const raw = await postJson<unknown>(
-    '/api/event-stream/long-poll',
-    { session_id: 'current', last_event_id: lastEventId },
-    { signal },
-  );
-  return transformSnakeToCamel<LongPollRsp>(raw);
-}
-
-function inboxChangedMessageId(event: EventMsg): number | null {
-  if (typeof event.eventType !== 'object' || event.eventType == null) return null;
-  const eventType = event.eventType as { ETInboxChanged?: unknown };
-  const messageId = eventType.ETInboxChanged;
-  return typeof messageId === 'number' && Number.isInteger(messageId) ? messageId : null;
-}
-
-function inboxChangedMessageIds(events: EventMsg[]): number[] {
+function inboxChangedMessageIds(messageIds: unknown): number[] {
+  if (!Array.isArray(messageIds)) return [];
   return Array.from(
     new Set(
-      events
-        .map(inboxChangedMessageId)
-        .filter((messageId): messageId is number => messageId != null),
+      messageIds.filter((messageId): messageId is number => {
+        return typeof messageId === 'number' && Number.isInteger(messageId);
+      }),
     ),
   );
 }
 
 export function useInboxChangedMessageIds({ onMessageIds }: Params) {
   const onMessageIdsRef = useRef(onMessageIds);
+  const pendingIdsRef = useRef<Set<number>>(new Set());
+  const refreshInFlightRef = useRef(false);
+  const isMountedRef = useRef(false);
 
   useEffect(() => {
     onMessageIdsRef.current = onMessageIds;
   }, [onMessageIds]);
 
   useEffect(() => {
-    let disposed = false;
-    let lastEventId: string | null = null;
-    let retryTimer: number | null = null;
-    let activeController: AbortController | null = null;
+    isMountedRef.current = true;
 
-    const scheduleRetry = () => {
-      retryTimer = window.setTimeout(() => {
-        retryTimer = null;
-        void runPoll();
-      }, EVENT_POLL_RETRY_MS);
-    };
-
-    const runPoll = async () => {
-      const controller = new AbortController();
-      activeController = controller;
+    const flushPendingIds = async () => {
+      if (refreshInFlightRef.current) return;
+      refreshInFlightRef.current = true;
       try {
-        const rsp = await pollEvents(lastEventId, controller.signal);
-        if (disposed || controller.signal.aborted) return;
-        lastEventId = rsp.lastEventId ?? lastEventId;
-        const messageIds = inboxChangedMessageIds(rsp.events ?? []);
-        if (messageIds.length > 0) await onMessageIdsRef.current(messageIds);
-        if (!disposed) void runPoll();
-      } catch (error) {
-        if (disposed || controller.signal.aborted || isAbortError(error)) return;
-        scheduleRetry();
+        while (pendingIdsRef.current.size > 0 && isMountedRef.current) {
+          const pendingIds = Array.from(pendingIdsRef.current);
+          pendingIdsRef.current.clear();
+          try {
+            await onMessageIdsRef.current(pendingIds);
+          } catch (error) {
+            console.error(error);
+          }
+        }
       } finally {
-        if (activeController === controller) activeController = null;
+        refreshInFlightRef.current = false;
       }
     };
 
-    void runPoll();
+    const enqueueMessageIds = (messageIds: number[]) => {
+      if (messageIds.length === 0) return;
+      messageIds.forEach((messageId) => pendingIdsRef.current.add(messageId));
+      void flushPendingIds();
+    };
+
+    const onInboxChanged = (event: Event) => {
+      const messageIds = inboxChangedMessageIds(
+        (event as CustomEvent<{ messageIds?: unknown }>).detail?.messageIds,
+      );
+      if (messageIds.length === 0) return;
+      enqueueMessageIds(messageIds);
+    };
+
+    window.addEventListener('echo-inbox-changed', onInboxChanged);
 
     return () => {
-      disposed = true;
-      activeController?.abort();
-      if (retryTimer != null) window.clearTimeout(retryTimer);
+      isMountedRef.current = false;
+      pendingIdsRef.current.clear();
+      window.removeEventListener('echo-inbox-changed', onInboxChanged);
     };
   }, []);
 }

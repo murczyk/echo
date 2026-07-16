@@ -49,13 +49,20 @@ pub mod tests {
     }
 
     pub async fn cleanup() -> Result<Arc<Env>, AppError> {
+        let (env, _guard) = cleanup_locked().await?;
+        Ok(env)
+    }
+
+    pub async fn cleanup_locked(
+    ) -> Result<(Arc<Env>, tokio::sync::MutexGuard<'static, ()>), AppError>
+    {
         MIGRATE
             .get_or_init(|| async {
                 crate::migration::run_migration_1(Mode::Test).await.unwrap();
             })
             .await;
+        let guard = CLEANUP.lock().await;
         let env = crate::server::new_env(Mode::Test).await.context(h!())?;
-        let _guard = CLEANUP.lock().await;
         // Delete dependent entities first to avoid foreign key constraint violations
         secret_group_user::Entity::delete_many()
             .exec(&env.dbx)
@@ -339,7 +346,11 @@ pub mod tests {
 
         fill_initial_data(&env.dbx).await?;
 
-        Ok(env)
+        Ok((env, guard))
+    }
+
+    pub async fn lock_cleanup() -> tokio::sync::MutexGuard<'static, ()> {
+        CLEANUP.lock().await
     }
 
     pub async fn fill_initial_data(

@@ -24,6 +24,7 @@ import Process
 import Random
 import Route exposing (Route)
 import Route.Path
+import Set exposing (Set)
 import Shared.Components.Navbar
 import Shared.Components.Toast
 import Shared.Model
@@ -140,7 +141,6 @@ init flagsResult route =
         [ E.sendCmd <| Ports.shared_getLocation ()
         , E.sendCmd <| Api.server_info GotServerInfo
         , E.sendCmd <| Api.changelog_index GotChangelogIndex
-        , E.sendCmd <| Task.perform (\_ -> EventServiceStartPolling) (Task.succeed ())
         , E.sendCmd <| Ports.shared_loadThemeMode ()
         , E.sendCmd <| Ports.shared_loadLastSeenChangelog ()
         , E.sendCmd <| Ports.shared_loadRerNetworkDetailsPreferredView ()
@@ -162,16 +162,23 @@ update req msg model =
                 , changelogLastSeenLoaded = True
                 , changelogLastSeen = user.lastReleaseSeen
               }
-            , E.pushRoute { path = Route.Path.Home_, query = Dict.empty, hash = Nothing }
+            , E.batch
+                [ E.pushRoute { path = Route.Path.Home_, query = Dict.empty, hash = Nothing }
+                , E.sendCmd <| Task.perform (\_ -> EventServiceStartPolling) (Task.succeed ())
+                ]
             )
 
         GotUser (Err e) ->
             if e.httpError == Http.BadStatus 401 then
+                let
+                    stoppedModel =
+                        { model | eventService = Core.EventService.init }
+                in
                 if req.path == Route.Path.Login then
-                    ( model, E.none )
+                    ( stoppedModel, E.none )
 
                 else
-                    ( model
+                    ( stoppedModel
                     , E.replaceRoute { path = Route.Path.Login, query = Dict.fromList [ ( "redirect", Url.toString req.url ) ], hash = Nothing }
                     )
 
@@ -196,6 +203,7 @@ update req msg model =
                     E.none
                 , loadSharedLookupData req.path
                 , E.getSystemSettings GotSystemSettings
+                , E.sendCmd <| Task.perform (\_ -> EventServiceStartPolling) (Task.succeed ())
                 ]
             )
 
@@ -312,7 +320,7 @@ update req msg model =
             )
 
         SignOut ->
-            ( { model | user = Nothing, userLoaded = False }
+            ( { model | user = Nothing, userLoaded = False, eventService = Core.EventService.init }
             , E.sendCmd <| Api.logout SignOutDone
             )
 
@@ -474,26 +482,23 @@ update req msg model =
             ( model, E.none )
 
         EventServiceStartPolling ->
-            let
-                eventService =
-                    model.eventService
+            if model.eventService.isPolling then
+                ( model, E.none )
 
-                newEventService =
-                    { eventService | isPolling = True, error = Nothing, retryCount = 0, retryDelay = 1000 }
-            in
-            ( { model | eventService = newEventService }
-            , E.sendCmd <| Task.perform (\_ -> EventServicePollEvents) (Task.succeed ())
-            )
+            else
+                let
+                    eventService =
+                        model.eventService
+
+                    newEventService =
+                        { eventService | isPolling = True, error = Nothing, retryCount = 0, retryDelay = 1000 }
+                in
+                ( { model | eventService = newEventService }
+                , E.sendCmd <| Task.perform (\_ -> EventServicePollEvents) (Task.succeed ())
+                )
 
         EventServiceStopPolling ->
-            let
-                eventService =
-                    model.eventService
-
-                newEventService =
-                    { eventService | isPolling = False, error = Nothing }
-            in
-            ( { model | eventService = newEventService }, E.none )
+            ( { model | eventService = Core.EventService.init }, E.none )
 
         EventServicePollEvents ->
             if model.eventService.isPolling then
@@ -506,6 +511,9 @@ update req msg model =
             let
                 eventService =
                     model.eventService
+
+                inboxChangedMessageIds =
+                    extractInboxChangedMessageIds response.events
 
                 newEventService =
                     { eventService
@@ -524,6 +532,11 @@ update req msg model =
             ( { model | eventService = newEventService }
             , E.batch
                 [ processEventsEffect
+                , if List.isEmpty inboxChangedMessageIds then
+                    E.none
+
+                  else
+                    E.sendCmd <| Ports.shared_dispatchInboxChanged inboxChangedMessageIds
                 , E.sendCmd <| Task.perform (\_ -> EventServicePollEvents) (Process.sleep 100.0)
                 ]
             )
@@ -626,6 +639,27 @@ update req msg model =
             ( { model | eventSubscriptions = Core.EventTypes.unsubscribeFromEvents pageId model.eventSubscriptions }
             , E.none
             )
+
+
+extractInboxChangedMessageIds : List B.EventMsg -> List Int
+extractInboxChangedMessageIds events =
+    let
+        step event ( messageIds, seen ) =
+            case event.eventType of
+                B.EtInboxChanged messageId ->
+                    if Set.member messageId seen then
+                        ( messageIds, seen )
+
+                    else
+                        ( messageId :: messageIds, Set.insert messageId seen )
+
+                _ ->
+                    ( messageIds, seen )
+    in
+    events
+        |> List.foldl step ( [], Set.empty )
+        |> Tuple.first
+        |> List.reverse
 
 
 isRerNetworkDetailsPath : String -> Bool

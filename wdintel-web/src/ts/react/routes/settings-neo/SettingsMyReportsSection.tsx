@@ -113,6 +113,7 @@ const DEFAULT_REPORTS_COLUMN_ORDER = [
 const DEFAULT_REPORTS_WITH_AUTHOR_COLUMNS_VISIBILITY = {
   ...DEFAULT_REPORTS_COLUMNS_VISIBILITY,
   requestedBy: true,
+  executionTime: true,
   errorLog: true,
 };
 
@@ -130,6 +131,7 @@ const DEFAULT_REPORTS_WITH_AUTHOR_COLUMN_ORDER = [
   'queuePosition',
   'bgtaskId',
   'completedAt',
+  'executionTime',
   'errorLog',
 ];
 
@@ -282,6 +284,13 @@ function formatReportDateOrDash(value: string | null | undefined): string {
   return formatReportDate(value ?? null) || '—';
 }
 
+function parseReportDate(value: string | null | undefined): Date | null {
+  if (value == null || value.trim() === '') return null;
+  const normalized = value.includes('T') ? value : value.replace(' ', 'T') + 'Z';
+  const date = new Date(normalized);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
 function formatReportId(value: number | null | undefined): string {
   return value == null ? '—' : `#${value}`;
 }
@@ -300,6 +309,51 @@ function formatReportKind(reportKind: string): string {
 
 function formatReportProgress(progress: number): string {
   return `${Math.max(0, Math.min(100, Math.round(progress)))}%`;
+}
+
+function formatReportDuration(totalSeconds: number): string {
+  if (totalSeconds < 0) return '';
+
+  const days = Math.floor(totalSeconds / 86400);
+  const hours = Math.floor((totalSeconds % 86400) / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+
+  const parts = [
+    days > 0 ? `${days}д` : null,
+    days > 0 || hours > 0 ? `${hours}г` : null,
+    days > 0 || hours > 0 || minutes > 0 ? `${minutes}хв` : null,
+    `${seconds}с`,
+  ];
+
+  return parts.filter((part) => part !== null).join(' ');
+}
+
+function reportDurationSeconds(startedAt: Date, completedAt: Date): number | null {
+  const totalSeconds = Math.floor((completedAt.getTime() - startedAt.getTime()) / 1000);
+  return totalSeconds < 0 ? null : totalSeconds;
+}
+
+function formatReportExecutionTime(row: ReportHistoryRow): string {
+  if (row.status !== 'done' || !row.hasFile) return '';
+
+  const createdAt = parseReportDate(row.createdAt);
+  const startedAt = parseReportDate(row.startedAt);
+  const completedAt = parseReportDate(row.completedAt);
+  if (createdAt === null || completedAt === null) return '';
+
+  if (startedAt === null) {
+    const totalSeconds = reportDurationSeconds(createdAt, completedAt);
+    return totalSeconds === null ? '' : formatReportDuration(totalSeconds);
+  }
+
+  const queueSeconds = reportDurationSeconds(createdAt, startedAt);
+  const executionSeconds = reportDurationSeconds(startedAt, completedAt);
+  if (queueSeconds === null || executionSeconds === null) return '';
+
+  return `очікування ${formatReportDuration(queueSeconds)}, виконання ${formatReportDuration(
+    executionSeconds,
+  )}`;
 }
 
 function formatReportStatus(row: ReportHistoryRow): string {
@@ -766,6 +820,17 @@ export function ReportHistoryTableSection({
       },
     );
 
+    if (includeAuthor) {
+      nextColumns.push({
+        id: 'executionTime',
+        accessorFn: (row) => formatReportExecutionTime(row),
+        header: 'Час виконання',
+        enableSorting: false,
+        enableColumnFilter: false,
+        Cell: ({ row }) => formatReportExecutionTime(row.original),
+      });
+    }
+
     return nextColumns;
   }, [handleCancel, handleDownload, handleRetry, includeAuthor]);
 
@@ -934,6 +999,10 @@ export function ReportHistoryTableSection({
                     toolbarFullScreenEnabled
                     manualFiltering={loadReportHistoryBatch !== undefined}
                     manualSorting={loadReportHistoryBatch !== undefined}
+                    tablePaperSx={fullHeight ? REPORTS_FULL_HEIGHT_BATCH_TABLE_PAPER_SX : undefined}
+                    tableContainerSx={
+                      fullHeight ? REPORTS_FULL_HEIGHT_BATCH_TABLE_CONTAINER_SX : undefined
+                    }
                     onQueryStateChange={loadReportHistoryBatch ? handleQueryStateChange : undefined}
                   />
                 </Box>

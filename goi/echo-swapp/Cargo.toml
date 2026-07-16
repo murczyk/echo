@@ -13,6 +13,7 @@ base64 = "0.22.1"
 chrono = { workspace = true }
 env_logger = "0.11.9"
 log = { workspace = true }
+milgeo-rs = { git = "ssh://git@github.com/echoua/milgeo-rs.git", rev = "a94bda974c1af3f31362c10965dda066c602cf30" }
 regex = "1.12.3"
 sea-orm = { workspace = true }
 serde = { workspace = true }
@@ -22,7 +23,7 @@ toml = "0.9.12"
 
 [dependencies.echo-im]
 git = "ssh://git@github.com/echoua/echo-im.git"
-rev = "e5367e08ecd1b2d6122d051904a858739482cf05"
+rev = "17d21606b887afb9f9012cc82941ec3224397c0a"
 
 [package.metadata.deb]
 maintainer-scripts = "debian/"

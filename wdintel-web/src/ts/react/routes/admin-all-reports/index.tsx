@@ -7,7 +7,7 @@ export function AdminAllReportsPage() {
     <ReportHistoryTableSection
       active
       title="Всі звіти"
-      tableId="admin-all-reports-v1"
+      tableId="admin-all-reports-v2"
       includeAuthor
       fullHeight
       compactFullHeight

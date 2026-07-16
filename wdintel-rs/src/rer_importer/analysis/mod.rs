@@ -507,6 +507,11 @@ where
             let selected_units =
                 selected_units.clone().into_iter().collect_vec();
             let exact_match_only = units_exact_match_only.unwrap_or(false);
+            let header_unit_match = unit_name_matches_selected_units(
+                Expr::col(sigint_inbox_item::Column::UnitV2).into(),
+                selected_units.clone(),
+                !exact_match_only,
+            );
             let linked_unit_match = linked_unit_matches_selected_units(
                 selected_units.clone(),
                 !exact_match_only,
@@ -519,9 +524,7 @@ where
                 in_subquery_condition
             } else {
                 // інакше фільтруємо по підрозділам які було вказано в шапці повідомлення, або по прив'язаним через Еталонні мережі
-                sigint_inbox_item::Column::UnitV2
-                    .eq_any(selected_units.clone())
-                    .or(in_subquery_condition)
+                header_unit_match.or(in_subquery_condition)
             };
 
             m_filter = Some(expr);
@@ -582,6 +585,11 @@ where
         if !denied_units.is_empty() {
             let selected_units = denied_units.into_iter().collect_vec();
             let exact_match_only = units_exact_match_only.unwrap_or(false);
+            let header_unit_match = unit_name_matches_selected_units(
+                Expr::col(sigint_inbox_item::Column::UnitV2).into(),
+                selected_units.clone(),
+                !exact_match_only,
+            );
             let linked_unit_match = linked_unit_matches_selected_units(
                 selected_units.clone(),
                 !exact_match_only,
@@ -596,8 +604,7 @@ where
                 let header_unit_not_denied = sigint_inbox_item::Column::UnitV2
                     .is_null()
                     .or(sigint_inbox_item::Column::UnitV2.eq(""))
-                    .or(sigint_inbox_item::Column::UnitV2
-                        .ne_all(selected_units));
+                    .or(header_unit_match.not());
 
                 // інакше фільтруємо по підрозділам які було вказано в шапці повідомлення, або по прив'язаним через Еталонні мережі
                 header_unit_not_denied.and(in_subquery_condition)
@@ -619,9 +626,11 @@ fn linked_unit_matches_selected_units(
     include_hierarchy: bool,
 ) -> SimpleExpr {
     let unit_alias = Alias::new("selected_unit");
-    let unit_matches =
-        Expr::col((unit_alias.clone(), sigint_unit::Column::Name))
-            .is_in(selected_units.clone());
+    let unit_matches = unit_name_matches_selected_units(
+        Expr::col((unit_alias.clone(), sigint_unit::Column::Name)).into(),
+        selected_units.clone(),
+        include_hierarchy,
+    );
 
     if !include_hierarchy {
         return unit_matches;
@@ -636,6 +645,89 @@ fn linked_unit_matches_selected_units(
             selected_units,
             unit_alias,
         ))
+}
+
+fn unit_name_matches_selected_units(
+    unit_name_expr: SimpleExpr,
+    selected_units: Vec<String>,
+    include_name_suffix: bool,
+) -> SimpleExpr {
+    let unit_matches = unit_name_expr.clone().is_in(selected_units.clone());
+
+    if !include_name_suffix {
+        return unit_matches;
+    }
+
+    unit_name_suffix_matches_selected_units(unit_name_expr, &selected_units)
+        .map_or(unit_matches.clone(), |suffix_matches| {
+            unit_matches.or(suffix_matches)
+        })
+}
+
+fn unit_name_suffix_matches_selected_units(
+    unit_name_expr: SimpleExpr,
+    selected_units: &[String],
+) -> Option<SimpleExpr> {
+    selected_units
+        .iter()
+        .map(|unit| unit.trim())
+        .filter(|unit| !unit.is_empty())
+        .map(|unit| {
+            let unit = unit.to_string();
+            Expr::cust_with_exprs(
+                "right($1, length($2) + 1) = concat(' ', $3)",
+                vec![
+                    unit_name_expr.clone(),
+                    Expr::val(unit.clone()).into(),
+                    Expr::val(unit).into(),
+                ],
+            )
+        })
+        .reduce(|expr, unit_expr| expr.or(unit_expr))
+}
+
+#[cfg(test)]
+mod unit_name_match_tests {
+    use super::*;
+
+    #[test]
+    fn fuzzy_unit_name_match_includes_suffix_condition() {
+        let expr = unit_name_matches_selected_units(
+            Expr::col((Alias::new("selected_unit"), sigint_unit::Column::Name))
+                .into(),
+            vec!["100 pbr".to_string()],
+            true,
+        );
+
+        let sql = Query::select().expr(expr).to_string(PostgresQueryBuilder);
+
+        assert!(
+            sql.contains(r#""selected_unit"."name" IN ('100 pbr')"#),
+            "{sql}"
+        );
+        assert!(
+            sql.contains(r#"right("selected_unit"."name", length('100 pbr') + 1) = concat(' ', '100 pbr')"#),
+            "{sql}"
+        );
+    }
+
+    #[test]
+    fn exact_unit_name_match_excludes_suffix_condition() {
+        let expr = unit_name_matches_selected_units(
+            Expr::col((Alias::new("selected_unit"), sigint_unit::Column::Name))
+                .into(),
+            vec!["100 pbr".to_string()],
+            false,
+        );
+
+        let sql = Query::select().expr(expr).to_string(PostgresQueryBuilder);
+
+        assert!(
+            sql.contains(r#""selected_unit"."name" IN ('100 pbr')"#),
+            "{sql}"
+        );
+        assert!(!sql.contains("right("), "{sql}");
+    }
 }
 
 fn unresolved_hierarchy_column_matches_selected_units(
@@ -3772,6 +3864,7 @@ pub async fn batch_message_comments_bl(
     message_ids: &[i64],
 ) -> Result<MessageComments, AppError> {
     let message_ids = accessible_message_ids(dbx, login, message_ids).await?;
+    let editable_comment_logins = editable_comment_logins(dbx, login).await?;
     let comments = sigint_comment::Entity::find()
         .find_also_related(sigint_post::Entity)
         .filter(sigint_comment::Column::SignalMessageId.eq_any(message_ids))
@@ -3781,6 +3874,13 @@ pub async fn batch_message_comments_bl(
         .c(h!())?;
     let mut res: BTreeMap<i64, Vec<MessageComment>> = BTreeMap::new();
     for (comment, sigint_post) in comments {
+        if is_editable_comment_for_logins(
+            &comment,
+            &sigint_post,
+            &editable_comment_logins,
+        ) {
+            continue;
+        }
         let message_id = comment.signal_message_id;
         res.entry(message_id)
             .or_default()
@@ -3794,6 +3894,27 @@ pub async fn batch_message_comments_bl(
         })
         .collect();
     Ok(MessageComments { data })
+}
+
+async fn editable_comment_logins(
+    dbx: &DatabaseConnection,
+    login: &str,
+) -> Result<HashSet<String>, AppError> {
+    let mut logins = crate::users::get_organism_logins_by_login(dbx, login)
+        .await
+        .c(h!())?
+        .into_iter()
+        .collect::<HashSet<_>>();
+    logins.insert(login.to_string());
+    Ok(logins)
+}
+
+fn is_editable_comment_for_logins(
+    comment: &sigint_comment::Model,
+    sigint_post: &Option<sigint_post::Model>,
+    logins: &HashSet<String>,
+) -> bool {
+    sigint_post.is_none() && logins.contains(&comment.login)
 }
 
 fn message_comment_from_model(
@@ -3848,7 +3969,8 @@ pub async fn message_comments(
     env: actix_web::web::Data<Env>,
     req: Json<MessageCommentsReq>,
 ) -> Result<Json<Vec<MessageComment>>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
+    let login = user.id().c(h!())?;
+    crate::users::has_role(&env.dbx, &login, "Rer")
         .await
         .c(h!())?;
     signal_message::Entity::find_by_id(req.message_id)
@@ -3864,8 +3986,17 @@ pub async fn message_comments(
         .all(&env.dbx)
         .await
         .c(h!())?;
+    let editable_comment_logins =
+        editable_comment_logins(&env.dbx, &login).await?;
     let mut res = vec![];
     for (comment, sigint_post) in comments {
+        if is_editable_comment_for_logins(
+            &comment,
+            &sigint_post,
+            &editable_comment_logins,
+        ) {
+            continue;
+        }
         res.push(message_comment_from_model(comment, sigint_post));
     }
     Ok(Json(res))

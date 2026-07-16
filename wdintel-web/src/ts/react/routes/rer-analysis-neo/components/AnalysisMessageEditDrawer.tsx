@@ -24,6 +24,49 @@ function normalizeCallsign(value: string): string {
   return value.trim().toUpperCase();
 }
 
+function normalizeLocation(value: string): string {
+  return value.trim();
+}
+
+function normalizeLocationKey(value: string): string {
+  return normalizeLocation(value).toLocaleUpperCase('uk-UA');
+}
+
+function splitLocationList(value: string | null | undefined): string[] {
+  return String(value ?? '')
+    .split(',')
+    .map(normalizeLocation)
+    .filter((location) => location !== '');
+}
+
+function formatLocationList(locations: string[]): string | null {
+  const nextLocations = locations.map(normalizeLocation).filter((location) => location !== '');
+  return nextLocations.length > 0 ? nextLocations.join(', ') : null;
+}
+
+function mergeLocationDraft(locations: string[], locationDraft: string): string[] {
+  const nextLocations = splitLocationList(locationDraft);
+  if (nextLocations.length === 0) return locations;
+  const existingLocations = new Set(locations.map(normalizeLocationKey));
+  const mergedLocations = [...locations];
+  nextLocations.forEach((location) => {
+    const locationKey = normalizeLocationKey(location);
+    if (existingLocations.has(locationKey)) return;
+    mergedLocations.push(location);
+    existingLocations.add(locationKey);
+  });
+  return mergedLocations;
+}
+
+function applyLocationDraft(
+  message: InboxMessage,
+  locations: string[],
+  locationDraft: string,
+): InboxMessage {
+  if (splitLocationList(locationDraft).length === 0) return message;
+  return { ...message, location: formatLocationList(mergeLocationDraft(locations, locationDraft)) };
+}
+
 function AnalysisMessageEditDrawerComponent({
   message,
   open,
@@ -32,10 +75,12 @@ function AnalysisMessageEditDrawerComponent({
   onSave,
 }: Props) {
   const [callsignDraft, setCallsignDraft] = useState('');
+  const [locationDraft, setLocationDraft] = useState('');
   const [draftMessage, setDraftMessage] = useState<InboxMessage | null>(message?.message ?? null);
 
   useEffect(() => {
     setCallsignDraft('');
+    setLocationDraft('');
     setDraftMessage(message?.message ?? null);
   }, [message?.id, message?.message, open]);
 
@@ -83,6 +128,11 @@ function AnalysisMessageEditDrawerComponent({
     );
   };
 
+  const currentLocations = useMemo(
+    () => splitLocationList(currentMessage?.location),
+    [currentMessage?.location],
+  );
+
   const addSuggestedCallsign = (callsign: string) => {
     if (isNullOrUndefined(currentMessage)) return;
     const currentCallsigns = currentMessage.callsigns ?? [];
@@ -90,10 +140,31 @@ function AnalysisMessageEditDrawerComponent({
     updateDraftField('callsigns', [...currentCallsigns, callsign]);
   };
 
+  const addLocation = () => {
+    if (isNullOrUndefined(currentMessage)) return;
+    if (splitLocationList(locationDraft).length === 0) return;
+    updateDraftField(
+      'location',
+      formatLocationList(mergeLocationDraft(currentLocations, locationDraft)),
+    );
+    setLocationDraft('');
+  };
+
+  const removeLocation = (location: string) => {
+    if (isNullOrUndefined(currentMessage)) return;
+    const locationKey = normalizeLocationKey(location);
+    updateDraftField(
+      'location',
+      formatLocationList(
+        currentLocations.filter((item) => normalizeLocationKey(item) !== locationKey),
+      ),
+    );
+  };
+
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!canSave || isNullOrUndefined(currentMessage)) return;
-    onSave(currentMessage);
+    onSave(applyLocationDraft(currentMessage, currentLocations, locationDraft));
   };
 
   return (
@@ -206,11 +277,50 @@ function AnalysisMessageEditDrawerComponent({
             value={nullableString(currentMessage?.unit)}
             onChange={(event) => updateDraftField('unit', event.target.value || null)}
           />
-          <TextField
-            label="Локація"
-            value={nullableString(currentMessage?.location)}
-            onChange={(event) => updateDraftField('location', event.target.value || null)}
-          />
+          <Stack spacing={1}>
+            <Stack direction="row" spacing={1} alignItems="center">
+              <TextField
+                fullWidth
+                label="Локація"
+                value={locationDraft}
+                placeholder="Додати локацію"
+                onChange={(event) => setLocationDraft(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    addLocation();
+                  }
+                }}
+              />
+              <IconButton
+                aria-label="Додати локацію"
+                onClick={addLocation}
+                disabled={normalizeLocation(locationDraft) === ''}
+              >
+                <AddIcon />
+              </IconButton>
+            </Stack>
+
+            <Stack direction="row" gap={1} flexWrap="wrap">
+              {currentLocations.length === 0 ? (
+                <Typography variant="body2" color="text.secondary">
+                  Локації ще не додані
+                </Typography>
+              ) : (
+                currentLocations.map((location) => (
+                  <Chip
+                    key={location}
+                    label={location}
+                    onDelete={() => removeLocation(location)}
+                    deleteIcon={<CloseIcon />}
+                    color="primary"
+                    variant="outlined"
+                  />
+                ))
+              )}
+            </Stack>
+          </Stack>
         </Stack>
         <Stack
           direction="row"

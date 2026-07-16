@@ -40,7 +40,9 @@ type SystemSettingsForm = {
   dutyPollIntervalSec: number;
   shortUrlEnabled: boolean;
   autofixEchoimMissingMessages: boolean;
-  cyberEchoEnabled: boolean;
+  devicesSectionEnabled: boolean;
+  sigintCommentParsingEnabled: boolean;
+  doNotStoreDuplicateEchoimFailures: boolean;
   pelengBoundsEnabled: boolean;
   pelengBoundsTopLeftLat: string;
   pelengBoundsTopLeftLng: string;
@@ -62,7 +64,9 @@ type SystemSettingsPayload = {
   dutyPollIntervalSec: number;
   shortUrlEnabled: boolean;
   autofixEchoimMissingMessages: boolean;
-  cyberEchoEnabled: boolean;
+  devicesSectionEnabled: boolean;
+  sigintCommentParsingEnabled: boolean;
+  doNotStoreDuplicateEchoimFailures: boolean;
   pelengBoundsEnabled: boolean;
   pelengBoundsTopLeftLat: number | null;
   pelengBoundsTopLeftLng: number | null;
@@ -82,7 +86,9 @@ const EMPTY_FORM: SystemSettingsForm = {
   dutyPollIntervalSec: 1,
   shortUrlEnabled: false,
   autofixEchoimMissingMessages: false,
-  cyberEchoEnabled: false,
+  devicesSectionEnabled: false,
+  sigintCommentParsingEnabled: true,
+  doNotStoreDuplicateEchoimFailures: false,
   pelengBoundsEnabled: false,
   pelengBoundsTopLeftLat: '',
   pelengBoundsTopLeftLng: '',
@@ -117,7 +123,9 @@ function formFromSettings(item: SystemSettingsItem | undefined): SystemSettingsF
     dutyPollIntervalSec: item?.rerDutyPollIntervalSec ?? 1,
     shortUrlEnabled: item?.rerShortUrlEnabled ?? false,
     autofixEchoimMissingMessages: item?.autofixEchoimMissingMessages ?? false,
-    cyberEchoEnabled: item?.cyberEchoEnabled ?? false,
+    devicesSectionEnabled: item?.devicesSectionEnabled ?? false,
+    sigintCommentParsingEnabled: item?.sigintCommentParsingEnabled ?? true,
+    doNotStoreDuplicateEchoimFailures: item?.doNotStoreDuplicateEchoimFailures ?? false,
     pelengBoundsEnabled: item?.pelengBoundsEnabled ?? false,
     pelengBoundsTopLeftLat: coordinateToInput(item?.pelengBoundsTopLeftLat ?? null),
     pelengBoundsTopLeftLng: coordinateToInput(item?.pelengBoundsTopLeftLng ?? null),
@@ -139,7 +147,9 @@ function formsEqual(a: SystemSettingsForm, b: SystemSettingsForm): boolean {
     a.dutyPollIntervalSec === b.dutyPollIntervalSec &&
     a.shortUrlEnabled === b.shortUrlEnabled &&
     a.autofixEchoimMissingMessages === b.autofixEchoimMissingMessages &&
-    a.cyberEchoEnabled === b.cyberEchoEnabled &&
+    a.devicesSectionEnabled === b.devicesSectionEnabled &&
+    a.sigintCommentParsingEnabled === b.sigintCommentParsingEnabled &&
+    a.doNotStoreDuplicateEchoimFailures === b.doNotStoreDuplicateEchoimFailures &&
     a.pelengBoundsEnabled === b.pelengBoundsEnabled &&
     a.pelengBoundsTopLeftLat === b.pelengBoundsTopLeftLat &&
     a.pelengBoundsTopLeftLng === b.pelengBoundsTopLeftLng &&
@@ -209,7 +219,9 @@ function formToPayload(form: SystemSettingsForm): SystemSettingsPayload {
     dutyPollIntervalSec: form.dutyPollIntervalSec,
     shortUrlEnabled: form.shortUrlEnabled,
     autofixEchoimMissingMessages: form.autofixEchoimMissingMessages,
-    cyberEchoEnabled: form.cyberEchoEnabled,
+    devicesSectionEnabled: form.devicesSectionEnabled,
+    sigintCommentParsingEnabled: form.sigintCommentParsingEnabled,
+    doNotStoreDuplicateEchoimFailures: form.doNotStoreDuplicateEchoimFailures,
     pelengBoundsEnabled: form.pelengBoundsEnabled,
     pelengBoundsTopLeftLat: coordinateToPayload(form.pelengBoundsTopLeftLat),
     pelengBoundsTopLeftLng: coordinateToPayload(form.pelengBoundsTopLeftLng),
@@ -341,6 +353,42 @@ function MainSettingsSection({
         }
         label="Використовувати новий аналіз за замовчуванням"
       />
+
+      <FormControlLabel
+        control={
+          <Switch
+            checked={form.devicesSectionEnabled}
+            onChange={(_, checked) => {
+              patchForm({ devicesSectionEnabled: checked });
+            }}
+          />
+        }
+        label="Увімкнути розділ Пристрої"
+      />
+
+      <FormControlLabel
+        control={
+          <Switch
+            checked={form.sigintCommentParsingEnabled}
+            onChange={(_, checked) => {
+              patchForm({ sigintCommentParsingEnabled: checked });
+            }}
+          />
+        }
+        label="Парсити коментарі"
+      />
+
+      <FormControlLabel
+        control={
+          <Switch
+            checked={form.doNotStoreDuplicateEchoimFailures}
+            onChange={(_, checked) => {
+              patchForm({ doNotStoreDuplicateEchoimFailures: checked });
+            }}
+          />
+        }
+        label="Не зберігати дублікати помилок Echo IM"
+      />
     </>
   );
 }
@@ -427,18 +475,6 @@ function DutySettingsSection({
           />
         }
         label="Автоматично відновлювати відсутні Echo IM повідомлення"
-      />
-
-      <FormControlLabel
-        control={
-          <Switch
-            checked={form.cyberEchoEnabled}
-            onChange={(_, checked) => {
-              patchForm({ cyberEchoEnabled: checked });
-            }}
-          />
-        }
-        label="Увімкнути режим Cyber Echo"
       />
 
       <Typography component="h2" variant="subtitle1" sx={{ m: 0, fontWeight: 600 }}>
@@ -643,7 +679,9 @@ export function AdminSystemSettingsNeoPage() {
         supportNonRerInterceptions: payload.supportNonRerInterceptions,
         defaultNeoAnalysis: payload.defaultNeoAnalysis,
         autofixEchoimMissingMessages: payload.autofixEchoimMissingMessages,
-        cyberEchoEnabled: payload.cyberEchoEnabled,
+        devicesSectionEnabled: payload.devicesSectionEnabled,
+        sigintCommentParsingEnabled: payload.sigintCommentParsingEnabled,
+        doNotStoreDuplicateEchoimFailures: payload.doNotStoreDuplicateEchoimFailures,
         pelengBoundsEnabled: payload.pelengBoundsEnabled,
         pelengBoundsTopLeftLat: payload.pelengBoundsTopLeftLat,
         pelengBoundsTopLeftLng: payload.pelengBoundsTopLeftLng,

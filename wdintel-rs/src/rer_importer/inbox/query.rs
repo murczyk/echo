@@ -825,6 +825,7 @@ where
         .column_as(sigint_inbox_item::Column::CallsignTokens, "callsign_tokens")
         .column_as(sigint_inbox_item::Column::SignalTokens, "signal_tokens")
         .column_as(sigint_inbox_item::Column::KeywordTokens, "keyword_tokens")
+        .column_as(sigint_inbox_item::Column::Location, "location")
         .column_as(sigint_inbox_item::Column::LocationV2, "location_v2")
         .column_as(sigint_inbox_item::Column::Date, "date")
         .column_as(sigint_inbox_item::Column::Time, "time")

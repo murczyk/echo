@@ -2,6 +2,7 @@ import type {
   SignalRestapiErrorCountsReq,
   SignalRestapiErrorCountsRsp,
   SignalRestapiErrorDayCount,
+  SignalRestapiErrorLatestRsp,
   SignalRestapiErrorListReq,
   SignalRestapiErrorListRsp,
   SignalRestapiErrorRow,
@@ -27,4 +28,9 @@ export async function listSignalRestapiErrorCounts(
     transformCamelToSnake(req),
   );
   return transformSnakeToCamel<SignalRestapiErrorCountsRsp>(raw).items ?? [];
+}
+
+export async function loadLatestSignalRestapiErrorCreatedAt(): Promise<string | null> {
+  const raw = await postJson<unknown>('/api/admin/signal-restapi-error/latest');
+  return transformSnakeToCamel<SignalRestapiErrorLatestRsp>(raw).createdAt ?? null;
 }

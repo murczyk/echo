@@ -12,6 +12,7 @@ use ::serde::{Deserialize, Serialize};
 use chrono::*;
 use redis::AsyncCommands;
 use sea_orm::*;
+use std::collections::HashSet;
 use std::sync::atomic::{AtomicBool, Ordering};
 use tokio::runtime::*;
 use tokio::time::{sleep, Duration};
@@ -692,9 +693,7 @@ async fn sync_inbox(
         echo_im::list_updates_since(client_name, time.naive_utc(), &txn)
             .await
             .c(h!())?;
-    apply_inbox_updates(datasource.id, &inbox_updates, &txn)
-        .await
-        .c(h!())?;
+    let inbox_updates = coalesce_latest_inbox_states(inbox_updates);
     let inbox_messages =
         echo_im::list_inbox_since(client_name, time.naive_utc(), &txn)
             .await
@@ -750,19 +749,21 @@ async fn sync_inbox(
     }
     let senders = inbox_messages
         .iter()
+        .chain(inbox_updates.iter().filter(|message| !message.deleted))
         .flat_map(|m| m.sender.clone())
         .map(|s| (s.uuid.clone(), s.clone()))
         .collect::<BTreeMap<_, _>>();
 
-    let items = inbox_messages
-        .into_iter()
-        .map(|m| (m, datasource.id))
-        .collect_vec();
-    let inbox_num = items.len();
+    let synced_item_count = inbox_messages.len() + inbox_updates.len();
     let mut ids = vec![];
-    for (item, datasource_id) in items {
+    for item in &inbox_messages {
         ids.push(item.internal_id);
-        write_to_signal_message_queue(item, datasource_id, &txn)
+        upsert_signal_message_queue_snapshot(item, datasource.id, &txn)
+            .await
+            .c(h!())?;
+    }
+    for update in &inbox_updates {
+        upsert_signal_message_queue_snapshot(update, datasource.id, &txn)
             .await
             .c(h!())?;
     }
@@ -773,7 +774,7 @@ async fn sync_inbox(
 
     notify_private_messages(config, client_name, private_message_bodies).await;
     sync_senders(db, senders).await.c(h!())?;
-    Ok(inbox_num)
+    Ok(synced_item_count)
 }
 
 async fn notify_private_messages(
@@ -809,33 +810,133 @@ async fn notify_private_messages(
     }
 }
 
-async fn write_to_signal_message_queue(
-    item: echo_im::types::MessageF1,
+fn coalesce_latest_inbox_states(
+    updates: Vec<echo_im::types::MessageF1>,
+) -> Vec<echo_im::types::MessageF1> {
+    let mut seen = HashSet::new();
+    let mut result = vec![];
+    for update in updates.into_iter().rev() {
+        if seen.insert(update.internal_id) {
+            result.push(update);
+        }
+    }
+    result.reverse();
+    result
+}
+
+async fn upsert_signal_message_queue_snapshot(
+    item: &echo_im::types::MessageF1,
     datasource_id: i64,
     txn: &DatabaseTransaction,
 ) -> anyhow::Result<()> {
-    let attachments = item.attachments.clone();
+    let existing_snapshot = load_signal_message_queue_snapshot(
+        txn,
+        datasource_id,
+        item.internal_id,
+    )
+    .await
+    .c(h!())?;
+    let effective_attachments = effective_queue_snapshot_attachments(
+        item,
+        datasource_id,
+        existing_snapshot
+            .as_ref()
+            .map(|(_, attachments)| attachments.len())
+            .unwrap_or(0),
+        txn,
+    )
+    .await
+    .c(h!())?;
+    if let Some((existing_item, existing_attachments)) = existing_snapshot {
+        if queue_snapshot_matches(
+            &existing_item,
+            &existing_attachments,
+            item,
+            &effective_attachments,
+        ) {
+            trace!(
+                "skipped unchanged inbox snapshot: queue_id={} datasource_id={} inbox_message_id={}",
+                existing_item.id,
+                datasource_id,
+                item.internal_id
+            );
+            return Ok(());
+        }
+    }
+
     let signal_message_queue_item = signal_message_queue::ActiveModel {
         id: NotSet,
         datasource_id: Set(datasource_id),
         internal_id: Set(item.internal_id as i64),
-        external_id: Set(item.id),
+        external_id: Set(item.id.clone()),
         body: Set(item.text.clone()),
-        sender_name: Set(item.sender.clone().and_then(|x| x.name)),
+        sender_name: Set(item.sender.as_ref().and_then(|x| x.name.clone())),
         sender_id: Set(item
             .sender
-            .clone()
-            .map(|x| x.uuid)
+            .as_ref()
+            .map(|x| x.uuid.clone())
             .map(|id| clear_messenger_login_string(&id))),
-        sender_phone_number: Set(item.sender.and_then(|x| x.phone_number)),
+        sender_phone_number: Set(item
+            .sender
+            .as_ref()
+            .and_then(|x| x.phone_number.clone())),
         group_id: Set(item.group_id.clone()),
         timestamp: Set(item.timestamp),
         created_at: NotSet,
+        deleted: Set(item.deleted),
+    };
+    signal_message_queue::Entity::insert(signal_message_queue_item)
+        .on_conflict(
+            sea_query::OnConflict::columns([
+                signal_message_queue::Column::DatasourceId,
+                signal_message_queue::Column::InternalId,
+            ])
+            .update_columns([
+                signal_message_queue::Column::ExternalId,
+                signal_message_queue::Column::Body,
+                signal_message_queue::Column::SenderName,
+                signal_message_queue::Column::SenderId,
+                signal_message_queue::Column::SenderPhoneNumber,
+                signal_message_queue::Column::GroupId,
+                signal_message_queue::Column::Timestamp,
+                signal_message_queue::Column::CreatedAt,
+                signal_message_queue::Column::Deleted,
+            ])
+            .to_owned(),
+        )
+        .exec(txn)
+        .await
+        .c(h!())?;
+
+    let signal_message_queue_item = signal_message_queue::Entity::find()
+        .filter(signal_message_queue::Column::DatasourceId.eq(datasource_id))
+        .filter(
+            signal_message_queue::Column::InternalId
+                .eq(item.internal_id as i64),
+        )
+        .one(txn)
+        .await
+        .c(h!())?
+        .c(h!())?;
+
+    signal_message_queue_attachment::Entity::delete_many()
+        .filter(
+            signal_message_queue_attachment::Column::MessageId
+                .eq(signal_message_queue_item.id),
+        )
+        .exec(txn)
+        .await
+        .c(h!())?;
+
+    if item.deleted {
+        info!(
+            "queued inbox tombstone: queue_id={} datasource_id={} inbox_message_id={}",
+            signal_message_queue_item.id, datasource_id, item.internal_id
+        );
+        return Ok(());
     }
-    .insert(txn)
-    .await
-    .c(h!())?;
-    for attachment in &attachments {
+
+    for attachment in &effective_attachments {
         signal_message_queue_attachment::ActiveModel {
             id: NotSet,
             message_id: Set(signal_message_queue_item.id),
@@ -847,136 +948,160 @@ async fn write_to_signal_message_queue(
         .await
         .c(h!())?;
     }
-    let attachment_paths: Vec<_> =
-        item.attachments.iter().map(|a| a.path.clone()).collect();
+    let attachment_paths: Vec<_> = effective_attachments
+        .iter()
+        .map(|a| a.path.clone())
+        .collect();
     info!(
-        "enqueued message to signal queue: queue_id={} datasource_id={} attachments_count={} attachment_paths={:?}",
+        "queued inbox snapshot: queue_id={} datasource_id={} inbox_message_id={} attachments_count={} attachment_paths={:?}",
         signal_message_queue_item.id,
         datasource_id,
+        item.internal_id,
         attachment_paths.len(),
         attachment_paths
     );
     Ok(())
 }
 
-async fn apply_inbox_updates(
+async fn effective_queue_snapshot_attachments(
+    item: &echo_im::types::MessageF1,
     datasource_id: i64,
-    updates: &[echo_im::types::MessageF1],
+    previous_attachment_count: usize,
     txn: &DatabaseTransaction,
-) -> anyhow::Result<()> {
-    for update in updates {
-        if update.deleted {
-            mark_message_deleted(datasource_id, update.internal_id as i64, txn)
-                .await
-                .c(h!())?;
-        }
+) -> anyhow::Result<Vec<echo_im::types::MessageAttachmentF1>> {
+    if item.deleted {
+        return Ok(vec![]);
     }
-    Ok(())
-}
-
-async fn mark_message_deleted(
-    datasource_id: i64,
-    inbox_message_id: i64,
-    txn: &DatabaseTransaction,
-) -> anyhow::Result<()> {
-    let queue_items = signal_message_queue::Entity::find()
-        .filter(signal_message_queue::Column::DatasourceId.eq(datasource_id))
-        .filter(signal_message_queue::Column::InternalId.eq(inbox_message_id))
-        .all(txn)
-        .await
-        .c(h!())?;
-    if !queue_items.is_empty() {
-        let queue_ids: Vec<i64> = queue_items.iter().map(|q| q.id).collect();
-        signal_message_queue_attachment::Entity::delete_many()
-            .filter(
-                signal_message_queue_attachment::Column::MessageId
-                    .is_in(queue_ids.clone()),
-            )
-            .exec(txn)
-            .await
-            .c(h!())?;
-        signal_message_queue::Entity::delete_many()
-            .filter(signal_message_queue::Column::Id.is_in(queue_ids))
-            .exec(txn)
-            .await
-            .c(h!())?;
-        info!(
-            "removed {} pending queue items for deleted inbox_message_id={}",
-            queue_items.len(),
-            inbox_message_id
-        );
+    if !item.attachments.is_empty() {
+        return Ok(trim_echo_attachment_batch_for_queue(
+            item.attachments.clone(),
+            previous_attachment_count,
+            datasource_id,
+            item.internal_id,
+        ));
     }
-
-    let inbox_id_i32 = match i32::try_from(inbox_message_id) {
-        Ok(v) => v,
-        Err(e) => {
-            warn!(
-                "failed to convert inbox_message_id={inbox_message_id} to i32: {e}; skipping delete"
-            );
-            return Ok(());
-        }
-    };
-    let inbox_message = echo_inbox_message::Entity::find_by_id(inbox_id_i32)
-        .one(txn)
+    if let Some(attachments) =
+        crate::messenger::attachments::load_latest_echo_attachment_batch(
+            txn,
+            datasource_id,
+            item.internal_id,
+        )
         .await
         .c(h!())?
-        .c(h!())?;
-    let Some(group_id) = inbox_message.group_id else {
-        // private chat, nothing to map into signal_message
-        return Ok(());
-    };
-    let Some(echo_group) = echo_group::Entity::find_by_id(group_id)
+    {
+        return Ok(trim_echo_attachment_batch_for_queue(
+            attachments,
+            previous_attachment_count,
+            datasource_id,
+            item.internal_id,
+        ));
+    }
+    Ok(vec![])
+}
+
+fn trim_echo_attachment_batch_for_queue(
+    attachments: Vec<echo_im::types::MessageAttachmentF1>,
+    previous_attachment_count: usize,
+    datasource_id: i64,
+    echo_inbox_message_id: i32,
+) -> Vec<echo_im::types::MessageAttachmentF1> {
+    let original_attachment_count = attachments.len();
+    let attachments =
+        crate::messenger::attachments::latest_attachment_batch_by_expected_count(
+            attachments,
+            previous_attachment_count,
+        );
+    if !attachments.is_empty() {
+        info!(
+            "using attachment batch for queued inbox snapshot: datasource_id={} echo_inbox_message_id={} attachments_count={} previous_attachment_count={} original_attachment_count={}",
+            datasource_id,
+            echo_inbox_message_id,
+            attachments.len(),
+            previous_attachment_count,
+            original_attachment_count
+        );
+    }
+    attachments
+}
+
+async fn load_signal_message_queue_snapshot(
+    txn: &DatabaseTransaction,
+    datasource_id: i64,
+    internal_id: i32,
+) -> anyhow::Result<
+    Option<(
+        signal_message_queue::Model,
+        Vec<signal_message_queue_attachment::Model>,
+    )>,
+> {
+    let Some(queue_item) = signal_message_queue::Entity::find()
+        .filter(signal_message_queue::Column::DatasourceId.eq(datasource_id))
+        .filter(signal_message_queue::Column::InternalId.eq(internal_id as i64))
         .one(txn)
         .await
         .c(h!())?
     else {
-        warn!(
-                "no echo_group found for id={group_id} while deleting inbox_message_id={inbox_message_id}"
-            );
-        return Ok(());
+        return Ok(None);
     };
-    let group_master_key = echo_group.group_id;
-    let datasource_group = datasource_group::Entity::find()
-        .filter(datasource_group::Column::DatasourceId.eq(datasource_id))
+    let attachments = signal_message_queue_attachment::Entity::find()
         .filter(
-            datasource_group::Column::GroupMasterKey
-                .eq(group_master_key.clone()),
+            signal_message_queue_attachment::Column::MessageId
+                .eq(queue_item.id),
         )
-        .one(txn)
-        .await
-        .c(h!())?;
-    let Some(datasource_group_id) = datasource_group.map(|g| g.id) else {
-        warn!(
-            "no datasource_group found for datasource_id={datasource_id} group_master_key={group_master_key}"
-        );
-        return Ok(());
-    };
-    let messages = signal_message::Entity::find()
-        .filter(
-            signal_message::Column::DatasourceGroupId.eq(datasource_group_id),
-        )
-        .filter(signal_message::Column::Timestamp.eq(inbox_message.timestamp))
-        .filter(signal_message::Column::Deleted.eq(false))
-        .filter(
-            signal_message::Column::Body.eq(Some(inbox_message.body.clone())),
-        )
+        .order_by_asc(signal_message_queue_attachment::Column::Id)
         .all(txn)
         .await
         .c(h!())?;
-    if messages.is_empty() {
-        if queue_items.is_empty() {
-            warn!(
-                "no signal_message found to delete: inbox_message_id={inbox_message_id} datasource_id={datasource_id}"
-            );
-        }
-        return Ok(());
-    }
-    for message in messages {
-        let mut message_am = message.into_active_model();
-        message_am.deleted = Set(true);
-        message_am.update(txn).await.c(h!())?;
-    }
-    Ok(())
+    Ok(Some((queue_item, attachments)))
+}
+
+fn queue_snapshot_matches(
+    existing_item: &signal_message_queue::Model,
+    existing_attachments: &[signal_message_queue_attachment::Model],
+    item: &echo_im::types::MessageF1,
+    effective_attachments: &[echo_im::types::MessageAttachmentF1],
+) -> bool {
+    existing_item.external_id == item.id
+        && existing_item.body == item.text
+        && existing_item.sender_name
+            == item.sender.as_ref().and_then(|sender| sender.name.clone())
+        && existing_item.sender_id
+            == item
+                .sender
+                .as_ref()
+                .map(|sender| clear_messenger_login_string(&sender.uuid))
+        && existing_item.sender_phone_number
+            == item
+                .sender
+                .as_ref()
+                .and_then(|sender| sender.phone_number.clone())
+        && existing_item.group_id == item.group_id
+        && existing_item.timestamp == item.timestamp
+        && existing_item.deleted == item.deleted
+        && queue_attachment_snapshot(existing_attachments)
+            == message_attachment_snapshot(effective_attachments)
+}
+
+fn queue_attachment_snapshot(
+    attachments: &[signal_message_queue_attachment::Model],
+) -> Vec<(String, Option<String>)> {
+    let mut snapshot = attachments
+        .iter()
+        .map(|attachment| (attachment.path.clone(), attachment.name.clone()))
+        .collect::<Vec<_>>();
+    snapshot.sort();
+    snapshot
+}
+
+fn message_attachment_snapshot(
+    attachments: &[echo_im::types::MessageAttachmentF1],
+) -> Vec<(String, Option<String>)> {
+    let mut snapshot = attachments
+        .iter()
+        .map(|attachment| (attachment.path.clone(), attachment.name.clone()))
+        .collect::<Vec<_>>();
+    snapshot.sort();
+    snapshot
 }
 
 async fn list_clients(
@@ -1123,6 +1248,12 @@ pub fn clear_messenger_login_string(input: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::entities::sea_orm_active_enums::{
+        AccountStatus, EchoMessageSource,
+    };
+    use crate::functest::tests::cleanup_locked;
+    use serial_test::serial;
+    use uuid::Uuid;
 
     #[test]
     fn unlinked_notification_suppresses_duplicates_until_success_cooldown() {
@@ -1238,5 +1369,367 @@ mod tests {
             clear_messenger_login_string("276343128371348:5@s.whatsapp.net"),
             "276343128371348@s.whatsapp.net"
         );
+    }
+
+    #[test]
+    fn coalesce_latest_inbox_states_keeps_last_snapshot_per_message() {
+        let result = coalesce_latest_inbox_states(vec![
+            test_message(7, "old", false),
+            test_message(8, "other", false),
+            test_message(7, "deleted", true),
+        ]);
+
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].internal_id, 8);
+        assert_eq!(result[1].internal_id, 7);
+        let message = result
+            .iter()
+            .find(|message| message.internal_id == 7)
+            .unwrap();
+        assert_eq!(message.text, "deleted");
+        assert!(message.deleted);
+    }
+
+    #[test]
+    fn queue_snapshot_matches_identical_payload() {
+        let mut message = test_message(9, "same", false);
+        message.id = Some("external-9".to_string());
+        message.sender = Some(echo_im::types::SenderF1 {
+            uuid: "276343128371348:5@lid".to_string(),
+            name: Some("Sender".to_string()),
+            phone_number: Some("123".to_string()),
+        });
+        message.attachments = vec![
+            echo_im::types::MessageAttachmentF1 {
+                path: "/tmp/a.txt".to_string(),
+                name: Some("a.txt".to_string()),
+            },
+            echo_im::types::MessageAttachmentF1 {
+                path: "/tmp/b.txt".to_string(),
+                name: Some("b.txt".to_string()),
+            },
+        ];
+        let existing_item = signal_message_queue::Model {
+            id: 1,
+            datasource_id: 2,
+            internal_id: 9,
+            external_id: Some("external-9".to_string()),
+            body: "same".to_string(),
+            sender_id: Some("276343128371348@lid".to_string()),
+            sender_name: Some("Sender".to_string()),
+            sender_phone_number: Some("123".to_string()),
+            group_id: Some("group".to_string()),
+            timestamp: message.timestamp,
+            created_at: message.timestamp,
+            deleted: false,
+        };
+        let existing_attachments = vec![
+            signal_message_queue_attachment::Model {
+                id: 2,
+                message_id: 1,
+                path: "/tmp/b.txt".to_string(),
+                name: Some("b.txt".to_string()),
+                created_at: message.timestamp,
+            },
+            signal_message_queue_attachment::Model {
+                id: 1,
+                message_id: 1,
+                path: "/tmp/a.txt".to_string(),
+                name: Some("a.txt".to_string()),
+                created_at: message.timestamp,
+            },
+        ];
+
+        assert!(queue_snapshot_matches(
+            &existing_item,
+            &existing_attachments,
+            &message,
+            &message.attachments
+        ));
+
+        message.text = "changed".to_string();
+        assert!(!queue_snapshot_matches(
+            &existing_item,
+            &existing_attachments,
+            &message,
+            &message.attachments
+        ));
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn queue_snapshot_hydrates_empty_attachments_from_echo_attachment() {
+        let (env, _guard) = cleanup_locked().await.unwrap();
+        let (account, datasource) = mk_linked_datasource(&env.dbx).await;
+        let inbox = mk_echo_inbox_message(&env.dbx, account.id).await;
+        let attachment_path = format!("/tmp/queue-fallback-{}", Uuid::new_v4());
+        mk_echo_attachment(
+            &env.dbx,
+            account.id,
+            inbox.id,
+            &attachment_path,
+            Some("fallback.txt"),
+        )
+        .await;
+
+        let mut snapshot = test_message(inbox.id, "caption", false);
+        snapshot.attachments = vec![echo_im::types::MessageAttachmentF1 {
+            path: attachment_path.clone(),
+            name: Some("fallback.txt".to_string()),
+        }];
+        let txn = env.dbx.begin().await.unwrap();
+        upsert_signal_message_queue_snapshot(&snapshot, datasource.id, &txn)
+            .await
+            .unwrap();
+        txn.commit().await.unwrap();
+
+        let mut update = test_message(inbox.id, "caption edited", false);
+        update.attachments = vec![];
+        let txn = env.dbx.begin().await.unwrap();
+        upsert_signal_message_queue_snapshot(&update, datasource.id, &txn)
+            .await
+            .unwrap();
+        txn.commit().await.unwrap();
+
+        let queue_item = signal_message_queue::Entity::find()
+            .filter(
+                signal_message_queue::Column::DatasourceId.eq(datasource.id),
+            )
+            .filter(
+                signal_message_queue::Column::InternalId
+                    .eq(i64::from(inbox.id)),
+            )
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(queue_item.body, "caption edited");
+        let attachments = signal_message_queue_attachment::Entity::find()
+            .filter(
+                signal_message_queue_attachment::Column::MessageId
+                    .eq(queue_item.id),
+            )
+            .all(&env.dbx)
+            .await
+            .unwrap();
+        assert_eq!(attachments.len(), 1);
+        assert_eq!(attachments[0].path, attachment_path);
+        assert_eq!(attachments[0].name.as_deref(), Some("fallback.txt"));
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn queue_snapshot_prefers_non_empty_snapshot_attachments() {
+        let (env, _guard) = cleanup_locked().await.unwrap();
+        let (account, datasource) = mk_linked_datasource(&env.dbx).await;
+        let inbox = mk_echo_inbox_message(&env.dbx, account.id).await;
+        let created_at = Utc::now().naive_utc();
+        mk_echo_attachment_at(
+            &env.dbx,
+            account.id,
+            inbox.id,
+            "/tmp/stale-a.jpg",
+            Some("a.jpg"),
+            created_at,
+        )
+        .await;
+        mk_echo_attachment_at(
+            &env.dbx,
+            account.id,
+            inbox.id,
+            "/tmp/stale-b.jpg",
+            Some("b.jpg"),
+            created_at,
+        )
+        .await;
+
+        let mut snapshot = test_message(inbox.id, "caption edited", false);
+        snapshot.attachments = vec![echo_im::types::MessageAttachmentF1 {
+            path: "/tmp/current-b.jpg".to_string(),
+            name: Some("b.jpg".to_string()),
+        }];
+        let txn = env.dbx.begin().await.unwrap();
+        upsert_signal_message_queue_snapshot(&snapshot, datasource.id, &txn)
+            .await
+            .unwrap();
+        txn.commit().await.unwrap();
+
+        let queue_item = signal_message_queue::Entity::find()
+            .filter(
+                signal_message_queue::Column::DatasourceId.eq(datasource.id),
+            )
+            .filter(
+                signal_message_queue::Column::InternalId
+                    .eq(i64::from(inbox.id)),
+            )
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        let attachments = signal_message_queue_attachment::Entity::find()
+            .filter(
+                signal_message_queue_attachment::Column::MessageId
+                    .eq(queue_item.id),
+            )
+            .all(&env.dbx)
+            .await
+            .unwrap();
+        assert_eq!(attachments.len(), 1);
+        assert_eq!(attachments[0].path, "/tmp/current-b.jpg");
+        assert_eq!(attachments[0].name.as_deref(), Some("b.jpg"));
+    }
+
+    fn test_message(
+        internal_id: i32,
+        text: &str,
+        deleted: bool,
+    ) -> echo_im::types::MessageF1 {
+        echo_im::types::MessageF1 {
+            id: Some(format!("external-{internal_id}")),
+            text: text.to_string(),
+            timestamp: NaiveDate::from_ymd_opt(2026, 7, 9)
+                .unwrap()
+                .and_hms_opt(12, 0, 0)
+                .unwrap(),
+            internal_id,
+            group_id: Some("group".to_string()),
+            sender_phone_number: None,
+            sender: None,
+            attachments: vec![],
+            message_source: echo_im::types::MessageSource::Signal,
+            reply_to: None,
+            deleted,
+        }
+    }
+
+    async fn mk_linked_datasource(
+        dbx: &DatabaseConnection,
+    ) -> (echo_account::Model, datasource::Model) {
+        let now = Utc::now().naive_utc();
+        let phone_seed = Uuid::new_v4().simple().to_string();
+        let account = echo_account::ActiveModel {
+            id: NotSet,
+            source: Set(EchoMessageSource::Signal),
+            phone_number: Set(format!("+{}", &phone_seed[..12])),
+            is_linked: Set(true),
+            created_at: Set(now),
+            synced_at: Set(None),
+            last_trusted_at: Set(None),
+            linked_at: Set(Some(now)),
+        }
+        .insert(dbx)
+        .await
+        .unwrap();
+        let client = echo_client::ActiveModel {
+            id: NotSet,
+            name: Set(format!("test-client-{}", Uuid::new_v4())),
+            created_at: Set(now),
+            deleted: Set(false),
+        }
+        .insert(dbx)
+        .await
+        .unwrap();
+        let lock = echo_client_lock::ActiveModel {
+            id: NotSet,
+            client_id: Set(client.id),
+            account_id: Set(account.id),
+            created_at: Set(now),
+            remove_requested: Set(false),
+        }
+        .insert(dbx)
+        .await
+        .unwrap();
+        let datasource = datasource::ActiveModel {
+            id: NotSet,
+            kind: Set("signal".to_string()),
+            display_name: Set(format!("test datasource {}", Uuid::new_v4())),
+            signal_phone: Set(Some(account.phone_number.clone())),
+            api_endpoint: Set(None),
+            enabled: Set(Some(true)),
+            group_master_key: Set(None),
+            sender_uuid: Set(None),
+            description: Set(None),
+            status: Set(AccountStatus::Active),
+            echo_client_lock_id: Set(Some(i64::from(lock.id))),
+            created_at: Set(now),
+            default_aor_id: Set(None),
+            api_login: Set(None),
+            updated_by: Set(None),
+            deleted: Set(false),
+            last_sync_at: Set(None),
+        }
+        .insert(dbx)
+        .await
+        .unwrap();
+
+        (account, datasource)
+    }
+
+    async fn mk_echo_inbox_message(
+        dbx: &DatabaseConnection,
+        account_id: i32,
+    ) -> echo_inbox_message::Model {
+        let now = Utc::now().naive_utc();
+        echo_inbox_message::ActiveModel {
+            id: NotSet,
+            body: Set(format!("inbox {}", Uuid::new_v4())),
+            internal_id: Set(Some(format!("external-{}", Uuid::new_v4()))),
+            duplicate_of: Set(None),
+            sender_id: Set(None),
+            group_id: Set(None),
+            account_id: Set(account_id),
+            created_at: Set(now),
+            timestamp: Set(Some(now)),
+            updated_at: Set(now),
+            reply_to_inbox_message_id: Set(None),
+            reply_to_outbox_message_id: Set(None),
+            internal_timestamp: Set(None),
+            seen: Set(false),
+            client_id: Set(None),
+            deleted: Set(false),
+        }
+        .insert(dbx)
+        .await
+        .unwrap()
+    }
+
+    async fn mk_echo_attachment(
+        dbx: &DatabaseConnection,
+        account_id: i32,
+        message_id: i32,
+        path: &str,
+        name: Option<&str>,
+    ) -> echo_attachment::Model {
+        mk_echo_attachment_at(
+            dbx,
+            account_id,
+            message_id,
+            path,
+            name,
+            Utc::now().naive_utc(),
+        )
+        .await
+    }
+
+    async fn mk_echo_attachment_at(
+        dbx: &DatabaseConnection,
+        account_id: i32,
+        message_id: i32,
+        path: &str,
+        name: Option<&str>,
+        created_at: NaiveDateTime,
+    ) -> echo_attachment::Model {
+        echo_attachment::ActiveModel {
+            id: NotSet,
+            name: Set(name.map(ToString::to_string)),
+            path: Set(path.to_string()),
+            message_id: Set(message_id),
+            account_id: Set(account_id),
+            created_at: Set(created_at),
+            updated_at: Set(created_at),
+        }
+        .insert(dbx)
+        .await
+        .unwrap()
     }
 }

@@ -49,7 +49,7 @@ if [[ "${PGDATA}" =~ ^/var/lib/postgresql/([^/]+)/([^/]+)$ ]]; then
   PG_VERSION="${PG_VERSION:-${BASH_REMATCH[1]}}"
   PG_CLUSTER="${PG_CLUSTER:-${BASH_REMATCH[2]}}"
 fi
-PG_VERSION="${PG_VERSION:-14}"
+PG_VERSION="${PG_VERSION:-18}"
 PG_CLUSTER="${PG_CLUSTER:-main}"
 PGDATA="${PGDATA:-/var/lib/postgresql/${PG_VERSION}/${PG_CLUSTER}}"
 PGDATA_NEXT="${ECHO_PGBACKREST_RESTORE_PGDATA_NEXT:-${PGDATA}.next}"

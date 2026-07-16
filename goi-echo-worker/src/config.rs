@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 use serde::Deserialize;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 pub const DEFAULT_CONFIG_PATH: &str = "/etc/goi-echo-worker/config.toml";
 pub const DEFAULT_PG_HOST: &str = "127.0.0.1";
@@ -69,10 +69,18 @@ impl Config {
             .unwrap_or(DEFAULT_KNOWLEDGE_XLSX_PATH)
     }
 
+    pub fn preferred_knowledge_xlsx_path(&self) -> PathBuf {
+        preferred_readonly_xlsx_path(self.knowledge_xlsx_path())
+    }
+
     pub fn frequencies_xlsx_path(&self) -> &str {
         self.frequencies_xlsx_path
             .as_deref()
             .unwrap_or(DEFAULT_FREQUENCIES_XLSX_PATH)
+    }
+
+    pub fn preferred_frequencies_xlsx_path(&self) -> PathBuf {
+        preferred_readonly_xlsx_path(self.frequencies_xlsx_path())
     }
 
     pub fn listen_host(&self) -> &str {
@@ -106,4 +114,75 @@ pub fn read_from_path(path: PathBuf) -> Result<Config> {
     let config = std::fs::read_to_string(&path)
         .with_context(|| path.display().to_string())?;
     toml::from_str::<Config>(&config).context("parsing TOML")
+}
+
+fn preferred_readonly_xlsx_path(path: &str) -> PathBuf {
+    let path = PathBuf::from(path);
+    let readonly_path = readonly_xlsx_path(&path);
+    if readonly_path.is_file() {
+        readonly_path
+    } else {
+        path
+    }
+}
+
+fn readonly_xlsx_path(path: &Path) -> PathBuf {
+    let Some(file_name) =
+        path.file_name().and_then(|file_name| file_name.to_str())
+    else {
+        return path.to_path_buf();
+    };
+    if file_name.ends_with("-readonly.xlsx") {
+        return path.to_path_buf();
+    }
+    let Some(file_name) = file_name.strip_suffix(".xlsx") else {
+        return path.to_path_buf();
+    };
+    path.with_file_name(format!("{file_name}-readonly.xlsx"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    #[test]
+    fn preferred_readonly_xlsx_path_uses_readonly_sibling_when_present() {
+        let dir = temp_dir("goi-readonly-xlsx");
+        fs::create_dir_all(&dir).expect("create temp dir");
+        let path = dir.join("frequencies.xlsx");
+        let readonly_path = dir.join("frequencies-readonly.xlsx");
+        fs::write(&path, b"regular").expect("write regular file");
+
+        assert_eq!(
+            preferred_readonly_xlsx_path(path.to_str().expect("utf8 path")),
+            path
+        );
+
+        fs::write(&readonly_path, b"readonly").expect("write readonly file");
+
+        assert_eq!(
+            preferred_readonly_xlsx_path(path.to_str().expect("utf8 path")),
+            readonly_path
+        );
+
+        fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn readonly_xlsx_path_does_not_double_suffix() {
+        let path = PathBuf::from("/etc/goi/data/xlsx/knowledge-readonly.xlsx");
+
+        assert_eq!(readonly_xlsx_path(&path), path);
+    }
+
+    fn temp_dir(prefix: &str) -> PathBuf {
+        let suffix = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos();
+        std::env::temp_dir()
+            .join(format!("{prefix}-{}-{suffix}", std::process::id()))
+    }
 }

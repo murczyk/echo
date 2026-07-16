@@ -79,6 +79,7 @@ pub const SIGINT_NETWORK_LIST_MAX_LIMIT: u64 = 100;
 pub const SIGINT_NETWORK_RELATION_MESSAGES_LIMIT_MAX: i64 = 50;
 pub const SIGINT_NETWORK_FIND_LIVE_RETURN_LIMIT: usize = 10;
 pub const SIGINT_NETWORK_FIND_LIVE_QUERY_LIMIT: u64 = 250;
+pub const SIGINT_UNIT_AUTO_CYBER_NETWORK_NAME: &str = "💻";
 /// Ukraine boundaries WGS84
 pub const LAT_MIN: f64 = 40.0;
 pub const LAT_MAX: f64 = 60.0;
@@ -162,9 +163,6 @@ pub const STATS_5MIN_MAX_NUM_DAYS: i64 = 2000; // FIXME change to 2
 pub const FEATURE_GROUP_STATS_AGGREGATED_DEFAULT: bool = true;
 pub const FEATURE_DELETE_UPLOADED_ATTACHMENT_DEFAULT: bool = true;
 pub const FEATURE_ACCESS_LOG_DEFAULT: bool = false;
-pub const FEATURE_SIGINT_COMMENT_PARSING_DEFAULT: bool = false;
-pub const FEATURE_SIGINT_COMMENT_PARSING_ENV: &str =
-    "ECHO_FEATURE_SIGINT_COMMENT_PARSING";
 pub const COMPUTER_NAME_SEARCH_LIMIT: u64 = 20;
 pub const SETTLEMENTS_LEGACY_FILE: &str = "settlements.json";
 pub const SETTLEMENTS_REGIONS_DIR: &str = "settlements_json";
@@ -353,7 +351,6 @@ pub struct Config {
     pub feature_group_stats_aggregated: Option<bool>,
     pub feature_delete_uploaded_attachment: Option<bool>,
     pub feature_calculate_sigint_inbox_item_networks: Option<bool>,
-    pub feature_sigint_comment_parsing: Option<bool>,
     pub skip_discord_notifications: Option<bool>,
     pub s3_config: Option<S3Config>,
     pub store_palitra_in_s3: Option<bool>,
@@ -404,37 +401,6 @@ impl Config {
         self.rer_duty_test_source_window_minutes
             .unwrap_or(RER_DUTY_TEST_SOURCE_WINDOW_MINUTES_DEFAULT)
             .max(1)
-    }
-
-    pub fn sigint_comment_parsing_enabled(&self) -> Result<bool, AppError> {
-        if let Some(value) =
-            bool_env_override(FEATURE_SIGINT_COMMENT_PARSING_ENV)?
-        {
-            return Ok(value);
-        }
-        Ok(self
-            .feature_sigint_comment_parsing
-            .unwrap_or(FEATURE_SIGINT_COMMENT_PARSING_DEFAULT))
-    }
-}
-
-fn bool_env_override(name: &str) -> Result<Option<bool>, AppError> {
-    match std::env::var(name) {
-        Ok(value) => Ok(Some(parse_bool_env(name, &value)?)),
-        Err(std::env::VarError::NotPresent) => Ok(None),
-        Err(std::env::VarError::NotUnicode(value)) => Err(AppError::BL {
-            msg: format!("{name} contains non-Unicode value: {value:?}"),
-        }),
-    }
-}
-
-fn parse_bool_env(name: &str, value: &str) -> Result<bool, AppError> {
-    match value.trim().to_ascii_lowercase().as_str() {
-        "1" | "true" | "yes" | "y" | "on" => Ok(true),
-        "0" | "false" | "no" | "n" | "off" => Ok(false),
-        _ => Err(AppError::BL {
-            msg: format!("invalid boolean value for {name}: {value}"),
-        }),
     }
 }
 
@@ -540,9 +506,51 @@ pub fn read_from_path<T>(path: PathBuf) -> Result<T, AppError>
 where
     T: for<'a> Deserialize<'a>,
 {
-    let config = std::fs::read_to_string(path)?;
-    let config: T = toml::from_str(&config).context(h!())?;
+    let config = std::fs::read_to_string(&path)?;
+    let (config, unused_keys) = deserialize_config(&config).context(h!())?;
+    warn_about_unused_config_keys(&path, &unused_keys);
     Ok(config)
+}
+
+fn deserialize_config<'de, T>(
+    config: &'de str,
+) -> std::result::Result<(T, Vec<String>), toml::de::Error>
+where
+    T: Deserialize<'de>,
+{
+    let mut unused_keys = Vec::new();
+    let deserializer = toml::Deserializer::parse(config)?;
+    let config = serde_ignored::deserialize(deserializer, |path| {
+        unused_keys.push(path.to_string())
+    })?;
+    unused_keys.sort();
+    unused_keys.dedup();
+    Ok((config, unused_keys))
+}
+
+fn warn_about_unused_config_keys(path: &Path, unused_keys: &[String]) {
+    if unused_keys.is_empty() {
+        return;
+    }
+    warn!("{}", unused_config_warning(path, unused_keys));
+}
+
+fn unused_config_warning(path: &Path, unused_keys: &[String]) -> String {
+    let keys = unused_keys
+        .iter()
+        .map(|key| format!("  - {key}"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    format!(
+        "\n\
+================================================================================\n\
+WARNING: UNUSED CONFIG KEYS IN {}\n\
+{}\n\
+These keys are not used anymore. Remove them from config.toml. Their settings were either removed or migrated to the database.\n\
+================================================================================",
+        path.display(),
+        keys,
+    )
 }
 
 pub fn m_unit_to_unidenfitied(unit: Option<String>) -> String {
@@ -666,69 +674,48 @@ pub fn check_is_worker_night_shift(config: &Config) -> bool {
 }
 
 #[cfg(test)]
-mod tests {
+mod config_tests {
     use super::*;
-    use serial_test::serial;
 
-    #[test]
-    #[serial]
-    fn sigint_comment_parsing_default_is_disabled() {
-        std::env::remove_var(FEATURE_SIGINT_COMMENT_PARSING_ENV);
-        assert!(!test_config(None).sigint_comment_parsing_enabled().unwrap());
+    #[derive(Debug, Deserialize, PartialEq)]
+    struct TestConfig {
+        active: String,
+        nested: TestNestedConfig,
+    }
+
+    #[derive(Debug, Deserialize, PartialEq)]
+    struct TestNestedConfig {
+        parsed: bool,
     }
 
     #[test]
-    #[serial]
-    fn sigint_comment_parsing_uses_config_value() {
-        std::env::remove_var(FEATURE_SIGINT_COMMENT_PARSING_ENV);
-        assert!(test_config(Some(true))
-            .sigint_comment_parsing_enabled()
-            .unwrap());
-        assert!(!test_config(Some(false))
-            .sigint_comment_parsing_enabled()
-            .unwrap());
+    fn deserialize_config_reports_unused_keys() {
+        let input = r#"
+active = "yes"
+removed = 1
+
+[nested]
+parsed = true
+migrated = "database"
+"#;
+
+        let (config, unused_keys) =
+            deserialize_config::<TestConfig>(input).unwrap();
+
+        assert_eq!(config.active, "yes");
+        assert!(config.nested.parsed);
+        assert_eq!(unused_keys, ["nested.migrated", "removed"]);
     }
 
     #[test]
-    #[serial]
-    fn sigint_comment_parsing_env_overrides_config() {
-        std::env::set_var(FEATURE_SIGINT_COMMENT_PARSING_ENV, "true");
-        assert!(test_config(Some(false))
-            .sigint_comment_parsing_enabled()
-            .unwrap());
+    fn unused_config_warning_is_prominent_and_actionable() {
+        let warning = unused_config_warning(
+            Path::new("/etc/echo/config.toml"),
+            &["removed".to_string()],
+        );
 
-        std::env::set_var(FEATURE_SIGINT_COMMENT_PARSING_ENV, "false");
-        assert!(!test_config(Some(true))
-            .sigint_comment_parsing_enabled()
-            .unwrap());
-
-        std::env::remove_var(FEATURE_SIGINT_COMMENT_PARSING_ENV);
-    }
-
-    #[test]
-    #[serial]
-    fn sigint_comment_parsing_invalid_env_fails() {
-        std::env::set_var(FEATURE_SIGINT_COMMENT_PARSING_ENV, "maybe");
-        assert!(test_config(None).sigint_comment_parsing_enabled().is_err());
-        std::env::remove_var(FEATURE_SIGINT_COMMENT_PARSING_ENV);
-    }
-
-    fn test_config(feature_sigint_comment_parsing: Option<bool>) -> Config {
-        let mut config: Config = toml::from_str(
-            r#"
-public_host = ""
-cookie_session_secret = ""
-storage_dir = ""
-signal_api_phone = ""
-signal_import_group_name = ""
-signal_import_fiven_name = ""
-static_path = ""
-executable_path = ""
-fill_comp_freq_worker = false
-"#,
-        )
-        .unwrap();
-        config.feature_sigint_comment_parsing = feature_sigint_comment_parsing;
-        config
+        assert!(warning.contains("WARNING: UNUSED CONFIG KEYS"));
+        assert!(warning.contains("  - removed"));
+        assert!(warning.contains("removed or migrated to the database"));
     }
 }

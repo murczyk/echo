@@ -100,18 +100,30 @@ export function ProfileDropdown({
           </li>
           <li className="my-1 border-t border-[var(--color-border)]"></li>
           {isBasic && (
-            <li>
-              <a
-                href="/settings-neo?section=my-groups"
-                onClick={(e) =>
-                  handleInternalLinkClick(e as any, '/settings-neo?section=my-groups')
-                }
-                className="flex items-center px-4 py-2 text-[var(--color-text)] hover:bg-black/10 dark:hover:bg-white/10 rounded transition-colors cursor-pointer whitespace-nowrap"
-              >
-                <i className="bi bi-gear mr-2"></i>
-                Налаштування
-              </a>
-            </li>
+            <>
+              <li>
+                <a
+                  href="/my-reports"
+                  onClick={(e) => handleInternalLinkClick(e as any, '/my-reports')}
+                  className="flex items-center px-4 py-2 text-[var(--color-text)] hover:bg-black/10 dark:hover:bg-white/10 rounded transition-colors cursor-pointer whitespace-nowrap"
+                >
+                  <i className="bi bi-file-earmark-text mr-2"></i>
+                  Мої Звіти
+                </a>
+              </li>
+              <li>
+                <a
+                  href="/settings-neo?section=my-groups"
+                  onClick={(e) =>
+                    handleInternalLinkClick(e as any, '/settings-neo?section=my-groups')
+                  }
+                  className="flex items-center px-4 py-2 text-[var(--color-text)] hover:bg-black/10 dark:hover:bg-white/10 rounded transition-colors cursor-pointer whitespace-nowrap"
+                >
+                  <i className="bi bi-gear mr-2"></i>
+                  Налаштування
+                </a>
+              </li>
+            </>
           )}
           <li>
             <a

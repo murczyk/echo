@@ -42,6 +42,7 @@ import './ts/react/messenger-neo-element';
 import './ts/react/organisms-neo-element';
 import './ts/react/organisms-neo-edit-element';
 import './ts/react/admin-all-reports-element';
+import './ts/react/my-reports-element';
 import './ts/react/admin-echo-missing-messages-element';
 import './ts/react/settings-neo-element';
 import './ts/react/system-settings-neo-element';
@@ -782,6 +783,16 @@ export const onReady = ({ app, env }) => {
           window.dispatchEvent(new Event('resize'));
         }, 300); // Match the transition duration from CSS
       });
+    });
+  }
+
+  if (app.ports && app.ports.shared_dispatchInboxChanged) {
+    app.ports.shared_dispatchInboxChanged.subscribe((messageIds: number[]) => {
+      window.dispatchEvent(
+        new CustomEvent('echo-inbox-changed', {
+          detail: { messageIds },
+        }),
+      );
     });
   }
 

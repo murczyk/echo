@@ -55,6 +55,9 @@ pub async fn find_known_callsigns(
 ) -> Result<Vec<CNCallsign>, AppError> {
     let body_orig = body;
     let res = extract_callsigns(body)?;
+    if res.is_empty() {
+        return Ok(vec![]);
+    }
     // let mut body = body.to_string();
     // let first_line: &str = body.lines().nth(0).unwrap_or("");
     // let m_freq = crate::rer_importer::frequency::extract_freq(first_line)?;
@@ -1761,6 +1764,7 @@ mod tests {
             group_master_key: None,
             sender: None,
             extended_form: None,
+            message_comments: vec![],
             post: None,
             post_id: None,
             unit: None,

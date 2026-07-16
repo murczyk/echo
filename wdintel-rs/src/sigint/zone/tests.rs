@@ -68,6 +68,52 @@ fn test_keep_existing_my_admin_group_user_outside_organism() {
     .unwrap();
 }
 
+#[test]
+fn test_group_requests_default_missing_organism_ids() {
+    let update_req: ZoneDatasourceGroupUpdateReq =
+        serde_json::from_value(serde_json::json!({
+            "id": 1,
+            "is_secret": true,
+            "interseption_kind": null,
+            "disable_network_assignment": null,
+            "user_logins": [],
+            "admin_logins": [],
+            "short_note": null,
+            "long_note": null,
+            "area_of_responsibility_id": null,
+            "area_of_responsibility_ids": null
+        }))
+        .unwrap();
+    assert!(update_req.organism_ids.is_empty());
+
+    let add_req: ZoneDatasourceGroupAddReq =
+        serde_json::from_value(serde_json::json!({
+            "zone_id": 1,
+            "datasource_id": 2,
+            "is_secret": true,
+            "interseption_kind": null,
+            "master_key": "group-key",
+            "user_logins": [],
+            "admin_logins": [],
+            "short_note": null,
+            "long_note": null
+        }))
+        .unwrap();
+    assert!(add_req.organism_ids.is_empty());
+
+    let my_admin_req: MyAdminSignalGroupUpdateReq =
+        serde_json::from_value(serde_json::json!({
+            "master_key": "group-key",
+            "is_secret": true,
+            "disable_network_assignment": false,
+            "user_logins": [],
+            "admin_logins": [],
+            "area_of_responsibility_ids": null
+        }))
+        .unwrap();
+    assert!(my_admin_req.organism_ids.is_empty());
+}
+
 #[serial]
 #[tokio::test]
 async fn test_collect_active_organism_logins_excludes_deleted() {
@@ -187,6 +233,7 @@ async fn test_bl_szd_group_update_01() {
         interseption_kind: None,
         disable_network_assignment: None,
         user_logins: vec![],
+        organism_ids: vec![],
         admin_logins: vec![],
         short_note: None,
         long_note: None,
@@ -205,6 +252,263 @@ async fn test_bl_szd_group_update_01() {
     assert_eq!(signal_group_aors[0].aor_id, aor.id);
 
     txn.rollback().await.unwrap();
+}
+
+#[serial]
+#[tokio::test]
+async fn test_secret_group_organism_invite_materializes_direct_and_derived_users(
+) {
+    let env = cleanup().await.unwrap();
+    let txn = env.dbx.begin().await.unwrap();
+    let organism = mk_organism(
+        &txn,
+        organism::ActiveModel {
+            name: Set("secret-group-organism".to_string()),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let direct_login = mk_login(
+        &txn,
+        login::ActiveModel {
+            login: Set("secret-direct-user".to_string()),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let organism_login = mk_login(
+        &txn,
+        login::ActiveModel {
+            login: Set("secret-organism-user".to_string()),
+            organism_id: Set(Some(organism.id)),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let overlap_login = mk_login(
+        &txn,
+        login::ActiveModel {
+            login: Set("secret-overlap-user".to_string()),
+            organism_id: Set(Some(organism.id)),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let szd = mk_sigint_zone_datasource(
+        &txn,
+        sigint_zone_datasource::ActiveModel {
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let master_key = szd.group_master_key.clone();
+
+    bl_zones_datasources_group_update_or_add(
+        vec![direct_login.login.clone(), overlap_login.login.clone()],
+        vec![organism.id],
+        vec![],
+        true,
+        None,
+        None,
+        szd.clone(),
+        &txn,
+    )
+    .await
+    .unwrap();
+
+    let invite = secret_group_organism::Entity::find()
+        .filter(secret_group_organism::Column::MasterKey.eq(master_key.clone()))
+        .one(&txn)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(invite.organism_id, organism.id);
+
+    let rows = secret_group_user::Entity::find()
+        .filter(secret_group_user::Column::MasterKey.eq(master_key.clone()))
+        .all(&txn)
+        .await
+        .unwrap();
+    let mut direct_logins = rows
+        .iter()
+        .filter(|row| row.secret_group_organism_id.is_none())
+        .map(|row| row.login.clone())
+        .collect::<Vec<_>>();
+    direct_logins.sort();
+    assert_eq!(
+        direct_logins,
+        vec![direct_login.login.clone(), overlap_login.login.clone(),]
+    );
+
+    let mut derived_logins = rows
+        .iter()
+        .filter(|row| row.secret_group_organism_id == Some(invite.id))
+        .map(|row| row.login.clone())
+        .collect::<Vec<_>>();
+    derived_logins.sort();
+    assert_eq!(
+        derived_logins,
+        vec![organism_login.login.clone(), overlap_login.login.clone(),]
+    );
+
+    let list = bl_szd_groups_list(szd.sigint_zone_id, szd.datasource_id, &txn)
+        .await
+        .unwrap();
+    let group = list
+        .groups
+        .into_iter()
+        .find(|group| group.group_master_key == master_key)
+        .unwrap();
+    assert_eq!(group.allowed_users, direct_logins);
+    assert_eq!(group.allowed_organism_ids, vec![organism.id]);
+
+    txn.rollback().await.unwrap();
+}
+
+#[serial]
+#[tokio::test]
+async fn test_refresh_secret_group_memberships_removes_moved_deleted_and_disabled(
+) {
+    let env = cleanup().await.unwrap();
+    let txn = env.dbx.begin().await.unwrap();
+    let organism = mk_organism(
+        &txn,
+        organism::ActiveModel {
+            name: Set("refresh-secret-group-organism".to_string()),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let other_organism = mk_organism(
+        &txn,
+        organism::ActiveModel {
+            name: Set("refresh-secret-group-other-organism".to_string()),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let moved_login = mk_login(
+        &txn,
+        login::ActiveModel {
+            login: Set("refresh-moved-user".to_string()),
+            organism_id: Set(Some(organism.id)),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let deleted_login = mk_login(
+        &txn,
+        login::ActiveModel {
+            login: Set("refresh-deleted-user".to_string()),
+            organism_id: Set(Some(organism.id)),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let szd = mk_sigint_zone_datasource(
+        &txn,
+        sigint_zone_datasource::ActiveModel {
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let master_key = szd.group_master_key.clone();
+
+    bl_zones_datasources_group_update_or_add(
+        vec![],
+        vec![organism.id],
+        vec![],
+        true,
+        None,
+        None,
+        szd,
+        &txn,
+    )
+    .await
+    .unwrap();
+    let invite = secret_group_organism::Entity::find()
+        .filter(secret_group_organism::Column::MasterKey.eq(master_key.clone()))
+        .one(&txn)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        derived_secret_group_logins(&txn, &master_key, invite.id).await,
+        vec![deleted_login.login.clone(), moved_login.login.clone(),]
+    );
+
+    let added_login = mk_login(
+        &txn,
+        login::ActiveModel {
+            login: Set("refresh-added-user".to_string()),
+            organism_id: Set(Some(organism.id)),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let mut moved_login = moved_login.into_active_model();
+    moved_login.organism_id = Set(Some(other_organism.id));
+    moved_login.update(&txn).await.unwrap();
+    let mut deleted_login = deleted_login.into_active_model();
+    deleted_login.deleted = Set(true);
+    deleted_login.update(&txn).await.unwrap();
+    refresh_secret_group_memberships(&txn).await.unwrap();
+    assert_eq!(
+        derived_secret_group_logins(&txn, &master_key, invite.id).await,
+        vec![added_login.login.clone()]
+    );
+
+    let mut organism = organism.into_active_model();
+    organism.enabled = Set(false);
+    organism.update(&txn).await.unwrap();
+    refresh_secret_group_memberships(&txn).await.unwrap();
+    let invite_count = secret_group_organism::Entity::find()
+        .filter(secret_group_organism::Column::MasterKey.eq(master_key.clone()))
+        .count(&txn)
+        .await
+        .unwrap();
+    let derived_count = secret_group_user::Entity::find()
+        .filter(secret_group_user::Column::MasterKey.eq(master_key.clone()))
+        .filter(secret_group_user::Column::SecretGroupOrganismId.is_not_null())
+        .count(&txn)
+        .await
+        .unwrap();
+    assert_eq!(invite_count, 0);
+    assert_eq!(derived_count, 0);
+
+    txn.rollback().await.unwrap();
+}
+
+async fn derived_secret_group_logins(
+    txn: &DatabaseTransaction,
+    master_key: &str,
+    invite_id: i64,
+) -> Vec<String> {
+    let mut logins = secret_group_user::Entity::find()
+        .filter(secret_group_user::Column::MasterKey.eq(master_key))
+        .filter(
+            secret_group_user::Column::SecretGroupOrganismId
+                .eq(Some(invite_id)),
+        )
+        .select_only()
+        .column(secret_group_user::Column::Login)
+        .into_tuple::<String>()
+        .all(txn)
+        .await
+        .unwrap();
+    logins.sort();
+    logins
 }
 
 /// Test listing zone datasource groups when two groups are assigned to the same AOR

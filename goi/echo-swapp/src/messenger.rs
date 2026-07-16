@@ -1,4 +1,6 @@
 use crate::config::Config;
+use crate::error::ShortContext;
+use crate::h;
 use anyhow::{bail, Context, Result};
 use echo_im::entities::sea_orm_active_enums::{
     EchoMessageSource, SignalCliMode,
@@ -93,7 +95,8 @@ pub async fn ensure_pause_state_storage(db: &DatabaseConnection) -> Result<()> {
         );
         ",
     )
-    .await?;
+    .await
+    .c(h!())?;
     Ok(())
 }
 
@@ -102,13 +105,15 @@ pub async fn create(
     config: &Config,
     req: CreateMessengerReq,
 ) -> Result<MessengerView> {
-    validate_name(&req.name)?;
-    validate_phone(&req.phone)?;
+    validate_name(&req.name).c(h!())?;
+    validate_phone(&req.phone).c(h!())?;
     let client_name = owned_client_name(&req.name);
-    ensure_client_available(db, &client_name).await?;
+    ensure_client_available(db, &client_name).await.c(h!())?;
 
-    let txn = db.begin().await?;
-    let port = echo_im::find_port_available(8010, 9000, &txn).await?;
+    let txn = db.begin().await.c(h!())?;
+    let port = echo_im::find_port_available(8010, 9000, &txn)
+        .await
+        .c(h!())?;
     let process_name =
         format!("{}@{}", unit_name(config, req.kind), client_name);
     let attachment_path = format!(
@@ -127,7 +132,8 @@ pub async fn create(
         SignalCliMode::Native,
     )
     .await
-    .map_err(|err| anyhow::anyhow!("{err}"))?;
+    .map_err(|err| anyhow::anyhow!("{err}"))
+    .c(h!())?;
     echo_im::set_account_phone(
         req.phone,
         &client_name,
@@ -136,13 +142,18 @@ pub async fn create(
         &txn,
     )
     .await
-    .map_err(|err| anyhow::anyhow!("{err}"))?;
-    persist_is_linked(&txn, &client_name, req.kind, false).await?;
+    .map_err(|err| anyhow::anyhow!("{err}"))
+    .c(h!())?;
+    persist_is_linked(&txn, &client_name, req.kind, false)
+        .await
+        .c(h!())?;
 
-    start_client(config, req.kind, &client_name, port).await?;
-    wait_for_signal_client(req.kind, port).await?;
-    txn.commit().await?;
-    load(db, &req.name).await
+    start_client(config, req.kind, &client_name, port)
+        .await
+        .c(h!())?;
+    wait_for_signal_client(req.kind, port).await.c(h!())?;
+    txn.commit().await.c(h!())?;
+    load(db, &req.name).await.c(h!())
 }
 
 pub async fn delete(
@@ -151,13 +162,16 @@ pub async fn delete(
     name: &str,
 ) -> Result<()> {
     let client_name = owned_client_name(name);
-    let messenger = load(db, name).await?;
-    stop_client(config, messenger.kind, &client_name).await?;
-    let txn = db.begin().await?;
+    let messenger = load(db, name).await.c(h!())?;
+    stop_client(config, messenger.kind, &client_name)
+        .await
+        .c(h!())?;
+    let txn = db.begin().await.c(h!())?;
     echo_im::detach_client(&client_name, &txn)
         .await
-        .map_err(|err| anyhow::anyhow!("{err}"))?;
-    txn.commit().await?;
+        .map_err(|err| anyhow::anyhow!("{err}"))
+        .c(h!())?;
+    txn.commit().await.c(h!())?;
     Ok(())
 }
 
@@ -166,10 +180,13 @@ pub async fn list(db: &DatabaseConnection) -> Result<Vec<MessengerView>> {
         .filter(echo_client::Column::Deleted.eq(false))
         .filter(echo_client::Column::Name.starts_with(OWNED_CLIENT_PREFIX))
         .all(db)
-        .await?;
+        .await
+        .c(h!())?;
     let mut result = Vec::new();
     for client in clients {
-        if let Some(messenger) = load_optional_owned(db, &client.name).await? {
+        if let Some(messenger) =
+            load_optional_owned(db, &client.name).await.c(h!())?
+        {
             result.push(messenger);
         }
     }
@@ -182,8 +199,10 @@ pub async fn load(
     name: &str,
 ) -> Result<MessengerView> {
     load_optional_owned(db, &owned_client_name(name))
-        .await?
+        .await
+        .c(h!())?
         .with_context(|| format!("messenger not found: {name}"))
+        .c(h!())
 }
 
 pub async fn link(
@@ -192,37 +211,45 @@ pub async fn link(
     name: &str,
 ) -> Result<QrRsp> {
     let client_name = owned_client_name(name);
-    let messenger = load(db, name).await?;
+    let messenger = load(db, name).await.c(h!())?;
     start_client(config, messenger.kind, &client_name, messenger.signal_port)
-        .await?;
-    wait_for_signal_client(messenger.kind, messenger.signal_port).await?;
-    let txn = db.begin().await?;
-    persist_is_linked(&txn, &client_name, messenger.kind, false).await?;
+        .await
+        .c(h!())?;
+    wait_for_signal_client(messenger.kind, messenger.signal_port)
+        .await
+        .c(h!())?;
+    let txn = db.begin().await.c(h!())?;
+    persist_is_linked(&txn, &client_name, messenger.kind, false)
+        .await
+        .c(h!())?;
     let qr_code_base64 = echo_im::link_account(
         &client_name,
         messenger.kind.message_source(),
         &txn,
     )
-    .await?;
-    txn.commit().await?;
+    .await
+    .c(h!())?;
+    txn.commit().await.c(h!())?;
     Ok(QrRsp { qr_code_base64 })
 }
 
 pub async fn unlink(db: &DatabaseConnection, name: &str) -> Result<()> {
     let client_name = owned_client_name(name);
-    let messenger = load(db, name).await?;
+    let messenger = load(db, name).await.c(h!())?;
     let phone = messenger
         .phone
         .clone()
-        .with_context(|| format!("phone not found for messenger: {name}"))?;
-    let txn = db.begin().await?;
+        .with_context(|| format!("phone not found for messenger: {name}"))
+        .c(h!())?;
+    let txn = db.begin().await.c(h!())?;
     echo_im::unlink_account(
         &client_name,
         messenger.kind.message_source(),
         &txn,
     )
     .await
-    .map_err(|err| anyhow::anyhow!("{err}"))?;
+    .map_err(|err| anyhow::anyhow!("{err}"))
+    .c(h!())?;
     echo_im::set_account_phone(
         phone,
         &client_name,
@@ -231,9 +258,12 @@ pub async fn unlink(db: &DatabaseConnection, name: &str) -> Result<()> {
         &txn,
     )
     .await
-    .map_err(|err| anyhow::anyhow!("{err}"))?;
-    txn.commit().await?;
-    persist_is_linked(db, &client_name, messenger.kind, false).await?;
+    .map_err(|err| anyhow::anyhow!("{err}"))
+    .c(h!())?;
+    txn.commit().await.c(h!())?;
+    persist_is_linked(db, &client_name, messenger.kind, false)
+        .await
+        .c(h!())?;
     Ok(())
 }
 
@@ -243,12 +273,15 @@ pub async fn is_linked(
     kind: MessengerKind,
 ) -> Result<bool> {
     let client_name = owned_client_name(name);
-    let txn = db.begin().await?;
+    let txn = db.begin().await.c(h!())?;
     let is_linked =
         echo_im::is_client_logged_in(&client_name, kind.message_source(), &txn)
-            .await?;
-    txn.commit().await?;
-    persist_is_linked(db, &client_name, kind, is_linked).await?;
+            .await
+            .c(h!())?;
+    txn.commit().await.c(h!())?;
+    persist_is_linked(db, &client_name, kind, is_linked)
+        .await
+        .c(h!())?;
     Ok(is_linked)
 }
 
@@ -258,15 +291,19 @@ pub async fn refresh_groups(
     kind: MessengerKind,
 ) -> Result<()> {
     let client_name = owned_client_name(name);
-    if sync_is_paused(db, &client_name).await? {
+    if sync_is_paused(db, &client_name).await.c(h!())? {
         return Ok(());
     }
     match kind {
         MessengerKind::Signal => {
-            echo_im::worker::signal_worker_tick_once(&client_name, db).await?
+            echo_im::worker::signal_worker_tick_once(&client_name, db)
+                .await
+                .c(h!())?
         }
         MessengerKind::Whatsapp => {
-            echo_im::worker::whatsapp_worker_tick_once(&client_name, db).await?
+            echo_im::worker::whatsapp_worker_tick_once(&client_name, db)
+                .await
+                .c(h!())?
         }
     };
     Ok(())
@@ -278,14 +315,15 @@ pub async fn groups(
     kind: MessengerKind,
 ) -> Result<Vec<echo_im::types::GroupF1>> {
     let client_name = owned_client_name(name);
-    let txn = db.begin().await?;
+    let txn = db.begin().await.c(h!())?;
     let groups = echo_im::list_groups(&client_name, &txn)
-        .await?
+        .await
+        .c(h!())?
         .into_iter()
         .filter(|group| group.message_source == kind.message_source())
         .filter(|group| !group.deleted_by_messenger)
         .collect();
-    txn.commit().await?;
+    txn.commit().await.c(h!())?;
     Ok(groups)
 }
 
@@ -295,13 +333,15 @@ pub async fn chats(
     kind: MessengerKind,
 ) -> Result<Vec<ChatView>> {
     let client_name = owned_client_name(name);
-    let Some(account) = load_account(db, &client_name, kind).await? else {
+    let Some(account) = load_account(db, &client_name, kind).await.c(h!())?
+    else {
         return Ok(vec![]);
     };
     let chats = echo_sender::Entity::find()
         .filter(echo_sender::Column::AccountId.eq(account.id))
         .all(db)
-        .await?
+        .await
+        .c(h!())?
         .into_iter()
         .map(|sender| {
             let id = sender
@@ -331,7 +371,7 @@ pub async fn send(
         bail!("message or attachment is required");
     }
     let client_name = owned_client_name(name);
-    let txn = db.begin().await?;
+    let txn = db.begin().await.c(h!())?;
     let should_tick_after_send = kind == MessengerKind::Signal;
     echo_im::send_message(
         SendMessageReq {
@@ -348,10 +388,15 @@ pub async fn send(
         &txn,
         None,
     )
-    .await?;
-    txn.commit().await?;
-    if should_tick_after_send && !sync_is_paused(db, &client_name).await? {
-        echo_im::worker::signal_worker_tick_once(&client_name, db).await?;
+    .await
+    .c(h!())?;
+    txn.commit().await.c(h!())?;
+    if should_tick_after_send
+        && !sync_is_paused(db, &client_name).await.c(h!())?
+    {
+        echo_im::worker::signal_worker_tick_once(&client_name, db)
+            .await
+            .c(h!())?;
     }
     Ok(())
 }
@@ -372,7 +417,8 @@ async fn load_optional_owned(
         )
         .select_also(echo_client_config::Entity)
         .one(db)
-        .await?
+        .await
+        .c(h!())?
     else {
         return Ok(None);
     };
@@ -386,7 +432,8 @@ async fn load_optional_owned(
         )
         .filter(echo_client_lock::Column::ClientId.eq(client.id))
         .one(db)
-        .await?;
+        .await
+        .c(h!())?;
     let kind = account
         .as_ref()
         .map(|account| match account.source {
@@ -399,7 +446,7 @@ async fn load_optional_owned(
         })
         .unwrap_or_else(|| kind_from_process_name(&config.process_name));
 
-    let is_paused = is_client_paused(db, client_name).await?;
+    let is_paused = is_client_paused(db, client_name).await.c(h!())?;
 
     Ok(Some(MessengerView {
         name,
@@ -424,7 +471,9 @@ pub async fn set_global_paused(
     db: &DatabaseConnection,
     is_paused: bool,
 ) -> Result<bool> {
-    set_sync_state_paused(db, GLOBAL_SYNC_STATE_KEY, is_paused).await?;
+    set_sync_state_paused(db, GLOBAL_SYNC_STATE_KEY, is_paused)
+        .await
+        .c(h!())?;
     Ok(is_paused)
 }
 
@@ -434,9 +483,10 @@ pub async fn set_paused(
     is_paused: bool,
 ) -> Result<bool> {
     let client_name = owned_client_name(name);
-    load(db, name).await?;
+    load(db, name).await.c(h!())?;
     set_sync_state_paused(db, &client_sync_state_key(&client_name), is_paused)
-        .await?;
+        .await
+        .c(h!())?;
     Ok(is_paused)
 }
 
@@ -448,7 +498,8 @@ async fn ensure_client_available(
         .filter(echo_client::Column::Name.eq(name))
         .filter(echo_client::Column::Deleted.eq(false))
         .one(db)
-        .await?;
+        .await
+        .c(h!())?;
     if existing.is_some() {
         bail!("messenger already exists: {name}");
     }
@@ -467,7 +518,8 @@ where
         .filter(echo_client::Column::Name.eq(name))
         .filter(echo_client::Column::Deleted.eq(false))
         .one(db)
-        .await?
+        .await
+        .c(h!())?
     else {
         return Ok(None);
     };
@@ -479,7 +531,8 @@ where
         .filter(echo_client_lock::Column::ClientId.eq(client.id))
         .filter(echo_account::Column::Source.eq(kind.echo_source()))
         .one(db)
-        .await?;
+        .await
+        .c(h!())?;
     Ok(account)
 }
 
@@ -492,7 +545,7 @@ async fn persist_is_linked<C>(
 where
     C: ConnectionTrait,
 {
-    let Some(account) = load_account(db, name, kind).await? else {
+    let Some(account) = load_account(db, name, kind).await.c(h!())? else {
         return Ok(());
     };
     if account.is_linked == is_linked {
@@ -500,7 +553,7 @@ where
     }
     let mut account: echo_account::ActiveModel = account.into();
     account.is_linked = Set(is_linked);
-    account.update(db).await?;
+    account.update(db).await.c(h!())?;
     Ok(())
 }
 
@@ -541,7 +594,8 @@ async fn start_client(
                 config.client_data_dir_name(),
                 &SignalCliMode::Native,
             )
-            .await?;
+            .await
+            .c(h!())?;
         }
         MessengerKind::Whatsapp => {
             echo_im::os_specific::start_new_whatsapp_client(
@@ -551,7 +605,8 @@ async fn start_client(
                 config.whatsapp_unit_name(),
                 config.client_data_dir_name(),
             )
-            .await?;
+            .await
+            .c(h!())?;
         }
     }
     Ok(())
@@ -569,7 +624,8 @@ async fn stop_client(
                 config.signal_client_dir(),
                 config.signal_unit_name(),
             )
-            .await?;
+            .await
+            .c(h!())?;
         }
         MessengerKind::Whatsapp => {
             echo_im::os_specific::stop_whatsapp_client(
@@ -577,14 +633,15 @@ async fn stop_client(
                 config.whatsapp_client_dir(),
                 config.whatsapp_unit_name(),
             )
-            .await?;
+            .await
+            .c(h!())?;
         }
     }
     Ok(())
 }
 
 fn validate_name(name: &str) -> Result<()> {
-    let re = Regex::new(r"^[a-z0-9][a-z0-9_-]{2,49}$")?;
+    let re = Regex::new(r"^[a-z0-9][a-z0-9_-]{2,49}$").c(h!())?;
     if !re.is_match(name) {
         bail!("name must be 3-50 lowercase latin letters, digits, hyphens, or underscores");
     }
@@ -597,7 +654,7 @@ fn validate_name(name: &str) -> Result<()> {
 }
 
 fn validate_phone(phone: &str) -> Result<()> {
-    let re = Regex::new(r"^\+38\d{10}$")?;
+    let re = Regex::new(r"^\+38\d{10}$").c(h!())?;
     if !re.is_match(phone) {
         bail!("phone must start with +38 and contain 12 digits");
     }
@@ -637,10 +694,8 @@ async fn sync_is_paused(
     db: &DatabaseConnection,
     client_name: &str,
 ) -> Result<bool> {
-    Ok(
-        global_is_paused(db).await?
-            || is_client_paused(db, client_name).await?,
-    )
+    Ok(global_is_paused(db).await.c(h!())?
+        || is_client_paused(db, client_name).await.c(h!())?)
 }
 
 async fn is_client_paused(
@@ -660,11 +715,12 @@ async fn sync_state_is_paused(
             "select paused from echo_swapp_sync_state where key = $1",
             [key.into()],
         ))
-        .await?;
+        .await
+        .c(h!())?;
     let Some(row) = row else {
         return Ok(false);
     };
-    row.try_get("", "paused").map_err(Into::into)
+    row.try_get("", "paused").c(h!())
 }
 
 async fn set_sync_state_paused(
@@ -683,7 +739,8 @@ async fn set_sync_state_paused(
         ",
         [key.into(), is_paused.into()],
     ))
-    .await?;
+    .await
+    .c(h!())?;
     Ok(())
 }
 

@@ -1,6 +1,7 @@
 import RefreshIcon from '@mui/icons-material/Refresh';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import { Box, Button, Chip, IconButton, Stack, Tooltip, Typography } from '@mui/material';
+import type { Dayjs } from 'dayjs';
 import type { ChipProps } from '@mui/material';
 import type { MRT_ColumnDef } from 'material-react-table';
 import { useCallback, useEffect, useMemo, useState } from 'react';
@@ -10,14 +11,17 @@ import { PageHeader } from '../../components/PageHeader';
 import { PowerAlert } from '../../components/PowerAlert';
 import { TableStateProvider } from '../../components/mui-customized/table/table-state-provider';
 import {
+  listEchoMissingMessageCounts,
   listEchoMissingMessages,
   resolveEchoMissingMessage,
 } from '../../services/api/echo-missing-message';
 import { parseUtcDateTime } from '../../services/api/report-history';
 import {
-  countRowsByAppDay,
+  appDayKey,
+  appDayUtcRange,
+  appMonthUtcRange,
+  type DayCountMap,
   DayCounterCalendar,
-  isRowOnAppDay,
   todayInAppTimeZone,
 } from '../admin-messenger-neo/DayCounterCalendar';
 import { SettingsNeoTable } from '../settings-neo/SettingsNeoTable';
@@ -310,27 +314,54 @@ function MissingMessageTable({
 
 export function AdminEchoMissingMessagesSection() {
   const [rows, setRows] = useState<EchoMissingMessageRow[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [rowsLoading, setRowsLoading] = useState(true);
+  const [countsLoading, setCountsLoading] = useState(true);
+  const [countsByDay, setCountsByDay] = useState<DayCountMap>({});
   const [loadError, setLoadError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [resolvingIds, setResolvingIds] = useState<Set<number>>(() => new Set());
   const [selectedDate, setSelectedDate] = useState(todayInAppTimeZone);
+  const selectedMonthKey = appDayKey(selectedDate).slice(0, 7);
 
-  const loadRows = useCallback(async () => {
-    setLoading(true);
+  const loadRows = useCallback(async (date: Dayjs) => {
+    setRowsLoading(true);
     setLoadError(null);
     try {
-      setRows(await listEchoMissingMessages());
+      setRows(await listEchoMissingMessages({ ...appDayUtcRange(date), limit: 1000 }));
     } catch (error) {
       setLoadError(`Помилка завантаження відсутніх повідомлень: ${formatErrorMessage(error)}`);
     } finally {
-      setLoading(false);
+      setRowsLoading(false);
+    }
+  }, []);
+
+  const loadCounts = useCallback(async (date: Dayjs) => {
+    setCountsLoading(true);
+    setLoadError(null);
+    try {
+      const counts = await listEchoMissingMessageCounts(appMonthUtcRange(date));
+      setCountsByDay(
+        counts.reduce<DayCountMap>((acc, item) => {
+          acc[item.day] = item.count;
+          return acc;
+        }, {}),
+      );
+    } catch (error) {
+      setLoadError(
+        `Помилка завантаження лічильників відсутніх повідомлень: ${formatErrorMessage(error)}`,
+      );
+    } finally {
+      setCountsLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    loadRows();
-  }, [loadRows]);
+    loadRows(selectedDate);
+  }, [loadRows, selectedDate]);
+
+  useEffect(() => {
+    loadCounts(selectedDate);
+  }, [loadCounts, selectedMonthKey]);
 
   const handleResolve = useCallback(async (id: number) => {
     setActionError(null);
@@ -349,11 +380,7 @@ export function AdminEchoMissingMessagesSection() {
     }
   }, []);
 
-  const countsByDay = useMemo(() => countRowsByAppDay(rows, (row) => row.createdAt), [rows]);
-  const filteredRows = useMemo(
-    () => rows.filter((row) => isRowOnAppDay(row, selectedDate, (item) => item.createdAt)),
-    [rows, selectedDate],
-  );
+  const loading = rowsLoading || countsLoading;
 
   return (
     <Stack spacing={2} sx={{ height: '100%', minHeight: 0 }}>
@@ -376,14 +403,18 @@ export function AdminEchoMissingMessagesSection() {
           selectedDate={selectedDate}
           selectedLabel="Повідомлень"
           onSelectedDateChange={setSelectedDate}
+          onVisibleMonthChange={loadCounts}
         />
         <Box sx={{ minHeight: 0, minWidth: 0 }}>
           <MissingMessageTable
-            rows={filteredRows}
-            loading={loading}
+            rows={rows}
+            loading={rowsLoading}
             resolvingIds={resolvingIds}
             onResolve={handleResolve}
-            onRefresh={loadRows}
+            onRefresh={() => {
+              loadRows(selectedDate);
+              loadCounts(selectedDate);
+            }}
           />
         </Box>
       </Box>

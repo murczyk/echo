@@ -2,8 +2,9 @@ use super::types::ReportAggregation;
 use crate::entities::*;
 use crate::error::AppError;
 use crate::h;
-use crate::rer_importer::inbox::query::build_inbox_query;
+use crate::rer_importer::inbox::query::build_filtered_inbox_query;
 use crate::rer_importer::types::InboxMessagesReq;
+use crate::sigint::sender::preferred_sender_expr;
 use crate::types::info;
 use crate::types::{Env, ShortContext};
 use crate::utils::dt_zoned_from_millis;
@@ -12,6 +13,7 @@ use anyhow::Context;
 use chrono::{NaiveDate, Utc};
 use itertools::Itertools;
 use rust_xlsxwriter::{Color, Format, FormatAlign, FormatBorder, Workbook};
+use sea_orm::sea_query::Expr;
 use sea_orm::*;
 use std::cmp::max;
 use std::collections::{BTreeMap, BTreeSet};
@@ -30,6 +32,15 @@ struct SenderStats {
 struct MessageStatRecord {
     quantity: u64,
     date: NaiveDate,
+    sender: Option<String>,
+    post: Option<String>,
+    freq: Option<String>,
+}
+
+#[derive(Debug, FromQueryResult)]
+struct MessageStatRow {
+    quantity: i64,
+    ts_dt: String,
     sender: Option<String>,
     post: Option<String>,
     freq: Option<String>,
@@ -54,31 +65,9 @@ pub async fn report_xlsx_kind_senders(
     let Some(till_date_inclusive_ms) = req.till_date_inclusive_ms else {
         return Err("Until date must be specified".into());
     };
-    let q = build_inbox_query(&login, env, &req).await.c(h!())?;
-
-    let q = format!(
-        r#"SELECT count(*) as quantity, "post_name" as post, "sender" as sender, "freq" as freq, to_char(("datetime" AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Kyiv')::date, 'DD.MM.YYYY') as ts_dt from ({q}) q group by "post_name", "sender", "freq", ("datetime" AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Kyiv')::date"#
-    );
-    let query_res: Vec<QueryResult> = read_db
-        .query_all(Statement::from_string(DatabaseBackend::Postgres, q))
+    let messages = load_message_stats(&read_db, &login, env, &req)
         .await
         .context(h!())?;
-    let mut messages = vec![];
-    for query_res in query_res {
-        let date: String = query_res.try_get("", "ts_dt")?;
-        let quantity: u64 = query_res.try_get::<i64>("", "quantity")? as u64;
-        let sender: Option<String> = query_res.try_get("", "sender")?;
-        let post: Option<String> = query_res.try_get("", "post")?;
-        let freq: Option<String> = query_res.try_get("", "freq")?;
-        let date = NaiveDate::parse_from_str(&date, FMT_DATE).context(h!())?;
-        messages.push(MessageStatRecord {
-            quantity,
-            date,
-            sender,
-            post,
-            freq,
-        });
-    }
 
     let senders = map_senders(&aggregation_kind, &read_db, &messages)
         .await
@@ -124,6 +113,50 @@ pub async fn report_xlsx_kind_senders(
     )?;
 
     Ok(())
+}
+
+async fn load_message_stats(
+    dbx: &DatabaseConnection,
+    login: &str,
+    env: &Env,
+    req: &InboxMessagesReq,
+) -> Result<Vec<MessageStatRecord>, AppError> {
+    let kyiv_date_expr = Expr::cust(
+        r#"("sigint_inbox_item"."datetime" AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Kyiv')::date"#,
+    );
+    let rows = build_filtered_inbox_query(dbx, login, env, req)
+        .await
+        .c(h!())?
+        .select_only()
+        .column_as(Expr::cust("count(*)"), "quantity")
+        .column_as(sigint_post::Column::Name, "post")
+        .column_as(preferred_sender_expr(None), "sender")
+        .column_as(sigint_inbox_item::Column::Freq, "freq")
+        .column_as(
+            Expr::cust(r#"to_char(("sigint_inbox_item"."datetime" AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Kyiv')::date, 'DD.MM.YYYY')"#),
+            "ts_dt",
+        )
+        .group_by(sigint_post::Column::Name)
+        .group_by(preferred_sender_expr(None))
+        .group_by(sigint_inbox_item::Column::Freq)
+        .group_by(kyiv_date_expr)
+        .into_model::<MessageStatRow>()
+        .all(dbx)
+        .await
+        .context(h!())?;
+
+    rows.into_iter()
+        .map(|row| {
+            Ok(MessageStatRecord {
+                quantity: row.quantity as u64,
+                date: NaiveDate::parse_from_str(&row.ts_dt, FMT_DATE)
+                    .context(h!())?,
+                sender: row.sender,
+                post: row.post,
+                freq: row.freq,
+            })
+        })
+        .collect()
 }
 
 async fn map_senders(

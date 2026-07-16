@@ -20,6 +20,7 @@ type CreateLoginReqBody = {
   roles: string[];
   sigint_zone_id: number | null;
   organism_id: number;
+  description: string | null;
 };
 
 type UpdateLoginReqBody = {
@@ -31,6 +32,7 @@ type UpdateLoginReqBody = {
   password: string | null;
   delta_login: string | null;
   deactivation_reason: DeactivationReasonType | null;
+  description: string | null;
 };
 
 type LoginLike = {
@@ -55,6 +57,7 @@ type LoginLike = {
   last_active_at?: number | string | null;
   deactivationReason?: DeactivationReasonType | null;
   deactivation_reason?: DeactivationReasonType | null;
+  description?: string | null;
 };
 
 type ListLoginsRspLike = {
@@ -71,6 +74,7 @@ function toCreateLoginReqBody(req: CreateLoginReq): CreateLoginReqBody {
     roles: req.roles,
     sigint_zone_id: req.sigintZoneId,
     organism_id: req.organismId,
+    description: req.description,
   };
 }
 
@@ -84,6 +88,7 @@ function toUpdateLoginReqBody(req: UpdateLoginReq): UpdateLoginReqBody {
     password: req.password,
     delta_login: req.deltaLogin,
     deactivation_reason: req.deactivationReason,
+    description: req.description,
   };
 }
 
@@ -120,6 +125,7 @@ function normalizeLogin(raw: LoginLike): Login {
     deltaLogin: raw.deltaLogin ?? raw.delta_login ?? null,
     lastActiveAt: normalizeOptionalNumber(raw.lastActiveAt ?? raw.last_active_at),
     deactivationReason: raw.deactivationReason ?? raw.deactivation_reason ?? null,
+    description: raw.description ?? null,
   };
 }
 

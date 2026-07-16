@@ -1,9 +1,11 @@
 import type { Page, Route } from '@playwright/test';
+import type { InboxMessagesRspRaw } from '../../src/ts/react/services/api/inbox-messages';
 import { networkSettingsResponse } from './fixture-responses';
 
 type AnalysisNeoMockOptions = {
   summaryDelayMs?: number;
   sidebarDelayMs?: number;
+  inboxResponse?: InboxMessagesRspRaw | null;
 };
 
 function jsonBody(body: unknown): string {
@@ -43,6 +45,61 @@ function emptyCountResponse() {
 function emptyInboxResponse() {
   return {
     inbox_items: [],
+    callsigns: [],
+    signal_profiles: {},
+    signal_groups: [],
+    freq_pelengs_summary: null,
+    page_limit: 20,
+  };
+}
+
+export function createEmptyInboxResponse(): InboxMessagesRspRaw {
+  return emptyInboxResponse();
+}
+
+export function createLoadedInboxResponse(): InboxMessagesRspRaw {
+  return {
+    inbox_items: [
+      [
+        101,
+        {
+          messageUid: 'analysis-summary-e2e-message',
+          text: 'Analysis summary fixture message',
+          media: [],
+          images: [],
+          imageRecognized: [],
+          date: '13.07.2026',
+          time: '12:34',
+          freq: '123.4',
+          coords: null,
+          callsigns: [],
+          callsignsAlg2: [],
+          checked: false,
+          important: false,
+          bookmarked: false,
+          timestamp: 1_720_000_000_000,
+          groupMasterKey: 'analysis-summary-e2e-group',
+          sender: 'Analysis Sender',
+          extendedForm: null,
+          messageComments: [],
+          post: null,
+          postId: null,
+          unit: 'Analysis Unit',
+          callsignTokens: null,
+          signalTokens: null,
+          pointTokens: null,
+          noHeadersBody: null,
+          keywordTokens: null,
+          textMarked: null,
+          datasourceId: null,
+          location: null,
+          tags: null,
+          networkIds: null,
+          inboxTags: null,
+          metadata: [],
+        } as never,
+      ],
+    ],
     callsigns: [],
     signal_profiles: {},
     signal_groups: [],
@@ -231,7 +288,7 @@ export async function installAnalysisNeoApiMocks(
     }
 
     if (pathname === '/api/rer-importer/get-inbox') {
-      await fulfillJson(route, emptyInboxResponse());
+      await fulfillJson(route, options.inboxResponse ?? createEmptyInboxResponse());
       return;
     }
 

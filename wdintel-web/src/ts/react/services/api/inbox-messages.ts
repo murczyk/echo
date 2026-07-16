@@ -6,9 +6,12 @@ import type {
   InboxMessageMetadata,
   InboxMessageTag,
   InboxMessagesReq,
+  MessageIdsReq,
   InboxMessagesRsp,
   InterseptionKind,
+  MessageComment,
   MessageMediaInfo,
+  MessageIdsRsp,
   SignalGroupEntry,
   SignalGroupStats,
   SignalProfilesRsp,
@@ -16,6 +19,7 @@ import type {
 import { emptyArrToNull, isNullOrUndefined, isPresent } from '../../utils/misc';
 import { postJson } from './client';
 import type { RequestOptions } from './client';
+import { transformCamelToSnake, transformSnakeToCamel } from '../../../snake-to-camel';
 
 const defaultGroupStats: SignalGroupStats = {
   activityLastDay: 0,
@@ -171,6 +175,24 @@ export function normalizeInboxMessageMetadata(
   };
 }
 
+export async function fetchMessagesByIds(
+  messageIds: number[],
+  inboxReq?: Partial<InboxMessagesReq> | null,
+  options?: RequestOptions,
+): Promise<Array<[number, InboxMessageType]>> {
+  const req: MessageIdsReq = {
+    messageIds,
+    inboxReq: inboxReq == null ? null : (inboxReq as InboxMessagesReq),
+  };
+  const raw = await postJson<unknown>(
+    '/api/rer-importer/messages-by-id',
+    transformCamelToSnake(req),
+    options,
+  );
+  const messages = transformSnakeToCamel<MessageIdsRsp>(raw).messages ?? [];
+  return messages.map(([id, message]) => [id, normalizeInboxMessage(message)]);
+}
+
 function normalizeContentNode(node: unknown): InboxTextMarkedNode | null {
   if (typeof node === 'string') return node === 'CNNewlineC' ? node : null;
   if (isNullOrUndefined(node) || typeof node !== 'object') return null;
@@ -213,6 +235,7 @@ function normalizeInboxMessage(
     network_ids?: number[] | null;
     location?: string | null;
     extended_form?: string | null;
+    message_comments?: InboxMessageType['messageComments'] | null;
     inbox_tags?: InboxMessageTagRaw[] | null;
     metadata?: InboxMessageMetadataRaw[] | null;
     text_marked?: InboxMessageType['textMarked'];
@@ -224,6 +247,10 @@ function normalizeInboxMessage(
   const networkIds = (m.networkIds ?? raw.network_ids ?? null) as number[] | null;
   const location = (m.location ?? raw.location ?? null) as string | null;
   const extendedForm = (m.extendedForm ?? raw.extended_form ?? null) as string | null;
+  const rawMessageComments = m.messageComments ?? raw.message_comments ?? [];
+  const messageComments = Array.isArray(rawMessageComments)
+    ? transformSnakeToCamel<MessageComment[]>(rawMessageComments)
+    : [];
   const rawInboxTags = (raw.inbox_tags ?? m.inboxTags ?? null) as
     InboxMessageTagRaw[] | null | undefined;
   const inboxTags: InboxMessageType['inboxTags'] =
@@ -254,6 +281,7 @@ function normalizeInboxMessage(
     networkIds,
     location,
     extendedForm,
+    messageComments,
     inboxTags,
     metadata,
     textMarked,

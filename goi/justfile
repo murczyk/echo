@@ -8,7 +8,7 @@ goi_b2_endpoint_url := "https://s3.eu-central-003.backblazeb2.com"
 swapp_dir := justfile_directory()
 swapp_app_dir := "/etc/swapp"
 swapp_alt_app_dir := "/etc/swapp-alt"
-goi_version := "1.5.1"
+goi_version := "1.5.3"
 goi_servers := "goi-stg goi-jf goi-prod-01 goi-prod-02 goi-prod-03 goi-prod-04 goi-prod-05 goi-prod-06 goi-prod-07 goi-prod-08 goi-prod-10 goi-tsur goi-prod-210oshp goi-prod-225oshp goi-159ombr"
 
 default:
@@ -330,6 +330,67 @@ deploy-goi-echo-worker server:
       sudo systemctl status goi-echo-worker --no-pager
     "
 
+
+[arg('server', long='server')]
+deploy-goi-xlsx server:
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    SERVER="{{ server }}"
+    FREQUENCIES_PATH="{{ goi_dir }}/deploy/frequencies.xlsx"
+    ASSOCIATIONS_PATH="{{ goi_dir }}/deploy/associations.xlsx"
+
+    if [[ ! -f "${FREQUENCIES_PATH}" ]]; then
+      echo "Missing ${FREQUENCIES_PATH}" >&2
+      exit 1
+    fi
+    if [[ ! -f "${ASSOCIATIONS_PATH}" ]]; then
+      echo "Missing ${ASSOCIATIONS_PATH}" >&2
+      exit 1
+    fi
+
+    echo "Uploading XLSX files to ${SERVER}..."
+    scp "${FREQUENCIES_PATH}" "${SERVER}:/var/tmp/goi-frequencies.xlsx"
+    scp "${ASSOCIATIONS_PATH}" "${SERVER}:/var/tmp/goi-associations.xlsx"
+
+    echo "Replacing XLSX files on ${SERVER}..."
+    ssh "$SERVER" bash -se <<'REMOTE'
+    set -euo pipefail
+
+    XLSX_DIR="/etc/goi/data/xlsx"
+    services_stopped=0
+
+    restart_services() {
+      if [[ "${services_stopped}" == "1" ]]; then
+        sudo systemctl start goi.service
+        sudo systemctl start goi-echo-worker.service
+      fi
+    }
+
+    trap restart_services EXIT
+
+    sudo systemctl stop goi-echo-worker.service goi.service
+    services_stopped=1
+
+    cd "${XLSX_DIR}"
+
+    if [[ -f frequencies.xlsx && ! -f frequencies-readonly.xlsx ]]; then
+      sudo mv frequencies.xlsx frequencies-readonly.xlsx
+    fi
+    if [[ -f associations.xlsx && ! -f associations-readonly.xlsx ]]; then
+      sudo mv associations.xlsx associations-readonly.xlsx
+    fi
+
+    sudo install -o echo -g echo -m 0644 /var/tmp/goi-frequencies.xlsx frequencies.xlsx
+    sudo install -o echo -g echo -m 0644 /var/tmp/goi-associations.xlsx associations.xlsx
+    rm -f /var/tmp/goi-frequencies.xlsx /var/tmp/goi-associations.xlsx
+
+    sudo systemctl start goi.service
+    sudo systemctl start goi-echo-worker.service
+    services_stopped=0
+    sudo systemctl status goi.service --no-pager
+    sudo systemctl status goi-echo-worker.service --no-pager
+    REMOTE
 [arg('server', long='server')]
 deploy-echo-swapp server:
     #!/usr/bin/env bash

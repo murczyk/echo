@@ -18,7 +18,7 @@ use chrono::*;
 use echo_migration::{Expr, Order, PostgresQueryBuilder};
 use itertools::Itertools;
 use sea_orm::*;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 pub(crate) mod bl;
 pub mod metadata;
@@ -800,6 +800,7 @@ async fn submit_generic_inbox_item(
         &message,
         login,
         logins,
+        InboxLocationSubmitMode::Parse,
     )
     .await
     .c(h!())?;
@@ -867,6 +868,7 @@ fn generic_submit_item_to_inbox_message(
         group_master_key: None,
         sender: item.sender.clone(),
         extended_form: item.full_body.clone(),
+        message_comments: vec![],
         post: item.post.clone(),
         post_id: None,
         unit: item.unit.clone(),
@@ -1726,53 +1728,22 @@ async fn comment_save(
     ensure_comment_save_access(&env, &login, &sigint_groups, req.message_id)
         .await?;
 
+    let logins = crate::users::get_organism_logins_by_login(&env.dbx, &login)
+        .await
+        .c(h!())?;
     let txn = env.dbx.begin().await.c(h!())?;
     let message_ids =
         find_all_duplicates(&txn, req.message_id).await.c(h!())?;
     let comment = req.comment.as_ref().map(|c| c.trim()).unwrap_or("");
     for id in &message_ids {
         if comment.is_empty() {
-            sigint_comment::Entity::delete_many()
-                .filter(sigint_comment::Column::SignalMessageId.eq(*id))
-                .filter(sigint_comment::Column::Login.eq(login.clone()))
-                .exec(&txn)
+            delete_editable_sigint_comments(&txn, *id, &login, &logins)
                 .await
                 .c(h!())?;
         } else {
-            let m_comment = sigint_comment::Entity::find()
-                .filter(sigint_comment::Column::SignalMessageId.eq(*id))
-                .filter(sigint_comment::Column::Login.eq(login.clone()))
-                .one(&txn)
+            upsert_editable_sigint_comment(&txn, *id, &login, &logins, comment)
                 .await
                 .c(h!())?;
-            match m_comment {
-                None => {
-                    sigint_comment::ActiveModel {
-                        id: NotSet,
-                        signal_message_id: Set(*id),
-                        login: Set(login.clone()),
-                        comment: Set(comment.to_string()),
-                        created_at: NotSet,
-                        sigint_post_id: NotSet,
-                    }
-                    .insert(&txn)
-                    .await
-                    .c(h!())?;
-                }
-                Some(comment_model) => {
-                    sigint_comment::ActiveModel {
-                        id: Set(comment_model.id),
-                        signal_message_id: Set(*id),
-                        login: Set(login.clone()),
-                        comment: Set(comment.to_string()),
-                        created_at: NotSet,
-                        sigint_post_id: NotSet,
-                    }
-                    .update(&txn)
-                    .await
-                    .c(h!())?;
-                }
-            }
         }
     }
     txn.commit().await.c(h!())?;
@@ -1895,6 +1866,7 @@ async fn submit_legacy_inbox_messages(
                 &message,
                 login,
                 logins,
+                InboxLocationSubmitMode::PreserveTyped,
             )
             .await
             .c(h!())?;
@@ -2050,6 +2022,20 @@ pub async fn get_inbox_messages_with_conn(
         .await
         .context(h!())?;
     Ok(res)
+}
+
+pub async fn load_message_networks_by_ids(
+    dbx: &DatabaseConnection,
+    message_ids: &[i64],
+) -> Result<HashMap<i64, Vec<i64>>, AppError> {
+    bl::load_messages_networks_by_ids(message_ids, dbx).await
+}
+
+pub(crate) fn format_inbox_message_location(
+    location: Option<String>,
+    location_v2: Option<String>,
+) -> Option<String> {
+    bl::format_inbox_message_location(location, location_v2)
 }
 
 async fn get_inbox_messages_limited(
@@ -2530,7 +2516,103 @@ mod tests {
 
     #[serial]
     #[tokio::test]
-    async fn test_submit_upsert_extended_form_does_not_update_peer_comment() {
+    async fn test_legacy_submit_preserves_typed_location_v2() {
+        let env = cleanup().await.unwrap();
+        let login = find_test_login(&env.dbx).await.unwrap();
+        let now = Utc::now().naive_utc();
+        let message = mk_signal_message(
+            &env.dbx,
+            signal_message::ActiveModel {
+                body: Set(Some("legacy typed location".to_string())),
+                created_at: Set(now),
+                timestamp: Set(Some(now)),
+                sender: Set(Some("legacy typed sender".to_string())),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let inbox_message = InboxMessage::from(InboxInsertPayload {
+            text: "legacy typed location".to_string(),
+            location: Some("Робоботине".to_string()),
+            ..Default::default()
+        });
+        let logins = vec![login.login.clone()];
+        let txn = env.dbx.begin().await.unwrap();
+
+        submit_upsert_inbox_item(
+            env.settlements.clone(),
+            &txn,
+            message.id,
+            &inbox_message,
+            &login.login,
+            &logins,
+            InboxLocationSubmitMode::PreserveTyped,
+        )
+        .await
+        .unwrap();
+        txn.commit().await.unwrap();
+
+        let inbox_item = sigint_inbox_item::Entity::find_by_id(message.id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(inbox_item.location.as_deref(), Some("Робоботине"));
+        assert_eq!(inbox_item.location_v2.as_deref(), Some("|Робоботине|"));
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn test_submit_parse_location_v2_keeps_parser_behavior() {
+        let env = cleanup().await.unwrap();
+        let login = find_test_login(&env.dbx).await.unwrap();
+        let now = Utc::now().naive_utc();
+        let message = mk_signal_message(
+            &env.dbx,
+            signal_message::ActiveModel {
+                body: Set(Some("generic parsed location".to_string())),
+                created_at: Set(now),
+                timestamp: Set(Some(now)),
+                sender: Set(Some("generic parsed sender".to_string())),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let inbox_message = InboxMessage::from(InboxInsertPayload {
+            text: "generic parsed location".to_string(),
+            location: Some("Робоботине".to_string()),
+            ..Default::default()
+        });
+        let logins = vec![login.login.clone()];
+        let txn = env.dbx.begin().await.unwrap();
+
+        submit_upsert_inbox_item(
+            env.settlements.clone(),
+            &txn,
+            message.id,
+            &inbox_message,
+            &login.login,
+            &logins,
+            InboxLocationSubmitMode::Parse,
+        )
+        .await
+        .unwrap();
+        txn.commit().await.unwrap();
+
+        let inbox_item = sigint_inbox_item::Entity::find_by_id(message.id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(inbox_item.location.as_deref(), Some("Робоботине"));
+        assert_eq!(inbox_item.location_v2.as_deref(), Some("|РОБОТИНЕ|"));
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn test_submit_upsert_extended_form_updates_same_organism_comment() {
         let env = cleanup().await.unwrap();
         let login = find_test_login(&env.dbx).await.unwrap();
         let peer_login = mk_login(
@@ -2591,6 +2673,7 @@ mod tests {
             &inbox_message,
             &login.login,
             &logins,
+            InboxLocationSubmitMode::PreserveTyped,
         )
         .await
         .unwrap();
@@ -2603,16 +2686,183 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
-        assert_eq!(peer_comment.comment, "peer comment must stay");
+        assert_eq!(peer_comment.comment, "current user comment");
 
-        let current_comment = sigint_comment::Entity::find()
+        let current_comment_count = sigint_comment::Entity::find()
             .filter(sigint_comment::Column::SignalMessageId.eq(message.id))
             .filter(sigint_comment::Column::Login.eq(login.login.clone()))
-            .one(&env.dbx)
+            .count(&env.dbx)
             .await
-            .unwrap()
             .unwrap();
-        assert_eq!(current_comment.comment, "current user comment");
+        assert_eq!(current_comment_count, 0);
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn test_upsert_editable_comment_merges_same_organism_duplicates() {
+        let env = cleanup().await.unwrap();
+        let login = find_test_login(&env.dbx).await.unwrap();
+        let peer_login = mk_login(
+            &env.dbx,
+            login::ActiveModel {
+                login: Set(format!("CommentMergePeer{}", Uuid::new_v4())),
+                organism_id: Set(login.organism_id),
+                sigint_zone_id: Set(login.sigint_zone_id),
+                created_at: Set(Utc::now().naive_utc()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let now = Utc::now().naive_utc();
+        let message = mk_signal_message(
+            &env.dbx,
+            signal_message::ActiveModel {
+                body: Set(Some("merge same organism comments".to_string())),
+                created_at: Set(now),
+                timestamp: Set(Some(now)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+        mk_sigint_comment(
+            &env.dbx,
+            sigint_comment::ActiveModel {
+                login: Set(peer_login.login.clone()),
+                signal_message_id: Set(message.id),
+                comment: Set("peer old".to_string()),
+                created_at: Set(now - Duration::minutes(2)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        mk_sigint_comment(
+            &env.dbx,
+            sigint_comment::ActiveModel {
+                login: Set(login.login.clone()),
+                signal_message_id: Set(message.id),
+                comment: Set("current old".to_string()),
+                created_at: Set(now - Duration::minutes(1)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+        let logins = vec![login.login.clone(), peer_login.login.clone()];
+        upsert_editable_sigint_comment(
+            &env.dbx,
+            message.id,
+            &login.login,
+            &logins,
+            "merged comment",
+        )
+        .await
+        .unwrap();
+
+        let comments = sigint_comment::Entity::find()
+            .filter(sigint_comment::Column::SignalMessageId.eq(message.id))
+            .all(&env.dbx)
+            .await
+            .unwrap();
+        assert_eq!(comments.len(), 1);
+        assert_eq!(comments[0].login, login.login);
+        assert_eq!(comments[0].comment, "merged comment");
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn test_delete_editable_comments_removes_same_organism_duplicates_only(
+    ) {
+        let env = cleanup().await.unwrap();
+        let login = find_test_login(&env.dbx).await.unwrap();
+        let peer_login = mk_login(
+            &env.dbx,
+            login::ActiveModel {
+                login: Set(format!("CommentDeletePeer{}", Uuid::new_v4())),
+                organism_id: Set(login.organism_id),
+                sigint_zone_id: Set(login.sigint_zone_id),
+                created_at: Set(Utc::now().naive_utc()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let other_organism = mk_organism(
+            &env.dbx,
+            organism::ActiveModel {
+                name: Set(format!("CommentDeleteOtherOrg{}", Uuid::new_v4())),
+                enabled: Set(true),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let other_login = mk_login(
+            &env.dbx,
+            login::ActiveModel {
+                login: Set(format!("CommentDeleteOther{}", Uuid::new_v4())),
+                organism_id: Set(Some(other_organism.id)),
+                sigint_zone_id: Set(login.sigint_zone_id),
+                created_at: Set(Utc::now().naive_utc()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let now = Utc::now().naive_utc();
+        let message = mk_signal_message(
+            &env.dbx,
+            signal_message::ActiveModel {
+                body: Set(Some("delete same organism comments".to_string())),
+                created_at: Set(now),
+                timestamp: Set(Some(now)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+        for (login_value, comment) in [
+            (login.login.clone(), "current comment"),
+            (peer_login.login.clone(), "peer comment"),
+            (other_login.login.clone(), "other comment"),
+        ] {
+            mk_sigint_comment(
+                &env.dbx,
+                sigint_comment::ActiveModel {
+                    login: Set(login_value),
+                    signal_message_id: Set(message.id),
+                    comment: Set(comment.to_string()),
+                    created_at: Set(now),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+        }
+
+        let logins = vec![login.login.clone(), peer_login.login.clone()];
+        delete_editable_sigint_comments(
+            &env.dbx,
+            message.id,
+            &login.login,
+            &logins,
+        )
+        .await
+        .unwrap();
+
+        let comments = sigint_comment::Entity::find()
+            .filter(sigint_comment::Column::SignalMessageId.eq(message.id))
+            .all(&env.dbx)
+            .await
+            .unwrap();
+        assert_eq!(comments.len(), 1);
+        assert_eq!(comments[0].login, other_login.login);
+        assert_eq!(comments[0].comment, "other comment");
     }
 
     #[serial]
@@ -3398,7 +3648,7 @@ mod tests {
 
     #[serial]
     #[tokio::test]
-    async fn test_get_inbox_messages_uses_only_current_login_extended_form() {
+    async fn test_get_inbox_messages_uses_current_organism_extended_form() {
         let env = cleanup().await.unwrap();
         let login = find_test_login(&env.dbx).await.unwrap();
         let peer_login = mk_login(
@@ -3563,12 +3813,17 @@ mod tests {
             current_entry.1.extended_form.as_deref(),
             Some("my editable comment")
         );
+        assert!(current_entry.1.message_comments.is_empty());
 
         let peer_only_entry = messages
             .iter()
             .find(|(id, _)| *id == peer_only_message.id)
             .expect("peer only message must be returned");
-        assert_eq!(peer_only_entry.1.extended_form, None);
+        assert_eq!(
+            peer_only_entry.1.extended_form.as_deref(),
+            Some("peer only editable comment")
+        );
+        assert!(peer_only_entry.1.message_comments.is_empty());
     }
 
     #[serial]

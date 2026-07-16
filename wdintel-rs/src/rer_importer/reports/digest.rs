@@ -1,6 +1,9 @@
 use super::super::types::*;
 use crate::entities::*;
 use crate::error::AppError;
+use crate::rer_importer::reports::inbox_light::{
+    blank_inbox_message, load_message_group_info, parse_optional_json_vec,
+};
 use crate::rer_importer::reports::util;
 use crate::rer_importer::reports::util::*;
 use crate::types::*;
@@ -78,6 +81,24 @@ pub struct NetworkSummary {
     pub unit_name: Option<String>,
 }
 
+#[derive(Debug, FromQueryResult)]
+struct DigestMessageRow {
+    id: i64,
+    message_uid: Option<String>,
+    body: Option<String>,
+    timestamp: Option<NaiveDateTime>,
+    freq: Option<String>,
+    coords: Option<String>,
+    callsigns: Option<serde_json::Value>,
+    callsigns_alg2: Option<serde_json::Value>,
+    callsign_tokens: Option<serde_json::Value>,
+    location: Option<String>,
+    location_v2: Option<String>,
+    date: Option<String>,
+    time: Option<String>,
+    unit: Option<String>,
+}
+
 pub async fn report_docx_kind_digest(
     user_login: &str,
     env: &Env,
@@ -104,10 +125,7 @@ pub async fn report_docx_kind_digest(
     let mut request = req.req.clone();
     request.report_tags_only_this_unit = Some(false);
     request.or_with_extended_form = Some(true); // with comments only
-    let messages: Vec<(i64, InboxMessage)> =
-        crate::rer_importer::inbox::get_inbox_messages_with_conn(
-            &read_db, &login, &logins, env, &request,
-        )
+    let messages = load_digest_messages(&read_db, &login, env, &request)
         .await
         .context(h!())?;
     let report = collect_report(
@@ -268,6 +286,73 @@ pub async fn report_docx_kind_digest(
 
     info!("report_docx_kind_digest completed");
     Ok(())
+}
+
+async fn load_digest_messages(
+    dbx: &DatabaseConnection,
+    login: &str,
+    env: &Env,
+    req: &InboxMessagesReq,
+) -> Result<Vec<(i64, InboxMessage)>, AppError> {
+    let rows = crate::rer_importer::inbox::query::build_filtered_inbox_query(
+        dbx, login, env, req,
+    )
+    .await
+    .context(h!())?
+    .select_only()
+    .column_as(signal_message::Column::Id, "id")
+    .column_as(signal_message::Column::MessageUid, "message_uid")
+    .column_as(signal_message::Column::Body, "body")
+    .column_as(signal_message::Column::Timestamp, "timestamp")
+    .column_as(sigint_inbox_item::Column::Freq, "freq")
+    .column_as(sigint_inbox_item::Column::Coords, "coords")
+    .column_as(sigint_inbox_item::Column::Callsigns, "callsigns")
+    .column_as(sigint_inbox_item::Column::CallsignsAlg2, "callsigns_alg2")
+    .column_as(sigint_inbox_item::Column::CallsignTokens, "callsign_tokens")
+    .column_as(sigint_inbox_item::Column::Location, "location")
+    .column_as(sigint_inbox_item::Column::LocationV2, "location_v2")
+    .column_as(sigint_inbox_item::Column::Date, "date")
+    .column_as(sigint_inbox_item::Column::Time, "time")
+    .column_as(sigint_inbox_item::Column::UnitV2, "unit")
+    .into_model::<DigestMessageRow>()
+    .all(dbx)
+    .await
+    .context(h!())?;
+    let message_ids = rows.iter().map(|row| row.id).collect_vec();
+    let mut groups_by_message =
+        load_message_group_info(dbx, login, req, &message_ids)
+            .await
+            .context(h!())?;
+
+    rows.into_iter()
+        .map(|row| {
+            let group_info = groups_by_message.remove(&row.id);
+            let mut message = blank_inbox_message();
+            message.message_uid = row.message_uid;
+            message.text = row.body.unwrap_or_default();
+            message.timestamp = row
+                .timestamp
+                .map(|timestamp| timestamp.and_utc().timestamp_millis());
+            message.freq = row.freq;
+            message.coords = row.coords;
+            message.callsigns = parse_optional_json_vec(row.callsigns)?;
+            message.callsigns_alg2 =
+                parse_optional_json_vec(row.callsigns_alg2)?;
+            message.callsign_tokens =
+                Some(parse_optional_json_vec(row.callsign_tokens)?);
+            message.location =
+                crate::rer_importer::inbox::format_inbox_message_location(
+                    row.location,
+                    row.location_v2,
+                );
+            message.date = row.date;
+            message.time = row.time;
+            message.unit = row.unit;
+            message.group_master_key =
+                group_info.and_then(|group| group.group_master_key);
+            Ok((row.id, message))
+        })
+        .collect()
 }
 
 fn build_note_comment(
@@ -1153,6 +1238,7 @@ mod tests {
             group_master_key: None,
             sender: None,
             extended_form: None,
+            message_comments: vec![],
             post: None,
             post_id: None,
             unit: None,
@@ -1203,6 +1289,7 @@ mod tests {
             group_master_key: None,
             sender: None,
             extended_form: None,
+            message_comments: vec![],
             post: None,
             post_id: None,
             unit: None,
@@ -1254,6 +1341,7 @@ mod tests {
                 group_master_key: None,
                 sender: None,
                 extended_form: None,
+                message_comments: vec![],
                 post: None,
                 post_id: None,
                 unit: None,

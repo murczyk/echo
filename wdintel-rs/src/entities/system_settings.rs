@@ -36,9 +36,11 @@ pub struct Model {
     pub echo_im_sync_since: DateTime,
     pub autofix_echoim_missing_messages: bool,
     pub echo_im_sync_since_inbox_message_id: i32,
-    pub cyber_echo_enabled: bool,
+    pub devices_section_enabled: bool,
     #[sea_orm(column_type = "Text", nullable)]
     pub echo_restapi_error_discord_webhook_url: Option<String>,
+    pub sigint_comment_parsing_enabled: bool,
+    pub do_not_store_duplicate_echoim_failures: bool,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

@@ -1,8 +1,8 @@
 /**
  * @vitest-environment happy-dom
  */
-import { act, forwardRef } from 'react';
-import type { ReactNode } from 'react';
+import { act, createElement, forwardRef } from 'react';
+import type { ComponentType, ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -15,13 +15,24 @@ vi.mock('react-virtuoso', () => ({
     {
       data?: Array<[number, unknown]>;
       itemContent?: (index: number, item: [number, unknown]) => ReactNode;
+      components?: {
+        List?: ComponentType<any>;
+        Footer?: ComponentType<any>;
+      };
     }
-  >(function Virtuoso({ data, itemContent }, ref) {
+  >(function Virtuoso({ data, itemContent, components }, ref) {
+    const List = components?.List ?? 'div';
+    const Footer = components?.Footer;
     return (
       <div ref={ref} data-testid="virtuoso">
-        {(data ?? []).map((item, index) => (
-          <div key={String(index)}>{itemContent?.(index, item)}</div>
-        ))}
+        {Footer ? createElement(Footer) : null}
+        {createElement(
+          List,
+          { ref: vi.fn(), 'data-testid': 'virtuoso-list' },
+          (data ?? []).map((item, index) => (
+            <div key={String(index)}>{itemContent?.(index, item)}</div>
+          )),
+        )}
       </div>
     );
   }),
@@ -188,6 +199,7 @@ function buildProps(): FeedColumnProps {
         onMessageComment: vi.fn(),
         onMessageExcludeEntity: vi.fn(),
         onMessageToggleTag: vi.fn(),
+        onCreateMessageFeed: vi.fn(),
       },
     },
   };
@@ -306,6 +318,72 @@ describe('FeedColumn', () => {
     });
 
     expect(container.querySelector('[data-testid="feed-notification-panel"]')).toBeNull();
+  });
+
+  it('renders the narrow feed create action inside the feed surface only when allowed', async () => {
+    const narrowProps = buildProps();
+    narrowProps.column.view.narrowScreen = true;
+    narrowProps.column.actions.onCreateMessageFeed = vi.fn();
+    const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    try {
+      await act(async () => {
+        root.render(<FeedColumn column={narrowProps.column} />);
+      });
+
+      const addButton = container.querySelector('button[aria-label="Додати стрічку"]');
+      expect(addButton).not.toBeNull();
+      expect(container.querySelector('[data-duty-feed-create-button]')).not.toBeNull();
+      expect(container.querySelector('[data-duty-feed-footer-spacer]')).not.toBeNull();
+      expect(addButton?.closest('[data-duty-feed-content-root]')).not.toBeNull();
+      expect(consoleErrorSpy).not.toHaveBeenCalled();
+
+      await act(async () => {
+        root.render(<FeedColumn column={buildProps().column} />);
+      });
+
+      expect(container.querySelector('button[aria-label="Додати стрічку"]')).toBeNull();
+      expect(container.querySelector('[data-duty-feed-footer-spacer]')).toBeNull();
+    } finally {
+      consoleErrorSpy.mockRestore();
+    }
+  });
+
+  it('does not reserve extra footer space when the add action is unavailable', async () => {
+    const props = buildProps();
+    props.column.view.narrowScreen = true;
+    props.column.actions.onCreateMessageFeed = undefined;
+
+    await act(async () => {
+      root.render(<FeedColumn column={props.column} />);
+    });
+
+    expect(container.querySelector('[data-duty-feed-footer-spacer]')).toBeNull();
+  });
+
+  it('keeps narrow floating actions vertically separated at tablet widths', async () => {
+    const props = buildProps();
+    props.column.view.narrowScreen = true;
+    props.column.view.unreadCount = 2;
+    props.column.actions.onArrowClick = vi.fn();
+    props.column.actions.onCreateMessageFeed = vi.fn();
+    props.column.feed.items = [[1, minimalInboxMessage({ timestamp: 100 })]];
+
+    await act(async () => {
+      root.render(<FeedColumn column={props.column} />);
+    });
+
+    const addWrapper = container.querySelector('[data-duty-feed-create-button]') as HTMLElement;
+    const scrollWrapper = container.querySelector('[data-duty-feed-scroll-button]') as HTMLElement;
+
+    expect(addWrapper).not.toBeNull();
+    expect(scrollWrapper).not.toBeNull();
+    expect(addWrapper.getAttribute('data-duty-bottom-offset')).toBe(
+      'max(12px, env(safe-area-inset-bottom, 0px))',
+    );
+    expect(scrollWrapper.getAttribute('data-duty-bottom-offset')).toBe(
+      'calc(max(12px, env(safe-area-inset-bottom, 0px)) + 47px)',
+    );
   });
 
   it('passes the copy menu etalon action into duty message cards', async () => {
@@ -435,5 +513,17 @@ describe('FeedColumn', () => {
     });
 
     expect(container.querySelector('[data-testid="virtuoso"]')).not.toBeNull();
+  });
+
+  it('keeps the header close action available for multi-feed columns', async () => {
+    const props = buildProps();
+    props.column.view.canRemove = true;
+    props.column.view.feedCount = 2;
+
+    await act(async () => {
+      root.render(<FeedColumn column={props.column} />);
+    });
+
+    expect(container.querySelector('button[aria-label="Закрити стрічку"]')).not.toBeNull();
   });
 });

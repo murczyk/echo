@@ -634,6 +634,16 @@ mod tests {
     }
 
     #[test]
+    fn unit_location_before_datetime_is_not_top_comment() {
+        let body = "7 р/м управління зрбатр 1430 мсп 42 мсд 58 А (ЯБЛУНІВКА)\n10.07.2026, 12:33:09\n666.5555\n123.2000\n111.1111\nМИРНЫЙ";
+        let comments = parse_comments(body);
+        assert!(comments.is_empty());
+
+        let res = extract_text_without_top_comment(body).unwrap();
+        assert_eq!(res.body, "МИРНЫЙ");
+    }
+
+    #[test]
     fn no_anchor_no_marker_returns_empty() {
         let body = "просто якийсь текст\nбез дати і часу";
         let res = parse_comments(body);

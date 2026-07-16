@@ -86,6 +86,7 @@ const DEFAULT_COLUMNS_VISIBILITY = {
   deltaLogin: true,
   createdAt: true,
   status: true,
+  description: true,
 };
 
 const DEFAULT_COLUMN_ORDER = [
@@ -98,6 +99,7 @@ const DEFAULT_COLUMN_ORDER = [
   'deltaLogin',
   'createdAt',
   'status',
+  'description',
 ];
 
 const defaultMRTOptions = getDefaultMRTOptions<Login>();
@@ -130,6 +132,7 @@ type AddUserForm = {
   sigintZoneId: number | null;
   organismId: number | null;
   useDelta: boolean;
+  description: string;
 };
 
 type AddUserErrors = {
@@ -148,6 +151,7 @@ type EditUserForm = {
   organismId: number | null;
   deltaLogin: string;
   deleted: boolean;
+  description: string;
 };
 
 type EditUserErrors = {
@@ -163,6 +167,7 @@ const EMPTY_ADD_FORM: AddUserForm = {
   sigintZoneId: null,
   organismId: null,
   useDelta: true,
+  description: '',
 };
 
 function renderLookupAutocompleteOption(
@@ -184,6 +189,7 @@ function buildUserLoadingRows(): Login[] {
     roles: [],
     deleted: false,
     deactivationReason: null,
+    description: null,
     organismEnabled: true,
     sigintZoneId: null,
     organismName: null,
@@ -286,6 +292,7 @@ function toCreateLoginReq(form: AddUserForm): CreateLoginReq {
     roles: form.roles,
     sigintZoneId: form.sigintZoneId,
     organismId: form.organismId,
+    description: form.description.trim() || null,
   };
 }
 
@@ -323,6 +330,7 @@ function toUpdateLoginReq(form: EditUserForm): UpdateLoginReq {
     password: trimmedPassword ? trimmedPassword : null,
     deltaLogin: trimmedDelta ? trimmedDelta : null,
     deactivationReason,
+    description: form.description.trim() || null,
   };
 }
 
@@ -461,6 +469,20 @@ function useUsersColumns(): MRT_ColumnDef<Login>[] {
             ...CUSTOM_CELL_STYLES,
           },
         }),
+      },
+      {
+        header: 'Нотатка',
+        id: 'description',
+        accessorFn: (row) => formatOptionalLabel(row.description),
+        Cell: ({ row }) => {
+          const label = formatOptionalLabel(row.original.description);
+          return (
+            <Tooltip title={label}>
+              <span>{label}</span>
+            </Tooltip>
+          );
+        },
+        size: 260,
       },
     ],
     [],
@@ -692,6 +714,19 @@ function AddUserDialog(props: {
               />
             )}
           />
+
+          <TextField
+            label="Нотатка"
+            value={form.description}
+            onChange={(event) => {
+              setForm((prev) => ({ ...prev, description: event.target.value }));
+            }}
+            fullWidth
+            multiline
+            minRows={3}
+            disabled={isSubmitting}
+            className="md:col-span-2"
+          />
         </div>
       </DialogContent>
       <DialogActions sx={STANDARD_DIALOG_ACTIONS_SX}>
@@ -761,6 +796,7 @@ function EditUserDialog(props: {
       organismId: login.organismId ?? null,
       deltaLogin: login.deltaLogin ?? '',
       deleted: login.deleted,
+      description: login.description ?? '',
     });
     setErrors({});
     setSubmitError(null);
@@ -962,6 +998,19 @@ function EditUserDialog(props: {
                 label="Видалити користувача"
               />
             </div>
+
+            <TextField
+              label="Нотатка"
+              value={form.description}
+              onChange={(event) => {
+                setForm((prev) => (prev ? { ...prev, description: event.target.value } : prev));
+              }}
+              fullWidth
+              multiline
+              minRows={3}
+              disabled={isSubmitting}
+              className="xl:col-span-6"
+            />
           </div>
         ) : null}
       </DialogContent>

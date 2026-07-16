@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # Re-registers echo-ai-train's tailscale IP for PostgreSQL access on remote DB servers.
 #
-# Unlike db-ct.sh (which is piped straight onto one server and hardcodes PostgreSQL 14),
+# Unlike db-ct.sh (which is piped straight onto one server and targets PostgreSQL 18),
 # this fixes the listen_addresses / pg_hba.conf entries and auto-detects the running
-# cluster/version, so it is not tied to PostgreSQL 14. Use it after a major-version
-# upgrade (e.g. PostgreSQL 18) where pg_upgrade writes a fresh config and drops those
+# cluster/version, so it is not tied to a PostgreSQL major version. Use it after a
+# major-version upgrade where pg_upgrade writes a fresh config and drops those
 # entries. It only touches connectivity; pgBackRest nightly-restore setup lives in db-ct.sh.
 #
 # The hop from echo-ai-train to the database servers must use the SSH keys stored on

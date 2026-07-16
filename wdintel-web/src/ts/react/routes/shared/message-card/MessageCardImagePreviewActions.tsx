@@ -27,11 +27,13 @@ import { getMessageCardPreviewActionBarSx } from './message-card-preview-shell';
 export function MessageCardImagePreviewControls({
   zoom,
   isFullscreen,
+  canFullscreen,
   onSetPreviewZoom,
   onToggleFullscreen,
 }: {
   zoom: number;
   isFullscreen: boolean;
+  canFullscreen: boolean;
   onSetPreviewZoom: (zoom: number) => void;
   onToggleFullscreen: () => void;
 }) {
@@ -127,21 +129,23 @@ export function MessageCardImagePreviewControls({
         {Math.round(zoom)}%
       </Typography>
 
-      <Box sx={{ ml: { xs: 0, sm: 1 } }}>
-        <Tooltip
-          title={isFullscreen ? 'Вийти з повноекранного режиму' : 'Повноекранний режим'}
-          enterDelay={300}
-        >
-          <IconButton
-            aria-label={isFullscreen ? 'Вийти з повноекранного режиму' : 'Повноекранний режим'}
-            size="small"
-            onClick={onToggleFullscreen}
-            sx={{ color: 'text.secondary' }}
+      {canFullscreen ? (
+        <Box sx={{ ml: { xs: 0, sm: 1 } }}>
+          <Tooltip
+            title={isFullscreen ? 'Вийти з повноекранного режиму' : 'Повноекранний режим'}
+            enterDelay={300}
           >
-            {isFullscreen ? <FullscreenExitIcon /> : <FullscreenIcon />}
-          </IconButton>
-        </Tooltip>
-      </Box>
+            <IconButton
+              aria-label={isFullscreen ? 'Вийти з повноекранного режиму' : 'Повноекранний режим'}
+              size="small"
+              onClick={onToggleFullscreen}
+              sx={{ color: 'text.secondary' }}
+            >
+              {isFullscreen ? <FullscreenExitIcon /> : <FullscreenIcon />}
+            </IconButton>
+          </Tooltip>
+        </Box>
+      ) : null}
     </Box>
   );
 }

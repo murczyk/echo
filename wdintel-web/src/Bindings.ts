@@ -391,6 +391,7 @@ export type InboxMessage = {
   groupMasterKey: string | null;
   sender: string | null;
   extendedForm: string | null;
+  messageComments: Array<MessageComment>;
   post: string | null;
   postId: number | null;
   unit: string | null;
@@ -1438,6 +1439,7 @@ export type Login = {
   deltaLogin: string | null;
   lastActiveAt: number | null;
   deactivationReason: DeactivationReasonType | null;
+  description: string | null;
 };
 
 export type ListLoginsSortBy =
@@ -1460,6 +1462,7 @@ export type CreateLoginReq = {
   roles: Array<string>;
   sigintZoneId: number | null;
   organismId: number;
+  description: string | null;
 };
 
 export type UpdateLoginReq = {
@@ -1471,6 +1474,7 @@ export type UpdateLoginReq = {
   password: string | null;
   deltaLogin: string | null;
   deactivationReason: DeactivationReasonType | null;
+  description: string | null;
 };
 
 export type SigintGroupsReq = {
@@ -1784,6 +1788,7 @@ export type ZoneDatasourceGroup = {
   interseptionKind: InterseptionKind;
   disableNetworkAssignment: boolean;
   allowedUsers: Array<string>;
+  allowedOrganismIds: Array<number>;
   adminLogins: Array<string>;
   shortNote: string | null;
   longNote: string | null;
@@ -1806,6 +1811,7 @@ export type ZoneDatasourceGroupAddReq = {
   interseptionKind: InterseptionKind | null;
   masterKey: string;
   userLogins: Array<string>;
+  organismIds: Array<number>;
   adminLogins: Array<string>;
   shortNote: string | null;
   longNote: string | null;
@@ -1817,6 +1823,7 @@ export type ZoneDatasourceGroupUpdateReq = {
   interseptionKind: InterseptionKind | null;
   disableNetworkAssignment: boolean | null;
   userLogins: Array<string>;
+  organismIds: Array<number>;
   adminLogins: Array<string>;
   shortNote: string | null;
   longNote: string | null;
@@ -1837,6 +1844,7 @@ export type MyAdminSignalGroup = {
   isGroupSecret: boolean;
   disableNetworkAssignment: boolean;
   allowedUsers: Array<SignalGroupLogin>;
+  allowedOrganismIds: Array<number>;
   adminLogins: Array<SignalGroupLogin>;
   areasOfResponsibility: Array<AreaOfResponsibility> | null;
 };
@@ -1846,6 +1854,7 @@ export type MyAdminSignalGroupUpdateReq = {
   isSecret: boolean;
   disableNetworkAssignment: boolean;
   userLogins: Array<string>;
+  organismIds: Array<number>;
   adminLogins: Array<string>;
   areaOfResponsibilityIds: Array<number> | null;
 };
@@ -1856,6 +1865,7 @@ export type MyAdminSignalGroupEditReferenceReq = {
 
 export type MyAdminSignalGroupEditReferenceRsp = {
   logins: Array<string>;
+  organisms: Array<MyOrganism>;
   areasOfResponsibility: Array<AreaOfResponsibility>;
 };
 
@@ -2086,6 +2096,18 @@ export type CreateUnitReq = {
   army: string;
   active: boolean;
   comment: string;
+};
+
+export type CreateUnitWithAutoNetworkReq = {
+  unit: CreateUnitReq;
+  skipNetworkCreation: boolean;
+  locations: Array<string>;
+  unitMask: Array<string>;
+};
+
+export type CreateUnitWithAutoNetworkRsp = {
+  unit: Unit;
+  networkId: number | null;
 };
 
 export type DeleteUnitDuplicateReq = {
@@ -3182,7 +3204,9 @@ export type SystemSettingsCurrentRsp = {
   pelengBoundsTopLeftLng: number | null;
   pelengBoundsBottomRightLat: number | null;
   pelengBoundsBottomRightLng: number | null;
-  cyberEchoEnabled: boolean;
+  devicesSectionEnabled: boolean;
+  sigintCommentParsingEnabled: boolean;
+  doNotStoreDuplicateEchoimFailures: boolean;
 };
 
 export type SystemSettingsItem = {
@@ -3206,8 +3230,10 @@ export type SystemSettingsItem = {
   pelengBoundsTopLeftLng: number | null;
   pelengBoundsBottomRightLat: number | null;
   pelengBoundsBottomRightLng: number | null;
-  cyberEchoEnabled: boolean;
+  devicesSectionEnabled: boolean;
   echoRestapiErrorDiscordWebhookUrl: string | null;
+  sigintCommentParsingEnabled: boolean;
+  doNotStoreDuplicateEchoimFailures: boolean;
 };
 
 export type SystemSettingsListRsp = {
@@ -3230,8 +3256,10 @@ export type CreateSystemSettingsReq = {
   pelengBoundsTopLeftLng: number | null;
   pelengBoundsBottomRightLat: number | null;
   pelengBoundsBottomRightLng: number | null;
-  cyberEchoEnabled: boolean;
+  devicesSectionEnabled: boolean;
   echoRestapiErrorDiscordWebhookUrl: string | null;
+  sigintCommentParsingEnabled: boolean;
+  doNotStoreDuplicateEchoimFailures: boolean;
 };
 
 export type ActivateSystemSettingsReq = {
@@ -3255,6 +3283,26 @@ export type EchoMissingMessageListRsp = {
   items: Array<EchoMissingMessageRow>;
 };
 
+export type EchoMissingMessageListReq = {
+  since: string;
+  till: string;
+  limit: number | null;
+};
+
+export type EchoMissingMessageCountsReq = {
+  since: string;
+  till: string;
+};
+
+export type EchoMissingMessageDayCount = {
+  day: string;
+  count: number;
+};
+
+export type EchoMissingMessageCountsRsp = {
+  items: Array<EchoMissingMessageDayCount>;
+};
+
 export type EchoMissingMessageResolveReq = {
   id: number;
 };
@@ -3268,8 +3316,11 @@ export type SignalRestapiErrorListReq = {
 export type SignalRestapiErrorRow = {
   id: number;
   createdAt: string;
+  source: string;
+  clientName: string | null;
   responseText: string;
   responseJson: string | null;
+  discordSentAt: string | null;
 };
 
 export type SignalRestapiErrorListRsp = {
@@ -3288,6 +3339,10 @@ export type SignalRestapiErrorDayCount = {
 
 export type SignalRestapiErrorCountsRsp = {
   items: Array<SignalRestapiErrorDayCount>;
+};
+
+export type SignalRestapiErrorLatestRsp = {
+  createdAt: string | null;
 };
 
 export type DeltaLoginUrl = {
@@ -3521,3 +3576,4 @@ export type UserDutySettingsDto = {
   disableAutoScroll: boolean;
   analysisMapInSidebar: boolean;
 };
+

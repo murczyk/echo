@@ -1,7 +1,5 @@
 import type { PointerEvent as ReactPointerEvent } from 'react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Box, Dialog, DialogContent } from '@mui/material';
-import { useTheme } from '@mui/material/styles';
 
 import {
   clamp,
@@ -27,10 +25,9 @@ import {
 import { MessageCardImagePreviewInfoPopover } from './MessageCardImagePreviewInfoPopover';
 import { MessageCardImagePreviewStage } from './MessageCardImagePreviewStage';
 import { canCopyImageToClipboard, copyImageToClipboard } from './copy-image-to-clipboard';
-import {
-  blurActivePreviewDialogElement,
-  getMessageCardPreviewDialogPaperSx,
-} from './message-card-preview-shell';
+import { blurActivePreviewDialogElement } from './message-card-preview-shell';
+import { getMessageCardPreviewShellConfig } from './message-card-preview-config';
+import { MessageCardPreviewShell } from './MessageCardPreviewShell';
 
 type StageSize = {
   width: number;
@@ -92,8 +89,9 @@ export function MessageImagePreviewDialog({
         : `image-${resolvedIndex + 1}`,
     [currentImage, resolvedIndex],
   );
-  const theme = useTheme();
-
+  const previewConfig = getMessageCardPreviewShellConfig('image');
+  const canFullscreen = previewConfig.supportsFullscreen;
+  const dialogIsFullscreen = canFullscreen && isFullscreen;
   const removePointerListeners = useCallback(() => {
     const listeners = pointerListenersRef.current;
     if (listeners === null) return;
@@ -212,7 +210,7 @@ export function MessageImagePreviewDialog({
   }, [open, resetPreviewState]);
 
   useEffect(() => {
-    if (!isFullscreen) return;
+    if (!dialogIsFullscreen) return;
 
     const handleFullscreenEscape = (event: globalThis.KeyboardEvent) => {
       if (event.key !== 'Escape') return;
@@ -225,13 +223,13 @@ export function MessageImagePreviewDialog({
     return () => {
       window.removeEventListener('keydown', handleFullscreenEscape as EventListener, true);
     };
-  }, [isFullscreen]);
+  }, [dialogIsFullscreen]);
 
   useEffect(() => {
     if (!open) return;
 
     const handleWindowKeyDown = (event: globalThis.KeyboardEvent) => {
-      if (isFullscreen && event.key === 'Escape') {
+      if (dialogIsFullscreen && event.key === 'Escape') {
         event.preventDefault();
         event.stopPropagation();
         setIsFullscreen(false);
@@ -255,7 +253,7 @@ export function MessageImagePreviewDialog({
     return () => {
       window.removeEventListener('keydown', handleWindowKeyDown, true);
     };
-  }, [hasCarousel, isFullscreen, open, resolvedIndex]);
+  }, [dialogIsFullscreen, hasCarousel, open, resolvedIndex]);
 
   useEffect(() => {
     if (!open || stageEl === null) return;
@@ -313,6 +311,11 @@ export function MessageImagePreviewDialog({
     }
   };
 
+  const handleToggleFullscreen = () => {
+    if (!canFullscreen) return;
+    setIsFullscreen((value) => !value);
+  };
+
   const startPan = (event: ReactPointerEvent<HTMLDivElement>) => {
     if (isInteractivePreviewTarget(event.target)) return;
     if (zoom === ZOOM_MIN) return;
@@ -343,96 +346,68 @@ export function MessageImagePreviewDialog({
   };
 
   const fileSize = currentImage.sizeBytes;
-  const imageId = currentImage.id?.trim() ?? '';
-  const showImageId = imageId !== '';
 
   return (
-    <Dialog
+    <MessageCardPreviewShell
       open={open}
+      isFullscreen={dialogIsFullscreen}
+      ariaLabel="Перегляд зображення"
       onClose={closeDialog}
-      maxWidth={false}
-      aria-label="Перегляд зображення"
-      disableEscapeKeyDown={isFullscreen}
-      disableRestoreFocus
-      PaperProps={{
-        sx: {
-          ...getMessageCardPreviewDialogPaperSx(isFullscreen),
-          display: 'flex',
-          flexDirection: 'column',
-          width: isFullscreen ? '100vw' : { xs: '100vw', sm: '92vw' },
-          height: isFullscreen ? '100svh' : { xs: '100svh', sm: '92svh' },
-          maxWidth: isFullscreen ? '100vw' : { xs: '100vw', sm: 'min(92vw, 1280px)' },
-          maxHeight: isFullscreen ? '100svh' : { xs: '100svh', sm: '92svh' },
-          borderRadius: isFullscreen ? 0 : { xs: 0, sm: 2 },
-          m: 0,
-        },
-      }}
-      BackdropProps={{
-        sx: { backgroundColor: 'rgba(0, 0, 0, 0.8)' },
-      }}
-    >
-      <DialogContent
-        sx={{
-          px: isFullscreen ? 0 : { xs: 0, sm: 2 },
-          pt: isFullscreen ? 0 : { xs: 0, sm: 2 },
-          pb: 0,
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'stretch',
-          minHeight: 0,
-          flex: '1 1 auto',
-          overflow: 'hidden',
-          gap: 0,
-        }}
-      >
-        <Box
-          sx={{
-            flex: 1,
-            minHeight: 0,
-            display: 'flex',
-            flexDirection: 'column',
-            borderRadius: isFullscreen ? 0 : { xs: 0, sm: 1.5 },
-            overflow: 'hidden',
-            backgroundColor: 'background.paper',
-            border: 'none',
+      config={previewConfig}
+      stage={
+        <MessageCardImagePreviewStage
+          ref={setStageNode}
+          currentImage={currentImage}
+          currentHref={currentHref}
+          imageCount={imageCount}
+          resolvedIndex={resolvedIndex}
+          previewFileName={previewFileName}
+          zoom={zoom}
+          pan={pan}
+          failedHref={failedHref}
+          imageSize={imageSize}
+          isFullscreen={dialogIsFullscreen}
+          onImageLoad={handleImageLoad}
+          onImageError={handleImageError}
+          onStartPan={startPan}
+          onStopPan={stopPan}
+          onExitFullscreen={() => {
+            if (canFullscreen) setIsFullscreen(false);
           }}
-        >
-          <MessageCardImagePreviewStage
-            ref={setStageNode}
-            currentImage={currentImage}
+        />
+      }
+      controls={
+        <MessageCardImagePreviewControls
+          zoom={zoom}
+          isFullscreen={dialogIsFullscreen}
+          canFullscreen={canFullscreen}
+          onSetPreviewZoom={setPreviewZoom}
+          onToggleFullscreen={handleToggleFullscreen}
+        />
+      }
+      actions={
+        !dialogIsFullscreen ? (
+          <MessageCardImagePreviewActions
             currentHref={currentHref}
-            imageCount={imageCount}
+            downloadFileName={downloadFileName}
+            hasCarousel={hasCarousel}
+            copyStatus={copyStatus}
+            canCopyImage={
+              loadedImage !== null &&
+              loadedImageKey === currentPreviewKey &&
+              canCopyImageToClipboard(loadedImage)
+            }
             resolvedIndex={resolvedIndex}
-            previewFileName={previewFileName}
-            zoom={zoom}
-            pan={pan}
-            failedHref={failedHref}
-            imageSize={imageSize}
-            isFullscreen={isFullscreen}
-            onImageLoad={handleImageLoad}
-            onImageError={handleImageError}
-            onStartPan={startPan}
-            onStopPan={stopPan}
-            onExitFullscreen={() => setIsFullscreen(false)}
+            imageCount={imageCount}
+            onCopyImage={handleCopyImage}
+            onGoToPrevious={() => goToIndex(resolvedIndex - 1)}
+            onGoToNext={() => goToIndex(resolvedIndex + 1)}
+            onInfoClick={(event) => setInfoAnchorEl(event.currentTarget)}
+            onClose={closeDialog}
           />
-          <Box
-            sx={{
-              display: 'flex',
-              justifyContent: 'center',
-              width: '100%',
-            }}
-          >
-            <Box sx={{ width: '100%', maxWidth: 800 }}>
-              <MessageCardImagePreviewControls
-                zoom={zoom}
-                isFullscreen={isFullscreen}
-                onSetPreviewZoom={setPreviewZoom}
-                onToggleFullscreen={() => setIsFullscreen((value) => !value)}
-              />
-            </Box>
-          </Box>
-        </Box>
-
+        ) : null
+      }
+      infoPopover={
         <MessageCardImagePreviewInfoPopover
           open={infoOpen}
           anchorEl={infoAnchorEl}
@@ -442,27 +417,7 @@ export function MessageImagePreviewDialog({
           fileSize={fileSize}
           imageSize={imageSize}
         />
-      </DialogContent>
-      {!isFullscreen && (
-        <MessageCardImagePreviewActions
-          currentHref={currentHref}
-          downloadFileName={downloadFileName}
-          hasCarousel={hasCarousel}
-          copyStatus={copyStatus}
-          canCopyImage={
-            loadedImage !== null &&
-            loadedImageKey === currentPreviewKey &&
-            canCopyImageToClipboard(loadedImage)
-          }
-          resolvedIndex={resolvedIndex}
-          imageCount={imageCount}
-          onCopyImage={handleCopyImage}
-          onGoToPrevious={() => goToIndex(resolvedIndex - 1)}
-          onGoToNext={() => goToIndex(resolvedIndex + 1)}
-          onInfoClick={(event) => setInfoAnchorEl(event.currentTarget)}
-          onClose={closeDialog}
-        />
-      )}
-    </Dialog>
+      }
+    />
   );
 }
