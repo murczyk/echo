@@ -132,17 +132,20 @@ export function FilterSection({
       }}
       disableGutters
       elevation={0}
+      square
       sx={{
-        border: '1px solid',
+        // Divider-only: sections read as a list, separated by a single hairline
+        // instead of nested boxes. No per-section border/radius/background.
+        border: 'none',
+        borderRadius: 0,
+        backgroundColor: 'transparent',
+        borderBottom: '1px solid',
         borderColor: 'divider',
-        borderRadius: (theme) => `${theme.shape.borderRadius}px`,
-        overflow: 'hidden',
-        backgroundColor: 'background.paper',
+        '&:last-of-type': {
+          borderBottom: 'none',
+        },
         '&:before': {
           display: 'none',
-        },
-        '& + &': {
-          mt: 1,
         },
       }}
     >
@@ -150,8 +153,13 @@ export function FilterSection({
         expandIcon={<ExpandMoreIcon />}
         sx={{
           minHeight: 46,
-          px: 1.5,
+          px: 0.5,
           py: 0.25,
+          borderRadius: (theme) => `${theme.shape.borderRadius}px`,
+          transition: (theme) => theme.transitions.create('background-color'),
+          '&:hover': {
+            backgroundColor: 'action.hover',
+          },
           '& .MuiAccordionSummary-content': {
             my: 0.75,
           },
@@ -183,7 +191,7 @@ export function FilterSection({
           ) : null}
         </Box>
       </AccordionSummary>
-      <AccordionDetails sx={{ px: 1.5, pb: 1.25, pt: 0 }}>
+      <AccordionDetails sx={{ px: 0.5, pb: 1.5, pt: 0 }}>
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>{children}</Box>
       </AccordionDetails>
     </Accordion>

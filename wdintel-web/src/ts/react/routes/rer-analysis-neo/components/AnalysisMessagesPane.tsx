@@ -54,8 +54,6 @@ export function getAnalysisMessagesScrollSx(theme: Theme) {
   return {
     height: '100%',
     overflow: 'auto',
-    borderRight: '1px solid',
-    borderColor: 'divider',
     scrollbarColor: `${thumbColor} transparent`,
     '&::-webkit-scrollbar': {
       width: 12,
@@ -468,7 +466,7 @@ function AnalysisMessagesPaneComponent({
           ))}
         </Box>
         {!noMoreToLoad && messages.length > 0 && !paginationLoading ? (
-          <Box sx={{ display: 'flex', justifyContent: 'center', mt: 2 }}>
+          <Box sx={{ display: 'flex', justifyContent: 'center', mt: 2, mb: 2 }}>
             <Button variant="outlined" onClick={onLoadMoreMessages} disabled={loading}>
               Завантажити ще
             </Button>
