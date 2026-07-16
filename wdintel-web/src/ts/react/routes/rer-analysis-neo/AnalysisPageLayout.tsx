@@ -50,23 +50,26 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
         display: 'flex',
         flexDirection: 'column',
         gap: { xs: 1, lg: 2 },
+        pt: { xs: 1, lg: 1 },
         overflow: 'hidden',
       }}
     >
-      <AnalysisPageHeader
-        page={page}
-        isMobileLayout={isMobileLayout}
-        leftPanelVisible={leftPanelVisible}
-        rightPanelVisible={rightPanelVisible}
-      />
+      <Box sx={{ px: { xs: 1, lg: 2 } }}>
+        <AnalysisPageHeader
+          page={page}
+          isMobileLayout={isMobileLayout}
+          leftPanelVisible={leftPanelVisible}
+          rightPanelVisible={rightPanelVisible}
+        />
+      </Box>
 
       {page.error ? (
-        <PowerAlert severity="error" role="alert">
+        <PowerAlert severity="error" role="alert" sx={{ mx: { xs: 1, lg: 2 } }}>
           {page.error}
         </PowerAlert>
       ) : null}
       {page.validationError ? (
-        <PowerAlert severity="warning" role="status">
+        <PowerAlert severity="warning" role="status" sx={{ mx: { xs: 1, lg: 2 } }}>
           {page.validationError}
         </PowerAlert>
       ) : null}
@@ -90,7 +93,7 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
             height: '100%',
             minHeight: 0,
             display: 'grid',
-            gap: 2,
+            gap: { xs: 2, lg: 0 },
             overflow: 'hidden',
             alignItems: 'stretch',
             gridTemplateColumns: {
@@ -114,6 +117,7 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
               centerTab={centerTab}
               centerTabs={centerTabs}
               isMobileLayout={isMobileLayout}
+              rightPanelVisible={rightPanelVisible}
               messagesPaneLoading={messagesPaneLoading}
               messagesPanelId={messagesPanelId}
               messagesTabId={messagesTabId}

@@ -1,4 +1,4 @@
-import { Box, FormControlLabel, Paper, Stack, Switch, Tab, Tabs } from '@mui/material';
+import { Box, FormControlLabel, Stack, Switch, Tab, Tabs } from '@mui/material';
 
 import { PowerChip } from '../../components/PowerChip';
 import { NO_DATA_LABEL } from '../../utils/misc';
@@ -13,6 +13,7 @@ type Props = {
   centerTab: AnalysisCenterTab;
   centerTabs: AnalysisCenterTab[];
   isMobileLayout: boolean;
+  rightPanelVisible: boolean;
   messagesPaneLoading: boolean;
   messagesPanelId: string;
   messagesTabId: string;
@@ -27,6 +28,7 @@ export function AnalysisCenterPanel({
   centerTab,
   centerTabs,
   isMobileLayout,
+  rightPanelVisible,
   messagesPaneLoading,
   messagesPanelId,
   messagesTabId,
@@ -35,29 +37,32 @@ export function AnalysisCenterPanel({
   mapPanelId,
   mapTabId,
 }: Props) {
+  // Flush, full-height divider on the column edge for every tab — mirrors the
+  // left panel's `border-r` so both sides read identically. (Previously the
+  // messages tab drew its own inset border on the scroll area, which sat 16px
+  // inside the column padding and looked misaligned with the left divider.)
+  // Columns stack below MUI's `lg` (1200px), so the divider is gated to
+  // `min-[1200px]`.
+  const showRightDivider = rightPanelVisible;
+
   return (
-    <Paper
-      variant="outlined"
-      component="section"
+    <section
       aria-labelledby={
         centerTab === 'messages' ? messagesTabId : centerTab === 'summary' ? summaryTabId : mapTabId
       }
-      sx={{
-        minHeight: 0,
-        minWidth: 0,
-        height: '100%',
-        display: 'flex',
-        flexDirection: 'column',
-        overflow: 'hidden',
-        position: 'relative',
-      }}
+      className={
+        'relative flex min-h-0 min-w-0 h-full flex-col overflow-hidden' +
+        (showRightDivider
+          ? ' min-[1200px]:border-r min-[1200px]:border-solid min-[1200px]:border-black/12 dark:min-[1200px]:border-white/12'
+          : '')
+      }
     >
       <Stack
         direction="row"
         alignItems="center"
         justifyContent="space-between"
         spacing={1}
-        sx={{ px: { xs: 1, lg: 2 }, pt: { xs: 0.5, lg: 1 }, mb: 0 }}
+        sx={{ px: { xs: 1, lg: 2 }, pt: 0, mb: 0 }}
       >
         <Tabs
           value={centerTab}
@@ -165,7 +170,7 @@ export function AnalysisCenterPanel({
             minWidth: 0,
             minHeight: 0,
             px: { xs: 1, lg: 2 },
-            pb: { xs: 1, lg: 2 },
+            pb: { xs: 1, lg: 0 },
             pt: { xs: 0.5, lg: 1 },
             display: centerTab === 'messages' ? 'flex' : 'none',
             overflow: 'hidden',
@@ -270,6 +275,6 @@ export function AnalysisCenterPanel({
           ) : null}
         </Box>
       </Box>
-    </Paper>
+    </section>
   );
 }

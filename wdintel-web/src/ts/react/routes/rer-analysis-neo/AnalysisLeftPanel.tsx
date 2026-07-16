@@ -1,5 +1,3 @@
-import { Box, Paper } from '@mui/material';
-
 import { AnalysisFiltersPanel } from './components/AnalysisFiltersPanel';
 import type { AnalysisPageViewModel } from './types';
 
@@ -8,33 +6,18 @@ type Props = {
   leftPanelVisible: boolean;
 };
 
+// Column separation uses a flat 1px divider instead of a boxed card. The
+// grid stacks below MUI's `lg` (1200px), so the right border is gated to
+// `min-[1200px]` to avoid a stray line on the mobile stacked layout.
 export function AnalysisLeftPanel({ page, leftPanelVisible }: Props) {
   if (!leftPanelVisible) return null;
 
   return (
-    <Paper
-      variant="outlined"
-      component="aside"
+    <aside
       aria-label="Панель фільтрів"
-      sx={{
-        minHeight: 0,
-        height: { xs: 'auto', lg: '100%' },
-        overflow: 'hidden',
-        display: 'block',
-      }}
+      className="flex min-h-0 h-auto flex-col overflow-hidden min-[1200px]:h-full min-[1200px]:border-r min-[1200px]:border-solid min-[1200px]:border-black/12 dark:min-[1200px]:border-white/12"
     >
-      <Box
-        sx={{
-          flex: 1,
-          minWidth: 0,
-          overflow: 'hidden',
-          display: 'flex',
-          flexDirection: 'column',
-          height: '100%',
-        }}
-      >
-        <AnalysisFiltersPanel page={page} />
-      </Box>
-    </Paper>
+      <AnalysisFiltersPanel page={page} />
+    </aside>
   );
 }

@@ -90,7 +90,9 @@ export function AnalysisFiltersPanel({ page }: AnalysisFiltersPanelProps) {
     <Paper
       variant="outlined"
       sx={{
-        p: { xs: 1, lg: 1.5 },
+        px: { xs: 1, lg: 1.5 },
+        pb: { xs: 1, lg: 1.5 },
+        pt: 0,
         overflow: { xs: 'hidden', sm: 'auto' },
         minHeight: 0,
         height: '100%',
@@ -108,7 +110,7 @@ export function AnalysisFiltersPanel({ page }: AnalysisFiltersPanelProps) {
           spacing={1}
           alignItems="center"
           justifyContent="space-between"
-          sx={{ py: 0.5, minWidth: 0 }}
+          sx={{ pt: 0, pb: 0.5, minWidth: 0 }}
         >
           {showCompactToggle ? (
             <Button

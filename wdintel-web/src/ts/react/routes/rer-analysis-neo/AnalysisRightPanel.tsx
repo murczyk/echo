@@ -1,4 +1,4 @@
-import { Box, Paper } from '@mui/material';
+import { Box } from '@mui/material';
 
 import { AnalysisSidebar } from './components/AnalysisSidebar';
 import type { AnalysisPageViewModel } from './types';
@@ -8,14 +8,15 @@ type Props = {
   rightPanelVisible: boolean;
 };
 
+// Flat, divider-only: no outlined card. The center panel already owns the
+// center→right hairline, so this column stays borderless to avoid doubling
+// the line. Inner panes are flattened by AnalysisSidebar's scroll box, which
+// strips descendant Paper borders and separates children with a single divider.
 export function AnalysisRightPanel({ page, rightPanelVisible }: Props) {
   if (!rightPanelVisible) return null;
 
   return (
-    <Paper
-      variant="outlined"
-      component="aside"
-      aria-label="Аналітична права секція"
+    <Box
       sx={{
         minHeight: 0,
         height: { xs: 'auto', lg: '100%' },
@@ -32,6 +33,6 @@ export function AnalysisRightPanel({ page, rightPanelVisible }: Props) {
       >
         <AnalysisSidebar {...page} />
       </Box>
-    </Paper>
+    </Box>
   );
 }
