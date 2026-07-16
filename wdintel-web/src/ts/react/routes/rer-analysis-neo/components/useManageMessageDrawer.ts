@@ -36,6 +36,7 @@ import { useMessageSubmit } from './useMessageSubmit';
 
 export type UseManageMessageDrawerProps = {
   open: boolean;
+  cyberEchoEnabled: boolean;
   currentUser: User | null;
   onClose: () => void;
   onSuccess?: () => void;
@@ -46,6 +47,7 @@ export type UseManageMessageDrawerProps = {
 
 export function useManageMessageDrawer({
   open,
+  cyberEchoEnabled,
   currentUser,
   onClose,
   onSuccess,
@@ -230,10 +232,17 @@ export function useManageMessageDrawer({
     fileInputRef,
     handleFileSelect,
     handleDrop,
+    handlePaste,
     handleDropzoneKeyDown,
     attachmentErrorMsg,
     setAttachmentErrorMsg,
   } = useMessageUppy(busy);
+
+  useEffect(() => {
+    if (!open) return;
+    window.addEventListener('paste', handlePaste);
+    return () => window.removeEventListener('paste', handlePaste);
+  }, [open, handlePaste]);
 
   const resolver = useMemo(() => zodResolver(makeMessageSchema(isEditMode)), [isEditMode]);
 
@@ -259,12 +268,23 @@ export function useManageMessageDrawer({
         if (!active) return;
         const infos = await getGroupInfosBatch(keys);
         if (!active) return;
-        setSignalGroups(
-          infos.filter((g) => {
-            const adminData = g.adminData as any;
-            return !adminData?.deleted;
-          }),
-        );
+        const available = infos.filter((g) => {
+          const adminData = g.adminData as any;
+          return !adminData?.deleted;
+        });
+        setSignalGroups(available);
+        // The MRU-seeded group is set synchronously on open, before this async list
+        // arrives. If that remembered key is no longer available (account switch,
+        // revoked access, deleted group), SystemSection renders it as an empty
+        // selection while the value still passes required-validation — letting submit
+        // or parse run against a group the user cannot actually see. Clear it so the
+        // user must pick a valid group.
+        if (!isEditMode && getValues('signalGroupMasterKey')) {
+          const seededKey = getValues('signalGroupMasterKey');
+          if (!available.some((g) => g.masterKey === seededKey)) {
+            setValue('signalGroupMasterKey', '');
+          }
+        }
       } catch (e) {
         console.error('Failed to load groups', e);
       } finally {
@@ -326,10 +346,18 @@ export function useManageMessageDrawer({
         })),
       });
     } else {
+      // Pre-fill the last-used values (MRU head) so repeated message creation
+      // doesn't require re-entering the same group/device/unit each time.
+      // Seed deviceName only when its field is actually rendered (cyberEchoEnabled);
+      // otherwise SystemSection hides it while useMessageSubmit would still call
+      // createDeviceName and send a stale device_name_id the user never chose.
       reset({
         ...EMPTY_FORM_VALUES,
         date: dayjs(),
         time: dayjs(),
+        signalGroupMasterKey: recentValues.group[0] ?? '',
+        deviceName: cyberEchoEnabled ? (recentValues.deviceName[0] ?? '') : '',
+        unit: recentValues.unit[0] ?? '',
       });
     }
   }, [open, isEditMode, editTarget?.id]);
@@ -446,6 +474,7 @@ export function useManageMessageDrawer({
     fileInputRef,
     handleFileSelect,
     handleDrop,
+    handlePaste,
     handleDropzoneKeyDown,
     attachmentErrorMsg,
     setAttachmentErrorMsg,
