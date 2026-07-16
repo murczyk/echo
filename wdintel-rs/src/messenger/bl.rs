@@ -262,6 +262,9 @@ pub async fn link_account(
     set_client_signal_mode(system_service_name, signal_cli_mode.clone(), txn)
         .await
         .c(h!())?;
+    let port = load_client_signal_port(system_service_name, txn)
+        .await
+        .c(h!())?;
 
     match src {
         MessageSource::Signal => os_specific::start_new_signal_client(
@@ -286,6 +289,26 @@ pub async fn link_account(
     };
 
     load_echo_account(id, txn).await
+}
+
+async fn load_client_signal_port(
+    client_name: &str,
+    txn: &DatabaseTransaction,
+) -> Result<i32, AppError> {
+    let client = echo_client::Entity::find()
+        .filter(echo_client::Column::Name.eq(client_name))
+        .filter(echo_client::Column::Deleted.eq(false))
+        .one(txn)
+        .await
+        .c(h!())?
+        .c(h!())?;
+    let config = echo_client_config::Entity::find()
+        .filter(echo_client_config::Column::ClientId.eq(client.id))
+        .one(txn)
+        .await
+        .c(h!())?
+        .c(h!())?;
+    Ok(config.signal_port)
 }
 
 async fn set_client_signal_mode(

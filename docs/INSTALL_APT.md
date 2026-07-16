@@ -13,7 +13,7 @@
 - Додайте apt-репо (HTTPS + підписаний ключ)
 
 ```
-sudo apt-get install -y curl
+sudo apt-get install -y curl openjdk-25-jre-headless
 sudo curl -fsSL https://echo-ci.eagle-atria.ts.net/keys/echo-ci-archive-keyring.gpg \
   -o /usr/share/keyrings/echo-ci-archive-keyring.gpg
 ARCH=$(dpkg --print-architecture)
@@ -22,6 +22,8 @@ https://echo-ci.eagle-atria.ts.net/echo jammy main" | \
   sudo tee /etc/apt/sources.list.d/echo.list
 sudo apt-get update
 ```
+
+Signal normal mode requires Java 25+ on the server before deploy; `just deploy` fails fast if `java` is missing or older.
 
 і потім гола інсталяція:
 

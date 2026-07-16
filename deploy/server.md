@@ -155,7 +155,7 @@ just deploy-echo-ai --server $SERVER
 ## ECHO-IM
 
 ```
-ssh $SERVER 'sudo apt install echo-im-signal echo-im-whatsapp'
+ssh $SERVER 'sudo apt install openjdk-25-jre-headless echo-im-signal echo-im-whatsapp'
 ```
 
 ## MILGEO-RS
