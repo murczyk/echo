@@ -173,6 +173,17 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
   const setFeedUnreadCursor = useCallback((feedId: string, cursorId: number | null) => {
     unreadCursorByFeedIdRef.current[feedId] = cursorId;
   }, []);
+  const advanceFeedReadCursor = useCallback(
+    (feedId: string, cursorId: number, remainingUnreadCount: number) => {
+      unreadCursorByFeedIdRef.current[feedId] = cursorId;
+      lastServerCountByFeedIdRef.current[feedId] = {
+        cursorId,
+        quantity: remainingUnreadCount,
+      };
+      delete newestExhaustedCursorByFeedIdRef.current[feedId];
+    },
+    [],
+  );
   const getFeedLoadGeneration = useCallback(
     (feedId: string) => loadGenerationByFeedIdRef.current[feedId] ?? 0,
     [],
@@ -493,10 +504,11 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
         const newestCursor = latestWindowed.items.at(-1)?.[0] ?? null;
         const markAllRead =
           opts?.scrollToEndAfterLoad === true || opts?.markAllReadAfterAppend === true;
-        if (addedCount > 0 && newestCursor != null) {
-          setFeedUnreadCursor(feedId, newestCursor);
+        if (addedCount > 0) {
           delete newestExhaustedCursorByFeedIdRef.current[feedId];
-          delete lastServerCountByFeedIdRef.current[feedId];
+          if (markAllRead && newestCursor != null) {
+            advanceFeedReadCursor(feedId, newestCursor, 0);
+          }
         } else {
           newestExhaustedCursorByFeedIdRef.current[feedId] = lastId;
         }
@@ -548,9 +560,25 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
       setProfiles,
       setGroupInfos,
       mergeInboxCallsigns,
-      setFeedUnreadCursor,
+      advanceFeedReadCursor,
     ],
   );
+
+  useEffect(() => {
+    messageFeeds.forEach((feed) => {
+      if (feed.loading || pendingReloadFeedIdsRef.current.has(feed.id)) return;
+      const currentCursor = unreadCursorByFeedIdRef.current[feed.id] ?? null;
+      let nextCursor = currentCursor;
+      for (const [id] of feed.items) {
+        if (currentCursor != null && id <= currentCursor) continue;
+        if (!feed.readIds.has(id)) break;
+        nextCursor = id;
+      }
+      if (nextCursor != null && nextCursor !== currentCursor) {
+        advanceFeedReadCursor(feed.id, nextCursor, feed.unreadCount);
+      }
+    });
+  }, [advanceFeedReadCursor, messageFeeds]);
 
   useEffect(() => {
     retainFeedIds(messageFeeds.map((feed) => feed.id));
