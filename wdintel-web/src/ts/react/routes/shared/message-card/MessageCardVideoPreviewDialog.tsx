@@ -125,6 +125,13 @@ export function MessageCardVideoPreviewDialog({
   }, [resolvedIndex, open]);
 
   useEffect(() => {
+    if (!open || !src) return;
+    const v = videoRef.current;
+    if (!v) return;
+    v.play().catch(() => {});
+  }, [open, src, resolvedIndex]);
+
+  useEffect(() => {
     if (!dialogIsFullscreen) return;
     const handleFullscreenEscape = (event: globalThis.KeyboardEvent) => {
       if (event.key !== 'Escape') return;
