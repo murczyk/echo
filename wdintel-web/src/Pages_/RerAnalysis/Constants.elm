@@ -70,5 +70,8 @@ reportTemplateToString x =
         RTSummaryTable ->
             "summary_table"
 
+        RTReport125 ->
+            "report_125"
+
         RTReport1213 ->
             "report_1213"

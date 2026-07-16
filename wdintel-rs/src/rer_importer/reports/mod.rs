@@ -27,6 +27,7 @@ mod network_frequencies;
 mod posts;
 mod reo;
 mod report_1213;
+mod report_125;
 mod report_xlsx_kind_pelengs;
 mod rer;
 mod senders;
@@ -50,13 +51,15 @@ mod kinds {
     pub const POSTS_DOCX: &str = "posts_docx";
     pub const ACTIVE_NETWORKS: &str = "active_networks";
     pub const NETWORK_FREQUENCIES: &str = "network_frequencies";
+    pub const REPORT_125: &str = "report_125";
     pub const REPORT_1213: &str = "report_1213";
 
-    pub const ADVANCED_REPORT_KINDS: [&str; 5] = [
+    pub const ADVANCED_REPORT_KINDS: [&str; 6] = [
         REO,
         DIGEST,
         ACTIVE_NETWORKS,
         NETWORK_FREQUENCIES,
+        REPORT_125,
         REPORT_1213,
     ];
 }
@@ -300,6 +303,15 @@ pub(crate) async fn report_docx_generate_file(
     } else if req.kind == kinds::NETWORK_FREQUENCIES {
         self::network_frequencies::report_docx_kind_network_frequencies(
             env, &req, &outpath,
+        )
+        .await
+        .c(h!())?;
+    } else if req.kind == kinds::REPORT_125 {
+        self::report_125::report_docx_kind_report_125(
+            &user_login,
+            env,
+            &req,
+            &outpath,
         )
         .await
         .c(h!())?;

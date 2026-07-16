@@ -24,6 +24,14 @@ pub fn extract_unit_with_aor(
     m_aor_id: Option<i64>,
 ) -> Result<UnitAndLoc, AppError> {
     // trace!("> extract_unit: inp={inp}");
+    if let Some(unit) = try_extract_report_125_unit(inp) {
+        return Ok(UnitAndLoc {
+            unit: Some(unit),
+            locality: None,
+            locality_v2: None,
+        });
+    }
+
     if let Some(zp_peleng) =
         crate::rer_importer::zp_peleng_vorony_odina_format::parse(inp)
     {
@@ -794,6 +802,23 @@ fn try_extract_pu_fsb_rf_unit_and_location(
     }))
 }
 
+fn try_extract_report_125_unit(inp: &str) -> Option<String> {
+    if !inp.to_lowercase().contains("умовні координати для бота")
+    {
+        return None;
+    }
+
+    lazy_static! {
+        static ref RE: Regex =
+            Regex::new(r#"(?m)^\s*Назва:\s*(?P<unit>[^;\n]+)\s*;?\s*$"#)
+                .unwrap();
+    }
+    RE.captures(inp)
+        .and_then(|capts| m_cap_s(&capts, "unit"))
+        .map(|unit| unit.trim().to_string())
+        .filter(|unit| !unit.is_empty())
+}
+
 fn try_extract_standard_unit_and_location(
     settlements: Arc<RwLock<crate::location::SettlementsDataConfig>>,
     inp: &str,
@@ -894,6 +919,40 @@ mod tests {
     use crate::location::SettlementDetails;
     use crate::unit::parse_library_unit;
     use std::collections::BTreeMap;
+
+    fn test_settlements() -> Arc<RwLock<crate::location::SettlementsDataConfig>>
+    {
+        let config = crate::config::read_config(Mode::Test).unwrap();
+        Arc::new(RwLock::new(
+            crate::location::load_settlements_data_config(
+                config.settlement_paths().unwrap(),
+                Mode::Test,
+            )
+            .unwrap(),
+        ))
+    }
+
+    #[test]
+    fn extract_unit_report_125_sample_name() {
+        let body = r#"16.07.2026 11:34:32
+Назва: А-50 (А-50У) РЛС з РТК «Шмєль-М»;
+Умовні координати для бота: MGRS 37U DR 32515 05505;
+Кут: 79.6;
+Частота: 3330;"#;
+        let res = extract_unit(test_settlements(), body, vec![]).unwrap();
+        assert_eq!(
+            res.unit.as_deref(),
+            Some("А-50 (А-50У) РЛС з РТК «Шмєль-М»")
+        );
+        assert_eq!(res.locality, None);
+    }
+
+    #[test]
+    fn extract_unit_does_not_treat_antenna_name_as_report_125_unit() {
+        let body = "Тип: Антена\nНазва: 141.715 МГц\n24.06.2026 17:32\nКоординати: 36U XB 66512 50880";
+        let res = extract_unit(test_settlements(), body, vec![]).unwrap();
+        assert_eq!(res.unit, None);
+    }
 
     #[test]
     fn extract_unit_01() {
