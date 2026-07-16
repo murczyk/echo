@@ -221,7 +221,10 @@ async fn save_signal_message(
         }
         None => None,
     };
-    let device_name_id = payload.device_name_id.or(existing_device_name_id);
+    let device_name_id = match payload.device_name_id {
+        Some(device_name_id) => device_name_id,
+        None => existing_device_name_id,
+    };
     if let Some(device_name_id) = device_name_id {
         query::validate_device_name_id(&txn, device_name_id).await?;
     }
@@ -698,7 +701,7 @@ mod tests {
         let mut create_payload = direct_submit_payload("original body");
         create_payload.timestamp = Some("2026-07-11T12:34:56Z".to_string());
         create_payload.freq = Some("145.025".to_string());
-        create_payload.device_name_id = Some(device_name_id);
+        create_payload.device_name_id = Some(Some(device_name_id));
         create_payload.comment = Some("old comment".to_string());
         create_payload.network =
             Some(crate::rer_importer::types::SubmitNetwork {
@@ -889,6 +892,33 @@ mod tests {
                 .await
                 .unwrap(),
             1
+        );
+
+        let mut clear_device_payload = direct_submit_payload("updated body");
+        clear_device_payload.device_name_id = Some(None);
+        let cleared = edit_signal_message(
+            TEST_LOGIN,
+            &env,
+            created.signal_message_id,
+            clear_device_payload,
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            cleared
+                .message
+                .as_ref()
+                .and_then(|message| message.device_name.as_deref()),
+            None
+        );
+        assert_eq!(
+            sigint_inbox_item::Entity::find_by_id(created.signal_message_id)
+                .one(&env.dbx)
+                .await
+                .unwrap()
+                .unwrap()
+                .device_name_id,
+            None
         );
     }
 

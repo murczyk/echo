@@ -2,6 +2,17 @@ use crate::rer_importer::types::{
     SubmitCoordinates, SubmitDmrMetadata, SubmitNetwork,
 };
 use crate::types::{Deserialize, Serialize};
+use serde::Deserializer;
+
+fn deserialize_optional_update<'de, D, T>(
+    deserializer: D,
+) -> Result<Option<Option<T>>, D::Error>
+where
+    D: Deserializer<'de>,
+    T: Deserialize<'de>,
+{
+    Option::<T>::deserialize(deserializer).map(Some)
+}
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
 pub struct DirectSubmitPayload {
@@ -35,8 +46,8 @@ pub struct DirectSubmitPayload {
     #[serde(default)]
     pub dmr: Vec<SubmitDmrMetadata>,
     pub signal_group_master_key: String,
-    #[serde(default)]
-    pub device_name_id: Option<i64>,
+    #[serde(default, deserialize_with = "deserialize_optional_update")]
+    pub device_name_id: Option<Option<i64>>,
     #[serde(default)]
     pub upload_urls: Option<Vec<String>>,
     #[serde(default)]
@@ -69,4 +80,34 @@ pub struct DirectSubmitParseRsp {
     pub unit: Option<String>,
     pub unit_v2: Option<String>,
     pub locations: Vec<String>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn payload(device_name_id: serde_json::Value) -> serde_json::Value {
+        let mut payload = json!({
+            "signal_group_master_key": "group",
+        });
+        payload["device_name_id"] = device_name_id;
+        payload
+    }
+
+    #[test]
+    fn device_name_id_distinguishes_missing_clear_and_value() {
+        let missing: DirectSubmitPayload = serde_json::from_value(json!({
+            "signal_group_master_key": "group",
+        }))
+        .unwrap();
+        let clear: DirectSubmitPayload =
+            serde_json::from_value(payload(json!(null))).unwrap();
+        let value: DirectSubmitPayload =
+            serde_json::from_value(payload(json!(42))).unwrap();
+
+        assert_eq!(missing.device_name_id, None);
+        assert_eq!(clear.device_name_id, Some(None));
+        assert_eq!(value.device_name_id, Some(Some(42)));
+    }
 }

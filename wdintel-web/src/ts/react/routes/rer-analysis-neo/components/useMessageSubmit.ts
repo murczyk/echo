@@ -66,11 +66,13 @@ export function useMessageSubmit({
     setErrorMsg(null);
 
     try {
-      let deviceNameId: number | undefined;
+      let deviceNameId: number | null | undefined;
       const deviceName = data.deviceName?.trim();
       if (deviceName) {
         const device = await createDeviceName(deviceName);
         deviceNameId = device.id;
+      } else if (isEditMode && editTarget?.message.deviceName) {
+        deviceNameId = null;
       }
 
       const files = uppy.getFiles();

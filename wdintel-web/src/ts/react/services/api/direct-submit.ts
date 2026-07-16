@@ -204,7 +204,7 @@ export type DirectSubmitRequest = {
   network?: SubmitNetwork;
   dmr?: SubmitDmrMetadata[];
   signal_group_master_key: string;
-  device_name_id?: number;
+  device_name_id?: number | null;
   upload_urls?: string[] | null;
   deleted_media_ids?: string[];
 };

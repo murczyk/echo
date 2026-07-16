@@ -296,10 +296,16 @@ describe('ManageMessageDrawer edit mode', () => {
       root.render(
         <ManageMessageDrawer
           open
-          cyberEchoEnabled={false}
+          cyberEchoEnabled
           currentUser={null}
           onClose={vi.fn()}
-          editTarget={{ id: 42, message: buildMessage({ networkName: 'Network Alpha' }) }}
+          editTarget={{
+            id: 42,
+            message: buildMessage({
+              networkName: 'Network Alpha',
+              deviceName: 'Incorrect device',
+            }),
+          }}
           editSaveInFlight={false}
           onSubmitEdit={onSubmitEdit}
         />,
@@ -323,6 +329,10 @@ describe('ManageMessageDrawer edit mode', () => {
     });
     expect(container.textContent).toContain('CHARLIE');
 
+    act(() => {
+      autocompleteOnChangeByLabel.get('Назва пристрою')?.(null, null);
+    });
+
     const form = container.querySelector('form') as HTMLFormElement;
     await act(async () => {
       form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
@@ -337,6 +347,7 @@ describe('ManageMessageDrawer edit mode', () => {
     expect(directSubmitMocks.editDirectSubmit).toHaveBeenCalledWith(
       42,
       expect.objectContaining({
+        device_name_id: null,
         network: {
           signal_name: 'DMR',
           cc: undefined,
