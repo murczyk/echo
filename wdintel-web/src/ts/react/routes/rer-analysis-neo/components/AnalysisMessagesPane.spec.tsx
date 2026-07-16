@@ -124,11 +124,6 @@ vi.mock('../../rer-duty-neo/dialogs', () => ({
     ) : null,
 }));
 
-vi.mock('./AnalysisMessageEditDrawer', () => ({
-  AnalysisMessageEditDrawer: (props: { open: boolean; message: { id: number } | null }) =>
-    props.open ? <div data-testid={`editor-drawer-${props.message?.id ?? 'none'}`} /> : null,
-}));
-
 vi.mock('../message-utils', async () => {
   const actual = await vi.importActual<typeof import('../message-utils')>('../message-utils');
   return {
@@ -183,13 +178,9 @@ function buildProps(
     messages: [],
     networkDisplayMap: {},
     noMoreToLoad: true,
-    editorMessage: null,
-    editorSaveInFlight: false,
-    onCloseEditor: vi.fn(),
     onDeleteMessage: vi.fn(),
     onLoadMoreMessages: vi.fn(),
     onOpenEditor: vi.fn(),
-    onSaveEditor: vi.fn(),
     onSaveMessageUpdate: vi.fn().mockResolvedValue(true),
     onSaveMessageComment: vi.fn(),
     onToggleMessageBookmark: vi.fn(),

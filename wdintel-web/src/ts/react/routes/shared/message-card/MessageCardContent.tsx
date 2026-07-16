@@ -30,7 +30,6 @@ import {
   MessageMediaAudioPlayer,
   MessageMediaDownloadLink,
 } from './MessageCardMedia';
-import { MessageCardVideoThumb } from './MessageCardVideoThumb';
 import { MessageImagePreviewDialog } from './MessageCardImagePreviewDialog';
 import { MessageCardVideoPreviewDialog } from './MessageCardVideoPreviewDialog';
 import { collectMessageImages } from './message-card-image-utils';
@@ -143,13 +142,15 @@ export function MessageCardMessageBody({
 
   return (
     <Stack spacing={compact ? 1.5 : 1.25} sx={{ minWidth: 0 }}>
-      {images.length > 0 ? (
+      {images.length > 0 || videoAttachments.length > 0 ? (
         <MessageCardImageList
           images={images}
+          videos={videoAttachments}
           onOpen={(index) => {
             blurActiveElement();
             setImagePreviewIndex(index);
           }}
+          onOpenVideo={(index) => setVideoPreviewIndex(index)}
         />
       ) : null}
       <MessageImagePreviewDialog
@@ -168,16 +169,29 @@ export function MessageCardMessageBody({
         onClose={() => setDocumentPreviewIndex(null)}
         onIndexChange={(index) => setDocumentPreviewIndex(index)}
       />
-      {documents.length > 0 ||
-      audioAttachments.length > 0 ||
-      videoAttachments.length > 0 ||
-      downloadAttachments.length > 0 ? (
+      {audioAttachments.length > 0 ? (
         <Box
           className="mt-1"
           sx={{
             display: 'flex',
             flexDirection: 'column',
             alignItems: 'flex-start',
+            width: '100%',
+          }}
+        >
+          {audioAttachments.map((attachment) => (
+            <MessageMediaAudioPlayer key={attachment.id} attachment={attachment} />
+          ))}
+        </Box>
+      ) : null}
+      {documents.length > 0 || downloadAttachments.length > 0 ? (
+        <Box
+          className="mt-1"
+          sx={{
+            display: 'flex',
+            flexWrap: 'wrap',
+            alignItems: 'flex-start',
+            gap: 0.5,
             width: '100%',
           }}
         >
@@ -201,29 +215,6 @@ export function MessageCardMessageBody({
               />
             );
           })}
-          {audioAttachments.map((attachment) => (
-            <MessageMediaAudioPlayer key={attachment.id} attachment={attachment} />
-          ))}
-          {videoAttachments.length > 0 && (
-            <Box
-              sx={{
-                display: 'flex',
-                flexWrap: 'wrap',
-                gap: 1,
-                mt: 1,
-                mb: 0.5,
-              }}
-            >
-              {videoAttachments.map((attachment, idx) => (
-                <MessageCardVideoThumb
-                  key={attachment.id}
-                  attachment={attachment}
-                  index={idx}
-                  onOpen={(idx) => setVideoPreviewIndex(idx)}
-                />
-              ))}
-            </Box>
-          )}
           {downloadAttachments.map((attachment) => (
             <MessageMediaDownloadLink key={attachment.id} attachment={attachment} />
           ))}

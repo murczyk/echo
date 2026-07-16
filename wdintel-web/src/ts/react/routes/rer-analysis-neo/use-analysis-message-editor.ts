@@ -79,7 +79,7 @@ export function useAnalysisMessageEditor({
   const [editorMessage, setEditorMessage] = useState<{ id: number; message: InboxMessage } | null>(
     null,
   );
-  const [editorSaveInFlight, setEditorSaveInFlight] = useState(false);
+  const editorSaveInFlight = false;
   const messagesRef = useRef(messages);
   const messageDraftsRef = useRef(buildMessageDraftMap(messages));
   const saveQueueRef = useRef(new Map<number, Promise<void>>());
@@ -134,17 +134,11 @@ export function useAnalysisMessageEditor({
   const saveEditor = useCallback(
     async (message: InboxMessage) => {
       if (isNullOrUndefined(editorMessage)) return;
-      setEditorSaveInFlight(true);
-      try {
-        const saved = await saveMessageUpdate(editorMessage.id, () => message);
-        if (saved) {
-          setEditorMessage(null);
-        }
-      } finally {
-        setEditorSaveInFlight(false);
-      }
+      messageDraftsRef.current.set(editorMessage.id, message);
+      onUpdateLocalMessage(editorMessage.id, () => message);
+      setEditorMessage(null);
     },
-    [editorMessage, saveMessageUpdate],
+    [editorMessage, onUpdateLocalMessage],
   );
 
   return {

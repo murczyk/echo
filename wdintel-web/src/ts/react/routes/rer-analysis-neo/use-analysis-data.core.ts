@@ -554,6 +554,12 @@ export function useAnalysisData({
     newCallsignsLoading: sidebarData.newCallsignsLoading,
     noMoreToLoad: messageList.noMoreToLoad,
     nolimitShown: messageList.nolimitShown,
+    onPrependLocalMessage: useCallback(
+      (messageId: number, message: InboxMessage) => {
+        messageList.setMessages((current) => [[messageId, message], ...current]);
+      },
+      [messageList.setMessages],
+    ),
     onUpdateLocalMessage,
     onDeleteMessage: messageActionState.onDeleteMessage,
     onCancelBotTagAction: messageActionState.onCancelBotTagAction,

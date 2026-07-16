@@ -111,6 +111,10 @@ where
         .join(
             JoinType::LeftJoin,
             sigint_inbox_item::Relation::SigintPost.def(),
+        )
+        .join(
+            JoinType::LeftJoin,
+            sigint_inbox_item::Relation::DeviceName.def(),
         );
 
     let access_subquery = Query::select()
@@ -831,6 +835,8 @@ where
         .column_as(sigint_inbox_item::Column::Time, "time")
         .column_as(sigint_inbox_item::Column::Checked, "checked")
         .column_as(sigint_inbox_item::Column::UnitV2, "unit_v2")
+        .column_as(sigint_inbox_item::Column::Network, "network")
+        .column_as(device_name::Column::Name, "device_name")
         .column_as(sigint_inbox_item::Column::PostId, "post_id")
         .column_as(sigint_inbox_item::Column::Datetime, "datetime")
         .column_as(sigint_post::Column::Name, "post_name")

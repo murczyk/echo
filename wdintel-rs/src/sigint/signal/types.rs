@@ -75,3 +75,25 @@ pub struct SignalUnitStatRow {
     pub unit_id: i64,
     pub count: i64,
 }
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct SignalSearchReq {
+    pub search: String,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct SignalSearchResult {
+    pub id: i64,
+    pub name: String,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct SignalSearchRsp {
+    pub signals: Vec<SignalSearchResult>,
+}
