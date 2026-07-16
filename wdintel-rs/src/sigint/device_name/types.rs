@@ -4,14 +4,14 @@ use serde::{Deserialize, Serialize};
 #[derive(
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
-pub struct ComputerNameSearchReq {
+pub struct DeviceNameSearchReq {
     pub search: String,
 }
 
 #[derive(
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
-pub struct ComputerNameSearchResult {
+pub struct DeviceNameSearchResult {
     pub id: i64,
     pub name: String,
 }
@@ -19,20 +19,20 @@ pub struct ComputerNameSearchResult {
 #[derive(
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
-pub struct ComputerNameSearchRsp {
-    pub computers: Vec<ComputerNameSearchResult>,
+pub struct DeviceNameSearchRsp {
+    pub devices: Vec<DeviceNameSearchResult>,
 }
 
 #[derive(
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
-pub struct CreateComputerNameReq {
+pub struct CreateDeviceNameReq {
     pub name: String,
 }
 
 #[derive(
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
-pub struct CreateComputerNameRsp {
-    pub computer: ComputerNameSearchResult,
+pub struct CreateDeviceNameRsp {
+    pub device: DeviceNameSearchResult,
 }

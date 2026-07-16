@@ -52,3 +52,25 @@ pub struct UpdatePostReq {
 pub struct DeletePostReq {
     pub id: i64,
 }
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct PostSearchReq {
+    pub search: String,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct PostSearchResult {
+    pub id: i64,
+    pub name: String,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct PostSearchRsp {
+    pub posts: Vec<PostSearchResult>,
+}

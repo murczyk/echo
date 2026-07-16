@@ -405,6 +405,8 @@ export type InboxMessage = {
   location: string | null;
   tags: Array<number> | null;
   networkIds: Array<number> | null;
+  networkName: string | null;
+  deviceName: string | null;
   inboxTags: Array<InboxMessageTag> | null;
   metadata: Array<InboxMessageMetadata>;
 };
@@ -2170,25 +2172,25 @@ export type SignalUnitStatRow = {
   count: number;
 };
 
-export type ComputerNameSearchReq = {
+export type DeviceNameSearchReq = {
   search: string;
 };
 
-export type ComputerNameSearchResult = {
+export type DeviceNameSearchResult = {
   id: number;
   name: string;
 };
 
-export type ComputerNameSearchRsp = {
-  computers: Array<ComputerNameSearchResult>;
+export type DeviceNameSearchRsp = {
+  devices: Array<DeviceNameSearchResult>;
 };
 
-export type CreateComputerNameReq = {
+export type CreateDeviceNameReq = {
   name: string;
 };
 
-export type CreateComputerNameRsp = {
-  computer: ComputerNameSearchResult;
+export type CreateDeviceNameRsp = {
+  device: DeviceNameSearchResult;
 };
 
 export type AddAsKnownNetworkCallsignReq = {
@@ -3019,6 +3021,19 @@ export type Post = {
   createdAt: number;
 };
 
+export type PostSearchReq = {
+  search: string;
+};
+
+export type PostSearchResult = {
+  id: number;
+  name: string;
+};
+
+export type PostSearchRsp = {
+  posts: Array<PostSearchResult>;
+};
+
 export type ListPostsSortBy =
   | 'PostNameDesc'
   | 'PostNameAsc'
@@ -3084,6 +3099,60 @@ export type UpdateNetworkDescriptionReq = {
 export type DeleteNetworkDescriptionReq = {
   networkId: number;
   descriptionId: number;
+};
+
+export type NetworkSearchReq = {
+  search: string;
+};
+
+export type NetworkSearchResult = {
+  id: number;
+  name: string;
+  unitIds: Array<number> | null;
+  freqs: Array<NetworkFreq>;
+};
+
+export type NetworkSearchRsp = {
+  networks: Array<NetworkSearchResult>;
+};
+
+export type FreqSearchReq = {
+  search: string;
+};
+
+export type FreqSearchResult = {
+  id: number;
+  name: string;
+};
+
+export type FreqSearchRsp = {
+  freqs: Array<FreqSearchResult>;
+};
+
+export type SignalSearchReq = {
+  search: string;
+};
+
+export type SignalSearchResult = {
+  id: number;
+  name: string;
+};
+
+export type SignalSearchRsp = {
+  signals: Array<SignalSearchResult>;
+};
+
+export type CallsignSearchReq = {
+  search: string;
+};
+
+export type CallsignSearchResult = {
+  id: number;
+  name: string;
+};
+
+export type CallsignSearchRsp = {
+  callsigns: Array<CallsignSearchResult>;
 };
 
 export type NetworkFreq = {
