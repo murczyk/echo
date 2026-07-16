@@ -10,7 +10,7 @@ import type { CoordinatePreviewPoint } from './message-coordinate-preview';
 const PREVIEW_HEIGHT_PX = 120;
 const PREVIEW_MAX_WIDTH_PX = 180;
 const PREVIEW_ROOT_MARGIN = '160px 0px';
-const PREVIEW_ZOOM = 13;
+const PREVIEW_ZOOM = 11;
 
 export function MessageCardCoordinatePreviewTile({
   point,
