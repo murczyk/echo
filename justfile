@@ -1024,7 +1024,7 @@ deploy-docs-from-local _server_pos="" server:
       just _print-servers; exit 1;
     fi
 
-    DEB_DIR="{{ justfile_directory() }}/docs/echo-docs/target/debian"
+    DEB_DIR="{{ justfile_directory() }}/target/debian"
     DEB_PATH=""
     REMOTE_DEB_PATH=""
 
