@@ -125,6 +125,8 @@ export function useWindowedFeedScroll({
   const previousItemIdsRef = useRef<readonly number[]>([]);
   const previousResetKeyRef = useRef<string | number | null>(resetKey);
   const isWatchModeRef = useRef<boolean>(isWatchMode);
+  // Narrow-screen feeds remain mounted while hidden. Disabled tracking must not
+  // report visibility, bottom state, loads, or read-state side effects.
   const enabledRef = useRef<boolean>(enabled);
   isWatchModeRef.current = isWatchMode;
   const wasAtBottomBeforeRender = atBottomRef.current;

@@ -116,6 +116,8 @@ export type MessageCardProps = {
   analysisCallsignActions?: AnalysisCallsignActions;
 };
 
+// Performance boundary: this component is repeated throughout Duty feeds.
+// Keep structural markup native and theme-aware; see ./AGENTS.md before adding layout wrappers.
 function MessageCardComponent({
   id,
   msg,

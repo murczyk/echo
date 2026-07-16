@@ -312,4 +312,6 @@ function useMemoText(
       })();
 }
 
+// Repeated card-content path: avoid structural MUI wrappers and per-card layout sx.
+// Preserve MUI theme parity through semantic styles; see ./AGENTS.md.
 export const MessageCardContent = memo(MessageCardMessageBody);

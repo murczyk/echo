@@ -898,6 +898,8 @@ export type MessageCardHeaderProps = {
   onExcludeMessageEntity?: (entity: MessageEntityFilterKind, value: string) => void;
 };
 
+// Hot path: preserve native structural layout and conditional menu mounting.
+// Leaf MUI components remain intentional; see ./AGENTS.md.
 function MessageCardHeaderComponent({
   compact = false,
   displayMode,

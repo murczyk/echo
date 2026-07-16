@@ -332,6 +332,7 @@ export function RerDutyNeoWorkspace({
                       sx={{
                         position: 'absolute',
                         inset: 0,
+                        // Inactive narrow feeds stay mounted to preserve state; scroll tracking is disabled explicitly.
                         display: isActive ? 'flex' : 'none',
                         minHeight: 0,
                         minWidth: 0,

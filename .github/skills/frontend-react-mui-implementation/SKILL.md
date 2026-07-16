@@ -70,6 +70,7 @@ Use when editing TSX React routes/components or custom element wrappers in `wdin
   | `Chip` (selectable/filter tags)                                                                                                                | `PowerChip` or `CompactPowerChip`                                                    |
   | `Menu`                                                                                                                                         | `PowerMenu` — Escape does not bubble to parent drawers                               |
   | Raw MUI is OK when no wrapper exists, props differ materially, or the file already uses raw MUI consistently and you are not touching that UI. |
+- When editing Duty feed or shared MessageCard hot-path code, also use `duty-feed-rendering-safety`. Its native-structure performance boundary overrides the general preference for MUI layout components and structural component-level `sx`. Leaf and interactive MUI components remain valid.
 - MUI `Dialog`, `Modal`, `Menu`, and `Popover` can surface `Blocked aria-hidden... retained focus` warnings when focus is restored into an `aria-hidden` subtree.
 - When chaining modal surfaces, close the current surface first, move or blur focus before hiding the focused subtree, and defer opening the next surface to the next tick/frame if needed.
 - For dialogs opened from menus, close the menu first, then open the dialog after state settles; use `disableRestoreFocus` when MUI would otherwise restore focus into an `aria-hidden` ancestor.

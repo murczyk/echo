@@ -241,6 +241,8 @@ const DutyMessageCardItem = memo(function DutyMessageCardItem({
   );
 });
 
+// Repeated feed-list boundary: keep list and card wrappers lightweight.
+// See ./AGENTS.md before adding structural component abstractions.
 type DutyMessageListProps = {
   items: [number, InboxMessage][];
   feedId: string;
