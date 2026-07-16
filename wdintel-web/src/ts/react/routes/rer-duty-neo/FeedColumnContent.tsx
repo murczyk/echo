@@ -364,6 +364,7 @@ export const FeedColumnContent = memo(
     const {
       narrowScreen = false,
       feedCount,
+      scrollTrackingEnabled = true,
       loadingNewer = false,
       arrowResultMessage = null,
       unreadCount = 0,
@@ -414,6 +415,7 @@ export const FeedColumnContent = memo(
     const scroll = useWindowedFeedScroll({
       itemIds,
       isWatchMode,
+      enabled: scrollTrackingEnabled,
       loadingOlder: feed.loadingOlder,
       loadingNewer,
       hasReachedStart: feed.hasReachedStart,
@@ -685,6 +687,7 @@ export const FeedColumnContent = memo(
       prevView.canRemove !== nextView.canRemove ||
       prevView.maxWidth !== nextView.maxWidth ||
       prevView.isWatchMode !== nextView.isWatchMode ||
+      prevView.scrollTrackingEnabled !== nextView.scrollTrackingEnabled ||
       prevView.loadingNewer !== nextView.loadingNewer ||
       prevView.arrowResultMessage !== nextView.arrowResultMessage ||
       prevView.unreadCount !== nextView.unreadCount

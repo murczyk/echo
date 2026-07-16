@@ -321,6 +321,10 @@ export function RerDutyNeoWorkspace({
                 messageFeeds.map((feed) => {
                   const isActive = feed.id === activeFeedId;
                   const column = buildFeedColumnModel(feed);
+                  const columnView = {
+                    ...column.view,
+                    scrollTrackingEnabled: isActive,
+                  };
                   return (
                     <Box
                       key={feed.id}
@@ -339,6 +343,7 @@ export function RerDutyNeoWorkspace({
                         }}
                         column={{
                           ...column,
+                          view: columnView,
                           actions: {
                             ...column.actions,
                             onCreateMessageFeed:
@@ -363,15 +368,25 @@ export function RerDutyNeoWorkspace({
                         : `repeat(${messageFeeds.length}, minmax(0, 1fr))`,
                   }}
                 >
-                  {messageFeeds.map((feed) => (
-                    <FeedColumn
-                      key={feed.id}
-                      ref={(el) => {
-                        columnRefsRef.current[feed.id] = el;
-                      }}
-                      column={buildFeedColumnModel(feed)}
-                    />
-                  ))}
+                  {messageFeeds.map((feed) => {
+                    const column = buildFeedColumnModel(feed);
+                    const columnView = {
+                      ...column.view,
+                      scrollTrackingEnabled: true,
+                    };
+                    return (
+                      <FeedColumn
+                        key={feed.id}
+                        ref={(el) => {
+                          columnRefsRef.current[feed.id] = el;
+                        }}
+                        column={{
+                          ...column,
+                          view: columnView,
+                        }}
+                      />
+                    );
+                  })}
                 </Box>
               )}
             </Box>

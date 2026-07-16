@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef } from 'react';
 import type { RefObject, UIEventHandler } from 'react';
 
 export type WindowedFeedScrollItem = { id: number };
@@ -42,6 +42,7 @@ export type UseWindowedFeedScrollOptions = {
   atBottomThresholdPx?: number;
   resetKey?: string | number | null;
   isWatchMode?: boolean;
+  enabled?: boolean;
 };
 
 export type WindowedFeedScrollHandle = {
@@ -80,6 +81,7 @@ export function useWindowedFeedScroll({
   atBottomThresholdPx = DEFAULT_AT_BOTTOM_THRESHOLD_PX,
   resetKey = null,
   isWatchMode = true,
+  enabled = true,
 }: UseWindowedFeedScrollOptions): WindowedFeedScrollHandle {
   const callbacksRef = useRef({
     onLoadOlder,
@@ -123,6 +125,7 @@ export function useWindowedFeedScroll({
   const previousItemIdsRef = useRef<readonly number[]>([]);
   const previousResetKeyRef = useRef<string | number | null>(resetKey);
   const isWatchModeRef = useRef<boolean>(isWatchMode);
+  const enabledRef = useRef<boolean>(enabled);
   isWatchModeRef.current = isWatchMode;
   const wasAtBottomBeforeRender = atBottomRef.current;
 
@@ -208,12 +211,15 @@ export function useWindowedFeedScroll({
   const reportVisibleMessageIdsRafRef = useRef<number | null>(null);
   const reportVisibleMessageIdsLastRunRef = useRef<number>(0);
   const reportVisibleMessageIdsLatestArgsRef = useRef<boolean>(false);
+  const handleScrollRafRef = useRef<number | null>(null);
 
   const reportVisibleMessageIds = useCallback(
     (atBottom: boolean) => {
+      if (!enabledRef.current) return;
       reportVisibleMessageIdsLatestArgsRef.current = atBottom;
 
       const run = () => {
+        if (!enabledRef.current) return;
         reportVisibleMessageIdsLastRunRef.current = Date.now();
         const latestAtBottom = reportVisibleMessageIdsLatestArgsRef.current;
         const { onVisibleMessageIds } = callbacksRef.current;
@@ -242,6 +248,7 @@ export function useWindowedFeedScroll({
         if (reportVisibleMessageIdsRafRef.current === null) {
           reportVisibleMessageIdsRafRef.current = window.setTimeout(() => {
             reportVisibleMessageIdsRafRef.current = null;
+            if (!enabledRef.current) return;
             run();
           }, 200);
         }
@@ -266,8 +273,37 @@ export function useWindowedFeedScroll({
 
   useEffect(() => stopBottomSettle, [stopBottomSettle]);
 
+  const cancelPendingScrollProcessing = useCallback(() => {
+    if (handleScrollRafRef.current !== null) {
+      cancelAnimationFrame(handleScrollRafRef.current);
+      handleScrollRafRef.current = null;
+    }
+    if (reportVisibleMessageIdsRafRef.current !== null) {
+      window.clearTimeout(reportVisibleMessageIdsRafRef.current);
+      reportVisibleMessageIdsRafRef.current = null;
+    }
+  }, []);
+
+  useLayoutEffect(() => {
+    const wasEnabled = enabledRef.current;
+    enabledRef.current = enabled;
+
+    if (wasEnabled && !enabled) {
+      cancelPendingScrollProcessing();
+      stopBottomSettle();
+      const { onAtBottomChange, onNearBottomChange } = callbacksRef.current;
+      if (atBottomRef.current !== false) onAtBottomChange?.(false);
+      if (nearBottomRef.current !== false) onNearBottomChange?.(false);
+      atBottomRef.current = false;
+      nearBottomRef.current = false;
+      loadOlderTriggeredRef.current = false;
+      loadNewerTriggeredRef.current = false;
+    }
+  }, [cancelPendingScrollProcessing, enabled, stopBottomSettle]);
+
   const updateScrollState = useCallback(
     (opts: { allowLoadOlder?: boolean; allowTopReached?: boolean } = {}) => {
+      if (!enabledRef.current) return;
       const scroller = scrollerRef.current;
       if (!scroller) return;
 
@@ -352,6 +388,7 @@ export function useWindowedFeedScroll({
 
   const scrollToBottom = useCallback(
     (behavior: ScrollBehavior = 'auto') => {
+      if (!enabledRef.current) return;
       const scroller = scrollerRef.current;
       if (!scroller) return;
       if (behavior === 'smooth' && typeof scroller.scrollTo === 'function') {
@@ -369,6 +406,7 @@ export function useWindowedFeedScroll({
   );
 
   const startBottomSettle = useCallback(() => {
+    if (!enabledRef.current) return;
     stopBottomSettle();
     if (!scrollerRef.current) return;
 
@@ -429,6 +467,9 @@ export function useWindowedFeedScroll({
     }
 
     const currentItemIds = itemIdsRef.current;
+    if (!enabled) {
+      return;
+    }
     if (currentItemIds.length === 0) {
       hasInitialScrolledRef.current = false;
       previousItemIdsRef.current = currentItemIds;
@@ -458,6 +499,7 @@ export function useWindowedFeedScroll({
     }
   }, [
     captureAnchorSnapshot,
+    enabled,
     resetKey,
     restoreAnchorAfterItemsChange,
     scrollToBottom,
@@ -466,8 +508,6 @@ export function useWindowedFeedScroll({
     updateScrollState,
     itemIds,
   ]);
-
-  const handleScrollRafRef = useRef<number | null>(null);
 
   useEffect(() => {
     return () => {
@@ -478,6 +518,7 @@ export function useWindowedFeedScroll({
   }, []);
 
   const handleScroll = useCallback<UIEventHandler<HTMLDivElement>>(() => {
+    if (!enabledRef.current) return;
     const scroller = scrollerRef.current;
     if (scroller && bottomSettleActiveRef.current) {
       const bottomDistance = distanceToBottom(scroller);

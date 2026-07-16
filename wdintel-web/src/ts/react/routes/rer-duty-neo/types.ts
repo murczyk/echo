@@ -23,6 +23,7 @@ export type FeedColumnModel = {
     canRemove: boolean;
     maxWidth?: string | number;
     isWatchMode?: boolean;
+    scrollTrackingEnabled?: boolean;
     loadingNewer?: boolean;
     arrowResultMessage?: string | null;
     unreadCount?: number;
