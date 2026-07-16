@@ -36,6 +36,7 @@ import { useMessageSubmit } from './useMessageSubmit';
 
 export type UseManageMessageDrawerProps = {
   open: boolean;
+  cyberEchoEnabled: boolean;
   currentUser: User | null;
   onClose: () => void;
   onSuccess?: () => void;
@@ -46,6 +47,7 @@ export type UseManageMessageDrawerProps = {
 
 export function useManageMessageDrawer({
   open,
+  cyberEchoEnabled,
   currentUser,
   onClose,
   onSuccess,
@@ -346,12 +348,15 @@ export function useManageMessageDrawer({
     } else {
       // Pre-fill the last-used values (MRU head) so repeated message creation
       // doesn't require re-entering the same group/device/unit each time.
+      // Seed deviceName only when its field is actually rendered (cyberEchoEnabled);
+      // otherwise SystemSection hides it while useMessageSubmit would still call
+      // createDeviceName and send a stale device_name_id the user never chose.
       reset({
         ...EMPTY_FORM_VALUES,
         date: dayjs(),
         time: dayjs(),
         signalGroupMasterKey: recentValues.group[0] ?? '',
-        deviceName: recentValues.deviceName[0] ?? '',
+        deviceName: cyberEchoEnabled ? (recentValues.deviceName[0] ?? '') : '',
         unit: recentValues.unit[0] ?? '',
       });
     }

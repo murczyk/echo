@@ -87,7 +87,7 @@ export function AttachmentsSection({
         <CloudUploadOutlinedIcon fontSize="small" sx={{ color: 'text.secondary', flexShrink: 0 }} />
         <Box sx={{ minWidth: 0 }}>
           <Typography variant="body2" color="text.secondary" noWrap>
-            Натисніть, перетягніть або вставте (Ctrl+V) файли сюди
+            Натисніть, перетягніть або вставте (Cmd/Ctrl+V) файли сюди
           </Typography>
           <Typography variant="caption" color="text.disabled" noWrap component="div">
             До 20 файлів, до 2 ГБ кожен

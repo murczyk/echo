@@ -17,16 +17,23 @@ const EXTENSION_BY_MIME: Record<string, string> = {
 // (e.g. macOS pastes as "image.png"). Treat these as nameless and synthesize.
 const GENERIC_PASTE_NAMES = new Set(['image.png', 'image.jpg', 'image.jpeg', 'image']);
 
+// Monotonic counter so multiple images pasted in the same millisecond (e.g. two images
+// in one clipboard event) never collide on the same synthesized name — Uppy rejects
+// duplicate file IDs, which would silently drop one of the images.
+let pasteNameCounter = 0;
+
 /**
  * Builds a name for a clipboard-pasted file. Screenshots arrive nameless or with a
- * generic placeholder name, so we synthesize a timestamped name; real filenames are kept.
+ * generic placeholder name, so we synthesize a unique timestamped name; real filenames
+ * are kept.
  */
 export function pastedFileName(file: File, now: Date = new Date()): string {
   if (file.name && !GENERIC_PASTE_NAMES.has(file.name.toLowerCase())) return file.name;
   const pad = (n: number) => String(n).padStart(2, '0');
   const stamp =
     `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}` +
-    `-${pad(now.getHours())}-${pad(now.getMinutes())}-${pad(now.getSeconds())}`;
+    `-${pad(now.getHours())}-${pad(now.getMinutes())}-${pad(now.getSeconds())}` +
+    `-${String(now.getMilliseconds()).padStart(3, '0')}-${pasteNameCounter++}`;
   const ext = EXTENSION_BY_MIME[file.type] ?? 'bin';
   return `screenshot-${stamp}.${ext}`;
 }
