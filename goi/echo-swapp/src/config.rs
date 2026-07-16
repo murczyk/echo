@@ -1,4 +1,6 @@
-use anyhow::{Context, Result};
+use crate::error::ShortContext;
+use crate::h;
+use anyhow::Result;
 use serde::Deserialize;
 use std::path::PathBuf;
 
@@ -115,7 +117,10 @@ pub fn read_config() -> Result<Config> {
 }
 
 fn read_from_path(path: PathBuf) -> Result<Config> {
-    let config = std::fs::read_to_string(&path)
-        .with_context(|| path.display().to_string())?;
-    toml::from_str::<Config>(&config).context("parsing TOML")
+    let config = std::fs::read_to_string(&path).c(format!(
+        "{}: {}",
+        h!(),
+        path.display()
+    ))?;
+    toml::from_str::<Config>(&config).c(h!())
 }

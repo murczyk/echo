@@ -9,6 +9,7 @@ import type {
 import { fetchMessagesByIds, fetchAnalysisMapPoints } from '../../services/api/analysis';
 import { listMapPalitrasV2 } from '../../services/api/palitra';
 import { isNullOrUndefined } from '../../utils/misc';
+import { primeCoordinatePreviewPalitraIds } from '../shared/message-card/message-coordinate-preview';
 import { ANALYSIS_SESSION_ACTIVITY_PAGE_ID, buildInboxReq } from './helpers';
 import { buildMapAttrs } from './helpers-map';
 import { toErrorMessage } from './use-analysis-data.shared';
@@ -137,6 +138,7 @@ export function useAnalysisMapData({
 
     try {
       const palitras = await listMapPalitrasV2();
+      primeCoordinatePreviewPalitraIds(palitras);
       setMapPalitras(
         palitras.map((palitraRead) => ({
           ...palitraRead,

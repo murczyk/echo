@@ -1,10 +1,13 @@
 mod api;
+mod automation;
 mod config;
 mod db;
+mod error;
 mod messenger;
 mod ui;
 mod worker;
 
+use crate::error::ShortContext;
 use actix_web::{middleware::Logger, web, App, HttpServer};
 use anyhow::Result;
 use config::Config;
@@ -19,10 +22,10 @@ pub struct AppState {
 #[actix_web::main]
 async fn main() -> Result<()> {
     env_logger::init();
-    let config = config::read_config()?;
-    let db = db::connect(&config).await?;
-    echo_im::run_migration(&db).await?;
-    messenger::ensure_pause_state_storage(&db).await?;
+    let config = config::read_config().c(h!())?;
+    let db = db::connect(&config).await.c(h!())?;
+    echo_im::run_migration(&db).await.c(h!())?;
+    messenger::ensure_pause_state_storage(&db).await.c(h!())?;
     worker::spawn_workers(db.clone());
     let state = web::Data::new(AppState {
         config: config.clone(),
@@ -39,9 +42,11 @@ async fn main() -> Result<()> {
             .service(ui::echo_logo)
             .configure(api::configure)
     })
-    .bind(bind)?
+    .bind(bind)
+    .c(h!())?
     .run()
-    .await?;
+    .await
+    .c(h!())?;
 
     Ok(())
 }

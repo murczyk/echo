@@ -34,4 +34,14 @@ describe('parseCoordinateInput', () => {
     expect(parsed!.lng).toBeGreaterThanOrEqual(-180);
     expect(parsed!.lng).toBeLessThanOrEqual(180);
   });
+
+  it('parses UTM coordinates with zone, band, easting and northing', () => {
+    const parsed = parseCoordinateInput('33T 292332 4642055');
+
+    expect(parsed).not.toBeNull();
+    expect(parsed!.lat).toBeGreaterThanOrEqual(-90);
+    expect(parsed!.lat).toBeLessThanOrEqual(90);
+    expect(parsed!.lng).toBeGreaterThanOrEqual(-180);
+    expect(parsed!.lng).toBeLessThanOrEqual(180);
+  });
 });

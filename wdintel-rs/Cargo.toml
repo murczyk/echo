@@ -9,6 +9,7 @@ description = "ЕХО"
 [dependencies]
 echo-migration = { version = "*", path = "../echo-migration" }
 serde = { workspace = true }
+serde_ignored = "0.1.14"
 serde_json = { workspace = true }
 quick-xml = { version = "0.38.4", features = ["serialize", "overlapped-lists"] }
 actix-web = { workspace = true }
@@ -112,7 +113,7 @@ rev = "c9efd65ccf72bf447867e5f959eec7779771007e"
 
 [dependencies.echo-im]
 git = "ssh://git@github.com/echoua/echo-im.git"
-rev = "749a318ff149d892f1588ff9e45f1677761a7c56"
+rev = "17d21606b887afb9f9012cc82941ec3224397c0a"
 
 [dependencies.milgeo-rs]
 git = "ssh://git@github.com/echoua/milgeo-rs.git"

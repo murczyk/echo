@@ -1,4 +1,6 @@
 use crate::config::Config;
+use crate::error::ShortContext;
+use crate::h;
 use anyhow::Result;
 use sea_orm::{ConnectOptions, Database, DatabaseConnection};
 use std::time::Duration;
@@ -12,7 +14,7 @@ pub async fn connect(config: &Config) -> Result<DatabaseConnection> {
         .connect_timeout(Duration::from_secs(10))
         .idle_timeout(Duration::from_secs(60))
         .sqlx_logging(false);
-    Ok(Database::connect(options).await?)
+    Database::connect(options).await.c(h!())
 }
 
 fn connection_string(config: &Config) -> String {

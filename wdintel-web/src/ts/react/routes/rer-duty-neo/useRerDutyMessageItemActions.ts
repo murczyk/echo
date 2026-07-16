@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
 
 import type { InboxMessage, SignalGroupEntry, SignalProfileEntry } from '../../../../Bindings';
+import { buildAnalysisMapHrefWithSearch, uniquePointEtalonsForMapSearch } from './utils';
 import {
   bookmarkAdd,
   bookmarkRemove,
@@ -256,6 +257,12 @@ export function useRerDutyMessageItemActions(params: Params) {
     setBotTagAction(null);
   }, []);
 
+  const handleOpenPointsOnMap = useCallback((etalons: string[], message: InboxMessage) => {
+    const search = uniquePointEtalonsForMapSearch(etalons).join(',');
+    if (search === '') return;
+    window.location.assign(buildAnalysisMapHrefWithSearch(search, message));
+  }, []);
+
   return {
     handleMessageBookmark,
     handleMessageImportant,
@@ -278,5 +285,6 @@ export function useRerDutyMessageItemActions(params: Params) {
     deleteConfirmId,
     deleteConfirmFeedId,
     copiedFeedbackId,
+    handleOpenPointsOnMap,
   };
 }
