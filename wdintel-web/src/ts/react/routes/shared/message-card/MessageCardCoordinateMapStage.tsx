@@ -210,6 +210,7 @@ export function MessageCardCoordinateMapStage({
         weight: 3,
         fillColor: '#ff4d2d',
         fillOpacity: 1,
+        interactive: false,
       }).addTo(map);
 
       mapRef.current = map;
@@ -583,7 +584,7 @@ export function MessageCardCoordinateMapStage({
               <Typography
                 variant="caption"
                 sx={coordinateValueSx}
-                style={{ minWidth: 0, width: '100%' }}
+                style={{ minWidth: 0, width: 'auto', flex: '1 1 auto' }}
                 data-mgrs-text={mgrsText ?? 'MGRS недоступні'}
                 title={mgrsText ?? 'MGRS недоступні'}
               >

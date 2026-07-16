@@ -21,7 +21,7 @@ import {
   shouldOpenAnalysisMapFromSearchParams,
   parseNewestFirstFromWindow,
 } from './helpers';
-import type { User } from '../../../../Bindings';
+import type { InboxMessage, User } from '../../../../Bindings';
 import type { AnalysisPageViewModel, AnalysisQueryState } from './types';
 import { useAnalysisData } from './use-analysis-data';
 import { useAnalysisMessageEditor } from './use-analysis-message-editor';
@@ -383,7 +383,7 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
   );
 
   const openPointsOnMap = useCallback(
-    (etalons: string[], _message: import('../../../../Bindings').InboxMessage) => {
+    (etalons: string[], _message: InboxMessage) => {
       const search = uniquePointEtalonsForMapSearch(etalons).join(',');
       if (search === '') {
         return;

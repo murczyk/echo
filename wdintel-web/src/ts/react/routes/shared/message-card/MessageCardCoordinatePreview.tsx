@@ -1,7 +1,7 @@
 import { Box, Button, Skeleton, Typography } from '@mui/material';
 import { useEffect, useRef, useState } from 'react';
 
-import type { InboxMessage } from '../../../../../Bindings';
+import type { InboxMessage, Tag } from '../../../../../Bindings';
 import {
   CoordinatePreviewLookupError,
   resolveMessageCoordinatePreview,
@@ -12,12 +12,15 @@ import { MessageCardCoordinatePreviewTile } from './MessageCardCoordinatePreview
 
 type Props = {
   msg: InboxMessage;
+  tagsMap?: Record<number, Tag>;
 };
 
 const PREVIEW_HEIGHT_PX = 120;
 const PREVIEW_ROOT_MARGIN = '160px 0px';
+const EMPTY_TAGS_MAP: Record<number, Tag> = {};
 
-export function MessageCardCoordinatePreview({ msg }: Props) {
+export function MessageCardCoordinatePreview({ msg, tagsMap }: Props) {
+  const previewTagsMap = tagsMap ?? EMPTY_TAGS_MAP;
   const hostRef = useRef<HTMLDivElement | null>(null);
   const resolveRequestIdRef = useRef(0);
   const pendingPreviewLoadRef = useRef(false);
@@ -30,7 +33,7 @@ export function MessageCardCoordinatePreview({ msg }: Props) {
     setDialogIndex(null);
     pendingPreviewLoadRef.current = false;
     resolveRequestIdRef.current += 1;
-  }, [msg]);
+  }, [msg, previewTagsMap]);
 
   useEffect(() => {
     const host = hostRef.current;
@@ -60,7 +63,7 @@ export function MessageCardCoordinatePreview({ msg }: Props) {
     resolveRequestIdRef.current = requestId;
     pendingPreviewLoadRef.current = true;
 
-    void resolveMessageCoordinatePreview({ message: msg })
+    void resolveMessageCoordinatePreview({ message: msg, tagsMap: previewTagsMap })
       .then((result) => {
         if (resolveRequestIdRef.current !== requestId) {
           return;
@@ -85,7 +88,7 @@ export function MessageCardCoordinatePreview({ msg }: Props) {
           lookupError,
         });
       });
-  }, [isNearViewport, msg, preview]);
+  }, [isNearViewport, msg, preview, previewTagsMap]);
 
   const points = preview?.points ?? [];
   const visiblePoints = points.slice(0, 3);

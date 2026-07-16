@@ -249,7 +249,9 @@ export function MessageCardMessageBody({
           {textPrimary}
         </Box>
       ) : null}
-      {hasCoordinatePreviewCandidate(msg) ? <MessageCardCoordinatePreview msg={msg} /> : null}
+      {hasCoordinatePreviewCandidate(msg, tagsMap) ? (
+        <MessageCardCoordinatePreview msg={msg} tagsMap={tagsMap} />
+      ) : null}
       {isPresent(msg.extendedForm) && msg.extendedForm.trim() !== '' ? (
         <Stack direction="row" spacing={0.75} alignItems="center" sx={{ minWidth: 0 }}>
           <ChatBubbleOutlineOutlinedIcon

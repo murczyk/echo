@@ -6,7 +6,7 @@ import { act } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Skeleton } from '@mui/material';
 
-import type { InboxMessage } from '../../../../../Bindings';
+import type { InboxMessage, Tag } from '../../../../../Bindings';
 import { MessageCardContent } from './MessageCardContent';
 
 vi.mock('./MessageCardCoordinatePreview', () => ({
@@ -74,11 +74,41 @@ describe('MessageCardContent coordinate preview guard', () => {
     ['50.45044, 30.52355', { text: '50.45044, 30.52355' }],
     ['X=5012345\\nY=5034567', { text: 'X=5012345\nY=5034567' }],
     ['33T 292332 4642055', { text: '33T 292332 4642055' }],
-  ])('renders the preview path for %s', (_label, overrides) => {
+  ])('renders the preview path for %s without Palitra tags', (_label, overrides) => {
     const msg = createMessage(overrides as Partial<InboxMessage>);
 
     act(() => {
       root.render(<MessageCardContent msg={msg} tagsMap={{}} onToggleTag={vi.fn()} />);
+    });
+
+    expect(container.querySelector('.MuiSkeleton-root')).not.toBeNull();
+  });
+
+  it('does not render a coordinate preview for untagged point tokens', () => {
+    const msg = createMessage({
+      text: 'routine',
+      pointTokens: [{ etalon: 'BRAVO' }],
+    });
+
+    act(() => {
+      root.render(<MessageCardContent msg={msg} tagsMap={{}} onToggleTag={vi.fn()} />);
+    });
+
+    expect(container.querySelector('.MuiSkeleton-root')).toBeNull();
+  });
+
+  it('renders a coordinate preview for Palitra-tagged point tokens', () => {
+    const tagsMap = {
+      7: { isPalitra: true } as Tag,
+    };
+    const msg = createMessage({
+      text: 'routine',
+      inboxTags: [{ tagId: 7 }],
+      pointTokens: [{ etalon: 'BRAVO' }],
+    });
+
+    act(() => {
+      root.render(<MessageCardContent msg={msg} tagsMap={tagsMap} onToggleTag={vi.fn()} />);
     });
 
     expect(container.querySelector('.MuiSkeleton-root')).not.toBeNull();

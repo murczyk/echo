@@ -3,7 +3,7 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { ContentNode, InboxMessage, PalitraReadV2 } from '../../../../../Bindings';
+import type { ContentNode, InboxMessage, PalitraReadV2, Tag } from '../../../../../Bindings';
 import {
   convertCoordinateToWgs84,
   extractCoordinates,
@@ -60,6 +60,10 @@ function createMessage(overrides: Partial<InboxMessage>): InboxMessage {
     ...overrides,
   } as InboxMessage;
 }
+
+const palitraTagsMap: Record<number, Tag> = {
+  7: { isPalitra: true } as Tag,
+};
 
 describe('message coordinate preview resolver', () => {
   beforeEach(() => {
@@ -151,6 +155,30 @@ describe('message coordinate preview resolver', () => {
         label: `${renderWgsFloat(expected!.lat)}, ${renderWgsFloat(expected!.lng)}`,
       },
     ]);
+    expect(listMapPalitrasV2).not.toHaveBeenCalled();
+    expect(searchPalitraPoints).not.toHaveBeenCalled();
+  });
+
+  it('rejects an unrelated bare preview USK pair that only looks numeric', async () => {
+    const result = await resolveMessageCoordinatePreview({
+      message: createMessage({
+        text: '1234567 7654321',
+      }),
+    });
+
+    expect(result).toBeNull();
+    expect(listMapPalitrasV2).not.toHaveBeenCalled();
+    expect(searchPalitraPoints).not.toHaveBeenCalled();
+  });
+
+  it('rejects an unrelated labeled preview USK pair that only looks numeric', async () => {
+    const result = await resolveMessageCoordinatePreview({
+      message: createMessage({
+        text: 'X=1234567 Y=7654321',
+      }),
+    });
+
+    expect(result).toBeNull();
     expect(listMapPalitrasV2).not.toHaveBeenCalled();
     expect(searchPalitraPoints).not.toHaveBeenCalled();
   });
@@ -584,11 +612,26 @@ describe('message coordinate preview resolver', () => {
       text: 'ROME\n33T 292332 4642055',
     });
 
-    expect(hasCoordinatePreviewCandidate(message)).toBe(true);
-    expect(await resolveMessageCoordinatePreview({ message })).toMatchObject({
+    expect(hasCoordinatePreviewCandidate(message, palitraTagsMap)).toBe(true);
+    expect(
+      await resolveMessageCoordinatePreview({ message, tagsMap: palitraTagsMap }),
+    ).toMatchObject({
       points: [expect.objectContaining({ source: 'direct' })],
       lookupError: null,
     });
+    expect(listMapPalitrasV2).not.toHaveBeenCalled();
+    expect(searchPalitraPoints).not.toHaveBeenCalled();
+  });
+
+  it('does not resolve point tokens when the message has no Palitra tag', async () => {
+    const result = await resolveMessageCoordinatePreview({
+      message: createMessage({
+        text: 'routine',
+        pointTokens: [{ etalon: 'BRAVO' }],
+      }),
+    });
+
+    expect(result).toBeNull();
     expect(listMapPalitrasV2).not.toHaveBeenCalled();
     expect(searchPalitraPoints).not.toHaveBeenCalled();
   });
@@ -619,8 +662,10 @@ describe('message coordinate preview resolver', () => {
       ] as never);
 
     const result = await resolveMessageCoordinatePreview({
+      tagsMap: palitraTagsMap,
       message: createMessage({
         text: 'routine',
+        inboxTags: [{ tagId: 7 }],
         pointTokens: [{ etalon: 'ALPHA' }, { etalon: 'BRAVO' }, { etalon: 'CHARLIE' }],
       }),
     });
@@ -663,8 +708,10 @@ describe('message coordinate preview resolver', () => {
       .mockRejectedValueOnce(new Error('point search failed'));
 
     const result = await resolveMessageCoordinatePreview({
+      tagsMap: palitraTagsMap,
       message: createMessage({
         text: 'routine',
+        inboxTags: [{ tagId: 7 }],
         pointTokens: [{ etalon: 'ALPHA' }, { etalon: 'BRAVO' }],
       }),
     });
@@ -699,9 +746,11 @@ describe('message coordinate preview resolver', () => {
     ] as never);
 
     const result = await resolveMessageCoordinatePreview({
+      tagsMap: palitraTagsMap,
       message: createMessage({
         text: 'invalid direct text',
         coords: 'X=12\nY=abc',
+        inboxTags: [{ tagId: 7 }],
         textMarked: [{ CNPointC: { text: 'BRAVO', etalon: 'BRAVO' } } as ContentNode],
       }),
     });
@@ -724,6 +773,7 @@ describe('message coordinate preview resolver', () => {
 
   it('keeps the first valid direct coordinate when both direct and palitra data are present', async () => {
     const result = await resolveMessageCoordinatePreview({
+      tagsMap: palitraTagsMap,
       message: createMessage({
         coords: '50.45044, 30.52355',
         textMarked: [{ CNPointC: { text: 'BRAVO', etalon: 'BRAVO' } } as ContentNode],
@@ -741,8 +791,10 @@ describe('message coordinate preview resolver', () => {
     vi.mocked(searchPalitraPoints).mockResolvedValue([] as never);
 
     const result = await resolveMessageCoordinatePreview({
+      tagsMap: palitraTagsMap,
       message: createMessage({
         text: 'unknown palitra label',
+        inboxTags: [{ tagId: 7 }],
         textMarked: [{ CNPointC: { text: 'UNKNOWN', etalon: 'UNKNOWN' } } as ContentNode],
       }),
     });
@@ -769,10 +821,13 @@ describe('message coordinate preview resolver', () => {
 
     const message = createMessage({
       text: 'routine',
+      inboxTags: [{ tagId: 7 }],
       pointTokens: [{ etalon: 'BRAVO' }],
     });
 
-    expect(await resolveMessageCoordinatePreview({ message })).toMatchObject({
+    expect(
+      await resolveMessageCoordinatePreview({ message, tagsMap: palitraTagsMap }),
+    ).toMatchObject({
       points: [],
       etalons: ['BRAVO'],
       lookupError: {
@@ -780,7 +835,9 @@ describe('message coordinate preview resolver', () => {
         kind: 'palette-list',
       },
     });
-    expect(await resolveMessageCoordinatePreview({ message })).toMatchObject({
+    expect(
+      await resolveMessageCoordinatePreview({ message, tagsMap: palitraTagsMap }),
+    ).toMatchObject({
       points: [
         {
           source: 'palitra',
@@ -813,10 +870,13 @@ describe('message coordinate preview resolver', () => {
 
     const message = createMessage({
       text: 'routine',
+      inboxTags: [{ tagId: 7 }],
       pointTokens: [{ etalon: 'BRAVO' }],
     });
 
-    expect(await resolveMessageCoordinatePreview({ message })).toMatchObject({
+    expect(
+      await resolveMessageCoordinatePreview({ message, tagsMap: palitraTagsMap }),
+    ).toMatchObject({
       points: [],
       etalons: ['BRAVO'],
       lookupError: {
@@ -824,7 +884,9 @@ describe('message coordinate preview resolver', () => {
         kind: 'point-search',
       },
     });
-    expect(await resolveMessageCoordinatePreview({ message })).toMatchObject({
+    expect(
+      await resolveMessageCoordinatePreview({ message, tagsMap: palitraTagsMap }),
+    ).toMatchObject({
       points: [
         {
           source: 'palitra',
@@ -845,11 +907,12 @@ describe('message coordinate preview resolver', () => {
 
     const message = createMessage({
       text: 'routine',
+      inboxTags: [{ tagId: 7 }],
       pointTokens: [{ etalon: 'BRAVO' }],
     });
 
-    expect(await resolveMessageCoordinatePreview({ message })).toBeNull();
-    expect(await resolveMessageCoordinatePreview({ message })).toBeNull();
+    expect(await resolveMessageCoordinatePreview({ message, tagsMap: palitraTagsMap })).toBeNull();
+    expect(await resolveMessageCoordinatePreview({ message, tagsMap: palitraTagsMap })).toBeNull();
     expect(listMapPalitrasV2).toHaveBeenCalledTimes(1);
     expect(searchPalitraPoints).not.toHaveBeenCalled();
   });
@@ -860,11 +923,12 @@ describe('message coordinate preview resolver', () => {
 
     const message = createMessage({
       text: 'routine',
+      inboxTags: [{ tagId: 7 }],
       pointTokens: [{ etalon: 'BRAVO' }],
     });
 
-    expect(await resolveMessageCoordinatePreview({ message })).toBeNull();
-    expect(await resolveMessageCoordinatePreview({ message })).toBeNull();
+    expect(await resolveMessageCoordinatePreview({ message, tagsMap: palitraTagsMap })).toBeNull();
+    expect(await resolveMessageCoordinatePreview({ message, tagsMap: palitraTagsMap })).toBeNull();
     expect(listMapPalitrasV2).toHaveBeenCalledTimes(1);
     expect(searchPalitraPoints).toHaveBeenCalledTimes(1);
   });
@@ -958,18 +1022,20 @@ describe('hasCoordinatePreviewCandidate', () => {
       expected: false,
     },
     {
-      label: 'Palitra token',
+      label: 'Palitra token without tag',
       message: createMessage({
         text: 'routine',
         pointTokens: [{ etalon: 'BRAVO' }],
       }),
-      expected: true,
+      expected: false,
     },
     {
-      label: 'marked Palitra token',
+      label: 'Palitra token with tag',
       message: createMessage({
         text: 'routine',
+        pointTokens: [{ etalon: 'BRAVO' }],
         textMarked: [{ CNPointC: { text: 'BRAVO', etalon: 'BRAVO' } } as ContentNode],
+        inboxTags: [{ tagId: 7 }],
       }),
       expected: true,
     },
@@ -987,11 +1053,12 @@ describe('hasCoordinatePreviewCandidate', () => {
       label: 'malformed X/Y with Palitra token',
       message: createMessage({
         text: 'X=12\nY=abc',
+        inboxTags: [{ tagId: 7 }],
         textMarked: [{ CNPointC: { text: 'BRAVO', etalon: 'BRAVO' } } as ContentNode],
       }),
       expected: true,
     },
   ])('$label -> $expected', ({ message, expected }) => {
-    expect(hasCoordinatePreviewCandidate(message)).toBe(expected);
+    expect(hasCoordinatePreviewCandidate(message, palitraTagsMap)).toBe(expected);
   });
 });

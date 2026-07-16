@@ -1,9 +1,10 @@
-import type { InboxMessage, PalitraReadV2 } from '../../../../../Bindings';
+import type { InboxMessage, PalitraReadV2, Tag } from '../../../../../Bindings';
 
 import {
   renderWgsFloat,
   extractCoordinates,
   convertCoordinateToWgs84,
+  isValidUsk2000Component,
 } from '../../importer-beta/coordinates';
 import { parseCoordinateInput } from '../../../../maps/coordinate-search';
 import { getPointEtalonsFromMessage } from '../../rer-duty-neo/utils';
@@ -20,6 +21,7 @@ export type CoordinatePreviewPoint = {
 
 export type CoordinatePreviewInput = {
   message: InboxMessage;
+  tagsMap?: Record<number, Tag>;
 };
 
 export type CoordinatePreviewLookupErrorKind = 'palette-list' | 'point-search';
@@ -125,7 +127,8 @@ type SourceRange = {
 function parsePreviewUskValue(valueText: string): number | null {
   const compact = valueText.replace(/\s+/g, '');
   if (/^\d{7}$/.test(compact)) {
-    return Number(compact);
+    const value = Number(compact);
+    return isValidUsk2000Component(value) ? value : null;
   }
 
   const compactMatch = compact.match(/^(\d{2})[-‐–—]?(\d{5})$/);
@@ -133,7 +136,8 @@ function parsePreviewUskValue(valueText: string): number | null {
     return null;
   }
 
-  return Number(`${compactMatch[1]}${compactMatch[2]}`);
+  const value = Number(`${compactMatch[1]}${compactMatch[2]}`);
+  return isValidUsk2000Component(value) ? value : null;
 }
 
 function isRangeConsumed(range: SourceRange, consumedRanges: SourceRange[]): boolean {
@@ -353,7 +357,10 @@ function resolveDirectCoordinatesFromMessage(message: InboxMessage): CoordinateP
   return resolveDirectCoordinatesFromCoordinateText(message.coords ?? '');
 }
 
-export function hasCoordinatePreviewCandidate(message: InboxMessage): boolean {
+export function hasCoordinatePreviewCandidate(
+  message: InboxMessage,
+  tagsMap: Record<number, Tag> = {},
+): boolean {
   if (resolveDirectCoordinatesFromCoordinateText(message.text ?? '').length > 0) {
     return true;
   }
@@ -362,7 +369,7 @@ export function hasCoordinatePreviewCandidate(message: InboxMessage): boolean {
     return true;
   }
 
-  return collectCoordinatePreviewEtalons(message).length > 0;
+  return collectCoordinatePreviewEtalons(message, tagsMap).length > 0;
 }
 
 async function loadAvailablePalitraIds(): Promise<{
@@ -475,7 +482,7 @@ export async function resolveMessageCoordinatePreview(
     };
   }
 
-  const etalons = normalizeEtalons(getPointEtalonsFromMessage(input.message));
+  const etalons = normalizeEtalons(getPointEtalonsFromMessage(input.message, input.tagsMap ?? {}));
   if (etalons.length === 0) {
     return null;
   }
@@ -527,6 +534,9 @@ export async function resolveMessageCoordinatePreview(
   };
 }
 
-export function collectCoordinatePreviewEtalons(message: InboxMessage): string[] {
-  return normalizeEtalons(getPointEtalonsFromMessage(message));
+export function collectCoordinatePreviewEtalons(
+  message: InboxMessage,
+  tagsMap: Record<number, Tag> = {},
+): string[] {
+  return normalizeEtalons(getPointEtalonsFromMessage(message, tagsMap));
 }

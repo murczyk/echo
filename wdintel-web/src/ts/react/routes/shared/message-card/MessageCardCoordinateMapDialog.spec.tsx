@@ -473,12 +473,15 @@ describe('MessageCardCoordinateMapDialog', () => {
     expect(copyButton?.style.height).toBe('24px');
     expect(wgsValue?.style.flex).toBe('1 1 auto');
     expect(wgsValue?.style.minWidth).toBe('0');
-    expect(mgrsValue?.style.width).toBe('100%');
+    expect(mgrsValue?.style.width).toBe('auto');
 
     const leaflet = await import('leaflet');
     expect(leaflet.map).toHaveBeenCalledTimes(1);
     expect(leaflet.map().setView).toHaveBeenCalledWith([50.45044, 30.52355], 13);
-    expect(leaflet.circleMarker).toHaveBeenCalledWith([50.45044, 30.52355], expect.any(Object));
+    expect(leaflet.circleMarker).toHaveBeenCalledWith(
+      [50.45044, 30.52355],
+      expect.objectContaining({ interactive: false }),
+    );
     expect(leaflet.map().invalidateSize).toHaveBeenCalledTimes(1);
     expect(leaflet.circleMarker().setLatLng).not.toHaveBeenCalled();
 
