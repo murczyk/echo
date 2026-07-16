@@ -803,20 +803,49 @@ fn try_extract_pu_fsb_rf_unit_and_location(
 }
 
 fn try_extract_report_125_unit(inp: &str) -> Option<String> {
-    if !inp.to_lowercase().contains("умовні координати для бота")
-    {
+    if !looks_like_report_125_unit_body(inp) {
         return None;
     }
 
     lazy_static! {
         static ref RE: Regex =
-            Regex::new(r#"(?m)^\s*Назва:\s*(?P<unit>[^;\n]+)\s*;?\s*$"#)
-                .unwrap();
+            Regex::new(r#"(?m)^\s*Назва:\s*(?P<unit>.*?)\s*;?\s*$"#).unwrap();
     }
     RE.captures(inp)
         .and_then(|capts| m_cap_s(&capts, "unit"))
-        .map(|unit| unit.trim().to_string())
+        .map(|unit| unit.trim().trim_start_matches('!').trim().to_string())
         .filter(|unit| !unit.is_empty())
+}
+
+fn looks_like_report_125_unit_body(inp: &str) -> bool {
+    let inp_lower = inp.to_lowercase();
+    if inp_lower.contains("умовні координати для бота") {
+        return true;
+    }
+
+    lazy_static! {
+        static ref COORDS_RE: Regex = RegexBuilder::new(
+            r#"(?m)^\s*(?:Координати|Умовні\s+координати|Условні\s+координати)(?:\s*\(MGRS\))?:\s*(?:(?:MGRS\s*)?\d{1,2}\p{L}\s+\p{L}{2}\s+\d{1,5}\s+\d{1,5}|кут\s*\d+(?:[\.,]\d+)?)\s*;?\s*$"#
+        )
+        .case_insensitive(true)
+        .build()
+        .unwrap();
+        static ref FREQ_RE: Regex =
+            RegexBuilder::new(r#"(?m)^\s*Частота\s*:"#)
+                .case_insensitive(true)
+                .build()
+                .unwrap();
+        static ref TECH_FIELD_RE: Regex = RegexBuilder::new(
+            r#"(?m)^\s*(Кут|Період\s+слідування|Тривалість\s+імпульсу)\s*(\(|:)"#
+        )
+        .case_insensitive(true)
+        .build()
+        .unwrap();
+    }
+
+    COORDS_RE.is_match(inp)
+        && FREQ_RE.is_match(inp)
+        && TECH_FIELD_RE.is_match(inp)
 }
 
 fn try_extract_standard_unit_and_location(
@@ -944,6 +973,92 @@ mod tests {
             res.unit.as_deref(),
             Some("А-50 (А-50У) РЛС з РТК «Шмєль-М»")
         );
+        assert_eq!(res.locality, None);
+    }
+
+    #[test]
+    fn extract_unit_report_125_plain_coords_sample_name() {
+        let body = r#"15.07.2026 11:33:26
+Назва: Су-35;
+Координати: MGRS 37U DR 37120 30872;
+Частота: 9052-9060;
+Період слідування (Ti,мкс): 5; 7; 16; 11;
+Тривалість імпульсу (τi,мкс): 1.8; 0.3; 1.9; 1.5;
+---------- ☿ Oscar_VR ☿ ----------"#;
+        let res = extract_unit(test_settlements(), body, vec![]).unwrap();
+        assert_eq!(res.unit.as_deref(), Some("Су-35"));
+        assert_eq!(res.locality, None);
+    }
+
+    #[test]
+    fn extract_unit_report_125_name_keeps_internal_semicolon() {
+        let body = r#"15.07.2026 11:33:26
+Назва: КІ РЛС ЛЧМ (17; 9 Тп);
+Координати: MGRS 37U DR 37120 30872;
+Частота: 9052-9060;
+Період слідування (Ti,мкс): 5; 7; 16; 11;"#;
+        let res = extract_unit(test_settlements(), body, vec![]).unwrap();
+        assert_eq!(res.unit.as_deref(), Some("КІ РЛС ЛЧМ (17; 9 Тп)"));
+        assert_eq!(res.locality, None);
+    }
+
+    #[test]
+    fn extract_unit_report_125_buk_radar_sample_name() {
+        let body = r#"10.07.2026 11:36:17
+Назва: РЛС СВУ 9А317М ЗРК “Бук-М2”;
+Координати: MGRS 37U DR 14916 32628;
+Частота: 5622;
+Період слідування (Ti,мкс): 437; 443;
+Тривалість імпульсу (τi,мкс): 1.2; 1.4;
+---------- ☿ Oscar_VR ☿ ----------"#;
+        let res = extract_unit(test_settlements(), body, vec![]).unwrap();
+        assert_eq!(res.unit.as_deref(), Some("РЛС СВУ 9А317М ЗРК “Бук-М2”"));
+        assert_eq!(res.locality, None);
+    }
+
+    #[test]
+    fn extract_unit_report_125_gps_jamming_sample_name() {
+        let body = r#"09.07.2026 13:14:25
+Назва: РНС GPS (подавлення супутникової навігації);
+Координати: MGRS 37U DR 10539 22836;
+Частота: 1201-1208;
+Період слідування (Ti,мкс): 12; 14; 11; 10; 17;
+Тривалість імпульсу (τi,мкс): 0.5; 0.3;
+---------- ☿ Oscar_VR ☿ ----------"#;
+        let res = extract_unit(test_settlements(), body, vec![]).unwrap();
+        assert_eq!(
+            res.unit.as_deref(),
+            Some("РНС GPS (подавлення супутникової навігації)")
+        );
+        assert_eq!(res.locality, None);
+    }
+
+    #[test]
+    fn extract_unit_report_125_conditional_coords_sample_name() {
+        let body = r#"09.07.2026 12:03:21
+Назва: РЛС 9С35М ЗРК “Бук-М1”;
+Кут 90.9;
+Условні координати: MGRS 37U DR 57187 13149;
+Частота: 6779;
+Період слідування (Ti,мкс): 966; 14; 2027; 941; 1059;
+Тривалість імпульсу (τi,мкс): 27; 9; 95; 5; 6;
+---------- ☿ Oscar_VR ☿ ----------"#;
+        let res = extract_unit(test_settlements(), body, vec![]).unwrap();
+        assert_eq!(res.unit.as_deref(), Some("РЛС 9С35М ЗРК “Бук-М1”"));
+        assert_eq!(res.locality, None);
+    }
+
+    #[test]
+    fn extract_unit_report_125_strips_name_exclamation_marks() {
+        let body = r#"08.07.2026 12:26:40
+Назва: !!!!!48Я6-К1 «Подлет-К1»;
+Координати: кут 107.3;
+Частота: 2850;
+Період слідування (Ti,мкс): 564; 493; 229; 215;
+Тривалість імпульсу (τi,мкс): 1.1; 0.7;
+---------- ☿ Oscar_VR ☿ ----------"#;
+        let res = extract_unit(test_settlements(), body, vec![]).unwrap();
+        assert_eq!(res.unit.as_deref(), Some("48Я6-К1 «Подлет-К1»"));
         assert_eq!(res.locality, None);
     }
 

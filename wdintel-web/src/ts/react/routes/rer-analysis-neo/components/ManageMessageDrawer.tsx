@@ -128,6 +128,7 @@ export function ManageMessageDrawer(props: Props) {
               noValidate
               onSubmit={methods.handleSubmit(onSubmit)}
               canSubmit={!busy}
+              globalSubmitShortcut
               sx={{
                 display: 'grid',
                 gridTemplateColumns: { xs: '1fr', md: 'minmax(0, 1fr) minmax(0, 1fr)' },
