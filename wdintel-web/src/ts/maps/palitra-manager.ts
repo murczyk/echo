@@ -10,7 +10,22 @@ import {
   PalitraManagerCallbacks,
   PalitraManagerOptions,
 } from './palitra-types';
-import { createPalitraGeometryLayer } from './utils/palitra-map-geometry';
+import { createPalitraGeometryLayer, hasRenderableGeometry } from './utils/palitra-map-geometry';
+
+function normalizePalitraIds(ids: number[]): number[] {
+  const result: number[] = [];
+  const seen = new Set<number>();
+
+  ids.forEach((value) => {
+    if (!Number.isInteger(value) || seen.has(value)) {
+      return;
+    }
+    seen.add(value);
+    result.push(value);
+  });
+
+  return result;
+}
 
 export class PalitraManager {
   private cacheManager: PalitraCacheManager;
@@ -24,11 +39,6 @@ export class PalitraManager {
   private enabled = true;
   private loadState: PalitrasLoadState = 'idle';
   private interactionDisabled = false;
-  // We request an auto-fit when visible palitras changed, but skip it if user
-  // already moved/zoomed manually after the request.
-  private fitOnNextPolygonUpdate = false;
-  private fitRequestedAt: number | null = null;
-  private lastUserNavigationAt = 0;
 
   constructor(
     private map: L.Map,
@@ -70,27 +80,50 @@ export class PalitraManager {
   }
 
   updateVisibleIds(ids: number[]): void {
-    const previousVisibleSet = new Set(this.visibleIds);
     this.visibleIds = ids;
     this.control?.updatePalitras(this.palitras, ids);
     this.updateControlVisibility();
-
-    const hasAddedVisibleIds = ids.some((id) => !previousVisibleSet.has(id));
-    if (hasAddedVisibleIds) {
-      this.fitOnNextPolygonUpdate = true;
-      this.fitRequestedAt = Date.now();
-    }
-
     this.updatePolygons();
   }
 
   setEnabled(enabled: boolean): void {
     this.enabled = enabled;
     this.updateControlVisibility();
-    this.fitOnNextPolygonUpdate = enabled;
-    this.fitRequestedAt = enabled ? Date.now() : null;
     this.updatePolygons();
     this.pointsController.onEnabledChanged();
+  }
+
+  fitPalitras(ids: number[]): void {
+    if (!this.enabled) {
+      return;
+    }
+
+    const targetIds = normalizePalitraIds(ids);
+    if (targetIds.length === 0) {
+      return;
+    }
+
+    const visibleIdSet = new Set(this.visibleIds);
+    const visibleTargetIds = targetIds.filter((id) => visibleIdSet.has(id));
+    if (visibleTargetIds.length === 0) {
+      return;
+    }
+
+    const geometryLayers = this.getRenderableGeometryLayers(visibleTargetIds);
+    if (geometryLayers.length === 0) {
+      return;
+    }
+
+    const group = L.featureGroup(geometryLayers);
+    const bounds = group.getBounds();
+    if (!bounds.isValid()) {
+      return;
+    }
+
+    this.map.fitBounds(bounds, {
+      padding: [50, 50],
+      maxZoom: 10,
+    });
   }
 
   setControl(control: PalitrasControl): void {
@@ -129,14 +162,8 @@ export class PalitraManager {
   }
 
   private setupEventListeners(): void {
-    this.map.on('zoomstart', () => this.markUserNavigation());
-    this.map.on('movestart', () => this.markUserNavigation());
     this.map.on('zoomend', () => this.pointsController.onViewportChanged());
     this.map.on('moveend', () => this.pointsController.onViewportChanged());
-  }
-
-  private markUserNavigation(): void {
-    this.lastUserNavigationAt = Date.now();
   }
 
   private updatePolygons(): void {
@@ -146,13 +173,22 @@ export class PalitraManager {
     }
 
     this.layerGroup.clearLayers();
-    const visiblePalitras = this.palitras.filter(
-      (palitraDetails) =>
-        this.visibleIds.includes(palitraDetails.palitra.id) && palitraDetails.palitra.geometry,
-    );
+    const geometryLayers = this.getRenderableGeometryLayers(this.visibleIds);
+    geometryLayers.forEach((layer) => {
+      this.layerGroup.addLayer(layer);
+    });
 
+    this.pointsController.updatePoints();
+  }
+
+  private getRenderableGeometryLayers(ids: number[]): L.Layer[] {
+    const idSet = new Set(ids);
     const geometryLayers: L.Layer[] = [];
-    visiblePalitras.forEach((palitraDetails) => {
+    this.palitras.forEach((palitraDetails) => {
+      if (!idSet.has(palitraDetails.palitra.id) || !hasRenderableGeometry(palitraDetails)) {
+        return;
+      }
+
       const layer = createPalitraGeometryLayer(palitraDetails);
       if (!layer) {
         console.log('❌ Palitra geometry creation failed');
@@ -173,28 +209,10 @@ export class PalitraManager {
         event.originalEvent?.preventDefault();
         event.originalEvent?.stopPropagation();
       });
-      this.layerGroup.addLayer(layer);
       geometryLayers.push(layer);
     });
 
-    this.pointsController.updatePoints();
-
-    if (this.fitOnNextPolygonUpdate && geometryLayers.length > 0) {
-      if (this.shouldFitAfterVisiblePalitrasChanged()) {
-        const group = L.featureGroup(geometryLayers);
-        this.map.fitBounds(group.getBounds(), {
-          padding: [50, 50],
-          maxZoom: 10,
-        });
-      }
-      this.fitOnNextPolygonUpdate = false;
-      this.fitRequestedAt = null;
-    }
-  }
-
-  private shouldFitAfterVisiblePalitrasChanged(): boolean {
-    // Ignore deferred fitBounds when user already took control of viewport.
-    return !(this.fitRequestedAt !== null && this.lastUserNavigationAt > this.fitRequestedAt);
+    return geometryLayers;
   }
 
   private getBufferedBounds(): L.LatLngBounds {

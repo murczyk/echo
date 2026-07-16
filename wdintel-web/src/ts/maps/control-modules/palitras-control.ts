@@ -35,6 +35,7 @@ export function createPalitrasControl(
   palitras: PalitraDetails[],
   visibleIds: number[],
   onVisibleIdsChange: (visibleIds: number[]) => void,
+  onFocusPalitras: (palitraIds: number[]) => void,
 ): PalitrasControl {
   const PalitrasControlClass = L.Control.extend({
     _palitras: palitras,
@@ -63,6 +64,22 @@ export function createPalitrasControl(
         const normalizedIds = normalizeVisibleIds(ids);
         this._visibleIds = normalizedIds;
         onVisibleIdsChange(normalizedIds);
+      });
+
+      palitrasElement.addEventListener('palitras-focus-request', (event: Event) => {
+        if (this._interactionDisabled) {
+          return;
+        }
+        const customEvent = event as CustomEvent<{ palitraIds?: number[] }>;
+        const palitraIds = customEvent.detail?.palitraIds;
+        if (!Array.isArray(palitraIds)) {
+          return;
+        }
+        const normalizedIds = normalizeVisibleIds(palitraIds);
+        if (normalizedIds.length === 0) {
+          return;
+        }
+        onFocusPalitras(normalizedIds);
       });
 
       L.DomEvent.disableClickPropagation(this._container);
