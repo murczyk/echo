@@ -2065,6 +2065,7 @@ fn worker_report_kinds() -> Vec<(&'static str, &'static str)> {
             "report_history_worker_network_frequencies",
             "network_frequencies",
         ),
+        ("report_history_worker_report_125", "report_125"),
         ("report_history_worker_report_1213", "report_1213"),
         ("report_history_worker_summary_table", KIND_SUMMARY_TABLE),
         ("report_history_worker_kmz", KIND_KMZ),

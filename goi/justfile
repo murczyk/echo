@@ -516,6 +516,30 @@ deploy-goi-echo-worker-from-local server:
     "
 
 [arg('server', long='server')]
+_backup-app-data server app_dir:
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    SERVER="{{ server }}"
+    APP_DIR="{{ app_dir }}"
+
+    echo "Backing up ${APP_DIR}/data on ${SERVER}..."
+    ssh "$SERVER" APP_DIR="$APP_DIR" bash -se <<'REMOTE'
+    set -euo pipefail
+
+    if [[ ! -d "${APP_DIR}/data" ]]; then
+      echo "${APP_DIR}/data does not exist; skipping backup."
+      exit 0
+    fi
+
+    BACKUP_DIR="${APP_DIR}/data_bkp/$(date +%d_%m_%y_%H_%M)"
+    sudo mkdir -p "${BACKUP_DIR}"
+    sudo cp -a "${APP_DIR}/data/." "${BACKUP_DIR}/"
+    sudo chown -R echo:echo "${APP_DIR}/data_bkp"
+    echo "Backed up ${APP_DIR}/data to ${BACKUP_DIR}"
+    REMOTE
+
+[arg('server', long='server')]
 deploy server:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -537,6 +561,8 @@ deploy server:
     sudo mkdir -p "${APP_DIR}" "${APP_DIR}/data"
     sudo chown echo:echo "${APP_DIR}" "${APP_DIR}/data"
     REMOTE
+
+    just --justfile "{{ goi_dir }}/justfile" _backup-app-data --server "$SERVER" "$APP_DIR"
 
     echo "Cleaning stale prebuilt externals in ${APP_DIR}..."
     ssh "$SERVER" APP_DIR="$APP_DIR" bash -se <<'REMOTE'
@@ -570,6 +596,7 @@ deploy server:
       --delete-after \
       --force \
       --exclude '.git/' \
+      --exclude '/data_bkp/' \
       --exclude '/data/' \
       --exclude '/node_modules/' \
       --exclude '.runtime/' \
@@ -641,6 +668,8 @@ deploy-first server:
       sudo chown -R echo:echo '${APP_DIR}'
     "
 
+    just --justfile "{{ goi_dir }}/justfile" _backup-app-data --server "$SERVER" "$APP_DIR"
+
     echo "Cleaning stale prebuilt externals in ${APP_DIR}..."
     ssh "$SERVER" "set -euo pipefail
       sudo rm -rf '${APP_DIR}/.next/node_modules'
@@ -656,6 +685,7 @@ deploy-first server:
       --delete-after \
       --force \
       --exclude '.git/' \
+      --exclude '/data_bkp/' \
       --exclude '/node_modules/' \
       --exclude '.runtime/' \
       --exclude '.bootstrap/' \
@@ -726,6 +756,8 @@ deploy-swapp server:
       sudo chown -R echo:echo '${APP_DIR}'
     "
 
+    just --justfile "{{ goi_dir }}/justfile" _backup-app-data --server "$SERVER" "$APP_DIR"
+
     echo "Cleaning stale prebuilt externals in ${APP_DIR}..."
     ssh "$SERVER" "set -euo pipefail
       sudo rm -rf '${APP_DIR}/.next/node_modules'
@@ -736,6 +768,7 @@ deploy-swapp server:
       --delete-after \
       --force \
       --exclude '.git/' \
+      --exclude '/data_bkp/' \
       --exclude '.runtime/' \
       --exclude '.bootstrap/' \
       --exclude '.output/' \
@@ -848,6 +881,8 @@ deploy-swapp-alt server:
       sudo chown -R echo:echo '${APP_DIR}'
     "
 
+    just --justfile "{{ goi_dir }}/justfile" _backup-app-data --server "$SERVER" "$APP_DIR"
+
     echo "Cleaning stale prebuilt externals in ${APP_DIR}..."
     ssh "$SERVER" "set -euo pipefail
       sudo rm -rf '${APP_DIR}/.next/node_modules'
@@ -858,6 +893,7 @@ deploy-swapp-alt server:
       --delete-after \
       --force \
       --exclude '.git/' \
+      --exclude '/data_bkp/' \
       --exclude '.runtime/' \
       --exclude '.bootstrap/' \
       --exclude '.output/' \

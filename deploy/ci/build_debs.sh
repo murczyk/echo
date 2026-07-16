@@ -61,11 +61,11 @@ if [ -n "$wdintel_epoch" ]; then
   touch -d "@$wdintel_epoch" target/release/wdintel-rs 2>/dev/null || true
   touch -d "@$wdintel_epoch" target/release/goi-echo-worker 2>/dev/null || true
   touch -d "@$wdintel_epoch" target/release/echo-swapp 2>/dev/null || true
-  SOURCE_DATE_EPOCH="$wdintel_epoch" cargo deb -p wdintel-rs --no-build
+  SOURCE_DATE_EPOCH="$wdintel_epoch" cargo deb -p wdintel-rs --no-build --fast
   SOURCE_DATE_EPOCH="$wdintel_epoch" cargo deb -p goi-echo-worker --no-build
   SOURCE_DATE_EPOCH="$wdintel_epoch" cargo deb -p echo-swapp --no-build
 else
-  cargo deb -p wdintel-rs --no-build
+  cargo deb -p wdintel-rs --no-build --fast
   cargo deb -p goi-echo-worker --no-build
   cargo deb -p echo-swapp --no-build
 fi

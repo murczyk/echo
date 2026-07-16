@@ -535,6 +535,24 @@ mod tests {
     }
 
     #[test]
+    fn extract_datetime_report_125_sample() {
+        let input = r#"16.07.2026 11:34:32
+Назва: А-50 (А-50У) РЛС з РТК «Шмєль-М»;
+Умовні координати для бота: MGRS 37U DR 32515 05505;
+Кут: 79.6;
+Частота: 3330;"#;
+        let lnow = Kyiv.with_ymd_and_hms(2026, 7, 17, 20, 15, 30).unwrap();
+        let res = extract_datetime(lnow, input).unwrap();
+        let expected = Some(
+            NaiveDate::from_ymd_opt(2026, 7, 16)
+                .unwrap()
+                .and_hms_opt(11, 34, 32)
+                .unwrap(),
+        );
+        assert_eq!(res, expected);
+    }
+
+    #[test]
     fn extract_datetime_handles_antenna_short_year_time_label() {
         let input = "Тип: Антена\nНазва: 136.850 МГц\nЧас: 26.06.26  19:46\nКоординати: 36U XB 70617 18612";
         let lnow = Kyiv.with_ymd_and_hms(2026, 6, 27, 20, 15, 30).unwrap();

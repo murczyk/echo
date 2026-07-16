@@ -276,6 +276,9 @@ where
 
     let ts = datetime
         .unwrap_or_else(|| result.datetime.unwrap_or(message.created_at));
+    crate::location::peleng::delete_inbox_pelengs(result.id, txn)
+        .await
+        .c(h!())?;
     crate::location::peleng::insert_pelengs(coords_vec, result.id, ts, txn)
         .await
         .c(h!())?;
@@ -691,6 +694,9 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::functest::tests::{
+        cleanup, find_test_datasource_group, mk_signal_message,
+    };
 
     #[test]
     fn format_date_time_fields_keeps_seconds() {
@@ -739,6 +745,119 @@ mod tests {
             meow_format.unwrap().body_noheader.body,
             "Перехоплення о 08:30\nрядок 2"
         );
+    }
+
+    fn report_125_sample_body(mgrs: &str) -> String {
+        format!(
+            "Назва: А-50 (А-50У) РЛС з РТК «Шмєль-М»;\n\
+             Частота: 3330;\n\
+             Дата та час: 16.07.2026 11:34:32;\n\
+             Умовні координати для бота: MGRS {mgrs};"
+        )
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn construct_inbox_item_imports_report_125_sample_and_replaces_pelengs(
+    ) {
+        let env = cleanup().await.unwrap();
+        let datasource_group =
+            find_test_datasource_group(&env.dbx).await.unwrap();
+        let created_at = NaiveDate::from_ymd_opt(2026, 7, 16)
+            .unwrap()
+            .and_hms_opt(8, 34, 32)
+            .unwrap();
+        let message = mk_signal_message(
+            &env.dbx,
+            signal_message::ActiveModel {
+                body: Set(Some(report_125_sample_body("37U DR 32515 05505"))),
+                created_at: Set(created_at),
+                timestamp: Set(Some(created_at)),
+                message_uid: Set(Some(format!(
+                    "report-125-sample-{}",
+                    Uuid::new_v4()
+                ))),
+                datasource_group_id: Set(Some(datasource_group.id)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let mut cache = TopKCache::<String, String>::new(64);
+
+        construct_inbox_item(
+            env.settlements.clone(),
+            &env.dbx,
+            &env.rq,
+            &env.config,
+            message.id,
+            &mut cache,
+            None,
+        )
+        .await
+        .unwrap();
+
+        let inbox_item = sigint_inbox_item::Entity::find_by_id(message.id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            inbox_item.unit.as_deref(),
+            Some("А-50 (А-50У) РЛС з РТК «Шмєль-М»")
+        );
+        assert_eq!(inbox_item.freq.as_deref(), Some("3330"));
+        assert_eq!(inbox_item.date.as_deref(), Some("2026-07-16"));
+        assert_eq!(inbox_item.time.as_deref(), Some("11:34:32"));
+        assert_eq!(
+            inbox_item.datetime,
+            Some(
+                NaiveDate::from_ymd_opt(2026, 7, 16)
+                    .unwrap()
+                    .and_hms_opt(8, 34, 32)
+                    .unwrap()
+            )
+        );
+        assert_eq!(active_pelengs(message.id, &env.dbx).await.len(), 1);
+
+        let mut message = message.into_active_model();
+        message.body = Set(Some(report_125_sample_body("37U DR 32615 05605")));
+        let message = message.update(&env.dbx).await.unwrap();
+
+        construct_inbox_item(
+            env.settlements.clone(),
+            &env.dbx,
+            &env.rq,
+            &env.config,
+            message.id,
+            &mut cache,
+            None,
+        )
+        .await
+        .unwrap();
+
+        let inbox_item = sigint_inbox_item::Entity::find_by_id(message.id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        let pelengs = active_pelengs(message.id, &env.dbx).await;
+        assert_eq!(pelengs.len(), 1);
+        assert_eq!(inbox_item.lat, Some(pelengs[0].lat));
+        assert_eq!(inbox_item.lng, Some(pelengs[0].lng));
+    }
+
+    async fn active_pelengs(
+        inbox_item_id: i64,
+        dbx: &DatabaseConnection,
+    ) -> Vec<sigint_peleng::Model> {
+        sigint_peleng::Entity::find()
+            .filter(sigint_peleng::Column::SourceInboxItemId.eq(inbox_item_id))
+            .filter(sigint_peleng::Column::Deleted.eq(false))
+            .order_by_asc(sigint_peleng::Column::Id)
+            .all(dbx)
+            .await
+            .unwrap()
     }
 
     #[test]

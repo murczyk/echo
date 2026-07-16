@@ -1,0 +1,790 @@
+use crate::entities::{
+    datasource, sigint_inbox_item, sigint_peleng, signal_message,
+};
+use crate::error::AppError;
+use crate::location::peleng::inbox_item_has_active_peleng_exists;
+use crate::rer_importer::reports::inbox_light::load_message_group_info;
+use crate::rer_importer::reports::types::ReportPreviewReq;
+use crate::types::*;
+use crate::utils::dt_zoned_from_millis;
+use crate::utils::orm::ArrayColumnOps;
+use anyhow::Context;
+use chrono::{NaiveDate, NaiveDateTime, NaiveTime};
+use docx_rs::{
+    AlignmentType, Docx, PageMargin, PageOrientationType, Paragraph, Run,
+    RunFonts, Table, TableCell, TableRow, VAlignType, WidthType,
+};
+use geoconvert::{LatLon, Mgrs};
+use itertools::Itertools;
+use sea_orm::*;
+use std::collections::{BTreeMap, BTreeSet};
+use std::path::Path;
+
+const DOCX_FONT: &str = "Times New Roman";
+const DOCX_FONT_SIZE: usize = 24;
+const DOCX_PAGE_WIDTH: u32 = 11906;
+const DOCX_PAGE_HEIGHT: u32 = 16838;
+const DOCX_PAGE_MARGIN: i32 = 600;
+
+const REPORT_125_FORM: &str = "Форма № 1.2.5  /ГУР";
+const REPORT_125_TITLE: &str = "Донесення за результатами функціонування тактичної радіопеленгаторної мережі у зоні відповідальності УОС (УВ (с), УСіЗ)";
+const REPORT_125_SECTION_TITLE: &str =
+    "Результати визначення місцеположення джерел (об’єктів) розвідки.";
+const REPORT_125_FOOTER: &str = "Начальник ОВУР";
+
+const CELL_NUM_WIDTH: usize = 600;
+const CELL_DATETIME_WIDTH: usize = 2100;
+const CELL_MGRS_WIDTH: usize = 2200;
+const CELL_TYPE_WIDTH: usize = 3000;
+const CELL_RECON_WIDTH: usize = 2100;
+const CELL_STRIKE_WIDTH: usize = 2100;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Report125Data {
+    rows: Vec<Report125Row>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Report125Row {
+    inbox_item_id: i64,
+    peleng_id: i64,
+    datetime: NaiveDateTime,
+    mgrs: String,
+    rls_type: String,
+}
+
+#[derive(Debug, Clone, FromQueryResult)]
+struct Report125MessageRow {
+    id: i64,
+    timestamp: Option<NaiveDateTime>,
+    date: Option<String>,
+    time: Option<String>,
+    datetime: Option<NaiveDateTime>,
+    unit: Option<String>,
+    unit_v2: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+struct Report125Message {
+    id: i64,
+    timestamp: Option<NaiveDateTime>,
+    date: Option<String>,
+    time: Option<String>,
+    datetime: Option<NaiveDateTime>,
+    unit: Option<String>,
+    unit_v2: Option<String>,
+    datasource_id: Option<i64>,
+}
+
+pub async fn report_docx_kind_report_125(
+    user_login: &str,
+    env: &Env,
+    req: &ReportPreviewReq,
+    outpath: &Path,
+) -> Result<(), AppError> {
+    let (read_db, replica_label) = env.replica_with_label();
+    match replica_label {
+        Some(label) => info!("Report 1.2.5 using replica {label}"),
+        None => info!("Report 1.2.5 using primary database"),
+    }
+
+    let login = user_login.to_string();
+    let logins = crate::users::get_organism_logins_by_login(&read_db, &login)
+        .await
+        .c(h!())?;
+    let report_data =
+        collect_report_125_data(&read_db, &login, &logins, env, req).await?;
+
+    build_report_125_docx_to_path(&report_data, outpath).context(h!())?;
+    Ok(())
+}
+
+async fn collect_report_125_data(
+    dbx: &DatabaseConnection,
+    login: &str,
+    logins: &[String],
+    env: &Env,
+    req: &ReportPreviewReq,
+) -> Result<Report125Data, AppError> {
+    let mut inbox_req = req.req.clone();
+    inbox_req.nolimit = Some(true);
+    inbox_req.report_tags_only_this_unit = Some(false);
+
+    let messages = load_report_125_messages(dbx, login, env, &inbox_req)
+        .await
+        .context(h!())?;
+    let own_datasource_ids = if req.report_tags_only_this_unit == Some(true) {
+        Some(load_report_125_datasource_ids(dbx, logins).await?)
+    } else {
+        None
+    };
+    let messages = messages
+        .into_iter()
+        .filter(|message| {
+            report_125_message_matches_datasource_scope(
+                message,
+                own_datasource_ids.as_ref(),
+            )
+        })
+        .collect_vec();
+    let message_ids = messages.iter().map(|message| message.id).collect_vec();
+    let pelengs_by_message = load_report_125_pelengs(dbx, &message_ids).await?;
+    build_report_125_data(messages, &pelengs_by_message)
+}
+
+async fn load_report_125_messages(
+    dbx: &DatabaseConnection,
+    login: &str,
+    env: &Env,
+    req: &crate::rer_importer::types::InboxMessagesReq,
+) -> Result<Vec<Report125Message>, AppError> {
+    let rows = crate::rer_importer::inbox::query::build_filtered_inbox_query(
+        dbx, login, env, req,
+    )
+    .await
+    .c(h!())?
+    .filter(inbox_item_has_active_peleng_exists())
+    .select_only()
+    .column_as(signal_message::Column::Id, "id")
+    .column_as(signal_message::Column::Timestamp, "timestamp")
+    .column_as(sigint_inbox_item::Column::Date, "date")
+    .column_as(sigint_inbox_item::Column::Time, "time")
+    .column_as(sigint_inbox_item::Column::Datetime, "datetime")
+    .column_as(sigint_inbox_item::Column::Unit, "unit")
+    .column_as(sigint_inbox_item::Column::UnitV2, "unit_v2")
+    .into_model::<Report125MessageRow>()
+    .all(dbx)
+    .await
+    .context(h!())?;
+
+    let message_ids = rows.iter().map(|row| row.id).collect_vec();
+    let mut groups_by_message =
+        load_message_group_info(dbx, login, req, &message_ids)
+            .await
+            .context(h!())?;
+
+    Ok(rows
+        .into_iter()
+        .map(|row| {
+            let group_info = groups_by_message.remove(&row.id);
+            Report125Message {
+                id: row.id,
+                timestamp: row.timestamp,
+                date: row.date,
+                time: row.time,
+                datetime: row.datetime,
+                unit: row.unit,
+                unit_v2: row.unit_v2,
+                datasource_id: group_info.and_then(|group| group.datasource_id),
+            }
+        })
+        .collect())
+}
+
+async fn load_report_125_datasource_ids(
+    dbx: &DatabaseConnection,
+    logins: &[String],
+) -> Result<BTreeSet<i64>, AppError> {
+    if logins.is_empty() {
+        return Ok(BTreeSet::new());
+    }
+
+    Ok(datasource::Entity::find()
+        .filter(datasource::Column::Deleted.eq(false))
+        .filter(datasource::Column::ApiLogin.is_in(logins.to_vec()))
+        .all(dbx)
+        .await
+        .c(h!())?
+        .into_iter()
+        .map(|datasource| datasource.id)
+        .collect())
+}
+
+async fn load_report_125_pelengs(
+    dbx: &DatabaseConnection,
+    message_ids: &[i64],
+) -> Result<BTreeMap<i64, Vec<sigint_peleng::Model>>, AppError> {
+    if message_ids.is_empty() {
+        return Ok(BTreeMap::new());
+    }
+
+    let mut pelengs_map = BTreeMap::<i64, Vec<sigint_peleng::Model>>::new();
+    for peleng in sigint_peleng::Entity::find()
+        .filter(sigint_peleng::Column::Deleted.eq(false))
+        .filter(
+            sigint_peleng::Column::SourceInboxItemId
+                .eq_any(message_ids.to_vec()),
+        )
+        .order_by_asc(sigint_peleng::Column::SourceInboxItemId)
+        .order_by_asc(sigint_peleng::Column::Id)
+        .all(dbx)
+        .await
+        .c(h!())?
+    {
+        pelengs_map
+            .entry(peleng.source_inbox_item_id)
+            .or_default()
+            .push(peleng);
+    }
+
+    Ok(pelengs_map)
+}
+
+fn build_report_125_data(
+    messages: Vec<Report125Message>,
+    pelengs_by_message: &BTreeMap<i64, Vec<sigint_peleng::Model>>,
+) -> Result<Report125Data, AppError> {
+    let mut rows = Vec::new();
+    for message in messages {
+        let Some(datetime) = report_125_datetime(&message)? else {
+            continue;
+        };
+        let rls_type = report_125_rls_type(&message);
+        for peleng in pelengs_by_message.get(&message.id).into_iter().flatten()
+        {
+            let Some(mgrs) = report_125_mgrs(peleng) else {
+                continue;
+            };
+            rows.push(Report125Row {
+                inbox_item_id: message.id,
+                peleng_id: peleng.id,
+                datetime,
+                mgrs,
+                rls_type: rls_type.clone(),
+            });
+        }
+    }
+
+    rows.sort_by_key(|row| (row.datetime, row.inbox_item_id, row.peleng_id));
+    Ok(Report125Data { rows })
+}
+
+fn report_125_message_matches_datasource_scope(
+    message: &Report125Message,
+    own_datasource_ids: Option<&BTreeSet<i64>>,
+) -> bool {
+    match own_datasource_ids {
+        Some(datasource_ids) => {
+            message.datasource_id.is_some_and(|datasource_id| {
+                datasource_ids.contains(&datasource_id)
+            })
+        }
+        None => true,
+    }
+}
+
+fn report_125_datetime(
+    message: &Report125Message,
+) -> Result<Option<NaiveDateTime>, AppError> {
+    if let Some(datetime) = message.datetime {
+        let datetime =
+            dt_zoned_from_millis(datetime.and_utc().timestamp_millis())?;
+        return Ok(Some(datetime.naive_local()));
+    }
+    if let Some(timestamp) = message.timestamp {
+        let datetime =
+            dt_zoned_from_millis(timestamp.and_utc().timestamp_millis())?;
+        return Ok(Some(datetime.naive_local()));
+    }
+
+    let (Some(date), Some(time)) =
+        (message.date.as_ref(), message.time.as_ref())
+    else {
+        return Ok(None);
+    };
+    let date = NaiveDate::parse_from_str(date, "%Y-%m-%d").context(h!())?;
+    let time = report_125_parse_time(time)?;
+    Ok(Some(date.and_time(time)))
+}
+
+fn report_125_parse_time(input: &str) -> Result<NaiveTime, AppError> {
+    for fmt in ["%H:%M:%S", "%H:%M"] {
+        if let Ok(time) = NaiveTime::parse_from_str(input, fmt) {
+            return Ok(time);
+        }
+    }
+    Err(format!("Unable to parse report 1.2.5 time value: {input}").into())
+}
+
+fn report_125_rls_type(message: &Report125Message) -> String {
+    if non_empty_text(message.unit_v2.as_deref()).is_some() {
+        return String::new();
+    }
+    non_empty_text(message.unit.as_deref())
+        .map(ToString::to_string)
+        .unwrap_or_default()
+}
+
+fn report_125_mgrs(peleng: &sigint_peleng::Model) -> Option<String> {
+    let latlon = LatLon::create(peleng.lat, peleng.lng).ok()?;
+    Some(Mgrs::from_latlon(&latlon, 5).to_string())
+}
+
+fn non_empty_text(value: Option<&str>) -> Option<&str> {
+    value.map(str::trim).filter(|value| !value.is_empty())
+}
+
+fn format_report_125_datetime(datetime: NaiveDateTime) -> String {
+    datetime.format("%d.%m.%Y %H:%M:%S").to_string()
+}
+
+fn build_report_125_docx_to_path(
+    report_data: &Report125Data,
+    outpath: &Path,
+) -> Result<(), AppError> {
+    let file = std::fs::File::create(outpath)?;
+    build_report_125_docx(report_data)
+        .build()
+        .pack(file)
+        .context(h!())?;
+    Ok(())
+}
+
+fn build_report_125_docx(report_data: &Report125Data) -> Docx {
+    let mut docx = Docx::new()
+        .page_orient(PageOrientationType::Portrait)
+        .default_size(DOCX_FONT_SIZE)
+        .default_fonts(
+            RunFonts::new()
+                .ascii(DOCX_FONT)
+                .east_asia(DOCX_FONT)
+                .cs(DOCX_FONT),
+        )
+        .page_size(DOCX_PAGE_WIDTH, DOCX_PAGE_HEIGHT)
+        .page_margin(
+            PageMargin::new()
+                .left(DOCX_PAGE_MARGIN)
+                .right(DOCX_PAGE_MARGIN)
+                .top(DOCX_PAGE_MARGIN)
+                .bottom(DOCX_PAGE_MARGIN),
+        )
+        .add_paragraph(left_paragraph(REPORT_125_FORM, false))
+        .add_paragraph(center_paragraph(REPORT_125_TITLE, true))
+        .add_paragraph(Paragraph::new())
+        .add_paragraph(center_paragraph(REPORT_125_SECTION_TITLE, false))
+        .add_table(build_report_125_table(report_data));
+
+    for _ in 0..7 {
+        docx = docx.add_paragraph(Paragraph::new());
+    }
+
+    docx.add_paragraph(left_paragraph(REPORT_125_FOOTER, false))
+}
+
+fn build_report_125_table(report_data: &Report125Data) -> Table {
+    let mut rows = Vec::with_capacity(report_data.rows.len() + 1);
+    rows.push(TableRow::new(vec![
+        header_cell("", CELL_NUM_WIDTH),
+        header_cell("Дата/час", CELL_DATETIME_WIDTH),
+        header_cell("Координати/вектор", CELL_MGRS_WIDTH),
+        header_cell("Тип РлС", CELL_TYPE_WIDTH),
+        header_cell("Проведення дорозвідки", CELL_RECON_WIDTH),
+        header_cell("Проведення ураження", CELL_STRIKE_WIDTH),
+    ]));
+
+    for (index, row) in report_data.rows.iter().enumerate() {
+        rows.push(TableRow::new(vec![
+            text_cell(&format!("{}.", index + 1), CELL_NUM_WIDTH),
+            text_cell(
+                &format_report_125_datetime(row.datetime),
+                CELL_DATETIME_WIDTH,
+            ),
+            text_cell(&row.mgrs, CELL_MGRS_WIDTH),
+            text_cell(&row.rls_type, CELL_TYPE_WIDTH),
+            text_cell("", CELL_RECON_WIDTH),
+            text_cell("", CELL_STRIKE_WIDTH),
+        ]));
+    }
+
+    Table::new(rows).width(
+        CELL_NUM_WIDTH
+            + CELL_DATETIME_WIDTH
+            + CELL_MGRS_WIDTH
+            + CELL_TYPE_WIDTH
+            + CELL_RECON_WIDTH
+            + CELL_STRIKE_WIDTH,
+        WidthType::Dxa,
+    )
+}
+
+fn left_paragraph(text: &str, bold: bool) -> Paragraph {
+    Paragraph::new()
+        .add_run(text_run(text, bold))
+        .align(AlignmentType::Left)
+}
+
+fn center_paragraph(text: &str, bold: bool) -> Paragraph {
+    Paragraph::new()
+        .add_run(text_run(text, bold))
+        .align(AlignmentType::Center)
+}
+
+fn header_cell(text: &str, width: usize) -> TableCell {
+    TableCell::new()
+        .width(width, WidthType::Dxa)
+        .vertical_align(VAlignType::Center)
+        .add_paragraph(center_paragraph(text, true))
+}
+
+fn text_cell(text: &str, width: usize) -> TableCell {
+    TableCell::new()
+        .width(width, WidthType::Dxa)
+        .vertical_align(VAlignType::Center)
+        .add_paragraph(Paragraph::new().add_run(text_run(text, false)))
+}
+
+fn text_run(text: &str, bold: bool) -> Run {
+    let run = Run::new()
+        .fonts(
+            RunFonts::new()
+                .ascii(DOCX_FONT)
+                .east_asia(DOCX_FONT)
+                .cs(DOCX_FONT),
+        )
+        .size(DOCX_FONT_SIZE)
+        .add_text(text);
+    if bold {
+        run.bold()
+    } else {
+        run
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::entities::{
+        datasource_group, sigint_inbox_item, sigint_peleng, signal_message,
+        signal_message_group,
+    };
+    use crate::functest::tests::*;
+    use chrono::NaiveDate;
+    use sea_orm::{
+        ActiveModelTrait, ActiveValue::Set, EntityTrait, IntoActiveModel,
+    };
+    use serial_test::serial;
+    use std::io::Read;
+    use tempfile::NamedTempFile;
+    use zip::ZipArchive;
+
+    async fn seed_report_125_message(
+        dbx: &DatabaseConnection,
+        datasource_group: &datasource_group::Model,
+        label: &str,
+        seen_at: NaiveDateTime,
+        unit: Option<&str>,
+        unit_v2: Option<&str>,
+        pelengs: &[(f64, f64, bool)],
+    ) -> Result<i64, AppError> {
+        let signal_message = mk_signal_message(
+            dbx,
+            signal_message::ActiveModel {
+                body: Set(Some(label.to_string())),
+                created_at: Set(seen_at),
+                timestamp: Set(Some(seen_at)),
+                message_uid: Set(Some(label.to_string())),
+                datasource_group_id: Set(Some(datasource_group.id)),
+                ..Default::default()
+            },
+        )
+        .await
+        .context(h!())?;
+
+        mk_signal_message_group(
+            dbx,
+            signal_message_group::ActiveModel {
+                signal_message_id: Set(signal_message.id),
+                group_master_key: Set(Some(
+                    datasource_group.group_master_key.clone(),
+                )),
+                datasource_group_id: Set(Some(datasource_group.id)),
+                sender: Set(Some(format!("{label}-sender"))),
+                message_uid: Set(Some(label.to_string())),
+                created_at: Set(seen_at),
+                ..Default::default()
+            },
+        )
+        .await
+        .context(h!())?;
+
+        mk_sigint_inbox_item(
+            dbx,
+            sigint_inbox_item::ActiveModel {
+                id: Set(signal_message.id),
+                freq: Set(Some("3330".to_string())),
+                date: Set(Some(seen_at.date().to_string())),
+                time: Set(Some(seen_at.time().format("%H:%M:%S").to_string())),
+                datetime: Set(Some(seen_at)),
+                unit: Set(unit.map(ToString::to_string)),
+                unit_v2: Set(unit_v2.map(ToString::to_string)),
+                reviewed: Set(Some(true)),
+                checked: Set(Some(true)),
+                parsed_unit_v2: Set(false),
+                ..Default::default()
+            },
+        )
+        .await
+        .context(h!())?;
+
+        for (lat, lng, deleted) in pelengs {
+            mk_sigint_peleng(
+                dbx,
+                sigint_peleng::ActiveModel {
+                    source_inbox_item_id: Set(signal_message.id),
+                    lat: Set(*lat),
+                    lng: Set(*lng),
+                    deleted: Set(*deleted),
+                    created_at: Set(seen_at),
+                    ..Default::default()
+                },
+            )
+            .await
+            .context(h!())?;
+        }
+
+        Ok(signal_message.id)
+    }
+
+    fn test_dt(day: u32, hour: u32, minute: u32, second: u32) -> NaiveDateTime {
+        NaiveDate::from_ymd_opt(2026, 7, day)
+            .expect("date")
+            .and_hms_opt(hour, minute, second)
+            .expect("time")
+    }
+
+    fn mgrs_from_latlng(lat: f64, lng: f64) -> String {
+        Mgrs::from_latlon(&LatLon::create(lat, lng).expect("latlon"), 5)
+            .to_string()
+    }
+
+    fn report_req() -> ReportPreviewReq {
+        ReportPreviewReq {
+            kind: "report_125".to_string(),
+            req: crate::rer_importer::InboxMessagesReq {
+                since_date_inclusive_ms: Some(
+                    test_dt(16, 0, 0, 0).and_utc().timestamp_millis(),
+                ),
+                till_date_inclusive_ms: Some(
+                    test_dt(17, 0, 0, 0).and_utc().timestamp_millis(),
+                ),
+                nolimit: Some(true),
+                ..Default::default()
+            },
+            report_type: None,
+            report_tags_only_this_unit: None,
+            tag_report_sort_by: None,
+            report_1213_linked_networks_only: None,
+            without_comments: None,
+            interception_keep_full_message: None,
+            interception_keep_old_colors: None,
+            digest_omit_exo_id: None,
+            digest_form_1_2_17: None,
+            sposob_unit_name: None,
+        }
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn collect_report_125_data_expands_active_pelengs_and_raw_unit_fields(
+    ) {
+        let env = cleanup().await.unwrap();
+        let login = find_test_login(&env.dbx).await.unwrap();
+        let datasource_group =
+            find_test_datasource_group(&env.dbx).await.unwrap();
+
+        let first_id = seed_report_125_message(
+            &env.dbx,
+            &datasource_group,
+            "msg-report-125-first",
+            test_dt(16, 11, 34, 32),
+            Some("А-50 (А-50У) РЛС з РТК «Шмєль-М»"),
+            None,
+            &[(48.1, 37.1, false), (48.2, 37.2, false)],
+        )
+        .await
+        .unwrap();
+        seed_report_125_message(
+            &env.dbx,
+            &datasource_group,
+            "msg-report-125-linked-unit",
+            test_dt(16, 12, 0, 0),
+            Some("Should be hidden"),
+            Some("linked unit"),
+            &[(48.3, 37.3, false)],
+        )
+        .await
+        .unwrap();
+        seed_report_125_message(
+            &env.dbx,
+            &datasource_group,
+            "msg-report-125-no-peleng",
+            test_dt(16, 13, 0, 0),
+            Some("No peleng"),
+            None,
+            &[],
+        )
+        .await
+        .unwrap();
+        seed_report_125_message(
+            &env.dbx,
+            &datasource_group,
+            "msg-report-125-deleted-peleng",
+            test_dt(16, 14, 0, 0),
+            Some("Deleted peleng"),
+            None,
+            &[(48.4, 37.4, true)],
+        )
+        .await
+        .unwrap();
+        seed_report_125_message(
+            &env.dbx,
+            &datasource_group,
+            "msg-report-125-old",
+            test_dt(15, 14, 0, 0),
+            Some("Old"),
+            None,
+            &[(48.5, 37.5, false)],
+        )
+        .await
+        .unwrap();
+
+        let req = report_req();
+        let logins = vec![login.login.clone()];
+        let report_data = collect_report_125_data(
+            &env.dbx,
+            &login.login,
+            &logins,
+            &env,
+            &req,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(report_data.rows.len(), 3);
+        assert_eq!(report_data.rows[0].inbox_item_id, first_id);
+        assert_eq!(report_data.rows[0].datetime, test_dt(16, 11, 34, 32));
+        assert_eq!(report_data.rows[0].mgrs, mgrs_from_latlng(48.1, 37.1));
+        assert_eq!(
+            report_data.rows[0].rls_type,
+            "А-50 (А-50У) РЛС з РТК «Шмєль-М»"
+        );
+        assert_eq!(report_data.rows[1].mgrs, mgrs_from_latlng(48.2, 37.2));
+        assert_eq!(report_data.rows[2].rls_type, "");
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn collect_report_125_data_can_be_empty_without_pelengs() {
+        let env = cleanup().await.unwrap();
+        let login = find_test_login(&env.dbx).await.unwrap();
+        let datasource_group =
+            find_test_datasource_group(&env.dbx).await.unwrap();
+        seed_report_125_message(
+            &env.dbx,
+            &datasource_group,
+            "msg-report-125-empty",
+            test_dt(16, 11, 34, 32),
+            Some("No peleng"),
+            None,
+            &[],
+        )
+        .await
+        .unwrap();
+
+        let req = report_req();
+        let logins = vec![login.login.clone()];
+        let report_data = collect_report_125_data(
+            &env.dbx,
+            &login.login,
+            &logins,
+            &env,
+            &req,
+        )
+        .await
+        .unwrap();
+
+        assert!(report_data.rows.is_empty());
+    }
+
+    #[test]
+    fn build_report_125_docx_to_path_writes_expected_document_xml() {
+        let report_data = Report125Data {
+            rows: vec![Report125Row {
+                inbox_item_id: 1,
+                peleng_id: 7,
+                datetime: test_dt(16, 11, 34, 32),
+                mgrs: "37UDR3251505505".to_string(),
+                rls_type: "А-50 (А-50У) РЛС з РТК «Шмєль-М»".to_string(),
+            }],
+        };
+        let tmp = NamedTempFile::new().unwrap();
+        build_report_125_docx_to_path(&report_data, tmp.path()).unwrap();
+
+        let xml = document_xml(tmp.path());
+        assert!(xml.contains(REPORT_125_FORM));
+        assert!(xml.contains(REPORT_125_TITLE));
+        assert!(xml.contains(REPORT_125_SECTION_TITLE));
+        assert!(xml.contains("Дата/час"));
+        assert!(xml.contains("Координати/вектор"));
+        assert!(xml.contains("Тип РлС"));
+        assert!(xml.contains("16.07.2026 11:34:32"));
+        assert!(xml.contains("37UDR3251505505"));
+        assert!(xml.contains(REPORT_125_FOOTER));
+        assert!(xml.contains(DOCX_FONT));
+        assert_eq!(xml.matches("<w:tr>").count(), 2);
+    }
+
+    fn document_xml(path: &Path) -> String {
+        let file = std::fs::File::open(path).unwrap();
+        let mut zip = ZipArchive::new(file).unwrap();
+        let mut document = zip.by_name("word/document.xml").unwrap();
+        let mut xml = String::new();
+        document.read_to_string(&mut xml).unwrap();
+        xml
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn report_125_message_scope_respects_report_tags_only_this_unit() {
+        let env = cleanup().await.unwrap();
+        let login = find_test_login(&env.dbx).await.unwrap();
+        let datasource_group =
+            find_test_datasource_group(&env.dbx).await.unwrap();
+        seed_report_125_message(
+            &env.dbx,
+            &datasource_group,
+            "msg-report-125-own",
+            test_dt(16, 11, 34, 32),
+            Some("Own"),
+            None,
+            &[(48.1, 37.1, false)],
+        )
+        .await
+        .unwrap();
+
+        let mut datasource =
+            datasource::Entity::find_by_id(datasource_group.datasource_id)
+                .one(&env.dbx)
+                .await
+                .unwrap()
+                .unwrap()
+                .into_active_model();
+        datasource.api_login = Set(None);
+        datasource.update(&env.dbx).await.unwrap();
+
+        let mut req = report_req();
+        req.report_tags_only_this_unit = Some(true);
+        let logins = vec![login.login.clone()];
+        let report_data = collect_report_125_data(
+            &env.dbx,
+            &login.login,
+            &logins,
+            &env,
+            &req,
+        )
+        .await
+        .unwrap();
+
+        assert!(report_data.rows.is_empty());
+    }
+}

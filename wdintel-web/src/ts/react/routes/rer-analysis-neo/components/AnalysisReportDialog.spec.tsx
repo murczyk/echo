@@ -190,6 +190,34 @@ describe('AnalysisReportDialog', () => {
     });
   });
 
+  it('shows report 1.2.5 as an advanced report option', () => {
+    const view = renderDialog();
+    const report125Button = Array.from(
+      view.container.querySelectorAll<HTMLButtonElement>('button'),
+    ).find((button) => button.textContent?.includes('Звіт 1.2.5'));
+
+    expect(report125Button).toBeTruthy();
+    expect(report125Button?.disabled).toBe(true);
+
+    act(() => {
+      view.root.render(
+        createElement(AnalysisReportDialog, {
+          ...view.props,
+          currentUser: { roles: ['AdvancedReports'] } as never,
+        }),
+      );
+    });
+
+    const enabledReport125Button = Array.from(
+      view.container.querySelectorAll<HTMLButtonElement>('button'),
+    ).find((button) => button.textContent?.includes('Звіт 1.2.5'));
+    expect(enabledReport125Button?.disabled).toBe(false);
+
+    act(() => {
+      view.root.unmount();
+    });
+  });
+
   it('shows queued warnings while keeping diagnostics collapsed', () => {
     const originalNow = Date.now;
     Date.now = () => new Date('2026-05-01T10:06:00Z').getTime();

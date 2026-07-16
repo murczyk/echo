@@ -29,6 +29,19 @@ pub fn extract_freq(body: &str) -> Result<Option<String>, AppError> {
     }
     '_if: {
         lazy_static! {
+            static ref RE: Regex =
+                Regex::new(r"(?m)^\s*Частота:\s*(?P<freq>\d{3,5})\s*;?\s*$")
+                    .unwrap();
+        }
+        if let Some(capts) = RE.captures(body) {
+            let Some(freq) = m_cap_s(&capts, "freq") else {
+                break '_if;
+            };
+            return Ok(Some(etalon(&freq)));
+        }
+    }
+    '_if: {
+        lazy_static! {
             static ref RE: Regex = Regex::new(
                 r"(?P<freq_a>\d+)(,|\.)(?P<freq_b>\d+)(\s?)(\(МГц\)|MHz)"
             )
@@ -309,6 +322,13 @@ mod tests {
         let res = extract_freq(input).unwrap();
         let expected = Some("449.0345".to_string());
         assert_eq!(res, expected);
+    }
+
+    #[test]
+    fn extract_freq_report_125_integer_frequency() {
+        let input = "16.07.2026 11:34:32\nНазва: А-50 (А-50У) РЛС з РТК «Шмєль-М»;\nУмовні координати для бота: MGRS 37U DR 32515 05505;\nКут: 79.6;\nЧастота: 3330;";
+        let res = extract_freq(input).unwrap();
+        assert_eq!(res, Some("3330".to_string()));
     }
 
     #[test]

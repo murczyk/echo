@@ -610,6 +610,11 @@ view user model shared route =
                     "Підсумкова таблиця"
                     "XLSX-експорт підсумкової таблиці без обмеження в 1 тиждень"
                 , templateCard
+                    (model.reportTemplate == RTReport125)
+                    (ReportTemplateSelect RTReport125)
+                    "Звіт 1.2.5"
+                    "Таблиця пеленгів у форматі форми 1.2.5"
+                , templateCard
                     (model.reportTemplate == RTReport1213)
                     (ReportTemplateSelect RTReport1213)
                     "Звіт 1.2.13"
@@ -895,6 +900,7 @@ view user model shared route =
                     , RTMouse
                     , RTReo
                     , RTDigest
+                    , RTReport125
                     , RTReport1213
                     ]
                 )
@@ -909,7 +915,7 @@ view user model shared route =
                         if model.reportTemplate == RTDigest then
                             "лише коментарі мого підрозділу"
 
-                        else if model.reportTemplate == RTReport1213 then
+                        else if List.member model.reportTemplate [ RTReport125, RTReport1213 ] then
                             "лише пеленги мого підрозділу"
 
                         else

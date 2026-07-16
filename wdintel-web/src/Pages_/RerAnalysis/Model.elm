@@ -239,6 +239,7 @@ type ReportTemplate
     | ActiveNetworks
     | RTNetworkFrequencies
     | RTSummaryTable
+    | RTReport125
     | RTReport1213
 
 
