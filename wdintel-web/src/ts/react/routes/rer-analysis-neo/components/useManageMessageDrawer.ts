@@ -266,12 +266,23 @@ export function useManageMessageDrawer({
         if (!active) return;
         const infos = await getGroupInfosBatch(keys);
         if (!active) return;
-        setSignalGroups(
-          infos.filter((g) => {
-            const adminData = g.adminData as any;
-            return !adminData?.deleted;
-          }),
-        );
+        const available = infos.filter((g) => {
+          const adminData = g.adminData as any;
+          return !adminData?.deleted;
+        });
+        setSignalGroups(available);
+        // The MRU-seeded group is set synchronously on open, before this async list
+        // arrives. If that remembered key is no longer available (account switch,
+        // revoked access, deleted group), SystemSection renders it as an empty
+        // selection while the value still passes required-validation — letting submit
+        // or parse run against a group the user cannot actually see. Clear it so the
+        // user must pick a valid group.
+        if (!isEditMode && getValues('signalGroupMasterKey')) {
+          const seededKey = getValues('signalGroupMasterKey');
+          if (!available.some((g) => g.masterKey === seededKey)) {
+            setValue('signalGroupMasterKey', '');
+          }
+        }
       } catch (e) {
         console.error('Failed to load groups', e);
       } finally {
