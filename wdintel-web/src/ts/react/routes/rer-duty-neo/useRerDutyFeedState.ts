@@ -373,6 +373,10 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
         }
       } catch (e) {
         if ((loadGenerationByFeedIdRef.current[feedId] ?? 0) !== requestLoadVersion) return;
+        const currentFeed = messageFeedsRef.current.find((x) => x.id === feedId);
+        const retainedCursorId = currentFeed?.items.at(-1)?.[0] ?? null;
+        clearFeedUnreadBaselines(feedId);
+        setFeedUnreadCursor(feedId, retainedCursorId);
         setError(e instanceof Error ? e.message : String(e));
         setMessageFeeds((prev) =>
           prev.map((x) => (x.id === feedId ? { ...x, loading: false } : x)),
