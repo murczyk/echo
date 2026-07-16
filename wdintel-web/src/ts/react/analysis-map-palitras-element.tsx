@@ -1,4 +1,6 @@
+import MoreVertIcon from '@mui/icons-material/MoreVert';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import FitScreenIcon from '@mui/icons-material/FitScreen';
 import FolderIcon from '@mui/icons-material/Folder';
 import PaletteIcon from '@mui/icons-material/Palette';
 import {
@@ -6,15 +8,29 @@ import {
   Checkbox,
   CircularProgress,
   IconButton,
+  MenuItem,
+  Tooltip,
   Typography,
   ThemeProvider,
 } from '@mui/material';
-import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
+import { flushSync } from 'react-dom';
 import { createRoot, Root } from 'react-dom/client';
 
 import { PalitraDetails } from '../maps/palitra-types';
+import { hasRenderableGeometry } from '../maps/utils/palitra-map-geometry';
 import { useNeoMuiTheme } from './mui-theme';
 import { PowerChip } from './components/PowerChip';
+import { PowerMenu } from './components/PowerMenu';
 import { SearchInput } from './components/SearchInput';
 import { ELLIPSIS } from './utils/misc';
 
@@ -40,6 +56,7 @@ type PalitrasOverlayProps = {
   interactionDisabled: boolean;
   forceCollapsed?: boolean;
   onVisibleIdsChange: (visibleIds: number[]) => void;
+  onFocusPalitras: (palitraIds: number[]) => void;
 };
 
 const COLLAPSE_STORAGE_KEY = 'palitras-control-collapsed';
@@ -134,6 +151,13 @@ function perimeterPointsCount(palitraDetails: PalitraDetails): number {
   return ringCount + linePoints;
 }
 
+function getRenderableVisibleIds(palitras: PalitraDetails[], visibleIdsSet: Set<number>): number[] {
+  return palitras
+    .filter((palitraDetails) => visibleIdsSet.has(palitraDetails.palitra.id))
+    .filter((palitraDetails) => hasRenderableGeometry(palitraDetails))
+    .map((palitraDetails) => palitraDetails.palitra.id);
+}
+
 type PalitraGroupRowProps = {
   group: PalitraGroup;
   visibleIdsSet: Set<number>;
@@ -141,6 +165,7 @@ type PalitraGroupRowProps = {
   nested?: boolean;
   onToggleGroup: (group: PalitraGroup) => void;
   onToggleColor: (palitraId: number) => void;
+  onFocusPalitras: (palitraIds: number[]) => void;
 };
 
 function isGroupSelectionEqual(
@@ -159,8 +184,11 @@ function isGroupSelectionEqual(
 
 const PalitraGroupRow = memo(
   function PalitraGroupRow(props: PalitraGroupRowProps) {
-    const { group, visibleIdsSet, onToggleGroup, onToggleColor } = props;
+    const { group, visibleIdsSet, onToggleGroup, onToggleColor, onFocusPalitras } = props;
     const [expanded, setExpanded] = useState(false);
+    const [menuAnchorEl, setMenuAnchorEl] = useState<HTMLElement | null>(null);
+    const menuId = useId();
+    const triggerId = `${menuId}-trigger`;
 
     const groupIds = useMemo(
       () => group.colors.map((palitraDetails) => palitraDetails.palitra.id),
@@ -169,6 +197,25 @@ const PalitraGroupRow = memo(
     const selectedColorsCount = groupIds.filter((id) => visibleIdsSet.has(id)).length;
     const groupSelected = selectedColorsCount === groupIds.length && groupIds.length > 0;
     const groupPartiallySelected = selectedColorsCount > 0 && selectedColorsCount < groupIds.length;
+    const selectedRenderableIds = useMemo(
+      () =>
+        group.colors
+          .filter((palitraDetails) => visibleIdsSet.has(palitraDetails.palitra.id))
+          .filter((palitraDetails) => hasRenderableGeometry(palitraDetails))
+          .map((palitraDetails) => palitraDetails.palitra.id),
+      [group.colors, visibleIdsSet],
+    );
+    const menuOpen = menuAnchorEl !== null;
+    const hasMenuAction = selectedRenderableIds.length > 0;
+
+    useEffect(() => {
+      if (!menuOpen) {
+        return;
+      }
+      if (!hasMenuAction || props.interactionDisabled) {
+        setMenuAnchorEl(null);
+      }
+    }, [hasMenuAction, menuOpen, props.interactionDisabled]);
 
     return (
       <Box className={`palitra-item ${props.nested ? 'palitra-item-nested' : ''}`}>
@@ -191,29 +238,81 @@ const PalitraGroupRow = memo(
           >
             <Typography className="palitra-name">{group.name}</Typography>
           </Box>
-          <IconButton
-            className={`palitra-expand-button ${expanded ? 'expanded' : ''}`}
-            onClick={(event) => {
-              event.preventDefault();
-              event.stopPropagation();
-              setExpanded((prev) => !prev);
-            }}
-            aria-label={
-              expanded
-                ? 'Сховати кольори палітри'
-                : `Показати всі кольори палітри (${group.colors.length})`
-            }
+          {hasMenuAction ? (
+            <Tooltip title="Дії палітри" arrow>
+              <span style={{ display: 'inline-flex' }}>
+                <IconButton
+                  className="palitra-focus-menu-button"
+                  id={triggerId}
+                  onClick={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    setMenuAnchorEl(event.currentTarget);
+                  }}
+                  aria-label="Дії палітри"
+                  aria-controls={menuOpen ? menuId : undefined}
+                  aria-expanded={menuOpen ? 'true' : undefined}
+                  aria-haspopup="menu"
+                  size="small"
+                  disabled={props.interactionDisabled}
+                >
+                  <MoreVertIcon fontSize="small" />
+                </IconButton>
+              </span>
+            </Tooltip>
+          ) : null}
+          <Tooltip
             title={
               expanded
                 ? 'Сховати кольори палітри'
                 : `Показати всі кольори палітри (${group.colors.length})`
             }
-            size="small"
-            disabled={props.interactionDisabled}
+            arrow
           >
-            <ExpandMoreIcon fontSize="small" />
-          </IconButton>
+            <span style={{ display: 'inline-flex' }}>
+              <IconButton
+                className={`palitra-expand-button ${expanded ? 'expanded' : ''}`}
+                onClick={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  setExpanded((prev) => !prev);
+                }}
+                aria-label={
+                  expanded
+                    ? 'Сховати кольори палітри'
+                    : `Показати всі кольори палітри (${group.colors.length})`
+                }
+                size="small"
+                disabled={props.interactionDisabled}
+              >
+                <ExpandMoreIcon fontSize="small" />
+              </IconButton>
+            </span>
+          </Tooltip>
         </Box>
+
+        {menuOpen && hasMenuAction ? (
+          <PowerMenu
+            id={menuId}
+            anchorEl={menuAnchorEl}
+            open={menuOpen}
+            onClose={() => {
+              setMenuAnchorEl(null);
+            }}
+            slotProps={{ list: { 'aria-labelledby': triggerId } }}
+          >
+            <MenuItem
+              onClick={() => {
+                flushSync(() => {
+                  setMenuAnchorEl(null);
+                });
+                onFocusPalitras(selectedRenderableIds);
+              }}
+            >
+              Показати на мапі
+            </MenuItem>
+          </PowerMenu>
+        ) : null}
 
         {expanded ? (
           <Box className="palitra-content">
@@ -268,7 +367,8 @@ const PalitraGroupRow = memo(
     }
     if (
       prevProps.onToggleGroup !== nextProps.onToggleGroup ||
-      prevProps.onToggleColor !== nextProps.onToggleColor
+      prevProps.onToggleColor !== nextProps.onToggleColor ||
+      prevProps.onFocusPalitras !== nextProps.onFocusPalitras
     ) {
       return false;
     }
@@ -283,6 +383,7 @@ type FolderGroupRowProps = {
   onToggleFolder: (folder: FolderGroup) => void;
   onToggleGroup: (group: PalitraGroup) => void;
   onToggleColor: (palitraId: number) => void;
+  onFocusPalitras: (palitraIds: number[]) => void;
 };
 
 const FolderGroupRow = memo(function FolderGroupRow(props: FolderGroupRowProps) {
@@ -293,6 +394,7 @@ const FolderGroupRow = memo(function FolderGroupRow(props: FolderGroupRowProps) 
     onToggleFolder,
     onToggleGroup,
     onToggleColor,
+    onFocusPalitras,
   } = props;
   const [expanded, setExpanded] = useState(false);
 
@@ -335,28 +437,34 @@ const FolderGroupRow = memo(function FolderGroupRow(props: FolderGroupRowProps) 
           <Typography className="palitra-name">{folder.name}</Typography>
           <FolderIcon className="palitra-folder-icon" fontSize="small" />
         </Box>
-        <IconButton
-          className={`palitra-expand-button ${expanded ? 'expanded' : ''}`}
-          onClick={(event) => {
-            event.preventDefault();
-            event.stopPropagation();
-            setExpanded((prev) => !prev);
-          }}
-          aria-label={
-            expanded
-              ? 'Сховати палітри папки'
-              : `Показати палітри папки (${folder.palitras.length})`
-          }
+        <Tooltip
           title={
             expanded
               ? 'Сховати палітри папки'
               : `Показати палітри папки (${folder.palitras.length})`
           }
-          size="small"
-          disabled={interactionDisabled}
+          arrow
         >
-          <ExpandMoreIcon fontSize="small" />
-        </IconButton>
+          <span style={{ display: 'inline-flex' }}>
+            <IconButton
+              className={`palitra-expand-button ${expanded ? 'expanded' : ''}`}
+              onClick={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                setExpanded((prev) => !prev);
+              }}
+              aria-label={
+                expanded
+                  ? 'Сховати палітри папки'
+                  : `Показати палітри папки (${folder.palitras.length})`
+              }
+              size="small"
+              disabled={interactionDisabled}
+            >
+              <ExpandMoreIcon fontSize="small" />
+            </IconButton>
+          </span>
+        </Tooltip>
       </Box>
 
       {expanded ? (
@@ -370,6 +478,7 @@ const FolderGroupRow = memo(function FolderGroupRow(props: FolderGroupRowProps) 
               nested
               onToggleGroup={onToggleGroup}
               onToggleColor={onToggleColor}
+              onFocusPalitras={onFocusPalitras}
             />
           ))}
         </Box>
@@ -386,6 +495,7 @@ function PalitrasOverlay(props: PalitrasOverlayProps) {
     interactionDisabled,
     forceCollapsed,
     onVisibleIdsChange,
+    onFocusPalitras,
   } = props;
   const controlRef = useRef<HTMLDivElement | null>(null);
   const [isCollapsed, setCollapsed] = useState<boolean>(() => {
@@ -469,6 +579,11 @@ function PalitrasOverlay(props: PalitrasOverlayProps) {
 
   const allSelected = allColorIds.length > 0 && allColorIds.every((id) => visibleIdsSet.has(id));
   const someSelected = allColorIds.some((id) => visibleIdsSet.has(id));
+  const selectedRenderableVisibleIds = useMemo(
+    () => getRenderableVisibleIds(palitras, visibleIdsSet),
+    [palitras, visibleIdsSet],
+  );
+  const hasVisibleSelectedGeometry = selectedRenderableVisibleIds.length > 0;
 
   const toggleCollapsed = useCallback(() => {
     setCollapsed((prev) => {
@@ -674,40 +789,65 @@ function PalitrasOverlay(props: PalitrasOverlayProps) {
     >
       <Box className="palitras-control-header">
         {isCollapsed ? (
-          <IconButton
-            className="palitras-palette-icon"
-            onClick={toggleCollapsed}
-            aria-label="Розгорнути список палітр"
-            title="Розгорнути список палітр"
-            size="small"
-          >
-            <PaletteIcon fontSize="small" />
-          </IconButton>
+          <Tooltip title="Розгорнути список палітр" arrow>
+            <span style={{ display: 'inline-flex' }}>
+              <IconButton
+                className="palitras-palette-icon"
+                onClick={toggleCollapsed}
+                aria-label="Розгорнути список палітр"
+                size="small"
+              >
+                <PaletteIcon fontSize="small" />
+              </IconButton>
+            </span>
+          </Tooltip>
         ) : (
           <>
-            <Box className="palitras-header-row" onClick={toggleSelectAll}>
-              <Checkbox
-                className="palitra-checkbox"
-                checked={allSelected}
-                indeterminate={!allSelected && someSelected}
-                disabled={interactionDisabled}
-                onClick={(event) => {
-                  event.stopPropagation();
-                }}
-                onChange={toggleSelectAll}
-                size="small"
-              />
-              <Typography className="palitras-control-title">Палітри</Typography>
+            <Box className="palitras-header-row">
+              <Box className="palitras-header-select-all" onClick={toggleSelectAll}>
+                <Checkbox
+                  className="palitra-checkbox"
+                  checked={allSelected}
+                  indeterminate={!allSelected && someSelected}
+                  disabled={interactionDisabled}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                  }}
+                  onChange={toggleSelectAll}
+                  size="small"
+                />
+                <Typography className="palitras-control-title">Палітри</Typography>
+              </Box>
+              {hasVisibleSelectedGeometry ? (
+                <Tooltip title="Показати обрані палітри" arrow>
+                  <span style={{ display: 'inline-flex' }}>
+                    <IconButton
+                      className="palitras-focus-button"
+                      onClick={() => {
+                        onFocusPalitras(selectedRenderableVisibleIds);
+                      }}
+                      aria-label="Показати обрані палітри"
+                      size="small"
+                      disabled={interactionDisabled}
+                    >
+                      <FitScreenIcon fontSize="small" />
+                    </IconButton>
+                  </span>
+                </Tooltip>
+              ) : null}
+              <Tooltip title="Згорнути список палітр" arrow>
+                <span style={{ display: 'inline-flex' }}>
+                  <IconButton
+                    className="palitras-toggle-button"
+                    onClick={toggleCollapsed}
+                    aria-label="Згорнути список палітр"
+                    size="small"
+                  >
+                    <ExpandMoreIcon fontSize="small" />
+                  </IconButton>
+                </span>
+              </Tooltip>
             </Box>
-            <IconButton
-              className="palitras-toggle-button"
-              onClick={toggleCollapsed}
-              aria-label="Згорнути список палітр"
-              title="Згорнути список палітр"
-              size="small"
-            >
-              <ExpandMoreIcon fontSize="small" />
-            </IconButton>
           </>
         )}
       </Box>
@@ -740,6 +880,7 @@ function PalitrasOverlay(props: PalitrasOverlayProps) {
                 onToggleFolder={toggleFolder}
                 onToggleGroup={toggleGroup}
                 onToggleColor={toggleColor}
+                onFocusPalitras={onFocusPalitras}
               />
             ))}
             {filteredData.rootPalitras.map((group) => (
@@ -750,6 +891,7 @@ function PalitrasOverlay(props: PalitrasOverlayProps) {
                 interactionDisabled={interactionDisabled}
                 onToggleGroup={toggleGroup}
                 onToggleColor={toggleColor}
+                onFocusPalitras={onFocusPalitras}
               />
             ))}
           </>
@@ -820,6 +962,16 @@ class AnalysisMapPalitrasElement extends HTMLElement {
     this.renderComponent();
   }
 
+  private handleFocusPalitras(palitraIds: number[]) {
+    this.dispatchEvent(
+      new CustomEvent('palitras-focus-request', {
+        detail: { palitraIds },
+        bubbles: true,
+        composed: true,
+      }),
+    );
+  }
+
   private renderComponent() {
     if (!this.root) {
       return;
@@ -840,6 +992,9 @@ class AnalysisMapPalitrasElement extends HTMLElement {
               composed: true,
             }),
           );
+        }}
+        onFocusPalitras={(palitraIds) => {
+          this.handleFocusPalitras(palitraIds);
         }}
       />,
     );

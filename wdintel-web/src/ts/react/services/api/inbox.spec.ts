@@ -103,6 +103,28 @@ describe('inbox API normalization', () => {
     expect(body.tag_presence).toBeNull();
   });
 
+  it('serializes without network and without coords flags as typed optional booleans', () => {
+    for (const value of [true, false, null] as const) {
+      const body = inboxMsgtoSnakeBody({
+        withoutNetwork: value,
+        orWithoutCoords: value,
+      } as unknown as InboxMessagesReq) as Record<string, unknown>;
+
+      expect(body.without_network).toBe(value);
+      expect(body.or_without_coords).toBe(value);
+    }
+  });
+
+  it('serializes empty selected networks as null while preserving without network', () => {
+    const body = inboxMsgtoSnakeBody({
+      selectedNetworks: [],
+      withoutNetwork: true,
+    } as unknown as InboxMessagesReq) as Record<string, unknown>;
+
+    expect(body.selected_networks).toBeNull();
+    expect(body.without_network).toBe(true);
+  });
+
   it('normalizes inbox metadata fields from snake_case and falls back to an empty array', async () => {
     postJsonMock.mockResolvedValueOnce({
       inbox_items: [

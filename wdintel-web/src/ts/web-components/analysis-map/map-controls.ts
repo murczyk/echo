@@ -35,6 +35,7 @@ type InitializeAnalysisMapControlsOptions = {
   onFeatureToggle: (feature: FeatureName, enabled: boolean) => void;
   onPelengLabelsPermanentChange: (show: boolean) => void;
   onVisiblePalitraIdsChange: (visibleIds: number[]) => void;
+  onFocusPalitras: (palitraIds: number[]) => void;
 };
 
 export function initializeAnalysisMapControls({
@@ -49,6 +50,7 @@ export function initializeAnalysisMapControls({
   onFeatureToggle,
   onPelengLabelsPermanentChange,
   onVisiblePalitraIdsChange,
+  onFocusPalitras,
 }: InitializeAnalysisMapControlsOptions): {
   switchTimeControl: TimeswitchControl;
   palitrasControl: PalitrasControl;
@@ -69,7 +71,7 @@ export function initializeAnalysisMapControls({
     pelengLabelsPermanent,
     onPelengLabelsPermanentChange,
   );
-  const palitrasControl = createPalitrasControl([], [], onVisiblePalitraIdsChange);
+  const palitrasControl = createPalitrasControl([], [], onVisiblePalitraIdsChange, onFocusPalitras);
 
   map.addControl(searchControl);
   map.addControl(switchTimeControl);
