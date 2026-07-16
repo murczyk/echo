@@ -56,14 +56,26 @@ export function filterPalitraApiIdsByBounds(
   );
 }
 
-export function createPalitraGeometryLayer(palitraDetails: PalitraDetails): L.Layer | null {
-  const palitra = palitraDetails.palitra;
-  const geometry = palitra.geometry;
-
+export function hasRenderableGeometry(palitraDetails: PalitraDetails): boolean {
+  const geometry = palitraDetails.palitra.geometry;
   if (!geometry) {
+    return false;
+  }
+
+  if ((geometry.perimeter_linear_ring?.length ?? 0) >= 3) {
+    return true;
+  }
+
+  return geometry.line_strings?.some((line) => line.length >= 2) ?? false;
+}
+
+export function createPalitraGeometryLayer(palitraDetails: PalitraDetails): L.Layer | null {
+  if (!hasRenderableGeometry(palitraDetails)) {
     return null;
   }
 
+  const palitra = palitraDetails.palitra;
+  const geometry = palitra.geometry as Geometry;
   const perimeter = geometry.perimeter_linear_ring;
   const layers: L.Layer[] = [];
   if (perimeter && perimeter.length >= 3) {
