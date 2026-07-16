@@ -61,7 +61,6 @@ struct Report125MessageRow {
     time: Option<String>,
     datetime: Option<NaiveDateTime>,
     unit: Option<String>,
-    unit_v2: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -72,7 +71,6 @@ struct Report125Message {
     time: Option<String>,
     datetime: Option<NaiveDateTime>,
     unit: Option<String>,
-    unit_v2: Option<String>,
     datasource_id: Option<i64>,
 }
 
@@ -151,7 +149,6 @@ async fn load_report_125_messages(
     .column_as(sigint_inbox_item::Column::Time, "time")
     .column_as(sigint_inbox_item::Column::Datetime, "datetime")
     .column_as(sigint_inbox_item::Column::Unit, "unit")
-    .column_as(sigint_inbox_item::Column::UnitV2, "unit_v2")
     .into_model::<Report125MessageRow>()
     .all(dbx)
     .await
@@ -174,7 +171,6 @@ async fn load_report_125_messages(
                 time: row.time,
                 datetime: row.datetime,
                 unit: row.unit,
-                unit_v2: row.unit_v2,
                 datasource_id: group_info.and_then(|group| group.datasource_id),
             }
         })
@@ -235,6 +231,7 @@ fn build_report_125_data(
     pelengs_by_message: &BTreeMap<i64, Vec<sigint_peleng::Model>>,
 ) -> Result<Report125Data, AppError> {
     let mut rows = Vec::new();
+    let mut seen_row_keys = BTreeSet::new();
     for message in messages {
         let Some(datetime) = report_125_datetime(&message)? else {
             continue;
@@ -245,6 +242,9 @@ fn build_report_125_data(
             let Some(mgrs) = report_125_mgrs(peleng) else {
                 continue;
             };
+            if !seen_row_keys.insert((message.id, mgrs.clone())) {
+                continue;
+            }
             rows.push(Report125Row {
                 inbox_item_id: message.id,
                 peleng_id: peleng.id,
@@ -307,9 +307,6 @@ fn report_125_parse_time(input: &str) -> Result<NaiveTime, AppError> {
 }
 
 fn report_125_rls_type(message: &Report125Message) -> String {
-    if non_empty_text(message.unit_v2.as_deref()).is_some() {
-        return String::new();
-    }
     let Some(unit) = non_empty_text(message.unit.as_deref()) else {
         return String::new();
     };
@@ -626,7 +623,7 @@ mod tests {
             &datasource_group,
             "msg-report-125-linked-unit",
             test_dt(16, 12, 0, 0),
-            Some("Should be hidden"),
+            Some("Су-35"),
             Some("linked unit"),
             &[(48.3, 37.3, false)],
         )
@@ -687,7 +684,33 @@ mod tests {
             "А-50 (А-50У) РЛС з РТК «Шмєль-М»"
         );
         assert_eq!(report_data.rows[1].mgrs, mgrs_from_latlng(48.2, 37.2));
-        assert_eq!(report_data.rows[2].rls_type, "");
+        assert_eq!(report_data.rows[2].rls_type, "Су-35");
+    }
+
+    #[test]
+    fn build_report_125_data_deduplicates_same_message_mgrs_rows() {
+        let messages = vec![Report125Message {
+            id: 1,
+            timestamp: None,
+            date: Some("2026-07-16".to_string()),
+            time: Some("12:14:31".to_string()),
+            datetime: None,
+            unit: Some("Сканер ФЛЧМ (80)".to_string()),
+            datasource_id: None,
+        }];
+        let pelengs_by_message = BTreeMap::from([(
+            1,
+            vec![
+                test_peleng(1118866, 49.439780423423215, 37.839316297246626),
+                test_peleng(1118867, 49.43978, 37.839316),
+            ],
+        )]);
+
+        let report_data =
+            build_report_125_data(messages, &pelengs_by_message).unwrap();
+
+        assert_eq!(report_data.rows.len(), 1);
+        assert_eq!(report_data.rows[0].peleng_id, 1118866);
     }
 
     #[tokio::test]
@@ -733,28 +756,23 @@ mod tests {
             "141.715 MHz",
             "141.715 МГц",
         ] {
-            assert_eq!(report_125_rls_type(&message_with_unit(unit, None)), "");
+            assert_eq!(report_125_rls_type(&message_with_unit(unit)), "");
         }
         assert_eq!(
             report_125_rls_type(&message_with_unit(
-                "А-50 (А-50У) РЛС з РТК «Шмєль-М»",
-                None,
+                "А-50 (А-50У) РЛС з РТК «Шмєль-М»"
             )),
             "А-50 (А-50У) РЛС з РТК «Шмєль-М»"
         );
         assert_eq!(
             report_125_rls_type(&message_with_unit(
-                "Should be hidden",
-                Some("linked unit")
+                "РЛС 35Д6 (19Ж6 рідкий запуск)"
             )),
-            ""
+            "РЛС 35Д6 (19Ж6 рідкий запуск)"
         );
     }
 
-    fn message_with_unit(
-        unit: &str,
-        unit_v2: Option<&str>,
-    ) -> Report125Message {
+    fn message_with_unit(unit: &str) -> Report125Message {
         Report125Message {
             id: 1,
             timestamp: None,
@@ -762,8 +780,23 @@ mod tests {
             time: None,
             datetime: None,
             unit: Some(unit.to_string()),
-            unit_v2: unit_v2.map(ToString::to_string),
             datasource_id: None,
+        }
+    }
+
+    fn test_peleng(id: i64, lat: f64, lng: f64) -> sigint_peleng::Model {
+        sigint_peleng::Model {
+            id,
+            source_inbox_item_id: 1,
+            lat,
+            lng,
+            settlement: None,
+            locality_direction: None,
+            distance_m: None,
+            country_code: None,
+            deleted: false,
+            created_at: test_dt(16, 12, 14, 31),
+            updated_at: None,
         }
     }
 
