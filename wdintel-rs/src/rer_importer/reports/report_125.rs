@@ -33,11 +33,11 @@ const REPORT_125_SECTION_TITLE: &str =
 const REPORT_125_FOOTER: &str = "Начальник ОВУР";
 
 const CELL_NUM_WIDTH: usize = 600;
-const CELL_DATETIME_WIDTH: usize = 2100;
-const CELL_MGRS_WIDTH: usize = 2200;
-const CELL_TYPE_WIDTH: usize = 3000;
-const CELL_RECON_WIDTH: usize = 1400;
-const CELL_STRIKE_WIDTH: usize = 1400;
+const CELL_DATETIME_WIDTH: usize = 2380;
+const CELL_MGRS_WIDTH: usize = 2620;
+const CELL_TYPE_WIDTH: usize = 2020;
+const CELL_RECON_WIDTH: usize = 1540;
+const CELL_STRIKE_WIDTH: usize = 1540;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct Report125Data {
@@ -359,9 +359,11 @@ fn build_report_125_docx(report_data: &Report125Data) -> Docx {
                 .bottom(DOCX_PAGE_MARGIN),
         )
         .add_paragraph(right_paragraph(REPORT_125_FORM, false))
+        .add_paragraph(Paragraph::new())
         .add_paragraph(center_paragraph(REPORT_125_TITLE, true))
         .add_paragraph(Paragraph::new())
         .add_paragraph(center_paragraph(REPORT_125_SECTION_TITLE, false))
+        .add_paragraph(Paragraph::new())
         .add_table(build_report_125_table(report_data));
 
     for _ in 0..7 {
