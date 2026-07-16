@@ -257,6 +257,7 @@ const REPORT_KIND_LABELS: Record<string, string> = {
   sposob: 'Способ',
   active_networks: 'Активні радіомережі',
   network_frequencies: 'Частоти Радіомереж',
+  report_125: 'Звіт 1.2.5',
   report_1213: 'Звіт 1.2.13',
   summary_table: 'Підсумкова таблиця',
   kmz: 'KMZ',

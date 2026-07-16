@@ -140,6 +140,20 @@ ID(CG)⬅️: НВ
     }
 
     #[tokio::test]
+    async fn extract_coords_keeps_report_125_bot_mgrs_coordinates() {
+        let body = r#"16.07.2026 11:34:32
+Назва: А-50 (А-50У) РЛС з РТК «Шмєль-М»;
+Умовні координати для бота: MGRS 37U DR 32515 05505;
+Кут: 79.6;
+Частота: 3330;
+"#;
+
+        let coords = extract_coords(body).await;
+        assert_eq!(coords.len(), 1);
+        assert_eq!(coords[0].mgrs, "37UDR3251505505");
+    }
+
+    #[tokio::test]
     async fn extract_coords_keeps_standalone_mgrs_after_dmr_headers() {
         let body = r#"27.06.2026 21:28:40 F=139.5660(МГц)
 УКХ р/м 122 мсп 68 мсд 6 А 🔑 (ГОЛУБІВКА-КАЛИНОВЕ) СС: 1️⃣5️⃣ 📟📣 139.566

@@ -145,6 +145,11 @@ const reportTemplateOptions: Array<{ id: ReportTemplateId; title: string; descri
   { id: 'reo', title: 'РЕО', description: 'Доступно лише для розширених ролей звітів' },
   { id: 'digest', title: 'Дайджест', description: 'Доступно лише для розширених ролей звітів' },
   {
+    id: 'report_125',
+    title: 'Звіт 1.2.5',
+    description: 'Доступно лише для розширених ролей звітів',
+  },
+  {
     id: 'active_networks',
     title: 'Активні радіомережі',
     description: 'Доступно лише для розширених ролей звітів',
@@ -375,7 +380,7 @@ export function AnalysisReportDialog({
                       key={option.id}
                       variant={report.template === option.id ? 'contained' : 'outlined'}
                       disabled={
-                        ['reo', 'digest', 'active_networks'].includes(option.id) &&
+                        ['reo', 'digest', 'report_125', 'active_networks'].includes(option.id) &&
                         !hasAdvancedReportAccess
                       }
                       onClick={() => onUpdate({ template: option.id })}

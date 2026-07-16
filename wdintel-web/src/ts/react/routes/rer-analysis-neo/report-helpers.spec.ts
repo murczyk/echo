@@ -7,6 +7,7 @@ import {
   createDefaultReportState,
   describeAppliedReportFilters,
   reportDownloadMeta,
+  reportTemplateToKind,
   reportTemplateToUiTitle,
 } from './report-helpers';
 
@@ -51,6 +52,20 @@ describe('report-helpers', () => {
     expect(reportTemplateToUiTitle({ ...createDefaultReportState(), template: 'geojson' })).toBe(
       'GeoJSON',
     );
+  });
+
+  it('maps report 1.2.5 to a docx report request', () => {
+    const state = { ...createDefaultReportState(), template: 'report_125' as const };
+    const request = buildReportRequest(state, {} as InboxMessagesReq);
+
+    expect(reportTemplateToKind(state.template, state.senderAggregation)).toBe('report_125');
+    expect(request.kind).toBe('report_125');
+    expect(request.reportType).toBeNull();
+    expect(reportDownloadMeta(state)).toEqual({
+      extension: 'docx',
+      mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    });
+    expect(reportTemplateToUiTitle(state)).toBe('звіт 1.2.5');
   });
 
   it('sends time sorting by default for tag reports', () => {

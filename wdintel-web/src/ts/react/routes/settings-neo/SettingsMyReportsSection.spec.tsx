@@ -151,6 +151,8 @@ describe('SettingsMyReportsSection', () => {
     const requestedByColumn = columns.find((column) => column.accessorKey === 'requestedBy');
     const bgtaskIdColumn = columns.find((column) => column.accessorKey === 'bgtaskId');
     const completedAtColumn = columns.find((column) => column.accessorKey === 'completedAt');
+    const reportKindColumn = columns.find((column) => column.id === 'reportKind') as
+      Record<string, any> | undefined;
 
     expect(plannedForTsColumn?.enableSorting).toBe(false);
     expect(plannedForTsColumn?.enableColumnFilter).toBe(false);
@@ -169,6 +171,9 @@ describe('SettingsMyReportsSection', () => {
     expect(bgtaskIdColumn?.enableColumnFilter).not.toBe(false);
     expect(completedAtColumn?.enableSorting).not.toBe(false);
     expect(completedAtColumn?.enableColumnFilter).not.toBe(false);
+    expect(reportKindColumn?.accessorFn?.({ ...sampleRunningRow, reportKind: 'report_125' })).toBe(
+      'Звіт 1.2.5',
+    );
 
     expect(capturedTableStateProviderProps?.defaultColumnOrder).toEqual([
       'mrt-row-numbers',

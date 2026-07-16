@@ -3773,6 +3773,9 @@ update user shared route msg model =
                         RTSummaryTable ->
                             ( "xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" )
 
+                        RTReport125 ->
+                            ( "docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document" )
+
                         RTReport1213 ->
                             ( "docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document" )
 
@@ -4341,6 +4344,9 @@ reportTemplateToApiType model template =
             Just (B.NetworkFrequencies { aorIds = [] })
 
         RTSummaryTable ->
+            Nothing
+
+        RTReport125 ->
             Nothing
 
         RTReport1213 ->

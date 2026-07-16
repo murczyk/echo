@@ -25,24 +25,25 @@ export function MessageCardPreviewShell({
   actions?: ReactNode;
   infoPopover?: ReactNode;
 }) {
-  const paperSx: Record<string, unknown> =
-    config.layout === 'media'
-      ? {
-          display: 'flex',
-          flexDirection: 'column',
-          width: isFullscreen ? '100vw' : { xs: '96vw', sm: '92vw' },
-          height: isFullscreen ? '100svh' : '92svh',
-          maxWidth: isFullscreen ? '100vw' : 'min(92vw, 1280px)',
-          maxHeight: isFullscreen ? '100svh' : '92svh',
-          m: 0,
-        }
-      : {
-          width: isFullscreen ? '100vw' : '92vw',
-          height: isFullscreen ? '100vh' : '92svh',
-          maxWidth: isFullscreen ? '100vw' : '92vw',
-          maxHeight: isFullscreen ? '100vh' : '92svh',
-          margin: 0,
-        };
+  const isMediaLayout = config.layout === 'media';
+  const paperSx: Record<string, unknown> = isMediaLayout
+    ? {
+        display: 'flex',
+        flexDirection: 'column',
+        width: isFullscreen ? '100vw' : { xs: '100vw', sm: '92vw' },
+        height: isFullscreen ? '100svh' : { xs: '100svh', sm: '92svh' },
+        maxWidth: isFullscreen ? '100vw' : { xs: '100vw', sm: 'min(92vw, 1280px)' },
+        maxHeight: isFullscreen ? '100svh' : { xs: '100svh', sm: '92svh' },
+        borderRadius: isFullscreen ? 0 : { xs: 0, sm: 2 },
+        m: 0,
+      }
+    : {
+        width: isFullscreen ? '100vw' : '92vw',
+        height: isFullscreen ? '100vh' : '92svh',
+        maxWidth: isFullscreen ? '100vw' : '92vw',
+        maxHeight: isFullscreen ? '100vh' : '92svh',
+        margin: 0,
+      };
 
   return (
     <Dialog
@@ -69,11 +70,12 @@ export function MessageCardPreviewShell({
         sx={{
           display: 'flex',
           flexDirection: 'column',
-          px: isFullscreen ? 0 : 2,
-          pt: isFullscreen ? 0 : 2,
+          px: isFullscreen ? 0 : isMediaLayout ? { xs: 0, sm: 2 } : 2,
+          pt: isFullscreen ? 0 : isMediaLayout ? { xs: 0, sm: 2 } : 2,
           pb: 0,
           gap: 0,
           minHeight: 0,
+          flex: '1 1 auto',
           overflow: 'hidden',
         }}
       >
@@ -83,10 +85,10 @@ export function MessageCardPreviewShell({
             minHeight: 0,
             display: 'flex',
             flexDirection: 'column',
-            borderRadius: isFullscreen ? 0 : 1.5,
+            borderRadius: isFullscreen ? 0 : isMediaLayout ? { xs: 0, sm: 1.5 } : 1.5,
             overflow: 'hidden',
             backgroundColor: 'background.paper',
-            border: isFullscreen ? 'none' : 1,
+            border: isFullscreen || isMediaLayout ? 'none' : 1,
             borderColor: 'divider',
           }}
         >

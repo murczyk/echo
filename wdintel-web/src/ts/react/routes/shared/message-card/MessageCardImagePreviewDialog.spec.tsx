@@ -255,10 +255,10 @@ describe('MessageImagePreviewDialog', () => {
     expect(dialog?.disableEscapeKeyDown).toBe(false);
     expect(dialog?.fullScreen).toBe(false);
     expect(dialog?.paperSx).toMatchObject({
-      width: { xs: '96vw', sm: '92vw' },
-      height: '92svh',
-      maxWidth: 'min(92vw, 1280px)',
-      maxHeight: '92svh',
+      width: { xs: '100vw', sm: '92vw' },
+      height: { xs: '100svh', sm: '92svh' },
+      maxWidth: { xs: '100vw', sm: 'min(92vw, 1280px)' },
+      maxHeight: { xs: '100svh', sm: '92svh' },
     });
     root.unmount();
   });

@@ -361,10 +361,10 @@ describe('MessageCardVideoPreviewDialog', () => {
     expect(dialogProps.at(-1)?.disableEscapeKeyDown).toBe(false);
     expect(dialogProps.at(-1)?.fullScreen).toBe(false);
     expect(dialogProps.at(-1)?.paperSx).toMatchObject({
-      width: { xs: '96vw', sm: '92vw' },
-      height: '92svh',
-      maxWidth: 'min(92vw, 1280px)',
-      maxHeight: '92svh',
+      width: { xs: '100vw', sm: '92vw' },
+      height: { xs: '100svh', sm: '92svh' },
+      maxWidth: { xs: '100vw', sm: 'min(92vw, 1280px)' },
+      maxHeight: { xs: '100svh', sm: '92svh' },
     });
 
     root.unmount();

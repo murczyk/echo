@@ -14,6 +14,8 @@ systemd-units = [
     { unit-name = "echo-docs" },
 ]
 depends = ""
+replaces = "wdintel-rs (<= 0.1.1~rc.202607160810-1)"
 assets = [
     [ "../public/**/*", "usr/share/echo-docs/", "755", ],
+    [ "../releases/**/media/*", "usr/share/echo/releases/", "644", ],
 ]

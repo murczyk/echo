@@ -24,7 +24,6 @@ export const MessageCardImagePreviewStage = forwardRef<
     pan: { x: number; y: number };
     failedHref: string | null;
     imageSize: StageSize | null;
-    stageBackground: string;
     isFullscreen: boolean;
     onImageLoad: (image: HTMLImageElement) => void;
     onImageError: () => void;
@@ -43,7 +42,6 @@ export const MessageCardImagePreviewStage = forwardRef<
     pan,
     failedHref,
     imageSize,
-    stageBackground,
     isFullscreen,
     onImageLoad,
     onImageError,
@@ -71,7 +69,6 @@ export const MessageCardImagePreviewStage = forwardRef<
         justifyContent: 'center',
         minHeight: 0,
         overflow: 'hidden',
-        backgroundImage: stageBackground,
         ...getMessageCardPreviewStageSx(theme, isFullscreen),
         backgroundRepeat: 'no-repeat',
         backgroundSize: 'cover',
@@ -105,7 +102,6 @@ export const MessageCardImagePreviewStage = forwardRef<
           transition: zoom === ZOOM_MIN ? 'transform 120ms ease-out' : 'none',
           willChange: 'transform',
           pointerEvents: 'none',
-          filter: 'drop-shadow(0 10px 24px rgba(0, 0, 0, 0.3))',
         }}
       />
       {failedHref === currentHref ? (

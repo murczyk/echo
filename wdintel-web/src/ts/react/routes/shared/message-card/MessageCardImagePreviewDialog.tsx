@@ -13,12 +13,10 @@ import {
 import { shouldIgnoreArrowNavigation } from './document-preview-utils';
 import {
   isInteractivePreviewTarget,
-  sampleCornerColors,
   ZOOM_MAX,
   ZOOM_MIN,
   ZOOM_STEP,
   type DragState,
-  type StagePalette,
 } from './message-card-image-preview-utils';
 import {
   MessageCardImagePreviewActions,
@@ -64,11 +62,9 @@ export function MessageImagePreviewDialog({
   const [zoom, setZoom] = useState(ZOOM_MIN);
   const [pan, setPan] = useState<Point>({ x: 0, y: 0 });
   const [imageSize, setImageSize] = useState<StageSize | null>(null);
-  const [, setStagePaletteVersion] = useState(0);
   const [infoAnchorEl, setInfoAnchorEl] = useState<HTMLButtonElement | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [stageEl, setStageEl] = useState<HTMLDivElement | null>(null);
-  const stagePaletteByHrefRef = useRef(new Map<string, StagePalette>());
   const stageRef = useRef<HTMLDivElement | null>(null);
   const copyRequestKeyRef = useRef<string | null>(null);
   const currentHrefRef = useRef(currentHref);
@@ -93,11 +89,6 @@ export function MessageImagePreviewDialog({
         : `image-${resolvedIndex + 1}`,
     [currentImage, resolvedIndex],
   );
-  const stagePalette =
-    currentHref !== '' ? (stagePaletteByHrefRef.current.get(currentHref) ?? null) : null;
-  const stageBackground = stagePalette
-    ? `linear-gradient(135deg, ${stagePalette.start} 0%, ${stagePalette.end} 100%)`
-    : 'none';
   const previewConfig = getMessageCardPreviewShellConfig('image');
   const canFullscreen = previewConfig.supportsFullscreen;
   const dialogIsFullscreen = canFullscreen && isFullscreen;
@@ -292,23 +283,11 @@ export function MessageImagePreviewDialog({
   const goToIndex = (nextIndex: number) =>
     onIndexChange(normalizePreviewIndex(nextIndex, imageCount));
 
-  const sampleStagePalette = (image: HTMLImageElement) => {
-    const sampleHref = currentHref;
-    window.requestAnimationFrame(() => {
-      if (sampleHref !== currentHrefRef.current) return;
-      const palette = sampleCornerColors(image);
-      if (palette === null || sampleHref !== currentHrefRef.current) return;
-      stagePaletteByHrefRef.current.set(sampleHref, palette);
-      setStagePaletteVersion((value) => value + 1);
-    });
-  };
-
   const handleImageLoad = (image: HTMLImageElement) => {
     setImageSize({ width: image.naturalWidth, height: image.naturalHeight });
     setFailedHref(null);
     setLoadedImage(image);
     setLoadedImageKey(currentPreviewKey);
-    sampleStagePalette(image);
   };
 
   const handleImageError = () => {
@@ -387,7 +366,6 @@ export function MessageImagePreviewDialog({
           pan={pan}
           failedHref={failedHref}
           imageSize={imageSize}
-          stageBackground={stageBackground}
           isFullscreen={dialogIsFullscreen}
           onImageLoad={handleImageLoad}
           onImageError={handleImageError}

@@ -305,6 +305,7 @@ export function MessageCardImagePreviewActions({
             px: 1,
             py: 0.25,
             borderRadius: 1,
+            whiteSpace: 'nowrap',
           }}
         >
           {`${resolvedIndex + 1} / ${imageCount}`}
