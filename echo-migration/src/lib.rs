@@ -302,6 +302,7 @@ mod m20260712_204007_add_do_not_store_duplicate_echoim_failures;
 mod m20260713_152932_rename_cyber_echo_enabled_to_devices_section_enabled;
 mod m20260715_092901_add_sigint_inbox_item_network;
 mod m20260716_101007_device_hostname_ssh_port_and_drop_name_uniqueness;
+mod m20260716_134601_device_aor_id_uuid;
 mod m20260716_161040_login_uuid_v7;
 mod m20260717_111121_goi_palitra_sync_changelog_source;
 mod m20260720_100029_analysis_stats_query_indexes;
@@ -771,6 +772,7 @@ impl MigratorTrait for Migrator {
             Box::new(
                 m20260716_101007_device_hostname_ssh_port_and_drop_name_uniqueness::Migration,
             ),
+            Box::new(m20260716_134601_device_aor_id_uuid::Migration),
             Box::new(m20260802_174927_rer_duty_test_replay::Migration),
             Box::new(m20260803_093803_echo_automation_send_log::Migration),
         ]

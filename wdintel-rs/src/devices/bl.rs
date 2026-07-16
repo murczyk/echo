@@ -393,7 +393,7 @@ where
 
     for smuha_id in aor_ids {
         device_aor::ActiveModel {
-            id: NotSet,
+            id: Set(Uuid::now_v7()),
             device_id: Set(device_id),
             aor_id: Set(*smuha_id),
             created_at: NotSet,
