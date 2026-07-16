@@ -10,6 +10,7 @@ describe('analysis-map', () => {
   function createAnalysisMap() {
     const element = document.createElement('analysis-map') as unknown as {
       _searchSubmitHandler: (event: CustomEvent<string>) => void;
+      _handleSearchAttributeChanged: (newValue: string) => void;
       _searchControl: {
         updateSearchLoading: (isLoading: boolean) => void;
         updateResultsCount: (count: number | null) => void;
@@ -18,6 +19,11 @@ describe('analysis-map', () => {
         setSearchQuery: (query: string) => void;
       } | null;
       _flyToCoordinate: (coords: { lat: number; lng: number }) => void;
+      _map: {
+        flyTo: (latlng: [number, number], zoom: number, options: { duration: number }) => void;
+        addLayer: () => void;
+        removeLayer: () => void;
+      } | null;
       _isDateRangeLoading: boolean;
       _palitrasLoadState: string;
     };
@@ -30,6 +36,11 @@ describe('analysis-map', () => {
       setSearchQuery: vi.fn(),
     };
     element._flyToCoordinate = vi.fn();
+    element._map = {
+      flyTo: vi.fn(),
+      addLayer: vi.fn(),
+      removeLayer: vi.fn(),
+    };
     element._isDateRangeLoading = false;
     element._palitrasLoadState = 'success';
 
@@ -131,6 +142,21 @@ describe('analysis-map', () => {
     expect(analysisMap._searchControl?.updateResultsCount).toHaveBeenCalledWith(null);
   });
 
+  it('flies to a direct coordinate search attribute change without waiting for palitras', () => {
+    const analysisMap = createAnalysisMap();
+    analysisMap._palitrasLoadState = 'loading';
+
+    analysisMap.attributeChangedCallback('search', null, '47.42135, 35.62197');
+
+    expect(analysisMap._flyToCoordinate).toHaveBeenCalledWith({
+      lat: 47.42135,
+      lng: 35.62197,
+    });
+    expect(analysisMap._palitraManager?.setSearchQuery).toHaveBeenCalledWith('');
+    expect(analysisMap._searchControl?.updateSearchLoading).toHaveBeenCalledWith(false);
+    expect(analysisMap._searchControl?.updateResultsCount).toHaveBeenCalledWith(null);
+  });
+
   it('clears the palette query on coordinate submit', () => {
     const analysisMap = createAnalysisMap();
     const coords = parseCoordinateInput('11T XT 11111 11111');
@@ -151,5 +177,32 @@ describe('analysis-map', () => {
 
     expect(analysisMap._flyToCoordinate).not.toHaveBeenCalled();
     expect(analysisMap._palitraManager?.setSearchQuery).toHaveBeenCalledWith('точка 12');
+  });
+
+  it('flies the map to the expected zoom level for direct coordinates', () => {
+    const analysisMap = Object.create(
+      (customElements.get('analysis-map') as CustomElementConstructor).prototype,
+    ) as HTMLElement;
+    const map = {
+      flyTo: vi.fn(),
+      addLayer: vi.fn(),
+      removeLayer: vi.fn(),
+    };
+    (
+      analysisMap as unknown as {
+        _map: typeof map | null;
+        _coordinateSearchMarker: null;
+        _flyToCoordinate: (coords: { lat: number; lng: number }) => void;
+      }
+    )._map = map;
+
+    (
+      analysisMap as unknown as {
+        _coordinateSearchMarker: null;
+        _flyToCoordinate: (coords: { lat: number; lng: number }) => void;
+      }
+    )._flyToCoordinate({ lat: 47.42135, lng: 35.62197 });
+
+    expect(map.flyTo).toHaveBeenCalledWith([47.42135, 35.62197], 13, { duration: 0.4 });
   });
 });

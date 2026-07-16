@@ -20,6 +20,8 @@ import { renderLinkifiedText } from './message-card-linkify';
 import { MessageCardBotTagPrompt } from './MessageCardBotTagPrompt';
 import { MessageCardComments } from './MessageCardComments';
 import { MessageCardCallsignsSection } from './MessageCardCallsignsSection';
+import { MessageCardCoordinatePreview } from './MessageCardCoordinatePreview';
+import { hasCoordinatePreviewCandidate } from './message-coordinate-preview';
 import {
   isAudioMediaAttachment,
   isVideoMediaAttachment,
@@ -60,6 +62,7 @@ export function MessageCardMessageBody({
   messageComments = [],
   signalMessageSenderLabel,
   searchText,
+  onOpenPointsOnMap,
 }: {
   compact?: boolean;
   msg: InboxMessage;
@@ -78,6 +81,7 @@ export function MessageCardMessageBody({
   messageComments?: MessageComment[];
   signalMessageSenderLabel?: string | null;
   searchText?: string | null;
+  onOpenPointsOnMap?: (etalons: string[], message: InboxMessage) => void;
 }) {
   const images = collectMessageImages(msg);
   const [imagePreviewIndex, setImagePreviewIndex] = useState<number | null>(null);
@@ -131,6 +135,7 @@ export function MessageCardMessageBody({
     networks,
     unitsMap,
     searchText,
+    onOpenPointsOnMap,
   );
   const hasTextPrimary = Array.isArray(textPrimary)
     ? textPrimary.some((node) => isPresent(node))
@@ -236,6 +241,9 @@ export function MessageCardMessageBody({
           {textPrimary}
         </div>
       ) : null}
+      {hasCoordinatePreviewCandidate(msg, tagsMap) ? (
+        <MessageCardCoordinatePreview msg={msg} tagsMap={tagsMap} />
+      ) : null}
       {isPresent(msg.extendedForm) && msg.extendedForm.trim() !== '' ? (
         <div className="flex flex-row items-center gap-[6px] min-w-0">
           <ChatBubbleOutlineOutlinedIcon
@@ -296,11 +304,13 @@ function useMemoText(
   networks?: Network[],
   unitsMap?: Record<number, Unit>,
   searchText?: string | null,
+  onOpenPointsOnMap?: (etalons: string[], message: InboxMessage) => void,
 ) {
   return msg.textMarked && msg.textMarked.length > 0
     ? renderMarkedText(msg.textMarked, msg.text ?? '', getPointEtalonsFromMessage(msg, tagsMap), {
         showPointLinks,
         message: msg,
+        onOpenPointsOnMap,
         callsignInfoMap,
         networks,
         unitsMap,

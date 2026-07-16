@@ -1,6 +1,6 @@
 import type { MessageCardDocumentKind } from './document-preview.types';
 
-export type MessageCardPreviewKind = 'image' | 'video' | MessageCardDocumentKind;
+export type MessageCardPreviewKind = 'image' | 'video' | 'coordinate-map' | MessageCardDocumentKind;
 
 export type MessageCardPreviewShellConfig = {
   layout: 'document' | 'media';
@@ -21,6 +21,12 @@ const MESSAGE_CARD_PREVIEW_SHELL_CONFIG_BY_KIND = {
     disableRestoreFocus: false,
     supportsFullscreen: true,
     disableEscapeKeyDownInFullscreen: true,
+  },
+  'coordinate-map': {
+    layout: 'media',
+    disableRestoreFocus: true,
+    supportsFullscreen: true,
+    disableEscapeKeyDownInFullscreen: false,
   },
   pdf: {
     layout: 'document',

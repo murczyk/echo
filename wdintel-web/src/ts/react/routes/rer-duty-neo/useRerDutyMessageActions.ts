@@ -33,6 +33,7 @@ export function useRerDutyMessageActions(deps: MessageActionsDeps) {
     saveFilterNameByFeedId,
     setSaveFilterNameByFeedId,
     dutyDisableAutoScroll,
+    openPointsOnMap,
   } = deps;
 
   const savedFilterActions = useRerDutySavedFilterActions({
@@ -131,5 +132,6 @@ export function useRerDutyMessageActions(deps: MessageActionsDeps) {
     senderOptions: senderOptionsStable,
     tagIdsList,
     copiedFeedbackId: messageItemActions.copiedFeedbackId,
+    handleOpenPointsOnMap: openPointsOnMap ?? messageItemActions.handleOpenPointsOnMap,
   };
 }

@@ -1,5 +1,6 @@
 import type {
   CallsignInfoRes,
+  InboxMessage,
   Network,
   OrganismKeywordSetDto,
   RerDutyQueryStateWf as RerDutyFeedFilterState,
@@ -50,6 +51,7 @@ export type FeedColumnModel = {
     botTagAction: MessageCardBotTagAction | null;
     onCancelBotTagAction: () => void;
     onMarkBotTagWrong: (messageId: number, tagId: number) => void | Promise<void>;
+    onOpenPointsOnMap?: (etalons: string[], message: InboxMessage) => void;
   };
   actions: {
     onLoadOlder: () => void;

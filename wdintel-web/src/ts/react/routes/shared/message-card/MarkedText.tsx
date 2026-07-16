@@ -187,12 +187,20 @@ function PointToken({
   hrefSingle,
   title,
   hasMultiplePoints,
+  onOpenPointsOnMap,
+  message,
+  etalonsAll,
+  etalonSingle,
 }: {
   text: string;
   hrefAll: string;
   hrefSingle: string;
   title: string;
   hasMultiplePoints: boolean;
+  onOpenPointsOnMap?: (etalons: string[], message: InboxMessage) => void;
+  message?: InboxMessage;
+  etalonsAll: string[];
+  etalonSingle: string;
 }) {
   const [menuAnchorEl, setMenuAnchorEl] = useState<HTMLElement | null>(null);
   const menuId = useId();
@@ -254,26 +262,56 @@ function PointToken({
         MenuListProps={{ 'aria-label': 'Дії з точкою' }}
       >
         {hasMultiplePoints ? (
-          <>
-            <MenuItem
-              component="a"
-              href={hrefAll}
-              target="_blank"
-              rel="noopener noreferrer"
-              onClick={() => setMenuAnchorEl(null)}
-            >
-              Показати на мапі всі точки
-            </MenuItem>
-            <MenuItem
-              component="a"
-              href={hrefSingle}
-              target="_blank"
-              rel="noopener noreferrer"
-              onClick={() => setMenuAnchorEl(null)}
-            >
-              Показати на мапі цю точку
-            </MenuItem>
-          </>
+          onOpenPointsOnMap && message ? (
+            <>
+              <MenuItem
+                onClick={() => {
+                  setMenuAnchorEl(null);
+                  onOpenPointsOnMap(etalonsAll, message);
+                }}
+              >
+                Показати на мапі всі точки
+              </MenuItem>
+              <MenuItem
+                onClick={() => {
+                  setMenuAnchorEl(null);
+                  onOpenPointsOnMap([etalonSingle], message);
+                }}
+              >
+                Показати на мапі цю точку
+              </MenuItem>
+            </>
+          ) : (
+            <>
+              <MenuItem
+                component="a"
+                href={hrefAll}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={() => setMenuAnchorEl(null)}
+              >
+                Показати на мапі всі точки
+              </MenuItem>
+              <MenuItem
+                component="a"
+                href={hrefSingle}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={() => setMenuAnchorEl(null)}
+              >
+                Показати на мапі цю точку
+              </MenuItem>
+            </>
+          )
+        ) : onOpenPointsOnMap && message ? (
+          <MenuItem
+            onClick={() => {
+              setMenuAnchorEl(null);
+              onOpenPointsOnMap([etalonSingle], message);
+            }}
+          >
+            Показати на мапі
+          </MenuItem>
         ) : (
           <MenuItem
             component="a"
@@ -520,6 +558,7 @@ export function renderMarkedText(
     showPointLinks?: boolean;
     linkCallsigns?: boolean;
     message?: InboxMessage;
+    onOpenPointsOnMap?: (etalons: string[], message: InboxMessage) => void;
     callsignInfoMap?: Record<string, CallsignInfoRes>;
     networks?: Network[];
     unitsMap?: Record<number, Unit>;
@@ -531,6 +570,7 @@ export function renderMarkedText(
   const showPointLinks = options?.showPointLinks !== false;
   const linkCallsigns = options?.linkCallsigns !== false;
   const messageForMap = options?.message;
+  const onOpenPointsOnMap = options?.onOpenPointsOnMap;
   const fromNodes = collectPointEtalons(nodes);
   const highlightedTexts = collectHighlightedTexts(nodes);
   const searchTerms = collectSearchTerms(options?.searchText);
@@ -620,6 +660,10 @@ export function renderMarkedText(
           hrefSingle={hrefSingle}
           title={title}
           hasMultiplePoints={allPointEtalons.length > 1}
+          onOpenPointsOnMap={onOpenPointsOnMap}
+          message={messageForMap}
+          etalonsAll={etalonsForUrl}
+          etalonSingle={cleanEtalon}
         />,
       );
     }

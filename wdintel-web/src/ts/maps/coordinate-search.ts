@@ -1,5 +1,7 @@
 import { toPoint } from 'mgrs';
 
+import { utmToWgs84 } from '../utils';
+
 export type Wgs84Coords = { lat: number; lng: number };
 
 const LAT_MIN = -90;
@@ -9,6 +11,7 @@ const LNG_MAX = 180;
 
 /** Match two signed decimal numbers separated by comma, semicolon, or whitespace. */
 const WGS84_NUMBERS = /^\s*(-?\d{1,3}(?:\.\d+)?)\s*[,;\s]\s*(-?\d{1,3}(?:\.\d+)?)\s*$/;
+const UTM_NUMBERS = /^\s*(\d{1,2})([C-HJ-NP-Xc-hj-np-x])\s+(\d{6})\s+(\d{7})\s*$/;
 
 function isValidLat(n: number): boolean {
   return Number.isFinite(n) && n >= LAT_MIN && n <= LAT_MAX;
@@ -50,11 +53,36 @@ function parseMgrs(input: string): Wgs84Coords | null {
   }
 }
 
+function parseUtm(input: string): Wgs84Coords | null {
+  const match = input.trim().match(UTM_NUMBERS);
+  if (!match) return null;
+
+  const zone = Number(match[1]);
+  const band = String(match[2] ?? '').toUpperCase();
+  const easting = Number(match[3]);
+  const northing = Number(match[4]);
+  if (
+    !Number.isInteger(zone) ||
+    zone < 1 ||
+    zone > 60 ||
+    !Number.isFinite(easting) ||
+    !Number.isFinite(northing) ||
+    easting < 100000 ||
+    easting > 999999 ||
+    northing < 0 ||
+    northing > 9999999
+  ) {
+    return null;
+  }
+
+  return utmToWgs84({ zone, band, easting, northing });
+}
+
 /**
  * Parse search input as coordinates.
  */
 export function parseCoordinateInput(value: string): Wgs84Coords | null {
   const trimmed = value.trim();
   if (!trimmed) return null;
-  return parseWgs84Decimal(trimmed) ?? parseMgrs(trimmed);
+  return parseWgs84Decimal(trimmed) ?? parseUtm(trimmed) ?? parseMgrs(trimmed);
 }

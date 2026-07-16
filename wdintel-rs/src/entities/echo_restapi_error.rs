@@ -17,6 +17,9 @@ pub struct Model {
     #[sea_orm(column_type = "JsonBinary", nullable)]
     pub res: Option<Json>,
     pub source: EchoMessageSource,
+    pub discord_sent_at: Option<DateTime>,
+    #[sea_orm(column_type = "Text", nullable)]
+    pub client_name: Option<String>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

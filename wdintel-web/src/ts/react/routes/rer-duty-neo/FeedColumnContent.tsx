@@ -115,6 +115,7 @@ type DutyMessageCardItemProps = {
   onMessageComment: (msgId: number, currentComment: string | null) => void;
   onMessageExcludeEntity: (entity: MessageEntityFilterKind, value: string) => void;
   onMessageToggleTag: (msgId: number, tagId: number) => void;
+  onOpenPointsOnMap?: (etalons: string[], message: InboxMessage) => void;
 };
 
 const DutyMessageCardItem = memo(function DutyMessageCardItem({
@@ -147,6 +148,7 @@ const DutyMessageCardItem = memo(function DutyMessageCardItem({
   onMessageComment,
   onMessageExcludeEntity,
   onMessageToggleTag,
+  onOpenPointsOnMap,
 }: DutyMessageCardItemProps) {
   const labels = buildMessageCardDisplayLabels(msg, { groupInfos, profiles });
   const etalonDisplayModel = resolveMessageCardEtalonDisplayModel(msg, {
@@ -232,6 +234,7 @@ const DutyMessageCardItem = memo(function DutyMessageCardItem({
       onComment={() => onMessageComment(id, msg.extendedForm ?? null)}
       onExcludeMessageEntity={(entity, value) => onMessageExcludeEntity(entity, value)}
       onToggleTag={(tagId) => onMessageToggleTag(id, tagId)}
+      onOpenPointsOnMap={onOpenPointsOnMap}
       rightHeaderInsetPx={0}
       filterState={filterState}
     />
@@ -267,6 +270,7 @@ type DutyMessageListProps = {
   onMessageComment: (msgId: number, currentComment: string | null) => void;
   onMessageExcludeEntity: (entity: MessageEntityFilterKind, value: string) => void;
   onMessageToggleTag: (msgId: number, tagId: number) => void;
+  onOpenPointsOnMap?: (etalons: string[], message: InboxMessage) => void;
   setItemRef: (id: number) => (node: HTMLDivElement | null) => void;
   listRef: React.RefObject<HTMLDivElement>;
 };
@@ -300,6 +304,7 @@ const DutyMessageList = memo(function DutyMessageList({
   onMessageComment,
   onMessageExcludeEntity,
   onMessageToggleTag,
+  onOpenPointsOnMap,
   setItemRef,
   listRef,
 }: DutyMessageListProps) {
@@ -342,6 +347,7 @@ const DutyMessageList = memo(function DutyMessageList({
             onMessageComment={onMessageComment}
             onMessageExcludeEntity={onMessageExcludeEntity}
             onMessageToggleTag={onMessageToggleTag}
+            onOpenPointsOnMap={onOpenPointsOnMap}
           />
         </div>
       ))}
@@ -379,6 +385,7 @@ export const FeedColumnContent = memo(
       botTagAction,
       onCancelBotTagAction,
       onMarkBotTagWrong,
+      onOpenPointsOnMap,
     } = messageCard;
     const {
       onLoadOlder,
@@ -436,6 +443,7 @@ export const FeedColumnContent = memo(
     const stableOnMessageComment = useStableCallback(onMessageComment);
     const stableOnMessageExcludeEntity = useStableCallback(onMessageExcludeEntity);
     const stableOnMessageToggleTag = useStableCallback(onMessageToggleTag);
+    const stableOnOpenPointsOnMap = useStableCallback(onOpenPointsOnMap);
 
     useImperativeHandle(ref, () => ({ scrollToBottom: scroll.scrollToBottom }), [
       scroll.scrollToBottom,
@@ -534,6 +542,7 @@ export const FeedColumnContent = memo(
               onMessageComment={stableOnMessageComment}
               onMessageExcludeEntity={stableOnMessageExcludeEntity}
               onMessageToggleTag={stableOnMessageToggleTag}
+              onOpenPointsOnMap={onOpenPointsOnMap ? stableOnOpenPointsOnMap : undefined}
               setItemRef={scroll.setItemRef}
               listRef={scroll.listRef}
             />
@@ -698,7 +707,8 @@ export const FeedColumnContent = memo(
       prevCard.tagsLayout !== nextCard.tagsLayout ||
       prevCard.tagsMap !== nextCard.tagsMap ||
       prevCard.tagsOrder !== nextCard.tagsOrder ||
-      prevCard.botTagAction !== nextCard.botTagAction
+      prevCard.botTagAction !== nextCard.botTagAction ||
+      prevCard.onOpenPointsOnMap !== nextCard.onOpenPointsOnMap
     ) {
       return false;
     }

@@ -1,6 +1,9 @@
+use crate::automation::{self, PauseAutomationReq, SaveAutomationReq};
+use crate::error::ShortContext;
+use crate::h;
 use crate::messenger::{self, CreateMessengerReq, MessengerKind};
 use crate::AppState;
-use actix_web::{delete, get, post, web, HttpResponse, Responder};
+use actix_web::{delete, get, post, put, web, HttpResponse, Responder};
 use base64::{engine::general_purpose, Engine};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -23,14 +26,21 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
         .service(signal_health)
         .service(signal_accounts)
         .service(signal_groups)
-        .service(signal_send);
+        .service(signal_send)
+        .service(automation_accounts)
+        .service(automation_groups)
+        .service(list_automations)
+        .service(create_automation)
+        .service(update_automation)
+        .service(pause_automation)
+        .service(delete_automation);
 }
 
 #[get("/ui-api/messengers")]
 async fn list_messengers(
     state: web::Data<AppState>,
 ) -> actix_web::Result<impl Responder> {
-    let messengers = messenger::list(&state.db).await.map_err(error)?;
+    let messengers = messenger::list(&state.db).await.c(h!()).map_err(error)?;
     Ok(web::Json(messengers))
 }
 
@@ -42,6 +52,7 @@ async fn create_messenger(
     let messenger =
         messenger::create(&state.db, &state.config, req.into_inner())
             .await
+            .c(h!())
             .map_err(error)?;
     Ok(web::Json(messenger))
 }
@@ -53,6 +64,7 @@ async fn link_messenger(
 ) -> actix_web::Result<impl Responder> {
     let rsp = messenger::link(&state.db, &state.config, &path.into_inner())
         .await
+        .c(h!())
         .map_err(error)?;
     Ok(web::Json(rsp))
 }
@@ -64,6 +76,7 @@ async fn unlink_messenger(
 ) -> actix_web::Result<impl Responder> {
     messenger::unlink(&state.db, &path.into_inner())
         .await
+        .c(h!())
         .map_err(error)?;
     Ok(HttpResponse::Ok().json(json!({ "ok": true })))
 }
@@ -74,9 +87,13 @@ async fn messenger_status(
     path: web::Path<String>,
 ) -> actix_web::Result<impl Responder> {
     let name = path.into_inner();
-    let messenger = messenger::load(&state.db, &name).await.map_err(error)?;
+    let messenger = messenger::load(&state.db, &name)
+        .await
+        .c(h!())
+        .map_err(error)?;
     let is_linked = messenger::is_linked(&state.db, &name, messenger.kind)
         .await
+        .c(h!())
         .map_err(error)?;
     Ok(web::Json(json!({ "isLinked": is_linked })))
 }
@@ -88,6 +105,93 @@ async fn delete_messenger(
 ) -> actix_web::Result<impl Responder> {
     messenger::delete(&state.db, &state.config, &path.into_inner())
         .await
+        .c(h!())
+        .map_err(error)?;
+    Ok(HttpResponse::Ok().json(json!({ "ok": true })))
+}
+
+#[get("/ui-api/automation-accounts")]
+async fn automation_accounts(
+    state: web::Data<AppState>,
+) -> actix_web::Result<impl Responder> {
+    let accounts = automation::account_options(&state.db)
+        .await
+        .c(h!())
+        .map_err(error)?;
+    Ok(web::Json(accounts))
+}
+
+#[get("/ui-api/automation-groups")]
+async fn automation_groups(
+    state: web::Data<AppState>,
+) -> actix_web::Result<impl Responder> {
+    let groups = automation::group_options(&state.db)
+        .await
+        .c(h!())
+        .map_err(error)?;
+    Ok(web::Json(groups))
+}
+
+#[get("/ui-api/automations")]
+async fn list_automations(
+    state: web::Data<AppState>,
+) -> actix_web::Result<impl Responder> {
+    let automations =
+        automation::list(&state.db).await.c(h!()).map_err(error)?;
+    Ok(web::Json(automations))
+}
+
+#[post("/ui-api/automations")]
+async fn create_automation(
+    state: web::Data<AppState>,
+    req: web::Json<SaveAutomationReq>,
+) -> actix_web::Result<impl Responder> {
+    let automation = automation::create(&state.db, req.into_inner())
+        .await
+        .c(h!())
+        .map_err(error)?;
+    Ok(web::Json(automation))
+}
+
+#[put("/ui-api/automations/{id}")]
+async fn update_automation(
+    state: web::Data<AppState>,
+    path: web::Path<i64>,
+    req: web::Json<SaveAutomationReq>,
+) -> actix_web::Result<impl Responder> {
+    let automation =
+        automation::update(&state.db, path.into_inner(), req.into_inner())
+            .await
+            .c(h!())
+            .map_err(error)?;
+    Ok(web::Json(automation))
+}
+
+#[post("/ui-api/automations/{id}/pause")]
+async fn pause_automation(
+    state: web::Data<AppState>,
+    path: web::Path<i64>,
+    req: web::Json<PauseAutomationReq>,
+) -> actix_web::Result<impl Responder> {
+    let automation = automation::set_paused(
+        &state.db,
+        path.into_inner(),
+        req.into_inner().is_paused,
+    )
+    .await
+    .c(h!())
+    .map_err(error)?;
+    Ok(web::Json(automation))
+}
+
+#[delete("/ui-api/automations/{id}")]
+async fn delete_automation(
+    state: web::Data<AppState>,
+    path: web::Path<i64>,
+) -> actix_web::Result<impl Responder> {
+    automation::delete(&state.db, path.into_inner())
+        .await
+        .c(h!())
         .map_err(error)?;
     Ok(HttpResponse::Ok().json(json!({ "ok": true })))
 }
@@ -118,6 +222,7 @@ async fn whatsapp_health(
         require_kind(&state, &name, MessengerKind::Whatsapp).await?;
     if messenger::is_linked(&state.db, &name, MessengerKind::Whatsapp)
         .await
+        .c(h!())
         .map_err(error)?
     {
         Ok(web::Json(json!({ "client": messenger })))
@@ -157,6 +262,7 @@ async fn pause_messenger(
         req.into_inner().is_paused,
     )
     .await
+    .c(h!())
     .map_err(error)?;
     Ok(web::Json(PauseRsp { is_paused }))
 }
@@ -167,6 +273,7 @@ async fn global_pause_status(
 ) -> actix_web::Result<impl Responder> {
     let is_paused = messenger::global_is_paused(&state.db)
         .await
+        .c(h!())
         .map_err(error)?;
     Ok(web::Json(PauseRsp { is_paused }))
 }
@@ -179,6 +286,7 @@ async fn set_global_pause(
     let is_paused =
         messenger::set_global_paused(&state.db, req.into_inner().is_paused)
             .await
+            .c(h!())
             .map_err(error)?;
     Ok(web::Json(PauseRsp { is_paused }))
 }
@@ -202,10 +310,12 @@ async fn whatsapp_groups(
     if query.refresh.unwrap_or(false) {
         messenger::refresh_groups(&state.db, &name, MessengerKind::Whatsapp)
             .await
+            .c(h!())
             .map_err(error)?;
     }
     let groups = messenger::groups(&state.db, &name, MessengerKind::Whatsapp)
         .await
+        .c(h!())
         .map_err(error)?
         .into_iter()
         .map(|group| WhatsappGroupRsp {
@@ -219,6 +329,7 @@ async fn whatsapp_groups(
         groups.extend(
             messenger::chats(&state.db, &name, MessengerKind::Whatsapp)
                 .await
+                .c(h!())
                 .map_err(error)?
                 .into_iter()
                 .map(|chat| WhatsappGroupRsp {
@@ -262,6 +373,7 @@ async fn whatsapp_send(
         attachments,
     )
     .await
+    .c(h!())
     .map_err(error)?;
     Ok(HttpResponse::Created().json(json!({ "ok": true })))
 }
@@ -285,6 +397,7 @@ async fn signal_accounts(
     let messenger = require_kind(&state, &name, MessengerKind::Signal).await?;
     if messenger::is_linked(&state.db, &name, MessengerKind::Signal)
         .await
+        .c(h!())
         .map_err(error)?
     {
         Ok(HttpResponse::Ok()
@@ -320,10 +433,12 @@ async fn signal_groups(
     if query.refresh.unwrap_or(false) {
         messenger::refresh_groups(&state.db, &name, MessengerKind::Signal)
             .await
+            .c(h!())
             .map_err(error)?;
     }
     let groups = messenger::groups(&state.db, &name, MessengerKind::Signal)
         .await
+        .c(h!())
         .map_err(error)?
         .into_iter()
         .map(|group| SignalGroupRsp {
@@ -365,6 +480,7 @@ async fn signal_send(
     let known_group_ids =
         messenger::groups(&state.db, &name, MessengerKind::Signal)
             .await
+            .c(h!())
             .map_err(error)?
             .into_iter()
             .map(|group| group.id)
@@ -381,6 +497,7 @@ async fn signal_send(
         req.base64_attachments.unwrap_or_default(),
     )
     .await
+    .c(h!())
     .map_err(error)?;
     Ok(HttpResponse::Created().json(json!({ "ok": true })))
 }
@@ -390,7 +507,10 @@ async fn require_kind(
     name: &str,
     kind: MessengerKind,
 ) -> actix_web::Result<messenger::MessengerView> {
-    let messenger = messenger::load(&state.db, name).await.map_err(error)?;
+    let messenger = messenger::load(&state.db, name)
+        .await
+        .c(h!())
+        .map_err(error)?;
     if messenger.kind != kind {
         return Err(actix_web::error::ErrorNotFound(format!(
             "{name} is not a {} messenger",
@@ -401,6 +521,7 @@ async fn require_kind(
 }
 
 fn error(err: anyhow::Error) -> actix_web::Error {
+    log::error!("echo-swapp API error: {err:#}");
     actix_web::error::ErrorInternalServerError(err.to_string())
 }
 
