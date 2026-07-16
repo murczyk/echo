@@ -54,6 +54,10 @@ export function MessageCardVideoPreviewDialog({
   useEffect(() => {
     if (!open || !video) return;
 
+    // Drop the previous item's URL so autoplay can't resume it while the next
+    // source is still resolving.
+    setSrc(null);
+
     if (typeof video.source === 'string') {
       if (
         !video.source.startsWith('blob:') &&
@@ -129,7 +133,7 @@ export function MessageCardVideoPreviewDialog({
     const v = videoRef.current;
     if (!v) return;
     v.play().catch(() => {});
-  }, [open, src, resolvedIndex]);
+  }, [open, src]);
 
   useEffect(() => {
     if (!dialogIsFullscreen) return;
