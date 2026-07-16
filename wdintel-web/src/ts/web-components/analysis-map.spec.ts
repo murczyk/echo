@@ -17,7 +17,7 @@ describe('analysis-map', () => {
       } | null;
       _palitraManager: {
         setSearchQuery: (query: string) => void;
-        fitVisiblePalitras: () => void;
+        fitPalitras: (palitraIds: number[]) => void;
       } | null;
       _flyToCoordinate: (coords: { lat: number; lng: number }) => void;
       _map: {
@@ -27,7 +27,7 @@ describe('analysis-map', () => {
       } | null;
       _isDateRangeLoading: boolean;
       _palitrasLoadState: string;
-      _handleFocusVisiblePalitrasRequest: () => void;
+      _handleFocusPalitrasRequest: (palitraIds: number[]) => void;
     };
 
     element._searchControl = {
@@ -36,7 +36,7 @@ describe('analysis-map', () => {
     };
     element._palitraManager = {
       setSearchQuery: vi.fn(),
-      fitVisiblePalitras: vi.fn(),
+      fitPalitras: vi.fn(),
     };
     element._flyToCoordinate = vi.fn();
     element._map = {
@@ -46,8 +46,11 @@ describe('analysis-map', () => {
     };
     element._isDateRangeLoading = false;
     element._palitrasLoadState = 'success';
-    element._handleFocusVisiblePalitrasRequest = vi.fn(function (this: typeof element) {
-      this._palitraManager?.fitVisiblePalitras();
+    element._handleFocusPalitrasRequest = vi.fn(function (
+      this: typeof element,
+      palitraIds: number[],
+    ) {
+      this._palitraManager?.fitPalitras(palitraIds);
     });
 
     return element;
@@ -188,9 +191,9 @@ describe('analysis-map', () => {
   it('routes explicit palette focus requests to the palitra manager', () => {
     const analysisMap = createAnalysisMap();
 
-    analysisMap._handleFocusVisiblePalitrasRequest();
+    analysisMap._handleFocusPalitrasRequest([1, 2, 2]);
 
-    expect(analysisMap._palitraManager?.fitVisiblePalitras).toHaveBeenCalledTimes(1);
+    expect(analysisMap._palitraManager?.fitPalitras).toHaveBeenCalledWith([1, 2, 2]);
   });
 
   it('flies the map to the expected zoom level for direct coordinates', () => {

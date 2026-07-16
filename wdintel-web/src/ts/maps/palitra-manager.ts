@@ -10,7 +10,22 @@ import {
   PalitraManagerCallbacks,
   PalitraManagerOptions,
 } from './palitra-types';
-import { createPalitraGeometryLayer } from './utils/palitra-map-geometry';
+import { createPalitraGeometryLayer, hasRenderableGeometry } from './utils/palitra-map-geometry';
+
+function normalizePalitraIds(ids: number[]): number[] {
+  const result: number[] = [];
+  const seen = new Set<number>();
+
+  ids.forEach((value) => {
+    if (!Number.isInteger(value) || seen.has(value)) {
+      return;
+    }
+    seen.add(value);
+    result.push(value);
+  });
+
+  return result;
+}
 
 export class PalitraManager {
   private cacheManager: PalitraCacheManager;
@@ -78,12 +93,23 @@ export class PalitraManager {
     this.pointsController.onEnabledChanged();
   }
 
-  fitVisiblePalitras(): void {
+  fitPalitras(ids: number[]): void {
     if (!this.enabled) {
       return;
     }
 
-    const geometryLayers = this.getVisibleGeometryLayers();
+    const targetIds = normalizePalitraIds(ids);
+    if (targetIds.length === 0) {
+      return;
+    }
+
+    const visibleIdSet = new Set(this.visibleIds);
+    const visibleTargetIds = targetIds.filter((id) => visibleIdSet.has(id));
+    if (visibleTargetIds.length === 0) {
+      return;
+    }
+
+    const geometryLayers = this.getRenderableGeometryLayers(visibleTargetIds);
     if (geometryLayers.length === 0) {
       return;
     }
@@ -147,7 +173,7 @@ export class PalitraManager {
     }
 
     this.layerGroup.clearLayers();
-    const geometryLayers = this.getVisibleGeometryLayers();
+    const geometryLayers = this.getRenderableGeometryLayers(this.visibleIds);
     geometryLayers.forEach((layer) => {
       this.layerGroup.addLayer(layer);
     });
@@ -155,14 +181,14 @@ export class PalitraManager {
     this.pointsController.updatePoints();
   }
 
-  private getVisibleGeometryLayers(): L.Layer[] {
-    const visiblePalitras = this.palitras.filter(
-      (palitraDetails) =>
-        this.visibleIds.includes(palitraDetails.palitra.id) && palitraDetails.palitra.geometry,
-    );
-
+  private getRenderableGeometryLayers(ids: number[]): L.Layer[] {
+    const idSet = new Set(ids);
     const geometryLayers: L.Layer[] = [];
-    visiblePalitras.forEach((palitraDetails) => {
+    this.palitras.forEach((palitraDetails) => {
+      if (!idSet.has(palitraDetails.palitra.id) || !hasRenderableGeometry(palitraDetails)) {
+        return;
+      }
+
       const layer = createPalitraGeometryLayer(palitraDetails);
       if (!layer) {
         console.log('❌ Palitra geometry creation failed');

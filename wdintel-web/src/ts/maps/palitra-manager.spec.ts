@@ -26,6 +26,26 @@ function createPalitraDetails(overrides?: Partial<PalitraDetails>): PalitraDetai
   };
 }
 
+function createLinePalitraDetails(overrides?: Partial<PalitraDetails>): PalitraDetails {
+  return createPalitraDetails({
+    palitra: {
+      id: 2,
+      name: 'Line',
+      color_hex: '#00ff00',
+      geometry: {
+        line_strings: [
+          [
+            { lat: 47.1, lng: 35.1 },
+            { lat: 47.2, lng: 35.2 },
+          ],
+        ],
+      },
+      ...overrides?.palitra,
+    },
+    ...overrides,
+  });
+}
+
 function createManager(overrides?: Partial<PalitraManager>) {
   const manager = Object.create(PalitraManager.prototype) as PalitraManager & {
     map: { fitBounds: ReturnType<typeof vi.fn> };
@@ -109,12 +129,64 @@ describe('PalitraManager viewport actions', () => {
       visibleIds: [1],
     });
 
-    manager.fitVisiblePalitras();
+    manager.fitPalitras([1]);
 
     expect(manager.map.fitBounds).toHaveBeenCalledTimes(1);
     const [bounds, options] = manager.map.fitBounds.mock.calls[0];
     expect(options).toEqual({ padding: [50, 50], maxZoom: 10 });
     expect(bounds.isValid()).toBe(true);
+  });
+
+  it('fits bounds for visible selected polygon and line geometries while ignoring duplicates and stale ids', () => {
+    const manager = createManager({
+      enabled: true,
+      palitras: [
+        createPalitraDetails(),
+        createLinePalitraDetails(),
+        createPalitraDetails({
+          palitra: {
+            id: 3,
+            name: 'Center only',
+            color_hex: '#0000ff',
+            geometry: {
+              center: { lat: 47.15, lng: 35.15 },
+            },
+          },
+        }),
+      ],
+      visibleIds: [1, 2, 3],
+    });
+
+    manager.fitPalitras([1, 1, 2, 3, 999]);
+
+    expect(manager.map.fitBounds).toHaveBeenCalledTimes(1);
+    const [bounds, options] = manager.map.fitBounds.mock.calls[0];
+    expect(options).toEqual({ padding: [50, 50], maxZoom: 10 });
+    expect(bounds.isValid()).toBe(true);
+  });
+
+  it('does nothing when focus ids are unknown, deselected, or non-renderable', () => {
+    const manager = createManager({
+      enabled: true,
+      palitras: [
+        createPalitraDetails(),
+        createPalitraDetails({
+          palitra: {
+            id: 4,
+            name: 'Center only',
+            color_hex: '#00ff00',
+            geometry: {
+              center: { lat: 47.15, lng: 35.15 },
+            },
+          },
+        }),
+      ],
+      visibleIds: [1],
+    });
+
+    manager.fitPalitras([4, 999]);
+
+    expect(manager.map.fitBounds).not.toHaveBeenCalled();
   });
 
   it('does nothing when the visible palettes have no geometry', () => {
@@ -133,7 +205,7 @@ describe('PalitraManager viewport actions', () => {
       visibleIds: [2],
     });
 
-    manager.fitVisiblePalitras();
+    manager.fitPalitras([2]);
 
     expect(manager.map.fitBounds).not.toHaveBeenCalled();
   });
@@ -156,7 +228,7 @@ describe('PalitraManager viewport actions', () => {
       visibleIds: [3],
     });
 
-    manager.fitVisiblePalitras();
+    manager.fitPalitras([3]);
 
     expect(manager.map.fitBounds).not.toHaveBeenCalled();
   });
