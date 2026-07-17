@@ -2,30 +2,23 @@
  * @vitest-environment happy-dom
  */
 import { act, forwardRef } from 'react';
-import type { ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { FeedColumnModel } from './FeedColumn';
+import type { FeedColumnModel } from './types';
 import { RerDutyNeoWorkspace } from './RerDutyNeoWorkspace';
 import type { MessageFeedState } from './utils';
 import { MAX_MESSAGE_FEEDS } from './utils';
 
-vi.mock('react-virtuoso', () => ({
-  Virtuoso: forwardRef<
-    HTMLDivElement,
-    {
-      data?: Array<[number, unknown]>;
-      itemContent?: (index: number, item: [number, unknown]) => ReactNode;
-    }
-  >(function Virtuoso({ data, itemContent }, ref) {
-    return (
-      <div ref={ref} data-testid="virtuoso">
-        {(data ?? []).map((item, index) => (
-          <div key={String(index)}>{itemContent?.(index, item)}</div>
-        ))}
-      </div>
-    );
+const renderedFeedColumns = new Map<string, FeedColumnModel>();
+
+vi.mock('./FeedColumn', () => ({
+  FeedColumn: forwardRef<HTMLDivElement, { column: FeedColumnModel }>(function FeedColumnMock(
+    { column },
+    ref,
+  ) {
+    renderedFeedColumns.set(column.feed.id, column);
+    return <div ref={ref} data-testid={`feed-column-${column.feed.id}`} />;
   }),
 }));
 
@@ -52,7 +45,6 @@ function buildFeed(id: string): MessageFeedState {
     loading: true,
     loadingOlder: false,
     hasReachedStart: false,
-    firstItemIndex: 0,
     referenceTimeMs: null,
     readIds: new Set<number>(),
     unreadCount: 0,
@@ -168,12 +160,17 @@ describe('RerDutyNeoWorkspace', () => {
   let container: HTMLElement;
   let root: Root;
 
+  beforeEach(() => {
+    renderedFeedColumns.clear();
+  });
+
   afterEach(() => {
     act(() => {
       root?.unmount();
       container?.remove();
       document.body.innerHTML = '';
     });
+    renderedFeedColumns.clear();
   });
 
   it('renders the initial loading header per feed instead of a shared top toolbar', async () => {
@@ -346,15 +343,59 @@ describe('RerDutyNeoWorkspace', () => {
       );
     });
 
-    expect(
-      container.querySelector('[role="tablist"] button[aria-label="Закрити стрічку"]'),
-    ).toBeNull();
-    expect(
-      container
-        .querySelector('[data-duty-feed-column-active="true"]')
-        ?.querySelectorAll('button[aria-label="Закрити стрічку"]'),
-    ).toHaveLength(1);
-    expect(container.querySelector('button[aria-label="Додати стрічку"]')).not.toBeNull();
+    expect(renderedFeedColumns.get('feed-1')?.actions.onCreateMessage).toBeUndefined();
+    expect(renderedFeedColumns.get('feed-2')?.actions.onCreateMessage).toBeDefined();
+    expect(renderedFeedColumns.get('feed-2')?.view.scrollTrackingEnabled).toBe(true);
+  });
+
+  it('enables scroll tracking only for the active narrow feed and flips it on tab change', async () => {
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+
+    const messageFeeds = [
+      { ...buildFeed('feed-1'), loading: false },
+      { ...buildFeed('feed-2'), loading: false },
+    ];
+    const columnRefsRef = { current: {} as Record<string, null> };
+
+    await act(async () => {
+      root.render(
+        <RerDutyNeoWorkspace
+          activeFeedId="feed-2"
+          buildFeedColumnModel={buildFeedColumnModel}
+          columnRefsRef={columnRefsRef}
+          createMessageFeed={() => {}}
+          isInitialLoading={false}
+          messageFeeds={messageFeeds}
+          narrowScreen
+          onSelectFeed={() => {}}
+          showLoadingBackdrop={false}
+        />,
+      );
+    });
+
+    expect(renderedFeedColumns.get('feed-1')?.view.scrollTrackingEnabled).toBe(false);
+    expect(renderedFeedColumns.get('feed-2')?.view.scrollTrackingEnabled).toBe(true);
+
+    await act(async () => {
+      root.render(
+        <RerDutyNeoWorkspace
+          activeFeedId="feed-1"
+          buildFeedColumnModel={buildFeedColumnModel}
+          columnRefsRef={columnRefsRef}
+          createMessageFeed={() => {}}
+          isInitialLoading={false}
+          messageFeeds={messageFeeds}
+          narrowScreen
+          onSelectFeed={() => {}}
+          showLoadingBackdrop={false}
+        />,
+      );
+    });
+
+    expect(renderedFeedColumns.get('feed-1')?.view.scrollTrackingEnabled).toBe(true);
+    expect(renderedFeedColumns.get('feed-2')?.view.scrollTrackingEnabled).toBe(false);
   });
 
   it('keeps the desktop workspace rail stable when the add feed action disappears', async () => {
@@ -429,5 +470,70 @@ describe('RerDutyNeoWorkspace', () => {
     expect(workspaceAfter.style.paddingTop).toBe(workspaceBefore.style.paddingTop);
     expect(createMessageFeed).not.toHaveBeenCalled();
     expect(openCreateMessageComposer).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps scroll tracking enabled for all desktop feeds', async () => {
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+
+    const messageFeeds = [
+      { ...buildFeed('feed-1'), loading: false },
+      { ...buildFeed('feed-2'), loading: false },
+    ];
+    const columnRefsRef = { current: {} as Record<string, null> };
+
+    await act(async () => {
+      root.render(
+        <RerDutyNeoWorkspace
+          activeFeedId="feed-1"
+          buildFeedColumnModel={buildFeedColumnModel}
+          columnRefsRef={columnRefsRef}
+          createMessageFeed={() => {}}
+          isInitialLoading={false}
+          messageFeeds={messageFeeds}
+          narrowScreen={false}
+          onSelectFeed={() => {}}
+          showLoadingBackdrop={false}
+        />,
+      );
+    });
+
+    expect(renderedFeedColumns.get('feed-1')?.view.scrollTrackingEnabled).toBe(true);
+    expect(renderedFeedColumns.get('feed-2')?.view.scrollTrackingEnabled).toBe(true);
+  });
+
+  it('does not mutate the source column view when enabling scroll tracking', async () => {
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+
+    const messageFeeds = [{ ...buildFeed('feed-1'), loading: false }];
+    const sourceColumn = buildFeedColumnModel(messageFeeds[0]);
+    const sourceView = sourceColumn.view;
+    const builder = vi.fn(() => sourceColumn);
+    const columnRefsRef = { current: {} as Record<string, null> };
+
+    await act(async () => {
+      root.render(
+        <RerDutyNeoWorkspace
+          activeFeedId="feed-1"
+          buildFeedColumnModel={builder}
+          columnRefsRef={columnRefsRef}
+          createMessageFeed={() => {}}
+          isInitialLoading={false}
+          messageFeeds={messageFeeds}
+          narrowScreen={false}
+          onSelectFeed={() => {}}
+          showLoadingBackdrop={false}
+        />,
+      );
+    });
+
+    expect(builder).toHaveBeenCalledTimes(1);
+    expect(sourceColumn.view).toBe(sourceView);
+    expect(sourceColumn.view.scrollTrackingEnabled).toBeUndefined();
+    expect(renderedFeedColumns.get(messageFeeds[0].id)?.view).not.toBe(sourceView);
+    expect(renderedFeedColumns.get(messageFeeds[0].id)?.view.scrollTrackingEnabled).toBe(true);
   });
 });

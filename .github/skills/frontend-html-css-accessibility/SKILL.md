@@ -32,6 +32,7 @@ Use when changing markup, classes, layout, spacing, colors, or interaction state
 - Reuse existing styling system in that file:
 - Elm/Tailwind utility classes when already present.
 - MUI `sx`/components in React files.
+- In the protected Duty/MessageCard hot path, preserve MUI theme parity through semantic HTML, existing utilities, shared theme-backed CSS variables, and leaf MUI components. Do not introduce structural MUI wrappers solely to obtain theme styling.
 - Prefer minimal, local style changes over global overrides.
 - Validate responsive layout at common widths:
 - Mobile (~360px)

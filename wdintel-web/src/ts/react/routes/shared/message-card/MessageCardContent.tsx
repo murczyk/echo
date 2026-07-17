@@ -6,9 +6,9 @@ import type {
   Tag,
   Unit,
 } from '../../../../../Bindings';
-import { Box, CircularProgress, Stack, Typography } from '@mui/material';
+import { CircularProgress, Typography } from '@mui/material';
 import ChatBubbleOutlineOutlinedIcon from '@mui/icons-material/ChatBubbleOutlineOutlined';
-import { useState, useMemo } from 'react';
+import { memo, useMemo, useState } from 'react';
 import { isPresent } from '../../../utils/misc';
 import {
   getPointEtalonsFromMessage,
@@ -103,11 +103,9 @@ export function MessageCardMessageBody({
     return !/\.(jpe?g|png|gif|webp|bmp|svg)(\?|#|$)/i.test(href);
   });
   const audioAttachments = attachmentMedia.filter(isAudioMediaAttachment);
-
   const videoAttachments = attachmentMedia.filter(
     (attachment) => isVideoMediaAttachment(attachment) && !isAudioMediaAttachment(attachment),
   );
-
   const downloadAttachments = attachmentMedia.filter(
     (attachment) => !isAudioMediaAttachment(attachment) && !isVideoMediaAttachment(attachment),
   );
@@ -119,7 +117,6 @@ export function MessageCardMessageBody({
         id: a.id ?? '',
         name: mediaAttachmentDisplayName(a),
         source: String(a.href ?? ''),
-        // Preserve normalized video metadata
         mimeType: raw.contentType ?? raw.content_type ?? undefined,
         sizeBytes: raw.sizeBytes ?? raw.size_bytes ?? undefined,
       };
@@ -143,7 +140,7 @@ export function MessageCardMessageBody({
     : isPresent(textPrimary);
 
   return (
-    <Stack spacing={compact ? 1.5 : 1.25} sx={{ minWidth: 0 }}>
+    <div className="flex flex-col min-w-0" style={{ gap: compact ? '12px' : '10px' }}>
       {images.length > 0 || videoAttachments.length > 0 ? (
         <MessageCardImageList
           images={images}
@@ -155,48 +152,35 @@ export function MessageCardMessageBody({
           onOpenVideo={(index) => setVideoPreviewIndex(index)}
         />
       ) : null}
-      <MessageImagePreviewDialog
-        imageHrefs={images}
-        initialIndex={imagePreviewIndex ?? 0}
-        currentIndex={imagePreviewIndex ?? 0}
-        open={imagePreviewIndex != null && images.length > 0}
-        onClose={() => setImagePreviewIndex(null)}
-        onIndexChange={(index) => setImagePreviewIndex(index)}
-      />
-      <MessageCardDocumentPreviewDialog
-        documents={previewableDocuments}
-        initialIndex={documentPreviewIndex ?? 0}
-        currentIndex={documentPreviewIndex ?? 0}
-        open={documentPreviewIndex != null && previewableDocuments.length > 0}
-        onClose={() => setDocumentPreviewIndex(null)}
-        onIndexChange={(index) => setDocumentPreviewIndex(index)}
-      />
+      {imagePreviewIndex != null && images.length > 0 ? (
+        <MessageImagePreviewDialog
+          imageHrefs={images}
+          initialIndex={imagePreviewIndex ?? 0}
+          currentIndex={imagePreviewIndex ?? 0}
+          open={true}
+          onClose={() => setImagePreviewIndex(null)}
+          onIndexChange={(index) => setImagePreviewIndex(index)}
+        />
+      ) : null}
+      {documentPreviewIndex != null && previewableDocuments.length > 0 ? (
+        <MessageCardDocumentPreviewDialog
+          documents={previewableDocuments}
+          initialIndex={documentPreviewIndex ?? 0}
+          currentIndex={documentPreviewIndex ?? 0}
+          open={true}
+          onClose={() => setDocumentPreviewIndex(null)}
+          onIndexChange={(index) => setDocumentPreviewIndex(index)}
+        />
+      ) : null}
       {audioAttachments.length > 0 ? (
-        <Box
-          className="mt-1"
-          sx={{
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'flex-start',
-            width: '100%',
-          }}
-        >
+        <div className="mt-1 flex flex-col items-start w-full">
           {audioAttachments.map((attachment) => (
             <MessageMediaAudioPlayer key={attachment.id} attachment={attachment} />
           ))}
-        </Box>
+        </div>
       ) : null}
       {documents.length > 0 || downloadAttachments.length > 0 ? (
-        <Box
-          className="mt-1"
-          sx={{
-            display: 'flex',
-            flexWrap: 'wrap',
-            alignItems: 'flex-start',
-            gap: 0.5,
-            width: '100%',
-          }}
-        >
+        <div className="mt-1 flex flex-wrap items-start gap-2 w-full">
           {documents.map((document, index) => {
             const previewIndex = previewableDocuments.findIndex(
               (previewableDocument) => previewableDocument.href === document.href,
@@ -220,41 +204,45 @@ export function MessageCardMessageBody({
           {downloadAttachments.map((attachment) => (
             <MessageMediaDownloadLink key={attachment.id} attachment={attachment} />
           ))}
-        </Box>
+        </div>
       ) : null}
-      <MessageCardVideoPreviewDialog
-        open={videoPreviewIndex !== null}
-        onClose={() => setVideoPreviewIndex(null)}
-        videos={videoPreviewSources}
-        currentIndex={videoPreviewIndex ?? 0}
-        onIndexChange={(idx) => setVideoPreviewIndex(idx)}
-      />
+      {videoPreviewIndex !== null ? (
+        <MessageCardVideoPreviewDialog
+          open={true}
+          onClose={() => setVideoPreviewIndex(null)}
+          videos={videoPreviewSources}
+          currentIndex={videoPreviewIndex ?? 0}
+          onIndexChange={(idx) => setVideoPreviewIndex(idx)}
+        />
+      ) : null}
       {hasTextPrimary ? (
-        <Box
-          component="div"
-          className={msg.textMarked && msg.textMarked.length > 0 ? 'text-marked' : undefined}
-          sx={{
-            whiteSpace: 'pre-wrap',
+        <div
+          className={
+            msg.textMarked && msg.textMarked.length > 0
+              ? 'text-marked whitespace-pre-wrap wrap-break-word'
+              : 'whitespace-pre-wrap wrap-break-word'
+          }
+          style={{
             overflowWrap: 'anywhere',
             lineHeight: 1.35,
           }}
         >
           {textPrimary}
-        </Box>
+        </div>
       ) : null}
       {hasCoordinatePreviewCandidate(msg, tagsMap) ? (
         <MessageCardCoordinatePreview msg={msg} tagsMap={tagsMap} />
       ) : null}
       {isPresent(msg.extendedForm) && msg.extendedForm.trim() !== '' ? (
-        <Stack direction="row" spacing={0.75} alignItems="center" sx={{ minWidth: 0 }}>
+        <div className="flex flex-row items-center gap-[6px] min-w-0">
           <ChatBubbleOutlineOutlinedIcon
             sx={{ fontSize: 13, color: 'var(--color-action)', flexShrink: 0 }}
             titleAccess="Коментар"
           />
-          <Typography variant="caption" sx={{ fontWeight: 700, overflowWrap: 'anywhere' }}>
+          <Typography variant="body2" sx={{ fontWeight: 700, overflowWrap: 'anywhere' }}>
             {msg.extendedForm}
           </Typography>
-        </Stack>
+        </div>
       ) : null}
       {messageComments.length > 0 ? (
         <MessageCardComments
@@ -263,19 +251,11 @@ export function MessageCardMessageBody({
         />
       ) : null}
       {tagsLoading ? (
-        <Box
-          sx={{
-            pt: 0.25,
-            minHeight: 34,
-            display: 'flex',
-            alignItems: 'center',
-          }}
-          aria-label="Завантаження тегів"
-        >
+        <div className="pt-[2px] min-h-[34px] flex items-center" aria-label="Завантаження тегів">
           <CircularProgress size={14} />
-        </Box>
+        </div>
       ) : hasTags ? (
-        <Box sx={{ pt: 0.25, minWidth: 0 }}>
+        <div className="pt-[2px] min-w-0">
           <span className="inline-flex flex-wrap gap-1 min-w-0 w-full">
             <MessageCardTags
               msg={msg}
@@ -286,7 +266,7 @@ export function MessageCardMessageBody({
               interactive={!readOnly && onToggleTag != null}
             />
           </span>
-        </Box>
+        </div>
       ) : null}
       {!readOnly &&
       botTagAction != null &&
@@ -305,7 +285,7 @@ export function MessageCardMessageBody({
           callsignInfoMap={callsignInfoMap}
         />
       ) : null}
-    </Stack>
+    </div>
   );
 }
 
@@ -338,4 +318,6 @@ function useMemoText(
       })();
 }
 
-export const MessageCardContent = MessageCardMessageBody;
+// Repeated card-content path: avoid structural MUI wrappers and per-card layout sx.
+// Preserve MUI theme parity through semantic styles; see ./AGENTS.md.
+export const MessageCardContent = memo(MessageCardMessageBody);

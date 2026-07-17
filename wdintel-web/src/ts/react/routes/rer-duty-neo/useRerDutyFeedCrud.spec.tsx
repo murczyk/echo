@@ -15,12 +15,7 @@ vi.mock('./utils', async () => {
   };
 });
 
-import {
-  emptyFilter,
-  MAX_MESSAGE_FEEDS,
-  VIRTUOSO_FIRST_ITEM_INDEX_INITIAL,
-  type MessageFeedState,
-} from './utils';
+import { emptyFilter, MAX_MESSAGE_FEEDS, type MessageFeedState } from './utils';
 import { useRerDutyFeedCrud } from './useRerDutyFeedCrud';
 
 function buildFeed(id: string): MessageFeedState {
@@ -31,7 +26,6 @@ function buildFeed(id: string): MessageFeedState {
     loading: false,
     loadingOlder: false,
     hasReachedStart: false,
-    firstItemIndex: VIRTUOSO_FIRST_ITEM_INDEX_INITIAL,
     referenceTimeMs: null,
     readIds: new Set<number>(),
     unreadCount: 0,
@@ -144,7 +138,6 @@ describe('useRerDutyFeedCrud', () => {
       loading: true,
       loadingOlder: false,
       hasReachedStart: false,
-      firstItemIndex: VIRTUOSO_FIRST_ITEM_INDEX_INITIAL,
       referenceTimeMs: null,
       readIds: new Set<number>(),
       unreadCount: 0,

@@ -55,6 +55,7 @@ export function useNeoMuiTheme() {
         palette: { mode },
         typography: {
           fontFamily: neoMuiFontFamily,
+          htmlFontSize: 14,
         },
         components: {
           MuiButtonBase: {

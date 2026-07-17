@@ -35,6 +35,7 @@ Use at the end of any task that changes frontend behavior, API calls, UI states,
 - Verify keyboard navigation and focus state visibility.
 - Verify loading, empty, error, success states.
 - Verify no break in core flows for impacted page routes.
+- For Duty/MessageCard changes, verify inactive hidden feeds do not produce read or scrolling side effects; scroll anchoring/windowing remains stable; closed menus/dialogs remain unmounted where required; theme-aware typography and geometry remain consistent; shared Analysis functionality remains intact; native hot-path structure has not been replaced by MUI layout wrappers.
 - State persistence checks:
 - For `TableStateProvider`, verify URL-backed `globalFilter`, `columnFilters`, `sorting`, and non-default `date` remain shareable and back-button aware.
 - Verify localStorage-backed table layout (`tableId` column visibility/order/sizing/toggles) survives reload and handles stale columns.

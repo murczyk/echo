@@ -6,6 +6,15 @@ type ShortStateFixtureOptions = {
   shortStateId?: string;
   shortState?: unknown;
   inboxResponse?: InboxMessagesRspRaw | null;
+  inboxResponseForRequest?: (
+    requestBody: unknown,
+  ) => InboxMessagesRspRaw | Promise<InboxMessagesRspRaw>;
+  inboxCountResponseForRequest?: (requestBody: unknown) =>
+    | { quantity: number; first_element_ts: number | null }
+    | Promise<{
+        quantity: number;
+        first_element_ts: number | null;
+      }>;
 };
 
 type ShortStateFixtureHandle = {
@@ -237,13 +246,20 @@ export async function installRerDutyShortStateMocks(
     }
 
     if (pathname === '/api/rer-importer/get-inbox-count') {
-      await fulfillJson(route, emptyDutyInboxCountResponse());
+      const requestBody = request.postDataJSON();
+      const response = options.inboxCountResponseForRequest
+        ? await options.inboxCountResponseForRequest(requestBody)
+        : emptyDutyInboxCountResponse();
+      await fulfillJson(route, response);
       return;
     }
 
     if (pathname === '/api/rer-importer/get-inbox') {
       lastInboxRequest = request.postDataJSON();
-      await fulfillJson(route, options.inboxResponse ?? emptyDutyInboxResponse());
+      const response = options.inboxResponseForRequest
+        ? await options.inboxResponseForRequest(lastInboxRequest)
+        : (options.inboxResponse ?? emptyDutyInboxResponse());
+      await fulfillJson(route, response);
       return;
     }
 

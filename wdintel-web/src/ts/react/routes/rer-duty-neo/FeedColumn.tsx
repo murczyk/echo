@@ -1,21 +1,6 @@
 import { Box } from '@mui/material';
 import { forwardRef, useCallback, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import type { MouseEvent } from 'react';
-import type { VirtuosoHandle } from 'react-virtuoso';
-
-import type {
-  CallsignInfoRes,
-  InboxMessage,
-  Network,
-  OrganismKeywordSetDto,
-  RerDutyQueryStateWf as RerDutyFeedFilterState,
-  SignalGroupEntry,
-  SignalProfileEntry,
-  Tag,
-  Unit,
-} from '../../../../Bindings';
-import type { MessageEntityFilterKind, TagsLayoutVariant, MessageFeedState } from './utils';
-import type { FeedFilterPanelModel } from './FeedFilterPanel';
 import {
   getStoredDutyNotificationSettingsForFeed,
   requestBrowserNotificationPermission,
@@ -23,89 +8,22 @@ import {
   setStoredDutyNotificationSettingsForFeed,
 } from './notifications';
 import { FeedColumnHeader } from './FeedColumnHeader';
-import { FeedColumnContent } from './FeedColumnContent';
+import { FeedColumnContent, type FeedColumnContentHandle } from './FeedColumnContent';
 import { useDocumentClickAway } from '../../hooks/use-document-click-away';
-import type { MessageCardBotTagAction } from '../shared/message-card/message-card.types';
-
-export type FeedColumnModel = {
-  feed: MessageFeedState;
-  view: {
-    /** Viewport below MUI `sm`: full-width columns, horizontal snap, flexible Virtuoso min-height. */
-    narrowScreen?: boolean;
-    /** Number of feeds (columns). Passed to MessageCard for header column shrink behavior. */
-    feedCount?: number;
-    canRemove: boolean;
-    maxWidth?: string | number;
-    isWatchMode?: boolean;
-    loadingNewer?: boolean;
-    arrowResultMessage?: string | null;
-    unreadCount?: number;
-  };
-  filterPanel: FeedFilterPanelModel;
-  keywordsPanel: {
-    keywordSets: OrganismKeywordSetDto[];
-    onFilterChange: (feedId: string, nextFilter: RerDutyFeedFilterState) => void;
-    onKeywordSetsReload: () => Promise<void>;
-  };
-  messageCard: {
-    /** Current auth user display name for message watermarks */
-    authUserName: string | null;
-    copiedFeedbackId: string | null;
-    networkDisplayMap: Record<number, string>;
-    networkMap: Record<number, Network>;
-    unitsMap: Record<number, Unit>;
-    callsignInfoMap: Record<string, CallsignInfoRes>;
-    groupInfos: Record<string, SignalGroupEntry>;
-    profiles: Record<string, SignalProfileEntry | null>;
-    /** When true, empty network ids do not fall back to `msg.unit`. Server `featureStrictNetworks`. */
-    featureStrictNetworks: boolean;
-    tagsLayout: TagsLayoutVariant;
-    tagsMap: Record<number, Tag>;
-    tagsOrder: number[];
-    botTagAction: MessageCardBotTagAction | null;
-    onCancelBotTagAction: () => void;
-    onMarkBotTagWrong: (messageId: number, tagId: number) => void | Promise<void>;
-    onOpenPointsOnMap?: (etalons: string[], message: InboxMessage) => void;
-  };
-  actions: {
-    onLoadOlder: () => void;
-    onRemoveColumn: () => void;
-    onMessageBookmark: (msgId: number, currentlyBookmarked: boolean) => void;
-    onMessageImportant: (msgId: number, currentlyImportant: boolean) => void;
-    onMessageAddFrequencyToFilter: (feedId: string, freq: string) => void;
-    onMessageCopy: (text: string, feedbackId: string) => void;
-    onMessageComment: (msgId: number, currentComment: string | null) => void;
-    onMessageExcludeEntity: (entity: MessageEntityFilterKind, value: string) => void;
-    onMessageToggleTag: (msgId: number, tagId: number) => void;
-    onCreateMessage?: () => void;
-    onCreateFeed?: () => void;
-    onScrollToTop?: () => void;
-    /** Called when user scrolls to bottom; use to enable watch mode (same as after arrow click). */
-    onReachedBottom?: () => void;
-    /** Called when user scrolls away from bottom; use to disable watch mode so we don't load new messages. */
-    onLeftBottom?: () => void;
-    /** Called when the visible range enters or leaves the "near bottom" zone (within LOAD_OLDER_BUFFER_ITEMS of the end). Used so the poll can load newer when count > 0 and user is below buffer. */
-    onNearBottomChange?: (near: boolean) => void;
-    /** Virtuoso pixel at-bottom (see DUTY_FEED_AT_BOTTOM_THRESHOLD_PX); used so auto-scroll follow only runs when the scroller is actually at the bottom. */
-    onAtBottomChange?: (atBottom: boolean) => void;
-    onArrowClick?: () => void;
-    /** Called when the visible range changes; pass message IDs in view so parent can add them to readIds. When user reaches bottom, called with all IDs and atBottom: true so badge clears. */
-    onVisibleMessageIds?: (ids: number[], opts?: { atBottom?: boolean }) => void;
-  };
-};
+import type { FeedColumnModel } from './types';
 
 export type FeedColumnProps = {
   column: FeedColumnModel;
 };
 
-export type FeedColumnHandle = { scrollToEnd: () => void };
+export type FeedColumnHandle = { scrollToEnd: (behavior?: ScrollBehavior) => void };
 export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function FeedColumn(
   { column },
   ref,
 ) {
   const { feed, view, filterPanel, keywordsPanel, actions } = column;
   const { narrowScreen = false, canRemove, maxWidth, feedCount = 1 } = view;
-  const { onRemoveColumn, onCreateFeed, onCreateMessage } = actions;
+  const { onRemoveColumn, onCreateFeed } = actions;
   const [showFilters, setShowFilters] = useState(false);
   const [showNotificationPanel, setShowNotificationPanel] = useState(false);
   const [showKeywordsPanel, setShowKeywordsPanel] = useState(false);
@@ -145,7 +63,7 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
     },
     [feed.id, bumpNotificationStorageSync],
   );
-  const virtuosoRef = useRef<VirtuosoHandle | null>(null);
+  const contentRef = useRef<FeedColumnContentHandle | null>(null);
   const closeFilters = useCallback(() => {
     setShowFilters(false);
   }, []);
@@ -213,13 +131,9 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
   useImperativeHandle(
     ref,
     () => ({
-      scrollToEnd() {
+      scrollToEnd(behavior: ScrollBehavior = 'smooth') {
         if (feed.items.length === 0) return;
-        virtuosoRef.current?.scrollToIndex({
-          index: feed.items.length - 1,
-          align: 'end',
-          behavior: 'smooth',
-        });
+        contentRef.current?.scrollToBottom(behavior);
       },
     }),
     [feed.items.length],
@@ -266,7 +180,7 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
         notificationStorageSyncKey={notificationStorageSyncKey}
         onNotificationPersisted={bumpNotificationStorageSync}
       />
-      <FeedColumnContent column={column} virtuosoRef={virtuosoRef} />
+      <FeedColumnContent ref={contentRef} column={column} />
     </Box>
   );
 });

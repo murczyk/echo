@@ -2,13 +2,7 @@ import { useCallback } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
 
 import type { RerDutyQueryStateWf as RerDutyFeedFilterState } from '../../../../Bindings';
-import {
-  emptyFilter,
-  filtersEqual,
-  generateMessageFeedId,
-  MAX_MESSAGE_FEEDS,
-  VIRTUOSO_FIRST_ITEM_INDEX_INITIAL,
-} from './utils';
+import { emptyFilter, filtersEqual, generateMessageFeedId, MAX_MESSAGE_FEEDS } from './utils';
 import type { MessageFeedState } from './utils';
 
 export function useRerDutyFeedCrud(
@@ -20,33 +14,35 @@ export function useRerDutyFeedCrud(
 ) {
   const applyFilter = useCallback(
     (feedId: string, f: RerDutyFeedFilterState) => {
+      const currentFeed = messageFeeds.find((feed) => feed.id === feedId);
+      if (!currentFeed) return;
+      if (filtersEqual(currentFeed.filter, f)) {
+        persistStateToUrl(messageFeeds);
+        return;
+      }
+      markFeedReloadRequested(feedId);
       setMessageFeeds((prev) => {
-        const w = prev.find((w) => w.id === feedId);
-        if (!w) return prev;
-        if (filtersEqual(w.filter, f)) {
-          persistStateToUrl(prev);
-          return prev;
-        }
-        markFeedReloadRequested(feedId);
-        const next = prev.map((w) =>
-          w.id === feedId
+        const w = prev.find((feed) => feed.id === feedId);
+        if (!w || filtersEqual(w.filter, f)) return prev;
+        const next = prev.map((feed) =>
+          feed.id === feedId
             ? {
-                ...w,
+                ...feed,
                 filter: f,
                 loading: true,
                 loadingOlder: false,
                 hasReachedStart: false,
-                adjacentFreqsRange: w.adjacentFreqsRange,
-                highlightSignalsEnabled: w.highlightSignalsEnabled,
-                onlyMyUnitTagsEnabled: w.onlyMyUnitTagsEnabled,
+                adjacentFreqsRange: feed.adjacentFreqsRange,
+                highlightSignalsEnabled: feed.highlightSignalsEnabled,
+                onlyMyUnitTagsEnabled: feed.onlyMyUnitTagsEnabled,
               }
-            : w,
+            : feed,
         );
         persistStateToUrl(next);
         return next;
       });
     },
-    [markFeedReloadRequested, persistStateToUrl, setMessageFeeds],
+    [markFeedReloadRequested, messageFeeds, persistStateToUrl, setMessageFeeds],
   );
 
   const toggleGroup = useCallback(
@@ -80,7 +76,6 @@ export function useRerDutyFeedCrud(
       loading: true,
       loadingOlder: false,
       hasReachedStart: false,
-      firstItemIndex: VIRTUOSO_FIRST_ITEM_INDEX_INITIAL,
       referenceTimeMs: null,
       readIds: new Set<number>(),
       unreadCount: 0,
