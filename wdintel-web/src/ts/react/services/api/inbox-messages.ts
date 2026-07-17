@@ -190,7 +190,7 @@ export async function fetchMessagesByIds(
     options,
   );
   const messages = transformSnakeToCamel<MessageIdsRsp>(raw).messages ?? [];
-  return messages.map(([id, message]) => [id, normalizeInboxMessage(message)]);
+  return messages.map(([id, message]) => [id, normalizeInboxMessageFromWire(message)]);
 }
 
 function normalizeContentNode(node: unknown): InboxTextMarkedNode | null {
@@ -296,6 +296,24 @@ function normalizeInboxMessage(
   };
 }
 
+export function normalizeInboxMessageFromWire(raw: unknown): InboxMessageType {
+  return normalizeInboxMessage(
+    transformSnakeToCamel<InboxMessageType>(raw) as InboxMessageType & {
+      group_master_key?: string | null;
+      network_ids?: number[] | null;
+      network_name?: string | null;
+      device_name?: string | null;
+      location?: string | null;
+      extended_form?: string | null;
+      message_comments?: InboxMessageType['messageComments'] | null;
+      inbox_tags?: InboxMessageTagRaw[] | null;
+      metadata?: InboxMessageMetadataRaw[] | null;
+      text_marked?: InboxMessageType['textMarked'];
+      point_tokens?: InboxMessageType['pointTokens'];
+    },
+  );
+}
+
 function normalizeSignalGroupEntry(
   g: InboxMessagesRspRaw['signal_groups'][number],
 ): SignalGroupEntry {
@@ -324,7 +342,7 @@ function mapRsp(raw: InboxMessagesRspRaw): InboxMessagesRsp {
   }
   const inboxItems: InboxMessagesRsp['inboxItems'] = (raw.inbox_items ?? []).map(([id, msg]) => [
     id,
-    normalizeInboxMessage(msg),
+    normalizeInboxMessageFromWire(msg),
   ]);
   const signalGroups: InboxMessagesRsp['signalGroups'] = (raw.signal_groups ?? []).map(
     normalizeSignalGroupEntry,
