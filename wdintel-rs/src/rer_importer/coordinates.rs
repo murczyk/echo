@@ -279,17 +279,20 @@ impl PreDatetimeState {
 struct PendingSplitCoordinate {
     waiting_for_value: bool,
     single_decimal_coordinate_lines: Vec<String>,
+    sk42_coordinate_lines: Vec<String>,
 }
 
 impl PendingSplitCoordinate {
     fn start(&mut self) {
         self.waiting_for_value = true;
         self.single_decimal_coordinate_lines.clear();
+        self.sk42_coordinate_lines.clear();
     }
 
     fn reset(&mut self) {
         self.waiting_for_value = false;
         self.single_decimal_coordinate_lines.clear();
+        self.sk42_coordinate_lines.clear();
     }
 
     fn accept_line(&mut self, line: &str) -> SplitCoordinateResult {
@@ -310,8 +313,38 @@ impl PendingSplitCoordinate {
             }
             return SplitCoordinateResult::Pending;
         }
+        if !self.single_decimal_coordinate_lines.is_empty() {
+            self.reset();
+            return SplitCoordinateResult::NotMatched;
+        }
+        if let Some(result) = self.accept_sk42_line(line) {
+            return result;
+        }
         self.reset();
         SplitCoordinateResult::NotMatched
+    }
+
+    fn accept_sk42_line(
+        &mut self,
+        line: &str,
+    ) -> Option<SplitCoordinateResult> {
+        if is_sk42_x_coordinate_line(line)
+            && self.sk42_coordinate_lines.is_empty()
+        {
+            self.sk42_coordinate_lines.push(line.to_string());
+            return Some(SplitCoordinateResult::Pending);
+        }
+        if is_sk42_y_coordinate_line(line)
+            && self.sk42_coordinate_lines.len() == 1
+            && is_sk42_x_coordinate_line(&self.sk42_coordinate_lines[0])
+        {
+            self.sk42_coordinate_lines.push(line.to_string());
+            self.waiting_for_value = false;
+            return Some(SplitCoordinateResult::Complete(std::mem::take(
+                &mut self.sk42_coordinate_lines,
+            )));
+        }
+        None
     }
 }
 
@@ -434,6 +467,24 @@ fn is_decimal_coords_only_line(line: &str) -> bool {
     }
 
     RE_DECIMAL_COORDS_ONLY.is_match(line)
+}
+
+fn is_sk42_x_coordinate_line(line: &str) -> bool {
+    lazy_static! {
+        static ref RE_SK42_X: Regex =
+            Regex::new(r#"(?i)^\s*x\s*:\s*\d{2}-\d{5}\s*$"#).unwrap();
+    }
+
+    RE_SK42_X.is_match(line)
+}
+
+fn is_sk42_y_coordinate_line(line: &str) -> bool {
+    lazy_static! {
+        static ref RE_SK42_Y: Regex =
+            Regex::new(r#"(?i)^\s*y\s*:\s*\d{2}-\d{5}\s*$"#).unwrap();
+    }
+
+    RE_SK42_Y.is_match(line)
 }
 
 fn is_structured_pre_datetime_header_line(line: &str) -> bool {
@@ -865,6 +916,30 @@ ID(CG)⬅️: 34655
         let coords = extract_inbox_coords(body, &body_noheader).await;
         assert_eq!(coords.len(), 1);
         assert_eq!(coords[0].text, "47.392477, 36.056984");
+    }
+
+    #[tokio::test]
+    async fn extract_inbox_coords_keeps_split_sk42_coordinate_before_datetime()
+    {
+        let body = r#"Координати:
+x:51-29637
+y:65-01850
+Дата 20.02.2025
+Час 16:16:48
+
+Зміст:
+1:
+2:"#;
+        let body_noheader =
+            crate::sigint::parser::extract_text_without_top_comment(body)
+                .unwrap();
+
+        assert!(!extract_coords(body).await.is_empty());
+
+        let coords = extract_inbox_coords(body, &body_noheader).await;
+        assert_eq!(coords.len(), 1);
+        assert!(coords[0].capture.contains("x:51-29637"));
+        assert!(coords[0].capture.contains("y:65-01850"));
     }
 
     #[tokio::test]
