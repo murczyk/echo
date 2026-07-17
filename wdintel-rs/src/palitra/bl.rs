@@ -1066,17 +1066,33 @@ pub async fn rename_accessible_palitra_folder(
     if mutable_palitras.is_empty() {
         return Ok(vec![]);
     }
+    let folder_palitras = mutable_palitras
+        .into_iter()
+        .filter_map(|palitra| {
+            let old_folder =
+                normalize_palitra_folder_from_db(palitra.folder.clone());
+            let new_folder = replace_folder_exact(
+                old_folder.as_deref(),
+                &from_folder,
+                &to_folder,
+            )?;
+            Some((palitra, old_folder, new_folder))
+        })
+        .collect_vec();
+    let goi_owned_ids = collect_goi_owned_convertible_palitra_ids(
+        dbx,
+        folder_palitras
+            .iter()
+            .map(|(palitra, _, _)| palitra.id)
+            .collect_vec(),
+    )
+    .await
+    .c(h!())?;
     let mut sync_items = Vec::new();
-    for palitra in mutable_palitras {
-        let old_folder =
-            normalize_palitra_folder_from_db(palitra.folder.clone());
-        let Some(new_folder) = replace_folder_exact(
-            old_folder.as_deref(),
-            &from_folder,
-            &to_folder,
-        ) else {
+    for (palitra, old_folder, new_folder) in folder_palitras {
+        if goi_owned_ids.contains(&palitra.id) {
             continue;
-        };
+        }
         let mut palitra = palitra.into_active_model();
         palitra.folder = Set(Some(new_folder));
         let palitra = palitra.update(txn).await.c(h!())?;
@@ -1105,6 +1121,14 @@ pub async fn archive_accessible_palitra_folder(
         .into_iter()
         .map(|palitra| palitra.id)
         .collect_vec();
+    let goi_owned_ids =
+        collect_goi_owned_convertible_palitra_ids(dbx, palitra_ids.clone())
+            .await
+            .c(h!())?;
+    let palitra_ids = palitra_ids
+        .into_iter()
+        .filter(|palitra_id| !goi_owned_ids.contains(palitra_id))
+        .collect_vec();
     if palitra_ids.is_empty() {
         return Ok(vec![]);
     }
@@ -1116,6 +1140,29 @@ pub async fn archive_accessible_palitra_folder(
         .await
         .c(h!())?;
     Ok(palitra_ids)
+}
+
+async fn collect_goi_owned_convertible_palitra_ids(
+    dbx: &DatabaseConnection,
+    palitra_ids: Vec<i64>,
+) -> anyhow::Result<HashSet<i64>> {
+    let palitra_ids = palitra_ids.into_iter().unique().collect_vec();
+    if palitra_ids.is_empty() {
+        return Ok(HashSet::new());
+    }
+    Ok(goi_palitra_sync::Entity::find()
+        .filter(goi_palitra_sync::Column::PalitraId.is_in(palitra_ids))
+        .filter(
+            goi_palitra_sync::Column::Direction
+                .eq(PALITRA_GOI_SYNC_DIRECTION_GOI),
+        )
+        .filter(goi_palitra_sync::Column::GoiSourceFileSha256.is_not_null())
+        .all(dbx)
+        .await
+        .c(h!())?
+        .into_iter()
+        .filter_map(|row| row.palitra_id)
+        .collect())
 }
 
 async fn has_admin_role(
@@ -2679,13 +2726,14 @@ mod tests {
         mk_palitra_geometry, mk_palitra_point,
     };
     use crate::palitra::bl::{
-        collect_accessible_palitra_ids,
+        archive_accessible_palitra_folder, collect_accessible_palitra_ids,
         collect_accessible_palitra_ids_in_folder,
         is_goi_owned_convertible_palitra, list_all_palitras_v2,
         list_map_palitras_v2, normalize_palitra_folder,
         normalize_palitra_folder_from_db, normalize_palitra_folder_lookup,
-        read_palitra_goi_sync_summary, replace_folder_exact,
-        search_palitra_points_by_labels, update_palitra, update_palitra_v2,
+        read_palitra_goi_sync_summary, rename_accessible_palitra_folder,
+        replace_folder_exact, search_palitra_points_by_labels, update_palitra,
+        update_palitra_v2,
     };
     use crate::palitra::types::{
         CreatePalitraReq, PalitraAccess, PalitraSearchPointsReq,
@@ -3132,6 +3180,28 @@ mod tests {
         }
     }
 
+    async fn mk_folder_palitra_for_test(
+        dbx: &sea_orm::DatabaseConnection,
+        name: &str,
+        author: &str,
+        folder: &str,
+    ) -> palitra::Model {
+        mk_palitra(
+            dbx,
+            palitra::ActiveModel {
+                name: Set(name.to_string()),
+                hex_legacy: Set(Some("#ffffff".to_string())),
+                author: Set(Some(author.to_string())),
+                deleted: Set(false),
+                folder: Set(Some(folder.to_string())),
+                created_at: Set(Utc::now().naive_utc()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap()
+    }
+
     async fn mk_goi_integration_for_test(
         dbx: &sea_orm::DatabaseConnection,
         server_key: &str,
@@ -3310,6 +3380,175 @@ mod tests {
             crate::error::AppError::BL { msg }
                 if msg == super::super::GOI_OWNED_PALITRA_EDIT_ERROR
         ));
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn test_rename_accessible_palitra_folder_skips_goi_owned_rows() {
+        let env = cleanup().await.unwrap();
+        let login = find_test_login(&env.dbx).await.unwrap();
+        let folder = "mixed-rename";
+        let editable = mk_folder_palitra_for_test(
+            &env.dbx,
+            "mixed-rename-editable",
+            &login.login,
+            folder,
+        )
+        .await;
+        let goi_owned = mk_folder_palitra_for_test(
+            &env.dbx,
+            "mixed-rename-goi-owned",
+            &login.login,
+            folder,
+        )
+        .await;
+        let integration =
+            mk_goi_integration_for_test(&env.dbx, "goi-owned-folder-rename")
+                .await;
+        mk_goi_palitra_sync_for_test(
+            &env.dbx,
+            integration.id,
+            goi_owned.id,
+            "source.gpx",
+            PALITRA_GOI_SYNC_DIRECTION_GOI,
+            Some("source-sha"),
+        )
+        .await;
+
+        let txn = env.dbx.begin().await.unwrap();
+        let sync_items = rename_accessible_palitra_folder(
+            login.login,
+            folder.to_string(),
+            "mixed-renamed".to_string(),
+            &env.dbx,
+            &txn,
+        )
+        .await
+        .unwrap();
+        txn.commit().await.unwrap();
+
+        assert_eq!(
+            sync_items
+                .iter()
+                .map(|item| item.palitra_id)
+                .collect::<Vec<_>>(),
+            vec![editable.id]
+        );
+        let editable = palitra::Entity::find_by_id(editable.id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        let goi_owned = palitra::Entity::find_by_id(goi_owned.id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(editable.folder.as_deref(), Some("mixed-renamed"));
+        assert_eq!(goi_owned.folder.as_deref(), Some(folder));
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn test_archive_accessible_palitra_folder_skips_goi_owned_rows() {
+        let env = cleanup().await.unwrap();
+        let login = find_test_login(&env.dbx).await.unwrap();
+        let folder = "mixed-archive";
+        let editable = mk_folder_palitra_for_test(
+            &env.dbx,
+            "mixed-archive-editable",
+            &login.login,
+            folder,
+        )
+        .await;
+        let goi_owned = mk_folder_palitra_for_test(
+            &env.dbx,
+            "mixed-archive-goi-owned",
+            &login.login,
+            folder,
+        )
+        .await;
+        let integration =
+            mk_goi_integration_for_test(&env.dbx, "goi-owned-folder-archive")
+                .await;
+        mk_goi_palitra_sync_for_test(
+            &env.dbx,
+            integration.id,
+            goi_owned.id,
+            "source.gpx",
+            PALITRA_GOI_SYNC_DIRECTION_GOI,
+            Some("source-sha"),
+        )
+        .await;
+
+        let txn = env.dbx.begin().await.unwrap();
+        let palitra_ids = archive_accessible_palitra_folder(
+            login.login,
+            folder.to_string(),
+            true,
+            &env.dbx,
+            &txn,
+        )
+        .await
+        .unwrap();
+        txn.commit().await.unwrap();
+
+        assert_eq!(palitra_ids, vec![editable.id]);
+        let editable = palitra::Entity::find_by_id(editable.id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        let goi_owned = palitra::Entity::find_by_id(goi_owned.id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(editable.is_archived);
+        assert!(!goi_owned.is_archived);
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn test_delete_palitra_from_folder_if_allowed_skips_goi_owned_rows() {
+        let env = cleanup().await.unwrap();
+        let login = find_test_login(&env.dbx).await.unwrap();
+        let palitra = mk_folder_palitra_for_test(
+            &env.dbx,
+            "mixed-delete-goi-owned",
+            &login.login,
+            "mixed-delete",
+        )
+        .await;
+        let integration =
+            mk_goi_integration_for_test(&env.dbx, "goi-owned-folder-delete")
+                .await;
+        mk_goi_palitra_sync_for_test(
+            &env.dbx,
+            integration.id,
+            palitra.id,
+            "source.gpx",
+            PALITRA_GOI_SYNC_DIRECTION_GOI,
+            Some("source-sha"),
+        )
+        .await;
+        let env = actix_web::web::Data::from(env);
+
+        let deleted = super::super::delete_palitra_from_folder_if_allowed(
+            palitra.id,
+            &login.login,
+            &env,
+        )
+        .await
+        .unwrap();
+
+        assert!(!deleted);
+        let palitra = palitra::Entity::find_by_id(palitra.id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(!palitra.deleted);
     }
 
     #[serial]

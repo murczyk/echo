@@ -1189,14 +1189,6 @@ pub async fn rename_palitra_folder(
         .await
         .c(h!())?;
     let req = req.into_inner();
-    let palitra_ids = bl::collect_accessible_palitra_ids_in_folder(
-        login.clone(),
-        req.from_folder.clone(),
-        &env.dbx,
-    )
-    .await
-    .c(h!())?;
-    ensure_palitras_echo_edit_allowed(&env.dbx, &palitra_ids).await?;
     let txn = env.dbx.begin().await.c(h!())?;
     let sync_items = bl::rename_accessible_palitra_folder(
         login,
@@ -1227,14 +1219,6 @@ pub async fn archive_palitra_folder(
         .await
         .c(h!())?;
     let folder = req.into_inner().folder;
-    let palitra_ids = bl::collect_accessible_palitra_ids_in_folder(
-        login.clone(),
-        folder.clone(),
-        &env.dbx,
-    )
-    .await
-    .c(h!())?;
-    ensure_palitras_echo_edit_allowed(&env.dbx, &palitra_ids).await?;
     let txn = env.dbx.begin().await.c(h!())?;
     let palitra_ids = bl::archive_accessible_palitra_folder(
         login, folder, true, &env.dbx, &txn,
@@ -1262,7 +1246,6 @@ pub async fn delete_palitra_folder(
     )
     .await
     .c(h!())?;
-    ensure_palitras_echo_edit_allowed(&env.dbx, &palitra_ids).await?;
     let mut deleted_palitra_ids = Vec::new();
     for palitra_id in &palitra_ids {
         if delete_palitra_from_folder_if_allowed(*palitra_id, &login, &env)
@@ -1297,7 +1280,9 @@ async fn delete_palitra_from_folder_if_allowed(
     if !is_author_or_admin {
         return Ok(false);
     }
-    ensure_palitra_echo_edit_allowed(&env.dbx, palitra_id).await?;
+    if !is_palitra_echo_edit_allowed(&env.dbx, palitra_id).await? {
+        return Ok(false);
+    }
     let existing_access =
         read_palitra_access(&env.dbx, palitra_id).await.c(h!())?;
     let txn = env.dbx.begin().await.c(h!())?;
@@ -1952,15 +1937,24 @@ async fn ensure_palitra_echo_edit_allowed<'a, C>(
 where
     C: ConnectionTrait + 'a,
 {
-    if bl::is_goi_owned_convertible_palitra(dbx, palitra_id)
-        .await
-        .c(h!())?
-    {
+    if !is_palitra_echo_edit_allowed(dbx, palitra_id).await? {
         return Err(AppError::BL {
             msg: GOI_OWNED_PALITRA_EDIT_ERROR.to_string(),
         });
     }
     Ok(())
+}
+
+async fn is_palitra_echo_edit_allowed<'a, C>(
+    dbx: &'a C,
+    palitra_id: i64,
+) -> Result<bool, AppError>
+where
+    C: ConnectionTrait + 'a,
+{
+    Ok(!bl::is_goi_owned_convertible_palitra(dbx, palitra_id)
+        .await
+        .c(h!())?)
 }
 
 async fn ensure_palitras_echo_edit_allowed<'a, C>(
