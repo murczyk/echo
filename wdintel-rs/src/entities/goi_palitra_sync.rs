@@ -41,6 +41,7 @@ pub struct Model {
     pub goi_source_format: Option<String>,
     #[sea_orm(column_type = "Text", nullable)]
     pub goi_source_content_type: Option<String>,
+    #[sea_orm(column_type = "VarBinary(StringLen::None)", nullable)]
     pub goi_source_file_data: Option<Vec<u8>>,
     pub goi_source_file_size: Option<i64>,
     #[sea_orm(column_type = "Text", nullable)]
