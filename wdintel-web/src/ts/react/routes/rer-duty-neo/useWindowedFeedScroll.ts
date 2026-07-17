@@ -313,7 +313,9 @@ export function useWindowedFeedScroll({
   }, [cancelPendingScrollProcessing, enabled, stopBottomSettle]);
 
   const updateScrollState = useCallback(
-    (opts: { allowLoadOlder?: boolean; allowTopReached?: boolean } = {}) => {
+    (
+      opts: { allowLoadOlder?: boolean; allowLoadNewer?: boolean; allowTopReached?: boolean } = {},
+    ) => {
       if (!enabledRef.current) return;
       const scroller = scrollerRef.current;
       if (!scroller) return;
@@ -375,7 +377,9 @@ export function useWindowedFeedScroll({
         } else if (scroller.scrollTop > topLoadBufferPx) {
           loadOlderTriggeredRef.current = false;
         }
+      }
 
+      if (opts.allowLoadNewer !== false) {
         const shouldLoadNewer = nearBottom && !loadingNewer && typeof onLoadNewer === 'function';
         if (shouldLoadNewer && !loadNewerTriggeredRef.current) {
           loadNewerTriggeredRef.current = true;
@@ -410,7 +414,11 @@ export function useWindowedFeedScroll({
       previousScrollTopRef.current = scroller.scrollTop;
       const canScroll =
         scroller.scrollHeight > scroller.clientHeight || scroller.scrollHeight === 0;
-      updateScrollState({ allowLoadOlder: !canScroll, allowTopReached: false });
+      updateScrollState({
+        allowLoadOlder: !canScroll,
+        allowLoadNewer: false,
+        allowTopReached: false,
+      });
       captureAnchorSnapshot();
     },
     [captureAnchorSnapshot, updateScrollState],
@@ -504,7 +512,7 @@ export function useWindowedFeedScroll({
       } else {
         restoreAnchorAfterItemsChange();
       }
-      updateScrollState({ allowLoadOlder: false, allowTopReached: false });
+      updateScrollState({ allowLoadOlder: false, allowLoadNewer: false, allowTopReached: false });
       captureAnchorSnapshot();
       previousItemIdsRef.current = currentItemIds;
       return;
@@ -513,6 +521,7 @@ export function useWindowedFeedScroll({
     if (!enabledBeforeRender && enabled) {
       updateScrollState({
         allowLoadOlder: false,
+        allowLoadNewer: false,
         allowTopReached: false,
       });
       captureAnchorSnapshot();

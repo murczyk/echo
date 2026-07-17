@@ -72,6 +72,26 @@ function setScrollMetrics(
   Object.defineProperty(el, 'scrollHeight', { value: metrics.scrollHeight, configurable: true });
 }
 
+function setClampedScrollMetrics(
+  el: HTMLElement,
+  metrics: { scrollTop: number; clientHeight: number; scrollHeight: number },
+) {
+  let scrollTop = metrics.scrollTop;
+  Object.defineProperty(el, 'clientHeight', { value: metrics.clientHeight, configurable: true });
+  Object.defineProperty(el, 'scrollHeight', {
+    get: () => metrics.scrollHeight,
+    configurable: true,
+  });
+  Object.defineProperty(el, 'scrollTop', {
+    get: () => scrollTop,
+    set: (value: number) => {
+      const maxScrollTop = Math.max(0, metrics.scrollHeight - metrics.clientHeight);
+      scrollTop = Math.max(0, Math.min(value, maxScrollTop));
+    },
+    configurable: true,
+  });
+}
+
 async function waitForAnimationFrame(): Promise<void> {
   await new Promise<void>((resolve) => {
     requestAnimationFrame(() => resolve());
@@ -131,6 +151,32 @@ describe('useWindowedFeedScroll', () => {
     expect(onVisibleMessageIds).not.toHaveBeenCalled();
     expect(onAtBottomChange).not.toHaveBeenCalledWith(true);
     expect(onLoadOlder).not.toHaveBeenCalled();
+    expect(onLoadNewer).not.toHaveBeenCalled();
+  });
+
+  it('loads older but not newer when the initial pin is underfilled', async () => {
+    const onLoadOlder = vi.fn();
+    const onLoadNewer = vi.fn();
+
+    await act(async () => {
+      root.render(<TestScroller ids={[]} onLoadOlder={onLoadOlder} onLoadNewer={onLoadNewer} />);
+    });
+
+    const scroller = container.querySelector('[data-testid="scroller"]') as HTMLElement;
+    setClampedScrollMetrics(scroller, { scrollTop: 0, clientHeight: 300, scrollHeight: 200 });
+
+    await act(async () => {
+      root.render(
+        <TestScroller ids={[1, 2, 3]} onLoadOlder={onLoadOlder} onLoadNewer={onLoadNewer} />,
+      );
+    });
+    await act(async () => {
+      await waitForAnimationFrame();
+      await waitForAnimationFrame();
+      await waitForAnimationFrame();
+    });
+
+    expect(onLoadOlder).toHaveBeenCalledTimes(1);
     expect(onLoadNewer).not.toHaveBeenCalled();
   });
 
