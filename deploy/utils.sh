@@ -17,7 +17,7 @@ bw_sync() {
 	SERVICE=$4
 	bw sync
 	ssh $SERVER "cat $SERVER_CONFIG" > /tmp/config-server.toml || echo "" > /tmp/config-server.toml
-	res=$(bw list items --pretty $NAME | jq -r '[.[] | select(.name=="'$NAME'")][0].notes')
+	res=$(bw list items --search "$NAME" | jq -r --arg name "$NAME" '[.[] | select(.name==$name)][0].notes')
 	if [[ "$res" == "null" ]]; then
 		echo "❌ Config not found in Bitwarden or it has empty notes field"
 		exit 1
@@ -90,7 +90,7 @@ EOL
 bw_get_note() {
 	local NAME=$1
     bw sync 1>&2
-	bw list items --pretty $NAME | jq -r '[.[] | select(.name=="'$NAME'")][0].notes'
+	bw list items --search "$NAME" | jq -r --arg name "$NAME" '[.[] | select(.name==$name)][0].notes'
 }
 
 ask_yes_no() {
