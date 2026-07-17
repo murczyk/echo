@@ -43,7 +43,7 @@ Implement GOI palette sync/conversion/checksum fixes, GOI frequency readonly reg
 - [x] Add a pure SQL migration for `goi_palitra_sync.changelog jsonb not null default '[]'::jsonb`.
 - [x] Migrate existing `goi_palitra_sync.last_error` values into `changelog` as non-OK entries with system text and Ukrainian user-facing descriptions.
 - [x] Drop `goi_palitra_sync.last_error` after migration.
-- [ ] Regenerate SeaORM entities with `just gen-seaorm`.
+- [x] Regenerate SeaORM entities with `just gen-seaorm`.
 - [x] Add Rust structs for changelog entries with fields `is_ok`, `timestamp`, `text`, and `description`.
 - [x] Add helper functions to append OK/error changelog entries without overwriting prior history.
 - [x] Add helpers for latest changelog entry and latest warning state.
@@ -145,7 +145,7 @@ Implement GOI palette sync/conversion/checksum fixes, GOI frequency readonly reg
 ### 13. Verification
 
 - [ ] Run `just migrate-up` for new migrations.
-- [ ] Run `just gen-seaorm` after schema changes.
+- [x] Run `just gen-seaorm` after schema changes.
 - [x] Run `just gen-front` after DTO/binding changes.
 - [x] Run `cargo fmt`.
 - [x] Run focused Rust tests for palette conversion and GOI sync modules.
