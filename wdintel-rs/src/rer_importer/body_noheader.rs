@@ -48,7 +48,7 @@ lazy_static! {
     .unwrap();
     // Remove data time line hh:mm dd.mm.yyyy
     static ref RE21: Regex = Regex::new(
-        r#"^[0-9]{2}:[0-9]{2} [0-9]{2}\.[0-9]{2}\.[0-9]{4}$"#
+        r#"^[0-9]{2}:[0-9]{2}[ \t]+[0-9]{2}\.[0-9]{2}\.[0-9]{4}$"#
     )
     .unwrap();
     // Remove data time line Дата dd.mm.yyyy
@@ -103,7 +103,7 @@ lazy_static! {
     .unwrap();
     // Remove data time line hh:mm:ss dd.mm.yyyy
     static ref RE29: Regex = Regex::new(
-        r#"^[0-9]{2}:[0-9]{2}:[0-9]{2} [0-9]{2}\.[0-9]{2}\.[0-9]{4}$"#
+        r#"^[0-9]{2}:[0-9]{2}:[0-9]{2}[ \t]+[0-9]{2}\.[0-9]{2}\.[0-9]{4}$"#
     )
     .unwrap();
     // Remove non-RER machine header line
@@ -269,17 +269,8 @@ pub(crate) fn extract_text_excluding_lines(
     input: &str,
     excluded_lines: &BTreeSet<usize>,
 ) -> Result<NoHeadersBody, AppError> {
-    // 1. Keep empty lines to avoid breaking `inp.find(&res)`
-    let mut lines: Vec<String> = input
-        .lines()
-        .enumerate()
-        .filter(|(idx, _)| !excluded_lines.contains(idx))
-        .filter(|(_, x)| !is_unit_watermark_line(x))
-        .map(|(_, x)| {
-            trim_otrymano_post_header(x).unwrap_or_else(|| x.to_string())
-        })
-        .collect();
-    let exact_format_input = lines.join("\n");
+    let mut lines = positioned_lines(input, excluded_lines);
+    let exact_format_input = join_positioned_lines(&lines);
     if let Some(exact_format_text) = extract_exact_format_text(
         exact_format_input.trim_matches(['\r', '\n']),
         input,
@@ -287,47 +278,92 @@ pub(crate) fn extract_text_excluding_lines(
         return Ok(exact_format_text);
     }
 
-    lines.retain(|line| !is_non_metadata_header_line(line));
+    lines.retain(|line| !is_non_metadata_header_line(&line.text));
 
     let mut start_line = 0;
     while start_line < lines.len()
-        && is_boundary_header_or_empty(&lines[start_line])
+        && is_boundary_header_or_empty(&lines[start_line].text)
     {
         start_line += 1;
     }
     let mut end_line = lines.len();
     while end_line > start_line
-        && is_boundary_header_or_empty(&lines[end_line - 1])
+        && is_boundary_header_or_empty(&lines[end_line - 1].text)
     {
         end_line -= 1;
     }
 
-    let mut res = lines[start_line..end_line].join("\n");
-
-    // 2. Find start position in character indices
-    let start_byte_pos = input.find(&res).unwrap_or(0);
-
-    // 3. Trim leading empty lines *after* finding `start`
-    while res.starts_with('\n') {
-        res = res.trim_start_matches('\n').to_string();
-    }
-
-    // 4. Trim empty lines from the end
-    while res.ends_with('\n') {
-        res = res.trim_end_matches('\n').to_string();
-    }
-
-    // 5. Adjust `start` after trimming
-    let new_start_byte_pos = input.find(&res).unwrap_or(start_byte_pos);
-    let new_start = input[..new_start_byte_pos].chars().count(); // Convert bytes to chars
-
-    let end = new_start + res.chars().count();
+    let lines = &lines[start_line..end_line];
 
     Ok(NoHeadersBody {
-        body: res,
-        start: new_start,
-        end,
+        body: join_positioned_lines(lines),
+        start: lines.first().map_or(0, |line| line.start),
+        end: lines.last().map_or(0, |line| line.end),
     })
+}
+
+struct PositionedLine {
+    text: String,
+    start: usize,
+    end: usize,
+}
+
+fn positioned_lines(
+    input: &str,
+    excluded_lines: &BTreeSet<usize>,
+) -> Vec<PositionedLine> {
+    let mut lines = Vec::new();
+    let mut line_start = 0;
+
+    for (idx, raw_line) in input.split_inclusive('\n').enumerate() {
+        let raw_line_len = raw_line.chars().count();
+        if !excluded_lines.contains(&idx) {
+            let line = trim_raw_line_end(raw_line);
+            if !is_unit_watermark_line(line) {
+                lines.push(positioned_line(line, line_start));
+            }
+        }
+        line_start += raw_line_len;
+    }
+
+    lines
+}
+
+fn positioned_line(line: &str, line_start: usize) -> PositionedLine {
+    if let Some(marker_start) = line.find("Отримано з пост") {
+        let prefix = &line[..marker_start];
+        let text = prefix.trim();
+        let trim_start = prefix.find(text).unwrap_or(0);
+        let start = line_start + prefix[..trim_start].chars().count();
+        let end = start + text.chars().count();
+        return PositionedLine {
+            text: text.to_string(),
+            start,
+            end,
+        };
+    }
+
+    PositionedLine {
+        text: line.to_string(),
+        start: line_start,
+        end: line_start + line.chars().count(),
+    }
+}
+
+fn trim_raw_line_end(line: &str) -> &str {
+    let line = line.strip_suffix('\n').unwrap_or(line);
+    line.strip_suffix('\r').unwrap_or(line)
+}
+
+fn join_positioned_lines(lines: &[PositionedLine]) -> String {
+    let mut body = String::new();
+    for (idx, line) in lines.iter().enumerate() {
+        if idx > 0 {
+            body.push('\n');
+        }
+        body.push_str(&line.text);
+    }
+    body
 }
 
 fn is_boundary_header_or_empty(line: &str) -> bool {
@@ -380,8 +416,28 @@ mod tests {
     }
 
     #[test]
+    fn extract_text_crlf_multiline_body_uses_original_positions() {
+        let body = "01.07.2026, 02:55:19\r\n155.0250\r\nКоординати: 36U XB 66512 50880\r\nУКХ р/м\r\n\r\nНВ\r\n— репліка";
+        let res = extract_text(body).unwrap();
+        let body_original = "НВ\r\n— репліка";
+        let start_byte = body.find(body_original).unwrap();
+        let end_byte = start_byte + body_original.len();
+
+        assert_eq!(res.body, "НВ\n— репліка");
+        assert_eq!(res.start, body[..start_byte].chars().count());
+        assert_eq!(res.end, body[..end_byte].chars().count());
+    }
+
+    #[test]
     fn extract_text_decorated_header_lines_are_headers() {
         let body = "🔺(01.07.2026 02:58:08)\n🔺(01.07.2026 02:58:08 F=170.0250(МГц))\n│╬{*123.7586*}\n[УКХ р/м]\nПерехоплення";
+        let res = extract_text(body).unwrap().body;
+        assert_eq!(res, "Перехоплення");
+    }
+
+    #[test]
+    fn extract_text_time_before_date_with_extra_space_is_header() {
+        let body = "16:41  25.02.2026\n139.450\nУКХ р/м\nПерехоплення";
         let res = extract_text(body).unwrap().body;
         assert_eq!(res, "Перехоплення");
     }
