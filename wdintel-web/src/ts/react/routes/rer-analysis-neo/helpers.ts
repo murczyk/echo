@@ -348,6 +348,14 @@ export function buildInboxReq(
   };
 }
 
+export function buildInboxOverallCountReq(state: AnalysisQueryState): InboxMessagesReq | null {
+  return buildInboxReq({
+    ...emptyQueryState(),
+    fromDateTimeStr: state.fromDateTimeStr,
+    toDateTimeStr: state.toDateTimeStr,
+  });
+}
+
 export function shouldRebuildAnalysisRequests(
   state: AnalysisQueryState,
   currentFrequencies: string[] = [],

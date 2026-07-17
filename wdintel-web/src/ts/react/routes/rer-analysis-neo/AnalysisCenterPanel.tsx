@@ -92,7 +92,7 @@ export function AnalysisCenterPanel({
                   value="messages"
                   icon={<Icon />}
                   iconPosition="start"
-                  label={`${meta.label} (${page.messages.length})`}
+                  label={meta.label}
                 />
               );
             }
@@ -187,11 +187,10 @@ export function AnalysisCenterPanel({
             messageComments={page.messageComments}
             messages={page.messages}
             networkDisplayMap={page.networkDisplayMap}
-            noMoreToLoad={page.noMoreToLoad}
+            pageIndex={page.pageIndex}
             onDeleteMessage={page.onDeleteMessage}
             onCancelBotTagAction={page.onCancelBotTagAction}
             onMarkBotTagWrong={page.onMarkBotTagWrong}
-            onLoadMoreMessages={page.loadMoreMessages}
             onOpenEditor={page.openEditor}
             onOpenPointsOnMap={page.openPointsOnMap}
             onSaveMessageUpdate={page.saveMessageUpdate}

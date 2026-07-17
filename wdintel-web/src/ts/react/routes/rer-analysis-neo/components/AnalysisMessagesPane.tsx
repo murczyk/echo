@@ -85,11 +85,10 @@ type Props = {
   messageComments: Record<number, MessageComment[]>;
   messages: Array<[number, InboxMessage]>;
   networkDisplayMap: Record<number, string>;
-  noMoreToLoad: boolean;
+  pageIndex: number;
   onDeleteMessage: (messageId: number) => void;
   onCancelBotTagAction?: () => void;
   onMarkBotTagWrong?: (messageId: number, tagId: number) => void;
-  onLoadMoreMessages: () => void;
   onOpenEditor: (messageId: number) => void;
   onOpenPointsOnMap: (etalons: string[], message: InboxMessage) => void;
   onSaveMessageUpdate: (
@@ -328,11 +327,10 @@ function AnalysisMessagesPaneComponent({
   messageComments,
   messages,
   networkDisplayMap,
-  noMoreToLoad,
+  pageIndex,
   onDeleteMessage,
   onCancelBotTagAction,
   onMarkBotTagWrong,
-  onLoadMoreMessages,
   onOpenEditor,
   onOpenPointsOnMap,
   onSaveMessageUpdate,
@@ -358,6 +356,7 @@ function AnalysisMessagesPaneComponent({
   } | null>(null);
   const [copiedFeedbackId, setCopiedFeedbackId] = useState<string | null>(copiedFeedbackIdProp);
   const [deleteMessageId, setDeleteMessageId] = useState<number | null>(null);
+  const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const referenceTimeMsRef = useRef<number | null>(Date.now());
   const copyFeedbackTimerRef = useRef<number | null>(null);
   const currentUserLogin = authUserName?.trim() || currentUser?.name?.trim() || null;
@@ -369,6 +368,12 @@ function AnalysisMessagesPaneComponent({
   useEffect(() => {
     referenceTimeMsRef.current = Date.now();
   }, [messages]);
+
+  useEffect(() => {
+    if (scrollContainerRef.current) {
+      scrollContainerRef.current.scrollTop = 0;
+    }
+  }, [pageIndex]);
 
   useEffect(() => {
     return () => {
@@ -426,7 +431,7 @@ function AnalysisMessagesPaneComponent({
 
   return (
     <Box sx={{ flex: 1, minHeight: 0, overflow: 'hidden', px: 0, position: 'relative' }}>
-      <Box sx={getAnalysisMessagesScrollSx}>
+      <Box ref={scrollContainerRef} sx={getAnalysisMessagesScrollSx}>
         <Box component="ul" sx={{ m: 0, p: 0, listStyle: 'none' }}>
           {messages.map(([id, message]) => (
             <AnalysisMessageCardItem
@@ -465,13 +470,6 @@ function AnalysisMessagesPaneComponent({
             />
           ))}
         </Box>
-        {!noMoreToLoad && messages.length > 0 && !paginationLoading ? (
-          <Box sx={{ display: 'flex', justifyContent: 'center', mt: 2, mb: 2 }}>
-            <Button variant="outlined" onClick={onLoadMoreMessages} disabled={loading}>
-              Завантажити ще
-            </Button>
-          </Box>
-        ) : null}
       </Box>
 
       {loading ? (

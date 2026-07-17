@@ -1,22 +1,16 @@
 import DescriptionOutlinedIcon from '@mui/icons-material/DescriptionOutlined';
 import RefreshOutlinedIcon from '@mui/icons-material/RefreshOutlined';
-import {
-  Button,
-  Stack,
-  Chip,
-  Skeleton,
-  Tooltip,
-  IconButton,
-  CircularProgress,
-} from '@mui/material';
+import { Button, Stack, Tooltip, IconButton, CircularProgress } from '@mui/material';
 
 import { PageHeader } from '../../components/PageHeader';
 import { SidePanelToggleButton } from '../../components/SidePanelToggleButton';
 import { AnalysisHeaderControls } from './components/AnalysisHeaderControls';
-import type { AnalysisPageViewModel } from './types';
+import { AnalysisPaginationControl } from './components/AnalysisPaginationControl';
+import type { AnalysisCenterTab, AnalysisPageViewModel } from './types';
 
 type Props = {
   page: AnalysisPageViewModel;
+  centerTab: AnalysisCenterTab;
   isMobileLayout: boolean;
   leftPanelVisible: boolean;
   rightPanelVisible: boolean;
@@ -24,6 +18,7 @@ type Props = {
 
 export function AnalysisPageHeader({
   page,
+  centerTab,
   isMobileLayout,
   leftPanelVisible,
   rightPanelVisible,
@@ -70,19 +65,17 @@ export function AnalysisPageHeader({
       middleGap={4}
       actions={
         <Stack direction="row" spacing={1} alignItems="center">
-          <Chip
-            label={
-              page.counts ? `${page.counts.countSelected} з ${page.counts.countOverall}` : '— з —'
-            }
-            size="small"
-            variant="outlined"
-            sx={{
-              height: 28,
-              fontSize: '0.8125rem',
-              fontWeight: 600,
-              bgcolor: 'background.paper',
-              borderColor: 'divider',
-            }}
+          <AnalysisPaginationControl
+            centerTab={centerTab}
+            pageIndex={page.pageIndex}
+            pageSize={20}
+            messagesCount={page.messages.length}
+            totalCount={page.messagesTotalCount}
+            totalLoading={page.messagesTotalLoading}
+            noMoreToLoad={page.noMoreToLoad}
+            busy={page.messagesPaging || page.messagesLoading}
+            onPrevPage={page.loadPrevPage}
+            onNextPage={page.loadNextPage}
           />
           <Tooltip title="Оновити" arrow>
             <span>

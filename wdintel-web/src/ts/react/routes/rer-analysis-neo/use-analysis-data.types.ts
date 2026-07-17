@@ -81,12 +81,16 @@ export type UseAnalysisDataResult = {
   loadCorrelatedFreqs: () => Promise<void>;
   loadGroupsActivity: (period?: AnalysisGroupsActivityPeriod) => Promise<void>;
   loadNewCallsigns: () => Promise<void>;
-  loadMoreMessages: () => Promise<void>;
+  loadNextPage: () => Promise<void>;
+  loadPrevPage: () => Promise<void>;
   loadMessagesForMap: (messageIds: number[]) => Promise<boolean>;
   mapAttrs: AnalysisMapAttrs;
   messageActionLoading: boolean;
   messagesLoading: boolean;
+  messagesOverallCount: number | null;
   messagesPaging: boolean;
+  messagesTotalCount: number | null;
+  messagesTotalLoading: boolean;
   messageComments: Record<number, MessageComment[]>;
   messages: Array<[number, InboxMessage]>;
   networkDisplayMap: Record<number, string>;
@@ -95,6 +99,7 @@ export type UseAnalysisDataResult = {
   newCallsignsLoading: boolean;
   noMoreToLoad: boolean;
   nolimitShown: boolean;
+  pageIndex: number;
   onUpdateLocalMessage: (
     messageId: number,
     updater: (message: InboxMessage) => InboxMessage,

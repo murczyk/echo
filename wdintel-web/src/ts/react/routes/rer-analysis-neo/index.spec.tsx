@@ -48,6 +48,7 @@ vi.mock('@mui/material', () => ({
   Tab: ({ label }: { label?: ReactNode }) => <div>{label}</div>,
   Tabs: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   Tooltip: ({ children }: { children: ReactNode }) => <>{children}</>,
+  Typography: ({ children }: { children: ReactNode }) => <span>{children}</span>,
   useMediaQuery: () => false,
 }));
 
@@ -199,7 +200,10 @@ function buildPage() {
     messageComments: {},
     messages: [],
     messagesLoading: false,
+    messagesOverallCount: null,
     messagesPaging: false,
+    messagesTotalCount: null,
+    messagesTotalLoading: true,
     networkDisplayMap: {},
     networks: [],
     newCallsigns: { notSeen24h: [], notSeen7days: [], notSeen30days: [] },
@@ -207,6 +211,7 @@ function buildPage() {
     noMoreToLoad: false,
     newestFirst: true,
     nolimitShown: false,
+    pageIndex: 0,
     options: {
       tags: [],
       aors: [],
@@ -272,7 +277,8 @@ function buildPage() {
     loadFilterSection: vi.fn(),
     loadGroupsActivity: vi.fn(),
     loadMessagesForMap: vi.fn(),
-    loadMoreMessages: vi.fn(),
+    loadNextPage: vi.fn(),
+    loadPrevPage: vi.fn(),
     loadNewCallsigns: vi.fn(),
     openReport: vi.fn(),
     repeatReportTaskRun: vi.fn(),
@@ -313,23 +319,6 @@ describe('RerAnalysisNeoPage', () => {
     for (const container of rendered.splice(0)) {
       document.body.removeChild(container);
     }
-  });
-
-  it('shows placeholder chips for totals while counts are loading', async () => {
-    const container = document.createElement('div');
-    document.body.appendChild(container);
-    rendered.push(container);
-    const root = createRoot(container);
-
-    await act(async () => {
-      root.render(<RerAnalysisNeoPage />);
-    });
-
-    expect(container.textContent).toContain('— з —');
-
-    await act(async () => {
-      root.unmount();
-    });
   });
 
   it('wires the header toggle buttons to the existing panel handlers', async () => {

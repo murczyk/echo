@@ -175,7 +175,10 @@ export type AnalysisPageState = {
   botTagAction: MessageCardBotTagAction | null;
   messageComments: Record<number, MessageComment[]>;
   messagesLoading: boolean;
+  messagesOverallCount: number | null;
   messagesPaging: boolean;
+  messagesTotalCount: number | null;
+  messagesTotalLoading: boolean;
   messages: Array<[number, InboxMessage]>;
   networkDisplayMap: Record<number, string>;
   networks: Network[];
@@ -183,6 +186,7 @@ export type AnalysisPageState = {
   newCallsignsLoading: boolean;
   noMoreToLoad: boolean;
   nolimitShown: boolean;
+  pageIndex: number;
   newestFirst: boolean;
   unitsExactMatchOnlyDefault: boolean | null;
   supportNonRerInterceptions: boolean;
@@ -226,7 +230,8 @@ export type AnalysisPageActions = {
   loadGroupsActivity: (period?: AnalysisGroupsActivityPeriod) => void;
   loadAllMessages: () => Promise<void>;
   loadFilterSection: (section: AnalysisFilterSectionId) => Promise<void>;
-  loadMoreMessages: () => Promise<void>;
+  loadNextPage: () => Promise<void>;
+  loadPrevPage: () => Promise<void>;
   loadMessagesForMap: (messageIds: number[]) => Promise<boolean>;
   loadNewCallsigns: () => Promise<void>;
   onDeleteMessage: (messageId: number) => void;
