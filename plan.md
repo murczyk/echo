@@ -60,7 +60,7 @@ Implement GOI palette sync/conversion/checksum fixes, GOI frequency readonly reg
 - [x] Use stored GOI source metadata/checksum to avoid retrying the same bad source file automatically until the GOI checksum changes or a user triggers retry.
 - [x] Append OK changelog entries for created, synced from GOI, imported new version, converted, synced to GOI, and error fixed events.
 - [x] Ensure original-path GOI sync rows are not left in a state that keeps re-processing the same original file after successful converted-artifact import.
-- [ ] Add tests for first import, GOI-side source refresh, failed source refresh, user retry, and no converted KMZ upload for GOI-origin source.
+- [x] Add tests for first import, GOI-side source refresh, failed source refresh, user retry, and no converted KMZ upload for GOI-origin source.
 
 ### 3. Block Echo-side edits for GOI-owned convertible palettes
 
@@ -70,14 +70,14 @@ Implement GOI palette sync/conversion/checksum fixes, GOI frequency readonly reg
 - [x] Expose enough metadata to the frontend to show the GOI-owned banner.
 - [x] Show a banner on `/rer-palitra-neo` palette details/edit surfaces: `Редагуйте цю палітру в ГОІ`.
 - [x] Disable or hide Echo-side edit actions for GOI-owned convertible palettes.
-- [ ] Add backend and frontend tests for edit blocking.
+- [x] Add backend and frontend tests for edit blocking.
 
 ### 4. Make GOI convertible import scheduling failure recoverable
 
 - [x] In `import_convertible_goi_palitra_file`, handle conversion scheduling failure after palette creation.
 - [x] Mark the palette `conversion_status = error` with the scheduling error when the conversion job cannot be inserted.
 - [x] Append a non-OK changelog entry for scheduling failure.
-- [ ] Add a regression test that simulates job scheduling failure and verifies the palette does not remain stuck in `processing`.
+- [x] Add a regression test that simulates job scheduling failure and verifies the palette does not remain stuck in `processing`.
 
 ### 5. Add recovery for processing palettes without live conversion jobs
 
@@ -85,7 +85,7 @@ Implement GOI palette sync/conversion/checksum fixes, GOI frequency readonly reg
 - [x] Mark unrecoverable rows as `conversion_status = error` with a diagnostic message after the stale timeout.
 - [x] Append a non-OK changelog entry when reconciliation marks a palette failed.
 - [x] Flush palette cache when reconciliation changes a palette status.
-- [ ] Add tests for stale processing-without-job recovery and non-stale processing rows being left alone.
+- [x] Add tests for stale processing-without-job recovery and non-stale processing rows being left alone.
 
 ### 6. Preserve Echo-origin semantics during GOI-side refresh
 
@@ -100,7 +100,7 @@ Implement GOI palette sync/conversion/checksum fixes, GOI frequency readonly reg
 - [x] Append non-OK changelog entries to every affected row explaining the duplicate remote-path conflict.
 - [x] Keep stale deletion behavior only for duplicate GOI-origin imports that are safe to collapse.
 - [x] Clear/fix the conflict by appending OK changelog entries once the duplicate mapping is resolved.
-- [ ] Add tests for GOI-origin duplicate cleanup and Echo-origin duplicate remote-path blocking.
+- [x] Add tests for GOI-origin duplicate cleanup and Echo-origin duplicate remote-path blocking.
 
 ### 8. Improve checksum conflict diagnostics and sync decisions
 
@@ -109,7 +109,7 @@ Implement GOI palette sync/conversion/checksum fixes, GOI frequency readonly reg
 - [x] Record specific changelog/error messages for missing Echo checksum metadata, missing/deleted Echo palette, missing Echo S3 file, and current Echo checksum differing from stored Echo checksum.
 - [x] Add table-driven unit tests for Echo edit push, GOI edit refresh, no-op, and conflict cases.
 - [x] Ensure decisions update side-specific checksum metadata without creating feedback loops.
-- [ ] Apply the pure-decision approach to other GOI sync state-machine branches when it keeps behavior testable without large integration setup.
+- [x] Apply the pure-decision approach to other GOI sync state-machine branches when it keeps behavior testable without large integration setup.
 
 ### 9. Add `/rer-palitra-neo` changelog UI
 
@@ -118,7 +118,7 @@ Implement GOI palette sync/conversion/checksum fixes, GOI frequency readonly reg
 - [x] Add an `Історія` row action in `PalitraTable.row-actions.tsx`.
 - [x] Implement a popup/dialog that shows changelog entries in reverse chronological order with status, timestamp, Ukrainian description, and technical text when useful.
 - [x] Handle API errors with visible toasts.
-- [ ] Add frontend tests for warning display and history dialog.
+- [x] Add frontend tests for warning display and history dialog.
 
 ### 10. Add GOI source refresh retry action
 
@@ -127,7 +127,7 @@ Implement GOI palette sync/conversion/checksum fixes, GOI frequency readonly reg
 - [x] Append OK/non-OK changelog entries for retry started, retry succeeded, and retry failed.
 - [x] Add a `/rer-palitra-neo` row action for retry when latest state is a GOI source conversion failure.
 - [x] Refresh table data and show success/error toasts after retry.
-- [ ] Add backend and frontend tests for retry visibility and execution.
+- [x] Add backend and frontend tests for retry visibility and execution.
 
 ### 11. Add GOI frequency readonly endpoint regression coverage
 
@@ -138,13 +138,13 @@ Implement GOI palette sync/conversion/checksum fixes, GOI frequency readonly reg
 
 ### 12. Add replacement conversion race regression coverage
 
-- [ ] Add a test where attempt 1 starts, a replacement upload is scheduled, and the replacement is picked as a later attempt.
-- [ ] Verify stale attempt 1 completion cannot update palette geometries, mark the job done, or schedule a GOI upload.
-- [ ] Keep the existing `attempt_count` guard behavior covered so future edits do not reintroduce the race.
+- [x] Add a test where attempt 1 starts, a replacement upload is scheduled, and the replacement is picked as a later attempt.
+- [x] Verify stale attempt 1 completion cannot update palette geometries, mark the job done, or schedule a GOI upload.
+- [x] Keep the existing `attempt_count` guard behavior covered so future edits do not reintroduce the race.
 
 ### 13. Verification
 
-- [ ] Run `just migrate-up` for new migrations.
+- [x] Run `just migrate-up` for new migrations.
 - [x] Run `just gen-seaorm` after schema changes.
 - [x] Run `just gen-front` after DTO/binding changes.
 - [x] Run `cargo fmt`.

@@ -436,6 +436,30 @@ describe('rer-palitra helpers', () => {
     ).toEqual(['Обрано палітр: 3', 'Уже в цій папці: 1', 'Недоступно для зміни: 1']);
   });
 
+  it('marks GOI-owned palitras as selectable but not modifiable', () => {
+    const goiOwnedPalitra = {
+      ...makePalitra(9, null, 'operator', 10),
+      goiOwned: true,
+    } as Palitra;
+
+    const rows = buildTableRows({
+      palitras: [goiOwnedPalitra],
+      user: makeUser({ name: 'operator', roles: ['Admin'] }),
+      myScope: null,
+      organisms: [],
+      aors: [],
+      inFlightArchiveId: null,
+      inFlightDeleteId: null,
+      inFlightDownloadId: null,
+      inFlightUploadId: null,
+      inFlightRetryId: null,
+      expandedFolderPaths: new Set(),
+    });
+    const row = rows.find((item) => item.kind === 'palitra' && item.id === 9);
+
+    expect(row).toMatchObject({ canModify: false, canSelect: true });
+  });
+
   it('keeps read-only palitras downloadable but not modifiable in bulk selections', () => {
     const rows = [makeRow(1, null, true, true), makeRow(2, null, true, false)];
 

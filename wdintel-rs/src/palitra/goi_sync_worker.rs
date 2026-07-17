@@ -114,6 +114,13 @@ enum GoiPalitraSyncConflict {
     EchoAndGoiChanged,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum GoiRemotePathTrackingState {
+    Normal,
+    DuplicateEchoOriginConflict,
+    GoiOriginDuplicateCleanupNeeded,
+}
+
 struct EchoOriginGoiSyncDecision {
     row: goi_palitra_sync::Model,
     decision: GoiPalitraSyncDecision,
@@ -521,7 +528,9 @@ async fn refresh_tracked_goi_palitra_if_changed(
     if target.integration.disable_goi_to_echo_palitra_sync {
         return Ok(());
     }
-    if has_duplicate_echo_origin_remote_path_conflict(tracked_rows) {
+    if classify_goi_remote_path_tracking(tracked_rows)
+        == GoiRemotePathTrackingState::DuplicateEchoOriginConflict
+    {
         mark_duplicate_echo_origin_remote_path_conflict(&env.dbx, tracked_rows)
             .await
             .c(h!())?;
@@ -594,6 +603,18 @@ async fn refresh_tracked_goi_palitra_if_changed(
     )
     .await
     .c(h!())
+}
+
+fn classify_goi_remote_path_tracking(
+    tracked_rows: &[goi_palitra_sync::Model],
+) -> GoiRemotePathTrackingState {
+    if has_duplicate_echo_origin_remote_path_conflict(tracked_rows) {
+        return GoiRemotePathTrackingState::DuplicateEchoOriginConflict;
+    }
+    if tracked_goi_palitra_ids(tracked_rows).len() > 1 {
+        return GoiRemotePathTrackingState::GoiOriginDuplicateCleanupNeeded;
+    }
+    GoiRemotePathTrackingState::Normal
 }
 
 fn has_duplicate_echo_origin_remote_path_conflict(
@@ -684,7 +705,9 @@ fn tracked_goi_file_needs_refresh(
     file_size: i64,
     file_sha256: &str,
 ) -> bool {
-    if tracked_goi_palitra_ids(tracked_rows).len() > 1 {
+    if classify_goi_remote_path_tracking(tracked_rows)
+        == GoiRemotePathTrackingState::GoiOriginDuplicateCleanupNeeded
+    {
         return true;
     }
     tracked_rows
@@ -1126,38 +1149,23 @@ async fn refresh_convertible_goi_palitra_file(
     .await;
     if let Err(err) = schedule_result {
         let error = format!("{err:#}");
-        super::update_palitra_conversion_status(
-            &txn,
-            palitra_id,
-            PALITRA_CONVERSION_STATUS_ERROR,
-            Some(goi_source.source_format.clone()),
-            None,
-            Some(error.clone()),
-        )
-        .await
-        .c(h!())?;
-        upsert_goi_palitra_sync(
+        record_goi_source_conversion_scheduling_failure(
             &txn,
             integration.id,
-            Some(palitra_id),
+            palitra_id,
             remote_path,
-            PALITRA_GOI_SYNC_DIRECTION_GOI,
-            PALITRA_GOI_REMOTE_STATUS_PRESENT,
-            Some(file_size),
-            Some(file_sha256.clone()),
-            Some(super::goi_changelog::error_entry(
-                format!(
-                    "Failed to schedule GOI source refresh conversion: {error}"
-                ),
-                "Не вдалося поставити оновлення з ГОІ в чергу на конвертацію.",
-            )),
-            Some(goi_source),
+            goi_source.source_format.clone(),
+            file_size,
+            file_sha256.clone(),
+            error.clone(),
+            format!(
+                "Failed to schedule GOI source refresh conversion: {error}"
+            ),
+            "Не вдалося поставити оновлення з ГОІ в чергу на конвертацію.",
+            goi_source,
         )
         .await
         .c(h!())?;
-        refresh_palitra_missing_in_goi(&txn, palitra_id)
-            .await
-            .c(h!())?;
         txn.commit().await.c(h!())?;
         anyhow::bail!(
             "failed to schedule GOI source refresh conversion: {error}"
@@ -1194,6 +1202,56 @@ async fn refresh_convertible_goi_palitra_file(
         .c(h!())?;
     }
     txn.commit().await.c(h!())?;
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn record_goi_source_conversion_scheduling_failure<'a, C>(
+    dbx: &'a C,
+    integration_id: i64,
+    palitra_id: i64,
+    remote_path: &str,
+    source_format: String,
+    file_size: i64,
+    file_sha256: String,
+    conversion_error: String,
+    changelog_text: String,
+    changelog_description: &str,
+    goi_source: GoiSourceFileSnapshot,
+) -> anyhow::Result<()>
+where
+    C: ConnectionTrait + 'a,
+{
+    super::update_palitra_conversion_status(
+        dbx,
+        palitra_id,
+        PALITRA_CONVERSION_STATUS_ERROR,
+        Some(source_format),
+        None,
+        Some(conversion_error),
+    )
+    .await
+    .c(h!())?;
+    upsert_goi_palitra_sync(
+        dbx,
+        integration_id,
+        Some(palitra_id),
+        remote_path,
+        PALITRA_GOI_SYNC_DIRECTION_GOI,
+        PALITRA_GOI_REMOTE_STATUS_PRESENT,
+        Some(file_size),
+        Some(file_sha256),
+        Some(super::goi_changelog::error_entry(
+            changelog_text,
+            changelog_description,
+        )),
+        Some(goi_source),
+    )
+    .await
+    .c(h!())?;
+    refresh_palitra_missing_in_goi(dbx, palitra_id)
+        .await
+        .c(h!())?;
     Ok(())
 }
 
@@ -1749,36 +1807,21 @@ async fn import_convertible_goi_palitra_file(
     .await;
     if let Err(err) = schedule_result {
         let error = format!("{err:#}");
-        super::update_palitra_conversion_status(
-            &env.dbx,
-            palitra.id,
-            PALITRA_CONVERSION_STATUS_ERROR,
-            Some(extension),
-            None,
-            Some(error.clone()),
-        )
-        .await
-        .c(h!())?;
-        upsert_goi_palitra_sync(
+        record_goi_source_conversion_scheduling_failure(
             &env.dbx,
             integration.id,
-            Some(palitra.id),
+            palitra.id,
             remote_path,
-            PALITRA_GOI_SYNC_DIRECTION_GOI,
-            PALITRA_GOI_REMOTE_STATUS_PRESENT,
-            Some(file_size),
-            Some(file_sha256),
-            Some(super::goi_changelog::error_entry(
-                format!("Failed to schedule GOI source conversion: {error}"),
-                "Не вдалося поставити конвертацію файлу ГОІ в чергу.",
-            )),
-            Some(goi_source),
+            extension,
+            file_size,
+            file_sha256,
+            error.clone(),
+            format!("Failed to schedule GOI source conversion: {error}"),
+            "Не вдалося поставити конвертацію файлу ГОІ в чергу.",
+            goi_source,
         )
         .await
         .c(h!())?;
-        refresh_palitra_missing_in_goi(&env.dbx, palitra.id)
-            .await
-            .c(h!())?;
         anyhow::bail!("failed to schedule GOI source conversion: {error}");
     }
     Ok(vec![palitra.id])
@@ -2905,6 +2948,11 @@ fn normalize_remote_relative_path(path: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::PALITRA_CONVERSION_JOB_STATUS_PENDING;
+    use crate::functest::tests::{
+        cleanup, find_test_login, find_test_organism, find_test_palitra,
+    };
+    use serial_test::serial;
 
     fn goi_palitra_sync_row(
         direction: &str,
@@ -2942,6 +2990,38 @@ mod tests {
             goi_source_failed_file_sha256: None,
             goi_source_last_retry_at: None,
         }
+    }
+
+    async fn mk_goi_integration_for_test(
+        dbx: &DatabaseConnection,
+        server_key: &str,
+    ) -> goi_integration::Model {
+        let organism = find_test_organism(dbx).await.unwrap();
+        let login = find_test_login(dbx).await.unwrap();
+        goi_integration::ActiveModel {
+            id: NotSet,
+            owner_organism_id: Set(organism.id),
+            created_at: Set(Utc::now().fixed_offset()),
+            integration_type: Set(
+                ORGANISM_GOI_INTEGRATION_TYPE_FULL.to_string()
+            ),
+            server_key: Set(server_key.to_string()),
+            server_label: Set(server_key.to_string()),
+            ssh_host: Set(Some("goi.test".to_string())),
+            ssh_user: Set(Some("goi".to_string())),
+            ssh_port: Set(22),
+            path: Set("/goi/palettes".to_string()),
+            api_host: Set(None),
+            api_port: Set(8088),
+            api_login: Set(None),
+            api_password: Set(None),
+            disable_goi_to_echo_palitra_sync: Set(false),
+            maintainer_login: Set(Some(login.login)),
+            pause_worker: Set(false),
+        }
+        .insert(dbx)
+        .await
+        .unwrap()
     }
 
     #[test]
@@ -3028,6 +3108,202 @@ mod tests {
 
         assert!(candidates.contains("one/foo.gpx"));
         assert!(!candidates.contains("two/foo.gpx"));
+    }
+
+    #[test]
+    fn goi_source_snapshot_tracks_convertible_source_only() {
+        let snapshot = goi_source_snapshot_for_remote_path(
+            "sector/source.gpx",
+            &[1, 2, 3],
+            3,
+            "source-sha",
+        )
+        .unwrap()
+        .unwrap();
+
+        assert_eq!(snapshot.file_name, "source.gpx");
+        assert_eq!(snapshot.source_format, "gpx");
+        assert_eq!(snapshot.file_data, vec![1, 2, 3]);
+        assert_eq!(snapshot.file_size, 3);
+        assert_eq!(snapshot.file_sha256, "source-sha");
+        assert!(goi_source_snapshot_for_remote_path(
+            "sector/direct.kmz",
+            &[1, 2, 3],
+            3,
+            "kmz-sha",
+        )
+        .unwrap()
+        .is_none());
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn convertible_goi_import_and_refresh_track_source_without_goi_upload(
+    ) {
+        let env = cleanup().await.unwrap();
+        let integration = mk_goi_integration_for_test(
+            &env.dbx,
+            "goi-convertible-import-refresh-test",
+        )
+        .await;
+
+        import_replacement_goi_palitra_file(
+            env.as_ref(),
+            &integration,
+            "sector/source.gpx",
+            vec![1, 2, 3],
+            3,
+            "imported-sha".to_string(),
+        )
+        .await
+        .unwrap();
+
+        let row = goi_palitra_sync::Entity::find()
+            .filter(
+                goi_palitra_sync::Column::GoiIntegrationId.eq(integration.id),
+            )
+            .filter(
+                goi_palitra_sync::Column::RemoteRelativePath
+                    .eq("sector/source.gpx"),
+            )
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        let palitra_id = row.palitra_id.unwrap();
+        let palitra = palitra::Entity::find_by_id(palitra_id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        let job = palitra_conversion_job::Entity::find()
+            .filter(palitra_conversion_job::Column::PalitraId.eq(palitra_id))
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert!(palitra.imported_from_goi);
+        assert_eq!(
+            palitra.conversion_status,
+            PALITRA_CONVERSION_STATUS_PROCESSING
+        );
+        assert_eq!(row.direction, PALITRA_GOI_SYNC_DIRECTION_GOI);
+        assert_eq!(row.goi_source_file_name.as_deref(), Some("source.gpx"));
+        assert_eq!(row.goi_source_format.as_deref(), Some("gpx"));
+        assert_eq!(row.goi_source_file_data, Some(vec![1, 2, 3]));
+        assert_eq!(row.goi_source_file_sha256.as_deref(), Some("imported-sha"));
+        assert_eq!(job.status, PALITRA_CONVERSION_JOB_STATUS_PENDING);
+        assert!(!job.should_schedule_goi_upload);
+
+        refresh_convertible_goi_palitra_file(
+            env.as_ref(),
+            &integration,
+            "sector/source.gpx",
+            "source.gpx".to_string(),
+            "gpx".to_string(),
+            vec![4, 5, 6, 7],
+            false,
+            4,
+            "refreshed-sha".to_string(),
+            std::slice::from_ref(&row),
+        )
+        .await
+        .unwrap();
+
+        let refreshed_row = goi_palitra_sync::Entity::find_by_id(row.id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        let refreshed_job = palitra_conversion_job::Entity::find()
+            .filter(palitra_conversion_job::Column::PalitraId.eq(palitra_id))
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(refreshed_row.goi_source_file_data, Some(vec![4, 5, 6, 7]));
+        assert_eq!(
+            refreshed_row.goi_source_file_sha256.as_deref(),
+            Some("refreshed-sha")
+        );
+        assert_eq!(refreshed_job.file_data, Some(vec![4, 5, 6, 7]));
+        assert!(!refreshed_job.should_schedule_goi_upload);
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn goi_source_scheduling_failure_marks_palitra_error_and_keeps_source(
+    ) {
+        let env = cleanup().await.unwrap();
+        let palitra = find_test_palitra(&env.dbx).await.unwrap();
+        let integration = mk_goi_integration_for_test(
+            &env.dbx,
+            "goi-source-scheduling-failure-test",
+        )
+        .await;
+        let goi_source = GoiSourceFileSnapshot {
+            file_name: "source.gpx".to_string(),
+            source_format: "gpx".to_string(),
+            content_type: None,
+            file_data: vec![9, 8, 7],
+            file_size: 3,
+            file_sha256: "failed-sha".to_string(),
+        };
+
+        record_goi_source_conversion_scheduling_failure(
+            &env.dbx,
+            integration.id,
+            palitra.id,
+            "sector/source.gpx",
+            "gpx".to_string(),
+            3,
+            "failed-sha".to_string(),
+            "simulated schedule error".to_string(),
+            "Failed to schedule GOI source conversion: simulated schedule error"
+                .to_string(),
+            "Не вдалося поставити конвертацію файлу ГОІ в чергу.",
+            goi_source,
+        )
+        .await
+        .unwrap();
+
+        let palitra = palitra::Entity::find_by_id(palitra.id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        let row = goi_palitra_sync::Entity::find()
+            .filter(
+                goi_palitra_sync::Column::GoiIntegrationId.eq(integration.id),
+            )
+            .filter(
+                goi_palitra_sync::Column::RemoteRelativePath
+                    .eq("sector/source.gpx"),
+            )
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        let entries =
+            super::super::goi_changelog::entries_from_value(&row.changelog);
+        let latest =
+            super::super::goi_changelog::latest_entry(&entries).unwrap();
+
+        assert_eq!(palitra.conversion_status, PALITRA_CONVERSION_STATUS_ERROR);
+        assert_eq!(palitra.source_format.as_deref(), Some("gpx"));
+        assert_eq!(
+            palitra.conversion_error.as_deref(),
+            Some("simulated schedule error")
+        );
+        assert!(!latest.is_ok);
+        assert_eq!(
+            latest.text,
+            "Failed to schedule GOI source conversion: simulated schedule error"
+        );
+        assert_eq!(row.goi_source_file_data, Some(vec![9, 8, 7]));
+        assert_eq!(row.goi_source_file_sha256.as_deref(), Some("failed-sha"));
     }
 
     fn checksum(file_size: i64, file_sha256: &str) -> FileChecksumRef<'_> {
@@ -3237,6 +3513,71 @@ mod tests {
         assert_eq!(
             imported_from_goi_update_for_refresh(&[goi_row]),
             Some(true)
+        );
+    }
+
+    #[test]
+    fn remote_path_tracking_classifies_duplicate_echo_origin_as_blocking_conflict(
+    ) {
+        let mut row_a = goi_palitra_sync_row(
+            PALITRA_GOI_SYNC_DIRECTION_ECHO,
+            Some(10),
+            Some(3),
+            Some("abc"),
+        );
+        row_a.id = 1;
+        let mut row_b = goi_palitra_sync_row(
+            PALITRA_GOI_SYNC_DIRECTION_ECHO,
+            Some(11),
+            Some(3),
+            Some("abc"),
+        );
+        row_b.id = 2;
+
+        assert_eq!(
+            classify_goi_remote_path_tracking(&[row_a, row_b]),
+            GoiRemotePathTrackingState::DuplicateEchoOriginConflict
+        );
+    }
+
+    #[test]
+    fn remote_path_tracking_classifies_duplicate_goi_origin_as_cleanup_needed()
+    {
+        let mut row_a = goi_palitra_sync_row(
+            PALITRA_GOI_SYNC_DIRECTION_GOI,
+            Some(10),
+            Some(3),
+            Some("abc"),
+        );
+        row_a.id = 1;
+        let mut row_b = goi_palitra_sync_row(
+            PALITRA_GOI_SYNC_DIRECTION_GOI,
+            Some(11),
+            Some(3),
+            Some("abc"),
+        );
+        row_b.id = 2;
+        let rows = vec![row_a, row_b];
+
+        assert_eq!(
+            classify_goi_remote_path_tracking(&rows),
+            GoiRemotePathTrackingState::GoiOriginDuplicateCleanupNeeded
+        );
+        assert!(tracked_goi_file_needs_refresh(&rows, 3, "abc"));
+    }
+
+    #[test]
+    fn remote_path_tracking_uses_normal_state_for_single_echo_origin_mapping() {
+        let row = goi_palitra_sync_row(
+            PALITRA_GOI_SYNC_DIRECTION_ECHO,
+            Some(10),
+            Some(3),
+            Some("abc"),
+        );
+
+        assert_eq!(
+            classify_goi_remote_path_tracking(&[row]),
+            GoiRemotePathTrackingState::Normal
         );
     }
 

@@ -20,6 +20,13 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct ConversionJobAttempt {
+    id: i64,
+    palitra_id: i64,
+    attempt_count: i32,
+}
+
 enum ConversionJobOutcome {
     Applied,
     Stale,
@@ -114,10 +121,7 @@ async fn palitra_conversion_worker_step(env: &Env) -> Result<bool, AppError> {
 async fn reconcile_stale_processing_palitras(
     env: &Env,
 ) -> anyhow::Result<bool> {
-    let stale_before = Utc::now().fixed_offset()
-        - chrono::Duration::seconds(
-            PALITRA_CONVERSION_JOB_STALE_PROCESSING_SEC as i64,
-        );
+    let stale_before = stale_processing_cutoff(Utc::now().fixed_offset());
     let palitras = palitra::Entity::find()
         .filter(palitra::Column::Deleted.eq(false))
         .filter(
@@ -134,6 +138,15 @@ async fn reconcile_stale_processing_palitras(
             .await
             .c(h!())?
         {
+            continue;
+        }
+        if !should_reconcile_processing_without_live_job(
+            palitra.deleted,
+            &palitra.conversion_status,
+            palitra.conversion_last_attempt_at,
+            stale_before,
+            false,
+        ) {
             continue;
         }
         let error = format!(
@@ -164,6 +177,28 @@ async fn reconcile_stale_processing_palitras(
         changed = true;
     }
     Ok(changed)
+}
+
+fn stale_processing_cutoff(
+    now: chrono::DateTime<chrono::FixedOffset>,
+) -> chrono::DateTime<chrono::FixedOffset> {
+    now - chrono::Duration::seconds(
+        PALITRA_CONVERSION_JOB_STALE_PROCESSING_SEC as i64,
+    )
+}
+
+fn should_reconcile_processing_without_live_job(
+    deleted: bool,
+    conversion_status: &str,
+    conversion_last_attempt_at: Option<chrono::DateTime<chrono::FixedOffset>>,
+    stale_before: chrono::DateTime<chrono::FixedOffset>,
+    live_job_exists: bool,
+) -> bool {
+    !deleted
+        && conversion_status == PALITRA_CONVERSION_STATUS_PROCESSING
+        && conversion_last_attempt_at
+            .is_some_and(|last_attempt_at| last_attempt_at <= stale_before)
+        && !live_job_exists
 }
 
 async fn live_conversion_job_exists<'a, C>(
@@ -313,7 +348,10 @@ async fn process_conversion_job(
     )
     .await
     .c(h!())?;
-    if !palitra.imported_from_goi || job.should_schedule_goi_upload {
+    if should_schedule_goi_upload_after_conversion(
+        palitra.imported_from_goi,
+        job.should_schedule_goi_upload,
+    ) {
         super::schedule_palitra_goi_upload(&txn, palitra.id, converted_body)
             .await
             .c(h!())?;
@@ -326,6 +364,13 @@ async fn process_conversion_job(
     }
     txn.commit().await.c(h!())?;
     Ok(ConversionJobOutcome::Applied)
+}
+
+fn should_schedule_goi_upload_after_conversion(
+    palitra_imported_from_goi: bool,
+    job_should_schedule_goi_upload: bool,
+) -> bool {
+    !palitra_imported_from_goi || job_should_schedule_goi_upload
 }
 
 async fn live_palitra_exists<'a, C>(
@@ -494,14 +539,39 @@ where
 fn current_processing_job_condition(
     job: &palitra_conversion_job::Model,
 ) -> Condition {
+    let attempt = conversion_job_attempt(job);
     Condition::all()
-        .add(palitra_conversion_job::Column::Id.eq(job.id))
-        .add(palitra_conversion_job::Column::PalitraId.eq(job.palitra_id))
+        .add(palitra_conversion_job::Column::Id.eq(attempt.id))
+        .add(palitra_conversion_job::Column::PalitraId.eq(attempt.palitra_id))
         .add(
             palitra_conversion_job::Column::Status
                 .eq(PALITRA_CONVERSION_JOB_STATUS_PROCESSING),
         )
-        .add(palitra_conversion_job::Column::AttemptCount.eq(job.attempt_count))
+        .add(
+            palitra_conversion_job::Column::AttemptCount
+                .eq(attempt.attempt_count),
+        )
+}
+
+fn conversion_job_attempt(
+    job: &palitra_conversion_job::Model,
+) -> ConversionJobAttempt {
+    ConversionJobAttempt {
+        id: job.id,
+        palitra_id: job.palitra_id,
+        attempt_count: job.attempt_count,
+    }
+}
+
+#[cfg(test)]
+fn is_current_processing_attempt(
+    expected: ConversionJobAttempt,
+    current: &palitra_conversion_job::Model,
+) -> bool {
+    current.id == expected.id
+        && current.palitra_id == expected.palitra_id
+        && current.status == PALITRA_CONVERSION_JOB_STATUS_PROCESSING
+        && current.attempt_count == expected.attempt_count
 }
 
 fn converted_kmz_file_name(source_file_name: &str) -> String {
@@ -513,4 +583,249 @@ fn converted_kmz_file_name(source_file_name: &str) -> String {
         .filter(|stem| !stem.is_empty())
         .unwrap_or("palitra");
     format!("{stem}.kmz")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::functest::tests::{cleanup, find_test_palitra, mk_palitra};
+    use serial_test::serial;
+
+    fn conversion_job(
+        status: &str,
+        attempt_count: i32,
+    ) -> palitra_conversion_job::Model {
+        let now = Utc::now().fixed_offset();
+        palitra_conversion_job::Model {
+            id: 7,
+            palitra_id: 42,
+            source_file_name: "source.gpx".to_string(),
+            source_format: "gpx".to_string(),
+            content_type: None,
+            file_data: Some(vec![1, 2, 3]),
+            status: status.to_string(),
+            conversion_receipt: None,
+            created_at: now,
+            last_attempt_at: Some(now),
+            attempt_count,
+            last_error: None,
+            should_schedule_goi_upload: false,
+        }
+    }
+
+    #[test]
+    fn stale_completion_from_replaced_attempt_is_not_current() {
+        let attempt_1 =
+            conversion_job(PALITRA_CONVERSION_JOB_STATUS_PROCESSING, 1);
+        let attempt_1_identity = conversion_job_attempt(&attempt_1);
+        let attempt_2 =
+            conversion_job(PALITRA_CONVERSION_JOB_STATUS_PROCESSING, 2);
+
+        assert!(is_current_processing_attempt(
+            attempt_1_identity,
+            &attempt_1
+        ));
+        assert!(!is_current_processing_attempt(
+            attempt_1_identity,
+            &attempt_2
+        ));
+    }
+
+    #[test]
+    fn current_attempt_requires_processing_status() {
+        let attempt =
+            conversion_job(PALITRA_CONVERSION_JOB_STATUS_PROCESSING, 1);
+        let identity = conversion_job_attempt(&attempt);
+        let done = conversion_job(PALITRA_CONVERSION_JOB_STATUS_DONE, 1);
+
+        assert!(!is_current_processing_attempt(identity, &done));
+    }
+
+    #[test]
+    fn goi_origin_source_conversion_does_not_schedule_upload_by_default() {
+        assert!(!should_schedule_goi_upload_after_conversion(true, false));
+        assert!(should_schedule_goi_upload_after_conversion(false, false));
+        assert!(should_schedule_goi_upload_after_conversion(true, true));
+    }
+
+    #[test]
+    fn stale_processing_reconciliation_requires_no_live_job_and_stale_attempt()
+    {
+        let now = Utc::now().fixed_offset();
+        let stale_before = stale_processing_cutoff(now);
+        let stale_attempt = stale_before - chrono::Duration::seconds(1);
+        let fresh_attempt = stale_before + chrono::Duration::seconds(1);
+
+        assert!(should_reconcile_processing_without_live_job(
+            false,
+            PALITRA_CONVERSION_STATUS_PROCESSING,
+            Some(stale_attempt),
+            stale_before,
+            false,
+        ));
+        assert!(!should_reconcile_processing_without_live_job(
+            false,
+            PALITRA_CONVERSION_STATUS_PROCESSING,
+            Some(fresh_attempt),
+            stale_before,
+            false,
+        ));
+        assert!(!should_reconcile_processing_without_live_job(
+            false,
+            PALITRA_CONVERSION_STATUS_PROCESSING,
+            Some(stale_attempt),
+            stale_before,
+            true,
+        ));
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn stale_processing_reconciliation_marks_only_stale_rows_without_live_jobs(
+    ) {
+        let env = cleanup().await.unwrap();
+        let now = Utc::now().fixed_offset();
+        let stale_attempt_at = now
+            - chrono::Duration::seconds(
+                PALITRA_CONVERSION_JOB_STALE_PROCESSING_SEC as i64 + 1,
+            );
+        let stale_palitra = find_test_palitra(&env.dbx).await.unwrap();
+        let mut stale_palitra = stale_palitra.into_active_model();
+        stale_palitra.conversion_status =
+            Set(PALITRA_CONVERSION_STATUS_PROCESSING.to_string());
+        stale_palitra.conversion_last_attempt_at = Set(Some(stale_attempt_at));
+        let stale_palitra = stale_palitra.update(&env.dbx).await.unwrap();
+        let fresh_palitra = mk_palitra(
+            &env.dbx,
+            palitra::ActiveModel {
+                name: Set("Fresh Processing Palitra".to_string()),
+                author: Set(Some("Tester".to_string())),
+                deleted: Set(false),
+                created_at: Set(Utc::now().naive_utc()),
+                conversion_status: Set(
+                    PALITRA_CONVERSION_STATUS_PROCESSING.to_string()
+                ),
+                conversion_last_attempt_at: Set(Some(now)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+        assert!(reconcile_stale_processing_palitras(env.as_ref())
+            .await
+            .unwrap());
+
+        let stale_palitra = palitra::Entity::find_by_id(stale_palitra.id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        let fresh_palitra = palitra::Entity::find_by_id(fresh_palitra.id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(
+            stale_palitra.conversion_status,
+            PALITRA_CONVERSION_STATUS_ERROR
+        );
+        assert!(stale_palitra.conversion_error.as_deref().is_some_and(
+            |error| error.contains("without a live conversion job")
+        ));
+        assert_eq!(
+            fresh_palitra.conversion_status,
+            PALITRA_CONVERSION_STATUS_PROCESSING
+        );
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn replacement_conversion_makes_previous_processing_attempt_stale() {
+        let env = cleanup().await.unwrap();
+        let palitra = find_test_palitra(&env.dbx).await.unwrap();
+        crate::palitra::schedule_palitra_conversion_with_goi_upload(
+            &env.dbx,
+            palitra.id,
+            "first.gpx".to_string(),
+            "gpx".to_string(),
+            None,
+            vec![1, 2, 3],
+            true,
+        )
+        .await
+        .unwrap();
+        let mut attempt_1 = palitra_conversion_job::Entity::find()
+            .filter(palitra_conversion_job::Column::PalitraId.eq(palitra.id))
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap()
+            .into_active_model();
+        attempt_1.status =
+            Set(PALITRA_CONVERSION_JOB_STATUS_PROCESSING.to_string());
+        attempt_1.attempt_count = Set(1);
+        let attempt_1 = attempt_1.update(&env.dbx).await.unwrap();
+
+        assert!(is_current_processing_job(&env.dbx, &attempt_1)
+            .await
+            .unwrap());
+
+        let txn = env.dbx.begin().await.unwrap();
+        crate::palitra::schedule_palitra_replacement_conversion_with_goi_upload(
+            &txn,
+            palitra.id,
+            "replacement.gpx".to_string(),
+            "gpx".to_string(),
+            None,
+            vec![4, 5, 6],
+            true,
+        )
+        .await
+        .unwrap();
+        txn.commit().await.unwrap();
+
+        assert!(!is_current_processing_job(&env.dbx, &attempt_1)
+            .await
+            .unwrap());
+
+        let mut replacement = palitra_conversion_job::Entity::find()
+            .filter(palitra_conversion_job::Column::PalitraId.eq(palitra.id))
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap()
+            .into_active_model();
+        replacement.status =
+            Set(PALITRA_CONVERSION_JOB_STATUS_PROCESSING.to_string());
+        replacement.attempt_count = Set(2);
+        let replacement = replacement.update(&env.dbx).await.unwrap();
+
+        assert!(is_current_processing_job(&env.dbx, &replacement)
+            .await
+            .unwrap());
+        assert!(!is_current_processing_job(&env.dbx, &attempt_1)
+            .await
+            .unwrap());
+
+        let update_result =
+            mark_conversion_job_done(&env.dbx, &attempt_1, "receipt".into())
+                .await
+                .unwrap();
+        let stored_replacement =
+            palitra_conversion_job::Entity::find_by_id(replacement.id)
+                .one(&env.dbx)
+                .await
+                .unwrap()
+                .unwrap();
+
+        assert_eq!(update_result.rows_affected, 0);
+        assert_eq!(
+            stored_replacement.status,
+            PALITRA_CONVERSION_JOB_STATUS_PROCESSING
+        );
+        assert_eq!(stored_replacement.conversion_receipt, None);
+        assert_eq!(stored_replacement.source_file_name, "replacement.gpx");
+    }
 }
