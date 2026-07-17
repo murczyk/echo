@@ -29,6 +29,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 use std::time::{Duration, Instant};
 
+const GOI_PALITRA_DUPLICATE_REMOTE_PATH_CONFLICT_TEXT: &str =
+    "Duplicate GOI remote path tracking conflict";
 const GOI_PALITRA_DUPLICATE_ECHO_REMOTE_PATH_CONFLICT_TEXT: &str =
     "Duplicate Echo-origin palitras map to the same GOI remote path";
 const GOI_PALITRA_MISSING_ECHO_CHECKSUM_TEXT: &str =
@@ -117,7 +119,7 @@ enum GoiPalitraSyncConflict {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum GoiRemotePathTrackingState {
     Normal,
-    DuplicateEchoOriginConflict,
+    DuplicateRemotePathConflict,
     GoiOriginDuplicateCleanupNeeded,
 }
 
@@ -529,14 +531,14 @@ async fn refresh_tracked_goi_palitra_if_changed(
         return Ok(());
     }
     if classify_goi_remote_path_tracking(tracked_rows)
-        == GoiRemotePathTrackingState::DuplicateEchoOriginConflict
+        == GoiRemotePathTrackingState::DuplicateRemotePathConflict
     {
-        mark_duplicate_echo_origin_remote_path_conflict(&env.dbx, tracked_rows)
+        mark_duplicate_remote_path_conflict(&env.dbx, tracked_rows)
             .await
             .c(h!())?;
         return Ok(());
     }
-    mark_duplicate_echo_origin_remote_path_resolved(&env.dbx, tracked_rows)
+    mark_duplicate_remote_path_resolved(&env.dbx, tracked_rows)
         .await
         .c(h!())?;
 
@@ -608,8 +610,8 @@ async fn refresh_tracked_goi_palitra_if_changed(
 fn classify_goi_remote_path_tracking(
     tracked_rows: &[goi_palitra_sync::Model],
 ) -> GoiRemotePathTrackingState {
-    if has_duplicate_echo_origin_remote_path_conflict(tracked_rows) {
-        return GoiRemotePathTrackingState::DuplicateEchoOriginConflict;
+    if has_duplicate_remote_path_conflict(tracked_rows) {
+        return GoiRemotePathTrackingState::DuplicateRemotePathConflict;
     }
     if tracked_goi_palitra_ids(tracked_rows).len() > 1 {
         return GoiRemotePathTrackingState::GoiOriginDuplicateCleanupNeeded;
@@ -617,19 +619,16 @@ fn classify_goi_remote_path_tracking(
     GoiRemotePathTrackingState::Normal
 }
 
-fn has_duplicate_echo_origin_remote_path_conflict(
+fn has_duplicate_remote_path_conflict(
     tracked_rows: &[goi_palitra_sync::Model],
 ) -> bool {
-    tracked_rows
+    let has_echo_origin_row = tracked_rows
         .iter()
-        .filter(|row| row.direction == PALITRA_GOI_SYNC_DIRECTION_ECHO)
-        .filter_map(|row| row.palitra_id)
-        .unique()
-        .count()
-        > 1
+        .any(|row| row.direction == PALITRA_GOI_SYNC_DIRECTION_ECHO);
+    has_echo_origin_row && tracked_palitra_ids(tracked_rows).len() > 1
 }
 
-async fn mark_duplicate_echo_origin_remote_path_conflict(
+async fn mark_duplicate_remote_path_conflict(
     dbx: &DatabaseConnection,
     tracked_rows: &[goi_palitra_sync::Model],
 ) -> anyhow::Result<()> {
@@ -638,8 +637,8 @@ async fn mark_duplicate_echo_origin_remote_path_conflict(
             super::goi_changelog::append_to_value_if_latest_differs(
                 &row.changelog,
                 super::goi_changelog::error_entry(
-                    GOI_PALITRA_DUPLICATE_ECHO_REMOTE_PATH_CONFLICT_TEXT,
-                    "Кілька палітр Echo привʼязані до одного шляху в ГОІ. Синхронізацію цього шляху заблоковано до виправлення дубля.",
+                    GOI_PALITRA_DUPLICATE_REMOTE_PATH_CONFLICT_TEXT,
+                    "Кілька палітр привʼязані до одного шляху в ГОІ. Синхронізацію цього шляху заблоковано до виправлення дубля.",
                 ),
             )
             .c(h!())?;
@@ -660,7 +659,7 @@ async fn mark_duplicate_echo_origin_remote_path_conflict(
     Ok(())
 }
 
-async fn mark_duplicate_echo_origin_remote_path_resolved(
+async fn mark_duplicate_remote_path_resolved(
     dbx: &DatabaseConnection,
     tracked_rows: &[goi_palitra_sync::Model],
 ) -> anyhow::Result<()> {
@@ -669,9 +668,7 @@ async fn mark_duplicate_echo_origin_remote_path_resolved(
         let Some(latest) = super::goi_changelog::latest_entry(&entries) else {
             continue;
         };
-        if latest.is_ok
-            || latest.text
-                != GOI_PALITRA_DUPLICATE_ECHO_REMOTE_PATH_CONFLICT_TEXT
+        if latest.is_ok || !is_duplicate_remote_path_conflict_text(&latest.text)
         {
             continue;
         }
@@ -698,6 +695,11 @@ async fn mark_duplicate_echo_origin_remote_path_resolved(
             .c(h!())?;
     }
     Ok(())
+}
+
+fn is_duplicate_remote_path_conflict_text(text: &str) -> bool {
+    text == GOI_PALITRA_DUPLICATE_REMOTE_PATH_CONFLICT_TEXT
+        || text == GOI_PALITRA_DUPLICATE_ECHO_REMOTE_PATH_CONFLICT_TEXT
 }
 
 fn tracked_goi_file_needs_refresh(
@@ -3536,7 +3538,31 @@ mod tests {
 
         assert_eq!(
             classify_goi_remote_path_tracking(&[row_a, row_b]),
-            GoiRemotePathTrackingState::DuplicateEchoOriginConflict
+            GoiRemotePathTrackingState::DuplicateRemotePathConflict
+        );
+    }
+
+    #[test]
+    fn remote_path_tracking_classifies_mixed_origin_duplicate_as_blocking_conflict(
+    ) {
+        let mut echo_row = goi_palitra_sync_row(
+            PALITRA_GOI_SYNC_DIRECTION_ECHO,
+            Some(10),
+            Some(3),
+            Some("abc"),
+        );
+        echo_row.id = 1;
+        let mut goi_row = goi_palitra_sync_row(
+            PALITRA_GOI_SYNC_DIRECTION_GOI,
+            Some(11),
+            Some(3),
+            Some("abc"),
+        );
+        goi_row.id = 2;
+
+        assert_eq!(
+            classify_goi_remote_path_tracking(&[echo_row, goi_row]),
+            GoiRemotePathTrackingState::DuplicateRemotePathConflict
         );
     }
 

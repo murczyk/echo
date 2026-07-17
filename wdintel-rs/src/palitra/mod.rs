@@ -832,17 +832,19 @@ pub async fn retry_goi_source_conversion(
             "Only author or Admin may retry palitra conversion".into(),
         ));
     }
-    let row = goi_palitra_sync::Entity::find()
+    let rows = goi_palitra_sync::Entity::find()
         .filter(goi_palitra_sync::Column::PalitraId.eq(palitra_id))
         .filter(goi_palitra_sync::Column::GoiSourceFileData.is_not_null())
         .order_by_desc(goi_palitra_sync::Column::UpdatedAt)
-        .one(&env.dbx)
+        .all(&env.dbx)
         .await
-        .c(h!())?
-        .ok_or_else(|| AppError::BL {
-            msg: "Cannot retry GOI source conversion: source file data is not available"
+        .c(h!())?;
+    let row = select_goi_source_conversion_retry_row(rows).ok_or_else(|| {
+        AppError::BL {
+            msg: "Cannot retry GOI source conversion: failed source file data is not available"
                 .to_string(),
-        })?;
+        }
+    })?;
     let filename = row.goi_source_file_name.clone().c(h!())?;
     let extension = row.goi_source_format.clone().c(h!())?;
     let file_data = row.goi_source_file_data.clone().c(h!())?;
@@ -883,6 +885,15 @@ pub async fn retry_goi_source_conversion(
             .await
             .c(h!())?;
     Ok(Json(palitra_response))
+}
+
+fn select_goi_source_conversion_retry_row(
+    rows: Vec<goi_palitra_sync::Model>,
+) -> Option<goi_palitra_sync::Model> {
+    rows.into_iter().find(|row| {
+        let changelog = goi_changelog::entries_from_value(&row.changelog);
+        goi_changelog::latest_warning(&changelog)
+    })
 }
 
 #[post("/api/palitra/list")]
@@ -3129,6 +3140,93 @@ fn goi_validate_connection_req(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn goi_source_retry_row_for_test(
+        id: i64,
+        updated_at_offset_sec: i64,
+        latest_warning: bool,
+        filename: &str,
+        file_data: Vec<u8>,
+    ) -> goi_palitra_sync::Model {
+        let now = Utc::now().fixed_offset();
+        let updated_at = now + chrono::Duration::seconds(updated_at_offset_sec);
+        let entry = if latest_warning {
+            goi_changelog::error_entry(
+                "GOI source conversion failed",
+                "Не вдалося сконвертувати файл ГОІ.",
+            )
+        } else {
+            goi_changelog::ok_entry(
+                "Converted GOI source",
+                "Файл ГОІ успішно сконвертовано.",
+            )
+        };
+        let changelog =
+            goi_changelog::append_to_value(&serde_json::json!([]), entry)
+                .unwrap();
+
+        goi_palitra_sync::Model {
+            id,
+            goi_integration_id: 2,
+            palitra_id: Some(10),
+            remote_relative_path: filename.to_string(),
+            direction: crate::config::PALITRA_GOI_SYNC_DIRECTION_GOI
+                .to_string(),
+            remote_status: PALITRA_GOI_REMOTE_STATUS_PRESENT.to_string(),
+            file_size: Some(3),
+            file_sha256: Some("abc".to_string()),
+            echo_file_size: Some(3),
+            echo_file_sha256: Some("abc".to_string()),
+            echo_updated_at: Some(now),
+            goi_file_size: Some(3),
+            goi_file_sha256: Some("abc".to_string()),
+            goi_updated_at: Some(now),
+            last_seen_at: Some(now),
+            last_sync_at: Some(now),
+            created_at: now,
+            updated_at,
+            changelog,
+            goi_source_file_name: Some(filename.to_string()),
+            goi_source_format: Some("gpx".to_string()),
+            goi_source_content_type: None,
+            goi_source_file_data: Some(file_data),
+            goi_source_file_size: Some(3),
+            goi_source_file_sha256: Some(format!("sha-{id}")),
+            goi_source_failed_file_sha256: None,
+            goi_source_last_retry_at: None,
+        }
+    }
+
+    #[test]
+    fn retry_goi_source_conversion_selects_failed_source_row() {
+        let failed_row = goi_source_retry_row_for_test(
+            1,
+            0,
+            true,
+            "failed-source.gpx",
+            vec![1, 2, 3],
+        );
+        let newer_ok_row = goi_source_retry_row_for_test(
+            2,
+            10,
+            false,
+            "newer-ok-source.gpx",
+            vec![4, 5, 6],
+        );
+
+        let row = select_goi_source_conversion_retry_row(vec![
+            newer_ok_row,
+            failed_row,
+        ])
+        .unwrap();
+
+        assert_eq!(row.id, 1);
+        assert_eq!(
+            row.goi_source_file_name.as_deref(),
+            Some("failed-source.gpx")
+        );
+        assert_eq!(row.goi_source_file_data, Some(vec![1, 2, 3]));
+    }
 
     #[test]
     fn pick_access_preserves_organism_scope_when_login_rows_exist() {
