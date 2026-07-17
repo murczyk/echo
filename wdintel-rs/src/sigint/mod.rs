@@ -180,12 +180,23 @@ pub async fn oneoff_reprocess_coords(
             .is_some_and(|coords| !coords.is_empty())
             || inbox_item.lat.is_some()
             || inbox_item.lng.is_some();
-        let mut inbox_item: sigint_inbox_item::ActiveModel = inbox_item.into();
         let Some(ref body) = message.body else {
             continue;
         };
+        // Reprocess must use the same coordinate input as initial inbox
+        // construction; otherwise maintenance jobs can reintroduce comment or
+        // unit-description coordinates that import deliberately ignored.
+        let body_noheader =
+            crate::rer_importer::coordinates::body_noheader_for_reprocess_coords(
+                body,
+            )?;
+        let mut inbox_item: sigint_inbox_item::ActiveModel = inbox_item.into();
         let coords_vec =
-            crate::rer_importer::coordinates::extract_coords(body).await;
+            crate::rer_importer::coordinates::extract_inbox_coords(
+                body,
+                &body_noheader,
+            )
+            .await;
         let mut coords_vec =
             crate::location::peleng::filter_allowed_peleng_coords(
                 coords_vec, &dbx,

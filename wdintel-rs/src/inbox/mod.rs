@@ -99,15 +99,6 @@ where
         m_dt.as_ref().map(|dt| dt.with_timezone(&Utc).naive_utc());
     let freq = crate::rer_importer::frequency::extract_freq(&body)?
         .map(|v| crate::rer_importer::frequency::etalon(&v));
-    let coords_vec =
-        crate::rer_importer::coordinates::extract_coords(&body).await;
-    let coords_vec =
-        crate::location::peleng::filter_allowed_peleng_coords(coords_vec, txn)
-            .await
-            .c(h!())?;
-    let mut other_coords = coords_vec.clone();
-    let coords = crate::utils::pop_vector(&mut other_coords);
-    let has_coords = coords.is_some();
     let callsign_tokens =
         crate::rer_importer::callsigns::find_known_callsigns(rq, &body)
             .await
@@ -131,6 +122,23 @@ where
         }
         None => crate::rer_importer::body_noheader::extract_text(&body)?,
     };
+    let coords_body_noheader =
+        crate::rer_importer::coordinates::body_noheader_for_inbox_coords(
+            &body,
+            meow_format.as_ref(),
+        )?;
+    let coords_vec = crate::rer_importer::coordinates::extract_inbox_coords(
+        &body,
+        &coords_body_noheader,
+    )
+    .await;
+    let coords_vec =
+        crate::location::peleng::filter_allowed_peleng_coords(coords_vec, txn)
+            .await
+            .c(h!())?;
+    let mut other_coords = coords_vec.clone();
+    let coords = crate::utils::pop_vector(&mut other_coords);
+    let has_coords = coords.is_some();
 
     // let location = crate::rer_importer::location::extract_location(&body)?;
     let post = crate::rer_importer::post::extract_post(&body)?;
@@ -726,6 +734,29 @@ mod tests {
             .all(|column| {
                 !matches!(column, sigint_inbox_item::Column::Datetime)
             }));
+    }
+
+    #[tokio::test]
+    async fn coordinate_extraction_keeps_standard_header_but_not_comments() {
+        let body = "36T VS 89904 14667\n01.07.2026, 02:55:19\n155.0250\nКоординати: 36U XB 66512 50880\nУКХ р/м\n\n— репліка";
+
+        assert!(!crate::rer_importer::coordinates::extract_coords(body)
+            .await
+            .is_empty());
+
+        let body_noheader =
+            crate::sigint::parser::extract_text_without_top_comment(body)
+                .unwrap();
+
+        assert_eq!(body_noheader.body, "— репліка");
+        let coords = crate::rer_importer::coordinates::extract_inbox_coords(
+            body,
+            &body_noheader,
+        )
+        .await;
+
+        assert_eq!(coords.len(), 1);
+        assert_eq!(coords[0].mgrs, "36UXB6651250880");
     }
 
     #[test]
