@@ -741,6 +741,19 @@ deploy _server_pos="" server:
 
     echo "CI finished detected. Proceeding with remote apt install."
     ssh "$SERVER" 'set -euo pipefail
+      if ! command -v java >/dev/null 2>&1; then
+        echo "ERROR: Java is required for Signal normal mode, but java is not installed." >&2
+        echo "Install Java 25+ on $HOSTNAME before deploying." >&2
+        exit 1
+      fi
+      java_major=$(java -version 2>&1 | head -1 | grep -oE "[0-9]+" | head -1)
+      if [ -z "$java_major" ] || [ "$java_major" -lt 25 ]; then
+        echo "ERROR: Signal normal mode requires Java 25+, found: $(java -version 2>&1 | head -1)" >&2
+        exit 1
+      fi
+      echo "Java preflight OK: $(java -version 2>&1 | head -1)"
+    '
+    ssh "$SERVER" 'set -euo pipefail
       if systemctl cat wdintel-rs-bgworker.service >/dev/null 2>&1; then
         echo "Stopping wdintel-rs-bgworker.service and waiting up to 120 seconds..."
         sudo systemctl stop wdintel-rs-bgworker.service || true
@@ -919,6 +932,19 @@ deploy-from-local _server_pos="" server:
     scp "$DEB_PATH" "${SERVER}:${REMOTE_DEB_PATH}"
 
     RESTART_BGWORKER_ON_FAILURE=1
+    ssh "$SERVER" 'set -euo pipefail
+      if ! command -v java >/dev/null 2>&1; then
+        echo "ERROR: Java is required for Signal normal mode, but java is not installed." >&2
+        echo "Install Java 25+ on $HOSTNAME before deploying." >&2
+        exit 1
+      fi
+      java_major=$(java -version 2>&1 | head -1 | grep -oE "[0-9]+" | head -1)
+      if [ -z "$java_major" ] || [ "$java_major" -lt 25 ]; then
+        echo "ERROR: Signal normal mode requires Java 25+, found: $(java -version 2>&1 | head -1)" >&2
+        exit 1
+      fi
+      echo "Java preflight OK: $(java -version 2>&1 | head -1)"
+    '
     ssh "$SERVER" 'set -euo pipefail
       if systemctl cat wdintel-rs-bgworker.service >/dev/null 2>&1; then
         echo "Stopping wdintel-rs-bgworker.service and waiting up to 120 seconds..."
