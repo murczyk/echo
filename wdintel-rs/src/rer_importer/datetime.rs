@@ -86,7 +86,7 @@ pub fn extract_datetime(
             ),
             // Work with formats like DD.MM.YYYY HH:MI
             (
-                Regex::new(r"(?P<day>\d{2})\.(?P<mon>\d{2})\.(?P<year>\d{4})[,\s]+(?P<hour>\d{1,2})\s*:(?P<minute>\d{2})(?:\s|$)").unwrap(),
+                Regex::new(r"(?P<day>\d{2})\.(?P<mon>\d{2})\.(?P<year>\d{4})(?:[ \t]*,[ \t]*|[ \t]+)(?P<hour>\d{1,2})[ \t]*:(?P<minute>\d{2})(?:\s|$)").unwrap(),
                 |lnow, capts| { parse_datetime(lnow, capts, true, true, true, false) },
             ),
             // Work with formats like Час: DD.MM.YY HH:MI
@@ -97,12 +97,12 @@ pub fn extract_datetime(
             // Work with formats like HH:MI:SS DD.MM.YYYY
             // Order here is important, see https://github.com/echoua/echo/issues/2538
             (
-                Regex::new(r"(?P<hour>\d{2})\s*:(?P<minute>\d{2})\s*:(?P<second>\d{2}) (?P<day>\d{2})\.(?P<mon>\d{2})\.(?P<year>\d{4})").unwrap(),
+                Regex::new(r"(?P<hour>\d{2})[ \t]*:(?P<minute>\d{2})[ \t]*:(?P<second>\d{2})[ \t]+(?P<day>\d{2})\.(?P<mon>\d{2})\.(?P<year>\d{4})").unwrap(),
                 |lnow, capts| { parse_datetime(lnow, capts, true, true, true, true) },
             ),
             // Work with formats like HH:MI DD.MM.YYYY
             (
-                Regex::new(r"(?P<hour>\d{2})\s*:(?P<minute>\d{2}) (?P<day>\d{2})\.(?P<mon>\d{2})\.(?P<year>\d{4})").unwrap(),
+                Regex::new(r"(?P<hour>\d{2})[ \t]*:(?P<minute>\d{2})[ \t]+(?P<day>\d{2})\.(?P<mon>\d{2})\.(?P<year>\d{4})").unwrap(),
                 |lnow, capts| { parse_datetime(lnow, capts, true, true, true, false) },
             ),
             (
@@ -820,6 +820,57 @@ mod tests {
             NaiveDate::from_ymd_opt(2025, 11, 29)
                 .unwrap()
                 .and_hms_opt(11, 37, 0)
+                .unwrap(),
+        );
+        assert_eq!(res, expected);
+    }
+
+    #[test]
+    fn extract_datetime_time_before_date_with_extra_space() {
+        let input = r#"16:41  25.02.2026
+139.450
+УКХ р/м
+Перехоплення"#;
+        let tz = crate::config::get_tz();
+        let lnow = tz.with_ymd_and_hms(2026, 2, 25, 18, 15, 30).unwrap();
+        let res = extract_datetime(lnow, input).unwrap();
+        let expected = Some(
+            NaiveDate::from_ymd_opt(2026, 2, 25)
+                .unwrap()
+                .and_hms_opt(16, 41, 0)
+                .unwrap(),
+        );
+        assert_eq!(res, expected);
+    }
+
+    #[test]
+    fn extract_datetime_time_before_date_does_not_cross_newline() {
+        let input = "Передали`16:41\n25.02.2026 без часу";
+        let tz = crate::config::get_tz();
+        let lnow = tz.with_ymd_and_hms(2026, 2, 26, 18, 15, 30).unwrap();
+        let res = extract_datetime(lnow, input).unwrap();
+        assert_eq!(res, None);
+    }
+
+    #[test]
+    fn extract_datetime_time_with_seconds_before_date_does_not_cross_newline() {
+        let input = "Передали`16:41:12\n25.02.2026 без часу";
+        let tz = crate::config::get_tz();
+        let lnow = tz.with_ymd_and_hms(2026, 2, 26, 18, 15, 30).unwrap();
+        let res = extract_datetime(lnow, input).unwrap();
+        assert_eq!(res, None);
+    }
+
+    #[test]
+    fn extract_datetime_date_before_time_does_not_cross_newline() {
+        let input = "Передали 25.02.2026\n16:41 без часу";
+        let tz = crate::config::get_tz();
+        let lnow = tz.with_ymd_and_hms(2026, 2, 26, 18, 15, 30).unwrap();
+        let res = extract_datetime(lnow, input).unwrap();
+        let expected = Some(
+            NaiveDate::from_ymd_opt(2026, 2, 26)
+                .unwrap()
+                .and_hms_opt(16, 41, 0)
                 .unwrap(),
         );
         assert_eq!(res, expected);
