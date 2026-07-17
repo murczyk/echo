@@ -596,6 +596,12 @@ where
 }
 
 fn preprocess_unit_text(input: &String) -> String {
+    lazy_static! {
+        static ref THIRD_SYMBOLIC_ARMY_TYPO_RE: Regex =
+            Regex::new(r#"\b(?P<number>\d+)\s+3(?i:а)\b"#).unwrap();
+    }
+
+    let input = THIRD_SYMBOLIC_ARMY_TYPO_RE.replace_all(input, "$number ЗА");
     input
         .replace(" зі складу ", " ")
         .replace(" ймовірно ", " ")
@@ -887,6 +893,44 @@ mod tests {
         assert_eq!(
             vec!["1 мсб 123 омсбр"],
             parse_library_unit(&String::from(body))
+        );
+    }
+
+    #[test]
+    fn parse_library_unit_soliton_paliy_unit_v2() {
+        let body = r#"Отримано з поста "Soliton_Paliy2"
+--------------------------------------
+15.07.2026, 10:40:32
+153.6250
+153.625 МГц УКХ р/м 1 мсб 121 мсп 68 мсд 6 3А (ЗАПАДНЕ, МАСЮТІВКА, ЛИМАН ПЕРШИЙ)
+НВ
+ЗАРЯ
+
+1 — Заря, Заря, прием."#;
+
+        assert_eq!(
+            Some("1 мсб 121 мсп 68 мсд 6 за".to_string()),
+            to_unit_txt(parse_library_unit(&String::from(body)))
+        );
+    }
+
+    #[test]
+    fn parse_library_unit_treats_3a_after_number_as_za_typo() {
+        assert_eq!(
+            Some("7 за".to_string()),
+            to_unit_txt(parse_library_unit(&String::from("7 3А")))
+        );
+        assert_eq!(
+            Some("12 за".to_string()),
+            to_unit_txt(parse_library_unit(&String::from("12 3а")))
+        );
+    }
+
+    #[test]
+    fn parse_library_unit_keeps_spaced_third_army() {
+        assert_eq!(
+            Some("3 а".to_string()),
+            to_unit_txt(parse_library_unit(&String::from("334 ошп 3 А")))
         );
     }
 
