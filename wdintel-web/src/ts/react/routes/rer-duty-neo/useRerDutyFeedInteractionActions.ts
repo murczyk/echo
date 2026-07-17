@@ -40,6 +40,9 @@ export function useRerDutyFeedInteractionActions(params: Params) {
     setMessageFeeds,
   } = params;
 
+  const busyArrowMessage = 'Оновлення триває, спробуйте ще раз';
+  const failureArrowMessage = 'Не вдалося перевірити нові повідомлення';
+
   const handleArrowClick = useCallback(
     async (feedId: string) => {
       const feed = messageFeeds.find((x) => x.id === feedId);
@@ -50,7 +53,11 @@ export function useRerDutyFeedInteractionActions(params: Params) {
       try {
         if (feed.items.length > 0) {
           const result = await requestValidatedInboxCount(feedId);
-          if (!result) return;
+          if (!result) {
+            columnRefsRef.current[feedId]?.scrollToEnd('auto');
+            showArrowResult(feedId, busyArrowMessage);
+            return;
+          }
           const { quantity } = result;
           if (quantity === 0) {
             columnRefsRef.current[feedId]?.scrollToEnd('auto');
@@ -77,7 +84,8 @@ export function useRerDutyFeedInteractionActions(params: Params) {
           showArrowResult(feedId, 'Завантажено нові повідомлення');
         }
       } catch {
-        showArrowResult(feedId, 'Немає нових повідомлень');
+        columnRefsRef.current[feedId]?.scrollToEnd('auto');
+        showArrowResult(feedId, failureArrowMessage);
       } finally {
         setLoadingNewerFeedIds((prev) => {
           if (!prev.has(feedId)) return prev;

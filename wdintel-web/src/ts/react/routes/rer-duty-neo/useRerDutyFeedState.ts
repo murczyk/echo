@@ -48,6 +48,7 @@ export type FeedStateDeps = {
 type ServerCountBaseline = {
   cursorId: number | null;
   quantity: number;
+  requestSignature: string;
 };
 
 function buildFeedCountSignature(feed: MessageFeedState, freqs: string[]): string {
@@ -97,7 +98,21 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
   const messageFeedsRef = useRef(messageFeeds);
   const loadNewerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const loadNewerInFlightRef = useRef<Set<string>>(new Set());
-  const countInFlightByFeedIdRef = useRef<Set<string>>(new Set());
+  const loadNewerPromiseByFeedIdRef = useRef<Record<string, Promise<void> | undefined>>({});
+  const pendingMarkAllReadByFeedIdRef = useRef<Record<string, boolean>>({});
+  const pendingFollowTailByFeedIdRef = useRef<Record<string, boolean>>({});
+  const countRequestPromiseByFeedIdRef = useRef<
+    Record<
+      string,
+      Promise<{
+        feedId: string;
+        quantity: number;
+        cursorId: number | null;
+        hasItems: boolean;
+        requestSignature: string;
+      } | null>
+    >
+  >({});
   const [watchModeByFeedId, setWatchModeByFeedId] = useState<Record<string, boolean>>({});
   const [loadingNewerFeedIds, setLoadingNewerFeedIds] = useState<Set<string>>(new Set());
   const [arrowResultByFeedId, setArrowResultByFeedId] = useState<Record<string, string | null>>({});
@@ -174,11 +189,12 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
     unreadCursorByFeedIdRef.current[feedId] = cursorId;
   }, []);
   const advanceFeedReadCursor = useCallback(
-    (feedId: string, cursorId: number, remainingUnreadCount: number) => {
+    (feedId: string, cursorId: number, remainingUnreadCount: number, requestSignature: string) => {
       unreadCursorByFeedIdRef.current[feedId] = cursorId;
       lastServerCountByFeedIdRef.current[feedId] = {
         cursorId,
         quantity: remainingUnreadCount,
+        requestSignature,
       };
       delete newestExhaustedCursorByFeedIdRef.current[feedId];
     },
@@ -227,22 +243,17 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
     [freqs],
   );
   const requestValidatedInboxCount = useCallback(
-    async (feedId: string) => {
+    (feedId: string) => {
+      const existingPromise = countRequestPromiseByFeedIdRef.current[feedId];
+      if (existingPromise) return existingPromise;
       const feed = messageFeedsRef.current.find((x) => x.id === feedId);
-      if (
-        !feed ||
-        feed.loading ||
-        pendingReloadFeedIdsRef.current.has(feedId) ||
-        loadNewerInFlightRef.current.has(feedId) ||
-        countInFlightByFeedIdRef.current.has(feedId)
-      ) {
-        return null;
+      if (!feed || feed.loading || pendingReloadFeedIdsRef.current.has(feedId)) {
+        return Promise.resolve(null);
       }
-      countInFlightByFeedIdRef.current.add(feedId);
       const requestGeneration = getFeedLoadGeneration(feedId);
       const cursorId = unreadCursorByFeedIdRef.current[feedId] ?? null;
       const requestSignature = buildFeedCountSignature(feed, freqs);
-      try {
+      const requestPromise = (async () => {
         const { quantity } = await fetchInboxCount(
           buildReqForFeed(feed, { sinceIdNoninclusive: cursorId, nolimit: true }),
         );
@@ -262,10 +273,23 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
           quantity,
           cursorId,
           hasItems: feed.items.length > 0,
+          requestSignature,
         };
-      } finally {
-        countInFlightByFeedIdRef.current.delete(feedId);
-      }
+      })();
+      countRequestPromiseByFeedIdRef.current[feedId] = requestPromise;
+      requestPromise.then(
+        () => {
+          if (countRequestPromiseByFeedIdRef.current[feedId] === requestPromise) {
+            delete countRequestPromiseByFeedIdRef.current[feedId];
+          }
+        },
+        () => {
+          if (countRequestPromiseByFeedIdRef.current[feedId] === requestPromise) {
+            delete countRequestPromiseByFeedIdRef.current[feedId];
+          }
+        },
+      );
+      return requestPromise;
     },
     [buildReqForFeed, freqs, getFeedLoadGeneration],
   );
@@ -455,7 +479,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
   );
 
   const loadFeedNewerMessages = useCallback(
-    async (
+    (
       feedId: string,
       opts?: {
         nolimit?: boolean;
@@ -464,16 +488,25 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
         skipIfNewestExhausted?: boolean;
       },
     ) => {
-      if (loadNewerInFlightRef.current.has(feedId)) return;
+      const inFlightPromise = loadNewerPromiseByFeedIdRef.current[feedId];
+      if (inFlightPromise) {
+        if (opts?.markAllReadAfterAppend === true || opts?.scrollToEndAfterLoad === true) {
+          pendingMarkAllReadByFeedIdRef.current[feedId] = true;
+        }
+        if (opts?.scrollToEndAfterLoad === true) {
+          pendingFollowTailByFeedIdRef.current[feedId] = true;
+        }
+        return inFlightPromise;
+      }
       const feed = messageFeedsRef.current.find((x) => x.id === feedId);
-      if (!feed || feed.items.length === 0) return;
+      if (!feed || feed.items.length === 0) return Promise.resolve();
       const requestLoadVersion = loadGenerationByFeedIdRef.current[feedId] ?? 0;
       const lastId = feed.items[feed.items.length - 1][0];
       if (
         opts?.skipIfNewestExhausted &&
         newestExhaustedCursorByFeedIdRef.current[feedId] === lastId
       ) {
-        return;
+        return Promise.resolve();
       }
       loadNewerInFlightRef.current.add(feedId);
       setLoadingNewerFeedIds((prev) => {
@@ -481,89 +514,100 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
         next.add(feedId);
         return next;
       });
-      try {
-        const req = buildReqForFeed(feed, {
-          sinceIdNoninclusive: lastId,
-          nolimit: opts?.nolimit ?? undefined,
-        });
-        const rsp = await fetchInboxMessages(req);
-        if ((loadGenerationByFeedIdRef.current[feedId] ?? 0) !== requestLoadVersion) return;
-        mergeInboxCallsigns(feedId, rsp.callsigns);
-        if (rsp.signalProfiles) setProfiles((p) => ({ ...p, ...rsp.signalProfiles }));
-        if (rsp.signalGroups?.length) {
-          const map: Record<string, SignalGroupEntry> = {};
-          rsp.signalGroups.forEach((g) => {
-            map[g.masterKey] = g;
+      const runPromise = (async () => {
+        try {
+          const req = buildReqForFeed(feed, {
+            sinceIdNoninclusive: lastId,
+            nolimit: opts?.nolimit ?? undefined,
           });
-          setGroupInfos((prev) => ({ ...prev, ...map }));
-        }
-        const latestFeed = messageFeedsRef.current.find((x) => x.id === feedId);
-        if (!latestFeed) return;
-        const latestWindowed = appendWindowedMessageItems(latestFeed.items, rsp.inboxItems);
-        const addedCount = latestWindowed.addedItems.length;
-        const newestCursor = latestWindowed.items.at(-1)?.[0] ?? null;
-        const markAllRead =
-          opts?.scrollToEndAfterLoad === true || opts?.markAllReadAfterAppend === true;
-        if (markAllRead && newestCursor != null) {
-          advanceFeedReadCursor(feedId, newestCursor, 0);
-        }
-        if (addedCount > 0) {
-          delete newestExhaustedCursorByFeedIdRef.current[feedId];
-        } else {
-          newestExhaustedCursorByFeedIdRef.current[feedId] = lastId;
-        }
-        if (opts?.scrollToEndAfterLoad === true) {
-          scrollToEndAfterNewerRef.current.add(feedId);
-          nearBottomByFeedIdRef.current = {
-            ...nearBottomByFeedIdRef.current,
-            [feedId]: true,
-          };
-        }
-        if (addedCount > 0 || markAllRead || opts?.scrollToEndAfterLoad === true) {
-          setMessageFeeds((prev) =>
-            prev.map((x) => {
-              if (x.id !== feedId) return x;
-              const windowed = appendWindowedMessageItems(x.items, rsp.inboxItems);
-              if (windowed.addedItems.length === 0) {
-                if (markAllRead) {
-                  const readIds = new Set<number>([...x.readIds, ...x.items.map(([id]) => id)]);
-                  return {
-                    ...x,
-                    readIds,
-                    unreadCount: 0,
-                  };
+          const rsp = await fetchInboxMessages(req);
+          if ((loadGenerationByFeedIdRef.current[feedId] ?? 0) !== requestLoadVersion) return;
+          mergeInboxCallsigns(feedId, rsp.callsigns);
+          if (rsp.signalProfiles) setProfiles((p) => ({ ...p, ...rsp.signalProfiles }));
+          if (rsp.signalGroups?.length) {
+            const map: Record<string, SignalGroupEntry> = {};
+            rsp.signalGroups.forEach((g) => {
+              map[g.masterKey] = g;
+            });
+            setGroupInfos((prev) => ({ ...prev, ...map }));
+          }
+          const latestFeed = messageFeedsRef.current.find((x) => x.id === feedId);
+          if (!latestFeed) return;
+          const latestWindowed = appendWindowedMessageItems(latestFeed.items, rsp.inboxItems);
+          const addedCount = latestWindowed.addedItems.length;
+          const newestCursor = latestWindowed.items.at(-1)?.[0] ?? null;
+          const pendingMarkAllRead = pendingMarkAllReadByFeedIdRef.current[feedId] === true;
+          const pendingFollowTail = pendingFollowTailByFeedIdRef.current[feedId] === true;
+          const followTail = opts?.scrollToEndAfterLoad === true || pendingFollowTail;
+          const markAllRead =
+            followTail || opts?.markAllReadAfterAppend === true || pendingMarkAllRead;
+          if (markAllRead && newestCursor != null) {
+            const currentSignature = buildFeedCountSignature(latestFeed, freqs);
+            advanceFeedReadCursor(feedId, newestCursor, 0, currentSignature);
+          }
+          if (addedCount > 0) {
+            delete newestExhaustedCursorByFeedIdRef.current[feedId];
+          } else {
+            newestExhaustedCursorByFeedIdRef.current[feedId] = lastId;
+          }
+          if (followTail) {
+            scrollToEndAfterNewerRef.current.add(feedId);
+            nearBottomByFeedIdRef.current = {
+              ...nearBottomByFeedIdRef.current,
+              [feedId]: true,
+            };
+          }
+          if (addedCount > 0 || markAllRead || followTail) {
+            setMessageFeeds((prev) =>
+              prev.map((x) => {
+                if (x.id !== feedId) return x;
+                const windowed = appendWindowedMessageItems(x.items, rsp.inboxItems);
+                if (windowed.addedItems.length === 0) {
+                  if (markAllRead) {
+                    const readIds = new Set<number>([...x.readIds, ...x.items.map(([id]) => id)]);
+                    return {
+                      ...x,
+                      readIds,
+                      unreadCount: 0,
+                    };
+                  }
+                  if (followTail) return { ...x };
+                  return x;
                 }
-                if (opts?.scrollToEndAfterLoad === true) return { ...x };
-                return x;
-              }
-              const unreadAddedCount = windowed.addedItems.filter(
-                ([id]) => !x.readIds.has(id),
-              ).length;
-              const readIds = markAllRead
-                ? new Set<number>([...x.readIds, ...windowed.items.map(([id]) => id)])
-                : x.readIds;
-              const unreadCount = markAllRead ? 0 : Math.max(x.unreadCount, unreadAddedCount);
-              return {
-                ...x,
-                items: windowed.items,
-                readIds,
-                unreadCount,
-                hasReachedStart: windowed.removedItems.length > 0 ? false : x.hasReachedStart,
-              };
-            }),
-          );
+                const unreadAddedCount = windowed.addedItems.filter(
+                  ([id]) => !x.readIds.has(id),
+                ).length;
+                const readIds = markAllRead
+                  ? new Set<number>([...x.readIds, ...windowed.items.map(([id]) => id)])
+                  : x.readIds;
+                const unreadCount = markAllRead ? 0 : Math.max(x.unreadCount, unreadAddedCount);
+                return {
+                  ...x,
+                  items: windowed.items,
+                  readIds,
+                  unreadCount,
+                  hasReachedStart: windowed.removedItems.length > 0 ? false : x.hasReachedStart,
+                };
+              }),
+            );
+          }
+        } catch {
+          // ignore single failure to keep polling and prev messages
+        } finally {
+          delete pendingMarkAllReadByFeedIdRef.current[feedId];
+          delete pendingFollowTailByFeedIdRef.current[feedId];
+          loadNewerInFlightRef.current.delete(feedId);
+          delete loadNewerPromiseByFeedIdRef.current[feedId];
+          setLoadingNewerFeedIds((prev) => {
+            if (!prev.has(feedId)) return prev;
+            const next = new Set(prev);
+            next.delete(feedId);
+            return next;
+          });
         }
-      } catch {
-        // ignore single failure to keep polling and prev messages
-      } finally {
-        loadNewerInFlightRef.current.delete(feedId);
-        setLoadingNewerFeedIds((prev) => {
-          if (!prev.has(feedId)) return prev;
-          const next = new Set(prev);
-          next.delete(feedId);
-          return next;
-        });
-      }
+      })();
+      loadNewerPromiseByFeedIdRef.current[feedId] = runPromise;
+      return runPromise;
     },
     [
       buildReqForFeed,
@@ -572,6 +616,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
       setGroupInfos,
       mergeInboxCallsigns,
       advanceFeedReadCursor,
+      freqs,
     ],
   );
 
@@ -586,10 +631,15 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
         nextCursor = id;
       }
       if (nextCursor != null && nextCursor !== currentCursor) {
-        advanceFeedReadCursor(feed.id, nextCursor, feed.unreadCount);
+        advanceFeedReadCursor(
+          feed.id,
+          nextCursor,
+          feed.unreadCount,
+          buildFeedCountSignature(feed, freqs),
+        );
       }
     });
-  }, [advanceFeedReadCursor, messageFeeds]);
+  }, [advanceFeedReadCursor, freqs, messageFeeds]);
 
   useEffect(() => {
     retainFeedIds(messageFeeds.map((feed) => feed.id));
@@ -625,22 +675,33 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
           lastServerCountByFeedIdRef.current[feedId] = {
             cursorId: entry.cursorId,
             quantity: 0,
+            requestSignature: entry.requestSignature,
           };
           return;
         }
         delete newestExhaustedCursorByFeedIdRef.current[feedId];
         const prevServerCount = lastServerCountByFeedIdRef.current[feedId];
         const nextCount = entry.quantity;
-        if (prevServerCount?.cursorId === entry.cursorId || (!prevServerCount && entry.hasItems)) {
+        const canCompareBaseline =
+          prevServerCount?.cursorId === entry.cursorId &&
+          prevServerCount?.requestSignature === entry.requestSignature;
+        const startsFreshBaseline = !prevServerCount && entry.hasItems;
+        const signatureChanged = Boolean(prevServerCount) && !canCompareBaseline && entry.hasItems;
+        if (entry.hasItems) {
           const prevQuantity = prevServerCount?.quantity ?? 0;
-          const newCount = Math.max(0, nextCount - prevQuantity);
-          if (newCount > 0) {
-            notifyDutyNewMessages(feedId, newCount);
+          if (canCompareBaseline || startsFreshBaseline) {
+            const newCount = Math.max(0, nextCount - prevQuantity);
+            if (newCount > 0) {
+              notifyDutyNewMessages(feedId, newCount);
+            }
+          } else if (signatureChanged) {
+            notifyDutyNewMessages(feedId, nextCount);
           }
         }
         lastServerCountByFeedIdRef.current[feedId] = {
           cursorId: entry.cursorId,
           quantity: nextCount,
+          requestSignature: entry.requestSignature,
         };
         const watchMode = watchModeByFeedId[feedId] ?? false;
         if (watchMode || nearBottom[feedId]) {

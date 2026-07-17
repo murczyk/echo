@@ -529,6 +529,49 @@ describe('useRerDutyFeedState — loading', () => {
     );
   });
 
+  it('shares one count request per feed across concurrent callers', async () => {
+    hoisted.fetchInboxMessages.mockResolvedValueOnce(
+      inboxRsp(
+        Array.from({ length: DUTY_FEED_MESSAGE_WINDOW_LIMIT }, (_, index) => [
+          index + 21,
+          minimalInboxMessage({ timestamp: (index + 21) * 100 }),
+        ]),
+      ),
+    );
+    const apiRef: React.MutableRefObject<ReturnType<typeof useRerDutyFeedState> | null> = {
+      current: null,
+    };
+
+    await act(async () => {
+      root.render(<TestHarness apiRef={apiRef} />);
+    });
+    await act(async () => {
+      await flushMicrotasks();
+    });
+
+    const count = deferred<{ quantity: number; firstElementTs: number | null }>();
+    hoisted.fetchInboxCount.mockReset();
+    hoisted.fetchInboxCount.mockReturnValue(count.promise);
+
+    const first = apiRef.current!.requestValidatedInboxCount('mf-0');
+    const second = apiRef.current!.requestValidatedInboxCount('mf-0');
+
+    expect(first).toBe(second);
+    expect(hoisted.fetchInboxCount).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      count.resolve({ quantity: 5, firstElementTs: null });
+      await flushMicrotasks();
+    });
+
+    await expect(first).resolves.toEqual(
+      expect.objectContaining({ feedId: 'mf-0', quantity: 5, cursorId: 60 }),
+    );
+    await expect(second).resolves.toEqual(
+      expect.objectContaining({ feedId: 'mf-0', quantity: 5, cursorId: 60 }),
+    );
+  });
+
   it('does not poll while a reload is pending and resumes with the reloaded cursor', async () => {
     hoisted.fetchInboxMessages.mockResolvedValueOnce(
       inboxRsp(
@@ -936,6 +979,119 @@ describe('useRerDutyFeedState — loading', () => {
     expect(hoisted.notifyDutyNewMessages).not.toHaveBeenCalled();
   });
 
+  it('keeps empty feeds from notifying even when count responses are positive', async () => {
+    hoisted.fetchInboxMessages.mockResolvedValueOnce(inboxRsp([]));
+
+    const apiRef: React.MutableRefObject<ReturnType<typeof useRerDutyFeedState> | null> = {
+      current: null,
+    };
+
+    await act(async () => {
+      root.render(<TestHarness apiRef={apiRef} />);
+    });
+    await act(async () => {
+      await flushMicrotasks();
+    });
+
+    expect(apiRef.current?.messageFeeds[0]?.items).toHaveLength(0);
+
+    hoisted.fetchInboxCount.mockResolvedValueOnce({ quantity: 5, firstElementTs: null });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000);
+    });
+    await act(async () => {
+      await flushMicrotasks();
+    });
+    expect(hoisted.notifyDutyNewMessages).not.toHaveBeenCalled();
+
+    hoisted.fetchInboxCount.mockResolvedValueOnce({ quantity: 9, firstElementTs: null });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000);
+    });
+    await act(async () => {
+      await flushMicrotasks();
+    });
+    expect(hoisted.notifyDutyNewMessages).not.toHaveBeenCalled();
+    expect(apiRef.current?.messageFeeds[0]?.items).toHaveLength(0);
+    expect(apiRef.current?.messageFeeds[0]?.unreadCount).toBe(0);
+  });
+
+  it('treats a changed count signature as a fresh baseline and discards stale in-flight counts', async () => {
+    hoisted.fetchInboxMessages.mockResolvedValueOnce(
+      inboxRsp(
+        Array.from({ length: DUTY_FEED_MESSAGE_WINDOW_LIMIT }, (_, index) => [
+          index + 21,
+          minimalInboxMessage({ timestamp: (index + 21) * 100 }),
+        ]),
+      ),
+    );
+    const apiRef: React.MutableRefObject<ReturnType<typeof useRerDutyFeedState> | null> = {
+      current: null,
+    };
+
+    await act(async () => {
+      root.render(<TestHarness apiRef={apiRef} />);
+    });
+    await act(async () => {
+      await flushMicrotasks();
+    });
+
+    hoisted.fetchInboxCount.mockResolvedValueOnce({ quantity: 5, firstElementTs: null });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000);
+    });
+    await act(async () => {
+      await flushMicrotasks();
+    });
+
+    expect(apiRef.current?.messageFeeds[0]?.unreadCount).toBe(5);
+    hoisted.notifyDutyNewMessages.mockReset();
+
+    const staleCount = deferred<{ quantity: number; firstElementTs: number | null }>();
+    hoisted.fetchInboxCount.mockReturnValueOnce(staleCount.promise);
+    const stalePromise = apiRef.current!.requestValidatedInboxCount('mf-0');
+
+    await act(async () => {
+      apiRef.current!.setMessageFeeds((prev) =>
+        prev.map((feed) => (feed.id === 'mf-0' ? { ...feed, adjacentFreqsRange: 2 } : feed)),
+      );
+      await flushMicrotasks();
+    });
+
+    await act(async () => {
+      staleCount.resolve({ quantity: 9, firstElementTs: null });
+      await flushMicrotasks();
+    });
+
+    await expect(stalePromise).resolves.toBeNull();
+    expect(hoisted.notifyDutyNewMessages).not.toHaveBeenCalled();
+
+    hoisted.fetchInboxCount.mockResolvedValueOnce({ quantity: 7, firstElementTs: null });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000);
+    });
+    await act(async () => {
+      await flushMicrotasks();
+    });
+
+    expect(apiRef.current?.messageFeeds[0]?.unreadCount).toBe(7);
+    expect(hoisted.notifyDutyNewMessages).toHaveBeenCalledTimes(1);
+    expect(hoisted.notifyDutyNewMessages).toHaveBeenLastCalledWith('mf-0', 7);
+
+    hoisted.notifyDutyNewMessages.mockReset();
+    hoisted.fetchInboxCount.mockResolvedValueOnce({ quantity: 9, firstElementTs: null });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000);
+    });
+    await act(async () => {
+      await flushMicrotasks();
+    });
+
+    expect(apiRef.current?.messageFeeds[0]?.unreadCount).toBe(9);
+    expect(hoisted.notifyDutyNewMessages).toHaveBeenCalledTimes(1);
+    expect(hoisted.notifyDutyNewMessages).toHaveBeenLastCalledWith('mf-0', 2);
+  });
+
   it('keeps queued unread updates when loading newer messages and preserves the newest cursor', async () => {
     hoisted.fetchInboxMessages.mockResolvedValueOnce(
       inboxRsp(
@@ -1242,10 +1398,17 @@ describe('useRerDutyFeedState — loading', () => {
     });
 
     const feed = apiRef.current!.messageFeeds[0];
+    const currentWindowIds = feed.items.map(([id]) => id);
     expect(feed.items.at(-1)?.[0]).toBe(15);
     expect(feed.unreadCount).toBe(0);
     expect(feed.readIds.has(11)).toBe(true);
     expect(feed.readIds.has(15)).toBe(true);
+    expect(currentWindowIds.every((id) => feed.readIds.has(id))).toBe(true);
+    expect(scrollToEnd).not.toHaveBeenCalled();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(32);
+      await flushMicrotasks();
+    });
     expect(scrollToEnd).not.toHaveBeenCalled();
 
     hoisted.fetchInboxCount.mockResolvedValueOnce({ quantity: 0, firstElementTs: null });
@@ -1253,6 +1416,130 @@ describe('useRerDutyFeedState — loading', () => {
     expect(countResult).toEqual(
       expect.objectContaining({ feedId: 'mf-0', cursorId: 15, quantity: 0 }),
     );
+  });
+
+  it('keeps mark-read-only joins from scrolling while preserving the shared newer request', async () => {
+    hoisted.fetchInboxMessages.mockResolvedValueOnce(
+      inboxRsp(
+        Array.from({ length: 10 }, (_, index) => [
+          index + 1,
+          minimalInboxMessage({ timestamp: (index + 1) * 100 }),
+        ]),
+      ),
+    );
+    const apiRef: React.MutableRefObject<ReturnType<typeof useRerDutyFeedState> | null> = {
+      current: null,
+    };
+
+    await act(async () => {
+      root.render(<TestHarness apiRef={apiRef} />);
+    });
+    await act(async () => {
+      await flushMicrotasks();
+    });
+
+    const newerResponse = deferred<InboxMessagesRsp>();
+    hoisted.fetchInboxMessages.mockImplementationOnce(() => newerResponse.promise);
+    const scrollToEnd = vi.fn();
+    apiRef.current!.columnRefsRef.current['mf-0'] = { scrollToEnd };
+
+    let firstPromise!: Promise<void>;
+    let secondPromise!: Promise<void>;
+    act(() => {
+      firstPromise = apiRef.current!.loadFeedNewerMessages('mf-0');
+      secondPromise = apiRef.current!.loadFeedNewerMessages('mf-0', {
+        markAllReadAfterAppend: true,
+      });
+    });
+
+    expect(hoisted.fetchInboxMessages).toHaveBeenCalledTimes(2);
+
+    await act(async () => {
+      newerResponse.resolve(
+        inboxRsp(
+          Array.from({ length: 5 }, (_, index) => [
+            11 + index,
+            minimalInboxMessage({ timestamp: (11 + index) * 100 }),
+          ]),
+        ),
+      );
+      await flushMicrotasks();
+    });
+    await act(async () => {
+      await firstPromise;
+      await secondPromise;
+      await vi.advanceTimersByTimeAsync(32);
+      await flushMicrotasks();
+    });
+
+    const feed = apiRef.current!.messageFeeds[0];
+    expect(feed.items.at(-1)?.[0]).toBe(15);
+    expect(feed.unreadCount).toBe(0);
+    expect(feed.readIds.has(1)).toBe(true);
+    expect(feed.readIds.has(15)).toBe(true);
+    expect(scrollToEnd).not.toHaveBeenCalled();
+  });
+
+  it('keeps follow-tail joins scrolling exactly once while marking the loaded batch read', async () => {
+    hoisted.fetchInboxMessages.mockResolvedValueOnce(
+      inboxRsp(
+        Array.from({ length: 10 }, (_, index) => [
+          index + 1,
+          minimalInboxMessage({ timestamp: (index + 1) * 100 }),
+        ]),
+      ),
+    );
+    const apiRef: React.MutableRefObject<ReturnType<typeof useRerDutyFeedState> | null> = {
+      current: null,
+    };
+
+    await act(async () => {
+      root.render(<TestHarness apiRef={apiRef} />);
+    });
+    await act(async () => {
+      await flushMicrotasks();
+    });
+
+    const newerResponse = deferred<InboxMessagesRsp>();
+    hoisted.fetchInboxMessages.mockImplementationOnce(() => newerResponse.promise);
+    const scrollToEnd = vi.fn();
+    apiRef.current!.columnRefsRef.current['mf-0'] = { scrollToEnd };
+
+    let firstPromise!: Promise<void>;
+    let secondPromise!: Promise<void>;
+    act(() => {
+      firstPromise = apiRef.current!.loadFeedNewerMessages('mf-0');
+      secondPromise = apiRef.current!.loadFeedNewerMessages('mf-0', {
+        scrollToEndAfterLoad: true,
+      });
+    });
+
+    expect(hoisted.fetchInboxMessages).toHaveBeenCalledTimes(2);
+
+    await act(async () => {
+      newerResponse.resolve(
+        inboxRsp(
+          Array.from({ length: 5 }, (_, index) => [
+            11 + index,
+            minimalInboxMessage({ timestamp: (11 + index) * 100 }),
+          ]),
+        ),
+      );
+      await flushMicrotasks();
+    });
+    await act(async () => {
+      await firstPromise;
+      await secondPromise;
+      await vi.advanceTimersByTimeAsync(32);
+      await flushMicrotasks();
+    });
+
+    const feed = apiRef.current!.messageFeeds[0];
+    expect(feed.items.at(-1)?.[0]).toBe(15);
+    expect(feed.unreadCount).toBe(0);
+    expect(feed.readIds.has(1)).toBe(true);
+    expect(feed.readIds.has(15)).toBe(true);
+    expect(scrollToEnd).toHaveBeenCalledTimes(1);
   });
 
   it('advances the unread cursor through committed read ids after partial scrolling', async () => {

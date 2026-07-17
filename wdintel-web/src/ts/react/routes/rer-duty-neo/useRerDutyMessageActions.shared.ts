@@ -33,6 +33,7 @@ export type MessageActionsDeps = {
     quantity: number;
     cursorId: number | null;
     hasItems: boolean;
+    requestSignature: string;
   } | null>;
   authUserName: string | null;
   profiles: Record<string, SignalProfileEntry | null>;

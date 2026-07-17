@@ -351,14 +351,22 @@ describe('useRerDutyMessageActions', () => {
     expect(hoisted.loadFeedNewerMessages).not.toHaveBeenCalled();
   });
 
-  it('stops silently when the shared count request resolves stale for the arrow button', async () => {
+  it('shows a busy result when the shared count request resolves stale for the arrow button', async () => {
     hoisted.requestValidatedInboxCount.mockResolvedValueOnce(null);
 
+    const columnRefsRef: MutableRefObject<
+      Record<string, { scrollToEnd: (behavior?: ScrollBehavior) => void } | null>
+    > = {
+      current: {
+        'mf-0': { scrollToEnd: vi.fn() },
+      },
+    };
     const apiRef: MutableRefObject<HarnessApi | null> = { current: null };
     await act(async () => {
       root.render(
         <TestHarness
           apiRef={apiRef}
+          columnRefsRef={columnRefsRef}
           initialFeeds={[buildFeed({ items: [[10, minimalInboxMessage({ timestamp: null })]] })]}
         />,
       );
@@ -373,18 +381,30 @@ describe('useRerDutyMessageActions', () => {
 
     expect(hoisted.requestValidatedInboxCount).toHaveBeenCalledTimes(1);
     expect(hoisted.fetchInboxCount).not.toHaveBeenCalled();
-    expect(hoisted.showArrowResult).not.toHaveBeenCalled();
+    expect(columnRefsRef.current['mf-0']?.scrollToEnd).toHaveBeenCalledTimes(1);
+    expect(hoisted.showArrowResult).toHaveBeenCalledWith(
+      'mf-0',
+      'Оновлення триває, спробуйте ще раз',
+    );
     expect(hoisted.loadFeedNewerMessages).not.toHaveBeenCalled();
   });
 
   it('shows the existing failure chip when the shared count request fails for the arrow button', async () => {
     hoisted.requestValidatedInboxCount.mockRejectedValueOnce(new Error('count failed'));
 
+    const columnRefsRef: MutableRefObject<
+      Record<string, { scrollToEnd: (behavior?: ScrollBehavior) => void } | null>
+    > = {
+      current: {
+        'mf-0': { scrollToEnd: vi.fn() },
+      },
+    };
     const apiRef: MutableRefObject<HarnessApi | null> = { current: null };
     await act(async () => {
       root.render(
         <TestHarness
           apiRef={apiRef}
+          columnRefsRef={columnRefsRef}
           initialFeeds={[buildFeed({ items: [[10, minimalInboxMessage({ timestamp: null })]] })]}
         />,
       );
@@ -398,7 +418,11 @@ describe('useRerDutyMessageActions', () => {
     });
 
     expect(hoisted.requestValidatedInboxCount).toHaveBeenCalledTimes(1);
-    expect(hoisted.showArrowResult).toHaveBeenCalledWith('mf-0', 'Немає нових повідомлень');
+    expect(columnRefsRef.current['mf-0']?.scrollToEnd).toHaveBeenCalledTimes(1);
+    expect(hoisted.showArrowResult).toHaveBeenCalledWith(
+      'mf-0',
+      'Не вдалося перевірити нові повідомлення',
+    );
     expect(hoisted.loadFeedNewerMessages).not.toHaveBeenCalled();
   });
 
