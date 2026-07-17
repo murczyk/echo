@@ -87,7 +87,11 @@ function makePalitra(overrides: Partial<Palitra> = {}): Palitra {
   } as Palitra;
 }
 
-function makeRow(palitra: Palitra, canModify = true): PalitraRowView {
+function makeRow(
+  palitra: Palitra,
+  canModify = true,
+  canRetryGoiSourceConversion = true,
+): PalitraRowView {
   return {
     id: palitra.id,
     kind: 'palitra',
@@ -101,6 +105,7 @@ function makeRow(palitra: Palitra, canModify = true): PalitraRowView {
     author: palitra.author,
     accessSummary: '—',
     canModify,
+    canRetryGoiSourceConversion,
     canSelect: true,
     archiveInFlight: false,
     deleteInFlight: false,
@@ -187,5 +192,32 @@ describe('PalitraTable row actions', () => {
     expect(
       container.querySelector<HTMLButtonElement>('[data-label="Додати точки"]')?.dataset.disabled,
     ).toBe('true');
+  });
+
+  it('disables GOI source retry without management permission', () => {
+    const onRetryGoiSourceConversion = vi.fn();
+    const { container } = renderActions(makeRow(makePalitra(), true, false), {
+      onRetryGoiSourceConversion,
+    });
+    const retryButton = container.querySelector<HTMLButtonElement>(
+      '[data-label="Повторити оновлення з ГОІ"]',
+    );
+
+    expect(retryButton?.dataset.disabled).toBe('true');
+
+    act(() => {
+      retryButton?.click();
+    });
+
+    expect(onRetryGoiSourceConversion).not.toHaveBeenCalled();
+  });
+
+  it('allows GOI source retry for management users on read-only rows', () => {
+    const { container } = renderActions(makeRow(makePalitra(), false, true));
+
+    expect(
+      container.querySelector<HTMLButtonElement>('[data-label="Повторити оновлення з ГОІ"]')
+        ?.dataset.disabled,
+    ).toBe('false');
   });
 });

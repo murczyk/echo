@@ -110,6 +110,16 @@ function isPalitraRowPreviewDisabled(row: PalitraRowView, props: Props): boolean
   );
 }
 
+function isGoiSourceRetryDisabled(row: PalitraRowView, props: Props): boolean {
+  return (
+    !row.canRetryGoiSourceConversion ||
+    row.retryInFlight ||
+    props.loading ||
+    props.bulkDeleteInFlight ||
+    props.externalBusy
+  );
+}
+
 function renderPalitraRowActions(row: PalitraRowView, props: Props) {
   const mutationDisabled = isPalitraRowMutationDisabled(row, props);
   const previewDisabled = isPalitraRowPreviewDisabled(row, props);
@@ -240,9 +250,7 @@ function renderPalitraRowActions(row: PalitraRowView, props: Props) {
           <MrtRowActionButton
             label="Повторити оновлення з ГОІ"
             onClick={() => props.onRetryGoiSourceConversion(row.palitra)}
-            disabled={
-              row.retryInFlight || props.loading || props.bulkDeleteInFlight || props.externalBusy
-            }
+            disabled={isGoiSourceRetryDisabled(row, props)}
             icon={
               row.retryInFlight ? (
                 <CircularProgress size={16} color="inherit" />

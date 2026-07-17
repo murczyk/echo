@@ -182,6 +182,7 @@ export function buildLoadingRows(): TableRowView[] {
     author: null,
     accessSummary: '',
     canModify: false,
+    canRetryGoiSourceConversion: false,
     canSelect: false,
     archiveInFlight: false,
     deleteInFlight: false,

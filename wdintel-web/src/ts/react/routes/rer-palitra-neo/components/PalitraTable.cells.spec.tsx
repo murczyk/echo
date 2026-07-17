@@ -84,6 +84,7 @@ function makeRow(palitra: Palitra): PalitraRowView {
     author: palitra.author,
     accessSummary: '—',
     canModify: false,
+    canRetryGoiSourceConversion: false,
     canSelect: true,
     archiveInFlight: false,
     deleteInFlight: false,

@@ -48,12 +48,16 @@ function canUseAorAccess(user: User | null): boolean {
   return isAdmin(user);
 }
 
-function canManagePalitraAccess(user: User | null): boolean {
+export function canManagePalitraAccess(user: User | null): boolean {
   return isAdmin(user) || isRer(user);
 }
 
 export function canModifyPalitra(user: User | null, palitra: Palitra): boolean {
   return isAdmin(user) || (canManagePalitraAccess(user) && palitra.author === user?.name);
+}
+
+export function canModifyEchoPalitra(user: User | null, palitra: Palitra): boolean {
+  return canModifyPalitra(user, palitra) && !palitra.goiOwned;
 }
 
 export function getAvailableAccessTypes(user: User | null, myScope: MyScope | null): AccessType[] {
