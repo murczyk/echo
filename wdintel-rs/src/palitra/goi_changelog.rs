@@ -49,6 +49,23 @@ pub(crate) fn latest_warning(entries: &[PalitraChangelogEntry]) -> bool {
     latest_entry(entries).is_some_and(|entry| !entry.is_ok)
 }
 
+pub(crate) fn latest_goi_source_conversion_warning(
+    entries: &[PalitraChangelogEntry],
+) -> bool {
+    latest_entry(entries).is_some_and(|entry| {
+        !entry.is_ok && is_goi_source_conversion_failure_text(&entry.text)
+    })
+}
+
+fn is_goi_source_conversion_failure_text(text: &str) -> bool {
+    text == "GOI source conversion failed"
+        || text.starts_with("GOI source conversion failed:")
+        || text.starts_with("Failed to schedule GOI source conversion:")
+        || text.starts_with("Failed to schedule GOI source refresh conversion:")
+        || text
+            .starts_with("palitra conversion stayed processing for at least ")
+}
+
 pub(crate) fn append_to_value(
     value: &serde_json::Value,
     entry: PalitraChangelogEntry,
@@ -90,7 +107,54 @@ where
         .all(dbx)
         .await
         .c(h!())?;
+    append_for_rows(dbx, rows, entry).await.c(h!())
+}
 
+pub(crate) async fn append_for_palitra_goi_source_file_sha256<'a, C>(
+    dbx: &'a C,
+    palitra_id: i64,
+    file_sha256: &str,
+    entry: PalitraChangelogEntry,
+) -> anyhow::Result<()>
+where
+    C: ConnectionTrait + 'a,
+{
+    let rows = goi_palitra_sync::Entity::find()
+        .filter(goi_palitra_sync::Column::PalitraId.eq(palitra_id))
+        .filter(goi_palitra_sync::Column::GoiSourceFileSha256.eq(file_sha256))
+        .all(dbx)
+        .await
+        .c(h!())?;
+    append_for_rows(dbx, rows, entry).await.c(h!())
+}
+
+pub(crate) async fn append_for_palitra_goi_source_row_ids<'a, C>(
+    dbx: &'a C,
+    row_ids: &[i64],
+    entry: PalitraChangelogEntry,
+) -> anyhow::Result<()>
+where
+    C: ConnectionTrait + 'a,
+{
+    if row_ids.is_empty() {
+        return Ok(());
+    }
+    let rows = goi_palitra_sync::Entity::find()
+        .filter(goi_palitra_sync::Column::Id.is_in(row_ids.to_vec()))
+        .all(dbx)
+        .await
+        .c(h!())?;
+    append_for_rows(dbx, rows, entry).await.c(h!())
+}
+
+async fn append_for_rows<'a, C>(
+    dbx: &'a C,
+    rows: Vec<goi_palitra_sync::Model>,
+    entry: PalitraChangelogEntry,
+) -> anyhow::Result<()>
+where
+    C: ConnectionTrait + 'a,
+{
     for row in rows {
         let changelog =
             append_to_value_if_latest_differs(&row.changelog, entry.clone())

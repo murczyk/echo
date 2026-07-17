@@ -818,18 +818,23 @@ pub async fn retry_goi_source_conversion(
         .await
         .c(h!())?;
     let palitra_id = path.into_inner();
-    let palitra = palitra::Entity::find_by_id(palitra_id)
+    palitra::Entity::find_by_id(palitra_id)
         .one(&env.dbx)
         .await
         .c(h!())?
         .c(h!())?;
-    let is_author_or_admin =
-        is_palitra_author_or_admin(&env.dbx, &login, &palitra)
+    let is_admin = is_palitra_admin(&env, &login).await.c(h!())?;
+    let is_accessible = if is_admin {
+        true
+    } else {
+        bl::collect_accessible_palitra_ids(login.clone(), &env.dbx)
             .await
-            .c(h!())?;
-    if !is_author_or_admin {
+            .c(h!())?
+            .contains(&palitra_id)
+    };
+    if !is_accessible {
         return Err(AppError::Forbidden(
-            "Only author or Admin may retry palitra conversion".into(),
+            "Palitra is not accessible for GOI source conversion retry".into(),
         ));
     }
     let rows = goi_palitra_sync::Entity::find()
@@ -859,9 +864,9 @@ pub async fn retry_goi_source_conversion(
     )
     .await
     .c(h!())?;
-    goi_changelog::append_for_palitra_goi_sources(
+    goi_changelog::append_for_palitra_goi_source_row_ids(
         &txn,
-        palitra_id,
+        &[row.id],
         goi_changelog::ok_entry(
             "GOI source conversion retry queued",
             "Повторну конвертацію файлу ГОІ поставлено в чергу.",
@@ -892,7 +897,7 @@ fn select_goi_source_conversion_retry_row(
 ) -> Option<goi_palitra_sync::Model> {
     rows.into_iter().find(|row| {
         let changelog = goi_changelog::entries_from_value(&row.changelog);
-        goi_changelog::latest_warning(&changelog)
+        goi_changelog::latest_goi_source_conversion_warning(&changelog)
     })
 }
 
@@ -3148,8 +3153,6 @@ mod tests {
         filename: &str,
         file_data: Vec<u8>,
     ) -> goi_palitra_sync::Model {
-        let now = Utc::now().fixed_offset();
-        let updated_at = now + chrono::Duration::seconds(updated_at_offset_sec);
         let entry = if latest_warning {
             goi_changelog::error_entry(
                 "GOI source conversion failed",
@@ -3161,6 +3164,24 @@ mod tests {
                 "Файл ГОІ успішно сконвертовано.",
             )
         };
+        goi_source_retry_row_with_entry_for_test(
+            id,
+            updated_at_offset_sec,
+            entry,
+            filename,
+            file_data,
+        )
+    }
+
+    fn goi_source_retry_row_with_entry_for_test(
+        id: i64,
+        updated_at_offset_sec: i64,
+        entry: PalitraChangelogEntry,
+        filename: &str,
+        file_data: Vec<u8>,
+    ) -> goi_palitra_sync::Model {
+        let now = Utc::now().fixed_offset();
+        let updated_at = now + chrono::Duration::seconds(updated_at_offset_sec);
         let changelog =
             goi_changelog::append_to_value(&serde_json::json!([]), entry)
                 .unwrap();
@@ -3226,6 +3247,25 @@ mod tests {
             Some("failed-source.gpx")
         );
         assert_eq!(row.goi_source_file_data, Some(vec![1, 2, 3]));
+    }
+
+    #[test]
+    fn retry_goi_source_conversion_ignores_non_conversion_warning() {
+        let duplicate_conflict_row = goi_source_retry_row_with_entry_for_test(
+            1,
+            0,
+            goi_changelog::error_entry(
+                "Duplicate GOI remote path tracking conflict",
+                "Дубльований шлях ГОІ.",
+            ),
+            "source.gpx",
+            vec![1, 2, 3],
+        );
+
+        assert!(select_goi_source_conversion_retry_row(vec![
+            duplicate_conflict_row
+        ])
+        .is_none());
     }
 
     #[test]

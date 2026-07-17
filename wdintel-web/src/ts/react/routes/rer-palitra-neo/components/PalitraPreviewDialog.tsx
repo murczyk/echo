@@ -260,7 +260,9 @@ export function PalitraPreviewDialog({
           pb: 0,
           overflow: 'hidden',
           display: 'flex',
+          flexDirection: 'column',
           flex: 1,
+          gap: 2,
           minHeight: 0,
         }}
       >

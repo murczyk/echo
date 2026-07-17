@@ -189,7 +189,9 @@ where
         goi_source_refresh_retry_available |= row
             .goi_source_file_data
             .is_some()
-            && crate::palitra::goi_changelog::latest_warning(&row_changelog);
+            && crate::palitra::goi_changelog::latest_goi_source_conversion_warning(
+                &row_changelog,
+            );
         changelog.extend(row_changelog);
     }
     changelog.sort_by(|left, right| left.timestamp.cmp(&right.timestamp));
@@ -3374,6 +3376,45 @@ mod tests {
 
         assert!(summary.goi_owned);
         assert!(!summary.latest_changelog_warning);
+        assert!(!summary.goi_source_refresh_retry_available);
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn test_goi_source_retry_summary_ignores_non_conversion_warnings() {
+        let env = cleanup().await.unwrap();
+        let palitra = find_test_palitra(&env.dbx).await.unwrap();
+        let integration = mk_goi_integration_for_test(
+            &env.dbx,
+            "goi-source-retry-non-conversion-warning-test",
+        )
+        .await;
+        let row = mk_goi_palitra_sync_for_test(
+            &env.dbx,
+            integration.id,
+            palitra.id,
+            "source.gpx",
+            PALITRA_GOI_SYNC_DIRECTION_GOI,
+            Some("source-sha"),
+        )
+        .await;
+        let changelog = crate::palitra::goi_changelog::append_to_value(
+            &row.changelog,
+            crate::palitra::goi_changelog::error_entry(
+                "Duplicate GOI remote path tracking conflict",
+                "Дубльований шлях ГОІ.",
+            ),
+        )
+        .unwrap();
+        let mut row = row.into_active_model();
+        row.changelog = Set(changelog);
+        row.update(&env.dbx).await.unwrap();
+
+        let summary = read_palitra_goi_sync_summary(&env.dbx, palitra.id)
+            .await
+            .unwrap();
+
+        assert!(summary.latest_changelog_warning);
         assert!(!summary.goi_source_refresh_retry_available);
     }
 

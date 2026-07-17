@@ -64,24 +64,34 @@ async fn palitra_conversion_worker_step(env: &Env) -> Result<bool, AppError> {
     let result = process_conversion_job(env, &job).await;
     match result {
         Ok(ConversionJobOutcome::Applied) => {
-            super::goi_changelog::append_for_palitra_goi_sources(
-                &env.dbx,
-                job.palitra_id,
-                super::goi_changelog::ok_entry(
-                    "Converted GOI source",
-                    "Файл ГОІ успішно сконвертовано.",
-                ),
-            )
-            .await
-            .c(h!())?;
-            clear_goi_source_failed_conversion(&env.dbx, job.palitra_id)
+            if let Some(source_file_sha256) =
+                conversion_job_source_file_sha256(&job)
+            {
+                super::goi_changelog::append_for_palitra_goi_source_file_sha256(
+                    &env.dbx,
+                    job.palitra_id,
+                    &source_file_sha256,
+                    super::goi_changelog::ok_entry(
+                        "Converted GOI source",
+                        "Файл ГОІ успішно сконвертовано.",
+                    ),
+                )
                 .await
                 .c(h!())?;
+                clear_goi_source_failed_conversion(
+                    &env.dbx,
+                    job.palitra_id,
+                    &source_file_sha256,
+                )
+                .await
+                .c(h!())?;
+            }
             env.palitra_worker_context.flush_cache(job.palitra_id).await;
         }
         Ok(ConversionJobOutcome::Stale) => {}
         Err(err) => {
             let error = format!("{err:#}");
+            let source_file_sha256 = conversion_job_source_file_sha256(&job);
             let update_result =
                 mark_conversion_job_error(&env.dbx, &job, error.clone())
                     .await
@@ -97,19 +107,26 @@ async fn palitra_conversion_worker_step(env: &Env) -> Result<bool, AppError> {
                 )
                 .await
                 .c(h!())?;
-                mark_goi_source_conversion_failed(&env.dbx, job.palitra_id)
+                if let Some(source_file_sha256) = source_file_sha256 {
+                    mark_goi_source_conversion_failed(
+                        &env.dbx,
+                        job.palitra_id,
+                        &source_file_sha256,
+                    )
                     .await
                     .c(h!())?;
-                super::goi_changelog::append_for_palitra_goi_sources(
-                    &env.dbx,
-                    job.palitra_id,
-                    super::goi_changelog::error_entry(
-                        format!("GOI source conversion failed: {error}"),
-                        "Конвертація файлу ГОІ не вдалася. Поточна геометрія Echo залишилась без змін.",
-                    ),
-                )
-                .await
-                .c(h!())?;
+                    super::goi_changelog::append_for_palitra_goi_source_file_sha256(
+                        &env.dbx,
+                        job.palitra_id,
+                        &source_file_sha256,
+                        super::goi_changelog::error_entry(
+                            format!("GOI source conversion failed: {error}"),
+                            "Конвертація файлу ГОІ не вдалася. Поточна геометрія Echo залишилась без змін.",
+                        ),
+                    )
+                    .await
+                    .c(h!())?;
+                }
                 env.palitra_worker_context.flush_cache(job.palitra_id).await;
             }
         }
@@ -501,13 +518,17 @@ where
 async fn mark_goi_source_conversion_failed<'a, C>(
     dbx: &'a C,
     palitra_id: i64,
+    source_file_sha256: &str,
 ) -> anyhow::Result<UpdateResult>
 where
     C: ConnectionTrait + 'a,
 {
     goi_palitra_sync::Entity::update_many()
         .filter(goi_palitra_sync::Column::PalitraId.eq(palitra_id))
-        .filter(goi_palitra_sync::Column::GoiSourceFileSha256.is_not_null())
+        .filter(
+            goi_palitra_sync::Column::GoiSourceFileSha256
+                .eq(source_file_sha256),
+        )
         .col_expr(
             goi_palitra_sync::Column::GoiSourceFailedFileSha256,
             Expr::col(goi_palitra_sync::Column::GoiSourceFileSha256).into(),
@@ -520,13 +541,17 @@ where
 async fn clear_goi_source_failed_conversion<'a, C>(
     dbx: &'a C,
     palitra_id: i64,
+    source_file_sha256: &str,
 ) -> anyhow::Result<UpdateResult>
 where
     C: ConnectionTrait + 'a,
 {
     goi_palitra_sync::Entity::update_many()
         .filter(goi_palitra_sync::Column::PalitraId.eq(palitra_id))
-        .filter(goi_palitra_sync::Column::GoiSourceFileSha256.is_not_null())
+        .filter(
+            goi_palitra_sync::Column::GoiSourceFileSha256
+                .eq(source_file_sha256),
+        )
         .col_expr(
             goi_palitra_sync::Column::GoiSourceFailedFileSha256,
             Expr::value(Option::<String>::None),
@@ -534,6 +559,12 @@ where
         .exec(dbx)
         .await
         .c(h!())
+}
+
+fn conversion_job_source_file_sha256(
+    job: &palitra_conversion_job::Model,
+) -> Option<String> {
+    job.file_data.as_ref().map(sha256::digest)
 }
 
 fn current_processing_job_condition(
