@@ -115,7 +115,6 @@ export function useRerDutyFeedInteractionActions(params: Params) {
         let changed = false;
         const next = prev.map((f) => {
           if (f.id !== feedId) return f;
-          const isAtBottom = opts?.atBottom ?? false;
 
           const newlyReadIds: number[] = [];
           for (const [id] of f.items) {
@@ -127,8 +126,7 @@ export function useRerDutyFeedInteractionActions(params: Params) {
             }
           }
 
-          if (newlyReadIds.length === 0 && !isAtBottom) return f;
-          if (newlyReadIds.length === 0 && isAtBottom && f.unreadCount === 0) return f;
+          if (newlyReadIds.length === 0) return f;
 
           changed = true;
           const nextReadIds = new Set(f.readIds);
@@ -136,7 +134,7 @@ export function useRerDutyFeedInteractionActions(params: Params) {
           return {
             ...f,
             readIds: nextReadIds,
-            unreadCount: isAtBottom ? 0 : Math.max(0, f.unreadCount - newlyReadIds.length),
+            unreadCount: Math.max(0, f.unreadCount - newlyReadIds.length),
           };
         });
         return changed ? next : prev;
