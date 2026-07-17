@@ -10,6 +10,7 @@ import {
   buildVisibleExcludeMenuOptions,
   excludeMessageEntityFromFilters,
   PAGE_ID,
+  appendWindowedMessageItems,
   buildAnalysisMapHrefWithSearch,
   buildSenderOptions,
   buildInboxReq,
@@ -25,13 +26,17 @@ import {
   isMessageEntityExcluded,
   messageHasPalitraTag,
   normalizeFeed,
+  prependWindowedMessageItems,
+  retainReadIdsForItems,
   uniquePointEtalonsForMapSearch,
   parseStateFromUrl,
   pushShortStateToUrl,
   pushStateToUrl,
   toRerDutyStateFromShort,
   toShortQueryState,
+  windowInitialMessageItems,
 } from './utils';
+import type { MessageFeedState } from './utils';
 import type { InboxMessage, Network, SignalProfileEntry, Tag, Unit } from '../../../../Bindings';
 
 describe('rer-duty utils', () => {
@@ -76,7 +81,6 @@ describe('rer-duty utils', () => {
         loading: false,
         loadingOlder: false,
         hasReachedStart: false,
-        firstItemIndex: 0,
         referenceTimeMs: null,
         readIds: new Set<number>(),
         unreadCount: 0,
@@ -122,7 +126,6 @@ describe('rer-duty utils', () => {
         loading: false,
         loadingOlder: false,
         hasReachedStart: false,
-        firstItemIndex: 0,
         referenceTimeMs: null,
         readIds: new Set<number>(),
         unreadCount: 0,
@@ -530,7 +533,6 @@ describe('rer-duty utils', () => {
             loading: false,
             loadingOlder: false,
             hasReachedStart: false,
-            firstItemIndex: 0,
             referenceTimeMs: null,
             readIds: new Set<number>(),
             unreadCount: 0,
@@ -548,8 +550,8 @@ describe('rer-duty utils', () => {
     ]);
   });
 
-  it('uses loaded unread items for feed and tab unread totals', () => {
-    const feed = {
+  it('uses the tracked unread count for feed and tab unread totals', () => {
+    const feed: MessageFeedState = {
       id: 'mf-1',
       filter: emptyFilter(),
       items: [
@@ -560,7 +562,6 @@ describe('rer-duty utils', () => {
       loading: false,
       loadingOlder: false,
       hasReachedStart: false,
-      firstItemIndex: 0,
       referenceTimeMs: null,
       readIds: new Set<number>([1]),
       unreadCount: 69980,
@@ -569,9 +570,62 @@ describe('rer-duty utils', () => {
       onlyMyUnitTagsEnabled: false,
     };
 
-    expect(feedUnreadDisplayCount(feed)).toBe(2);
-    expect(feedsUnreadDisplayTotal([feed, { ...feed, readIds: new Set<number>([1, 2, 3]) }])).toBe(
-      2,
+    expect(feedUnreadDisplayCount(feed)).toBe(69980);
+    expect(
+      feedsUnreadDisplayTotal([
+        feed,
+        { ...feed, unreadCount: 4, readIds: new Set<number>([1, 2, 3]) },
+      ]),
+    ).toBe(69984);
+  });
+
+  it('windows initial messages to the newest items after sorting and dedupe', () => {
+    const items = [
+      [3, { timestamp: 300 } as InboxMessage],
+      [1, { timestamp: 100 } as InboxMessage],
+      [2, { timestamp: 200 } as InboxMessage],
+      [2, { timestamp: 250 } as InboxMessage],
+      [4, { timestamp: 400 } as InboxMessage],
+    ] as Array<[number, InboxMessage]>;
+
+    expect(windowInitialMessageItems(items, 3).map(([id]) => id)).toEqual([2, 3, 4]);
+  });
+
+  it('prepends older messages and trims the newest side when the window is full', () => {
+    const existing = [3, 4, 5].map(
+      (id) => [id, { timestamp: id * 100 } as InboxMessage] as [number, InboxMessage],
     );
+    const incomingOlder = [1, 2, 3].map(
+      (id) => [id, { timestamp: id * 100 } as InboxMessage] as [number, InboxMessage],
+    );
+
+    const result = prependWindowedMessageItems(existing, incomingOlder, 4);
+
+    expect(result.items.map(([id]) => id)).toEqual([1, 2, 3, 4]);
+    expect(result.addedItems.map(([id]) => id)).toEqual([1, 2]);
+    expect(result.removedItems.map(([id]) => id)).toEqual([5]);
+  });
+
+  it('appends newer messages and trims the oldest side when the window is full', () => {
+    const existing = [1, 2, 3].map(
+      (id) => [id, { timestamp: id * 100 } as InboxMessage] as [number, InboxMessage],
+    );
+    const incomingNewer = [3, 4, 5].map(
+      (id) => [id, { timestamp: id * 100 } as InboxMessage] as [number, InboxMessage],
+    );
+
+    const result = appendWindowedMessageItems(existing, incomingNewer, 4);
+
+    expect(result.items.map(([id]) => id)).toEqual([2, 3, 4, 5]);
+    expect(result.addedItems.map(([id]) => id)).toEqual([4, 5]);
+    expect(result.removedItems.map(([id]) => id)).toEqual([1]);
+  });
+
+  it('retains read ids only for messages still inside the fixed window', () => {
+    const items = [2, 3].map(
+      (id) => [id, { timestamp: id * 100 } as InboxMessage] as [number, InboxMessage],
+    );
+
+    expect([...retainReadIdsForItems(new Set([1, 2, 4]), items)]).toEqual([2]);
   });
 });

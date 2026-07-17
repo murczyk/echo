@@ -1,6 +1,8 @@
 /**
  * @vitest-environment happy-dom
  */
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import type { ComponentProps, ElementType, ReactNode } from 'react';
 import React, { act, forwardRef } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
@@ -12,6 +14,7 @@ import { ELLIPSIS } from '../../../utils/misc';
 import { inboxMessageWithMockImages } from '../../rer-duty-neo/inbox-message-mocks';
 import { emptyFilter } from '../../rer-duty-neo/utils';
 import { formatMessageCardTooltipTime, MessageCard } from './MessageCard';
+import { MessageCardContent } from './MessageCardContent';
 import { MessageCardHeader } from './MessageCardHeader';
 import {
   normalizeLocationDisplayValue,
@@ -416,9 +419,26 @@ vi.mock('@mui/material', () => ({
       />
     </label>
   ),
-  Typography: ({ children, component, ...props }: PrimitiveProps) => {
+  Typography: ({ children, component, variant, sx, style, ...props }: PrimitiveProps) => {
     const Component = component ?? 'div';
-    return <Component {...omitMuiLayoutProps(props)}>{children}</Component>;
+    const typographyStyle = {
+      ...(style as Record<string, unknown> | undefined),
+      ...(sx != null && typeof sx === 'object' && !Array.isArray(sx)
+        ? {
+            fontWeight: (sx as { fontWeight?: unknown }).fontWeight,
+          }
+        : {}),
+    };
+    if (typographyStyle.fontWeight == null) delete typographyStyle.fontWeight;
+    return (
+      <Component
+        data-mui-variant={variant ?? 'body1'}
+        style={Object.keys(typographyStyle).length > 0 ? typographyStyle : undefined}
+        {...omitMuiLayoutProps(props)}
+      >
+        {children}
+      </Component>
+    );
   },
 }));
 
@@ -577,7 +597,7 @@ async function renderHeader(
   const container = document.createElement('div');
   document.body.appendChild(container);
   const root = createRoot(container);
-  const msg = buildMessage();
+  const msg = overrides.msg ?? buildMessage();
   const etalonDisplayModel = resolveMessageCardEtalonDisplayModel(msg, {
     featureStrictNetworks: false,
     networkDisplayMap: { 7: 'р/м Alpha' },
@@ -588,7 +608,6 @@ async function renderHeader(
     compact: true,
     displayMode: 'duty',
     excludeMenuOptions: [],
-    networkRowContentWidthPct: 90,
     id: 42,
     msg,
     copiedFeedbackId: null,
@@ -648,6 +667,16 @@ function getTagButtonLabels(container: HTMLElement): string[] {
   return Array.from(container.querySelectorAll('button'))
     .map((button) => button.textContent?.trim() ?? '')
     .filter((label) => tagLabels.has(label));
+}
+
+function getMuiTypographyElementByText(container: HTMLElement, text: string): HTMLElement {
+  const element = Array.from(container.querySelectorAll('[data-mui-variant]')).find(
+    (node) => node.textContent?.trim() === text,
+  );
+  if (!(element instanceof HTMLElement)) {
+    throw new Error(`Typography element not found for text: ${text}`);
+  }
+  return element;
 }
 
 async function click(element: HTMLElement): Promise<void> {
@@ -806,6 +835,14 @@ describe('MessageCard', () => {
     const view = await renderCard();
     rendered.push(view);
 
+    const card = view.container.querySelector('li');
+    if (!(card instanceof HTMLElement)) throw new Error('card root not found');
+    expect(card.style.contentVisibility).toBe('auto');
+    expect(
+      card.style.containIntrinsicBlockSize ||
+        card.style.getPropertyValue('contain-intrinsic-block-size'),
+    ).toBe('auto 120px');
+
     expect(view.container.textContent).toContain("Куп'янськ пеленг");
     expect(view.container.textContent).toContain('Dow_Jones_2');
     expect(view.container.textContent).toContain('153.6250');
@@ -815,6 +852,96 @@ describe('MessageCard', () => {
     expect(view.container.querySelector(`button[aria-label="${NAVIGATE_TITLE}"]`)).not.toBeNull();
     expect(view.container.querySelector('button[aria-label="Відкрити аналіз"]')).toBeNull();
     expect(view.container.querySelector('button[aria-label="Відкрити мапу"]')).toBeNull();
+  });
+
+  it('keeps closed menus unmounted and preserves the header hot-path structure', async () => {
+    const view = await renderCard({
+      displayMode: 'analysis',
+      onEditDetails: vi.fn(),
+      onDelete: vi.fn(),
+    });
+    rendered.push(view);
+
+    expect(latestMenuProps).toHaveLength(0);
+
+    const headerSource = readFileSync(
+      join(process.cwd(), new URL('./MessageCardHeader.tsx', import.meta.url).pathname.slice(1)),
+      'utf8',
+    );
+    expect(headerSource).not.toContain('<Box');
+    expect(headerSource).not.toContain('<Stack');
+    expect(headerSource).toContain(
+      'isPresent(overflowMenuAnchorPosition) && canShowOverflowMenu ?',
+    );
+    expect(headerSource).toContain('isPresent(copyMenuAnchorPosition) ?');
+    expect(headerSource).toContain(
+      'isPresent(navigationMenuAnchorPosition) && canShowNavigationMenu ?',
+    );
+    expect(headerSource).toContain('isPresent(excludeMenuAnchorPosition) && canShowExcludeMenu ?');
+
+    expect(typeof MessageCardHeader).toBe('object');
+    expect((MessageCardHeader as { type?: unknown }).type).toBeTypeOf('function');
+    expect(typeof MessageCardContent).toBe('object');
+    expect((MessageCardContent as { type?: unknown }).type).toBeTypeOf('function');
+  });
+
+  it.each(['duty', 'analysis'] as const)(
+    'renders operational header values as body2 in %s mode',
+    async (displayMode) => {
+      const view = await renderHeader({
+        displayMode,
+        msg: buildMessage({
+          coords: '12.3456789, -98.7654321',
+          networkIds: [],
+          unit: ' 1-й танк ',
+          location: '  ХАРКІВ  ',
+        }),
+        groupName: 'Група A',
+        senderName: 'Відправник B',
+      });
+      rendered.push(view);
+
+      const headerText = view.container.querySelector(
+        '[data-message-header-grid="true"]',
+      )?.textContent;
+      if (headerText == null) throw new Error('header text not found');
+
+      const expectedValues = [
+        '02:45',
+        '23.03',
+        '153.6250',
+        'Група A',
+        'Відправник B',
+        '12.34568, -98.76543',
+        'Харків',
+      ] as const;
+      for (const value of expectedValues) {
+        const typographyElement = getMuiTypographyElementByText(view.container, value);
+        expect(typographyElement.getAttribute('data-mui-variant')).toBe('body2');
+        expect(headerText).toContain(value);
+      }
+
+      expect(headerText.indexOf('Група A')).toBeLessThan(headerText.indexOf('Відправник B'));
+      expect(headerText.indexOf('Відправник B')).toBeLessThan(headerText.indexOf('153.6250'));
+      expect(headerText.indexOf('153.6250')).toBeLessThan(
+        headerText.indexOf('12.34568, -98.76543'),
+      );
+      expect(headerText.indexOf('12.34568, -98.76543')).toBeLessThan(
+        headerText.indexOf('1-й танк'),
+      );
+      expect(headerText.indexOf('1-й танк')).toBeLessThan(headerText.indexOf('Харків'));
+    },
+  );
+
+  it('renders the extended form as bold body2 text', async () => {
+    const view = await renderCard({
+      msg: buildMessage({ extendedForm: 'Коментар' }),
+    });
+    rendered.push(view);
+
+    const extendedForm = getMuiTypographyElementByText(view.container, 'Коментар');
+    expect(extendedForm.getAttribute('data-mui-variant')).toBe('body2');
+    expect(window.getComputedStyle(extendedForm).fontWeight).toBe('700');
   });
 
   it('linkifies plain message text URLs in the body', async () => {
@@ -948,6 +1075,10 @@ describe('MessageCard', () => {
     expect(navigateButton.getAttribute('aria-haspopup')).toBe('menu');
     await click(navigateButton);
     expect(navigateButton.getAttribute('aria-expanded')).toBe('true');
+    expect(latestMenuProps).toHaveLength(1);
+    const navigationMenuId = latestMenuProps.at(-1)?.id;
+    if (navigationMenuId == null) throw new Error('navigation menu id not found');
+    expect(view.container.querySelector(`[id="${navigationMenuId}"]`)).not.toBeNull();
 
     const networkLinks = Array.from(view.container.querySelectorAll('a[href^="/rer-networks/"]'));
     expect(networkLinks).toHaveLength(1);
@@ -1174,6 +1305,11 @@ describe('MessageCard', () => {
     expect(view.container.querySelector('button[aria-label="Виключити"]')).toBeNull();
     expect(view.container.querySelector('button[aria-label="Мінус"]')).toBeNull();
     expect(view.container.querySelector(`button[aria-label="${NAVIGATE_TITLE}"]`)).not.toBeNull();
+    const proposedCallsignsLabel = getMuiTypographyElementByText(
+      view.container,
+      'Запропоновані позивні',
+    );
+    expect(proposedCallsignsLabel.getAttribute('data-mui-variant')).toBe('caption');
     expect(view.container.textContent).toContain('Запропоновані позивні');
     expect(view.container.querySelector('input[placeholder="Позивний"]')).not.toBeNull();
     expect(view.container.textContent).toContain('ALPHA');
@@ -1383,6 +1519,10 @@ describe('MessageCard', () => {
     if (!(overflowButton instanceof HTMLButtonElement))
       throw new Error('overflow button not found');
     await click(overflowButton);
+    expect(latestMenuProps).toHaveLength(1);
+    const overflowMenuId = latestMenuProps.at(-1)?.id;
+    if (overflowMenuId == null) throw new Error('overflow menu id not found');
+    expect(view.container.querySelector(`[id="${overflowMenuId}"]`)).not.toBeNull();
 
     expect(view.container.textContent).not.toContain('Редагувати додаткові поля та позивні');
     expect(view.container.textContent).toContain('Видалити');
@@ -1544,23 +1684,31 @@ describe('MessageCard', () => {
 
     expect(view.container.querySelector(`button[aria-label="${COPY_TITLE}"]`)).not.toBeNull();
     expect(view.container.querySelector('button[aria-label="Копіювати частоту"]')).toBeNull();
+    expect(latestMenuProps).toHaveLength(0);
 
     const copyButton = view.container.querySelector(`button[aria-label="${COPY_TITLE}"]`);
     if (!(copyButton instanceof HTMLButtonElement)) throw new Error('copy button not found');
     await click(copyButton);
 
+    expect(latestMenuProps).toHaveLength(1);
+    const copyMenuId = latestMenuProps.at(-1)?.id;
+    if (copyMenuId == null) throw new Error('copy menu id not found');
+    expect(view.container.querySelector(`[id="${copyMenuId}"]`)).not.toBeNull();
     expect(view.container.textContent).toContain('Копіювати повідомлення');
     expect(view.container.textContent).toContain('Копіювати частоту');
     expect(view.container.textContent).toContain("Копіювати прив'язку");
 
     await click(getButton(view.container, 'Копіювати повідомлення'));
     expect(onCopyText).toHaveBeenCalledTimes(1);
+    expect(view.container.querySelector(`[id="${copyMenuId}"]`)).toBeNull();
 
     await click(copyButton);
+    expect(view.container.querySelector(`[id="${copyMenuId}"]`)).not.toBeNull();
     await click(getButton(view.container, 'Копіювати частоту'));
     expect(onCopyFreq).toHaveBeenCalledTimes(1);
 
     await click(copyButton);
+    expect(view.container.querySelector(`[id="${copyMenuId}"]`)).not.toBeNull();
     await click(getButton(view.container, "Копіювати прив'язку"));
     expect(onCopyEtalon).toHaveBeenCalledTimes(1);
   });
@@ -1592,6 +1740,10 @@ describe('MessageCard', () => {
     const excludeButton = view.container.querySelector(`button[aria-label="${EXCLUDE_TITLE}"]`);
     if (!(excludeButton instanceof HTMLButtonElement)) throw new Error('exclude button not found');
     await click(excludeButton);
+    expect(latestMenuProps).toHaveLength(1);
+    const excludeMenuId = latestMenuProps.at(-1)?.id;
+    if (excludeMenuId == null) throw new Error('exclude menu id not found');
+    expect(view.container.querySelector(`[id="${excludeMenuId}"]`)).not.toBeNull();
 
     const excludeGroupButton = Array.from(view.container.querySelectorAll('button')).find(
       (button) => button.textContent?.includes('Виключити групу'),
@@ -1641,6 +1793,11 @@ describe('MessageCard', () => {
     });
     rendered.push(view);
 
+    const author = getMuiTypographyElementByText(view.container, 'peer-login');
+    const body = getMuiTypographyElementByText(view.container, 'peer comment');
+    expect(author.getAttribute('data-mui-variant')).toBe('body2');
+    expect(body.getAttribute('data-mui-variant')).toBe('body2');
+    expect(author).not.toBe(body);
     expect(view.container.textContent).toContain('peer-login');
     expect(view.container.textContent).toContain('peer comment');
     expect(view.container.textContent).toContain('hidden comment');

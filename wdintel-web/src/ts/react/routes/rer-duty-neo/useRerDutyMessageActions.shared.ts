@@ -1,5 +1,4 @@
 import type {
-  InboxMessagesReq,
   InboxMessage,
   RerDutyQueryStateWf as RerDutyFeedFilterState,
   SavedFilterDuty,
@@ -8,8 +7,6 @@ import type {
   Tag,
 } from '../../../../Bindings';
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
-import type { FeedColumnHandle } from './FeedColumn';
-import { buildInboxReq } from './utils';
 import type { MessageFeedState } from './utils';
 
 export type MessageActionsDeps = {
@@ -25,21 +22,19 @@ export type MessageActionsDeps = {
     feedId: string,
     opts?: { nolimit?: boolean; scrollToEndAfterLoad?: boolean; markAllReadAfterAppend?: boolean },
   ) => Promise<void>;
-  buildReqForFeed: (
-    feed: MessageFeedState,
-    opts: Omit<
-      Parameters<typeof buildInboxReq>[0],
-      | 'filter'
-      | 'expandedFreqsSelected'
-      | 'expandedFreqsDenied'
-      | 'highlightSignals'
-      | 'reportTagsOnlyThisUnit'
-    >,
-  ) => InboxMessagesReq;
-  columnRefsRef: MutableRefObject<Record<string, FeedColumnHandle | null>>;
   showArrowResult: (feedId: string, message: string) => void;
+  columnRefsRef: MutableRefObject<
+    Record<string, { scrollToEnd: (behavior?: ScrollBehavior) => void } | null>
+  >;
   setWatchModeByFeedId: Dispatch<SetStateAction<Record<string, boolean>>>;
-  setLoadingNewerFeedId: Dispatch<SetStateAction<string | null>>;
+  setLoadingNewerFeedIds: Dispatch<SetStateAction<Set<string>>>;
+  requestValidatedInboxCount: (feedId: string) => Promise<{
+    feedId: string;
+    quantity: number;
+    cursorId: number | null;
+    hasItems: boolean;
+    requestSignature: string;
+  } | null>;
   authUserName: string | null;
   profiles: Record<string, SignalProfileEntry | null>;
   tagsMap: Record<number, Tag>;

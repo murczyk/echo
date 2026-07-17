@@ -82,8 +82,8 @@ export function RerDutyNeoPage({
       feedCount: messageFeeds.length,
       canRemove: messageFeeds.length > 1,
       maxWidth: dutyFeedColumnMaxWidth(messageFeeds.length, narrowScreen),
-      isWatchMode: !dutyDisableAutoScroll && (watchModeByFeedId[feed.id] ?? false),
-      loadingNewer: loadingNewerFeedId === feed.id,
+      isWatchMode: !dutyDisableAutoScroll && (watchModeByFeedId[feed.id] ?? true),
+      loadingNewer: loadingNewerFeedIds.has(feed.id),
       arrowResultMessage: arrowResultByFeedId[feed.id] ?? null,
       unreadCount: feedUnreadDisplayCount(feed),
     },
@@ -198,6 +198,7 @@ export function RerDutyNeoPage({
     },
     actions: {
       onLoadOlder: () => loadFeedOlderMessages(feed.id),
+      onLoadNewer: () => loadFeedNewerMessages(feed.id, { skipIfNewestExhausted: true }),
       onRemoveColumn: () => removeMessageFeed(feed.id),
       onMessageBookmark: (msgId, currentlyBookmarked) =>
         handleMessageBookmark(feed.id, msgId, currentlyBookmarked),
@@ -216,10 +217,9 @@ export function RerDutyNeoPage({
           setWatchModeByFeedId((prev) => ({ ...prev, [feed.id]: true }));
         }
         if (feed.items.length > 0) {
-          handleVisibleMessageIds(feed.id)(
-            feed.items.map(([id]) => id),
-            { atBottom: true },
-          );
+          handleVisibleMessageIds(feed.id)(feed.items[feed.items.length - 1][0], {
+            atBottom: true,
+          });
         }
       },
       onLeftBottom: () => setWatchModeByFeedId((prev) => ({ ...prev, [feed.id]: false })),
@@ -251,6 +251,7 @@ export function RerDutyNeoPage({
     removeMessageFeed,
     loadFeedInitialMessages,
     loadFeedOlderMessages,
+    loadFeedNewerMessages,
     handleSaveFilter,
     handleApplySavedFilter,
     handleUpdateSelectedSavedFilter,
@@ -302,7 +303,7 @@ export function RerDutyNeoPage({
     featureStrictNetworks,
     watchModeByFeedId,
     setWatchModeByFeedId,
-    loadingNewerFeedId,
+    loadingNewerFeedIds,
     arrowResultByFeedId,
     copiedFeedbackId,
     setMessageFeeds,

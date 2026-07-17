@@ -1,7 +1,8 @@
-import { Box, Tooltip, Typography } from '@mui/material';
+import { Tooltip, Typography } from '@mui/material';
+import { styled } from '@mui/material/styles';
 import dayjs from 'dayjs';
 import customParseFormat from 'dayjs/plugin/customParseFormat';
-import { useMemo } from 'react';
+import { memo, useMemo } from 'react';
 import type {
   CallsignInfoRes,
   InboxMessage,
@@ -30,15 +31,24 @@ import {
   emptyFilter,
   getPointEtalonsFromMessage,
   messageRenderDistance,
+  type MessageEntityExcludeMenuOption,
   type MessageEntityFilterKind,
   type TagsLayoutVariant,
 } from '../../rer-duty-neo/utils';
 import { resolveMessageCardEtalonDisplayModel } from './message-card.utils';
 
-/** Share of the header row (network vs relative time) reserved for etalon / network block. */
-export const MESSAGE_CARD_HEADER_NETWORK_ROW_WIDTH_PCT = 90;
-
 dayjs.extend(customParseFormat);
+
+// Hoisted so repeated renders (e.g. every message card in a scrolling feed) share a single
+// stable reference for these "empty" defaults, instead of allocating a fresh object/array
+// per render that would otherwise defeat React.memo and downstream useMemo dependency checks.
+const EMPTY_FILTER: RerDutyFeedFilterState = emptyFilter();
+const EMPTY_MESSAGE_COMMENTS: MessageComment[] = [];
+const EMPTY_EXCLUDE_OPTIONS: MessageEntityExcludeMenuOption[] = [];
+
+const MessageCardRoot = styled('div')(({ theme }) => ({
+  ...theme.typography.body2,
+}));
 
 export function formatMessageCardTooltipTime(
   msg: Pick<InboxMessage, 'time' | 'timestamp'>,
@@ -111,7 +121,9 @@ export type MessageCardProps = {
   analysisCallsignActions?: AnalysisCallsignActions;
 };
 
-export function MessageCard({
+// Performance boundary: this component is repeated throughout Duty feeds.
+// Keep structural markup native and theme-aware; see ./AGENTS.md before adding layout wrappers.
+function MessageCardComponent({
   id,
   msg,
   feedCount = 1,
@@ -124,8 +136,8 @@ export function MessageCard({
   senderName,
   copiedFeedbackId,
   networkDisplayMap,
-  filterState = emptyFilter(),
-  messageComments = [],
+  filterState = EMPTY_FILTER,
+  messageComments = EMPTY_MESSAGE_COMMENTS,
   searchText,
   networkMap = {},
   featureStrictNetworks = false,
@@ -162,65 +174,82 @@ export function MessageCard({
     if (!networks) return {};
     return Object.fromEntries(networks.map((network) => [network.id, network]));
   }, [networkMap, networks]);
-  const etalonDisplayModel = resolveMessageCardEtalonDisplayModel(msg, {
-    featureStrictNetworks,
-    networkDisplayMap,
-    networkMap: derivedNetworkMap,
-    networks,
-  });
+  const etalonDisplayModel = useMemo(
+    () =>
+      resolveMessageCardEtalonDisplayModel(msg, {
+        featureStrictNetworks,
+        networkDisplayMap,
+        networkMap: derivedNetworkMap,
+        networks,
+      }),
+    [msg, featureStrictNetworks, networkDisplayMap, derivedNetworkMap, networks],
+  );
   const onCopyEtalonAction = etalonDisplayModel.copyEtalonValue == null ? undefined : onCopyEtalon;
   const onCopyLocationAction =
     etalonDisplayModel.copyLocationValue == null ? undefined : onCopyLocation;
-  const pointEtalons = getPointEtalonsFromMessage(msg, tagsMap);
-  const excludeMenuOptions =
-    displayMode === 'duty'
-      ? buildVisibleExcludeMenuOptions(filterState, {
-          group: { value: msg.groupMasterKey, label: groupName },
-          sender: { value: msg.sender, label: senderName },
-          freq: { value: msg.freq, label: msg.freq },
-          post: { value: msg.post, label: msg.post },
-        })
-      : [];
-  const mapHref =
-    displayMode === 'duty'
-      ? pointEtalons.length > 0
-        ? buildClassicAnalysisMapHrefWithSearch(pointEtalons, msg)
-        : buildClassicAnalysisHref(msg, true)
-      : undefined;
+  const pointEtalons = useMemo(() => getPointEtalonsFromMessage(msg, tagsMap), [msg, tagsMap]);
+  const excludeSources = useMemo(
+    () => ({
+      group: { value: msg.groupMasterKey, label: groupName },
+      sender: { value: msg.sender, label: senderName },
+      freq: { value: msg.freq, label: msg.freq },
+      post: { value: msg.post, label: msg.post },
+    }),
+    [msg.groupMasterKey, groupName, msg.sender, senderName, msg.freq, msg.post],
+  );
+  const excludeMenuOptions = useMemo(
+    () =>
+      displayMode === 'duty'
+        ? buildVisibleExcludeMenuOptions(filterState, excludeSources)
+        : EMPTY_EXCLUDE_OPTIONS,
+    [displayMode, filterState, excludeSources],
+  );
+  const mapHref = useMemo(
+    () =>
+      displayMode === 'duty'
+        ? pointEtalons.length > 0
+          ? buildClassicAnalysisMapHrefWithSearch(pointEtalons, msg)
+          : buildClassicAnalysisHref(msg, true)
+        : undefined,
+    [displayMode, pointEtalons, msg],
+  );
   const watermarkUserName = authUserName?.trim() ?? '';
   const timeDistance =
     isPresent(msg.timestamp) && isPresent(relativeTimeMs)
       ? messageRenderDistance(msg.timestamp, relativeTimeMs)
       : null;
-  const tooltipTime = formatMessageCardTooltipTime(msg);
+  const tooltipTime = useMemo(() => formatMessageCardTooltipTime(msg), [msg]);
 
   const topRight =
     displayMode === 'duty' ? (
       isPresent(timeDistance) ? (
-        <Box sx={{ flex: '1 1 0', minWidth: 0, display: 'flex', justifyContent: 'flex-end' }}>
+        <div className="flex-1 min-w-0 flex justify-end">
           {tooltipTime === NO_DATA_LABEL ? (
-            <Typography variant="caption" sx={{ color: 'text.secondary', whiteSpace: 'nowrap' }}>
+            <Typography variant="body2" sx={{ color: 'text.secondary', whiteSpace: 'nowrap' }}>
               {timeDistance}
             </Typography>
           ) : (
             <Tooltip title={tooltipTime} placement="top" enterDelay={300}>
               <Typography
-                variant="caption"
+                variant="body2"
                 sx={{ color: 'text.secondary', whiteSpace: 'nowrap', cursor: 'default' }}
               >
                 {timeDistance}
               </Typography>
             </Tooltip>
           )}
-        </Box>
+        </div>
       ) : (
-        <Box sx={{ minHeight: 28 }} />
+        <div className="min-h-[28px]" />
       )
     ) : (
-      <Box sx={{ minHeight: 28 }} />
+      <div className="min-h-[28px]" />
     );
 
-  const analysisHref = displayMode === 'duty' ? buildClassicAnalysisHref(msg, false) : undefined;
+  const analysisHref = useMemo(
+    () => (displayMode === 'duty' ? buildClassicAnalysisHref(msg, false) : undefined),
+    [displayMode, msg],
+  );
   const metadataTrigger =
     displayMode === 'analysis' && hasVisibleDmrMetadata(msg) ? (
       <MessageCardDmrMetadataPopover msg={msg} />
@@ -229,7 +258,6 @@ export function MessageCard({
   const headerProps: MessageCardHeaderProps = {
     compact: compactLayout,
     displayMode,
-    networkRowContentWidthPct: MESSAGE_CARD_HEADER_NETWORK_ROW_WIDTH_PCT,
     id,
     msg,
     copiedFeedbackId,
@@ -259,49 +287,21 @@ export function MessageCard({
   const visibleMessageComments = messageComments;
 
   return (
-    <Box
-      ref={messageRootRef}
-      component="li"
-      sx={{
-        listStyle: 'none',
-        display: 'flex',
-        flexDirection: 'column',
-        pl: 0,
-        pr: 0,
-        pb: 1.5,
-        mb: 0,
-        fontSize: 14,
-      }}
+    <li
+      ref={messageRootRef as React.RefObject<HTMLLIElement>}
+      className="list-none flex flex-col px-0 pb-3 mb-0"
+      // Preserve a remembered block-size fallback so skipped off-screen cards do not
+      // collapse scroll-height or anchor measurements before Chromium measures them.
+      style={{ contentVisibility: 'auto', containIntrinsicBlockSize: 'auto 120px' }}
     >
-      <Box
-        sx={{
-          position: 'relative',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: compactLayout ? 1.25 : 1.5,
-          width: '100%',
-          px: 1.5,
-          py: 1.25,
-          borderRadius: 1,
-          bgcolor: 'var(--color-card)',
-          color: 'text.primary',
-          overflow: 'hidden',
-          fontSize: 14,
-          '& .MuiTypography-root': {
-            fontSize: 14,
-          },
-          '& a': {
-            fontSize: 14,
-          },
-        }}
+      <MessageCardRoot
+        className="message-card-root relative flex flex-col w-full px-[12px] py-[10px] rounded bg-(--color-card) overflow-hidden"
+        style={{ gap: compactLayout ? '10px' : '12px' }}
       >
         {watermarkUserName !== '' && (
-          <Box
-            sx={{ position: 'absolute', inset: 0, overflow: 'hidden', pointerEvents: 'none' }}
-            aria-hidden
-          >
+          <div className="absolute inset-0 overflow-hidden pointer-events-none" aria-hidden>
             <MessageCardWatermark authUserName={watermarkUserName} />
-          </Box>
+          </div>
         )}
         <MessageCardHeader {...headerProps} />
         <MessageCardContent
@@ -323,10 +323,12 @@ export function MessageCard({
           searchText={searchText}
           onOpenPointsOnMap={onOpenPointsOnMap}
         />
-      </Box>
-    </Box>
+      </MessageCardRoot>
+    </li>
   );
 }
+
+export const MessageCard = memo(MessageCardComponent);
 
 type BaseMessageCardProps = Omit<MessageCardProps, 'displayMode'>;
 

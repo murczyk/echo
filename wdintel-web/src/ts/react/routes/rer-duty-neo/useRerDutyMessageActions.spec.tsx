@@ -2,7 +2,7 @@
  * @vitest-environment happy-dom
  */
 import { createRoot, type Root } from 'react-dom/client';
-import { useState, act } from 'react';
+import { useRef, useState, act } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 
@@ -32,6 +32,12 @@ const hoisted = vi.hoisted(() => ({
   savedFilterRename: vi.fn(),
   savedFilterUpsert: vi.fn(),
   copyTextToClipboard: vi.fn(),
+  requestValidatedInboxCount: vi.fn(),
+  loadFeedNewerMessages: vi.fn(() => Promise.resolve()),
+  loadFeedInitialMessages: vi.fn(() => Promise.resolve()),
+  showArrowResult: vi.fn(),
+  setWatchModeByFeedId: vi.fn(),
+  setLoadingNewerFeedIds: vi.fn(),
 }));
 
 vi.mock('../../services/api/inbox', () => ({
@@ -114,7 +120,6 @@ function buildFeed(overrides: Partial<MessageFeedState> = {}): MessageFeedState 
     loading: false,
     loadingOlder: false,
     hasReachedStart: false,
-    firstItemIndex: 0,
     referenceTimeMs: null,
     readIds: new Set<number>(),
     unreadCount: 70000,
@@ -151,6 +156,9 @@ function TestHarness(props: {
   initialFeeds?: MessageFeedState[];
   initialSavedFilters?: SavedFilterDuty[];
   authUserName?: string | null;
+  columnRefsRef?: MutableRefObject<
+    Record<string, { scrollToEnd: (behavior?: ScrollBehavior) => void } | null>
+  >;
 }) {
   const [messageFeeds, setMessageFeeds] = useState<MessageFeedState[]>(
     props.initialFeeds ?? [buildFeed()],
@@ -162,18 +170,22 @@ function TestHarness(props: {
     Record<string, number | null>
   >({});
   const [saveFilterNameByFeedId, setSaveFilterNameByFeedId] = useState<Record<string, string>>({});
+  const fallbackColumnRefsRef = useRef<
+    Record<string, { scrollToEnd: (behavior?: ScrollBehavior) => void } | null>
+  >({});
+  const columnRefsRef = props.columnRefsRef ?? fallbackColumnRefsRef;
   const actions = useRerDutyMessageActions({
     messageFeeds,
     setMessageFeeds,
     setError: vi.fn(),
     applyFilter: vi.fn(),
-    loadFeedInitialMessages: vi.fn(() => Promise.resolve()),
-    loadFeedNewerMessages: vi.fn(() => Promise.resolve()),
-    buildReqForFeed,
-    columnRefsRef: { current: {} },
-    showArrowResult: vi.fn(),
-    setWatchModeByFeedId: vi.fn(),
-    setLoadingNewerFeedId: vi.fn(),
+    loadFeedInitialMessages: hoisted.loadFeedInitialMessages,
+    loadFeedNewerMessages: hoisted.loadFeedNewerMessages,
+    showArrowResult: hoisted.showArrowResult,
+    columnRefsRef,
+    setWatchModeByFeedId: hoisted.setWatchModeByFeedId,
+    setLoadingNewerFeedIds: hoisted.setLoadingNewerFeedIds,
+    requestValidatedInboxCount: hoisted.requestValidatedInboxCount,
     authUserName: props.authUserName ?? null,
     profiles: {
       'sender-1': { givenName: 'BBC', familyName: 'SPORT' },
@@ -235,6 +247,15 @@ describe('useRerDutyMessageActions', () => {
     hoisted.deleteMessage.mockResolvedValue(undefined);
     hoisted.fetchInboxCount.mockResolvedValue({ quantity: 0, firstElementTs: null });
     hoisted.inboxMessageTagsModelError.mockResolvedValue(undefined);
+    hoisted.requestValidatedInboxCount.mockResolvedValue({
+      feedId: 'mf-0',
+      quantity: 0,
+      cursorId: 10,
+      hasItems: true,
+    });
+    hoisted.loadFeedNewerMessages.mockResolvedValue(undefined);
+    hoisted.loadFeedInitialMessages.mockResolvedValue(undefined);
+    hoisted.showArrowResult.mockReset();
     container = document.createElement('div');
     document.body.appendChild(container);
     root = createRoot(container);
@@ -250,11 +271,25 @@ describe('useRerDutyMessageActions', () => {
   });
 
   it('uses the last message id cursor when loading newer mail from the arrow button', async () => {
+    hoisted.requestValidatedInboxCount.mockResolvedValueOnce({
+      feedId: 'mf-0',
+      quantity: 3,
+      cursorId: 10,
+      hasItems: true,
+    });
+    const columnRefsRef: MutableRefObject<
+      Record<string, { scrollToEnd: (behavior?: ScrollBehavior) => void } | null>
+    > = {
+      current: {
+        'mf-0': { scrollToEnd: vi.fn() },
+      },
+    };
     const apiRef: MutableRefObject<HarnessApi | null> = { current: null };
     await act(async () => {
       root.render(
         <TestHarness
           apiRef={apiRef}
+          columnRefsRef={columnRefsRef}
           initialFeeds={[buildFeed({ items: [[10, minimalInboxMessage({ timestamp: null })]] })]}
         />,
       );
@@ -267,17 +302,131 @@ describe('useRerDutyMessageActions', () => {
       await apiRef.current!.handleArrowClick('mf-0');
     });
 
-    expect(hoisted.fetchInboxCount).toHaveBeenCalledTimes(1);
-    expect(hoisted.fetchInboxCount.mock.calls[0]?.[0]).toEqual(
-      expect.objectContaining({
-        sinceIdNoninclusive: 10,
-        sinceDateInclusiveMs: null,
-        nolimit: true,
-      }),
+    expect(hoisted.requestValidatedInboxCount).toHaveBeenCalledTimes(1);
+    expect(hoisted.requestValidatedInboxCount).toHaveBeenCalledWith('mf-0');
+    expect(hoisted.fetchInboxCount).not.toHaveBeenCalled();
+    expect(columnRefsRef.current['mf-0']?.scrollToEnd).not.toHaveBeenCalled();
+    expect(hoisted.loadFeedNewerMessages).toHaveBeenCalledTimes(1);
+    expect(hoisted.loadFeedNewerMessages).toHaveBeenCalledWith(
+      'mf-0',
+      expect.objectContaining({ scrollToEndAfterLoad: true }),
     );
   });
 
-  it('decrements unreadCount by newly visible ids and clears it at bottom', async () => {
+  it('scrolls to the existing bottom once for a valid zero-count arrow result', async () => {
+    hoisted.requestValidatedInboxCount.mockResolvedValueOnce({
+      feedId: 'mf-0',
+      quantity: 0,
+      cursorId: 10,
+      hasItems: true,
+    });
+    const columnRefsRef: MutableRefObject<
+      Record<string, { scrollToEnd: (behavior?: ScrollBehavior) => void } | null>
+    > = {
+      current: {
+        'mf-0': { scrollToEnd: vi.fn() },
+      },
+    };
+    const apiRef: MutableRefObject<HarnessApi | null> = { current: null };
+    await act(async () => {
+      root.render(
+        <TestHarness
+          apiRef={apiRef}
+          columnRefsRef={columnRefsRef}
+          initialFeeds={[buildFeed({ items: [[10, minimalInboxMessage({ timestamp: null })]] })]}
+        />,
+      );
+    });
+    await act(async () => {
+      await flushMicrotasks();
+    });
+
+    await act(async () => {
+      await apiRef.current!.handleArrowClick('mf-0');
+    });
+
+    expect(columnRefsRef.current['mf-0']?.scrollToEnd).toHaveBeenCalledTimes(1);
+    expect(columnRefsRef.current['mf-0']?.scrollToEnd).toHaveBeenCalledWith('auto');
+    expect(hoisted.showArrowResult).toHaveBeenCalledWith('mf-0', 'Немає нових повідомлень');
+    expect(hoisted.loadFeedNewerMessages).not.toHaveBeenCalled();
+  });
+
+  it('shows a busy result when the shared count request resolves stale for the arrow button', async () => {
+    hoisted.requestValidatedInboxCount.mockResolvedValueOnce(null);
+
+    const columnRefsRef: MutableRefObject<
+      Record<string, { scrollToEnd: (behavior?: ScrollBehavior) => void } | null>
+    > = {
+      current: {
+        'mf-0': { scrollToEnd: vi.fn() },
+      },
+    };
+    const apiRef: MutableRefObject<HarnessApi | null> = { current: null };
+    await act(async () => {
+      root.render(
+        <TestHarness
+          apiRef={apiRef}
+          columnRefsRef={columnRefsRef}
+          initialFeeds={[buildFeed({ items: [[10, minimalInboxMessage({ timestamp: null })]] })]}
+        />,
+      );
+    });
+    await act(async () => {
+      await flushMicrotasks();
+    });
+
+    await act(async () => {
+      await apiRef.current!.handleArrowClick('mf-0');
+    });
+
+    expect(hoisted.requestValidatedInboxCount).toHaveBeenCalledTimes(1);
+    expect(hoisted.fetchInboxCount).not.toHaveBeenCalled();
+    expect(columnRefsRef.current['mf-0']?.scrollToEnd).toHaveBeenCalledTimes(1);
+    expect(hoisted.showArrowResult).toHaveBeenCalledWith(
+      'mf-0',
+      'Оновлення триває, спробуйте ще раз',
+    );
+    expect(hoisted.loadFeedNewerMessages).not.toHaveBeenCalled();
+  });
+
+  it('shows the existing failure chip when the shared count request fails for the arrow button', async () => {
+    hoisted.requestValidatedInboxCount.mockRejectedValueOnce(new Error('count failed'));
+
+    const columnRefsRef: MutableRefObject<
+      Record<string, { scrollToEnd: (behavior?: ScrollBehavior) => void } | null>
+    > = {
+      current: {
+        'mf-0': { scrollToEnd: vi.fn() },
+      },
+    };
+    const apiRef: MutableRefObject<HarnessApi | null> = { current: null };
+    await act(async () => {
+      root.render(
+        <TestHarness
+          apiRef={apiRef}
+          columnRefsRef={columnRefsRef}
+          initialFeeds={[buildFeed({ items: [[10, minimalInboxMessage({ timestamp: null })]] })]}
+        />,
+      );
+    });
+    await act(async () => {
+      await flushMicrotasks();
+    });
+
+    await act(async () => {
+      await apiRef.current!.handleArrowClick('mf-0');
+    });
+
+    expect(hoisted.requestValidatedInboxCount).toHaveBeenCalledTimes(1);
+    expect(columnRefsRef.current['mf-0']?.scrollToEnd).toHaveBeenCalledTimes(1);
+    expect(hoisted.showArrowResult).toHaveBeenCalledWith(
+      'mf-0',
+      'Не вдалося перевірити нові повідомлення',
+    );
+    expect(hoisted.loadFeedNewerMessages).not.toHaveBeenCalled();
+  });
+
+  it('keeps unreadCount unchanged when the trimmed window is already read at bottom', async () => {
     const apiRef: MutableRefObject<HarnessApi | null> = { current: null };
     await act(async () => {
       root.render(<TestHarness apiRef={apiRef} />);
@@ -287,20 +436,133 @@ describe('useRerDutyMessageActions', () => {
     });
 
     await act(async () => {
-      apiRef.current!.handleVisibleMessageIds('mf-0')(
-        Array.from({ length: 20 }, (_, index) => index + 1),
-        { atBottom: false },
+      apiRef.current!.setMessageFeeds((prev) =>
+        prev.map((feed) =>
+          feed.id === 'mf-0'
+            ? {
+                ...feed,
+                items: Array.from({ length: 40 }, (_, index) => [
+                  index + 1,
+                  minimalInboxMessage({ timestamp: 100 + index }),
+                ]),
+                readIds: new Set<number>(Array.from({ length: 40 }, (_, index) => index + 1)),
+                unreadCount: 5,
+              }
+            : feed,
+        ),
       );
     });
-    expect(apiRef.current!.messageFeeds[0].unreadCount).toBe(69980);
+    const feedBefore = apiRef.current!.messageFeeds[0];
 
     await act(async () => {
-      apiRef.current!.handleVisibleMessageIds('mf-0')(
-        Array.from({ length: 20 }, (_, index) => index + 1),
-        { atBottom: true },
+      apiRef.current!.handleVisibleMessageIds('mf-0')(40, { atBottom: true });
+    });
+    expect(apiRef.current!.messageFeeds[0]).toBe(feedBefore);
+    expect(apiRef.current!.messageFeeds[0].unreadCount).toBe(5);
+    expect(apiRef.current!.messageFeeds[0].readIds.has(40)).toBe(true);
+  });
+
+  it('decrements unreadCount by newly visible ids from the loaded unread tail', async () => {
+    const apiRef: MutableRefObject<HarnessApi | null> = { current: null };
+    await act(async () => {
+      root.render(<TestHarness apiRef={apiRef} />);
+    });
+    await act(async () => {
+      await flushMicrotasks();
+    });
+
+    await act(async () => {
+      apiRef.current!.setMessageFeeds((prev) =>
+        prev.map((feed) =>
+          feed.id === 'mf-0'
+            ? {
+                ...feed,
+                items: Array.from({ length: 65 }, (_, index) => [
+                  index + 1,
+                  minimalInboxMessage({ timestamp: 100 + index }),
+                ]),
+                readIds: new Set<number>(Array.from({ length: 60 }, (_, index) => index + 1)),
+                unreadCount: 7,
+              }
+            : feed,
+        ),
       );
     });
+
+    await act(async () => {
+      apiRef.current!.handleVisibleMessageIds('mf-0')(65, { atBottom: true });
+    });
+    expect(apiRef.current!.messageFeeds[0].unreadCount).toBe(2);
+    expect(
+      [61, 62, 63, 64, 65].every((id) => apiRef.current!.messageFeeds[0].readIds.has(id)),
+    ).toBe(true);
+  });
+
+  it('clears unreadCount when the loaded unread tail accounts for all unread messages', async () => {
+    const apiRef: MutableRefObject<HarnessApi | null> = { current: null };
+    await act(async () => {
+      root.render(
+        <TestHarness
+          apiRef={apiRef}
+          initialFeeds={[
+            buildFeed({
+              items: Array.from({ length: 65 }, (_, index) => [
+                index + 1,
+                minimalInboxMessage({ timestamp: 100 + index }),
+              ]),
+              readIds: new Set<number>(Array.from({ length: 60 }, (_, index) => index + 1)),
+              unreadCount: 5,
+            }),
+          ]}
+        />,
+      );
+    });
+    await act(async () => {
+      await flushMicrotasks();
+    });
+
+    await act(async () => {
+      apiRef.current!.handleVisibleMessageIds('mf-0')(65, { atBottom: true });
+    });
     expect(apiRef.current!.messageFeeds[0].unreadCount).toBe(0);
+    expect(
+      [61, 62, 63, 64, 65].every((id) => apiRef.current!.messageFeeds[0].readIds.has(id)),
+    ).toBe(true);
+  });
+
+  it('does not mutate state on repeated bottom visibility reports for already read ids', async () => {
+    const apiRef: MutableRefObject<HarnessApi | null> = { current: null };
+    await act(async () => {
+      root.render(
+        <TestHarness
+          apiRef={apiRef}
+          initialFeeds={[
+            buildFeed({
+              items: Array.from({ length: 65 }, (_, index) => [
+                index + 1,
+                minimalInboxMessage({ timestamp: 100 + index }),
+              ]),
+              readIds: new Set<number>(Array.from({ length: 65 }, (_, index) => index + 1)),
+              unreadCount: 5,
+            }),
+          ]}
+        />,
+      );
+    });
+    await act(async () => {
+      await flushMicrotasks();
+    });
+
+    const feedBefore = apiRef.current!.messageFeeds[0];
+    const stateBefore = apiRef.current!.messageFeeds;
+
+    await act(async () => {
+      apiRef.current!.handleVisibleMessageIds('mf-0')(65, { atBottom: true });
+    });
+
+    expect(apiRef.current!.messageFeeds).toBe(stateBefore);
+    expect(apiRef.current!.messageFeeds[0]).toBe(feedBefore);
+    expect(apiRef.current!.messageFeeds[0].unreadCount).toBe(5);
   });
 
   it('decrements unreadCount only when deleting an unread message', async () => {

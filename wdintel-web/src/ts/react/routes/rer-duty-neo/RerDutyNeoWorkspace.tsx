@@ -12,7 +12,8 @@ import {
 import { isPresent } from '../../utils/misc';
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 
-import { FeedColumn, type FeedColumnHandle, type FeedColumnModel } from './FeedColumn';
+import { FeedColumn, type FeedColumnHandle } from './FeedColumn';
+import type { FeedColumnModel } from './types';
 import { DUTY_ICON_ONLY_FEED_TAB_MIN_FEEDS } from './FeedColumnHeader';
 import { dutyTopAddFabSx } from './top-action-styles';
 import type { MessageFeedState } from './utils';
@@ -320,6 +321,10 @@ export function RerDutyNeoWorkspace({
                 messageFeeds.map((feed) => {
                   const isActive = feed.id === activeFeedId;
                   const column = buildFeedColumnModel(feed);
+                  const columnView = {
+                    ...column.view,
+                    scrollTrackingEnabled: isActive,
+                  };
                   return (
                     <Box
                       key={feed.id}
@@ -327,6 +332,7 @@ export function RerDutyNeoWorkspace({
                       sx={{
                         position: 'absolute',
                         inset: 0,
+                        // Inactive narrow feeds stay mounted to preserve state; scroll tracking is disabled explicitly.
                         display: isActive ? 'flex' : 'none',
                         minHeight: 0,
                         minWidth: 0,
@@ -338,6 +344,7 @@ export function RerDutyNeoWorkspace({
                         }}
                         column={{
                           ...column,
+                          view: columnView,
                           actions: {
                             ...column.actions,
                             onCreateMessageFeed:
@@ -362,15 +369,25 @@ export function RerDutyNeoWorkspace({
                         : `repeat(${messageFeeds.length}, minmax(0, 1fr))`,
                   }}
                 >
-                  {messageFeeds.map((feed) => (
-                    <FeedColumn
-                      key={feed.id}
-                      ref={(el) => {
-                        columnRefsRef.current[feed.id] = el;
-                      }}
-                      column={buildFeedColumnModel(feed)}
-                    />
-                  ))}
+                  {messageFeeds.map((feed) => {
+                    const column = buildFeedColumnModel(feed);
+                    const columnView = {
+                      ...column.view,
+                      scrollTrackingEnabled: true,
+                    };
+                    return (
+                      <FeedColumn
+                        key={feed.id}
+                        ref={(el) => {
+                          columnRefsRef.current[feed.id] = el;
+                        }}
+                        column={{
+                          ...column,
+                          view: columnView,
+                        }}
+                      />
+                    );
+                  })}
                 </Box>
               )}
             </Box>
