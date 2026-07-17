@@ -16,6 +16,8 @@ type Params = {
   queryState: AnalysisQueryState;
 };
 
+const MESSAGE_COUNTS_DEBOUNCE_MS = 200;
+
 export function useAnalysisMessageCounts({
   newestFirst,
   onError,
@@ -47,41 +49,45 @@ export function useAnalysisMessageCounts({
       return;
     }
 
-    const abortController = new AbortController();
     setMessagesTotalCount(null);
     setMessagesOverallCount(null);
     setMessagesTotalLoading(true);
+    let abortController: AbortController | null = null;
 
-    const selectedCountPromise = fetchInboxCount(
-      { ...inboxReq, nolimit: true, newestFirst },
-      { signal: abortController.signal },
-    );
-    const overallCountPromise =
-      messagesTotalRequestJson === messagesOverallRequestJson
-        ? selectedCountPromise
-        : fetchInboxCount(
-            { ...overallInboxReq, nolimit: true, newestFirst },
-            { signal: abortController.signal },
-          );
+    const timeoutId = window.setTimeout(() => {
+      abortController = new AbortController();
+      const signal = abortController.signal;
+      const selectedCountPromise = fetchInboxCount(
+        { ...inboxReq, nolimit: true, newestFirst },
+        { signal },
+      );
+      const overallCountPromise =
+        messagesTotalRequestJson === messagesOverallRequestJson
+          ? selectedCountPromise
+          : fetchInboxCount({ ...overallInboxReq, nolimit: true, newestFirst }, { signal });
 
-    void Promise.all([selectedCountPromise, overallCountPromise])
-      .then(([selectedCount, overallCount]) => {
-        if (abortController.signal.aborted) return;
-        setMessagesTotalCount(selectedCount.quantity);
-        setMessagesOverallCount(overallCount.quantity);
-      })
-      .catch((loadError: unknown) => {
-        if (abortController.signal.aborted || isAbortError(loadError)) return;
-        if (!onUnauthorizedRef.current(loadError)) onErrorRef.current(toErrorMessage(loadError));
-      })
-      .finally(() => {
-        if (!abortController.signal.aborted) setMessagesTotalLoading(false);
-      });
+      void Promise.all([selectedCountPromise, overallCountPromise])
+        .then(([selectedCount, overallCount]) => {
+          if (signal.aborted) return;
+          setMessagesTotalCount(selectedCount.quantity);
+          setMessagesOverallCount(overallCount.quantity);
+        })
+        .catch((loadError: unknown) => {
+          if (signal.aborted || isAbortError(loadError)) return;
+          if (!onUnauthorizedRef.current(loadError)) onErrorRef.current(toErrorMessage(loadError));
+        })
+        .finally(() => {
+          if (!signal.aborted) setMessagesTotalLoading(false);
+        });
+    }, MESSAGE_COUNTS_DEBOUNCE_MS);
 
-    return () => abortController.abort();
+    return () => {
+      window.clearTimeout(timeoutId);
+      abortController?.abort();
+    };
   }, [loadVersion, messagesOverallRequestJson, messagesTotalRequestJson, newestFirst]);
 
-  const reloadMessageCounts = useCallback(() => {
+  const refreshMessageCounts = useCallback(() => {
     setLoadVersion((current) => current + 1);
   }, []);
 
@@ -89,6 +95,6 @@ export function useAnalysisMessageCounts({
     messagesOverallCount,
     messagesTotalCount,
     messagesTotalLoading,
-    reloadMessageCounts,
+    refreshMessageCounts,
   };
 }

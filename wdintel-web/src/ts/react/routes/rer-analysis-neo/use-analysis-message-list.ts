@@ -53,7 +53,7 @@ export function useAnalysisMessageList({
   const messageCommentsLoadVersionRef = useRef(0);
   const loadMoreMessagesRequestRef = useRef(0);
   const pageCursorsRef = useRef<AnalysisMessagePageCursor[]>([FIRST_PAGE_CURSOR]);
-  const { messagesOverallCount, messagesTotalCount, messagesTotalLoading, reloadMessageCounts } =
+  const { messagesOverallCount, messagesTotalCount, messagesTotalLoading, refreshMessageCounts } =
     useAnalysisMessageCounts({
       newestFirst,
       onError,
@@ -69,8 +69,7 @@ export function useAnalysisMessageList({
   const invalidateMessagePageRequests = useCallback(() => {
     loadMoreMessagesRequestRef.current += 1;
     setMessagesPaging(false);
-    reloadMessageCounts();
-  }, [reloadMessageCounts]);
+  }, []);
 
   const invalidateMessagePaging = useCallback(() => {
     invalidateMessagePageRequests();
@@ -132,7 +131,7 @@ export function useAnalysisMessageList({
   ]);
 
   const fetchPage = useCallback(
-    async (cursor: AnalysisMessagePageCursor) => {
+    async (cursor: AnalysisMessagePageCursor, keepCurrentOnEmpty = false) => {
       const inboxReq = buildInboxReq(queryState, optionsFreqValues, true);
       if (isNullOrUndefined(inboxReq)) return null;
 
@@ -151,10 +150,16 @@ export function useAnalysisMessageList({
         const rsp = await fetchInboxMessages(paginatedReq);
         if (isStale()) return null;
         const pageMessages = rsp.inboxItems ?? [];
+        if (keepCurrentOnEmpty && pageMessages.length === 0) {
+          setNoMoreToLoad(true);
+          return pageMessages;
+        }
         setSummaryCallsignsInfo((current) => mergeAnalysisCallsignInfoMap(current, rsp.callsigns));
         setMessages(pageMessages);
         await loadMissingNetworksForMessages(pageMessages);
+        if (isStale()) return null;
         await loadMessageComments(pageMessages, false);
+        if (isStale()) return null;
         setNoMoreToLoad(isAnalysisInboxPageExhausted(pageMessages, rsp.pageLimit));
         return pageMessages;
       } catch (loadError) {
@@ -189,8 +194,8 @@ export function useAnalysisMessageList({
       ? { beforeIdNoninclusive: lastMessage[0], sinceIdNoninclusive: null }
       : { beforeIdNoninclusive: null, sinceIdNoninclusive: lastMessage[0] };
 
-    const fetched = await fetchPage(nextCursor);
-    if (fetched === null) return;
+    const fetched = await fetchPage(nextCursor, true);
+    if (fetched === null || fetched.length === 0) return;
 
     pageCursorsRef.current = [...pageCursorsRef.current.slice(0, pageIndex + 1), nextCursor];
     setPageIndex((current) => current + 1);
@@ -229,6 +234,7 @@ export function useAnalysisMessageList({
     noMoreToLoad,
     nolimitShown,
     pageIndex,
+    refreshMessageCounts,
     setAorEntries,
     setCounts,
     setHasLoadedInitialMessages,

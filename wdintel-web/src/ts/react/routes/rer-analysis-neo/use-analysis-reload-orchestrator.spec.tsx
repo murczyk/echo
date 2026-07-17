@@ -83,6 +83,7 @@ function buildParams(overrides: Partial<Parameters<typeof useAnalysisReloadOrche
     })),
     invalidateMessagePageRequests: vi.fn(),
     invalidateMessagePaging: vi.fn(),
+    refreshMessageCounts: vi.fn(),
     setAorEntries: noopSetter as Dispatch<SetStateAction<AnalysisAorEntry[]>>,
     setCounts: noopSetter as Dispatch<
       SetStateAction<import('../../../../Bindings').CountStatsRsp | null>
@@ -176,6 +177,7 @@ describe('useAnalysisReloadOrchestrator', () => {
     await renderHook(params);
 
     expect(reloadAnalysisDataMock.reloadAnalysisData).toHaveBeenCalledTimes(1);
+    expect(params.refreshMessageCounts).not.toHaveBeenCalled();
   });
 
   it('preserves the current message cursor for a manual page refresh', async () => {
@@ -197,6 +199,7 @@ describe('useAnalysisReloadOrchestrator', () => {
       }),
     );
     expect(params.getCurrentMessagePageCursor).toHaveBeenCalledTimes(1);
+    expect(params.refreshMessageCounts).toHaveBeenCalledTimes(1);
   });
 
   it('loads map palitras on initial eligible load', async () => {

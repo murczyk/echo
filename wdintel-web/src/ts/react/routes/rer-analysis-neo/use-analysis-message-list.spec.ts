@@ -53,7 +53,23 @@ type Harness = {
   latest: ReturnType<typeof useAnalysisMessageList>;
 };
 
-function renderHook(queryState = buildQueryState()): Harness {
+type Deferred<T> = {
+  promise: Promise<T>;
+  resolve: (value: T) => void;
+};
+
+function deferred<T>(): Deferred<T> {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((promiseResolve) => {
+    resolve = promiseResolve;
+  });
+  return { promise, resolve };
+}
+
+function renderHook(
+  queryState = buildQueryState(),
+  loadMissingNetworksForMessages = vi.fn().mockResolvedValue(undefined),
+): Harness {
   const container = document.createElement('div');
   document.body.appendChild(container);
   const root = createRoot(container);
@@ -61,7 +77,7 @@ function renderHook(queryState = buildQueryState()): Harness {
 
   function TestComponent() {
     harness.latest = useAnalysisMessageList({
-      loadMissingNetworksForMessages: vi.fn().mockResolvedValue(undefined),
+      loadMissingNetworksForMessages,
       newestFirst: true,
       onError: vi.fn(),
       onUnauthorized: vi.fn().mockReturnValue(false),
@@ -93,6 +109,7 @@ describe('useAnalysisMessageList pagination', () => {
       act(() => h.root.unmount());
       h.container.remove();
     }
+    vi.useRealTimers();
   });
 
   it('starts at pageIndex 0', () => {
@@ -102,10 +119,14 @@ describe('useAnalysisMessageList pagination', () => {
   });
 
   it('loads the total count using the same inbox filters', async () => {
+    vi.useFakeTimers();
     const h = renderHook();
     harnesses.push(h);
 
-    await act(async () => {});
+    expect(fetchInboxCountMock).not.toHaveBeenCalled();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(200);
+    });
 
     expect(h.latest.messagesTotalCount).toBe(42);
     expect(h.latest.messagesOverallCount).toBe(42);
@@ -117,13 +138,16 @@ describe('useAnalysisMessageList pagination', () => {
   });
 
   it('loads separate selected and overall counts when filters are active', async () => {
+    vi.useFakeTimers();
     fetchInboxCountMock
       .mockResolvedValueOnce({ quantity: 42, firstElementTs: null })
       .mockResolvedValueOnce({ quantity: 137, firstElementTs: null });
     const h = renderHook({ ...buildQueryState(), search: 'filtered' });
     harnesses.push(h);
 
-    await act(async () => {});
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(200);
+    });
 
     expect(fetchInboxCountMock).toHaveBeenCalledTimes(2);
     expect(h.latest.messagesTotalCount).toBe(42);
@@ -151,6 +175,64 @@ describe('useAnalysisMessageList pagination', () => {
     expect(h.latest.messages).toEqual(page(2));
     const lastCall = fetchInboxMessagesMock.mock.calls.at(-1)?.[0];
     expect(lastCall.beforeIdNoninclusive).toBe(1);
+  });
+
+  it('does not advance a stale page request after message hydration', async () => {
+    const hydration = deferred<void>();
+    const h = renderHook(
+      buildQueryState(),
+      vi.fn(() => hydration.promise),
+    );
+    harnesses.push(h);
+    await act(async () => {
+      h.latest.setMessages(page(1));
+    });
+    fetchInboxMessagesMock.mockResolvedValueOnce({
+      inboxItems: page(2),
+      callsigns: [],
+      pageLimit: 20,
+    });
+
+    let nextPagePromise!: Promise<void>;
+    await act(async () => {
+      nextPagePromise = h.latest.loadNextPage();
+      await Promise.resolve();
+    });
+    act(() => {
+      h.latest.invalidateMessagePaging();
+    });
+    hydration.resolve();
+    await act(async () => {
+      await nextPagePromise;
+    });
+
+    expect(h.latest.pageIndex).toBe(0);
+    expect(h.latest.noMoreToLoad).toBe(false);
+  });
+
+  it('keeps the current page when the next page is empty', async () => {
+    const currentMessages = Array.from({ length: 20 }, (_, index) => [
+      100 - index,
+      buildMessage(),
+    ]) as Array<[number, InboxMessage]>;
+    const h = renderHook();
+    harnesses.push(h);
+    await act(async () => {
+      h.latest.setMessages(currentMessages);
+    });
+    fetchInboxMessagesMock.mockResolvedValueOnce({
+      inboxItems: [],
+      callsigns: [],
+      pageLimit: 20,
+    });
+
+    await act(async () => {
+      await h.latest.loadNextPage();
+    });
+
+    expect(h.latest.messages).toEqual(currentMessages);
+    expect(h.latest.pageIndex).toBe(0);
+    expect(h.latest.noMoreToLoad).toBe(true);
   });
 
   it('loadPrevPage is a no-op at pageIndex 0', async () => {
@@ -248,15 +330,26 @@ describe('useAnalysisMessageList pagination', () => {
     });
   });
 
-  it('reloads the total count when message paging is invalidated', async () => {
+  it('refreshes counts only when explicitly requested', async () => {
+    vi.useFakeTimers();
     const h = renderHook();
     harnesses.push(h);
-    await act(async () => {});
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(200);
+    });
+    expect(fetchInboxCountMock).toHaveBeenCalledTimes(1);
+
+    act(() => {
+      h.latest.invalidateMessagePaging();
+    });
     expect(fetchInboxCountMock).toHaveBeenCalledTimes(1);
 
     fetchInboxCountMock.mockResolvedValueOnce({ quantity: 43, firstElementTs: null });
+    act(() => {
+      h.latest.refreshMessageCounts();
+    });
     await act(async () => {
-      h.latest.invalidateMessagePaging();
+      await vi.advanceTimersByTimeAsync(200);
     });
 
     expect(fetchInboxCountMock).toHaveBeenCalledTimes(2);

@@ -64,6 +64,7 @@ type Params = {
   invalidateMessagePaging: () => void;
   invalidateMessagePageRequests: () => void;
   getCurrentMessagePageCursor: () => import('./types').AnalysisMessagePageCursor;
+  refreshMessageCounts: () => void;
   setAorEntries: Setter<AnalysisAorEntry[]>;
   setCounts: Setter<import('../../../../Bindings').CountStatsRsp | null>;
   setCountsLoading: Setter<boolean>;
@@ -131,6 +132,7 @@ export function useAnalysisReloadOrchestrator(params: Params): UseAnalysisReload
     onUnauthorized,
     optionsFreqValuesRef,
     queryState,
+    refreshMessageCounts,
     reloadTriggerKey,
     rightSidebarTab,
     rightSidebarVisible,
@@ -179,6 +181,9 @@ export function useAnalysisReloadOrchestrator(params: Params): UseAnalysisReload
       const abortController = new AbortController();
       reloadAbortControllerRef.current = abortController;
       const preserveMessagePage = options.preserveMessagePage === true;
+      const shouldRefreshMessageCounts = options.refreshMessageCounts !== false;
+
+      if (shouldRefreshMessageCounts) refreshMessageCounts();
 
       try {
         await reloadAnalysisData({
@@ -270,6 +275,7 @@ export function useAnalysisReloadOrchestrator(params: Params): UseAnalysisReload
       onUnauthorized,
       optionsFreqValuesRef,
       queryState,
+      refreshMessageCounts,
       reloadTriggerKey,
       setAorEntries,
       setCounts,
@@ -326,7 +332,7 @@ export function useAnalysisReloadOrchestrator(params: Params): UseAnalysisReload
       if (centerTab === 'summary' && !summaryReloadWasAlreadyPending) {
         invalidateSummaryData(true);
       }
-      void reload()
+      void reload({ refreshMessageCounts: false })
         .then(() => {
           if (mapVisible) {
             mapReloadedKeyRef.current = reloadTriggerKey;
@@ -381,7 +387,7 @@ export function useAnalysisReloadOrchestrator(params: Params): UseAnalysisReload
     if (mapReloadedKeyRef.current === reloadTriggerKey) return;
 
     mapReloadPendingKeyRef.current = reloadTriggerKey;
-    void reload().finally(() => {
+    void reload({ refreshMessageCounts: false }).finally(() => {
       if (mapReloadPendingKeyRef.current !== reloadTriggerKey) return;
       mapReloadPendingKeyRef.current = null;
       mapReloadedKeyRef.current = reloadTriggerKey;

@@ -128,6 +128,7 @@ export type AnalysisMessagePageCursor = {
 
 export type AnalysisReloadOptions = {
   preserveMessagePage?: boolean;
+  refreshMessageCounts?: boolean;
 };
 export type AnalysisSidebarTab = 'map' | 'stats' | 'callsigns' | 'newCallsigns';
 

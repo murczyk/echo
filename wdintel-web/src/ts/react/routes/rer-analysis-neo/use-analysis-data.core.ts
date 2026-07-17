@@ -402,6 +402,7 @@ export function useAnalysisData({
       getCurrentMessagePageCursor: messageList.getCurrentMessagePageCursor,
       invalidateMessagePageRequests: messageList.invalidateMessagePageRequests,
       invalidateMessagePaging: messageList.invalidateMessagePaging,
+      refreshMessageCounts: messageList.refreshMessageCounts,
       setAorEntries: messageList.setAorEntries,
       setCounts: messageList.setCounts,
       setCountsLoading,
