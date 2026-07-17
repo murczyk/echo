@@ -17,6 +17,7 @@ import type {
 } from '../../../../Bindings';
 import { emptyQueryState } from './helpers';
 import { useAnalysisReloadOrchestrator } from './use-analysis-reload-orchestrator';
+import type { UseAnalysisReloadOrchestratorResult } from './use-analysis-reload-orchestrator';
 import type {
   AnalysisAorEntry,
   AnalysisCenterTab,
@@ -35,6 +36,7 @@ vi.mock('./use-analysis-data.reload', () => reloadAnalysisDataMock);
 
 let container: HTMLDivElement | null = null;
 let root: Root | null = null;
+let latestResult: UseAnalysisReloadOrchestratorResult | null = null;
 
 function buildQueryState(): AnalysisQueryState {
   return {
@@ -75,6 +77,11 @@ function buildParams(overrides: Partial<Parameters<typeof useAnalysisReloadOrche
     loadTopSidebarData: vi.fn().mockResolvedValue(undefined),
     clearAnalysisResults: vi.fn(),
     loadMessageComments: vi.fn().mockResolvedValue(undefined),
+    getCurrentMessagePageCursor: vi.fn(() => ({
+      beforeIdNoninclusive: 120,
+      sinceIdNoninclusive: null,
+    })),
+    invalidateMessagePageRequests: vi.fn(),
     invalidateMessagePaging: vi.fn(),
     setAorEntries: noopSetter as Dispatch<SetStateAction<AnalysisAorEntry[]>>,
     setCounts: noopSetter as Dispatch<
@@ -121,7 +128,7 @@ function buildParams(overrides: Partial<Parameters<typeof useAnalysisReloadOrche
 }
 
 function Harness(props: Parameters<typeof useAnalysisReloadOrchestrator>[0]) {
-  useAnalysisReloadOrchestrator(props);
+  latestResult = useAnalysisReloadOrchestrator(props);
   return null;
 }
 
@@ -148,6 +155,7 @@ beforeEach(() => {
   container = document.createElement('div');
   document.body.appendChild(container);
   reloadAnalysisDataMock.reloadAnalysisData.mockClear();
+  latestResult = null;
 });
 
 afterEach(() => {
@@ -168,6 +176,27 @@ describe('useAnalysisReloadOrchestrator', () => {
     await renderHook(params);
 
     expect(reloadAnalysisDataMock.reloadAnalysisData).toHaveBeenCalledTimes(1);
+  });
+
+  it('preserves the current message cursor for a manual page refresh', async () => {
+    const params = buildParams();
+    await renderHook(params);
+    reloadAnalysisDataMock.reloadAnalysisData.mockClear();
+
+    await act(async () => {
+      await latestResult?.reload({ preserveMessagePage: true });
+    });
+
+    expect(reloadAnalysisDataMock.reloadAnalysisData).toHaveBeenCalledWith(
+      expect.objectContaining({
+        invalidateMessagePaging: params.invalidateMessagePageRequests,
+        messagePageCursor: {
+          beforeIdNoninclusive: 120,
+          sinceIdNoninclusive: null,
+        },
+      }),
+    );
+    expect(params.getCurrentMessagePageCursor).toHaveBeenCalledTimes(1);
   });
 
   it('loads map palitras on initial eligible load', async () => {

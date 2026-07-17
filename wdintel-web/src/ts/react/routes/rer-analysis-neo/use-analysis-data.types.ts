@@ -25,6 +25,7 @@ import type {
   AnalysisCenterTab,
   AnalysisGroupsActivityPeriod,
   AnalysisMapAttrs,
+  AnalysisReloadOptions,
 } from './types';
 
 export type UseAnalysisDataProps = {
@@ -115,7 +116,7 @@ export type UseAnalysisDataResult = {
   options: AnalysisFilterOptions;
   profiles: Record<string, SignalProfileEntry | null>;
   refreshMapDateRange: (range: { startDate: number; endDate: number }) => Promise<void>;
-  reload: () => Promise<void>;
+  reload: (options?: AnalysisReloadOptions) => Promise<void>;
   summaryLoading: boolean;
   summaryLoaded: boolean;
   summaryHasLoadedOnce: boolean;

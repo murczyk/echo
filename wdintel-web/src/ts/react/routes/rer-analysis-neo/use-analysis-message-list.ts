@@ -12,7 +12,7 @@ import { loadMissingMessageCommentsForMessages } from './use-analysis-data.comme
 import { mergeAnalysisCallsignInfoMap } from './use-analysis-data.callsigns';
 import { isAnalysisInboxPageExhausted, toErrorMessage } from './use-analysis-data.shared';
 import { useAnalysisMessageCounts } from './use-analysis-message-counts';
-import type { AnalysisAorEntry, AnalysisQueryState } from './types';
+import type { AnalysisAorEntry, AnalysisMessagePageCursor, AnalysisQueryState } from './types';
 import { isNullOrUndefined } from '../../utils/misc';
 
 type Params = {
@@ -25,12 +25,10 @@ type Params = {
   setSummaryCallsignsInfo: React.Dispatch<React.SetStateAction<Record<string, CallsignInfoRes>>>;
 };
 
-type PageCursor = {
-  beforeIdNoninclusive: number | null;
-  sinceIdNoninclusive: number | null;
+const FIRST_PAGE_CURSOR: AnalysisMessagePageCursor = {
+  beforeIdNoninclusive: null,
+  sinceIdNoninclusive: null,
 };
-
-const FIRST_PAGE_CURSOR: PageCursor = { beforeIdNoninclusive: null, sinceIdNoninclusive: null };
 
 export function useAnalysisMessageList({
   loadMissingNetworksForMessages,
@@ -54,7 +52,7 @@ export function useAnalysisMessageList({
   const messageCommentsRef = useRef(messageComments);
   const messageCommentsLoadVersionRef = useRef(0);
   const loadMoreMessagesRequestRef = useRef(0);
-  const pageCursorsRef = useRef<PageCursor[]>([FIRST_PAGE_CURSOR]);
+  const pageCursorsRef = useRef<AnalysisMessagePageCursor[]>([FIRST_PAGE_CURSOR]);
   const { messagesOverallCount, messagesTotalCount, messagesTotalLoading, reloadMessageCounts } =
     useAnalysisMessageCounts({
       newestFirst,
@@ -68,13 +66,22 @@ export function useAnalysisMessageList({
     messageCommentsRef.current = messageComments;
   }, [messageComments]);
 
-  const invalidateMessagePaging = useCallback(() => {
+  const invalidateMessagePageRequests = useCallback(() => {
     loadMoreMessagesRequestRef.current += 1;
     setMessagesPaging(false);
-    pageCursorsRef.current = [FIRST_PAGE_CURSOR];
-    setPageIndex(0);
     reloadMessageCounts();
   }, [reloadMessageCounts]);
+
+  const invalidateMessagePaging = useCallback(() => {
+    invalidateMessagePageRequests();
+    pageCursorsRef.current = [FIRST_PAGE_CURSOR];
+    setPageIndex(0);
+  }, [invalidateMessagePageRequests]);
+
+  const getCurrentMessagePageCursor = useCallback(
+    () => pageCursorsRef.current[pageIndex] ?? FIRST_PAGE_CURSOR,
+    [pageIndex],
+  );
 
   const loadMessageComments = useCallback(
     async (loadedMessages: Array<[number, InboxMessage]>, forceReload = false) => {
@@ -125,7 +132,7 @@ export function useAnalysisMessageList({
   ]);
 
   const fetchPage = useCallback(
-    async (cursor: PageCursor) => {
+    async (cursor: AnalysisMessagePageCursor) => {
       const inboxReq = buildInboxReq(queryState, optionsFreqValues, true);
       if (isNullOrUndefined(inboxReq)) return null;
 
@@ -178,7 +185,7 @@ export function useAnalysisMessageList({
     const lastMessage = messages.at(-1);
     if (isNullOrUndefined(lastMessage)) return;
 
-    const nextCursor: PageCursor = newestFirst
+    const nextCursor: AnalysisMessagePageCursor = newestFirst
       ? { beforeIdNoninclusive: lastMessage[0], sinceIdNoninclusive: null }
       : { beforeIdNoninclusive: null, sinceIdNoninclusive: lastMessage[0] };
 
@@ -203,7 +210,9 @@ export function useAnalysisMessageList({
   return {
     aorEntries,
     counts,
+    getCurrentMessagePageCursor,
     hasLoadedInitialMessages,
+    invalidateMessagePageRequests,
     invalidateMessagePaging,
     loadAllMessages,
     loadMessageComments,

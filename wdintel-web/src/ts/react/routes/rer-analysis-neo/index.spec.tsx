@@ -26,8 +26,18 @@ vi.mock('@mui/material', () => ({
       {label}
     </div>
   ),
-  IconButton: ({ children, onClick }: { children: ReactNode; onClick?: () => void }) => (
-    <button type="button" onClick={onClick}>
+  IconButton: ({
+    children,
+    onClick,
+    disabled,
+    'aria-label': ariaLabel,
+  }: {
+    children: ReactNode;
+    onClick?: () => void;
+    disabled?: boolean;
+    'aria-label'?: string;
+  }) => (
+    <button type="button" onClick={onClick} disabled={disabled} aria-label={ariaLabel}>
       {children}
     </button>
   ),
@@ -283,6 +293,7 @@ function buildPage() {
     openReport: vi.fn(),
     repeatReportTaskRun: vi.fn(),
     refreshMapDateRange: vi.fn(),
+    reload: vi.fn(),
     renameSummaryUnit: vi.fn(),
     setCenterTab: vi.fn(),
     setNewestFirst: vi.fn(),
@@ -349,6 +360,29 @@ describe('RerAnalysisNeoPage', () => {
     const page = useRerAnalysisNeoPageMock.mock.results[0]?.value;
     expect(page.toggleLeftPanel).toHaveBeenCalledTimes(1);
     expect(page.toggleRightPanel).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      root.unmount();
+    });
+  });
+
+  it('preserves the current message page when the header refresh button is clicked', async () => {
+    const page = buildPage();
+    page.countsLoading = false;
+    useRerAnalysisNeoPageMock.mockReturnValue(page);
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    rendered.push(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(<RerAnalysisNeoPage />);
+    });
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>('[aria-label="Оновити"]')?.click();
+    });
+
+    expect(page.reload).toHaveBeenCalledWith({ preserveMessagePage: true });
 
     await act(async () => {
       root.unmount();

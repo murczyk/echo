@@ -56,6 +56,7 @@ import type {
   AnalysisFilterOption,
   AnalysisFilterOptions,
   AnalysisFilterSectionId,
+  AnalysisMessagePageCursor,
   AnalysisQueryState,
 } from './types';
 
@@ -550,6 +551,7 @@ type ReloadParams = {
   invalidateCorrelatedFreqsCache: () => void;
   invalidateCallsignGraph: () => void;
   invalidateMessagePaging: () => void;
+  messagePageCursor?: AnalysisMessagePageCursor;
   centerTab?: import('./types').AnalysisCenterTab;
   rightSidebarVisible?: boolean;
   rightSidebarTab?: import('./types').AnalysisSidebarTab | null;
@@ -680,7 +682,11 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
       );
       countsPromise.catch(() => undefined);
       const inboxPromise = fetchInboxMessages(
-        { ...messageInboxReq, newestFirst: params.newestFirst },
+        {
+          ...messageInboxReq,
+          ...params.messagePageCursor,
+          newestFirst: params.newestFirst,
+        },
         params.signal ? { signal: params.signal } : undefined,
       );
       const freqsPromise = fetchAnalysisFreqs(
@@ -744,7 +750,11 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
         ) {
           try {
             const rebuiltInboxRsp = await fetchInboxMessages(
-              { ...rebuiltMessageInboxReq, newestFirst: params.newestFirst },
+              {
+                ...rebuiltMessageInboxReq,
+                ...params.messagePageCursor,
+                newestFirst: params.newestFirst,
+              },
               params.signal ? { signal: params.signal } : undefined,
             );
             const rebuiltFreqsRsp = await fetchAnalysisFreqs(

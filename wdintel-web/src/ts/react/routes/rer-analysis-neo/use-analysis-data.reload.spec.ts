@@ -288,6 +288,7 @@ describe('reloadAnalysisData', () => {
       invalidateCorrelatedFreqsCache,
       invalidateCallsignGraph: vi.fn(),
       invalidateMessagePaging: vi.fn(),
+      messagePageCursor: { beforeIdNoninclusive: 120, sinceIdNoninclusive: null },
       newestFirst: true,
       onError: vi.fn(),
       onUnauthorized: vi.fn().mockReturnValue(false),
@@ -331,6 +332,10 @@ describe('reloadAnalysisData', () => {
 
     await flushPromises();
     expect(messagesLoadingTransitions).toContain(true);
+    expect(mocks.fetchInboxMessages.mock.calls[0]?.[0]).toMatchObject({
+      beforeIdNoninclusive: 120,
+      sinceIdNoninclusive: null,
+    });
 
     inboxDeferred.resolve({
       inboxItems: [[1, { networkIds: [] }]],

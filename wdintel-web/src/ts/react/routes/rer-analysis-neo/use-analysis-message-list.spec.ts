@@ -222,6 +222,32 @@ describe('useAnalysisMessageList pagination', () => {
     expect(h.latest.pageIndex).toBe(0);
   });
 
+  it('invalidates current page requests without resetting its cursor', async () => {
+    const h = renderHook();
+    harnesses.push(h);
+    await act(async () => {
+      h.latest.setMessages(page(1));
+    });
+    fetchInboxMessagesMock.mockResolvedValueOnce({
+      inboxItems: page(2),
+      callsigns: [],
+      pageLimit: 20,
+    });
+    await act(async () => {
+      await h.latest.loadNextPage();
+    });
+
+    act(() => {
+      h.latest.invalidateMessagePageRequests();
+    });
+
+    expect(h.latest.pageIndex).toBe(1);
+    expect(h.latest.getCurrentMessagePageCursor()).toEqual({
+      beforeIdNoninclusive: 1,
+      sinceIdNoninclusive: null,
+    });
+  });
+
   it('reloads the total count when message paging is invalidated', async () => {
     const h = renderHook();
     harnesses.push(h);

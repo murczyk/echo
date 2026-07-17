@@ -120,6 +120,15 @@ export type AnalysisMapAttrs = {
 };
 
 export type AnalysisCenterTab = 'messages' | 'summary' | 'map';
+
+export type AnalysisMessagePageCursor = {
+  beforeIdNoninclusive: number | null;
+  sinceIdNoninclusive: number | null;
+};
+
+export type AnalysisReloadOptions = {
+  preserveMessagePage?: boolean;
+};
 export type AnalysisSidebarTab = 'map' | 'stats' | 'callsigns' | 'newCallsigns';
 
 export function getAnalysisCenterTabs(analysisMapInSidebar: boolean): AnalysisCenterTab[] {
@@ -256,7 +265,7 @@ export type AnalysisPageActions = {
   openReport: () => void;
   openEditor: (messageId: number) => void;
   refreshMapDateRange: (range: { startDate: number; endDate: number }) => void;
-  reload: () => void;
+  reload: (options?: AnalysisReloadOptions) => void;
   resetFilters: () => void;
   saveAsNew: (name: string) => Promise<boolean>;
   setCenterTab: (tab: AnalysisCenterTab) => void;

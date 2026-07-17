@@ -80,7 +80,7 @@ export function AnalysisPageHeader({
           <Tooltip title="Оновити" arrow>
             <span>
               <IconButton
-                onClick={page.reload}
+                onClick={() => page.reload({ preserveMessagePage: true })}
                 disabled={loading}
                 aria-label="Оновити"
                 sx={{

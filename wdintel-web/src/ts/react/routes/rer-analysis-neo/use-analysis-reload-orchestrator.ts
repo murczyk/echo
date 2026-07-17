@@ -18,6 +18,7 @@ import type {
   AnalysisCountItem,
   AnalysisFilterOptions,
   AnalysisFilterSectionId,
+  AnalysisReloadOptions,
   AnalysisQueryState,
   AnalysisSidebarTab,
 } from './types';
@@ -61,6 +62,8 @@ type Params = {
     forceReload?: boolean,
   ) => Promise<void>;
   invalidateMessagePaging: () => void;
+  invalidateMessagePageRequests: () => void;
+  getCurrentMessagePageCursor: () => import('./types').AnalysisMessagePageCursor;
   setAorEntries: Setter<AnalysisAorEntry[]>;
   setCounts: Setter<import('../../../../Bindings').CountStatsRsp | null>;
   setCountsLoading: Setter<boolean>;
@@ -95,7 +98,7 @@ type Params = {
 };
 
 export type UseAnalysisReloadOrchestratorResult = {
-  reload: () => Promise<void>;
+  reload: (options?: AnalysisReloadOptions) => Promise<void>;
   summaryReloadBarrier: number;
 };
 
@@ -105,12 +108,14 @@ export function useAnalysisReloadOrchestrator(params: Params): UseAnalysisReload
     clearAnalysisResults,
     deferInitialLoad,
     getLoadedFilterSections,
+    getCurrentMessagePageCursor,
     getReloadFilterSections,
     invalidateCallsignGraph,
     invalidateCorrelatedFreqsCache,
     invalidateFilterSectionLoads,
     invalidateFilterSectionLoadsForPatch,
     invalidateMessagePaging,
+    invalidateMessagePageRequests,
     invalidateRightSidebarData,
     invalidateSummaryData,
     loadInitialFilterSections,
@@ -168,128 +173,137 @@ export function useAnalysisReloadOrchestrator(params: Params): UseAnalysisReload
   const reloadDebounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [summaryReloadBarrier, setSummaryReloadBarrier] = useState(0);
 
-  const reload = useCallback(async () => {
-    reloadAbortControllerRef.current?.abort();
-    const abortController = new AbortController();
-    reloadAbortControllerRef.current = abortController;
+  const reload = useCallback(
+    async (options: AnalysisReloadOptions = {}) => {
+      reloadAbortControllerRef.current?.abort();
+      const abortController = new AbortController();
+      reloadAbortControllerRef.current = abortController;
+      const preserveMessagePage = options.preserveMessagePage === true;
 
-    try {
-      await reloadAnalysisData({
-        clearAnalysisResults,
-        invalidateCallsignGraph,
-        invalidateCorrelatedFreqsCache,
-        invalidateMessagePaging,
-        newestFirst,
-        onError,
-        onUnauthorized,
-        optionsFreqsRef: optionsFreqValuesRef,
-        queryState,
-        reloadRequestRef,
-        newCallsignsRequestRef,
-        newCallsignsLoadedKeyRef,
-        newCallsignsPendingKeyRef,
-        setAorEntries,
-        setCounts,
-        setCountsLoading,
-        setFiltersLoading,
-        setGroupInfos,
-        setMapLoading,
-        setMapDateRange,
-        setMapNetworkUnits,
-        setMapOpenMessages,
-        setMapPoints,
-        setMessages,
-        loadMessageComments,
-        setMessagesLoading,
-        setNetworks,
-        setNewCallsigns,
-        setNewCallsignsLoading,
-        setNewCallsignsLoadedKey,
-        shouldLoadNewCallsigns,
-        setNoMoreToLoad,
-        setNolimitShown,
-        setOptions,
-        setProfiles,
-        setSummaryCallsignsInfo,
-        setTagsMap,
-        setTopCallsigns,
-        setTopFreqs,
-        setTopLocations,
-        setTopUnits,
-        setUnitsMap,
-        setHasLoadedInitialMessages,
-        invalidateSummaryLoads: () => invalidateSummaryData(centerTab === 'summary'),
-        invalidateTopSidebarLoads: invalidateRightSidebarData,
-        getLoadedFilterSections,
-        getReloadFilterSections,
-        loadInitialFilterSections,
-        invalidateFilterSectionLoads,
-        invalidateFilterSectionLoadsForPatch,
-        centerTab,
-        rightSidebarVisible,
-        rightSidebarTab,
-        signal: abortController.signal,
-      });
-    } finally {
-      if (reloadAbortControllerRef.current === abortController) {
-        reloadAbortControllerRef.current = null;
+      try {
+        await reloadAnalysisData({
+          clearAnalysisResults,
+          invalidateCallsignGraph,
+          invalidateCorrelatedFreqsCache,
+          invalidateMessagePaging: preserveMessagePage
+            ? invalidateMessagePageRequests
+            : invalidateMessagePaging,
+          messagePageCursor: preserveMessagePage ? getCurrentMessagePageCursor() : undefined,
+          newestFirst,
+          onError,
+          onUnauthorized,
+          optionsFreqsRef: optionsFreqValuesRef,
+          queryState,
+          reloadRequestRef,
+          newCallsignsRequestRef,
+          newCallsignsLoadedKeyRef,
+          newCallsignsPendingKeyRef,
+          setAorEntries,
+          setCounts,
+          setCountsLoading,
+          setFiltersLoading,
+          setGroupInfos,
+          setMapLoading,
+          setMapDateRange,
+          setMapNetworkUnits,
+          setMapOpenMessages,
+          setMapPoints,
+          setMessages,
+          loadMessageComments,
+          setMessagesLoading,
+          setNetworks,
+          setNewCallsigns,
+          setNewCallsignsLoading,
+          setNewCallsignsLoadedKey,
+          shouldLoadNewCallsigns,
+          setNoMoreToLoad,
+          setNolimitShown,
+          setOptions,
+          setProfiles,
+          setSummaryCallsignsInfo,
+          setTagsMap,
+          setTopCallsigns,
+          setTopFreqs,
+          setTopLocations,
+          setTopUnits,
+          setUnitsMap,
+          setHasLoadedInitialMessages,
+          invalidateSummaryLoads: () => invalidateSummaryData(centerTab === 'summary'),
+          invalidateTopSidebarLoads: invalidateRightSidebarData,
+          getLoadedFilterSections,
+          getReloadFilterSections,
+          loadInitialFilterSections,
+          invalidateFilterSectionLoads,
+          invalidateFilterSectionLoadsForPatch,
+          centerTab,
+          rightSidebarVisible,
+          rightSidebarTab,
+          signal: abortController.signal,
+        });
+      } finally {
+        if (reloadAbortControllerRef.current === abortController) {
+          reloadAbortControllerRef.current = null;
+        }
       }
-    }
-  }, [
-    centerTab,
-    clearAnalysisResults,
-    getLoadedFilterSections,
-    getReloadFilterSections,
-    invalidateCallsignGraph,
-    invalidateCorrelatedFreqsCache,
-    invalidateFilterSectionLoads,
-    invalidateFilterSectionLoadsForPatch,
-    invalidateMessagePaging,
-    invalidateRightSidebarData,
-    invalidateSummaryData,
-    loadInitialFilterSections,
-    loadMessageComments,
-    newestFirst,
-    newCallsignsLoadedKeyRef,
-    newCallsignsPendingKeyRef,
-    newCallsignsRequestRef,
-    onError,
-    onUnauthorized,
-    optionsFreqValuesRef,
-    queryState,
-    reloadTriggerKey,
-    setAorEntries,
-    setCounts,
-    setCountsLoading,
-    setFiltersLoading,
-    setGroupInfos,
-    setHasLoadedInitialMessages,
-    setMapDateRange,
-    setMapLoading,
-    setMapNetworkUnits,
-    setMapOpenMessages,
-    setMapPoints,
-    setMessages,
-    setMessagesLoading,
-    setNetworks,
-    setNewCallsigns,
-    setNewCallsignsLoading,
-    setNewCallsignsLoadedKey,
-    setNoMoreToLoad,
-    setNolimitShown,
-    setOptions,
-    setProfiles,
-    setSummaryCallsignsInfo,
-    setTagsMap,
-    setTopCallsigns,
-    setTopFreqs,
-    setTopLocations,
-    setTopUnits,
-    setUnitsMap,
-    shouldLoadNewCallsigns,
-    rightSidebarVisible,
-    rightSidebarTab,
-  ]);
+    },
+    [
+      centerTab,
+      clearAnalysisResults,
+      getCurrentMessagePageCursor,
+      getLoadedFilterSections,
+      getReloadFilterSections,
+      invalidateCallsignGraph,
+      invalidateCorrelatedFreqsCache,
+      invalidateFilterSectionLoads,
+      invalidateFilterSectionLoadsForPatch,
+      invalidateMessagePaging,
+      invalidateMessagePageRequests,
+      invalidateRightSidebarData,
+      invalidateSummaryData,
+      loadInitialFilterSections,
+      loadMessageComments,
+      newestFirst,
+      newCallsignsLoadedKeyRef,
+      newCallsignsPendingKeyRef,
+      newCallsignsRequestRef,
+      onError,
+      onUnauthorized,
+      optionsFreqValuesRef,
+      queryState,
+      reloadTriggerKey,
+      setAorEntries,
+      setCounts,
+      setCountsLoading,
+      setFiltersLoading,
+      setGroupInfos,
+      setHasLoadedInitialMessages,
+      setMapDateRange,
+      setMapLoading,
+      setMapNetworkUnits,
+      setMapOpenMessages,
+      setMapPoints,
+      setMessages,
+      setMessagesLoading,
+      setNetworks,
+      setNewCallsigns,
+      setNewCallsignsLoading,
+      setNewCallsignsLoadedKey,
+      setNoMoreToLoad,
+      setNolimitShown,
+      setOptions,
+      setProfiles,
+      setSummaryCallsignsInfo,
+      setTagsMap,
+      setTopCallsigns,
+      setTopFreqs,
+      setTopLocations,
+      setTopUnits,
+      setUnitsMap,
+      shouldLoadNewCallsigns,
+      rightSidebarVisible,
+      rightSidebarTab,
+    ],
+  );
 
   const mapVisible = centerTab === 'map' || (rightSidebarVisible && rightSidebarTab === 'map');
 

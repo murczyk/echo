@@ -399,6 +399,8 @@ export function useAnalysisData({
       loadTopSidebarData: sidebarData.loadTopSidebarData,
       clearAnalysisResults,
       loadMessageComments: messageList.loadMessageComments,
+      getCurrentMessagePageCursor: messageList.getCurrentMessagePageCursor,
+      invalidateMessagePageRequests: messageList.invalidateMessagePageRequests,
       invalidateMessagePaging: messageList.invalidateMessagePaging,
       setAorEntries: messageList.setAorEntries,
       setCounts: messageList.setCounts,
