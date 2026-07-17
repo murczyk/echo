@@ -2096,7 +2096,6 @@ where
             palitra_conversion_job::Column::Status,
             palitra_conversion_job::Column::ConversionReceipt,
             palitra_conversion_job::Column::LastAttemptAt,
-            palitra_conversion_job::Column::AttemptCount,
             palitra_conversion_job::Column::LastError,
             palitra_conversion_job::Column::ShouldScheduleGoiUpload,
         ])

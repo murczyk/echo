@@ -2536,7 +2536,10 @@ mod tests {
             Some("abc"),
         );
 
-        assert_eq!(tracked_palitra_ids(&[echo_row.clone()]), vec![11]);
+        assert_eq!(
+            tracked_palitra_ids(std::slice::from_ref(&echo_row)),
+            vec![11]
+        );
         assert!(tracked_goi_palitra_ids(&[echo_row]).is_empty());
         assert_eq!(tracked_goi_palitra_ids(&[goi_row]), vec![10]);
     }
