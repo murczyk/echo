@@ -36,7 +36,7 @@ export function mapPalitraToRowView({
   depth?: number;
   hiddenByCollapsedFolder?: boolean;
 }): PalitraRowView {
-  const canModify = canModifyPalitra(user, palitra);
+  const canModify = canModifyPalitra(user, palitra) && !palitra.goiOwned;
   const archiveInFlight = inFlightArchiveId === palitra.id;
   const deleteInFlight = inFlightDeleteId === palitra.id;
   const downloadInFlight = inFlightDownloadId === palitra.id;

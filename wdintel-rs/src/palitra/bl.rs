@@ -108,6 +108,13 @@ struct LoginAccessScope {
     aor_ids: HashSet<i64>,
 }
 
+pub(crate) struct PalitraGoiSyncSummary {
+    pub changelog: Vec<PalitraChangelogEntry>,
+    pub goi_owned: bool,
+    pub goi_source_refresh_retry_available: bool,
+    pub latest_changelog_warning: bool,
+}
+
 pub async fn collect_palitra_access_logins<'a, 'async_trait, C>(
     txn: &'a C,
     palitra_id: i64,
@@ -157,6 +164,63 @@ where
         .all(txn)
         .await
         .c(h!())
+}
+
+pub(crate) async fn read_palitra_goi_sync_summary<'a, 'async_trait, C>(
+    dbx: &'a C,
+    palitra_id: i64,
+) -> anyhow::Result<PalitraGoiSyncSummary>
+where
+    C: ConnectionTrait + 'async_trait,
+{
+    let rows = goi_palitra_sync::Entity::find()
+        .filter(goi_palitra_sync::Column::PalitraId.eq(palitra_id))
+        .all(dbx)
+        .await
+        .c(h!())?;
+    let mut changelog = Vec::new();
+    let mut goi_owned = false;
+    let mut goi_source_refresh_retry_available = false;
+    for row in rows {
+        let row_changelog =
+            crate::palitra::goi_changelog::entries_from_value(&row.changelog);
+        goi_owned |= row.direction == PALITRA_GOI_SYNC_DIRECTION_GOI
+            && row.goi_source_file_sha256.is_some();
+        goi_source_refresh_retry_available |= row
+            .goi_source_file_data
+            .is_some()
+            && crate::palitra::goi_changelog::latest_warning(&row_changelog);
+        changelog.extend(row_changelog);
+    }
+    changelog.sort_by(|left, right| left.timestamp.cmp(&right.timestamp));
+    let latest_changelog_warning =
+        crate::palitra::goi_changelog::latest_warning(&changelog);
+    Ok(PalitraGoiSyncSummary {
+        changelog,
+        goi_owned,
+        goi_source_refresh_retry_available,
+        latest_changelog_warning,
+    })
+}
+
+pub(crate) async fn is_goi_owned_convertible_palitra<'a, 'async_trait, C>(
+    dbx: &'a C,
+    palitra_id: i64,
+) -> anyhow::Result<bool>
+where
+    C: ConnectionTrait + 'async_trait,
+{
+    Ok(goi_palitra_sync::Entity::find()
+        .filter(goi_palitra_sync::Column::PalitraId.eq(palitra_id))
+        .filter(
+            goi_palitra_sync::Column::Direction
+                .eq(PALITRA_GOI_SYNC_DIRECTION_GOI),
+        )
+        .filter(goi_palitra_sync::Column::GoiSourceFileSha256.is_not_null())
+        .one(dbx)
+        .await
+        .c(h!())?
+        .is_some())
 }
 
 pub async fn update_palitra(
@@ -2027,6 +2091,9 @@ where
                 .await
                 .c(h!())?
         };
+    let goi_sync_summary = read_palitra_goi_sync_summary(dbx, palitra_id)
+        .await
+        .c(h!())?;
     Ok(Palitra {
         id: palitra_id,
         name: palitra_model.name,
@@ -2041,6 +2108,11 @@ where
         conversion_error: palitra_model.conversion_error,
         missing_in_goi: palitra_model.missing_in_goi,
         imported_from_goi: palitra_model.imported_from_goi,
+        goi_owned: goi_sync_summary.goi_owned,
+        goi_source_refresh_retry_available: goi_sync_summary
+            .goi_source_refresh_retry_available,
+        latest_changelog_warning: goi_sync_summary.latest_changelog_warning,
+        changelog: goi_sync_summary.changelog,
         geometry,
         access_aor_id: access_aor_ids,
         access_organism_ids,

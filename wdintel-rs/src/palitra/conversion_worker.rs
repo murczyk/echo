@@ -4,13 +4,15 @@ use crate::config::{
     PALITRA_CONVERSION_JOB_STATUS_PENDING,
     PALITRA_CONVERSION_JOB_STATUS_PROCESSING,
     PALITRA_CONVERSION_JOB_TIMEOUT_SEC, PALITRA_CONVERSION_STATUS_ERROR,
-    PALITRA_CONVERSION_STATUS_READY, PALITRA_CONVERSION_WORKER_SLEEP_SEC,
+    PALITRA_CONVERSION_STATUS_PROCESSING, PALITRA_CONVERSION_STATUS_READY,
+    PALITRA_CONVERSION_WORKER_SLEEP_SEC,
 };
 use crate::entities::*;
 use crate::error::AppError;
 use crate::h;
 use crate::types::*;
 use anyhow::bail;
+use chrono::Utc;
 use sea_orm::prelude::Expr;
 use sea_orm::Statement;
 use sea_orm::*;
@@ -45,6 +47,9 @@ async fn palitra_conversion_worker_step(env: &Env) -> Result<bool, AppError> {
     let txn = env.dbx.begin().await.c(h!())?;
     let Some(job) = take_next_job(&txn).await.c(h!())? else {
         txn.commit().await.c(h!())?;
+        if reconcile_stale_processing_palitras(env).await.c(h!())? {
+            return Ok(false);
+        }
         return Ok(true);
     };
     txn.commit().await.c(h!())?;
@@ -52,6 +57,19 @@ async fn palitra_conversion_worker_step(env: &Env) -> Result<bool, AppError> {
     let result = process_conversion_job(env, &job).await;
     match result {
         Ok(ConversionJobOutcome::Applied) => {
+            super::goi_changelog::append_for_palitra_goi_sources(
+                &env.dbx,
+                job.palitra_id,
+                super::goi_changelog::ok_entry(
+                    "Converted GOI source",
+                    "Файл ГОІ успішно сконвертовано.",
+                ),
+            )
+            .await
+            .c(h!())?;
+            clear_goi_source_failed_conversion(&env.dbx, job.palitra_id)
+                .await
+                .c(h!())?;
             env.palitra_worker_context.flush_cache(job.palitra_id).await;
         }
         Ok(ConversionJobOutcome::Stale) => {}
@@ -68,7 +86,20 @@ async fn palitra_conversion_worker_step(env: &Env) -> Result<bool, AppError> {
                     PALITRA_CONVERSION_STATUS_ERROR,
                     Some(job.source_format.clone()),
                     None,
-                    Some(error),
+                    Some(error.clone()),
+                )
+                .await
+                .c(h!())?;
+                mark_goi_source_conversion_failed(&env.dbx, job.palitra_id)
+                    .await
+                    .c(h!())?;
+                super::goi_changelog::append_for_palitra_goi_sources(
+                    &env.dbx,
+                    job.palitra_id,
+                    super::goi_changelog::error_entry(
+                        format!("GOI source conversion failed: {error}"),
+                        "Конвертація файлу ГОІ не вдалася. Поточна геометрія Echo залишилась без змін.",
+                    ),
                 )
                 .await
                 .c(h!())?;
@@ -78,6 +109,80 @@ async fn palitra_conversion_worker_step(env: &Env) -> Result<bool, AppError> {
     }
 
     Ok(false)
+}
+
+async fn reconcile_stale_processing_palitras(
+    env: &Env,
+) -> anyhow::Result<bool> {
+    let stale_before = Utc::now().fixed_offset()
+        - chrono::Duration::seconds(
+            PALITRA_CONVERSION_JOB_STALE_PROCESSING_SEC as i64,
+        );
+    let palitras = palitra::Entity::find()
+        .filter(palitra::Column::Deleted.eq(false))
+        .filter(
+            palitra::Column::ConversionStatus
+                .eq(PALITRA_CONVERSION_STATUS_PROCESSING),
+        )
+        .filter(palitra::Column::ConversionLastAttemptAt.lte(stale_before))
+        .all(&env.dbx)
+        .await
+        .c(h!())?;
+    let mut changed = false;
+    for palitra in palitras {
+        if live_conversion_job_exists(&env.dbx, palitra.id)
+            .await
+            .c(h!())?
+        {
+            continue;
+        }
+        let error = format!(
+            "palitra conversion stayed processing for at least {} seconds without a live conversion job",
+            PALITRA_CONVERSION_JOB_STALE_PROCESSING_SEC
+        );
+        super::update_palitra_conversion_status(
+            &env.dbx,
+            palitra.id,
+            PALITRA_CONVERSION_STATUS_ERROR,
+            palitra.source_format.clone(),
+            None,
+            Some(error.clone()),
+        )
+        .await
+        .c(h!())?;
+        super::goi_changelog::append_for_palitra_goi_sources(
+            &env.dbx,
+            palitra.id,
+            super::goi_changelog::error_entry(
+                error,
+                "Конвертація палітри зависла без активної задачі та була позначена як помилка.",
+            ),
+        )
+        .await
+        .c(h!())?;
+        env.palitra_worker_context.flush_cache(palitra.id).await;
+        changed = true;
+    }
+    Ok(changed)
+}
+
+async fn live_conversion_job_exists<'a, C>(
+    dbx: &'a C,
+    palitra_id: i64,
+) -> anyhow::Result<bool>
+where
+    C: ConnectionTrait + 'a,
+{
+    Ok(palitra_conversion_job::Entity::find()
+        .filter(palitra_conversion_job::Column::PalitraId.eq(palitra_id))
+        .filter(palitra_conversion_job::Column::Status.is_in([
+            PALITRA_CONVERSION_JOB_STATUS_PENDING,
+            PALITRA_CONVERSION_JOB_STATUS_PROCESSING,
+        ]))
+        .one(dbx)
+        .await
+        .c(h!())?
+        .is_some())
 }
 
 async fn take_next_job(
@@ -342,6 +447,44 @@ where
         .col_expr(
             palitra_conversion_job::Column::LastError,
             Expr::value(Some(error)),
+        )
+        .exec(dbx)
+        .await
+        .c(h!())
+}
+
+async fn mark_goi_source_conversion_failed<'a, C>(
+    dbx: &'a C,
+    palitra_id: i64,
+) -> anyhow::Result<UpdateResult>
+where
+    C: ConnectionTrait + 'a,
+{
+    goi_palitra_sync::Entity::update_many()
+        .filter(goi_palitra_sync::Column::PalitraId.eq(palitra_id))
+        .filter(goi_palitra_sync::Column::GoiSourceFileSha256.is_not_null())
+        .col_expr(
+            goi_palitra_sync::Column::GoiSourceFailedFileSha256,
+            Expr::col(goi_palitra_sync::Column::GoiSourceFileSha256).into(),
+        )
+        .exec(dbx)
+        .await
+        .c(h!())
+}
+
+async fn clear_goi_source_failed_conversion<'a, C>(
+    dbx: &'a C,
+    palitra_id: i64,
+) -> anyhow::Result<UpdateResult>
+where
+    C: ConnectionTrait + 'a,
+{
+    goi_palitra_sync::Entity::update_many()
+        .filter(goi_palitra_sync::Column::PalitraId.eq(palitra_id))
+        .filter(goi_palitra_sync::Column::GoiSourceFileSha256.is_not_null())
+        .col_expr(
+            goi_palitra_sync::Column::GoiSourceFailedFileSha256,
+            Expr::value(Option::<String>::None),
         )
         .exec(dbx)
         .await

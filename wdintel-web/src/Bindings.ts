@@ -1183,6 +1183,13 @@ export type CreatePalitraReq = {
   lastUploadedAtTs: number | null;
 };
 
+export type PalitraChangelogEntry = {
+  isOk: boolean;
+  timestamp: string;
+  text: string;
+  description: string;
+};
+
 export type Palitra = {
   id: number;
   name: string;
@@ -1197,6 +1204,10 @@ export type Palitra = {
   conversionError: string | null;
   missingInGoi: boolean;
   importedFromGoi: boolean;
+  goiOwned: boolean;
+  goiSourceRefreshRetryAvailable: boolean;
+  latestChangelogWarning: boolean;
+  changelog: Array<PalitraChangelogEntry>;
   geometry: Geometry | null;
   accessAorId: Array<number>;
   accessOrganismIds: Array<number>;

@@ -264,6 +264,9 @@ export function PalitraPreviewDialog({
           minHeight: 0,
         }}
       >
+        {palitra?.goiOwned ? (
+          <PowerAlert severity="warning">Редагуйте цю палітру в ГОІ</PowerAlert>
+        ) : null}
         <Box
           ref={mapContainerRef}
           className="palitra-map-surface"

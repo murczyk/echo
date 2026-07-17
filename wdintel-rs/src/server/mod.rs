@@ -843,6 +843,7 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::palitra::download_palitras_delta_split)
             .service(crate::palitra::upload_palitra_points)
             .service(crate::palitra::retry_palitra_conversion)
+            .service(crate::palitra::retry_goi_source_conversion)
             .service(crate::palitra::analyze_kmz)
             .service(crate::alpine::convert_alpinequest_file)
             .service(crate::alpine::download_alpine_result)

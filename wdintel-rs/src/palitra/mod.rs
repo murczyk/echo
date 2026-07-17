@@ -41,6 +41,7 @@ use zip::write::FileOptions;
 pub(crate) mod bl;
 pub mod conversion_worker;
 mod download;
+pub(crate) mod goi_changelog;
 pub mod goi_sync_worker;
 mod kmz;
 pub mod oneoff;
@@ -48,6 +49,8 @@ pub mod types;
 pub mod worker;
 
 pub use download::download_palitras_delta_split;
+
+const GOI_OWNED_PALITRA_EDIT_ERROR: &str = "Редагуйте цю палітру в ГОІ";
 
 #[derive(Clone)]
 struct UserScope {
@@ -566,6 +569,7 @@ pub async fn upload_palitra_points(
             "Only author or Admin may upload palitra points".into(),
         ));
     }
+    ensure_palitra_echo_edit_allowed(&env.dbx, palitra_id).await?;
     let (field, val) = multipart::extract(&mut payload).await.c(h!())?;
     let raw_filename = field
         .content_disposition()
@@ -803,6 +807,84 @@ pub async fn retry_palitra_conversion(
     Ok(Json(palitra_response))
 }
 
+#[post("/api/palitra/retry-goi-source-conversion/{palitra_id}")]
+pub async fn retry_goi_source_conversion(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+    path: actix_web::web::Path<i64>,
+) -> Result<Json<Palitra>, AppError> {
+    let login = user.id().c(h!())?;
+    ensure_palitra_management_permission(&env, &login)
+        .await
+        .c(h!())?;
+    let palitra_id = path.into_inner();
+    let palitra = palitra::Entity::find_by_id(palitra_id)
+        .one(&env.dbx)
+        .await
+        .c(h!())?
+        .c(h!())?;
+    let is_author_or_admin =
+        is_palitra_author_or_admin(&env.dbx, &login, &palitra)
+            .await
+            .c(h!())?;
+    if !is_author_or_admin {
+        return Err(AppError::Forbidden(
+            "Only author or Admin may retry palitra conversion".into(),
+        ));
+    }
+    let row = goi_palitra_sync::Entity::find()
+        .filter(goi_palitra_sync::Column::PalitraId.eq(palitra_id))
+        .filter(goi_palitra_sync::Column::GoiSourceFileData.is_not_null())
+        .order_by_desc(goi_palitra_sync::Column::UpdatedAt)
+        .one(&env.dbx)
+        .await
+        .c(h!())?
+        .ok_or_else(|| AppError::BL {
+            msg: "Cannot retry GOI source conversion: source file data is not available"
+                .to_string(),
+        })?;
+    let filename = row.goi_source_file_name.clone().c(h!())?;
+    let extension = row.goi_source_format.clone().c(h!())?;
+    let file_data = row.goi_source_file_data.clone().c(h!())?;
+    let txn = env.dbx.begin().await.c(h!())?;
+    schedule_palitra_goi_source_conversion(
+        &txn,
+        palitra_id,
+        filename,
+        extension,
+        row.goi_source_content_type,
+        file_data,
+    )
+    .await
+    .c(h!())?;
+    goi_changelog::append_for_palitra_goi_sources(
+        &txn,
+        palitra_id,
+        goi_changelog::ok_entry(
+            "GOI source conversion retry queued",
+            "Повторну конвертацію файлу ГОІ поставлено в чергу.",
+        ),
+    )
+    .await
+    .c(h!())?;
+    goi_palitra_sync::Entity::update_many()
+        .filter(goi_palitra_sync::Column::Id.eq(row.id))
+        .col_expr(
+            goi_palitra_sync::Column::GoiSourceLastRetryAt,
+            Expr::value(Some(Utc::now().fixed_offset())),
+        )
+        .exec(&txn)
+        .await
+        .c(h!())?;
+    txn.commit().await.c(h!())?;
+    env.palitra_worker_context.flush_cache(palitra_id).await;
+    let palitra_response =
+        render_created_palitra_response(&env.dbx, palitra_id)
+            .await
+            .c(h!())?;
+    Ok(Json(palitra_response))
+}
+
 #[post("/api/palitra/list")]
 pub async fn list_all_palitras(
     user: actix_identity::Identity,
@@ -1005,8 +1087,9 @@ pub async fn archive_palitra(
     ensure_palitra_management_permission(&env, &login)
         .await
         .c(h!())?;
-    let txn = env.dbx.begin().await.c(h!())?;
     let palitra_id = path.into_inner();
+    ensure_palitra_echo_edit_allowed(&env.dbx, palitra_id).await?;
+    let txn = env.dbx.begin().await.c(h!())?;
     let palitra = bl::update_accessible_palitra_archive_flag(
         login, palitra_id, true, &env.dbx, &txn,
     )
@@ -1031,8 +1114,9 @@ pub async fn unarchive_palitra(
     ensure_palitra_management_permission(&env, &login)
         .await
         .c(h!())?;
-    let txn = env.dbx.begin().await.c(h!())?;
     let palitra_id = path.into_inner();
+    ensure_palitra_echo_edit_allowed(&env.dbx, palitra_id).await?;
+    let txn = env.dbx.begin().await.c(h!())?;
     let palitra = bl::update_accessible_palitra_archive_flag(
         login, palitra_id, false, &env.dbx, &txn,
     )
@@ -1057,8 +1141,9 @@ pub async fn assign_palitra_folder(
     ensure_palitra_management_permission(&env, &login)
         .await
         .c(h!())?;
-    let txn = env.dbx.begin().await.c(h!())?;
     let req = req.into_inner();
+    ensure_palitras_echo_edit_allowed(&env.dbx, &req.palitra_ids).await?;
+    let txn = env.dbx.begin().await.c(h!())?;
     let sync_items = bl::assign_folder_to_accessible_palitras(
         login,
         req.palitra_ids,
@@ -1087,8 +1172,16 @@ pub async fn rename_palitra_folder(
     ensure_palitra_management_permission(&env, &login)
         .await
         .c(h!())?;
-    let txn = env.dbx.begin().await.c(h!())?;
     let req = req.into_inner();
+    let palitra_ids = bl::collect_accessible_palitra_ids_in_folder(
+        login.clone(),
+        req.from_folder.clone(),
+        &env.dbx,
+    )
+    .await
+    .c(h!())?;
+    ensure_palitras_echo_edit_allowed(&env.dbx, &palitra_ids).await?;
+    let txn = env.dbx.begin().await.c(h!())?;
     let sync_items = bl::rename_accessible_palitra_folder(
         login,
         req.from_folder,
@@ -1117,13 +1210,18 @@ pub async fn archive_palitra_folder(
     ensure_palitra_management_permission(&env, &login)
         .await
         .c(h!())?;
+    let folder = req.into_inner().folder;
+    let palitra_ids = bl::collect_accessible_palitra_ids_in_folder(
+        login.clone(),
+        folder.clone(),
+        &env.dbx,
+    )
+    .await
+    .c(h!())?;
+    ensure_palitras_echo_edit_allowed(&env.dbx, &palitra_ids).await?;
     let txn = env.dbx.begin().await.c(h!())?;
     let palitra_ids = bl::archive_accessible_palitra_folder(
-        login,
-        req.into_inner().folder,
-        true,
-        &env.dbx,
-        &txn,
+        login, folder, true, &env.dbx, &txn,
     )
     .await
     .c(h!())?;
@@ -1148,6 +1246,7 @@ pub async fn delete_palitra_folder(
     )
     .await
     .c(h!())?;
+    ensure_palitras_echo_edit_allowed(&env.dbx, &palitra_ids).await?;
     let mut deleted_palitra_ids = Vec::new();
     for palitra_id in &palitra_ids {
         if delete_palitra_from_folder_if_allowed(*palitra_id, &login, &env)
@@ -1182,6 +1281,7 @@ async fn delete_palitra_from_folder_if_allowed(
     if !is_author_or_admin {
         return Ok(false);
     }
+    ensure_palitra_echo_edit_allowed(&env.dbx, palitra_id).await?;
     let existing_access =
         read_palitra_access(&env.dbx, palitra_id).await.c(h!())?;
     let txn = env.dbx.begin().await.c(h!())?;
@@ -1362,6 +1462,7 @@ pub async fn update_palitra(
             "Only author or Admin may update palitra".into(),
         ));
     }
+    ensure_palitra_echo_edit_allowed(&env.dbx, palitra_id).await?;
     let result = bl::update_palitra(palitra.id, req, &txn).await.c(h!())?;
     txn.commit().await.c(h!())?;
     Ok(Json(result))
@@ -1396,6 +1497,7 @@ pub async fn update_palitra_v2(
             "Only author or Admin may update palitra".into(),
         ));
     }
+    ensure_palitra_echo_edit_allowed(&env.dbx, palitra_id).await?;
     let result = bl::update_palitra_v2(palitra.id, req, &txn).await.c(h!())?;
     txn.commit().await.c(h!())?;
     Ok(Json(result))
@@ -1427,6 +1529,7 @@ pub async fn delete_palitra(
             "Only author or Admin may delete palitra".into(),
         ));
     }
+    ensure_palitra_echo_edit_allowed(&env.dbx, palitra_id).await?;
     let existing_access =
         read_palitra_access(&env.dbx, palitra_id).await.c(h!())?;
 
@@ -1721,6 +1824,9 @@ async fn render_created_palitra_response(
                 .await
                 .c(h!())?
         };
+    let goi_sync_summary = bl::read_palitra_goi_sync_summary(dbx, palitra_id)
+        .await
+        .c(h!())?;
     Ok(Palitra {
         id: palitra.id,
         name: palitra.name,
@@ -1737,6 +1843,11 @@ async fn render_created_palitra_response(
         conversion_error: palitra.conversion_error,
         missing_in_goi: palitra.missing_in_goi,
         imported_from_goi: palitra.imported_from_goi,
+        goi_owned: goi_sync_summary.goi_owned,
+        goi_source_refresh_retry_available: goi_sync_summary
+            .goi_source_refresh_retry_available,
+        latest_changelog_warning: goi_sync_summary.latest_changelog_warning,
+        changelog: goi_sync_summary.changelog,
         geometry: None,
         access_aor_id: bl::collect_palitra_access_aors(dbx, palitra_id)
             .await
@@ -1816,6 +1927,39 @@ async fn ensure_palitra_management_permission(
     Err(AppError::Forbidden(
         "Only Admin or Rer may manage palitra".into(),
     ))
+}
+
+async fn ensure_palitra_echo_edit_allowed<'a, C>(
+    dbx: &'a C,
+    palitra_id: i64,
+) -> Result<(), AppError>
+where
+    C: ConnectionTrait + 'a,
+{
+    if bl::is_goi_owned_convertible_palitra(dbx, palitra_id)
+        .await
+        .c(h!())?
+    {
+        return Err(AppError::BL {
+            msg: GOI_OWNED_PALITRA_EDIT_ERROR.to_string(),
+        });
+    }
+    Ok(())
+}
+
+async fn ensure_palitras_echo_edit_allowed<'a, C>(
+    dbx: &'a C,
+    palitra_ids: &[i64],
+) -> Result<(), AppError>
+where
+    C: ConnectionTrait + 'a,
+{
+    for palitra_id in palitra_ids {
+        ensure_palitra_echo_edit_allowed(dbx, *palitra_id)
+            .await
+            .c(h!())?;
+    }
+    Ok(())
 }
 
 async fn is_palitra_admin(
@@ -2141,6 +2285,28 @@ pub(crate) async fn schedule_palitra_replacement_conversion_with_goi_upload(
     clear_active_palitra_geometries(txn, palitra_id)
         .await
         .c(h!())
+}
+
+pub(crate) async fn schedule_palitra_goi_source_conversion(
+    txn: &DatabaseTransaction,
+    palitra_id: i64,
+    filename: String,
+    extension: String,
+    content_type: Option<String>,
+    file_data: Vec<u8>,
+) -> anyhow::Result<()> {
+    cancel_palitra_goi_upload(txn, palitra_id).await.c(h!())?;
+    schedule_palitra_conversion_with_goi_upload(
+        txn,
+        palitra_id,
+        filename,
+        extension,
+        content_type,
+        file_data,
+        false,
+    )
+    .await
+    .c(h!())
 }
 
 async fn clear_active_palitra_geometries(

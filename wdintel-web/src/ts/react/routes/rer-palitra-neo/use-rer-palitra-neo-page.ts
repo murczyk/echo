@@ -81,6 +81,7 @@ export function useRerPalitraNeoPage() {
   const [previewData, setPreviewData] = useState<PalitraReadV2 | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
+  const [historyDialogPalitra, setHistoryDialogPalitra] = useState<Palitra | null>(null);
   const [folderDialogState, setFolderDialogState] = useState<FolderActionDialogState | null>(null);
   const [folderActionInFlight, setFolderActionInFlight] = useState(false);
   const [expandedFolderPaths, setExpandedFolderPaths] = useState<string[]>([]);
@@ -387,6 +388,7 @@ export function useRerPalitraNeoPage() {
     handleUploadPointsSelected,
     handleKmzSelected,
     handleRetryConversion,
+    handleRetryGoiSourceConversion,
   } = createPalitraPageActionHandlers({
     user,
     myScope,
@@ -489,6 +491,14 @@ export function useRerPalitraNeoPage() {
     [folderActionsBlocked, loading, previewLoading],
   );
 
+  const openHistory = useCallback((palitra: Palitra) => {
+    setHistoryDialogPalitra(palitra);
+  }, []);
+
+  const closeHistory = useCallback(() => {
+    setHistoryDialogPalitra(null);
+  }, []);
+
   const {
     requestAssignFolder,
     requestAssignFolderForPalitra,
@@ -559,6 +569,7 @@ export function useRerPalitraNeoPage() {
     previewData,
     previewLoading,
     previewError,
+    historyDialogPalitra,
     createOpen,
     createMode,
     createForm,
@@ -612,9 +623,12 @@ export function useRerPalitraNeoPage() {
     handleUploadPointsSelected,
     handleKmzSelected,
     handleRetryConversion,
+    handleRetryGoiSourceConversion,
     handleBulkDownload,
     openPreview,
     closePreview,
+    openHistory,
+    closeHistory,
     requestAssignFolder,
     requestAssignFolderForPalitra,
     requestRenameFolder,

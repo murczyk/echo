@@ -45,6 +45,16 @@ impl PalitraAccess {
 #[derive(
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
+pub struct PalitraChangelogEntry {
+    pub is_ok: bool,
+    pub timestamp: String,
+    pub text: String,
+    pub description: String,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
 pub struct Palitra {
     pub id: i64,
     pub name: String,
@@ -59,6 +69,10 @@ pub struct Palitra {
     pub conversion_error: Option<String>,
     pub missing_in_goi: bool,
     pub imported_from_goi: bool,
+    pub goi_owned: bool,
+    pub goi_source_refresh_retry_available: bool,
+    pub latest_changelog_warning: bool,
+    pub changelog: Vec<PalitraChangelogEntry>,
     pub geometry: Option<Geometry>,
     pub access_aor_id: Vec<i64>,
     pub access_organism_ids: Vec<i64>,

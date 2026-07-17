@@ -3080,6 +3080,24 @@ createPalitraReqEncoder struct =
         ]
 
 
+type alias PalitraChangelogEntry =
+    { isOk : Bool
+    , timestamp : String
+    , text : String
+    , description : String
+    }
+
+
+palitraChangelogEntryEncoder : PalitraChangelogEntry -> Json.Encode.Value
+palitraChangelogEntryEncoder struct =
+    Json.Encode.object
+        [ ( "is_ok", (Json.Encode.bool) struct.isOk )
+        , ( "timestamp", (Json.Encode.string) struct.timestamp )
+        , ( "text", (Json.Encode.string) struct.text )
+        , ( "description", (Json.Encode.string) struct.description )
+        ]
+
+
 type alias Palitra =
     { id : Int
     , name : String
@@ -3094,6 +3112,10 @@ type alias Palitra =
     , conversionError : Maybe (String)
     , missingInGoi : Bool
     , importedFromGoi : Bool
+    , goiOwned : Bool
+    , goiSourceRefreshRetryAvailable : Bool
+    , latestChangelogWarning : Bool
+    , changelog : List (PalitraChangelogEntry)
     , geometry : Maybe (Geometry)
     , accessAorId : List (Int)
     , accessOrganismIds : List (Int)
@@ -3117,6 +3139,10 @@ palitraEncoder struct =
         , ( "conversion_error", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.conversionError )
         , ( "missing_in_goi", (Json.Encode.bool) struct.missingInGoi )
         , ( "imported_from_goi", (Json.Encode.bool) struct.importedFromGoi )
+        , ( "goi_owned", (Json.Encode.bool) struct.goiOwned )
+        , ( "goi_source_refresh_retry_available", (Json.Encode.bool) struct.goiSourceRefreshRetryAvailable )
+        , ( "latest_changelog_warning", (Json.Encode.bool) struct.latestChangelogWarning )
+        , ( "changelog", (Json.Encode.list (palitraChangelogEntryEncoder)) struct.changelog )
         , ( "geometry", (Maybe.withDefault Json.Encode.null << Maybe.map (geometryEncoder)) struct.geometry )
         , ( "access_aor_id", (Json.Encode.list (Json.Encode.int)) struct.accessAorId )
         , ( "access_organism_ids", (Json.Encode.list (Json.Encode.int)) struct.accessOrganismIds )
@@ -10930,6 +10956,15 @@ createPalitraReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "last_uploaded_at_ts" (Json.Decode.nullable (Json.Decode.int))))
 
 
+palitraChangelogEntryDecoder : Json.Decode.Decoder PalitraChangelogEntry
+palitraChangelogEntryDecoder =
+    Json.Decode.succeed PalitraChangelogEntry
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_ok" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "timestamp" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "text" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "description" (Json.Decode.string)))
+
+
 palitraDecoder : Json.Decode.Decoder Palitra
 palitraDecoder =
     Json.Decode.succeed Palitra
@@ -10946,6 +10981,10 @@ palitraDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "conversion_error" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "missing_in_goi" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "imported_from_goi" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "goi_owned" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "goi_source_refresh_retry_available" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "latest_changelog_warning" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "changelog" (Json.Decode.list (palitraChangelogEntryDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "geometry" (Json.Decode.nullable (geometryDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "access_aor_id" (Json.Decode.list (Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "access_organism_ids" (Json.Decode.list (Json.Decode.int))))

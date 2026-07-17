@@ -9,6 +9,7 @@ import {
   deletePalitra,
   downloadPalitras,
   retryPalitraConversion,
+  retryGoiSourceConversion,
   unarchivePalitra,
   updatePalitra,
   uploadPalitraPoints,
@@ -137,6 +138,10 @@ export function createPalitraPageActionHandlers(props: Props) {
 
   function openEdit(palitra: Palitra) {
     if (props.folderActionsBlocked) return;
+    if (palitra.goiOwned) {
+      props.setStatus({ kind: 'warning', text: 'Редагуйте цю палітру в ГОІ.' });
+      return;
+    }
     props.setEditPalitraId(palitra.id);
     props.setEditForm(
       applyRestrictedAccess(palitraToForm(palitra), props.user, props.myScope, props.allLogins),
@@ -507,6 +512,31 @@ export function createPalitraPageActionHandlers(props: Props) {
     }
   }
 
+  async function handleRetryGoiSourceConversion(palitra: Palitra) {
+    if (
+      props.inFlightRetryId !== null ||
+      props.folderActionsBlocked ||
+      !palitra.goiSourceRefreshRetryAvailable
+    )
+      return;
+
+    props.setInFlightRetryId(palitra.id);
+    props.setStatus(null);
+
+    try {
+      const updatedPalitra = await retryGoiSourceConversion(palitra.id);
+      replacePalitra(updatedPalitra);
+      props.setStatus({ kind: 'success', text: 'Оновлення з ГОІ поставлено в чергу.' });
+    } catch (retryError) {
+      props.setStatus({
+        kind: 'error',
+        text: 'Не вдалося повторити оновлення з ГОІ: ' + formatErrorMessage(retryError),
+      });
+    } finally {
+      props.setInFlightRetryId(null);
+    }
+  }
+
   function requestAnalyzeKmz() {
     if (!props.uploadKmzInputRef.current) return;
     props.uploadKmzInputRef.current.value = '';
@@ -684,5 +714,6 @@ export function createPalitraPageActionHandlers(props: Props) {
     handleUploadPointsSelected,
     handleKmzSelected,
     handleRetryConversion,
+    handleRetryGoiSourceConversion,
   };
 }
