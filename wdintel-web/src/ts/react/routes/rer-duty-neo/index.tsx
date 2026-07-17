@@ -1,5 +1,5 @@
 import { Box, useMediaQuery, useTheme } from '@mui/material';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { isPresent } from '../../utils/misc';
 
 import { CommentDialog, DeleteConfirmDialog } from './dialogs';
@@ -20,6 +20,12 @@ import { useRerDutyFeeds } from './useRerDutyFeeds';
 import { USER_SETTINGS_UPDATED_EVENT, fetchUserSettings } from '../../services/api/user-settings';
 import { PowerAlert } from '../../components/PowerAlert';
 import { RerDutyNeoWorkspace } from './RerDutyNeoWorkspace';
+import { fetchCurrentUser } from '../../services/api/user';
+import { currentSystemSettings } from '../../services/api/system-settings';
+import type { User } from '../../../../Bindings';
+import { ManageMessageDrawer } from '../shared/manage-message/ManageMessageDrawer';
+import { CreatedMessagePreviewDrawer } from './CreatedMessagePreviewDrawer';
+import { useCreatedMessageResult } from './useCreatedMessageResult';
 
 export type RerDutyNeoPageProps = {
   /** Auth user display name from the host page (avoids duplicate /api/user request). */
@@ -43,7 +49,10 @@ export function RerDutyNeoPage({
   const theme = useTheme();
   const narrowScreen = useMediaQuery(theme.breakpoints.down(1024));
   const authUserName = authUserNameProp ?? null;
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [cyberEchoEnabled, setCyberEchoEnabled] = useState(false);
   const [activeFeedId, setActiveFeedId] = useState<string | null>(null);
+  const [createMessageOpen, setCreateMessageOpen] = useState(false);
   const previousFeedCountRef = useRef(0);
   const [tagsLayout, setTagsLayout] = useState<TagsLayoutVariant>(DEFAULT_DUTY_TAGS_LAYOUT);
   useEffect(() => {
@@ -73,6 +82,40 @@ export function RerDutyNeoPage({
     window.addEventListener(USER_SETTINGS_UPDATED_EVENT, onSettingsUpdated as EventListener);
     return () => {
       window.removeEventListener(USER_SETTINGS_UPDATED_EVENT, onSettingsUpdated as EventListener);
+    };
+  }, []);
+  useEffect(() => {
+    const abortController = new AbortController();
+
+    void currentSystemSettings()
+      .then((settings) => {
+        if (abortController.signal.aborted) return;
+        setCyberEchoEnabled(settings.devicesSectionEnabled);
+      })
+      .catch(() => {
+        if (abortController.signal.aborted) return;
+        setCyberEchoEnabled(false);
+      });
+
+    return () => {
+      abortController.abort();
+    };
+  }, []);
+  useEffect(() => {
+    const abortController = new AbortController();
+
+    void fetchCurrentUser(abortController.signal)
+      .then((user) => {
+        if (abortController.signal.aborted) return;
+        setCurrentUser(user);
+      })
+      .catch(() => {
+        if (abortController.signal.aborted) return;
+        setCurrentUser(null);
+      });
+
+    return () => {
+      abortController.abort();
     };
   }, []);
   const buildFeedColumnModel = (feed: MessageFeedState) => ({
@@ -310,10 +353,15 @@ export function RerDutyNeoPage({
     reloadKeywordSets,
     applyFilter,
   } = useRerDutyFeeds(authUserName);
+  const { createdMessageResult, closeCreatedMessageResult, handleCreatedMessage } =
+    useCreatedMessageResult();
   const activeFeedIdSafe = messageFeeds.some((feed) => feed.id === activeFeedId)
     ? activeFeedId
     : (messageFeeds[0]?.id ?? null);
   const [hasCompletedInitialLoad, setHasCompletedInitialLoad] = useState(false);
+  const openCreateMessageComposer = useCallback(() => {
+    setCreateMessageOpen(true);
+  }, []);
 
   useEffect(() => {
     if (
@@ -391,11 +439,36 @@ export function RerDutyNeoPage({
         buildFeedColumnModel={buildFeedColumnModel}
         columnRefsRef={columnRefsRef}
         createMessageFeed={createMessageFeed}
+        openCreateMessageComposer={openCreateMessageComposer}
         isInitialLoading={isInitialLoading}
         messageFeeds={messageFeeds}
         narrowScreen={narrowScreen}
         onSelectFeed={setActiveFeedId}
         showLoadingBackdrop={showLoadingBackdrop}
+      />
+
+      <ManageMessageDrawer
+        open={createMessageOpen}
+        cyberEchoEnabled={cyberEchoEnabled}
+        currentUser={currentUser}
+        onClose={() => setCreateMessageOpen(false)}
+        onCreated={handleCreatedMessage}
+      />
+
+      <CreatedMessagePreviewDrawer
+        authUserName={authUserName}
+        open={createdMessageResult.kind !== 'closed'}
+        result={createdMessageResult}
+        onClose={closeCreatedMessageResult}
+        groupInfos={groupInfos}
+        profiles={profiles}
+        networkDisplayMap={networkDisplayMap}
+        networkMap={networkMap}
+        unitsMap={unitsMap}
+        callsignInfoMap={callsignInfoMap}
+        tagsMap={tagsMap}
+        tagsOrder={tagsOrder}
+        featureStrictNetworks={featureStrictNetworks}
       />
 
       <CommentDialog

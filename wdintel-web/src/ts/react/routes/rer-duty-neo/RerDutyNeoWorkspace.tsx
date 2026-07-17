@@ -1,14 +1,5 @@
 import AddIcon from '@mui/icons-material/Add';
-import {
-  Backdrop,
-  Box,
-  ButtonBase,
-  CircularProgress,
-  Fab,
-  IconButton,
-  Skeleton,
-  Tooltip,
-} from '@mui/material';
+import { Backdrop, Box, ButtonBase, CircularProgress, Fab, Skeleton, Tooltip } from '@mui/material';
 import { isPresent } from '../../utils/misc';
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 
@@ -16,7 +7,8 @@ import { FeedColumn, type FeedColumnHandle, type FeedColumnModel } from './FeedC
 import { DUTY_ICON_ONLY_FEED_TAB_MIN_FEEDS } from './FeedColumnHeader';
 import { dutyTopAddFabSx } from './top-action-styles';
 import type { MessageFeedState } from './utils';
-import { MAX_MESSAGE_FEEDS } from './useRerDutyFeeds';
+import { MAX_MESSAGE_FEEDS } from './utils';
+import { CreateMessageFab } from '../shared/manage-message/CreateMessageFab';
 
 function dutyFeedColumnMaxWidth(feedCount: number, narrow: boolean): string {
   if (narrow) return '100%';
@@ -159,6 +151,7 @@ type RerDutyNeoWorkspaceProps = {
   buildFeedColumnModel: (feed: MessageFeedState) => FeedColumnModel;
   columnRefsRef: MutableRefObject<Record<string, FeedColumnHandle | null>>;
   createMessageFeed: () => void;
+  openCreateMessageComposer: () => void;
   isInitialLoading: boolean;
   messageFeeds: MessageFeedState[];
   narrowScreen: boolean;
@@ -171,6 +164,7 @@ export function RerDutyNeoWorkspace({
   buildFeedColumnModel,
   columnRefsRef,
   createMessageFeed,
+  openCreateMessageComposer,
   isInitialLoading,
   messageFeeds,
   narrowScreen,
@@ -189,9 +183,10 @@ export function RerDutyNeoWorkspace({
         <DutyNeoInitialLoadingSkeleton feedCount={messageFeeds.length} narrow={narrowScreen} />
       ) : (
         <Box
+          data-duty-workspace-main
           className="h-full min-h-0 w-full overflow-hidden flex gap-2"
+          style={{ paddingTop: narrowScreen ? 0 : 48 }}
           sx={{
-            pr: !narrowScreen && showAddButton ? 6 : 0,
             position: 'relative',
           }}
         >
@@ -340,8 +335,8 @@ export function RerDutyNeoWorkspace({
                           ...column,
                           actions: {
                             ...column.actions,
-                            onCreateMessageFeed:
-                              isActive && showAddButton ? createMessageFeed : undefined,
+                            onCreateMessage: isActive ? openCreateMessageComposer : undefined,
+                            onCreateFeed: isActive && showAddButton ? createMessageFeed : undefined,
                           },
                         }}
                       />
@@ -379,13 +374,11 @@ export function RerDutyNeoWorkspace({
             <Box
               sx={{
                 position: 'absolute',
-                right: 0,
-                bottom: { xs: 'max(12px, env(safe-area-inset-bottom, 0px))', sm: 12 },
-                width: 44,
+                right: 12,
+                top: { xs: 'max(12px, env(safe-area-inset-top, 0px))', sm: 12 },
                 display: 'flex',
-                justifyContent: 'center',
-                alignItems: 'flex-end',
                 pointerEvents: 'none',
+                zIndex: 2,
               }}
             >
               <Fab
@@ -400,6 +393,7 @@ export function RerDutyNeoWorkspace({
           )}
         </Box>
       )}
+      {!narrowScreen ? <CreateMessageFab onClick={openCreateMessageComposer} /> : null}
 
       <Backdrop
         open={showLoadingBackdrop}

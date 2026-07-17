@@ -942,6 +942,7 @@ function NetworkEtalonSection({
 export type MessageCardHeaderProps = {
   compact?: boolean;
   displayMode: MessageCardDisplayMode;
+  readOnly?: boolean;
   excludeMenuOptions?: MessageEntityExcludeMenuOption[];
   /** Width % of the bottom header row for the network / etalon block. */
   networkRowContentWidthPct?: number;
@@ -956,11 +957,11 @@ export type MessageCardHeaderProps = {
   rightInsetPx?: number;
   topRight?: ReactNode;
   metadataTrigger?: ReactNode;
-  onBookmark: () => void;
-  onImportant: () => void;
-  onComment: () => void;
-  onCopyText: () => void;
-  onCopyFreq: () => void;
+  onBookmark?: () => void;
+  onImportant?: () => void;
+  onComment?: () => void;
+  onCopyText?: () => void;
+  onCopyFreq?: () => void;
   onCopyTextWithNetwork?: () => void;
   onCopyTextWithNetworkAndNote?: () => void;
   onCopyEtalon?: () => void;
@@ -974,6 +975,7 @@ export type MessageCardHeaderProps = {
 export function MessageCardHeader({
   compact = false,
   displayMode,
+  readOnly = false,
   excludeMenuOptions = [],
   networkRowContentWidthPct = 80,
   id,
@@ -1131,30 +1133,32 @@ export function MessageCardHeader({
           <Box sx={{ minWidth: 0, display: 'flex', alignItems: 'center', flex: '1 1 0' }}>
             {dateTimeBlock}
           </Box>
-          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <ActionIconsRow
-              id={id}
-              msg={msg}
-              compact
-              displayMode={displayMode}
-              excludeMenuOptions={excludeMenuOptions}
-              etalonDisplayModel={etalonDisplayModel}
-              copiedFeedbackId={copiedFeedbackId}
-              navigationMenuItems={navigationMenuItems}
-              onBookmark={onBookmark}
-              onImportant={onImportant}
-              onComment={onComment}
-              onCopyText={onCopyText}
-              onCopyFreq={onCopyFreq}
-              onCopyTextWithNetwork={onCopyTextWithNetwork}
-              onCopyTextWithNetworkAndNote={onCopyTextWithNetworkAndNote}
-              onCopyEtalon={onCopyEtalon}
-              onCopyLocation={onCopyLocation}
-              onDelete={onDelete}
-              onEditDetails={onEditDetails}
-              onExcludeMessageEntity={onExcludeMessageEntity}
-            />
-          </Box>
+          {readOnly ? null : (
+            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <ActionIconsRow
+                id={id}
+                msg={msg}
+                compact
+                displayMode={displayMode}
+                excludeMenuOptions={excludeMenuOptions}
+                etalonDisplayModel={etalonDisplayModel}
+                copiedFeedbackId={copiedFeedbackId}
+                navigationMenuItems={navigationMenuItems}
+                onBookmark={onBookmark!}
+                onImportant={onImportant!}
+                onComment={onComment!}
+                onCopyText={onCopyText!}
+                onCopyFreq={onCopyFreq!}
+                onCopyTextWithNetwork={onCopyTextWithNetwork}
+                onCopyTextWithNetworkAndNote={onCopyTextWithNetworkAndNote}
+                onCopyEtalon={onCopyEtalon}
+                onCopyLocation={onCopyLocation}
+                onDelete={onDelete}
+                onEditDetails={onEditDetails}
+                onExcludeMessageEntity={onExcludeMessageEntity}
+              />
+            </Box>
+          )}
           <Box
             sx={{
               minWidth: 0,
@@ -1212,30 +1216,32 @@ export function MessageCardHeader({
         <Box sx={{ minWidth: 0, display: 'flex', alignItems: 'center', flex: '1 1 0' }}>
           {dateTimeBlock}
         </Box>
-        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <ActionIconsRow
-            id={id}
-            msg={msg}
-            compact={compact}
-            displayMode={displayMode}
-            excludeMenuOptions={excludeMenuOptions}
-            etalonDisplayModel={etalonDisplayModel}
-            copiedFeedbackId={copiedFeedbackId}
-            navigationMenuItems={navigationMenuItems}
-            onBookmark={onBookmark}
-            onImportant={onImportant}
-            onComment={onComment}
-            onCopyText={onCopyText}
-            onCopyFreq={onCopyFreq}
-            onCopyTextWithNetwork={onCopyTextWithNetwork}
-            onCopyTextWithNetworkAndNote={onCopyTextWithNetworkAndNote}
-            onCopyEtalon={onCopyEtalon}
-            onCopyLocation={onCopyLocation}
-            onDelete={onDelete}
-            onEditDetails={onEditDetails}
-            onExcludeMessageEntity={onExcludeMessageEntity}
-          />
-        </Box>
+        {readOnly ? null : (
+          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <ActionIconsRow
+              id={id}
+              msg={msg}
+              compact={compact}
+              displayMode={displayMode}
+              excludeMenuOptions={excludeMenuOptions}
+              etalonDisplayModel={etalonDisplayModel}
+              copiedFeedbackId={copiedFeedbackId}
+              navigationMenuItems={navigationMenuItems}
+              onBookmark={onBookmark!}
+              onImportant={onImportant!}
+              onComment={onComment!}
+              onCopyText={onCopyText!}
+              onCopyFreq={onCopyFreq!}
+              onCopyTextWithNetwork={onCopyTextWithNetwork}
+              onCopyTextWithNetworkAndNote={onCopyTextWithNetworkAndNote}
+              onCopyEtalon={onCopyEtalon}
+              onCopyLocation={onCopyLocation}
+              onDelete={onDelete}
+              onEditDetails={onEditDetails}
+              onExcludeMessageEntity={onExcludeMessageEntity}
+            />
+          </Box>
+        )}
         <Box
           sx={{
             minWidth: 0,

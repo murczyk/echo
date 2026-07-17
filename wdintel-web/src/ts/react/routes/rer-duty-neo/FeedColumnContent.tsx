@@ -132,7 +132,7 @@ export function FeedColumnContent({ column, virtuosoRef }: FeedColumnContentProp
     onAtBottomChange,
     onArrowClick,
     onVisibleMessageIds,
-    onCreateMessageFeed,
+    onCreateMessage,
   } = actions;
   const [isAtBottom, setIsAtBottom] = useState(true);
   const loadOlderTriggeredRef = useRef(false);
@@ -282,7 +282,7 @@ export function FeedColumnContent({ column, virtuosoRef }: FeedColumnContentProp
           ),
           List: FeedList,
           Footer: () =>
-            narrowScreen && isPresent(onCreateMessageFeed) ? (
+            narrowScreen && isPresent(onCreateMessage) ? (
               <Box
                 data-duty-feed-footer-spacer
                 data-duty-bottom-offset={`calc(${DUTY_FLOATING_ACTION_BOTTOM_PX} + ${DUTY_FLOATING_ACTION_STACK_HEIGHT_PX}px)`}
@@ -383,9 +383,9 @@ export function FeedColumnContent({ column, virtuosoRef }: FeedColumnContentProp
           );
         }}
       />
-      {narrowScreen && isPresent(onCreateMessageFeed) ? (
+      {narrowScreen && isPresent(onCreateMessage) ? (
         <Box
-          data-duty-feed-create-button
+          data-duty-message-create-button
           data-duty-bottom-offset={DUTY_FLOATING_ACTION_BOTTOM_PX}
           style={{
             position: 'absolute',
@@ -401,8 +401,8 @@ export function FeedColumnContent({ column, virtuosoRef }: FeedColumnContentProp
           <Fab
             color="primary"
             size="small"
-            aria-label="Додати стрічку"
-            onClick={onCreateMessageFeed}
+            aria-label="Додати повідомлення"
+            onClick={onCreateMessage}
             sx={{ ...dutyTopAddFabSx, pointerEvents: 'auto' }}
           >
             <AddIcon />
@@ -413,12 +413,12 @@ export function FeedColumnContent({ column, virtuosoRef }: FeedColumnContentProp
         <Box
           data-duty-feed-scroll-button
           data-duty-bottom-offset={
-            narrowScreen && isPresent(onCreateMessageFeed) ? DUTY_FLOATING_SCROLL_BOTTOM_PX : '12px'
+            narrowScreen && isPresent(onCreateMessage) ? DUTY_FLOATING_SCROLL_BOTTOM_PX : '12px'
           }
           style={{
             position: 'absolute',
             bottom:
-              narrowScreen && isPresent(onCreateMessageFeed) ? DUTY_FLOATING_SCROLL_BOTTOM_PX : 12,
+              narrowScreen && isPresent(onCreateMessage) ? DUTY_FLOATING_SCROLL_BOTTOM_PX : 12,
           }}
           sx={{
             right: { xs: 12, sm: 20 },

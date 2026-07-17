@@ -9,6 +9,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { FeedColumnModel } from './FeedColumn';
 import { RerDutyNeoWorkspace } from './RerDutyNeoWorkspace';
 import type { MessageFeedState } from './utils';
+import { MAX_MESSAGE_FEEDS } from './utils';
 
 vi.mock('react-virtuoso', () => ({
   Virtuoso: forwardRef<
@@ -289,6 +290,7 @@ describe('RerDutyNeoWorkspace', () => {
           buildFeedColumnModel={() => feedColumnModel}
           columnRefsRef={columnRefsRef}
           createMessageFeed={() => {}}
+          openCreateMessageComposer={() => {}}
           isInitialLoading
           messageFeeds={messageFeeds}
           narrowScreen={false}
@@ -334,6 +336,7 @@ describe('RerDutyNeoWorkspace', () => {
           buildFeedColumnModel={narrowBuildFeedColumnModel}
           columnRefsRef={columnRefsRef}
           createMessageFeed={() => {}}
+          openCreateMessageComposer={() => {}}
           isInitialLoading={false}
           messageFeeds={messageFeeds}
           narrowScreen
@@ -354,31 +357,77 @@ describe('RerDutyNeoWorkspace', () => {
     expect(container.querySelector('button[aria-label="Додати стрічку"]')).not.toBeNull();
   });
 
-  it('keeps the desktop add action in the workspace rail', async () => {
+  it('keeps the desktop workspace rail stable when the add feed action disappears', async () => {
     container = document.createElement('div');
     document.body.appendChild(container);
     root = createRoot(container);
-
-    const messageFeeds = [{ ...buildFeed('feed-1'), loading: false }];
     const columnRefsRef = { current: {} as Record<string, null> };
+    const createMessageFeed = vi.fn();
+    const openCreateMessageComposer = vi.fn();
 
+    const renderWorkspace = async (feedCount: number) => {
+      const messageFeeds = Array.from({ length: feedCount }, (_, index) => ({
+        ...buildFeed(`feed-${index + 1}`),
+        loading: false,
+      }));
+
+      await act(async () => {
+        root.render(
+          <RerDutyNeoWorkspace
+            activeFeedId={messageFeeds[0]?.id ?? null}
+            buildFeedColumnModel={(feed) => {
+              const column = buildFeedColumnModel(feed);
+              column.view.feedCount = messageFeeds.length;
+              column.view.canRemove = messageFeeds.length > 1;
+              return column;
+            }}
+            columnRefsRef={columnRefsRef}
+            createMessageFeed={createMessageFeed}
+            openCreateMessageComposer={openCreateMessageComposer}
+            isInitialLoading={false}
+            messageFeeds={messageFeeds}
+            narrowScreen={false}
+            onSelectFeed={() => {}}
+            showLoadingBackdrop={false}
+          />,
+        );
+      });
+    };
+
+    await renderWorkspace(MAX_MESSAGE_FEEDS - 1);
+    const workspaceBefore = container.querySelector('[data-duty-workspace-main]') as HTMLElement;
+    expect(workspaceBefore.style.paddingTop).toBe('48px');
+    const addButtonBefore = container.querySelector(
+      'button[aria-label="Додати стрічку"]',
+    ) as HTMLButtonElement | null;
+    const createButtonBefore = container.querySelector(
+      'button[aria-label="Додати повідомлення"]',
+    ) as HTMLButtonElement | null;
+    expect(addButtonBefore).not.toBeNull();
+    expect(createButtonBefore).not.toBeNull();
     await act(async () => {
-      root.render(
-        <RerDutyNeoWorkspace
-          activeFeedId="feed-1"
-          buildFeedColumnModel={buildFeedColumnModel}
-          columnRefsRef={columnRefsRef}
-          createMessageFeed={() => {}}
-          isInitialLoading={false}
-          messageFeeds={messageFeeds}
-          narrowScreen={false}
-          onSelectFeed={() => {}}
-          showLoadingBackdrop={false}
-        />,
-      );
+      addButtonBefore?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      createButtonBefore?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    expect(createMessageFeed).toHaveBeenCalledTimes(1);
+    expect(openCreateMessageComposer).toHaveBeenCalledTimes(1);
+
+    createMessageFeed.mockReset();
+    openCreateMessageComposer.mockReset();
+    await renderWorkspace(MAX_MESSAGE_FEEDS);
+    const workspaceAfter = container.querySelector('[data-duty-workspace-main]') as HTMLElement;
+    expect(workspaceAfter.style.paddingTop).toBe('48px');
+    expect(container.querySelector('button[aria-label="Додати стрічку"]')).toBeNull();
+    const createButtonAfter = container.querySelector(
+      'button[aria-label="Додати повідомлення"]',
+    ) as HTMLButtonElement | null;
+    expect(createButtonAfter).not.toBeNull();
+    await act(async () => {
+      createButtonAfter?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     });
 
-    expect(container.querySelector('button[aria-label="Додати стрічку"]')).not.toBeNull();
-    expect(container.querySelector('[data-duty-feed-create-button]')).toBeNull();
+    expect(workspaceAfter.style.paddingTop).toBe(workspaceBefore.style.paddingTop);
+    expect(createMessageFeed).not.toHaveBeenCalled();
+    expect(openCreateMessageComposer).toHaveBeenCalledTimes(1);
   });
 });

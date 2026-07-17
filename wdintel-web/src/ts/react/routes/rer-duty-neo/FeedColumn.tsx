@@ -77,7 +77,8 @@ export type FeedColumnModel = {
     onMessageComment: (msgId: number, currentComment: string | null) => void;
     onMessageExcludeEntity: (entity: MessageEntityFilterKind, value: string) => void;
     onMessageToggleTag: (msgId: number, tagId: number) => void;
-    onCreateMessageFeed?: () => void;
+    onCreateMessage?: () => void;
+    onCreateFeed?: () => void;
     onScrollToTop?: () => void;
     /** Called when user scrolls to bottom; use to enable watch mode (same as after arrow click). */
     onReachedBottom?: () => void;
@@ -104,7 +105,7 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
 ) {
   const { feed, view, filterPanel, keywordsPanel, actions } = column;
   const { narrowScreen = false, canRemove, maxWidth, feedCount = 1 } = view;
-  const { onRemoveColumn } = actions;
+  const { onRemoveColumn, onCreateFeed, onCreateMessage } = actions;
   const [showFilters, setShowFilters] = useState(false);
   const [showNotificationPanel, setShowNotificationPanel] = useState(false);
   const [showKeywordsPanel, setShowKeywordsPanel] = useState(false);
@@ -247,6 +248,8 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
         showNotificationPanel={showNotificationPanel}
         showKeywordsPanel={showKeywordsPanel}
         dutyNotificationsOn={dutyNotificationsOn}
+        narrowScreen={narrowScreen}
+        onCreateFeed={onCreateFeed}
         onToggleFilters={onToggleFilters}
         onToggleNotificationPanel={onToggleNotificationPanel}
         onToggleKeywordsPanel={onToggleKeywordsPanel}

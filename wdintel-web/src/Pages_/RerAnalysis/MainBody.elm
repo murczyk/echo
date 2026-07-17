@@ -1059,7 +1059,7 @@ view user model shared route =
                     [ href "/my-reports"
                     , class "text-sm"
                     ]
-                    [ text "Мої Звіти" ]
+                    [ text "Мої звіти" ]
                 ]
             ]
 

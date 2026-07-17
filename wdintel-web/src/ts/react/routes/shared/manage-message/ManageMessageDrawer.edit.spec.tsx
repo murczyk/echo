@@ -681,7 +681,7 @@ describe('ManageMessageDrawer edit mode', () => {
           currentUser={null}
           onClose={vi.fn()}
           editTarget={null}
-          onSuccess={vi.fn()}
+          onCreated={vi.fn()}
         />,
       );
     });
@@ -695,7 +695,7 @@ describe('ManageMessageDrawer edit mode', () => {
           currentUser={null}
           onClose={vi.fn()}
           editTarget={null}
-          onSuccess={vi.fn()}
+          onCreated={vi.fn()}
         />,
       );
     });
@@ -708,6 +708,49 @@ describe('ManageMessageDrawer edit mode', () => {
     // The edit-only pieces must be gone too.
     expect(container.textContent).not.toContain('existing body');
     expect(container.textContent).not.toContain('ALFA');
+
+    root.unmount();
+  });
+
+  it('closes create mode before notifying the host and ignores host callback failures', async () => {
+    const onClose = vi.fn();
+    const onCreated = vi.fn().mockRejectedValue(new Error('preview failed'));
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <ManageMessageDrawer
+          open
+          cyberEchoEnabled={false}
+          currentUser={null}
+          onClose={onClose}
+          onCreated={onCreated}
+        />,
+      );
+    });
+
+    act(() => {
+      textFieldPropsByLabel.get('Текст повідомлення')?.onChange?.({
+        target: { value: 'new message body' },
+      });
+    });
+    act(() => {
+      autocompleteOnChangeByLabel.get('Група')?.(null, {
+        masterKey: 'g-1',
+        name: 'Group 1',
+      });
+    });
+
+    const form = container.querySelector('form') as HTMLFormElement;
+    await act(async () => {
+      form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    });
+
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(onCreated).toHaveBeenCalledTimes(1);
+    expect(container.textContent).not.toContain('preview failed');
 
     root.unmount();
   });

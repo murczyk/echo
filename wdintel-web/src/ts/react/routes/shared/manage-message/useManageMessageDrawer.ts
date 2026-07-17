@@ -39,7 +39,9 @@ export type UseManageMessageDrawerProps = {
   cyberEchoEnabled: boolean;
   currentUser: User | null;
   onClose: () => void;
-  onSuccess?: () => void;
+  onCreated?: (
+    result: import('../../../services/api/direct-submit').DirectSubmitResponse,
+  ) => void | Promise<void>;
   editTarget?: { id: number; message: InboxMessage } | null;
   editSaveInFlight?: boolean;
   onSubmitEdit?: (id: number, message: InboxMessage) => void | Promise<void>;
@@ -50,7 +52,7 @@ export function useManageMessageDrawer({
   cyberEchoEnabled,
   currentUser,
   onClose,
-  onSuccess,
+  onCreated,
   editTarget = null,
   editSaveInFlight,
   onSubmitEdit,
@@ -393,14 +395,18 @@ export function useManageMessageDrawer({
       .catch(console.error);
   }, [open, isEditMode, editTarget?.id]);
 
-  const handleDrawerClose = () => {
-    if (busy) return;
+  const closeDrawerAfterSubmit = () => {
     uppy.cancelAll();
     reset();
     setDeviceNameInput('');
     setShowAdvanced(false);
     setErrorMsg(null);
     onClose();
+  };
+
+  const handleDrawerClose = () => {
+    if (busy) return;
+    closeDrawerAfterSubmit();
   };
 
   const getProposedCallsigns = (current: string[]): string[] => {
@@ -427,8 +433,8 @@ export function useManageMessageDrawer({
     setErrorMsg,
     uppy,
     addValues,
-    onSuccess,
-    handleDrawerClose,
+    onCreated,
+    handleDrawerCloseAfterSubmit: closeDrawerAfterSubmit,
   });
 
   return {

@@ -11,8 +11,8 @@ import { AnalysisLoadingSkeletons } from './AnalysisLoadingSkeletons';
 import { AnalysisCenterPanel } from './AnalysisCenterPanel';
 import { AnalysisRightPanel } from './AnalysisRightPanel';
 import { AnalysisReportDialog } from './components/AnalysisReportDialog';
-import { CreateMessageFab } from './components/CreateMessageFab';
-import { ManageMessageDrawer } from './components/ManageMessageDrawer';
+import { CreateMessageFab } from '../shared/manage-message/CreateMessageFab';
+import { ManageMessageDrawer } from '../shared/manage-message/ManageMessageDrawer';
 import { getAnalysisCenterTabs } from './types';
 import { useMinDurationBusy } from './use-min-duration-busy';
 import { useRerAnalysisNeoPage } from './use-rer-analysis-neo-page';
@@ -166,7 +166,7 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
           }
         }}
         onSubmitEdit={(_id, message) => page.saveEditor(message)}
-        onSuccess={() => {
+        onCreated={async () => {
           setCreateMessageOpen(false);
           page.reload();
         }}

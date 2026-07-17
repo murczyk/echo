@@ -8,6 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { FeedColumnProps } from './FeedColumn';
 import { minimalInboxMessage } from './inbox-message-mocks';
+import { MAX_MESSAGE_FEEDS } from './utils';
 
 vi.mock('react-virtuoso', () => ({
   Virtuoso: forwardRef<
@@ -199,7 +200,8 @@ function buildProps(): FeedColumnProps {
         onMessageComment: vi.fn(),
         onMessageExcludeEntity: vi.fn(),
         onMessageToggleTag: vi.fn(),
-        onCreateMessageFeed: vi.fn(),
+        onCreateMessage: vi.fn(),
+        onCreateFeed: vi.fn(),
       },
     },
   };
@@ -320,39 +322,75 @@ describe('FeedColumn', () => {
     expect(container.querySelector('[data-testid="feed-notification-panel"]')).toBeNull();
   });
 
-  it('renders the narrow feed create action inside the feed surface only when allowed', async () => {
+  it('renders a single explicit header action container with the narrow add action', async () => {
     const narrowProps = buildProps();
     narrowProps.column.view.narrowScreen = true;
-    narrowProps.column.actions.onCreateMessageFeed = vi.fn();
-    const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    narrowProps.column.view.feedCount = 1;
+    narrowProps.column.view.canRemove = false;
+    narrowProps.column.actions.onCreateMessage = vi.fn();
+    narrowProps.column.actions.onCreateFeed = vi.fn();
 
-    try {
-      await act(async () => {
-        root.render(<FeedColumn column={narrowProps.column} />);
-      });
+    await act(async () => {
+      root.render(<FeedColumn column={narrowProps.column} />);
+    });
 
-      const addButton = container.querySelector('button[aria-label="Додати стрічку"]');
-      expect(addButton).not.toBeNull();
-      expect(container.querySelector('[data-duty-feed-create-button]')).not.toBeNull();
-      expect(container.querySelector('[data-duty-feed-footer-spacer]')).not.toBeNull();
-      expect(addButton?.closest('[data-duty-feed-content-root]')).not.toBeNull();
-      expect(consoleErrorSpy).not.toHaveBeenCalled();
+    const actionContainer = container.querySelector('[data-duty-feed-header-actions]');
+    expect(actionContainer).not.toBeNull();
+    expect(actionContainer?.querySelectorAll('button')).toHaveLength(1);
+    expect(container.querySelector('[data-duty-feed-header-layout="flex"]')).not.toBeNull();
+    expect(container.querySelector('button[aria-label="Додати стрічку"]')).not.toBeNull();
+    expect(container.querySelector('button[aria-label="Закрити стрічку"]')).toBeNull();
+    expect(container.querySelector('[data-duty-feed-footer-spacer]')).not.toBeNull();
 
-      await act(async () => {
-        root.render(<FeedColumn column={buildProps().column} />);
-      });
+    await act(async () => {
+      container
+        .querySelector('button[aria-label="Додати повідомлення"]')
+        ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
 
-      expect(container.querySelector('button[aria-label="Додати стрічку"]')).toBeNull();
-      expect(container.querySelector('[data-duty-feed-footer-spacer]')).toBeNull();
-    } finally {
-      consoleErrorSpy.mockRestore();
-    }
+    expect(narrowProps.column.actions.onCreateMessage).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows add and remove actions together on the active narrow feed when multiple feeds exist', async () => {
+    const narrowProps = buildProps();
+    narrowProps.column.view.narrowScreen = true;
+    narrowProps.column.view.feedCount = 2;
+    narrowProps.column.view.canRemove = true;
+    narrowProps.column.actions.onCreateMessage = vi.fn();
+    narrowProps.column.actions.onCreateFeed = vi.fn();
+
+    await act(async () => {
+      root.render(<FeedColumn column={narrowProps.column} />);
+    });
+
+    const actionContainer = container.querySelector('[data-duty-feed-header-actions]');
+    expect(actionContainer?.querySelectorAll('button')).toHaveLength(2);
+    expect(container.querySelector('button[aria-label="Додати стрічку"]')).not.toBeNull();
+    expect(container.querySelector('button[aria-label="Закрити стрічку"]')).not.toBeNull();
+  });
+
+  it('hides add feed at the maximum while keeping remove visible', async () => {
+    const props = buildProps();
+    props.column.view.narrowScreen = true;
+    props.column.view.feedCount = MAX_MESSAGE_FEEDS;
+    props.column.view.canRemove = true;
+    props.column.actions.onCreateMessage = vi.fn();
+    props.column.actions.onCreateFeed = undefined;
+
+    await act(async () => {
+      root.render(<FeedColumn column={props.column} />);
+    });
+
+    const actionContainer = container.querySelector('[data-duty-feed-header-actions]');
+    expect(actionContainer?.querySelectorAll('button')).toHaveLength(1);
+    expect(container.querySelector('button[aria-label="Додати стрічку"]')).toBeNull();
+    expect(container.querySelector('button[aria-label="Закрити стрічку"]')).not.toBeNull();
   });
 
   it('does not reserve extra footer space when the add action is unavailable', async () => {
     const props = buildProps();
     props.column.view.narrowScreen = true;
-    props.column.actions.onCreateMessageFeed = undefined;
+    props.column.actions.onCreateMessage = undefined;
 
     await act(async () => {
       root.render(<FeedColumn column={props.column} />);
@@ -366,14 +404,14 @@ describe('FeedColumn', () => {
     props.column.view.narrowScreen = true;
     props.column.view.unreadCount = 2;
     props.column.actions.onArrowClick = vi.fn();
-    props.column.actions.onCreateMessageFeed = vi.fn();
+    props.column.actions.onCreateMessage = vi.fn();
     props.column.feed.items = [[1, minimalInboxMessage({ timestamp: 100 })]];
 
     await act(async () => {
       root.render(<FeedColumn column={props.column} />);
     });
 
-    const addWrapper = container.querySelector('[data-duty-feed-create-button]') as HTMLElement;
+    const addWrapper = container.querySelector('[data-duty-message-create-button]') as HTMLElement;
     const scrollWrapper = container.querySelector('[data-duty-feed-scroll-button]') as HTMLElement;
 
     expect(addWrapper).not.toBeNull();

@@ -7,6 +7,7 @@ import {
   submitDirect,
   editDirectSubmit,
   formatDirectSubmitError,
+  type DirectSubmitResponse,
 } from '../../../services/api/direct-submit';
 import { parseCoordLine, type MessageFormData } from './manage-message-drawer.schema';
 import { combineDateTimeToMs, formatDateInputValueInTimeZone } from '../../../utils/misc';
@@ -22,8 +23,8 @@ type SubmitOptions = {
   setErrorMsg: (msg: string | null) => void;
   uppy: Uppy<any, any>;
   addValues: (vals: any) => void;
-  onSuccess?: () => void;
-  handleDrawerClose: () => void;
+  onCreated?: (result: DirectSubmitResponse) => void | Promise<void>;
+  handleDrawerCloseAfterSubmit: () => void;
 };
 
 export function useMessageSubmit({
@@ -36,11 +37,12 @@ export function useMessageSubmit({
   setErrorMsg,
   uppy,
   addValues,
-  onSuccess,
-  handleDrawerClose,
+  onCreated,
+  handleDrawerCloseAfterSubmit,
 }: SubmitOptions) {
   const onSubmit = async (data: MessageFormData) => {
     if (busy) return;
+    let createdResult: DirectSubmitResponse | null = null;
 
     const hasTextContent = !!(data.text?.trim() || data.full_body?.trim());
     const uppyFiles = uppy.getFiles();
@@ -166,42 +168,48 @@ export function useMessageSubmit({
           await onSubmitEdit(editTarget.id, res.message);
         }
       } else {
-        await submitDirect(payload);
+        const result = await submitDirect(payload);
+        addValues({
+          group: data.signalGroupMasterKey ? [data.signalGroupMasterKey] : [],
+          post: data.post ? [data.post] : [],
+          freq: data.freq ? [data.freq] : [],
+          unit: data.unit ? [data.unit] : [],
+          network_cc: dmrRows.flatMap((metadata) => (metadata.cc ? [metadata.cc] : [])),
+          network_signal_name: data.network_signal_name ? [data.network_signal_name] : [],
+          network_name: data.network_name ? [data.network_name] : [],
+          dmr_sender_id: dmrRows.flatMap((metadata) =>
+            metadata.sender_id ? [metadata.sender_id] : [],
+          ),
+          dmr_sender_name: dmrRows.flatMap((metadata) =>
+            metadata.sender_name ? [metadata.sender_name] : [],
+          ),
+          dmr_call_group_id: dmrRows.flatMap((metadata) =>
+            metadata.call_group_id ? [metadata.call_group_id] : [],
+          ),
+          dmr_call_group_name: dmrRows.flatMap((metadata) =>
+            metadata.call_group_name ? [metadata.call_group_name] : [],
+          ),
+          dmr_hash_id: dmrRows.flatMap((metadata) => (metadata.hash_id ? [metadata.hash_id] : [])),
+          locations: data.locations ?? [],
+          callsigns: data.callsigns ?? [],
+          deviceName: data.deviceName ? [data.deviceName] : [],
+        });
+        handleDrawerCloseAfterSubmit();
+        createdResult = result;
       }
-
-      addValues({
-        group: data.signalGroupMasterKey ? [data.signalGroupMasterKey] : [],
-        post: data.post ? [data.post] : [],
-        freq: data.freq ? [data.freq] : [],
-        unit: data.unit ? [data.unit] : [],
-        network_cc: dmrRows.flatMap((metadata) => (metadata.cc ? [metadata.cc] : [])),
-        network_signal_name: data.network_signal_name ? [data.network_signal_name] : [],
-        network_name: data.network_name ? [data.network_name] : [],
-        dmr_sender_id: dmrRows.flatMap((metadata) =>
-          metadata.sender_id ? [metadata.sender_id] : [],
-        ),
-        dmr_sender_name: dmrRows.flatMap((metadata) =>
-          metadata.sender_name ? [metadata.sender_name] : [],
-        ),
-        dmr_call_group_id: dmrRows.flatMap((metadata) =>
-          metadata.call_group_id ? [metadata.call_group_id] : [],
-        ),
-        dmr_call_group_name: dmrRows.flatMap((metadata) =>
-          metadata.call_group_name ? [metadata.call_group_name] : [],
-        ),
-        dmr_hash_id: dmrRows.flatMap((metadata) => (metadata.hash_id ? [metadata.hash_id] : [])),
-        locations: data.locations ?? [],
-        callsigns: data.callsigns ?? [],
-        deviceName: data.deviceName ? [data.deviceName] : [],
-      });
-
-      onSuccess?.();
-      handleDrawerClose();
     } catch (error: unknown) {
       console.error('Error creating message', error);
       setErrorMsg(formatDirectSubmitError(error, 'save'));
     } finally {
       setSubmitting(false);
+    }
+
+    if (createdResult) {
+      try {
+        await onCreated?.(createdResult);
+      } catch (error) {
+        console.error('Error handling created message', error);
+      }
     }
   };
 

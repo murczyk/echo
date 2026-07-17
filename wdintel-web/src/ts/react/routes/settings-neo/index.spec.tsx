@@ -384,7 +384,7 @@ describe('SettingsNeoPage', () => {
       await Promise.resolve();
     });
 
-    expect(container.textContent).toContain('Мої Звіти');
+    expect(container.textContent).toContain('Мої звіти');
     expect(container.textContent).not.toContain('BETA');
     expect(container.querySelector('[data-testid=OpenInNewIcon]')).not.toBeNull();
   });

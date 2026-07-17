@@ -75,7 +75,7 @@ function renderMyReportsTabLabel() {
       component="span"
       sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5, whiteSpace: 'nowrap' }}
     >
-      <span>Мої Звіти</span>
+      <span>Мої звіти</span>
       <OpenInNewIcon sx={{ fontSize: 16 }} aria-hidden="true" />
     </Box>
   );

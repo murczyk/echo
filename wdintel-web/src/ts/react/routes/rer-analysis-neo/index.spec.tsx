@@ -127,11 +127,11 @@ vi.mock('./components/AnalysisSummaryTableCard', () => ({
   AnalysisSummaryTableCard: () => <div data-testid="summary-card" />,
 }));
 
-vi.mock('./components/CreateMessageFab', () => ({
+vi.mock('../shared/manage-message/CreateMessageFab', () => ({
   CreateMessageFab: () => <button type="button">create message</button>,
 }));
 
-vi.mock('./components/ManageMessageDrawer', () => ({
+vi.mock('../shared/manage-message/ManageMessageDrawer', () => ({
   ManageMessageDrawer: () => <div data-testid="manage-message-drawer" />,
 }));
 

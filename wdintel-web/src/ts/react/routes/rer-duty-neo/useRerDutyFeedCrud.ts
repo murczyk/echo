@@ -6,11 +6,10 @@ import {
   emptyFilter,
   filtersEqual,
   generateMessageFeedId,
+  MAX_MESSAGE_FEEDS,
   VIRTUOSO_FIRST_ITEM_INDEX_INITIAL,
 } from './utils';
 import type { MessageFeedState } from './utils';
-
-const MAX_MESSAGE_FEEDS = 4;
 
 export function useRerDutyFeedCrud(
   messageFeeds: MessageFeedState[],

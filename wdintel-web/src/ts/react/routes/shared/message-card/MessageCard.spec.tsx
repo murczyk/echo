@@ -2215,6 +2215,26 @@ describe('MessageCard', () => {
     expect(view.container.textContent).not.toContain('переміщення');
   });
 
+  it('renders tags in read-only mode without mutation controls', async () => {
+    const onToggleTag = vi.fn();
+    const view = await renderCard({ readOnly: true, onToggleTag });
+    rendered.push(view);
+
+    expect(view.container.querySelector('[data-message-card-tag-id="3"]')).not.toBeNull();
+    expect(view.container.textContent).toContain('переміщення');
+    expect(view.container.textContent).toContain('зв’язок');
+    expect(view.container.textContent).toContain('РЕБ');
+    expect(view.container.querySelector('button[aria-label="Редагувати"]')).toBeNull();
+    expect(view.container.querySelector('button[aria-label="Позначити як важливе"]')).toBeNull();
+    expect(view.container.querySelector('button[aria-label="Додати в закладки"]')).toBeNull();
+    expect(view.container.querySelector('button[aria-label="Редагувати коментар"]')).toBeNull();
+    expect(view.container.querySelector('button[aria-label^="Виключити"]')).toBeNull();
+
+    await click(view.container.querySelector('[data-message-card-tag-id="3"]') as HTMLElement);
+
+    expect(onToggleTag).not.toHaveBeenCalled();
+  });
+
   it('hides tags completely when the shared tag layout is set to hidden', async () => {
     const view = await renderCard({ tagsLayout: 'hidden' });
     rendered.push(view);
