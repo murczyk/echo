@@ -429,6 +429,18 @@ mod tests {
     }
 
     #[test]
+    fn extract_text_multiline_body_positions_span_removed_middle_header() {
+        let body = "01.07.2026, 02:55:19\n— перша\nКоординати: 36U XB 66512 50880\n— друга";
+        let res = extract_text(body).unwrap();
+        let body_start = body.find("— перша").unwrap();
+        let body_end = body.find("— друга").unwrap() + "— друга".len();
+
+        assert_eq!(res.body, "— перша\n— друга");
+        assert_eq!(res.start, body[..body_start].chars().count());
+        assert_eq!(res.end, body[..body_end].chars().count());
+    }
+
+    #[test]
     fn extract_text_decorated_header_lines_are_headers() {
         let body = "🔺(01.07.2026 02:58:08)\n🔺(01.07.2026 02:58:08 F=170.0250(МГц))\n│╬{*123.7586*}\n[УКХ р/м]\nПерехоплення";
         let res = extract_text(body).unwrap().body;

@@ -63,7 +63,7 @@ fn prepare_inbox_body_for_coords(
     body_noheader: &crate::rer_importer::body_noheader::NoHeadersBody,
 ) -> String {
     let mut parts = standard_coordinate_metadata_lines(body, body_noheader);
-    let body_noheader = strip_marker_comment_blocks(&body_noheader.body);
+    let body_noheader = coordinate_body_text(body, body_noheader);
     if !body_noheader.trim().is_empty() {
         parts.push(body_noheader);
     }
@@ -74,10 +74,14 @@ fn standard_coordinate_metadata_lines(
     body: &str,
     body_noheader: &crate::rer_importer::body_noheader::NoHeadersBody,
 ) -> Vec<String> {
-    let mut parser = CoordinateMetadataParser::new(body);
+    let lines = coordinate_input_lines(body, body_noheader);
+    let mut parser = CoordinateMetadataParser::new(&lines);
     let mut skip_comment_metadata = false;
-    for raw_line in body.split_inclusive('\n') {
-        let line = trim_line_end(raw_line).trim();
+    for input_line in lines {
+        if input_line.is_body_line {
+            continue;
+        }
+        let line = input_line.text.as_str();
         if crate::rer_importer::body_noheader::is_datetime_header_line(line) {
             parser.accept_datetime_header(line);
             skip_comment_metadata = false;
@@ -86,13 +90,6 @@ fn standard_coordinate_metadata_lines(
         if line.is_empty() {
             parser.accept_empty_line();
             skip_comment_metadata = false;
-            continue;
-        }
-        if body_noheader
-            .body
-            .lines()
-            .any(|body_line| body_line.trim() == line)
-        {
             continue;
         }
         if skip_comment_metadata && !is_dialog_line(line) {
@@ -110,6 +107,142 @@ fn standard_coordinate_metadata_lines(
     parser.into_lines()
 }
 
+struct CoordinateInputLine {
+    text: String,
+    is_body_line: bool,
+}
+
+struct OriginalLine {
+    text: String,
+    comparable_text: String,
+    comparable_start: usize,
+    comparable_end: usize,
+}
+
+fn coordinate_input_lines(
+    body: &str,
+    body_noheader: &crate::rer_importer::body_noheader::NoHeadersBody,
+) -> Vec<CoordinateInputLine> {
+    let original_lines = original_lines(body);
+    let body_line_flags = body_line_flags(&original_lines, body_noheader);
+
+    original_lines
+        .into_iter()
+        .zip(body_line_flags)
+        .map(|(line, is_body_line)| CoordinateInputLine {
+            text: line.text.trim().to_string(),
+            is_body_line,
+        })
+        .collect()
+}
+
+fn original_lines(body: &str) -> Vec<OriginalLine> {
+    let mut lines = Vec::new();
+    let mut line_start = 0;
+    for raw_line in body.split_inclusive('\n') {
+        let raw_line_len = raw_line.chars().count();
+        let text = trim_line_end(raw_line);
+        lines.push(original_line(text, line_start));
+        line_start += raw_line_len;
+    }
+    lines
+}
+
+fn original_line(line: &str, line_start: usize) -> OriginalLine {
+    if let Some(marker_start) = line.find("Отримано з пост") {
+        let prefix = &line[..marker_start];
+        let comparable_text = prefix.trim();
+        let trim_start = prefix.find(comparable_text).unwrap_or(0);
+        let comparable_start =
+            line_start + prefix[..trim_start].chars().count();
+        let comparable_end = comparable_start + comparable_text.chars().count();
+        return OriginalLine {
+            text: line.to_string(),
+            comparable_text: comparable_text.to_string(),
+            comparable_start,
+            comparable_end,
+        };
+    }
+
+    OriginalLine {
+        text: line.to_string(),
+        comparable_text: line.to_string(),
+        comparable_start: line_start,
+        comparable_end: line_start + line.chars().count(),
+    }
+}
+
+fn body_line_flags(
+    lines: &[OriginalLine],
+    body_noheader: &crate::rer_importer::body_noheader::NoHeadersBody,
+) -> Vec<bool> {
+    let body_lines = body_noheader.body.lines().collect::<Vec<_>>();
+    let mut flags = vec![false; lines.len()];
+    let mut body_line_idx = 0;
+    for (idx, line) in lines.iter().enumerate() {
+        let Some(body_line) = body_lines.get(body_line_idx) else {
+            break;
+        };
+        if !line_is_inside_body_noheader(line, body_noheader) {
+            continue;
+        }
+        if line.comparable_text == *body_line {
+            flags[idx] = true;
+            body_line_idx += 1;
+        }
+    }
+    flags
+}
+
+fn line_is_inside_body_noheader(
+    line: &OriginalLine,
+    body_noheader: &crate::rer_importer::body_noheader::NoHeadersBody,
+) -> bool {
+    !body_noheader.body.is_empty()
+        && line.comparable_start >= body_noheader.start
+        && line.comparable_end <= body_noheader.end
+}
+
+fn coordinate_body_text(
+    body: &str,
+    body_noheader: &crate::rer_importer::body_noheader::NoHeadersBody,
+) -> String {
+    let lines = original_lines(body);
+    let body_line_flags = body_line_flags(&lines, body_noheader);
+    let comment_line_flags = marker_comment_line_flags(&lines);
+
+    lines
+        .into_iter()
+        .zip(body_line_flags)
+        .zip(comment_line_flags)
+        .filter_map(|((line, is_body_line), is_comment_line)| {
+            (is_body_line && !is_comment_line).then_some(line.comparable_text)
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn marker_comment_line_flags(lines: &[OriginalLine]) -> Vec<bool> {
+    let mut flags = vec![false; lines.len()];
+    let mut skip_comment_block = false;
+    for (idx, line) in lines.iter().enumerate() {
+        let trimmed = line.text.trim();
+        if is_comment_marker_line(trimmed) {
+            flags[idx] = true;
+            skip_comment_block = true;
+            continue;
+        }
+        if skip_comment_block {
+            if trimmed.is_empty() || is_dialog_line(trimmed) {
+                skip_comment_block = false;
+            } else {
+                flags[idx] = true;
+            }
+        }
+    }
+    flags
+}
+
 struct CoordinateMetadataParser {
     has_datetime_header: bool,
     seen_datetime_header: bool,
@@ -121,11 +254,9 @@ struct CoordinateMetadataParser {
 }
 
 impl CoordinateMetadataParser {
-    fn new(body: &str) -> Self {
+    fn new(lines: &[CoordinateInputLine]) -> Self {
         Self {
-            has_datetime_header: body.lines().map(str::trim).any(
-                crate::rer_importer::body_noheader::is_datetime_header_line,
-            ),
+            has_datetime_header: has_metadata_datetime_header(lines),
             seen_datetime_header: false,
             pre_datetime_state: PreDatetimeState::Clean,
             pending_pre_datetime_coordinate_lines: Vec::new(),
@@ -246,6 +377,18 @@ impl CoordinateMetadataParser {
     }
 }
 
+fn has_metadata_datetime_header(lines: &[CoordinateInputLine]) -> bool {
+    let boundary = lines
+        .iter()
+        .position(|line| line.is_body_line)
+        .or_else(|| lines.iter().position(|line| is_dialog_line(&line.text)))
+        .unwrap_or(lines.len());
+
+    lines[..boundary].iter().any(|line| {
+        crate::rer_importer::body_noheader::is_datetime_header_line(&line.text)
+    })
+}
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum PreDatetimeState {
     Clean,
@@ -340,27 +483,6 @@ enum SplitCoordinateResult {
     Complete(Vec<String>),
     Pending,
     NotMatched,
-}
-
-fn strip_marker_comment_blocks(body: &str) -> String {
-    let mut lines = Vec::new();
-    let mut skip_comment_block = false;
-    for line in body.lines() {
-        let trimmed = line.trim();
-        if is_comment_marker_line(trimmed) {
-            skip_comment_block = true;
-            continue;
-        }
-        if skip_comment_block {
-            if trimmed.is_empty() || is_dialog_line(trimmed) {
-                skip_comment_block = false;
-                lines.push(line.to_string());
-            }
-            continue;
-        }
-        lines.push(line.to_string());
-    }
-    lines.join("\n")
 }
 
 fn trim_line_end(line: &str) -> &str {
@@ -1143,6 +1265,16 @@ y:65-01850
     }
 
     #[tokio::test]
+    async fn extract_inbox_coords_ignores_body_datetime_for_header_detection() {
+        let body = "139.450\nКоординати: 36U XB 66512 50880\nУКХ р/м\n\n— репліка\n01.07.2026, 02:55:19";
+        let body_noheader = body_noheader_for_reprocess_coords(body).unwrap();
+
+        let coords = extract_inbox_coords(body, &body_noheader).await;
+        assert_eq!(coords.len(), 1);
+        assert_eq!(coords[0].mgrs, "36UXB6651250880");
+    }
+
+    #[tokio::test]
     async fn extract_inbox_coords_ignores_kraken_preamble_comment() {
         let body =
             "36T VS 89904 14667\n audio | 2026-07-01_14-47-03\nПерехоплення";
@@ -1174,6 +1306,32 @@ y:65-01850
         assert!(body_noheader.body.contains("Координати"));
         assert!(!extract_coords(&body_noheader.body).await.is_empty());
         assert!(extract_inbox_coords(body, &body_noheader).await.is_empty());
+    }
+
+    #[tokio::test]
+    async fn extract_inbox_coords_ignores_bare_coordinate_comment_continuation()
+    {
+        let body = "01.07.2026, 02:55:19\n155.0250\nУКХ р/м\n\nКоментар:\n36U XB 66512 50880\n— репліка";
+        let body_noheader =
+            crate::sigint::parser::extract_text_without_top_comment(body)
+                .unwrap();
+
+        assert!(!extract_coords(body).await.is_empty());
+        assert!(body_noheader.body.contains("36U XB 66512 50880"));
+        assert!(extract_inbox_coords(body, &body_noheader).await.is_empty());
+    }
+
+    #[tokio::test]
+    async fn extract_inbox_coords_keeps_split_header_coordinate_repeated_in_comment(
+    ) {
+        let body = "01.07.2026, 02:55:19\n155.0250\nКоординати:\n36U XB 66512 50880\nУКХ р/м\n\nКоментар:\n36U XB 66512 50880\n— репліка";
+        let body_noheader =
+            crate::sigint::parser::extract_text_without_top_comment(body)
+                .unwrap();
+
+        let coords = extract_inbox_coords(body, &body_noheader).await;
+        assert_eq!(coords.len(), 1);
+        assert_eq!(coords[0].mgrs, "36UXB6651250880");
     }
 
     #[tokio::test]
