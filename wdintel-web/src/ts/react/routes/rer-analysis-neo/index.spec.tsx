@@ -9,6 +9,17 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { emptyQueryState } from './helpers';
 
 const useRerAnalysisNeoPageMock = vi.hoisted(() => vi.fn());
+const createMessageFabPropsHistory = vi.hoisted(() => [] as Array<{ onClick?: () => void }>);
+const manageMessageDrawerPropsHistory = vi.hoisted(
+  () =>
+    [] as Array<{
+      open: boolean;
+      onClose: () => void;
+      onCreated?: (result: unknown) => Promise<void> | void;
+      onSubmitEdit?: (id: number, message: unknown) => Promise<void> | void;
+      editTarget?: unknown;
+    }>,
+);
 
 vi.mock('@mui/material', () => ({
   Badge: ({ children }: { children: ReactNode }) => <div>{children}</div>,
@@ -128,11 +139,27 @@ vi.mock('./components/AnalysisSummaryTableCard', () => ({
 }));
 
 vi.mock('../shared/manage-message/CreateMessageFab', () => ({
-  CreateMessageFab: () => <button type="button">create message</button>,
+  CreateMessageFab: ({ onClick }: { onClick?: () => void }) => {
+    createMessageFabPropsHistory.push({ onClick });
+    return (
+      <button type="button" aria-label="create-message-fab" onClick={onClick}>
+        create message
+      </button>
+    );
+  },
 }));
 
 vi.mock('../shared/manage-message/ManageMessageDrawer', () => ({
-  ManageMessageDrawer: () => <div data-testid="manage-message-drawer" />,
+  ManageMessageDrawer: (props: {
+    open: boolean;
+    onClose: () => void;
+    onCreated?: (result: unknown) => Promise<void> | void;
+    onSubmitEdit?: (id: number, message: unknown) => Promise<void> | void;
+    editTarget?: unknown;
+  }) => {
+    manageMessageDrawerPropsHistory.push(props);
+    return props.open ? <div data-testid="manage-message-drawer" /> : null;
+  },
 }));
 
 vi.mock('./use-min-duration-busy', () => ({
@@ -278,6 +305,7 @@ function buildPage() {
     repeatReportTaskRun: vi.fn(),
     refreshMapDateRange: vi.fn(),
     renameSummaryUnit: vi.fn(),
+    reload: vi.fn(),
     setCenterTab: vi.fn(),
     setNewestFirst: vi.fn(),
     setReportProgressExpanded: vi.fn(),
@@ -307,6 +335,8 @@ describe('RerAnalysisNeoPage', () => {
   beforeEach(() => {
     useRerAnalysisNeoPageMock.mockReset();
     useRerAnalysisNeoPageMock.mockReturnValue(buildPage());
+    createMessageFabPropsHistory.splice(0);
+    manageMessageDrawerPropsHistory.splice(0);
   });
 
   afterEach(async () => {
@@ -360,6 +390,91 @@ describe('RerAnalysisNeoPage', () => {
     const page = useRerAnalysisNeoPageMock.mock.results[0]?.value;
     expect(page.toggleLeftPanel).toHaveBeenCalledTimes(1);
     expect(page.toggleRightPanel).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      root.unmount();
+    });
+  });
+
+  it('opens the composer from the create fab and reloads only after a successful create', async () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    rendered.push(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(<RerAnalysisNeoPage />);
+    });
+
+    const page = useRerAnalysisNeoPageMock.mock.results[0]?.value;
+    const createFab = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="create-message-fab"]',
+    );
+    expect(createFab).not.toBeNull();
+
+    await act(async () => {
+      createFab?.click();
+    });
+
+    expect(manageMessageDrawerPropsHistory.at(-1)?.open).toBe(true);
+    expect(page.reload).not.toHaveBeenCalled();
+
+    await act(async () => {
+      manageMessageDrawerPropsHistory.at(-1)?.onClose();
+    });
+
+    expect(manageMessageDrawerPropsHistory.at(-1)?.open).toBe(false);
+    expect(page.reload).not.toHaveBeenCalled();
+
+    await act(async () => {
+      createFab?.click();
+    });
+    const createdDrawer = manageMessageDrawerPropsHistory.at(-1);
+    expect(createdDrawer?.open).toBe(true);
+
+    await act(async () => {
+      await createdDrawer?.onCreated?.({ signal_message_id: 17 });
+    });
+
+    expect(manageMessageDrawerPropsHistory.at(-1)?.open).toBe(false);
+    expect(page.reload).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      root.unmount();
+    });
+  });
+
+  it('opens edit mode from the current editor message and wires save and close callbacks', async () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    rendered.push(container);
+    const root = createRoot(container);
+    const editorMessage = { id: 42, message: { messageUid: 'm-42' } as never };
+    const page = buildPage();
+    page.editorMessage = editorMessage;
+    useRerAnalysisNeoPageMock.mockReturnValueOnce(page);
+
+    await act(async () => {
+      root.render(<RerAnalysisNeoPage />);
+    });
+
+    const drawer = manageMessageDrawerPropsHistory.at(-1);
+    expect(drawer?.open).toBe(true);
+    expect(drawer?.editTarget).toBe(editorMessage);
+
+    await act(async () => {
+      await drawer?.onSubmitEdit?.(42, { messageUid: 'm-updated' });
+    });
+
+    expect(page.saveEditor).toHaveBeenCalledTimes(1);
+    expect(page.saveEditor).toHaveBeenCalledWith({ messageUid: 'm-updated' });
+    expect(page.reload).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      drawer?.onClose();
+    });
+
+    expect(page.closeEditor).toHaveBeenCalledTimes(1);
 
     await act(async () => {
       root.unmount();

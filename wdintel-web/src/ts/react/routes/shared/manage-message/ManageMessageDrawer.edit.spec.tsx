@@ -754,4 +754,40 @@ describe('ManageMessageDrawer edit mode', () => {
 
     root.unmount();
   });
+
+  it('closes edit mode even when the host edit callback rejects', async () => {
+    const onSubmitEdit = vi.fn().mockRejectedValue(new Error('editor failed'));
+    directSubmitMocks.editDirectSubmit.mockResolvedValue({
+      signal_message_id: 123,
+      message: buildMessage(),
+    });
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <ManageMessageDrawer
+          open
+          cyberEchoEnabled
+          currentUser={null}
+          onClose={vi.fn()}
+          editTarget={{ id: 123, message: buildMessage() }}
+          editSaveInFlight={false}
+          onSubmitEdit={onSubmitEdit}
+        />,
+      );
+    });
+
+    const form = container.querySelector('form') as HTMLFormElement;
+    await act(async () => {
+      form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    });
+
+    expect(onSubmitEdit).toHaveBeenCalledTimes(1);
+    expect(container.textContent).not.toContain('editor failed');
+    expect(container.textContent).not.toContain('Помилка');
+
+    root.unmount();
+  });
 });

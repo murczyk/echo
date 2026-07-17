@@ -9,6 +9,7 @@ import {
   formatDirectSubmitError,
   type DirectSubmitResponse,
 } from '../../../services/api/direct-submit';
+import type { RecentValues } from './useRecentValues';
 import { parseCoordLine, type MessageFormData } from './manage-message-drawer.schema';
 import { combineDateTimeToMs, formatDateInputValueInTimeZone } from '../../../utils/misc';
 import { MAX_MESSAGE_ATTACHMENTS } from './useMessageUppy';
@@ -22,7 +23,7 @@ type SubmitOptions = {
   setSubmitting: (val: boolean) => void;
   setErrorMsg: (msg: string | null) => void;
   uppy: Uppy<any, any>;
-  addValues: (vals: any) => void;
+  addValues: (vals: Partial<RecentValues>) => void;
   onCreated?: (result: DirectSubmitResponse) => void | Promise<void>;
   handleDrawerCloseAfterSubmit: () => void;
 };
@@ -141,6 +142,7 @@ export function useMessageSubmit({
         call_group_name: metadata.call_group_name?.trim() || undefined,
         hash_id: metadata.hash_id?.trim() || undefined,
       }));
+      const recentValues = buildRecentValues(data, dmrRows);
 
       const payload = {
         full_body: data.full_body?.trim() || undefined,
@@ -164,36 +166,18 @@ export function useMessageSubmit({
 
       if (isEditMode && editTarget) {
         const res = await editDirectSubmit(editTarget.id, payload);
+        addValues(recentValues);
         if (onSubmitEdit && res.message) {
-          await onSubmitEdit(editTarget.id, res.message);
+          try {
+            await onSubmitEdit(editTarget.id, res.message);
+          } catch (error) {
+            console.error('Error handling edited message', error);
+          }
         }
+        handleDrawerCloseAfterSubmit();
       } else {
         const result = await submitDirect(payload);
-        addValues({
-          group: data.signalGroupMasterKey ? [data.signalGroupMasterKey] : [],
-          post: data.post ? [data.post] : [],
-          freq: data.freq ? [data.freq] : [],
-          unit: data.unit ? [data.unit] : [],
-          network_cc: dmrRows.flatMap((metadata) => (metadata.cc ? [metadata.cc] : [])),
-          network_signal_name: data.network_signal_name ? [data.network_signal_name] : [],
-          network_name: data.network_name ? [data.network_name] : [],
-          dmr_sender_id: dmrRows.flatMap((metadata) =>
-            metadata.sender_id ? [metadata.sender_id] : [],
-          ),
-          dmr_sender_name: dmrRows.flatMap((metadata) =>
-            metadata.sender_name ? [metadata.sender_name] : [],
-          ),
-          dmr_call_group_id: dmrRows.flatMap((metadata) =>
-            metadata.call_group_id ? [metadata.call_group_id] : [],
-          ),
-          dmr_call_group_name: dmrRows.flatMap((metadata) =>
-            metadata.call_group_name ? [metadata.call_group_name] : [],
-          ),
-          dmr_hash_id: dmrRows.flatMap((metadata) => (metadata.hash_id ? [metadata.hash_id] : [])),
-          locations: data.locations ?? [],
-          callsigns: data.callsigns ?? [],
-          deviceName: data.deviceName ? [data.deviceName] : [],
-        });
+        addValues(recentValues);
         handleDrawerCloseAfterSubmit();
         createdResult = result;
       }
@@ -236,4 +220,40 @@ function shortBodyForSubmit(
     (editTarget.message.noHeadersBody?.body ?? editTarget.message.text ?? '').trim() || undefined;
   if (fullBody !== originalFullBody && shortBody === originalShortBody) return undefined;
   return shortBody;
+}
+
+function buildRecentValues(
+  data: MessageFormData,
+  dmrRows: Array<{
+    cc?: string | null;
+    sender_id?: string | null;
+    sender_name?: string | null;
+    call_group_id?: string | null;
+    call_group_name?: string | null;
+    hash_id?: string | null;
+  }>,
+): Partial<RecentValues> {
+  return {
+    group: data.signalGroupMasterKey ? [data.signalGroupMasterKey] : [],
+    post: data.post ? [data.post] : [],
+    freq: data.freq ? [data.freq] : [],
+    unit: data.unit ? [data.unit] : [],
+    network_cc: dmrRows.flatMap((metadata) => (metadata.cc ? [metadata.cc] : [])),
+    network_signal_name: data.network_signal_name ? [data.network_signal_name] : [],
+    network_name: data.network_name ? [data.network_name] : [],
+    dmr_sender_id: dmrRows.flatMap((metadata) => (metadata.sender_id ? [metadata.sender_id] : [])),
+    dmr_sender_name: dmrRows.flatMap((metadata) =>
+      metadata.sender_name ? [metadata.sender_name] : [],
+    ),
+    dmr_call_group_id: dmrRows.flatMap((metadata) =>
+      metadata.call_group_id ? [metadata.call_group_id] : [],
+    ),
+    dmr_call_group_name: dmrRows.flatMap((metadata) =>
+      metadata.call_group_name ? [metadata.call_group_name] : [],
+    ),
+    dmr_hash_id: dmrRows.flatMap((metadata) => (metadata.hash_id ? [metadata.hash_id] : [])),
+    locations: data.locations ?? [],
+    callsigns: data.callsigns ?? [],
+    deviceName: data.deviceName ? [data.deviceName] : [],
+  };
 }

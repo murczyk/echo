@@ -165,7 +165,10 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
             setCreateMessageOpen(false);
           }
         }}
-        onSubmitEdit={(_id, message) => page.saveEditor(message)}
+        onSubmitEdit={async (_id, message) => {
+          await Promise.resolve(page.saveEditor(message));
+          page.reload();
+        }}
         onCreated={async () => {
           setCreateMessageOpen(false);
           page.reload();
