@@ -450,6 +450,27 @@ async fn refresh_tracked_goi_palitra_if_changed(
     let file_size = file_data.len() as i64;
     let file_sha256 = sha256::digest(&file_data);
     if tracked_goi_palitra_ids(tracked_rows).is_empty() {
+        if echo_origin_goi_file_needs_refresh(
+            env,
+            tracked_rows,
+            file_size,
+            &file_sha256,
+        )
+        .await
+        .c(h!())?
+        {
+            return refresh_imported_goi_palitra_file(
+                env,
+                &target.integration,
+                remote_path,
+                file_data,
+                file_size,
+                file_sha256,
+                tracked_rows,
+            )
+            .await
+            .c(h!());
+        }
         update_echo_origin_goi_palitra_remote_metadata(
             &env.dbx,
             tracked_rows,
@@ -500,6 +521,62 @@ fn tracked_goi_file_needs_refresh(
             tracked_row_goi_file_size(row) != Some(file_size)
                 || tracked_row_goi_file_sha256(row) != Some(file_sha256)
         })
+}
+
+async fn echo_origin_goi_file_needs_refresh(
+    env: &Env,
+    tracked_rows: &[goi_palitra_sync::Model],
+    file_size: i64,
+    file_sha256: &str,
+) -> anyhow::Result<bool> {
+    for row in tracked_rows
+        .iter()
+        .filter(|row| row.direction == PALITRA_GOI_SYNC_DIRECTION_ECHO)
+    {
+        if tracked_row_goi_file_size(row) == Some(file_size)
+            && tracked_row_goi_file_sha256(row) == Some(file_sha256)
+        {
+            continue;
+        }
+        if !echo_origin_palitra_still_matches_tracked_echo(env, row)
+            .await
+            .c(h!())?
+        {
+            continue;
+        }
+        return Ok(true);
+    }
+    Ok(false)
+}
+
+async fn echo_origin_palitra_still_matches_tracked_echo(
+    env: &Env,
+    row: &goi_palitra_sync::Model,
+) -> anyhow::Result<bool> {
+    let Some(expected_file_size) = tracked_row_echo_file_size(row) else {
+        return Ok(false);
+    };
+    let Some(expected_file_sha256) = tracked_row_echo_file_sha256(row) else {
+        return Ok(false);
+    };
+    let Some(palitra_id) = row.palitra_id else {
+        return Ok(false);
+    };
+    let Some(palitra) = palitra::Entity::find_by_id(palitra_id)
+        .filter(palitra::Column::Deleted.eq(false))
+        .one(&env.dbx)
+        .await
+        .c(h!())?
+    else {
+        return Ok(false);
+    };
+    let Some(file_data) =
+        maybe_load_palitra_file_data(env, &palitra).await.c(h!())?
+    else {
+        return Ok(false);
+    };
+    Ok(file_data.len() as i64 == expected_file_size
+        && sha256::digest(&file_data) == expected_file_sha256)
 }
 
 fn tracked_row_goi_file_size(row: &goi_palitra_sync::Model) -> Option<i64> {
@@ -666,7 +743,7 @@ async fn refresh_convertible_goi_palitra_file(
     file_sha256: String,
     tracked_rows: &[goi_palitra_sync::Model],
 ) -> anyhow::Result<()> {
-    let palitra_ids = tracked_goi_palitra_ids(tracked_rows);
+    let palitra_ids = tracked_palitra_ids(tracked_rows);
     let Some(palitra_id) = palitra_ids.first().copied() else {
         return import_replacement_goi_palitra_file(
             env,
@@ -714,8 +791,8 @@ async fn refresh_convertible_goi_palitra_file(
     )
     .await
     .c(h!())?;
-    super::schedule_palitra_replacement_conversion(
-        &txn, palitra_id, filename, extension, None, file_data,
+    super::schedule_palitra_replacement_conversion_with_goi_upload(
+        &txn, palitra_id, filename, extension, None, file_data, true,
     )
     .await
     .c(h!())?;
@@ -762,9 +839,9 @@ async fn refresh_direct_goi_palitra_file(
     file_sha256: String,
     tracked_rows: &[goi_palitra_sync::Model],
 ) -> anyhow::Result<()> {
-    let palitra_ids = tracked_goi_palitra_ids(tracked_rows);
+    let palitra_ids = tracked_palitra_ids(tracked_rows);
     let Some(palitra) =
-        find_first_existing_tracked_goi_palitra(&env.dbx, tracked_rows)
+        find_first_existing_tracked_palitra(&env.dbx, tracked_rows)
             .await
             .c(h!())?
     else {
@@ -848,14 +925,14 @@ async fn refresh_direct_goi_palitra_file(
     Ok(())
 }
 
-async fn find_first_existing_tracked_goi_palitra<'a, C>(
+async fn find_first_existing_tracked_palitra<'a, C>(
     dbx: &'a C,
     tracked_rows: &[goi_palitra_sync::Model],
 ) -> anyhow::Result<Option<palitra::Model>>
 where
     C: ConnectionTrait + 'a,
 {
-    for palitra_id in tracked_goi_palitra_ids(tracked_rows) {
+    for palitra_id in tracked_palitra_ids(tracked_rows) {
         if let Some(palitra) = palitra::Entity::find_by_id(palitra_id)
             .filter(palitra::Column::Deleted.eq(false))
             .one(dbx)
@@ -866,6 +943,14 @@ where
         }
     }
     Ok(None)
+}
+
+fn tracked_palitra_ids(tracked_rows: &[goi_palitra_sync::Model]) -> Vec<i64> {
+    tracked_rows
+        .iter()
+        .filter_map(|row| row.palitra_id)
+        .unique()
+        .collect_vec()
 }
 
 fn tracked_goi_palitra_ids(
@@ -1210,8 +1295,8 @@ async fn import_convertible_goi_palitra_file(
     .await
     .c(h!())?;
     txn.commit().await.c(h!())?;
-    super::schedule_palitra_conversion(
-        &env.dbx, palitra.id, filename, extension, None, file_data,
+    super::schedule_palitra_conversion_with_goi_upload(
+        &env.dbx, palitra.id, filename, extension, None, file_data, true,
     )
     .await
     .c(h!())?;
@@ -2433,6 +2518,27 @@ mod tests {
             Some("abc"),
         );
         assert!(!tracked_goi_file_needs_refresh(&[echo_row], 4, "def"));
+    }
+
+    #[test]
+    fn tracked_palitra_ids_include_echo_origin_rows_without_marking_them_goi_origin(
+    ) {
+        let echo_row = goi_palitra_sync_row(
+            PALITRA_GOI_SYNC_DIRECTION_ECHO,
+            Some(11),
+            Some(3),
+            Some("abc"),
+        );
+        let goi_row = goi_palitra_sync_row(
+            PALITRA_GOI_SYNC_DIRECTION_GOI,
+            Some(10),
+            Some(3),
+            Some("abc"),
+        );
+
+        assert_eq!(tracked_palitra_ids(&[echo_row.clone()]), vec![11]);
+        assert!(tracked_goi_palitra_ids(&[echo_row]).is_empty());
+        assert_eq!(tracked_goi_palitra_ids(&[goi_row]), vec![10]);
     }
 
     #[test]

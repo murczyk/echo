@@ -358,10 +358,6 @@ fn current_processing_job_condition(
             palitra_conversion_job::Column::Status
                 .eq(PALITRA_CONVERSION_JOB_STATUS_PROCESSING),
         )
-        .add(
-            palitra_conversion_job::Column::LastAttemptAt
-                .eq(job.last_attempt_at),
-        )
         .add(palitra_conversion_job::Column::AttemptCount.eq(job.attempt_count))
 }
 

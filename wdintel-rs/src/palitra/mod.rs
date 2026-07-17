@@ -2118,27 +2118,6 @@ where
     Ok(())
 }
 
-pub(crate) async fn schedule_palitra_replacement_conversion(
-    txn: &DatabaseTransaction,
-    palitra_id: i64,
-    filename: String,
-    extension: String,
-    content_type: Option<String>,
-    file_data: Vec<u8>,
-) -> anyhow::Result<()> {
-    schedule_palitra_replacement_conversion_with_goi_upload(
-        txn,
-        palitra_id,
-        filename,
-        extension,
-        content_type,
-        file_data,
-        false,
-    )
-    .await
-    .c(h!())
-}
-
 pub(crate) async fn schedule_palitra_replacement_conversion_with_goi_upload(
     txn: &DatabaseTransaction,
     palitra_id: i64,
