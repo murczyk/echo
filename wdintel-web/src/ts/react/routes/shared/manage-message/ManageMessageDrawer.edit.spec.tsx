@@ -2,7 +2,7 @@
  * @vitest-environment happy-dom
  */
 import type { ReactNode } from 'react';
-import { act } from 'react';
+import { act, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { InboxMessage } from '../../../../../Bindings';
@@ -755,8 +755,10 @@ describe('ManageMessageDrawer edit mode', () => {
     root.unmount();
   });
 
-  it('closes edit mode even when the host edit callback rejects', async () => {
+  it('closes the rendered edit composer when the host edit callback rejects', async () => {
     const onSubmitEdit = vi.fn().mockRejectedValue(new Error('editor failed'));
+    const onClose = vi.fn();
+    const onCreated = vi.fn();
     directSubmitMocks.editDirectSubmit.mockResolvedValue({
       signal_message_id: 123,
       message: buildMessage(),
@@ -765,18 +767,28 @@ describe('ManageMessageDrawer edit mode', () => {
     document.body.appendChild(container);
     const root = createRoot(container);
 
-    await act(async () => {
-      root.render(
+    function ControlledHarness() {
+      const [open, setOpen] = useState(true);
+
+      return (
         <ManageMessageDrawer
-          open
+          open={open}
           cyberEchoEnabled
           currentUser={null}
-          onClose={vi.fn()}
+          onClose={() => {
+            onClose();
+            setOpen(false);
+          }}
           editTarget={{ id: 123, message: buildMessage() }}
           editSaveInFlight={false}
           onSubmitEdit={onSubmitEdit}
-        />,
+          onCreated={onCreated}
+        />
       );
+    }
+
+    await act(async () => {
+      root.render(<ControlledHarness />);
     });
 
     const form = container.querySelector('form') as HTMLFormElement;
@@ -784,9 +796,14 @@ describe('ManageMessageDrawer edit mode', () => {
       form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
     });
 
+    expect(directSubmitMocks.editDirectSubmit).toHaveBeenCalledTimes(1);
     expect(onSubmitEdit).toHaveBeenCalledTimes(1);
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(container.textContent).not.toContain('Редагувати повідомлення');
+    expect(container.querySelector('form')).toBeNull();
     expect(container.textContent).not.toContain('editor failed');
     expect(container.textContent).not.toContain('Помилка');
+    expect(onCreated).not.toHaveBeenCalled();
 
     root.unmount();
   });

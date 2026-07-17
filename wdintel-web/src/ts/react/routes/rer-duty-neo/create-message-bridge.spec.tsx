@@ -492,22 +492,32 @@ describe('duty create-message bridge', () => {
     expect(fetchMessagesByIds).toHaveBeenCalledTimes(1);
   });
 
-  it('keeps the composer closed when host preview handling fails', async () => {
+  it('closes the rendered composer when host preview handling fails', async () => {
     const containerLocal = document.createElement('div');
     document.body.appendChild(containerLocal);
     const rootLocal = createRoot(containerLocal);
     const onCreated = vi.fn().mockRejectedValue(new Error('preview failed'));
+    submitDirect.mockResolvedValueOnce({
+      signal_message_id: 505,
+      message: buildMessage(),
+    });
 
-    await act(async () => {
-      rootLocal.render(
+    function ControlledHarness() {
+      const [open, setOpen] = useState(true);
+
+      return (
         <ManageMessageDrawer
-          open
+          open={open}
           cyberEchoEnabled
           currentUser={null}
-          onClose={vi.fn()}
+          onClose={() => setOpen(false)}
           onCreated={onCreated}
-        />,
+        />
       );
+    }
+
+    await act(async () => {
+      rootLocal.render(<ControlledHarness />);
     });
 
     act(() => {
@@ -526,8 +536,13 @@ describe('duty create-message bridge', () => {
       await flushMicrotasks();
     });
 
+    expect(submitDirect).toHaveBeenCalledTimes(1);
+    expect(onCreated).toHaveBeenCalledTimes(1);
+    expect(containerLocal.textContent).not.toContain('Створити повідомлення');
+    expect(containerLocal.querySelector('form')).toBeNull();
     expect(containerLocal.textContent).not.toContain('preview failed');
     expect(containerLocal.textContent).not.toContain('Сталася помилка');
+    expect(containerLocal.querySelector('[role="dialog"]')).toBeNull();
 
     await act(async () => {
       rootLocal.unmount();

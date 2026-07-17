@@ -400,7 +400,7 @@ describe('RerDutyNeoPage creation workflow', () => {
     });
   });
 
-  it('shows receipt state when the fallback is empty or fails', async () => {
+  it('shows receipt state when the fallback is empty', async () => {
     nextCreatedResponse.value = { signal_message_id: 303 };
     fetchMessagesByIds.mockResolvedValueOnce([]);
     const { container, root } = await renderPage();
