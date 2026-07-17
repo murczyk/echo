@@ -290,7 +290,9 @@ function MessageCardComponent({
     <li
       ref={messageRootRef as React.RefObject<HTMLLIElement>}
       className="list-none flex flex-col px-0 pb-3 mb-0"
-      style={{ contentVisibility: 'auto' }}
+      // Preserve a remembered block-size fallback so skipped off-screen cards do not
+      // collapse scroll-height or anchor measurements before Chromium measures them.
+      style={{ contentVisibility: 'auto', containIntrinsicBlockSize: 'auto 120px' }}
     >
       <MessageCardRoot
         className="message-card-root relative flex flex-col w-full px-[12px] py-[10px] rounded bg-(--color-card) overflow-hidden"

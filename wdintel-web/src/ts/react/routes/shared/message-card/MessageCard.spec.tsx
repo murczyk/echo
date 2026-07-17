@@ -835,6 +835,14 @@ describe('MessageCard', () => {
     const view = await renderCard();
     rendered.push(view);
 
+    const card = view.container.querySelector('li');
+    if (!(card instanceof HTMLElement)) throw new Error('card root not found');
+    expect(card.style.contentVisibility).toBe('auto');
+    expect(
+      card.style.containIntrinsicBlockSize ||
+        card.style.getPropertyValue('contain-intrinsic-block-size'),
+    ).toBe('auto 120px');
+
     expect(view.container.textContent).toContain("Куп'янськ пеленг");
     expect(view.container.textContent).toContain('Dow_Jones_2');
     expect(view.container.textContent).toContain('153.6250');
