@@ -344,6 +344,15 @@ ID(CG)⬅️:50📣",
     }
 
     #[test]
+    fn parse_metadata_text_callsigns_returns_source_id_sender_names() {
+        let callsigns = parse_metadata_text_callsigns(
+            "SOURCE ID: 123(ЯРУС)\nID відправника: 124(СВЕТЛЫЙ)",
+        );
+
+        assert_eq!(callsigns, vec!["ЯРУС".to_string(), "СВЕТЛЫЙ".to_string()]);
+    }
+
+    #[test]
     fn parse_metadata_text_callsigns_ignores_numeric_only_metadata() {
         let callsigns = parse_metadata_text_callsigns(
             "СС:10\nID➡️:3097968\nID(CG)⬅️3187767",
@@ -385,6 +394,21 @@ ID(CG)⬅️:50📣",
         assert_eq!(
             append_metadata_text_callsigns(callsigns, body),
             vec!["id".to_string(), "ЯРУС".to_string(), "СВЕТЛЫЙ".to_string(),]
+        );
+    }
+
+    #[test]
+    fn append_metadata_text_callsigns_restores_source_id_names() {
+        let body = "SOURCE ID: 123(ЯРУС)";
+        let yarus_header = test_cn_callsign(body, "ЯРУС", "ярус");
+
+        let callsigns =
+            non_metadata_line_callsign_etalons([&yarus_header], body);
+
+        assert!(callsigns.is_empty());
+        assert_eq!(
+            append_metadata_text_callsigns(callsigns, body),
+            vec!["ЯРУС".to_string()]
         );
     }
 
