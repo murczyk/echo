@@ -14,8 +14,7 @@ pub struct Model {
     pub tag_id: i64,
     #[sea_orm(column_type = "Double")]
     pub confidence: f64,
-    #[sea_orm(column_type = "Text", nullable)]
-    pub login: Option<String>,
+    pub login_id: Option<Uuid>,
     #[sea_orm(column_type = "Text", nullable)]
     pub model: Option<String>,
 }
@@ -24,8 +23,8 @@ pub struct Model {
 pub enum Relation {
     #[sea_orm(
         belongs_to = "super::login::Entity",
-        from = "Column::Login",
-        to = "super::login::Column::Login",
+        from = "Column::LoginId",
+        to = "super::login::Column::Id",
         on_update = "NoAction",
         on_delete = "NoAction"
     )]

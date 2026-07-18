@@ -10,8 +10,7 @@ use serde::{Deserialize, Serialize};
 pub struct Model {
     #[sea_orm(primary_key)]
     pub id: i64,
-    #[sea_orm(column_type = "Text")]
-    pub login: String,
+    pub login_id: Uuid,
     #[sea_orm(column_type = "JsonBinary")]
     pub ordering: Json,
     #[sea_orm(column_type = "Text")]
@@ -26,8 +25,8 @@ pub struct Model {
 pub enum Relation {
     #[sea_orm(
         belongs_to = "super::login::Entity",
-        from = "Column::Login",
-        to = "super::login::Column::Login",
+        from = "Column::LoginId",
+        to = "super::login::Column::Id",
         on_update = "NoAction",
         on_delete = "NoAction"
     )]

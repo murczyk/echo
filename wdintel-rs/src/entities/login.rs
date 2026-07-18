@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 )]
 #[sea_orm(table_name = "login")]
 pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false, column_type = "Text")]
+    #[sea_orm(column_type = "Text", unique)]
     pub login: String,
     #[sea_orm(column_type = "Text", nullable)]
     pub password: Option<String>,
@@ -27,6 +27,8 @@ pub struct Model {
     pub last_release_seen: Option<String>,
     #[sea_orm(column_type = "Text", nullable)]
     pub description: Option<String>,
+    #[sea_orm(primary_key, auto_increment = false)]
+    pub id: Uuid,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
@@ -45,6 +47,12 @@ pub enum Relation {
         on_delete = "NoAction"
     )]
     DeltaLogin,
+    #[sea_orm(has_many = "super::device_name::Entity")]
+    DeviceName,
+    #[sea_orm(has_many = "super::echo_missing_message::Entity")]
+    EchoMissingMessage,
+    #[sea_orm(has_many = "super::enemy_units_geojson::Entity")]
+    EnemyUnitsGeojson,
     #[sea_orm(has_many = "super::device_name::Entity")]
     DeviceName,
     #[sea_orm(has_many = "super::goi_integration::Entity")]
@@ -69,24 +77,44 @@ pub enum Relation {
     PalitraAccessLogin,
     #[sea_orm(has_many = "super::report_history::Entity")]
     ReportHistory,
+    #[sea_orm(has_many = "super::restream::Entity")]
+    Restream,
+    #[sea_orm(has_many = "super::restream_setup::Entity")]
+    RestreamSetup,
     #[sea_orm(has_many = "super::secret_group_user::Entity")]
     SecretGroupUser,
+    #[sea_orm(has_many = "super::sigint_bookmark::Entity")]
+    SigintBookmark,
     #[sea_orm(has_many = "super::sigint_callsign_changelog::Entity")]
     SigintCallsignChangelog,
     #[sea_orm(has_many = "super::sigint_comment::Entity")]
     SigintComment,
+    #[sea_orm(has_many = "super::sigint_important::Entity")]
+    SigintImportant,
     #[sea_orm(has_many = "super::sigint_inbox_item_tag::Entity")]
     SigintInboxItemTag,
     #[sea_orm(has_many = "super::sigint_key_share_policy::Entity")]
     SigintKeySharePolicy,
     #[sea_orm(has_many = "super::sigint_network::Entity")]
     SigintNetwork,
+    #[sea_orm(has_many = "super::sigint_network_callsign_changelog::Entity")]
+    SigintNetworkCallsignChangelog,
+    #[sea_orm(has_many = "super::sigint_network_changelog::Entity")]
+    SigintNetworkChangelog,
     #[sea_orm(has_many = "super::sigint_network_description::Entity")]
     SigintNetworkDescription,
+    #[sea_orm(has_many = "super::sigint_network_freq_changelog::Entity")]
+    SigintNetworkFreqChangelog,
+    #[sea_orm(has_many = "super::sigint_network_unit_changelog::Entity")]
+    SigintNetworkUnitChangelog,
+    #[sea_orm(has_many = "super::sigint_saved_filter::Entity")]
+    SigintSavedFilter,
     #[sea_orm(has_many = "super::sigint_settlement::Entity")]
     SigintSettlement,
     #[sea_orm(has_many = "super::sigint_signal_changelog::Entity")]
     SigintSignalChangelog,
+    #[sea_orm(has_many = "super::sigint_unit::Entity")]
+    SigintUnit,
     #[sea_orm(has_many = "super::sigint_unit_changelog::Entity")]
     SigintUnitChangelog,
     #[sea_orm(
@@ -103,7 +131,9 @@ pub enum Relation {
     SystemSettings,
     #[sea_orm(has_many = "super::tags_ordering::Entity")]
     TagsOrdering,
-    #[sea_orm(has_one = "super::user_settings::Entity")]
+    #[sea_orm(has_many = "super::url_visit_notification::Entity")]
+    UrlVisitNotification,
+    #[sea_orm(has_many = "super::user_settings::Entity")]
     UserSettings,
 }
 
@@ -131,9 +161,22 @@ impl Related<super::delta_login::Entity> for Entity {
     }
 }
 
+
 impl Related<super::device_name::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::DeviceName.def()
+    }
+}
+
+impl Related<super::echo_missing_message::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::EchoMissingMessage.def()
+    }
+}
+
+impl Related<super::enemy_units_geojson::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::EnemyUnitsGeojson.def()
     }
 }
 
@@ -185,9 +228,27 @@ impl Related<super::report_history::Entity> for Entity {
     }
 }
 
+impl Related<super::restream::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::Restream.def()
+    }
+}
+
+impl Related<super::restream_setup::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::RestreamSetup.def()
+    }
+}
+
 impl Related<super::secret_group_user::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::SecretGroupUser.def()
+    }
+}
+
+impl Related<super::sigint_bookmark::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::SigintBookmark.def()
     }
 }
 
@@ -200,6 +261,12 @@ impl Related<super::sigint_callsign_changelog::Entity> for Entity {
 impl Related<super::sigint_comment::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::SigintComment.def()
+    }
+}
+
+impl Related<super::sigint_important::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::SigintImportant.def()
     }
 }
 
@@ -221,9 +288,39 @@ impl Related<super::sigint_network::Entity> for Entity {
     }
 }
 
+impl Related<super::sigint_network_callsign_changelog::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::SigintNetworkCallsignChangelog.def()
+    }
+}
+
+impl Related<super::sigint_network_changelog::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::SigintNetworkChangelog.def()
+    }
+}
+
 impl Related<super::sigint_network_description::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::SigintNetworkDescription.def()
+    }
+}
+
+impl Related<super::sigint_network_freq_changelog::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::SigintNetworkFreqChangelog.def()
+    }
+}
+
+impl Related<super::sigint_network_unit_changelog::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::SigintNetworkUnitChangelog.def()
+    }
+}
+
+impl Related<super::sigint_saved_filter::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::SigintSavedFilter.def()
     }
 }
 
@@ -236,6 +333,12 @@ impl Related<super::sigint_settlement::Entity> for Entity {
 impl Related<super::sigint_signal_changelog::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::SigintSignalChangelog.def()
+    }
+}
+
+impl Related<super::sigint_unit::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::SigintUnit.def()
     }
 }
 
@@ -266,6 +369,12 @@ impl Related<super::system_settings::Entity> for Entity {
 impl Related<super::tags_ordering::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::TagsOrdering.def()
+    }
+}
+
+impl Related<super::url_visit_notification::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::UrlVisitNotification.def()
     }
 }
 

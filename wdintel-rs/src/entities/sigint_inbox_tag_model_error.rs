@@ -14,12 +14,10 @@ pub struct Model {
     pub tag_id: i64,
     #[sea_orm(column_type = "Text")]
     pub model: String,
-    #[sea_orm(column_type = "Text", nullable)]
-    pub model_login: Option<String>,
+    pub model_login_id: Option<Uuid>,
     #[sea_orm(column_type = "Double")]
     pub confidence: f64,
-    #[sea_orm(column_type = "Text")]
-    pub removed_by_login: String,
+    pub removed_by_login_id: Uuid,
     pub removed_at: DateTimeWithTimeZone,
 }
 
@@ -27,16 +25,16 @@ pub struct Model {
 pub enum Relation {
     #[sea_orm(
         belongs_to = "super::login::Entity",
-        from = "Column::ModelLogin",
-        to = "super::login::Column::Login",
+        from = "Column::ModelLoginId",
+        to = "super::login::Column::Id",
         on_update = "NoAction",
         on_delete = "NoAction"
     )]
     Login2,
     #[sea_orm(
         belongs_to = "super::login::Entity",
-        from = "Column::RemovedByLogin",
-        to = "super::login::Column::Login",
+        from = "Column::RemovedByLoginId",
+        to = "super::login::Column::Id",
         on_update = "NoAction",
         on_delete = "NoAction"
     )]
