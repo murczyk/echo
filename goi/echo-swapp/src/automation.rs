@@ -30,7 +30,25 @@ pub struct SaveAutomationReq {
     pub resend_attachments: bool,
     pub coordinate_presence_mode: Option<String>,
     pub polygon_filter_mode: Option<String>,
-    pub polygon_coordinates: Option<Vec<String>>,
+    pub polygon_id: Option<i64>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SavePolygonReq {
+    pub name: Option<String>,
+    pub coordinates: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PolygonView {
+    pub id: i64,
+    pub name: String,
+    pub coordinates: Vec<String>,
+    pub automation_count: i64,
+    pub created_at: i64,
+    pub updated_at: i64,
 }
 
 #[derive(Debug, Deserialize)]
@@ -72,6 +90,8 @@ pub struct AutomationView {
     pub resend_attachments: bool,
     pub coordinate_presence_mode: String,
     pub polygon_filter_mode: String,
+    pub polygon_id: Option<i64>,
+    pub polygon_name: Option<String>,
     pub polygon_coordinates: Vec<String>,
     pub is_paused: bool,
     pub status: String,
@@ -127,6 +147,8 @@ struct AutomationListRow {
     resend_attachments: bool,
     coordinate_presence_mode: String,
     polygon_filter_mode: String,
+    polygon_id: Option<i64>,
+    polygon_name: Option<String>,
     polygon_coordinates: Option<Json>,
     is_paused: bool,
     status: String,
@@ -209,6 +231,16 @@ struct AccountOptionRow {
     is_linked: bool,
 }
 
+#[derive(Debug, FromQueryResult)]
+struct PolygonListRow {
+    id: i64,
+    name: String,
+    coordinates: Json,
+    automation_count: i64,
+    created_at: NaiveDateTime,
+    updated_at: NaiveDateTime,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum CoordinatePresenceMode {
     Any,
@@ -280,7 +312,7 @@ struct NormalizedAutomation {
     resend_attachments: bool,
     coordinate_presence_mode: CoordinatePresenceMode,
     polygon_filter_mode: PolygonFilterMode,
-    polygon_coordinates: Vec<String>,
+    polygon_id: Option<i64>,
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -298,6 +330,110 @@ pub async fn list(db: &DatabaseConnection) -> Result<Vec<AutomationView>> {
     .await
     .c(h!())?;
     Ok(rows.into_iter().map(automation_view).collect())
+}
+
+pub async fn list_polygons(
+    db: &DatabaseConnection,
+) -> Result<Vec<PolygonView>> {
+    let rows = PolygonListRow::find_by_statement(Statement::from_string(
+        DatabaseBackend::Postgres,
+        r#"
+        select
+            polygon.id,
+            polygon.name,
+            polygon.coordinates,
+            count(automation.id)::bigint as automation_count,
+            polygon.created_at,
+            polygon.updated_at
+        from echo_automation_polygon polygon
+        left join echo_automation automation on automation.polygon_id = polygon.id
+        group by polygon.id
+        order by polygon.updated_at desc, polygon.id desc
+        "#,
+    ))
+    .all(db)
+    .await
+    .c(h!())?;
+    Ok(rows.into_iter().map(polygon_view).collect())
+}
+
+pub async fn create_polygon(
+    db: &DatabaseConnection,
+    req: SavePolygonReq,
+) -> Result<PolygonView> {
+    let (name, coordinates) = normalize_polygon_req(req).await.c(h!())?;
+    let row = db
+        .query_one(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            r#"
+            insert into echo_automation_polygon (name, coordinates, updated_at)
+            values ($1, $2::jsonb, now() at time zone 'utc')
+            returning id
+            "#,
+            vec![
+                name.into(),
+                serde_json::to_string(&coordinates).c(h!())?.into(),
+            ],
+        ))
+        .await
+        .c(h!())?
+        .context("polygon insert did not return id")
+        .c(h!())?;
+    load_polygon_view(db, row.try_get("", "id").c(h!())?)
+        .await
+        .c(h!())
+}
+
+pub async fn update_polygon(
+    db: &DatabaseConnection,
+    id: i64,
+    req: SavePolygonReq,
+) -> Result<PolygonView> {
+    let (name, coordinates) = normalize_polygon_req(req).await.c(h!())?;
+    db.execute(Statement::from_sql_and_values(
+        DatabaseBackend::Postgres,
+        r#"
+        update echo_automation_polygon
+        set
+            name = $2,
+            coordinates = $3::jsonb,
+            updated_at = now() at time zone 'utc'
+        where id = $1
+        "#,
+        vec![
+            id.into(),
+            name.into(),
+            serde_json::to_string(&coordinates).c(h!())?.into(),
+        ],
+    ))
+    .await
+    .c(h!())?;
+    load_polygon_view(db, id).await.c(h!())
+}
+
+pub async fn delete_polygon(db: &DatabaseConnection, id: i64) -> Result<()> {
+    let row = db
+        .query_one(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            "select count(*)::bigint as count from echo_automation where polygon_id = $1",
+            [id.into()],
+        ))
+        .await
+        .c(h!())?
+        .context("polygon usage query did not return a row")
+        .c(h!())?;
+    let usage_count: i64 = row.try_get("", "count").c(h!())?;
+    if usage_count > 0 {
+        bail!("area of interest is used by automations");
+    }
+    db.execute(Statement::from_sql_and_values(
+        DatabaseBackend::Postgres,
+        "delete from echo_automation_polygon where id = $1",
+        [id.into()],
+    ))
+    .await
+    .c(h!())?;
+    Ok(())
 }
 
 pub async fn group_options(
@@ -380,6 +516,7 @@ pub async fn create(
 ) -> Result<AutomationView> {
     let automation = normalize_req(req).await.c(h!())?;
     validate_group_accounts(db, &automation).await.c(h!())?;
+    validate_polygon_ref(db, &automation).await.c(h!())?;
     let row = db
         .query_one(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
@@ -396,10 +533,10 @@ pub async fn create(
                 resend_attachments,
                 coordinate_presence_mode,
                 polygon_filter_mode,
-                polygon_coordinates,
+                polygon_id,
                 updated_at
             )
-            values ($1, $2, $3, $4, $5, $6::jsonb, $7::jsonb, $8, $9, $10, $11, $12::jsonb, now() at time zone 'utc')
+            values ($1, $2, $3, $4, $5, $6::jsonb, $7::jsonb, $8, $9, $10, $11, $12, now() at time zone 'utc')
             returning id
             "#,
             vec![
@@ -418,9 +555,7 @@ pub async fn create(
                 automation.resend_attachments.into(),
                 automation.coordinate_presence_mode.as_str().into(),
                 automation.polygon_filter_mode.as_str().into(),
-                optional_json_string(&automation.polygon_coordinates)
-                    .c(h!())?
-                    .into(),
+                automation.polygon_id.into(),
             ],
         ))
         .await
@@ -437,6 +572,7 @@ pub async fn update(
 ) -> Result<AutomationView> {
     let automation = normalize_req(req).await.c(h!())?;
     validate_group_accounts(db, &automation).await.c(h!())?;
+    validate_polygon_ref(db, &automation).await.c(h!())?;
     db.execute(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         r#"
@@ -453,7 +589,7 @@ pub async fn update(
             resend_attachments = $10,
             coordinate_presence_mode = $11,
             polygon_filter_mode = $12,
-            polygon_coordinates = $13::jsonb,
+            polygon_id = $13,
             updated_at = now() at time zone 'utc'
         where id = $1
         "#,
@@ -474,9 +610,7 @@ pub async fn update(
             automation.resend_attachments.into(),
             automation.coordinate_presence_mode.as_str().into(),
             automation.polygon_filter_mode.as_str().into(),
-            optional_json_string(&automation.polygon_coordinates)
-                .c(h!())?
-                .into(),
+            automation.polygon_id.into(),
         ],
     ))
     .await
@@ -520,7 +654,7 @@ pub async fn worker_tick(db: &DatabaseConnection) -> Result<()> {
             DatabaseBackend::Postgres,
             r#"
             select
-                id,
+                automation.id,
                 source_account_id,
                 source_group_id,
                 target_account_id,
@@ -531,12 +665,14 @@ pub async fn worker_tick(db: &DatabaseConnection) -> Result<()> {
                 resend_attachments,
                 coordinate_presence_mode,
                 polygon_filter_mode,
-                polygon_coordinates,
+                polygon.coordinates as polygon_coordinates,
                 checkpoint_at,
                 last_processed_inbox_message_id
-            from echo_automation
+            from echo_automation automation
+            left join echo_automation_polygon polygon
+                on polygon.id = automation.polygon_id
             where is_paused = false
-            order by id
+            order by automation.id
             "#,
         ))
         .all(db)
@@ -611,17 +747,12 @@ async fn normalize_req(req: SaveAutomationReq) -> Result<NormalizedAutomation> {
     {
         bail!("polygon filter is not allowed when messages with coordinates are ignored");
     }
-    let polygon_coordinates =
-        normalize_tokens(req.polygon_coordinates.unwrap_or_default());
-    if polygon_filter_mode != PolygonFilterMode::None {
-        if polygon_coordinates.len() < 3 {
-            bail!("polygon filter requires at least 3 coordinates");
-        }
-        let polygon = parse_polygon(&polygon_coordinates).await.c(h!())?;
-        if polygon.len() < 3 {
-            bail!("polygon filter requires at least 3 valid coordinates");
-        }
-    }
+    let polygon_id = (polygon_filter_mode != PolygonFilterMode::None)
+        .then_some(
+            req.polygon_id
+                .context("polygon is required when polygon filter is enabled")
+                .c(h!())?,
+        );
     Ok(NormalizedAutomation {
         name: req.name.unwrap_or_default().trim().to_string(),
         source_account_id: req.source_account_id,
@@ -634,8 +765,34 @@ async fn normalize_req(req: SaveAutomationReq) -> Result<NormalizedAutomation> {
         resend_attachments: req.resend_attachments,
         coordinate_presence_mode,
         polygon_filter_mode,
-        polygon_coordinates,
+        polygon_id,
     })
+}
+
+async fn validate_polygon_ref(
+    db: &DatabaseConnection,
+    automation: &NormalizedAutomation,
+) -> Result<()> {
+    let Some(polygon_id) = automation.polygon_id else {
+        return Ok(());
+    };
+    let row = db
+        .query_one(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            "select coordinates from echo_automation_polygon where id = $1",
+            [polygon_id.into()],
+        ))
+        .await
+        .c(h!())?
+        .with_context(|| format!("polygon not found: {polygon_id}"))
+        .c(h!())?;
+    let coordinates: Json = row.try_get("", "coordinates").c(h!())?;
+    let coordinates = json_vec(Some(&coordinates));
+    let polygon = parse_polygon(&coordinates).await.c(h!())?;
+    if polygon.len() < 3 {
+        bail!("polygon filter requires at least 3 valid coordinates");
+    }
+    Ok(())
 }
 
 async fn validate_group_accounts(
@@ -767,10 +924,11 @@ async fn process_message(
         return Ok(());
     }
     let coords = extract_points(&message.body).await;
-    let polygon_coordinates = json_vec(automation.polygon_coordinates.as_ref());
     let polygon = if automation.polygon_filter_mode == "none" {
         Vec::new()
     } else {
+        let polygon_coordinates =
+            json_vec(automation.polygon_coordinates.as_ref());
         parse_polygon(&polygon_coordinates).await.c(h!())?
     };
     let decision = message_matches_filters(
@@ -1456,14 +1614,6 @@ fn json_vec(value: Option<&Json>) -> Vec<String> {
         .unwrap_or_default()
 }
 
-fn optional_json_string(tokens: &[String]) -> Result<Option<String>> {
-    if tokens.is_empty() {
-        Ok(None)
-    } else {
-        Ok(Some(serde_json::to_string(tokens).c(h!())?))
-    }
-}
-
 fn messenger_kind_from_db(kind: &str) -> Result<MessengerKind> {
     match kind {
         "signal" => Ok(MessengerKind::Signal),
@@ -1503,6 +1653,8 @@ fn automation_view(row: AutomationListRow) -> AutomationView {
         resend_attachments: row.resend_attachments,
         coordinate_presence_mode: row.coordinate_presence_mode,
         polygon_filter_mode: row.polygon_filter_mode,
+        polygon_id: row.polygon_id,
+        polygon_name: row.polygon_name,
         polygon_coordinates: json_vec(row.polygon_coordinates.as_ref()),
         is_paused: row.is_paused,
         status: row.status,
@@ -1516,6 +1668,66 @@ fn automation_view(row: AutomationListRow) -> AutomationView {
         created_at: row.created_at.and_utc().timestamp_millis(),
         updated_at: row.updated_at.and_utc().timestamp_millis(),
     }
+}
+
+fn polygon_view(row: PolygonListRow) -> PolygonView {
+    PolygonView {
+        id: row.id,
+        name: row.name,
+        coordinates: json_vec(Some(&row.coordinates)),
+        automation_count: row.automation_count,
+        created_at: row.created_at.and_utc().timestamp_millis(),
+        updated_at: row.updated_at.and_utc().timestamp_millis(),
+    }
+}
+
+async fn load_polygon_view(
+    db: &DatabaseConnection,
+    id: i64,
+) -> Result<PolygonView> {
+    let rows = PolygonListRow::find_by_statement(Statement::from_sql_and_values(
+        DatabaseBackend::Postgres,
+        r#"
+        select
+            polygon.id,
+            polygon.name,
+            polygon.coordinates,
+            count(automation.id)::bigint as automation_count,
+            polygon.created_at,
+            polygon.updated_at
+        from echo_automation_polygon polygon
+        left join echo_automation automation on automation.polygon_id = polygon.id
+        where polygon.id = $1
+        group by polygon.id
+        "#,
+        [id.into()],
+    ))
+    .all(db)
+    .await
+    .c(h!())?;
+    rows.into_iter()
+        .next()
+        .map(polygon_view)
+        .with_context(|| format!("polygon not found: {id}"))
+        .c(h!())
+}
+
+async fn normalize_polygon_req(
+    req: SavePolygonReq,
+) -> Result<(String, Vec<String>)> {
+    let name = req.name.unwrap_or_default().trim().to_string();
+    if name.is_empty() {
+        bail!("polygon name is required");
+    }
+    let coordinates = normalize_tokens(req.coordinates);
+    if coordinates.len() < 3 {
+        bail!("polygon requires at least 3 coordinates");
+    }
+    let polygon = parse_polygon(&coordinates).await.c(h!())?;
+    if polygon.len() < 3 {
+        bail!("polygon requires at least 3 valid coordinates");
+    }
+    Ok((name, coordinates))
 }
 
 fn list_sql_head() -> &'static str {
@@ -1543,7 +1755,9 @@ fn list_sql_head() -> &'static str {
         a.resend_attachments,
         a.coordinate_presence_mode,
         a.polygon_filter_mode,
-        a.polygon_coordinates,
+        a.polygon_id,
+        polygon.name as polygon_name,
+        polygon.coordinates as polygon_coordinates,
         a.is_paused,
         a.status,
         a.last_error,
@@ -1576,6 +1790,8 @@ fn list_sql_head() -> &'static str {
     join echo_group target_group
         on target_group.id = a.target_group_id
         and target_group.account_id = target_account.id
+    left join echo_automation_polygon polygon
+        on polygon.id = a.polygon_id
     left join echo_automation_delivery delivery
         on delivery.automation_id = a.id
     "#
@@ -1590,7 +1806,8 @@ fn list_sql_tail() -> &'static str {
         source_group.id,
         target_account.id,
         target_client.id,
-        target_group.id
+        target_group.id,
+        polygon.id
     order by a.created_at desc, a.id desc
     "#
 }

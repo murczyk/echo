@@ -160,7 +160,7 @@ type Msg
     | MapClosed
     | MapPeriodChanged { startDate : Int, endDate : Int }
     | LoadMessagesForMap (List Int)
-    | GotMessagesForMap Int (Result ApiError B.MessageIdsRsp)
+    | GotMessagesForMap Int (List Int) (Result ApiError B.MessageIdsRsp)
     | GotFreqActivityDaily (Result ApiError B.FreqDailyActivityCount)
     | SetUnitFilterFromMap String
     | SelectFilterAdjacentFreqsRange (Select.Msg Float)

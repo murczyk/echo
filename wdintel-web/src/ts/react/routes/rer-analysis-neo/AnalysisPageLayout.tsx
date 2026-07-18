@@ -58,6 +58,7 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
       <Box sx={{ px: { xs: 1, lg: 2 } }}>
         <AnalysisPageHeader
           page={page}
+          centerTab={centerTab}
           isMobileLayout={isMobileLayout}
           leftPanelVisible={leftPanelVisible}
           rightPanelVisible={rightPanelVisible}

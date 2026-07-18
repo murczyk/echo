@@ -2183,9 +2183,9 @@ async fn get_freq_pelengs_summary(
 mod tests {
     use super::*;
     use crate::entities::{
-        datasource, datasource_group, login, organism, sigint_comment,
-        sigint_inbox_item, sigint_inbox_item_metadata,
-        sigint_inbox_item_point_token, sigint_inbox_item_tag,
+        datasource, datasource_group, login, organism, organism_group,
+        sigint_comment, sigint_inbox_item, sigint_inbox_item_metadata,
+        sigint_inbox_item_point_token, sigint_inbox_item_tag, sigint_peleng,
         sigint_zone_datasource, signal_group, signal_message,
         signal_message_group, signal_message_media, tag,
     };
@@ -3490,6 +3490,160 @@ mod tests {
         assert!(media_ids.contains(&video_message.id));
         assert!(media_ids.contains(&pdf_message.id));
         assert!(!media_ids.contains(&no_media_message.id));
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn test_get_inbox_map_items_respects_reduced_organism_groups() {
+        let env = cleanup().await.unwrap();
+        let login = find_test_login(&env.dbx).await.unwrap();
+        let datasource = find_test_datasource(&env.dbx).await.unwrap();
+        let datasource_group =
+            find_test_datasource_group(&env.dbx).await.unwrap();
+        let aor = find_test_aor(&env.dbx).await.unwrap();
+        let sigint_zone = find_test_sigint_zone(&env.dbx).await.unwrap();
+        let now = Utc::now().naive_utc();
+
+        let other_group = mk_signal_group(
+            &env.dbx,
+            signal_group::ActiveModel {
+                master_key: Set(format!(
+                    "map-hidden-group-{}",
+                    now.and_utc().timestamp_millis()
+                )),
+                datasource_id: Set(Some(datasource.id)),
+                deleted: Set(false),
+                name: Set(Some("Map Hidden Group".to_string())),
+                created_at: Set(now),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let other_datasource_group = mk_datasource_group(
+            &env.dbx,
+            datasource_group::ActiveModel {
+                datasource_id: Set(datasource.id),
+                group_master_key: Set(other_group.master_key.clone()),
+                name: Set("Map Hidden Group".to_string()),
+                created_at: Set(now),
+                last_sync_at: Set(now),
+                deleted: Set(false),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        mk_sigint_zone_datasource(
+            &env.dbx,
+            sigint_zone_datasource::ActiveModel {
+                sigint_zone_id: Set(sigint_zone.id),
+                datasource_id: Set(datasource.id),
+                group_master_key: Set(other_group.master_key.clone()),
+                created_at: Set(now),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        mk_signal_group_aor(
+            &env.dbx,
+            signal_group_aor::ActiveModel {
+                master_key: Set(other_group.master_key.clone()),
+                aor_id: Set(aor.id),
+                created_at: Set(now),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+        let visible_message =
+            seed_message_with_media(&env, &datasource_group, None, "visible")
+                .await
+                .unwrap();
+        let hidden_message = seed_message_with_media(
+            &env,
+            &other_datasource_group,
+            None,
+            "hidden",
+        )
+        .await
+        .unwrap();
+        for (message_id, lat, lng) in [
+            (visible_message.id, 50.0, 30.0),
+            (hidden_message.id, 51.0, 31.0),
+        ] {
+            sigint_peleng::ActiveModel {
+                source_inbox_item_id: Set(message_id),
+                lat: Set(lat),
+                lng: Set(lng),
+                created_at: Set(now),
+                deleted: Set(false),
+                ..Default::default()
+            }
+            .insert(&env.dbx)
+            .await
+            .unwrap();
+        }
+
+        let req = InboxMessagesReq {
+            nolimit: Some(true),
+            ..Default::default()
+        };
+        let initial_items =
+            get_inbox_map_items(&login.login, &env, &req).await.unwrap();
+        assert!(initial_items
+            .iter()
+            .any(|item| item.id == visible_message.id));
+        assert!(initial_items
+            .iter()
+            .any(|item| item.id == hidden_message.id));
+
+        organism_group::ActiveModel {
+            organism_id: Set(login.organism_id.unwrap()),
+            signal_group_master_key: Set(datasource_group
+                .group_master_key
+                .clone()),
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+
+        let reduced_items =
+            get_inbox_map_items(&login.login, &env, &req).await.unwrap();
+        assert!(reduced_items
+            .iter()
+            .any(|item| item.id == visible_message.id));
+        assert!(!reduced_items
+            .iter()
+            .any(|item| item.id == hidden_message.id));
+
+        let pelengs = crate::location::peleng::collect_inbox_item_pelengs(
+            &reduced_items,
+            &env.dbx,
+        )
+        .await
+        .unwrap();
+        let map_points = collect_map_points(reduced_items, pelengs).unwrap();
+        assert!(map_points
+            .iter()
+            .any(|point| point.message_id == visible_message.id));
+        assert!(!map_points
+            .iter()
+            .any(|point| point.message_id == hidden_message.id));
+
+        let logins = vec![login.login.clone()];
+        let hidden_messages = messages_by_id_bl(
+            &login.login,
+            &logins,
+            &env,
+            &[hidden_message.id],
+            &messages_by_id_default_req(),
+        )
+        .await
+        .unwrap();
+        assert!(hidden_messages.is_empty());
     }
 
     #[serial]

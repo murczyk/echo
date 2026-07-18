@@ -43,6 +43,7 @@ const INDEX_HTML: &str = r#"<!doctype html>
     <nav class="flex gap-2 border-b border-zinc-800" aria-label="Розділи">
       <button id="integrationsTabBtn" class="border-b-2 border-sky-400 px-3 py-2 text-sm text-zinc-100" type="button">Інтеграції</button>
       <button id="automationsTabBtn" class="border-b-2 border-transparent px-3 py-2 text-sm text-zinc-400 hover:text-zinc-100" type="button">Автоматизації</button>
+      <button id="polygonsTabBtn" class="border-b-2 border-transparent px-3 py-2 text-sm text-zinc-400 hover:text-zinc-100" type="button">Райони Інтересу</button>
     </nav>
 
     <section id="integrationsTab" class="grid gap-4 lg:grid-cols-[360px_1fr]">
@@ -128,17 +129,16 @@ const INDEX_HTML: &str = r#"<!doctype html>
             </select>
           </label>
           <label class="grid gap-1 text-sm">
-            <span class="text-zinc-400">Район Інтересу</span>
+            <span class="text-zinc-400">Режим району інтересу</span>
             <select id="polygonModeInput" class="h-10 rounded-md border border-zinc-700 bg-zinc-950 px-3 text-zinc-100 outline-none focus:border-sky-500">
               <option value="none" style="color:#71717a">Не фільтрувати</option>
               <option value="inside">Ігнорувати всередині</option>
               <option value="outside">Ігнорувати зовні</option>
             </select>
-            <span class="text-xs text-zinc-500">Набір координат; область усередині вважаємо зоною інтересу, яку можна включати або виключати фільтром.</span>
           </label>
           <label class="grid gap-1 text-sm">
-            <span class="text-zinc-400">Координати району інтересу</span>
-            <textarea id="polygonCoordinatesInput" class="min-h-24 rounded-md border border-zinc-700 bg-zinc-950 px-3 py-2 text-zinc-100 outline-none focus:border-sky-500" placeholder="37U DR 05997 22279&#10;37U DR 06020 22340&#10;37U DR 06090 22270"></textarea>
+            <span class="text-zinc-400">Район Інтересу</span>
+            <select id="polygonInput" class="h-10 rounded-md border border-zinc-700 bg-zinc-950 px-3 text-zinc-100 outline-none focus:border-sky-500"></select>
           </label>
           <label class="flex items-center gap-2 text-sm text-zinc-300">
             <input id="resendAttachmentsInput" type="checkbox" class="h-4 w-4 rounded border-zinc-700 bg-zinc-950" />
@@ -156,6 +156,31 @@ const INDEX_HTML: &str = r#"<!doctype html>
         <div id="automationList" class="grid gap-3 p-4"></div>
       </section>
 
+    </section>
+
+    <section id="polygonsTab" class="hidden grid gap-4 lg:grid-cols-[360px_1fr]">
+      <form id="polygonForm" class="rounded-lg border border-zinc-800 bg-zinc-900/70 p-4">
+        <h2 class="text-base font-medium">Новий район інтересу</h2>
+        <div class="mt-4 grid gap-3">
+          <label class="grid gap-1 text-sm">
+            <span class="text-zinc-400">Назва</span>
+            <input id="polygonNameInput" class="h-10 rounded-md border border-zinc-700 bg-zinc-950 px-3 text-zinc-100 outline-none focus:border-sky-500" placeholder="Північний фланг" required />
+          </label>
+          <label class="grid gap-1 text-sm">
+            <span class="text-zinc-400">Координати</span>
+            <textarea id="polygonCoordinatesInput" class="min-h-36 rounded-md border border-zinc-700 bg-zinc-950 px-3 py-2 text-zinc-100 outline-none focus:border-sky-500" placeholder="37U DR 05997 22279&#10;37U DR 06020 22340&#10;37U DR 06090 22270" required></textarea>
+          </label>
+          <button class="mt-2 h-10 rounded-md bg-sky-500 px-4 text-sm font-medium text-zinc-950 hover:bg-sky-400" type="submit">Створити</button>
+          <p id="polygonFormMsg" class="min-h-5 text-sm text-zinc-400"></p>
+        </div>
+      </form>
+
+      <section class="rounded-lg border border-zinc-800 bg-zinc-900/50">
+        <div class="border-b border-zinc-800 px-4 py-3">
+          <h2 class="text-base font-medium">Райони Інтересу</h2>
+        </div>
+        <div id="polygonList" class="grid gap-3 p-4"></div>
+      </section>
     </section>
   </main>
 
@@ -223,17 +248,16 @@ const INDEX_HTML: &str = r#"<!doctype html>
           </select>
         </label>
         <label class="grid gap-1 text-sm">
-          <span class="text-zinc-400">Район Інтересу</span>
+          <span class="text-zinc-400">Режим району інтересу</span>
           <select id="editPolygonModeInput" class="h-10 rounded-md border border-zinc-700 bg-zinc-950 px-3 text-zinc-100 outline-none focus:border-sky-500">
             <option value="none" style="color:#71717a">Не фільтрувати</option>
             <option value="inside">Ігнорувати всередині</option>
             <option value="outside">Ігнорувати зовні</option>
           </select>
-          <span class="text-xs text-zinc-500">Набір координат; область усередині вважаємо зоною інтересу, яку можна включати або виключати фільтром.</span>
         </label>
         <label class="grid gap-1 text-sm">
-          <span class="text-zinc-400">Координати району інтересу</span>
-          <textarea id="editPolygonCoordinatesInput" class="min-h-24 rounded-md border border-zinc-700 bg-zinc-950 px-3 py-2 text-zinc-100 outline-none focus:border-sky-500" placeholder="37U DR 05997 22279&#10;37U DR 06020 22340&#10;37U DR 06090 22270"></textarea>
+          <span class="text-zinc-400">Район Інтересу</span>
+          <select id="editPolygonInput" class="h-10 rounded-md border border-zinc-700 bg-zinc-950 px-3 text-zinc-100 outline-none focus:border-sky-500"></select>
         </label>
         <label class="flex items-center gap-2 text-sm text-zinc-300">
           <input id="editResendAttachmentsInput" type="checkbox" class="h-4 w-4 rounded border-zinc-700 bg-zinc-950" />
@@ -248,13 +272,42 @@ const INDEX_HTML: &str = r#"<!doctype html>
     </form>
   </dialog>
 
+
+  <dialog id="polygonEditDialog" class="w-[min(92vw,520px)] rounded-lg border border-zinc-800 bg-zinc-950 p-0 text-zinc-100 backdrop:bg-black/70">
+    <form id="polygonEditForm">
+      <div class="flex items-center justify-between border-b border-zinc-800 px-4 py-3">
+        <h2 class="text-base font-medium">Редагувати район інтересу</h2>
+        <button id="closePolygonEdit" class="inline-flex h-9 w-9 items-center justify-center rounded-md border border-zinc-700 text-zinc-200 hover:bg-zinc-900" type="button" aria-label="Закрити" title="Закрити">×</button>
+      </div>
+      <div class="grid max-h-[75vh] gap-3 overflow-y-auto p-4">
+        <label class="grid gap-1 text-sm">
+          <span class="text-zinc-400">Назва</span>
+          <input id="editPolygonNameInput" class="h-10 rounded-md border border-zinc-700 bg-zinc-950 px-3 text-zinc-100 outline-none focus:border-sky-500" required />
+        </label>
+        <label class="grid gap-1 text-sm">
+          <span class="text-zinc-400">Координати</span>
+          <textarea id="editPolygonCoordinatesInput" class="min-h-36 rounded-md border border-zinc-700 bg-zinc-950 px-3 py-2 text-zinc-100 outline-none focus:border-sky-500" required></textarea>
+        </label>
+        <p id="polygonEditFormMsg" class="min-h-5 text-sm text-zinc-400"></p>
+      </div>
+      <div class="flex justify-end gap-2 border-t border-zinc-800 px-4 py-3">
+        <button class="h-10 rounded-md border border-zinc-700 px-4 text-sm text-zinc-200 hover:bg-zinc-900" type="button" data-polygon-edit-cancel>Скасувати</button>
+        <button class="h-10 rounded-md bg-sky-500 px-4 text-sm font-medium text-zinc-950 hover:bg-sky-400" type="submit">Зберегти</button>
+      </div>
+    </form>
+  </dialog>
+
   <script>
     const list = document.getElementById('list');
     const automationList = document.getElementById('automationList');
+    const polygonList = document.getElementById('polygonList');
     const formMsg = document.getElementById('formMsg');
     const automationFormMsg = document.getElementById('automationFormMsg');
+    const polygonFormMsg = document.getElementById('polygonFormMsg');
     const automationEditDialog = document.getElementById('automationEditDialog');
     const automationEditFormMsg = document.getElementById('automationEditFormMsg');
+    const polygonEditDialog = document.getElementById('polygonEditDialog');
+    const polygonEditFormMsg = document.getElementById('polygonEditFormMsg');
     const qrDialog = document.getElementById('qrDialog');
     const qrBox = document.getElementById('qrBox');
     const qrTitle = document.getElementById('qrTitle');
@@ -268,6 +321,8 @@ const INDEX_HTML: &str = r#"<!doctype html>
     let automations = [];
     let automationAccounts = [];
     let automationGroups = [];
+    let polygons = [];
+    let editPolygonId = null;
     const keywordTokens = [];
     const frequencyTokens = [];
     let editAutomationId = null;
@@ -303,6 +358,7 @@ const INDEX_HTML: &str = r#"<!doctype html>
       await loadGlobalPause();
       await loadAutomationAccounts();
       await loadAutomationGroups();
+      await loadPolygons();
       await loadAutomations();
       list.innerHTML = '<div class="p-4 text-sm text-zinc-400">Завантаження...</div>';
       try {
@@ -322,10 +378,14 @@ const INDEX_HTML: &str = r#"<!doctype html>
       activeTab = tab;
       document.getElementById('integrationsTab').classList.toggle('hidden', tab !== 'integrations');
       document.getElementById('automationsTab').classList.toggle('hidden', tab !== 'automations');
+      document.getElementById('polygonsTab').classList.toggle('hidden', tab !== 'polygons');
       document.getElementById('integrationsTabBtn').className = tab === 'integrations'
         ? 'border-b-2 border-sky-400 px-3 py-2 text-sm text-zinc-100'
         : 'border-b-2 border-transparent px-3 py-2 text-sm text-zinc-400 hover:text-zinc-100';
       document.getElementById('automationsTabBtn').className = tab === 'automations'
+        ? 'border-b-2 border-sky-400 px-3 py-2 text-sm text-zinc-100'
+        : 'border-b-2 border-transparent px-3 py-2 text-sm text-zinc-400 hover:text-zinc-100';
+      document.getElementById('polygonsTabBtn').className = tab === 'polygons'
         ? 'border-b-2 border-sky-400 px-3 py-2 text-sm text-zinc-100'
         : 'border-b-2 border-transparent px-3 py-2 text-sm text-zinc-400 hover:text-zinc-100';
     }
@@ -338,6 +398,25 @@ const INDEX_HTML: &str = r#"<!doctype html>
     async function loadAutomationAccounts() {
       automationAccounts = await request(appUrl('/ui-api/automation-accounts'));
       renderAutomationFormSelects();
+    }
+
+
+    async function loadPolygons() {
+      polygonList.innerHTML = '<div class="p-4 text-sm text-zinc-400">Завантаження...</div>';
+      try {
+        const data = await request(appUrl('/ui-api/polygons'));
+        polygons = data;
+        renderPolygonSelect(document.getElementById('polygonInput'));
+        renderPolygonSelect(document.getElementById('editPolygonInput'));
+        if (data.length === 0) {
+          polygonList.innerHTML = '<div class="p-4 text-sm text-zinc-400">Районів інтересу ще немає.</div>';
+          return;
+        }
+        polygonList.innerHTML = '';
+        data.forEach(renderPolygonRow);
+      } catch (err) {
+        polygonList.innerHTML = `<div class="p-4 text-sm text-red-400">${err.message}</div>`;
+      }
     }
 
     async function loadAutomations() {
@@ -394,6 +473,30 @@ const INDEX_HTML: &str = r#"<!doctype html>
       } else if (groups.length > 0) {
         select.value = String(groups[0].id);
       }
+    }
+
+
+    function renderPolygonSelect(select) {
+      if (!select) return;
+      const current = Number(select.value);
+      select.innerHTML = '<option value="" style="color:#71717a">Оберіть район</option>' + polygons.map(polygon => {
+        return `<option value="${polygon.id}">${polygon.name}</option>`;
+      }).join('');
+      if (polygons.some(polygon => polygon.id === current)) {
+        select.value = String(current);
+      }
+    }
+
+    function polygonIdValue(selectId) {
+      const value = document.getElementById(selectId).value;
+      return value ? Number(value) : null;
+    }
+
+    function coordinateLines(textareaId) {
+      return document.getElementById(textareaId).value
+        .split('\n')
+        .map(value => value.trim())
+        .filter(Boolean);
     }
 
     function renderToken(containerId, tokens, removePrefix) {
@@ -572,6 +675,29 @@ const INDEX_HTML: &str = r#"<!doctype html>
       `;
     }
 
+
+    function renderPolygonRow(item) {
+      const row = document.createElement('article');
+      row.className = 'grid gap-3 rounded-md border border-zinc-800 bg-zinc-950 p-4';
+      row.innerHTML = `
+        <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div class="min-w-0">
+            <div class="flex flex-wrap items-center gap-2">
+              <h3 class="truncate text-base font-medium">${item.name}</h3>
+              <span class="rounded bg-zinc-800 px-2 py-0.5 text-xs text-zinc-300">${item.coordinates.length} точок</span>
+              ${item.automationCount > 0 ? `<span class="text-sm text-zinc-400">${item.automationCount} автоматизацій</span>` : ''}
+            </div>
+            <p class="mt-1 overflow-hidden text-ellipsis whitespace-nowrap text-xs text-zinc-500">${item.coordinates.join(' · ')}</p>
+          </div>
+          <div class="flex shrink-0 gap-2">
+            <button data-polygon-edit="${item.id}" class="inline-flex h-9 w-9 items-center justify-center rounded-md border border-zinc-700 text-zinc-200 hover:bg-zinc-900" type="button" aria-label="Редагувати район інтересу" title="Редагувати район інтересу">${pencilIcon()}</button>
+            <button data-polygon-delete="${item.id}" class="inline-flex h-9 w-9 items-center justify-center rounded-md bg-red-600 text-white hover:bg-red-500" type="button" aria-label="Видалити район інтересу" title="Видалити район інтересу">${deleteIcon()}</button>
+          </div>
+        </div>
+      `;
+      polygonList.appendChild(row);
+    }
+
     function renderAutomationRow(item) {
       const row = document.createElement('article');
       row.className = 'grid gap-3 rounded-md border border-zinc-800 bg-zinc-950 p-4';
@@ -599,6 +725,7 @@ const INDEX_HTML: &str = r#"<!doctype html>
               ${automationField('Звідки', `${item.sourceAccountName} / ${item.sourceGroupName}`)}
               ${automationField('Куди', `${item.targetAccountName} / ${item.targetGroupName}`)}
               ${automationField('Фільтри', filters)}
+              ${item.polygonFilterMode !== 'none' ? automationField('Район Інтересу', item.polygonName || '-') : ''}
               ${automationField('Синхронізовано до', checkpoint)}
             </div>
             ${warnings.map(warning => `<p class="mt-1 text-xs text-amber-300">${warning}</p>`).join('')}
@@ -619,20 +746,6 @@ const INDEX_HTML: &str = r#"<!doctype html>
       automationList.appendChild(row);
     }
 
-    function polygonCoordinates() {
-      return document.getElementById('polygonCoordinatesInput').value
-        .split('\n')
-        .map(value => value.trim())
-        .filter(Boolean);
-    }
-
-    function editPolygonCoordinates() {
-      return document.getElementById('editPolygonCoordinatesInput').value
-        .split('\n')
-        .map(value => value.trim())
-        .filter(Boolean);
-    }
-
     function automationPayload() {
       return {
         name: document.getElementById('automationNameInput').value.trim(),
@@ -646,7 +759,7 @@ const INDEX_HTML: &str = r#"<!doctype html>
         resendAttachments: document.getElementById('resendAttachmentsInput').checked,
         coordinatePresenceMode: document.getElementById('coordinatePresenceInput').value,
         polygonFilterMode: document.getElementById('polygonModeInput').value,
-        polygonCoordinates: polygonCoordinates(),
+        polygonId: polygonIdValue('polygonInput'),
       };
     }
 
@@ -663,7 +776,7 @@ const INDEX_HTML: &str = r#"<!doctype html>
         resendAttachments: document.getElementById('editResendAttachmentsInput').checked,
         coordinatePresenceMode: document.getElementById('editCoordinatePresenceInput').value,
         polygonFilterMode: document.getElementById('editPolygonModeInput').value,
-        polygonCoordinates: editPolygonCoordinates(),
+        polygonId: polygonIdValue('editPolygonInput'),
       };
     }
 
@@ -694,9 +807,21 @@ const INDEX_HTML: &str = r#"<!doctype html>
       document.getElementById('editResendAttachmentsInput').checked = item.resendAttachments;
       document.getElementById('editCoordinatePresenceInput').value = item.coordinatePresenceMode;
       document.getElementById('editPolygonModeInput').value = item.polygonFilterMode;
-      document.getElementById('editPolygonCoordinatesInput').value = item.polygonCoordinates.join('\n');
+      renderPolygonSelect(document.getElementById('editPolygonInput'));
+      document.getElementById('editPolygonInput').value = item.polygonId ? String(item.polygonId) : '';
       updateEditPolygonAvailability();
       automationEditDialog.showModal();
+    }
+
+
+    function openPolygonEdit(id) {
+      const item = polygons.find(polygon => polygon.id === Number(id));
+      if (!item) return;
+      editPolygonId = item.id;
+      polygonEditFormMsg.textContent = '';
+      document.getElementById('editPolygonNameInput').value = item.name || '';
+      document.getElementById('editPolygonCoordinatesInput').value = item.coordinates.join('\n');
+      polygonEditDialog.showModal();
     }
 
     document.getElementById('createForm').addEventListener('submit', async (event) => {
@@ -719,6 +844,26 @@ const INDEX_HTML: &str = r#"<!doctype html>
       }
     });
 
+
+    document.getElementById('polygonForm').addEventListener('submit', async (event) => {
+      event.preventDefault();
+      polygonFormMsg.textContent = 'Створення...';
+      try {
+        await request(appUrl('/ui-api/polygons'), {
+          method: 'POST',
+          body: JSON.stringify({
+            name: document.getElementById('polygonNameInput').value.trim(),
+            coordinates: coordinateLines('polygonCoordinatesInput'),
+          }),
+        });
+        polygonFormMsg.textContent = 'Створено.';
+        event.target.reset();
+        await loadPolygons();
+      } catch (err) {
+        polygonFormMsg.textContent = err.message;
+      }
+    });
+
     document.getElementById('automationForm').addEventListener('submit', async (event) => {
       event.preventDefault();
       addToken(document.getElementById('keywordTokenInput'), keywordTokens, 'keywordTokens', 'keyword');
@@ -737,6 +882,7 @@ const INDEX_HTML: &str = r#"<!doctype html>
         renderToken('frequencyTokens', frequencyTokens, 'frequency');
         updatePolygonAvailability();
         renderAutomationFormSelects();
+        renderPolygonSelect(document.getElementById('polygonInput'));
         await loadAutomations();
       } catch (err) {
         automationFormMsg.textContent = err.message;
@@ -799,6 +945,23 @@ const INDEX_HTML: &str = r#"<!doctype html>
       renderToken('editFrequencyTokens', editFrequencyTokens, 'edit-frequency');
     });
 
+
+    polygonList.addEventListener('click', async (event) => {
+      const button = event.target.closest('button');
+      if (!button) return;
+      const editId = button.dataset.polygonEdit;
+      const deleteId = button.dataset.polygonDelete;
+      if (editId) {
+        openPolygonEdit(editId);
+      }
+      if (deleteId) {
+        if (!confirm('Видалити район інтересу?')) return;
+        await request(appUrl(`/ui-api/polygons/${deleteId}`), { method: 'DELETE' });
+        await loadPolygons();
+        await loadAutomations();
+      }
+    });
+
     automationList.addEventListener('click', async (event) => {
       const button = event.target.closest('button');
       if (!button) return;
@@ -858,24 +1021,51 @@ const INDEX_HTML: &str = r#"<!doctype html>
     });
 
     function updatePolygonAvailability() {
-      const disabled = document.getElementById('coordinatePresenceInput').value === 'skip_with_coordinates';
-      document.getElementById('polygonModeInput').disabled = disabled;
-      document.getElementById('polygonCoordinatesInput').disabled = disabled;
-      if (disabled) {
+      const skipCoordinates = document.getElementById('coordinatePresenceInput').value === 'skip_with_coordinates';
+      const noPolygonFilter = document.getElementById('polygonModeInput').value === 'none';
+      document.getElementById('polygonModeInput').disabled = skipCoordinates;
+      document.getElementById('polygonInput').disabled = skipCoordinates || noPolygonFilter;
+      if (skipCoordinates) {
         document.getElementById('polygonModeInput').value = 'none';
-        document.getElementById('polygonCoordinatesInput').value = '';
+      }
+      if (skipCoordinates || noPolygonFilter) {
+        document.getElementById('polygonInput').value = '';
       }
     }
 
     function updateEditPolygonAvailability() {
-      const disabled = document.getElementById('editCoordinatePresenceInput').value === 'skip_with_coordinates';
-      document.getElementById('editPolygonModeInput').disabled = disabled;
-      document.getElementById('editPolygonCoordinatesInput').disabled = disabled;
-      if (disabled) {
+      const skipCoordinates = document.getElementById('editCoordinatePresenceInput').value === 'skip_with_coordinates';
+      const noPolygonFilter = document.getElementById('editPolygonModeInput').value === 'none';
+      document.getElementById('editPolygonModeInput').disabled = skipCoordinates;
+      document.getElementById('editPolygonInput').disabled = skipCoordinates || noPolygonFilter;
+      if (skipCoordinates) {
         document.getElementById('editPolygonModeInput').value = 'none';
-        document.getElementById('editPolygonCoordinatesInput').value = '';
+      }
+      if (skipCoordinates || noPolygonFilter) {
+        document.getElementById('editPolygonInput').value = '';
       }
     }
+
+
+    document.getElementById('polygonEditForm').addEventListener('submit', async (event) => {
+      event.preventDefault();
+      polygonEditFormMsg.textContent = 'Збереження...';
+      try {
+        await request(appUrl(`/ui-api/polygons/${editPolygonId}`), {
+          method: 'PUT',
+          body: JSON.stringify({
+            name: document.getElementById('editPolygonNameInput').value.trim(),
+            coordinates: coordinateLines('editPolygonCoordinatesInput'),
+          }),
+        });
+        polygonEditFormMsg.textContent = 'Збережено.';
+        polygonEditDialog.close();
+        await loadPolygons();
+        await loadAutomations();
+      } catch (err) {
+        polygonEditFormMsg.textContent = err.message;
+      }
+    });
 
     document.getElementById('automationEditForm').addEventListener('submit', async (event) => {
       event.preventDefault();
@@ -897,6 +1087,8 @@ const INDEX_HTML: &str = r#"<!doctype html>
 
     document.getElementById('closeAutomationEdit').addEventListener('click', () => automationEditDialog.close());
     document.querySelector('[data-edit-cancel]').addEventListener('click', () => automationEditDialog.close());
+    document.getElementById('closePolygonEdit').addEventListener('click', () => polygonEditDialog.close());
+    document.querySelector('[data-polygon-edit-cancel]').addEventListener('click', () => polygonEditDialog.close());
 
     async function openQr(name) {
       currentQrName = name;
@@ -948,8 +1140,11 @@ const INDEX_HTML: &str = r#"<!doctype html>
     document.getElementById('refreshBtn').addEventListener('click', load);
     document.getElementById('integrationsTabBtn').addEventListener('click', () => setActiveTab('integrations'));
     document.getElementById('automationsTabBtn').addEventListener('click', () => setActiveTab('automations'));
+    document.getElementById('polygonsTabBtn').addEventListener('click', () => setActiveTab('polygons'));
     document.getElementById('coordinatePresenceInput').addEventListener('change', updatePolygonAvailability);
+    document.getElementById('polygonModeInput').addEventListener('change', updatePolygonAvailability);
     document.getElementById('editCoordinatePresenceInput').addEventListener('change', updateEditPolygonAvailability);
+    document.getElementById('editPolygonModeInput').addEventListener('change', updateEditPolygonAvailability);
     bindTokenInput('keywordTokenInput', keywordTokens, 'keywordTokens', 'keyword');
     bindTokenInput('frequencyTokenInput', frequencyTokens, 'frequencyTokens', 'frequency');
     bindTokenInput('editKeywordTokenInput', editKeywordTokens, 'editKeywordTokens', 'edit-keyword');

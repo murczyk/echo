@@ -15,6 +15,7 @@ import { normalizeUnknownUnitSelections } from '../shared/analysis-unit-filter';
 import type { AnalysisQueryState } from './types';
 
 export const ANALYSIS_ROUTE_PAGE_ID = 'rer-analysis-neo';
+export const ANALYSIS_MESSAGES_PAGE_SIZE = 20;
 // Keep old and new analysis pages grouped in session activity while both coexist.
 export const ANALYSIS_SESSION_ACTIVITY_PAGE_ID = 'rer-analysis';
 export const ADJACENT_FREQS_RANGE_OPTIONS = [0, 0.0005, 0.002, 0.005] as const;
@@ -346,6 +347,14 @@ export function buildInboxReq(
     withoutModelTags: req.withoutModelTags,
     onlyWithMedia: includeOnlyWithMedia ? state.onlyWithMedia : false,
   };
+}
+
+export function buildInboxOverallCountReq(state: AnalysisQueryState): InboxMessagesReq | null {
+  return buildInboxReq({
+    ...emptyQueryState(),
+    fromDateTimeStr: state.fromDateTimeStr,
+    toDateTimeStr: state.toDateTimeStr,
+  });
 }
 
 export function shouldRebuildAnalysisRequests(

@@ -25,6 +25,7 @@ import type {
   AnalysisCenterTab,
   AnalysisGroupsActivityPeriod,
   AnalysisMapAttrs,
+  AnalysisReloadOptions,
 } from './types';
 
 export type UseAnalysisDataProps = {
@@ -81,12 +82,18 @@ export type UseAnalysisDataResult = {
   loadCorrelatedFreqs: () => Promise<void>;
   loadGroupsActivity: (period?: AnalysisGroupsActivityPeriod) => Promise<void>;
   loadNewCallsigns: () => Promise<void>;
-  loadMoreMessages: () => Promise<void>;
+  loadFirstPage: () => Promise<void>;
+  loadLastPage: () => Promise<void>;
+  loadNextPage: () => Promise<void>;
+  loadPrevPage: () => Promise<void>;
   loadMessagesForMap: (messageIds: number[]) => Promise<boolean>;
   mapAttrs: AnalysisMapAttrs;
   messageActionLoading: boolean;
   messagesLoading: boolean;
+  messagesOverallCount: number | null;
   messagesPaging: boolean;
+  messagesTotalCount: number | null;
+  messagesTotalLoading: boolean;
   messageComments: Record<number, MessageComment[]>;
   messages: Array<[number, InboxMessage]>;
   networkDisplayMap: Record<number, string>;
@@ -95,6 +102,7 @@ export type UseAnalysisDataResult = {
   newCallsignsLoading: boolean;
   noMoreToLoad: boolean;
   nolimitShown: boolean;
+  pageIndex: number;
   onUpdateLocalMessage: (
     messageId: number,
     updater: (message: InboxMessage) => InboxMessage,
@@ -110,7 +118,7 @@ export type UseAnalysisDataResult = {
   options: AnalysisFilterOptions;
   profiles: Record<string, SignalProfileEntry | null>;
   refreshMapDateRange: (range: { startDate: number; endDate: number }) => Promise<void>;
-  reload: () => Promise<void>;
+  reload: (options?: AnalysisReloadOptions) => Promise<void>;
   summaryLoading: boolean;
   summaryLoaded: boolean;
   summaryHasLoadedOnce: boolean;

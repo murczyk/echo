@@ -5,7 +5,11 @@ import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { normalizeMapMessageIds, shouldClearMapOpenMessages } from './use-analysis-data.loaders';
+import {
+  missingMapMessageIds,
+  normalizeMapMessageIds,
+  shouldClearMapOpenMessages,
+} from './use-analysis-data.loaders';
 import { emptyQueryState } from './helpers';
 import { useAnalysisDataLoaders } from './use-analysis-data.loaders';
 
@@ -137,6 +141,12 @@ describe('normalizeMapMessageIds', () => {
   });
 });
 
+describe('missingMapMessageIds', () => {
+  it('returns requested ids that are absent from the fetched messages', () => {
+    expect(missingMapMessageIds([1, 2, 3], [[2, { networkIds: [] }]])).toEqual([1, 3]);
+  });
+});
+
 describe('shouldClearMapOpenMessages', () => {
   it('returns true when the map selection is empty after normalization', () => {
     expect(shouldClearMapOpenMessages([null, undefined, Number.NaN])).toBe(true);
@@ -165,6 +175,46 @@ describe('retryable loader caches', () => {
     expect(setMapOpenMessages).toHaveBeenCalledWith(messages);
     expect(loadMissingNetworksForMessages).toHaveBeenCalledWith(messages);
     expect(loaded).toBe(true);
+  });
+
+  it('removes map points for requested messages denied by the backend', async () => {
+    const setMapOpenMessages = vi.fn();
+    const setMapPoints = vi.fn();
+    const messages = [[7, { networkIds: [] }]];
+    apiMocks.fetchMessagesByIds.mockResolvedValueOnce(messages);
+
+    renderLoaderHook({ setMapOpenMessages, setMapPoints });
+
+    let loaded = false;
+    await act(async () => {
+      loaded = (await latest?.loadMessagesForMap([7, 8])) ?? false;
+    });
+
+    expect(setMapOpenMessages).toHaveBeenCalledWith(messages);
+    expect(setMapPoints).toHaveBeenCalledTimes(1);
+
+    const updateMapPoints = setMapPoints.mock.calls[0][0];
+    const mapPoints = [{ messageId: 7 }, { messageId: 8 }, { messageId: 9 }];
+    expect(updateMapPoints(mapPoints)).toEqual([{ messageId: 7 }, { messageId: 9 }]);
+    expect(loaded).toBe(true);
+  });
+
+  it('reports map message load failure when every requested message is denied', async () => {
+    const setMapOpenMessages = vi.fn();
+    const setMapPoints = vi.fn();
+    apiMocks.fetchMessagesByIds.mockResolvedValueOnce([]);
+
+    renderLoaderHook({ setMapOpenMessages, setMapPoints });
+
+    let loaded = true;
+    await act(async () => {
+      loaded = (await latest?.loadMessagesForMap([8])) ?? true;
+    });
+
+    expect(setMapOpenMessages).toHaveBeenCalledWith([]);
+    expect(setMapPoints).toHaveBeenCalledTimes(1);
+    expect(setMapPoints.mock.calls[0][0]([{ messageId: 8 }])).toEqual([]);
+    expect(loaded).toBe(false);
   });
 
   it('retries summary loading after a failure for the same query', async () => {
