@@ -540,6 +540,8 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
     loadCorrelatedFreqs: data.loadCorrelatedFreqs,
     loadGroupsActivity: data.loadGroupsActivity,
     loadNewCallsigns: data.loadNewCallsigns,
+    loadFirstPage: data.loadFirstPage,
+    loadLastPage: data.loadLastPage,
     loadNextPage: data.loadNextPage,
     loadPrevPage: data.loadPrevPage,
     loadMessagesForMap: data.loadMessagesForMap,

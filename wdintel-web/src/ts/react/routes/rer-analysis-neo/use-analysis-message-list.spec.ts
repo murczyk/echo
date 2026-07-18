@@ -69,6 +69,7 @@ function deferred<T>(): Deferred<T> {
 function renderHook(
   queryState = buildQueryState(),
   loadMissingNetworksForMessages = vi.fn().mockResolvedValue(undefined),
+  newestFirst = true,
 ): Harness {
   const container = document.createElement('div');
   document.body.appendChild(container);
@@ -78,7 +79,7 @@ function renderHook(
   function TestComponent() {
     harness.latest = useAnalysisMessageList({
       loadMissingNetworksForMessages,
-      newestFirst: true,
+      newestFirst,
       onError: vi.fn(),
       onUnauthorized: vi.fn().mockReturnValue(false),
       optionsFreqValues: [],
@@ -175,6 +176,37 @@ describe('useAnalysisMessageList pagination', () => {
     expect(h.latest.messages).toEqual(page(2));
     const lastCall = fetchInboxMessagesMock.mock.calls.at(-1)?.[0];
     expect(lastCall.beforeIdNoninclusive).toBe(1);
+  });
+
+  it('updates messages and pageIndex together before message hydration finishes', async () => {
+    const hydration = deferred<void>();
+    const h = renderHook(
+      buildQueryState(),
+      vi.fn(() => hydration.promise),
+    );
+    harnesses.push(h);
+    await act(async () => {
+      h.latest.setMessages(page(1));
+    });
+    fetchInboxMessagesMock.mockResolvedValueOnce({
+      inboxItems: page(2),
+      callsigns: [],
+      pageLimit: 20,
+    });
+
+    let nextPagePromise!: Promise<void>;
+    await act(async () => {
+      nextPagePromise = h.latest.loadNextPage();
+      await Promise.resolve();
+    });
+
+    expect(h.latest.messages).toEqual(page(2));
+    expect(h.latest.pageIndex).toBe(1);
+
+    hydration.resolve();
+    await act(async () => {
+      await nextPagePromise;
+    });
   });
 
   it('does not advance a stale page request after message hydration', async () => {
@@ -278,6 +310,110 @@ describe('useAnalysisMessageList pagination', () => {
     const lastCall = fetchInboxMessagesMock.mock.calls.at(-1)?.[0];
     expect(lastCall.beforeIdNoninclusive).toBeNull();
     expect(lastCall.sinceIdNoninclusive).toBeNull();
+  });
+
+  it('jumps to the first page', async () => {
+    const h = renderHook();
+    harnesses.push(h);
+    await act(async () => {
+      h.latest.setMessages(page(1));
+    });
+    fetchInboxMessagesMock.mockResolvedValueOnce({
+      inboxItems: page(2),
+      callsigns: [],
+      pageLimit: 20,
+    });
+    await act(async () => {
+      await h.latest.loadNextPage();
+    });
+
+    fetchInboxMessagesMock.mockResolvedValueOnce({
+      inboxItems: page(1),
+      callsigns: [],
+      pageLimit: 20,
+    });
+    await act(async () => {
+      await h.latest.loadFirstPage();
+    });
+
+    expect(h.latest.pageIndex).toBe(0);
+    expect(h.latest.messages).toEqual(page(1));
+    expect(fetchInboxMessagesMock.mock.calls.at(-1)?.[0]).toMatchObject({
+      beforeIdNoninclusive: null,
+      sinceIdNoninclusive: null,
+      newestFirst: true,
+    });
+  });
+
+  it('jumps to the last partial page and preserves the selected ordering', async () => {
+    vi.useFakeTimers();
+    const h = renderHook();
+    harnesses.push(h);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(200);
+    });
+    const oldestMessages = Array.from({ length: 20 }, (_, index) => [
+      index + 1,
+      buildMessage(),
+    ]) as Array<[number, InboxMessage]>;
+    fetchInboxMessagesMock.mockResolvedValueOnce({
+      inboxItems: oldestMessages,
+      callsigns: [],
+      pageLimit: 20,
+    });
+
+    await act(async () => {
+      await h.latest.loadLastPage();
+    });
+
+    expect(h.latest.pageIndex).toBe(2);
+    expect(h.latest.messages.map(([id]) => id)).toEqual([2, 1]);
+    expect(h.latest.noMoreToLoad).toBe(true);
+    expect(fetchInboxMessagesMock.mock.calls.at(-1)?.[0].newestFirst).toBe(false);
+    expect(h.latest.getCurrentMessagePageCursor()).toMatchObject({
+      requestNewestFirst: false,
+      reverseResults: true,
+      resultLimit: 2,
+    });
+  });
+
+  it('loads the adjacent previous page after jumping to the end', async () => {
+    vi.useFakeTimers();
+    const h = renderHook();
+    harnesses.push(h);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(200);
+    });
+    fetchInboxMessagesMock.mockResolvedValueOnce({
+      inboxItems: [page(1)[0], page(2)[0]],
+      callsigns: [],
+      pageLimit: 20,
+    });
+    await act(async () => {
+      await h.latest.loadLastPage();
+    });
+    const previousMessages = Array.from({ length: 20 }, (_, index) => [
+      index + 3,
+      buildMessage(),
+    ]) as Array<[number, InboxMessage]>;
+    fetchInboxMessagesMock.mockResolvedValueOnce({
+      inboxItems: previousMessages,
+      callsigns: [],
+      pageLimit: 20,
+    });
+
+    await act(async () => {
+      await h.latest.loadPrevPage();
+    });
+
+    expect(h.latest.pageIndex).toBe(1);
+    expect(h.latest.messages.map(([id]) => id)).toEqual(
+      Array.from({ length: 20 }, (_, index) => 22 - index),
+    );
+    expect(fetchInboxMessagesMock.mock.calls.at(-1)?.[0]).toMatchObject({
+      sinceIdNoninclusive: 2,
+      newestFirst: false,
+    });
   });
 
   it('invalidateMessagePaging resets pageIndex to 0', async () => {

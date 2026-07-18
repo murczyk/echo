@@ -274,6 +274,7 @@ describe('reloadAnalysisData', () => {
 
     const invalidateCorrelatedFreqsCache = vi.fn();
     const setHasLoadedInitialMessages = vi.fn();
+    const setMessages = vi.fn();
     const setNoMoreToLoad = vi.fn();
     const setSummaryCallsignsInfo = vi.fn();
 
@@ -288,7 +289,13 @@ describe('reloadAnalysisData', () => {
       invalidateCorrelatedFreqsCache,
       invalidateCallsignGraph: vi.fn(),
       invalidateMessagePaging: vi.fn(),
-      messagePageCursor: { beforeIdNoninclusive: 120, sinceIdNoninclusive: null },
+      messagePageCursor: {
+        beforeIdNoninclusive: null,
+        sinceIdNoninclusive: null,
+        requestNewestFirst: false,
+        reverseResults: true,
+        resultLimit: 2,
+      },
       newestFirst: true,
       onError: vi.fn(),
       onUnauthorized: vi.fn().mockReturnValue(false),
@@ -305,7 +312,7 @@ describe('reloadAnalysisData', () => {
       setMapNetworkUnits: vi.fn(),
       setMapOpenMessages: vi.fn(),
       setMapPoints: vi.fn(),
-      setMessages: vi.fn(),
+      setMessages,
       setMessagesLoading,
       setNetworks: vi.fn(),
       setUnitsMap: vi.fn(),
@@ -333,18 +340,27 @@ describe('reloadAnalysisData', () => {
     await flushPromises();
     expect(messagesLoadingTransitions).toContain(true);
     expect(mocks.fetchInboxMessages.mock.calls[0]?.[0]).toMatchObject({
-      beforeIdNoninclusive: 120,
+      beforeIdNoninclusive: null,
       sinceIdNoninclusive: null,
+      newestFirst: false,
     });
 
     inboxDeferred.resolve({
-      inboxItems: [[1, { networkIds: [] }]],
+      inboxItems: [
+        [1, { networkIds: [] }],
+        [2, { networkIds: [] }],
+        [3, { networkIds: [] }],
+      ],
       callsigns: [{ callsign: 'alpha', res: [] }],
       pageLimit: 20,
     });
     await flushPromises();
 
     expect(setHasLoadedInitialMessages).toHaveBeenCalledWith(true);
+    expect(setMessages).toHaveBeenCalledWith([
+      [2, { networkIds: [] }],
+      [1, { networkIds: [] }],
+    ]);
     expect(messagesLoadingTransitions).toContain(false);
     expect(mocks.fetchAnalysisCount).toHaveBeenCalledTimes(1);
     expect(setSummaryCallsignsInfo).toHaveBeenCalledWith(

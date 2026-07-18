@@ -6,6 +6,7 @@ import { PageHeader } from '../../components/PageHeader';
 import { SidePanelToggleButton } from '../../components/SidePanelToggleButton';
 import { AnalysisHeaderControls } from './components/AnalysisHeaderControls';
 import { AnalysisPaginationControl } from './components/AnalysisPaginationControl';
+import { ANALYSIS_MESSAGES_PAGE_SIZE } from './helpers';
 import type { AnalysisCenterTab, AnalysisPageViewModel } from './types';
 
 type Props = {
@@ -68,12 +69,14 @@ export function AnalysisPageHeader({
           <AnalysisPaginationControl
             centerTab={centerTab}
             pageIndex={page.pageIndex}
-            pageSize={20}
+            pageSize={ANALYSIS_MESSAGES_PAGE_SIZE}
             messagesCount={page.messages.length}
             totalCount={page.messagesTotalCount}
             totalLoading={page.messagesTotalLoading}
             noMoreToLoad={page.noMoreToLoad}
             busy={page.messagesPaging || page.messagesLoading}
+            onFirstPage={page.loadFirstPage}
+            onLastPage={page.loadLastPage}
             onPrevPage={page.loadPrevPage}
             onNextPage={page.loadNextPage}
           />

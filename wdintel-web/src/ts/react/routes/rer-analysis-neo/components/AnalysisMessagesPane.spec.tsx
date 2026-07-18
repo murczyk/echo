@@ -1,7 +1,7 @@
 /**
  * @vitest-environment happy-dom
  */
-import { act } from 'react';
+import { act, forwardRef } from 'react';
 import type { ComponentProps, ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -13,7 +13,10 @@ import type { InboxMessage, SignalGroupEntry } from '../../../../../Bindings';
 vi.mock('@mui/material', () => ({
   Alert: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   Backdrop: ({ children }: { children: ReactNode }) => <div>{children}</div>,
-  Box: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  Box: forwardRef<HTMLDivElement, { children: ReactNode; component?: string }>(
+    ({ children, component }, ref) =>
+      component === 'ul' ? <ul>{children}</ul> : <div ref={ref}>{children}</div>,
+  ),
   Button: (props: {
     children: ReactNode;
     onClick?: () => void;

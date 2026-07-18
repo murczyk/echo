@@ -543,6 +543,8 @@ export function useAnalysisData({
     loadCorrelatedFreqs: sidebarData.loadCorrelatedFreqs,
     loadGroupsActivity: sidebarData.loadGroupsActivity,
     loadNewCallsigns: sidebarData.loadNewCallsigns,
+    loadFirstPage: messageList.loadFirstPage,
+    loadLastPage: messageList.loadLastPage,
     loadNextPage: messageList.loadNextPage,
     loadPrevPage: messageList.loadPrevPage,
     loadMessagesForMap: mapData.loadMessagesForMap,

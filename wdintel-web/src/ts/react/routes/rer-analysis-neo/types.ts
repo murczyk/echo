@@ -124,6 +124,9 @@ export type AnalysisCenterTab = 'messages' | 'summary' | 'map';
 export type AnalysisMessagePageCursor = {
   beforeIdNoninclusive: number | null;
   sinceIdNoninclusive: number | null;
+  requestNewestFirst?: boolean;
+  reverseResults?: boolean;
+  resultLimit?: number;
 };
 
 export type AnalysisReloadOptions = {
@@ -240,6 +243,8 @@ export type AnalysisPageActions = {
   loadGroupsActivity: (period?: AnalysisGroupsActivityPeriod) => void;
   loadAllMessages: () => Promise<void>;
   loadFilterSection: (section: AnalysisFilterSectionId) => Promise<void>;
+  loadFirstPage: () => Promise<void>;
+  loadLastPage: () => Promise<void>;
   loadNextPage: () => Promise<void>;
   loadPrevPage: () => Promise<void>;
   loadMessagesForMap: (messageIds: number[]) => Promise<boolean>;

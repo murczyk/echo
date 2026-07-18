@@ -1,12 +1,45 @@
 /**
  * @vitest-environment happy-dom
  */
-import { act } from 'react';
+import { act, useEffect } from 'react';
 import type { ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('@mui/material', () => ({
+  ButtonBase: (props: {
+    children: ReactNode;
+    onClick?: (event: React.MouseEvent<HTMLElement>) => void;
+    onMouseEnter?: (event: React.MouseEvent<HTMLElement>) => void;
+    onMouseLeave?: () => void;
+    disabled?: boolean;
+    'aria-label'?: string;
+    'aria-controls'?: string;
+    'aria-expanded'?: boolean;
+    'aria-haspopup'?: string;
+  }) => (
+    <button
+      type="button"
+      onClick={props.onClick}
+      onMouseEnter={props.onMouseEnter}
+      onMouseLeave={props.onMouseLeave}
+      disabled={props.disabled}
+      aria-label={props['aria-label']}
+      aria-controls={props['aria-controls']}
+      aria-expanded={props['aria-expanded']}
+      aria-haspopup={props['aria-haspopup']}
+    >
+      {props.children}
+    </button>
+  ),
+  ClickAwayListener: (props: { children: ReactNode; onClickAway: (event: MouseEvent) => void }) => {
+    useEffect(() => {
+      const onClick = (event: MouseEvent) => props.onClickAway(event);
+      document.addEventListener('click', onClick);
+      return () => document.removeEventListener('click', onClick);
+    }, [props.onClickAway]);
+    return props.children;
+  },
   IconButton: (props: {
     children: ReactNode;
     onClick?: () => void;
@@ -22,12 +55,31 @@ vi.mock('@mui/material', () => ({
       {props.children}
     </button>
   ),
+  MenuItem: (props: { children: ReactNode; disabled?: boolean; onClick?: () => void }) => (
+    <button type="button" role="menuitem" disabled={props.disabled} onClick={props.onClick}>
+      {props.children}
+    </button>
+  ),
+  MenuList: ({ children, id }: { children: ReactNode; id?: string }) => (
+    <div role="menu" id={id}>
+      {children}
+    </div>
+  ),
+  Paper: (props: { children: ReactNode; onMouseEnter?: () => void; onMouseLeave?: () => void }) => (
+    <div onMouseEnter={props.onMouseEnter} onMouseLeave={props.onMouseLeave}>
+      {props.children}
+    </div>
+  ),
+  Popper: ({ children, open }: { children: ReactNode; open: boolean }) =>
+    open ? <div>{children}</div> : null,
   Stack: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   Typography: ({ children }: { children: ReactNode }) => <span>{children}</span>,
 }));
 
 vi.mock('@mui/icons-material/ChevronLeftOutlined', () => ({ default: () => <span>left</span> }));
 vi.mock('@mui/icons-material/ChevronRightOutlined', () => ({ default: () => <span>right</span> }));
+vi.mock('@mui/icons-material/FirstPageOutlined', () => ({ default: () => <span>first</span> }));
+vi.mock('@mui/icons-material/LastPageOutlined', () => ({ default: () => <span>last</span> }));
 
 import { AnalysisPaginationControl } from './AnalysisPaginationControl';
 
@@ -55,6 +107,8 @@ function baseProps(): React.ComponentProps<typeof AnalysisPaginationControl> {
     totalLoading: false,
     noMoreToLoad: false,
     busy: false,
+    onFirstPage: vi.fn(),
+    onLastPage: vi.fn(),
     onPrevPage: vi.fn(),
     onNextPage: vi.fn(),
   };
@@ -98,6 +152,65 @@ describe('AnalysisPaginationControl', () => {
     const view = await renderComponent({ ...baseProps(), totalCount: 0, noMoreToLoad: false });
     rendered.push(view);
     expect(view.container.textContent).toContain('1-20 з 0');
+  });
+
+  it('opens the first/last page menu when the counter is clicked or hovered', async () => {
+    const view = await renderComponent(baseProps());
+    rendered.push(view);
+    const counter = view.container.querySelector(
+      '[aria-label="Перейти до першої або останньої сторінки"]',
+    ) as HTMLButtonElement;
+
+    await act(async () => {
+      counter.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    expect(view.container.querySelector('[role="menu"]')?.textContent).toContain('Перша сторінка');
+
+    await act(async () => {
+      counter.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+      counter.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    expect(view.container.querySelector('[role="menu"]')?.textContent).toContain(
+      'Остання сторінка',
+    );
+  });
+
+  it('wires first and last page menu actions', async () => {
+    const onFirstPage = vi.fn();
+    const onLastPage = vi.fn();
+    const view = await renderComponent({
+      ...baseProps(),
+      pageIndex: 1,
+      onFirstPage,
+      onLastPage,
+    });
+    rendered.push(view);
+    const counter = view.container.querySelector(
+      '[aria-label="Перейти до першої або останньої сторінки"]',
+    ) as HTMLButtonElement;
+
+    await act(async () => {
+      counter.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    const firstPage = Array.from(view.container.querySelectorAll('[role="menuitem"]')).find(
+      (item) => item.textContent?.includes('Перша сторінка'),
+    ) as HTMLButtonElement;
+    await act(async () => {
+      firstPage.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+
+    await act(async () => {
+      counter.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    const lastPage = Array.from(view.container.querySelectorAll('[role="menuitem"]')).find((item) =>
+      item.textContent?.includes('Остання сторінка'),
+    ) as HTMLButtonElement;
+    await act(async () => {
+      lastPage.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+
+    expect(onFirstPage).toHaveBeenCalledTimes(1);
+    expect(onLastPage).toHaveBeenCalledTimes(1);
   });
 
   it('disables the left chevron on the first page', async () => {

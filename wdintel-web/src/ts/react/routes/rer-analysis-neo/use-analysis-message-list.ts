@@ -7,7 +7,7 @@ import type {
   MessageComment,
 } from '../../../../Bindings';
 import { fetchInboxMessages } from '../../services/api/analysis';
-import { buildInboxReq } from './helpers';
+import { ANALYSIS_MESSAGES_PAGE_SIZE, buildInboxReq } from './helpers';
 import { loadMissingMessageCommentsForMessages } from './use-analysis-data.comments';
 import { mergeAnalysisCallsignInfoMap } from './use-analysis-data.callsigns';
 import { isAnalysisInboxPageExhausted, toErrorMessage } from './use-analysis-data.shared';
@@ -29,6 +29,14 @@ const FIRST_PAGE_CURSOR: AnalysisMessagePageCursor = {
   beforeIdNoninclusive: null,
   sinceIdNoninclusive: null,
 };
+
+function transformPageMessages(
+  messages: Array<[number, InboxMessage]>,
+  cursor: AnalysisMessagePageCursor,
+): Array<[number, InboxMessage]> {
+  const limitedMessages = cursor.resultLimit ? messages.slice(0, cursor.resultLimit) : messages;
+  return cursor.reverseResults ? [...limitedMessages].reverse() : limitedMessages;
+}
 
 export function useAnalysisMessageList({
   loadMissingNetworksForMessages,
@@ -131,7 +139,10 @@ export function useAnalysisMessageList({
   ]);
 
   const fetchPage = useCallback(
-    async (cursor: AnalysisMessagePageCursor, keepCurrentOnEmpty = false) => {
+    async (
+      cursor: AnalysisMessagePageCursor,
+      options: { keepCurrentOnEmpty?: boolean; targetPageIndex: number },
+    ) => {
       const inboxReq = buildInboxReq(queryState, optionsFreqValues, true);
       if (isNullOrUndefined(inboxReq)) return null;
 
@@ -145,17 +156,18 @@ export function useAnalysisMessageList({
           ...inboxReq,
           beforeIdNoninclusive: cursor.beforeIdNoninclusive,
           sinceIdNoninclusive: cursor.sinceIdNoninclusive,
-          newestFirst,
+          newestFirst: cursor.requestNewestFirst ?? newestFirst,
         };
         const rsp = await fetchInboxMessages(paginatedReq);
         if (isStale()) return null;
-        const pageMessages = rsp.inboxItems ?? [];
-        if (keepCurrentOnEmpty && pageMessages.length === 0) {
+        const pageMessages = transformPageMessages(rsp.inboxItems ?? [], cursor);
+        if (options.keepCurrentOnEmpty && pageMessages.length === 0) {
           setNoMoreToLoad(true);
           return pageMessages;
         }
         setSummaryCallsignsInfo((current) => mergeAnalysisCallsignInfoMap(current, rsp.callsigns));
         setMessages(pageMessages);
+        setPageIndex(options.targetPageIndex);
         await loadMissingNetworksForMessages(pageMessages);
         if (isStale()) return null;
         await loadMessageComments(pageMessages, false);
@@ -194,23 +206,72 @@ export function useAnalysisMessageList({
       ? { beforeIdNoninclusive: lastMessage[0], sinceIdNoninclusive: null }
       : { beforeIdNoninclusive: null, sinceIdNoninclusive: lastMessage[0] };
 
-    const fetched = await fetchPage(nextCursor, true);
+    const fetched = await fetchPage(nextCursor, {
+      keepCurrentOnEmpty: true,
+      targetPageIndex: pageIndex + 1,
+    });
     if (fetched === null || fetched.length === 0) return;
 
-    pageCursorsRef.current = [...pageCursorsRef.current.slice(0, pageIndex + 1), nextCursor];
-    setPageIndex((current) => current + 1);
+    pageCursorsRef.current = pageCursorsRef.current.slice(0, pageIndex + 1);
+    pageCursorsRef.current[pageIndex + 1] = nextCursor;
   }, [fetchPage, messages, newestFirst, pageIndex]);
 
   const loadPrevPage = useCallback(async () => {
     if (pageIndex === 0) return;
-    const prevCursor = pageCursorsRef.current[pageIndex - 1];
-    if (isNullOrUndefined(prevCursor)) return;
+    let prevCursor = pageCursorsRef.current[pageIndex - 1];
+    if (isNullOrUndefined(prevCursor)) {
+      const firstMessage = messages.at(0);
+      if (isNullOrUndefined(firstMessage)) return;
 
-    const fetched = await fetchPage(prevCursor);
+      prevCursor = newestFirst
+        ? {
+            beforeIdNoninclusive: null,
+            sinceIdNoninclusive: firstMessage[0],
+            requestNewestFirst: false,
+            reverseResults: true,
+          }
+        : {
+            beforeIdNoninclusive: firstMessage[0],
+            sinceIdNoninclusive: null,
+          };
+    }
+
+    const fetched = await fetchPage(prevCursor, { targetPageIndex: pageIndex - 1 });
     if (fetched === null) return;
 
-    setPageIndex((current) => current - 1);
+    pageCursorsRef.current[pageIndex - 1] = prevCursor;
+  }, [fetchPage, messages, newestFirst, pageIndex]);
+
+  const loadFirstPage = useCallback(async () => {
+    if (pageIndex === 0) return;
+    const fetched = await fetchPage(FIRST_PAGE_CURSOR, { targetPageIndex: 0 });
+    if (fetched === null) return;
+
+    pageCursorsRef.current = [FIRST_PAGE_CURSOR];
   }, [fetchPage, pageIndex]);
+
+  const loadLastPage = useCallback(async () => {
+    if (isNullOrUndefined(messagesTotalCount) || messagesTotalCount === 0) return;
+    const lastPageIndex = Math.max(
+      0,
+      Math.ceil(messagesTotalCount / ANALYSIS_MESSAGES_PAGE_SIZE) - 1,
+    );
+    if (pageIndex === lastPageIndex) return;
+
+    const lastPageSize = messagesTotalCount % ANALYSIS_MESSAGES_PAGE_SIZE;
+    const lastPageCursor: AnalysisMessagePageCursor = {
+      ...FIRST_PAGE_CURSOR,
+      requestNewestFirst: !newestFirst,
+      reverseResults: true,
+      resultLimit: lastPageSize || ANALYSIS_MESSAGES_PAGE_SIZE,
+    };
+    const fetched = await fetchPage(lastPageCursor, { targetPageIndex: lastPageIndex });
+    if (fetched === null) return;
+
+    pageCursorsRef.current = [FIRST_PAGE_CURSOR];
+    pageCursorsRef.current[lastPageIndex] = lastPageCursor;
+    setNoMoreToLoad(true);
+  }, [fetchPage, messagesTotalCount, newestFirst, pageIndex]);
 
   return {
     aorEntries,
@@ -220,6 +281,8 @@ export function useAnalysisMessageList({
     invalidateMessagePageRequests,
     invalidateMessagePaging,
     loadAllMessages,
+    loadFirstPage,
+    loadLastPage,
     loadMessageComments,
     loadNextPage,
     loadPrevPage,
