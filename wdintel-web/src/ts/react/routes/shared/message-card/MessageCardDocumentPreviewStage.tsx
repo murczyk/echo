@@ -7,6 +7,7 @@ import { DocxDocumentPreview } from './renderers/DocxDocumentPreview';
 import { PdfDocumentPreview } from './renderers/PdfDocumentPreview';
 import { UnsupportedDocumentPreview } from './renderers/UnsupportedDocumentPreview';
 import { XlsxDocumentPreview } from './renderers/XlsxDocumentPreview';
+import { CsvDocumentPreview } from './renderers/CsvDocumentPreview';
 import { MarkdownDocumentPreview, TxtDocumentPreview } from './text-document-preview';
 import { getMessageCardPreviewStageSx } from './message-card-preview-shell';
 
@@ -62,6 +63,13 @@ export const MessageCardDocumentPreviewStage = forwardRef<
             href={currentDocument.href}
             zoom={zoom}
             sizeBytes={currentDocument.sizeBytes ?? null}
+          />
+        ) : currentDocument.kind === 'csv' ? (
+          <CsvDocumentPreview
+            href={currentDocument.href}
+            zoom={zoom}
+            sizeBytes={currentDocument.sizeBytes ?? null}
+            contentType={currentDocument.contentType ?? null}
           />
         ) : currentDocument.kind === 'txt' ? (
           <TxtDocumentPreview
