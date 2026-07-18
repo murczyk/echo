@@ -25,6 +25,7 @@ type SubmitOptions = {
   uppy: Uppy<any, any>;
   addValues: (vals: Partial<RecentValues>) => void;
   onCreated?: (result: DirectSubmitResponse) => void | Promise<void>;
+  onEditSuccess?: (result: DirectSubmitResponse) => void | Promise<void>;
   handleDrawerCloseAfterSubmit: () => void;
 };
 
@@ -39,6 +40,7 @@ export function useMessageSubmit({
   uppy,
   addValues,
   onCreated,
+  onEditSuccess,
   handleDrawerCloseAfterSubmit,
 }: SubmitOptions) {
   const onSubmit = async (data: MessageFormData) => {
@@ -175,6 +177,11 @@ export function useMessageSubmit({
           }
         }
         handleDrawerCloseAfterSubmit();
+        try {
+          await onEditSuccess?.(res);
+        } catch (error) {
+          console.error('Error handling edit success', error);
+        }
       } else {
         const result = await submitDirect(payload);
         addValues(recentValues);

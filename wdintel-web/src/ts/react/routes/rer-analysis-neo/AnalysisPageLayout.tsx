@@ -180,6 +180,8 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
         }}
         onSubmitEdit={async (_id, message) => {
           await Promise.resolve(page.saveEditor(message));
+        }}
+        onEditSuccess={() => {
           page.reload();
         }}
         onCreated={async () => {

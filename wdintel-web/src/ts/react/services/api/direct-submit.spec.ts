@@ -115,4 +115,15 @@ describe('direct-submit response normalization', () => {
     expect(result.message?.groupMasterKey).toBe('group-1');
     expect(apiMocks.postJson).toHaveBeenCalledWith('/api/1.1/message/42/edit', request, options);
   });
+
+  it.each([{ signal_message_id: 105 }, { signal_message_id: 106, message: null }])(
+    'normalizes an edit response without an inline message',
+    async (raw) => {
+      apiMocks.postJson.mockResolvedValueOnce(raw);
+
+      await expect(editDirectSubmit(42, request)).resolves.toEqual({
+        signal_message_id: raw.signal_message_id,
+      });
+    },
+  );
 });

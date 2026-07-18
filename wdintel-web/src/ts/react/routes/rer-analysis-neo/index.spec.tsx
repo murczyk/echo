@@ -17,6 +17,7 @@ const manageMessageDrawerPropsHistory = vi.hoisted(
       onClose: () => void;
       onCreated?: (result: unknown) => Promise<void> | void;
       onSubmitEdit?: (id: number, message: unknown) => Promise<void> | void;
+      onEditSuccess?: (result: unknown) => Promise<void> | void;
       editTarget?: unknown;
     }>,
 );
@@ -586,6 +587,10 @@ describe('RerAnalysisNeoPage', () => {
 
     expect(page.saveEditor).toHaveBeenCalledTimes(1);
     expect(page.saveEditor).toHaveBeenCalledWith({ messageUid: 'm-updated' });
+    expect(page.reload).not.toHaveBeenCalled();
+    await act(async () => {
+      await drawer?.onEditSuccess?.({ signal_message_id: 42 });
+    });
     expect(page.reload).toHaveBeenCalledTimes(1);
     expect(container.querySelector('[role="status"]')).toBeNull();
 
@@ -598,6 +603,31 @@ describe('RerAnalysisNeoPage', () => {
     await act(async () => {
       root.unmount();
     });
+  });
+
+  it('reloads after an edit without an inline message without saving a stale local message', async () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    rendered.push(container);
+    const root = createRoot(container);
+    const editorMessage = { id: 43, message: { messageUid: 'm-43' } as never };
+    const page = buildPage();
+    page.editorMessage = editorMessage;
+    useRerAnalysisNeoPageMock.mockReturnValueOnce(page);
+
+    await act(async () => {
+      root.render(<RerAnalysisNeoPage />);
+    });
+    const drawer = manageMessageDrawerPropsHistory.at(-1);
+    await act(async () => {
+      await drawer?.onEditSuccess?.({ signal_message_id: 43 });
+    });
+
+    expect(page.saveEditor).not.toHaveBeenCalled();
+    expect(page.reload).toHaveBeenCalledTimes(1);
+    expect(container.textContent).not.toContain('Повідомлення успішно створено.');
+
+    await act(async () => root.unmount());
   });
 
   it('preserves the current message page when the header refresh button is clicked', async () => {

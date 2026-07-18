@@ -43,6 +43,9 @@ export type UseManageMessageDrawerProps = {
   onCreated?: (
     result: import('../../../services/api/direct-submit').DirectSubmitResponse,
   ) => void | Promise<void>;
+  onEditSuccess?: (
+    result: import('../../../services/api/direct-submit').DirectSubmitResponse,
+  ) => void | Promise<void>;
   editTarget?: { id: number; message: InboxMessage } | null;
   editSaveInFlight?: boolean;
   onSubmitEdit?: (id: number, message: InboxMessage) => void | Promise<void>;
@@ -54,6 +57,7 @@ export function useManageMessageDrawer({
   currentUser,
   onClose,
   onCreated,
+  onEditSuccess,
   editTarget = null,
   editSaveInFlight,
   onSubmitEdit,
@@ -471,6 +475,7 @@ export function useManageMessageDrawer({
     uppy,
     addValues,
     onCreated,
+    onEditSuccess,
     handleDrawerCloseAfterSubmit: closeDrawerAfterSubmit,
   });
 

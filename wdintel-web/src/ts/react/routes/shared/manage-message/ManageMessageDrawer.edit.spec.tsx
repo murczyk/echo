@@ -1410,6 +1410,7 @@ describe('ManageMessageDrawer edit mode', () => {
 
   it('closes the rendered edit composer when the host edit callback rejects', async () => {
     const onSubmitEdit = vi.fn().mockRejectedValue(new Error('editor failed'));
+    const onEditSuccess = vi.fn();
     const onClose = vi.fn();
     const onCreated = vi.fn();
     directSubmitMocks.editDirectSubmit.mockResolvedValue({
@@ -1435,6 +1436,7 @@ describe('ManageMessageDrawer edit mode', () => {
           editTarget={{ id: 123, message: buildMessage() }}
           editSaveInFlight={false}
           onSubmitEdit={onSubmitEdit}
+          onEditSuccess={onEditSuccess}
           onCreated={onCreated}
         />
       );
@@ -1451,6 +1453,7 @@ describe('ManageMessageDrawer edit mode', () => {
 
     expect(directSubmitMocks.editDirectSubmit).toHaveBeenCalledTimes(1);
     expect(onSubmitEdit).toHaveBeenCalledTimes(1);
+    expect(onEditSuccess).toHaveBeenCalledTimes(1);
     expect(onClose).toHaveBeenCalledTimes(1);
     expect(container.textContent).not.toContain('Редагувати повідомлення');
     expect(container.querySelector('form')).toBeNull();
@@ -1458,6 +1461,115 @@ describe('ManageMessageDrawer edit mode', () => {
     expect(container.textContent).not.toContain('Помилка');
     expect(onCreated).not.toHaveBeenCalled();
 
+    root.unmount();
+  });
+
+  it('closes and reports edit success when the response has no inline message', async () => {
+    const onSubmitEdit = vi.fn();
+    const onEditSuccess = vi.fn();
+    const onClose = vi.fn();
+    directSubmitMocks.editDirectSubmit.mockResolvedValue({ signal_message_id: 124 });
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    function ControlledHarness() {
+      const [open, setOpen] = useState(true);
+      return (
+        <ManageMessageDrawer
+          open={open}
+          cyberEchoEnabled={false}
+          currentUser={null}
+          onClose={() => {
+            onClose();
+            setOpen(false);
+          }}
+          editTarget={{ id: 124, message: buildMessage() }}
+          onSubmitEdit={onSubmitEdit}
+          onEditSuccess={onEditSuccess}
+        />
+      );
+    }
+
+    await act(async () => root.render(<ControlledHarness />));
+    await act(async () => {
+      (container.querySelector('form') as HTMLFormElement).dispatchEvent(
+        new Event('submit', { bubbles: true, cancelable: true }),
+      );
+    });
+
+    expect(onSubmitEdit).not.toHaveBeenCalled();
+    expect(onEditSuccess).toHaveBeenCalledTimes(1);
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(container.querySelector('form')).toBeNull();
+    expect(container.textContent).not.toContain('Помилка');
+    root.unmount();
+  });
+
+  it('does not call edit success callbacks when the edit API rejects', async () => {
+    const onSubmitEdit = vi.fn();
+    const onEditSuccess = vi.fn();
+    const onClose = vi.fn();
+    directSubmitMocks.editDirectSubmit.mockRejectedValue(new Error('edit request failed'));
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <ManageMessageDrawer
+          open
+          cyberEchoEnabled={false}
+          currentUser={null}
+          onClose={onClose}
+          editTarget={{ id: 125, message: buildMessage() }}
+          onSubmitEdit={onSubmitEdit}
+          onEditSuccess={onEditSuccess}
+        />,
+      );
+    });
+    await act(async () => {
+      (container.querySelector('form') as HTMLFormElement).dispatchEvent(
+        new Event('submit', { bubbles: true, cancelable: true }),
+      );
+    });
+
+    expect(onSubmitEdit).not.toHaveBeenCalled();
+    expect(onEditSuccess).not.toHaveBeenCalled();
+    expect(onClose).not.toHaveBeenCalled();
+    expect(container.textContent).toContain('edit request failed');
+    root.unmount();
+  });
+
+  it('keeps the drawer closed without a submission error when edit success rejects', async () => {
+    const onEditSuccess = vi.fn().mockRejectedValue(new Error('reload failed'));
+    const onClose = vi.fn();
+    directSubmitMocks.editDirectSubmit.mockResolvedValue({ signal_message_id: 126 });
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <ManageMessageDrawer
+          open
+          cyberEchoEnabled={false}
+          currentUser={null}
+          onClose={onClose}
+          editTarget={{ id: 126, message: buildMessage() }}
+          onEditSuccess={onEditSuccess}
+        />,
+      );
+    });
+    await act(async () => {
+      (container.querySelector('form') as HTMLFormElement).dispatchEvent(
+        new Event('submit', { bubbles: true, cancelable: true }),
+      );
+    });
+
+    expect(onEditSuccess).toHaveBeenCalledTimes(1);
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(container.textContent).not.toContain('Помилка');
     root.unmount();
   });
 });
