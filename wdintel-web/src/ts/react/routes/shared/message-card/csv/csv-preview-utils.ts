@@ -115,31 +115,54 @@ export function parseCsvText(text: string): CsvPreviewResult {
 
 export function detectCsvDelimiter(text: string): ',' | ';' | '\t' | '|' {
   const candidates = [',', ';', '\t', '|'] as const;
-  const counts = candidates.map((candidate) => countDelimiter(text, candidate));
   let bestIndex = 0;
-  for (let index = 1; index < counts.length; index += 1) {
-    if (counts[index] > counts[bestIndex]) bestIndex = index;
+  let bestScore = 0;
+  for (let index = 0; index < candidates.length; index += 1) {
+    const score = scoreDelimiter(text, candidates[index]);
+    if (score > bestScore) {
+      bestIndex = index;
+      bestScore = score;
+    }
   }
   return candidates[bestIndex];
 }
 
-function countDelimiter(text: string, delimiter: string): number {
-  let count = 0;
+function scoreDelimiter(text: string, delimiter: string): number {
+  const fieldCounts = getLogicalRecordFieldCounts(text, delimiter);
+  if (!fieldCounts.some((fieldCount) => fieldCount > 1)) return 0;
+  const frequencies = new Map<number, number>();
+  for (const fieldCount of fieldCounts) {
+    frequencies.set(fieldCount, (frequencies.get(fieldCount) ?? 0) + 1);
+  }
+  return Math.max(0, ...frequencies.values());
+}
+
+function getLogicalRecordFieldCounts(text: string, delimiter: string): number[] {
+  const fieldCounts: number[] = [];
+  let delimiterCount = 0;
   let quoted = false;
-  let records = 0;
-  for (let index = 0; index < text.length && records < 10; index += 1) {
+  let hasContent = false;
+  for (let index = 0; index < text.length && fieldCounts.length < 10; index += 1) {
     const character = text[index];
     if (character === '"') {
       if (quoted && text[index + 1] === '"') index += 1;
       else quoted = !quoted;
     } else if (!quoted && character === delimiter) {
-      count += 1;
+      delimiterCount += 1;
+      hasContent = true;
     } else if (!quoted && (character === '\n' || character === '\r')) {
-      records += 1;
+      if (hasContent || delimiterCount > 0) fieldCounts.push(delimiterCount + 1);
+      delimiterCount = 0;
+      hasContent = false;
       if (character === '\r' && text[index + 1] === '\n') index += 1;
+    } else if (!quoted && character.trim() !== '') {
+      hasContent = true;
     }
   }
-  return count;
+  if (fieldCounts.length < 10 && (hasContent || delimiterCount > 0)) {
+    fieldCounts.push(delimiterCount + 1);
+  }
+  return fieldCounts;
 }
 
 export function decodeCsvBytes(bytes: Uint8Array, contentType: string | null): string {

@@ -35,12 +35,28 @@ describe('csv-preview-utils', () => {
   });
 
   it.each([
-    ['a,b\n1,2', ','],
-    ['a;b\n1;2', ';'],
-    ['a\tb\n1\t2', '\t'],
-    ['a|b\n1|2', '|'],
+    ['a,b\n1,2\n3,4', ','],
+    ['a;b\n1;2\n3;4', ';'],
+    ['a\tb\n1\t2\n3\t4', '\t'],
+    ['a|b\n1|2\n3|4', '|'],
   ])('detects %s delimiter', (text, delimiter) => {
     expect(detectCsvDelimiter(text)).toBe(delimiter);
+  });
+
+  it('prefers consistent semicolon fields over decimal commas', () => {
+    expect(
+      detectCsvDelimiter('name;price;total\nApple;12,50;25,00\nPear;3,20;6,40\nPlum;4,10;8,20'),
+    ).toBe(';');
+  });
+
+  it('ignores candidate delimiters inside quoted cells', () => {
+    expect(detectCsvDelimiter('name,description\nA,"one; two | three"')).toBe(',');
+    expect(detectCsvDelimiter('name;description\nA;"one, two | three"')).toBe(';');
+  });
+
+  it('uses comma as a deterministic fallback for ambiguous single-record input', () => {
+    expect(detectCsvDelimiter('single value')).toBe(',');
+    expect(detectCsvDelimiter('one,two;three')).toBe(',');
   });
 
   it('decodes UTF-8 and UTF-16 BOMs', () => {
