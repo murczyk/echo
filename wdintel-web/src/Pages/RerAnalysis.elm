@@ -5,6 +5,7 @@ import Auth
 import Bindings as B
 import Config
 import Core.EventHelpers
+import Core.Types exposing (ApiError)
 import Date
 import Dict exposing (Dict)
 import Effect as E exposing (Effect)
@@ -517,6 +518,42 @@ markMetadataStatsStale model =
         | metadataStats =
             NeedsReload (RD.withDefault emptyMetadataStatsRsp model.metadataStats)
     }
+
+
+removeMapPointsForMissingMessages :
+    List Int
+    -> List ( Int, B.InboxMessage )
+    -> RemoteData ApiError (List B.FreqDetailedPoint)
+    -> RemoteData ApiError (List B.FreqDetailedPoint)
+removeMapPointsForMissingMessages requestedMessageIds messages mapPoints =
+    let
+        loadedMessageIds =
+            messages
+                |> List.map Tuple.first
+                |> Set.fromList
+
+        missingMessageIds =
+            requestedMessageIds
+                |> List.filter (\messageId -> not (Set.member messageId loadedMessageIds))
+                |> Set.fromList
+
+        removeMissing points =
+            points
+                |> List.filter (\point -> not (Set.member point.messageId missingMessageIds))
+    in
+    if Set.isEmpty missingMessageIds then
+        mapPoints
+
+    else
+        case mapPoints of
+            Success points ->
+                Success (removeMissing points)
+
+            NeedsReload points ->
+                NeedsReload (removeMissing points)
+
+            _ ->
+                mapPoints
 
 
 loadMetadataStatsIfNeeded : Model -> Effect Msg
@@ -3978,16 +4015,19 @@ update user shared route msg model =
                 m2 =
                     { model | mapOpenMessages = Loading, mapOpenMessagesLoadRequestId = requestId }
             in
-            ( m2, E.getMessagesByIds (GotMessagesForMap requestId) { messageIds = ids, inboxReq = Nothing } )
+            ( m2, E.getMessagesByIds (GotMessagesForMap requestId ids) { messageIds = ids, inboxReq = Nothing } )
 
-        GotMessagesForMap requestId (Ok rsp) ->
+        GotMessagesForMap requestId requestedMessageIds (Ok rsp) ->
             if requestId /= model.mapOpenMessagesLoadRequestId then
                 ( model, E.none )
 
             else
                 let
                     m2 =
-                        { model | mapOpenMessages = Success rsp.messages }
+                        { model
+                            | mapOpenMessages = Success rsp.messages
+                            , mapPoints = removeMapPointsForMissingMessages requestedMessageIds rsp.messages model.mapPoints
+                        }
                 in
                 if List.isEmpty rsp.messages then
                     ( m2, E.none )
@@ -3997,7 +4037,7 @@ update user shared route msg model =
                     , loadNetworksForMessages shared m2 rsp.messages
                     )
 
-        GotMessagesForMap requestId (Err err) ->
+        GotMessagesForMap requestId _ (Err err) ->
             if requestId /= model.mapOpenMessagesLoadRequestId then
                 ( model, E.none )
 

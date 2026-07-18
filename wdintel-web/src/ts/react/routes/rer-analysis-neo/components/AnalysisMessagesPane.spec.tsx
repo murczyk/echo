@@ -1,7 +1,7 @@
 /**
  * @vitest-environment happy-dom
  */
-import { act } from 'react';
+import { act, forwardRef } from 'react';
 import type { ComponentProps, ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -13,7 +13,10 @@ import type { InboxMessage, SignalGroupEntry } from '../../../../../Bindings';
 vi.mock('@mui/material', () => ({
   Alert: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   Backdrop: ({ children }: { children: ReactNode }) => <div>{children}</div>,
-  Box: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  Box: forwardRef<HTMLDivElement, { children: ReactNode; component?: string }>(
+    ({ children, component }, ref) =>
+      component === 'ul' ? <ul>{children}</ul> : <div ref={ref}>{children}</div>,
+  ),
   Button: (props: {
     children: ReactNode;
     onClick?: () => void;
@@ -177,9 +180,8 @@ function buildProps(
     messageComments: {},
     messages: [],
     networkDisplayMap: {},
-    noMoreToLoad: true,
+    pageIndex: 0,
     onDeleteMessage: vi.fn(),
-    onLoadMoreMessages: vi.fn(),
     onOpenEditor: vi.fn(),
     onSaveMessageUpdate: vi.fn().mockResolvedValue(true),
     onSaveMessageComment: vi.fn(),
@@ -249,22 +251,6 @@ describe('AnalysisMessagesPane', () => {
     expect(view.container.textContent).not.toContain('Немає жодного повідомлення для аналізу.');
   });
 
-  it('wires load more into the page callback when more messages are available', async () => {
-    const onLoadMoreMessages = vi.fn();
-    const view = await renderComponent(
-      buildProps({
-        messages: [[7, buildMessage()]],
-        noMoreToLoad: false,
-        onLoadMoreMessages,
-      }),
-    );
-    rendered.push(view);
-
-    await click(getButton(view.container, 'Завантажити ще'));
-
-    expect(onLoadMoreMessages).toHaveBeenCalledTimes(1);
-  });
-
   it('uses a theme-aware scrollbar thumb in the messages pane', () => {
     const lightTheme = createTheme({ palette: { mode: 'light' } });
     const darkTheme = createTheme({ palette: { mode: 'dark' } });
@@ -310,19 +296,16 @@ describe('AnalysisMessagesPane', () => {
     expect(view.container.querySelector('[data-testid="sender-7"]')?.textContent).toBe('BBC SPORT');
   });
 
-  it('shows the loading spinner while loading more messages', async () => {
+  it('shows the loading spinner while paginating', async () => {
     const view = await renderComponent(
       buildProps({
         messages: [[7, buildMessage()]],
-        noMoreToLoad: false,
         paginationLoading: true,
       }),
     );
     rendered.push(view);
 
     expect(view.container.textContent).toContain('loading');
-    expect(view.container.textContent).not.toContain('Завантажити ще');
-    expect(view.container.textContent).not.toContain(`Завантаження${ELLIPSIS}`);
   });
 
   it('wires comment save into the page callback', async () => {
@@ -505,5 +488,26 @@ describe('AnalysisMessagesPane', () => {
     await click(getButton(view.container, 'remove-callsign'));
 
     expect(onSaveMessageUpdate).toHaveBeenCalled();
+  });
+
+  it('scrolls the message list to top when pageIndex changes', async () => {
+    const view = await renderComponent(
+      buildProps({ messages: [[7, buildMessage()]], pageIndex: 0 }),
+    );
+    rendered.push(view);
+
+    const messageCard = view.container.querySelector('[data-testid="message-card-7"]');
+    const scrollBox = messageCard?.closest('ul')?.parentElement as HTMLElement | null;
+    if (scrollBox) {
+      Object.defineProperty(scrollBox, 'scrollTop', { value: 500, writable: true });
+    }
+
+    await act(async () => {
+      view.root.render(
+        <AnalysisMessagesPane {...buildProps({ messages: [[7, buildMessage()]], pageIndex: 1 })} />,
+      );
+    });
+
+    expect(scrollBox?.scrollTop).toBe(0);
   });
 });

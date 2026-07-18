@@ -31,6 +31,11 @@ import { listMapPalitrasV2 } from '../../services/api/palitra';
 import { downloadBlob } from '../../utils/download-blob';
 import { normalizeCallsignLookupValue } from '../../utils/callsign-normalization';
 import { ANALYSIS_SESSION_ACTIVITY_PAGE_ID, buildAnalysisReq, buildInboxReq } from './helpers';
+import {
+  missingMapMessageIds,
+  normalizeMapMessageIds,
+  removeMapPointsForMissingMessages,
+} from './analysis-map-message-access';
 import { mergeAnalysisCallsignInfoMap } from './use-analysis-data.callsigns';
 import { topItems } from './use-analysis-data.shared';
 import { toErrorMessage } from './use-analysis-data.shared';
@@ -44,11 +49,7 @@ import type { InvalidateCallsignGraphOptions } from './use-analysis-graph-data';
 
 type Setter<T> = React.Dispatch<React.SetStateAction<T>>;
 
-export function normalizeMapMessageIds(messageIds: readonly unknown[]): number[] {
-  return Array.from(
-    new Set(messageIds.filter((messageId): messageId is number => Number.isInteger(messageId))),
-  );
-}
+export { missingMapMessageIds, normalizeMapMessageIds };
 
 export function shouldClearMapOpenMessages(messageIds: readonly unknown[]): boolean {
   return normalizeMapMessageIds(messageIds).length === 0;
@@ -285,9 +286,13 @@ export function useAnalysisDataLoaders(params: Params) {
       try {
         const nextMessages = await fetchMessagesByIds(cleanMessageIds);
         if (mapMessagesLoadVersionRef.current !== loadVersion) return false;
+        const missingMessageIds = missingMapMessageIds(cleanMessageIds, nextMessages);
+        if (missingMessageIds.length > 0) {
+          setMapPoints((current) => removeMapPointsForMissingMessages(current, missingMessageIds));
+        }
         setMapOpenMessages(nextMessages);
         void loadMissingNetworksForMessages(nextMessages);
-        return true;
+        return nextMessages.length > 0;
       } catch (loadError) {
         if (mapMessagesLoadVersionRef.current !== loadVersion) return false;
         if (!onUnauthorized(loadError)) onError(toErrorMessage(loadError));
@@ -300,6 +305,7 @@ export function useAnalysisDataLoaders(params: Params) {
       onError,
       onUnauthorized,
       setMapOpenMessages,
+      setMapPoints,
     ],
   );
 

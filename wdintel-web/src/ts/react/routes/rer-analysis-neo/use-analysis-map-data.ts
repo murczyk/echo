@@ -10,6 +10,11 @@ import { fetchMessagesByIds, fetchAnalysisMapPoints } from '../../services/api/a
 import { listMapPalitrasV2 } from '../../services/api/palitra';
 import { isNullOrUndefined } from '../../utils/misc';
 import { primeCoordinatePreviewPalitraIds } from '../shared/message-card/message-coordinate-preview';
+import {
+  missingMapMessageIds,
+  normalizeMapMessageIds,
+  removeMapPointsForMissingMessages,
+} from './analysis-map-message-access';
 import { ANALYSIS_SESSION_ACTIVITY_PAGE_ID, buildInboxReq } from './helpers';
 import { buildMapAttrs } from './helpers-map';
 import { toErrorMessage } from './use-analysis-data.shared';
@@ -105,9 +110,7 @@ export function useAnalysisMapData({
 
   const loadMessagesForMap = useCallback(
     async (messageIds: number[]) => {
-      const cleanMessageIds = Array.from(
-        new Set(messageIds.filter((messageId): messageId is number => Number.isInteger(messageId))),
-      );
+      const cleanMessageIds = normalizeMapMessageIds(messageIds);
       if (cleanMessageIds.length === 0) {
         mapMessagesLoadVersionRef.current += 1;
         setMapOpenMessages([]);
@@ -120,9 +123,13 @@ export function useAnalysisMapData({
       try {
         const nextMessages = await fetchMessagesByIds(cleanMessageIds);
         if (mapMessagesLoadVersionRef.current !== loadVersion) return false;
+        const missingMessageIds = missingMapMessageIds(cleanMessageIds, nextMessages);
+        if (missingMessageIds.length > 0) {
+          setMapPoints((current) => removeMapPointsForMissingMessages(current, missingMessageIds));
+        }
         setMapOpenMessages(nextMessages);
         void loadMissingNetworksForMessages(nextMessages);
-        return true;
+        return nextMessages.length > 0;
       } catch (loadError) {
         if (mapMessagesLoadVersionRef.current !== loadVersion) return false;
         if (!onUnauthorized(loadError)) onError(toErrorMessage(loadError));
