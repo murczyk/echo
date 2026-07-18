@@ -11,6 +11,7 @@ const DOCUMENT_PREVIEW_CAPABILITIES: Record<
   pdf: { zoomable: true },
   docx: { zoomable: true },
   xlsx: { zoomable: true },
+  csv: { zoomable: true },
   txt: { zoomable: false },
   md: { zoomable: false },
   unsupported: { zoomable: false },

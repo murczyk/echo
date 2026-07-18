@@ -8,9 +8,10 @@ type MessageMediaInfoRaw = MessageMediaInfo & {
   file_name?: string | null;
 };
 
-const DOCUMENT_DOWNLOAD_EXTENSION_RE = /\.(pdf|docx?|xlsx?)(\?|#|$)/i;
+const DOCUMENT_DOWNLOAD_EXTENSION_RE = /\.(pdf|docx?|xlsx?|csv)(\?|#|$)/i;
 const LEGACY_SPREADSHEET_CONTENT_TYPES = new Set(['application/vnd.ms-excel']);
 const TEXT_CONTENT_TYPES = new Set(['text/plain']);
+const CSV_CONTENT_TYPES = new Set(['text/csv']);
 const MARKDOWN_CONTENT_TYPES = new Set(['text/markdown', 'text/x-markdown']);
 
 function mediaAttachmentDisplayName(m: MessageMediaInfo): string {
@@ -48,6 +49,13 @@ function getDocumentKind(m: MessageMediaInfo): MessageCardDocumentKind {
     return 'xlsx';
   }
   if (
+    CSV_CONTENT_TYPES.has(contentType) ||
+    fileName.endsWith('.csv') ||
+    /\.csv(\?|#|$)/i.test(href)
+  ) {
+    return 'csv';
+  }
+  if (
     fileName.endsWith('.md') ||
     fileName.endsWith('.markdown') ||
     /\.md(\?|#|$)/i.test(href) ||
@@ -75,6 +83,10 @@ export function isDocxAttachment(m: MessageMediaInfo): boolean {
 
 export function isXlsxAttachment(m: MessageMediaInfo): boolean {
   return getDocumentKind(m) === 'xlsx';
+}
+
+export function isCsvAttachment(m: MessageMediaInfo): boolean {
+  return getDocumentKind(m) === 'csv';
 }
 
 export function isTxtAttachment(m: MessageMediaInfo): boolean {
