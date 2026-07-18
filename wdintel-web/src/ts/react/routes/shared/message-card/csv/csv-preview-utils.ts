@@ -147,10 +147,13 @@ export function parseCsvText(text: string): CsvPreviewResult {
 export function detectCsvDelimiter(text: string): ',' | ';' | '\t' | '|' {
   const candidates = [',', ';', '\t', '|'] as const;
   let bestIndex = 0;
-  let bestScore = 0;
+  let bestScore: DelimiterScore = {
+    consistentRecordCount: 0,
+    decimalCommaCellCount: 0,
+  };
   for (let index = 0; index < candidates.length; index += 1) {
     const score = scoreDelimiter(text, candidates[index]);
-    if (score > bestScore) {
+    if (isBetterDelimiterScore(score, bestScore)) {
       bestIndex = index;
       bestScore = score;
     }
@@ -158,42 +161,90 @@ export function detectCsvDelimiter(text: string): ',' | ';' | '\t' | '|' {
   return candidates[bestIndex];
 }
 
-function scoreDelimiter(text: string, delimiter: string): number {
-  const fieldCounts = getLogicalRecordFieldCounts(text, delimiter);
-  if (!fieldCounts.some((fieldCount) => fieldCount > 1)) return 0;
-  const frequencies = new Map<number, number>();
-  for (const fieldCount of fieldCounts) {
-    frequencies.set(fieldCount, (frequencies.get(fieldCount) ?? 0) + 1);
-  }
-  return Math.max(0, ...frequencies.values());
-}
+type DelimiterScore = {
+  consistentRecordCount: number;
+  decimalCommaCellCount: number;
+};
 
-function getLogicalRecordFieldCounts(text: string, delimiter: string): number[] {
+function scoreDelimiter(text: string, delimiter: string): DelimiterScore {
   const fieldCounts: number[] = [];
-  let delimiterCount = 0;
+  let recordFieldCount = 1;
+  let recordCount = 0;
+  let decimalState: DecimalState = 'start';
+  let decimalCommaCellCount = 0;
   let quoted = false;
-  let hasContent = false;
-  for (let index = 0; index < text.length && fieldCounts.length < 10; index += 1) {
+  let recordStarted = false;
+
+  const finishField = (isCandidateDelimiter: boolean) => {
+    if (decimalState === 'fraction') decimalCommaCellCount += 1;
+    decimalState = 'start';
+    if (isCandidateDelimiter) recordFieldCount += 1;
+  };
+
+  const finishRecord = () => {
+    finishField(false);
+    if (fieldCounts.length < 10) fieldCounts.push(recordFieldCount);
+    recordCount += 1;
+    recordFieldCount = 1;
+    recordStarted = false;
+  };
+
+  for (let index = 0; index < text.length && recordCount < 10; index += 1) {
     const character = text[index];
     if (character === '"') {
-      if (quoted && text[index + 1] === '"') index += 1;
-      else quoted = !quoted;
+      if (quoted && text[index + 1] === '"') {
+        decimalState = updateDecimalState(decimalState, '"');
+        index += 1;
+      } else {
+        quoted = !quoted;
+      }
+      recordStarted = true;
     } else if (!quoted && character === delimiter) {
-      delimiterCount += 1;
-      hasContent = true;
+      finishField(true);
+      recordStarted = true;
     } else if (!quoted && (character === '\n' || character === '\r')) {
-      if (hasContent || delimiterCount > 0) fieldCounts.push(delimiterCount + 1);
-      delimiterCount = 0;
-      hasContent = false;
+      finishRecord();
       if (character === '\r' && text[index + 1] === '\n') index += 1;
-    } else if (!quoted && character.trim() !== '') {
-      hasContent = true;
+    } else {
+      decimalState = updateDecimalState(decimalState, character);
+      recordStarted = true;
     }
   }
-  if (fieldCounts.length < 10 && (hasContent || delimiterCount > 0)) {
-    fieldCounts.push(delimiterCount + 1);
+
+  if (recordCount < 10 && recordStarted) finishRecord();
+
+  const frequencies = new Map<number, number>();
+  for (const fieldCount of fieldCounts) {
+    if (fieldCount <= 1) continue;
+    frequencies.set(fieldCount, (frequencies.get(fieldCount) ?? 0) + 1);
   }
-  return fieldCounts;
+  const consistentRecordCount = Math.max(0, ...frequencies.values());
+  return {
+    consistentRecordCount,
+    decimalCommaCellCount,
+  };
+}
+
+type DecimalState = 'start' | 'minus' | 'integer' | 'comma' | 'fraction' | 'invalid';
+
+function updateDecimalState(state: DecimalState, character: string): DecimalState {
+  if (state === 'invalid') return state;
+  const isDigit = character >= '0' && character <= '9';
+  if (state === 'start') return character === '-' ? 'minus' : isDigit ? 'integer' : 'invalid';
+  if (state === 'minus') return isDigit ? 'integer' : 'invalid';
+  if (state === 'integer') {
+    if (isDigit) return state;
+    return character === ',' ? 'comma' : 'invalid';
+  }
+  if (state === 'comma') return isDigit ? 'fraction' : 'invalid';
+  return isDigit ? 'fraction' : 'invalid';
+}
+
+function isBetterDelimiterScore(candidate: DelimiterScore, current: DelimiterScore): boolean {
+  if (candidate.consistentRecordCount !== current.consistentRecordCount) {
+    return candidate.consistentRecordCount > current.consistentRecordCount;
+  }
+  return candidate.decimalCommaCellCount > current.decimalCommaCellCount;
 }
 
 export function decodeCsvBytes(bytes: Uint8Array, contentType: string | null): string {

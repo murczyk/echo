@@ -49,14 +49,32 @@ describe('csv-preview-utils', () => {
     ).toBe(';');
   });
 
+  it('selects and parses a no-header semicolon CSV with decimal commas', () => {
+    const text = 'Apple;12,50;25,00\nPear;3,20;6,40\nPlum;4,10;8,20';
+
+    expect(detectCsvDelimiter(text)).toBe(';');
+    expect(parseCsvText(text).rows).toEqual([
+      ['Apple', '12,50', '25,00'],
+      ['Pear', '3,20', '6,40'],
+      ['Plum', '4,10', '8,20'],
+    ]);
+  });
+
   it('ignores candidate delimiters inside quoted cells', () => {
     expect(detectCsvDelimiter('name,description\nA,"one; two | three"')).toBe(',');
     expect(detectCsvDelimiter('name;description\nA;"one, two | three"')).toBe(';');
   });
 
+  it('detects a delimiter in a very wide row without retaining fields', () => {
+    const text = Array.from({ length: 100_001 }, () => 'x').join(',');
+
+    expect(detectCsvDelimiter(text)).toBe(',');
+  });
+
   it('uses comma as a deterministic fallback for ambiguous single-record input', () => {
     expect(detectCsvDelimiter('single value')).toBe(',');
     expect(detectCsvDelimiter('one,two;three')).toBe(',');
+    expect(detectCsvDelimiter('one,two;three\nfour,five;six')).toBe(',');
   });
 
   it('decodes UTF-8 and UTF-16 BOMs', () => {
