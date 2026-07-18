@@ -56,7 +56,7 @@ suite =
                                     user
                                     shared
                                     route
-                                    (GotMessagesForMap 1 (Ok { messages = [ ( 7, messageStub ) ] }))
+                                    (GotMessagesForMap 1 [ 7 ] (Ok { messages = [ ( 7, messageStub ) ] }))
                                     loadingModel
                         in
                         Expect.all
@@ -107,7 +107,7 @@ suite =
                                     user
                                     shared
                                     route
-                                    (GotMessagesForMap 1 (Ok { messages = [] }))
+                                    (GotMessagesForMap 1 [ 7 ] (Ok { messages = [] }))
                                     loadingModel
                         in
                         Expect.all
