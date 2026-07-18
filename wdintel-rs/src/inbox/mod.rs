@@ -103,12 +103,14 @@ where
         crate::rer_importer::callsigns::find_known_callsigns(rq, &body)
             .await
             .c(h!())?;
-    let callsigns: Vec<String> = crate::utils::uniq_via_btreeset(
-        &callsign_tokens
-            .iter()
-            .map(|x| x.etalon.clone())
-            .collect::<Vec<String>>(),
-    );
+    let callsigns: Vec<String> =
+        crate::rer_importer::inbox::metadata::append_metadata_text_callsigns(
+            callsign_tokens.iter().map(|x| x.etalon.clone()),
+            &body,
+        )
+        .into_iter()
+        .map(|x| x.to_lowercase())
+        .collect();
     let checked = freq.is_some();
     let reviewed = false;
     let comment_parsing_enabled =

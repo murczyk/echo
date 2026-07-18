@@ -14,6 +14,67 @@ pub(crate) use parser::{
     is_metadata_line, normalize_metadata_digits, normalize_metadata_value,
 };
 
+pub(crate) fn parse_metadata_text_callsigns(body: &str) -> Vec<String> {
+    dedupe_text_callsigns_case_insensitive(
+        parse_metadata(body).into_iter().flat_map(|metadata| {
+            metadata_text_callsigns(
+                metadata.id_name.as_deref(),
+                metadata.cg_name.as_deref(),
+            )
+        }),
+    )
+}
+
+pub(crate) fn append_metadata_text_callsigns<I>(
+    callsigns: I,
+    body: &str,
+) -> Vec<String>
+where
+    I: IntoIterator<Item = String>,
+{
+    dedupe_text_callsigns_case_insensitive(
+        callsigns
+            .into_iter()
+            .chain(parse_metadata_text_callsigns(body)),
+    )
+}
+
+pub(crate) fn metadata_text_callsigns(
+    sender: Option<&str>,
+    receiver: Option<&str>,
+) -> Vec<String> {
+    dedupe_text_callsigns_case_insensitive(
+        [sender, receiver]
+            .into_iter()
+            .flatten()
+            .map(|value| value.to_string()),
+    )
+}
+
+pub(crate) fn dedupe_text_callsigns_case_insensitive<I>(
+    callsigns: I,
+) -> Vec<String>
+where
+    I: IntoIterator<Item = String>,
+{
+    let mut result = vec![];
+    let mut seen = std::collections::BTreeSet::new();
+    for callsign in callsigns {
+        let Some(callsign) = normalize_metadata_text_callsign(&callsign) else {
+            continue;
+        };
+        if seen.insert(callsign.to_lowercase()) {
+            result.push(callsign);
+        }
+    }
+    result
+}
+
+fn normalize_metadata_text_callsign(value: &str) -> Option<String> {
+    let value = normalize_metadata_digits(value);
+    normalize_metadata_value(&value)
+}
+
 pub async fn refresh_metadata_for_body<'a, 'async_trait, C>(
     sigint_inbox_item_id: i64,
     body: &str,
@@ -221,6 +282,48 @@ ID(CG)⬅️:50📣",
                 ..Default::default()
             }]
         );
+    }
+
+    #[test]
+    fn parse_metadata_text_callsigns_returns_sender_and_receiver_names() {
+        let callsigns = parse_metadata_text_callsigns(
+            "СС:10\nID➡️: 3097968(ЯРУС)\nID(CG)⬅️3187767(СВЕТЛЫЙ)",
+        );
+
+        assert_eq!(callsigns, vec!["ЯРУС".to_string(), "СВЕТЛЫЙ".to_string()]);
+    }
+
+    #[test]
+    fn parse_metadata_text_callsigns_ignores_numeric_only_metadata() {
+        let callsigns = parse_metadata_text_callsigns(
+            "СС:10\nID➡️:3097968\nID(CG)⬅️3187767",
+        );
+
+        assert!(callsigns.is_empty());
+    }
+
+    #[test]
+    fn append_metadata_text_callsigns_appends_text_and_dedupes() {
+        let callsigns = append_metadata_text_callsigns(
+            vec!["АЛЬФА".to_string(), "ярус".to_string()],
+            "ID➡️:110( ЯРУС )\nID(CG)⬅️:50( СВЕТЛЫЙ )",
+        );
+
+        assert_eq!(
+            callsigns,
+            vec![
+                "АЛЬФА".to_string(),
+                "ярус".to_string(),
+                "СВЕТЛЫЙ".to_string()
+            ]
+        );
+    }
+
+    #[test]
+    fn metadata_text_callsigns_trim_and_dedupe_case_insensitively() {
+        let callsigns = metadata_text_callsigns(Some(" ЯРУС "), Some("ярус"));
+
+        assert_eq!(callsigns, vec!["ЯРУС".to_string()]);
     }
 
     #[test]
