@@ -292,6 +292,7 @@ export function RerDutyNeoPage({
     createMessageFeed,
     removeMessageFeed,
     loadFeedInitialMessages,
+    reloadEmptyFeeds,
     loadFeedOlderMessages,
     loadFeedNewerMessages,
     handleSaveFilter,
@@ -363,7 +364,8 @@ export function RerDutyNeoPage({
   const handleCreatedMessage = useCallback(() => {
     setCreateMessageOpen(false);
     setCreatedMessageNoticeRevision((revision) => revision + 1);
-  }, []);
+    reloadEmptyFeeds();
+  }, [reloadEmptyFeeds]);
 
   useEffect(() => {
     if (

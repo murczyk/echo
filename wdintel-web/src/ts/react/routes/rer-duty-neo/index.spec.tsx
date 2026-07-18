@@ -187,6 +187,7 @@ function buildFeedsState() {
     createMessageFeed: vi.fn(),
     removeMessageFeed: vi.fn(),
     loadFeedInitialMessages: vi.fn(),
+    reloadEmptyFeeds: vi.fn(),
     loadFeedOlderMessages: vi.fn(),
     applyFilter: vi.fn(),
     addFrequencyToFilter: vi.fn(),
@@ -317,6 +318,7 @@ describe('RerDutyNeoPage creation workflow', () => {
     expect(state.createMessageFeed).not.toHaveBeenCalled();
     expect(state.removeMessageFeed).not.toHaveBeenCalled();
     expect(state.loadFeedInitialMessages).not.toHaveBeenCalled();
+    expect(state.reloadEmptyFeeds).toHaveBeenCalledTimes(1);
     expect(state.loadFeedOlderMessages).not.toHaveBeenCalled();
     expect(state.applyFilter).not.toHaveBeenCalled();
 

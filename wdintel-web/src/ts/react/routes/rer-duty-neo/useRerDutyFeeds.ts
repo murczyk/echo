@@ -424,6 +424,7 @@ export function useRerDutyFeeds(authUserName: string | null) {
     createMessageFeed: feedState.createMessageFeed,
     removeMessageFeed: feedState.removeMessageFeed,
     loadFeedInitialMessages: feedState.loadFeedInitialMessages,
+    reloadEmptyFeeds: feedState.reloadEmptyFeeds,
     loadFeedOlderMessages: feedState.loadFeedOlderMessages,
     loadFeedNewerMessages: feedState.loadFeedNewerMessages,
     applyFilter: feedState.applyFilter,
