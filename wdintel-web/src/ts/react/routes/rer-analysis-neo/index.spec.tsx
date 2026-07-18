@@ -2,7 +2,7 @@
  * @vitest-environment happy-dom
  */
 import { createRoot } from 'react-dom/client';
-import { act } from 'react';
+import { act, useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -95,7 +95,21 @@ vi.mock('../../components/PageHeader', () => ({
 }));
 
 vi.mock('../../components/PowerAlert', () => ({
-  PowerAlert: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  PowerAlert: ({
+    children,
+    autoHideDuration,
+    ...props
+  }: { children: ReactNode; autoHideDuration?: number } & Record<string, unknown>) => {
+    const [visible, setVisible] = useState(true);
+
+    useEffect(() => {
+      if (autoHideDuration == null) return;
+      const timeoutId = window.setTimeout(() => setVisible(false), autoHideDuration);
+      return () => window.clearTimeout(timeoutId);
+    }, [autoHideDuration]);
+
+    return visible ? <div {...props}>{children}</div> : null;
+  },
 }));
 
 vi.mock('../../components/PowerChip', () => ({
@@ -337,9 +351,12 @@ describe('RerAnalysisNeoPage', () => {
     useRerAnalysisNeoPageMock.mockReturnValue(buildPage());
     createMessageFabPropsHistory.splice(0);
     manageMessageDrawerPropsHistory.splice(0);
+    vi.useFakeTimers();
   });
 
   afterEach(async () => {
+    vi.runOnlyPendingTimers();
+    vi.useRealTimers();
     for (const container of rendered.splice(0)) {
       document.body.removeChild(container);
     }
@@ -438,6 +455,86 @@ describe('RerAnalysisNeoPage', () => {
 
     expect(manageMessageDrawerPropsHistory.at(-1)?.open).toBe(false);
     expect(page.reload).toHaveBeenCalledTimes(1);
+    const successAlert = container.querySelector('[role="status"]');
+    expect(successAlert?.textContent).toBe('Повідомлення успішно створено.');
+    expect(successAlert?.getAttribute('severity')).toBe('success');
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2999);
+    });
+    expect(container.querySelector('[role="status"]')).not.toBeNull();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1);
+    });
+    expect(container.querySelector('[role="status"]')).toBeNull();
+
+    await act(async () => {
+      root.unmount();
+    });
+  });
+
+  it('restarts the success notification timeout after repeated creation', async () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    rendered.push(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(<RerAnalysisNeoPage />);
+    });
+
+    const create = async () => {
+      await act(async () => {
+        container
+          .querySelector<HTMLButtonElement>('button[aria-label="create-message-fab"]')
+          ?.click();
+      });
+      const drawer = manageMessageDrawerPropsHistory.at(-1);
+      await act(async () => {
+        await drawer?.onCreated?.({ signal_message_id: 17 });
+      });
+    };
+
+    await create();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2999);
+    });
+    await create();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1);
+    });
+    expect(container.querySelector('[role="status"]')).not.toBeNull();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2999);
+    });
+    expect(container.querySelector('[role="status"]')).toBeNull();
+
+    await act(async () => {
+      root.unmount();
+    });
+  });
+
+  it('does not show a success notification when creation is cancelled', async () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    rendered.push(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(<RerAnalysisNeoPage />);
+    });
+    await act(async () => {
+      container
+        .querySelector<HTMLButtonElement>('button[aria-label="create-message-fab"]')
+        ?.click();
+    });
+    await act(async () => {
+      manageMessageDrawerPropsHistory.at(-1)?.onClose();
+    });
+
+    const page = useRerAnalysisNeoPageMock.mock.results[0]?.value;
+    expect(container.querySelector('[role="status"]')).toBeNull();
+    expect(page.reload).not.toHaveBeenCalled();
 
     await act(async () => {
       root.unmount();
@@ -469,6 +566,7 @@ describe('RerAnalysisNeoPage', () => {
     expect(page.saveEditor).toHaveBeenCalledTimes(1);
     expect(page.saveEditor).toHaveBeenCalledWith({ messageUid: 'm-updated' });
     expect(page.reload).toHaveBeenCalledTimes(1);
+    expect(container.querySelector('[role="status"]')).toBeNull();
 
     await act(async () => {
       drawer?.onClose();

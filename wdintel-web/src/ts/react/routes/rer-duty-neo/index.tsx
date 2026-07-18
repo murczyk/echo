@@ -24,8 +24,6 @@ import { fetchCurrentUser } from '../../services/api/user';
 import { currentSystemSettings } from '../../services/api/system-settings';
 import type { User } from '../../../../Bindings';
 import { ManageMessageDrawer } from '../shared/manage-message/ManageMessageDrawer';
-import { CreatedMessagePreviewDrawer } from './CreatedMessagePreviewDrawer';
-import { useCreatedMessageResult } from './useCreatedMessageResult';
 
 export type RerDutyNeoPageProps = {
   /** Auth user display name from the host page (avoids duplicate /api/user request). */
@@ -53,6 +51,7 @@ export function RerDutyNeoPage({
   const [cyberEchoEnabled, setCyberEchoEnabled] = useState(false);
   const [activeFeedId, setActiveFeedId] = useState<string | null>(null);
   const [createMessageOpen, setCreateMessageOpen] = useState(false);
+  const [createdMessageNoticeRevision, setCreatedMessageNoticeRevision] = useState(0);
   const previousFeedCountRef = useRef(0);
   const [tagsLayout, setTagsLayout] = useState<TagsLayoutVariant>(DEFAULT_DUTY_TAGS_LAYOUT);
   useEffect(() => {
@@ -354,14 +353,16 @@ export function RerDutyNeoPage({
     reloadKeywordSets,
     applyFilter,
   } = useRerDutyFeeds(authUserName);
-  const { createdMessageResult, closeCreatedMessageResult, handleCreatedMessage } =
-    useCreatedMessageResult();
   const activeFeedIdSafe = messageFeeds.some((feed) => feed.id === activeFeedId)
     ? activeFeedId
     : (messageFeeds[0]?.id ?? null);
   const [hasCompletedInitialLoad, setHasCompletedInitialLoad] = useState(false);
   const openCreateMessageComposer = useCallback(() => {
     setCreateMessageOpen(true);
+  }, []);
+  const handleCreatedMessage = useCallback(() => {
+    setCreateMessageOpen(false);
+    setCreatedMessageNoticeRevision((revision) => revision + 1);
   }, []);
 
   useEffect(() => {
@@ -423,6 +424,18 @@ export function RerDutyNeoPage({
     >
       <Box className="flex items-center justify-between flex-wrap gap-2 mb-2 shrink-0" />
 
+      {createdMessageNoticeRevision > 0 ? (
+        <PowerAlert
+          key={createdMessageNoticeRevision}
+          severity="success"
+          role="status"
+          autoHideDuration={3000}
+          className="mb-2 shrink-0"
+        >
+          Повідомлення успішно створено.
+        </PowerAlert>
+      ) : null}
+
       {error ? (
         <PowerAlert
           severity="error"
@@ -454,22 +467,6 @@ export function RerDutyNeoPage({
         currentUser={currentUser}
         onClose={() => setCreateMessageOpen(false)}
         onCreated={handleCreatedMessage}
-      />
-
-      <CreatedMessagePreviewDrawer
-        authUserName={authUserName}
-        open={createdMessageResult.kind !== 'closed'}
-        result={createdMessageResult}
-        onClose={closeCreatedMessageResult}
-        groupInfos={groupInfos}
-        profiles={profiles}
-        networkDisplayMap={networkDisplayMap}
-        networkMap={networkMap}
-        unitsMap={unitsMap}
-        callsignInfoMap={callsignInfoMap}
-        tagsMap={tagsMap}
-        tagsOrder={tagsOrder}
-        featureStrictNetworks={featureStrictNetworks}
       />
 
       <CommentDialog

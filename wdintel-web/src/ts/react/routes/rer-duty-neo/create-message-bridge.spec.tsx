@@ -6,9 +6,6 @@ import type { ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { InboxMessage } from '../../../../Bindings';
-
-const fetchMessagesByIds = vi.hoisted(() => vi.fn());
 const submitDirect = vi.hoisted(() => vi.fn());
 const getUserSigintGroups = vi.hoisted(() => vi.fn());
 const getGroupInfosBatch = vi.hoisted(() => vi.fn());
@@ -22,9 +19,6 @@ const searchSignalNames = vi.hoisted(() => vi.fn());
 const searchCallsignNames = vi.hoisted(() => vi.fn());
 const searchFreqs = vi.hoisted(() => vi.fn());
 
-vi.mock('../../services/api/inbox-messages', () => ({
-  fetchMessagesByIds,
-}));
 vi.mock('../../services/api/direct-submit', () => ({
   createDeviceName,
   submitDirect,
@@ -221,18 +215,8 @@ vi.mock('../../../components/loadingOverlayStyles', () => ({
   pageDrawerBackdropSx: () => ({}),
 }));
 vi.mock('@mui/icons-material/DeleteOutline', () => ({ default: () => <span /> }));
-vi.mock('../shared/message-card/MessageCard', () => ({
-  DutyMessageCard: (props: { id: number; msg: InboxMessage }) => (
-    <div data-testid="message-card">
-      <span data-testid="message-text">{props.msg.text}</span>
-      <span data-testid="message-id">{String(props.id)}</span>
-    </div>
-  ),
-}));
 
 import { ManageMessageDrawer } from '../shared/manage-message/ManageMessageDrawer';
-import { CreatedMessagePreviewDrawer } from './CreatedMessagePreviewDrawer';
-import { useCreatedMessageResult } from './useCreatedMessageResult';
 
 const textFieldPropsByLabel = new Map<string | undefined, { onChange?: (event: any) => void }>();
 const autocompleteOnChangeByLabel = new Map<string, (event: unknown, value: unknown) => void>();
@@ -257,46 +241,8 @@ vi.mock('../shared/manage-message/drawer-sections/MetadataSection', () => ({
   MetadataSection: () => <div data-testid="metadata-section" />,
 }));
 
-function buildMessage(overrides: Partial<InboxMessage> = {}): InboxMessage {
-  return {
-    messageUid: 'm-1',
-    text: 'created preview body',
-    freq: '149.500',
-    bookmarked: false,
-    important: false,
-    extendedForm: 'note',
-    sender: 'sender-a',
-    groupMasterKey: 'g-1',
-    networkIds: [7],
-    tags: [3],
-    inboxTags: null,
-    metadata: [],
-    textMarked: null,
-    pointTokens: null,
-    media: [],
-    images: [],
-    imageRecognized: [],
-    date: '2026-07-17',
-    time: '12:00',
-    timestamp: null,
-    post: 'post-a',
-    unit: 'unit-a',
-    callsigns: [],
-    callsignsAlg2: [],
-    checked: false,
-    comment: null,
-    location: null,
-    coords: null,
-    noHeadersBody: null,
-    messageComments: [],
-    ...overrides,
-  } as InboxMessage;
-}
-
 function Harness() {
   const [open, setOpen] = useState(true);
-  const { createdMessageResult, closeCreatedMessageResult, handleCreatedMessage } =
-    useCreatedMessageResult();
 
   return (
     <>
@@ -305,22 +251,7 @@ function Harness() {
         cyberEchoEnabled
         currentUser={null}
         onClose={() => setOpen(false)}
-        onCreated={handleCreatedMessage}
-      />
-      <CreatedMessagePreviewDrawer
-        authUserName="tester"
-        open={createdMessageResult.kind !== 'closed'}
-        result={createdMessageResult}
-        onClose={closeCreatedMessageResult}
-        groupInfos={{ 'g-1': { name: 'Group Alpha' } as never }}
-        profiles={{ 'sender-a': { givenName: 'Sender', familyName: 'Alpha' } as never }}
-        networkDisplayMap={{ 7: 'Network 7' }}
-        networkMap={{ 7: { id: 7, name: 'Network 7' } as never }}
-        unitsMap={{ 1: { id: 1, name: 'Unit 1' } as never }}
-        callsignInfoMap={{}}
-        tagsMap={{ 3: { id: 3, label: 'tag-3', isPalitra: false } as never }}
-        tagsOrder={[3]}
-        featureStrictNetworks={false}
+        onCreated={() => setOpen(false)}
       />
     </>
   );
@@ -344,7 +275,6 @@ describe('duty create-message bridge', () => {
   let root: Root;
 
   beforeEach(() => {
-    fetchMessagesByIds.mockReset();
     submitDirect.mockReset();
     getUserSigintGroups.mockReset();
     getGroupInfosBatch.mockReset();
@@ -415,10 +345,9 @@ describe('duty create-message bridge', () => {
     });
   }
 
-  it('uses the response message directly and does not fetch a fallback', async () => {
+  it('closes the composer after successful direct submission', async () => {
     submitDirect.mockResolvedValueOnce({
       signal_message_id: 101,
-      message: buildMessage(),
     });
     await mountHarness();
 
@@ -426,81 +355,17 @@ describe('duty create-message bridge', () => {
     await submitComposer();
 
     expect(container.textContent).not.toContain('Створити повідомлення');
-    expect(container.textContent).not.toContain('Додане повідомлення');
-    expect(fetchMessagesByIds).not.toHaveBeenCalled();
-
-    await act(async () => {
-      await vi.runAllTimersAsync();
-    });
-
-    expect(container.textContent).toContain('Додане повідомлення');
-    expect(container.querySelector('[data-testid="message-card"]')).not.toBeNull();
-    expect(container.querySelector('[data-testid="message-text"]')?.textContent).toBe(
-      'created preview body',
-    );
     expect(submitDirect).toHaveBeenCalledTimes(1);
+    expect(container.querySelector('form')).toBeNull();
   });
 
-  it('fetches once when the response omits the message', async () => {
-    submitDirect.mockResolvedValueOnce({ signal_message_id: 202 });
-    fetchMessagesByIds.mockResolvedValueOnce([[202, buildMessage({ text: 'fetched body' })]]);
-    await mountHarness();
-
-    await submitComposer();
-    expect(fetchMessagesByIds).toHaveBeenCalledTimes(1);
-    expect(fetchMessagesByIds).toHaveBeenCalledWith([202]);
-
-    await act(async () => {
-      await vi.runAllTimersAsync();
-    });
-
-    expect(container.textContent).toContain('Додане повідомлення');
-    expect(container.querySelector('[data-testid="message-text"]')?.textContent).toBe(
-      'fetched body',
-    );
-  });
-
-  it('shows the receipt when the fallback is empty', async () => {
-    submitDirect.mockResolvedValueOnce({ signal_message_id: 303 });
-    fetchMessagesByIds.mockResolvedValueOnce([]);
-    await mountHarness();
-
-    await submitComposer();
-
-    await act(async () => {
-      await vi.runAllTimersAsync();
-    });
-
-    expect(container.textContent).toContain('Повідомлення створено.');
-    expect(container.textContent).toContain('ID повідомлення: 303');
-    expect(container.querySelector('[data-testid="message-card"]')).toBeNull();
-  });
-
-  it('keeps the success receipt when the fallback rejects', async () => {
-    submitDirect.mockResolvedValueOnce({ signal_message_id: 404 });
-    fetchMessagesByIds.mockRejectedValueOnce(new Error('lookup failed'));
-    await mountHarness();
-
-    await submitComposer();
-
-    await act(async () => {
-      await vi.runAllTimersAsync();
-    });
-
-    expect(container.textContent).toContain('Повідомлення створено.');
-    expect(container.textContent).toContain('ID повідомлення: 404');
-    expect(container.querySelector('[data-testid="message-card"]')).toBeNull();
-    expect(fetchMessagesByIds).toHaveBeenCalledTimes(1);
-  });
-
-  it('closes the rendered composer when host preview handling fails', async () => {
+  it('closes the rendered composer when the host creation callback rejects', async () => {
     const containerLocal = document.createElement('div');
     document.body.appendChild(containerLocal);
     const rootLocal = createRoot(containerLocal);
-    const onCreated = vi.fn().mockRejectedValue(new Error('preview failed'));
+    const onCreated = vi.fn().mockRejectedValue(new Error('creation callback failed'));
     submitDirect.mockResolvedValueOnce({
       signal_message_id: 505,
-      message: buildMessage(),
     });
 
     function ControlledHarness() {
@@ -542,7 +407,7 @@ describe('duty create-message bridge', () => {
     expect(onCreated).toHaveBeenCalledTimes(1);
     expect(containerLocal.textContent).not.toContain('Створити повідомлення');
     expect(containerLocal.querySelector('form')).toBeNull();
-    expect(containerLocal.textContent).not.toContain('preview failed');
+    expect(containerLocal.textContent).not.toContain('creation callback failed');
     expect(containerLocal.textContent).not.toContain('Сталася помилка');
     expect(containerLocal.querySelector('[role="dialog"]')).toBeNull();
 

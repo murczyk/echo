@@ -25,6 +25,7 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
   const page = useRerAnalysisNeoPage(authUserName);
   const theme = useTheme();
   const [createMessageOpen, setCreateMessageOpen] = useState(false);
+  const [createdMessageNoticeRevision, setCreatedMessageNoticeRevision] = useState(0);
   const isMobileLayout = useMediaQuery(theme.breakpoints.down('sm'));
   const centerTabsId = useId().replace(/:/g, '-');
   const messagesTabId = `${centerTabsId}-messages-tab`;
@@ -63,6 +64,17 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
         />
       </Box>
 
+      {createdMessageNoticeRevision > 0 ? (
+        <PowerAlert
+          key={createdMessageNoticeRevision}
+          severity="success"
+          role="status"
+          autoHideDuration={3000}
+          sx={{ mx: { xs: 1, lg: 2 } }}
+        >
+          Повідомлення успішно створено.
+        </PowerAlert>
+      ) : null}
       {page.error ? (
         <PowerAlert severity="error" role="alert" sx={{ mx: { xs: 1, lg: 2 } }}>
           {page.error}
@@ -171,6 +183,7 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
         }}
         onCreated={async () => {
           setCreateMessageOpen(false);
+          setCreatedMessageNoticeRevision((revision) => revision + 1);
           page.reload();
         }}
       />

@@ -1,22 +1,16 @@
 /**
  * @vitest-environment happy-dom
  */
-import { act, createElement } from 'react';
+import { act, createElement, useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { InboxMessage } from '../../../../Bindings';
-
-const fetchMessagesByIds = vi.hoisted(() => vi.fn());
 const useRerDutyFeedsMock = vi.hoisted(() => vi.fn());
 const nextCreatedResponse = vi.hoisted(() => ({
-  value: null as null | { signal_message_id: number; message?: InboxMessage },
+  value: null as null | { signal_message_id: number },
 }));
 
-vi.mock('../../services/api/inbox-messages', () => ({
-  fetchMessagesByIds,
-}));
 vi.mock('../../services/api/user-settings', () => ({
   USER_SETTINGS_UPDATED_EVENT: 'user-settings-updated',
   fetchUserSettings: vi.fn().mockResolvedValue({ tagsLayout: 'compact' }),
@@ -59,10 +53,7 @@ vi.mock('../shared/manage-message/ManageMessageDrawer', () => ({
   }: {
     open: boolean;
     onClose: () => void;
-    onCreated?: (result: {
-      signal_message_id: number;
-      message?: InboxMessage;
-    }) => Promise<void> | void;
+    onCreated?: (result: { signal_message_id: number }) => Promise<void> | void;
   }) =>
     open ? (
       <div role="dialog" data-testid="composer">
@@ -81,19 +72,23 @@ vi.mock('../shared/manage-message/ManageMessageDrawer', () => ({
       </div>
     ) : null,
 }));
-vi.mock('../shared/message-card/MessageCard', () => ({
-  DutyMessageCard: (props: { id: number; msg: InboxMessage }) => (
-    <div data-testid="message-card">
-      <span data-testid="message-text">{props.msg.text}</span>
-      <span data-testid="message-id">{String(props.id)}</span>
-    </div>
-  ),
-}));
 vi.mock('./CommentDialog', () => ({ CommentDialog: () => null }));
 vi.mock('./DeleteConfirmDialog', () => ({ DeleteConfirmDialog: () => null }));
 vi.mock('./dialogs', () => ({ CommentDialog: () => null, DeleteConfirmDialog: () => null }));
 vi.mock('../../components/PowerAlert', () => ({
-  PowerAlert: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
+  PowerAlert: ({
+    children,
+    autoHideDuration,
+    ...props
+  }: { children?: ReactNode; autoHideDuration?: number } & Record<string, unknown>) => {
+    const [visible, setVisible] = useState(true);
+    useEffect(() => {
+      if (autoHideDuration == null) return;
+      const timeoutId = window.setTimeout(() => setVisible(false), autoHideDuration);
+      return () => window.clearTimeout(timeoutId);
+    }, [autoHideDuration]);
+    return visible ? <div {...props}>{children}</div> : null;
+  },
 }));
 vi.mock('@mui/material', () => ({
   Box: ({
@@ -140,42 +135,6 @@ vi.mock('@mui/material', () => ({
 
 import { RerDutyNeoPage } from './index';
 
-function buildMessage(overrides: Partial<InboxMessage> = {}): InboxMessage {
-  return {
-    messageUid: 'm-1',
-    text: 'created preview body',
-    freq: '149.500',
-    bookmarked: false,
-    important: false,
-    extendedForm: 'note',
-    sender: 'sender-a',
-    groupMasterKey: 'g-1',
-    networkIds: [7],
-    tags: [3],
-    inboxTags: null,
-    metadata: [],
-    textMarked: null,
-    pointTokens: null,
-    media: [],
-    images: [],
-    imageRecognized: [],
-    date: '2026-07-17',
-    time: '12:00',
-    timestamp: null,
-    post: 'post-a',
-    unit: 'unit-a',
-    callsigns: [],
-    callsignsAlg2: [],
-    checked: false,
-    comment: null,
-    location: null,
-    coords: null,
-    noHeadersBody: null,
-    messageComments: [],
-    ...overrides,
-  } as InboxMessage;
-}
-
 function buildFeedsState() {
   const feedFilter = {
     groupsSelected: ['g-1'],
@@ -199,7 +158,7 @@ function buildFeedsState() {
       {
         id: 'feed-1',
         filter: feedFilter,
-        items: [[1, buildMessage()]] as Array<[number, InboxMessage]>,
+        items: [],
         loading: false,
         loadingOlder: false,
         hasReachedStart: false,
@@ -329,7 +288,6 @@ async function click(element: Element | null) {
 
 describe('RerDutyNeoPage creation workflow', () => {
   beforeEach(() => {
-    fetchMessagesByIds.mockReset();
     useRerDutyFeedsMock.mockReset();
     nextCreatedResponse.value = null;
     vi.useFakeTimers();
@@ -343,76 +301,59 @@ describe('RerDutyNeoPage creation workflow', () => {
     document.body.innerHTML = '';
   });
 
-  it('closes the composer before showing a response-message preview', async () => {
-    nextCreatedResponse.value = { signal_message_id: 101, message: buildMessage() };
+  it('closes the composer and shows a success alert after creation', async () => {
+    nextCreatedResponse.value = { signal_message_id: 101 };
     const { container, root, state } = await renderPage();
 
     await click(container.querySelector('button[aria-label="Додати повідомлення"]'));
     expect(container.querySelector('[data-testid="composer"]')).not.toBeNull();
 
     await click(container.querySelector('button[aria-label="Створити повідомлення"]'));
-    await act(async () => {
-      await vi.runAllTimersAsync();
-    });
 
     expect(container.querySelector('[data-testid="composer"]')).toBeNull();
-    expect(container.textContent).toContain('Додане повідомлення');
-    expect(container.textContent).toContain('101');
-    expect(container.querySelector('[data-testid="message-text"]')?.textContent).toBe(
-      'created preview body',
-    );
+    const successAlert = container.querySelector('[role="status"]');
+    expect(successAlert?.textContent).toBe('Повідомлення успішно створено.');
+    expect(successAlert?.getAttribute('severity')).toBe('success');
     expect(state.createMessageFeed).not.toHaveBeenCalled();
     expect(state.removeMessageFeed).not.toHaveBeenCalled();
     expect(state.loadFeedInitialMessages).not.toHaveBeenCalled();
     expect(state.loadFeedOlderMessages).not.toHaveBeenCalled();
     expect(state.applyFilter).not.toHaveBeenCalled();
 
-    await click(container.querySelector('button[aria-label="Закрити"]'));
-    expect(container.querySelector('[data-testid="composer"]')).toBeNull();
-    expect(container.textContent).toContain('feed-1');
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2999);
+    });
+    expect(container.querySelector('[role="status"]')).not.toBeNull();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1);
+    });
+    expect(container.querySelector('[role="status"]')).toBeNull();
 
     await act(async () => {
       root.unmount();
     });
   });
 
-  it('fetches once for fallback preview when the response omits the message', async () => {
+  it('restarts the success alert timer on repeated creation', async () => {
     nextCreatedResponse.value = { signal_message_id: 202 };
-    fetchMessagesByIds.mockResolvedValueOnce([[202, buildMessage()]]);
-    const { container, root, state } = await renderPage();
-
-    await click(container.querySelector('button[aria-label="Додати повідомлення"]'));
-    await click(container.querySelector('button[aria-label="Створити повідомлення"]'));
-    await act(async () => {
-      await vi.runAllTimersAsync();
-    });
-
-    expect(fetchMessagesByIds).toHaveBeenCalledTimes(1);
-    expect(fetchMessagesByIds).toHaveBeenCalledWith([202]);
-    expect(container.textContent).toContain('Додане повідомлення');
-    expect(container.textContent).toContain('202');
-    expect(state.createMessageFeed).not.toHaveBeenCalled();
-
-    await act(async () => {
-      root.unmount();
-    });
-  });
-
-  it('shows receipt state when the fallback is empty', async () => {
-    nextCreatedResponse.value = { signal_message_id: 303 };
-    fetchMessagesByIds.mockResolvedValueOnce([]);
     const { container, root } = await renderPage();
 
     await click(container.querySelector('button[aria-label="Додати повідомлення"]'));
     await click(container.querySelector('button[aria-label="Створити повідомлення"]'));
     await act(async () => {
-      await vi.runAllTimersAsync();
+      await vi.advanceTimersByTimeAsync(2999);
     });
 
-    expect(container.textContent).toContain('Повідомлення створено.');
-    expect(container.textContent).toContain('ID повідомлення: 303');
-    expect(container.textContent).toContain('попередній перегляд не вдалося завантажити');
-    expect(container.querySelector('[data-testid="message-card"]')).toBeNull();
+    await click(container.querySelector('button[aria-label="Додати повідомлення"]'));
+    await click(container.querySelector('button[aria-label="Створити повідомлення"]'));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1);
+    });
+    expect(container.querySelector('[role="status"]')).not.toBeNull();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2999);
+    });
+    expect(container.querySelector('[role="status"]')).toBeNull();
 
     await act(async () => {
       root.unmount();
