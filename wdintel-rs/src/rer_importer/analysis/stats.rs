@@ -1195,31 +1195,37 @@ pub async fn fetch_metadata_stats_for_login(
     )
     .context(h!())?;
 
-    let ccs = fetch_metadata_value_stats(
+    let ccs = fetch_metadata_single_value_stats(
         &env.dbx,
         messages_q.clone(),
         sigint_inbox_item_metadata::Column::ColorCode,
     )
     .await
     .context(h!())?;
-    let hashes = fetch_metadata_value_stats(
+    let hashes = fetch_metadata_single_value_stats(
         &env.dbx,
         messages_q.clone(),
         sigint_inbox_item_metadata::Column::HashId,
     )
     .await
     .context(h!())?;
-    let senders = fetch_metadata_value_stats(
+    let senders = fetch_metadata_multi_value_stats(
         &env.dbx,
         messages_q.clone(),
-        sigint_inbox_item_metadata::Column::SenderId,
+        &[
+            sigint_inbox_item_metadata::Column::SenderId,
+            sigint_inbox_item_metadata::Column::SenderName,
+        ],
     )
     .await
     .context(h!())?;
-    let receivers = fetch_metadata_value_stats(
+    let receivers = fetch_metadata_multi_value_stats(
         &env.dbx,
         messages_q.clone(),
-        sigint_inbox_item_metadata::Column::CallGroupId,
+        &[
+            sigint_inbox_item_metadata::Column::CallGroupId,
+            sigint_inbox_item_metadata::Column::CallGroupName,
+        ],
     )
     .await
     .context(h!())?;
@@ -1252,7 +1258,7 @@ struct MetadataValueRes {
     count: i64,
 }
 
-async fn fetch_metadata_value_stats(
+async fn fetch_metadata_single_value_stats(
     db: &DatabaseConnection,
     messages_q: Select<sigint_inbox_item::Entity>,
     column: sigint_inbox_item_metadata::Column,
@@ -1262,31 +1268,39 @@ async fn fetch_metadata_value_stats(
         .column(sigint_inbox_item::Column::Id)
         .to_owned()
         .into_query();
-    let metadata_res: Vec<MetadataValueRes> = sigint_inbox_item_metadata::Entity::find()
-        .select_only()
-        .column_as(
-            Expr::col((sigint_inbox_item_metadata::Entity, column)).if_null(""),
-            "value",
-        )
-        .column_as(
-            Expr::cust(r#"COUNT(DISTINCT "sigint_inbox_item_metadata"."sigint_inbox_item_id")"#),
-            "count",
-        )
-        .filter(
-            sigint_inbox_item_metadata::Column::SigintInboxItemId
-                .in_subquery(messages_subquery),
-        )
-        .filter(Expr::col((sigint_inbox_item_metadata::Entity, column)).is_not_null())
-        .filter(
-            Expr::col((sigint_inbox_item_metadata::Entity, column)).ne(""),
-        )
-        .group_by(Expr::cust("1"))
-        .order_by_desc(Expr::cust("2"))
-        .order_by_asc(Expr::cust("1"))
-        .into_model::<MetadataValueRes>()
-        .all(db)
-        .await
-        .context(h!())?;
+    let metadata_res: Vec<MetadataValueRes> =
+        sigint_inbox_item_metadata::Entity::find()
+            .select_only()
+            .column_as(
+                Expr::col((sigint_inbox_item_metadata::Entity, column))
+                    .if_null(""),
+                "value",
+            )
+            .column_as(
+                Expr::cust(
+                    r#"COUNT(DISTINCT "sigint_inbox_item_metadata"."sigint_inbox_item_id")"#,
+                ),
+                "count",
+            )
+            .filter(
+                sigint_inbox_item_metadata::Column::SigintInboxItemId
+                    .in_subquery(messages_subquery),
+            )
+            .filter(
+                Expr::col((sigint_inbox_item_metadata::Entity, column))
+                    .is_not_null(),
+            )
+            .filter(
+                Expr::col((sigint_inbox_item_metadata::Entity, column))
+                    .ne(""),
+            )
+            .group_by(Expr::cust("1"))
+            .order_by_desc(Expr::cust("2"))
+            .order_by_asc(Expr::cust("1"))
+            .into_model::<MetadataValueRes>()
+            .all(db)
+            .await
+            .context(h!())?;
 
     Ok(metadata_res
         .into_iter()
@@ -1304,6 +1318,80 @@ async fn fetch_metadata_value_stats(
             })
         })
         .collect())
+}
+
+#[derive(FromQueryResult)]
+struct MetadataColumnValueRes {
+    value: Option<String>,
+    sigint_inbox_item_id: i64,
+}
+
+async fn fetch_metadata_multi_value_stats(
+    db: &DatabaseConnection,
+    messages_q: Select<sigint_inbox_item::Entity>,
+    columns: &[sigint_inbox_item_metadata::Column],
+) -> Result<Vec<AnalysisStatsMetadataValue>, AppError> {
+    let mut inbox_ids_by_value = BTreeMap::<String, BTreeSet<i64>>::new();
+    for column in columns {
+        let messages_subquery = messages_q
+            .clone()
+            .select_only()
+            .column(sigint_inbox_item::Column::Id)
+            .to_owned()
+            .into_query();
+        let metadata_res: Vec<MetadataColumnValueRes> =
+            sigint_inbox_item_metadata::Entity::find()
+                .select_only()
+                .column_as(
+                    Expr::col((sigint_inbox_item_metadata::Entity, *column))
+                        .if_null(""),
+                    "value",
+                )
+                .column(sigint_inbox_item_metadata::Column::SigintInboxItemId)
+                .filter(
+                    sigint_inbox_item_metadata::Column::SigintInboxItemId
+                        .in_subquery(messages_subquery),
+                )
+                .filter(
+                    Expr::col((sigint_inbox_item_metadata::Entity, *column))
+                        .is_not_null(),
+                )
+                .filter(
+                    Expr::col((sigint_inbox_item_metadata::Entity, *column))
+                        .ne(""),
+                )
+                .into_model::<MetadataColumnValueRes>()
+                .all(db)
+                .await
+                .context(h!())?;
+
+        for row in metadata_res {
+            let Some(value) = row.value else { continue };
+            let value = value.trim().to_string();
+            if value.is_empty() {
+                continue;
+            }
+            inbox_ids_by_value
+                .entry(value)
+                .or_default()
+                .insert(row.sigint_inbox_item_id);
+        }
+    }
+
+    let mut values = inbox_ids_by_value
+        .into_iter()
+        .map(|(value, inbox_ids)| AnalysisStatsMetadataValue {
+            value,
+            count: inbox_ids.len() as i64,
+        })
+        .collect::<Vec<_>>();
+    values.sort_by(|left, right| {
+        right
+            .count
+            .cmp(&left.count)
+            .then_with(|| left.value.cmp(&right.value))
+    });
+    Ok(values)
 }
 
 fn build_callsigns_query(

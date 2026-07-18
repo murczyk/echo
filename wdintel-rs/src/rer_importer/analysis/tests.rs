@@ -3242,6 +3242,19 @@ async fn rer_analysis_metadata_and_important_filters_follow_surviving_messages()
     );
 
     let mut req = analysis_stats_req0(&fixture);
+    req.metadata_receiver = Some(vec!["Receiver-01 Extra".to_string()]);
+    assert_eq!(
+        fetch_selected_count_for_req(&fixture.env, &req)
+            .await
+            .unwrap(),
+        1
+    );
+    assert_eq!(
+        fetch_freq_counts_for_req(&fixture.env, &req).await.unwrap(),
+        BTreeMap::from([("943.4".to_string(), 1)])
+    );
+
+    let mut req = analysis_stats_req0(&fixture);
     req.metadata_hash = Some(vec!["Hash-01".to_string()]);
     assert_eq!(
         fetch_selected_count_for_req(&fixture.env, &req)
@@ -3306,7 +3319,7 @@ async fn rer_analysis_metadata_and_important_filters_follow_surviving_messages()
 
 #[tokio::test]
 #[serial]
-async fn rer_analysis_metadata_stats_use_ids_not_display_names() {
+async fn rer_analysis_metadata_stats_use_ids_and_text_names() {
     let fixture = mk_rer_analysis_fixture().await.unwrap();
     let db = &fixture.env.dbx;
 
@@ -3335,6 +3348,20 @@ async fn rer_analysis_metadata_stats_use_ids_not_display_names() {
     )
     .await
     .unwrap();
+    mk_sigint_inbox_item_metadata(
+        db,
+        sigint_inbox_item_metadata::ActiveModel {
+            sigint_inbox_item_id: Set(msg.id),
+            sender_id: Set(Some("SAME-SENDER".to_string())),
+            sender_name: Set(Some("SAME-SENDER".to_string())),
+            call_group_id: Set(Some("SAME-RECEIVER".to_string())),
+            call_group_name: Set(Some("SAME-RECEIVER".to_string())),
+            created_at: Set(test_dt(2026, 3, 1, 10, 9)),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
 
     let req = analysis_stats_req0(&fixture);
     let metadata = fetch_metadata_stats_for_req(&fixture.env, &req)
@@ -3343,10 +3370,22 @@ async fn rer_analysis_metadata_stats_use_ids_not_display_names() {
     let sender_values = metadata_value_counts(metadata.senders);
     let receiver_values = metadata_value_counts(metadata.receivers);
 
-    assert_eq!(sender_values, BTreeMap::from([("SID-01".to_string(), 1)]));
-    assert!(!sender_values.contains_key("Sender Name"));
-    assert_eq!(receiver_values, BTreeMap::from([("RID-01".to_string(), 1)]));
-    assert!(!receiver_values.contains_key("Receiver Name"));
+    assert_eq!(
+        sender_values,
+        BTreeMap::from([
+            ("SAME-SENDER".to_string(), 1),
+            ("SID-01".to_string(), 1),
+            ("Sender Name".to_string(), 1),
+        ])
+    );
+    assert_eq!(
+        receiver_values,
+        BTreeMap::from([
+            ("RID-01".to_string(), 1),
+            ("Receiver Name".to_string(), 1),
+            ("SAME-RECEIVER".to_string(), 1),
+        ])
+    );
 }
 
 #[tokio::test]
