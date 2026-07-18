@@ -5,7 +5,7 @@ use actix_identity::Identity;
 use actix_web::web::Json;
 use chrono::Duration;
 use echo_migration::{Expr, JoinType};
-use sea_orm::sea_query::{SimpleExpr, UnionType};
+use sea_orm::sea_query::{Order, SelectStatement, SimpleExpr, UnionType};
 use sea_orm::FromQueryResult;
 use sea_orm::*;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
@@ -1320,78 +1320,113 @@ async fn fetch_metadata_single_value_stats(
         .collect())
 }
 
-#[derive(FromQueryResult)]
-struct MetadataColumnValueRes {
-    value: Option<String>,
-    sigint_inbox_item_id: i64,
-}
-
 async fn fetch_metadata_multi_value_stats(
     db: &DatabaseConnection,
     messages_q: Select<sigint_inbox_item::Entity>,
     columns: &[sigint_inbox_item_metadata::Column],
 ) -> Result<Vec<AnalysisStatsMetadataValue>, AppError> {
-    let mut inbox_ids_by_value = BTreeMap::<String, BTreeSet<i64>>::new();
-    for column in columns {
-        let messages_subquery = messages_q
-            .clone()
-            .select_only()
-            .column(sigint_inbox_item::Column::Id)
-            .to_owned()
-            .into_query();
-        let metadata_res: Vec<MetadataColumnValueRes> =
-            sigint_inbox_item_metadata::Entity::find()
-                .select_only()
-                .column_as(
-                    Expr::col((sigint_inbox_item_metadata::Entity, *column))
-                        .if_null(""),
-                    "value",
-                )
-                .column(sigint_inbox_item_metadata::Column::SigintInboxItemId)
-                .filter(
-                    sigint_inbox_item_metadata::Column::SigintInboxItemId
-                        .in_subquery(messages_subquery),
-                )
-                .filter(
-                    Expr::col((sigint_inbox_item_metadata::Entity, *column))
-                        .is_not_null(),
-                )
-                .filter(
-                    Expr::col((sigint_inbox_item_metadata::Entity, *column))
-                        .ne(""),
-                )
-                .into_model::<MetadataColumnValueRes>()
-                .all(db)
-                .await
-                .context(h!())?;
+    let Some(values_q) = build_metadata_values_union_query(messages_q, columns)
+    else {
+        return Ok(vec![]);
+    };
 
-        for row in metadata_res {
-            let Some(value) = row.value else { continue };
-            let value = value.trim().to_string();
-            if value.is_empty() {
-                continue;
-            }
-            inbox_ids_by_value
-                .entry(value)
-                .or_default()
-                .insert(row.sigint_inbox_item_id);
-        }
-    }
+    let values_alias = Alias::new("metadata_values");
+    let value_alias = Alias::new("value");
+    let inbox_item_id_alias = Alias::new("sigint_inbox_item_id");
+    let count_expr = Expr::cust_with_exprs(
+        "COUNT(DISTINCT $1)",
+        [
+            Expr::col((values_alias.clone(), inbox_item_id_alias.clone()))
+                .into_simple_expr(),
+        ],
+    );
+    let mut metadata_q = Query::select();
+    metadata_q
+        .expr_as(
+            Expr::col((values_alias.clone(), value_alias.clone())),
+            value_alias.clone(),
+        )
+        .expr_as(count_expr, Alias::new("count"))
+        .from_subquery(values_q, values_alias.clone())
+        .and_where(
+            Expr::col((values_alias.clone(), value_alias.clone()))
+                .is_not_null(),
+        )
+        .group_by_col((values_alias.clone(), value_alias.clone()))
+        .order_by(Alias::new("count"), Order::Desc)
+        .order_by(Alias::new("value"), Order::Asc);
 
-    let mut values = inbox_ids_by_value
+    let (sql, values) = metadata_q.build(PostgresQueryBuilder);
+    let metadata_res: Vec<MetadataValueRes> =
+        MetadataValueRes::find_by_statement(Statement::from_sql_and_values(
+            DbBackend::Postgres,
+            sql,
+            values,
+        ))
+        .all(db)
+        .await
+        .context(h!())?;
+
+    Ok(metadata_res
         .into_iter()
-        .map(|(value, inbox_ids)| AnalysisStatsMetadataValue {
-            value,
-            count: inbox_ids.len() as i64,
+        .filter_map(|row| {
+            row.value.map(|value| AnalysisStatsMetadataValue {
+                value,
+                count: row.count,
+            })
         })
-        .collect::<Vec<_>>();
-    values.sort_by(|left, right| {
-        right
-            .count
-            .cmp(&left.count)
-            .then_with(|| left.value.cmp(&right.value))
-    });
-    Ok(values)
+        .collect())
+}
+
+fn build_metadata_values_union_query(
+    messages_q: Select<sigint_inbox_item::Entity>,
+    columns: &[sigint_inbox_item_metadata::Column],
+) -> Option<SelectStatement> {
+    let (first_column, rest_columns) = columns.split_first()?;
+    let mut values_q =
+        build_metadata_value_column_query(messages_q.clone(), *first_column);
+    for column in rest_columns {
+        values_q.union(
+            UnionType::All,
+            build_metadata_value_column_query(messages_q.clone(), *column),
+        );
+    }
+    Some(values_q)
+}
+
+fn build_metadata_value_column_query(
+    messages_q: Select<sigint_inbox_item::Entity>,
+    column: sigint_inbox_item_metadata::Column,
+) -> SelectStatement {
+    let messages_subquery = messages_q
+        .select_only()
+        .column(sigint_inbox_item::Column::Id)
+        .to_owned()
+        .into_query();
+    let mut value_q = Query::select();
+    value_q
+        .expr_as(metadata_value_expr(column), Alias::new("value"))
+        .column(sigint_inbox_item_metadata::Column::SigintInboxItemId)
+        .from(sigint_inbox_item_metadata::Entity)
+        .and_where(
+            sigint_inbox_item_metadata::Column::SigintInboxItemId
+                .in_subquery(messages_subquery),
+        )
+        .and_where(
+            Expr::col((sigint_inbox_item_metadata::Entity, column))
+                .is_not_null(),
+        );
+    value_q
+}
+
+fn metadata_value_expr(
+    column: sigint_inbox_item_metadata::Column,
+) -> SimpleExpr {
+    Expr::cust_with_exprs(
+        "NULLIF(TRIM($1), '')",
+        [Expr::col((sigint_inbox_item_metadata::Entity, column))
+            .into_simple_expr()],
+    )
 }
 
 fn build_callsigns_query(
