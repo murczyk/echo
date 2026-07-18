@@ -113,7 +113,7 @@ pub async fn network_callsigns_relations(
     env: actix_web::web::Data<Env>,
     req: Json<NetworkCallsignRelationsReq>,
 ) -> Result<Json<NetworkCallsignRelationsRsp>, AppError> {
-    let user_id = user.id().c(h!())?;
+    let user_id = crate::users::identity_id(&user)?;
     crate::users::has_any_role(
         &env.dbx,
         &user_id,
@@ -172,7 +172,7 @@ pub async fn network_callsigns_relation_messages(
     env: actix_web::web::Data<Env>,
     req: Json<NetworkCallsignRelationMessagesReq>,
 ) -> Result<Json<NetworkCallsignRelationMessagesRsp>, AppError> {
-    let user_id = user.id().c(h!())?;
+    let user_id = crate::users::identity_id(&user)?;
     crate::users::has_any_role(
         &env.dbx,
         &user_id,
@@ -432,7 +432,7 @@ fn clamp_network_relation_messages_limit(limit: i64) -> i64 {
 async fn load_network_callsigns(
     dbx: &DatabaseConnection,
     network_id: i64,
-    user_id: &str,
+    user_id: &uuid::Uuid,
 ) -> Result<HashMap<String, NodeEnrichment>, AppError> {
     let network_callsigns = bl_get_network_callsigns_list(
         &ListNetworkCallsignsReq {
