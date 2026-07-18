@@ -236,7 +236,7 @@ export function useAnalysisMessageList({
         : {
             beforeIdNoninclusive: firstMessage[0],
             sinceIdNoninclusive: null,
-            requestNewestFirst: true,
+            requestNewestFirst: false,
             reverseResults: true,
           };
     }

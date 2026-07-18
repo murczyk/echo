@@ -500,10 +500,10 @@ describe('useAnalysisMessageList pagination', () => {
     );
     expect(fetchInboxMessagesMock.mock.calls.at(-1)?.[0]).toMatchObject({
       beforeIdNoninclusive: 41,
-      newestFirst: true,
+      newestFirst: false,
     });
     expect(h.latest.getCurrentMessagePageCursor()).toMatchObject({
-      requestNewestFirst: true,
+      requestNewestFirst: false,
       reverseResults: true,
     });
   });
