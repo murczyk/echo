@@ -22,6 +22,12 @@ vi.mock('./FeedColumn', () => ({
   }),
 }));
 
+vi.mock('../shared/manage-message/CreateMessageFab', () => ({
+  CreateMessageFab: ({ onClick }: { onClick: () => void }) => (
+    <button type="button" aria-label="Додати повідомлення" onClick={onClick} />
+  ),
+}));
+
 function buildFeed(id: string): MessageFeedState {
   return {
     id,
@@ -305,12 +311,26 @@ describe('RerDutyNeoWorkspace', () => {
     const skeletonHeaders = content.querySelectorAll('[data-duty-skeleton-feed-header="true"]');
     expect(content.querySelectorAll('[data-duty-skeleton-feed-column="true"]')).toHaveLength(3);
     expect(skeletonHeaders).toHaveLength(3);
+    expect(content.querySelectorAll('[data-duty-skeleton-feed-toolbar-row]')).toHaveLength(3);
     expect(content.querySelectorAll('[data-duty-skeleton-feed-header-controls]')).toHaveLength(3);
     expect(
       content.querySelectorAll('[data-duty-skeleton-feed-header-section="filters"]'),
     ).toHaveLength(3);
     expect(content.querySelectorAll('[data-duty-skeleton-add-feed]')).toHaveLength(1);
     expect(content.querySelectorAll('[data-duty-skeleton-close-feed]')).toHaveLength(3);
+    expect(
+      Array.from(
+        skeletonHeaders[0]?.querySelectorAll('[data-duty-skeleton-feed-header-section]') ?? [],
+      ).map((section) => section.getAttribute('data-duty-skeleton-feed-header-section')),
+    ).toEqual(['filters', 'notifications', 'highlighting']);
+    expect(skeletonHeaders[2]?.querySelector('[data-duty-skeleton-add-feed]')).not.toBeNull();
+    expect(skeletonHeaders[2]?.querySelector('[data-duty-skeleton-close-feed]')).not.toBeNull();
+    expect(
+      skeletonHeaders[2]?.querySelector('[data-duty-skeleton-action-placeholder="add"]'),
+    ).not.toBeNull();
+    expect(
+      skeletonHeaders[2]?.querySelector('[data-duty-skeleton-action-placeholder="close"]'),
+    ).not.toBeNull();
 
     await act(async () => {
       root.render(
@@ -365,7 +385,7 @@ describe('RerDutyNeoWorkspace', () => {
     );
   });
 
-  it('keeps only one close action on narrow screens and exposes the create action in the active feed', async () => {
+  it('keeps only one close action on narrow screens and exposes scroll stacking on the active feed', async () => {
     container = document.createElement('div');
     document.body.appendChild(container);
     root = createRoot(container);
@@ -392,7 +412,7 @@ describe('RerDutyNeoWorkspace', () => {
           buildFeedColumnModel={narrowBuildFeedColumnModel}
           columnRefsRef={columnRefsRef}
           createMessageFeed={() => {}}
-          openCreateMessageComposer={() => {}}
+          openCreateMessageComposer={vi.fn()}
           isInitialLoading={false}
           messageFeeds={messageFeeds}
           narrowScreen
@@ -402,8 +422,9 @@ describe('RerDutyNeoWorkspace', () => {
       );
     });
 
-    expect(renderedFeedColumns.get('feed-1')?.actions.onCreateMessage).toBeUndefined();
-    expect(renderedFeedColumns.get('feed-2')?.actions.onCreateMessage).toBeDefined();
+    expect(container.querySelectorAll('button[aria-label="Додати повідомлення"]')).toHaveLength(1);
+    expect(renderedFeedColumns.get('feed-1')?.view.workspaceFabAvoidance).toBe('none');
+    expect(renderedFeedColumns.get('feed-2')?.view.workspaceFabAvoidance).toBe('above');
     expect(renderedFeedColumns.get('feed-2')?.view.scrollTrackingEnabled).toBe(true);
   });
 
@@ -436,6 +457,8 @@ describe('RerDutyNeoWorkspace', () => {
 
     expect(renderedFeedColumns.get('feed-1')?.view.scrollTrackingEnabled).toBe(false);
     expect(renderedFeedColumns.get('feed-2')?.view.scrollTrackingEnabled).toBe(true);
+    expect(renderedFeedColumns.get('feed-1')?.view.workspaceFabAvoidance).toBe('none');
+    expect(renderedFeedColumns.get('feed-2')?.view.workspaceFabAvoidance).toBe('above');
 
     await act(async () => {
       root.render(
@@ -455,6 +478,8 @@ describe('RerDutyNeoWorkspace', () => {
 
     expect(renderedFeedColumns.get('feed-1')?.view.scrollTrackingEnabled).toBe(true);
     expect(renderedFeedColumns.get('feed-2')?.view.scrollTrackingEnabled).toBe(false);
+    expect(renderedFeedColumns.get('feed-1')?.view.workspaceFabAvoidance).toBe('above');
+    expect(renderedFeedColumns.get('feed-2')?.view.workspaceFabAvoidance).toBe('none');
   });
 
   it('assigns add-feed to the last desktop header and removes it at the limit', async () => {
@@ -494,6 +519,17 @@ describe('RerDutyNeoWorkspace', () => {
       });
     };
 
+    await renderWorkspace(1);
+    expect(renderedFeedColumns.get('feed-1')?.view.workspaceFabAvoidance).toBe('none');
+    expect(container.querySelectorAll('button[aria-label="Додати повідомлення"]')).toHaveLength(1);
+    await act(async () => {
+      container
+        .querySelector('button[aria-label="Додати повідомлення"]')
+        ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    expect(openCreateMessageComposer).toHaveBeenCalledTimes(1);
+    openCreateMessageComposer.mockReset();
+
     await renderWorkspace(MAX_MESSAGE_FEEDS - 1);
     const workspaceBefore = container.querySelector('[data-duty-workspace-main]') as HTMLElement;
     expect(workspaceBefore.style.paddingTop).toBe('');
@@ -502,15 +538,23 @@ describe('RerDutyNeoWorkspace', () => {
       renderedFeedColumns.get(`feed-${MAX_MESSAGE_FEEDS - 1}`)?.actions.onCreateFeed,
     ).toBeDefined();
     for (let index = 1; index < MAX_MESSAGE_FEEDS - 1; index += 1) {
-      expect(renderedFeedColumns.get(`feed-${index}`)?.actions.onCreateMessage).toBeUndefined();
+      expect(renderedFeedColumns.get(`feed-${index}`)?.actions.onCreateFeed).toBeUndefined();
+      expect(renderedFeedColumns.get(`feed-${index}`)?.view.workspaceFabAvoidance).toBe('none');
     }
-    expect(renderedFeedColumns.get(`feed-${MAX_MESSAGE_FEEDS - 1}`)?.actions.onCreateMessage).toBe(
-      openCreateMessageComposer,
-    );
-    expect(container.querySelector('button[aria-label="Додати повідомлення"]')).toBeNull();
+    expect(
+      renderedFeedColumns.get(`feed-${MAX_MESSAGE_FEEDS - 1}`)?.view.workspaceFabAvoidance,
+    ).toBe('left');
+    expect(
+      Array.from(renderedFeedColumns.values()).every(
+        (column) => !Object.prototype.hasOwnProperty.call(column.actions, 'onCreateMessage'),
+      ),
+    ).toBe(true);
+    expect(container.querySelectorAll('button[aria-label="Додати повідомлення"]')).toHaveLength(1);
     await act(async () => {
       renderedFeedColumns.get(`feed-${MAX_MESSAGE_FEEDS - 1}`)?.actions.onCreateFeed?.();
-      renderedFeedColumns.get(`feed-${MAX_MESSAGE_FEEDS - 1}`)?.actions.onCreateMessage?.();
+      container
+        .querySelector('button[aria-label="Додати повідомлення"]')
+        ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     });
     expect(createMessageFeed).toHaveBeenCalledTimes(1);
     expect(openCreateMessageComposer).toHaveBeenCalledTimes(1);
@@ -527,14 +571,21 @@ describe('RerDutyNeoWorkspace', () => {
     ).toBe(true);
     expect(container.querySelector('button[aria-label="Додати стрічку"]')).toBeNull();
     for (let index = 1; index < MAX_MESSAGE_FEEDS; index += 1) {
-      expect(renderedFeedColumns.get(`feed-${index}`)?.actions.onCreateMessage).toBeUndefined();
+      expect(renderedFeedColumns.get(`feed-${index}`)?.view.workspaceFabAvoidance).toBe('none');
     }
-    expect(renderedFeedColumns.get(`feed-${MAX_MESSAGE_FEEDS}`)?.actions.onCreateMessage).toBe(
-      openCreateMessageComposer,
+    expect(renderedFeedColumns.get(`feed-${MAX_MESSAGE_FEEDS}`)?.view.workspaceFabAvoidance).toBe(
+      'left',
     );
-    expect(container.querySelector('button[aria-label="Додати повідомлення"]')).toBeNull();
+    expect(
+      Array.from(renderedFeedColumns.values()).every(
+        (column) => !Object.prototype.hasOwnProperty.call(column.actions, 'onCreateMessage'),
+      ),
+    ).toBe(true);
+    expect(container.querySelectorAll('button[aria-label="Додати повідомлення"]')).toHaveLength(1);
     await act(async () => {
-      renderedFeedColumns.get(`feed-${MAX_MESSAGE_FEEDS}`)?.actions.onCreateMessage?.();
+      container
+        .querySelector('button[aria-label="Додати повідомлення"]')
+        ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     });
 
     expect(workspaceAfter.style.paddingTop).toBe(workspaceBefore.style.paddingTop);

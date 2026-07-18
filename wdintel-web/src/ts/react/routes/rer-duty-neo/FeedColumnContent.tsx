@@ -1,4 +1,3 @@
-import AddIcon from '@mui/icons-material/Add';
 import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward';
 import { Box, CircularProgress, Fab, Paper, Typography } from '@mui/material';
 import {
@@ -24,6 +23,7 @@ import type {
 } from '../../../../Bindings';
 import { ELLIPSIS, isNullOrUndefined, isPresent } from '../../utils/misc';
 import type { FeedColumnModel } from './types';
+import { resolveDutyScrollFabPosition } from './duty-scroll-fab-position';
 import { PowerChip } from '../../components/PowerChip';
 import { DutyMessageCard } from '../shared/message-card/MessageCard';
 import type { MessageCardBotTagAction } from '../shared/message-card/message-card.types';
@@ -34,7 +34,7 @@ import {
   resolveMessageCardEtalonDisplayModel,
 } from '../shared/message-card/message-card.utils';
 import type { MessageEntityFilterKind, TagsLayoutVariant } from './utils';
-import { dutyTopAddFabSx, dutyTopScrollButtonSx } from './top-action-styles';
+import { dutyTopScrollButtonSx } from './top-action-styles';
 import { useWindowedFeedScroll } from './useWindowedFeedScroll';
 
 /** Start loading older messages when the user scrolls close to the top of the DOM list. */
@@ -46,15 +46,6 @@ const DUTY_FEED_AT_BOTTOM_THRESHOLD_PX = 25;
 // Hoisted stable empty array: passing `[]` inline as a prop would allocate a fresh reference
 // every render, defeating React.memo / useMemo bailouts downstream in MessageCard.
 const EMPTY_MESSAGE_COMMENTS: MessageComment[] = [];
-
-const DUTY_FLOATING_ACTION_GAP_PX = 12;
-const DUTY_FLOATING_ACTION_SIZE_PX = 35;
-const DUTY_FLOATING_ACTION_STACK_HEIGHT_PX =
-  DUTY_FLOATING_ACTION_SIZE_PX * 2 + DUTY_FLOATING_ACTION_GAP_PX * 3;
-const DUTY_FLOATING_ACTION_BOTTOM_PX = 'max(12px, env(safe-area-inset-bottom, 0px))';
-const DUTY_FLOATING_SCROLL_BOTTOM_PX = `calc(${DUTY_FLOATING_ACTION_BOTTOM_PX} + ${
-  DUTY_FLOATING_ACTION_SIZE_PX + DUTY_FLOATING_ACTION_GAP_PX
-}px)`;
 
 function filterOwnMessageComments(
   messageComments: MessageComment[] | null | undefined,
@@ -371,6 +362,7 @@ export const FeedColumnContent = memo(
       arrowResultMessage = null,
       unreadCount = 0,
       isWatchMode = false,
+      workspaceFabAvoidance = 'none',
     } = view;
     const {
       authUserName,
@@ -448,6 +440,10 @@ export const FeedColumnContent = memo(
     const stableOnMessageExcludeEntity = useStableCallback(onMessageExcludeEntity);
     const stableOnMessageToggleTag = useStableCallback(onMessageToggleTag);
     const stableOnOpenPointsOnMap = useStableCallback(onOpenPointsOnMap);
+    const scrollFabPosition = resolveDutyScrollFabPosition({
+      narrowScreen,
+      workspaceFabAvoidance,
+    });
 
     useImperativeHandle(ref, () => ({ scrollToBottom: scroll.scrollToBottom }), [
       scroll.scrollToBottom,
@@ -551,55 +547,18 @@ export const FeedColumnContent = memo(
               listRef={scroll.listRef}
             />
           )}
-          {isPresent(actions.onCreateMessage) ? (
-            <Box
-              data-duty-feed-footer-spacer
-              data-duty-bottom-offset={`calc(${DUTY_FLOATING_ACTION_BOTTOM_PX} + ${DUTY_FLOATING_ACTION_STACK_HEIGHT_PX}px)`}
-              sx={{
-                height: `calc(${DUTY_FLOATING_ACTION_BOTTOM_PX} + ${DUTY_FLOATING_ACTION_STACK_HEIGHT_PX}px)`,
-                flexShrink: 0,
-              }}
-            />
-          ) : null}
         </Box>
-        {isPresent(actions.onCreateMessage) ? (
-          <Box
-            data-duty-message-create-button
-            data-duty-bottom-offset={DUTY_FLOATING_ACTION_BOTTOM_PX}
-            style={{
-              position: 'absolute',
-              bottom: DUTY_FLOATING_ACTION_BOTTOM_PX,
-            }}
-            sx={{
-              right: { xs: 12, sm: 20 },
-              display: 'flex',
-              pointerEvents: 'none',
-              zIndex: 1,
-            }}
-          >
-            <Fab
-              color="primary"
-              size="small"
-              aria-label="Додати повідомлення"
-              onClick={actions.onCreateMessage}
-              sx={{ ...dutyTopAddFabSx, pointerEvents: 'auto' }}
-            >
-              <AddIcon />
-            </Fab>
-          </Box>
-        ) : null}
         {isPresent(actions.onArrowClick) && (!isAtBottom || loadingNewer || unreadCount > 0) && (
           <Box
             data-duty-feed-scroll-button
-            data-duty-bottom-offset={
-              isPresent(actions.onCreateMessage) ? DUTY_FLOATING_SCROLL_BOTTOM_PX : '12px'
-            }
+            data-duty-bottom-offset={String(scrollFabPosition.bottom)}
+            data-duty-right-offset={String(scrollFabPosition.right)}
             style={{
               position: 'absolute',
-              bottom: isPresent(actions.onCreateMessage) ? DUTY_FLOATING_SCROLL_BOTTOM_PX : 12,
+              bottom: scrollFabPosition.bottom,
+              right: scrollFabPosition.right,
             }}
             sx={{
-              right: { xs: 12, sm: 20 },
               display: 'flex',
               alignItems: 'center',
               gap: 1,
@@ -687,7 +646,8 @@ export const FeedColumnContent = memo(
       prevView.scrollTrackingEnabled !== nextView.scrollTrackingEnabled ||
       prevView.loadingNewer !== nextView.loadingNewer ||
       prevView.arrowResultMessage !== nextView.arrowResultMessage ||
-      prevView.unreadCount !== nextView.unreadCount
+      prevView.unreadCount !== nextView.unreadCount ||
+      prevView.workspaceFabAvoidance !== nextView.workspaceFabAvoidance
     ) {
       return false;
     }
@@ -726,7 +686,6 @@ export const FeedColumnContent = memo(
       prevActions.onMessageComment !== nextActions.onMessageComment ||
       prevActions.onMessageExcludeEntity !== nextActions.onMessageExcludeEntity ||
       prevActions.onMessageToggleTag !== nextActions.onMessageToggleTag ||
-      prevActions.onCreateMessage !== nextActions.onCreateMessage ||
       prevActions.onScrollToTop !== nextActions.onScrollToTop ||
       prevActions.onReachedBottom !== nextActions.onReachedBottom ||
       prevActions.onLeftBottom !== nextActions.onLeftBottom ||
