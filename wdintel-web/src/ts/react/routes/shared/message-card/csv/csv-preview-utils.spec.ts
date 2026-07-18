@@ -86,9 +86,45 @@ describe('csv-preview-utils', () => {
 
   it('rejects malformed quoted fields and truncates display dimensions', () => {
     expect(() => parseCsvText('a,"unterminated')).toThrow('Unclosed');
-    expect(
-      parseCsvText(`${Array.from({ length: 5001 }, (_, index) => `${index},x`).join('\n')}`)
-        .truncated,
-    ).toBe(true);
+  });
+
+  it('retains 5000 rows while counting every source row', () => {
+    const result = parseCsvText(
+      Array.from({ length: 5001 }, (_, index) => `${index},x`).join('\n'),
+    );
+
+    expect(result.rowCount).toBe(5001);
+    expect(result.rows).toHaveLength(5000);
+    expect(result.truncated).toBe(true);
+  });
+
+  it('retains 100 cells while counting every source column', () => {
+    const result = parseCsvText(Array.from({ length: 101 }, (_, index) => `c${index}`).join(','));
+
+    expect(result.columnCount).toBe(101);
+    expect(result.rows[0]).toHaveLength(100);
+    expect(result.truncated).toBe(true);
+  });
+
+  it('keeps bounded preview output while preserving large source dimensions', () => {
+    const source = Array.from({ length: 5001 }, () =>
+      Array.from({ length: 101 }, (_, index) => `v${index}`).join(','),
+    ).join('\n');
+    const result = parseCsvText(source);
+
+    expect(result.rowCount).toBe(5001);
+    expect(result.columnCount).toBe(101);
+    expect(result.rows).toHaveLength(5000);
+    expect(result.rows.every((row) => row.length === 100)).toBe(true);
+    expect(result.truncated).toBe(true);
+  });
+
+  it('validates malformed quoted fields after the retained preview bounds', () => {
+    expect(() => parseCsvText(`${'ok,ok\n'.repeat(5000)}bad,"unterminated`)).toThrowError(
+      expect.objectContaining({ code: 'CSV_MALFORMED' }),
+    );
+    expect(() =>
+      parseCsvText(`${Array.from({ length: 100 }, (_, index) => `c${index}`).join(',')},"bad`),
+    ).toThrowError(expect.objectContaining({ code: 'CSV_MALFORMED' }));
   });
 });

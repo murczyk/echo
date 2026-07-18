@@ -38,38 +38,72 @@ export function formatCsvPreviewErrorMessage(error: string | null): string {
 export function parseCsvText(text: string): CsvPreviewResult {
   const delimiter = detectCsvDelimiter(text);
   const rows: string[][] = [];
-  let row: string[] = [];
+  let retainedRow: string[] = [];
+  let rowCount = 0;
+  let currentColumnCount = 0;
+  let columnCount = 0;
   let cell = '';
+  let hasCellContent = false;
   let quoted = false;
   let afterQuote = false;
+  let rowStarted = false;
+
+  const finishCell = () => {
+    currentColumnCount += 1;
+    if (
+      rowCount < MAX_DOCUMENT_PREVIEW_ROWS &&
+      currentColumnCount <= MAX_DOCUMENT_PREVIEW_COLUMNS
+    ) {
+      retainedRow.push(cell);
+    }
+    cell = '';
+    hasCellContent = false;
+  };
+
+  const finishRow = () => {
+    finishCell();
+    columnCount = Math.max(columnCount, currentColumnCount);
+    if (rowCount < MAX_DOCUMENT_PREVIEW_ROWS) rows.push(retainedRow);
+    rowCount += 1;
+    retainedRow = [];
+    currentColumnCount = 0;
+    rowStarted = false;
+  };
 
   for (let index = 0; index < text.length; index += 1) {
     const character = text[index];
     if (quoted) {
       if (character === '"') {
         if (text[index + 1] === '"') {
-          cell += '"';
+          if (
+            rowCount < MAX_DOCUMENT_PREVIEW_ROWS &&
+            currentColumnCount < MAX_DOCUMENT_PREVIEW_COLUMNS
+          ) {
+            cell += '"';
+          }
           index += 1;
         } else {
           quoted = false;
           afterQuote = true;
         }
       } else {
-        cell += character;
+        if (
+          rowCount < MAX_DOCUMENT_PREVIEW_ROWS &&
+          currentColumnCount < MAX_DOCUMENT_PREVIEW_COLUMNS
+        ) {
+          cell += character;
+        }
       }
       continue;
     }
 
     if (afterQuote) {
       if (character === delimiter) {
-        row.push(cell);
-        cell = '';
+        finishCell();
+        rowStarted = true;
         afterQuote = false;
       } else if (character === '\r' || character === '\n') {
-        row.push(cell);
-        rows.push(row);
-        row = [];
-        cell = '';
+        finishRow();
         afterQuote = false;
         if (character === '\r' && text[index + 1] === '\n') index += 1;
       } else if (character !== ' ' && character !== '\t') {
@@ -79,37 +113,34 @@ export function parseCsvText(text: string): CsvPreviewResult {
     }
 
     if (character === '"') {
-      if (cell.trim() !== '') throw new CsvPreviewError('CSV_MALFORMED', 'Invalid quoted field');
+      if (hasCellContent) throw new CsvPreviewError('CSV_MALFORMED', 'Invalid quoted field');
       quoted = true;
+      rowStarted = true;
     } else if (character === delimiter) {
-      row.push(cell);
-      cell = '';
+      finishCell();
+      rowStarted = true;
     } else if (character === '\r' || character === '\n') {
-      row.push(cell);
-      rows.push(row);
-      row = [];
-      cell = '';
+      finishRow();
       if (character === '\r' && text[index + 1] === '\n') index += 1;
     } else {
-      cell += character;
+      if (
+        rowCount < MAX_DOCUMENT_PREVIEW_ROWS &&
+        currentColumnCount < MAX_DOCUMENT_PREVIEW_COLUMNS
+      ) {
+        cell += character;
+      }
+      if (character.trim() !== '') hasCellContent = true;
+      rowStarted = true;
     }
   }
 
   if (quoted) throw new CsvPreviewError('CSV_MALFORMED', 'Unclosed quoted CSV field');
-  if (afterQuote || cell !== '' || row.length > 0 || text.endsWith(delimiter)) {
-    row.push(cell);
-    rows.push(row);
-  }
-
-  const columnCount = rows.reduce((max, currentRow) => Math.max(max, currentRow.length), 0);
+  if (rowStarted || afterQuote) finishRow();
   return {
-    rows: rows
-      .slice(0, MAX_DOCUMENT_PREVIEW_ROWS)
-      .map((currentRow) => currentRow.slice(0, MAX_DOCUMENT_PREVIEW_COLUMNS)),
-    rowCount: rows.length,
+    rows,
+    rowCount,
     columnCount,
-    truncated:
-      rows.length > MAX_DOCUMENT_PREVIEW_ROWS || columnCount > MAX_DOCUMENT_PREVIEW_COLUMNS,
+    truncated: rowCount > MAX_DOCUMENT_PREVIEW_ROWS || columnCount > MAX_DOCUMENT_PREVIEW_COLUMNS,
   };
 }
 
