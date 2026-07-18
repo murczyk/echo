@@ -52,6 +52,16 @@ pub use download::download_palitras_delta_split;
 
 const GOI_OWNED_PALITRA_EDIT_ERROR: &str = "Редагуйте цю палітру в ГОІ";
 
+#[derive(Debug, FromQueryResult)]
+struct GoiSourceConversionRetryCandidate {
+    id: i64,
+    direction: String,
+    remote_status: String,
+    goi_source_file_sha256: Option<String>,
+    changelog: serde_json::Value,
+    has_goi_source_file_data: bool,
+}
+
 #[derive(Clone)]
 struct UserScope {
     organism_ids: Vec<i64>,
@@ -848,18 +858,43 @@ pub async fn retry_goi_source_conversion(
                 .eq(PALITRA_GOI_REMOTE_STATUS_PRESENT),
         )
         .filter(goi_palitra_sync::Column::GoiSourceFileSha256.is_not_null())
+        .select_only()
+        .column(goi_palitra_sync::Column::Id)
+        .column(goi_palitra_sync::Column::Direction)
+        .column(goi_palitra_sync::Column::RemoteStatus)
+        .column(goi_palitra_sync::Column::GoiSourceFileSha256)
+        .column(goi_palitra_sync::Column::Changelog)
+        .column_as(
+            Expr::col((
+                goi_palitra_sync::Entity,
+                goi_palitra_sync::Column::GoiSourceFileData,
+            ))
+            .is_not_null(),
+            "has_goi_source_file_data",
+        )
         .order_by_desc(goi_palitra_sync::Column::UpdatedAt)
         .order_by_desc(goi_palitra_sync::Column::Id)
-        .limit(1)
+        .into_model::<GoiSourceConversionRetryCandidate>()
         .all(&env.dbx)
         .await
         .c(h!())?;
-    let row = select_goi_source_conversion_retry_row(rows).ok_or_else(|| {
-        AppError::BL {
-            msg: "Cannot retry GOI source conversion: failed source file data is not available"
-                .to_string(),
-        }
-    })?;
+    let row_id = select_goi_source_conversion_retry_row_id(rows)
+        .ok_or_else(goi_source_conversion_retry_unavailable_error)?;
+    let row = goi_palitra_sync::Entity::find_by_id(row_id)
+        .filter(goi_palitra_sync::Column::PalitraId.eq(palitra_id))
+        .filter(
+            goi_palitra_sync::Column::Direction
+                .eq(PALITRA_GOI_SYNC_DIRECTION_GOI),
+        )
+        .filter(
+            goi_palitra_sync::Column::RemoteStatus
+                .eq(PALITRA_GOI_REMOTE_STATUS_PRESENT),
+        )
+        .filter(goi_palitra_sync::Column::GoiSourceFileData.is_not_null())
+        .one(&env.dbx)
+        .await
+        .c(h!())?
+        .ok_or_else(goi_source_conversion_retry_unavailable_error)?;
     let filename = row.goi_source_file_name.clone().c(h!())?;
     let extension = row.goi_source_format.clone().c(h!())?;
     let file_data = row.goi_source_file_data.clone().c(h!())?;
@@ -902,23 +937,60 @@ pub async fn retry_goi_source_conversion(
     Ok(Json(palitra_response))
 }
 
+fn goi_source_conversion_retry_unavailable_error() -> AppError {
+    AppError::BL {
+        msg: "Cannot retry GOI source conversion: failed source file data is not available"
+            .to_string(),
+    }
+}
+
+fn select_goi_source_conversion_retry_row_id(
+    rows: Vec<GoiSourceConversionRetryCandidate>,
+) -> Option<i64> {
+    rows.into_iter()
+        .find(|row| {
+            is_goi_source_conversion_retry_candidate(
+                &row.direction,
+                &row.remote_status,
+                row.goi_source_file_sha256.as_deref(),
+                row.has_goi_source_file_data,
+                &row.changelog,
+            )
+        })
+        .map(|row| row.id)
+}
+
+#[cfg(test)]
 fn select_goi_source_conversion_retry_row(
     rows: Vec<goi_palitra_sync::Model>,
 ) -> Option<goi_palitra_sync::Model> {
-    rows.into_iter()
-        .find(|row| {
-            row.direction == PALITRA_GOI_SYNC_DIRECTION_GOI
-                && row.remote_status == PALITRA_GOI_REMOTE_STATUS_PRESENT
-                && row.goi_source_file_sha256.is_some()
-        })
-        .and_then(|row| {
-            let changelog = goi_changelog::entries_from_value(&row.changelog);
-            (row.goi_source_file_data.is_some()
-                && goi_changelog::latest_goi_source_conversion_warning(
-                    &changelog,
-                ))
-            .then_some(row)
-        })
+    rows.into_iter().find(|row| {
+        is_goi_source_conversion_retry_candidate(
+            &row.direction,
+            &row.remote_status,
+            row.goi_source_file_sha256.as_deref(),
+            row.goi_source_file_data.is_some(),
+            &row.changelog,
+        )
+    })
+}
+
+fn is_goi_source_conversion_retry_candidate(
+    direction: &str,
+    remote_status: &str,
+    goi_source_file_sha256: Option<&str>,
+    has_goi_source_file_data: bool,
+    changelog: &serde_json::Value,
+) -> bool {
+    if direction != PALITRA_GOI_SYNC_DIRECTION_GOI
+        || remote_status != PALITRA_GOI_REMOTE_STATUS_PRESENT
+        || goi_source_file_sha256.is_none()
+        || !has_goi_source_file_data
+    {
+        return false;
+    }
+    let changelog = goi_changelog::entries_from_value(changelog);
+    goi_changelog::latest_goi_source_conversion_warning(&changelog)
 }
 
 #[post("/api/palitra/list")]
@@ -3287,7 +3359,7 @@ mod tests {
     }
 
     #[test]
-    fn retry_goi_source_conversion_ignores_older_warning_after_current_ok() {
+    fn retry_goi_source_conversion_selects_retryable_row_after_newer_ok() {
         let older_failed_row = goi_source_retry_row_for_test(
             1,
             0,
@@ -3303,16 +3375,18 @@ mod tests {
             vec![4, 5, 6],
         );
 
-        assert!(select_goi_source_conversion_retry_row(vec![
+        let row = select_goi_source_conversion_retry_row(vec![
             current_ok_row,
             older_failed_row,
         ])
-        .is_none());
+        .unwrap();
+
+        assert_eq!(row.id, 1);
     }
 
     #[test]
-    fn retry_goi_source_conversion_ignores_older_warning_after_current_without_data(
-    ) {
+    fn retry_goi_source_conversion_selects_older_warning_when_newer_lacks_data()
+    {
         let older_failed_row = goi_source_retry_row_for_test(
             1,
             0,
@@ -3333,7 +3407,7 @@ mod tests {
             current_failed_row,
             older_failed_row,
         ])
-        .is_none());
+        .is_some_and(|row| row.id == 1));
     }
 
     #[test]

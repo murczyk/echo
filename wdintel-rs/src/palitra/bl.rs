@@ -234,7 +234,6 @@ where
         .all(dbx)
         .await
         .c(h!())?;
-    let mut current_goi_source_row_ids = HashSet::new();
     for row in rows {
         let Some(palitra_id) = row.palitra_id else {
             continue;
@@ -244,17 +243,13 @@ where
         };
         let row_changelog =
             crate::palitra::goi_changelog::entries_from_value(&row.changelog);
-        let is_goi_source_row = row.direction == PALITRA_GOI_SYNC_DIRECTION_GOI
-            && row.goi_source_file_sha256.is_some();
-        summary.goi_owned |= is_goi_source_row;
-        if is_goi_source_row && current_goi_source_row_ids.insert(palitra_id) {
-            summary.goi_source_refresh_retry_available =
-                row.has_goi_source_file_data
-                    && crate::palitra::goi_changelog::latest_goi_source_conversion_warning(
-                        &row_changelog,
-                    );
-        }
-        summary.changelog.extend(row_changelog);
+        update_goi_sync_summary_from_row(
+            summary,
+            &row.direction,
+            row.goi_source_file_sha256.as_deref(),
+            row.has_goi_source_file_data,
+            row_changelog,
+        );
     }
     for summary in result.values_mut() {
         summary
@@ -267,6 +262,26 @@ where
         }
     }
     Ok(result)
+}
+
+fn update_goi_sync_summary_from_row(
+    summary: &mut PalitraGoiSyncSummary,
+    direction: &str,
+    goi_source_file_sha256: Option<&str>,
+    has_goi_source_file_data: bool,
+    row_changelog: Vec<PalitraChangelogEntry>,
+) {
+    let is_goi_source_row = direction == PALITRA_GOI_SYNC_DIRECTION_GOI
+        && goi_source_file_sha256.is_some();
+    summary.goi_owned |= is_goi_source_row;
+    if is_goi_source_row {
+        summary.goi_source_refresh_retry_available |=
+            has_goi_source_file_data
+                && crate::palitra::goi_changelog::latest_goi_source_conversion_warning(
+                    &row_changelog,
+                );
+    }
+    summary.changelog.extend(row_changelog);
 }
 
 pub(crate) async fn is_goi_owned_convertible_palitra<'a, 'async_trait, C>(
@@ -3811,6 +3826,38 @@ mod tests {
 
         assert!(summary.latest_changelog_warning);
         assert!(!summary.goi_source_refresh_retry_available);
+    }
+
+    #[test]
+    fn test_goi_source_retry_summary_checks_all_present_source_rows() {
+        let mut summary = super::PalitraGoiSyncSummary::default();
+        let ok_changelog = vec![crate::palitra::goi_changelog::ok_entry(
+            "Synced from GOI",
+            "Палітру оновлено з ГОІ.",
+        )];
+        let failed_changelog =
+            vec![crate::palitra::goi_changelog::error_entry(
+                "GOI source conversion failed",
+                "Не вдалося сконвертувати файл ГОІ.",
+            )];
+
+        super::update_goi_sync_summary_from_row(
+            &mut summary,
+            PALITRA_GOI_SYNC_DIRECTION_GOI,
+            Some("ok-source-sha"),
+            true,
+            ok_changelog,
+        );
+        super::update_goi_sync_summary_from_row(
+            &mut summary,
+            PALITRA_GOI_SYNC_DIRECTION_GOI,
+            Some("failed-source-sha"),
+            true,
+            failed_changelog,
+        );
+
+        assert!(summary.goi_owned);
+        assert!(summary.goi_source_refresh_retry_available);
     }
 
     #[test]
