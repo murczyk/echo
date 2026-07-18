@@ -13,6 +13,19 @@ const useRerAnalysisNeoPageMock = vi.hoisted(() => vi.fn());
 vi.mock('@mui/material', () => ({
   Badge: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   Box: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  ButtonBase: ({
+    children,
+    onClick,
+    disabled,
+  }: {
+    children: ReactNode;
+    onClick?: () => void;
+    disabled?: boolean;
+  }) => (
+    <button type="button" onClick={onClick} disabled={disabled}>
+      {children}
+    </button>
+  ),
   Button: ({ children, onClick }: { children: ReactNode; onClick?: () => void }) => (
     <button type="button" onClick={onClick}>
       {children}
@@ -20,18 +33,33 @@ vi.mock('@mui/material', () => ({
   ),
   Chip: ({ label }: { label?: ReactNode }) => <div>{label}</div>,
   CircularProgress: () => <div data-testid="circular-progress" />,
+  ClickAwayListener: ({ children }: { children: ReactNode }) => children,
   FormControlLabel: ({ control, label }: { control: ReactNode; label: ReactNode }) => (
     <div>
       {control}
       {label}
     </div>
   ),
-  IconButton: ({ children, onClick }: { children: ReactNode; onClick?: () => void }) => (
-    <button type="button" onClick={onClick}>
+  IconButton: ({
+    children,
+    onClick,
+    disabled,
+    'aria-label': ariaLabel,
+  }: {
+    children: ReactNode;
+    onClick?: () => void;
+    disabled?: boolean;
+    'aria-label'?: string;
+  }) => (
+    <button type="button" onClick={onClick} disabled={disabled} aria-label={ariaLabel}>
       {children}
     </button>
   ),
+  MenuItem: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  MenuList: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   Paper: ({ children }: { children: ReactNode }) => <section>{children}</section>,
+  Popper: ({ children, open }: { children: ReactNode; open: boolean }) =>
+    open ? <div>{children}</div> : null,
   Skeleton: ({ children }: { children?: ReactNode }) => <div>{children ?? 'skeleton'}</div>,
   Stack: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   Switch: ({
@@ -48,6 +76,7 @@ vi.mock('@mui/material', () => ({
   Tab: ({ label }: { label?: ReactNode }) => <div>{label}</div>,
   Tabs: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   Tooltip: ({ children }: { children: ReactNode }) => <>{children}</>,
+  Typography: ({ children }: { children: ReactNode }) => <span>{children}</span>,
   useMediaQuery: () => false,
 }));
 
@@ -143,9 +172,11 @@ vi.mock('@mui/icons-material/BarChartOutlined', () => ({ default: () => <span />
 vi.mock('@mui/icons-material/ChevronLeftOutlined', () => ({ default: () => <span /> }));
 vi.mock('@mui/icons-material/ChevronRightOutlined', () => ({ default: () => <span /> }));
 vi.mock('@mui/icons-material/DescriptionOutlined', () => ({ default: () => <span /> }));
+vi.mock('@mui/icons-material/FirstPageOutlined', () => ({ default: () => <span /> }));
 vi.mock('@mui/icons-material/FilterAltOutlined', () => ({ default: () => <span /> }));
 vi.mock('@mui/icons-material/PeopleOutlineOutlined', () => ({ default: () => <span /> }));
 vi.mock('@mui/icons-material/MapOutlined', () => ({ default: () => <span /> }));
+vi.mock('@mui/icons-material/LastPageOutlined', () => ({ default: () => <span /> }));
 vi.mock('@mui/icons-material/MessageOutlined', () => ({ default: () => <span /> }));
 vi.mock('@mui/icons-material/PersonAddOutlined', () => ({ default: () => <span /> }));
 vi.mock('@mui/icons-material/TableRowsOutlined', () => ({ default: () => <span /> }));
@@ -199,7 +230,10 @@ function buildPage() {
     messageComments: {},
     messages: [],
     messagesLoading: false,
+    messagesOverallCount: null,
     messagesPaging: false,
+    messagesTotalCount: null,
+    messagesTotalLoading: true,
     networkDisplayMap: {},
     networks: [],
     newCallsigns: { notSeen24h: [], notSeen7days: [], notSeen30days: [] },
@@ -207,6 +241,7 @@ function buildPage() {
     noMoreToLoad: false,
     newestFirst: true,
     nolimitShown: false,
+    pageIndex: 0,
     options: {
       tags: [],
       aors: [],
@@ -272,11 +307,15 @@ function buildPage() {
     loadFilterSection: vi.fn(),
     loadGroupsActivity: vi.fn(),
     loadMessagesForMap: vi.fn(),
-    loadMoreMessages: vi.fn(),
+    loadFirstPage: vi.fn(),
+    loadLastPage: vi.fn(),
+    loadNextPage: vi.fn(),
+    loadPrevPage: vi.fn(),
     loadNewCallsigns: vi.fn(),
     openReport: vi.fn(),
     repeatReportTaskRun: vi.fn(),
     refreshMapDateRange: vi.fn(),
+    reload: vi.fn(),
     renameSummaryUnit: vi.fn(),
     setCenterTab: vi.fn(),
     setNewestFirst: vi.fn(),
@@ -315,23 +354,6 @@ describe('RerAnalysisNeoPage', () => {
     }
   });
 
-  it('shows placeholder chips for totals while counts are loading', async () => {
-    const container = document.createElement('div');
-    document.body.appendChild(container);
-    rendered.push(container);
-    const root = createRoot(container);
-
-    await act(async () => {
-      root.render(<RerAnalysisNeoPage />);
-    });
-
-    expect(container.textContent).toContain('— з —');
-
-    await act(async () => {
-      root.unmount();
-    });
-  });
-
   it('wires the header toggle buttons to the existing panel handlers', async () => {
     const container = document.createElement('div');
     document.body.appendChild(container);
@@ -360,6 +382,29 @@ describe('RerAnalysisNeoPage', () => {
     const page = useRerAnalysisNeoPageMock.mock.results[0]?.value;
     expect(page.toggleLeftPanel).toHaveBeenCalledTimes(1);
     expect(page.toggleRightPanel).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      root.unmount();
+    });
+  });
+
+  it('preserves the current message page when the header refresh button is clicked', async () => {
+    const page = buildPage();
+    page.countsLoading = false;
+    useRerAnalysisNeoPageMock.mockReturnValue(page);
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    rendered.push(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(<RerAnalysisNeoPage />);
+    });
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>('[aria-label="Оновити"]')?.click();
+    });
+
+    expect(page.reload).toHaveBeenCalledWith({ preserveMessagePage: true });
 
     await act(async () => {
       root.unmount();

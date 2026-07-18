@@ -301,6 +301,7 @@ export function useAnalysisData({
   });
 
   const messageList = useAnalysisMessageList({
+    deferInitialLoad,
     loadMissingNetworksForMessages,
     newestFirst,
     onError,
@@ -399,7 +400,10 @@ export function useAnalysisData({
       loadTopSidebarData: sidebarData.loadTopSidebarData,
       clearAnalysisResults,
       loadMessageComments: messageList.loadMessageComments,
+      getCurrentMessagePageCursor: messageList.getCurrentMessagePageCursor,
+      invalidateMessagePageRequests: messageList.invalidateMessagePageRequests,
       invalidateMessagePaging: messageList.invalidateMessagePaging,
+      refreshMessageCounts: messageList.refreshMessageCounts,
       setAorEntries: messageList.setAorEntries,
       setCounts: messageList.setCounts,
       setCountsLoading,
@@ -540,7 +544,10 @@ export function useAnalysisData({
     loadCorrelatedFreqs: sidebarData.loadCorrelatedFreqs,
     loadGroupsActivity: sidebarData.loadGroupsActivity,
     loadNewCallsigns: sidebarData.loadNewCallsigns,
-    loadMoreMessages: messageList.loadMoreMessages,
+    loadFirstPage: messageList.loadFirstPage,
+    loadLastPage: messageList.loadLastPage,
+    loadNextPage: messageList.loadNextPage,
+    loadPrevPage: messageList.loadPrevPage,
     loadMessagesForMap: mapData.loadMessagesForMap,
     mapAttrs: mapData.mapAttrs,
     messageActionLoading: messageActionState.messageActionCount > 0,
@@ -548,12 +555,16 @@ export function useAnalysisData({
     messagesPaging: messageList.messagesPaging,
     messageComments: messageList.messageComments,
     messages: messageList.messages,
+    messagesOverallCount: messageList.messagesOverallCount,
+    messagesTotalCount: messageList.messagesTotalCount,
+    messagesTotalLoading: messageList.messagesTotalLoading,
     networkDisplayMap: referenceState.networkDisplayMap,
     networks: referenceState.networks,
     newCallsigns: sidebarData.newCallsigns,
     newCallsignsLoading: sidebarData.newCallsignsLoading,
     noMoreToLoad: messageList.noMoreToLoad,
     nolimitShown: messageList.nolimitShown,
+    pageIndex: messageList.pageIndex,
     onPrependLocalMessage: useCallback(
       (messageId: number, message: InboxMessage) => {
         messageList.setMessages((current) => [[messageId, message], ...current]);

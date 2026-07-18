@@ -38,6 +38,9 @@ export function AnalysisFiltersPanel({ page }: AnalysisFiltersPanelProps) {
     groupInfos,
     includeOnlyNewFreqs,
     loadedSavedFilter,
+    messagesOverallCount,
+    messagesTotalCount,
+    messagesTotalLoading,
     options,
     queryState,
     unitsExactMatchOnlyDefault,
@@ -147,6 +150,16 @@ export function AnalysisFiltersPanel({ page }: AnalysisFiltersPanelProps) {
               Фільтри
             </Typography>
           )}
+          <Typography
+            variant="body2"
+            role="status"
+            aria-live="polite"
+            sx={{ fontWeight: 600, whiteSpace: 'nowrap', px: 0.5 }}
+          >
+            {!messagesTotalLoading && messagesTotalCount !== null && messagesOverallCount !== null
+              ? `${messagesTotalCount} з ${messagesOverallCount}`
+              : '— з —'}
+          </Typography>
           <Button
             size="small"
             onClick={resetFilters}

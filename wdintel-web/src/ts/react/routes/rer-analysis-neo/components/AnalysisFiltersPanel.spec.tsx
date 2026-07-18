@@ -133,7 +133,9 @@ vi.mock('@mui/material', () => ({
   ),
   Tooltip: ({ children }: { children: ReactNode }) => <>{children}</>,
   useMediaQuery: () => false,
-  Typography: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  Typography: ({ children, role }: { children: ReactNode; role?: string }) => (
+    <div role={role}>{children}</div>
+  ),
 }));
 
 vi.mock('@mui/icons-material/Search', () => ({
@@ -267,6 +269,9 @@ function buildProps(
       aorEntries: [],
       includeOnlyNewFreqs: false,
       loadedSavedFilter: null,
+      messagesOverallCount: null,
+      messagesTotalCount: null,
+      messagesTotalLoading: false,
       isFilterSectionLoading: () => false,
       isFilterSectionEmptyLoading: () => false,
       isFilterSectionStale: () => false,
@@ -345,6 +350,28 @@ describe('AnalysisFiltersPanel', () => {
       });
       item.container.remove();
     }
+  });
+
+  it('renders exact selected and overall message counts', async () => {
+    const view = await renderComponent(
+      buildProps({
+        counts: { countOverall: 0, countSelected: 0 } as never,
+        messagesOverallCount: 137,
+        messagesTotalCount: 42,
+      }),
+    );
+    rendered.push(view);
+
+    const counter = view.container.querySelector('[role="status"]');
+    expect(counter?.textContent).toBe('42 з 137');
+  });
+
+  it('shows an em-dash placeholder chip while message counts are loading', async () => {
+    const view = await renderComponent(buildProps({ messagesTotalLoading: true }));
+    rendered.push(view);
+
+    const counter = view.container.querySelector('[role="status"]');
+    expect(counter?.textContent).toBe('— з —');
   });
 
   it('passes Elm-parity disabled states into the frequency and network filters', async () => {

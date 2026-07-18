@@ -66,6 +66,7 @@ import {
   getTagsMapForDisplay,
   importantAdd,
   importantRemove,
+  fetchInboxCount,
   inboxMessageTagsAdd,
   inboxMessageTagsModelError,
   inboxMessageTagsRm,
@@ -485,7 +486,7 @@ export async function fetchNetworksByIds(
   return transformSnakeToCamel<Network[]>(raw) ?? [];
 }
 
-export { fetchInboxMessages };
+export { fetchInboxCount, fetchInboxMessages };
 export {
   bookmarkAdd,
   bookmarkRemove,

@@ -136,6 +136,9 @@ type BuildReloadParamsInput = {
     forceReload?: boolean,
   ) => Promise<void>;
   invalidateMessagePaging: () => void;
+  invalidateMessagePageRequests: () => void;
+  getCurrentMessagePageCursor: MessageList['getCurrentMessagePageCursor'];
+  refreshMessageCounts: MessageList['refreshMessageCounts'];
   setAorEntries: MessageList['setAorEntries'];
   setCounts: MessageList['setCounts'];
   setCountsLoading: Setter<boolean>;
@@ -198,6 +201,9 @@ export function buildReloadOrchestratorParams(input: BuildReloadParamsInput) {
     clearAnalysisResults: input.clearAnalysisResults,
     loadMessageComments: input.loadMessageComments,
     invalidateMessagePaging: input.invalidateMessagePaging,
+    invalidateMessagePageRequests: input.invalidateMessagePageRequests,
+    getCurrentMessagePageCursor: input.getCurrentMessagePageCursor,
+    refreshMessageCounts: input.refreshMessageCounts,
     setAorEntries: input.setAorEntries,
     setCounts: input.setCounts,
     setCountsLoading: input.setCountsLoading,
