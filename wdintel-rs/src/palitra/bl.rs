@@ -173,8 +173,29 @@ pub(crate) async fn read_palitra_goi_sync_summary<'a, 'async_trait, C>(
 where
     C: ConnectionTrait + 'async_trait,
 {
+    #[derive(Debug, FromQueryResult)]
+    struct GoiPalitraSyncSummaryRow {
+        direction: String,
+        goi_source_file_sha256: Option<String>,
+        changelog: Json,
+        has_goi_source_file_data: bool,
+    }
+
     let rows = goi_palitra_sync::Entity::find()
         .filter(goi_palitra_sync::Column::PalitraId.eq(palitra_id))
+        .select_only()
+        .column(goi_palitra_sync::Column::Direction)
+        .column(goi_palitra_sync::Column::GoiSourceFileSha256)
+        .column(goi_palitra_sync::Column::Changelog)
+        .column_as(
+            Expr::col((
+                goi_palitra_sync::Entity,
+                goi_palitra_sync::Column::GoiSourceFileData,
+            ))
+            .is_not_null(),
+            "has_goi_source_file_data",
+        )
+        .into_model::<GoiPalitraSyncSummaryRow>()
         .all(dbx)
         .await
         .c(h!())?;
@@ -186,9 +207,7 @@ where
             crate::palitra::goi_changelog::entries_from_value(&row.changelog);
         goi_owned |= row.direction == PALITRA_GOI_SYNC_DIRECTION_GOI
             && row.goi_source_file_sha256.is_some();
-        goi_source_refresh_retry_available |= row
-            .goi_source_file_data
-            .is_some()
+        goi_source_refresh_retry_available |= row.has_goi_source_file_data
             && crate::palitra::goi_changelog::latest_goi_source_conversion_warning(
                 &row_changelog,
             );
