@@ -145,7 +145,11 @@ async fn reconcile_stale_processing_palitras(
             palitra::Column::ConversionStatus
                 .eq(PALITRA_CONVERSION_STATUS_PROCESSING),
         )
-        .filter(palitra::Column::ConversionLastAttemptAt.lte(stale_before))
+        .filter(
+            Condition::any()
+                .add(palitra::Column::ConversionLastAttemptAt.lte(stale_before))
+                .add(palitra::Column::ConversionLastAttemptAt.is_null()),
+        )
         .all(&env.dbx)
         .await
         .c(h!())?;
@@ -214,7 +218,8 @@ fn should_reconcile_processing_without_live_job(
     !deleted
         && conversion_status == PALITRA_CONVERSION_STATUS_PROCESSING
         && conversion_last_attempt_at
-            .is_some_and(|last_attempt_at| last_attempt_at <= stale_before)
+            .map(|last_attempt_at| last_attempt_at <= stale_before)
+            .unwrap_or(true)
         && !live_job_exists
 }
 
@@ -707,6 +712,13 @@ mod tests {
             Some(stale_attempt),
             stale_before,
             true,
+        ));
+        assert!(should_reconcile_processing_without_live_job(
+            false,
+            PALITRA_CONVERSION_STATUS_PROCESSING,
+            None,
+            stale_before,
+            false,
         ));
     }
 

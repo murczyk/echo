@@ -95,8 +95,11 @@ function renderConversionStatusChip(palitra: Palitra) {
 }
 
 function latestChangelogWarningDescription(palitra: Palitra): string {
-  if (!palitra.latestChangelogWarning || palitra.changelog.length === 0) {
+  if (!palitra.latestChangelogWarning) {
     return '';
+  }
+  if (palitra.changelog.length === 0) {
+    return 'Остання подія синхронізації містить попередження';
   }
   const latest = palitra.changelog[palitra.changelog.length - 1];
   return latest.description || latest.text || 'Остання подія синхронізації містить попередження';

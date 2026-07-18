@@ -577,9 +577,6 @@ impl MigratorTrait for Migrator {
             Box::new(m20260701_120000_goi_palitra_sync_multi_palitra::Migration),
             Box::new(m20260701_152707_goi_palitra_sync_side_checksums::Migration),
             Box::new(m20260701_160523_palitra_conversion_job_goi_upload_flag::Migration),
-            Box::new(
-                m20260717_111121_goi_palitra_sync_changelog_source::Migration,
-            ),
             Box::new(m20260702_145245_create_sigint_comment::Migration),
             Box::new(m20260702_155737_echo_im_sync_since::Migration),
             Box::new(m20260702_173206_echo_missing_messages::Migration),
@@ -633,6 +630,9 @@ impl MigratorTrait for Migrator {
                 m20260713_152932_rename_cyber_echo_enabled_to_devices_section_enabled::Migration,
             ),
             Box::new(m20260715_092901_add_sigint_inbox_item_network::Migration),
+            Box::new(
+                m20260717_111121_goi_palitra_sync_changelog_source::Migration,
+            ),
         ]
     }
 }

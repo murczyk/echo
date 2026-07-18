@@ -172,7 +172,7 @@ function renderPalitraRowActions(row: PalitraRowView, props: Props) {
         <MrtRowActionButton
           label="Історія"
           onClick={() => props.onOpenHistory(row.palitra)}
-          disabled={row.palitra.changelog.length === 0 || props.loading || props.externalBusy}
+          disabled={props.loading || props.externalBusy}
           icon={<HistoryIcon fontSize="small" />}
           opensModal
         />

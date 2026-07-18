@@ -140,9 +140,13 @@ function formatChangelogTimestamp(timestamp: string): string {
 
 function PalitraHistoryDialog({
   palitra,
+  loading,
+  error,
   onClose,
 }: {
   palitra: ReturnType<typeof useRerPalitraNeoPage>['historyDialogPalitra'];
+  loading: boolean;
+  error: string | null;
   onClose: () => void;
 }) {
   const entries = palitra ? [...palitra.changelog].reverse() : [];
@@ -155,7 +159,18 @@ function PalitraHistoryDialog({
           {palitra?.name ?? ''}
         </Typography>
         <Stack spacing={1.5}>
-          {entries.length === 0 ? (
+          {loading ? (
+            <Stack direction="row" spacing={1.5} alignItems="center">
+              <CircularProgress size={18} />
+              <Typography variant="body2" color="text.secondary">
+                Завантаження історії...
+              </Typography>
+            </Stack>
+          ) : error ? (
+            <Typography variant="body2" color="error">
+              {error}
+            </Typography>
+          ) : entries.length === 0 ? (
             <Typography variant="body2" color="text.secondary">
               Немає записів історії.
             </Typography>
@@ -345,7 +360,12 @@ function RerPalitraNeoPageBody() {
         onClose={page.closePreview}
       />
 
-      <PalitraHistoryDialog palitra={page.historyDialogPalitra} onClose={page.closeHistory} />
+      <PalitraHistoryDialog
+        palitra={page.historyDialogPalitra}
+        loading={page.historyLoading}
+        error={page.historyError}
+        onClose={page.closeHistory}
+      />
 
       <Dialog
         open={page.archiveDialogOpen}

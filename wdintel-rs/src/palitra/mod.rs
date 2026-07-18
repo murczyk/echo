@@ -5,8 +5,8 @@ use crate::config::{
     PALITRA_CONVERSION_JOB_STATUS_PENDING, PALITRA_CONVERSION_STATUS_ERROR,
     PALITRA_CONVERSION_STATUS_PROCESSING, PALITRA_CONVERSION_STATUS_READY,
     PALITRA_DIRECT_PARSE_EXTENSIONS, PALITRA_GOI_REMOTE_STATUS_PRESENT,
-    PALITRA_GOI_SYNC_JOB_KIND_DELETE, PALITRA_GOI_SYNC_JOB_KIND_MOVE,
-    PALITRA_GOI_SYNC_JOB_KIND_UPLOAD,
+    PALITRA_GOI_SYNC_DIRECTION_GOI, PALITRA_GOI_SYNC_JOB_KIND_DELETE,
+    PALITRA_GOI_SYNC_JOB_KIND_MOVE, PALITRA_GOI_SYNC_JOB_KIND_UPLOAD,
 };
 use crate::entities::*;
 use crate::error::AppError;
@@ -839,8 +839,18 @@ pub async fn retry_goi_source_conversion(
     }
     let rows = goi_palitra_sync::Entity::find()
         .filter(goi_palitra_sync::Column::PalitraId.eq(palitra_id))
-        .filter(goi_palitra_sync::Column::GoiSourceFileData.is_not_null())
+        .filter(
+            goi_palitra_sync::Column::Direction
+                .eq(PALITRA_GOI_SYNC_DIRECTION_GOI),
+        )
+        .filter(
+            goi_palitra_sync::Column::RemoteStatus
+                .eq(PALITRA_GOI_REMOTE_STATUS_PRESENT),
+        )
+        .filter(goi_palitra_sync::Column::GoiSourceFileSha256.is_not_null())
         .order_by_desc(goi_palitra_sync::Column::UpdatedAt)
+        .order_by_desc(goi_palitra_sync::Column::Id)
+        .limit(1)
         .all(&env.dbx)
         .await
         .c(h!())?;
@@ -895,10 +905,20 @@ pub async fn retry_goi_source_conversion(
 fn select_goi_source_conversion_retry_row(
     rows: Vec<goi_palitra_sync::Model>,
 ) -> Option<goi_palitra_sync::Model> {
-    rows.into_iter().find(|row| {
-        let changelog = goi_changelog::entries_from_value(&row.changelog);
-        goi_changelog::latest_goi_source_conversion_warning(&changelog)
-    })
+    rows.into_iter()
+        .find(|row| {
+            row.direction == PALITRA_GOI_SYNC_DIRECTION_GOI
+                && row.remote_status == PALITRA_GOI_REMOTE_STATUS_PRESENT
+                && row.goi_source_file_sha256.is_some()
+        })
+        .and_then(|row| {
+            let changelog = goi_changelog::entries_from_value(&row.changelog);
+            (row.goi_source_file_data.is_some()
+                && goi_changelog::latest_goi_source_conversion_warning(
+                    &changelog,
+                ))
+            .then_some(row)
+        })
 }
 
 #[post("/api/palitra/list")]
@@ -957,6 +977,37 @@ pub async fn list_all_palitras_detailed(
         .await
         .context(h!())?;
     Ok(Json(palitra))
+}
+
+#[post("/api/palitra/goi-sync-history/{palitra_id}")]
+pub async fn read_palitra_goi_sync_history(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+    path: actix_web::web::Path<i64>,
+) -> Result<Json<Vec<PalitraChangelogEntry>>, AppError> {
+    let login = user.id().c(h!())?;
+    crate::users::has_role(&env.dbx, &login, "Rer")
+        .await
+        .context(h!())?;
+    let palitra_id = path.into_inner();
+    let is_admin = is_palitra_admin(&env, &login).await.c(h!())?;
+    let is_accessible = if is_admin {
+        true
+    } else {
+        bl::collect_accessible_palitra_ids(login, &env.dbx)
+            .await
+            .c(h!())?
+            .contains(&palitra_id)
+    };
+    if !is_accessible {
+        return Err(AppError::Forbidden(
+            "Palitra is not accessible for GOI sync history".into(),
+        ));
+    }
+    let summary = bl::read_palitra_goi_sync_summary(&env.dbx, palitra_id)
+        .await
+        .context(h!())?;
+    Ok(Json(summary.changelog))
 }
 
 #[post("/api/palitra/v2/read/{palitra_id}")]
@@ -3163,6 +3214,7 @@ mod tests {
             updated_at_offset_sec,
             entry,
             filename,
+            PALITRA_GOI_REMOTE_STATUS_PRESENT,
             file_data,
         )
     }
@@ -3172,6 +3224,7 @@ mod tests {
         updated_at_offset_sec: i64,
         entry: PalitraChangelogEntry,
         filename: &str,
+        remote_status: &str,
         file_data: Vec<u8>,
     ) -> goi_palitra_sync::Model {
         let now = Utc::now().fixed_offset();
@@ -3187,7 +3240,7 @@ mod tests {
             remote_relative_path: filename.to_string(),
             direction: crate::config::PALITRA_GOI_SYNC_DIRECTION_GOI
                 .to_string(),
-            remote_status: PALITRA_GOI_REMOTE_STATUS_PRESENT.to_string(),
+            remote_status: remote_status.to_string(),
             file_size: Some(3),
             file_sha256: Some("abc".to_string()),
             echo_file_size: Some(3),
@@ -3221,19 +3274,9 @@ mod tests {
             "failed-source.gpx",
             vec![1, 2, 3],
         );
-        let newer_ok_row = goi_source_retry_row_for_test(
-            2,
-            10,
-            false,
-            "newer-ok-source.gpx",
-            vec![4, 5, 6],
-        );
 
-        let row = select_goi_source_conversion_retry_row(vec![
-            newer_ok_row,
-            failed_row,
-        ])
-        .unwrap();
+        let row =
+            select_goi_source_conversion_retry_row(vec![failed_row]).unwrap();
 
         assert_eq!(row.id, 1);
         assert_eq!(
@@ -3241,6 +3284,56 @@ mod tests {
             Some("failed-source.gpx")
         );
         assert_eq!(row.goi_source_file_data, Some(vec![1, 2, 3]));
+    }
+
+    #[test]
+    fn retry_goi_source_conversion_ignores_older_warning_after_current_ok() {
+        let older_failed_row = goi_source_retry_row_for_test(
+            1,
+            0,
+            true,
+            "older-failed-source.gpx",
+            vec![1, 2, 3],
+        );
+        let current_ok_row = goi_source_retry_row_for_test(
+            2,
+            10,
+            false,
+            "current-ok-source.gpx",
+            vec![4, 5, 6],
+        );
+
+        assert!(select_goi_source_conversion_retry_row(vec![
+            current_ok_row,
+            older_failed_row,
+        ])
+        .is_none());
+    }
+
+    #[test]
+    fn retry_goi_source_conversion_ignores_older_warning_after_current_without_data(
+    ) {
+        let older_failed_row = goi_source_retry_row_for_test(
+            1,
+            0,
+            true,
+            "older-failed-source.gpx",
+            vec![1, 2, 3],
+        );
+        let mut current_failed_row = goi_source_retry_row_for_test(
+            2,
+            10,
+            true,
+            "current-failed-source.gpx",
+            vec![4, 5, 6],
+        );
+        current_failed_row.goi_source_file_data = None;
+
+        assert!(select_goi_source_conversion_retry_row(vec![
+            current_failed_row,
+            older_failed_row,
+        ])
+        .is_none());
     }
 
     #[test]
@@ -3253,11 +3346,32 @@ mod tests {
                 "Дубльований шлях ГОІ.",
             ),
             "source.gpx",
+            PALITRA_GOI_REMOTE_STATUS_PRESENT,
             vec![1, 2, 3],
         );
 
         assert!(select_goi_source_conversion_retry_row(vec![
             duplicate_conflict_row
+        ])
+        .is_none());
+    }
+
+    #[test]
+    fn retry_goi_source_conversion_ignores_missing_source_row() {
+        let missing_failed_row = goi_source_retry_row_with_entry_for_test(
+            1,
+            0,
+            goi_changelog::error_entry(
+                "GOI source conversion failed",
+                "Не вдалося сконвертувати файл ГОІ.",
+            ),
+            "missing-source.gpx",
+            crate::config::PALITRA_GOI_REMOTE_STATUS_MISSING,
+            vec![1, 2, 3],
+        );
+
+        assert!(select_goi_source_conversion_retry_row(vec![
+            missing_failed_row
         ])
         .is_none());
     }

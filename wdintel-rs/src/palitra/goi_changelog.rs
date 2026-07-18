@@ -1,3 +1,6 @@
+use crate::config::{
+    PALITRA_GOI_REMOTE_STATUS_PRESENT, PALITRA_GOI_SYNC_DIRECTION_GOI,
+};
 use crate::entities::*;
 use crate::h;
 use crate::palitra::types::PalitraChangelogEntry;
@@ -5,6 +8,12 @@ use crate::types::*;
 use chrono::Utc;
 use sea_orm::prelude::Expr;
 use sea_orm::*;
+
+#[derive(Debug, FromQueryResult)]
+struct GoiPalitraSyncChangelogRow {
+    id: i64,
+    changelog: serde_json::Value,
+}
 
 pub(crate) fn ok_entry(
     text: impl Into<String>,
@@ -103,7 +112,19 @@ where
 {
     let rows = goi_palitra_sync::Entity::find()
         .filter(goi_palitra_sync::Column::PalitraId.eq(palitra_id))
+        .filter(
+            goi_palitra_sync::Column::Direction
+                .eq(PALITRA_GOI_SYNC_DIRECTION_GOI),
+        )
+        .filter(
+            goi_palitra_sync::Column::RemoteStatus
+                .eq(PALITRA_GOI_REMOTE_STATUS_PRESENT),
+        )
         .filter(goi_palitra_sync::Column::GoiSourceFileSha256.is_not_null())
+        .select_only()
+        .column(goi_palitra_sync::Column::Id)
+        .column(goi_palitra_sync::Column::Changelog)
+        .into_model::<GoiPalitraSyncChangelogRow>()
         .all(dbx)
         .await
         .c(h!())?;
@@ -121,7 +142,19 @@ where
 {
     let rows = goi_palitra_sync::Entity::find()
         .filter(goi_palitra_sync::Column::PalitraId.eq(palitra_id))
+        .filter(
+            goi_palitra_sync::Column::Direction
+                .eq(PALITRA_GOI_SYNC_DIRECTION_GOI),
+        )
+        .filter(
+            goi_palitra_sync::Column::RemoteStatus
+                .eq(PALITRA_GOI_REMOTE_STATUS_PRESENT),
+        )
         .filter(goi_palitra_sync::Column::GoiSourceFileSha256.eq(file_sha256))
+        .select_only()
+        .column(goi_palitra_sync::Column::Id)
+        .column(goi_palitra_sync::Column::Changelog)
+        .into_model::<GoiPalitraSyncChangelogRow>()
         .all(dbx)
         .await
         .c(h!())?;
@@ -141,6 +174,10 @@ where
     }
     let rows = goi_palitra_sync::Entity::find()
         .filter(goi_palitra_sync::Column::Id.is_in(row_ids.to_vec()))
+        .select_only()
+        .column(goi_palitra_sync::Column::Id)
+        .column(goi_palitra_sync::Column::Changelog)
+        .into_model::<GoiPalitraSyncChangelogRow>()
         .all(dbx)
         .await
         .c(h!())?;
@@ -149,7 +186,7 @@ where
 
 async fn append_for_rows<'a, C>(
     dbx: &'a C,
-    rows: Vec<goi_palitra_sync::Model>,
+    rows: Vec<GoiPalitraSyncChangelogRow>,
     entry: PalitraChangelogEntry,
 ) -> anyhow::Result<()>
 where

@@ -475,7 +475,7 @@ async fn find_goi_palitra_sync_rows(
     goi_integration_id: i64,
     remote_path: &str,
 ) -> anyhow::Result<Vec<goi_palitra_sync::Model>> {
-    goi_palitra_sync::Entity::find()
+    goi_palitra_sync_without_source_data_query()
         .filter(
             goi_palitra_sync::Column::GoiIntegrationId.eq(goi_integration_id),
         )
@@ -483,9 +483,43 @@ async fn find_goi_palitra_sync_rows(
             goi_palitra_sync::Column::RemoteRelativePath
                 .eq(remote_path.to_string()),
         )
+        .order_by_asc(goi_palitra_sync::Column::Id)
         .all(dbx)
         .await
         .c(h!())
+}
+
+fn goi_palitra_sync_without_source_data_query(
+) -> Select<goi_palitra_sync::Entity> {
+    goi_palitra_sync::Entity::find()
+        .select_only()
+        .column(goi_palitra_sync::Column::Id)
+        .column(goi_palitra_sync::Column::GoiIntegrationId)
+        .column(goi_palitra_sync::Column::PalitraId)
+        .column(goi_palitra_sync::Column::RemoteRelativePath)
+        .column(goi_palitra_sync::Column::Direction)
+        .column(goi_palitra_sync::Column::RemoteStatus)
+        .column(goi_palitra_sync::Column::FileSize)
+        .column(goi_palitra_sync::Column::FileSha256)
+        .column(goi_palitra_sync::Column::LastSeenAt)
+        .column(goi_palitra_sync::Column::LastSyncAt)
+        .column(goi_palitra_sync::Column::CreatedAt)
+        .column(goi_palitra_sync::Column::UpdatedAt)
+        .column(goi_palitra_sync::Column::EchoFileSize)
+        .column(goi_palitra_sync::Column::EchoFileSha256)
+        .column(goi_palitra_sync::Column::EchoUpdatedAt)
+        .column(goi_palitra_sync::Column::GoiFileSize)
+        .column(goi_palitra_sync::Column::GoiFileSha256)
+        .column(goi_palitra_sync::Column::GoiUpdatedAt)
+        .column(goi_palitra_sync::Column::Changelog)
+        .column(goi_palitra_sync::Column::GoiSourceFileName)
+        .column(goi_palitra_sync::Column::GoiSourceFormat)
+        .column(goi_palitra_sync::Column::GoiSourceContentType)
+        .column_as(Expr::cust("NULL::bytea"), "goi_source_file_data")
+        .column(goi_palitra_sync::Column::GoiSourceFileSize)
+        .column(goi_palitra_sync::Column::GoiSourceFileSha256)
+        .column(goi_palitra_sync::Column::GoiSourceFailedFileSha256)
+        .column(goi_palitra_sync::Column::GoiSourceLastRetryAt)
 }
 
 async fn reconcile_tracked_goi_paths(
@@ -493,8 +527,20 @@ async fn reconcile_tracked_goi_paths(
     integration: &goi_integration::Model,
     remote_paths: &BTreeSet<String>,
 ) -> anyhow::Result<()> {
+    #[derive(Debug, FromQueryResult)]
+    struct TrackedGoiPathRow {
+        id: i64,
+        palitra_id: Option<i64>,
+        remote_relative_path: String,
+    }
+
     let rows = goi_palitra_sync::Entity::find()
         .filter(goi_palitra_sync::Column::GoiIntegrationId.eq(integration.id))
+        .select_only()
+        .column(goi_palitra_sync::Column::Id)
+        .column(goi_palitra_sync::Column::PalitraId)
+        .column(goi_palitra_sync::Column::RemoteRelativePath)
+        .into_model::<TrackedGoiPathRow>()
         .all(dbx)
         .await
         .c(h!())?;
@@ -502,17 +548,24 @@ async fn reconcile_tracked_goi_paths(
     for row in rows {
         let is_present = remote_paths.contains(&row.remote_relative_path);
         let palitra_id = row.palitra_id;
-        let mut row = row.into_active_model();
-        row.remote_status = Set(if is_present {
-            PALITRA_GOI_REMOTE_STATUS_PRESENT.to_string()
-        } else {
-            PALITRA_GOI_REMOTE_STATUS_MISSING.to_string()
-        });
-        row.updated_at = Set(now);
+        let mut update = goi_palitra_sync::Entity::update_many()
+            .filter(goi_palitra_sync::Column::Id.eq(row.id))
+            .col_expr(
+                goi_palitra_sync::Column::RemoteStatus,
+                Expr::value(if is_present {
+                    PALITRA_GOI_REMOTE_STATUS_PRESENT.to_string()
+                } else {
+                    PALITRA_GOI_REMOTE_STATUS_MISSING.to_string()
+                }),
+            )
+            .col_expr(goi_palitra_sync::Column::UpdatedAt, Expr::value(now));
         if is_present {
-            row.last_seen_at = Set(Some(now));
+            update = update.col_expr(
+                goi_palitra_sync::Column::LastSeenAt,
+                Expr::value(Some(now)),
+            );
         }
-        row.update(dbx).await.c(h!())?;
+        update.exec(dbx).await.c(h!())?;
         if let Some(palitra_id) = palitra_id {
             refresh_palitra_missing_in_goi(dbx, palitra_id)
                 .await
@@ -1009,21 +1062,41 @@ where
             .await
             .c(h!())?;
         }
-        let mut row = row.clone().into_active_model();
-        row.remote_status = Set(PALITRA_GOI_REMOTE_STATUS_PRESENT.to_string());
+        let mut update = goi_palitra_sync::Entity::update_many()
+            .filter(goi_palitra_sync::Column::Id.eq(row.id))
+            .col_expr(
+                goi_palitra_sync::Column::RemoteStatus,
+                Expr::value(PALITRA_GOI_REMOTE_STATUS_PRESENT.to_string()),
+            )
+            .col_expr(
+                goi_palitra_sync::Column::LastSeenAt,
+                Expr::value(Some(now)),
+            )
+            .col_expr(goi_palitra_sync::Column::UpdatedAt, Expr::value(now));
         if matches!(sync_decision.decision, GoiPalitraSyncDecision::Noop) {
-            row.goi_file_size = Set(Some(file_size));
-            row.goi_file_sha256 = Set(Some(file_sha256.to_string()));
+            update = update
+                .col_expr(
+                    goi_palitra_sync::Column::GoiFileSize,
+                    Expr::value(Some(file_size)),
+                )
+                .col_expr(
+                    goi_palitra_sync::Column::GoiFileSha256,
+                    Expr::value(Some(file_sha256.to_string())),
+                );
             if goi_changed {
-                row.goi_updated_at = Set(Some(now));
+                update = update.col_expr(
+                    goi_palitra_sync::Column::GoiUpdatedAt,
+                    Expr::value(Some(now)),
+                );
             }
         }
-        row.last_seen_at = Set(Some(now));
         if let Some(changelog) = changelog {
-            row.changelog = Set(changelog);
+            update = update.col_expr(
+                goi_palitra_sync::Column::Changelog,
+                Expr::value(changelog),
+            );
         }
-        row.updated_at = Set(now);
-        row.update(dbx).await.c(h!())?;
+        update.exec(dbx).await.c(h!())?;
     }
     Ok(())
 }
@@ -1046,24 +1119,59 @@ where
             || tracked_row_goi_file_sha256(row) != Some(file_sha256);
         let echo_checksum_known = tracked_row_echo_file_size(row).is_some()
             || tracked_row_echo_file_sha256(row).is_some();
-        let mut row = row.clone().into_active_model();
-        row.remote_status = Set(PALITRA_GOI_REMOTE_STATUS_PRESENT.to_string());
-        row.file_size = Set(Some(file_size));
-        row.file_sha256 = Set(Some(file_sha256.to_string()));
+        let mut update = goi_palitra_sync::Entity::update_many()
+            .filter(goi_palitra_sync::Column::Id.eq(row.id))
+            .col_expr(
+                goi_palitra_sync::Column::RemoteStatus,
+                Expr::value(PALITRA_GOI_REMOTE_STATUS_PRESENT.to_string()),
+            )
+            .col_expr(
+                goi_palitra_sync::Column::FileSize,
+                Expr::value(Some(file_size)),
+            )
+            .col_expr(
+                goi_palitra_sync::Column::FileSha256,
+                Expr::value(Some(file_sha256.to_string())),
+            )
+            .col_expr(
+                goi_palitra_sync::Column::GoiFileSize,
+                Expr::value(Some(file_size)),
+            )
+            .col_expr(
+                goi_palitra_sync::Column::GoiFileSha256,
+                Expr::value(Some(file_sha256.to_string())),
+            )
+            .col_expr(
+                goi_palitra_sync::Column::LastSeenAt,
+                Expr::value(Some(now)),
+            )
+            .col_expr(
+                goi_palitra_sync::Column::LastSyncAt,
+                Expr::value(Some(now)),
+            )
+            .col_expr(goi_palitra_sync::Column::UpdatedAt, Expr::value(now));
         if !echo_checksum_known {
-            row.echo_file_size = Set(Some(file_size));
-            row.echo_file_sha256 = Set(Some(file_sha256.to_string()));
-            row.echo_updated_at = Set(Some(now));
+            update = update
+                .col_expr(
+                    goi_palitra_sync::Column::EchoFileSize,
+                    Expr::value(Some(file_size)),
+                )
+                .col_expr(
+                    goi_palitra_sync::Column::EchoFileSha256,
+                    Expr::value(Some(file_sha256.to_string())),
+                )
+                .col_expr(
+                    goi_palitra_sync::Column::EchoUpdatedAt,
+                    Expr::value(Some(now)),
+                );
         }
-        row.goi_file_size = Set(Some(file_size));
-        row.goi_file_sha256 = Set(Some(file_sha256.to_string()));
         if goi_changed {
-            row.goi_updated_at = Set(Some(now));
+            update = update.col_expr(
+                goi_palitra_sync::Column::GoiUpdatedAt,
+                Expr::value(Some(now)),
+            );
         }
-        row.last_seen_at = Set(Some(now));
-        row.last_sync_at = Set(Some(now));
-        row.updated_at = Set(now);
-        row.update(dbx).await.c(h!())?;
+        update.exec(dbx).await.c(h!())?;
     }
     Ok(())
 }
@@ -1132,24 +1240,12 @@ async fn refresh_convertible_goi_palitra_file(
         file_sha256: file_sha256.clone(),
     };
     let palitra_ids = tracked_palitra_ids(tracked_rows);
-    let Some(palitra_id) = palitra_ids.first().copied() else {
-        return import_replacement_goi_palitra_file(
-            env,
-            integration,
-            remote_path,
-            file_data,
-            file_size,
-            file_sha256,
-        )
-        .await;
-    };
-    let txn = env.dbx.begin().await.c(h!())?;
-    let Some(_) = palitra::Entity::find_by_id(palitra_id)
-        .filter(palitra::Column::Deleted.eq(false))
-        .one(&txn)
-        .await
-        .c(h!())?
+    let Some(palitra) =
+        find_first_existing_tracked_palitra(&env.dbx, tracked_rows)
+            .await
+            .c(h!())?
     else {
+        let txn = env.dbx.begin().await.c(h!())?;
         delete_tracked_goi_palitra_sync_rows(
             &txn,
             integration.id,
@@ -1169,10 +1265,12 @@ async fn refresh_convertible_goi_palitra_file(
         )
         .await;
     };
+    let retained_palitra_id = palitra.id;
 
+    let txn = env.dbx.begin().await.c(h!())?;
     update_imported_palitra_fields(
         &txn,
-        palitra_id,
+        retained_palitra_id,
         PALITRA_CONVERSION_STATUS_PROCESSING,
         &extension,
         is_archived,
@@ -1181,7 +1279,12 @@ async fn refresh_convertible_goi_palitra_file(
     .await
     .c(h!())?;
     let schedule_result = super::schedule_palitra_goi_source_conversion(
-        &txn, palitra_id, filename, extension, None, file_data,
+        &txn,
+        retained_palitra_id,
+        filename,
+        extension,
+        None,
+        file_data,
     )
     .await;
     if let Err(err) = schedule_result {
@@ -1189,7 +1292,7 @@ async fn refresh_convertible_goi_palitra_file(
         record_goi_source_conversion_scheduling_failure(
             &txn,
             integration.id,
-            palitra_id,
+            retained_palitra_id,
             remote_path,
             goi_source.source_format.clone(),
             file_size,
@@ -1211,7 +1314,7 @@ async fn refresh_convertible_goi_palitra_file(
     upsert_goi_palitra_sync(
         &txn,
         integration.id,
-        Some(palitra_id),
+        Some(retained_palitra_id),
         remote_path,
         PALITRA_GOI_SYNC_DIRECTION_GOI,
         PALITRA_GOI_REMOTE_STATUS_PRESENT,
@@ -1225,10 +1328,14 @@ async fn refresh_convertible_goi_palitra_file(
     )
     .await
     .c(h!())?;
-    refresh_palitra_missing_in_goi(&txn, palitra_id)
+    refresh_palitra_missing_in_goi(&txn, retained_palitra_id)
         .await
         .c(h!())?;
-    for stale_palitra_id in palitra_ids.into_iter().skip(1) {
+    let stale_palitra_ids = palitra_ids
+        .into_iter()
+        .filter(|palitra_id| *palitra_id != retained_palitra_id)
+        .collect_vec();
+    for stale_palitra_id in stale_palitra_ids {
         delete_stale_imported_goi_palitra(
             &txn,
             integration.id,
@@ -2063,6 +2170,12 @@ where
             Expr::value(imported_from_goi),
         );
     }
+    if status == PALITRA_CONVERSION_STATUS_PROCESSING {
+        update = update.col_expr(
+            palitra::Column::ConversionLastAttemptAt,
+            Expr::value(Some(Utc::now().fixed_offset())),
+        );
+    }
     update.exec(dbx).await.c(h!())?;
     Ok(())
 }
@@ -2421,15 +2534,18 @@ async fn refresh_palitra_missing_in_goi<'a, C>(
 where
     C: ConnectionTrait + 'a,
 {
-    let rows = goi_palitra_sync::Entity::find()
+    let remote_statuses = goi_palitra_sync::Entity::find()
         .filter(goi_palitra_sync::Column::PalitraId.eq(palitra_id))
+        .select_only()
+        .column(goi_palitra_sync::Column::RemoteStatus)
+        .into_tuple::<String>()
         .all(dbx)
         .await
         .c(h!())?;
-    let missing = !rows.is_empty()
-        && rows
-            .iter()
-            .all(|row| row.remote_status != PALITRA_GOI_REMOTE_STATUS_PRESENT);
+    let missing = !remote_statuses.is_empty()
+        && remote_statuses.iter().all(|remote_status| {
+            remote_status != PALITRA_GOI_REMOTE_STATUS_PRESENT
+        });
     palitra::Entity::update_many()
         .filter(palitra::Column::Id.eq(palitra_id))
         .col_expr(palitra::Column::MissingInGoi, Expr::value(missing))
@@ -2662,18 +2778,21 @@ where
 {
     let rows = goi_palitra_sync::Entity::find()
         .filter(goi_palitra_sync::Column::PalitraId.eq(palitra_id))
+        .select_only()
+        .column(goi_palitra_sync::Column::GoiIntegrationId)
+        .column(goi_palitra_sync::Column::RemoteRelativePath)
+        .into_tuple::<(i64, String)>()
         .all(dbx)
         .await
         .c(h!())?;
     let mut paths_by_integration = BTreeMap::<i64, BTreeSet<String>>::new();
-    for row in rows {
-        let Some(path) =
-            normalize_remote_relative_path(&row.remote_relative_path)
+    for (goi_integration_id, remote_relative_path) in rows {
+        let Some(path) = normalize_remote_relative_path(&remote_relative_path)
         else {
             continue;
         };
         paths_by_integration
-            .entry(row.goi_integration_id)
+            .entry(goi_integration_id)
             .or_default()
             .insert(path);
     }

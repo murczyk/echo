@@ -13,6 +13,7 @@ import {
   archivePalitraFolder,
   assignPalitraFolder,
   deletePalitraFolder,
+  fetchPalitraGoiSyncHistory,
   fetchPalitraReferenceData,
   listPalitras,
   readPalitraPreviewV2,
@@ -82,6 +83,8 @@ export function useRerPalitraNeoPage() {
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [historyDialogPalitra, setHistoryDialogPalitra] = useState<Palitra | null>(null);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyError, setHistoryError] = useState<string | null>(null);
   const [folderDialogState, setFolderDialogState] = useState<FolderActionDialogState | null>(null);
   const [folderActionInFlight, setFolderActionInFlight] = useState(false);
   const [expandedFolderPaths, setExpandedFolderPaths] = useState<string[]>([]);
@@ -106,6 +109,7 @@ export function useRerPalitraNeoPage() {
   const uploadKmzInputRef = useRef<HTMLInputElement | null>(null);
   const pendingUploadPalitraIdRef = useRef<number | null>(null);
   const previewRequestIdRef = useRef(0);
+  const historyRequestIdRef = useRef(0);
 
   const availableAccessTypes = useMemo(
     () => getAvailableAccessTypes(user, myScope),
@@ -491,12 +495,40 @@ export function useRerPalitraNeoPage() {
     [folderActionsBlocked, loading, previewLoading],
   );
 
-  const openHistory = useCallback((palitra: Palitra) => {
-    setHistoryDialogPalitra(palitra);
+  const openHistory = useCallback(async (palitra: Palitra) => {
+    const requestId = historyRequestIdRef.current + 1;
+    historyRequestIdRef.current = requestId;
+    setHistoryDialogPalitra({ ...palitra, changelog: [] });
+    setHistoryLoading(true);
+    setHistoryError(null);
+    setStatus(null);
+
+    try {
+      const changelog = await fetchPalitraGoiSyncHistory(palitra.id);
+      if (historyRequestIdRef.current !== requestId) return;
+      setHistoryDialogPalitra((current) =>
+        current?.id === palitra.id ? { ...current, changelog } : current,
+      );
+    } catch (historyLoadError) {
+      if (historyRequestIdRef.current !== requestId) return;
+      const message = formatErrorMessage(historyLoadError);
+      setHistoryError(message);
+      setStatus({
+        kind: 'error',
+        text: 'Не вдалося завантажити історію палітри: ' + message,
+      });
+    } finally {
+      if (historyRequestIdRef.current === requestId) {
+        setHistoryLoading(false);
+      }
+    }
   }, []);
 
   const closeHistory = useCallback(() => {
+    historyRequestIdRef.current += 1;
     setHistoryDialogPalitra(null);
+    setHistoryLoading(false);
+    setHistoryError(null);
   }, []);
 
   const {
@@ -570,6 +602,8 @@ export function useRerPalitraNeoPage() {
     previewLoading,
     previewError,
     historyDialogPalitra,
+    historyLoading,
+    historyError,
     createOpen,
     createMode,
     createForm,

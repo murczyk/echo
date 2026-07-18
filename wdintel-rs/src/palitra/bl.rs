@@ -1,5 +1,6 @@
 use crate::config::{
-    PALITRA_GOI_SYNC_DIRECTION_GOI, PALITRA_POINTS_INSERT_BATCH_SIZE,
+    PALITRA_GOI_REMOTE_STATUS_PRESENT, PALITRA_GOI_SYNC_DIRECTION_GOI,
+    PALITRA_POINTS_INSERT_BATCH_SIZE,
 };
 use crate::entities::*;
 use crate::palitra::types::*;
@@ -108,6 +109,7 @@ struct LoginAccessScope {
     aor_ids: HashSet<i64>,
 }
 
+#[derive(Clone, Default)]
 pub(crate) struct PalitraGoiSyncSummary {
     pub changelog: Vec<PalitraChangelogEntry>,
     pub goi_owned: bool,
@@ -173,8 +175,33 @@ pub(crate) async fn read_palitra_goi_sync_summary<'a, 'async_trait, C>(
 where
     C: ConnectionTrait + 'async_trait,
 {
+    Ok(read_palitra_goi_sync_summaries(dbx, vec![palitra_id], true)
+        .await
+        .c(h!())?
+        .remove(&palitra_id)
+        .unwrap_or_default())
+}
+
+async fn read_palitra_goi_sync_summaries<'a, 'async_trait, C>(
+    dbx: &'a C,
+    palitra_ids: Vec<i64>,
+    include_changelog: bool,
+) -> anyhow::Result<HashMap<i64, PalitraGoiSyncSummary>>
+where
+    C: ConnectionTrait + 'async_trait,
+{
+    let palitra_ids = palitra_ids.into_iter().unique().collect_vec();
+    let mut result = palitra_ids
+        .iter()
+        .map(|palitra_id| (*palitra_id, PalitraGoiSyncSummary::default()))
+        .collect::<HashMap<_, _>>();
+    if palitra_ids.is_empty() {
+        return Ok(result);
+    }
+
     #[derive(Debug, FromQueryResult)]
     struct GoiPalitraSyncSummaryRow {
+        palitra_id: Option<i64>,
         direction: String,
         goi_source_file_sha256: Option<String>,
         changelog: Json,
@@ -182,8 +209,13 @@ where
     }
 
     let rows = goi_palitra_sync::Entity::find()
-        .filter(goi_palitra_sync::Column::PalitraId.eq(palitra_id))
+        .filter(goi_palitra_sync::Column::PalitraId.is_in(palitra_ids))
+        .filter(
+            goi_palitra_sync::Column::RemoteStatus
+                .eq(PALITRA_GOI_REMOTE_STATUS_PRESENT),
+        )
         .select_only()
+        .column(goi_palitra_sync::Column::PalitraId)
         .column(goi_palitra_sync::Column::Direction)
         .column(goi_palitra_sync::Column::GoiSourceFileSha256)
         .column(goi_palitra_sync::Column::Changelog)
@@ -195,33 +227,46 @@ where
             .is_not_null(),
             "has_goi_source_file_data",
         )
+        .order_by_asc(goi_palitra_sync::Column::PalitraId)
+        .order_by_desc(goi_palitra_sync::Column::UpdatedAt)
+        .order_by_desc(goi_palitra_sync::Column::Id)
         .into_model::<GoiPalitraSyncSummaryRow>()
         .all(dbx)
         .await
         .c(h!())?;
-    let mut changelog = Vec::new();
-    let mut goi_owned = false;
-    let mut goi_source_refresh_retry_available = false;
+    let mut current_goi_source_row_ids = HashSet::new();
     for row in rows {
+        let Some(palitra_id) = row.palitra_id else {
+            continue;
+        };
+        let Some(summary) = result.get_mut(&palitra_id) else {
+            continue;
+        };
         let row_changelog =
             crate::palitra::goi_changelog::entries_from_value(&row.changelog);
-        goi_owned |= row.direction == PALITRA_GOI_SYNC_DIRECTION_GOI
+        let is_goi_source_row = row.direction == PALITRA_GOI_SYNC_DIRECTION_GOI
             && row.goi_source_file_sha256.is_some();
-        goi_source_refresh_retry_available |= row.has_goi_source_file_data
-            && crate::palitra::goi_changelog::latest_goi_source_conversion_warning(
-                &row_changelog,
-            );
-        changelog.extend(row_changelog);
+        summary.goi_owned |= is_goi_source_row;
+        if is_goi_source_row && current_goi_source_row_ids.insert(palitra_id) {
+            summary.goi_source_refresh_retry_available =
+                row.has_goi_source_file_data
+                    && crate::palitra::goi_changelog::latest_goi_source_conversion_warning(
+                        &row_changelog,
+                    );
+        }
+        summary.changelog.extend(row_changelog);
     }
-    changelog.sort_by(|left, right| left.timestamp.cmp(&right.timestamp));
-    let latest_changelog_warning =
-        crate::palitra::goi_changelog::latest_warning(&changelog);
-    Ok(PalitraGoiSyncSummary {
-        changelog,
-        goi_owned,
-        goi_source_refresh_retry_available,
-        latest_changelog_warning,
-    })
+    for summary in result.values_mut() {
+        summary
+            .changelog
+            .sort_by(|left, right| left.timestamp.cmp(&right.timestamp));
+        summary.latest_changelog_warning =
+            crate::palitra::goi_changelog::latest_warning(&summary.changelog);
+        if !include_changelog {
+            summary.changelog.clear();
+        }
+    }
+    Ok(result)
 }
 
 pub(crate) async fn is_goi_owned_convertible_palitra<'a, 'async_trait, C>(
@@ -237,7 +282,14 @@ where
             goi_palitra_sync::Column::Direction
                 .eq(PALITRA_GOI_SYNC_DIRECTION_GOI),
         )
+        .filter(
+            goi_palitra_sync::Column::RemoteStatus
+                .eq(PALITRA_GOI_REMOTE_STATUS_PRESENT),
+        )
         .filter(goi_palitra_sync::Column::GoiSourceFileSha256.is_not_null())
+        .select_only()
+        .column(goi_palitra_sync::Column::Id)
+        .into_tuple::<i64>()
         .one(dbx)
         .await
         .c(h!())?
@@ -326,12 +378,22 @@ async fn list_palitras_v2_by_ids(
     palitra_ids: Vec<i64>,
     dbx: &DatabaseConnection,
 ) -> anyhow::Result<Vec<PalitraReadV2>> {
+    let mut goi_sync_summaries =
+        read_palitra_goi_sync_summaries(dbx, palitra_ids.clone(), false)
+            .await
+            .c(h!())?;
     let mut result = Vec::with_capacity(palitra_ids.len());
     for palitra_id in palitra_ids {
+        let goi_sync_summary =
+            goi_sync_summaries.remove(&palitra_id).unwrap_or_default();
         result.push(
-            render_palitra_v2_without_points(Either::Right(palitra_id), dbx)
-                .await
-                .c(h!())?,
+            render_palitra_v2_without_points_with_summary(
+                Either::Right(palitra_id),
+                dbx,
+                goi_sync_summary,
+            )
+            .await
+            .c(h!())?,
         );
     }
     Ok(result)
@@ -855,9 +917,21 @@ pub async fn list_all_palitras(
 ) -> anyhow::Result<Vec<Palitra>> {
     let palitra_ids =
         collect_accessible_palitra_ids(login, dbx).await.c(h!())?;
+    let mut goi_sync_summaries =
+        read_palitra_goi_sync_summaries(dbx, palitra_ids.clone(), false)
+            .await
+            .c(h!())?;
     let mut result = vec![];
     for id in palitra_ids {
-        let palitra = render_palitra(Either::Right(id), dbx).await.c(h!())?;
+        let goi_sync_summary =
+            goi_sync_summaries.remove(&id).unwrap_or_default();
+        let palitra = render_palitra_with_summary(
+            Either::Right(id),
+            dbx,
+            goi_sync_summary,
+        )
+        .await
+        .c(h!())?;
         result.push(palitra);
     }
     Ok(result)
@@ -1175,12 +1249,19 @@ async fn collect_goi_owned_convertible_palitra_ids(
             goi_palitra_sync::Column::Direction
                 .eq(PALITRA_GOI_SYNC_DIRECTION_GOI),
         )
+        .filter(
+            goi_palitra_sync::Column::RemoteStatus
+                .eq(PALITRA_GOI_REMOTE_STATUS_PRESENT),
+        )
         .filter(goi_palitra_sync::Column::GoiSourceFileSha256.is_not_null())
+        .select_only()
+        .column(goi_palitra_sync::Column::PalitraId)
+        .into_tuple::<Option<i64>>()
         .all(dbx)
         .await
         .c(h!())?
         .into_iter()
-        .filter_map(|row| row.palitra_id)
+        .flatten()
         .collect())
 }
 
@@ -2091,6 +2172,44 @@ where
             .c(h!())?,
     };
     let palitra_id = palitra_model.id;
+    let goi_sync_summary = read_palitra_goi_sync_summary(dbx, palitra_id)
+        .await
+        .c(h!())?;
+    render_palitra_model(palitra_model, dbx, goi_sync_summary)
+        .await
+        .c(h!())
+}
+
+async fn render_palitra_with_summary<'a, 'async_trait, C>(
+    e_palitra_model: Either<palitra::Model, i64>,
+    dbx: &'a C,
+    goi_sync_summary: PalitraGoiSyncSummary,
+) -> anyhow::Result<Palitra>
+where
+    C: ConnectionTrait + 'async_trait,
+{
+    let palitra_model = match e_palitra_model {
+        Either::Left(model) => model,
+        Either::Right(id) => palitra::Entity::find_by_id(id)
+            .one(dbx)
+            .await
+            .c(h!())?
+            .c(h!())?,
+    };
+    render_palitra_model(palitra_model, dbx, goi_sync_summary)
+        .await
+        .c(h!())
+}
+
+async fn render_palitra_model<'a, 'async_trait, C>(
+    palitra_model: palitra::Model,
+    dbx: &'a C,
+    goi_sync_summary: PalitraGoiSyncSummary,
+) -> anyhow::Result<Palitra>
+where
+    C: ConnectionTrait + 'async_trait,
+{
+    let palitra_id = palitra_model.id;
     let (
         color_hex,
         source_file_name,
@@ -2159,9 +2278,6 @@ where
                 .await
                 .c(h!())?
         };
-    let goi_sync_summary = read_palitra_goi_sync_summary(dbx, palitra_id)
-        .await
-        .c(h!())?;
     Ok(Palitra {
         id: palitra_id,
         name: palitra_model.name,
@@ -2195,7 +2311,7 @@ async fn render_palitra_v2<'a, 'async_trait, C>(
 where
     C: ConnectionTrait + 'async_trait,
 {
-    render_palitra_v2_inner(e_palitra_model, dbx, true)
+    render_palitra_v2_inner(e_palitra_model, dbx, true, None)
         .await
         .c(h!())
 }
@@ -2207,7 +2323,20 @@ async fn render_palitra_v2_without_points<'a, 'async_trait, C>(
 where
     C: ConnectionTrait + 'async_trait,
 {
-    render_palitra_v2_inner(e_palitra_model, dbx, false)
+    render_palitra_v2_inner(e_palitra_model, dbx, false, None)
+        .await
+        .c(h!())
+}
+
+async fn render_palitra_v2_without_points_with_summary<'a, 'async_trait, C>(
+    e_palitra_model: Either<palitra::Model, i64>,
+    dbx: &'a C,
+    goi_sync_summary: PalitraGoiSyncSummary,
+) -> anyhow::Result<PalitraReadV2>
+where
+    C: ConnectionTrait + 'async_trait,
+{
+    render_palitra_v2_inner(e_palitra_model, dbx, false, Some(goi_sync_summary))
         .await
         .c(h!())
 }
@@ -2216,11 +2345,19 @@ async fn render_palitra_v2_inner<'a, 'async_trait, C>(
     e_palitra_model: Either<palitra::Model, i64>,
     dbx: &'a C,
     include_points: bool,
+    goi_sync_summary: Option<PalitraGoiSyncSummary>,
 ) -> anyhow::Result<PalitraReadV2>
 where
     C: ConnectionTrait + 'async_trait,
 {
-    let palitra = render_palitra(e_palitra_model, dbx).await.c(h!())?;
+    let palitra = match goi_sync_summary {
+        Some(goi_sync_summary) => {
+            render_palitra_with_summary(e_palitra_model, dbx, goi_sync_summary)
+                .await
+                .c(h!())?
+        }
+        None => render_palitra(e_palitra_model, dbx).await.c(h!())?,
+    };
     let palitra_geometry_models =
         order_by_primary_geometry(palitra_geometry::Entity::find())
             .filter(palitra_geometry::Column::PalitraId.eq(palitra.id))

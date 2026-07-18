@@ -821,6 +821,7 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::palitra::list_all_palitras_v2)
             .service(crate::palitra::list_map_palitras_v2)
             .service(crate::palitra::list_all_palitras_detailed)
+            .service(crate::palitra::read_palitra_goi_sync_history)
             .service(crate::palitra::read_palitra_v2)
             .service(crate::palitra::read_palitra_preview_v2)
             .service(crate::palitra::list_palitra_points)
