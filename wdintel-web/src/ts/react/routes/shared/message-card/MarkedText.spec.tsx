@@ -4,7 +4,7 @@
 import React from 'react';
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createTheme } from '@mui/material/styles';
 
 import { CALLSIGN_TOOLTIP_ITEM_SX, renderMarkedText } from './MarkedText';
@@ -40,6 +40,7 @@ function TestHost(props: {
   showPointLinks?: boolean;
   linkCallsigns?: boolean;
   message?: InboxMessage;
+  onOpenPointsOnMap?: (etalons: string[], message: InboxMessage) => void;
   searchText?: string | null;
   callsignInfoMap?: Record<string, CallsignInfoRes>;
   networks?: Network[];
@@ -51,6 +52,7 @@ function TestHost(props: {
         showPointLinks: props.showPointLinks,
         linkCallsigns: props.linkCallsigns,
         message: props.message,
+        onOpenPointsOnMap: props.onOpenPointsOnMap,
         callsignInfoMap: props.callsignInfoMap,
         networks: props.networks,
         unitsMap: props.unitsMap,
@@ -264,6 +266,83 @@ describe('MarkedText', () => {
     expect(container.querySelector('a.content-token--ADP')?.textContent).toBe('WOLF');
     expect(container.querySelector('[data-testid="callsign-hint-badge-network"]')).not.toBeNull();
     expect(container.querySelector('[data-testid="callsign-hint-badge-system"]')).toBeNull();
+  });
+
+  it('uses the in-app map action when provided and falls back to a normal map link otherwise', async () => {
+    const message = {
+      freq: null,
+      networkIds: null,
+      pointTokens: [{ etalon: 'BRAVO' }],
+    } as InboxMessage;
+    const nodes: ContentNode[] = [
+      { CNPointC: { text: 'BRAVO', begin: 0, end: 5, etalon: 'BRAVO' } },
+    ];
+    const onOpenPointsOnMap = vi.fn();
+
+    await act(async () => {
+      root.render(
+        <TestHost
+          nodes={nodes}
+          bodyText="BRAVO"
+          message={message}
+          messagePointEtalons={['BRAVO']}
+          onOpenPointsOnMap={onOpenPointsOnMap}
+        />,
+      );
+    });
+
+    const openMenuButton = container.querySelector(
+      'button[aria-label="Показати на мапі"]',
+    ) as HTMLButtonElement | null;
+    expect(openMenuButton).not.toBeNull();
+
+    await act(async () => {
+      openMenuButton?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+      await Promise.resolve();
+    });
+
+    const callbackMenuItem = document.body.querySelector('[role="menuitem"]') as HTMLElement | null;
+    expect(callbackMenuItem).not.toBeNull();
+    expect(callbackMenuItem?.tagName.toLowerCase()).not.toBe('a');
+
+    await act(async () => {
+      callbackMenuItem?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+      await Promise.resolve();
+    });
+
+    expect(onOpenPointsOnMap).toHaveBeenCalledTimes(1);
+    expect(onOpenPointsOnMap).toHaveBeenCalledWith(['BRAVO'], message);
+
+    await act(async () => {
+      root.render(
+        <TestHost
+          nodes={nodes}
+          bodyText="BRAVO"
+          message={message}
+          messagePointEtalons={['BRAVO']}
+        />,
+      );
+    });
+
+    const fallbackOpenMenuButton = container.querySelector(
+      'button[aria-label="Показати на мапі"]',
+    ) as HTMLButtonElement | null;
+    expect(fallbackOpenMenuButton).not.toBeNull();
+
+    await act(async () => {
+      fallbackOpenMenuButton?.dispatchEvent(
+        new MouseEvent('click', { bubbles: true, cancelable: true }),
+      );
+      await Promise.resolve();
+    });
+
+    const fallbackMenuItem = document.body.querySelector(
+      '[role="menuitem"]',
+    ) as HTMLAnchorElement | null;
+    expect(fallbackMenuItem).not.toBeNull();
+    expect(fallbackMenuItem?.tagName.toLowerCase()).toBe('a');
+    expect(fallbackMenuItem?.getAttribute('target')).toBe('_blank');
+    expect(fallbackMenuItem?.getAttribute('href')).toContain('search=');
   });
 
   it('renders the filled-badge network state without linking when callsign links are disabled', async () => {

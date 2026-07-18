@@ -16,11 +16,11 @@ export function useRerDutyMessageActions(deps: MessageActionsDeps) {
     applyFilter,
     loadFeedInitialMessages,
     loadFeedNewerMessages,
-    buildReqForFeed,
-    columnRefsRef,
     showArrowResult,
+    columnRefsRef,
     setWatchModeByFeedId,
-    setLoadingNewerFeedId,
+    setLoadingNewerFeedIds,
+    requestValidatedInboxCount,
     authUserName,
     profiles,
     tagsMap,
@@ -45,7 +45,7 @@ export function useRerDutyMessageActions(deps: MessageActionsDeps) {
     saveFilterNameByFeedId,
     setSaveFilterNameByFeedId,
     applyFilter,
-    setError: (value) => setError(value),
+    setError,
   });
 
   const messageItemActions = useRerDutyMessageItemActions({
@@ -54,18 +54,18 @@ export function useRerDutyMessageActions(deps: MessageActionsDeps) {
     authUserName,
     profiles,
     groupInfos,
-    setError: (value) => setError(value),
+    setError,
   });
 
   const feedInteractionActions = useRerDutyFeedInteractionActions({
     messageFeeds,
-    buildReqForFeed,
-    columnRefsRef,
     showArrowResult,
+    columnRefsRef,
     setWatchModeByFeedId,
-    setLoadingNewerFeedId,
+    setLoadingNewerFeedIds,
     loadFeedInitialMessages,
     loadFeedNewerMessages,
+    requestValidatedInboxCount,
     dutyDisableAutoScroll,
     setMessageFeeds,
   });

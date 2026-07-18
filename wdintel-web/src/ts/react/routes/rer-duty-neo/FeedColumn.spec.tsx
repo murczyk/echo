@@ -1,42 +1,12 @@
 /**
  * @vitest-environment happy-dom
  */
-import { act, createElement, forwardRef } from 'react';
-import type { ComponentType, ReactNode } from 'react';
+import { act, type ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { FeedColumnProps } from './FeedColumn';
 import { minimalInboxMessage } from './inbox-message-mocks';
-
-vi.mock('react-virtuoso', () => ({
-  Virtuoso: forwardRef<
-    HTMLDivElement,
-    {
-      data?: Array<[number, unknown]>;
-      itemContent?: (index: number, item: [number, unknown]) => ReactNode;
-      components?: {
-        List?: ComponentType<any>;
-        Footer?: ComponentType<any>;
-      };
-    }
-  >(function Virtuoso({ data, itemContent, components }, ref) {
-    const List = components?.List ?? 'div';
-    const Footer = components?.Footer;
-    return (
-      <div ref={ref} data-testid="virtuoso">
-        {Footer ? createElement(Footer) : null}
-        {createElement(
-          List,
-          { ref: vi.fn(), 'data-testid': 'virtuoso-list' },
-          (data ?? []).map((item, index) => (
-            <div key={String(index)}>{itemContent?.(index, item)}</div>
-          )),
-        )}
-      </div>
-    );
-  }),
-}));
 
 vi.mock('./FeedFilterPanel', () => ({
   FeedFilterPanel: () => <div data-testid="feed-filter-panel" />,
@@ -96,7 +66,6 @@ function buildProps(): FeedColumnProps {
         loading: false,
         loadingOlder: false,
         hasReachedStart: false,
-        firstItemIndex: 0,
         referenceTimeMs: null,
         readIds: new Set<number>(),
         unreadCount: 0,
@@ -512,7 +481,8 @@ describe('FeedColumn', () => {
       root.render(<FeedColumn column={props.column} />);
     });
 
-    expect(container.querySelector('[data-testid="virtuoso"]')).not.toBeNull();
+    expect(container.querySelector('[data-duty-feed-scroller="true"]')).not.toBeNull();
+    expect(container.querySelector('[data-duty-feed-list="true"]')).not.toBeNull();
   });
 
   it('keeps the header close action available for multi-feed columns', async () => {

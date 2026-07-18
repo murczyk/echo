@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import PersonOutlineOutlinedIcon from '@mui/icons-material/PersonOutlineOutlined';
 import SmartToyOutlinedIcon from '@mui/icons-material/SmartToyOutlined';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
@@ -26,7 +26,7 @@ export function buildSelectedFirstTagOrder(rows: MessageCardTagRow[]): number[] 
   );
 }
 
-export function MessageCardTags({
+function MessageCardTagsComponent({
   msg,
   tagsMap,
   tagsOrder,
@@ -266,3 +266,5 @@ export function MessageCardTags({
     </Box>
   );
 }
+
+export const MessageCardTags = memo(MessageCardTagsComponent);

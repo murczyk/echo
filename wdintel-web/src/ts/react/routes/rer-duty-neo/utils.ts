@@ -670,6 +670,84 @@ export function getPointEtalonsFromMessage(
 
 export type MessageItem = [number, InboxMessage];
 
+export const DUTY_FEED_MESSAGE_PAGE_SIZE = 20;
+export const DUTY_FEED_MESSAGE_WINDOW_LIMIT = 40;
+
+export type WindowedMessageItemsResult = {
+  items: MessageItem[];
+  addedItems: MessageItem[];
+  removedItems: MessageItem[];
+};
+
+function normalizeWindowLimit(limit: number): number {
+  if (!Number.isFinite(limit)) return DUTY_FEED_MESSAGE_WINDOW_LIMIT;
+  return Math.max(1, Math.floor(limit));
+}
+
+function itemIds(items: MessageItem[]): Set<number> {
+  return new Set(items.map(([id]) => id));
+}
+
+function trimMessageWindow(
+  items: MessageItem[],
+  limit: number,
+  trimFrom: 'start' | 'end',
+): { items: MessageItem[]; removedItems: MessageItem[] } {
+  const normalizedLimit = normalizeWindowLimit(limit);
+  if (items.length <= normalizedLimit) return { items, removedItems: [] };
+  const removeCount = items.length - normalizedLimit;
+  if (trimFrom === 'start') {
+    return {
+      items: items.slice(removeCount),
+      removedItems: items.slice(0, removeCount),
+    };
+  }
+  return {
+    items: items.slice(0, normalizedLimit),
+    removedItems: items.slice(normalizedLimit),
+  };
+}
+
+export function windowInitialMessageItems(
+  items: MessageItem[],
+  limit: number = DUTY_FEED_MESSAGE_WINDOW_LIMIT,
+): MessageItem[] {
+  const sorted = sortMessageItemsByTime(dedupeMessageItems(items));
+  return trimMessageWindow(sorted, limit, 'start').items;
+}
+
+export function prependWindowedMessageItems(
+  existing: MessageItem[],
+  incomingOlder: MessageItem[],
+  limit: number = DUTY_FEED_MESSAGE_WINDOW_LIMIT,
+): WindowedMessageItemsResult {
+  const existingIds = itemIds(existing);
+  const addedItems = dedupeMessageItems(incomingOlder).filter(([id]) => !existingIds.has(id));
+  const combined = sortMessageItemsByTime(dedupeMessageItems([...addedItems, ...existing]));
+  const trimmed = trimMessageWindow(combined, limit, 'end');
+  return { items: trimmed.items, addedItems, removedItems: trimmed.removedItems };
+}
+
+export function appendWindowedMessageItems(
+  existing: MessageItem[],
+  incomingNewer: MessageItem[],
+  limit: number = DUTY_FEED_MESSAGE_WINDOW_LIMIT,
+): WindowedMessageItemsResult {
+  const existingIds = itemIds(existing);
+  const addedItems = dedupeMessageItems(incomingNewer).filter(([id]) => !existingIds.has(id));
+  const combined = sortMessageItemsByTime(dedupeMessageItems([...existing, ...addedItems]));
+  const trimmed = trimMessageWindow(combined, limit, 'start');
+  return { items: trimmed.items, addedItems, removedItems: trimmed.removedItems };
+}
+
+export function retainReadIdsForItems(
+  readIds: ReadonlySet<number>,
+  items: MessageItem[],
+): Set<number> {
+  const visibleIds = itemIds(items);
+  return new Set([...readIds].filter((id) => visibleIds.has(id)));
+}
+
 function extractCallsignsFromNodes(nodes: ContentNode[] | null | undefined): string[] {
   if (!nodes || nodes.length === 0) return [];
   const callsigns: string[] = [];
@@ -731,9 +809,6 @@ export function dedupeMessageItems(items: MessageItem[]): MessageItem[] {
   });
 }
 
-/** Initial firstItemIndex for Virtuoso; decreased when we prepend so scroll position is preserved. */
-export const VIRTUOSO_FIRST_ITEM_INDEX_INITIAL = 10_000;
-
 export type MessageFeedState = {
   id: string;
   filter: RerDutyFeedFilterState;
@@ -742,8 +817,6 @@ export type MessageFeedState = {
   loadingOlder: boolean;
   /** True after "load older" returned 0 new items — nothing older to fetch */
   hasReachedStart: boolean;
-  /** Virtuoso firstItemIndex: start at VIRTUOSO_FIRST_ITEM_INDEX_INITIAL, decrease by N when prepending N items (infinite scroll). */
-  firstItemIndex: number;
   /** Reference time (ms) for relative "time ago" in message cards; set when feed items are loaded. */
   referenceTimeMs: number | null;
   /** Message IDs that have been "read" (entered viewport). Unread count = items not in this set. */
@@ -759,7 +832,7 @@ export type MessageFeedState = {
 
 /** Single source of truth for displayed unread count on a feed. */
 export function feedUnreadDisplayCount(feed: MessageFeedState): number {
-  return Math.max(0, feed.items.filter(([id]) => !feed.readIds.has(id)).length);
+  return Math.max(0, feed.unreadCount);
 }
 
 /** Sum of {@link feedUnreadDisplayCount} across all feeds. */

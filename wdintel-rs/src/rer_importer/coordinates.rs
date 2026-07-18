@@ -2,6 +2,48 @@ use lazy_static::lazy_static;
 use milgeo_rs::coordinates::Coords;
 use regex::Regex;
 
+pub fn body_noheader_for_inbox_coords(
+    body: &str,
+    meow_format: Option<&crate::rer_importer::meow_format::MeowFormat>,
+) -> Result<
+    crate::rer_importer::body_noheader::NoHeadersBody,
+    crate::error::AppError,
+> {
+    // Coordinate extraction has its own input rules: comments are not pelengs,
+    // but regular meow messages need the meow body splitter because their time
+    // header is not a generic body_noheader header.
+    if crate::rer_importer::meow_format::parse_kraken_audio(body).is_none() {
+        if let Some(meow_format) = meow_format {
+            return Ok(meow_format.body_noheader.clone());
+        }
+    }
+
+    crate::sigint::parser::extract_text_without_top_comment(body)
+}
+
+pub fn body_noheader_for_reprocess_coords(
+    body: &str,
+) -> Result<
+    crate::rer_importer::body_noheader::NoHeadersBody,
+    crate::error::AppError,
+> {
+    let lnow = chrono::Local::now().with_timezone(&crate::config::get_tz());
+    let meow_format = crate::rer_importer::meow_format::parse(lnow, body);
+    body_noheader_for_inbox_coords(body, meow_format.as_ref())
+}
+
+pub async fn extract_inbox_coords(
+    body: &str,
+    body_noheader: &crate::rer_importer::body_noheader::NoHeadersBody,
+) -> Vec<Coords> {
+    // Do not scan the raw message as one blob: operator comments and
+    // unit/network headers often contain reference locations that must not
+    // create pelengs. Use the parsed body, then add back only standard
+    // coordinate metadata rows stripped by body_noheader for display/search.
+    let body = prepare_inbox_body_for_coords(body, body_noheader);
+    extract_coords(&body).await
+}
+
 pub async fn extract_coords(body: &str) -> Vec<Coords> {
     if let Some(zp_peleng) =
         crate::rer_importer::zp_peleng_vorony_odina_format::parse(body)
@@ -14,6 +56,555 @@ pub async fn extract_coords(body: &str) -> Vec<Coords> {
 
     let body = prepare_body_for_coords(body);
     milgeo_rs::coordinates::rer_extract_coords(&body).await
+}
+
+fn prepare_inbox_body_for_coords(
+    body: &str,
+    body_noheader: &crate::rer_importer::body_noheader::NoHeadersBody,
+) -> String {
+    let mut parts = standard_coordinate_metadata_lines(body, body_noheader);
+    let body_noheader = coordinate_body_text(body, body_noheader);
+    if !body_noheader.trim().is_empty() {
+        parts.push(body_noheader);
+    }
+    parts.join("\n")
+}
+
+fn standard_coordinate_metadata_lines(
+    body: &str,
+    body_noheader: &crate::rer_importer::body_noheader::NoHeadersBody,
+) -> Vec<String> {
+    let lines = coordinate_input_lines(body, body_noheader);
+    let mut parser = CoordinateMetadataParser::new(&lines);
+    let mut skip_comment_metadata = false;
+    for input_line in lines {
+        if input_line.is_body_line {
+            continue;
+        }
+        let line = input_line.text.as_str();
+        if crate::rer_importer::body_noheader::is_datetime_header_line(line) {
+            parser.accept_datetime_header(line);
+            skip_comment_metadata = false;
+            continue;
+        }
+        if line.is_empty() {
+            parser.accept_empty_line();
+            skip_comment_metadata = false;
+            continue;
+        }
+        if skip_comment_metadata && !is_dialog_line(line) {
+            continue;
+        }
+        if skip_comment_metadata {
+            skip_comment_metadata = false;
+        }
+        if parser.accepts_metadata_lines() && is_comment_marker_line(line) {
+            skip_comment_metadata = true;
+            continue;
+        }
+        parser.accept_line(line);
+    }
+    parser.into_lines()
+}
+
+struct CoordinateInputLine {
+    text: String,
+    is_body_line: bool,
+}
+
+struct OriginalLine {
+    text: String,
+    comparable_text: String,
+    comparable_start: usize,
+    comparable_end: usize,
+}
+
+fn coordinate_input_lines(
+    body: &str,
+    body_noheader: &crate::rer_importer::body_noheader::NoHeadersBody,
+) -> Vec<CoordinateInputLine> {
+    let original_lines = original_lines(body);
+    let body_line_flags = body_line_flags(&original_lines, body_noheader);
+
+    original_lines
+        .into_iter()
+        .zip(body_line_flags)
+        .map(|(line, is_body_line)| CoordinateInputLine {
+            text: line.text.trim().to_string(),
+            is_body_line,
+        })
+        .collect()
+}
+
+fn original_lines(body: &str) -> Vec<OriginalLine> {
+    let mut lines = Vec::new();
+    let mut line_start = 0;
+    for raw_line in body.split_inclusive('\n') {
+        let raw_line_len = raw_line.chars().count();
+        let text = trim_line_end(raw_line);
+        lines.push(original_line(text, line_start));
+        line_start += raw_line_len;
+    }
+    lines
+}
+
+fn original_line(line: &str, line_start: usize) -> OriginalLine {
+    if let Some(marker_start) = line.find("Отримано з пост") {
+        let prefix = &line[..marker_start];
+        let comparable_text = prefix.trim();
+        let trim_start = prefix.find(comparable_text).unwrap_or(0);
+        let comparable_start =
+            line_start + prefix[..trim_start].chars().count();
+        let comparable_end = comparable_start + comparable_text.chars().count();
+        return OriginalLine {
+            text: line.to_string(),
+            comparable_text: comparable_text.to_string(),
+            comparable_start,
+            comparable_end,
+        };
+    }
+
+    OriginalLine {
+        text: line.to_string(),
+        comparable_text: line.to_string(),
+        comparable_start: line_start,
+        comparable_end: line_start + line.chars().count(),
+    }
+}
+
+fn body_line_flags(
+    lines: &[OriginalLine],
+    body_noheader: &crate::rer_importer::body_noheader::NoHeadersBody,
+) -> Vec<bool> {
+    let body_lines = body_noheader.body.lines().collect::<Vec<_>>();
+    let mut flags = vec![false; lines.len()];
+    let mut body_line_idx = 0;
+    for (idx, line) in lines.iter().enumerate() {
+        let Some(body_line) = body_lines.get(body_line_idx) else {
+            break;
+        };
+        if !line_is_inside_body_noheader(line, body_noheader) {
+            continue;
+        }
+        if line.comparable_text == *body_line {
+            flags[idx] = true;
+            body_line_idx += 1;
+        }
+    }
+    flags
+}
+
+fn line_is_inside_body_noheader(
+    line: &OriginalLine,
+    body_noheader: &crate::rer_importer::body_noheader::NoHeadersBody,
+) -> bool {
+    !body_noheader.body.is_empty()
+        && line.comparable_start >= body_noheader.start
+        && line.comparable_end <= body_noheader.end
+}
+
+fn coordinate_body_text(
+    body: &str,
+    body_noheader: &crate::rer_importer::body_noheader::NoHeadersBody,
+) -> String {
+    let lines = original_lines(body);
+    let body_line_flags = body_line_flags(&lines, body_noheader);
+    let comment_line_flags = marker_comment_line_flags(&lines);
+
+    lines
+        .into_iter()
+        .zip(body_line_flags)
+        .zip(comment_line_flags)
+        .filter_map(|((line, is_body_line), is_comment_line)| {
+            (is_body_line && !is_comment_line).then_some(line.comparable_text)
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn marker_comment_line_flags(lines: &[OriginalLine]) -> Vec<bool> {
+    let mut flags = vec![false; lines.len()];
+    let mut skip_comment_block = false;
+    for (idx, line) in lines.iter().enumerate() {
+        let trimmed = line.text.trim();
+        if is_comment_marker_line(trimmed) {
+            flags[idx] = true;
+            skip_comment_block = true;
+            continue;
+        }
+        if skip_comment_block {
+            if trimmed.is_empty() || is_dialog_line(trimmed) {
+                skip_comment_block = false;
+            } else {
+                flags[idx] = true;
+            }
+        }
+    }
+    flags
+}
+
+struct CoordinateMetadataParser {
+    has_datetime_header: bool,
+    seen_datetime_header: bool,
+    pre_datetime_state: PreDatetimeState,
+    pending_pre_datetime_coordinate_lines: Vec<String>,
+    pending_split_pre_datetime_coordinate_lines: Vec<String>,
+    pending_split_coordinate: PendingSplitCoordinate,
+    lines: Vec<String>,
+}
+
+impl CoordinateMetadataParser {
+    fn new(lines: &[CoordinateInputLine]) -> Self {
+        Self {
+            has_datetime_header: has_metadata_datetime_header(lines),
+            seen_datetime_header: false,
+            pre_datetime_state: PreDatetimeState::Clean,
+            pending_pre_datetime_coordinate_lines: Vec::new(),
+            pending_split_pre_datetime_coordinate_lines: Vec::new(),
+            pending_split_coordinate: PendingSplitCoordinate::default(),
+            lines: Vec::new(),
+        }
+    }
+
+    fn into_lines(self) -> Vec<String> {
+        self.lines
+    }
+
+    fn accepts_metadata_lines(&self) -> bool {
+        self.seen_datetime_header || !self.has_datetime_header
+    }
+
+    fn accept_datetime_header(&mut self, line: &str) {
+        if !self.pre_datetime_state.is_unstructured()
+            && is_buran_datetime_header_line(line)
+        {
+            self.push_pending_pre_datetime_coordinate_lines();
+        }
+        self.seen_datetime_header = true;
+        self.pre_datetime_state = PreDatetimeState::Clean;
+        self.pending_pre_datetime_coordinate_lines.clear();
+        self.pending_split_pre_datetime_coordinate_lines.clear();
+        self.pending_split_coordinate.reset();
+    }
+
+    fn accept_empty_line(&mut self) {
+        if self.seen_datetime_header {
+            return;
+        }
+        self.pre_datetime_state = PreDatetimeState::Clean;
+        self.pending_split_coordinate.reset();
+    }
+
+    fn accept_line(&mut self, line: &str) {
+        if self.accepts_metadata_lines() {
+            self.accept_metadata_line(line);
+        } else {
+            self.accept_pre_datetime_line(line);
+        }
+    }
+
+    fn accept_metadata_line(&mut self, line: &str) {
+        if is_standard_coordinate_metadata_line(line) {
+            self.pending_split_coordinate.reset();
+            self.lines.push(line.to_string());
+        } else if is_coordinate_label_marker_line(line) {
+            self.pending_split_coordinate.start();
+        } else {
+            match self.pending_split_coordinate.accept_line(line) {
+                SplitCoordinateResult::Complete(lines) => {
+                    self.lines.extend(lines);
+                }
+                SplitCoordinateResult::Pending => {}
+                SplitCoordinateResult::NotMatched => {}
+            }
+        }
+    }
+
+    fn accept_pre_datetime_line(&mut self, line: &str) {
+        if is_coordinate_label_value_line(line) {
+            self.pending_split_coordinate.reset();
+            if self.pre_datetime_state.is_structured() {
+                self.lines.push(line.to_string());
+            } else if !self.pre_datetime_state.is_unstructured() {
+                self.pending_pre_datetime_coordinate_lines
+                    .push(line.to_string());
+            }
+        } else if is_coordinate_label_marker_line(line) {
+            if self.pre_datetime_state.is_unstructured() {
+                self.pending_split_coordinate.reset();
+            } else {
+                self.pending_split_coordinate.start();
+            }
+        } else {
+            match self.pending_split_coordinate.accept_line(line) {
+                SplitCoordinateResult::Complete(lines) => {
+                    self.push_pre_datetime_coordinate_lines(lines);
+                }
+                SplitCoordinateResult::Pending => {}
+                SplitCoordinateResult::NotMatched => {
+                    self.accept_pre_datetime_non_coordinate_line(line);
+                }
+            }
+        }
+    }
+
+    fn accept_pre_datetime_non_coordinate_line(&mut self, line: &str) {
+        if is_structured_pre_datetime_header_line(line) {
+            self.pre_datetime_state = PreDatetimeState::StructuredHeader;
+            self.push_pending_pre_datetime_coordinate_lines();
+        } else {
+            self.pre_datetime_state = PreDatetimeState::UnstructuredLine;
+            self.pending_pre_datetime_coordinate_lines.clear();
+            self.pending_split_pre_datetime_coordinate_lines.clear();
+        }
+    }
+
+    fn push_pending_pre_datetime_coordinate_lines(&mut self) {
+        self.lines
+            .append(&mut self.pending_pre_datetime_coordinate_lines);
+        self.lines
+            .append(&mut self.pending_split_pre_datetime_coordinate_lines);
+        self.pending_split_coordinate.reset();
+    }
+
+    fn push_pre_datetime_coordinate_lines(&mut self, mut lines: Vec<String>) {
+        if self.pre_datetime_state.is_structured() {
+            self.lines.append(&mut lines);
+        } else {
+            self.pending_split_pre_datetime_coordinate_lines
+                .append(&mut lines);
+        }
+    }
+}
+
+fn has_metadata_datetime_header(lines: &[CoordinateInputLine]) -> bool {
+    let boundary = lines
+        .iter()
+        .position(|line| line.is_body_line)
+        .or_else(|| lines.iter().position(|line| is_dialog_line(&line.text)))
+        .unwrap_or(lines.len());
+
+    lines[..boundary].iter().any(|line| {
+        crate::rer_importer::body_noheader::is_datetime_header_line(&line.text)
+    })
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum PreDatetimeState {
+    Clean,
+    StructuredHeader,
+    UnstructuredLine,
+}
+
+impl PreDatetimeState {
+    fn is_structured(self) -> bool {
+        self == Self::StructuredHeader
+    }
+
+    fn is_unstructured(self) -> bool {
+        self == Self::UnstructuredLine
+    }
+}
+
+#[derive(Default)]
+struct PendingSplitCoordinate {
+    waiting_for_value: bool,
+    single_decimal_coordinate_lines: Vec<String>,
+    sk42_coordinate_lines: Vec<String>,
+}
+
+impl PendingSplitCoordinate {
+    fn start(&mut self) {
+        self.waiting_for_value = true;
+        self.single_decimal_coordinate_lines.clear();
+        self.sk42_coordinate_lines.clear();
+    }
+
+    fn reset(&mut self) {
+        self.waiting_for_value = false;
+        self.single_decimal_coordinate_lines.clear();
+        self.sk42_coordinate_lines.clear();
+    }
+
+    fn accept_line(&mut self, line: &str) -> SplitCoordinateResult {
+        if !self.waiting_for_value {
+            return SplitCoordinateResult::NotMatched;
+        }
+        if is_standalone_coordinate_value_line(line) {
+            self.reset();
+            return SplitCoordinateResult::Complete(vec![line.to_string()]);
+        }
+        if is_single_decimal_coordinate_line(line) {
+            self.single_decimal_coordinate_lines.push(line.to_string());
+            if self.single_decimal_coordinate_lines.len() == 2 {
+                self.waiting_for_value = false;
+                return SplitCoordinateResult::Complete(std::mem::take(
+                    &mut self.single_decimal_coordinate_lines,
+                ));
+            }
+            return SplitCoordinateResult::Pending;
+        }
+        if !self.single_decimal_coordinate_lines.is_empty() {
+            self.reset();
+            return SplitCoordinateResult::NotMatched;
+        }
+        if let Some(result) = self.accept_sk42_line(line) {
+            return result;
+        }
+        self.reset();
+        SplitCoordinateResult::NotMatched
+    }
+
+    fn accept_sk42_line(
+        &mut self,
+        line: &str,
+    ) -> Option<SplitCoordinateResult> {
+        if is_sk42_x_coordinate_line(line)
+            && self.sk42_coordinate_lines.is_empty()
+        {
+            self.sk42_coordinate_lines.push(line.to_string());
+            return Some(SplitCoordinateResult::Pending);
+        }
+        if is_sk42_y_coordinate_line(line)
+            && self.sk42_coordinate_lines.len() == 1
+            && is_sk42_x_coordinate_line(&self.sk42_coordinate_lines[0])
+        {
+            self.sk42_coordinate_lines.push(line.to_string());
+            self.waiting_for_value = false;
+            return Some(SplitCoordinateResult::Complete(std::mem::take(
+                &mut self.sk42_coordinate_lines,
+            )));
+        }
+        None
+    }
+}
+
+enum SplitCoordinateResult {
+    Complete(Vec<String>),
+    Pending,
+    NotMatched,
+}
+
+fn trim_line_end(line: &str) -> &str {
+    let line = line.strip_suffix('\n').unwrap_or(line);
+    line.strip_suffix('\r').unwrap_or(line)
+}
+
+fn is_standard_coordinate_metadata_line(line: &str) -> bool {
+    is_coordinate_label_value_line(line) || is_decimal_coords_only_line(line)
+}
+
+fn is_coordinate_label_value_line(line: &str) -> bool {
+    lazy_static! {
+        static ref RE_COORDINATE_LABEL: Regex = Regex::new(
+            r#"(?i)^\s*(?:координати|координаты|координата|coordinates?|coords?|mgrs|wgs(?:84)?)(?:\s*\([^)]*\))?\s*[:：]\s*\S"#
+        )
+        .unwrap();
+    }
+
+    RE_COORDINATE_LABEL.is_match(line)
+}
+
+fn is_coordinate_label_marker_line(line: &str) -> bool {
+    lazy_static! {
+        static ref RE_COORDINATE_LABEL_MARKER: Regex = Regex::new(
+            r#"(?i)^\s*(?:координати|координаты|координата|coordinates?|coords?|mgrs|wgs(?:84)?)(?:\s*\([^)]*\))?\s*[:：]\s*$"#
+        )
+        .unwrap();
+    }
+
+    RE_COORDINATE_LABEL_MARKER.is_match(line)
+}
+
+fn is_comment_marker_line(line: &str) -> bool {
+    lazy_static! {
+        static ref RE_COMMENT_MARKER: Regex = Regex::new(
+            r#"(?i)^\s*(?:коментар|коментарій|комментарий|комментар|comment)\s*[:\-—]"#
+        )
+        .unwrap();
+    }
+
+    RE_COMMENT_MARKER.is_match(line)
+}
+
+fn is_dialog_line(line: &str) -> bool {
+    lazy_static! {
+        static ref RE_DIALOG_LINE: Regex =
+            Regex::new(r#"^([—–―‒\-]|\d+\s*[\.\)\-:]|\d+\s+[—–―‒\-])"#)
+                .unwrap();
+    }
+
+    RE_DIALOG_LINE.is_match(line.trim())
+}
+
+fn is_standalone_coordinate_value_line(line: &str) -> bool {
+    is_decimal_coords_only_line(line) || is_mgrs_only_line(line)
+}
+
+fn is_mgrs_only_line(line: &str) -> bool {
+    lazy_static! {
+        static ref RE_MGRS_ONLY: Regex = Regex::new(
+            r#"(?i)^\s*\d{1,2}[C-HJ-NP-X]\s*[A-HJ-NP-Z]{2}(?:\s+\d{1,5}\s+\d{1,5}|\s*\d{2,10})\s*$"#
+        )
+        .unwrap();
+    }
+
+    RE_MGRS_ONLY.is_match(line)
+}
+
+fn is_single_decimal_coordinate_line(line: &str) -> bool {
+    lazy_static! {
+        static ref RE_SINGLE_DECIMAL_COORD: Regex =
+            Regex::new(r#"^\s*-?\d{1,3}[.,]\d{5,7}\s*$"#).unwrap();
+    }
+
+    RE_SINGLE_DECIMAL_COORD.is_match(line)
+}
+
+fn is_decimal_coords_only_line(line: &str) -> bool {
+    lazy_static! {
+        static ref RE_DECIMAL_COORDS_ONLY: Regex = Regex::new(
+            r#"^\s*-?\d{1,3}[.,]\d{5,7}\s*[, ]\s*-?\d{1,3}[.,]\d{5,7}\s*$"#
+        )
+        .unwrap();
+    }
+
+    RE_DECIMAL_COORDS_ONLY.is_match(line)
+}
+
+fn is_sk42_x_coordinate_line(line: &str) -> bool {
+    lazy_static! {
+        static ref RE_SK42_X: Regex =
+            Regex::new(r#"(?i)^\s*x\s*:\s*\d{2}-\d{5}\s*$"#).unwrap();
+    }
+
+    RE_SK42_X.is_match(line)
+}
+
+fn is_sk42_y_coordinate_line(line: &str) -> bool {
+    lazy_static! {
+        static ref RE_SK42_Y: Regex =
+            Regex::new(r#"(?i)^\s*y\s*:\s*\d{2}-\d{5}\s*$"#).unwrap();
+    }
+
+    RE_SK42_Y.is_match(line)
+}
+
+fn is_structured_pre_datetime_header_line(line: &str) -> bool {
+    lazy_static! {
+        static ref RE: Regex = Regex::new(
+            r#"(?i)^\s*(?:район|частота|локація|локация|мережа|сеть|засічка|засечка|підрозділ|подразделение|хто|кому|абоненти|абоненты|позивні|позывные|пост|тип сигналу|тип сигнала|приналежність|принадлежность|мітки перехоплення|метки перехвата)\s*:"#
+        )
+        .unwrap();
+    }
+    RE.is_match(line)
+}
+
+fn is_buran_datetime_header_line(line: &str) -> bool {
+    lazy_static! {
+        static ref RE: Regex = Regex::new(r#"^(Дата|Час)\s*[: ]"#).unwrap();
+    }
+    RE.is_match(line)
 }
 
 fn prepare_body_for_coords(body: &str) -> String {
@@ -84,6 +675,20 @@ fn is_received_from_post_line(line: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn no_headers_body_at(
+        body: &str,
+        body_noheader: &str,
+    ) -> crate::rer_importer::body_noheader::NoHeadersBody {
+        let start_byte = body.find(body_noheader).unwrap();
+        let start = body[..start_byte].chars().count();
+        let end = start + body_noheader.chars().count();
+        crate::rer_importer::body_noheader::NoHeadersBody {
+            body: body_noheader.to_string(),
+            start,
+            end,
+        }
+    }
 
     #[tokio::test]
     async fn extract_coords_ignores_sc_transcript_dmr_header_ids() {
@@ -191,6 +796,554 @@ ID(CG)⬅️: 34655
         let coords = extract_coords(body).await;
         assert_eq!(coords.len(), 1);
         assert_eq!(coords[0].text, "47.392477, 36.056984");
+    }
+
+    #[tokio::test]
+    async fn extract_inbox_coords_keeps_standard_coordinate_header() {
+        let body = "01.07.2026, 02:55:19\n155.0250\nКоординати: 36U XB 66512 50880\nУКХ р/м\n\n— репліка";
+        let body_noheader =
+            crate::sigint::parser::extract_text_without_top_comment(body)
+                .unwrap();
+
+        assert_eq!(body_noheader.body, "— репліка");
+
+        let coords = extract_inbox_coords(body, &body_noheader).await;
+        assert_eq!(coords.len(), 1);
+        assert_eq!(coords[0].mgrs, "36UXB6651250880");
+    }
+
+    #[tokio::test]
+    async fn extract_inbox_coords_keeps_crlf_standard_coordinate_header() {
+        let body = "01.07.2026, 02:55:19\r\n155.0250\r\nКоординати: 36U XB 66512 50880\r\nУКХ р/м\r\n\r\nНВ\r\n— репліка";
+        let body_noheader = body_noheader_for_reprocess_coords(body).unwrap();
+
+        assert_eq!(body_noheader.body, "НВ\n— репліка");
+        assert!(body_noheader.start > 0);
+
+        let coords = extract_inbox_coords(body, &body_noheader).await;
+        assert_eq!(coords.len(), 1);
+        assert_eq!(coords[0].mgrs, "36UXB6651250880");
+    }
+
+    #[tokio::test]
+    async fn extract_inbox_coords_keeps_split_mgrs_coordinate_after_datetime() {
+        let body = "01.07.2026, 02:55:19\n155.0250\nКоординати:\n36U XB 66512 50880\nУКХ р/м\n\n— репліка";
+        let body_noheader = no_headers_body_at(body, "— репліка");
+
+        assert_eq!(body_noheader.body, "— репліка");
+
+        let coords = extract_inbox_coords(body, &body_noheader).await;
+        assert_eq!(coords.len(), 1);
+        assert_eq!(coords[0].mgrs, "36UXB6651250880");
+    }
+
+    #[tokio::test]
+    async fn extract_inbox_coords_keeps_split_decimal_coordinate_after_datetime(
+    ) {
+        let body = "01.07.2026, 02:55:19\n155.0250\nКоординати:\n47.392477\n36.056984\nУКХ р/м\n\n— репліка";
+        let body_noheader = no_headers_body_at(body, "— репліка");
+
+        assert_eq!(body_noheader.body, "— репліка");
+
+        let coords = extract_inbox_coords(body, &body_noheader).await;
+        assert_eq!(coords.len(), 1);
+        assert_eq!(coords[0].text, "47.392477, 36.056984");
+    }
+
+    #[tokio::test]
+    async fn extract_inbox_coords_reprocess_keeps_standard_coordinate_header() {
+        let body = "01.07.2026, 02:55:19\n155.0250\nКоординати: 36U XB 66512 50880\nУКХ р/м\n\n— репліка";
+        let body_noheader = body_noheader_for_reprocess_coords(body).unwrap();
+
+        assert_eq!(body_noheader.body, "— репліка");
+
+        let coords = extract_inbox_coords(body, &body_noheader).await;
+        assert_eq!(coords.len(), 1);
+        assert_eq!(coords[0].mgrs, "36UXB6651250880");
+    }
+
+    #[tokio::test]
+    async fn extract_inbox_coords_keeps_buran_coordinate_before_datetime() {
+        let body = r#"Частота: 442.585(МГц)
+Локація: Новобахмутівка
+Підрозділ: УКХ р/ м не визначеного підрозділу
+Координати: 37U CP 97168 42114
+
+Зміст:
+1:
+2:
+
+
+Дата 20.02.2025
+Час 16:16:48"#;
+        let body_noheader =
+            crate::sigint::parser::extract_text_without_top_comment(body)
+                .unwrap();
+
+        assert!(!extract_coords(body).await.is_empty());
+
+        let coords = extract_inbox_coords(body, &body_noheader).await;
+        assert_eq!(coords.len(), 1);
+        assert_eq!(coords[0].mgrs, "37UCP9716842114");
+    }
+
+    #[tokio::test]
+    async fn extract_inbox_coords_keeps_first_buran_coordinate_before_datetime()
+    {
+        let body = r#"Координати: 37U CP 97168 42114
+Частота: 442.585(МГц)
+Підрозділ: УКХ р/ м не визначеного підрозділу
+Дата 20.02.2025
+Час 16:16:48
+
+Зміст:
+1:
+2:"#;
+        let body_noheader =
+            crate::sigint::parser::extract_text_without_top_comment(body)
+                .unwrap();
+
+        assert!(!extract_coords(body).await.is_empty());
+
+        let coords = extract_inbox_coords(body, &body_noheader).await;
+        assert_eq!(coords.len(), 1);
+        assert_eq!(coords[0].mgrs, "37UCP9716842114");
+    }
+
+    #[tokio::test]
+    async fn extract_inbox_coords_keeps_only_inline_buran_coordinate_before_datetime(
+    ) {
+        let body = r#"Координати: 37U CP 97168 42114
+Дата 20.02.2025
+Час 16:16:48
+
+Зміст:
+1:
+2:"#;
+        let body_noheader =
+            crate::sigint::parser::extract_text_without_top_comment(body)
+                .unwrap();
+
+        assert!(!extract_coords(body).await.is_empty());
+
+        let coords = extract_inbox_coords(body, &body_noheader).await;
+        assert_eq!(coords.len(), 1);
+        assert_eq!(coords[0].mgrs, "37UCP9716842114");
+    }
+
+    #[tokio::test]
+    async fn extract_inbox_coords_keeps_inline_buran_coordinate_before_blank_datetime(
+    ) {
+        let body = r#"Координати: 37U CP 97168 42114
+
+Дата 20.02.2025
+Час 16:16:48
+
+Зміст:
+1:
+2:"#;
+        let body_noheader =
+            crate::sigint::parser::extract_text_without_top_comment(body)
+                .unwrap();
+
+        assert!(!extract_coords(body).await.is_empty());
+
+        let coords = extract_inbox_coords(body, &body_noheader).await;
+        assert_eq!(coords.len(), 1);
+        assert_eq!(coords[0].mgrs, "37UCP9716842114");
+    }
+
+    #[tokio::test]
+    async fn extract_inbox_coords_keeps_split_buran_coordinate_before_datetime()
+    {
+        let body = r#"Координати:
+37U CP 97168 42114
+Дата 20.02.2025
+Час 16:16:48
+
+Зміст:
+1:
+2:"#;
+        let body_noheader =
+            crate::sigint::parser::extract_text_without_top_comment(body)
+                .unwrap();
+
+        assert!(!extract_coords(body).await.is_empty());
+
+        let coords = extract_inbox_coords(body, &body_noheader).await;
+        assert_eq!(coords.len(), 1);
+        assert_eq!(coords[0].mgrs, "37UCP9716842114");
+    }
+
+    #[tokio::test]
+    async fn extract_inbox_coords_keeps_split_buran_coordinate_before_blank_datetime(
+    ) {
+        let body = r#"Координати:
+37U CP 97168 42114
+
+Дата 20.02.2025
+Час 16:16:48
+
+Зміст:
+1:
+2:"#;
+        let body_noheader =
+            crate::sigint::parser::extract_text_without_top_comment(body)
+                .unwrap();
+
+        assert!(!extract_coords(body).await.is_empty());
+
+        let coords = extract_inbox_coords(body, &body_noheader).await;
+        assert_eq!(coords.len(), 1);
+        assert_eq!(coords[0].mgrs, "37UCP9716842114");
+    }
+
+    #[tokio::test]
+    async fn extract_inbox_coords_keeps_split_decimal_coordinate_before_datetime(
+    ) {
+        let body = r#"Координати:
+47.392477
+36.056984
+Дата 20.02.2025
+Час 16:16:48
+
+Зміст:
+1:
+2:"#;
+        let body_noheader =
+            crate::sigint::parser::extract_text_without_top_comment(body)
+                .unwrap();
+
+        assert!(!extract_coords(body).await.is_empty());
+
+        let coords = extract_inbox_coords(body, &body_noheader).await;
+        assert_eq!(coords.len(), 1);
+        assert_eq!(coords[0].text, "47.392477, 36.056984");
+    }
+
+    #[tokio::test]
+    async fn extract_inbox_coords_keeps_split_sk42_coordinate_before_datetime()
+    {
+        let body = r#"Координати:
+x:51-29637
+y:65-01850
+Дата 20.02.2025
+Час 16:16:48
+
+Зміст:
+1:
+2:"#;
+        let body_noheader =
+            crate::sigint::parser::extract_text_without_top_comment(body)
+                .unwrap();
+
+        assert!(!extract_coords(body).await.is_empty());
+
+        let coords = extract_inbox_coords(body, &body_noheader).await;
+        assert_eq!(coords.len(), 1);
+        assert!(coords[0].capture.contains("x:51-29637"));
+        assert!(coords[0].capture.contains("y:65-01850"));
+    }
+
+    #[tokio::test]
+    async fn extract_inbox_coords_ignores_split_coordinate_top_comment_before_generic_datetime(
+    ) {
+        let body = r#"Координати:
+37U CP 97168 42114
+01.07.2026, 02:55:19
+155.0250
+УКХ р/м
+
+— репліка"#;
+        let body_noheader =
+            crate::sigint::parser::extract_text_without_top_comment(body)
+                .unwrap();
+
+        assert!(!extract_coords(body).await.is_empty());
+        assert_eq!(body_noheader.body, "— репліка");
+
+        let coords = extract_inbox_coords(body, &body_noheader).await;
+        assert!(coords.is_empty());
+    }
+
+    #[tokio::test]
+    async fn extract_inbox_coords_ignores_labeled_coordinate_top_comment_before_structured_header(
+    ) {
+        let body = r#"Координати: 37U CP 97168 42114
+операторська примітка
+Частота: 442.585(МГц)
+Дата 20.02.2025
+Час 16:16:48
+
+Зміст:
+1:
+2:"#;
+        let body_noheader =
+            crate::sigint::parser::extract_text_without_top_comment(body)
+                .unwrap();
+
+        assert!(!extract_coords(body).await.is_empty());
+
+        let coords = extract_inbox_coords(body, &body_noheader).await;
+        assert!(coords.is_empty());
+    }
+
+    #[tokio::test]
+    async fn extract_inbox_coords_ignores_split_coordinate_comment_marker_before_datetime(
+    ) {
+        let body = r#"Коментар:
+Координати:
+37U CP 97168 42114
+Дата 20.02.2025
+Час 16:16:48
+
+Зміст:
+1:
+2:"#;
+        let body_noheader =
+            crate::sigint::parser::extract_text_without_top_comment(body)
+                .unwrap();
+
+        assert!(!extract_coords(body).await.is_empty());
+
+        let coords = extract_inbox_coords(body, &body_noheader).await;
+        assert!(coords.is_empty());
+    }
+
+    #[tokio::test]
+    async fn extract_inbox_coords_ignores_top_comment_coordinates() {
+        let body = "36T VS 89904 14667\n01.07.2026, 02:55:19\n155.0250\nУКХ р/м\n\n— репліка";
+        let body_noheader =
+            crate::sigint::parser::extract_text_without_top_comment(body)
+                .unwrap();
+
+        assert_eq!(body_noheader.body, "— репліка");
+        assert!(extract_inbox_coords(body, &body_noheader).await.is_empty());
+    }
+
+    #[tokio::test]
+    async fn extract_inbox_coords_ignores_top_comment_decimal_coordinates() {
+        let body = "47.392477, 36.056984\n01.07.2026, 02:55:19\n155.0250\nУКХ р/м\n\n— репліка";
+        let body_noheader =
+            crate::sigint::parser::extract_text_without_top_comment(body)
+                .unwrap();
+
+        assert_eq!(body_noheader.body, "— репліка");
+        assert!(extract_inbox_coords(body, &body_noheader).await.is_empty());
+    }
+
+    #[tokio::test]
+    async fn extract_inbox_coords_ignores_top_comment_labeled_coordinates() {
+        for coordinate_line in
+            ["Координати: 36U XB 66512 50880", "MGRS: 36U XB 66512 50880"]
+        {
+            let body = format!(
+                "{coordinate_line}\n01.07.2026, 02:55:19\n155.0250\nУКХ р/м\n\n— репліка"
+            );
+            let body_noheader =
+                crate::sigint::parser::extract_text_without_top_comment(&body)
+                    .unwrap();
+
+            assert_eq!(body_noheader.body, "— репліка");
+            assert!(
+                extract_inbox_coords(&body, &body_noheader).await.is_empty(),
+                "{coordinate_line}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn extract_inbox_coords_ignores_comment_marker_labeled_coordinates() {
+        let body = "Коментар:\nКоординати: 36U XB 66512 50880\n01.07.2026, 02:55:19\n155.0250\nУКХ р/м\n\n— репліка";
+        let body_noheader =
+            crate::sigint::parser::extract_text_without_top_comment(body)
+                .unwrap();
+
+        assert_eq!(body_noheader.body, "— репліка");
+        assert!(extract_inbox_coords(body, &body_noheader).await.is_empty());
+    }
+
+    #[tokio::test]
+    async fn extract_inbox_coords_ignores_mid_body_comment_coordinates() {
+        let body = "01.07.2026, 02:55:19\n155.0250\nУКХ р/м\n\n— перша репліка\nКоментар:\nКоординати: 36U XB 66512 50880\n— друга репліка";
+        let body_noheader =
+            crate::sigint::parser::extract_text_without_top_comment(body)
+                .unwrap();
+
+        assert!(body_noheader.body.contains("— перша репліка"));
+        assert!(body_noheader.body.contains("— друга репліка"));
+        assert!(!body_noheader.body.contains("Координати"));
+
+        assert!(extract_inbox_coords(body, &body_noheader).await.is_empty());
+    }
+
+    #[tokio::test]
+    async fn extract_inbox_coords_ignores_footer_comment_labeled_coordinates() {
+        let body = "01.07.2026, 02:55:19\n155.0250\nУКХ р/м\n\n— репліка\n\nКоментар: примітка\nКоординати: 36U XB 66512 50880";
+        let body_noheader =
+            crate::sigint::parser::extract_text_without_top_comment(body)
+                .unwrap();
+
+        assert!(!extract_coords(body).await.is_empty());
+        assert!(body_noheader.body.contains("— репліка"));
+        assert!(extract_inbox_coords(body, &body_noheader).await.is_empty());
+    }
+
+    #[tokio::test]
+    async fn extract_inbox_coords_keeps_unmarked_footer_coordinates() {
+        let body = "01.07.2026, 02:55:19\n155.0250\nУКХ р/м\n\n— репліка\n\nКоординати: 36U XB 66512 50880";
+        let body_noheader =
+            crate::sigint::parser::extract_text_without_top_comment(body)
+                .unwrap();
+
+        assert_eq!(body_noheader.body, "— репліка");
+
+        let coords = extract_inbox_coords(body, &body_noheader).await;
+        assert_eq!(coords.len(), 1);
+        assert_eq!(coords[0].mgrs, "36UXB6651250880");
+    }
+
+    #[tokio::test]
+    async fn extract_inbox_coords_ignores_empty_body_footer_comment_coordinates(
+    ) {
+        let body = "01.07.2026, 02:55:19\n155.0250\nУКХ р/м\n\nКоментар: примітка\nКоординати: 36U XB 66512 50880";
+        let body_noheader =
+            crate::sigint::parser::extract_text_without_top_comment(body)
+                .unwrap();
+
+        assert!(!extract_coords(body).await.is_empty());
+        assert!(body_noheader.body.is_empty());
+        assert!(extract_inbox_coords(body, &body_noheader).await.is_empty());
+    }
+
+    #[tokio::test]
+    async fn extract_inbox_coords_keeps_decimal_coords_after_spaced_time_date()
+    {
+        let body = "16:41  25.02.2026\n139.450\n47.392477, 36.056984\nУКХ р/м\n\n— репліка";
+        let body_noheader =
+            crate::sigint::parser::extract_text_without_top_comment(body)
+                .unwrap();
+
+        assert_eq!(body_noheader.body, "— репліка");
+
+        let coords = extract_inbox_coords(body, &body_noheader).await;
+        assert_eq!(coords.len(), 1);
+        assert_eq!(coords[0].text, "47.392477, 36.056984");
+    }
+
+    #[tokio::test]
+    async fn extract_inbox_coords_keeps_decimal_coords_without_datetime_header()
+    {
+        let body = "139.450\n47.392477, 36.056984\nУКХ р/м\n\n— репліка";
+        let body_noheader =
+            crate::sigint::parser::extract_text_without_top_comment(body)
+                .unwrap();
+
+        assert!(!extract_coords(body).await.is_empty());
+        assert_eq!(body_noheader.body, "— репліка");
+
+        let coords = extract_inbox_coords(body, &body_noheader).await;
+        assert_eq!(coords.len(), 1);
+        assert_eq!(coords[0].text, "47.392477, 36.056984");
+    }
+
+    #[tokio::test]
+    async fn extract_inbox_coords_keeps_labeled_coords_without_datetime_header()
+    {
+        let body =
+            "139.450\nКоординати: 36U XB 66512 50880\nУКХ р/м\n\n— репліка";
+        let body_noheader =
+            crate::sigint::parser::extract_text_without_top_comment(body)
+                .unwrap();
+
+        assert!(!extract_coords(body).await.is_empty());
+        assert_eq!(body_noheader.body, "— репліка");
+
+        let coords = extract_inbox_coords(body, &body_noheader).await;
+        assert_eq!(coords.len(), 1);
+        assert_eq!(coords[0].mgrs, "36UXB6651250880");
+    }
+
+    #[tokio::test]
+    async fn extract_inbox_coords_ignores_body_datetime_for_header_detection() {
+        let body = "139.450\nКоординати: 36U XB 66512 50880\nУКХ р/м\n\n— репліка\n01.07.2026, 02:55:19";
+        let body_noheader = body_noheader_for_reprocess_coords(body).unwrap();
+
+        let coords = extract_inbox_coords(body, &body_noheader).await;
+        assert_eq!(coords.len(), 1);
+        assert_eq!(coords[0].mgrs, "36UXB6651250880");
+    }
+
+    #[tokio::test]
+    async fn extract_inbox_coords_ignores_kraken_preamble_comment() {
+        let body =
+            "36T VS 89904 14667\n audio | 2026-07-01_14-47-03\nПерехоплення";
+        let kraken_audio =
+            crate::rer_importer::meow_format::parse_kraken_audio(body).unwrap();
+
+        assert!(kraken_audio.body_noheader.body.contains("36T VS"));
+
+        let body_noheader =
+            body_noheader_for_inbox_coords(body, Some(&kraken_audio)).unwrap();
+        assert_eq!(body_noheader.body, "Перехоплення");
+        assert!(extract_inbox_coords(body, &body_noheader).await.is_empty());
+    }
+
+    #[test]
+    fn body_noheader_for_reprocess_coords_keeps_regular_meow_body() {
+        let body =
+            "50 обрБпС\n05.58 (МСК/Київ) +- 10хв\n\nПерехоплення\nрядок 2";
+        let body_noheader = body_noheader_for_reprocess_coords(body).unwrap();
+
+        assert_eq!(body_noheader.body, "Перехоплення\nрядок 2");
+    }
+
+    #[tokio::test]
+    async fn extract_inbox_coords_ignores_meow_footer_comment_coordinates() {
+        let body = "50 обрБпС\n05.58 (МСК/Київ) +- 10хв\n\nПерехоплення\n\nКоментар: примітка\nКоординати: 36U XB 66512 50880";
+        let body_noheader = body_noheader_for_reprocess_coords(body).unwrap();
+
+        assert!(body_noheader.body.contains("Координати"));
+        assert!(!extract_coords(&body_noheader.body).await.is_empty());
+        assert!(extract_inbox_coords(body, &body_noheader).await.is_empty());
+    }
+
+    #[tokio::test]
+    async fn extract_inbox_coords_ignores_bare_coordinate_comment_continuation()
+    {
+        let body = "01.07.2026, 02:55:19\n155.0250\nУКХ р/м\n\nКоментар:\n36U XB 66512 50880\n— репліка";
+        let body_noheader =
+            crate::sigint::parser::extract_text_without_top_comment(body)
+                .unwrap();
+
+        assert!(!extract_coords(body).await.is_empty());
+        assert!(body_noheader.body.contains("36U XB 66512 50880"));
+        assert!(extract_inbox_coords(body, &body_noheader).await.is_empty());
+    }
+
+    #[tokio::test]
+    async fn extract_inbox_coords_keeps_split_header_coordinate_repeated_in_comment(
+    ) {
+        let body = "01.07.2026, 02:55:19\n155.0250\nКоординати:\n36U XB 66512 50880\nУКХ р/м\n\nКоментар:\n36U XB 66512 50880\n— репліка";
+        let body_noheader =
+            crate::sigint::parser::extract_text_without_top_comment(body)
+                .unwrap();
+
+        let coords = extract_inbox_coords(body, &body_noheader).await;
+        assert_eq!(coords.len(), 1);
+        assert_eq!(coords[0].mgrs, "36UXB6651250880");
+    }
+
+    #[tokio::test]
+    async fn extract_inbox_coords_ignores_unit_description_coordinates() {
+        let body = "01.07.2026, 02:55:19\n155.0250\nУКХ р/м 123 мсп 36U XB 66512 50880\n\n— репліка";
+        let body_noheader =
+            crate::sigint::parser::extract_text_without_top_comment(body)
+                .unwrap();
+
+        assert!(!extract_coords(body).await.is_empty());
+        assert_eq!(body_noheader.body, "— репліка");
+        assert!(extract_inbox_coords(body, &body_noheader).await.is_empty());
     }
 
     #[tokio::test]

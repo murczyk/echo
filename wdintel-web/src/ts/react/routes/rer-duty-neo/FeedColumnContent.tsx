@@ -1,28 +1,52 @@
 import AddIcon from '@mui/icons-material/Add';
-import { Box, CircularProgress, Fab, Paper, Typography } from '@mui/material';
 import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward';
-import { forwardRef, useCallback, useEffect, useRef, useState } from 'react';
-import type { ComponentProps, Ref, RefObject } from 'react';
-import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso';
-import { ELLIPSIS, isNullOrUndefined, isPresent } from '../../utils/misc';
-import type { MessageComment } from '../../../../Bindings';
-import type { FeedColumnModel } from './FeedColumn';
-import { DutyMessageCard } from '../shared/message-card/MessageCard';
-import { PowerChip } from '../../components/PowerChip';
+import { Box, CircularProgress, Fab, Paper, Typography } from '@mui/material';
 import {
-  resolveMessageCardEtalonDisplayModel,
+  forwardRef,
+  memo,
+  useCallback,
+  useImperativeHandle,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
+import type {
+  CallsignInfoRes,
+  InboxMessage,
+  MessageComment,
+  Network,
+  RerDutyQueryStateWf as RerDutyFeedFilterState,
+  SignalGroupEntry,
+  SignalProfileEntry,
+  Tag,
+  Unit,
+} from '../../../../Bindings';
+import { ELLIPSIS, isNullOrUndefined, isPresent } from '../../utils/misc';
+import type { FeedColumnModel } from './types';
+import { PowerChip } from '../../components/PowerChip';
+import { DutyMessageCard } from '../shared/message-card/MessageCard';
+import type { MessageCardBotTagAction } from '../shared/message-card/message-card.types';
+import { buildMessageCardDisplayLabels } from '../shared/message-card/message-card-labels';
+import {
   buildCopyTextWithNetworkAndNote,
   buildCopyTextWithNetworkName,
+  resolveMessageCardEtalonDisplayModel,
 } from '../shared/message-card/message-card.utils';
-import { buildMessageCardDisplayLabels } from '../shared/message-card/message-card-labels';
+import type { MessageEntityFilterKind, TagsLayoutVariant } from './utils';
 import { dutyTopAddFabSx, dutyTopScrollButtonSx } from './top-action-styles';
+import { useWindowedFeedScroll } from './useWindowedFeedScroll';
 
-/** When the visible range enters this many items from the bottom (oldest at top, newest at bottom), load 20 older messages to keep scroll position and unread count. */
-const LOAD_OLDER_BUFFER_ITEMS = 10;
-/** Virtuoso: consider "at bottom" when within this many pixels of the scroll end (watch mode / reach-bottom). */
+/** Start loading older messages when the user scrolls close to the top of the DOM list. */
+const LOAD_OLDER_BUFFER_PX = 160;
+/** Start loading newer messages before the user gets close to the bottom edge. */
+const LOAD_NEWER_NEAR_BOTTOM_BUFFER_PX = 800;
+/** Consider "at bottom" when within this many pixels of the scroll end (watch mode / read-state). */
 const DUTY_FEED_AT_BOTTOM_THRESHOLD_PX = 25;
-/** After loading older, don't trigger again until the user scrolls back up so the visible range is at least this far from the bottom. */
-const LOAD_OLDER_RESET_MARGIN = 20;
+// Hoisted stable empty array: passing `[]` inline as a prop would allocate a fresh reference
+// every render, defeating React.memo / useMemo bailouts downstream in MessageCard.
+const EMPTY_MESSAGE_COMMENTS: MessageComment[] = [];
+
 const DUTY_FLOATING_ACTION_GAP_PX = 12;
 const DUTY_FLOATING_ACTION_SIZE_PX = 35;
 const DUTY_FLOATING_ACTION_STACK_HEIGHT_PX =
@@ -36,460 +60,688 @@ function filterOwnMessageComments(
   messageComments: MessageComment[] | null | undefined,
   authUserName: string | null,
 ): MessageComment[] {
-  if (!messageComments) return [];
+  if (!messageComments || messageComments.length === 0) return EMPTY_MESSAGE_COMMENTS;
   const activeLogin = authUserName?.trim();
   if (!activeLogin) return messageComments;
-  return messageComments.filter((comment) => comment.login.trim() !== activeLogin);
+  const filtered = messageComments.filter((comment) => comment.login.trim() !== activeLogin);
+  return filtered.length === 0 ? EMPTY_MESSAGE_COMMENTS : filtered;
 }
 
-const FeedScroller = forwardRef<HTMLDivElement, ComponentProps<'div'>>(function FeedScroller(
-  { style, className, ...props },
-  ref,
-) {
-  return (
-    <Box
-      ref={ref}
-      data-virtuoso-scroller
-      component="div"
-      style={style}
-      sx={{
-        pl: '12px',
-        scrollbarGutter: 'stable',
-        boxSizing: 'border-box',
-        overflowX: 'hidden',
-      }}
-      className={[className, 'rer-duty-feed-scroll'].filter(Boolean).join(' ')}
-      {...props}
-    />
-  );
-});
+export type FeedColumnContentHandle = {
+  scrollToBottom: (behavior?: ScrollBehavior) => void;
+};
 
-const FeedList = forwardRef<HTMLDivElement, ComponentProps<'div'>>(function FeedList(
-  { style, className, ...props },
-  ref,
-) {
-  return (
-    <Box
-      ref={ref}
-      component="div"
-      style={style}
-      sx={{
-        pr: '12px',
-        boxSizing: 'border-box',
-      }}
-      className={className}
-      {...props}
-    />
-  );
-});
+function useStableCallback<T extends (...args: any[]) => any>(callback: T | undefined): T {
+  const ref = useRef<T | undefined>(callback);
+  useLayoutEffect(() => {
+    ref.current = callback;
+  });
+  return useCallback((...args: any[]) => {
+    return ref.current?.(...args);
+  }, []) as T;
+}
 
 type FeedColumnContentProps = {
   column: FeedColumnModel;
-  virtuosoRef: RefObject<VirtuosoHandle | null>;
 };
 
-export function FeedColumnContent({ column, virtuosoRef }: FeedColumnContentProps) {
-  const { feed, view, messageCard, actions } = column;
-  const {
-    narrowScreen = false,
-    feedCount,
-    loadingNewer = false,
-    arrowResultMessage = null,
-    unreadCount = 0,
-    isWatchMode = false,
-  } = view;
-  const {
-    authUserName,
-    copiedFeedbackId,
+type DutyMessageCardItemProps = {
+  id: number;
+  msg: InboxMessage;
+  feedId: string;
+  feedCount?: number;
+  tagsLayout: TagsLayoutVariant;
+  botTagAction: MessageCardBotTagAction | null;
+  onCancelBotTagAction?: () => void;
+  onMarkBotTagWrong?: (messageId: number, tagId: number) => void | Promise<void>;
+  referenceTimeMs: number | null;
+  authUserName: string | null;
+  groupInfos: Record<string, SignalGroupEntry>;
+  profiles: Record<string, SignalProfileEntry | null>;
+  copiedFeedbackId: string | null;
+  networkDisplayMap: Record<number, string>;
+  networkMap: Record<number, Network>;
+  unitsMap: Record<number, Unit>;
+  callsignInfoMap: Record<string, CallsignInfoRes>;
+  networks?: Network[];
+  featureStrictNetworks: boolean;
+  tagsMap: Record<number, Tag>;
+  tagsOrder?: number[];
+  filterState: RerDutyFeedFilterState;
+  onMessageBookmark: (msgId: number, currentlyBookmarked: boolean) => void;
+  onMessageImportant: (msgId: number, currentlyImportant: boolean) => void;
+  onMessageCopy: (text: string, feedbackId: string) => void;
+  onMessageAddFrequencyToFilter: (feedId: string, freq: string) => void;
+  onMessageComment: (msgId: number, currentComment: string | null) => void;
+  onMessageExcludeEntity: (entity: MessageEntityFilterKind, value: string) => void;
+  onMessageToggleTag: (msgId: number, tagId: number) => void;
+  onOpenPointsOnMap?: (etalons: string[], message: InboxMessage) => void;
+};
+
+const DutyMessageCardItem = memo(function DutyMessageCardItem({
+  id,
+  msg,
+  feedId,
+  feedCount,
+  tagsLayout,
+  botTagAction,
+  onCancelBotTagAction,
+  onMarkBotTagWrong,
+  referenceTimeMs,
+  authUserName,
+  groupInfos,
+  profiles,
+  copiedFeedbackId,
+  networkDisplayMap,
+  networkMap,
+  unitsMap,
+  callsignInfoMap,
+  networks,
+  featureStrictNetworks,
+  tagsMap,
+  tagsOrder,
+  filterState,
+  onMessageBookmark,
+  onMessageImportant,
+  onMessageCopy,
+  onMessageAddFrequencyToFilter,
+  onMessageComment,
+  onMessageExcludeEntity,
+  onMessageToggleTag,
+  onOpenPointsOnMap,
+}: DutyMessageCardItemProps) {
+  const labels = buildMessageCardDisplayLabels(msg, { groupInfos, profiles });
+  const etalonDisplayModel = resolveMessageCardEtalonDisplayModel(msg, {
+    featureStrictNetworks,
     networkDisplayMap,
     networkMap,
-    unitsMap,
-    callsignInfoMap,
-    groupInfos,
-    profiles,
-    featureStrictNetworks,
-    tagsLayout,
-    tagsMap,
-    tagsOrder,
-    botTagAction,
-    onCancelBotTagAction,
-    onMarkBotTagWrong,
-    onOpenPointsOnMap,
-  } = messageCard;
-  const {
-    onLoadOlder,
-    onMessageBookmark,
-    onMessageImportant,
-    onMessageAddFrequencyToFilter,
-    onMessageCopy,
-    onMessageComment,
-    onMessageExcludeEntity,
-    onMessageToggleTag,
-    onScrollToTop,
-    onReachedBottom,
-    onLeftBottom,
-    onNearBottomChange,
-    onAtBottomChange,
-    onArrowClick,
-    onVisibleMessageIds,
-    onCreateMessageFeed,
-  } = actions;
-  const [isAtBottom, setIsAtBottom] = useState(true);
-  const loadOlderTriggeredRef = useRef(false);
-  const hasSeenNotAtBottomRef = useRef(false);
-  const atBottomRef = useRef(true);
-  const nearBottomRef = useRef<boolean | null>(null);
+    networks,
+  });
 
-  useEffect(() => {
-    if (!feed.loadingOlder) loadOlderTriggeredRef.current = false;
-  }, [feed.loadingOlder]);
-
-  const tryLoadOlder = useCallback(() => {
-    if (loadOlderTriggeredRef.current || feed.loadingOlder || feed.hasReachedStart) return;
-    loadOlderTriggeredRef.current = true;
-    onLoadOlder();
-  }, [feed.loadingOlder, feed.hasReachedStart, onLoadOlder]);
-
-  const firstItemIndex = feed.firstItemIndex ?? 0;
-  const handleRangeChanged = useCallback(
-    (range: { startIndex: number; endIndex: number }) => {
-      const len = feed.items.length;
-      const startDataIndex = range.startIndex - firstItemIndex;
-      const endDataIndex = range.endIndex - firstItemIndex;
-      const nearTop =
-        len <= LOAD_OLDER_BUFFER_ITEMS
-          ? len > 0 && startDataIndex <= 0
-          : startDataIndex < LOAD_OLDER_BUFFER_ITEMS;
-      if (nearTop) {
-        tryLoadOlder();
-      } else if (startDataIndex > LOAD_OLDER_RESET_MARGIN) {
-        loadOlderTriggeredRef.current = false;
-      }
-      const nearBottom =
-        len <= LOAD_OLDER_BUFFER_ITEMS
-          ? len > 0 && endDataIndex >= len - 1
-          : endDataIndex >= len - LOAD_OLDER_BUFFER_ITEMS;
-      if (nearBottomRef.current !== nearBottom) {
-        nearBottomRef.current = nearBottom;
-        onNearBottomChange?.(nearBottom);
-      }
-      if (isPresent(onVisibleMessageIds) && len > 0) {
-        const ids: number[] = [];
-        for (let dataIndex = 0; dataIndex <= endDataIndex && dataIndex < len; dataIndex += 1) {
-          ids.push(feed.items[dataIndex][0]);
-        }
-        if (ids.length > 0) onVisibleMessageIds(ids, { atBottom: false });
-      }
-    },
-    [
-      feed.items,
-      feed.items.length,
-      firstItemIndex,
-      onNearBottomChange,
-      onVisibleMessageIds,
-      tryLoadOlder,
-    ],
+  const messageComments = useMemo(
+    () => filterOwnMessageComments(msg.messageComments, authUserName),
+    [msg.messageComments, authUserName],
   );
 
-  if (feed.loading && feed.items.length === 0) {
-    return (
-      <Box className="flex-1 flex justify-center items-center min-h-0">
-        <CircularProgress />
-      </Box>
-    );
-  }
-
   return (
-    <Paper
-      variant="outlined"
-      data-duty-feed-content-root
-      className="flex-1 overflow-hidden min-h-0 p-0 flex flex-col h-full"
-      sx={{
-        mt: '-1px',
-        borderTopLeftRadius: 0,
-        borderTopRightRadius: 0,
-        position: 'relative',
-      }}
+    <DutyMessageCard
+      id={id}
+      msg={msg}
+      feedCount={feedCount}
+      tagsLayout={tagsLayout}
+      botTagAction={botTagAction?.messageId === id ? botTagAction : null}
+      onCancelBotTagAction={onCancelBotTagAction}
+      onMarkBotTagWrong={onMarkBotTagWrong}
+      referenceTimeMs={referenceTimeMs}
+      authUserName={authUserName}
+      groupName={labels.groupName}
+      senderName={labels.senderName}
+      copiedFeedbackId={copiedFeedbackId}
+      networkDisplayMap={networkDisplayMap}
+      messageComments={messageComments}
+      networkMap={networkMap}
+      unitsMap={unitsMap}
+      callsignInfoMap={callsignInfoMap}
+      networks={networks}
+      featureStrictNetworks={featureStrictNetworks}
+      tagsMap={tagsMap}
+      tagsOrder={tagsOrder}
+      onBookmark={() => onMessageBookmark(id, msg.bookmarked)}
+      onImportant={() => onMessageImportant(id, msg.important)}
+      onCopyText={() => onMessageCopy(msg.text || '', `text-${id}`)}
+      onCopyFreq={() => onMessageCopy(msg.freq ?? '', `freq-${id}`)}
+      onCopyTextWithNetwork={
+        etalonDisplayModel.primaryKind === 'network' && etalonDisplayModel.copyEtalonValue != null
+          ? () =>
+              onMessageCopy(
+                buildCopyTextWithNetworkName(
+                  msg.text || '',
+                  etalonDisplayModel.copyEtalonValue,
+                  msg.noHeadersBody,
+                ),
+                `text-network-${id}`,
+              )
+          : undefined
+      }
+      onCopyTextWithNetworkAndNote={
+        etalonDisplayModel.primaryKind === 'network' &&
+        etalonDisplayModel.copyEtalonValue != null &&
+        isPresent(msg.extendedForm) &&
+        msg.extendedForm.trim() !== ''
+          ? () =>
+              onMessageCopy(
+                buildCopyTextWithNetworkAndNote(
+                  msg.text || '',
+                  etalonDisplayModel.copyEtalonValue,
+                  msg.extendedForm,
+                  msg.noHeadersBody,
+                ),
+                `text-network-note-${id}`,
+              )
+          : undefined
+      }
+      onCopyEtalon={
+        etalonDisplayModel.copyEtalonValue == null
+          ? undefined
+          : () => onMessageCopy(etalonDisplayModel.copyEtalonValue ?? '', `etalon-${id}`)
+      }
+      onCopyLocation={
+        etalonDisplayModel.copyLocationValue == null
+          ? undefined
+          : () => onMessageCopy(etalonDisplayModel.copyLocationValue ?? '', `location-${id}`)
+      }
+      onAddFrequencyToFilter={(freq) => onMessageAddFrequencyToFilter(feedId, freq)}
+      onComment={() => onMessageComment(id, msg.extendedForm ?? null)}
+      onExcludeMessageEntity={(entity, value) => onMessageExcludeEntity(entity, value)}
+      onToggleTag={(tagId) => onMessageToggleTag(id, tagId)}
+      onOpenPointsOnMap={onOpenPointsOnMap}
+      rightHeaderInsetPx={0}
+      filterState={filterState}
+    />
+  );
+});
+
+// Repeated feed-list boundary: keep list and card wrappers lightweight.
+// See ./AGENTS.md before adding structural component abstractions.
+type DutyMessageListProps = {
+  items: [number, InboxMessage][];
+  feedId: string;
+  feedCount?: number;
+  tagsLayout: TagsLayoutVariant;
+  botTagAction: MessageCardBotTagAction | null;
+  onCancelBotTagAction: () => void;
+  onMarkBotTagWrong: (messageId: number, tagId: number) => void | Promise<void>;
+  referenceTimeMs: number | null;
+  authUserName: string | null;
+  groupInfos: Record<string, SignalGroupEntry>;
+  profiles: Record<string, SignalProfileEntry | null>;
+  copiedFeedbackId: string | null;
+  networkDisplayMap: Record<number, string>;
+  networkMap: Record<number, Network>;
+  unitsMap: Record<number, Unit>;
+  callsignInfoMap: Record<string, CallsignInfoRes>;
+  networks?: Network[];
+  featureStrictNetworks: boolean;
+  tagsMap: Record<number, Tag>;
+  tagsOrder?: number[];
+  filterState: RerDutyFeedFilterState;
+  onMessageBookmark: (msgId: number, currentlyBookmarked: boolean) => void;
+  onMessageImportant: (msgId: number, currentlyImportant: boolean) => void;
+  onMessageCopy: (text: string, feedbackId: string) => void;
+  onMessageAddFrequencyToFilter: (feedId: string, freq: string) => void;
+  onMessageComment: (msgId: number, currentComment: string | null) => void;
+  onMessageExcludeEntity: (entity: MessageEntityFilterKind, value: string) => void;
+  onMessageToggleTag: (msgId: number, tagId: number) => void;
+  onOpenPointsOnMap?: (etalons: string[], message: InboxMessage) => void;
+  setItemRef: (id: number) => (node: HTMLDivElement | null) => void;
+  listRef: React.RefObject<HTMLDivElement>;
+};
+
+const DutyMessageList = memo(function DutyMessageList({
+  items,
+  feedId,
+  feedCount,
+  tagsLayout,
+  botTagAction,
+  onCancelBotTagAction,
+  onMarkBotTagWrong,
+  referenceTimeMs,
+  authUserName,
+  groupInfos,
+  profiles,
+  copiedFeedbackId,
+  networkDisplayMap,
+  networkMap,
+  unitsMap,
+  callsignInfoMap,
+  networks,
+  featureStrictNetworks,
+  tagsMap,
+  tagsOrder,
+  filterState,
+  onMessageBookmark,
+  onMessageImportant,
+  onMessageCopy,
+  onMessageAddFrequencyToFilter,
+  onMessageComment,
+  onMessageExcludeEntity,
+  onMessageToggleTag,
+  onOpenPointsOnMap,
+  setItemRef,
+  listRef,
+}: DutyMessageListProps) {
+  return (
+    <div
+      ref={listRef}
+      data-duty-feed-list="true"
+      className="m-0 list-none rer-duty pt-2"
+      style={{ boxSizing: 'border-box' }}
     >
-      <Virtuoso
-        ref={virtuosoRef as unknown as Ref<VirtuosoHandle>}
-        style={{ flex: 1, minHeight: narrowScreen ? 0 : 400 }}
-        data={feed.items}
-        firstItemIndex={feed.firstItemIndex ?? 0}
-        computeItemKey={(_index, [id]) => String(id)}
-        {...(feed.items.length > 0
-          ? {
-              initialTopMostItemIndex: {
-                index: feed.items.length - 1,
-                align: 'end' as const,
-              },
-            }
-          : {})}
-        startReached={tryLoadOlder}
-        rangeChanged={handleRangeChanged}
-        atTopStateChange={(atTop) => {
-          if (atTop) {
-            onScrollToTop?.();
-            tryLoadOlder();
-          }
+      {items.map(([id, msg]) => (
+        <div key={id} ref={setItemRef(id)} data-duty-message-id={id}>
+          <DutyMessageCardItem
+            id={id}
+            msg={msg}
+            feedId={feedId}
+            feedCount={feedCount}
+            tagsLayout={tagsLayout}
+            botTagAction={botTagAction}
+            onCancelBotTagAction={onCancelBotTagAction}
+            onMarkBotTagWrong={onMarkBotTagWrong}
+            referenceTimeMs={referenceTimeMs}
+            authUserName={authUserName}
+            groupInfos={groupInfos}
+            profiles={profiles}
+            copiedFeedbackId={copiedFeedbackId}
+            networkDisplayMap={networkDisplayMap}
+            networkMap={networkMap}
+            unitsMap={unitsMap}
+            callsignInfoMap={callsignInfoMap}
+            networks={networks}
+            featureStrictNetworks={featureStrictNetworks}
+            tagsMap={tagsMap}
+            tagsOrder={tagsOrder}
+            filterState={filterState}
+            onMessageBookmark={onMessageBookmark}
+            onMessageImportant={onMessageImportant}
+            onMessageCopy={onMessageCopy}
+            onMessageAddFrequencyToFilter={onMessageAddFrequencyToFilter}
+            onMessageComment={onMessageComment}
+            onMessageExcludeEntity={onMessageExcludeEntity}
+            onMessageToggleTag={onMessageToggleTag}
+            onOpenPointsOnMap={onOpenPointsOnMap}
+          />
+        </div>
+      ))}
+    </div>
+  );
+});
+
+export const FeedColumnContent = memo(
+  forwardRef<FeedColumnContentHandle, FeedColumnContentProps>(function FeedColumnContent(
+    { column },
+    ref,
+  ) {
+    const { feed, view, messageCard, actions } = column;
+    const {
+      narrowScreen = false,
+      feedCount,
+      scrollTrackingEnabled = true,
+      loadingNewer = false,
+      arrowResultMessage = null,
+      unreadCount = 0,
+      isWatchMode = false,
+    } = view;
+    const {
+      authUserName,
+      copiedFeedbackId,
+      networkDisplayMap,
+      networkMap,
+      unitsMap,
+      callsignInfoMap,
+      groupInfos,
+      profiles,
+      featureStrictNetworks,
+      tagsLayout,
+      tagsMap,
+      tagsOrder,
+      botTagAction,
+      onCancelBotTagAction,
+      onMarkBotTagWrong,
+      onOpenPointsOnMap,
+    } = messageCard;
+    const {
+      onLoadOlder,
+      onLoadNewer,
+      onMessageBookmark,
+      onMessageImportant,
+      onMessageAddFrequencyToFilter,
+      onMessageCopy,
+      onMessageComment,
+      onMessageExcludeEntity,
+      onMessageToggleTag,
+      onScrollToTop,
+      onReachedBottom,
+      onLeftBottom,
+      onNearBottomChange,
+      onAtBottomChange,
+      onArrowClick,
+      onVisibleMessageIds,
+    } = actions;
+    const [isAtBottom, setIsAtBottom] = useState(true);
+    const networks = useMemo(
+      () => (networkMap ? Object.values(networkMap) : undefined),
+      [networkMap],
+    );
+    const itemIds = useMemo(() => feed.items.map(([id]) => id), [feed.items]);
+    const scroll = useWindowedFeedScroll({
+      itemIds,
+      isWatchMode,
+      enabled: scrollTrackingEnabled,
+      loadingOlder: feed.loadingOlder,
+      loadingNewer,
+      hasReachedStart: feed.hasReachedStart,
+      onLoadOlder,
+      onLoadNewer,
+      onScrollToTop,
+      onReachedBottom,
+      onLeftBottom,
+      onNearBottomChange,
+      onAtBottomChange: (atBottom) => {
+        setIsAtBottom(atBottom);
+        onAtBottomChange?.(atBottom);
+      },
+      onVisibleMessageIds,
+      topLoadBufferPx: LOAD_OLDER_BUFFER_PX,
+      bottomLoadBufferPx: LOAD_NEWER_NEAR_BOTTOM_BUFFER_PX,
+      atBottomThresholdPx: DUTY_FEED_AT_BOTTOM_THRESHOLD_PX,
+      resetKey: feed.referenceTimeMs ?? feed.id,
+    });
+
+    const stableOnCancelBotTagAction = useStableCallback(onCancelBotTagAction);
+    const stableOnMarkBotTagWrong = useStableCallback(onMarkBotTagWrong);
+    const stableOnMessageBookmark = useStableCallback(onMessageBookmark);
+    const stableOnMessageImportant = useStableCallback(onMessageImportant);
+    const stableOnMessageCopy = useStableCallback(onMessageCopy);
+    const stableOnMessageAddFrequencyToFilter = useStableCallback(onMessageAddFrequencyToFilter);
+    const stableOnMessageComment = useStableCallback(onMessageComment);
+    const stableOnMessageExcludeEntity = useStableCallback(onMessageExcludeEntity);
+    const stableOnMessageToggleTag = useStableCallback(onMessageToggleTag);
+    const stableOnOpenPointsOnMap = useStableCallback(onOpenPointsOnMap);
+
+    useImperativeHandle(ref, () => ({ scrollToBottom: scroll.scrollToBottom }), [
+      scroll.scrollToBottom,
+    ]);
+
+    if (feed.loading && feed.items.length === 0) {
+      return (
+        <Box className="flex-1 flex justify-center items-center min-h-0">
+          <CircularProgress />
+        </Box>
+      );
+    }
+
+    return (
+      <Paper
+        data-duty-feed-content-root
+        variant="outlined"
+        className="flex-1 overflow-hidden min-h-0 p-0 flex flex-col h-full"
+        sx={{
+          mt: '-1px',
+          borderTopLeftRadius: 0,
+          borderTopRightRadius: 0,
+          position: 'relative',
         }}
-        atBottomThreshold={DUTY_FEED_AT_BOTTOM_THRESHOLD_PX}
-        atBottomStateChange={(atBottom) => {
-          const wasAtBottom = atBottomRef.current;
-          atBottomRef.current = atBottom;
-          onAtBottomChange?.(atBottom);
-          if (!atBottom) hasSeenNotAtBottomRef.current = true;
-          setIsAtBottom(atBottom);
-          if (atBottom && hasSeenNotAtBottomRef.current) onReachedBottom?.();
-          if (!atBottom && wasAtBottom) onLeftBottom?.();
-          if (atBottom && isPresent(onVisibleMessageIds) && feed.items.length > 0) {
-            onVisibleMessageIds(
-              feed.items.map(([id]) => id),
-              { atBottom: true },
-            );
-          }
-        }}
-        components={{
-          Scroller: FeedScroller,
-          Header: () =>
-            feed.loadingOlder ? (
-              <Box
-                sx={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: 1,
-                  py: 1.5,
-                  color: 'text.secondary',
-                }}
-              >
-                <CircularProgress size={18} />
-                <Typography variant="body2">{`Завантаження старіших${ELLIPSIS}`}</Typography>
-              </Box>
-            ) : feed.hasReachedStart ? (
-              <Typography
-                variant="body2"
-                color="text.secondary"
-                sx={{ textAlign: 'center', py: 1.5 }}
-              >
-                Немає старіших повідомлень
-              </Typography>
-            ) : null,
-          EmptyPlaceholder: () => (
+      >
+        <Box
+          ref={scroll.scrollerRef}
+          data-duty-feed-scroller="true"
+          component="div"
+          className="rer-duty-feed-scroll"
+          onScroll={scroll.handleScroll}
+          sx={{
+            flex: 1,
+            minHeight: narrowScreen ? 0 : 400,
+            overflowY: 'auto',
+            overflowX: 'hidden',
+            pl: '12px',
+            scrollbarGutter: 'stable',
+            boxSizing: 'border-box',
+          }}
+        >
+          {feed.loadingOlder ? (
+            <Box
+              sx={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 1,
+                py: 1.5,
+                color: 'text.secondary',
+              }}
+            >
+              <CircularProgress size={18} />
+              <Typography variant="body2">{`Завантаження старіших${ELLIPSIS}`}</Typography>
+            </Box>
+          ) : feed.hasReachedStart ? (
+            <Typography
+              variant="body2"
+              color="text.secondary"
+              sx={{ textAlign: 'center', py: 1.5 }}
+            >
+              Немає старіших повідомлень
+            </Typography>
+          ) : null}
+          {feed.items.length === 0 ? (
             <Typography color="text.secondary" className="p-4">
               Немає повідомлень
             </Typography>
-          ),
-          List: FeedList,
-          Footer: () =>
-            narrowScreen && isPresent(onCreateMessageFeed) ? (
-              <Box
-                data-duty-feed-footer-spacer
-                data-duty-bottom-offset={`calc(${DUTY_FLOATING_ACTION_BOTTOM_PX} + ${DUTY_FLOATING_ACTION_STACK_HEIGHT_PX}px)`}
-                sx={{
-                  height: `calc(${DUTY_FLOATING_ACTION_BOTTOM_PX} + ${DUTY_FLOATING_ACTION_STACK_HEIGHT_PX}px)`,
-                  flexShrink: 0,
-                }}
-              />
-            ) : null,
-        }}
-        className="m-0 list-none rer-duty pt-2"
-        itemContent={(_index, [id, msg]) => {
-          const messageComments = filterOwnMessageComments(msg.messageComments, authUserName);
-          const labels = buildMessageCardDisplayLabels(msg, { groupInfos, profiles });
-          const etalonDisplayModel = resolveMessageCardEtalonDisplayModel(msg, {
-            featureStrictNetworks,
-            networkDisplayMap,
-            networkMap,
-            networks: networkMap ? Object.values(networkMap) : undefined,
-          });
-          return (
-            <DutyMessageCard
-              id={id}
-              msg={msg}
+          ) : (
+            <DutyMessageList
+              items={feed.items}
+              feedId={feed.id}
               feedCount={feedCount}
               tagsLayout={tagsLayout}
-              botTagAction={botTagAction?.messageId === id ? botTagAction : null}
-              onCancelBotTagAction={onCancelBotTagAction}
-              onMarkBotTagWrong={onMarkBotTagWrong}
-              onOpenPointsOnMap={onOpenPointsOnMap}
+              botTagAction={botTagAction}
+              onCancelBotTagAction={stableOnCancelBotTagAction}
+              onMarkBotTagWrong={stableOnMarkBotTagWrong}
               referenceTimeMs={feed.referenceTimeMs}
               authUserName={authUserName}
-              groupName={labels.groupName}
-              senderName={labels.senderName}
+              groupInfos={groupInfos}
+              profiles={profiles}
               copiedFeedbackId={copiedFeedbackId}
               networkDisplayMap={networkDisplayMap}
-              messageComments={messageComments}
               networkMap={networkMap}
               unitsMap={unitsMap}
               callsignInfoMap={callsignInfoMap}
-              networks={networkMap ? Object.values(networkMap) : undefined}
+              networks={networks}
               featureStrictNetworks={featureStrictNetworks}
               tagsMap={tagsMap}
               tagsOrder={tagsOrder}
-              onBookmark={() => onMessageBookmark(id, msg.bookmarked)}
-              onImportant={() => onMessageImportant(id, msg.important)}
-              onCopyText={() => onMessageCopy(msg.text || '', `text-${id}`)}
-              onCopyFreq={() => onMessageCopy(msg.freq ?? '', `freq-${id}`)}
-              onCopyTextWithNetwork={
-                etalonDisplayModel.primaryKind === 'network' &&
-                etalonDisplayModel.copyEtalonValue != null
-                  ? () =>
-                      onMessageCopy(
-                        buildCopyTextWithNetworkName(
-                          msg.text || '',
-                          etalonDisplayModel.copyEtalonValue,
-                          msg.noHeadersBody,
-                        ),
-                        `text-network-${id}`,
-                      )
-                  : undefined
-              }
-              onCopyTextWithNetworkAndNote={
-                etalonDisplayModel.primaryKind === 'network' &&
-                etalonDisplayModel.copyEtalonValue != null &&
-                isPresent(msg.extendedForm) &&
-                msg.extendedForm.trim() !== ''
-                  ? () =>
-                      onMessageCopy(
-                        buildCopyTextWithNetworkAndNote(
-                          msg.text || '',
-                          etalonDisplayModel.copyEtalonValue,
-                          msg.extendedForm,
-                          msg.noHeadersBody,
-                        ),
-                        `text-network-note-${id}`,
-                      )
-                  : undefined
-              }
-              onCopyEtalon={
-                etalonDisplayModel.copyEtalonValue == null
-                  ? undefined
-                  : () => onMessageCopy(etalonDisplayModel.copyEtalonValue ?? '', `etalon-${id}`)
-              }
-              onCopyLocation={
-                etalonDisplayModel.copyLocationValue == null
-                  ? undefined
-                  : () =>
-                      onMessageCopy(etalonDisplayModel.copyLocationValue ?? '', `location-${id}`)
-              }
-              onAddFrequencyToFilter={(freq) => onMessageAddFrequencyToFilter(feed.id, freq)}
-              onComment={() => onMessageComment(id, msg.extendedForm ?? null)}
-              onExcludeMessageEntity={(entity, value) => onMessageExcludeEntity(entity, value)}
-              onToggleTag={(tagId) => onMessageToggleTag(id, tagId)}
-              rightHeaderInsetPx={0}
               filterState={feed.filter}
-            />
-          );
-        }}
-      />
-      {narrowScreen && isPresent(onCreateMessageFeed) ? (
-        <Box
-          data-duty-feed-create-button
-          data-duty-bottom-offset={DUTY_FLOATING_ACTION_BOTTOM_PX}
-          style={{
-            position: 'absolute',
-            bottom: DUTY_FLOATING_ACTION_BOTTOM_PX,
-          }}
-          sx={{
-            right: { xs: 12, sm: 20 },
-            display: 'flex',
-            pointerEvents: 'none',
-            zIndex: 1,
-          }}
-        >
-          <Fab
-            color="primary"
-            size="small"
-            aria-label="Додати стрічку"
-            onClick={onCreateMessageFeed}
-            sx={{ ...dutyTopAddFabSx, pointerEvents: 'auto' }}
-          >
-            <AddIcon />
-          </Fab>
-        </Box>
-      ) : null}
-      {isPresent(onArrowClick) && (!isAtBottom || loadingNewer || unreadCount > 0) && (
-        <Box
-          data-duty-feed-scroll-button
-          data-duty-bottom-offset={
-            narrowScreen && isPresent(onCreateMessageFeed) ? DUTY_FLOATING_SCROLL_BOTTOM_PX : '12px'
-          }
-          style={{
-            position: 'absolute',
-            bottom:
-              narrowScreen && isPresent(onCreateMessageFeed) ? DUTY_FLOATING_SCROLL_BOTTOM_PX : 12,
-          }}
-          sx={{
-            right: { xs: 12, sm: 20 },
-            display: 'flex',
-            alignItems: 'center',
-            gap: 1,
-            zIndex: 1,
-          }}
-        >
-          {!loadingNewer && isPresent(arrowResultMessage) && (
-            <PowerChip
-              size="small"
-              label={arrowResultMessage}
-              interactive={false}
-              unselectedOpacity={1}
-              color="default"
-              sx={{ fontWeight: 500 }}
+              onMessageBookmark={stableOnMessageBookmark}
+              onMessageImportant={stableOnMessageImportant}
+              onMessageCopy={stableOnMessageCopy}
+              onMessageAddFrequencyToFilter={stableOnMessageAddFrequencyToFilter}
+              onMessageComment={stableOnMessageComment}
+              onMessageExcludeEntity={stableOnMessageExcludeEntity}
+              onMessageToggleTag={stableOnMessageToggleTag}
+              onOpenPointsOnMap={onOpenPointsOnMap ? stableOnOpenPointsOnMap : undefined}
+              setItemRef={scroll.setItemRef}
+              listRef={scroll.listRef}
             />
           )}
-          <Box sx={{ position: 'relative', display: 'inline-flex' }}>
-            <Fab
-              color={unreadCount > 0 ? 'primary' : 'default'}
-              size="small"
+          {narrowScreen && isPresent(actions.onCreateMessageFeed) ? (
+            <Box
+              data-duty-feed-footer-spacer
+              data-duty-bottom-offset={`calc(${DUTY_FLOATING_ACTION_BOTTOM_PX} + ${DUTY_FLOATING_ACTION_STACK_HEIGHT_PX}px)`}
               sx={{
-                ...dutyTopScrollButtonSx,
-                position: 'relative',
-                zIndex: 0,
-                borderColor: unreadCount > 0 ? 'primary.main' : 'grey.400',
-                color: unreadCount > 0 ? 'primary.main' : 'grey.400',
-                '&:hover': {
-                  backgroundColor: 'background.paper',
-                  borderColor: 'primary.main',
-                  color: 'primary.main',
-                  boxShadow: 'none',
-                },
+                height: `calc(${DUTY_FLOATING_ACTION_BOTTOM_PX} + ${DUTY_FLOATING_ACTION_STACK_HEIGHT_PX}px)`,
+                flexShrink: 0,
               }}
-              aria-label={
-                isWatchMode ? 'Режим перегляду нових' : 'Завантажити нові та перейти вниз'
-              }
-              onClick={onArrowClick}
-              disabled={loadingNewer}
-            >
-              {loadingNewer ? (
-                <CircularProgress size={20} sx={{ color: 'primary.main' }} />
-              ) : (
-                <ArrowDownwardIcon sx={{ fontSize: 20 }} />
-              )}
-            </Fab>
-            {!loadingNewer &&
-              unreadCount > 0 &&
-              !isWatchMode &&
-              isNullOrUndefined(arrowResultMessage) && (
-                <PowerChip
-                  size="small"
-                  label={unreadCount}
-                  selected
-                  interactive={false}
-                  unselectedOpacity={1}
-                  sx={{
-                    position: 'absolute',
-                    top: -6,
-                    right: -6,
-                    fontWeight: 600,
-                    zIndex: 2,
-                    pointerEvents: 'none',
-                  }}
-                />
-              )}
-          </Box>
+            />
+          ) : null}
         </Box>
-      )}
-    </Paper>
-  );
-}
+        {narrowScreen && isPresent(actions.onCreateMessageFeed) ? (
+          <Box
+            data-duty-feed-create-button
+            data-duty-bottom-offset={DUTY_FLOATING_ACTION_BOTTOM_PX}
+            style={{
+              position: 'absolute',
+              bottom: DUTY_FLOATING_ACTION_BOTTOM_PX,
+            }}
+            sx={{
+              right: { xs: 12, sm: 20 },
+              display: 'flex',
+              pointerEvents: 'none',
+              zIndex: 1,
+            }}
+          >
+            <Fab
+              color="primary"
+              size="small"
+              aria-label="Додати стрічку"
+              onClick={actions.onCreateMessageFeed}
+              sx={{ ...dutyTopAddFabSx, pointerEvents: 'auto' }}
+            >
+              <AddIcon />
+            </Fab>
+          </Box>
+        ) : null}
+        {isPresent(actions.onArrowClick) && (!isAtBottom || loadingNewer || unreadCount > 0) && (
+          <Box
+            data-duty-feed-scroll-button
+            data-duty-bottom-offset={
+              narrowScreen && isPresent(actions.onCreateMessageFeed)
+                ? DUTY_FLOATING_SCROLL_BOTTOM_PX
+                : '12px'
+            }
+            style={{
+              position: 'absolute',
+              bottom:
+                narrowScreen && isPresent(actions.onCreateMessageFeed)
+                  ? DUTY_FLOATING_SCROLL_BOTTOM_PX
+                  : 12,
+            }}
+            sx={{
+              right: { xs: 12, sm: 20 },
+              display: 'flex',
+              alignItems: 'center',
+              gap: 1,
+              zIndex: 1,
+            }}
+          >
+            {!loadingNewer && isPresent(arrowResultMessage) && (
+              <PowerChip
+                size="small"
+                label={arrowResultMessage}
+                interactive={false}
+                unselectedOpacity={1}
+                color="default"
+                sx={{ fontWeight: 500 }}
+              />
+            )}
+            <Box sx={{ position: 'relative', display: 'inline-flex' }}>
+              <Fab
+                color={unreadCount > 0 ? 'primary' : 'default'}
+                size="small"
+                sx={{
+                  ...dutyTopScrollButtonSx,
+                  position: 'relative',
+                  zIndex: 0,
+                  borderColor: unreadCount > 0 ? 'primary.main' : 'grey.400',
+                  color: unreadCount > 0 ? 'primary.main' : 'grey.400',
+                  '&:hover': {
+                    backgroundColor: 'background.paper',
+                    borderColor: 'primary.main',
+                    color: 'primary.main',
+                    boxShadow: 'none',
+                  },
+                }}
+                aria-label={
+                  isWatchMode ? 'Режим перегляду нових' : 'Завантажити нові та перейти вниз'
+                }
+                onClick={onArrowClick}
+                disabled={loadingNewer}
+              >
+                {loadingNewer ? (
+                  <CircularProgress size={20} sx={{ color: 'primary.main' }} />
+                ) : (
+                  <ArrowDownwardIcon sx={{ fontSize: 20 }} />
+                )}
+              </Fab>
+              {!loadingNewer &&
+                unreadCount > 0 &&
+                !isWatchMode &&
+                isNullOrUndefined(arrowResultMessage) && (
+                  <PowerChip
+                    size="small"
+                    label={unreadCount}
+                    selected
+                    interactive={false}
+                    unselectedOpacity={1}
+                    sx={{
+                      position: 'absolute',
+                      top: -6,
+                      right: -6,
+                      fontWeight: 600,
+                      zIndex: 2,
+                      pointerEvents: 'none',
+                    }}
+                  />
+                )}
+            </Box>
+          </Box>
+        )}
+      </Paper>
+    );
+  }),
+  (prevProps, nextProps) => {
+    if (prevProps.column.feed !== nextProps.column.feed) {
+      return false;
+    }
+
+    const prevView = prevProps.column.view;
+    const nextView = nextProps.column.view;
+    if (
+      prevView.narrowScreen !== nextView.narrowScreen ||
+      prevView.feedCount !== nextView.feedCount ||
+      prevView.canRemove !== nextView.canRemove ||
+      prevView.maxWidth !== nextView.maxWidth ||
+      prevView.isWatchMode !== nextView.isWatchMode ||
+      prevView.scrollTrackingEnabled !== nextView.scrollTrackingEnabled ||
+      prevView.loadingNewer !== nextView.loadingNewer ||
+      prevView.arrowResultMessage !== nextView.arrowResultMessage ||
+      prevView.unreadCount !== nextView.unreadCount
+    ) {
+      return false;
+    }
+
+    const prevCard = prevProps.column.messageCard;
+    const nextCard = nextProps.column.messageCard;
+    if (
+      prevCard.authUserName !== nextCard.authUserName ||
+      prevCard.copiedFeedbackId !== nextCard.copiedFeedbackId ||
+      prevCard.networkDisplayMap !== nextCard.networkDisplayMap ||
+      prevCard.networkMap !== nextCard.networkMap ||
+      prevCard.unitsMap !== nextCard.unitsMap ||
+      prevCard.callsignInfoMap !== nextCard.callsignInfoMap ||
+      prevCard.groupInfos !== nextCard.groupInfos ||
+      prevCard.profiles !== nextCard.profiles ||
+      prevCard.featureStrictNetworks !== nextCard.featureStrictNetworks ||
+      prevCard.tagsLayout !== nextCard.tagsLayout ||
+      prevCard.tagsMap !== nextCard.tagsMap ||
+      prevCard.tagsOrder !== nextCard.tagsOrder ||
+      prevCard.botTagAction !== nextCard.botTagAction ||
+      prevCard.onOpenPointsOnMap !== nextCard.onOpenPointsOnMap
+    ) {
+      return false;
+    }
+
+    const prevActions = prevProps.column.actions;
+    const nextActions = nextProps.column.actions;
+    if (
+      prevActions.onLoadOlder !== nextActions.onLoadOlder ||
+      prevActions.onLoadNewer !== nextActions.onLoadNewer ||
+      prevActions.onRemoveColumn !== nextActions.onRemoveColumn ||
+      prevActions.onMessageBookmark !== nextActions.onMessageBookmark ||
+      prevActions.onMessageImportant !== nextActions.onMessageImportant ||
+      prevActions.onMessageAddFrequencyToFilter !== nextActions.onMessageAddFrequencyToFilter ||
+      prevActions.onMessageCopy !== nextActions.onMessageCopy ||
+      prevActions.onMessageComment !== nextActions.onMessageComment ||
+      prevActions.onMessageExcludeEntity !== nextActions.onMessageExcludeEntity ||
+      prevActions.onMessageToggleTag !== nextActions.onMessageToggleTag ||
+      prevActions.onScrollToTop !== nextActions.onScrollToTop ||
+      prevActions.onReachedBottom !== nextActions.onReachedBottom ||
+      prevActions.onLeftBottom !== nextActions.onLeftBottom ||
+      prevActions.onNearBottomChange !== nextActions.onNearBottomChange ||
+      prevActions.onAtBottomChange !== nextActions.onAtBottomChange ||
+      prevActions.onArrowClick !== nextActions.onArrowClick ||
+      prevActions.onVisibleMessageIds !== nextActions.onVisibleMessageIds
+    ) {
+      return false;
+    }
+
+    return true;
+  },
+);
