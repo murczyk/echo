@@ -320,6 +320,21 @@ describe('FeedColumn', () => {
     expect(narrowProps.column.actions.onCreateMessage).toHaveBeenCalledTimes(1);
   });
 
+  it('renders the add-feed action in a desktop header before close', async () => {
+    const props = buildProps();
+    props.column.actions.onCreateFeed = vi.fn();
+    props.column.view.canRemove = true;
+
+    await act(async () => {
+      root.render(<FeedColumn column={props.column} />);
+    });
+
+    const buttons = Array.from(
+      container.querySelectorAll('[data-duty-feed-header-actions] button'),
+    ).map((button) => button.getAttribute('aria-label'));
+    expect(buttons).toEqual(['Додати стрічку', 'Закрити стрічку']);
+  });
+
   it('shows add and remove actions together on the active narrow feed when multiple feeds exist', async () => {
     const narrowProps = buildProps();
     narrowProps.column.view.narrowScreen = true;

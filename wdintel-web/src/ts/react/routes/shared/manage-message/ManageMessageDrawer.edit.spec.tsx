@@ -2,21 +2,26 @@
  * @vitest-environment happy-dom
  */
 import type { ReactNode } from 'react';
-import { act, useState } from 'react';
+import { act, forwardRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { InboxMessage } from '../../../../../Bindings';
 
 const referenceDataMocks = vi.hoisted(() => ({
+  getUserSigintGroups: vi.fn().mockResolvedValue([]),
+  getGroupInfosBatch: vi.fn().mockResolvedValue([]),
   getTagsForDisplay: vi.fn().mockResolvedValue({ tagsMap: {}, tagsOrder: [] }),
 }));
 const directSubmitMocks = vi.hoisted(() => ({
+  submitDirect: vi.fn().mockResolvedValue({ signal_message_id: 1 }),
   editDirectSubmit: vi.fn(),
+  createDeviceName: vi.fn().mockResolvedValue({ id: 1 }),
+  parseDirectSubmit: vi.fn(),
 }));
 
 vi.mock('../../../services/api/inbox-reference-data', () => ({
-  getUserSigintGroups: vi.fn().mockResolvedValue([]),
-  getGroupInfosBatch: vi.fn().mockResolvedValue([]),
+  getUserSigintGroups: referenceDataMocks.getUserSigintGroups,
+  getGroupInfosBatch: referenceDataMocks.getGroupInfosBatch,
   getTagsForDisplay: referenceDataMocks.getTagsForDisplay,
 }));
 vi.mock('../../../services/api/direct-submit', () => ({
@@ -28,9 +33,9 @@ vi.mock('../../../services/api/direct-submit', () => ({
   searchSignalNames: vi.fn().mockResolvedValue([]),
   searchCallsignNames: vi.fn().mockResolvedValue([]),
   searchFreqs: vi.fn().mockResolvedValue([]),
-  createDeviceName: vi.fn().mockResolvedValue({ id: 1 }),
-  parseDirectSubmit: vi.fn(),
-  submitDirect: vi.fn().mockResolvedValue({ signal_message_id: 1 }),
+  createDeviceName: directSubmitMocks.createDeviceName,
+  parseDirectSubmit: directSubmitMocks.parseDirectSubmit,
+  submitDirect: directSubmitMocks.submitDirect,
   editDirectSubmit: directSubmitMocks.editDirectSubmit,
   formatDirectSubmitError: (error: unknown) =>
     error instanceof Error ? error.message : 'save failed',
@@ -40,17 +45,37 @@ vi.mock('../../../services/api/networks', () => ({
 }));
 vi.mock('@uppy/core', () => {
   class FakeUppy {
+    files: Array<Record<string, unknown>> = [];
+    listeners = new Map<string, Set<(...args: any[]) => void>>();
+
     use() {
       return this;
     }
-    on() {}
-    off() {}
+    on(event: string, callback: (...args: any[]) => void) {
+      const callbacks = this.listeners.get(event) ?? new Set();
+      callbacks.add(callback);
+      this.listeners.set(event, callbacks);
+    }
+    off(event: string, callback: (...args: any[]) => void) {
+      this.listeners.get(event)?.delete(callback);
+    }
     getFiles() {
-      return [];
+      return this.files;
     }
     cancelAll() {}
-    removeFile() {}
-    addFile() {}
+    removeFile(id: string) {
+      this.files = this.files.filter((file) => file.id !== id);
+      this.listeners.get('file-removed')?.forEach((callback) => callback());
+    }
+    addFile(file: Record<string, unknown>) {
+      if (this.files.length >= 20) {
+        throw new Error('exceeds maximum number of files');
+      }
+      const addedFile = { id: `file-${this.files.length + 1}`, ...file };
+      this.files = [...this.files, addedFile];
+      this.listeners.get('file-added')?.forEach((callback) => callback(addedFile));
+      return addedFile;
+    }
     upload() {
       return Promise.resolve({ successful: [], failed: [] });
     }
@@ -61,7 +86,10 @@ vi.mock('@uppy/tus', () => ({ default: class {} }));
 vi.mock('@mui/icons-material/DeleteOutline', () => ({ default: () => <span /> }));
 
 vi.mock('../../../components/PowerDateTimePicker', () => ({
-  PowerDatePicker: ({ label }: { label?: string }) => <div>{label}</div>,
+  PowerDatePicker: ({ label, value }: { label?: string; value?: unknown }) => {
+    if (label) pickerValuesByLabel.set(label, value);
+    return <div>{label}</div>;
+  },
 }));
 vi.mock('../../../components/PowerAlert', () => ({
   PowerAlert: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
@@ -70,7 +98,10 @@ vi.mock('../../../components/loadingOverlayStyles', () => ({
   pageDrawerBackdropSx: () => ({}),
 }));
 vi.mock('@mui/x-date-pickers/TimePicker', () => ({
-  TimePicker: ({ label }: { label?: string }) => <div>{label}</div>,
+  TimePicker: ({ label, value }: { label?: string; value?: unknown }) => {
+    if (label) pickerValuesByLabel.set(label, value);
+    return <div>{label}</div>;
+  },
 }));
 vi.mock('@mui/x-date-pickers/AdapterDayjs', () => ({ AdapterDayjs: class {} }));
 vi.mock('@mui/x-date-pickers/LocalizationProvider', () => ({
@@ -89,30 +120,52 @@ type TextFieldMockProps = {
 
 const textFieldPropsByLabel = new Map<string | undefined, TextFieldMockProps>();
 const autocompleteOnChangeByLabel = new Map<string, (event: unknown, value: unknown) => void>();
+const autocompleteValuesByLabel = new Map<string, unknown>();
+const pickerValuesByLabel = new Map<string, unknown>();
+
+function setRecentValues(values: Record<string, unknown>) {
+  Object.defineProperty(globalThis, 'localStorage', {
+    configurable: true,
+    value: {
+      getItem: vi.fn().mockReturnValue(JSON.stringify(values)),
+      setItem: vi.fn(),
+    },
+  });
+}
 
 vi.mock('@mui/material', () => ({
-  Box: ({
-    children,
-    component = 'div',
-    ...props
-  }: {
-    children?: ReactNode;
-    component?: string;
-  } & Record<string, unknown>) => {
-    const Component = component as keyof HTMLElementTagNameMap;
-    const { sx: _sx, onSubmit, onKeyDown, ...rest } = props as Record<string, unknown>;
-    return (
-      <Component
-        {...(rest as Record<string, unknown>)}
-        onSubmit={onSubmit as never}
-        onKeyDown={onKeyDown as never}
-      >
-        {children}
-      </Component>
-    );
-  },
+  Box: forwardRef(
+    (
+      {
+        children,
+        component = 'div',
+        ...props
+      }: {
+        children?: ReactNode;
+        component?: string;
+      } & Record<string, unknown>,
+      ref,
+    ) => {
+      const Component = component as keyof HTMLElementTagNameMap;
+      const { sx: _sx, onSubmit, onKeyDown, ...rest } = props as Record<string, unknown>;
+      return (
+        <Component
+          {...(rest as Record<string, unknown>)}
+          ref={ref as never}
+          onSubmit={onSubmit as never}
+          onKeyDown={onKeyDown as never}
+        >
+          {children}
+        </Component>
+      );
+    },
+  ),
   Stack: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
-  Typography: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
+  Divider: () => <hr />,
+  Typography: ({ children, component = 'div' }: { children?: ReactNode; component?: string }) => {
+    const Component = component as keyof HTMLElementTagNameMap;
+    return <Component>{children}</Component>;
+  },
   Drawer: ({ children, open }: { children?: ReactNode; open?: boolean }) =>
     open ? <div role="dialog">{children}</div> : null,
   Button: ({
@@ -223,6 +276,7 @@ vi.mock('@mui/material', () => ({
     if (typeof label === 'string' && onChange) {
       autocompleteOnChangeByLabel.set(label, onChange);
     }
+    if (typeof label === 'string') autocompleteValuesByLabel.set(label, value);
     return (
       <div data-testid="autocomplete" data-value={JSON.stringify(value)}>
         {Array.isArray(value) ? value.map((v) => <span key={String(v)}>{String(v)}</span>) : null}
@@ -278,9 +332,592 @@ describe('ManageMessageDrawer edit mode', () => {
   afterEach(() => {
     textFieldPropsByLabel.clear();
     autocompleteOnChangeByLabel.clear();
+    autocompleteValuesByLabel.clear();
+    pickerValuesByLabel.clear();
+    directSubmitMocks.submitDirect.mockReset();
+    directSubmitMocks.submitDirect.mockResolvedValue({ signal_message_id: 1 });
     directSubmitMocks.editDirectSubmit.mockReset();
+    directSubmitMocks.createDeviceName.mockReset();
+    directSubmitMocks.createDeviceName.mockResolvedValue({ id: 1 });
+    directSubmitMocks.parseDirectSubmit.mockReset();
     document.body.innerHTML = '';
     referenceDataMocks.getTagsForDisplay.mockResolvedValue({ tagsMap: {}, tagsOrder: [] });
+    referenceDataMocks.getUserSigintGroups.mockReset();
+    referenceDataMocks.getGroupInfosBatch.mockReset();
+    referenceDataMocks.getUserSigintGroups.mockResolvedValue([]);
+    referenceDataMocks.getGroupInfosBatch.mockResolvedValue([]);
+    setRecentValues({});
+  });
+
+  it('initializes shared create fields from recent values without applying suggestions as defaults', async () => {
+    setRecentValues({
+      group: ['g-1'],
+      unit: ['u-1'],
+      deviceName: ['device-1'],
+      freq: ['149.500'],
+      post: ['post-1'],
+      callsigns: ['ALFA'],
+      locations: ['Київ'],
+    });
+    referenceDataMocks.getUserSigintGroups.mockResolvedValue(['g-1']);
+    referenceDataMocks.getGroupInfosBatch.mockResolvedValue([
+      { masterKey: 'g-1', name: 'Group 1' },
+    ]);
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <ManageMessageDrawer open cyberEchoEnabled currentUser={null} onClose={vi.fn()} />,
+      );
+      await Promise.resolve();
+    });
+
+    expect(pickerValuesByLabel.get('Дата перехоплення')).toBeTruthy();
+    expect(pickerValuesByLabel.get('Час перехоплення')).toBeTruthy();
+    expect(autocompleteValuesByLabel.get('Група')).toMatchObject({ masterKey: 'g-1' });
+    expect(autocompleteValuesByLabel.get('Підрозділ')).toBe('u-1');
+    expect(autocompleteValuesByLabel.get('Назва пристрою')).toBe('device-1');
+    expect(textFieldPropsByLabel.get('Частота')?.value ?? '').toBe('');
+    expect(textFieldPropsByLabel.get('Пост')?.value ?? '').toBe('');
+
+    root.unmount();
+  });
+
+  it('keeps create submission disabled until group and meaningful content are valid', async () => {
+    referenceDataMocks.getUserSigintGroups.mockResolvedValue(['g-1']);
+    referenceDataMocks.getGroupInfosBatch.mockResolvedValue([{ masterKey: 'g-1' }]);
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <ManageMessageDrawer open cyberEchoEnabled={false} currentUser={null} onClose={vi.fn()} />,
+      );
+      await Promise.resolve();
+    });
+
+    const submitButton = () =>
+      container.querySelector('button[type="submit"]') as HTMLButtonElement;
+    expect(container.querySelector('legend')?.textContent).toContain('Вміст повідомлення');
+    expect(container.textContent).toContain(
+      'Додайте текст повідомлення або принаймні одне вкладення.',
+    );
+    const messageTextarea = container.querySelector(
+      'textarea[aria-label="Текст повідомлення"]',
+    ) as HTMLTextAreaElement;
+    expect(messageTextarea.required).toBe(false);
+    expect(messageTextarea.getAttribute('aria-required')).toBeNull();
+    expect(submitButton().disabled).toBe(true);
+
+    await act(async () => {
+      autocompleteOnChangeByLabel.get('Група')?.(null, { masterKey: 'g-1' });
+      await Promise.resolve();
+    });
+    expect(submitButton().disabled).toBe(true);
+
+    await act(async () => {
+      textFieldPropsByLabel.get('Текст повідомлення')?.onChange?.({ target: { value: '   ' } });
+      await Promise.resolve();
+    });
+    expect(submitButton().disabled).toBe(true);
+
+    await act(async () => {
+      textFieldPropsByLabel.get('Текст повідомлення')?.onChange?.({ target: { value: 'message' } });
+      await Promise.resolve();
+    });
+    expect(submitButton().disabled).toBe(false);
+
+    root.unmount();
+  });
+
+  it('clears a stale remembered group and disables submission after groups resolve', async () => {
+    setRecentValues({ group: ['stale-group'] });
+    referenceDataMocks.getUserSigintGroups.mockResolvedValue(['g-1']);
+    referenceDataMocks.getGroupInfosBatch.mockResolvedValue([{ masterKey: 'g-1' }]);
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <ManageMessageDrawer open cyberEchoEnabled={false} currentUser={null} onClose={vi.fn()} />,
+      );
+      await Promise.resolve();
+    });
+
+    expect(autocompleteValuesByLabel.get('Група')).toBeNull();
+    expect((container.querySelector('button[type="submit"]') as HTMLButtonElement).disabled).toBe(
+      true,
+    );
+    root.unmount();
+  });
+
+  it('disables submission for invalid frequency and re-enables it when restored', async () => {
+    referenceDataMocks.getUserSigintGroups.mockResolvedValue(['g-1']);
+    referenceDataMocks.getGroupInfosBatch.mockResolvedValue([{ masterKey: 'g-1' }]);
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <ManageMessageDrawer open cyberEchoEnabled={false} currentUser={null} onClose={vi.fn()} />,
+      );
+      await Promise.resolve();
+    });
+
+    const form = container.querySelector('form') as HTMLFormElement;
+    const submitButton = container.querySelector('button[type="submit"]') as HTMLButtonElement;
+    const expectEligibility = (expected: boolean) => {
+      expect(submitButton.disabled).toBe(!expected);
+    };
+
+    expectEligibility(false);
+    await act(async () => {
+      autocompleteOnChangeByLabel.get('Група')?.(null, { masterKey: 'g-1' });
+      textFieldPropsByLabel.get('Текст повідомлення')?.onChange?.({ target: { value: 'body' } });
+      await Promise.resolve();
+    });
+    expectEligibility(true);
+
+    await act(async () => {
+      autocompleteOnChangeByLabel.get('Частота (МГц)')?.(null, 'not-a-frequency');
+      await Promise.resolve();
+    });
+    expectEligibility(false);
+
+    await act(async () => {
+      autocompleteOnChangeByLabel.get('Частота (МГц)')?.(null, '149.500');
+      await Promise.resolve();
+    });
+    expectEligibility(true);
+
+    root.unmount();
+  });
+
+  it('disables submission for invalid coordinates while frequency remains valid', async () => {
+    referenceDataMocks.getUserSigintGroups.mockResolvedValue(['g-1']);
+    referenceDataMocks.getGroupInfosBatch.mockResolvedValue([{ masterKey: 'g-1' }]);
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <ManageMessageDrawer open cyberEchoEnabled={false} currentUser={null} onClose={vi.fn()} />,
+      );
+      await Promise.resolve();
+    });
+    const submitButton = container.querySelector('button[type="submit"]') as HTMLButtonElement;
+
+    await act(async () => {
+      autocompleteOnChangeByLabel.get('Група')?.(null, { masterKey: 'g-1' });
+      autocompleteOnChangeByLabel.get('Частота (МГц)')?.(null, '149.500');
+      textFieldPropsByLabel.get('Текст повідомлення')?.onChange?.({ target: { value: 'body' } });
+      await Promise.resolve();
+    });
+    expect(submitButton.disabled).toBe(false);
+
+    await act(async () => {
+      textFieldPropsByLabel
+        .get('Координати (lat, lon або MGRS)')
+        ?.onChange?.({ target: { value: 'not-a-coordinate' } });
+      await Promise.resolve();
+    });
+    expect(submitButton.disabled).toBe(true);
+
+    await act(async () => {
+      textFieldPropsByLabel
+        .get('Координати (lat, lon або MGRS)')
+        ?.onChange?.({ target: { value: '49.1, 37.2' } });
+      await Promise.resolve();
+    });
+    expect(submitButton.disabled).toBe(false);
+    root.unmount();
+  });
+
+  it('disables submission for invalid DMR color code and restores it when corrected', async () => {
+    referenceDataMocks.getUserSigintGroups.mockResolvedValue(['g-1']);
+    referenceDataMocks.getGroupInfosBatch.mockResolvedValue([{ masterKey: 'g-1' }]);
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <ManageMessageDrawer open cyberEchoEnabled={false} currentUser={null} onClose={vi.fn()} />,
+      );
+      await Promise.resolve();
+    });
+    await act(async () => {
+      autocompleteOnChangeByLabel.get('Група')?.(null, { masterKey: 'g-1' });
+      textFieldPropsByLabel.get('Текст повідомлення')?.onChange?.({ target: { value: 'body' } });
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      Array.from(container.querySelectorAll('button'))
+        .find((button) => button.textContent === 'Розширені поля')
+        ?.click();
+      await Promise.resolve();
+    });
+    await act(async () => {
+      Array.from(container.querySelectorAll('button'))
+        .find((button) => button.textContent === 'Додати запис')
+        ?.click();
+      await Promise.resolve();
+    });
+    const submitButton = container.querySelector('button[type="submit"]') as HTMLButtonElement;
+    await act(async () => {
+      autocompleteOnChangeByLabel.get('Колірний код (CC)')?.(null, '16');
+      await Promise.resolve();
+    });
+    expect(submitButton.disabled).toBe(true);
+    container
+      .querySelector('form')
+      ?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', ctrlKey: true, bubbles: true }));
+    expect(directSubmitMocks.submitDirect).not.toHaveBeenCalled();
+
+    await act(async () => {
+      autocompleteOnChangeByLabel.get('Колірний код (CC)')?.(null, '15');
+      await Promise.resolve();
+    });
+    expect(submitButton.disabled).toBe(false);
+    root.unmount();
+  });
+
+  it('enables submission for a new attachment and disables it after removal', async () => {
+    referenceDataMocks.getUserSigintGroups.mockResolvedValue(['g-1']);
+    referenceDataMocks.getGroupInfosBatch.mockResolvedValue([{ masterKey: 'g-1' }]);
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <ManageMessageDrawer open cyberEchoEnabled={false} currentUser={null} onClose={vi.fn()} />,
+      );
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      autocompleteOnChangeByLabel.get('Група')?.(null, { masterKey: 'g-1' });
+      await Promise.resolve();
+    });
+    const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement;
+    Object.defineProperty(fileInput, 'files', {
+      configurable: true,
+      value: [new File(['attachment'], 'attachment.txt', { type: 'text/plain' })],
+    });
+    await act(async () => {
+      fileInput.dispatchEvent(new Event('change', { bubbles: true }));
+      await Promise.resolve();
+    });
+
+    const submitButton = container.querySelector('button[type="submit"]') as HTMLButtonElement;
+    expect(submitButton.disabled).toBe(false);
+
+    const removeButton = container.querySelector('button[aria-label="Видалити attachment.txt"]');
+    await act(async () => {
+      (removeButton as HTMLButtonElement).click();
+      await Promise.resolve();
+    });
+    expect(submitButton.disabled).toBe(true);
+
+    root.unmount();
+  });
+
+  it('enforces the 20-attachment limit through the real drawer integration', async () => {
+    referenceDataMocks.getUserSigintGroups.mockResolvedValue(['g-1']);
+    referenceDataMocks.getGroupInfosBatch.mockResolvedValue([{ masterKey: 'g-1' }]);
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <ManageMessageDrawer open cyberEchoEnabled={false} currentUser={null} onClose={vi.fn()} />,
+      );
+      await Promise.resolve();
+    });
+    await act(async () => {
+      autocompleteOnChangeByLabel.get('Група')?.(null, { masterKey: 'g-1' });
+      await Promise.resolve();
+    });
+
+    const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement;
+    Object.defineProperty(fileInput, 'files', {
+      configurable: true,
+      value: Array.from(
+        { length: 21 },
+        (_, index) =>
+          new File([`attachment-${index}`], `attachment-${index}.txt`, { type: 'text/plain' }),
+      ),
+    });
+    await act(async () => {
+      fileInput.dispatchEvent(new Event('change', { bubbles: true }));
+      await Promise.resolve();
+    });
+
+    expect(container.textContent).toContain('Вкладення (20)');
+    expect(container.textContent).toContain('Перевищено максимальну кількість файлів (20)');
+    expect((container.querySelector('button[type="submit"]') as HTMLButtonElement).disabled).toBe(
+      false,
+    );
+    root.unmount();
+  });
+
+  it('counts retained edit media together with new attachments', async () => {
+    const media = Array.from({ length: 20 }, (_, index) => ({
+      id: `media-${index}`,
+      contentType: 'text/plain',
+      fileName: `media-${index}.txt`,
+      sizeBytes: 1,
+      href: `/media/${index}`,
+    }));
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <ManageMessageDrawer
+          open
+          cyberEchoEnabled={false}
+          currentUser={null}
+          onClose={vi.fn()}
+          editTarget={{ id: 1, message: buildMessage({ media }) }}
+          onSubmitEdit={vi.fn()}
+        />,
+      );
+      await Promise.resolve();
+    });
+
+    expect((container.querySelector('button[type="submit"]') as HTMLButtonElement).disabled).toBe(
+      false,
+    );
+    const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement;
+    Object.defineProperty(fileInput, 'files', {
+      configurable: true,
+      value: [new File(['new'], 'new.txt', { type: 'text/plain' })],
+    });
+    await act(async () => {
+      fileInput.dispatchEvent(new Event('change', { bubbles: true }));
+      await Promise.resolve();
+    });
+    expect(container.textContent).toContain('Вкладення (20)');
+    expect(container.textContent).not.toContain('Вкладення (21)');
+    expect(container.textContent).not.toContain('new.txt');
+    expect(container.textContent).toContain('Перевищено максимальну кількість файлів (20)');
+    expect((container.querySelector('button[type="submit"]') as HTMLButtonElement).disabled).toBe(
+      false,
+    );
+
+    await act(async () => {
+      (
+        container.querySelector('button[aria-label="Видалити media-0.txt"]') as HTMLButtonElement
+      ).click();
+      await Promise.resolve();
+    });
+    Object.defineProperty(fileInput, 'files', {
+      configurable: true,
+      value: [new File(['new'], 'new.txt', { type: 'text/plain' })],
+    });
+    await act(async () => {
+      fileInput.dispatchEvent(new Event('change', { bubbles: true }));
+      await Promise.resolve();
+    });
+    expect(container.textContent).toContain('Вкладення (20)');
+    expect(container.textContent).not.toContain('Вкладення (21)');
+    expect(container.textContent).toContain('new.txt');
+    expect(container.textContent).not.toContain('Перевищено максимальну кількість файлів (20)');
+    expect((container.querySelector('button[type="submit"]') as HTMLButtonElement).disabled).toBe(
+      false,
+    );
+    root.unmount();
+  });
+
+  it('allows an edit with only one retained attachment, then requires content after removal', async () => {
+    const media = [
+      {
+        id: 'media-1',
+        contentType: 'text/plain',
+        fileName: 'media-1.txt',
+        sizeBytes: 1,
+        href: '/media/1',
+      },
+    ];
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <ManageMessageDrawer
+          open
+          cyberEchoEnabled={false}
+          currentUser={null}
+          onClose={vi.fn()}
+          editTarget={{ id: 1, message: buildMessage({ text: '', media }) }}
+          onSubmitEdit={vi.fn()}
+        />,
+      );
+      await Promise.resolve();
+    });
+
+    const submitButton = container.querySelector('button[type="submit"]') as HTMLButtonElement;
+    expect(submitButton.disabled).toBe(false);
+
+    await act(async () => {
+      (
+        container.querySelector('button[aria-label="Видалити media-1.txt"]') as HTMLButtonElement
+      ).click();
+      await Promise.resolve();
+    });
+    expect(submitButton.disabled).toBe(true);
+
+    await act(async () => {
+      textFieldPropsByLabel.get('Текст повідомлення')?.onChange?.({ target: { value: 'body' } });
+      await Promise.resolve();
+    });
+    expect(submitButton.disabled).toBe(false);
+    root.unmount();
+  });
+
+  it('blocks duplicate keyboard and direct submissions while a valid create is pending', async () => {
+    let resolveSubmit!: (value: { signal_message_id: number }) => void;
+    const response = { signal_message_id: 1 };
+    const onClose = vi.fn();
+    const onCreated = vi.fn();
+    directSubmitMocks.submitDirect.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveSubmit = resolve;
+      }),
+    );
+    referenceDataMocks.getUserSigintGroups.mockResolvedValue(['g-1']);
+    referenceDataMocks.getGroupInfosBatch.mockResolvedValue([{ masterKey: 'g-1' }]);
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    function ControlledHarness() {
+      const [open, setOpen] = useState(true);
+
+      return (
+        <ManageMessageDrawer
+          open={open}
+          cyberEchoEnabled={false}
+          currentUser={null}
+          onClose={() => {
+            onClose();
+            setOpen(false);
+          }}
+          onCreated={onCreated}
+        />
+      );
+    }
+
+    await act(async () => {
+      root.render(<ControlledHarness />);
+      await Promise.resolve();
+    });
+
+    const form = container.querySelector('form') as HTMLFormElement;
+    const submitButton = container.querySelector('button[type="submit"]') as HTMLButtonElement;
+    const dispatchShortcut = () =>
+      form.dispatchEvent(
+        new KeyboardEvent('keydown', {
+          key: 'Enter',
+          ctrlKey: true,
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+
+    await act(async () => {
+      autocompleteOnChangeByLabel.get('Група')?.(null, { masterKey: 'g-1' });
+      textFieldPropsByLabel.get('Текст повідомлення')?.onChange?.({ target: { value: 'body' } });
+      await Promise.resolve();
+    });
+    expect(submitButton.disabled).toBe(false);
+
+    await act(async () => {
+      dispatchShortcut();
+      await Promise.resolve();
+    });
+    expect(directSubmitMocks.submitDirect).toHaveBeenCalledTimes(1);
+    expect(submitButton.disabled).toBe(true);
+    expect(submitButton.textContent).toBe('Збереження...');
+
+    await act(async () => {
+      dispatchShortcut();
+      form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+      submitButton.click();
+      await Promise.resolve();
+    });
+    expect(directSubmitMocks.submitDirect).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      resolveSubmit(response);
+      for (let index = 0; index < 5; index += 1) await Promise.resolve();
+    });
+
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(onCreated).toHaveBeenCalledTimes(1);
+    expect(onCreated).toHaveBeenCalledWith(response);
+    expect(container.querySelector('form')).toBeNull();
+    expect(container.textContent).not.toContain('Сталася помилка');
+    root.unmount();
+  });
+
+  it('blocks submission while parsing and restores eligibility after parsing completes', async () => {
+    let resolveParse!: (value: Record<string, unknown>) => void;
+    directSubmitMocks.parseDirectSubmit.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveParse = resolve;
+      }),
+    );
+    referenceDataMocks.getUserSigintGroups.mockResolvedValue(['g-1']);
+    referenceDataMocks.getGroupInfosBatch.mockResolvedValue([{ masterKey: 'g-1' }]);
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <ManageMessageDrawer open cyberEchoEnabled={false} currentUser={null} onClose={vi.fn()} />,
+      );
+      await Promise.resolve();
+    });
+    await act(async () => {
+      autocompleteOnChangeByLabel.get('Група')?.(null, { masterKey: 'g-1' });
+      textFieldPropsByLabel.get('Текст повідомлення')?.onChange?.({ target: { value: 'body' } });
+      await Promise.resolve();
+    });
+
+    const parseButton = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent === 'Розпарсити',
+    ) as HTMLButtonElement;
+    const form = container.querySelector('form') as HTMLFormElement;
+    const submitButton = container.querySelector('button[type="submit"]') as HTMLButtonElement;
+    await act(async () => {
+      parseButton.click();
+      await Promise.resolve();
+    });
+    expect(submitButton.disabled).toBe(true);
+    form.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Enter', ctrlKey: true, bubbles: true }),
+    );
+    expect(directSubmitMocks.submitDirect).not.toHaveBeenCalled();
+
+    await act(async () => {
+      resolveParse({ text: 'parsed body' });
+      await Promise.resolve();
+    });
+    expect(submitButton.disabled).toBe(false);
+    root.unmount();
   });
 
   it('renders the edit title and calls onSubmitEdit with a merged message on save', async () => {
@@ -712,45 +1349,61 @@ describe('ManageMessageDrawer edit mode', () => {
     root.unmount();
   });
 
-  it('closes create mode before notifying the host and ignores host callback failures', async () => {
+  it('closes the rendered create composer before notifying the host when the callback rejects', async () => {
     const onClose = vi.fn();
     const onCreated = vi.fn().mockRejectedValue(new Error('preview failed'));
+    setRecentValues({ deviceName: ['remembered-device'] });
+    referenceDataMocks.getUserSigintGroups.mockResolvedValue(['g-1']);
+    referenceDataMocks.getGroupInfosBatch.mockResolvedValue([{ masterKey: 'g-1' }]);
     const container = document.createElement('div');
     document.body.appendChild(container);
     const root = createRoot(container);
 
-    await act(async () => {
-      root.render(
+    function ControlledHarness() {
+      const [open, setOpen] = useState(true);
+
+      return (
         <ManageMessageDrawer
-          open
+          open={open}
           cyberEchoEnabled={false}
           currentUser={null}
-          onClose={onClose}
+          onClose={() => {
+            onClose();
+            setOpen(false);
+          }}
           onCreated={onCreated}
-        />,
+        />
       );
+    }
+
+    await act(async () => {
+      root.render(<ControlledHarness />);
     });
 
-    act(() => {
+    await act(async () => {
       textFieldPropsByLabel.get('Текст повідомлення')?.onChange?.({
         target: { value: 'new message body' },
       });
-    });
-    act(() => {
       autocompleteOnChangeByLabel.get('Група')?.(null, {
         masterKey: 'g-1',
         name: 'Group 1',
       });
+      await Promise.resolve();
     });
 
     const form = container.querySelector('form') as HTMLFormElement;
     await act(async () => {
       form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+      await Promise.resolve();
     });
 
+    expect(directSubmitMocks.submitDirect).toHaveBeenCalledTimes(1);
+    expect(directSubmitMocks.createDeviceName).not.toHaveBeenCalled();
     expect(onClose).toHaveBeenCalledTimes(1);
     expect(onCreated).toHaveBeenCalledTimes(1);
     expect(container.textContent).not.toContain('preview failed');
+    expect(container.textContent).not.toContain('Помилка');
+    expect(container.querySelector('form')).toBeNull();
 
     root.unmount();
   });

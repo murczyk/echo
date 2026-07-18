@@ -31,7 +31,6 @@ type FeedColumnHeaderProps = {
   showNotificationPanel: boolean;
   showKeywordsPanel: boolean;
   dutyNotificationsOn: boolean;
-  narrowScreen: boolean;
   onCreateFeed?: () => void;
   onToggleFilters: () => void;
   onToggleNotificationPanel: () => void;
@@ -185,7 +184,6 @@ export function FeedColumnHeader({
   showNotificationPanel,
   showKeywordsPanel,
   dutyNotificationsOn,
-  narrowScreen,
   onCreateFeed,
   onToggleFilters,
   onToggleNotificationPanel,
@@ -335,7 +333,7 @@ export function FeedColumnHeader({
             minHeight: 0,
           }}
         >
-          {narrowScreen && onCreateFeed ? (
+          {onCreateFeed ? (
             <Tooltip title="Додати стрічку">
               <IconButton
                 size="small"

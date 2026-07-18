@@ -67,6 +67,7 @@ export function ManageMessageDrawer(props: Props) {
     handleDrop,
     handleDropzoneKeyDown,
     methods,
+    canSubmit,
     handleParse,
     handleDrawerClose,
     getProposedCallsigns,
@@ -129,7 +130,7 @@ export function ManageMessageDrawer(props: Props) {
               id="create-message-form"
               noValidate
               onSubmit={methods.handleSubmit(onSubmit)}
-              canSubmit={!busy}
+              canSubmit={canSubmit}
               globalSubmitShortcut
               sx={{
                 display: 'grid',
@@ -139,59 +140,67 @@ export function ManageMessageDrawer(props: Props) {
               }}
             >
               {/* LEFT COLUMN */}
-              <Stack spacing={2.5}>
-                <FormSectionWrapper
-                  title="Джерело"
-                  action={
-                    !isEditMode && (
-                      <Button
-                        onClick={handleParse}
-                        variant="outlined"
-                        size="small"
-                        startIcon={
-                          parsing ? (
-                            <CircularProgress size={16} color="inherit" />
-                          ) : (
-                            <AutoFixHighIcon />
-                          )
-                        }
-                        disabled={busy || parsing}
-                      >
-                        Розпарсити
-                      </Button>
-                    )
-                  }
-                >
-                  <Controller
-                    name="full_body"
-                    control={methods.control}
-                    render={({ field }) => (
-                      <TextField
-                        {...field}
-                        label="Текст повідомлення"
-                        fullWidth
-                        multiline
-                        rows={12}
-                        disabled={busy}
-                      />
-                    )}
-                  />
-                </FormSectionWrapper>
+              <Box component="fieldset" sx={{ minWidth: 0, border: 0, p: 0, m: 0 }}>
+                <Typography component="legend" variant="subtitle2" sx={{ mb: 1 }}>
+                  Вміст повідомлення <span aria-hidden="true">*</span>
+                </Typography>
+                <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                  Додайте текст повідомлення або принаймні одне вкладення.
+                </Typography>
+                <Stack spacing={2.5}>
+                  <FormSectionWrapper
+                    title="Джерело"
+                    action={
+                      !isEditMode && (
+                        <Button
+                          onClick={handleParse}
+                          variant="outlined"
+                          size="small"
+                          startIcon={
+                            parsing ? (
+                              <CircularProgress size={16} color="inherit" />
+                            ) : (
+                              <AutoFixHighIcon />
+                            )
+                          }
+                          disabled={busy || parsing}
+                        >
+                          Розпарсити
+                        </Button>
+                      )
+                    }
+                  >
+                    <Controller
+                      name="full_body"
+                      control={methods.control}
+                      render={({ field }) => (
+                        <TextField
+                          {...field}
+                          label="Текст повідомлення"
+                          fullWidth
+                          multiline
+                          rows={12}
+                          disabled={busy}
+                        />
+                      )}
+                    />
+                  </FormSectionWrapper>
 
-                <AttachmentsSection
-                  uppy={uppy}
-                  uppyFiles={uppyFiles}
-                  fileInputRef={fileInputRef}
-                  handleFileSelect={handleFileSelect}
-                  handleDrop={handleDrop}
-                  handleDropzoneKeyDown={handleDropzoneKeyDown}
-                  busy={busy}
-                  existingMedia={
-                    isEditMode && props.editTarget ? props.editTarget.message.media : []
-                  }
-                  errorMsg={drawerState.attachmentErrorMsg}
-                />
-              </Stack>
+                  <AttachmentsSection
+                    uppy={uppy}
+                    uppyFiles={uppyFiles}
+                    fileInputRef={fileInputRef}
+                    handleFileSelect={handleFileSelect}
+                    handleDrop={handleDrop}
+                    handleDropzoneKeyDown={handleDropzoneKeyDown}
+                    busy={busy}
+                    existingMedia={
+                      isEditMode && props.editTarget ? props.editTarget.message.media : []
+                    }
+                    errorMsg={drawerState.attachmentErrorMsg}
+                  />
+                </Stack>
+              </Box>
 
               {/* RIGHT COLUMN */}
               <Stack spacing={2.5}>
@@ -289,7 +298,7 @@ export function ManageMessageDrawer(props: Props) {
               form="create-message-form"
               variant="contained"
               color="primary"
-              disabled={busy}
+              disabled={!canSubmit}
               startIcon={busy && <CircularProgress size={20} color="inherit" />}
             >
               {busy ? 'Збереження...' : isEditMode ? 'Зберегти' : 'Створити'}

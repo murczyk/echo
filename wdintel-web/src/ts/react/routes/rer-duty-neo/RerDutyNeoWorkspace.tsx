@@ -1,12 +1,10 @@
-import AddIcon from '@mui/icons-material/Add';
-import { Backdrop, Box, ButtonBase, CircularProgress, Fab, Skeleton, Tooltip } from '@mui/material';
+import { Backdrop, Box, ButtonBase, CircularProgress, Skeleton, Tooltip } from '@mui/material';
 import { isPresent } from '../../utils/misc';
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 
 import { FeedColumn, type FeedColumnHandle } from './FeedColumn';
 import type { FeedColumnModel } from './types';
 import { DUTY_ICON_ONLY_FEED_TAB_MIN_FEEDS } from './FeedColumnHeader';
-import { dutyTopAddFabSx } from './top-action-styles';
 import type { MessageFeedState } from './utils';
 import { MAX_MESSAGE_FEEDS } from './utils';
 import { CreateMessageFab } from '../shared/manage-message/CreateMessageFab';
@@ -186,7 +184,6 @@ export function RerDutyNeoWorkspace({
         <Box
           data-duty-workspace-main
           className="h-full min-h-0 w-full overflow-hidden flex gap-2"
-          style={{ paddingTop: narrowScreen ? 0 : 48 }}
           sx={{
             position: 'relative',
           }}
@@ -364,7 +361,7 @@ export function RerDutyNeoWorkspace({
                         : `repeat(${messageFeeds.length}, minmax(0, 1fr))`,
                   }}
                 >
-                  {messageFeeds.map((feed) => {
+                  {messageFeeds.map((feed, index) => {
                     const column = buildFeedColumnModel(feed);
                     const columnView = {
                       ...column.view,
@@ -379,6 +376,13 @@ export function RerDutyNeoWorkspace({
                         column={{
                           ...column,
                           view: columnView,
+                          actions: {
+                            ...column.actions,
+                            onCreateFeed:
+                              index === messageFeeds.length - 1 && showAddButton
+                                ? createMessageFeed
+                                : undefined,
+                          },
                         }}
                       />
                     );
@@ -387,27 +391,6 @@ export function RerDutyNeoWorkspace({
               )}
             </Box>
           </Box>
-          {!narrowScreen && showAddButton && (
-            <Box
-              sx={{
-                position: 'absolute',
-                right: 12,
-                top: { xs: 'max(12px, env(safe-area-inset-top, 0px))', sm: 12 },
-                display: 'flex',
-                pointerEvents: 'none',
-                zIndex: 2,
-              }}
-            >
-              <Fab
-                color="primary"
-                aria-label="Додати стрічку"
-                onClick={createMessageFeed}
-                sx={{ ...dutyTopAddFabSx, pointerEvents: 'auto' }}
-              >
-                <AddIcon />
-              </Fab>
-            </Box>
-          )}
         </Box>
       )}
       {!narrowScreen ? <CreateMessageFab onClick={openCreateMessageComposer} /> : null}

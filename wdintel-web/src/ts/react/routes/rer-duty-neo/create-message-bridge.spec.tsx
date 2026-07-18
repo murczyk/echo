@@ -398,7 +398,7 @@ describe('duty create-message bridge', () => {
   }
 
   async function submitComposer() {
-    act(() => {
+    await act(async () => {
       textFieldPropsByLabel.get('Текст повідомлення')?.onChange?.({
         target: { value: 'new message body' },
       });
@@ -406,6 +406,7 @@ describe('duty create-message bridge', () => {
         masterKey: 'g-1',
         name: 'Group Alpha',
       });
+      await flushMicrotasks();
     });
     const form = container.querySelector('form') as HTMLFormElement;
     await act(async () => {
@@ -520,7 +521,7 @@ describe('duty create-message bridge', () => {
       rootLocal.render(<ControlledHarness />);
     });
 
-    act(() => {
+    await act(async () => {
       textFieldPropsByLabel.get('Текст повідомлення')?.onChange?.({
         target: { value: 'new message body' },
       });
@@ -528,6 +529,7 @@ describe('duty create-message bridge', () => {
         masterKey: 'g-1',
         name: 'Group Alpha',
       });
+      await flushMicrotasks();
     });
 
     const form = containerLocal.querySelector('form') as HTMLFormElement;

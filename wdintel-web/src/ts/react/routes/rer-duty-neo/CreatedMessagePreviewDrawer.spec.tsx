@@ -22,9 +22,14 @@ const drawerPropsHistory = vi.hoisted(() => [] as Array<{ open?: boolean; onClos
 const messageCardPropsHistory = vi.hoisted(() => [] as Array<Record<string, unknown>>);
 
 vi.mock('@mui/material', () => ({
-  Box: ({ children, ...props }: { children?: ReactNode } & Record<string, unknown>) => (
-    <div {...props}>{children}</div>
-  ),
+  Box: ({
+    children,
+    component: Component = 'div',
+    ...props
+  }: { children?: ReactNode; component?: string } & Record<string, unknown>) => {
+    const Element = Component as keyof HTMLElementTagNameMap;
+    return <Element {...props}>{children}</Element>;
+  },
   Button: ({
     children,
     onClick,
@@ -152,6 +157,27 @@ function renderDrawer(
   return { container, root, onClose, props };
 }
 
+function assertSharedShell(container: HTMLElement, messageId: number) {
+  const header = container.querySelector('header');
+  const content = container.querySelector('main');
+  const footer = container.querySelector('footer');
+
+  expect(header?.textContent).toContain('Додане повідомлення');
+  expect(header?.textContent).toContain(String(messageId));
+  expect(header?.querySelector('button[aria-label="Закрити"]')).not.toBeNull();
+  expect(content).not.toBeNull();
+  expect(footer).not.toBeNull();
+
+  const footerButtons = footer?.querySelectorAll('button');
+  expect(footerButtons).toHaveLength(1);
+  expect(footerButtons?.[0]?.textContent).toBe('Закрити');
+  expect(footerButtons?.[0]?.getAttribute('variant')).not.toBe('contained');
+  expect(footerButtons?.[0]?.getAttribute('fullWidth')).toBeNull();
+  expect(content?.textContent).not.toContain('Закрити');
+
+  return { content, footer, header, footerButton: footerButtons?.[0] as HTMLButtonElement };
+}
+
 describe('CreatedMessagePreviewDrawer', () => {
   beforeEach(() => {
     drawerPropsHistory.splice(0);
@@ -162,7 +188,7 @@ describe('CreatedMessagePreviewDrawer', () => {
     document.body.innerHTML = '';
   });
 
-  it('opens a full message preview with reference data and close controls', async () => {
+  it('opens a full message preview with a fixed header and footer close control', async () => {
     const message = buildMessage();
     const { container, root, onClose, props } = renderDrawer({
       kind: 'message',
@@ -175,8 +201,7 @@ describe('CreatedMessagePreviewDrawer', () => {
     });
 
     expect(container.querySelector('[role="dialog"]')).not.toBeNull();
-    expect(container.textContent).toContain('Додане повідомлення');
-    expect(container.textContent).toContain('77');
+    const { footer, header } = assertSharedShell(container, 77);
     expect(container.querySelector('[data-testid="message-card"]')).not.toBeNull();
     expect(container.querySelector('[data-testid="message-text"]')?.textContent).toBe(
       'preview body',
@@ -199,15 +224,13 @@ describe('CreatedMessagePreviewDrawer', () => {
     expect(cardProps?.onToggleTag).toBeUndefined();
 
     await act(async () => {
-      container
-        .querySelector('button[aria-label="Закрити"]')
-        ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      footer?.querySelector('button')?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     });
     expect(onClose).toHaveBeenCalledTimes(1);
 
     await act(async () => {
-      container
-        .querySelectorAll('button')[1]
+      header
+        ?.querySelector('button[aria-label="Закрити"]')
         ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     });
     expect(onClose).toHaveBeenCalledTimes(2);
@@ -233,21 +256,27 @@ describe('CreatedMessagePreviewDrawer', () => {
       root.render(<CreatedMessagePreviewDrawer {...props} />);
     });
 
+    const { footer, header } = assertSharedShell(container, 88);
     expect(container.textContent).toContain('Повідомлення створено.');
     expect(container.textContent).toContain('ID повідомлення: 88');
     expect(container.textContent).toContain('fallback failed');
     expect(container.querySelector('[data-testid="message-card"]')).toBeNull();
 
     await act(async () => {
-      container
-        .querySelector('button[aria-label="Закрити"]')
-        ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      footer?.querySelector('button')?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     });
     expect(onClose).toHaveBeenCalledTimes(1);
 
+    await act(async () => {
+      header
+        ?.querySelector('button[aria-label="Закрити"]')
+        ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    expect(onClose).toHaveBeenCalledTimes(2);
+
     const drawerProps = drawerPropsHistory.at(-1);
     drawerProps?.onClose?.();
-    expect(onClose).toHaveBeenCalledTimes(2);
+    expect(onClose).toHaveBeenCalledTimes(3);
 
     await act(async () => {
       root.unmount();

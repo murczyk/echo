@@ -162,7 +162,6 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
         showNotificationPanel={showNotificationPanel}
         showKeywordsPanel={showKeywordsPanel}
         dutyNotificationsOn={dutyNotificationsOn}
-        narrowScreen={narrowScreen}
         onCreateFeed={onCreateFeed}
         onToggleFilters={onToggleFilters}
         onToggleNotificationPanel={onToggleNotificationPanel}

@@ -38,7 +38,7 @@ export function pastedFileName(file: File, now: Date = new Date()): string {
   return `screenshot-${stamp}.${ext}`;
 }
 
-export function useMessageUppy(busy: boolean) {
+export function useMessageUppy(busy: boolean, occupiedAttachmentCount = 0) {
   const [attachmentErrorMsg, setAttachmentErrorMsg] = useState<string | null>(null);
 
   const translateError = (msg: string) => {
@@ -66,6 +66,30 @@ export function useMessageUppy(busy: boolean) {
   const [uppyFiles, setUppyFiles] = useState<UppyFile<any, any>[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const addFiles = (files: File[], getName: (file: File) => string) => {
+    setAttachmentErrorMsg(null);
+    files.forEach((file) => {
+      const remainingCapacity =
+        MAX_MESSAGE_ATTACHMENTS - occupiedAttachmentCount - uppy.getFiles().length;
+      if (remainingCapacity <= 0) {
+        setAttachmentErrorMsg(
+          `Перевищено максимальну кількість файлів (${MAX_MESSAGE_ATTACHMENTS})`,
+        );
+        return;
+      }
+
+      try {
+        uppy.addFile({
+          name: getName(file),
+          type: file.type,
+          data: file,
+        });
+      } catch (err: any) {
+        setAttachmentErrorMsg(translateError(err.message || 'Помилка додавання файлу'));
+      }
+    });
+  };
+
   useEffect(() => {
     const updateFiles = () => {
       setUppyFiles(uppy.getFiles());
@@ -92,19 +116,8 @@ export function useMessageUppy(busy: boolean) {
   }, [uppy]);
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setAttachmentErrorMsg(null);
     if (e.target.files) {
-      Array.from(e.target.files).forEach((file) => {
-        try {
-          uppy.addFile({
-            name: file.name,
-            type: file.type,
-            data: file,
-          });
-        } catch (err: any) {
-          setAttachmentErrorMsg(translateError(err.message || 'Помилка додавання файлу'));
-        }
-      });
+      addFiles(Array.from(e.target.files), (file) => file.name);
     }
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
@@ -114,19 +127,8 @@ export function useMessageUppy(busy: boolean) {
   const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     e.stopPropagation();
-    setAttachmentErrorMsg(null);
     if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-      Array.from(e.dataTransfer.files).forEach((file) => {
-        try {
-          uppy.addFile({
-            name: file.name,
-            type: file.type,
-            data: file,
-          });
-        } catch (err: any) {
-          setAttachmentErrorMsg(translateError(err.message || 'Помилка додавання файлу'));
-        }
-      });
+      addFiles(Array.from(e.dataTransfer.files), (file) => file.name);
       e.dataTransfer.clearData();
     }
   };
@@ -144,18 +146,7 @@ export function useMessageUppy(busy: boolean) {
     if (files.length === 0) return;
 
     e.preventDefault();
-    setAttachmentErrorMsg(null);
-    files.forEach((file) => {
-      try {
-        uppy.addFile({
-          name: pastedFileName(file),
-          type: file.type,
-          data: file,
-        });
-      } catch (err: any) {
-        setAttachmentErrorMsg(translateError(err.message || 'Помилка додавання файлу'));
-      }
-    });
+    addFiles(files, pastedFileName);
   };
 
   const handleDropzoneKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {

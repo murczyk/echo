@@ -398,7 +398,7 @@ describe('RerDutyNeoWorkspace', () => {
     expect(renderedFeedColumns.get('feed-2')?.view.scrollTrackingEnabled).toBe(false);
   });
 
-  it('keeps the desktop workspace rail stable when the add feed action disappears', async () => {
+  it('assigns add-feed to the last desktop header and removes it at the limit', async () => {
     container = document.createElement('div');
     document.body.appendChild(container);
     root = createRoot(container);
@@ -437,17 +437,18 @@ describe('RerDutyNeoWorkspace', () => {
 
     await renderWorkspace(MAX_MESSAGE_FEEDS - 1);
     const workspaceBefore = container.querySelector('[data-duty-workspace-main]') as HTMLElement;
-    expect(workspaceBefore.style.paddingTop).toBe('48px');
-    const addButtonBefore = container.querySelector(
-      'button[aria-label="Додати стрічку"]',
-    ) as HTMLButtonElement | null;
+    expect(workspaceBefore.style.paddingTop).toBe('');
+    expect(renderedFeedColumns.get('feed-1')?.actions.onCreateFeed).toBeUndefined();
+    expect(
+      renderedFeedColumns.get(`feed-${MAX_MESSAGE_FEEDS - 1}`)?.actions.onCreateFeed,
+    ).toBeDefined();
+    expect(container.querySelector('button[aria-label="Додати стрічку"]')).toBeNull();
     const createButtonBefore = container.querySelector(
       'button[aria-label="Додати повідомлення"]',
     ) as HTMLButtonElement | null;
-    expect(addButtonBefore).not.toBeNull();
     expect(createButtonBefore).not.toBeNull();
     await act(async () => {
-      addButtonBefore?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      renderedFeedColumns.get(`feed-${MAX_MESSAGE_FEEDS - 1}`)?.actions.onCreateFeed?.();
       createButtonBefore?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     });
     expect(createMessageFeed).toHaveBeenCalledTimes(1);
@@ -457,7 +458,12 @@ describe('RerDutyNeoWorkspace', () => {
     openCreateMessageComposer.mockReset();
     await renderWorkspace(MAX_MESSAGE_FEEDS);
     const workspaceAfter = container.querySelector('[data-duty-workspace-main]') as HTMLElement;
-    expect(workspaceAfter.style.paddingTop).toBe('48px');
+    expect(workspaceAfter.style.paddingTop).toBe('');
+    expect(
+      Array.from(renderedFeedColumns.values()).every(
+        (column) => column.actions.onCreateFeed == null,
+      ),
+    ).toBe(true);
     expect(container.querySelector('button[aria-label="Додати стрічку"]')).toBeNull();
     const createButtonAfter = container.querySelector(
       'button[aria-label="Додати повідомлення"]',

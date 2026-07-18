@@ -1,5 +1,6 @@
 import CloseIcon from '@mui/icons-material/Close';
 import { Box, Button, Drawer, IconButton, Stack, Typography } from '@mui/material';
+import type { ReactNode } from 'react';
 
 import type {
   SignalGroupEntry,
@@ -121,53 +122,27 @@ function CreatedMessageDrawerMessage({
   const labels = buildMessageCardDisplayLabels(message, { groupInfos, profiles });
 
   return (
-    <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-      <Box
-        sx={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          px: 2,
-          py: 1.5,
-          borderBottom: '1px solid',
-          borderColor: 'divider',
-        }}
-      >
-        <Box>
-          <Typography variant="h6">Додане повідомлення</Typography>
-          <Typography variant="body2" color="text.secondary">
-            {messageId}
-          </Typography>
-        </Box>
-        <IconButton aria-label="Закрити" onClick={onClose}>
-          <CloseIcon />
-        </IconButton>
-      </Box>
-      <Box sx={{ flex: 1, minHeight: 0, overflow: 'auto', p: 2 }}>
-        <Stack spacing={2}>
-          <DutyMessageCard
-            id={messageId}
-            msg={message}
-            readOnly
-            referenceTimeMs={Date.now()}
-            authUserName={authUserName}
-            groupName={labels.groupName}
-            senderName={labels.senderName}
-            copiedFeedbackId={null}
-            networkDisplayMap={networkDisplayMap}
-            networkMap={networkMap}
-            unitsMap={unitsMap}
-            callsignInfoMap={callsignInfoMap}
-            tagsMap={tagsMap}
-            tagsOrder={tagsOrder}
-            featureStrictNetworks={featureStrictNetworks}
-          />
-          <Button variant="contained" onClick={onClose}>
-            Закрити
-          </Button>
-        </Stack>
-      </Box>
-    </Box>
+    <CreatedMessageDrawerShell messageId={messageId} onClose={onClose}>
+      <Stack spacing={2}>
+        <DutyMessageCard
+          id={messageId}
+          msg={message}
+          readOnly
+          referenceTimeMs={Date.now()}
+          authUserName={authUserName}
+          groupName={labels.groupName}
+          senderName={labels.senderName}
+          copiedFeedbackId={null}
+          networkDisplayMap={networkDisplayMap}
+          networkMap={networkMap}
+          unitsMap={unitsMap}
+          callsignInfoMap={callsignInfoMap}
+          tagsMap={tagsMap}
+          tagsOrder={tagsOrder}
+          featureStrictNetworks={featureStrictNetworks}
+        />
+      </Stack>
+    </CreatedMessageDrawerShell>
   );
 }
 
@@ -181,8 +156,33 @@ function CreatedMessageDrawerReceipt({
   onClose: () => void;
 }) {
   return (
+    <CreatedMessageDrawerShell messageId={messageId} onClose={onClose}>
+      <Stack spacing={2}>
+        <PowerAlert severity="success">Повідомлення створено.</PowerAlert>
+        <Box sx={{ display: 'grid', gap: 1 }}>
+          <Typography variant="body1">ID повідомлення: {messageId}</Typography>
+          <Typography variant="body2" color="text.secondary">
+            {warning}
+          </Typography>
+        </Box>
+      </Stack>
+    </CreatedMessageDrawerShell>
+  );
+}
+
+function CreatedMessageDrawerShell({
+  messageId,
+  onClose,
+  children,
+}: {
+  messageId: number;
+  onClose: () => void;
+  children: ReactNode;
+}) {
+  return (
     <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       <Box
+        component="header"
         sx={{
           display: 'flex',
           alignItems: 'center',
@@ -203,19 +203,22 @@ function CreatedMessageDrawerReceipt({
           <CloseIcon />
         </IconButton>
       </Box>
-      <Box sx={{ flex: 1, minHeight: 0, overflow: 'auto', p: 2 }}>
-        <Stack spacing={2}>
-          <PowerAlert severity="success">Повідомлення створено.</PowerAlert>
-          <Box sx={{ display: 'grid', gap: 1 }}>
-            <Typography variant="body1">ID повідомлення: {messageId}</Typography>
-            <Typography variant="body2" color="text.secondary">
-              {warning}
-            </Typography>
-          </Box>
-          <Button variant="contained" onClick={onClose}>
-            Закрити
-          </Button>
-        </Stack>
+      <Box component="main" sx={{ flex: 1, minHeight: 0, overflow: 'auto', p: 2 }}>
+        {children}
+      </Box>
+      <Box
+        component="footer"
+        sx={{
+          p: 2.5,
+          borderTop: '1px solid',
+          borderColor: 'divider',
+          display: 'flex',
+          justifyContent: 'flex-end',
+          gap: 2,
+          flexShrink: 0,
+        }}
+      >
+        <Button onClick={onClose}>Закрити</Button>
       </Box>
     </Box>
   );
