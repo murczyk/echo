@@ -1930,6 +1930,7 @@ async fn reset_machine_derived_inbox_data(
 }
 
 #[cfg(test)]
+#[serial_test::serial]
 mod tests {
     use super::*;
     use crate::functest::tests::{
