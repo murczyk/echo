@@ -108,6 +108,7 @@ export type PalitraRowView = {
   author: string | null;
   accessSummary: string;
   canModify: boolean;
+  canRetryGoiSourceConversion: boolean;
   canSelect: boolean;
   archiveInFlight: boolean;
   deleteInFlight: boolean;

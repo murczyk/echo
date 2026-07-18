@@ -23,8 +23,6 @@ pub struct Model {
     pub file_sha256: Option<String>,
     pub last_seen_at: Option<DateTimeWithTimeZone>,
     pub last_sync_at: Option<DateTimeWithTimeZone>,
-    #[sea_orm(column_type = "Text", nullable)]
-    pub last_error: Option<String>,
     pub created_at: DateTimeWithTimeZone,
     pub updated_at: DateTimeWithTimeZone,
     pub echo_file_size: Option<i64>,
@@ -35,6 +33,22 @@ pub struct Model {
     #[sea_orm(column_type = "Text", nullable)]
     pub goi_file_sha256: Option<String>,
     pub goi_updated_at: Option<DateTimeWithTimeZone>,
+    #[sea_orm(column_type = "JsonBinary")]
+    pub changelog: Json,
+    #[sea_orm(column_type = "Text", nullable)]
+    pub goi_source_file_name: Option<String>,
+    #[sea_orm(column_type = "Text", nullable)]
+    pub goi_source_format: Option<String>,
+    #[sea_orm(column_type = "Text", nullable)]
+    pub goi_source_content_type: Option<String>,
+    #[sea_orm(column_type = "VarBinary(StringLen::None)", nullable)]
+    pub goi_source_file_data: Option<Vec<u8>>,
+    pub goi_source_file_size: Option<i64>,
+    #[sea_orm(column_type = "Text", nullable)]
+    pub goi_source_file_sha256: Option<String>,
+    #[sea_orm(column_type = "Text", nullable)]
+    pub goi_source_failed_file_sha256: Option<String>,
+    pub goi_source_last_retry_at: Option<DateTimeWithTimeZone>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

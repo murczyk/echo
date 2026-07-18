@@ -1,6 +1,6 @@
 import { AreaOfResponsibility, MyScope, Organism, Palitra, User } from '../../../../Bindings';
 
-import { canModifyPalitra, getAccessSummary } from './helpers-access';
+import { canManagePalitraAccess, canModifyEchoPalitra, getAccessSummary } from './helpers-access';
 import {
   buildFolderTree,
   mapFolderNodeToRowView,
@@ -36,7 +36,7 @@ export function mapPalitraToRowView({
   depth?: number;
   hiddenByCollapsedFolder?: boolean;
 }): PalitraRowView {
-  const canModify = canModifyPalitra(user, palitra);
+  const canModify = canModifyEchoPalitra(user, palitra);
   const archiveInFlight = inFlightArchiveId === palitra.id;
   const deleteInFlight = inFlightDeleteId === palitra.id;
   const downloadInFlight = inFlightDownloadId === palitra.id;
@@ -56,6 +56,7 @@ export function mapPalitraToRowView({
     author: palitra.author,
     accessSummary: getAccessSummary(palitra, user, myScope, organisms, aors),
     canModify,
+    canRetryGoiSourceConversion: canManagePalitraAccess(user),
     canSelect:
       palitra.id >= 0 &&
       !archiveInFlight &&

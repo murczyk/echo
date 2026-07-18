@@ -43,6 +43,7 @@ import {
 } from './components/PalitraTable';
 import { useRerPalitraNeoPage } from './use-rer-palitra-neo-page';
 import { PowerAlert } from '../../components/PowerAlert';
+import { formatDateTime24 } from '../../utils/misc';
 
 const DEFAULT_PALITRA_SORTING: MRT_SortingState = [{ id: 'lastUploadedAtTs', desc: true }];
 
@@ -128,6 +129,87 @@ function SelectedPalitraActionsMenu(props: SelectedPalitraActionsMenuProps) {
         </MenuItem>
       </Menu>
     </>
+  );
+}
+
+function formatChangelogTimestamp(timestamp: string): string {
+  const timestampMs = Date.parse(timestamp);
+  if (Number.isFinite(timestampMs)) return formatDateTime24(timestampMs);
+  return timestamp || '—';
+}
+
+function PalitraHistoryDialog({
+  palitra,
+  loading,
+  error,
+  onClose,
+}: {
+  palitra: ReturnType<typeof useRerPalitraNeoPage>['historyDialogPalitra'];
+  loading: boolean;
+  error: string | null;
+  onClose: () => void;
+}) {
+  const entries = palitra ? [...palitra.changelog].reverse() : [];
+
+  return (
+    <Dialog open={palitra !== null} onClose={onClose} disableRestoreFocus fullWidth maxWidth="md">
+      <DialogTitle>Історія</DialogTitle>
+      <DialogContent>
+        <Typography variant="subtitle1" sx={{ mb: 2 }}>
+          {palitra?.name ?? ''}
+        </Typography>
+        <Stack spacing={1.5}>
+          {loading ? (
+            <Stack direction="row" spacing={1.5} alignItems="center">
+              <CircularProgress size={18} />
+              <Typography variant="body2" color="text.secondary">
+                Завантаження історії...
+              </Typography>
+            </Stack>
+          ) : error ? (
+            <Typography variant="body2" color="error">
+              {error}
+            </Typography>
+          ) : entries.length === 0 ? (
+            <Typography variant="body2" color="text.secondary">
+              Немає записів історії.
+            </Typography>
+          ) : (
+            entries.map((entry, index) => (
+              <Box
+                key={entry.timestamp + '-' + index}
+                sx={{
+                  borderLeft: '3px solid',
+                  borderColor: entry.isOk ? 'success.main' : 'warning.main',
+                  pl: 1.5,
+                  py: 0.5,
+                }}
+              >
+                <Stack direction="row" spacing={1.5} alignItems="center" useFlexGap flexWrap="wrap">
+                  <Typography variant="body2" fontWeight={700}>
+                    {entry.isOk ? 'OK' : 'Попередження'}
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    {formatChangelogTimestamp(entry.timestamp)}
+                  </Typography>
+                </Stack>
+                <Typography variant="body2" sx={{ mt: 0.5 }}>
+                  {entry.description || entry.text}
+                </Typography>
+                {entry.text && entry.text !== entry.description ? (
+                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+                    {entry.text}
+                  </Typography>
+                ) : null}
+              </Box>
+            ))
+          )}
+        </Stack>
+      </DialogContent>
+      <DialogActions sx={STANDARD_DIALOG_ACTIONS_SX}>
+        <Button onClick={onClose}>Закрити</Button>
+      </DialogActions>
+    </Dialog>
   );
 }
 
@@ -247,6 +329,8 @@ function RerPalitraNeoPageBody() {
             onRequestPreview={page.openPreview}
             onRequestUploadPoints={page.requestUploadPoints}
             onRetryConversion={page.handleRetryConversion}
+            onRetryGoiSourceConversion={page.handleRetryGoiSourceConversion}
+            onOpenHistory={page.openHistory}
             onDelete={page.requestDelete}
             onSetSelectedPalitraIds={page.setSelectedPalitraIds}
             onToggleFolderExpanded={page.toggleFolderExpanded}
@@ -274,6 +358,13 @@ function RerPalitraNeoPageBody() {
         loading={page.previewLoading}
         error={page.previewError}
         onClose={page.closePreview}
+      />
+
+      <PalitraHistoryDialog
+        palitra={page.historyDialogPalitra}
+        loading={page.historyLoading}
+        error={page.historyError}
+        onClose={page.closeHistory}
       />
 
       <Dialog

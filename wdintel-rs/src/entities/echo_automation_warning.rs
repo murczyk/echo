@@ -21,14 +21,6 @@ pub struct Model {
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {
     #[sea_orm(
-        belongs_to = "super::echo_inbox_message::Entity",
-        from = "Column::SourceInboxMessageId",
-        to = "super::echo_inbox_message::Column::Id",
-        on_update = "NoAction",
-        on_delete = "SetNull"
-    )]
-    EchoInboxMessage,
-    #[sea_orm(
         belongs_to = "super::echo_automation::Entity",
         from = "Column::AutomationId",
         to = "super::echo_automation::Column::Id",
@@ -36,17 +28,25 @@ pub enum Relation {
         on_delete = "Cascade"
     )]
     EchoAutomation,
-}
-
-impl Related<super::echo_inbox_message::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::EchoInboxMessage.def()
-    }
+    #[sea_orm(
+        belongs_to = "super::echo_inbox_message::Entity",
+        from = "Column::SourceInboxMessageId",
+        to = "super::echo_inbox_message::Column::Id",
+        on_update = "NoAction",
+        on_delete = "SetNull"
+    )]
+    EchoInboxMessage,
 }
 
 impl Related<super::echo_automation::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::EchoAutomation.def()
+    }
+}
+
+impl Related<super::echo_inbox_message::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::EchoInboxMessage.def()
     }
 }
 

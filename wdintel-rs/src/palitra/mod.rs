@@ -5,8 +5,8 @@ use crate::config::{
     PALITRA_CONVERSION_JOB_STATUS_PENDING, PALITRA_CONVERSION_STATUS_ERROR,
     PALITRA_CONVERSION_STATUS_PROCESSING, PALITRA_CONVERSION_STATUS_READY,
     PALITRA_DIRECT_PARSE_EXTENSIONS, PALITRA_GOI_REMOTE_STATUS_PRESENT,
-    PALITRA_GOI_SYNC_JOB_KIND_DELETE, PALITRA_GOI_SYNC_JOB_KIND_MOVE,
-    PALITRA_GOI_SYNC_JOB_KIND_UPLOAD,
+    PALITRA_GOI_SYNC_DIRECTION_GOI, PALITRA_GOI_SYNC_JOB_KIND_DELETE,
+    PALITRA_GOI_SYNC_JOB_KIND_MOVE, PALITRA_GOI_SYNC_JOB_KIND_UPLOAD,
 };
 use crate::entities::*;
 use crate::error::AppError;
@@ -41,6 +41,7 @@ use zip::write::FileOptions;
 pub(crate) mod bl;
 pub mod conversion_worker;
 mod download;
+pub(crate) mod goi_changelog;
 pub mod goi_sync_worker;
 mod kmz;
 pub mod oneoff;
@@ -48,6 +49,18 @@ pub mod types;
 pub mod worker;
 
 pub use download::download_palitras_delta_split;
+
+const GOI_OWNED_PALITRA_EDIT_ERROR: &str = "Редагуйте цю палітру в ГОІ";
+
+#[derive(Debug, FromQueryResult)]
+struct GoiSourceConversionRetryCandidate {
+    id: i64,
+    direction: String,
+    remote_status: String,
+    goi_source_file_sha256: Option<String>,
+    changelog: serde_json::Value,
+    has_goi_source_file_data: bool,
+}
 
 #[derive(Clone)]
 struct UserScope {
@@ -566,6 +579,7 @@ pub async fn upload_palitra_points(
             "Only author or Admin may upload palitra points".into(),
         ));
     }
+    ensure_palitra_echo_edit_allowed(&env.dbx, palitra_id).await?;
     let (field, val) = multipart::extract(&mut payload).await.c(h!())?;
     let raw_filename = field
         .content_disposition()
@@ -803,6 +817,182 @@ pub async fn retry_palitra_conversion(
     Ok(Json(palitra_response))
 }
 
+#[post("/api/palitra/retry-goi-source-conversion/{palitra_id}")]
+pub async fn retry_goi_source_conversion(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+    path: actix_web::web::Path<i64>,
+) -> Result<Json<Palitra>, AppError> {
+    let login = user.id().c(h!())?;
+    ensure_palitra_management_permission(&env, &login)
+        .await
+        .c(h!())?;
+    let palitra_id = path.into_inner();
+    palitra::Entity::find_by_id(palitra_id)
+        .one(&env.dbx)
+        .await
+        .c(h!())?
+        .c(h!())?;
+    let is_admin = is_palitra_admin(&env, &login).await.c(h!())?;
+    let is_accessible = if is_admin {
+        true
+    } else {
+        bl::collect_accessible_palitra_ids(login.clone(), &env.dbx)
+            .await
+            .c(h!())?
+            .contains(&palitra_id)
+    };
+    if !is_accessible {
+        return Err(AppError::Forbidden(
+            "Palitra is not accessible for GOI source conversion retry".into(),
+        ));
+    }
+    let rows = goi_palitra_sync::Entity::find()
+        .filter(goi_palitra_sync::Column::PalitraId.eq(palitra_id))
+        .filter(
+            goi_palitra_sync::Column::Direction
+                .eq(PALITRA_GOI_SYNC_DIRECTION_GOI),
+        )
+        .filter(
+            goi_palitra_sync::Column::RemoteStatus
+                .eq(PALITRA_GOI_REMOTE_STATUS_PRESENT),
+        )
+        .filter(goi_palitra_sync::Column::GoiSourceFileSha256.is_not_null())
+        .select_only()
+        .column(goi_palitra_sync::Column::Id)
+        .column(goi_palitra_sync::Column::Direction)
+        .column(goi_palitra_sync::Column::RemoteStatus)
+        .column(goi_palitra_sync::Column::GoiSourceFileSha256)
+        .column(goi_palitra_sync::Column::Changelog)
+        .column_as(
+            Expr::col((
+                goi_palitra_sync::Entity,
+                goi_palitra_sync::Column::GoiSourceFileData,
+            ))
+            .is_not_null(),
+            "has_goi_source_file_data",
+        )
+        .order_by_desc(goi_palitra_sync::Column::UpdatedAt)
+        .order_by_desc(goi_palitra_sync::Column::Id)
+        .into_model::<GoiSourceConversionRetryCandidate>()
+        .all(&env.dbx)
+        .await
+        .c(h!())?;
+    let row_id = select_goi_source_conversion_retry_row_id(rows)
+        .ok_or_else(goi_source_conversion_retry_unavailable_error)?;
+    let row = goi_palitra_sync::Entity::find_by_id(row_id)
+        .filter(goi_palitra_sync::Column::PalitraId.eq(palitra_id))
+        .filter(
+            goi_palitra_sync::Column::Direction
+                .eq(PALITRA_GOI_SYNC_DIRECTION_GOI),
+        )
+        .filter(
+            goi_palitra_sync::Column::RemoteStatus
+                .eq(PALITRA_GOI_REMOTE_STATUS_PRESENT),
+        )
+        .filter(goi_palitra_sync::Column::GoiSourceFileData.is_not_null())
+        .one(&env.dbx)
+        .await
+        .c(h!())?
+        .ok_or_else(goi_source_conversion_retry_unavailable_error)?;
+    let filename = row.goi_source_file_name.clone().c(h!())?;
+    let extension = row.goi_source_format.clone().c(h!())?;
+    let file_data = row.goi_source_file_data.clone().c(h!())?;
+    let txn = env.dbx.begin().await.c(h!())?;
+    schedule_palitra_goi_source_conversion(
+        &txn,
+        palitra_id,
+        filename,
+        extension,
+        row.goi_source_content_type,
+        file_data,
+    )
+    .await
+    .c(h!())?;
+    goi_changelog::append_for_palitra_goi_source_row_ids(
+        &txn,
+        &[row.id],
+        goi_changelog::ok_entry(
+            "GOI source conversion retry queued",
+            "Повторну конвертацію файлу ГОІ поставлено в чергу.",
+        ),
+    )
+    .await
+    .c(h!())?;
+    goi_palitra_sync::Entity::update_many()
+        .filter(goi_palitra_sync::Column::Id.eq(row.id))
+        .col_expr(
+            goi_palitra_sync::Column::GoiSourceLastRetryAt,
+            Expr::value(Some(Utc::now().fixed_offset())),
+        )
+        .exec(&txn)
+        .await
+        .c(h!())?;
+    txn.commit().await.c(h!())?;
+    env.palitra_worker_context.flush_cache(palitra_id).await;
+    let palitra_response =
+        render_created_palitra_response(&env.dbx, palitra_id)
+            .await
+            .c(h!())?;
+    Ok(Json(palitra_response))
+}
+
+fn goi_source_conversion_retry_unavailable_error() -> AppError {
+    AppError::BL {
+        msg: "Cannot retry GOI source conversion: failed source file data is not available"
+            .to_string(),
+    }
+}
+
+fn select_goi_source_conversion_retry_row_id(
+    rows: Vec<GoiSourceConversionRetryCandidate>,
+) -> Option<i64> {
+    rows.into_iter()
+        .find(|row| {
+            is_goi_source_conversion_retry_candidate(
+                &row.direction,
+                &row.remote_status,
+                row.goi_source_file_sha256.as_deref(),
+                row.has_goi_source_file_data,
+                &row.changelog,
+            )
+        })
+        .map(|row| row.id)
+}
+
+#[cfg(test)]
+fn select_goi_source_conversion_retry_row(
+    rows: Vec<goi_palitra_sync::Model>,
+) -> Option<goi_palitra_sync::Model> {
+    rows.into_iter().find(|row| {
+        is_goi_source_conversion_retry_candidate(
+            &row.direction,
+            &row.remote_status,
+            row.goi_source_file_sha256.as_deref(),
+            row.goi_source_file_data.is_some(),
+            &row.changelog,
+        )
+    })
+}
+
+fn is_goi_source_conversion_retry_candidate(
+    direction: &str,
+    remote_status: &str,
+    goi_source_file_sha256: Option<&str>,
+    has_goi_source_file_data: bool,
+    changelog: &serde_json::Value,
+) -> bool {
+    if direction != PALITRA_GOI_SYNC_DIRECTION_GOI
+        || remote_status != PALITRA_GOI_REMOTE_STATUS_PRESENT
+        || goi_source_file_sha256.is_none()
+        || !has_goi_source_file_data
+    {
+        return false;
+    }
+    let changelog = goi_changelog::entries_from_value(changelog);
+    goi_changelog::latest_goi_source_conversion_warning(&changelog)
+}
+
 #[post("/api/palitra/list")]
 pub async fn list_all_palitras(
     user: actix_identity::Identity,
@@ -859,6 +1049,37 @@ pub async fn list_all_palitras_detailed(
         .await
         .context(h!())?;
     Ok(Json(palitra))
+}
+
+#[post("/api/palitra/goi-sync-history/{palitra_id}")]
+pub async fn read_palitra_goi_sync_history(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+    path: actix_web::web::Path<i64>,
+) -> Result<Json<Vec<PalitraChangelogEntry>>, AppError> {
+    let login = user.id().c(h!())?;
+    crate::users::has_role(&env.dbx, &login, "Rer")
+        .await
+        .context(h!())?;
+    let palitra_id = path.into_inner();
+    let is_admin = is_palitra_admin(&env, &login).await.c(h!())?;
+    let is_accessible = if is_admin {
+        true
+    } else {
+        bl::collect_accessible_palitra_ids(login, &env.dbx)
+            .await
+            .c(h!())?
+            .contains(&palitra_id)
+    };
+    if !is_accessible {
+        return Err(AppError::Forbidden(
+            "Palitra is not accessible for GOI sync history".into(),
+        ));
+    }
+    let summary = bl::read_palitra_goi_sync_summary(&env.dbx, palitra_id)
+        .await
+        .context(h!())?;
+    Ok(Json(summary.changelog))
 }
 
 #[post("/api/palitra/v2/read/{palitra_id}")]
@@ -1005,8 +1226,9 @@ pub async fn archive_palitra(
     ensure_palitra_management_permission(&env, &login)
         .await
         .c(h!())?;
-    let txn = env.dbx.begin().await.c(h!())?;
     let palitra_id = path.into_inner();
+    ensure_palitra_echo_edit_allowed(&env.dbx, palitra_id).await?;
+    let txn = env.dbx.begin().await.c(h!())?;
     let palitra = bl::update_accessible_palitra_archive_flag(
         login, palitra_id, true, &env.dbx, &txn,
     )
@@ -1031,8 +1253,9 @@ pub async fn unarchive_palitra(
     ensure_palitra_management_permission(&env, &login)
         .await
         .c(h!())?;
-    let txn = env.dbx.begin().await.c(h!())?;
     let palitra_id = path.into_inner();
+    ensure_palitra_echo_edit_allowed(&env.dbx, palitra_id).await?;
+    let txn = env.dbx.begin().await.c(h!())?;
     let palitra = bl::update_accessible_palitra_archive_flag(
         login, palitra_id, false, &env.dbx, &txn,
     )
@@ -1057,8 +1280,9 @@ pub async fn assign_palitra_folder(
     ensure_palitra_management_permission(&env, &login)
         .await
         .c(h!())?;
-    let txn = env.dbx.begin().await.c(h!())?;
     let req = req.into_inner();
+    ensure_palitras_echo_edit_allowed(&env.dbx, &req.palitra_ids).await?;
+    let txn = env.dbx.begin().await.c(h!())?;
     let sync_items = bl::assign_folder_to_accessible_palitras(
         login,
         req.palitra_ids,
@@ -1087,8 +1311,8 @@ pub async fn rename_palitra_folder(
     ensure_palitra_management_permission(&env, &login)
         .await
         .c(h!())?;
-    let txn = env.dbx.begin().await.c(h!())?;
     let req = req.into_inner();
+    let txn = env.dbx.begin().await.c(h!())?;
     let sync_items = bl::rename_accessible_palitra_folder(
         login,
         req.from_folder,
@@ -1117,13 +1341,10 @@ pub async fn archive_palitra_folder(
     ensure_palitra_management_permission(&env, &login)
         .await
         .c(h!())?;
+    let folder = req.into_inner().folder;
     let txn = env.dbx.begin().await.c(h!())?;
     let palitra_ids = bl::archive_accessible_palitra_folder(
-        login,
-        req.into_inner().folder,
-        true,
-        &env.dbx,
-        &txn,
+        login, folder, true, &env.dbx, &txn,
     )
     .await
     .c(h!())?;
@@ -1180,6 +1401,9 @@ async fn delete_palitra_from_folder_if_allowed(
             .await
             .c(h!())?;
     if !is_author_or_admin {
+        return Ok(false);
+    }
+    if !is_palitra_echo_edit_allowed(&env.dbx, palitra_id).await? {
         return Ok(false);
     }
     let existing_access =
@@ -1362,6 +1586,7 @@ pub async fn update_palitra(
             "Only author or Admin may update palitra".into(),
         ));
     }
+    ensure_palitra_echo_edit_allowed(&env.dbx, palitra_id).await?;
     let result = bl::update_palitra(palitra.id, req, &txn).await.c(h!())?;
     txn.commit().await.c(h!())?;
     Ok(Json(result))
@@ -1396,6 +1621,7 @@ pub async fn update_palitra_v2(
             "Only author or Admin may update palitra".into(),
         ));
     }
+    ensure_palitra_echo_edit_allowed(&env.dbx, palitra_id).await?;
     let result = bl::update_palitra_v2(palitra.id, req, &txn).await.c(h!())?;
     txn.commit().await.c(h!())?;
     Ok(Json(result))
@@ -1427,6 +1653,7 @@ pub async fn delete_palitra(
             "Only author or Admin may delete palitra".into(),
         ));
     }
+    ensure_palitra_echo_edit_allowed(&env.dbx, palitra_id).await?;
     let existing_access =
         read_palitra_access(&env.dbx, palitra_id).await.c(h!())?;
 
@@ -1721,6 +1948,9 @@ async fn render_created_palitra_response(
                 .await
                 .c(h!())?
         };
+    let goi_sync_summary = bl::read_palitra_goi_sync_summary(dbx, palitra_id)
+        .await
+        .c(h!())?;
     Ok(Palitra {
         id: palitra.id,
         name: palitra.name,
@@ -1737,6 +1967,11 @@ async fn render_created_palitra_response(
         conversion_error: palitra.conversion_error,
         missing_in_goi: palitra.missing_in_goi,
         imported_from_goi: palitra.imported_from_goi,
+        goi_owned: goi_sync_summary.goi_owned,
+        goi_source_refresh_retry_available: goi_sync_summary
+            .goi_source_refresh_retry_available,
+        latest_changelog_warning: goi_sync_summary.latest_changelog_warning,
+        changelog: goi_sync_summary.changelog,
         geometry: None,
         access_aor_id: bl::collect_palitra_access_aors(dbx, palitra_id)
             .await
@@ -1816,6 +2051,48 @@ async fn ensure_palitra_management_permission(
     Err(AppError::Forbidden(
         "Only Admin or Rer may manage palitra".into(),
     ))
+}
+
+async fn ensure_palitra_echo_edit_allowed<'a, C>(
+    dbx: &'a C,
+    palitra_id: i64,
+) -> Result<(), AppError>
+where
+    C: ConnectionTrait + 'a,
+{
+    if !is_palitra_echo_edit_allowed(dbx, palitra_id).await? {
+        return Err(AppError::BL {
+            msg: GOI_OWNED_PALITRA_EDIT_ERROR.to_string(),
+        });
+    }
+    Ok(())
+}
+
+async fn is_palitra_echo_edit_allowed<'a, C>(
+    dbx: &'a C,
+    palitra_id: i64,
+) -> Result<bool, AppError>
+where
+    C: ConnectionTrait + 'a,
+{
+    Ok(!bl::is_goi_owned_convertible_palitra(dbx, palitra_id)
+        .await
+        .c(h!())?)
+}
+
+async fn ensure_palitras_echo_edit_allowed<'a, C>(
+    dbx: &'a C,
+    palitra_ids: &[i64],
+) -> Result<(), AppError>
+where
+    C: ConnectionTrait + 'a,
+{
+    for palitra_id in palitra_ids {
+        ensure_palitra_echo_edit_allowed(dbx, *palitra_id)
+            .await
+            .c(h!())?;
+    }
+    Ok(())
 }
 
 async fn is_palitra_admin(
@@ -2096,7 +2373,6 @@ where
             palitra_conversion_job::Column::Status,
             palitra_conversion_job::Column::ConversionReceipt,
             palitra_conversion_job::Column::LastAttemptAt,
-            palitra_conversion_job::Column::AttemptCount,
             palitra_conversion_job::Column::LastError,
             palitra_conversion_job::Column::ShouldScheduleGoiUpload,
         ])
@@ -2116,27 +2392,6 @@ where
     .await
     .c(h!())?;
     Ok(())
-}
-
-pub(crate) async fn schedule_palitra_replacement_conversion(
-    txn: &DatabaseTransaction,
-    palitra_id: i64,
-    filename: String,
-    extension: String,
-    content_type: Option<String>,
-    file_data: Vec<u8>,
-) -> anyhow::Result<()> {
-    schedule_palitra_replacement_conversion_with_goi_upload(
-        txn,
-        palitra_id,
-        filename,
-        extension,
-        content_type,
-        file_data,
-        false,
-    )
-    .await
-    .c(h!())
 }
 
 pub(crate) async fn schedule_palitra_replacement_conversion_with_goi_upload(
@@ -2163,6 +2418,28 @@ pub(crate) async fn schedule_palitra_replacement_conversion_with_goi_upload(
     clear_active_palitra_geometries(txn, palitra_id)
         .await
         .c(h!())
+}
+
+pub(crate) async fn schedule_palitra_goi_source_conversion(
+    txn: &DatabaseTransaction,
+    palitra_id: i64,
+    filename: String,
+    extension: String,
+    content_type: Option<String>,
+    file_data: Vec<u8>,
+) -> anyhow::Result<()> {
+    cancel_palitra_goi_upload(txn, palitra_id).await.c(h!())?;
+    schedule_palitra_conversion_with_goi_upload(
+        txn,
+        palitra_id,
+        filename,
+        extension,
+        content_type,
+        file_data,
+        false,
+    )
+    .await
+    .c(h!())
 }
 
 async fn clear_active_palitra_geometries(
@@ -2985,6 +3262,193 @@ fn goi_validate_connection_req(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn goi_source_retry_row_for_test(
+        id: i64,
+        updated_at_offset_sec: i64,
+        latest_warning: bool,
+        filename: &str,
+        file_data: Vec<u8>,
+    ) -> goi_palitra_sync::Model {
+        let entry = if latest_warning {
+            goi_changelog::error_entry(
+                "GOI source conversion failed",
+                "Не вдалося сконвертувати файл ГОІ.",
+            )
+        } else {
+            goi_changelog::ok_entry(
+                "Converted GOI source",
+                "Файл ГОІ успішно сконвертовано.",
+            )
+        };
+        goi_source_retry_row_with_entry_for_test(
+            id,
+            updated_at_offset_sec,
+            entry,
+            filename,
+            PALITRA_GOI_REMOTE_STATUS_PRESENT,
+            file_data,
+        )
+    }
+
+    fn goi_source_retry_row_with_entry_for_test(
+        id: i64,
+        updated_at_offset_sec: i64,
+        entry: PalitraChangelogEntry,
+        filename: &str,
+        remote_status: &str,
+        file_data: Vec<u8>,
+    ) -> goi_palitra_sync::Model {
+        let now = Utc::now().fixed_offset();
+        let updated_at = now + chrono::Duration::seconds(updated_at_offset_sec);
+        let changelog =
+            goi_changelog::append_to_value(&serde_json::json!([]), entry)
+                .unwrap();
+
+        goi_palitra_sync::Model {
+            id,
+            goi_integration_id: 2,
+            palitra_id: Some(10),
+            remote_relative_path: filename.to_string(),
+            direction: crate::config::PALITRA_GOI_SYNC_DIRECTION_GOI
+                .to_string(),
+            remote_status: remote_status.to_string(),
+            file_size: Some(3),
+            file_sha256: Some("abc".to_string()),
+            echo_file_size: Some(3),
+            echo_file_sha256: Some("abc".to_string()),
+            echo_updated_at: Some(now),
+            goi_file_size: Some(3),
+            goi_file_sha256: Some("abc".to_string()),
+            goi_updated_at: Some(now),
+            last_seen_at: Some(now),
+            last_sync_at: Some(now),
+            created_at: now,
+            updated_at,
+            changelog,
+            goi_source_file_name: Some(filename.to_string()),
+            goi_source_format: Some("gpx".to_string()),
+            goi_source_content_type: None,
+            goi_source_file_data: Some(file_data),
+            goi_source_file_size: Some(3),
+            goi_source_file_sha256: Some(format!("sha-{id}")),
+            goi_source_failed_file_sha256: None,
+            goi_source_last_retry_at: None,
+        }
+    }
+
+    #[test]
+    fn retry_goi_source_conversion_selects_failed_source_row() {
+        let failed_row = goi_source_retry_row_for_test(
+            1,
+            0,
+            true,
+            "failed-source.gpx",
+            vec![1, 2, 3],
+        );
+
+        let row =
+            select_goi_source_conversion_retry_row(vec![failed_row]).unwrap();
+
+        assert_eq!(row.id, 1);
+        assert_eq!(
+            row.goi_source_file_name.as_deref(),
+            Some("failed-source.gpx")
+        );
+        assert_eq!(row.goi_source_file_data, Some(vec![1, 2, 3]));
+    }
+
+    #[test]
+    fn retry_goi_source_conversion_selects_retryable_row_after_newer_ok() {
+        let older_failed_row = goi_source_retry_row_for_test(
+            1,
+            0,
+            true,
+            "older-failed-source.gpx",
+            vec![1, 2, 3],
+        );
+        let current_ok_row = goi_source_retry_row_for_test(
+            2,
+            10,
+            false,
+            "current-ok-source.gpx",
+            vec![4, 5, 6],
+        );
+
+        let row = select_goi_source_conversion_retry_row(vec![
+            current_ok_row,
+            older_failed_row,
+        ])
+        .unwrap();
+
+        assert_eq!(row.id, 1);
+    }
+
+    #[test]
+    fn retry_goi_source_conversion_selects_older_warning_when_newer_lacks_data()
+    {
+        let older_failed_row = goi_source_retry_row_for_test(
+            1,
+            0,
+            true,
+            "older-failed-source.gpx",
+            vec![1, 2, 3],
+        );
+        let mut current_failed_row = goi_source_retry_row_for_test(
+            2,
+            10,
+            true,
+            "current-failed-source.gpx",
+            vec![4, 5, 6],
+        );
+        current_failed_row.goi_source_file_data = None;
+
+        assert!(select_goi_source_conversion_retry_row(vec![
+            current_failed_row,
+            older_failed_row,
+        ])
+        .is_some_and(|row| row.id == 1));
+    }
+
+    #[test]
+    fn retry_goi_source_conversion_ignores_non_conversion_warning() {
+        let duplicate_conflict_row = goi_source_retry_row_with_entry_for_test(
+            1,
+            0,
+            goi_changelog::error_entry(
+                "Duplicate GOI remote path tracking conflict",
+                "Дубльований шлях ГОІ.",
+            ),
+            "source.gpx",
+            PALITRA_GOI_REMOTE_STATUS_PRESENT,
+            vec![1, 2, 3],
+        );
+
+        assert!(select_goi_source_conversion_retry_row(vec![
+            duplicate_conflict_row
+        ])
+        .is_none());
+    }
+
+    #[test]
+    fn retry_goi_source_conversion_ignores_missing_source_row() {
+        let missing_failed_row = goi_source_retry_row_with_entry_for_test(
+            1,
+            0,
+            goi_changelog::error_entry(
+                "GOI source conversion failed",
+                "Не вдалося сконвертувати файл ГОІ.",
+            ),
+            "missing-source.gpx",
+            crate::config::PALITRA_GOI_REMOTE_STATUS_MISSING,
+            vec![1, 2, 3],
+        );
+
+        assert!(select_goi_source_conversion_retry_row(vec![
+            missing_failed_row
+        ])
+        .is_none());
+    }
 
     #[test]
     fn pick_access_preserves_organism_scope_when_login_rows_exist() {

@@ -58,6 +58,10 @@ pub enum Relation {
         on_delete = "Cascade"
     )]
     EchoAccount1,
+    #[sea_orm(has_many = "super::echo_automation_delivery::Entity")]
+    EchoAutomationDelivery,
+    #[sea_orm(has_many = "super::echo_automation_warning::Entity")]
+    EchoAutomationWarning,
     #[sea_orm(
         belongs_to = "super::echo_group::Entity",
         from = "Column::SourceGroupId",
@@ -74,10 +78,6 @@ pub enum Relation {
         on_delete = "Cascade"
     )]
     EchoGroup1,
-    #[sea_orm(has_many = "super::echo_automation_delivery::Entity")]
-    EchoAutomationDelivery,
-    #[sea_orm(has_many = "super::echo_automation_warning::Entity")]
-    EchoAutomationWarning,
 }
 
 impl Related<super::echo_automation_delivery::Entity> for Entity {
