@@ -5,7 +5,68 @@ use crate::{h, new_pg_pool_from_mode};
 use anyhow::{bail, Context};
 use milgeo_rs::coordinates::usk2000::usk2000_to_wgs84;
 use milgeo_rs::coordinates::Usk2000;
+use sea_orm::{ConnectionTrait, DbBackend, Statement};
 use xshell::{cmd, Shell};
+
+pub async fn oneoff_kill_old_queries(
+    mode: Mode,
+    ps: &crate::OneoffKillOldQueriesPs,
+) -> Result<(), AppError> {
+    let db = new_pg_pool_from_mode(mode).await.c(h!())?;
+    let rows = db
+        .query_all(Statement::from_sql_and_values(
+            DbBackend::Postgres,
+            r#"
+SELECT pid,
+       usename,
+       application_name,
+       client_addr::text AS client_addr,
+       (clock_timestamp() - query_start)::text AS age,
+       query,
+       pg_cancel_backend(pid) AS cancelled
+FROM pg_stat_activity
+WHERE backend_type = 'client backend'
+  AND state = 'active'
+  AND usename = current_user
+  AND pid <> pg_backend_pid()
+  AND query_start < clock_timestamp() - ($1::bigint * interval '1 minute')
+ORDER BY query_start
+"#,
+            [ps.minutes.into()],
+        ))
+        .await
+        .context(h!())?;
+
+    let mut cancelled_count = 0;
+    for row in &rows {
+        let pid: i32 = row.try_get("", "pid").context(h!())?;
+        let usename: String = row.try_get("", "usename").context(h!())?;
+        let application_name: String =
+            row.try_get("", "application_name").context(h!())?;
+        let client_addr: Option<String> =
+            row.try_get("", "client_addr").context(h!())?;
+        let age: String = row.try_get("", "age").context(h!())?;
+        let query: String = row.try_get("", "query").context(h!())?;
+        let cancelled: bool = row.try_get("", "cancelled").context(h!())?;
+        cancelled_count += usize::from(cancelled);
+        let query = query.split_whitespace().collect::<Vec<_>>().join(" ");
+        let query: String = query
+            .chars()
+            .take(crate::config::ONEOFF_KILL_OLD_QUERIES_QUERY_PREVIEW_CHARS)
+            .collect();
+        println!(
+            "pid={pid} user={usename} application={application_name:?} client={client_addr:?} age={age} cancelled={cancelled} query={query}"
+        );
+    }
+
+    println!(
+        "matched={} cancelled={} threshold_minutes={}",
+        rows.len(),
+        cancelled_count,
+        ps.minutes
+    );
+    Ok(())
+}
 
 pub async fn oneoff_restart_echo(
     mode: Mode,

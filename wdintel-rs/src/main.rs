@@ -599,6 +599,17 @@ pub struct OneoffRestartEchoPs {
 }
 
 #[derive(clap::Args, Debug, Clone)]
+pub struct OneoffKillOldQueriesPs {
+    /// Cancel active application queries older than this many minutes.
+    #[arg(
+        long,
+        default_value_t = ONEOFF_KILL_OLD_QUERIES_DEFAULT_MINUTES,
+        value_parser = clap::value_parser!(u64).range(1..)
+    )]
+    pub minutes: u64,
+}
+
+#[derive(clap::Args, Debug, Clone)]
 pub struct OneoffMigrateModulationToEncryptionPs {
     /// Print what would be done without committing changes.
     #[arg(long, default_value = "false")]
@@ -721,6 +732,7 @@ enum Cmd {
     OneoffAuditMissingEchoImMessages(OneoffAuditMissingEchoImMessagesPs),
     OneoffReprocessInboxPosts(OneoffReprocessInboxPostsPs),
     OneoffRestartEcho(OneoffRestartEchoPs),
+    OneoffKillOldQueries(OneoffKillOldQueriesPs),
     OneoffRefreshAiModels,
     OneoffMigrateModulationToEncryption(OneoffMigrateModulationToEncryptionPs),
     OneoffMergeDatasourceGroup(OneoffMergeDatasourceGroupPs),
@@ -1203,6 +1215,9 @@ async fn async_main(
         }
         Cmd::OneoffRestartEcho(ps) => {
             oneoff::oneoff_restart_echo(mode, &ps).await
+        }
+        Cmd::OneoffKillOldQueries(ps) => {
+            oneoff::oneoff_kill_old_queries(mode, &ps).await
         }
         Cmd::TuiImportUnit(ps) => {
             sigint::import::tui::run_import_unit_tui(mode, ps).await
