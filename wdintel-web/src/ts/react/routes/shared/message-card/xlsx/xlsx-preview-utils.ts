@@ -2,6 +2,7 @@ import readXlsxFile from 'read-excel-file/web-worker';
 import { debugDocumentPreview } from '../document-preview-debug';
 import { extractWorkbookSheetNames } from './xlsx-preview-metadata';
 import { normalizeXlsxPreviewWorkbook } from './xlsx-preview-normalize';
+import { MAX_DOCUMENT_PREVIEW_COLUMNS, MAX_DOCUMENT_PREVIEW_ROWS } from '../document-grid-limits';
 
 // read-excel-file's runtime parser supports options.sheets and filters sheet
 // IDs before parseSheet(), but the package typings omit that option. Keep this
@@ -21,8 +22,8 @@ const readXlsxFileWithRuntimeSheetsOption =
 export const MAX_XLSX_FILE_MB = 10;
 export const MAX_XLSX_FILE_BYTES = MAX_XLSX_FILE_MB * 1024 * 1024;
 export const MAX_XLSX_SHEETS = 20;
-export const MAX_XLSX_ROWS = 5000;
-export const MAX_XLSX_COLUMNS = 100;
+export const MAX_XLSX_ROWS = MAX_DOCUMENT_PREVIEW_ROWS;
+export const MAX_XLSX_COLUMNS = MAX_DOCUMENT_PREVIEW_COLUMNS;
 
 export type XlsxPreviewSheet = {
   name: string;

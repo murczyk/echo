@@ -59,6 +59,15 @@ describe('message-card-preview-config', () => {
       },
     ],
     [
+      'csv',
+      {
+        layout: 'document',
+        disableRestoreFocus: true,
+        supportsFullscreen: true,
+        disableEscapeKeyDownInFullscreen: false,
+      },
+    ],
+    [
       'txt',
       {
         layout: 'document',

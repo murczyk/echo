@@ -1,4 +1,5 @@
-export type MessageCardDocumentKind = 'pdf' | 'docx' | 'xlsx' | 'txt' | 'md' | 'unsupported';
+export type MessageCardDocumentKind =
+  'pdf' | 'docx' | 'xlsx' | 'csv' | 'txt' | 'md' | 'unsupported';
 
 export type MessageCardDocument = {
   id?: string | null;

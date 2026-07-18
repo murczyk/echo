@@ -46,6 +46,12 @@ const MESSAGE_CARD_PREVIEW_SHELL_CONFIG_BY_KIND = {
     supportsFullscreen: true,
     disableEscapeKeyDownInFullscreen: false,
   },
+  csv: {
+    layout: 'document',
+    disableRestoreFocus: true,
+    supportsFullscreen: true,
+    disableEscapeKeyDownInFullscreen: false,
+  },
   txt: {
     layout: 'document',
     disableRestoreFocus: true,

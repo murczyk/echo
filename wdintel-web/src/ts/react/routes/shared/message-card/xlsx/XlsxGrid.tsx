@@ -21,11 +21,13 @@ export function XlsxGrid({
   rows,
   zoom,
   truncated,
+  truncationNotice,
   onSelectionChange,
 }: {
   rows: string[][];
   zoom: number;
   truncated: boolean;
+  truncationNotice?: string;
   onSelectionChange?: (selection: XlsxGridRange | null) => void;
 }) {
   const rootRef = useRef<HTMLDivElement>(null);
@@ -158,7 +160,8 @@ export function XlsxGrid({
           }}
         >
           <Typography variant="caption" sx={{ color: 'text.secondary' }}>
-            {`Показано перші ${MAX_XLSX_ROWS} рядків, ${MAX_XLSX_COLUMNS} колонок або ${MAX_XLSX_SHEETS} аркушів.`}
+            {truncationNotice ??
+              `Показано перші ${MAX_XLSX_ROWS} рядків, ${MAX_XLSX_COLUMNS} колонок або ${MAX_XLSX_SHEETS} аркушів.`}
           </Typography>
         </Box>
       ) : null}

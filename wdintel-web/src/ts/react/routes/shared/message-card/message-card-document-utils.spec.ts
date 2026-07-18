@@ -14,6 +14,7 @@ import {
   isPdfAttachment,
   isTxtAttachment,
   isXlsxAttachment,
+  isCsvAttachment,
 } from './message-card-document-utils';
 
 describe('message-card document utils', () => {
@@ -27,6 +28,18 @@ describe('message-card document utils', () => {
     expect(
       isDocxAttachment({
         href: 'https://example.test/report.docx',
+        contentType: 'application/octet-stream',
+      } as MessageMediaInfo),
+    ).toBe(true);
+    expect(
+      isCsvAttachment({
+        href: 'https://example.test/report',
+        contentType: 'text/csv; charset=utf-8',
+      } as MessageMediaInfo),
+    ).toBe(true);
+    expect(
+      isCsvAttachment({
+        href: 'https://example.test/report.csv?download=1',
         contentType: 'application/octet-stream',
       } as MessageMediaInfo),
     ).toBe(true);
@@ -113,23 +126,32 @@ describe('message-card document utils', () => {
           fileName: 'readme.markdown',
           sizeBytes: 256,
         },
+        {
+          id: 'csv-1',
+          href: 'https://example.test/files/data.csv',
+          contentType: 'text/csv; charset=utf-8',
+          fileName: 'data.csv',
+          sizeBytes: 128,
+        },
       ] as InboxMessage['media'],
     } as InboxMessage;
 
     const documents = collectMessageDocuments(msg);
 
-    expect(documents).toHaveLength(5);
+    expect(documents).toHaveLength(6);
     expect(deriveDocumentFileName(documents[0]!, 0)).toBe('report.pdf');
     expect(deriveDocumentDownloadName(documents[1]!, 1)).toBe('sheet.xlsx');
     expect(documents[2]?.kind).toBe('unsupported');
     expect(documents[3]?.kind).toBe('txt');
     expect(documents[4]?.kind).toBe('md');
+    expect(documents[5]?.kind).toBe('csv');
     expect(documents.map((document) => document.kind)).toEqual([
       'pdf',
       'xlsx',
       'unsupported',
       'txt',
       'md',
+      'csv',
     ]);
   });
 
