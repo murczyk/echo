@@ -224,7 +224,7 @@ struct Report1213MessageRow {
 }
 
 pub async fn report_docx_kind_report_1213(
-    user_login: &str,
+    user_login: &uuid::Uuid,
     env: &Env,
     req: &ReportPreviewReq,
     outpath: &Path,
@@ -235,12 +235,12 @@ pub async fn report_docx_kind_report_1213(
         None => info!("Report 1.2.13 using primary database"),
     }
 
-    let login = user_login.to_string();
-    let logins = crate::users::get_organism_logins_by_login(&read_db, &login)
+    let login = *user_login;
+    let login_ids = crate::users::get_organism_login_ids_by_id(&read_db, &login)
         .await
         .c(h!())?;
     let report_data =
-        collect_report_1213_data(&read_db, &login, &logins, env, req).await?;
+        collect_report_1213_data(&read_db, &login, &login_ids, env, req).await?;
 
     build_report_1213_docx_to_path(&report_data, outpath).context(h!())?;
     Ok(())
@@ -248,8 +248,8 @@ pub async fn report_docx_kind_report_1213(
 
 async fn collect_report_1213_data(
     dbx: &DatabaseConnection,
-    login: &str,
-    logins: &Vec<String>,
+    login: &uuid::Uuid,
+    logins: &Vec<uuid::Uuid>,
     env: &Env,
     req: &ReportPreviewReq,
 ) -> Result<Report1213Data, AppError> {
@@ -316,7 +316,7 @@ async fn collect_report_1213_data(
 
 async fn load_report_1213_messages(
     dbx: &DatabaseConnection,
-    login: &str,
+    login: &uuid::Uuid,
     env: &Env,
     req: &crate::rer_importer::types::InboxMessagesReq,
 ) -> Result<Vec<(i64, InboxMessage)>, AppError> {
@@ -487,7 +487,7 @@ async fn load_report_1213_group_aors(
 
 async fn load_report_1213_datasource_ids(
     dbx: &DatabaseConnection,
-    logins: &[String],
+    logins: &[uuid::Uuid],
 ) -> Result<BTreeSet<i64>, AppError> {
     if logins.is_empty() {
         return Ok(BTreeSet::new());
@@ -495,7 +495,7 @@ async fn load_report_1213_datasource_ids(
 
     Ok(datasource::Entity::find()
         .filter(datasource::Column::Deleted.eq(false))
-        .filter(datasource::Column::ApiLogin.is_in(logins.to_vec()))
+        .filter(datasource::Column::ApiLoginId.is_in(logins.to_vec()))
         .all(dbx)
         .await
         .c(h!())?
@@ -1152,7 +1152,7 @@ mod tests {
             .unwrap()
             .unwrap()
             .into_active_model();
-        datasource.api_login = Set(None);
+        datasource.api_login_id = Set(None);
         datasource.update(dbx).await.unwrap();
     }
 
@@ -1280,16 +1280,11 @@ mod tests {
             sposob_unit_name: None,
         };
 
-        let logins = vec![login.login.clone()];
-        let report_data = collect_report_1213_data(
-            &env.dbx,
-            &login.login,
-            &logins,
-            &env,
-            &req,
-        )
-        .await
-        .unwrap();
+        let logins = vec![login.id];
+        let report_data =
+            collect_report_1213_data(&env.dbx, &login.id, &logins, &env, &req)
+                .await
+                .unwrap();
 
         assert_eq!(report_data.items.len(), 2);
         assert_eq!(report_data.peleng_count, 3);
@@ -1377,16 +1372,11 @@ mod tests {
             sposob_unit_name: None,
         };
 
-        let logins = vec![login.login.clone()];
-        let report_data = collect_report_1213_data(
-            &env.dbx,
-            &login.login,
-            &logins,
-            &env,
-            &req,
-        )
-        .await
-        .unwrap();
+        let logins = vec![login.id];
+        let report_data =
+            collect_report_1213_data(&env.dbx, &login.id, &logins, &env, &req)
+                .await
+                .unwrap();
 
         assert_eq!(report_data.items.len(), 1);
         let row = report_data.items.first().unwrap();
@@ -1417,7 +1407,7 @@ mod tests {
                 .unwrap()
                 .unwrap()
                 .into_active_model();
-        own_datasource.api_login = Set(Some(login.login.clone()));
+        own_datasource.api_login_id = Set(Some(login.id));
         own_datasource.update(&env.dbx).await.unwrap();
 
         let outsider_organism = mk_organism(
@@ -1432,6 +1422,7 @@ mod tests {
         let outsider_login = mk_login(
             &env.dbx,
             login::ActiveModel {
+                id: NotSet,
                 login: Set("outsider-report-1213".to_string()),
                 organism_id: Set(Some(outsider_organism.id)),
                 ..Default::default()
@@ -1442,7 +1433,7 @@ mod tests {
         let outsider_datasource = mk_datasource(
             &env.dbx,
             datasource::ActiveModel {
-                api_login: Set(Some(outsider_login.login.clone())),
+                api_login_id: Set(Some(outsider_login.id)),
                 ..Default::default()
             },
         )
@@ -1515,16 +1506,11 @@ mod tests {
             sposob_unit_name: None,
         };
 
-        let logins = vec![login.login.clone()];
-        let report_data = collect_report_1213_data(
-            &env.dbx,
-            &login.login,
-            &logins,
-            &env,
-            &req,
-        )
-        .await
-        .unwrap();
+        let logins = vec![login.id];
+        let report_data =
+            collect_report_1213_data(&env.dbx, &login.id, &logins, &env, &req)
+                .await
+                .unwrap();
 
         assert_eq!(report_data.items.len(), 1);
         assert_eq!(report_data.peleng_count, 1);
@@ -1684,16 +1670,11 @@ mod tests {
             sposob_unit_name: None,
         };
 
-        let logins = vec![login.login.clone()];
-        let report_data = collect_report_1213_data(
-            &env.dbx,
-            &login.login,
-            &logins,
-            &env,
-            &req,
-        )
-        .await
-        .unwrap();
+        let logins = vec![login.id];
+        let report_data =
+            collect_report_1213_data(&env.dbx, &login.id, &logins, &env, &req)
+                .await
+                .unwrap();
 
         assert_eq!(report_data.peleng_count, 2);
         let rows = report_data
@@ -1761,16 +1742,11 @@ mod tests {
             sposob_unit_name: None,
         };
 
-        let logins = vec![login.login.clone()];
-        let report_data = collect_report_1213_data(
-            &env.dbx,
-            &login.login,
-            &logins,
-            &env,
-            &req,
-        )
-        .await
-        .unwrap();
+        let logins = vec![login.id];
+        let report_data =
+            collect_report_1213_data(&env.dbx, &login.id, &logins, &env, &req)
+                .await
+                .unwrap();
 
         assert!(report_data.items.is_empty());
         assert_eq!(report_data.peleng_count, 0);

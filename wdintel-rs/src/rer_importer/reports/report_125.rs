@@ -75,7 +75,7 @@ struct Report125Message {
 }
 
 pub async fn report_docx_kind_report_125(
-    user_login: &str,
+    user_login: &uuid::Uuid,
     env: &Env,
     req: &ReportPreviewReq,
     outpath: &Path,
@@ -86,12 +86,12 @@ pub async fn report_docx_kind_report_125(
         None => info!("Report 1.2.5 using primary database"),
     }
 
-    let login = user_login.to_string();
-    let logins = crate::users::get_organism_logins_by_login(&read_db, &login)
+    let login = *user_login;
+    let login_ids = crate::users::get_organism_login_ids_by_id(&read_db, &login)
         .await
         .c(h!())?;
     let report_data =
-        collect_report_125_data(&read_db, &login, &logins, env, req).await?;
+        collect_report_125_data(&read_db, &login, &login_ids, env, req).await?;
 
     build_report_125_docx_to_path(&report_data, outpath).context(h!())?;
     Ok(())
@@ -99,8 +99,8 @@ pub async fn report_docx_kind_report_125(
 
 async fn collect_report_125_data(
     dbx: &DatabaseConnection,
-    login: &str,
-    logins: &[String],
+    login: &uuid::Uuid,
+    logins: &[uuid::Uuid],
     env: &Env,
     req: &ReportPreviewReq,
 ) -> Result<Report125Data, AppError> {
@@ -132,7 +132,7 @@ async fn collect_report_125_data(
 
 async fn load_report_125_messages(
     dbx: &DatabaseConnection,
-    login: &str,
+    login: &uuid::Uuid,
     env: &Env,
     req: &crate::rer_importer::types::InboxMessagesReq,
 ) -> Result<Vec<Report125Message>, AppError> {
@@ -179,7 +179,7 @@ async fn load_report_125_messages(
 
 async fn load_report_125_datasource_ids(
     dbx: &DatabaseConnection,
-    logins: &[String],
+    logins: &[uuid::Uuid],
 ) -> Result<BTreeSet<i64>, AppError> {
     if logins.is_empty() {
         return Ok(BTreeSet::new());
@@ -187,7 +187,7 @@ async fn load_report_125_datasource_ids(
 
     Ok(datasource::Entity::find()
         .filter(datasource::Column::Deleted.eq(false))
-        .filter(datasource::Column::ApiLogin.is_in(logins.to_vec()))
+        .filter(datasource::Column::ApiLoginId.is_in(logins.to_vec()))
         .all(dbx)
         .await
         .c(h!())?
@@ -664,16 +664,11 @@ mod tests {
         .unwrap();
 
         let req = report_req();
-        let logins = vec![login.login.clone()];
-        let report_data = collect_report_125_data(
-            &env.dbx,
-            &login.login,
-            &logins,
-            &env,
-            &req,
-        )
-        .await
-        .unwrap();
+        let logins = vec![login.id];
+        let report_data =
+            collect_report_125_data(&env.dbx, &login.id, &logins, &env, &req)
+                .await
+                .unwrap();
 
         assert_eq!(report_data.rows.len(), 3);
         assert_eq!(report_data.rows[0].inbox_item_id, first_id);
@@ -733,16 +728,11 @@ mod tests {
         .unwrap();
 
         let req = report_req();
-        let logins = vec![login.login.clone()];
-        let report_data = collect_report_125_data(
-            &env.dbx,
-            &login.login,
-            &logins,
-            &env,
-            &req,
-        )
-        .await
-        .unwrap();
+        let logins = vec![login.id];
+        let report_data =
+            collect_report_125_data(&env.dbx, &login.id, &logins, &env, &req)
+                .await
+                .unwrap();
 
         assert!(report_data.rows.is_empty());
     }
@@ -864,21 +854,16 @@ mod tests {
                 .unwrap()
                 .unwrap()
                 .into_active_model();
-        datasource.api_login = Set(None);
+        datasource.api_login_id = Set(None);
         datasource.update(&env.dbx).await.unwrap();
 
         let mut req = report_req();
         req.report_tags_only_this_unit = Some(true);
-        let logins = vec![login.login.clone()];
-        let report_data = collect_report_125_data(
-            &env.dbx,
-            &login.login,
-            &logins,
-            &env,
-            &req,
-        )
-        .await
-        .unwrap();
+        let logins = vec![login.id];
+        let report_data =
+            collect_report_125_data(&env.dbx, &login.id, &logins, &env, &req)
+                .await
+                .unwrap();
 
         assert!(report_data.rows.is_empty());
     }

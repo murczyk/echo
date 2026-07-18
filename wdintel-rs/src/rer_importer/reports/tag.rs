@@ -15,7 +15,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
 pub async fn report_docx_kind_tag(
-    user_login: &str,
+    user_login: &uuid::Uuid,
     env: &Env,
     req: &super::types::ReportPreviewReq,
     outpath: &PathBuf,
@@ -23,7 +23,7 @@ pub async fn report_docx_kind_tag(
     let mut current_req = req.req.clone();
     current_req.report_tags_only_this_unit = req.report_tags_only_this_unit;
     let tag_report_sort_by = req.tag_report_sort_by.unwrap_or_default();
-    let login = user_login.to_string();
+    let login = *user_login;
     let period = tag_report_period(&current_req)?;
     let read_db = env.replica();
     let data = load_tag_report_data(
@@ -103,7 +103,7 @@ fn tag_report_period(
 
 async fn load_tag_report_data(
     read_db: &DatabaseConnection,
-    login: &str,
+    login: &uuid::Uuid,
     env: &Env,
     req: &crate::rer_importer::types::InboxMessagesReq,
     period: &TagReportPeriod,
@@ -125,12 +125,12 @@ async fn load_tag_report_data(
 
 async fn load_tag_report_snapshot_txn(
     txn: &DatabaseTransaction,
-    login: &str,
+    login: &uuid::Uuid,
     env: &Env,
     req: &crate::rer_importer::types::InboxMessagesReq,
     period: &TagReportPeriod,
 ) -> Result<TagReportSnapshot, AppError> {
-    let logins = crate::users::get_organism_logins_by_login(txn, login)
+    let login_ids = crate::users::get_organism_login_ids_by_id(txn, login)
         .await
         .c(h!())?;
     let candidates = load_tag_report_candidates(txn, login, env, req).await?;
@@ -139,7 +139,7 @@ async fn load_tag_report_snapshot_txn(
     let important_ids = load_tag_report_important_ids(
         txn,
         login,
-        &logins,
+        &login_ids,
         &message_ids,
         period,
     )
@@ -150,7 +150,7 @@ async fn load_tag_report_snapshot_txn(
     let datasources =
         load_tag_report_datasources(txn, signal_messages.values()).await?;
     let own_comments =
-        load_tag_report_comments(txn, &message_ids, Some(&logins)).await?;
+        load_tag_report_comments(txn, &message_ids, Some(&login_ids)).await?;
     let report_comments = if req.report_tags_only_this_unit.is_some() {
         own_comments.clone()
     } else {
@@ -191,7 +191,7 @@ fn collect_tag_report_data(
 
 async fn load_tag_report_candidates(
     txn: &DatabaseTransaction,
-    login: &str,
+    login: &uuid::Uuid,
     env: &Env,
     req: &crate::rer_importer::types::InboxMessagesReq,
 ) -> Result<Vec<TagReportMessageCandidate>, AppError> {
@@ -236,8 +236,8 @@ fn tag_report_time_order(
 
 async fn load_tag_report_important_ids(
     txn: &DatabaseTransaction,
-    login: &str,
-    logins: &[String],
+    login: &uuid::Uuid,
+    logins: &[uuid::Uuid],
     message_ids: &[i64],
     period: &TagReportPeriod,
 ) -> Result<BTreeSet<i64>, AppError> {
@@ -249,7 +249,7 @@ async fn load_tag_report_important_ids(
             .await
             .context(h!())?;
     let importants = sigint_important::Entity::find()
-        .filter(sigint_important::Column::UserId.eq_any(logins.to_vec()))
+        .filter(sigint_important::Column::LoginId.eq_any(logins.to_vec()))
         .filter(
             sigint_important::Column::SignalMessageId
                 .eq_any(message_ids.to_vec()),
@@ -350,7 +350,7 @@ async fn load_tag_report_datasources<'a>(
 async fn load_tag_report_comments(
     txn: &DatabaseTransaction,
     message_ids: &[i64],
-    logins: Option<&[String]>,
+    logins: Option<&[uuid::Uuid]>,
 ) -> Result<BTreeMap<i64, String>, AppError> {
     if message_ids.is_empty() {
         return Ok(BTreeMap::new());
@@ -361,7 +361,7 @@ async fn load_tag_report_comments(
                 .eq_any(message_ids.to_vec()),
         )
         .apply_if(logins, |q, logins| {
-            q.filter(sigint_comment::Column::Login.eq_any(logins.to_vec()))
+            q.filter(sigint_comment::Column::LoginId.eq_any(logins.to_vec()))
         })
         .order_by_asc(sigint_comment::Column::Id)
         .all(txn)

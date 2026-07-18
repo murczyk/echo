@@ -127,7 +127,7 @@ struct SposobReport {
 }
 
 pub async fn report_docx_kind_rer(
-    user_login: &str,
+    user_login: &uuid::Uuid,
     env: &Env,
     req: &ReportPreviewReq,
     outpath: &Path,
@@ -140,7 +140,7 @@ pub async fn report_docx_kind_rer(
 }
 
 pub async fn report_docx_kind_sposob(
-    user_login: &str,
+    user_login: &uuid::Uuid,
     env: &Env,
     req: &ReportPreviewReq,
     outpath: &Path,
@@ -347,7 +347,7 @@ fn format_sposob_report_content_text(content: &SposobReportContent) -> String {
 }
 
 async fn load_report(
-    user_login: &str,
+    user_login: &uuid::Uuid,
     env: &Env,
     req: &ReportPreviewReq,
     bgtask_id: Option<i64>,
@@ -408,7 +408,7 @@ async fn load_report(
 }
 
 async fn load_sposob_report(
-    user_login: &str,
+    user_login: &uuid::Uuid,
     env: &Env,
     req: &ReportPreviewReq,
 ) -> Result<SposobReport, AppError> {
@@ -515,7 +515,7 @@ fn insert_sposob_report_message(
 
 async fn load_candidate_item_ids(
     dbx: &DatabaseConnection,
-    user_login: &str,
+    user_login: &uuid::Uuid,
     env: &Env,
     req: &ReportPreviewReq,
     require_network_link: bool,
@@ -1481,7 +1481,7 @@ mod tests {
             active: true,
             deleted: false,
             created_at: dt(0, 0),
-            created_by: "Tester".to_string(),
+            created_by_login_id: uuid::Uuid::nil(),
             name: name.to_string(),
             comment: String::new(),
             battalion: battalion.to_string(),

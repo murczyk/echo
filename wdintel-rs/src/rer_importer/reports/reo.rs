@@ -146,7 +146,7 @@ fn non_empty_comment_filter() -> SimpleExpr {
 }
 
 pub async fn report_docx_kind_reo(
-    user_login: &str,
+    user_login: &uuid::Uuid,
     env: &Env,
     req: &super::types::ReportPreviewReq,
     outpath: &Path,
@@ -156,8 +156,8 @@ pub async fn report_docx_kind_reo(
 
     let start = Instant::now();
     let read_db = env.dbx.clone();
-    let login = user_login.to_string();
-    let logins = crate::users::get_organism_logins_by_login(&read_db, &login)
+    let login = *user_login;
+    let login_ids = crate::users::get_organism_login_ids_by_id(&read_db, &login)
         .await
         .context(h!())?;
     info!("get_organism_logins took: {:?}", start.elapsed());
@@ -190,7 +190,7 @@ pub async fn report_docx_kind_reo(
     let start = Instant::now();
     let mut report = collect_report(
         messages,
-        logins.clone(),
+        login_ids.clone(),
         env,
         &read_db,
         range_khz,
@@ -246,7 +246,7 @@ pub async fn report_docx_kind_reo(
 
 async fn load_reo_inbox_messages(
     dbx: &DatabaseConnection,
-    login: &str,
+    login: &uuid::Uuid,
     env: &Env,
     req: &InboxMessagesReq,
 ) -> Result<Vec<(i64, ReoInboxMessage)>, AppError> {
@@ -310,7 +310,7 @@ async fn load_reo_inbox_messages(
 
 async fn load_reo_group_master_keys(
     dbx: &DatabaseConnection,
-    login: &str,
+    login: &uuid::Uuid,
     req: &InboxMessagesReq,
     message_ids: &[i64],
 ) -> Result<HashMap<i64, Option<String>>, AppError> {
@@ -805,7 +805,7 @@ fn get_processed_correspondence(
 
 async fn collect_report(
     messages: Vec<(i64, ReoInboxMessage)>,
-    logins: Vec<String>,
+    logins: Vec<uuid::Uuid>,
     env: &Env,
     dbx: &DatabaseConnection,
     range_khz: f64,
@@ -834,8 +834,8 @@ async fn collect_report(
                 .order_by_asc(sigint_comment::Column::SignalMessageId)
                 .order_by_asc(sigint_comment::Column::CreatedAt);
             if only_comments_from_current_organism {
-                query =
-                    query.filter(sigint_comment::Column::Login.eq_any(logins));
+                query = query
+                    .filter(sigint_comment::Column::LoginId.eq_any(logins));
             }
             query
                 .into_model::<CommentSummary>()
@@ -864,8 +864,9 @@ async fn collect_report(
                     .order_by_asc(sigint_comment::Column::SignalMessageId)
                     .order_by_asc(sigint_comment::Column::CreatedAt);
                 if only_comments_from_current_organism {
-                    query = query
-                        .filter(sigint_comment::Column::Login.is_in(&logins));
+                    query = query.filter(
+                        sigint_comment::Column::LoginId.is_in(logins.clone()),
+                    );
                 }
                 query
                     .into_model::<CommentSummary>()

@@ -49,14 +49,14 @@ struct MessageStatRow {
 pub async fn report_xlsx_kind_senders(
     aggregation_kind: ReportAggregation,
     advanced_freqs: bool,
-    user_login: &str,
+    user_login: &uuid::Uuid,
     env: &Env,
     req: &InboxMessagesReq,
     outpath: &PathBuf,
 ) -> Result<(), AppError> {
     info!("[report_xlsx_kind_senders] {}: started", Utc::now());
     let read_db = env.replica();
-    let login = user_login.to_string();
+    let login = *user_login;
     let mut req = req.to_owned();
     req.return_duplicates = Some(false);
     let Some(since_date_inclusive_ms) = req.since_date_inclusive_ms else {
@@ -117,7 +117,7 @@ pub async fn report_xlsx_kind_senders(
 
 async fn load_message_stats(
     dbx: &DatabaseConnection,
-    login: &str,
+    login: &uuid::Uuid,
     env: &Env,
     req: &InboxMessagesReq,
 ) -> Result<Vec<MessageStatRecord>, AppError> {
