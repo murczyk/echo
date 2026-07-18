@@ -1397,10 +1397,10 @@ pub async fn oneoff_reprocess_callsigns(
                     .await
                     .c(h!())?;
             let callsigns: Vec<String> = crate::utils::uniq_via_btreeset(
-                &callsign_tokens
-                    .iter()
-                    .map(|x| x.etalon.clone())
-                    .collect::<Vec<String>>(),
+                &crate::rer_importer::inbox::metadata::non_metadata_line_callsign_etalons(
+                    &callsign_tokens,
+                    &body,
+                ),
             );
             let callsign_tokens =
                 highlight_callsigns(&rq, &body, &callsigns).await.c(h!())?;

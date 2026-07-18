@@ -1,10 +1,12 @@
 use crate::entities::*;
+use crate::rer_importer::highlight::CNCallsign;
 use crate::rer_importer::inbox::metadata::parser::*;
 use crate::rer_importer::inbox::metadata::types::*;
 use crate::types::*;
 use chrono::NaiveDateTime;
 use futures_util::TryStreamExt;
 use sea_orm::*;
+use std::ops::Range;
 
 pub mod oneoff;
 mod parser;
@@ -37,6 +39,54 @@ where
             .into_iter()
             .chain(parse_metadata_text_callsigns(body)),
     )
+}
+
+pub(crate) fn non_metadata_line_callsign_etalons<'a, I>(
+    callsign_tokens: I,
+    body: &str,
+) -> Vec<String>
+where
+    I: IntoIterator<Item = &'a CNCallsign>,
+{
+    let metadata_line_ranges = metadata_line_ranges(body);
+    callsign_tokens
+        .into_iter()
+        .filter(|callsign| {
+            !span_is_in_metadata_line(
+                &metadata_line_ranges,
+                callsign.begin,
+                callsign.end,
+            )
+        })
+        .map(|callsign| callsign.etalon.clone())
+        .collect()
+}
+
+fn metadata_line_ranges(body: &str) -> Vec<Range<usize>> {
+    let mut ranges = vec![];
+    let mut line_start = 0;
+    for line in body.split_inclusive('\n') {
+        let line_len = line.chars().count();
+        let line_without_newline = line.strip_suffix('\n').unwrap_or(line);
+        let line_without_newline = line_without_newline
+            .strip_suffix('\r')
+            .unwrap_or(line_without_newline);
+        if is_metadata_line(line_without_newline) {
+            ranges.push(line_start..line_start + line_len);
+        }
+        line_start += line_len;
+    }
+    ranges
+}
+
+fn span_is_in_metadata_line(
+    metadata_line_ranges: &[Range<usize>],
+    begin: usize,
+    end: usize,
+) -> bool {
+    metadata_line_ranges
+        .iter()
+        .any(|range| begin >= range.start && end <= range.end)
 }
 
 pub(crate) fn metadata_text_callsigns(
@@ -316,6 +366,25 @@ ID(CG)⬅️:50📣",
                 "ярус".to_string(),
                 "СВЕТЛЫЙ".to_string()
             ]
+        );
+    }
+
+    #[test]
+    fn non_metadata_line_callsign_etalons_drops_metadata_header_tokens() {
+        let body = "ID➡️:110(ЯРУС)\nID(CG)⬅️:50(СВЕТЛЫЙ)\nID поза метаданими";
+        let id_header = test_cn_callsign(body, "ID", "id");
+        let yarus_header = test_cn_callsign(body, "ЯРУС", "ярус");
+        let id_body = test_cn_callsign(body, "ID поза", "id");
+
+        let callsigns = non_metadata_line_callsign_etalons(
+            [&id_header, &yarus_header, &id_body],
+            body,
+        );
+
+        assert_eq!(callsigns, vec!["id".to_string()]);
+        assert_eq!(
+            append_metadata_text_callsigns(callsigns, body),
+            vec!["id".to_string(), "ЯРУС".to_string(), "СВЕТЛЫЙ".to_string(),]
         );
     }
 
@@ -1023,6 +1092,18 @@ CC:2 CG:20",
 
     fn normalize_span_text(value: &str) -> String {
         normalize_metadata_digits(value).trim().to_lowercase()
+    }
+
+    fn test_cn_callsign(body: &str, text: &str, etalon: &str) -> CNCallsign {
+        let byte_start = body.find(text).unwrap();
+        let begin = body[..byte_start].chars().count();
+        let end = begin + text.chars().count();
+        CNCallsign {
+            begin,
+            end,
+            etalon: etalon.to_string(),
+            text: text.to_string(),
+        }
     }
 
     fn metadata_without_spans(items: Vec<InboxMetadata>) -> Vec<InboxMetadata> {

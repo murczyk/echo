@@ -62,11 +62,14 @@ where
         crate::rer_importer::callsigns::find_known_callsigns(&env.rq, body)
             .await
             .c(h!())?;
+    let callsign_etalons =
+        crate::rer_importer::inbox::metadata::non_metadata_line_callsign_etalons(
+            &callsign_tokens,
+            body,
+        );
     let callsigns =
         crate::rer_importer::inbox::metadata::append_metadata_text_callsigns(
-            callsign_tokens
-                .iter()
-                .map(|callsign| callsign.etalon.clone()),
+            callsign_etalons,
             body,
         )
         .into_iter()
