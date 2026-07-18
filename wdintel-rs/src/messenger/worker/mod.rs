@@ -1653,8 +1653,8 @@ mod tests {
             echo_client_lock_id: Set(Some(i64::from(lock.id))),
             created_at: Set(now),
             default_aor_id: Set(None),
-            api_login: Set(None),
-            updated_by: Set(None),
+            api_login_id: Set(None),
+            updated_by_login_id: Set(None),
             deleted: Set(false),
             last_sync_at: Set(None),
         }

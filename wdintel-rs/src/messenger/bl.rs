@@ -85,8 +85,11 @@ pub async fn edit_account(
     api_login: Option<String>,
     api_endpoint: Option<String>,
     dbx: &DatabaseConnection,
-    login: &String,
+    login: &Uuid,
 ) -> anyhow::Result<()> {
+    let api_login = api_login
+        .map(|api_login| Uuid::parse_str(&api_login))
+        .transpose()?;
     let txn = dbx.begin().await.cae(h!())?;
     let mut account = datasource::Entity::find_by_id(id)
         .one(&txn)
@@ -102,8 +105,8 @@ pub async fn edit_account(
     } else {
         account.status = Set(AccountStatus::Paused);
     }
-    account.updated_by = Set(Some(login.to_string()));
-    account.api_login = Set(api_login);
+    account.updated_by_login_id = Set(Some(*login));
+    account.api_login_id = Set(api_login);
     account.api_endpoint = Set(api_endpoint);
     account.update(&txn).await.c(h!())?;
     txn.commit().await.c(h!())?;
@@ -113,7 +116,7 @@ pub async fn edit_account(
 pub async fn deactivate_account(
     id: i64,
     txn: &DatabaseTransaction,
-    login: Option<String>,
+    login: Option<Uuid>,
     mark_deleted: bool,
 ) -> Result<(), AppError> {
     let account = load_echo_account(id, txn).await.c(h!())?;
@@ -135,7 +138,7 @@ pub async fn deactivate_account(
         datasource.deleted = Set(true);
     }
     if let Some(login) = login {
-        datasource.updated_by = Set(Some(login));
+        datasource.updated_by_login_id = Set(Some(login));
     }
     datasource.update(txn).await.c(h!())?;
     Ok(())
@@ -151,7 +154,7 @@ pub async fn link_account(
     description: Option<String>,
     aor_id: i64,
     txn: &DatabaseTransaction,
-    login: &String,
+    login: &Uuid,
 ) -> Result<EchoAccountF1, AppError> {
     if !is_valid_service_name(system_service_name) {
         return Err(AppError::BL {
@@ -248,8 +251,8 @@ pub async fn link_account(
             description: Set(description),
             kind: Set(src_display_name),
             default_aor_id: Set(Some(aor_id)),
-            api_login: NotSet,
-            updated_by: Set(Some(login.to_string())),
+            api_login_id: NotSet,
+            updated_by_login_id: Set(Some(*login)),
             deleted: NotSet,
             last_sync_at: NotSet,
         }
@@ -344,7 +347,7 @@ async fn set_client_signal_mode(
 pub async fn get_qr_code(
     account_id: i64,
     db: &DatabaseConnection,
-    login: &String,
+    login: &Uuid,
 ) -> Result<String, AppError> {
     let m_account = list_echo_accounts(Some(account_id), db)
         .await
@@ -376,7 +379,7 @@ pub async fn get_qr_code(
     let m_login = Some(login.to_string());
     datasource::Entity::update_many()
         .filter(datasource::Column::Id.eq(account.id))
-        .col_expr(datasource::Column::UpdatedBy, Expr::value(m_login))
+        .col_expr(datasource::Column::UpdatedByLoginId, Expr::value(m_login))
         .exec(&txn)
         .await
         .c(h!())?;
@@ -388,7 +391,7 @@ pub async fn get_qr_code(
 async fn link_existing_datasource(
     datasource_id: i64,
     txn: &DatabaseTransaction,
-    login: &String,
+    login: &Uuid,
 ) -> anyhow::Result<EchoAccountF1> {
     let datasource = datasource::Entity::find_by_id(datasource_id)
         .one(txn)
@@ -475,7 +478,7 @@ where
         .select_only()
         .column(datasource::Column::Id)
         .column_as(datasource::Column::DefaultAorId, "aor_id")
-        .column(datasource::Column::ApiLogin)
+        .column(datasource::Column::ApiLoginId)
         .column(datasource::Column::ApiEndpoint)
         .column(datasource::Column::Kind)
         .column_as(datasource::Column::SignalPhone, "datasource_phone_number")
@@ -592,7 +595,9 @@ where
                 system_service_name: None,
                 messenger: ods.kind,
                 phone_number: "".to_string(),
-                api_login: ods.api_login,
+                api_login: ods
+                    .api_login_id
+                    .map(|login_id| login_id.to_string()),
                 api_endpoint: ods.api_endpoint,
                 is_linked: true,
                 description: ods.description,

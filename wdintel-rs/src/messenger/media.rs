@@ -536,7 +536,7 @@ pub async fn delete_stored_media_files(
 /// knowing a media or message URL alone must never grant access.
 pub(crate) async fn ensure_media_access(
     dbx: &DatabaseConnection,
-    login: &str,
+    login: &uuid::Uuid,
     signal_message_id: i64,
 ) -> Result<(), AppError> {
     let allowed_groups =

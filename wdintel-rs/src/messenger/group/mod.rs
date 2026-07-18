@@ -491,13 +491,13 @@ where
 
 pub async fn get_identity_sigint_groups<'a, 'async_trait, C>(
     txn: &'a C,
-    login: &str,
+    login: &uuid::Uuid,
 ) -> Result<Vec<String>, AppError>
 where
     C: ConnectionTrait + 'async_trait,
 {
     let login_obj = login::Entity::find()
-        .filter(login::Column::Login.eq(login))
+        .filter(login::Column::Id.eq(*login))
         .filter(login::Column::DeletedPermanently.eq(false))
         .one(txn)
         .await
@@ -598,7 +598,7 @@ pub async fn get_identity_sigint_groups_noimport(
     user: &actix_identity::Identity,
     _config: &crate::config::Config,
 ) -> Result<Vec<String>, AppError> {
-    let login = user.id().c(h!())?;
+    let login = crate::users::identity_id(user)?;
     let master_keys = get_identity_sigint_groups(dbx, &login)
         .await
         .context(h!())?;

@@ -17,6 +17,7 @@ use lazy_static::lazy_static;
 use regex::Regex;
 use sea_orm::*;
 use std::collections::{BTreeMap, HashMap, HashSet};
+use uuid::Uuid;
 
 pub mod attachments;
 pub mod bl;
@@ -42,8 +43,12 @@ pub async fn list_messengers(
     user: actix_identity::Identity,
     env: actix_web::web::Data<Env>,
 ) -> Result<Json<AccountsRsp>, AppError> {
-    crate::users::has_any_role(&env.dbx, &user.id().c(h!())?, vec!["Admin"])
-        .await?;
+    crate::users::has_any_role(
+        &env.dbx,
+        &crate::users::identity_id(&user)?,
+        vec!["Admin"],
+    )
+    .await?;
     let txn = env.dbx.begin().await.c(h!())?;
     let accounts = bl::list_echo_accounts(None, &txn).await.c(h!())?;
     txn.commit().await.c(h!())?;
@@ -56,8 +61,12 @@ pub async fn accounts_stats_timeline(
     env: actix_web::web::Data<Env>,
     req: Json<AccountStatsTimelineReq>,
 ) -> Result<Json<AccountStatsTimelineRsp>, AppError> {
-    crate::users::has_any_role(&env.dbx, &user.id().c(h!())?, vec!["Admin"])
-        .await?;
+    crate::users::has_any_role(
+        &env.dbx,
+        &crate::users::identity_id(&user)?,
+        vec!["Admin"],
+    )
+    .await?;
     let req = req.into_inner();
     let mut seen = HashSet::new();
     let datasource_ids = req
@@ -149,7 +158,7 @@ pub async fn get_qr(
     env: actix_web::web::Data<Env>,
     req: Json<QrCodeReq>,
 ) -> Result<Json<QrCodeRsp>, AppError> {
-    let login = user.id().c(h!())?;
+    let login = crate::users::identity_id(&user)?;
     crate::users::has_any_role(&env.dbx, &login, vec!["Admin"]).await?;
     let qr_code_base64 = bl::get_qr_code(req.account_id, &env.dbx, &login)
         .await
@@ -163,8 +172,12 @@ pub async fn is_linked(
     env: actix_web::web::Data<Env>,
     req: Json<IsAccountLinkedReq>,
 ) -> Result<Json<IsAccountLinkedRsp>, AppError> {
-    crate::users::has_any_role(&env.dbx, &user.id().c(h!())?, vec!["Admin"])
-        .await?;
+    crate::users::has_any_role(
+        &env.dbx,
+        &crate::users::identity_id(&user)?,
+        vec!["Admin"],
+    )
+    .await?;
     let txn = env.dbx.begin().await.cae(h!())?;
     let is_account_linked = bl::is_account_linked(req.account_id, &txn).await;
     txn.commit().await.c(h!())?;
@@ -183,7 +196,7 @@ pub async fn edit(
     env: actix_web::web::Data<Env>,
     req: Json<AccountStatusReq>,
 ) -> Result<Json<EchoAccountF1>, AppError> {
-    let login = user.id().c(h!())?;
+    let login = crate::users::identity_id(&user)?;
     crate::users::has_any_role(&env.dbx, &login, vec!["Admin"]).await?;
     let id = req.account_id;
     bl::edit_account(
@@ -209,9 +222,13 @@ pub async fn group_update(
     user: actix_identity::Identity,
     req: Json<GroupUpdateReq>,
 ) -> Result<Json<GroupEntryF1>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Admin")
-        .await
-        .c(h!())?;
+    crate::users::has_role(
+        &env.dbx,
+        &crate::users::identity_id(&user)?,
+        "Admin",
+    )
+    .await
+    .c(h!())?;
     let req = req.into_inner();
     let txn = env.dbx.begin().await.c(h!())?;
 
@@ -252,10 +269,10 @@ pub async fn unlink(
     env: actix_web::web::Data<Env>,
     req: Json<DeleteAccountReq>,
 ) -> Result<Json<()>, AppError> {
-    let login = user.id().c(h!())?;
+    let login = crate::users::identity_id(&user)?;
     crate::users::has_any_role(&env.dbx, &login, vec!["Admin"]).await?;
     let txn = env.dbx.begin().await.cae(h!())?;
-    bl::deactivate_account(req.account_id, &txn, Some(login.clone()), true)
+    bl::deactivate_account(req.account_id, &txn, Some(login), true)
         .await
         .c(h!())?;
     txn.commit().await.c(h!())?;
@@ -268,7 +285,7 @@ pub async fn link(
     env: actix_web::web::Data<Env>,
     req: Json<LinkAccountReq>,
 ) -> Result<Json<LinkAccountRsp>, AppError> {
-    let login = user.id().c(h!())?;
+    let login = crate::users::identity_id(&user)?;
     crate::users::has_any_role(&env.dbx, &login, vec!["Admin"]).await?;
     let txn = env.dbx.begin().await.cae(h!())?;
     only_alphanumeric_and_hyphen(&req.system_service_name)?;
@@ -303,7 +320,7 @@ pub async fn link_operator(
     env: actix_web::web::Data<Env>,
     req: Json<LinkEchoOperatorReq>,
 ) -> Result<Json<LinkAccountRsp>, AppError> {
-    let login = user.id().c(h!())?;
+    let login = crate::users::identity_id(&user)?;
     crate::users::has_any_role(&env.dbx, &login, vec!["Admin"]).await?;
     let txn = env.dbx.begin().await.cae(h!())?;
     let aor_id = load_default_aor(&txn).await.c(h!())?.id;
@@ -315,14 +332,14 @@ pub async fn link_operator(
         display_name: Set(req.display_name.to_string()),
         signal_phone: Set(None),
         api_endpoint: Set(Some(req.api_endpoint.clone())),
-        api_login: Set(Some(req.api_login.clone())),
+        api_login_id: Set(Some(Uuid::parse_str(&req.api_login).c(h!())?)),
         enabled: Set(Some(true)),
         group_master_key: NotSet,
         sender_uuid: NotSet,
         description: Set(req.description.clone()),
         kind: Set("echo_operator".to_string()),
         default_aor_id: Set(Some(aor_id)),
-        updated_by: Set(Some(login.to_string())),
+        updated_by_login_id: Set(Some(login)),
         deleted: NotSet,
         last_sync_at: NotSet,
     }

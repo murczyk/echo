@@ -249,6 +249,7 @@ async fn test_get_identity_sigint_groups_includes_secret_organism_invites() {
     let login = mk_login(
         &txn,
         login::ActiveModel {
+            id: NotSet,
             login: Set("secret-organism-viewer".to_string()),
             sigint_zone_id: Set(Some(zone.id)),
             organism_id: Set(Some(organism.id)),
@@ -310,9 +311,8 @@ async fn test_get_identity_sigint_groups_includes_secret_organism_invites() {
         .unwrap();
     assert_eq!(organism_group_count, 0);
 
-    let master_keys = get_identity_sigint_groups(&txn, &login.login)
-        .await
-        .unwrap();
+    let master_keys =
+        get_identity_sigint_groups(&txn, &login.id).await.unwrap();
 
     assert_eq!(master_keys, vec![group.master_key]);
 

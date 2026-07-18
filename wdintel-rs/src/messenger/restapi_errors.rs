@@ -210,7 +210,7 @@ pub async fn signal_restapi_error_list(
     env: actix_web::web::Data<Env>,
     req: Json<SignalRestapiErrorListReq>,
 ) -> Result<Json<SignalRestapiErrorListRsp>, AppError> {
-    let login = user.id().c(h!())?;
+    let login = crate::users::identity_id(&user)?;
     crate::users::has_role(&env.dbx, &login, "Admin")
         .await
         .c(h!())?;
@@ -224,7 +224,7 @@ pub async fn signal_restapi_error_latest(
     user: Identity,
     env: actix_web::web::Data<Env>,
 ) -> Result<Json<SignalRestapiErrorLatestRsp>, AppError> {
-    let login = user.id().c(h!())?;
+    let login = crate::users::identity_id(&user)?;
     crate::users::has_role(&env.dbx, &login, "Admin")
         .await
         .c(h!())?;
@@ -239,7 +239,7 @@ pub async fn signal_restapi_error_counts(
     env: actix_web::web::Data<Env>,
     req: Json<SignalRestapiErrorCountsReq>,
 ) -> Result<Json<SignalRestapiErrorCountsRsp>, AppError> {
-    let login = user.id().c(h!())?;
+    let login = crate::users::identity_id(&user)?;
     crate::users::has_role(&env.dbx, &login, "Admin")
         .await
         .c(h!())?;
