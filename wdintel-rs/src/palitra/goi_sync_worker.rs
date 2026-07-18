@@ -1028,6 +1028,27 @@ fn append_checksum_sync_resolution_if_needed(
     .c(h!())
 }
 
+fn append_goi_sync_success_resolution_if_needed(
+    changelog: &serde_json::Value,
+) -> anyhow::Result<Option<serde_json::Value>> {
+    let entries = super::goi_changelog::entries_from_value(changelog);
+    let Some(latest) = super::goi_changelog::latest_entry(&entries) else {
+        return Ok(None);
+    };
+    if latest.is_ok {
+        return Ok(None);
+    }
+    super::goi_changelog::append_to_value(
+        changelog,
+        super::goi_changelog::ok_entry(
+            "GOI palitra sync recovered",
+            "Синхронізація палітри з ГОІ знову успішна.",
+        ),
+    )
+    .map(Some)
+    .c(h!())
+}
+
 async fn update_echo_origin_goi_palitra_remote_metadata<'a, C>(
     dbx: &'a C,
     sync_decisions: &[EchoOriginGoiSyncDecision],
@@ -1115,6 +1136,9 @@ where
         .iter()
         .filter(|row| row.direction == PALITRA_GOI_SYNC_DIRECTION_GOI)
     {
+        let changelog =
+            append_goi_sync_success_resolution_if_needed(&row.changelog)
+                .c(h!())?;
         let goi_changed = tracked_row_goi_file_size(row) != Some(file_size)
             || tracked_row_goi_file_sha256(row) != Some(file_sha256);
         let echo_checksum_known = tracked_row_echo_file_size(row).is_some()
@@ -1169,6 +1193,12 @@ where
             update = update.col_expr(
                 goi_palitra_sync::Column::GoiUpdatedAt,
                 Expr::value(Some(now)),
+            );
+        }
+        if let Some(changelog) = changelog {
+            update = update.col_expr(
+                goi_palitra_sync::Column::Changelog,
+                Expr::value(changelog),
             );
         }
         update.exec(dbx).await.c(h!())?;
@@ -3627,6 +3657,30 @@ mod tests {
 
         assert!(latest.is_ok);
         assert_eq!(latest.text, "GOI checksum sync conflict resolved");
+    }
+
+    #[test]
+    fn goi_sync_success_resolution_appends_ok_after_warning() {
+        let changelog = super::super::goi_changelog::append_to_value(
+            &serde_json::json!([]),
+            super::super::goi_changelog::error_entry(
+                "Migrated GOI sync warning",
+                "Попередня синхронізація ГОІ завершилась помилкою.",
+            ),
+        )
+        .unwrap();
+
+        let changelog =
+            append_goi_sync_success_resolution_if_needed(&changelog)
+                .unwrap()
+                .expect("resolution entry");
+        let entries =
+            super::super::goi_changelog::entries_from_value(&changelog);
+        let latest = super::super::goi_changelog::latest_entry(&entries)
+            .expect("latest");
+
+        assert!(latest.is_ok);
+        assert_eq!(latest.text, "GOI palitra sync recovered");
     }
 
     #[test]
