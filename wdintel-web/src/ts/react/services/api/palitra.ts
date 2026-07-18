@@ -7,6 +7,7 @@ import {
   Organism,
   Palitra,
   PalitraAccess,
+  PalitraChangelogEntry,
   PalitraDetails,
   PalitraGeometryDetails,
   PalitraReadV2,
@@ -92,6 +93,13 @@ type PalitraLike = {
   missing_in_goi?: boolean;
   importedFromGoi?: boolean;
   imported_from_goi?: boolean;
+  goiOwned?: boolean;
+  goi_owned?: boolean;
+  goiSourceRefreshRetryAvailable?: boolean;
+  goi_source_refresh_retry_available?: boolean;
+  latestChangelogWarning?: boolean;
+  latest_changelog_warning?: boolean;
+  changelog?: PalitraChangelogEntryLike[] | null;
   geometry?: GeometryLike | null;
   accessAorId?: Array<number | string> | null;
   access_aor_id?: Array<number | string> | null;
@@ -99,6 +107,14 @@ type PalitraLike = {
   access_organism_ids?: Array<number | string> | null;
   accessLogins?: Array<string> | null;
   access_logins?: Array<string> | null;
+};
+
+type PalitraChangelogEntryLike = {
+  isOk?: boolean;
+  is_ok?: boolean;
+  timestamp?: string;
+  text?: string;
+  description?: string;
 };
 
 type PalitraDetailsLike = {
@@ -239,6 +255,7 @@ function toAccessBody(access: PalitraAccess): CreatePalitraReqBody['access'] {
 
 function normalizePalitra(raw: PalitraLike | null | undefined): Palitra {
   const folder = raw?.folder?.trim() ?? '';
+  const changelog = (raw?.changelog ?? []).map(normalizePalitraChangelogEntry);
   return {
     id: normalizeNumber(raw?.id),
     name: raw?.name ?? '',
@@ -253,10 +270,29 @@ function normalizePalitra(raw: PalitraLike | null | undefined): Palitra {
     conversionError: raw?.conversionError ?? raw?.conversion_error ?? null,
     missingInGoi: raw?.missingInGoi ?? raw?.missing_in_goi ?? false,
     importedFromGoi: raw?.importedFromGoi ?? raw?.imported_from_goi ?? false,
+    goiOwned: raw?.goiOwned ?? raw?.goi_owned ?? false,
+    goiSourceRefreshRetryAvailable:
+      raw?.goiSourceRefreshRetryAvailable ?? raw?.goi_source_refresh_retry_available ?? false,
+    latestChangelogWarning:
+      raw?.latestChangelogWarning ??
+      raw?.latest_changelog_warning ??
+      (changelog.length > 0 ? !changelog[changelog.length - 1].isOk : false),
+    changelog,
     geometry: normalizeGeometry(raw?.geometry),
     accessAorId: normalizeNumberArray(raw?.accessAorId ?? raw?.access_aor_id),
     accessOrganismIds: normalizeNumberArray(raw?.accessOrganismIds ?? raw?.access_organism_ids),
     accessLogins: raw?.accessLogins ?? raw?.access_logins ?? [],
+  };
+}
+
+function normalizePalitraChangelogEntry(
+  raw: PalitraChangelogEntryLike | null | undefined,
+): Palitra['changelog'][number] {
+  return {
+    isOk: raw?.isOk ?? raw?.is_ok ?? false,
+    timestamp: raw?.timestamp ?? '',
+    text: raw?.text ?? '',
+    description: raw?.description ?? '',
   };
 }
 
@@ -439,6 +475,15 @@ export async function readPalitraPreviewV2(palitraId: number): Promise<PalitraRe
   return normalizePalitraReadV2(data);
 }
 
+export async function fetchPalitraGoiSyncHistory(
+  palitraId: number,
+): Promise<PalitraChangelogEntry[]> {
+  const data = await postJson<PalitraChangelogEntryLike[]>(
+    `/api/palitra/goi-sync-history/${palitraId}`,
+  );
+  return (data ?? []).map(normalizePalitraChangelogEntry);
+}
+
 async function getPrimaryGeometryIdForUpdate(palitraId: number): Promise<number | null> {
   const cached = primaryGeometryIdByPalitraId.get(palitraId);
   if (cached !== undefined) {
@@ -584,6 +629,11 @@ export async function uploadPalitraPoints(palitraId: number, file: File): Promis
 
 export async function retryPalitraConversion(palitraId: number): Promise<Palitra> {
   const data = await postJson<PalitraLike>(`/api/palitra/retry-conversion/${palitraId}`);
+  return normalizePalitra(data);
+}
+
+export async function retryGoiSourceConversion(palitraId: number): Promise<Palitra> {
+  const data = await postJson<PalitraLike>(`/api/palitra/retry-goi-source-conversion/${palitraId}`);
   return normalizePalitra(data);
 }
 

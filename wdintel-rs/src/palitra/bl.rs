@@ -1,5 +1,6 @@
 use crate::config::{
-    PALITRA_GOI_SYNC_DIRECTION_GOI, PALITRA_POINTS_INSERT_BATCH_SIZE,
+    PALITRA_GOI_REMOTE_STATUS_PRESENT, PALITRA_GOI_SYNC_DIRECTION_GOI,
+    PALITRA_POINTS_INSERT_BATCH_SIZE,
 };
 use crate::entities::*;
 use crate::palitra::types::*;
@@ -108,6 +109,14 @@ struct LoginAccessScope {
     aor_ids: HashSet<i64>,
 }
 
+#[derive(Clone, Default)]
+pub(crate) struct PalitraGoiSyncSummary {
+    pub changelog: Vec<PalitraChangelogEntry>,
+    pub goi_owned: bool,
+    pub goi_source_refresh_retry_available: bool,
+    pub latest_changelog_warning: bool,
+}
+
 pub async fn collect_palitra_access_logins<'a, 'async_trait, C>(
     txn: &'a C,
     palitra_id: i64,
@@ -157,6 +166,149 @@ where
         .all(txn)
         .await
         .c(h!())
+}
+
+pub(crate) async fn read_palitra_goi_sync_summary<'a, 'async_trait, C>(
+    dbx: &'a C,
+    palitra_id: i64,
+) -> anyhow::Result<PalitraGoiSyncSummary>
+where
+    C: ConnectionTrait + 'async_trait,
+{
+    Ok(read_palitra_goi_sync_summaries(dbx, vec![palitra_id], true)
+        .await
+        .c(h!())?
+        .remove(&palitra_id)
+        .unwrap_or_default())
+}
+
+async fn read_palitra_goi_sync_summaries<'a, 'async_trait, C>(
+    dbx: &'a C,
+    palitra_ids: Vec<i64>,
+    include_changelog: bool,
+) -> anyhow::Result<HashMap<i64, PalitraGoiSyncSummary>>
+where
+    C: ConnectionTrait + 'async_trait,
+{
+    let palitra_ids = palitra_ids.into_iter().unique().collect_vec();
+    let mut result = palitra_ids
+        .iter()
+        .map(|palitra_id| (*palitra_id, PalitraGoiSyncSummary::default()))
+        .collect::<HashMap<_, _>>();
+    if palitra_ids.is_empty() {
+        return Ok(result);
+    }
+
+    #[derive(Debug, FromQueryResult)]
+    struct GoiPalitraSyncSummaryRow {
+        palitra_id: Option<i64>,
+        direction: String,
+        goi_source_file_sha256: Option<String>,
+        changelog: Json,
+        has_goi_source_file_data: bool,
+    }
+
+    let rows = goi_palitra_sync::Entity::find()
+        .filter(goi_palitra_sync::Column::PalitraId.is_in(palitra_ids))
+        .filter(
+            goi_palitra_sync::Column::RemoteStatus
+                .eq(PALITRA_GOI_REMOTE_STATUS_PRESENT),
+        )
+        .select_only()
+        .column(goi_palitra_sync::Column::PalitraId)
+        .column(goi_palitra_sync::Column::Direction)
+        .column(goi_palitra_sync::Column::GoiSourceFileSha256)
+        .column(goi_palitra_sync::Column::Changelog)
+        .column_as(
+            Expr::col((
+                goi_palitra_sync::Entity,
+                goi_palitra_sync::Column::GoiSourceFileData,
+            ))
+            .is_not_null(),
+            "has_goi_source_file_data",
+        )
+        .order_by_asc(goi_palitra_sync::Column::PalitraId)
+        .order_by_desc(goi_palitra_sync::Column::UpdatedAt)
+        .order_by_desc(goi_palitra_sync::Column::Id)
+        .into_model::<GoiPalitraSyncSummaryRow>()
+        .all(dbx)
+        .await
+        .c(h!())?;
+    for row in rows {
+        let Some(palitra_id) = row.palitra_id else {
+            continue;
+        };
+        let Some(summary) = result.get_mut(&palitra_id) else {
+            continue;
+        };
+        let row_changelog =
+            crate::palitra::goi_changelog::entries_from_value(&row.changelog);
+        update_goi_sync_summary_from_row(
+            summary,
+            &row.direction,
+            row.goi_source_file_sha256.as_deref(),
+            row.has_goi_source_file_data,
+            row_changelog,
+        );
+    }
+    for summary in result.values_mut() {
+        summary
+            .changelog
+            .sort_by(|left, right| left.timestamp.cmp(&right.timestamp));
+        summary.latest_changelog_warning =
+            crate::palitra::goi_changelog::latest_warning(&summary.changelog);
+        if !include_changelog {
+            summary.changelog.clear();
+        }
+    }
+    Ok(result)
+}
+
+fn update_goi_sync_summary_from_row(
+    summary: &mut PalitraGoiSyncSummary,
+    direction: &str,
+    goi_source_file_sha256: Option<&str>,
+    has_goi_source_file_data: bool,
+    row_changelog: Vec<PalitraChangelogEntry>,
+) {
+    let is_goi_source_row = direction == PALITRA_GOI_SYNC_DIRECTION_GOI
+        && goi_source_file_sha256.is_some();
+    summary.goi_owned |= is_goi_source_row;
+    if is_goi_source_row {
+        summary.goi_source_refresh_retry_available |=
+            has_goi_source_file_data
+                && crate::palitra::goi_changelog::latest_goi_source_conversion_warning(
+                    &row_changelog,
+                );
+    }
+    summary.changelog.extend(row_changelog);
+}
+
+pub(crate) async fn is_goi_owned_convertible_palitra<'a, 'async_trait, C>(
+    dbx: &'a C,
+    palitra_id: i64,
+) -> anyhow::Result<bool>
+where
+    C: ConnectionTrait + 'async_trait,
+{
+    Ok(goi_palitra_sync::Entity::find()
+        .filter(goi_palitra_sync::Column::PalitraId.eq(palitra_id))
+        .filter(
+            goi_palitra_sync::Column::Direction
+                .eq(PALITRA_GOI_SYNC_DIRECTION_GOI),
+        )
+        .filter(
+            goi_palitra_sync::Column::RemoteStatus
+                .eq(PALITRA_GOI_REMOTE_STATUS_PRESENT),
+        )
+        .filter(goi_palitra_sync::Column::GoiSourceFileSha256.is_not_null())
+        .select_only()
+        .column(goi_palitra_sync::Column::Id)
+        .into_tuple::<i64>()
+        .one(dbx)
+        .await
+        .c(h!())?
+        .is_some())
 }
 
 pub async fn update_palitra(
@@ -241,12 +393,22 @@ async fn list_palitras_v2_by_ids(
     palitra_ids: Vec<i64>,
     dbx: &DatabaseConnection,
 ) -> anyhow::Result<Vec<PalitraReadV2>> {
+    let mut goi_sync_summaries =
+        read_palitra_goi_sync_summaries(dbx, palitra_ids.clone(), false)
+            .await
+            .c(h!())?;
     let mut result = Vec::with_capacity(palitra_ids.len());
     for palitra_id in palitra_ids {
+        let goi_sync_summary =
+            goi_sync_summaries.remove(&palitra_id).unwrap_or_default();
         result.push(
-            render_palitra_v2_without_points(Either::Right(palitra_id), dbx)
-                .await
-                .c(h!())?,
+            render_palitra_v2_without_points_with_summary(
+                Either::Right(palitra_id),
+                dbx,
+                goi_sync_summary,
+            )
+            .await
+            .c(h!())?,
         );
     }
     Ok(result)
@@ -770,9 +932,21 @@ pub async fn list_all_palitras(
 ) -> anyhow::Result<Vec<Palitra>> {
     let palitra_ids =
         collect_accessible_palitra_ids(login, dbx).await.c(h!())?;
+    let mut goi_sync_summaries =
+        read_palitra_goi_sync_summaries(dbx, palitra_ids.clone(), false)
+            .await
+            .c(h!())?;
     let mut result = vec![];
     for id in palitra_ids {
-        let palitra = render_palitra(Either::Right(id), dbx).await.c(h!())?;
+        let goi_sync_summary =
+            goi_sync_summaries.remove(&id).unwrap_or_default();
+        let palitra = render_palitra_with_summary(
+            Either::Right(id),
+            dbx,
+            goi_sync_summary,
+        )
+        .await
+        .c(h!())?;
         result.push(palitra);
     }
     Ok(result)
@@ -1000,17 +1174,33 @@ pub async fn rename_accessible_palitra_folder(
     if mutable_palitras.is_empty() {
         return Ok(vec![]);
     }
+    let folder_palitras = mutable_palitras
+        .into_iter()
+        .filter_map(|palitra| {
+            let old_folder =
+                normalize_palitra_folder_from_db(palitra.folder.clone());
+            let new_folder = replace_folder_exact(
+                old_folder.as_deref(),
+                &from_folder,
+                &to_folder,
+            )?;
+            Some((palitra, old_folder, new_folder))
+        })
+        .collect_vec();
+    let goi_owned_ids = collect_goi_owned_convertible_palitra_ids(
+        dbx,
+        folder_palitras
+            .iter()
+            .map(|(palitra, _, _)| palitra.id)
+            .collect_vec(),
+    )
+    .await
+    .c(h!())?;
     let mut sync_items = Vec::new();
-    for palitra in mutable_palitras {
-        let old_folder =
-            normalize_palitra_folder_from_db(palitra.folder.clone());
-        let Some(new_folder) = replace_folder_exact(
-            old_folder.as_deref(),
-            &from_folder,
-            &to_folder,
-        ) else {
+    for (palitra, old_folder, new_folder) in folder_palitras {
+        if goi_owned_ids.contains(&palitra.id) {
             continue;
-        };
+        }
         let mut palitra = palitra.into_active_model();
         palitra.folder = Set(Some(new_folder));
         let palitra = palitra.update(txn).await.c(h!())?;
@@ -1039,6 +1229,14 @@ pub async fn archive_accessible_palitra_folder(
         .into_iter()
         .map(|palitra| palitra.id)
         .collect_vec();
+    let goi_owned_ids =
+        collect_goi_owned_convertible_palitra_ids(dbx, palitra_ids.clone())
+            .await
+            .c(h!())?;
+    let palitra_ids = palitra_ids
+        .into_iter()
+        .filter(|palitra_id| !goi_owned_ids.contains(palitra_id))
+        .collect_vec();
     if palitra_ids.is_empty() {
         return Ok(vec![]);
     }
@@ -1050,6 +1248,36 @@ pub async fn archive_accessible_palitra_folder(
         .await
         .c(h!())?;
     Ok(palitra_ids)
+}
+
+async fn collect_goi_owned_convertible_palitra_ids(
+    dbx: &DatabaseConnection,
+    palitra_ids: Vec<i64>,
+) -> anyhow::Result<HashSet<i64>> {
+    let palitra_ids = palitra_ids.into_iter().unique().collect_vec();
+    if palitra_ids.is_empty() {
+        return Ok(HashSet::new());
+    }
+    Ok(goi_palitra_sync::Entity::find()
+        .filter(goi_palitra_sync::Column::PalitraId.is_in(palitra_ids))
+        .filter(
+            goi_palitra_sync::Column::Direction
+                .eq(PALITRA_GOI_SYNC_DIRECTION_GOI),
+        )
+        .filter(
+            goi_palitra_sync::Column::RemoteStatus
+                .eq(PALITRA_GOI_REMOTE_STATUS_PRESENT),
+        )
+        .filter(goi_palitra_sync::Column::GoiSourceFileSha256.is_not_null())
+        .select_only()
+        .column(goi_palitra_sync::Column::PalitraId)
+        .into_tuple::<Option<i64>>()
+        .all(dbx)
+        .await
+        .c(h!())?
+        .into_iter()
+        .flatten()
+        .collect())
 }
 
 async fn has_admin_role(
@@ -1959,6 +2187,44 @@ where
             .c(h!())?,
     };
     let palitra_id = palitra_model.id;
+    let goi_sync_summary = read_palitra_goi_sync_summary(dbx, palitra_id)
+        .await
+        .c(h!())?;
+    render_palitra_model(palitra_model, dbx, goi_sync_summary)
+        .await
+        .c(h!())
+}
+
+async fn render_palitra_with_summary<'a, 'async_trait, C>(
+    e_palitra_model: Either<palitra::Model, i64>,
+    dbx: &'a C,
+    goi_sync_summary: PalitraGoiSyncSummary,
+) -> anyhow::Result<Palitra>
+where
+    C: ConnectionTrait + 'async_trait,
+{
+    let palitra_model = match e_palitra_model {
+        Either::Left(model) => model,
+        Either::Right(id) => palitra::Entity::find_by_id(id)
+            .one(dbx)
+            .await
+            .c(h!())?
+            .c(h!())?,
+    };
+    render_palitra_model(palitra_model, dbx, goi_sync_summary)
+        .await
+        .c(h!())
+}
+
+async fn render_palitra_model<'a, 'async_trait, C>(
+    palitra_model: palitra::Model,
+    dbx: &'a C,
+    goi_sync_summary: PalitraGoiSyncSummary,
+) -> anyhow::Result<Palitra>
+where
+    C: ConnectionTrait + 'async_trait,
+{
+    let palitra_id = palitra_model.id;
     let (
         color_hex,
         source_file_name,
@@ -2041,6 +2307,11 @@ where
         conversion_error: palitra_model.conversion_error,
         missing_in_goi: palitra_model.missing_in_goi,
         imported_from_goi: palitra_model.imported_from_goi,
+        goi_owned: goi_sync_summary.goi_owned,
+        goi_source_refresh_retry_available: goi_sync_summary
+            .goi_source_refresh_retry_available,
+        latest_changelog_warning: goi_sync_summary.latest_changelog_warning,
+        changelog: goi_sync_summary.changelog,
         geometry,
         access_aor_id: access_aor_ids,
         access_organism_ids,
@@ -2055,7 +2326,7 @@ async fn render_palitra_v2<'a, 'async_trait, C>(
 where
     C: ConnectionTrait + 'async_trait,
 {
-    render_palitra_v2_inner(e_palitra_model, dbx, true)
+    render_palitra_v2_inner(e_palitra_model, dbx, true, None)
         .await
         .c(h!())
 }
@@ -2067,7 +2338,20 @@ async fn render_palitra_v2_without_points<'a, 'async_trait, C>(
 where
     C: ConnectionTrait + 'async_trait,
 {
-    render_palitra_v2_inner(e_palitra_model, dbx, false)
+    render_palitra_v2_inner(e_palitra_model, dbx, false, None)
+        .await
+        .c(h!())
+}
+
+async fn render_palitra_v2_without_points_with_summary<'a, 'async_trait, C>(
+    e_palitra_model: Either<palitra::Model, i64>,
+    dbx: &'a C,
+    goi_sync_summary: PalitraGoiSyncSummary,
+) -> anyhow::Result<PalitraReadV2>
+where
+    C: ConnectionTrait + 'async_trait,
+{
+    render_palitra_v2_inner(e_palitra_model, dbx, false, Some(goi_sync_summary))
         .await
         .c(h!())
 }
@@ -2076,11 +2360,19 @@ async fn render_palitra_v2_inner<'a, 'async_trait, C>(
     e_palitra_model: Either<palitra::Model, i64>,
     dbx: &'a C,
     include_points: bool,
+    goi_sync_summary: Option<PalitraGoiSyncSummary>,
 ) -> anyhow::Result<PalitraReadV2>
 where
     C: ConnectionTrait + 'async_trait,
 {
-    let palitra = render_palitra(e_palitra_model, dbx).await.c(h!())?;
+    let palitra = match goi_sync_summary {
+        Some(goi_sync_summary) => {
+            render_palitra_with_summary(e_palitra_model, dbx, goi_sync_summary)
+                .await
+                .c(h!())?
+        }
+        None => render_palitra(e_palitra_model, dbx).await.c(h!())?,
+    };
     let palitra_geometry_models =
         order_by_primary_geometry(palitra_geometry::Entity::find())
             .filter(palitra_geometry::Column::PalitraId.eq(palitra.id))
@@ -2590,21 +2882,27 @@ where
 
 #[cfg(test)]
 mod tests {
+    use crate::config::{
+        ORGANISM_GOI_INTEGRATION_TYPE_FULL, PALITRA_GOI_REMOTE_STATUS_PRESENT,
+        PALITRA_GOI_SYNC_DIRECTION_ECHO, PALITRA_GOI_SYNC_DIRECTION_GOI,
+    };
     use crate::entities::{
-        area_of_responsibility, login, organism, organism_aor, palitra,
-        palitra_access_aor, palitra_access_login, palitra_access_organism,
-        palitra_geometry,
+        area_of_responsibility, goi_integration, goi_palitra_sync, login,
+        organism, organism_aor, palitra, palitra_access_aor,
+        palitra_access_login, palitra_access_organism, palitra_geometry,
     };
     use crate::functest::tests::{
-        cleanup, find_test_login, find_test_palitra, mk_aor, mk_login,
-        mk_organism, mk_organism_aor, mk_palitra, mk_palitra_geometry,
-        mk_palitra_point,
+        cleanup, find_test_login, find_test_organism, find_test_palitra,
+        mk_aor, mk_login, mk_organism, mk_organism_aor, mk_palitra,
+        mk_palitra_geometry, mk_palitra_point,
     };
     use crate::palitra::bl::{
-        collect_accessible_palitra_ids,
-        collect_accessible_palitra_ids_in_folder, list_all_palitras_v2,
+        archive_accessible_palitra_folder, collect_accessible_palitra_ids,
+        collect_accessible_palitra_ids_in_folder,
+        is_goi_owned_convertible_palitra, list_all_palitras_v2,
         list_map_palitras_v2, normalize_palitra_folder,
         normalize_palitra_folder_from_db, normalize_palitra_folder_lookup,
+        read_palitra_goi_sync_summary, rename_accessible_palitra_folder,
         replace_folder_exact, search_palitra_points_by_labels, update_palitra,
         update_palitra_v2,
     };
@@ -3051,6 +3349,515 @@ mod tests {
             palitra_ids: vec![palitra_id],
             point_labels: labels,
         }
+    }
+
+    async fn mk_folder_palitra_for_test(
+        dbx: &sea_orm::DatabaseConnection,
+        name: &str,
+        author: &str,
+        folder: &str,
+    ) -> palitra::Model {
+        mk_palitra(
+            dbx,
+            palitra::ActiveModel {
+                name: Set(name.to_string()),
+                hex_legacy: Set(Some("#ffffff".to_string())),
+                author: Set(Some(author.to_string())),
+                deleted: Set(false),
+                folder: Set(Some(folder.to_string())),
+                created_at: Set(Utc::now().naive_utc()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap()
+    }
+
+    async fn mk_goi_integration_for_test(
+        dbx: &sea_orm::DatabaseConnection,
+        server_key: &str,
+    ) -> goi_integration::Model {
+        let organism = find_test_organism(dbx).await.unwrap();
+        let login = find_test_login(dbx).await.unwrap();
+        goi_integration::ActiveModel {
+            id: NotSet,
+            owner_organism_id: Set(organism.id),
+            created_at: Set(Utc::now().fixed_offset()),
+            integration_type: Set(
+                ORGANISM_GOI_INTEGRATION_TYPE_FULL.to_string()
+            ),
+            server_key: Set(server_key.to_string()),
+            server_label: Set(server_key.to_string()),
+            ssh_host: Set(Some("goi.test".to_string())),
+            ssh_user: Set(Some("goi".to_string())),
+            ssh_port: Set(22),
+            path: Set("/goi/palettes".to_string()),
+            api_host: Set(None),
+            api_port: Set(8088),
+            api_login: Set(None),
+            api_password: Set(None),
+            disable_goi_to_echo_palitra_sync: Set(false),
+            maintainer_login: Set(Some(login.login)),
+            pause_worker: Set(false),
+        }
+        .insert(dbx)
+        .await
+        .unwrap()
+    }
+
+    async fn mk_goi_palitra_sync_for_test(
+        dbx: &sea_orm::DatabaseConnection,
+        integration_id: i64,
+        palitra_id: i64,
+        remote_relative_path: &str,
+        direction: &str,
+        goi_source_file_sha256: Option<&str>,
+    ) -> goi_palitra_sync::Model {
+        let now = Utc::now().fixed_offset();
+        goi_palitra_sync::ActiveModel {
+            id: NotSet,
+            goi_integration_id: Set(integration_id),
+            palitra_id: Set(Some(palitra_id)),
+            remote_relative_path: Set(remote_relative_path.to_string()),
+            direction: Set(direction.to_string()),
+            remote_status: Set(PALITRA_GOI_REMOTE_STATUS_PRESENT.to_string()),
+            file_size: Set(Some(3)),
+            file_sha256: Set(Some("abc".to_string())),
+            echo_file_size: Set(Some(3)),
+            echo_file_sha256: Set(Some("abc".to_string())),
+            echo_updated_at: Set(Some(now)),
+            goi_file_size: Set(Some(3)),
+            goi_file_sha256: Set(Some("abc".to_string())),
+            goi_updated_at: Set(Some(now)),
+            last_seen_at: Set(Some(now)),
+            last_sync_at: Set(Some(now)),
+            created_at: Set(now),
+            updated_at: Set(now),
+            changelog: Set(serde_json::json!([])),
+            goi_source_file_name: Set(
+                goi_source_file_sha256.map(|_| "source.gpx".to_string())
+            ),
+            goi_source_format: Set(
+                goi_source_file_sha256.map(|_| "gpx".to_string())
+            ),
+            goi_source_content_type: Set(None),
+            goi_source_file_data: Set(
+                goi_source_file_sha256.map(|_| vec![1, 2, 3])
+            ),
+            goi_source_file_size: Set(goi_source_file_sha256.map(|_| 3)),
+            goi_source_file_sha256: Set(
+                goi_source_file_sha256.map(str::to_string)
+            ),
+            goi_source_failed_file_sha256: Set(None),
+            goi_source_last_retry_at: Set(None),
+        }
+        .insert(dbx)
+        .await
+        .unwrap()
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn test_goi_owned_convertible_palitra_requires_goi_direction_and_source(
+    ) {
+        let env = cleanup().await.unwrap();
+        let palitra = find_test_palitra(&env.dbx).await.unwrap();
+        let integration =
+            mk_goi_integration_for_test(&env.dbx, "goi-owned-convertible-test")
+                .await;
+
+        mk_goi_palitra_sync_for_test(
+            &env.dbx,
+            integration.id,
+            palitra.id,
+            "source.gpx",
+            PALITRA_GOI_SYNC_DIRECTION_GOI,
+            Some("source-sha"),
+        )
+        .await;
+
+        assert!(is_goi_owned_convertible_palitra(&env.dbx, palitra.id)
+            .await
+            .unwrap());
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn test_goi_owned_convertible_palitra_ignores_echo_direction_and_direct_goi_rows(
+    ) {
+        let env = cleanup().await.unwrap();
+        let palitra = find_test_palitra(&env.dbx).await.unwrap();
+        let integration =
+            mk_goi_integration_for_test(&env.dbx, "goi-owned-negative-test")
+                .await;
+
+        mk_goi_palitra_sync_for_test(
+            &env.dbx,
+            integration.id,
+            palitra.id,
+            "echo-source.gpx",
+            PALITRA_GOI_SYNC_DIRECTION_ECHO,
+            Some("source-sha"),
+        )
+        .await;
+        mk_goi_palitra_sync_for_test(
+            &env.dbx,
+            integration.id,
+            palitra.id,
+            "direct.kmz",
+            PALITRA_GOI_SYNC_DIRECTION_GOI,
+            None,
+        )
+        .await;
+
+        assert!(!is_goi_owned_convertible_palitra(&env.dbx, palitra.id)
+            .await
+            .unwrap());
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn test_goi_owned_convertible_palitra_blocks_echo_edit_guard() {
+        let env = cleanup().await.unwrap();
+        let palitra = find_test_palitra(&env.dbx).await.unwrap();
+        let integration =
+            mk_goi_integration_for_test(&env.dbx, "goi-owned-edit-guard-test")
+                .await;
+
+        assert!(super::super::ensure_palitra_echo_edit_allowed(
+            &env.dbx, palitra.id,
+        )
+        .await
+        .is_ok());
+
+        mk_goi_palitra_sync_for_test(
+            &env.dbx,
+            integration.id,
+            palitra.id,
+            "source.gpx",
+            PALITRA_GOI_SYNC_DIRECTION_GOI,
+            Some("source-sha"),
+        )
+        .await;
+
+        let err = super::super::ensure_palitra_echo_edit_allowed(
+            &env.dbx, palitra.id,
+        )
+        .await
+        .unwrap_err();
+
+        assert!(matches!(
+            err,
+            crate::error::AppError::BL { msg }
+                if msg == super::super::GOI_OWNED_PALITRA_EDIT_ERROR
+        ));
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn test_rename_accessible_palitra_folder_skips_goi_owned_rows() {
+        let env = cleanup().await.unwrap();
+        let login = find_test_login(&env.dbx).await.unwrap();
+        let folder = "mixed-rename";
+        let editable = mk_folder_palitra_for_test(
+            &env.dbx,
+            "mixed-rename-editable",
+            &login.login,
+            folder,
+        )
+        .await;
+        let goi_owned = mk_folder_palitra_for_test(
+            &env.dbx,
+            "mixed-rename-goi-owned",
+            &login.login,
+            folder,
+        )
+        .await;
+        let integration =
+            mk_goi_integration_for_test(&env.dbx, "goi-owned-folder-rename")
+                .await;
+        mk_goi_palitra_sync_for_test(
+            &env.dbx,
+            integration.id,
+            goi_owned.id,
+            "source.gpx",
+            PALITRA_GOI_SYNC_DIRECTION_GOI,
+            Some("source-sha"),
+        )
+        .await;
+
+        let txn = env.dbx.begin().await.unwrap();
+        let sync_items = rename_accessible_palitra_folder(
+            login.login,
+            folder.to_string(),
+            "mixed-renamed".to_string(),
+            &env.dbx,
+            &txn,
+        )
+        .await
+        .unwrap();
+        txn.commit().await.unwrap();
+
+        assert_eq!(
+            sync_items
+                .iter()
+                .map(|item| item.palitra_id)
+                .collect::<Vec<_>>(),
+            vec![editable.id]
+        );
+        let editable = palitra::Entity::find_by_id(editable.id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        let goi_owned = palitra::Entity::find_by_id(goi_owned.id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(editable.folder.as_deref(), Some("mixed-renamed"));
+        assert_eq!(goi_owned.folder.as_deref(), Some(folder));
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn test_archive_accessible_palitra_folder_skips_goi_owned_rows() {
+        let env = cleanup().await.unwrap();
+        let login = find_test_login(&env.dbx).await.unwrap();
+        let folder = "mixed-archive";
+        let editable = mk_folder_palitra_for_test(
+            &env.dbx,
+            "mixed-archive-editable",
+            &login.login,
+            folder,
+        )
+        .await;
+        let goi_owned = mk_folder_palitra_for_test(
+            &env.dbx,
+            "mixed-archive-goi-owned",
+            &login.login,
+            folder,
+        )
+        .await;
+        let integration =
+            mk_goi_integration_for_test(&env.dbx, "goi-owned-folder-archive")
+                .await;
+        mk_goi_palitra_sync_for_test(
+            &env.dbx,
+            integration.id,
+            goi_owned.id,
+            "source.gpx",
+            PALITRA_GOI_SYNC_DIRECTION_GOI,
+            Some("source-sha"),
+        )
+        .await;
+
+        let txn = env.dbx.begin().await.unwrap();
+        let palitra_ids = archive_accessible_palitra_folder(
+            login.login,
+            folder.to_string(),
+            true,
+            &env.dbx,
+            &txn,
+        )
+        .await
+        .unwrap();
+        txn.commit().await.unwrap();
+
+        assert_eq!(palitra_ids, vec![editable.id]);
+        let editable = palitra::Entity::find_by_id(editable.id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        let goi_owned = palitra::Entity::find_by_id(goi_owned.id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(editable.is_archived);
+        assert!(!goi_owned.is_archived);
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn test_delete_palitra_from_folder_if_allowed_skips_goi_owned_rows() {
+        let env = cleanup().await.unwrap();
+        let login = find_test_login(&env.dbx).await.unwrap();
+        let palitra = mk_folder_palitra_for_test(
+            &env.dbx,
+            "mixed-delete-goi-owned",
+            &login.login,
+            "mixed-delete",
+        )
+        .await;
+        let integration =
+            mk_goi_integration_for_test(&env.dbx, "goi-owned-folder-delete")
+                .await;
+        mk_goi_palitra_sync_for_test(
+            &env.dbx,
+            integration.id,
+            palitra.id,
+            "source.gpx",
+            PALITRA_GOI_SYNC_DIRECTION_GOI,
+            Some("source-sha"),
+        )
+        .await;
+        let env = actix_web::web::Data::from(env);
+
+        let deleted = super::super::delete_palitra_from_folder_if_allowed(
+            palitra.id,
+            &login.login,
+            &env,
+        )
+        .await
+        .unwrap();
+
+        assert!(!deleted);
+        let palitra = palitra::Entity::find_by_id(palitra.id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(!palitra.deleted);
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn test_goi_source_retry_summary_requires_latest_warning_and_source_data(
+    ) {
+        let env = cleanup().await.unwrap();
+        let palitra = find_test_palitra(&env.dbx).await.unwrap();
+        let integration = mk_goi_integration_for_test(
+            &env.dbx,
+            "goi-source-retry-summary-test",
+        )
+        .await;
+        let row = mk_goi_palitra_sync_for_test(
+            &env.dbx,
+            integration.id,
+            palitra.id,
+            "source.gpx",
+            PALITRA_GOI_SYNC_DIRECTION_GOI,
+            Some("source-sha"),
+        )
+        .await;
+        let row_id = row.id;
+        let changelog = crate::palitra::goi_changelog::append_to_value(
+            &row.changelog,
+            crate::palitra::goi_changelog::error_entry(
+                "GOI source conversion failed",
+                "Не вдалося сконвертувати файл ГОІ.",
+            ),
+        )
+        .unwrap();
+        let mut row = row.into_active_model();
+        row.changelog = Set(changelog);
+        row.update(&env.dbx).await.unwrap();
+
+        let summary = read_palitra_goi_sync_summary(&env.dbx, palitra.id)
+            .await
+            .unwrap();
+
+        assert!(summary.goi_owned);
+        assert!(summary.latest_changelog_warning);
+        assert!(summary.goi_source_refresh_retry_available);
+
+        let row = goi_palitra_sync::Entity::find_by_id(row_id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        let changelog = crate::palitra::goi_changelog::append_to_value(
+            &row.changelog,
+            crate::palitra::goi_changelog::ok_entry(
+                "GOI source conversion recovered",
+                "Конвертацію файлу ГОІ відновлено.",
+            ),
+        )
+        .unwrap();
+        let mut row = row.into_active_model();
+        row.changelog = Set(changelog);
+        row.update(&env.dbx).await.unwrap();
+
+        let summary = read_palitra_goi_sync_summary(&env.dbx, palitra.id)
+            .await
+            .unwrap();
+
+        assert!(summary.goi_owned);
+        assert!(!summary.latest_changelog_warning);
+        assert!(!summary.goi_source_refresh_retry_available);
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn test_goi_source_retry_summary_ignores_non_conversion_warnings() {
+        let env = cleanup().await.unwrap();
+        let palitra = find_test_palitra(&env.dbx).await.unwrap();
+        let integration = mk_goi_integration_for_test(
+            &env.dbx,
+            "goi-source-retry-non-conversion-warning-test",
+        )
+        .await;
+        let row = mk_goi_palitra_sync_for_test(
+            &env.dbx,
+            integration.id,
+            palitra.id,
+            "source.gpx",
+            PALITRA_GOI_SYNC_DIRECTION_GOI,
+            Some("source-sha"),
+        )
+        .await;
+        let changelog = crate::palitra::goi_changelog::append_to_value(
+            &row.changelog,
+            crate::palitra::goi_changelog::error_entry(
+                "Duplicate GOI remote path tracking conflict",
+                "Дубльований шлях ГОІ.",
+            ),
+        )
+        .unwrap();
+        let mut row = row.into_active_model();
+        row.changelog = Set(changelog);
+        row.update(&env.dbx).await.unwrap();
+
+        let summary = read_palitra_goi_sync_summary(&env.dbx, palitra.id)
+            .await
+            .unwrap();
+
+        assert!(summary.latest_changelog_warning);
+        assert!(!summary.goi_source_refresh_retry_available);
+    }
+
+    #[test]
+    fn test_goi_source_retry_summary_checks_all_present_source_rows() {
+        let mut summary = super::PalitraGoiSyncSummary::default();
+        let ok_changelog = vec![crate::palitra::goi_changelog::ok_entry(
+            "Synced from GOI",
+            "Палітру оновлено з ГОІ.",
+        )];
+        let failed_changelog =
+            vec![crate::palitra::goi_changelog::error_entry(
+                "GOI source conversion failed",
+                "Не вдалося сконвертувати файл ГОІ.",
+            )];
+
+        super::update_goi_sync_summary_from_row(
+            &mut summary,
+            PALITRA_GOI_SYNC_DIRECTION_GOI,
+            Some("ok-source-sha"),
+            true,
+            ok_changelog,
+        );
+        super::update_goi_sync_summary_from_row(
+            &mut summary,
+            PALITRA_GOI_SYNC_DIRECTION_GOI,
+            Some("failed-source-sha"),
+            true,
+            failed_changelog,
+        );
+
+        assert!(summary.goi_owned);
+        assert!(summary.goi_source_refresh_retry_available);
     }
 
     #[test]

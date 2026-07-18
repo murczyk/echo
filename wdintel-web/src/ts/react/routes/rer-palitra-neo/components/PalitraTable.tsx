@@ -61,6 +61,8 @@ type Props = {
   onRequestPreview: (palitra: Palitra) => void;
   onRequestUploadPoints: (palitraId: number) => void;
   onRetryConversion: (palitra: Palitra) => void;
+  onRetryGoiSourceConversion: (palitra: Palitra) => void;
+  onOpenHistory: (palitra: Palitra) => void;
   onDelete: (palitra: Palitra) => void;
   onSetSelectedPalitraIds: (palitraIds: number[]) => void;
   onToggleFolderExpanded: (path: string) => void;
@@ -89,6 +91,8 @@ export function PalitraTable({
   onRequestPreview,
   onRequestUploadPoints,
   onRetryConversion,
+  onRetryGoiSourceConversion,
+  onOpenHistory,
   onDelete,
   onSetSelectedPalitraIds,
   onToggleFolderExpanded,
@@ -208,6 +212,8 @@ export function PalitraTable({
         onRequestPreview,
         onRequestUploadPoints,
         onRetryConversion,
+        onRetryGoiSourceConversion,
+        onOpenHistory,
         onDelete,
         onToggleFolderExpanded,
         onRequestRenameFolder,

@@ -101,11 +101,13 @@ function makeRow(
     author: 'operator',
     accessSummary: '—',
     canModify,
+    canRetryGoiSourceConversion: false,
     canSelect,
     archiveInFlight: false,
     deleteInFlight: false,
     downloadInFlight: false,
     uploadInFlight: false,
+    retryInFlight: false,
   };
 }
 
@@ -434,6 +436,54 @@ describe('rer-palitra helpers', () => {
         preview,
       }),
     ).toEqual(['Обрано палітр: 3', 'Уже в цій папці: 1', 'Недоступно для зміни: 1']);
+  });
+
+  it('marks GOI-owned palitras as selectable but not modifiable', () => {
+    const goiOwnedPalitra = {
+      ...makePalitra(9, null, 'operator', 10),
+      goiOwned: true,
+    } as Palitra;
+
+    const rows = buildTableRows({
+      palitras: [goiOwnedPalitra],
+      user: makeUser({ name: 'operator', roles: ['Admin'] }),
+      myScope: null,
+      organisms: [],
+      aors: [],
+      inFlightArchiveId: null,
+      inFlightDeleteId: null,
+      inFlightDownloadId: null,
+      inFlightUploadId: null,
+      inFlightRetryId: null,
+      expandedFolderPaths: new Set(),
+    });
+    const row = rows.find((item) => item.kind === 'palitra' && item.id === 9);
+
+    expect(row).toMatchObject({ canModify: false, canSelect: true });
+  });
+
+  it('excludes GOI-owned palitras from folder modifiable actions', () => {
+    const goiOwnedPalitra = {
+      ...makePalitra(9, 'GOI', 'operator', 10),
+      goiOwned: true,
+    } as Palitra;
+
+    const rows = buildTableRows({
+      palitras: [goiOwnedPalitra],
+      user: makeUser({ name: 'operator', roles: ['Admin'] }),
+      myScope: null,
+      organisms: [],
+      aors: [],
+      inFlightArchiveId: null,
+      inFlightDeleteId: null,
+      inFlightDownloadId: null,
+      inFlightUploadId: null,
+      inFlightRetryId: null,
+      expandedFolderPaths: new Set(['GOI']),
+    });
+    const folderRow = rows.find((item) => item.kind === 'folder' && item.folderPath === 'GOI');
+
+    expect(folderRow).toMatchObject({ canModify: false, modifiableCount: 0, totalCount: 1 });
   });
 
   it('keeps read-only palitras downloadable but not modifiable in bulk selections', () => {

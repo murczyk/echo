@@ -162,6 +162,7 @@ pub fn main_gen_elm() -> Result<(), AppError> {
 
             crate::palitra::types::PalitraAccess,
             crate::palitra::types::CreatePalitraReq,
+            crate::palitra::types::PalitraChangelogEntry,
             crate::palitra::types::Palitra,
             crate::palitra::types::PalitraDetails,
             crate::palitra::types::PalitraGeometryDetails,
@@ -634,6 +635,7 @@ pub fn main_gen_elm() -> Result<(), AppError> {
 
             crate::palitra::types::PalitraAccess,
             crate::palitra::types::CreatePalitraReq,
+            crate::palitra::types::PalitraChangelogEntry,
             crate::palitra::types::Palitra,
             crate::palitra::types::PalitraDetails,
             crate::palitra::types::PalitraGeometryDetails,

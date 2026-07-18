@@ -2,19 +2,22 @@ use crate::config::{
     ORGANISM_GOI_INTEGRATION_TYPE_FULL, ORGANISM_GOI_PATH_DEFAULT,
     ORGANISM_GOI_SSH_PORT_DEFAULT, PALITRA_ALLOWED_UPLOAD_EXTENSIONS,
     PALITRA_BLOCKED_UNSTABLE_UPLOAD_EXTENSIONS,
-    PALITRA_CONVERSION_STATUS_PROCESSING, PALITRA_CONVERSION_STATUS_READY,
-    PALITRA_GOI_RECONCILE_INTERVAL_SEC, PALITRA_GOI_REMOTE_STATUS_MISSING,
-    PALITRA_GOI_REMOTE_STATUS_PRESENT, PALITRA_GOI_SYNC_DIRECTION_ECHO,
-    PALITRA_GOI_SYNC_DIRECTION_GOI, PALITRA_GOI_SYNC_JOB_KIND_DELETE,
-    PALITRA_GOI_SYNC_JOB_KIND_MOVE, PALITRA_GOI_SYNC_JOB_KIND_UPLOAD,
-    PALITRA_GOI_SYNC_JOB_RETRY_DELAY_SEC, PALITRA_GOI_SYNC_WORKER_SLEEP_SEC,
+    PALITRA_CONVERSION_STATUS_ERROR, PALITRA_CONVERSION_STATUS_PROCESSING,
+    PALITRA_CONVERSION_STATUS_READY, PALITRA_GOI_RECONCILE_INTERVAL_SEC,
+    PALITRA_GOI_REMOTE_STATUS_MISSING, PALITRA_GOI_REMOTE_STATUS_PRESENT,
+    PALITRA_GOI_SYNC_DIRECTION_ECHO, PALITRA_GOI_SYNC_DIRECTION_GOI,
+    PALITRA_GOI_SYNC_JOB_KIND_DELETE, PALITRA_GOI_SYNC_JOB_KIND_MOVE,
+    PALITRA_GOI_SYNC_JOB_KIND_UPLOAD, PALITRA_GOI_SYNC_JOB_RETRY_DELAY_SEC,
+    PALITRA_GOI_SYNC_WORKER_SLEEP_SEC,
 };
 use crate::entities::*;
 use crate::error::AppError;
 use crate::organism::goi;
 use crate::organism::goi::shared::goi_integration_worker_paused;
 use crate::organism::types::CheckOrganismGoiConnectionReq;
-use crate::palitra::types::{CreatePalitraReq, PalitraAccess};
+use crate::palitra::types::{
+    CreatePalitraReq, PalitraAccess, PalitraChangelogEntry,
+};
 use crate::types::*;
 use crate::utils::string::normalize_trimmed_or_default;
 use chrono::Utc;
@@ -26,6 +29,19 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 use std::time::{Duration, Instant};
 
+const GOI_PALITRA_DUPLICATE_REMOTE_PATH_CONFLICT_TEXT: &str =
+    "Duplicate GOI remote path tracking conflict";
+const GOI_PALITRA_DUPLICATE_ECHO_REMOTE_PATH_CONFLICT_TEXT: &str =
+    "Duplicate Echo-origin palitras map to the same GOI remote path";
+const GOI_PALITRA_MISSING_ECHO_CHECKSUM_TEXT: &str =
+    "Missing stored Echo checksum metadata";
+const GOI_PALITRA_MISSING_ECHO_PALETTE_TEXT: &str =
+    "Missing Echo palitra for checksum sync";
+const GOI_PALITRA_MISSING_ECHO_FILE_TEXT: &str =
+    "Missing Echo palitra source file for checksum sync";
+const GOI_PALITRA_ECHO_AND_GOI_CHANGED_TEXT: &str =
+    "Echo and GOI checksums changed since last sync";
+
 #[derive(Clone)]
 struct GoiSyncTarget {
     integration: goi_integration::Model,
@@ -36,6 +52,81 @@ struct DownloadedGoiPalitraFile {
     data: Vec<u8>,
     file_size: i64,
     file_sha256: String,
+}
+
+#[derive(Clone)]
+struct GoiSourceFileSnapshot {
+    file_name: String,
+    source_format: String,
+    content_type: Option<String>,
+    file_data: Vec<u8>,
+    file_size: i64,
+    file_sha256: String,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct FileChecksumRef<'a> {
+    file_size: i64,
+    file_sha256: &'a str,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct OwnedFileChecksum {
+    file_size: i64,
+    file_sha256: String,
+}
+
+impl OwnedFileChecksum {
+    fn as_ref(&self) -> FileChecksumRef<'_> {
+        FileChecksumRef {
+            file_size: self.file_size,
+            file_sha256: &self.file_sha256,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum CurrentEchoChecksum<'a> {
+    Known(FileChecksumRef<'a>),
+    MissingPalette,
+    MissingFile,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct GoiPalitraSyncDecisionInput<'a> {
+    stored_echo_checksum: Option<FileChecksumRef<'a>>,
+    current_echo_checksum: CurrentEchoChecksum<'a>,
+    stored_goi_checksum: Option<FileChecksumRef<'a>>,
+    current_goi_checksum: FileChecksumRef<'a>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum GoiPalitraSyncDecision {
+    RefreshEcho,
+    PushEcho,
+    Noop,
+    Conflict(GoiPalitraSyncConflict),
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum GoiPalitraSyncConflict {
+    MissingEchoChecksumMetadata,
+    MissingEchoPalette,
+    MissingEchoFile,
+    EchoAndGoiChanged,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum GoiRemotePathTrackingState {
+    Normal,
+    DuplicateRemotePathConflict,
+    GoiOriginDuplicateCleanupNeeded,
+}
+
+struct EchoOriginGoiSyncDecision {
+    row: goi_palitra_sync::Model,
+    decision: GoiPalitraSyncDecision,
+    current_echo_file_data: Option<Vec<u8>>,
 }
 
 pub async fn palitra_goi_sync_worker_nofail(env: Arc<Env>) {
@@ -332,6 +423,7 @@ async fn upsert_echo_origin_goi_palitra(
         Some(goi_file.file_size),
         Some(goi_file.file_sha256.clone()),
         None,
+        None,
     )
     .await
     .c(h!())?;
@@ -383,7 +475,7 @@ async fn find_goi_palitra_sync_rows(
     goi_integration_id: i64,
     remote_path: &str,
 ) -> anyhow::Result<Vec<goi_palitra_sync::Model>> {
-    goi_palitra_sync::Entity::find()
+    goi_palitra_sync_without_source_data_query()
         .filter(
             goi_palitra_sync::Column::GoiIntegrationId.eq(goi_integration_id),
         )
@@ -391,9 +483,43 @@ async fn find_goi_palitra_sync_rows(
             goi_palitra_sync::Column::RemoteRelativePath
                 .eq(remote_path.to_string()),
         )
+        .order_by_asc(goi_palitra_sync::Column::Id)
         .all(dbx)
         .await
         .c(h!())
+}
+
+fn goi_palitra_sync_without_source_data_query(
+) -> Select<goi_palitra_sync::Entity> {
+    goi_palitra_sync::Entity::find()
+        .select_only()
+        .column(goi_palitra_sync::Column::Id)
+        .column(goi_palitra_sync::Column::GoiIntegrationId)
+        .column(goi_palitra_sync::Column::PalitraId)
+        .column(goi_palitra_sync::Column::RemoteRelativePath)
+        .column(goi_palitra_sync::Column::Direction)
+        .column(goi_palitra_sync::Column::RemoteStatus)
+        .column(goi_palitra_sync::Column::FileSize)
+        .column(goi_palitra_sync::Column::FileSha256)
+        .column(goi_palitra_sync::Column::LastSeenAt)
+        .column(goi_palitra_sync::Column::LastSyncAt)
+        .column(goi_palitra_sync::Column::CreatedAt)
+        .column(goi_palitra_sync::Column::UpdatedAt)
+        .column(goi_palitra_sync::Column::EchoFileSize)
+        .column(goi_palitra_sync::Column::EchoFileSha256)
+        .column(goi_palitra_sync::Column::EchoUpdatedAt)
+        .column(goi_palitra_sync::Column::GoiFileSize)
+        .column(goi_palitra_sync::Column::GoiFileSha256)
+        .column(goi_palitra_sync::Column::GoiUpdatedAt)
+        .column(goi_palitra_sync::Column::Changelog)
+        .column(goi_palitra_sync::Column::GoiSourceFileName)
+        .column(goi_palitra_sync::Column::GoiSourceFormat)
+        .column(goi_palitra_sync::Column::GoiSourceContentType)
+        .column_as(Expr::cust("NULL::bytea"), "goi_source_file_data")
+        .column(goi_palitra_sync::Column::GoiSourceFileSize)
+        .column(goi_palitra_sync::Column::GoiSourceFileSha256)
+        .column(goi_palitra_sync::Column::GoiSourceFailedFileSha256)
+        .column(goi_palitra_sync::Column::GoiSourceLastRetryAt)
 }
 
 async fn reconcile_tracked_goi_paths(
@@ -401,8 +527,20 @@ async fn reconcile_tracked_goi_paths(
     integration: &goi_integration::Model,
     remote_paths: &BTreeSet<String>,
 ) -> anyhow::Result<()> {
+    #[derive(Debug, FromQueryResult)]
+    struct TrackedGoiPathRow {
+        id: i64,
+        palitra_id: Option<i64>,
+        remote_relative_path: String,
+    }
+
     let rows = goi_palitra_sync::Entity::find()
         .filter(goi_palitra_sync::Column::GoiIntegrationId.eq(integration.id))
+        .select_only()
+        .column(goi_palitra_sync::Column::Id)
+        .column(goi_palitra_sync::Column::PalitraId)
+        .column(goi_palitra_sync::Column::RemoteRelativePath)
+        .into_model::<TrackedGoiPathRow>()
         .all(dbx)
         .await
         .c(h!())?;
@@ -410,18 +548,24 @@ async fn reconcile_tracked_goi_paths(
     for row in rows {
         let is_present = remote_paths.contains(&row.remote_relative_path);
         let palitra_id = row.palitra_id;
-        let mut row = row.into_active_model();
-        row.remote_status = Set(if is_present {
-            PALITRA_GOI_REMOTE_STATUS_PRESENT.to_string()
-        } else {
-            PALITRA_GOI_REMOTE_STATUS_MISSING.to_string()
-        });
-        row.updated_at = Set(now);
+        let mut update = goi_palitra_sync::Entity::update_many()
+            .filter(goi_palitra_sync::Column::Id.eq(row.id))
+            .col_expr(
+                goi_palitra_sync::Column::RemoteStatus,
+                Expr::value(if is_present {
+                    PALITRA_GOI_REMOTE_STATUS_PRESENT.to_string()
+                } else {
+                    PALITRA_GOI_REMOTE_STATUS_MISSING.to_string()
+                }),
+            )
+            .col_expr(goi_palitra_sync::Column::UpdatedAt, Expr::value(now));
         if is_present {
-            row.last_seen_at = Set(Some(now));
-            row.last_error = Set(None);
+            update = update.col_expr(
+                goi_palitra_sync::Column::LastSeenAt,
+                Expr::value(Some(now)),
+            );
         }
-        row.update(dbx).await.c(h!())?;
+        update.exec(dbx).await.c(h!())?;
         if let Some(palitra_id) = palitra_id {
             refresh_palitra_missing_in_goi(dbx, palitra_id)
                 .await
@@ -440,6 +584,17 @@ async fn refresh_tracked_goi_palitra_if_changed(
     if target.integration.disable_goi_to_echo_palitra_sync {
         return Ok(());
     }
+    if classify_goi_remote_path_tracking(tracked_rows)
+        == GoiRemotePathTrackingState::DuplicateRemotePathConflict
+    {
+        mark_duplicate_remote_path_conflict(&env.dbx, tracked_rows)
+            .await
+            .c(h!())?;
+        return Ok(());
+    }
+    mark_duplicate_remote_path_resolved(&env.dbx, tracked_rows)
+        .await
+        .c(h!())?;
 
     let remote_file_path =
         super::compose_goi_palette_remote_path(&target.req.path, remote_path);
@@ -450,9 +605,30 @@ async fn refresh_tracked_goi_palitra_if_changed(
     let file_size = file_data.len() as i64;
     let file_sha256 = sha256::digest(&file_data);
     if tracked_goi_palitra_ids(tracked_rows).is_empty() {
+        let sync_decisions = read_echo_origin_goi_sync_decisions(
+            env,
+            tracked_rows,
+            file_size,
+            &file_sha256,
+        )
+        .await
+        .c(h!())?;
+        if echo_origin_goi_file_needs_refresh(&sync_decisions) {
+            return refresh_imported_goi_palitra_file(
+                env,
+                &target.integration,
+                remote_path,
+                file_data,
+                file_size,
+                file_sha256,
+                tracked_rows,
+            )
+            .await
+            .c(h!());
+        }
         update_echo_origin_goi_palitra_remote_metadata(
             &env.dbx,
-            tracked_rows,
+            &sync_decisions,
             file_size,
             &file_sha256,
         )
@@ -485,12 +661,109 @@ async fn refresh_tracked_goi_palitra_if_changed(
     .c(h!())
 }
 
+fn classify_goi_remote_path_tracking(
+    tracked_rows: &[goi_palitra_sync::Model],
+) -> GoiRemotePathTrackingState {
+    if has_duplicate_remote_path_conflict(tracked_rows) {
+        return GoiRemotePathTrackingState::DuplicateRemotePathConflict;
+    }
+    if tracked_goi_palitra_ids(tracked_rows).len() > 1 {
+        return GoiRemotePathTrackingState::GoiOriginDuplicateCleanupNeeded;
+    }
+    GoiRemotePathTrackingState::Normal
+}
+
+fn has_duplicate_remote_path_conflict(
+    tracked_rows: &[goi_palitra_sync::Model],
+) -> bool {
+    let has_echo_origin_row = tracked_rows
+        .iter()
+        .any(|row| row.direction == PALITRA_GOI_SYNC_DIRECTION_ECHO);
+    has_echo_origin_row && tracked_palitra_ids(tracked_rows).len() > 1
+}
+
+async fn mark_duplicate_remote_path_conflict(
+    dbx: &DatabaseConnection,
+    tracked_rows: &[goi_palitra_sync::Model],
+) -> anyhow::Result<()> {
+    for row in tracked_rows {
+        let changelog =
+            super::goi_changelog::append_to_value_if_latest_differs(
+                &row.changelog,
+                super::goi_changelog::error_entry(
+                    GOI_PALITRA_DUPLICATE_REMOTE_PATH_CONFLICT_TEXT,
+                    "Кілька палітр привʼязані до одного шляху в ГОІ. Синхронізацію цього шляху заблоковано до виправлення дубля.",
+                ),
+            )
+            .c(h!())?;
+        goi_palitra_sync::Entity::update_many()
+            .filter(goi_palitra_sync::Column::Id.eq(row.id))
+            .col_expr(
+                goi_palitra_sync::Column::Changelog,
+                Expr::value(changelog),
+            )
+            .col_expr(
+                goi_palitra_sync::Column::UpdatedAt,
+                Expr::value(Utc::now().fixed_offset()),
+            )
+            .exec(dbx)
+            .await
+            .c(h!())?;
+    }
+    Ok(())
+}
+
+async fn mark_duplicate_remote_path_resolved(
+    dbx: &DatabaseConnection,
+    tracked_rows: &[goi_palitra_sync::Model],
+) -> anyhow::Result<()> {
+    for row in tracked_rows {
+        let entries = super::goi_changelog::entries_from_value(&row.changelog);
+        let Some(latest) = super::goi_changelog::latest_entry(&entries) else {
+            continue;
+        };
+        if latest.is_ok || !is_duplicate_remote_path_conflict_text(&latest.text)
+        {
+            continue;
+        }
+        let changelog = super::goi_changelog::append_to_value(
+            &row.changelog,
+            super::goi_changelog::ok_entry(
+                "Duplicate Echo-origin GOI remote path conflict resolved",
+                "Конфлікт дубльованого шляху ГОІ виправлено. Синхронізацію відновлено.",
+            ),
+        )
+        .c(h!())?;
+        goi_palitra_sync::Entity::update_many()
+            .filter(goi_palitra_sync::Column::Id.eq(row.id))
+            .col_expr(
+                goi_palitra_sync::Column::Changelog,
+                Expr::value(changelog),
+            )
+            .col_expr(
+                goi_palitra_sync::Column::UpdatedAt,
+                Expr::value(Utc::now().fixed_offset()),
+            )
+            .exec(dbx)
+            .await
+            .c(h!())?;
+    }
+    Ok(())
+}
+
+fn is_duplicate_remote_path_conflict_text(text: &str) -> bool {
+    text == GOI_PALITRA_DUPLICATE_REMOTE_PATH_CONFLICT_TEXT
+        || text == GOI_PALITRA_DUPLICATE_ECHO_REMOTE_PATH_CONFLICT_TEXT
+}
+
 fn tracked_goi_file_needs_refresh(
     tracked_rows: &[goi_palitra_sync::Model],
     file_size: i64,
     file_sha256: &str,
 ) -> bool {
-    if tracked_goi_palitra_ids(tracked_rows).len() > 1 {
+    if classify_goi_remote_path_tracking(tracked_rows)
+        == GoiRemotePathTrackingState::GoiOriginDuplicateCleanupNeeded
+    {
         return true;
     }
     tracked_rows
@@ -500,6 +773,178 @@ fn tracked_goi_file_needs_refresh(
             tracked_row_goi_file_size(row) != Some(file_size)
                 || tracked_row_goi_file_sha256(row) != Some(file_sha256)
         })
+}
+
+async fn read_echo_origin_goi_sync_decisions(
+    env: &Env,
+    tracked_rows: &[goi_palitra_sync::Model],
+    file_size: i64,
+    file_sha256: &str,
+) -> anyhow::Result<Vec<EchoOriginGoiSyncDecision>> {
+    let current_goi_checksum = OwnedFileChecksum {
+        file_size,
+        file_sha256: file_sha256.to_string(),
+    };
+    let mut decisions = Vec::new();
+    for row in tracked_rows
+        .iter()
+        .filter(|row| row.direction == PALITRA_GOI_SYNC_DIRECTION_ECHO)
+    {
+        let current_echo_checksum =
+            read_current_echo_checksum(env, row).await.c(h!())?;
+        let decision =
+            decide_goi_palitra_checksum_sync(GoiPalitraSyncDecisionInput {
+                stored_echo_checksum: tracked_row_echo_checksum(row),
+                current_echo_checksum: current_echo_checksum.as_ref(),
+                stored_goi_checksum: tracked_row_goi_checksum(row),
+                current_goi_checksum: current_goi_checksum.as_ref(),
+            });
+        let current_echo_file_data =
+            if decision == GoiPalitraSyncDecision::PushEcho {
+                current_echo_checksum
+                    .file_data()
+                    .map(|file_data| file_data.to_vec())
+            } else {
+                None
+            };
+        decisions.push(EchoOriginGoiSyncDecision {
+            row: row.clone(),
+            decision,
+            current_echo_file_data,
+        });
+    }
+    Ok(decisions)
+}
+
+fn echo_origin_goi_file_needs_refresh(
+    decisions: &[EchoOriginGoiSyncDecision],
+) -> bool {
+    decisions.iter().any(|decision| {
+        decision.decision == GoiPalitraSyncDecision::RefreshEcho
+    })
+}
+
+async fn read_current_echo_checksum(
+    env: &Env,
+    row: &goi_palitra_sync::Model,
+) -> anyhow::Result<CurrentEchoChecksumOwned> {
+    let Some(palitra_id) = row.palitra_id else {
+        return Ok(CurrentEchoChecksumOwned::MissingPalette);
+    };
+    let Some(palitra) = palitra::Entity::find_by_id(palitra_id)
+        .filter(palitra::Column::Deleted.eq(false))
+        .one(&env.dbx)
+        .await
+        .c(h!())?
+    else {
+        return Ok(CurrentEchoChecksumOwned::MissingPalette);
+    };
+    let Some(file_data) =
+        maybe_load_palitra_file_data(env, &palitra).await.c(h!())?
+    else {
+        return Ok(CurrentEchoChecksumOwned::MissingFile);
+    };
+    Ok(CurrentEchoChecksumOwned::Known(OwnedEchoFile {
+        checksum: OwnedFileChecksum {
+            file_size: file_data.len() as i64,
+            file_sha256: sha256::digest(&file_data),
+        },
+        file_data,
+    }))
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct OwnedEchoFile {
+    checksum: OwnedFileChecksum,
+    file_data: Vec<u8>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum CurrentEchoChecksumOwned {
+    Known(OwnedEchoFile),
+    MissingPalette,
+    MissingFile,
+}
+
+impl CurrentEchoChecksumOwned {
+    fn as_ref(&self) -> CurrentEchoChecksum<'_> {
+        match self {
+            Self::Known(echo_file) => {
+                CurrentEchoChecksum::Known(echo_file.checksum.as_ref())
+            }
+            Self::MissingPalette => CurrentEchoChecksum::MissingPalette,
+            Self::MissingFile => CurrentEchoChecksum::MissingFile,
+        }
+    }
+
+    fn file_data(&self) -> Option<&[u8]> {
+        match self {
+            Self::Known(echo_file) => Some(&echo_file.file_data),
+            Self::MissingPalette | Self::MissingFile => None,
+        }
+    }
+}
+
+fn decide_goi_palitra_checksum_sync(
+    input: GoiPalitraSyncDecisionInput<'_>,
+) -> GoiPalitraSyncDecision {
+    let Some(stored_echo_checksum) = input.stored_echo_checksum else {
+        return GoiPalitraSyncDecision::Conflict(
+            GoiPalitraSyncConflict::MissingEchoChecksumMetadata,
+        );
+    };
+    let current_echo_checksum = match input.current_echo_checksum {
+        CurrentEchoChecksum::Known(checksum) => checksum,
+        CurrentEchoChecksum::MissingPalette => {
+            return GoiPalitraSyncDecision::Conflict(
+                GoiPalitraSyncConflict::MissingEchoPalette,
+            );
+        }
+        CurrentEchoChecksum::MissingFile => {
+            return GoiPalitraSyncDecision::Conflict(
+                GoiPalitraSyncConflict::MissingEchoFile,
+            );
+        }
+    };
+    let echo_changed = current_echo_checksum != stored_echo_checksum;
+    let goi_changed =
+        input.stored_goi_checksum != Some(input.current_goi_checksum);
+    match (echo_changed, goi_changed) {
+        (false, false) => GoiPalitraSyncDecision::Noop,
+        (false, true) => GoiPalitraSyncDecision::RefreshEcho,
+        (true, false) => GoiPalitraSyncDecision::PushEcho,
+        (true, true) => GoiPalitraSyncDecision::Conflict(
+            GoiPalitraSyncConflict::EchoAndGoiChanged,
+        ),
+    }
+}
+
+fn tracked_row_checksum<'a>(
+    file_size: Option<i64>,
+    file_sha256: Option<&'a str>,
+) -> Option<FileChecksumRef<'a>> {
+    Some(FileChecksumRef {
+        file_size: file_size?,
+        file_sha256: file_sha256?,
+    })
+}
+
+fn tracked_row_goi_checksum(
+    row: &goi_palitra_sync::Model,
+) -> Option<FileChecksumRef<'_>> {
+    tracked_row_checksum(
+        tracked_row_goi_file_size(row),
+        tracked_row_goi_file_sha256(row),
+    )
+}
+
+fn tracked_row_echo_checksum(
+    row: &goi_palitra_sync::Model,
+) -> Option<FileChecksumRef<'_>> {
+    tracked_row_checksum(
+        tracked_row_echo_file_size(row),
+        tracked_row_echo_file_sha256(row),
+    )
 }
 
 fn tracked_row_goi_file_size(row: &goi_palitra_sync::Model) -> Option<i64> {
@@ -522,9 +967,91 @@ fn tracked_row_echo_file_sha256(row: &goi_palitra_sync::Model) -> Option<&str> {
         .or(row.file_sha256.as_deref())
 }
 
+fn checksum_sync_conflict_entry(
+    conflict: GoiPalitraSyncConflict,
+) -> PalitraChangelogEntry {
+    let (text, description) = checksum_sync_conflict_text(conflict);
+    super::goi_changelog::error_entry(text, description)
+}
+
+fn checksum_sync_conflict_text(
+    conflict: GoiPalitraSyncConflict,
+) -> (&'static str, &'static str) {
+    match conflict {
+        GoiPalitraSyncConflict::MissingEchoChecksumMetadata => (
+            GOI_PALITRA_MISSING_ECHO_CHECKSUM_TEXT,
+            "Не вистачає контрольної суми Echo для безпечної синхронізації з ГОІ.",
+        ),
+        GoiPalitraSyncConflict::MissingEchoPalette => (
+            GOI_PALITRA_MISSING_ECHO_PALETTE_TEXT,
+            "Палітру Echo не знайдено. Синхронізацію з ГОІ зупинено для цього рядка.",
+        ),
+        GoiPalitraSyncConflict::MissingEchoFile => (
+            GOI_PALITRA_MISSING_ECHO_FILE_TEXT,
+            "Файл палітри Echo не знайдено. Синхронізацію з ГОІ зупинено для цього рядка.",
+        ),
+        GoiPalitraSyncConflict::EchoAndGoiChanged => (
+            GOI_PALITRA_ECHO_AND_GOI_CHANGED_TEXT,
+            "Палітру змінено і в Echo, і в ГОІ після останньої синхронізації. Потрібне ручне виправлення.",
+        ),
+    }
+}
+
+fn is_checksum_sync_conflict_text(text: &str) -> bool {
+    [
+        GOI_PALITRA_MISSING_ECHO_CHECKSUM_TEXT,
+        GOI_PALITRA_MISSING_ECHO_PALETTE_TEXT,
+        GOI_PALITRA_MISSING_ECHO_FILE_TEXT,
+        GOI_PALITRA_ECHO_AND_GOI_CHANGED_TEXT,
+    ]
+    .contains(&text)
+}
+
+fn append_checksum_sync_resolution_if_needed(
+    changelog: &serde_json::Value,
+) -> anyhow::Result<Option<serde_json::Value>> {
+    let entries = super::goi_changelog::entries_from_value(changelog);
+    let Some(latest) = super::goi_changelog::latest_entry(&entries) else {
+        return Ok(None);
+    };
+    if latest.is_ok || !is_checksum_sync_conflict_text(&latest.text) {
+        return Ok(None);
+    }
+    super::goi_changelog::append_to_value(
+        changelog,
+        super::goi_changelog::ok_entry(
+            "GOI checksum sync conflict resolved",
+            "Конфлікт контрольних сум між Echo та ГОІ виправлено.",
+        ),
+    )
+    .map(Some)
+    .c(h!())
+}
+
+fn append_goi_sync_success_resolution_if_needed(
+    changelog: &serde_json::Value,
+) -> anyhow::Result<Option<serde_json::Value>> {
+    let entries = super::goi_changelog::entries_from_value(changelog);
+    let Some(latest) = super::goi_changelog::latest_entry(&entries) else {
+        return Ok(None);
+    };
+    if latest.is_ok {
+        return Ok(None);
+    }
+    super::goi_changelog::append_to_value(
+        changelog,
+        super::goi_changelog::ok_entry(
+            "GOI palitra sync recovered",
+            "Синхронізація палітри з ГОІ знову успішна.",
+        ),
+    )
+    .map(Some)
+    .c(h!())
+}
+
 async fn update_echo_origin_goi_palitra_remote_metadata<'a, C>(
     dbx: &'a C,
-    tracked_rows: &[goi_palitra_sync::Model],
+    sync_decisions: &[EchoOriginGoiSyncDecision],
     file_size: i64,
     file_sha256: &str,
 ) -> anyhow::Result<()>
@@ -532,40 +1059,65 @@ where
     C: ConnectionTrait + 'a,
 {
     let now = Utc::now().fixed_offset();
-    for row in tracked_rows
-        .iter()
-        .filter(|row| row.direction == PALITRA_GOI_SYNC_DIRECTION_ECHO)
-    {
-        let echo_checksum_known = tracked_row_echo_file_size(row).is_some()
-            || tracked_row_echo_file_sha256(row).is_some();
-        let echo_matches_remote = !echo_checksum_known
-            || (tracked_row_echo_file_size(row) == Some(file_size)
-                && tracked_row_echo_file_sha256(row) == Some(file_sha256));
-        let goi_changed = tracked_row_goi_file_size(row) != Some(file_size)
-            || tracked_row_goi_file_sha256(row) != Some(file_sha256);
-        let mut row = row.clone().into_active_model();
-        row.remote_status = Set(PALITRA_GOI_REMOTE_STATUS_PRESENT.to_string());
-        if !echo_checksum_known {
-            row.echo_file_size = Set(Some(file_size));
-            row.echo_file_sha256 = Set(Some(file_sha256.to_string()));
-            row.echo_updated_at = Set(Some(now));
-        }
-        row.goi_file_size = Set(Some(file_size));
-        row.goi_file_sha256 = Set(Some(file_sha256.to_string()));
-        if goi_changed {
-            row.goi_updated_at = Set(Some(now));
-        }
-        row.last_seen_at = Set(Some(now));
-        row.last_error = Set(if echo_matches_remote {
-            None
-        } else {
-            Some(
-                "GOI file checksum differs from Echo-origin checksum; skipping re-import to avoid sync loop"
-                    .to_string(),
+    for sync_decision in sync_decisions {
+        let row = &sync_decision.row;
+        let goi_changed = tracked_row_goi_checksum(row)
+            != tracked_row_checksum(Some(file_size), Some(file_sha256));
+        let changelog = match sync_decision.decision {
+            GoiPalitraSyncDecision::Conflict(conflict) => Some(
+                super::goi_changelog::append_to_value_if_latest_differs(
+                    &row.changelog,
+                    checksum_sync_conflict_entry(conflict),
+                )
+                .c(h!())?,
+            ),
+            _ => append_checksum_sync_resolution_if_needed(&row.changelog)
+                .c(h!())?,
+        };
+        if matches!(sync_decision.decision, GoiPalitraSyncDecision::PushEcho) {
+            super::schedule_palitra_goi_upload(
+                dbx,
+                row.palitra_id.c(h!())?,
+                sync_decision.current_echo_file_data.clone().c(h!())?,
             )
-        });
-        row.updated_at = Set(now);
-        row.update(dbx).await.c(h!())?;
+            .await
+            .c(h!())?;
+        }
+        let mut update = goi_palitra_sync::Entity::update_many()
+            .filter(goi_palitra_sync::Column::Id.eq(row.id))
+            .col_expr(
+                goi_palitra_sync::Column::RemoteStatus,
+                Expr::value(PALITRA_GOI_REMOTE_STATUS_PRESENT.to_string()),
+            )
+            .col_expr(
+                goi_palitra_sync::Column::LastSeenAt,
+                Expr::value(Some(now)),
+            )
+            .col_expr(goi_palitra_sync::Column::UpdatedAt, Expr::value(now));
+        if matches!(sync_decision.decision, GoiPalitraSyncDecision::Noop) {
+            update = update
+                .col_expr(
+                    goi_palitra_sync::Column::GoiFileSize,
+                    Expr::value(Some(file_size)),
+                )
+                .col_expr(
+                    goi_palitra_sync::Column::GoiFileSha256,
+                    Expr::value(Some(file_sha256.to_string())),
+                );
+            if goi_changed {
+                update = update.col_expr(
+                    goi_palitra_sync::Column::GoiUpdatedAt,
+                    Expr::value(Some(now)),
+                );
+            }
+        }
+        if let Some(changelog) = changelog {
+            update = update.col_expr(
+                goi_palitra_sync::Column::Changelog,
+                Expr::value(changelog),
+            );
+        }
+        update.exec(dbx).await.c(h!())?;
     }
     Ok(())
 }
@@ -584,29 +1136,72 @@ where
         .iter()
         .filter(|row| row.direction == PALITRA_GOI_SYNC_DIRECTION_GOI)
     {
+        let changelog =
+            append_goi_sync_success_resolution_if_needed(&row.changelog)
+                .c(h!())?;
         let goi_changed = tracked_row_goi_file_size(row) != Some(file_size)
             || tracked_row_goi_file_sha256(row) != Some(file_sha256);
         let echo_checksum_known = tracked_row_echo_file_size(row).is_some()
             || tracked_row_echo_file_sha256(row).is_some();
-        let mut row = row.clone().into_active_model();
-        row.remote_status = Set(PALITRA_GOI_REMOTE_STATUS_PRESENT.to_string());
-        row.file_size = Set(Some(file_size));
-        row.file_sha256 = Set(Some(file_sha256.to_string()));
+        let mut update = goi_palitra_sync::Entity::update_many()
+            .filter(goi_palitra_sync::Column::Id.eq(row.id))
+            .col_expr(
+                goi_palitra_sync::Column::RemoteStatus,
+                Expr::value(PALITRA_GOI_REMOTE_STATUS_PRESENT.to_string()),
+            )
+            .col_expr(
+                goi_palitra_sync::Column::FileSize,
+                Expr::value(Some(file_size)),
+            )
+            .col_expr(
+                goi_palitra_sync::Column::FileSha256,
+                Expr::value(Some(file_sha256.to_string())),
+            )
+            .col_expr(
+                goi_palitra_sync::Column::GoiFileSize,
+                Expr::value(Some(file_size)),
+            )
+            .col_expr(
+                goi_palitra_sync::Column::GoiFileSha256,
+                Expr::value(Some(file_sha256.to_string())),
+            )
+            .col_expr(
+                goi_palitra_sync::Column::LastSeenAt,
+                Expr::value(Some(now)),
+            )
+            .col_expr(
+                goi_palitra_sync::Column::LastSyncAt,
+                Expr::value(Some(now)),
+            )
+            .col_expr(goi_palitra_sync::Column::UpdatedAt, Expr::value(now));
         if !echo_checksum_known {
-            row.echo_file_size = Set(Some(file_size));
-            row.echo_file_sha256 = Set(Some(file_sha256.to_string()));
-            row.echo_updated_at = Set(Some(now));
+            update = update
+                .col_expr(
+                    goi_palitra_sync::Column::EchoFileSize,
+                    Expr::value(Some(file_size)),
+                )
+                .col_expr(
+                    goi_palitra_sync::Column::EchoFileSha256,
+                    Expr::value(Some(file_sha256.to_string())),
+                )
+                .col_expr(
+                    goi_palitra_sync::Column::EchoUpdatedAt,
+                    Expr::value(Some(now)),
+                );
         }
-        row.goi_file_size = Set(Some(file_size));
-        row.goi_file_sha256 = Set(Some(file_sha256.to_string()));
         if goi_changed {
-            row.goi_updated_at = Set(Some(now));
+            update = update.col_expr(
+                goi_palitra_sync::Column::GoiUpdatedAt,
+                Expr::value(Some(now)),
+            );
         }
-        row.last_seen_at = Set(Some(now));
-        row.last_sync_at = Set(Some(now));
-        row.last_error = Set(None);
-        row.updated_at = Set(now);
-        row.update(dbx).await.c(h!())?;
+        if let Some(changelog) = changelog {
+            update = update.col_expr(
+                goi_palitra_sync::Column::Changelog,
+                Expr::value(changelog),
+            );
+        }
+        update.exec(dbx).await.c(h!())?;
     }
     Ok(())
 }
@@ -666,25 +1261,21 @@ async fn refresh_convertible_goi_palitra_file(
     file_sha256: String,
     tracked_rows: &[goi_palitra_sync::Model],
 ) -> anyhow::Result<()> {
-    let palitra_ids = tracked_goi_palitra_ids(tracked_rows);
-    let Some(palitra_id) = palitra_ids.first().copied() else {
-        return import_replacement_goi_palitra_file(
-            env,
-            integration,
-            remote_path,
-            file_data,
-            file_size,
-            file_sha256,
-        )
-        .await;
+    let goi_source = GoiSourceFileSnapshot {
+        file_name: filename.clone(),
+        source_format: extension.clone(),
+        content_type: None,
+        file_data: file_data.clone(),
+        file_size,
+        file_sha256: file_sha256.clone(),
     };
-    let txn = env.dbx.begin().await.c(h!())?;
-    let Some(_) = palitra::Entity::find_by_id(palitra_id)
-        .filter(palitra::Column::Deleted.eq(false))
-        .one(&txn)
-        .await
-        .c(h!())?
+    let palitra_ids = tracked_palitra_ids(tracked_rows);
+    let Some(palitra) =
+        find_first_existing_tracked_palitra(&env.dbx, tracked_rows)
+            .await
+            .c(h!())?
     else {
+        let txn = env.dbx.begin().await.c(h!())?;
         delete_tracked_goi_palitra_sync_rows(
             &txn,
             integration.id,
@@ -704,38 +1295,77 @@ async fn refresh_convertible_goi_palitra_file(
         )
         .await;
     };
+    let retained_palitra_id = palitra.id;
 
+    let txn = env.dbx.begin().await.c(h!())?;
     update_imported_palitra_fields(
         &txn,
-        palitra_id,
+        retained_palitra_id,
         PALITRA_CONVERSION_STATUS_PROCESSING,
         &extension,
         is_archived,
+        imported_from_goi_update_for_refresh(tracked_rows),
     )
     .await
     .c(h!())?;
-    super::schedule_palitra_replacement_conversion(
-        &txn, palitra_id, filename, extension, None, file_data,
+    let schedule_result = super::schedule_palitra_goi_source_conversion(
+        &txn,
+        retained_palitra_id,
+        filename,
+        extension,
+        None,
+        file_data,
     )
-    .await
-    .c(h!())?;
+    .await;
+    if let Err(err) = schedule_result {
+        let error = format!("{err:#}");
+        record_goi_source_conversion_scheduling_failure(
+            &txn,
+            integration.id,
+            retained_palitra_id,
+            remote_path,
+            goi_source.source_format.clone(),
+            file_size,
+            file_sha256.clone(),
+            error.clone(),
+            format!(
+                "Failed to schedule GOI source refresh conversion: {error}"
+            ),
+            "Не вдалося поставити оновлення з ГОІ в чергу на конвертацію.",
+            goi_source,
+        )
+        .await
+        .c(h!())?;
+        txn.commit().await.c(h!())?;
+        anyhow::bail!(
+            "failed to schedule GOI source refresh conversion: {error}"
+        );
+    }
     upsert_goi_palitra_sync(
         &txn,
         integration.id,
-        Some(palitra_id),
+        Some(retained_palitra_id),
         remote_path,
         PALITRA_GOI_SYNC_DIRECTION_GOI,
         PALITRA_GOI_REMOTE_STATUS_PRESENT,
         Some(file_size),
         Some(file_sha256),
-        None,
+        Some(super::goi_changelog::ok_entry(
+            "GOI source refresh queued for conversion",
+            "Нову версію з ГОІ поставлено в чергу на конвертацію.",
+        )),
+        Some(goi_source),
     )
     .await
     .c(h!())?;
-    refresh_palitra_missing_in_goi(&txn, palitra_id)
+    refresh_palitra_missing_in_goi(&txn, retained_palitra_id)
         .await
         .c(h!())?;
-    for stale_palitra_id in palitra_ids.into_iter().skip(1) {
+    let stale_palitra_ids = palitra_ids
+        .into_iter()
+        .filter(|palitra_id| *palitra_id != retained_palitra_id)
+        .collect_vec();
+    for stale_palitra_id in stale_palitra_ids {
         delete_stale_imported_goi_palitra(
             &txn,
             integration.id,
@@ -746,6 +1376,56 @@ async fn refresh_convertible_goi_palitra_file(
         .c(h!())?;
     }
     txn.commit().await.c(h!())?;
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn record_goi_source_conversion_scheduling_failure<'a, C>(
+    dbx: &'a C,
+    integration_id: i64,
+    palitra_id: i64,
+    remote_path: &str,
+    source_format: String,
+    file_size: i64,
+    file_sha256: String,
+    conversion_error: String,
+    changelog_text: String,
+    changelog_description: &str,
+    goi_source: GoiSourceFileSnapshot,
+) -> anyhow::Result<()>
+where
+    C: ConnectionTrait + 'a,
+{
+    super::update_palitra_conversion_status(
+        dbx,
+        palitra_id,
+        PALITRA_CONVERSION_STATUS_ERROR,
+        Some(source_format),
+        None,
+        Some(conversion_error),
+    )
+    .await
+    .c(h!())?;
+    upsert_goi_palitra_sync(
+        dbx,
+        integration_id,
+        Some(palitra_id),
+        remote_path,
+        PALITRA_GOI_SYNC_DIRECTION_GOI,
+        PALITRA_GOI_REMOTE_STATUS_PRESENT,
+        Some(file_size),
+        Some(file_sha256),
+        Some(super::goi_changelog::error_entry(
+            changelog_text,
+            changelog_description,
+        )),
+        Some(goi_source),
+    )
+    .await
+    .c(h!())?;
+    refresh_palitra_missing_in_goi(dbx, palitra_id)
+        .await
+        .c(h!())?;
     Ok(())
 }
 
@@ -762,9 +1442,9 @@ async fn refresh_direct_goi_palitra_file(
     file_sha256: String,
     tracked_rows: &[goi_palitra_sync::Model],
 ) -> anyhow::Result<()> {
-    let palitra_ids = tracked_goi_palitra_ids(tracked_rows);
+    let palitra_ids = tracked_palitra_ids(tracked_rows);
     let Some(palitra) =
-        find_first_existing_tracked_goi_palitra(&env.dbx, tracked_rows)
+        find_first_existing_tracked_palitra(&env.dbx, tracked_rows)
             .await
             .c(h!())?
     else {
@@ -801,6 +1481,7 @@ async fn refresh_direct_goi_palitra_file(
         PALITRA_CONVERSION_STATUS_READY,
         &extension,
         is_archived,
+        imported_from_goi_update_for_refresh(tracked_rows),
     )
     .await
     .c(h!())?;
@@ -823,6 +1504,10 @@ async fn refresh_direct_goi_palitra_file(
         PALITRA_GOI_REMOTE_STATUS_PRESENT,
         Some(file_size),
         Some(file_sha256),
+        Some(super::goi_changelog::ok_entry(
+            "Synced from GOI",
+            "Палітру оновлено з ГОІ.",
+        )),
         None,
     )
     .await
@@ -848,14 +1533,14 @@ async fn refresh_direct_goi_palitra_file(
     Ok(())
 }
 
-async fn find_first_existing_tracked_goi_palitra<'a, C>(
+async fn find_first_existing_tracked_palitra<'a, C>(
     dbx: &'a C,
     tracked_rows: &[goi_palitra_sync::Model],
 ) -> anyhow::Result<Option<palitra::Model>>
 where
     C: ConnectionTrait + 'a,
 {
-    for palitra_id in tracked_goi_palitra_ids(tracked_rows) {
+    for palitra_id in tracked_palitra_ids(tracked_rows) {
         if let Some(palitra) = palitra::Entity::find_by_id(palitra_id)
             .filter(palitra::Column::Deleted.eq(false))
             .one(dbx)
@@ -866,6 +1551,14 @@ where
         }
     }
     Ok(None)
+}
+
+fn tracked_palitra_ids(tracked_rows: &[goi_palitra_sync::Model]) -> Vec<i64> {
+    tracked_rows
+        .iter()
+        .filter_map(|row| row.palitra_id)
+        .unique()
+        .collect_vec()
 }
 
 fn tracked_goi_palitra_ids(
@@ -879,6 +1572,34 @@ fn tracked_goi_palitra_ids(
         .collect_vec()
 }
 
+fn imported_from_goi_update_for_refresh(
+    tracked_rows: &[goi_palitra_sync::Model],
+) -> Option<bool> {
+    (!tracked_rows.is_empty()).then_some(true)
+}
+
+fn goi_source_snapshot_for_remote_path(
+    remote_path: &str,
+    file_data: &[u8],
+    file_size: i64,
+    file_sha256: &str,
+) -> anyhow::Result<Option<GoiSourceFileSnapshot>> {
+    let filename = remote_path_file_name(remote_path).c(h!())?;
+    let extension =
+        super::validate_palitra_upload_filename(&filename).c(h!())?;
+    if super::is_direct_palitra_upload_extension(&extension) {
+        return Ok(None);
+    }
+    Ok(Some(GoiSourceFileSnapshot {
+        file_name: filename,
+        source_format: extension,
+        content_type: None,
+        file_data: file_data.to_vec(),
+        file_size,
+        file_sha256: file_sha256.to_string(),
+    }))
+}
+
 async fn import_replacement_goi_palitra_file(
     env: &Env,
     integration: &goi_integration::Model,
@@ -887,10 +1608,32 @@ async fn import_replacement_goi_palitra_file(
     file_size: i64,
     file_sha256: String,
 ) -> anyhow::Result<()> {
-    let palitra_ids =
-        import_goi_palitra_file(env, integration, remote_path, file_data)
-            .await
-            .c(h!())?;
+    let goi_source = goi_source_snapshot_for_remote_path(
+        remote_path,
+        &file_data,
+        file_size,
+        &file_sha256,
+    )
+    .c(h!())?;
+    let changelog_entry = super::goi_changelog::ok_entry(
+        "Imported GOI palitra",
+        "Палітру імпортовано з ГОІ.",
+    );
+    let palitra_ids = import_goi_palitra_file(
+        env,
+        integration,
+        remote_path,
+        file_data,
+        file_size,
+        file_sha256.clone(),
+        goi_source.clone(),
+        changelog_entry.clone(),
+    )
+    .await
+    .c(h!())?;
+    if goi_source.is_some() {
+        return Ok(());
+    }
     for palitra_id in palitra_ids {
         upsert_goi_palitra_sync(
             &env.dbx,
@@ -901,6 +1644,7 @@ async fn import_replacement_goi_palitra_file(
             PALITRA_GOI_REMOTE_STATUS_PRESENT,
             Some(file_size),
             Some(file_sha256.clone()),
+            Some(changelog_entry.clone()),
             None,
         )
         .await
@@ -1105,16 +1849,36 @@ async fn import_goi_palitra(
         goi::goi_download_file(target.req.clone(), remote_file_path)
             .await
             .c(h!())?;
+    let file_size = file_data.len() as i64;
+    let file_sha256 = sha256::digest(&file_data);
+    let goi_source = goi_source_snapshot_for_remote_path(
+        remote_path,
+        &file_data,
+        file_size,
+        &file_sha256,
+    )
+    .c(h!())?;
+    let changelog_entry = super::goi_changelog::ok_entry(
+        "Created from GOI",
+        "Палітру створено з файлу ГОІ.",
+    );
     let palitra_ids = import_goi_palitra_file(
         env,
         &target.integration,
         remote_path,
-        file_data.clone(),
+        file_data,
+        file_size,
+        file_sha256.clone(),
+        goi_source.clone(),
+        changelog_entry.clone(),
     )
     .await
     .c(h!())?;
-    let file_size = Some(file_data.len() as i64);
-    let file_sha256 = Some(sha256::digest(&file_data));
+    if goi_source.is_some() {
+        return Ok(());
+    }
+    let file_size = Some(file_size);
+    let file_sha256 = Some(file_sha256);
     for palitra_id in palitra_ids {
         upsert_goi_palitra_sync(
             &env.dbx,
@@ -1125,6 +1889,7 @@ async fn import_goi_palitra(
             PALITRA_GOI_REMOTE_STATUS_PRESENT,
             file_size,
             file_sha256.clone(),
+            Some(changelog_entry.clone()),
             None,
         )
         .await
@@ -1141,6 +1906,10 @@ async fn import_goi_palitra_file(
     integration: &goi_integration::Model,
     remote_path: &str,
     file_data: Vec<u8>,
+    file_size: i64,
+    file_sha256: String,
+    goi_source: Option<GoiSourceFileSnapshot>,
+    changelog_entry: PalitraChangelogEntry,
 ) -> anyhow::Result<Vec<i64>> {
     let filename = remote_path_file_name(remote_path).c(h!())?;
     let extension =
@@ -1155,6 +1924,10 @@ async fn import_goi_palitra_file(
             extension,
             file_data,
             is_archived,
+            file_size,
+            file_sha256,
+            goi_source.c(h!())?,
+            changelog_entry,
         )
         .await;
     }
@@ -1178,6 +1951,10 @@ async fn import_convertible_goi_palitra_file(
     extension: String,
     file_data: Vec<u8>,
     is_archived: bool,
+    file_size: i64,
+    file_sha256: String,
+    goi_source: GoiSourceFileSnapshot,
+    changelog_entry: PalitraChangelogEntry,
 ) -> anyhow::Result<Vec<i64>> {
     let organism_ids =
         goi_import_access(&env.dbx, integration).await.c(h!())?;
@@ -1206,15 +1983,57 @@ async fn import_convertible_goi_palitra_file(
         PALITRA_CONVERSION_STATUS_PROCESSING,
         &extension,
         is_archived,
+        Some(true),
     )
     .await
     .c(h!())?;
+    upsert_goi_palitra_sync(
+        &txn,
+        integration.id,
+        Some(palitra.id),
+        remote_path,
+        PALITRA_GOI_SYNC_DIRECTION_GOI,
+        PALITRA_GOI_REMOTE_STATUS_PRESENT,
+        Some(file_size),
+        Some(file_sha256.clone()),
+        Some(changelog_entry),
+        Some(goi_source.clone()),
+    )
+    .await
+    .c(h!())?;
+    refresh_palitra_missing_in_goi(&txn, palitra.id)
+        .await
+        .c(h!())?;
     txn.commit().await.c(h!())?;
-    super::schedule_palitra_conversion(
-        &env.dbx, palitra.id, filename, extension, None, file_data,
+    let schedule_result = super::schedule_palitra_conversion_with_goi_upload(
+        &env.dbx,
+        palitra.id,
+        filename,
+        extension.clone(),
+        None,
+        file_data,
+        false,
     )
-    .await
-    .c(h!())?;
+    .await;
+    if let Err(err) = schedule_result {
+        let error = format!("{err:#}");
+        record_goi_source_conversion_scheduling_failure(
+            &env.dbx,
+            integration.id,
+            palitra.id,
+            remote_path,
+            extension,
+            file_size,
+            file_sha256,
+            error.clone(),
+            format!("Failed to schedule GOI source conversion: {error}"),
+            "Не вдалося поставити конвертацію файлу ГОІ в чергу.",
+            goi_source,
+        )
+        .await
+        .c(h!())?;
+        anyhow::bail!("failed to schedule GOI source conversion: {error}");
+    }
     Ok(vec![palitra.id])
 }
 
@@ -1274,6 +2093,7 @@ async fn import_direct_goi_palitra_file(
         PALITRA_CONVERSION_STATUS_READY,
         &extension,
         is_archived,
+        Some(true),
     )
     .await
     .c(h!())?;
@@ -1349,13 +2169,13 @@ async fn update_imported_palitra_fields<'a, C>(
     status: &str,
     source_format: &str,
     is_archived: bool,
+    imported_from_goi: Option<bool>,
 ) -> anyhow::Result<()>
 where
     C: ConnectionTrait + 'a,
 {
-    palitra::Entity::update_many()
+    let mut update = palitra::Entity::update_many()
         .filter(palitra::Column::Id.eq(palitra_id))
-        .col_expr(palitra::Column::ImportedFromGoi, Expr::value(true))
         .col_expr(palitra::Column::MissingInGoi, Expr::value(false))
         .col_expr(palitra::Column::IsArchived, Expr::value(is_archived))
         .col_expr(
@@ -1373,10 +2193,20 @@ where
         .col_expr(
             palitra::Column::ConversionError,
             Expr::value(Option::<String>::None),
-        )
-        .exec(dbx)
-        .await
-        .c(h!())?;
+        );
+    if let Some(imported_from_goi) = imported_from_goi {
+        update = update.col_expr(
+            palitra::Column::ImportedFromGoi,
+            Expr::value(imported_from_goi),
+        );
+    }
+    if status == PALITRA_CONVERSION_STATUS_PROCESSING {
+        update = update.col_expr(
+            palitra::Column::ConversionLastAttemptAt,
+            Expr::value(Some(Utc::now().fixed_offset())),
+        );
+    }
+    update.exec(dbx).await.c(h!())?;
     Ok(())
 }
 
@@ -1604,7 +2434,8 @@ async fn upsert_goi_palitra_sync<'a, C>(
     remote_status: &str,
     file_size: Option<i64>,
     file_sha256: Option<String>,
-    last_error: Option<String>,
+    changelog_entry: Option<PalitraChangelogEntry>,
+    goi_source: Option<GoiSourceFileSnapshot>,
 ) -> anyhow::Result<()>
 where
     C: ConnectionTrait + 'a,
@@ -1632,6 +2463,13 @@ where
         let goi_changed = has_file_metadata
             && (tracked_row_goi_file_size(&row) != file_size
                 || tracked_row_goi_file_sha256(&row) != file_sha256.as_deref());
+        let changelog = match changelog_entry {
+            Some(entry) => Some(
+                super::goi_changelog::append_to_value(&row.changelog, entry)
+                    .c(h!())?,
+            ),
+            None => None,
+        };
         let mut row = row.into_active_model();
         row.direction = Set(direction.to_string());
         row.remote_status = Set(remote_status.to_string());
@@ -1651,11 +2489,42 @@ where
         }
         row.last_seen_at = Set(Some(now));
         row.last_sync_at = Set(Some(now));
-        row.last_error = Set(last_error);
+        if let Some(changelog) = changelog {
+            row.changelog = Set(changelog);
+        }
+        if let Some(goi_source) = goi_source {
+            row.goi_source_file_name = Set(Some(goi_source.file_name));
+            row.goi_source_format = Set(Some(goi_source.source_format));
+            row.goi_source_content_type = Set(goi_source.content_type);
+            row.goi_source_file_data = Set(Some(goi_source.file_data));
+            row.goi_source_file_size = Set(Some(goi_source.file_size));
+            row.goi_source_file_sha256 = Set(Some(goi_source.file_sha256));
+        }
         row.updated_at = Set(now);
         row.update(dbx).await.c(h!())?;
         return Ok(());
     }
+    let changelog =
+        changelog_entry.map(|entry| vec![entry]).unwrap_or_default();
+    let changelog = serde_json::to_value(changelog).c(h!())?;
+    let (
+        goi_source_file_name,
+        goi_source_format,
+        goi_source_content_type,
+        goi_source_file_data,
+        goi_source_file_size,
+        goi_source_file_sha256,
+    ) = match goi_source {
+        Some(goi_source) => (
+            Some(goi_source.file_name),
+            Some(goi_source.source_format),
+            goi_source.content_type,
+            Some(goi_source.file_data),
+            Some(goi_source.file_size),
+            Some(goi_source.file_sha256),
+        ),
+        None => (None, None, None, None, None, None),
+    };
     goi_palitra_sync::Entity::insert(goi_palitra_sync::ActiveModel {
         goi_integration_id: Set(goi_integration_id),
         palitra_id: Set(palitra_id),
@@ -1672,7 +2541,13 @@ where
         goi_updated_at: Set(has_file_metadata.then_some(now)),
         last_seen_at: Set(Some(now)),
         last_sync_at: Set(Some(now)),
-        last_error: Set(last_error),
+        changelog: Set(changelog),
+        goi_source_file_name: Set(goi_source_file_name),
+        goi_source_format: Set(goi_source_format),
+        goi_source_content_type: Set(goi_source_content_type),
+        goi_source_file_data: Set(goi_source_file_data),
+        goi_source_file_size: Set(goi_source_file_size),
+        goi_source_file_sha256: Set(goi_source_file_sha256),
         updated_at: Set(now),
         ..Default::default()
     })
@@ -1689,15 +2564,18 @@ async fn refresh_palitra_missing_in_goi<'a, C>(
 where
     C: ConnectionTrait + 'a,
 {
-    let rows = goi_palitra_sync::Entity::find()
+    let remote_statuses = goi_palitra_sync::Entity::find()
         .filter(goi_palitra_sync::Column::PalitraId.eq(palitra_id))
+        .select_only()
+        .column(goi_palitra_sync::Column::RemoteStatus)
+        .into_tuple::<String>()
         .all(dbx)
         .await
         .c(h!())?;
-    let missing = !rows.is_empty()
-        && rows
-            .iter()
-            .all(|row| row.remote_status != PALITRA_GOI_REMOTE_STATUS_PRESENT);
+    let missing = !remote_statuses.is_empty()
+        && remote_statuses.iter().all(|remote_status| {
+            remote_status != PALITRA_GOI_REMOTE_STATUS_PRESENT
+        });
     palitra::Entity::update_many()
         .filter(palitra::Column::Id.eq(palitra_id))
         .col_expr(palitra::Column::MissingInGoi, Expr::value(missing))
@@ -1930,18 +2808,21 @@ where
 {
     let rows = goi_palitra_sync::Entity::find()
         .filter(goi_palitra_sync::Column::PalitraId.eq(palitra_id))
+        .select_only()
+        .column(goi_palitra_sync::Column::GoiIntegrationId)
+        .column(goi_palitra_sync::Column::RemoteRelativePath)
+        .into_tuple::<(i64, String)>()
         .all(dbx)
         .await
         .c(h!())?;
     let mut paths_by_integration = BTreeMap::<i64, BTreeSet<String>>::new();
-    for row in rows {
-        let Some(path) =
-            normalize_remote_relative_path(&row.remote_relative_path)
+    for (goi_integration_id, remote_relative_path) in rows {
+        let Some(path) = normalize_remote_relative_path(&remote_relative_path)
         else {
             continue;
         };
         paths_by_integration
-            .entry(row.goi_integration_id)
+            .entry(goi_integration_id)
             .or_default()
             .insert(path);
     }
@@ -2062,6 +2943,10 @@ async fn upload_palitra_to_goi_target(
         PALITRA_GOI_REMOTE_STATUS_PRESENT,
         Some(file_data.len() as i64),
         Some(sha256::digest(file_data)),
+        Some(super::goi_changelog::ok_entry(
+            "Synced to GOI",
+            "Палітру синхронізовано в ГОІ.",
+        )),
         None,
     )
     .await
@@ -2285,6 +3170,11 @@ fn normalize_remote_relative_path(path: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::PALITRA_CONVERSION_JOB_STATUS_PENDING;
+    use crate::functest::tests::{
+        cleanup, find_test_login, find_test_organism, find_test_palitra,
+    };
+    use serial_test::serial;
 
     fn goi_palitra_sync_row(
         direction: &str,
@@ -2310,10 +3200,50 @@ mod tests {
             goi_updated_at: Some(now),
             last_seen_at: Some(now),
             last_sync_at: Some(now),
-            last_error: None,
             created_at: now,
             updated_at: now,
+            changelog: serde_json::json!([]),
+            goi_source_file_name: None,
+            goi_source_format: None,
+            goi_source_content_type: None,
+            goi_source_file_data: None,
+            goi_source_file_size: None,
+            goi_source_file_sha256: None,
+            goi_source_failed_file_sha256: None,
+            goi_source_last_retry_at: None,
         }
+    }
+
+    async fn mk_goi_integration_for_test(
+        dbx: &DatabaseConnection,
+        server_key: &str,
+    ) -> goi_integration::Model {
+        let organism = find_test_organism(dbx).await.unwrap();
+        let login = find_test_login(dbx).await.unwrap();
+        goi_integration::ActiveModel {
+            id: NotSet,
+            owner_organism_id: Set(organism.id),
+            created_at: Set(Utc::now().fixed_offset()),
+            integration_type: Set(
+                ORGANISM_GOI_INTEGRATION_TYPE_FULL.to_string()
+            ),
+            server_key: Set(server_key.to_string()),
+            server_label: Set(server_key.to_string()),
+            ssh_host: Set(Some("goi.test".to_string())),
+            ssh_user: Set(Some("goi".to_string())),
+            ssh_port: Set(22),
+            path: Set("/goi/palettes".to_string()),
+            api_host: Set(None),
+            api_port: Set(8088),
+            api_login: Set(None),
+            api_password: Set(None),
+            disable_goi_to_echo_palitra_sync: Set(false),
+            maintainer_login: Set(Some(login.login)),
+            pause_worker: Set(false),
+        }
+        .insert(dbx)
+        .await
+        .unwrap()
     }
 
     #[test]
@@ -2403,6 +3333,357 @@ mod tests {
     }
 
     #[test]
+    fn goi_source_snapshot_tracks_convertible_source_only() {
+        let snapshot = goi_source_snapshot_for_remote_path(
+            "sector/source.gpx",
+            &[1, 2, 3],
+            3,
+            "source-sha",
+        )
+        .unwrap()
+        .unwrap();
+
+        assert_eq!(snapshot.file_name, "source.gpx");
+        assert_eq!(snapshot.source_format, "gpx");
+        assert_eq!(snapshot.file_data, vec![1, 2, 3]);
+        assert_eq!(snapshot.file_size, 3);
+        assert_eq!(snapshot.file_sha256, "source-sha");
+        assert!(goi_source_snapshot_for_remote_path(
+            "sector/direct.kmz",
+            &[1, 2, 3],
+            3,
+            "kmz-sha",
+        )
+        .unwrap()
+        .is_none());
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn convertible_goi_import_and_refresh_track_source_without_goi_upload(
+    ) {
+        let env = cleanup().await.unwrap();
+        let integration = mk_goi_integration_for_test(
+            &env.dbx,
+            "goi-convertible-import-refresh-test",
+        )
+        .await;
+
+        import_replacement_goi_palitra_file(
+            env.as_ref(),
+            &integration,
+            "sector/source.gpx",
+            vec![1, 2, 3],
+            3,
+            "imported-sha".to_string(),
+        )
+        .await
+        .unwrap();
+
+        let row = goi_palitra_sync::Entity::find()
+            .filter(
+                goi_palitra_sync::Column::GoiIntegrationId.eq(integration.id),
+            )
+            .filter(
+                goi_palitra_sync::Column::RemoteRelativePath
+                    .eq("sector/source.gpx"),
+            )
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        let palitra_id = row.palitra_id.unwrap();
+        let palitra = palitra::Entity::find_by_id(palitra_id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        let job = palitra_conversion_job::Entity::find()
+            .filter(palitra_conversion_job::Column::PalitraId.eq(palitra_id))
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert!(palitra.imported_from_goi);
+        assert_eq!(
+            palitra.conversion_status,
+            PALITRA_CONVERSION_STATUS_PROCESSING
+        );
+        assert_eq!(row.direction, PALITRA_GOI_SYNC_DIRECTION_GOI);
+        assert_eq!(row.goi_source_file_name.as_deref(), Some("source.gpx"));
+        assert_eq!(row.goi_source_format.as_deref(), Some("gpx"));
+        assert_eq!(row.goi_source_file_data, Some(vec![1, 2, 3]));
+        assert_eq!(row.goi_source_file_sha256.as_deref(), Some("imported-sha"));
+        assert_eq!(job.status, PALITRA_CONVERSION_JOB_STATUS_PENDING);
+        assert!(!job.should_schedule_goi_upload);
+
+        refresh_convertible_goi_palitra_file(
+            env.as_ref(),
+            &integration,
+            "sector/source.gpx",
+            "source.gpx".to_string(),
+            "gpx".to_string(),
+            vec![4, 5, 6, 7],
+            false,
+            4,
+            "refreshed-sha".to_string(),
+            std::slice::from_ref(&row),
+        )
+        .await
+        .unwrap();
+
+        let refreshed_row = goi_palitra_sync::Entity::find_by_id(row.id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        let refreshed_job = palitra_conversion_job::Entity::find()
+            .filter(palitra_conversion_job::Column::PalitraId.eq(palitra_id))
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(refreshed_row.goi_source_file_data, Some(vec![4, 5, 6, 7]));
+        assert_eq!(
+            refreshed_row.goi_source_file_sha256.as_deref(),
+            Some("refreshed-sha")
+        );
+        assert_eq!(refreshed_job.file_data, Some(vec![4, 5, 6, 7]));
+        assert!(!refreshed_job.should_schedule_goi_upload);
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn goi_source_scheduling_failure_marks_palitra_error_and_keeps_source(
+    ) {
+        let env = cleanup().await.unwrap();
+        let palitra = find_test_palitra(&env.dbx).await.unwrap();
+        let integration = mk_goi_integration_for_test(
+            &env.dbx,
+            "goi-source-scheduling-failure-test",
+        )
+        .await;
+        let goi_source = GoiSourceFileSnapshot {
+            file_name: "source.gpx".to_string(),
+            source_format: "gpx".to_string(),
+            content_type: None,
+            file_data: vec![9, 8, 7],
+            file_size: 3,
+            file_sha256: "failed-sha".to_string(),
+        };
+
+        record_goi_source_conversion_scheduling_failure(
+            &env.dbx,
+            integration.id,
+            palitra.id,
+            "sector/source.gpx",
+            "gpx".to_string(),
+            3,
+            "failed-sha".to_string(),
+            "simulated schedule error".to_string(),
+            "Failed to schedule GOI source conversion: simulated schedule error"
+                .to_string(),
+            "Не вдалося поставити конвертацію файлу ГОІ в чергу.",
+            goi_source,
+        )
+        .await
+        .unwrap();
+
+        let palitra = palitra::Entity::find_by_id(palitra.id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        let row = goi_palitra_sync::Entity::find()
+            .filter(
+                goi_palitra_sync::Column::GoiIntegrationId.eq(integration.id),
+            )
+            .filter(
+                goi_palitra_sync::Column::RemoteRelativePath
+                    .eq("sector/source.gpx"),
+            )
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        let entries =
+            super::super::goi_changelog::entries_from_value(&row.changelog);
+        let latest =
+            super::super::goi_changelog::latest_entry(&entries).unwrap();
+
+        assert_eq!(palitra.conversion_status, PALITRA_CONVERSION_STATUS_ERROR);
+        assert_eq!(palitra.source_format.as_deref(), Some("gpx"));
+        assert_eq!(
+            palitra.conversion_error.as_deref(),
+            Some("simulated schedule error")
+        );
+        assert!(!latest.is_ok);
+        assert_eq!(
+            latest.text,
+            "Failed to schedule GOI source conversion: simulated schedule error"
+        );
+        assert_eq!(row.goi_source_file_data, Some(vec![9, 8, 7]));
+        assert_eq!(row.goi_source_file_sha256.as_deref(), Some("failed-sha"));
+    }
+
+    fn checksum(file_size: i64, file_sha256: &str) -> FileChecksumRef<'_> {
+        FileChecksumRef {
+            file_size,
+            file_sha256,
+        }
+    }
+
+    #[test]
+    fn checksum_sync_decision_uses_side_specific_checksums() {
+        let cases = vec![
+            (
+                "no changes",
+                GoiPalitraSyncDecisionInput {
+                    stored_echo_checksum: Some(checksum(3, "echo-a")),
+                    current_echo_checksum: CurrentEchoChecksum::Known(
+                        checksum(3, "echo-a"),
+                    ),
+                    stored_goi_checksum: Some(checksum(3, "goi-a")),
+                    current_goi_checksum: checksum(3, "goi-a"),
+                },
+                GoiPalitraSyncDecision::Noop,
+            ),
+            (
+                "goi changed",
+                GoiPalitraSyncDecisionInput {
+                    stored_echo_checksum: Some(checksum(3, "echo-a")),
+                    current_echo_checksum: CurrentEchoChecksum::Known(
+                        checksum(3, "echo-a"),
+                    ),
+                    stored_goi_checksum: Some(checksum(3, "goi-a")),
+                    current_goi_checksum: checksum(4, "goi-b"),
+                },
+                GoiPalitraSyncDecision::RefreshEcho,
+            ),
+            (
+                "echo changed",
+                GoiPalitraSyncDecisionInput {
+                    stored_echo_checksum: Some(checksum(3, "echo-a")),
+                    current_echo_checksum: CurrentEchoChecksum::Known(
+                        checksum(4, "echo-b"),
+                    ),
+                    stored_goi_checksum: Some(checksum(3, "goi-a")),
+                    current_goi_checksum: checksum(3, "goi-a"),
+                },
+                GoiPalitraSyncDecision::PushEcho,
+            ),
+            (
+                "both changed",
+                GoiPalitraSyncDecisionInput {
+                    stored_echo_checksum: Some(checksum(3, "echo-a")),
+                    current_echo_checksum: CurrentEchoChecksum::Known(
+                        checksum(4, "echo-b"),
+                    ),
+                    stored_goi_checksum: Some(checksum(3, "goi-a")),
+                    current_goi_checksum: checksum(4, "goi-b"),
+                },
+                GoiPalitraSyncDecision::Conflict(
+                    GoiPalitraSyncConflict::EchoAndGoiChanged,
+                ),
+            ),
+            (
+                "missing stored echo checksum",
+                GoiPalitraSyncDecisionInput {
+                    stored_echo_checksum: None,
+                    current_echo_checksum: CurrentEchoChecksum::Known(
+                        checksum(3, "echo-a"),
+                    ),
+                    stored_goi_checksum: Some(checksum(3, "goi-a")),
+                    current_goi_checksum: checksum(3, "goi-a"),
+                },
+                GoiPalitraSyncDecision::Conflict(
+                    GoiPalitraSyncConflict::MissingEchoChecksumMetadata,
+                ),
+            ),
+            (
+                "missing echo palette",
+                GoiPalitraSyncDecisionInput {
+                    stored_echo_checksum: Some(checksum(3, "echo-a")),
+                    current_echo_checksum: CurrentEchoChecksum::MissingPalette,
+                    stored_goi_checksum: Some(checksum(3, "goi-a")),
+                    current_goi_checksum: checksum(3, "goi-a"),
+                },
+                GoiPalitraSyncDecision::Conflict(
+                    GoiPalitraSyncConflict::MissingEchoPalette,
+                ),
+            ),
+            (
+                "missing echo file",
+                GoiPalitraSyncDecisionInput {
+                    stored_echo_checksum: Some(checksum(3, "echo-a")),
+                    current_echo_checksum: CurrentEchoChecksum::MissingFile,
+                    stored_goi_checksum: Some(checksum(3, "goi-a")),
+                    current_goi_checksum: checksum(3, "goi-a"),
+                },
+                GoiPalitraSyncDecision::Conflict(
+                    GoiPalitraSyncConflict::MissingEchoFile,
+                ),
+            ),
+        ];
+
+        for (name, input, expected) in cases {
+            assert_eq!(
+                decide_goi_palitra_checksum_sync(input),
+                expected,
+                "{name}"
+            );
+        }
+    }
+
+    #[test]
+    fn checksum_sync_resolution_appends_ok_after_conflict() {
+        let changelog = super::super::goi_changelog::append_to_value(
+            &serde_json::json!([]),
+            checksum_sync_conflict_entry(
+                GoiPalitraSyncConflict::EchoAndGoiChanged,
+            ),
+        )
+        .unwrap();
+
+        let changelog = append_checksum_sync_resolution_if_needed(&changelog)
+            .unwrap()
+            .expect("resolution entry");
+        let entries =
+            super::super::goi_changelog::entries_from_value(&changelog);
+        let latest = super::super::goi_changelog::latest_entry(&entries)
+            .expect("latest");
+
+        assert!(latest.is_ok);
+        assert_eq!(latest.text, "GOI checksum sync conflict resolved");
+    }
+
+    #[test]
+    fn goi_sync_success_resolution_appends_ok_after_warning() {
+        let changelog = super::super::goi_changelog::append_to_value(
+            &serde_json::json!([]),
+            super::super::goi_changelog::error_entry(
+                "Migrated GOI sync warning",
+                "Попередня синхронізація ГОІ завершилась помилкою.",
+            ),
+        )
+        .unwrap();
+
+        let changelog =
+            append_goi_sync_success_resolution_if_needed(&changelog)
+                .unwrap()
+                .expect("resolution entry");
+        let entries =
+            super::super::goi_changelog::entries_from_value(&changelog);
+        let latest = super::super::goi_changelog::latest_entry(&entries)
+            .expect("latest");
+
+        assert!(latest.is_ok);
+        assert_eq!(latest.text, "GOI palitra sync recovered");
+    }
+
+    #[test]
     fn tracked_goi_file_refresh_uses_goi_checksum_metadata() {
         let row = goi_palitra_sync_row(
             PALITRA_GOI_SYNC_DIRECTION_GOI,
@@ -2433,6 +3714,207 @@ mod tests {
             Some("abc"),
         );
         assert!(!tracked_goi_file_needs_refresh(&[echo_row], 4, "def"));
+    }
+
+    #[test]
+    fn tracked_palitra_ids_include_echo_origin_rows_without_marking_them_goi_origin(
+    ) {
+        let echo_row = goi_palitra_sync_row(
+            PALITRA_GOI_SYNC_DIRECTION_ECHO,
+            Some(11),
+            Some(3),
+            Some("abc"),
+        );
+        let goi_row = goi_palitra_sync_row(
+            PALITRA_GOI_SYNC_DIRECTION_GOI,
+            Some(10),
+            Some(3),
+            Some("abc"),
+        );
+
+        assert_eq!(
+            tracked_palitra_ids(std::slice::from_ref(&echo_row)),
+            vec![11]
+        );
+        assert!(tracked_goi_palitra_ids(&[echo_row]).is_empty());
+        assert_eq!(tracked_goi_palitra_ids(&[goi_row]), vec![10]);
+    }
+
+    #[test]
+    fn echo_origin_refresh_marks_palitra_as_imported_from_goi() {
+        let echo_row = goi_palitra_sync_row(
+            PALITRA_GOI_SYNC_DIRECTION_ECHO,
+            Some(11),
+            Some(3),
+            Some("abc"),
+        );
+        let goi_row = goi_palitra_sync_row(
+            PALITRA_GOI_SYNC_DIRECTION_GOI,
+            Some(10),
+            Some(3),
+            Some("abc"),
+        );
+
+        assert_eq!(
+            imported_from_goi_update_for_refresh(&[echo_row]),
+            Some(true)
+        );
+        assert_eq!(
+            imported_from_goi_update_for_refresh(&[goi_row]),
+            Some(true)
+        );
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn echo_origin_push_echo_schedules_upload_job() {
+        let env = cleanup().await.unwrap();
+        let palitra = find_test_palitra(&env.dbx).await.unwrap();
+        let integration = mk_goi_integration_for_test(
+            &env.dbx,
+            "echo-origin-push-echo-schedules-upload-test",
+        )
+        .await;
+        let now = Utc::now().fixed_offset();
+        let row = goi_palitra_sync::ActiveModel {
+            goi_integration_id: Set(integration.id),
+            palitra_id: Set(Some(palitra.id)),
+            remote_relative_path: Set("foo.kmz".to_string()),
+            direction: Set(PALITRA_GOI_SYNC_DIRECTION_ECHO.to_string()),
+            remote_status: Set(PALITRA_GOI_REMOTE_STATUS_PRESENT.to_string()),
+            file_size: Set(Some(3)),
+            file_sha256: Set(Some("goi-a".to_string())),
+            echo_file_size: Set(Some(3)),
+            echo_file_sha256: Set(Some("echo-a".to_string())),
+            echo_updated_at: Set(Some(now)),
+            goi_file_size: Set(Some(3)),
+            goi_file_sha256: Set(Some("goi-a".to_string())),
+            goi_updated_at: Set(Some(now)),
+            last_seen_at: Set(Some(now)),
+            last_sync_at: Set(Some(now)),
+            changelog: Set(serde_json::json!([])),
+            updated_at: Set(now),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        let file_data = vec![1, 2, 3, 4];
+
+        update_echo_origin_goi_palitra_remote_metadata(
+            &env.dbx,
+            &[EchoOriginGoiSyncDecision {
+                row,
+                decision: GoiPalitraSyncDecision::PushEcho,
+                current_echo_file_data: Some(file_data.clone()),
+            }],
+            3,
+            "goi-a",
+        )
+        .await
+        .unwrap();
+
+        let job = palitra_goi_sync_job::Entity::find()
+            .filter(palitra_goi_sync_job::Column::PalitraId.eq(palitra.id))
+            .filter(
+                palitra_goi_sync_job::Column::Kind
+                    .eq(PALITRA_GOI_SYNC_JOB_KIND_UPLOAD),
+            )
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(job.file_data, Some(file_data));
+    }
+
+    #[test]
+    fn remote_path_tracking_classifies_duplicate_echo_origin_as_blocking_conflict(
+    ) {
+        let mut row_a = goi_palitra_sync_row(
+            PALITRA_GOI_SYNC_DIRECTION_ECHO,
+            Some(10),
+            Some(3),
+            Some("abc"),
+        );
+        row_a.id = 1;
+        let mut row_b = goi_palitra_sync_row(
+            PALITRA_GOI_SYNC_DIRECTION_ECHO,
+            Some(11),
+            Some(3),
+            Some("abc"),
+        );
+        row_b.id = 2;
+
+        assert_eq!(
+            classify_goi_remote_path_tracking(&[row_a, row_b]),
+            GoiRemotePathTrackingState::DuplicateRemotePathConflict
+        );
+    }
+
+    #[test]
+    fn remote_path_tracking_classifies_mixed_origin_duplicate_as_blocking_conflict(
+    ) {
+        let mut echo_row = goi_palitra_sync_row(
+            PALITRA_GOI_SYNC_DIRECTION_ECHO,
+            Some(10),
+            Some(3),
+            Some("abc"),
+        );
+        echo_row.id = 1;
+        let mut goi_row = goi_palitra_sync_row(
+            PALITRA_GOI_SYNC_DIRECTION_GOI,
+            Some(11),
+            Some(3),
+            Some("abc"),
+        );
+        goi_row.id = 2;
+
+        assert_eq!(
+            classify_goi_remote_path_tracking(&[echo_row, goi_row]),
+            GoiRemotePathTrackingState::DuplicateRemotePathConflict
+        );
+    }
+
+    #[test]
+    fn remote_path_tracking_classifies_duplicate_goi_origin_as_cleanup_needed()
+    {
+        let mut row_a = goi_palitra_sync_row(
+            PALITRA_GOI_SYNC_DIRECTION_GOI,
+            Some(10),
+            Some(3),
+            Some("abc"),
+        );
+        row_a.id = 1;
+        let mut row_b = goi_palitra_sync_row(
+            PALITRA_GOI_SYNC_DIRECTION_GOI,
+            Some(11),
+            Some(3),
+            Some("abc"),
+        );
+        row_b.id = 2;
+        let rows = vec![row_a, row_b];
+
+        assert_eq!(
+            classify_goi_remote_path_tracking(&rows),
+            GoiRemotePathTrackingState::GoiOriginDuplicateCleanupNeeded
+        );
+        assert!(tracked_goi_file_needs_refresh(&rows, 3, "abc"));
+    }
+
+    #[test]
+    fn remote_path_tracking_uses_normal_state_for_single_echo_origin_mapping() {
+        let row = goi_palitra_sync_row(
+            PALITRA_GOI_SYNC_DIRECTION_ECHO,
+            Some(10),
+            Some(3),
+            Some("abc"),
+        );
+
+        assert_eq!(
+            classify_goi_remote_path_tracking(&[row]),
+            GoiRemotePathTrackingState::Normal
+        );
     }
 
     #[test]

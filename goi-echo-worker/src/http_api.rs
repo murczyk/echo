@@ -261,3 +261,83 @@ fn temp_xlsx_path(path: &Path) -> PathBuf {
         .as_nanos();
     path.with_file_name(format!(".{file_name}.tmp-{suffix}"))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use actix_web::{http::StatusCode, test, App};
+    use goi_echo_worker::xlsx::empty_xlsx_buffer;
+    use sea_orm::DatabaseConnection;
+    use std::fs;
+
+    #[actix_web::test]
+    async fn import_signed_frequencies_writes_readonly_sibling_when_present() {
+        let dir = temp_dir("goi-frequency-readonly-import");
+        fs::create_dir_all(&dir).expect("create temp dir");
+        let frequencies_path = dir.join("frequencies.xlsx");
+        let readonly_path = dir.join("frequencies-readonly.xlsx");
+        let original_frequencies = empty_xlsx_buffer().expect("regular xlsx");
+        let original_readonly = empty_xlsx_buffer().expect("readonly xlsx");
+        fs::write(&frequencies_path, &original_frequencies)
+            .expect("write regular xlsx");
+        fs::write(&readonly_path, &original_readonly)
+            .expect("write readonly xlsx");
+
+        let state = AppState {
+            db: DatabaseConnection::Disconnected,
+            config: Config {
+                pg_host: None,
+                pg_port: None,
+                pg_user: None,
+                pg_password: None,
+                pg_dbname: None,
+                api_login: "login".to_string(),
+                api_password: "password".to_string(),
+                associations_xlsx_path: None,
+                knowledge_xlsx_path: None,
+                frequencies_xlsx_path: Some(
+                    frequencies_path.display().to_string(),
+                ),
+                listen_host: None,
+                listen_port: None,
+                poll_sleep_ms: None,
+            },
+        };
+        let app = test::init_service(
+            App::new()
+                .app_data(web::Data::new(state))
+                .service(import_signed_frequencies),
+        )
+        .await;
+        let body = empty_xlsx_buffer().expect("request xlsx");
+        let auth = format!("Basic {}", Base64.encode("login:password"));
+
+        let req = test::TestRequest::post()
+            .uri("/api/frequencies/signed/import")
+            .insert_header((header::AUTHORIZATION, auth))
+            .set_payload(body.clone())
+            .to_request();
+        let res = test::call_service(&app, req).await;
+
+        assert_eq!(res.status(), StatusCode::OK);
+        let rsp: ImportSignedFrequenciesRsp = test::read_body_json(res).await;
+        assert_eq!(rsp.path, readonly_path.display().to_string());
+        assert_eq!(rsp.bytes_written, body.len());
+        assert_eq!(
+            fs::read(&frequencies_path).expect("read regular xlsx"),
+            original_frequencies
+        );
+        assert_eq!(fs::read(&readonly_path).expect("read readonly xlsx"), body);
+
+        fs::remove_dir_all(dir).ok();
+    }
+
+    fn temp_dir(prefix: &str) -> PathBuf {
+        let suffix = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos();
+        std::env::temp_dir()
+            .join(format!("{prefix}-{}-{suffix}", std::process::id()))
+    }
+}

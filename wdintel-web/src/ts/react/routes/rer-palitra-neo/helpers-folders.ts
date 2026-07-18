@@ -1,6 +1,6 @@
 import type { Palitra, User } from '../../../../Bindings';
 
-import { canModifyPalitra } from './helpers-access';
+import { canModifyEchoPalitra } from './helpers-access';
 import { FolderTableRowView, FolderTreeNode } from './types';
 
 export function normalizeFolderPathForUi(path: string): string {
@@ -91,7 +91,7 @@ export function buildFolderTree(palitras: Palitra[], user: User | null): FolderT
     const directPalitras = palitrasByFolder.get(path) ?? [];
     const directIds = directPalitras.map((palitra) => palitra.id);
     const directModifiableIds = directPalitras
-      .filter((palitra) => canModifyPalitra(user, palitra))
+      .filter((palitra) => canModifyEchoPalitra(user, palitra))
       .map((palitra) => palitra.id);
     const childAllIds = node.childPaths.flatMap(
       (childPath) => folderNodes.get(childPath)?.allPalitraIds ?? [],

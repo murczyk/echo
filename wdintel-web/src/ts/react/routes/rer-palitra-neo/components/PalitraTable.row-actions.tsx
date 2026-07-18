@@ -6,6 +6,7 @@ import DownloadIcon from '@mui/icons-material/Download';
 import DriveFileMoveOutlinedIcon from '@mui/icons-material/DriveFileMoveOutlined';
 import EditIcon from '@mui/icons-material/Edit';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import HistoryIcon from '@mui/icons-material/History';
 import ReplayIcon from '@mui/icons-material/Replay';
 import VisibilityOutlinedIcon from '@mui/icons-material/VisibilityOutlined';
 import UnarchiveOutlinedIcon from '@mui/icons-material/UnarchiveOutlined';
@@ -29,6 +30,8 @@ type Props = {
   onRequestPreview: (palitra: Palitra) => void;
   onRequestUploadPoints: (palitraId: number) => void;
   onRetryConversion: (palitra: Palitra) => void;
+  onRetryGoiSourceConversion: (palitra: Palitra) => void;
+  onOpenHistory: (palitra: Palitra) => void;
   onDelete: (palitra: Palitra) => void;
   onToggleFolderExpanded: (path: string) => void;
   onRequestRenameFolder: (path: string) => void;
@@ -107,6 +110,16 @@ function isPalitraRowPreviewDisabled(row: PalitraRowView, props: Props): boolean
   );
 }
 
+function isGoiSourceRetryDisabled(row: PalitraRowView, props: Props): boolean {
+  return (
+    !row.canRetryGoiSourceConversion ||
+    row.retryInFlight ||
+    props.loading ||
+    props.bulkDeleteInFlight ||
+    props.externalBusy
+  );
+}
+
 function renderPalitraRowActions(row: PalitraRowView, props: Props) {
   const mutationDisabled = isPalitraRowMutationDisabled(row, props);
   const previewDisabled = isPalitraRowPreviewDisabled(row, props);
@@ -154,6 +167,13 @@ function renderPalitraRowActions(row: PalitraRowView, props: Props) {
           onClick={() => props.onOpenEdit(row.palitra)}
           disabled={mutationDisabled}
           icon={<EditIcon fontSize="small" />}
+          opensModal
+        />
+        <MrtRowActionButton
+          label="Історія"
+          onClick={() => props.onOpenHistory(row.palitra)}
+          disabled={props.loading || props.externalBusy}
+          icon={<HistoryIcon fontSize="small" />}
           opensModal
         />
         <MrtRowActionButton
@@ -226,7 +246,21 @@ function renderPalitraRowActions(row: PalitraRowView, props: Props) {
             )
           }
         />
-        {row.palitra.conversionStatus === 'error' ? (
+        {row.palitra.goiSourceRefreshRetryAvailable ? (
+          <MrtRowActionButton
+            label="Повторити оновлення з ГОІ"
+            onClick={() => props.onRetryGoiSourceConversion(row.palitra)}
+            disabled={isGoiSourceRetryDisabled(row, props)}
+            icon={
+              row.retryInFlight ? (
+                <CircularProgress size={16} color="inherit" />
+              ) : (
+                <ReplayIcon fontSize="small" />
+              )
+            }
+          />
+        ) : null}
+        {row.palitra.conversionStatus === 'error' && !row.palitra.goiSourceRefreshRetryAvailable ? (
           <MrtRowActionButton
             label="Повторити конвертацію"
             onClick={() => props.onRetryConversion(row.palitra)}

@@ -94,6 +94,17 @@ function renderConversionStatusChip(palitra: Palitra) {
   return null;
 }
 
+function latestChangelogWarningDescription(palitra: Palitra): string {
+  if (!palitra.latestChangelogWarning) {
+    return '';
+  }
+  if (palitra.changelog.length === 0) {
+    return 'Остання подія синхронізації містить попередження';
+  }
+  const latest = palitra.changelog[palitra.changelog.length - 1];
+  return latest.description || latest.text || 'Остання подія синхронізації містить попередження';
+}
+
 function renderNameCell(row: TableRowView, onToggleFolderExpanded: (path: string) => void) {
   const leftPadding = row.depth * 3;
 
@@ -116,6 +127,11 @@ function renderNameCell(row: TableRowView, onToggleFolderExpanded: (path: string
       {row.palitra.missingInGoi ? (
         <Tooltip title="Палітра відсутня на сервері ГОІ">
           <WarningAmberIcon color="error" fontSize="small" />
+        </Tooltip>
+      ) : null}
+      {row.palitra.latestChangelogWarning ? (
+        <Tooltip title={latestChangelogWarningDescription(row.palitra)}>
+          <WarningAmberIcon color="warning" fontSize="small" />
         </Tooltip>
       ) : null}
       {renderConversionStatusChip(row.palitra)}
@@ -151,6 +167,10 @@ export function buildLoadingRows(): TableRowView[] {
       conversionError: null,
       missingInGoi: false,
       importedFromGoi: false,
+      goiOwned: false,
+      goiSourceRefreshRetryAvailable: false,
+      latestChangelogWarning: false,
+      changelog: [],
       accessLogins: [],
       accessOrganismIds: [],
       accessAorId: [],
@@ -165,6 +185,7 @@ export function buildLoadingRows(): TableRowView[] {
     author: null,
     accessSummary: '',
     canModify: false,
+    canRetryGoiSourceConversion: false,
     canSelect: false,
     archiveInFlight: false,
     deleteInFlight: false,
