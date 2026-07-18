@@ -9,6 +9,7 @@ import type { AnalysisQueryState } from './types';
 import { toErrorMessage } from './use-analysis-data.shared';
 
 type Params = {
+  deferInitialLoad: boolean;
   newestFirst: boolean;
   onError: (message: string) => void;
   onUnauthorized: (error: unknown) => boolean;
@@ -19,6 +20,7 @@ type Params = {
 const MESSAGE_COUNTS_DEBOUNCE_MS = 200;
 
 export function useAnalysisMessageCounts({
+  deferInitialLoad,
   newestFirst,
   onError,
   onUnauthorized,
@@ -40,6 +42,8 @@ export function useAnalysisMessageCounts({
   onUnauthorizedRef.current = onUnauthorized;
 
   useEffect(() => {
+    if (deferInitialLoad) return;
+
     const inboxReq = JSON.parse(messagesTotalRequestJson) as InboxMessagesReq | null;
     const overallInboxReq = JSON.parse(messagesOverallRequestJson) as InboxMessagesReq | null;
     if (isNullOrUndefined(inboxReq) || isNullOrUndefined(overallInboxReq)) {
@@ -85,7 +89,13 @@ export function useAnalysisMessageCounts({
       window.clearTimeout(timeoutId);
       abortController?.abort();
     };
-  }, [loadVersion, messagesOverallRequestJson, messagesTotalRequestJson, newestFirst]);
+  }, [
+    deferInitialLoad,
+    loadVersion,
+    messagesOverallRequestJson,
+    messagesTotalRequestJson,
+    newestFirst,
+  ]);
 
   const refreshMessageCounts = useCallback(() => {
     setLoadVersion((current) => current + 1);

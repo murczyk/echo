@@ -16,6 +16,7 @@ import type { AnalysisAorEntry, AnalysisMessagePageCursor, AnalysisQueryState } 
 import { isNullOrUndefined } from '../../utils/misc';
 
 type Params = {
+  deferInitialLoad: boolean;
   loadMissingNetworksForMessages: (messageItems: Array<[number, InboxMessage]>) => Promise<void>;
   newestFirst: boolean;
   onError: (message: string) => void;
@@ -39,6 +40,7 @@ function transformPageMessages(
 }
 
 export function useAnalysisMessageList({
+  deferInitialLoad,
   loadMissingNetworksForMessages,
   newestFirst,
   onError,
@@ -63,6 +65,7 @@ export function useAnalysisMessageList({
   const pageCursorsRef = useRef<AnalysisMessagePageCursor[]>([FIRST_PAGE_CURSOR]);
   const { messagesOverallCount, messagesTotalCount, messagesTotalLoading, refreshMessageCounts } =
     useAnalysisMessageCounts({
+      deferInitialLoad,
       newestFirst,
       onError,
       onUnauthorized,
@@ -233,6 +236,8 @@ export function useAnalysisMessageList({
         : {
             beforeIdNoninclusive: firstMessage[0],
             sinceIdNoninclusive: null,
+            requestNewestFirst: true,
+            reverseResults: true,
           };
     }
 

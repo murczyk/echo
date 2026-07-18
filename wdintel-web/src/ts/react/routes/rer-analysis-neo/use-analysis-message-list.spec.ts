@@ -1,10 +1,9 @@
 /**
  * @vitest-environment happy-dom
  */
-import { act } from 'react';
+import { act, createElement, useState } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createElement } from 'react';
 
 import { useAnalysisMessageList } from './use-analysis-message-list';
 import { emptyQueryState } from './helpers';
@@ -51,6 +50,7 @@ type Harness = {
   container: HTMLDivElement;
   root: Root;
   latest: ReturnType<typeof useAnalysisMessageList>;
+  setDeferInitialLoad: React.Dispatch<React.SetStateAction<boolean>>;
 };
 
 type Deferred<T> = {
@@ -70,6 +70,7 @@ function renderHook(
   queryState = buildQueryState(),
   loadMissingNetworksForMessages = vi.fn().mockResolvedValue(undefined),
   newestFirst = true,
+  initialDeferInitialLoad = false,
 ): Harness {
   const container = document.createElement('div');
   document.body.appendChild(container);
@@ -77,7 +78,10 @@ function renderHook(
   const harness = { container, root } as Harness;
 
   function TestComponent() {
+    const [deferInitialLoad, setDeferInitialLoad] = useState(initialDeferInitialLoad);
+    harness.setDeferInitialLoad = setDeferInitialLoad;
     harness.latest = useAnalysisMessageList({
+      deferInitialLoad,
       loadMissingNetworksForMessages,
       newestFirst,
       onError: vi.fn(),
@@ -136,6 +140,28 @@ describe('useAnalysisMessageList pagination', () => {
       expect.objectContaining({ nolimit: true, onlyWithMedia: false, newestFirst: true }),
       expect.objectContaining({ signal: expect.any(AbortSignal) }),
     );
+  });
+
+  it('defers message counts until initial loading is allowed', async () => {
+    vi.useFakeTimers();
+    const h = renderHook(buildQueryState(), undefined, true, true);
+    harnesses.push(h);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(500);
+    });
+
+    expect(fetchInboxCountMock).not.toHaveBeenCalled();
+    expect(h.latest.messagesTotalLoading).toBe(false);
+
+    act(() => h.setDeferInitialLoad(false));
+    expect(h.latest.messagesTotalLoading).toBe(true);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(200);
+    });
+
+    expect(fetchInboxCountMock).toHaveBeenCalledTimes(1);
+    expect(h.latest.messagesTotalCount).toBe(42);
   });
 
   it('loads separate selected and overall counts when filters are active', async () => {
@@ -413,6 +439,49 @@ describe('useAnalysisMessageList pagination', () => {
     expect(fetchInboxMessagesMock.mock.calls.at(-1)?.[0]).toMatchObject({
       sinceIdNoninclusive: 2,
       newestFirst: false,
+    });
+  });
+
+  it('keeps oldest-first ordering when loading the previous page after an end jump', async () => {
+    vi.useFakeTimers();
+    const h = renderHook(buildQueryState(), undefined, false);
+    harnesses.push(h);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(200);
+    });
+    fetchInboxMessagesMock.mockResolvedValueOnce({
+      inboxItems: [page(42)[0], page(41)[0]],
+      callsigns: [],
+      pageLimit: 20,
+    });
+    await act(async () => {
+      await h.latest.loadLastPage();
+    });
+    const previousMessages = Array.from({ length: 20 }, (_, index) => [
+      40 - index,
+      buildMessage(),
+    ]) as Array<[number, InboxMessage]>;
+    fetchInboxMessagesMock.mockResolvedValueOnce({
+      inboxItems: previousMessages,
+      callsigns: [],
+      pageLimit: 20,
+    });
+
+    await act(async () => {
+      await h.latest.loadPrevPage();
+    });
+
+    expect(h.latest.pageIndex).toBe(1);
+    expect(h.latest.messages.map(([id]) => id)).toEqual(
+      Array.from({ length: 20 }, (_, index) => 21 + index),
+    );
+    expect(fetchInboxMessagesMock.mock.calls.at(-1)?.[0]).toMatchObject({
+      beforeIdNoninclusive: 41,
+      newestFirst: true,
+    });
+    expect(h.latest.getCurrentMessagePageCursor()).toMatchObject({
+      requestNewestFirst: true,
+      reverseResults: true,
     });
   });
 

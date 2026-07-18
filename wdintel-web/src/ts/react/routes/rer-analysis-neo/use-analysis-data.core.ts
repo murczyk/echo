@@ -301,6 +301,7 @@ export function useAnalysisData({
   });
 
   const messageList = useAnalysisMessageList({
+    deferInitialLoad,
     loadMissingNetworksForMessages,
     newestFirst,
     onError,
