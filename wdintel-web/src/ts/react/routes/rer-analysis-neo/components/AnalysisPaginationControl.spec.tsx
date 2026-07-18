@@ -105,6 +105,7 @@ function baseProps(): React.ComponentProps<typeof AnalysisPaginationControl> {
     messagesCount: 20,
     totalCount: 137,
     totalLoading: false,
+    loading: false,
     noMoreToLoad: false,
     busy: false,
     onFirstPage: vi.fn(),
@@ -146,6 +147,13 @@ describe('AnalysisPaginationControl', () => {
     );
     rendered.push(view);
     expect(view.container.textContent).toContain('— з —');
+  });
+
+  it('falls back to em dash while replacement messages are loading', async () => {
+    const view = await renderComponent({ ...baseProps(), messagesCount: 1, loading: true });
+    rendered.push(view);
+    expect(view.container.textContent).toContain('— з —');
+    expect(view.container.textContent).not.toContain('1-1 з 137');
   });
 
   it('always renders a loaded total count', async () => {

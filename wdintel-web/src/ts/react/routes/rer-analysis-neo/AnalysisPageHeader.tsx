@@ -73,6 +73,7 @@ export function AnalysisPageHeader({
             messagesCount={page.messages.length}
             totalCount={page.messagesTotalCount}
             totalLoading={page.messagesTotalLoading}
+            loading={page.messagesLoading}
             noMoreToLoad={page.noMoreToLoad}
             busy={page.messagesPaging || page.messagesLoading}
             onFirstPage={page.loadFirstPage}

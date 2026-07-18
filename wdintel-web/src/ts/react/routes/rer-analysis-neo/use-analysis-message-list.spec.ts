@@ -51,6 +51,7 @@ type Harness = {
   root: Root;
   latest: ReturnType<typeof useAnalysisMessageList>;
   setDeferInitialLoad: React.Dispatch<React.SetStateAction<boolean>>;
+  setQueryState: React.Dispatch<React.SetStateAction<ReturnType<typeof buildQueryState>>>;
 };
 
 type Deferred<T> = {
@@ -79,7 +80,9 @@ function renderHook(
 
   function TestComponent() {
     const [deferInitialLoad, setDeferInitialLoad] = useState(initialDeferInitialLoad);
+    const [currentQueryState, setCurrentQueryState] = useState(queryState);
     harness.setDeferInitialLoad = setDeferInitialLoad;
+    harness.setQueryState = setCurrentQueryState;
     harness.latest = useAnalysisMessageList({
       deferInitialLoad,
       loadMissingNetworksForMessages,
@@ -87,7 +90,7 @@ function renderHook(
       onError: vi.fn(),
       onUnauthorized: vi.fn().mockReturnValue(false),
       optionsFreqValues: [],
-      queryState,
+      queryState: currentQueryState,
       setSummaryCallsignsInfo: vi.fn(),
     });
     return null;
@@ -179,6 +182,26 @@ describe('useAnalysisMessageList pagination', () => {
     expect(fetchInboxCountMock).toHaveBeenCalledTimes(2);
     expect(h.latest.messagesTotalCount).toBe(42);
     expect(h.latest.messagesOverallCount).toBe(137);
+  });
+
+  it('marks counts as loading synchronously when the date range changes', async () => {
+    vi.useFakeTimers();
+    const h = renderHook();
+    harnesses.push(h);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(200);
+    });
+    expect(h.latest.messagesTotalLoading).toBe(false);
+
+    act(() => {
+      h.setQueryState((current) => ({
+        ...current,
+        toDateTimeStr: '2026-04-03T00:00',
+      }));
+    });
+
+    expect(h.latest.messagesTotalLoading).toBe(true);
+    expect(fetchInboxCountMock).toHaveBeenCalledTimes(1);
   });
 
   it('loadNextPage replaces messages, increments pageIndex, and cursors from the last message', async () => {

@@ -24,6 +24,7 @@ type Props = {
   messagesCount: number;
   totalCount: number | null;
   totalLoading: boolean;
+  loading: boolean;
   noMoreToLoad: boolean;
   busy: boolean;
   onFirstPage: () => void;
@@ -153,6 +154,7 @@ export function AnalysisPaginationControl({
   messagesCount,
   totalCount,
   totalLoading,
+  loading,
   noMoreToLoad,
   busy,
   onFirstPage,
@@ -164,7 +166,7 @@ export function AnalysisPaginationControl({
   const end = pageIndex * pageSize + messagesCount;
 
   const isMessagesTab = centerTab === 'messages';
-  const totalUnknown = totalLoading || totalCount === null;
+  const totalUnknown = loading || totalLoading || totalCount === null;
   let rangeText = '';
   if (totalUnknown) {
     rangeText = `— з —`;

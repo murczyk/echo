@@ -31,12 +31,14 @@ export function useAnalysisMessageCounts({
   const [messagesOverallCount, setMessagesOverallCount] = useState<number | null>(null);
   const [messagesTotalLoading, setMessagesTotalLoading] = useState(false);
   const [loadVersion, setLoadVersion] = useState(0);
+  const [activeRequestKey, setActiveRequestKey] = useState<string | null>(null);
   const onErrorRef = useRef(onError);
   const onUnauthorizedRef = useRef(onUnauthorized);
   const messagesTotalRequestJson = JSON.stringify(
     buildInboxReq(queryState, optionsFreqValues, true),
   );
   const messagesOverallRequestJson = JSON.stringify(buildInboxOverallCountReq(queryState));
+  const requestKey = `${loadVersion}|${newestFirst ? 'newest' : 'oldest'}|${messagesTotalRequestJson}|${messagesOverallRequestJson}`;
 
   onErrorRef.current = onError;
   onUnauthorizedRef.current = onUnauthorized;
@@ -44,6 +46,7 @@ export function useAnalysisMessageCounts({
   useEffect(() => {
     if (deferInitialLoad) return;
 
+    setActiveRequestKey(requestKey);
     const inboxReq = JSON.parse(messagesTotalRequestJson) as InboxMessagesReq | null;
     const overallInboxReq = JSON.parse(messagesOverallRequestJson) as InboxMessagesReq | null;
     if (isNullOrUndefined(inboxReq) || isNullOrUndefined(overallInboxReq)) {
@@ -95,6 +98,7 @@ export function useAnalysisMessageCounts({
     messagesOverallRequestJson,
     messagesTotalRequestJson,
     newestFirst,
+    requestKey,
   ]);
 
   const refreshMessageCounts = useCallback(() => {
@@ -104,7 +108,8 @@ export function useAnalysisMessageCounts({
   return {
     messagesOverallCount,
     messagesTotalCount,
-    messagesTotalLoading,
+    messagesTotalLoading:
+      !deferInitialLoad && (messagesTotalLoading || activeRequestKey !== requestKey),
     refreshMessageCounts,
   };
 }
