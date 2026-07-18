@@ -1,4 +1,6 @@
-use crate::automation::{self, PauseAutomationReq, SaveAutomationReq};
+use crate::automation::{
+    self, PauseAutomationReq, SaveAutomationReq, SavePolygonReq,
+};
 use crate::error::ShortContext;
 use crate::h;
 use crate::messenger::{self, CreateMessengerReq, MessengerKind};
@@ -29,6 +31,10 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
         .service(signal_send)
         .service(automation_accounts)
         .service(automation_groups)
+        .service(list_polygons)
+        .service(create_polygon)
+        .service(update_polygon)
+        .service(delete_polygon)
         .service(list_automations)
         .service(create_automation)
         .service(update_automation)
@@ -130,6 +136,58 @@ async fn automation_groups(
         .c(h!())
         .map_err(error)?;
     Ok(web::Json(groups))
+}
+
+#[get("/ui-api/polygons")]
+async fn list_polygons(
+    state: web::Data<AppState>,
+) -> actix_web::Result<impl Responder> {
+    let polygons = automation::list_polygons(&state.db)
+        .await
+        .c(h!())
+        .map_err(error)?;
+    Ok(web::Json(polygons))
+}
+
+#[post("/ui-api/polygons")]
+async fn create_polygon(
+    state: web::Data<AppState>,
+    req: web::Json<SavePolygonReq>,
+) -> actix_web::Result<impl Responder> {
+    let polygon = automation::create_polygon(&state.db, req.into_inner())
+        .await
+        .c(h!())
+        .map_err(error)?;
+    Ok(web::Json(polygon))
+}
+
+#[put("/ui-api/polygons/{id}")]
+async fn update_polygon(
+    state: web::Data<AppState>,
+    path: web::Path<i64>,
+    req: web::Json<SavePolygonReq>,
+) -> actix_web::Result<impl Responder> {
+    let polygon = automation::update_polygon(
+        &state.db,
+        path.into_inner(),
+        req.into_inner(),
+    )
+    .await
+    .c(h!())
+    .map_err(error)?;
+    Ok(web::Json(polygon))
+}
+
+#[delete("/ui-api/polygons/{id}")]
+async fn delete_polygon(
+    state: web::Data<AppState>,
+    path: web::Path<i64>,
+) -> actix_web::Result<impl Responder> {
+    automation::delete_polygon(&state.db, path.into_inner())
+        .await
+        .c(h!())
+        .map_err(error)?;
+    Ok(HttpResponse::Ok().json(json!({ "ok": true })))
 }
 
 #[get("/ui-api/automations")]
