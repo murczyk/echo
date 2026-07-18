@@ -352,6 +352,59 @@ fn trim(string: String) -> String {
     String::from(string.trim())
 }
 
+pub(crate) fn remove_standard_location_context_terms(line: &str) -> String {
+    line.split_whitespace()
+        .filter(|token| !is_standard_location_context_token(token))
+        .join(" ")
+}
+
+fn is_standard_location_context_token(token: &str) -> bool {
+    let token = token.trim_matches(|ch: char| {
+        !(ch.is_alphabetic() || ch == '-' || ch == '.' || ch == '/')
+    });
+    if token.is_empty() {
+        return false;
+    }
+
+    let token = token.to_uppercase();
+    if matches!(token.trim_matches('.'), "Р-Н" | "Н.П" | "Н/П") {
+        return true;
+    }
+
+    let mut parts = token
+        .split(|ch| matches!(ch, '-' | '.' | '/'))
+        .filter(|part| !part.is_empty());
+    let Some(first) = parts.next() else {
+        return false;
+    };
+    is_standard_location_context_word(first)
+        && parts.all(is_standard_location_context_word)
+}
+
+fn is_standard_location_context_word(word: &str) -> bool {
+    let word = normalize_location_context_word(word);
+    matches!(
+        word.as_str(),
+        "ЗАХ"
+            | "ЗХ"
+            | "СХ"
+            | "ПІВН"
+            | "ПН"
+            | "ПІВД"
+            | "ПД"
+            | "ЙМ"
+            | "ЙМОВ"
+            | "ЙМОВІРНО"
+    ) || collect_near()
+        .into_iter()
+        .map(normalize_location_context_word)
+        .any(|term| term == word)
+}
+
+fn normalize_location_context_word(word: &str) -> String {
+    word.replace(r"\.", ".").trim_matches('.').to_uppercase()
+}
+
 pub fn load_from_file(
     settlements_paths: Vec<String>,
     mode: Mode,
@@ -602,6 +655,15 @@ mod tests {
     use super::*;
 
     #[test]
+    fn standard_location_context_terms_include_direction_abbreviations() {
+        let result = remove_standard_location_context_terms(
+            "БОРІВСЬКА АНДРІЇВКА - зх. МЯСОЖАРІВКА - пд.-сх. ЧАСІВ ЯР",
+        );
+
+        assert_eq!(result, "БОРІВСЬКА АНДРІЇВКА - МЯСОЖАРІВКА - ЧАСІВ ЯР");
+    }
+
+    #[test]
     fn lists_all_regional_settlements_configs() {
         let configs = find_available_settlements_configs(Mode::Test).unwrap();
 
@@ -813,6 +875,25 @@ mod tests {
         let result = parse_location_with_aor_id(
             settlements,
             String::from("сх. Соледар, Донецька обл."),
+        )
+        .unwrap();
+        let result = test_settlements_array(result);
+        assert_eq!(vec!["СОЛЕДАР",], result);
+    }
+
+    #[test]
+    pub fn test11_zx_direction_abbreviation() {
+        let config = crate::config::read_config(Mode::Test).unwrap();
+        let settlements = Arc::new(RwLock::new(
+            load_settlements_data_config(
+                config.settlement_paths().unwrap(),
+                Mode::Test,
+            )
+            .unwrap(),
+        ));
+        let result = parse_location_with_aor_id(
+            settlements,
+            String::from("зх. Соледар, Донецька обл."),
         )
         .unwrap();
         let result = test_settlements_array(result);
