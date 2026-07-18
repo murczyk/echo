@@ -302,8 +302,67 @@ describe('RerDutyNeoWorkspace', () => {
     const content = loadingRoot.firstElementChild as HTMLElement;
     expect(content.children).toHaveLength(1);
 
+    const skeletonHeaders = content.querySelectorAll('[data-duty-skeleton-feed-header="true"]');
     expect(content.querySelectorAll('[data-duty-skeleton-feed-column="true"]')).toHaveLength(3);
-    expect(content.querySelectorAll('[data-duty-skeleton-feed-header="true"]')).toHaveLength(3);
+    expect(skeletonHeaders).toHaveLength(3);
+    expect(content.querySelectorAll('[data-duty-skeleton-feed-header-controls]')).toHaveLength(3);
+    expect(
+      content.querySelectorAll('[data-duty-skeleton-feed-header-section="filters"]'),
+    ).toHaveLength(3);
+    expect(content.querySelectorAll('[data-duty-skeleton-add-feed]')).toHaveLength(1);
+    expect(content.querySelectorAll('[data-duty-skeleton-close-feed]')).toHaveLength(3);
+
+    await act(async () => {
+      root.render(
+        <RerDutyNeoWorkspace
+          activeFeedId={null}
+          buildFeedColumnModel={() => feedColumnModel}
+          columnRefsRef={columnRefsRef}
+          createMessageFeed={() => {}}
+          openCreateMessageComposer={() => {}}
+          isInitialLoading
+          messageFeeds={[buildFeed('feed-1')]}
+          narrowScreen={false}
+          onSelectFeed={() => {}}
+          showLoadingBackdrop={false}
+        />,
+      );
+    });
+
+    const oneFeedContent = (container.firstElementChild?.firstElementChild?.firstElementChild ??
+      null) as HTMLElement;
+    expect(oneFeedContent.querySelectorAll('[data-duty-skeleton-feed-header]')).toHaveLength(1);
+    expect(oneFeedContent.querySelectorAll('[data-duty-skeleton-add-feed]')).toHaveLength(1);
+    expect(oneFeedContent.querySelectorAll('[data-duty-skeleton-close-feed]')).toHaveLength(0);
+
+    await act(async () => {
+      root.render(
+        <RerDutyNeoWorkspace
+          activeFeedId={null}
+          buildFeedColumnModel={() => feedColumnModel}
+          columnRefsRef={columnRefsRef}
+          createMessageFeed={() => {}}
+          openCreateMessageComposer={() => {}}
+          isInitialLoading
+          messageFeeds={Array.from({ length: MAX_MESSAGE_FEEDS }, (_, index) =>
+            buildFeed(`feed-${index + 1}`),
+          )}
+          narrowScreen={false}
+          onSelectFeed={() => {}}
+          showLoadingBackdrop={false}
+        />,
+      );
+    });
+
+    const maxFeedContent = (container.firstElementChild?.firstElementChild?.firstElementChild ??
+      null) as HTMLElement;
+    expect(maxFeedContent.querySelectorAll('[data-duty-skeleton-feed-header]')).toHaveLength(
+      MAX_MESSAGE_FEEDS,
+    );
+    expect(maxFeedContent.querySelectorAll('[data-duty-skeleton-add-feed]')).toHaveLength(0);
+    expect(maxFeedContent.querySelectorAll('[data-duty-skeleton-close-feed]')).toHaveLength(
+      MAX_MESSAGE_FEEDS,
+    );
   });
 
   it('keeps only one close action on narrow screens and exposes the create action in the active feed', async () => {
@@ -442,14 +501,16 @@ describe('RerDutyNeoWorkspace', () => {
     expect(
       renderedFeedColumns.get(`feed-${MAX_MESSAGE_FEEDS - 1}`)?.actions.onCreateFeed,
     ).toBeDefined();
-    expect(container.querySelector('button[aria-label="Додати стрічку"]')).toBeNull();
-    const createButtonBefore = container.querySelector(
-      'button[aria-label="Додати повідомлення"]',
-    ) as HTMLButtonElement | null;
-    expect(createButtonBefore).not.toBeNull();
+    for (let index = 1; index < MAX_MESSAGE_FEEDS - 1; index += 1) {
+      expect(renderedFeedColumns.get(`feed-${index}`)?.actions.onCreateMessage).toBeUndefined();
+    }
+    expect(renderedFeedColumns.get(`feed-${MAX_MESSAGE_FEEDS - 1}`)?.actions.onCreateMessage).toBe(
+      openCreateMessageComposer,
+    );
+    expect(container.querySelector('button[aria-label="Додати повідомлення"]')).toBeNull();
     await act(async () => {
       renderedFeedColumns.get(`feed-${MAX_MESSAGE_FEEDS - 1}`)?.actions.onCreateFeed?.();
-      createButtonBefore?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      renderedFeedColumns.get(`feed-${MAX_MESSAGE_FEEDS - 1}`)?.actions.onCreateMessage?.();
     });
     expect(createMessageFeed).toHaveBeenCalledTimes(1);
     expect(openCreateMessageComposer).toHaveBeenCalledTimes(1);
@@ -465,12 +526,15 @@ describe('RerDutyNeoWorkspace', () => {
       ),
     ).toBe(true);
     expect(container.querySelector('button[aria-label="Додати стрічку"]')).toBeNull();
-    const createButtonAfter = container.querySelector(
-      'button[aria-label="Додати повідомлення"]',
-    ) as HTMLButtonElement | null;
-    expect(createButtonAfter).not.toBeNull();
+    for (let index = 1; index < MAX_MESSAGE_FEEDS; index += 1) {
+      expect(renderedFeedColumns.get(`feed-${index}`)?.actions.onCreateMessage).toBeUndefined();
+    }
+    expect(renderedFeedColumns.get(`feed-${MAX_MESSAGE_FEEDS}`)?.actions.onCreateMessage).toBe(
+      openCreateMessageComposer,
+    );
+    expect(container.querySelector('button[aria-label="Додати повідомлення"]')).toBeNull();
     await act(async () => {
-      createButtonAfter?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      renderedFeedColumns.get(`feed-${MAX_MESSAGE_FEEDS}`)?.actions.onCreateMessage?.();
     });
 
     expect(workspaceAfter.style.paddingTop).toBe(workspaceBefore.style.paddingTop);

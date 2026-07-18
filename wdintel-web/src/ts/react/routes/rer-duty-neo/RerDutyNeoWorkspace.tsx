@@ -4,10 +4,12 @@ import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 
 import { FeedColumn, type FeedColumnHandle } from './FeedColumn';
 import type { FeedColumnModel } from './types';
-import { DUTY_ICON_ONLY_FEED_TAB_MIN_FEEDS } from './FeedColumnHeader';
+import {
+  DUTY_ICON_ONLY_COLUMN_HEADER_MIN_FEEDS,
+  DUTY_ICON_ONLY_FEED_TAB_MIN_FEEDS,
+} from './FeedColumnHeader';
 import type { MessageFeedState } from './utils';
 import { MAX_MESSAGE_FEEDS } from './utils';
-import { CreateMessageFab } from '../shared/manage-message/CreateMessageFab';
 
 function dutyFeedColumnMaxWidth(feedCount: number, narrow: boolean): string {
   if (narrow) return '100%';
@@ -15,36 +17,94 @@ function dutyFeedColumnMaxWidth(feedCount: number, narrow: boolean): string {
   return '100%';
 }
 
-function DutyNeoInitialLoadingSkeletonFeedHeader() {
+function DutyNeoInitialLoadingSkeletonFeedHeader({
+  feedCount,
+  isRightmost,
+  canAddFeed,
+  canCloseFeed,
+}: {
+  feedCount: number;
+  isRightmost: boolean;
+  canAddFeed: boolean;
+  canCloseFeed: boolean;
+}) {
+  const iconOnly = feedCount >= DUTY_ICON_ONLY_COLUMN_HEADER_MIN_FEEDS;
+
   return (
     <Box
       data-duty-skeleton-feed-header="true"
       sx={{
         display: 'flex',
         alignItems: 'stretch',
-        justifyContent: 'space-between',
-        gap: 1,
+        height: 32,
+        minHeight: 32,
         flexShrink: 0,
-        minHeight: 48,
-        px: 1,
-        py: 1,
         border: '1px solid',
         borderColor: 'divider',
-        borderRadius: 1,
+        borderRadius: 0,
         backgroundColor: 'background.paper',
       }}
     >
-      <Box sx={{ display: 'flex', alignItems: 'stretch', minWidth: 0, gap: 0.5 }}>
-        <Skeleton variant="rounded" width={168} height={32} />
-        <Skeleton variant="rounded" width={32} height={32} />
-        <Skeleton variant="rounded" width={144} height={32} />
+      <Box
+        data-duty-skeleton-feed-header-controls
+        sx={{ display: 'flex', flex: '1 1 auto', minWidth: 0, overflow: 'hidden' }}
+      >
+        {['filters', 'notifications', 'highlighting'].map((section) => (
+          <Box
+            key={section}
+            data-duty-skeleton-feed-header-section={section}
+            sx={{
+              display: 'flex',
+              flex: '1 1 0',
+              minWidth: 0,
+              alignItems: 'center',
+              justifyContent: 'center',
+              borderRight: '1px solid',
+              borderColor: 'divider',
+            }}
+          >
+            <Skeleton
+              variant="rectangular"
+              width={iconOnly ? 20 : '70%'}
+              height={iconOnly ? 20 : 18}
+            />
+          </Box>
+        ))}
       </Box>
-      <Skeleton variant="rounded" width={32} height={32} />
+      <Box
+        data-duty-skeleton-feed-header-actions
+        sx={{ display: 'flex', flexShrink: 0, minWidth: 0 }}
+      >
+        {isRightmost && canAddFeed ? (
+          <Skeleton
+            data-duty-skeleton-add-feed
+            variant="rectangular"
+            width={32}
+            height={32}
+            sx={{ borderRight: '1px solid', borderColor: 'divider' }}
+          />
+        ) : null}
+        {canCloseFeed ? (
+          <Skeleton data-duty-skeleton-close-feed variant="rectangular" width={32} height={32} />
+        ) : null}
+      </Box>
     </Box>
   );
 }
 
-function DutyNeoInitialLoadingSkeletonFeedColumn({ messageCount }: { messageCount: number }) {
+function DutyNeoInitialLoadingSkeletonFeedColumn({
+  messageCount,
+  feedCount,
+  isRightmost,
+  canAddFeed,
+  canCloseFeed,
+}: {
+  messageCount: number;
+  feedCount: number;
+  isRightmost: boolean;
+  canAddFeed: boolean;
+  canCloseFeed: boolean;
+}) {
   return (
     <Box
       data-duty-skeleton-feed-column="true"
@@ -63,7 +123,12 @@ function DutyNeoInitialLoadingSkeletonFeedColumn({ messageCount }: { messageCoun
         backgroundColor: 'background.paper',
       }}
     >
-      <DutyNeoInitialLoadingSkeletonFeedHeader />
+      <DutyNeoInitialLoadingSkeletonFeedHeader
+        feedCount={feedCount}
+        isRightmost={isRightmost}
+        canAddFeed={canAddFeed}
+        canCloseFeed={canCloseFeed}
+      />
       {Array.from({ length: messageCount }).map((_, messageIndex) => (
         <Box
           key={messageIndex}
@@ -137,6 +202,10 @@ function DutyNeoInitialLoadingSkeleton({
             <DutyNeoInitialLoadingSkeletonFeedColumn
               key={index}
               messageCount={skeletonMessageCount}
+              feedCount={feedCount}
+              isRightmost={index === skeletonFeedCount - 1}
+              canAddFeed={feedCount < MAX_MESSAGE_FEEDS}
+              canCloseFeed={feedCount > 1}
             />
           ))}
         </Box>
@@ -382,6 +451,10 @@ export function RerDutyNeoWorkspace({
                               index === messageFeeds.length - 1 && showAddButton
                                 ? createMessageFeed
                                 : undefined,
+                            onCreateMessage:
+                              index === messageFeeds.length - 1
+                                ? openCreateMessageComposer
+                                : undefined,
                           },
                         }}
                       />
@@ -393,8 +466,6 @@ export function RerDutyNeoWorkspace({
           </Box>
         </Box>
       )}
-      {!narrowScreen ? <CreateMessageFab onClick={openCreateMessageComposer} /> : null}
-
       <Backdrop
         open={showLoadingBackdrop}
         sx={{

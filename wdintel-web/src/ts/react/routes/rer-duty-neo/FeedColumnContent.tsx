@@ -551,7 +551,7 @@ export const FeedColumnContent = memo(
               listRef={scroll.listRef}
             />
           )}
-          {narrowScreen && isPresent(actions.onCreateMessage) ? (
+          {isPresent(actions.onCreateMessage) ? (
             <Box
               data-duty-feed-footer-spacer
               data-duty-bottom-offset={`calc(${DUTY_FLOATING_ACTION_BOTTOM_PX} + ${DUTY_FLOATING_ACTION_STACK_HEIGHT_PX}px)`}
@@ -562,7 +562,7 @@ export const FeedColumnContent = memo(
             />
           ) : null}
         </Box>
-        {narrowScreen && isPresent(actions.onCreateMessage) ? (
+        {isPresent(actions.onCreateMessage) ? (
           <Box
             data-duty-message-create-button
             data-duty-bottom-offset={DUTY_FLOATING_ACTION_BOTTOM_PX}
@@ -592,16 +592,11 @@ export const FeedColumnContent = memo(
           <Box
             data-duty-feed-scroll-button
             data-duty-bottom-offset={
-              narrowScreen && isPresent(actions.onCreateMessage)
-                ? DUTY_FLOATING_SCROLL_BOTTOM_PX
-                : '12px'
+              isPresent(actions.onCreateMessage) ? DUTY_FLOATING_SCROLL_BOTTOM_PX : '12px'
             }
             style={{
               position: 'absolute',
-              bottom:
-                narrowScreen && isPresent(actions.onCreateMessage)
-                  ? DUTY_FLOATING_SCROLL_BOTTOM_PX
-                  : 12,
+              bottom: isPresent(actions.onCreateMessage) ? DUTY_FLOATING_SCROLL_BOTTOM_PX : 12,
             }}
             sx={{
               right: { xs: 12, sm: 20 },

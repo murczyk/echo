@@ -408,6 +408,63 @@ describe('FeedColumn', () => {
     );
   });
 
+  it('keeps desktop create and scroll actions visible, separated, and independently clickable', async () => {
+    const props = buildProps();
+    const onCreateMessage = vi.fn();
+    const onArrowClick = vi.fn();
+    props.column.actions.onCreateMessage = onCreateMessage;
+    props.column.actions.onArrowClick = onArrowClick;
+    props.column.view.unreadCount = 2;
+    props.column.feed.items = [[1, minimalInboxMessage({ timestamp: 100 })]];
+
+    await act(async () => {
+      root.render(<FeedColumn column={props.column} />);
+    });
+
+    const addWrapper = container.querySelector('[data-duty-message-create-button]') as HTMLElement;
+    const scrollWrapper = container.querySelector('[data-duty-feed-scroll-button]') as HTMLElement;
+
+    expect(addWrapper).not.toBeNull();
+    expect(scrollWrapper).not.toBeNull();
+    expect(addWrapper.getAttribute('data-duty-bottom-offset')).toBe(
+      'max(12px, env(safe-area-inset-bottom, 0px))',
+    );
+    expect(scrollWrapper.getAttribute('data-duty-bottom-offset')).toBe(
+      'calc(max(12px, env(safe-area-inset-bottom, 0px)) + 47px)',
+    );
+    expect(addWrapper.getAttribute('data-duty-bottom-offset')).not.toBe(
+      scrollWrapper.getAttribute('data-duty-bottom-offset'),
+    );
+
+    await act(async () => {
+      addWrapper.querySelector('button')?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      scrollWrapper
+        .querySelector('button')
+        ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+
+    expect(onCreateMessage).toHaveBeenCalledTimes(1);
+    expect(onArrowClick).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the desktop scroll action at its original offset without create action', async () => {
+    const props = buildProps();
+    props.column.actions.onCreateMessage = undefined;
+    props.column.actions.onArrowClick = vi.fn();
+    props.column.view.unreadCount = 1;
+
+    await act(async () => {
+      root.render(<FeedColumn column={props.column} />);
+    });
+
+    expect(container.querySelector('[data-duty-message-create-button]')).toBeNull();
+    expect(
+      container
+        .querySelector('[data-duty-feed-scroll-button]')
+        ?.getAttribute('data-duty-bottom-offset'),
+    ).toBe('12px');
+  });
+
   it('passes the copy menu etalon action into duty message cards', async () => {
     const props = buildProps();
     props.column.feed.items = [[7, minimalInboxMessage({ unit: '1-й танк' })]];
