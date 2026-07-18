@@ -371,9 +371,8 @@ fn is_standard_location_context_token(token: &str) -> bool {
         return true;
     }
 
-    let mut parts = token
-        .split(|ch| matches!(ch, '-' | '.' | '/'))
-        .filter(|part| !part.is_empty());
+    let mut parts =
+        token.split(['-', '.', '/']).filter(|part| !part.is_empty());
     let Some(first) = parts.next() else {
         return false;
     };
