@@ -31,7 +31,7 @@ import {
   Tooltip,
   Typography,
 } from '@mui/material';
-import React from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 import type { GoiReportTabOrderItem } from '../../../../Bindings';
 import { PowerAlert } from '../../components/PowerAlert';
@@ -158,19 +158,17 @@ function SortableReportTabOrderItem(props: SortableReportTabOrderItemProps) {
 }
 
 export function GoiReportTabOrderSection(props: Props) {
-  const scopes = React.useMemo(
+  const scopes = useMemo(
     () => buildScopes(props.isAdmin, props.integrations),
     [props.integrations, props.isAdmin],
   );
-  const [activeScopeKey, setActiveScopeKey] = React.useState('');
-  const [items, setItems] = React.useState<GoiReportTabOrderItem[]>([]);
-  const [initialItems, setInitialItems] = React.useState<GoiReportTabOrderItem[]>([]);
-  const [loadStatus, setLoadStatus] = React.useState<'idle' | 'loading' | 'ready' | 'error'>(
-    'idle',
-  );
-  const [loadError, setLoadError] = React.useState<string | null>(null);
-  const [saveError, setSaveError] = React.useState<string | null>(null);
-  const [saveInProgress, setSaveInProgress] = React.useState(false);
+  const [activeScopeKey, setActiveScopeKey] = useState('');
+  const [items, setItems] = useState<GoiReportTabOrderItem[]>([]);
+  const [initialItems, setInitialItems] = useState<GoiReportTabOrderItem[]>([]);
+  const [loadStatus, setLoadStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [saveInProgress, setSaveInProgress] = useState(false);
   const { notify } = usePowerSnackbar();
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -181,16 +179,16 @@ export function GoiReportTabOrderSection(props: Props) {
     }),
   );
 
-  const activeScope = React.useMemo(
+  const activeScope = useMemo(
     () => scopes.find((scope) => scope.key === activeScopeKey) ?? scopes[0] ?? null,
     [activeScopeKey, scopes],
   );
-  const isDirty = React.useMemo(
+  const isDirty = useMemo(
     () => !sequencesEqual(sequence(items), sequence(initialItems)),
     [initialItems, items],
   );
 
-  React.useEffect(() => {
+  useEffect(() => {
     if (scopes.length === 0) {
       setActiveScopeKey('');
       return;
@@ -200,7 +198,7 @@ export function GoiReportTabOrderSection(props: Props) {
     }
   }, [activeScopeKey, scopes]);
 
-  React.useEffect(() => {
+  useEffect(() => {
     if (!activeScope) {
       setItems([]);
       setInitialItems([]);

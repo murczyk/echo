@@ -100,7 +100,7 @@ export function FeedKeywordsPanel({
     saving,
     saveError,
     syncSelectedId,
-    clearSaveFeedback,
+    clearSaveError,
     discardChanges,
     handleSave: saveEditorSet,
     handleCreate: createEditorSet,
@@ -470,7 +470,7 @@ export function FeedKeywordsPanel({
                   <KeywordFormsEditor
                     words={words}
                     onWordsChange={(next) => {
-                      clearSaveFeedback();
+                      clearSaveError();
                       setWords(next);
                     }}
                     disabled={saving}

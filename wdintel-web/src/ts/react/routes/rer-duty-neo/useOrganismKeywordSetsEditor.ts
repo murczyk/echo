@@ -75,7 +75,7 @@ export function useOrganismKeywordSetsEditor(
     [isDirty, selectedId],
   );
 
-  const clearSaveFeedback = useCallback(() => {
+  const clearSaveError = useCallback(() => {
     setSaveError(null);
   }, []);
 
@@ -83,8 +83,8 @@ export function useOrganismKeywordSetsEditor(
     if (!selected) return;
     setName(selected.name);
     setWords(selected.words);
-    clearSaveFeedback();
-  }, [selected, clearSaveFeedback]);
+    clearSaveError();
+  }, [selected, clearSaveError]);
 
   const handleSave = useCallback(async () => {
     if (!selected) return;
@@ -210,7 +210,7 @@ export function useOrganismKeywordSetsEditor(
     saveError,
     selectSet,
     syncSelectedId,
-    clearSaveFeedback,
+    clearSaveError,
     discardChanges,
     handleSave,
     handleCreate,
