@@ -8,7 +8,7 @@ pub struct OrganismKeywordSetDto {
     pub id: i64,
     pub name: String,
     pub words: Vec<String>,
-    pub author_login: Option<String>,
+    pub author_login_id: Option<String>,
     pub can_edit: bool,
     pub can_delete: bool,
 }
