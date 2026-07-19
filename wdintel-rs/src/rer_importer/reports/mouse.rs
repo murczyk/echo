@@ -68,10 +68,17 @@ pub async fn report_docx_kind_mouse(
     let width_unit = 1870;
     let mut inbox_req = req.req.clone();
     inbox_req.report_tags_only_this_unit = req.report_tags_only_this_unit;
-    let messages =
-        load_mouse_report_messages(&read_db, &login, env, &inbox_req, true)
-            .await
-            .c(h!())?;
+    let messages = load_mouse_report_messages(
+        &read_db,
+        &login,
+        env,
+        &inbox_req,
+        true,
+        Some(RER_MOUSE_REPORT_MESSAGE_MAX + 1),
+    )
+    .await
+    .c(h!())?;
+    ensure_mouse_report_message_limit(&login, messages.len())?;
     let Some(since_date_inclusive_ms) = inbox_req.since_date_inclusive_ms
     else {
         return Err("Since date must be specified".into());
@@ -88,40 +95,20 @@ pub async fn report_docx_kind_mouse(
     let file = std::fs::File::create(outpath)?;
     let without_model_tags = inbox_req.without_model_tags.unwrap_or(false);
 
-    let message_tags_map: BTreeMap<i64, Vec<InboxMessageTag>> = messages
+    let highlighted_message_ids: BTreeSet<i64> = messages
         .iter()
-        .map(|(message_id, message)| {
-            let tags = message
+        .filter_map(|(message_id, message)| {
+            message
                 .inbox_tags
-                .clone()
-                .unwrap_or_default()
-                .into_iter()
-                .filter(|tag| {
+                .as_ref()?
+                .iter()
+                .any(|tag| {
                     tag.confidence >= TAG_MINIMUM_CONFIDENCE
                         && (!without_model_tags || tag.model.is_none())
                 })
-                .collect::<Vec<_>>();
-            (*message_id, tags)
+                .then_some(*message_id)
         })
         .collect();
-
-    let mut per_tag_msgs: BTreeMap<i64, Vec<InboxMessage>> = BTreeMap::new();
-    for (message_id, message) in messages.iter() {
-        let tag_ids: Vec<i64> = message_tags_map
-            .get(message_id)
-            .map(|tags| tags.iter().map(|tag| tag.tag_id).collect())
-            .unwrap_or_default();
-        if tag_ids.is_empty() {
-            per_tag_msgs.entry(0).or_default().push(message.clone());
-        } else {
-            for tag_id in tag_ids {
-                per_tag_msgs
-                    .entry(tag_id)
-                    .or_default()
-                    .push(message.clone());
-            }
-        }
-    }
 
     let uniq_freqs: BTreeSet<String> =
         BTreeSet::from_iter(messages.iter().map(|(_message_id, message)| {
@@ -132,7 +119,7 @@ pub async fn report_docx_kind_mouse(
     uniq_freqs_sorted.sort();
     let mut per_freq_callsigns: BTreeMap<String, BTreeSet<String>> =
         BTreeMap::new();
-    let mut per_freq_messages: BTreeMap<String, Vec<(i64, InboxMessage)>> =
+    let mut per_freq_messages: BTreeMap<String, Vec<(i64, &InboxMessage)>> =
         BTreeMap::new();
     let Some(zone_id) = crate::sigint::zone::get_user_zone_id(&read_db, &login)
         .await
@@ -186,7 +173,7 @@ pub async fn report_docx_kind_mouse(
         per_freq_messages
             .entry(freq.clone())
             .or_default()
-            .push((*message_id, message.clone()));
+            .push((*message_id, message));
     }
     // fill per_freq_units_counted
     let mut per_freq_units_counted: BTreeMap<String, BTreeMap<String, i64>> =
@@ -728,7 +715,7 @@ pub async fn report_docx_kind_mouse(
             };
             let mut body_cell =
                 TableCell::new().width(width_unit * 6, WidthType::Dxa);
-            let Some(msg) = message_map.get(&message_id).cloned() else {
+            let Some(msg) = message_map.get(&message_id) else {
                 continue;
             };
             let Some(group_id) = msg.datasource_group_id else {
@@ -738,26 +725,23 @@ pub async fn report_docx_kind_mouse(
             else {
                 continue;
             };
-            let Some(inbox) = inbox_map.get(&message_id).cloned() else {
+            let Some(inbox) = inbox_map.get(&message_id) else {
                 continue;
             };
-            let Some(datasource) = datasource_map.get(datasource_id).cloned()
-            else {
+            let Some(datasource) = datasource_map.get(datasource_id) else {
                 continue;
             };
-            let mut need_highlight = message_tags_map
-                .get(&message_id)
-                .map(|tags| !tags.is_empty())
-                .unwrap_or(false);
+            let mut need_highlight =
+                highlighted_message_ids.contains(&message_id);
             if important_ids.contains(&message_id) {
                 need_highlight = true;
             }
             if bookmark_ids.contains(&message_id) {
                 need_highlight = true;
             }
-            let m_comment = comments_map.get(&message_id).cloned();
+            let m_comment = comments_map.get(&message_id);
             let mut full_text =
-                message_full_text(&msg, &inbox, &datasource, &m_comment)?;
+                message_full_text(msg, inbox, datasource, m_comment)?;
             if need_highlight {
                 full_text = format!("⚠️ {full_text}");
             }
@@ -897,21 +881,24 @@ pub async fn report_docx_kind_mouse(
                     .align(docx_rs::alignment_type::AlignmentType::Center),
             ),
     ]));
-    let mut messages_datetime_sorted = messages.clone();
+    let mut messages_datetime_sorted = messages
+        .iter()
+        .map(|(_, message)| message)
+        .collect::<Vec<_>>();
     messages_datetime_sorted.sort_by(|a, b| {
         let dt_a = format!(
             "{}T{}",
-            a.1.date.clone().unwrap_or("".to_string()),
-            a.1.time.clone().unwrap_or("".to_string())
+            a.date.clone().unwrap_or("".to_string()),
+            a.time.clone().unwrap_or("".to_string())
         );
         let dt_b = format!(
             "{}T{}",
-            b.1.date.clone().unwrap_or("".to_string()),
-            b.1.time.clone().unwrap_or("".to_string())
+            b.date.clone().unwrap_or("".to_string()),
+            b.time.clone().unwrap_or("".to_string())
         );
         dt_a.cmp(&dt_b)
     });
-    for (_message_id, message) in messages_datetime_sorted.iter() {
+    for message in messages_datetime_sorted {
         let Some(coords) = message.coords.as_ref() else {
             continue;
         };
@@ -1044,8 +1031,8 @@ pub async fn report_docx_kind_mouse(
             let Some(_inbox) = inbox_map.get(&message_id) else {
                 continue;
             };
-            let m_comment = comments_map.get(&message_id).cloned();
-            if let Some(extended_form) = m_comment.map(|x| x.comment) {
+            let m_comment = comments_map.get(&message_id);
+            if let Some(extended_form) = m_comment.map(|x| &x.comment) {
                 let paragraph =
                     Paragraph::new().add_run(Run::new().add_text(format!(
                         "- {date} {time}: {freq} {extended_form}",
@@ -1117,8 +1104,9 @@ async fn load_mouse_report_messages(
     env: &Env,
     req: &InboxMessagesReq,
     include_tags: bool,
+    max_messages: Option<usize>,
 ) -> Result<Vec<(i64, InboxMessage)>, AppError> {
-    let rows = crate::rer_importer::inbox::query::build_filtered_inbox_query(
+    let query = crate::rer_importer::inbox::query::build_filtered_inbox_query(
         dbx, login, env, req,
     )
     .await
@@ -1131,11 +1119,16 @@ async fn load_mouse_report_messages(
     .column_as(sigint_inbox_item::Column::Callsigns, "callsigns")
     .column_as(sigint_inbox_item::Column::Date, "date")
     .column_as(sigint_inbox_item::Column::Time, "time")
-    .column_as(sigint_inbox_item::Column::UnitV2, "unit")
-    .into_model::<MouseReportMessageRow>()
-    .all(dbx)
-    .await
-    .context(h!())?;
+    .column_as(sigint_inbox_item::Column::UnitV2, "unit");
+    let query = match max_messages {
+        Some(max_messages) => query.limit(max_messages as u64),
+        None => query,
+    };
+    let rows = query
+        .into_model::<MouseReportMessageRow>()
+        .all(dbx)
+        .await
+        .context(h!())?;
     let message_ids = rows.iter().map(|row| row.id).collect::<Vec<_>>();
     let mut tags_by_message = if include_tags {
         load_mouse_inbox_tags(dbx, login, req, &message_ids).await?
@@ -1159,6 +1152,24 @@ async fn load_mouse_report_messages(
             Ok((row.id, message))
         })
         .collect()
+}
+
+fn ensure_mouse_report_message_limit(
+    user_login: &str,
+    message_count: usize,
+) -> Result<(), AppError> {
+    if message_count <= RER_MOUSE_REPORT_MESSAGE_MAX {
+        return Ok(());
+    }
+
+    log::error!(
+        "mouse report message limit exceeded: user={user_login}, messages={message_count}, max_messages={RER_MOUSE_REPORT_MESSAGE_MAX}",
+    );
+    Err(AppError::BL {
+        msg: format!(
+            "Звіт містить понад {RER_MOUSE_REPORT_MESSAGE_MAX} повідомлень. Зменшіть період або звузьте фільтри."
+        ),
+    })
 }
 
 async fn load_mouse_inbox_tags(
@@ -1242,10 +1253,11 @@ pub async fn report_xlsx_kind_pelengs(
     let login = user_login.to_string();
     let mut inbox_req = req.req.clone();
     inbox_req.report_tags_only_this_unit = req.report_tags_only_this_unit;
-    let messages =
-        load_mouse_report_messages(&read_db, &login, env, &inbox_req, false)
-            .await
-            .c(h!())?;
+    let messages = load_mouse_report_messages(
+        &read_db, &login, env, &inbox_req, false, None,
+    )
+    .await
+    .c(h!())?;
     let messages: Vec<(i64, InboxMessage)> = messages
         .iter()
         .filter(|(_, m)| m.coords.is_some())
@@ -1356,14 +1368,14 @@ fn message_full_text(
     message: &signal_message::Model,
     inbox: &sigint_inbox_item::Model,
     datasource: &datasource::Model,
-    m_comment: &Option<sigint_comment::Model>,
+    m_comment: Option<&sigint_comment::Model>,
 ) -> Result<String, AppError> {
     if datasource.kind == "signal" || datasource.kind == "whatsapp" {
-        let extended_form = m_comment.clone().map(|x| x.comment);
+        let extended_form = m_comment.map(|x| x.comment.as_str());
         Ok(format!(
             "{}\n\n{}",
             message.body.clone().unwrap_or("".to_string()),
-            extended_form.clone().unwrap_or("".to_string())
+            extended_form.unwrap_or("")
         ))
     } else if datasource.kind == "api" {
         let datetime_part = match (inbox.date.clone(), inbox.time.clone()) {
@@ -1388,7 +1400,7 @@ fn message_full_text(
             }
             None => "".to_string(),
         };
-        let extended_form = m_comment.clone().map(|x| x.comment);
+        let extended_form = m_comment.map(|x| x.comment.as_str());
         let comment_part = match extended_form {
             Some(comment) => format!("\n\nКоментар: {comment}"),
             None => "".to_string(),
@@ -1399,5 +1411,28 @@ fn message_full_text(
         ))
     } else {
         Err(format!("Unknown datasource kind: {:?}", datasource.kind).into())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn mouse_report_message_limit_allows_maximum() {
+        assert!(ensure_mouse_report_message_limit(
+            "operator",
+            RER_MOUSE_REPORT_MESSAGE_MAX,
+        )
+        .is_ok());
+    }
+
+    #[test]
+    fn mouse_report_message_limit_rejects_overflow() {
+        assert!(ensure_mouse_report_message_limit(
+            "operator",
+            RER_MOUSE_REPORT_MESSAGE_MAX + 1,
+        )
+        .is_err());
     }
 }
