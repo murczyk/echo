@@ -19,6 +19,7 @@ import {
 import { useRerDutyFeeds } from './useRerDutyFeeds';
 import { USER_SETTINGS_UPDATED_EVENT, fetchUserSettings } from '../../services/api/user-settings';
 import { PowerAlert } from '../../components/PowerAlert';
+import { usePowerSnackbar } from '../../components/PowerSnackbar';
 import { RerDutyNeoWorkspace } from './RerDutyNeoWorkspace';
 import { fetchCurrentUser } from '../../services/api/user';
 import { currentSystemSettings } from '../../services/api/system-settings';
@@ -51,7 +52,7 @@ export function RerDutyNeoPage({
   const [cyberEchoEnabled, setCyberEchoEnabled] = useState(false);
   const [activeFeedId, setActiveFeedId] = useState<string | null>(null);
   const [createMessageOpen, setCreateMessageOpen] = useState(false);
-  const [createdMessageNoticeRevision, setCreatedMessageNoticeRevision] = useState(0);
+  const { notify } = usePowerSnackbar();
   const previousFeedCountRef = useRef(0);
   const [tagsLayout, setTagsLayout] = useState<TagsLayoutVariant>(DEFAULT_DUTY_TAGS_LAYOUT);
   useEffect(() => {
@@ -363,9 +364,9 @@ export function RerDutyNeoPage({
   }, []);
   const handleCreatedMessage = useCallback(() => {
     setCreateMessageOpen(false);
-    setCreatedMessageNoticeRevision((revision) => revision + 1);
     reloadEmptyFeeds();
-  }, [reloadEmptyFeeds]);
+    notify({ message: 'Повідомлення успішно створено.', severity: 'success' });
+  }, [notify, reloadEmptyFeeds]);
 
   useEffect(() => {
     if (
@@ -425,18 +426,6 @@ export function RerDutyNeoPage({
       }}
     >
       <Box className="flex items-center justify-between flex-wrap gap-2 mb-2 shrink-0" />
-
-      {createdMessageNoticeRevision > 0 ? (
-        <PowerAlert
-          key={createdMessageNoticeRevision}
-          severity="success"
-          role="status"
-          autoHideDuration={3000}
-          className="mb-2 shrink-0"
-        >
-          Повідомлення успішно створено.
-        </PowerAlert>
-      ) : null}
 
       {error ? (
         <PowerAlert

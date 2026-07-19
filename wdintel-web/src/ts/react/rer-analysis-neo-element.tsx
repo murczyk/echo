@@ -3,6 +3,11 @@ import { isNullOrUndefined } from './utils/misc';
 import { createRoot, Root } from 'react-dom/client';
 
 import { NeoMuiThemeProvider } from './mui-theme';
+import { PowerSnackbarProvider } from './components/PowerSnackbar';
+import {
+  POWER_ANALYSIS_SNACKBAR_CLEARANCE,
+  POWER_FLOATING_CONTROL_RIGHT_CLEARANCE,
+} from './routes/shared/manage-message/floating-control-geometry';
 import { RerAnalysisNeoPage } from './routes/rer-analysis-neo';
 
 function getAuthUserNameFromShell(el: Element): string | null {
@@ -15,7 +20,12 @@ function getAuthUserNameFromShell(el: Element): string | null {
 function RerAnalysisNeoRoot({ authUserName }: { authUserName: string | null }) {
   return (
     <NeoMuiThemeProvider>
-      <RerAnalysisNeoPage authUserName={authUserName} />
+      <PowerSnackbarProvider
+        bottomInset={POWER_ANALYSIS_SNACKBAR_CLEARANCE}
+        rightInset={POWER_FLOATING_CONTROL_RIGHT_CLEARANCE}
+      >
+        <RerAnalysisNeoPage authUserName={authUserName} />
+      </PowerSnackbarProvider>
     </NeoMuiThemeProvider>
   );
 }

@@ -7,6 +7,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const useRerDutyFeedsMock = vi.hoisted(() => vi.fn());
+const notifyMock = vi.hoisted(() => vi.fn());
 const nextCreatedResponse = vi.hoisted(() => ({
   value: null as null | { signal_message_id: number },
 }));
@@ -23,6 +24,9 @@ vi.mock('../../services/api/system-settings', () => ({
 }));
 vi.mock('./useRerDutyFeeds', () => ({
   useRerDutyFeeds: useRerDutyFeedsMock,
+}));
+vi.mock('../../components/PowerSnackbar', () => ({
+  usePowerSnackbar: () => ({ notify: notifyMock }),
 }));
 vi.mock('./RerDutyNeoWorkspace', () => ({
   RerDutyNeoWorkspace: ({
@@ -57,12 +61,18 @@ vi.mock('../shared/manage-message/ManageMessageDrawer', () => ({
   }) =>
     open ? (
       <div role="dialog" data-testid="composer">
+        <button type="button" aria-label="Закрити повідомлення" onClick={onClose}>
+          Закрити
+        </button>
+        <button type="button" aria-label="Симулювати помилку">
+          Помилка
+        </button>
         <button
           type="button"
           aria-label="Створити повідомлення"
           onClick={async () => {
-            onClose();
             if (nextCreatedResponse.value) {
+              onClose();
               await onCreated?.(nextCreatedResponse.value);
             }
           }}
@@ -290,6 +300,7 @@ async function click(element: Element | null) {
 describe('RerDutyNeoPage creation workflow', () => {
   beforeEach(() => {
     useRerDutyFeedsMock.mockReset();
+    notifyMock.mockReset();
     nextCreatedResponse.value = null;
     vi.useFakeTimers();
     vi.stubGlobal('requestAnimationFrame', undefined);
@@ -302,7 +313,7 @@ describe('RerDutyNeoPage creation workflow', () => {
     document.body.innerHTML = '';
   });
 
-  it('closes the composer and shows a success alert after creation', async () => {
+  it('enqueues success Snackbar and reloads empty feeds after creation', async () => {
     nextCreatedResponse.value = { signal_message_id: 101 };
     const { container, root, state } = await renderPage();
 
@@ -312,9 +323,11 @@ describe('RerDutyNeoPage creation workflow', () => {
     await click(container.querySelector('button[aria-label="Створити повідомлення"]'));
 
     expect(container.querySelector('[data-testid="composer"]')).toBeNull();
-    const successAlert = container.querySelector('[role="status"]');
-    expect(successAlert?.textContent).toBe('Повідомлення успішно створено.');
-    expect(successAlert?.getAttribute('severity')).toBe('success');
+    expect(notifyMock).toHaveBeenCalledTimes(1);
+    expect(notifyMock).toHaveBeenCalledWith({
+      message: 'Повідомлення успішно створено.',
+      severity: 'success',
+    });
     expect(state.createMessageFeed).not.toHaveBeenCalled();
     expect(state.removeMessageFeed).not.toHaveBeenCalled();
     expect(state.loadFeedInitialMessages).not.toHaveBeenCalled();
@@ -323,20 +336,11 @@ describe('RerDutyNeoPage creation workflow', () => {
     expect(state.applyFilter).not.toHaveBeenCalled();
 
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(2999);
-    });
-    expect(container.querySelector('[role="status"]')).not.toBeNull();
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(1);
-    });
-    expect(container.querySelector('[role="status"]')).toBeNull();
-
-    await act(async () => {
       root.unmount();
     });
   });
 
-  it('restarts the success alert timer on repeated creation', async () => {
+  it('enqueues separate Snackbar notifications for repeated creations', async () => {
     nextCreatedResponse.value = { signal_message_id: 202 };
     const { container, root } = await renderPage();
 
@@ -348,17 +352,34 @@ describe('RerDutyNeoPage creation workflow', () => {
 
     await click(container.querySelector('button[aria-label="Додати повідомлення"]'));
     await click(container.querySelector('button[aria-label="Створити повідомлення"]'));
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(1);
-    });
-    expect(container.querySelector('[role="status"]')).not.toBeNull();
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(2999);
-    });
-    expect(container.querySelector('[role="status"]')).toBeNull();
+    expect(notifyMock).toHaveBeenCalledTimes(2);
 
     await act(async () => {
       root.unmount();
     });
+  });
+
+  it('does not notify or reload when creation is cancelled', async () => {
+    const { container, root, state } = await renderPage();
+
+    await click(container.querySelector('button[aria-label="Додати повідомлення"]'));
+    await click(container.querySelector('button[aria-label="Закрити повідомлення"]'));
+
+    expect(container.querySelector('[data-testid="composer"]')).toBeNull();
+    expect(notifyMock).not.toHaveBeenCalled();
+    expect(state.reloadEmptyFeeds).not.toHaveBeenCalled();
+    root.unmount();
+  });
+
+  it('keeps the composer open after failed submission without a success notification', async () => {
+    const { container, root, state } = await renderPage();
+
+    await click(container.querySelector('button[aria-label="Додати повідомлення"]'));
+    await click(container.querySelector('button[aria-label="Симулювати помилку"]'));
+
+    expect(container.querySelector('[data-testid="composer"]')).not.toBeNull();
+    expect(notifyMock).not.toHaveBeenCalled();
+    expect(state.reloadEmptyFeeds).not.toHaveBeenCalled();
+    root.unmount();
   });
 });

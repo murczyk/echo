@@ -1,11 +1,19 @@
+import {
+  POWER_FLOATING_CONTROL_DESKTOP_RIGHT_INSET,
+  POWER_FLOATING_CONTROL_EDGE_INSET,
+  POWER_FLOATING_CONTROL_GAP,
+  POWER_FLOATING_CONTROL_RIGHT_CLEARANCE,
+  POWER_FLOATING_CONTROL_SIZE,
+} from '../shared/manage-message/floating-control-geometry';
+
 export type DutyWorkspaceFabAvoidance = 'none' | 'above' | 'left';
 
-export const DUTY_SCROLL_FAB_SIZE = 35;
-export const DUTY_SCROLL_FAB_GAP = 12;
+export const DUTY_SCROLL_FAB_SIZE = POWER_FLOATING_CONTROL_SIZE;
+export const DUTY_SCROLL_FAB_GAP = POWER_FLOATING_CONTROL_GAP;
 export const DUTY_SCROLL_FAB_STACK_OFFSET = DUTY_SCROLL_FAB_SIZE + DUTY_SCROLL_FAB_GAP;
 
-const DUTY_SAFE_BOTTOM = 'max(12px, env(safe-area-inset-bottom, 0px))';
-const DUTY_SAFE_RIGHT = 'max(12px, env(safe-area-inset-right, 0px))';
+const DUTY_SAFE_BOTTOM = `max(${POWER_FLOATING_CONTROL_EDGE_INSET}px, env(safe-area-inset-bottom, 0px))`;
+const DUTY_SAFE_RIGHT = `max(${POWER_FLOATING_CONTROL_EDGE_INSET}px, env(safe-area-inset-right, 0px))`;
 
 export function resolveDutyScrollFabPosition({
   narrowScreen,
@@ -22,10 +30,16 @@ export function resolveDutyScrollFabPosition({
   }
 
   if (workspaceFabAvoidance === 'left') {
-    return { bottom: '12px', right: '59px' };
+    return {
+      bottom: `${POWER_FLOATING_CONTROL_EDGE_INSET}px`,
+      right: `${POWER_FLOATING_CONTROL_RIGHT_CLEARANCE}px`,
+    };
   }
 
   return narrowScreen
     ? { bottom: DUTY_SAFE_BOTTOM, right: DUTY_SAFE_RIGHT }
-    : { bottom: '12px', right: '20px' };
+    : {
+        bottom: `${POWER_FLOATING_CONTROL_EDGE_INSET}px`,
+        right: `${POWER_FLOATING_CONTROL_DESKTOP_RIGHT_INSET}px`,
+      };
 }

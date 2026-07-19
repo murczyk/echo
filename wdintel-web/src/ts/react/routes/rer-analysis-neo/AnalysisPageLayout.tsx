@@ -4,6 +4,7 @@ import { useMediaQuery } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
 
 import { PowerAlert } from '../../components/PowerAlert';
+import { usePowerSnackbar } from '../../components/PowerSnackbar';
 import { isPresent } from '../../utils/misc';
 import { AnalysisPageHeader } from './AnalysisPageHeader';
 import { AnalysisLeftPanel } from './AnalysisLeftPanel';
@@ -25,7 +26,7 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
   const page = useRerAnalysisNeoPage(authUserName);
   const theme = useTheme();
   const [createMessageOpen, setCreateMessageOpen] = useState(false);
-  const [createdMessageNoticeRevision, setCreatedMessageNoticeRevision] = useState(0);
+  const { notify } = usePowerSnackbar();
   const isMobileLayout = useMediaQuery(theme.breakpoints.down('sm'));
   const centerTabsId = useId().replace(/:/g, '-');
   const messagesTabId = `${centerTabsId}-messages-tab`;
@@ -65,17 +66,6 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
         />
       </Box>
 
-      {createdMessageNoticeRevision > 0 ? (
-        <PowerAlert
-          key={createdMessageNoticeRevision}
-          severity="success"
-          role="status"
-          autoHideDuration={3000}
-          sx={{ mx: { xs: 1, lg: 2 } }}
-        >
-          Повідомлення успішно створено.
-        </PowerAlert>
-      ) : null}
       {page.error ? (
         <PowerAlert severity="error" role="alert" sx={{ mx: { xs: 1, lg: 2 } }}>
           {page.error}
@@ -186,8 +176,8 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
         }}
         onCreated={async () => {
           setCreateMessageOpen(false);
-          setCreatedMessageNoticeRevision((revision) => revision + 1);
           page.reload();
+          notify({ message: 'Повідомлення успішно створено.', severity: 'success' });
         }}
       />
     </Box>

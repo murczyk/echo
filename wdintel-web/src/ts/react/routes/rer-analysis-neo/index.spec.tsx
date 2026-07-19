@@ -9,6 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { emptyQueryState } from './helpers';
 
 const useRerAnalysisNeoPageMock = vi.hoisted(() => vi.fn());
+const notifyMock = vi.hoisted(() => vi.fn());
 const createMessageFabPropsHistory = vi.hoisted(() => [] as Array<{ onClick?: () => void }>);
 const manageMessageDrawerPropsHistory = vi.hoisted(
   () =>
@@ -191,6 +192,9 @@ vi.mock('../shared/manage-message/CreateMessageFab', () => ({
       </button>
     );
   },
+}));
+vi.mock('../../components/PowerSnackbar', () => ({
+  usePowerSnackbar: () => ({ notify: notifyMock }),
 }));
 
 vi.mock('../shared/manage-message/ManageMessageDrawer', () => ({
@@ -388,6 +392,7 @@ describe('RerAnalysisNeoPage', () => {
 
   beforeEach(() => {
     useRerAnalysisNeoPageMock.mockReset();
+    notifyMock.mockReset();
     useRerAnalysisNeoPageMock.mockReturnValue(buildPage());
     createMessageFabPropsHistory.splice(0);
     manageMessageDrawerPropsHistory.splice(0);
@@ -436,7 +441,7 @@ describe('RerAnalysisNeoPage', () => {
     });
   });
 
-  it('opens the composer from the create fab and reloads only after a successful create', async () => {
+  it('enqueues success Snackbar and reloads after creation', async () => {
     const container = document.createElement('div');
     document.body.appendChild(container);
     rendered.push(container);
@@ -478,25 +483,18 @@ describe('RerAnalysisNeoPage', () => {
 
     expect(manageMessageDrawerPropsHistory.at(-1)?.open).toBe(false);
     expect(page.reload).toHaveBeenCalledTimes(1);
-    const successAlert = container.querySelector('[role="status"]');
-    expect(successAlert?.textContent).toBe('Повідомлення успішно створено.');
-    expect(successAlert?.getAttribute('severity')).toBe('success');
-
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(2999);
+    expect(notifyMock).toHaveBeenCalledTimes(1);
+    expect(notifyMock).toHaveBeenCalledWith({
+      message: 'Повідомлення успішно створено.',
+      severity: 'success',
     });
-    expect(container.querySelector('[role="status"]')).not.toBeNull();
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(1);
-    });
-    expect(container.querySelector('[role="status"]')).toBeNull();
 
     await act(async () => {
       root.unmount();
     });
   });
 
-  it('restarts the success notification timeout after repeated creation', async () => {
+  it('enqueues separate Snackbar notifications for repeated creations', async () => {
     const container = document.createElement('div');
     document.body.appendChild(container);
     rendered.push(container);
@@ -519,25 +517,15 @@ describe('RerAnalysisNeoPage', () => {
     };
 
     await create();
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(2999);
-    });
     await create();
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(1);
-    });
-    expect(container.querySelector('[role="status"]')).not.toBeNull();
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(2999);
-    });
-    expect(container.querySelector('[role="status"]')).toBeNull();
+    expect(notifyMock).toHaveBeenCalledTimes(2);
 
     await act(async () => {
       root.unmount();
     });
   });
 
-  it('does not show a success notification when creation is cancelled', async () => {
+  it('does not enqueue a success Snackbar when creation is cancelled', async () => {
     const container = document.createElement('div');
     document.body.appendChild(container);
     rendered.push(container);
@@ -556,7 +544,7 @@ describe('RerAnalysisNeoPage', () => {
     });
 
     const page = useRerAnalysisNeoPageMock.mock.results[0]?.value;
-    expect(container.querySelector('[role="status"]')).toBeNull();
+    expect(notifyMock).not.toHaveBeenCalled();
     expect(page.reload).not.toHaveBeenCalled();
 
     await act(async () => {

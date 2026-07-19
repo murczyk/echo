@@ -1,5 +1,9 @@
 import { Fab } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
+import {
+  POWER_FLOATING_CONTROL_EDGE_INSET,
+  POWER_FLOATING_CONTROL_SIZE,
+} from './floating-control-geometry';
 
 type Props = {
   onClick: () => void;
@@ -13,13 +17,19 @@ export function CreateMessageFab({ onClick }: Props) {
       onClick={onClick}
       sx={{
         position: 'absolute',
-        right: { xs: 'max(12px, env(safe-area-inset-right, 0px))', sm: 12 },
-        bottom: { xs: 'max(12px, env(safe-area-inset-bottom, 0px))', sm: 12 },
+        right: {
+          xs: `max(${POWER_FLOATING_CONTROL_EDGE_INSET}px, env(safe-area-inset-right, 0px))`,
+          sm: POWER_FLOATING_CONTROL_EDGE_INSET,
+        },
+        bottom: {
+          xs: `max(${POWER_FLOATING_CONTROL_EDGE_INSET}px, env(safe-area-inset-bottom, 0px))`,
+          sm: POWER_FLOATING_CONTROL_EDGE_INSET,
+        },
         zIndex: 1000,
-        width: 35,
-        minWidth: 35,
-        height: 35,
-        minHeight: 35,
+        width: POWER_FLOATING_CONTROL_SIZE,
+        minWidth: POWER_FLOATING_CONTROL_SIZE,
+        height: POWER_FLOATING_CONTROL_SIZE,
+        minHeight: POWER_FLOATING_CONTROL_SIZE,
         boxShadow: 'none',
         '&:hover': {
           boxShadow: 'none',
