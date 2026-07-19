@@ -82,6 +82,8 @@ function buildProps(): FeedColumnProps {
         loadingNewer: false,
         arrowResultMessage: null,
         unreadCount: 0,
+        physicallyAtBottom: true,
+        tailAvailability: 'available',
       },
       filterPanel: {
         feedId: 'feed-1',
@@ -169,6 +171,7 @@ function buildProps(): FeedColumnProps {
         onMessageExcludeEntity: vi.fn(),
         onMessageToggleTag: vi.fn(),
         onCreateMessageFeed: vi.fn(),
+        onArrowClick: vi.fn(),
       },
     },
   };
@@ -353,6 +356,45 @@ describe('FeedColumn', () => {
     expect(scrollWrapper.getAttribute('data-duty-bottom-offset')).toBe(
       'calc(max(12px, env(safe-area-inset-bottom, 0px)) + 47px)',
     );
+  });
+
+  it('does not show the bottom button for stale unread data at an exhausted tail', async () => {
+    const props = buildProps();
+    props.column.feed.items = [[1, minimalInboxMessage({ timestamp: 100 })]];
+    props.column.view.unreadCount = 3;
+    props.column.view.tailAvailability = 'exhausted';
+    await act(async () => root.render(<FeedColumn column={props.column} />));
+    expect(container.querySelector('[data-duty-feed-scroll-button]')).toBeNull();
+  });
+
+  it('shows the bottom button only for available tail content or away from the bottom', async () => {
+    const available = buildProps();
+    available.column.feed.items = [[1, minimalInboxMessage({ timestamp: 100 })]];
+    available.column.view.tailAvailability = 'available';
+    await act(async () => root.render(<FeedColumn column={available.column} />));
+    expect(container.querySelector('[data-duty-feed-scroll-button]')).not.toBeNull();
+
+    const middle = buildProps();
+    middle.column.feed.items = [[1, minimalInboxMessage({ timestamp: 100 })]];
+    middle.column.view.physicallyAtBottom = false;
+    middle.column.view.tailAvailability = 'exhausted';
+    await act(async () => root.render(<FeedColumn column={middle.column} />));
+    expect(container.querySelector('[data-duty-feed-scroll-button]')).not.toBeNull();
+  });
+
+  it('shows a spinner only for explicit newer loading', async () => {
+    const background = buildProps();
+    background.column.feed.items = [[1, minimalInboxMessage({ timestamp: 100 })]];
+    background.column.view.loadingNewer = false;
+    await act(async () => root.render(<FeedColumn column={background.column} />));
+    expect(container.querySelector('[data-duty-feed-scroll-button]')).not.toBeNull();
+    expect(container.querySelector('[role="progressbar"]')).toBeNull();
+
+    const explicit = buildProps();
+    explicit.column.feed.items = [[1, minimalInboxMessage({ timestamp: 100 })]];
+    explicit.column.view.loadingNewer = true;
+    await act(async () => root.render(<FeedColumn column={explicit.column} />));
+    expect(container.querySelector('[role="progressbar"]')).not.toBeNull();
   });
 
   it('passes the copy menu etalon action into duty message cards', async () => {

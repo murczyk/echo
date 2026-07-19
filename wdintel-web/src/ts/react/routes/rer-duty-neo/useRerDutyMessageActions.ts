@@ -33,6 +33,7 @@ export function useRerDutyMessageActions(deps: MessageActionsDeps) {
     saveFilterNameByFeedId,
     setSaveFilterNameByFeedId,
     dutyDisableAutoScroll,
+    beginFollowTail,
     openPointsOnMap,
   } = deps;
 
@@ -67,6 +68,7 @@ export function useRerDutyMessageActions(deps: MessageActionsDeps) {
     loadFeedNewerMessages,
     requestValidatedInboxCount,
     dutyDisableAutoScroll,
+    beginFollowTail,
     setMessageFeeds,
   });
 

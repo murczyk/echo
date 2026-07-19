@@ -10,12 +10,16 @@ import type {
 import { fetchInboxMessages } from '../../services/api/inbox';
 import { appendWindowedMessageItems, prependWindowedMessageItems } from './utils';
 import type { MessageFeedState } from './utils';
+import type { TailAvailability } from './types';
 
 type NewerLoadOptions = {
   nolimit?: boolean;
   scrollToEndAfterLoad?: boolean;
   markAllReadAfterAppend?: boolean;
   skipIfNewestExhausted?: boolean;
+  showLoading?: boolean;
+  followGeneration?: number;
+  confirmedTailAvailable?: boolean;
 };
 
 type DirectionalOperation = {
@@ -23,8 +27,10 @@ type DirectionalOperation = {
   promise: Promise<void>;
   resolve: () => void;
   newerOptions: Required<NewerLoadOptions>;
+  commitExpected: boolean;
   phase: 'running' | 'awaitingCommit';
   run: () => Promise<void>;
+  tailAvailabilityBefore: TailAvailability;
 };
 
 type DirectionalLane = {
@@ -59,8 +65,13 @@ type Params = {
     requestSignature: string,
   ) => void;
   newestExhaustedCursorByFeedIdRef: MutableRefObject<Record<string, number>>;
-  scrollToEndAfterNewerRef: MutableRefObject<Set<string>>;
+  pendingScrollToEndRef: MutableRefObject<Record<string, number>>;
   nearBottomByFeedIdRef: MutableRefObject<Record<string, boolean>>;
+  followTailByFeedIdRef: MutableRefObject<Record<string, boolean>>;
+  followGenerationByFeedIdRef: MutableRefObject<Record<string, number>>;
+  isFollowTailValid: (feedId: string, generation: number) => boolean;
+  setTailAvailability: (feedId: string, availability: TailAvailability) => void;
+  getTailAvailability: (feedId: string) => TailAvailability;
 };
 
 function createOperation(
@@ -85,9 +96,14 @@ function createOperation(
       scrollToEndAfterLoad: options?.scrollToEndAfterLoad ?? false,
       markAllReadAfterAppend: options?.markAllReadAfterAppend ?? false,
       skipIfNewestExhausted: options?.skipIfNewestExhausted ?? false,
+      showLoading: options?.showLoading ?? true,
+      followGeneration: options?.followGeneration ?? -1,
+      confirmedTailAvailable: options?.confirmedTailAvailable ?? false,
     },
+    commitExpected: false,
     phase: 'running',
     run: async () => {},
+    tailAvailabilityBefore: 'unknown',
   };
 }
 
@@ -237,9 +253,22 @@ export function useRerDutyDirectionalLoads(params: Params) {
       if (existing) {
         existing.newerOptions.nolimit ||= options?.nolimit === true;
         existing.newerOptions.scrollToEndAfterLoad ||= options?.scrollToEndAfterLoad === true;
+        if (options?.followGeneration != null) {
+          existing.newerOptions.followGeneration = options.followGeneration;
+        }
+        const gainedConfirmedTail =
+          options?.confirmedTailAvailable === true && !existing.newerOptions.confirmedTailAvailable;
+        existing.newerOptions.confirmedTailAvailable ||= options?.confirmedTailAvailable === true;
+        if (gainedConfirmedTail && !existing.newerOptions.showLoading) {
+          currentParams.setTailAvailability(feedId, 'loading');
+        }
         existing.newerOptions.markAllReadAfterAppend ||= options?.markAllReadAfterAppend === true;
         if (options?.skipIfNewestExhausted !== true) {
           existing.newerOptions.skipIfNewestExhausted = false;
+        }
+        if (options?.showLoading === true && !existing.newerOptions.showLoading) {
+          existing.newerOptions.showLoading = true;
+          currentParams.setLoadingNewerFeedIds((previous) => new Set(previous).add(feedId));
         }
         return existing.promise;
       }
@@ -260,32 +289,48 @@ export function useRerDutyDirectionalLoads(params: Params) {
           return;
         }
         const requestGeneration = runParams.getFeedLoadGeneration(feedId);
-        const lastId = currentFeed.items.at(-1)![0];
+        const requestedTailId = currentFeed.items.at(-1)![0];
+        const requestSignature = runParams.getFeedCountSignature(currentFeed);
+        const isStillCurrent = () => {
+          const latestFeed = runParams.messageFeedsRef.current.find(
+            (candidate) => candidate.id === feedId,
+          );
+          return Boolean(
+            latestFeed &&
+            runParams.getFeedLoadGeneration(feedId) === requestGeneration &&
+            latestFeed.items.at(-1)?.[0] === requestedTailId &&
+            runParams.getFeedCountSignature(latestFeed) === requestSignature,
+          );
+        };
         if (
           operation.newerOptions.skipIfNewestExhausted &&
-          runParams.newestExhaustedCursorByFeedIdRef.current[feedId] === lastId
+          runParams.newestExhaustedCursorByFeedIdRef.current[feedId] === requestedTailId
         ) {
           lane.active = null;
           operation.resolve();
           startOperationRef.current(feedId);
           return;
         }
-        runParams.setLoadingNewerFeedIds((previous) => new Set(previous).add(feedId));
+        if (operation.newerOptions.showLoading) {
+          runParams.setLoadingNewerFeedIds((previous) => new Set(previous).add(feedId));
+        }
+        operation.tailAvailabilityBefore = runParams.getTailAvailability(feedId);
+        if (operation.newerOptions.confirmedTailAvailable) {
+          runParams.setTailAvailability(feedId, 'loading');
+        }
         try {
           const response = await fetchInboxMessages(
             runParams.buildReqForFeed(currentFeed, {
-              sinceIdNoninclusive: lastId,
+              sinceIdNoninclusive: requestedTailId,
               nolimit: operation.newerOptions.nolimit || undefined,
             }),
           );
+          const capturedFollowGeneration = operation.newerOptions.followGeneration;
+          const followStillValid = runParams.isFollowTailValid(feedId, capturedFollowGeneration);
           const latestFeed = runParams.messageFeedsRef.current.find(
             (candidate) => candidate.id === feedId,
           );
-          const accepted = Boolean(
-            latestFeed &&
-            runParams.getFeedLoadGeneration(feedId) === requestGeneration &&
-            latestFeed.items.at(-1)?.[0] === lastId,
-          );
+          const accepted = isStillCurrent();
           if (accepted) {
             runParams.mergeInboxCallsigns(feedId, response.callsigns);
             if (response.signalProfiles) {
@@ -303,8 +348,10 @@ export function useRerDutyDirectionalLoads(params: Params) {
           const latestWindowed = appendWindowedMessageItems(latestFeed.items, response.inboxItems);
           const addedCount = latestWindowed.addedItems.length;
           const newestCursor = latestWindowed.items.at(-1)?.[0] ?? null;
-          const followTail = operation.newerOptions.scrollToEndAfterLoad;
-          const markAllRead = followTail || operation.newerOptions.markAllReadAfterAppend;
+          const followTail = operation.newerOptions.scrollToEndAfterLoad && followStillValid;
+          const markAllRead =
+            (followTail && runParams.isFollowTailValid(feedId, capturedFollowGeneration)) ||
+            operation.newerOptions.markAllReadAfterAppend;
           if (markAllRead && newestCursor != null) {
             runParams.advanceFeedReadCursor(
               feedId,
@@ -315,17 +362,20 @@ export function useRerDutyDirectionalLoads(params: Params) {
           }
           if (addedCount > 0) {
             delete runParams.newestExhaustedCursorByFeedIdRef.current[feedId];
+            runParams.setTailAvailability(feedId, 'unknown');
           } else {
-            runParams.newestExhaustedCursorByFeedIdRef.current[feedId] = lastId;
+            runParams.newestExhaustedCursorByFeedIdRef.current[feedId] = requestedTailId;
+            runParams.setTailAvailability(feedId, 'exhausted');
           }
-          if (followTail) {
-            runParams.scrollToEndAfterNewerRef.current.add(feedId);
+          if (followTail && runParams.isFollowTailValid(feedId, capturedFollowGeneration)) {
+            runParams.pendingScrollToEndRef.current[feedId] = capturedFollowGeneration;
             runParams.nearBottomByFeedIdRef.current = {
               ...runParams.nearBottomByFeedIdRef.current,
               [feedId]: true,
             };
           }
           if (addedCount > 0 || markAllRead || followTail) {
+            operation.commitExpected = true;
             runParams.setMessageFeeds((previous) =>
               previous.map((feed) => {
                 if (feed.id !== feedId) return feed;
@@ -358,8 +408,15 @@ export function useRerDutyDirectionalLoads(params: Params) {
           }
         } catch {
           // Keep polling and the previously loaded messages after a transient failure.
+          if (!isStillCurrent()) return;
+          if (operation.newerOptions.confirmedTailAvailable) {
+            runParams.setTailAvailability(feedId, 'available');
+          }
         } finally {
-          if (lanesRef.current[feedId]?.active === operation) {
+          if (
+            operation.newerOptions.showLoading &&
+            lanesRef.current[feedId]?.active === operation
+          ) {
             runParams.setLoadingNewerFeedIds((previous) => {
               if (!previous.has(feedId)) return previous;
               const next = new Set(previous);
@@ -367,7 +424,12 @@ export function useRerDutyDirectionalLoads(params: Params) {
               return next;
             });
           }
-          operation.phase = 'awaitingCommit';
+          if (!operation.commitExpected && lanesRef.current[feedId]?.active === operation) {
+            lanesRef.current[feedId].active = null;
+            startOperationRef.current(feedId);
+          } else {
+            operation.phase = 'awaitingCommit';
+          }
           operation.resolve();
         }
       };

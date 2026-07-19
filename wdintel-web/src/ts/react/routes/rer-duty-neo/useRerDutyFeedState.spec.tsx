@@ -99,9 +99,40 @@ function deferred<T>() {
 describe('useRerDutyFeedState — loading', () => {
   let container: HTMLElement;
   let root: Root;
+  let rafCallbacks: FrameRequestCallback[];
+
+  const runNextRaf = () => {
+    const callback = rafCallbacks.shift();
+    callback?.(0);
+  };
+
+  async function mountLoadedFeed(disableAutoScroll = false) {
+    const apiRef: React.MutableRefObject<ReturnType<typeof useRerDutyFeedState> | null> = {
+      current: null,
+    };
+    await act(async () => {
+      root.render(<TestHarness apiRef={apiRef} disableAutoScroll={disableAutoScroll} />);
+      await flushMicrotasks();
+    });
+    const scrollToEnd = vi.fn();
+    apiRef.current!.columnRefsRef.current['mf-0'] = { scrollToEnd };
+    return { apiRef, scrollToEnd };
+  }
+
+  async function startPoll() {
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000);
+    });
+  }
 
   beforeEach(() => {
     vi.useFakeTimers();
+    rafCallbacks = [];
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+      rafCallbacks.push(callback);
+      return rafCallbacks.length;
+    });
+    vi.stubGlobal('cancelAnimationFrame', vi.fn());
     vi.clearAllMocks();
     hoisted.fetchInboxMessages.mockReset();
     hoisted.fetchInboxCount.mockReset();
@@ -133,6 +164,7 @@ describe('useRerDutyFeedState — loading', () => {
       document.body.innerHTML = '';
     });
     vi.useRealTimers();
+    vi.unstubAllGlobals();
   });
 
   it('runs a single get-inbox initial load per feed on mount', async () => {
@@ -149,6 +181,375 @@ describe('useRerDutyFeedState — loading', () => {
     expect(hoisted.fetchInboxMessages).toHaveBeenCalledTimes(1);
     expect(apiRef.current?.messageFeeds[0]?.items[0]?.[0]).toBe(1);
     expect(apiRef.current?.messageFeeds[0]?.loading).toBe(false);
+  });
+
+  it('preserves a follow generation until cancellation', async () => {
+    const apiRef: React.MutableRefObject<ReturnType<typeof useRerDutyFeedState> | null> = {
+      current: null,
+    };
+    await act(async () => {
+      root.render(<TestHarness apiRef={apiRef} />);
+      await flushMicrotasks();
+    });
+
+    const firstGeneration = apiRef.current!.beginFollowTail('mf-0');
+    expect(apiRef.current!.ensureFollowTail('mf-0')).toBe(firstGeneration);
+    apiRef.current!.cancelFollowTail('mf-0');
+    expect(apiRef.current!.ensureFollowTail('mf-0')).toBe(firstGeneration + 2);
+  });
+
+  it('cancels follow while newer messages are pending', async () => {
+    const { apiRef, scrollToEnd } = await mountLoadedFeed();
+    const generation = apiRef.current!.beginFollowTail('mf-0');
+    const newer = deferred<InboxMessagesRsp>();
+    hoisted.fetchInboxMessages.mockImplementationOnce(() => newer.promise);
+
+    const load = apiRef.current!.loadFeedNewerMessages('mf-0', {
+      scrollToEndAfterLoad: true,
+      followGeneration: generation,
+    });
+    apiRef.current!.cancelFollowTail('mf-0');
+    await act(async () => {
+      newer.resolve(inboxRsp([[2, minimalInboxMessage({ timestamp: 200 })]]));
+      await load;
+      await flushMicrotasks();
+    });
+
+    expect(apiRef.current!.messageFeeds[0].items.map(([id]) => id)).toEqual([1, 2]);
+    expect(apiRef.current!.messageFeeds[0].readIds.has(2)).toBe(false);
+    runNextRaf();
+    runNextRaf();
+    expect(scrollToEnd).not.toHaveBeenCalled();
+  });
+
+  it('cancels follow while unread count is pending', async () => {
+    const { apiRef, scrollToEnd } = await mountLoadedFeed();
+    apiRef.current!.nearBottomByFeedIdRef.current['mf-0'] = true;
+    apiRef.current!.physicallyAtBottomByFeedIdRef.current['mf-0'] = true;
+    const generation = apiRef.current!.beginFollowTail('mf-0');
+    const count = deferred<{ quantity: number; firstElementTs: number | null }>();
+    hoisted.fetchInboxCount.mockImplementationOnce(() => count.promise);
+
+    await startPoll();
+    expect(hoisted.fetchInboxCount).toHaveBeenCalledTimes(1);
+    apiRef.current!.cancelFollowTail('mf-0');
+    hoisted.fetchInboxMessages.mockResolvedValueOnce(
+      inboxRsp([[2, minimalInboxMessage({ timestamp: 200 })]]),
+    );
+    await act(async () => {
+      count.resolve({ quantity: 1, firstElementTs: null });
+      await flushMicrotasks();
+    });
+
+    expect(apiRef.current!.messageFeeds[0].items.map(([id]) => id)).toEqual([1, 2]);
+    expect(apiRef.current!.messageFeeds[0].readIds.has(2)).toBe(false);
+    expect(apiRef.current!.messageFeeds[0].unreadCount).toBeGreaterThan(0);
+    expect(generation).toBeGreaterThan(0);
+    runNextRaf();
+    runNextRaf();
+    expect(scrollToEnd).not.toHaveBeenCalled();
+  });
+
+  it('does not scroll when follow is cancelled before the first RAF', async () => {
+    const { apiRef, scrollToEnd } = await mountLoadedFeed();
+    const generation = apiRef.current!.beginFollowTail('mf-0');
+    hoisted.fetchInboxMessages.mockResolvedValueOnce(
+      inboxRsp([[2, minimalInboxMessage({ timestamp: 200 })]]),
+    );
+
+    await act(async () => {
+      await apiRef.current!.loadFeedNewerMessages('mf-0', {
+        scrollToEndAfterLoad: true,
+        followGeneration: generation,
+      });
+      await flushMicrotasks();
+    });
+    apiRef.current!.cancelFollowTail('mf-0');
+    runNextRaf();
+    runNextRaf();
+    expect(scrollToEnd).not.toHaveBeenCalled();
+  });
+
+  it('does not scroll when follow is cancelled between the two RAFs', async () => {
+    const { apiRef, scrollToEnd } = await mountLoadedFeed();
+    const generation = apiRef.current!.beginFollowTail('mf-0');
+    hoisted.fetchInboxMessages.mockResolvedValueOnce(
+      inboxRsp([[2, minimalInboxMessage({ timestamp: 200 })]]),
+    );
+
+    await act(async () => {
+      await apiRef.current!.loadFeedNewerMessages('mf-0', {
+        scrollToEndAfterLoad: true,
+        followGeneration: generation,
+      });
+      await flushMicrotasks();
+    });
+    expect(rafCallbacks).toHaveLength(1);
+    runNextRaf();
+    apiRef.current!.cancelFollowTail('mf-0');
+    runNextRaf();
+    expect(scrollToEnd).not.toHaveBeenCalled();
+  });
+
+  it('does not let an obsolete RAF suppress a newer follow generation', async () => {
+    const { apiRef, scrollToEnd } = await mountLoadedFeed();
+    const firstGeneration = apiRef.current!.beginFollowTail('mf-0');
+    hoisted.fetchInboxMessages.mockResolvedValueOnce(
+      inboxRsp([[2, minimalInboxMessage({ timestamp: 200 })]]),
+    );
+    await act(async () => {
+      await apiRef.current!.loadFeedNewerMessages('mf-0', {
+        scrollToEndAfterLoad: true,
+        followGeneration: firstGeneration,
+      });
+      await flushMicrotasks();
+    });
+    runNextRaf();
+
+    apiRef.current!.cancelFollowTail('mf-0');
+    const secondGeneration = apiRef.current!.beginFollowTail('mf-0');
+    hoisted.fetchInboxMessages.mockResolvedValueOnce(
+      inboxRsp([[3, minimalInboxMessage({ timestamp: 300 })]]),
+    );
+    await act(async () => {
+      await apiRef.current!.loadFeedNewerMessages('mf-0', {
+        scrollToEndAfterLoad: true,
+        followGeneration: secondGeneration,
+      });
+      await flushMicrotasks();
+    });
+
+    runNextRaf();
+    runNextRaf();
+    runNextRaf();
+    expect(scrollToEnd).toHaveBeenCalledTimes(1);
+    expect(scrollToEnd).toHaveBeenCalledWith('auto');
+  });
+
+  it('runs an explicit follow pin with continuous auto-scroll disabled', async () => {
+    const { apiRef, scrollToEnd } = await mountLoadedFeed(true);
+    const generation = apiRef.current!.beginFollowTail('mf-0');
+    hoisted.fetchInboxMessages.mockResolvedValueOnce(
+      inboxRsp([[2, minimalInboxMessage({ timestamp: 200 })]]),
+    );
+
+    await act(async () => {
+      await apiRef.current!.loadFeedNewerMessages('mf-0', {
+        scrollToEndAfterLoad: true,
+        followGeneration: generation,
+      });
+      await flushMicrotasks();
+    });
+    runNextRaf();
+    runNextRaf();
+    expect(scrollToEnd).toHaveBeenCalledTimes(1);
+  });
+
+  it('restores available after a confirmed-tail request fails', async () => {
+    const { apiRef } = await mountLoadedFeed();
+    const newer = deferred<InboxMessagesRsp>();
+    hoisted.fetchInboxMessages.mockImplementationOnce(() => newer.promise);
+
+    let load!: Promise<void>;
+    await act(async () => {
+      load = apiRef.current!.loadFeedNewerMessages('mf-0', {
+        showLoading: false,
+        confirmedTailAvailable: true,
+      });
+      await flushMicrotasks();
+    });
+    expect(apiRef.current!.tailAvailabilityByFeedId['mf-0']).toBe('loading');
+
+    await act(async () => {
+      newer.reject(new Error('network down'));
+      await load;
+      await flushMicrotasks();
+    });
+    expect(apiRef.current!.tailAvailabilityByFeedId['mf-0']).toBe('available');
+  });
+
+  it('does not expose a blind background failure as available tail content', async () => {
+    const { apiRef } = await mountLoadedFeed();
+    const newer = deferred<InboxMessagesRsp>();
+    hoisted.fetchInboxMessages.mockImplementationOnce(() => newer.promise);
+
+    const load = apiRef.current!.loadFeedNewerMessages('mf-0', {
+      showLoading: false,
+      confirmedTailAvailable: false,
+    });
+    await act(async () => {
+      newer.reject(new Error('network down'));
+      await load;
+      await flushMicrotasks();
+    });
+    expect(apiRef.current!.tailAvailabilityByFeedId['mf-0'] ?? 'unknown').toBe('unknown');
+  });
+
+  it('keeps confirmed tail available when tail count resolves after leaving bottom', async () => {
+    const { apiRef, scrollToEnd } = await mountLoadedFeed();
+    hoisted.fetchInboxMessages.mockResolvedValueOnce(inboxRsp([]));
+    await act(async () => {
+      await apiRef.current!.loadFeedNewerMessages('mf-0');
+      await flushMicrotasks();
+    });
+    expect(apiRef.current!.tailAvailabilityByFeedId['mf-0']).toBe('exhausted');
+
+    apiRef.current!.nearBottomByFeedIdRef.current['mf-0'] = true;
+    const tailCount = deferred<{ quantity: number; firstElementTs: number | null }>();
+    hoisted.fetchInboxCount
+      .mockResolvedValueOnce({ quantity: 1, firstElementTs: null })
+      .mockImplementationOnce(() => tailCount.promise);
+    await startPoll();
+    expect(hoisted.fetchInboxCount).toHaveBeenCalledTimes(2);
+    expect(apiRef.current!.tailAvailabilityByFeedId['mf-0']).toBe('checking');
+
+    apiRef.current!.nearBottomByFeedIdRef.current['mf-0'] = false;
+    await act(async () => {
+      tailCount.resolve({ quantity: 1, firstElementTs: null });
+      await flushMicrotasks();
+    });
+    expect(apiRef.current!.tailAvailabilityByFeedId['mf-0']).toBe('available');
+    expect(hoisted.fetchInboxMessages).toHaveBeenCalledTimes(2);
+    expect(scrollToEnd).not.toHaveBeenCalled();
+  });
+
+  it('loads available tail content after returning near bottom', async () => {
+    const { apiRef } = await mountLoadedFeed();
+    const failedConfirmation = deferred<InboxMessagesRsp>();
+    hoisted.fetchInboxMessages.mockImplementationOnce(() => failedConfirmation.promise);
+    const failedLoad = apiRef.current!.loadFeedNewerMessages('mf-0', {
+      showLoading: false,
+      confirmedTailAvailable: true,
+    });
+    await act(async () => {
+      failedConfirmation.reject(new Error('temporary failure'));
+      await failedLoad;
+      await flushMicrotasks();
+    });
+    expect(apiRef.current!.tailAvailabilityByFeedId['mf-0']).toBe('available');
+
+    apiRef.current!.nearBottomByFeedIdRef.current['mf-0'] = true;
+    hoisted.fetchInboxCount.mockResolvedValueOnce({ quantity: 1, firstElementTs: null });
+    const newer = deferred<InboxMessagesRsp>();
+    hoisted.fetchInboxMessages.mockImplementationOnce(() => newer.promise);
+    await startPoll();
+    expect(apiRef.current!.tailAvailabilityByFeedId['mf-0']).toBe('loading');
+    await act(async () => {
+      newer.resolve(inboxRsp([[2, minimalInboxMessage({ timestamp: 200 })]]));
+      await flushMicrotasks();
+    });
+    expect(apiRef.current!.messageFeeds[0].items.map(([id]) => id)).toEqual([1, 2]);
+    expect(apiRef.current!.tailAvailabilityByFeedId['mf-0']).toBe('unknown');
+  });
+
+  it('marks an available tail exhausted when retry returns no messages', async () => {
+    const { apiRef } = await mountLoadedFeed();
+    const failedConfirmation = deferred<InboxMessagesRsp>();
+    hoisted.fetchInboxMessages.mockImplementationOnce(() => failedConfirmation.promise);
+    const failedLoad = apiRef.current!.loadFeedNewerMessages('mf-0', {
+      showLoading: false,
+      confirmedTailAvailable: true,
+    });
+    await act(async () => {
+      failedConfirmation.reject(new Error('temporary failure'));
+      await failedLoad;
+      await flushMicrotasks();
+    });
+    apiRef.current!.nearBottomByFeedIdRef.current['mf-0'] = true;
+    hoisted.fetchInboxCount.mockResolvedValueOnce({ quantity: 1, firstElementTs: null });
+    const newer = deferred<InboxMessagesRsp>();
+    hoisted.fetchInboxMessages.mockImplementationOnce(() => newer.promise);
+    await startPoll();
+    expect(apiRef.current!.tailAvailabilityByFeedId['mf-0']).toBe('loading');
+    await act(async () => {
+      newer.resolve(inboxRsp([]));
+      await flushMicrotasks();
+    });
+    expect(apiRef.current!.messageFeeds[0].items.map(([id]) => id)).toEqual([1]);
+    expect(apiRef.current!.tailAvailabilityByFeedId['mf-0']).toBe('exhausted');
+  });
+
+  it('preserves exhausted state after a blind background failure', async () => {
+    const { apiRef } = await mountLoadedFeed();
+    hoisted.fetchInboxMessages.mockResolvedValueOnce(inboxRsp([]));
+    await act(async () => {
+      await apiRef.current!.loadFeedNewerMessages('mf-0');
+      await flushMicrotasks();
+    });
+    const newer = deferred<InboxMessagesRsp>();
+    hoisted.fetchInboxMessages.mockImplementationOnce(() => newer.promise);
+    const load = apiRef.current!.loadFeedNewerMessages('mf-0', {
+      showLoading: false,
+      confirmedTailAvailable: false,
+    });
+    await act(async () => {
+      newer.reject(new Error('network down'));
+      await load;
+      await flushMicrotasks();
+    });
+    expect(apiRef.current!.tailAvailabilityByFeedId['mf-0']).toBe('exhausted');
+  });
+
+  it('ignores a confirmed-tail failure after filter invalidation', async () => {
+    const { apiRef } = await mountLoadedFeed();
+    const staleNewer = deferred<InboxMessagesRsp>();
+    const reload = deferred<InboxMessagesRsp>();
+    hoisted.fetchInboxMessages
+      .mockImplementationOnce(() => staleNewer.promise)
+      .mockImplementationOnce(() => reload.promise);
+    const staleLoad = apiRef.current!.loadFeedNewerMessages('mf-0', {
+      showLoading: false,
+      confirmedTailAvailable: true,
+    });
+    await act(async () => {
+      await flushMicrotasks();
+    });
+    expect(apiRef.current!.tailAvailabilityByFeedId['mf-0']).toBe('loading');
+    await act(async () => {
+      apiRef.current!.applyFilter('mf-0', {
+        ...emptyFilter(),
+        groupsSelected: ['replacement-filter'],
+      });
+      await flushMicrotasks();
+    });
+    expect(apiRef.current!.tailAvailabilityByFeedId['mf-0']).toBe('unknown');
+    await act(async () => {
+      staleNewer.reject(new Error('stale failure'));
+      await staleLoad;
+      await flushMicrotasks();
+    });
+    expect(apiRef.current!.tailAvailabilityByFeedId['mf-0']).toBe('unknown');
+    await act(async () => {
+      reload.resolve(inboxRsp([[3, minimalInboxMessage({ timestamp: 300 })]]));
+      await flushMicrotasks();
+    });
+    expect(apiRef.current!.tailAvailabilityByFeedId['mf-0']).not.toBe('available');
+  });
+
+  it('upgrades an in-flight blind request when confirmed availability coalesces', async () => {
+    const { apiRef } = await mountLoadedFeed();
+    const newer = deferred<InboxMessagesRsp>();
+    hoisted.fetchInboxMessages.mockImplementationOnce(() => newer.promise);
+
+    let blind!: Promise<void>;
+    let confirmed!: Promise<void>;
+    await act(async () => {
+      blind = apiRef.current!.loadFeedNewerMessages('mf-0', { showLoading: false });
+      confirmed = apiRef.current!.loadFeedNewerMessages('mf-0', {
+        showLoading: false,
+        confirmedTailAvailable: true,
+      });
+      await flushMicrotasks();
+    });
+    expect(hoisted.fetchInboxMessages).toHaveBeenCalledTimes(2);
+    expect(apiRef.current!.tailAvailabilityByFeedId['mf-0']).toBe('loading');
+
+    await act(async () => {
+      newer.reject(new Error('network down'));
+      await Promise.all([blind, confirmed]);
+      await flushMicrotasks();
+    });
+    expect(apiRef.current!.tailAvailabilityByFeedId['mf-0']).toBe('available');
   });
 
   it('sets error and clears loading when initial get-inbox fails', async () => {
@@ -330,7 +731,7 @@ describe('useRerDutyFeedState — loading', () => {
     expect(ids).toEqual([1, 2]);
   });
 
-  it('calls get-inbox for newer mail when watch mode is on', async () => {
+  it('calls get-inbox for newer mail when the feed is near bottom', async () => {
     const apiRef: React.MutableRefObject<ReturnType<typeof useRerDutyFeedState> | null> = {
       current: null,
     };
@@ -347,8 +748,7 @@ describe('useRerDutyFeedState — loading', () => {
     hoisted.fetchInboxCount.mockResolvedValue({ quantity: 1, firstElementTs: null });
 
     await act(async () => {
-      apiRef.current!.setWatchModeByFeedId((prev) => ({ ...prev, 'mf-0': true }));
-      apiRef.current!.atBottomByFeedIdRef.current['mf-0'] = true;
+      apiRef.current!.nearBottomByFeedIdRef.current['mf-0'] = true;
     });
 
     await act(async () => {
@@ -1256,13 +1656,19 @@ describe('useRerDutyFeedState — loading', () => {
     hoisted.fetchInboxMessages.mockResolvedValueOnce(inboxRsp([]));
 
     await act(async () => {
-      await apiRef.current!.loadFeedNewerMessages('mf-0', { scrollToEndAfterLoad: true });
+      const followGeneration = apiRef.current!.beginFollowTail('mf-0');
+      await apiRef.current!.loadFeedNewerMessages('mf-0', {
+        scrollToEndAfterLoad: true,
+        followGeneration,
+      });
     });
     await act(async () => {
       await vi.advanceTimersByTimeAsync(32);
       await flushMicrotasks();
     });
 
+    runNextRaf();
+    runNextRaf();
     expect(scrollToEnd).toHaveBeenCalledTimes(1);
     expect(apiRef.current!.messageFeeds[0].items.map(([id]) => id)).toEqual([
       1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
@@ -1455,6 +1861,7 @@ describe('useRerDutyFeedState — loading', () => {
     let firstPromise!: Promise<void>;
     let secondPromise!: Promise<void>;
     act(() => {
+      const followGeneration = apiRef.current!.beginFollowTail('mf-0');
       firstPromise = apiRef.current!.loadFeedNewerMessages('mf-0');
       secondPromise = apiRef.current!.loadFeedNewerMessages('mf-0', {
         markAllReadAfterAppend: true,
@@ -1517,9 +1924,11 @@ describe('useRerDutyFeedState — loading', () => {
     let firstPromise!: Promise<void>;
     let secondPromise!: Promise<void>;
     act(() => {
+      const followGeneration = apiRef.current!.beginFollowTail('mf-0');
       firstPromise = apiRef.current!.loadFeedNewerMessages('mf-0');
       secondPromise = apiRef.current!.loadFeedNewerMessages('mf-0', {
         scrollToEndAfterLoad: true,
+        followGeneration,
       });
     });
 
@@ -1548,6 +1957,8 @@ describe('useRerDutyFeedState — loading', () => {
     expect(feed.unreadCount).toBe(0);
     expect(feed.readIds.has(1)).toBe(true);
     expect(feed.readIds.has(15)).toBe(true);
+    runNextRaf();
+    runNextRaf();
     expect(scrollToEnd).toHaveBeenCalledTimes(1);
   });
 
@@ -2187,8 +2598,9 @@ describe('useRerDutyFeedState — loading', () => {
       hoisted.fetchInboxCount.mockResolvedValue({ quantity: 1, firstElementTs: null });
 
       await act(async () => {
-        apiRef.current!.setWatchModeByFeedId((prev) => ({ ...prev, 'mf-0': true }));
-        apiRef.current!.atBottomByFeedIdRef.current['mf-0'] = true;
+        apiRef.current!.nearBottomByFeedIdRef.current['mf-0'] = true;
+        apiRef.current!.physicallyAtBottomByFeedIdRef.current['mf-0'] = true;
+        apiRef.current!.beginFollowTail('mf-0');
       });
 
       await act(async () => {
@@ -2221,8 +2633,9 @@ describe('useRerDutyFeedState — loading', () => {
       hoisted.fetchInboxCount.mockResolvedValue({ quantity: 1, firstElementTs: null });
 
       await act(async () => {
-        apiRef.current!.setWatchModeByFeedId((prev) => ({ ...prev, 'mf-0': true }));
-        apiRef.current!.atBottomByFeedIdRef.current['mf-0'] = false;
+        apiRef.current!.nearBottomByFeedIdRef.current['mf-0'] = true;
+        apiRef.current!.physicallyAtBottomByFeedIdRef.current['mf-0'] = false;
+        apiRef.current!.beginFollowTail('mf-0');
       });
 
       await act(async () => {
@@ -2255,8 +2668,9 @@ describe('useRerDutyFeedState — loading', () => {
       hoisted.fetchInboxCount.mockResolvedValue({ quantity: 1, firstElementTs: null });
 
       await act(async () => {
-        apiRef.current!.setWatchModeByFeedId((prev) => ({ ...prev, 'mf-0': true }));
-        apiRef.current!.atBottomByFeedIdRef.current['mf-0'] = true;
+        apiRef.current!.nearBottomByFeedIdRef.current['mf-0'] = true;
+        apiRef.current!.physicallyAtBottomByFeedIdRef.current['mf-0'] = true;
+        apiRef.current!.beginFollowTail('mf-0');
       });
 
       await act(async () => {
@@ -2496,6 +2910,53 @@ describe('useRerDutyFeedState — loading', () => {
 
       expect(apiRef.current!.error).toBeNull();
       expect(apiRef.current!.messageFeeds.map((feed) => feed.id)).toEqual(['mf-0']);
+    });
+
+    it('does not restore available state after a confirmed request feed is removed', async () => {
+      window.history.replaceState(
+        {},
+        '',
+        '/?state=' +
+          encodeURIComponent(
+            JSON.stringify({
+              messageFeeds: [
+                ['mf-0', emptyFilter()],
+                ['mf-1', emptyFilter()],
+              ],
+            }),
+          ),
+      );
+      const apiRef: React.MutableRefObject<ReturnType<typeof useRerDutyFeedState> | null> = {
+        current: null,
+      };
+      const staleNewer = deferred<InboxMessagesRsp>();
+      const mf1ScrollToEnd = vi.fn();
+      hoisted.fetchInboxMessages.mockResolvedValueOnce(rangeRsp(1, 20));
+      hoisted.fetchInboxMessages.mockResolvedValueOnce(rangeRsp(21, 40));
+      hoisted.fetchInboxMessages.mockImplementationOnce(() => staleNewer.promise);
+      await act(async () => root.render(<TestHarness apiRef={apiRef} />));
+      await act(async () => flushMicrotasks());
+      apiRef.current!.columnRefsRef.current['mf-0'] = { scrollToEnd: vi.fn() };
+      apiRef.current!.columnRefsRef.current['mf-1'] = { scrollToEnd: mf1ScrollToEnd };
+
+      const staleLoad = apiRef.current!.loadFeedNewerMessages('mf-1', {
+        showLoading: false,
+        confirmedTailAvailable: true,
+      });
+      await act(async () => flushMicrotasks());
+      expect(apiRef.current!.tailAvailabilityByFeedId['mf-1']).toBe('loading');
+      await act(async () => {
+        apiRef.current!.removeMessageFeed('mf-1');
+        await flushMicrotasks();
+      });
+      await act(async () => {
+        staleNewer.reject(new Error('removed feed failure'));
+        await staleLoad;
+        await flushMicrotasks();
+      });
+      expect(apiRef.current!.messageFeeds.map((feed) => feed.id)).toEqual(['mf-0']);
+      expect(apiRef.current!.tailAvailabilityByFeedId['mf-1']).not.toBe('available');
+      expect(mf1ScrollToEnd).not.toHaveBeenCalled();
     });
 
     it('starts a replacement newer load while the invalidated request remains pending', async () => {

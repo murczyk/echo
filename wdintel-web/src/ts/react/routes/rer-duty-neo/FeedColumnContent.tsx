@@ -370,6 +370,8 @@ export const FeedColumnContent = memo(
       loadingNewer = false,
       arrowResultMessage = null,
       unreadCount = 0,
+      physicallyAtBottom = true,
+      tailAvailability = 'unknown',
       isWatchMode = false,
     } = view;
     const {
@@ -405,10 +407,15 @@ export const FeedColumnContent = memo(
       onLeftBottom,
       onNearBottomChange,
       onAtBottomChange,
+      onPhysicalBottomChange,
       onArrowClick,
       onVisibleMessageIds,
     } = actions;
     const [isAtBottom, setIsAtBottom] = useState(true);
+    const [isPhysicallyAtBottom, setIsPhysicallyAtBottom] = useState(physicallyAtBottom);
+    useLayoutEffect(() => {
+      setIsPhysicallyAtBottom(physicallyAtBottom);
+    }, [physicallyAtBottom]);
     const networks = useMemo(
       () => (networkMap ? Object.values(networkMap) : undefined),
       [networkMap],
@@ -430,6 +437,10 @@ export const FeedColumnContent = memo(
       onAtBottomChange: (atBottom) => {
         setIsAtBottom(atBottom);
         onAtBottomChange?.(atBottom);
+      },
+      onPhysicalBottomChange: (atBottom) => {
+        setIsPhysicallyAtBottom(atBottom);
+        onPhysicalBottomChange?.(atBottom);
       },
       onVisibleMessageIds,
       topLoadBufferPx: LOAD_OLDER_BUFFER_PX,
@@ -588,91 +599,92 @@ export const FeedColumnContent = memo(
             </Fab>
           </Box>
         ) : null}
-        {isPresent(actions.onArrowClick) && (!isAtBottom || loadingNewer || unreadCount > 0) && (
-          <Box
-            data-duty-feed-scroll-button
-            data-duty-bottom-offset={
-              narrowScreen && isPresent(actions.onCreateMessageFeed)
-                ? DUTY_FLOATING_SCROLL_BOTTOM_PX
-                : '12px'
-            }
-            style={{
-              position: 'absolute',
-              bottom:
+        {isPresent(actions.onArrowClick) &&
+          (loadingNewer || !isPhysicallyAtBottom || tailAvailability === 'available') && (
+            <Box
+              data-duty-feed-scroll-button
+              data-duty-bottom-offset={
                 narrowScreen && isPresent(actions.onCreateMessageFeed)
                   ? DUTY_FLOATING_SCROLL_BOTTOM_PX
-                  : 12,
-            }}
-            sx={{
-              right: { xs: 12, sm: 20 },
-              display: 'flex',
-              alignItems: 'center',
-              gap: 1,
-              zIndex: 1,
-            }}
-          >
-            {!loadingNewer && isPresent(arrowResultMessage) && (
-              <PowerChip
-                size="small"
-                label={arrowResultMessage}
-                interactive={false}
-                unselectedOpacity={1}
-                color="default"
-                sx={{ fontWeight: 500 }}
-              />
-            )}
-            <Box sx={{ position: 'relative', display: 'inline-flex' }}>
-              <Fab
-                color={unreadCount > 0 ? 'primary' : 'default'}
-                size="small"
-                sx={{
-                  ...dutyTopScrollButtonSx,
-                  position: 'relative',
-                  zIndex: 0,
-                  borderColor: unreadCount > 0 ? 'primary.main' : 'grey.400',
-                  color: unreadCount > 0 ? 'primary.main' : 'grey.400',
-                  '&:hover': {
-                    backgroundColor: 'background.paper',
-                    borderColor: 'primary.main',
-                    color: 'primary.main',
-                    boxShadow: 'none',
-                  },
-                }}
-                aria-label={
-                  isWatchMode ? 'Режим перегляду нових' : 'Завантажити нові та перейти вниз'
-                }
-                onClick={onArrowClick}
-                disabled={loadingNewer}
-              >
-                {loadingNewer ? (
-                  <CircularProgress size={20} sx={{ color: 'primary.main' }} />
-                ) : (
-                  <ArrowDownwardIcon sx={{ fontSize: 20 }} />
-                )}
-              </Fab>
-              {!loadingNewer &&
-                unreadCount > 0 &&
-                !isWatchMode &&
-                isNullOrUndefined(arrowResultMessage) && (
-                  <PowerChip
-                    size="small"
-                    label={unreadCount}
-                    selected
-                    interactive={false}
-                    unselectedOpacity={1}
-                    sx={{
-                      position: 'absolute',
-                      top: -6,
-                      right: -6,
-                      fontWeight: 600,
-                      zIndex: 2,
-                      pointerEvents: 'none',
-                    }}
-                  />
-                )}
+                  : '12px'
+              }
+              style={{
+                position: 'absolute',
+                bottom:
+                  narrowScreen && isPresent(actions.onCreateMessageFeed)
+                    ? DUTY_FLOATING_SCROLL_BOTTOM_PX
+                    : 12,
+              }}
+              sx={{
+                right: { xs: 12, sm: 20 },
+                display: 'flex',
+                alignItems: 'center',
+                gap: 1,
+                zIndex: 1,
+              }}
+            >
+              {!loadingNewer && isPresent(arrowResultMessage) && (
+                <PowerChip
+                  size="small"
+                  label={arrowResultMessage}
+                  interactive={false}
+                  unselectedOpacity={1}
+                  color="default"
+                  sx={{ fontWeight: 500 }}
+                />
+              )}
+              <Box sx={{ position: 'relative', display: 'inline-flex' }}>
+                <Fab
+                  color={unreadCount > 0 ? 'primary' : 'default'}
+                  size="small"
+                  sx={{
+                    ...dutyTopScrollButtonSx,
+                    position: 'relative',
+                    zIndex: 0,
+                    borderColor: unreadCount > 0 ? 'primary.main' : 'grey.400',
+                    color: unreadCount > 0 ? 'primary.main' : 'grey.400',
+                    '&:hover': {
+                      backgroundColor: 'background.paper',
+                      borderColor: 'primary.main',
+                      color: 'primary.main',
+                      boxShadow: 'none',
+                    },
+                  }}
+                  aria-label={
+                    isWatchMode ? 'Режим перегляду нових' : 'Завантажити нові та перейти вниз'
+                  }
+                  onClick={onArrowClick}
+                  disabled={loadingNewer}
+                >
+                  {loadingNewer ? (
+                    <CircularProgress size={20} sx={{ color: 'primary.main' }} />
+                  ) : (
+                    <ArrowDownwardIcon sx={{ fontSize: 20 }} />
+                  )}
+                </Fab>
+                {!loadingNewer &&
+                  unreadCount > 0 &&
+                  !isWatchMode &&
+                  isNullOrUndefined(arrowResultMessage) && (
+                    <PowerChip
+                      size="small"
+                      label={unreadCount}
+                      selected
+                      interactive={false}
+                      unselectedOpacity={1}
+                      sx={{
+                        position: 'absolute',
+                        top: -6,
+                        right: -6,
+                        fontWeight: 600,
+                        zIndex: 2,
+                        pointerEvents: 'none',
+                      }}
+                    />
+                  )}
+              </Box>
             </Box>
-          </Box>
-        )}
+          )}
       </Paper>
     );
   }),
@@ -692,7 +704,9 @@ export const FeedColumnContent = memo(
       prevView.scrollTrackingEnabled !== nextView.scrollTrackingEnabled ||
       prevView.loadingNewer !== nextView.loadingNewer ||
       prevView.arrowResultMessage !== nextView.arrowResultMessage ||
-      prevView.unreadCount !== nextView.unreadCount
+      prevView.unreadCount !== nextView.unreadCount ||
+      prevView.physicallyAtBottom !== nextView.physicallyAtBottom ||
+      prevView.tailAvailability !== nextView.tailAvailability
     ) {
       return false;
     }

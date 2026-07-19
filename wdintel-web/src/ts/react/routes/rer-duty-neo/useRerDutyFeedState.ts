@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
-import { isNullOrUndefined, isPresent } from '../../utils/misc';
+import { isNullOrUndefined } from '../../utils/misc';
 
 import type { SignalGroupEntry, SignalProfileEntry } from '../../../../Bindings';
 import { fetchInboxCount } from '../../services/api/inbox';
@@ -15,6 +15,7 @@ import { useRerDutyDirectionalLoads } from './useRerDutyDirectionalLoads';
 import { useRerDutyShortState } from './useRerDutyShortState';
 import { createEmptyFeedState, useRerDutyInitialLoad } from './useRerDutyInitialLoad';
 import { buildFeedCountSignature } from './rerDutyFeedCount';
+import type { TailAvailability } from './types';
 
 export type FeedStateDeps = {
   freqs: string[];
@@ -59,6 +60,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
       } | null>
     >
   >({});
+  const tailCountRequestPromiseByFeedIdRef = useRef<Record<string, Promise<number | null>>>({});
   const [watchModeByFeedId, setWatchModeByFeedId] = useState<Record<string, boolean>>({});
   const [loadingNewerFeedIds, setLoadingNewerFeedIds] = useState<Set<string>>(new Set());
   const [arrowResultByFeedId, setArrowResultByFeedId] = useState<Record<string, string | null>>({});
@@ -66,7 +68,15 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
   const arrowResultTimeoutsRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const loadGenerationByFeedIdRef = useRef<Record<string, number>>({});
   const pendingReloadFeedIdsRef = useRef<Set<string>>(new Set());
-  const scrollToEndAfterNewerRef = useRef<Set<string>>(new Set());
+  const pendingScrollToEndRef = useRef<Record<string, number>>({});
+  const scheduledScrollToEndRef = useRef<Record<string, number>>({});
+  const followTailByFeedIdRef = useRef<Record<string, boolean>>({});
+  const followGenerationByFeedIdRef = useRef<Record<string, number>>({});
+  const physicallyAtBottomByFeedIdRef = useRef<Record<string, boolean>>({});
+  const [tailAvailabilityByFeedId, setTailAvailabilityByFeedId] = useState<
+    Record<string, TailAvailability>
+  >({});
+  const tailAvailabilityByFeedIdRef = useRef<Record<string, TailAvailability>>({});
   const nearBottomByFeedIdRef = useRef<Record<string, boolean>>({});
   const unreadCursorByFeedIdRef = useRef<Record<string, number | null>>({});
   const newestExhaustedCursorByFeedIdRef = useRef<Record<string, number>>({});
@@ -100,17 +110,31 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
     }, 3000);
   }, []);
 
-  const markFeedReloadRequested = useCallback((feedId: string) => {
-    loadGenerationByFeedIdRef.current = {
-      ...loadGenerationByFeedIdRef.current,
-      [feedId]: (loadGenerationByFeedIdRef.current[feedId] ?? 0) + 1,
-    };
-    delete unreadCursorByFeedIdRef.current[feedId];
-    delete lastServerCountByFeedIdRef.current[feedId];
+  const resetTailState = useCallback((feedId: string) => {
     delete newestExhaustedCursorByFeedIdRef.current[feedId];
-    invalidateFeedLoadsRef.current(feedId);
-    pendingReloadFeedIdsRef.current = new Set([...pendingReloadFeedIdsRef.current, feedId]);
+    delete tailCountRequestPromiseByFeedIdRef.current[feedId];
+    delete pendingScrollToEndRef.current[feedId];
+    delete scheduledScrollToEndRef.current[feedId];
+    tailAvailabilityByFeedIdRef.current[feedId] = 'unknown';
+    setTailAvailabilityByFeedId((previous) => ({ ...previous, [feedId]: 'unknown' }));
   }, []);
+  const markFeedReloadRequested = useCallback(
+    (feedId: string) => {
+      loadGenerationByFeedIdRef.current = {
+        ...loadGenerationByFeedIdRef.current,
+        [feedId]: (loadGenerationByFeedIdRef.current[feedId] ?? 0) + 1,
+      };
+      delete unreadCursorByFeedIdRef.current[feedId];
+      delete lastServerCountByFeedIdRef.current[feedId];
+      resetTailState(feedId);
+      followTailByFeedIdRef.current[feedId] = false;
+      followGenerationByFeedIdRef.current[feedId] =
+        (followGenerationByFeedIdRef.current[feedId] ?? 0) + 1;
+      invalidateFeedLoadsRef.current(feedId);
+      pendingReloadFeedIdsRef.current = new Set([...pendingReloadFeedIdsRef.current, feedId]);
+    },
+    [resetTailState],
+  );
   const clearFeedUnreadBaselines = useCallback((feedId: string) => {
     delete unreadCursorByFeedIdRef.current[feedId];
     delete lastServerCountByFeedIdRef.current[feedId];
@@ -130,10 +154,44 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
         quantity: remainingUnreadCount,
         requestSignature,
       };
-      delete newestExhaustedCursorByFeedIdRef.current[feedId];
     },
     [],
   );
+  const beginFollowTail = useCallback((feedId: string) => {
+    const generation = (followGenerationByFeedIdRef.current[feedId] ?? 0) + 1;
+    followGenerationByFeedIdRef.current[feedId] = generation;
+    followTailByFeedIdRef.current[feedId] = true;
+    delete pendingScrollToEndRef.current[feedId];
+    return generation;
+  }, []);
+  const ensureFollowTail = useCallback(
+    (feedId: string) => {
+      const generation = followGenerationByFeedIdRef.current[feedId];
+      if (followTailByFeedIdRef.current[feedId] === true && generation !== undefined) {
+        return generation;
+      }
+      return beginFollowTail(feedId);
+    },
+    [beginFollowTail],
+  );
+  const cancelFollowTail = useCallback((feedId: string) => {
+    followGenerationByFeedIdRef.current[feedId] =
+      (followGenerationByFeedIdRef.current[feedId] ?? 0) + 1;
+    followTailByFeedIdRef.current[feedId] = false;
+    delete pendingScrollToEndRef.current[feedId];
+  }, []);
+  const isFollowTailValid = useCallback(
+    (feedId: string, generation: number) =>
+      followTailByFeedIdRef.current[feedId] === true &&
+      followGenerationByFeedIdRef.current[feedId] === generation,
+    [],
+  );
+  const setTailAvailability = useCallback((feedId: string, availability: TailAvailability) => {
+    tailAvailabilityByFeedIdRef.current[feedId] = availability;
+    setTailAvailabilityByFeedId((previous) =>
+      previous[feedId] === availability ? previous : { ...previous, [feedId]: availability },
+    );
+  }, []);
   const getFeedLoadGeneration = useCallback(
     (feedId: string) => loadGenerationByFeedIdRef.current[feedId] ?? 0,
     [],
@@ -227,6 +285,49 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
     },
     [buildReqForFeed, freqs, getFeedLoadGeneration],
   );
+  const requestValidatedTailCount = useCallback(
+    (feedId: string, tailId: number) => {
+      const existingPromise = tailCountRequestPromiseByFeedIdRef.current[feedId];
+      if (existingPromise) return existingPromise;
+      const feed = messageFeedsRef.current.find((candidate) => candidate.id === feedId);
+      if (!feed || feed.loading || feed.items.at(-1)?.[0] !== tailId) {
+        return Promise.resolve(null);
+      }
+      const requestGeneration = getFeedLoadGeneration(feedId);
+      const requestSignature = buildFeedCountSignature(feed, freqs);
+      const requestPromise = (async () => {
+        const { quantity } = await fetchInboxCount(
+          buildReqForFeed(feed, { sinceIdNoninclusive: tailId, nolimit: true }),
+        );
+        const currentFeed = messageFeedsRef.current.find((candidate) => candidate.id === feedId);
+        if (
+          !currentFeed ||
+          currentFeed.loading ||
+          getFeedLoadGeneration(feedId) !== requestGeneration ||
+          currentFeed.items.at(-1)?.[0] !== tailId ||
+          buildFeedCountSignature(currentFeed, freqs) !== requestSignature
+        ) {
+          return null;
+        }
+        return quantity;
+      })();
+      tailCountRequestPromiseByFeedIdRef.current[feedId] = requestPromise;
+      requestPromise.then(
+        () => {
+          if (tailCountRequestPromiseByFeedIdRef.current[feedId] === requestPromise) {
+            delete tailCountRequestPromiseByFeedIdRef.current[feedId];
+          }
+        },
+        () => {
+          if (tailCountRequestPromiseByFeedIdRef.current[feedId] === requestPromise) {
+            delete tailCountRequestPromiseByFeedIdRef.current[feedId];
+          }
+        },
+      );
+      return requestPromise;
+    },
+    [buildReqForFeed, freqs, getFeedLoadGeneration],
+  );
 
   useEffect(() => {
     return () => {
@@ -264,8 +365,13 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
       getFeedCountSignature: (feed) => buildFeedCountSignature(feed, freqs),
       advanceFeedReadCursor,
       newestExhaustedCursorByFeedIdRef,
-      scrollToEndAfterNewerRef,
+      pendingScrollToEndRef,
       nearBottomByFeedIdRef,
+      followTailByFeedIdRef,
+      followGenerationByFeedIdRef,
+      isFollowTailValid,
+      setTailAvailability,
+      getTailAvailability: (feedId) => tailAvailabilityByFeedIdRef.current[feedId] ?? 'unknown',
     });
   invalidateFeedLoadsRef.current = invalidateFeedLoads;
 
@@ -296,7 +402,6 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
 
   const pollCountThenLoadNewerIfNeeded = useCallback(async () => {
     if (!messageFeedsRef.current.length) return;
-    const nearBottom = nearBottomByFeedIdRef.current;
     await Promise.all(
       messageFeedsRef.current.map(async (feed) => {
         let entry: Awaited<ReturnType<typeof requestValidatedInboxCount>>;
@@ -319,8 +424,6 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
           }
         }
         if (entry.quantity <= 0) {
-          if (isPresent(entry.cursorId))
-            newestExhaustedCursorByFeedIdRef.current[feedId] = entry.cursorId;
           lastServerCountByFeedIdRef.current[feedId] = {
             cursorId: entry.cursorId,
             quantity: 0,
@@ -328,7 +431,6 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
           };
           return;
         }
-        delete newestExhaustedCursorByFeedIdRef.current[feedId];
         const prevServerCount = lastServerCountByFeedIdRef.current[feedId];
         const nextCount = entry.quantity;
         const canCompareBaseline =
@@ -352,22 +454,63 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
           quantity: nextCount,
           requestSignature: entry.requestSignature,
         };
-        const watchMode = watchModeByFeedId[feedId] ?? false;
-        if (watchMode || nearBottom[feedId]) {
-          const shouldFollowScroll =
-            !deps.disableAutoScroll && watchMode && (atBottomByFeedIdRef.current[feedId] ?? false);
+        let confirmedTailAvailable = tailAvailabilityByFeedIdRef.current[feedId] === 'available';
+        if (nearBottomByFeedIdRef.current[feedId] === true) {
+          const loadedTailId = currentFeed.items.at(-1)?.[0];
+          const exhaustedTail =
+            loadedTailId != null &&
+            newestExhaustedCursorByFeedIdRef.current[feedId] === loadedTailId;
+          if (exhaustedTail) {
+            const previousAvailability = tailAvailabilityByFeedIdRef.current[feedId] ?? 'exhausted';
+            setTailAvailability(feedId, 'checking');
+            let tailQuantity: number | null;
+            try {
+              tailQuantity = await requestValidatedTailCount(feedId, loadedTailId);
+            } catch {
+              setTailAvailability(
+                feedId,
+                previousAvailability === 'loading' ? 'available' : previousAvailability,
+              );
+              return;
+            }
+            if (tailQuantity === null) {
+              setTailAvailability(feedId, previousAvailability);
+              return;
+            }
+            if (tailQuantity <= 0) {
+              setTailAvailability(feedId, 'exhausted');
+              return;
+            }
+            confirmedTailAvailable = true;
+            if (nearBottomByFeedIdRef.current[feedId] !== true) {
+              delete newestExhaustedCursorByFeedIdRef.current[feedId];
+              setTailAvailability(feedId, 'available');
+              return;
+            }
+            delete newestExhaustedCursorByFeedIdRef.current[feedId];
+          }
+          if (nearBottomByFeedIdRef.current[feedId] !== true) return;
+          const capturedFollowGeneration = followGenerationByFeedIdRef.current[feedId] ?? -1;
+          const shouldFollow =
+            !deps.disableAutoScroll &&
+            physicallyAtBottomByFeedIdRef.current[feedId] === true &&
+            isFollowTailValid(feedId, capturedFollowGeneration);
           await loadFeedNewerMessages(feedId, {
-            scrollToEndAfterLoad: shouldFollowScroll,
+            scrollToEndAfterLoad: shouldFollow,
             skipIfNewestExhausted: true,
+            showLoading: false,
+            followGeneration: capturedFollowGeneration,
+            confirmedTailAvailable,
           });
         }
       }),
     );
   }, [
-    watchModeByFeedId,
     loadFeedNewerMessages,
     deps.disableAutoScroll,
     requestValidatedInboxCount,
+    requestValidatedTailCount,
+    isFollowTailValid,
   ]);
 
   const feedIds = useMemo(() => messageFeeds.map((w) => w.id).join(','), [messageFeeds]);
@@ -428,16 +571,31 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
   }, [deps.pollIntervalSec, pollCountThenLoadNewerIfNeeded, shortStateReady]);
 
   useEffect(() => {
-    const feedIds = Array.from(scrollToEndAfterNewerRef.current);
-    if (feedIds.length === 0) return;
-    scrollToEndAfterNewerRef.current.clear();
+    const pendingEntries = Object.entries(pendingScrollToEndRef.current).filter(
+      ([feedId, generation]) => scheduledScrollToEndRef.current[feedId] !== generation,
+    );
+    if (pendingEntries.length === 0) return;
     const refs = columnRefsRef.current;
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
-        feedIds.forEach((feedId) => {
+        pendingEntries.forEach(([feedId, capturedGeneration]) => {
+          if (scheduledScrollToEndRef.current[feedId] !== capturedGeneration) return;
+          if (pendingScrollToEndRef.current[feedId] !== capturedGeneration) {
+            delete scheduledScrollToEndRef.current[feedId];
+            return;
+          }
+          if (!isFollowTailValid(feedId, capturedGeneration)) {
+            delete scheduledScrollToEndRef.current[feedId];
+            return;
+          }
+          delete pendingScrollToEndRef.current[feedId];
+          delete scheduledScrollToEndRef.current[feedId];
           refs[feedId]?.scrollToEnd('auto');
         });
       });
+    });
+    pendingEntries.forEach(([feedId, generation]) => {
+      scheduledScrollToEndRef.current[feedId] = generation;
     });
   }, [messageFeeds]);
 
@@ -453,6 +611,19 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
       };
       removeFeedLoads(feedId);
       clearFeedUnreadBaselines(feedId);
+      resetTailState(feedId);
+      [
+        followTailByFeedIdRef,
+        followGenerationByFeedIdRef,
+        physicallyAtBottomByFeedIdRef,
+        nearBottomByFeedIdRef,
+        atBottomByFeedIdRef,
+      ].forEach((ref) => delete ref.current[feedId]);
+      setLoadingNewerFeedIds((previous) => {
+        const next = new Set(previous);
+        next.delete(feedId);
+        return next;
+      });
       deps.onFeedRemoved?.(feedId);
     },
   );
@@ -467,6 +638,11 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
     columnRefsRef,
     nearBottomByFeedIdRef,
     atBottomByFeedIdRef,
+    physicallyAtBottomByFeedIdRef,
+    tailAvailabilityByFeedId,
+    beginFollowTail,
+    ensureFollowTail,
+    cancelFollowTail,
     loadFeedInitialMessages,
     loadFeedOlderMessages,
     loadFeedNewerMessages,

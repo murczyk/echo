@@ -14,7 +14,13 @@ type Params = {
   loadFeedInitialMessages: (feedId: string) => Promise<void>;
   loadFeedNewerMessages: (
     feedId: string,
-    opts?: { nolimit?: boolean; scrollToEndAfterLoad?: boolean; markAllReadAfterAppend?: boolean },
+    opts?: {
+      nolimit?: boolean;
+      scrollToEndAfterLoad?: boolean;
+      markAllReadAfterAppend?: boolean;
+      showLoading?: boolean;
+      followGeneration?: number;
+    },
   ) => Promise<void>;
   requestValidatedInboxCount: (feedId: string) => Promise<{
     feedId: string;
@@ -24,6 +30,7 @@ type Params = {
   } | null>;
   dutyDisableAutoScroll: boolean;
   setMessageFeeds: Dispatch<SetStateAction<MessageFeedState[]>>;
+  beginFollowTail?: (feedId: string) => number;
 };
 
 export function useRerDutyFeedInteractionActions(params: Params) {
@@ -38,6 +45,7 @@ export function useRerDutyFeedInteractionActions(params: Params) {
     requestValidatedInboxCount,
     dutyDisableAutoScroll,
     setMessageFeeds,
+    beginFollowTail,
   } = params;
 
   const busyArrowMessage = 'Оновлення триває, спробуйте ще раз';
@@ -47,20 +55,24 @@ export function useRerDutyFeedInteractionActions(params: Params) {
     async (feedId: string) => {
       const feed = messageFeeds.find((x) => x.id === feedId);
       if (!feed) return;
+      const followGeneration = beginFollowTail?.(feedId) ?? -1;
+      if (feed.items.length > 0) {
+        const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+        columnRefsRef.current[feedId]?.scrollToEnd(reducedMotion ? 'auto' : 'smooth');
+      }
       if (!dutyDisableAutoScroll) {
         setWatchModeByFeedId((prev) => ({ ...prev, [feedId]: true }));
       }
+      setLoadingNewerFeedIds((prev) => new Set(prev).add(feedId));
       try {
         if (feed.items.length > 0) {
           const result = await requestValidatedInboxCount(feedId);
           if (!result) {
-            columnRefsRef.current[feedId]?.scrollToEnd('auto');
             showArrowResult(feedId, busyArrowMessage);
             return;
           }
           const { quantity } = result;
           if (quantity === 0) {
-            columnRefsRef.current[feedId]?.scrollToEnd('auto');
             showArrowResult(feedId, 'Немає нових повідомлень');
             return;
           }
@@ -77,6 +89,8 @@ export function useRerDutyFeedInteractionActions(params: Params) {
           await loadFeedNewerMessages(feedId, {
             nolimit: true,
             scrollToEndAfterLoad: true,
+            showLoading: true,
+            followGeneration,
           });
           showArrowResult(feedId, 'Завантажено нові повідомлення');
         } else if (!feed.loading) {
@@ -84,7 +98,6 @@ export function useRerDutyFeedInteractionActions(params: Params) {
           showArrowResult(feedId, 'Завантажено нові повідомлення');
         }
       } catch {
-        columnRefsRef.current[feedId]?.scrollToEnd('auto');
         showArrowResult(feedId, failureArrowMessage);
       } finally {
         setLoadingNewerFeedIds((prev) => {
