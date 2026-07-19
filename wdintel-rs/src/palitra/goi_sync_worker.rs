@@ -2191,7 +2191,7 @@ async fn import_convertible_goi_palitra_file(
 ) -> anyhow::Result<Vec<i64>> {
     let organism_ids =
         goi_import_access(&env.dbx, integration).await.c(h!())?;
-    let author = integration.maintainer_login.clone().c(h!())?;
+    let author = integration.maintainer_login_id.c(h!())?;
     let txn = env.dbx.begin().await.c(h!())?;
     let palitra = super::bl::create_palitra(
         author,
@@ -2322,7 +2322,7 @@ async fn import_direct_goi_palitra_file(
 
     let organism_ids =
         goi_import_access(&env.dbx, integration).await.c(h!())?;
-    let author = integration.maintainer_login.clone().c(h!())?;
+    let author = integration.maintainer_login_id.c(h!())?;
     let uploaded_at = Utc::now();
     let txn = env.dbx.begin().await.c(h!())?;
     let palitra = super::bl::create_palitra(

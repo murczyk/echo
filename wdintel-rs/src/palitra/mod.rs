@@ -97,7 +97,7 @@ pub async fn create_palitra_with_kmz(
     env: actix_web::web::Data<Env>,
     mut payload: Multipart,
 ) -> Result<Json<Palitra>, AppError> {
-    let login = user.id().c(h!())?;
+    let login = crate::users::identity_id(&user)?;
     let scope = load_user_scope(&env.dbx, &login).await.c(h!())?;
     let multipart_payload =
         parse_create_palitra_multipart(&mut payload).await.c(h!())?;
@@ -127,9 +127,7 @@ pub async fn create_palitra_with_kmz(
     };
 
     // Create palitra first
-    let palitra = bl::create_palitra(login.clone(), req, &env.dbx)
-        .await
-        .c(h!())?;
+    let palitra = bl::create_palitra(login, req, &env.dbx).await.c(h!())?;
     if !is_direct_palitra_upload_extension(&multipart_payload.extension) {
         schedule_palitra_conversion(
             &env.dbx,
@@ -209,7 +207,7 @@ pub async fn create_palitra_basic(
     env: actix_web::web::Data<Env>,
     mut payload: Multipart,
 ) -> Result<Json<Palitra>, AppError> {
-    let login = user.id().c(h!())?;
+    let login = crate::users::identity_id(&user)?;
     let scope = load_user_scope(&env.dbx, &login).await.c(h!())?;
     let multipart_payload =
         parse_create_palitra_multipart(&mut payload).await.c(h!())?;
@@ -288,8 +286,7 @@ pub async fn create_palitra_basic(
             source_file_name: Some(multipart_payload.filename.clone()),
             last_uploaded_at_ts: Some(uploaded_at.timestamp_millis()),
         };
-        let palitra =
-            bl::create_palitra(login.clone(), req, &txn).await.c(h!())?;
+        let palitra = bl::create_palitra(login, req, &txn).await.c(h!())?;
         created_palitra_ids.push(palitra.id);
         let palitra_geometry =
             read_latest_palitra_geometry_with_warning(&txn, palitra.id)
@@ -354,7 +351,7 @@ pub async fn create_palitra_basic_v2(
     env: actix_web::web::Data<Env>,
     mut payload: Multipart,
 ) -> Result<Json<Palitra>, AppError> {
-    let login = user.id().c(h!())?;
+    let login = crate::users::identity_id(&user)?;
     let scope = load_user_scope(&env.dbx, &login).await.c(h!())?;
     let multipart_payload =
         parse_create_palitra_multipart(&mut payload).await.c(h!())?;
@@ -508,7 +505,7 @@ pub async fn analyze_kmz(
     env: actix_web::web::Data<Env>,
     mut payload: Multipart,
 ) -> Result<Json<AnalyzeKmzResponse>, AppError> {
-    let login = user.id().c(h!())?;
+    let login = crate::users::identity_id(&user)?;
     crate::users::has_role(&env.dbx, &login, "Rer")
         .await
         .context(h!())?;
@@ -557,7 +554,7 @@ pub async fn upload_palitra_points(
     path: actix_web::web::Path<i64>,
     mut payload: Multipart,
 ) -> Result<Json<()>, AppError> {
-    let login = user.id().c(h!())?;
+    let login = crate::users::identity_id(&user)?;
     ensure_palitra_management_permission(&env, &login)
         .await
         .c(h!())?;
@@ -760,7 +757,7 @@ pub async fn retry_palitra_conversion(
     env: actix_web::web::Data<Env>,
     path: actix_web::web::Path<i64>,
 ) -> Result<Json<Palitra>, AppError> {
-    let login = user.id().c(h!())?;
+    let login = crate::users::identity_id(&user)?;
     ensure_palitra_management_permission(&env, &login)
         .await
         .c(h!())?;
@@ -995,7 +992,7 @@ pub async fn list_all_palitras(
     user: actix_identity::Identity,
     env: actix_web::web::Data<Env>,
 ) -> Result<Json<Vec<Palitra>>, AppError> {
-    let login = user.id().c(h!())?;
+    let login = crate::users::identity_id(&user)?;
     crate::users::has_role(&env.dbx, &login, "Rer")
         .await
         .context(h!())?;
@@ -1008,7 +1005,7 @@ pub async fn list_all_palitras_v2(
     user: actix_identity::Identity,
     env: actix_web::web::Data<Env>,
 ) -> Result<Json<Vec<PalitraReadV2>>, AppError> {
-    let login = user.id().c(h!())?;
+    let login = crate::users::identity_id(&user)?;
     crate::users::has_role(&env.dbx, &login, "Rer")
         .await
         .context(h!())?;
@@ -1023,7 +1020,7 @@ pub async fn list_map_palitras_v2(
     user: actix_identity::Identity,
     env: actix_web::web::Data<Env>,
 ) -> Result<Json<Vec<PalitraReadV2>>, AppError> {
-    let login = user.id().c(h!())?;
+    let login = crate::users::identity_id(&user)?;
     crate::users::has_role(&env.dbx, &login, "Rer")
         .await
         .context(h!())?;
@@ -1038,7 +1035,7 @@ pub async fn list_all_palitras_detailed(
     user: actix_identity::Identity,
     env: actix_web::web::Data<Env>,
 ) -> Result<Json<Vec<PalitraDetails>>, AppError> {
-    let login = user.id().c(h!())?;
+    let login = crate::users::identity_id(&user)?;
     crate::users::has_role(&env.dbx, &login, "Rer")
         .await
         .context(h!())?;
@@ -1085,7 +1082,7 @@ pub async fn read_palitra_v2(
     env: actix_web::web::Data<Env>,
     path: actix_web::web::Path<i64>,
 ) -> Result<Json<PalitraReadV2>, AppError> {
-    let login = user.id().c(h!())?;
+    let login = crate::users::identity_id(&user)?;
     crate::users::has_role(&env.dbx, &login, "Rer")
         .await
         .context(h!())?;
@@ -1102,7 +1099,7 @@ pub async fn read_palitra_preview_v2(
     env: actix_web::web::Data<Env>,
     path: actix_web::web::Path<i64>,
 ) -> Result<Json<PalitraReadV2>, AppError> {
-    let login = user.id().c(h!())?;
+    let login = crate::users::identity_id(&user)?;
     crate::users::has_role(&env.dbx, &login, "Rer")
         .await
         .context(h!())?;
@@ -1119,7 +1116,7 @@ pub async fn list_palitra_points(
     env: actix_web::web::Data<Env>,
     req: Json<PalitraPointsReq>,
 ) -> Result<Json<Vec<PalitraPoints>>, AppError> {
-    let login = user.id().c(h!())?;
+    let login = crate::users::identity_id(&user)?;
     crate::users::has_role(&env.dbx, &login, "Rer")
         .await
         .context(h!())?;
@@ -1137,7 +1134,7 @@ pub async fn suggest_palitra_point_labels(
     env: actix_web::web::Data<Env>,
     req: Json<PalitraPointLabelSuggestReq>,
 ) -> Result<Json<Vec<PalitraPointLabelSuggestRsp>>, AppError> {
-    let login = user.id().c(h!())?;
+    let login = crate::users::identity_id(&user)?;
     crate::users::has_role(&env.dbx, &login, "Rer")
         .await
         .context(h!())?;
@@ -1169,7 +1166,7 @@ pub async fn search_palitra_points(
     env: actix_web::web::Data<Env>,
     req: Json<PalitraSearchPointsReq>,
 ) -> Result<Json<Vec<PalitraPoints>>, AppError> {
-    let login = user.id().c(h!())?;
+    let login = crate::users::identity_id(&user)?;
     crate::users::has_role(&env.dbx, &login, "Rer")
         .await
         .context(h!())?;
@@ -1201,7 +1198,7 @@ pub async fn create_palitra(
     env: actix_web::web::Data<Env>,
     req: Json<CreatePalitraReq>,
 ) -> Result<Json<Palitra>, AppError> {
-    let login = user.id().c(h!())?;
+    let login = crate::users::identity_id(&user)?;
     let req = req.into_inner();
     let scope = load_user_scope(&env.dbx, &login).await.c(h!())?;
     ensure_palitra_permissions(&env, &login, &req.access, &scope)
@@ -1219,7 +1216,7 @@ pub async fn archive_palitra(
     env: actix_web::web::Data<Env>,
     path: actix_web::web::Path<i64>,
 ) -> Result<Json<Palitra>, AppError> {
-    let login = user.id().c(h!())?;
+    let login = crate::users::identity_id(&user)?;
     ensure_palitra_management_permission(&env, &login)
         .await
         .c(h!())?;
@@ -1246,7 +1243,7 @@ pub async fn unarchive_palitra(
     env: actix_web::web::Data<Env>,
     path: actix_web::web::Path<i64>,
 ) -> Result<Json<Palitra>, AppError> {
-    let login = user.id().c(h!())?;
+    let login = crate::users::identity_id(&user)?;
     ensure_palitra_management_permission(&env, &login)
         .await
         .c(h!())?;
@@ -1273,7 +1270,7 @@ pub async fn assign_palitra_folder(
     env: actix_web::web::Data<Env>,
     req: Json<PalitraFolderAssignReq>,
 ) -> Result<Json<PalitraBulkActionRsp>, AppError> {
-    let login = user.id().c(h!())?;
+    let login = crate::users::identity_id(&user)?;
     ensure_palitra_management_permission(&env, &login)
         .await
         .c(h!())?;
@@ -1304,7 +1301,7 @@ pub async fn rename_palitra_folder(
     env: actix_web::web::Data<Env>,
     req: Json<PalitraFolderRenameReq>,
 ) -> Result<Json<PalitraBulkActionRsp>, AppError> {
-    let login = user.id().c(h!())?;
+    let login = crate::users::identity_id(&user)?;
     ensure_palitra_management_permission(&env, &login)
         .await
         .c(h!())?;
@@ -1334,7 +1331,7 @@ pub async fn archive_palitra_folder(
     env: actix_web::web::Data<Env>,
     req: Json<PalitraFolderReq>,
 ) -> Result<Json<PalitraBulkActionRsp>, AppError> {
-    let login = user.id().c(h!())?;
+    let login = crate::users::identity_id(&user)?;
     ensure_palitra_management_permission(&env, &login)
         .await
         .c(h!())?;
@@ -1355,12 +1352,12 @@ pub async fn delete_palitra_folder(
     env: actix_web::web::Data<Env>,
     req: Json<PalitraFolderReq>,
 ) -> Result<Json<PalitraBulkActionRsp>, AppError> {
-    let login = user.id().c(h!())?;
+    let login = crate::users::identity_id(&user)?;
     ensure_palitra_management_permission(&env, &login)
         .await
         .c(h!())?;
     let palitra_ids = bl::collect_accessible_palitra_ids_in_folder(
-        login.clone(),
+        login,
         req.into_inner().folder,
         &env.dbx,
     )
@@ -1385,7 +1382,7 @@ pub async fn delete_palitra_folder(
 
 async fn delete_palitra_from_folder_if_allowed(
     palitra_id: i64,
-    login: &str,
+    login: &uuid::Uuid,
     env: &Data<Env>,
 ) -> Result<bool, AppError> {
     let palitra = palitra::Entity::find_by_id(palitra_id)
@@ -1419,7 +1416,7 @@ pub async fn download_palitras(
     env: actix_web::web::Data<Env>,
     req: Json<PalitraDownloadReq>,
 ) -> Result<HttpResponse, AppError> {
-    let login = user.id().c(h!())?;
+    let login = crate::users::identity_id(&user)?;
     crate::users::has_role(&env.dbx, &login, "Rer")
         .await
         .context(h!())?;
@@ -1578,7 +1575,7 @@ pub async fn update_palitra(
     req: Json<CreatePalitraReq>,
     path: actix_web::web::Path<i64>,
 ) -> Result<Json<PalitraDetails>, AppError> {
-    let login = user.id().c(h!())?;
+    let login = crate::users::identity_id(&user)?;
     let req = req.into_inner();
     let scope = load_user_scope(&env.dbx, &login).await.c(h!())?;
     ensure_palitra_permissions(&env, &login, &req.access, &scope)
@@ -1613,7 +1610,7 @@ pub async fn update_palitra_v2(
     req: Json<UpdatePalitraV2Req>,
     path: actix_web::web::Path<i64>,
 ) -> Result<Json<PalitraReadV2>, AppError> {
-    let login = user.id().c(h!())?;
+    let login = crate::users::identity_id(&user)?;
     let req = req.into_inner();
     let scope = load_user_scope(&env.dbx, &login).await.c(h!())?;
     ensure_palitra_permissions(&env, &login, &req.access, &scope)
@@ -1647,7 +1644,7 @@ pub async fn delete_palitra(
     env: actix_web::web::Data<Env>,
     path: actix_web::web::Path<i64>,
 ) -> Result<Json<()>, AppError> {
-    let login = user.id().c(h!())?;
+    let login = crate::users::identity_id(&user)?;
     ensure_palitra_management_permission(&env, &login)
         .await
         .c(h!())?;
@@ -1962,6 +1959,14 @@ async fn render_created_palitra_response(
                 .await
                 .c(h!())?
         };
+    let author = match palitra.author_login_id {
+        Some(author_login_id) => {
+            crate::users::login_names_by_ids(dbx, vec![author_login_id])
+                .await?
+                .remove(&author_login_id)
+        }
+        None => None,
+    };
     let goi_sync_summary = bl::read_palitra_goi_sync_summary(dbx, palitra_id)
         .await
         .c(h!())?;
@@ -1971,7 +1976,7 @@ async fn render_created_palitra_response(
         folder: bl::normalize_palitra_folder_from_db(palitra.folder),
         is_archived: palitra.is_archived,
         color_hex: palitra_geometry.hex,
-        author: palitra.author,
+        author,
         source_file_name: palitra_geometry.source_file_name,
         last_uploaded_at_ts: palitra_geometry
             .last_uploaded_at
@@ -1991,13 +1996,16 @@ async fn render_created_palitra_response(
             .await
             .c(h!())?,
         access_organism_ids,
-        access_logins,
+        access_logins: access_logins
+            .into_iter()
+            .map(|login_id| login_id.to_string())
+            .collect(),
     })
 }
 
 async fn ensure_palitra_permissions(
     env: &Data<Env>,
-    login: &str,
+    login: &uuid::Uuid,
     access: &PalitraAccess,
     scope: &UserScope,
 ) -> anyhow::Result<()> {
@@ -2021,7 +2029,9 @@ async fn ensure_palitra_permissions(
             if !is_rer {
                 bail!("Only Rer may manage login-scoped palitra");
             }
-            let all_self = logins.iter().all(|l| l == login);
+            let all_self = logins.iter().all(|login_id| {
+                Uuid::parse_str(login_id).ok().as_ref() == Some(login)
+            });
             if !all_self {
                 bail!("Rer may only manage palitra scoped to own login");
             }
@@ -2052,7 +2062,7 @@ async fn ensure_palitra_permissions(
 
 async fn ensure_palitra_management_permission(
     env: &Data<Env>,
-    login: &str,
+    login: &uuid::Uuid,
 ) -> Result<(), AppError> {
     if is_palitra_admin(env, login).await.c(h!())? {
         return Ok(());
@@ -2111,14 +2121,14 @@ where
 
 async fn is_palitra_admin(
     env: &Data<Env>,
-    login: &str,
+    login: &uuid::Uuid,
 ) -> Result<bool, AppError> {
     has_role_or_false(env, login, "Admin").await
 }
 
 async fn has_role_or_false(
     env: &Data<Env>,
-    login: &str,
+    login: &uuid::Uuid,
     role: &str,
 ) -> Result<bool, AppError> {
     match crate::users::has_role(&env.dbx, login, role).await {
@@ -2176,10 +2186,9 @@ where
 
 async fn load_user_scope(
     dbx: &DatabaseConnection,
-    login_name: &str,
+    login_id: &Uuid,
 ) -> anyhow::Result<UserScope> {
-    let login = login::Entity::find()
-        .filter(login::Column::Login.eq(login_name.to_string()))
+    let login = login::Entity::find_by_id(*login_id)
         .filter(login::Column::DeletedPermanently.eq(false))
         .one(dbx)
         .await
@@ -2192,11 +2201,11 @@ async fn load_user_scope(
 
 async fn is_palitra_author_or_admin(
     dbx: &DatabaseConnection,
-    login: &str,
+    login: &uuid::Uuid,
     palitra: &palitra::Model,
 ) -> anyhow::Result<bool> {
     let is_admin = crate::users::has_role(dbx, login, "Admin").await.is_ok();
-    Ok(is_admin || palitra.author.as_deref() == Some(login))
+    Ok(is_admin || palitra.author_login_id == Some(*login))
 }
 
 async fn read_palitra_access<'a, C>(
@@ -2219,7 +2228,7 @@ where
 }
 
 fn pick_access(
-    logins: Vec<String>,
+    logins: Vec<uuid::Uuid>,
     organism_ids: Vec<i64>,
     aor_ids: Vec<i64>,
 ) -> anyhow::Result<PalitraAccess> {
@@ -2227,7 +2236,12 @@ fn pick_access(
         return Ok(PalitraAccess::ByOrganisms { organism_ids });
     }
     if !logins.is_empty() {
-        return Ok(PalitraAccess::ByLogins { logins });
+        return Ok(PalitraAccess::ByLogins {
+            logins: logins
+                .into_iter()
+                .map(|login_id| login_id.to_string())
+                .collect(),
+        });
     }
     if !aor_ids.is_empty() {
         return Ok(PalitraAccess::ByAor { aor_ids });
@@ -3371,8 +3385,7 @@ mod tests {
     #[test]
     fn pick_access_preserves_organism_scope_when_login_rows_exist() {
         let access =
-            pick_access(vec!["extra-login".to_string()], vec![10], vec![])
-                .unwrap();
+            pick_access(vec![uuid::Uuid::nil()], vec![10], vec![]).unwrap();
 
         assert!(matches!(
             access,

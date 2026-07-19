@@ -214,7 +214,7 @@ pub struct GoiAdminIntegration {
     pub api_password: Option<String>,
     pub disable_goi_to_echo_palitra_sync: bool,
     pub pause_worker: bool,
-    pub maintainer_login: Option<String>,
+    pub maintainer_login_id: Option<String>,
     pub access_organism_ids: Vec<i64>,
     pub access_logins: Vec<String>,
 }
@@ -244,7 +244,7 @@ pub struct UpsertGoiAdminIntegrationReq {
     pub api_password: Option<String>,
     pub disable_goi_to_echo_palitra_sync: bool,
     pub pause_worker: bool,
-    pub maintainer_login: Option<String>,
+    pub maintainer_login_id: Option<String>,
     pub access_organism_ids: Vec<i64>,
     pub access_logins: Vec<String>,
 }

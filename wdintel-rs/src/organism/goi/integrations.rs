@@ -78,7 +78,12 @@ pub async fn list_admin_goi_integrations(
     user: actix_identity::Identity,
     env: actix_web::web::Data<Env>,
 ) -> Result<Json<ListGoiAdminIntegrationsRsp>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Admin").await?;
+    crate::users::has_role(
+        &env.dbx,
+        &crate::users::identity_id(&user)?,
+        "Admin",
+    )
+    .await?;
 
     let items = load_integrations_with_owners_all(&env.dbx).await.c(h!())?;
     let mut integrations = Vec::with_capacity(items.len());
@@ -98,7 +103,12 @@ pub async fn get_admin_goi_integration(
     env: actix_web::web::Data<Env>,
     req: Json<GetGoiAdminIntegrationReq>,
 ) -> Result<Json<GoiAdminIntegration>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Admin").await?;
+    crate::users::has_role(
+        &env.dbx,
+        &crate::users::identity_id(&user)?,
+        "Admin",
+    )
+    .await?;
 
     let item = load_integration_with_owner(&env.dbx, req.id)
         .await
@@ -114,7 +124,12 @@ pub async fn upsert_admin_goi_integration(
     env: actix_web::web::Data<Env>,
     req: Json<UpsertGoiAdminIntegrationReq>,
 ) -> Result<Json<GoiAdminIntegration>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Admin").await?;
+    crate::users::has_role(
+        &env.dbx,
+        &crate::users::identity_id(&user)?,
+        "Admin",
+    )
+    .await?;
 
     let req = req.into_inner();
     validate_goi_admin_integration_req(&req)?;
@@ -130,7 +145,7 @@ pub async fn upsert_admin_goi_integration(
     .c(h!())?;
     ensure_goi_maintainer_exists(
         &env.dbx,
-        req.maintainer_login.as_deref(),
+        req.maintainer_login_id.as_deref(),
         !req.disable_goi_to_echo_palitra_sync,
     )
     .await
@@ -187,9 +202,12 @@ pub async fn upsert_admin_goi_integration(
                 req.disable_goi_to_echo_palitra_sync
             ),
             pause_worker: Set(req.pause_worker),
-            maintainer_login: Set(normalize_optional_trimmed(
-                req.maintainer_login.clone(),
-            )),
+            maintainer_login_id: Set(req
+                .maintainer_login_id
+                .as_deref()
+                .map(Uuid::parse_str)
+                .transpose()
+                .c(h!())?),
         }
         .insert(&tx)
         .await
@@ -223,7 +241,12 @@ pub async fn delete_admin_goi_integration(
     env: actix_web::web::Data<Env>,
     req: Json<DeleteGoiAdminIntegrationReq>,
 ) -> Result<Json<()>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Admin").await?;
+    crate::users::has_role(
+        &env.dbx,
+        &crate::users::identity_id(&user)?,
+        "Admin",
+    )
+    .await?;
 
     goi_integration::Entity::delete_many()
         .filter(goi_integration::Column::Id.eq(req.id))
@@ -240,7 +263,12 @@ pub async fn check_goi_integration_connection(
     env: actix_web::web::Data<Env>,
     req: Json<CheckOrganismGoiConnectionReq>,
 ) -> Result<Json<CheckOrganismGoiConnectionRsp>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Admin").await?;
+    crate::users::has_role(
+        &env.dbx,
+        &crate::users::identity_id(&user)?,
+        "Admin",
+    )
+    .await?;
 
     let req = req.into_inner();
     let (listed_entries, error) = match super::goi_validate_connection_req(&req)
@@ -274,7 +302,12 @@ pub async fn setup_goi_integration_worker(
     env: actix_web::web::Data<Env>,
     req: Json<SetupGoiIntegrationWorkerReq>,
 ) -> Result<Json<GoiAdminIntegration>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Admin").await?;
+    crate::users::has_role(
+        &env.dbx,
+        &crate::users::identity_id(&user)?,
+        "Admin",
+    )
+    .await?;
 
     let req = req.into_inner();
     let ssh_req = CheckOrganismGoiConnectionReq {
@@ -321,7 +354,9 @@ pub async fn setup_goi_integration_worker(
         disable_goi_to_echo_palitra_sync: integration
             .disable_goi_to_echo_palitra_sync,
         pause_worker: goi_integration_worker_paused(&integration),
-        maintainer_login: integration.maintainer_login,
+        maintainer_login_id: integration
+            .maintainer_login_id
+            .map(|login_id| login_id.to_string()),
         access_organism_ids: collect_goi_access_organism_ids(
             &env.dbx,
             integration.id,
@@ -344,9 +379,10 @@ pub async fn list_current_user_goi_integrations(
     user: actix_identity::Identity,
     env: actix_web::web::Data<Env>,
 ) -> Result<Json<ListCurrentUserGoiIntegrationsRsp>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer").await?;
+    crate::users::has_role(&env.dbx, &crate::users::identity_id(&user)?, "Rer")
+        .await?;
 
-    let user_id = user.id().c(h!())?;
+    let user_id = crate::users::identity_id(&user)?;
     let is_admin = goi_pause_worker_user_is_admin(&env.dbx, &user_id).await;
     let items = load_accessible_integrations_for_user(&env.dbx, &user_id)
         .await
@@ -367,9 +403,10 @@ pub async fn update_current_user_goi_pause_worker(
     env: actix_web::web::Data<Env>,
     req: Json<UpdateGoiIntegrationPauseWorkerReq>,
 ) -> Result<Json<GoiUserIntegration>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer").await?;
+    crate::users::has_role(&env.dbx, &crate::users::identity_id(&user)?, "Rer")
+        .await?;
 
-    let user_id = user.id().c(h!())?;
+    let user_id = crate::users::identity_id(&user)?;
     let req = req.into_inner();
     let item = load_accessible_integration_for_user(
         &env.dbx,
@@ -404,7 +441,7 @@ pub async fn list_goi_report_tab_order(
     env: actix_web::web::Data<Env>,
     req: Json<GoiReportTabOrderListReq>,
 ) -> Result<Json<GoiReportTabOrderListRsp>, AppError> {
-    let user_id = user.id().c(h!())?;
+    let user_id = crate::users::identity_id(&user)?;
     let organism_id = resolve_report_tab_order_organism_id(
         &env.dbx,
         &user_id,
@@ -429,7 +466,7 @@ pub async fn update_goi_report_tab_order(
     env: actix_web::web::Data<Env>,
     req: Json<GoiReportTabOrderUpdateReq>,
 ) -> Result<Json<GoiReportTabOrderListRsp>, AppError> {
-    let user_id = user.id().c(h!())?;
+    let user_id = crate::users::identity_id(&user)?;
     let organism_id = resolve_report_tab_order_organism_id(
         &env.dbx,
         &user_id,
@@ -466,9 +503,10 @@ pub async fn list_current_user_goi_associations(
     env: actix_web::web::Data<Env>,
     req: Json<ListGoiAssociationsReq>,
 ) -> Result<Json<ListGoiAssociationsRsp>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer").await?;
+    crate::users::has_role(&env.dbx, &crate::users::identity_id(&user)?, "Rer")
+        .await?;
 
-    let user_id = user.id().c(h!())?;
+    let user_id = crate::users::identity_id(&user)?;
     let req = req.into_inner();
     let integrations =
         load_accessible_integrations_for_user(&env.dbx, &user_id)
@@ -516,9 +554,10 @@ pub async fn list_current_user_goi_knowledge(
     env: actix_web::web::Data<Env>,
     req: Json<ListGoiKnowledgeReq>,
 ) -> Result<Json<ListGoiKnowledgeRsp>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer").await?;
+    crate::users::has_role(&env.dbx, &crate::users::identity_id(&user)?, "Rer")
+        .await?;
 
-    let user_id = user.id().c(h!())?;
+    let user_id = crate::users::identity_id(&user)?;
     let req = req.into_inner();
     let integrations =
         load_accessible_integrations_for_user(&env.dbx, &user_id)
@@ -562,7 +601,7 @@ pub async fn list_current_user_goi_knowledge(
 
 async fn resolve_report_tab_order_organism_id(
     dbx: &DatabaseConnection,
-    user_id: &str,
+    user_id: &uuid::Uuid,
     integration_id: Option<i64>,
 ) -> Result<Option<i64>, AppError> {
     match integration_id {
@@ -600,9 +639,10 @@ pub async fn restart_current_user_goi_service(
     env: actix_web::web::Data<Env>,
     req: Json<RestartGoiIntegrationServiceReq>,
 ) -> Result<Json<bool>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer").await?;
+    crate::users::has_role(&env.dbx, &crate::users::identity_id(&user)?, "Rer")
+        .await?;
 
-    let user_id = user.id().c(h!())?;
+    let user_id = crate::users::identity_id(&user)?;
     let integrations =
         load_accessible_integrations_for_user(&env.dbx, &user_id)
             .await
@@ -635,9 +675,10 @@ pub async fn unlink_current_user_goi_whatsapp(
     env: actix_web::web::Data<Env>,
     req: Json<UnlinkGoiIntegrationWhatsappReq>,
 ) -> Result<Json<bool>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer").await?;
+    crate::users::has_role(&env.dbx, &crate::users::identity_id(&user)?, "Rer")
+        .await?;
 
-    let user_id = user.id().c(h!())?;
+    let user_id = crate::users::identity_id(&user)?;
     let integrations =
         load_accessible_integrations_for_user(&env.dbx, &user_id)
             .await
@@ -670,9 +711,10 @@ pub async fn download_current_user_goi_palettes(
     env: actix_web::web::Data<Env>,
     req: Json<DownloadGoiIntegrationPalettesReq>,
 ) -> Result<HttpResponse, AppError> {
-    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer").await?;
+    crate::users::has_role(&env.dbx, &crate::users::identity_id(&user)?, "Rer")
+        .await?;
 
-    let user_id = user.id().c(h!())?;
+    let user_id = crate::users::identity_id(&user)?;
     let req = req.into_inner();
     let integration = load_accessible_integration_for_user(
         &env.dbx,
@@ -709,9 +751,10 @@ pub async fn upload_current_user_goi_categories(
     integration_id: ActixPath<i64>,
     mut payload: Multipart,
 ) -> Result<Json<bool>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer").await?;
+    crate::users::has_role(&env.dbx, &crate::users::identity_id(&user)?, "Rer")
+        .await?;
 
-    let user_id = user.id().c(h!())?;
+    let user_id = crate::users::identity_id(&user)?;
     let integration = load_accessible_integration_for_user(
         &env.dbx,
         &user_id,
@@ -740,10 +783,10 @@ pub async fn upload_current_user_goi_categories(
 
 async fn load_accessible_integrations_for_user(
     dbx: &DatabaseConnection,
-    user_id: &str,
+    user_id: &uuid::Uuid,
 ) -> Result<Vec<GoiIntegrationWithOwner>, AppError> {
     let login = login::Entity::find()
-        .filter(login::Column::Login.eq(user_id))
+        .filter(login::Column::Id.eq(*user_id))
         .filter(login::Column::DeletedPermanently.eq(false))
         .one(dbx)
         .await
@@ -759,7 +802,7 @@ async fn load_accessible_integrations_for_user(
 
 async fn load_accessible_integration_for_user(
     dbx: &DatabaseConnection,
-    user_id: &str,
+    user_id: &uuid::Uuid,
     integration_id: i64,
 ) -> Result<GoiIntegrationWithOwner, AppError> {
     load_accessible_integrations_for_user(dbx, user_id)
@@ -893,7 +936,7 @@ fn validate_categories_json_payload(bytes: &[u8]) -> Result<(), AppError> {
 pub async fn load_user_goi_integrations(
     dbx: &DatabaseConnection,
     organism_id: Option<i64>,
-    user_id: &str,
+    user_id: &uuid::Uuid,
 ) -> Result<Vec<GoiUserIntegration>, AppError> {
     if organism_id.is_none() {
         return Ok(Vec::new());
@@ -911,29 +954,29 @@ pub async fn ensure_goi_integration_maintainers(
     dbx: &DatabaseConnection,
 ) -> Result<(), AppError> {
     let integrations = goi_integration::Entity::find()
-        .filter(goi_integration::Column::MaintainerLogin.is_null())
+        .filter(goi_integration::Column::MaintainerLoginId.is_null())
         .order_by_asc(goi_integration::Column::Id)
         .all(dbx)
         .await
         .c(h!())?;
     for integration in integrations {
-        let Some(maintainer_login) =
+        let Some(maintainer_login_id) =
             pick_goi_maintainer_login(dbx, integration.owner_organism_id)
                 .await
                 .c(h!())?
         else {
             error!(
-                "GOI integration {} has no maintainer_login and no fallback user was found",
+                "GOI integration {} has no maintainer_login_id and no fallback user was found",
                 integration.id
             );
             continue;
         };
         error!(
-            "GOI integration {} had empty maintainer_login; assigning {} automatically",
-            integration.id, maintainer_login
+            "GOI integration {} had empty maintainer_login_id; assigning {} automatically",
+            integration.id, maintainer_login_id
         );
         let mut integration = integration.into_active_model();
-        integration.maintainer_login = Set(Some(maintainer_login));
+        integration.maintainer_login_id = Set(Some(maintainer_login_id));
         integration.update(dbx).await.c(h!())?;
     }
     Ok(())
@@ -942,7 +985,7 @@ pub async fn ensure_goi_integration_maintainers(
 async fn pick_goi_maintainer_login(
     dbx: &DatabaseConnection,
     owner_organism_id: i64,
-) -> Result<Option<String>, AppError> {
+) -> Result<Option<Uuid>, AppError> {
     if let Some(login) =
         pick_oldest_organism_login(dbx, owner_organism_id, false)
             .await
@@ -964,7 +1007,7 @@ async fn pick_oldest_organism_login(
     dbx: &DatabaseConnection,
     owner_organism_id: i64,
     include_inactive: bool,
-) -> Result<Option<String>, AppError> {
+) -> Result<Option<Uuid>, AppError> {
     let mut query = login::Entity::find()
         .filter(login::Column::DeletedPermanently.eq(false))
         .filter(login::Column::OrganismId.eq(owner_organism_id));
@@ -976,12 +1019,12 @@ async fn pick_oldest_organism_login(
         .one(dbx)
         .await
         .c(h!())?
-        .map(|login| login.login))
+        .map(|login| login.id))
 }
 
 async fn pick_oldest_admin_login(
     dbx: &DatabaseConnection,
-) -> Result<Option<String>, AppError> {
+) -> Result<Option<Uuid>, AppError> {
     Ok(login::Entity::find()
         .filter(login::Column::DeletedPermanently.eq(false))
         .filter(Expr::cust("roles @> '[\"Admin\"]'::jsonb"))
@@ -989,7 +1032,7 @@ async fn pick_oldest_admin_login(
         .one(dbx)
         .await
         .c(h!())?
-        .map(|login| login.login))
+        .map(|login| login.id))
 }
 
 async fn upsert_goi_integration_internal(
@@ -1009,7 +1052,7 @@ async fn upsert_goi_integration_internal(
     .c(h!())?;
     ensure_goi_maintainer_exists(
         dbx,
-        req.maintainer_login.as_deref(),
+        req.maintainer_login_id.as_deref(),
         !req.disable_goi_to_echo_palitra_sync,
     )
     .await
@@ -1065,9 +1108,12 @@ async fn upsert_goi_integration_internal(
                 req.disable_goi_to_echo_palitra_sync
             ),
             pause_worker: Set(req.pause_worker),
-            maintainer_login: Set(normalize_optional_trimmed(
-                req.maintainer_login.clone(),
-            )),
+            maintainer_login_id: Set(req
+                .maintainer_login_id
+                .as_deref()
+                .map(Uuid::parse_str)
+                .transpose()
+                .c(h!())?),
         }
         .insert(&tx)
         .await
@@ -1166,9 +1212,10 @@ async fn load_goi_admin_integration(
             .integration
             .disable_goi_to_echo_palitra_sync,
         pause_worker: item.integration.pause_worker,
-        maintainer_login: normalize_optional_trimmed(
-            item.integration.maintainer_login,
-        ),
+        maintainer_login_id: item
+            .integration
+            .maintainer_login_id
+            .map(|login_id| login_id.to_string()),
         access_organism_ids,
         access_logins,
     })
@@ -1279,11 +1326,14 @@ async fn collect_goi_access_logins(
                 .eq(integration_id),
         )
         .select_only()
-        .column(goi_integration_access_login::Column::Login)
-        .into_tuple::<String>()
+        .column(goi_integration_access_login::Column::LoginId)
+        .into_tuple::<Uuid>()
         .all(dbx)
         .await
-        .c(h!())?)
+        .c(h!())?
+        .into_iter()
+        .map(|login_id| login_id.to_string())
+        .collect())
 }
 
 async fn load_accessible_integration_ids_for_login(
@@ -1293,9 +1343,7 @@ async fn load_accessible_integration_ids_for_login(
     let mut integration_ids = HashSet::new();
 
     let by_login = goi_integration_access_login::Entity::find()
-        .filter(
-            goi_integration_access_login::Column::Login.eq(login.login.clone()),
-        )
+        .filter(goi_integration_access_login::Column::LoginId.eq(login.id))
         .select_only()
         .column(goi_integration_access_login::Column::GoiIntegrationId)
         .into_tuple::<i64>()
@@ -1336,25 +1384,22 @@ async fn load_accessible_integration_ids_for_login(
 
 async fn goi_pause_worker_user_is_admin(
     dbx: &DatabaseConnection,
-    user_id: &str,
+    user_id: &uuid::Uuid,
 ) -> bool {
     crate::users::has_role(dbx, user_id, "Admin").await.is_ok()
 }
 
 fn goi_pause_worker_can_change(
     integration: &goi_integration::Model,
-    user_id: &str,
+    user_id: &uuid::Uuid,
     is_admin: bool,
 ) -> bool {
-    is_admin
-        || normalize_optional_trimmed(integration.maintainer_login.clone())
-            .as_deref()
-            == Some(user_id)
+    is_admin || integration.maintainer_login_id.as_ref() == Some(user_id)
 }
 
 fn user_goi_integration_from_item(
     item: &GoiIntegrationWithOwner,
-    user_id: &str,
+    user_id: &uuid::Uuid,
     is_admin: bool,
 ) -> GoiUserIntegration {
     let can_restart = goi_integration_has_api_config(&item.integration);
@@ -1903,14 +1948,17 @@ async fn ensure_goi_access_references_exist(
         }
     }
     if !logins.is_empty() {
+        let login_ids = logins
+            .iter()
+            .map(|login_id| Uuid::parse_str(login_id).c(h!()))
+            .collect::<Result<Vec<_>, _>>()?;
         let count = login::Entity::find()
             .filter(login::Column::DeletedPermanently.eq(false))
-            .filter(login::Column::Login.is_in(logins.to_vec()))
+            .filter(login::Column::Id.is_in(login_ids.clone()))
             .count(dbx)
             .await
             .c(h!())?;
-        if count as usize
-            != logins.iter().cloned().collect::<HashSet<_>>().len()
+        if count as usize != login_ids.into_iter().collect::<HashSet<_>>().len()
         {
             return Err(AppError::BL {
                 msg: "Не всі логіни для доступу ГОІ існують".to_string(),
@@ -1922,10 +1970,10 @@ async fn ensure_goi_access_references_exist(
 
 async fn ensure_goi_maintainer_exists(
     dbx: &DatabaseConnection,
-    maintainer_login: Option<&str>,
+    maintainer_login_id: Option<&str>,
     is_required: bool,
 ) -> Result<(), AppError> {
-    let Some(maintainer_login) = maintainer_login
+    let Some(maintainer_login_id) = maintainer_login_id
         .map(str::trim)
         .filter(|value| !value.is_empty())
     else {
@@ -1937,9 +1985,10 @@ async fn ensure_goi_maintainer_exists(
         }
         return Ok(());
     };
+    let maintainer_login_id = Uuid::parse_str(maintainer_login_id).c(h!())?;
     let exists = login::Entity::find()
         .filter(login::Column::DeletedPermanently.eq(false))
-        .filter(login::Column::Login.eq(maintainer_login.to_string()))
+        .filter(login::Column::Id.eq(maintainer_login_id))
         .one(dbx)
         .await
         .c(h!())?
@@ -2010,8 +2059,10 @@ fn apply_goi_integration_patch(
     item.disable_goi_to_echo_palitra_sync =
         Set(req.disable_goi_to_echo_palitra_sync);
     item.pause_worker = Set(req.pause_worker);
-    item.maintainer_login =
-        Set(normalize_optional_trimmed(req.maintainer_login.clone()));
+    item.maintainer_login_id = Set(req
+        .maintainer_login_id
+        .as_deref()
+        .and_then(|login_id| Uuid::parse_str(login_id).ok()));
 }
 
 struct GoiIntegrationValues {
@@ -2105,7 +2156,8 @@ async fn replace_goi_integration_access(
         .access_logins
         .iter()
         .filter_map(|login| normalize_optional_trimmed(Some(login.clone())))
-        .collect::<Vec<_>>();
+        .map(|login_id| Uuid::parse_str(&login_id).c(h!()))
+        .collect::<Result<Vec<_>, _>>()?;
     access_logins.sort();
     access_logins.dedup();
     if !access_logins.is_empty() {
@@ -2114,7 +2166,7 @@ async fn replace_goi_integration_access(
                 goi_integration_access_login::ActiveModel {
                     id: NotSet,
                     goi_integration_id: Set(integration_id),
-                    login: Set(login),
+                    login_id: Set(login),
                     created_at: NotSet,
                 }
             }),

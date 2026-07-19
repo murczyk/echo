@@ -59,7 +59,7 @@ pub async fn download_palitras_delta_split(
     env: Data<Env>,
     req: Json<PalitraDeltaSplitDownloadReq>,
 ) -> Result<HttpResponse, AppError> {
-    let login = user.id().c(h!())?;
+    let login = crate::users::identity_id(&user)?;
     crate::users::has_role(&env.dbx, &login, "Rer")
         .await
         .context(h!())?;
