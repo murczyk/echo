@@ -2,6 +2,7 @@ import { ThemeProvider } from '@mui/material/styles';
 import { createRoot, Root } from 'react-dom/client';
 
 import { useNeoMuiTheme } from './mui-theme';
+import { PowerSnackbarProvider } from './components/PowerSnackbar';
 import { AdminSystemSettingsNeoPage } from './routes/admin-system-settings-neo';
 
 function SystemSettingsNeoRoot() {
@@ -9,7 +10,9 @@ function SystemSettingsNeoRoot() {
 
   return (
     <ThemeProvider theme={theme}>
-      <AdminSystemSettingsNeoPage />
+      <PowerSnackbarProvider>
+        <AdminSystemSettingsNeoPage />
+      </PowerSnackbarProvider>
     </ThemeProvider>
   );
 }

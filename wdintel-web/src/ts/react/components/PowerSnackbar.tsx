@@ -39,11 +39,13 @@ const DEFAULT_DURATION_MS: Record<PowerSnackbarSeverity, number> = {
   warning: 8000,
   error: 10000,
 };
+const DEFAULT_NARROW_INSET = 8;
+const DEFAULT_DESKTOP_INSET = 24;
 
 export function PowerSnackbarProvider({
   children,
-  bottomInset = 0,
-  rightInset = 0,
+  bottomInset,
+  rightInset,
 }: {
   children: ReactNode;
   bottomInset?: number | string;
@@ -99,8 +101,20 @@ export function PowerSnackbarProvider({
   );
 
   const inset = (value: number | string) => (typeof value === 'number' ? `${value}px` : value);
-  const bottom = `calc(${inset(bottomInset)} + env(safe-area-inset-bottom, 0px))`;
-  const right = `calc(${inset(rightInset)} + env(safe-area-inset-right, 0px))`;
+  const bottom =
+    bottomInset === undefined
+      ? {
+          xs: `calc(${DEFAULT_NARROW_INSET}px + env(safe-area-inset-bottom, 0px))`,
+          sm: `calc(${DEFAULT_DESKTOP_INSET}px + env(safe-area-inset-bottom, 0px))`,
+        }
+      : `calc(${inset(bottomInset)} + env(safe-area-inset-bottom, 0px))`;
+  const right =
+    rightInset === undefined
+      ? {
+          xs: `calc(${DEFAULT_NARROW_INSET}px + env(safe-area-inset-right, 0px))`,
+          sm: `calc(${DEFAULT_DESKTOP_INSET}px + env(safe-area-inset-right, 0px))`,
+        }
+      : `calc(${inset(rightInset)} + env(safe-area-inset-right, 0px))`;
 
   const contextValue = useMemo(() => ({ notify }), [notify]);
 

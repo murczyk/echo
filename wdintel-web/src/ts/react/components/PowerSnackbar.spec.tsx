@@ -397,6 +397,30 @@ describe('PowerSnackbarProvider', () => {
     await act(async () => root.unmount());
   });
 
+  it('uses safe-area-aware responsive defaults when insets are omitted', async () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () =>
+      root.render(
+        <PowerSnackbarProvider>
+          <NotificationHarness />
+        </PowerSnackbarProvider>,
+      ),
+    );
+    await act(async () => container.querySelector<HTMLButtonElement>('button')?.click());
+
+    const generatedStyles = Array.from(document.head.querySelectorAll('style'))
+      .map((style) => style.textContent ?? '')
+      .join('\n');
+    expect(generatedStyles).toContain('calc(8px + env(safe-area-inset-bottom, 0px))');
+    expect(generatedStyles).toContain('calc(24px + env(safe-area-inset-bottom, 0px))');
+    expect(generatedStyles).toContain('calc(8px + env(safe-area-inset-right, 0px))');
+    expect(generatedStyles).toContain('calc(24px + env(safe-area-inset-right, 0px))');
+    await act(async () => root.unmount());
+  });
+
   it('does not rerender hook consumers when queue state changes', async () => {
     vi.useFakeTimers();
     let renders = 0;

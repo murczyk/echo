@@ -1,12 +1,15 @@
 import { createRoot, Root } from 'react-dom/client';
 
 import { NeoMuiThemeProvider } from './mui-theme';
+import { PowerSnackbarProvider } from './components/PowerSnackbar';
 import { GoiSettingsPage } from './routes/goi-settings';
 
 function GoiSettingsRoot() {
   return (
     <NeoMuiThemeProvider>
-      <GoiSettingsPage />
+      <PowerSnackbarProvider>
+        <GoiSettingsPage />
+      </PowerSnackbarProvider>
     </NeoMuiThemeProvider>
   );
 }

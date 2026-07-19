@@ -32,6 +32,7 @@ import type {
 import { CompactText } from '../../components/CompactTypography';
 import { KeywordFormsEditor } from '../../components/KeywordFormsEditor';
 import { PowerAlert } from '../../components/PowerAlert';
+import { usePowerSnackbar } from '../../components/PowerSnackbar';
 import { STANDARD_DIALOG_ACTIONS_SX } from '../../components/dialogStyles';
 import {
   keywordSetDisplayName,
@@ -98,7 +99,6 @@ export function FeedKeywordsPanel({
     isDirty,
     saving,
     saveError,
-    saveSuccess,
     syncSelectedId,
     clearSaveFeedback,
     discardChanges,
@@ -107,6 +107,7 @@ export function FeedKeywordsPanel({
     handleRename: renameEditorSet,
     handleDelete: deleteEditorSet,
   } = useOrganismKeywordSetsEditor(keywordSets, onKeywordSetsReload);
+  const { notify } = usePowerSnackbar();
 
   const [editExpanded, setEditExpanded] = useState(false);
   const [reloading, setReloading] = useState(false);
@@ -135,6 +136,7 @@ export function FeedKeywordsPanel({
     if (savedId != null) {
       applySetId(savedId);
       setEditExpanded(false);
+      notify({ severity: 'success', message: 'Збережено' });
     }
   };
 
@@ -457,12 +459,6 @@ export function FeedKeywordsPanel({
           />
 
           {saveError ? <PowerAlert severity="error">{saveError}</PowerAlert> : null}
-          {saveSuccess ? (
-            <PowerAlert severity="success" role="status" onClose={() => clearSaveFeedback()}>
-              {saveSuccess}
-            </PowerAlert>
-          ) : null}
-
           {editExpanded && canManageSet ? (
             <Stack spacing={1.25} sx={{ pt: 0.25 }}>
               {!canEdit ? (
