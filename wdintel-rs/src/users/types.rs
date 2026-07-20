@@ -15,6 +15,7 @@ pub struct UserValidationResult {
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
 pub struct User {
+    pub id: String,
     pub name: String,
     pub roles: Vec<String>,
     pub sigint_zone_id: Option<i64>,
@@ -60,6 +61,7 @@ pub struct UserInfoReq {
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
 pub struct Login {
+    pub id: String,
     pub login: String,
     pub roles: Vec<String>,
     pub created_at: i64,
@@ -125,6 +127,7 @@ pub struct CreateDeltaLoginReq {
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
 pub struct UpdateLoginReq {
+    pub id: String,
     pub login: String,
     pub roles: Option<Vec<String>>,
     pub sigint_zone_id: Option<i64>,
