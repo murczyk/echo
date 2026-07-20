@@ -77,9 +77,12 @@ function buildParams(overrides: Partial<Parameters<typeof useAnalysisReloadOrche
     loadTopSidebarData: vi.fn().mockResolvedValue(undefined),
     clearAnalysisResults: vi.fn(),
     loadMessageComments: vi.fn().mockResolvedValue(undefined),
-    getCurrentMessagePageCursor: vi.fn(() => ({
-      beforeIdNoninclusive: 120,
-      sinceIdNoninclusive: null,
+    getCurrentMessagePage: vi.fn(() => ({
+      cursor: {
+        beforeIdNoninclusive: 120,
+        sinceIdNoninclusive: null,
+      },
+      pageIndex: 1,
     })),
     setCurrentMessagePage: vi.fn(),
     invalidateMessagePageRequests: vi.fn(),
@@ -193,13 +196,11 @@ describe('useAnalysisReloadOrchestrator', () => {
     expect(reloadAnalysisDataMock.reloadAnalysisData).toHaveBeenCalledWith(
       expect.objectContaining({
         invalidateMessagePaging: params.invalidateMessagePageRequests,
-        messagePageCursor: {
-          beforeIdNoninclusive: 120,
-          sinceIdNoninclusive: null,
-        },
+        messagePageCursor: { beforeIdNoninclusive: 120, sinceIdNoninclusive: null },
+        pageIndex: 1,
       }),
     );
-    expect(params.getCurrentMessagePageCursor).toHaveBeenCalledTimes(1);
+    expect(params.getCurrentMessagePage).toHaveBeenCalledTimes(1);
     expect(params.refreshMessageCounts).toHaveBeenCalledTimes(1);
   });
 

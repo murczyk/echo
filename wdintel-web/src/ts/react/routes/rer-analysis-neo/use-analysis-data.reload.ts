@@ -586,6 +586,7 @@ type ReloadParams = {
   invalidateCallsignGraph: () => void;
   invalidateMessagePaging: () => void;
   messagePageCursor?: AnalysisMessagePageCursor;
+  pageIndex?: number;
   setCurrentMessagePage?: (cursor: AnalysisMessagePageCursor, pageIndex: number) => void;
   centerTab?: import('./types').AnalysisCenterTab;
   rightSidebarVisible?: boolean;
@@ -717,6 +718,7 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
       );
       countsPromise.catch(() => undefined);
       let messagePageCursor = params.messagePageCursor;
+      let messagePageIndex = params.pageIndex;
       if (isLastPageCursor(messagePageCursor)) {
         const messageCount = await fetchInboxCount(
           { ...messageInboxReq, nolimit: true, newestFirst: params.newestFirst },
@@ -726,6 +728,7 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
         const rebuiltPage = rebuildLastPageCursor(messagePageCursor, messageCount.quantity);
         messagePageCursor = rebuiltPage.cursor;
         params.setCurrentMessagePage?.(rebuiltPage.cursor, rebuiltPage.pageIndex);
+        messagePageIndex = rebuiltPage.pageIndex;
       }
       const inboxPromise = fetchInboxMessages(
         {
@@ -752,6 +755,43 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
         throw loadError;
       }
       if (isStaleReload() || params.signal?.aborted) return null;
+
+      if (
+        inboxRsp.inboxItems.length === 0 &&
+        messagePageCursor != null &&
+        messagePageIndex != null &&
+        !isLastPageCursor(messagePageCursor)
+      ) {
+        const messageCount = await fetchInboxCount(
+          { ...messageInboxReq, nolimit: true, newestFirst: params.newestFirst },
+          params.signal ? { signal: params.signal } : undefined,
+        );
+        if (isStaleReload() || params.signal?.aborted) return null;
+        const newLastPage = rebuildLastPageCursor(
+          {
+            beforeIdNoninclusive: null,
+            sinceIdNoninclusive: null,
+            requestNewestFirst: !params.newestFirst,
+            reverseResults: true,
+          },
+          messageCount.quantity,
+        );
+        if (messagePageIndex > newLastPage.pageIndex) {
+          messagePageCursor = newLastPage.cursor;
+          messagePageIndex = newLastPage.pageIndex;
+          params.setCurrentMessagePage?.(messagePageCursor, messagePageIndex);
+          const lastPageRsp = await fetchInboxMessages(
+            {
+              ...messageInboxReq,
+              beforeIdNoninclusive: null,
+              sinceIdNoninclusive: null,
+              newestFirst: messagePageCursor.requestNewestFirst ?? params.newestFirst,
+            },
+            params.signal ? { signal: params.signal } : undefined,
+          );
+          inboxRsp = transformMessagePageResponse(lastPageRsp, messagePageCursor);
+        }
+      }
 
       params.setMessages(inboxRsp.inboxItems ?? []);
       params.setProfiles((current) => mergeSignalProfiles(current, inboxRsp.signalProfiles ?? {}));

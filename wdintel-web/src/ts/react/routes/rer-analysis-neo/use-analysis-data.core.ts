@@ -402,7 +402,7 @@ export function useAnalysisData({
       loadTopSidebarData: sidebarData.loadTopSidebarData,
       clearAnalysisResults,
       loadMessageComments: messageList.loadMessageComments,
-      getCurrentMessagePageCursor: messageList.getCurrentMessagePageCursor,
+      getCurrentMessagePage: messageList.getCurrentMessagePage,
       setCurrentMessagePage: messageList.setCurrentMessagePage,
       invalidateMessagePageRequests: messageList.invalidateMessagePageRequests,
       invalidateMessagePaging: messageList.invalidateMessagePaging,

@@ -301,6 +301,118 @@ describe('last-page cursor reloads', () => {
 });
 
 describe('reloadAnalysisData', () => {
+  function buildReloadParams(overrides: Record<string, unknown> = {}) {
+    const setter = vi.fn();
+    return {
+      clearAnalysisResults: vi.fn(),
+      invalidateCorrelatedFreqsCache: vi.fn(),
+      invalidateCallsignGraph: vi.fn(),
+      invalidateMessagePaging: vi.fn(),
+      newestFirst: true,
+      onError: vi.fn(),
+      onUnauthorized: vi.fn().mockReturnValue(false),
+      optionsFreqsRef: { current: [] },
+      queryState: {
+        ...emptyQueryState(),
+        fromDateTimeStr: '2026-04-01T00:00',
+        toDateTimeStr: '2026-04-02T00:00',
+      },
+      reloadRequestRef: { current: 0 },
+      setAorEntries: setter,
+      setCounts: setter,
+      setCountsLoading: setter,
+      setFiltersLoading: setter,
+      setGroupInfos: setter,
+      setMapLoading: setter,
+      setMapDateRange: setter,
+      setMapNetworkUnits: setter,
+      setMapOpenMessages: setter,
+      setMapPoints: setter,
+      setMessages: setter,
+      setMessagesLoading: setter,
+      setNetworks: setter,
+      setUnitsMap: setter,
+      setNewCallsigns: setter,
+      setHasLoadedInitialMessages: setter,
+      setNewCallsignsLoading: setter,
+      setNewCallsignsLoadedKey: setter,
+      shouldLoadNewCallsigns: false,
+      setNoMoreToLoad: setter,
+      setNolimitShown: setter,
+      setOptions: setter,
+      setProfiles: setter,
+      setSummaryCallsignsInfo: setter,
+      setTagsMap: setter,
+      setTopCallsigns: setter,
+      setTopFreqs: setter,
+      setTopLocations: setter,
+      setTopUnits: setter,
+      loadInitialFilterSections: vi.fn().mockResolvedValue(undefined),
+      invalidateFilterSectionLoads: vi.fn(),
+      invalidateFilterSectionLoadsForPatch: vi.fn(),
+      ...overrides,
+    } as Parameters<typeof reloadAnalysisData>[0];
+  }
+
+  it('clamps an empty forward page to the refreshed last page', async () => {
+    const setMessages = vi.fn();
+    const setCurrentMessagePage = vi.fn();
+    mocks.fetchInboxCount.mockResolvedValue({ quantity: 40 });
+    mocks.fetchAnalysisCount.mockResolvedValue({});
+    mocks.fetchAnalysisFreqs.mockResolvedValue({ freqs: [] });
+    mocks.fetchInboxMessages
+      .mockResolvedValueOnce({ inboxItems: [], callsigns: [], pageLimit: 20 })
+      .mockResolvedValueOnce({
+        inboxItems: Array.from({ length: 20 }, (_, index) => [index, { networkIds: [] }]),
+        callsigns: [],
+        pageLimit: 20,
+      });
+
+    const reloadPromise = reloadAnalysisData(
+      buildReloadParams({
+        messagePageCursor: { beforeIdNoninclusive: 20, sinceIdNoninclusive: null },
+        pageIndex: 2,
+        setMessages,
+        setCurrentMessagePage,
+      }),
+    );
+    await reloadPromise;
+
+    expect(setCurrentMessagePage).toHaveBeenCalledWith(
+      expect.objectContaining({ reverseResults: true, resultLimit: 20 }),
+      1,
+    );
+    expect(setMessages).toHaveBeenLastCalledWith(
+      Array.from({ length: 20 }, (_, index) => [19 - index, { networkIds: [] }]),
+    );
+    expect(setMessages.mock.lastCall?.[0]).toHaveLength(20);
+  });
+
+  it('keeps a nonempty forward page cursor and index unchanged', async () => {
+    const setMessages = vi.fn();
+    const setCurrentMessagePage = vi.fn();
+    mocks.fetchAnalysisCount.mockResolvedValue({});
+    mocks.fetchAnalysisFreqs.mockResolvedValue({ freqs: [] });
+    mocks.fetchInboxMessages.mockResolvedValueOnce({
+      inboxItems: [[21, { networkIds: [] }]],
+      callsigns: [],
+      pageLimit: 20,
+    });
+
+    await reloadAnalysisData(
+      buildReloadParams({
+        messagePageCursor: { beforeIdNoninclusive: 20, sinceIdNoninclusive: null },
+        pageIndex: 2,
+        setMessages,
+        setCurrentMessagePage,
+      }),
+    );
+
+    expect(setCurrentMessagePage).not.toHaveBeenCalled();
+    expect(mocks.fetchInboxCount).not.toHaveBeenCalled();
+    expect(setMessages).toHaveBeenCalledWith([[21, { networkIds: [] }]]);
+  });
+
   it('clears messages loading immediately after inbox resolves, without waiting for freqs', async () => {
     const inboxDeferred = deferred<ReloadInboxRsp>();
     const freqsDeferred = deferred<{

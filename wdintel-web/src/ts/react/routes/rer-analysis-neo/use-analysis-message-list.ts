@@ -93,6 +93,11 @@ export function useAnalysisMessageList({
     [pageIndex],
   );
 
+  const getCurrentMessagePage = useCallback(
+    () => ({ cursor: pageCursorsRef.current[pageIndex] ?? FIRST_PAGE_CURSOR, pageIndex }),
+    [pageIndex],
+  );
+
   const setCurrentMessagePage = useCallback(
     (cursor: AnalysisMessagePageCursor, nextPageIndex: number) => {
       pageCursorsRef.current = pageCursorsRef.current.slice(0, nextPageIndex + 1);
@@ -291,6 +296,7 @@ export function useAnalysisMessageList({
     aorEntries,
     counts,
     getCurrentMessagePageCursor,
+    getCurrentMessagePage,
     hasLoadedInitialMessages,
     invalidateMessagePageRequests,
     invalidateMessagePaging,

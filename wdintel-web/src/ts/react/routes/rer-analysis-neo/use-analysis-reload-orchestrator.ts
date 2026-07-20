@@ -63,7 +63,10 @@ type Params = {
   ) => Promise<void>;
   invalidateMessagePaging: () => void;
   invalidateMessagePageRequests: () => void;
-  getCurrentMessagePageCursor: () => import('./types').AnalysisMessagePageCursor;
+  getCurrentMessagePage: () => {
+    cursor: import('./types').AnalysisMessagePageCursor;
+    pageIndex: number;
+  };
   setCurrentMessagePage: (
     cursor: import('./types').AnalysisMessagePageCursor,
     pageIndex: number,
@@ -113,7 +116,7 @@ export function useAnalysisReloadOrchestrator(params: Params): UseAnalysisReload
     clearAnalysisResults,
     deferInitialLoad,
     getLoadedFilterSections,
-    getCurrentMessagePageCursor,
+    getCurrentMessagePage,
     setCurrentMessagePage,
     getReloadFilterSections,
     invalidateCallsignGraph,
@@ -187,6 +190,7 @@ export function useAnalysisReloadOrchestrator(params: Params): UseAnalysisReload
       reloadAbortControllerRef.current = abortController;
       const preserveMessagePage = options.preserveMessagePage === true;
       const shouldRefreshMessageCounts = options.refreshMessageCounts !== false;
+      const currentMessagePage = preserveMessagePage ? getCurrentMessagePage() : null;
 
       if (shouldRefreshMessageCounts) refreshMessageCounts();
 
@@ -198,7 +202,8 @@ export function useAnalysisReloadOrchestrator(params: Params): UseAnalysisReload
           invalidateMessagePaging: preserveMessagePage
             ? invalidateMessagePageRequests
             : invalidateMessagePaging,
-          messagePageCursor: preserveMessagePage ? getCurrentMessagePageCursor() : undefined,
+          messagePageCursor: currentMessagePage?.cursor,
+          pageIndex: currentMessagePage?.pageIndex,
           setCurrentMessagePage,
           newestFirst,
           onError,
@@ -260,7 +265,7 @@ export function useAnalysisReloadOrchestrator(params: Params): UseAnalysisReload
     [
       centerTab,
       clearAnalysisResults,
-      getCurrentMessagePageCursor,
+      getCurrentMessagePage,
       getLoadedFilterSections,
       getReloadFilterSections,
       invalidateCallsignGraph,
