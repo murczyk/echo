@@ -228,6 +228,22 @@ export function MessageMediaDownloadLink({ attachment }: { attachment: MessageMe
   );
 }
 
+export function MessageMediaDownloadAllLink({ messageId }: { messageId: number }) {
+  return (
+    <a
+      href={`/api/rer-importer/messages/${messageId}/attachments.zip`}
+      download="attachments.zip"
+      target="_blank"
+      rel="noopener noreferrer"
+      aria-label="Завантажити все"
+      className="mb-0.5 inline-flex min-h-[26px] self-center items-center justify-center gap-1 rounded border border-solid border-(--color-divider) px-2 py-0.5 text-[11px] font-medium leading-tight text-(--color-text) no-underline hover:bg-(--color-hover)"
+    >
+      <DownloadOutlinedIcon aria-hidden fontSize="small" />
+      Завантажити все
+    </a>
+  );
+}
+
 export function MessageMediaVideoPreviewButton({
   attachment,
   onClick,

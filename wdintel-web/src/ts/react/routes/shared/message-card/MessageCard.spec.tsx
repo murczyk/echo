@@ -2193,6 +2193,80 @@ describe('MessageCard', () => {
     expect(downloadButtons[1]?.textContent).toContain('8a7d0703-4f44-4ce8-b95a-8a2e.txt');
   });
 
+  it('shows the message attachment archive link only for multiple attachments', async () => {
+    const singleAttachment = await renderCard({
+      msg: {
+        ...buildMessage(),
+        media: [
+          {
+            id: 'single',
+            href: '/api/messenger/media/single',
+            contentType: 'text/plain',
+            fileName: 'single.txt',
+          },
+        ] as InboxMessage['media'],
+      },
+    });
+    rendered.push(singleAttachment);
+    expect(singleAttachment.container.textContent).not.toContain('Завантажити все');
+
+    const multipleAttachments = await renderCard({
+      msg: {
+        ...buildMessage(),
+        media: [
+          {
+            id: 'first',
+            href: '/api/messenger/media/first',
+            contentType: 'text/plain',
+            fileName: 'first.txt',
+          },
+          {
+            id: 'second',
+            href: '/api/messenger/media/second',
+            contentType: 'text/plain',
+            fileName: 'second.txt',
+          },
+        ] as InboxMessage['media'],
+      },
+    });
+    rendered.push(multipleAttachments);
+
+    const archiveLink = Array.from(multipleAttachments.container.querySelectorAll('a')).find(
+      (link) => link.textContent?.includes('Завантажити все'),
+    );
+    expect(archiveLink?.getAttribute('href')).toBe('/api/rer-importer/messages/42/attachments.zip');
+    expect(archiveLink?.hasAttribute('download')).toBe(true);
+  });
+
+  it.each([
+    ['image', 'image/jpeg', 'image.jpg'],
+    ['audio', 'audio/mpeg', 'audio.mp3'],
+    ['video', 'video/mp4', 'video.mp4'],
+    ['document', 'text/plain', 'document.txt'],
+  ])(
+    'keeps the archive action associated with the %s attachment area',
+    async (_, contentType, fileName) => {
+      const view = await renderCard({
+        msg: {
+          ...buildMessage(),
+          media: [
+            { id: `${fileName}-1`, href: `/media/${fileName}-1`, contentType, fileName },
+            { id: `${fileName}-2`, href: `/media/${fileName}-2`, contentType, fileName },
+          ] as InboxMessage['media'],
+        },
+      });
+      rendered.push(view);
+
+      const archiveLink = view.container.querySelector('a[aria-label="Завантажити все"]');
+      expect(archiveLink).not.toBeNull();
+      const attachmentArea = archiveLink?.parentElement;
+      expect(attachmentArea?.className).toContain('flex-col');
+      expect(attachmentArea?.className).toContain('sm:flex-row');
+      expect(attachmentArea?.children).toHaveLength(2);
+      expect(attachmentArea?.firstElementChild?.className).toContain('flex-1');
+    },
+  );
+
   it('renders document attachments with preview and download affordances', async () => {
     const view = await renderCard({
       msg: {

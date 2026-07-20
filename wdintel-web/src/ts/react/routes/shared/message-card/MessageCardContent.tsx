@@ -28,6 +28,7 @@ import {
   mediaAttachmentContentType,
   mediaAttachmentDisplayName,
   MessageMediaAudioPlayer,
+  MessageMediaDownloadAllLink,
   MessageMediaDownloadLink,
 } from './MessageCardMedia';
 import { MessageImagePreviewDialog } from './MessageCardImagePreviewDialog';
@@ -45,6 +46,7 @@ export type { AnalysisCallsignActions, MessageCardBotTagAction } from './message
 
 export function MessageCardMessageBody({
   compact = false,
+  messageId,
   msg,
   tagsMap,
   tagsOrder,
@@ -65,6 +67,7 @@ export function MessageCardMessageBody({
   onOpenPointsOnMap,
 }: {
   compact?: boolean;
+  messageId: number;
   msg: InboxMessage;
   tagsMap: Record<number, Tag>;
   tagsOrder?: number[];
@@ -109,6 +112,11 @@ export function MessageCardMessageBody({
   const downloadAttachments = attachmentMedia.filter(
     (attachment) => !isAudioMediaAttachment(attachment) && !isVideoMediaAttachment(attachment),
   );
+  const hasMultipleAttachments = (msg.media ?? []).length > 1;
+  const hasImageOrVideoAttachments = images.length > 0 || videoAttachments.length > 0;
+  const archiveInImageArea = hasMultipleAttachments && hasImageOrVideoAttachments;
+  const archiveInAudioArea =
+    hasMultipleAttachments && !archiveInImageArea && audioAttachments.length > 0;
 
   const videoPreviewSources = useMemo(() => {
     return videoAttachments.map((a) => {
@@ -141,16 +149,21 @@ export function MessageCardMessageBody({
 
   return (
     <div className="flex flex-col min-w-0" style={{ gap: compact ? '12px' : '10px' }}>
-      {images.length > 0 || videoAttachments.length > 0 ? (
-        <MessageCardImageList
-          images={images}
-          videos={videoAttachments}
-          onOpen={(index) => {
-            blurActiveElement();
-            setImagePreviewIndex(index);
-          }}
-          onOpenVideo={(index) => setVideoPreviewIndex(index)}
-        />
+      {hasImageOrVideoAttachments ? (
+        <div className="flex min-w-0 w-full flex-col gap-2 sm:flex-row sm:items-center">
+          <div className="min-w-0 flex-1">
+            <MessageCardImageList
+              images={images}
+              videos={videoAttachments}
+              onOpen={(index) => {
+                blurActiveElement();
+                setImagePreviewIndex(index);
+              }}
+              onOpenVideo={(index) => setVideoPreviewIndex(index)}
+            />
+          </div>
+          {archiveInImageArea ? <MessageMediaDownloadAllLink messageId={messageId} /> : null}
+        </div>
       ) : null}
       {imagePreviewIndex != null && images.length > 0 ? (
         <MessageImagePreviewDialog
@@ -173,37 +186,45 @@ export function MessageCardMessageBody({
         />
       ) : null}
       {audioAttachments.length > 0 ? (
-        <div className="mt-1 flex flex-col items-start w-full">
-          {audioAttachments.map((attachment) => (
-            <MessageMediaAudioPlayer key={attachment.id} attachment={attachment} />
-          ))}
+        <div className="mt-1 flex min-w-0 w-full flex-col gap-2 sm:flex-row sm:items-center">
+          <div className="min-w-0 flex-1">
+            {audioAttachments.map((attachment) => (
+              <MessageMediaAudioPlayer key={attachment.id} attachment={attachment} />
+            ))}
+          </div>
+          {archiveInAudioArea ? <MessageMediaDownloadAllLink messageId={messageId} /> : null}
         </div>
       ) : null}
       {documents.length > 0 || downloadAttachments.length > 0 ? (
-        <div className="mt-1 flex flex-wrap items-start gap-2 w-full">
-          {documents.map((document, index) => {
-            const previewIndex = previewableDocuments.findIndex(
-              (previewableDocument) => previewableDocument.href === document.href,
-            );
-            return (
-              <MessageMediaDocumentLink
-                key={document.id ?? document.href}
-                document={document}
-                index={index}
-                onPreview={
-                  previewIndex >= 0
-                    ? () => {
-                        blurActiveElement();
-                        setDocumentPreviewIndex(previewIndex);
-                      }
-                    : undefined
-                }
-              />
-            );
-          })}
-          {downloadAttachments.map((attachment) => (
-            <MessageMediaDownloadLink key={attachment.id} attachment={attachment} />
-          ))}
+        <div className="mt-1 flex min-w-0 w-full flex-col gap-2 sm:flex-row sm:items-center">
+          <div className="min-w-0 flex flex-1 flex-wrap items-start gap-2">
+            {documents.map((document, index) => {
+              const previewIndex = previewableDocuments.findIndex(
+                (previewableDocument) => previewableDocument.href === document.href,
+              );
+              return (
+                <MessageMediaDocumentLink
+                  key={document.id ?? document.href}
+                  document={document}
+                  index={index}
+                  onPreview={
+                    previewIndex >= 0
+                      ? () => {
+                          blurActiveElement();
+                          setDocumentPreviewIndex(previewIndex);
+                        }
+                      : undefined
+                  }
+                />
+              );
+            })}
+            {downloadAttachments.map((attachment) => (
+              <MessageMediaDownloadLink key={attachment.id} attachment={attachment} />
+            ))}
+          </div>
+          {!archiveInImageArea && !archiveInAudioArea && hasMultipleAttachments ? (
+            <MessageMediaDownloadAllLink messageId={messageId} />
+          ) : null}
         </div>
       ) : null}
       {videoPreviewIndex !== null ? (
