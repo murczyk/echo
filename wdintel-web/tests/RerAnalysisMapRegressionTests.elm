@@ -32,7 +32,8 @@ suite =
 
                             user =
                                 Maybe.withDefault
-                                    { name = "anonymous"
+                                    { id = ""
+                                    , name = "anonymous"
                                     , roles = []
                                     , sigintZoneId = Nothing
                                     , organismId = Nothing
@@ -83,7 +84,8 @@ suite =
 
                             user =
                                 Maybe.withDefault
-                                    { name = "anonymous"
+                                    { id = ""
+                                    , name = "anonymous"
                                     , roles = []
                                     , sigintZoneId = Nothing
                                     , organismId = Nothing
