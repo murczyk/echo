@@ -11,7 +11,7 @@ use uuid::Uuid;
 
 pub async fn find_available_signal_group<C>(
     dbx: &C,
-    login: &str,
+    login: &uuid::Uuid,
     signal_group_master_key: &str,
 ) -> Result<signal_group::Model, AppError>
 where
@@ -64,12 +64,12 @@ where
 
 pub async fn ensure_current_user_sender<C>(
     dbx: &C,
-    login: &str,
+    login: &uuid::Uuid,
 ) -> Result<String, AppError>
 where
     C: ConnectionTrait,
 {
-    if signal_profile::Entity::find_by_id(login.to_string())
+    if signal_profile::Entity::find_by_id(*login)
         .one(dbx)
         .await
         .c(h!())?

@@ -21,7 +21,7 @@ use std::collections::{BTreeMap, HashSet};
 use uuid::Uuid;
 
 pub async fn parse_signal_message(
-    login: &str,
+    login: &uuid::Uuid,
     env: &Env,
     payload: DirectSubmitParsePayload,
 ) -> Result<DirectSubmitParseRsp, AppError> {
@@ -143,7 +143,7 @@ where
 }
 
 pub async fn submit_signal_message(
-    login: &str,
+    login: &uuid::Uuid,
     env: &Env,
     payload: DirectSubmitPayload,
 ) -> Result<DirectSubmitRsp, AppError> {
@@ -151,7 +151,7 @@ pub async fn submit_signal_message(
 }
 
 pub async fn edit_signal_message(
-    login: &str,
+    login: &uuid::Uuid,
     env: &Env,
     signal_message_id: i64,
     payload: DirectSubmitPayload,
@@ -160,7 +160,7 @@ pub async fn edit_signal_message(
 }
 
 async fn save_signal_message(
-    login: &str,
+    login: &uuid::Uuid,
     env: &Env,
     signal_message_id: Option<i64>,
     payload: DirectSubmitPayload,
@@ -191,14 +191,20 @@ async fn save_signal_message(
         ),
         None => None,
     };
+    let deleted_media_ids = payload
+        .deleted_media_ids
+        .as_deref()
+        .unwrap_or_default()
+        .iter()
+        .map(|media_id| {
+            Uuid::parse_str(media_id)
+                .map_err(anyhow::Error::from)
+                .map_err(AppError::from)
+        })
+        .collect::<Result<Vec<_>, AppError>>()?;
     let (retained_media_count, media_to_delete) = match signal_message_id {
         Some(signal_message_id) => {
-            load_edit_media(
-                &txn,
-                signal_message_id,
-                payload.deleted_media_ids.as_deref().unwrap_or_default(),
-            )
-            .await?
+            load_edit_media(&txn, signal_message_id, &deleted_media_ids).await?
         }
         None => (0, vec![]),
     };
@@ -235,7 +241,7 @@ async fn save_signal_message(
     if let Some(device_name_id) = device_name_id {
         query::validate_device_name_id(&txn, device_name_id).await?;
     }
-    let logins = crate::users::get_organism_logins_by_login(&txn, login)
+    let logins = crate::users::get_organism_login_ids_by_id(&txn, login)
         .await
         .c(h!())?;
     let previous_timestamp =
@@ -395,7 +401,7 @@ async fn load_edit_media(
 
 async fn resolve_direct_submit_uploads(
     env: &Env,
-    login: &str,
+    login: &uuid::Uuid,
     upload_urls: &[String],
 ) -> Result<Vec<MediaUploadInput>, AppError> {
     let tus_handler = crate::sigint::file_upload::tus::TusHandler::new(
@@ -413,8 +419,8 @@ async fn persist_direct_submit_item(
     txn: &DatabaseTransaction,
     signal_message_id: Option<i64>,
     signal_group: crate::entities::signal_group::Model,
-    login: &str,
-    logins: &Vec<String>,
+    login: &uuid::Uuid,
+    logins: &Vec<uuid::Uuid>,
     submit_item: InboxSubmitItem,
     allow_empty_content: bool,
     keep_timestamp_missing: bool,
@@ -703,10 +709,13 @@ mod tests {
     #[serial]
     async fn direct_edit_updates_existing_message_by_id() {
         let env = cleanup().await.unwrap();
+        let login_id = crate::users::login_id_by_name(&env.dbx, TEST_LOGIN)
+            .await
+            .unwrap();
         let device_name_id =
             device_name::Entity::insert(device_name::ActiveModel {
                 name: Set(Some("edit-test-device".to_string())),
-                login: Set(TEST_LOGIN.to_string()),
+                login_id: Set(login_id),
                 ..Default::default()
             })
             .exec(&env.dbx)
@@ -724,7 +733,7 @@ mod tests {
                 cc: None,
                 name: Some("original network".to_string()),
             });
-        let created = submit_signal_message(TEST_LOGIN, &env, create_payload)
+        let created = submit_signal_message(&login_id, &env, create_payload)
             .await
             .unwrap();
         assert_eq!(
@@ -784,7 +793,7 @@ mod tests {
             sigint_inbox_item_id: Set(created.signal_message_id),
             tag_id: Set(tag.id),
             confidence: Set(0.9),
-            login: Set(None),
+            login_id: Set(None),
             model: Set(Some("old-model".to_string())),
             ..Default::default()
         }
@@ -801,7 +810,7 @@ mod tests {
                 name: Some("updated network".to_string()),
             });
         let edited = edit_signal_message(
-            TEST_LOGIN,
+            &login_id,
             &env,
             created.signal_message_id,
             edit_payload,
@@ -858,7 +867,7 @@ mod tests {
                     sigint_comment::Column::SignalMessageId
                         .eq(created.signal_message_id)
                 )
-                .filter(sigint_comment::Column::Login.eq(TEST_LOGIN))
+                .filter(sigint_comment::Column::LoginId.eq(login_id))
                 .count(&env.dbx)
                 .await
                 .unwrap(),
@@ -912,7 +921,7 @@ mod tests {
         let mut clear_device_payload = direct_submit_payload("updated body");
         clear_device_payload.device_name_id = Some(None);
         let cleared = edit_signal_message(
-            TEST_LOGIN,
+            &login_id,
             &env,
             created.signal_message_id,
             clear_device_payload,
@@ -941,9 +950,12 @@ mod tests {
     #[serial]
     async fn direct_edit_preserves_missing_timestamp() {
         let env = cleanup().await.unwrap();
+        let login_id = crate::users::login_id_by_name(&env.dbx, TEST_LOGIN)
+            .await
+            .unwrap();
         let mut create_payload = direct_submit_payload("original body");
         create_payload.timestamp = Some("2026-07-11T12:34:56Z".to_string());
-        let created = submit_signal_message(TEST_LOGIN, &env, create_payload)
+        let created = submit_signal_message(&login_id, &env, create_payload)
             .await
             .unwrap();
 
@@ -968,7 +980,7 @@ mod tests {
         inbox_item.update(&env.dbx).await.unwrap();
 
         edit_signal_message(
-            TEST_LOGIN,
+            &login_id,
             &env,
             created.signal_message_id,
             direct_submit_payload("updated body"),

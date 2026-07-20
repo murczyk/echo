@@ -31,7 +31,7 @@ where
 
 pub async fn create<C>(
     dbx: &C,
-    login: String,
+    login: uuid::Uuid,
     name: String,
 ) -> Result<DeviceNameRow, AppError>
 where
@@ -40,7 +40,7 @@ where
     let device_name = device_name::ActiveModel {
         id: NotSet,
         name: Set(Some(name.clone())),
-        login: Set(login),
+        login_id: Set(login),
         created_at: NotSet,
         search_tsv: NotSet,
     };

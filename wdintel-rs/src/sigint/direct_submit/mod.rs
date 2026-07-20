@@ -18,9 +18,7 @@ pub async fn submit_direct(
     payload: web::Json<DirectSubmitPayload>,
 ) -> Result<web::Json<DirectSubmitRsp>, DirectSubmitApiError> {
     let action = DirectSubmitAction::Save;
-    let login = user
-        .id()
-        .c(h!())
+    let login = crate::users::identity_id(&user)
         .map_err(|err| DirectSubmitApiError::new(err, action))?;
     crate::users::has_role(&env.dbx, &login, "Rer")
         .await
@@ -42,9 +40,7 @@ pub async fn edit_message(
     payload: web::Json<DirectSubmitPayload>,
 ) -> Result<web::Json<DirectSubmitRsp>, DirectSubmitApiError> {
     let action = DirectSubmitAction::Edit;
-    let login = user
-        .id()
-        .c(h!())
+    let login = crate::users::identity_id(&user)
         .map_err(|err| DirectSubmitApiError::new(err, action))?;
     crate::users::has_role(&env.dbx, &login, "Rer")
         .await
@@ -70,9 +66,7 @@ pub async fn parse_direct_submit(
     payload: web::Json<DirectSubmitParsePayload>,
 ) -> Result<web::Json<DirectSubmitParseRsp>, DirectSubmitApiError> {
     let action = DirectSubmitAction::Parse;
-    let login = user
-        .id()
-        .c(h!())
+    let login = crate::users::identity_id(&user)
         .map_err(|err| DirectSubmitApiError::new(err, action))?;
     crate::users::has_role(&env.dbx, &login, "Rer")
         .await

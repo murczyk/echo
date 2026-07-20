@@ -17,7 +17,7 @@ pub async fn device_name_create(
     env: actix_web::web::Data<Env>,
     req: Json<CreateDeviceNameReq>,
 ) -> Result<Json<CreateDeviceNameRsp>, AppError> {
-    let login = user.id().c(h!())?;
+    let login = crate::users::identity_id(&user)?;
     crate::users::has_any_role(&env.dbx, &login, vec!["Rer"])
         .await
         .c(h!())?;
@@ -35,9 +35,13 @@ pub async fn device_name_search(
     env: actix_web::web::Data<Env>,
     req: Json<DeviceNameSearchReq>,
 ) -> Result<Json<DeviceNameSearchRsp>, AppError> {
-    crate::users::has_any_role(&env.dbx, &user.id().c(h!())?, vec!["Rer"])
-        .await
-        .c(h!())?;
+    crate::users::has_any_role(
+        &env.dbx,
+        &crate::users::identity_id(&user)?,
+        vec!["Rer"],
+    )
+    .await
+    .c(h!())?;
 
     let rsp = bl::search_device_names(&env.dbx, req.into_inner())
         .await

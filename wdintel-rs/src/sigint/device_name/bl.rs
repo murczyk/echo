@@ -9,7 +9,7 @@ use sea_orm::ConnectionTrait;
 
 pub async fn create_device_name<C>(
     dbx: &C,
-    login: String,
+    login: uuid::Uuid,
     req: CreateDeviceNameReq,
 ) -> Result<CreateDeviceNameRsp, AppError>
 where
