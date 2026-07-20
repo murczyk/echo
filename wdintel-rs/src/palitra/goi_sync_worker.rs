@@ -372,15 +372,16 @@ async fn reconcile_echo_palitras_missing_in_goi(
     )
     .await
     .c(h!())?;
-    let tracked_palitra_ids = find_present_tracked_palitra_ids(
+    let present_tracked_palitras = find_present_tracked_palitras(
         &env.dbx,
         target.integration.id,
         remote_paths,
     )
     .await
     .c(h!())?;
+    let tracked_palitra_ids = present_tracked_palitras.palitra_ids;
     let mut remote_paths = remote_paths.clone();
-    let mut uploaded_paths = BTreeSet::new();
+    let mut uploaded_paths = present_tracked_palitras.remote_paths;
 
     for palitra in palitras {
         if tracked_palitra_ids.contains(&palitra.id) {
@@ -460,6 +461,9 @@ async fn reconcile_echo_palitra_missing_in_goi(
     )
     .await
     .c(h!())?;
+    refresh_palitra_missing_in_goi(&env.dbx, palitra.id)
+        .await
+        .c(h!())?;
     Ok(Some(relative_path))
 }
 
@@ -512,15 +516,21 @@ async fn find_echo_palitras_for_goi_target(
         .c(h!())
 }
 
-async fn find_present_tracked_palitra_ids(
+#[derive(Default)]
+struct PresentTrackedGoiPalitras {
+    palitra_ids: BTreeSet<i64>,
+    remote_paths: BTreeSet<String>,
+}
+
+async fn find_present_tracked_palitras(
     dbx: &DatabaseConnection,
     goi_integration_id: i64,
     remote_paths: &BTreeSet<String>,
-) -> anyhow::Result<BTreeSet<i64>> {
+) -> anyhow::Result<PresentTrackedGoiPalitras> {
     if remote_paths.is_empty() {
-        return Ok(BTreeSet::new());
+        return Ok(PresentTrackedGoiPalitras::default());
     }
-    goi_palitra_sync::Entity::find()
+    let rows = goi_palitra_sync::Entity::find()
         .filter(
             goi_palitra_sync::Column::GoiIntegrationId.eq(goi_integration_id),
         )
@@ -531,11 +541,19 @@ async fn find_present_tracked_palitra_ids(
         .filter(goi_palitra_sync::Column::PalitraId.is_not_null())
         .select_only()
         .column(goi_palitra_sync::Column::PalitraId)
-        .into_tuple::<i64>()
+        .column(goi_palitra_sync::Column::RemoteRelativePath)
+        .into_tuple::<(i64, String)>()
         .all(dbx)
         .await
-        .c(h!())
-        .map(|palitra_ids| palitra_ids.into_iter().collect())
+        .c(h!())?;
+    let mut present_tracked_palitras = PresentTrackedGoiPalitras::default();
+    for (palitra_id, remote_relative_path) in rows {
+        present_tracked_palitras.palitra_ids.insert(palitra_id);
+        present_tracked_palitras
+            .remote_paths
+            .insert(remote_relative_path);
+    }
+    Ok(present_tracked_palitras)
 }
 
 async fn refresh_goi_sync_lock(
