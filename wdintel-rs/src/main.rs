@@ -120,16 +120,17 @@ pub async fn oneoff_compare_rer_counts(
         serde_json::from_str(&payload_raw).context(h!())?;
 
     for login in ps.logins.iter() {
-        users::has_role(&env.dbx, login, "Rer").await.c(h!())?;
+        let login_id = users::login_id_by_name(&env.dbx, login).await?;
+        users::has_role(&env.dbx, &login_id, "Rer").await.c(h!())?;
         let master_keys =
-            messenger::group::get_identity_sigint_groups(&env.dbx, login)
+            messenger::group::get_identity_sigint_groups(&env.dbx, &login_id)
                 .await
                 .context(h!())?;
         let req_json = actix_web::web::Json(req_body.clone());
         let (count_overall, count_selected) =
             rer_importer::analysis::stats::fetch_counts_for_login(
                 &req_json,
-                login,
+                &login_id,
                 env.as_ref(),
                 master_keys,
             )

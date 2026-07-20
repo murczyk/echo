@@ -15,9 +15,13 @@ pub async fn restart_datasource(
     user: actix_identity::Identity,
     req: Json<i32>,
 ) -> Result<Json<bool>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Admin")
-        .await
-        .c(h!())?;
+    crate::users::has_role(
+        &env.dbx,
+        &crate::users::identity_id(&user)?,
+        "Admin",
+    )
+    .await
+    .c(h!())?;
     let datasource_id = req.into_inner();
     let client_id = datasource::Entity::find()
         .join(
@@ -42,9 +46,13 @@ pub async fn restart_echo(
     user: actix_identity::Identity,
     req: Json<RestartEchoRequest>,
 ) -> Result<Json<bool>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Admin")
-        .await
-        .c(h!())?;
+    crate::users::has_role(
+        &env.dbx,
+        &crate::users::identity_id(&user)?,
+        "Admin",
+    )
+    .await
+    .c(h!())?;
     let req = req.into_inner();
     let mut args = Vec::new();
     if req.restart_postgres.unwrap_or(false) {

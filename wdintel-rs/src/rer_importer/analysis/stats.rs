@@ -28,13 +28,13 @@ pub async fn fetch_groups(
     env: &actix_web::web::Data<Env>,
     master_keys: Vec<String>,
 ) -> Result<Vec<AnalysisStatsGroup>, AppError> {
-    let login_value = user.id().c(h!())?;
-    fetch_groups_for_login(&req.0, login_value.as_str(), env, master_keys).await
+    let login_value = crate::users::identity_id(user)?;
+    fetch_groups_for_login(&req.0, &login_value, env, master_keys).await
 }
 
 pub async fn fetch_groups_for_login(
     req: &AnalysisStatsReq,
-    login_str: &str,
+    login_str: &uuid::Uuid,
     env: &actix_web::web::Data<Env>,
     master_keys: Vec<String>,
 ) -> Result<Vec<AnalysisStatsGroup>, AppError> {
@@ -72,12 +72,12 @@ pub(super) async fn fetch_groups_raw_with_db(
     db: &DatabaseConnection,
     master_keys: Vec<String>,
 ) -> Result<Vec<AnalysisStatsGroup>, AppError> {
-    let login_value = user.id().c(h!())?;
+    let login_value = crate::users::identity_id(user)?;
     let dt_since = dt_from_millis(req.since_date_inclusive_ms).c(h!())?;
     let dt_till = dt_from_millis(req.till_date_noninclusive_ms).c(h!())?;
     fetch_groups_for_login_with_db(
         &req.0,
-        login_value.as_str(),
+        &login_value,
         db,
         master_keys,
         dt_since,
@@ -88,7 +88,7 @@ pub(super) async fn fetch_groups_raw_with_db(
 
 async fn fetch_groups_for_login_with_db(
     req: &AnalysisStatsReq,
-    login_str: &str,
+    login_str: &uuid::Uuid,
     db: &DatabaseConnection,
     master_keys: Vec<String>,
     dt_since: NaiveDateTime,
@@ -209,10 +209,10 @@ pub async fn count_groups(
     let dt_since = dt_from_millis(req.since_date_inclusive_ms).c(h!())?;
     let dt_till = dt_from_millis(req.till_date_noninclusive_ms).c(h!())?;
     let read_db = env.replica();
-    let login_value = user.id().c(h!())?;
+    let login_value = crate::users::identity_id(user)?;
     let groups_res = build_groups_query(
         &req.0,
-        login_value.as_str(),
+        &login_value,
         dt_since,
         dt_till,
         master_keys,
@@ -223,7 +223,7 @@ pub async fn count_groups(
 
 fn build_groups_query(
     req: &AnalysisStatsReq,
-    login_str: &str,
+    login_str: &uuid::Uuid,
     dt_since: NaiveDateTime,
     dt_till: NaiveDateTime,
     master_keys: Vec<String>,
@@ -330,14 +330,13 @@ pub async fn fetch_senders(
     env: &actix_web::web::Data<Env>,
     master_keys: Vec<String>,
 ) -> Result<Vec<AnalysisStatsSender>, AppError> {
-    let login_value = user.id().c(h!())?;
-    fetch_senders_for_login(&req.0, login_value.as_str(), env, master_keys)
-        .await
+    let login_value = crate::users::identity_id(user)?;
+    fetch_senders_for_login(&req.0, &login_value, env, master_keys).await
 }
 
 pub async fn fetch_senders_for_login(
     req: &AnalysisStatsReq,
-    login_str: &str,
+    login_str: &uuid::Uuid,
     env: &actix_web::web::Data<Env>,
     master_keys: Vec<String>,
 ) -> Result<Vec<AnalysisStatsSender>, AppError> {
@@ -534,13 +533,13 @@ pub(super) async fn count_senders_with_db(
     let dt_since = dt_from_millis(req.since_date_inclusive_ms).context(h!())?;
     let dt_till =
         dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
-    let login_value = user.id().context(h!())?;
+    let login_value = crate::users::identity_id(user)?;
 
     let instant = std::time::Instant::now();
     trace!("get identity master keys op took: {:?}", instant.elapsed());
     let groups_res = build_senders_query(
         &req,
-        login_value.as_str(),
+        &login_value,
         dt_since,
         dt_till,
         master_keys,
@@ -551,7 +550,7 @@ pub(super) async fn count_senders_with_db(
 
 fn build_senders_query(
     req: &&Json<AnalysisStatsReq>,
-    login_str: &str,
+    login_str: &uuid::Uuid,
     dt_since: NaiveDateTime,
     dt_till: NaiveDateTime,
     master_keys: Vec<String>,
@@ -675,7 +674,7 @@ fn apply_sender_dimension_filters(
 fn apply_sender_filters_for_login<E>(
     query: Select<E>,
     req: &Json<AnalysisStatsReq>,
-    login_str: &str,
+    login_str: &uuid::Uuid,
     master_keys: Vec<String>,
 ) -> Result<Select<E>, AppError>
 where
@@ -883,7 +882,7 @@ fn build_posts_query(
         &req.or_with_extended_form,
         &req.filter_tags_option,
         &req.without_model_tags,
-        &user.id().context(h!())?,
+        &crate::users::identity_id(user)?,
         req.report_tags_only_this_unit.unwrap_or(false),
     )
     .context(h!())?;
@@ -906,13 +905,13 @@ pub async fn fetch_freqs(
     env: &actix_web::web::Data<Env>,
     master_keys: Vec<String>,
 ) -> Result<Vec<AnalysisStatsFreq>, AppError> {
-    let login_value = user.id().c(h!())?;
-    fetch_freqs_for_login(&req.0, login_value.as_str(), env, master_keys).await
+    let login_value = crate::users::identity_id(user)?;
+    fetch_freqs_for_login(&req.0, &login_value, env, master_keys).await
 }
 
 pub async fn fetch_freqs_for_login(
     req: &AnalysisStatsReq,
-    login_str: &str,
+    login_str: &uuid::Uuid,
     env: &actix_web::web::Data<Env>,
     master_keys: Vec<String>,
 ) -> Result<Vec<AnalysisStatsFreq>, AppError> {
@@ -1034,10 +1033,10 @@ pub(super) async fn count_freqs_with_db(
 
     let instant = std::time::Instant::now();
     trace!("get identity master keys op took: {:?}", instant.elapsed());
-    let login_value = user.id().c(h!())?;
+    let login_value = crate::users::identity_id(user)?;
     let groups_res = build_freqs_query(
         &req.0,
-        login_value.as_str(),
+        &login_value,
         dt_since,
         dt_till,
         master_keys,
@@ -1048,7 +1047,7 @@ pub(super) async fn count_freqs_with_db(
 
 fn build_freqs_query(
     req: &AnalysisStatsReq,
-    login_str: &str,
+    login_str: &uuid::Uuid,
     dt_since: NaiveDateTime,
     dt_till: NaiveDateTime,
     master_keys: Vec<String>,
@@ -1138,14 +1137,13 @@ pub async fn fetch_callsigns(
     env: &actix_web::web::Data<Env>,
     master_keys: Vec<String>,
 ) -> Result<Vec<AnalysisStatsCallsign>, AppError> {
-    let login_value = user.id().c(h!())?;
-    fetch_callsigns_for_login(&req.0, login_value.as_str(), env, master_keys)
-        .await
+    let login_value = crate::users::identity_id(user)?;
+    fetch_callsigns_for_login(&req.0, &login_value, env, master_keys).await
 }
 
 pub async fn fetch_callsigns_for_login(
     req: &AnalysisStatsReq,
-    login_str: &str,
+    login_str: &uuid::Uuid,
     env: &actix_web::web::Data<Env>,
     master_keys: Vec<String>,
 ) -> Result<Vec<AnalysisStatsCallsign>, AppError> {
@@ -1214,7 +1212,7 @@ pub(super) async fn count_callsigns_with_db(
     db: &DatabaseConnection,
     master_keys: Vec<String>,
 ) -> Result<i64, AppError> {
-    let login_value = user.id().c(h!())?;
+    let login_value = crate::users::identity_id(user)?;
     let dt_since = dt_from_millis(req.since_date_inclusive_ms).context(h!())?;
     let dt_till =
         dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
@@ -1223,7 +1221,7 @@ pub(super) async fn count_callsigns_with_db(
     trace!("get identity master keys op took: {:?}", instant.elapsed());
     let groups_res = build_callsigns_query(
         &req.0,
-        login_value.as_str(),
+        &login_value,
         dt_since,
         dt_till,
         master_keys,
@@ -1238,19 +1236,13 @@ pub async fn fetch_metadata_stats(
     env: &actix_web::web::Data<Env>,
     master_keys: Vec<String>,
 ) -> Result<MetadataStatsRsp, AppError> {
-    let login_value = user.id().context(h!())?;
-    fetch_metadata_stats_for_login(
-        &req.0,
-        login_value.as_str(),
-        env,
-        master_keys,
-    )
-    .await
+    let login_value = crate::users::identity_id(user)?;
+    fetch_metadata_stats_for_login(&req.0, &login_value, env, master_keys).await
 }
 
 pub async fn fetch_metadata_stats_for_login(
     req: &AnalysisStatsReq,
-    login_str: &str,
+    login_str: &uuid::Uuid,
     env: &actix_web::web::Data<Env>,
     master_keys: Vec<String>,
 ) -> Result<MetadataStatsRsp, AppError> {
@@ -1312,7 +1304,7 @@ pub async fn fetch_metadata_stats_for_login(
 
 fn build_metadata_messages_query(
     req: &Json<AnalysisStatsReq>,
-    login_str: &str,
+    login_str: &uuid::Uuid,
     dt_since: NaiveDateTime,
     dt_till: NaiveDateTime,
     master_keys: Vec<String>,
@@ -1503,7 +1495,7 @@ fn metadata_value_expr(
 
 fn build_callsigns_query(
     req: &AnalysisStatsReq,
-    login_str: &str,
+    login_str: &uuid::Uuid,
     dt_since: NaiveDateTime,
     dt_till: NaiveDateTime,
     master_keys: Vec<String>,
@@ -1590,13 +1582,13 @@ pub async fn fetch_tags(
     env: &actix_web::web::Data<Env>,
     master_keys: Vec<String>,
 ) -> Result<Vec<AnalysisStatsTag>, AppError> {
-    let login_value = user.id().c(h!())?;
-    fetch_tags_for_login(&req.0, login_value.as_str(), env, master_keys).await
+    let login_value = crate::users::identity_id(user)?;
+    fetch_tags_for_login(&req.0, &login_value, env, master_keys).await
 }
 
 pub async fn fetch_tags_for_login(
     req: &AnalysisStatsReq,
-    login_str: &str,
+    login_str: &uuid::Uuid,
     env: &actix_web::web::Data<Env>,
     master_keys: Vec<String>,
 ) -> Result<Vec<AnalysisStatsTag>, AppError> {
@@ -1669,7 +1661,7 @@ pub(super) async fn count_tags_with_db(
     db: &DatabaseConnection,
     master_keys: Vec<String>,
 ) -> Result<i64, AppError> {
-    let login_value = user.id().c(h!())?;
+    let login_value = crate::users::identity_id(user)?;
     let dt_since = dt_from_millis(req.since_date_inclusive_ms).context(h!())?;
     let dt_till =
         dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
@@ -1678,7 +1670,7 @@ pub(super) async fn count_tags_with_db(
     trace!("get identity master keys op took: {:?}", instant.elapsed());
     let groups_res = build_tags_query(
         &req.0,
-        login_value.as_str(),
+        &login_value,
         dt_since,
         dt_till,
         master_keys,
@@ -1689,7 +1681,7 @@ pub(super) async fn count_tags_with_db(
 
 fn build_tags_query(
     req: &AnalysisStatsReq,
-    login_str: &str,
+    login_str: &uuid::Uuid,
     dt_since: NaiveDateTime,
     dt_till: NaiveDateTime,
     master_keys: Vec<String>,
@@ -1898,12 +1890,12 @@ pub(super) async fn count_unit_exact_match_breakdown_raw_with_db(
     db: &DatabaseConnection,
     master_keys: Vec<String>,
 ) -> Result<(i64, i64), AppError> {
-    let login_value = user.id().c(h!())?;
+    let login_value = crate::users::identity_id(user)?;
     let mut exact_req = req.0.clone();
     exact_req.units_exact_match_only = Some(true);
     let (_, exact_matches_count) = fetch_counts_for_login_with_conn(
         &Json(exact_req),
-        login_value.as_str(),
+        &login_value,
         master_keys.clone(),
         env,
         db,
@@ -1915,7 +1907,7 @@ pub(super) async fn count_unit_exact_match_breakdown_raw_with_db(
     combined_req.units_exact_match_only = Some(false);
     let (_, total_matches_count) = fetch_counts_for_login_with_conn(
         &Json(combined_req),
-        login_value.as_str(),
+        &login_value,
         master_keys,
         env,
         db,
@@ -1995,7 +1987,7 @@ fn build_units_query(
         &req.or_with_extended_form,
         &req.filter_tags_option,
         &req.without_model_tags,
-        &user.id().context(h!())?,
+        &crate::users::identity_id(user)?,
         req.report_tags_only_this_unit.unwrap_or(false),
     )
     .context(h!())?;
@@ -2018,14 +2010,13 @@ pub async fn fetch_locations(
     env: &actix_web::web::Data<Env>,
     master_keys: Vec<String>,
 ) -> Result<Vec<AnalysisStatsLocation>, AppError> {
-    let login_value = user.id().c(h!())?;
-    fetch_locations_for_login(&req.0, login_value.as_str(), env, master_keys)
-        .await
+    let login_value = crate::users::identity_id(user)?;
+    fetch_locations_for_login(&req.0, &login_value, env, master_keys).await
 }
 
 pub async fn fetch_locations_for_login(
     req: &AnalysisStatsReq,
-    login_str: &str,
+    login_str: &uuid::Uuid,
     env: &actix_web::web::Data<Env>,
     master_keys: Vec<String>,
 ) -> Result<Vec<AnalysisStatsLocation>, AppError> {
@@ -2117,10 +2108,10 @@ fn build_locations_query(
     dt_till: NaiveDateTime,
     master_keys: Vec<String>,
 ) -> Result<Select<sigint_inbox_item::Entity>, AppError> {
-    let login_value = user.id().context(h!())?;
+    let login_value = crate::users::identity_id(user)?;
     build_locations_query_for_login(
         &req.0,
-        login_value.as_str(),
+        &login_value,
         dt_since,
         dt_till,
         master_keys,
@@ -2129,7 +2120,7 @@ fn build_locations_query(
 
 fn build_locations_query_for_login(
     req: &AnalysisStatsReq,
-    login_str: &str,
+    login_str: &uuid::Uuid,
     dt_since: NaiveDateTime,
     dt_till: NaiveDateTime,
     master_keys: Vec<String>,
@@ -2224,13 +2215,13 @@ pub async fn fetch_aors(
     env: &actix_web::web::Data<Env>,
     master_keys: Vec<String>,
 ) -> Result<Vec<AnalysisStatsAor>, AppError> {
-    let login_value = user.id().c(h!())?;
-    fetch_aors_for_login(&req.0, login_value.as_str(), env, master_keys).await
+    let login_value = crate::users::identity_id(user)?;
+    fetch_aors_for_login(&req.0, &login_value, env, master_keys).await
 }
 
 pub async fn fetch_aors_for_login(
     req: &AnalysisStatsReq,
-    login_str: &str,
+    login_str: &uuid::Uuid,
     env: &actix_web::web::Data<Env>,
     master_keys: Vec<String>,
 ) -> Result<Vec<AnalysisStatsAor>, AppError> {
@@ -2316,10 +2307,10 @@ async fn count_aors_with_db(
     dt_since: NaiveDateTime,
     dt_till: NaiveDateTime,
 ) -> Result<i64, AppError> {
-    let login_value = user.id().c(h!())?;
+    let login_value = crate::users::identity_id(user)?;
     let stmt = build_aors_query(
         &req.0,
-        login_value.as_str(),
+        &login_value,
         dt_since,
         dt_till,
         master_keys,
@@ -2334,7 +2325,7 @@ async fn count_aors_with_db(
 
 fn build_aors_query(
     req: &AnalysisStatsReq,
-    login_str: &str,
+    login_str: &uuid::Uuid,
     dt_since: NaiveDateTime,
     dt_till: NaiveDateTime,
     master_keys: Vec<String>,
@@ -2596,19 +2587,13 @@ pub async fn fetch_networks(
     env: &actix_web::web::Data<Env>,
     master_keys: Vec<String>,
 ) -> Result<Vec<AnalysisStatsNetwork>, AppError> {
-    let login_value = user.id().c(h!())?;
-    fetch_networks_for_login(
-        &req.0,
-        login_value.as_str(),
-        &env.dbx,
-        master_keys,
-    )
-    .await
+    let login_value = crate::users::identity_id(user)?;
+    fetch_networks_for_login(&req.0, &login_value, &env.dbx, master_keys).await
 }
 
 pub async fn fetch_networks_for_login(
     req: &AnalysisStatsReq,
-    login_str: &str,
+    login_str: &uuid::Uuid,
     db: &DatabaseConnection,
     master_keys: Vec<String>,
 ) -> Result<Vec<AnalysisStatsNetwork>, AppError> {
@@ -2696,10 +2681,10 @@ fn build_networks_query(
     dt_till: NaiveDateTime,
     master_keys: Vec<String>,
 ) -> Result<WithQuery, AppError> {
-    let login_value = user.id().c(h!())?;
+    let login_value = crate::users::identity_id(user)?;
     build_networks_query_for_login(
         req,
-        login_value.as_str(),
+        &login_value,
         dt_since,
         dt_till,
         master_keys,
@@ -2767,7 +2752,7 @@ fn group_network_aor_overlap_condition(
 
 fn build_networks_query_for_login(
     req: &AnalysisStatsReq,
-    login_str: &str,
+    login_str: &uuid::Uuid,
     dt_since: NaiveDateTime,
     dt_till: NaiveDateTime,
     master_keys: Vec<String>,
@@ -3162,19 +3147,13 @@ pub async fn fetch_counts(
     env: &actix_web::web::Data<Env>,
     master_keys: Vec<String>,
 ) -> Result<(i64, i64), AppError> {
-    let login_value = user.id().c(h!())?;
-    fetch_counts_for_login(
-        req,
-        login_value.as_str(),
-        env.get_ref(),
-        master_keys,
-    )
-    .await
+    let login_value = crate::users::identity_id(user)?;
+    fetch_counts_for_login(req, &login_value, env.get_ref(), master_keys).await
 }
 
 pub async fn fetch_counts_for_login(
     req: &Json<AnalysisStatsReq>,
-    login_str: &str,
+    login_str: &uuid::Uuid,
     env: &Env,
     master_keys: Vec<String>,
 ) -> Result<(i64, i64), AppError> {
@@ -3213,7 +3192,7 @@ pub async fn fetch_counts_for_login(
 
 async fn fetch_counts_for_login_with_conn(
     req: &Json<AnalysisStatsReq>,
-    login_str: &str,
+    login_str: &uuid::Uuid,
     master_keys: Vec<String>,
     env: &Env,
     db: &DatabaseConnection,
@@ -3365,10 +3344,10 @@ pub(super) async fn fetch_counts_raw_with_db(
     db: &DatabaseConnection,
     master_keys: Vec<String>,
 ) -> Result<(i64, i64), AppError> {
-    let login_value = user.id().c(h!())?;
+    let login_value = crate::users::identity_id(user)?;
     fetch_counts_for_login_with_conn(
         req,
-        login_value.as_str(),
+        &login_value,
         master_keys,
         env,
         db,

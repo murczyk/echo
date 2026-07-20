@@ -35,7 +35,7 @@ pub async fn report_networks_task_launch(
     env: actix_web::web::Data<Env>,
     req: Json<EtalonkaJimForksReq>,
 ) -> Result<Json<i64>, AppError> {
-    let user_login = user.id().c(h!())?;
+    let user_login = crate::users::identity_id(&user)?;
     crate::users::has_role(&env.dbx, &user_login, "Rer")
         .await
         .c(h!())?;
@@ -61,7 +61,7 @@ pub async fn report_networks_batch_id_task_launch(
     env: actix_web::web::Data<Env>,
     req: Json<EtalonkaNetworkBatchReq>,
 ) -> Result<Json<i64>, AppError> {
-    let user_login = user.id().c(h!())?;
+    let user_login = crate::users::identity_id(&user)?;
     crate::users::has_role(&env.dbx, &user_login, "Rer")
         .await
         .c(h!())?;

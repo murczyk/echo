@@ -16,7 +16,7 @@ pub async fn list_sources(
 ) -> Result<Json<ListSourcesRsp>, AppError> {
     crate::users::has_any_role(
         &env.dbx,
-        &user.id().c(h!())?,
+        &crate::users::identity_id(&user)?,
         vec!["Rer", "Api"],
     )
     .await

@@ -7,12 +7,12 @@ use sea_orm::*;
 
 pub async fn current_user_organism_id<C>(
     db: &C,
-    login: &str,
+    login: &uuid::Uuid,
 ) -> Result<Option<i64>, AppError>
 where
     C: ConnectionTrait,
 {
-    login::Entity::find_by_id(login.to_string())
+    login::Entity::find_by_id(*login)
         .filter(login::Column::DeletedPermanently.eq(false))
         .select_only()
         .column(login::Column::OrganismId)

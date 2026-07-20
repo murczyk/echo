@@ -26,7 +26,7 @@ pub async fn list_network_callsigns(
     env: actix_web::web::Data<Env>,
     req: Json<ListNetworkCallsignsReq>,
 ) -> Result<Json<ListNetworkCallsignsRes>, AppError> {
-    let user_id = user.id().c(h!())?;
+    let user_id = crate::users::identity_id(&user)?;
     crate::users::has_any_role(&env.dbx, &user_id, vec!["Rer", "ApiAgent"])
         .await
         .c(h!())?;
@@ -67,7 +67,7 @@ pub async fn create_network_callsign(
     env: actix_web::web::Data<Env>,
     req: Json<CreateNetworkCallsignReq>,
 ) -> Result<Json<NetworkCallsign>, AppError> {
-    let user_id = user.id().c(h!())?;
+    let user_id = crate::users::identity_id(&user)?;
     crate::users::has_role(&env.dbx, &user_id, "Rer")
         .await
         .context(h!())?;
@@ -128,7 +128,7 @@ pub async fn add_as_known_network_callsigns(
     env: actix_web::web::Data<Env>,
     req: Json<AddAsKnownNetworkCallsignReq>,
 ) -> Result<Json<Vec<NetworkCallsign>>, AppError> {
-    let user_id = user.id().c(h!())?;
+    let user_id = crate::users::identity_id(&user)?;
     crate::users::has_role(&env.dbx, &user_id, "Rer")
         .await
         .context(h!())?;
@@ -189,7 +189,7 @@ pub async fn update_network_callsign(
     env: actix_web::web::Data<Env>,
     req: Json<UpdateNetworkCallsignReq>,
 ) -> Result<Json<NetworkCallsign>, AppError> {
-    let user_id = user.id().c(h!())?;
+    let user_id = crate::users::identity_id(&user)?;
     crate::users::has_role(&env.dbx, &user_id, "Rer")
         .await
         .context(h!())?;
@@ -249,7 +249,7 @@ pub async fn delete_network_callsign(
     env: actix_web::web::Data<Env>,
     req: Json<i64>,
 ) -> Result<Json<NetworkCallsign>, AppError> {
-    let user_id = user.id().c(h!())?;
+    let user_id = crate::users::identity_id(&user)?;
     crate::users::has_role(&env.dbx, &user_id, "Rer")
         .await
         .c(h!())?;
@@ -302,7 +302,7 @@ pub async fn network_callsigns_activity(
     env: actix_web::web::Data<Env>,
     req: Json<NetworkCallsignsActivityReq>,
 ) -> Result<Json<NetworkCallsignsActivityRsp>, AppError> {
-    let user_id = user.id().c(h!())?;
+    let user_id = crate::users::identity_id(&user)?;
     crate::users::has_role(&env.dbx, &user_id, "Rer")
         .await
         .c(h!())?;

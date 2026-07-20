@@ -179,9 +179,13 @@ pub async fn api_delta_csv_to_kmz(
     env: actix_web::web::Data<Env>,
     mut payload: Multipart,
 ) -> Result<actix_web::HttpResponse, AppError> {
-    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Bpla")
-        .await
-        .c(h!())?;
+    crate::users::has_role(
+        &env.dbx,
+        &crate::users::identity_id(&user)?,
+        "Bpla",
+    )
+    .await
+    .c(h!())?;
     let (field, val) = multipart::extract(&mut payload).await.c(h!())?;
     let tmp_dir = TempDir::new()?;
     println!("> tmp_dir {}", &tmp_dir.path().display());

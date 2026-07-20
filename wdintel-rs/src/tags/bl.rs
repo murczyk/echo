@@ -36,7 +36,7 @@ where
 
 pub async fn list_current_organism_tags<C>(
     db: &C,
-    login: &str,
+    login: &uuid::Uuid,
 ) -> Result<Vec<TagAdmin>, AppError>
 where
     C: ConnectionTrait,
@@ -101,7 +101,7 @@ where
 
 async fn current_user_required_organism_id<C>(
     db: &C,
-    login: &str,
+    login: &uuid::Uuid,
 ) -> Result<i64, AppError>
 where
     C: ConnectionTrait,

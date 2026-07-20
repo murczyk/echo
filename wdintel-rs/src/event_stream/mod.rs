@@ -45,10 +45,14 @@ async fn long_poll(
     session: actix_session::Session,
     req: Json<LongPollReq>,
 ) -> Result<Json<LongPollRsp>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Basic")
-        .await
-        .c(h!())?;
-    let user_id = user.id().c(h!())?;
+    crate::users::has_role(
+        &env.dbx,
+        &crate::users::identity_id(&user)?,
+        "Basic",
+    )
+    .await
+    .c(h!())?;
+    let user_id = crate::users::identity_id(&user)?;
     let account_id = user_id;
     let Some(session_id) = get_session_id(&session).c(h!())? else {
         tokio::time::sleep(tokio::time::Duration::from_millis(

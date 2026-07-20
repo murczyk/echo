@@ -33,10 +33,10 @@ pub async fn user_settings_get(
     env: Data<Env>,
     user: Identity,
 ) -> Result<Json<UserDutySettingsDto>, AppError> {
-    let login_id = user.id().c(h!())?;
+    let login_id = crate::users::identity_id(&user)?;
     load_login(&env.dbx, &login_id).await.c(h!())?;
     let row = user_settings::Entity::find()
-        .filter(user_settings::Column::Login.eq(login_id))
+        .filter(user_settings::Column::LoginId.eq(login_id))
         .one(&env.dbx)
         .await
         .c(h!())?;
@@ -53,13 +53,13 @@ pub async fn user_settings_put(
     user: Identity,
     req: Json<UserDutySettingsDto>,
 ) -> Result<Json<UserDutySettingsDto>, AppError> {
-    let login_id = user.id().c(h!())?;
+    let login_id = crate::users::identity_id(&user)?;
     load_login(&env.dbx, &login_id).await.c(h!())?;
     let dto = req.into_inner();
     let now = Utc::now().naive_utc();
     user_settings::Entity::insert(user_settings::ActiveModel {
         id: NotSet,
-        login: Set(login_id),
+        login_id: Set(login_id),
         tags_layout: Set(match dto.tags_layout {
             DutyTagsLayout::Full => DbTagsLayout::Full,
             DutyTagsLayout::Compact => DbTagsLayout::Compact,
@@ -70,7 +70,7 @@ pub async fn user_settings_put(
         updated_at: Set(now),
     })
     .on_conflict(
-        OnConflict::column(user_settings::Column::Login)
+        OnConflict::column(user_settings::Column::LoginId)
             .update_columns([
                 user_settings::Column::TagsLayout,
                 user_settings::Column::DisableAutoScroll,
@@ -87,10 +87,9 @@ pub async fn user_settings_put(
 
 async fn load_login(
     dbx: &DatabaseConnection,
-    login_id: &str,
+    login_id: &uuid::Uuid,
 ) -> Result<(), AppError> {
-    login::Entity::find()
-        .filter(login::Column::Login.eq(login_id))
+    login::Entity::find_by_id(*login_id)
         .filter(login::Column::DeletedPermanently.eq(false))
         .one(dbx)
         .await

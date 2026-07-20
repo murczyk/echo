@@ -173,6 +173,7 @@ pub async fn process_messages<C: ConnectionTrait>(
     dbx: &C,
     tag_keyword_regex_cache: &Arc<RwLock<TagKeywordRegexCache>>,
 ) -> Result<ProcessMessagesResult, AppError> {
+    let system_login_id = crate::users::system_login_id(dbx).await.c(h!())?;
     let tags_to_predict = get_tags_to_predict(dbx, tag_keyword_regex_cache)
         .await
         .c(h!())?;
@@ -217,12 +218,12 @@ pub async fn process_messages<C: ConnectionTrait>(
                 skip_nlp_tag_id_message_id.insert((tag_id, message_id));
             } else if cache_item.regex_set_positive.is_match(text.as_str()) {
                 skip_nlp_tag_id_message_id.insert((tag_id, message_id));
-                let login = Some(SYSTEM_LOGIN_NAME.to_string());
+                let login = Some(system_login_id);
                 let model = Some(KEYWORDS_REGEX_MODEL_NAME.to_owned());
                 let model = sigint_inbox_item_tag::ActiveModel {
                     tag_id: Set(tag_id),
                     sigint_inbox_item_id: Set(message_id),
-                    login: Set(login),
+                    login_id: Set(login),
                     model: Set(model),
                     confidence: Set(TAG_SUGGEST_WORKER_REGEX_CONFIDENCE),
                     ..Default::default()
@@ -247,13 +248,13 @@ pub async fn process_messages<C: ConnectionTrait>(
             let tag_id = tags_to_predict[key];
             if !skip_nlp_tag_id_message_id.contains(&(tag_id, message_id)) {
                 let confidence: f64 = res.probability;
-                let login = Some(SYSTEM_LOGIN_NAME.to_string());
+                let login = Some(system_login_id);
                 let model =
                     format!("{}{}", NLP_MODEL_NAME_PREFIX, &res.model_version);
                 let model = sigint_inbox_item_tag::ActiveModel {
                     tag_id: Set(tag_id),
                     sigint_inbox_item_id: Set(message_id),
-                    login: Set(login),
+                    login_id: Set(login),
                     model: Set(Some(model)),
                     confidence: Set(confidence),
                     ..Default::default()
@@ -273,7 +274,7 @@ pub async fn process_messages<C: ConnectionTrait>(
                 OnConflict::columns([
                     sigint_inbox_item_tag::Column::SigintInboxItemId,
                     sigint_inbox_item_tag::Column::TagId,
-                    sigint_inbox_item_tag::Column::Login,
+                    sigint_inbox_item_tag::Column::LoginId,
                     sigint_inbox_item_tag::Column::Model,
                 ])
                 .do_nothing()

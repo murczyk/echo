@@ -127,7 +127,7 @@ fn select_callsigns_for_table_type(
 
 pub async fn bl_etalonka_report_networks_data(
     dbx: &DatabaseConnection,
-    user_login: &str,
+    user_login: &uuid::Uuid,
     req: &EtalonkaJimForksReq,
     trace_id: Uuid,
 ) -> Result<EtalonkaData, AppError> {
@@ -151,7 +151,7 @@ pub async fn bl_etalonka_report_networks_data(
 
 pub async fn bl_etalonka_report_networks_batch_id_data(
     dbx: &DatabaseConnection,
-    user_login: &str,
+    user_login: &uuid::Uuid,
     req: &EtalonkaNetworkBatchReq,
     trace_id: Uuid,
 ) -> Result<EtalonkaData, AppError> {
@@ -275,7 +275,7 @@ async fn load_pelengs_maps(
 
 pub async fn collect_etalonka_data(
     dbx: &DatabaseConnection,
-    user_id: &str,
+    user_id: &uuid::Uuid,
     groups: Vec<String>,
     networks_data: BTreeMap<NetworkEtalonkaUnitKey, Vec<NetworkEtalonkaResult>>,
     report_type: &EtalonkaReportType,
@@ -295,7 +295,7 @@ pub async fn collect_etalonka_data(
 
 pub(crate) async fn collect_etalonka_data_with_progress(
     dbx: &DatabaseConnection,
-    user_id: &str,
+    user_id: &uuid::Uuid,
     groups: Vec<String>,
     networks_data: BTreeMap<NetworkEtalonkaUnitKey, Vec<NetworkEtalonkaResult>>,
     report_type: &EtalonkaReportType,
@@ -2053,7 +2053,7 @@ mod tests {
             active: Set(true),
             deleted: Set(false),
             created_at: Set(now),
-            created_by: Set(login.login.clone()),
+            created_by_login_id: Set(login.id),
             name: Set("TestUnit".to_string()),
             comment: Set("".to_string()),
             battalion: Set("B".to_string()),
@@ -2068,7 +2068,7 @@ mod tests {
             location: Set("TestLocation".to_string()),
             deleted: Set(false),
             created_at: Set(now),
-            updated_by: Set(None),
+            updated_by_login_id: Set(None),
             updated_at: Set(now),
             radio_station: Set(None),
             purpose: Set(Some("purpose".to_string())),
@@ -2269,7 +2269,7 @@ mod tests {
 
         let data = bl_etalonka_report_networks_data(
             &env.dbx,
-            &login.login,
+            &login.id,
             &req,
             Uuid::new_v4(),
         )

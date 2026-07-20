@@ -1,4 +1,3 @@
-use crate::config::*;
 use crate::entities::sigint_inbox_item_tag;
 use crate::error::AppError;
 use crate::h;
@@ -10,7 +9,7 @@ use sea_orm::*;
 use std::collections::BTreeSet;
 
 pub async fn upsert_tags(
-    login: &str,
+    login: &uuid::Uuid,
     inbox_item_id: i64,
     inbox_message: &InboxMessage,
     txn: &impl ConnectionTrait,
@@ -59,11 +58,12 @@ pub async fn upsert_tags(
 }
 
 async fn upsert_tag_by_item(
-    login: &str,
+    login: &uuid::Uuid,
     message_id: i64,
     entry: EitherOrBoth<sigint_inbox_item_tag::Model, &InboxMessageTag>,
     txn: &impl ConnectionTrait,
 ) -> Result<(), AppError> {
+    let is_system_login = *login == crate::users::system_login_id(txn).await?;
     match entry {
         EitherOrBoth::Left(tag_to_remove) => {
             remove_tag(login, message_id, txn, tag_to_remove)
@@ -74,25 +74,25 @@ async fn upsert_tag_by_item(
             let mut new_tag = sigint_inbox_item_tag::ActiveModel {
                 tag_id: Set(tag_to_add.tag_id),
                 sigint_inbox_item_id: Set(message_id),
-                login: Set(Some(login.to_owned())),
+                login_id: Set(Some(login.to_owned())),
                 ..Default::default()
             };
-            if login == SYSTEM_LOGIN_NAME {
+            if is_system_login {
                 new_tag.confidence = Set(tag_to_add.confidence);
                 new_tag.model = Set(tag_to_add.model.clone());
             }
             new_tag.insert(txn).await.c(h!())?;
         }
         EitherOrBoth::Both(tag, new_values) => {
-            if login == SYSTEM_LOGIN_NAME {
+            if is_system_login {
                 let mut tag = tag.into_active_model();
                 tag.confidence = Set(new_values.confidence);
                 tag.model = Set(new_values.model.clone());
-                tag.login = Set(Some(login.to_owned()));
+                tag.login_id = Set(Some(*login));
                 tag.update(txn).await.c(h!())?;
             } else if tag.confidence != new_values.confidence {
                 let mut tag = tag.into_active_model();
-                tag.login = Set(Some(login.to_owned()));
+                tag.login_id = Set(Some(*login));
                 tag.confidence = Set(new_values.confidence);
                 tag.update(txn).await.c(h!())?;
             }
@@ -102,7 +102,7 @@ async fn upsert_tag_by_item(
 }
 
 async fn upsert_tag_by_id(
-    login: &str,
+    login: &uuid::Uuid,
     message_id: i64,
     entry: EitherOrBoth<sigint_inbox_item_tag::Model, i64>,
     txn: &impl ConnectionTrait,
@@ -117,7 +117,7 @@ async fn upsert_tag_by_id(
             let new_tag = sigint_inbox_item_tag::ActiveModel {
                 tag_id: Set(tag_to_add),
                 sigint_inbox_item_id: Set(message_id),
-                login: Set(Some(login.to_owned())),
+                login_id: Set(Some(login.to_owned())),
                 ..Default::default()
             };
             new_tag.insert(txn).await.c(h!())?;
@@ -128,7 +128,7 @@ async fn upsert_tag_by_id(
 }
 
 async fn remove_tag(
-    login: &str,
+    login: &uuid::Uuid,
     message_id: i64,
     txn: &impl ConnectionTrait,
     tag_to_remove: sigint_inbox_item_tag::Model,

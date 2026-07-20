@@ -39,7 +39,7 @@ pub async fn list_key_share_policies(
     env: Data<Env>,
     _req: Json<()>,
 ) -> Result<Json<Vec<SigintKeySharePolicy>>, AppError> {
-    let login = user.id().c(h!())?;
+    let login = crate::users::identity_id(&user)?;
     crate::users::has_role(&env.dbx, &login, "Admin")
         .await
         .c(h!())?;
@@ -50,9 +50,23 @@ pub async fn list_key_share_policies(
         .all(&env.dbx)
         .await
         .c(h!())?;
+    let login_names = crate::users::login_names_by_ids(
+        &env.dbx,
+        policies
+            .iter()
+            .map(|policy| policy.author_login_id)
+            .collect(),
+    )
+    .await?;
 
     Ok(Json(
-        policies.into_iter().map(map_policy).collect::<Vec<_>>(),
+        policies
+            .into_iter()
+            .map(|policy| {
+                let author = login_names[&policy.author_login_id].clone();
+                map_policy(policy, author)
+            })
+            .collect::<Vec<_>>(),
     ))
 }
 
@@ -62,7 +76,7 @@ pub async fn create_key_share_policy(
     env: Data<Env>,
     req: Json<CreateSigintKeySharePolicyReq>,
 ) -> Result<Json<SigintKeySharePolicy>, AppError> {
-    let login = user.id().c(h!())?;
+    let login = crate::users::identity_id(&user)?;
     crate::users::has_role(&env.dbx, &login, "Admin")
         .await
         .c(h!())?;
@@ -73,13 +87,15 @@ pub async fn create_key_share_policy(
     let model = sigint_key_share_policy::ActiveModel {
         grant_from: Set(req.grant_from),
         grant_to: Set(req.grant_to),
-        author: Set(login),
+        author_login_id: Set(login),
         deleted: Set(false),
         ..Default::default()
     };
     let policy = model.insert(&env.dbx).await.c(h!())?;
+    let login_names =
+        crate::users::login_names_by_ids(&env.dbx, vec![login]).await?;
 
-    Ok(Json(map_policy(policy)))
+    Ok(Json(map_policy(policy, login_names[&login].clone())))
 }
 
 #[post("/api/sigint/key-share-policy/delete")]
@@ -88,7 +104,7 @@ pub async fn delete_key_share_policy(
     env: Data<Env>,
     req: Json<DeleteSigintKeySharePolicyReq>,
 ) -> Result<Json<()>, AppError> {
-    let login = user.id().c(h!())?;
+    let login = crate::users::identity_id(&user)?;
     crate::users::has_role(&env.dbx, &login, "Admin")
         .await
         .c(h!())?;
@@ -101,7 +117,7 @@ pub async fn delete_key_share_policy(
 
     let mut policy_am = policy.into_active_model();
     policy_am.deleted = Set(true);
-    policy_am.author = Set(login);
+    policy_am.author_login_id = Set(login);
     policy_am.update(&env.dbx).await.c(h!())?;
 
     Ok(Json(()))
@@ -124,12 +140,15 @@ where
     Ok(())
 }
 
-fn map_policy(model: sigint_key_share_policy::Model) -> SigintKeySharePolicy {
+fn map_policy(
+    policy: sigint_key_share_policy::Model,
+    author: String,
+) -> SigintKeySharePolicy {
     SigintKeySharePolicy {
-        id: model.id,
-        grant_from: model.grant_from,
-        grant_to: model.grant_to,
-        author: model.author,
-        created_at: model.created_at.and_utc().timestamp_millis(),
+        id: policy.id,
+        grant_from: policy.grant_from,
+        grant_to: policy.grant_to,
+        author,
+        created_at: policy.created_at.and_utc().timestamp_millis(),
     }
 }

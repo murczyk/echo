@@ -297,9 +297,13 @@ async fn operatyvka_download(
     http_req: HttpRequest,
     req: actix_web::web::Query<OperatyvkaDownloadReq>,
 ) -> Result<actix_web::HttpResponse, AppError> {
-    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Bpla")
-        .await
-        .c(h!())?;
+    crate::users::has_role(
+        &env.dbx,
+        &crate::users::identity_id(&user)?,
+        "Bpla",
+    )
+    .await
+    .c(h!())?;
     let kml = crate::kml::read_myplaces(env.mode)?;
     let style_maps = crate::kml::extract_style_maps(&kml.nodes.clone())?;
     let folders = crate::kml::extract_operatyvka_folders(&kml)?;

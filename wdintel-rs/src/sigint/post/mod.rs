@@ -80,7 +80,7 @@ pub async fn post_list(
 ) -> Result<Json<Vec<Post>>, AppError> {
     crate::users::has_any_role(
         &env.dbx,
-        &user.id().c(h!())?,
+        &crate::users::identity_id(&user)?,
         vec!["Rer", "Api"],
     )
     .await?;
@@ -122,9 +122,13 @@ pub async fn create_post(
     env: actix_web::web::Data<Env>,
     req: Json<CreatePostReq>,
 ) -> Result<Json<Post>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Admin")
-        .await
-        .context(h!())?;
+    crate::users::has_role(
+        &env.dbx,
+        &crate::users::identity_id(&user)?,
+        "Admin",
+    )
+    .await
+    .context(h!())?;
 
     let post = sigint_post::ActiveModel {
         id: NotSet,
@@ -156,9 +160,13 @@ pub async fn update_post(
     env: actix_web::web::Data<Env>,
     req: Json<UpdatePostReq>,
 ) -> Result<Json<Post>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Admin")
-        .await
-        .context(h!())?;
+    crate::users::has_role(
+        &env.dbx,
+        &crate::users::identity_id(&user)?,
+        "Admin",
+    )
+    .await
+    .context(h!())?;
 
     let post_obj = sigint_post::Entity::find()
         .filter(sigint_post::Column::Id.eq(req.id))
@@ -197,9 +205,13 @@ pub async fn delete_post(
     env: actix_web::web::Data<Env>,
     req: Json<DeletePostReq>,
 ) -> Result<Json<()>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Admin")
-        .await
-        .context(h!())?;
+    crate::users::has_role(
+        &env.dbx,
+        &crate::users::identity_id(&user)?,
+        "Admin",
+    )
+    .await
+    .context(h!())?;
 
     let post_obj = sigint_post::Entity::find()
         .filter(sigint_post::Column::Id.eq(req.id))
@@ -220,9 +232,13 @@ pub async fn post_name_search(
     env: actix_web::web::Data<Env>,
     req: Json<PostSearchReq>,
 ) -> Result<Json<PostSearchRsp>, AppError> {
-    crate::users::has_any_role(&env.dbx, &user.id().c(h!())?, vec!["Rer"])
-        .await
-        .c(h!())?;
+    crate::users::has_any_role(
+        &env.dbx,
+        &crate::users::identity_id(&user)?,
+        vec!["Rer"],
+    )
+    .await
+    .c(h!())?;
 
     let search_phrase = req.search.trim();
 

@@ -130,7 +130,7 @@ async fn fix_callsign(
     };
     crate::sigint::callsign::bl_network_callsign::ensure_callsign(
         &req,
-        "system",
+        &crate::users::system_login_id(dbx).await?,
         &txn,
         &network_callsign,
         unit_id,

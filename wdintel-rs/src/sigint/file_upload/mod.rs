@@ -40,7 +40,7 @@ async fn handle_tus(
     request_file: Option<String>,
     payload: web::Payload,
 ) -> Result<HttpResponse, AppError> {
-    let login = user.id().c(h!())?;
+    let login = crate::users::identity_id(&user)?;
     ensure_request_allowed(&login, &env).await.c(h!())?;
 
     tus::TusHandler::new(env.config.storage_dir.clone(), TUS_PATH_BASE)
@@ -55,7 +55,7 @@ async fn handle_tus(
 }
 
 async fn ensure_request_allowed(
-    login: &str,
+    login: &uuid::Uuid,
     env: &Env,
 ) -> Result<(), AppError> {
     crate::users::has_role(&env.dbx, login, "Rer")

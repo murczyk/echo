@@ -34,10 +34,10 @@ pub async fn freq_activity_daily(
     env: actix_web::web::Data<Env>,
     req: Json<FreqStatsReq>,
 ) -> Result<Json<FreqDailyActivityCount>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
+    crate::users::has_role(&env.dbx, &crate::users::identity_id(&user)?, "Rer")
         .await
         .c(h!())?;
-    let login = user.id().c(h!())?;
+    let login = crate::users::identity_id(&user)?;
     let req = req.into_inner();
     let freq = req.freq;
 
@@ -103,7 +103,7 @@ pub async fn freq_activity_daily(
         )
         .filter(login::Column::DeletedPermanently.eq(false))
         .filter(Expr::col((sigint_zone_datasource::Entity, sigint_zone_datasource::Column::GroupMasterKey)).equals((signal_message_group::Entity, signal_message_group::Column::GroupMasterKey)))
-        .filter(login::Column::Login.eq(login))
+        .filter(login::Column::Id.eq(login))
         .filter(sigint_inbox_item::Column::Freq.eq(freq))
         .filter(ts_filter)
         .select_only()
@@ -143,7 +143,7 @@ pub async fn list_alt_unit_by_freqs(
     env: actix_web::web::Data<Env>,
     req: Json<ListAltUnitByFreqsReq>,
 ) -> Result<Json<HashMap<String, Vec<FreqAltUnitMessageCount>>>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
+    crate::users::has_role(&env.dbx, &crate::users::identity_id(&user)?, "Rer")
         .await
         .c(h!())?;
     let dt_since = dt_from_millis(req.since_date_inclusive_ms)?;
@@ -210,7 +210,7 @@ pub async fn list_points_by_freq(
     env: actix_web::web::Data<Env>,
     req: Json<ListPointsByFreqReq>,
 ) -> Result<Json<ListPointsByFreqRsp>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
+    crate::users::has_role(&env.dbx, &crate::users::identity_id(&user)?, "Rer")
         .await
         .c(h!())?;
     let dt_since = dt_from_millis(req.since_date_inclusive_ms)?;
@@ -261,7 +261,7 @@ pub async fn list_groups_by_freqs_per_day(
     req: Json<ListGroupsByFreqsPerDayReq>,
 ) -> Result<Json<HashMap<String, HashMap<i64, HashMap<String, i64>>>>, AppError>
 {
-    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
+    crate::users::has_role(&env.dbx, &crate::users::identity_id(&user)?, "Rer")
         .await
         .c(h!())?;
     let dt_till = dt_from_millis(req.till_date_noninclusive_ms)?;
@@ -393,7 +393,7 @@ pub async fn list_callsigns_by_freqs(
     env: actix_web::web::Data<Env>,
     req: Json<ListCallsignsByFreqsReq>,
 ) -> Result<Json<HashMap<String, Vec<String>>>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
+    crate::users::has_role(&env.dbx, &crate::users::identity_id(&user)?, "Rer")
         .await
         .c(h!())?;
     let dt_since = dt_from_millis(req.since_date_inclusive_ms)?;
@@ -466,11 +466,11 @@ pub async fn list_freqs(
 ) -> Result<Json<ListFreqsRsp>, AppError> {
     crate::users::has_any_role(
         &env.dbx,
-        &user.id().c(h!())?,
+        &crate::users::identity_id(&user)?,
         vec!["Rer", "Api"],
     )
     .await?;
-    let login = user.id().c(h!())?;
+    let login = crate::users::identity_id(&user)?;
     const LIMIT: usize = 30;
     /// Period designating how many days are considered that freq is inactive
     const PERIOD_DAYS: i64 = 14;
@@ -799,8 +799,9 @@ pub async fn list_freqs(
 
         let is_new = !before_res.contains(&freq);
         let network_ids = networks.iter().map(|x| x.id).collect();
-        let last_updated_by =
-            last_updated_network.and_then(|x| x.updated_by.clone());
+        let last_updated_by = last_updated_network
+            .and_then(|x| x.updated_by_login_id)
+            .map(|login_id| login_id.to_string());
         let last_updated_at = last_updated_network
             .map(|x| x.updated_at)
             .map(|t| t.and_utc().timestamp_millis());
@@ -851,11 +852,11 @@ pub async fn list_freqs_v2(
 ) -> Result<Json<ListFreqsV2Rsp>, AppError> {
     crate::users::has_any_role(
         &env.dbx,
-        &user.id().c(h!())?,
+        &crate::users::identity_id(&user)?,
         vec!["Rer", "Api"],
     )
     .await?;
-    let login = user.id().c(h!())?;
+    let login = crate::users::identity_id(&user)?;
     const LIMIT: usize = 30;
     /// Period designating how many days are considered that freq is inactive
     const PERIOD_DAYS: i64 = 14;
@@ -1145,8 +1146,9 @@ pub async fn list_freqs_v2(
 
         let is_new = !before_res.contains(&freq);
         let network_ids = networks.iter().map(|x| x.id).collect();
-        let last_updated_by =
-            last_updated_network.and_then(|x| x.updated_by.clone());
+        let last_updated_by = last_updated_network
+            .and_then(|x| x.updated_by_login_id)
+            .map(|login_id| login_id.to_string());
         let last_updated_at = last_updated_network
             .map(|x| x.updated_at)
             .map(|t| t.and_utc().timestamp_millis());
@@ -1291,10 +1293,10 @@ pub async fn latest_frequencies(
     user: actix_identity::Identity,
     env: actix_web::web::Data<Env>,
 ) -> Result<Json<Vec<String>>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
+    crate::users::has_role(&env.dbx, &crate::users::identity_id(&user)?, "Rer")
         .await
         .c(h!())?;
-    let login = user.id().c(h!())?;
+    let login = crate::users::identity_id(&user)?;
 
     #[derive(FromQueryResult)]
     struct FreqRes {
@@ -1336,7 +1338,7 @@ pub async fn freq_unit_stats(
     user: actix_identity::Identity,
     env: actix_web::web::Data<Env>,
 ) -> Result<Json<FreqUnitStatsRsp>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
+    crate::users::has_role(&env.dbx, &crate::users::identity_id(&user)?, "Rer")
         .await
         .c(h!())?;
 
@@ -1420,7 +1422,7 @@ pub async fn callsigns_for_filter(
     req: Json<CallsignsForFreqReq>,
 ) -> Result<Json<CallsignsForFreqRsp>, AppError> {
     println!("getting filters for callsigns-filter call: {:?}", req.freq);
-    let login = user.id().c(h!())?;
+    let login = crate::users::identity_id(&user)?;
     crate::users::has_role(&env.dbx, &login, "Rer")
         .await
         .c(h!())?;
@@ -1478,10 +1480,10 @@ pub async fn freq_exists(
     env: actix_web::web::Data<Env>,
     req: Json<FreqExistsReq>,
 ) -> Result<Json<()>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
+    crate::users::has_role(&env.dbx, &crate::users::identity_id(&user)?, "Rer")
         .await
         .c(h!())?;
-    let login = user.id().c(h!())?;
+    let login = crate::users::identity_id(&user)?;
 
     let master_keys =
         crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
@@ -1534,11 +1536,11 @@ pub async fn list_freqs_for_period(
 ) -> Result<Json<ListFreqsForPeriodRsp>, AppError> {
     crate::users::has_any_role(
         &env.dbx,
-        &user.id().c(h!())?,
+        &crate::users::identity_id(&user)?,
         vec!["Rer", "Api"],
     )
     .await?;
-    let login = user.id().c(h!())?;
+    let login = crate::users::identity_id(&user)?;
 
     let master_keys =
         crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
@@ -1584,9 +1586,13 @@ pub async fn freq_search(
     env: actix_web::web::Data<Env>,
     req: Json<FreqSearchReq>,
 ) -> Result<Json<FreqSearchRsp>, AppError> {
-    crate::users::has_any_role(&env.dbx, &user.id().c(h!())?, vec!["Rer"])
-        .await
-        .c(h!())?;
+    crate::users::has_any_role(
+        &env.dbx,
+        &crate::users::identity_id(&user)?,
+        vec!["Rer"],
+    )
+    .await
+    .c(h!())?;
 
     let search_phrase = req.search.trim().to_lowercase();
 

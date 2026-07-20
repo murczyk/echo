@@ -75,7 +75,7 @@ async fn convert_alpinequest_file(
     mut payload: Multipart,
 ) -> Result<Json<i64>, AppError> {
     info!("convert_alpinequest_file started");
-    let login = user.id().c(h!())?;
+    let login = crate::users::identity_id(&user)?;
     crate::users::has_role(&env.dbx, &login, "Rer")
         .await
         .c(h!())?;
@@ -157,7 +157,7 @@ async fn download_alpine_result(
     env: actix_web::web::Data<Env>,
     req: Json<AlpineDownloadResultReq>,
 ) -> Result<HttpResponse, AppError> {
-    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
+    crate::users::has_role(&env.dbx, &crate::users::identity_id(&user)?, "Rer")
         .await
         .c(h!())?;
     let res = bgtask_res::Entity::find_by_id(req.bgtask_id)

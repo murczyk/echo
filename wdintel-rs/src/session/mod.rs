@@ -72,7 +72,7 @@ fn enqueue_session_activity(
 }
 
 pub async fn record_new_session(
-    user_id: &str,
+    user_id: &uuid::Uuid,
     session_id: Uuid,
     env: &actix_web::web::Data<Env>,
 ) -> anyhow::Result<()> {
@@ -91,7 +91,7 @@ pub async fn record_new_session(
 }
 
 pub async fn record_page_visit(
-    user_id: &str,
+    user_id: &uuid::Uuid,
     page: &Option<String>,
     env: &actix_web::web::Data<Env>,
     payload: Option<serde_json::Value>,
@@ -414,7 +414,7 @@ pub async fn get_all_sessions(
 pub async fn add_session(
     redis: &mut ConnectionManager,
     session_id: Uuid,
-    account_id: &str,
+    account_id: &Uuid,
 ) -> Result<RedisSession, AppError> {
     let _res: redis::Value = redis
         .sadd::<&str, String, redis::Value>(
@@ -445,10 +445,10 @@ pub async fn add_session(
 pub async fn update_heartbeat(
     redis: &mut ConnectionManager,
     mut session: RedisSession,
-    account_id: &str,
+    account_id: &Uuid,
 ) -> Result<RedisSession, AppError> {
     session.heartbeat_at = Utc::now().naive_utc();
-    session.account_id = account_id.to_owned();
+    session.account_id = account_id.to_string();
 
     let key = crate::event_stream::get_sess_key(session.session_id);
     let _res: () = redis.set(key.clone(), &session).await.c(h!())?;

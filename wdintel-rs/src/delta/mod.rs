@@ -339,9 +339,13 @@ async fn download_geojson(
     env: actix_web::web::Data<Env>,
     req: Json<crate::importer::DownloadKmzReq>,
 ) -> Result<Json<GeoJson>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Basic")
-        .await
-        .c(h!())?;
+    crate::users::has_role(
+        &env.dbx,
+        &crate::users::identity_id(&user)?,
+        "Basic",
+    )
+    .await
+    .c(h!())?;
     let mut features = vec![];
     let now = Utc::now();
     for row in req.rows.iter() {
@@ -384,9 +388,13 @@ async fn radios_convert(
     env: actix_web::web::Data<Env>,
     mut payload: Multipart,
 ) -> Result<Json<i64>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Basic")
-        .await
-        .c(h!())?;
+    crate::users::has_role(
+        &env.dbx,
+        &crate::users::identity_id(&user)?,
+        "Basic",
+    )
+    .await
+    .c(h!())?;
     let (field, val) = multipart::extract(&mut payload).await.c(h!())?;
     let tmp_dir = TempDir::new()?;
     println!("> tmp_dir {}", &tmp_dir.path().display());
@@ -579,9 +587,13 @@ pub async fn radios_download_result_per_radio(
     env: actix_web::web::Data<Env>,
     req: Json<RadiosDownloadResultReq>,
 ) -> Result<HttpResponse, AppError> {
-    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Basic")
-        .await
-        .c(h!())?;
+    crate::users::has_role(
+        &env.dbx,
+        &crate::users::identity_id(&user)?,
+        "Basic",
+    )
+    .await
+    .c(h!())?;
     if let Some(keys) =
         load_radios_output_keys(env.as_ref(), req.bgtask_id).await?
     {
@@ -620,9 +632,13 @@ pub async fn radios_download_result_per_date(
     env: actix_web::web::Data<Env>,
     req: Json<RadiosDownloadResultReq>,
 ) -> Result<HttpResponse, AppError> {
-    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Basic")
-        .await
-        .c(h!())?;
+    crate::users::has_role(
+        &env.dbx,
+        &crate::users::identity_id(&user)?,
+        "Basic",
+    )
+    .await
+    .c(h!())?;
     if let Some(keys) =
         load_radios_output_keys(env.as_ref(), req.bgtask_id).await?
     {
@@ -661,9 +677,13 @@ pub async fn radios_download_result_csv(
     env: actix_web::web::Data<Env>,
     req: Json<RadiosDownloadResultReq>,
 ) -> Result<HttpResponse, AppError> {
-    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Basic")
-        .await
-        .c(h!())?;
+    crate::users::has_role(
+        &env.dbx,
+        &crate::users::identity_id(&user)?,
+        "Basic",
+    )
+    .await
+    .c(h!())?;
     let page_part = match req.csv_page {
         None => "".to_string(),
         Some(page) => format!("-page-{page}"),
@@ -790,9 +810,13 @@ pub async fn get_geojson(
     user: actix_identity::Identity,
     env: actix_web::web::Data<Env>,
 ) -> Result<Json<GeoJson>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Basic")
-        .await
-        .c(h!())?;
+    crate::users::has_role(
+        &env.dbx,
+        &crate::users::identity_id(&user)?,
+        "Basic",
+    )
+    .await
+    .c(h!())?;
 
     let geojson = EnemyUnitsGeojson::find()
         .filter(
@@ -826,9 +850,13 @@ pub async fn get_kml(
     http_req: HttpRequest,
     env: actix_web::web::Data<Env>,
 ) -> Result<HttpResponse, AppError> {
-    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Basic")
-        .await
-        .c(h!())?;
+    crate::users::has_role(
+        &env.dbx,
+        &crate::users::identity_id(&user)?,
+        "Basic",
+    )
+    .await
+    .c(h!())?;
     match EnemyUnitsGeojson::find()
         .filter(
             enemy_units_geojson::Column::Status
@@ -878,7 +906,7 @@ pub async fn import_map(
     env: actix_web::web::Data<Env>,
     mut payload: Multipart,
 ) -> Result<Json<i64>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
+    crate::users::has_role(&env.dbx, &crate::users::identity_id(&user)?, "Rer")
         .await
         .c(h!())?;
     let (field, val) = multipart::extract(&mut payload).await.c(h!())?;
@@ -889,7 +917,7 @@ pub async fn import_map(
         geojson_s3_id: Set(None),
         kml_s3_id: Set(None),
         created_at: Set(Utc::now().naive_utc()),
-        created_by: Set(user.id().c(h!())?),
+        created_by_login_id: Set(crate::users::identity_id(&user)?),
     }
     .insert(&env.dbx)
     .await
@@ -1121,9 +1149,13 @@ async fn bgtask_get_status_and_logs(
     bgtask_id: actix_web::web::Path<(i64,)>,
     q: actix_web::web::Query<BgtaskStatusAndLogsQuery>,
 ) -> Result<Json<BgtaskStatusAndLogsRsp>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Basic")
-        .await
-        .c(h!())?;
+    crate::users::has_role(
+        &env.dbx,
+        &crate::users::identity_id(&user)?,
+        "Basic",
+    )
+    .await
+    .c(h!())?;
     match Bgtask::find()
         .filter(bgtask::Column::Id.eq(bgtask_id.0))
         .one(&env.dbx)
@@ -1185,9 +1217,13 @@ pub async fn kmz_to_geojson(
     env: actix_web::web::Data<Env>,
     mut payload: Multipart,
 ) -> Result<actix_web::HttpResponse, AppError> {
-    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Basic")
-        .await
-        .c(h!())?;
+    crate::users::has_role(
+        &env.dbx,
+        &crate::users::identity_id(&user)?,
+        "Basic",
+    )
+    .await
+    .c(h!())?;
     let (field, val) = multipart::extract(&mut payload).await.c(h!())?;
     let filename = field.name().c(h!())?;
     let tmp_dir = TempDir::new()?;
@@ -1745,9 +1781,13 @@ async fn download_layer_result(
     env: actix_web::web::Data<Env>,
     req: Json<DownloadLayerResultReq>,
 ) -> Result<HttpResponse, AppError> {
-    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Bpla")
-        .await
-        .c(h!())?;
+    crate::users::has_role(
+        &env.dbx,
+        &crate::users::identity_id(&user)?,
+        "Bpla",
+    )
+    .await
+    .c(h!())?;
     let bgtask_res = BgtaskRes::find_by_id(req.bgtask_id)
         .one(&env.dbx)
         .await

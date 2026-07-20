@@ -18,9 +18,13 @@ pub async fn list_datasources(
     env: actix_web::web::Data<Env>,
     user: actix_identity::Identity,
 ) -> Result<Json<Vec<(i64, Datasource)>>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Basic")
-        .await
-        .c(h!())?;
+    crate::users::has_role(
+        &env.dbx,
+        &crate::users::identity_id(&user)?,
+        "Basic",
+    )
+    .await
+    .c(h!())?;
     let datasources = datasource::Entity::find()
         // .filter(datasource::Column::Enabled.eq(true))
         .all(&env.dbx)
@@ -47,13 +51,20 @@ pub async fn datasource_group_list(
     user: actix_identity::Identity,
     req: Json<i64>,
 ) -> Result<Json<Vec<String>>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Basic")
-        .await
-        .c(h!())?;
-    let is_admin =
-        crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Admin")
-            .await
-            .is_ok();
+    crate::users::has_role(
+        &env.dbx,
+        &crate::users::identity_id(&user)?,
+        "Basic",
+    )
+    .await
+    .c(h!())?;
+    let is_admin = crate::users::has_role(
+        &env.dbx,
+        &crate::users::identity_id(&user)?,
+        "Admin",
+    )
+    .await
+    .is_ok();
     let datasource_id: i64 = req.into_inner();
     let datasource = datasource::Entity::find_by_id(datasource_id)
         .one(&env.dbx)
@@ -84,7 +95,7 @@ pub async fn datasource_group_list(
                 datasource_group::Column::GroupMasterKey.eq_any(
                     crate::messenger::group::get_identity_sigint_groups(
                         &env.dbx,
-                        &user.id().c(h!())?,
+                        &crate::users::identity_id(&user)?,
                     )
                     .await
                     .c(h!())?,

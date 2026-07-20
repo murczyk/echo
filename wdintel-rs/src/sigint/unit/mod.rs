@@ -63,7 +63,7 @@ pub async fn list_units(
 ) -> Result<Json<ListUnitsRsp>, AppError> {
     crate::users::has_any_role(
         &env.dbx,
-        &user.id().c(h!())?,
+        &crate::users::identity_id(&user)?,
         vec!["Rer", "Api"],
     )
     .await
@@ -164,7 +164,7 @@ pub async fn list_units_by_id(
 ) -> Result<Json<ListUnitsByIdRsp>, AppError> {
     crate::users::has_any_role(
         &env.dbx,
-        &user.id().c(h!())?,
+        &crate::users::identity_id(&user)?,
         vec!["Rer", "Api"],
     )
     .await
@@ -189,7 +189,7 @@ pub async fn create_unit(
     env: actix_web::web::Data<Env>,
     req: Json<CreateUnitReq>,
 ) -> Result<Json<Unit>, AppError> {
-    let login = user.id().c(h!())?.to_string();
+    let login = crate::users::identity_id(&user)?;
     crate::users::has_role(&env.dbx, &login, "Rer")
         .await
         .c(h!())?;
@@ -211,7 +211,7 @@ pub async fn create_unit_with_auto_network(
     env: actix_web::web::Data<Env>,
     req: Json<CreateUnitWithAutoNetworkReq>,
 ) -> Result<Json<CreateUnitWithAutoNetworkRsp>, AppError> {
-    let login = user.id().c(h!())?.to_string();
+    let login = crate::users::identity_id(&user)?;
     crate::users::has_role(&env.dbx, &login, "Rer")
         .await
         .c(h!())?;
@@ -227,7 +227,7 @@ pub async fn create_unit_with_auto_network(
 }
 
 pub async fn create_unit_with_auto_network_for_login(
-    login: &str,
+    login: &uuid::Uuid,
     env: &Env,
     req: CreateUnitWithAutoNetworkReq,
 ) -> Result<CreateUnitWithAutoNetworkRsp, AppError> {
@@ -287,7 +287,7 @@ pub async fn create_unit_with_auto_network_for_login(
 
 async fn insert_unit_with_changelog<'a, 'async_trait, C>(
     dbx: &'a C,
-    login: &str,
+    login: &uuid::Uuid,
     req: &CreateUnitReq,
 ) -> Result<sigint_unit::Model, AppError>
 where
@@ -302,7 +302,7 @@ where
         army: Set(req.army.clone()),
         active: Set(req.active),
         created_at: NotSet,
-        created_by: Set(login.to_string()),
+        created_by_login_id: Set(*login),
         comment: Set(req.comment.clone()),
         name: Set(unit_name_req(req)),
         deleted: Set(false),
@@ -322,7 +322,7 @@ where
     let _changelog = sigint_unit_changelog::ActiveModel {
         id: NotSet,
         sigint_unit_id: Set(unit.id),
-        login: Set(login.to_string()),
+        login_id: Set(*login),
         action: Set("create".to_string()),
         created_at: NotSet,
         new_value: Set(Some(unit_json)),
@@ -339,7 +339,7 @@ where
 
 async fn insert_auto_cyber_network<'a, 'async_trait, C>(
     txn: &'a C,
-    login: &str,
+    login: &uuid::Uuid,
     req: &CreateUnitWithAutoNetworkReq,
     unit_id: i64,
     locations: Vec<String>,
@@ -356,7 +356,7 @@ where
         location: Set(locations.join(", ")),
         deleted: Set(false),
         created_at: NotSet,
-        updated_by: Set(Some(login.to_string())),
+        updated_by_login_id: Set(Some(*login)),
         updated_at: NotSet,
         radio_station: Set(None),
         purpose: Set(None),
@@ -384,7 +384,7 @@ where
     sigint_network_changelog::ActiveModel {
         id: NotSet,
         sigint_network_id: Set(network.id),
-        login: Set(login.to_string()),
+        login_id: Set(*login),
         action: Set(ChangelogActionEnum::Create),
         created_at: NotSet,
         new_value: Set(Some(network_json)),
@@ -461,12 +461,16 @@ pub async fn update_unit(
     env: actix_web::web::Data<Env>,
     req: Json<Unit>,
 ) -> Result<Json<Unit>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
+    crate::users::has_role(&env.dbx, &crate::users::identity_id(&user)?, "Rer")
         .await
         .c(h!())?;
-    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "UnitsEditor")
-        .await
-        .c(h!())?;
+    crate::users::has_role(
+        &env.dbx,
+        &crate::users::identity_id(&user)?,
+        "UnitsEditor",
+    )
+    .await
+    .c(h!())?;
     let unit = find_unit(&env.dbx, req.id).await.context(h!())?;
     let unit_json_old = sigint_unit::Entity::find_by_id(req.id)
         .into_json()
@@ -493,7 +497,7 @@ pub async fn update_unit(
     let _changelog = sigint_unit_changelog::ActiveModel {
         id: NotSet,
         sigint_unit_id: Set(req.id),
-        login: Set(user.id().c(h!())?.to_string()),
+        login_id: Set(crate::users::identity_id(&user)?),
         action: Set("update".to_string()),
         created_at: NotSet,
         new_value: Set(Some(unit_json_new)),
@@ -520,12 +524,16 @@ pub async fn delete_unit(
     env: actix_web::web::Data<Env>,
     req: Json<i64>,
 ) -> Result<Json<Unit>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
+    crate::users::has_role(&env.dbx, &crate::users::identity_id(&user)?, "Rer")
         .await
         .c(h!())?;
-    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "UnitsEditor")
-        .await
-        .c(h!())?;
+    crate::users::has_role(
+        &env.dbx,
+        &crate::users::identity_id(&user)?,
+        "UnitsEditor",
+    )
+    .await
+    .c(h!())?;
     let unit = find_unit(&env.dbx, req.into_inner()).await.context(h!())?;
     let unit_json_old = sigint_unit::Entity::find_by_id(unit.id)
         .into_json()
@@ -545,7 +553,7 @@ pub async fn delete_unit(
     let _changelog = sigint_unit_changelog::ActiveModel {
         id: NotSet,
         sigint_unit_id: Set(unit.id),
-        login: Set(user.id().c(h!())?.to_string()),
+        login_id: Set(crate::users::identity_id(&user)?),
         action: Set("delete".to_string()),
         created_at: NotSet,
         new_value: Set(Some(unit_json_new)),
@@ -568,14 +576,18 @@ pub async fn delete_unit_duplicate(
     env: actix_web::web::Data<Env>,
     req: Json<DeleteUnitDuplicateReq>,
 ) -> Result<Json<Unit>, AppError> {
-    let login = user.id().c(h!())?.to_string();
+    let login = crate::users::identity_id(&user)?;
     let dbx = &env.dbx;
-    crate::users::has_role(dbx, &user.id().c(h!())?, "Rer")
+    crate::users::has_role(dbx, &crate::users::identity_id(&user)?, "Rer")
         .await
         .c(h!())?;
-    crate::users::has_role(dbx, &user.id().c(h!())?, "UnitsEditor")
-        .await
-        .c(h!())?;
+    crate::users::has_role(
+        dbx,
+        &crate::users::identity_id(&user)?,
+        "UnitsEditor",
+    )
+    .await
+    .c(h!())?;
     let req: DeleteUnitDuplicateReq = req.into_inner();
     let unit_to_delete_id = req.clone_to_delete_id;
     let original_id = req.original_id;
@@ -591,7 +603,7 @@ pub async fn delete_unit_duplicate(
 }
 
 pub async fn merge_units(
-    login: String,
+    login: uuid::Uuid,
     dbx: &DatabaseConnection,
     unit_to_delete_id: i64,
     original_id: i64,
@@ -603,7 +615,7 @@ pub async fn merge_units(
         .await
         .context(h!())?;
 
-    swap_units(unit_to_delete_id, original_id, login.clone(), dbx)
+    swap_units(unit_to_delete_id, original_id, login, dbx)
         .await
         .context(h!())?;
 
@@ -627,7 +639,7 @@ pub async fn merge_units(
     let _changelog = sigint_unit_changelog::ActiveModel {
         id: NotSet,
         sigint_unit_id: Set(unit_to_delete_id),
-        login: Set(login),
+        login_id: Set(login),
         action: Set("delete_duplicate".to_string()),
         created_at: NotSet,
         new_value: Set(Some(unit_json_new)),
@@ -664,14 +676,14 @@ pub fn render_unit(unit: &sigint_unit::Model) -> Result<Unit, AppError> {
         comment: unit.comment.clone(),
         name: unit.name.clone(),
         created_at: unit.created_at.and_utc().timestamp_millis(),
-        created_by: unit.created_by.clone(),
+        created_by_login_id: unit.created_by_login_id.to_string(),
     })
 }
 
 async fn swap_units(
     old_unit_id: i64,
     new_unit_id: i64,
-    login: String,
+    login: uuid::Uuid,
     dbx: &DatabaseConnection,
 ) -> anyhow::Result<()> {
     let callsigns = sigint_callsign::Entity::find()
@@ -699,7 +711,7 @@ async fn swap_units(
         sigint_callsign_changelog::ActiveModel {
             id: NotSet,
             sigint_callsign_id: Set(id),
-            login: Set(login.clone()),
+            login_id: Set(login),
             action: Set("update".to_string()),
             created_at: NotSet,
             new_value: Set(Some(json_new)),
@@ -738,7 +750,7 @@ async fn swap_units(
         sigint_signal_changelog::ActiveModel {
             id: NotSet,
             sigint_signal_id: Set(id),
-            login: Set(login.clone()),
+            login_id: Set(login),
             action: Set(
                 sea_orm_active_enums::SigintSignalChangelogActionEnum::Update,
             ),
@@ -779,7 +791,7 @@ async fn swap_units(
         sigint_network_unit_changelog::ActiveModel {
             id: NotSet,
             sigint_network_unit_id: Set(id),
-            login: Set(login.clone()),
+            login_id: Set(login),
             action: Set("update".to_string()),
             created_at: NotSet,
             new_value: Set(Some(json_new)),
@@ -821,11 +833,6 @@ async fn update_original_unit(
     }
     if unit_original.comment.is_empty() && !unit_to_merge.comment.is_empty() {
         unit.comment = Set(unit_to_merge.comment.clone());
-    }
-    if unit_original.created_by.is_empty()
-        && !unit_to_merge.created_by.is_empty()
-    {
-        unit.created_by = Set(unit_to_merge.created_by.clone());
     }
     if unit_original.deleted && !unit_to_merge.deleted {
         unit.deleted = Set(false);
@@ -912,9 +919,13 @@ pub async fn units_search(
     env: actix_web::web::Data<Env>,
     req: Json<UnitSearchReq>,
 ) -> Result<Json<ListUnitsByIdRsp>, AppError> {
-    crate::users::has_any_role(&env.dbx, &user.id().c(h!())?, vec!["Rer"])
-        .await
-        .c(h!())?;
+    crate::users::has_any_role(
+        &env.dbx,
+        &crate::users::identity_id(&user)?,
+        vec!["Rer"],
+    )
+    .await
+    .c(h!())?;
 
     let search_phrase = req.search.trim();
     let mut q = sigint_unit::Entity::find()
@@ -962,6 +973,12 @@ mod tests {
 
     const TEST_LOGIN: &str = "Tester";
 
+    async fn test_login_id(env: &Env) -> uuid::Uuid {
+        crate::users::login_id_by_name(&env.dbx, TEST_LOGIN)
+            .await
+            .unwrap()
+    }
+
     fn unit_req() -> CreateUnitReq {
         CreateUnitReq {
             company: "2 шр".to_string(),
@@ -994,7 +1011,7 @@ mod tests {
             rer_analysis_units_exact_match_only_default: Set(false),
             created_at: Set(now),
             updated_at: Set(now),
-            updated_by: Set(None),
+            updated_by_login_id: Set(None),
             deleted: Set(false),
             rer_duty_test_enabled: Set(false),
             rer_duty_test_since_ms: Set(0),
@@ -1035,9 +1052,10 @@ mod tests {
     #[serial]
     async fn create_unit_with_auto_network_rejects_when_setting_missing() {
         let env = cleanup().await.unwrap();
+        let login_id = test_login_id(&env).await;
 
         let err = create_unit_with_auto_network_for_login(
-            TEST_LOGIN,
+            &login_id,
             &env,
             auto_req(false, vec!["Роботине"], vec!["2 шр"]),
         )
@@ -1052,9 +1070,10 @@ mod tests {
     async fn create_unit_with_auto_network_rejects_when_setting_disabled() {
         let env = cleanup().await.unwrap();
         insert_settings(&env.dbx, false).await;
+        let login_id = test_login_id(&env).await;
 
         let err = create_unit_with_auto_network_for_login(
-            TEST_LOGIN,
+            &login_id,
             &env,
             auto_req(false, vec!["Роботине"], vec!["2 шр"]),
         )
@@ -1069,9 +1088,10 @@ mod tests {
     async fn create_unit_with_auto_network_can_skip_network_creation() {
         let env = cleanup().await.unwrap();
         insert_settings(&env.dbx, true).await;
+        let login_id = test_login_id(&env).await;
 
         let rsp = create_unit_with_auto_network_for_login(
-            TEST_LOGIN,
+            &login_id,
             &env,
             auto_req(true, vec![], vec![]),
         )
@@ -1089,9 +1109,10 @@ mod tests {
     async fn create_unit_with_auto_network_rejects_missing_locations() {
         let env = cleanup().await.unwrap();
         insert_settings(&env.dbx, true).await;
+        let login_id = test_login_id(&env).await;
 
         let err = create_unit_with_auto_network_for_login(
-            TEST_LOGIN,
+            &login_id,
             &env,
             auto_req(false, vec![" ", ","], vec!["2 шр"]),
         )
@@ -1108,9 +1129,10 @@ mod tests {
     async fn create_unit_with_auto_network_persists_network_details() {
         let env = cleanup().await.unwrap();
         insert_settings(&env.dbx, true).await;
+        let login_id = test_login_id(&env).await;
 
         let rsp = create_unit_with_auto_network_for_login(
-            TEST_LOGIN,
+            &login_id,
             &env,
             auto_req(
                 false,

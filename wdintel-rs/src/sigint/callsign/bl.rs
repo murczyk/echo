@@ -126,7 +126,7 @@ fn validate_update_callsign_req(
 
 pub async fn bl_callsign_create(
     req: &CreateCallsignReq,
-    user_id: &str,
+    user_id: &uuid::Uuid,
     txn: &DatabaseTransaction,
 ) -> Result<sigint_callsign::Model, AppError> {
     validate_create_callsign_req(req)?;
@@ -169,7 +169,7 @@ pub async fn bl_callsign_create(
         sigint_origin_id: NotSet,
         id: NotSet,
         sigint_callsign_id: Set(callsign.id),
-        login: Set(user_id.to_string()),
+        login_id: Set(*user_id),
         action: Set("create".to_string()),
         created_at: NotSet,
         new_value: Set(Some(callsign_json)),
@@ -186,7 +186,7 @@ pub async fn bl_callsign_create(
 
 pub async fn bl_callsign_update(
     req: &UpdateCallsignReq,
-    user_id: &str,
+    user_id: &uuid::Uuid,
     txn: &DatabaseTransaction,
 ) -> Result<sigint_callsign::Model, AppError> {
     let callsign = find_callsign(txn, req.id).await.context(h!())?;
@@ -227,7 +227,7 @@ pub async fn bl_callsign_update(
     let _changelog = sigint_callsign_changelog::ActiveModel {
         id: NotSet,
         sigint_callsign_id: Set(callsign.id),
-        login: Set(user_id.to_string()),
+        login_id: Set(*user_id),
         action: Set("update".to_string()),
         created_at: NotSet,
         new_value: Set(Some(callsign_json_new)),

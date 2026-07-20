@@ -82,7 +82,7 @@ pub enum ReportHistoryRequest {
 pub struct ReportHistoryRow {
     pub id: i64,
     pub report_kind: String,
-    pub requested_by: String,
+    pub requested_by_login_id: String,
     pub created_at: String,
     pub started_at: Option<String>,
     pub planned_for_ts: Option<String>,
@@ -186,22 +186,22 @@ struct ReportHistoryQueueMetaRow {
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct ReportHistoryQueueScope {
     report_kind: String,
-    requested_by: Option<String>,
+    requested_by_login_id: Option<String>,
 }
 
 fn report_history_queue_scope(
     report_kind: &str,
-    requested_by: &str,
+    requested_by_login_id: &uuid::Uuid,
 ) -> ReportHistoryQueueScope {
     if report_kind == KIND_ETALONKA {
         ReportHistoryQueueScope {
             report_kind: report_kind.to_string(),
-            requested_by: Some(requested_by.to_string()),
+            requested_by_login_id: Some(requested_by_login_id.to_string()),
         }
     } else {
         ReportHistoryQueueScope {
             report_kind: report_kind.to_string(),
-            requested_by: None,
+            requested_by_login_id: None,
         }
     }
 }
@@ -216,7 +216,7 @@ fn report_history_queue_scope_for_row(
     }
     Some(report_history_queue_scope(
         &report_history.report_kind,
-        &report_history.requested_by,
+        &report_history.requested_by_login_id,
     ))
 }
 
@@ -347,7 +347,7 @@ fn to_report_history_row(
     ReportHistoryRow {
         id: report_history.id,
         report_kind: report_history.report_kind,
-        requested_by: report_history.requested_by,
+        requested_by_login_id: report_history.requested_by_login_id.to_string(),
         created_at: report_history.created_at.to_string(),
         started_at: report_history
             .started_at
@@ -415,7 +415,7 @@ async fn report_history_queue_meta(
 
     let mut sql = String::from(
         r#"
-        with input_rows(id, report_kind, requested_by, status, queued_for, created_at) as (
+        with input_rows(id, report_kind, requested_by_login_id, status, queued_for, created_at) as (
             values
 "#,
     );
@@ -437,7 +437,7 @@ async fn report_history_queue_meta(
         ));
         values.push(report_history.id.into());
         values.push(scope.report_kind.clone().into());
-        values.push(scope.requested_by.clone().into());
+        values.push(scope.requested_by_login_id.clone().into());
         values.push(report_history.status.clone().into());
         values.push((*queued_for).into());
         values.push(report_history.created_at.into());
@@ -453,12 +453,12 @@ async fn report_history_queue_meta(
                 where other.status in ('planned', 'in_progress')
                   and (
                       (
-                          i.requested_by is not null
+                          i.requested_by_login_id is not null
                           and other.report_kind = i.report_kind
-                          and other.requested_by = i.requested_by
+                          and other.requested_by_login_id = i.requested_by_login_id
                       )
                       or (
-                          i.requested_by is null
+                          i.requested_by_login_id is null
                           and other.report_kind = i.report_kind
                       )
                   )
@@ -486,12 +486,12 @@ async fn report_history_queue_meta(
                 where other.status in ('planned', 'in_progress')
                   and (
                       (
-                          i.requested_by is not null
+                          i.requested_by_login_id is not null
                           and other.report_kind = i.report_kind
-                          and other.requested_by = i.requested_by
+                          and other.requested_by_login_id = i.requested_by_login_id
                       )
                       or (
-                          i.requested_by is null
+                          i.requested_by_login_id is null
                           and other.report_kind = i.report_kind
                       )
                   )
@@ -531,12 +531,12 @@ async fn report_history_queue_meta(
                 where other.status in ('planned', 'in_progress')
                   and (
                       (
-                          i.requested_by is not null
+                          i.requested_by_login_id is not null
                           and other.report_kind = i.report_kind
-                          and other.requested_by = i.requested_by
+                          and other.requested_by_login_id = i.requested_by_login_id
                       )
                       or (
-                          i.requested_by is null
+                          i.requested_by_login_id is null
                           and other.report_kind = i.report_kind
                       )
                   )
@@ -576,12 +576,12 @@ async fn report_history_queue_meta(
                 where other.status in ('planned', 'in_progress')
                   and (
                       (
-                          i.requested_by is not null
+                          i.requested_by_login_id is not null
                           and other.report_kind = i.report_kind
-                          and other.requested_by = i.requested_by
+                          and other.requested_by_login_id = i.requested_by_login_id
                       )
                       or (
-                          i.requested_by is null
+                          i.requested_by_login_id is null
                           and other.report_kind = i.report_kind
                       )
                   )
@@ -1022,9 +1022,10 @@ fn report_history_column_filter_condition(
         "reportKind" => {
             report_history_text_condition("report_history.report_kind", values)
         }
-        "requestedBy" => {
-            report_history_text_condition("report_history.requested_by", values)
-        }
+        "requestedBy" => report_history_text_condition(
+            "report_history.requested_by_login_id",
+            values,
+        ),
         "createdAt" => report_history_text_condition(
             "report_history.created_at::text",
             values,
@@ -1065,7 +1066,7 @@ fn report_history_global_filter_condition(value: &str) -> Option<Condition> {
                 value,
             ))
             .add(report_history_like_expr(
-                "report_history.requested_by",
+                "report_history.requested_by_login_id",
                 value,
             ))
             .add(report_history_like_expr(
@@ -1116,7 +1117,7 @@ fn report_history_sort_column(id: &str) -> Option<report_history::Column> {
     match id {
         "id" => Some(report_history::Column::Id),
         "reportKind" => Some(report_history::Column::ReportKind),
-        "requestedBy" => Some(report_history::Column::RequestedBy),
+        "requestedBy" => Some(report_history::Column::RequestedByLoginId),
         "createdAt" => Some(report_history::Column::CreatedAt),
         "status" => Some(report_history::Column::Status),
         "completedAt" => Some(report_history::Column::CompletedAt),
@@ -1194,14 +1195,19 @@ async fn read_and_remove_generated_report_file(
 
 pub async fn record_failed_report_nofail(
     env: &Env,
-    requested_by: &str,
+    requested_by_login_id: &uuid::Uuid,
     report_kind: &str,
     request: ReportHistoryRequest,
     err_msg: String,
 ) {
-    if let Err(err) =
-        record_failed_report(env, requested_by, report_kind, request, err_msg)
-            .await
+    if let Err(err) = record_failed_report(
+        env,
+        requested_by_login_id,
+        report_kind,
+        request,
+        err_msg,
+    )
+    .await
     {
         error!("failed to record failed report history row: {err:?}");
     }
@@ -1209,7 +1215,7 @@ pub async fn record_failed_report_nofail(
 
 async fn record_failed_report(
     env: &Env,
-    requested_by: &str,
+    requested_by_login_id: &uuid::Uuid,
     report_kind: &str,
     request: ReportHistoryRequest,
     err_msg: String,
@@ -1218,7 +1224,7 @@ async fn record_failed_report(
     Ok(report_history::ActiveModel {
         id: NotSet,
         report_kind: Set(report_kind.to_string()),
-        requested_by: Set(requested_by.to_string()),
+        requested_by_login_id: Set(*requested_by_login_id),
         request: Set(serde_json::to_value(request).c(h!())?),
         created_at: Set(now),
         status: Set(STATUS_FAILED.to_string()),
@@ -1242,7 +1248,7 @@ async fn record_failed_report(
 
 pub async fn enqueue_report(
     dbx: &DatabaseConnection,
-    requested_by: &str,
+    requested_by_login_id: &uuid::Uuid,
     report_kind: &str,
     request: ReportHistoryRequest,
     file_name: Option<String>,
@@ -1251,7 +1257,7 @@ pub async fn enqueue_report(
     Ok(report_history::ActiveModel {
         id: NotSet,
         report_kind: Set(report_kind.to_string()),
-        requested_by: Set(requested_by.to_string()),
+        requested_by_login_id: Set(*requested_by_login_id),
         request: Set(serde_json::to_value(request).c(h!())?),
         created_at: Set(Utc::now().naive_utc()),
         status: Set(STATUS_PLANNED.to_string()),
@@ -1275,7 +1281,7 @@ pub async fn enqueue_report(
 
 pub async fn record_completed_report_nofail(
     env: &Env,
-    requested_by: &str,
+    requested_by_login_id: &uuid::Uuid,
     report_kind: &str,
     request: ReportHistoryRequest,
     file_name: String,
@@ -1284,7 +1290,7 @@ pub async fn record_completed_report_nofail(
 ) {
     if let Err(err) = record_completed_report(
         env,
-        requested_by,
+        requested_by_login_id,
         report_kind,
         request,
         file_name,
@@ -1299,7 +1305,7 @@ pub async fn record_completed_report_nofail(
 
 async fn record_completed_report(
     env: &Env,
-    requested_by: &str,
+    requested_by_login_id: &uuid::Uuid,
     report_kind: &str,
     request: ReportHistoryRequest,
     file_name: String,
@@ -1327,7 +1333,7 @@ async fn record_completed_report(
     };
     insert_completed_report_row(
         env,
-        requested_by,
+        requested_by_login_id,
         report_kind,
         request,
         generated.file_name,
@@ -1342,7 +1348,7 @@ async fn record_completed_report(
 
 pub async fn record_completed_report_file_nofail(
     env: &Env,
-    requested_by: &str,
+    requested_by_login_id: &uuid::Uuid,
     report_kind: &str,
     request: ReportHistoryRequest,
     file_name: String,
@@ -1351,7 +1357,7 @@ pub async fn record_completed_report_file_nofail(
 ) {
     if let Err(err) = record_completed_report_file(
         env,
-        requested_by,
+        requested_by_login_id,
         report_kind,
         request,
         file_name,
@@ -1366,7 +1372,7 @@ pub async fn record_completed_report_file_nofail(
 
 async fn record_completed_report_file(
     env: &Env,
-    requested_by: &str,
+    requested_by_login_id: &uuid::Uuid,
     report_kind: &str,
     request: ReportHistoryRequest,
     file_name: String,
@@ -1375,7 +1381,7 @@ async fn record_completed_report_file(
 ) -> Result<report_history::Model, AppError> {
     let report_history = insert_archiving_report_row(
         env,
-        requested_by,
+        requested_by_login_id,
         report_kind,
         request,
         file_name.clone(),
@@ -1395,7 +1401,7 @@ async fn record_completed_report_file(
 
 async fn insert_archiving_report_row(
     env: &Env,
-    requested_by: &str,
+    requested_by_login_id: &uuid::Uuid,
     report_kind: &str,
     request: ReportHistoryRequest,
     file_name: String,
@@ -1406,7 +1412,7 @@ async fn insert_archiving_report_row(
     Ok(report_history::ActiveModel {
         id: NotSet,
         report_kind: Set(report_kind.to_string()),
-        requested_by: Set(requested_by.to_string()),
+        requested_by_login_id: Set(*requested_by_login_id),
         request: Set(serde_json::to_value(request).c(h!())?),
         created_at: Set(now),
         status: Set(STATUS_IN_PROGRESS.to_string()),
@@ -1430,7 +1436,7 @@ async fn insert_archiving_report_row(
 
 async fn insert_completed_report_row(
     env: &Env,
-    requested_by: &str,
+    requested_by_login_id: &uuid::Uuid,
     report_kind: &str,
     request: ReportHistoryRequest,
     file_name: String,
@@ -1444,7 +1450,7 @@ async fn insert_completed_report_row(
     Ok(report_history::ActiveModel {
         id: NotSet,
         report_kind: Set(report_kind.to_string()),
-        requested_by: Set(requested_by.to_string()),
+        requested_by_login_id: Set(*requested_by_login_id),
         request: Set(serde_json::to_value(request).c(h!())?),
         created_at: Set(now),
         status: Set(STATUS_DONE.to_string()),
@@ -1598,12 +1604,12 @@ pub async fn report_history_list(
     user: Identity,
     env: actix_web::web::Data<Env>,
 ) -> Result<Json<Vec<ReportHistoryRow>>, AppError> {
-    let user_login = user.id().c(h!())?;
+    let user_login = crate::users::identity_id(&user)?;
     crate::users::has_role(&env.dbx, &user_login, "Rer")
         .await
         .c(h!())?;
     let report_histories = ReportHistory::find()
-        .filter(report_history::Column::RequestedBy.eq(user_login))
+        .filter(report_history::Column::RequestedByLoginId.eq(user_login))
         .order_by_desc(report_history::Column::CreatedAt)
         .limit(REPORT_HISTORY_LIST_LIMIT)
         .all(&env.dbx)
@@ -1620,7 +1626,7 @@ pub async fn report_history_admin_list(
     env: actix_web::web::Data<Env>,
     req: Json<ReportHistoryAdminListReq>,
 ) -> Result<Json<ReportHistoryAdminListRsp>, AppError> {
-    let user_login = user.id().c(h!())?;
+    let user_login = crate::users::identity_id(&user)?;
     crate::users::has_role(&env.dbx, &user_login, "Admin")
         .await
         .c(h!())?;
@@ -1645,7 +1651,7 @@ pub async fn report_history_retry(
     env: actix_web::web::Data<Env>,
     req: Json<ReportHistoryIdReq>,
 ) -> Result<Json<ReportHistoryRow>, AppError> {
-    let user_login = user.id().c(h!())?;
+    let user_login = crate::users::identity_id(&user)?;
     crate::users::has_role(&env.dbx, &user_login, "Rer")
         .await
         .c(h!())?;
@@ -1668,7 +1674,7 @@ pub async fn report_history_retry(
     report_history.last_error = Set(None);
     report_history.log = Set(append_log_entry(
         report_history.log.unwrap(),
-        &user_login,
+        &user_login.to_string(),
         "user requested another attempt for a failed task",
     ));
     let report_history = report_history.update(&env.dbx).await.c(h!())?;
@@ -1683,7 +1689,7 @@ pub async fn report_history_cancel(
     env: actix_web::web::Data<Env>,
     req: Json<ReportHistoryIdReq>,
 ) -> Result<Json<ReportHistoryRow>, AppError> {
-    let user_login = user.id().c(h!())?;
+    let user_login = crate::users::identity_id(&user)?;
     crate::users::has_role(&env.dbx, &user_login, "Rer")
         .await
         .c(h!())?;
@@ -1753,13 +1759,13 @@ pub async fn report_history_download(
     env: actix_web::web::Data<Env>,
     req: Json<ReportHistoryIdReq>,
 ) -> Result<HttpResponse, AppError> {
-    let user_login = user.id().c(h!())?;
+    let user_login = crate::users::identity_id(&user)?;
     download_report_for_user_login(&env, &user_login, req.id).await
 }
 
 pub async fn download_report_for_user_login(
     env: &Env,
-    user_login: &str,
+    user_login: &uuid::Uuid,
     report_history_id: i64,
 ) -> Result<HttpResponse, AppError> {
     crate::users::has_role(&env.dbx, user_login, "Rer")
@@ -1792,7 +1798,7 @@ async fn find_current_user_report(
     user: &Identity,
     id: i64,
 ) -> Result<report_history::Model, AppError> {
-    let user_login = user.id().c(h!())?;
+    let user_login = crate::users::identity_id(user)?;
     crate::users::has_role(&env.dbx, &user_login, "Rer")
         .await
         .c(h!())?;
@@ -1804,7 +1810,7 @@ async fn find_current_user_report(
 async fn find_report_for_user(
     dbx: &DatabaseConnection,
     id: i64,
-    user_login: &str,
+    user_login: &uuid::Uuid,
 ) -> Result<Option<report_history::Model>, AppError> {
     match crate::users::has_role(dbx, user_login, "Admin").await {
         Ok(()) => Ok(ReportHistory::find_by_id(id).one(dbx).await.c(h!())?),
@@ -1818,10 +1824,10 @@ async fn find_report_for_user(
 async fn find_report_for_login(
     dbx: &DatabaseConnection,
     id: i64,
-    user_login: &str,
+    user_login: &uuid::Uuid,
 ) -> Result<Option<report_history::Model>, AppError> {
     Ok(ReportHistory::find_by_id(id)
-        .filter(report_history::Column::RequestedBy.eq(user_login))
+        .filter(report_history::Column::RequestedByLoginId.eq(*user_login))
         .one(dbx)
         .await
         .c(h!())?)
@@ -2010,10 +2016,10 @@ async fn run_unknown_report_history_worker_nofail(env: std::sync::Arc<Env>) {
         match fail_next_unknown_report(env.as_ref()).await {
             Ok(Some(report_history)) => {
                 error!(
-                    "unsupported report kind requested: id={}, kind={}, requested_by={}",
+                    "unsupported report kind requested: id={}, kind={}, requested_by_login_id={}",
                     report_history.id,
                     report_history.report_kind,
-                    report_history.requested_by
+                    report_history.requested_by_login_id
                 );
             }
             Ok(None) => {
@@ -2107,14 +2113,14 @@ async fn take_next_report(
                           from report_history active_report
                           where active_report.status = 'in_progress'
                             and active_report.report_kind = report_history.report_kind
-                            and active_report.requested_by = report_history.requested_by
+                            and active_report.requested_by_login_id = report_history.requested_by_login_id
                       )
                       and not exists (
                           select 1
                           from report_history earlier_report
                           where earlier_report.status = 'planned'
                             and earlier_report.report_kind = report_history.report_kind
-                            and earlier_report.requested_by = report_history.requested_by
+                            and earlier_report.requested_by_login_id = report_history.requested_by_login_id
                             and (
                                 earlier_report.planned_for_ts is null
                                 or earlier_report.planned_for_ts <= now() at time zone 'utc'
@@ -2393,7 +2399,7 @@ async fn generate_report(
         ReportHistoryRequest::AnalysisReport { payload } => {
             let generated =
                 crate::rer_importer::reports::report_docx_generate_file(
-                    report_history.requested_by.clone(),
+                    report_history.requested_by_login_id,
                     env,
                     *payload,
                     false,
@@ -2418,7 +2424,7 @@ async fn generate_report(
                         .unwrap_or_else(|| "summary-table.xlsx".to_string()),
                     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet".to_string(),
                     crate::rer_importer::analysis::summary_table_xlsx_bytes(
-                        &report_history.requested_by,
+                        &report_history.requested_by_login_id,
                         env,
                         *payload,
                     )
@@ -2432,7 +2438,7 @@ async fn generate_report(
                         .unwrap_or_else(|| "analysis.kmz".to_string()),
                     "application/vnd.google-earth.kmz".to_string(),
                     crate::rer_importer::analysis::kmz::rer_analysis_kmz_bytes(
-                        &report_history.requested_by,
+                        &report_history.requested_by_login_id,
                         env,
                         *payload,
                     )
@@ -2446,7 +2452,7 @@ async fn generate_report(
                         .unwrap_or_else(|| "analysis.geojson".to_string()),
                     "application/geo+json".to_string(),
                     crate::rer_importer::analysis::geojson::rer_analysis_geojson_bytes(
-                        &report_history.requested_by,
+                        &report_history.requested_by_login_id,
                         env,
                         *payload,
                     )
@@ -2473,7 +2479,7 @@ async fn generate_report(
             let etalonka_data =
                 crate::sigint::etalonka::bl_etalonka_report_networks_data(
                     &env.dbx,
-                    &report_history.requested_by,
+                    &report_history.requested_by_login_id,
                     &payload,
                     trace_id,
                 )
@@ -2500,7 +2506,7 @@ async fn generate_report(
             let etalonka_data =
                 crate::sigint::etalonka::bl_etalonka_report_networks_batch_id_data(
                     &env.dbx,
-                    &report_history.requested_by,
+                    &report_history.requested_by_login_id,
                     &payload,
                     trace_id,
                 )
@@ -2525,7 +2531,7 @@ async fn generate_report(
         ReportHistoryRequest::GoiReport { .. } => {
             let organism_id = crate::sigint::network::goi::login_organism_id(
                 &env.dbx,
-                &report_history.requested_by,
+                &report_history.requested_by_login_id,
             )
             .await
             .c(h!())?;
@@ -2613,11 +2619,11 @@ async fn download_report_bytes(
 fn report_timeout_message(report_history: &report_history::Model) -> String {
     let timeout_secs = report_timeout_secs(&report_history.report_kind);
     format!(
-        "Report generation timed out after {} seconds: id={}, kind={}, requested_by={}",
+        "Report generation timed out after {} seconds: id={}, kind={}, requested_by_login_id={}",
         timeout_secs,
         report_history.id,
         report_history.report_kind,
-        report_history.requested_by,
+        report_history.requested_by_login_id,
     )
 }
 
@@ -2729,11 +2735,11 @@ async fn notify_report_timeout_nofail(
     err_msg: &str,
 ) {
     let content = format!(
-        "Report timed out at echo server {}: id={}, kind={}, requested_by={}\n{}",
+        "Report timed out at echo server {}: id={}, kind={}, requested_by_login_id={}\n{}",
         env.config.public_host,
         report_history.id,
         report_history.report_kind,
-        report_history.requested_by,
+        report_history.requested_by_login_id,
         err_msg,
     );
     let result = tokio::time::timeout(
@@ -2893,7 +2899,7 @@ mod tests {
 
     async fn insert_report_history(
         dbx: &DatabaseConnection,
-        requested_by: &str,
+        requested_by_login: &str,
         report_kind: &str,
         status: &str,
         created_at: chrono::NaiveDateTime,
@@ -2903,7 +2909,11 @@ mod tests {
         Ok(report_history::ActiveModel {
             id: NotSet,
             report_kind: Set(report_kind.to_string()),
-            requested_by: Set(requested_by.to_string()),
+            requested_by_login_id: Set(crate::users::login_id_by_name(
+                dbx,
+                requested_by_login,
+            )
+            .await?),
             request: Set(serde_json::to_value(
                 ReportHistoryRequest::GoiReport { payload: json!({}) },
             )
@@ -2950,6 +2960,7 @@ mod tests {
         let _alice = mk_login(
             &env.dbx,
             login::ActiveModel {
+                id: NotSet,
                 login: Set("report-history-alice".to_string()),
                 ..Default::default()
             },
@@ -3010,6 +3021,7 @@ mod tests {
         let _alice = mk_login(
             &env.dbx,
             login::ActiveModel {
+                id: NotSet,
                 login: Set("report-history-alice".to_string()),
                 ..Default::default()
             },
@@ -3019,6 +3031,7 @@ mod tests {
         let _bob = mk_login(
             &env.dbx,
             login::ActiveModel {
+                id: NotSet,
                 login: Set("report-history-bob".to_string()),
                 ..Default::default()
             },
@@ -3095,6 +3108,7 @@ mod tests {
         let _alice = mk_login(
             &env.dbx,
             login::ActiveModel {
+                id: NotSet,
                 login: Set("report-history-alice".to_string()),
                 ..Default::default()
             },
@@ -3104,6 +3118,7 @@ mod tests {
         let _bob = mk_login(
             &env.dbx,
             login::ActiveModel {
+                id: NotSet,
                 login: Set("report-history-bob".to_string()),
                 ..Default::default()
             },
@@ -3157,6 +3172,7 @@ mod tests {
         let _alice = mk_login(
             &env.dbx,
             login::ActiveModel {
+                id: NotSet,
                 login: Set("report-history-alice".to_string()),
                 ..Default::default()
             },
@@ -3166,6 +3182,7 @@ mod tests {
         let _bob = mk_login(
             &env.dbx,
             login::ActiveModel {
+                id: NotSet,
                 login: Set("report-history-bob".to_string()),
                 ..Default::default()
             },
@@ -3219,6 +3236,7 @@ mod tests {
         let _alice = mk_login(
             &env.dbx,
             login::ActiveModel {
+                id: NotSet,
                 login: Set("report-history-alice".to_string()),
                 ..Default::default()
             },
@@ -3228,6 +3246,7 @@ mod tests {
         let _bob = mk_login(
             &env.dbx,
             login::ActiveModel {
+                id: NotSet,
                 login: Set("report-history-bob".to_string()),
                 ..Default::default()
             },
@@ -3278,6 +3297,7 @@ mod tests {
         let _alice = mk_login(
             &env.dbx,
             login::ActiveModel {
+                id: NotSet,
                 login: Set("report-history-alice".to_string()),
                 ..Default::default()
             },
@@ -3287,6 +3307,7 @@ mod tests {
         let _bob = mk_login(
             &env.dbx,
             login::ActiveModel {
+                id: NotSet,
                 login: Set("report-history-bob".to_string()),
                 ..Default::default()
             },
@@ -3340,6 +3361,7 @@ mod tests {
         let _alice = mk_login(
             &env.dbx,
             login::ActiveModel {
+                id: NotSet,
                 login: Set("report-history-alice".to_string()),
                 ..Default::default()
             },
@@ -3390,6 +3412,7 @@ mod tests {
         let _login = mk_login(
             &env.dbx,
             login::ActiveModel {
+                id: NotSet,
                 login: Set("report-history-cancel".to_string()),
                 ..Default::default()
             },
@@ -3414,7 +3437,7 @@ mod tests {
             &env,
             report_history::Entity::find()
                 .filter(
-                    report_history::Column::RequestedBy
+                    report_history::Column::RequestedByLoginId
                         .eq("report-history-cancel"),
                 )
                 .one(&env.dbx)
@@ -3430,7 +3453,8 @@ mod tests {
 
         let refreshed = ReportHistory::find()
             .filter(
-                report_history::Column::RequestedBy.eq("report-history-cancel"),
+                report_history::Column::RequestedByLoginId
+                    .eq("report-history-cancel"),
             )
             .one(&env.dbx)
             .await
@@ -3461,6 +3485,7 @@ mod tests {
         let _login = mk_login(
             &env.dbx,
             login::ActiveModel {
+                id: NotSet,
                 login: Set("report-history-cancel-list".to_string()),
                 ..Default::default()
             },
@@ -3514,6 +3539,7 @@ mod tests {
         let _login = mk_login(
             &env.dbx,
             login::ActiveModel {
+                id: NotSet,
                 login: Set("report-history-guard".to_string()),
                 ..Default::default()
             },

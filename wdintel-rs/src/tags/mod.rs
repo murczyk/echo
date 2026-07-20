@@ -50,7 +50,7 @@ async fn tags_list(
     user: actix_identity::Identity,
     env: actix_web::web::Data<Env>,
 ) -> Result<Json<Vec<(i64, Tag)>>, AppError> {
-    let user_id = user.id().c(h!())?;
+    let user_id = crate::users::identity_id(&user)?;
     crate::users::has_role(&env.dbx, &user_id, "Rer")
         .await
         .c(h!())?;
@@ -81,7 +81,7 @@ async fn admin_list_tags(
     user: actix_identity::Identity,
     env: actix_web::web::Data<Env>,
 ) -> Result<Json<Vec<TagAdmin>>, AppError> {
-    let login = user.id().c(h!())?;
+    let login = crate::users::identity_id(&user)?;
     crate::users::has_role(&env.dbx, &login, "Admin")
         .await
         .c(h!())?;
@@ -97,7 +97,7 @@ async fn create_tag(
     env: actix_web::web::Data<Env>,
     req: Json<TagUpsertReq>,
 ) -> Result<Json<TagAdmin>, AppError> {
-    let login = user.id().c(h!())?;
+    let login = crate::users::identity_id(&user)?;
     crate::users::has_role(&env.dbx, &login, "Admin")
         .await
         .c(h!())?;
@@ -116,7 +116,7 @@ async fn update_tag(
     path: actix_web::web::Path<(i64,)>,
     req: Json<TagUpsertReq>,
 ) -> Result<Json<TagAdmin>, AppError> {
-    let login = user.id().c(h!())?;
+    let login = crate::users::identity_id(&user)?;
     crate::users::has_role(&env.dbx, &login, "Admin")
         .await
         .c(h!())?;
@@ -135,7 +135,7 @@ async fn organism_list_tags(
     user: actix_identity::Identity,
     env: actix_web::web::Data<Env>,
 ) -> Result<Json<Vec<TagAdmin>>, AppError> {
-    let login = user.id().c(h!())?;
+    let login = crate::users::identity_id(&user)?;
     crate::users::has_role(&env.dbx, &login, "Rer")
         .await
         .c(h!())?;
@@ -152,7 +152,7 @@ async fn admin_organism_list_tags(
     env: actix_web::web::Data<Env>,
     path: actix_web::web::Path<(i64,)>,
 ) -> Result<Json<Vec<TagAdmin>>, AppError> {
-    let login = user.id().c(h!())?;
+    let login = crate::users::identity_id(&user)?;
     crate::users::has_role(&env.dbx, &login, "Admin")
         .await
         .c(h!())?;
@@ -171,7 +171,7 @@ async fn create_organism_tag(
     path: actix_web::web::Path<(i64,)>,
     req: Json<TagUpsertReq>,
 ) -> Result<Json<TagAdmin>, AppError> {
-    let login = user.id().c(h!())?;
+    let login = crate::users::identity_id(&user)?;
     crate::users::has_role(&env.dbx, &login, "Admin")
         .await
         .c(h!())?;
@@ -190,7 +190,7 @@ async fn update_organism_tag(
     path: actix_web::web::Path<(i64, i64)>,
     req: Json<TagUpsertReq>,
 ) -> Result<Json<TagAdmin>, AppError> {
-    let login = user.id().c(h!())?;
+    let login = crate::users::identity_id(&user)?;
     crate::users::has_role(&env.dbx, &login, "Admin")
         .await
         .c(h!())?;
@@ -210,7 +210,7 @@ async fn delete_organism_tag(
     env: actix_web::web::Data<Env>,
     path: actix_web::web::Path<(i64, i64)>,
 ) -> Result<Json<()>, AppError> {
-    let login = user.id().c(h!())?;
+    let login = crate::users::identity_id(&user)?;
     crate::users::has_role(&env.dbx, &login, "Admin")
         .await
         .c(h!())?;
@@ -232,7 +232,7 @@ async fn add_tag_keywords(
     path: actix_web::web::Path<(i64,)>,
     req: Json<Vec<TagKeywordAddReq>>,
 ) -> Result<Json<Vec<TagKeyword>>, AppError> {
-    let login = user.id().c(h!())?;
+    let login = crate::users::identity_id(&user)?;
     crate::users::has_role(&env.dbx, &login, "Admin")
         .await
         .c(h!())?;
@@ -317,7 +317,7 @@ async fn delete_tag_keyword(
     env: actix_web::web::Data<Env>,
     path: actix_web::web::Path<(i64, i64)>,
 ) -> Result<(), AppError> {
-    let login = user.id().c(h!())?;
+    let login = crate::users::identity_id(&user)?;
     crate::users::has_role(&env.dbx, &login, "Admin")
         .await
         .c(h!())?;
@@ -346,7 +346,7 @@ async fn update_tag_keyword(
     path: actix_web::web::Path<(i64, i64)>,
     req: Json<TagKeywordAddReq>,
 ) -> Result<(), AppError> {
-    let login = user.id().c(h!())?;
+    let login = crate::users::identity_id(&user)?;
     crate::users::has_role(&env.dbx, &login, "Admin")
         .await
         .c(h!())?;
@@ -403,7 +403,7 @@ async fn inbox_message_tags_add(
     env: actix_web::web::Data<Env>,
     req: Json<InboxMessageTagsAddReq>,
 ) -> Result<Json<()>, AppError> {
-    let user_id: String = user.id().c(h!())?;
+    let user_id: uuid::Uuid = crate::users::identity_id(&user)?;
     crate::users::has_role(&env.dbx, &user_id, "Rer")
         .await
         .c(h!())?;
@@ -430,7 +430,7 @@ async fn inbox_message_tags_add(
             sigint_inbox_item_tag::Column::SigintInboxItemId.eq(req.message_id),
         )
         .filter(sigint_inbox_item_tag::Column::TagId.eq(req.tag_id))
-        .filter(sigint_inbox_item_tag::Column::Login.eq(Some(user_id.clone())))
+        .filter(sigint_inbox_item_tag::Column::LoginId.eq(Some(user_id)))
         .filter(sigint_inbox_item_tag::Column::Model.is_null())
         .one(&txn)
         .await
@@ -446,7 +446,7 @@ async fn inbox_message_tags_add(
         attached_tag = sigint_inbox_item_tag::ActiveModel {
             sigint_inbox_item_id: Set(inbox.id),
             tag_id: Set(req.tag_id),
-            login: Set(Some(user_id.clone())),
+            login_id: Set(Some(user_id)),
             model: Set(None),
             ..Default::default()
         };
@@ -466,7 +466,7 @@ async fn inbox_message_tags_rm(
     env: actix_web::web::Data<Env>,
     req: Json<InboxMessageTagsRmReq>,
 ) -> Result<Json<()>, AppError> {
-    let user_id: String = user.id().c(h!())?;
+    let user_id: uuid::Uuid = crate::users::identity_id(&user)?;
 
     crate::users::has_role(&env.dbx, &user_id, "Rer")
         .await
@@ -491,7 +491,7 @@ async fn inbox_message_tags_rm(
             sigint_inbox_item_tag::Column::SigintInboxItemId.eq(req.message_id),
         )
         .filter(sigint_inbox_item_tag::Column::TagId.eq(req.tag_id))
-        .filter(sigint_inbox_item_tag::Column::Login.eq(Some(user_id.clone())))
+        .filter(sigint_inbox_item_tag::Column::LoginId.eq(Some(user_id)))
         .filter(sigint_inbox_item_tag::Column::Model.is_null())
         .one(&txn)
         .await
@@ -517,7 +517,7 @@ async fn get_inbox_message_model_errors(
     env: actix_web::web::Data<Env>,
     path: actix_web::web::Path<(i64,)>,
 ) -> Result<Json<Vec<TagModelError>>, AppError> {
-    let login = user.id().c(h!())?;
+    let login = crate::users::identity_id(&user)?;
     crate::users::has_role(&env.dbx, &login, "Admin")
         .await
         .c(h!())?;
@@ -554,9 +554,9 @@ async fn get_inbox_message_model_errors(
         .column(sigint_inbox_tag_model_error::Column::Id)
         .column(sigint_inbox_tag_model_error::Column::SigintInboxItemId)
         .column(sigint_inbox_tag_model_error::Column::Model)
-        .column(sigint_inbox_tag_model_error::Column::ModelLogin)
+        .column(sigint_inbox_tag_model_error::Column::ModelLoginId)
         .column(sigint_inbox_tag_model_error::Column::Confidence)
-        .column(sigint_inbox_tag_model_error::Column::RemovedByLogin)
+        .column(sigint_inbox_tag_model_error::Column::RemovedByLoginId)
         .column(sigint_inbox_tag_model_error::Column::RemovedAt)
         .column(signal_message::Column::Body)
         .column(signal_message::Column::Timestamp)
@@ -577,9 +577,9 @@ async fn get_inbox_message_model_errors(
             id: item.id,
             sigint_inbox_item_id: item.sigint_inbox_item_id,
             model: item.model,
-            model_login: item.model_login,
+            model_login_id: item.model_login_id,
             confidence: item.confidence,
-            removed_by_login: item.removed_by_login,
+            removed_by_login_id: item.removed_by_login_id,
             removed_at: item.removed_at.timestamp_millis(),
             body: item.body,
             timestamp: item.timestamp.map(|ts| ts.and_utc().timestamp_millis()),
@@ -601,7 +601,7 @@ async fn inbox_message_tags_model_error(
     env: actix_web::web::Data<Env>,
     req: Json<InboxMessageTagModelErrorReq>,
 ) -> Result<Json<()>, AppError> {
-    let user_id: String = user.id().c(h!())?;
+    let user_id: uuid::Uuid = crate::users::identity_id(&user)?;
 
     crate::users::has_role(&env.dbx, &user_id, "Rer")
         .await
@@ -644,9 +644,9 @@ async fn inbox_message_tags_model_error(
             sigint_inbox_item_id: Set(tag.sigint_inbox_item_id),
             tag_id: Set(tag.tag_id),
             model: Set(model_name),
-            model_login: Set(tag.login.clone()),
+            model_login_id: Set(tag.login_id),
             confidence: Set(tag.confidence),
-            removed_by_login: Set(user_id.clone()),
+            removed_by_login_id: Set(user_id),
             ..Default::default()
         });
     }

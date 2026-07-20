@@ -158,14 +158,14 @@ async fn load_inbox_messages(
         newest_first: Some(false),
         ..Default::default()
     };
-    let logins = crate::users::get_organism_logins_by_login(
+    let logins = crate::users::get_organism_login_ids_by_id(
         &env.dbx,
-        &api_integration.api_user,
+        &api_integration.api_user_login_id,
     )
     .await
     .c(h!())?;
     crate::rer_importer::inbox::get_inbox_messages_created_between(
-        &api_integration.api_user,
+        &api_integration.api_user_login_id,
         &logins,
         env,
         &req,

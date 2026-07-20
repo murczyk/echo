@@ -297,8 +297,8 @@ pub mod tests {
             .context(h!())?;
         area_of_responsibility::Entity::update_many()
             .col_expr(
-                area_of_responsibility::Column::UpdatedBy,
-                sea_orm::sea_query::Expr::value(Option::<String>::None),
+                area_of_responsibility::Column::UpdatedByLoginId,
+                sea_orm::sea_query::Expr::value(Option::<uuid::Uuid>::None),
             )
             .exec(&env.dbx)
             .await
@@ -468,6 +468,7 @@ pub mod tests {
         mk_login(
             dbx,
             login::ActiveModel {
+                id: NotSet,
                 login: Set(TEST_LOGIN.to_string()),
                 sigint_zone_id: Set(Some(sigint_zone.id)),
                 organism_id: Set(Some(organism.id)),
@@ -509,7 +510,9 @@ pub mod tests {
             palitra::ActiveModel {
                 name: Set(TEST_PALITRA_NAME.to_string()),
                 hex_legacy: Set(Some("#ffffff".into())),
-                author: Set(Some(TEST_LOGIN.to_string())),
+                author_login_id: Set(Some(
+                    crate::users::login_id_by_name(dbx, TEST_LOGIN).await?,
+                )),
                 deleted: Set(false),
                 created_at: Set(Utc::now().naive_utc()),
                 ..Default::default()
@@ -532,10 +535,12 @@ pub mod tests {
         mk_palitra_access(
             dbx,
             palitra_access_login::ActiveModel {
+                id: NotSet,
                 palitra_id: Set(palitra.id),
-                login: Set(TEST_LOGIN.to_string()),
+                login_id: Set(
+                    crate::users::login_id_by_name(dbx, TEST_LOGIN).await?
+                ),
                 created_at: Set(Utc::now().naive_utc()),
-                ..Default::default()
             },
         )
         .await
@@ -1155,8 +1160,8 @@ pub mod tests {
         if out.right_settlement == NotSet {
             out.right_settlement = Set(None);
         }
-        if out.updated_by == NotSet {
-            out.updated_by = Set(None);
+        if out.updated_by_login_id == NotSet {
+            out.updated_by_login_id = Set(None);
         }
         if out.updated_at == NotSet {
             out.updated_at = Set(chrono::Utc::now().naive_utc());
@@ -1338,7 +1343,7 @@ pub mod tests {
                     .context(h!()),
             ));
         }
-        if out.login == NotSet {
+        if out.login_id == NotSet {
             return Err(AppError::from(
                 anyhow!("login must be set for secret_group_user")
                     .context(h!()),
@@ -1367,16 +1372,17 @@ pub mod tests {
             .context(h!())?;
             inp.master_key = Set(signal_group.master_key);
         }
-        if inp.login == NotSet {
+        if inp.login_id == NotSet {
             let login = mk_login(
                 txn,
                 login::ActiveModel {
+                    id: NotSet,
                     ..Default::default()
                 },
             )
             .await
             .context(h!())?;
-            inp.login = Set(login.login);
+            inp.login_id = Set(login.id);
         }
         let out = build_secret_group_user(inp)
             .context(h!())?
@@ -1561,8 +1567,8 @@ pub mod tests {
         if out.created_at == NotSet {
             out.created_at = Set(chrono::Utc::now().naive_utc());
         }
-        if out.updated_by == NotSet {
-            out.updated_by = Set(None);
+        if out.updated_by_login_id == NotSet {
+            out.updated_by_login_id = Set(None);
         }
         if out.updated_at == NotSet {
             out.updated_at = Set(chrono::Utc::now().naive_utc());
@@ -1945,7 +1951,7 @@ pub mod tests {
         inp: sigint_bookmark::ActiveModel,
     ) -> Result<sigint_bookmark::ActiveModel, AppError> {
         let mut out = inp.clone();
-        if out.user_id == NotSet {
+        if out.login_id == NotSet {
             return Err(AppError::from(
                 anyhow!("user_id must be set for sigint_bookmark")
                     .context(h!()),
@@ -1980,8 +1986,9 @@ pub mod tests {
                 .context(h!())?;
             inp.signal_message_id = Set(signal_message.id);
         }
-        if inp.user_id == NotSet {
-            inp.user_id = Set(TEST_LOGIN.to_string());
+        if inp.login_id == NotSet {
+            inp.login_id =
+                Set(crate::users::login_id_by_name(txn, TEST_LOGIN).await?);
         }
         let out = build_sigint_bookmark(inp)
             .context(h!())?
@@ -2001,8 +2008,8 @@ pub mod tests {
                     .context(h!()),
             ));
         }
-        if out.user_id == NotSet {
-            out.user_id = Set(None);
+        if out.login_id == NotSet {
+            out.login_id = Set(None);
         }
         if out.created_at == NotSet {
             out.created_at = Set(chrono::Utc::now().naive_utc());
@@ -2039,7 +2046,7 @@ pub mod tests {
         inp: sigint_comment::ActiveModel,
     ) -> Result<sigint_comment::ActiveModel, AppError> {
         let mut out = inp.clone();
-        if out.login == NotSet {
+        if out.login_id == NotSet {
             return Err(AppError::from(
                 anyhow!("login must be set for sigint_comment").context(h!()),
             ));
@@ -2073,8 +2080,9 @@ pub mod tests {
                 .context(h!())?;
             inp.signal_message_id = Set(signal_message.id);
         }
-        if inp.login == NotSet {
-            inp.login = Set(TEST_LOGIN.to_string());
+        if inp.login_id == NotSet {
+            inp.login_id =
+                Set(crate::users::login_id_by_name(txn, TEST_LOGIN).await?);
         }
         let out = build_sigint_comment(inp)
             .context(h!())?
@@ -2149,9 +2157,6 @@ pub mod tests {
         if out.created_at == NotSet {
             out.created_at = Set(chrono::Utc::now().naive_utc());
         }
-        if out.created_by == NotSet {
-            out.created_by = Set(TEST_LOGIN.to_string());
-        }
         if out.name == NotSet {
             out.name = Set(random_word::get(random_word::Lang::En).to_string());
         }
@@ -2177,6 +2182,11 @@ pub mod tests {
     where
         C: ConnectionTrait + 'async_trait,
     {
+        let mut inp = inp;
+        if inp.created_by_login_id == NotSet {
+            inp.created_by_login_id =
+                Set(crate::users::login_id_by_name(txn, TEST_LOGIN).await?);
+        }
         let out = build_sigint_unit(inp).insert(txn).await.context(h!())?;
         Ok(out)
     }
@@ -2258,8 +2268,8 @@ pub mod tests {
         if out.confidence == NotSet {
             out.confidence = Set(1.0);
         }
-        if out.login == NotSet {
-            out.login = Set(None);
+        if out.login_id == NotSet {
+            out.login_id = Set(None);
         }
         if out.model == NotSet {
             out.model = Set(None);

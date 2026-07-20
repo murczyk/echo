@@ -23,7 +23,7 @@ pub async fn list_signals(
     env: actix_web::web::Data<Env>,
     req: Json<ListSignalsReq>,
 ) -> Result<Json<ListSignalsRsp>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
+    crate::users::has_role(&env.dbx, &crate::users::identity_id(&user)?, "Rer")
         .await
         .c(h!())?;
     const LIMIT: u64 = 100000;
@@ -45,7 +45,7 @@ pub async fn list_signals_csv(
     req: Json<ListSignalsReq>,
     http_req: actix_web::HttpRequest,
 ) -> Result<actix_web::HttpResponse, AppError> {
-    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
+    crate::users::has_role(&env.dbx, &crate::users::identity_id(&user)?, "Rer")
         .await
         .c(h!())?;
 
@@ -181,7 +181,7 @@ pub async fn signal_unit_stats(
     env: actix_web::web::Data<Env>,
     _req: Json<()>,
 ) -> Result<Json<SignalUnitStatsRsp>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
+    crate::users::has_role(&env.dbx, &crate::users::identity_id(&user)?, "Rer")
         .await
         .c(h!())?;
     #[derive(FromQueryResult)]
@@ -231,12 +231,16 @@ pub async fn create_signal(
     env: actix_web::web::Data<Env>,
     req: Json<CreateSignalReq>,
 ) -> Result<Json<i64>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
+    crate::users::has_role(&env.dbx, &crate::users::identity_id(&user)?, "Rer")
         .await
         .c(h!())?;
-    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "UnitsEditor")
-        .await
-        .c(h!())?;
+    crate::users::has_role(
+        &env.dbx,
+        &crate::users::identity_id(&user)?,
+        "UnitsEditor",
+    )
+    .await
+    .c(h!())?;
 
     let res = sigint_signal::ActiveModel {
         id: NotSet,
@@ -265,7 +269,7 @@ pub async fn create_signal(
     sigint_signal_changelog::ActiveModel {
         id: NotSet,
         sigint_signal_id: Set(res.id),
-        login: Set(user.id().c(h!())?),
+        login_id: Set(crate::users::identity_id(&user)?),
         action: Set(
             sea_orm_active_enums::SigintSignalChangelogActionEnum::Create,
         ),
@@ -292,12 +296,16 @@ pub async fn update_signal(
     env: actix_web::web::Data<Env>,
     req: Json<UpdateSignalReq>,
 ) -> Result<Json<i64>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
+    crate::users::has_role(&env.dbx, &crate::users::identity_id(&user)?, "Rer")
         .await
         .c(h!())?;
-    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "UnitsEditor")
-        .await
-        .c(h!())?;
+    crate::users::has_role(
+        &env.dbx,
+        &crate::users::identity_id(&user)?,
+        "UnitsEditor",
+    )
+    .await
+    .c(h!())?;
 
     let mut signal: sigint_signal::ActiveModel =
         find_signal(&env.dbx, req.id).await.context(h!())?.into();
@@ -321,7 +329,7 @@ pub async fn update_signal(
     sigint_signal_changelog::ActiveModel {
         id: NotSet,
         sigint_signal_id: Set(res.id),
-        login: Set(user.id().c(h!())?),
+        login_id: Set(crate::users::identity_id(&user)?),
         action: Set(
             sea_orm_active_enums::SigintSignalChangelogActionEnum::Update,
         ),
@@ -348,12 +356,16 @@ pub async fn delete_signal(
     env: actix_web::web::Data<Env>,
     req: Json<i64>,
 ) -> Result<Json<i64>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
+    crate::users::has_role(&env.dbx, &crate::users::identity_id(&user)?, "Rer")
         .await
         .c(h!())?;
-    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "UnitsEditor")
-        .await
-        .c(h!())?;
+    crate::users::has_role(
+        &env.dbx,
+        &crate::users::identity_id(&user)?,
+        "UnitsEditor",
+    )
+    .await
+    .c(h!())?;
 
     let mut signal: sigint_signal::ActiveModel =
         find_signal(&env.dbx, req.0).await.context(h!())?.into();
@@ -365,7 +377,7 @@ pub async fn delete_signal(
     sigint_signal_changelog::ActiveModel {
         id: NotSet,
         sigint_signal_id: Set(res_id),
-        login: Set(user.id().c(h!())?),
+        login_id: Set(crate::users::identity_id(&user)?),
         action: Set(
             sea_orm_active_enums::SigintSignalChangelogActionEnum::Delete,
         ),
@@ -407,9 +419,13 @@ pub async fn signal_name_search(
     env: actix_web::web::Data<Env>,
     req: Json<SignalSearchReq>,
 ) -> Result<Json<SignalSearchRsp>, AppError> {
-    crate::users::has_any_role(&env.dbx, &user.id().c(h!())?, vec!["Rer"])
-        .await
-        .c(h!())?;
+    crate::users::has_any_role(
+        &env.dbx,
+        &crate::users::identity_id(&user)?,
+        vec!["Rer"],
+    )
+    .await
+    .c(h!())?;
 
     let search_phrase = req.search.trim();
 
