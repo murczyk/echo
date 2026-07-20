@@ -347,38 +347,12 @@ pub(crate) async fn messages_by_id_bl(
     message_ids: &[i64],
     req: &InboxMessagesReq,
 ) -> Result<Vec<(i64, InboxMessage)>, AppError> {
-    let sigint_groups =
-        crate::messenger::group::get_identity_sigint_groups(&env.dbx, login)
-            .await
-            .c(h!())?;
-    let mut messages = SignalMessage::find()
-        .join(
-            JoinType::InnerJoin,
-            signal_message::Relation::DatasourceGroup.def(),
-        )
-        .join(
-            JoinType::LeftJoin,
-            signal_message::Relation::SigintInboxItem.def(),
-        )
-        .join(
-            JoinType::LeftJoin,
-            datasource_group::Relation::SignalGroup.def(),
-        )
-        .join(
-            JoinType::LeftJoin,
-            sigint_inbox_item::Relation::SigintPost.def(),
-        )
-        .join(
-            JoinType::LeftJoin,
-            sigint_inbox_item::Relation::DeviceName.def(),
-        );
-
-    messages = add_inbox_message_columns(messages);
-
+    let mut messages = build_filtered_inbox_query(&env.dbx, login, env, req)
+        .await
+        .c(h!())?;
     messages = messages
-        .filter(signal_message::Column::Deleted.eq(false))
-        .filter(datasource_group::Column::GroupMasterKey.eq_any(sigint_groups))
         .filter(signal_message::Column::Id.eq_any(message_ids.to_vec()));
+    messages = add_inbox_message_columns(messages);
     let owner_organism_id =
         crate::tags::query::current_user_organism_id(&env.dbx, login)
             .await
@@ -4276,5 +4250,32 @@ mod tests {
             matching_sender_messages[0].1.sender.as_deref(),
             Some("sender-c")
         );
+
+        let organism_logins =
+            crate::users::get_organism_logins_by_login(&env.dbx, &login.login)
+                .await
+                .unwrap();
+        let wrong_sender_by_id = messages_by_id_bl(
+            &login.login,
+            &organism_logins,
+            &env,
+            &[message.id],
+            &wrong_sender_req,
+        )
+        .await
+        .unwrap();
+        assert!(wrong_sender_by_id.is_empty());
+
+        let matching_sender_by_id = messages_by_id_bl(
+            &login.login,
+            &organism_logins,
+            &env,
+            &[message.id],
+            &matching_sender_req,
+        )
+        .await
+        .unwrap();
+        assert_eq!(matching_sender_by_id.len(), 1);
+        assert_eq!(matching_sender_by_id[0].0, message.id);
     }
 }
