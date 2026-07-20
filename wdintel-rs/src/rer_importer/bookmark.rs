@@ -24,7 +24,7 @@ async fn bookmark_add(
     env: actix_web::web::Data<Env>,
     req: Json<BookmarkAddReq>,
 ) -> Result<Json<()>, AppError> {
-    let login = user.id().c(h!())?;
+    let login = crate::users::identity_id(&user)?;
     crate::users::has_role(&env.dbx, &login, "Rer")
         .await
         .c(h!())?;
@@ -37,7 +37,7 @@ async fn bookmark_add(
             .into_iter()
             .map(|id| sigint_bookmark::ActiveModel {
                 id: NotSet,
-                user_id: Set(login.to_string()),
+                login_id: Set(login),
                 signal_message_id: Set(id),
                 deleted: Set(false),
                 created_at: NotSet,
@@ -81,14 +81,14 @@ async fn bookmarks_list(
     env: actix_web::web::Data<Env>,
     req: Json<BookmarkListReq>,
 ) -> Result<Json<Vec<Bookmark>>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
+    crate::users::has_role(&env.dbx, &crate::users::identity_id(&user)?, "Rer")
         .await
         .c(h!())?;
     Ok(Json(
         sigint_bookmark::Entity::find()
             .filter(
-                sigint_bookmark::Column::UserId
-                    .eq(user.id().c(h!())?.to_string()),
+                sigint_bookmark::Column::LoginId
+                    .eq(crate::users::identity_id(&user)?),
             )
             .filter(sigint_bookmark::Column::CreatedAt.gte(
                 if let Some(since_ts_millis) = req.since_ts_millis {
@@ -124,7 +124,7 @@ async fn bookmark_rm(
     env: actix_web::web::Data<Env>,
     req: Json<BookmarkRmReq>,
 ) -> Result<Json<()>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
+    crate::users::has_role(&env.dbx, &crate::users::identity_id(&user)?, "Rer")
         .await
         .c(h!())?;
     let txn = env.dbx.begin().await.c(h!())?;
@@ -132,7 +132,8 @@ async fn bookmark_rm(
     sigint_bookmark::Entity::update_many()
         .col_expr(sigint_bookmark::Column::Deleted, Expr::value(true))
         .filter(
-            sigint_bookmark::Column::UserId.eq(user.id().c(h!())?.to_string()),
+            sigint_bookmark::Column::LoginId
+                .eq(crate::users::identity_id(&user)?),
         )
         .filter(
             sigint_bookmark::Column::SignalMessageId.eq_any(
@@ -152,7 +153,7 @@ async fn bookmark_rm(
     println!(
         "Bookmark removed for message_id: {} by {}",
         req.message_id,
-        user.id().c(h!())?
+        crate::users::identity_id(&user)?
     );
     txn.commit().await.c(h!())?;
 

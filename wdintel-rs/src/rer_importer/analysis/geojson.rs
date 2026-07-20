@@ -49,7 +49,7 @@ fn trim_leading_newline(comment: &str) -> &str {
 }
 
 pub(crate) async fn rer_analysis_geojson_bytes(
-    login: &str,
+    login: &uuid::Uuid,
     env: &Env,
     req: AnalysisStatsReq,
 ) -> Result<Vec<u8>, AppError> {

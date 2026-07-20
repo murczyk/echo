@@ -20,7 +20,7 @@ pub async fn rer_delta_kmz_import(
     env: actix_web::web::Data<Env>,
     mut payload: Multipart,
 ) -> Result<Json<i64>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
+    crate::users::has_role(&env.dbx, &crate::users::identity_id(&user)?, "Rer")
         .await
         .c(h!())?;
     let (field, val) = multipart::extract(&mut payload).await.c(h!())?;

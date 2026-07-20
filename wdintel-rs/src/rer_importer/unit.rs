@@ -1,4 +1,3 @@
-use crate::config::*;
 use crate::entities::*;
 use crate::error::AppError;
 use crate::types::*;
@@ -218,7 +217,10 @@ pub async fn import_unit(
                         .clone()
                         .unwrap_or_default()),
                     comment: Set(json_unit.comment.clone().unwrap_or_default()),
-                    created_by: Set(SYSTEM_LOGIN_NAME.to_string()),
+                    created_by_login_id: Set(crate::users::system_login_id(
+                        &dbx,
+                    )
+                    .await?),
                     sigint_origin_id: Set(Some(sigint_origin_id)),
                     ..Default::default()
                 })

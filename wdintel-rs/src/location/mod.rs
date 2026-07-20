@@ -33,7 +33,7 @@ async fn find_locations(
     env: actix_web::web::Data<Env>,
     req: Json<FindSettlementReq>,
 ) -> Result<Json<Vec<SettlementDetails>>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
+    crate::users::has_role(&env.dbx, &crate::users::identity_id(&user)?, "Rer")
         .await
         .c(h!())?;
     let req = req.into_inner();
@@ -110,7 +110,7 @@ async fn fetch_regions(
     req: actix_web::web::Query<FetchRegionsReq>,
     env: actix_web::web::Data<Env>,
 ) -> Result<Json<Vec<String>>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
+    crate::users::has_role(&env.dbx, &crate::users::identity_id(&user)?, "Rer")
         .await
         .c(h!())?;
     let region_names =

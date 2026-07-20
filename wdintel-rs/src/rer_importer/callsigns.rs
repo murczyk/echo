@@ -1434,7 +1434,7 @@ pub async fn callsigns_graph(
     env: actix_web::web::Data<Env>,
     req: Json<CallsignsGraphReq>,
 ) -> Result<Json<NetJSONGraphAndMeta>, AppError> {
-    let login = user.id().c(h!())?;
+    let login = crate::users::identity_id(&user)?;
     crate::users::has_role(&env.dbx, &login, "Rer")
         .await
         .c(h!())?;

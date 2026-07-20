@@ -24,7 +24,7 @@ async fn important_add(
     env: actix_web::web::Data<Env>,
     req: Json<ImportantAddReq>,
 ) -> Result<Json<()>, AppError> {
-    let login = user.id().c(h!())?;
+    let login = crate::users::identity_id(&user)?;
     crate::users::has_role(&env.dbx, &login, "Rer")
         .await
         .c(h!())?;
@@ -36,7 +36,7 @@ async fn important_add(
             .into_iter()
             .map(|id| sigint_important::ActiveModel {
                 id: NotSet,
-                user_id: Set(Some(login.to_string())),
+                login_id: Set(Some(login)),
                 signal_message_id: Set(id),
                 deleted: Set(false),
                 created_at: NotSet,
@@ -79,11 +79,11 @@ async fn importants_list(
     env: actix_web::web::Data<Env>,
     req: Json<ImportantListReq>,
 ) -> Result<Json<Vec<Important>>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
+    crate::users::has_role(&env.dbx, &crate::users::identity_id(&user)?, "Rer")
         .await
         .c(h!())?;
     // let mut q = sigint_important::Entity::find()
-    //     .filter(sigint_important::Column::UserId.eq(user.id().c(h!())?.to_string()));
+    //     .filter(sigint_important::Column::LoginId.eq(crate::users::identity_id(&user)?));
 
     Ok(Json(
         sigint_important::Entity::find()
@@ -121,7 +121,7 @@ async fn important_rm(
     env: actix_web::web::Data<Env>,
     req: Json<ImportantRmReq>,
 ) -> Result<Json<()>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
+    crate::users::has_role(&env.dbx, &crate::users::identity_id(&user)?, "Rer")
         .await
         .c(h!())?;
     let txn = env.dbx.begin().await.c(h!())?;
@@ -129,7 +129,8 @@ async fn important_rm(
     sigint_important::Entity::update_many()
         .col_expr(sigint_important::Column::Deleted, Expr::value(true))
         .filter(
-            sigint_important::Column::UserId.eq(user.id().c(h!())?.to_string()),
+            sigint_important::Column::LoginId
+                .eq(crate::users::identity_id(&user)?),
         )
         .filter(
             sigint_important::Column::SignalMessageId.eq_any(
@@ -149,7 +150,7 @@ async fn important_rm(
     println!(
         "Remove important sign for message {} by {}",
         req.message_id,
-        user.id().c(h!())?
+        crate::users::identity_id(&user)?
     );
     txn.commit().await.c(h!())?;
 

@@ -44,6 +44,15 @@ struct AorFilterFixture {
     till_date_noninclusive_ms: i64,
 }
 
+async fn test_identity_login_id(
+    env: &Env,
+    test_identity: &TestIdentity,
+) -> uuid::Uuid {
+    crate::users::login_id_by_name(&env.dbx, &test_identity.login)
+        .await
+        .unwrap()
+}
+
 fn test_dt(
     year: i32,
     month: u32,
@@ -529,7 +538,7 @@ async fn mk_rer_analysis_fixture() -> Result<RerAnalysisFixture, AppError> {
             db,
             secret_group_user::ActiveModel {
                 master_key: Set(group.signal_group.master_key.clone()),
-                login: Set(login.login.clone()),
+                login_id: Set(login.id),
                 ..Default::default()
             },
         )
@@ -807,13 +816,14 @@ fn metadata_value_counts(
 
 async fn analysis_login_and_master_keys(
     env: &Env,
-) -> Result<(String, Vec<String>), AppError> {
+) -> Result<(uuid::Uuid, Vec<String>), AppError> {
     let test_identity = mk_test_identity().await?;
-    let master_keys =
-        get_identity_sigint_groups(&env.dbx, &test_identity.login)
-            .await
-            .context(h!())?;
-    Ok((test_identity.login, master_keys))
+    let login_id =
+        crate::users::login_id_by_name(&env.dbx, &test_identity.login).await?;
+    let master_keys = get_identity_sigint_groups(&env.dbx, &login_id)
+        .await
+        .context(h!())?;
+    Ok((login_id, master_keys))
 }
 
 async fn fetch_group_counts_for_req(
@@ -1156,23 +1166,21 @@ async fn rer_analysis_group_stats_hide_unrelated_and_secret_groups() {
     );
 
     let test_identity = mk_test_identity().await.unwrap();
+    let login_id =
+        crate::users::login_id_by_name(&fixture.env.dbx, &test_identity.login)
+            .await
+            .unwrap();
     let env = Data::from(fixture.env.clone());
     let mut req = analysis_stats_req0(&fixture);
     req.selected_aors = Some(vec![fixture.south_aor.id]);
     let req = Json(req);
-    let master_keys =
-        get_identity_sigint_groups(&fixture.env.dbx, &test_identity.login)
-            .await
-            .unwrap();
-    let counts = group_counts(
-        stats::fetch_groups_for_login(
-            &req.0,
-            &test_identity.login,
-            &env,
-            master_keys,
-        )
+    let master_keys = get_identity_sigint_groups(&fixture.env.dbx, &login_id)
         .await
-        .unwrap(),
+        .unwrap();
+    let counts = group_counts(
+        stats::fetch_groups_for_login(&req.0, &login_id, &env, master_keys)
+            .await
+            .unwrap(),
     );
 
     assert_eq!(counts.len(), 1);
@@ -2020,6 +2028,7 @@ async fn rer_analysis_callsign_and_tag_stats_follow_tag_like_filters() {
     let same_org_login = mk_login(
         db,
         login::ActiveModel {
+            id: NotSet,
             login: Set("SameOrgCommenter".to_string()),
             organism_id: Set(Some(organism.id)),
             ..Default::default()
@@ -2030,6 +2039,7 @@ async fn rer_analysis_callsign_and_tag_stats_follow_tag_like_filters() {
     let other_org_login = mk_login(
         db,
         login::ActiveModel {
+            id: NotSet,
             login: Set("OtherOrgCommenter".to_string()),
             organism_id: Set(Some(other_organism.id)),
             ..Default::default()
@@ -2055,7 +2065,9 @@ async fn rer_analysis_callsign_and_tag_stats_follow_tag_like_filters() {
     mk_sigint_bookmark(
         db,
         sigint_bookmark::ActiveModel {
-            user_id: Set("Tester".to_string()),
+            login_id: Set(crate::users::login_id_by_name(db, "Tester")
+                .await
+                .unwrap()),
             signal_message_id: Set(msg_bookmark.id),
             created_at: Set(test_dt(2026, 3, 1, 10, 6)),
             deleted: Set(false),
@@ -2069,7 +2081,9 @@ async fn rer_analysis_callsign_and_tag_stats_follow_tag_like_filters() {
         sigint_inbox_item_tag::ActiveModel {
             sigint_inbox_item_id: Set(msg_bookmark.id),
             tag_id: Set(tag_bookmark.id),
-            login: Set(Some("Tester".to_string())),
+            login_id: Set(Some(
+                crate::users::login_id_by_name(db, "Tester").await.unwrap(),
+            )),
             model: Set(None),
             ..Default::default()
         },
@@ -2107,7 +2121,9 @@ async fn rer_analysis_callsign_and_tag_stats_follow_tag_like_filters() {
         sigint_inbox_item_tag::ActiveModel {
             sigint_inbox_item_id: Set(msg_important.id),
             tag_id: Set(tag_important.id),
-            login: Set(Some("Tester".to_string())),
+            login_id: Set(Some(
+                crate::users::login_id_by_name(db, "Tester").await.unwrap(),
+            )),
             model: Set(None),
             ..Default::default()
         },
@@ -2132,7 +2148,9 @@ async fn rer_analysis_callsign_and_tag_stats_follow_tag_like_filters() {
     mk_sigint_comment(
         db,
         sigint_comment::ActiveModel {
-            login: Set("Tester".to_string()),
+            login_id: Set(crate::users::login_id_by_name(db, "Tester")
+                .await
+                .unwrap()),
             signal_message_id: Set(msg_comment.id),
             comment: Set("filled".to_string()),
             created_at: Set(test_dt(2026, 3, 1, 10, 8)),
@@ -2146,7 +2164,9 @@ async fn rer_analysis_callsign_and_tag_stats_follow_tag_like_filters() {
         sigint_inbox_item_tag::ActiveModel {
             sigint_inbox_item_id: Set(msg_comment.id),
             tag_id: Set(tag_comment.id),
-            login: Set(Some("Tester".to_string())),
+            login_id: Set(Some(
+                crate::users::login_id_by_name(db, "Tester").await.unwrap(),
+            )),
             model: Set(None),
             ..Default::default()
         },
@@ -2174,7 +2194,7 @@ async fn rer_analysis_callsign_and_tag_stats_follow_tag_like_filters() {
     mk_sigint_comment(
         db,
         sigint_comment::ActiveModel {
-            login: Set(same_org_login.login.clone()),
+            login_id: Set(same_org_login.id),
             signal_message_id: Set(msg_same_org_comment.id),
             comment: Set("same org".to_string()),
             created_at: Set(test_dt(2026, 3, 1, 10, 9)),
@@ -2188,7 +2208,9 @@ async fn rer_analysis_callsign_and_tag_stats_follow_tag_like_filters() {
         sigint_inbox_item_tag::ActiveModel {
             sigint_inbox_item_id: Set(msg_same_org_comment.id),
             tag_id: Set(tag_comment.id),
-            login: Set(Some("Tester".to_string())),
+            login_id: Set(Some(
+                crate::users::login_id_by_name(db, "Tester").await.unwrap(),
+            )),
             model: Set(None),
             ..Default::default()
         },
@@ -2216,7 +2238,7 @@ async fn rer_analysis_callsign_and_tag_stats_follow_tag_like_filters() {
     mk_sigint_comment(
         db,
         sigint_comment::ActiveModel {
-            login: Set(other_org_login.login.clone()),
+            login_id: Set(other_org_login.id),
             signal_message_id: Set(msg_other_org_comment.id),
             comment: Set("other org".to_string()),
             created_at: Set(test_dt(2026, 3, 1, 10, 9)),
@@ -2230,7 +2252,9 @@ async fn rer_analysis_callsign_and_tag_stats_follow_tag_like_filters() {
         sigint_inbox_item_tag::ActiveModel {
             sigint_inbox_item_id: Set(msg_other_org_comment.id),
             tag_id: Set(tag_comment.id),
-            login: Set(Some("Tester".to_string())),
+            login_id: Set(Some(
+                crate::users::login_id_by_name(db, "Tester").await.unwrap(),
+            )),
             model: Set(None),
             ..Default::default()
         },
@@ -2320,6 +2344,7 @@ async fn rer_analysis_comments_api_returns_other_organism_comment_for_accessible
     let other_org_login = mk_login(
         db,
         login::ActiveModel {
+            id: NotSet,
             login: Set("CommenterOtherOrg".to_string()),
             organism_id: Set(Some(other_organism.id)),
             ..Default::default()
@@ -2341,7 +2366,7 @@ async fn rer_analysis_comments_api_returns_other_organism_comment_for_accessible
     mk_sigint_comment(
         db,
         sigint_comment::ActiveModel {
-            login: Set(other_org_login.login.clone()),
+            login_id: Set(other_org_login.id),
             signal_message_id: Set(message.id),
             comment: Set("other organism visible comment".to_string()),
             created_at: Set(test_dt(2026, 3, 1, 10, 6)),
@@ -2351,11 +2376,11 @@ async fn rer_analysis_comments_api_returns_other_organism_comment_for_accessible
     .await
     .unwrap();
 
-    let logins = crate::users::get_organism_logins_by_login(db, &login.login)
+    let logins = crate::users::get_organism_login_ids_by_id(db, &login.id)
         .await
         .unwrap();
     let messages = crate::rer_importer::inbox::get_inbox_messages(
-        &login.login,
+        &login.id,
         &logins,
         &fixture.env,
         &crate::rer_importer::types::InboxMessagesReq {
@@ -2370,7 +2395,7 @@ async fn rer_analysis_comments_api_returns_other_organism_comment_for_accessible
     .unwrap();
     assert!(messages.iter().any(|(id, _)| *id == message.id));
 
-    let comments = batch_message_comments_bl(db, &login.login, &[message.id])
+    let comments = batch_message_comments_bl(db, &login.id, &[message.id])
         .await
         .unwrap();
     let entry = comments
@@ -2393,6 +2418,7 @@ async fn rer_analysis_comments_api_hides_same_organism_editable_comment() {
     let same_org_login = mk_login(
         db,
         login::ActiveModel {
+            id: NotSet,
             login: Set("CommenterSameOrg".to_string()),
             organism_id: Set(login.organism_id),
             ..Default::default()
@@ -2414,7 +2440,7 @@ async fn rer_analysis_comments_api_hides_same_organism_editable_comment() {
     mk_sigint_comment(
         db,
         sigint_comment::ActiveModel {
-            login: Set(same_org_login.login.clone()),
+            login_id: Set(same_org_login.id),
             signal_message_id: Set(message.id),
             comment: Set("same organism editable comment".to_string()),
             created_at: Set(test_dt(2026, 3, 1, 10, 6)),
@@ -2424,11 +2450,11 @@ async fn rer_analysis_comments_api_hides_same_organism_editable_comment() {
     .await
     .unwrap();
 
-    let logins = crate::users::get_organism_logins_by_login(db, &login.login)
+    let logins = crate::users::get_organism_login_ids_by_id(db, &login.id)
         .await
         .unwrap();
     let messages = crate::rer_importer::inbox::get_inbox_messages(
-        &login.login,
+        &login.id,
         &logins,
         &fixture.env,
         &crate::rer_importer::types::InboxMessagesReq {
@@ -2450,7 +2476,7 @@ async fn rer_analysis_comments_api_hides_same_organism_editable_comment() {
         Some("same organism editable comment")
     );
 
-    let comments = batch_message_comments_bl(db, &login.login, &[message.id])
+    let comments = batch_message_comments_bl(db, &login.id, &[message.id])
         .await
         .unwrap();
     assert!(comments.data.is_empty());
@@ -2483,7 +2509,8 @@ async fn rer_analysis_comments_api_returns_post_name_for_auto_comment() {
     .insert(db)
     .await
     .unwrap();
-    if login::Entity::find_by_id(SYSTEM_LOGIN_NAME)
+    if login::Entity::find()
+        .filter(login::Column::Login.eq(SYSTEM_LOGIN_NAME))
         .one(db)
         .await
         .unwrap()
@@ -2492,6 +2519,7 @@ async fn rer_analysis_comments_api_returns_post_name_for_auto_comment() {
         mk_login(
             db,
             login::ActiveModel {
+                id: NotSet,
                 login: Set(SYSTEM_LOGIN_NAME.to_string()),
                 ..Default::default()
             },
@@ -2502,7 +2530,7 @@ async fn rer_analysis_comments_api_returns_post_name_for_auto_comment() {
     mk_sigint_comment(
         db,
         sigint_comment::ActiveModel {
-            login: Set(SYSTEM_LOGIN_NAME.to_string()),
+            login_id: Set(crate::users::system_login_id(db).await.unwrap()),
             signal_message_id: Set(message.id),
             comment: Set("auto extracted comment".to_string()),
             created_at: Set(test_dt(2026, 3, 1, 10, 6)),
@@ -2513,7 +2541,7 @@ async fn rer_analysis_comments_api_returns_post_name_for_auto_comment() {
     .await
     .unwrap();
 
-    let comments = batch_message_comments_bl(db, &login.login, &[message.id])
+    let comments = batch_message_comments_bl(db, &login.id, &[message.id])
         .await
         .unwrap();
     let entry = comments
@@ -2551,7 +2579,7 @@ async fn rer_analysis_comments_batch_skips_inaccessible_messages() {
     mk_sigint_comment(
         db,
         sigint_comment::ActiveModel {
-            login: Set(login.login.clone()),
+            login_id: Set(login.id),
             signal_message_id: Set(message.id),
             comment: Set("hidden comment".to_string()),
             created_at: Set(test_dt(2026, 3, 1, 10, 7)),
@@ -2561,7 +2589,7 @@ async fn rer_analysis_comments_batch_skips_inaccessible_messages() {
     .await
     .unwrap();
 
-    let comments = batch_message_comments_bl(db, &login.login, &[message.id])
+    let comments = batch_message_comments_bl(db, &login.id, &[message.id])
         .await
         .unwrap();
 
@@ -2599,7 +2627,9 @@ async fn rer_analysis_tag_filters_handle_or_and_and_all_tags() {
     mk_sigint_bookmark(
         db,
         sigint_bookmark::ActiveModel {
-            user_id: Set("Tester".to_string()),
+            login_id: Set(crate::users::login_id_by_name(db, "Tester")
+                .await
+                .unwrap()),
             signal_message_id: Set(msg_bookmark_only.id),
             created_at: Set(test_dt(2026, 3, 1, 10, 6)),
             deleted: Set(false),
@@ -2625,7 +2655,9 @@ async fn rer_analysis_tag_filters_handle_or_and_and_all_tags() {
         sigint_inbox_item_tag::ActiveModel {
             sigint_inbox_item_id: Set(msg_tag_a.id),
             tag_id: Set(tag_a.id),
-            login: Set(Some("Tester".to_string())),
+            login_id: Set(Some(
+                crate::users::login_id_by_name(db, "Tester").await.unwrap(),
+            )),
             model: Set(None),
             ..Default::default()
         },
@@ -2649,7 +2681,9 @@ async fn rer_analysis_tag_filters_handle_or_and_and_all_tags() {
         sigint_inbox_item_tag::ActiveModel {
             sigint_inbox_item_id: Set(msg_tag_ab.id),
             tag_id: Set(tag_a.id),
-            login: Set(Some("Tester".to_string())),
+            login_id: Set(Some(
+                crate::users::login_id_by_name(db, "Tester").await.unwrap(),
+            )),
             model: Set(None),
             ..Default::default()
         },
@@ -2661,7 +2695,9 @@ async fn rer_analysis_tag_filters_handle_or_and_and_all_tags() {
         sigint_inbox_item_tag::ActiveModel {
             sigint_inbox_item_id: Set(msg_tag_ab.id),
             tag_id: Set(tag_b.id),
-            login: Set(Some("Tester".to_string())),
+            login_id: Set(Some(
+                crate::users::login_id_by_name(db, "Tester").await.unwrap(),
+            )),
             model: Set(None),
             ..Default::default()
         },
@@ -2671,7 +2707,9 @@ async fn rer_analysis_tag_filters_handle_or_and_and_all_tags() {
     mk_sigint_comment(
         db,
         sigint_comment::ActiveModel {
-            login: Set("Tester".to_string()),
+            login_id: Set(crate::users::login_id_by_name(db, "Tester")
+                .await
+                .unwrap()),
             signal_message_id: Set(msg_tag_ab.id),
             comment: Set("extended".to_string()),
             created_at: Set(test_dt(2026, 3, 1, 10, 8)),
@@ -2745,6 +2783,7 @@ async fn rer_analysis_tag_scope_checkboxes_filter_messages_correctly() {
     let same_org_login = mk_login(
         db,
         login::ActiveModel {
+            id: NotSet,
             login: Set("SameOrgTagger".to_string()),
             organism_id: Set(Some(organism.id)),
             ..Default::default()
@@ -2755,6 +2794,7 @@ async fn rer_analysis_tag_scope_checkboxes_filter_messages_correctly() {
     let other_org_login = mk_login(
         db,
         login::ActiveModel {
+            id: NotSet,
             login: Set("OtherOrgTagger".to_string()),
             organism_id: Set(Some(other_organism.id)),
             ..Default::default()
@@ -2812,7 +2852,7 @@ async fn rer_analysis_tag_scope_checkboxes_filter_messages_correctly() {
         sigint_inbox_item_tag::ActiveModel {
             sigint_inbox_item_id: Set(msg_same_org.id),
             tag_id: Set(tag.id),
-            login: Set(Some(same_org_login.login.clone())),
+            login_id: Set(Some(same_org_login.id)),
             ..Default::default()
         },
     )
@@ -2835,7 +2875,7 @@ async fn rer_analysis_tag_scope_checkboxes_filter_messages_correctly() {
         sigint_inbox_item_tag::ActiveModel {
             sigint_inbox_item_id: Set(msg_other_org.id),
             tag_id: Set(tag.id),
-            login: Set(Some(other_org_login.login.clone())),
+            login_id: Set(Some(other_org_login.id)),
             ..Default::default()
         },
     )
@@ -2923,7 +2963,9 @@ async fn rer_analysis_sender_callsign_and_post_filters_recalculate_values() {
         sigint_inbox_item_tag::ActiveModel {
             sigint_inbox_item_id: Set(msg_alpha.id),
             tag_id: Set(tag_alpha.id),
-            login: Set(Some("Tester".to_string())),
+            login_id: Set(Some(
+                crate::users::login_id_by_name(db, "Tester").await.unwrap(),
+            )),
             model: Set(None),
             ..Default::default()
         },
@@ -2950,7 +2992,9 @@ async fn rer_analysis_sender_callsign_and_post_filters_recalculate_values() {
         sigint_inbox_item_tag::ActiveModel {
             sigint_inbox_item_id: Set(msg_beta.id),
             tag_id: Set(tag_beta.id),
-            login: Set(Some("Tester".to_string())),
+            login_id: Set(Some(
+                crate::users::login_id_by_name(db, "Tester").await.unwrap(),
+            )),
             model: Set(None),
             ..Default::default()
         },
@@ -3397,7 +3441,11 @@ async fn rer_analysis_units_exact_and_undefined_filters_work() {
         db,
         sigint_unit::ActiveModel {
             name: Set("Etalon Unit".to_string()),
-            created_by: Set("Tester".to_string()),
+            created_by_login_id: Set(crate::users::login_id_by_name(
+                db, "Tester",
+            )
+            .await
+            .unwrap()),
             ..Default::default()
         },
     )
@@ -3529,7 +3577,11 @@ async fn rer_analysis_units_match_etalon_units_during_active_window() {
         db,
         sigint_unit::ActiveModel {
             name: Set("Active Etalon Unit".to_string()),
-            created_by: Set("Tester".to_string()),
+            created_by_login_id: Set(crate::users::login_id_by_name(
+                db, "Tester",
+            )
+            .await
+            .unwrap()),
             ..Default::default()
         },
     )
@@ -3608,7 +3660,11 @@ async fn rer_analysis_map_unit_filter_uses_message_network_links() {
         db,
         sigint_unit::ActiveModel {
             name: Set("Selected Unit".to_string()),
-            created_by: Set("Tester".to_string()),
+            created_by_login_id: Set(crate::users::login_id_by_name(
+                db, "Tester",
+            )
+            .await
+            .unwrap()),
             ..Default::default()
         },
     )
@@ -3618,7 +3674,11 @@ async fn rer_analysis_map_unit_filter_uses_message_network_links() {
         db,
         sigint_unit::ActiveModel {
             name: Set("Other Unit".to_string()),
-            created_by: Set("Tester".to_string()),
+            created_by_login_id: Set(crate::users::login_id_by_name(
+                db, "Tester",
+            )
+            .await
+            .unwrap()),
             ..Default::default()
         },
     )
@@ -3705,7 +3765,7 @@ async fn rer_analysis_map_unit_filter_uses_message_network_links() {
         ..Default::default()
     };
     let items = crate::rer_importer::inbox::bl::get_inbox_map_items(
-        &test_identity.login,
+        &test_identity_login_id(&fixture.env, &test_identity).await,
         &fixture.env,
         &base_req,
     )
@@ -3721,7 +3781,7 @@ async fn rer_analysis_map_unit_filter_uses_message_network_links() {
         ..base_req.clone()
     };
     let items = crate::rer_importer::inbox::bl::get_inbox_map_items(
-        &test_identity.login,
+        &test_identity_login_id(&fixture.env, &test_identity).await,
         &fixture.env,
         &req,
     )
@@ -3744,7 +3804,11 @@ async fn rer_duty_unit_filter_includes_child_units_in_fuzzy_mode() {
             name: Set("2 бат 1 полк".to_string()),
             battalion: Set("2 бат".to_string()),
             regiment: Set("1 полк".to_string()),
-            created_by: Set("Tester".to_string()),
+            created_by_login_id: Set(crate::users::login_id_by_name(
+                db, "Tester",
+            )
+            .await
+            .unwrap()),
             ..Default::default()
         },
     )
@@ -3756,7 +3820,11 @@ async fn rer_duty_unit_filter_includes_child_units_in_fuzzy_mode() {
             name: Set("2 бат".to_string()),
             battalion: Set("2 бат".to_string()),
             regiment: Set("1 полк".to_string()),
-            created_by: Set("Tester".to_string()),
+            created_by_login_id: Set(crate::users::login_id_by_name(
+                db, "Tester",
+            )
+            .await
+            .unwrap()),
             ..Default::default()
         },
     )
@@ -3769,7 +3837,11 @@ async fn rer_duty_unit_filter_includes_child_units_in_fuzzy_mode() {
             company: Set("3 рота".to_string()),
             battalion: Set("2 бат".to_string()),
             regiment: Set("1 полк".to_string()),
-            created_by: Set("Tester".to_string()),
+            created_by_login_id: Set(crate::users::login_id_by_name(
+                db, "Tester",
+            )
+            .await
+            .unwrap()),
             ..Default::default()
         },
     )
@@ -3782,7 +3854,11 @@ async fn rer_duty_unit_filter_includes_child_units_in_fuzzy_mode() {
             company: Set("3 рота".to_string()),
             battalion: Set("2 бат".to_string()),
             regiment: Set("2 полк".to_string()),
-            created_by: Set("Tester".to_string()),
+            created_by_login_id: Set(crate::users::login_id_by_name(
+                db, "Tester",
+            )
+            .await
+            .unwrap()),
             ..Default::default()
         },
     )
@@ -3868,7 +3944,7 @@ async fn rer_duty_unit_filter_includes_child_units_in_fuzzy_mode() {
         ..Default::default()
     };
     let items = crate::rer_importer::inbox::bl::get_inbox_map_items(
-        &test_identity.login,
+        &test_identity_login_id(&fixture.env, &test_identity).await,
         &fixture.env,
         &base_req,
     )
@@ -3884,7 +3960,7 @@ async fn rer_duty_unit_filter_includes_child_units_in_fuzzy_mode() {
         ..base_req.clone()
     };
     let items = crate::rer_importer::inbox::bl::get_inbox_map_items(
-        &test_identity.login,
+        &test_identity_login_id(&fixture.env, &test_identity).await,
         &fixture.env,
         &req,
     )
@@ -3900,7 +3976,7 @@ async fn rer_duty_unit_filter_includes_child_units_in_fuzzy_mode() {
         ..base_req
     };
     let items = crate::rer_importer::inbox::bl::get_inbox_map_items(
-        &test_identity.login,
+        &test_identity_login_id(&fixture.env, &test_identity).await,
         &fixture.env,
         &req,
     )
@@ -3917,7 +3993,7 @@ async fn rer_duty_unit_filter_includes_child_units_in_fuzzy_mode() {
         ..Default::default()
     };
     let items = crate::rer_importer::inbox::bl::get_inbox_map_items(
-        &test_identity.login,
+        &test_identity_login_id(&fixture.env, &test_identity).await,
         &fixture.env,
         &req,
     )
@@ -3939,7 +4015,11 @@ async fn rer_analysis_unit_filter_includes_child_units_by_name_suffix_in_fuzzy_m
         db,
         sigint_unit::ActiveModel {
             name: Set("100 pbr".to_string()),
-            created_by: Set("Tester".to_string()),
+            created_by_login_id: Set(crate::users::login_id_by_name(
+                db, "Tester",
+            )
+            .await
+            .unwrap()),
             ..Default::default()
         },
     )
@@ -3949,7 +4029,11 @@ async fn rer_analysis_unit_filter_includes_child_units_by_name_suffix_in_fuzzy_m
         db,
         sigint_unit::ActiveModel {
             name: Set("1 pdb 100 pbr".to_string()),
-            created_by: Set("Tester".to_string()),
+            created_by_login_id: Set(crate::users::login_id_by_name(
+                db, "Tester",
+            )
+            .await
+            .unwrap()),
             ..Default::default()
         },
     )
@@ -3959,7 +4043,11 @@ async fn rer_analysis_unit_filter_includes_child_units_by_name_suffix_in_fuzzy_m
         db,
         sigint_unit::ActiveModel {
             name: Set("1 pdb 200 pbr".to_string()),
-            created_by: Set("Tester".to_string()),
+            created_by_login_id: Set(crate::users::login_id_by_name(
+                db, "Tester",
+            )
+            .await
+            .unwrap()),
             ..Default::default()
         },
     )
@@ -4045,7 +4133,7 @@ async fn rer_analysis_unit_filter_includes_child_units_by_name_suffix_in_fuzzy_m
         ..Default::default()
     };
     let items = crate::rer_importer::inbox::bl::get_inbox_map_items(
-        &test_identity.login,
+        &test_identity_login_id(&fixture.env, &test_identity).await,
         &fixture.env,
         &base_req,
     )
@@ -4061,7 +4149,7 @@ async fn rer_analysis_unit_filter_includes_child_units_by_name_suffix_in_fuzzy_m
         ..base_req.clone()
     };
     let items = crate::rer_importer::inbox::bl::get_inbox_map_items(
-        &test_identity.login,
+        &test_identity_login_id(&fixture.env, &test_identity).await,
         &fixture.env,
         &req,
     )
@@ -4076,7 +4164,7 @@ async fn rer_analysis_unit_filter_includes_child_units_by_name_suffix_in_fuzzy_m
         ..base_req
     };
     let items = crate::rer_importer::inbox::bl::get_inbox_map_items(
-        &test_identity.login,
+        &test_identity_login_id(&fixture.env, &test_identity).await,
         &fixture.env,
         &req,
     )
@@ -4098,14 +4186,16 @@ async fn rer_analysis_freq_stats_follow_group_and_network_filters() {
     let mut req = analysis_stats_req0(&fixture);
     req.selected_groups =
         Some(vec![fixture.alpha.signal_group.master_key.clone()]);
-    let master_keys =
-        get_identity_sigint_groups(&fixture.env.dbx, &test_identity.login)
-            .await
-            .unwrap();
+    let master_keys = get_identity_sigint_groups(
+        &fixture.env.dbx,
+        &test_identity_login_id(&fixture.env, &test_identity).await,
+    )
+    .await
+    .unwrap();
     let counts = freq_counts(
         stats::fetch_freqs_for_login(
             &req,
-            &test_identity.login,
+            &test_identity_login_id(&fixture.env, &test_identity).await,
             &env,
             master_keys,
         )
@@ -4127,14 +4217,16 @@ async fn rer_analysis_freq_stats_follow_group_and_network_filters() {
     req.selected_groups =
         Some(vec![fixture.alpha.signal_group.master_key.clone()]);
     req.selected_aors = Some(vec![fixture.south_aor.id]);
-    let master_keys =
-        get_identity_sigint_groups(&fixture.env.dbx, &test_identity.login)
-            .await
-            .unwrap();
+    let master_keys = get_identity_sigint_groups(
+        &fixture.env.dbx,
+        &test_identity_login_id(&fixture.env, &test_identity).await,
+    )
+    .await
+    .unwrap();
     let counts = freq_counts(
         stats::fetch_freqs_for_login(
             &req,
-            &test_identity.login,
+            &test_identity_login_id(&fixture.env, &test_identity).await,
             &env,
             master_keys,
         )
@@ -4150,14 +4242,16 @@ async fn rer_analysis_freq_stats_follow_group_and_network_filters() {
     let test_identity = mk_test_identity().await.unwrap();
     let mut req = analysis_stats_req0(&fixture);
     req.without_network = Some(true);
-    let master_keys =
-        get_identity_sigint_groups(&fixture.env.dbx, &test_identity.login)
-            .await
-            .unwrap();
+    let master_keys = get_identity_sigint_groups(
+        &fixture.env.dbx,
+        &test_identity_login_id(&fixture.env, &test_identity).await,
+    )
+    .await
+    .unwrap();
     let counts = freq_counts(
         stats::fetch_freqs_for_login(
             &req,
-            &test_identity.login,
+            &test_identity_login_id(&fixture.env, &test_identity).await,
             &env,
             master_keys,
         )
@@ -4222,14 +4316,16 @@ async fn rer_analysis_count_stats_follow_aor_frequency_and_peleng_filters() {
 
     let test_identity = mk_test_identity().await.unwrap();
     let req = Json(analysis_stats_req0(&fixture));
-    let master_keys =
-        get_identity_sigint_groups(&fixture.env.dbx, &test_identity.login)
-            .await
-            .unwrap();
+    let master_keys = get_identity_sigint_groups(
+        &fixture.env.dbx,
+        &test_identity_login_id(&fixture.env, &test_identity).await,
+    )
+    .await
+    .unwrap();
     let master_keys_noimport = master_keys.clone();
     let groups = stats::fetch_groups_for_login(
         &req.0,
-        &test_identity.login,
+        &test_identity_login_id(&fixture.env, &test_identity).await,
         &env,
         master_keys_noimport.clone(),
     )
@@ -4244,7 +4340,7 @@ async fn rer_analysis_count_stats_follow_aor_frequency_and_peleng_filters() {
     .unwrap();
     let (count_overall, count_selected) = stats::fetch_counts_for_login(
         &req,
-        &test_identity.login,
+        &test_identity_login_id(&fixture.env, &test_identity).await,
         &fixture.env,
         master_keys.clone(),
     )
@@ -4257,7 +4353,7 @@ async fn rer_analysis_count_stats_follow_aor_frequency_and_peleng_filters() {
         senders_count: 0,
         freqs_count: stats::fetch_freqs_for_login(
             &req.0,
-            &test_identity.login,
+            &test_identity_login_id(&fixture.env, &test_identity).await,
             &env,
             master_keys.clone(),
         )
@@ -4283,14 +4379,16 @@ async fn rer_analysis_count_stats_follow_aor_frequency_and_peleng_filters() {
     let mut req = analysis_stats_req0(&fixture);
     req.selected_aors = Some(vec![fixture.south_aor.id]);
     let req = Json(req);
-    let master_keys =
-        get_identity_sigint_groups(&fixture.env.dbx, &test_identity.login)
-            .await
-            .unwrap();
+    let master_keys = get_identity_sigint_groups(
+        &fixture.env.dbx,
+        &test_identity_login_id(&fixture.env, &test_identity).await,
+    )
+    .await
+    .unwrap();
     assert_eq!(
         stats::fetch_counts_for_login(
             &req,
-            &test_identity.login,
+            &test_identity_login_id(&fixture.env, &test_identity).await,
             &fixture.env,
             master_keys,
         )
@@ -4306,14 +4404,16 @@ async fn rer_analysis_count_stats_follow_aor_frequency_and_peleng_filters() {
     req.selected_groups =
         Some(vec![fixture.alpha.signal_group.master_key.clone()]);
     let req = Json(req);
-    let master_keys =
-        get_identity_sigint_groups(&fixture.env.dbx, &test_identity.login)
-            .await
-            .unwrap();
+    let master_keys = get_identity_sigint_groups(
+        &fixture.env.dbx,
+        &test_identity_login_id(&fixture.env, &test_identity).await,
+    )
+    .await
+    .unwrap();
     assert_eq!(
         stats::fetch_counts_for_login(
             &req,
-            &test_identity.login,
+            &test_identity_login_id(&fixture.env, &test_identity).await,
             &fixture.env,
             master_keys,
         )
@@ -4327,14 +4427,16 @@ async fn rer_analysis_count_stats_follow_aor_frequency_and_peleng_filters() {
     let mut req = analysis_stats_req0(&fixture);
     req.selected_freqs = Some(vec!["555.5".to_string()]);
     let req = Json(req);
-    let master_keys =
-        get_identity_sigint_groups(&fixture.env.dbx, &test_identity.login)
-            .await
-            .unwrap();
+    let master_keys = get_identity_sigint_groups(
+        &fixture.env.dbx,
+        &test_identity_login_id(&fixture.env, &test_identity).await,
+    )
+    .await
+    .unwrap();
     assert_eq!(
         stats::fetch_counts_for_login(
             &req,
-            &test_identity.login,
+            &test_identity_login_id(&fixture.env, &test_identity).await,
             &fixture.env,
             master_keys,
         )
@@ -4348,14 +4450,16 @@ async fn rer_analysis_count_stats_follow_aor_frequency_and_peleng_filters() {
     let mut req = analysis_stats_req0(&fixture);
     req.without_network = Some(true);
     let req = Json(req);
-    let master_keys =
-        get_identity_sigint_groups(&fixture.env.dbx, &test_identity.login)
-            .await
-            .unwrap();
+    let master_keys = get_identity_sigint_groups(
+        &fixture.env.dbx,
+        &test_identity_login_id(&fixture.env, &test_identity).await,
+    )
+    .await
+    .unwrap();
     assert_eq!(
         stats::fetch_counts_for_login(
             &req,
-            &test_identity.login,
+            &test_identity_login_id(&fixture.env, &test_identity).await,
             &fixture.env,
             master_keys,
         )
@@ -4384,14 +4488,16 @@ async fn rer_analysis_count_stats_follow_aor_frequency_and_peleng_filters() {
     let mut req = analysis_stats_req0(&fixture);
     req.or_with_coords = Some(true);
     let req = Json(req);
-    let master_keys =
-        get_identity_sigint_groups(&fixture.env.dbx, &test_identity.login)
-            .await
-            .unwrap();
+    let master_keys = get_identity_sigint_groups(
+        &fixture.env.dbx,
+        &test_identity_login_id(&fixture.env, &test_identity).await,
+    )
+    .await
+    .unwrap();
     assert_eq!(
         stats::fetch_counts_for_login(
             &req,
-            &test_identity.login,
+            &test_identity_login_id(&fixture.env, &test_identity).await,
             &fixture.env,
             master_keys,
         )
@@ -4461,14 +4567,16 @@ async fn rer_analysis_count_stats_follow_aor_frequency_and_peleng_filters() {
     req.selected_freqs = Some(vec!["999.9".to_string()]);
     req.or_with_coords = Some(true);
     let req = Json(req);
-    let master_keys =
-        get_identity_sigint_groups(&fixture.env.dbx, &test_identity.login)
-            .await
-            .unwrap();
+    let master_keys = get_identity_sigint_groups(
+        &fixture.env.dbx,
+        &test_identity_login_id(&fixture.env, &test_identity).await,
+    )
+    .await
+    .unwrap();
     assert_eq!(
         stats::fetch_counts_for_login(
             &req,
-            &test_identity.login,
+            &test_identity_login_id(&fixture.env, &test_identity).await,
             &fixture.env,
             master_keys,
         )
@@ -4483,14 +4591,16 @@ async fn rer_analysis_count_stats_follow_aor_frequency_and_peleng_filters() {
     req.selected_freqs = Some(vec!["998.8".to_string()]);
     req.or_with_coords = Some(true);
     let req = Json(req);
-    let master_keys =
-        get_identity_sigint_groups(&fixture.env.dbx, &test_identity.login)
-            .await
-            .unwrap();
+    let master_keys = get_identity_sigint_groups(
+        &fixture.env.dbx,
+        &test_identity_login_id(&fixture.env, &test_identity).await,
+    )
+    .await
+    .unwrap();
     assert_eq!(
         stats::fetch_counts_for_login(
             &req,
-            &test_identity.login,
+            &test_identity_login_id(&fixture.env, &test_identity).await,
             &fixture.env,
             master_keys,
         )
@@ -4510,7 +4620,7 @@ async fn rer_analysis_count_stats_follow_aor_frequency_and_peleng_filters() {
         ..Default::default()
     };
     let inbox_items = crate::rer_importer::inbox::bl::get_inbox_map_items(
-        &test_identity.login,
+        &test_identity_login_id(&fixture.env, &test_identity).await,
         &fixture.env,
         &map_req,
     )
@@ -4569,14 +4679,16 @@ async fn rer_analysis_count_uses_aggregated_count_for_open_filters() {
     .await
     .unwrap();
     let req = Json(req);
-    let master_keys =
-        get_identity_sigint_groups(&fixture.env.dbx, &test_identity.login)
-            .await
-            .unwrap();
+    let master_keys = get_identity_sigint_groups(
+        &fixture.env.dbx,
+        &test_identity_login_id(&fixture.env, &test_identity).await,
+    )
+    .await
+    .unwrap();
 
     let (count_overall, count_selected) = stats::fetch_counts_for_login(
         &req,
-        &test_identity.login,
+        &test_identity_login_id(&fixture.env, &test_identity).await,
         &fixture.env,
         master_keys,
     )
@@ -4650,14 +4762,16 @@ async fn rer_analysis_aor_and_network_stats_render_only_relevant_values() {
     let test_identity = mk_test_identity().await.unwrap();
     let mut req = analysis_stats_req0(&fixture);
     req.selected_freqs = Some(vec!["444.4".to_string()]);
-    let master_keys =
-        get_identity_sigint_groups(&fixture.env.dbx, &test_identity.login)
-            .await
-            .unwrap();
+    let master_keys = get_identity_sigint_groups(
+        &fixture.env.dbx,
+        &test_identity_login_id(&fixture.env, &test_identity).await,
+    )
+    .await
+    .unwrap();
     let counts = aor_counts(
         stats::fetch_aors_for_login(
             &req,
-            &test_identity.login,
+            &test_identity_login_id(&fixture.env, &test_identity).await,
             &env,
             master_keys,
         )
@@ -4669,14 +4783,16 @@ async fn rer_analysis_aor_and_network_stats_render_only_relevant_values() {
     let test_identity = mk_test_identity().await.unwrap();
     let mut req = analysis_stats_req0(&fixture);
     req.selected_freqs = Some(vec!["333.3".to_string()]);
-    let master_keys =
-        get_identity_sigint_groups(&fixture.env.dbx, &test_identity.login)
-            .await
-            .unwrap();
+    let master_keys = get_identity_sigint_groups(
+        &fixture.env.dbx,
+        &test_identity_login_id(&fixture.env, &test_identity).await,
+    )
+    .await
+    .unwrap();
     let counts = aor_counts(
         stats::fetch_aors_for_login(
             &req,
-            &test_identity.login,
+            &test_identity_login_id(&fixture.env, &test_identity).await,
             &env,
             master_keys,
         )
@@ -4691,14 +4807,16 @@ async fn rer_analysis_aor_and_network_stats_render_only_relevant_values() {
     let test_identity = mk_test_identity().await.unwrap();
     let mut req = analysis_stats_req0(&fixture);
     req.selected_aors = Some(vec![fixture.south_aor.id]);
-    let master_keys =
-        get_identity_sigint_groups(&fixture.env.dbx, &test_identity.login)
-            .await
-            .unwrap();
+    let master_keys = get_identity_sigint_groups(
+        &fixture.env.dbx,
+        &test_identity_login_id(&fixture.env, &test_identity).await,
+    )
+    .await
+    .unwrap();
     let counts = network_counts(
         stats::fetch_networks_for_login(
             &req,
-            &test_identity.login,
+            &test_identity_login_id(&fixture.env, &test_identity).await,
             &fixture.env.dbx,
             master_keys,
         )

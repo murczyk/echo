@@ -1,11 +1,11 @@
 use super::*;
 use crate::rer_importer::inbox::bl::find_sigint_comment_by_signal_message_id_and_logins;
 use crate::types::ShortContext;
-use crate::users::get_organism_logins_by_login;
+use crate::users::get_organism_login_ids_by_id;
 use tempfile::TempDir;
 
 pub(crate) async fn rer_analysis_kmz_bytes(
-    login: &str,
+    login: &uuid::Uuid,
     env: &Env,
     req: super::AnalysisStatsReq,
 ) -> Result<Vec<u8>, AppError> {
@@ -105,15 +105,13 @@ pub(crate) async fn rer_analysis_kmz_bytes(
     // let res = crate::kml::build_style_maps_per_app6d(&vec![sidc.clone()])?;
 
     let mut nodes = vec![];
-    let logins = get_organism_logins_by_login(&env.dbx, login)
-        .await
-        .c(h!())?;
+    let login_ids = get_organism_login_ids_by_id(&env.dbx, login).await.c(h!())?;
     for item in items.iter() {
         let Some(ref freq) = item.freq else { continue };
         let Some(ref lat) = item.lat else { continue };
         let Some(ref lng) = item.lng else { continue };
         let m_comment = find_sigint_comment_by_signal_message_id_and_logins(
-            env, item.id, &logins,
+            env, item.id, &login_ids,
         )
         .await?;
 

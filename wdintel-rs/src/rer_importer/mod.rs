@@ -162,7 +162,7 @@ async fn messenger_media(
     env: actix_web::web::Data<Env>,
     path: actix_web::web::Path<(Uuid,)>,
 ) -> Result<HttpResponse, AppError> {
-    let login = user.id().c(h!())?;
+    let login = crate::users::identity_id(&user)?;
     crate::users::has_role(&env.dbx, &login, "Rer")
         .await
         .c(h!())?;
@@ -672,7 +672,7 @@ async fn rer_importer_callsigns(
     env: actix_web::web::Data<Env>,
     req: Json<RerImporterCallsignsReq>,
 ) -> Result<Json<Vec<CallsignWithFrequencies>>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
+    crate::users::has_role(&env.dbx, &crate::users::identity_id(&user)?, "Rer")
         .await
         .c(h!())?;
     let sixty_days_ago_offset =
@@ -692,11 +692,11 @@ inner join datasource d on d.id=sm.datasource_id
 inner join sigint_zone_datasource szd on szd.datasource_id = d.id
 inner join sigint_zone sz on sz.id=szd.sigint_zone_id
 inner join login l on l.sigint_zone_id = sz.id
-where sm.created_at >= $1 and sii.checked and l.login=$2
+where sm.created_at >= $1 and sii.checked and l.id=$2
  group by 1"#,
     )
     .bind(sixty_days_ago_primitive)
-    .bind(user.id().c(h!())?)
+    .bind(crate::users::identity_id(&user)?)
     .fetch_all(env.dbx.get_postgres_connection_pool())
     .await
     .c(h!())?;
@@ -730,7 +730,7 @@ async fn list_messages(
     env: actix_web::web::Data<Env>,
     req: actix_web::web::Query<MessagesReq>,
 ) -> Result<Json<Vec<MessageRsp>>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
+    crate::users::has_role(&env.dbx, &crate::users::identity_id(&user)?, "Rer")
         .await
         .c(h!())?;
 
@@ -806,7 +806,7 @@ async fn callsigns_alchemy(
     user: actix_identity::Identity,
     env: actix_web::web::Data<Env>,
 ) -> Result<Json<CallsignsAlchemyRsp>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
+    crate::users::has_role(&env.dbx, &crate::users::identity_id(&user)?, "Rer")
         .await
         .c(h!())?;
     let callsigns = network_callsign::Entity::find()
@@ -898,7 +898,7 @@ pub async fn unread_counters(
     env: actix_web::web::Data<Env>,
     req: Json<UnreadCountersReq>,
 ) -> Result<Json<UnreadCountersRsp>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
+    crate::users::has_role(&env.dbx, &crate::users::identity_id(&user)?, "Rer")
         .await
         .c(h!())?;
     let newer_msg_count = match req.only_show_unprocessed {
@@ -941,7 +941,7 @@ pub async fn signal_group_info(
     env: actix_web::web::Data<Env>,
     req: Json<SignalGroupReq>,
 ) -> Result<Json<SignalGroupRsp>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
+    crate::users::has_role(&env.dbx, &crate::users::identity_id(&user)?, "Rer")
         .await
         .c(h!())?;
     let m_signal_group = signal_group::Entity::find()
@@ -966,14 +966,17 @@ pub async fn signal_group_info_batch(
 ) -> Result<Json<SignalGroupsRsp>, AppError> {
     crate::users::has_any_role(
         &env.dbx,
-        &user.id().c(h!())?,
+        &crate::users::identity_id(&user)?,
         vec!["Rer", "Api"],
     )
     .await?;
-    let is_admin =
-        crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Admin")
-            .await
-            .is_ok();
+    let is_admin = crate::users::has_role(
+        &env.dbx,
+        &crate::users::identity_id(&user)?,
+        "Admin",
+    )
+    .await
+    .is_ok();
     let keys: Vec<String> =
         req.groups.iter().map(|b| b.master_key.clone()).collect();
     let data = crate::messenger::group::collect_groups(
@@ -996,15 +999,18 @@ pub async fn signal_groups(
 ) -> Result<Json<SignalGroupsRsp>, AppError> {
     crate::users::has_any_role(
         &env.dbx,
-        &user.id().c(h!())?,
+        &crate::users::identity_id(&user)?,
         vec!["Rer", "Api"],
     )
     .await
     .c(h!())?;
-    let is_admin =
-        crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Admin")
-            .await
-            .is_ok();
+    let is_admin = crate::users::has_role(
+        &env.dbx,
+        &crate::users::identity_id(&user)?,
+        "Admin",
+    )
+    .await
+    .is_ok();
     let keys = signal_group::Entity::find()
         .filter(signal_group::Column::Deleted.eq(false))
         .filter(signal_group::Column::IsArchived.eq(false))
@@ -1033,7 +1039,7 @@ pub async fn signal_profile_info(
     env: actix_web::web::Data<Env>,
     req: Json<SignalProfileReq>,
 ) -> Result<Json<Option<SignalProfileRsp>>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
+    crate::users::has_role(&env.dbx, &crate::users::identity_id(&user)?, "Rer")
         .await
         .c(h!())?;
     // signal_profile::Column::Uuid
@@ -1059,7 +1065,7 @@ pub async fn signal_profile_info_batch(
     env: actix_web::web::Data<Env>,
     req: Json<BatchSignalProfileReq>,
 ) -> Result<Json<SignalProfilesRsp>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
+    crate::users::has_role(&env.dbx, &crate::users::identity_id(&user)?, "Rer")
         .await
         .c(h!())?;
     let txn = env.dbx.begin().await.c(h!())?;
@@ -1079,7 +1085,7 @@ pub async fn signal_profile_save(
     env: actix_web::web::Data<Env>,
     req: Json<SignalProfileSaveReq>,
 ) -> Result<Json<()>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
+    crate::users::has_role(&env.dbx, &crate::users::identity_id(&user)?, "Rer")
         .await
         .c(h!())?;
     signal_profile::Entity::insert(signal_profile::ActiveModel {
@@ -1442,8 +1448,8 @@ pub async fn latest_senders(
     user: actix_identity::Identity,
     env: actix_web::web::Data<Env>,
 ) -> Result<Json<SignalProfilesRsp>, AppError> {
-    let login = user.id().c(h!())?;
-    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
+    let login = crate::users::identity_id(&user)?;
+    crate::users::has_role(&env.dbx, &crate::users::identity_id(&user)?, "Rer")
         .await
         .c(h!())?;
     let now = Utc::now();
@@ -1490,7 +1496,7 @@ pub async fn senders(
 ) -> Result<Json<SignalProfilesRsp>, AppError> {
     crate::users::has_any_role(
         &env.dbx,
-        &user.id().c(h!())?,
+        &crate::users::identity_id(&user)?,
         vec!["Rer", "Api"],
     )
     .await

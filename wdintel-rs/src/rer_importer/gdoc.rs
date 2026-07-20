@@ -14,7 +14,7 @@ async fn rer_callsign_info(
     env: actix_web::web::Data<Env>,
     req: Json<RerCallsignInfoReq>,
 ) -> Result<Json<Vec<CallsignInfo>>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
+    crate::users::has_role(&env.dbx, &crate::users::identity_id(&user)?, "Rer")
         .await
         .c(h!())?;
 
@@ -129,7 +129,7 @@ async fn rer_callsign_info_batch(
     env: actix_web::web::Data<Env>,
     req: Json<RerCallsignInfoBatchReq>,
 ) -> Result<Json<Vec<CallsignInfoRes>>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
+    crate::users::has_role(&env.dbx, &crate::users::identity_id(&user)?, "Rer")
         .await
         .c(h!())?;
     let network_callsigns = req
