@@ -432,6 +432,7 @@ async fn reconcile_echo_palitra_missing_in_goi(
         remote_paths,
         target_folder.as_deref(),
         &remote_file_names,
+        target.integration.disable_goi_to_echo_palitra_sync,
     ) else {
         return Ok(None);
     };
@@ -461,7 +462,11 @@ fn find_echo_palitra_backfill_remote_file_name<'a>(
     remote_paths: &BTreeSet<String>,
     target_folder: Option<&str>,
     remote_file_names: &'a [String],
+    overwrite_existing: bool,
 ) -> Option<&'a str> {
+    if overwrite_existing {
+        return remote_file_names.first().map(String::as_str);
+    }
     remote_file_names.iter().find_map(|file_name| {
         (!remote_paths
             .contains(&compose_relative_path(target_folder, file_name)))
@@ -3454,6 +3459,7 @@ mod tests {
                 &BTreeSet::new(),
                 Some("folder"),
                 &remote_file_names,
+                false,
             ),
             Some("Current name.kmz")
         );
@@ -3464,6 +3470,7 @@ mod tests {
                 &current_path,
                 Some("folder"),
                 &remote_file_names,
+                false,
             ),
             Some("source.kml")
         );
@@ -3476,6 +3483,7 @@ mod tests {
                 &current_and_source_paths,
                 Some("folder"),
                 &remote_file_names,
+                false,
             ),
             Some("palitra_000042.kmz")
         );
@@ -3489,8 +3497,30 @@ mod tests {
                 &all_paths,
                 Some("folder"),
                 &remote_file_names,
+                false,
             ),
             None
+        );
+    }
+
+    #[test]
+    fn echo_only_backfill_overwrites_preferred_remote_name() {
+        let remote_file_names = super::super::palitra_goi_remote_file_names(
+            42,
+            Some("Current name"),
+            Some("source.kml"),
+        );
+        let current_path =
+            BTreeSet::from(["folder/Current name.kmz".to_string()]);
+
+        assert_eq!(
+            find_echo_palitra_backfill_remote_file_name(
+                &current_path,
+                Some("folder"),
+                &remote_file_names,
+                true,
+            ),
+            Some("Current name.kmz")
         );
     }
 
