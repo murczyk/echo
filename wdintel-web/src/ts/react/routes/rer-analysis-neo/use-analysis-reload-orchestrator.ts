@@ -64,6 +64,10 @@ type Params = {
   invalidateMessagePaging: () => void;
   invalidateMessagePageRequests: () => void;
   getCurrentMessagePageCursor: () => import('./types').AnalysisMessagePageCursor;
+  setCurrentMessagePage: (
+    cursor: import('./types').AnalysisMessagePageCursor,
+    pageIndex: number,
+  ) => void;
   refreshMessageCounts: () => void;
   setAorEntries: Setter<AnalysisAorEntry[]>;
   setCounts: Setter<import('../../../../Bindings').CountStatsRsp | null>;
@@ -110,6 +114,7 @@ export function useAnalysisReloadOrchestrator(params: Params): UseAnalysisReload
     deferInitialLoad,
     getLoadedFilterSections,
     getCurrentMessagePageCursor,
+    setCurrentMessagePage,
     getReloadFilterSections,
     invalidateCallsignGraph,
     invalidateCorrelatedFreqsCache,
@@ -194,6 +199,7 @@ export function useAnalysisReloadOrchestrator(params: Params): UseAnalysisReload
             ? invalidateMessagePageRequests
             : invalidateMessagePaging,
           messagePageCursor: preserveMessagePage ? getCurrentMessagePageCursor() : undefined,
+          setCurrentMessagePage,
           newestFirst,
           onError,
           onUnauthorized,

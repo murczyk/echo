@@ -25,6 +25,7 @@ import {
   fetchAnalysisSenders,
   fetchAnalysisTags,
   fetchAnalysisUnits,
+  fetchInboxCount,
   fetchInboxMessages,
   fetchNetworksByIds,
   getLatestSenders,
@@ -59,6 +60,7 @@ import type {
   AnalysisMessagePageCursor,
   AnalysisQueryState,
 } from './types';
+import { ANALYSIS_MESSAGES_PAGE_SIZE } from './helpers';
 
 type FilterSectionLoadContext = {
   analysisReq: NonNullable<ReturnType<typeof buildAnalysisReq>>;
@@ -546,10 +548,9 @@ export async function loadFilterSectionData(
 
 type Setter<T> = React.Dispatch<React.SetStateAction<T>>;
 
-function transformMessagePageResponse<T extends { inboxItems: Array<[number, InboxMessage]> }>(
-  response: T,
-  cursor: AnalysisMessagePageCursor | undefined,
-): T {
+export function transformMessagePageResponse<
+  T extends { inboxItems: Array<[number, InboxMessage]> },
+>(response: T, cursor: AnalysisMessagePageCursor | undefined): T {
   if (isNullOrUndefined(cursor)) return response;
   const limitedMessages = cursor.resultLimit
     ? response.inboxItems.slice(0, cursor.resultLimit)
@@ -560,12 +561,32 @@ function transformMessagePageResponse<T extends { inboxItems: Array<[number, Inb
   };
 }
 
+function isLastPageCursor(
+  cursor: AnalysisMessagePageCursor | undefined,
+): cursor is AnalysisMessagePageCursor {
+  return cursor?.reverseResults === true && cursor.resultLimit != null;
+}
+
+export function rebuildLastPageCursor(
+  cursor: AnalysisMessagePageCursor,
+  total: number,
+): { cursor: AnalysisMessagePageCursor; pageIndex: number } {
+  return {
+    cursor: {
+      ...cursor,
+      resultLimit: total % ANALYSIS_MESSAGES_PAGE_SIZE || ANALYSIS_MESSAGES_PAGE_SIZE,
+    },
+    pageIndex: Math.max(0, Math.ceil(total / ANALYSIS_MESSAGES_PAGE_SIZE) - 1),
+  };
+}
+
 type ReloadParams = {
   clearAnalysisResults: () => void;
   invalidateCorrelatedFreqsCache: () => void;
   invalidateCallsignGraph: () => void;
   invalidateMessagePaging: () => void;
   messagePageCursor?: AnalysisMessagePageCursor;
+  setCurrentMessagePage?: (cursor: AnalysisMessagePageCursor, pageIndex: number) => void;
   centerTab?: import('./types').AnalysisCenterTab;
   rightSidebarVisible?: boolean;
   rightSidebarTab?: import('./types').AnalysisSidebarTab | null;
@@ -695,14 +716,25 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
         params.signal ? { signal: params.signal } : undefined,
       );
       countsPromise.catch(() => undefined);
+      let messagePageCursor = params.messagePageCursor;
+      if (isLastPageCursor(messagePageCursor)) {
+        const messageCount = await fetchInboxCount(
+          { ...messageInboxReq, nolimit: true, newestFirst: params.newestFirst },
+          params.signal ? { signal: params.signal } : undefined,
+        );
+        if (isStaleReload() || params.signal?.aborted) return null;
+        const rebuiltPage = rebuildLastPageCursor(messagePageCursor, messageCount.quantity);
+        messagePageCursor = rebuiltPage.cursor;
+        params.setCurrentMessagePage?.(rebuiltPage.cursor, rebuiltPage.pageIndex);
+      }
       const inboxPromise = fetchInboxMessages(
         {
           ...messageInboxReq,
           beforeIdNoninclusive:
-            params.messagePageCursor?.beforeIdNoninclusive ?? messageInboxReq.beforeIdNoninclusive,
+            messagePageCursor?.beforeIdNoninclusive ?? messageInboxReq.beforeIdNoninclusive,
           sinceIdNoninclusive:
-            params.messagePageCursor?.sinceIdNoninclusive ?? messageInboxReq.sinceIdNoninclusive,
-          newestFirst: params.messagePageCursor?.requestNewestFirst ?? params.newestFirst,
+            messagePageCursor?.sinceIdNoninclusive ?? messageInboxReq.sinceIdNoninclusive,
+          newestFirst: messagePageCursor?.requestNewestFirst ?? params.newestFirst,
         },
         params.signal ? { signal: params.signal } : undefined,
       );
@@ -714,7 +746,7 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
 
       let inboxRsp: Awaited<ReturnType<typeof fetchInboxMessages>>;
       try {
-        inboxRsp = transformMessagePageResponse(await inboxPromise, params.messagePageCursor);
+        inboxRsp = transformMessagePageResponse(await inboxPromise, messagePageCursor);
       } catch (loadError) {
         if (isAbortError(loadError) || params.signal?.aborted) return null;
         throw loadError;
@@ -770,18 +802,18 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
               {
                 ...rebuiltMessageInboxReq,
                 beforeIdNoninclusive:
-                  params.messagePageCursor?.beforeIdNoninclusive ??
+                  messagePageCursor?.beforeIdNoninclusive ??
                   rebuiltMessageInboxReq.beforeIdNoninclusive,
                 sinceIdNoninclusive:
-                  params.messagePageCursor?.sinceIdNoninclusive ??
+                  messagePageCursor?.sinceIdNoninclusive ??
                   rebuiltMessageInboxReq.sinceIdNoninclusive,
-                newestFirst: params.messagePageCursor?.requestNewestFirst ?? params.newestFirst,
+                newestFirst: messagePageCursor?.requestNewestFirst ?? params.newestFirst,
               },
               params.signal ? { signal: params.signal } : undefined,
             );
             const rebuiltMessagePageRsp = transformMessagePageResponse(
               rebuiltInboxRsp,
-              params.messagePageCursor,
+              messagePageCursor,
             );
             const rebuiltFreqsRsp = await fetchAnalysisFreqs(
               rebuiltAnalysisReq,

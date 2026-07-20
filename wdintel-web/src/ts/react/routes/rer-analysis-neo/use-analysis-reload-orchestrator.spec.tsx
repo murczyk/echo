@@ -81,6 +81,7 @@ function buildParams(overrides: Partial<Parameters<typeof useAnalysisReloadOrche
       beforeIdNoninclusive: 120,
       sinceIdNoninclusive: null,
     })),
+    setCurrentMessagePage: vi.fn(),
     invalidateMessagePageRequests: vi.fn(),
     invalidateMessagePaging: vi.fn(),
     refreshMessageCounts: vi.fn(),
