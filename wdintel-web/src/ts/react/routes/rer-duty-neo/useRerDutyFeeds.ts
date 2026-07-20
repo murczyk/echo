@@ -486,6 +486,7 @@ export function useRerDutyFeeds(authUserName: string | null) {
     loadingNewerFeedIds: feedState.loadingNewerFeedIds,
     arrowResultByFeedId: feedState.arrowResultByFeedId,
     copiedFeedbackId: actions.copiedFeedbackId,
+    handleEditedMessage: actions.handleEditedMessage,
     keywordSets,
     reloadKeywordSets,
   };

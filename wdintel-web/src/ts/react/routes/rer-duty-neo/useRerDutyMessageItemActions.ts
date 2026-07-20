@@ -257,6 +257,20 @@ export function useRerDutyMessageItemActions(params: Params) {
     setBotTagAction(null);
   }, []);
 
+  const handleEditedMessage = useCallback(
+    (messageId: number, message: InboxMessage) => {
+      setMessageFeeds((prev) =>
+        prev.map((feed) => ({
+          ...feed,
+          items: feed.items.map(([id, currentMessage]) =>
+            id === messageId ? [id, message] : [id, currentMessage],
+          ),
+        })),
+      );
+    },
+    [setMessageFeeds],
+  );
+
   const handleOpenPointsOnMap = useCallback((etalons: string[], message: InboxMessage) => {
     const search = uniquePointEtalonsForMapSearch(etalons).join(',');
     if (search === '') return;
@@ -277,6 +291,7 @@ export function useRerDutyMessageItemActions(params: Params) {
     botTagAction,
     onCancelBotTagAction,
     onMarkBotTagWrong,
+    handleEditedMessage,
     commentMessageId,
     commentText,
     setCommentText,

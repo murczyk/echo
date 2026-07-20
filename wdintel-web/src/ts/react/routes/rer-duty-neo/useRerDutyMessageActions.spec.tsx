@@ -313,6 +313,28 @@ describe('useRerDutyMessageActions', () => {
     );
   });
 
+  it('replaces an edited message in every loaded feed without changing feed state', async () => {
+    const original = buildMessage({ text: 'before' });
+    const updated = buildMessage({ text: 'after' });
+    const firstFeed = buildFeed({ id: 'mf-1', items: [[42, original]] });
+    const secondFeed = buildFeed({ id: 'mf-2', items: [[42, original]] });
+    const apiRef: MutableRefObject<HarnessApi | null> = { current: null };
+
+    await act(async () => {
+      root.render(<TestHarness apiRef={apiRef} initialFeeds={[firstFeed, secondFeed]} />);
+    });
+
+    await act(async () => {
+      apiRef.current!.handleEditedMessage(42, updated);
+    });
+
+    expect(apiRef.current!.messageFeeds.map((feed) => feed.items[0]?.[1].text)).toEqual([
+      'after',
+      'after',
+    ]);
+    expect(apiRef.current!.messageFeeds.map((feed) => feed.unreadCount)).toEqual([70000, 70000]);
+  });
+
   it('scrolls to the existing bottom once for a valid zero-count arrow result', async () => {
     hoisted.requestValidatedInboxCount.mockResolvedValueOnce({
       feedId: 'mf-0',

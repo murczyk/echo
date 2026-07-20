@@ -27,11 +27,15 @@ vi.mock('../shared/message-card/MessageCard', () => ({
     botTagAction?: { messageId: number; tagId: number } | null;
     onCopyEtalon?: () => void;
     onCopyLocation?: () => void;
+    onEditDetails?: () => void;
   }) => (
     <div data-testid="message-card">
       <span data-testid={`bot-action-${props.id}`}>{props.botTagAction?.messageId ?? ''}</span>
       {props.onCopyEtalon != null ? <span data-testid="copy-etalon">copy-etalon</span> : null}
       {props.onCopyLocation != null ? <span data-testid="copy-location">copy-location</span> : null}
+      {props.onEditDetails != null ? (
+        <button type="button" data-testid="edit-message" onClick={props.onEditDetails} />
+      ) : null}
     </div>
   ),
 }));
@@ -169,6 +173,7 @@ function buildProps(): FeedColumnProps {
         onMessageComment: vi.fn(),
         onMessageExcludeEntity: vi.fn(),
         onMessageToggleTag: vi.fn(),
+        onMessageEdit: vi.fn(),
         onCreateFeed: vi.fn(),
       },
     },
@@ -218,6 +223,23 @@ describe('FeedColumn', () => {
     });
 
     expect(container.querySelector('[data-testid="feed-filter-panel"]')).toBeNull();
+  });
+
+  it('passes the message id and message to the Duty edit action', async () => {
+    const props = buildProps();
+    const message = minimalInboxMessage({ text: 'edit me' });
+    const onMessageEdit = vi.fn();
+    props.column.feed.items = [[42, message]];
+    props.column.actions.onMessageEdit = onMessageEdit;
+
+    await act(async () => {
+      root.render(<FeedColumn column={props.column} />);
+    });
+    await act(async () => {
+      (container.querySelector('[data-testid="edit-message"]') as HTMLButtonElement).click();
+    });
+
+    expect(onMessageEdit).toHaveBeenCalledWith(42, message);
   });
 
   it('closes the filters panel when clicking its trigger again', async () => {

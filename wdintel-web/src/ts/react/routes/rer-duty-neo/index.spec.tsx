@@ -5,6 +5,7 @@ import { act, createElement, useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { minimalInboxMessage } from './inbox-message-mocks';
 
 const useRerDutyFeedsMock = vi.hoisted(() => vi.fn());
 const notifyMock = vi.hoisted(() => vi.fn());
@@ -33,10 +34,14 @@ vi.mock('./RerDutyNeoWorkspace', () => ({
     activeFeedId,
     createMessageFeed,
     openCreateMessageComposer,
+    buildFeedColumnModel,
+    messageFeeds,
   }: {
     activeFeedId: string | null;
     createMessageFeed: () => void;
     openCreateMessageComposer: () => void;
+    buildFeedColumnModel: (feed: any) => any;
+    messageFeeds: any[];
   }) => (
     <div>
       <div data-testid="active-feed">{activeFeedId}</div>
@@ -46,6 +51,16 @@ vi.mock('./RerDutyNeoWorkspace', () => ({
       <button type="button" aria-label="Додати стрічку" onClick={createMessageFeed}>
         Додати стрічку
       </button>
+      {messageFeeds[0]?.items[0] ? (
+        <button
+          type="button"
+          aria-label="Редагувати повідомлення"
+          onClick={() => {
+            const [id, message] = messageFeeds[0].items[0];
+            buildFeedColumnModel(messageFeeds[0]).actions.onMessageEdit(id, message);
+          }}
+        />
+      ) : null}
     </div>
   ),
 }));
@@ -54,10 +69,14 @@ vi.mock('../shared/manage-message/ManageMessageDrawer', () => ({
     open,
     onClose,
     onCreated,
+    editTarget,
+    onSubmitEdit,
   }: {
     open: boolean;
     onClose: () => void;
     onCreated?: (result: { signal_message_id: number }) => Promise<void> | void;
+    editTarget?: { id: number; message: any } | null;
+    onSubmitEdit?: (id: number, message: any) => Promise<void> | void;
   }) =>
     open ? (
       <div role="dialog" data-testid="composer">
@@ -67,6 +86,16 @@ vi.mock('../shared/manage-message/ManageMessageDrawer', () => ({
         <button type="button" aria-label="Симулювати помилку">
           Помилка
         </button>
+        {editTarget ? (
+          <button
+            type="button"
+            aria-label="Зберегти редагування"
+            onClick={async () => {
+              await onSubmitEdit?.(editTarget.id, { ...editTarget.message, text: 'updated' });
+              onClose();
+            }}
+          />
+        ) : null}
         <button
           type="button"
           aria-label="Створити повідомлення"
@@ -168,7 +197,7 @@ function buildFeedsState() {
       {
         id: 'feed-1',
         filter: feedFilter,
-        items: [],
+        items: [[42, minimalInboxMessage({ text: 'original' })]],
         loading: false,
         loadingOlder: false,
         hasReachedStart: false,
@@ -182,7 +211,7 @@ function buildFeedsState() {
       {
         id: 'feed-2',
         filter: { ...feedFilter, groupsSelected: ['g-2'] },
-        items: [],
+        items: [[42, minimalInboxMessage({ text: 'original' })]],
         loading: false,
         loadingOlder: false,
         hasReachedStart: false,
@@ -212,6 +241,7 @@ function buildFeedsState() {
     handleMessageBookmark: vi.fn(),
     handleMessageImportant: vi.fn(),
     handleMessageCopy: vi.fn(),
+    handleEditedMessage: vi.fn(),
     handleOpenPointsOnMap: vi.fn(),
     handleDeleteConfirm: vi.fn(),
     setDeleteConfirmId: vi.fn(),
@@ -260,6 +290,7 @@ function buildFeedsState() {
     featureStrictNetworks: false,
     watchModeByFeedId: {},
     setWatchModeByFeedId: vi.fn(),
+    loadingNewerFeedIds: new Set<string>(),
     loadingNewerFeedId: null,
     arrowResultByFeedId: {},
     copiedFeedbackId: null,
@@ -334,6 +365,25 @@ describe('RerDutyNeoPage creation workflow', () => {
     expect(state.reloadEmptyFeeds).toHaveBeenCalledTimes(1);
     expect(state.loadFeedOlderMessages).not.toHaveBeenCalled();
     expect(state.applyFilter).not.toHaveBeenCalled();
+
+    await act(async () => {
+      root.unmount();
+    });
+  });
+
+  it('opens edit mode, submits the returned message, and closes the drawer', async () => {
+    const { container, root, state } = await renderPage();
+
+    await click(container.querySelector('button[aria-label="Редагувати повідомлення"]'));
+    expect(container.querySelector('[data-testid="composer"]')).not.toBeNull();
+
+    await click(container.querySelector('button[aria-label="Зберегти редагування"]'));
+
+    expect(state.handleEditedMessage).toHaveBeenCalledWith(
+      42,
+      expect.objectContaining({ text: 'updated' }),
+    );
+    expect(container.querySelector('[data-testid="composer"]')).toBeNull();
 
     await act(async () => {
       root.unmount();
