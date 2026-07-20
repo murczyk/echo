@@ -2320,6 +2320,48 @@ describe('useRerDutyFeedState — loading', () => {
     expect(hoisted.notifyDutyNewMessages).not.toHaveBeenCalled();
   });
 
+  it('keeps the unread cursor before evicted unread IDs until they are read', async () => {
+    hoisted.fetchInboxMessages.mockResolvedValueOnce(
+      inboxRsp(
+        Array.from({ length: 40 }, (_, index) => [
+          index + 1,
+          minimalInboxMessage({ timestamp: (index + 1) * 100 }),
+        ]),
+      ),
+    );
+    const apiRef: React.MutableRefObject<ReturnType<typeof useRerDutyFeedState> | null> = {
+      current: null,
+    };
+    await act(async () => root.render(<TestHarness apiRef={apiRef} />));
+    await act(async () => flushMicrotasks());
+    await act(async () =>
+      apiRef.current!.setMessageFeeds((feeds) =>
+        feeds.map((feed) => ({
+          ...feed,
+          items: Array.from({ length: 20 }, (_, index) => [
+            index + 61,
+            minimalInboxMessage({ timestamp: (index + 61) * 100 }),
+          ]),
+          readIds: new Set(Array.from({ length: 20 }, (_, index) => index + 61)),
+          windowedUnreadIds: new Set(Array.from({ length: 100000 }, (_, index) => index + 41)),
+        })),
+      ),
+    );
+    apiRef.current!.nearBottomByFeedIdRef.current['mf-0'] = true;
+    hoisted.fetchInboxCount.mockResolvedValueOnce({ quantity: 1, firstElementTs: null });
+    await startPoll();
+    expectTailCountRequest(40);
+
+    await act(async () =>
+      apiRef.current!.setMessageFeeds((feeds) =>
+        feeds.map((feed) => ({ ...feed, windowedUnreadIds: new Set<number>() })),
+      ),
+    );
+    hoisted.fetchInboxCount.mockResolvedValueOnce({ quantity: 1, firstElementTs: null });
+    await startPoll();
+    expectTailCountRequest(80);
+  });
+
   it('resets the unread cursor and notification baseline after a filter reload', async () => {
     hoisted.fetchInboxMessages.mockResolvedValueOnce(
       inboxRsp(

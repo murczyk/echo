@@ -682,6 +682,15 @@ describe('rer-duty utils', () => {
     expect(feedIndicatorUnreadCount(feed, { tailId: 20, count: 1 })).toBe(1);
   });
 
+  it('counts windowed unread IDs at or before a matching preview tail', () => {
+    const feed = indicatorFeed({
+      items: [[80, {} as InboxMessage]],
+      readIds: new Set([80]),
+      windowedUnreadIds: new Set(Array.from({ length: 20 }, (_, index) => index + 41)),
+    });
+    expect(feedIndicatorUnreadCount(feed, { tailId: 80, count: 0 })).toBe(20);
+  });
+
   it('sums loaded unread rows with a matching preview', () => {
     const feed = indicatorFeed({
       items: [

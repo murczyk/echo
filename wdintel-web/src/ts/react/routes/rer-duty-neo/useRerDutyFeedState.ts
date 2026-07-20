@@ -489,6 +489,18 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
         if (!feed.readIds.has(id)) break;
         nextCursor = id;
       }
+      const windowedUnreadIds = feed.windowedUnreadIds;
+      if (nextCursor != null && windowedUnreadIds.size > 0) {
+        let earliestWindowedUnreadId: number | null = null;
+        for (const id of windowedUnreadIds) {
+          if (earliestWindowedUnreadId === null || id < earliestWindowedUnreadId) {
+            earliestWindowedUnreadId = id;
+          }
+        }
+        if (earliestWindowedUnreadId !== null) {
+          nextCursor = Math.min(nextCursor, earliestWindowedUnreadId - 1);
+        }
+      }
       if (nextCursor != null && nextCursor !== currentCursor) {
         advanceFeedReadCursor(
           feed.id,

@@ -852,7 +852,12 @@ export function feedIndicatorUnreadCount(
   const loadedUnread = feedLoadedUnreadCount(feed);
   const currentTailId = feed.items.at(-1)?.[0];
   const hasMatchingPreview = currentTailId != null && preview?.tailId === currentTailId;
-  if (hasMatchingPreview) return loadedUnread + Math.max(0, preview.count);
+  if (hasMatchingPreview) {
+    const windowedUnreadBeforeOrAtTail = [...(feed.windowedUnreadIds ?? [])].filter(
+      (id) => id <= currentTailId,
+    ).length;
+    return loadedUnread + Math.max(0, preview.count) + windowedUnreadBeforeOrAtTail;
+  }
 
   return Math.max(0, feed.unreadCount, loadedUnread + (feed.windowedUnreadIds?.size ?? 0));
 }
