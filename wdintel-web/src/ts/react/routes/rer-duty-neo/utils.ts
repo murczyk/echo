@@ -851,10 +851,10 @@ export function feedIndicatorUnreadCount(
 ): number {
   const loadedUnread = feedLoadedUnreadCount(feed);
   const currentTailId = feed.items.at(-1)?.[0];
-  const confirmedTailUnread =
-    currentTailId != null && preview?.tailId === currentTailId ? Math.max(0, preview.count) : 0;
+  const hasMatchingPreview = currentTailId != null && preview?.tailId === currentTailId;
+  if (hasMatchingPreview) return loadedUnread + Math.max(0, preview.count);
 
-  return loadedUnread + confirmedTailUnread + (feed.windowedUnreadIds?.size ?? 0);
+  return Math.max(0, feed.unreadCount, loadedUnread + (feed.windowedUnreadIds?.size ?? 0));
 }
 
 /** Sum of {@link feedUnreadDisplayCount} across all feeds. */

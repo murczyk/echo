@@ -643,13 +643,23 @@ describe('rer-duty utils', () => {
     expect(feedUnreadDisplayCount(feed)).toBe(1);
   });
 
-  it('ignores raw unread count when all loaded IDs are read and preview is empty', () => {
+  it('lets a matching empty preview clear a stale raw unread count', () => {
     const feed = indicatorFeed({
       items: [[1, {} as InboxMessage]],
       readIds: new Set([1]),
       unreadCount: 1,
     });
     expect(feedIndicatorUnreadCount(feed, { tailId: 1, count: 0 })).toBe(0);
+  });
+
+  it('retains the authoritative server total for a large near-bottom unread count', () => {
+    const feed = indicatorFeed({
+      items: Array.from({ length: 20 }, (_, index) => [index + 1, {} as InboxMessage]),
+      readIds: new Set<number>(),
+      unreadCount: 70000,
+      windowedUnreadIds: new Set<number>(),
+    });
+    expect(feedIndicatorUnreadCount(feed)).toBe(70000);
   });
 
   it('adds matching confirmed preview unread messages to loaded unread messages', () => {
@@ -661,6 +671,26 @@ describe('rer-duty utils', () => {
       readIds: new Set([1]),
     });
     expect(feedIndicatorUnreadCount(feed, { tailId: 2, count: 2 })).toBe(3);
+  });
+
+  it('does not double count windowed IDs covered by a matching preview', () => {
+    const feed = indicatorFeed({
+      items: [[20, {} as InboxMessage]],
+      readIds: new Set([20]),
+      windowedUnreadIds: new Set([40]),
+    });
+    expect(feedIndicatorUnreadCount(feed, { tailId: 20, count: 1 })).toBe(1);
+  });
+
+  it('sums loaded unread rows with a matching preview', () => {
+    const feed = indicatorFeed({
+      items: [
+        [1, {} as InboxMessage],
+        [2, {} as InboxMessage],
+      ],
+      readIds: new Set<number>(),
+    });
+    expect(feedIndicatorUnreadCount(feed, { tailId: 2, count: 3 })).toBe(5);
   });
 
   it('ignores a confirmed preview for a different tail', () => {
