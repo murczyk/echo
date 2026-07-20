@@ -386,7 +386,7 @@ pub async fn my_admin_groups(
     let datasource_map = collect_datasources(datasource_ids, &env.dbx)
         .await
         .c(h!())?;
-    let login_delta_map = collect_group_logins_delta(
+    let group_login_map = collect_group_logins(
         group_admins
             .values()
             .chain(allowed_users.values())
@@ -431,7 +431,7 @@ pub async fn my_admin_groups(
                             .get(&master_key)
                             .cloned()
                             .unwrap_or_default(),
-                        &login_delta_map,
+                        &group_login_map,
                     ),
                     allowed_organism_ids: allowed_organism_ids
                         .get(&master_key)
@@ -442,7 +442,7 @@ pub async fn my_admin_groups(
                             .get(&master_key)
                             .cloned()
                             .unwrap_or_default(),
-                        &login_delta_map,
+                        &group_login_map,
                     ),
                     master_key,
                     is_group_secret,
@@ -473,9 +473,13 @@ pub async fn my_admin_group_edit_reference(
         .await
         .c(h!())?;
 
-    let logins = collect_active_organism_logins(&env.dbx, &login)
+    let login_ids = collect_active_organism_login_ids(&env.dbx, &login)
         .await
         .c(h!())?;
+    let group_login_map = collect_group_logins(login_ids.clone(), &env.dbx)
+        .await
+        .c(h!())?;
+    let logins = render_group_logins(login_ids, &group_login_map);
     let organisms = collect_active_user_organisms(&env.dbx, &login)
         .await
         .c(h!())?;
@@ -519,7 +523,7 @@ pub async fn my_admin_group_update(
     let admin_logins =
         normalize_my_admin_group_admin_logins(req.admin_logins).c(h!())?;
     let allowed_organism_logins =
-        collect_active_organism_logins(&txn, &login).await.c(h!())?;
+        collect_active_organism_login_ids(&txn, &login).await.c(h!())?;
     let existing_admin_logins =
         bl::collect_signal_group_admins(vec![req.master_key.clone()], &txn)
             .await
@@ -635,7 +639,7 @@ fn normalize_my_admin_group_admin_logins(
     Ok(admin_logins)
 }
 
-async fn collect_active_organism_logins<'a, 'async_trait, C>(
+async fn collect_active_organism_login_ids<'a, 'async_trait, C>(
     dbx: &'a C,
     login_id: &uuid::Uuid,
 ) -> Result<Vec<String>, AppError>
@@ -829,21 +833,26 @@ where
 
 fn render_group_logins(
     logins: Vec<String>,
-    login_delta_map: &HashMap<String, Option<String>>,
+    group_login_map: &HashMap<String, SignalGroupLogin>,
 ) -> Vec<SignalGroupLogin> {
     logins
         .into_iter()
-        .map(|login| SignalGroupLogin {
-            delta_login: login_delta_map.get(&login).cloned().flatten(),
-            login,
+        .map(|login_id| {
+            group_login_map.get(&login_id).cloned().unwrap_or_else(|| {
+                SignalGroupLogin {
+                    login: login_id.clone(),
+                    login_id,
+                    delta_login: None,
+                }
+            })
         })
         .collect()
 }
 
-async fn collect_group_logins_delta<'a, 'async_trait, C>(
+async fn collect_group_logins<'a, 'async_trait, C>(
     logins: Vec<String>,
     dbx: &'a C,
-) -> Result<HashMap<String, Option<String>>, AppError>
+) -> Result<HashMap<String, SignalGroupLogin>, AppError>
 where
     C: ConnectionTrait + 'async_trait,
 {
@@ -867,15 +876,26 @@ where
         .filter(login::Column::Id.eq_any(login_ids))
         .select_only()
         .column(login::Column::Id)
+        .column(login::Column::Login)
         .column_as(delta_login::Column::Login, "delta_login")
-        .into_tuple::<(uuid::Uuid, Option<String>)>()
+        .into_tuple::<(uuid::Uuid, String, Option<String>)>()
         .all(dbx)
         .await
         .c(h!())?;
 
     Ok(rows
         .into_iter()
-        .map(|(login_id, delta_login)| (login_id.to_string(), delta_login))
+        .map(|(login_id, login, delta_login)| {
+            let login_id = login_id.to_string();
+            (
+                login_id.clone(),
+                SignalGroupLogin {
+                    login_id,
+                    login,
+                    delta_login,
+                },
+            )
+        })
         .collect())
 }
 

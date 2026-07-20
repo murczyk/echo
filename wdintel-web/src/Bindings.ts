@@ -1848,6 +1848,7 @@ export type ZoneDatasourceGroupUpdateReq = {
 };
 
 export type SignalGroupLogin = {
+  loginId: string;
   login: string;
   deltaLogin: string | null;
 };
@@ -1880,7 +1881,7 @@ export type MyAdminSignalGroupEditReferenceReq = {
 };
 
 export type MyAdminSignalGroupEditReferenceRsp = {
-  logins: Array<string>;
+  logins: Array<SignalGroupLogin>;
   organisms: Array<MyOrganism>;
   areasOfResponsibility: Array<AreaOfResponsibility>;
 };

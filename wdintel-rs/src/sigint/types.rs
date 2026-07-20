@@ -134,6 +134,7 @@ pub struct ZoneDatasourceGroupAddRsp {
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
 pub struct SignalGroupLogin {
+    pub login_id: String,
     pub login: String,
     pub delta_login: Option<String>,
 }
@@ -179,7 +180,7 @@ pub struct MyAdminSignalGroupEditReferenceReq {
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
 pub struct MyAdminSignalGroupEditReferenceRsp {
-    pub logins: Vec<String>,
+    pub logins: Vec<SignalGroupLogin>,
     pub organisms: Vec<MyOrganism>,
     pub areas_of_responsibility: Vec<AreaOfResponsibility>,
 }

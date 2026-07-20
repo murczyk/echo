@@ -20,11 +20,8 @@ use uuid::Uuid;
 pub mod types;
 
 pub fn identity_id(user: &Identity) -> Result<Uuid, AppError> {
-    Uuid::parse_str(&user.id().c(h!())?).map_err(|source| {
-        AppError::AnyhowError {
-            source: source.into(),
-        }
-    })
+    let identity = user.id().map_err(|_| AppError::Unauthenticated)?;
+    Uuid::parse_str(&identity).map_err(|_| AppError::Unauthenticated)
 }
 
 pub async fn login_id_by_name<C>(

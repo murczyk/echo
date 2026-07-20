@@ -4798,7 +4798,8 @@ zoneDatasourceGroupUpdateReqEncoder struct =
 
 
 type alias SignalGroupLogin =
-    { login : String
+    { loginId : String
+    , login : String
     , deltaLogin : Maybe (String)
     }
 
@@ -4806,7 +4807,8 @@ type alias SignalGroupLogin =
 signalGroupLoginEncoder : SignalGroupLogin -> Json.Encode.Value
 signalGroupLoginEncoder struct =
     Json.Encode.object
-        [ ( "login", (Json.Encode.string) struct.login )
+        [ ( "login_id", (Json.Encode.string) struct.loginId )
+        , ( "login", (Json.Encode.string) struct.login )
         , ( "delta_login", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.deltaLogin )
         ]
 
@@ -4878,7 +4880,7 @@ myAdminSignalGroupEditReferenceReqEncoder struct =
 
 
 type alias MyAdminSignalGroupEditReferenceRsp =
-    { logins : List (String)
+    { logins : List (SignalGroupLogin)
     , organisms : List (MyOrganism)
     , areasOfResponsibility : List (AreaOfResponsibility)
     }
@@ -4887,7 +4889,7 @@ type alias MyAdminSignalGroupEditReferenceRsp =
 myAdminSignalGroupEditReferenceRspEncoder : MyAdminSignalGroupEditReferenceRsp -> Json.Encode.Value
 myAdminSignalGroupEditReferenceRspEncoder struct =
     Json.Encode.object
-        [ ( "logins", (Json.Encode.list (Json.Encode.string)) struct.logins )
+        [ ( "logins", (Json.Encode.list (signalGroupLoginEncoder)) struct.logins )
         , ( "organisms", (Json.Encode.list (myOrganismEncoder)) struct.organisms )
         , ( "areas_of_responsibility", (Json.Encode.list (areaOfResponsibilityEncoder)) struct.areasOfResponsibility )
         ]
@@ -12122,6 +12124,7 @@ zoneDatasourceGroupUpdateReqDecoder =
 signalGroupLoginDecoder : Json.Decode.Decoder SignalGroupLogin
 signalGroupLoginDecoder =
     Json.Decode.succeed SignalGroupLogin
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "login_id" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "login" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "delta_login" (Json.Decode.nullable (Json.Decode.string))))
 
@@ -12162,7 +12165,7 @@ myAdminSignalGroupEditReferenceReqDecoder =
 myAdminSignalGroupEditReferenceRspDecoder : Json.Decode.Decoder MyAdminSignalGroupEditReferenceRsp
 myAdminSignalGroupEditReferenceRspDecoder =
     Json.Decode.succeed MyAdminSignalGroupEditReferenceRsp
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "logins" (Json.Decode.list (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "logins" (Json.Decode.list (signalGroupLoginDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "organisms" (Json.Decode.list (myOrganismDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "areas_of_responsibility" (Json.Decode.list (areaOfResponsibilityDecoder))))
 

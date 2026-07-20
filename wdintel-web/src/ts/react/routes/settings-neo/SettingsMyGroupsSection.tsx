@@ -83,9 +83,9 @@ type MyGroupEditState = {
   group: MyAdminSignalGroup;
   isSecret: boolean;
   disableNetworkAssignment: boolean;
-  selectedUsers: string[];
+  selectedUsers: SignalGroupLogin[];
   selectedOrganismIds: number[];
-  selectedAdmins: string[];
+  selectedAdmins: SignalGroupLogin[];
   selectedAorIds: number[];
   isSaving: boolean;
   error: string | null;
@@ -125,10 +125,6 @@ function formatAllowedUsers(group: MyAdminSignalGroup): string {
     parts.push(`Організми: ${formatOrganismIds(group.allowedOrganismIds)}`);
   }
   return parts.length > 0 ? parts.join('; ') : '—';
-}
-
-function groupLoginValues(logins: SignalGroupLogin[]): string[] {
-  return logins.map((login) => login.login);
 }
 
 function selectedOrganisms(selectedIds: number[], options: MyOrganism[]) {
@@ -336,7 +332,7 @@ export type SettingsMyGroupsSectionProps = {
 function MyGroupEditDialog(props: {
   editDialog: MyGroupEditState | null;
   setEditDialog: (editDialog: MyGroupEditState | null) => void;
-  logins: string[];
+  logins: SignalGroupLogin[];
   organisms: MyOrganism[];
   aorOptions: AreaOfResponsibility[];
   referenceDataStatus: ReferenceDataStatus;
@@ -398,6 +394,8 @@ function MyGroupEditDialog(props: {
             onChange={(_, value) =>
               editDialog && setEditDialog({ ...editDialog, selectedUsers: value })
             }
+            getOptionLabel={formatGroupLogin}
+            isOptionEqualToValue={(option, value) => option.loginId === value.loginId}
             renderInput={(params) => <TextField {...params} label="Користувачі" />}
           />
         ) : null}
@@ -437,6 +435,8 @@ function MyGroupEditDialog(props: {
           onChange={(_, value) =>
             editDialog && setEditDialog({ ...editDialog, selectedAdmins: value })
           }
+          getOptionLabel={formatGroupLogin}
+          isOptionEqualToValue={(option, value) => option.loginId === value.loginId}
           renderInput={(params) => <TextField {...params} label="Адміністратори групи" />}
         />
         <Autocomplete
@@ -496,7 +496,7 @@ export function SettingsMyGroupsSection({
 }: SettingsMyGroupsSectionProps) {
   const hasGroups = groups.length > 0;
   const [editDialog, setEditDialog] = useState<MyGroupEditState | null>(null);
-  const [logins, setLogins] = useState<string[]>([]);
+  const [logins, setLogins] = useState<SignalGroupLogin[]>([]);
   const [organisms, setOrganisms] = useState<MyOrganism[]>([]);
   const [aorOptions, setAorOptions] = useState<AreaOfResponsibility[]>([]);
   const [referenceDataStatus, setReferenceDataStatus] = useState<ReferenceDataStatus>('idle');
@@ -529,9 +529,9 @@ export function SettingsMyGroupsSection({
       group,
       isSecret: group.isGroupSecret,
       disableNetworkAssignment: group.disableNetworkAssignment,
-      selectedUsers: groupLoginValues(group.allowedUsers),
+      selectedUsers: group.allowedUsers,
       selectedOrganismIds: group.allowedOrganismIds,
-      selectedAdmins: groupLoginValues(group.adminLogins),
+      selectedAdmins: group.adminLogins,
       selectedAorIds: (group.areasOfResponsibility ?? []).map((aor) => aor.id),
       isSaving: false,
       error: null,
@@ -542,7 +542,7 @@ export function SettingsMyGroupsSection({
   async function handleSaveGroupEdit() {
     if (!editDialog) return;
     const selectedAdmins = Array.from(
-      new Set(editDialog.selectedAdmins.map((login) => login.trim()).filter(Boolean)),
+      new Set(editDialog.selectedAdmins.map((login) => login.loginId).filter(Boolean)),
     );
     if (selectedAdmins.length === 0) {
       setEditDialog({
@@ -559,7 +559,9 @@ export function SettingsMyGroupsSection({
         masterKey: editDialog.group.masterKey,
         isSecret: editDialog.isSecret,
         disableNetworkAssignment: editDialog.disableNetworkAssignment,
-        userLogins: editDialog.isSecret ? editDialog.selectedUsers : [],
+        userLogins: editDialog.isSecret
+          ? editDialog.selectedUsers.map((login) => login.loginId)
+          : [],
         organismIds: editDialog.isSecret ? editDialog.selectedOrganismIds : [],
         adminLogins: selectedAdmins,
         areaOfResponsibilityIds:
