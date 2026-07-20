@@ -87,8 +87,8 @@ fn is_metadata_only_line(line: &str) -> bool {
               | [iі]d\s+отримувача\s*:?\s*(?:\d+|нв|-)(?:\s*\([^)]+\))?
               | (?:[cс]g|group\s+id|код\s+групи)\s*:?\s*(?:[xх]\s*:)?(?:\d+|нв|-)(?:\s*\([^)]+\))?
               | [iі]d\s+відправника\s*:?\s*(?:\d+|нв|-)(?:\s*\([^)]+\))?
-              | source\s+id\s*:?\s*(?:\d+(?:\s*,\s*\d+)*|нв|-)(?:\s*\([^)]+\))?
-              | [iі]d\s*(?:➡️?)?\s*:?\s*(?:\d+(?:\s*,\s*\d+)*|нв|-)(?:\s*\([^)]+\))?
+              | source\s+id\s*:?\s*(?:\d+(?:\s*\([^)]+\))?(?:\s*,\s*\d+(?:\s*\([^)]+\))?)*|нв|-)
+              | [iі]d\s*(?:➡️?)?\s*:?\s*(?:\d+(?:\s*\([^)]+\))?(?:\s*,\s*\d+(?:\s*\([^)]+\))?)*|нв|-)
               | [iі]d\s*:\s*[^;\r\n]+;
               | хеш\s+[iі]d\s*:\s*[0-9a-f]+
               | 👥\s*:\s*[^🔐\r\n]+?\s*🔐
@@ -130,7 +130,10 @@ pub fn parse_mid(line: &NormalizedLine) -> Option<MatchedValue> {
     }
     lazy_static! {
         static ref RE_CG_LIST: Regex =
-            Regex::new(r#"➡️?\s*:?\s*([\d,\s]+)"#).unwrap();
+            Regex::new(
+                r#"➡️?\s*:?\s*((?:\d+\s*(?:\([^)]+\))?\s*,\s*)+\d+\s*(?:\([^)]+\))?)"#
+            )
+            .unwrap();
     }
     lazy_static! {
         static ref RE_ID: Regex =
@@ -142,19 +145,21 @@ pub fn parse_mid(line: &NormalizedLine) -> Option<MatchedValue> {
                 .unwrap();
     }
     lazy_static! {
-        static ref RE_SOURCE_ID: Regex =
-            Regex::new(r#"(?i)SOURCE\s+ID\s*:?\s*([\d,\s]+)"#).unwrap();
-    }
-    parse_numeric_value_from_standalone_regexes(
-        line,
-        &[&RE_SENDER_ID_UA, &RE_ID],
-    )
-    .or_else(|| {
-        parse_numeric_value_from_regexes(
-            line,
-            &[&RE_CG_LIST, &RE_CG, &RE_SOURCE_ID],
+        static ref RE_SOURCE_ID: Regex = Regex::new(
+            r#"(?i)\bSOURCE\s+ID\s*:?\s*((?:\d+\s*(?:\([^)]+\))?\s*,\s*)+\d+\s*(?:\([^)]+\))?|\d+)"#
         )
-    })
+        .unwrap();
+    }
+    parse_numeric_value_from_regexes(line, &[&RE_SOURCE_ID])
+        .or_else(|| {
+            parse_numeric_value_from_standalone_regexes(
+                line,
+                &[&RE_SENDER_ID_UA, &RE_ID],
+            )
+        })
+        .or_else(|| {
+            parse_numeric_value_from_regexes(line, &[&RE_CG_LIST, &RE_CG])
+        })
 }
 
 pub fn parse_mid_id(line: &NormalizedLine) -> Option<MatchedValue> {
@@ -178,15 +183,15 @@ pub fn parse_mid_id(line: &NormalizedLine) -> Option<MatchedValue> {
     }
     lazy_static! {
         static ref RE_SOURCE_ID: Regex = Regex::new(
-            r#"(?i)SOURCE\s+ID\s*:?\s*(?:\d+(?:\s*,\s*\d+)*|нв|-)\s*\(([^)]+)\)"#
+            r#"(?i)\bSOURCE\s+ID\s*:?\s*(?:\d+(?:\s*,\s*\d+)*|нв|-)\s*\(([^)]+)\)"#
         )
         .unwrap();
     }
-    parse_string_from_standalone_regexes(line, &[&RE_ID], 2)
+    parse_string_from_regexes(line, &[&RE_SOURCE_ID], 1)
+        .or_else(|| parse_string_from_standalone_regexes(line, &[&RE_ID], 2))
         .or_else(|| {
             parse_string_from_standalone_regexes(line, &[&RE_SENDER_ID_UA], 1)
         })
-        .or_else(|| parse_string_from_regexes(line, &[&RE_SOURCE_ID], 1))
         .or_else(|| parse_string_from_regexes(line, &[&RE_CG], 2))
         .or_else(|| {
             parse_string_from_standalone_regexes(line, &[&RE_ID_TEXT], 1)
@@ -508,22 +513,63 @@ fn expand_multi_source_ids(
     items: Vec<WorkingMetadata>,
 ) -> Vec<WorkingMetadata> {
     let mut result = vec![];
-    for item in items {
+    for mut item in items {
         let Some(ids) = split_multi_source_id(&item.id) else {
             result.push(item);
             continue;
         };
 
-        for id in ids {
+        if let Some(shared_id_name) = trailing_shared_source_id_name(&ids) {
+            item.id_name = shared_id_name.clone();
+        } else if matched_value_is_within(&item.id_name, &item.id) {
+            item.id_name = MatchedValue::default();
+        }
+        for (id, id_name) in ids {
             let mut item = item.clone();
             item.id = id;
+            if id_name.has_value() {
+                item.id_name = id_name;
+            }
             result.push(item);
         }
     }
     result
 }
 
-fn split_multi_source_id(id: &MatchedValue) -> Option<Vec<MatchedValue>> {
+fn trailing_shared_source_id_name(
+    ids: &[(MatchedValue, MatchedValue)],
+) -> Option<&MatchedValue> {
+    let ((_, trailing_name), preceding_ids) = ids.split_last()?;
+    (trailing_name.has_value()
+        && preceding_ids
+            .iter()
+            .all(|(_, id_name)| !id_name.has_value()))
+    .then_some(trailing_name)
+}
+
+fn matched_value_is_within(
+    value: &MatchedValue,
+    container: &MatchedValue,
+) -> bool {
+    match (
+        value.start_index,
+        value.end_index,
+        container.start_index,
+        container.end_index,
+    ) {
+        (
+            Some(start),
+            Some(end),
+            Some(container_start),
+            Some(container_end),
+        ) => start >= container_start && end <= container_end,
+        _ => false,
+    }
+}
+
+fn split_multi_source_id(
+    id: &MatchedValue,
+) -> Option<Vec<(MatchedValue, MatchedValue)>> {
     let raw_text = id.raw_text.as_ref()?;
     let start_index = id.start_index?;
     if !raw_text.contains(',') {
@@ -531,11 +577,46 @@ fn split_multi_source_id(id: &MatchedValue) -> Option<Vec<MatchedValue>> {
     }
 
     let chars = raw_text.chars().collect::<Vec<_>>();
-    let mut ids = vec![];
+    let ids = split_source_id_part_ranges(&chars)
+        .into_iter()
+        .map(|(part_start, part_end)| {
+            let raw_part =
+                chars[part_start..part_end].iter().collect::<String>();
+            parse_source_id_part(&raw_part, part_start, start_index)
+        })
+        .collect::<Option<Vec<_>>>()?;
+
+    if ids.len() <= 1
+        || ids.iter().any(|(id, _)| {
+            id.value.as_ref().is_none_or(|value| {
+                !value.chars().all(|ch| ch.is_ascii_digit())
+            })
+        })
+    {
+        return None;
+    }
+
+    Some(ids)
+}
+
+fn split_source_id_part_ranges(chars: &[char]) -> Vec<(usize, usize)> {
+    let mut ranges = vec![];
     let mut part_start = 0_usize;
+    let mut in_parentheses = false;
     for idx in 0..=chars.len() {
-        if idx < chars.len() && chars[idx] != ',' {
-            continue;
+        if idx < chars.len() {
+            match chars[idx] {
+                '(' => {
+                    in_parentheses = true;
+                    continue;
+                }
+                ')' => {
+                    in_parentheses = false;
+                    continue;
+                }
+                ',' if !in_parentheses => {}
+                _ => continue,
+            }
         }
 
         let mut trimmed_start = part_start;
@@ -551,31 +632,57 @@ fn split_multi_source_id(id: &MatchedValue) -> Option<Vec<MatchedValue>> {
             trimmed_end -= 1;
         }
         if trimmed_start < trimmed_end {
-            let raw_part =
-                chars[trimmed_start..trimmed_end].iter().collect::<String>();
-            let normalized_part = normalize_metadata_digits(&raw_part);
-            let value = normalize_metadata_value(&normalized_part)?;
-            ids.push(MatchedValue {
-                value: Some(value),
-                start_index: Some(start_index + trimmed_start as i32),
-                end_index: Some(start_index + trimmed_end as i32 - 1),
-                raw_text: Some(raw_part),
-            });
+            ranges.push((trimmed_start, trimmed_end));
         }
         part_start = idx + 1;
     }
+    ranges
+}
 
-    if ids.len() <= 1
-        || ids.iter().any(|id| {
-            id.value.as_ref().is_none_or(|value| {
-                !value.chars().all(|ch| ch.is_ascii_digit())
-            })
-        })
-    {
-        return None;
+fn parse_source_id_part(
+    raw_part: &str,
+    part_start: usize,
+    source_start_index: i32,
+) -> Option<(MatchedValue, MatchedValue)> {
+    lazy_static! {
+        static ref RE_SOURCE_ID_PART: Regex =
+            Regex::new(r#"^\s*(\d+)\s*(?:\(([^)]+)\))?\s*$"#).unwrap();
     }
 
-    Some(ids)
+    let normalized_part = NormalizedLine::new(raw_part.to_string());
+    let captures = RE_SOURCE_ID_PART.captures(&normalized_part.text)?;
+    let id = matched_source_id_part(
+        &normalized_part,
+        captures.get(1)?,
+        part_start,
+        source_start_index,
+    )?;
+    let id_name = captures
+        .get(2)
+        .and_then(|name| {
+            matched_source_id_part(
+                &normalized_part,
+                name,
+                part_start,
+                source_start_index,
+            )
+        })
+        .unwrap_or_default();
+    Some((id, id_name))
+}
+
+fn matched_source_id_part(
+    normalized_part: &NormalizedLine,
+    value_match: regex::Match<'_>,
+    part_start: usize,
+    source_start_index: i32,
+) -> Option<MatchedValue> {
+    let mut value =
+        normalized_part.build_value(value_match, normalize_metadata_value)?;
+    let offset = source_start_index + part_start as i32;
+    value.start_index = value.start_index.map(|index| index + offset);
+    value.end_index = value.end_index.map(|index| index + offset);
+    Some(value)
 }
 
 fn reduce_metadata_list(mut items: Vec<InboxMetadata>) -> Vec<InboxMetadata> {
