@@ -136,6 +136,12 @@ describe('MessageCardCoordinatePreview', () => {
     expect(button?.getAttribute('style')).toContain('flex-grow: 0');
     expect(button?.getAttribute('style')).toContain('flex-shrink: 0');
     expect(button?.getAttribute('style')).toContain('flex-basis: 180px');
+    expect(
+      container.querySelector('[data-coordinate-preview-root]')?.getAttribute('style'),
+    ).toContain('width: 180px');
+    expect(
+      container.querySelector('[data-coordinate-preview-tile]')?.getAttribute('style'),
+    ).toEqual(expect.stringContaining('height: 120px'));
     expect(container.textContent).not.toContain('+');
 
     await act(async () => {
@@ -158,7 +164,7 @@ describe('MessageCardCoordinatePreview', () => {
     expect(dialog?.getAttribute('data-lng')).toBe('30.52355');
   });
 
-  it('shows the hidden-count action for palitra previews', async () => {
+  it('shows one unified preview with the pluralized point count', async () => {
     const msg = { pointTokens: [] } as InboxMessage;
     vi.mocked(resolveMessageCoordinatePreview).mockResolvedValue({
       points: [
@@ -166,6 +172,11 @@ describe('MessageCardCoordinatePreview', () => {
         { source: 'palitra', lat: 50.46, lng: 30.53, label: 'CHARLIE' },
         { source: 'palitra', lat: 50.47, lng: 30.54, label: 'DELTA' },
         { source: 'palitra', lat: 50.48, lng: 30.55, label: 'ECHO' },
+        { source: 'palitra', lat: 50.49, lng: 30.56, label: 'FOXTROT' },
+        { source: 'palitra', lat: 50.5, lng: 30.57, label: 'GOLF' },
+        { source: 'palitra', lat: 50.51, lng: 30.58, label: 'HOTEL' },
+        { source: 'palitra', lat: 50.52, lng: 30.59, label: 'INDIA' },
+        { source: 'palitra', lat: 50.53, lng: 30.6, label: 'JULIET' },
       ],
       etalons: ['ALPHA', 'BRAVO', 'CHARLIE', 'DELTA'],
       lookupError: null,
@@ -179,8 +190,11 @@ describe('MessageCardCoordinatePreview', () => {
       await Promise.resolve();
     });
 
-    expect(container.querySelectorAll('button[aria-label^="Open "]')).toHaveLength(3);
-    expect(container.textContent).toContain('+1');
+    expect(container.querySelectorAll('button[aria-label^="Open "]')).toHaveLength(1);
+    expect(container.textContent).toContain('9 точок');
+    expect(container.textContent).not.toContain('+1');
+    expect(container.querySelectorAll('[data-coordinate-preview-count]')).toHaveLength(1);
+    expect(container.querySelector('[data-coordinate-preview-count]')?.textContent).toBe('9 точок');
     const button = container.querySelector('button[aria-label="Open BRAVO on map"]');
     expect(button).not.toBeNull();
     expect(button?.getAttribute('style')).toContain('width: 180px');
@@ -198,16 +212,14 @@ describe('MessageCardCoordinatePreview', () => {
 
     expect(document.body.querySelector('[data-popper-placement="top"]')).not.toBeNull();
     expect(document.body.textContent).toContain('Відкрити на мапі');
-    expect(container.textContent).toContain('+1');
+    expect(container.textContent).not.toContain('+1');
 
     await act(async () => {
-      Array.from(container.querySelectorAll('button'))
-        .find((element) => element.textContent?.trim() === '+1')
-        ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      button?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
       await Promise.resolve();
     });
 
-    expect(container.querySelector('[role="dialog"]')?.getAttribute('data-index')).toBe('3');
+    expect(container.querySelector('[role="dialog"]')?.getAttribute('data-index')).toBe('0');
   });
 
   it('renders an inline retry error when the resolver rejects for a palette list failure', async () => {
