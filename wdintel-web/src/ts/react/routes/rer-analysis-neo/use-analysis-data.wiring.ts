@@ -3,7 +3,7 @@ import { useAnalysisReferenceState } from './use-analysis-reference-state';
 import { useAnalysisMessageList } from './use-analysis-message-list';
 import { useAnalysisMapData } from './use-analysis-map-data';
 import { useAnalysisSidebarData } from './use-analysis-sidebar-data';
-import type { AnalysisQueryState, AnalysisFilterSectionId } from './types';
+import type { AnalysisQueryState, AnalysisFilterSectionId, AnalysisReloadOptions } from './types';
 import type { FilterSectionLoadPlan } from './use-analysis-data-filter-sections';
 import { emptyNewCallsigns, emptyOptions } from './use-analysis-data.shared';
 import type { UseAnalysisDataProps } from './use-analysis-data.types';
@@ -25,7 +25,7 @@ type BuildActionParamsInput = {
   onUnauthorized: (error: unknown) => boolean;
   queryState: AnalysisQueryState;
   invalidateTagFacetLoad: () => void;
-  reloadRef: React.MutableRefObject<() => Promise<void>>;
+  reloadRef: React.MutableRefObject<(options?: AnalysisReloadOptions) => Promise<void>>;
   referenceState: ReferenceState;
   messageList: MessageList;
   mapData: MapData;
@@ -56,7 +56,7 @@ export function buildAnalysisActionsParams({
     onUnauthorized,
     queryState,
     invalidateTagFacetLoad,
-    reload: () => reloadRef.current(),
+    reload: (options?: AnalysisReloadOptions) => reloadRef.current(options),
     setMapOpenMessages: mapData.setMapOpenMessages,
     setMessages: messageList.setMessages,
     setSummaryRows: sidebarData.setSummaryRows,

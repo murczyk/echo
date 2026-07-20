@@ -16,7 +16,7 @@ import {
 } from '../../services/api/analysis';
 import { buildAnalysisReq } from './helpers';
 import type { User } from '../../../../Bindings';
-import type { AnalysisQueryState } from './types';
+import type { AnalysisQueryState, AnalysisReloadOptions } from './types';
 import type { MessageCardBotTagAction } from '../shared/message-card/message-card.types';
 import {
   hasBotTag,
@@ -36,7 +36,7 @@ type Params = {
   patchMessages: (updater: (messageId: number, message: InboxMessage) => InboxMessage) => void;
   queryState: AnalysisQueryState;
   invalidateTagFacetLoad: () => void;
-  reload: () => Promise<void>;
+  reload: (options?: AnalysisReloadOptions) => Promise<void>;
   setMapOpenMessages: React.Dispatch<React.SetStateAction<Array<[number, InboxMessage]>>>;
   setMessages: React.Dispatch<React.SetStateAction<Array<[number, InboxMessage]>>>;
   setSummaryRows: React.Dispatch<React.SetStateAction<SummaryTableFreqRow[]>>;
@@ -177,7 +177,7 @@ export function useAnalysisDataMessageActions(params: Params) {
           // unchanged, so the cached 'tags' facet would otherwise be reused with stale
           // counters — invalidate it before the reload so its counts re-fetch.
           params.invalidateTagFacetLoad();
-          await params.reload();
+          await params.reload({ preserveMessagePage: true });
         } catch (reloadError) {
           // The tag mutation above already persisted, so the optimistic patch is now the
           // correct state — a reload failure must not roll it back. Report the error only.

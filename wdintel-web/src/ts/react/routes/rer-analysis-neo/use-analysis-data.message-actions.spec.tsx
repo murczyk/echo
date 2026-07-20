@@ -334,7 +334,7 @@ describe('useAnalysisDataMessageActions', () => {
 
     expect(hoisted.inboxMessageTagsRm).toHaveBeenCalledWith({ messageId: 1, tagId: 3 });
     expect(invalidateTagFacetLoad).toHaveBeenCalledTimes(1);
-    expect(reload).toHaveBeenCalledTimes(1);
+    expect(reload).toHaveBeenCalledWith({ preserveMessagePage: true });
   });
 
   it('keeps the optimistic tag change and reports the error when only the reload fails', async () => {

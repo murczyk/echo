@@ -17,7 +17,7 @@ import {
   buildAnalysisActionsParams,
   buildReloadOrchestratorParams,
 } from './use-analysis-data.wiring';
-import type { AnalysisQueryState } from './types';
+import type { AnalysisQueryState, AnalysisReloadOptions } from './types';
 import type { UseAnalysisDataProps, UseAnalysisDataResult } from './use-analysis-data.types';
 import { useInboxChangedMessageIds } from '../shared/useInboxChangedMessageIds';
 
@@ -289,7 +289,9 @@ export function useAnalysisData({
   );
   const [filtersLoading, setFiltersLoading] = useState(false);
   const [countsLoading, setCountsLoading] = useState(false);
-  const reloadRef = useRef<() => Promise<void>>(async () => undefined);
+  const reloadRef = useRef<(options?: AnalysisReloadOptions) => Promise<void>>(
+    async () => undefined,
+  );
 
   const loadMissingNetworksForMessages = useLoadMissingNetworksForMessages({
     networksRef: referenceState.networksRef,
