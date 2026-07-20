@@ -271,6 +271,7 @@ function buildFeedsState() {
     columnRefsRef: { current: {} },
     nearBottomByFeedIdRef: { current: {} },
     atBottomByFeedIdRef: { current: {} },
+    confirmedTailPreviewByFeedId: {},
     dutyDisableAutoScroll: false,
   };
 }

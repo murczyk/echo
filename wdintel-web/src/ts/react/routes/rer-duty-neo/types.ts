@@ -14,6 +14,8 @@ import type { FeedFilterPanelModel } from './FeedFilterPanel';
 import type { MessageCardBotTagAction } from '../shared/message-card/message-card.types';
 import type { DutyWorkspaceFabAvoidance } from './duty-scroll-fab-position';
 
+export type TailAvailability = 'unknown' | 'checking' | 'loading' | 'available' | 'exhausted';
+
 export type FeedColumnModel = {
   feed: MessageFeedState;
   view: {
@@ -27,6 +29,9 @@ export type FeedColumnModel = {
     scrollTrackingEnabled?: boolean;
     loadingNewer?: boolean;
     arrowResultMessage?: string | null;
+    bottomUnreadCount?: number;
+    physicallyAtBottom?: boolean;
+    tailAvailability?: TailAvailability;
     unreadCount?: number;
     workspaceFabAvoidance?: DutyWorkspaceFabAvoidance;
   };
@@ -77,6 +82,7 @@ export type FeedColumnModel = {
     onNearBottomChange?: (near: boolean) => void;
     /** Pixel-level at-bottom state; used so auto-scroll follow only runs when the scroller is actually at the bottom. */
     onAtBottomChange?: (atBottom: boolean) => void;
+    onPhysicalBottomChange?: (atBottom: boolean) => void;
     onArrowClick?: () => void;
     /** Called when the visible range changes; pass message IDs in view so parent can add them to readIds. When user reaches bottom, called with all IDs and atBottom: true so badge clears. */
     onVisibleMessageIds?: (lastVisibleId: number, opts?: { atBottom?: boolean }) => void;

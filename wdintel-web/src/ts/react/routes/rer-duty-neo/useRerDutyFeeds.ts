@@ -378,6 +378,7 @@ export function useRerDutyFeeds(authUserName: string | null) {
     saveFilterNameByFeedId: filterOpts.saveFilterNameByFeedId,
     setSaveFilterNameByFeedId: filterOpts.setSaveFilterNameByFeedId,
     dutyDisableAutoScroll: dutySettings.disableAutoScroll,
+    beginFollowTail: feedState.beginFollowTail,
   });
 
   const freqs = useMemo(
@@ -420,6 +421,12 @@ export function useRerDutyFeeds(authUserName: string | null) {
     columnRefsRef: feedState.columnRefsRef,
     nearBottomByFeedIdRef: feedState.nearBottomByFeedIdRef,
     atBottomByFeedIdRef: feedState.atBottomByFeedIdRef,
+    physicallyAtBottomByFeedIdRef: feedState.physicallyAtBottomByFeedIdRef,
+    tailAvailabilityByFeedId: feedState.tailAvailabilityByFeedId,
+    confirmedTailPreviewByFeedId: feedState.confirmedTailPreviewByFeedId,
+    beginFollowTail: feedState.beginFollowTail,
+    ensureFollowTail: feedState.ensureFollowTail,
+    cancelFollowTail: feedState.cancelFollowTail,
     dutyDisableAutoScroll: dutySettings.disableAutoScroll,
     createMessageFeed: feedState.createMessageFeed,
     removeMessageFeed: feedState.removeMessageFeed,

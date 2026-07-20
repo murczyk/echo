@@ -37,7 +37,14 @@ vi.mock('../shared/message-card/MessageCard', () => ({
 }));
 
 vi.mock('../../components/PowerChip', () => ({
-  PowerChip: () => <div data-testid="power-chip" />,
+  PowerChip: (props: { label?: unknown; 'data-duty-scroll-unread-badge'?: boolean }) => (
+    <div
+      data-testid="power-chip"
+      data-duty-scroll-unread-badge={props['data-duty-scroll-unread-badge'] || undefined}
+    >
+      {props.label as any}
+    </div>
+  ),
 }));
 
 import { FeedColumn } from './FeedColumn';
@@ -82,7 +89,9 @@ function buildProps(): FeedColumnProps {
         isWatchMode: false,
         loadingNewer: false,
         arrowResultMessage: null,
-        unreadCount: 0,
+        bottomUnreadCount: 0,
+        physicallyAtBottom: true,
+        tailAvailability: 'available',
       },
       filterPanel: {
         feedId: 'feed-1',
@@ -170,6 +179,7 @@ function buildProps(): FeedColumnProps {
         onMessageExcludeEntity: vi.fn(),
         onMessageToggleTag: vi.fn(),
         onCreateFeed: vi.fn(),
+        onArrowClick: vi.fn(),
       },
     },
   };
@@ -374,10 +384,11 @@ describe('FeedColumn', () => {
   it('keeps narrow scroll placement vertically stacked and horizontally aligned', async () => {
     const props = buildProps();
     props.column.view.narrowScreen = true;
-    props.column.view.unreadCount = 2;
+    props.column.view.bottomUnreadCount = 2;
+    props.column.view.tailAvailability = 'available';
     props.column.actions.onArrowClick = vi.fn();
-    props.column.view.workspaceFabAvoidance = 'above';
     props.column.feed.items = [[1, minimalInboxMessage({ timestamp: 100 })]];
+    props.column.view.workspaceFabAvoidance = 'above';
 
     await act(async () => {
       root.render(<FeedColumn column={props.column} />);
@@ -400,7 +411,8 @@ describe('FeedColumn', () => {
     const onArrowClick = vi.fn();
     props.column.actions.onArrowClick = onArrowClick;
     props.column.view.workspaceFabAvoidance = 'left';
-    props.column.view.unreadCount = 2;
+    props.column.view.bottomUnreadCount = 2;
+    props.column.view.tailAvailability = 'available';
     props.column.feed.items = [[1, minimalInboxMessage({ timestamp: 100 })]];
 
     await act(async () => {
@@ -430,7 +442,9 @@ describe('FeedColumn', () => {
     const props = buildProps();
     props.column.actions.onArrowClick = vi.fn();
     props.column.view.workspaceFabAvoidance = 'none';
-    props.column.view.unreadCount = 1;
+    props.column.view.bottomUnreadCount = 1;
+    props.column.view.tailAvailability = 'available';
+    props.column.feed.items = [[1, minimalInboxMessage({ timestamp: 100 })]];
 
     await act(async () => {
       root.render(<FeedColumn column={props.column} />);
@@ -447,6 +461,89 @@ describe('FeedColumn', () => {
         .querySelector('[data-duty-feed-scroll-button]')
         ?.getAttribute('data-duty-right-offset'),
     ).toBe('20px');
+  });
+
+  it('does not show the bottom button for stale unread data at an exhausted tail', async () => {
+    const props = buildProps();
+    props.column.feed.items = [[1, minimalInboxMessage({ timestamp: 100 })]];
+    props.column.view.bottomUnreadCount = 3;
+    props.column.view.tailAvailability = 'exhausted';
+    await act(async () => root.render(<FeedColumn column={props.column} />));
+    expect(container.querySelector('[data-duty-feed-scroll-button]')).toBeNull();
+  });
+
+  it('does not show bottom controls for an empty settled feed with incomplete geometry', async () => {
+    const props = buildProps();
+    props.column.feed.items = [];
+    props.column.feed.unreadCount = 1;
+    props.column.view.loadingNewer = true;
+    props.column.view.physicallyAtBottom = false;
+    props.column.view.bottomUnreadCount = 1;
+    props.column.view.tailAvailability = 'available';
+    await act(async () => root.render(<FeedColumn column={props.column} />));
+    expect(container.querySelector('[data-duty-feed-scroll-button]')).toBeNull();
+    expect(container.querySelector('[data-duty-feed-scroll-button] svg')).toBeNull();
+    expect(container.querySelector('[data-duty-new-message-badge]')).toBeNull();
+  });
+
+  it('does not show a badge when raw unread exists but every loaded message is read', async () => {
+    const props = buildProps();
+    props.column.feed.items = [[1, minimalInboxMessage({ timestamp: 100 })]];
+    props.column.feed.readIds = new Set([1]);
+    props.column.feed.unreadCount = 1;
+    props.column.view.bottomUnreadCount = 0;
+    props.column.view.physicallyAtBottom = false;
+    await act(async () => root.render(<FeedColumn column={props.column} />));
+    expect(container.querySelector('[data-duty-feed-scroll-button]')).not.toBeNull();
+    expect(container.querySelector('[data-duty-feed-scroll-button]')?.textContent).not.toContain(
+      '1',
+    );
+  });
+
+  it('shows the number of actual loaded unread messages', async () => {
+    const props = buildProps();
+    props.column.feed.items = [
+      [1, minimalInboxMessage({ timestamp: 100 })],
+      [2, minimalInboxMessage({ timestamp: 200 })],
+    ];
+    props.column.feed.readIds = new Set([1]);
+    props.column.feed.unreadCount = 50;
+    props.column.view.bottomUnreadCount = 1;
+    props.column.view.physicallyAtBottom = false;
+    props.column.view.isWatchMode = false;
+    await act(async () => root.render(<FeedColumn column={props.column} />));
+    expect(container.querySelector('[data-duty-feed-scroll-button]')?.textContent).toContain('1');
+    expect(container.querySelector('[data-duty-scroll-unread-badge]')).not.toBeNull();
+  });
+
+  it('shows the bottom button only for available tail content or away from the bottom', async () => {
+    const available = buildProps();
+    available.column.feed.items = [[1, minimalInboxMessage({ timestamp: 100 })]];
+    available.column.view.tailAvailability = 'available';
+    await act(async () => root.render(<FeedColumn column={available.column} />));
+    expect(container.querySelector('[data-duty-feed-scroll-button]')).not.toBeNull();
+
+    const middle = buildProps();
+    middle.column.feed.items = [[1, minimalInboxMessage({ timestamp: 100 })]];
+    middle.column.view.physicallyAtBottom = false;
+    middle.column.view.tailAvailability = 'exhausted';
+    await act(async () => root.render(<FeedColumn column={middle.column} />));
+    expect(container.querySelector('[data-duty-feed-scroll-button]')).not.toBeNull();
+  });
+
+  it('shows a spinner only for explicit newer loading', async () => {
+    const background = buildProps();
+    background.column.feed.items = [[1, minimalInboxMessage({ timestamp: 100 })]];
+    background.column.view.loadingNewer = false;
+    await act(async () => root.render(<FeedColumn column={background.column} />));
+    expect(container.querySelector('[data-duty-feed-scroll-button]')).not.toBeNull();
+    expect(container.querySelector('[role="progressbar"]')).toBeNull();
+
+    const explicit = buildProps();
+    explicit.column.feed.items = [[1, minimalInboxMessage({ timestamp: 100 })]];
+    explicit.column.view.loadingNewer = true;
+    await act(async () => root.render(<FeedColumn column={explicit.column} />));
+    expect(container.querySelector('[role="progressbar"]')).not.toBeNull();
   });
 
   it('passes the copy menu etalon action into duty message cards', async () => {
