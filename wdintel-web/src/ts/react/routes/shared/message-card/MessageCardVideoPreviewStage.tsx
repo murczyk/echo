@@ -116,16 +116,24 @@ export const MessageCardVideoPreviewStage = forwardRef<
 
       {(!src && !error) || (src && !error && isBuffering) ? (
         <Box
+          role="status"
+          aria-live="polite"
           sx={{
             position: 'absolute',
             inset: 0,
             zIndex: 2,
-            display: 'grid',
-            placeItems: 'center',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 1,
             pointerEvents: 'none',
           }}
         >
           <CircularProgress size={22} />
+          <Typography variant="body2" color="text.secondary">
+            Скачування та розшифровка медіа
+          </Typography>
         </Box>
       ) : null}
 

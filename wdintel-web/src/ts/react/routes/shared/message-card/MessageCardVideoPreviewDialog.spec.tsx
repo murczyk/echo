@@ -8,6 +8,12 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { VideoPlayerState, VideoPreviewSource } from './message-card-video-utils';
 
+const authRedirectMocks = vi.hoisted(() => ({
+  emitUnauthorizedEvent: vi.fn(),
+}));
+
+vi.mock('../../../auth-redirect', () => authRedirectMocks);
+
 type DialogRecord = {
   disableRestoreFocus?: boolean;
   disableEscapeKeyDown?: boolean;
@@ -304,6 +310,7 @@ import { MessageCardVideoPreviewDialog } from './MessageCardVideoPreviewDialog';
 
 describe('MessageCardVideoPreviewDialog', () => {
   afterEach(() => {
+    vi.useRealTimers();
     dialogProps.splice(0);
     previewConfig = {
       layout: 'media',
@@ -315,6 +322,7 @@ describe('MessageCardVideoPreviewDialog', () => {
     latestVideoProps = null;
     latestActionProps = null;
     latestInfoProps = null;
+    authRedirectMocks.emitUnauthorizedEvent.mockReset();
     document.body.innerHTML = '';
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
@@ -411,6 +419,235 @@ describe('MessageCardVideoPreviewDialog', () => {
 
     remote.root.unmount();
     expect(revokeObjectUrlSpy).toHaveBeenCalledWith('blob:https://example.test/video');
+  });
+
+  it('retries a busy large local video preflight before assigning its source', async () => {
+    vi.useFakeTimers();
+    const firstBodyCancel = vi.fn().mockResolvedValue(undefined);
+    const secondBodyCancel = vi.fn().mockResolvedValue(undefined);
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 503,
+        headers: new Headers({ 'Retry-After': '2' }),
+        body: { cancel: firstBodyCancel },
+      } as never)
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 206,
+        headers: new Headers(),
+        body: { cancel: secondBodyCancel },
+      } as never);
+
+    const { root } = renderDialog({
+      videos: [
+        {
+          id: 'large-local',
+          name: 'large.mp4',
+          source: '/api/messenger/media/large-local',
+          sizeBytes: 10 * 1024 * 1024 + 1,
+        },
+      ],
+    });
+
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(fetchSpy).toHaveBeenNthCalledWith(
+      1,
+      '/api/messenger/media/large-local',
+      expect.objectContaining({
+        headers: {
+          Range: 'bytes=0-0',
+          'X-Echo-Media-Cache-Preflight': '1',
+        },
+      }),
+    );
+    expect(latestVideoProps?.src).toBeNull();
+    expect(firstBodyCancel).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2_000);
+    });
+
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+    expect(secondBodyCancel).toHaveBeenCalledTimes(1);
+    expect(latestVideoProps?.src).toBe('/api/messenger/media/large-local');
+
+    root.unmount();
+  });
+
+  it('routes local video 401 responses through the unauthorized handler', async () => {
+    const responseBodyCancel = vi.fn().mockResolvedValue(undefined);
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: false,
+      status: 401,
+      headers: new Headers(),
+      body: { cancel: responseBodyCancel },
+    } as never);
+
+    const largeVideo = renderDialog({
+      videos: [
+        {
+          id: 'large-local',
+          name: 'large.mp4',
+          source: '/api/messenger/media/large-local',
+          sizeBytes: 10 * 1024 * 1024 + 1,
+        },
+      ],
+    });
+
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(authRedirectMocks.emitUnauthorizedEvent).toHaveBeenCalledTimes(1);
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(responseBodyCancel).toHaveBeenCalledTimes(1);
+    expect(latestVideoProps?.error?.message).toBe('Не вдалося завантажити відео.');
+    largeVideo.root.unmount();
+
+    authRedirectMocks.emitUnauthorizedEvent.mockClear();
+    fetchSpy.mockClear();
+
+    const smallVideo = renderDialog({
+      videos: [
+        {
+          id: 'small-local',
+          name: 'small.mp4',
+          source: '/api/messenger/media/small-local',
+          sizeBytes: 1024,
+        },
+      ],
+    });
+
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(authRedirectMocks.emitUnauthorizedEvent).toHaveBeenCalledTimes(1);
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(latestVideoProps?.error?.message).toBe('Не вдалося завантажити відео.');
+    smallVideo.root.unmount();
+  });
+
+  it('retries network and gateway failures with capped backoff during large-video preflight', async () => {
+    vi.useFakeTimers();
+    const gatewayBodyCancel = vi.fn().mockResolvedValue(undefined);
+    const successBodyCancel = vi.fn().mockResolvedValue(undefined);
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockRejectedValueOnce(new TypeError('network unavailable'))
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 504,
+        headers: new Headers({ 'Retry-After': '3' }),
+        body: { cancel: gatewayBodyCancel },
+      } as never)
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 206,
+        headers: new Headers(),
+        body: { cancel: successBodyCancel },
+      } as never);
+
+    const { root } = renderDialog({
+      videos: [
+        {
+          id: 'large-local',
+          name: 'large.mp4',
+          source: '/api/messenger/media/large-local',
+          sizeBytes: 10 * 1024 * 1024 + 1,
+        },
+      ],
+    });
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(latestVideoProps?.src).toBeNull();
+    expect(latestVideoProps?.error).toBeUndefined();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2_000);
+    });
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+    expect(gatewayBodyCancel).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(3_999);
+    });
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1);
+    });
+    expect(fetchSpy).toHaveBeenCalledTimes(3);
+    expect(successBodyCancel).toHaveBeenCalledTimes(1);
+    expect(latestVideoProps?.src).toBe('/api/messenger/media/large-local');
+
+    root.unmount();
+  });
+
+  it('retries busy small local videos while keeping the loading stage visible', async () => {
+    vi.useFakeTimers();
+    const firstBodyCancel = vi.fn().mockResolvedValue(undefined);
+    const createObjectUrlSpy = vi
+      .spyOn(globalThis.URL, 'createObjectURL')
+      .mockReturnValue('blob:small-local-video');
+    const revokeObjectUrlSpy = vi
+      .spyOn(globalThis.URL, 'revokeObjectURL')
+      .mockImplementation(() => {});
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 503,
+        headers: new Headers({ 'Retry-After': '2' }),
+        body: { cancel: firstBodyCancel },
+      } as never)
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        headers: new Headers(),
+        blob: async () => new Blob(['video'], { type: 'video/mp4' }),
+      } as never);
+
+    const { root } = renderDialog({
+      videos: [
+        {
+          id: 'small-local',
+          name: 'small.mp4',
+          source: '/api/messenger/media/small-local',
+          sizeBytes: 1024,
+        },
+      ],
+    });
+
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(firstBodyCancel).toHaveBeenCalledTimes(1);
+    expect(latestVideoProps?.src).toBeNull();
+    expect(latestVideoProps?.error).toBeUndefined();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2_000);
+    });
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+    expect(createObjectUrlSpy).toHaveBeenCalledTimes(1);
+    expect(latestVideoProps?.src).toBe('blob:small-local-video');
+
+    root.unmount();
+    expect(revokeObjectUrlSpy).toHaveBeenCalledWith('blob:small-local-video');
   });
 
   it('shows the existing video-load error when fetch fails', async () => {

@@ -3422,6 +3422,7 @@ mod tests {
                 file_ext: Set(None),
                 file_name: Set(None),
                 size_bytes: Set(1),
+                is_encrypted: Set(true),
                 created_at: Set(now),
             }
             .insert(&env.dbx)

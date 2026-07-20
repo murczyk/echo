@@ -10,6 +10,7 @@ import { MessageCardVideoPreviewDialog } from './MessageCardVideoPreviewDialog';
 const AUDIO_PLAYER_MIN_HEIGHT_PX = 72;
 const AUDIO_PLAYER_TOP_PADDING_PX = 0;
 const AUDIO_PLAYER_Z_INDEX = 0;
+const AUDIO_DERIVED_IMAGE_MAX_SOURCE_SIZE_BYTES = 100 * 1024 * 1024;
 
 const AUDIO_FILE_EXTENSIONS = [
   '.mp3',
@@ -30,6 +31,7 @@ const AUDIO_FILE_EXTENSION_RE = /\.(mp3|mpeg|mpga|wav|ogg|oga|opus|m4a|aac|flac|
 type MessageMediaInfoRaw = MessageMediaInfo & {
   content_type?: string | null;
   file_name?: string | null;
+  size_bytes?: number | null;
 };
 
 export function mediaAttachmentContentType(m: MessageMediaInfo): string {
@@ -50,8 +52,8 @@ export function isImageMediaAttachment(m: MessageMediaInfo): boolean {
 
 export function isAudioMediaAttachment(m: MessageMediaInfo): boolean {
   const ct = mediaAttachmentContentType(m);
-  if (ct.startsWith('video/')) return false;
   if (ct.startsWith('audio/')) return true;
+  if (ct.startsWith('image/') || isVideoMediaAttachment(m)) return false;
   if (ct.includes('mpeg') || ct.includes('mp3')) return true;
   const fileName = mediaAttachmentDisplayName(m).toLowerCase();
   if (AUDIO_FILE_EXTENSIONS.some((ext) => fileName.endsWith(ext))) return true;
@@ -59,18 +61,46 @@ export function isAudioMediaAttachment(m: MessageMediaInfo): boolean {
   return AUDIO_FILE_EXTENSION_RE.test(href);
 }
 
-const VIDEO_FILE_EXTENSIONS = ['.mp4', '.webm', '.ogg', '.mov', '.mkv'] as const;
+const VIDEO_FILE_EXTENSIONS = [
+  '.mp4',
+  '.m4v',
+  '.mov',
+  '.webm',
+  '.mkv',
+  '.avi',
+  '.mpeg',
+  '.mpg',
+  '.wmv',
+  '.flv',
+  '.f4v',
+  '.3gp',
+  '.3g2',
+  '.m2ts',
+  '.ogv',
+  '.vob',
+  '.asf',
+] as const;
 
-const VIDEO_FILE_EXTENSION_RE = /\.(mp4|webm|ogg|mov|mkv)(\?|#|$)/i;
+const VIDEO_FILE_EXTENSION_RE =
+  /\.(mp4|m4v|mov|webm|mkv|avi|mpeg|mpg|wmv|flv|f4v|3gp|3g2|m2ts|ogv|vob|asf)(\?|#|$)/i;
+const VIDEO_APPLICATION_CONTENT_TYPES = ['application/mp4', 'application/x-matroska'] as const;
+
+function hasVideoFileExtension(m: MessageMediaInfo): boolean {
+  const fileName = mediaAttachmentDisplayName(m).toLowerCase();
+  if (VIDEO_FILE_EXTENSIONS.some((ext) => fileName.endsWith(ext))) return true;
+  return VIDEO_FILE_EXTENSION_RE.test(String(m.href ?? '').toLowerCase());
+}
 
 export function isVideoMediaAttachment(m: MessageMediaInfo): boolean {
   const ct = mediaAttachmentContentType(m);
-  if (ct.startsWith('video/')) return true;
+  if (
+    ct.startsWith('video/') ||
+    VIDEO_APPLICATION_CONTENT_TYPES.some((contentType) => contentType === ct)
+  ) {
+    return true;
+  }
   if (ct.startsWith('audio/') || ct.startsWith('image/')) return false;
-  const fileName = mediaAttachmentDisplayName(m).toLowerCase();
-  if (VIDEO_FILE_EXTENSIONS.some((ext) => fileName.endsWith(ext))) return true;
-  const href = String(m.href ?? '').toLowerCase();
-  return VIDEO_FILE_EXTENSION_RE.test(href);
+  return hasVideoFileExtension(m);
 }
 
 export function mediaAttachmentDisplayName(m: MessageMediaInfo): string {
@@ -78,6 +108,11 @@ export function mediaAttachmentDisplayName(m: MessageMediaInfo): string {
   const s = (m.fileName ?? raw.file_name ?? '').trim();
   if (s !== '') return s;
   return '<файл без назви>';
+}
+
+function mediaAttachmentSizeBytes(m: MessageMediaInfo): number | null {
+  const raw = m as MessageMediaInfoRaw;
+  return m.sizeBytes ?? raw.size_bytes ?? null;
 }
 
 const MESSENGER_MEDIA_PATH_RE = /\/api\/messenger\/media\/([^/?#]+)/;
@@ -97,6 +132,10 @@ export function mediaAttachmentSpectrumUrl(mediaId: string): string {
   return `/api/messenger/media/${mediaId}/spectrogram`;
 }
 
+export function mediaAttachmentThumbnailUrl(mediaId: string): string {
+  return `/api/messenger/media/${mediaId}/thumbnail`;
+}
+
 export function syncAudioPlayerTheme(player: HTMLElement, paletteMode: 'light' | 'dark') {
   player.setAttribute('theme', paletteMode);
 }
@@ -108,8 +147,13 @@ export function MessageMediaAudioPlayer({ attachment }: { attachment: MessageMed
   const displayName = mediaAttachmentDisplayName(attachment);
   const href = String(attachment.href ?? '');
   const mediaId = resolveMediaAttachmentId(attachment);
-  const waveSrc = mediaId !== '' ? mediaAttachmentWaveUrl(mediaId) : '';
-  const spectrumSrc = mediaId !== '' ? mediaAttachmentSpectrumUrl(mediaId) : '';
+  const sizeBytes = mediaAttachmentSizeBytes(attachment);
+  const canLoadDerivedImages =
+    !hasVideoFileExtension(attachment) &&
+    (sizeBytes == null || sizeBytes <= AUDIO_DERIVED_IMAGE_MAX_SOURCE_SIZE_BYTES);
+  const waveSrc = mediaId !== '' && canLoadDerivedImages ? mediaAttachmentWaveUrl(mediaId) : '';
+  const spectrumSrc =
+    mediaId !== '' && canLoadDerivedImages ? mediaAttachmentSpectrumUrl(mediaId) : '';
   const storageKey = `echo-inbox-${mediaId || displayName}`;
 
   useLayoutEffect(() => {

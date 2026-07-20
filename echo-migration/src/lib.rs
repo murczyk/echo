@@ -298,6 +298,7 @@ mod m20260712_204007_add_do_not_store_duplicate_echoim_failures;
 mod m20260713_152932_rename_cyber_echo_enabled_to_devices_section_enabled;
 mod m20260715_092901_add_sigint_inbox_item_network;
 mod m20260717_111121_goi_palitra_sync_changelog_source;
+mod m20260720_124323_add_signal_message_media_is_encrypted;
 
 pub struct Migrator;
 
@@ -632,6 +633,9 @@ impl MigratorTrait for Migrator {
             Box::new(m20260715_092901_add_sigint_inbox_item_network::Migration),
             Box::new(
                 m20260717_111121_goi_palitra_sync_changelog_source::Migration,
+            ),
+            Box::new(
+                m20260720_124323_add_signal_message_media_is_encrypted::Migration,
             ),
         ]
     }

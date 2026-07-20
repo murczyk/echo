@@ -9,13 +9,20 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createTheme } from '@mui/material/styles';
 
-import type { InboxMessage, InboxMessageMetadata, Network, Tag } from '../../../../../Bindings';
+import type {
+  InboxMessage,
+  InboxMessageMetadata,
+  MessageMediaInfo,
+  Network,
+  Tag,
+} from '../../../../../Bindings';
 import { ELLIPSIS } from '../../../utils/misc';
 import { inboxMessageWithMockImages } from '../../rer-duty-neo/inbox-message-mocks';
 import { emptyFilter } from '../../rer-duty-neo/utils';
 import { formatMessageCardTooltipTime, MessageCard } from './MessageCard';
 import { MessageCardContent } from './MessageCardContent';
 import { MessageCardHeader } from './MessageCardHeader';
+import { isAudioMediaAttachment, isVideoMediaAttachment } from './MessageCardMedia';
 import {
   normalizeLocationDisplayValue,
   resolveEtalonBindingDisplayValue,
@@ -2103,6 +2110,102 @@ describe('MessageCard', () => {
     expect(view.container.querySelector('button')).not.toBeNull();
   });
 
+  it('treats application/mp4 attachments as video', () => {
+    expect(
+      isVideoMediaAttachment({
+        id: 'application-mp4',
+        href: '/api/messenger/media/application-mp4',
+        contentType: ' application/mp4; codecs=avc1 ',
+        fileName: 'clip.bin',
+        sizeBytes: 1024,
+      } as MessageMediaInfo),
+    ).toBe(true);
+  });
+
+  it('treats common video MIME types and extensions as video', () => {
+    expect(
+      isVideoMediaAttachment({
+        id: 'quicktime',
+        href: '/api/messenger/media/quicktime',
+        contentType: 'video/quicktime',
+        fileName: null,
+        sizeBytes: 1024,
+      } as MessageMediaInfo),
+    ).toBe(true);
+    expect(
+      isVideoMediaAttachment({
+        id: 'matroska',
+        href: '/api/messenger/media/matroska',
+        contentType: 'application/x-matroska',
+        fileName: 'clip.bin',
+        sizeBytes: 1024,
+      } as MessageMediaInfo),
+    ).toBe(true);
+    expect(
+      isVideoMediaAttachment({
+        id: 'avi',
+        href: '/api/messenger/media/avi',
+        contentType: 'application/octet-stream',
+        fileName: 'clip.avi',
+        sizeBytes: 1024,
+      } as MessageMediaInfo),
+    ).toBe(true);
+  });
+
+  it('does not classify TypeScript source extensions as video without video MIME', () => {
+    for (const extension of ['ts', 'mts']) {
+      expect(
+        isVideoMediaAttachment({
+          id: `typescript-${extension}`,
+          href: `/api/messenger/media/typescript-${extension}`,
+          contentType: 'application/typescript',
+          fileName: `source.${extension}`,
+          sizeBytes: 1024,
+        } as MessageMediaInfo),
+      ).toBe(false);
+    }
+  });
+
+  it('classifies MPEG transport streams by MIME despite an ambiguous extension', () => {
+    expect(
+      isVideoMediaAttachment({
+        id: 'mpeg-ts',
+        href: '/api/messenger/media/mpeg-ts',
+        contentType: 'video/mp2t',
+        fileName: 'clip.ts',
+        sizeBytes: 1024,
+      } as MessageMediaInfo),
+    ).toBe(true);
+  });
+
+  it('uses video classification before ambiguous audio extension fallbacks', () => {
+    for (const [id, fileName] of [
+      ['mpeg', 'clip.mpeg'],
+      ['webm', 'clip.webm'],
+    ]) {
+      const attachment = {
+        id,
+        href: `/api/messenger/media/${id}`,
+        contentType: 'application/octet-stream',
+        fileName,
+        sizeBytes: 1024,
+      } as MessageMediaInfo;
+
+      expect(isVideoMediaAttachment(attachment)).toBe(true);
+      expect(isAudioMediaAttachment(attachment)).toBe(false);
+    }
+
+    const applicationMp4 = {
+      id: 'application-mp4-audio-name',
+      href: '/api/messenger/media/application-mp4-audio-name',
+      contentType: 'application/mp4',
+      fileName: 'voice.m4a',
+      sizeBytes: 1024,
+    } as MessageMediaInfo;
+    expect(isVideoMediaAttachment(applicationMp4)).toBe(true);
+    expect(isAudioMediaAttachment(applicationMp4)).toBe(false);
+  });
+
   it('renders audio attachments with the custom audio player instead of a download button', async () => {
     const view = await renderCard({
       msg: {
@@ -2134,6 +2237,75 @@ describe('MessageCard', () => {
         button.textContent?.includes('recording.mp3'),
       ),
     ).toBe(false);
+  });
+
+  it('does not request derived images for audio attachments larger than 100 MiB', async () => {
+    const view = await renderCard({
+      msg: {
+        ...buildMessage(),
+        media: [
+          {
+            id: 'large-audio',
+            href: '/api/messenger/media/large-audio',
+            contentType: 'audio/mpeg',
+            fileName: 'large.mp3',
+            sizeBytes: 100 * 1024 * 1024 + 1,
+          },
+        ] as InboxMessage['media'],
+      },
+    });
+    rendered.push(view);
+
+    const player = view.container.querySelector('custom-audio-player');
+    expect(player?.getAttribute('src')).toBe('/api/messenger/media/large-audio');
+    expect(player?.hasAttribute('wave-src')).toBe(false);
+    expect(player?.hasAttribute('spectrum-src')).toBe(false);
+  });
+
+  it('does not request derived images for large snake_case audio attachments', async () => {
+    const view = await renderCard({
+      msg: {
+        ...buildMessage(),
+        media: [
+          {
+            id: 'large-snake-audio',
+            href: '/api/messenger/media/large-snake-audio',
+            content_type: 'audio/mpeg',
+            file_name: 'large.mp3',
+            size_bytes: 100 * 1024 * 1024 + 1,
+          },
+        ] as InboxMessage['media'],
+      },
+    });
+    rendered.push(view);
+
+    const player = view.container.querySelector('custom-audio-player');
+    expect(player?.getAttribute('src')).toBe('/api/messenger/media/large-snake-audio');
+    expect(player?.hasAttribute('wave-src')).toBe(false);
+    expect(player?.hasAttribute('spectrum-src')).toBe(false);
+  });
+
+  it('does not request derived images for plaintext video-container audio', async () => {
+    const view = await renderCard({
+      msg: {
+        ...buildMessage(),
+        media: [
+          {
+            id: 'webm-audio',
+            href: '/api/messenger/media/webm-audio',
+            contentType: ' Audio/WebM; codecs=opus ',
+            fileName: 'voice.webm',
+            sizeBytes: 1024,
+          },
+        ] as InboxMessage['media'],
+      },
+    });
+    rendered.push(view);
+
+    const player = view.container.querySelector('custom-audio-player');
+    expect(player?.getAttribute('src')).toBe('/api/messenger/media/webm-audio');
+    expect(player?.hasAttribute('wave-src')).toBe(false);
+    expect(player?.hasAttribute('spectrum-src')).toBe(false);
   });
 
   it('renders audio attachments from snake_case API media fields', async () => {

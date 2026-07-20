@@ -617,6 +617,13 @@ pub struct OneoffMigrateModulationToEncryptionPs {
 }
 
 #[derive(clap::Args, Debug, Clone)]
+pub struct OneoffMigrateLargeMediaToPlaintextPs {
+    /// Show eligible media count and bytes without changing B2 or the database.
+    #[arg(long, action)]
+    pub dry_run: bool,
+}
+
+#[derive(clap::Args, Debug, Clone)]
 pub struct BackupPs {
     /// Skip the configured sleep_before_backup_mins delay.
     #[arg(long, action)]
@@ -735,6 +742,7 @@ enum Cmd {
     OneoffKillOldQueries(OneoffKillOldQueriesPs),
     OneoffRefreshAiModels,
     OneoffMigrateModulationToEncryption(OneoffMigrateModulationToEncryptionPs),
+    OneoffMigrateLargeMediaToPlaintext(OneoffMigrateLargeMediaToPlaintextPs),
     OneoffMergeDatasourceGroup(OneoffMergeDatasourceGroupPs),
     OneoffCompactDatasourceGroup,
     OneoffEnsureApiIntegrationIggyTopics,
@@ -1246,6 +1254,12 @@ async fn async_main(
         Cmd::OneoffRefreshAiModels => tags::worker::oneoff_refresh_models(mode).await,
         Cmd::OneoffMigrateModulationToEncryption(ps) => {
             sigint::network::oneoff::oneoff_migrate_modulation_to_encryption(
+                mode, ps.dry_run,
+            )
+            .await
+        },
+        Cmd::OneoffMigrateLargeMediaToPlaintext(ps) => {
+            messenger::oneoff::oneoff_migrate_large_media_to_plaintext(
                 mode, ps.dry_run,
             )
             .await

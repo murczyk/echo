@@ -49,7 +49,7 @@ async fn message_submit(
             datasource_id: datasource.id,
             inbox_message_id: None,
         };
-        let signal_message_uid =
+        let signal_message_result =
             crate::message_queue::process_signal_message_queue_item(
                 message,
                 Vec::<MessageAttachmentF1>::new(),
@@ -64,6 +64,7 @@ async fn message_submit(
             )
             .await
             .c(h!())?;
+        let signal_message_uid = signal_message_result.message_uid;
 
         let types::OperatorInboxMessage {
             instance_id,

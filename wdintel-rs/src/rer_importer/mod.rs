@@ -69,33 +69,62 @@ fn parse_single_byte_range(
     range_header: &str,
     total: u64,
 ) -> Option<(u64, u64)> {
-    let spec = range_header.trim().strip_prefix("bytes=")?.trim();
-    let spec = spec.split(',').next()?.trim();
-    if spec.is_empty() || total == 0 {
+    let specs = range_header.trim().strip_prefix("bytes=")?.trim();
+    if specs.is_empty() {
+        return None;
+    }
+
+    let mut first_range = None;
+    for spec in specs.split(',') {
+        match parse_byte_range_spec(spec.trim(), total)? {
+            ParsedByteRangeSpec::Satisfiable(start, end) => {
+                first_range.get_or_insert((start, end));
+            }
+            ParsedByteRangeSpec::Unsatisfiable => {}
+        }
+    }
+    first_range
+}
+
+enum ParsedByteRangeSpec {
+    Satisfiable(u64, u64),
+    Unsatisfiable,
+}
+
+fn parse_byte_range_spec(
+    spec: &str,
+    total: u64,
+) -> Option<ParsedByteRangeSpec> {
+    if spec.is_empty() {
         return None;
     }
 
     if let Some(suffix) = spec.strip_prefix('-') {
-        let suffix_len: u64 = suffix.parse().ok()?;
-        if suffix_len == 0 {
-            return None;
+        let suffix_len: u64 = suffix.trim().parse().ok()?;
+        if suffix_len == 0 || total == 0 {
+            return Some(ParsedByteRangeSpec::Unsatisfiable);
         }
         let suffix_len = suffix_len.min(total);
         let start = total - suffix_len;
-        return Some((start, total - 1));
+        return Some(ParsedByteRangeSpec::Satisfiable(start, total - 1));
     }
 
     let (start_str, end_str) = spec.split_once('-')?;
-    let start: u64 = start_str.parse().ok()?;
-    let end = if end_str.is_empty() {
-        total - 1
+    let start: u64 = start_str.trim().parse().ok()?;
+    let end_str = end_str.trim();
+    let requested_end = if end_str.is_empty() {
+        None
     } else {
-        end_str.parse().ok()?
+        Some(end_str.parse::<u64>().ok()?)
     };
-    if start >= total || start > end {
+    if requested_end.is_some_and(|end| start > end) {
         return None;
     }
-    Some((start, end.min(total - 1)))
+    if start >= total {
+        return Some(ParsedByteRangeSpec::Unsatisfiable);
+    }
+    let end = requested_end.unwrap_or(total - 1).min(total - 1);
+    Some(ParsedByteRangeSpec::Satisfiable(start, end))
 }
 
 fn apply_media_response_headers(
@@ -105,9 +134,22 @@ fn apply_media_response_headers(
 ) {
     builder.insert_header((header::ACCEPT_RANGES, "bytes"));
     builder.insert_header((header::CONTENT_TYPE, content_type.to_string()));
+    builder.insert_header(("X-Accel-Buffering", "no"));
     if let Some(cd) = media_inline_content_disposition(file_name) {
         builder.insert_header(cd);
     }
+}
+
+fn media_range_not_satisfiable_response(
+    content_type: &str,
+    file_name: Option<&str>,
+    total: u64,
+) -> HttpResponse {
+    let mut response = HttpResponse::build(StatusCode::RANGE_NOT_SATISFIABLE);
+    apply_media_response_headers(&mut response, content_type, file_name);
+    response
+        .insert_header((header::CONTENT_RANGE, format!("bytes */{total}")))
+        .finish()
 }
 
 #[get("/api/messenger/media/{media_id}")]
@@ -133,8 +175,190 @@ async fn messenger_media(
         media.signal_message_id,
     )
     .await?;
-    let data = crate::messenger::media::fetch_media_bytes(env.as_ref(), &media)
-        .await?;
+
+    if !media.is_encrypted {
+        return serve_plaintext_messenger_media(&req, env.as_ref(), &media)
+            .await;
+    }
+    if crate::messenger::media::is_video_media(&media)
+        && crate::messenger::media_cache::should_cache_media(media.size_bytes)
+    {
+        return serve_cached_messenger_media(&req, env.as_ref(), &media).await;
+    }
+    serve_small_messenger_media(&req, env.as_ref(), &media).await
+}
+
+async fn serve_plaintext_messenger_media(
+    req: &HttpRequest,
+    env: &Env,
+    media: &signal_message_media::Model,
+) -> Result<HttpResponse, AppError> {
+    let total = u64::try_from(media.size_bytes).c(h!())?;
+    if total == 0 {
+        if req.headers().contains_key(header::RANGE) {
+            return Ok(media_range_not_satisfiable_response(
+                &media.content_type,
+                media.file_name.as_deref(),
+                total,
+            ));
+        }
+        let mut response = HttpResponse::Ok();
+        apply_media_response_headers(
+            &mut response,
+            &media.content_type,
+            media.file_name.as_deref(),
+        );
+        return Ok(response
+            .insert_header((header::CONTENT_LENGTH, "0"))
+            .finish());
+    }
+    let requested_range = req.headers().get(header::RANGE);
+    let (start, end, status) = if let Some(range_header) = requested_range {
+        let range_header = range_header.to_str().unwrap_or("");
+        let Some((start, end)) = parse_single_byte_range(range_header, total)
+        else {
+            return Ok(media_range_not_satisfiable_response(
+                &media.content_type,
+                media.file_name.as_deref(),
+                total,
+            ));
+        };
+        (start, end, StatusCode::PARTIAL_CONTENT)
+    } else {
+        (0, total - 1, StatusCode::OK)
+    };
+    let length = end - start + 1;
+    let media_id = media.id;
+    let stream = crate::messenger::media::stream_plaintext_media_range(
+        env,
+        media,
+        start..end + 1,
+    )
+    .await?
+    .map_err(move |err| {
+        error!("failed to stream plaintext media {media_id}: {err:#?}");
+        err
+    });
+    let mut response = HttpResponse::build(status);
+    apply_media_response_headers(
+        &mut response,
+        &media.content_type,
+        media.file_name.as_deref(),
+    );
+    response.insert_header((header::CONTENT_LENGTH, length.to_string()));
+    if status == StatusCode::PARTIAL_CONTENT {
+        response.insert_header((
+            header::CONTENT_RANGE,
+            format!("bytes {start}-{end}/{total}"),
+        ));
+    }
+    Ok(response.streaming(stream))
+}
+
+async fn serve_cached_messenger_media(
+    req: &HttpRequest,
+    env: &Env,
+    media: &signal_message_media::Model,
+) -> Result<HttpResponse, AppError> {
+    let poll_cache = media_cache_preflight_requested(req);
+    let mut file = open_cached_messenger_media(env, media, poll_cache)
+        .await?
+        .use_etag(false)
+        .use_last_modified(false);
+    if let Ok(content_type) =
+        media.content_type.parse::<actix_web::mime::Mime>()
+    {
+        file = file.set_content_type(content_type);
+    }
+    if let Some(content_disposition) =
+        media_inline_content_disposition(media.file_name.as_deref())
+    {
+        file = file.set_content_disposition(content_disposition);
+    }
+    let mut response = file.into_response(req);
+    response.headers_mut().insert(
+        header::HeaderName::from_static("x-accel-buffering"),
+        header::HeaderValue::from_static("no"),
+    );
+    Ok(response)
+}
+
+async fn open_cached_messenger_media(
+    env: &Env,
+    media: &signal_message_media::Model,
+    poll_cache: bool,
+) -> Result<actix_files::NamedFile, AppError> {
+    let cache_path =
+        cached_messenger_media_path(env, media, poll_cache).await?;
+    if crate::messenger::media::is_video_media(media) {
+        if let Err(err) =
+            crate::messenger::media_thumbnail::try_stage_thumbnail_source_file(
+                &env.config,
+                media.id,
+                &cache_path,
+                media.size_bytes,
+            )
+            .await
+        {
+            warn!(
+                "failed to stage cached thumbnail source for media {}: {err:#?}",
+                media.id
+            );
+        }
+    }
+    match actix_files::NamedFile::open_async(&cache_path).await {
+        Ok(file) => Ok(file),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+            let cache_path =
+                cached_messenger_media_path(env, media, poll_cache).await?;
+            actix_files::NamedFile::open_async(cache_path)
+                .await
+                .c(h!())
+                .map_err(Into::into)
+        }
+        Err(err) => Err(err.into()),
+    }
+}
+
+fn media_cache_preflight_requested(req: &HttpRequest) -> bool {
+    req.headers()
+        .get(crate::config::MESSENGER_MEDIA_CACHE_PREFLIGHT_HEADER)
+        .is_some_and(|value| value.as_bytes() == b"1")
+}
+
+async fn cached_messenger_media_path(
+    env: &Env,
+    media: &signal_message_media::Model,
+    poll_cache: bool,
+) -> Result<std::path::PathBuf, AppError> {
+    if poll_cache {
+        crate::messenger::media_cache::poll_media_cache(env, media).await
+    } else {
+        crate::messenger::media_cache::ensure_media_cached(env, media).await
+    }
+}
+
+async fn serve_small_messenger_media(
+    req: &HttpRequest,
+    env: &Env,
+    media: &signal_message_media::Model,
+) -> Result<HttpResponse, AppError> {
+    let data = crate::messenger::media::fetch_media_bytes(env, media).await?;
+    if crate::messenger::media::is_video_media(media) {
+        if let Err(err) =
+            crate::messenger::media_thumbnail::try_stage_thumbnail_source_bytes(
+                &env.config,
+                media.id,
+                &data,
+            )
+            .await
+        {
+            warn!(
+                "failed to stage decrypted thumbnail source for media {}: {err:#?}",
+                media.id
+            );
+        }
+    }
     let bytes = Bytes::from(data);
     let total = bytes.len() as u64;
     let content_type = media.content_type.as_str();
@@ -156,11 +380,11 @@ async fn messenger_media(
                 .insert_header((header::CONTENT_LENGTH, length.to_string()))
                 .body(slice));
         }
-        let mut resp = HttpResponse::build(StatusCode::RANGE_NOT_SATISFIABLE);
-        apply_media_response_headers(&mut resp, content_type, file_name);
-        return Ok(resp
-            .insert_header((header::CONTENT_RANGE, format!("bytes */{total}")))
-            .finish());
+        return Ok(media_range_not_satisfiable_response(
+            content_type,
+            file_name,
+            total,
+        ));
     }
 
     let mut resp = HttpResponse::Ok();
@@ -1051,8 +1275,11 @@ where
 #[cfg(test)]
 mod messenger_media_tests {
     use super::{
+        media_cache_preflight_requested, media_range_not_satisfiable_response,
         parse_oneoff_reprocess_unit_names_since_ts, parse_single_byte_range,
     };
+    use actix_web::http::{header, StatusCode};
+    use actix_web::test::TestRequest;
     use chrono::NaiveDate;
 
     #[test]
@@ -1079,6 +1306,72 @@ mod messenger_media_tests {
     #[test]
     fn parse_byte_range_rejects_out_of_bounds() {
         assert_eq!(parse_single_byte_range("bytes=1000-1100", 1000), None);
+    }
+
+    #[test]
+    fn parse_byte_range_uses_first_satisfiable_range() {
+        assert_eq!(
+            parse_single_byte_range("bytes=0-9,20-29", 1000),
+            Some((0, 9))
+        );
+    }
+
+    #[test]
+    fn parse_byte_range_skips_unsatisfiable_ranges() {
+        assert_eq!(
+            parse_single_byte_range("bytes=1000-1100,20-29", 1000),
+            Some((20, 29))
+        );
+    }
+
+    #[test]
+    fn parse_byte_range_rejects_malformed_multi_range() {
+        assert_eq!(parse_single_byte_range("bytes=0-9,broken", 1000), None);
+    }
+
+    #[test]
+    fn parse_byte_range_rejects_fully_unsatisfiable_multi_range() {
+        assert_eq!(
+            parse_single_byte_range("bytes=1000-1100,2000-", 1000),
+            None
+        );
+    }
+
+    #[test]
+    fn unsatisfiable_range_response_includes_representation_size() {
+        let response = media_range_not_satisfiable_response(
+            "video/mp4",
+            Some("video.mp4"),
+            1000,
+        );
+
+        assert_eq!(response.status(), StatusCode::RANGE_NOT_SATISFIABLE);
+        assert_eq!(
+            response.headers().get(header::CONTENT_RANGE).unwrap(),
+            "bytes */1000"
+        );
+        assert_eq!(response.headers().get("x-accel-buffering").unwrap(), "no");
+    }
+
+    #[test]
+    fn media_cache_preflight_requires_explicit_header_value() {
+        let regular_request = TestRequest::default().to_http_request();
+        let preflight_request = TestRequest::default()
+            .insert_header((
+                crate::config::MESSENGER_MEDIA_CACHE_PREFLIGHT_HEADER,
+                "1",
+            ))
+            .to_http_request();
+        let invalid_request = TestRequest::default()
+            .insert_header((
+                crate::config::MESSENGER_MEDIA_CACHE_PREFLIGHT_HEADER,
+                "true",
+            ))
+            .to_http_request();
+
+        assert!(!media_cache_preflight_requested(&regular_request));
+        assert!(media_cache_preflight_requested(&preflight_request));
+        assert!(!media_cache_preflight_requested(&invalid_request));
     }
 
     #[test]
