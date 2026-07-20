@@ -9096,6 +9096,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "wdfiles-migration"
+version = "0.1.0"
+dependencies = [
+ "sea-orm-migration",
+ "tokio",
+]
+
+[[package]]
 name = "wdintel-rs"
 version = "0.1.1-rc.202608040643"
 dependencies = [
@@ -9200,6 +9208,7 @@ dependencies = [
  "urlencoding",
  "uuid",
  "walkdir",
+ "wdfiles-migration",
  "xshell",
  "zip 4.6.1",
  "zstd",

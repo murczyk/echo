@@ -6,6 +6,26 @@ For server setup see [[server.md]]
 
 For CI/testing, use `just setup-test-db [branch_name]` to create branch-specific test databases from the base dump. Use `just cleanup-test-dbs` to remove all test databases. CI automatically handles this for each branch via the `TEST_DB_NAME` environment variable.
 
+### File registry database
+
+The file registry uses an independent PostgreSQL database: `wd_files` in live/debug mode and `wd_files_test` in test mode. Configure its connection with `pg_wdfile_host`, `pg_wdfile_port`, `pg_wdfile_user`, `pg_wdfile_password`, and `pg_wdfile_dbname` in the selected `deploy/config*.toml`.
+
+Create the database once before starting the server or background worker:
+
+```bash
+just create-file-registry-database --mode=debug
+```
+
+The command selects configuration exactly like the backend; set `ECHO_CONFIG_PATH` to use a different TOML file. It creates only the database. The `wdfiles-migration` schema migrator runs automatically during backend startup. The configured PostgreSQL user needs `CREATEDB` to provision the database and normal DDL permissions to run its migrations.
+
+Generate the isolated SeaORM entity tree from the same configuration:
+
+```bash
+just gen-seaorm-files --mode=debug
+```
+
+Branch test setup creates the paired main and file-registry databases, then exports both `TEST_DB_NAME` and `TEST_WDFILE_DB_NAME`.
+
 ### runtime deps
 
 See "Denendencies" in [[../README.md]]

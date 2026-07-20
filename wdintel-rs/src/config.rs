@@ -10,8 +10,11 @@ pub const DEFAULT_PG_PORT: u16 = 5432;
 pub const DEFAULT_PG_USER: &str = "wd";
 pub const DEFAULT_PG_PASSWORD: &str = "fee_-_-_-FnoeKFBeebu87bf";
 pub const DEFAULT_PG_DBNAME: &str = "wd";
+pub const DEFAULT_PG_WDFILE_DBNAME: &str = "wd_files";
 pub const PG_POOL_DEFAULT_MAX_CONNECTIONS: u32 = 30;
 pub const PG_POOL_BGWORKER_MAX_CONNECTIONS: u32 = 20;
+pub const PG_WDFILE_POOL_MAX_CONNECTIONS: u32 = 10;
+pub const PG_WDFILE_MIGRATION_POOL_MAX_CONNECTIONS: u32 = 1;
 pub const PGBACKREST_CONF_PATH: &str = "/etc/pgbackrest/pgbackrest.conf";
 pub const PGBACKREST_CONF_INCLUDE_DIR: &str = "/etc/pgbackrest/conf.d";
 pub const PGBACKREST_STANZA_CONF_PREFIX: &str = "pgbackrest-";
@@ -590,6 +593,11 @@ pub struct Config {
     pub pg_user: Option<String>,
     pub pg_password: Option<String>,
     pub pg_dbname: Option<String>,
+    pub pg_wdfile_host: Option<String>,
+    pub pg_wdfile_port: Option<u16>,
+    pub pg_wdfile_user: Option<String>,
+    pub pg_wdfile_password: Option<String>,
+    pub pg_wdfile_dbname: Option<String>,
     pub cookie_session_secret: String,
     pub storage_dir: String,
     pub signal_api_phone: String,
@@ -1087,6 +1095,88 @@ pg_dbname = "echo_analytics_gateway"
         assert_eq!(
             analytics.retry_cooldown_ms(),
             ANALYTICS_RETRY_COOLDOWN_MS_DEFAULT
+        );
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn file_registry_database_config_is_flat_and_uses_test_override() {
+        let configured: Config = toml::from_str(
+            r#"
+public_host = ""
+pg_wdfile_host = "file-host"
+pg_wdfile_port = 5433
+pg_wdfile_user = "file-user"
+pg_wdfile_password = "file-password"
+pg_wdfile_dbname = "file-db"
+cookie_session_secret = ""
+storage_dir = ""
+signal_api_phone = ""
+signal_import_group_name = ""
+signal_import_fiven_name = ""
+static_path = ""
+executable_path = ""
+fill_comp_freq_worker = false
+"#,
+        )
+        .unwrap();
+        assert_eq!(configured.pg_wdfile_host.as_deref(), Some("file-host"));
+        assert_eq!(configured.pg_wdfile_port, Some(5433));
+        assert_eq!(configured.pg_wdfile_user.as_deref(), Some("file-user"));
+        assert_eq!(
+            configured.pg_wdfile_password.as_deref(),
+            Some("file-password")
+        );
+        assert_eq!(configured.pg_wdfile_dbname.as_deref(), Some("file-db"));
+        assert_eq!(
+            crate::mk_wdfile_conn_string(&configured, Mode::Debug),
+            "postgresql://file-user:file-password@file-host:5433/file-db"
+        );
+
+        let defaults: Config = toml::from_str(
+            r#"
+public_host = ""
+cookie_session_secret = ""
+storage_dir = ""
+signal_api_phone = ""
+signal_import_group_name = ""
+signal_import_fiven_name = ""
+static_path = ""
+executable_path = ""
+fill_comp_freq_worker = false
+"#,
+        )
+        .unwrap();
+        let expected_default =
+            "postgresql://wd:fee_-_-_-FnoeKFBeebu87bf@localhost:5432/wd_files";
+        assert_eq!(
+            crate::mk_wdfile_conn_string(&defaults, Mode::Debug),
+            expected_default
+        );
+
+        let previous = std::env::var_os("TEST_WDFILE_DB_NAME");
+        std::env::set_var(
+            "TEST_WDFILE_DB_NAME",
+            "temporary-file-registry-database",
+        );
+        let test_conn_string =
+            crate::mk_wdfile_conn_string(&defaults, Mode::Test);
+        match previous {
+            Some(value) => {
+                std::env::set_var("TEST_WDFILE_DB_NAME", value);
+            }
+            None => {
+                std::env::remove_var("TEST_WDFILE_DB_NAME");
+            }
+        }
+
+        assert_eq!(
+            crate::mk_wdfile_conn_string(&defaults, Mode::Live),
+            expected_default
+        );
+        assert_eq!(
+            test_conn_string,
+            "postgresql://wd:fee_-_-_-FnoeKFBeebu87bf@localhost:5432/temporary-file-registry-database"
         );
     }
 }

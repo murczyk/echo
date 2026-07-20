@@ -30,6 +30,7 @@ pub mod elm;
 pub mod entities;
 pub mod error;
 pub mod event_stream;
+pub mod file_registry;
 pub mod functest;
 pub mod icons;
 pub mod iggy;
@@ -728,6 +729,7 @@ enum Cmd {
     GenTs,
     #[command(visible_alias = "migration")]
     Migrate,
+    OneoffCreateFileRegistryDatabase,
     NetworkInvalidationTui,
     /// Prepare a normalized ORBIT Parquet snapshot from a JSON export.
     OneoffPrepareOrbitImport(OneoffPrepareOrbitImportPs),
@@ -891,8 +893,37 @@ async fn new_pg_pool_from_conn_string_with_timeout(
     connect_timeout: Option<core::time::Duration>,
     connect_lazy: bool,
 ) -> Result<sea_orm::DatabaseConnection, AppError> {
+    Ok(new_pg_pool_from_conn_string_with_options(
+        conn_string,
+        pg_pool_max_connections(),
+        connect_timeout,
+        connect_lazy,
+    )
+    .await
+    .c(h!())?)
+}
+
+pub(crate) async fn new_pg_pool_from_conn_string_with_max_connections(
+    conn_string: String,
+    max_connections: u32,
+) -> Result<sea_orm::DatabaseConnection, sea_orm::DbErr> {
+    new_pg_pool_from_conn_string_with_options(
+        conn_string,
+        max_connections,
+        None,
+        false,
+    )
+    .await
+}
+
+async fn new_pg_pool_from_conn_string_with_options(
+    conn_string: String,
+    max_connections: u32,
+    connect_timeout: Option<core::time::Duration>,
+    connect_lazy: bool,
+) -> Result<sea_orm::DatabaseConnection, sea_orm::DbErr> {
     let mut opt = sea_orm::ConnectOptions::new(conn_string);
-    opt.max_connections(pg_pool_max_connections())
+    opt.max_connections(max_connections)
         .min_connections(0)
         .idle_timeout(core::time::Duration::from_secs(30))
         .sqlx_logging(true)
@@ -907,8 +938,7 @@ async fn new_pg_pool_from_conn_string_with_timeout(
     }
     opt.connect_lazy(connect_lazy);
 
-    let db = sea_orm::Database::connect(opt).await.c(h!())?;
-    Ok(db)
+    sea_orm::Database::connect(opt).await
 }
 
 /// Connect to GreptimeDB similar to Postgresql, except that it's ok to fail, the dependency is optional
@@ -963,6 +993,47 @@ fn mk_conn_string(config: &Config) -> String {
         "postgresql://{pg_user}:{pg_password}@{pg_host}:{pg_port}/{pg_dbname}",
     );
     conn_string
+}
+
+fn wdfile_connection_parts(
+    config: &Config,
+    mode: Mode,
+) -> (String, u16, String, String, String) {
+    let pg_host = config
+        .pg_wdfile_host
+        .clone()
+        .unwrap_or_else(|| DEFAULT_PG_HOST.to_string());
+    let pg_port = config.pg_wdfile_port.unwrap_or(DEFAULT_PG_PORT);
+    let pg_user = config
+        .pg_wdfile_user
+        .clone()
+        .unwrap_or_else(|| DEFAULT_PG_USER.to_string());
+    let pg_password = config
+        .pg_wdfile_password
+        .clone()
+        .unwrap_or_else(|| DEFAULT_PG_PASSWORD.to_string());
+    let mut pg_dbname = config
+        .pg_wdfile_dbname
+        .clone()
+        .unwrap_or_else(|| DEFAULT_PG_WDFILE_DBNAME.to_string());
+
+    if mode == Mode::Test {
+        if let Ok(test_db_name) = std::env::var("TEST_WDFILE_DB_NAME") {
+            if !test_db_name.is_empty() {
+                pg_dbname = test_db_name;
+            }
+        }
+    }
+
+    (pg_host, pg_port, pg_user, pg_password, pg_dbname)
+}
+
+fn mk_wdfile_conn_string(config: &Config, mode: Mode) -> String {
+    let (pg_host, pg_port, pg_user, pg_password, pg_dbname) =
+        wdfile_connection_parts(config, mode);
+    format!(
+        "postgresql://{pg_user}:{pg_password}@{pg_host}:{pg_port}/{pg_dbname}"
+    )
 }
 
 fn mk_replica_conn_string(config: &Config, replica: &ReplicaConfig) -> String {
@@ -1150,6 +1221,9 @@ async fn async_main(
         }
         Cmd::OneoffFixKmz(ps) => kml::oneoff_fix_kml_main(mode, &ps).await,
         Cmd::Migrate => migration::run_migration_1(mode).await,
+        Cmd::OneoffCreateFileRegistryDatabase => {
+            file_registry::provisioning::oneoff_create_database(mode).await
+        }
         Cmd::RenewTailscaleCert(ps) => {
             renew_tailscale_cert(mode, ps.force).await
         }

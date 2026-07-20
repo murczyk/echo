@@ -1,7 +1,7 @@
 [workspace]
 members = [
     "wdintel-rs",
-    "echo-migration", "echo-install",
+    "echo-migration", "wdfiles-migration", "echo-install",
     "docs/echo-docs", "echo-ai", "echo-iggy", "goi-echo-worker",
     "goi/echo-swapp",
 ]

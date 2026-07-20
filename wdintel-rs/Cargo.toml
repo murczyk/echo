@@ -8,6 +8,7 @@ description = "ЕХО"
 
 [dependencies]
 echo-migration = { version = "*", path = "../echo-migration" }
+wdfiles-migration = { version = "*", path = "../wdfiles-migration" }
 serde = { workspace = true }
 serde_ignored = "0.1.14"
 serde_json = { workspace = true }

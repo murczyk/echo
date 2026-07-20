@@ -81,6 +81,9 @@ pub async fn new_env(mode: Mode) -> Result<Arc<Env>, AppError> {
         .await
         .c(h!())?,
     );
+    let file_registry_db = crate::file_registry::connect_runtime(&config, mode)
+        .await
+        .c(h!())?;
     let mut replicas = vec![];
     if let Some(replica_configs) = config.replicas.clone() {
         for replica in replica_configs {
@@ -176,6 +179,7 @@ pub async fn new_env(mode: Mode) -> Result<Arc<Env>, AppError> {
         mil_geo: mil_geo.clone(),
         dbx: dbx.clone(),
         echo_gpu_client,
+        file_registry_db,
         rq,
         rq_goi_associations,
         config: config.clone(),

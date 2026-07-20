@@ -72,6 +72,10 @@ pub mod tests {
             .await
             .context(h!())?;
         env.echo_gpu_client.reload_instances().await.context(h!())?;
+        crate::file_registry::entities::device_file::Entity::delete_many()
+            .exec(env.file_registry_db.connection())
+            .await
+            .context(h!())?;
         // Delete dependent entities first to avoid foreign key constraint violations
         secret_group_user::Entity::delete_many()
             .exec(&env.dbx)
