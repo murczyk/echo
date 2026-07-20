@@ -240,6 +240,47 @@ fn write_zip_entry<W: Write + Seek>(
     Ok(())
 }
 
+fn attachment_size_limit_error(total_bytes: u64) -> AppError {
+    AppError::BL {
+        msg: format!(
+            "Message attachments are too large: {} bytes, max is {}",
+            total_bytes,
+            crate::config::RER_MESSAGE_ATTACHMENTS_ZIP_MAX_TOTAL_BYTES
+        ),
+    }
+}
+
+fn checked_attachment_size_total(
+    total_bytes: u64,
+    additional_bytes: u64,
+) -> Result<u64, AppError> {
+    let total_bytes = total_bytes
+        .checked_add(additional_bytes)
+        .ok_or_else(|| attachment_size_limit_error(u64::MAX))?;
+    if total_bytes > crate::config::RER_MESSAGE_ATTACHMENTS_ZIP_MAX_TOTAL_BYTES
+    {
+        return Err(attachment_size_limit_error(total_bytes));
+    }
+    Ok(total_bytes)
+}
+
+fn validate_attachment_metadata_sizes(
+    media: &[signal_message_media::Model],
+) -> Result<u64, AppError> {
+    let mut total_bytes = 0;
+    for media in media {
+        let size_bytes =
+            u64::try_from(media.size_bytes).map_err(|_| AppError::BL {
+                msg: format!(
+                    "Invalid attachment size: {} bytes",
+                    media.size_bytes
+                ),
+            })?;
+        total_bytes = checked_attachment_size_total(total_bytes, size_bytes)?;
+    }
+    Ok(total_bytes)
+}
+
 fn message_attachments_archive_name_from_parts(
     message_uuid: Option<&str>,
     timestamp: chrono::NaiveDateTime,
@@ -301,6 +342,7 @@ async fn rer_message_attachments_zip(
             ),
         });
     }
+    validate_attachment_metadata_sizes(&media)?;
 
     let zip_file = tempfile::tempfile().c(h!())?;
     let mut archive = zip::ZipWriter::new(BufWriter::new(zip_file));
@@ -312,18 +354,10 @@ async fn rer_message_attachments_zip(
         let data =
             crate::messenger::media::fetch_media_bytes(env.as_ref(), media)
                 .await?;
-        total_bytes = total_bytes.saturating_add(data.len() as u64);
-        if total_bytes
-            > crate::config::RER_MESSAGE_ATTACHMENTS_ZIP_MAX_TOTAL_BYTES
-        {
-            return Err(AppError::BL {
-                msg: format!(
-                    "Message attachments are too large: {} bytes, max is {}",
-                    total_bytes,
-                    crate::config::RER_MESSAGE_ATTACHMENTS_ZIP_MAX_TOTAL_BYTES
-                ),
-            });
-        }
+        total_bytes = checked_attachment_size_total(
+            total_bytes,
+            u64::try_from(data.len()).c(h!())?,
+        )?;
         let name = safe_zip_entry_name(
             media.file_name.as_deref(),
             media.file_ext.as_deref(),
@@ -1228,13 +1262,17 @@ where
 #[cfg(test)]
 mod messenger_media_tests {
     use super::{
+        checked_attachment_size_total,
         message_attachments_archive_name_from_parts,
         parse_oneoff_reprocess_unit_names_since_ts, parse_single_byte_range,
-        safe_zip_entry_name, write_zip_entry,
+        safe_zip_entry_name, validate_attachment_metadata_sizes,
+        write_zip_entry,
     };
+    use crate::entities::signal_message_media;
     use chrono::{NaiveDate, NaiveDateTime};
     use std::collections::HashSet;
     use std::io::{Cursor, Read};
+    use std::iter;
     use zip::write::SimpleFileOptions;
 
     #[test]
@@ -1366,5 +1404,39 @@ mod messenger_media_tests {
             ),
             "attachments_550e8400-e29b-41d4-a716-446655440000_20260720_140506.zip"
         );
+    }
+
+    #[test]
+    fn attachment_size_validation_accepts_below_and_exact_limit() {
+        let limit = crate::config::RER_MESSAGE_ATTACHMENTS_ZIP_MAX_TOTAL_BYTES;
+        assert_eq!(checked_attachment_size_total(limit - 1, 1).unwrap(), limit);
+        assert_eq!(checked_attachment_size_total(0, limit).unwrap(), limit);
+    }
+
+    #[test]
+    fn attachment_size_validation_rejects_above_limit() {
+        let limit = crate::config::RER_MESSAGE_ATTACHMENTS_ZIP_MAX_TOTAL_BYTES;
+        assert!(checked_attachment_size_total(limit, 1).is_err());
+    }
+
+    #[test]
+    fn attachment_size_validation_rejects_negative_metadata() {
+        let media = iter::once(signal_message_media::Model {
+            id: uuid::Uuid::nil(),
+            signal_message_id: 1,
+            content_type: "text/plain".to_string(),
+            file_ext: Some("txt".to_string()),
+            file_name: Some("negative.txt".to_string()),
+            size_bytes: -1,
+            created_at: chrono::Utc::now().naive_utc(),
+        })
+        .collect::<Vec<_>>();
+        let error = validate_attachment_metadata_sizes(&media).unwrap_err();
+        assert!(error.to_string().contains("Invalid attachment size"));
+    }
+
+    #[test]
+    fn attachment_size_validation_rejects_integer_overflow() {
+        assert!(checked_attachment_size_total(u64::MAX, 1).is_err());
     }
 }
