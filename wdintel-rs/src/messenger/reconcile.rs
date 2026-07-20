@@ -2049,7 +2049,7 @@ mod tests {
         let (env, _guard) = cleanup_locked().await.unwrap();
         let txn = env.dbx.begin().await.unwrap();
         let login_value = format!("comment-post-{}", Uuid::new_v4());
-        mk_login(
+        let login = mk_login(
             &txn,
             login::ActiveModel {
                 id: NotSet,
@@ -2083,12 +2083,7 @@ mod tests {
             &txn,
             sigint_comment::ActiveModel {
                 signal_message_id: Set(original.id),
-                login_id: Set(crate::users::login_id_by_name(
-                    &txn,
-                    &login_value,
-                )
-                .await
-                .unwrap()),
+                login_id: Set(login.id),
                 comment: Set(comment.clone()),
                 created_at: Set(created_at),
                 sigint_post_id: Set(Some(post_a.id)),
@@ -2101,12 +2096,7 @@ mod tests {
             &txn,
             sigint_comment::ActiveModel {
                 signal_message_id: Set(promoted.id),
-                login_id: Set(crate::users::login_id_by_name(
-                    &txn,
-                    &login_value,
-                )
-                .await
-                .unwrap()),
+                login_id: Set(login.id),
                 comment: Set(comment.clone()),
                 created_at: Set(created_at),
                 sigint_post_id: Set(Some(post_b.id)),
@@ -2126,7 +2116,7 @@ mod tests {
 
         let post_ids = sigint_comment::Entity::find()
             .filter(sigint_comment::Column::SignalMessageId.eq(promoted.id))
-            .filter(sigint_comment::Column::LoginId.eq(&login_value))
+            .filter(sigint_comment::Column::LoginId.eq(login.id))
             .filter(sigint_comment::Column::Comment.eq(&comment))
             .all(&txn)
             .await
@@ -4101,6 +4091,14 @@ mod tests {
             .await
             .unwrap();
         }
+        let source_login_id =
+            crate::users::login_id_by_name(&txn, &source_login)
+                .await
+                .unwrap();
+        let obsolete_login_id =
+            crate::users::login_id_by_name(&txn, &obsolete_login)
+                .await
+                .unwrap();
         mk_sigint_comment(
             &txn,
             sigint_comment::ActiveModel {
@@ -4291,10 +4289,10 @@ mod tests {
                     .filter(
                         sigint_comment::Column::SignalMessageId.eq(child_id)
                     )
-                    .filter(sigint_comment::Column::LoginId.is_in(vec![
-                        source_login.clone(),
-                        obsolete_login.clone()
-                    ]))
+                    .filter(
+                        sigint_comment::Column::LoginId
+                            .is_in(vec![source_login_id, obsolete_login_id])
+                    )
                     .count(&txn)
                     .await
                     .unwrap(),
@@ -4305,10 +4303,10 @@ mod tests {
                     .filter(
                         sigint_bookmark::Column::SignalMessageId.eq(child_id)
                     )
-                    .filter(sigint_bookmark::Column::LoginId.is_in(vec![
-                        source_login.clone(),
-                        obsolete_login.clone()
-                    ]))
+                    .filter(
+                        sigint_bookmark::Column::LoginId
+                            .is_in(vec![source_login_id, obsolete_login_id])
+                    )
                     .filter(sigint_bookmark::Column::Deleted.eq(false))
                     .count(&txn)
                     .await

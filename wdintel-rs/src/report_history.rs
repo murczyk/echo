@@ -186,7 +186,7 @@ struct ReportHistoryQueueMetaRow {
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct ReportHistoryQueueScope {
     report_kind: String,
-    requested_by_login_id: Option<String>,
+    requested_by_login_id: Option<uuid::Uuid>,
 }
 
 fn report_history_queue_scope(
@@ -196,7 +196,7 @@ fn report_history_queue_scope(
     if report_kind == KIND_ETALONKA {
         ReportHistoryQueueScope {
             report_kind: report_kind.to_string(),
-            requested_by_login_id: Some(requested_by_login_id.to_string()),
+            requested_by_login_id: Some(*requested_by_login_id),
         }
     } else {
         ReportHistoryQueueScope {
@@ -453,7 +453,7 @@ async fn report_history_queue_meta(
         ));
         values.push(report_history.id.into());
         values.push(scope.report_kind.clone().into());
-        values.push(scope.requested_by_login_id.clone().into());
+        values.push(scope.requested_by_login_id.into());
         values.push(report_history.status.clone().into());
         values.push((*queued_for).into());
         values.push(report_history.created_at.into());
@@ -2910,7 +2910,7 @@ fn append_log_entry(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::entities::login;
+    use crate::entities::{bgtask_res, login};
     use crate::functest::tests::{cleanup, mk_login};
     use chrono::Timelike;
     use sea_orm::ActiveValue::{NotSet, Set};
@@ -3430,7 +3430,7 @@ mod tests {
             .c(h!())?;
 
         let created_at = Utc::now().naive_utc();
-        let _login = mk_login(
+        let login = mk_login(
             &env.dbx,
             login::ActiveModel {
                 id: NotSet,
@@ -3457,10 +3457,7 @@ mod tests {
         handle_report_failure(
             &env,
             report_history::Entity::find()
-                .filter(
-                    report_history::Column::RequestedByLoginId
-                        .eq("report-history-cancel"),
-                )
+                .filter(report_history::Column::RequestedByLoginId.eq(login.id))
                 .one(&env.dbx)
                 .await
                 .c(h!())?
@@ -3473,10 +3470,7 @@ mod tests {
         .await?;
 
         let refreshed = ReportHistory::find()
-            .filter(
-                report_history::Column::RequestedByLoginId
-                    .eq("report-history-cancel"),
-            )
+            .filter(report_history::Column::RequestedByLoginId.eq(login.id))
             .one(&env.dbx)
             .await
             .c(h!())?
@@ -3551,6 +3545,10 @@ mod tests {
     ) -> Result<(), AppError> {
         let env = cleanup().await?;
         report_history::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .c(h!())?;
+        bgtask_res::Entity::delete_many()
             .exec(&env.dbx)
             .await
             .c(h!())?;

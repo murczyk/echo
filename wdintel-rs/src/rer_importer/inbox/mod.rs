@@ -929,10 +929,7 @@ async fn add_submit_tags(
                 sigint_inbox_item_tag::Column::SigintInboxItemId.eq(inbox_id),
             )
             .filter(sigint_inbox_item_tag::Column::TagId.eq(tag_id))
-            .filter(
-                sigint_inbox_item_tag::Column::LoginId
-                    .eq(Some(login.to_string())),
-            )
+            .filter(sigint_inbox_item_tag::Column::LoginId.eq(Some(*login)))
             .filter(sigint_inbox_item_tag::Column::Model.is_null())
             .one(txn)
             .await
