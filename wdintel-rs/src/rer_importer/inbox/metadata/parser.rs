@@ -170,7 +170,23 @@ pub fn parse_mid_id(line: &NormalizedLine) -> Option<MatchedValue> {
         static ref RE_ID_TEXT: Regex =
             Regex::new(r#"[іІiI][dD]\s*:\s*([^;]+)\s*;"#).unwrap();
     }
+    lazy_static! {
+        static ref RE_SENDER_ID_UA: Regex = Regex::new(
+            r#"(?i)[іІiI][dD]\s+відправника\s*:?\s*(?:\d+|нв|-)\s*\(([^)]+)\)"#
+        )
+        .unwrap();
+    }
+    lazy_static! {
+        static ref RE_SOURCE_ID: Regex = Regex::new(
+            r#"(?i)SOURCE\s+ID\s*:?\s*(?:\d+(?:\s*,\s*\d+)*|нв|-)\s*\(([^)]+)\)"#
+        )
+        .unwrap();
+    }
     parse_string_from_standalone_regexes(line, &[&RE_ID], 2)
+        .or_else(|| {
+            parse_string_from_standalone_regexes(line, &[&RE_SENDER_ID_UA], 1)
+        })
+        .or_else(|| parse_string_from_regexes(line, &[&RE_SOURCE_ID], 1))
         .or_else(|| parse_string_from_regexes(line, &[&RE_CG], 2))
         .or_else(|| {
             parse_string_from_standalone_regexes(line, &[&RE_ID_TEXT], 1)

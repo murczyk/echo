@@ -62,12 +62,19 @@ where
         crate::rer_importer::callsigns::find_known_callsigns(&env.rq, body)
             .await
             .c(h!())?;
-    let callsigns = crate::utils::uniq_via_btreeset(
-        &callsign_tokens
-            .iter()
-            .map(|callsign| callsign.etalon.clone())
-            .collect::<Vec<_>>(),
-    );
+    let callsign_etalons =
+        crate::rer_importer::inbox::metadata::non_metadata_line_callsign_etalons(
+            &callsign_tokens,
+            body,
+        );
+    let callsigns =
+        crate::rer_importer::inbox::metadata::append_metadata_text_callsigns(
+            callsign_etalons,
+            body,
+        )
+        .into_iter()
+        .map(|callsign| callsign.to_lowercase())
+        .collect::<Vec<_>>();
     let coords = crate::rer_importer::coordinates::extract_coords(body).await;
     let coords =
         crate::location::peleng::filter_allowed_peleng_coords(coords, dbx)
@@ -672,7 +679,7 @@ mod tests {
     #[serial]
     async fn direct_submit_parse_suggests_inbox_fields() {
         let env = cleanup().await.unwrap();
-        let body = "01.04.2023_15:00 F=411,7500(МГЦ)\n49.12345, 37.12345\nТекст повідомлення";
+        let body = "01.04.2023_15:00 F=411,7500(МГЦ)\n49.12345, 37.12345\nID➡️:110(ЯРУС)\nID(CG)⬅️:50(СВЕТЛЫЙ)\nТекст повідомлення";
 
         let parsed = parse_signal_message_body(&env, &env.dbx, body, None)
             .await
@@ -680,6 +687,7 @@ mod tests {
 
         assert_eq!(parsed.freq.as_deref(), Some("411.7500"));
         assert_eq!(parsed.coords.len(), 1);
+        assert_eq!(parsed.to, vec!["ярус".to_string(), "светлый".to_string()]);
         assert!(parsed.text.contains("Текст повідомлення"));
         assert!(parsed.timestamp.is_some());
     }

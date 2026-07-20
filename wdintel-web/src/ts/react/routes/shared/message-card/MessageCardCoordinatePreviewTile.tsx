@@ -5,24 +5,29 @@ import * as L from 'leaflet';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 
 import { getTileLayers } from '../../../../web-components/analysis-map/tile-layers';
-import type { CoordinatePreviewPoint } from './message-coordinate-preview';
+import {
+  formatCoordinatePreviewPointCount,
+  type CoordinatePreviewPoint,
+} from './message-coordinate-preview';
 
 const PREVIEW_HEIGHT_PX = 120;
 const PREVIEW_MAX_WIDTH_PX = 180;
 const PREVIEW_ROOT_MARGIN = '160px 0px';
 const PREVIEW_ZOOM = 11;
+const PREVIEW_MAX_ZOOM = 13;
+const PREVIEW_BOUNDS_PADDING: [number, number] = [20, 20];
 
 export function MessageCardCoordinatePreviewTile({
-  point,
+  points,
   onOpen,
 }: {
-  point: CoordinatePreviewPoint;
+  points: CoordinatePreviewPoint[];
   onOpen: () => void;
 }) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<L.Map | null>(null);
-  const markerRef = useRef<L.CircleMarker | null>(null);
+  const markerRefs = useRef<L.CircleMarker[]>([]);
   const [isNearViewport, setIsNearViewport] = useState(false);
 
   useEffect(() => {
@@ -52,6 +57,20 @@ export function MessageCardCoordinatePreviewTile({
 
     let cancelled = false;
     let frameId = 0;
+    let resizeObserver: ResizeObserver | null = null;
+
+    const fitMap = (map: L.Map) => {
+      const latLngs = points.map(({ lat, lng }): [number, number] => [lat, lng]);
+      if (latLngs.length === 1) {
+        map.setView(latLngs[0], PREVIEW_ZOOM, { animate: false });
+      } else {
+        map.fitBounds(L.latLngBounds(latLngs), {
+          animate: false,
+          maxZoom: PREVIEW_MAX_ZOOM,
+          padding: PREVIEW_BOUNDS_PADDING,
+        });
+      }
+    };
 
     const initMap = () => {
       if (cancelled || mapRef.current || mapContainerRef.current !== container) {
@@ -76,28 +95,44 @@ export function MessageCardCoordinatePreviewTile({
         preferCanvas: true,
         minZoom: 2,
         maxZoom: 17,
-      }).setView([point.lat, point.lng], PREVIEW_ZOOM);
+      });
+
+      fitMap(map);
 
       const tileLayers = getTileLayers();
       tileLayers.googleHybrid.addTo(map);
 
-      const marker = L.circleMarker([point.lat, point.lng], {
-        radius: 8,
-        color: '#ffffff',
-        weight: 3,
-        fillColor: '#ff4d2d',
-        fillOpacity: 1,
-      }).addTo(map);
+      const markers = points.map(({ lat, lng }) =>
+        L.circleMarker([lat, lng], {
+          radius: 8,
+          color: '#ffffff',
+          weight: 3,
+          fillColor: '#ff4d2d',
+          fillOpacity: 1,
+        }).addTo(map),
+      );
 
       map.getContainer().style.pointerEvents = 'none';
       mapRef.current = map;
-      markerRef.current = marker;
+      markerRefs.current = markers;
 
       window.requestAnimationFrame(() => {
         if (!cancelled) {
           map.invalidateSize();
+          fitMap(map);
         }
       });
+
+      resizeObserver =
+        typeof ResizeObserver === 'undefined'
+          ? null
+          : new ResizeObserver(() => {
+              if (!cancelled) {
+                map.invalidateSize({ animate: false, pan: false });
+                fitMap(map);
+              }
+            });
+      resizeObserver?.observe(container);
     };
 
     frameId = window.requestAnimationFrame(initMap);
@@ -105,19 +140,28 @@ export function MessageCardCoordinatePreviewTile({
     return () => {
       cancelled = true;
       window.cancelAnimationFrame(frameId);
-      markerRef.current?.remove();
-      markerRef.current = null;
+      resizeObserver?.disconnect();
+      markerRefs.current.forEach((marker) => marker.remove());
+      markerRefs.current = [];
       mapRef.current?.remove();
       mapRef.current = null;
     };
-  }, [isNearViewport, point.lat, point.lng]);
+  }, [isNearViewport, points]);
+
+  const point = points[0];
+  if (point == null) {
+    return null;
+  }
 
   return (
     <Box
       ref={hostRef}
-      style={{ flex: '0 0 180px', maxWidth: 'none' }}
+      data-coordinate-preview-tile="true"
+      style={{ flex: '0 0 auto', width: '180px', height: '120px', maxWidth: 'none' }}
       sx={{
-        flex: '0 0 180px',
+        flex: '0 0 auto',
+        width: 180,
+        height: PREVIEW_HEIGHT_PX,
         maxWidth: 'none',
         alignSelf: 'flex-start',
       }}
@@ -159,9 +203,11 @@ export function MessageCardCoordinatePreviewTile({
             <Box
               ref={mapContainerRef}
               aria-hidden="true"
+              style={{ zIndex: 0 }}
               sx={{
                 position: 'absolute',
                 inset: 0,
+                zIndex: 0,
                 '& .leaflet-container': {
                   width: '100%',
                   height: '100%',
@@ -169,15 +215,18 @@ export function MessageCardCoordinatePreviewTile({
               }}
             />
             <Box
+              style={{ zIndex: 1 }}
               sx={{
                 position: 'absolute',
                 inset: 0,
+                zIndex: 1,
                 background:
                   'linear-gradient(180deg, rgba(10, 13, 18, 0.08), rgba(10, 13, 18, 0.36) 80%)',
                 pointerEvents: 'none',
               }}
             />
             <Box
+              style={{ zIndex: 2 }}
               sx={{
                 position: 'absolute',
                 left: 8,
@@ -185,30 +234,50 @@ export function MessageCardCoordinatePreviewTile({
                 top: 8,
                 display: 'flex',
                 alignItems: 'flex-start',
-                justifyContent: 'space-between',
+                justifyContent: 'flex-start',
                 gap: 0.75,
                 pointerEvents: 'none',
+                zIndex: 2,
               }}
             >
-              <Typography
-                variant="caption"
-                sx={{
-                  px: 0.75,
-                  py: 0.5,
-                  borderRadius: 1.5,
-                  bgcolor: 'rgba(10, 13, 18, 0.7)',
-                  color: 'common.white',
-                  fontWeight: 700,
-                  lineHeight: 1.2,
-                  backdropFilter: 'blur(6px)',
-                  maxWidth: '100%',
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  whiteSpace: 'nowrap',
-                }}
-              >
-                {point.label}
-              </Typography>
+              {points.length === 1 ? (
+                <Typography
+                  variant="caption"
+                  sx={{
+                    px: 0.75,
+                    py: 0.5,
+                    borderRadius: 1.5,
+                    bgcolor: 'rgba(10, 13, 18, 0.7)',
+                    color: 'common.white',
+                    fontWeight: 700,
+                    lineHeight: 1.2,
+                    backdropFilter: 'blur(6px)',
+                    maxWidth: '100%',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  {point.label}
+                </Typography>
+              ) : (
+                <Typography
+                  variant="caption"
+                  data-coordinate-preview-count="true"
+                  sx={{
+                    px: 0.75,
+                    py: 0.5,
+                    borderRadius: 1.5,
+                    bgcolor: 'rgba(10, 13, 18, 0.7)',
+                    color: 'common.white',
+                    fontWeight: 700,
+                    lineHeight: 1.2,
+                    backdropFilter: 'blur(6px)',
+                  }}
+                >
+                  {formatCoordinatePreviewPointCount(points.length)}
+                </Typography>
+              )}
             </Box>
           </ButtonBase>
         </Tooltip>

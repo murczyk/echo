@@ -38,6 +38,7 @@ const leafletMock = vi.hoisted(() => {
   };
   const map = {
     setView: vi.fn(() => map),
+    fitBounds: vi.fn(() => map),
     getZoom: vi.fn(() => 13),
     getContainer() {
       return container;
@@ -48,11 +49,13 @@ const leafletMock = vi.hoisted(() => {
   const marker = {
     addTo: vi.fn(() => marker),
     setLatLng: vi.fn(() => marker),
+    setStyle: vi.fn(() => marker),
     remove: vi.fn(),
   };
 
   return {
     map: vi.fn(() => map),
+    latLngBounds: vi.fn((latLngs) => latLngs),
     circleMarker: vi.fn(() => marker),
   };
 });
@@ -477,11 +480,18 @@ describe('MessageCardCoordinateMapDialog', () => {
 
     const leaflet = await import('leaflet');
     expect(leaflet.map).toHaveBeenCalledTimes(1);
-    expect(leaflet.map().setView).toHaveBeenCalledWith([50.45044, 30.52355], 13);
+    expect(leaflet.map().fitBounds).toHaveBeenCalledWith(
+      [
+        [50.45044, 30.52355],
+        [50.5, 30.6],
+      ],
+      expect.objectContaining({ maxZoom: 13, padding: [40, 40] }),
+    );
     expect(leaflet.circleMarker).toHaveBeenCalledWith(
       [50.45044, 30.52355],
       expect.objectContaining({ interactive: false }),
     );
+    expect(leaflet.circleMarker).toHaveBeenCalledTimes(2);
     expect(leaflet.map().invalidateSize).toHaveBeenCalledTimes(1);
     expect(leaflet.circleMarker().setLatLng).not.toHaveBeenCalled();
 
@@ -540,7 +550,7 @@ describe('MessageCardCoordinateMapDialog', () => {
     });
 
     expect(leaflet.map().setView).toHaveBeenCalledWith([50.5, 30.6], 13);
-    expect(leaflet.circleMarker().setLatLng).toHaveBeenCalledWith([50.5, 30.6]);
+    expect(leaflet.circleMarker().setStyle).toHaveBeenCalled();
 
     await act(async () => {
       resizeObserverInstances.at(-1)?.trigger();
@@ -614,6 +624,7 @@ describe('MessageCardCoordinateMapDialog', () => {
     };
     const markerInstance = leaflet.circleMarker.mock.results[0]?.value as {
       setLatLng: ReturnType<typeof vi.fn>;
+      setStyle: ReturnType<typeof vi.fn>;
     };
 
     await act(async () => {
@@ -624,7 +635,7 @@ describe('MessageCardCoordinateMapDialog', () => {
     expect(onIndexChange).toHaveBeenCalledWith(1);
     expect(leaflet.map).toHaveBeenCalledTimes(1);
     expect(mapInstance.setView).toHaveBeenLastCalledWith([50.5, 30.6], 13);
-    expect(markerInstance.setLatLng).toHaveBeenLastCalledWith([50.5, 30.6]);
+    expect(markerInstance.setStyle).toHaveBeenCalled();
 
     await act(async () => {
       window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
@@ -634,7 +645,7 @@ describe('MessageCardCoordinateMapDialog', () => {
     expect(onIndexChange).toHaveBeenLastCalledWith(0);
     expect(leaflet.map).toHaveBeenCalledTimes(1);
     expect(mapInstance.setView).toHaveBeenLastCalledWith([50.45044, 30.52355], 13);
-    expect(markerInstance.setLatLng).toHaveBeenLastCalledWith([50.45044, 30.52355]);
+    expect(markerInstance.setStyle).toHaveBeenCalled();
   });
 
   it('ignores arrow navigation from editable and slider targets', async () => {

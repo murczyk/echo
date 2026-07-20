@@ -99,16 +99,32 @@ where
         m_dt.as_ref().map(|dt| dt.with_timezone(&Utc).naive_utc());
     let freq = crate::rer_importer::frequency::extract_freq(&body)?
         .map(|v| crate::rer_importer::frequency::etalon(&v));
-    let callsign_tokens =
+    let known_callsign_tokens =
         crate::rer_importer::callsigns::find_known_callsigns(rq, &body)
             .await
             .c(h!())?;
-    let callsigns: Vec<String> = crate::utils::uniq_via_btreeset(
-        &callsign_tokens
-            .iter()
-            .map(|x| x.etalon.clone())
-            .collect::<Vec<String>>(),
-    );
+    let callsign_etalons =
+        crate::rer_importer::inbox::metadata::non_metadata_line_callsign_etalons(
+            &known_callsign_tokens,
+            &body,
+        );
+    let callsigns: Vec<String> =
+        crate::rer_importer::inbox::metadata::append_metadata_text_callsigns(
+            callsign_etalons,
+            &body,
+        )
+        .into_iter()
+        .map(|x| x.to_lowercase())
+        .collect();
+    let callsign_tokens = if callsigns.is_empty() {
+        vec![]
+    } else {
+        crate::rer_importer::callsigns::highlight_callsigns(
+            rq, &body, &callsigns,
+        )
+        .await
+        .c(h!())?
+    };
     let checked = freq.is_some();
     let reviewed = false;
     let comment_parsing_enabled =
