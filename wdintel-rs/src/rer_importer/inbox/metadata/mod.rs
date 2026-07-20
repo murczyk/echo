@@ -492,6 +492,28 @@ ID(CG)⬅️:50📣",
     }
 
     #[test]
+    fn parse_metadata_shares_trailing_name_across_source_id_list() {
+        for body in ["SOURCE ID: 1, 33 (ЯРУС)", "ID➡️: 1, 33 (ЯРУС)"]
+        {
+            assert_eq!(
+                parse_metadata_asserting_spans(body),
+                vec![
+                    InboxMetadata {
+                        id: Some("1".to_string()),
+                        id_name: Some("ЯРУС".to_string()),
+                        ..Default::default()
+                    },
+                    InboxMetadata {
+                        id: Some("33".to_string()),
+                        id_name: Some("ЯРУС".to_string()),
+                        ..Default::default()
+                    },
+                ]
+            );
+        }
+    }
+
+    #[test]
     fn parse_metadata_handles_sc_transcript_header() {
         let metadata = parse_metadata_asserting_spans(
             r#"27.06.2026 20:37:23

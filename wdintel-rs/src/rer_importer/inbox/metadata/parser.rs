@@ -519,7 +519,18 @@ fn expand_multi_source_ids(
             continue;
         };
 
-        if matched_value_is_within(&item.id_name, &item.id) {
+        if let Some((_, shared_id_name)) = ids
+            .last()
+            .filter(|(_, id_name)| id_name.has_value())
+            .filter(|_| {
+                ids.iter()
+                    .filter(|(_, id_name)| id_name.has_value())
+                    .count()
+                    == 1
+            })
+        {
+            item.id_name = shared_id_name.clone();
+        } else if matched_value_is_within(&item.id_name, &item.id) {
             item.id_name = MatchedValue::default();
         }
         for (id, id_name) in ids {
