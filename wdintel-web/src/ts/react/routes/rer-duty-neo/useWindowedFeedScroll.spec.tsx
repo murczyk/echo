@@ -16,6 +16,9 @@ function TestScroller(props: {
   loadingNewer?: boolean;
   onNearBottomChange?: (near: boolean) => void;
   onAtBottomChange?: (atBottom: boolean) => void;
+  onPhysicalBottomChange?: (atBottom: boolean) => void;
+  onReachedBottom?: () => void;
+  onLeftBottom?: () => void;
   onVisibleMessageIds?: (lastVisibleId: number, opts?: { atBottom?: boolean }) => void;
   enabled?: boolean;
 }) {
@@ -28,6 +31,9 @@ function TestScroller(props: {
     onLoadNewer: props.onLoadNewer,
     onNearBottomChange: props.onNearBottomChange,
     onAtBottomChange: props.onAtBottomChange,
+    onPhysicalBottomChange: props.onPhysicalBottomChange,
+    onReachedBottom: props.onReachedBottom,
+    onLeftBottom: props.onLeftBottom,
     onVisibleMessageIds: props.onVisibleMessageIds,
     enabled: props.enabled ?? true,
     topLoadBufferPx: 80,
@@ -205,6 +211,137 @@ describe('useWindowedFeedScroll', () => {
 
     expect(onLoadOlder).not.toHaveBeenCalled();
     expect(onLoadNewer).not.toHaveBeenCalled();
+  });
+
+  it('resets bottom state when the feed becomes disabled without cancelling follow', async () => {
+    const onPhysicalBottomChange = vi.fn();
+    const onNearBottomChange = vi.fn();
+    const onAtBottomChange = vi.fn();
+    const onLeftBottom = vi.fn();
+    const onReachedBottom = vi.fn();
+    const onVisibleMessageIds = vi.fn();
+    const onLoadOlder = vi.fn();
+    const onLoadNewer = vi.fn();
+    await act(async () => {
+      root.render(
+        <TestScroller
+          ids={[1, 2, 3, 4]}
+          onPhysicalBottomChange={onPhysicalBottomChange}
+          onNearBottomChange={onNearBottomChange}
+          onAtBottomChange={onAtBottomChange}
+          onLeftBottom={onLeftBottom}
+          onReachedBottom={onReachedBottom}
+          onVisibleMessageIds={onVisibleMessageIds}
+          onLoadOlder={onLoadOlder}
+          onLoadNewer={onLoadNewer}
+        />,
+      );
+    });
+    const scroller = container.querySelector('[data-testid="scroller"]') as HTMLElement;
+    setScrollMetrics(scroller, { scrollTop: 200, clientHeight: 100, scrollHeight: 300 });
+    await act(async () => {
+      scroller.dispatchEvent(new Event('scroll', { bubbles: true }));
+      await waitForAnimationFrame();
+    });
+    onPhysicalBottomChange.mockClear();
+    onNearBottomChange.mockClear();
+    onAtBottomChange.mockClear();
+    onLeftBottom.mockClear();
+    onVisibleMessageIds.mockClear();
+    onLoadOlder.mockClear();
+    onLoadNewer.mockClear();
+
+    await act(async () => {
+      root.render(
+        <TestScroller
+          ids={[1, 2, 3, 4]}
+          enabled={false}
+          onPhysicalBottomChange={onPhysicalBottomChange}
+          onNearBottomChange={onNearBottomChange}
+          onAtBottomChange={onAtBottomChange}
+          onLeftBottom={onLeftBottom}
+          onReachedBottom={onReachedBottom}
+          onVisibleMessageIds={onVisibleMessageIds}
+          onLoadOlder={onLoadOlder}
+          onLoadNewer={onLoadNewer}
+        />,
+      );
+    });
+    expect(onPhysicalBottomChange).toHaveBeenCalledWith(false);
+    expect(onNearBottomChange).toHaveBeenCalledWith(false);
+    expect(onAtBottomChange).toHaveBeenCalledWith(false);
+    expect(onLeftBottom).not.toHaveBeenCalled();
+
+    await act(async () => {
+      root.render(
+        <TestScroller
+          ids={[1, 2, 3, 4, 5]}
+          enabled={false}
+          onLoadOlder={onLoadOlder}
+          onLoadNewer={onLoadNewer}
+          onPhysicalBottomChange={onPhysicalBottomChange}
+          onNearBottomChange={onNearBottomChange}
+          onAtBottomChange={onAtBottomChange}
+          onLeftBottom={onLeftBottom}
+          onReachedBottom={onReachedBottom}
+          onVisibleMessageIds={onVisibleMessageIds}
+        />,
+      );
+      scroller.dispatchEvent(new Event('scroll', { bubbles: true }));
+      await waitForAnimationFrame();
+    });
+    expect(onVisibleMessageIds).not.toHaveBeenCalled();
+    expect(onLoadOlder).not.toHaveBeenCalled();
+    expect(onLoadNewer).not.toHaveBeenCalled();
+
+    onReachedBottom.mockClear();
+    await act(async () => {
+      root.render(
+        <TestScroller
+          ids={[1, 2, 3, 4, 5]}
+          onLoadOlder={onLoadOlder}
+          onLoadNewer={onLoadNewer}
+          onPhysicalBottomChange={onPhysicalBottomChange}
+          onNearBottomChange={onNearBottomChange}
+          onAtBottomChange={onAtBottomChange}
+          onLeftBottom={onLeftBottom}
+          onReachedBottom={onReachedBottom}
+          onVisibleMessageIds={onVisibleMessageIds}
+        />,
+      );
+      setScrollMetrics(scroller, { scrollTop: 200, clientHeight: 100, scrollHeight: 300 });
+      scroller.dispatchEvent(new Event('scroll', { bubbles: true }));
+      await waitForAnimationFrame();
+    });
+    expect(onReachedBottom).toHaveBeenCalledTimes(1);
+    expect(onPhysicalBottomChange).toHaveBeenLastCalledWith(true);
+  });
+
+  it('does not cancel follow across disable and re-enable until an upward scroll', async () => {
+    const onLeftBottom = vi.fn();
+    await act(async () => {
+      root.render(<TestScroller ids={[1, 2, 3, 4]} onLeftBottom={onLeftBottom} />);
+    });
+    const scroller = container.querySelector('[data-testid="scroller"]') as HTMLElement;
+    setScrollMetrics(scroller, { scrollTop: 200, clientHeight: 100, scrollHeight: 300 });
+    await act(async () => {
+      scroller.dispatchEvent(new Event('scroll', { bubbles: true }));
+      await waitForAnimationFrame();
+    });
+    await act(async () => {
+      root.render(<TestScroller ids={[1, 2, 3, 4]} enabled={false} onLeftBottom={onLeftBottom} />);
+    });
+    await act(async () => {
+      root.render(<TestScroller ids={[1, 2, 3, 4]} onLeftBottom={onLeftBottom} />);
+    });
+    expect(onLeftBottom).not.toHaveBeenCalled();
+
+    setScrollMetrics(scroller, { scrollTop: 190, clientHeight: 100, scrollHeight: 300 });
+    await act(async () => {
+      scroller.dispatchEvent(new Event('scroll', { bubbles: true }));
+      await waitForAnimationFrame();
+    });
+    expect(onLeftBottom).toHaveBeenCalledTimes(1);
   });
 
   it('does not clear unread state when hidden items append', async () => {
@@ -523,6 +660,59 @@ describe('useWindowedFeedScroll', () => {
 
     expect(onNearBottomChange).toHaveBeenLastCalledWith(true);
     expect(onAtBottomChange).toHaveBeenLastCalledWith(true);
+  });
+
+  it('fires the physical bottom transition once after entering from the threshold zone', async () => {
+    const onReachedBottom = vi.fn();
+    const onPhysicalBottomChange = vi.fn();
+    await act(async () => {
+      root.render(
+        <TestScroller
+          ids={[1, 2, 3, 4]}
+          onReachedBottom={onReachedBottom}
+          onPhysicalBottomChange={onPhysicalBottomChange}
+        />,
+      );
+    });
+
+    const scroller = container.querySelector('[data-testid="scroller"]') as HTMLElement;
+    setScrollMetrics(scroller, { scrollTop: 180, clientHeight: 100, scrollHeight: 300 });
+    await act(async () => {
+      scroller.dispatchEvent(new Event('scroll', { bubbles: true }));
+      await waitForAnimationFrame();
+    });
+    setScrollMetrics(scroller, { scrollTop: 200, clientHeight: 100, scrollHeight: 300 });
+    await act(async () => {
+      scroller.dispatchEvent(new Event('scroll', { bubbles: true }));
+      await waitForAnimationFrame();
+      scroller.dispatchEvent(new Event('scroll', { bubbles: true }));
+      await waitForAnimationFrame();
+    });
+
+    expect(onReachedBottom).toHaveBeenCalledTimes(2);
+    expect(onPhysicalBottomChange).toHaveBeenLastCalledWith(true);
+  });
+
+  it('cancels follow once for repeated upward scroll events', async () => {
+    const onLeftBottom = vi.fn();
+    await act(async () => {
+      root.render(<TestScroller ids={[1, 2, 3, 4]} onLeftBottom={onLeftBottom} />);
+    });
+
+    const scroller = container.querySelector('[data-testid="scroller"]') as HTMLElement;
+    setScrollMetrics(scroller, { scrollTop: 200, clientHeight: 100, scrollHeight: 300 });
+    await act(async () => {
+      scroller.dispatchEvent(new Event('scroll', { bubbles: true }));
+      await waitForAnimationFrame();
+    });
+    setScrollMetrics(scroller, { scrollTop: 190, clientHeight: 100, scrollHeight: 300 });
+    await act(async () => {
+      scroller.dispatchEvent(new Event('scroll', { bubbles: true }));
+      scroller.dispatchEvent(new Event('scroll', { bubbles: true }));
+      await waitForAnimationFrame();
+    });
+
+    expect(onLeftBottom).toHaveBeenCalledTimes(1);
   });
 
   it('calls onLoadNewer before the scroller reaches the bottom edge', async () => {

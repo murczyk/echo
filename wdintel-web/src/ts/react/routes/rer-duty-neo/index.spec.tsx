@@ -305,6 +305,12 @@ function buildFeedsState() {
     columnRefsRef: { current: {} },
     nearBottomByFeedIdRef: { current: {} },
     atBottomByFeedIdRef: { current: {} },
+    physicallyAtBottomByFeedIdRef: { current: {} },
+    tailAvailabilityByFeedId: {},
+    confirmedTailPreviewByFeedId: {},
+    beginFollowTail: vi.fn(),
+    ensureFollowTail: vi.fn(),
+    cancelFollowTail: vi.fn(),
     dutyDisableAutoScroll: false,
   };
 }

@@ -45,6 +45,10 @@ dayjs.extend(customParseFormat);
 const EMPTY_FILTER: RerDutyFeedFilterState = emptyFilter();
 const EMPTY_MESSAGE_COMMENTS: MessageComment[] = [];
 const EMPTY_EXCLUDE_OPTIONS: MessageEntityExcludeMenuOption[] = [];
+const ANALYSIS_MESSAGE_CARD_VISIBILITY_STYLE = {
+  contentVisibility: 'auto',
+  containIntrinsicBlockSize: 'auto 120px',
+} as const;
 
 const MessageCardRoot = styled('div')(({ theme }) => ({
   ...theme.typography.body2,
@@ -293,9 +297,7 @@ function MessageCardComponent({
     <li
       ref={messageRootRef as React.RefObject<HTMLLIElement>}
       className="list-none flex flex-col px-0 pb-3 mb-0"
-      // Preserve a remembered block-size fallback so skipped off-screen cards do not
-      // collapse scroll-height or anchor measurements before Chromium measures them.
-      style={{ contentVisibility: 'auto', containIntrinsicBlockSize: 'auto 120px' }}
+      style={displayMode === 'analysis' ? ANALYSIS_MESSAGE_CARD_VISIBILITY_STYLE : undefined}
     >
       <MessageCardRoot
         className="message-card-root relative flex flex-col w-full px-[12px] py-[10px] rounded bg-(--color-card) overflow-hidden"

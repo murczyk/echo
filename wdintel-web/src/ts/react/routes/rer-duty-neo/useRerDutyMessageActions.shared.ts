@@ -20,7 +20,13 @@ export type MessageActionsDeps = {
   ) => Promise<void>;
   loadFeedNewerMessages: (
     feedId: string,
-    opts?: { nolimit?: boolean; scrollToEndAfterLoad?: boolean; markAllReadAfterAppend?: boolean },
+    opts?: {
+      nolimit?: boolean;
+      scrollToEndAfterLoad?: boolean;
+      markAllReadAfterAppend?: boolean;
+      showLoading?: boolean;
+      followGeneration?: number;
+    },
   ) => Promise<void>;
   showArrowResult: (feedId: string, message: string) => void;
   columnRefsRef: MutableRefObject<
@@ -47,5 +53,6 @@ export type MessageActionsDeps = {
   saveFilterNameByFeedId: Record<string, string>;
   setSaveFilterNameByFeedId: Dispatch<SetStateAction<Record<string, string>>>;
   dutyDisableAutoScroll: boolean;
+  beginFollowTail: (feedId: string) => number;
   openPointsOnMap?: (etalons: string[], message: InboxMessage) => void;
 };

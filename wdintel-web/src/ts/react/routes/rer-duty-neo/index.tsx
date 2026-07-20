@@ -9,8 +9,7 @@ import {
 } from './notifications';
 import {
   DEFAULT_DUTY_TAGS_LAYOUT,
-  feedUnreadDisplayCount,
-  feedsUnreadDisplayTotal,
+  feedIndicatorUnreadCount,
   excludeMessageEntityFromFilters,
   type MessageEntityFilterKind,
   type MessageFeedState,
@@ -129,7 +128,10 @@ export function RerDutyNeoPage({
       isWatchMode: !dutyDisableAutoScroll && (watchModeByFeedId[feed.id] ?? true),
       loadingNewer: loadingNewerFeedIds.has(feed.id),
       arrowResultMessage: arrowResultByFeedId[feed.id] ?? null,
-      unreadCount: feedUnreadDisplayCount(feed),
+      bottomUnreadCount: feedIndicatorUnreadCount(feed, confirmedTailPreviewByFeedId[feed.id]),
+      physicallyAtBottom:
+        feed.items.length === 0 ? true : (physicallyAtBottomByFeedIdRef.current[feed.id] ?? false),
+      tailAvailability: tailAvailabilityByFeedId[feed.id] ?? 'unknown',
     },
     filterPanel: {
       feedId: feed.id,
@@ -242,7 +244,8 @@ export function RerDutyNeoPage({
     },
     actions: {
       onLoadOlder: () => loadFeedOlderMessages(feed.id),
-      onLoadNewer: () => loadFeedNewerMessages(feed.id, { skipIfNewestExhausted: true }),
+      onLoadNewer: () =>
+        loadFeedNewerMessages(feed.id, { skipIfNewestExhausted: true, showLoading: false }),
       onRemoveColumn: () => removeMessageFeed(feed.id),
       onMessageBookmark: (msgId, currentlyBookmarked) =>
         handleMessageBookmark(feed.id, msgId, currentlyBookmarked),
@@ -259,8 +262,12 @@ export function RerDutyNeoPage({
         setCreateMessageOpen(false);
         setEditTarget({ id: messageId, message });
       },
-      onScrollToTop: () => setWatchModeByFeedId((prev) => ({ ...prev, [feed.id]: false })),
+      onScrollToTop: () => {
+        cancelFollowTail(feed.id);
+        setWatchModeByFeedId((prev) => ({ ...prev, [feed.id]: false }));
+      },
       onReachedBottom: () => {
+        ensureFollowTail(feed.id);
         if (!dutyDisableAutoScroll) {
           setWatchModeByFeedId((prev) => ({ ...prev, [feed.id]: true }));
         }
@@ -270,7 +277,10 @@ export function RerDutyNeoPage({
           });
         }
       },
-      onLeftBottom: () => setWatchModeByFeedId((prev) => ({ ...prev, [feed.id]: false })),
+      onLeftBottom: () => {
+        cancelFollowTail(feed.id);
+        setWatchModeByFeedId((prev) => ({ ...prev, [feed.id]: false }));
+      },
       onNearBottomChange: (near) => {
         nearBottomByFeedIdRef.current = {
           ...nearBottomByFeedIdRef.current,
@@ -280,6 +290,12 @@ export function RerDutyNeoPage({
       onAtBottomChange: (atBottom) => {
         atBottomByFeedIdRef.current = {
           ...atBottomByFeedIdRef.current,
+          [feed.id]: atBottom,
+        };
+      },
+      onPhysicalBottomChange: (atBottom) => {
+        physicallyAtBottomByFeedIdRef.current = {
+          ...physicallyAtBottomByFeedIdRef.current,
           [feed.id]: atBottom,
         };
       },
@@ -294,6 +310,12 @@ export function RerDutyNeoPage({
     columnRefsRef,
     nearBottomByFeedIdRef,
     atBottomByFeedIdRef,
+    physicallyAtBottomByFeedIdRef,
+    tailAvailabilityByFeedId,
+    confirmedTailPreviewByFeedId,
+    beginFollowTail,
+    ensureFollowTail,
+    cancelFollowTail,
     dutyDisableAutoScroll,
     createMessageFeed,
     removeMessageFeed,
@@ -407,7 +429,15 @@ export function RerDutyNeoPage({
     previousFeedCountRef.current = messageFeeds.length;
   }, [messageFeeds]);
 
-  const dutyTabUnreadTotal = useMemo(() => feedsUnreadDisplayTotal(messageFeeds), [messageFeeds]);
+  const dutyTabUnreadTotal = useMemo(
+    () =>
+      messageFeeds.reduce(
+        (total, feed) =>
+          total + feedIndicatorUnreadCount(feed, confirmedTailPreviewByFeedId[feed.id]),
+        0,
+      ),
+    [messageFeeds, confirmedTailPreviewByFeedId],
+  );
   const anyFeedInitialLoading = messageFeeds.some(
     (feed) => feed.loading && feed.items.length === 0,
   );

@@ -837,11 +837,11 @@ describe('MessageCard', () => {
 
     const card = view.container.querySelector('li');
     if (!(card instanceof HTMLElement)) throw new Error('card root not found');
-    expect(card.style.contentVisibility).toBe('auto');
+    expect(card.style.contentVisibility).toBe('');
     expect(
       card.style.containIntrinsicBlockSize ||
         card.style.getPropertyValue('contain-intrinsic-block-size'),
-    ).toBe('auto 120px');
+    ).toBe('');
 
     expect(view.container.textContent).toContain("Куп'янськ пеленг");
     expect(view.container.textContent).toContain('Dow_Jones_2');
@@ -852,6 +852,19 @@ describe('MessageCard', () => {
     expect(view.container.querySelector(`button[aria-label="${NAVIGATE_TITLE}"]`)).not.toBeNull();
     expect(view.container.querySelector('button[aria-label="Відкрити аналіз"]')).toBeNull();
     expect(view.container.querySelector('button[aria-label="Відкрити мапу"]')).toBeNull();
+  });
+
+  it('keeps deferred off-screen layout limited to analysis cards', async () => {
+    const view = await renderCard({ displayMode: 'analysis' });
+    rendered.push(view);
+
+    const card = view.container.querySelector('li');
+    if (!(card instanceof HTMLElement)) throw new Error('card root not found');
+    expect(card.style.contentVisibility).toBe('auto');
+    expect(
+      card.style.containIntrinsicBlockSize ||
+        card.style.getPropertyValue('contain-intrinsic-block-size'),
+    ).toBe('auto 120px');
   });
 
   it('keeps closed menus unmounted and preserves the header hot-path structure', async () => {

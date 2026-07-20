@@ -36,6 +36,7 @@ export type UseWindowedFeedScrollOptions = {
   onLeftBottom?: () => void;
   onNearBottomChange?: (near: boolean) => void;
   onAtBottomChange?: (atBottom: boolean) => void;
+  onPhysicalBottomChange?: (atBottom: boolean) => void;
   onVisibleMessageIds?: (lastVisibleId: number, opts?: { atBottom?: boolean }) => void;
   topLoadBufferPx?: number;
   bottomLoadBufferPx?: number;
@@ -75,6 +76,7 @@ export function useWindowedFeedScroll({
   onLeftBottom,
   onNearBottomChange,
   onAtBottomChange,
+  onPhysicalBottomChange,
   onVisibleMessageIds,
   topLoadBufferPx = DEFAULT_TOP_LOAD_BUFFER_PX,
   bottomLoadBufferPx = DEFAULT_BOTTOM_LOAD_BUFFER_PX,
@@ -91,6 +93,7 @@ export function useWindowedFeedScroll({
     onLeftBottom,
     onNearBottomChange,
     onAtBottomChange,
+    onPhysicalBottomChange,
     onVisibleMessageIds,
   });
   useLayoutEffect(() => {
@@ -102,6 +105,7 @@ export function useWindowedFeedScroll({
       onLeftBottom,
       onNearBottomChange,
       onAtBottomChange,
+      onPhysicalBottomChange,
       onVisibleMessageIds,
     };
   });
@@ -112,6 +116,7 @@ export function useWindowedFeedScroll({
   const loadNewerTriggeredRef = useRef(false);
   const hasSeenNotAtBottomRef = useRef(false);
   const atBottomRef = useRef<boolean | null>(null);
+  const physicallyAtBottomRef = useRef<boolean | null>(null);
   const previousScrollTopRef = useRef(0);
   const nearBottomRef = useRef<boolean | null>(null);
   const atTopRef = useRef<boolean | null>(null);
@@ -122,6 +127,7 @@ export function useWindowedFeedScroll({
   const bottomSettleRafRef = useRef<number | null>(null);
   const bottomSettleTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const bottomSettleResizeObserverRef = useRef<ResizeObserver | null>(null);
+  const liveBottomFollowRef = useRef(false);
   const previousItemIdsRef = useRef<readonly number[]>([]);
   const previousResetKeyRef = useRef<string | number | null>(resetKey);
   const isWatchModeRef = useRef<boolean>(isWatchMode);
@@ -130,7 +136,6 @@ export function useWindowedFeedScroll({
   const enabledRef = useRef<boolean>(enabled);
   const enabledBeforeRender = enabledRef.current;
   isWatchModeRef.current = isWatchMode;
-  const wasAtBottomBeforeRender = atBottomRef.current;
 
   const itemIdsRef = useRef<readonly number[]>(itemIds);
   itemIdsRef.current = itemIds;
@@ -302,11 +307,14 @@ export function useWindowedFeedScroll({
     if (enabledBeforeRender && !enabled) {
       cancelPendingScrollProcessing();
       stopBottomSettle();
-      const { onAtBottomChange, onNearBottomChange } = callbacksRef.current;
+      const { onAtBottomChange, onNearBottomChange, onPhysicalBottomChange } = callbacksRef.current;
       if (atBottomRef.current !== false) onAtBottomChange?.(false);
       if (nearBottomRef.current !== false) onNearBottomChange?.(false);
+      if (physicallyAtBottomRef.current !== false) onPhysicalBottomChange?.(false);
       atBottomRef.current = false;
+      physicallyAtBottomRef.current = false;
       nearBottomRef.current = false;
+      liveBottomFollowRef.current = false;
       loadOlderTriggeredRef.current = false;
       loadNewerTriggeredRef.current = false;
     }
@@ -322,6 +330,7 @@ export function useWindowedFeedScroll({
 
       const bottomDistance = distanceToBottom(scroller);
       const atBottom = bottomDistance <= atBottomThresholdPx;
+      const physicallyAtBottom = bottomDistance <= 1;
       const nearBottom = bottomDistance <= bottomLoadBufferPx;
       const atTop = scroller.scrollTop <= 0;
       const wasAtBottom = atBottomRef.current;
@@ -339,6 +348,16 @@ export function useWindowedFeedScroll({
         onLoadNewer,
       } = callbacksRef.current;
 
+      if (physicallyAtBottomRef.current !== physicallyAtBottom) {
+        const wasPhysicallyAtBottom = physicallyAtBottomRef.current;
+        physicallyAtBottomRef.current = physicallyAtBottom;
+        callbacksRef.current.onPhysicalBottomChange?.(physicallyAtBottom);
+        if (physicallyAtBottom && wasPhysicallyAtBottom !== true) {
+          liveBottomFollowRef.current = true;
+          onReachedBottom?.();
+        }
+      }
+
       if (nearBottomRef.current !== nearBottom) {
         nearBottomRef.current = nearBottom;
         onNearBottomChange?.(nearBottom);
@@ -355,11 +374,11 @@ export function useWindowedFeedScroll({
       if (!atBottom) hasSeenNotAtBottomRef.current = true;
       if (wasAtBottom === true && !atBottom) {
         const scrolledUp = currentScrollTop < prevScrollTop - 1;
-        if (scrolledUp && !bottomSettleActiveRef.current) {
+        if (scrolledUp) {
+          liveBottomFollowRef.current = false;
           onLeftBottom?.();
         }
       }
-      if (atBottom && wasAtBottom === false && hasSeenNotAtBottomRef.current) onReachedBottom?.();
 
       if (opts.allowTopReached !== false && atTopRef.current !== atTop) {
         atTopRef.current = atTop;
@@ -412,6 +431,7 @@ export function useWindowedFeedScroll({
         scroller.scrollTop = scroller.scrollHeight;
       }
       previousScrollTopRef.current = scroller.scrollTop;
+      liveBottomFollowRef.current = true;
       const canScroll =
         scroller.scrollHeight > scroller.clientHeight || scroller.scrollHeight === 0;
       updateScrollState({
@@ -499,6 +519,7 @@ export function useWindowedFeedScroll({
     if (!hasInitialScrolledRef.current) {
       scrollToBottom('auto');
       startBottomSettle();
+      liveBottomFollowRef.current = true;
       hasInitialScrolledRef.current = true;
       previousItemIdsRef.current = currentItemIds;
       return;
@@ -506,7 +527,7 @@ export function useWindowedFeedScroll({
 
     const itemsChanged = !areNumberArraysEqual(previousItemIdsRef.current, currentItemIds);
     if (itemsChanged) {
-      if (wasAtBottomBeforeRender === true && isWatchModeRef.current !== false) {
+      if (liveBottomFollowRef.current && isWatchModeRef.current !== false) {
         scrollToBottom('auto');
         startBottomSettle();
       } else {
@@ -550,10 +571,20 @@ export function useWindowedFeedScroll({
   const handleScroll = useCallback<UIEventHandler<HTMLDivElement>>(() => {
     if (!enabledRef.current) return;
     const scroller = scrollerRef.current;
+    if (scroller && scroller.scrollTop < previousScrollTopRef.current - 1) {
+      previousScrollTopRef.current = scroller.scrollTop;
+      stopBottomSettle();
+      if (liveBottomFollowRef.current) {
+        liveBottomFollowRef.current = false;
+        callbacksRef.current.onLeftBottom?.();
+      }
+    } else if (scroller && distanceToBottom(scroller) <= 0.5) {
+      liveBottomFollowRef.current = true;
+    }
     if (scroller && bottomSettleActiveRef.current) {
       const bottomDistance = distanceToBottom(scroller);
-      const atBottom = bottomDistance <= atBottomThresholdPx;
-      if (!atBottom) {
+      const physicallyAtBottom = bottomDistance <= 1;
+      if (!physicallyAtBottom) {
         stopBottomSettle();
       }
     }
