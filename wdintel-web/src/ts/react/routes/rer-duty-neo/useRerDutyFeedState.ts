@@ -402,11 +402,10 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
       tailPreviewGenerationByFeedIdRef.current[feedId] = previewGeneration;
       const requestSignature = buildFeedCountSignature(feed, freqs);
       const requestPromise = (async () => {
-        const response = await fetchInboxMessages(
-          buildReqForFeed(feed, { sinceIdNoninclusive: tailId }),
-        );
+        const count = await requestValidatedTailCount(feedId, tailId);
         const currentFeed = messageFeedsRef.current.find((candidate) => candidate.id === feedId);
         if (
+          count === null ||
           !currentFeed ||
           getFeedLoadGeneration(feedId) !== requestGeneration ||
           currentFeed.items.at(-1)?.[0] !== tailId ||
@@ -414,10 +413,9 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
         ) {
           return null;
         }
-        const loadedIds = new Set(currentFeed.items.map(([id]) => id));
         return {
           tailId,
-          count: response.inboxItems.filter(([id]) => !loadedIds.has(id)).length,
+          count,
           generation: previewGeneration,
         };
       })();
@@ -431,7 +429,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
         .catch(() => {});
       return requestPromise;
     },
-    [buildReqForFeed, freqs, getFeedLoadGeneration],
+    [buildReqForFeed, freqs, getFeedLoadGeneration, requestValidatedTailCount],
   );
 
   useEffect(() => {
