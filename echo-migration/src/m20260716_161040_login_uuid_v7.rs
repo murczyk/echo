@@ -56,6 +56,14 @@ where not exists (
     where login.login = geojson.created_by
 );
 
+update sigint_unit unit
+set created_by = 'system'
+where not exists (
+    select 1
+    from login
+    where login.login = unit.created_by
+);
+
 do $$
 declare
     ref record;
