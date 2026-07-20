@@ -890,11 +890,24 @@ fn submit_operator_tags(
 }
 
 fn submit_item_callsigns(item: &InboxSubmitItem) -> Vec<String> {
-    item.from_callsign
+    let dmr_callsigns = item
+        .dmr
         .iter()
-        .chain(item.to.iter())
-        .filter_map(|callsign| normalized_optional_string(Some(callsign)))
-        .collect()
+        .flat_map(|metadata| {
+            metadata::metadata_text_callsigns(
+                metadata.sender_name.as_deref(),
+                metadata.call_group_name.as_deref(),
+            )
+        })
+        .collect::<Vec<_>>();
+
+    metadata::dedupe_text_callsigns_case_insensitive(
+        item.from_callsign
+            .iter()
+            .chain(item.to.iter())
+            .filter_map(|callsign| normalized_optional_string(Some(callsign)))
+            .chain(dmr_callsigns),
+    )
 }
 
 async fn add_submit_tags(
@@ -2410,8 +2423,17 @@ mod tests {
                 " ".to_string(),
                 "КОПАНІ".to_string(),
             ],
-            from_callsign: Some("ЯРУС".to_string()),
+            from_callsign: Some(" ЯРУС ".to_string()),
             to: vec!["СВЕТЛЫЙ".to_string(), " ".to_string()],
+            dmr: vec![SubmitDmrMetadata {
+                timestamp: "2026-06-25T12:34:56Z".to_string(),
+                cc: Some(5),
+                freq: "145.02678".to_string(),
+                signal_name: "dmr".to_string(),
+                sender_name: Some("ярус".to_string()),
+                call_group_name: Some(" ВОСТОК ".to_string()),
+                ..submit_dmr_metadata(None)
+            }],
             ..Default::default()
         };
 
@@ -2438,7 +2460,11 @@ mod tests {
         assert_eq!(message.location.as_deref(), Some("ЛИМАН ПЕРШИЙ, КОПАНІ"));
         assert_eq!(
             message.callsigns,
-            vec!["ЯРУС".to_string(), "СВЕТЛЫЙ".to_string()]
+            vec![
+                "ЯРУС".to_string(),
+                "СВЕТЛЫЙ".to_string(),
+                "ВОСТОК".to_string()
+            ]
         );
     }
 
