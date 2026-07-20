@@ -213,7 +213,7 @@ describe('useWindowedFeedScroll', () => {
     expect(onLoadNewer).not.toHaveBeenCalled();
   });
 
-  it('cancels active bottom following when the feed becomes disabled', async () => {
+  it('resets bottom state when the feed becomes disabled without cancelling follow', async () => {
     const onPhysicalBottomChange = vi.fn();
     const onNearBottomChange = vi.fn();
     const onAtBottomChange = vi.fn();
@@ -270,7 +270,7 @@ describe('useWindowedFeedScroll', () => {
     expect(onPhysicalBottomChange).toHaveBeenCalledWith(false);
     expect(onNearBottomChange).toHaveBeenCalledWith(false);
     expect(onAtBottomChange).toHaveBeenCalledWith(false);
-    expect(onLeftBottom).toHaveBeenCalledTimes(1);
+    expect(onLeftBottom).not.toHaveBeenCalled();
 
     await act(async () => {
       root.render(
@@ -315,6 +315,33 @@ describe('useWindowedFeedScroll', () => {
     });
     expect(onReachedBottom).toHaveBeenCalledTimes(1);
     expect(onPhysicalBottomChange).toHaveBeenLastCalledWith(true);
+  });
+
+  it('does not cancel follow across disable and re-enable until an upward scroll', async () => {
+    const onLeftBottom = vi.fn();
+    await act(async () => {
+      root.render(<TestScroller ids={[1, 2, 3, 4]} onLeftBottom={onLeftBottom} />);
+    });
+    const scroller = container.querySelector('[data-testid="scroller"]') as HTMLElement;
+    setScrollMetrics(scroller, { scrollTop: 200, clientHeight: 100, scrollHeight: 300 });
+    await act(async () => {
+      scroller.dispatchEvent(new Event('scroll', { bubbles: true }));
+      await waitForAnimationFrame();
+    });
+    await act(async () => {
+      root.render(<TestScroller ids={[1, 2, 3, 4]} enabled={false} onLeftBottom={onLeftBottom} />);
+    });
+    await act(async () => {
+      root.render(<TestScroller ids={[1, 2, 3, 4]} onLeftBottom={onLeftBottom} />);
+    });
+    expect(onLeftBottom).not.toHaveBeenCalled();
+
+    setScrollMetrics(scroller, { scrollTop: 190, clientHeight: 100, scrollHeight: 300 });
+    await act(async () => {
+      scroller.dispatchEvent(new Event('scroll', { bubbles: true }));
+      await waitForAnimationFrame();
+    });
+    expect(onLeftBottom).toHaveBeenCalledTimes(1);
   });
 
   it('does not clear unread state when hidden items append', async () => {

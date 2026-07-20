@@ -307,9 +307,7 @@ export function useWindowedFeedScroll({
     if (enabledBeforeRender && !enabled) {
       cancelPendingScrollProcessing();
       stopBottomSettle();
-      const { onAtBottomChange, onNearBottomChange, onPhysicalBottomChange, onLeftBottom } =
-        callbacksRef.current;
-      const hadLiveFollow = liveBottomFollowRef.current;
+      const { onAtBottomChange, onNearBottomChange, onPhysicalBottomChange } = callbacksRef.current;
       if (atBottomRef.current !== false) onAtBottomChange?.(false);
       if (nearBottomRef.current !== false) onNearBottomChange?.(false);
       if (physicallyAtBottomRef.current !== false) onPhysicalBottomChange?.(false);
@@ -317,7 +315,6 @@ export function useWindowedFeedScroll({
       physicallyAtBottomRef.current = false;
       nearBottomRef.current = false;
       liveBottomFollowRef.current = false;
-      if (hadLiveFollow) onLeftBottom?.();
       loadOlderTriggeredRef.current = false;
       loadNewerTriggeredRef.current = false;
     }
