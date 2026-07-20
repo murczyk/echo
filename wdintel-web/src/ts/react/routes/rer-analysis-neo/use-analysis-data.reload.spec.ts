@@ -413,6 +413,51 @@ describe('reloadAnalysisData', () => {
     expect(setMessages).toHaveBeenCalledWith([[21, { networkIds: [] }]]);
   });
 
+  it('ignores a stale fallback response after a newer reload starts', async () => {
+    const fallbackRsp = deferred<ReloadInboxRsp>();
+    const oldSetMessages = vi.fn();
+    const newSetMessages = vi.fn();
+    const reloadRequestRef = { current: 0 };
+    mocks.fetchInboxCount.mockResolvedValue({ quantity: 40 });
+    mocks.fetchAnalysisCount.mockResolvedValue({});
+    mocks.fetchAnalysisFreqs.mockResolvedValue({ freqs: [] });
+    mocks.fetchInboxMessages
+      .mockResolvedValueOnce({ inboxItems: [], callsigns: [], pageLimit: 20 })
+      .mockImplementationOnce(() => fallbackRsp.promise)
+      .mockResolvedValueOnce({
+        inboxItems: [[99, { networkIds: [] }]],
+        callsigns: [],
+        pageLimit: 20,
+      });
+
+    const oldReload = reloadAnalysisData(
+      buildReloadParams({
+        reloadRequestRef,
+        messagePageCursor: { beforeIdNoninclusive: 20, sinceIdNoninclusive: null },
+        pageIndex: 2,
+        setMessages: oldSetMessages,
+      }),
+    );
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const newReload = reloadAnalysisData(
+      buildReloadParams({
+        reloadRequestRef,
+        messagePageCursor: { beforeIdNoninclusive: 20, sinceIdNoninclusive: null },
+        pageIndex: 2,
+        setMessages: newSetMessages,
+      }),
+    );
+    await newReload;
+    fallbackRsp.resolve({ inboxItems: [[1, { networkIds: [] }]], callsigns: [], pageLimit: 20 });
+    await oldReload;
+
+    expect(oldSetMessages).not.toHaveBeenCalled();
+    expect(newSetMessages).toHaveBeenCalledWith([[99, { networkIds: [] }]]);
+  });
+
   it('clears messages loading immediately after inbox resolves, without waiting for freqs', async () => {
     const inboxDeferred = deferred<ReloadInboxRsp>();
     const freqsDeferred = deferred<{
@@ -554,7 +599,9 @@ describe('reloadAnalysisData', () => {
     mocks.fetchAnalysisFreqs
       .mockImplementationOnce(() => freqsDeferred.promise)
       .mockImplementationOnce(() => rebuiltFreqsDeferred.promise);
-    mocks.fetchInboxCount.mockResolvedValue({ quantity: 43 });
+    mocks.fetchInboxCount
+      .mockResolvedValueOnce({ quantity: 43 })
+      .mockResolvedValueOnce({ quantity: 41 });
     mocks.fetchAnalysisCount.mockResolvedValue({});
     mocks.fetchAnalysisSummaryTable.mockResolvedValue({ rows: [] });
     mocks.fetchAnalysisMapPoints.mockResolvedValue({ points: [], networkUnits: [] });
@@ -582,8 +629,9 @@ describe('reloadAnalysisData', () => {
         sinceIdNoninclusive: null,
         requestNewestFirst: false,
         reverseResults: true,
-        resultLimit: 2,
+        resultLimit: 3,
       },
+      pageIndex: 2,
       setCurrentMessagePage,
       newestFirst: true,
       onError: vi.fn(),
@@ -681,16 +729,12 @@ describe('reloadAnalysisData', () => {
     expect(mocks.fetchAnalysisCallsigns).not.toHaveBeenCalled();
     expect(mocks.fetchAnalysisCallsignInfos).not.toHaveBeenCalled();
     expect(mocks.fetchAnalysisFreqs).toHaveBeenCalledTimes(2);
-    expect(setCurrentMessagePage).toHaveBeenCalledWith(
-      expect.objectContaining({ reverseResults: true, resultLimit: 3 }),
+    expect(setCurrentMessagePage).toHaveBeenLastCalledWith(
+      expect.objectContaining({ reverseResults: true, resultLimit: 1 }),
       2,
     );
-    expect(setMessages).toHaveBeenLastCalledWith(
-      expect.arrayContaining(
-        Array.from({ length: 3 }, (_, index) => [22 - index, { networkIds: [] }]),
-      ),
-    );
-    expect(setMessages.mock.lastCall?.[0]).toHaveLength(3);
+    expect(setMessages).toHaveBeenLastCalledWith([[20, { networkIds: [] }]]);
+    expect(setMessages.mock.lastCall?.[0]).toHaveLength(1);
   });
 
   it('keeps the original inbox state when rebuilt inbox fetch fails', async () => {
