@@ -183,6 +183,18 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
     },
     [resetTailState],
   );
+  const reloadEmptyFeeds = useCallback(() => {
+    const emptyFeedIds = Array.from(
+      new Set(
+        messageFeedsRef.current.filter((feed) => feed.items.length === 0).map((feed) => feed.id),
+      ),
+    );
+    if (emptyFeedIds.length === 0) return;
+    emptyFeedIds.forEach(markFeedReloadRequested);
+    setMessageFeeds((previous) =>
+      previous.map((feed) => (emptyFeedIds.includes(feed.id) ? { ...feed, loading: true } : feed)),
+    );
+  }, [markFeedReloadRequested]);
   const clearFeedUnreadBaselines = useCallback((feedId: string) => {
     delete unreadCursorByFeedIdRef.current[feedId];
     delete lastServerCountByFeedIdRef.current[feedId];
@@ -757,6 +769,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
     ensureFollowTail,
     cancelFollowTail,
     loadFeedInitialMessages,
+    reloadEmptyFeeds,
     loadFeedOlderMessages,
     loadFeedNewerMessages,
     requestValidatedInboxCount,

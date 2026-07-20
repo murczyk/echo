@@ -718,6 +718,122 @@ describe('useRerDutyFeedState — loading', () => {
     expect(apiRef.current!.tailAvailabilityByFeedId['mf-0']).toBe('available');
   });
 
+  it('reloads a settled empty feed through the initial-load effect', async () => {
+    hoisted.fetchInboxMessages
+      .mockResolvedValueOnce(inboxRsp([]))
+      .mockResolvedValueOnce(inboxRsp([[7, minimalInboxMessage({ timestamp: 700 })]]));
+    const apiRef: React.MutableRefObject<ReturnType<typeof useRerDutyFeedState> | null> = {
+      current: null,
+    };
+
+    await act(async () => root.render(<TestHarness apiRef={apiRef} />));
+    await act(async () => flushMicrotasks());
+    expect(apiRef.current?.messageFeeds[0]?.items).toHaveLength(0);
+
+    await act(async () => apiRef.current?.reloadEmptyFeeds());
+    await act(async () => flushMicrotasks());
+
+    expect(apiRef.current?.messageFeeds[0]?.items.map(([id]) => id)).toEqual([7]);
+    expect(apiRef.current?.messageFeeds[0]?.loading).toBe(false);
+    expect(hoisted.fetchInboxMessages).toHaveBeenCalledTimes(2);
+  });
+
+  it('reloads all empty feeds without reloading non-empty feeds', async () => {
+    window.history.replaceState(
+      {},
+      '',
+      '/?state=' +
+        encodeURIComponent(
+          JSON.stringify({
+            messageFeeds: [
+              ['mf-0', { ...emptyFilter(), groupsSelected: ['group-0'] }],
+              ['mf-1', { ...emptyFilter(), groupsSelected: ['group-1'] }],
+              ['mf-2', { ...emptyFilter(), groupsSelected: ['group-2'] }],
+            ],
+          }),
+        ),
+    );
+    hoisted.fetchInboxMessages.mockImplementation((request: any) => {
+      const group = request.selectedGroups?.[0];
+      if (group === 'group-0')
+        return Promise.resolve(inboxRsp([[1, minimalInboxMessage({ timestamp: 100 })]]));
+      if (group === 'group-1') return Promise.resolve(inboxRsp([]));
+      if (group === 'group-2') return Promise.resolve(inboxRsp([]));
+      throw new Error(`Unexpected group ${group}`);
+    });
+    const apiRef: React.MutableRefObject<ReturnType<typeof useRerDutyFeedState> | null> = {
+      current: null,
+    };
+
+    await act(async () => root.render(<TestHarness apiRef={apiRef} />));
+    await act(async () => flushMicrotasks());
+    hoisted.fetchInboxMessages.mockClear();
+    hoisted.fetchInboxMessages.mockImplementation((request: any) => {
+      const group = request.selectedGroups?.[0];
+      if (group === 'group-1')
+        return Promise.resolve(inboxRsp([[8, minimalInboxMessage({ timestamp: 800 })]]));
+      if (group === 'group-2')
+        return Promise.resolve(inboxRsp([[9, minimalInboxMessage({ timestamp: 900 })]]));
+      throw new Error(`Unexpected reload group ${group}`);
+    });
+
+    await act(async () => apiRef.current?.reloadEmptyFeeds());
+    await act(async () => flushMicrotasks());
+
+    expect(hoisted.fetchInboxMessages).toHaveBeenCalledTimes(2);
+    expect(
+      hoisted.fetchInboxMessages.mock.calls.map(([request]) => request.selectedGroups),
+    ).toEqual(expect.arrayContaining([['group-1'], ['group-2']]));
+    expect(apiRef.current?.messageFeeds.map((feed) => feed.items.map(([id]) => id))).toEqual([
+      [1],
+      [8],
+      [9],
+    ]);
+    expect(apiRef.current?.messageFeeds.every((feed) => feed.loading === false)).toBe(true);
+    expect(apiRef.current?.error).toBeNull();
+  });
+
+  it('invalidates a stale empty-feed initial response during reload', async () => {
+    const stale = deferred<InboxMessagesRsp>();
+    const fresh = deferred<InboxMessagesRsp>();
+    hoisted.fetchInboxMessages
+      .mockImplementationOnce(() => stale.promise)
+      .mockImplementationOnce(() => fresh.promise);
+    const apiRef: React.MutableRefObject<ReturnType<typeof useRerDutyFeedState> | null> = {
+      current: null,
+    };
+
+    await act(async () => root.render(<TestHarness apiRef={apiRef} />));
+    await act(async () => flushMicrotasks());
+    await act(async () => apiRef.current?.reloadEmptyFeeds());
+    await act(async () => flushMicrotasks());
+
+    fresh.resolve(inboxRsp([[9, minimalInboxMessage({ timestamp: 900 })]]));
+    await act(async () => flushMicrotasks());
+    stale.resolve(inboxRsp([]));
+    await act(async () => flushMicrotasks());
+
+    expect(apiRef.current?.messageFeeds[0]?.items.map(([id]) => id)).toEqual([9]);
+    expect(apiRef.current?.error).toBeNull();
+  });
+
+  it('clears loading and surfaces an empty-feed reload failure', async () => {
+    hoisted.fetchInboxMessages
+      .mockResolvedValueOnce(inboxRsp([]))
+      .mockRejectedValueOnce(new Error('empty feed reload failed'));
+    const apiRef: React.MutableRefObject<ReturnType<typeof useRerDutyFeedState> | null> = {
+      current: null,
+    };
+
+    await act(async () => root.render(<TestHarness apiRef={apiRef} />));
+    await act(async () => flushMicrotasks());
+    await act(async () => apiRef.current?.reloadEmptyFeeds());
+    await act(async () => flushMicrotasks());
+
+    expect(apiRef.current?.messageFeeds[0]?.loading).toBe(false);
+    expect(apiRef.current?.error).toBe('empty feed reload failed');
+  });
+
   it('sets error and clears loading when initial get-inbox fails', async () => {
     hoisted.fetchInboxMessages.mockRejectedValueOnce(new Error('network down'));
 

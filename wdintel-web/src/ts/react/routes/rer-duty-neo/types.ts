@@ -12,6 +12,7 @@ import type {
 import type { MessageEntityFilterKind, TagsLayoutVariant, MessageFeedState } from './utils';
 import type { FeedFilterPanelModel } from './FeedFilterPanel';
 import type { MessageCardBotTagAction } from '../shared/message-card/message-card.types';
+import type { DutyWorkspaceFabAvoidance } from './duty-scroll-fab-position';
 
 export type TailAvailability = 'unknown' | 'checking' | 'loading' | 'available' | 'exhausted';
 
@@ -31,6 +32,8 @@ export type FeedColumnModel = {
     bottomUnreadCount?: number;
     physicallyAtBottom?: boolean;
     tailAvailability?: TailAvailability;
+    unreadCount?: number;
+    workspaceFabAvoidance?: DutyWorkspaceFabAvoidance;
   };
   filterPanel: FeedFilterPanelModel;
   keywordsPanel: {
@@ -69,7 +72,7 @@ export type FeedColumnModel = {
     onMessageComment: (msgId: number, currentComment: string | null) => void;
     onMessageExcludeEntity: (entity: MessageEntityFilterKind, value: string) => void;
     onMessageToggleTag: (msgId: number, tagId: number) => void;
-    onCreateMessageFeed?: () => void;
+    onCreateFeed?: () => void;
     onScrollToTop?: () => void;
     /** Called when user scrolls to bottom; use to enable watch mode (same as after arrow click). */
     onReachedBottom?: () => void;

@@ -410,6 +410,6 @@ sumTableBlock2 model shared route sumTable =
                 [ href "/my-reports"
                 , class "text-sm align-self-center"
                 ]
-                [ text "Мої Звіти" ]
+                [ text "Мої звіти" ]
             ]
         ]

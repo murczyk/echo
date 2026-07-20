@@ -1,4 +1,5 @@
 import { Box, Button, IconButton, Tooltip } from '@mui/material';
+import AddIcon from '@mui/icons-material/Add';
 import CloseIcon from '@mui/icons-material/Close';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
@@ -30,6 +31,7 @@ type FeedColumnHeaderProps = {
   showNotificationPanel: boolean;
   showKeywordsPanel: boolean;
   dutyNotificationsOn: boolean;
+  onCreateFeed?: () => void;
   onToggleFilters: () => void;
   onToggleNotificationPanel: () => void;
   onToggleKeywordsPanel: () => void;
@@ -182,6 +184,7 @@ export function FeedColumnHeader({
   showNotificationPanel,
   showKeywordsPanel,
   dutyNotificationsOn,
+  onCreateFeed,
   onToggleFilters,
   onToggleNotificationPanel,
   onToggleKeywordsPanel,
@@ -211,12 +214,13 @@ export function FeedColumnHeader({
     >
       <Box
         ref={headerRef}
+        data-duty-feed-header-layout="flex"
         sx={{
-          display: 'grid',
-          gridTemplateColumns: canRemove ? 'minmax(0, 1fr) auto' : 'minmax(0, 1fr)',
+          display: 'flex',
           alignItems: 'stretch',
           height: 32,
           minWidth: 0,
+          width: '100%',
           position: 'sticky',
           top: 0,
           zIndex: 1,
@@ -236,15 +240,16 @@ export function FeedColumnHeader({
         }}
       >
         <Box
+          data-duty-feed-header-controls
           sx={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
-            width: '100%',
+            display: 'flex',
+            flex: '1 1 auto',
             minWidth: 0,
             overflow: 'hidden',
+            alignItems: 'stretch',
           }}
         >
-          <Box sx={{ display: 'flex', minWidth: 0, minHeight: 0 }}>
+          <Box sx={{ display: 'flex', flex: '1 1 0', minWidth: 0, minHeight: 0 }}>
             <HeaderPanelToggle
               iconOnly={iconOnlyHeader}
               label="Фільтри"
@@ -258,6 +263,7 @@ export function FeedColumnHeader({
             sx={{
               borderColor: 'rgba(148, 163, 184, 0.28)',
               display: 'flex',
+              flex: '1 1 0',
               minWidth: 0,
               minHeight: 0,
             }}
@@ -296,7 +302,7 @@ export function FeedColumnHeader({
                 </IconButton>
               </Tooltip>
             ) : null}
-            <Box sx={{ display: 'flex', flex: '1 1 auto', minWidth: 0, minHeight: 0 }}>
+            <Box sx={{ display: 'flex', flex: '1 1 0', minWidth: 0, minHeight: 0 }}>
               <HeaderPanelToggle
                 iconOnly={iconOnlyHeader}
                 label="Сповіщення"
@@ -307,7 +313,7 @@ export function FeedColumnHeader({
               />
             </Box>
           </Box>
-          <Box sx={{ display: 'flex', minWidth: 0, minHeight: 0 }}>
+          <Box sx={{ display: 'flex', flex: '1 1 0', minWidth: 0, minHeight: 0 }}>
             <HeaderPanelToggle
               iconOnly={iconOnlyHeader}
               label="Підсвітка"
@@ -317,26 +323,53 @@ export function FeedColumnHeader({
             />
           </Box>
         </Box>
-        {canRemove ? (
-          <Tooltip title="Закрити стрічку">
-            <IconButton
-              size="small"
-              aria-label="Закрити стрічку"
-              onClick={onRemoveColumn}
-              sx={{
-                ...dutyTopActionButtonSx,
-                position: 'sticky',
-                right: 0,
-                zIndex: 1,
-                flexShrink: 0,
-                borderLeft: '1px solid',
-                borderLeftColor: 'divider',
-              }}
-            >
-              <CloseIcon />
-            </IconButton>
-          </Tooltip>
-        ) : null}
+        <Box
+          data-duty-feed-header-actions
+          sx={{
+            display: 'flex',
+            alignItems: 'stretch',
+            flexShrink: 0,
+            minWidth: 0,
+            minHeight: 0,
+          }}
+        >
+          {onCreateFeed ? (
+            <Tooltip title="Додати стрічку">
+              <IconButton
+                size="small"
+                aria-label="Додати стрічку"
+                onClick={onCreateFeed}
+                sx={{
+                  ...dutyTopActionButtonSx,
+                  borderLeft: '1px solid',
+                  borderLeftColor: 'divider',
+                  borderRadius: 0,
+                  flexShrink: 0,
+                }}
+              >
+                <AddIcon />
+              </IconButton>
+            </Tooltip>
+          ) : null}
+          {canRemove ? (
+            <Tooltip title="Закрити стрічку">
+              <IconButton
+                size="small"
+                aria-label="Закрити стрічку"
+                onClick={onRemoveColumn}
+                sx={{
+                  ...dutyTopActionButtonSx,
+                  flexShrink: 0,
+                  borderLeft: '1px solid',
+                  borderLeftColor: 'divider',
+                  borderRadius: 0,
+                }}
+              >
+                <CloseIcon />
+              </IconButton>
+            </Tooltip>
+          ) : null}
+        </Box>
       </Box>
       {showFilters && (
         <Box sx={columnPanelOverlaySx}>

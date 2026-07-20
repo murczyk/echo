@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { useForm } from 'react-hook-form';
+import { useForm, useWatch } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import dayjs from 'dayjs';
 
@@ -30,16 +30,22 @@ import {
   normalizeCallsign,
   type MessageFormData,
 } from './manage-message-drawer.schema';
-import { useMessageUppy } from './useMessageUppy';
+import { MAX_MESSAGE_ATTACHMENTS, useMessageUppy } from './useMessageUppy';
 import { useMessageParser } from './useMessageParser';
 import { useMessageSubmit } from './useMessageSubmit';
+import { isManageMessageSubmitEligible } from './manage-message-submit-eligibility';
 
 export type UseManageMessageDrawerProps = {
   open: boolean;
   cyberEchoEnabled: boolean;
   currentUser: User | null;
   onClose: () => void;
-  onSuccess?: () => void;
+  onCreated?: (
+    result: import('../../../services/api/direct-submit').DirectSubmitResponse,
+  ) => void | Promise<void>;
+  onEditSuccess?: (
+    result: import('../../../services/api/direct-submit').DirectSubmitResponse,
+  ) => void | Promise<void>;
   editTarget?: { id: number; message: InboxMessage } | null;
   editSaveInFlight?: boolean;
   onSubmitEdit?: (id: number, message: InboxMessage) => void | Promise<void>;
@@ -50,7 +56,8 @@ export function useManageMessageDrawer({
   cyberEchoEnabled,
   currentUser,
   onClose,
-  onSuccess,
+  onCreated,
+  onEditSuccess,
   editTarget = null,
   editSaveInFlight,
   onSubmitEdit,
@@ -226,6 +233,23 @@ export function useManageMessageDrawer({
     };
   }, [freqInput, open]);
 
+  const resolver = useMemo(() => zodResolver(makeMessageSchema(isEditMode)), [isEditMode]);
+
+  const methods = useForm<MessageFormData>({
+    resolver,
+    mode: 'onChange',
+    reValidateMode: 'onChange',
+    defaultValues: EMPTY_FORM_VALUES,
+  });
+
+  const { control, formState, getValues, setValue, reset } = methods;
+  const formValues = useWatch({ control });
+
+  const retainedAttachmentCount = isEditMode
+    ? (editTarget?.message.media.filter(
+        (media) => !(formValues.deleted_media_ids ?? []).includes(media.id),
+      ).length ?? 0)
+    : 0;
   const {
     uppy,
     uppyFiles,
@@ -236,7 +260,7 @@ export function useManageMessageDrawer({
     handleDropzoneKeyDown,
     attachmentErrorMsg,
     setAttachmentErrorMsg,
-  } = useMessageUppy(busy);
+  } = useMessageUppy(busy, retainedAttachmentCount);
 
   useEffect(() => {
     if (!open) return;
@@ -244,18 +268,37 @@ export function useManageMessageDrawer({
     return () => window.removeEventListener('paste', handlePaste);
   }, [open, handlePaste]);
 
-  const resolver = useMemo(() => zodResolver(makeMessageSchema(isEditMode)), [isEditMode]);
-
-  const methods = useForm<MessageFormData>({
-    resolver,
-    mode: 'onTouched',
-    reValidateMode: 'onChange',
-    defaultValues: EMPTY_FORM_VALUES,
-  });
-
-  const { getValues, setValue, reset } = methods;
-
   const { parsing, handleParse } = useMessageParser(methods, busy, setErrorMsg);
+
+  const canSubmit = useMemo(
+    () =>
+      isManageMessageSubmitEligible({
+        busy,
+        parsing,
+        schemaValid: formState.isValid,
+        isEditMode,
+        groupsLoading,
+        selectedGroupKey: formValues.signalGroupMasterKey ?? '',
+        accessibleGroupKeys: signalGroups.map((group) => group.masterKey),
+        text: formValues.text ?? '',
+        fullBody: formValues.full_body ?? '',
+        newAttachmentCount: uppyFiles.length,
+        existingAttachmentIds: editTarget?.message.media.map((media) => media.id) ?? [],
+        deletedAttachmentIds: formValues.deleted_media_ids ?? [],
+        maxAttachmentCount: MAX_MESSAGE_ATTACHMENTS,
+      }),
+    [
+      busy,
+      editTarget,
+      formState.isValid,
+      formValues,
+      groupsLoading,
+      isEditMode,
+      parsing,
+      signalGroups,
+      uppyFiles.length,
+    ],
+  );
 
   useEffect(() => {
     if (!open) return;
@@ -282,7 +325,7 @@ export function useManageMessageDrawer({
         if (!isEditMode && getValues('signalGroupMasterKey')) {
           const seededKey = getValues('signalGroupMasterKey');
           if (!available.some((g) => g.masterKey === seededKey)) {
-            setValue('signalGroupMasterKey', '');
+            setValue('signalGroupMasterKey', '', { shouldValidate: true });
           }
         }
       } catch (e) {
@@ -360,7 +403,7 @@ export function useManageMessageDrawer({
         unit: recentValues.unit[0] ?? '',
       });
     }
-  }, [open, isEditMode, editTarget?.id]);
+  }, [open, isEditMode, editTarget?.id, recentValues]);
 
   useEffect(() => {
     if (!open || !isEditMode || !editTarget) return;
@@ -393,14 +436,18 @@ export function useManageMessageDrawer({
       .catch(console.error);
   }, [open, isEditMode, editTarget?.id]);
 
-  const handleDrawerClose = () => {
-    if (busy) return;
+  const closeDrawerAfterSubmit = () => {
     uppy.cancelAll();
     reset();
     setDeviceNameInput('');
     setShowAdvanced(false);
     setErrorMsg(null);
     onClose();
+  };
+
+  const handleDrawerClose = () => {
+    if (busy) return;
+    closeDrawerAfterSubmit();
   };
 
   const getProposedCallsigns = (current: string[]): string[] => {
@@ -427,8 +474,9 @@ export function useManageMessageDrawer({
     setErrorMsg,
     uppy,
     addValues,
-    onSuccess,
-    handleDrawerClose,
+    onCreated,
+    onEditSuccess,
+    handleDrawerCloseAfterSubmit: closeDrawerAfterSubmit,
   });
 
   return {
@@ -479,6 +527,7 @@ export function useManageMessageDrawer({
     attachmentErrorMsg,
     setAttachmentErrorMsg,
     methods,
+    canSubmit,
     handleParse,
     handleDrawerClose,
     getProposedCallsigns,

@@ -108,7 +108,7 @@ export function ProfileDropdown({
                   className="flex items-center px-4 py-2 text-[var(--color-text)] hover:bg-black/10 dark:hover:bg-white/10 rounded transition-colors cursor-pointer whitespace-nowrap"
                 >
                   <i className="bi bi-file-earmark-text mr-2"></i>
-                  Мої Звіти
+                  Мої звіти
                 </a>
               </li>
               <li>

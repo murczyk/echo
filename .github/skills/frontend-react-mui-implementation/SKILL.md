@@ -6,15 +6,18 @@ description: Implement or refactor React + MUI features in wdintel-web/src/ts/re
 # Frontend React+MUI Implementation
 
 ## Short description (for triggering)
+
 Use when editing TSX React routes/components or custom element wrappers in `wdintel-web/src/ts/react`.
 
 ## When to use / When NOT to use
+
 - Use: React pages/components, MUI UI updates, API service usage in TS.
 - Use: Files under `wdintel-web/src/ts/react/routes`, `components`, `services/api`, `*-element.tsx`.
 - Do not use: Elm-only changes.
 - Do not use: Commit/changelog-only requests.
 
 ## Inputs the agent should request or derive
+
 - Derive target custom element tag from related Elm page (for hybrid pages).
 - Derive existing theme/style conventions from nearby component.
 - Derive API shape from `Bindings` types and `services/api/*`.
@@ -22,6 +25,7 @@ Use when editing TSX React routes/components or custom element wrappers in `wdin
 - Ask only if the mount target element/tag is unclear.
 
 ## Procedure (checklist)
+
 - Keep hybrid mount pattern:
 - `createRoot(this)` in custom element class.
 - Wrap route root with `ThemeProvider` + `useNeoMuiTheme`.
@@ -62,13 +66,13 @@ Use when editing TSX React routes/components or custom element wrappers in `wdin
 - `SavedFiltersControl` for saved filter CRUD.
 - `PageHeader` and existing top-action styles for neo page headers/actions.
 - **Power wrappers** (`wdintel-web/src/ts/react/components/`): prefer these over raw MUI when the use case matches.
-  | MUI                                                                                                                                            | Use instead                                                                          |
-  | ---------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
-  | `Alert`                                                                                                                                        | `PowerAlert` — auto-hide, dismissible severity alerts (errors/warnings/info/success) |
-  | `Button`                                                                                                                                       | `PowerButton` — debounced double-submit guard                                        |
-  | `IconButton`                                                                                                                                   | `PowerIconButton`                                                                    |
-  | `Chip` (selectable/filter tags)                                                                                                                | `PowerChip` or `CompactPowerChip`                                                    |
-  | `Menu`                                                                                                                                         | `PowerMenu` — Escape does not bubble to parent drawers                               |
+  | MUI                                                                                                                                            | Use instead                                                                                         |
+  | ---------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+  | `Alert`                                                                                                                                        | `PowerAlert` — contextual/static severity alerts; use `PowerSnackbar` for transient action feedback |
+  | `Button`                                                                                                                                       | `PowerButton` — debounced double-submit guard                                                       |
+  | `IconButton`                                                                                                                                   | `PowerIconButton`                                                                                   |
+  | `Chip` (selectable/filter tags)                                                                                                                | `PowerChip` or `CompactPowerChip`                                                                   |
+  | `Menu`                                                                                                                                         | `PowerMenu` — Escape does not bubble to parent drawers                                              |
   | Raw MUI is OK when no wrapper exists, props differ materially, or the file already uses raw MUI consistently and you are not touching that UI. |
 - When editing Duty feed or shared MessageCard hot-path code, also use `duty-feed-rendering-safety`. Its native-structure performance boundary overrides the general preference for MUI layout components and structural component-level `sx`. Leaf and interactive MUI components remain valid.
 - MUI `Dialog`, `Modal`, `Menu`, and `Popover` can surface `Blocked aria-hidden... retained focus` warnings when focus is restored into an `aria-hidden` subtree.
@@ -88,6 +92,7 @@ Use when editing TSX React routes/components or custom element wrappers in `wdin
 - `cd wdintel-web && npm run test:ts`
 
 ## Definition of Done (checklist)
+
 - Custom element still mounts/unmounts correctly.
 - Theme stays synced via `useNeoMuiTheme`.
 - API errors, including 401, are handled explicitly.
@@ -97,18 +102,21 @@ Use when editing TSX React routes/components or custom element wrappers in `wdin
 - `just build-front` passes.
 
 ## Tiny examples
+
 ```ts
 if (isUnauthorizedError(error)) {
-  window.location.assign('/login');
+  window.location.assign("/login");
   return;
 }
 ```
 
 ## Self-check
+
 - Inspect diff for endpoint/method/path changes in `services/api/*`.
 - Verify request and response shape transforms stayed compatible.
 - Verify loading/empty/error states and disabled-in-flight behavior.
 - New or touched neo UI uses `Power*` wrappers where a matching one exists (especially `PowerAlert` for page/drawer errors).
+- Use `PowerSnackbar` for new transient, non-blocking action feedback; keep `PowerAlert` for contextual/static page, form, load, permission, and persistent states.
 - Check touched React files for stray default `React` imports, duplicate `react` imports, or leftover `React.*` namespace usage.
 - Confirm Prettier formatting was applied with `cd wdintel-web && npm run format:staged` after TS/TSX/JS/CSS/JSON edits.
 - Check new hook/component modules have focused names and matching targeted tests for pure helpers or state-heavy behavior.
@@ -117,4 +125,5 @@ if (isUnauthorizedError(error)) {
 - Confirm mobile/tablet/desktop layout still works for touched route.
 
 ## Assumptions
+
 - React features are embedded as custom elements and mounted from Elm pages in this repo.

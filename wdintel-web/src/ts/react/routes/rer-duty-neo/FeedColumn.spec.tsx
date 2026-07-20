@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { FeedColumnProps } from './FeedColumn';
 import { minimalInboxMessage } from './inbox-message-mocks';
+import { MAX_MESSAGE_FEEDS } from './utils';
 
 vi.mock('./FeedFilterPanel', () => ({
   FeedFilterPanel: () => <div data-testid="feed-filter-panel" />,
@@ -177,7 +178,7 @@ function buildProps(): FeedColumnProps {
         onMessageComment: vi.fn(),
         onMessageExcludeEntity: vi.fn(),
         onMessageToggleTag: vi.fn(),
-        onCreateMessageFeed: vi.fn(),
+        onCreateFeed: vi.fn(),
         onArrowClick: vi.fn(),
       },
     },
@@ -299,39 +300,79 @@ describe('FeedColumn', () => {
     expect(container.querySelector('[data-testid="feed-notification-panel"]')).toBeNull();
   });
 
-  it('renders the narrow feed create action inside the feed surface only when allowed', async () => {
+  it('renders a single explicit header action container with the narrow add action', async () => {
     const narrowProps = buildProps();
     narrowProps.column.view.narrowScreen = true;
-    narrowProps.column.actions.onCreateMessageFeed = vi.fn();
-    const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    narrowProps.column.view.feedCount = 1;
+    narrowProps.column.view.canRemove = false;
+    narrowProps.column.actions.onCreateFeed = vi.fn();
 
-    try {
-      await act(async () => {
-        root.render(<FeedColumn column={narrowProps.column} />);
-      });
+    await act(async () => {
+      root.render(<FeedColumn column={narrowProps.column} />);
+    });
 
-      const addButton = container.querySelector('button[aria-label="Додати стрічку"]');
-      expect(addButton).not.toBeNull();
-      expect(container.querySelector('[data-duty-feed-create-button]')).not.toBeNull();
-      expect(container.querySelector('[data-duty-feed-footer-spacer]')).not.toBeNull();
-      expect(addButton?.closest('[data-duty-feed-content-root]')).not.toBeNull();
-      expect(consoleErrorSpy).not.toHaveBeenCalled();
+    const actionContainer = container.querySelector('[data-duty-feed-header-actions]');
+    expect(actionContainer).not.toBeNull();
+    expect(actionContainer?.querySelectorAll('button')).toHaveLength(1);
+    expect(container.querySelector('[data-duty-feed-header-layout="flex"]')).not.toBeNull();
+    expect(container.querySelector('button[aria-label="Додати стрічку"]')).not.toBeNull();
+    expect(container.querySelector('button[aria-label="Закрити стрічку"]')).toBeNull();
+    expect(container.querySelector('[data-duty-feed-footer-spacer]')).toBeNull();
+    expect(container.querySelector('[data-duty-message-create-button]')).toBeNull();
+  });
 
-      await act(async () => {
-        root.render(<FeedColumn column={buildProps().column} />);
-      });
+  it('renders the add-feed action in a desktop header before close', async () => {
+    const props = buildProps();
+    props.column.actions.onCreateFeed = vi.fn();
+    props.column.view.canRemove = true;
 
-      expect(container.querySelector('button[aria-label="Додати стрічку"]')).toBeNull();
-      expect(container.querySelector('[data-duty-feed-footer-spacer]')).toBeNull();
-    } finally {
-      consoleErrorSpy.mockRestore();
-    }
+    await act(async () => {
+      root.render(<FeedColumn column={props.column} />);
+    });
+
+    const buttons = Array.from(
+      container.querySelectorAll('[data-duty-feed-header-actions] button'),
+    ).map((button) => button.getAttribute('aria-label'));
+    expect(buttons).toEqual(['Додати стрічку', 'Закрити стрічку']);
+  });
+
+  it('shows add and remove actions together on the active narrow feed when multiple feeds exist', async () => {
+    const narrowProps = buildProps();
+    narrowProps.column.view.narrowScreen = true;
+    narrowProps.column.view.feedCount = 2;
+    narrowProps.column.view.canRemove = true;
+    narrowProps.column.actions.onCreateFeed = vi.fn();
+
+    await act(async () => {
+      root.render(<FeedColumn column={narrowProps.column} />);
+    });
+
+    const actionContainer = container.querySelector('[data-duty-feed-header-actions]');
+    expect(actionContainer?.querySelectorAll('button')).toHaveLength(2);
+    expect(container.querySelector('button[aria-label="Додати стрічку"]')).not.toBeNull();
+    expect(container.querySelector('button[aria-label="Закрити стрічку"]')).not.toBeNull();
+  });
+
+  it('hides add feed at the maximum while keeping remove visible', async () => {
+    const props = buildProps();
+    props.column.view.narrowScreen = true;
+    props.column.view.feedCount = MAX_MESSAGE_FEEDS;
+    props.column.view.canRemove = true;
+    props.column.actions.onCreateFeed = undefined;
+
+    await act(async () => {
+      root.render(<FeedColumn column={props.column} />);
+    });
+
+    const actionContainer = container.querySelector('[data-duty-feed-header-actions]');
+    expect(actionContainer?.querySelectorAll('button')).toHaveLength(1);
+    expect(container.querySelector('button[aria-label="Додати стрічку"]')).toBeNull();
+    expect(container.querySelector('button[aria-label="Закрити стрічку"]')).not.toBeNull();
   });
 
   it('does not reserve extra footer space when the add action is unavailable', async () => {
     const props = buildProps();
     props.column.view.narrowScreen = true;
-    props.column.actions.onCreateMessageFeed = undefined;
 
     await act(async () => {
       root.render(<FeedColumn column={props.column} />);
@@ -340,29 +381,85 @@ describe('FeedColumn', () => {
     expect(container.querySelector('[data-duty-feed-footer-spacer]')).toBeNull();
   });
 
-  it('keeps narrow floating actions vertically separated at tablet widths', async () => {
+  it('keeps narrow scroll placement vertically stacked and horizontally aligned', async () => {
     const props = buildProps();
     props.column.view.narrowScreen = true;
     props.column.view.bottomUnreadCount = 2;
+    props.column.view.tailAvailability = 'available';
     props.column.actions.onArrowClick = vi.fn();
-    props.column.actions.onCreateMessageFeed = vi.fn();
+    props.column.view.workspaceFabAvoidance = 'above';
     props.column.feed.items = [[1, minimalInboxMessage({ timestamp: 100 })]];
 
     await act(async () => {
       root.render(<FeedColumn column={props.column} />);
     });
 
-    const addWrapper = container.querySelector('[data-duty-feed-create-button]') as HTMLElement;
     const scrollWrapper = container.querySelector('[data-duty-feed-scroll-button]') as HTMLElement;
 
-    expect(addWrapper).not.toBeNull();
+    expect(container.querySelector('[data-duty-message-create-button]')).toBeNull();
     expect(scrollWrapper).not.toBeNull();
-    expect(addWrapper.getAttribute('data-duty-bottom-offset')).toBe(
-      'max(12px, env(safe-area-inset-bottom, 0px))',
-    );
     expect(scrollWrapper.getAttribute('data-duty-bottom-offset')).toBe(
       'calc(max(12px, env(safe-area-inset-bottom, 0px)) + 47px)',
     );
+    expect(scrollWrapper.getAttribute('data-duty-right-offset')).toBe(
+      'max(12px, env(safe-area-inset-right, 0px))',
+    );
+  });
+
+  it('keeps the desktop scroll action left of the workspace FAB and independently clickable', async () => {
+    const props = buildProps();
+    const onArrowClick = vi.fn();
+    props.column.actions.onArrowClick = onArrowClick;
+    props.column.view.workspaceFabAvoidance = 'left';
+    props.column.view.bottomUnreadCount = 2;
+    props.column.view.tailAvailability = 'available';
+    props.column.feed.items = [[1, minimalInboxMessage({ timestamp: 100 })]];
+
+    await act(async () => {
+      root.render(<FeedColumn column={props.column} />);
+    });
+
+    const scrollWrapper = container.querySelector('[data-duty-feed-scroll-button]') as HTMLElement;
+
+    expect(container.querySelector('[data-duty-message-create-button]')).toBeNull();
+    expect(scrollWrapper).not.toBeNull();
+    expect(container.querySelector('[data-duty-feed-footer-spacer]')).toBeNull();
+    expect(scrollWrapper.getAttribute('data-duty-bottom-offset')).toBe('12px');
+    expect(scrollWrapper.getAttribute('data-duty-right-offset')).toBe('59px');
+    expect(scrollWrapper.style.bottom).toBe(scrollWrapper.getAttribute('data-duty-bottom-offset'));
+    expect(scrollWrapper.style.right).toBe(scrollWrapper.getAttribute('data-duty-right-offset'));
+
+    await act(async () => {
+      scrollWrapper
+        .querySelector('button')
+        ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+
+    expect(onArrowClick).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the desktop scroll action at its original offset without create action', async () => {
+    const props = buildProps();
+    props.column.actions.onArrowClick = vi.fn();
+    props.column.view.workspaceFabAvoidance = 'none';
+    props.column.view.bottomUnreadCount = 1;
+    props.column.view.tailAvailability = 'available';
+
+    await act(async () => {
+      root.render(<FeedColumn column={props.column} />);
+    });
+
+    expect(container.querySelector('[data-duty-message-create-button]')).toBeNull();
+    expect(
+      container
+        .querySelector('[data-duty-feed-scroll-button]')
+        ?.getAttribute('data-duty-bottom-offset'),
+    ).toBe('12px');
+    expect(
+      container
+        .querySelector('[data-duty-feed-scroll-button]')
+        ?.getAttribute('data-duty-right-offset'),
+    ).toBe('20px');
   });
 
   it('does not show the bottom button for stale unread data at an exhausted tail', async () => {

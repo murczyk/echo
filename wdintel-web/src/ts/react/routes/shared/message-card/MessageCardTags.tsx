@@ -32,12 +32,14 @@ function MessageCardTagsComponent({
   tagsOrder,
   onToggleTag,
   tagsLayout,
+  interactive = true,
 }: {
   msg: InboxMessage;
   tagsMap: Record<number, Tag>;
   tagsOrder?: number[];
-  onToggleTag: (tagId: number) => void;
+  onToggleTag?: (tagId: number) => void;
   tagsLayout: TagsLayoutVariant;
+  interactive?: boolean;
 }) {
   const [showCompactRest, setShowCompactRest] = useState(false);
   const compactMeasureRef = useRef<HTMLDivElement | null>(null);
@@ -144,6 +146,7 @@ function MessageCardTagsComponent({
     <Tooltip key={row.tagId} title={row.tip} placement="top">
       <Box
         component="span"
+        data-message-card-tag-id={row.tagId}
         sx={{
           display: 'inline-flex',
           alignItems: 'flex-start',
@@ -156,7 +159,8 @@ function MessageCardTagsComponent({
           <PowerChip
             label={row.label}
             selected={row.isSet}
-            onClick={() => onToggleTag(Number(row.tagId))}
+            interactive={interactive}
+            onClick={interactive && onToggleTag ? () => onToggleTag(Number(row.tagId)) : undefined}
             size="small"
             fontSize="0.875rem"
             unselectedBackgroundColor="var(--color-background)"

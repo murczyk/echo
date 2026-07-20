@@ -331,7 +331,7 @@ export function NetworkEtalonkaReportDialog({
               '&:hover': { textDecoration: 'underline' },
             }}
           >
-            Мої Звіти
+            Мої звіти
           </Box>
         </Typography>
       </DialogTitle>
@@ -680,13 +680,13 @@ export function NetworkEtalonkaReportDialog({
                 {report.error ? <PowerAlert severity="error">{report.error}</PowerAlert> : null}
                 {showQueueWarning ? (
                   <PowerAlert severity="warning">
-                    Звіт ще не стартував. Перевірте його стан у Мої Звіти.
+                    Звіт ще не стартував. Перевірте його стан у Мої звіти.
                   </PowerAlert>
                 ) : null}
                 {showLongRunningHint ? (
                   <PowerAlert severity="info">
                     Формування може тривати кілька хвилин. Звіт можна переглянути та завантажити
-                    пізніше в Мої Звіти.
+                    пізніше в Мої звіти.
                   </PowerAlert>
                 ) : null}
               </Stack>

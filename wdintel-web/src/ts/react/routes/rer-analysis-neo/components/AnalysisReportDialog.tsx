@@ -368,7 +368,7 @@ export function AnalysisReportDialog({
                   '&:hover': { textDecoration: 'underline' },
                 }}
               >
-                Мої Звіти
+                Мої звіти
               </Box>
             </Typography>
 
@@ -747,7 +747,7 @@ export function AnalysisReportDialog({
               historyRow?.createdAt != null &&
               Date.now() - parseUtcDateTime(historyRow.createdAt)!.getTime() >= 5 * 60 * 1000 ? (
                 <Alert severity="warning">
-                  Звіт ще не стартував. Перевірте його стан у Мої Звіти.
+                  Звіт ще не стартував. Перевірте його стан у Мої звіти.
                 </Alert>
               ) : null}
 

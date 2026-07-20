@@ -5,7 +5,7 @@ import type { Dayjs } from 'dayjs';
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import type { MouseEvent } from 'react';
 
-import { APP_DATETIME_INPUT_MIN, APP_TIME_ZONE } from '../utils/misc';
+import { APP_DATETIME_INPUT_MAX, APP_DATETIME_INPUT_MIN, APP_TIME_ZONE } from '../utils/misc';
 import { CompactTitle } from './CompactTypography';
 import { PowerDateTimePicker } from './PowerDateTimePicker';
 
@@ -84,19 +84,23 @@ export function DateTimeRangeControl({
   onChange,
   className,
   disabled = false,
-  now = new Date(),
+  now,
 }: DateTimeRangeControlProps) {
   const anchorId = useId().replace(/:/g, '-');
   const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null);
-  const [activePreset, setActivePreset] = useState<'custom' | 1 | 3 | 7 | 14 | 30>('custom');
+  const [activePreset, setActivePreset] = useState<'custom' | 'today' | 1 | 3 | 7 | 14 | 30>(
+    'custom',
+  );
   const valueRef = useRef(value);
   const open = Boolean(anchorEl);
   const minDateTime = dayjs.tz(APP_DATETIME_INPUT_MIN, APP_TIME_ZONE) as Dayjs;
-  const maxDateTime = dayjs(now).tz(APP_TIME_ZONE).startOf('day').add(1, 'day') as Dayjs;
+  const maxDateTime = dayjs.tz(APP_DATETIME_INPUT_MAX, APP_TIME_ZONE) as Dayjs;
   const fromValue = parseDateTimeInAppTimeZone(value.fromDateTimeStr);
   const toValue = parseDateTimeInAppTimeZone(value.toDateTimeStr);
   const fromMaxDateTime = toValue && toValue.isBefore(maxDateTime) ? toValue : maxDateTime;
   const toMinDateTime = fromValue && fromValue.isAfter(minDateTime) ? fromValue : minDateTime;
+
+  const getPresetNow = useCallback(() => (now ? dayjs(now) : dayjs()).tz(APP_TIME_ZONE), [now]);
 
   useEffect(() => {
     valueRef.current = value;
@@ -104,7 +108,7 @@ export function DateTimeRangeControl({
 
   const applyPreset = useCallback(
     (days: 1 | 3 | 7 | 14 | 30) => {
-      const to = dayjs().tz(APP_TIME_ZONE);
+      const to = getPresetNow();
       const from = to.subtract(days, 'day');
       const nextValue = {
         fromDateTimeStr: from.format('YYYY-MM-DDTHH:mm'),
@@ -115,8 +119,20 @@ export function DateTimeRangeControl({
       onChange(nextValue);
       setAnchorEl(null);
     },
-    [onChange],
+    [getPresetNow, onChange],
   );
+
+  const applyToday = useCallback(() => {
+    const today = getPresetNow();
+    const nextValue = {
+      fromDateTimeStr: today.startOf('day').format('YYYY-MM-DDTHH:mm'),
+      toDateTimeStr: today.endOf('day').format('YYYY-MM-DDTHH:mm'),
+    };
+    setActivePreset('today');
+    valueRef.current = nextValue;
+    onChange(nextValue);
+    setAnchorEl(null);
+  }, [getPresetNow, onChange]);
 
   const openPopover = useCallback((event: MouseEvent<HTMLElement>) => {
     const activeElement = document.activeElement;
@@ -196,6 +212,15 @@ export function DateTimeRangeControl({
             </Button>
           </Stack>
           <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
+            <Button
+              size="small"
+              variant={activePreset === 'today' ? 'contained' : 'outlined'}
+              onClick={applyToday}
+              disabled={disabled}
+              sx={{ minWidth: 0, flexShrink: 0 }}
+            >
+              Сьогодні
+            </Button>
             {([1, 3, 7, 14, 30] as const).map((days) => (
               <Button
                 key={days}

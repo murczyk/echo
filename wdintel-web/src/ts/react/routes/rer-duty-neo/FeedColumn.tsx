@@ -23,7 +23,7 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
 ) {
   const { feed, view, filterPanel, keywordsPanel, actions } = column;
   const { narrowScreen = false, canRemove, maxWidth, feedCount = 1 } = view;
-  const { onRemoveColumn } = actions;
+  const { onRemoveColumn, onCreateFeed } = actions;
   const [showFilters, setShowFilters] = useState(false);
   const [showNotificationPanel, setShowNotificationPanel] = useState(false);
   const [showKeywordsPanel, setShowKeywordsPanel] = useState(false);
@@ -162,6 +162,7 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
         showNotificationPanel={showNotificationPanel}
         showKeywordsPanel={showKeywordsPanel}
         dutyNotificationsOn={dutyNotificationsOn}
+        onCreateFeed={onCreateFeed}
         onToggleFilters={onToggleFilters}
         onToggleNotificationPanel={onToggleNotificationPanel}
         onToggleKeywordsPanel={onToggleKeywordsPanel}

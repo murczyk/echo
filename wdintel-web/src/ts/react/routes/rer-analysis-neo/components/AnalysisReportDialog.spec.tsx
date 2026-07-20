@@ -267,7 +267,7 @@ describe('AnalysisReportDialog', () => {
       expect(document.body.textContent).toContain('Показати деталі');
       expect(document.body.textContent).not.toContain('ID звіту');
       expect(document.body.textContent).toContain(
-        'Звіт ще не стартував. Перевірте його стан у Мої Звіти.',
+        'Звіт ще не стартував. Перевірте його стан у Мої звіти.',
       );
 
       act(() => {

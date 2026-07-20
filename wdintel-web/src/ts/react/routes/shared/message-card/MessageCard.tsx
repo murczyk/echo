@@ -76,6 +76,7 @@ export function formatMessageCardTooltipTime(
 export type MessageCardProps = {
   id: number;
   msg: InboxMessage;
+  readOnly?: boolean;
   /** Number of feeds (columns). When >= 3, header columns use differential shrink (left 3, center 2, right 0). When 1 or 2, all columns shrink equally. */
   feedCount?: number;
   /** Duty vs analysis: controls stacked action icon grid width (4 vs 3 columns). */
@@ -103,20 +104,20 @@ export type MessageCardProps = {
   callsignInfoMap?: Record<string, CallsignInfoRes>;
   networks?: Network[];
   unitsMap?: Record<number, Unit>;
-  onBookmark: () => void;
-  onImportant: () => void;
-  onCopyText: () => void;
-  onCopyFreq: () => void;
+  onBookmark?: () => void;
+  onImportant?: () => void;
+  onCopyText?: () => void;
+  onCopyFreq?: () => void;
   onCopyTextWithNetwork?: () => void;
   onCopyTextWithNetworkAndNote?: () => void;
   onCopyEtalon?: () => void;
   onCopyLocation?: () => void;
   onAddFrequencyToFilter?: (freq: string) => void;
-  onComment: () => void;
+  onComment?: () => void;
   onDelete?: () => void;
   onEditDetails?: () => void;
   onExcludeMessageEntity?: (entity: MessageEntityFilterKind, value: string) => void;
-  onToggleTag: (tagId: number) => void;
+  onToggleTag?: (tagId: number) => void;
   onOpenPointsOnMap?: (etalons: string[], message: InboxMessage) => void;
   botTagAction?: MessageCardBotTagAction | null;
   onCancelBotTagAction?: () => void;
@@ -130,6 +131,7 @@ export type MessageCardProps = {
 function MessageCardComponent({
   id,
   msg,
+  readOnly = false,
   feedCount = 1,
   displayMode = 'duty',
   tagsLayout = 'full',
@@ -287,6 +289,7 @@ function MessageCardComponent({
     onExcludeMessageEntity,
     metadataTrigger,
     excludeMenuOptions,
+    readOnly,
   };
   const visibleMessageComments = messageComments;
 
@@ -312,6 +315,7 @@ function MessageCardComponent({
           tagsOrder={tagsOrder}
           tagsLoading={tagsLoading}
           onToggleTag={onToggleTag}
+          readOnly={readOnly}
           tagsLayout={tagsLayout}
           botTagAction={botTagAction}
           onCancelBotTagAction={onCancelBotTagAction}

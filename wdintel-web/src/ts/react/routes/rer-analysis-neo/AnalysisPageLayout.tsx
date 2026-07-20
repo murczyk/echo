@@ -4,6 +4,7 @@ import { useMediaQuery } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
 
 import { PowerAlert } from '../../components/PowerAlert';
+import { usePowerSnackbar } from '../../components/PowerSnackbar';
 import { isPresent } from '../../utils/misc';
 import { AnalysisPageHeader } from './AnalysisPageHeader';
 import { AnalysisLeftPanel } from './AnalysisLeftPanel';
@@ -11,8 +12,8 @@ import { AnalysisLoadingSkeletons } from './AnalysisLoadingSkeletons';
 import { AnalysisCenterPanel } from './AnalysisCenterPanel';
 import { AnalysisRightPanel } from './AnalysisRightPanel';
 import { AnalysisReportDialog } from './components/AnalysisReportDialog';
-import { CreateMessageFab } from './components/CreateMessageFab';
-import { ManageMessageDrawer } from './components/ManageMessageDrawer';
+import { CreateMessageFab } from '../shared/manage-message/CreateMessageFab';
+import { ManageMessageDrawer } from '../shared/manage-message/ManageMessageDrawer';
 import { getAnalysisCenterTabs } from './types';
 import { useMinDurationBusy } from './use-min-duration-busy';
 import { useRerAnalysisNeoPage } from './use-rer-analysis-neo-page';
@@ -25,6 +26,7 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
   const page = useRerAnalysisNeoPage(authUserName);
   const theme = useTheme();
   const [createMessageOpen, setCreateMessageOpen] = useState(false);
+  const { notify } = usePowerSnackbar();
   const isMobileLayout = useMediaQuery(theme.breakpoints.down('sm'));
   const centerTabsId = useId().replace(/:/g, '-');
   const messagesTabId = `${centerTabsId}-messages-tab`;
@@ -166,10 +168,16 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
             setCreateMessageOpen(false);
           }
         }}
-        onSubmitEdit={(_id, message) => page.saveEditor(message)}
-        onSuccess={() => {
+        onSubmitEdit={async (_id, message) => {
+          await Promise.resolve(page.saveEditor(message));
+        }}
+        onEditSuccess={() => {
+          page.reload();
+        }}
+        onCreated={async () => {
           setCreateMessageOpen(false);
           page.reload();
+          notify({ message: 'Повідомлення успішно створено.', severity: 'success' });
         }}
       />
     </Box>

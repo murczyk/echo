@@ -1,4 +1,5 @@
 import type { SxProps, Theme } from '@mui/material/styles';
+import { POWER_FLOATING_CONTROL_SIZE } from '../shared/manage-message/floating-control-geometry';
 
 export const DUTY_TOP_ACTION_BUTTON_SIZE = 32;
 
@@ -26,10 +27,10 @@ export const dutyTopActionButtonSx: SxProps<Theme> = {
 };
 
 export const dutyTopScrollButtonSx: SxProps<Theme> = {
-  width: 35,
-  minWidth: 35,
-  height: 35,
-  minHeight: 35,
+  width: POWER_FLOATING_CONTROL_SIZE,
+  minWidth: POWER_FLOATING_CONTROL_SIZE,
+  height: POWER_FLOATING_CONTROL_SIZE,
+  minHeight: POWER_FLOATING_CONTROL_SIZE,
   boxSizing: 'border-box',
   display: 'flex',
   justifyContent: 'center',
@@ -59,10 +60,10 @@ export const dutyTopScrollButtonSx: SxProps<Theme> = {
 };
 
 export const dutyTopAddFabSx: SxProps<Theme> = {
-  width: 35,
-  minWidth: 35,
-  height: 35,
-  minHeight: 35,
+  width: POWER_FLOATING_CONTROL_SIZE,
+  minWidth: POWER_FLOATING_CONTROL_SIZE,
+  height: POWER_FLOATING_CONTROL_SIZE,
+  minHeight: POWER_FLOATING_CONTROL_SIZE,
   boxSizing: 'border-box',
   display: 'flex',
   justifyContent: 'center',

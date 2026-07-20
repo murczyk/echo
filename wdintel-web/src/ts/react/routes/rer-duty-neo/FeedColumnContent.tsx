@@ -1,4 +1,3 @@
-import AddIcon from '@mui/icons-material/Add';
 import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward';
 import { Box, CircularProgress, Fab, Paper, Typography } from '@mui/material';
 import {
@@ -24,6 +23,7 @@ import type {
 } from '../../../../Bindings';
 import { ELLIPSIS, isNullOrUndefined, isPresent } from '../../utils/misc';
 import type { FeedColumnModel } from './types';
+import { resolveDutyScrollFabPosition } from './duty-scroll-fab-position';
 import { PowerChip } from '../../components/PowerChip';
 import { DutyMessageCard } from '../shared/message-card/MessageCard';
 import type { MessageCardBotTagAction } from '../shared/message-card/message-card.types';
@@ -34,7 +34,7 @@ import {
   resolveMessageCardEtalonDisplayModel,
 } from '../shared/message-card/message-card.utils';
 import type { MessageEntityFilterKind, TagsLayoutVariant } from './utils';
-import { dutyTopAddFabSx, dutyTopScrollButtonSx } from './top-action-styles';
+import { dutyTopScrollButtonSx } from './top-action-styles';
 import { useWindowedFeedScroll } from './useWindowedFeedScroll';
 
 /** Start loading older messages when the user scrolls close to the top of the DOM list. */
@@ -46,15 +46,6 @@ const DUTY_FEED_AT_BOTTOM_THRESHOLD_PX = 25;
 // Hoisted stable empty array: passing `[]` inline as a prop would allocate a fresh reference
 // every render, defeating React.memo / useMemo bailouts downstream in MessageCard.
 const EMPTY_MESSAGE_COMMENTS: MessageComment[] = [];
-
-const DUTY_FLOATING_ACTION_GAP_PX = 12;
-const DUTY_FLOATING_ACTION_SIZE_PX = 35;
-const DUTY_FLOATING_ACTION_STACK_HEIGHT_PX =
-  DUTY_FLOATING_ACTION_SIZE_PX * 2 + DUTY_FLOATING_ACTION_GAP_PX * 3;
-const DUTY_FLOATING_ACTION_BOTTOM_PX = 'max(12px, env(safe-area-inset-bottom, 0px))';
-const DUTY_FLOATING_SCROLL_BOTTOM_PX = `calc(${DUTY_FLOATING_ACTION_BOTTOM_PX} + ${
-  DUTY_FLOATING_ACTION_SIZE_PX + DUTY_FLOATING_ACTION_GAP_PX
-}px)`;
 
 function filterOwnMessageComments(
   messageComments: MessageComment[] | null | undefined,
@@ -373,6 +364,7 @@ export const FeedColumnContent = memo(
       physicallyAtBottom = true,
       tailAvailability = 'unknown',
       isWatchMode = false,
+      workspaceFabAvoidance = 'none',
     } = view;
     const {
       authUserName,
@@ -411,7 +403,6 @@ export const FeedColumnContent = memo(
       onArrowClick,
       onVisibleMessageIds,
     } = actions;
-    const [isAtBottom, setIsAtBottom] = useState(true);
     const [isPhysicallyAtBottom, setIsPhysicallyAtBottom] = useState(physicallyAtBottom);
     useLayoutEffect(() => {
       setIsPhysicallyAtBottom(physicallyAtBottom);
@@ -434,10 +425,7 @@ export const FeedColumnContent = memo(
       onReachedBottom,
       onLeftBottom,
       onNearBottomChange,
-      onAtBottomChange: (atBottom) => {
-        setIsAtBottom(atBottom);
-        onAtBottomChange?.(atBottom);
-      },
+      onAtBottomChange,
       onPhysicalBottomChange: (atBottom) => {
         setIsPhysicallyAtBottom(atBottom);
         onPhysicalBottomChange?.(atBottom);
@@ -459,6 +447,10 @@ export const FeedColumnContent = memo(
     const stableOnMessageExcludeEntity = useStableCallback(onMessageExcludeEntity);
     const stableOnMessageToggleTag = useStableCallback(onMessageToggleTag);
     const stableOnOpenPointsOnMap = useStableCallback(onOpenPointsOnMap);
+    const scrollFabPosition = resolveDutyScrollFabPosition({
+      narrowScreen,
+      workspaceFabAvoidance,
+    });
 
     useImperativeHandle(ref, () => ({ scrollToBottom: scroll.scrollToBottom }), [
       scroll.scrollToBottom,
@@ -562,61 +554,19 @@ export const FeedColumnContent = memo(
               listRef={scroll.listRef}
             />
           )}
-          {narrowScreen && isPresent(actions.onCreateMessageFeed) ? (
-            <Box
-              data-duty-feed-footer-spacer
-              data-duty-bottom-offset={`calc(${DUTY_FLOATING_ACTION_BOTTOM_PX} + ${DUTY_FLOATING_ACTION_STACK_HEIGHT_PX}px)`}
-              sx={{
-                height: `calc(${DUTY_FLOATING_ACTION_BOTTOM_PX} + ${DUTY_FLOATING_ACTION_STACK_HEIGHT_PX}px)`,
-                flexShrink: 0,
-              }}
-            />
-          ) : null}
         </Box>
-        {narrowScreen && isPresent(actions.onCreateMessageFeed) ? (
-          <Box
-            data-duty-feed-create-button
-            data-duty-bottom-offset={DUTY_FLOATING_ACTION_BOTTOM_PX}
-            style={{
-              position: 'absolute',
-              bottom: DUTY_FLOATING_ACTION_BOTTOM_PX,
-            }}
-            sx={{
-              right: { xs: 12, sm: 20 },
-              display: 'flex',
-              pointerEvents: 'none',
-              zIndex: 1,
-            }}
-          >
-            <Fab
-              color="primary"
-              size="small"
-              aria-label="Додати стрічку"
-              onClick={actions.onCreateMessageFeed}
-              sx={{ ...dutyTopAddFabSx, pointerEvents: 'auto' }}
-            >
-              <AddIcon />
-            </Fab>
-          </Box>
-        ) : null}
         {isPresent(actions.onArrowClick) &&
           (loadingNewer || !isPhysicallyAtBottom || tailAvailability === 'available') && (
             <Box
               data-duty-feed-scroll-button
-              data-duty-bottom-offset={
-                narrowScreen && isPresent(actions.onCreateMessageFeed)
-                  ? DUTY_FLOATING_SCROLL_BOTTOM_PX
-                  : '12px'
-              }
+              data-duty-bottom-offset={String(scrollFabPosition.bottom)}
+              data-duty-right-offset={String(scrollFabPosition.right)}
               style={{
                 position: 'absolute',
-                bottom:
-                  narrowScreen && isPresent(actions.onCreateMessageFeed)
-                    ? DUTY_FLOATING_SCROLL_BOTTOM_PX
-                    : 12,
+                bottom: scrollFabPosition.bottom,
+                right: scrollFabPosition.right,
               }}
               sx={{
-                right: { xs: 12, sm: 20 },
                 display: 'flex',
                 alignItems: 'center',
                 gap: 1,
@@ -667,8 +617,8 @@ export const FeedColumnContent = memo(
                   !isWatchMode &&
                   isNullOrUndefined(arrowResultMessage) && (
                     <PowerChip
-                      data-duty-scroll-unread-badge
                       size="small"
+                      data-duty-scroll-unread-badge
                       label={bottomUnreadCount}
                       selected
                       interactive={false}
@@ -707,7 +657,8 @@ export const FeedColumnContent = memo(
       prevView.arrowResultMessage !== nextView.arrowResultMessage ||
       prevView.bottomUnreadCount !== nextView.bottomUnreadCount ||
       prevView.physicallyAtBottom !== nextView.physicallyAtBottom ||
-      prevView.tailAvailability !== nextView.tailAvailability
+      prevView.tailAvailability !== nextView.tailAvailability ||
+      prevView.workspaceFabAvoidance !== nextView.workspaceFabAvoidance
     ) {
       return false;
     }
@@ -751,6 +702,7 @@ export const FeedColumnContent = memo(
       prevActions.onLeftBottom !== nextActions.onLeftBottom ||
       prevActions.onNearBottomChange !== nextActions.onNearBottomChange ||
       prevActions.onAtBottomChange !== nextActions.onAtBottomChange ||
+      prevActions.onPhysicalBottomChange !== nextActions.onPhysicalBottomChange ||
       prevActions.onArrowClick !== nextActions.onArrowClick ||
       prevActions.onVisibleMessageIds !== nextActions.onVisibleMessageIds
     ) {
