@@ -2554,6 +2554,7 @@ describe('useRerDutyFeedState — loading', () => {
     expect(ids.at(-1)).toBe(DUTY_FEED_MESSAGE_WINDOW_LIMIT + 20);
     expect(feed.readIds.has(1)).toBe(true);
     expect(feed.readIds.has(DUTY_FEED_MESSAGE_WINDOW_LIMIT + 20)).toBe(true);
+    expect(feed.windowedUnreadIds).toEqual(new Set());
 
     hoisted.fetchInboxCount.mockResolvedValueOnce({ quantity: 0, firstElementTs: null });
     const countResult = await apiRef.current!.requestValidatedInboxCount('mf-0');
@@ -2568,6 +2569,122 @@ describe('useRerDutyFeedState — loading', () => {
         sinceIdNoninclusive: DUTY_FEED_MESSAGE_WINDOW_LIMIT + 20,
       }),
     );
+  });
+
+  it('retains and reconciles unread IDs across newer append and older prepend window boundaries', async () => {
+    hoisted.fetchInboxMessages.mockResolvedValueOnce(
+      inboxRsp(
+        Array.from({ length: DUTY_FEED_MESSAGE_WINDOW_LIMIT }, (_, index) => [
+          index + 1,
+          minimalInboxMessage({ timestamp: (index + 1) * 100 }),
+        ]),
+      ),
+    );
+    const apiRef: React.MutableRefObject<ReturnType<typeof useRerDutyFeedState> | null> = {
+      current: null,
+    };
+    await act(async () => root.render(<TestHarness apiRef={apiRef} />));
+    await act(async () => flushMicrotasks());
+    await act(async () =>
+      apiRef.current!.setMessageFeeds((feeds) =>
+        feeds.map((feed) => ({
+          ...feed,
+          readIds: new Set([...feed.readIds].filter((id) => id !== 1)),
+        })),
+      ),
+    );
+    hoisted.fetchInboxMessages.mockResolvedValueOnce(
+      inboxRsp(
+        Array.from({ length: 20 }, (_, index) => [
+          DUTY_FEED_MESSAGE_WINDOW_LIMIT + index + 1,
+          minimalInboxMessage({ timestamp: (DUTY_FEED_MESSAGE_WINDOW_LIMIT + index + 1) * 100 }),
+        ]),
+      ),
+    );
+    await act(async () => apiRef.current!.loadFeedNewerMessages('mf-0'));
+    expect(apiRef.current!.messageFeeds[0].windowedUnreadIds).toEqual(new Set([1]));
+    expect(feedIndicatorUnreadCount(apiRef.current!.messageFeeds[0])).toBe(21);
+
+    hoisted.fetchInboxMessages.mockResolvedValueOnce(
+      inboxRsp(
+        Array.from({ length: 20 }, (_, index) => [
+          index + 1,
+          minimalInboxMessage({ timestamp: (index + 1) * 100 }),
+        ]),
+      ),
+    );
+    await act(async () => apiRef.current!.loadFeedOlderMessages('mf-0'));
+    expect(apiRef.current!.messageFeeds[0].windowedUnreadIds).toEqual(
+      new Set(Array.from({ length: 20 }, (_, index) => index + 41)),
+    );
+    expect(apiRef.current!.messageFeeds[0].windowedUnreadIds).not.toContain(1);
+    expect(feedIndicatorUnreadCount(apiRef.current!.messageFeeds[0])).toBe(20);
+  });
+
+  it('retains immediately trimmed unread IDs from an oversized newer batch', async () => {
+    hoisted.fetchInboxMessages.mockResolvedValueOnce(
+      inboxRsp(
+        Array.from({ length: DUTY_FEED_MESSAGE_WINDOW_LIMIT }, (_, index) => [
+          index + 1,
+          minimalInboxMessage({ timestamp: (index + 1) * 100 }),
+        ]),
+      ),
+    );
+    const apiRef: React.MutableRefObject<ReturnType<typeof useRerDutyFeedState> | null> = {
+      current: null,
+    };
+    await act(async () => root.render(<TestHarness apiRef={apiRef} />));
+    await act(async () => flushMicrotasks());
+    hoisted.fetchInboxMessages.mockResolvedValueOnce(
+      inboxRsp(
+        Array.from({ length: 50 }, (_, index) => [
+          DUTY_FEED_MESSAGE_WINDOW_LIMIT + index + 1,
+          minimalInboxMessage({ timestamp: (DUTY_FEED_MESSAGE_WINDOW_LIMIT + index + 1) * 100 }),
+        ]),
+      ),
+    );
+    await act(async () => apiRef.current!.loadFeedNewerMessages('mf-0'));
+    const feed = apiRef.current!.messageFeeds[0];
+    expect(feed.items).toHaveLength(DUTY_FEED_MESSAGE_WINDOW_LIMIT);
+    expect(feed.windowedUnreadIds).toEqual(
+      new Set(Array.from({ length: 10 }, (_, index) => DUTY_FEED_MESSAGE_WINDOW_LIMIT + index + 1)),
+    );
+    expect(feedIndicatorUnreadCount(feed)).toBe(50);
+  });
+
+  it('retains unread newest rows evicted by older-page prepends', async () => {
+    hoisted.fetchInboxMessages.mockResolvedValueOnce(
+      inboxRsp(
+        Array.from({ length: DUTY_FEED_MESSAGE_WINDOW_LIMIT }, (_, index) => [
+          index + 1,
+          minimalInboxMessage({ timestamp: (index + 1) * 100 }),
+        ]),
+      ),
+    );
+    const apiRef: React.MutableRefObject<ReturnType<typeof useRerDutyFeedState> | null> = {
+      current: null,
+    };
+    await act(async () => root.render(<TestHarness apiRef={apiRef} />));
+    await act(async () => flushMicrotasks());
+    await act(async () =>
+      apiRef.current!.setMessageFeeds((feeds) =>
+        feeds.map((feed) => ({
+          ...feed,
+          readIds: new Set([...feed.readIds].filter((id) => id !== 40)),
+        })),
+      ),
+    );
+    hoisted.fetchInboxMessages.mockResolvedValueOnce(
+      inboxRsp(
+        Array.from({ length: 20 }, (_, index) => [
+          index - 19,
+          minimalInboxMessage({ timestamp: (index - 19) * 100 }),
+        ]),
+      ),
+    );
+    await act(async () => apiRef.current!.loadFeedOlderMessages('mf-0'));
+    expect(apiRef.current!.messageFeeds[0].windowedUnreadIds).toEqual(new Set([40]));
+    expect(feedIndicatorUnreadCount(apiRef.current!.messageFeeds[0])).toBe(1);
   });
 
   it('clears start exhaustion when newer append evicts older rows from the fixed window', async () => {

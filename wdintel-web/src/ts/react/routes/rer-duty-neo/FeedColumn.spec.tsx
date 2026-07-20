@@ -387,8 +387,8 @@ describe('FeedColumn', () => {
     props.column.view.bottomUnreadCount = 2;
     props.column.view.tailAvailability = 'available';
     props.column.actions.onArrowClick = vi.fn();
-    props.column.view.workspaceFabAvoidance = 'above';
     props.column.feed.items = [[1, minimalInboxMessage({ timestamp: 100 })]];
+    props.column.view.workspaceFabAvoidance = 'above';
 
     await act(async () => {
       root.render(<FeedColumn column={props.column} />);
@@ -444,6 +444,7 @@ describe('FeedColumn', () => {
     props.column.view.workspaceFabAvoidance = 'none';
     props.column.view.bottomUnreadCount = 1;
     props.column.view.tailAvailability = 'available';
+    props.column.feed.items = [[1, minimalInboxMessage({ timestamp: 100 })]];
 
     await act(async () => {
       root.render(<FeedColumn column={props.column} />);
@@ -469,6 +470,20 @@ describe('FeedColumn', () => {
     props.column.view.tailAvailability = 'exhausted';
     await act(async () => root.render(<FeedColumn column={props.column} />));
     expect(container.querySelector('[data-duty-feed-scroll-button]')).toBeNull();
+  });
+
+  it('does not show bottom controls for an empty settled feed with incomplete geometry', async () => {
+    const props = buildProps();
+    props.column.feed.items = [];
+    props.column.feed.unreadCount = 1;
+    props.column.view.loadingNewer = true;
+    props.column.view.physicallyAtBottom = false;
+    props.column.view.bottomUnreadCount = 1;
+    props.column.view.tailAvailability = 'available';
+    await act(async () => root.render(<FeedColumn column={props.column} />));
+    expect(container.querySelector('[data-duty-feed-scroll-button]')).toBeNull();
+    expect(container.querySelector('[data-duty-feed-scroll-button] svg')).toBeNull();
+    expect(container.querySelector('[data-duty-new-message-badge]')).toBeNull();
   });
 
   it('does not show a badge when raw unread exists but every loaded message is read', async () => {

@@ -128,7 +128,8 @@ export function RerDutyNeoPage({
       loadingNewer: loadingNewerFeedIds.has(feed.id),
       arrowResultMessage: arrowResultByFeedId[feed.id] ?? null,
       bottomUnreadCount: feedIndicatorUnreadCount(feed, confirmedTailPreviewByFeedId[feed.id]),
-      physicallyAtBottom: physicallyAtBottomByFeedIdRef.current[feed.id] ?? false,
+      physicallyAtBottom:
+        feed.items.length === 0 ? true : (physicallyAtBottomByFeedIdRef.current[feed.id] ?? false),
       tailAvailability: tailAvailabilityByFeedId[feed.id] ?? 'unknown',
     },
     filterPanel: {

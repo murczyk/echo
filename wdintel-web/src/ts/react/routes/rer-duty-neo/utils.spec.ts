@@ -682,6 +682,24 @@ describe('rer-duty utils', () => {
     expect(feedIndicatorUnreadCount(feed, { tailId: 1, count: -2 })).toBe(1);
   });
 
+  it('retains unread IDs evicted from the fixed window without double counting re-entry', () => {
+    const feed = indicatorFeed({
+      items: [[2, {} as InboxMessage]],
+      readIds: new Set<number>(),
+      windowedUnreadIds: new Set([1]),
+    });
+    expect(feedIndicatorUnreadCount(feed)).toBe(2);
+    const reentered = indicatorFeed({
+      items: [
+        [1, {} as InboxMessage],
+        [2, {} as InboxMessage],
+      ],
+      readIds: new Set<number>(),
+      windowedUnreadIds: new Set<number>(),
+    });
+    expect(feedIndicatorUnreadCount(reentered)).toBe(2);
+  });
+
   it('windows initial messages to the newest items after sorting and dedupe', () => {
     const items = [
       [3, { timestamp: 300 } as InboxMessage],

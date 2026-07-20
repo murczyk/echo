@@ -822,6 +822,7 @@ export type MessageFeedState = {
   referenceTimeMs: number | null;
   /** Message IDs that have been "read" (entered viewport). Unread count = items not in this set. */
   readIds: Set<number>;
+  windowedUnreadIds: Set<number>;
   unreadCount: number;
   /** Auto-add freqs in range (MHz); 0 = off. */
   adjacentFreqsRange: number;
@@ -853,7 +854,7 @@ export function feedIndicatorUnreadCount(
   const confirmedTailUnread =
     currentTailId != null && preview?.tailId === currentTailId ? Math.max(0, preview.count) : 0;
 
-  return loadedUnread + confirmedTailUnread;
+  return loadedUnread + confirmedTailUnread + (feed.windowedUnreadIds?.size ?? 0);
 }
 
 /** Sum of {@link feedUnreadDisplayCount} across all feeds. */

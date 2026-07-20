@@ -24,6 +24,7 @@ export function createEmptyFeedState(
     hasReachedStart: false,
     referenceTimeMs: null,
     readIds: new Set<number>(),
+    windowedUnreadIds: new Set<number>(),
     unreadCount: 0,
     adjacentFreqsRange: 0,
     highlightSignalsEnabled: false,
@@ -87,6 +88,7 @@ export function useRerDutyInitialLoad(params: Params) {
                   loading: false,
                   referenceTimeMs: Date.now(),
                   readIds: new Set<number>(items.map(([id]) => id)),
+                  windowedUnreadIds: new Set<number>(),
                   unreadCount: 0,
                 }
               : candidate,

@@ -555,7 +555,8 @@ export const FeedColumnContent = memo(
             />
           )}
         </Box>
-        {isPresent(actions.onArrowClick) &&
+        {feed.items.length > 0 &&
+          isPresent(actions.onArrowClick) &&
           (loadingNewer || !isPhysicallyAtBottom || tailAvailability === 'available') && (
             <Box
               data-duty-feed-scroll-button

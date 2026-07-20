@@ -140,6 +140,7 @@ describe('useRerDutyFeedCrud', () => {
       hasReachedStart: false,
       referenceTimeMs: null,
       readIds: new Set<number>(),
+      windowedUnreadIds: new Set<number>(),
       unreadCount: 0,
       adjacentFreqsRange: 0,
       highlightSignalsEnabled: false,
