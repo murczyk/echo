@@ -5,6 +5,7 @@ import BarChartIcon from '@mui/icons-material/BarChart';
 import BookmarkIcon from '@mui/icons-material/Bookmark';
 import BookmarkBorderOutlinedIcon from '@mui/icons-material/BookmarkBorderOutlined';
 import DeleteIcon from '@mui/icons-material/Delete';
+import DevicesIcon from '@mui/icons-material/Devices';
 import CalendarTodayOutlinedIcon from '@mui/icons-material/CalendarTodayOutlined';
 import ChatBubbleOutlineOutlinedIcon from '@mui/icons-material/ChatBubbleOutlineOutlined';
 import ContentCopyOutlinedIcon from '@mui/icons-material/ContentCopyOutlined';
@@ -992,6 +993,7 @@ function MessageCardHeaderComponent({
       ) : null}
     </div>
   ) : null;
+  const deviceName = msg.deviceName?.trim();
 
   const metadataRow = (
     <div
@@ -1020,6 +1022,9 @@ function MessageCardHeaderComponent({
         />
       ) : null}
       {freqRowItem}
+      {isPresent(deviceName) && deviceName !== '' ? (
+        <MetaLine icon={<DevicesIcon sx={{ fontSize: 18 }} />} title="Пристрій" text={deviceName} />
+      ) : null}
       {coordsDisplayValue != null ? (
         <MetaLine
           icon={<GpsFixedOutlinedIcon sx={{ fontSize: 18 }} />}
