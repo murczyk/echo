@@ -18,12 +18,15 @@ pub(crate) use parser::{
 
 pub(crate) fn parse_metadata_text_callsigns(body: &str) -> Vec<String> {
     dedupe_text_callsigns_case_insensitive(
-        parse_metadata(body).into_iter().flat_map(|metadata| {
-            metadata_text_callsigns(
-                metadata.id_name.as_deref(),
-                metadata.cg_name.as_deref(),
-            )
-        }),
+        body.lines()
+            .filter(|line| is_metadata_line(line))
+            .flat_map(parse_metadata)
+            .flat_map(|metadata| {
+                metadata_text_callsigns(
+                    metadata.id_name.as_deref(),
+                    metadata.cg_name.as_deref(),
+                )
+            }),
     )
 }
 
@@ -356,6 +359,15 @@ ID(CG)⬅️:50📣",
     fn parse_metadata_text_callsigns_ignores_numeric_only_metadata() {
         let callsigns = parse_metadata_text_callsigns(
             "СС:10\nID➡️:3097968\nID(CG)⬅️3187767",
+        );
+
+        assert!(callsigns.is_empty());
+    }
+
+    #[test]
+    fn parse_metadata_text_callsigns_ignores_names_in_prose() {
+        let callsigns = parse_metadata_text_callsigns(
+            "Звичайний текст ID: 120(ЛИС)\nІнший текст CG 121(ВОВК)",
         );
 
         assert!(callsigns.is_empty());
