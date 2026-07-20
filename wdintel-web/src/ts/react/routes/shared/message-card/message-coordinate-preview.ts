@@ -19,6 +19,21 @@ export type CoordinatePreviewPoint = {
   label: string;
 };
 
+export function formatCoordinatePreviewPointCount(count: number): string {
+  const lastTwoDigits = count % 100;
+  const lastDigit = count % 10;
+
+  if (lastDigit === 1 && lastTwoDigits !== 11) {
+    return `${count} точка`;
+  }
+
+  if (lastDigit >= 2 && lastDigit <= 4 && (lastTwoDigits < 12 || lastTwoDigits > 14)) {
+    return `${count} точки`;
+  }
+
+  return `${count} точок`;
+}
+
 export type CoordinatePreviewInput = {
   message: InboxMessage;
   tagsMap?: Record<number, Tag>;

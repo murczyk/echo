@@ -16,6 +16,7 @@ type Props = {
 };
 
 const PREVIEW_HEIGHT_PX = 120;
+const PREVIEW_WIDTH_PX = 180;
 const PREVIEW_ROOT_MARGIN = '160px 0px';
 const EMPTY_TAGS_MAP: Record<number, Tag> = {};
 
@@ -91,8 +92,6 @@ export function MessageCardCoordinatePreview({ msg, tagsMap }: Props) {
   }, [isNearViewport, msg, preview, previewTagsMap]);
 
   const points = preview?.points ?? [];
-  const visiblePoints = points.slice(0, 3);
-  const hiddenPointCount = Math.max(points.length - visiblePoints.length, 0);
   const lookupError = preview?.lookupError ?? null;
   const currentIndex =
     dialogIndex == null ? 0 : Math.min(Math.max(dialogIndex, 0), Math.max(points.length - 1, 0));
@@ -111,10 +110,13 @@ export function MessageCardCoordinatePreview({ msg, tagsMap }: Props) {
   return (
     <Box
       ref={hostRef}
-      style={{ width: '100%' }}
+      data-coordinate-preview-root="true"
+      style={{ width: `${PREVIEW_WIDTH_PX}px` }}
       sx={{
-        width: '100%',
-        minWidth: 0,
+        width: PREVIEW_WIDTH_PX,
+        minWidth: PREVIEW_WIDTH_PX,
+        maxWidth: PREVIEW_WIDTH_PX,
+        minHeight: PREVIEW_HEIGHT_PX,
         alignSelf: 'flex-start',
       }}
     >
@@ -123,40 +125,11 @@ export function MessageCardCoordinatePreview({ msg, tagsMap }: Props) {
           variant="rounded"
           height={PREVIEW_HEIGHT_PX}
           animation="wave"
-          sx={{ width: '100%', minWidth: 0 }}
+          sx={{ width: PREVIEW_WIDTH_PX, minWidth: PREVIEW_WIDTH_PX }}
         />
       ) : points.length > 0 ? (
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1, minWidth: 0 }}>
-          <Box
-            sx={{
-              display: 'flex',
-              flexDirection: 'row',
-              flexWrap: 'nowrap',
-              gap: 0.75,
-              minWidth: 0,
-              overflowX: 'auto',
-              overflowY: 'hidden',
-              pb: 0.25,
-            }}
-          >
-            {visiblePoints.map((point, index) => (
-              <MessageCardCoordinatePreviewTile
-                key={`${point.lat}:${point.lng}:${point.label}:${index}`}
-                point={point}
-                onOpen={() => setDialogIndex(index)}
-              />
-            ))}
-            {hiddenPointCount > 0 ? (
-              <Button
-                type="button"
-                variant="text"
-                onClick={() => setDialogIndex(visiblePoints.length)}
-                sx={{ alignSelf: 'flex-start', flexShrink: 0, whiteSpace: 'nowrap' }}
-              >
-                +{hiddenPointCount}
-              </Button>
-            ) : null}
-          </Box>
+          <MessageCardCoordinatePreviewTile points={points} onOpen={() => setDialogIndex(0)} />
           {lookupError != null ? (
             <RetryTile compact error={lookupError} onRetry={handleRetry} />
           ) : null}
