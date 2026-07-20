@@ -6,10 +6,12 @@ use crate::entities::sea_orm_active_enums::InterseptionKind;
 use crate::entities::*;
 use crate::error::AppError;
 use crate::h;
-use crate::rer_importer::body_noheader::NoHeadersBody;
 use crate::types::{error, Mode, ShortContext};
 use crate::utils::worker_watch;
 use chrono::{Duration, Utc};
+use itertools::Itertools;
+use lazy_static::lazy_static;
+use regex::Regex;
 use sea_orm::sea_query::OnConflict;
 use sea_orm::*;
 use std::collections::HashSet;
@@ -192,7 +194,7 @@ where
             .c(h!())?;
         return Ok(());
     }
-    let Some((sigint_inbox_item, device_name)) =
+    let Some((_sigint_inbox_item, device_name)) =
         sigint_inbox_item::Entity::find_by_id(sigint_inbox_item_id)
             .find_also_related(device_name::Entity)
             .one(db)
@@ -209,14 +211,19 @@ where
         .all(db)
         .await
         .c(h!())?;
-    let matched_networks = match_networks_by_device_name_or_body_noheader(
+    let body = signal_message::Entity::find_by_id(sigint_inbox_item_id)
+        .one(db)
+        .await
+        .c(h!())?
+        .and_then(|message| message.body)
+        .unwrap_or_default();
+    let matched_networks = match_networks_by_device_name_or_message(
         active_networks,
         device_name
             .as_ref()
             .and_then(|device_name| device_name.name.as_deref()),
-        sigint_inbox_item.body_noheader.as_ref(),
-    )
-    .c(h!())?;
+        &body,
+    );
     sync_network_links(db, sigint_inbox_item_id, matched_networks)
         .await
         .c(h!())?;
@@ -376,11 +383,93 @@ fn match_networks_by_unit_tag_precedence(
     matched_networks
 }
 
-fn match_networks_by_device_name_or_body_noheader(
+fn parse_unit_tag_header(body: &str) -> ParsedUnitTagHeader {
+    let mut lines = body.lines();
+    let Some(first_line) = lines.next().map(str::trim) else {
+        return ParsedUnitTagHeader::default();
+    };
+    let Some((left, _right)) = first_line.split_once('|') else {
+        return ParsedUnitTagHeader::default();
+    };
+    let left = left.trim();
+    let unit_tag = if let Some((tag, _rest)) = left.split_once('[') {
+        tag.trim().to_string()
+    } else {
+        left.to_string()
+    };
+    ParsedUnitTagHeader {
+        unit_tag: Some(unit_tag).filter(|v| !v.is_empty()),
+    }
+}
+
+#[derive(Default)]
+struct ParsedUnitTagHeader {
+    unit_tag: Option<String>,
+}
+
+fn unit_tag_header_match_text(body: &str) -> String {
+    let mut parts = Vec::new();
+    if let Some(unit_tag) = parse_unit_tag_header(body).unit_tag {
+        parts.push(unit_tag);
+    }
+    if let Some(zp_digital_post_alt) =
+        crate::rer_importer::zp_digital_post_alt_format::parse(body)
+    {
+        parts.push(zp_digital_post_alt.network_line);
+    }
+    parts.extend(body.lines().filter_map(unit_tag_header_line_text));
+    parts.into_iter().unique().join(" ")
+}
+
+fn unit_tag_header_line_text(line: &str) -> Option<String> {
+    if !crate::rer_importer::body_noheader::is_header_line(line) {
+        return None;
+    }
+    let line = normalize_unit_tag_header_line(line);
+    let line = trim_unit_tag_header_prefix(&line);
+    if !is_sigint_network_label(&line) {
+        return None;
+    }
+    Some(line)
+}
+
+fn normalize_unit_tag_header_line(line: &str) -> String {
+    demoji::demoji(line)
+        .chars()
+        .map(|ch| match ch {
+            '[' | ']' | '{' | '}' | '(' | ')' => ' ',
+            '╬' | '│' => ' ',
+            '\u{200d}' | '\u{fe0e}' | '\u{fe0f}' => ' ',
+            _ => ch,
+        })
+        .collect::<String>()
+        .split_whitespace()
+        .join(" ")
+}
+
+fn trim_unit_tag_header_prefix(line: &str) -> String {
+    lazy_static! {
+        static ref PREFIX_RE: Regex =
+            Regex::new(r#"(?i)^\s*(?:мережа|підрозділ)\s*:\s*"#).unwrap();
+    }
+    PREFIX_RE.replace(line, "").trim().to_string()
+}
+
+fn is_sigint_network_label(line: &str) -> bool {
+    lazy_static! {
+        static ref NETWORK_LABEL_RE: Regex = Regex::new(
+            r#"(?i)(?:\bукх\b|(?:^|[^\p{L}\p{N}])р\s*/\s*м(?:$|[^\p{L}\p{N}])|\bdmre?\b|\bрадіомережа\b)"#
+        )
+        .unwrap();
+    }
+    NETWORK_LABEL_RE.is_match(line)
+}
+
+fn match_networks_by_device_name_or_message(
     networks: Vec<sigint_network::Model>,
     device_name: Option<&str>,
-    body_noheader: Option<&serde_json::Value>,
-) -> anyhow::Result<Vec<sigint_network::Model>> {
+    body: &str,
+) -> Vec<sigint_network::Model> {
     if let Some(device_name) = device_name
         .map(str::trim)
         .filter(|device_name| !device_name.is_empty())
@@ -390,25 +479,20 @@ fn match_networks_by_device_name_or_body_noheader(
             device_name,
         );
         if !matched_networks.is_empty() {
-            return Ok(matched_networks);
+            return matched_networks;
         }
     }
-    let body_noheader = body_noheader_text(body_noheader).c(h!())?;
-    Ok(match_networks_by_unit_tag_precedence(
-        networks,
-        &body_noheader,
-    ))
-}
-
-fn body_noheader_text(
-    body_noheader: Option<&serde_json::Value>,
-) -> anyhow::Result<String> {
-    let Some(body_noheader) = body_noheader else {
-        return Ok(String::new());
-    };
-    let body_noheader: NoHeadersBody =
-        serde_json::from_value(body_noheader.clone()).c(h!())?;
-    Ok(body_noheader.body)
+    let header_match_text = unit_tag_header_match_text(body);
+    if !header_match_text.is_empty() {
+        let matched_networks = match_networks_by_unit_tag_precedence(
+            networks.clone(),
+            &header_match_text,
+        );
+        if !matched_networks.is_empty() {
+            return matched_networks;
+        }
+    }
+    match_networks_by_unit_tag_precedence(networks, body)
 }
 
 fn network_unit_tag_matches(
@@ -618,41 +702,93 @@ mod tests {
     }
 
     #[test]
-    fn device_name_match_wins_over_body_noheader() {
-        let matched_network_ids =
-            match_networks_by_device_name_or_body_noheader(
-                vec![
-                    test_network(1, vec!["device-label"]),
-                    test_network(2, vec!["body-label"]),
-                ],
-                Some("device-label"),
-                Some(&test_body_noheader("body-label")),
-            )
-            .unwrap()
-            .into_iter()
-            .map(|network| network.id)
-            .collect::<Vec<_>>();
+    fn parses_unit_tag_header_without_machine_id() {
+        let header = parse_unit_tag_header("50 обрБпС | 2026-06-26\n11-34");
+
+        assert_eq!(header.unit_tag.as_deref(), Some("50 обрБпС"));
+    }
+
+    #[test]
+    fn parses_unit_tag_header_with_machine_id() {
+        let header = parse_unit_tag_header(
+            "50 обрБпС [33hhfg50d] | 2026-06-26_08-13-12",
+        );
+
+        assert_eq!(header.unit_tag.as_deref(), Some("50 обрБпС"));
+    }
+
+    #[test]
+    fn unit_tag_header_match_text_includes_network_header_line() {
+        let body = "02.07.2026, 02:57:03\n142.2001\nМережа: УКХ р/м 123 мсб 45 мсп 99А (р-н КУКУЄВО (РФ))\nРУДНИК\n\n— Прийом.";
+
+        assert!(unit_tag_header_match_text(body)
+            .contains("УКХ р/м 123 мсб 45 мсп 99А"));
+    }
+
+    #[test]
+    fn device_name_match_wins_over_body() {
+        let matched_network_ids = match_networks_by_device_name_or_message(
+            vec![
+                test_network(1, vec!["device-label"]),
+                test_network(2, vec!["body-label"]),
+            ],
+            Some("device-label"),
+            "body-label",
+        )
+        .into_iter()
+        .map(|network| network.id)
+        .collect::<Vec<_>>();
 
         assert_eq!(matched_network_ids, vec![1]);
     }
 
     #[test]
-    fn body_noheader_match_is_used_when_device_name_has_no_label() {
-        let matched_network_ids =
-            match_networks_by_device_name_or_body_noheader(
-                vec![
-                    test_network(1, vec!["device-label"]),
-                    test_network(2, vec!["body-label"]),
-                ],
-                Some("unmatched device"),
-                Some(&test_body_noheader("body-label")),
-            )
-            .unwrap()
-            .into_iter()
-            .map(|network| network.id)
-            .collect::<Vec<_>>();
+    fn body_match_is_used_when_device_name_has_no_label() {
+        let matched_network_ids = match_networks_by_device_name_or_message(
+            vec![
+                test_network(1, vec!["device-label"]),
+                test_network(2, vec!["body-label"]),
+            ],
+            Some("unmatched device"),
+            "body-label",
+        )
+        .into_iter()
+        .map(|network| network.id)
+        .collect::<Vec<_>>();
 
         assert_eq!(matched_network_ids, vec![2]);
+    }
+
+    #[test]
+    fn header_match_wins_over_full_body() {
+        let matched_network_ids = match_networks_by_device_name_or_message(
+            vec![
+                test_network(1, vec!["УКХ р/м 123 мсб"]),
+                test_network(2, vec!["body-label"]),
+            ],
+            None,
+            "02.07.2026, 02:57:03\n142.2001\nМережа: УКХ р/м 123 мсб\n\nbody-label",
+        )
+        .into_iter()
+        .map(|network| network.id)
+        .collect::<Vec<_>>();
+
+        assert_eq!(matched_network_ids, vec![1]);
+    }
+
+    #[test]
+    fn full_body_match_sees_stripped_network_header_when_device_name_is_empty()
+    {
+        let matched_network_ids = match_networks_by_device_name_or_message(
+            vec![test_network(1, vec!["УКХ р/м ПУ ФСБ рф"])],
+            None,
+            "Отримано з постів \"Пост 10\"\n--------------------------------------\n01.07.2026, 02:55:19\n155.0250\nУКХ р/м ПУ ФСБ рф\n\n— репліка",
+        )
+        .into_iter()
+        .map(|network| network.id)
+        .collect::<Vec<_>>();
+
+        assert_eq!(matched_network_ids, vec![1]);
     }
 
     #[test]
@@ -668,15 +804,6 @@ mod tests {
             ),
             vec![10]
         );
-    }
-
-    fn test_body_noheader(body: &str) -> serde_json::Value {
-        serde_json::to_value(NoHeadersBody {
-            body: body.to_string(),
-            start: 0,
-            end: body.chars().count(),
-        })
-        .unwrap()
     }
 
     fn test_network(id: i64, unit_mask: Vec<&str>) -> sigint_network::Model {
