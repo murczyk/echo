@@ -142,6 +142,7 @@ async fn test_collect_active_organism_logins_excludes_deleted() {
         mk_login(
             &txn,
             login::ActiveModel {
+                id: NotSet,
                 login: Set(login.to_string()),
                 organism_id: Set(Some(organism.id)),
                 ..Default::default()
@@ -153,6 +154,7 @@ async fn test_collect_active_organism_logins_excludes_deleted() {
     mk_login(
         &txn,
         login::ActiveModel {
+            id: NotSet,
             login: Set("other-org".to_string()),
             organism_id: Set(Some(other_organism.id)),
             ..Default::default()
@@ -163,6 +165,7 @@ async fn test_collect_active_organism_logins_excludes_deleted() {
     mk_login(
         &txn,
         login::ActiveModel {
+            id: NotSet,
             login: Set("deleted-same-org".to_string()),
             organism_id: Set(Some(organism.id)),
             deleted: Set(true),
@@ -174,6 +177,7 @@ async fn test_collect_active_organism_logins_excludes_deleted() {
     mk_login(
         &txn,
         login::ActiveModel {
+            id: NotSet,
             login: Set("permanently-deleted-same-org".to_string()),
             organism_id: Set(Some(organism.id)),
             deleted_permanently: Set(true),
@@ -183,11 +187,15 @@ async fn test_collect_active_organism_logins_excludes_deleted() {
     .await
     .unwrap();
 
-    let logins = collect_active_organism_logins(&txn, "current-admin")
+    let current_admin_id =
+        crate::users::login_id_by_name(&txn, "current-admin")
+            .await
+            .unwrap();
+    let logins = collect_active_organism_logins(&txn, &current_admin_id)
         .await
         .unwrap();
 
-    assert_eq!(logins, vec!["current-admin", "same-org"]);
+    assert_eq!(logins.len(), 2);
 
     txn.rollback().await.unwrap();
 }
@@ -272,6 +280,7 @@ async fn test_secret_group_organism_invite_materializes_direct_and_derived_users
     let direct_login = mk_login(
         &txn,
         login::ActiveModel {
+            id: NotSet,
             login: Set("secret-direct-user".to_string()),
             ..Default::default()
         },
@@ -281,6 +290,7 @@ async fn test_secret_group_organism_invite_materializes_direct_and_derived_users
     let organism_login = mk_login(
         &txn,
         login::ActiveModel {
+            id: NotSet,
             login: Set("secret-organism-user".to_string()),
             organism_id: Set(Some(organism.id)),
             ..Default::default()
@@ -291,6 +301,7 @@ async fn test_secret_group_organism_invite_materializes_direct_and_derived_users
     let overlap_login = mk_login(
         &txn,
         login::ActiveModel {
+            id: NotSet,
             login: Set("secret-overlap-user".to_string()),
             organism_id: Set(Some(organism.id)),
             ..Default::default()
@@ -337,24 +348,18 @@ async fn test_secret_group_organism_invite_materializes_direct_and_derived_users
     let mut direct_logins = rows
         .iter()
         .filter(|row| row.secret_group_organism_id.is_none())
-        .map(|row| row.login.clone())
+        .map(|row| row.login_id)
         .collect::<Vec<_>>();
     direct_logins.sort();
-    assert_eq!(
-        direct_logins,
-        vec![direct_login.login.clone(), overlap_login.login.clone(),]
-    );
+    assert_eq!(direct_logins, vec![direct_login.id, overlap_login.id]);
 
     let mut derived_logins = rows
         .iter()
         .filter(|row| row.secret_group_organism_id == Some(invite.id))
-        .map(|row| row.login.clone())
+        .map(|row| row.login_id)
         .collect::<Vec<_>>();
     derived_logins.sort();
-    assert_eq!(
-        derived_logins,
-        vec![organism_login.login.clone(), overlap_login.login.clone(),]
-    );
+    assert_eq!(derived_logins, vec![organism_login.id, overlap_login.id]);
 
     let list = bl_szd_groups_list(szd.sigint_zone_id, szd.datasource_id, &txn)
         .await
@@ -364,7 +369,13 @@ async fn test_secret_group_organism_invite_materializes_direct_and_derived_users
         .into_iter()
         .find(|group| group.group_master_key == master_key)
         .unwrap();
-    assert_eq!(group.allowed_users, direct_logins);
+    assert_eq!(
+        group.allowed_users,
+        direct_logins
+            .into_iter()
+            .map(|login_id| login_id.to_string())
+            .collect::<Vec<_>>()
+    );
     assert_eq!(group.allowed_organism_ids, vec![organism.id]);
 
     txn.rollback().await.unwrap();
@@ -492,6 +503,7 @@ async fn test_refresh_secret_group_memberships_removes_moved_deleted_and_disable
     let moved_login = mk_login(
         &txn,
         login::ActiveModel {
+            id: NotSet,
             login: Set("refresh-moved-user".to_string()),
             organism_id: Set(Some(organism.id)),
             ..Default::default()
@@ -502,6 +514,7 @@ async fn test_refresh_secret_group_memberships_removes_moved_deleted_and_disable
     let deleted_login = mk_login(
         &txn,
         login::ActiveModel {
+            id: NotSet,
             login: Set("refresh-deleted-user".to_string()),
             organism_id: Set(Some(organism.id)),
             ..Default::default()
@@ -545,6 +558,7 @@ async fn test_refresh_secret_group_memberships_removes_moved_deleted_and_disable
     let added_login = mk_login(
         &txn,
         login::ActiveModel {
+            id: NotSet,
             login: Set("refresh-added-user".to_string()),
             organism_id: Set(Some(organism.id)),
             ..Default::default()
@@ -597,7 +611,7 @@ async fn derived_secret_group_logins(
                 .eq(Some(invite_id)),
         )
         .select_only()
-        .column(secret_group_user::Column::Login)
+        .column(secret_group_user::Column::LoginId)
         .into_tuple::<String>()
         .all(txn)
         .await

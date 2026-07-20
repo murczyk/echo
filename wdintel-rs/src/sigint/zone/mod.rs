@@ -21,7 +21,7 @@ pub async fn zones_list(
 ) -> Result<Json<Vec<(i64, SigintZone)>>, AppError> {
     crate::users::has_any_role(
         &env.dbx,
-        &user.id().c(h!())?,
+        &crate::users::identity_id(&user)?,
         vec!["Rer", "Api", "Admin"],
     )
     .await?;
@@ -51,7 +51,7 @@ pub async fn zones_datasources_list(
 ) -> Result<Json<Vec<i64>>, AppError> {
     crate::users::has_any_role(
         &env.dbx,
-        &user.id().c(h!())?,
+        &crate::users::identity_id(&user)?,
         vec!["Rer", "Api"],
     )
     .await?;
@@ -82,9 +82,13 @@ pub async fn zones_datasources_groups_list(
     user: actix_identity::Identity,
     req: Json<ZoneDatasourceGroupsReq>,
 ) -> Result<Json<ZoneDatasourceGroupListRsp>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Admin")
-        .await
-        .c(h!())?;
+    crate::users::has_role(
+        &env.dbx,
+        &crate::users::identity_id(&user)?,
+        "Admin",
+    )
+    .await
+    .c(h!())?;
     let req = req.into_inner();
     let txn = env.dbx.begin().await.c(h!())?;
 
@@ -103,7 +107,7 @@ pub async fn zones_datasources_group_update(
     user: actix_identity::Identity,
     req: Json<ZoneDatasourceGroupUpdateReq>,
 ) -> Result<Json<ZoneDatasourceGroup>, AppError> {
-    let login = user.id().c(h!())?;
+    let login = crate::users::identity_id(&user)?;
     crate::users::has_role(&env.dbx, &login, "Admin")
         .await
         .c(h!())?;
@@ -148,7 +152,7 @@ pub async fn zones_datasources_group_add(
     user: actix_identity::Identity,
     req: Json<ZoneDatasourceGroupAddReq>,
 ) -> Result<Json<ZoneDatasourceGroupAddRsp>, AppError> {
-    let login = user.id().c(h!())?;
+    let login = crate::users::identity_id(&user)?;
     crate::users::has_role(&env.dbx, &login, "Admin")
         .await
         .c(h!())?;
@@ -298,7 +302,7 @@ pub async fn zones_datasources_group_delete(
     user: actix_identity::Identity,
     req: Json<i64>,
 ) -> Result<Json<()>, AppError> {
-    let login = user.id().c(h!())?;
+    let login = crate::users::identity_id(&user)?;
     crate::users::has_role(&env.dbx, &login, "Admin")
         .await
         .c(h!())?;
@@ -329,7 +333,7 @@ pub async fn my_admin_groups(
     env: actix_web::web::Data<Env>,
     user: actix_identity::Identity,
 ) -> Result<Json<MyAdminSignalGroupsRsp>, AppError> {
-    let login = user.id().c(h!())?;
+    let login = crate::users::identity_id(&user)?;
 
     let groups = signal_group_admin::Entity::find()
         .join(
@@ -337,7 +341,7 @@ pub async fn my_admin_groups(
             signal_group_admin::Relation::SignalGroup.def(),
         )
         .filter(signal_group_admin::Column::Deleted.eq(false))
-        .filter(signal_group_admin::Column::Login.eq(&login))
+        .filter(signal_group_admin::Column::LoginId.eq(login))
         .filter(signal_group::Column::Deleted.eq(false))
         .filter(signal_group::Column::IsArchived.eq(false))
         .select_only()
@@ -463,7 +467,7 @@ pub async fn my_admin_group_edit_reference(
         ));
     }
 
-    let login = user.id().c(h!())?;
+    let login = crate::users::identity_id(&user)?;
     let req = req.into_inner();
     ensure_my_admin_group_access(&env.dbx, &login, &req.master_key)
         .await
@@ -505,7 +509,7 @@ pub async fn my_admin_group_update(
         ));
     }
 
-    let login = user.id().c(h!())?;
+    let login = crate::users::identity_id(&user)?;
     let req = req.into_inner();
     let txn = env.dbx.begin().await.c(h!())?;
 
@@ -633,13 +637,13 @@ fn normalize_my_admin_group_admin_logins(
 
 async fn collect_active_organism_logins<'a, 'async_trait, C>(
     dbx: &'a C,
-    login_s: &str,
+    login_id: &uuid::Uuid,
 ) -> Result<Vec<String>, AppError>
 where
     C: ConnectionTrait + 'async_trait,
 {
     let login_obj = login::Entity::find()
-        .filter(login::Column::Login.eq(login_s))
+        .filter(login::Column::Id.eq(*login_id))
         .filter(login::Column::Deleted.eq(false))
         .filter(login::Column::DeletedPermanently.eq(false))
         .one(dbx)
@@ -651,28 +655,35 @@ where
         .filter(login::Column::Deleted.eq(false))
         .filter(login::Column::DeletedPermanently.eq(false))
         .select_only()
-        .column(login::Column::Login)
-        .order_by_asc(login::Column::Login);
+        .column(login::Column::Id)
+        .order_by_asc(login::Column::Id);
 
     query = match login_obj.organism_id {
         Some(organism_id) => {
             query.filter(login::Column::OrganismId.eq(organism_id))
         }
-        None => query.filter(login::Column::Login.eq(login_obj.login)),
+        None => query.filter(login::Column::Id.eq(login_obj.id)),
     };
 
-    Ok(query.into_tuple::<String>().all(dbx).await.c(h!())?)
+    Ok(query
+        .into_tuple::<uuid::Uuid>()
+        .all(dbx)
+        .await
+        .c(h!())?
+        .into_iter()
+        .map(|login_id| login_id.to_string())
+        .collect())
 }
 
 async fn collect_active_user_organisms<'a, 'async_trait, C>(
     dbx: &'a C,
-    login_s: &str,
+    login_id: &uuid::Uuid,
 ) -> Result<Vec<crate::organism::types::MyOrganism>, AppError>
 where
     C: ConnectionTrait + 'async_trait,
 {
     let login_obj = login::Entity::find()
-        .filter(login::Column::Login.eq(login_s))
+        .filter(login::Column::Id.eq(*login_id))
         .filter(login::Column::Deleted.eq(false))
         .filter(login::Column::DeletedPermanently.eq(false))
         .one(dbx)
@@ -786,7 +797,7 @@ fn ensure_added_my_admin_group_organism_ids_allowed(
 
 async fn ensure_my_admin_group_access<'a, 'async_trait, C>(
     dbx: &'a C,
-    login: &str,
+    login: &uuid::Uuid,
     master_key: &str,
 ) -> Result<(), AppError>
 where
@@ -798,7 +809,7 @@ where
             signal_group_admin::Relation::SignalGroup.def(),
         )
         .filter(signal_group_admin::Column::Deleted.eq(false))
-        .filter(signal_group_admin::Column::Login.eq(login))
+        .filter(signal_group_admin::Column::LoginId.eq(*login))
         .filter(signal_group_admin::Column::SignalGroupId.eq(master_key))
         .filter(signal_group::Column::Deleted.eq(false))
         .filter(signal_group::Column::IsArchived.eq(false))
@@ -840,24 +851,32 @@ where
         return Ok(HashMap::new());
     }
 
-    let logins = logins
+    let login_ids = logins
         .into_iter()
-        .collect::<HashSet<_>>()
+        .map(|login| {
+            uuid::Uuid::parse_str(&login)
+                .map_err(anyhow::Error::from)
+                .map_err(AppError::from)
+        })
+        .collect::<Result<HashSet<_>, AppError>>()?
         .into_iter()
         .collect::<Vec<_>>();
 
     let rows = login::Entity::find()
         .join(JoinType::LeftJoin, login::Relation::DeltaLogin.def())
-        .filter(login::Column::Login.eq_any(logins))
+        .filter(login::Column::Id.eq_any(login_ids))
         .select_only()
-        .column(login::Column::Login)
+        .column(login::Column::Id)
         .column_as(delta_login::Column::Login, "delta_login")
-        .into_tuple::<(String, Option<String>)>()
+        .into_tuple::<(uuid::Uuid, Option<String>)>()
         .all(dbx)
         .await
         .c(h!())?;
 
-    Ok(rows.into_iter().collect())
+    Ok(rows
+        .into_iter()
+        .map(|(login_id, delta_login)| (login_id.to_string(), delta_login))
+        .collect())
 }
 
 async fn collect_datasources<'a, 'async_trait, C>(
@@ -887,7 +906,7 @@ where
 fn log_sigint_zone_datasource_event(
     szd: &sigint_zone_datasource::Model,
     event_name: &str,
-    user_login: &str,
+    user_login: &uuid::Uuid,
 ) {
     let key = &szd.group_master_key;
     let datasource_id = &szd.datasource_id;
@@ -897,7 +916,7 @@ fn log_sigint_zone_datasource_event(
 
 pub fn filter_out_ineligible_secret_chats<E: EntityTrait>(
     select: Select<E>,
-    login: &str,
+    login: &uuid::Uuid,
 ) -> Select<E> {
     select.filter(
         signal_group::Column::IsSecret.eq(false).or(
@@ -908,7 +927,7 @@ pub fn filter_out_ineligible_secret_chats<E: EntityTrait>(
                         sea_query::Alias::new("master_key"),
                     )
                     .from(secret_group_user::Entity)
-                    .and_where(secret_group_user::Column::Login.eq(login))
+                    .and_where(secret_group_user::Column::LoginId.eq(*login))
                     .to_owned(),
             ),
         ),
@@ -940,11 +959,11 @@ where
 
 pub async fn get_user_zone_id(
     dbx: &DbConn,
-    user_id: &str,
+    user_id: &uuid::Uuid,
 ) -> Result<Option<i64>, AppError> {
     let user = login::Entity::find()
         .filter(login::Column::DeletedPermanently.eq(false))
-        .filter(login::Column::Login.eq(user_id))
+        .filter(login::Column::Id.eq(*user_id))
         .one(dbx)
         .await
         .c(h!())?;
