@@ -2110,10 +2110,9 @@ async fn generate_referenced_thumbnail_locked(
         )
         .await?
         {
-            finalize_thumbnail_source_reference_locked(
+            remove_uncommitted_thumbnail_source_reference_locked(
                 &thumbnail_source_dir(&env.config),
                 reference_path,
-                true,
             )
             .await?;
         }
@@ -2417,6 +2416,18 @@ async fn finalize_thumbnail_source_reference_locked(
         remove_file_if_present(&reference.source_path).await?;
     }
     remove_file_if_present(reference_path).await
+}
+
+async fn remove_uncommitted_thumbnail_source_reference_locked(
+    source_dir: &Path,
+    reference_path: &Path,
+) -> Result<(), AppError> {
+    finalize_thumbnail_source_reference_locked(
+        source_dir,
+        reference_path,
+        false,
+    )
+    .await
 }
 
 async fn thumbnail_source_reference_matches_file(
@@ -2854,6 +2865,40 @@ mod tests {
         .unwrap();
         assert!(!reference_path.exists());
         assert!(!original_path.exists());
+    }
+
+    #[tokio::test]
+    async fn rolled_back_media_reference_cleanup_preserves_upload_source() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let source_dir = temp_dir.path().join("sources");
+        let original_path = temp_dir.path().join("original.mp4");
+        let data = b"retryable local video";
+        fs::write(&original_path, data).await.unwrap();
+        let original_path = fs::canonicalize(original_path).await.unwrap();
+        let media_id = Uuid::new_v4();
+
+        stage_thumbnail_source_reference_locked(
+            &source_dir,
+            media_id,
+            &original_path,
+            data.len() as u64,
+            true,
+        )
+        .await
+        .unwrap();
+        let reference_path =
+            thumbnail_source_reference_path(&source_dir, media_id);
+
+        remove_uncommitted_thumbnail_source_reference_locked(
+            &source_dir,
+            &reference_path,
+        )
+        .await
+        .unwrap();
+
+        assert!(!reference_path.exists());
+        assert!(original_path.exists());
+        assert_eq!(fs::read(original_path).await.unwrap(), data);
     }
 
     #[tokio::test]

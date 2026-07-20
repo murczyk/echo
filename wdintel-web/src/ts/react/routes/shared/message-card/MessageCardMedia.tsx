@@ -148,8 +148,9 @@ export function MessageMediaAudioPlayer({ attachment }: { attachment: MessageMed
   const href = String(attachment.href ?? '');
   const mediaId = resolveMediaAttachmentId(attachment);
   const sizeBytes = mediaAttachmentSizeBytes(attachment);
+  const hasExplicitAudioType = mediaAttachmentContentType(attachment).startsWith('audio/');
   const canLoadDerivedImages =
-    !hasVideoFileExtension(attachment) &&
+    (hasExplicitAudioType || !hasVideoFileExtension(attachment)) &&
     (sizeBytes == null || sizeBytes <= AUDIO_DERIVED_IMAGE_MAX_SOURCE_SIZE_BYTES);
   const waveSrc = mediaId !== '' && canLoadDerivedImages ? mediaAttachmentWaveUrl(mediaId) : '';
   const spectrumSrc =

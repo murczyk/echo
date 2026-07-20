@@ -2285,7 +2285,7 @@ describe('MessageCard', () => {
     expect(player?.hasAttribute('spectrum-src')).toBe(false);
   });
 
-  it('does not request derived images for plaintext video-container audio', async () => {
+  it('requests derived images for explicitly typed WebM audio', async () => {
     const view = await renderCard({
       msg: {
         ...buildMessage(),
@@ -2304,8 +2304,10 @@ describe('MessageCard', () => {
 
     const player = view.container.querySelector('custom-audio-player');
     expect(player?.getAttribute('src')).toBe('/api/messenger/media/webm-audio');
-    expect(player?.hasAttribute('wave-src')).toBe(false);
-    expect(player?.hasAttribute('spectrum-src')).toBe(false);
+    expect(player?.getAttribute('wave-src')).toBe('/api/messenger/media/webm-audio/wave');
+    expect(player?.getAttribute('spectrum-src')).toBe(
+      '/api/messenger/media/webm-audio/spectrogram',
+    );
   });
 
   it('renders audio attachments from snake_case API media fields', async () => {
