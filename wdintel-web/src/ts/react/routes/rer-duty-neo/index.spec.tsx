@@ -71,12 +71,14 @@ vi.mock('../shared/manage-message/ManageMessageDrawer', () => ({
     onCreated,
     editTarget,
     onSubmitEdit,
+    onEditSuccess,
   }: {
     open: boolean;
     onClose: () => void;
     onCreated?: (result: { signal_message_id: number }) => Promise<void> | void;
     editTarget?: { id: number; message: any } | null;
     onSubmitEdit?: (id: number, message: any) => Promise<void> | void;
+    onEditSuccess?: (result: { signal_message_id: number }) => Promise<void> | void;
   }) =>
     open ? (
       <div role="dialog" data-testid="composer">
@@ -91,7 +93,7 @@ vi.mock('../shared/manage-message/ManageMessageDrawer', () => ({
             type="button"
             aria-label="Зберегти редагування"
             onClick={async () => {
-              await onSubmitEdit?.(editTarget.id, { ...editTarget.message, text: 'updated' });
+              await onEditSuccess?.({ signal_message_id: editTarget.id });
               onClose();
             }}
           />
@@ -242,6 +244,7 @@ function buildFeedsState() {
     handleMessageImportant: vi.fn(),
     handleMessageCopy: vi.fn(),
     handleEditedMessage: vi.fn(),
+    refreshEditedMessage: vi.fn(),
     handleOpenPointsOnMap: vi.fn(),
     handleDeleteConfirm: vi.fn(),
     setDeleteConfirmId: vi.fn(),
@@ -379,10 +382,8 @@ describe('RerDutyNeoPage creation workflow', () => {
 
     await click(container.querySelector('button[aria-label="Зберегти редагування"]'));
 
-    expect(state.handleEditedMessage).toHaveBeenCalledWith(
-      42,
-      expect.objectContaining({ text: 'updated' }),
-    );
+    expect(state.handleEditedMessage).not.toHaveBeenCalled();
+    expect(state.refreshEditedMessage).toHaveBeenCalledWith(42);
     expect(container.querySelector('[data-testid="composer"]')).toBeNull();
 
     await act(async () => {
