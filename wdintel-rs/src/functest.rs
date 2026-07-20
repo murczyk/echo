@@ -308,6 +308,7 @@ pub mod tests {
             .await
             .context(h!())?;
         login::Entity::delete_many()
+            .filter(login::Column::Login.ne(crate::config::SYSTEM_LOGIN_NAME))
             .exec(&env.dbx)
             .await
             .context(h!())?;

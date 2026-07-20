@@ -1975,7 +1975,7 @@ async fn reset_machine_derived_inbox_data(
                 .add(sigint_inbox_item_tag::Column::LoginId.is_null())
                 .add(
                     sigint_inbox_item_tag::Column::LoginId
-                        .eq(Some(SYSTEM_LOGIN_NAME.to_string())),
+                        .eq(Some(system_login_id)),
                 )
                 .add(sigint_inbox_item_tag::Column::Model.is_not_null()),
         )
@@ -2650,6 +2650,10 @@ mod tests {
         )
         .await
         .unwrap();
+        let annotation_login_id =
+            crate::users::login_id_by_name(&txn, &annotation_login)
+                .await
+                .unwrap();
         mk_sigint_comment(
             &txn,
             sigint_comment::ActiveModel {
@@ -2884,7 +2888,7 @@ mod tests {
         assert_eq!(media.signal_message_id, duplicate_a.id);
         let mut comments = sigint_comment::Entity::find()
             .filter(sigint_comment::Column::SignalMessageId.eq(duplicate_a.id))
-            .filter(sigint_comment::Column::LoginId.eq(&annotation_login))
+            .filter(sigint_comment::Column::LoginId.eq(annotation_login_id))
             .all(&txn)
             .await
             .unwrap()
@@ -2905,7 +2909,9 @@ mod tests {
                 .filter(
                     sigint_bookmark::Column::SignalMessageId.eq(duplicate_a.id),
                 )
-                .filter(sigint_bookmark::Column::LoginId.eq(&annotation_login),)
+                .filter(
+                    sigint_bookmark::Column::LoginId.eq(annotation_login_id),
+                )
                 .filter(sigint_bookmark::Column::Deleted.eq(false))
                 .count(&txn)
                 .await
@@ -2920,7 +2926,7 @@ mod tests {
                 )
                 .filter(
                     sigint_important::Column::LoginId
-                        .eq(Some(annotation_login.clone())),
+                        .eq(Some(annotation_login_id)),
                 )
                 .filter(sigint_important::Column::Deleted.eq(false))
                 .count(&txn)
@@ -2952,7 +2958,7 @@ mod tests {
                 )
                 .filter(
                     sigint_inbox_item_tag::Column::LoginId
-                        .eq(Some(annotation_login.clone())),
+                        .eq(Some(annotation_login_id)),
                 )
                 .filter(sigint_inbox_item_tag::Column::Model.is_null())
                 .count(&txn)
@@ -3389,6 +3395,10 @@ mod tests {
         )
         .await
         .unwrap();
+        let annotation_login_id =
+            crate::users::login_id_by_name(&txn, &annotation_login)
+                .await
+                .unwrap();
         mk_sigint_comment(
             &txn,
             sigint_comment::ActiveModel {
@@ -3542,7 +3552,7 @@ mod tests {
                             .eq(promoted_child_id),
                     )
                     .filter(
-                        sigint_comment::Column::LoginId.eq(&annotation_login)
+                        sigint_comment::Column::LoginId.eq(annotation_login_id)
                     )
                     .count(&txn)
                     .await
@@ -3556,7 +3566,8 @@ mod tests {
                             .eq(promoted_child_id),
                     )
                     .filter(
-                        sigint_bookmark::Column::LoginId.eq(&annotation_login)
+                        sigint_bookmark::Column::LoginId
+                            .eq(annotation_login_id)
                     )
                     .filter(sigint_bookmark::Column::Deleted.eq(false))
                     .count(&txn)
@@ -3572,7 +3583,7 @@ mod tests {
                     )
                     .filter(
                         sigint_important::Column::LoginId
-                            .eq(Some(annotation_login.clone())),
+                            .eq(Some(annotation_login_id)),
                     )
                     .filter(sigint_important::Column::Deleted.eq(false))
                     .count(&txn)
@@ -3592,7 +3603,7 @@ mod tests {
                     )
                     .filter(
                         sigint_inbox_item_tag::Column::LoginId
-                            .eq(Some(annotation_login.clone())),
+                            .eq(Some(annotation_login_id)),
                     )
                     .filter(sigint_inbox_item_tag::Column::Model.is_null())
                     .count(&txn)
@@ -4591,12 +4602,13 @@ mod tests {
         )
         .await
         .unwrap();
-        let annotation_login = format!("duplicate-edit-{}", Uuid::new_v4());
-        mk_login(
+        let annotation_login_name =
+            format!("duplicate-edit-{}", Uuid::new_v4());
+        let annotation_login = mk_login(
             &txn,
             login::ActiveModel {
                 id: NotSet,
-                login: Set(annotation_login.clone()),
+                login: Set(annotation_login_name),
                 ..Default::default()
             },
         )
@@ -4606,12 +4618,7 @@ mod tests {
             &txn,
             sigint_comment::ActiveModel {
                 signal_message_id: Set(source_message.id),
-                login_id: Set(crate::users::login_id_by_name(
-                    &txn,
-                    &annotation_login,
-                )
-                .await
-                .unwrap()),
+                login_id: Set(annotation_login.id),
                 comment: Set("duplicate edit note".to_string()),
                 ..Default::default()
             },
@@ -4622,12 +4629,7 @@ mod tests {
             &txn,
             sigint_bookmark::ActiveModel {
                 signal_message_id: Set(source_message.id),
-                login_id: Set(crate::users::login_id_by_name(
-                    &txn,
-                    &annotation_login,
-                )
-                .await
-                .unwrap()),
+                login_id: Set(annotation_login.id),
                 deleted: Set(false),
                 ..Default::default()
             },
@@ -4638,11 +4640,7 @@ mod tests {
             &txn,
             sigint_important::ActiveModel {
                 signal_message_id: Set(source_message.id),
-                login_id: Set(Some(
-                    crate::users::login_id_by_name(&txn, &annotation_login)
-                        .await
-                        .unwrap(),
-                )),
+                login_id: Set(Some(annotation_login.id)),
                 deleted: Set(false),
                 ..Default::default()
             },
@@ -4664,11 +4662,7 @@ mod tests {
             &txn,
             sigint_inbox_item_tag::ActiveModel {
                 sigint_inbox_item_id: Set(source_message.id),
-                login_id: Set(Some(
-                    crate::users::login_id_by_name(&txn, &annotation_login)
-                        .await
-                        .unwrap(),
-                )),
+                login_id: Set(Some(annotation_login.id)),
                 model: Set(None),
                 ..Default::default()
             },
@@ -4679,11 +4673,7 @@ mod tests {
             sigint_inbox_item_id: Set(source_message.id),
             tag_id: Set(manual_tag.tag_id),
             confidence: Set(0.5),
-            login_id: Set(Some(
-                crate::users::login_id_by_name(&txn, &annotation_login)
-                    .await
-                    .unwrap(),
-            )),
+            login_id: Set(Some(annotation_login.id)),
             model: Set(Some("model-derived".to_string())),
             ..Default::default()
         }
@@ -4755,7 +4745,7 @@ mod tests {
                     sigint_comment::Column::SignalMessageId
                         .eq(duplicate_target.id),
                 )
-                .filter(sigint_comment::Column::LoginId.eq(&annotation_login))
+                .filter(sigint_comment::Column::LoginId.eq(annotation_login.id))
                 .one(&txn)
                 .await
                 .unwrap()
@@ -4769,7 +4759,9 @@ mod tests {
                     sigint_bookmark::Column::SignalMessageId
                         .eq(duplicate_target.id),
                 )
-                .filter(sigint_bookmark::Column::LoginId.eq(&annotation_login))
+                .filter(
+                    sigint_bookmark::Column::LoginId.eq(annotation_login.id)
+                )
                 .filter(sigint_bookmark::Column::Deleted.eq(false))
                 .count(&txn)
                 .await
@@ -4784,7 +4776,7 @@ mod tests {
                 )
                 .filter(
                     sigint_important::Column::LoginId
-                        .eq(Some(annotation_login.clone())),
+                        .eq(Some(annotation_login.id)),
                 )
                 .filter(sigint_important::Column::Deleted.eq(false))
                 .count(&txn)
@@ -4816,7 +4808,7 @@ mod tests {
                 )
                 .filter(
                     sigint_inbox_item_tag::Column::LoginId
-                        .eq(Some(annotation_login.clone())),
+                        .eq(Some(annotation_login.id)),
                 )
                 .filter(sigint_inbox_item_tag::Column::Model.is_null())
                 .count(&txn)

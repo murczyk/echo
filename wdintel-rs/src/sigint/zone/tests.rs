@@ -320,7 +320,7 @@ async fn test_secret_group_organism_invite_materializes_direct_and_derived_users
     let master_key = szd.group_master_key.clone();
 
     bl_zones_datasources_group_update_or_add(
-        vec![direct_login.login.clone(), overlap_login.login.clone()],
+        vec![direct_login.id.to_string(), overlap_login.id.to_string()],
         vec![organism.id],
         vec![],
         true,
@@ -550,9 +550,11 @@ async fn test_refresh_secret_group_memberships_removes_moved_deleted_and_disable
         .await
         .unwrap()
         .unwrap();
+    let mut expected_login_ids = vec![deleted_login.id, moved_login.id];
+    expected_login_ids.sort();
     assert_eq!(
         derived_secret_group_logins(&txn, &master_key, invite.id).await,
-        vec![deleted_login.login.clone(), moved_login.login.clone(),]
+        expected_login_ids
     );
 
     let added_login = mk_login(
@@ -575,7 +577,7 @@ async fn test_refresh_secret_group_memberships_removes_moved_deleted_and_disable
     refresh_secret_group_memberships(&txn).await.unwrap();
     assert_eq!(
         derived_secret_group_logins(&txn, &master_key, invite.id).await,
-        vec![added_login.login.clone()]
+        vec![added_login.id]
     );
 
     let mut organism = organism.into_active_model();
@@ -603,7 +605,7 @@ async fn derived_secret_group_logins(
     txn: &DatabaseTransaction,
     master_key: &str,
     invite_id: i64,
-) -> Vec<String> {
+) -> Vec<uuid::Uuid> {
     let mut logins = secret_group_user::Entity::find()
         .filter(secret_group_user::Column::MasterKey.eq(master_key))
         .filter(
@@ -612,7 +614,7 @@ async fn derived_secret_group_logins(
         )
         .select_only()
         .column(secret_group_user::Column::LoginId)
-        .into_tuple::<String>()
+        .into_tuple::<uuid::Uuid>()
         .all(txn)
         .await
         .unwrap();
