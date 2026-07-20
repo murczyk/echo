@@ -10,7 +10,17 @@ impl MigrationTrait for Migration {
             .get_connection()
             .execute_unprepared(
                 r#"
-alter table login add column id uuid not null default uuidv7();
+do $$
+begin
+    if to_regprocedure('uuidv7()') is not null then
+        execute 'alter table login add column id uuid not null default uuidv7()';
+    elsif to_regprocedure('uuid_generate_v7()') is not null then
+        execute 'alter table login add column id uuid not null default uuid_generate_v7()';
+    else
+        raise exception 'UUIDv7 generator is unavailable: use PostgreSQL 18+ or enable the pg_uuidv7 extension';
+    end if;
+end
+$$;
 
 create function pg_temp.login_id_from_name(login_name text)
 returns uuid

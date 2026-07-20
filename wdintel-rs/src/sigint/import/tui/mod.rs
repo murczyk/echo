@@ -1637,7 +1637,7 @@ where
     let to_insert = missing_logins
         .into_iter()
         .map(|login| login::ActiveModel {
-            id: NotSet,
+            id: Set(uuid::Uuid::now_v7()),
             login: Set(login),
             password: Set(None),
             roles: Set(json!([])),

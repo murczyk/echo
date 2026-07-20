@@ -413,7 +413,7 @@ pub async fn create_login(
     let res = insert_login(
         &txn,
         login::ActiveModel {
-            id: NotSet,
+            id: Set(Uuid::now_v7()),
             // Make sure delta link is cleared for regular accounts
             delta_login_id: Set(None),
             login: Set(req.login.trim().to_string()),
@@ -966,7 +966,7 @@ pub async fn register_user(
     let hash_s =
         argon2::hash_encoded(password.as_bytes(), salt, &config).c(h!())?;
     login::ActiveModel {
-        id: NotSet,
+        id: Set(Uuid::now_v7()),
         login: Set(user.to_string()),
         password: Set(Some(hash_s.clone())),
         roles: Set(serde_json::to_value(roles.to_owned()).c(h!())?),
@@ -1352,7 +1352,7 @@ async fn register_delta_user(
     let login_obj = insert_login(
         &txn,
         login::ActiveModel {
-            id: NotSet,
+            id: Set(Uuid::now_v7()),
             login: Set(login),
             password: Set(None),
             roles: Set(serde_json::to_value(roles).c(h!())?),

@@ -116,7 +116,7 @@ fn test_group_requests_default_missing_organism_ids() {
 
 #[serial]
 #[tokio::test]
-async fn test_collect_active_organism_logins_excludes_deleted() {
+async fn test_collect_active_organism_login_ids_excludes_deleted() {
     let env = cleanup().await.unwrap();
     let txn = env.dbx.begin().await.unwrap();
     let organism = mk_organism(
@@ -191,7 +191,7 @@ async fn test_collect_active_organism_logins_excludes_deleted() {
         crate::users::login_id_by_name(&txn, "current-admin")
             .await
             .unwrap();
-    let logins = collect_active_organism_logins(&txn, &current_admin_id)
+    let logins = collect_active_organism_login_ids(&txn, &current_admin_id)
         .await
         .unwrap();
 
