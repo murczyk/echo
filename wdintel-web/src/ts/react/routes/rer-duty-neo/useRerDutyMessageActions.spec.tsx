@@ -314,25 +314,43 @@ describe('useRerDutyMessageActions', () => {
   });
 
   it('replaces an edited message in every loaded feed without changing feed state', async () => {
-    const original = buildMessage({ text: 'before' });
-    const updated = buildMessage({ text: 'after' });
-    const firstFeed = buildFeed({ id: 'mf-1', items: [[42, original]] });
+    const original = buildMessage({ text: 'before', timestamp: 20 });
+    const updated = buildMessage({ text: 'after', timestamp: 30 });
+    const firstFeed = buildFeed({
+      id: 'mf-1',
+      items: [
+        [8, buildMessage({ timestamp: 20 })],
+        [42, original],
+        [3, buildMessage({ timestamp: 20 })],
+      ],
+    });
     const secondFeed = buildFeed({ id: 'mf-2', items: [[42, original]] });
+    const untouchedFeed = buildFeed({ id: 'mf-3', items: [[9, buildMessage({ timestamp: 5 })]] });
+    const untouchedItems = untouchedFeed.items;
     const apiRef: MutableRefObject<HarnessApi | null> = { current: null };
 
     await act(async () => {
-      root.render(<TestHarness apiRef={apiRef} initialFeeds={[firstFeed, secondFeed]} />);
+      root.render(
+        <TestHarness apiRef={apiRef} initialFeeds={[firstFeed, secondFeed, untouchedFeed]} />,
+      );
     });
 
     await act(async () => {
       apiRef.current!.handleEditedMessage(42, updated);
     });
 
-    expect(apiRef.current!.messageFeeds.map((feed) => feed.items[0]?.[1].text)).toEqual([
-      'after',
-      'after',
+    expect(apiRef.current!.messageFeeds[0].items.map(([id]) => id)).toEqual([3, 8, 42]);
+    expect(apiRef.current!.messageFeeds[1].items.map(([id]) => id)).toEqual([42]);
+    expect(apiRef.current!.messageFeeds[2].items).toBe(untouchedItems);
+    expect(apiRef.current!.messageFeeds.map((feed) => feed.unreadCount)).toEqual([
+      70000, 70000, 70000,
     ]);
-    expect(apiRef.current!.messageFeeds.map((feed) => feed.unreadCount)).toEqual([70000, 70000]);
+
+    await act(async () => {
+      apiRef.current!.handleEditedMessage(42, buildMessage({ text: 'earlier', timestamp: 10 }));
+    });
+
+    expect(apiRef.current!.messageFeeds[0].items.map(([id]) => id)).toEqual([42, 3, 8]);
   });
 
   it('scrolls to the existing bottom once for a valid zero-count arrow result', async () => {
