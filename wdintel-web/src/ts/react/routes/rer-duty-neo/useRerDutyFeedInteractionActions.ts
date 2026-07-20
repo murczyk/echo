@@ -144,12 +144,12 @@ export function useRerDutyFeedInteractionActions(params: Params) {
           changed = true;
           const nextReadIds = new Set(f.readIds);
           newlyReadIds.forEach((id) => nextReadIds.add(id));
-          const windowedUnreadIds = new Set(f.windowedUnreadIds ?? []);
-          newlyReadIds.forEach((id) => windowedUnreadIds.delete(id));
+          const windowedUnreadItems = new Map(f.windowedUnreadItems);
+          newlyReadIds.forEach((id) => windowedUnreadItems.delete(id));
           return {
             ...f,
             readIds: nextReadIds,
-            windowedUnreadIds,
+            windowedUnreadItems,
             unreadCount: Math.max(0, f.unreadCount - newlyReadIds.length),
           };
         });

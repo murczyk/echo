@@ -670,6 +670,15 @@ export function getPointEtalonsFromMessage(
 }
 
 export type MessageItem = [number, InboxMessage];
+export type MessageCursor = { id: number; timestamp: number | null };
+
+export function compareMessageTuple(
+  a: { timestamp: number | null | undefined; id: number },
+  b: { timestamp: number | null | undefined; id: number },
+): number {
+  const timestampDiff = (a.timestamp ?? 0) - (b.timestamp ?? 0);
+  return timestampDiff !== 0 ? timestampDiff : a.id - b.id;
+}
 
 export const DUTY_FEED_MESSAGE_PAGE_SIZE = 20;
 export const DUTY_FEED_MESSAGE_WINDOW_LIMIT = 40;
@@ -792,12 +801,9 @@ export function mergeCallsignInfoResponses(
 
 /** Sort message items by time ascending (oldest first). Uses timestamp then id as tiebreaker. */
 export function sortMessageItemsByTime(items: MessageItem[]): MessageItem[] {
-  return [...items].sort(([idA, a], [idB, b]) => {
-    const tsA = a.timestamp ?? 0;
-    const tsB = b.timestamp ?? 0;
-    if (tsA !== tsB) return tsA - tsB;
-    return idA - idB;
-  });
+  return [...items].sort(([idA, a], [idB, b]) =>
+    compareMessageTuple({ id: idA, timestamp: a.timestamp }, { id: idB, timestamp: b.timestamp }),
+  );
 }
 
 /** Deduplicate by message id (first occurrence wins). Prevents duplicate key warnings when API or merge returns same id twice. */
@@ -822,7 +828,7 @@ export type MessageFeedState = {
   referenceTimeMs: number | null;
   /** Message IDs that have been "read" (entered viewport). Unread count = items not in this set. */
   readIds: Set<number>;
-  windowedUnreadIds: Set<number>;
+  windowedUnreadItems: Map<number, number>;
   unreadCount: number;
   /** Auto-add freqs in range (MHz); 0 = off. */
   adjacentFreqsRange: number;
@@ -853,13 +859,18 @@ export function feedIndicatorUnreadCount(
   const currentTailId = feed.items.at(-1)?.[0];
   const hasMatchingPreview = currentTailId != null && preview?.tailId === currentTailId;
   if (hasMatchingPreview) {
-    const windowedUnreadBeforeOrAtTail = [...(feed.windowedUnreadIds ?? [])].filter(
-      (id) => id <= currentTailId,
+    const tail = feed.items.at(-1);
+    const windowedUnreadBeforeOrAtTail = [...(feed.windowedUnreadItems ?? new Map())].filter(
+      ([id, timestamp]) =>
+        compareMessageTuple(
+          { timestamp, id },
+          { timestamp: tail?.[1].timestamp, id: currentTailId },
+        ) <= 0,
     ).length;
     return loadedUnread + Math.max(0, preview.count) + windowedUnreadBeforeOrAtTail;
   }
 
-  return Math.max(0, feed.unreadCount, loadedUnread + (feed.windowedUnreadIds?.size ?? 0));
+  return Math.max(0, feed.unreadCount, loadedUnread + (feed.windowedUnreadItems?.size ?? 0));
 }
 
 /** Sum of {@link feedUnreadDisplayCount} across all feeds. */

@@ -10,6 +10,7 @@ import type {
 import { fetchInboxMessages } from '../../services/api/inbox';
 import { windowInitialMessageItems } from './utils';
 import type { MessageFeedState } from './utils';
+import type { MessageCursor } from './utils';
 
 export function createEmptyFeedState(
   id: string,
@@ -24,7 +25,7 @@ export function createEmptyFeedState(
     hasReachedStart: false,
     referenceTimeMs: null,
     readIds: new Set<number>(),
-    windowedUnreadIds: new Set<number>(),
+    windowedUnreadItems: new Map<number, number>(),
     unreadCount: 0,
     adjacentFreqsRange: 0,
     highlightSignalsEnabled: false,
@@ -47,7 +48,7 @@ type Params = {
   setProfiles: Dispatch<SetStateAction<Record<string, SignalProfileEntry | null>>>;
   setGroupInfos: Dispatch<SetStateAction<Record<string, SignalGroupEntry>>>;
   clearFeedUnreadBaselines: (feedId: string) => void;
-  setFeedUnreadCursor: (feedId: string, cursorId: number | null) => void;
+  setFeedUnreadCursor: (feedId: string, cursor: MessageCursor | null) => void;
 };
 
 export function useRerDutyInitialLoad(params: Params) {
@@ -78,7 +79,11 @@ export function useRerDutyInitialLoad(params: Params) {
         current.mergeInboxCallsigns(feedId, response.callsigns, { replace: true });
         const items = windowInitialMessageItems(response.inboxItems);
         current.clearFeedUnreadBaselines(feedId);
-        current.setFeedUnreadCursor(feedId, items.at(-1)?.[0] ?? null);
+        const tail = items.at(-1);
+        current.setFeedUnreadCursor(
+          feedId,
+          tail ? { id: tail[0], timestamp: tail[1].timestamp } : null,
+        );
         current.setMessageFeeds((previous) =>
           previous.map((candidate) =>
             candidate.id === feedId
@@ -88,7 +93,7 @@ export function useRerDutyInitialLoad(params: Params) {
                   loading: false,
                   referenceTimeMs: Date.now(),
                   readIds: new Set<number>(items.map(([id]) => id)),
-                  windowedUnreadIds: new Set<number>(),
+                  windowedUnreadItems: new Map<number, number>(),
                   unreadCount: 0,
                 }
               : candidate,
@@ -110,7 +115,11 @@ export function useRerDutyInitialLoad(params: Params) {
           (candidate) => candidate.id === feedId,
         );
         current.clearFeedUnreadBaselines(feedId);
-        current.setFeedUnreadCursor(feedId, currentFeed?.items.at(-1)?.[0] ?? null);
+        const tail = currentFeed?.items.at(-1);
+        current.setFeedUnreadCursor(
+          feedId,
+          tail ? { id: tail[0], timestamp: tail[1].timestamp } : null,
+        );
         current.setError(error instanceof Error ? error.message : String(error));
         current.setMessageFeeds((previous) =>
           previous.map((candidate) =>

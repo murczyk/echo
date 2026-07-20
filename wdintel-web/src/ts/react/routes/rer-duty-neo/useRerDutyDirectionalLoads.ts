@@ -9,7 +9,7 @@ import type {
 } from '../../../../Bindings';
 import { fetchInboxMessages } from '../../services/api/inbox';
 import { appendWindowedMessageItems, prependWindowedMessageItems } from './utils';
-import type { MessageFeedState, MessageItem } from './utils';
+import type { MessageCursor, MessageFeedState, MessageItem } from './utils';
 import type { TailAvailability } from './types';
 
 type NewerLoadOptions = {
@@ -37,16 +37,16 @@ function reconcileWindowedUnreadIds(
   feed: MessageFeedState,
   windowed: { items: MessageItem[]; addedItems: MessageItem[]; removedItems: MessageItem[] },
   addedItemsAreRead: boolean,
-): Set<number> {
-  const windowedUnreadIds = new Set(feed.windowedUnreadIds);
-  windowed.removedItems.forEach(([id]) => {
-    if (!feed.readIds.has(id)) windowedUnreadIds.add(id);
+): Map<number, number> {
+  const windowedUnreadItems = new Map(feed.windowedUnreadItems);
+  windowed.removedItems.forEach(([id, message]) => {
+    if (!feed.readIds.has(id)) windowedUnreadItems.set(id, message.timestamp ?? 0);
   });
-  windowed.items.forEach(([id]) => windowedUnreadIds.delete(id));
+  windowed.items.forEach(([id]) => windowedUnreadItems.delete(id));
   if (addedItemsAreRead) {
-    windowed.addedItems.forEach(([id]) => windowedUnreadIds.delete(id));
+    windowed.addedItems.forEach(([id]) => windowedUnreadItems.delete(id));
   }
-  return windowedUnreadIds;
+  return windowedUnreadItems;
 }
 
 type DirectionalLane = {
@@ -76,7 +76,7 @@ type Params = {
   getFeedCountSignature: (feed: MessageFeedState) => string;
   advanceFeedReadCursor: (
     feedId: string,
-    cursorId: number,
+    cursor: MessageCursor,
     remainingUnreadCount: number,
     requestSignature: string,
   ) => void;
@@ -223,7 +223,7 @@ export function useRerDutyDirectionalLoads(params: Params) {
                     ...feed.readIds,
                     ...windowed.addedItems.map(([id]) => id),
                   ]),
-                  windowedUnreadIds: reconcileWindowedUnreadIds(feed, windowed, true),
+                  windowedUnreadItems: reconcileWindowedUnreadIds(feed, windowed, true),
                   loadingOlder: false,
                   hasReachedStart: windowed.addedItems.length === 0,
                 };
@@ -366,15 +366,15 @@ export function useRerDutyDirectionalLoads(params: Params) {
           runParams.invalidateTailPreview(feedId);
           const latestWindowed = appendWindowedMessageItems(latestFeed.items, response.inboxItems);
           const addedCount = latestWindowed.addedItems.length;
-          const newestCursor = latestWindowed.items.at(-1)?.[0] ?? null;
+          const newestItem = latestWindowed.items.at(-1) ?? null;
           const followTail = operation.newerOptions.scrollToEndAfterLoad && followStillValid;
           const markAllRead =
             (followTail && runParams.isFollowTailValid(feedId, capturedFollowGeneration)) ||
             operation.newerOptions.markAllReadAfterAppend;
-          if (markAllRead && newestCursor != null) {
+          if (markAllRead && newestItem != null) {
             runParams.advanceFeedReadCursor(
               feedId,
-              newestCursor,
+              { id: newestItem[0], timestamp: newestItem[1].timestamp },
               0,
               runParams.getFeedCountSignature(latestFeed!),
             );
@@ -404,7 +404,7 @@ export function useRerDutyDirectionalLoads(params: Params) {
                     return {
                       ...feed,
                       readIds: new Set<number>([...feed.readIds, ...feed.items.map(([id]) => id)]),
-                      windowedUnreadIds: new Set<number>(),
+                      windowedUnreadItems: new Map<number, number>(),
                       unreadCount: 0,
                     };
                   }
@@ -414,7 +414,7 @@ export function useRerDutyDirectionalLoads(params: Params) {
                 const unreadAddedCount = windowed.addedItems.filter(
                   ([id]) => !feed.readIds.has(id),
                 ).length;
-                const windowedUnreadIds = reconcileWindowedUnreadIds(feed, windowed, false);
+                const windowedUnreadItems = reconcileWindowedUnreadIds(feed, windowed, false);
                 return {
                   ...feed,
                   items: windowed.items,
@@ -422,7 +422,9 @@ export function useRerDutyDirectionalLoads(params: Params) {
                     ? new Set<number>([...feed.readIds, ...windowed.items.map(([id]) => id)])
                     : feed.readIds,
                   unreadCount: markAllRead ? 0 : Math.max(feed.unreadCount, unreadAddedCount),
-                  windowedUnreadIds: markAllRead ? new Set<number>() : windowedUnreadIds,
+                  windowedUnreadItems: markAllRead
+                    ? new Map<number, number>()
+                    : windowedUnreadItems,
                   hasReachedStart: windowed.removedItems.length > 0 ? false : feed.hasReachedStart,
                 };
               }),

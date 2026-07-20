@@ -6,7 +6,7 @@ import type { SignalGroupEntry, SignalProfileEntry } from '../../../../Bindings'
 import { fetchInboxCount, fetchInboxMessages } from '../../services/api/inbox';
 import type { FeedColumnHandle } from './FeedColumn';
 import { buildInboxReq, emptyFilter, findAllAdjacentFreqs, parseStateFromUrl } from './utils';
-import type { MessageFeedState } from './utils';
+import type { MessageCursor, MessageFeedState } from './utils';
 import { useRerDutyFeedCrud } from './useRerDutyFeedCrud';
 import { notifyDutyNewMessages } from './notifications';
 import { useRerDutyCallsignInfo } from './useRerDutyCallsignInfo';
@@ -15,6 +15,7 @@ import { useRerDutyDirectionalLoads } from './useRerDutyDirectionalLoads';
 import { useRerDutyShortState } from './useRerDutyShortState';
 import { createEmptyFeedState, useRerDutyInitialLoad } from './useRerDutyInitialLoad';
 import { buildFeedCountSignature } from './rerDutyFeedCount';
+import { compareMessageTuple } from './utils';
 import type { TailAvailability } from './types';
 
 export type FeedStateDeps = {
@@ -89,7 +90,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
     {},
   );
   const nearBottomByFeedIdRef = useRef<Record<string, boolean>>({});
-  const unreadCursorByFeedIdRef = useRef<Record<string, number | null>>({});
+  const unreadCursorByFeedIdRef = useRef<Record<string, MessageCursor | null>>({});
   const newestExhaustedCursorByFeedIdRef = useRef<Record<string, number>>({});
   const lastServerCountByFeedIdRef = useRef<Record<string, ServerCountBaseline>>({});
   /** Pixel-level at-bottom state; used so poll only auto-scrolls when the scroller is actually at the bottom. */
@@ -203,17 +204,29 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
       [...pendingReloadFeedIdsRef.current].filter((id) => id !== feedId),
     );
   }, []);
-  const setFeedUnreadCursor = useCallback((feedId: string, cursorId: number | null) => {
-    unreadCursorByFeedIdRef.current[feedId] = cursorId;
+  const setFeedUnreadCursor = useCallback((feedId: string, cursor: MessageCursor | null) => {
+    unreadCursorByFeedIdRef.current[feedId] = cursor;
   }, []);
   const advanceFeedReadCursor = useCallback(
-    (feedId: string, cursorId: number, remainingUnreadCount: number, requestSignature: string) => {
-      unreadCursorByFeedIdRef.current[feedId] = cursorId;
+    (
+      feedId: string,
+      cursor: MessageCursor,
+      remainingUnreadCount: number,
+      requestSignature: string,
+    ) => {
+      unreadCursorByFeedIdRef.current[feedId] = cursor;
       lastServerCountByFeedIdRef.current[feedId] = {
-        cursorId,
+        cursorId: cursor.id,
         quantity: remainingUnreadCount,
         requestSignature,
       };
+    },
+    [],
+  );
+  const resetOrRewindFeedReadCursor = useCallback(
+    (feedId: string, cursor: MessageCursor | null) => {
+      unreadCursorByFeedIdRef.current[feedId] = cursor;
+      delete lastServerCountByFeedIdRef.current[feedId];
     },
     [],
   );
@@ -303,7 +316,8 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
         return Promise.resolve(null);
       }
       const requestGeneration = getFeedLoadGeneration(feedId);
-      const cursorId = unreadCursorByFeedIdRef.current[feedId] ?? null;
+      const cursor = unreadCursorByFeedIdRef.current[feedId] ?? null;
+      const cursorId = cursor?.id ?? null;
       const requestSignature = buildFeedCountSignature(feed, freqs);
       const requestPromise = (async () => {
         const { quantity } = await fetchInboxCount(
@@ -315,7 +329,8 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
           currentFeed.loading ||
           pendingReloadFeedIdsRef.current.has(feedId) ||
           getFeedLoadGeneration(feedId) !== requestGeneration ||
-          (unreadCursorByFeedIdRef.current[feedId] ?? null) !== cursorId ||
+          unreadCursorByFeedIdRef.current[feedId]?.id !== cursor?.id ||
+          unreadCursorByFeedIdRef.current[feedId]?.timestamp !== cursor?.timestamp ||
           buildFeedCountSignature(currentFeed, freqs) !== requestSignature
         ) {
           return null;
@@ -483,25 +498,41 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
     messageFeeds.forEach((feed) => {
       if (feed.loading || pendingReloadFeedIdsRef.current.has(feed.id)) return;
       const currentCursor = unreadCursorByFeedIdRef.current[feed.id] ?? null;
-      let nextCursor = currentCursor;
-      for (const [id] of feed.items) {
-        if (currentCursor != null && id <= currentCursor) continue;
+      let earliestWindowedUnreadItem: MessageCursor | null = null;
+      for (const [id, timestamp] of feed.windowedUnreadItems) {
+        const item = { id, timestamp };
+        if (
+          earliestWindowedUnreadItem === null ||
+          compareMessageTuple(item, earliestWindowedUnreadItem) < 0
+        ) {
+          earliestWindowedUnreadItem = item;
+        }
+      }
+      const cursorIsUnsafe =
+        currentCursor !== null &&
+        earliestWindowedUnreadItem !== null &&
+        compareMessageTuple(earliestWindowedUnreadItem, currentCursor) <= 0;
+      let nextCursor: MessageCursor | null = cursorIsUnsafe ? null : currentCursor;
+      for (const [id, message] of feed.items) {
+        const itemCursor = { id, timestamp: message.timestamp };
+        if (nextCursor != null && compareMessageTuple(itemCursor, nextCursor) <= 0) continue;
+        if (
+          earliestWindowedUnreadItem !== null &&
+          compareMessageTuple(itemCursor, earliestWindowedUnreadItem) >= 0
+        ) {
+          break;
+        }
         if (!feed.readIds.has(id)) break;
-        nextCursor = id;
+        nextCursor = itemCursor;
       }
-      const windowedUnreadIds = feed.windowedUnreadIds;
-      if (nextCursor != null && windowedUnreadIds.size > 0) {
-        let earliestWindowedUnreadId: number | null = null;
-        for (const id of windowedUnreadIds) {
-          if (earliestWindowedUnreadId === null || id < earliestWindowedUnreadId) {
-            earliestWindowedUnreadId = id;
-          }
-        }
-        if (earliestWindowedUnreadId !== null) {
-          nextCursor = Math.min(nextCursor, earliestWindowedUnreadId - 1);
-        }
+      if (cursorIsUnsafe) {
+        resetOrRewindFeedReadCursor(feed.id, nextCursor);
       }
-      if (nextCursor != null && nextCursor !== currentCursor) {
+      if (
+        nextCursor != null &&
+        !cursorIsUnsafe &&
+        (currentCursor === null || compareMessageTuple(nextCursor, currentCursor) > 0)
+      ) {
         advanceFeedReadCursor(
           feed.id,
           nextCursor,
@@ -510,7 +541,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
         );
       }
     });
-  }, [advanceFeedReadCursor, freqs, messageFeeds]);
+  }, [advanceFeedReadCursor, freqs, messageFeeds, resetOrRewindFeedReadCursor]);
 
   useEffect(() => {
     retainFeedIds(messageFeeds.map((feed) => feed.id));

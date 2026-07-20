@@ -91,7 +91,7 @@ async function flushMicrotasks(): Promise<void> {
   }
 }
 
-function expectTailCountRequest(tailId: number): void {
+function expectTailCountRequest(tailId: number | null): void {
   expect(
     hoisted.fetchInboxCount.mock.calls.some(([request]) => request?.sinceIdNoninclusive === tailId),
   ).toBe(true);
@@ -2320,7 +2320,7 @@ describe('useRerDutyFeedState — loading', () => {
     expect(hoisted.notifyDutyNewMessages).not.toHaveBeenCalled();
   });
 
-  it('keeps the unread cursor before evicted unread IDs until they are read', async () => {
+  it('resets an unsafe unread cursor before evicted unread IDs until they are read', async () => {
     hoisted.fetchInboxMessages.mockResolvedValueOnce(
       inboxRsp(
         Array.from({ length: 40 }, (_, index) => [
@@ -2334,6 +2334,16 @@ describe('useRerDutyFeedState — loading', () => {
     };
     await act(async () => root.render(<TestHarness apiRef={apiRef} />));
     await act(async () => flushMicrotasks());
+    apiRef.current!.nearBottomByFeedIdRef.current['mf-0'] = true;
+    hoisted.fetchInboxCount.mockResolvedValueOnce({ quantity: 0, firstElementTs: null });
+    await startPoll();
+    await act(async () => flushMicrotasks());
+    expectTailCountRequest(40);
+    hoisted.notifyDutyNewMessages.mockReset();
+    const windowedUnreadItems = new Map(
+      Array.from({ length: 100000 }, (_, index) => [index + 41, (index + 41) * 100]),
+    );
+    windowedUnreadItems.set(900, 100);
     await act(async () =>
       apiRef.current!.setMessageFeeds((feeds) =>
         feeds.map((feed) => ({
@@ -2343,22 +2353,40 @@ describe('useRerDutyFeedState — loading', () => {
             minimalInboxMessage({ timestamp: (index + 61) * 100 }),
           ]),
           readIds: new Set(Array.from({ length: 20 }, (_, index) => index + 61)),
-          windowedUnreadIds: new Set(Array.from({ length: 100000 }, (_, index) => index + 41)),
+          windowedUnreadItems,
         })),
       ),
     );
     apiRef.current!.nearBottomByFeedIdRef.current['mf-0'] = true;
-    hoisted.fetchInboxCount.mockResolvedValueOnce({ quantity: 1, firstElementTs: null });
+    const countCallsBeforeRewind = hoisted.fetchInboxCount.mock.calls.length;
+    hoisted.fetchInboxCount.mockResolvedValueOnce({ quantity: 5, firstElementTs: null });
     await startPoll();
-    expectTailCountRequest(40);
+    await act(async () => flushMicrotasks());
+    const rewindRequests = hoisted.fetchInboxCount.mock.calls
+      .slice(countCallsBeforeRewind)
+      .map(([request]) => request);
+    expect(rewindRequests[0]).toEqual(
+      expect.objectContaining({ sinceIdNoninclusive: null, nolimit: true }),
+    );
+    expect(rewindRequests.some((request) => request?.sinceIdNoninclusive === 40)).toBe(false);
+    expect(hoisted.notifyDutyNewMessages).toHaveBeenCalledWith('mf-0', 5);
 
     await act(async () =>
       apiRef.current!.setMessageFeeds((feeds) =>
-        feeds.map((feed) => ({ ...feed, windowedUnreadIds: new Set<number>() })),
+        feeds.map((feed) => ({
+          ...feed,
+          readIds: new Set(feed.readIds),
+          windowedUnreadItems: new Map<number, number>(),
+        })),
       ),
     );
+    await act(async () => flushMicrotasks());
     hoisted.fetchInboxCount.mockResolvedValueOnce({ quantity: 1, firstElementTs: null });
     await startPoll();
+    await act(async () => flushMicrotasks());
+    hoisted.fetchInboxCount.mockResolvedValueOnce({ quantity: 1, firstElementTs: null });
+    await startPoll();
+    await act(async () => flushMicrotasks());
     expectTailCountRequest(80);
   });
 
@@ -2596,7 +2624,7 @@ describe('useRerDutyFeedState — loading', () => {
     expect(ids.at(-1)).toBe(DUTY_FEED_MESSAGE_WINDOW_LIMIT + 20);
     expect(feed.readIds.has(1)).toBe(true);
     expect(feed.readIds.has(DUTY_FEED_MESSAGE_WINDOW_LIMIT + 20)).toBe(true);
-    expect(feed.windowedUnreadIds).toEqual(new Set());
+    expect(feed.windowedUnreadItems).toEqual(new Map());
 
     hoisted.fetchInboxCount.mockResolvedValueOnce({ quantity: 0, firstElementTs: null });
     const countResult = await apiRef.current!.requestValidatedInboxCount('mf-0');
@@ -2644,7 +2672,7 @@ describe('useRerDutyFeedState — loading', () => {
       ),
     );
     await act(async () => apiRef.current!.loadFeedNewerMessages('mf-0'));
-    expect(apiRef.current!.messageFeeds[0].windowedUnreadIds).toEqual(new Set([1]));
+    expect(apiRef.current!.messageFeeds[0].windowedUnreadItems).toEqual(new Map([[1, 100]]));
     expect(feedIndicatorUnreadCount(apiRef.current!.messageFeeds[0])).toBe(21);
 
     hoisted.fetchInboxMessages.mockResolvedValueOnce(
@@ -2656,10 +2684,10 @@ describe('useRerDutyFeedState — loading', () => {
       ),
     );
     await act(async () => apiRef.current!.loadFeedOlderMessages('mf-0'));
-    expect(apiRef.current!.messageFeeds[0].windowedUnreadIds).toEqual(
-      new Set(Array.from({ length: 20 }, (_, index) => index + 41)),
+    expect(apiRef.current!.messageFeeds[0].windowedUnreadItems).toEqual(
+      new Map(Array.from({ length: 20 }, (_, index) => [index + 41, (index + 41) * 100])),
     );
-    expect(apiRef.current!.messageFeeds[0].windowedUnreadIds).not.toContain(1);
+    expect(apiRef.current!.messageFeeds[0].windowedUnreadItems.has(1)).toBe(false);
     expect(feedIndicatorUnreadCount(apiRef.current!.messageFeeds[0])).toBe(20);
   });
 
@@ -2688,8 +2716,13 @@ describe('useRerDutyFeedState — loading', () => {
     await act(async () => apiRef.current!.loadFeedNewerMessages('mf-0'));
     const feed = apiRef.current!.messageFeeds[0];
     expect(feed.items).toHaveLength(DUTY_FEED_MESSAGE_WINDOW_LIMIT);
-    expect(feed.windowedUnreadIds).toEqual(
-      new Set(Array.from({ length: 10 }, (_, index) => DUTY_FEED_MESSAGE_WINDOW_LIMIT + index + 1)),
+    expect(feed.windowedUnreadItems).toEqual(
+      new Map(
+        Array.from({ length: 10 }, (_, index) => [
+          DUTY_FEED_MESSAGE_WINDOW_LIMIT + index + 1,
+          (DUTY_FEED_MESSAGE_WINDOW_LIMIT + index + 1) * 100,
+        ]),
+      ),
     );
     expect(feedIndicatorUnreadCount(feed)).toBe(50);
   });
@@ -2725,7 +2758,7 @@ describe('useRerDutyFeedState — loading', () => {
       ),
     );
     await act(async () => apiRef.current!.loadFeedOlderMessages('mf-0'));
-    expect(apiRef.current!.messageFeeds[0].windowedUnreadIds).toEqual(new Set([40]));
+    expect(apiRef.current!.messageFeeds[0].windowedUnreadItems).toEqual(new Map([[40, 4000]]));
     expect(feedIndicatorUnreadCount(apiRef.current!.messageFeeds[0])).toBe(1);
   });
 

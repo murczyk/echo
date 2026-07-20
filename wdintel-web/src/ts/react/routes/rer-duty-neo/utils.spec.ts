@@ -657,7 +657,7 @@ describe('rer-duty utils', () => {
       items: Array.from({ length: 20 }, (_, index) => [index + 1, {} as InboxMessage]),
       readIds: new Set<number>(),
       unreadCount: 70000,
-      windowedUnreadIds: new Set<number>(),
+      windowedUnreadItems: new Map<number, number>(),
     });
     expect(feedIndicatorUnreadCount(feed)).toBe(70000);
   });
@@ -675,18 +675,27 @@ describe('rer-duty utils', () => {
 
   it('does not double count windowed IDs covered by a matching preview', () => {
     const feed = indicatorFeed({
-      items: [[20, {} as InboxMessage]],
+      items: [[20, { timestamp: 200 } as InboxMessage]],
       readIds: new Set([20]),
-      windowedUnreadIds: new Set([40]),
+      windowedUnreadItems: new Map([[1, 300]]),
     });
     expect(feedIndicatorUnreadCount(feed, { tailId: 20, count: 1 })).toBe(1);
   });
 
+  it('counts a hidden unread item before a matching tail preview', () => {
+    const feed = indicatorFeed({
+      items: [[20, { timestamp: 200 } as InboxMessage]],
+      readIds: new Set([20]),
+      windowedUnreadItems: new Map([[900, 100]]),
+    });
+    expect(feedIndicatorUnreadCount(feed, { tailId: 20, count: 0 })).toBe(1);
+  });
+
   it('counts windowed unread IDs at or before a matching preview tail', () => {
     const feed = indicatorFeed({
-      items: [[80, {} as InboxMessage]],
+      items: [[80, { timestamp: 200 } as InboxMessage]],
       readIds: new Set([80]),
-      windowedUnreadIds: new Set(Array.from({ length: 20 }, (_, index) => index + 41)),
+      windowedUnreadItems: new Map(Array.from({ length: 20 }, (_, index) => [index + 41, 100])),
     });
     expect(feedIndicatorUnreadCount(feed, { tailId: 80, count: 0 })).toBe(20);
   });
@@ -725,7 +734,7 @@ describe('rer-duty utils', () => {
     const feed = indicatorFeed({
       items: [[2, {} as InboxMessage]],
       readIds: new Set<number>(),
-      windowedUnreadIds: new Set([1]),
+      windowedUnreadItems: new Map([[1, 0]]),
     });
     expect(feedIndicatorUnreadCount(feed)).toBe(2);
     const reentered = indicatorFeed({
@@ -734,7 +743,7 @@ describe('rer-duty utils', () => {
         [2, {} as InboxMessage],
       ],
       readIds: new Set<number>(),
-      windowedUnreadIds: new Set<number>(),
+      windowedUnreadItems: new Map<number, number>(),
     });
     expect(feedIndicatorUnreadCount(reentered)).toBe(2);
   });
