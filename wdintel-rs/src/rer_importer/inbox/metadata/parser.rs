@@ -593,9 +593,10 @@ fn parse_source_id_part(
             Regex::new(r#"^\s*(\d+)\s*(?:\(([^)]+)\))?\s*$"#).unwrap();
     }
 
-    let captures = RE_SOURCE_ID_PART.captures(raw_part)?;
+    let normalized_part = NormalizedLine::new(raw_part.to_string());
+    let captures = RE_SOURCE_ID_PART.captures(&normalized_part.text)?;
     let id = matched_source_id_part(
-        raw_part,
+        &normalized_part,
         captures.get(1)?,
         part_start,
         source_start_index,
@@ -604,7 +605,7 @@ fn parse_source_id_part(
         .get(2)
         .and_then(|name| {
             matched_source_id_part(
-                raw_part,
+                &normalized_part,
                 name,
                 part_start,
                 source_start_index,
@@ -615,21 +616,17 @@ fn parse_source_id_part(
 }
 
 fn matched_source_id_part(
-    raw_part: &str,
+    normalized_part: &NormalizedLine,
     value_match: regex::Match<'_>,
     part_start: usize,
     source_start_index: i32,
 ) -> Option<MatchedValue> {
-    let value = normalize_metadata_value(value_match.as_str())?;
-    let value_start =
-        part_start + raw_part[..value_match.start()].chars().count();
-    let value_end = part_start + raw_part[..value_match.end()].chars().count();
-    Some(MatchedValue {
-        value: Some(value),
-        start_index: Some(source_start_index + value_start as i32),
-        end_index: Some(source_start_index + value_end as i32 - 1),
-        raw_text: Some(value_match.as_str().to_string()),
-    })
+    let mut value =
+        normalized_part.build_value(value_match, normalize_metadata_value)?;
+    let offset = source_start_index + part_start as i32;
+    value.start_index = value.start_index.map(|index| index + offset);
+    value.end_index = value.end_index.map(|index| index + offset);
+    Some(value)
 }
 
 fn reduce_metadata_list(mut items: Vec<InboxMetadata>) -> Vec<InboxMetadata> {
