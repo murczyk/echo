@@ -905,6 +905,7 @@ describe('MessageCard', () => {
         displayMode,
         msg: buildMessage({
           coords: '12.3456789, -98.7654321',
+          deviceName: '  Радіостанція  ',
           networkIds: [],
           unit: ' 1-й танк ',
           location: '  ХАРКІВ  ',
@@ -926,6 +927,7 @@ describe('MessageCard', () => {
         'Група A',
         'Відправник B',
         '12.34568, -98.76543',
+        'Радіостанція',
         'Харків',
       ] as const;
       for (const value of expectedValues) {
@@ -933,16 +935,31 @@ describe('MessageCard', () => {
         expect(typographyElement.getAttribute('data-mui-variant')).toBe('body2');
         expect(headerText).toContain(value);
       }
+      expect(view.container.querySelector('[title="Пристрій"]')).not.toBeNull();
 
       expect(headerText.indexOf('Група A')).toBeLessThan(headerText.indexOf('Відправник B'));
       expect(headerText.indexOf('Відправник B')).toBeLessThan(headerText.indexOf('153.6250'));
-      expect(headerText.indexOf('153.6250')).toBeLessThan(
+      expect(headerText.indexOf('153.6250')).toBeLessThan(headerText.indexOf('Радіостанція'));
+      expect(headerText.indexOf('Радіостанція')).toBeLessThan(
         headerText.indexOf('12.34568, -98.76543'),
       );
       expect(headerText.indexOf('12.34568, -98.76543')).toBeLessThan(
         headerText.indexOf('1-й танк'),
       );
       expect(headerText.indexOf('1-й танк')).toBeLessThan(headerText.indexOf('Харків'));
+    },
+  );
+
+  it.each(['duty', 'analysis'] as const)(
+    'hides an empty device name in %s mode',
+    async (displayMode) => {
+      const view = await renderHeader({
+        displayMode,
+        msg: buildMessage({ deviceName: '   ' }),
+      });
+      rendered.push(view);
+
+      expect(view.container.querySelector('[title="Пристрій"]')).toBeNull();
     },
   );
 
