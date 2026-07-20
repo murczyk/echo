@@ -6,7 +6,12 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { InboxMessage, InboxMessagesRsp } from '../../../../Bindings';
 import { minimalInboxMessage } from './inbox-message-mocks';
-import { DUTY_FEED_MESSAGE_WINDOW_LIMIT, emptyFilter, feedLoadedUnreadCount } from './utils';
+import {
+  DUTY_FEED_MESSAGE_WINDOW_LIMIT,
+  emptyFilter,
+  feedIndicatorUnreadCount,
+  feedLoadedUnreadCount,
+} from './utils';
 import { useRerDutyFeedState } from './useRerDutyFeedState';
 
 const hoisted = vi.hoisted(() => ({
@@ -255,6 +260,9 @@ describe('useRerDutyFeedState — loading', () => {
     });
     expect(scrollToEnd).not.toHaveBeenCalled();
     expect(hoisted.fetchInboxMessages).toHaveBeenCalledTimes(4);
+    expect(
+      feedIndicatorUnreadCount(feed, apiRef.current!.confirmedTailPreviewByFeedId['mf-0']),
+    ).toBe(0);
   });
 
   it('confirms newer messages without appending or scrolling while away from bottom', async () => {

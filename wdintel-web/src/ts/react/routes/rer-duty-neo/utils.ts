@@ -843,6 +843,18 @@ export function feedLoadedUnreadCount(feed: MessageFeedState): number {
   return count;
 }
 
+export function feedIndicatorUnreadCount(
+  feed: MessageFeedState,
+  preview?: { tailId: number; count: number },
+): number {
+  const loadedUnread = feedLoadedUnreadCount(feed);
+  const currentTailId = feed.items.at(-1)?.[0];
+  const confirmedTailUnread =
+    currentTailId != null && preview?.tailId === currentTailId ? Math.max(0, preview.count) : 0;
+
+  return loadedUnread + confirmedTailUnread;
+}
+
 /** Sum of {@link feedUnreadDisplayCount} across all feeds. */
 export function feedsUnreadDisplayTotal(feeds: MessageFeedState[]): number {
   return feeds.reduce((sum, feed) => sum + feedUnreadDisplayCount(feed), 0);

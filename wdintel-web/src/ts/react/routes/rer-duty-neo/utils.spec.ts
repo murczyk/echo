@@ -19,6 +19,7 @@ import {
   etalonFallbackWhenNoNetworks,
   filtersEqual,
   findAllAdjacentFreqs,
+  feedIndicatorUnreadCount,
   feedUnreadDisplayCount,
   feedLoadedUnreadCount,
   feedsUnreadDisplayTotal,
@@ -39,6 +40,24 @@ import {
 } from './utils';
 import type { MessageFeedState } from './utils';
 import type { InboxMessage, Network, SignalProfileEntry, Tag, Unit } from '../../../../Bindings';
+
+function indicatorFeed(overrides: Partial<MessageFeedState>): MessageFeedState {
+  return {
+    id: 'mf-0',
+    filter: emptyFilter(),
+    items: [],
+    loading: false,
+    loadingOlder: false,
+    hasReachedStart: false,
+    referenceTimeMs: null,
+    readIds: new Set<number>(),
+    unreadCount: 0,
+    adjacentFreqsRange: 0,
+    highlightSignalsEnabled: false,
+    onlyMyUnitTagsEnabled: false,
+    ...overrides,
+  };
+}
 
 describe('rer-duty utils', () => {
   it('etalon fallback when no networks: unit vs strict', () => {
@@ -622,6 +641,45 @@ describe('rer-duty utils', () => {
     } satisfies MessageFeedState;
     expect(feedLoadedUnreadCount(feed)).toBe(0);
     expect(feedUnreadDisplayCount(feed)).toBe(1);
+  });
+
+  it('ignores raw unread count when all loaded IDs are read and preview is empty', () => {
+    const feed = indicatorFeed({
+      items: [[1, {} as InboxMessage]],
+      readIds: new Set([1]),
+      unreadCount: 1,
+    });
+    expect(feedIndicatorUnreadCount(feed, { tailId: 1, count: 0 })).toBe(0);
+  });
+
+  it('adds matching confirmed preview unread messages to loaded unread messages', () => {
+    const feed = indicatorFeed({
+      items: [
+        [1, {} as InboxMessage],
+        [2, {} as InboxMessage],
+      ],
+      readIds: new Set([1]),
+    });
+    expect(feedIndicatorUnreadCount(feed, { tailId: 2, count: 2 })).toBe(3);
+  });
+
+  it('ignores a confirmed preview for a different tail', () => {
+    const feed = indicatorFeed({
+      items: [
+        [1, {} as InboxMessage],
+        [2, {} as InboxMessage],
+      ],
+      readIds: new Set([1]),
+    });
+    expect(feedIndicatorUnreadCount(feed, { tailId: 1, count: 2 })).toBe(1);
+  });
+
+  it('clamps negative confirmed preview counts to zero', () => {
+    const feed = indicatorFeed({
+      items: [[1, {} as InboxMessage]],
+      readIds: new Set<number>(),
+    });
+    expect(feedIndicatorUnreadCount(feed, { tailId: 1, count: -2 })).toBe(1);
   });
 
   it('windows initial messages to the newest items after sorting and dedupe', () => {

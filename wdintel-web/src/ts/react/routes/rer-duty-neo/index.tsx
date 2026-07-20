@@ -9,8 +9,7 @@ import {
 } from './notifications';
 import {
   DEFAULT_DUTY_TAGS_LAYOUT,
-  feedLoadedUnreadCount,
-  feedsUnreadDisplayTotal,
+  feedIndicatorUnreadCount,
   excludeMessageEntityFromFilters,
   type MessageEntityFilterKind,
   type MessageFeedState,
@@ -85,11 +84,7 @@ export function RerDutyNeoPage({
       isWatchMode: !dutyDisableAutoScroll && (watchModeByFeedId[feed.id] ?? true),
       loadingNewer: loadingNewerFeedIds.has(feed.id),
       arrowResultMessage: arrowResultByFeedId[feed.id] ?? null,
-      bottomUnreadCount:
-        feedLoadedUnreadCount(feed) +
-        (feed.items.at(-1)?.[0] === confirmedTailPreviewByFeedId[feed.id]?.tailId
-          ? confirmedTailPreviewByFeedId[feed.id]!.count
-          : 0),
+      bottomUnreadCount: feedIndicatorUnreadCount(feed, confirmedTailPreviewByFeedId[feed.id]),
       physicallyAtBottom: physicallyAtBottomByFeedIdRef.current[feed.id] ?? false,
       tailAvailability: tailAvailabilityByFeedId[feed.id] ?? 'unknown',
     },
@@ -369,7 +364,15 @@ export function RerDutyNeoPage({
     previousFeedCountRef.current = messageFeeds.length;
   }, [messageFeeds]);
 
-  const dutyTabUnreadTotal = useMemo(() => feedsUnreadDisplayTotal(messageFeeds), [messageFeeds]);
+  const dutyTabUnreadTotal = useMemo(
+    () =>
+      messageFeeds.reduce(
+        (total, feed) =>
+          total + feedIndicatorUnreadCount(feed, confirmedTailPreviewByFeedId[feed.id]),
+        0,
+      ),
+    [messageFeeds, confirmedTailPreviewByFeedId],
+  );
   const anyFeedInitialLoading = messageFeeds.some(
     (feed) => feed.loading && feed.items.length === 0,
   );
