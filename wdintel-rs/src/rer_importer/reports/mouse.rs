@@ -1155,7 +1155,7 @@ async fn load_mouse_report_messages(
 }
 
 fn ensure_mouse_report_message_limit(
-    user_login: &str,
+    user_login: &uuid::Uuid,
     message_count: usize,
 ) -> Result<(), AppError> {
     if message_count <= RER_MOUSE_REPORT_MESSAGE_MAX {
@@ -1421,7 +1421,7 @@ mod tests {
     #[test]
     fn mouse_report_message_limit_allows_maximum() {
         assert!(ensure_mouse_report_message_limit(
-            "operator",
+            &uuid::Uuid::nil(),
             RER_MOUSE_REPORT_MESSAGE_MAX,
         )
         .is_ok());
@@ -1430,7 +1430,7 @@ mod tests {
     #[test]
     fn mouse_report_message_limit_rejects_overflow() {
         assert!(ensure_mouse_report_message_limit(
-            "operator",
+            &uuid::Uuid::nil(),
             RER_MOUSE_REPORT_MESSAGE_MAX + 1,
         )
         .is_err());

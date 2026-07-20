@@ -817,7 +817,7 @@ pub async fn retry_goi_source_conversion(
     env: actix_web::web::Data<Env>,
     path: actix_web::web::Path<i64>,
 ) -> Result<Json<Palitra>, AppError> {
-    let login = user.id().c(h!())?;
+    let login = crate::users::identity_id(&user)?;
     ensure_palitra_management_permission(&env, &login)
         .await
         .c(h!())?;
@@ -831,7 +831,7 @@ pub async fn retry_goi_source_conversion(
     let is_accessible = if is_admin {
         true
     } else {
-        bl::collect_accessible_palitra_ids(login.clone(), &env.dbx)
+        bl::collect_accessible_palitra_ids(login, &env.dbx)
             .await
             .c(h!())?
             .contains(&palitra_id)
@@ -1051,7 +1051,7 @@ pub async fn read_palitra_goi_sync_history(
     env: actix_web::web::Data<Env>,
     path: actix_web::web::Path<i64>,
 ) -> Result<Json<Vec<PalitraChangelogEntry>>, AppError> {
-    let login = user.id().c(h!())?;
+    let login = crate::users::identity_id(&user)?;
     crate::users::has_role(&env.dbx, &login, "Rer")
         .await
         .context(h!())?;

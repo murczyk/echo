@@ -3396,7 +3396,7 @@ mod tests {
     async fn mk_folder_palitra_for_test(
         dbx: &sea_orm::DatabaseConnection,
         name: &str,
-        author: &str,
+        author_login_id: uuid::Uuid,
         folder: &str,
     ) -> palitra::Model {
         mk_palitra(
@@ -3404,7 +3404,7 @@ mod tests {
             palitra::ActiveModel {
                 name: Set(name.to_string()),
                 hex_legacy: Set(Some("#ffffff".to_string())),
-                author: Set(Some(author.to_string())),
+                author_login_id: Set(Some(author_login_id)),
                 deleted: Set(false),
                 folder: Set(Some(folder.to_string())),
                 created_at: Set(Utc::now().naive_utc()),
@@ -3439,7 +3439,7 @@ mod tests {
             api_login: Set(None),
             api_password: Set(None),
             disable_goi_to_echo_palitra_sync: Set(false),
-            maintainer_login: Set(Some(login.login)),
+            maintainer_login_id: Set(Some(login.id)),
             pause_worker: Set(false),
         }
         .insert(dbx)
@@ -3604,14 +3604,14 @@ mod tests {
         let editable = mk_folder_palitra_for_test(
             &env.dbx,
             "mixed-rename-editable",
-            &login.login,
+            login.id,
             folder,
         )
         .await;
         let goi_owned = mk_folder_palitra_for_test(
             &env.dbx,
             "mixed-rename-goi-owned",
-            &login.login,
+            login.id,
             folder,
         )
         .await;
@@ -3630,7 +3630,7 @@ mod tests {
 
         let txn = env.dbx.begin().await.unwrap();
         let sync_items = rename_accessible_palitra_folder(
-            login.login,
+            login.id,
             folder.to_string(),
             "mixed-renamed".to_string(),
             &env.dbx,
@@ -3670,14 +3670,14 @@ mod tests {
         let editable = mk_folder_palitra_for_test(
             &env.dbx,
             "mixed-archive-editable",
-            &login.login,
+            login.id,
             folder,
         )
         .await;
         let goi_owned = mk_folder_palitra_for_test(
             &env.dbx,
             "mixed-archive-goi-owned",
-            &login.login,
+            login.id,
             folder,
         )
         .await;
@@ -3696,7 +3696,7 @@ mod tests {
 
         let txn = env.dbx.begin().await.unwrap();
         let palitra_ids = archive_accessible_palitra_folder(
-            login.login,
+            login.id,
             folder.to_string(),
             true,
             &env.dbx,
@@ -3729,7 +3729,7 @@ mod tests {
         let palitra = mk_folder_palitra_for_test(
             &env.dbx,
             "mixed-delete-goi-owned",
-            &login.login,
+            login.id,
             "mixed-delete",
         )
         .await;
@@ -3749,7 +3749,7 @@ mod tests {
 
         let deleted = super::super::delete_palitra_from_folder_if_allowed(
             palitra.id,
-            &login.login,
+            &login.id,
             &env,
         )
         .await

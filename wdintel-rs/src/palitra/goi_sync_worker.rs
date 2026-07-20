@@ -3551,7 +3551,7 @@ mod tests {
             api_login: Set(None),
             api_password: Set(None),
             disable_goi_to_echo_palitra_sync: Set(false),
-            maintainer_login: Set(Some(login.login)),
+            maintainer_login_id: Set(Some(login.id)),
             pause_worker: Set(false),
         }
         .insert(dbx)

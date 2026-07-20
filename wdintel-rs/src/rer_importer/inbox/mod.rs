@@ -3621,7 +3621,7 @@ mod tests {
             ..Default::default()
         };
         let initial_items =
-            get_inbox_map_items(&login.login, &env, &req).await.unwrap();
+            get_inbox_map_items(&login.id, &env, &req).await.unwrap();
         assert!(initial_items
             .iter()
             .any(|item| item.id == visible_message.id));
@@ -3640,7 +3640,7 @@ mod tests {
         .unwrap();
 
         let reduced_items =
-            get_inbox_map_items(&login.login, &env, &req).await.unwrap();
+            get_inbox_map_items(&login.id, &env, &req).await.unwrap();
         assert!(reduced_items
             .iter()
             .any(|item| item.id == visible_message.id));
@@ -3662,9 +3662,9 @@ mod tests {
             .iter()
             .any(|point| point.message_id == hidden_message.id));
 
-        let logins = vec![login.login.clone()];
+        let logins = vec![login.id];
         let hidden_messages = messages_by_id_bl(
-            &login.login,
+            &login.id,
             &logins,
             &env,
             &[hidden_message.id],

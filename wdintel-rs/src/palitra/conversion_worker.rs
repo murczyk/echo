@@ -742,7 +742,7 @@ mod tests {
             &env.dbx,
             palitra::ActiveModel {
                 name: Set("Fresh Processing Palitra".to_string()),
-                author: Set(Some("Tester".to_string())),
+                author_login_id: Set(stale_palitra.author_login_id),
                 deleted: Set(false),
                 created_at: Set(Utc::now().naive_utc()),
                 conversion_status: Set(

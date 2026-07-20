@@ -53,8 +53,6 @@ pub enum Relation {
     EchoMissingMessage,
     #[sea_orm(has_many = "super::enemy_units_geojson::Entity")]
     EnemyUnitsGeojson,
-    #[sea_orm(has_many = "super::device_name::Entity")]
-    DeviceName,
     #[sea_orm(has_many = "super::goi_integration::Entity")]
     GoiIntegration,
     #[sea_orm(has_many = "super::goi_integration_access_login::Entity")]
@@ -160,7 +158,6 @@ impl Related<super::delta_login::Entity> for Entity {
         Relation::DeltaLogin.def()
     }
 }
-
 
 impl Related<super::device_name::Entity> for Entity {
     fn to() -> RelationDef {
