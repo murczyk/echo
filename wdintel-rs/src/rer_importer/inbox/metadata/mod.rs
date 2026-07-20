@@ -608,6 +608,27 @@ ID(CG)⬅️: 8584772
     }
 
     #[test]
+    fn parse_metadata_preserves_source_name_for_unnamed_id_list_parts() {
+        let metadata = parse_metadata_asserting_spans("ID: ЯРУС; ID➡️: 1, 2");
+
+        assert_eq!(
+            metadata,
+            vec![
+                InboxMetadata {
+                    id: Some("1".to_string()),
+                    id_name: Some("ЯРУС".to_string()),
+                    ..Default::default()
+                },
+                InboxMetadata {
+                    id: Some("2".to_string()),
+                    id_name: Some("ЯРУС".to_string()),
+                    ..Default::default()
+                },
+            ]
+        );
+    }
+
+    #[test]
     fn parse_metadata_line_handles_source_id_variant() {
         let metadata = parse_metadata_line_asserting_spans("SOURCE ID: 0");
         assert_eq!(

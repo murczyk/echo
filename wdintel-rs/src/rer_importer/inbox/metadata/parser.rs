@@ -513,20 +513,45 @@ fn expand_multi_source_ids(
     items: Vec<WorkingMetadata>,
 ) -> Vec<WorkingMetadata> {
     let mut result = vec![];
-    for item in items {
+    for mut item in items {
         let Some(ids) = split_multi_source_id(&item.id) else {
             result.push(item);
             continue;
         };
 
+        if matched_value_is_within(&item.id_name, &item.id) {
+            item.id_name = MatchedValue::default();
+        }
         for (id, id_name) in ids {
             let mut item = item.clone();
             item.id = id;
-            item.id_name = id_name;
+            if id_name.has_value() {
+                item.id_name = id_name;
+            }
             result.push(item);
         }
     }
     result
+}
+
+fn matched_value_is_within(
+    value: &MatchedValue,
+    container: &MatchedValue,
+) -> bool {
+    match (
+        value.start_index,
+        value.end_index,
+        container.start_index,
+        container.end_index,
+    ) {
+        (
+            Some(start),
+            Some(end),
+            Some(container_start),
+            Some(container_end),
+        ) => start >= container_start && end <= container_end,
+        _ => false,
+    }
 }
 
 fn split_multi_source_id(
