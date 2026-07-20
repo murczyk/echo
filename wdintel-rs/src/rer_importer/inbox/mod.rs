@@ -334,15 +334,9 @@ async fn messages_by_id(
         ..Default::default()
     };
     let inbox_req = req.inbox_req.as_ref().unwrap_or(&default_req);
-    let messages = messages_by_id_bl(
-        &login,
-        &logins,
-        &env,
-        &req.message_ids,
-        inbox_req,
-        InboxQueryScope::FeedMembership,
-    )
-    .await?;
+    let messages =
+        messages_by_id_bl(&login, &logins, &env, &req.message_ids, inbox_req)
+            .await?;
     Ok(Json(MessageIdsRsp { messages }))
 }
 
@@ -352,12 +346,10 @@ pub(crate) async fn messages_by_id_bl(
     env: &Env,
     message_ids: &[i64],
     req: &InboxMessagesReq,
-    scope: InboxQueryScope,
 ) -> Result<Vec<(i64, InboxMessage)>, AppError> {
-    let mut messages =
-        build_filtered_inbox_query_with_scope(&env.dbx, login, env, req, scope)
-            .await
-            .c(h!())?;
+    let mut messages = build_filtered_inbox_query(&env.dbx, login, env, req)
+        .await
+        .c(h!())?;
     messages = messages
         .filter(signal_message::Column::Id.eq_any(message_ids.to_vec()));
     messages = add_inbox_message_columns(messages);
@@ -3648,7 +3640,6 @@ mod tests {
             &env,
             &[hidden_message.id],
             &messages_by_id_default_req(),
-            InboxQueryScope::FeedMembership,
         )
         .await
         .unwrap();
@@ -3683,7 +3674,6 @@ mod tests {
             &env,
             &[message.id],
             &messages_by_id_default_req(),
-            InboxQueryScope::FeedMembership,
         )
         .await
         .unwrap();
@@ -3744,7 +3734,6 @@ mod tests {
             &env,
             &[message.id],
             &messages_by_id_default_req(),
-            InboxQueryScope::FeedMembership,
         )
         .await
         .unwrap();
@@ -3760,7 +3749,6 @@ mod tests {
             &env,
             &[message.id],
             &messages_by_id_default_req(),
-            InboxQueryScope::FeedMembership,
         )
         .await
         .unwrap();
@@ -4273,7 +4261,6 @@ mod tests {
             &env,
             &[message.id],
             &wrong_sender_req,
-            InboxQueryScope::FeedMembership,
         )
         .await
         .unwrap();
@@ -4285,33 +4272,10 @@ mod tests {
             &env,
             &[message.id],
             &matching_sender_req,
-            InboxQueryScope::FeedMembership,
         )
         .await
         .unwrap();
         assert_eq!(matching_sender_by_id.len(), 1);
         assert_eq!(matching_sender_by_id[0].0, message.id);
-
-        let mut historical_message =
-            signal_message::Entity::find_by_id(message.id)
-                .one(&env.dbx)
-                .await
-                .unwrap()
-                .unwrap()
-                .into_active_model();
-        historical_message.timestamp = Set(Some(now - Duration::days(365)));
-        historical_message.update(&env.dbx).await.unwrap();
-
-        let historical_feed_membership = messages_by_id_bl(
-            &login.login,
-            &organism_logins,
-            &env,
-            &[message.id],
-            &matching_sender_req,
-            InboxQueryScope::FeedMembership,
-        )
-        .await
-        .unwrap();
-        assert!(historical_feed_membership.is_empty());
     }
 }

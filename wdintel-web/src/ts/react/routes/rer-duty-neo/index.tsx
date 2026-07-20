@@ -321,6 +321,7 @@ export function RerDutyNeoPage({
     removeMessageFeed,
     loadFeedInitialMessages,
     reloadEmptyFeeds,
+    reloadFeeds,
     loadFeedOlderMessages,
     loadFeedNewerMessages,
     handleSaveFilter,
@@ -334,7 +335,6 @@ export function RerDutyNeoPage({
     addFrequencyToFilter,
     handleMessageCopy,
     handleEditedMessage,
-    refreshEditedMessage,
     handleDeleteConfirm,
     setDeleteConfirmId,
     setDeleteConfirmFeedId,
@@ -503,7 +503,7 @@ export function RerDutyNeoPage({
         onSubmitEdit={async (messageId, message) => {
           handleEditedMessage(messageId, message);
         }}
-        onEditSuccess={(result) => refreshEditedMessage(result.signal_message_id)}
+        onEditSuccess={() => reloadFeeds()}
         onCreated={handleCreatedMessage}
       />
 

@@ -382,54 +382,6 @@ export function useRerDutyFeeds(authUserName: string | null) {
     beginFollowTail: feedState.beginFollowTail,
   });
 
-  const refreshEditedMessage = useCallback(
-    async (messageId: number) => {
-      const refreshes = feedState.messageFeeds
-        .filter((feed) => feed.items.some(([id]) => id === messageId))
-        .map((feed) => ({
-          feedId: feed.id,
-          inboxReq: feedState.buildReqForFeed(feed, { loadLatest: true }),
-          requestSignature: stableStringify(feedState.buildReqForFeed(feed, { loadLatest: true })),
-          loadGeneration: feedState.getFeedLoadGeneration(feed.id),
-        }));
-
-      await Promise.all(
-        refreshes.map(async ({ feedId, inboxReq, requestSignature, loadGeneration }) => {
-          try {
-            const refreshedItems = await fetchMessagesByIds([messageId], inboxReq);
-            feedState.setMessageFeeds((currentFeeds) => {
-              const currentFeed = currentFeeds.find((feed) => feed.id === feedId);
-              if (
-                currentFeed == null ||
-                !currentFeed.items.some(([id]) => id === messageId) ||
-                feedState.getFeedLoadGeneration(feedId) !== loadGeneration ||
-                stableStringify(feedState.buildReqForFeed(currentFeed, { loadLatest: true })) !==
-                  requestSignature
-              ) {
-                return currentFeeds;
-              }
-
-              const mergedFeeds = mergeUpdatedDutyFeedMessages(
-                currentFeeds,
-                feedId,
-                [messageId],
-                refreshedItems,
-              );
-              const mergedFeed = mergedFeeds.find((feed) => feed.id === feedId);
-              if (mergedFeed == null || mergedFeed === currentFeed) return mergedFeeds;
-              return mergedFeeds.map((feed) =>
-                feed.id === feedId ? { ...feed, items: sortMessageItemsByTime(feed.items) } : feed,
-              );
-            });
-          } catch (error) {
-            feedState.setError(error instanceof Error ? error.message : String(error));
-          }
-        }),
-      );
-    },
-    [feedState],
-  );
-
   const freqs = useMemo(
     () => mergeFreqsFromMessages(filterOpts.freqs, feedState.messageFeeds),
     [filterOpts.freqs, feedState.messageFeeds],
@@ -481,6 +433,7 @@ export function useRerDutyFeeds(authUserName: string | null) {
     removeMessageFeed: feedState.removeMessageFeed,
     loadFeedInitialMessages: feedState.loadFeedInitialMessages,
     reloadEmptyFeeds: feedState.reloadEmptyFeeds,
+    reloadFeeds: feedState.reloadFeeds,
     loadFeedOlderMessages: feedState.loadFeedOlderMessages,
     loadFeedNewerMessages: feedState.loadFeedNewerMessages,
     applyFilter: feedState.applyFilter,
@@ -543,7 +496,6 @@ export function useRerDutyFeeds(authUserName: string | null) {
     arrowResultByFeedId: feedState.arrowResultByFeedId,
     copiedFeedbackId: actions.copiedFeedbackId,
     handleEditedMessage: actions.handleEditedMessage,
-    refreshEditedMessage,
     keywordSets,
     reloadKeywordSets,
   };

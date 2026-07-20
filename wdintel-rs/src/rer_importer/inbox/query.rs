@@ -12,12 +12,6 @@ use sea_orm::{sea_query::PostgresQueryBuilder, *};
 use sea_query::types::IntoColumnRef;
 use sea_query::{Alias, Expr, ExprTrait, Query, SelectStatement, SimpleExpr};
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum InboxQueryScope {
-    FeedMembership,
-    ExactMessageLookup,
-}
-
 fn since_id_null_bucket_filter(
     since_id_noninclusive: i64,
     cursor_expr: SimpleExpr,
@@ -92,26 +86,6 @@ pub(crate) async fn build_filtered_inbox_query<'a, 'async_trait, C>(
     login: &str,
     env: &Env,
     req: &InboxMessagesReq,
-) -> Result<Select<signal_message::Entity>, AppError>
-where
-    C: ConnectionTrait + 'async_trait,
-{
-    build_filtered_inbox_query_with_scope(
-        dbx,
-        login,
-        env,
-        req,
-        InboxQueryScope::FeedMembership,
-    )
-    .await
-}
-
-pub(crate) async fn build_filtered_inbox_query_with_scope<'a, 'async_trait, C>(
-    dbx: &'a C,
-    login: &str,
-    env: &Env,
-    req: &InboxMessagesReq,
-    scope: InboxQueryScope,
 ) -> Result<Select<signal_message::Entity>, AppError>
 where
     C: ConnectionTrait + 'async_trait,
@@ -225,8 +199,7 @@ where
         q = q.filter(message_has_media_exists());
     }
 
-    if scope == InboxQueryScope::FeedMembership
-        && req.since_id_noninclusive.is_none()
+    if req.since_id_noninclusive.is_none()
         && req.since_date_inclusive_ms.is_none()
     {
         // TODO FIXME filter by 1 days
@@ -236,7 +209,7 @@ where
             ));
     }
 
-    q = get_pagination_filters_with_conn_scope(dbx, env, req, q, scope)
+    q = get_pagination_filters_with_conn(dbx, env, req, q)
         .await
         .c(h!())?;
     Ok(q)
@@ -420,27 +393,6 @@ where
     C: ConnectionTrait + 'async_trait,
     Q: QueryFilter,
 {
-    get_pagination_filters_with_conn_scope(
-        dbx,
-        _env,
-        req,
-        q,
-        InboxQueryScope::FeedMembership,
-    )
-    .await
-}
-
-async fn get_pagination_filters_with_conn_scope<'a, 'async_trait, C, Q>(
-    dbx: &'a C,
-    _env: &Env,
-    req: &InboxMessagesReq,
-    q: Q,
-    scope: InboxQueryScope,
-) -> Result<Q, AppError>
-where
-    C: ConnectionTrait + 'async_trait,
-    Q: QueryFilter,
-{
     let mut q = q;
     let since_id_noninclusive: Option<i64> = req.since_id_noninclusive;
 
@@ -453,10 +405,6 @@ where
     if let Some(till_date_inclusive_ms) = req.till_date_inclusive_ms {
         let datetime = dt_from_millis(till_date_inclusive_ms)?;
         q = q.filter(inbox_date_lte_expr(req_sort_by, datetime.into()));
-    }
-
-    if scope == InboxQueryScope::ExactMessageLookup {
-        return Ok(q);
     }
 
     // here are more complex and nuanced filters

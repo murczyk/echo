@@ -229,6 +229,7 @@ function buildFeedsState() {
     removeMessageFeed: vi.fn(),
     loadFeedInitialMessages: vi.fn(),
     reloadEmptyFeeds: vi.fn(),
+    reloadFeeds: vi.fn(),
     loadFeedOlderMessages: vi.fn(),
     applyFilter: vi.fn(),
     addFrequencyToFilter: vi.fn(),
@@ -244,7 +245,6 @@ function buildFeedsState() {
     handleMessageImportant: vi.fn(),
     handleMessageCopy: vi.fn(),
     handleEditedMessage: vi.fn(),
-    refreshEditedMessage: vi.fn(),
     handleOpenPointsOnMap: vi.fn(),
     handleDeleteConfirm: vi.fn(),
     setDeleteConfirmId: vi.fn(),
@@ -389,7 +389,7 @@ describe('RerDutyNeoPage creation workflow', () => {
     await click(container.querySelector('button[aria-label="Зберегти редагування"]'));
 
     expect(state.handleEditedMessage).not.toHaveBeenCalled();
-    expect(state.refreshEditedMessage).toHaveBeenCalledWith(42);
+    expect(state.reloadFeeds).toHaveBeenCalledTimes(1);
     expect(container.querySelector('[data-testid="composer"]')).toBeNull();
 
     await act(async () => {

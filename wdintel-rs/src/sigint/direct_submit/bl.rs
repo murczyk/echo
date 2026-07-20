@@ -289,7 +289,6 @@ async fn save_signal_message(
         env,
         &[rsp.signal_message_id],
         &req,
-        crate::rer_importer::inbox::query::InboxQueryScope::ExactMessageLookup,
     )
     .await?;
     if let Some((_, message)) = messages.into_iter().next() {
@@ -708,7 +707,7 @@ mod tests {
             .unwrap()
             .last_insert_id;
         let mut create_payload = direct_submit_payload("original body");
-        create_payload.timestamp = Some("2020-07-11T12:34:56Z".to_string());
+        create_payload.timestamp = Some("2026-07-11T12:34:56Z".to_string());
         create_payload.freq = Some("145.025".to_string());
         create_payload.device_name_id = Some(Some(device_name_id));
         create_payload.comment = Some("old comment".to_string());
@@ -829,7 +828,7 @@ mod tests {
         assert_eq!(
             signal_message.timestamp,
             Some(
-                chrono::DateTime::parse_from_rfc3339("2020-07-11T12:34:56Z")
+                chrono::DateTime::parse_from_rfc3339("2026-07-11T12:34:56Z")
                     .unwrap()
                     .naive_utc()
             )
