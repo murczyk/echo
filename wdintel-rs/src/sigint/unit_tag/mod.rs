@@ -6,6 +6,7 @@ use crate::entities::sea_orm_active_enums::InterseptionKind;
 use crate::entities::*;
 use crate::error::AppError;
 use crate::h;
+use crate::rer_importer::body_noheader::NoHeadersBody;
 use crate::types::{error, Mode, ShortContext};
 use crate::utils::worker_watch;
 use chrono::{Duration, Utc};
@@ -191,8 +192,9 @@ where
             .c(h!())?;
         return Ok(());
     }
-    let Some(message) =
-        signal_message::Entity::find_by_id(sigint_inbox_item_id)
+    let Some((sigint_inbox_item, device_name)) =
+        sigint_inbox_item::Entity::find_by_id(sigint_inbox_item_id)
+            .find_also_related(device_name::Entity)
             .one(db)
             .await
             .c(h!())?
@@ -202,16 +204,19 @@ where
             .c(h!())?;
         return Ok(());
     };
-    let body = message.body.unwrap_or_default();
-    let header = parse_unit_tag_header(&body);
-    let match_text = unit_tag_match_text(&body, &header);
     let active_networks = sigint_network::Entity::find()
         .filter(sigint_network::Column::Deleted.eq(false))
         .all(db)
         .await
         .c(h!())?;
-    let matched_networks =
-        match_networks_by_unit_tag_precedence(active_networks, &match_text);
+    let matched_networks = match_networks_by_device_name_or_body_noheader(
+        active_networks,
+        device_name
+            .as_ref()
+            .and_then(|device_name| device_name.name.as_deref()),
+        sigint_inbox_item.body_noheader.as_ref(),
+    )
+    .c(h!())?;
     sync_network_links(db, sigint_inbox_item_id, matched_networks)
         .await
         .c(h!())?;
@@ -350,38 +355,6 @@ where
     Ok(count > 0)
 }
 
-fn parse_unit_tag_header(body: &str) -> ParsedUnitTagHeader {
-    let mut lines = body.lines();
-    let Some(first_line) = lines.next().map(str::trim) else {
-        return ParsedUnitTagHeader::default();
-    };
-    let Some((left, _right)) = first_line.split_once('|') else {
-        return ParsedUnitTagHeader::default();
-    };
-    let left = left.trim();
-    let unit_tag = if let Some((tag, _rest)) = left.split_once('[') {
-        tag.trim().to_string()
-    } else {
-        left.to_string()
-    };
-    ParsedUnitTagHeader {
-        unit_tag: Some(unit_tag).filter(|v| !v.is_empty()),
-    }
-}
-
-#[derive(Default)]
-struct ParsedUnitTagHeader {
-    unit_tag: Option<String>,
-}
-
-fn unit_tag_match_text(body: &str, header: &ParsedUnitTagHeader) -> String {
-    let mut parts = vec![body.to_string()];
-    if let Some(unit_tag) = &header.unit_tag {
-        parts.push(unit_tag.clone());
-    }
-    parts.join(" ")
-}
-
 fn match_networks_by_unit_tag_precedence(
     networks: Vec<sigint_network::Model>,
     match_text: &str,
@@ -401,6 +374,41 @@ fn match_networks_by_unit_tag_precedence(
         }
     }
     matched_networks
+}
+
+fn match_networks_by_device_name_or_body_noheader(
+    networks: Vec<sigint_network::Model>,
+    device_name: Option<&str>,
+    body_noheader: Option<&serde_json::Value>,
+) -> anyhow::Result<Vec<sigint_network::Model>> {
+    if let Some(device_name) = device_name
+        .map(str::trim)
+        .filter(|device_name| !device_name.is_empty())
+    {
+        let matched_networks = match_networks_by_unit_tag_precedence(
+            networks.clone(),
+            device_name,
+        );
+        if !matched_networks.is_empty() {
+            return Ok(matched_networks);
+        }
+    }
+    let body_noheader = body_noheader_text(body_noheader).c(h!())?;
+    Ok(match_networks_by_unit_tag_precedence(
+        networks,
+        &body_noheader,
+    ))
+}
+
+fn body_noheader_text(
+    body_noheader: Option<&serde_json::Value>,
+) -> anyhow::Result<String> {
+    let Some(body_noheader) = body_noheader else {
+        return Ok(String::new());
+    };
+    let body_noheader: NoHeadersBody =
+        serde_json::from_value(body_noheader.clone()).c(h!())?;
+    Ok(body_noheader.body)
 }
 
 fn network_unit_tag_matches(
@@ -565,22 +573,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn parses_unit_tag_header_without_machine_id() {
-        let header = parse_unit_tag_header("50 обрБпС | 2026-06-26\n11-34");
-
-        assert_eq!(header.unit_tag.as_deref(), Some("50 обрБпС"));
-    }
-
-    #[test]
-    fn parses_unit_tag_header_with_machine_id() {
-        let header = parse_unit_tag_header(
-            "50 обрБпС [33hhfg50d] | 2026-06-26_08-13-12",
-        );
-
-        assert_eq!(header.unit_tag.as_deref(), Some("50 обрБпС"));
-    }
-
-    #[test]
     fn unit_tag_match_requires_word_boundaries() {
         assert!(contains_word_case_insensitive(
             "prefix 50 обрБпС suffix",
@@ -626,6 +618,44 @@ mod tests {
     }
 
     #[test]
+    fn device_name_match_wins_over_body_noheader() {
+        let matched_network_ids =
+            match_networks_by_device_name_or_body_noheader(
+                vec![
+                    test_network(1, vec!["device-label"]),
+                    test_network(2, vec!["body-label"]),
+                ],
+                Some("device-label"),
+                Some(&test_body_noheader("body-label")),
+            )
+            .unwrap()
+            .into_iter()
+            .map(|network| network.id)
+            .collect::<Vec<_>>();
+
+        assert_eq!(matched_network_ids, vec![1]);
+    }
+
+    #[test]
+    fn body_noheader_match_is_used_when_device_name_has_no_label() {
+        let matched_network_ids =
+            match_networks_by_device_name_or_body_noheader(
+                vec![
+                    test_network(1, vec!["device-label"]),
+                    test_network(2, vec!["body-label"]),
+                ],
+                Some("unmatched device"),
+                Some(&test_body_noheader("body-label")),
+            )
+            .unwrap()
+            .into_iter()
+            .map(|network| network.id)
+            .collect::<Vec<_>>();
+
+        assert_eq!(matched_network_ids, vec![2]);
+    }
+
+    #[test]
     fn stale_network_links_include_non_unit_tag_networks() {
         let existing_network_links =
             vec![test_network_link(10, 1), test_network_link(11, 2)];
@@ -638,6 +668,15 @@ mod tests {
             ),
             vec![10]
         );
+    }
+
+    fn test_body_noheader(body: &str) -> serde_json::Value {
+        serde_json::to_value(NoHeadersBody {
+            body: body.to_string(),
+            start: 0,
+            end: body.chars().count(),
+        })
+        .unwrap()
     }
 
     fn test_network(id: i64, unit_mask: Vec<&str>) -> sigint_network::Model {

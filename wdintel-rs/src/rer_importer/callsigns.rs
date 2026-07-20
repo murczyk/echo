@@ -1396,12 +1396,18 @@ pub async fn oneoff_reprocess_callsigns(
                 super::callsigns::find_known_callsigns(&rq, &body)
                     .await
                     .c(h!())?;
-            let callsigns: Vec<String> = crate::utils::uniq_via_btreeset(
-                &callsign_tokens
-                    .iter()
-                    .map(|x| x.etalon.clone())
-                    .collect::<Vec<String>>(),
-            );
+            let callsigns = crate::rer_importer::inbox::metadata::append_metadata_text_callsigns(
+                crate::rer_importer::inbox::metadata::non_metadata_line_callsign_etalons(
+                    &callsign_tokens,
+                    &body,
+                ),
+                &body,
+            )
+            .into_iter()
+            .map(|callsign| callsign.to_lowercase())
+            .collect::<Vec<_>>();
+            let callsigns: Vec<String> =
+                crate::utils::uniq_via_btreeset(&callsigns);
             let callsign_tokens =
                 highlight_callsigns(&rq, &body, &callsigns).await.c(h!())?;
             let mut inbox_item: sigint_inbox_item::ActiveModel =

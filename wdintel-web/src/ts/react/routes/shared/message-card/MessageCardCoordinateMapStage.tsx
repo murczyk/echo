@@ -17,6 +17,8 @@ type MapInitState = 'loading' | 'ready' | 'error';
 type BaseLayerId = 'googleHybrid' | 'openStreetMap';
 
 const PREVIEW_ZOOM = 13;
+const PREVIEW_MAX_ZOOM = 13;
+const PREVIEW_BOUNDS_PADDING: [number, number] = [40, 40];
 const MAP_INIT_TIMEOUT_MS = 2000;
 const MAP_HOST_MIN_SIZE_PX = 48;
 const COORDINATE_ROW_HEIGHT = 24;
@@ -26,12 +28,14 @@ const COORDINATE_COPY_SIZE = 24;
 const COORDINATE_COPY_GAP = 4;
 
 export function MessageCardCoordinateMapStage({
-  point,
+  points,
+  activeIndex,
   open,
   baseLayerId,
   isFullscreen,
 }: {
-  point: CoordinatePreviewPoint;
+  points: CoordinatePreviewPoint[];
+  activeIndex: number;
   open: boolean;
   baseLayerId: BaseLayerId;
   isFullscreen: boolean;
@@ -39,11 +43,12 @@ export function MessageCardCoordinateMapStage({
   const theme = useTheme();
   const [mapHostEl, setMapHostEl] = useState<HTMLDivElement | null>(null);
   const mapRef = useRef<L.Map | null>(null);
-  const markerRef = useRef<L.CircleMarker | null>(null);
+  const markerRefs = useRef<L.CircleMarker[]>([]);
   const layerRef = useRef<L.TileLayer | null>(null);
   const tileLayersRef = useRef<ReturnType<typeof getTileLayers> | null>(null);
   const baseLayerIdRef = useRef<BaseLayerId>('googleHybrid');
-  const pointRef = useRef(point);
+  const pointsRef = useRef(points);
+  const activeIndexRef = useRef(activeIndex);
   const initFrameRef = useRef<number | null>(null);
   const invalidateFrameRef = useRef<number | null>(null);
   const initTimeoutRef = useRef<number | null>(null);
@@ -57,8 +62,12 @@ export function MessageCardCoordinateMapStage({
   }, [baseLayerId]);
 
   useEffect(() => {
-    pointRef.current = point;
-  }, [point.lat, point.lng, point.label, point.source]);
+    pointsRef.current = points;
+  }, [points]);
+
+  useEffect(() => {
+    activeIndexRef.current = activeIndex;
+  }, [activeIndex]);
 
   useEffect(() => {
     if (!open) {
@@ -74,7 +83,7 @@ export function MessageCardCoordinateMapStage({
 
   useEffect(() => {
     setCopyStatus('idle');
-  }, [point.lat, point.lng]);
+  }, [activeIndex]);
 
   useEffect(() => {
     if (!open || mapRef.current == null) {
@@ -102,8 +111,19 @@ export function MessageCardCoordinateMapStage({
       return;
     }
 
-    mapRef.current.setView([point.lat, point.lng], mapRef.current.getZoom());
-    markerRef.current?.setLatLng([point.lat, point.lng]);
+    const activePoint = points[activeIndex];
+    if (activePoint == null) {
+      return;
+    }
+
+    mapRef.current.setView([activePoint.lat, activePoint.lng], mapRef.current.getZoom());
+    markerRefs.current.forEach((marker, index) => {
+      marker.setStyle(
+        index === activeIndex
+          ? { radius: 10, fillColor: '#1976d2' }
+          : { radius: 8, fillColor: '#ff4d2d' },
+      );
+    });
 
     if (invalidateFrameRef.current !== null) {
       window.cancelAnimationFrame(invalidateFrameRef.current);
@@ -114,7 +134,7 @@ export function MessageCardCoordinateMapStage({
       invalidateFrameRef.current = null;
       mapRef.current?.invalidateSize();
     });
-  }, [open, point.lat, point.lng]);
+  }, [activeIndex, open, points]);
 
   useEffect(() => {
     if (!open) {
@@ -163,7 +183,19 @@ export function MessageCardCoordinateMapStage({
 
       invalidateFrameRef.current = window.requestAnimationFrame(() => {
         invalidateFrameRef.current = null;
-        mapRef.current?.invalidateSize();
+        const map = mapRef.current;
+        if (map == null) {
+          return;
+        }
+        map.invalidateSize({ animate: false, pan: false });
+        const latLngs = pointsRef.current.map(({ lat, lng }): [number, number] => [lat, lng]);
+        if (latLngs.length > 1) {
+          map.fitBounds(L.latLngBounds(latLngs), {
+            animate: false,
+            maxZoom: PREVIEW_MAX_ZOOM,
+            padding: PREVIEW_BOUNDS_PADDING,
+          });
+        }
       });
     };
 
@@ -181,7 +213,11 @@ export function MessageCardCoordinateMapStage({
         return false;
       }
 
-      const currentPoint = pointRef.current;
+      const visiblePoints = pointsRef.current;
+      const currentPoint = visiblePoints[activeIndexRef.current] ?? visiblePoints[0];
+      if (currentPoint == null) {
+        return false;
+      }
       const map = L.map(currentHost, {
         zoomControl: true,
         attributionControl: false,
@@ -194,7 +230,18 @@ export function MessageCardCoordinateMapStage({
         preferCanvas: true,
         minZoom: 2,
         maxZoom: 17,
-      }).setView([currentPoint.lat, currentPoint.lng], PREVIEW_ZOOM);
+      });
+
+      const latLngs = visiblePoints.map(({ lat, lng }): [number, number] => [lat, lng]);
+      if (latLngs.length === 1) {
+        map.setView(latLngs[0], PREVIEW_ZOOM);
+      } else {
+        map.fitBounds(L.latLngBounds(latLngs), {
+          animate: false,
+          maxZoom: PREVIEW_MAX_ZOOM,
+          padding: PREVIEW_BOUNDS_PADDING,
+        });
+      }
 
       const tileLayers = getTileLayers();
       tileLayersRef.current = tileLayers;
@@ -204,17 +251,19 @@ export function MessageCardCoordinateMapStage({
           : tileLayers.openStreetMap;
       baseLayer.addTo(map);
 
-      const marker = L.circleMarker([currentPoint.lat, currentPoint.lng], {
-        radius: 8,
-        color: '#ffffff',
-        weight: 3,
-        fillColor: '#ff4d2d',
-        fillOpacity: 1,
-        interactive: false,
-      }).addTo(map);
+      const markers = visiblePoints.map(({ lat, lng }, index) =>
+        L.circleMarker([lat, lng], {
+          radius: index === activeIndexRef.current ? 10 : 8,
+          color: '#ffffff',
+          weight: 3,
+          fillColor: index === activeIndexRef.current ? '#1976d2' : '#ff4d2d',
+          fillOpacity: 1,
+          interactive: false,
+        }).addTo(map),
+      );
 
       mapRef.current = map;
-      markerRef.current = marker;
+      markerRefs.current = markers;
       layerRef.current = baseLayer;
       setMapInitState('ready');
       scheduleInvalidate();
@@ -262,8 +311,8 @@ export function MessageCardCoordinateMapStage({
         initTimeoutRef.current = null;
       }
       clearPendingInvalidate();
-      markerRef.current?.remove();
-      markerRef.current = null;
+      markerRefs.current.forEach((marker) => marker.remove());
+      markerRefs.current = [];
       layerRef.current?.remove();
       layerRef.current = null;
       tileLayersRef.current = null;
@@ -272,6 +321,10 @@ export function MessageCardCoordinateMapStage({
     };
   }, [mapHostEl, open, retryToken]);
 
+  const point = points[activeIndex] ?? points[0];
+  if (point == null) {
+    return null;
+  }
   const mgrsText = getCoordinateMgrsText({ lat: point.lat, lng: point.lng });
   const wgs84Text = `${renderWgsFloat(point.lat)}, ${renderWgsFloat(point.lng)}`;
   const handleCopyMgrs = useCallback(() => {
@@ -368,6 +421,7 @@ export function MessageCardCoordinateMapStage({
     >
       <Box
         ref={setMapHostEl}
+        data-coordinate-marker-count={mapInitState === 'ready' ? points.length : 0}
         sx={{
           position: 'absolute',
           inset: 0,

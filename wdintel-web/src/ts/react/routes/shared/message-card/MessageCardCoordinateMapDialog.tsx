@@ -32,13 +32,14 @@ export function MessageCardCoordinateMapDialog({
   const canFullscreen = previewConfig.supportsFullscreen;
   const dialogIsFullscreen = canFullscreen && isFullscreen;
 
+  const activeIndex = Math.min(Math.max(currentIndex, 0), Math.max(points.length - 1, 0));
   const currentPoint = useMemo(() => {
     if (points.length === 0) {
       return null;
     }
 
-    return points[Math.min(Math.max(currentIndex, 0), points.length - 1)] ?? null;
-  }, [currentIndex, points]);
+    return points[activeIndex] ?? null;
+  }, [activeIndex, points]);
 
   useEffect(() => {
     if (!open) {
@@ -116,7 +117,8 @@ export function MessageCardCoordinateMapDialog({
       stage={
         <MessageCardCoordinateMapStage
           open={open}
-          point={currentPoint}
+          points={points}
+          activeIndex={activeIndex}
           baseLayerId={baseLayerId}
           isFullscreen={dialogIsFullscreen}
         />
@@ -132,7 +134,7 @@ export function MessageCardCoordinateMapDialog({
       }
       actions={
         <MessageCardCoordinateMapActions
-          currentIndex={Math.min(Math.max(currentIndex, 0), points.length - 1)}
+          currentIndex={activeIndex}
           pointCount={points.length}
           onClose={handleClose}
           onIndexChange={onIndexChange}
