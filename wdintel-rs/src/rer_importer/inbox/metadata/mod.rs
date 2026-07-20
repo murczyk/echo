@@ -552,6 +552,11 @@ ID(CG)⬅️:50📣",
     }
 
     #[test]
+    fn parse_metadata_does_not_match_named_id_lists_in_prose() {
+        assert!(parse_metadata_checked("Цілі: 1 (АЛЬФА), 2 (БРАВО)").is_empty());
+    }
+
+    #[test]
     fn parse_metadata_handles_sc_transcript_header() {
         let metadata = parse_metadata_asserting_spans(
             r#"27.06.2026 20:37:23

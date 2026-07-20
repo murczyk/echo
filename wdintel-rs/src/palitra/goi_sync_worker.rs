@@ -380,6 +380,7 @@ async fn reconcile_echo_palitras_missing_in_goi(
     .await
     .c(h!())?;
     let mut remote_paths = remote_paths.clone();
+    let mut uploaded_paths = BTreeSet::new();
 
     for palitra in palitras {
         if tracked_palitra_ids.contains(&palitra.id) {
@@ -390,11 +391,13 @@ async fn reconcile_echo_palitras_missing_in_goi(
             target,
             &palitra,
             &remote_paths,
+            &uploaded_paths,
         )
         .await
         {
             Ok(Some(relative_path)) => {
-                remote_paths.insert(relative_path);
+                remote_paths.insert(relative_path.clone());
+                uploaded_paths.insert(relative_path);
             }
             Ok(None) => {}
             Err(err) => {
@@ -416,6 +419,7 @@ async fn reconcile_echo_palitra_missing_in_goi(
     target: &GoiSyncTarget,
     palitra: &palitra::Model,
     remote_paths: &BTreeSet<String>,
+    uploaded_paths: &BTreeSet<String>,
 ) -> anyhow::Result<Option<String>> {
     let geometry =
         super::read_latest_palitra_geometry_with_warning(&env.dbx, palitra.id)
@@ -430,6 +434,7 @@ async fn reconcile_echo_palitra_missing_in_goi(
     );
     let Some(remote_file_name) = find_echo_palitra_backfill_remote_file_name(
         remote_paths,
+        uploaded_paths,
         target_folder.as_deref(),
         &remote_file_names,
         target.integration.disable_goi_to_echo_palitra_sync,
@@ -460,17 +465,19 @@ async fn reconcile_echo_palitra_missing_in_goi(
 
 fn find_echo_palitra_backfill_remote_file_name<'a>(
     remote_paths: &BTreeSet<String>,
+    uploaded_paths: &BTreeSet<String>,
     target_folder: Option<&str>,
     remote_file_names: &'a [String],
     overwrite_existing: bool,
 ) -> Option<&'a str> {
-    if overwrite_existing {
-        return remote_file_names.first().map(String::as_str);
-    }
     remote_file_names.iter().find_map(|file_name| {
-        (!remote_paths
-            .contains(&compose_relative_path(target_folder, file_name)))
-        .then_some(file_name.as_str())
+        let relative_path = compose_relative_path(target_folder, file_name);
+        let path_is_available = if overwrite_existing {
+            !uploaded_paths.contains(&relative_path)
+        } else {
+            !remote_paths.contains(&relative_path)
+        };
+        path_is_available.then_some(file_name.as_str())
     })
 }
 
@@ -3457,6 +3464,7 @@ mod tests {
         assert_eq!(
             find_echo_palitra_backfill_remote_file_name(
                 &BTreeSet::new(),
+                &BTreeSet::new(),
                 Some("folder"),
                 &remote_file_names,
                 false,
@@ -3468,6 +3476,7 @@ mod tests {
         assert_eq!(
             find_echo_palitra_backfill_remote_file_name(
                 &current_path,
+                &BTreeSet::new(),
                 Some("folder"),
                 &remote_file_names,
                 false,
@@ -3481,6 +3490,7 @@ mod tests {
         assert_eq!(
             find_echo_palitra_backfill_remote_file_name(
                 &current_and_source_paths,
+                &BTreeSet::new(),
                 Some("folder"),
                 &remote_file_names,
                 false,
@@ -3495,6 +3505,7 @@ mod tests {
         assert_eq!(
             find_echo_palitra_backfill_remote_file_name(
                 &all_paths,
+                &BTreeSet::new(),
                 Some("folder"),
                 &remote_file_names,
                 false,
@@ -3516,11 +3527,23 @@ mod tests {
         assert_eq!(
             find_echo_palitra_backfill_remote_file_name(
                 &current_path,
+                &BTreeSet::new(),
                 Some("folder"),
                 &remote_file_names,
                 true,
             ),
             Some("Current name.kmz")
+        );
+
+        assert_eq!(
+            find_echo_palitra_backfill_remote_file_name(
+                &current_path,
+                &current_path,
+                Some("folder"),
+                &remote_file_names,
+                true,
+            ),
+            Some("source.kml")
         );
     }
 
