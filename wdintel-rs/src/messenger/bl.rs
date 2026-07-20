@@ -376,10 +376,12 @@ pub async fn get_qr_code(
         .await
         .c(h!())?;
     let txn = db.begin().await.c(h!())?;
-    let m_login = Some(login.to_string());
     datasource::Entity::update_many()
         .filter(datasource::Column::Id.eq(account.id))
-        .col_expr(datasource::Column::UpdatedByLoginId, Expr::value(m_login))
+        .col_expr(
+            datasource::Column::UpdatedByLoginId,
+            Expr::value(Some(*login)),
+        )
         .exec(&txn)
         .await
         .c(h!())?;

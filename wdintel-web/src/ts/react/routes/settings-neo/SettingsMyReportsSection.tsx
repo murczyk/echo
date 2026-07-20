@@ -373,7 +373,7 @@ function buildReportLoadingRows(rowCount: number): ReportHistoryRow[] {
   return Array.from({ length: rowCount }, (_, index) => ({
     id: -index - 1,
     reportKind: '',
-    requestedByLoginId: '',
+    requestedBy: '',
     createdAt: '',
     status: 'planned',
     completedAt: null,
@@ -736,9 +736,9 @@ export function ReportHistoryTableSection({
     if (includeAuthor) {
       nextColumns.push(
         {
-          accessorKey: 'requestedByLoginId',
+          accessorKey: 'requestedBy',
           header: 'Автор',
-          Cell: ({ row }) => row.original.requestedByLoginId,
+          Cell: ({ row }) => row.original.requestedBy,
         },
         {
           id: 'errorLog',

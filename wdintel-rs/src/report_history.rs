@@ -7,7 +7,7 @@ use crate::config::{
 };
 use crate::delta::{bgtask_log, finish_bgtask};
 use crate::entities::{
-    area_of_responsibility, bgtask, prelude::*, report_history,
+    area_of_responsibility, bgtask, login, prelude::*, report_history,
 };
 use crate::error::AppError;
 use crate::h;
@@ -27,9 +27,9 @@ use log::{error, warn};
 use sea_orm::sea_query::{Expr, SimpleExpr};
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, Condition, ConnectionTrait, DatabaseBackend,
-    DatabaseConnection, EntityTrait, FromQueryResult, IntoActiveModel, NotSet,
-    PaginatorTrait, QueryFilter, QueryOrder, QuerySelect, Select, Set,
-    Statement, TransactionTrait,
+    DatabaseConnection, EntityTrait, FromQueryResult, IntoActiveModel,
+    JoinType, NotSet, PaginatorTrait, QueryFilter, QueryOrder, QuerySelect,
+    RelationTrait, Select, Set, Statement, TransactionTrait,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -82,7 +82,7 @@ pub enum ReportHistoryRequest {
 pub struct ReportHistoryRow {
     pub id: i64,
     pub report_kind: String,
-    pub requested_by_login_id: String,
+    pub requested_by: String,
     pub created_at: String,
     pub started_at: Option<String>,
     pub planned_for_ts: Option<String>,
@@ -288,6 +288,14 @@ async fn build_report_history_rows(
             .await?;
     let queue_meta_by_id =
         report_history_queue_meta(dbx, &report_histories).await?;
+    let requested_by_by_id = crate::users::login_names_by_ids(
+        dbx,
+        report_histories
+            .iter()
+            .map(|report_history| report_history.requested_by_login_id)
+            .collect(),
+    )
+    .await?;
 
     Ok(report_histories
         .into_iter()
@@ -295,8 +303,15 @@ async fn build_report_history_rows(
         .map(|(report_history, refs)| {
             let report_history_id = report_history.id;
             let progress = lookup.report_history_progress(&report_history);
+            let requested_by = requested_by_by_id
+                .get(&report_history.requested_by_login_id)
+                .cloned()
+                .unwrap_or_else(|| {
+                    report_history.requested_by_login_id.to_string()
+                });
             to_report_history_row(
                 report_history,
+                requested_by,
                 lookup.format_details(refs),
                 progress,
                 queue_meta_by_id.get(&report_history_id).cloned(),
@@ -319,6 +334,7 @@ async fn build_report_history_row(
 
 fn to_report_history_row(
     report_history: report_history::Model,
+    requested_by: String,
     details: String,
     progress: i64,
     queue_meta: Option<ReportHistoryQueueMetaRow>,
@@ -347,7 +363,7 @@ fn to_report_history_row(
     ReportHistoryRow {
         id: report_history.id,
         report_kind: report_history.report_kind,
-        requested_by_login_id: report_history.requested_by_login_id.to_string(),
+        requested_by,
         created_at: report_history.created_at.to_string(),
         started_at: report_history
             .started_at
@@ -1022,10 +1038,7 @@ fn report_history_column_filter_condition(
         "reportKind" => {
             report_history_text_condition("report_history.report_kind", values)
         }
-        "requestedBy" => report_history_text_condition(
-            "report_history.requested_by_login_id",
-            values,
-        ),
+        "requestedBy" => report_history_text_condition("login.login", values),
         "createdAt" => report_history_text_condition(
             "report_history.created_at::text",
             values,
@@ -1065,10 +1078,7 @@ fn report_history_global_filter_condition(value: &str) -> Option<Condition> {
                 "report_history.report_kind",
                 value,
             ))
-            .add(report_history_like_expr(
-                "report_history.requested_by_login_id",
-                value,
-            ))
+            .add(report_history_like_expr("login.login", value))
             .add(report_history_like_expr(
                 "report_history.created_at::text",
                 value,
@@ -1117,7 +1127,6 @@ fn report_history_sort_column(id: &str) -> Option<report_history::Column> {
     match id {
         "id" => Some(report_history::Column::Id),
         "reportKind" => Some(report_history::Column::ReportKind),
-        "requestedBy" => Some(report_history::Column::RequestedByLoginId),
         "createdAt" => Some(report_history::Column::CreatedAt),
         "status" => Some(report_history::Column::Status),
         "completedAt" => Some(report_history::Column::CompletedAt),
@@ -1135,6 +1144,15 @@ fn apply_report_history_admin_sorting(
 ) -> Select<report_history::Entity> {
     let mut applied_sorting = false;
     for sorting in sorting {
+        if sorting.id == "requestedBy" {
+            query = if sorting.desc {
+                query.order_by_desc(login::Column::Login)
+            } else {
+                query.order_by_asc(login::Column::Login)
+            };
+            applied_sorting = true;
+            continue;
+        }
         let Some(column) = report_history_sort_column(&sorting.id) else {
             continue;
         };
@@ -1158,8 +1176,11 @@ async fn list_admin_report_histories(
 ) -> Result<ReportHistoryAdminListRsp, AppError> {
     let offset = report_history_list_offset(req);
     let limit = report_history_list_batch_size(req);
-    let filtered_query =
-        apply_report_history_admin_filters(ReportHistory::find(), req);
+    let filtered_query = apply_report_history_admin_filters(
+        ReportHistory::find()
+            .join(JoinType::LeftJoin, report_history::Relation::Login.def()),
+        req,
+    );
     let total = filtered_query.clone().count(dbx).await.c(h!())?;
 
     let report_histories =

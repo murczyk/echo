@@ -17,8 +17,6 @@ use lazy_static::lazy_static;
 use regex::Regex;
 use sea_orm::*;
 use std::collections::{BTreeMap, HashMap, HashSet};
-use uuid::Uuid;
-
 pub mod attachments;
 pub mod bl;
 pub mod dedupe;
@@ -324,6 +322,8 @@ pub async fn link_operator(
     crate::users::has_any_role(&env.dbx, &login, vec!["Admin"]).await?;
     let txn = env.dbx.begin().await.cae(h!())?;
     let aor_id = load_default_aor(&txn).await.c(h!())?.id;
+    let api_login_id =
+        crate::users::login_id_by_name(&txn, &req.api_login).await?;
     let new_datasource_id = datasource::ActiveModel {
         echo_client_lock_id: NotSet,
         id: NotSet,
@@ -332,7 +332,7 @@ pub async fn link_operator(
         display_name: Set(req.display_name.to_string()),
         signal_phone: Set(None),
         api_endpoint: Set(Some(req.api_endpoint.clone())),
-        api_login_id: Set(Some(Uuid::parse_str(&req.api_login).c(h!())?)),
+        api_login_id: Set(Some(api_login_id)),
         enabled: Set(Some(true)),
         group_master_key: NotSet,
         sender_uuid: NotSet,
