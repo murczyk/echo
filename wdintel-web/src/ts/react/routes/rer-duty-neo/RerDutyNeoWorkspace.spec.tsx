@@ -520,7 +520,7 @@ describe('RerDutyNeoWorkspace', () => {
     };
 
     await renderWorkspace(1);
-    expect(renderedFeedColumns.get('feed-1')?.view.workspaceFabAvoidance).toBe('left');
+    expect(renderedFeedColumns.get('feed-1')?.view.workspaceFabAvoidance).toBe('none');
     expect(container.querySelectorAll('button[aria-label="Додати повідомлення"]')).toHaveLength(1);
     await act(async () => {
       container
