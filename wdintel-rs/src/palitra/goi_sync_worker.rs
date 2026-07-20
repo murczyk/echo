@@ -157,14 +157,13 @@ async fn palitra_goi_sync_worker_step(
     env: &Env,
     last_reconcile_at: &mut Option<Instant>,
 ) -> Result<bool, AppError> {
-    if should_reconcile_goi_palitras(*last_reconcile_at) {
-        *last_reconcile_at = Some(Instant::now());
-        reconcile_goi_palitras(env).await.c(h!())?;
-    }
-
     let txn = env.dbx.begin().await.c(h!())?;
     let Some(job) = take_next_job(&txn).await.c(h!())? else {
         txn.commit().await.c(h!())?;
+        if should_reconcile_goi_palitras(*last_reconcile_at) {
+            *last_reconcile_at = Some(Instant::now());
+            reconcile_goi_palitras(env).await.c(h!())?;
+        }
         return Ok(true);
     };
     txn.commit().await.c(h!())?;
