@@ -3,6 +3,7 @@ import { SettingsSaveReq, User } from '../../../../Bindings';
 import { getJson, postJson, postVoid } from './client';
 
 type UserLike = {
+  id?: string;
   name?: string;
   roles?: string[] | null;
   sigintZoneId?: number | null;
@@ -29,6 +30,7 @@ type SettingsSaveReqBody = {
 
 function normalizeUser(raw: UserLike | null | undefined): User {
   return {
+    id: raw?.id ?? '',
     name: raw?.name ?? '',
     roles: raw?.roles ?? [],
     sigintZoneId: raw?.sigintZoneId ?? raw?.sigint_zone_id ?? null,

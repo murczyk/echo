@@ -317,7 +317,7 @@ export type BgtaskStatusAndLogsQuery = {
 export type ReportHistoryRow = {
   id: number;
   reportKind: string;
-  requestedBy: string;
+  requestedByLoginId: string;
   createdAt: string;
   startedAt: string | null;
   plannedForTs: string | null;
@@ -1385,6 +1385,7 @@ export type LoginReq = {
 };
 
 export type User = {
+  id: string;
   name: string;
   roles: Array<string>;
   sigintZoneId: number | null;
@@ -1440,6 +1441,7 @@ export type UserInfoReq = {
 };
 
 export type Login = {
+  id: string;
   login: string;
   roles: Array<string>;
   createdAt: number;
@@ -1479,6 +1481,7 @@ export type CreateLoginReq = {
 };
 
 export type UpdateLoginReq = {
+  id: string;
   login: string;
   roles: Array<string> | null;
   sigintZoneId: number | null;
@@ -1510,7 +1513,7 @@ export type DeactivationReasonType =
 export type ApiIntegration = {
   id: number;
   description: string | null;
-  apiUser: string;
+  apiUserLoginId: string;
   hasIggyConnection: boolean;
   iggyUrl: string | null;
   iggyLogin: string | null;
@@ -1530,7 +1533,7 @@ export type ListApiIntegrationsRsp = {
 export type UpsertApiIntegrationReq = {
   id: number | null;
   description: string | null;
-  apiUser: string;
+  apiUserLoginId: string;
   hasIggyConnection: boolean;
   iggyUrl: string | null;
   iggyLogin: string | null;
@@ -1629,7 +1632,7 @@ export type OrganismKeywordSetDto = {
   id: number;
   name: string;
   words: Array<string>;
-  authorLogin: string | null;
+  authorLoginId: string | null;
   canEdit: boolean;
   canDelete: boolean;
 };
@@ -2079,7 +2082,7 @@ export type Unit = {
   name: string;
   active: boolean;
   createdAt: number;
-  createdBy: string;
+  createdByLoginId: string;
 };
 
 export type ListUnitsReq = {
@@ -3300,7 +3303,7 @@ export type SystemSettingsItem = {
   rerDutyPollIntervalSec: number;
   createdAt: number;
   updatedAt: number;
-  updatedBy: string | null;
+  updatedByLoginId: string | null;
   deleted: boolean;
   shortUrlEnabled: boolean;
   supportNonRerInterceptions: boolean;

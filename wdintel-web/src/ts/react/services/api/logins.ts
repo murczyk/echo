@@ -24,6 +24,7 @@ type CreateLoginReqBody = {
 };
 
 type UpdateLoginReqBody = {
+  id: string;
   login: string;
   roles: string[] | null;
   sigint_zone_id: number | null;
@@ -36,6 +37,7 @@ type UpdateLoginReqBody = {
 };
 
 type LoginLike = {
+  id?: string;
   login?: string;
   roles?: string[] | null;
   createdAt?: number | string;
@@ -80,6 +82,7 @@ function toCreateLoginReqBody(req: CreateLoginReq): CreateLoginReqBody {
 
 function toUpdateLoginReqBody(req: UpdateLoginReq): UpdateLoginReqBody {
   return {
+    id: req.id,
     login: req.login,
     roles: req.roles,
     sigint_zone_id: req.sigintZoneId,
@@ -113,6 +116,7 @@ function normalizeOptionalNumber(value: number | string | null | undefined): num
 
 function normalizeLogin(raw: LoginLike): Login {
   return {
+    id: raw.id ?? '',
     login: raw.login ?? '',
     roles: raw.roles ?? [],
     createdAt: normalizeNumber(raw.createdAt ?? raw.created_at),

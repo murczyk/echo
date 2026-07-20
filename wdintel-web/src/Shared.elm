@@ -101,7 +101,8 @@ init flagsResult route =
     in
     ( { user =
             Just
-                { name = "anonymous"
+                { id = ""
+                , name = "anonymous"
                 , roles = []
                 , sigintZoneId = Nothing
                 , organismId = Nothing

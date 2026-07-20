@@ -31,7 +31,7 @@ function createSyntheticUnsetUnit(): Unit {
     comment: '',
     active: true,
     createdAt: 0,
-    createdBy: '',
+    createdByLoginId: '',
   };
 }
 
