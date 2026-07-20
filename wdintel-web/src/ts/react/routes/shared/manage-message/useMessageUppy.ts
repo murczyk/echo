@@ -22,6 +22,15 @@ const GENERIC_PASTE_NAMES = new Set(['image.png', 'image.jpg', 'image.jpeg', 'im
 // duplicate file IDs, which would silently drop one of the images.
 let pasteNameCounter = 0;
 
+function translateAttachmentError(msg: string): string {
+  if (msg.toLowerCase().includes('duplicate')) return 'Цей файл вже додано';
+  if (msg.toLowerCase().includes('exceeds maximum allowed size'))
+    return 'Файл занадто великий (максимум 2 ГБ)';
+  if (msg.toLowerCase().includes('exceeds maximum number of files'))
+    return `Перевищено максимальну кількість файлів (${MAX_MESSAGE_ATTACHMENTS})`;
+  return msg;
+}
+
 /**
  * Builds a name for a clipboard-pasted file. Screenshots arrive nameless or with a
  * generic placeholder name, so we synthesize a unique timestamped name; real filenames
@@ -40,15 +49,6 @@ export function pastedFileName(file: File, now: Date = new Date()): string {
 
 export function useMessageUppy(busy: boolean, occupiedAttachmentCount = 0) {
   const [attachmentErrorMsg, setAttachmentErrorMsg] = useState<string | null>(null);
-
-  const translateError = (msg: string) => {
-    if (msg.toLowerCase().includes('duplicate')) return 'Цей файл вже додано';
-    if (msg.toLowerCase().includes('exceeds maximum allowed size'))
-      return 'Файл занадто великий (максимум 2 ГБ)';
-    if (msg.toLowerCase().includes('exceeds maximum number of files'))
-      return `Перевищено максимальну кількість файлів (${MAX_MESSAGE_ATTACHMENTS})`;
-    return msg;
-  };
   const [uppy] = useState(() =>
     new Uppy({
       restrictions: {
@@ -85,33 +85,42 @@ export function useMessageUppy(busy: boolean, occupiedAttachmentCount = 0) {
           data: file,
         });
       } catch (err: any) {
-        setAttachmentErrorMsg(translateError(err.message || 'Помилка додавання файлу'));
+        setAttachmentErrorMsg(translateAttachmentError(err.message || 'Помилка додавання файлу'));
       }
     });
   };
 
   useEffect(() => {
     const updateFiles = () => {
-      setUppyFiles(uppy.getFiles());
+      setUppyFiles([...uppy.getFiles()]);
+    };
+    const updateFilesAndClearError = () => {
+      updateFiles();
       setAttachmentErrorMsg(null);
     };
-    uppy.on('file-added', updateFiles);
-    uppy.on('file-removed', updateFiles);
-    return () => {
-      uppy.off('file-added', updateFiles);
-      uppy.off('file-removed', updateFiles);
-      uppy.off('restriction-failed', (file, error) => {
-        setAttachmentErrorMsg(translateError(error.message));
-      });
+    const handleRestrictionFailed = (_file: unknown, error: Error) => {
+      setAttachmentErrorMsg(translateAttachmentError(error.message));
     };
-  }, [uppy]);
 
-  useEffect(() => {
-    uppy.on('restriction-failed', (file, error) => {
-      setAttachmentErrorMsg(translateError(error.message));
-    });
+    uppy.on('file-added', updateFilesAndClearError);
+    uppy.on('file-removed', updateFilesAndClearError);
+    uppy.on('upload-start', updateFiles);
+    uppy.on('upload-progress', updateFiles);
+    uppy.on('upload-success', updateFiles);
+    uppy.on('upload-error', updateFiles);
+    uppy.on('upload-pause', updateFiles);
+    uppy.on('upload-retry', updateFiles);
+    uppy.on('restriction-failed', handleRestrictionFailed);
     return () => {
-      // handled above
+      uppy.off('file-added', updateFilesAndClearError);
+      uppy.off('file-removed', updateFilesAndClearError);
+      uppy.off('upload-start', updateFiles);
+      uppy.off('upload-progress', updateFiles);
+      uppy.off('upload-success', updateFiles);
+      uppy.off('upload-error', updateFiles);
+      uppy.off('upload-pause', updateFiles);
+      uppy.off('upload-retry', updateFiles);
+      uppy.off('restriction-failed', handleRestrictionFailed);
     };
   }, [uppy]);
 
