@@ -146,20 +146,20 @@ pub fn parse_mid(line: &NormalizedLine) -> Option<MatchedValue> {
     }
     lazy_static! {
         static ref RE_SOURCE_ID: Regex = Regex::new(
-            r#"(?i)SOURCE\s+ID\s*:?\s*((?:\d+\s*(?:\([^)]+\))?\s*,\s*)+\d+\s*(?:\([^)]+\))?|\d+)"#
+            r#"(?i)\bSOURCE\s+ID\s*:?\s*((?:\d+\s*(?:\([^)]+\))?\s*,\s*)+\d+\s*(?:\([^)]+\))?|\d+)"#
         )
         .unwrap();
     }
-    parse_numeric_value_from_standalone_regexes(
-        line,
-        &[&RE_SENDER_ID_UA, &RE_ID],
-    )
-    .or_else(|| {
-        parse_numeric_value_from_regexes(
-            line,
-            &[&RE_CG_LIST, &RE_CG, &RE_SOURCE_ID],
-        )
-    })
+    parse_numeric_value_from_regexes(line, &[&RE_SOURCE_ID])
+        .or_else(|| {
+            parse_numeric_value_from_standalone_regexes(
+                line,
+                &[&RE_SENDER_ID_UA, &RE_ID],
+            )
+        })
+        .or_else(|| {
+            parse_numeric_value_from_regexes(line, &[&RE_CG_LIST, &RE_CG])
+        })
 }
 
 pub fn parse_mid_id(line: &NormalizedLine) -> Option<MatchedValue> {
@@ -183,15 +183,15 @@ pub fn parse_mid_id(line: &NormalizedLine) -> Option<MatchedValue> {
     }
     lazy_static! {
         static ref RE_SOURCE_ID: Regex = Regex::new(
-            r#"(?i)SOURCE\s+ID\s*:?\s*(?:\d+(?:\s*,\s*\d+)*|нв|-)\s*\(([^)]+)\)"#
+            r#"(?i)\bSOURCE\s+ID\s*:?\s*(?:\d+(?:\s*,\s*\d+)*|нв|-)\s*\(([^)]+)\)"#
         )
         .unwrap();
     }
-    parse_string_from_standalone_regexes(line, &[&RE_ID], 2)
+    parse_string_from_regexes(line, &[&RE_SOURCE_ID], 1)
+        .or_else(|| parse_string_from_standalone_regexes(line, &[&RE_ID], 2))
         .or_else(|| {
             parse_string_from_standalone_regexes(line, &[&RE_SENDER_ID_UA], 1)
         })
-        .or_else(|| parse_string_from_regexes(line, &[&RE_SOURCE_ID], 1))
         .or_else(|| parse_string_from_regexes(line, &[&RE_CG], 2))
         .or_else(|| {
             parse_string_from_standalone_regexes(line, &[&RE_ID_TEXT], 1)
@@ -519,16 +519,7 @@ fn expand_multi_source_ids(
             continue;
         };
 
-        if let Some((_, shared_id_name)) = ids
-            .last()
-            .filter(|(_, id_name)| id_name.has_value())
-            .filter(|_| {
-                ids.iter()
-                    .filter(|(_, id_name)| id_name.has_value())
-                    .count()
-                    == 1
-            })
-        {
+        if let Some(shared_id_name) = trailing_shared_source_id_name(&ids) {
             item.id_name = shared_id_name.clone();
         } else if matched_value_is_within(&item.id_name, &item.id) {
             item.id_name = MatchedValue::default();
@@ -543,6 +534,17 @@ fn expand_multi_source_ids(
         }
     }
     result
+}
+
+fn trailing_shared_source_id_name(
+    ids: &[(MatchedValue, MatchedValue)],
+) -> Option<&MatchedValue> {
+    let ((_, trailing_name), preceding_ids) = ids.split_last()?;
+    (trailing_name.has_value()
+        && preceding_ids
+            .iter()
+            .all(|(_, id_name)| !id_name.has_value()))
+    .then_some(trailing_name)
 }
 
 fn matched_value_is_within(
@@ -575,11 +577,46 @@ fn split_multi_source_id(
     }
 
     let chars = raw_text.chars().collect::<Vec<_>>();
-    let mut ids = vec![];
+    let ids = split_source_id_part_ranges(&chars)
+        .into_iter()
+        .map(|(part_start, part_end)| {
+            let raw_part =
+                chars[part_start..part_end].iter().collect::<String>();
+            parse_source_id_part(&raw_part, part_start, start_index)
+        })
+        .collect::<Option<Vec<_>>>()?;
+
+    if ids.len() <= 1
+        || ids.iter().any(|(id, _)| {
+            id.value.as_ref().is_none_or(|value| {
+                !value.chars().all(|ch| ch.is_ascii_digit())
+            })
+        })
+    {
+        return None;
+    }
+
+    Some(ids)
+}
+
+fn split_source_id_part_ranges(chars: &[char]) -> Vec<(usize, usize)> {
+    let mut ranges = vec![];
     let mut part_start = 0_usize;
+    let mut in_parentheses = false;
     for idx in 0..=chars.len() {
-        if idx < chars.len() && chars[idx] != ',' {
-            continue;
+        if idx < chars.len() {
+            match chars[idx] {
+                '(' => {
+                    in_parentheses = true;
+                    continue;
+                }
+                ')' => {
+                    in_parentheses = false;
+                    continue;
+                }
+                ',' if !in_parentheses => {}
+                _ => continue,
+            }
         }
 
         let mut trimmed_start = part_start;
@@ -595,28 +632,11 @@ fn split_multi_source_id(
             trimmed_end -= 1;
         }
         if trimmed_start < trimmed_end {
-            let raw_part =
-                chars[trimmed_start..trimmed_end].iter().collect::<String>();
-            ids.push(parse_source_id_part(
-                &raw_part,
-                trimmed_start,
-                start_index,
-            )?);
+            ranges.push((trimmed_start, trimmed_end));
         }
         part_start = idx + 1;
     }
-
-    if ids.len() <= 1
-        || ids.iter().any(|(id, _)| {
-            id.value.as_ref().is_none_or(|value| {
-                !value.chars().all(|ch| ch.is_ascii_digit())
-            })
-        })
-    {
-        return None;
-    }
-
-    Some(ids)
+    ranges
 }
 
 fn parse_source_id_part(

@@ -514,6 +514,30 @@ ID(CG)⬅️:50📣",
     }
 
     #[test]
+    fn parse_metadata_handles_named_source_id_list() {
+        assert_eq!(
+            parse_metadata_asserting_spans("SOURCE ID: 1 (A), 2 (B)"),
+            vec![
+                InboxMetadata {
+                    id: Some("1".to_string()),
+                    id_name: Some("A".to_string()),
+                    ..Default::default()
+                },
+                InboxMetadata {
+                    id: Some("2".to_string()),
+                    id_name: Some("B".to_string()),
+                    ..Default::default()
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn parse_metadata_does_not_match_source_id_inside_word() {
+        assert!(parse_metadata_checked("RESOURCE ID: 1, 2").is_empty());
+    }
+
+    #[test]
     fn parse_metadata_handles_sc_transcript_header() {
         let metadata = parse_metadata_asserting_spans(
             r#"27.06.2026 20:37:23
@@ -603,6 +627,29 @@ ID(CG)⬅️: 8584772
                 "БАНАН".to_string(),
                 "ОДНОРАЗИК".to_string(),
                 "ЛУНТИК".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn parse_metadata_keeps_commas_inside_source_id_names() {
+        let metadata = parse_metadata_asserting_spans(
+            "ID➡️: 1 (АЛЬФА, РЕЗЕРВ), 2 (БРАВО)",
+        );
+
+        assert_eq!(
+            metadata,
+            vec![
+                InboxMetadata {
+                    id: Some("1".to_string()),
+                    id_name: Some("АЛЬФА, РЕЗЕРВ".to_string()),
+                    ..Default::default()
+                },
+                InboxMetadata {
+                    id: Some("2".to_string()),
+                    id_name: Some("БРАВО".to_string()),
+                    ..Default::default()
+                },
             ]
         );
     }
