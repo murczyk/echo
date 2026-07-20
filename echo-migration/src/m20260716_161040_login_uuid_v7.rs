@@ -31,6 +31,31 @@ as $$
     select id from login where login = login_name
 $$;
 
+update sigint_saved_filter saved_filter
+set login = null
+where saved_filter.login is not null
+  and not exists (
+      select 1
+      from login
+      where login.login = saved_filter.login
+  );
+
+insert into login (login, roles)
+select 'system', '["Admin", "NoAutoLogout"]'::jsonb
+where not exists (
+    select 1
+    from login
+    where login.login = 'system'
+);
+
+update enemy_units_geojson geojson
+set created_by = 'system'
+where not exists (
+    select 1
+    from login
+    where login.login = geojson.created_by
+);
+
 do $$
 declare
     ref record;
