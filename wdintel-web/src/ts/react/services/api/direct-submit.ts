@@ -1,6 +1,7 @@
 import { HttpRequestError, postJson } from './client';
 import type { RequestOptions } from './client';
 import type { InboxMessage } from '../../../../Bindings';
+import { normalizeInboxMessageFromWire } from './inbox-messages';
 
 export type DeviceNameSearchRequest = {
   search: string;
@@ -214,6 +215,18 @@ export type DirectSubmitResponse = {
   message?: InboxMessage;
 };
 
+export type DirectSubmitResponseRaw = {
+  signal_message_id: number;
+  message?: unknown | null;
+};
+
+function normalizeDirectSubmitResponse(raw: DirectSubmitResponseRaw): DirectSubmitResponse {
+  return {
+    signal_message_id: raw.signal_message_id,
+    ...(raw.message == null ? {} : { message: normalizeInboxMessageFromWire(raw.message) }),
+  };
+}
+
 export type DirectSubmitParseRequest = {
   full_body: string;
   signal_group_master_key?: string;
@@ -251,7 +264,8 @@ export async function submitDirect(
   req: DirectSubmitRequest,
   options?: RequestOptions,
 ): Promise<DirectSubmitResponse> {
-  return await postJson<DirectSubmitResponse>('/api/1.1/submit-direct', req, options);
+  const raw = await postJson<DirectSubmitResponseRaw>('/api/1.1/submit-direct', req, options);
+  return normalizeDirectSubmitResponse(raw);
 }
 
 export async function editDirectSubmit(
@@ -259,7 +273,8 @@ export async function editDirectSubmit(
   req: DirectSubmitRequest,
   options?: RequestOptions,
 ): Promise<DirectSubmitResponse> {
-  return await postJson<DirectSubmitResponse>(`/api/1.1/message/${id}/edit`, req, options);
+  const raw = await postJson<DirectSubmitResponseRaw>(`/api/1.1/message/${id}/edit`, req, options);
+  return normalizeDirectSubmitResponse(raw);
 }
 
 export async function parseDirectSubmit(

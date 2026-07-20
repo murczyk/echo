@@ -20,6 +20,7 @@ import type { FormEvent } from 'react';
 import { PageHeader } from '../../components/PageHeader';
 import { PowerAlert } from '../../components/PowerAlert';
 import { PowerButton } from '../../components/PowerButton';
+import { usePowerSnackbar } from '../../components/PowerSnackbar';
 import {
   createSystemSettings,
   listSystemSettings,
@@ -617,8 +618,8 @@ export function AdminSystemSettingsNeoPage() {
   const [loadInProgress, setLoadInProgress] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
-  const [saveSuccess, setSaveSuccess] = useState<string | null>(null);
   const [saveInProgress, setSaveInProgress] = useState(false);
+  const { notify } = usePowerSnackbar();
 
   useEffect(() => {
     async function loadSystemSettings() {
@@ -644,7 +645,6 @@ export function AdminSystemSettingsNeoPage() {
   const isDirty = !formsEqual(form, saved);
 
   function patchForm(patch: Partial<SystemSettingsForm>) {
-    setSaveSuccess(null);
     setForm((prev) => ({ ...prev, ...patch }));
   }
 
@@ -657,14 +657,12 @@ export function AdminSystemSettingsNeoPage() {
     const validationError = validatePelengBounds(nextForm);
     if (validationError) {
       setForm(nextForm);
-      setSaveSuccess(null);
       setSaveError(validationError);
       return;
     }
 
     setSaveInProgress(true);
     setSaveError(null);
-    setSaveSuccess(null);
 
     try {
       const payload = formToPayload(nextForm);
@@ -691,7 +689,10 @@ export function AdminSystemSettingsNeoPage() {
       });
       setForm(nextForm);
       setSaved(nextForm);
-      setSaveSuccess('Нове системне налаштування збережено.');
+      notify({
+        severity: 'success',
+        message: 'Нове системне налаштування збережено.',
+      });
       window.dispatchEvent(new Event('system-settings-saved'));
     } catch (error) {
       setSaveError(`Помилка збереження: ${formatErrorMessage(error)}`);
@@ -761,12 +762,6 @@ export function AdminSystemSettingsNeoPage() {
               <Stack spacing={3} sx={{ width: '100%' }}>
                 {loadError ? <PowerAlert severity="error">{loadError}</PowerAlert> : null}
                 {saveError ? <PowerAlert severity="error">{saveError}</PowerAlert> : null}
-                {saveSuccess ? (
-                  <PowerAlert severity="success" role="status">
-                    {saveSuccess}
-                  </PowerAlert>
-                ) : null}
-
                 <Box
                   id="system-settings-neo-panel-main"
                   role="tabpanel"

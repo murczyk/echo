@@ -16,7 +16,6 @@ export function useOrganismKeywordSetsEditor(
   const [name, setName] = useState('');
   const [words, setWords] = useState<string[]>([]);
   const [saveError, setSaveError] = useState<string | null>(null);
-  const [saveSuccess, setSaveSuccess] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
   const selected = useMemo(
@@ -60,7 +59,6 @@ export function useOrganismKeywordSetsEditor(
 
   useEffect(() => {
     setSaveError(null);
-    setSaveSuccess(null);
   }, [selectedId]);
 
   const selectSet = useCallback(
@@ -77,8 +75,7 @@ export function useOrganismKeywordSetsEditor(
     [isDirty, selectedId],
   );
 
-  const clearSaveFeedback = useCallback(() => {
-    setSaveSuccess(null);
+  const clearSaveError = useCallback(() => {
     setSaveError(null);
   }, []);
 
@@ -86,21 +83,19 @@ export function useOrganismKeywordSetsEditor(
     if (!selected) return;
     setName(selected.name);
     setWords(selected.words);
-    clearSaveFeedback();
-  }, [selected, clearSaveFeedback]);
+    clearSaveError();
+  }, [selected, clearSaveError]);
 
   const handleSave = useCallback(async () => {
     if (!selected) return;
     setSaving(true);
     setSaveError(null);
-    setSaveSuccess(null);
     try {
       const saved = await upsertOrganismKeywordSet({
         id: selected.id,
         name: name.trim(),
         words,
       });
-      setSaveSuccess('Збережено');
       await reloadKeywordSets();
       setSelectedId(saved.id);
       return saved.id;
@@ -145,7 +140,6 @@ export function useOrganismKeywordSetsEditor(
       }
       setSaving(true);
       setSaveError(null);
-      setSaveSuccess(null);
       try {
         const saved = await upsertOrganismKeywordSet({
           id: selected.id,
@@ -214,10 +208,9 @@ export function useOrganismKeywordSetsEditor(
     isDirty,
     saving,
     saveError,
-    saveSuccess,
     selectSet,
     syncSelectedId,
-    clearSaveFeedback,
+    clearSaveError,
     discardChanges,
     handleSave,
     handleCreate,

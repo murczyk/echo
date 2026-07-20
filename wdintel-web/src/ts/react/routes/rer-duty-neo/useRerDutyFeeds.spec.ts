@@ -148,7 +148,6 @@ vi.mock('./useRerDutyFeedState', () => ({
                 items: [[2, { text: 'reloaded', unit: 'reloaded-unit' } as never]],
                 readIds: new Set<number>(),
                 unreadCount: 0,
-                firstItemIndex: 0,
                 referenceTimeMs: 0,
                 loading: false,
                 loadingOlder: false,

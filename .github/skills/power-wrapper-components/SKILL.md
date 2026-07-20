@@ -20,7 +20,7 @@ Use when adding or refactoring React + MUI UI in `wdintel-web/src/ts/react`.
 - Prefer `PowerChip` over `Chip`.
 - Prefer `PowerButton` over `Button` when a wrapper exists and fits the use case.
 - Prefer `PowerDatePicker` / `PowerDateTimePicker` over native MUI date and time pickers.
-- Prefer `PowerMenu`, `PowerAlert`, and other existing wrappers over raw MUI components.
+- Prefer `PowerMenu`, `PowerAlert`, `PowerSnackbar`, and other existing wrappers over raw MUI components. Use `PowerSnackbar` for transient action feedback and `PowerAlert` for contextual/static content.
 - Check `wdintel-web/src/ts/react/components` before introducing a new raw MUI primitive in routes or shared UI.
 
 ## Why

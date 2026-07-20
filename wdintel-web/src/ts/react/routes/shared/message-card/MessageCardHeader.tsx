@@ -57,16 +57,17 @@ type ActionIconsRowProps = {
   id: number;
   msg: InboxMessage;
   compact?: boolean;
+  readOnly?: boolean;
   displayMode: MessageCardDisplayMode;
   excludeMenuOptions?: MessageEntityExcludeMenuOption[];
   etalonDisplayModel: MessageCardEtalonDisplayModel;
   navigationMenuItems?: MessageCardNavigationMenuItem[];
   copiedFeedbackId: string | null;
-  onBookmark: () => void;
-  onImportant: () => void;
-  onComment: () => void;
-  onCopyText: () => void;
-  onCopyFreq: () => void;
+  onBookmark?: () => void;
+  onImportant?: () => void;
+  onComment?: () => void;
+  onCopyText?: () => void;
+  onCopyFreq?: () => void;
   onCopyTextWithNetwork?: () => void;
   onCopyTextWithNetworkAndNote?: () => void;
   onCopyEtalon?: () => void;
@@ -151,6 +152,7 @@ function ActionIconsRow({
   id,
   msg,
   compact = false,
+  readOnly = false,
   displayMode,
   excludeMenuOptions = [],
   etalonDisplayModel,
@@ -281,6 +283,10 @@ function ActionIconsRow({
     blurActiveElement();
     action();
     closeOverflowMenu();
+  }
+
+  if (!onBookmark || !onImportant || !onComment || !onCopyText || !onCopyFreq) {
+    return null;
   }
 
   const buttons = [
@@ -870,6 +876,7 @@ function NetworkEtalonSection({
 
 export type MessageCardHeaderProps = {
   compact?: boolean;
+  readOnly?: boolean;
   displayMode: MessageCardDisplayMode;
   excludeMenuOptions?: MessageEntityExcludeMenuOption[];
   id: number;
@@ -883,11 +890,11 @@ export type MessageCardHeaderProps = {
   rightInsetPx?: number;
   topRight?: ReactNode;
   metadataTrigger?: ReactNode;
-  onBookmark: () => void;
-  onImportant: () => void;
-  onComment: () => void;
-  onCopyText: () => void;
-  onCopyFreq: () => void;
+  onBookmark?: () => void;
+  onImportant?: () => void;
+  onComment?: () => void;
+  onCopyText?: () => void;
+  onCopyFreq?: () => void;
   onCopyTextWithNetwork?: () => void;
   onCopyTextWithNetworkAndNote?: () => void;
   onCopyEtalon?: () => void;
@@ -902,6 +909,7 @@ export type MessageCardHeaderProps = {
 // Leaf MUI components remain intentional; see ./AGENTS.md.
 function MessageCardHeaderComponent({
   compact = false,
+  readOnly = false,
   displayMode,
   excludeMenuOptions = [],
   id,
@@ -1043,30 +1051,32 @@ function MessageCardHeaderComponent({
       <div style={{ minWidth: 0, display: 'flex', alignItems: 'center', flex: '1 1 0' }}>
         {dateTimeBlock}
       </div>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <ActionIconsRow
-          id={id}
-          msg={msg}
-          compact={compact}
-          displayMode={displayMode}
-          excludeMenuOptions={excludeMenuOptions}
-          etalonDisplayModel={etalonDisplayModel}
-          copiedFeedbackId={copiedFeedbackId}
-          navigationMenuItems={navigationMenuItems}
-          onBookmark={onBookmark}
-          onImportant={onImportant}
-          onComment={onComment}
-          onCopyText={onCopyText}
-          onCopyFreq={onCopyFreq}
-          onCopyTextWithNetwork={onCopyTextWithNetwork}
-          onCopyTextWithNetworkAndNote={onCopyTextWithNetworkAndNote}
-          onCopyEtalon={onCopyEtalon}
-          onCopyLocation={onCopyLocation}
-          onDelete={onDelete}
-          onEditDetails={onEditDetails}
-          onExcludeMessageEntity={onExcludeMessageEntity}
-        />
-      </div>
+      {!readOnly ? (
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <ActionIconsRow
+            id={id}
+            msg={msg}
+            compact={compact}
+            displayMode={displayMode}
+            excludeMenuOptions={excludeMenuOptions}
+            etalonDisplayModel={etalonDisplayModel}
+            copiedFeedbackId={copiedFeedbackId}
+            navigationMenuItems={navigationMenuItems}
+            onBookmark={onBookmark}
+            onImportant={onImportant}
+            onComment={onComment}
+            onCopyText={onCopyText}
+            onCopyFreq={onCopyFreq}
+            onCopyTextWithNetwork={onCopyTextWithNetwork}
+            onCopyTextWithNetworkAndNote={onCopyTextWithNetworkAndNote}
+            onCopyEtalon={onCopyEtalon}
+            onCopyLocation={onCopyLocation}
+            onDelete={onDelete}
+            onEditDetails={onEditDetails}
+            onExcludeMessageEntity={onExcludeMessageEntity}
+          />
+        </div>
+      ) : null}
       <div
         style={{
           minWidth: 0,

@@ -31,11 +31,12 @@ import {
   Tooltip,
   Typography,
 } from '@mui/material';
-import React from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 import type { GoiReportTabOrderItem } from '../../../../Bindings';
 import { PowerAlert } from '../../components/PowerAlert';
 import { PowerButton } from '../../components/PowerButton';
+import { usePowerSnackbar } from '../../components/PowerSnackbar';
 import {
   GoiUserIntegration,
   fetchGoiReportTabOrder,
@@ -157,20 +158,18 @@ function SortableReportTabOrderItem(props: SortableReportTabOrderItemProps) {
 }
 
 export function GoiReportTabOrderSection(props: Props) {
-  const scopes = React.useMemo(
+  const scopes = useMemo(
     () => buildScopes(props.isAdmin, props.integrations),
     [props.integrations, props.isAdmin],
   );
-  const [activeScopeKey, setActiveScopeKey] = React.useState('');
-  const [items, setItems] = React.useState<GoiReportTabOrderItem[]>([]);
-  const [initialItems, setInitialItems] = React.useState<GoiReportTabOrderItem[]>([]);
-  const [loadStatus, setLoadStatus] = React.useState<'idle' | 'loading' | 'ready' | 'error'>(
-    'idle',
-  );
-  const [loadError, setLoadError] = React.useState<string | null>(null);
-  const [saveError, setSaveError] = React.useState<string | null>(null);
-  const [saveSuccess, setSaveSuccess] = React.useState<string | null>(null);
-  const [saveInProgress, setSaveInProgress] = React.useState(false);
+  const [activeScopeKey, setActiveScopeKey] = useState('');
+  const [items, setItems] = useState<GoiReportTabOrderItem[]>([]);
+  const [initialItems, setInitialItems] = useState<GoiReportTabOrderItem[]>([]);
+  const [loadStatus, setLoadStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [saveInProgress, setSaveInProgress] = useState(false);
+  const { notify } = usePowerSnackbar();
   const sensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: { distance: 6 },
@@ -180,16 +179,16 @@ export function GoiReportTabOrderSection(props: Props) {
     }),
   );
 
-  const activeScope = React.useMemo(
+  const activeScope = useMemo(
     () => scopes.find((scope) => scope.key === activeScopeKey) ?? scopes[0] ?? null,
     [activeScopeKey, scopes],
   );
-  const isDirty = React.useMemo(
+  const isDirty = useMemo(
     () => !sequencesEqual(sequence(items), sequence(initialItems)),
     [initialItems, items],
   );
 
-  React.useEffect(() => {
+  useEffect(() => {
     if (scopes.length === 0) {
       setActiveScopeKey('');
       return;
@@ -199,7 +198,7 @@ export function GoiReportTabOrderSection(props: Props) {
     }
   }, [activeScopeKey, scopes]);
 
-  React.useEffect(() => {
+  useEffect(() => {
     if (!activeScope) {
       setItems([]);
       setInitialItems([]);
@@ -211,7 +210,6 @@ export function GoiReportTabOrderSection(props: Props) {
     setLoadStatus('loading');
     setLoadError(null);
     setSaveError(null);
-    setSaveSuccess(null);
 
     void fetchGoiReportTabOrder(activeScope.integrationId, abortController.signal)
       .then((nextItems) => {
@@ -238,7 +236,6 @@ export function GoiReportTabOrderSection(props: Props) {
     const activeId = uniqueIdentifierToNumber(active.id);
     const overId = uniqueIdentifierToNumber(over.id);
     setSaveError(null);
-    setSaveSuccess(null);
     setItems((currentItems) => {
       const oldIndex = currentItems.findIndex((item) => item.aorId === activeId);
       const newIndex = currentItems.findIndex((item) => item.aorId === overId);
@@ -250,7 +247,6 @@ export function GoiReportTabOrderSection(props: Props) {
   function resetOrder() {
     setItems(initialItems);
     setSaveError(null);
-    setSaveSuccess(null);
   }
 
   async function saveOrder() {
@@ -258,7 +254,6 @@ export function GoiReportTabOrderSection(props: Props) {
 
     setSaveInProgress(true);
     setSaveError(null);
-    setSaveSuccess(null);
 
     try {
       const updatedItems = await updateGoiReportTabOrder({
@@ -270,7 +265,7 @@ export function GoiReportTabOrderSection(props: Props) {
       });
       setItems(updatedItems);
       setInitialItems(updatedItems);
-      setSaveSuccess('Порядок вкладок збережено');
+      notify({ severity: 'success', message: 'Порядок вкладок збережено' });
     } catch (error) {
       setSaveError(formatErrorMessage(error));
     } finally {
@@ -310,7 +305,6 @@ export function GoiReportTabOrderSection(props: Props) {
 
           {loadError ? <PowerAlert severity="error">{loadError}</PowerAlert> : null}
           {saveError ? <PowerAlert severity="error">{saveError}</PowerAlert> : null}
-          {saveSuccess ? <PowerAlert severity="success">{saveSuccess}</PowerAlert> : null}
 
           {loadStatus === 'ready' && items.length === 0 ? (
             <PowerAlert severity="info">Смуг для звіту не знайдено.</PowerAlert>

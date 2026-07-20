@@ -100,6 +100,7 @@ export function formatUtcDateOnly(value: number | null | undefined): string {
 
 export const APP_DATE_INPUT_MIN = '2022-01-01';
 export const APP_DATETIME_INPUT_MIN = '2022-01-01T00:00';
+export const APP_DATETIME_INPUT_MAX = '2100-12-31T23:59';
 export const APP_DATE_INPUT_MIN_YEAR = 2022;
 export const APP_TIME_ZONE = 'Europe/Kiev';
 

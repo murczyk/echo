@@ -50,6 +50,7 @@ export function MessageCardMessageBody({
   tagsOrder,
   tagsLoading = false,
   onToggleTag,
+  readOnly = false,
   tagsLayout = 'full',
   botTagAction = null,
   onCancelBotTagAction,
@@ -68,7 +69,8 @@ export function MessageCardMessageBody({
   tagsMap: Record<number, Tag>;
   tagsOrder?: number[];
   tagsLoading?: boolean;
-  onToggleTag: (tagId: number) => void;
+  readOnly?: boolean;
+  onToggleTag?: (tagId: number) => void;
   tagsLayout?: TagsLayoutVariant;
   botTagAction?: MessageCardBotTagAction | null;
   onCancelBotTagAction?: () => void;
@@ -261,18 +263,22 @@ export function MessageCardMessageBody({
               tagsOrder={tagsOrder}
               onToggleTag={onToggleTag}
               tagsLayout={tagsLayout}
+              interactive={!readOnly && onToggleTag != null}
             />
           </span>
         </div>
       ) : null}
-      {botTagAction != null && onMarkBotTagWrong != null && onCancelBotTagAction != null ? (
+      {!readOnly &&
+      botTagAction != null &&
+      onMarkBotTagWrong != null &&
+      onCancelBotTagAction != null ? (
         <MessageCardBotTagPrompt
           botTagAction={botTagAction}
           onCancelBotTagAction={onCancelBotTagAction}
           onMarkBotTagWrong={onMarkBotTagWrong}
         />
       ) : null}
-      {isPresent(analysisCallsignActions) ? (
+      {!readOnly && isPresent(analysisCallsignActions) ? (
         <MessageCardCallsignsSection
           msg={msg}
           actions={analysisCallsignActions}

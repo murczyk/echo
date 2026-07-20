@@ -11,11 +11,10 @@ import { normalizeCallsignLookupValue } from '../../utils/callsign-normalization
 import { useRerDutyFeedState } from './useRerDutyFeedState';
 import { useRerDutyFilterOptions } from './useRerDutyFilterOptions';
 import { useRerDutyMessageActions } from './useRerDutyMessageActions';
-import { collectUniqueCallsignsFromMessages, stableStringify } from './utils';
+import { collectUniqueCallsignsFromMessages, MAX_MESSAGE_FEEDS, stableStringify } from './utils';
 import { useDutySettings } from '../../hooks/use-duty-settings';
 import { useInboxChangedMessageIds } from '../shared/useInboxChangedMessageIds';
 
-const MAX_MESSAGE_FEEDS = 4;
 const CALLSIGN_LOOKUP_RETRY_BACKOFF_MS = 30_000;
 
 export { MAX_MESSAGE_FEEDS };
@@ -425,6 +424,7 @@ export function useRerDutyFeeds(authUserName: string | null) {
     createMessageFeed: feedState.createMessageFeed,
     removeMessageFeed: feedState.removeMessageFeed,
     loadFeedInitialMessages: feedState.loadFeedInitialMessages,
+    reloadEmptyFeeds: feedState.reloadEmptyFeeds,
     loadFeedOlderMessages: feedState.loadFeedOlderMessages,
     loadFeedNewerMessages: feedState.loadFeedNewerMessages,
     applyFilter: feedState.applyFilter,

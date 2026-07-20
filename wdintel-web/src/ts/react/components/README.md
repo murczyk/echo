@@ -43,11 +43,53 @@ Use for icon buttons that need the same double-submit guard.
 
 ## `PowerAlert`
 
-Use for dismissible alerts with optional auto-hide timing.
+Use for contextual or static content: loading and empty states, validation or
+load/reference errors, permission and gating warnings, and persistent information.
 
 ```tsx
 <PowerAlert severity="error">...</PowerAlert>
 ```
+
+## `PowerSnackbar`
+
+Use for transient, non-blocking action feedback. Place
+`<PowerSnackbarProvider>` inside the route's MUI theme provider, then call
+`usePowerSnackbar()` with `success`, `info`, `warning`, or `error` severity.
+Notifications are queued FIFO in a single bottom-right Snackbar and dismiss
+automatically. Include safe-area-aware insets when the route has floating controls.
+
+```tsx
+<ThemeProvider theme={theme}>
+  <PowerSnackbarProvider>
+    <Page />
+  </PowerSnackbarProvider>
+</ThemeProvider>
+```
+
+```tsx
+const { notify } = usePowerSnackbar();
+
+notify({
+  severity: 'success',
+  message: 'Зміни збережено.',
+});
+```
+
+Use one provider per independently mounted React root. Route-specific insets
+are required when floating controls occupy the bottom-right corner.
+
+Raw MUI `Snackbar` must not be used outside `PowerSnackbar`.
+
+New transient action feedback must use `PowerSnackbar`; legacy timed
+`PowerAlert` usages remain temporarily for migration compatibility.
+
+| Message meaning                               | Component       |
+| --------------------------------------------- | --------------- |
+| Save/create/import succeeded                  | `PowerSnackbar` |
+| Non-contextual action failed                  | `PowerSnackbar` |
+| Form validation or submission error           | `PowerAlert`    |
+| Page/section loading failure                  | `PowerAlert`    |
+| Permission, warning or persistent information | `PowerAlert`    |
 
 ## `PowerMenu`
 

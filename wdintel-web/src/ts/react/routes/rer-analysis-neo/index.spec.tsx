@@ -2,13 +2,26 @@
  * @vitest-environment happy-dom
  */
 import { createRoot } from 'react-dom/client';
-import { act } from 'react';
+import { act, useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { emptyQueryState } from './helpers';
 
 const useRerAnalysisNeoPageMock = vi.hoisted(() => vi.fn());
+const notifyMock = vi.hoisted(() => vi.fn());
+const createMessageFabPropsHistory = vi.hoisted(() => [] as Array<{ onClick?: () => void }>);
+const manageMessageDrawerPropsHistory = vi.hoisted(
+  () =>
+    [] as Array<{
+      open: boolean;
+      onClose: () => void;
+      onCreated?: (result: unknown) => Promise<void> | void;
+      onSubmitEdit?: (id: number, message: unknown) => Promise<void> | void;
+      onEditSuccess?: (result: unknown) => Promise<void> | void;
+      editTarget?: unknown;
+    }>,
+);
 
 vi.mock('@mui/material', () => ({
   Badge: ({ children }: { children: ReactNode }) => <div>{children}</div>,
@@ -113,7 +126,21 @@ vi.mock('../../components/PageHeader', () => ({
 }));
 
 vi.mock('../../components/PowerAlert', () => ({
-  PowerAlert: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  PowerAlert: ({
+    children,
+    autoHideDuration,
+    ...props
+  }: { children: ReactNode; autoHideDuration?: number } & Record<string, unknown>) => {
+    const [visible, setVisible] = useState(true);
+
+    useEffect(() => {
+      if (autoHideDuration == null) return;
+      const timeoutId = window.setTimeout(() => setVisible(false), autoHideDuration);
+      return () => window.clearTimeout(timeoutId);
+    }, [autoHideDuration]);
+
+    return visible ? <div {...props}>{children}</div> : null;
+  },
 }));
 
 vi.mock('../../components/PowerChip', () => ({
@@ -156,12 +183,31 @@ vi.mock('./components/AnalysisSummaryTableCard', () => ({
   AnalysisSummaryTableCard: () => <div data-testid="summary-card" />,
 }));
 
-vi.mock('./components/CreateMessageFab', () => ({
-  CreateMessageFab: () => <button type="button">create message</button>,
+vi.mock('../shared/manage-message/CreateMessageFab', () => ({
+  CreateMessageFab: ({ onClick }: { onClick?: () => void }) => {
+    createMessageFabPropsHistory.push({ onClick });
+    return (
+      <button type="button" aria-label="create-message-fab" onClick={onClick}>
+        create message
+      </button>
+    );
+  },
+}));
+vi.mock('../../components/PowerSnackbar', () => ({
+  usePowerSnackbar: () => ({ notify: notifyMock }),
 }));
 
-vi.mock('./components/ManageMessageDrawer', () => ({
-  ManageMessageDrawer: () => <div data-testid="manage-message-drawer" />,
+vi.mock('../shared/manage-message/ManageMessageDrawer', () => ({
+  ManageMessageDrawer: (props: {
+    open: boolean;
+    onClose: () => void;
+    onCreated?: (result: unknown) => Promise<void> | void;
+    onSubmitEdit?: (id: number, message: unknown) => Promise<void> | void;
+    editTarget?: unknown;
+  }) => {
+    manageMessageDrawerPropsHistory.push(props);
+    return props.open ? <div data-testid="manage-message-drawer" /> : null;
+  },
 }));
 
 vi.mock('./use-min-duration-busy', () => ({
@@ -317,6 +363,7 @@ function buildPage() {
     refreshMapDateRange: vi.fn(),
     reload: vi.fn(),
     renameSummaryUnit: vi.fn(),
+    reload: vi.fn(),
     setCenterTab: vi.fn(),
     setNewestFirst: vi.fn(),
     setReportProgressExpanded: vi.fn(),
@@ -345,10 +392,16 @@ describe('RerAnalysisNeoPage', () => {
 
   beforeEach(() => {
     useRerAnalysisNeoPageMock.mockReset();
+    notifyMock.mockReset();
     useRerAnalysisNeoPageMock.mockReturnValue(buildPage());
+    createMessageFabPropsHistory.splice(0);
+    manageMessageDrawerPropsHistory.splice(0);
+    vi.useFakeTimers();
   });
 
   afterEach(async () => {
+    vi.runOnlyPendingTimers();
+    vi.useRealTimers();
     for (const container of rendered.splice(0)) {
       document.body.removeChild(container);
     }
@@ -386,6 +439,183 @@ describe('RerAnalysisNeoPage', () => {
     await act(async () => {
       root.unmount();
     });
+  });
+
+  it('enqueues success Snackbar and reloads after creation', async () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    rendered.push(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(<RerAnalysisNeoPage />);
+    });
+
+    const page = useRerAnalysisNeoPageMock.mock.results[0]?.value;
+    const createFab = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="create-message-fab"]',
+    );
+    expect(createFab).not.toBeNull();
+
+    await act(async () => {
+      createFab?.click();
+    });
+
+    expect(manageMessageDrawerPropsHistory.at(-1)?.open).toBe(true);
+    expect(page.reload).not.toHaveBeenCalled();
+
+    await act(async () => {
+      manageMessageDrawerPropsHistory.at(-1)?.onClose();
+    });
+
+    expect(manageMessageDrawerPropsHistory.at(-1)?.open).toBe(false);
+    expect(page.reload).not.toHaveBeenCalled();
+
+    await act(async () => {
+      createFab?.click();
+    });
+    const createdDrawer = manageMessageDrawerPropsHistory.at(-1);
+    expect(createdDrawer?.open).toBe(true);
+
+    await act(async () => {
+      await createdDrawer?.onCreated?.({ signal_message_id: 17 });
+    });
+
+    expect(manageMessageDrawerPropsHistory.at(-1)?.open).toBe(false);
+    expect(page.reload).toHaveBeenCalledTimes(1);
+    expect(notifyMock).toHaveBeenCalledTimes(1);
+    expect(notifyMock).toHaveBeenCalledWith({
+      message: 'Повідомлення успішно створено.',
+      severity: 'success',
+    });
+
+    await act(async () => {
+      root.unmount();
+    });
+  });
+
+  it('enqueues separate Snackbar notifications for repeated creations', async () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    rendered.push(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(<RerAnalysisNeoPage />);
+    });
+
+    const create = async () => {
+      await act(async () => {
+        container
+          .querySelector<HTMLButtonElement>('button[aria-label="create-message-fab"]')
+          ?.click();
+      });
+      const drawer = manageMessageDrawerPropsHistory.at(-1);
+      await act(async () => {
+        await drawer?.onCreated?.({ signal_message_id: 17 });
+      });
+    };
+
+    await create();
+    await create();
+    expect(notifyMock).toHaveBeenCalledTimes(2);
+
+    await act(async () => {
+      root.unmount();
+    });
+  });
+
+  it('does not enqueue a success Snackbar when creation is cancelled', async () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    rendered.push(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(<RerAnalysisNeoPage />);
+    });
+    await act(async () => {
+      container
+        .querySelector<HTMLButtonElement>('button[aria-label="create-message-fab"]')
+        ?.click();
+    });
+    await act(async () => {
+      manageMessageDrawerPropsHistory.at(-1)?.onClose();
+    });
+
+    const page = useRerAnalysisNeoPageMock.mock.results[0]?.value;
+    expect(notifyMock).not.toHaveBeenCalled();
+    expect(page.reload).not.toHaveBeenCalled();
+
+    await act(async () => {
+      root.unmount();
+    });
+  });
+
+  it('opens edit mode from the current editor message and wires save and close callbacks', async () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    rendered.push(container);
+    const root = createRoot(container);
+    const editorMessage = { id: 42, message: { messageUid: 'm-42' } as never };
+    const page = buildPage();
+    page.editorMessage = editorMessage;
+    useRerAnalysisNeoPageMock.mockReturnValueOnce(page);
+    await act(async () => {
+      root.render(<RerAnalysisNeoPage />);
+    });
+
+    const drawer = manageMessageDrawerPropsHistory.at(-1);
+    expect(drawer?.open).toBe(true);
+    expect(drawer?.editTarget).toBe(editorMessage);
+
+    await act(async () => {
+      await drawer?.onSubmitEdit?.(42, { messageUid: 'm-updated' });
+    });
+
+    expect(page.saveEditor).toHaveBeenCalledTimes(1);
+    expect(page.saveEditor).toHaveBeenCalledWith({ messageUid: 'm-updated' });
+    expect(page.reload).not.toHaveBeenCalled();
+    await act(async () => {
+      await drawer?.onEditSuccess?.({ signal_message_id: 42 });
+    });
+    expect(page.reload).toHaveBeenCalledTimes(1);
+    expect(container.querySelector('[role="status"]')).toBeNull();
+
+    await act(async () => {
+      drawer?.onClose();
+    });
+
+    expect(page.closeEditor).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      root.unmount();
+    });
+  });
+
+  it('reloads after an edit without an inline message without saving a stale local message', async () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    rendered.push(container);
+    const root = createRoot(container);
+    const editorMessage = { id: 43, message: { messageUid: 'm-43' } as never };
+    const page = buildPage();
+    page.editorMessage = editorMessage;
+    useRerAnalysisNeoPageMock.mockReturnValueOnce(page);
+
+    await act(async () => {
+      root.render(<RerAnalysisNeoPage />);
+    });
+    const drawer = manageMessageDrawerPropsHistory.at(-1);
+    await act(async () => {
+      await drawer?.onEditSuccess?.({ signal_message_id: 43 });
+    });
+
+    expect(page.saveEditor).not.toHaveBeenCalled();
+    expect(page.reload).toHaveBeenCalledTimes(1);
+    expect(container.textContent).not.toContain('Повідомлення успішно створено.');
+
+    await act(async () => root.unmount());
   });
 
   it('preserves the current message page when the header refresh button is clicked', async () => {
