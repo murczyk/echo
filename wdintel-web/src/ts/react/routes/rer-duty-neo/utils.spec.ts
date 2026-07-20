@@ -20,6 +20,7 @@ import {
   filtersEqual,
   findAllAdjacentFreqs,
   feedUnreadDisplayCount,
+  feedLoadedUnreadCount,
   feedsUnreadDisplayTotal,
   getPointEtalonsFromMessage,
   getShortStateIdFromUrl,
@@ -577,6 +578,50 @@ describe('rer-duty utils', () => {
         { ...feed, unreadCount: 4, readIds: new Set<number>([1, 2, 3]) },
       ]),
     ).toBe(69984);
+  });
+
+  it('counts only loaded unread messages for the bottom button', () => {
+    const feed = {
+      id: 'mf-1',
+      filter: emptyFilter(),
+      items: [
+        [1, {} as InboxMessage],
+        [2, {} as InboxMessage],
+        [3, {} as InboxMessage],
+      ],
+      loading: false,
+      loadingOlder: false,
+      hasReachedStart: false,
+      referenceTimeMs: null,
+      readIds: new Set([1, 2]),
+      unreadCount: 70000,
+      adjacentFreqsRange: 0,
+      highlightSignalsEnabled: false,
+      onlyMyUnitTagsEnabled: false,
+    } satisfies MessageFeedState;
+    expect(feedLoadedUnreadCount(feed)).toBe(1);
+  });
+
+  it('does not expose raw server unread count when all loaded messages are read', () => {
+    const feed = {
+      id: 'mf-1',
+      filter: emptyFilter(),
+      items: [
+        [1, {} as InboxMessage],
+        [2, {} as InboxMessage],
+      ],
+      loading: false,
+      loadingOlder: false,
+      hasReachedStart: false,
+      referenceTimeMs: null,
+      readIds: new Set([1, 2]),
+      unreadCount: 1,
+      adjacentFreqsRange: 0,
+      highlightSignalsEnabled: false,
+      onlyMyUnitTagsEnabled: false,
+    } satisfies MessageFeedState;
+    expect(feedLoadedUnreadCount(feed)).toBe(0);
+    expect(feedUnreadDisplayCount(feed)).toBe(1);
   });
 
   it('windows initial messages to the newest items after sorting and dedupe', () => {

@@ -72,6 +72,7 @@ type Params = {
   isFollowTailValid: (feedId: string, generation: number) => boolean;
   setTailAvailability: (feedId: string, availability: TailAvailability) => void;
   getTailAvailability: (feedId: string) => TailAvailability;
+  invalidateTailPreview: (feedId: string) => void;
 };
 
 function createOperation(
@@ -345,6 +346,7 @@ export function useRerDutyDirectionalLoads(params: Params) {
             }
           }
           if (!accepted || !latestFeed) return;
+          runParams.invalidateTailPreview(feedId);
           const latestWindowed = appendWindowedMessageItems(latestFeed.items, response.inboxItems);
           const addedCount = latestWindowed.addedItems.length;
           const newestCursor = latestWindowed.items.at(-1)?.[0] ?? null;

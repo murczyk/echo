@@ -424,6 +424,7 @@ export function useRerDutyFeeds(authUserName: string | null) {
     atBottomByFeedIdRef: feedState.atBottomByFeedIdRef,
     physicallyAtBottomByFeedIdRef: feedState.physicallyAtBottomByFeedIdRef,
     tailAvailabilityByFeedId: feedState.tailAvailabilityByFeedId,
+    confirmedTailPreviewByFeedId: feedState.confirmedTailPreviewByFeedId,
     beginFollowTail: feedState.beginFollowTail,
     ensureFollowTail: feedState.ensureFollowTail,
     cancelFollowTail: feedState.cancelFollowTail,

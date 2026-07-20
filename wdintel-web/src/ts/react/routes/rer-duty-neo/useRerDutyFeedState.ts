@@ -3,7 +3,7 @@ import type { Dispatch, SetStateAction } from 'react';
 import { isNullOrUndefined } from '../../utils/misc';
 
 import type { SignalGroupEntry, SignalProfileEntry } from '../../../../Bindings';
-import { fetchInboxCount } from '../../services/api/inbox';
+import { fetchInboxCount, fetchInboxMessages } from '../../services/api/inbox';
 import type { FeedColumnHandle } from './FeedColumn';
 import { buildInboxReq, emptyFilter, findAllAdjacentFreqs, parseStateFromUrl } from './utils';
 import type { MessageFeedState } from './utils';
@@ -35,6 +35,7 @@ type ServerCountBaseline = {
   quantity: number;
   requestSignature: string;
 };
+type ConfirmedTailPreview = { tailId: number; count: number; generation: number };
 
 export function useRerDutyFeedState(deps: FeedStateDeps) {
   const { freqs, setProfiles, setGroupInfos } = deps;
@@ -61,6 +62,10 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
     >
   >({});
   const tailCountRequestPromiseByFeedIdRef = useRef<Record<string, Promise<number | null>>>({});
+  const tailPreviewPromiseByFeedIdRef = useRef<
+    Record<string, Promise<ConfirmedTailPreview | null>>
+  >({});
+  const tailPreviewGenerationByFeedIdRef = useRef<Record<string, number>>({});
   const [watchModeByFeedId, setWatchModeByFeedId] = useState<Record<string, boolean>>({});
   const [loadingNewerFeedIds, setLoadingNewerFeedIds] = useState<Set<string>>(new Set());
   const [arrowResultByFeedId, setArrowResultByFeedId] = useState<Record<string, string | null>>({});
@@ -77,6 +82,12 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
     Record<string, TailAvailability>
   >({});
   const tailAvailabilityByFeedIdRef = useRef<Record<string, TailAvailability>>({});
+  const [confirmedTailPreviewByFeedId, setConfirmedTailPreviewByFeedId] = useState<
+    Record<string, ConfirmedTailPreview | undefined>
+  >({});
+  const confirmedTailPreviewByFeedIdRef = useRef<Record<string, ConfirmedTailPreview | undefined>>(
+    {},
+  );
   const nearBottomByFeedIdRef = useRef<Record<string, boolean>>({});
   const unreadCursorByFeedIdRef = useRef<Record<string, number | null>>({});
   const newestExhaustedCursorByFeedIdRef = useRef<Record<string, number>>({});
@@ -111,13 +122,50 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
   }, []);
 
   const resetTailState = useCallback((feedId: string) => {
+    tailPreviewGenerationByFeedIdRef.current[feedId] =
+      (tailPreviewGenerationByFeedIdRef.current[feedId] ?? 0) + 1;
     delete newestExhaustedCursorByFeedIdRef.current[feedId];
     delete tailCountRequestPromiseByFeedIdRef.current[feedId];
+    delete tailPreviewPromiseByFeedIdRef.current[feedId];
+    delete confirmedTailPreviewByFeedIdRef.current[feedId];
+    setConfirmedTailPreviewByFeedId((previous) => {
+      if (!(feedId in previous)) return previous;
+      const next = { ...previous };
+      delete next[feedId];
+      return next;
+    });
     delete pendingScrollToEndRef.current[feedId];
     delete scheduledScrollToEndRef.current[feedId];
     tailAvailabilityByFeedIdRef.current[feedId] = 'unknown';
     setTailAvailabilityByFeedId((previous) => ({ ...previous, [feedId]: 'unknown' }));
   }, []);
+  const setConfirmedTailPreview = useCallback(
+    (feedId: string, preview: ConfirmedTailPreview | undefined) => {
+      confirmedTailPreviewByFeedIdRef.current[feedId] = preview;
+      setConfirmedTailPreviewByFeedId((previous) => {
+        if (preview === undefined) {
+          if (!(feedId in previous)) return previous;
+          const next = { ...previous };
+          delete next[feedId];
+          return next;
+        }
+        const current = previous[feedId];
+        return current?.tailId === preview.tailId && current.count === preview.count
+          ? previous
+          : { ...previous, [feedId]: preview };
+      });
+    },
+    [],
+  );
+  const invalidateTailPreview = useCallback(
+    (feedId: string) => {
+      tailPreviewGenerationByFeedIdRef.current[feedId] =
+        (tailPreviewGenerationByFeedIdRef.current[feedId] ?? 0) + 1;
+      delete tailPreviewPromiseByFeedIdRef.current[feedId];
+      setConfirmedTailPreview(feedId, undefined);
+    },
+    [setConfirmedTailPreview],
+  );
   const markFeedReloadRequested = useCallback(
     (feedId: string) => {
       loadGenerationByFeedIdRef.current = {
@@ -328,6 +376,51 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
     },
     [buildReqForFeed, freqs, getFeedLoadGeneration],
   );
+  const requestValidatedTailPreview = useCallback(
+    (feedId: string): Promise<ConfirmedTailPreview | null> => {
+      const existingPromise = tailPreviewPromiseByFeedIdRef.current[feedId];
+      if (existingPromise) return existingPromise;
+      const feed = messageFeedsRef.current.find((candidate) => candidate.id === feedId);
+      const tailId = feed?.items.at(-1)?.[0];
+      if (!feed || feed.loading || pendingReloadFeedIdsRef.current.has(feedId) || tailId == null) {
+        return Promise.resolve(null);
+      }
+      const requestGeneration = getFeedLoadGeneration(feedId);
+      const previewGeneration = tailPreviewGenerationByFeedIdRef.current[feedId] ?? 0;
+      tailPreviewGenerationByFeedIdRef.current[feedId] = previewGeneration;
+      const requestSignature = buildFeedCountSignature(feed, freqs);
+      const requestPromise = (async () => {
+        const response = await fetchInboxMessages(
+          buildReqForFeed(feed, { sinceIdNoninclusive: tailId }),
+        );
+        const currentFeed = messageFeedsRef.current.find((candidate) => candidate.id === feedId);
+        if (
+          !currentFeed ||
+          getFeedLoadGeneration(feedId) !== requestGeneration ||
+          currentFeed.items.at(-1)?.[0] !== tailId ||
+          buildFeedCountSignature(currentFeed, freqs) !== requestSignature
+        ) {
+          return null;
+        }
+        const loadedIds = new Set(currentFeed.items.map(([id]) => id));
+        return {
+          tailId,
+          count: response.inboxItems.filter(([id]) => !loadedIds.has(id)).length,
+          generation: previewGeneration,
+        };
+      })();
+      tailPreviewPromiseByFeedIdRef.current[feedId] = requestPromise;
+      requestPromise
+        .finally(() => {
+          if (tailPreviewPromiseByFeedIdRef.current[feedId] === requestPromise) {
+            delete tailPreviewPromiseByFeedIdRef.current[feedId];
+          }
+        })
+        .catch(() => {});
+      return requestPromise;
+    },
+    [buildReqForFeed, freqs, getFeedLoadGeneration],
+  );
 
   useEffect(() => {
     return () => {
@@ -372,6 +465,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
       isFollowTailValid,
       setTailAvailability,
       getTailAvailability: (feedId) => tailAvailabilityByFeedIdRef.current[feedId] ?? 'unknown',
+      invalidateTailPreview,
     });
   invalidateFeedLoadsRef.current = invalidateFeedLoads;
 
@@ -424,6 +518,8 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
           }
         }
         if (entry.quantity <= 0) {
+          invalidateTailPreview(feedId);
+          setTailAvailability(feedId, currentFeed.items.length > 0 ? 'exhausted' : 'unknown');
           lastServerCountByFeedIdRef.current[feedId] = {
             cursorId: entry.cursorId,
             quantity: 0,
@@ -455,6 +551,19 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
           requestSignature: entry.requestSignature,
         };
         let confirmedTailAvailable = tailAvailabilityByFeedIdRef.current[feedId] === 'available';
+        if (nearBottomByFeedIdRef.current[feedId] !== true) {
+          let preview: ConfirmedTailPreview | null;
+          try {
+            preview = await requestValidatedTailPreview(feedId);
+          } catch {
+            return;
+          }
+          if (!preview || tailPreviewGenerationByFeedIdRef.current[feedId] !== preview.generation)
+            return;
+          setConfirmedTailPreview(feedId, preview);
+          setTailAvailability(feedId, preview.count > 0 ? 'available' : 'exhausted');
+          return;
+        }
         if (nearBottomByFeedIdRef.current[feedId] === true) {
           const loadedTailId = currentFeed.items.at(-1)?.[0];
           const exhaustedTail =
@@ -510,7 +619,10 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
     deps.disableAutoScroll,
     requestValidatedInboxCount,
     requestValidatedTailCount,
+    requestValidatedTailPreview,
     isFollowTailValid,
+    setConfirmedTailPreview,
+    invalidateTailPreview,
   ]);
 
   const feedIds = useMemo(() => messageFeeds.map((w) => w.id).join(','), [messageFeeds]);
@@ -640,6 +752,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
     atBottomByFeedIdRef,
     physicallyAtBottomByFeedIdRef,
     tailAvailabilityByFeedId,
+    confirmedTailPreviewByFeedId,
     beginFollowTail,
     ensureFollowTail,
     cancelFollowTail,

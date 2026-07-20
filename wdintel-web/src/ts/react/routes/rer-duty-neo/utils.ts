@@ -835,6 +835,14 @@ export function feedUnreadDisplayCount(feed: MessageFeedState): number {
   return Math.max(0, feed.unreadCount);
 }
 
+export function feedLoadedUnreadCount(feed: MessageFeedState): number {
+  let count = 0;
+  for (const [id] of feed.items) {
+    if (!feed.readIds.has(id)) count += 1;
+  }
+  return count;
+}
+
 /** Sum of {@link feedUnreadDisplayCount} across all feeds. */
 export function feedsUnreadDisplayTotal(feeds: MessageFeedState[]): number {
   return feeds.reduce((sum, feed) => sum + feedUnreadDisplayCount(feed), 0);

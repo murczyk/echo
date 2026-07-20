@@ -28,7 +28,7 @@ export type FeedColumnModel = {
     scrollTrackingEnabled?: boolean;
     loadingNewer?: boolean;
     arrowResultMessage?: string | null;
-    unreadCount?: number;
+    bottomUnreadCount?: number;
     physicallyAtBottom?: boolean;
     tailAvailability?: TailAvailability;
   };

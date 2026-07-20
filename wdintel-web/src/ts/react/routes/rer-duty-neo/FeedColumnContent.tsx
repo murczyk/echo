@@ -369,7 +369,7 @@ export const FeedColumnContent = memo(
       scrollTrackingEnabled = true,
       loadingNewer = false,
       arrowResultMessage = null,
-      unreadCount = 0,
+      bottomUnreadCount = 0,
       physicallyAtBottom = true,
       tailAvailability = 'unknown',
       isWatchMode = false,
@@ -635,14 +635,14 @@ export const FeedColumnContent = memo(
               )}
               <Box sx={{ position: 'relative', display: 'inline-flex' }}>
                 <Fab
-                  color={unreadCount > 0 ? 'primary' : 'default'}
+                  color={bottomUnreadCount > 0 ? 'primary' : 'default'}
                   size="small"
                   sx={{
                     ...dutyTopScrollButtonSx,
                     position: 'relative',
                     zIndex: 0,
-                    borderColor: unreadCount > 0 ? 'primary.main' : 'grey.400',
-                    color: unreadCount > 0 ? 'primary.main' : 'grey.400',
+                    borderColor: bottomUnreadCount > 0 ? 'primary.main' : 'grey.400',
+                    color: bottomUnreadCount > 0 ? 'primary.main' : 'grey.400',
                     '&:hover': {
                       backgroundColor: 'background.paper',
                       borderColor: 'primary.main',
@@ -663,12 +663,13 @@ export const FeedColumnContent = memo(
                   )}
                 </Fab>
                 {!loadingNewer &&
-                  unreadCount > 0 &&
+                  bottomUnreadCount > 0 &&
                   !isWatchMode &&
                   isNullOrUndefined(arrowResultMessage) && (
                     <PowerChip
+                      data-duty-scroll-unread-badge
                       size="small"
-                      label={unreadCount}
+                      label={bottomUnreadCount}
                       selected
                       interactive={false}
                       unselectedOpacity={1}
@@ -704,7 +705,7 @@ export const FeedColumnContent = memo(
       prevView.scrollTrackingEnabled !== nextView.scrollTrackingEnabled ||
       prevView.loadingNewer !== nextView.loadingNewer ||
       prevView.arrowResultMessage !== nextView.arrowResultMessage ||
-      prevView.unreadCount !== nextView.unreadCount ||
+      prevView.bottomUnreadCount !== nextView.bottomUnreadCount ||
       prevView.physicallyAtBottom !== nextView.physicallyAtBottom ||
       prevView.tailAvailability !== nextView.tailAvailability
     ) {

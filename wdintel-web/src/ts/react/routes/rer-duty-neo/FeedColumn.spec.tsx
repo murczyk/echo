@@ -36,7 +36,14 @@ vi.mock('../shared/message-card/MessageCard', () => ({
 }));
 
 vi.mock('../../components/PowerChip', () => ({
-  PowerChip: () => <div data-testid="power-chip" />,
+  PowerChip: (props: { label?: unknown; 'data-duty-scroll-unread-badge'?: boolean }) => (
+    <div
+      data-testid="power-chip"
+      data-duty-scroll-unread-badge={props['data-duty-scroll-unread-badge'] || undefined}
+    >
+      {props.label as any}
+    </div>
+  ),
 }));
 
 import { FeedColumn } from './FeedColumn';
@@ -81,7 +88,7 @@ function buildProps(): FeedColumnProps {
         isWatchMode: false,
         loadingNewer: false,
         arrowResultMessage: null,
-        unreadCount: 0,
+        bottomUnreadCount: 0,
         physicallyAtBottom: true,
         tailAvailability: 'available',
       },
@@ -336,7 +343,7 @@ describe('FeedColumn', () => {
   it('keeps narrow floating actions vertically separated at tablet widths', async () => {
     const props = buildProps();
     props.column.view.narrowScreen = true;
-    props.column.view.unreadCount = 2;
+    props.column.view.bottomUnreadCount = 2;
     props.column.actions.onArrowClick = vi.fn();
     props.column.actions.onCreateMessageFeed = vi.fn();
     props.column.feed.items = [[1, minimalInboxMessage({ timestamp: 100 })]];
@@ -361,10 +368,40 @@ describe('FeedColumn', () => {
   it('does not show the bottom button for stale unread data at an exhausted tail', async () => {
     const props = buildProps();
     props.column.feed.items = [[1, minimalInboxMessage({ timestamp: 100 })]];
-    props.column.view.unreadCount = 3;
+    props.column.view.bottomUnreadCount = 3;
     props.column.view.tailAvailability = 'exhausted';
     await act(async () => root.render(<FeedColumn column={props.column} />));
     expect(container.querySelector('[data-duty-feed-scroll-button]')).toBeNull();
+  });
+
+  it('does not show a badge when raw unread exists but every loaded message is read', async () => {
+    const props = buildProps();
+    props.column.feed.items = [[1, minimalInboxMessage({ timestamp: 100 })]];
+    props.column.feed.readIds = new Set([1]);
+    props.column.feed.unreadCount = 1;
+    props.column.view.bottomUnreadCount = 0;
+    props.column.view.physicallyAtBottom = false;
+    await act(async () => root.render(<FeedColumn column={props.column} />));
+    expect(container.querySelector('[data-duty-feed-scroll-button]')).not.toBeNull();
+    expect(container.querySelector('[data-duty-feed-scroll-button]')?.textContent).not.toContain(
+      '1',
+    );
+  });
+
+  it('shows the number of actual loaded unread messages', async () => {
+    const props = buildProps();
+    props.column.feed.items = [
+      [1, minimalInboxMessage({ timestamp: 100 })],
+      [2, minimalInboxMessage({ timestamp: 200 })],
+    ];
+    props.column.feed.readIds = new Set([1]);
+    props.column.feed.unreadCount = 50;
+    props.column.view.bottomUnreadCount = 1;
+    props.column.view.physicallyAtBottom = false;
+    props.column.view.isWatchMode = false;
+    await act(async () => root.render(<FeedColumn column={props.column} />));
+    expect(container.querySelector('[data-duty-feed-scroll-button]')?.textContent).toContain('1');
+    expect(container.querySelector('[data-duty-scroll-unread-badge]')).not.toBeNull();
   });
 
   it('shows the bottom button only for available tail content or away from the bottom', async () => {

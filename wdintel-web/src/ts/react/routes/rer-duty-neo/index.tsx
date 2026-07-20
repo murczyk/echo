@@ -9,7 +9,7 @@ import {
 } from './notifications';
 import {
   DEFAULT_DUTY_TAGS_LAYOUT,
-  feedUnreadDisplayCount,
+  feedLoadedUnreadCount,
   feedsUnreadDisplayTotal,
   excludeMessageEntityFromFilters,
   type MessageEntityFilterKind,
@@ -85,7 +85,11 @@ export function RerDutyNeoPage({
       isWatchMode: !dutyDisableAutoScroll && (watchModeByFeedId[feed.id] ?? true),
       loadingNewer: loadingNewerFeedIds.has(feed.id),
       arrowResultMessage: arrowResultByFeedId[feed.id] ?? null,
-      unreadCount: feedUnreadDisplayCount(feed),
+      bottomUnreadCount:
+        feedLoadedUnreadCount(feed) +
+        (feed.items.at(-1)?.[0] === confirmedTailPreviewByFeedId[feed.id]?.tailId
+          ? confirmedTailPreviewByFeedId[feed.id]!.count
+          : 0),
       physicallyAtBottom: physicallyAtBottomByFeedIdRef.current[feed.id] ?? false,
       tailAvailability: tailAvailabilityByFeedId[feed.id] ?? 'unknown',
     },
@@ -264,6 +268,7 @@ export function RerDutyNeoPage({
     atBottomByFeedIdRef,
     physicallyAtBottomByFeedIdRef,
     tailAvailabilityByFeedId,
+    confirmedTailPreviewByFeedId,
     beginFollowTail,
     ensureFollowTail,
     cancelFollowTail,
