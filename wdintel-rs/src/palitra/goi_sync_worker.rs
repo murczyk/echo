@@ -429,15 +429,14 @@ async fn reconcile_echo_palitra_missing_in_goi(
         Some(&palitra.name),
         geometry.source_file_name.as_deref(),
     );
-    if echo_palitra_remote_path_is_present(
+    let Some(remote_file_name) = find_echo_palitra_backfill_remote_file_name(
         remote_paths,
         target_folder.as_deref(),
         &remote_file_names,
-    ) {
+    ) else {
         return Ok(None);
-    }
+    };
 
-    let remote_file_name = remote_file_names.first().c(h!())?;
     let relative_path =
         compose_relative_path(target_folder.as_deref(), remote_file_name);
     let remote_file_path = compose_remote_path(
@@ -459,13 +458,15 @@ async fn reconcile_echo_palitra_missing_in_goi(
     Ok(Some(relative_path))
 }
 
-fn echo_palitra_remote_path_is_present(
+fn find_echo_palitra_backfill_remote_file_name<'a>(
     remote_paths: &BTreeSet<String>,
     target_folder: Option<&str>,
-    remote_file_names: &[String],
-) -> bool {
-    remote_file_names.iter().any(|file_name| {
-        remote_paths.contains(&compose_relative_path(target_folder, file_name))
+    remote_file_names: &'a [String],
+) -> Option<&'a str> {
+    remote_file_names.iter().find_map(|file_name| {
+        (!remote_paths
+            .contains(&compose_relative_path(target_folder, file_name)))
+        .then_some(file_name.as_str())
     })
 }
 
@@ -3442,29 +3443,56 @@ mod tests {
     }
 
     #[test]
-    fn echo_backfill_recognizes_current_source_and_legacy_remote_names() {
+    fn echo_backfill_uses_first_available_remote_name() {
         let remote_file_names = super::super::palitra_goi_remote_file_names(
             42,
             Some("Current name"),
             Some("source.kml"),
         );
 
-        for remote_path in [
-            "folder/Current name.kmz",
-            "folder/source.kmz",
-            "folder/palitra_000042.kmz",
-        ] {
-            assert!(echo_palitra_remote_path_is_present(
-                &BTreeSet::from([remote_path.to_string()]),
+        assert_eq!(
+            find_echo_palitra_backfill_remote_file_name(
+                &BTreeSet::new(),
                 Some("folder"),
                 &remote_file_names,
-            ));
-        }
-        assert!(!echo_palitra_remote_path_is_present(
-            &BTreeSet::from(["other/Current name.kmz".to_string()]),
-            Some("folder"),
-            &remote_file_names,
-        ));
+            ),
+            Some("Current name.kmz")
+        );
+        let current_path =
+            BTreeSet::from(["folder/Current name.kmz".to_string()]);
+        assert_eq!(
+            find_echo_palitra_backfill_remote_file_name(
+                &current_path,
+                Some("folder"),
+                &remote_file_names,
+            ),
+            Some("source.kml")
+        );
+        let current_and_source_paths = BTreeSet::from([
+            "folder/Current name.kmz".to_string(),
+            "folder/source.kml".to_string(),
+        ]);
+        assert_eq!(
+            find_echo_palitra_backfill_remote_file_name(
+                &current_and_source_paths,
+                Some("folder"),
+                &remote_file_names,
+            ),
+            Some("palitra_000042.kmz")
+        );
+        let all_paths = BTreeSet::from([
+            "folder/Current name.kmz".to_string(),
+            "folder/source.kml".to_string(),
+            "folder/palitra_000042.kmz".to_string(),
+        ]);
+        assert_eq!(
+            find_echo_palitra_backfill_remote_file_name(
+                &all_paths,
+                Some("folder"),
+                &remote_file_names,
+            ),
+            None
+        );
     }
 
     #[test]
