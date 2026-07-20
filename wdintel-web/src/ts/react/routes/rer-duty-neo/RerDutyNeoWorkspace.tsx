@@ -475,10 +475,7 @@ export function RerDutyNeoWorkspace({
                     const columnView: FeedColumnModel['view'] = {
                       ...column.view,
                       scrollTrackingEnabled: true,
-                      workspaceFabAvoidance:
-                        messageFeeds.length > 1 && index === messageFeeds.length - 1
-                          ? 'left'
-                          : 'none',
+                      workspaceFabAvoidance: index === messageFeeds.length - 1 ? 'left' : 'none',
                     };
                     return (
                       <FeedColumn
