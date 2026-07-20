@@ -536,6 +536,56 @@ ID(CG)⬅️: 8584772
     }
 
     #[test]
+    fn parse_metadata_handles_named_source_ids_in_list() {
+        let body = "СС: 11\nID➡️: 2070 (БАНАН), 6005 (ОДНОРАЗИК), 1007, 1991\nID(CG)⬅️: 906090 (ЛУНТИК)";
+        let metadata = parse_metadata_asserting_spans(body);
+
+        assert_eq!(
+            metadata,
+            vec![
+                InboxMetadata {
+                    cc: Some("11".to_string()),
+                    cg: Some("906090".to_string()),
+                    cg_name: Some("ЛУНТИК".to_string()),
+                    id: Some("2070".to_string()),
+                    id_name: Some("БАНАН".to_string()),
+                    ..Default::default()
+                },
+                InboxMetadata {
+                    cc: Some("11".to_string()),
+                    cg: Some("906090".to_string()),
+                    cg_name: Some("ЛУНТИК".to_string()),
+                    id: Some("6005".to_string()),
+                    id_name: Some("ОДНОРАЗИК".to_string()),
+                    ..Default::default()
+                },
+                InboxMetadata {
+                    cc: Some("11".to_string()),
+                    cg: Some("906090".to_string()),
+                    cg_name: Some("ЛУНТИК".to_string()),
+                    id: Some("1007".to_string()),
+                    ..Default::default()
+                },
+                InboxMetadata {
+                    cc: Some("11".to_string()),
+                    cg: Some("906090".to_string()),
+                    cg_name: Some("ЛУНТИК".to_string()),
+                    id: Some("1991".to_string()),
+                    ..Default::default()
+                },
+            ]
+        );
+        assert_eq!(
+            append_metadata_text_callsigns(Vec::new(), body),
+            vec![
+                "БАНАН".to_string(),
+                "ОДНОРАЗИК".to_string(),
+                "ЛУНТИК".to_string(),
+            ]
+        );
+    }
+
+    #[test]
     fn parse_metadata_line_handles_source_id_variant() {
         let metadata = parse_metadata_line_asserting_spans("SOURCE ID: 0");
         assert_eq!(
