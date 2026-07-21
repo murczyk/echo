@@ -899,6 +899,10 @@ async fn process_recovery_message(
     match result {
         Ok((result, changed_inbox_item_ids)) => {
             txn.commit().await.c(h!())?;
+            crate::messenger::media::delete_uploaded_attachment_files(
+                &result.uploaded_files_ready_for_deletion,
+            )
+            .await;
             if let Err(err) = crate::inbox::fanout_inbox_changes(
                 redis,
                 changed_inbox_item_ids,

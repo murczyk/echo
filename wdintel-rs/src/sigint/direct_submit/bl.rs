@@ -487,13 +487,18 @@ async fn finish_direct_submit(
     .await
     .c(h!())?;
 
-    crate::messenger::media::store_media_attachments(
+    let deletion = if delete_uploaded_attachments {
+        crate::messenger::media::UploadedAttachmentDeletion::DeleteAfterCommit
+    } else {
+        crate::messenger::media::UploadedAttachmentDeletion::Preserve
+    };
+    let upload_result = crate::messenger::media::store_media_attachments(
         uploads,
         signal_message_id,
         &env.config,
         &env.s3,
         &txn,
-        false,
+        deletion,
     )
     .await
     .c(h!())?;
@@ -519,8 +524,10 @@ async fn finish_direct_submit(
     txn.commit().await.c(h!())?;
 
     if delete_uploaded_attachments {
-        crate::messenger::media::delete_uploaded_attachment_files(uploads)
-            .await;
+        crate::messenger::media::delete_uploaded_attachment_files(
+            &upload_result.uploaded_files_ready_for_deletion,
+        )
+        .await;
     }
     if !media_to_delete.is_empty() {
         crate::messenger::media::delete_stored_media_files(

@@ -18,6 +18,12 @@ const directSubmitMocks = vi.hoisted(() => ({
   createDeviceName: vi.fn().mockResolvedValue({ id: 1 }),
   parseDirectSubmit: vi.fn(),
 }));
+const uppyMocks = vi.hoisted(() => ({
+  latest: null as {
+    emitUploadProgress: (percentage: number) => void;
+    emitUploadSuccess: () => void;
+  } | null,
+}));
 
 vi.mock('../../../services/api/inbox-reference-data', () => ({
   getUserSigintGroups: referenceDataMocks.getUserSigintGroups,
@@ -48,6 +54,10 @@ vi.mock('@uppy/core', () => {
     files: Array<Record<string, unknown>> = [];
     listeners = new Map<string, Set<(...args: any[]) => void>>();
 
+    constructor() {
+      uppyMocks.latest = this;
+    }
+
     use() {
       return this;
     }
@@ -71,10 +81,46 @@ vi.mock('@uppy/core', () => {
       if (this.files.length >= 20) {
         throw new Error('exceeds maximum number of files');
       }
-      const addedFile = { id: `file-${this.files.length + 1}`, ...file };
+      const addedFile = {
+        id: `file-${this.files.length + 1}`,
+        progress: {
+          uploadStarted: null,
+          uploadComplete: false,
+          percentage: 0,
+          bytesUploaded: false,
+          bytesTotal: null,
+        },
+        ...file,
+      };
       this.files = [...this.files, addedFile];
       this.listeners.get('file-added')?.forEach((callback) => callback(addedFile));
       return addedFile;
+    }
+    emitUploadProgress(percentage: number) {
+      const file = this.files[0];
+      if (!file) return;
+      file.progress = {
+        uploadStarted: Date.now(),
+        uploadComplete: false,
+        percentage,
+        bytesUploaded: percentage,
+        bytesTotal: 100,
+      };
+      this.listeners.get('upload-progress')?.forEach((callback) => callback(file, file.progress));
+    }
+    emitUploadSuccess() {
+      const file = this.files[0];
+      if (!file) return;
+      file.progress = {
+        uploadStarted: Date.now(),
+        uploadComplete: true,
+        percentage: 100,
+        bytesUploaded: 100,
+        bytesTotal: 100,
+      };
+      this.listeners
+        .get('upload-success')
+        ?.forEach((callback) => callback(file, { status: 200, uploadURL: '/upload/1' }));
     }
     upload() {
       return Promise.resolve({ successful: [], failed: [] });
@@ -199,6 +245,13 @@ vi.mock('@mui/material', () => ({
     </button>
   ),
   CircularProgress: () => <span data-testid="spinner" />,
+  LinearProgress: ({
+    value,
+    'aria-label': ariaLabel,
+  }: {
+    value?: number;
+    'aria-label'?: string;
+  }) => <progress value={value} max={100} aria-label={ariaLabel} />,
   Chip: ({
     label,
     onDelete,
@@ -347,6 +400,7 @@ describe('ManageMessageDrawer edit mode', () => {
     referenceDataMocks.getUserSigintGroups.mockResolvedValue([]);
     referenceDataMocks.getGroupInfosBatch.mockResolvedValue([]);
     setRecentValues({});
+    uppyMocks.latest = null;
   });
 
   it('initializes shared create fields from recent values without applying suggestions as defaults', async () => {
@@ -626,6 +680,48 @@ describe('ManageMessageDrawer edit mode', () => {
       await Promise.resolve();
     });
     expect(submitButton.disabled).toBe(true);
+
+    root.unmount();
+  });
+
+  it('shows progress for each uploading attachment', async () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <ManageMessageDrawer open cyberEchoEnabled={false} currentUser={null} onClose={vi.fn()} />,
+      );
+      await Promise.resolve();
+    });
+
+    const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement;
+    Object.defineProperty(fileInput, 'files', {
+      configurable: true,
+      value: [new File(['video'], 'video.mp4', { type: 'video/mp4' })],
+    });
+    await act(async () => {
+      fileInput.dispatchEvent(new Event('change', { bubbles: true }));
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      uppyMocks.latest?.emitUploadProgress(37);
+      await Promise.resolve();
+    });
+    const progress = container.querySelector(
+      'progress[aria-label="Прогрес завантаження video.mp4"]',
+    ) as HTMLProgressElement;
+    expect(progress.value).toBe(37);
+    expect(container.textContent).toContain('Завантаження: 37%');
+
+    await act(async () => {
+      uppyMocks.latest?.emitUploadSuccess();
+      await Promise.resolve();
+    });
+    expect(progress.value).toBe(100);
+    expect(container.textContent).toContain('Завантажено');
 
     root.unmount();
   });

@@ -492,6 +492,52 @@ ID(CG)⬅️:50📣",
     }
 
     #[test]
+    fn parse_metadata_shares_trailing_name_across_source_id_list() {
+        for body in ["SOURCE ID: 1, 33 (ЯРУС)", "ID➡️: 1, 33 (ЯРУС)"]
+        {
+            assert_eq!(
+                parse_metadata_asserting_spans(body),
+                vec![
+                    InboxMetadata {
+                        id: Some("1".to_string()),
+                        id_name: Some("ЯРУС".to_string()),
+                        ..Default::default()
+                    },
+                    InboxMetadata {
+                        id: Some("33".to_string()),
+                        id_name: Some("ЯРУС".to_string()),
+                        ..Default::default()
+                    },
+                ]
+            );
+        }
+    }
+
+    #[test]
+    fn parse_metadata_handles_named_source_id_list() {
+        assert_eq!(
+            parse_metadata_asserting_spans("SOURCE ID: 1 (A), 2 (B)"),
+            vec![
+                InboxMetadata {
+                    id: Some("1".to_string()),
+                    id_name: Some("A".to_string()),
+                    ..Default::default()
+                },
+                InboxMetadata {
+                    id: Some("2".to_string()),
+                    id_name: Some("B".to_string()),
+                    ..Default::default()
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn parse_metadata_does_not_match_source_id_inside_word() {
+        assert!(parse_metadata_checked("RESOURCE ID: 1, 2").is_empty());
+    }
+
+    #[test]
     fn parse_metadata_handles_sc_transcript_header() {
         let metadata = parse_metadata_asserting_spans(
             r#"27.06.2026 20:37:23
@@ -531,6 +577,122 @@ ID(CG)⬅️: 8584772
                     id: Some("2539".to_string()),
                     ..Default::default()
                 }
+            ]
+        );
+    }
+
+    #[test]
+    fn parse_metadata_handles_named_source_ids_in_list() {
+        let body = "СС: 11\nID➡️: 2070 (БАНАН), 6005 (ОДНОРАЗИК), 1007, 1991\nID(CG)⬅️: 906090 (ЛУНТИК)";
+        let metadata = parse_metadata_asserting_spans(body);
+
+        assert_eq!(
+            metadata,
+            vec![
+                InboxMetadata {
+                    cc: Some("11".to_string()),
+                    cg: Some("906090".to_string()),
+                    cg_name: Some("ЛУНТИК".to_string()),
+                    id: Some("2070".to_string()),
+                    id_name: Some("БАНАН".to_string()),
+                    ..Default::default()
+                },
+                InboxMetadata {
+                    cc: Some("11".to_string()),
+                    cg: Some("906090".to_string()),
+                    cg_name: Some("ЛУНТИК".to_string()),
+                    id: Some("6005".to_string()),
+                    id_name: Some("ОДНОРАЗИК".to_string()),
+                    ..Default::default()
+                },
+                InboxMetadata {
+                    cc: Some("11".to_string()),
+                    cg: Some("906090".to_string()),
+                    cg_name: Some("ЛУНТИК".to_string()),
+                    id: Some("1007".to_string()),
+                    ..Default::default()
+                },
+                InboxMetadata {
+                    cc: Some("11".to_string()),
+                    cg: Some("906090".to_string()),
+                    cg_name: Some("ЛУНТИК".to_string()),
+                    id: Some("1991".to_string()),
+                    ..Default::default()
+                },
+            ]
+        );
+        assert_eq!(
+            append_metadata_text_callsigns(Vec::new(), body),
+            vec![
+                "БАНАН".to_string(),
+                "ОДНОРАЗИК".to_string(),
+                "ЛУНТИК".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn parse_metadata_keeps_commas_inside_source_id_names() {
+        let metadata = parse_metadata_asserting_spans(
+            "ID➡️: 1 (АЛЬФА, РЕЗЕРВ), 2 (БРАВО)",
+        );
+
+        assert_eq!(
+            metadata,
+            vec![
+                InboxMetadata {
+                    id: Some("1".to_string()),
+                    id_name: Some("АЛЬФА, РЕЗЕРВ".to_string()),
+                    ..Default::default()
+                },
+                InboxMetadata {
+                    id: Some("2".to_string()),
+                    id_name: Some("БРАВО".to_string()),
+                    ..Default::default()
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn parse_metadata_handles_keycap_source_ids_in_list() {
+        let metadata =
+            parse_metadata_asserting_spans("ID➡️: 1️⃣ (АЛЬФА), 2️⃣ (БРАВО)");
+
+        assert_eq!(
+            metadata,
+            vec![
+                InboxMetadata {
+                    id: Some("1".to_string()),
+                    id_name: Some("АЛЬФА".to_string()),
+                    ..Default::default()
+                },
+                InboxMetadata {
+                    id: Some("2".to_string()),
+                    id_name: Some("БРАВО".to_string()),
+                    ..Default::default()
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn parse_metadata_preserves_source_name_for_unnamed_id_list_parts() {
+        let metadata = parse_metadata_asserting_spans("ID: ЯРУС; ID➡️: 1, 2");
+
+        assert_eq!(
+            metadata,
+            vec![
+                InboxMetadata {
+                    id: Some("1".to_string()),
+                    id_name: Some("ЯРУС".to_string()),
+                    ..Default::default()
+                },
+                InboxMetadata {
+                    id: Some("2".to_string()),
+                    id_name: Some("ЯРУС".to_string()),
+                    ..Default::default()
+                },
             ]
         );
     }

@@ -670,15 +670,21 @@ pub async fn save_attachment_restapi(
                 name: attachment.filename.clone(),
                 content_type: Some(attachment.content_type.clone()),
             }];
+            let deletion = if config
+                .feature_delete_uploaded_attachment
+                .unwrap_or(FEATURE_DELETE_UPLOADED_ATTACHMENT_DEFAULT)
+            {
+                media::UploadedAttachmentDeletion::DeleteAfterStore
+            } else {
+                media::UploadedAttachmentDeletion::Preserve
+            };
             media::store_media_attachments(
                 &uploads,
                 db_message_id,
                 config,
                 s3,
                 dbx,
-                config
-                    .feature_delete_uploaded_attachment
-                    .unwrap_or(FEATURE_DELETE_UPLOADED_ATTACHMENT_DEFAULT),
+                deletion,
             )
             .await
             .c(h!())?;

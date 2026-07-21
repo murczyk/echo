@@ -7,7 +7,75 @@ import {
 } from './MessageCardVideoPreviewActions';
 import { MessageCardVideoPreviewInfoPopover } from './MessageCardVideoPreviewInfoPopover';
 import { getMessageCardPreviewShellConfig } from './message-card-preview-config';
+import { handleUnauthorizedMediaResponse } from './message-card-media-fetch';
 import { MessageCardPreviewShell } from './MessageCardPreviewShell';
+
+const VIDEO_LOCAL_PREFLIGHT_MIN_SIZE_BYTES = 10 * 1024 * 1024;
+const VIDEO_LOCAL_PREFLIGHT_RETRY_DELAY_MS = 2_000;
+const VIDEO_LOCAL_PREFLIGHT_MAX_RETRY_DELAY_MS = 30_000;
+
+function isManagedLocalVideo(video: VideoPreviewSource): video is VideoPreviewSource & {
+  source: string;
+} {
+  return (
+    typeof video.source === 'string' &&
+    video.source.startsWith('/api/messenger/media/') &&
+    !video.source.includes('/thumbnail')
+  );
+}
+
+function isSmallLocalVideo(video: VideoPreviewSource): video is VideoPreviewSource & {
+  source: string;
+} {
+  return (
+    isManagedLocalVideo(video) &&
+    typeof video.sizeBytes === 'number' &&
+    Number.isFinite(video.sizeBytes) &&
+    video.sizeBytes >= 0 &&
+    video.sizeBytes <= VIDEO_LOCAL_PREFLIGHT_MIN_SIZE_BYTES
+  );
+}
+
+function preflightVideoSize(response: Response): number | null {
+  const contentRange = response.headers.get('Content-Range');
+  const rangeSize = contentRange?.match(/\/(\d+)$/)?.[1];
+  const size =
+    rangeSize ?? (response.status === 206 ? null : response.headers.get('Content-Length'));
+  if (size === null || size === undefined) return null;
+  const value = Number(size);
+  return Number.isSafeInteger(value) && value >= 0 ? value : null;
+}
+
+function videoRetryDelay(response: Response | null, attempt: number): number {
+  const fallback = Math.min(
+    VIDEO_LOCAL_PREFLIGHT_MAX_RETRY_DELAY_MS,
+    VIDEO_LOCAL_PREFLIGHT_RETRY_DELAY_MS * 2 ** attempt,
+  );
+  const retryAfter = response?.headers.get('Retry-After');
+  if (retryAfter === null || retryAfter === undefined) {
+    return fallback;
+  }
+
+  const retryAfterSeconds = Number(retryAfter);
+  if (Number.isFinite(retryAfterSeconds) && retryAfterSeconds > 0) {
+    return Math.max(fallback, retryAfterSeconds * 1_000);
+  }
+
+  const retryAt = Date.parse(retryAfter);
+  return Number.isFinite(retryAt) ? Math.max(fallback, retryAt - Date.now()) : fallback;
+}
+
+function responseCanBeRetried(status: number): boolean {
+  return status === 408 || status === 425 || status === 429 || status >= 500;
+}
+
+async function discardResponseBody(response: Response) {
+  try {
+    await response.body?.cancel();
+  } catch {
+    // The response may already be closed.
+  }
+}
 
 export function MessageCardVideoPreviewDialog({
   open,
@@ -59,11 +127,112 @@ export function MessageCardVideoPreviewDialog({
     setSrc(null);
 
     if (typeof video.source === 'string') {
-      if (
-        !video.source.startsWith('blob:') &&
-        !video.source.startsWith('data:') &&
-        video.source.startsWith('/')
-      ) {
+      if (isManagedLocalVideo(video)) {
+        let stopped = false;
+        let retryTimer: number | null = null;
+        const requestController = new AbortController();
+        const source = video.source;
+        let blobUrl = '';
+        let retryAttempt = 0;
+
+        const fail = (cause: unknown) => {
+          if (stopped) return;
+          setPlayerState((state) => ({
+            ...state,
+            error: {
+              code: 'VIDEO_LOAD_ERROR',
+              message: 'Не вдалося завантажити відео.',
+              cause,
+            },
+          }));
+        };
+        const scheduleRetry = (response: Response | null, request: () => Promise<void>) => {
+          const delay = videoRetryDelay(response, retryAttempt);
+          retryAttempt += 1;
+          retryTimer = window.setTimeout(() => {
+            retryTimer = null;
+            void request();
+          }, delay);
+        };
+        const requestPreflight = async () => {
+          let response: Response;
+          try {
+            response = await fetch(source, {
+              headers: {
+                Range: 'bytes=0-0',
+                'X-Echo-Media-Cache-Preflight': '1',
+              },
+              signal: requestController.signal,
+            });
+          } catch {
+            if (!requestController.signal.aborted) scheduleRetry(null, requestPreflight);
+            return;
+          }
+          handleUnauthorizedMediaResponse(response, source);
+          const videoSize = preflightVideoSize(response);
+          await discardResponseBody(response);
+          if (stopped) return;
+          if (responseCanBeRetried(response.status)) {
+            scheduleRetry(response, requestPreflight);
+            return;
+          }
+          if (!response.ok) {
+            fail(new Error(`Video preflight failed with status ${response.status}`));
+            return;
+          }
+          if (videoSize !== null && videoSize <= VIDEO_LOCAL_PREFLIGHT_MIN_SIZE_BYTES) {
+            void requestSmallVideo();
+            return;
+          }
+          setSrc(source);
+        };
+        const requestSmallVideo = async () => {
+          let response: Response;
+          try {
+            response = await fetch(source, {
+              credentials: 'same-origin',
+              signal: requestController.signal,
+            });
+          } catch {
+            if (!requestController.signal.aborted) scheduleRetry(null, requestSmallVideo);
+            return;
+          }
+          handleUnauthorizedMediaResponse(response, source);
+          if (stopped) return;
+          if (responseCanBeRetried(response.status)) {
+            await discardResponseBody(response);
+            if (!stopped) scheduleRetry(response, requestSmallVideo);
+            return;
+          }
+          if (!response.ok) {
+            await discardResponseBody(response);
+            fail(new Error(`Video fetch failed with status ${response.status}`));
+            return;
+          }
+
+          try {
+            const videoBlob = await response.blob();
+            if (stopped) return;
+            blobUrl = URL.createObjectURL(videoBlob);
+            setSrc(blobUrl);
+          } catch (error) {
+            if (!requestController.signal.aborted) scheduleRetry(null, requestSmallVideo);
+          }
+        };
+
+        if (isSmallLocalVideo(video)) {
+          void requestSmallVideo();
+        } else {
+          void requestPreflight();
+        }
+        return () => {
+          stopped = true;
+          requestController.abort();
+          if (retryTimer !== null) window.clearTimeout(retryTimer);
+          if (blobUrl !== '') URL.revokeObjectURL(blobUrl);
+        };
+      }
+      if (video.source.startsWith('/') || video.source.startsWith('data:')) {
         setSrc(video.source);
         return;
       }
@@ -85,6 +254,7 @@ export function MessageCardVideoPreviewDialog({
     } else {
       fetch(source)
         .then((res) => {
+          handleUnauthorizedMediaResponse(res, source);
           if (!res.ok) throw new Error('Video fetch failed');
           return res.blob();
         })
@@ -112,7 +282,7 @@ export function MessageCardVideoPreviewDialog({
         URL.revokeObjectURL(blobUrl);
       }
     };
-  }, [open, video?.source]);
+  }, [open, video?.source, video?.sizeBytes]);
 
   useEffect(() => {
     const v = videoRef.current;

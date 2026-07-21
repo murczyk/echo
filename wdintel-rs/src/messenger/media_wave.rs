@@ -103,6 +103,15 @@ async fn read_cached_png(path: &Path) -> Result<Option<Vec<u8>>, AppError> {
     Ok(Some(bytes))
 }
 
+fn ensure_audio_png_source_supported(
+    media: &signal_message_media::Model,
+) -> Result<(), AppError> {
+    if !media.is_encrypted {
+        return Err(AppError::NotFound);
+    }
+    Ok(())
+}
+
 async fn load_authorized_audio_media_meta(
     env: &Env,
     login: &str,
@@ -155,6 +164,7 @@ async fn serve_cached_or_generate_png(
     if let Some(bytes) = read_cached_png(output_path).await? {
         return Ok(png_http_response(bytes));
     }
+    ensure_audio_png_source_supported(&media)?;
     let data = fetch_media_bytes(env, &media).await?;
     let audio_file = write_audio_temp_file(&media, &data).await?;
     let req = PngGenRequest::new(audio_file.path(), output_path);
@@ -209,7 +219,10 @@ pub async fn messenger_media_spectrogram(
 
 #[cfg(test)]
 mod tests {
-    use super::{audio_temp_suffix, spectrogram_png_path, wave_png_path};
+    use super::{
+        audio_temp_suffix, ensure_audio_png_source_supported,
+        spectrogram_png_path, wave_png_path,
+    };
     use crate::config::MESSENGER_MEDIA_AUDIO_PNG_TMP_DIR;
     use crate::entities::signal_message_media;
     use sea_orm::prelude::DateTime;
@@ -227,6 +240,7 @@ mod tests {
             file_ext: file_ext.map(str::to_string),
             file_name: file_name.map(str::to_string),
             size_bytes: 0,
+            is_encrypted: true,
             created_at: DateTime::default(),
         }
     }
@@ -242,6 +256,17 @@ mod tests {
             audio_temp_suffix(&media("audio/ogg", Some("ogg"), None)),
             ".ogg"
         );
+    }
+
+    #[test]
+    fn plaintext_audio_does_not_generate_derived_images() {
+        let mut media = media("audio/mpeg", Some("mp3"), Some("audio.mp3"));
+        media.is_encrypted = false;
+
+        assert!(matches!(
+            ensure_audio_png_source_supported(&media),
+            Err(crate::error::AppError::NotFound)
+        ));
     }
 
     #[test]

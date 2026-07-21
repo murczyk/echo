@@ -509,6 +509,9 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::delta::login::handle_redirect)
             .service(crate::rer_importer::messenger_media)
             .service(crate::rer_importer::rer_message_attachments_zip)
+            .service(
+                crate::messenger::media_thumbnail::messenger_media_thumbnail,
+            )
             .service(crate::messenger::media_wave::messenger_media_wave)
             .service(crate::messenger::media_wave::messenger_media_spectrogram)
             .service(crate::rer_importer::rer_importer_callsigns)
@@ -878,6 +881,29 @@ pub async fn main_server(
             crate::session::run_activity_worker_nofail(
                 session_env,
                 token_session,
+            )
+            .await;
+        },
+    );
+    let media_cache_dir =
+        crate::messenger::media_cache::media_cache_dir(&config);
+    spawn_named_worker(
+        "messenger_media_cache_cleanup_worker",
+        &mut background_tasks,
+        async move {
+            crate::messenger::media_cache::run_cache_cleanup_worker_nofail(
+                media_cache_dir,
+            )
+            .await;
+        },
+    );
+    let media_thumbnail_env = env.clone();
+    spawn_named_worker(
+        "messenger_media_thumbnail_worker",
+        &mut background_tasks,
+        async move {
+            crate::messenger::media_thumbnail::run_thumbnail_worker_nofail(
+                media_thumbnail_env,
             )
             .await;
         },
