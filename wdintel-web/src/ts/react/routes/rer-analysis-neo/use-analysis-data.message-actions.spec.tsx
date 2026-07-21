@@ -238,17 +238,21 @@ describe('useAnalysisDataMessageActions', () => {
   }
 
   it('removes only the human contribution, keeps bot rows, and opens the prompt', async () => {
-    const apiRef = await renderHarness([
+    const reload = vi.fn(() => Promise.resolve());
+    const apiRef = await renderHarness(
       [
-        1,
-        buildMessage({
-          inboxTags: [
-            buildTag(3, { login: 'tester', organismId: 1 }),
-            buildTag(3, { model: 'bot', confidence: 0.92 }),
-          ],
-        }),
+        [
+          1,
+          buildMessage({
+            inboxTags: [
+              buildTag(3, { login: 'tester', organismId: 1 }),
+              buildTag(3, { model: 'bot', confidence: 0.92 }),
+            ],
+          }),
+        ],
       ],
-    ]);
+      { reload },
+    );
 
     await act(async () => {
       await apiRef.current!.onToggleMessageTag(1, 3);
@@ -257,6 +261,7 @@ describe('useAnalysisDataMessageActions', () => {
     expect(hoisted.inboxMessageTagsRm).toHaveBeenCalledWith({ messageId: 1, tagId: 3 });
     expect(hoisted.inboxMessageTagsAdd).not.toHaveBeenCalled();
     expect(apiRef.current!.botTagAction).toEqual({ messageId: 1, tagId: 3 });
+    expect(reload).toHaveBeenCalledWith({ preserveMessagePage: true });
     expect(apiRef.current!.messages[0]?.[1].inboxTags).toEqual([
       expect.objectContaining({ tagId: 3, model: 'bot' }),
     ]);

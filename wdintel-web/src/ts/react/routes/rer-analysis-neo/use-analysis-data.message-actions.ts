@@ -145,6 +145,8 @@ export function useAnalysisDataMessageActions(params: Params) {
       const currentUserOrganismId = params.currentUser?.organismId ?? null;
       const userHasTag = hasUserTag(sourceMessage, tagId, currentUserName);
       const botHasTag = hasBotTag(sourceMessage, tagId);
+      const canChangeTagMembership =
+        doesTagMutationAffectMessageMembership(params.queryState) && !botHasTag;
       const nextBotTagAction = userHasTag && botHasTag ? { messageId, tagId } : null;
 
       setMessageActionCount((current) => current + 1);
@@ -173,13 +175,12 @@ export function useAnalysisDataMessageActions(params: Params) {
           params.invalidateTagFacetLoad();
           // Preserve the user's page and cursor after a tag mutation. A synthetic last-page cursor
           // contains an old resultLimit, so it cannot safely requery a membership-changing result set.
-          // That case intentionally clears the current page instead of rebuilding/clamping it or moving
-          // the user; canonical reflow requires snapshot/offset pagination.
+          // When the mutation changes tag-ID membership, that case intentionally clears the current
+          // page instead of rebuilding/clamping it or moving the user; canonical reflow requires
+          // snapshot/offset pagination.
           await params.reload({
             preserveMessagePage: true,
-            ...(doesTagMutationAffectMessageMembership(params.queryState)
-              ? { clearSyntheticLastPage: true }
-              : {}),
+            ...(canChangeTagMembership ? { clearSyntheticLastPage: true } : {}),
           });
         } catch (reloadError) {
           // The tag mutation above already persisted, so the optimistic patch is now the
