@@ -28,7 +28,7 @@ pub struct NoHeadersBody {
 lazy_static! {
     // Remove data from Buran
     static ref RE: Regex = Regex::new(
-        r#"^(Район|Частота|Час|Дата|Локація|Мережа|Засічка|Підрозділ|Хто|Кому|Абоненти|Позивні|Коментар|Пост|Координати|Тип|Назва|Ворожий|Зауваження штабу|Тип сигналу|Приналежність|Мітк(?:а|и) перехоплення):"#
+        r#"^(Район|Частота|Час|Дата/час|Дата|Локація|Мережа|Засічка|Підрозділ|Хто|Кому|Абоненти|Позивні|Коментар|Пост|Координати|Тип|Назва|Ворожий|Зауваження штабу|Тип сигналу|Приналежність|Мітк(?:а|и) перехоплення):"#
     )
     .unwrap();
     // Remove data with line starting as below
@@ -123,7 +123,10 @@ lazy_static! {
     // Remove line with ---------------------
     static ref RE6: Regex = Regex::new(r#"^-+$"#).unwrap();
     // Buran-style date/time label line: `Дата: ...` / `Час: ...`
-    static ref RE_DT_LABEL: Regex = Regex::new(r#"^(Дата|Час)\s*[: ]"#).unwrap();
+    static ref RE_DT_LABEL: Regex =
+        Regex::new(r#"^(Дата/час|Дата|Час)\s*[: ]"#).unwrap();
+    static ref RE_UNIT_DIVIDER: Regex =
+        Regex::new(r#"(?i)^-+\s*(?:РЕР|РР)\s+\d+\s+[^-]+-+$"#).unwrap();
     static ref UNIT_WATERMARK_LINES: HashSet<String> = ["---- РР 47 ОМБР ----"]
         .into_iter()
         .map(normalize_unit_watermark_line)
@@ -167,6 +170,7 @@ fn is_header_line_raw(line: &str) -> bool {
         || RE4.is_match(line)
         || RE5.is_match(line)
         || RE6.is_match(line)
+        || RE_UNIT_DIVIDER.is_match(line)
 }
 
 pub fn is_datetime_header_line(line: &str) -> bool {

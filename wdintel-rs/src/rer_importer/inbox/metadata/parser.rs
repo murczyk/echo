@@ -31,7 +31,7 @@ pub fn parse_metadata(message: &str) -> Vec<InboxMetadata> {
         }
 
         let normalized_line = NormalizedLine::new(line);
-        for mut line_metadata in parse_metadata_line(&normalized_line) {
+        for mut line_metadata in parse_metadata_line_grouped(&normalized_line) {
             offset_metadata(&mut line_metadata, line_start_index + trim_offset);
             if !line_metadata.has_some_value() {
                 continue;
@@ -60,7 +60,7 @@ pub fn parse_metadata(message: &str) -> Vec<InboxMetadata> {
     }
 
     push_metadata_if_nonempty(&mut result, current);
-    let result = expand_multi_source_ids(result)
+    let result = expand_color_codes(expand_multi_source_ids(result))
         .into_iter()
         .map(WorkingMetadata::into_public)
         .filter(InboxMetadata::has_some_value)
@@ -81,7 +81,7 @@ fn is_metadata_only_line(line: &str) -> bool {
         static ref RE_METADATA_HEADER_PART: Regex = Regex::new(
             r#"(?ix)
             (?:
-                [cс]{2}\s*:?\s*(?:\d+|нв|-)
+                (?:[cс]{2}|🎨)\s*:?\s*(?:(?:\d+\s*,\s*)*\d+|нв|-)
               | код\s+кольору\s*:?\s*(?:\d+|нв|-)
               | [iі]d\s*\(\s*[cс]g\s*\)\s*(?:⬅️?)?\s*:?\s*(?:[xх]\s*:)?(?:\d+|нв|-)(?:\s*\([^)]+\))?
               | [iі]d\s+отримувача\s*:?\s*(?:\d+|нв|-)(?:\s*\([^)]+\))?
@@ -122,6 +122,28 @@ pub fn parse_color_code(line: &NormalizedLine) -> Option<MatchedValue> {
     parse_numeric_value_from_standalone_regexes(line, &[&RE_CC_UA])
         .or_else(|| parse_value_from_regexes(line, &[&RE_CC]))
         .or_else(|| parse_numeric_value_from_regexes(line, &[&RE_CC_NO_COLON]))
+}
+
+fn parse_color_codes(line: &NormalizedLine) -> Vec<MatchedValue> {
+    lazy_static! {
+        static ref RE_COLOR_CODES: Regex =
+            Regex::new(r#"(?:[cCсС]{2}|🎨)\s*:\s*(\d+(?:\s*,\s*\d+)*)"#)
+                .unwrap();
+    }
+
+    let color_codes = RE_COLOR_CODES
+        .captures_iter(&line.text)
+        .filter_map(|captures| {
+            line.build_value(captures.get(1)?, normalize_metadata_value)
+        })
+        .filter_map(|value| split_numeric_metadata_list(&value))
+        .flatten()
+        .collect::<Vec<_>>();
+    if color_codes.is_empty() {
+        parse_color_code(line).into_iter().collect()
+    } else {
+        color_codes
+    }
 }
 
 pub fn parse_mid(line: &NormalizedLine) -> Option<MatchedValue> {
@@ -342,22 +364,195 @@ pub fn parse_hash_id(line: &NormalizedLine) -> Option<MatchedValue> {
     parse_value_from_regexes(line, &[&RE_HASH_ID])
         .or_else(|| parse_value_from_regexes(line, &[&RE_HASH_ID_EMOJI]))
         .map(MatchedValue::lowercase_value)
+        .filter(|hash_id| hash_id.value.as_deref() != Some("різні"))
 }
 
+#[cfg(test)]
 pub fn parse_metadata_line(line: &NormalizedLine) -> Vec<WorkingMetadata> {
-    let mut result = vec![WorkingMetadata {
-        cc: parse_color_code(line).unwrap_or_default(),
+    expand_color_codes(parse_metadata_line_grouped(line))
+}
+
+fn parse_metadata_line_grouped(line: &NormalizedLine) -> Vec<WorkingMetadata> {
+    let common = WorkingMetadata {
         id: parse_mid(line).unwrap_or_default(),
         id_name: parse_mid_id(line).unwrap_or_default(),
-        hash_id: parse_hash_id(line).unwrap_or_default(),
         ..Default::default()
-    }];
-
+    };
+    let mut result = if let Some(abonents) = parse_emoji_abonent_lists(line) {
+        abonents
+            .into_iter()
+            .map(|(sender, receiver)| WorkingMetadata {
+                id: sender,
+                receiver,
+                ..common.clone()
+            })
+            .collect()
+    } else {
+        vec![WorkingMetadata {
+            hash_id: parse_hash_id(line).unwrap_or_default(),
+            ..common
+        }]
+    };
     let mut cg_parts = parse_cg_parts(line);
     cg_parts.sort_by_key(|(start, _)| *start);
-    result.extend(cg_parts.into_iter().map(|(_, metadata)| metadata));
+    result = apply_cg_parts(result, cg_parts);
+    result = attach_color_codes(result, parse_color_codes(line));
 
     result
+}
+
+fn apply_cg_parts(
+    items: Vec<WorkingMetadata>,
+    cg_parts: Vec<(usize, WorkingMetadata)>,
+) -> Vec<WorkingMetadata> {
+    if cg_parts.is_empty() {
+        return items;
+    }
+
+    let mut result = vec![];
+    for item in items {
+        for (_, cg_part) in &cg_parts {
+            let mut item = item.clone();
+            item.merge_from(cg_part.clone());
+            result.push(item);
+        }
+    }
+    result
+}
+
+fn attach_color_codes(
+    mut items: Vec<WorkingMetadata>,
+    color_codes: Vec<MatchedValue>,
+) -> Vec<WorkingMetadata> {
+    if color_codes.is_empty() {
+        return items;
+    }
+
+    let mut color_codes = color_codes.into_iter();
+    let Some(color_code) = color_codes.next() else {
+        return items;
+    };
+    let additional_ccs = color_codes.collect::<Vec<_>>();
+    for item in &mut items {
+        item.cc = color_code.clone();
+        item.additional_ccs = additional_ccs.clone();
+    }
+    items
+}
+
+fn parse_emoji_abonent_lists(
+    line: &NormalizedLine,
+) -> Option<Vec<(MatchedValue, MatchedValue)>> {
+    lazy_static! {
+        static ref RE_ABONENT_LIST: Regex = Regex::new(
+            r#"👥\s*:\s*(?:\d{3}[.,]\d{3,4}\s*(?i:мгц)\s*)?((?:\d+\s*[,/]\s*)+\d+)\s*🔐"#
+        )
+        .unwrap();
+        static ref RE_SEPARATE_ABONENT_LISTS: Regex = Regex::new(
+            r#"👥\s*:\s*(?:\d{3}[.,]\d{3,4}\s*(?i:мгц)\s*)?(\d+(?:\s*[,/]\s*\d+)*)\s*[,/]?\s*👥\s*:\s*(?:\d{3}[.,]\d{3,4}\s*(?i:мгц)\s*)?(\d+(?:\s*[,/]\s*\d+)*)\s*🔐"#
+        )
+        .unwrap();
+    }
+
+    let separate_groups =
+        parse_separate_emoji_abonent_groups(line, &RE_SEPARATE_ABONENT_LISTS);
+    let separate_spans = separate_groups
+        .iter()
+        .map(|(start, end, _)| (*start, *end))
+        .collect::<Vec<_>>();
+    let mut groups = separate_groups
+        .into_iter()
+        .map(|(start, _, abonents)| (start, abonents))
+        .collect::<Vec<_>>();
+    groups.extend(parse_single_emoji_abonent_groups(
+        line,
+        &RE_ABONENT_LIST,
+        &separate_spans,
+    ));
+    groups.sort_by_key(|(start, _)| *start);
+    let abonents = groups
+        .into_iter()
+        .flat_map(|(_, abonents)| abonents)
+        .collect::<Vec<_>>();
+    (!abonents.is_empty()).then_some(abonents)
+}
+
+fn parse_separate_emoji_abonent_groups(
+    line: &NormalizedLine,
+    regex: &Regex,
+) -> Vec<(usize, usize, Vec<(MatchedValue, MatchedValue)>)> {
+    regex
+        .captures_iter(&line.text)
+        .filter_map(|captures| {
+            let full_match = captures.get(0)?;
+            let senders =
+                line.build_value(captures.get(1)?, normalize_metadata_value)?;
+            let receivers =
+                line.build_value(captures.get(2)?, normalize_metadata_value)?;
+            let senders = split_numeric_metadata_list(&senders)?;
+            let receivers = split_numeric_metadata_list(&receivers)?;
+            let mut abonents = vec![];
+            for sender in senders {
+                for receiver in &receivers {
+                    abonents.push((sender.clone(), receiver.clone()));
+                }
+            }
+            Some((full_match.start(), full_match.end(), abonents))
+        })
+        .collect()
+}
+
+fn parse_single_emoji_abonent_groups(
+    line: &NormalizedLine,
+    regex: &Regex,
+    excluded_spans: &[(usize, usize)],
+) -> Vec<(usize, Vec<(MatchedValue, MatchedValue)>)> {
+    regex
+        .captures_iter(&line.text)
+        .filter_map(|captures| {
+            let full_match = captures.get(0)?;
+            if excluded_spans.iter().any(|(start, end)| {
+                full_match.start() >= *start && full_match.end() <= *end
+            }) {
+                return None;
+            }
+            let list =
+                line.build_value(captures.get(1)?, normalize_metadata_value)?;
+            let mut abonents = split_numeric_metadata_list(&list)?.into_iter();
+            let sender = abonents.next()?;
+            Some((
+                full_match.start(),
+                abonents
+                    .map(|receiver| (sender.clone(), receiver))
+                    .collect(),
+            ))
+        })
+        .collect()
+}
+
+fn split_numeric_metadata_list(
+    value: &MatchedValue,
+) -> Option<Vec<MatchedValue>> {
+    let raw_text = value.raw_text.as_ref()?;
+    let start_index = value.start_index?;
+    let chars = raw_text.chars().collect::<Vec<_>>();
+    let ids = split_source_id_part_ranges(&chars)
+        .into_iter()
+        .map(|(part_start, part_end)| {
+            let raw_part =
+                chars[part_start..part_end].iter().collect::<String>();
+            parse_source_id_part(&raw_part, part_start, start_index)
+                .map(|(id, _)| id)
+        })
+        .collect::<Option<Vec<_>>>()?;
+
+    (!ids.is_empty()
+        && ids.iter().all(|id| {
+            id.value.as_ref().is_some_and(|value| {
+                value.chars().all(|ch| ch.is_ascii_digit())
+            })
+        }))
+    .then_some(ids)
 }
 
 pub fn parse_cg_parts(line: &NormalizedLine) -> Vec<(usize, WorkingMetadata)> {
@@ -536,6 +731,20 @@ fn expand_multi_source_ids(
     result
 }
 
+fn expand_color_codes(items: Vec<WorkingMetadata>) -> Vec<WorkingMetadata> {
+    let mut result = vec![];
+    for mut item in items {
+        let additional_ccs = std::mem::take(&mut item.additional_ccs);
+        result.push(item.clone());
+        for color_code in additional_ccs {
+            let mut item = item.clone();
+            item.cc = color_code;
+            result.push(item);
+        }
+    }
+    result
+}
+
 fn trailing_shared_source_id_name(
     ids: &[(MatchedValue, MatchedValue)],
 ) -> Option<&MatchedValue> {
@@ -614,7 +823,7 @@ fn split_source_id_part_ranges(chars: &[char]) -> Vec<(usize, usize)> {
                     in_parentheses = false;
                     continue;
                 }
-                ',' if !in_parentheses => {}
+                ',' | '/' if !in_parentheses => {}
                 _ => continue,
             }
         }
@@ -740,6 +949,14 @@ fn offset_metadata(metadata: &mut WorkingMetadata, offset: i32) {
         &mut metadata.id_name,
         &mut metadata.hash_id,
     ] {
+        if let Some(start_index) = value.start_index.as_mut() {
+            *start_index += offset;
+        }
+        if let Some(end_index) = value.end_index.as_mut() {
+            *end_index += offset;
+        }
+    }
+    for value in &mut metadata.additional_ccs {
         if let Some(start_index) = value.start_index.as_mut() {
             *start_index += offset;
         }
