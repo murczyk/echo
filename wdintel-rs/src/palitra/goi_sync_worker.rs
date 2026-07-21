@@ -314,31 +314,246 @@ async fn reconcile_goi_target_files(
         .c(h!())?;
     refresh_goi_sync_lock(lock).await.c(h!())?;
     for remote_path in &remote_paths {
-        let tracked_rows = find_goi_palitra_sync_rows(
-            &env.dbx,
-            target.integration.id,
-            remote_path,
-        )
+        if let Err(err) =
+            reconcile_goi_remote_path(env, target, remote_path).await
+        {
+            warn!(
+                "GOI palitra reconciliation failed for integration {} ({}), remote path '{}': {err:#}",
+                target.integration.id,
+                target.integration.server_label,
+                remote_path
+            );
+        }
+        refresh_goi_sync_lock(lock).await.c(h!())?;
+    }
+    reconcile_echo_palitras_missing_in_goi(env, target, &remote_paths, lock)
         .await
         .c(h!())?;
-        if !tracked_rows.is_empty() {
-            refresh_tracked_goi_palitra_if_changed(
-                env,
-                target,
-                remote_path,
-                &tracked_rows,
-            )
+    refresh_goi_sync_lock(lock).await.c(h!())?;
+    Ok(())
+}
+
+async fn reconcile_goi_remote_path(
+    env: &Env,
+    target: &GoiSyncTarget,
+    remote_path: &str,
+) -> anyhow::Result<()> {
+    let tracked_rows = find_goi_palitra_sync_rows(
+        &env.dbx,
+        target.integration.id,
+        remote_path,
+    )
+    .await
+    .c(h!())?;
+    if tracked_rows.is_empty() {
+        return reconcile_untracked_goi_palitra(env, target, remote_path)
             .await
-            .c(h!())?;
-            refresh_goi_sync_lock(lock).await.c(h!())?;
+            .c(h!());
+    }
+    refresh_tracked_goi_palitra_if_changed(
+        env,
+        target,
+        remote_path,
+        &tracked_rows,
+    )
+    .await
+    .c(h!())
+}
+
+async fn reconcile_echo_palitras_missing_in_goi(
+    env: &Env,
+    target: &GoiSyncTarget,
+    remote_paths: &BTreeSet<String>,
+    lock: Option<&goi::GoiSyncLock>,
+) -> anyhow::Result<()> {
+    let palitras = find_echo_palitras_for_goi_target(
+        &env.dbx,
+        target.integration.owner_organism_id,
+    )
+    .await
+    .c(h!())?;
+    let present_tracked_palitras = find_present_tracked_palitras(
+        &env.dbx,
+        target.integration.id,
+        remote_paths,
+    )
+    .await
+    .c(h!())?;
+    let tracked_palitra_ids = present_tracked_palitras.palitra_ids;
+    let mut remote_paths = remote_paths.clone();
+    let mut uploaded_paths = present_tracked_palitras.remote_paths;
+
+    for palitra in palitras {
+        if tracked_palitra_ids.contains(&palitra.id) {
             continue;
         }
-        reconcile_untracked_goi_palitra(env, target, remote_path)
-            .await
-            .c(h!())?;
+        match reconcile_echo_palitra_missing_in_goi(
+            env,
+            target,
+            &palitra,
+            &remote_paths,
+            &uploaded_paths,
+        )
+        .await
+        {
+            Ok(Some(relative_path)) => {
+                remote_paths.insert(relative_path.clone());
+                uploaded_paths.insert(relative_path);
+            }
+            Ok(None) => {}
+            Err(err) => {
+                warn!(
+                    "GOI palitra backfill failed for integration {} ({}), palitra {}: {err:#}",
+                    target.integration.id,
+                    target.integration.server_label,
+                    palitra.id
+                );
+            }
+        }
         refresh_goi_sync_lock(lock).await.c(h!())?;
     }
     Ok(())
+}
+
+async fn reconcile_echo_palitra_missing_in_goi(
+    env: &Env,
+    target: &GoiSyncTarget,
+    palitra: &palitra::Model,
+    remote_paths: &BTreeSet<String>,
+    uploaded_paths: &BTreeSet<String>,
+) -> anyhow::Result<Option<String>> {
+    let geometry =
+        super::read_latest_palitra_geometry_with_warning(&env.dbx, palitra.id)
+            .await
+            .c(h!())?;
+    let target_folder =
+        super::bl::normalize_palitra_folder_from_db(palitra.folder.clone());
+    let remote_file_names = super::palitra_goi_remote_file_names(
+        palitra.id,
+        Some(&palitra.name),
+        geometry.source_file_name.as_deref(),
+    );
+    let Some(remote_file_name) = find_echo_palitra_backfill_remote_file_name(
+        remote_paths,
+        uploaded_paths,
+        target_folder.as_deref(),
+        &remote_file_names,
+        target.integration.disable_goi_to_echo_palitra_sync,
+    ) else {
+        return Ok(None);
+    };
+
+    let relative_path =
+        compose_relative_path(target_folder.as_deref(), remote_file_name);
+    let remote_file_path = compose_remote_path(
+        &target.req,
+        target_folder.as_deref(),
+        remote_file_name,
+    );
+    let file_data = load_palitra_file_data(env, palitra).await.c(h!())?;
+    upload_palitra_to_goi_target(
+        &env.dbx,
+        target,
+        palitra.id,
+        &relative_path,
+        &remote_file_path,
+        &file_data,
+    )
+    .await
+    .c(h!())?;
+    refresh_palitra_missing_in_goi(&env.dbx, palitra.id)
+        .await
+        .c(h!())?;
+    Ok(Some(relative_path))
+}
+
+fn find_echo_palitra_backfill_remote_file_name<'a>(
+    remote_paths: &BTreeSet<String>,
+    uploaded_paths: &BTreeSet<String>,
+    target_folder: Option<&str>,
+    remote_file_names: &'a [String],
+    overwrite_existing: bool,
+) -> Option<&'a str> {
+    remote_file_names.iter().find_map(|file_name| {
+        let relative_path = compose_relative_path(target_folder, file_name);
+        let path_is_available = if overwrite_existing {
+            !uploaded_paths.contains(&relative_path)
+        } else {
+            !remote_paths.contains(&relative_path)
+        };
+        path_is_available.then_some(file_name.as_str())
+    })
+}
+
+async fn find_echo_palitras_for_goi_target(
+    dbx: &DatabaseConnection,
+    owner_organism_id: i64,
+) -> anyhow::Result<Vec<palitra::Model>> {
+    let palitra_ids = palitra_access_organism::Entity::find()
+        .filter(
+            palitra_access_organism::Column::OrganismId.eq(owner_organism_id),
+        )
+        .select_only()
+        .column(palitra_access_organism::Column::PalitraId)
+        .into_tuple::<i64>()
+        .all(dbx)
+        .await
+        .c(h!())?;
+    if palitra_ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    palitra::Entity::find()
+        .filter(palitra::Column::Id.is_in(palitra_ids))
+        .filter(palitra::Column::Deleted.eq(false))
+        .filter(palitra::Column::ImportedFromGoi.eq(false))
+        .filter(
+            palitra::Column::ConversionStatus
+                .eq(PALITRA_CONVERSION_STATUS_READY),
+        )
+        .order_by_asc(palitra::Column::Id)
+        .all(dbx)
+        .await
+        .c(h!())
+}
+
+#[derive(Default)]
+struct PresentTrackedGoiPalitras {
+    palitra_ids: BTreeSet<i64>,
+    remote_paths: BTreeSet<String>,
+}
+
+async fn find_present_tracked_palitras(
+    dbx: &DatabaseConnection,
+    goi_integration_id: i64,
+    remote_paths: &BTreeSet<String>,
+) -> anyhow::Result<PresentTrackedGoiPalitras> {
+    if remote_paths.is_empty() {
+        return Ok(PresentTrackedGoiPalitras::default());
+    }
+    let rows = goi_palitra_sync::Entity::find()
+        .filter(
+            goi_palitra_sync::Column::GoiIntegrationId.eq(goi_integration_id),
+        )
+        .filter(
+            goi_palitra_sync::Column::RemoteRelativePath
+                .is_in(remote_paths.iter().cloned()),
+        )
+        .filter(goi_palitra_sync::Column::PalitraId.is_not_null())
+        .select_only()
+        .column(goi_palitra_sync::Column::PalitraId)
+        .column(goi_palitra_sync::Column::RemoteRelativePath)
+        .into_tuple::<(i64, String)>()
+        .all(dbx)
+        .await
+        .c(h!())?;
+    let mut present_tracked_palitras = PresentTrackedGoiPalitras::default();
+    for (palitra_id, remote_relative_path) in rows {
+        present_tracked_palitras.palitra_ids.insert(palitra_id);
+        present_tracked_palitras
+            .remote_paths
+            .insert(remote_relative_path);
+    }
+    Ok(present_tracked_palitras)
 }
 
 async fn refresh_goi_sync_lock(
@@ -3244,6 +3459,110 @@ mod tests {
         .insert(dbx)
         .await
         .unwrap()
+    }
+
+    #[test]
+    fn goi_reconciliation_is_due_on_start_and_after_interval() {
+        assert!(should_reconcile_goi_palitras(None));
+        assert!(!should_reconcile_goi_palitras(Some(Instant::now())));
+        assert!(should_reconcile_goi_palitras(Some(
+            Instant::now()
+                - Duration::from_secs(PALITRA_GOI_RECONCILE_INTERVAL_SEC)
+        )));
+    }
+
+    #[test]
+    fn echo_backfill_uses_first_available_remote_name() {
+        let remote_file_names = super::super::palitra_goi_remote_file_names(
+            42,
+            Some("Current name"),
+            Some("source.kml"),
+        );
+
+        assert_eq!(
+            find_echo_palitra_backfill_remote_file_name(
+                &BTreeSet::new(),
+                &BTreeSet::new(),
+                Some("folder"),
+                &remote_file_names,
+                false,
+            ),
+            Some("Current name.kmz")
+        );
+        let current_path =
+            BTreeSet::from(["folder/Current name.kmz".to_string()]);
+        assert_eq!(
+            find_echo_palitra_backfill_remote_file_name(
+                &current_path,
+                &BTreeSet::new(),
+                Some("folder"),
+                &remote_file_names,
+                false,
+            ),
+            Some("source.kml")
+        );
+        let current_and_source_paths = BTreeSet::from([
+            "folder/Current name.kmz".to_string(),
+            "folder/source.kml".to_string(),
+        ]);
+        assert_eq!(
+            find_echo_palitra_backfill_remote_file_name(
+                &current_and_source_paths,
+                &BTreeSet::new(),
+                Some("folder"),
+                &remote_file_names,
+                false,
+            ),
+            Some("palitra_000042.kmz")
+        );
+        let all_paths = BTreeSet::from([
+            "folder/Current name.kmz".to_string(),
+            "folder/source.kml".to_string(),
+            "folder/palitra_000042.kmz".to_string(),
+        ]);
+        assert_eq!(
+            find_echo_palitra_backfill_remote_file_name(
+                &all_paths,
+                &BTreeSet::new(),
+                Some("folder"),
+                &remote_file_names,
+                false,
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn echo_only_backfill_overwrites_preferred_remote_name() {
+        let remote_file_names = super::super::palitra_goi_remote_file_names(
+            42,
+            Some("Current name"),
+            Some("source.kml"),
+        );
+        let current_path =
+            BTreeSet::from(["folder/Current name.kmz".to_string()]);
+
+        assert_eq!(
+            find_echo_palitra_backfill_remote_file_name(
+                &current_path,
+                &BTreeSet::new(),
+                Some("folder"),
+                &remote_file_names,
+                true,
+            ),
+            Some("Current name.kmz")
+        );
+
+        assert_eq!(
+            find_echo_palitra_backfill_remote_file_name(
+                &current_path,
+                &current_path,
+                Some("folder"),
+                &remote_file_names,
+                true,
+            ),
+            Some("source.kml")
+        );
     }
 
     #[test]
