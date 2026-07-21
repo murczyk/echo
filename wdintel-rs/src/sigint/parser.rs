@@ -257,11 +257,14 @@ fn normalized_body_lines(body: &str) -> Vec<String> {
 }
 
 fn scan_marker_comment(lines: &[&str]) -> Option<MarkerComment> {
-    scan_marker(lines, &COMMENT_MARKER)
-        .filter(|comment| {
-            filter_ignored_comment(Some(comment.text.clone())).is_some()
-        })
-        .or_else(|| scan_marker(lines, &INTERCEPTION_TAG_MARKER))
+    let comment = scan_marker(lines, &COMMENT_MARKER);
+    if comment.as_ref().is_some_and(|comment| {
+        filter_ignored_comment(Some(comment.text.clone())).is_none()
+    }) {
+        scan_marker(lines, &INTERCEPTION_TAG_MARKER).or(comment)
+    } else {
+        comment.or_else(|| scan_marker(lines, &INTERCEPTION_TAG_MARKER))
+    }
 }
 
 fn scan_marker(lines: &[&str], marker: &Regex) -> Option<MarkerComment> {
@@ -630,6 +633,19 @@ mod tests {
         let res = parse_comments(body);
         assert_eq!(res.top, None);
         assert_eq!(res.bottom, None);
+    }
+
+    #[test]
+    fn top_ignores_marked_service_radio_exchange_comments() {
+        for marker in ["Коментарій", "Комментарий", "Comment"]
+        {
+            let body = format!(
+                "{marker}: службовий радіообмін\n\n24.07.2025, 08:05:21\n149.7300\nУКХ\nНВ\n\n— репліка"
+            );
+            let res = parse_comments(&body);
+            assert_eq!(res.top, None, "marker: {marker}");
+            assert_eq!(res.bottom, None, "marker: {marker}");
+        }
     }
 
     #[test]
