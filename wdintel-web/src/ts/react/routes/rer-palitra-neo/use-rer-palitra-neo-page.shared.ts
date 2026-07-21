@@ -1,9 +1,27 @@
+import type { Palitra } from '../../../../Bindings';
+
 import { buildBulkActionResultSummary, formatFolderActionSuccessMessage } from './helpers';
 import type { FolderActionDialogState, UiStatus } from './types';
 
 export type ArchiveView = 'active' | 'all' | 'archived';
 
 const VIEW_MODE_QUERY_PARAM = 'viewMode';
+
+export function filterPalitrasByArchiveView(
+  palitras: Palitra[],
+  archiveView: ArchiveView,
+): Palitra[] {
+  switch (archiveView) {
+    case 'archived':
+      return palitras.filter((palitra) => palitra.isArchived);
+    case 'all':
+      return palitras;
+    case 'active':
+      return palitras.filter(
+        (palitra) => !palitra.isArchived && palitra.conversionStatus !== 'error',
+      );
+  }
+}
 
 export function readInitialArchiveViewFromUrl(): ArchiveView {
   const params = new URLSearchParams(window.location.search);
