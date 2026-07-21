@@ -226,7 +226,8 @@ pub fn extract_text_without_top_comment(
 
     let lines = normalized_body_lines(body);
     let lines: Vec<&str> = lines.iter().map(String::as_str).collect();
-    let excluded_lines = top_comment_line_indices(&lines);
+    let mut excluded_lines = top_comment_line_indices(&lines);
+    excluded_lines.extend(pre_datetime_location_header_line_indices(&lines));
     crate::rer_importer::body_noheader::extract_text_excluding_lines(
         body,
         &excluded_lines,
@@ -333,6 +334,18 @@ fn top_comment_line_indices(lines: &[&str]) -> BTreeSet<usize> {
     join_block(&kept)
         .map(|_| indices.into_iter().collect())
         .unwrap_or_default()
+}
+
+fn pre_datetime_location_header_line_indices(
+    lines: &[&str],
+) -> BTreeSet<usize> {
+    let Some(anchor) = lines.iter().position(|l| is_datetime_header_line(l))
+    else {
+        return BTreeSet::new();
+    };
+    (0..anchor)
+        .filter(|idx| is_pre_datetime_location_header_line(lines, *idx, anchor))
+        .collect()
 }
 
 fn zp_peleng_vorony_odina_suffix_start(
@@ -910,6 +923,8 @@ mod tests {
         let res = parse_comments(body);
 
         assert!(res.is_empty());
+        let res = extract_text_without_top_comment(body).unwrap();
+        assert_eq!(res.body, "1. Прийом.");
     }
 
     #[test]
