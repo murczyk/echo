@@ -74,6 +74,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
   const arrowResultTimeoutsRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const loadGenerationByFeedIdRef = useRef<Record<string, number>>({});
   const pendingReloadFeedIdsRef = useRef<Set<string>>(new Set());
+  const editReloadFeedIdsRef = useRef<Set<string>>(new Set());
   const pendingScrollToEndRef = useRef<Record<string, number>>({});
   const scheduledScrollToEndRef = useRef<Record<string, number>>({});
   const followTailByFeedIdRef = useRef<Record<string, boolean>>({});
@@ -168,13 +169,16 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
     [setConfirmedTailPreview],
   );
   const markFeedReloadRequested = useCallback(
-    (feedId: string) => {
+    (feedId: string, preserveUnread = false) => {
+      if (!preserveUnread) editReloadFeedIdsRef.current.delete(feedId);
       loadGenerationByFeedIdRef.current = {
         ...loadGenerationByFeedIdRef.current,
         [feedId]: (loadGenerationByFeedIdRef.current[feedId] ?? 0) + 1,
       };
-      delete unreadCursorByFeedIdRef.current[feedId];
-      delete lastServerCountByFeedIdRef.current[feedId];
+      if (!preserveUnread) {
+        delete unreadCursorByFeedIdRef.current[feedId];
+        delete lastServerCountByFeedIdRef.current[feedId];
+      }
       resetTailState(feedId);
       followTailByFeedIdRef.current[feedId] = false;
       followGenerationByFeedIdRef.current[feedId] =
@@ -191,7 +195,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
       ),
     );
     if (emptyFeedIds.length === 0) return;
-    emptyFeedIds.forEach(markFeedReloadRequested);
+    emptyFeedIds.forEach((feedId) => markFeedReloadRequested(feedId));
     setMessageFeeds((previous) =>
       previous.map((feed) => (emptyFeedIds.includes(feed.id) ? { ...feed, loading: true } : feed)),
     );
@@ -199,19 +203,36 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
   const reloadFeeds = useCallback(() => {
     const feedIds = Array.from(new Set(messageFeedsRef.current.map((feed) => feed.id)));
     if (feedIds.length === 0) return;
-    feedIds.forEach(markFeedReloadRequested);
+    feedIds.forEach((feedId) => markFeedReloadRequested(feedId));
     setMessageFeeds((previous) =>
       previous.map((feed) => (feedIds.includes(feed.id) ? { ...feed, loading: true } : feed)),
     );
   }, [markFeedReloadRequested]);
-  const clearFeedUnreadBaselines = useCallback((feedId: string) => {
-    delete unreadCursorByFeedIdRef.current[feedId];
-    delete lastServerCountByFeedIdRef.current[feedId];
-    delete newestExhaustedCursorByFeedIdRef.current[feedId];
+  const reloadEditedFeeds = useCallback(() => {
+    const feedIds = Array.from(new Set(messageFeedsRef.current.map((feed) => feed.id)));
+    if (feedIds.length === 0) return;
+    feedIds.forEach((feedId) => {
+      markFeedReloadRequested(feedId, true);
+      editReloadFeedIdsRef.current.add(feedId);
+    });
+    setMessageFeeds((previous) =>
+      previous.map((feed) => (feedIds.includes(feed.id) ? { ...feed, loading: true } : feed)),
+    );
+  }, [markFeedReloadRequested]);
+  const completeFeedReload = useCallback((feedId: string) => {
     pendingReloadFeedIdsRef.current = new Set(
       [...pendingReloadFeedIdsRef.current].filter((id) => id !== feedId),
     );
   }, []);
+  const clearFeedUnreadBaselines = useCallback(
+    (feedId: string) => {
+      delete unreadCursorByFeedIdRef.current[feedId];
+      delete lastServerCountByFeedIdRef.current[feedId];
+      delete newestExhaustedCursorByFeedIdRef.current[feedId];
+      completeFeedReload(feedId);
+    },
+    [completeFeedReload],
+  );
   const setFeedUnreadCursor = useCallback((feedId: string, cursor: MessageCursor | null) => {
     unreadCursorByFeedIdRef.current[feedId] = cursor;
   }, []);
@@ -472,6 +493,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
     setProfiles,
     setGroupInfos,
     clearFeedUnreadBaselines,
+    completeFeedReload,
     setFeedUnreadCursor,
   });
 
@@ -727,7 +749,8 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
       const key = `${w.id}:${loadGenerationByFeedIdRef.current[w.id] ?? 0}:${JSON.stringify(w.filter)}`;
       if (!started.has(key)) {
         started.add(key);
-        loadFeedInitialMessagesRef.current(w.id);
+        const preserveUnread = editReloadFeedIdsRef.current.delete(w.id);
+        loadFeedInitialMessagesRef.current(w.id, { preserveUnread });
       }
     });
   }, [feedIds, feedsNeedingLoadKey, shortStateReady]);
@@ -820,6 +843,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
     loadFeedInitialMessages,
     reloadEmptyFeeds,
     reloadFeeds,
+    reloadEditedFeeds,
     loadFeedOlderMessages,
     loadFeedNewerMessages,
     requestValidatedInboxCount,

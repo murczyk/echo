@@ -322,6 +322,7 @@ export function RerDutyNeoPage({
     loadFeedInitialMessages,
     reloadEmptyFeeds,
     reloadFeeds,
+    reloadEditedFeeds,
     loadFeedOlderMessages,
     loadFeedNewerMessages,
     handleSaveFilter,
@@ -503,7 +504,7 @@ export function RerDutyNeoPage({
         onSubmitEdit={async (messageId, message) => {
           handleEditedMessage(messageId, message);
         }}
-        onEditSuccess={() => reloadFeeds()}
+        onEditSuccess={() => reloadEditedFeeds()}
         onCreated={handleCreatedMessage}
       />
 

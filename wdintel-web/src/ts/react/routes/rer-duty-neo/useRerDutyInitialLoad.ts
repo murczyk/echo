@@ -3,6 +3,7 @@ import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 
 import type {
   CallsignInfoRes,
+  InboxMessage,
   InboxMessagesReq,
   SignalGroupEntry,
   SignalProfileEntry,
@@ -48,8 +49,31 @@ type Params = {
   setProfiles: Dispatch<SetStateAction<Record<string, SignalProfileEntry | null>>>;
   setGroupInfos: Dispatch<SetStateAction<Record<string, SignalGroupEntry>>>;
   clearFeedUnreadBaselines: (feedId: string) => void;
+  completeFeedReload: (feedId: string) => void;
   setFeedUnreadCursor: (feedId: string, cursor: MessageCursor | null) => void;
 };
+
+function preserveUnreadState(
+  feed: MessageFeedState,
+  items: Array<[number, InboxMessage]>,
+): Pick<MessageFeedState, 'readIds' | 'windowedUnreadItems' | 'unreadCount'> {
+  const itemIds = new Set(items.map(([id]) => id));
+  const readIds = new Set([...feed.readIds].filter((id) => itemIds.has(id)));
+  const windowedUnreadItems = new Map(
+    [...feed.windowedUnreadItems].filter(([id]) => itemIds.has(id)),
+  );
+  let unreadCount = Math.max(
+    0,
+    feed.unreadCount - (feed.windowedUnreadItems.size - windowedUnreadItems.size),
+  );
+  items.forEach(([id, message]) => {
+    if (!readIds.has(id) && !windowedUnreadItems.has(id) && message.timestamp != null) {
+      windowedUnreadItems.set(id, message.timestamp);
+      unreadCount += 1;
+    }
+  });
+  return { readIds, windowedUnreadItems, unreadCount };
+}
 
 export function useRerDutyInitialLoad(params: Params) {
   const paramsRef = useRef(params);
@@ -58,13 +82,28 @@ export function useRerDutyInitialLoad(params: Params) {
   return useCallback(
     async (
       feedId: string,
-      overrides?: { highlightSignalsEnabled?: boolean; onlyMyUnitTagsEnabled?: boolean },
+      overrides?: {
+        highlightSignalsEnabled?: boolean;
+        onlyMyUnitTagsEnabled?: boolean;
+        preserveUnread?: boolean;
+      },
     ) => {
       const current = paramsRef.current;
       const feed = current.messageFeeds.find((candidate) => candidate.id === feedId);
       if (!feed) return;
       const requestGeneration = current.getFeedLoadGeneration(feedId);
-      const effectiveFeed = overrides ? { ...feed, ...overrides } : feed;
+      const preserveUnread = overrides?.preserveUnread ?? false;
+      const effectiveFeed = overrides
+        ? {
+            ...feed,
+            ...(overrides.highlightSignalsEnabled === undefined
+              ? {}
+              : { highlightSignalsEnabled: overrides.highlightSignalsEnabled }),
+            ...(overrides.onlyMyUnitTagsEnabled === undefined
+              ? {}
+              : { onlyMyUnitTagsEnabled: overrides.onlyMyUnitTagsEnabled }),
+          }
+        : feed;
       current.setMessageFeeds((previous) =>
         previous.map((candidate) =>
           candidate.id === feedId ? { ...candidate, loading: true } : candidate,
@@ -78,12 +117,17 @@ export function useRerDutyInitialLoad(params: Params) {
         if (current.getFeedLoadGeneration(feedId) !== requestGeneration) return;
         current.mergeInboxCallsigns(feedId, response.callsigns, { replace: true });
         const items = windowInitialMessageItems(response.inboxItems);
-        current.clearFeedUnreadBaselines(feedId);
-        const tail = items.at(-1);
-        current.setFeedUnreadCursor(
-          feedId,
-          tail ? { id: tail[0], timestamp: tail[1].timestamp } : null,
+        const previousFeed = current.messageFeedsRef.current.find(
+          (candidate) => candidate.id === feedId,
         );
+        if (!preserveUnread) {
+          current.clearFeedUnreadBaselines(feedId);
+          const tail = items.at(-1);
+          current.setFeedUnreadCursor(
+            feedId,
+            tail ? { id: tail[0], timestamp: tail[1].timestamp } : null,
+          );
+        }
         current.setMessageFeeds((previous) =>
           previous.map((candidate) =>
             candidate.id === feedId
@@ -92,13 +136,18 @@ export function useRerDutyInitialLoad(params: Params) {
                   items,
                   loading: false,
                   referenceTimeMs: Date.now(),
-                  readIds: new Set<number>(items.map(([id]) => id)),
-                  windowedUnreadItems: new Map<number, number>(),
-                  unreadCount: 0,
+                  ...(preserveUnread && previousFeed
+                    ? preserveUnreadState(previousFeed, items)
+                    : {
+                        readIds: new Set<number>(items.map(([id]) => id)),
+                        windowedUnreadItems: new Map<number, number>(),
+                        unreadCount: 0,
+                      }),
                 }
               : candidate,
           ),
         );
+        if (preserveUnread) current.completeFeedReload(feedId);
         if (response.signalProfiles) {
           current.setProfiles((previous) => ({ ...previous, ...response.signalProfiles }));
         }
@@ -114,12 +163,14 @@ export function useRerDutyInitialLoad(params: Params) {
         const currentFeed = current.messageFeedsRef.current.find(
           (candidate) => candidate.id === feedId,
         );
-        current.clearFeedUnreadBaselines(feedId);
         const tail = currentFeed?.items.at(-1);
-        current.setFeedUnreadCursor(
-          feedId,
-          tail ? { id: tail[0], timestamp: tail[1].timestamp } : null,
-        );
+        const tailCursor = tail ? { id: tail[0], timestamp: tail[1].timestamp } : null;
+        if (preserveUnread) {
+          current.completeFeedReload(feedId);
+        } else {
+          current.clearFeedUnreadBaselines(feedId);
+          current.setFeedUnreadCursor(feedId, tailCursor);
+        }
         current.setError(error instanceof Error ? error.message : String(error));
         current.setMessageFeeds((previous) =>
           previous.map((candidate) =>

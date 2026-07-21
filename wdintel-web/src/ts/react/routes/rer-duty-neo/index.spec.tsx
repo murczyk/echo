@@ -230,6 +230,7 @@ function buildFeedsState() {
     loadFeedInitialMessages: vi.fn(),
     reloadEmptyFeeds: vi.fn(),
     reloadFeeds: vi.fn(),
+    reloadEditedFeeds: vi.fn(),
     loadFeedOlderMessages: vi.fn(),
     applyFilter: vi.fn(),
     addFrequencyToFilter: vi.fn(),
@@ -389,7 +390,7 @@ describe('RerDutyNeoPage creation workflow', () => {
     await click(container.querySelector('button[aria-label="Зберегти редагування"]'));
 
     expect(state.handleEditedMessage).not.toHaveBeenCalled();
-    expect(state.reloadFeeds).toHaveBeenCalledTimes(1);
+    expect(state.reloadEditedFeeds).toHaveBeenCalledTimes(1);
     expect(container.querySelector('[data-testid="composer"]')).toBeNull();
 
     await act(async () => {

@@ -188,6 +188,7 @@ vi.mock('./useRerDutyFeedState', () => ({
       removeMessageFeed: vi.fn(),
       loadFeedInitialMessages: hoisted.loadFeedInitialMessages,
       reloadFeeds: vi.fn(),
+      reloadEditedFeeds: vi.fn(),
       loadFeedOlderMessages: vi.fn(),
       applyFilter: hoisted.applyFilterMock,
       toggleGroup: vi.fn(),
