@@ -3287,6 +3287,7 @@ export type SystemSettingsCurrentRsp = {
   devicesSectionEnabled: boolean;
   sigintCommentParsingEnabled: boolean;
   doNotStoreDuplicateEchoimFailures: boolean;
+  goiAssociationMessageUidWorkerEnabled: boolean;
 };
 
 export type SystemSettingsItem = {
@@ -3314,6 +3315,7 @@ export type SystemSettingsItem = {
   echoRestapiErrorDiscordWebhookUrl: string | null;
   sigintCommentParsingEnabled: boolean;
   doNotStoreDuplicateEchoimFailures: boolean;
+  goiAssociationMessageUidWorkerEnabled: boolean;
 };
 
 export type SystemSettingsListRsp = {
@@ -3340,6 +3342,7 @@ export type CreateSystemSettingsReq = {
   echoRestapiErrorDiscordWebhookUrl: string | null;
   sigintCommentParsingEnabled: boolean;
   doNotStoreDuplicateEchoimFailures: boolean;
+  goiAssociationMessageUidWorkerEnabled: boolean;
 };
 
 export type ActivateSystemSettingsReq = {

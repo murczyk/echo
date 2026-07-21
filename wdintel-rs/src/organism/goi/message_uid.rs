@@ -1,8 +1,10 @@
 use crate::config::{
     ORGANISM_GOI_MESSAGE_UID_BATCH_SIZE,
+    ORGANISM_GOI_MESSAGE_UID_CANDIDATE_BATCH_SIZE,
     ORGANISM_GOI_MESSAGE_UID_LOOKBACK_HOURS,
     ORGANISM_GOI_MESSAGE_UID_PROBE_CHARS,
     ORGANISM_GOI_MESSAGE_UID_WORKER_SLEEP_SEC,
+    ORGANISM_GOI_ORIGINAL_MESSAGE_CELL_INDEX,
 };
 use crate::entities::{goi_association, signal_message};
 use crate::error::AppError;
@@ -20,6 +22,13 @@ use std::time::Duration;
 struct BackfillStats {
     scanned: u64,
     filled: u64,
+}
+
+#[derive(Debug, FromQueryResult)]
+struct MessageCandidate {
+    id: i64,
+    body: Option<String>,
+    message_uid: Option<String>,
 }
 
 pub async fn oneoff_backfill_goi_association_message_uids(
@@ -40,11 +49,12 @@ pub async fn oneoff_backfill_goi_association_message_uids(
 
 pub async fn goi_association_message_uid_worker_nofail(env: Arc<Env>) {
     loop {
-        match backfill_goi_association_message_uids(&env.dbx).await {
-            Ok(stats) => info!(
+        match goi_association_message_uid_worker_pass(&env).await {
+            Ok(Some(stats)) => info!(
                 "GOI association message UID worker pass completed: scanned={}, filled={}",
                 stats.scanned, stats.filled
             ),
+            Ok(None) => {},
             Err(err) => warn!(
                 "GOI association message UID worker pass failed: {err:#}"
             ),
@@ -54,6 +64,25 @@ pub async fn goi_association_message_uid_worker_nofail(env: Arc<Env>) {
         ))
         .await;
     }
+}
+
+async fn goi_association_message_uid_worker_pass(
+    env: &Env,
+) -> Result<Option<BackfillStats>, AppError> {
+    if !crate::system_settings::goi_association_message_uid_worker_enabled(
+        &env.dbx,
+    )
+    .await
+    .c(h!())?
+    {
+        return Ok(None);
+    }
+
+    Ok(Some(
+        backfill_goi_association_message_uids(&env.dbx)
+            .await
+            .c(h!())?,
+    ))
 }
 
 async fn backfill_goi_association_message_uids(
@@ -120,30 +149,71 @@ async fn find_association_message_uid(
     let Some(probe) = message_probe(association_message) else {
         return Ok(None);
     };
-    let (window_start, window_end) =
-        signal_message_window(&association.source_created_at);
-    let candidates = signal_message::Entity::find()
+    let window_anchor = message_window_anchor(
+        association.source_date.as_ref(),
+        &association.source_created_at,
+    );
+    let (window_start, window_end) = signal_message_window(window_anchor);
+    let mut offset = 0;
+    let mut newest_duplicate_uid = None;
+    loop {
+        let candidates = load_message_candidate_batch(
+            db,
+            &probe,
+            window_start,
+            window_end,
+            offset,
+        )
+        .await
+        .c(h!())?;
+        let candidate_count = candidates.len() as u64;
+        if let Some(message_uid) = select_matching_original_message_uid(
+            association_message,
+            candidates,
+            &mut newest_duplicate_uid,
+        ) {
+            return Ok(Some(message_uid));
+        }
+        if candidate_count < ORGANISM_GOI_MESSAGE_UID_CANDIDATE_BATCH_SIZE {
+            return Ok(newest_duplicate_uid);
+        }
+        offset += candidate_count;
+    }
+}
+
+async fn load_message_candidate_batch(
+    db: &DatabaseConnection,
+    probe: &str,
+    window_start: NaiveDateTime,
+    window_end: NaiveDateTime,
+    offset: u64,
+) -> Result<Vec<MessageCandidate>, AppError> {
+    Ok(signal_message::Entity::find()
+        .select_only()
+        .column(signal_message::Column::Id)
+        .column(signal_message::Column::Body)
+        .column(signal_message::Column::MessageUid)
         .filter(signal_message::Column::Timestamp.gte(window_start))
         .filter(signal_message::Column::Timestamp.lte(window_end))
         .filter(signal_message::Column::MessageUid.is_not_null())
         .filter(signal_message::Column::MessageUid.ne(""))
         .filter(
             Expr::col(signal_message::Column::Body)
-                .like(format!("%{}%", escape_like(&probe))),
+                .like(format!("%{}%", escape_like(probe))),
         )
         .order_by_desc(signal_message::Column::Timestamp)
         .order_by_desc(signal_message::Column::Id)
+        .limit(ORGANISM_GOI_MESSAGE_UID_CANDIDATE_BATCH_SIZE)
+        .offset(offset)
+        .into_model::<MessageCandidate>()
         .all(db)
         .await
-        .c(h!())?;
-
-    Ok(select_matching_message(association_message, candidates)
-        .and_then(|message| message.message_uid))
+        .c(h!())?)
 }
 
 fn association_original_message(row: &serde_json::Value) -> Option<&str> {
     row.get("cells")?
-        .get(13)?
+        .get(ORGANISM_GOI_ORIGINAL_MESSAGE_CELL_INDEX)?
         .get("value")?
         .as_str()
         .map(str::trim)
@@ -175,19 +245,26 @@ fn escape_like(value: &str) -> String {
 }
 
 fn signal_message_window(
-    association_created_at: &DateTime<FixedOffset>,
+    window_anchor: &DateTime<FixedOffset>,
 ) -> (NaiveDateTime, NaiveDateTime) {
-    let window_end = association_created_at.with_timezone(&Utc).naive_utc();
+    let window_end = window_anchor.with_timezone(&Utc).naive_utc();
     let window_start = window_end
         - ChronoDuration::hours(ORGANISM_GOI_MESSAGE_UID_LOOKBACK_HOURS);
     (window_start, window_end)
 }
 
-fn select_matching_message(
+fn message_window_anchor<'a>(
+    source_date: Option<&'a DateTime<FixedOffset>>,
+    source_created_at: &'a DateTime<FixedOffset>,
+) -> &'a DateTime<FixedOffset> {
+    source_date.unwrap_or(source_created_at)
+}
+
+fn select_matching_original_message_uid(
     association_message: &str,
-    candidates: Vec<signal_message::Model>,
-) -> Option<signal_message::Model> {
-    let mut newest_duplicate = None;
+    candidates: Vec<MessageCandidate>,
+    newest_duplicate_uid: &mut Option<String>,
+) -> Option<String> {
     for candidate in candidates {
         let Some(candidate_body) = candidate.body.as_deref() else {
             continue;
@@ -195,14 +272,17 @@ fn select_matching_message(
         if !message_bodies_match(association_message, candidate_body) {
             continue;
         }
-        if !is_duplicate_trace(&candidate) {
-            return Some(candidate);
+        let Some(message_uid) = candidate.message_uid else {
+            continue;
+        };
+        if !is_duplicate_trace(candidate.id, &message_uid) {
+            return Some(message_uid);
         }
-        if newest_duplicate.is_none() {
-            newest_duplicate = Some(candidate);
+        if newest_duplicate_uid.is_none() {
+            *newest_duplicate_uid = Some(message_uid);
         }
     }
-    newest_duplicate
+    None
 }
 
 fn message_bodies_match(left: &str, right: &str) -> bool {
@@ -213,13 +293,11 @@ fn message_bodies_match(left: &str, right: &str) -> bool {
         && (left.contains(right) || right.contains(left))
 }
 
-fn is_duplicate_trace(message: &signal_message::Model) -> bool {
-    message
-        .message_uid
-        .as_deref()
-        .and_then(|message_uid| message_uid.strip_prefix("duplicate-trace-"))
+fn is_duplicate_trace(message_id: i64, message_uid: &str) -> bool {
+    message_uid
+        .strip_prefix("duplicate-trace-")
         .and_then(|message_id| message_id.parse::<i64>().ok())
-        == Some(message.id)
+        == Some(message_id)
 }
 
 #[cfg(test)]
@@ -229,7 +307,10 @@ mod tests {
 
     #[test]
     fn association_original_message_decodes_json_escaping() {
-        let mut cells = vec![serde_json::Value::Null; 13];
+        let mut cells = vec![
+            serde_json::Value::Null;
+            ORGANISM_GOI_ORIGINAL_MESSAGE_CELL_INDEX
+        ];
         cells.push(serde_json::json!({
             "kind": "string",
             "value": "first line\nquoted \"message\""
@@ -245,6 +326,11 @@ mod tests {
             association_original_message(&row),
             Some("first line\nquoted \"message\"")
         );
+    }
+
+    #[test]
+    fn message_probe_escapes_like_wildcards() {
+        assert_eq!(escape_like(r"a\\b%c_d"), r"a\\\\b\%c\_d");
     }
 
     #[test]
@@ -266,12 +352,12 @@ mod tests {
 
     #[test]
     fn signal_message_window_is_previous_twenty_four_hours() {
-        let association_created_at = FixedOffset::east_opt(2 * 60 * 60)
+        let window_anchor = FixedOffset::east_opt(2 * 60 * 60)
             .unwrap()
             .with_ymd_and_hms(2026, 7, 21, 12, 0, 0)
             .unwrap();
 
-        let (start, end) = signal_message_window(&association_created_at);
+        let (start, end) = signal_message_window(&window_anchor);
 
         assert_eq!(
             end,
@@ -283,46 +369,61 @@ mod tests {
     }
 
     #[test]
+    fn message_window_anchor_prefers_source_date_and_falls_back_to_created_at()
+    {
+        let source_date =
+            DateTime::parse_from_rfc3339("2026-06-15T08:00:00Z").unwrap();
+        let source_created_at =
+            DateTime::parse_from_rfc3339("2026-07-21T10:00:00Z").unwrap();
+
+        assert_eq!(
+            message_window_anchor(Some(&source_date), &source_created_at),
+            &source_date
+        );
+        assert_eq!(
+            message_window_anchor(None, &source_created_at),
+            &source_created_at
+        );
+    }
+
+    #[test]
     fn matching_prefers_original_then_falls_back_to_newest_duplicate() {
         let duplicate = test_message(3, "duplicate-trace-3", "message");
         let original = test_message(2, "original-uid", "prefix message suffix");
         let older_duplicate =
             test_message(1, "duplicate-trace-1", "prefix message suffix");
 
-        let selected = select_matching_message(
+        let mut newest_duplicate_uid = None;
+        let selected = select_matching_original_message_uid(
             "message",
-            vec![duplicate.clone(), original.clone(), older_duplicate.clone()],
+            vec![duplicate, original, older_duplicate],
+            &mut newest_duplicate_uid,
         )
         .unwrap();
-        assert_eq!(selected.id, original.id);
+        assert_eq!(selected, "original-uid");
 
-        let selected = select_matching_message(
+        let mut newest_duplicate_uid = None;
+        let selected = select_matching_original_message_uid(
             "message",
-            vec![duplicate.clone(), older_duplicate],
-        )
-        .unwrap();
-        assert_eq!(selected.id, duplicate.id);
+            vec![
+                test_message(3, "duplicate-trace-3", "message"),
+                test_message(1, "duplicate-trace-1", "prefix message suffix"),
+            ],
+            &mut newest_duplicate_uid,
+        );
+        assert_eq!(selected, None);
+        assert_eq!(newest_duplicate_uid.as_deref(), Some("duplicate-trace-3"));
     }
 
     fn test_message(
         id: i64,
         message_uid: &str,
         body: &str,
-    ) -> signal_message::Model {
-        signal_message::Model {
+    ) -> MessageCandidate {
+        MessageCandidate {
             id,
             body: Some(body.to_string()),
-            created_at: NaiveDateTime::default(),
-            timestamp: Some(NaiveDateTime::default()),
-            sender: None,
-            format: None,
-            deleted: message_uid.starts_with("duplicate-trace-"),
-            external_id: None,
             message_uid: Some(message_uid.to_string()),
-            datasource_group_id: None,
-            operator_tags: None,
-            echo_inbox_message_id: None,
-            attachments_hash: None,
         }
     }
 }
