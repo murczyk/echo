@@ -283,7 +283,10 @@ export function useAnalysisMessageList({
           candidatePageIndex >= 0;
           candidatePageIndex -= 1
         ) {
-          const cursor = pageCursorsRef.current[candidatePageIndex] ?? FIRST_PAGE_CURSOR;
+          const cursor =
+            pageCursorsRef.current[candidatePageIndex] ??
+            (candidatePageIndex === 0 ? FIRST_PAGE_CURSOR : undefined);
+          if (isNullOrUndefined(cursor)) continue;
           const inboxReq = buildInboxReq(queryState, optionsFreqValues, true);
           if (isNullOrUndefined(inboxReq)) return;
 

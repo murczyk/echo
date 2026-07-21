@@ -539,6 +539,56 @@ describe('useAnalysisMessageList pagination', () => {
     });
   });
 
+  it('skips unknown intermediate cursors when reconciling a sparse last-page history', async () => {
+    vi.useFakeTimers();
+    const h = renderHook();
+    harnesses.push(h);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(200);
+    });
+    fetchInboxMessagesMock.mockResolvedValueOnce({
+      inboxItems: [page(1)[0], page(2)[0]],
+      callsigns: [],
+      pageLimit: 20,
+    });
+    await act(async () => h.latest.loadLastPage());
+    expect(h.latest.pageIndex).toBe(2);
+
+    const preservedPage = h.latest.getCurrentMessagePage();
+    await act(async () => h.latest.setMessages([]));
+    const previousMessages = Array.from({ length: 20 }, (_, index) => [
+      index + 3,
+      buildMessage(),
+    ]) as Array<[number, InboxMessage]>;
+    fetchInboxMessagesMock.mockResolvedValueOnce({
+      inboxItems: previousMessages,
+      callsigns: [],
+      pageLimit: 20,
+    });
+    await act(async () => h.latest.reconcileCurrentMessagePage(true, preservedPage));
+
+    expect(fetchInboxMessagesMock).toHaveBeenCalledTimes(2);
+    expect(h.latest.pageIndex).toBe(0);
+    expect(h.latest.messages).toEqual(previousMessages);
+    expect(h.latest.getCurrentMessagePageCursor()).toEqual({
+      beforeIdNoninclusive: null,
+      sinceIdNoninclusive: null,
+    });
+
+    fetchInboxMessagesMock.mockResolvedValueOnce({
+      inboxItems: page(23),
+      callsigns: [],
+      pageLimit: 20,
+    });
+    await act(async () => h.latest.loadNextPage());
+
+    expect(h.latest.pageIndex).toBe(1);
+    expect(h.latest.getCurrentMessagePageCursor()).toEqual({
+      beforeIdNoninclusive: 22,
+      sinceIdNoninclusive: null,
+    });
+  });
+
   it('loads the adjacent previous page after jumping to the end', async () => {
     vi.useFakeTimers();
     const h = renderHook();
