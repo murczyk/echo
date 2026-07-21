@@ -917,7 +917,6 @@ mod tests {
         organism_group::ActiveModel {
             organism_id: Set(organism.id),
             signal_group_master_key: Set(group_a.master_key.clone()),
-            ..Default::default()
         }
         .insert(&txn)
         .await

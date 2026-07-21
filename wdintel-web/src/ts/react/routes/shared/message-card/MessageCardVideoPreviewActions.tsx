@@ -5,7 +5,15 @@ import FullscreenIcon from '@mui/icons-material/Fullscreen';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
-import { Box, Button, DialogActions, IconButton, Tooltip, Typography } from '@mui/material';
+import {
+  Box,
+  Button,
+  CircularProgress,
+  DialogActions,
+  IconButton,
+  Tooltip,
+  Typography,
+} from '@mui/material';
 import type { VideoPreviewSource, VideoPlayerState } from './message-card-video-utils';
 import { formatVideoTime, downloadOriginalVideo } from './message-card-video-utils';
 import {
@@ -130,6 +138,9 @@ export function MessageCardVideoPreviewActions({
   onGoToPrevious,
   onGoToNext,
   onInfoClick,
+  downloadKey,
+  isDownloadStarting,
+  onDownloadStart,
 }: {
   video: VideoPreviewSource;
   openHref?: string | null;
@@ -140,7 +151,11 @@ export function MessageCardVideoPreviewActions({
   onGoToPrevious?: () => void;
   onGoToNext?: () => void;
   onInfoClick?: (event: React.MouseEvent<HTMLButtonElement>) => void;
+  downloadKey: string;
+  isDownloadStarting: (downloadKey: string) => boolean;
+  onDownloadStart: (downloadKey: string) => boolean;
 }) {
+  const downloading = isDownloadStarting(downloadKey);
   return (
     <DialogActions
       sx={{
@@ -185,14 +200,26 @@ export function MessageCardVideoPreviewActions({
             </IconButton>
           </Tooltip>
         ) : null}
-        <Tooltip title="Завантажити" enterDelay={300}>
+        <Tooltip title={downloading ? 'Завантаження…' : 'Завантажити'} enterDelay={300}>
           <IconButton
-            aria-label="Завантажити"
+            aria-label={downloading ? 'Завантаження…' : 'Завантажити'}
+            aria-busy={downloading}
+            disabled={isDownloadStarting(downloadKey)}
             size="small"
-            onClick={() => downloadOriginalVideo(video)}
+            onClick={(event) => {
+              if (isDownloadStarting(downloadKey) || !onDownloadStart(downloadKey)) {
+                event.preventDefault();
+                return;
+              }
+              downloadOriginalVideo(video);
+            }}
             sx={{ color: 'text.secondary' }}
           >
-            <DownloadIcon />
+            {downloading ? (
+              <CircularProgress size={14} aria-label="Завантаження…" />
+            ) : (
+              <DownloadIcon />
+            )}
           </IconButton>
         </Tooltip>
       </Box>

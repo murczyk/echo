@@ -138,6 +138,8 @@ describe('MessageCardDocumentPreviewDialog', () => {
           open
           onClose={onClose}
           onIndexChange={vi.fn()}
+          isDownloadStarting={() => false}
+          onDownloadStart={vi.fn(() => true)}
         />,
       );
     });
@@ -205,6 +207,8 @@ describe('MessageCardDocumentPreviewDialog', () => {
           open
           onClose={vi.fn()}
           onIndexChange={onIndexChange}
+          isDownloadStarting={() => false}
+          onDownloadStart={vi.fn(() => true)}
         />,
       );
     });
@@ -255,6 +259,8 @@ describe('MessageCardDocumentPreviewDialog', () => {
           open
           onClose={vi.fn()}
           onIndexChange={vi.fn()}
+          isDownloadStarting={() => false}
+          onDownloadStart={vi.fn(() => true)}
         />,
       );
     });
@@ -303,6 +309,8 @@ describe('MessageCardDocumentPreviewDialog', () => {
           open
           onClose={vi.fn()}
           onIndexChange={vi.fn()}
+          isDownloadStarting={() => false}
+          onDownloadStart={vi.fn(() => true)}
         />,
       );
     });
@@ -343,6 +351,8 @@ describe('MessageCardDocumentPreviewDialog', () => {
           open
           onClose={vi.fn()}
           onIndexChange={vi.fn()}
+          isDownloadStarting={() => false}
+          onDownloadStart={vi.fn(() => true)}
         />,
       );
     });
@@ -382,6 +392,8 @@ describe('MessageCardDocumentPreviewDialog', () => {
           open
           onClose={vi.fn()}
           onIndexChange={vi.fn()}
+          isDownloadStarting={() => false}
+          onDownloadStart={vi.fn(() => true)}
         />,
       );
     });

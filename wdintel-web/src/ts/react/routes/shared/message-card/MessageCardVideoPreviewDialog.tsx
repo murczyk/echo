@@ -9,6 +9,7 @@ import { MessageCardVideoPreviewInfoPopover } from './MessageCardVideoPreviewInf
 import { getMessageCardPreviewShellConfig } from './message-card-preview-config';
 import { handleUnauthorizedMediaResponse } from './message-card-media-fetch';
 import { MessageCardPreviewShell } from './MessageCardPreviewShell';
+import type { MessageCardDownloadGuardProps } from './MessageCardMedia';
 
 const VIDEO_LOCAL_PREFLIGHT_MIN_SIZE_BYTES = 10 * 1024 * 1024;
 const VIDEO_LOCAL_PREFLIGHT_RETRY_DELAY_MS = 2_000;
@@ -84,6 +85,8 @@ export function MessageCardVideoPreviewDialog({
   initialIndex = 0,
   currentIndex,
   onIndexChange,
+  isDownloadStarting,
+  onDownloadStart,
 }: {
   open: boolean;
   onClose: () => void;
@@ -91,7 +94,7 @@ export function MessageCardVideoPreviewDialog({
   initialIndex?: number;
   currentIndex?: number;
   onIndexChange?: (index: number) => void;
-}) {
+} & MessageCardDownloadGuardProps) {
   const videoCount = videos?.length ?? 0;
   const hasCarousel = videoCount > 1;
   const resolvedIndex =
@@ -479,6 +482,9 @@ export function MessageCardVideoPreviewDialog({
             onGoToPrevious={() => onIndexChange?.(resolvedIndex - 1)}
             onGoToNext={() => onIndexChange?.(resolvedIndex + 1)}
             onInfoClick={(event) => setInfoAnchorEl(event.currentTarget)}
+            downloadKey={`media:${String(video.id ?? '')}`}
+            isDownloadStarting={isDownloadStarting}
+            onDownloadStart={onDownloadStart}
           />
         ) : null
       }

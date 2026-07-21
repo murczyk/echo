@@ -1,24 +1,31 @@
 import DescriptionOutlinedIcon from '@mui/icons-material/DescriptionOutlined';
 import DownloadIcon from '@mui/icons-material/Download';
-import { Box, Button, IconButton, Tooltip } from '@mui/material';
+import { Box, Button, CircularProgress, IconButton, Tooltip } from '@mui/material';
 import type { MouseEvent } from 'react';
 
 import type { MessageCardDocument } from './document-preview.types';
 import { deriveDocumentDownloadName, deriveDocumentFileName } from './message-card-document-utils';
 import { blurActiveElement } from '../../../utils/focus';
+import { MessageCardDisabledControlCursorWrapper } from './MessageCardDisabledControlCursorWrapper';
 
 export function MessageMediaDocumentLink({
   document,
   index,
   onPreview,
+  isDownloadStarting,
+  onDownloadStart,
 }: {
   document: MessageCardDocument;
   index: number;
   onPreview?: () => void;
+  isDownloadStarting: (downloadKey: string) => boolean;
+  onDownloadStart: (downloadKey: string) => boolean;
 }) {
   const displayName = deriveDocumentFileName(document, index);
   const downloadName = deriveDocumentDownloadName(document, index);
   const canPreview = document.kind !== 'unsupported' && onPreview != null;
+  const downloadKey = `media:${String(document.id ?? '')}`;
+  const downloading = isDownloadStarting(downloadKey);
   const handlePreviewClick = (_event: MouseEvent<HTMLButtonElement>) => {
     blurActiveElement();
     onPreview?.();
@@ -81,20 +88,33 @@ export function MessageMediaDocumentLink({
           </Box>
         </Button>
       </Tooltip>
-      <Tooltip title="Завантажити" enterDelay={400}>
-        <IconButton
-          component="a"
-          href={document.href}
-          download={downloadName}
-          target="_blank"
-          rel="noopener noreferrer"
-          aria-label="Завантажити"
-          size="small"
-          sx={{ color: 'text.secondary' }}
-        >
-          <DownloadIcon fontSize="inherit" />
-        </IconButton>
-      </Tooltip>
+      <MessageCardDisabledControlCursorWrapper disabled={downloading}>
+        <Tooltip title={downloading ? 'Завантаження…' : 'Завантажити'} enterDelay={400}>
+          <IconButton
+            component="a"
+            href={document.href}
+            download={downloadName}
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label={downloading ? 'Завантаження…' : 'Завантажити'}
+            aria-busy={downloading}
+            disabled={downloading}
+            onClick={(event) => {
+              if (isDownloadStarting(downloadKey) || !onDownloadStart(downloadKey)) {
+                event.preventDefault();
+              }
+            }}
+            size="small"
+            sx={{ color: 'text.secondary' }}
+          >
+            {downloading ? (
+              <CircularProgress size={14} aria-label="Завантаження…" />
+            ) : (
+              <DownloadIcon fontSize="inherit" />
+            )}
+          </IconButton>
+        </Tooltip>
+      </MessageCardDisabledControlCursorWrapper>
     </Box>
   );
 }

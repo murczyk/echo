@@ -61,10 +61,12 @@ export function useNeoMuiTheme() {
           MuiButtonBase: {
             styleOverrides: {
               root: {
-                '&.Mui-disabled, &.Mui-disabled:hover': {
-                  cursor: 'not-allowed',
-                },
-                '&.Mui-disabled *': {
+                '&.Mui-disabled:is(button, input, select, textarea), &.Mui-disabled:is(button, input, select, textarea):hover':
+                  {
+                    cursor: 'not-allowed',
+                    pointerEvents: 'auto',
+                  },
+                '&.Mui-disabled:is(button, input, select, textarea) *': {
                   cursor: 'not-allowed',
                 },
               },
@@ -82,6 +84,13 @@ export function useNeoMuiTheme() {
                 ...buildAutofillStyles(theme),
               }),
               input: ({ theme }) => ({
+                '&.Mui-disabled, &.Mui-disabled:hover': {
+                  cursor: 'not-allowed',
+                  pointerEvents: 'auto',
+                },
+                '&.Mui-disabled *': {
+                  cursor: 'not-allowed',
+                },
                 ...buildAutofillStyles(theme),
               }),
             },

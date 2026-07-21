@@ -237,7 +237,7 @@ vi.mock('@mui/material', () => ({
     const Component = component ?? 'div';
     return <Component {...omitMuiLayoutProps(props)}>{children}</Component>;
   },
-  CircularProgress: () => <span>tags-loading</span>,
+  CircularProgress: (props: Record<string, unknown>) => <span {...props}>tags-loading</span>,
   Collapse: ({ children, in: open }: { children?: ReactNode; in?: boolean }) =>
     open ? <>{children}</> : null,
   Chip: ({
@@ -703,8 +703,16 @@ function getMuiTypographyElementByText(container: HTMLElement, text: string): HT
 
 async function click(element: HTMLElement): Promise<void> {
   await act(async () => {
-    element.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    element.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
   });
+}
+
+async function dispatchCancelableClick(element: HTMLElement): Promise<MouseEvent> {
+  const event = new MouseEvent('click', { bubbles: true, cancelable: true });
+  await act(async () => {
+    element.dispatchEvent(event);
+  });
+  return event;
 }
 
 async function setInputValue(input: HTMLInputElement, value: string): Promise<void> {
@@ -2440,8 +2448,98 @@ describe('MessageCard', () => {
     expect(archiveLink?.getAttribute('data-mui-sx')).toContain('text.primary');
     expect(archiveLink?.getAttribute('data-mui-sx')).toContain('divider');
     expect(archiveLink?.getAttribute('data-mui-sx')).toContain('action.hover');
-    expect(archiveLink?.parentElement?.className).toContain('mt-1');
-    expect(archiveLink?.parentElement?.className).toContain('items-start');
+    expect(archiveLink?.parentElement?.parentElement?.className).toContain('mt-1');
+    expect(archiveLink?.parentElement?.parentElement?.className).toContain('items-start');
+  });
+
+  it('guards each download key independently for its own cooldown', async () => {
+    vi.useFakeTimers();
+    const fetchMock = vi.spyOn(window, 'fetch').mockResolvedValue(new Response());
+    try {
+      const firstCard = await renderCard({
+        msg: {
+          ...buildMessage(),
+          media: [
+            {
+              id: 'first',
+              href: 'javascript:void(1)',
+              contentType: 'text/plain',
+              fileName: 'first.txt',
+            },
+            {
+              id: 'second',
+              href: 'javascript:void(0)',
+              contentType: 'text/plain',
+              fileName: 'second.txt',
+            },
+          ] as InboxMessage['media'],
+        },
+      });
+      rendered.push(firstCard);
+
+      const archive = firstCard.container.querySelector('a[aria-label="Завантажити все"]');
+      const downloadLinks = Array.from(firstCard.container.querySelectorAll('a[download]'));
+      const individualLinks = downloadLinks.filter((link) => link !== archive);
+      const firstIndividual = individualLinks[0];
+      const secondIndividual = individualLinks[1];
+      expect(archive).not.toBeNull();
+      expect(firstIndividual).not.toBeNull();
+      expect(secondIndividual).not.toBeNull();
+      (archive as HTMLAnchorElement).href = 'javascript:void(0)';
+
+      const firstClick = await dispatchCancelableClick(firstIndividual as HTMLElement);
+      expect(firstIndividual?.getAttribute('aria-label')).toBe('Завантаження…');
+      const duplicateClick = await dispatchCancelableClick(firstIndividual as HTMLElement);
+      expect(firstClick.defaultPrevented).toBe(false);
+      expect(duplicateClick.defaultPrevented).toBe(true);
+      expect(firstIndividual?.getAttribute('aria-label')).toBe('Завантаження…');
+      expect(firstIndividual?.querySelector('[aria-label="Завантаження…"]')).not.toBeNull();
+      expect(
+        firstIndividual?.parentElement?.hasAttribute('data-disabled-control-cursor-wrapper'),
+      ).toBe(true);
+      expect(secondIndividual?.getAttribute('disabled')).toBeNull();
+      expect(archive?.getAttribute('disabled')).toBeNull();
+
+      await act(async () => {
+        vi.advanceTimersByTime(1_000);
+      });
+      const secondClick = await dispatchCancelableClick(secondIndividual as HTMLElement);
+      expect(secondClick.defaultPrevented).toBe(false);
+      expect(secondIndividual?.getAttribute('aria-label')).toBe('Завантаження…');
+      expect(firstIndividual?.getAttribute('disabled')).not.toBeNull();
+      expect(archive?.getAttribute('disabled')).toBeNull();
+
+      await act(async () => {
+        vi.advanceTimersByTime(1_000);
+      });
+      const archiveClick = await dispatchCancelableClick(archive as HTMLElement);
+      expect(archiveClick.defaultPrevented).toBe(false);
+      expect(archive?.getAttribute('aria-label')).toBe('Завантаження…');
+      expect(firstIndividual?.getAttribute('disabled')).not.toBeNull();
+      expect(secondIndividual?.getAttribute('disabled')).not.toBeNull();
+
+      await act(async () => {
+        vi.advanceTimersByTime(1_000);
+      });
+      expect(firstIndividual?.getAttribute('disabled')).toBeNull();
+      expect(secondIndividual?.getAttribute('disabled')).not.toBeNull();
+      expect(archive?.getAttribute('disabled')).not.toBeNull();
+
+      await act(async () => {
+        vi.advanceTimersByTime(1_000);
+      });
+      expect(secondIndividual?.getAttribute('disabled')).toBeNull();
+      expect(archive?.getAttribute('disabled')).not.toBeNull();
+
+      await act(async () => {
+        vi.advanceTimersByTime(1_000);
+      });
+      expect(archive?.getAttribute('aria-label')).toBe('Завантажити все');
+      expect(archive?.getAttribute('disabled')).toBeNull();
+    } finally {
+      fetchMock.mockRestore();
+      vi.useRealTimers();
+    }
   });
 
   it.each([
@@ -2463,7 +2561,7 @@ describe('MessageCard', () => {
 
     const archiveLink = view.container.querySelector('a[aria-label="Завантажити все"]');
     expect(archiveLink).not.toBeNull();
-    const attachmentArea = archiveLink?.parentElement;
+    const attachmentArea = archiveLink?.parentElement?.parentElement;
     expect(attachmentArea?.tagName).toBe('DIV');
     expect(attachmentArea?.className).toContain('mt-1');
     expect(attachmentArea?.className).toContain('items-start');
