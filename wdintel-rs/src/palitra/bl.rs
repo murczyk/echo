@@ -3335,9 +3335,8 @@ mod tests {
         let palitra = find_test_palitra(&env.dbx).await.unwrap();
         let palitra_id = palitra.id;
 
-        let map_palitras = list_map_palitras_v2(login.login.clone(), &env.dbx)
-            .await
-            .unwrap();
+        let map_palitras =
+            list_map_palitras_v2(login.id, &env.dbx).await.unwrap();
         assert!(map_palitras
             .iter()
             .any(|item| item.palitra.id == palitra_id));
@@ -3365,9 +3364,8 @@ mod tests {
         );
         let palitra = palitra.update(&env.dbx).await.unwrap();
 
-        let map_palitras = list_map_palitras_v2(login.login.clone(), &env.dbx)
-            .await
-            .unwrap();
+        let map_palitras =
+            list_map_palitras_v2(login.id, &env.dbx).await.unwrap();
         assert!(!map_palitras
             .iter()
             .any(|item| item.palitra.id == palitra_id));
@@ -3378,7 +3376,7 @@ mod tests {
         palitra.update(&env.dbx).await.unwrap();
 
         let map_palitras =
-            list_map_palitras_v2(login.login, &env.dbx).await.unwrap();
+            list_map_palitras_v2(login.id, &env.dbx).await.unwrap();
         assert!(!map_palitras
             .iter()
             .any(|item| item.palitra.id == palitra_id));
