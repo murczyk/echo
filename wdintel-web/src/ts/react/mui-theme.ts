@@ -58,6 +58,9 @@ export function useNeoMuiTheme() {
           htmlFontSize: 14,
         },
         components: {
+          // Native controls can safely restore pointer events while disabled.
+          // Non-native controls and anchors must remain non-interactive; wrap
+          // them in a ref-forwarding cursor wrapper when a forbidden cursor is needed.
           MuiButtonBase: {
             styleOverrides: {
               root: {

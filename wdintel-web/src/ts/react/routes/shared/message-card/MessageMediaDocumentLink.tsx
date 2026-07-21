@@ -88,8 +88,8 @@ export function MessageMediaDocumentLink({
           </Box>
         </Button>
       </Tooltip>
-      <MessageCardDisabledControlCursorWrapper disabled={downloading}>
-        <Tooltip title={downloading ? 'Завантаження…' : 'Завантажити'} enterDelay={400}>
+      <Tooltip title={downloading ? 'Завантаження…' : 'Завантажити'} enterDelay={400}>
+        <MessageCardDisabledControlCursorWrapper disabled={downloading}>
           <IconButton
             component="a"
             href={document.href}
@@ -113,8 +113,8 @@ export function MessageMediaDocumentLink({
               <DownloadIcon fontSize="inherit" />
             )}
           </IconButton>
-        </Tooltip>
-      </MessageCardDisabledControlCursorWrapper>
+        </MessageCardDisabledControlCursorWrapper>
+      </Tooltip>
     </Box>
   );
 }

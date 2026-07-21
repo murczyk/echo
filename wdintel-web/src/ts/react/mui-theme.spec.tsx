@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   Button,
   IconButton,
+  Slider,
   Table,
   TableBody,
   TableCell,
@@ -20,6 +21,7 @@ import type { InboxMessage } from '../../Bindings';
 import { MessageCard } from './routes/shared/message-card/MessageCard';
 import { NeoMuiThemeProvider } from './mui-theme';
 import { emptyFilter } from './routes/rer-duty-neo/utils';
+import { MessageCardDisabledControlCursorWrapper } from './routes/shared/message-card/MessageCardDisabledControlCursorWrapper';
 
 function buildMessage(): InboxMessage {
   return {
@@ -83,6 +85,9 @@ function Harness() {
           label="Input sample"
           inputProps={{ 'data-testid': 'input-element' }}
         />
+        <MessageCardDisabledControlCursorWrapper disabled data-testid="disabled-slider-wrapper">
+          <Slider data-testid="disabled-slider" disabled value={25} />
+        </MessageCardDisabledControlCursorWrapper>
         <TextField
           data-testid="disabled-input-sample"
           disabled
@@ -198,5 +203,22 @@ describe('mui-theme', () => {
       expect(styles.cursor).toBe('not-allowed');
       expect(styles.pointerEvents).toBe('auto');
     }
+  });
+
+  it('uses the cursor wrapper without re-enabling disabled non-native sliders', async () => {
+    await act(async () => {
+      root.render(<Harness />);
+    });
+
+    const wrapper = container.querySelector('[data-testid="disabled-slider-wrapper"]');
+    const slider = container.querySelector('[data-testid="disabled-slider"]');
+    expect(wrapper).not.toBeNull();
+    expect(slider).not.toBeNull();
+    if (!(wrapper instanceof HTMLElement) || !(slider instanceof HTMLElement)) {
+      throw new Error('Expected disabled slider fixture nodes');
+    }
+
+    expect(window.getComputedStyle(wrapper).cursor).toBe('not-allowed');
+    expect(window.getComputedStyle(slider).pointerEvents).toBe('none');
   });
 });

@@ -23,6 +23,7 @@ import {
   SpeedSelect,
   VideoProgressSlider,
 } from './MessageCardVideoControls';
+import { MessageCardDisabledControlCursorWrapper } from './MessageCardDisabledControlCursorWrapper';
 
 export function MessageCardVideoPreviewControls({
   playerState,
@@ -201,26 +202,28 @@ export function MessageCardVideoPreviewActions({
           </Tooltip>
         ) : null}
         <Tooltip title={downloading ? 'Завантаження…' : 'Завантажити'} enterDelay={300}>
-          <IconButton
-            aria-label={downloading ? 'Завантаження…' : 'Завантажити'}
-            aria-busy={downloading}
-            disabled={isDownloadStarting(downloadKey)}
-            size="small"
-            onClick={(event) => {
-              if (isDownloadStarting(downloadKey) || !onDownloadStart(downloadKey)) {
-                event.preventDefault();
-                return;
-              }
-              downloadOriginalVideo(video);
-            }}
-            sx={{ color: 'text.secondary' }}
-          >
-            {downloading ? (
-              <CircularProgress size={14} aria-label="Завантаження…" />
-            ) : (
-              <DownloadIcon />
-            )}
-          </IconButton>
+          <MessageCardDisabledControlCursorWrapper disabled={downloading}>
+            <IconButton
+              aria-label={downloading ? 'Завантаження…' : 'Завантажити'}
+              aria-busy={downloading}
+              disabled={downloading}
+              size="small"
+              onClick={(event) => {
+                if (isDownloadStarting(downloadKey) || !onDownloadStart(downloadKey)) {
+                  event.preventDefault();
+                  return;
+                }
+                downloadOriginalVideo(video);
+              }}
+              sx={{ color: 'text.secondary' }}
+            >
+              {downloading ? (
+                <CircularProgress size={14} aria-label="Завантаження…" />
+              ) : (
+                <DownloadIcon />
+              )}
+            </IconButton>
+          </MessageCardDisabledControlCursorWrapper>
         </Tooltip>
       </Box>
       {hasCarousel && (

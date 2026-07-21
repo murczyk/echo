@@ -48,12 +48,15 @@ vi.mock('@mui/material', () => ({
       );
     })(),
   Slider: () => <div />,
-  Tooltip: ({ children }: { children?: ReactNode }) => children,
+  Tooltip: ({ children, title }: { children?: ReactNode; title?: ReactNode }) => (
+    <span data-tooltip-title={typeof title === 'string' ? title : undefined}>{children}</span>
+  ),
   Typography: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
   useTheme: () => ({ palette: { divider: '#000' } }),
 }));
 
 import { MessageCardImagePreviewActions } from './MessageCardImagePreviewActions';
+import { MessageCardDisabledControlCursorWrapper } from './MessageCardDisabledControlCursorWrapper';
 import { MessageMediaDownloadLink } from './MessageCardMedia';
 
 function SharedMediaDownloadHarness() {
@@ -157,6 +160,9 @@ describe('MessageCardImagePreviewActions', () => {
 
     expect(cardDownload?.getAttribute('aria-label')).toBe('Завантаження…');
     expect(previewDownload?.getAttribute('disabled')).not.toBeNull();
+    expect(
+      previewDownload?.closest('[data-tooltip-title]')?.getAttribute('data-tooltip-title'),
+    ).toBe('Завантаження…');
     const duplicateEvent = new MouseEvent('click', { bubbles: true, cancelable: true });
     await act(async () => {
       previewDownload?.dispatchEvent(duplicateEvent);
@@ -165,5 +171,33 @@ describe('MessageCardImagePreviewActions', () => {
 
     root.unmount();
     fetchMock.mockRestore();
+  });
+
+  it('forwards span props and refs from the disabled cursor wrapper', async () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const ref = { current: null as HTMLSpanElement | null };
+
+    await act(async () => {
+      root.render(
+        <MessageCardDisabledControlCursorWrapper
+          ref={ref}
+          disabled
+          data-testid="cursor-wrapper"
+          aria-label="Disabled download"
+        >
+          <button disabled>Download</button>
+        </MessageCardDisabledControlCursorWrapper>,
+      );
+    });
+
+    const wrapper = container.querySelector('[data-testid="cursor-wrapper"]');
+    expect(wrapper).toBe(ref.current);
+    expect(wrapper?.tagName).toBe('SPAN');
+    expect(wrapper?.getAttribute('aria-label')).toBe('Disabled download');
+    expect(wrapper?.getAttribute('data-disabled')).toBe('true');
+    expect((wrapper as HTMLElement).style.display).toBe('inline-flex');
+    root.unmount();
   });
 });

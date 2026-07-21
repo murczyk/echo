@@ -1,30 +1,28 @@
-import { Box } from '@mui/material';
-import type { ReactNode } from 'react';
+import { forwardRef } from 'react';
+import type { ComponentPropsWithoutRef, ReactNode } from 'react';
 
-export function MessageCardDisabledControlCursorWrapper({
-  disabled,
-  children,
-}: {
+export type MessageCardDisabledControlCursorWrapperProps = ComponentPropsWithoutRef<'span'> & {
   disabled: boolean;
   children: ReactNode;
-}) {
+};
+
+export const MessageCardDisabledControlCursorWrapper = forwardRef<
+  HTMLSpanElement,
+  MessageCardDisabledControlCursorWrapperProps
+>(function MessageCardDisabledControlCursorWrapper({ disabled, children, style, ...props }, ref) {
   return (
-    <Box
-      component="span"
+    <span
+      {...props}
+      ref={ref}
       data-disabled-control-cursor-wrapper
-      sx={{
+      data-disabled={disabled ? 'true' : undefined}
+      style={{
         display: 'inline-flex',
-        ...(disabled
-          ? {
-              cursor: 'not-allowed',
-              '& .Mui-disabled, & .Mui-disabled *': {
-                cursor: 'not-allowed',
-              },
-            }
-          : {}),
+        ...(disabled ? { cursor: 'not-allowed' } : {}),
+        ...style,
       }}
     >
       {children}
-    </Box>
+    </span>
   );
-}
+});

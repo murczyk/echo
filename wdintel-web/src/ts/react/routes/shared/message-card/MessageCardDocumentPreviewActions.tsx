@@ -214,8 +214,8 @@ export function MessageCardDocumentPreviewActions({
             <OpenInNewIcon />
           </IconButton>
         </Tooltip>
-        <MessageCardDisabledControlCursorWrapper disabled={downloading}>
-          <Tooltip title={downloading ? 'Завантаження…' : 'Завантажити'} enterDelay={300}>
+        <Tooltip title={downloading ? 'Завантаження…' : 'Завантажити'} enterDelay={300}>
+          <MessageCardDisabledControlCursorWrapper disabled={downloading}>
             <IconButton
               component="a"
               href={currentHref}
@@ -237,8 +237,8 @@ export function MessageCardDocumentPreviewActions({
                 <DownloadIcon />
               )}
             </IconButton>
-          </Tooltip>
-        </MessageCardDisabledControlCursorWrapper>
+          </MessageCardDisabledControlCursorWrapper>
+        </Tooltip>
       </Stack>
 
       <Stack

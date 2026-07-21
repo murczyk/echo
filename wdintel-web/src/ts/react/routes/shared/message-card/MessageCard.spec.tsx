@@ -41,7 +41,7 @@ const latestMenuProps: Array<{
 const latestDocumentDialogProps: Array<{
   currentIndex?: number;
   open?: boolean;
-  documents?: Array<{ kind: string; href: string }>;
+  documents?: Array<{ id?: string | number | null; kind: string; href: string }>;
 }> = [];
 
 type PrimitiveProps = { children?: ReactNode; component?: string } & Record<string, unknown>;
@@ -98,19 +98,47 @@ vi.mock('./MessageCardDocumentPreviewDialog', () => ({
     currentIndex,
     documents,
     open,
+    isDownloadStarting,
+    onDownloadStart,
   }: {
     currentIndex?: number;
-    documents?: Array<{ kind: string; href: string }>;
+    documents?: Array<{ id?: string | number | null; kind: string; href: string }>;
     open: boolean;
+    isDownloadStarting?: (downloadKey: string) => boolean;
+    onDownloadStart?: (downloadKey: string) => boolean;
   }) => {
+    const currentDocument = documents?.[currentIndex ?? 0];
+    const downloadKey = `media:${String(currentDocument?.id ?? '')}`;
+    const downloading = isDownloadStarting?.(downloadKey) ?? false;
     if (open) {
       latestDocumentDialogProps.push({
         currentIndex,
         open,
-        documents: documents?.map((document) => ({ kind: document.kind, href: document.href })),
+        documents: documents?.map((document) => ({
+          id: document.id,
+          kind: document.kind,
+          href: document.href,
+        })),
       });
     }
-    return open ? <div role="dialog">document-dialog</div> : null;
+    return open ? (
+      <div role="dialog">
+        <a
+          data-preview-download
+          href={currentDocument?.href}
+          download
+          aria-label={downloading ? 'Завантаження…' : 'Завантажити файл'}
+          aria-busy={downloading}
+          disabled={downloading}
+          onClick={(event) => {
+            if (downloading || !onDownloadStart?.(downloadKey)) event.preventDefault();
+          }}
+        >
+          {downloading ? 'spinner' : 'download'}
+        </a>
+        document-dialog
+      </div>
+    ) : null;
   },
 }));
 
@@ -2607,6 +2635,49 @@ describe('MessageCard', () => {
     expect(downloadLink?.getAttribute('href')).toBe('https://example.test/files/report.pdf');
     expect(downloadLink?.getAttribute('download')).toBe('report.pdf');
     expect(view.container.querySelector('button[aria-label="Попередній перегляд"]')).toBeNull();
+  });
+
+  it('guards a document preview download when the same file starts in the card', async () => {
+    const view = await renderCard({
+      msg: {
+        ...buildMessage(),
+        media: [
+          {
+            id: 'document-preview-1',
+            href: 'javascript:void(0)',
+            contentType: 'application/pdf',
+            fileName: 'report.pdf',
+            sizeBytes: 2048,
+          },
+        ] as InboxMessage['media'],
+      },
+    });
+    rendered.push(view);
+
+    const documentButton = Array.from(view.container.querySelectorAll('button')).find((button) =>
+      button.textContent?.includes('report.pdf'),
+    );
+    expect(documentButton).not.toBeNull();
+    await click(documentButton as HTMLElement);
+
+    const cardDownload = view.container.querySelector('a[download="report.pdf"]');
+    const previewDownload = document.body.querySelector('a[data-preview-download]');
+    expect(cardDownload).not.toBeNull();
+    expect(previewDownload).not.toBeNull();
+
+    cardDownload?.addEventListener('click', (event) => event.preventDefault(), {
+      capture: true,
+      once: true,
+    });
+    await dispatchCancelableClick(cardDownload as HTMLElement);
+
+    expect(previewDownload?.getAttribute('disabled')).not.toBeNull();
+    expect(previewDownload?.getAttribute('aria-busy')).toBe('true');
+    expect(previewDownload?.getAttribute('aria-label')).toBe('Завантаження…');
+    expect(previewDownload?.textContent).toContain('spinner');
+
+    const duplicateEvent = await dispatchCancelableClick(previewDownload as HTMLElement);
+    expect(duplicateEvent.defaultPrevented).toBe(true);
   });
 
   it('opens mixed previewable documents in the clicked position and preserves order', async () => {
