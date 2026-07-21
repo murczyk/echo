@@ -115,7 +115,9 @@ export function useRerDutyInitialLoad(params: Params) {
         const previousFeed = current.messageFeedsRef.current.find(
           (candidate) => candidate.id === feedId,
         );
-        if (!preserveUnread) {
+        if (preserveUnread) {
+          current.setFeedUnreadCursor(feedId, null);
+        } else {
           current.clearFeedUnreadBaselines(feedId);
           const tail = items.at(-1);
           current.setFeedUnreadCursor(

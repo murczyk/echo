@@ -960,6 +960,37 @@ describe('useRerDutyFeedState — loading', () => {
     expect(hoisted.fetchInboxCount).toHaveBeenCalledTimes(1);
   });
 
+  it('derives a new unread cursor when an edit moves the old tail earlier', async () => {
+    hoisted.fetchInboxMessages
+      .mockResolvedValueOnce(
+        inboxRsp([
+          [1, minimalInboxMessage({ timestamp: 100 })],
+          [3, minimalInboxMessage({ timestamp: 300 })],
+        ]),
+      )
+      .mockResolvedValueOnce(
+        inboxRsp([
+          [3, minimalInboxMessage({ timestamp: 50 })],
+          [1, minimalInboxMessage({ timestamp: 100 })],
+        ]),
+      );
+    const apiRef: React.MutableRefObject<ReturnType<typeof useRerDutyFeedState> | null> = {
+      current: null,
+    };
+
+    await act(async () => root.render(<TestHarness apiRef={apiRef} />));
+    await act(async () => flushMicrotasks());
+    await act(async () => apiRef.current?.reloadEditedFeeds());
+    await act(async () => flushMicrotasks());
+    hoisted.fetchInboxCount.mockClear();
+
+    await act(async () => apiRef.current?.requestValidatedInboxCount('mf-0'));
+
+    expect(hoisted.fetchInboxCount).toHaveBeenCalledWith(
+      expect.objectContaining({ sinceIdNoninclusive: 1 }),
+    );
+  });
+
   it('invalidates a stale empty-feed initial response during reload', async () => {
     const stale = deferred<InboxMessagesRsp>();
     const fresh = deferred<InboxMessagesRsp>();
