@@ -8512,6 +8512,7 @@ type alias SystemSettingsCurrentRsp =
     , devicesSectionEnabled : Bool
     , sigintCommentParsingEnabled : Bool
     , doNotStoreDuplicateEchoimFailures : Bool
+    , goiAssociationMessageUidWorkerEnabled : Bool
     }
 
 
@@ -8537,6 +8538,7 @@ systemSettingsCurrentRspEncoder struct =
         , ( "devices_section_enabled", (Json.Encode.bool) struct.devicesSectionEnabled )
         , ( "sigint_comment_parsing_enabled", (Json.Encode.bool) struct.sigintCommentParsingEnabled )
         , ( "do_not_store_duplicate_echoim_failures", (Json.Encode.bool) struct.doNotStoreDuplicateEchoimFailures )
+        , ( "goi_association_message_uid_worker_enabled", (Json.Encode.bool) struct.goiAssociationMessageUidWorkerEnabled )
         ]
 
 
@@ -8565,6 +8567,7 @@ type alias SystemSettingsItem =
     , echoRestapiErrorDiscordWebhookUrl : Maybe (String)
     , sigintCommentParsingEnabled : Bool
     , doNotStoreDuplicateEchoimFailures : Bool
+    , goiAssociationMessageUidWorkerEnabled : Bool
     }
 
 
@@ -8595,6 +8598,7 @@ systemSettingsItemEncoder struct =
         , ( "echo_restapi_error_discord_webhook_url", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.echoRestapiErrorDiscordWebhookUrl )
         , ( "sigint_comment_parsing_enabled", (Json.Encode.bool) struct.sigintCommentParsingEnabled )
         , ( "do_not_store_duplicate_echoim_failures", (Json.Encode.bool) struct.doNotStoreDuplicateEchoimFailures )
+        , ( "goi_association_message_uid_worker_enabled", (Json.Encode.bool) struct.goiAssociationMessageUidWorkerEnabled )
         ]
 
 
@@ -8630,6 +8634,7 @@ type alias CreateSystemSettingsReq =
     , echoRestapiErrorDiscordWebhookUrl : Maybe (String)
     , sigintCommentParsingEnabled : Bool
     , doNotStoreDuplicateEchoimFailures : Bool
+    , goiAssociationMessageUidWorkerEnabled : Bool
     }
 
 
@@ -8655,6 +8660,7 @@ createSystemSettingsReqEncoder struct =
         , ( "echo_restapi_error_discord_webhook_url", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.echoRestapiErrorDiscordWebhookUrl )
         , ( "sigint_comment_parsing_enabled", (Json.Encode.bool) struct.sigintCommentParsingEnabled )
         , ( "do_not_store_duplicate_echoim_failures", (Json.Encode.bool) struct.doNotStoreDuplicateEchoimFailures )
+        , ( "goi_association_message_uid_worker_enabled", (Json.Encode.bool) struct.goiAssociationMessageUidWorkerEnabled )
         ]
 
 
@@ -14381,6 +14387,7 @@ systemSettingsCurrentRspDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "devices_section_enabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sigint_comment_parsing_enabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "do_not_store_duplicate_echoim_failures" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "goi_association_message_uid_worker_enabled" (Json.Decode.bool)))
 
 
 systemSettingsItemDecoder : Json.Decode.Decoder SystemSettingsItem
@@ -14410,6 +14417,7 @@ systemSettingsItemDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "echo_restapi_error_discord_webhook_url" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sigint_comment_parsing_enabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "do_not_store_duplicate_echoim_failures" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "goi_association_message_uid_worker_enabled" (Json.Decode.bool)))
 
 
 systemSettingsListRspDecoder : Json.Decode.Decoder SystemSettingsListRsp
@@ -14440,6 +14448,7 @@ createSystemSettingsReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "echo_restapi_error_discord_webhook_url" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sigint_comment_parsing_enabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "do_not_store_duplicate_echoim_failures" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "goi_association_message_uid_worker_enabled" (Json.Decode.bool)))
 
 
 activateSystemSettingsReqDecoder : Json.Decode.Decoder ActivateSystemSettingsReq

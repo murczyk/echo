@@ -488,6 +488,13 @@ pub struct OneoffAssignMessageIdsPs {
 }
 
 #[derive(clap::Parser, Debug)]
+pub struct OneoffBackfillGoiAssociationMessageUidsPs {
+    /// Earliest GOI association source timestamp (inclusive). Example: `2026-06-15T00:00:00Z`
+    #[arg(long)]
+    pub since_ts: Option<String>,
+}
+
+#[derive(clap::Parser, Debug)]
 pub struct OneoffPrintOrganismGroupsPs {
     #[arg(long, value_enum)]
     pub organism_name: String,
@@ -714,6 +721,9 @@ enum Cmd {
     OneoffFixAreasOfResponsibility(OneoffFixAreasOfResponsibilityPs),
     OneoffPrintOrganismGroups(OneoffPrintOrganismGroupsPs),
     OneoffAssignMessageIds(OneoffAssignMessageIdsPs),
+    OneoffBackfillGoiAssociationMessageUids(
+        OneoffBackfillGoiAssociationMessageUidsPs,
+    ),
     OneoffGetNetworksActivityStats(OneoffGetNetworksActivityStatsPs),
     OneoffCompareRerCounts(CompareRerCountsPs),
     OneoffPopulateSignalMessageGroupIds,
@@ -1134,6 +1144,13 @@ async fn async_main(
             messenger::id::oneoff_assign_message_ids(
                 mode,
                 ps.dry_run.unwrap_or(true),
+            )
+            .await
+        }
+        Cmd::OneoffBackfillGoiAssociationMessageUids(ps) => {
+            organism::goi::message_uid::oneoff_backfill_goi_association_message_uids(
+                mode,
+                ps.since_ts.as_deref(),
             )
             .await
         }

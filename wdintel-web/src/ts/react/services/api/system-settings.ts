@@ -19,6 +19,7 @@ type SystemSettingsItemRaw = {
   devices_section_enabled?: boolean;
   sigint_comment_parsing_enabled?: boolean;
   do_not_store_duplicate_echoim_failures?: boolean;
+  goi_association_message_uid_worker_enabled?: boolean;
   peleng_bounds_enabled?: boolean;
   peleng_bounds_top_left_lat?: number | null;
   peleng_bounds_top_left_lng?: number | null;
@@ -42,6 +43,7 @@ type SystemSettingsCurrentRspRaw = {
   devices_section_enabled?: boolean;
   sigint_comment_parsing_enabled?: boolean;
   do_not_store_duplicate_echoim_failures?: boolean;
+  goi_association_message_uid_worker_enabled?: boolean;
   peleng_bounds_enabled?: boolean;
   peleng_bounds_top_left_lat?: number | null;
   peleng_bounds_top_left_lng?: number | null;
@@ -67,6 +69,7 @@ type CreateSystemSettingsReqRaw = {
   devices_section_enabled: boolean;
   sigint_comment_parsing_enabled: boolean;
   do_not_store_duplicate_echoim_failures: boolean;
+  goi_association_message_uid_worker_enabled: boolean;
   peleng_bounds_enabled: boolean;
   peleng_bounds_top_left_lat: number | null;
   peleng_bounds_top_left_lng: number | null;
@@ -98,6 +101,7 @@ export type SystemSettingsItem = {
   devicesSectionEnabled: boolean;
   sigintCommentParsingEnabled: boolean;
   doNotStoreDuplicateEchoimFailures: boolean;
+  goiAssociationMessageUidWorkerEnabled: boolean;
   pelengBoundsEnabled: boolean;
   pelengBoundsTopLeftLat: number | null;
   pelengBoundsTopLeftLng: number | null;
@@ -121,6 +125,7 @@ export type SystemSettingsCurrent = {
   devicesSectionEnabled: boolean;
   sigintCommentParsingEnabled: boolean;
   doNotStoreDuplicateEchoimFailures: boolean;
+  goiAssociationMessageUidWorkerEnabled: boolean;
   pelengBoundsEnabled: boolean;
   pelengBoundsTopLeftLat: number | null;
   pelengBoundsTopLeftLng: number | null;
@@ -142,6 +147,7 @@ export type CreateSystemSettingsInput = {
   devicesSectionEnabled: boolean;
   sigintCommentParsingEnabled: boolean;
   doNotStoreDuplicateEchoimFailures: boolean;
+  goiAssociationMessageUidWorkerEnabled: boolean;
   pelengBoundsEnabled: boolean;
   pelengBoundsTopLeftLat: number | null;
   pelengBoundsTopLeftLng: number | null;
@@ -170,6 +176,7 @@ function normalizeItem(raw: SystemSettingsItemRaw): SystemSettingsItem {
     devicesSectionEnabled: raw.devices_section_enabled ?? false,
     sigintCommentParsingEnabled: raw.sigint_comment_parsing_enabled ?? false,
     doNotStoreDuplicateEchoimFailures: raw.do_not_store_duplicate_echoim_failures ?? false,
+    goiAssociationMessageUidWorkerEnabled: raw.goi_association_message_uid_worker_enabled ?? false,
     pelengBoundsEnabled: raw.peleng_bounds_enabled ?? false,
     pelengBoundsTopLeftLat: raw.peleng_bounds_top_left_lat ?? null,
     pelengBoundsTopLeftLng: raw.peleng_bounds_top_left_lng ?? null,
@@ -195,6 +202,7 @@ function normalizeCurrent(raw: SystemSettingsCurrentRspRaw): SystemSettingsCurre
     devicesSectionEnabled: raw.devices_section_enabled ?? false,
     sigintCommentParsingEnabled: raw.sigint_comment_parsing_enabled ?? false,
     doNotStoreDuplicateEchoimFailures: raw.do_not_store_duplicate_echoim_failures ?? false,
+    goiAssociationMessageUidWorkerEnabled: raw.goi_association_message_uid_worker_enabled ?? false,
     pelengBoundsEnabled: raw.peleng_bounds_enabled ?? false,
     pelengBoundsTopLeftLat: raw.peleng_bounds_top_left_lat ?? null,
     pelengBoundsTopLeftLng: raw.peleng_bounds_top_left_lng ?? null,
@@ -225,6 +233,7 @@ export async function createSystemSettings(
     devices_section_enabled: input.devicesSectionEnabled,
     sigint_comment_parsing_enabled: input.sigintCommentParsingEnabled,
     do_not_store_duplicate_echoim_failures: input.doNotStoreDuplicateEchoimFailures,
+    goi_association_message_uid_worker_enabled: input.goiAssociationMessageUidWorkerEnabled,
     peleng_bounds_enabled: input.pelengBoundsEnabled,
     peleng_bounds_top_left_lat: input.pelengBoundsTopLeftLat,
     peleng_bounds_top_left_lng: input.pelengBoundsTopLeftLng,

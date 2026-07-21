@@ -44,6 +44,7 @@ type SystemSettingsForm = {
   devicesSectionEnabled: boolean;
   sigintCommentParsingEnabled: boolean;
   doNotStoreDuplicateEchoimFailures: boolean;
+  goiAssociationMessageUidWorkerEnabled: boolean;
   pelengBoundsEnabled: boolean;
   pelengBoundsTopLeftLat: string;
   pelengBoundsTopLeftLng: string;
@@ -68,6 +69,7 @@ type SystemSettingsPayload = {
   devicesSectionEnabled: boolean;
   sigintCommentParsingEnabled: boolean;
   doNotStoreDuplicateEchoimFailures: boolean;
+  goiAssociationMessageUidWorkerEnabled: boolean;
   pelengBoundsEnabled: boolean;
   pelengBoundsTopLeftLat: number | null;
   pelengBoundsTopLeftLng: number | null;
@@ -90,6 +92,7 @@ const EMPTY_FORM: SystemSettingsForm = {
   devicesSectionEnabled: false,
   sigintCommentParsingEnabled: true,
   doNotStoreDuplicateEchoimFailures: false,
+  goiAssociationMessageUidWorkerEnabled: false,
   pelengBoundsEnabled: false,
   pelengBoundsTopLeftLat: '',
   pelengBoundsTopLeftLng: '',
@@ -127,6 +130,7 @@ function formFromSettings(item: SystemSettingsItem | undefined): SystemSettingsF
     devicesSectionEnabled: item?.devicesSectionEnabled ?? false,
     sigintCommentParsingEnabled: item?.sigintCommentParsingEnabled ?? true,
     doNotStoreDuplicateEchoimFailures: item?.doNotStoreDuplicateEchoimFailures ?? false,
+    goiAssociationMessageUidWorkerEnabled: item?.goiAssociationMessageUidWorkerEnabled ?? false,
     pelengBoundsEnabled: item?.pelengBoundsEnabled ?? false,
     pelengBoundsTopLeftLat: coordinateToInput(item?.pelengBoundsTopLeftLat ?? null),
     pelengBoundsTopLeftLng: coordinateToInput(item?.pelengBoundsTopLeftLng ?? null),
@@ -151,6 +155,7 @@ function formsEqual(a: SystemSettingsForm, b: SystemSettingsForm): boolean {
     a.devicesSectionEnabled === b.devicesSectionEnabled &&
     a.sigintCommentParsingEnabled === b.sigintCommentParsingEnabled &&
     a.doNotStoreDuplicateEchoimFailures === b.doNotStoreDuplicateEchoimFailures &&
+    a.goiAssociationMessageUidWorkerEnabled === b.goiAssociationMessageUidWorkerEnabled &&
     a.pelengBoundsEnabled === b.pelengBoundsEnabled &&
     a.pelengBoundsTopLeftLat === b.pelengBoundsTopLeftLat &&
     a.pelengBoundsTopLeftLng === b.pelengBoundsTopLeftLng &&
@@ -223,6 +228,7 @@ function formToPayload(form: SystemSettingsForm): SystemSettingsPayload {
     devicesSectionEnabled: form.devicesSectionEnabled,
     sigintCommentParsingEnabled: form.sigintCommentParsingEnabled,
     doNotStoreDuplicateEchoimFailures: form.doNotStoreDuplicateEchoimFailures,
+    goiAssociationMessageUidWorkerEnabled: form.goiAssociationMessageUidWorkerEnabled,
     pelengBoundsEnabled: form.pelengBoundsEnabled,
     pelengBoundsTopLeftLat: coordinateToPayload(form.pelengBoundsTopLeftLat),
     pelengBoundsTopLeftLng: coordinateToPayload(form.pelengBoundsTopLeftLng),
@@ -389,6 +395,18 @@ function MainSettingsSection({
           />
         }
         label="Не зберігати дублікати помилок Echo IM"
+      />
+
+      <FormControlLabel
+        control={
+          <Switch
+            checked={form.goiAssociationMessageUidWorkerEnabled}
+            onChange={(_, checked) => {
+              patchForm({ goiAssociationMessageUidWorkerEnabled: checked });
+            }}
+          />
+        }
+        label="Заповнювати UID повідомлень висновків GOI"
       />
     </>
   );
@@ -680,6 +698,7 @@ export function AdminSystemSettingsNeoPage() {
         devicesSectionEnabled: payload.devicesSectionEnabled,
         sigintCommentParsingEnabled: payload.sigintCommentParsingEnabled,
         doNotStoreDuplicateEchoimFailures: payload.doNotStoreDuplicateEchoimFailures,
+        goiAssociationMessageUidWorkerEnabled: payload.goiAssociationMessageUidWorkerEnabled,
         pelengBoundsEnabled: payload.pelengBoundsEnabled,
         pelengBoundsTopLeftLat: payload.pelengBoundsTopLeftLat,
         pelengBoundsTopLeftLng: payload.pelengBoundsTopLeftLng,

@@ -43,6 +43,8 @@ pub struct Model {
     #[sea_orm(column_type = "JsonBinary", nullable)]
     pub palettes: Option<Json>,
     pub integration_id: i64,
+    #[sea_orm(column_type = "Text", nullable)]
+    pub message_uid: Option<String>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
