@@ -442,6 +442,26 @@ ID(CG)⬅️:50📣",
     }
 
     #[test]
+    fn parse_metadata_applies_each_color_code_to_later_sender() {
+        let metadata = parse_metadata_asserting_spans("СС:2,5\nID:123");
+        assert_eq!(
+            metadata,
+            vec![
+                InboxMetadata {
+                    cc: Some("2".to_string()),
+                    id: Some("123".to_string()),
+                    ..Default::default()
+                },
+                InboxMetadata {
+                    cc: Some("5".to_string()),
+                    id: Some("123".to_string()),
+                    ..Default::default()
+                },
+            ]
+        );
+    }
+
+    #[test]
     fn parse_metadata_handles_repeated_palette_color_codes() {
         let metadata = parse_metadata_asserting_spans(
             "🔺УКХ р/м управління мсб 26 тп 47 тд 1 ТА 🎨: 5,👥: 97087. 🎨: 1,👥: 91638 ,97087🔐.",

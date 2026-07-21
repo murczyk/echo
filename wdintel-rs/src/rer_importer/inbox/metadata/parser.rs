@@ -31,7 +31,7 @@ pub fn parse_metadata(message: &str) -> Vec<InboxMetadata> {
         }
 
         let normalized_line = NormalizedLine::new(line);
-        for mut line_metadata in parse_metadata_line(&normalized_line) {
+        for mut line_metadata in parse_metadata_line_grouped(&normalized_line) {
             offset_metadata(&mut line_metadata, line_start_index + trim_offset);
             if !line_metadata.has_some_value() {
                 continue;
@@ -60,7 +60,7 @@ pub fn parse_metadata(message: &str) -> Vec<InboxMetadata> {
     }
 
     push_metadata_if_nonempty(&mut result, current);
-    let result = expand_multi_source_ids(result)
+    let result = expand_color_codes(expand_multi_source_ids(result))
         .into_iter()
         .map(WorkingMetadata::into_public)
         .filter(InboxMetadata::has_some_value)
@@ -367,7 +367,12 @@ pub fn parse_hash_id(line: &NormalizedLine) -> Option<MatchedValue> {
         .filter(|hash_id| hash_id.value.as_deref() != Some("різні"))
 }
 
+#[cfg(test)]
 pub fn parse_metadata_line(line: &NormalizedLine) -> Vec<WorkingMetadata> {
+    expand_color_codes(parse_metadata_line_grouped(line))
+}
+
+fn parse_metadata_line_grouped(line: &NormalizedLine) -> Vec<WorkingMetadata> {
     let common = WorkingMetadata {
         id: parse_mid(line).unwrap_or_default(),
         id_name: parse_mid_id(line).unwrap_or_default(),
@@ -391,7 +396,7 @@ pub fn parse_metadata_line(line: &NormalizedLine) -> Vec<WorkingMetadata> {
     let mut cg_parts = parse_cg_parts(line);
     cg_parts.sort_by_key(|(start, _)| *start);
     result = apply_cg_parts(result, cg_parts);
-    result = apply_color_codes(result, parse_color_codes(line));
+    result = attach_color_codes(result, parse_color_codes(line));
 
     result
 }
@@ -415,23 +420,24 @@ fn apply_cg_parts(
     result
 }
 
-fn apply_color_codes(
-    items: Vec<WorkingMetadata>,
+fn attach_color_codes(
+    mut items: Vec<WorkingMetadata>,
     color_codes: Vec<MatchedValue>,
 ) -> Vec<WorkingMetadata> {
     if color_codes.is_empty() {
         return items;
     }
 
-    let mut result = vec![];
-    for item in items {
-        for color_code in &color_codes {
-            let mut item = item.clone();
-            item.cc = color_code.clone();
-            result.push(item);
-        }
+    let mut color_codes = color_codes.into_iter();
+    let Some(color_code) = color_codes.next() else {
+        return items;
+    };
+    let additional_ccs = color_codes.collect::<Vec<_>>();
+    for item in &mut items {
+        item.cc = color_code.clone();
+        item.additional_ccs = additional_ccs.clone();
     }
-    result
+    items
 }
 
 fn parse_emoji_abonent_lists(
@@ -725,6 +731,20 @@ fn expand_multi_source_ids(
     result
 }
 
+fn expand_color_codes(items: Vec<WorkingMetadata>) -> Vec<WorkingMetadata> {
+    let mut result = vec![];
+    for mut item in items {
+        let additional_ccs = std::mem::take(&mut item.additional_ccs);
+        result.push(item.clone());
+        for color_code in additional_ccs {
+            let mut item = item.clone();
+            item.cc = color_code;
+            result.push(item);
+        }
+    }
+    result
+}
+
 fn trailing_shared_source_id_name(
     ids: &[(MatchedValue, MatchedValue)],
 ) -> Option<&MatchedValue> {
@@ -929,6 +949,14 @@ fn offset_metadata(metadata: &mut WorkingMetadata, offset: i32) {
         &mut metadata.id_name,
         &mut metadata.hash_id,
     ] {
+        if let Some(start_index) = value.start_index.as_mut() {
+            *start_index += offset;
+        }
+        if let Some(end_index) = value.end_index.as_mut() {
+            *end_index += offset;
+        }
+    }
+    for value in &mut metadata.additional_ccs {
         if let Some(start_index) = value.start_index.as_mut() {
             *start_index += offset;
         }
