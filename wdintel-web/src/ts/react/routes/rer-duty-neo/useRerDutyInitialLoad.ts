@@ -59,13 +59,8 @@ function preserveUnreadState(
 ): Pick<MessageFeedState, 'readIds' | 'windowedUnreadItems' | 'unreadCount'> {
   const itemIds = new Set(items.map(([id]) => id));
   const readIds = new Set([...feed.readIds].filter((id) => itemIds.has(id)));
-  const windowedUnreadItems = new Map(
-    [...feed.windowedUnreadItems].filter(([id]) => itemIds.has(id)),
-  );
-  let unreadCount = Math.max(
-    0,
-    feed.unreadCount - (feed.windowedUnreadItems.size - windowedUnreadItems.size),
-  );
+  const windowedUnreadItems = new Map(feed.windowedUnreadItems);
+  let unreadCount = feed.unreadCount;
   items.forEach(([id, message]) => {
     if (!readIds.has(id) && !windowedUnreadItems.has(id) && message.timestamp != null) {
       windowedUnreadItems.set(id, message.timestamp);

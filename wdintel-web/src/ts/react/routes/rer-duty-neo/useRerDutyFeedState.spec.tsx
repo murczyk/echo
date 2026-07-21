@@ -898,8 +898,11 @@ describe('useRerDutyFeedState — loading', () => {
             : {
                 ...feed,
                 readIds: new Set([10]),
-                windowedUnreadItems: new Map([[11, 1100]]),
-                unreadCount: 2,
+                windowedUnreadItems: new Map([
+                  [11, 1100],
+                  [99, 9900],
+                ]),
+                unreadCount: 3,
               },
         ),
       );
@@ -932,10 +935,11 @@ describe('useRerDutyFeedState — loading', () => {
     expect(untouchedFeed.windowedUnreadItems).toEqual(
       new Map([
         [11, 1100],
+        [99, 9900],
         [12, 1200],
       ]),
     );
-    expect(untouchedFeed.unreadCount).toBe(3);
+    expect(untouchedFeed.unreadCount).toBe(4);
   });
 
   it('completes an edit refresh before requesting unread counts', async () => {
