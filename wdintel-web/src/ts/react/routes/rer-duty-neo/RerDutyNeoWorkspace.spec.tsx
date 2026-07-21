@@ -11,6 +11,9 @@ import type { MessageFeedState } from './utils';
 import { MAX_MESSAGE_FEEDS } from './utils';
 
 const renderedFeedColumns = new Map<string, FeedColumnModel>();
+const createMessageFabPropsHistory = vi.hoisted(
+  () => [] as Array<{ onClick?: () => void; rightInset?: number }>,
+);
 
 vi.mock('./FeedColumn', () => ({
   FeedColumn: forwardRef<HTMLDivElement, { column: FeedColumnModel }>(function FeedColumnMock(
@@ -23,9 +26,10 @@ vi.mock('./FeedColumn', () => ({
 }));
 
 vi.mock('../shared/manage-message/CreateMessageFab', () => ({
-  CreateMessageFab: ({ onClick }: { onClick: () => void }) => (
-    <button type="button" aria-label="Додати повідомлення" onClick={onClick} />
-  ),
+  CreateMessageFab: ({ onClick, rightInset }: { onClick: () => void; rightInset?: number }) => {
+    createMessageFabPropsHistory.push({ onClick, rightInset });
+    return <button type="button" aria-label="Додати повідомлення" onClick={onClick} />;
+  },
 }));
 
 function buildFeed(id: string): MessageFeedState {
@@ -168,6 +172,7 @@ describe('RerDutyNeoWorkspace', () => {
 
   beforeEach(() => {
     renderedFeedColumns.clear();
+    createMessageFabPropsHistory.splice(0);
   });
 
   afterEach(() => {
@@ -422,7 +427,12 @@ describe('RerDutyNeoWorkspace', () => {
       );
     });
 
-    expect(container.querySelectorAll('button[aria-label="Додати повідомлення"]')).toHaveLength(1);
+    const fab = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Додати повідомлення"]',
+    );
+    expect(fab).not.toBeNull();
+    expect(container.contains(fab)).toBe(true);
+    expect(createMessageFabPropsHistory.at(-1)?.rightInset).toBe(5);
     expect(renderedFeedColumns.get('feed-1')?.view.workspaceFabAvoidance).toBe('none');
     expect(renderedFeedColumns.get('feed-2')?.view.workspaceFabAvoidance).toBe('above');
     expect(renderedFeedColumns.get('feed-2')?.view.scrollTrackingEnabled).toBe(true);
@@ -622,6 +632,62 @@ describe('RerDutyNeoWorkspace', () => {
 
     expect(renderedFeedColumns.get('feed-1')?.view.scrollTrackingEnabled).toBe(true);
     expect(renderedFeedColumns.get('feed-2')?.view.scrollTrackingEnabled).toBe(true);
+  });
+
+  it('still renders the create-message FAB in narrow and desktop workspace states', async () => {
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+    const columnRefsRef = { current: {} as Record<string, null> };
+    const messageFeeds = [{ ...buildFeed('feed-1'), loading: false }];
+
+    await act(async () => {
+      root.render(
+        <RerDutyNeoWorkspace
+          activeFeedId="feed-1"
+          buildFeedColumnModel={buildFeedColumnModel}
+          columnRefsRef={columnRefsRef}
+          createMessageFeed={() => {}}
+          openCreateMessageComposer={() => {}}
+          isInitialLoading={true}
+          messageFeeds={messageFeeds}
+          narrowScreen
+          onSelectFeed={() => {}}
+          showLoadingBackdrop={false}
+        />,
+      );
+    });
+
+    const narrowFab = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Додати повідомлення"]',
+    );
+    expect(narrowFab).not.toBeNull();
+    expect(container.contains(narrowFab)).toBe(true);
+    expect(createMessageFabPropsHistory.at(-1)?.rightInset).toBe(5);
+
+    await act(async () => {
+      root.render(
+        <RerDutyNeoWorkspace
+          activeFeedId="feed-1"
+          buildFeedColumnModel={buildFeedColumnModel}
+          columnRefsRef={columnRefsRef}
+          createMessageFeed={() => {}}
+          openCreateMessageComposer={() => {}}
+          isInitialLoading={false}
+          messageFeeds={messageFeeds}
+          narrowScreen={false}
+          onSelectFeed={() => {}}
+          showLoadingBackdrop={false}
+        />,
+      );
+    });
+
+    const desktopFab = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Додати повідомлення"]',
+    );
+    expect(desktopFab).not.toBeNull();
+    expect(container.contains(desktopFab)).toBe(true);
+    expect(createMessageFabPropsHistory.at(-1)?.rightInset).toBe(5);
   });
 
   it('does not mutate the source column view when enabling scroll tracking', async () => {

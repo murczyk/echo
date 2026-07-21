@@ -508,7 +508,7 @@ export function RerDutyNeoWorkspace({
           </Box>
         </Box>
       )}
-      <CreateMessageFab onClick={openCreateMessageComposer} />
+      <CreateMessageFab onClick={openCreateMessageComposer} rightInset={5} />
 
       <Backdrop
         open={showLoadingBackdrop}

@@ -7,9 +7,13 @@ import {
 
 type Props = {
   onClick: () => void;
+  rightInset?: number;
 };
 
-export function CreateMessageFab({ onClick }: Props) {
+export function CreateMessageFab({
+  onClick,
+  rightInset = POWER_FLOATING_CONTROL_EDGE_INSET,
+}: Props) {
   return (
     <Fab
       color="primary"
@@ -18,8 +22,8 @@ export function CreateMessageFab({ onClick }: Props) {
       sx={{
         position: 'absolute',
         right: {
-          xs: `max(${POWER_FLOATING_CONTROL_EDGE_INSET}px, env(safe-area-inset-right, 0px))`,
-          sm: POWER_FLOATING_CONTROL_EDGE_INSET,
+          xs: `max(${rightInset}px, env(safe-area-inset-right, 0px))`,
+          sm: rightInset,
         },
         bottom: {
           xs: `max(${POWER_FLOATING_CONTROL_EDGE_INSET}px, env(safe-area-inset-bottom, 0px))`,
