@@ -12,7 +12,12 @@ import { loadMissingMessageCommentsForMessages } from './use-analysis-data.comme
 import { mergeAnalysisCallsignInfoMap } from './use-analysis-data.callsigns';
 import { isAnalysisInboxPageExhausted, toErrorMessage } from './use-analysis-data.shared';
 import { useAnalysisMessageCounts } from './use-analysis-message-counts';
-import type { AnalysisAorEntry, AnalysisMessagePageCursor, AnalysisQueryState } from './types';
+import type {
+  AnalysisAorEntry,
+  AnalysisMessagePageContext,
+  AnalysisMessagePageCursor,
+  AnalysisQueryState,
+} from './types';
 import { isNullOrUndefined } from '../../utils/misc';
 
 type Params = {
@@ -59,6 +64,7 @@ export function useAnalysisMessageList({
   const [noMoreToLoad, setNoMoreToLoad] = useState(false);
   const [nolimitShown, setNolimitShown] = useState(false);
   const [pageIndex, setPageIndex] = useState(0);
+  const pageIndexRef = useRef(pageIndex);
   const messageCommentsRef = useRef(messageComments);
   const messageCommentsLoadVersionRef = useRef(0);
   const loadMoreMessagesRequestRef = useRef(0);
@@ -72,6 +78,8 @@ export function useAnalysisMessageList({
       optionsFreqValues,
       queryState,
     });
+
+  pageIndexRef.current = pageIndex;
 
   useEffect(() => {
     messageCommentsRef.current = messageComments;
@@ -96,15 +104,6 @@ export function useAnalysisMessageList({
   const getCurrentMessagePage = useCallback(
     () => ({ cursor: pageCursorsRef.current[pageIndex] ?? FIRST_PAGE_CURSOR, pageIndex }),
     [pageIndex],
-  );
-
-  const setCurrentMessagePage = useCallback(
-    (cursor: AnalysisMessagePageCursor, nextPageIndex: number) => {
-      pageCursorsRef.current = pageCursorsRef.current.slice(0, nextPageIndex + 1);
-      pageCursorsRef.current[nextPageIndex] = cursor;
-      setPageIndex(nextPageIndex);
-    },
-    [],
   );
 
   const loadMessageComments = useCallback(
@@ -261,6 +260,81 @@ export function useAnalysisMessageList({
     pageCursorsRef.current[pageIndex - 1] = prevCursor;
   }, [fetchPage, messages, newestFirst, pageIndex]);
 
+  const reconcileCurrentMessagePage = useCallback(
+    async (finalMessagePageWasEmpty: boolean, preservedPage: AnalysisMessagePageContext) => {
+      if (!finalMessagePageWasEmpty) return;
+      const currentPageIndex = pageIndexRef.current;
+      const currentCursor = pageCursorsRef.current[currentPageIndex] ?? FIRST_PAGE_CURSOR;
+      if (
+        currentPageIndex !== preservedPage.pageIndex ||
+        JSON.stringify(currentCursor) !== JSON.stringify(preservedPage.cursor)
+      ) {
+        return;
+      }
+      if (currentPageIndex === 0) return;
+
+      const requestId = loadMoreMessagesRequestRef.current + 1;
+      loadMoreMessagesRequestRef.current = requestId;
+      const isStale = () => requestId !== loadMoreMessagesRequestRef.current;
+      setMessagesPaging(true);
+      try {
+        for (
+          let candidatePageIndex = currentPageIndex - 1;
+          candidatePageIndex >= 0;
+          candidatePageIndex -= 1
+        ) {
+          const cursor = pageCursorsRef.current[candidatePageIndex] ?? FIRST_PAGE_CURSOR;
+          const inboxReq = buildInboxReq(queryState, optionsFreqValues, true);
+          if (isNullOrUndefined(inboxReq)) return;
+
+          const rsp = await fetchInboxMessages({
+            ...inboxReq,
+            beforeIdNoninclusive: cursor.beforeIdNoninclusive,
+            sinceIdNoninclusive: cursor.sinceIdNoninclusive,
+            newestFirst: cursor.requestNewestFirst ?? newestFirst,
+          });
+          if (isStale()) return;
+
+          const pageMessages = transformPageMessages(rsp.inboxItems ?? [], cursor);
+          if (pageMessages.length === 0) continue;
+
+          setSummaryCallsignsInfo((current) =>
+            mergeAnalysisCallsignInfoMap(current, rsp.callsigns),
+          );
+          pageCursorsRef.current = pageCursorsRef.current.slice(0, candidatePageIndex + 1);
+          setMessages(pageMessages);
+          setPageIndex(candidatePageIndex);
+          await loadMissingNetworksForMessages(pageMessages);
+          if (isStale()) return;
+          await loadMessageComments(pageMessages, false);
+          if (isStale()) return;
+          setNoMoreToLoad(isAnalysisInboxPageExhausted(pageMessages, rsp.pageLimit));
+          return;
+        }
+
+        if (isStale()) return;
+        pageCursorsRef.current = [FIRST_PAGE_CURSOR];
+        setPageIndex(0);
+        setMessages([]);
+        setNoMoreToLoad(true);
+      } catch (loadError) {
+        if (isStale()) return;
+        if (!onUnauthorized(loadError)) onError(toErrorMessage(loadError));
+      } finally {
+        if (!isStale()) setMessagesPaging(false);
+      }
+    },
+    [
+      loadMessageComments,
+      loadMissingNetworksForMessages,
+      newestFirst,
+      onError,
+      onUnauthorized,
+      optionsFreqValues,
+      queryState,
+    ],
+  );
+
   const loadFirstPage = useCallback(async () => {
     if (pageIndex === 0) return;
     const fetched = await fetchPage(FIRST_PAGE_CURSOR, { targetPageIndex: 0 });
@@ -306,6 +380,7 @@ export function useAnalysisMessageList({
     loadMessageComments,
     loadNextPage,
     loadPrevPage,
+    reconcileCurrentMessagePage,
     messageComments,
     messageCommentsLoadVersionRef,
     messages,
@@ -319,7 +394,6 @@ export function useAnalysisMessageList({
     pageIndex,
     refreshMessageCounts,
     setAorEntries,
-    setCurrentMessagePage,
     setCounts,
     setHasLoadedInitialMessages,
     setMessageComments,

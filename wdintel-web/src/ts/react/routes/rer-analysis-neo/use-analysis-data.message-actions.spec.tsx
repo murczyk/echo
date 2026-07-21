@@ -50,6 +50,8 @@ type HarnessApi = ReturnType<typeof useAnalysisDataMessageActions> & {
   onError: ReturnType<typeof vi.fn>;
   reload: ReturnType<typeof vi.fn>;
   invalidateTagFacetLoad: ReturnType<typeof vi.fn>;
+  refreshTagFacet: ReturnType<typeof vi.fn>;
+  refreshMessageCounts: ReturnType<typeof vi.fn>;
 };
 
 function buildUser(): User {
@@ -104,6 +106,9 @@ function TestHarness(props: {
   onError?: ReturnType<typeof vi.fn>;
   reload?: ReturnType<typeof vi.fn>;
   invalidateTagFacetLoad?: ReturnType<typeof vi.fn>;
+  refreshMessageCounts?: ReturnType<typeof vi.fn>;
+  refreshTagFacet?: ReturnType<typeof vi.fn>;
+  queryState?: ReturnType<typeof emptyQueryState>;
 }) {
   const [messages, setMessages] = useState<Array<[number, InboxMessage]>>(
     props.initialMessages ?? [[1, buildMessage()]],
@@ -114,6 +119,8 @@ function TestHarness(props: {
   const [onError] = useState(() => props.onError ?? vi.fn());
   const [reload] = useState(() => props.reload ?? vi.fn(() => Promise.resolve()));
   const [invalidateTagFacetLoad] = useState(() => props.invalidateTagFacetLoad ?? vi.fn());
+  const [refreshMessageCounts] = useState(() => props.refreshMessageCounts ?? vi.fn());
+  const [refreshTagFacet] = useState(() => props.refreshTagFacet ?? vi.fn(() => Promise.resolve()));
   const onUnauthorized = vi.fn(() => false);
   const currentUser = props.currentUser ?? buildUser();
   const patchMessages = useCallback(
@@ -132,8 +139,15 @@ function TestHarness(props: {
     onError,
     onUnauthorized,
     patchMessages,
-    queryState: emptyQueryState(),
+    queryState: props.queryState ?? {
+      ...emptyQueryState(),
+      fromDateTimeStr: '2026-04-01T00:00',
+      toDateTimeStr: '2026-04-02T00:00',
+      tags: [3],
+    },
     invalidateTagFacetLoad,
+    refreshMessageCounts,
+    refreshTagFacet,
     reload,
     setMapOpenMessages,
     setMessages,
@@ -150,6 +164,8 @@ function TestHarness(props: {
     onError,
     reload,
     invalidateTagFacetLoad,
+    refreshMessageCounts,
+    refreshTagFacet,
   };
 
   return null;
@@ -184,6 +200,9 @@ describe('useAnalysisDataMessageActions', () => {
       currentUser?: User | null;
       reload?: ReturnType<typeof vi.fn>;
       invalidateTagFacetLoad?: ReturnType<typeof vi.fn>;
+      refreshMessageCounts?: ReturnType<typeof vi.fn>;
+      refreshTagFacet?: ReturnType<typeof vi.fn>;
+      queryState?: ReturnType<typeof emptyQueryState>;
     } = {},
   ) {
     const apiRef: MutableRefObject<HarnessApi | null> = { current: null };
@@ -196,6 +215,9 @@ describe('useAnalysisDataMessageActions', () => {
           currentUser={options.currentUser}
           reload={options.reload}
           invalidateTagFacetLoad={options.invalidateTagFacetLoad}
+          refreshMessageCounts={options.refreshMessageCounts}
+          refreshTagFacet={options.refreshTagFacet}
+          queryState={options.queryState}
         />,
       );
     });
@@ -337,6 +359,37 @@ describe('useAnalysisDataMessageActions', () => {
     expect(reload).toHaveBeenCalledWith({ preserveMessagePage: true });
   });
 
+  it('keeps the message page when the active query has no tag predicate', async () => {
+    const reload = vi.fn(() => Promise.resolve());
+    const refreshMessageCounts = vi.fn();
+    const refreshTagFacet = vi.fn(() => Promise.resolve());
+    const invalidateTagFacetLoad = vi.fn();
+    const apiRef = await renderHarness(
+      [[1, buildMessage({ inboxTags: [buildTag(3, { login: 'tester', organismId: 1 })] })]],
+      {
+        reload,
+        refreshMessageCounts,
+        refreshTagFacet,
+        invalidateTagFacetLoad,
+        queryState: {
+          ...emptyQueryState(),
+          fromDateTimeStr: '2026-04-01T00:00',
+          toDateTimeStr: '2026-04-02T00:00',
+          tags: [],
+        },
+      },
+    );
+
+    await act(async () => {
+      await apiRef.current!.onToggleMessageTag(1, 3);
+    });
+
+    expect(apiRef.current!.messages[0]?.[1].inboxTags).toEqual([]);
+    expect(reload).not.toHaveBeenCalled();
+    expect(refreshTagFacet).toHaveBeenCalledTimes(1);
+    expect(refreshMessageCounts).toHaveBeenCalledTimes(1);
+  });
+
   it('keeps the optimistic tag change and reports the error when only the reload fails', async () => {
     const reload = vi.fn(() => Promise.reject(new Error('reload boom')));
     const invalidateTagFacetLoad = vi.fn();
@@ -354,6 +407,29 @@ describe('useAnalysisDataMessageActions', () => {
     expect(apiRef.current!.messages[0]?.[1].inboxTags).toEqual([]);
     expect(apiRef.current!.messages[0]?.[1].tags).toEqual([4]);
     expect(apiRef.current!.onError).toHaveBeenCalledWith('reload boom');
+  });
+
+  it('keeps the optimistic tag change when a visible facet refresh fails', async () => {
+    const refreshTagFacet = vi.fn(() => Promise.reject(new Error('facet boom')));
+    const apiRef = await renderHarness(
+      [[1, buildMessage({ inboxTags: [buildTag(3, { login: 'tester', organismId: 1 })] })]],
+      {
+        refreshTagFacet,
+        queryState: {
+          ...emptyQueryState(),
+          fromDateTimeStr: '2026-04-01T00:00',
+          toDateTimeStr: '2026-04-02T00:00',
+          tags: [],
+        },
+      },
+    );
+
+    await act(async () => {
+      await apiRef.current!.onToggleMessageTag(1, 3);
+    });
+
+    expect(apiRef.current!.messages[0]?.[1].inboxTags).toEqual([]);
+    expect(apiRef.current!.onError).toHaveBeenCalledWith('facet boom');
   });
 
   it('does not reload or invalidate the tag facet when the tag toggle fails', async () => {

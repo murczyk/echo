@@ -129,6 +129,11 @@ export type AnalysisMessagePageCursor = {
   resultLimit?: number;
 };
 
+export type AnalysisMessagePageContext = {
+  cursor: AnalysisMessagePageCursor;
+  pageIndex: number;
+};
+
 export type AnalysisReloadOptions = {
   preserveMessagePage?: boolean;
   refreshMessageCounts?: boolean;

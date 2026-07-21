@@ -25,6 +25,7 @@ type BuildActionParamsInput = {
   onUnauthorized: (error: unknown) => boolean;
   queryState: AnalysisQueryState;
   invalidateTagFacetLoad: () => void;
+  refreshTagFacet: () => Promise<void>;
   reloadRef: React.MutableRefObject<(options?: AnalysisReloadOptions) => Promise<void>>;
   referenceState: ReferenceState;
   messageList: MessageList;
@@ -40,6 +41,7 @@ export function buildAnalysisActionsParams({
   onUnauthorized,
   queryState,
   invalidateTagFacetLoad,
+  refreshTagFacet,
   reloadRef,
   referenceState,
   messageList,
@@ -56,6 +58,8 @@ export function buildAnalysisActionsParams({
     onUnauthorized,
     queryState,
     invalidateTagFacetLoad,
+    refreshTagFacet,
+    refreshMessageCounts: messageList.refreshMessageCounts,
     reload: (options?: AnalysisReloadOptions) => reloadRef.current(options),
     setMapOpenMessages: mapData.setMapOpenMessages,
     setMessages: messageList.setMessages,
@@ -138,7 +142,7 @@ type BuildReloadParamsInput = {
   invalidateMessagePaging: () => void;
   invalidateMessagePageRequests: () => void;
   getCurrentMessagePage: MessageList['getCurrentMessagePage'];
-  setCurrentMessagePage: MessageList['setCurrentMessagePage'];
+  reconcileCurrentMessagePage: MessageList['reconcileCurrentMessagePage'];
   refreshMessageCounts: MessageList['refreshMessageCounts'];
   setAorEntries: MessageList['setAorEntries'];
   setCounts: MessageList['setCounts'];
@@ -204,7 +208,7 @@ export function buildReloadOrchestratorParams(input: BuildReloadParamsInput) {
     invalidateMessagePaging: input.invalidateMessagePaging,
     invalidateMessagePageRequests: input.invalidateMessagePageRequests,
     getCurrentMessagePage: input.getCurrentMessagePage,
-    setCurrentMessagePage: input.setCurrentMessagePage,
+    reconcileCurrentMessagePage: input.reconcileCurrentMessagePage,
     refreshMessageCounts: input.refreshMessageCounts,
     setAorEntries: input.setAorEntries,
     setCounts: input.setCounts,

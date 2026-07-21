@@ -10,7 +10,6 @@ import {
   mergeSignalProfiles,
   mergeNetworkFilterOptions,
   replaceNetworkFilterOptionsPreservingSelectedLabels,
-  rebuildLastPageCursor,
   reloadAnalysisData,
   transformMessagePageResponse,
 } from './use-analysis-data.reload';
@@ -255,389 +254,7 @@ describe('filterSectionsForInitialLoad', () => {
   });
 });
 
-describe('last-page cursor reloads', () => {
-  const oldLastPageCursor = {
-    beforeIdNoninclusive: null,
-    sinceIdNoninclusive: null,
-    requestNewestFirst: false,
-    reverseResults: true,
-    resultLimit: 2,
-  } as const;
-
-  it.each([
-    [43, 2, 3],
-    [41, 2, 1],
-    [40, 1, 20],
-  ])('rebuilds total %i as page index %i with %i messages', (total, pageIndex, resultLimit) => {
-    const rebuilt = rebuildLastPageCursor(oldLastPageCursor, total);
-    expect(rebuilt.pageIndex).toBe(pageIndex);
-    expect(rebuilt.cursor).toMatchObject({
-      reverseResults: true,
-      requestNewestFirst: false,
-      resultLimit,
-    });
-
-    const response = transformMessagePageResponse(
-      { inboxItems: Array.from({ length: 20 }, (_, index) => [index, {} as never]) },
-      rebuilt.cursor,
-    );
-    expect(response.inboxItems).toHaveLength(resultLimit);
-  });
-
-  it('leaves ordinary page cursors unchanged', () => {
-    const cursor = { beforeIdNoninclusive: 20, sinceIdNoninclusive: null };
-    const response = transformMessagePageResponse(
-      {
-        inboxItems: [
-          [1, {} as never],
-          [2, {} as never],
-        ],
-      },
-      cursor,
-    );
-    expect(response.inboxItems).toHaveLength(2);
-    expect(cursor).toEqual({ beforeIdNoninclusive: 20, sinceIdNoninclusive: null });
-  });
-});
-
 describe('reloadAnalysisData', () => {
-  function buildReloadParams(overrides: Record<string, unknown> = {}) {
-    const setter = vi.fn();
-    return {
-      clearAnalysisResults: vi.fn(),
-      invalidateCorrelatedFreqsCache: vi.fn(),
-      invalidateCallsignGraph: vi.fn(),
-      invalidateMessagePaging: vi.fn(),
-      newestFirst: true,
-      onError: vi.fn(),
-      onUnauthorized: vi.fn().mockReturnValue(false),
-      optionsFreqsRef: { current: [] },
-      queryState: {
-        ...emptyQueryState(),
-        fromDateTimeStr: '2026-04-01T00:00',
-        toDateTimeStr: '2026-04-02T00:00',
-      },
-      reloadRequestRef: { current: 0 },
-      setAorEntries: setter,
-      setCounts: setter,
-      setCountsLoading: setter,
-      setFiltersLoading: setter,
-      setGroupInfos: setter,
-      setMapLoading: setter,
-      setMapDateRange: setter,
-      setMapNetworkUnits: setter,
-      setMapOpenMessages: setter,
-      setMapPoints: setter,
-      setMessages: setter,
-      setMessagesLoading: setter,
-      setNetworks: setter,
-      setUnitsMap: setter,
-      setNewCallsigns: setter,
-      setHasLoadedInitialMessages: setter,
-      setNewCallsignsLoading: setter,
-      setNewCallsignsLoadedKey: setter,
-      shouldLoadNewCallsigns: false,
-      setNoMoreToLoad: setter,
-      setNolimitShown: setter,
-      setOptions: setter,
-      setProfiles: setter,
-      setSummaryCallsignsInfo: setter,
-      setTagsMap: setter,
-      setTopCallsigns: setter,
-      setTopFreqs: setter,
-      setTopLocations: setter,
-      setTopUnits: setter,
-      loadInitialFilterSections: vi.fn().mockResolvedValue(undefined),
-      invalidateFilterSectionLoads: vi.fn(),
-      invalidateFilterSectionLoadsForPatch: vi.fn(),
-      ...overrides,
-    } as Parameters<typeof reloadAnalysisData>[0];
-  }
-
-  it('clamps an empty forward page to the refreshed last page', async () => {
-    const setMessages = vi.fn();
-    const setCurrentMessagePage = vi.fn();
-    mocks.fetchInboxCount.mockResolvedValue({ quantity: 40 });
-    mocks.fetchAnalysisCount.mockResolvedValue({});
-    mocks.fetchAnalysisFreqs.mockResolvedValue({ freqs: [] });
-    mocks.fetchInboxMessages
-      .mockResolvedValueOnce({ inboxItems: [], callsigns: [], pageLimit: 20 })
-      .mockResolvedValueOnce({
-        inboxItems: Array.from({ length: 20 }, (_, index) => [index, { networkIds: [] }]),
-        callsigns: [],
-        pageLimit: 20,
-      });
-
-    const reloadPromise = reloadAnalysisData(
-      buildReloadParams({
-        messagePageCursor: { beforeIdNoninclusive: 20, sinceIdNoninclusive: null },
-        pageIndex: 2,
-        setMessages,
-        setCurrentMessagePage,
-      }),
-    );
-    await reloadPromise;
-
-    expect(setCurrentMessagePage).toHaveBeenCalledWith(
-      expect.objectContaining({ reverseResults: true, resultLimit: 20 }),
-      1,
-    );
-    expect(setMessages).toHaveBeenLastCalledWith(
-      Array.from({ length: 20 }, (_, index) => [19 - index, { networkIds: [] }]),
-    );
-    expect(setMessages.mock.lastCall?.[0]).toHaveLength(20);
-  });
-
-  it('keeps a nonempty forward page cursor and index unchanged', async () => {
-    const setMessages = vi.fn();
-    const setCurrentMessagePage = vi.fn();
-    mocks.fetchAnalysisCount.mockResolvedValue({});
-    mocks.fetchAnalysisFreqs.mockResolvedValue({ freqs: [] });
-    mocks.fetchInboxMessages.mockResolvedValueOnce({
-      inboxItems: [[21, { networkIds: [] }]],
-      callsigns: [],
-      pageLimit: 20,
-    });
-
-    await reloadAnalysisData(
-      buildReloadParams({
-        messagePageCursor: { beforeIdNoninclusive: 20, sinceIdNoninclusive: null },
-        pageIndex: 2,
-        setMessages,
-        setCurrentMessagePage,
-      }),
-    );
-
-    expect(setCurrentMessagePage).not.toHaveBeenCalled();
-    expect(mocks.fetchInboxCount).toHaveBeenCalledTimes(1);
-    expect(mocks.fetchInboxMessages).toHaveBeenCalledTimes(1);
-    expect(setMessages).toHaveBeenCalledWith([[21, { networkIds: [] }]]);
-  });
-
-  it('commits a first-page reload without fetching a count', async () => {
-    const setMessages = vi.fn();
-    mocks.fetchInboxCount.mockRejectedValue(new Error('count failed'));
-    mocks.fetchAnalysisCount.mockResolvedValue({});
-    mocks.fetchAnalysisFreqs.mockResolvedValue({ freqs: [] });
-    mocks.fetchInboxMessages.mockResolvedValueOnce({
-      inboxItems: [[1, { networkIds: [] }]],
-      callsigns: [],
-      pageLimit: 20,
-    });
-
-    await reloadAnalysisData(
-      buildReloadParams({
-        messagePageCursor: { beforeIdNoninclusive: null, sinceIdNoninclusive: null },
-        pageIndex: 0,
-        setMessages,
-      }),
-    );
-
-    expect(mocks.fetchInboxCount).not.toHaveBeenCalled();
-    expect(mocks.fetchInboxMessages).toHaveBeenCalledTimes(1);
-    expect(setMessages).toHaveBeenCalledWith([[1, { networkIds: [] }]]);
-  });
-
-  it('commits a first-page frequency rebuild without fetching a count', async () => {
-    const setMessages = vi.fn();
-    mocks.fetchInboxCount.mockRejectedValue(new Error('count failed'));
-    mocks.fetchAnalysisCount.mockResolvedValue({});
-    mocks.fetchAnalysisFreqs
-      .mockResolvedValueOnce({
-        freqs: [
-          { freq: '150.099', count: 1, isNew: false },
-          { freq: '150.100', count: 1, isNew: false },
-          { freq: '150.101', count: 1, isNew: false },
-        ],
-      })
-      .mockResolvedValueOnce({
-        freqs: [
-          { freq: '150.199', count: 1, isNew: false },
-          { freq: '150.200', count: 1, isNew: false },
-        ],
-      });
-    mocks.fetchInboxMessages
-      .mockResolvedValueOnce({
-        inboxItems: [[1, { networkIds: [] }]],
-        callsigns: [],
-        pageLimit: 20,
-      })
-      .mockResolvedValueOnce({
-        inboxItems: [[2, { networkIds: [] }]],
-        callsigns: [],
-        pageLimit: 20,
-      });
-
-    await reloadAnalysisData(
-      buildReloadParams({
-        messagePageCursor: { beforeIdNoninclusive: null, sinceIdNoninclusive: null },
-        pageIndex: 0,
-        queryState: {
-          ...emptyQueryState(),
-          fromDateTimeStr: '2026-04-01T00:00',
-          toDateTimeStr: '2026-04-02T00:00',
-          freqsSelected: ['150.100'],
-          adjacentFreqsRange: 0.002,
-        },
-        setMessages,
-      }),
-    );
-
-    expect(mocks.fetchInboxCount).not.toHaveBeenCalled();
-    expect(mocks.fetchInboxMessages).toHaveBeenCalledTimes(2);
-    expect(setMessages).toHaveBeenLastCalledWith([[2, { networkIds: [] }]]);
-  });
-
-  it('clamps a nonempty forward page to the refreshed last page', async () => {
-    const setMessages = vi.fn();
-    const setCurrentMessagePage = vi.fn();
-    mocks.fetchInboxCount.mockResolvedValue({ quantity: 25 });
-    mocks.fetchAnalysisCount.mockResolvedValue({});
-    mocks.fetchAnalysisFreqs.mockResolvedValue({ freqs: [] });
-    mocks.fetchInboxMessages
-      .mockResolvedValueOnce({
-        inboxItems: Array.from({ length: 5 }, (_, index) => [40 + index, { networkIds: [] }]),
-        callsigns: [],
-        pageLimit: 20,
-      })
-      .mockResolvedValueOnce({
-        inboxItems: Array.from({ length: 5 }, (_, index) => [20 + index, { networkIds: [] }]),
-        callsigns: [],
-        pageLimit: 20,
-      });
-
-    await reloadAnalysisData(
-      buildReloadParams({
-        messagePageCursor: { beforeIdNoninclusive: 40, sinceIdNoninclusive: null },
-        pageIndex: 2,
-        setMessages,
-        setCurrentMessagePage,
-      }),
-    );
-
-    expect(setCurrentMessagePage).toHaveBeenCalledTimes(1);
-    expect(setCurrentMessagePage).toHaveBeenCalledWith(
-      expect.objectContaining({ reverseResults: true, resultLimit: 5 }),
-      1,
-    );
-    expect(setMessages).toHaveBeenLastCalledWith(
-      Array.from({ length: 5 }, (_, index) => [24 - index, { networkIds: [] }]),
-    );
-    expect(setMessages.mock.lastCall?.[0]).toHaveLength(5);
-    expect(mocks.fetchInboxMessages).toHaveBeenCalledTimes(2);
-  });
-
-  it('clamps a nonempty forward page after rebuilding frequency requests', async () => {
-    const setMessages = vi.fn();
-    const setCurrentMessagePage = vi.fn();
-    mocks.fetchInboxCount
-      .mockResolvedValueOnce({ quantity: 25 })
-      .mockResolvedValueOnce({ quantity: 25 });
-    mocks.fetchAnalysisCount.mockResolvedValue({});
-    mocks.fetchAnalysisFreqs
-      .mockResolvedValueOnce({
-        freqs: [
-          { freq: '150.099', count: 1, isNew: false },
-          { freq: '150.100', count: 1, isNew: false },
-          { freq: '150.101', count: 1, isNew: false },
-        ],
-      })
-      .mockResolvedValueOnce({
-        freqs: [
-          { freq: '150.199', count: 1, isNew: false },
-          { freq: '150.200', count: 1, isNew: false },
-        ],
-      });
-    mocks.fetchInboxMessages
-      .mockResolvedValueOnce({
-        inboxItems: Array.from({ length: 5 }, (_, index) => [40 + index, { networkIds: [] }]),
-        callsigns: [],
-        pageLimit: 20,
-      })
-      .mockResolvedValueOnce({
-        inboxItems: Array.from({ length: 5 }, (_, index) => [50 + index, { networkIds: [] }]),
-        callsigns: [],
-        pageLimit: 20,
-      })
-      .mockResolvedValueOnce({
-        inboxItems: Array.from({ length: 5 }, (_, index) => [20 + index, { networkIds: [] }]),
-        callsigns: [],
-        pageLimit: 20,
-      });
-
-    await reloadAnalysisData(
-      buildReloadParams({
-        messagePageCursor: { beforeIdNoninclusive: 40, sinceIdNoninclusive: null },
-        pageIndex: 2,
-        queryState: {
-          ...emptyQueryState(),
-          fromDateTimeStr: '2026-04-01T00:00',
-          toDateTimeStr: '2026-04-02T00:00',
-          freqsSelected: ['150.100'],
-          adjacentFreqsRange: 0.002,
-        },
-        setMessages,
-        setCurrentMessagePage,
-      }),
-    );
-
-    expect(setCurrentMessagePage).toHaveBeenCalledTimes(1);
-    expect(setCurrentMessagePage).toHaveBeenCalledWith(
-      expect.objectContaining({ reverseResults: true, resultLimit: 5 }),
-      1,
-    );
-    expect(setMessages).toHaveBeenLastCalledWith(
-      Array.from({ length: 5 }, (_, index) => [24 - index, { networkIds: [] }]),
-    );
-    expect(setMessages.mock.lastCall?.[0]).toHaveLength(5);
-    expect(mocks.fetchInboxMessages).toHaveBeenCalledTimes(3);
-  });
-
-  it('ignores a stale fallback response after a newer reload starts', async () => {
-    const fallbackRsp = deferred<ReloadInboxRsp>();
-    const oldSetMessages = vi.fn();
-    const newSetMessages = vi.fn();
-    const reloadRequestRef = { current: 0 };
-    mocks.fetchInboxCount
-      .mockResolvedValueOnce({ quantity: 40 })
-      .mockResolvedValueOnce({ quantity: 41 });
-    mocks.fetchAnalysisCount.mockResolvedValue({});
-    mocks.fetchAnalysisFreqs.mockResolvedValue({ freqs: [] });
-    mocks.fetchInboxMessages
-      .mockResolvedValueOnce({ inboxItems: [], callsigns: [], pageLimit: 20 })
-      .mockImplementationOnce(() => fallbackRsp.promise)
-      .mockResolvedValueOnce({
-        inboxItems: [[99, { networkIds: [] }]],
-        callsigns: [],
-        pageLimit: 20,
-      });
-
-    const oldReload = reloadAnalysisData(
-      buildReloadParams({
-        reloadRequestRef,
-        messagePageCursor: { beforeIdNoninclusive: 20, sinceIdNoninclusive: null },
-        pageIndex: 2,
-        setMessages: oldSetMessages,
-      }),
-    );
-    await vi.waitFor(() => expect(mocks.fetchInboxMessages).toHaveBeenCalledTimes(2));
-
-    const newReload = reloadAnalysisData(
-      buildReloadParams({
-        reloadRequestRef,
-        messagePageCursor: { beforeIdNoninclusive: 20, sinceIdNoninclusive: null },
-        pageIndex: 2,
-        setMessages: newSetMessages,
-      }),
-    );
-    await newReload;
-    fallbackRsp.resolve({ inboxItems: [[1, { networkIds: [] }]], callsigns: [], pageLimit: 20 });
-    await oldReload;
-
-    expect(oldSetMessages).not.toHaveBeenCalled();
-    expect(newSetMessages).toHaveBeenCalledWith([[99, { networkIds: [] }]]);
-  });
-
   it('clears messages loading immediately after inbox resolves, without waiting for freqs', async () => {
     const inboxDeferred = deferred<ReloadInboxRsp>();
     const freqsDeferred = deferred<{
@@ -779,9 +396,6 @@ describe('reloadAnalysisData', () => {
     mocks.fetchAnalysisFreqs
       .mockImplementationOnce(() => freqsDeferred.promise)
       .mockImplementationOnce(() => rebuiltFreqsDeferred.promise);
-    mocks.fetchInboxCount
-      .mockResolvedValueOnce({ quantity: 43 })
-      .mockResolvedValueOnce({ quantity: 41 });
     mocks.fetchAnalysisCount.mockResolvedValue({});
     mocks.fetchAnalysisSummaryTable.mockResolvedValue({ rows: [] });
     mocks.fetchAnalysisMapPoints.mockResolvedValue({ points: [], networkUnits: [] });
@@ -797,7 +411,6 @@ describe('reloadAnalysisData', () => {
 
     const setSummaryCallsignsInfo = vi.fn();
     const setMessages = vi.fn();
-    const setCurrentMessagePage = vi.fn();
 
     const reloadPromise = reloadAnalysisData({
       clearAnalysisResults: vi.fn(),
@@ -811,8 +424,6 @@ describe('reloadAnalysisData', () => {
         reverseResults: true,
         resultLimit: 3,
       },
-      pageIndex: 2,
-      setCurrentMessagePage,
       newestFirst: true,
       onError: vi.fn(),
       onUnauthorized: vi.fn().mockReturnValue(false),
@@ -909,12 +520,12 @@ describe('reloadAnalysisData', () => {
     expect(mocks.fetchAnalysisCallsigns).not.toHaveBeenCalled();
     expect(mocks.fetchAnalysisCallsignInfos).not.toHaveBeenCalled();
     expect(mocks.fetchAnalysisFreqs).toHaveBeenCalledTimes(2);
-    expect(setCurrentMessagePage).toHaveBeenLastCalledWith(
-      expect.objectContaining({ reverseResults: true, resultLimit: 1 }),
-      2,
-    );
-    expect(setMessages).toHaveBeenLastCalledWith([[20, { networkIds: [] }]]);
-    expect(setMessages.mock.lastCall?.[0]).toHaveLength(1);
+    expect(setMessages).toHaveBeenLastCalledWith([
+      [22, { networkIds: [] }],
+      [21, { networkIds: [] }],
+      [20, { networkIds: [] }],
+    ]);
+    expect(setMessages.mock.lastCall?.[0]).toHaveLength(3);
   });
 
   it('keeps the original inbox state when rebuilt inbox fetch fails', async () => {

@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { useAnalysisMessageList } from './use-analysis-message-list';
 import { emptyQueryState } from './helpers';
-import type { InboxMessage } from '../../../../Bindings';
+import type { CallsignInfoRes, InboxMessage } from '../../../../Bindings';
 
 const fetchInboxMessagesMock = vi.hoisted(() => vi.fn());
 const fetchInboxCountMock = vi.hoisted(() => vi.fn());
@@ -52,6 +52,7 @@ type Harness = {
   latest: ReturnType<typeof useAnalysisMessageList>;
   setDeferInitialLoad: React.Dispatch<React.SetStateAction<boolean>>;
   setQueryState: React.Dispatch<React.SetStateAction<ReturnType<typeof buildQueryState>>>;
+  summaryCallsignsInfo: Record<string, CallsignInfoRes>;
 };
 
 type Deferred<T> = {
@@ -81,8 +82,12 @@ function renderHook(
   function TestComponent() {
     const [deferInitialLoad, setDeferInitialLoad] = useState(initialDeferInitialLoad);
     const [currentQueryState, setCurrentQueryState] = useState(queryState);
+    const [summaryCallsignsInfo, setSummaryCallsignsInfo] = useState<
+      Record<string, CallsignInfoRes>
+    >({});
     harness.setDeferInitialLoad = setDeferInitialLoad;
     harness.setQueryState = setCurrentQueryState;
+    harness.summaryCallsignsInfo = summaryCallsignsInfo;
     harness.latest = useAnalysisMessageList({
       deferInitialLoad,
       loadMissingNetworksForMessages,
@@ -91,7 +96,7 @@ function renderHook(
       onUnauthorized: vi.fn().mockReturnValue(false),
       optionsFreqValues: [],
       queryState: currentQueryState,
-      setSummaryCallsignsInfo: vi.fn(),
+      setSummaryCallsignsInfo,
     });
     return null;
   }
@@ -314,6 +319,114 @@ describe('useAnalysisMessageList pagination', () => {
     expect(h.latest.messages).toEqual(currentMessages);
     expect(h.latest.pageIndex).toBe(0);
     expect(h.latest.noMoreToLoad).toBe(true);
+  });
+
+  it('falls back to the nearest known nonempty previous cursor after a page disappears', async () => {
+    const h = renderHook();
+    harnesses.push(h);
+    await act(async () => h.latest.setMessages(page(1)));
+    fetchInboxMessagesMock.mockResolvedValueOnce({
+      inboxItems: page(2),
+      callsigns: [],
+      pageLimit: 20,
+    });
+    await act(async () => h.latest.loadNextPage());
+    const preservedPage = h.latest.getCurrentMessagePage();
+    await act(async () => h.latest.setMessages([]));
+
+    fetchInboxMessagesMock.mockResolvedValueOnce({
+      inboxItems: page(1),
+      callsigns: [{ callsign: 'prior', res: [] }],
+      pageLimit: 20,
+    });
+    await act(async () => h.latest.reconcileCurrentMessagePage(true, preservedPage));
+
+    expect(h.latest.pageIndex).toBe(0);
+    expect(h.latest.messages).toEqual(page(1));
+    expect(h.summaryCallsignsInfo.prior).toEqual({ callsign: 'prior', res: [] });
+    expect(fetchInboxCountMock).not.toHaveBeenCalled();
+  });
+
+  it('walks backward across several empty cursor pages', async () => {
+    const h = renderHook();
+    harnesses.push(h);
+    await act(async () => h.latest.setMessages(page(1)));
+    fetchInboxMessagesMock.mockResolvedValueOnce({
+      inboxItems: page(2),
+      callsigns: [],
+      pageLimit: 20,
+    });
+    await act(async () => h.latest.loadNextPage());
+    fetchInboxMessagesMock.mockResolvedValueOnce({
+      inboxItems: page(3),
+      callsigns: [],
+      pageLimit: 20,
+    });
+    await act(async () => h.latest.loadNextPage());
+    const preservedPage = h.latest.getCurrentMessagePage();
+    await act(async () => h.latest.setMessages([]));
+
+    fetchInboxMessagesMock
+      .mockResolvedValueOnce({ inboxItems: [], callsigns: [], pageLimit: 20 })
+      .mockResolvedValueOnce({ inboxItems: page(1), callsigns: [], pageLimit: 20 });
+    await act(async () => h.latest.reconcileCurrentMessagePage(true, preservedPage));
+
+    expect(h.latest.pageIndex).toBe(0);
+    expect(h.latest.messages).toEqual(page(1));
+    expect(fetchInboxCountMock).not.toHaveBeenCalled();
+  });
+
+  it('ignores stale fallback messages and callsigns after a newer reload starts', async () => {
+    const h = renderHook();
+    harnesses.push(h);
+    await act(async () => h.latest.setMessages(page(1)));
+    fetchInboxMessagesMock.mockResolvedValueOnce({
+      inboxItems: page(2),
+      callsigns: [],
+      pageLimit: 20,
+    });
+    await act(async () => h.latest.loadNextPage());
+    const preservedPage = h.latest.getCurrentMessagePage();
+    await act(async () => h.latest.setMessages([]));
+
+    const fallback = deferred<{
+      inboxItems: Array<[number, InboxMessage]>;
+      callsigns: CallsignInfoRes[];
+      pageLimit: number;
+    }>();
+    fetchInboxMessagesMock.mockImplementationOnce(() => fallback.promise);
+    let reconcilePromise!: Promise<void>;
+    await act(async () => {
+      reconcilePromise = h.latest.reconcileCurrentMessagePage(true, preservedPage);
+      await Promise.resolve();
+    });
+    act(() => h.latest.invalidateMessagePageRequests());
+    fallback.resolve({
+      inboxItems: page(1),
+      callsigns: [{ callsign: 'stale', res: [] }],
+      pageLimit: 20,
+    });
+    await act(async () => {
+      await reconcilePromise;
+    });
+
+    expect(h.latest.pageIndex).toBe(1);
+    expect(h.latest.messages).toEqual([]);
+    expect(h.summaryCallsignsInfo.stale).toBeUndefined();
+  });
+
+  it('shows the normal empty state when the first page has no matches', async () => {
+    const h = renderHook();
+    harnesses.push(h);
+    await act(async () => h.latest.setMessages([]));
+
+    await act(async () =>
+      h.latest.reconcileCurrentMessagePage(true, h.latest.getCurrentMessagePage()),
+    );
+
+    expect(fetchInboxMessagesMock).not.toHaveBeenCalled();
+    expect(h.latest.pageIndex).toBe(0);
+    expect(h.latest.messages).toEqual([]);
   });
 
   it('loadPrevPage is a no-op at pageIndex 0', async () => {

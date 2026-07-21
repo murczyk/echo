@@ -25,7 +25,6 @@ import {
   fetchAnalysisSenders,
   fetchAnalysisTags,
   fetchAnalysisUnits,
-  fetchInboxCount,
   fetchInboxMessages,
   fetchNetworksByIds,
   getLatestSenders,
@@ -60,7 +59,6 @@ import type {
   AnalysisMessagePageCursor,
   AnalysisQueryState,
 } from './types';
-import { ANALYSIS_MESSAGES_PAGE_SIZE } from './helpers';
 
 type FilterSectionLoadContext = {
   analysisReq: NonNullable<ReturnType<typeof buildAnalysisReq>>;
@@ -548,6 +546,11 @@ export async function loadFilterSectionData(
 
 type Setter<T> = React.Dispatch<React.SetStateAction<T>>;
 
+export type ReloadAnalysisResult = {
+  completed: boolean;
+  finalMessagePageWasEmpty: boolean;
+};
+
 export function transformMessagePageResponse<
   T extends { inboxItems: Array<[number, InboxMessage]> },
 >(response: T, cursor: AnalysisMessagePageCursor | undefined): T {
@@ -561,33 +564,12 @@ export function transformMessagePageResponse<
   };
 }
 
-function isLastPageCursor(
-  cursor: AnalysisMessagePageCursor | undefined,
-): cursor is AnalysisMessagePageCursor {
-  return cursor?.reverseResults === true && cursor.resultLimit != null;
-}
-
-export function rebuildLastPageCursor(
-  cursor: AnalysisMessagePageCursor,
-  total: number,
-): { cursor: AnalysisMessagePageCursor; pageIndex: number } {
-  return {
-    cursor: {
-      ...cursor,
-      resultLimit: total % ANALYSIS_MESSAGES_PAGE_SIZE || ANALYSIS_MESSAGES_PAGE_SIZE,
-    },
-    pageIndex: Math.max(0, Math.ceil(total / ANALYSIS_MESSAGES_PAGE_SIZE) - 1),
-  };
-}
-
 type ReloadParams = {
   clearAnalysisResults: () => void;
   invalidateCorrelatedFreqsCache: () => void;
   invalidateCallsignGraph: () => void;
   invalidateMessagePaging: () => void;
   messagePageCursor?: AnalysisMessagePageCursor;
-  pageIndex?: number;
-  setCurrentMessagePage?: (cursor: AnalysisMessagePageCursor, pageIndex: number) => void;
   centerTab?: import('./types').AnalysisCenterTab;
   rightSidebarVisible?: boolean;
   rightSidebarTab?: import('./types').AnalysisSidebarTab | null;
@@ -650,7 +632,7 @@ type ReloadParams = {
   signal?: AbortSignal;
 };
 
-export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
+export async function reloadAnalysisData(params: ReloadParams): Promise<ReloadAnalysisResult> {
   const requestId = params.reloadRequestRef.current + 1;
   params.reloadRequestRef.current = requestId;
   const isStaleReload = () => requestId !== params.reloadRequestRef.current;
@@ -683,6 +665,7 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
       freqsRsp: Awaited<ReturnType<typeof fetchAnalysisFreqs>>;
       countsPromise: Promise<CountStatsRsp>;
       resolvedAnalysisReq: NonNullable<ReturnType<typeof buildAnalysisReq>>;
+      finalMessagePageWasEmpty: boolean;
     } | null> => {
       const analysisReq = buildAnalysisReq(params.queryState, allFrequencies);
       const inboxReq = buildInboxReq(params.queryState, allFrequencies);
@@ -718,17 +701,6 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
       );
       countsPromise.catch(() => undefined);
       let messagePageCursor = params.messagePageCursor;
-      let messagePageIndex = params.pageIndex;
-      if (isLastPageCursor(messagePageCursor)) {
-        const messageCount = await fetchInboxCount(
-          { ...messageInboxReq, nolimit: true, newestFirst: params.newestFirst },
-          params.signal ? { signal: params.signal } : undefined,
-        );
-        if (isStaleReload() || params.signal?.aborted) return null;
-        const rebuiltPage = rebuildLastPageCursor(messagePageCursor, messageCount.quantity);
-        messagePageCursor = rebuiltPage.cursor;
-        messagePageIndex = rebuiltPage.pageIndex;
-      }
       const inboxPromise = fetchInboxMessages(
         {
           ...messageInboxReq,
@@ -754,43 +726,6 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
         throw loadError;
       }
       if (isStaleReload() || params.signal?.aborted) return null;
-
-      if (
-        messagePageCursor != null &&
-        messagePageIndex != null &&
-        messagePageIndex > 0 &&
-        !isLastPageCursor(messagePageCursor)
-      ) {
-        const messageCount = await fetchInboxCount(
-          { ...messageInboxReq, nolimit: true, newestFirst: params.newestFirst },
-          params.signal ? { signal: params.signal } : undefined,
-        );
-        if (isStaleReload() || params.signal?.aborted) return null;
-        const newLastPage = rebuildLastPageCursor(
-          {
-            beforeIdNoninclusive: null,
-            sinceIdNoninclusive: null,
-            requestNewestFirst: !params.newestFirst,
-            reverseResults: true,
-          },
-          messageCount.quantity,
-        );
-        if (messagePageIndex > newLastPage.pageIndex) {
-          messagePageCursor = newLastPage.cursor;
-          messagePageIndex = newLastPage.pageIndex;
-          const lastPageRsp = await fetchInboxMessages(
-            {
-              ...messageInboxReq,
-              beforeIdNoninclusive: null,
-              sinceIdNoninclusive: null,
-              newestFirst: messagePageCursor.requestNewestFirst ?? params.newestFirst,
-            },
-            params.signal ? { signal: params.signal } : undefined,
-          );
-          if (isStaleReload() || params.signal?.aborted) return null;
-          inboxRsp = transformMessagePageResponse(lastPageRsp, messagePageCursor);
-        }
-      }
 
       params.setMessages(inboxRsp.inboxItems ?? []);
       params.setProfiles((current) => mergeSignalProfiles(current, inboxRsp.signalProfiles ?? {}));
@@ -838,21 +773,6 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
         ) {
           try {
             let rebuiltMessagePageCursor = messagePageCursor;
-            let rebuiltMessagePageIndex = messagePageIndex;
-            let rebuiltLastPageIndex: number | null = null;
-            if (isLastPageCursor(rebuiltMessagePageCursor)) {
-              const rebuiltMessageCount = await fetchInboxCount(
-                { ...rebuiltMessageInboxReq, nolimit: true, newestFirst: params.newestFirst },
-                params.signal ? { signal: params.signal } : undefined,
-              );
-              if (isStaleReload() || params.signal?.aborted) return null;
-              const rebuiltPage = rebuildLastPageCursor(
-                rebuiltMessagePageCursor,
-                rebuiltMessageCount.quantity,
-              );
-              rebuiltMessagePageCursor = rebuiltPage.cursor;
-              rebuiltMessagePageIndex = rebuiltPage.pageIndex;
-            }
 
             let rebuiltInboxRsp = await fetchInboxMessages(
               {
@@ -869,46 +789,6 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
             );
             if (isStaleReload() || params.signal?.aborted) return null;
 
-            if (
-              rebuiltMessagePageCursor != null &&
-              rebuiltMessagePageIndex != null &&
-              rebuiltMessagePageIndex > 0 &&
-              !isLastPageCursor(rebuiltMessagePageCursor)
-            ) {
-              const rebuiltMessageCount = await fetchInboxCount(
-                { ...rebuiltMessageInboxReq, nolimit: true, newestFirst: params.newestFirst },
-                params.signal ? { signal: params.signal } : undefined,
-              );
-              if (isStaleReload() || params.signal?.aborted) return null;
-              rebuiltLastPageIndex = Math.max(
-                0,
-                Math.ceil(rebuiltMessageCount.quantity / ANALYSIS_MESSAGES_PAGE_SIZE) - 1,
-              );
-              if (rebuiltMessagePageIndex > rebuiltLastPageIndex) {
-                const rebuiltPage = rebuildLastPageCursor(
-                  {
-                    beforeIdNoninclusive: null,
-                    sinceIdNoninclusive: null,
-                    requestNewestFirst: !params.newestFirst,
-                    reverseResults: true,
-                  },
-                  rebuiltMessageCount.quantity,
-                );
-                rebuiltMessagePageCursor = rebuiltPage.cursor;
-                rebuiltMessagePageIndex = rebuiltPage.pageIndex;
-                rebuiltInboxRsp = await fetchInboxMessages(
-                  {
-                    ...rebuiltMessageInboxReq,
-                    beforeIdNoninclusive: null,
-                    sinceIdNoninclusive: null,
-                    newestFirst: rebuiltMessagePageCursor.requestNewestFirst ?? params.newestFirst,
-                  },
-                  params.signal ? { signal: params.signal } : undefined,
-                );
-                if (isStaleReload() || params.signal?.aborted) return null;
-              }
-            }
-
             const rebuiltMessagePageRsp = transformMessagePageResponse(
               rebuiltInboxRsp,
               rebuiltMessagePageCursor,
@@ -921,7 +801,6 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
             // Promote rebuilt req/rsp only after the rebuilt inbox succeeds so we never mix
             // rebuilt summary/count/map data with the old inbox response.
             messagePageCursor = rebuiltMessagePageCursor;
-            messagePageIndex = rebuiltMessagePageIndex;
             params.setMessages(rebuiltMessagePageRsp.inboxItems ?? []);
             params.setProfiles((current) =>
               mergeSignalProfiles(current, rebuiltMessagePageRsp.signalProfiles ?? {}),
@@ -955,10 +834,6 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
             }
           }
         }
-      }
-
-      if (isLastPageCursor(messagePageCursor) && messagePageIndex != null) {
-        params.setCurrentMessagePage?.(messagePageCursor, messagePageIndex);
       }
 
       const effectiveFreqsRsp = resolvedFreqsRsp;
@@ -1020,11 +895,14 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
         inboxRsp: resolvedInboxRsp,
         freqsRsp: resolvedFreqsRsp,
         resolvedAnalysisReq,
+        finalMessagePageWasEmpty: (resolvedInboxRsp.inboxItems ?? []).length === 0,
       };
     };
 
     const criticalData = await loadCriticalData(params.optionsFreqsRef.current);
-    if (isNullOrUndefined(criticalData) || isStaleReload() || params.signal?.aborted) return;
+    if (isNullOrUndefined(criticalData) || isStaleReload() || params.signal?.aborted) {
+      return { completed: false, finalMessagePageWasEmpty: false };
+    }
 
     params.optionsFreqsRef.current = criticalData.freqsRsp.freqs.map((item) => item.freq);
     params.setFiltersLoading(false);
@@ -1159,9 +1037,13 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
       params.setNewCallsignsLoadedKey(null);
     }
     void Promise.all(secondaryLoads);
+    return { completed: true, finalMessagePageWasEmpty: criticalData.finalMessagePageWasEmpty };
   } catch (loadError) {
-    if (isStaleReload() || params.signal?.aborted) return;
+    if (isStaleReload() || params.signal?.aborted) {
+      return { completed: false, finalMessagePageWasEmpty: false };
+    }
     if (!params.onUnauthorized(loadError)) params.onError(toErrorMessage(loadError));
+    return { completed: false, finalMessagePageWasEmpty: false };
   } finally {
     if (!isStaleReload() && !params.signal?.aborted) {
       params.setMessagesLoading(false);

@@ -14,7 +14,7 @@ import {
   inboxMessageTagsModelError,
   inboxMessageTagsRm,
 } from '../../services/api/analysis';
-import { buildAnalysisReq } from './helpers';
+import { buildAnalysisReq, doesTagMutationAffectMessageMembership } from './helpers';
 import type { User } from '../../../../Bindings';
 import type { AnalysisQueryState, AnalysisReloadOptions } from './types';
 import type { MessageCardBotTagAction } from '../shared/message-card/message-card.types';
@@ -36,6 +36,8 @@ type Params = {
   patchMessages: (updater: (messageId: number, message: InboxMessage) => InboxMessage) => void;
   queryState: AnalysisQueryState;
   invalidateTagFacetLoad: () => void;
+  refreshTagFacet: () => Promise<void>;
+  refreshMessageCounts: () => void;
   reload: (options?: AnalysisReloadOptions) => Promise<void>;
   setMapOpenMessages: React.Dispatch<React.SetStateAction<Array<[number, InboxMessage]>>>;
   setMessages: React.Dispatch<React.SetStateAction<Array<[number, InboxMessage]>>>;
@@ -170,14 +172,15 @@ export function useAnalysisDataMessageActions(params: Params) {
         });
 
         try {
-          // Re-run the filtered query after the optimistic patch: when a tag filter is
-          // active, changing a message's tag can move it in or out of the result set and
-          // recompute the tag facet. The patch keeps the toggle instant; the reload keeps
-          // the list and filter options correct. The tag toggle leaves `analysisReq`
-          // unchanged, so the cached 'tags' facet would otherwise be reused with stale
-          // counters — invalidate it before the reload so its counts re-fetch.
-          params.invalidateTagFacetLoad();
-          await params.reload({ preserveMessagePage: true });
+          if (doesTagMutationAffectMessageMembership(params.queryState)) {
+            params.invalidateTagFacetLoad();
+            await params.reload({ preserveMessagePage: true });
+          } else {
+            await Promise.all([
+              params.refreshTagFacet(),
+              Promise.resolve(params.refreshMessageCounts()),
+            ]);
+          }
         } catch (reloadError) {
           // The tag mutation above already persisted, so the optimistic patch is now the
           // correct state — a reload failure must not roll it back. Report the error only.
