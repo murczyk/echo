@@ -197,6 +197,10 @@ vi.mock('@mui/material', () => ({
     startIcon,
     endIcon,
     component,
+    size,
+    variant,
+    color,
+    sx,
     ...props
   }: { children?: ReactNode; startIcon?: ReactNode; endIcon?: ReactNode } & Record<
     string,
@@ -206,6 +210,10 @@ vi.mock('@mui/material', () => ({
     return (
       <Component
         {...(Component === 'button' ? { type: 'button' } : {})}
+        data-mui-size={size}
+        data-mui-variant={variant}
+        data-mui-color={color}
+        data-mui-sx={JSON.stringify(sx ?? {})}
         {...omitMuiLayoutProps(props)}
       >
         {startIcon}
@@ -2349,29 +2357,34 @@ describe('MessageCard', () => {
         media: [
           {
             id: 1,
-            href: 'https://example.test/files/HByMR1VD5nrYaiQRyaFV.txt',
-            contentType: 'text/plain',
-            fileName: 'HByMR1VD5nrYaiQRyaFV.txt',
+            href: 'https://example.test/files/HByMR1VD5nrYaiQRyaFV.bin',
+            contentType: 'application/octet-stream',
+            fileName: 'HByMR1VD5nrYaiQRyaFV.bin',
           },
           {
             id: 2,
-            href: 'https://example.test/files/8a7d0703-4f44-4ce8-b95a-8a2e.txt',
-            contentType: 'text/plain',
-            fileName: '8a7d0703-4f44-4ce8-b95a-8a2e.txt',
+            href: 'https://example.test/files/8a7d0703-4f44-4ce8-b95a-8a2e.bin',
+            contentType: 'application/octet-stream',
+            fileName: '8a7d0703-4f44-4ce8-b95a-8a2e.bin',
           },
         ] as InboxMessage['media'],
       },
     });
     rendered.push(view);
 
-    const downloadButtons = Array.from(view.container.querySelectorAll('button')).filter((button) =>
-      button.textContent?.includes('.txt'),
-    );
+    const downloadButtons = Array.from(
+      view.container.querySelectorAll('[data-mui-variant="outlined"]'),
+    ).filter((button) => button.textContent?.includes('.bin'));
     expect(downloadButtons).toHaveLength(2);
     expect(downloadButtons[0]?.querySelector('svg')).not.toBeNull();
     expect(downloadButtons[1]?.querySelector('svg')).not.toBeNull();
-    expect(downloadButtons[0]?.textContent).toContain('HByMR1VD5nrYaiQRyaFV.txt');
-    expect(downloadButtons[1]?.textContent).toContain('8a7d0703-4f44-4ce8-b95a-8a2e.txt');
+    expect(downloadButtons[0]?.getAttribute('data-mui-variant')).toBe('outlined');
+    expect(downloadButtons[1]?.getAttribute('data-mui-variant')).toBe('outlined');
+    expect(downloadButtons[0]?.getAttribute('data-mui-sx')).toContain('text.primary');
+    expect(downloadButtons[0]?.getAttribute('data-mui-sx')).toContain('divider');
+    expect(downloadButtons[0]?.getAttribute('data-mui-sx')).toContain('action.hover');
+    expect(downloadButtons[0]?.textContent).toContain('HByMR1VD5nrYaiQRyaFV.bin');
+    expect(downloadButtons[1]?.textContent).toContain('8a7d0703-4f44-4ce8-b95a-8a2e.bin');
   });
 
   it('shows the message attachment archive link only for multiple attachments', async () => {
@@ -2421,8 +2434,13 @@ describe('MessageCard', () => {
     expect(archiveLink?.getAttribute('download')).toBe('attachments.zip');
     expect(archiveLink?.querySelector('[data-testid="DownloadIcon"]')).not.toBeNull();
     expect(archiveLink?.querySelector('[data-testid="DownloadOutlinedIcon"]')).toBeNull();
-    expect(archiveLink?.parentElement?.className).toContain('inline-flex');
-    expect(archiveLink?.parentElement?.className).toContain('max-w-full');
+    expect(archiveLink?.getAttribute('data-mui-size')).toBe('small');
+    expect(archiveLink?.getAttribute('data-mui-variant')).toBe('contained');
+    expect(archiveLink?.getAttribute('data-mui-color')).toBe('primary');
+    expect(archiveLink?.getAttribute('data-mui-sx')).toContain('&&');
+    expect(archiveLink?.getAttribute('data-mui-sx')).toContain('primary.contrastText');
+    expect(archiveLink?.parentElement?.className).toContain('mt-1');
+    expect(archiveLink?.parentElement?.className).toContain('items-start');
   });
 
   it.each([
@@ -2430,34 +2448,27 @@ describe('MessageCard', () => {
     ['audio', 'audio/mpeg', 'audio.mp3'],
     ['video', 'video/mp4', 'video.mp4'],
     ['document', 'text/plain', 'document.txt'],
-  ])(
-    'keeps the archive action associated with the %s attachment area',
-    async (_, contentType, fileName) => {
-      const view = await renderCard({
-        msg: {
-          ...buildMessage(),
-          media: [
-            { id: `${fileName}-1`, href: `/media/${fileName}-1`, contentType, fileName },
-            { id: `${fileName}-2`, href: `/media/${fileName}-2`, contentType, fileName },
-          ] as InboxMessage['media'],
-        },
-      });
-      rendered.push(view);
+  ])('places the archive action below the %s attachment area', async (_, contentType, fileName) => {
+    const view = await renderCard({
+      msg: {
+        ...buildMessage(),
+        media: [
+          { id: `${fileName}-1`, href: `/media/${fileName}-1`, contentType, fileName },
+          { id: `${fileName}-2`, href: `/media/${fileName}-2`, contentType, fileName },
+        ] as InboxMessage['media'],
+      },
+    });
+    rendered.push(view);
 
-      const archiveLink = view.container.querySelector('a[aria-label="Завантажити все"]');
-      expect(archiveLink).not.toBeNull();
-      const attachmentArea = archiveLink?.parentElement;
-      expect(attachmentArea?.tagName).toBe('DIV');
-      expect(attachmentArea?.className).toContain('inline-flex');
-      expect(attachmentArea?.className).toContain('flex-wrap');
-      expect(attachmentArea?.className).toContain('max-w-full');
-      expect(attachmentArea?.children).toHaveLength(2);
-      expect(attachmentArea?.firstElementChild?.className).toContain('inline-flex');
-      expect(attachmentArea?.firstElementChild?.classList.contains('flex-1')).toBe(false);
-      expect(attachmentArea?.firstElementChild?.classList.contains('w-full')).toBe(false);
-      expect(archiveLink?.querySelector('[data-testid="DownloadIcon"]')).not.toBeNull();
-    },
-  );
+    const archiveLink = view.container.querySelector('a[aria-label="Завантажити все"]');
+    expect(archiveLink).not.toBeNull();
+    const attachmentArea = archiveLink?.parentElement;
+    expect(attachmentArea?.tagName).toBe('DIV');
+    expect(attachmentArea?.className).toContain('mt-1');
+    expect(attachmentArea?.className).toContain('items-start');
+    expect(attachmentArea?.children).toHaveLength(1);
+    expect(archiveLink?.querySelector('[data-testid="DownloadIcon"]')).not.toBeNull();
+  });
 
   it('renders document attachments with preview and download affordances', async () => {
     const view = await renderCard({

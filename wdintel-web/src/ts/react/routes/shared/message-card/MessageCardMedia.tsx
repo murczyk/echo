@@ -244,6 +244,12 @@ export function MessageMediaDownloadLink({ attachment }: { attachment: MessageMe
           lineHeight: 1.25,
           textTransform: 'none',
           fontWeight: 500,
+          color: 'text.primary',
+          borderColor: 'divider',
+          '&:hover': {
+            backgroundColor: 'action.hover',
+            borderColor: 'text.primary',
+          },
           alignSelf: 'flex-start',
           overflow: 'hidden',
           justifyContent: 'flex-start',
@@ -279,7 +285,8 @@ export function MessageMediaDownloadAllLink({ messageId }: { messageId: number }
     <Button
       component="a"
       size="small"
-      variant="outlined"
+      variant="contained"
+      color="primary"
       href={`/api/rer-importer/messages/${messageId}/attachments.zip`}
       download="attachments.zip"
       target="_blank"
@@ -295,6 +302,9 @@ export function MessageMediaDownloadAllLink({ messageId }: { messageId: number }
         lineHeight: 1.25,
         textTransform: 'none',
         fontWeight: 500,
+        '&&': {
+          color: 'primary.contrastText',
+        },
         alignSelf: 'center',
         flexShrink: 0,
         '& .MuiButton-startIcon': {

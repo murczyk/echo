@@ -38,7 +38,7 @@ export function MessageMediaDocumentLink({
       <Tooltip title={displayName} enterDelay={400}>
         <Button
           size="small"
-          variant="contained"
+          variant="outlined"
           onClick={canPreview ? handlePreviewClick : undefined}
           disabled={!canPreview}
           type="button"
@@ -52,6 +52,12 @@ export function MessageMediaDocumentLink({
             lineHeight: 1.25,
             textTransform: 'none',
             fontWeight: 500,
+            color: 'text.primary',
+            borderColor: 'divider',
+            '&:hover': {
+              backgroundColor: 'action.hover',
+              borderColor: 'text.primary',
+            },
             alignSelf: 'flex-start',
             overflow: 'hidden',
             justifyContent: 'flex-start',

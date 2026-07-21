@@ -114,9 +114,6 @@ export function MessageCardMessageBody({
   );
   const hasMultipleAttachments = (msg.media ?? []).length > 1;
   const hasImageOrVideoAttachments = images.length > 0 || videoAttachments.length > 0;
-  const archiveInImageArea = hasMultipleAttachments && hasImageOrVideoAttachments;
-  const archiveInAudioArea =
-    hasMultipleAttachments && !archiveInImageArea && audioAttachments.length > 0;
 
   const videoPreviewSources = useMemo(() => {
     return videoAttachments.map((a) => {
@@ -150,20 +147,15 @@ export function MessageCardMessageBody({
   return (
     <div className="flex flex-col min-w-0" style={{ gap: compact ? '12px' : '10px' }}>
       {hasImageOrVideoAttachments ? (
-        <div className="inline-flex max-w-full flex-wrap items-center gap-2">
-          <div className="inline-flex max-w-full min-w-0">
-            <MessageCardImageList
-              images={images}
-              videos={videoAttachments}
-              onOpen={(index) => {
-                blurActiveElement();
-                setImagePreviewIndex(index);
-              }}
-              onOpenVideo={(index) => setVideoPreviewIndex(index)}
-            />
-          </div>
-          {archiveInImageArea ? <MessageMediaDownloadAllLink messageId={messageId} /> : null}
-        </div>
+        <MessageCardImageList
+          images={images}
+          videos={videoAttachments}
+          onOpen={(index) => {
+            blurActiveElement();
+            setImagePreviewIndex(index);
+          }}
+          onOpenVideo={(index) => setVideoPreviewIndex(index)}
+        />
       ) : null}
       {imagePreviewIndex != null && images.length > 0 ? (
         <MessageImagePreviewDialog
@@ -186,45 +178,42 @@ export function MessageCardMessageBody({
         />
       ) : null}
       {audioAttachments.length > 0 ? (
-        <div className="mt-1 inline-flex max-w-full flex-wrap items-center gap-2">
-          <div className="inline-flex max-w-full min-w-0 flex-col items-start">
-            {audioAttachments.map((attachment) => (
-              <MessageMediaAudioPlayer key={attachment.id} attachment={attachment} />
-            ))}
-          </div>
-          {archiveInAudioArea ? <MessageMediaDownloadAllLink messageId={messageId} /> : null}
+        <div className="mt-1 flex flex-col items-start w-full">
+          {audioAttachments.map((attachment) => (
+            <MessageMediaAudioPlayer key={attachment.id} attachment={attachment} />
+          ))}
         </div>
       ) : null}
       {documents.length > 0 || downloadAttachments.length > 0 ? (
-        <div className="mt-1 inline-flex max-w-full flex-wrap items-center gap-2">
-          <div className="inline-flex max-w-full min-w-0 flex-wrap items-start gap-2">
-            {documents.map((document, index) => {
-              const previewIndex = previewableDocuments.findIndex(
-                (previewableDocument) => previewableDocument.href === document.href,
-              );
-              return (
-                <MessageMediaDocumentLink
-                  key={document.id ?? document.href}
-                  document={document}
-                  index={index}
-                  onPreview={
-                    previewIndex >= 0
-                      ? () => {
-                          blurActiveElement();
-                          setDocumentPreviewIndex(previewIndex);
-                        }
-                      : undefined
-                  }
-                />
-              );
-            })}
-            {downloadAttachments.map((attachment) => (
-              <MessageMediaDownloadLink key={attachment.id} attachment={attachment} />
-            ))}
-          </div>
-          {!archiveInImageArea && !archiveInAudioArea && hasMultipleAttachments ? (
-            <MessageMediaDownloadAllLink messageId={messageId} />
-          ) : null}
+        <div className="mt-1 flex flex-wrap items-start gap-2 w-full">
+          {documents.map((document, index) => {
+            const previewIndex = previewableDocuments.findIndex(
+              (previewableDocument) => previewableDocument.href === document.href,
+            );
+            return (
+              <MessageMediaDocumentLink
+                key={document.id ?? document.href}
+                document={document}
+                index={index}
+                onPreview={
+                  previewIndex >= 0
+                    ? () => {
+                        blurActiveElement();
+                        setDocumentPreviewIndex(previewIndex);
+                      }
+                    : undefined
+                }
+              />
+            );
+          })}
+          {downloadAttachments.map((attachment) => (
+            <MessageMediaDownloadLink key={attachment.id} attachment={attachment} />
+          ))}
+        </div>
+      ) : null}
+      {hasMultipleAttachments ? (
+        <div className="mt-1 flex items-start w-full">
+          <MessageMediaDownloadAllLink messageId={messageId} />
         </div>
       ) : null}
       {videoPreviewIndex !== null ? (
