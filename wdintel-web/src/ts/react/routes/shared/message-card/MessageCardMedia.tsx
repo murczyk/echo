@@ -15,6 +15,9 @@ const AUDIO_PLAYER_TOP_PADDING_PX = 0;
 const AUDIO_PLAYER_Z_INDEX = 0;
 const AUDIO_DERIVED_IMAGE_MAX_SOURCE_SIZE_BYTES = 100 * 1024 * 1024;
 export const MESSAGE_CARD_DOWNLOAD_START_COOLDOWN_MS = 3_000;
+// Keep synchronized with wdintel-rs/src/config.rs:RER_MESSAGE_ATTACHMENTS_ZIP_MAX_FILES
+// and useMessageUppy.ts:MAX_MESSAGE_ATTACHMENTS.
+export const RER_MESSAGE_ATTACHMENTS_ZIP_MAX_FILES = 20;
 // Keep synchronized with wdintel-rs/src/config.rs:RER_MESSAGE_ATTACHMENTS_ZIP_MAX_TOTAL_BYTES.
 export const RER_MESSAGE_ATTACHMENTS_ZIP_MAX_TOTAL_BYTES = 200 * 1024 * 1024;
 
@@ -141,7 +144,9 @@ export function mediaAttachmentSizeBytes(m: MessageMediaInfo): number | null {
 }
 
 export function canDownloadAllMessageAttachments(attachments: MessageMediaInfo[]): boolean {
-  if (attachments.length <= 1) return false;
+  if (attachments.length <= 1 || attachments.length > RER_MESSAGE_ATTACHMENTS_ZIP_MAX_FILES) {
+    return false;
+  }
 
   let totalBytes = 0;
   for (const attachment of attachments) {

@@ -26,6 +26,7 @@ import {
   canDownloadAllMessageAttachments,
   isAudioMediaAttachment,
   isVideoMediaAttachment,
+  RER_MESSAGE_ATTACHMENTS_ZIP_MAX_FILES,
   RER_MESSAGE_ATTACHMENTS_ZIP_MAX_TOTAL_BYTES,
 } from './MessageCardMedia';
 import {
@@ -2626,6 +2627,24 @@ describe('MessageCard', () => {
 
     expect(view.container.querySelector('a[aria-label="Завантажити все"]')).toBeNull();
     expect(view.container.querySelectorAll('a[download]')).toHaveLength(2);
+  });
+
+  it.each([
+    [RER_MESSAGE_ATTACHMENTS_ZIP_MAX_FILES, true],
+    [RER_MESSAGE_ATTACHMENTS_ZIP_MAX_FILES + 1, false],
+  ])('applies the archive file-count limit at %s attachments', async (count, expected) => {
+    const media = Array.from({ length: count }, (_, index) => ({
+      id: `count-${index}`,
+      href: `/api/messenger/media/count-${index}`,
+      contentType: 'text/plain',
+      fileName: `count-${index}.txt`,
+      sizeBytes: 1,
+    })) as InboxMessage['media'];
+    const view = await renderCard({ msg: { ...buildMessage(), media } });
+    rendered.push(view);
+
+    expect(view.container.querySelector('a[aria-label="Завантажити все"]') !== null).toBe(expected);
+    expect(view.container.querySelectorAll('a[download]')).toHaveLength(count + (expected ? 1 : 0));
   });
 
   it.each([

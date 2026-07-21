@@ -4,8 +4,9 @@ import type { UppyFile } from '@uppy/core';
 import Tus from '@uppy/tus';
 
 // MESSAGE_ATTACHMENT_LIMIT_SYNC: keep this client upload limit synchronized
-// with `SIGINT_MESSAGE_MAX_ATTACHMENTS` and
-// `RER_MESSAGE_ATTACHMENTS_ZIP_MAX_FILES` in `wdintel-rs/src/config.rs`.
+// Keep synchronized with `SIGINT_MESSAGE_MAX_ATTACHMENTS` and
+// `RER_MESSAGE_ATTACHMENTS_ZIP_MAX_FILES` in `wdintel-rs/src/config.rs`, and
+// `RER_MESSAGE_ATTACHMENTS_ZIP_MAX_FILES` in MessageCardMedia.tsx.
 export const MAX_MESSAGE_ATTACHMENTS = 20;
 
 const EXTENSION_BY_MIME: Record<string, string> = {
