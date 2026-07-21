@@ -81,7 +81,7 @@ fn is_metadata_only_line(line: &str) -> bool {
         static ref RE_METADATA_HEADER_PART: Regex = Regex::new(
             r#"(?ix)
             (?:
-                [cс]{2}\s*:?\s*(?:(?:\d+\s*,\s*)*\d+|нв|-)
+                (?:[cс]{2}|🎨)\s*:?\s*(?:(?:\d+\s*,\s*)*\d+|нв|-)
               | код\s+кольору\s*:?\s*(?:\d+|нв|-)
               | [iі]d\s*\(\s*[cс]g\s*\)\s*(?:⬅️?)?\s*:?\s*(?:[xх]\s*:)?(?:\d+|нв|-)(?:\s*\([^)]+\))?
               | [iі]d\s+отримувача\s*:?\s*(?:\d+|нв|-)(?:\s*\([^)]+\))?
@@ -126,13 +126,24 @@ pub fn parse_color_code(line: &NormalizedLine) -> Option<MatchedValue> {
 
 fn parse_color_codes(line: &NormalizedLine) -> Vec<MatchedValue> {
     lazy_static! {
-        static ref RE_CC_LIST: Regex =
-            Regex::new(r#"[cCсС]{2}\s*:\s*((?:\d+\s*,\s*)+\d+)"#).unwrap();
+        static ref RE_COLOR_CODES: Regex =
+            Regex::new(r#"(?:[cCсС]{2}|🎨)\s*:\s*(\d+(?:\s*,\s*\d+)*)"#)
+                .unwrap();
     }
 
-    parse_value_from_regexes(line, &[&RE_CC_LIST])
-        .and_then(|value| split_numeric_metadata_list(&value))
-        .unwrap_or_else(|| parse_color_code(line).into_iter().collect())
+    let color_codes = RE_COLOR_CODES
+        .captures_iter(&line.text)
+        .filter_map(|captures| {
+            line.build_value(captures.get(1)?, normalize_metadata_value)
+        })
+        .filter_map(|value| split_numeric_metadata_list(&value))
+        .flatten()
+        .collect::<Vec<_>>();
+    if color_codes.is_empty() {
+        parse_color_code(line).into_iter().collect()
+    } else {
+        color_codes
+    }
 }
 
 pub fn parse_mid(line: &NormalizedLine) -> Option<MatchedValue> {
@@ -377,12 +388,30 @@ pub fn parse_metadata_line(line: &NormalizedLine) -> Vec<WorkingMetadata> {
             ..common
         }]
     };
-    result = apply_color_codes(result, parse_color_codes(line));
-
     let mut cg_parts = parse_cg_parts(line);
     cg_parts.sort_by_key(|(start, _)| *start);
-    result.extend(cg_parts.into_iter().map(|(_, metadata)| metadata));
+    result = apply_cg_parts(result, cg_parts);
+    result = apply_color_codes(result, parse_color_codes(line));
 
+    result
+}
+
+fn apply_cg_parts(
+    items: Vec<WorkingMetadata>,
+    cg_parts: Vec<(usize, WorkingMetadata)>,
+) -> Vec<WorkingMetadata> {
+    if cg_parts.is_empty() {
+        return items;
+    }
+
+    let mut result = vec![];
+    for item in items {
+        for (_, cg_part) in &cg_parts {
+            let mut item = item.clone();
+            item.merge_from(cg_part.clone());
+            result.push(item);
+        }
+    }
     result
 }
 
@@ -410,11 +439,11 @@ fn parse_emoji_abonent_lists(
 ) -> Option<Vec<(MatchedValue, MatchedValue)>> {
     lazy_static! {
         static ref RE_ABONENT_LIST: Regex = Regex::new(
-            r#"👥\s*:\s*(?:\d{3}\.\d{3,4}\s*(?i:мгц)\s*)?((?:\d+\s*,\s*)+\d+)\s*🔐"#
+            r#"👥\s*:\s*(?:\d{3}\.\d{3,4}\s*(?i:мгц)\s*)?((?:\d+\s*[,/]\s*)+\d+)\s*🔐"#
         )
         .unwrap();
         static ref RE_SEPARATE_ABONENT_LISTS: Regex = Regex::new(
-            r#"👥\s*:\s*(?:\d{3}\.\d{3,4}\s*(?i:мгц)\s*)?(\d+(?:\s*,\s*\d+)*)\s*,?\s*👥\s*:\s*(?:\d{3}\.\d{3,4}\s*(?i:мгц)\s*)?(\d+(?:\s*,\s*\d+)*)\s*🔐"#
+            r#"👥\s*:\s*(?:\d{3}\.\d{3,4}\s*(?i:мгц)\s*)?(\d+(?:\s*[,/]\s*\d+)*)\s*[,/]?\s*👥\s*:\s*(?:\d{3}\.\d{3,4}\s*(?i:мгц)\s*)?(\d+(?:\s*[,/]\s*\d+)*)\s*🔐"#
         )
         .unwrap();
     }
@@ -724,7 +753,7 @@ fn split_source_id_part_ranges(chars: &[char]) -> Vec<(usize, usize)> {
                     in_parentheses = false;
                     continue;
                 }
-                ',' if !in_parentheses => {}
+                ',' | '/' if !in_parentheses => {}
                 _ => continue,
             }
         }

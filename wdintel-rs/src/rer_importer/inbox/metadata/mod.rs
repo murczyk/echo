@@ -341,7 +341,7 @@ ID(CG)⬅️:50📣",
     #[test]
     fn parse_metadata_handles_separate_emoji_sender_and_receiver_lists() {
         let metadata = parse_metadata_asserting_spans(
-            "🔺УКХ р/м управління 2 мсб 37 мсп 67 мсд 25 А 🎨: 1, 4, 7, 10, 13, 2. 👥: 18655, 👥: 1, 44456, 0, 1310720 🔐. 5118209. 196801.",
+            "🔺УКХ р/м управління 2 мсб 37 мсп 67 мсд 25 А 👥: 18655, 👥: 1, 44456, 0, 1310720 🔐. 5118209. 196801.",
         );
         assert_eq!(
             metadata,
@@ -422,6 +422,50 @@ ID(CG)⬅️:50📣",
     }
 
     #[test]
+    fn parse_metadata_applies_each_color_code_to_receiver() {
+        let metadata = parse_metadata_asserting_spans("СС:2,5 ID(CG):10");
+        assert_eq!(
+            metadata,
+            vec![
+                InboxMetadata {
+                    cc: Some("2".to_string()),
+                    cg: Some("10".to_string()),
+                    ..Default::default()
+                },
+                InboxMetadata {
+                    cc: Some("5".to_string()),
+                    cg: Some("10".to_string()),
+                    ..Default::default()
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn parse_metadata_handles_repeated_palette_color_codes() {
+        let metadata = parse_metadata_asserting_spans(
+            "🔺УКХ р/м управління мсб 26 тп 47 тд 1 ТА 🎨: 5,👥: 97087. 🎨: 1,👥: 91638 ,97087🔐.",
+        );
+        assert_eq!(
+            metadata,
+            vec![
+                InboxMetadata {
+                    cc: Some("5".to_string()),
+                    cg: Some("97087".to_string()),
+                    id: Some("91638".to_string()),
+                    ..Default::default()
+                },
+                InboxMetadata {
+                    cc: Some("1".to_string()),
+                    cg: Some("97087".to_string()),
+                    id: Some("91638".to_string()),
+                    ..Default::default()
+                },
+            ]
+        );
+    }
+
+    #[test]
     fn parse_metadata_skips_frequency_before_emoji_abonents() {
         let metadata = parse_metadata_asserting_spans(
             "🔸УКХ р/м управління 2 мсб 128 омсбр 44 АК СС: 0 👥: 146.500 МГц 8, 16776413, 16776414 🔐",
@@ -439,6 +483,28 @@ ID(CG)⬅️:50📣",
                     cc: Some("0".to_string()),
                     cg: Some("16776414".to_string()),
                     id: Some("8".to_string()),
+                    ..Default::default()
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn parse_metadata_handles_slash_separated_emoji_abonents() {
+        let metadata = parse_metadata_asserting_spans(
+            "Мережа: УКХ р/м управління 2 мсб 41 мсп 72 мсд 44 АК 👥: 67200/62485/67204🔐",
+        );
+        assert_eq!(
+            metadata,
+            vec![
+                InboxMetadata {
+                    cg: Some("62485".to_string()),
+                    id: Some("67200".to_string()),
+                    ..Default::default()
+                },
+                InboxMetadata {
+                    cg: Some("67204".to_string()),
+                    id: Some("67200".to_string()),
                     ..Default::default()
                 },
             ]
@@ -902,17 +968,12 @@ ID(CG)⬅️: 8584772
         );
         assert_eq!(
             metadata,
-            vec![
-                WorkingMetadata {
-                    cc: matched_value("23"),
-                    id: matched_value("1, 33"),
-                    ..Default::default()
-                },
-                WorkingMetadata {
-                    receiver_group: matched_value("6"),
-                    ..Default::default()
-                }
-            ]
+            vec![WorkingMetadata {
+                cc: matched_value("23"),
+                receiver_group: matched_value("6"),
+                id: matched_value("1, 33"),
+                ..Default::default()
+            }]
         );
     }
 
@@ -980,13 +1041,10 @@ ID отримувача: 3359939
         let metadata = parse_metadata_line_asserting_spans("GROUP ID: 0");
         assert_eq!(
             metadata,
-            vec![
-                WorkingMetadata::default(),
-                WorkingMetadata {
-                    receiver_group: matched_value("0"),
-                    ..Default::default()
-                }
-            ]
+            vec![WorkingMetadata {
+                receiver_group: matched_value("0"),
+                ..Default::default()
+            }]
         );
     }
 
