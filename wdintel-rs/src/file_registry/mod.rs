@@ -16,7 +16,7 @@ pub struct FileRegistryDb {
 }
 
 impl FileRegistryDb {
-    pub fn connection(&self) -> &DatabaseConnection {
+    pub(crate) fn connection(&self) -> &DatabaseConnection {
         &self.connection
     }
 }

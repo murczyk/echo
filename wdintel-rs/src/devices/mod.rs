@@ -9,6 +9,7 @@ pub mod types;
 mod access;
 mod bl;
 mod custom_fields;
+mod filesystem;
 mod query;
 #[cfg(test)]
 mod schema_tests;
@@ -96,11 +97,6 @@ pub async fn device_files_list(
     access::ensure_device_reader(&env.dbx, &user).await?;
     let req = req.into_inner();
     Ok(Json(
-        query::list_device_files(
-            &env.dbx,
-            env.file_registry_db.connection(),
-            &req,
-        )
-        .await?,
+        query::list_device_files(&env.dbx, &env.file_registry_db, &req).await?,
     ))
 }

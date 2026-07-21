@@ -1,6 +1,9 @@
 #![allow(dead_code)]
 
 use crate::devices::custom_fields::custom_fields_from_json;
+use crate::devices::filesystem::{
+    FileEntry, FilesystemError, FilesystemRepository, OffsetPageRequest,
+};
 use crate::devices::types::{
     DeviceArchivedFilter, DeviceDetailReq, DeviceDetails, DeviceFileEntry,
     DeviceListItem, DeviceListSortBy, DeviceStatusCountsRsp, DeviceUnitStatRow,
@@ -13,15 +16,15 @@ use crate::devices::validation::{
 use crate::entities::{
     area_of_responsibility, device, device_aor, sigint_unit,
 };
-use crate::file_registry::entities::file_entry;
+use crate::file_registry::FileRegistryDb;
 use crate::h;
 use crate::types::{AppError, BTreeMap, BTreeSet, ShortContext, Uuid};
 use chrono::NaiveDateTime;
 use sea_orm::sea_query::{Alias, Expr, Order};
 use sea_orm::{
-    ColumnTrait, ConnectionTrait, DatabaseConnection, EntityTrait,
-    FromQueryResult, IntoSimpleExpr, JoinType, PaginatorTrait, QueryFilter,
-    QueryOrder, QuerySelect, QueryTrait, RelationTrait, Select,
+    ColumnTrait, ConnectionTrait, EntityTrait, FromQueryResult, IntoSimpleExpr,
+    JoinType, PaginatorTrait, QueryFilter, QueryOrder, QuerySelect, QueryTrait,
+    RelationTrait, Select,
 };
 
 #[derive(Clone)]
@@ -92,14 +95,14 @@ fn render_device_details(
     })
 }
 
-fn render_device_file_entry(file: file_entry::Model) -> DeviceFileEntry {
+fn render_device_file_entry(file: FileEntry) -> DeviceFileEntry {
     DeviceFileEntry {
-        file_id: file.id.to_string(),
+        file_id: file.file_id.to_string(),
         device_id: file.device_id.to_string(),
-        parent_id: file.parent_id.map(|parent_id| parent_id.to_string()),
+        parent_id: Some(file.parent_entry_id.to_string()),
         name: file.name,
-        path_syntax: file.path_syntax,
-        absolute_path: file.absolute_path,
+        path_syntax: Some(file.path_syntax.as_db_str().to_owned()),
+        absolute_path: Some(file.absolute_path),
         mime_type: file.mime_type,
         extension: file.extension,
         file_metadata_created_at_ms: file
@@ -282,7 +285,7 @@ where
 
 pub async fn list_device_files<C>(
     main_db: &C,
-    file_registry_db: &DatabaseConnection,
+    file_registry_db: &FileRegistryDb,
     req: &ListDeviceFilesReq,
 ) -> Result<ListDeviceFilesRsp, AppError>
 where
@@ -292,25 +295,34 @@ where
     ensure_device_exists(main_db, device_id).await?;
 
     let pagination = normalize_device_list_pagination(req.limit, req.offset)?;
-    let query = file_entry::Entity::find()
-        .filter(file_entry::Column::DeviceId.eq(device_id))
-        .filter(file_entry::Column::Kind.eq("file"));
-    let total = query.clone().count(file_registry_db).await.c(h!())?;
-    let files = query
-        .order_by_desc(file_entry::Column::UpdatedAt)
-        .order_by_desc(file_entry::Column::Id)
-        .offset(pagination.offset)
-        .limit(pagination.limit)
-        .all(file_registry_db)
+    let repository = FilesystemRepository::new(file_registry_db);
+    let page = repository
+        .list_files_offset(
+            device_id,
+            OffsetPageRequest {
+                limit: pagination.limit,
+                offset: pagination.offset,
+            },
+        )
         .await
-        .c(h!())?;
-    let next_offset = pagination.offset + files.len() as u64;
+        .map_err(map_filesystem_error)?;
 
     Ok(ListDeviceFilesRsp {
-        list: files.into_iter().map(render_device_file_entry).collect(),
-        total,
-        has_more: next_offset < total,
+        list: page
+            .entries
+            .into_iter()
+            .map(render_device_file_entry)
+            .collect(),
+        total: page.total,
+        has_more: page.has_more,
     })
+}
+
+fn map_filesystem_error(error: FilesystemError) -> AppError {
+    AppError::AnyhowError {
+        source: anyhow::Error::new(error)
+            .context("failed to list device files"),
+    }
 }
 
 async fn ensure_device_exists<C>(
@@ -540,6 +552,8 @@ fn datetime_ms(datetime: NaiveDateTime) -> i64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::devices::filesystem::PathSyntax;
+    use actix_web::{body::to_bytes, http::StatusCode, ResponseError};
     use chrono::NaiveDate;
     use sea_orm::{DbBackend, QueryTrait};
     use serde_json::json;
@@ -706,37 +720,77 @@ mod tests {
 
     #[test]
     fn render_device_file_entry_uses_file_entry_fields() {
-        let now = NaiveDate::from_ymd_opt(2026, 7, 7)
+        let created_at = NaiveDate::from_ymd_opt(2026, 7, 7)
             .unwrap()
-            .and_hms_opt(10, 30, 0)
+            .and_hms_milli_opt(10, 30, 0, 123)
             .unwrap();
-        let entry = file_entry::Model {
-            id: Uuid::from_u128(0x018f0000000070008000000000000001),
+        let updated_at = created_at
+            .checked_add_signed(chrono::Duration::milliseconds(456))
+            .unwrap();
+        let parent_entry_id =
+            Uuid::from_u128(0x018f0000000070008000000000000002);
+        let entry = FileEntry {
+            file_id: Uuid::from_u128(
+                0x018f0000000070008000000000000001,
+            ),
             device_id: Uuid::from_u128(
                 0x018f0000000070008000000000000000,
             ),
-            parent_id: Some(Uuid::from_u128(
-                0x018f0000000070008000000000000002,
-            )),
-            kind: "file".to_string(),
+            parent_entry_id,
             name: "report.pdf".to_string(),
             name_key: b"report.pdf".to_vec(),
-            path_syntax: Some("posix".to_string()),
-            absolute_path: Some("/reports/report.pdf".to_string()),
+            path_syntax: PathSyntax::Posix,
+            absolute_path: "/reports/report.pdf".to_string(),
             hierarchy_path: "n018f0000000070008000000000000002.n018f0000000070008000000000000001".to_string(),
             mime_type: Some("application/pdf".to_string()),
             extension: Some("pdf".to_string()),
-            file_metadata_created_at: Some(now),
-            file_metadata_modified_at: Some(now),
-            created_at: now,
-            updated_at: now,
+            file_metadata_created_at: Some(created_at),
+            file_metadata_modified_at: Some(updated_at),
+            created_at,
+            updated_at,
         };
 
         let row = render_device_file_entry(entry);
 
+        assert_eq!(row.file_id, "018f0000-0000-7000-8000-000000000001");
+        assert_eq!(row.device_id, "018f0000-0000-7000-8000-000000000000");
+        assert_eq!(
+            row.parent_id.as_deref(),
+            Some("018f0000-0000-7000-8000-000000000002")
+        );
         assert_eq!(row.name, "report.pdf");
+        assert_eq!(row.path_syntax.as_deref(), Some("posix"));
         assert_eq!(row.absolute_path.as_deref(), Some("/reports/report.pdf"));
         assert_eq!(row.mime_type.as_deref(), Some("application/pdf"));
-        assert_eq!(row.file_metadata_modified_at_ms, Some(datetime_ms(now)));
+        assert_eq!(row.extension.as_deref(), Some("pdf"));
+        assert_eq!(
+            row.file_metadata_created_at_ms,
+            Some(datetime_ms(created_at))
+        );
+        assert_eq!(
+            row.file_metadata_modified_at_ms,
+            Some(datetime_ms(updated_at))
+        );
+        assert_eq!(row.created_at_ms, datetime_ms(created_at));
+        assert_eq!(row.updated_at_ms, datetime_ms(updated_at));
+    }
+    #[actix_web::test]
+    async fn filesystem_errors_remain_internal_at_transport_boundary() {
+        for filesystem_error in [
+            FilesystemError::Invariant("safe_invariant_code"),
+            FilesystemError::Internal(anyhow::anyhow!(
+                "filesystem-adapter-source-sentinel"
+            )),
+        ] {
+            let error = map_filesystem_error(filesystem_error);
+            assert!(matches!(error, AppError::AnyhowError { .. }));
+            let response = error.error_response();
+
+            assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+            assert_eq!(
+                to_bytes(response.into_body()).await.unwrap().as_ref(),
+                b"Internal server error"
+            );
+        }
     }
 }
