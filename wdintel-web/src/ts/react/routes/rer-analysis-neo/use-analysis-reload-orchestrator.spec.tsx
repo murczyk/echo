@@ -86,7 +86,6 @@ function buildParams(overrides: Partial<Parameters<typeof useAnalysisReloadOrche
       },
       pageIndex: 1,
     })),
-    reconcileCurrentMessagePage: vi.fn().mockResolvedValue(undefined),
     invalidateMessagePageRequests: vi.fn(),
     invalidateMessagePaging: vi.fn(),
     refreshMessageCounts: vi.fn(),
@@ -202,7 +201,7 @@ describe('useAnalysisReloadOrchestrator', () => {
       }),
     );
     expect(params.getCurrentMessagePage).toHaveBeenCalledTimes(1);
-    expect(params.refreshMessageCounts).toHaveBeenCalledTimes(1);
+    expect(params.refreshMessageCounts).not.toHaveBeenCalled();
   });
 
   it('loads map palitras on initial eligible load', async () => {

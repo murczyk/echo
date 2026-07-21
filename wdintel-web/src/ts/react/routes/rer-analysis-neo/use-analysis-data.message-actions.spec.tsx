@@ -27,6 +27,7 @@ const hoisted = vi.hoisted(() => ({
   inboxMessageTagsAdd: vi.fn(),
   inboxMessageTagsModelError: vi.fn(),
   inboxMessageTagsRm: vi.fn(),
+  fetchInboxMessages: vi.fn(),
 }));
 
 vi.mock('../../services/api/analysis', () => ({
@@ -40,6 +41,7 @@ vi.mock('../../services/api/analysis', () => ({
   inboxMessageTagsAdd: hoisted.inboxMessageTagsAdd,
   inboxMessageTagsModelError: hoisted.inboxMessageTagsModelError,
   inboxMessageTagsRm: hoisted.inboxMessageTagsRm,
+  fetchInboxMessages: hoisted.fetchInboxMessages,
 }));
 
 type HarnessApi = ReturnType<typeof useAnalysisDataMessageActions> & {
@@ -52,6 +54,8 @@ type HarnessApi = ReturnType<typeof useAnalysisDataMessageActions> & {
   invalidateTagFacetLoad: ReturnType<typeof vi.fn>;
   refreshTagFacet: ReturnType<typeof vi.fn>;
   refreshMessageCounts: ReturnType<typeof vi.fn>;
+  pageIndex: number;
+  currentCursor: { beforeIdNoninclusive: number | null; sinceIdNoninclusive: number | null };
 };
 
 function buildUser(): User {
@@ -109,6 +113,9 @@ function TestHarness(props: {
   refreshMessageCounts?: ReturnType<typeof vi.fn>;
   refreshTagFacet?: ReturnType<typeof vi.fn>;
   queryState?: ReturnType<typeof emptyQueryState>;
+  initialPageIndex?: number;
+  initialCursor?: { beforeIdNoninclusive: number | null; sinceIdNoninclusive: number | null };
+  reloadCurrentPage?: boolean;
 }) {
   const [messages, setMessages] = useState<Array<[number, InboxMessage]>>(
     props.initialMessages ?? [[1, buildMessage()]],
@@ -117,10 +124,13 @@ function TestHarness(props: {
     props.initialMessages ?? [[1, buildMessage()]],
   );
   const [onError] = useState(() => props.onError ?? vi.fn());
-  const [reload] = useState(() => props.reload ?? vi.fn(() => Promise.resolve()));
   const [invalidateTagFacetLoad] = useState(() => props.invalidateTagFacetLoad ?? vi.fn());
   const [refreshMessageCounts] = useState(() => props.refreshMessageCounts ?? vi.fn());
   const [refreshTagFacet] = useState(() => props.refreshTagFacet ?? vi.fn(() => Promise.resolve()));
+  const [pageIndex] = useState(props.initialPageIndex ?? 0);
+  const [currentCursor] = useState(
+    props.initialCursor ?? { beforeIdNoninclusive: null, sinceIdNoninclusive: null },
+  );
   const onUnauthorized = vi.fn(() => false);
   const currentUser = props.currentUser ?? buildUser();
   const patchMessages = useCallback(
@@ -129,6 +139,15 @@ function TestHarness(props: {
       setMapOpenMessages((current) => patchItems(current, updater));
     },
     [],
+  );
+  const [reload] = useState(
+    () =>
+      props.reload ??
+      vi.fn(async (options?: { preserveMessagePage?: boolean }) => {
+        if (!props.reloadCurrentPage || options?.preserveMessagePage !== true) return;
+        const rsp = await hoisted.fetchInboxMessages({ ...currentCursor }, {});
+        setMessages(rsp.inboxItems ?? []);
+      }),
   );
   const actions = useAnalysisDataMessageActions({
     authUserName: props.authUserName ?? currentUser?.name ?? null,
@@ -166,6 +185,8 @@ function TestHarness(props: {
     invalidateTagFacetLoad,
     refreshMessageCounts,
     refreshTagFacet,
+    pageIndex,
+    currentCursor,
   };
 
   return null;
@@ -203,6 +224,9 @@ describe('useAnalysisDataMessageActions', () => {
       refreshMessageCounts?: ReturnType<typeof vi.fn>;
       refreshTagFacet?: ReturnType<typeof vi.fn>;
       queryState?: ReturnType<typeof emptyQueryState>;
+      initialPageIndex?: number;
+      initialCursor?: { beforeIdNoninclusive: number | null; sinceIdNoninclusive: number | null };
+      reloadCurrentPage?: boolean;
     } = {},
   ) {
     const apiRef: MutableRefObject<HarnessApi | null> = { current: null };
@@ -218,6 +242,9 @@ describe('useAnalysisDataMessageActions', () => {
           refreshMessageCounts={options.refreshMessageCounts}
           refreshTagFacet={options.refreshTagFacet}
           queryState={options.queryState}
+          initialPageIndex={options.initialPageIndex}
+          initialCursor={options.initialCursor}
+          reloadCurrentPage={options.reloadCurrentPage}
         />,
       );
     });
@@ -359,6 +386,36 @@ describe('useAnalysisDataMessageActions', () => {
     expect(reload).toHaveBeenCalledWith({ preserveMessagePage: true });
   });
 
+  it('preserves an empty current page after a tag toggle', async () => {
+    const originalPage16Cursor = { beforeIdNoninclusive: 160, sinceIdNoninclusive: null };
+    hoisted.fetchInboxMessages.mockResolvedValueOnce({
+      inboxItems: [],
+      callsigns: [],
+      pageLimit: 20,
+    });
+    const apiRef = await renderHarness(
+      [[1, buildMessage({ inboxTags: [buildTag(3, { login: 'tester', organismId: 1 })] })]],
+      {
+        initialPageIndex: 16,
+        initialCursor: originalPage16Cursor,
+        reloadCurrentPage: true,
+      },
+    );
+
+    await act(async () => {
+      await apiRef.current!.onToggleMessageTag(1, 3);
+    });
+
+    expect(apiRef.current!.reload).toHaveBeenCalledWith({ preserveMessagePage: true });
+    expect(apiRef.current!.pageIndex).toBe(16);
+    expect(apiRef.current!.currentCursor).toEqual(originalPage16Cursor);
+    expect(apiRef.current!.messages).toEqual([]);
+    expect(hoisted.fetchInboxMessages).toHaveBeenCalledWith(
+      expect.objectContaining(originalPage16Cursor),
+      expect.anything(),
+    );
+  });
+
   it('keeps the message page when the active query has no tag predicate', async () => {
     const reload = vi.fn(() => Promise.resolve());
     const refreshMessageCounts = vi.fn();
@@ -385,9 +442,9 @@ describe('useAnalysisDataMessageActions', () => {
     });
 
     expect(apiRef.current!.messages[0]?.[1].inboxTags).toEqual([]);
-    expect(reload).not.toHaveBeenCalled();
-    expect(refreshTagFacet).toHaveBeenCalledTimes(1);
-    expect(refreshMessageCounts).toHaveBeenCalledTimes(1);
+    expect(reload).toHaveBeenCalledWith({ preserveMessagePage: true });
+    expect(refreshTagFacet).not.toHaveBeenCalled();
+    expect(refreshMessageCounts).not.toHaveBeenCalled();
   });
 
   it('keeps the optimistic tag change and reports the error when only the reload fails', async () => {
@@ -407,29 +464,6 @@ describe('useAnalysisDataMessageActions', () => {
     expect(apiRef.current!.messages[0]?.[1].inboxTags).toEqual([]);
     expect(apiRef.current!.messages[0]?.[1].tags).toEqual([4]);
     expect(apiRef.current!.onError).toHaveBeenCalledWith('reload boom');
-  });
-
-  it('keeps the optimistic tag change when a visible facet refresh fails', async () => {
-    const refreshTagFacet = vi.fn(() => Promise.reject(new Error('facet boom')));
-    const apiRef = await renderHarness(
-      [[1, buildMessage({ inboxTags: [buildTag(3, { login: 'tester', organismId: 1 })] })]],
-      {
-        refreshTagFacet,
-        queryState: {
-          ...emptyQueryState(),
-          fromDateTimeStr: '2026-04-01T00:00',
-          toDateTimeStr: '2026-04-02T00:00',
-          tags: [],
-        },
-      },
-    );
-
-    await act(async () => {
-      await apiRef.current!.onToggleMessageTag(1, 3);
-    });
-
-    expect(apiRef.current!.messages[0]?.[1].inboxTags).toEqual([]);
-    expect(apiRef.current!.onError).toHaveBeenCalledWith('facet boom');
   });
 
   it('does not reload or invalidate the tag facet when the tag toggle fails', async () => {

@@ -172,15 +172,8 @@ export function useAnalysisDataMessageActions(params: Params) {
         });
 
         try {
-          if (doesTagMutationAffectMessageMembership(params.queryState)) {
-            params.invalidateTagFacetLoad();
-            await params.reload({ preserveMessagePage: true });
-          } else {
-            await Promise.all([
-              params.refreshTagFacet(),
-              Promise.resolve(params.refreshMessageCounts()),
-            ]);
-          }
+          params.invalidateTagFacetLoad();
+          await params.reload({ preserveMessagePage: true });
         } catch (reloadError) {
           // The tag mutation above already persisted, so the optimistic patch is now the
           // correct state — a reload failure must not roll it back. Report the error only.

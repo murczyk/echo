@@ -10,7 +10,7 @@ import type {
   Unit,
 } from '../../../../Bindings';
 import { buildAnalysisReq } from './helpers';
-import { reloadAnalysisData, type ReloadAnalysisResult } from './use-analysis-data.reload';
+import { reloadAnalysisData } from './use-analysis-data.reload';
 import type { FilterSectionLoadPlan } from './use-analysis-data-filter-sections';
 import type {
   AnalysisAorEntry,
@@ -67,10 +67,6 @@ type Params = {
     cursor: import('./types').AnalysisMessagePageCursor;
     pageIndex: number;
   };
-  reconcileCurrentMessagePage: (
-    finalMessagePageWasEmpty: boolean,
-    preservedPage: ReturnType<Params['getCurrentMessagePage']>,
-  ) => Promise<void>;
   refreshMessageCounts: () => void;
   setAorEntries: Setter<AnalysisAorEntry[]>;
   setCounts: Setter<import('../../../../Bindings').CountStatsRsp | null>;
@@ -117,7 +113,6 @@ export function useAnalysisReloadOrchestrator(params: Params): UseAnalysisReload
     deferInitialLoad,
     getLoadedFilterSections,
     getCurrentMessagePage,
-    reconcileCurrentMessagePage,
     getReloadFilterSections,
     invalidateCallsignGraph,
     invalidateCorrelatedFreqsCache,
@@ -192,10 +187,10 @@ export function useAnalysisReloadOrchestrator(params: Params): UseAnalysisReload
       const shouldRefreshMessageCounts = options.refreshMessageCounts !== false;
       const currentMessagePage = preserveMessagePage ? getCurrentMessagePage() : null;
 
-      if (shouldRefreshMessageCounts) refreshMessageCounts();
+      if (shouldRefreshMessageCounts && !preserveMessagePage) refreshMessageCounts();
 
       try {
-        const reloadResult: ReloadAnalysisResult = await reloadAnalysisData({
+        await reloadAnalysisData({
           clearAnalysisResults,
           invalidateCallsignGraph,
           invalidateCorrelatedFreqsCache,
@@ -254,17 +249,6 @@ export function useAnalysisReloadOrchestrator(params: Params): UseAnalysisReload
           rightSidebarTab,
           signal: abortController.signal,
         });
-        if (
-          preserveMessagePage &&
-          reloadAbortControllerRef.current === abortController &&
-          !abortController.signal.aborted &&
-          reloadResult?.completed
-        ) {
-          await reconcileCurrentMessagePage(
-            reloadResult.finalMessagePageWasEmpty,
-            currentMessagePage!,
-          );
-        }
       } finally {
         if (reloadAbortControllerRef.current === abortController) {
           reloadAbortControllerRef.current = null;
@@ -275,7 +259,6 @@ export function useAnalysisReloadOrchestrator(params: Params): UseAnalysisReload
       centerTab,
       clearAnalysisResults,
       getCurrentMessagePage,
-      reconcileCurrentMessagePage,
       getLoadedFilterSections,
       getReloadFilterSections,
       invalidateCallsignGraph,
