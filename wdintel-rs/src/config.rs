@@ -52,7 +52,13 @@ pub const IDENTITY_DURATION_HOURS: u64 = 12;
 pub const IDENTITY_SALT: &str = "IUBwdub783736#";
 pub const ROLE_ADMIN: &str = "Admin";
 pub const SIGINT_SIGNAL_TIMEOUT_MS: u64 = 1000;
+/// MESSAGE_ATTACHMENT_LIMIT_SYNC: keep this upload limit synchronized with
+/// `RER_MESSAGE_ATTACHMENTS_ZIP_MAX_FILES` and frontend
+/// `MAX_MESSAGE_ATTACHMENTS` in `useMessageUppy.ts`.
 pub const SIGINT_MESSAGE_MAX_ATTACHMENTS: usize = 20;
+/// MESSAGE_ATTACHMENT_LIMIT_SYNC: keep this archive-download limit synchronized
+/// with `SIGINT_MESSAGE_MAX_ATTACHMENTS` and frontend
+/// `MAX_MESSAGE_ATTACHMENTS` in `useMessageUppy.ts`.
 pub const RER_MESSAGE_ATTACHMENTS_ZIP_MAX_FILES: usize = 20;
 pub const RER_MESSAGE_ATTACHMENTS_ZIP_MAX_TOTAL_BYTES: u64 = 200 * 1024 * 1024;
 pub const CLEANUP_REPORT_DAYS: u64 = 30;

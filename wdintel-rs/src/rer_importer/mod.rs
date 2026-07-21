@@ -580,6 +580,8 @@ async fn rer_message_attachments_zip(
         .await
         .c(h!())?
         .ok_or(AppError::NotFound)?;
+    // Uses the same group-membership gate as individual media downloads; this
+    // endpoint must not grant access merely because a message URL is known.
     crate::messenger::media::ensure_media_access(&env.dbx, &login, message_id)
         .await?;
     let media = signal_message_media::Entity::find()

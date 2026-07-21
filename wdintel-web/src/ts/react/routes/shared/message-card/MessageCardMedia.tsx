@@ -285,8 +285,7 @@ export function MessageMediaDownloadAllLink({ messageId }: { messageId: number }
     <Button
       component="a"
       size="small"
-      variant="contained"
-      color="primary"
+      variant="outlined"
       href={`/api/rer-importer/messages/${messageId}/attachments.zip`}
       download="attachments.zip"
       target="_blank"
@@ -302,8 +301,11 @@ export function MessageMediaDownloadAllLink({ messageId }: { messageId: number }
         lineHeight: 1.25,
         textTransform: 'none',
         fontWeight: 500,
-        '&&': {
-          color: 'primary.contrastText',
+        color: 'text.primary',
+        borderColor: 'divider',
+        '&:hover': {
+          backgroundColor: 'action.hover',
+          borderColor: 'text.primary',
         },
         alignSelf: 'center',
         flexShrink: 0,

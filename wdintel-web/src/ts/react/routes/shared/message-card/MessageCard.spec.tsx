@@ -2436,10 +2436,10 @@ describe('MessageCard', () => {
     expect(archiveLink?.querySelector('[data-testid="DownloadIcon"]')).not.toBeNull();
     expect(archiveLink?.querySelector('[data-testid="DownloadOutlinedIcon"]')).toBeNull();
     expect(archiveLink?.getAttribute('data-mui-size')).toBe('small');
-    expect(archiveLink?.getAttribute('data-mui-variant')).toBe('contained');
-    expect(archiveLink?.getAttribute('data-mui-color')).toBe('primary');
-    expect(archiveLink?.getAttribute('data-mui-sx')).toContain('&&');
-    expect(archiveLink?.getAttribute('data-mui-sx')).toContain('primary.contrastText');
+    expect(archiveLink?.getAttribute('data-mui-variant')).toBe('outlined');
+    expect(archiveLink?.getAttribute('data-mui-sx')).toContain('text.primary');
+    expect(archiveLink?.getAttribute('data-mui-sx')).toContain('divider');
+    expect(archiveLink?.getAttribute('data-mui-sx')).toContain('action.hover');
     expect(archiveLink?.parentElement?.className).toContain('mt-1');
     expect(archiveLink?.parentElement?.className).toContain('items-start');
   });
