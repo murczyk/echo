@@ -28,7 +28,7 @@ pub struct NoHeadersBody {
 lazy_static! {
     // Remove data from Buran
     static ref RE: Regex = Regex::new(
-        r#"^(Район|Частота|Час|Дата|Локація|Мережа|Засічка|Підрозділ|Хто|Кому|Абоненти|Позивні|Коментар|Пост|Координати|Тип сигналу|Приналежність|Мітки перехоплення):"#
+        r#"^(Район|Частота|Час|Дата|Локація|Мережа|Засічка|Підрозділ|Хто|Кому|Абоненти|Позивні|Коментар|Пост|Координати|Тип|Назва|Ворожий|Зауваження штабу|Тип сигналу|Приналежність|Мітк(?:а|и) перехоплення):"#
     )
     .unwrap();
     // Remove data with line starting as below
@@ -117,7 +117,7 @@ lazy_static! {
     // Remove unit line from Mouse
     static ref RE3: Regex = Regex::new(r#"^[^\p{L}\p{N}]*(?i:new\s+)?(?:[0-9]+\s+)?(?:[0-9]{3}(?:\.|,)[0-9]{3,5}\s*(?:\(?МГц\)?|MHz)\s+)?(?i:(?:\[dmr\]\s*)?(?:укх|управління)|dmre?\s+р/м|р/м|ймовірно\s+.+\s+/\s*(?:район|р-н))\s"#).unwrap();
     // Remove freq line from Mouse
-    static ref RE4: Regex = Regex::new(r#"^(?:\*[0-9]{3}(?:\.|,)[0-9]{3,5}\*|[0-9]{3}(?:\.|,)[0-9]{3,5})(?:\s+[а-яіїА-ЯІЇ]{0,2}(?:П|п)\s*-?\s*\d{1,3})?\s*$"#).unwrap();
+    static ref RE4: Regex = Regex::new(r#"^(?:\*[0-9]{3}(?:\.|,)[0-9]{3,5}\*|[0-9]{3}(?:\.|,)[0-9]{3,5}|[0-9]{3}(?:\.|,)[0-9]{1,5}\s*(?:\(?МГц\)?|(?i:MHz)))(?:\s+[а-яіїА-ЯІЇ]{0,2}(?:П|п)\s*-?\s*\d{1,3})?\s*$"#).unwrap();
     // Remove coordinates line from Mouse
     static ref RE5: Regex = Regex::new(r#"^[0-9]{2}\.[0-9]{5,7}\s*,\s*[0-9]{2}\.[0-9]{5,7}$"#).unwrap();
     // Remove line with ---------------------
@@ -476,6 +476,13 @@ mod tests {
             res,
             "НВ\nОРБИТА\n\n— Орбита, Орбита, переходим на этаж выше."
         );
+    }
+
+    #[test]
+    fn extract_text_singular_interception_marker_is_header() {
+        let body = "18.07.2026, 13:59:56\n143.8150\nПАРОВОЗ\nСОКОЛ\n\n— Сокол, Паровозу\n\nМітка перехоплення: Важливо";
+        let res = extract_text(body).unwrap().body;
+        assert_eq!(res, "ПАРОВОЗ\nСОКОЛ\n\n— Сокол, Паровозу");
     }
 
     #[test]
