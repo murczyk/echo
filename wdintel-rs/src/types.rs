@@ -82,7 +82,8 @@ impl ShortContextErr for AppError {
             | AppError::Unauthenticated
             | AppError::Forbidden(_)
             | AppError::ForbiddenWithHeader { .. }
-            | AppError::Form(_) => self,
+            | AppError::Form(_)
+            | AppError::ServiceUnavailable { .. } => self,
             AppError::AnyhowError { source } => AppError::AnyhowError {
                 source: source.context(context),
             },

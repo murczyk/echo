@@ -24,6 +24,7 @@ pub struct ProcessSignalMessageQueueItemOptions {
 pub struct ProcessSignalMessageQueueItemResult {
     pub message_uid: String,
     pub is_duplicate: bool,
+    pub uploaded_files_ready_for_deletion: Vec<MediaUploadInput>,
 }
 
 pub async fn process_signal_message_queue_item(
@@ -37,8 +38,8 @@ pub async fn process_signal_message_queue_item(
     txn: &DatabaseTransaction,
     skip_process_inbox_item: bool,
     changed_inbox_item_ids: &mut Vec<i64>,
-) -> Result<String, AppError> {
-    Ok(process_signal_message_queue_item_with_options(
+) -> Result<ProcessSignalMessageQueueItemResult, AppError> {
+    process_signal_message_queue_item_with_options(
         m,
         attachments,
         redis,
@@ -51,8 +52,7 @@ pub async fn process_signal_message_queue_item(
         changed_inbox_item_ids,
         ProcessSignalMessageQueueItemOptions::default(),
     )
-    .await?
-    .message_uid)
+    .await
 }
 
 pub async fn process_signal_message_queue_item_with_options(
@@ -134,15 +134,16 @@ pub async fn process_signal_message_queue_item_with_options(
     .c(h!())?;
 
     if res.is_duplicate {
-        store_kept_duplicate_trace_media(
-            txn,
-            config,
-            s3,
-            staged_signal_message_id,
-            &attachments,
-        )
-        .await
-        .c(h!())?;
+        let uploaded_files_ready_for_deletion =
+            store_kept_duplicate_trace_media(
+                txn,
+                config,
+                s3,
+                staged_signal_message_id,
+                &attachments,
+            )
+            .await
+            .c(h!())?;
         if let Some(inbox_message_id) = m.inbox_message_id {
             match i32::try_from(inbox_message_id) {
                 Ok(message_id) => {
@@ -179,6 +180,7 @@ pub async fn process_signal_message_queue_item_with_options(
         return Ok(ProcessSignalMessageQueueItemResult {
             message_uid: duplicate_target.message_uid.context(h!())?,
             is_duplicate: true,
+            uploaded_files_ready_for_deletion,
         });
     }
 
@@ -189,11 +191,13 @@ pub async fn process_signal_message_queue_item_with_options(
 
     let message_uid = signal_message.message_uid.clone().c(h!())?;
 
-    if !attachments.is_empty() {
+    let uploaded_files_ready_for_deletion = if attachments.is_empty() {
+        vec![]
+    } else {
         store_queue_media(txn, config, s3, signal_message.id, &attachments)
             .await
-            .c(h!())?;
-    }
+            .c(h!())?
+    };
 
     if !skip_process_inbox_item {
         let processed_inbox_item_ids =
@@ -220,6 +224,7 @@ pub async fn process_signal_message_queue_item_with_options(
     Ok(ProcessSignalMessageQueueItemResult {
         message_uid,
         is_duplicate: false,
+        uploaded_files_ready_for_deletion,
     })
 }
 
@@ -229,9 +234,9 @@ async fn store_kept_duplicate_trace_media(
     s3: &Option<opendal::Operator>,
     signal_message_id: i64,
     attachments: &[MessageAttachmentF1],
-) -> Result<(), AppError> {
+) -> Result<Vec<MediaUploadInput>, AppError> {
     if attachments.is_empty() {
-        return Ok(());
+        return Ok(vec![]);
     }
     if signal_message::Entity::find_by_id(signal_message_id)
         .one(txn)
@@ -239,7 +244,7 @@ async fn store_kept_duplicate_trace_media(
         .c(h!())?
         .is_none()
     {
-        return Ok(());
+        return Ok(vec![]);
     }
     store_queue_media(txn, config, s3, signal_message_id, attachments).await
 }
@@ -250,21 +255,31 @@ async fn store_queue_media(
     s3: &Option<opendal::Operator>,
     signal_message_id: i64,
     attachments: &[MessageAttachmentF1],
-) -> Result<(), AppError> {
+) -> Result<Vec<MediaUploadInput>, AppError> {
     // Recovery wraps this error in a rollback because media may carry critical context.
     let upload_inputs: Vec<MediaUploadInput> =
         attachments.iter().cloned().map(Into::into).collect();
-    crate::messenger::media::store_media_attachments(
+    let delete_uploaded = config
+        .feature_delete_uploaded_attachment
+        .unwrap_or(FEATURE_DELETE_UPLOADED_ATTACHMENT_DEFAULT);
+    let deletion = if delete_uploaded {
+        crate::messenger::media::UploadedAttachmentDeletion::DeleteAfterCommit
+    } else {
+        crate::messenger::media::UploadedAttachmentDeletion::Preserve
+    };
+    let result = crate::messenger::media::store_media_attachments(
         &upload_inputs,
         signal_message_id,
         config,
         s3,
         txn,
-        config
-            .feature_delete_uploaded_attachment
-            .unwrap_or(FEATURE_DELETE_UPLOADED_ATTACHMENT_DEFAULT),
+        deletion,
     )
     .await
     .c(h!())?;
-    Ok(())
+    if delete_uploaded {
+        Ok(result.uploaded_files_ready_for_deletion)
+    } else {
+        Ok(vec![])
+    }
 }

@@ -106,6 +106,7 @@ type DutyMessageCardItemProps = {
   onMessageComment: (msgId: number, currentComment: string | null) => void;
   onMessageExcludeEntity: (entity: MessageEntityFilterKind, value: string) => void;
   onMessageToggleTag: (msgId: number, tagId: number) => void;
+  onMessageEdit: (messageId: number, message: InboxMessage) => void;
   onOpenPointsOnMap?: (etalons: string[], message: InboxMessage) => void;
 };
 
@@ -139,6 +140,7 @@ const DutyMessageCardItem = memo(function DutyMessageCardItem({
   onMessageComment,
   onMessageExcludeEntity,
   onMessageToggleTag,
+  onMessageEdit,
   onOpenPointsOnMap,
 }: DutyMessageCardItemProps) {
   const labels = buildMessageCardDisplayLabels(msg, { groupInfos, profiles });
@@ -225,6 +227,7 @@ const DutyMessageCardItem = memo(function DutyMessageCardItem({
       onComment={() => onMessageComment(id, msg.extendedForm ?? null)}
       onExcludeMessageEntity={(entity, value) => onMessageExcludeEntity(entity, value)}
       onToggleTag={(tagId) => onMessageToggleTag(id, tagId)}
+      onEditDetails={() => onMessageEdit(id, msg)}
       onOpenPointsOnMap={onOpenPointsOnMap}
       rightHeaderInsetPx={0}
       filterState={filterState}
@@ -263,6 +266,7 @@ type DutyMessageListProps = {
   onMessageComment: (msgId: number, currentComment: string | null) => void;
   onMessageExcludeEntity: (entity: MessageEntityFilterKind, value: string) => void;
   onMessageToggleTag: (msgId: number, tagId: number) => void;
+  onMessageEdit: (messageId: number, message: InboxMessage) => void;
   onOpenPointsOnMap?: (etalons: string[], message: InboxMessage) => void;
   setItemRef: (id: number) => (node: HTMLDivElement | null) => void;
   listRef: React.RefObject<HTMLDivElement>;
@@ -297,6 +301,7 @@ const DutyMessageList = memo(function DutyMessageList({
   onMessageComment,
   onMessageExcludeEntity,
   onMessageToggleTag,
+  onMessageEdit,
   onOpenPointsOnMap,
   setItemRef,
   listRef,
@@ -340,6 +345,7 @@ const DutyMessageList = memo(function DutyMessageList({
             onMessageComment={onMessageComment}
             onMessageExcludeEntity={onMessageExcludeEntity}
             onMessageToggleTag={onMessageToggleTag}
+            onMessageEdit={onMessageEdit}
             onOpenPointsOnMap={onOpenPointsOnMap}
           />
         </div>
@@ -394,6 +400,7 @@ export const FeedColumnContent = memo(
       onMessageComment,
       onMessageExcludeEntity,
       onMessageToggleTag,
+      onMessageEdit,
       onScrollToTop,
       onReachedBottom,
       onLeftBottom,
@@ -446,6 +453,7 @@ export const FeedColumnContent = memo(
     const stableOnMessageComment = useStableCallback(onMessageComment);
     const stableOnMessageExcludeEntity = useStableCallback(onMessageExcludeEntity);
     const stableOnMessageToggleTag = useStableCallback(onMessageToggleTag);
+    const stableOnMessageEdit = useStableCallback(onMessageEdit);
     const stableOnOpenPointsOnMap = useStableCallback(onOpenPointsOnMap);
     const scrollFabPosition = resolveDutyScrollFabPosition({
       narrowScreen,
@@ -549,6 +557,7 @@ export const FeedColumnContent = memo(
               onMessageComment={stableOnMessageComment}
               onMessageExcludeEntity={stableOnMessageExcludeEntity}
               onMessageToggleTag={stableOnMessageToggleTag}
+              onMessageEdit={stableOnMessageEdit}
               onOpenPointsOnMap={onOpenPointsOnMap ? stableOnOpenPointsOnMap : undefined}
               setItemRef={scroll.setItemRef}
               listRef={scroll.listRef}
@@ -698,6 +707,7 @@ export const FeedColumnContent = memo(
       prevActions.onMessageComment !== nextActions.onMessageComment ||
       prevActions.onMessageExcludeEntity !== nextActions.onMessageExcludeEntity ||
       prevActions.onMessageToggleTag !== nextActions.onMessageToggleTag ||
+      prevActions.onMessageEdit !== nextActions.onMessageEdit ||
       prevActions.onScrollToTop !== nextActions.onScrollToTop ||
       prevActions.onReachedBottom !== nextActions.onReachedBottom ||
       prevActions.onLeftBottom !== nextActions.onLeftBottom ||

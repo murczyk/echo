@@ -1,5 +1,5 @@
 import React, { RefObject } from 'react';
-import { Box, Typography, IconButton } from '@mui/material';
+import { Box, Typography, IconButton, LinearProgress } from '@mui/material';
 import CloudUploadOutlinedIcon from '@mui/icons-material/CloudUploadOutlined';
 import CloseIcon from '@mui/icons-material/Close';
 import type { Uppy, UppyFile } from '@uppy/core';
@@ -24,6 +24,38 @@ type Props = {
   existingMedia?: MessageMediaInfo[];
   errorMsg?: string | null;
 };
+
+type UploadPresentation = {
+  label: string;
+  percentage: number;
+  color: 'primary' | 'success' | 'error';
+};
+
+function fileUploadPresentation(
+  file: UppyFile<any, any>,
+  busy: boolean,
+): UploadPresentation | null {
+  const progress = file.progress;
+  const rawPercentage = progress?.percentage ?? 0;
+  const percentage = Math.min(100, Math.max(0, Math.round(rawPercentage)));
+  if (file.error) {
+    return { label: 'Помилка завантаження', percentage, color: 'error' };
+  }
+  if (progress?.uploadComplete) {
+    return {
+      label: busy ? 'Завантажено, обробка…' : 'Завантажено',
+      percentage: 100,
+      color: 'success',
+    };
+  }
+  if (progress?.uploadStarted != null) {
+    return { label: `Завантаження: ${percentage}%`, percentage, color: 'primary' };
+  }
+  if (busy) {
+    return { label: 'Очікує завантаження', percentage: 0, color: 'primary' };
+  }
+  return null;
+}
 
 export function AttachmentsSection({
   uppy,
@@ -109,13 +141,14 @@ export function AttachmentsSection({
             const ext = fileExtension(fileName);
             const size = formatFileSize(f.size);
             const meta = [ext, size].filter(Boolean).join(' · ');
+            const upload = fileUploadPresentation(f, busy);
             return (
               <Box
                 key={f.id}
                 sx={{
                   display: 'flex',
-                  alignItems: 'center',
-                  gap: 1,
+                  flexDirection: 'column',
+                  gap: 0.5,
                   py: 0.5,
                   px: 1,
                   border: '1px solid',
@@ -124,27 +157,49 @@ export function AttachmentsSection({
                   bgcolor: 'action.hover',
                 }}
               >
-                <FileIcon fontSize="small" sx={{ color: 'text.secondary', flexShrink: 0 }} />
-                <Typography variant="body2" noWrap title={fileName} sx={{ flex: 1, minWidth: 0 }}>
-                  {fileName}
-                </Typography>
-                {meta && (
-                  <Typography
-                    variant="caption"
-                    color="text.secondary"
-                    sx={{ flexShrink: 0, whiteSpace: 'nowrap' }}
-                  >
-                    {meta}
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, width: '100%' }}>
+                  <FileIcon fontSize="small" sx={{ color: 'text.secondary', flexShrink: 0 }} />
+                  <Typography variant="body2" noWrap title={fileName} sx={{ flex: 1, minWidth: 0 }}>
+                    {fileName}
                   </Typography>
+                  {meta && (
+                    <Typography
+                      variant="caption"
+                      color="text.secondary"
+                      sx={{ flexShrink: 0, whiteSpace: 'nowrap' }}
+                    >
+                      {meta}
+                    </Typography>
+                  )}
+                  <IconButton
+                    size="small"
+                    aria-label={`Видалити ${fileName}`}
+                    onClick={() => uppy.removeFile(f.id)}
+                    disabled={busy}
+                  >
+                    <CloseIcon fontSize="small" />
+                  </IconButton>
+                </Box>
+                {upload && (
+                  <Box
+                    sx={{ display: 'flex', alignItems: 'center', gap: 1, width: '100%', pl: 3.5 }}
+                  >
+                    <LinearProgress
+                      variant="determinate"
+                      value={upload.percentage}
+                      color={upload.color}
+                      aria-label={`Прогрес завантаження ${fileName}`}
+                      sx={{ flex: 1, minWidth: 48 }}
+                    />
+                    <Typography
+                      variant="caption"
+                      color={upload.color === 'error' ? 'error' : 'text.secondary'}
+                      sx={{ flexShrink: 0, minWidth: 138, textAlign: 'right' }}
+                    >
+                      {upload.label}
+                    </Typography>
+                  </Box>
                 )}
-                <IconButton
-                  size="small"
-                  aria-label={`Видалити ${fileName}`}
-                  onClick={() => uppy.removeFile(f.id)}
-                  disabled={busy}
-                >
-                  <CloseIcon fontSize="small" />
-                </IconButton>
               </Box>
             );
           })}

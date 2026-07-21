@@ -18,6 +18,7 @@ pub struct ReconcileResult {
     pub changed_inbox_item_ids: Vec<i64>,
     pub superseded_media_ids: Vec<Uuid>,
     pub pending_dedupe_updates: Vec<DedupeRedisUpdate>,
+    pub uploaded_files_ready_for_deletion: Vec<MediaUploadInput>,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -187,6 +188,7 @@ pub async fn reconcile_deleted_message(
         changed_inbox_item_ids,
         superseded_media_ids: vec![],
         pending_dedupe_updates,
+        uploaded_files_ready_for_deletion: vec![],
     })
 }
 
@@ -978,6 +980,7 @@ pub async fn reconcile_active_message(
                 changed_inbox_item_ids: retired_inbox_item_ids,
                 superseded_media_ids,
                 pending_dedupe_updates: vec![],
+                uploaded_files_ready_for_deletion: vec![],
             });
         }
 
@@ -1012,6 +1015,8 @@ pub async fn reconcile_active_message(
             .c(h!())?;
         }
         let superseded_media_ids = media_replacement.superseded_media_ids;
+        let uploaded_files_ready_for_deletion =
+            media_replacement.uploaded_files_ready_for_deletion;
         reset_machine_derived_inbox_data(txn, signal_message.id)
             .await
             .c(h!())?;
@@ -1070,6 +1075,7 @@ pub async fn reconcile_active_message(
             changed_inbox_item_ids,
             superseded_media_ids,
             pending_dedupe_updates: vec![],
+            uploaded_files_ready_for_deletion,
         })
     }
     .await;
@@ -1100,11 +1106,23 @@ pub async fn reconcile_active_message(
 }
 
 pub async fn delete_media_objects_best_effort(
+    app_config: &crate::config::Config,
     s3: &Option<opendal::Operator>,
     media_ids: Vec<Uuid>,
 ) {
     if media_ids.is_empty() {
         return;
+    }
+    for media_id in &media_ids {
+        crate::messenger::media_cache::remove_cached_media_file_best_effort(
+            app_config, *media_id,
+        )
+        .await;
+        crate::messenger::media_thumbnail::remove_media_thumbnail_files_best_effort(
+            app_config,
+            *media_id,
+        )
+        .await;
     }
     let Some(s3) = s3 else {
         warn!(
@@ -1113,13 +1131,30 @@ pub async fn delete_media_objects_best_effort(
         );
         return;
     };
+    let Some(s3_config) = app_config.s3_config.as_ref() else {
+        warn!(
+            "S3 is not configured, skipped deletion for {} superseded media objects",
+            media_ids.len()
+        );
+        return;
+    };
+    let s3_config = crate::storage::S3Config::from(s3_config);
     for media_id in media_ids {
-        let object_key = crate::storage::nested_object_key(&media_id);
-        if let Err(err) = s3.delete(&object_key).await {
-            error!(
-                "failed to delete superseded media object {}: {:?}",
-                object_key, err
-            );
+        let object_keys = [
+            crate::storage::nested_object_key(&media_id),
+            crate::storage::plaintext_media_object_key(&media_id),
+            crate::storage::plaintext_media_migration_marker_object_key(
+                &media_id,
+            ),
+        ];
+        for object_key in object_keys {
+            let remote_key = s3_config.prefixed_key(&object_key);
+            if let Err(err) = s3.delete(&remote_key).await {
+                error!(
+                    "failed to delete superseded media object {}: {:?}",
+                    remote_key, err
+                );
+            }
         }
     }
 }
@@ -1642,6 +1677,7 @@ fn dedupe_redis_key(body_for_dedupe: &str) -> String {
 struct MediaReplacementResult {
     superseded_media_ids: Vec<Uuid>,
     preserved_previous: bool,
+    uploaded_files_ready_for_deletion: Vec<MediaUploadInput>,
 }
 
 async fn replace_media_if_changed(
@@ -1666,6 +1702,7 @@ async fn replace_media_if_changed(
         return Ok(MediaReplacementResult {
             superseded_media_ids: vec![],
             preserved_previous: false,
+            uploaded_files_ready_for_deletion: vec![],
         });
     }
 
@@ -1673,6 +1710,7 @@ async fn replace_media_if_changed(
         return Ok(MediaReplacementResult {
             superseded_media_ids: vec![],
             preserved_previous: false,
+            uploaded_files_ready_for_deletion: vec![],
         });
     }
 
@@ -1687,6 +1725,7 @@ async fn replace_media_if_changed(
         return Ok(MediaReplacementResult {
             superseded_media_ids: vec![],
             preserved_previous: true,
+            uploaded_files_ready_for_deletion: vec![],
         });
     }
 
@@ -1695,15 +1734,21 @@ async fn replace_media_if_changed(
         .cloned()
         .map(MediaUploadInput::from)
         .collect_vec();
+    let delete_uploaded = config
+        .feature_delete_uploaded_attachment
+        .unwrap_or(FEATURE_DELETE_UPLOADED_ATTACHMENT_DEFAULT);
+    let deletion = if delete_uploaded {
+        crate::messenger::media::UploadedAttachmentDeletion::DeleteAfterCommit
+    } else {
+        crate::messenger::media::UploadedAttachmentDeletion::Preserve
+    };
     let upload_result = crate::messenger::media::store_media_attachments(
         &upload_inputs,
         signal_message.id,
         config,
         s3,
         txn,
-        config
-            .feature_delete_uploaded_attachment
-            .unwrap_or(FEATURE_DELETE_UPLOADED_ATTACHMENT_DEFAULT),
+        deletion,
     )
     .await
     .c(h!())?;
@@ -1723,11 +1768,21 @@ async fn replace_media_if_changed(
         return Ok(MediaReplacementResult {
             superseded_media_ids: uploaded_media_ids,
             preserved_previous: true,
+            uploaded_files_ready_for_deletion: if delete_uploaded {
+                upload_result.uploaded_files_ready_for_deletion
+            } else {
+                vec![]
+            },
         });
     }
     Ok(MediaReplacementResult {
         superseded_media_ids: delete_old_media(txn, old_media_ids).await?,
         preserved_previous: false,
+        uploaded_files_ready_for_deletion: if delete_uploaded {
+            upload_result.uploaded_files_ready_for_deletion
+        } else {
+            vec![]
+        },
     })
 }
 
@@ -2546,6 +2601,7 @@ mod tests {
             file_ext: Set(Some("txt".to_string())),
             file_name: Set(Some("original.txt".to_string())),
             size_bytes: Set(8),
+            is_encrypted: Set(true),
             created_at: NotSet,
         }
         .insert(&txn)
@@ -3701,6 +3757,7 @@ mod tests {
             file_ext: Set(Some("txt".to_string())),
             file_name: Set(Some("old.txt".to_string())),
             size_bytes: Set(3),
+            is_encrypted: Set(true),
             created_at: NotSet,
         }
         .insert(&txn)
@@ -3813,6 +3870,7 @@ mod tests {
             file_ext: Set(Some("jpg".to_string())),
             file_name: Set(Some("a.jpg".to_string())),
             size_bytes: Set(3),
+            is_encrypted: Set(true),
             created_at: NotSet,
         }
         .insert(&txn)
@@ -4522,6 +4580,7 @@ mod tests {
             file_ext: Set(Some("txt".to_string())),
             file_name: Set(Some("old.txt".to_string())),
             size_bytes: Set(3),
+            is_encrypted: Set(true),
             created_at: NotSet,
         }
         .insert(&txn)
@@ -4732,6 +4791,7 @@ mod tests {
             file_ext: Set(Some("txt".to_string())),
             file_name: Set(Some("old.txt".to_string())),
             size_bytes: Set(3),
+            is_encrypted: Set(true),
             created_at: NotSet,
         }
         .insert(&txn)
@@ -4861,6 +4921,7 @@ mod tests {
             file_ext: Set(Some("txt".to_string())),
             file_name: Set(Some("old.txt".to_string())),
             size_bytes: Set(3),
+            is_encrypted: Set(true),
             created_at: NotSet,
         }
         .insert(&txn)

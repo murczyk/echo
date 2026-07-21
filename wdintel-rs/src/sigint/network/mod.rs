@@ -4738,6 +4738,26 @@ mod tests {
     }
 
     #[test]
+    fn list_query_with_global_text_filter_requires_all_tokens_in_one_field() {
+        let mut req = empty_list_networks_req();
+        req.filter_text = Some("27 омсбр".to_string());
+
+        let sql = build_networks_query(&req, NetworkQueryKind::List)
+            .build(DbBackend::Postgres)
+            .to_string();
+
+        assert!(sql.contains(
+            "(lower(sigint_network.name collate \"ru-x-icu\") ilike '%27%') AND (lower(sigint_network.name collate \"ru-x-icu\") ilike '%омсбр%')"
+        ));
+        assert!(sql.contains(
+            "(lower(sigint_network.location collate \"ru-x-icu\") ilike '%27%') AND (lower(sigint_network.location collate \"ru-x-icu\") ilike '%омсбр%')"
+        ));
+        assert!(sql.contains(
+            "(lower(sigint_network_freq.freq collate \"ru-x-icu\") ilike '%27%') AND (lower(sigint_network_freq.freq collate \"ru-x-icu\") ilike '%омсбр%')"
+        ));
+    }
+
+    #[test]
     fn list_query_with_numeric_global_text_filter_uses_valid_aor_alias() {
         let mut req = empty_list_networks_req();
         req.filter_text = Some("336".to_string());

@@ -144,4 +144,21 @@ describe('PalitraTable cells', () => {
 
     expect(container.querySelector('[data-testid="warning-warning"]')).toBeNull();
   });
+
+  it('shows a GOI import error with its parsing details', () => {
+    const container = renderNameCell(
+      makeRow(
+        makePalitra({
+          conversionStatus: 'error',
+          conversionError: 'invalid XML before declaration',
+          goiOwned: false,
+        }),
+      ),
+    );
+
+    expect(container.textContent).toContain('Помилка імпорту');
+    expect(
+      container.querySelector('[data-tooltip-title="invalid XML before declaration"]'),
+    ).not.toBeNull();
+  });
 });

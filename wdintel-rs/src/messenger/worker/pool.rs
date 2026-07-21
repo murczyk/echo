@@ -325,6 +325,7 @@ async fn process_item_once(
     let mut changed_inbox_item_ids = vec![];
     let mut superseded_media_ids = vec![];
     let mut pending_dedupe_updates = vec![];
+    let mut uploaded_files_ready_for_deletion = vec![];
     let mut redis = context.redis.clone();
     // let current_time = Utc::now().naive_utc();
     // if m.timestamp < current_time - TimeDelta::minutes(15) {
@@ -347,6 +348,8 @@ async fn process_item_once(
         .c(h!())?;
         changed_inbox_item_ids.extend(result.changed_inbox_item_ids);
         pending_dedupe_updates.extend(result.pending_dedupe_updates);
+        uploaded_files_ready_for_deletion
+            .extend(result.uploaded_files_ready_for_deletion);
     } else {
         let linked_messages =
             crate::messenger::reconcile::load_active_linked_messages(
@@ -373,6 +376,8 @@ async fn process_item_once(
             changed_inbox_item_ids.extend(result.changed_inbox_item_ids);
             superseded_media_ids.extend(result.superseded_media_ids);
             pending_dedupe_updates.extend(result.pending_dedupe_updates);
+            uploaded_files_ready_for_deletion
+                .extend(result.uploaded_files_ready_for_deletion);
         } else if let Some(group_id) = m.group_id.clone() {
             let message = Message {
                 body: m.text.clone(),
@@ -382,25 +387,32 @@ async fn process_item_once(
                 datasource_id,
                 inbox_message_id: Some(m.internal_id as i64),
             };
-            crate::message_queue::process_signal_message_queue_item(
-                message,
-                m.attachments,
-                &mut redis,
-                context.settlements.clone(),
-                &context.rq,
-                &context.config,
-                &context.s3,
-                &txn,
-                false,
-                &mut changed_inbox_item_ids,
-            )
-            .await
-            .c(h!())?;
+            let result =
+                crate::message_queue::process_signal_message_queue_item(
+                    message,
+                    m.attachments,
+                    &mut redis,
+                    context.settlements.clone(),
+                    &context.rq,
+                    &context.config,
+                    &context.s3,
+                    &txn,
+                    false,
+                    &mut changed_inbox_item_ids,
+                )
+                .await
+                .c(h!())?;
+            uploaded_files_ready_for_deletion
+                .extend(result.uploaded_files_ready_for_deletion);
         } else {
             warn!("[{client_name}] skipping message {:?} with no group, possibly a private message", m.id);
         }
     }
     txn.commit().await.c(h!())?;
+    crate::messenger::media::delete_uploaded_attachment_files(
+        &uploaded_files_ready_for_deletion,
+    )
+    .await;
     if let Err(err) = crate::messenger::reconcile::apply_pending_dedupe_updates(
         &mut redis,
         pending_dedupe_updates,
@@ -422,6 +434,7 @@ async fn process_item_once(
         );
     }
     crate::messenger::reconcile::delete_media_objects_best_effort(
+        &context.config,
         &context.s3,
         superseded_media_ids,
     )

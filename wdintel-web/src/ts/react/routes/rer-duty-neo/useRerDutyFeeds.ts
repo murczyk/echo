@@ -5,6 +5,7 @@ import { fetchAnalysisCallsignInfos } from '../../services/api/analysis';
 import { fetchMessagesByIds } from '../../services/api/inbox-messages';
 import { currentSystemSettings } from '../../services/api/system-settings';
 import { mergeUpdatedDutyFeedMessages } from '../shared/message-card/message-card-message-updates';
+import { sortMessageItemsByTime } from './utils';
 import { attachDutyNotificationAudioPrimingListeners } from './notifications';
 import { isNullOrUndefined, sortFrequenciesNumerically } from '../../utils/misc';
 import { normalizeCallsignLookupValue } from '../../utils/callsign-normalization';
@@ -432,6 +433,8 @@ export function useRerDutyFeeds(authUserName: string | null) {
     removeMessageFeed: feedState.removeMessageFeed,
     loadFeedInitialMessages: feedState.loadFeedInitialMessages,
     reloadEmptyFeeds: feedState.reloadEmptyFeeds,
+    reloadFeeds: feedState.reloadFeeds,
+    reloadEditedFeeds: feedState.reloadEditedFeeds,
     loadFeedOlderMessages: feedState.loadFeedOlderMessages,
     loadFeedNewerMessages: feedState.loadFeedNewerMessages,
     applyFilter: feedState.applyFilter,
@@ -493,6 +496,7 @@ export function useRerDutyFeeds(authUserName: string | null) {
     loadingNewerFeedIds: feedState.loadingNewerFeedIds,
     arrowResultByFeedId: feedState.arrowResultByFeedId,
     copiedFeedbackId: actions.copiedFeedbackId,
+    handleEditedMessage: actions.handleEditedMessage,
     keywordSets,
     reloadKeywordSets,
   };

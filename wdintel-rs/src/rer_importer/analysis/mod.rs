@@ -728,6 +728,27 @@ mod unit_name_match_tests {
         );
         assert!(!sql.contains("right("), "{sql}");
     }
+
+    #[test]
+    fn linked_unit_query_precomputes_matching_network_ids() {
+        let filter_expr = linked_unit_matches_selected_units(
+            vec!["100 pbr".to_string()],
+            true,
+        );
+        let sql = select_sigint_units_by_names(filter_expr)
+            .to_string(PostgresQueryBuilder);
+
+        assert!(sql.contains(" IN (SELECT DISTINCT "), "{sql}");
+        assert!(
+            sql.contains(
+                r#"FROM "sigint_network_unit" AS "selected_unit_network_unit" INNER JOIN "sigint_unit" AS "selected_unit""#
+            ),
+            "{sql}"
+        );
+        assert!(!sql.contains(
+            r#"INNER JOIN "sigint_network_unit" AS "selected_unit_network_unit" ON "selected_unit_network_unit"."network_id" = "selected_unit_network"."id""#
+        ), "{sql}");
+    }
 }
 
 fn unresolved_hierarchy_column_matches_selected_units(
@@ -869,12 +890,11 @@ fn select_sigint_units_by_names(filter_expr: SimpleExpr) -> SelectStatement {
     let inbox_network_alias = Alias::new("selected_unit_inbox_network");
     let network_alias = Alias::new("selected_unit_network");
     let network_freq_alias = Alias::new("selected_unit_network_freq");
-    let network_unit_alias = Alias::new("selected_unit_network_unit");
-    let unit_alias = Alias::new("selected_unit");
     let message_datetime = Expr::col((
         sigint_inbox_item::Entity,
         sigint_inbox_item::Column::Datetime,
     ));
+    let matching_network_ids = select_network_ids_by_unit(filter_expr);
     Query::select()
         .expr(Expr::value(1))
         .from_as(
@@ -900,25 +920,6 @@ fn select_sigint_units_by_names(filter_expr: SimpleExpr) -> SelectStatement {
                 sigint_network_freq::Column::NetworkId,
             ))
             .equals((network_alias.clone(), sigint_network::Column::Id)),
-        )
-        .join_as(
-            JoinType::InnerJoin,
-            sigint_network_unit::Entity,
-            network_unit_alias.clone(),
-            Expr::col((
-                network_unit_alias.clone(),
-                sigint_network_unit::Column::NetworkId,
-            ))
-            .equals((network_alias.clone(), sigint_network::Column::Id)),
-        )
-        .join_as(
-            JoinType::InnerJoin,
-            sigint_unit::Entity,
-            unit_alias.clone(),
-            Expr::col((unit_alias.clone(), sigint_unit::Column::Id)).equals((
-                network_unit_alias.clone(),
-                sigint_network_unit::Column::UnitId,
-            )),
         )
         .and_where(
             Expr::col((
@@ -968,10 +969,6 @@ fn select_sigint_units_by_names(filter_expr: SimpleExpr) -> SelectStatement {
             .eq(false),
         )
         .and_where(
-            Expr::col((unit_alias.clone(), sigint_unit::Column::Deleted))
-                .eq(false),
-        )
-        .and_where(
             Expr::col((
                 network_alias.clone(),
                 sigint_network::Column::ActiveFrom,
@@ -994,6 +991,35 @@ fn select_sigint_units_by_names(filter_expr: SimpleExpr) -> SelectStatement {
                 sigint_network::Column::ActiveTo,
             ))
             .gte(message_datetime.clone())),
+        )
+        .and_where(
+            Expr::col((network_alias, sigint_network::Column::Id))
+                .in_subquery(matching_network_ids),
+        )
+        .to_owned()
+}
+
+fn select_network_ids_by_unit(filter_expr: SimpleExpr) -> SelectStatement {
+    let network_unit_alias = Alias::new("selected_unit_network_unit");
+    let unit_alias = Alias::new("selected_unit");
+    Query::select()
+        .distinct()
+        .column((
+            network_unit_alias.clone(),
+            sigint_network_unit::Column::NetworkId,
+        ))
+        .from_as(sigint_network_unit::Entity, network_unit_alias.clone())
+        .join_as(
+            JoinType::InnerJoin,
+            sigint_unit::Entity,
+            unit_alias.clone(),
+            Expr::col((unit_alias.clone(), sigint_unit::Column::Id)).equals((
+                network_unit_alias,
+                sigint_network_unit::Column::UnitId,
+            )),
+        )
+        .and_where(
+            Expr::col((unit_alias, sigint_unit::Column::Deleted)).eq(false),
         )
         .and_where(filter_expr)
         .to_owned()

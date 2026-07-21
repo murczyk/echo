@@ -48,6 +48,11 @@ lazy_static! {
     )
     .unwrap();
 
+    static ref INTERCEPTION_TAG_MARKER: Regex = Regex::new(
+        r"^Мітк(?:а|и)\s+перехоплення\s*[:\-—]\s*(?P<rest>.*)$"
+    )
+    .unwrap();
+
     static ref DIALOG_LINE: Regex = Regex::new(
         r"^([—–―‒\-]|\d+\s*[\.\)\-:]|\d+\s+[—–―‒\-])"
     )
@@ -89,6 +94,58 @@ fn is_dialog_line(line: &str) -> bool {
     DIALOG_LINE.is_match(line.trim())
 }
 
+fn is_top_header_or_context_line(
+    lines: &[&str],
+    idx: usize,
+    anchor: usize,
+) -> bool {
+    is_header_line(lines[idx])
+        || is_pre_datetime_location_header_line(lines, idx, anchor)
+}
+
+fn is_pre_datetime_location_header_line(
+    lines: &[&str],
+    idx: usize,
+    anchor: usize,
+) -> bool {
+    idx < anchor
+        && has_radio_header_before(lines, idx)
+        && is_location_header_line(lines[idx])
+}
+
+fn has_radio_header_before(lines: &[&str], idx: usize) -> bool {
+    lines[..idx]
+        .iter()
+        .rev()
+        .any(|line| is_radio_header_line(line.trim()))
+}
+
+fn is_radio_header_line(line: &str) -> bool {
+    let line = line.to_lowercase();
+    line.contains("укх") || line.contains("р/м") || line.contains("dmr")
+}
+
+fn is_location_header_line(line: &str) -> bool {
+    let line = line.trim();
+    if line.is_empty() || is_dialog_line(line) {
+        return false;
+    }
+    if !(line.contains(" - ") || line.starts_with('(') && line.ends_with(')')) {
+        return false;
+    }
+
+    let line = crate::location::remove_standard_location_context_terms(line);
+    let mut has_uppercase = false;
+    for ch in line.chars().filter(|ch| ch.is_alphabetic()) {
+        if ch.is_lowercase() {
+            return false;
+        }
+        if ch.is_uppercase() {
+            has_uppercase = true;
+        }
+    }
+    has_uppercase
+}
 fn clean(text: &str) -> String {
     let mut t = text.trim().to_string();
     loop {
@@ -174,7 +231,8 @@ pub fn extract_text_without_top_comment(
 
     let lines = normalized_body_lines(body);
     let lines: Vec<&str> = lines.iter().map(String::as_str).collect();
-    let excluded_lines = top_comment_line_indices(&lines);
+    let mut excluded_lines = top_comment_line_indices(&lines);
+    excluded_lines.extend(pre_datetime_location_header_line_indices(&lines));
     crate::rer_importer::body_noheader::extract_text_excluding_lines(
         body,
         &excluded_lines,
@@ -199,8 +257,19 @@ fn normalized_body_lines(body: &str) -> Vec<String> {
 }
 
 fn scan_marker_comment(lines: &[&str]) -> Option<MarkerComment> {
+    let comment = scan_marker(lines, &COMMENT_MARKER);
+    if comment.as_ref().is_some_and(|comment| {
+        filter_ignored_comment(Some(comment.text.clone())).is_none()
+    }) {
+        scan_marker(lines, &INTERCEPTION_TAG_MARKER).or(comment)
+    } else {
+        comment.or_else(|| scan_marker(lines, &INTERCEPTION_TAG_MARKER))
+    }
+}
+
+fn scan_marker(lines: &[&str], marker: &Regex) -> Option<MarkerComment> {
     for (i, line) in lines.iter().enumerate() {
-        if let Some(caps) = COMMENT_MARKER.captures(line.trim()) {
+        if let Some(caps) = marker.captures(line.trim()) {
             let mut block: Vec<&str> = Vec::new();
             let rest = caps.name("rest").map(|m| m.as_str()).unwrap_or("");
             let has_inline_rest = !rest.trim().is_empty();
@@ -231,6 +300,8 @@ fn scan_marker_comment(lines: &[&str]) -> Option<MarkerComment> {
 fn is_marker_comment_boundary(line: &str) -> bool {
     let line = line.trim();
     line.is_empty()
+        || COMMENT_MARKER.is_match(line)
+        || INTERCEPTION_TAG_MARKER.is_match(line)
         || is_header_line(line)
         || is_datetime_header_line(line)
         || is_dialog_line(line)
@@ -246,8 +317,8 @@ fn parse_top(
     let kept: Vec<&str> = lines[..comment_end]
         .iter()
         .enumerate()
-        .filter(|(i, l)| {
-            !is_header_line(l)
+        .filter(|(i, _l)| {
+            !is_top_header_or_context_line(lines, *i, anchor)
                 && !marker_comment
                     .map(|comment| *i >= comment.start && *i < comment.end)
                     .unwrap_or(false)
@@ -268,8 +339,8 @@ fn top_comment_line_indices(lines: &[&str]) -> BTreeSet<usize> {
     let indices: Vec<usize> = lines[..comment_end]
         .iter()
         .enumerate()
-        .filter(|(i, l)| {
-            !is_header_line(l)
+        .filter(|(i, _l)| {
+            !is_top_header_or_context_line(lines, *i, anchor)
                 && !marker_comment
                     .as_ref()
                     .map(|comment| *i >= comment.start && *i < comment.end)
@@ -281,6 +352,18 @@ fn top_comment_line_indices(lines: &[&str]) -> BTreeSet<usize> {
     join_block(&kept)
         .map(|_| indices.into_iter().collect())
         .unwrap_or_default()
+}
+
+fn pre_datetime_location_header_line_indices(
+    lines: &[&str],
+) -> BTreeSet<usize> {
+    let Some(anchor) = lines.iter().position(|l| is_datetime_header_line(l))
+    else {
+        return BTreeSet::new();
+    };
+    (0..anchor)
+        .filter(|idx| is_pre_datetime_location_header_line(lines, *idx, anchor))
+        .collect()
 }
 
 fn zp_peleng_vorony_odina_suffix_start(
@@ -553,6 +636,27 @@ mod tests {
     }
 
     #[test]
+    fn top_ignores_marked_service_radio_exchange_comments() {
+        for marker in ["Коментарій", "Комментарий", "Comment"]
+        {
+            let body = format!(
+                "{marker}: службовий радіообмін\n\n24.07.2025, 08:05:21\n149.7300\nУКХ\nНВ\n\n— репліка"
+            );
+            let res = parse_comments(&body);
+            assert_eq!(res.top, None, "marker: {marker}");
+            assert_eq!(res.bottom, None, "marker: {marker}");
+        }
+    }
+
+    #[test]
+    fn bottom_uses_interception_tag_after_ignored_comment() {
+        let body = "24.07.2025, 08:05:21\n149.7300\nУКХ\nНВ\n\n— репліка діалогу\n\nКоментар: службовий радіообмін\n\nМітки перехоплення: 🚙 - Переміщення";
+        let res = parse_comments(body);
+        assert_eq!(res.top, None);
+        assert_eq!(res.bottom.as_deref(), Some("🚙 - Переміщення"));
+    }
+
+    #[test]
     fn bottom_drops_only_service_radio_exchange_comment_line() {
         let body = "24.07.2025, 08:05:21\n149.7300\nУКХ\nНВ\n\n— репліка діалогу\n\nКоментар: службовий радіообмін\nважливий рядок";
         let res = parse_comments(body);
@@ -631,6 +735,248 @@ mod tests {
         let body = "24.07.2025, 08:05:21\n149.7300\nУКХ р/м 60 омсб\nТРАКТОР\nНВ\n\n— Депутат, Депутат Трактору.\n— Да, все живы.";
         let res = parse_comments(body);
         assert!(res.is_empty());
+    }
+
+    #[test]
+    fn interception_tag_markers_parse_as_bottom_comments() {
+        let cases = [
+            (
+                "Мітки перехоплення",
+                "🦧 - Перевірка стану/зв'язку",
+                "🦧 - Перевірка стану/зв'язку",
+            ),
+            (
+                "Мітки перехоплення",
+                "🚙🏃‍➡️ - Переміщення",
+                "🚙🏃‍➡️ - Переміщення",
+            ),
+            (
+                "Мітки перехоплення",
+                "❗🚀 - Робота артилерії/ миномету",
+                "❗🚀 - Робота артилерії/ миномету",
+            ),
+            (
+                "Мітки перехоплення",
+                "Переміщення О/C👣👣👣 - Переміщення особового складу противника",
+                "Переміщення О/C👣👣👣 - Переміщення особового складу противника",
+            ),
+            (
+                "Мітки перехоплення",
+                "FPV🛸🛸🛸 - Робота FPV СОУ",
+                "FPV🛸🛸🛸 - Робота FPV СОУ",
+            ),
+            (
+                "Мітки перехоплення",
+                "🛩️ - Застосування БпЛА РОВ",
+                "🛩️ - Застосування БпЛА РОВ",
+            ),
+            (
+                "Мітки перехоплення",
+                "Обстріл☄️☄️☄️ - Інформація про ураження, обстріл позицій противника",
+                "Обстріл☄️☄️☄️ - Інформація про ураження, обстріл позицій противника",
+            ),
+            (
+                "Мітки перехоплення",
+                "🧩 - Планування робот",
+                "🧩 - Планування робот",
+            ),
+            (
+                "Мітки перехоплення",
+                "👁️🛩️ - Спостереження БпЛА",
+                "👁️🛩️ - Спостереження БпЛА",
+            ),
+            (
+                "Мітки перехоплення",
+                "🛸🛰 - Детектор дронів / йм. ідентифікують роботу БПЛА СОУ",
+                "🛸🛰 - Детектор дронів / йм. ідентифікують роботу БПЛА СОУ",
+            ),
+            (
+                "Мітки перехоплення",
+                "🔇 - Проблеми зі зв'язком",
+                "🔇 - Проблеми зі зв'язком",
+            ),
+            (
+                "Мітки перехоплення",
+                "🔌 📡 - Налагодження зв'язку",
+                "🔌 📡 - Налагодження зв'язку",
+            ),
+            (
+                "Мітки перехоплення",
+                "Звязок📞📞📞 - Інформая про перехід на інші засоби звязку.",
+                "Звязок📞📞📞 - Інформая про перехід на інші засоби звязку",
+            ),
+            (
+                "Мітки перехоплення",
+                "🛩️🧨 - Робота БпЛА зі скидом/FPV",
+                "🛩️🧨 - Робота БпЛА зі скидом/FPV",
+            ),
+            (
+                "Мітки перехоплення",
+                "👩‍🦼 - Санітарні втрати",
+                "👩‍🦼 - Санітарні втрати",
+            ),
+            (
+                "Мітка перехоплення",
+                "Важливо - Важливо !!!",
+                "Важливо - Важливо !!!",
+            ),
+            (
+                "Мітки перехоплення",
+                "200/300💀💀💀 - Втрати противника",
+                "200/300💀💀💀 - Втрати противника",
+            ),
+            (
+                "Мітки перехоплення",
+                "🦧 - Перевірка стану/зв'язку, 🚙🏃‍➡️ - Переміщення",
+                "🦧 - Перевірка стану/зв'язку, 🚙🏃‍➡️ - Переміщення",
+            ),
+        ];
+
+        for (marker, value, expected) in cases {
+            let body = format!(
+                "18.07.2026, 13:59:56\n143.8150\nУКХ р/м управління підрозділу\nПАРОВОЗ\nСОКОЛ\n\n— Сокол, Паровозу\n\n{marker}: {value}"
+            );
+            let res = parse_comments(&body);
+            assert_eq!(res.top, None, "{value}");
+            assert_eq!(res.bottom.as_deref(), Some(expected), "{value}");
+        }
+    }
+
+    #[test]
+    fn explicit_comment_after_interception_tags_takes_priority() {
+        let body = "18.07.2026, 13:59:56\n143.8150\nУКХ р/м\n\n— Сокол, Паровозу\n\nМітки перехоплення: 🚙 - Переміщення\n\nКоментар: операторське уточнення";
+
+        let res = parse_comments(body);
+
+        assert_eq!(res.bottom.as_deref(), Some("операторське уточнення"));
+        assert_eq!(
+            marker_comment_strip_candidates(body),
+            vec!["операторське уточнення"]
+        );
+    }
+
+    #[test]
+    fn new_inter_csv_rows_do_not_parse_headers_as_comments() {
+        let cases = [
+            (
+                "22577918",
+                r#"🤿УКХ р/м управління 1 мсб 423 мсп 4 тд 1 ТА
+АНДРІЇВКА - ЛОЗОВА - БОРІВСЬКА АНДРІЇВКА
+16.07.2026 15:08:46
+
+Отримувач: НВ
+Відправник: НВ
+
+1. Это не в доме, это птичка в спеле, она лежит. Я пошел по другой тропинке и там похоже что-то на мину, на УЗМ-ку похоже, вроде как пустая, но говорят, что ничего там не стояло и ничего там не лежало
+2. ... пришел?
+1. Да, я тогда перебегал через эту черню и перепрыгнул
+2. Хороший. Так, а получается как, если, так им корректно говоря, если в ..., то левая и правая, на какой это будет?
+1.  На правой, если с Бобра, птичка, на левой, вот это хуйня"#,
+            ),
+            (
+                "22577927",
+                r#"🤿УКХ р/м управління 1 мсб 423 мсп 4 тд 1 ТА
+145.799 МГц
+АНДРІЇВКА - ЛОЗОВА - БОРІВСЬКА АНДРІЇВКА
+16.07.2026 15:08:46
+
+Отримувач: НВ
+Відправник: НВ
+
+1. Это не в доме, это птичка в спеле, она лежит. Я пошел по другой тропинке и там похоже что-то на мину, на УЗМ-ку похоже, вроде как пустая, но говорят, что ничего там не стояло и ничего там не лежало
+2. ... пришел?
+1. Да, я тогда перебегал через эту черню и перепрыгнул
+2. Хороший. Так, а получается как, если, так им корректно говоря, если в ..., то левая и правая, на какой это будет?
+1.  На правой, если с Бобра, птичка, на левой, вот это хуйня"#,
+            ),
+            (
+                "22577945",
+                r#"Тип: Антена
+Назва: 136.850  МГц
+Час: 16.07.26  14:15
+Ворожий:
+Зауваження штабу: -
+Координати: 36U XB 72799 18684
+УКХ р/м управління 19 сб 80 тп 90 тд ЦВО (СТАРОСЄЛЬЄ, ГРАБОВСЬКЕ, РЯСНЕ)"#,
+            ),
+            (
+                "22578075",
+                r#"Тип: Антена
+Назва: 136.850  МГц
+Час: 16.07.26  14:30
+Ворожий:
+Зауваження штабу: -
+Координати: 36U XB 69744 20084
+УКХ р/м управління 19 сб 80 тп 90 тд ЦВО (СТАРОСЄЛЬЄ, ГРАБОВСЬКЕ, РЯСНЕ)"#,
+            ),
+            (
+                "22578105",
+                r#"🤿УКХ р/м упр. загін "Шторм" 12 тп 4 тд 1 ТА
+БОРІВСЬКА АНДРІЇВКА - ЗЕЛЕНИЙ ГАЙ - зах. МЯСОЖАРІВКА
+16.07.2026 15:12:33
+
+Отримувач: Олень
+Відправник: Гуша
+
+1. Олень, я Гуша, я разместил-разместил людей, выдвигаюсь за крайней-крайней группой
+2. Да, ты ... щас видел?
+1. Никак нет, никак нет
+1. Щас буду, буду, сама собой, щас поднимусь в горку только"#,
+            ),
+            (
+                "22578162",
+                r#"🤿УКХ р/м упр. загін "Шторм" 12 тп 4 тд 1 ТА
+147.825 МГц
+БОРІВСЬКА АНДРІЇВКА - ЗЕЛЕНИЙ ГАЙ - зах. МЯСОЖАРІВКА
+16.07.2026 15:12:33
+
+Отримувач: Олень
+Відправник: Гуша
+
+1. Олень, я Гуша, я разместил-разместил людей, выдвигаюсь за крайней-крайней группой
+2. Да, ты ... щас видел?
+1. Никак нет, никак нет
+1. Щас буду, буду, сама собой, щас поднимусь в горку только"#,
+            ),
+            (
+                "22578195",
+                r#"🧽УКХ р/м управління 1 мсб 122 мсп 68 мсд 6А
+(КУП'ЯНСЬК)
+16.07.2026 14:48:30
+
+Отримувач: Сизый
+Відправник: НВ
+
+1. Сизый, Сизый, приём, приём, смотри, наша птичка там сверху полетает, посмотрит кто там что, где накидывает, если что кто найдет, сразу розебем короче.
+2. Да, принял-принял.
+2. Что там по посылке, по посылке?
+1. Братец, Братец, посылка ещё в пути, посылка в пути, там обстановка не позволяет, посылка движется, она в пути мужики.
+2. Да, принял."#,
+            ),
+        ];
+
+        let parsed_comments: Vec<(&str, ParsedComments)> = cases
+            .iter()
+            .map(|(id, body)| (*id, parse_comments(body)))
+            .filter(|(_, comments)| !comments.is_empty())
+            .collect();
+
+        assert_eq!(parsed_comments, Vec::<(&str, ParsedComments)>::new());
+    }
+
+    #[test]
+    fn pre_datetime_location_with_zx_direction_is_not_top_comment() {
+        let body = r#"🤿УКХ р/м управління 1 мсб 423 мсп 4 тд 1 ТА
+БОРІВСЬКА АНДРІЇВКА - ЗЕЛЕНИЙ ГАЙ - зх. МЯСОЖАРІВКА
+16.07.2026 15:12:33
+
+1. Прийом."#;
+
+        let res = parse_comments(body);
+
+        assert!(res.is_empty());
+        let res = extract_text_without_top_comment(body).unwrap();
+        assert_eq!(res.body, "1. Прийом.");
     }
 
     #[test]

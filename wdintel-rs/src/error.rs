@@ -22,6 +22,8 @@ pub enum AppError {
         header_name: &'static str,
         header_value: &'static str,
     },
+    #[error("Service unavailable: {msg}")]
+    ServiceUnavailable { msg: String, retry_after_secs: u64 },
     #[error("Form errors")]
     Form(BTreeMap<String, String>),
     #[error("IO Error")]
@@ -89,6 +91,16 @@ impl From<anyhow::Error> for AppError {
                     header_value,
                 };
             }
+            if let Some(AppError::ServiceUnavailable {
+                msg,
+                retry_after_secs,
+            }) = err.downcast_ref::<AppError>()
+            {
+                return AppError::ServiceUnavailable {
+                    msg: msg.clone(),
+                    retry_after_secs: *retry_after_secs,
+                };
+            }
         }
         AppError::AnyhowError { source: value }
     }
@@ -143,6 +155,20 @@ impl actix_web::error::ResponseError for AppError {
                 .insert_header((*header_name, *header_value))
                 .body("Forbidden")
             }
+            AppError::ServiceUnavailable {
+                msg,
+                retry_after_secs,
+            } => {
+                warn!("Service unavailable: {msg}");
+                actix_web::HttpResponseBuilder::new(
+                    actix_web::http::StatusCode::SERVICE_UNAVAILABLE,
+                )
+                .insert_header((
+                    actix_web::http::header::RETRY_AFTER,
+                    retry_after_secs.to_string(),
+                ))
+                .body(msg.clone())
+            }
             AppError::Form(es) => {
                 error!(target: "form_error_details", "Form errors: {:?}", es);
                 actix_web::HttpResponseBuilder::new(
@@ -177,7 +203,8 @@ impl actix_web::error::ResponseError for AppError {
                     | AppError::NotFound
                     | AppError::Unauthenticated
                     | AppError::Forbidden(_)
-                    | AppError::ForbiddenWithHeader { .. } => {}
+                    | AppError::ForbiddenWithHeader { .. }
+                    | AppError::ServiceUnavailable { .. } => {}
                 }
                 actix_web::HttpResponseBuilder::new(
                     actix_web::http::StatusCode::INTERNAL_SERVER_ERROR,
@@ -249,5 +276,30 @@ where
 {
     fn cae(self, ctx: impl Into<String>) -> Result<T, AppError> {
         self.context(ctx.into()).map_err(Into::<AppError>::into)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn service_unavailable_response_includes_retry_after() {
+        let error = AppError::ServiceUnavailable {
+            msg: "retry later".to_string(),
+            retry_after_secs: 2,
+        };
+
+        let response =
+            <AppError as actix_web::ResponseError>::error_response(&error);
+
+        assert_eq!(
+            response.status(),
+            actix_web::http::StatusCode::SERVICE_UNAVAILABLE
+        );
+        assert_eq!(
+            response.headers().get(actix_web::http::header::RETRY_AFTER),
+            Some(&actix_web::http::header::HeaderValue::from_static("2"))
+        );
     }
 }

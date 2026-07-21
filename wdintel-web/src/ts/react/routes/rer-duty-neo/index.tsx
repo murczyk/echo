@@ -22,7 +22,7 @@ import { usePowerSnackbar } from '../../components/PowerSnackbar';
 import { RerDutyNeoWorkspace } from './RerDutyNeoWorkspace';
 import { fetchCurrentUser } from '../../services/api/user';
 import { currentSystemSettings } from '../../services/api/system-settings';
-import type { User } from '../../../../Bindings';
+import type { InboxMessage, User } from '../../../../Bindings';
 import { ManageMessageDrawer } from '../shared/manage-message/ManageMessageDrawer';
 
 export type RerDutyNeoPageProps = {
@@ -51,6 +51,7 @@ export function RerDutyNeoPage({
   const [cyberEchoEnabled, setCyberEchoEnabled] = useState(false);
   const [activeFeedId, setActiveFeedId] = useState<string | null>(null);
   const [createMessageOpen, setCreateMessageOpen] = useState(false);
+  const [editTarget, setEditTarget] = useState<{ id: number; message: InboxMessage } | null>(null);
   const { notify } = usePowerSnackbar();
   const previousFeedCountRef = useRef(0);
   const [tagsLayout, setTagsLayout] = useState<TagsLayoutVariant>(DEFAULT_DUTY_TAGS_LAYOUT);
@@ -257,6 +258,10 @@ export function RerDutyNeoPage({
       onMessageExcludeEntity: (entity: MessageEntityFilterKind, value: string) =>
         applyFilter(feed.id, excludeMessageEntityFromFilters(feed.filter, entity, value)),
       onMessageToggleTag: (msgId, tagId) => handleToggleTag(feed.id, msgId, tagId),
+      onMessageEdit: (messageId, message) => {
+        setCreateMessageOpen(false);
+        setEditTarget({ id: messageId, message });
+      },
       onScrollToTop: () => {
         cancelFollowTail(feed.id);
         setWatchModeByFeedId((prev) => ({ ...prev, [feed.id]: false }));
@@ -316,6 +321,8 @@ export function RerDutyNeoPage({
     removeMessageFeed,
     loadFeedInitialMessages,
     reloadEmptyFeeds,
+    reloadFeeds,
+    reloadEditedFeeds,
     loadFeedOlderMessages,
     loadFeedNewerMessages,
     handleSaveFilter,
@@ -328,6 +335,7 @@ export function RerDutyNeoPage({
     handleOpenPointsOnMap,
     addFrequencyToFilter,
     handleMessageCopy,
+    handleEditedMessage,
     handleDeleteConfirm,
     setDeleteConfirmId,
     setDeleteConfirmFeedId,
@@ -382,7 +390,12 @@ export function RerDutyNeoPage({
     : (messageFeeds[0]?.id ?? null);
   const [hasCompletedInitialLoad, setHasCompletedInitialLoad] = useState(false);
   const openCreateMessageComposer = useCallback(() => {
+    setEditTarget(null);
     setCreateMessageOpen(true);
+  }, []);
+  const closeMessageEditor = useCallback(() => {
+    setCreateMessageOpen(false);
+    setEditTarget(null);
   }, []);
   const handleCreatedMessage = useCallback(() => {
     setCreateMessageOpen(false);
@@ -483,10 +496,15 @@ export function RerDutyNeoPage({
       />
 
       <ManageMessageDrawer
-        open={createMessageOpen}
+        open={createMessageOpen || isPresent(editTarget)}
         cyberEchoEnabled={cyberEchoEnabled}
         currentUser={currentUser}
-        onClose={() => setCreateMessageOpen(false)}
+        editTarget={editTarget}
+        onClose={closeMessageEditor}
+        onSubmitEdit={async (messageId, message) => {
+          handleEditedMessage(messageId, message);
+        }}
+        onEditSuccess={() => reloadEditedFeeds()}
         onCreated={handleCreatedMessage}
       />
 
