@@ -14,6 +14,10 @@ impl MigrationTrait for Migration {
                     on goi_association (id)
                     where message_uid is null;
 
+                create index if not exists goi_association_message_uid_null_source_created_at_id_idx
+                    on goi_association (source_created_at, id)
+                    where message_uid is null;
+
                 create index if not exists signal_message_timestamp_id_idx
                     on signal_message (timestamp, id);
                 "#,
@@ -28,6 +32,7 @@ impl MigrationTrait for Migration {
             .execute_unprepared(
                 r#"
                 drop index if exists signal_message_timestamp_id_idx;
+                drop index if exists goi_association_message_uid_null_source_created_at_id_idx;
                 drop index if exists goi_association_message_uid_null_id_idx;
                 "#,
             )

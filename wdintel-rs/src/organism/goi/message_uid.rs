@@ -2,19 +2,24 @@ use crate::config::{
     ORGANISM_GOI_MESSAGE_UID_BATCH_SIZE,
     ORGANISM_GOI_MESSAGE_UID_CANDIDATE_BATCH_SIZE,
     ORGANISM_GOI_MESSAGE_UID_LOOKBACK_HOURS,
+    ORGANISM_GOI_MESSAGE_UID_ONEOFF_DEFAULT_LIMIT,
     ORGANISM_GOI_MESSAGE_UID_PROBE_CHARS,
     ORGANISM_GOI_MESSAGE_UID_WORKER_SLEEP_SEC,
     ORGANISM_GOI_ORIGINAL_MESSAGE_CELL_INDEX,
 };
-use crate::entities::{goi_association, signal_message};
+use crate::entities::{
+    datasource_group, goi_association, signal_message, signal_message_group,
+};
 use crate::error::AppError;
 use crate::types::{info, warn, Env, Mode, ShortContext};
+use crate::utils::orm::ArrayColumnOps;
 use crate::{h, new_pg_pool_from_mode};
 use chrono::{
     DateTime, Duration as ChronoDuration, FixedOffset, NaiveDateTime, Utc,
 };
 use sea_orm::*;
-use sea_query::Expr;
+use sea_query::{Expr, Query};
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -31,20 +36,50 @@ struct MessageCandidate {
     message_uid: Option<String>,
 }
 
+type OrganismGroupCache = HashMap<i64, Arc<Vec<String>>>;
+
 pub async fn oneoff_backfill_goi_association_message_uids(
     mode: Mode,
+    since_ts: Option<&str>,
 ) -> Result<(), AppError> {
     let started_at = std::time::Instant::now();
     info!("starting GOI association message UID backfill");
     let db = new_pg_pool_from_mode(mode).await.c(h!())?;
-    let stats = backfill_goi_association_message_uids(&db).await.c(h!())?;
+    let stats = match since_ts {
+        Some(since_ts) => {
+            let since_ts = parse_since_ts(since_ts).c(h!())?;
+            backfill_goi_association_message_uids(&db, Some(&since_ts))
+                .await
+                .c(h!())?
+        }
+        None => backfill_latest_goi_association_message_uids(
+            &db,
+            ORGANISM_GOI_MESSAGE_UID_ONEOFF_DEFAULT_LIMIT,
+        )
+        .await
+        .c(h!())?,
+    };
     info!(
         "GOI association message UID backfill completed: scanned={}, filled={}, elapsed={:?}",
         stats.scanned,
         stats.filled,
         started_at.elapsed()
     );
+    if since_ts.is_none() {
+        println!(
+            "Only the {} newest GOI associations were processed. Pass --since-ts to process the intended range. Example: wdintel-rs --mode live oneoff-backfill-goi-association-message-uids --since-ts 2026-06-15T00:00:00Z",
+            ORGANISM_GOI_MESSAGE_UID_ONEOFF_DEFAULT_LIMIT
+        );
+    }
     Ok(())
+}
+
+fn parse_since_ts(value: &str) -> Result<DateTime<FixedOffset>, AppError> {
+    DateTime::parse_from_rfc3339(value).map_err(|err| AppError::BL {
+        msg: format!(
+            "invalid since_ts `{value}`; expected RFC3339, for example `2026-06-15T00:00:00Z`: {err}"
+        ),
+    })
 }
 
 pub async fn goi_association_message_uid_worker_nofail(env: Arc<Env>) {
@@ -79,7 +114,7 @@ async fn goi_association_message_uid_worker_pass(
     }
 
     Ok(Some(
-        backfill_goi_association_message_uids(&env.dbx)
+        backfill_goi_association_message_uids(&env.dbx, None)
             .await
             .c(h!())?,
     ))
@@ -87,59 +122,139 @@ async fn goi_association_message_uid_worker_pass(
 
 async fn backfill_goi_association_message_uids(
     db: &DatabaseConnection,
+    since_ts: Option<&DateTime<FixedOffset>>,
 ) -> Result<BackfillStats, AppError> {
     let mut stats = BackfillStats::default();
+    let mut group_cache = OrganismGroupCache::new();
     let mut after_id = 0;
     loop {
-        let associations =
-            load_association_batch(db, after_id).await.c(h!())?;
+        let associations = load_association_batch(db, after_id, since_ts)
+            .await
+            .c(h!())?;
         let Some(last_association) = associations.last() else {
             break;
         };
         after_id = last_association.id;
-        stats.scanned += associations.len() as u64;
-
-        for association in associations {
-            let Some(message_uid) =
-                find_association_message_uid(db, &association)
-                    .await
-                    .c(h!())?
-            else {
-                continue;
-            };
-            let update = goi_association::Entity::update_many()
-                .col_expr(
-                    goi_association::Column::MessageUid,
-                    Expr::value(message_uid),
-                )
-                .filter(goi_association::Column::Id.eq(association.id))
-                .filter(goi_association::Column::MessageUid.is_null())
-                .exec(db)
-                .await
-                .c(h!())?;
-            stats.filled += update.rows_affected;
-        }
+        fill_association_message_uids(
+            db,
+            associations,
+            &mut group_cache,
+            &mut stats,
+        )
+        .await
+        .c(h!())?;
     }
     Ok(stats)
+}
+
+async fn backfill_latest_goi_association_message_uids(
+    db: &DatabaseConnection,
+    limit: u64,
+) -> Result<BackfillStats, AppError> {
+    let associations =
+        latest_associations_query(limit).all(db).await.c(h!())?;
+    let mut stats = BackfillStats::default();
+    let mut group_cache = OrganismGroupCache::new();
+    fill_association_message_uids(
+        db,
+        associations,
+        &mut group_cache,
+        &mut stats,
+    )
+    .await
+    .c(h!())?;
+    Ok(stats)
+}
+
+fn latest_associations_query(limit: u64) -> Select<goi_association::Entity> {
+    goi_association::Entity::find()
+        .order_by_desc(goi_association::Column::Id)
+        .limit(limit)
+}
+
+async fn fill_association_message_uids(
+    db: &DatabaseConnection,
+    associations: Vec<goi_association::Model>,
+    group_cache: &mut OrganismGroupCache,
+    stats: &mut BackfillStats,
+) -> Result<(), AppError> {
+    stats.scanned += associations.len() as u64;
+    for association in associations {
+        if association.message_uid.is_some() {
+            continue;
+        }
+        let group_keys = organism_signal_group_keys(
+            db,
+            association.organism_id,
+            group_cache,
+        )
+        .await
+        .c(h!())?;
+        if group_keys.is_empty() {
+            continue;
+        }
+        let Some(message_uid) =
+            find_association_message_uid(db, &association, &group_keys)
+                .await
+                .c(h!())?
+        else {
+            continue;
+        };
+        let update = goi_association::Entity::update_many()
+            .col_expr(
+                goi_association::Column::MessageUid,
+                Expr::value(message_uid),
+            )
+            .filter(goi_association::Column::Id.eq(association.id))
+            .filter(goi_association::Column::MessageUid.is_null())
+            .exec(db)
+            .await
+            .c(h!())?;
+        stats.filled += update.rows_affected;
+    }
+    Ok(())
+}
+
+async fn organism_signal_group_keys(
+    db: &DatabaseConnection,
+    organism_id: i64,
+    group_cache: &mut OrganismGroupCache,
+) -> Result<Arc<Vec<String>>, AppError> {
+    if let Some(group_keys) = group_cache.get(&organism_id) {
+        return Ok(group_keys.clone());
+    }
+    let group_keys = Arc::new(
+        crate::organism::bl::load_organism_group_ids(db, organism_id)
+            .await
+            .c(h!())?
+            .available_keys,
+    );
+    group_cache.insert(organism_id, group_keys.clone());
+    Ok(group_keys)
 }
 
 async fn load_association_batch(
     db: &DatabaseConnection,
     after_id: i64,
+    since_ts: Option<&DateTime<FixedOffset>>,
 ) -> Result<Vec<goi_association::Model>, AppError> {
-    Ok(goi_association::Entity::find()
+    let mut query = goi_association::Entity::find()
         .filter(goi_association::Column::Id.gt(after_id))
         .filter(goi_association::Column::MessageUid.is_null())
         .order_by_asc(goi_association::Column::Id)
-        .limit(ORGANISM_GOI_MESSAGE_UID_BATCH_SIZE)
-        .all(db)
-        .await
-        .c(h!())?)
+        .limit(ORGANISM_GOI_MESSAGE_UID_BATCH_SIZE);
+    if let Some(since_ts) = since_ts {
+        query = query.filter(
+            goi_association::Column::SourceCreatedAt.gte(since_ts.to_owned()),
+        );
+    }
+    Ok(query.all(db).await.c(h!())?)
 }
 
 async fn find_association_message_uid(
     db: &DatabaseConnection,
     association: &goi_association::Model,
+    group_keys: &[String],
 ) -> Result<Option<String>, AppError> {
     let Some(association_message) =
         association_original_message(&association.row)
@@ -162,6 +277,7 @@ async fn find_association_message_uid(
             &probe,
             window_start,
             window_end,
+            group_keys,
             offset,
         )
         .await
@@ -186,6 +302,7 @@ async fn load_message_candidate_batch(
     probe: &str,
     window_start: NaiveDateTime,
     window_end: NaiveDateTime,
+    group_keys: &[String],
     offset: u64,
 ) -> Result<Vec<MessageCandidate>, AppError> {
     Ok(signal_message::Entity::find()
@@ -197,6 +314,7 @@ async fn load_message_candidate_batch(
         .filter(signal_message::Column::Timestamp.lte(window_end))
         .filter(signal_message::Column::MessageUid.is_not_null())
         .filter(signal_message::Column::MessageUid.ne(""))
+        .filter(message_in_organism_groups(group_keys))
         .filter(
             Expr::col(signal_message::Column::Body)
                 .like(format!("%{}%", escape_like(probe))),
@@ -209,6 +327,32 @@ async fn load_message_candidate_batch(
         .all(db)
         .await
         .c(h!())?)
+}
+
+fn message_in_organism_groups(group_keys: &[String]) -> Condition {
+    let linked_message_ids = Query::select()
+        .column(signal_message_group::Column::SignalMessageId)
+        .from(signal_message_group::Entity)
+        .and_where(
+            signal_message_group::Column::GroupMasterKey
+                .eq_any(group_keys.to_vec()),
+        )
+        .to_owned();
+    let datasource_group_ids = Query::select()
+        .column(datasource_group::Column::Id)
+        .from(datasource_group::Entity)
+        .and_where(
+            datasource_group::Column::GroupMasterKey
+                .eq_any(group_keys.to_vec()),
+        )
+        .to_owned();
+
+    Condition::any()
+        .add(signal_message::Column::Id.in_subquery(linked_message_ids))
+        .add(
+            signal_message::Column::DatasourceGroupId
+                .in_subquery(datasource_group_ids),
+        )
 }
 
 fn association_original_message(row: &serde_json::Value) -> Option<&str> {
@@ -304,6 +448,39 @@ fn is_duplicate_trace(message_id: i64, message_uid: &str) -> bool {
 mod tests {
     use super::*;
     use chrono::TimeZone;
+
+    #[test]
+    fn parses_since_ts_as_rfc3339() {
+        assert_eq!(
+            parse_since_ts("2026-06-15T08:00:00Z").unwrap(),
+            DateTime::parse_from_rfc3339("2026-06-15T08:00:00Z").unwrap()
+        );
+        assert!(parse_since_ts("2026-06-15").is_err());
+    }
+
+    #[test]
+    fn default_oneoff_query_selects_ten_newest_associations() {
+        let sql = latest_associations_query(
+            ORGANISM_GOI_MESSAGE_UID_ONEOFF_DEFAULT_LIMIT,
+        )
+        .build(DbBackend::Postgres)
+        .to_string();
+
+        assert!(sql.contains("ORDER BY \"goi_association\".\"id\" DESC"));
+        assert!(sql.contains("LIMIT 10"));
+    }
+
+    #[test]
+    fn candidate_scope_uses_organism_signal_groups() {
+        let sql = signal_message::Entity::find()
+            .filter(message_in_organism_groups(&["allowed-group".to_string()]))
+            .build(DbBackend::Postgres)
+            .to_string();
+
+        assert!(sql.contains("signal_message_group"));
+        assert!(sql.contains("datasource_group"));
+        assert!(sql.contains("group_master_key"));
+    }
 
     #[test]
     fn association_original_message_decodes_json_escaping() {
