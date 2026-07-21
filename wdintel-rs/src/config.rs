@@ -60,6 +60,8 @@ pub const SIGINT_MESSAGE_MAX_ATTACHMENTS: usize = 20;
 /// with `SIGINT_MESSAGE_MAX_ATTACHMENTS` and frontend
 /// `MAX_MESSAGE_ATTACHMENTS` in `useMessageUppy.ts`.
 pub const RER_MESSAGE_ATTACHMENTS_ZIP_MAX_FILES: usize = 20;
+/// Keep synchronized with
+/// `wdintel-web/src/ts/react/routes/shared/message-card/MessageCardMedia.tsx:RER_MESSAGE_ATTACHMENTS_ZIP_MAX_TOTAL_BYTES`.
 pub const RER_MESSAGE_ATTACHMENTS_ZIP_MAX_TOTAL_BYTES: u64 = 200 * 1024 * 1024;
 pub const CLEANUP_REPORT_DAYS: u64 = 30;
 pub const RER_REPORT_ERROR_CODE_HEADER_NAME: &str = "x-echo-error-code";

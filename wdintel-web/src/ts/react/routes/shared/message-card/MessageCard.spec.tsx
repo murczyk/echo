@@ -22,7 +22,12 @@ import { emptyFilter } from '../../rer-duty-neo/utils';
 import { formatMessageCardTooltipTime, MessageCard } from './MessageCard';
 import { MessageCardContent } from './MessageCardContent';
 import { MessageCardHeader } from './MessageCardHeader';
-import { isAudioMediaAttachment, isVideoMediaAttachment } from './MessageCardMedia';
+import {
+  canDownloadAllMessageAttachments,
+  isAudioMediaAttachment,
+  isVideoMediaAttachment,
+  RER_MESSAGE_ATTACHMENTS_ZIP_MAX_TOTAL_BYTES,
+} from './MessageCardMedia';
 import {
   normalizeLocationDisplayValue,
   resolveEtalonBindingDisplayValue,
@@ -2450,12 +2455,14 @@ describe('MessageCard', () => {
             href: '/api/messenger/media/first',
             contentType: 'text/plain',
             fileName: 'first.txt',
+            sizeBytes: 1,
           },
           {
             id: 'second',
             href: '/api/messenger/media/second',
             contentType: 'text/plain',
             fileName: 'second.txt',
+            sizeBytes: 1,
           },
         ] as InboxMessage['media'],
       },
@@ -2493,12 +2500,14 @@ describe('MessageCard', () => {
               href: 'javascript:void(1)',
               contentType: 'text/plain',
               fileName: 'first.txt',
+              sizeBytes: 1,
             },
             {
               id: 'second',
               href: 'javascript:void(0)',
               contentType: 'text/plain',
               fileName: 'second.txt',
+              sizeBytes: 1,
             },
           ] as InboxMessage['media'],
         },
@@ -2571,6 +2580,55 @@ describe('MessageCard', () => {
   });
 
   it.each([
+    ['exactly at the limit', [RER_MESSAGE_ATTACHMENTS_ZIP_MAX_TOTAL_BYTES, 0], true],
+    ['over the limit', [RER_MESSAGE_ATTACHMENTS_ZIP_MAX_TOTAL_BYTES, 1], false],
+    ['missing metadata', [undefined, 1], false],
+    ['negative metadata', [-1, 1], false],
+    ['non-finite metadata', [Number.NaN, 1], false],
+  ])('validates archive visibility for %s metadata', async (_, sizes, expected) => {
+    const attachments = sizes.map((sizeBytes, index) => ({
+      id: `size-${index}`,
+      href: `/api/messenger/media/size-${index}`,
+      contentType: 'text/plain',
+      fileName: `size-${index}.txt`,
+      ...(sizeBytes === undefined ? {} : { sizeBytes }),
+    })) as InboxMessage['media'];
+
+    expect(canDownloadAllMessageAttachments(attachments)).toBe(expected);
+    const view = await renderCard({
+      msg: { ...buildMessage(), media: attachments },
+    });
+    rendered.push(view);
+    expect(view.container.querySelector('a[aria-label="Завантажити все"]') !== null).toBe(expected);
+  });
+
+  it('keeps individual downloads visible when archive metadata is unavailable', async () => {
+    const view = await renderCard({
+      msg: {
+        ...buildMessage(),
+        media: [
+          {
+            id: 'unknown-first',
+            href: '/api/messenger/media/unknown-first',
+            contentType: 'text/plain',
+            fileName: 'first.txt',
+          },
+          {
+            id: 'unknown-second',
+            href: '/api/messenger/media/unknown-second',
+            contentType: 'text/plain',
+            fileName: 'second.txt',
+          },
+        ] as InboxMessage['media'],
+      },
+    });
+    rendered.push(view);
+
+    expect(view.container.querySelector('a[aria-label="Завантажити все"]')).toBeNull();
+    expect(view.container.querySelectorAll('a[download]')).toHaveLength(2);
+  });
+
+  it.each([
     ['image', 'image/jpeg', 'image.jpg'],
     ['audio', 'audio/mpeg', 'audio.mp3'],
     ['video', 'video/mp4', 'video.mp4'],
@@ -2580,8 +2638,20 @@ describe('MessageCard', () => {
       msg: {
         ...buildMessage(),
         media: [
-          { id: `${fileName}-1`, href: `/media/${fileName}-1`, contentType, fileName },
-          { id: `${fileName}-2`, href: `/media/${fileName}-2`, contentType, fileName },
+          {
+            id: `${fileName}-1`,
+            href: `/media/${fileName}-1`,
+            contentType,
+            fileName,
+            sizeBytes: 1,
+          },
+          {
+            id: `${fileName}-2`,
+            href: `/media/${fileName}-2`,
+            contentType,
+            fileName,
+            sizeBytes: 1,
+          },
         ] as InboxMessage['media'],
       },
     });

@@ -15,6 +15,8 @@ const AUDIO_PLAYER_TOP_PADDING_PX = 0;
 const AUDIO_PLAYER_Z_INDEX = 0;
 const AUDIO_DERIVED_IMAGE_MAX_SOURCE_SIZE_BYTES = 100 * 1024 * 1024;
 export const MESSAGE_CARD_DOWNLOAD_START_COOLDOWN_MS = 3_000;
+// Keep synchronized with wdintel-rs/src/config.rs:RER_MESSAGE_ATTACHMENTS_ZIP_MAX_TOTAL_BYTES.
+export const RER_MESSAGE_ATTACHMENTS_ZIP_MAX_TOTAL_BYTES = 200 * 1024 * 1024;
 
 export type MessageCardDownloadGuardProps = {
   isDownloadStarting: (downloadKey: string) => boolean;
@@ -133,9 +135,26 @@ export function mediaAttachmentDisplayName(m: MessageMediaInfo): string {
   return '<файл без назви>';
 }
 
-function mediaAttachmentSizeBytes(m: MessageMediaInfo): number | null {
+export function mediaAttachmentSizeBytes(m: MessageMediaInfo): number | null {
   const raw = m as MessageMediaInfoRaw;
   return m.sizeBytes ?? raw.size_bytes ?? null;
+}
+
+export function canDownloadAllMessageAttachments(attachments: MessageMediaInfo[]): boolean {
+  if (attachments.length <= 1) return false;
+
+  let totalBytes = 0;
+  for (const attachment of attachments) {
+    const sizeBytes = mediaAttachmentSizeBytes(attachment);
+    if (sizeBytes === null || !Number.isFinite(sizeBytes) || sizeBytes < 0) {
+      return false;
+    }
+    totalBytes += sizeBytes;
+    if (totalBytes > RER_MESSAGE_ATTACHMENTS_ZIP_MAX_TOTAL_BYTES) {
+      return false;
+    }
+  }
+  return true;
 }
 
 const MESSENGER_MEDIA_PATH_RE = /\/api\/messenger\/media\/([^/?#]+)/;

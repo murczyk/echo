@@ -24,6 +24,7 @@ import { MessageCardCoordinatePreview } from './MessageCardCoordinatePreview';
 import { hasCoordinatePreviewCandidate } from './message-coordinate-preview';
 import {
   isAudioMediaAttachment,
+  canDownloadAllMessageAttachments,
   isVideoMediaAttachment,
   mediaAttachmentContentType,
   mediaAttachmentDisplayName,
@@ -145,7 +146,7 @@ export function MessageCardMessageBody({
   const downloadAttachments = attachmentMedia.filter(
     (attachment) => !isAudioMediaAttachment(attachment) && !isVideoMediaAttachment(attachment),
   );
-  const hasMultipleAttachments = (msg.media ?? []).length > 1;
+  const canDownloadAllAttachments = canDownloadAllMessageAttachments(msg.media ?? []);
   const hasImageOrVideoAttachments = images.length > 0 || videoAttachments.length > 0;
 
   const videoPreviewSources = useMemo(() => {
@@ -255,7 +256,7 @@ export function MessageCardMessageBody({
           ))}
         </div>
       ) : null}
-      {hasMultipleAttachments ? (
+      {canDownloadAllAttachments ? (
         <div className="mt-1 flex items-start w-full">
           <MessageMediaDownloadAllLink
             messageId={messageId}

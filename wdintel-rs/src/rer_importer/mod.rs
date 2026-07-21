@@ -564,6 +564,19 @@ fn message_attachments_archive_name_from_parts(
     format!("attachments_{message_uuid}_{timestamp}.zip")
 }
 
+async fn find_active_attachment_archive_message(
+    dbx: &DatabaseConnection,
+    message_id: i64,
+) -> Result<signal_message::Model, AppError> {
+    signal_message::Entity::find()
+        .filter(signal_message::Column::Id.eq(message_id))
+        .filter(signal_message::Column::Deleted.eq(false))
+        .one(dbx)
+        .await
+        .c(h!())?
+        .ok_or(AppError::NotFound)
+}
+
 #[get("/api/rer-importer/messages/{message_id}/attachments.zip")]
 async fn rer_message_attachments_zip(
     user: actix_identity::Identity,
@@ -575,11 +588,8 @@ async fn rer_message_attachments_zip(
         .await
         .c(h!())?;
     let message_id = path.0;
-    let message = signal_message::Entity::find_by_id(message_id)
-        .one(&env.dbx)
-        .await
-        .c(h!())?
-        .ok_or(AppError::NotFound)?;
+    let message =
+        find_active_attachment_archive_message(&env.dbx, message_id).await?;
     // Uses the same group-membership gate as individual media downloads; this
     // endpoint must not grant access merely because a message URL is known.
     crate::messenger::media::ensure_media_access(&env.dbx, &login, message_id)
@@ -1537,17 +1547,22 @@ where
 #[cfg(test)]
 mod messenger_media_tests {
     use super::{
-        checked_attachment_size_total, media_cache_preflight_requested,
-        media_range_not_satisfiable_response,
+        checked_attachment_size_total, find_active_attachment_archive_message,
+        media_cache_preflight_requested, media_range_not_satisfiable_response,
         message_attachments_archive_name_from_parts,
         parse_oneoff_reprocess_unit_names_since_ts, parse_single_byte_range,
         safe_zip_entry_name, validate_attachment_metadata_sizes,
         write_zip_entry,
     };
+    use crate::entities::signal_message;
     use crate::entities::signal_message_media;
+    use crate::error::AppError;
+    use crate::functest::tests::{cleanup, mk_signal_message};
     use actix_web::http::{header, StatusCode};
     use actix_web::test::TestRequest;
     use chrono::{NaiveDate, NaiveDateTime};
+    use sea_orm::{ActiveModelTrait, IntoActiveModel, Set};
+    use serial_test::serial;
     use std::collections::HashSet;
     use std::io::{Cursor, Read};
     use std::iter;
@@ -1783,5 +1798,42 @@ mod messenger_media_tests {
     #[test]
     fn attachment_size_validation_rejects_integer_overflow() {
         assert!(checked_attachment_size_total(u64::MAX, 1).is_err());
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn archive_message_lookup_excludes_soft_deleted_messages() {
+        let env = cleanup().await.unwrap();
+        let active_message = mk_signal_message(
+            &env.dbx,
+            <signal_message::ActiveModel as Default>::default(),
+        )
+        .await
+        .unwrap();
+        let deleted_message = mk_signal_message(
+            &env.dbx,
+            <signal_message::ActiveModel as Default>::default(),
+        )
+        .await
+        .unwrap();
+        let deleted_message_id = deleted_message.id;
+        let mut deleted_message_active = deleted_message.into_active_model();
+        deleted_message_active.deleted = Set(true);
+        deleted_message_active.update(&env.dbx).await.unwrap();
+
+        assert!(find_active_attachment_archive_message(
+            &env.dbx,
+            active_message.id
+        )
+        .await
+        .is_ok());
+        assert!(matches!(
+            find_active_attachment_archive_message(
+                &env.dbx,
+                deleted_message_id
+            )
+            .await,
+            Err(AppError::NotFound)
+        ));
     }
 }
