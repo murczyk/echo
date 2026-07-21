@@ -44,7 +44,12 @@ impl MarkerComment {
 
 lazy_static! {
     static ref COMMENT_MARKER: Regex = Regex::new(
-        r"^(?:(?:Коментар|Коментарій|Комментарий|Комментар|Comment)|Мітк(?:а|и)\s+перехоплення)\s*[:\-—]\s*(?P<rest>.*)$"
+        r"^(?:Коментар|Коментарій|Комментарий|Комментар|Comment)\s*[:\-—]\s*(?P<rest>.*)$"
+    )
+    .unwrap();
+
+    static ref INTERCEPTION_TAG_MARKER: Regex = Regex::new(
+        r"^Мітк(?:а|и)\s+перехоплення\s*[:\-—]\s*(?P<rest>.*)$"
     )
     .unwrap();
 
@@ -252,8 +257,13 @@ fn normalized_body_lines(body: &str) -> Vec<String> {
 }
 
 fn scan_marker_comment(lines: &[&str]) -> Option<MarkerComment> {
+    scan_marker(lines, &COMMENT_MARKER)
+        .or_else(|| scan_marker(lines, &INTERCEPTION_TAG_MARKER))
+}
+
+fn scan_marker(lines: &[&str], marker: &Regex) -> Option<MarkerComment> {
     for (i, line) in lines.iter().enumerate() {
-        if let Some(caps) = COMMENT_MARKER.captures(line.trim()) {
+        if let Some(caps) = marker.captures(line.trim()) {
             let mut block: Vec<&str> = Vec::new();
             let rest = caps.name("rest").map(|m| m.as_str()).unwrap_or("");
             let has_inline_rest = !rest.trim().is_empty();
@@ -284,6 +294,8 @@ fn scan_marker_comment(lines: &[&str]) -> Option<MarkerComment> {
 fn is_marker_comment_boundary(line: &str) -> bool {
     let line = line.trim();
     line.is_empty()
+        || COMMENT_MARKER.is_match(line)
+        || INTERCEPTION_TAG_MARKER.is_match(line)
         || is_header_line(line)
         || is_datetime_header_line(line)
         || is_dialog_line(line)
@@ -801,6 +813,19 @@ mod tests {
             assert_eq!(res.top, None, "{value}");
             assert_eq!(res.bottom.as_deref(), Some(expected), "{value}");
         }
+    }
+
+    #[test]
+    fn explicit_comment_after_interception_tags_takes_priority() {
+        let body = "18.07.2026, 13:59:56\n143.8150\nУКХ р/м\n\n— Сокол, Паровозу\n\nМітки перехоплення: 🚙 - Переміщення\n\nКоментар: операторське уточнення";
+
+        let res = parse_comments(body);
+
+        assert_eq!(res.bottom.as_deref(), Some("операторське уточнення"));
+        assert_eq!(
+            marker_comment_strip_candidates(body),
+            vec!["операторське уточнення"]
+        );
     }
 
     #[test]
