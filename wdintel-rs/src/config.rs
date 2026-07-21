@@ -3,6 +3,7 @@ use crate::types::*;
 use anyhow::Result;
 use chrono::Timelike;
 use opendal::Operator;
+use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
 pub const DEFAULT_PG_HOST: &str = "localhost";
@@ -111,6 +112,12 @@ pub const DEVICE_TAG_VALUE_MAX_CHARS: usize = 4096;
 pub const DEVICE_EXTERNAL_URL_MAX_CHARS: usize = 4096;
 pub const DEVICE_LIST_DEFAULT_LIMIT: u64 = 100;
 pub const DEVICE_LIST_MAX_LIMIT: u64 = 100;
+pub const DEVICE_FILE_PAGE_DEFAULT_LIMIT: u64 = 100;
+pub const DEVICE_FILE_PAGE_MAX_LIMIT: u64 = 100;
+pub const DEVICE_FILE_SEARCH_FILTER_MAX_VALUES: usize = 50;
+pub const DEVICE_FILE_SEARCH_NAME_QUERY_MIN_CHARS: usize = 3;
+pub const DEVICE_FILE_SEARCH_NAME_QUERY_MAX_CHARS: usize = 255;
+pub const DEVICE_FILE_CURSOR_MAX_BYTES: usize = 4096;
 pub const SIGINT_SIGNAL_TIMEOUT_MS: u64 = 1000;
 /// MESSAGE_ATTACHMENT_LIMIT_SYNC: keep this upload limit synchronized with
 /// `RER_MESSAGE_ATTACHMENTS_ZIP_MAX_FILES`, frontend

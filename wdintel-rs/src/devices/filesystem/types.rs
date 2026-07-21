@@ -82,6 +82,37 @@ pub(in crate::devices) struct DirectoryEntry {
     pub(in crate::devices) updated_at: NaiveDateTime,
 }
 
+#[allow(dead_code)]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(in crate::devices) enum DirectoryScope {
+    Root(RootEntry),
+    Directory(DirectoryEntry),
+}
+
+#[allow(dead_code)]
+impl DirectoryScope {
+    pub(in crate::devices) fn device_id(&self) -> Uuid {
+        match self {
+            Self::Root(root) => root.device_id,
+            Self::Directory(directory) => directory.device_id,
+        }
+    }
+
+    pub(in crate::devices) fn entry_id(&self) -> Uuid {
+        match self {
+            Self::Root(root) => root.entry_id,
+            Self::Directory(directory) => directory.entry_id,
+        }
+    }
+
+    pub(super) fn hierarchy_path(&self) -> &str {
+        match self {
+            Self::Root(root) => &root.hierarchy_path,
+            Self::Directory(directory) => &directory.hierarchy_path,
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(in crate::devices) struct FileEntry {
     pub(in crate::devices) file_id: Uuid,
@@ -117,24 +148,109 @@ pub(in crate::devices) struct Breadcrumb {
 #[allow(dead_code)]
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub(in crate::devices) struct RootSortKey {
-    pub(in crate::devices) path_syntax: PathSyntax,
-    pub(in crate::devices) name_key: Vec<u8>,
-    pub(in crate::devices) entry_id: Uuid,
+    path_syntax: PathSyntax,
+    name_key: Vec<u8>,
+    entry_id: Uuid,
+}
+
+#[allow(dead_code)]
+impl RootSortKey {
+    pub(super) fn new(
+        path_syntax: PathSyntax,
+        name_key: Vec<u8>,
+        entry_id: Uuid,
+    ) -> Self {
+        Self {
+            path_syntax,
+            name_key,
+            entry_id,
+        }
+    }
+
+    pub(super) fn path_syntax(&self) -> PathSyntax {
+        self.path_syntax
+    }
+
+    pub(super) fn name_key(&self) -> &[u8] {
+        &self.name_key
+    }
+
+    pub(super) fn entry_id(&self) -> Uuid {
+        self.entry_id
+    }
 }
 
 #[allow(dead_code)]
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub(in crate::devices) struct EntrySortKey {
-    pub(in crate::devices) kind: FileEntryKind,
-    pub(in crate::devices) name_key: Vec<u8>,
-    pub(in crate::devices) entry_id: Uuid,
+    kind: FileEntryKind,
+    name_key: Vec<u8>,
+    entry_id: Uuid,
+}
+
+#[allow(dead_code)]
+impl EntrySortKey {
+    pub(super) fn new(
+        kind: FileEntryKind,
+        name_key: Vec<u8>,
+        entry_id: Uuid,
+    ) -> Self {
+        Self {
+            kind,
+            name_key,
+            entry_id,
+        }
+    }
+
+    pub(super) fn kind(&self) -> FileEntryKind {
+        self.kind
+    }
+
+    pub(super) fn name_key(&self) -> &[u8] {
+        &self.name_key
+    }
+
+    pub(super) fn entry_id(&self) -> Uuid {
+        self.entry_id
+    }
 }
 
 #[allow(dead_code)]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(in crate::devices) struct KeysetPageRequest<K> {
-    pub(in crate::devices) limit: u64,
-    pub(in crate::devices) after: Option<K>,
+    limit: u64,
+    after: Option<K>,
+}
+
+#[allow(dead_code)]
+impl<K> KeysetPageRequest<K> {
+    pub(in crate::devices) fn try_new(
+        limit: Option<u64>,
+        after: Option<K>,
+    ) -> Result<Self, FilesystemError> {
+        let limit =
+            limit.unwrap_or(crate::config::DEVICE_FILE_PAGE_DEFAULT_LIMIT);
+        if !(1..=crate::config::DEVICE_FILE_PAGE_MAX_LIMIT).contains(&limit) {
+            return Err(FilesystemError::Validation(vec![
+                FilesystemFieldError {
+                    path: "limit".to_string(),
+                    message: format!(
+                        "must be between 1 and {}",
+                        crate::config::DEVICE_FILE_PAGE_MAX_LIMIT
+                    ),
+                },
+            ]));
+        }
+        Ok(Self { limit, after })
+    }
+
+    pub(in crate::devices) fn limit(&self) -> u64 {
+        self.limit
+    }
+
+    pub(in crate::devices) fn after(&self) -> Option<&K> {
+        self.after.as_ref()
+    }
 }
 
 #[allow(dead_code)]
@@ -159,13 +275,105 @@ pub(in crate::devices) struct OffsetPage<T> {
 
 #[allow(dead_code)]
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(in crate::devices) struct FileSearchFilters {
+pub(in crate::devices) struct RawFileSearchFilters {
     pub(in crate::devices) kinds: Vec<FileEntryKind>,
     pub(in crate::devices) name_query: Option<String>,
     pub(in crate::devices) mime_types: Vec<String>,
     pub(in crate::devices) extensions: Vec<String>,
     pub(in crate::devices) file_metadata_modified_from: Option<NaiveDateTime>,
     pub(in crate::devices) file_metadata_modified_to: Option<NaiveDateTime>,
+}
+
+#[allow(dead_code)]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(in crate::devices) struct FileSearchFilters {
+    kinds: Vec<FileEntryKind>,
+    name_query: Option<String>,
+    mime_types: Vec<String>,
+    extensions: Vec<String>,
+    file_metadata_modified_from: Option<NaiveDateTime>,
+    file_metadata_modified_to: Option<NaiveDateTime>,
+}
+
+#[allow(dead_code)]
+impl FileSearchFilters {
+    pub(super) fn from_validated_parts(
+        kinds: Vec<FileEntryKind>,
+        name_query: Option<String>,
+        mime_types: Vec<String>,
+        extensions: Vec<String>,
+        file_metadata_modified_from: Option<NaiveDateTime>,
+        file_metadata_modified_to: Option<NaiveDateTime>,
+    ) -> Self {
+        Self {
+            kinds,
+            name_query,
+            mime_types,
+            extensions,
+            file_metadata_modified_from,
+            file_metadata_modified_to,
+        }
+    }
+
+    pub(super) fn kinds(&self) -> &[FileEntryKind] {
+        &self.kinds
+    }
+
+    pub(super) fn name_query(&self) -> Option<&str> {
+        self.name_query.as_deref()
+    }
+
+    pub(super) fn mime_types(&self) -> &[String] {
+        &self.mime_types
+    }
+
+    pub(super) fn extensions(&self) -> &[String] {
+        &self.extensions
+    }
+
+    pub(super) fn file_metadata_modified_from(&self) -> Option<NaiveDateTime> {
+        self.file_metadata_modified_from
+    }
+
+    pub(super) fn file_metadata_modified_to(&self) -> Option<NaiveDateTime> {
+        self.file_metadata_modified_to
+    }
+}
+
+#[allow(dead_code)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(in crate::devices) enum EntryQueryScope<'a> {
+    Browse(&'a DirectoryScope),
+    Search {
+        directory: &'a DirectoryScope,
+        filters: &'a FileSearchFilters,
+    },
+}
+
+#[allow(dead_code)]
+impl EntryQueryScope<'_> {
+    pub(super) fn directory(&self) -> &DirectoryScope {
+        match self {
+            Self::Browse(directory) | Self::Search { directory, .. } => {
+                directory
+            }
+        }
+    }
+
+    pub(super) fn device_id(&self) -> Uuid {
+        self.directory().device_id()
+    }
+
+    pub(super) fn entry_id(&self) -> Uuid {
+        self.directory().entry_id()
+    }
+
+    pub(super) fn filters(&self) -> Option<&FileSearchFilters> {
+        match self {
+            Self::Browse(_) => None,
+            Self::Search { filters, .. } => Some(filters),
+        }
+    }
 }
 
 #[allow(dead_code)]
@@ -272,37 +480,24 @@ mod tests {
         let highest_id = Uuid::from_u128(2);
 
         assert!(
-            RootSortKey {
-                path_syntax: PathSyntax::Posix,
-                name_key: b"z".to_vec(),
-                entry_id: highest_id,
-            } < RootSortKey {
-                path_syntax: PathSyntax::Windows,
-                name_key: b"a".to_vec(),
-                entry_id: lowest_id,
-            }
+            RootSortKey::new(PathSyntax::Posix, b"z".to_vec(), highest_id)
+                < RootSortKey::new(
+                    PathSyntax::Windows,
+                    b"a".to_vec(),
+                    lowest_id
+                )
         );
         assert!(
-            RootSortKey {
-                path_syntax: PathSyntax::Posix,
-                name_key: b"Z".to_vec(),
-                entry_id: highest_id,
-            } < RootSortKey {
-                path_syntax: PathSyntax::Posix,
-                name_key: b"a".to_vec(),
-                entry_id: lowest_id,
-            }
+            RootSortKey::new(PathSyntax::Posix, b"Z".to_vec(), highest_id)
+                < RootSortKey::new(PathSyntax::Posix, b"a".to_vec(), lowest_id)
         );
         assert!(
-            RootSortKey {
-                path_syntax: PathSyntax::Posix,
-                name_key: b"same".to_vec(),
-                entry_id: lowest_id,
-            } < RootSortKey {
-                path_syntax: PathSyntax::Posix,
-                name_key: b"same".to_vec(),
-                entry_id: highest_id,
-            }
+            RootSortKey::new(PathSyntax::Posix, b"same".to_vec(), lowest_id)
+                < RootSortKey::new(
+                    PathSyntax::Posix,
+                    b"same".to_vec(),
+                    highest_id
+                )
         );
     }
 
@@ -312,37 +507,96 @@ mod tests {
         let highest_id = Uuid::from_u128(2);
 
         assert!(
-            EntrySortKey {
-                kind: FileEntryKind::Directory,
-                name_key: b"z".to_vec(),
-                entry_id: highest_id,
-            } < EntrySortKey {
-                kind: FileEntryKind::File,
-                name_key: b"a".to_vec(),
-                entry_id: lowest_id,
-            }
+            EntrySortKey::new(
+                FileEntryKind::Directory,
+                b"z".to_vec(),
+                highest_id
+            ) < EntrySortKey::new(
+                FileEntryKind::File,
+                b"a".to_vec(),
+                lowest_id
+            )
         );
         assert!(
-            EntrySortKey {
-                kind: FileEntryKind::File,
-                name_key: b"Z".to_vec(),
-                entry_id: highest_id,
-            } < EntrySortKey {
-                kind: FileEntryKind::File,
-                name_key: b"a".to_vec(),
-                entry_id: lowest_id,
-            }
+            EntrySortKey::new(FileEntryKind::File, b"Z".to_vec(), highest_id)
+                < EntrySortKey::new(
+                    FileEntryKind::File,
+                    b"a".to_vec(),
+                    lowest_id
+                )
         );
         assert!(
-            EntrySortKey {
-                kind: FileEntryKind::File,
-                name_key: b"same".to_vec(),
-                entry_id: lowest_id,
-            } < EntrySortKey {
-                kind: FileEntryKind::File,
-                name_key: b"same".to_vec(),
-                entry_id: highest_id,
-            }
+            EntrySortKey::new(FileEntryKind::File, b"same".to_vec(), lowest_id)
+                < EntrySortKey::new(
+                    FileEntryKind::File,
+                    b"same".to_vec(),
+                    highest_id
+                )
+        );
+    }
+
+    #[test]
+    fn directory_and_query_scopes_preserve_one_navigation_scope() {
+        let device_id = Uuid::from_u128(1);
+        let root_id = Uuid::from_u128(2);
+        let directory_id = Uuid::from_u128(3);
+        let timestamp = chrono::NaiveDate::from_ymd_opt(2026, 7, 21)
+            .unwrap()
+            .and_hms_opt(12, 0, 0)
+            .unwrap();
+        let root_scope = DirectoryScope::Root(RootEntry {
+            entry_id: root_id,
+            device_id,
+            name: "root".to_string(),
+            name_key: b"root".to_vec(),
+            path_syntax: PathSyntax::Posix,
+            hierarchy_path: "n00000000000000000000000000000002".to_string(),
+            created_at: timestamp,
+            updated_at: timestamp,
+        });
+        let directory_scope = DirectoryScope::Directory(DirectoryEntry {
+            entry_id: directory_id,
+            device_id,
+            parent_entry_id: root_id,
+            name: "directory".to_string(),
+            name_key: b"directory".to_vec(),
+            hierarchy_path:
+                "n00000000000000000000000000000002.n00000000000000000000000000000003"
+                    .to_string(),
+            created_at: timestamp,
+            updated_at: timestamp,
+        });
+        let filters = FileSearchFilters::try_from(RawFileSearchFilters {
+            kinds: vec![FileEntryKind::File],
+            name_query: Some("abc".to_string()),
+            mime_types: Vec::new(),
+            extensions: Vec::new(),
+            file_metadata_modified_from: None,
+            file_metadata_modified_to: None,
+        })
+        .unwrap();
+
+        let browse = EntryQueryScope::Browse(&root_scope);
+        assert_eq!(browse.device_id(), device_id);
+        assert_eq!(browse.entry_id(), root_id);
+        assert_eq!(browse.directory(), &root_scope);
+        assert_eq!(browse.filters(), None);
+        assert_eq!(
+            root_scope.hierarchy_path(),
+            "n00000000000000000000000000000002"
+        );
+
+        let search = EntryQueryScope::Search {
+            directory: &directory_scope,
+            filters: &filters,
+        };
+        assert_eq!(search.device_id(), device_id);
+        assert_eq!(search.entry_id(), directory_id);
+        assert_eq!(search.directory(), &directory_scope);
+        assert_eq!(search.filters(), Some(&filters));
+        assert_eq!(
+            directory_scope.hierarchy_path(),
+            "n00000000000000000000000000000002.n00000000000000000000000000000003"
         );
     }
 }

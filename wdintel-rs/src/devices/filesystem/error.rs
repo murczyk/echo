@@ -30,6 +30,15 @@ pub(in crate::devices) enum FilesystemError {
     CommitUncertain(#[source] anyhow::Error),
 }
 
+impl FilesystemError {
+    pub(super) fn invalid_cursor() -> Self {
+        Self::Validation(vec![FilesystemFieldError {
+            path: "cursor".to_string(),
+            message: "invalid cursor".to_string(),
+        }])
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -1,6 +1,6 @@
+use super::model;
 use crate::devices::filesystem::{
     FileEntry, FileEntryKind, FilesystemError, OffsetPage, OffsetPageRequest,
-    PathSyntax,
 };
 use crate::file_registry::entities::file_entry;
 use crate::h;
@@ -50,44 +50,18 @@ pub(in crate::devices::filesystem) async fn list_files_offset(
 fn map_file_model(
     file: file_entry::Model,
 ) -> Result<FileEntry, FilesystemError> {
-    let kind = FileEntryKind::try_from(file.kind.as_str())?;
-    if kind != FileEntryKind::File {
-        return Err(FilesystemError::Invariant("flat_list_non_file_entry"));
+    match model::map_file_model(file) {
+        Err(FilesystemError::Invariant("file_entry_non_file")) => {
+            Err(FilesystemError::Invariant("flat_list_non_file_entry"))
+        }
+        result => result,
     }
-
-    let parent_entry_id = file
-        .parent_id
-        .ok_or(FilesystemError::Invariant("file_parent_missing"))?;
-    let path_syntax = file
-        .path_syntax
-        .as_deref()
-        .ok_or(FilesystemError::Invariant("file_path_syntax_missing"))
-        .and_then(PathSyntax::try_from)?;
-    let absolute_path = file
-        .absolute_path
-        .ok_or(FilesystemError::Invariant("file_absolute_path_missing"))?;
-
-    Ok(FileEntry {
-        file_id: file.id,
-        device_id: file.device_id,
-        parent_entry_id,
-        name: file.name,
-        name_key: file.name_key,
-        path_syntax,
-        absolute_path,
-        hierarchy_path: file.hierarchy_path,
-        mime_type: file.mime_type,
-        extension: file.extension,
-        file_metadata_created_at: file.file_metadata_created_at,
-        file_metadata_modified_at: file.file_metadata_modified_at,
-        created_at: file.created_at,
-        updated_at: file.updated_at,
-    })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::devices::filesystem::PathSyntax;
     use chrono::NaiveDate;
 
     fn valid_file_model() -> file_entry::Model {

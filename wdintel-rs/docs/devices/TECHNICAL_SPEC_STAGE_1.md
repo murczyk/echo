@@ -311,14 +311,13 @@ HTTP-обробники не реалізують доменні правила 
 | `DeviceService` | Створює, читає й атомарно редагує пристрої тільки через `MainDb`. |
 | `FileMetadataService` | Після перевірки пристрою через `MainDb` синхронізує file entries, автоматично upsert-ить derived roots/hierarchy та обслуговує root list, folder browse, breadcrumbs і scoped search через `FileRegistryDb`. |
 | `SourcePathParser` | Строго розбирає exact absolute path за `posix` або `windows`, повертає canonical root і точні компоненти та не звертається до локальної файлової системи backend-а. |
-| `FileCursorCodec` | Канонічно серіалізує fingerprint/sort tuple, підписує continuation cursor і відхиляє version, MAC або parameters mismatch. |
+| `FileCursorCodec` | Передає й розбирає boundary entry UUID як cursor; repository у фактичному scope відновлює typed sort tuple для продовження. |
 | `DeviceValidation` | Нормалізує значення, класифікує наявні поля за групами й формує помилки з точними шляхами полів. |
 
 У прикладні функції передається не список ролей із запиту, а серверний `DeviceActor` щонайменше з `login`, `can_read`, `can_write_source_data` і `can_write_analytical_data`. Контекст формується заново для кожної операції. Відкликана роль перестає діяти з наступного запиту; клієнт не може передати, розширити або кешувати ефективні можливості.
 
 Репозиторій пристроїв приймає лише `MainDb`, а репозиторій файлового реєстру — лише `FileRegistryDb`. HTTP-обробник не отримує нетипізований пул для вибору бази й не виконує SQL напряму. Це робить випадковий запит до таблиці іншої бази помилкою структури коду.
 
-`FileCursorCodec` читає окремий `device_file_cursor_hmac_key` із `config.toml`/secret injection. Runtime не стартує без щонайменше 32 random bytes, не журналює key і не перевикористовує cookie/session secrets; його ротація може явно інвалідувати короткоживучі cursors.
 
 ### Ефективні можливості та видимість
 
@@ -439,7 +438,7 @@ DTO створення приймає лише `source_label`, `external_url` і
 - Folder browse читає лише direct children через B-tree та вимагає explicit `parent_entry_id` кореневої або вкладеної directory. Breadcrumbs містять root і current directory в порядку зростання `nlevel`; для root це масив з одним breadcrumb.
 - Scoped search вимагає explicit directory `scope_entry_id`, визначає її path, застосовує `<@` разом із `id <> scope_entry_id`, literal escaped `ILIKE` та технічні фільтри, а relative path components сторінки збирає batch-ом.
 - Browse і search читають `limit + 1`, повертають `next_cursor` за наявності наступного entry та не виконують mandatory `COUNT(*)`.
-- Cursor є versioned authenticated base64url payload із query fingerprint і останнім sort tuple. Fingerprint включає device, operation, scope, filters і fixed sort, але не `limit` чи `include_breadcrumbs`; dedicated secret не перевикористовує session-cookie key.
+- Cursor є текстовим boundary `entry_id`, без підпису та query fingerprint. Repository завантажує цей UUID у фактичному device/scope/filter query і відновлює typed `(kind, name_key, id)` для strict-after predicate; якщо boundary не належить поточному scope, cursor invalid. Клієнт очищує cursor при зміні scope або filters.
 - Cursor не закріплює database snapshot між HTTP requests: кожна сторінка цілісна, а гарантія відсутності повторів діє за незмінного набору. Конкурентний rename/move може змінити положення entry між сторінками.
 - Недоступність `wd_files` повертає помилку, а не порожній результат. Стабільний UUID є остаточним tie-breaker.
 
@@ -727,7 +726,7 @@ UI повторно використовує чинні AOR/unit dictionary endp
 - UUID передається canonical lowercase з дефісами. Нові device, root, directory і file UUID генерує лише ЕХО як UUIDv7; у schema-only реалізації 0.14 target table лишається порожньою, а root і directory UUID з’являться лише в окремому Logic/API етапі.
 - Усі timestamps є RFC 3339 strings; response нормалізує UTC `Z`, request вимагає explicit timezone.
 - Exact `absolute_path`, root names і path components не trim-яться, не case-fold-яться й не Unicode-normalize-яться; єдиний виняток — uppercase canonical Windows drive letter у root name. NUL заборонений.
-- Cursor є opaque string. Client не декодує та не модифікує його.
+- Cursor є boundary entry UUID; клієнт повертає його лише як continuation позицію.
 - Responses не містять internal `ltree`, `name_key`, content, content state, analytics, hide state або інших позаетапних fields.
 
 Нормативні спільні response types:
@@ -1037,7 +1036,7 @@ interface BrowseDeviceFilesRsp {
 
 `parent_entry_id` required і має бути root або synthetic directory цього device. `include_breadcrumbs` default `true`; якщо `false`, response містить `[]`; якщо `true`, breadcrumbs містять root і current parent.
 
-Fixed order: directory before file, then exact `name_key ASC`, then `entry_id ASC`. Backend reads `limit + 1`; `next_cursor` є authenticated continuation того самого fingerprint і sort tuple. Duplicate files із тим самим name повертаються окремо. Mandatory count і deep `OFFSET` відсутні.
+Fixed order: directory before file, then exact `name_key ASC`, then `entry_id ASC`. Backend reads `limit + 1`; `next_cursor` є boundary `entry_id`, з якого repository у фактичному scope відновлює sort tuple. Duplicate files із тим самим name повертаються окремо. Mandatory count і deep `OFFSET` відсутні.
 
 ### `POST /api/device/files/search`
 

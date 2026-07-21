@@ -1,14 +1,23 @@
-use super::{FilesystemRepository, OffsetPageRequest};
+use super::{
+    ancestor_expr, descendant_expr, query, EntryQueryScope, EntrySortKey,
+    FileCursorCodec, FileEntryKind, FileSearchFilters, FilesystemError,
+    FilesystemRepository, OffsetPageRequest, RawFileSearchFilters,
+};
+use crate::config::read_config;
 use crate::devices::query::list_device_files;
 use crate::devices::types::{
     DeviceFileEntry, ListDeviceFilesReq, ListDeviceFilesRsp,
 };
 use crate::entities::{device, login};
 use crate::file_registry::entities::file_entry;
+use crate::file_registry::{connect_runtime, run_migrations};
 use crate::functest::tests::{cleanup_locked, mk_login};
-use crate::types::{AppError, Uuid};
+use crate::types::{AppError, Mode, Uuid};
 use chrono::{Duration, NaiveDate, NaiveDateTime};
-use sea_orm::{ActiveModelTrait, ActiveValue::Set, DatabaseConnection};
+use sea_orm::{
+    ActiveModelTrait, ActiveValue::Set, ConnectionTrait, DatabaseConnection,
+    EntityTrait, IntoActiveModel, QueryFilter, QuerySelect,
+};
 use serde_json::json;
 
 #[tokio::test]
@@ -455,4 +464,595 @@ fn datetime_ms(timestamp: NaiveDateTime) -> i64 {
 
 fn uuid_label(id: Uuid) -> String {
     format!("n{}", id.to_string().replace('-', ""))
+}
+
+#[tokio::test]
+#[serial_test::serial]
+async fn stage_two_runtime_scopes_filters_ltree_and_cursor_contracts() {
+    let config = read_config(Mode::Test).unwrap();
+    run_migrations(&config, Mode::Test).await.unwrap();
+    let file_registry_db = connect_runtime(&config, Mode::Test).await.unwrap();
+    let db = file_registry_db.connection();
+    db.execute_unprepared("truncate table public.file_entry")
+        .await
+        .unwrap();
+
+    let timestamp = NaiveDate::from_ymd_opt(2026, 7, 21)
+        .unwrap()
+        .and_hms_milli_opt(12, 30, 45, 123)
+        .unwrap();
+    let tree = insert_stage_two_tree(db, timestamp).await;
+    let repository = FilesystemRepository::new(&file_registry_db);
+    let reports_scope = assert_directory_scope_lookup(&repository, &tree).await;
+
+    assert_ltree_predicates(db, &tree).await;
+    assert_scope_rules(db, &reports_scope, &tree).await;
+    assert_literal_name_filters(db, &reports_scope, &tree).await;
+    assert_exact_metadata_filters(db, &reports_scope, &tree).await;
+    assert_duplicate_name_key_pagination(
+        db,
+        &repository,
+        &reports_scope,
+        &tree,
+    )
+    .await;
+    assert_file_move_round_trip(db, &tree, timestamp).await;
+
+    db.execute_unprepared("truncate table public.file_entry")
+        .await
+        .unwrap();
+}
+
+struct StageTwoTree {
+    device_id: Uuid,
+    other_device_id: Uuid,
+    root_id: Uuid,
+    reports_id: Uuid,
+    archive_id: Uuid,
+    nested_file_id: Uuid,
+    duplicate_file_ids: [Uuid; 3],
+    percent_file_id: Uuid,
+    underscore_file_id: Uuid,
+    backslash_file_id: Uuid,
+    metadata_file_id: Uuid,
+    metadata_modified_at: NaiveDateTime,
+    movable_file_id: Uuid,
+    outside_file_id: Uuid,
+    reports_path: String,
+    archive_path: String,
+}
+
+async fn insert_stage_two_tree(
+    db: &DatabaseConnection,
+    timestamp: NaiveDateTime,
+) -> StageTwoTree {
+    let device_id = Uuid::from_u128(0x018f_0000_0000_7000_8000_0000_0000_1000);
+    let other_device_id =
+        Uuid::from_u128(0x018f_0000_0000_7000_8000_0000_0000_1100);
+    let root_id = Uuid::from_u128(0x018f_0000_0000_7000_8000_0000_0000_1200);
+    let reports_id = Uuid::from_u128(0x018f_0000_0000_7000_8000_0000_0000_1300);
+    let archive_id = Uuid::from_u128(0x018f_0000_0000_7000_8000_0000_0000_1400);
+    let nested_file_id =
+        Uuid::from_u128(0x018f_0000_0000_7000_8000_0000_0000_1500);
+    let duplicate_file_ids = [
+        Uuid::from_u128(0x018f_0000_0000_7000_8000_0000_0000_1600),
+        Uuid::from_u128(0x018f_0000_0000_7000_8000_0000_0000_1700),
+        Uuid::from_u128(0x018f_0000_0000_7000_8000_0000_0000_1800),
+    ];
+    let percent_file_id =
+        Uuid::from_u128(0x018f_0000_0000_7000_8000_0000_0000_1900);
+    let percent_noise_file_id =
+        Uuid::from_u128(0x018f_0000_0000_7000_8000_0000_0000_1a00);
+    let underscore_file_id =
+        Uuid::from_u128(0x018f_0000_0000_7000_8000_0000_0000_1b00);
+    let underscore_noise_file_id =
+        Uuid::from_u128(0x018f_0000_0000_7000_8000_0000_0000_1c00);
+    let backslash_file_id =
+        Uuid::from_u128(0x018f_0000_0000_7000_8000_0000_0000_1d00);
+    let backslash_noise_file_id =
+        Uuid::from_u128(0x018f_0000_0000_7000_8000_0000_0000_1e00);
+    let metadata_file_id =
+        Uuid::from_u128(0x018f_0000_0000_7000_8000_0000_0000_1f00);
+    let metadata_noise_file_id =
+        Uuid::from_u128(0x018f_0000_0000_7000_8000_0000_0000_2000);
+    let movable_file_id =
+        Uuid::from_u128(0x018f_0000_0000_7000_8000_0000_0000_2100);
+    let other_root_id =
+        Uuid::from_u128(0x018f_0000_0000_7000_8000_0000_0000_2200);
+    let outside_file_id =
+        Uuid::from_u128(0x018f_0000_0000_7000_8000_0000_0000_2300);
+    let root_path = uuid_label(root_id);
+    let reports_path = format!("{root_path}.{}", uuid_label(reports_id));
+    let archive_path = format!("{reports_path}.{}", uuid_label(archive_id));
+    let other_root_path = uuid_label(other_root_id);
+    let metadata_modified_at = timestamp + Duration::hours(3);
+
+    insert_file_entry(db, root_entry(root_id, device_id, timestamp)).await;
+    insert_file_entry(
+        db,
+        directory_entry(
+            reports_id, device_id, root_id, &root_path, "reports", timestamp,
+        ),
+    )
+    .await;
+    insert_file_entry(
+        db,
+        directory_entry(
+            archive_id,
+            device_id,
+            reports_id,
+            &reports_path,
+            "archive",
+            timestamp,
+        ),
+    )
+    .await;
+    insert_stage_two_file(
+        db,
+        nested_file_id,
+        device_id,
+        archive_id,
+        &archive_path,
+        "nested.log",
+        "/reports/archive/nested.log",
+        "text/plain",
+        "log",
+        timestamp,
+        timestamp,
+    )
+    .await;
+    for duplicate_file_id in duplicate_file_ids {
+        insert_stage_two_file(
+            db,
+            duplicate_file_id,
+            device_id,
+            reports_id,
+            &reports_path,
+            "duplicate",
+            "/reports/duplicate",
+            "text/plain",
+            "log",
+            timestamp,
+            timestamp,
+        )
+        .await;
+    }
+    insert_stage_two_file(
+        db,
+        percent_file_id,
+        device_id,
+        reports_id,
+        &reports_path,
+        "literal%value",
+        "/reports/literal%value",
+        "text/plain",
+        "log",
+        timestamp,
+        timestamp,
+    )
+    .await;
+    insert_stage_two_file(
+        db,
+        percent_noise_file_id,
+        device_id,
+        reports_id,
+        &reports_path,
+        "literalXvalue",
+        "/reports/literalXvalue",
+        "text/plain",
+        "log",
+        timestamp,
+        timestamp,
+    )
+    .await;
+    insert_stage_two_file(
+        db,
+        underscore_file_id,
+        device_id,
+        reports_id,
+        &reports_path,
+        "under_score",
+        "/reports/under_score",
+        "text/plain",
+        "log",
+        timestamp,
+        timestamp,
+    )
+    .await;
+    insert_stage_two_file(
+        db,
+        underscore_noise_file_id,
+        device_id,
+        reports_id,
+        &reports_path,
+        "underXscore",
+        "/reports/underXscore",
+        "text/plain",
+        "log",
+        timestamp,
+        timestamp,
+    )
+    .await;
+    insert_stage_two_file(
+        db,
+        backslash_file_id,
+        device_id,
+        reports_id,
+        &reports_path,
+        r"back\slash",
+        r"\reports\back\slash",
+        "text/plain",
+        "log",
+        timestamp,
+        timestamp,
+    )
+    .await;
+    insert_stage_two_file(
+        db,
+        backslash_noise_file_id,
+        device_id,
+        reports_id,
+        &reports_path,
+        "backXslash",
+        "/reports/backXslash",
+        "text/plain",
+        "log",
+        timestamp,
+        timestamp,
+    )
+    .await;
+    insert_stage_two_file(
+        db,
+        metadata_file_id,
+        device_id,
+        reports_id,
+        &reports_path,
+        "metadata.pdf",
+        "/reports/metadata.pdf",
+        "application/pdf",
+        "pdf",
+        timestamp,
+        metadata_modified_at,
+    )
+    .await;
+    insert_stage_two_file(
+        db,
+        metadata_noise_file_id,
+        device_id,
+        reports_id,
+        &reports_path,
+        "metadata-old.pdf",
+        "/reports/metadata-old.pdf",
+        "application/pdf",
+        "pdf",
+        timestamp,
+        metadata_modified_at - Duration::seconds(1),
+    )
+    .await;
+    insert_stage_two_file(
+        db,
+        movable_file_id,
+        device_id,
+        reports_id,
+        &reports_path,
+        "movable.log",
+        "/reports/movable.log",
+        "text/plain",
+        "log",
+        timestamp,
+        timestamp,
+    )
+    .await;
+    insert_file_entry(
+        db,
+        root_entry(other_root_id, other_device_id, timestamp),
+    )
+    .await;
+    insert_stage_two_file(
+        db,
+        outside_file_id,
+        other_device_id,
+        other_root_id,
+        &other_root_path,
+        "outside.log",
+        "/other/outside.log",
+        "text/plain",
+        "log",
+        timestamp,
+        timestamp,
+    )
+    .await;
+
+    StageTwoTree {
+        device_id,
+        other_device_id,
+        root_id,
+        reports_id,
+        archive_id,
+        nested_file_id,
+        duplicate_file_ids,
+        percent_file_id,
+        underscore_file_id,
+        backslash_file_id,
+        metadata_file_id,
+        metadata_modified_at,
+        movable_file_id,
+        outside_file_id,
+        reports_path,
+        archive_path,
+    }
+}
+
+async fn insert_stage_two_file(
+    db: &DatabaseConnection,
+    id: Uuid,
+    device_id: Uuid,
+    parent_id: Uuid,
+    parent_hierarchy_path: &str,
+    name: &str,
+    absolute_path: &str,
+    mime_type: &str,
+    extension: &str,
+    created_at: NaiveDateTime,
+    modified_at: NaiveDateTime,
+) {
+    let mut entry = file_entry_row(
+        id,
+        device_id,
+        parent_id,
+        parent_hierarchy_path,
+        name,
+        absolute_path,
+        created_at,
+    );
+    entry.mime_type = Set(Some(mime_type.to_string()));
+    entry.extension = Set(Some(extension.to_string()));
+    entry.file_metadata_modified_at = Set(Some(modified_at));
+    insert_file_entry(db, entry).await;
+}
+
+async fn assert_directory_scope_lookup(
+    repository: &FilesystemRepository<'_>,
+    tree: &StageTwoTree,
+) -> super::DirectoryScope {
+    let scope = repository
+        .find_directory_scope(tree.device_id, tree.reports_id)
+        .await
+        .unwrap();
+    assert_eq!(scope.device_id(), tree.device_id);
+    assert_eq!(scope.entry_id(), tree.reports_id);
+    assert!(matches!(
+        repository
+            .find_directory_scope(tree.other_device_id, tree.reports_id)
+            .await,
+        Err(FilesystemError::NotFound)
+    ));
+    assert!(matches!(
+        repository
+            .find_directory_scope(tree.device_id, tree.nested_file_id)
+            .await,
+        Err(FilesystemError::NotFound)
+    ));
+    scope
+}
+
+async fn assert_ltree_predicates(db: &DatabaseConnection, tree: &StageTwoTree) {
+    let nested = file_entry::Entity::find_by_id(tree.nested_file_id)
+        .one(db)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        nested.hierarchy_path,
+        format!("{}.{}", tree.archive_path, uuid_label(tree.nested_file_id))
+    );
+
+    let descendants = file_entry::Entity::find()
+        .filter(descendant_expr(&tree.reports_path))
+        .all(db)
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|entry| entry.id)
+        .collect::<Vec<_>>();
+    assert!(descendants.contains(&tree.reports_id));
+    assert!(descendants.contains(&tree.archive_id));
+    assert!(descendants.contains(&tree.nested_file_id));
+    assert!(!descendants.contains(&tree.root_id));
+    assert!(!descendants.contains(&tree.outside_file_id));
+
+    let mut ancestors = file_entry::Entity::find()
+        .filter(ancestor_expr(&tree.archive_path))
+        .all(db)
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|entry| entry.id)
+        .collect::<Vec<_>>();
+    ancestors.sort_unstable();
+    assert_eq!(
+        ancestors,
+        vec![tree.root_id, tree.reports_id, tree.archive_id]
+    );
+}
+
+async fn assert_scope_rules(
+    db: &DatabaseConnection,
+    reports_scope: &super::DirectoryScope,
+    tree: &StageTwoTree,
+) {
+    let browse = EntryQueryScope::Browse(reports_scope);
+    let browse_ids = scoped_entry_ids(db, &browse, None, None).await;
+    assert!(browse_ids.contains(&tree.archive_id));
+    assert!(browse_ids.contains(&tree.duplicate_file_ids[0]));
+    assert!(!browse_ids.contains(&tree.reports_id));
+    assert!(!browse_ids.contains(&tree.nested_file_id));
+    assert!(!browse_ids.contains(&tree.outside_file_id));
+
+    let all_filters = FileSearchFilters::try_from(RawFileSearchFilters {
+        kinds: Vec::new(),
+        name_query: None,
+        mime_types: Vec::new(),
+        extensions: Vec::new(),
+        file_metadata_modified_from: None,
+        file_metadata_modified_to: None,
+    })
+    .unwrap();
+    let search = EntryQueryScope::Search {
+        directory: reports_scope,
+        filters: &all_filters,
+    };
+    let search_ids = scoped_entry_ids(db, &search, None, None).await;
+    assert!(search_ids.contains(&tree.archive_id));
+    assert!(search_ids.contains(&tree.nested_file_id));
+    assert!(!search_ids.contains(&tree.reports_id));
+    assert!(!search_ids.contains(&tree.root_id));
+    assert!(!search_ids.contains(&tree.outside_file_id));
+}
+
+async fn assert_literal_name_filters(
+    db: &DatabaseConnection,
+    reports_scope: &super::DirectoryScope,
+    tree: &StageTwoTree,
+) {
+    for (name_query, expected_id) in [
+        ("literal%value", tree.percent_file_id),
+        ("under_score", tree.underscore_file_id),
+        (r"back\slash", tree.backslash_file_id),
+    ] {
+        let filters = search_filters(Some(name_query), &[], &[], None, None);
+        let scope = EntryQueryScope::Search {
+            directory: reports_scope,
+            filters: &filters,
+        };
+        assert_eq!(
+            scoped_entry_ids(db, &scope, None, None).await,
+            vec![expected_id]
+        );
+    }
+}
+
+async fn assert_exact_metadata_filters(
+    db: &DatabaseConnection,
+    reports_scope: &super::DirectoryScope,
+    tree: &StageTwoTree,
+) {
+    let filters = search_filters(
+        None,
+        &["application/pdf"],
+        &["pdf"],
+        Some(tree.metadata_modified_at),
+        Some(tree.metadata_modified_at),
+    );
+    let scope = EntryQueryScope::Search {
+        directory: reports_scope,
+        filters: &filters,
+    };
+    assert_eq!(
+        scoped_entry_ids(db, &scope, None, None).await,
+        vec![tree.metadata_file_id]
+    );
+}
+
+async fn assert_duplicate_name_key_pagination(
+    db: &DatabaseConnection,
+    repository: &FilesystemRepository<'_>,
+    reports_scope: &super::DirectoryScope,
+    tree: &StageTwoTree,
+) {
+    let filters = search_filters(Some("duplicate"), &[], &[], None, None);
+    let scope = EntryQueryScope::Search {
+        directory: reports_scope,
+        filters: &filters,
+    };
+    let first_page = scoped_entry_ids(db, &scope, None, Some(2)).await;
+    assert_eq!(
+        first_page,
+        vec![tree.duplicate_file_ids[0], tree.duplicate_file_ids[1]]
+    );
+
+    let cursor = FileCursorCodec::encode(first_page[1]);
+    let boundary_entry_id = FileCursorCodec::decode(&cursor).unwrap();
+    let after = repository
+        .resolve_cursor_entry_sort_key(boundary_entry_id, &scope)
+        .await
+        .unwrap();
+    let second_page = scoped_entry_ids(db, &scope, Some(&after), Some(2)).await;
+
+    assert_eq!(second_page, vec![tree.duplicate_file_ids[2]]);
+    assert_eq!([first_page, second_page].concat(), tree.duplicate_file_ids);
+}
+
+async fn assert_file_move_round_trip(
+    db: &DatabaseConnection,
+    tree: &StageTwoTree,
+    timestamp: NaiveDateTime,
+) {
+    let mut movable = file_entry::Entity::find_by_id(tree.movable_file_id)
+        .one(db)
+        .await
+        .unwrap()
+        .unwrap()
+        .into_active_model();
+    let expected_hierarchy_path =
+        format!("{}.{}", tree.archive_path, uuid_label(tree.movable_file_id));
+    movable.parent_id = Set(Some(tree.archive_id));
+    movable.absolute_path =
+        Set(Some("/reports/archive/movable.log".to_string()));
+    movable.hierarchy_path = Set(expected_hierarchy_path.clone());
+    movable.updated_at = Set(timestamp + Duration::seconds(1));
+    movable.save(db).await.unwrap();
+
+    let moved = file_entry::Entity::find_by_id(tree.movable_file_id)
+        .one(db)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(moved.parent_id, Some(tree.archive_id));
+    assert_eq!(
+        moved.absolute_path.as_deref(),
+        Some("/reports/archive/movable.log")
+    );
+    assert_eq!(moved.hierarchy_path, expected_hierarchy_path);
+}
+
+fn search_filters(
+    name_query: Option<&str>,
+    mime_types: &[&str],
+    extensions: &[&str],
+    file_metadata_modified_from: Option<NaiveDateTime>,
+    file_metadata_modified_to: Option<NaiveDateTime>,
+) -> FileSearchFilters {
+    FileSearchFilters::try_from(RawFileSearchFilters {
+        kinds: vec![FileEntryKind::File],
+        name_query: name_query.map(str::to_string),
+        mime_types: mime_types.iter().map(ToString::to_string).collect(),
+        extensions: extensions.iter().map(ToString::to_string).collect(),
+        file_metadata_modified_from,
+        file_metadata_modified_to,
+    })
+    .unwrap()
+}
+
+async fn scoped_entry_ids(
+    db: &DatabaseConnection,
+    scope: &EntryQueryScope<'_>,
+    after: Option<&EntrySortKey>,
+    limit: Option<u64>,
+) -> Vec<Uuid> {
+    let mut query = query::apply_entry_scope(file_entry::Entity::find(), scope);
+    query = query::apply_entry_order(query);
+    if let Some(after) = after {
+        query = query.filter(query::entry_strict_after_condition(after));
+    }
+    if let Some(limit) = limit {
+        query = query.limit(limit);
+    }
+    query
+        .all(db)
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|entry| entry.id)
+        .collect()
 }

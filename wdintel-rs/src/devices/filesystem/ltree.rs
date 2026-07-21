@@ -1,0 +1,128 @@
+use super::error::FilesystemError;
+use sea_orm::sea_query::{Expr, SimpleExpr};
+use std::fmt::Write;
+use uuid::Uuid;
+
+#[allow(dead_code)]
+pub(super) fn uuid_label(entry_id: Uuid) -> String {
+    let mut label = String::with_capacity(33);
+    label.push('n');
+    write!(&mut label, "{}", entry_id.simple())
+        .expect("writing to String cannot fail");
+    label
+}
+
+#[allow(dead_code)]
+pub(super) fn root_hierarchy_path(entry_id: Uuid) -> String {
+    uuid_label(entry_id)
+}
+
+#[allow(dead_code)]
+pub(super) fn child_hierarchy_path(
+    parent_path: &str,
+    entry_id: Uuid,
+) -> String {
+    let mut hierarchy_path = String::with_capacity(parent_path.len() + 34);
+    hierarchy_path.push_str(parent_path);
+    hierarchy_path.push('.');
+    hierarchy_path.push('n');
+    write!(&mut hierarchy_path, "{}", entry_id.simple())
+        .expect("writing to String cannot fail");
+    hierarchy_path
+}
+
+#[allow(dead_code)]
+pub(super) fn expected_hierarchy_path(
+    ordered_entry_ids: &[Uuid],
+) -> Result<String, FilesystemError> {
+    let Some((first_entry_id, remaining_entry_ids)) =
+        ordered_entry_ids.split_first()
+    else {
+        return Err(FilesystemError::Invariant("hierarchy_path_empty"));
+    };
+    let mut hierarchy_path =
+        String::with_capacity(ordered_entry_ids.len() * 34 - 1);
+    hierarchy_path.push('n');
+    write!(&mut hierarchy_path, "{}", first_entry_id.simple())
+        .expect("writing to String cannot fail");
+
+    for entry_id in remaining_entry_ids {
+        hierarchy_path.push('.');
+        hierarchy_path.push('n');
+        write!(&mut hierarchy_path, "{}", entry_id.simple())
+            .expect("writing to String cannot fail");
+    }
+
+    Ok(hierarchy_path)
+}
+
+#[allow(dead_code)]
+pub(super) fn verify_hierarchy_path(
+    ordered_entry_ids: &[Uuid],
+    hierarchy_path: &str,
+) -> Result<(), FilesystemError> {
+    if expected_hierarchy_path(ordered_entry_ids)? == hierarchy_path {
+        Ok(())
+    } else {
+        Err(FilesystemError::Invariant("hierarchy_path_mismatch"))
+    }
+}
+
+#[allow(dead_code)]
+pub(super) fn descendant_expr(hierarchy_path: &str) -> SimpleExpr {
+    Expr::cust_with_values(
+        r#""file_entry"."hierarchy_path" <@ $1::ltree"#,
+        vec![hierarchy_path.to_string()],
+    )
+}
+
+#[allow(dead_code)]
+pub(super) fn ancestor_expr(hierarchy_path: &str) -> SimpleExpr {
+    Expr::cust_with_values(
+        r#""file_entry"."hierarchy_path" @> $1::ltree"#,
+        vec![hierarchy_path.to_string()],
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn uuid_paths_use_only_lowercase_uuid_labels() {
+        let root_id = Uuid::from_u128(0x018f0000000700080000000000000002);
+        let directory_id = Uuid::from_u128(0x018f0000000700080000000000000001);
+        let root_label = "n018f0000000700080000000000000002";
+        let directory_label = "n018f0000000700080000000000000001";
+
+        assert_eq!(uuid_label(root_id), root_label);
+        assert_eq!(root_hierarchy_path(root_id), root_label);
+        assert_eq!(
+            child_hierarchy_path(root_label, directory_id),
+            format!("{root_label}.{directory_label}")
+        );
+    }
+
+    #[test]
+    fn expected_hierarchy_path_requires_exact_nonempty_uuid_chain() {
+        let root_id = Uuid::from_u128(1);
+        let directory_id = Uuid::from_u128(2);
+        let expected = "n00000000000000000000000000000001.n00000000000000000000000000000002";
+
+        assert_eq!(
+            expected_hierarchy_path(&[root_id, directory_id]).unwrap(),
+            expected
+        );
+        assert!(
+            verify_hierarchy_path(&[root_id, directory_id], expected).is_ok()
+        );
+        assert!(matches!(
+            expected_hierarchy_path(&[]),
+            Err(FilesystemError::Invariant("hierarchy_path_empty"))
+        ));
+        assert!(matches!(
+            verify_hierarchy_path(&[root_id, directory_id], "nwrong"),
+            Err(FilesystemError::Invariant("hierarchy_path_mismatch"))
+        ));
+    }
+}

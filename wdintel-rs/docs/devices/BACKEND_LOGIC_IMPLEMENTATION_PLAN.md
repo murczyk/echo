@@ -39,7 +39,7 @@
 - отримання root entries, direct children, breadcrumbs і scoped search;
 - стабільне сортування, технічні фільтри й keyset pagination;
 - безпечні parameterized `ltree` та literal name-search predicates;
-- opaque authenticated cursor і його query fingerprint;
+- continuation cursor з boundary entry UUID;
 - строгий розбір POSIX, Windows drive та UNC absolute paths;
 - нормалізація й виведення технічних файлових метаданих;
 - автоматичне створення root і synthetic directory chain;
@@ -74,7 +74,7 @@
 4. **Внутрішні типи не є wire DTO.** Domain commands, filters, pages і results не імпортують Actix, Elm bindings або transport-specific структури.
 5. **`parent_id` — canonical adjacency, `hierarchy_path` — похідна проєкція.** Direct children читаються через B-tree; subtree й ancestors — через `ltree`.
 6. **Людські імена не кодуються в `ltree`.** Labels формуються лише з immutable UUID; exact `name` і `name_key` зберігають файлову семантику окремо.
-7. **Тільки parameterized values.** `ltree`, search patterns, filters і cursor tuples ніколи не інтерполюються в SQL-рядки.
+7. **Тільки parameterized values.** `ltree`, search patterns, filters і typed keyset predicates ніколи не інтерполюються в SQL-рядки.
 8. **Фіксований індексований порядок.** Перший етап не підтримує довільне сортування за request column. Кожна операція має один нормативний порядок із UUID як остаточним tie-breaker.
 9. **Keyset замість deep offset.** Browse і search читають `limit + 1`, не виконують mandatory count і не використовують deep `OFFSET`.
 10. **Накопичувальна семантика.** Sync змінює лише явно адресований file item. Відсутність інших IDs у batch нічого не видаляє.
@@ -111,7 +111,7 @@ Transport adapter на діаграмі позначає лише зовнішн
 | `devices/filesystem/error.rs` | Внутрішня класифікація validation, not-found, conflict, dependency, invariant, internal і commit-uncertain failures. |
 | `devices/filesystem/repository.rs` | Concrete repository, який можна створити лише з `FileRegistryDb`; відкриття file connections/transactions і делегування у query/mutation modules. |
 | `devices/filesystem/ltree.rs` | UUID labels, hierarchy-path composition, перевірка отриманого path і parameterized ancestor/descendant expressions. |
-| `devices/filesystem/cursor.rs` | Canonical query fingerprint, versioned cursor payload, HMAC verification і sort-tuple continuation. |
+| `devices/filesystem/cursor.rs` | Текстове кодування/розбір boundary entry UUID і ліміт розміру cursor. |
 | `devices/filesystem/path.rs` | Pure parser POSIX, Windows drive та UNC paths без доступу до локальної файлової системи. |
 | `devices/filesystem/metadata.rs` | Валідація explicit MIME/extension, виведення extension/MIME та нормалізація file timestamps. |
 | `devices/filesystem/validation.rs` | Межі batch, paths, components, filter arrays, name query, page limit і duplicate file IDs. |
@@ -145,7 +145,7 @@ Transport adapter на діаграмі позначає лише зовнішн
 - знайти descendants у заданому directory scope;
 - застосувати kind, literal name, MIME, extension і modified-time filters;
 - повернути `path_components` сторінки одним batch ancestor query;
-- сформувати й перевірити continuation cursor для незмінного query fingerprint.
+- сформувати continuation cursor з boundary entry UUID.
 
 ### 7.3. Файлова ієрархія: зміни
 
@@ -199,7 +199,7 @@ Transport adapter на діаграмі позначає лише зовнішн
 
 - `entry_id` і `file_id` усередині модуля є UUID, але file identity використовується лише для `kind = file`.
 - Internal entry representation не маскує directory під file і не покладається на nullable `file_id` для доменних розгалужень.
-- Fixed sort tuples є окремими типами, щоб cursor не міг прийняти tuple від іншої операції.
+- Fixed sort tuples є окремими типами; cursor не містить tuple, а repository відновлює його лише у фактичному scoped query.
 - Repository лишається concrete; mocking SeaORM query builder не вводиться.
 
 #### Перевірка
@@ -236,25 +236,19 @@ Transport adapter на діаграмі позначає лише зовнішн
    - exact `extensions`;
    - inclusive `file_metadata_modified_from` і `file_metadata_modified_to`;
    - trimmed literal case-insensitive `name_query` довжиною 3–255 Unicode scalar values.
-6. До 50 filter values кожної технічної групи дедуплікувати й canonical-sort до fingerprint/query build. `from > to` відхиляти до DB query.
+6. До 50 filter values кожної технічної групи дедуплікувати й canonical-sort до query build. `from > to` відхиляти до DB query.
 7. Для literal search екранувати `%`, `_` і `\`; pattern передавати bound value з явним escape rule. Search text не інтерполювати в SQL.
 8. Реалізувати page limit default 100, range 1–100 і читання `limit + 1`. Mandatory count та file offset у нових hierarchy methods не використовувати.
 9. Реалізувати `FileCursorCodec`:
-   - versioned canonical payload;
-   - operation kind, device, scope, canonical filters і fixed sort у fingerprint;
-   - last sort tuple окремого типу;
-   - base64url transport representation;
-   - максимальна довжина cursor representation — 4096 bytes із відхиленням oversized input до декодування;
-   - HMAC verification у constant time;
-   - відхилення невідомої version, malformed payload, invalid MAC і fingerprint mismatch;
-   - виключення `limit` та `include_breadcrumbs` із fingerprint.
-10. Додати dedicated `device_file_cursor_hmac_key` до backend configuration і secret injection у тому самому завершеному кроці. Runtime validation вимагає щонайменше 32 random bytes, не має default/fallback і ніколи не журналює значення.
+   - передавати boundary `entry_id` як текстовий UUID cursor;
+   - максимальна довжина cursor representation — 4096 bytes із відхиленням malformed або oversized input;
+   - у фактичному device/navigation/filter scope знайти boundary UUID і відновити окремий typed last sort tuple для strict-after predicate.
 
 #### Ключові рішення
 
 - Для equality/range filters використовується SeaORM query builder; для `ltree` і escaped `ILIKE` — лише parameterized custom expressions.
-- Cursor не містить SQL, raw hierarchy path або людські path components.
-- Cursor не гарантує snapshot між сторінками. Він гарантує правильне продовження того самого canonical query за незмінного набору даних.
+- Cursor не містить SQL, raw hierarchy path, людські path components або sort tuple; це лише boundary UUID. Зміна scope або filters на клієнті очищує cursor, а repository відхиляє boundary, якої немає в фактичному scope.
+- Cursor не гарантує snapshot між сторінками. Він гарантує продовження після boundary у фактичному query за незмінного набору даних.
 - Metadata filters не match-ять directories; якщо задано MIME, extension або modified range, directory rows природно виключаються.
 - Цей шар формує query semantics, але не перевіряє роль користувача: authorization належить service boundary.
 
@@ -263,9 +257,9 @@ Transport adapter на діаграмі позначає лише зовнішн
 - runtime round-trip реального `ltree` read/write та ancestor/descendant predicates;
 - однакові names із різними IDs проходять сторінками без втрат і повторів за незмінного набору;
 - Unicode names sort-яться за `name_key`, а не locale;
-- cursor від іншого device, operation, scope або filter set відхиляється;
-- зміна лише порядку еквівалентного filter array дає той самий canonical fingerprint;
-- tampered, oversized і wrong-version cursors відхиляються;
+- boundary UUID, якої немає у фактичному scope/filter query, відхиляється.
+- canonicalized filter arrays дають один і той самий query behavior;
+- malformed і oversized cursors відхиляються.
 - query capture підтверджує bound values і відсутність value interpolation.
 
 #### Робочий стан після етапу

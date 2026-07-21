@@ -1,4 +1,7 @@
-use super::{query, FileEntry, FilesystemError, OffsetPage, OffsetPageRequest};
+use super::{
+    query, DirectoryScope, EntryQueryScope, EntrySortKey, FileEntry,
+    FilesystemError, OffsetPage, OffsetPageRequest,
+};
 use crate::file_registry::FileRegistryDb;
 use uuid::Uuid;
 
@@ -22,6 +25,34 @@ impl<'db> FilesystemRepository<'db> {
             self.file_registry_db.connection(),
             device_id,
             page,
+        )
+        .await
+    }
+
+    #[allow(dead_code)]
+    pub(in crate::devices) async fn find_directory_scope(
+        &self,
+        device_id: Uuid,
+        entry_id: Uuid,
+    ) -> Result<DirectoryScope, FilesystemError> {
+        query::find_directory_scope(
+            self.file_registry_db.connection(),
+            device_id,
+            entry_id,
+        )
+        .await
+    }
+
+    #[allow(dead_code)]
+    pub(in crate::devices) async fn resolve_cursor_entry_sort_key(
+        &self,
+        boundary_entry_id: Uuid,
+        scope: &EntryQueryScope<'_>,
+    ) -> Result<EntrySortKey, FilesystemError> {
+        query::resolve_cursor_entry_sort_key(
+            self.file_registry_db.connection(),
+            boundary_entry_id,
+            scope,
         )
         .await
     }
