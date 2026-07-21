@@ -414,6 +414,80 @@ describe('reloadAnalysisData', () => {
     expect(setMessages).toHaveBeenCalledWith([[21, { networkIds: [] }]]);
   });
 
+  it('commits a first-page reload without fetching a count', async () => {
+    const setMessages = vi.fn();
+    mocks.fetchInboxCount.mockRejectedValue(new Error('count failed'));
+    mocks.fetchAnalysisCount.mockResolvedValue({});
+    mocks.fetchAnalysisFreqs.mockResolvedValue({ freqs: [] });
+    mocks.fetchInboxMessages.mockResolvedValueOnce({
+      inboxItems: [[1, { networkIds: [] }]],
+      callsigns: [],
+      pageLimit: 20,
+    });
+
+    await reloadAnalysisData(
+      buildReloadParams({
+        messagePageCursor: { beforeIdNoninclusive: null, sinceIdNoninclusive: null },
+        pageIndex: 0,
+        setMessages,
+      }),
+    );
+
+    expect(mocks.fetchInboxCount).not.toHaveBeenCalled();
+    expect(mocks.fetchInboxMessages).toHaveBeenCalledTimes(1);
+    expect(setMessages).toHaveBeenCalledWith([[1, { networkIds: [] }]]);
+  });
+
+  it('commits a first-page frequency rebuild without fetching a count', async () => {
+    const setMessages = vi.fn();
+    mocks.fetchInboxCount.mockRejectedValue(new Error('count failed'));
+    mocks.fetchAnalysisCount.mockResolvedValue({});
+    mocks.fetchAnalysisFreqs
+      .mockResolvedValueOnce({
+        freqs: [
+          { freq: '150.099', count: 1, isNew: false },
+          { freq: '150.100', count: 1, isNew: false },
+          { freq: '150.101', count: 1, isNew: false },
+        ],
+      })
+      .mockResolvedValueOnce({
+        freqs: [
+          { freq: '150.199', count: 1, isNew: false },
+          { freq: '150.200', count: 1, isNew: false },
+        ],
+      });
+    mocks.fetchInboxMessages
+      .mockResolvedValueOnce({
+        inboxItems: [[1, { networkIds: [] }]],
+        callsigns: [],
+        pageLimit: 20,
+      })
+      .mockResolvedValueOnce({
+        inboxItems: [[2, { networkIds: [] }]],
+        callsigns: [],
+        pageLimit: 20,
+      });
+
+    await reloadAnalysisData(
+      buildReloadParams({
+        messagePageCursor: { beforeIdNoninclusive: null, sinceIdNoninclusive: null },
+        pageIndex: 0,
+        queryState: {
+          ...emptyQueryState(),
+          fromDateTimeStr: '2026-04-01T00:00',
+          toDateTimeStr: '2026-04-02T00:00',
+          freqsSelected: ['150.100'],
+          adjacentFreqsRange: 0.002,
+        },
+        setMessages,
+      }),
+    );
+
+    expect(mocks.fetchInboxCount).not.toHaveBeenCalled();
+    expect(mocks.fetchInboxMessages).toHaveBeenCalledTimes(2);
+    expect(setMessages).toHaveBeenLastCalledWith([[2, { networkIds: [] }]]);
+  });
+
   it('clamps a nonempty forward page to the refreshed last page', async () => {
     const setMessages = vi.fn();
     const setCurrentMessagePage = vi.fn();

@@ -758,6 +758,7 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
       if (
         messagePageCursor != null &&
         messagePageIndex != null &&
+        messagePageIndex > 0 &&
         !isLastPageCursor(messagePageCursor)
       ) {
         const messageCount = await fetchInboxCount(
@@ -871,6 +872,7 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
             if (
               rebuiltMessagePageCursor != null &&
               rebuiltMessagePageIndex != null &&
+              rebuiltMessagePageIndex > 0 &&
               !isLastPageCursor(rebuiltMessagePageCursor)
             ) {
               const rebuiltMessageCount = await fetchInboxCount(
