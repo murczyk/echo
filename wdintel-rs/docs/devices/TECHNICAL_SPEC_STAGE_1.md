@@ -1,36 +1,43 @@
 # Технічна специфікація «Пристрої»: етап 1 — створення й редагування пристроїв та синхронізація сирих даних джерела
 
 - **Статус:** Чернетка
-- **Версія:** 0.10
-- **Дата:** 2026-07-19
+- **Версія:** 0.14
+- **Дата:** 2026-07-21
 - **Етап:** 1
-- **Функціональний дизайн:** [`DEVICES.md`](./DEVICES.md), версія 0.10, статус «Прийнятий»
+- **Функціональний дизайн:** [`DEVICES.md`](./DEVICES.md), версія 0.13, статус «Прийнятий»
 
 ## Призначення документа
 
-Документ визначає технічну реалізацію лише першого етапу функціоналу «Пристрої»: створення й редагування супровідних технічних відомостей пристрою, його аналітичної назви, AOR і підрозділу, а також синхронізацію метаданих файлів із джерела.
+Документ визначає технічну реалізацію лише першого етапу функціоналу «Пристрої»: створення й редагування супровідних технічних відомостей пристрою, його аналітичної назви, AOR і підрозділу, синхронізацію накопичувального реєстру файлових метаданих із джерела та ієрархічне отримання цих відомостей.
 
 Кожен наступний етап описується в окремому документі. Залежності від майбутніх етапів тут можна зазначати лише як межі або передумови без проєктування їхньої реалізації.
+
+### Статус реалізації v0.14
+
+Версія 0.14 реалізує лише підготовку схеми даних і сумісний persistence/rendering чинного device API: перетворення `main.device` та створення порожньої `wd_files.public.file_entry`. Логіка file registry, API cutover, frontend і перенесення legacy file rows не входять до цієї реалізації; чинні file routes продовжують працювати з `main.device_file`.
+
 
 ## Межі першого етапу
 
 ### Мета
 
-Надати наскрізну реалізацію трьох потоків:
+Надати наскрізну реалізацію чотирьох потоків:
 
 1. створення пристрою лише з джерельними технічними відомостями;
 2. рольове редагування супровідних технічних відомостей, аналітичної назви, AOR і підрозділу пристрою;
-3. синхронізація метаданих файлів пристрою із джерела.
+3. синхронізація поточних метаданих відомих файлових об’єктів за абсолютними шляхами з автоматичним визначенням коренів і похідної ієрархії;
+4. root listing, folder browsing, breadcrumbs і scoped search із cursor pagination над накопичувальним файловим реєстром.
 
 ### У межах етапу
 
-- схема зберігання пристроїв, їхніх супровідних технічних відомостей, аналітичної назви, AOR, підрозділу та метаданих файлів;
-- створення стабільних ключів пристроїв і файлів;
+- схема зберігання пристроїв, їхніх супровідних технічних відомостей, аналітичної назви, AOR, підрозділу та єдиного ієрархічного набору файлових entries;
+- створення стабільних ключів пристроїв і файлів та автоматичне створення кореневих і віртуальних директорій;
 - рольові межі `DeviceSource` для створення й синхронізації джерельних даних та `DeviceAnalyst` для подальшого редагування визначених аналітичних полів;
-- валідація, атомарність і оброблення помилок операцій пристрою;
+- валідація, атомарність, конкурентні інваріанти та оброблення помилок;
 - синхронізація технічних метаданих файлів без передавання або зберігання файлового контенту;
+- root listing, direct-child browse, breadcrumbs, scoped search і opaque keyset cursor без mandatory file count;
 - бекенд-операції, API-контракти та фронтенд-потоки, потрібні для цих можливостей;
-- міграція схеми, перевірка та введення першого етапу в експлуатацію.
+- нова міграція схеми, перевірка та введення першого етапу в експлуатацію.
 
 ### Поза межами етапу
 
@@ -41,22 +48,25 @@
 - архівування та відновлення пристроїв;
 - приховування та відновлення файлів як окремі користувацькі операції;
 - нові типи сирих даних, відмінні від файлів;
+- повні filesystem snapshots, неявне видалення відсутніх у batch файлів і first-class порожні директорії;
+- hard links, symlinks, inode identity та публічні операції створення, rename, move або delete директорії;
 - реалізація продуктових рішень, які у функціональному дизайні залишаються відкритими.
 
 ### Критерій межі етапу
 
-Етап вважається технічно завершеним, коли створення й рольове редагування визначених полів пристрою та синхронізація метаданих файлів із джерела працюють наскрізно через схему даних, бекенд, фронтенд і API та перевірені за відповідними вимогами функціонального дизайну.
+Етап вважається технічно завершеним, коли створення й рольове редагування визначених полів пристрою, синхронізація файлових метаданих за абсолютними шляхами з автоматичними коренями та ієрархічні browse/search потоки працюють наскрізно через схему даних, бекенд, фронтенд і API та перевірені за відповідними вимогами функціонального дизайну.
 
 ## Трасування до функціонального дизайну
 
-Цей розділ повинен пов’язати кожне технічне рішення з нормативними вимогами `DEV-*` і сценаріями `SC-*` із [`DEVICES.md`](./DEVICES.md).
+Трасування першого етапу:
 
-Для кожного потоку потрібно зафіксувати:
-
-- функціональні вимоги та сценарії;
-- технічні компоненти, що їх реалізують;
-- секцію цієї специфікації, де визначено рішення;
-- спосіб перевірки результату.
+| Потік | Функціональні вимоги | Сценарії | Технічні секції | Перевірка |
+| ----- | -------------------- | -------- | ----------------- | --------- |
+| Створення й рольове редагування пристрою | `DEV-ID-001`, `DEV-ID-007`, `DEV-ID-012`, `DEV-ACC-011`, `DEV-ACC-012`, `DEV-INT-010`, `DEV-INT-011` | `SC-01`, `SC-02`, `SC-07` | `main.device`, `DeviceService`, create/update API та drawers | Transaction, role й contract tests; browser create/edit. |
+| Абсолютні шляхи, корені й path identity | `DEV-FILE-020`, `DEV-FILE-021`, `DEV-FILE-022`, `DEV-FILE-023` | `SC-03`, `SC-11` | Source path parser, parentless `file_entry`, automatic root upsert і absolute-path sync | Parser/schema invariants, duplicate-path contract і multi-root sync smoke test. |
+| Накопичення та move між коренями | `DEV-FILE-019`, `DEV-FILE-024`, `DEV-FILE-025`, `DEV-LC-007`, `DEV-INT-012` | `SC-03`, `SC-04` | Per-item transaction, ordered root row locks, directory upsert/prune і file lock | Cross-root move/concurrency tests; same ID and preserved out-of-stage state. |
+| Ієрархічне отримання | `DEV-INT-019`, `DEV-INT-020`, `DEV-INT-021`, `DEV-INT-022`, `DEV-UX-010`, `DEV-UX-011`, `DEV-UX-012`, `DEV-NFR-009` | `SC-11` | `ltree`, children/search indexes, browse/search API та file panel | Query-plan fixtures, cursor contracts і browser navigation/search. |
+| Частковий batch і явні помилки | `DEV-INT-005`, `DEV-NFR-004`, `DEV-UX-005`, `DEV-UX-006` | `SC-03`, `SC-04` | Ordered result union, error mapping і independent commits | Mixed accepted/rejected, dependency and commit-uncertainty tests. |
 
 ## Модель даних (схема бази)
 
@@ -67,7 +77,7 @@
 | База даних | Відповідальність |
 | ---------- | ---------------- |
 | Основна база ЕХО (`main`) | Пристрої, аналітичні й супровідні технічні відомості пристроїв, зв’язки з AOR, підрозділами, користувачами та іншими чинними довідниками. |
-| Реєстр файлів (`wd_files`) | Лише поточні технічні метадані файлів і логічний зв’язок кожного файла зі стабільним ключем пристрою. |
+| Реєстр файлів (`wd_files`) | Накопичувальні поточні технічні метадані відомих файлових об’єктів і їхня похідна ієрархія; кожен entry логічно пов’язаний зі стабільним ключем пристрою. |
 
 `wd_files` є окремою базою даних із точним ім’ям `wd_files`, а не схемою або набором таблиць в основній базі. Вона може бути розгорнута на тому самому або на іншому сервері PostgreSQL; реалізація не покладається на спільний інстанс.
 
@@ -83,7 +93,7 @@
 | `name` | `text null` | Аналітична назва. Якщо задана, після `btrim` не може бути порожньою; унікальність не вимагається. |
 | `unit_id` | `bigint null` | Зовнішній ключ на чинний `sigint_unit(id)`. |
 | `external_url` | `text null` | Необов’язкове зовнішнє посилання; порожній рядок не зберігається. |
-| `custom_fields` | `jsonb not null default '{}'::jsonb` | JSON-об’єкт поточних пар `ключ:значення`. Ключі унікальні в межах об’єкта, а значення є рядками. |
+| `custom_fields` | `jsonb not null` | JSON-об’єкт поточних пар `ключ:значення`. Ключі унікальні в межах об’єкта, а значення є рядками. |
 | `created_by` | `text not null` | Зовнішній ключ на `login(login)` для аудиту створення; не визначає власника або права на пристрій. |
 | `archived` | `boolean not null default false` | Наявний життєвий стан, який етап читає для блокування змін; операції архівування не входять до етапу. |
 | `archived_at` | `timestamp null` | Час архівування в UTC; має бути заданий тоді й лише тоді, коли `archived = true`. |
@@ -120,68 +130,168 @@
 
 Зміна `source_label`, `external_url`, `custom_fields`, `name`, `unit_id` і набору AOR виконується в одній транзакції основної бази. Поточний рядок `device` блокується до завершення patch, тому невалідне або заборонене поле не залишає частково зміненого стану.
 
-### Цільова таблиця `wd_files.public.device_file`
+### Вибір ієрархічної моделі
+
+Розглянуті варіанти та рішення:
+
+| Варіант | Перевага | Причина не використовувати як canonical model |
+| ------- | -------- | ---------------------------------------------- |
+| Лише raw pathname у file row | Простий джерельний контракт без знання дерева ЕХО | Немає first-class direct children і кожен browse потребує parsing; exact `absolute_path` зберігається як джерельне значення, але не замінює canonical adjacency. |
+| `text[]` компонентів | Зберігає точні Unicode-компоненти без escaping | Ordered-prefix retrieval не має повноцінної штатної ієрархічної індексації; directory identity лишається неявною. |
+| Лише adjacency list | Сильні FK та дешеві direct-child mutation | Кожен subtree/ancestor/breadcrumb query потребує recursive CTE. |
+| `ltree` із людськими назвами | Швидкі ancestor/subtree operators | Label grammar не покриває довільні файлові імена, а rename переписує paths descendants. |
+| Closure table | Прості indexed ancestor/subtree joins | `O(depth)` rows на entry і дорожчі insert/move без доведеного навантаження, яке це виправдовує. |
+| Зовнішній graph/document/object store | Природний для загальних графів або immutable snapshots | Додає окремий сервіс та consistency boundary для задачі rooted tree; не потрібний для чинної accumulated registry semantics. |
+| **Adjacency + UUID-based `ltree`** | FK/direct children із швидкими subtree/ancestor queries | **Обрано:** `parent_id` є canonical структурним зв’язком, `hierarchy_path` — синхронна похідна проєкція. |
+
+Джерело передає exact `absolute_path` і `path_syntax`; backend детерміновано виводить canonical root та ordered relative names. `absolute_path` є поточним джерельним значенням, а `parent_id`, `name` і `hierarchy_path` — перевіреною структурною проєкцією для навігації. `ltree` містить лише immutable UUID labels, тому filesystem semantics не залежать від label grammar, а move файла, зокрема між коренями, переписує лише один leaf path.
+
+### Цільова таблиця `wd_files.public.file_entry`
+
+`file_entry` зберігає весь файловий forest без окремої таблиці namespace. `parent_id IS NULL` є єдиною ознакою кореневої директорії; окремих `namespace_id`, `root_id`, `source_key`, `display_root` або `kind = 'root'` немає. `parent_id` забезпечує direct-child операції та цілісність, а UUID-based `hierarchy_path ltree` є синхронною похідною проєкцією для subtree, ancestors і breadcrumbs. Людські назви ніколи не кодуються в `ltree`.
+У реалізації 0.14 migration створює `file_entry` порожньою: вона не копіює, не імпортує, не зіставляє та не перевіряє coverage рядків із `main.device_file` або `wd_files.public.device_file`.
+
 
 | Колонка | Тип і допустимість | Призначення та обмеження |
 | ------- | ------------------ | ------------------------ |
-| `id` | `uuid not null` | Первинний стабільний ключ файла, який генерує бекенд ЕХО. |
-| `device_id` | `uuid not null` | Стабільний ключ пристрою з основної бази; логічне посилання без міжбазового зовнішнього ключа. |
-| `name` | `text not null` | Обов’язкова непорожня поточна назва файла; приймається від клієнта або виводиться бекендом із `path`. |
-| `path` | `text not null` | Єдиний поточний шлях файла у файловій системі джерела; після `btrim` не може бути порожнім. |
-| `mime_type` | `text null` | MIME-тип, переданий джерелом або виведений бекендом; лишається `NULL`, якщо його неможливо визначити. |
-| `extension` | `text null` | Розширення, передане джерелом або виведене з ефективної назви файла; лишається `NULL`, якщо назва не має розширення. |
-| `file_metadata_created_at` | `timestamp null` | Час створення з метаданих файла, нормалізований до UTC. |
-| `file_metadata_modified_at` | `timestamp null` | Час останньої зміни з метаданих файла, нормалізований до UTC. |
-| `created_at` | `timestamp not null` | Час першого створення запису в ЕХО в UTC. |
-| `updated_at` | `timestamp not null` | Час останньої прийнятої зміни метаданих в UTC. |
+| `id` | `uuid not null` | Первинний стабільний entry key. Для нових entries ЕХО генерує UUIDv7. Для file це публічний `file_id`; IDs root і вкладених directory є структурними ключами навігації. |
+| `device_id` | `uuid not null` | Логічне посилання на `main.device(id)` без міжбазового зовнішнього ключа; дублюється в entries для scope та composite self-FK. |
+| `parent_id` | `uuid null` | `NULL` лише для кореневої directory; кожен інший entry посилається на directory того самого пристрою. |
+| `kind` | `text not null` | Одне з `directory`, `file`; після створення не змінюється. |
+| `name` | `text not null` | Точна непорожня назва без `trim` або Unicode-нормалізації. Для root це канонічні `/`, uppercase drive root на кшталт `C:\` або UNC share на кшталт `\\server\share\`; для інших entries — один виведений компонент. |
+| `name_key` | `bytea not null` | Точні UTF-8 bytes `name`, використані для identity та ordering незалежно від locale collation. |
+| `path_syntax` | `text null` | Одне з `posix`, `windows` для root і file; `NULL` для synthetic directory. Для file зберігає синтаксис, за яким розібрано `absolute_path`. |
+| `absolute_path` | `text null` | Exact рядок джерела лише для file; `NULL` для всіх directory. Не є ключем і може дублюватися. |
+| `hierarchy_path` | `ltree not null` | Послідовність immutable entry labels від parentless root до цього entry. |
+| `mime_type` | `text null` | Допустиме лише для file; передане або виведене значення. |
+| `extension` | `text null` | Допустиме лише для file; передане або виведене значення без початкової крапки. |
+| `file_metadata_created_at` | `timestamp null` | Допустиме лише для file; файлова дата створення в UTC. |
+| `file_metadata_modified_at` | `timestamp null` | Допустиме лише для file; файлова дата зміни в UTC. |
+| `created_at` | `timestamp not null` | Час створення entry в ЕХО. |
+| `updated_at` | `timestamp not null` | Час останньої прийнятої зміни entry. |
 
-Для `device_file` база гарантує:
+Кожен label має форму `n` + UUID без дефісів, наприклад `n019bc8d4acdf7f42a5d1c2726bfc1880`. Root path містить label його власного `id`; child path дорівнює `parent.hierarchy_path || own_label`. File move в тому самому або іншому root переписує лише його leaf path. Публічного root або directory move в етапі немає.
 
-- первинний ключ `device_file(id)`;
-- `check (btrim(name) <> '')`;
-- заборону порожніх значень для заданих `mime_type` та `extension`;
-- `check (btrim(path) <> '')`;
-- індекс `(device_id, updated_at desc, id)` для списку файлів пристрою.
+База й repository разом гарантують:
 
-Кожен файл має рівно один шлях і одну непорожню назву. Однакові назви, шляхи або інші метадані не утворюють унікальності: два створення без ключа є двома файлами з різними UUID. `device_id` і `created_at` після створення не змінюються. Зміна з ключем атомарно замінює повний поточний набір технічних метаданих в одній транзакції `wd_files`.
+- первинний ключ `file_entry(id)` і додатковий `unique (device_id, id)` для composite self-FK;
+- `foreign key (device_id, parent_id) references file_entry(device_id, id) on delete restrict`;
+- `parent_id IS NULL` допускається лише для directory; file завжди має parent;
+- parent кожного descendant є directory того самого device;
+- `name_key = convert_to(name, 'UTF8')`;
+- row-shape check задає рівно три форми: root directory має `parent_id IS NULL`, заданий `path_syntax` і `absolute_path IS NULL`; synthetic directory має parent і обидва path-поля `NULL`; file має parent і обидва path-поля `NOT NULL`;
+- `path_syntax` належить `posix | windows`; file `absolute_path` непорожній, не перевищує визначені character/UTF-8 byte limits, а його синтаксис збігається із синтаксисом root;
+- файлові метадані `NULL` для directory, а задані `mime_type` та `extension` непорожні;
+- `unique (device_id, hierarchy_path)` і constraint trigger, який перевіряє parent kind, відсутність циклу та точну відповідність похідного path;
+- root identity `unique (device_id, path_syntax, name_key) where parent_id is null`;
+- synthetic directory sibling identity `unique (device_id, parent_id, name_key) where kind = 'directory' and parent_id is not null`;
+- repository перевіряє, що root, components, file `name`, `path_syntax` і `absolute_path` є результатом одного нормативного parse;
+- file sibling absolute path не є унікальним: файли з однаковим parent, `name_key` і `absolute_path` мають різні IDs та співіснують;
+- file і directory можуть мати однакові `parent_id` та `name_key`; kind та IDs однозначно розрізняють їх у відповідях.
 
-У схемі етапу немає колонок `hidden` і `hidden_at`, а також колонок для бінарного контенту, стану контенту, S3, ознаки оброблення аналітиком, категорій, тегів або коментарів файла.
+Порожні synthetic directory entries не зберігаються. Parentless root автоматично створюється в транзакції першого прийнятого file item для відповідного canonical root і зберігається навіть без дітей. Backend upsert-ить один root та chain для розібраних шляхів і після move прибирає порожні старі ancestors до root.
+
+### Індекси та query shapes
+
+```sql
+CREATE UNIQUE INDEX file_entry_roots_uidx
+    ON file_entry (device_id, path_syntax, name_key)
+    WHERE parent_id IS NULL;
+
+CREATE UNIQUE INDEX file_entry_hierarchy_uidx
+    ON file_entry (device_id, hierarchy_path);
+
+CREATE INDEX file_entry_children_idx
+    ON file_entry (device_id, parent_id, kind, name_key, id)
+    WHERE parent_id IS NOT NULL;
+
+CREATE UNIQUE INDEX file_entry_directory_sibling_uidx
+    ON file_entry (device_id, parent_id, name_key)
+    WHERE kind = 'directory' AND parent_id IS NOT NULL;
+
+CREATE INDEX file_entry_hierarchy_gist_idx
+    ON file_entry USING gist (hierarchy_path);
+
+CREATE INDEX file_entry_search_order_idx
+    ON file_entry (device_id, kind, name_key, id)
+    WHERE parent_id IS NOT NULL;
+
+CREATE INDEX file_entry_name_trgm_idx
+    ON file_entry USING gin (name gin_trgm_ops)
+    WHERE parent_id IS NOT NULL;
+
+CREATE INDEX file_entry_file_mime_idx
+    ON file_entry (device_id, mime_type, id)
+    WHERE kind = 'file' AND mime_type IS NOT NULL;
+
+CREATE INDEX file_entry_file_extension_idx
+    ON file_entry (device_id, extension, id)
+    WHERE kind = 'file' AND extension IS NOT NULL;
+
+CREATE INDEX file_entry_file_modified_idx
+    ON file_entry (device_id, file_metadata_modified_at, id)
+    WHERE kind = 'file' AND file_metadata_modified_at IS NOT NULL;
+```
+
+Root listing використовує `file_entry_roots_uidx` і порядок `(path_syntax, name_key, id)`. Direct children використовують composite B-tree і keyset tuple `(kind, name_key, id)`. Device-wide unfiltered search може йти `file_entry_search_order_idx`; selective subtree застосовує `hierarchy_path <@ scope_path`, ancestors — `hierarchy_path @> entry_path`. Scoped name search поєднує GiST і trigram GIN через bitmap scan, а MIME/extension/time filters — відповідні partial B-tree indexes.
+
+`name_query` має щонайменше три Unicode scalar values, бо коротший substring не дає селективного trigram key. `%`, `_` і `\` escape-яться як literals. Default GiST signature змінюють лише за результатом `EXPLAIN (ANALYZE, BUFFERS)` на representative depth/cardinality fixture.
+
+Оператори, index classes і обмеження labels визначені в [PostgreSQL `ltree`](https://www.postgresql.org/docs/current/ltree.html), а поведінка indexed `ILIKE` — у [PostgreSQL `pg_trgm`](https://www.postgresql.org/docs/current/pgtrgm.html). Exact `absolute_path` зберігається у file row; похідний `path_components` не дублюється окремою колонкою й будується з ordered ancestors, виключаючи parentless root. Для search page результати та ancestors завантажуються одним batch-запитом, а не N+1.
+
+### SeaORM і безпечний SQL
+
+`sea-orm-codegen 1.1.19` генерує custom `ltree` як `String`, але без cast runtime SELECT несумісний із `TEXT`. Генерація `wd_files` entities детерміновано додає:
+
+```rust
+#[sea_orm(
+    column_type = "custom(\"ltree\")",
+    select_as = "text",
+    save_as = "ltree"
+)]
+pub hierarchy_path: String,
+```
+
+`just gen-seaorm-files` виконує цей post-codegen крок і CI перевіряє його повторюваність. Hierarchy predicates інкапсулює repository та передає значення параметрами:
+
+```rust
+Expr::cust_with_values(
+    "file_entry.hierarchy_path <@ $1::ltree",
+    [scope_path],
+)
+```
+
+String interpolation для `ltree`, `ILIKE`, cursors або компонентів заборонена. SQLx `PgLTree` можна використовувати всередині того самого repository, але wire DTO ніколи не містить внутрішній `hierarchy_path`.
 
 ### Міжбазова цілісність
 
-PostgreSQL не підтримує зовнішній ключ між окремими базами, тому `device_file.device_id` є логічним посиланням. Його цілісність забезпечує прикладна послідовність:
+PostgreSQL не підтримує зовнішній ключ між окремими базами, тому `file_entry.device_id` є логічним посиланням. Його цілісність забезпечує прикладна послідовність:
 
-1. бекенд у `main` автентифікує користувача та перевіряє існування, видимість і активний стан пристрою;
+1. бекенд у `main` автентифікує користувача та перевіряє існування, видимість і допустимий життєвий стан пристрою;
 2. транзакція й з’єднання `main` звільняються;
-3. бекенд читає або змінює тільки рядки `wd_files`, що мають перевірений `device_id`;
-4. оновлення наявного файла адресує одночасно `id` і `device_id`, тому ключ файла іншого пристрою не приймається.
+3. бекенд читає або змінює лише entries з перевіреним `device_id`;
+4. file, parent і browse/search scope адресуються одночасно `file_entry.id` та `file_entry.device_id`; sync не приймає directory IDs;
+5. parent перевіряється composite FK, а root і components для sync виводяться лише з `path_syntax` та `absolute_path`.
 
-Етап не виконує фізичного видалення пристроїв, тому робочий потік не створює осиротілих файлових записів. Майбутнє фізичне видалення не можна додати без окремого протоколу очищення й перевірки `wd_files`.
+Етап не виконує фізичного видалення пристроїв. File move між автоматично визначеними коренями входить до етапу й виконується однією транзакцією `FileRegistryDb`; майбутнє фізичне видалення потребуватиме окремого протоколу координації та очищення.
 
 ### Provisioning, міграції та права
 
-Базу `wd_files` створює окремий provisioning-крок з адміністративними обліковими даними. Прикладний бекенд не має права `CREATE DATABASE`.
+Чинна топологія підключень не змінюється: `main` використовує `pg_host`, `pg_port`, `pg_user`, `pg_password`, `pg_dbname`, а `wd_files` — `pg_wdfile_host`, `pg_wdfile_port`, `pg_wdfile_user`, `pg_wdfile_password`, `pg_wdfile_dbname`. Налаштований користувач кожної бази, як і раніше, виконує runtime queries і відповідний migration chain. Бази та їхні `seaql_migrations` незалежні, але ця зміна не додає users, passwords, pools, окремих migrator binaries або readiness protocols.
 
-Для двох баз використовуються:
+Чинний `oneoff-create-file-registry-database` створює лише database. `file_registry::run_migrations` через `wdfiles_migration::Migrator` встановлює extensions і schema у file database; він є єдиним шляхом file migration. Нова pure-SQL migration починається з:
 
-- незалежні ланцюжки міграцій і незалежні таблиці `seaql_migrations`;
-- окремий власник схеми або міграційний користувач із DDL-правами;
-- окремі runtime-користувачі з мінімальними DML-правами лише у своїй базі;
-- окремі конфігурації, пули, таймаути та перевірки готовності.
+```sql
+CREATE EXTENSION IF NOT EXISTS ltree WITH SCHEMA public;
+CREATE EXTENSION IF NOT EXISTS pg_trgm WITH SCHEMA public;
+```
 
-Runtime-користувач основної бази не отримує прав у `wd_files`, а runtime-користувач реєстру не отримує прав в основній базі. Сумарні ліміти обох пулів повинні вкладатися в ліміти відповідних серверів PostgreSQL.
+Після цього вона створює порожню `public.file_entry` з описаними constraints, triggers та indexes. Вона не читає, не `ALTER`-ить і не `DROP`-ить `public.device_file`; extensions не видаляються під час rollback, бо migration не може довести ownership.
 
-Наявні міграції не редагуються. Перехід виконується новими міграціями й окремою операцією перенесення:
+Нова main migration в одній transaction перетворює саму таблицю `main.device`: додає `source_label` і object `custom_fields`, переносить у них значення чинних `name`/`hostname`/`ssh_port`, а потім прибирає legacy columns. Це не є file backfill і не змінює `updated_at`.
 
-1. у `main` додається `source_label`, поточне непорожнє `name` використовується для його початкового заповнення, після чого `source_label` стає `not null`;
-2. з `name` прибираються `not null` і унікальний індекс, щоб пристрій можна було створити без аналітичної назви;
-3. `hostname` і `ssh_port` перетворюються на `custom_fields` без втрати значень; неоднозначне або конфліктне перетворення блокує міграцію замість тихої втрати даних; позаетапні аналітичні колонки залишаються без змін;
-4. provisioning створює `wd_files`, а окремий файловий мігратор створює цільову таблицю;
-5. файлові записи тимчасово блокуються; перенесення перевіряє, що кожен наявний `device_file` має `original_absolute_path` і не має позаетапного стану приховування, після чого застосовує ті самі правила виведення метаданих, ідемпотентно копіює UUID, `device_id`, часові мітки та відображає `original_absolute_path` у `path`, ефективну `original_name` або назву з шляху — у `name`, `original_created_at` — у `file_metadata_created_at`, а `original_modified_at` — у `file_metadata_modified_at`; неможливість отримати непорожню назву або інше порушення передумов блокує перехід замість тихої втрати даних;
-6. кількість рядків за кожним `device_id` і контрольна сума нормалізованих значень звіряються між базами;
-7. бекенд перемикається на `wd_files`, і лише після перевіреного періоду окрема наступна міграція видаляє застарілу таблицю з `main`.
+`main.device_file` і `wd_files.public.device_file` лишаються незалежними legacy tables: їхні rows не імпортуються, не зіставляються та не перевіряються на coverage. Немає manifest, resumable backfill, checkpoint, checksum, cutover або privilege-phase протоколу. Майбутній окремий Logic/API етап почне писати `file_entry` без автоматичного перенесення legacy rows; до нього чинні file routes залишаються на `main.device_file`.
 
-Подвійний запис у стару й нову таблиці не використовується. Відкочування після поновлення файлових записів не може перемкнутися на застарілу копію: спочатку записи зупиняються, різниця переноситься назад і перевіряється, або виконується виправлення вперед.
 
 ## Логіка (бекенд)
 
@@ -190,7 +300,7 @@ Runtime-користувач основної бази не отримує пр�
 HTTP-обробники не реалізують доменні правила самостійно. UI та API викликають один прикладний шар, а той працює з двома типізованими ресурсами:
 
 - `MainDb` — автентифікація, ролі, видимість, супровідні технічні та визначені цим етапом аналітичні відомості пристроїв;
-- `FileRegistryDb` — поточні метадані файлів.
+- `FileRegistryDb` — parentless roots, synthetic hierarchy та поточні метадані відомих файлів.
 
 Прикладний шар складається з таких компонентів:
 
@@ -199,12 +309,16 @@ HTTP-обробники не реалізують доменні правила 
 | `DeviceActorResolver` | За поточною `Identity` читає логін і ролі з `main`, перевіряє прапорець доступності розділу та формує серверний контекст можливостей. |
 | `DeviceVisibility` | Додає до запитів `main.device` єдиний предикат видимості й окремо перевіряє допустимий життєвий стан. |
 | `DeviceService` | Створює, читає й атомарно редагує пристрої тільки через `MainDb`. |
-| `FileMetadataService` | Після перевірки пристрою через `MainDb` читає або змінює метадані тільки через `FileRegistryDb`. |
+| `FileMetadataService` | Після перевірки пристрою через `MainDb` синхронізує file entries, автоматично upsert-ить derived roots/hierarchy та обслуговує root list, folder browse, breadcrumbs і scoped search через `FileRegistryDb`. |
+| `SourcePathParser` | Строго розбирає exact absolute path за `posix` або `windows`, повертає canonical root і точні компоненти та не звертається до локальної файлової системи backend-а. |
+| `FileCursorCodec` | Канонічно серіалізує fingerprint/sort tuple, підписує continuation cursor і відхиляє version, MAC або parameters mismatch. |
 | `DeviceValidation` | Нормалізує значення, класифікує наявні поля за групами й формує помилки з точними шляхами полів. |
 
 У прикладні функції передається не список ролей із запиту, а серверний `DeviceActor` щонайменше з `login`, `can_read`, `can_write_source_data` і `can_write_analytical_data`. Контекст формується заново для кожної операції. Відкликана роль перестає діяти з наступного запиту; клієнт не може передати, розширити або кешувати ефективні можливості.
 
 Репозиторій пристроїв приймає лише `MainDb`, а репозиторій файлового реєстру — лише `FileRegistryDb`. HTTP-обробник не отримує нетипізований пул для вибору бази й не виконує SQL напряму. Це робить випадковий запит до таблиці іншої бази помилкою структури коду.
+
+`FileCursorCodec` читає окремий `device_file_cursor_hmac_key` із `config.toml`/secret injection. Runtime не стартує без щонайменше 32 random bytes, не журналює key і не перевикористовує cookie/session secrets; його ротація може явно інвалідувати короткоживучі cursors.
 
 ### Ефективні можливості та видимість
 
@@ -217,7 +331,7 @@ HTTP-обробники не реалізують доменні правила 
 | `DeviceAnalyst` | так | так, як успадкована можливість `DeviceSource` | так |
 | `Admin` | так | так | так |
 
-Кілька ролей дають об’єднання можливостей. Створення пристрою, зміна його супровідних технічних відомостей і синхронізація файлових метаданих вимагають `can_write_source_data`. Команда створення не містить `name`, `aor_ids` або `unit_id` і відхиляє їхню присутність незалежно від ролі та значення. Під час редагування фактично передані `name`, `aor_ids` або `unit_id`, навіть із `null` чи порожнім масивом, вимагають `can_write_analytical_data`.
+Кілька ролей дають об’єднання можливостей. Створення пристрою, зміна його супровідних технічних відомостей і синхронізація файлових метаданих вимагають `can_write_source_data`. Команда створення пристрою не містить `name`, `aor_ids` або `unit_id` і відхиляє їхню присутність незалежно від ролі та значення. Під час редагування фактично передані `name`, `aor_ids` або `unit_id`, навіть із `null` чи порожнім масивом, вимагають `can_write_analytical_data`.
 
 На першому етапі не додається окреме row-level володіння за автором, `source_label`, AOR або підрозділом. За чинної політики видимими є всі пристрої дозволеного життєвого стану для користувача з правом читання розділу. Проте кожен запит на наявний пристрій уже використовує спільний `DeviceVisibility`, а не безумовний `find_by_id`, щоб майбутня зміна політики не вимагала переписувати прикладні операції.
 
@@ -240,7 +354,7 @@ HTTP-обробники не реалізують доменні правила 
 | ----- | ------------------ | ----------------- |
 | Технічні відомості пристрою | `source_label`, `external_url`, patch `custom_fields` | `can_write_source_data` |
 | Аналітичні відомості пристрою | `name`, `aor_ids`, `unit_id` | `can_write_analytical_data` |
-| Технічні метадані файла | `file_id` як адреса, `path`, обов’язкова ефективна `name`, `mime_type`, `extension`, `file_metadata_created_at`, `file_metadata_modified_at` | `can_write_source_data` |
+| Технічні метадані файла | `device_id` як адреса batch, обов’язковий `path_syntax`, optional `file_id`, `absolute_path`, `mime_type`, `extension`, `file_metadata_created_at`, `file_metadata_modified_at` під час sync | `can_write_source_data` |
 | Системні поля | UUID, `created_by`, `created_at`, `updated_at` | лише бекенд |
 | Файловий контент і його стан | відсутні в DTO етапу | поза межами етапу |
 | Аналітика файла, ознака оброблення, приховування | відсутні в DTO етапу | поза межами етапу |
@@ -268,20 +382,25 @@ DTO створення приймає лише `source_label`, `external_url` і
 
 Граничні розміри рядків, кількість кастомних полів і розмір команди задаються окремими константами групи `DEVICE_*` у `config.rs`; однакові валідатори використовуються всіма каналами. Константи не дублюються в HTTP-обробниках або фронтенді.
 
-#### Метадані файла
+#### Абсолютний шлях і метадані файла
 
-- Команда адресує рівно один `device_id` і містить від 1 до `DEVICE_FILE_SYNC_BATCH_MAX_COUNT` елементів; для першого етапу значення константи — `100`.
-- `file_id` відсутній для створення і є UUID для заміни наявного стану. Довільний, невідомий або належний іншому пристрою ключ не створює новий файл.
-- `path` є обов’язковим рядком і має містити хоча б один непробільний символ.
-- Нормалізований файловий елемент завжди має непорожню `name`. Передана назва лише з пробілів відхиляється. Якщо `name` не передано, бекенд виводить її з кінцевого компонента `path` після останнього роздільника `/` або `\`; шлях із порожнім кінцевим компонентом не дає назви й отримує помилку `files[i].name`. Після перевірки `path` і ефективна `name` зберігаються без `trim`, щоб не змінити фактичні значення файлової системи джерела.
-- Якщо `extension` не передано, бекенд виводить її з суфікса ефективної `name` після останньої крапки, не враховуючи крапку на початку або в кінці назви, і зберігає без початкової крапки. Якщо суфікса немає, `extension` лишається `NULL`.
-- Якщо `mime_type` не передано, бекенд визначає його через наявний `mime_guess` за ефективними `extension` і `name`. Якщо відповідності немає, `mime_type` лишається `NULL`.
-- Явно передані непорожні `name`, `extension` і `mime_type` мають пріоритет над виведеними значеннями. Бекенд не виправляє й не звіряє їх між собою або з `path`; виведення лише заповнює відсутні поля.
-- `file_metadata_created_at` і `file_metadata_modified_at` необов’язкові, мають декодуватися в допустимий момент часу та нормалізуються до UTC. Відсутність не виводиться з інших полів.
-- Однакові шлях або назва дозволені для різних UUID; ідентичність і належність визначаються лише ключами ЕХО.
-- Елемент із ключем є повною заміною технічних метаданих: спочатку з нового `path` і переданих значень обчислюються ефективні `name`, `extension` і `mime_type`, після чого вони разом з іншими значеннями стають поточним станом. Пропущена файлова часова мітка очищується. `device_id`, `file_id` та `created_at` не змінюються.
+- Команда sync адресує рівно один `device_id`, задає один обов’язковий `path_syntax` зі значенням `posix` або `windows` і містить від 1 до `DEVICE_FILE_SYNC_BATCH_MAX_COUNT` елементів; для першого етапу значення константи — `100`.
+- Один batch може містити файли з кількох roots, якщо всі їхні шляхи мають заявлений синтаксис.
+- `file_id` відсутній для створення і є UUID для зміни наявного файла. Невідомий ключ або ключ іншого пристрою не створює новий файл.
+- `absolute_path` required, зберігається exact без `trim` і не використовується для доступу до файлової системи backend-а.
+- `absolute_path` має від 1 до `DEVICE_FILE_ABSOLUTE_PATH_MAX_CHARS = 16384` Unicode scalar values і не більш як `DEVICE_FILE_ABSOLUTE_PATH_MAX_BYTES = 65536` UTF-8 bytes.
+- `posix` приймає лише шлях з одним початковим `/` і щонайменше одним file component; separator — `/`, canonical root — `/`, а trailing або repeated separator заборонений.
+- `windows` приймає лише fully qualified drive path на кшталт `C:\dir\file` або UNC path `\\server\share\dir\file`; separator — `\`, canonical root — uppercase `C:\` або exact `\\server\share\`, а `/`, drive-relative, root-relative і device-namespace `\\?\`/`\\.\` форми відхиляються.
+- UNC server, share і кожен file component мають бути непорожніми. Обов’язковий початковий `\\` не вважається repeated separator.
+- NUL, порожні компоненти, `.` і `..` та шлях, що закінчується separator-ом або позначає лише root, відхиляються. Backend не case-fold-ить і не Unicode-normalize-ить server, share або file components та не застосовує залежні від NTFS/ext4 правила допустимих імен.
+- Parser повертає canonical root і щонайменше один точний relative component. Ефективна `name` файла завжди є останнім компонентом; незалежних request-полів `name`, `root_entry_id` або `path_components` немає.
+- Якщо `extension` не передано, backend виводить її з суфікса `name` після останньої крапки, не враховуючи крапку на початку або в кінці; якщо суфікса немає, повертає `null`.
+- Якщо `mime_type` не передано, backend визначає його через `mime_guess` за extension/name; якщо відповідності немає, повертає `null`. Явні непорожні `extension` і `mime_type` мають пріоритет.
+- Файлові часові мітки декодуються як RFC 3339 з timezone і нормалізуються до UTC. Для update пропущене або `null` значення очищується, бо елемент передає повний поточний технічний стан.
+- Однакові `path_syntax` і `absolute_path` дозволені для різних UUID. Ідентичність визначає лише `file_id`.
+- Update може змінити absolute path, syntax, root, parent, name та metadata зі збереженням `file_id`, `device_id` і `created_at`.
 
-Помилка містить шлях на кшталт `files[3].path`, а не лише загальне повідомлення батча. Перед записом бекенд попередньо декодує всі надані `file_id`. Якщо один ненульовий ключ повторюється, кожен елемент із цим ключем отримує помилку дублювання й жоден із них не записується; інші незалежні елементи батча можуть бути прийняті.
+Помилка містить точний шлях на кшталт `files[3].absolute_path`. Перед записом backend декодує всі `file_id`; якщо один ключ повторюється, кожен елемент із ним отримує validation error, а незалежні елементи можуть бути прийняті.
 
 ### Створення пристрою
 
@@ -314,40 +433,51 @@ DTO створення приймає лише `source_label`, `external_url` і
 ### Читання поточного стану
 
 - Список і деталі пристрою читаються лише з `MainDb`; фільтр активного або архівного стану є явним.
-- Відповіді першого етапу повертають `source_label`, зовнішнє посилання, кастомні й системні поля, а також `name`, масив `aors` і `unit`; кожне посилання на AOR або підрозділ містить ідентифікатор і його поточну назву з чинного довідника.
-- Метадані файлів не приєднуються до кожного запиту пристрою. Окрема операція спочатку перевіряє видимість пристрою в `MainDb`, звільняє це з’єднання, а потім читає `FileRegistryDb`.
-- Відсутність файлових рядків повертає порожній список. Недоступність `wd_files` повертає помилку залежності й не маскується порожнім списком.
-- Списки мають стабільне сортування з UUID як останнім tie-breaker і нормалізовані межі пагінації з `config.rs`.
-- Основним заголовком пристрою є непорожня аналітична `name`, якщо її задано; до цього інтерфейс використовує `source_label`. Окреме похідне або збережене поле заголовка не створюється.
+- Відповіді пристрою повертають `source_label`, зовнішнє посилання, кастомні й системні поля, `name`, `aors` і `unit` із поточними назвами довідників.
+- Файлова операція спочатку перевіряє видимість пристрою в `MainDb`, звільняє з’єднання, а потім читає `FileRegistryDb`.
+- Root list повертає всі directory з `parent_id IS NULL` для device. Відсутність roots є успішним порожнім масивом.
+- Folder browse читає лише direct children через B-tree та вимагає explicit `parent_entry_id` кореневої або вкладеної directory. Breadcrumbs містять root і current directory в порядку зростання `nlevel`; для root це масив з одним breadcrumb.
+- Scoped search вимагає explicit directory `scope_entry_id`, визначає її path, застосовує `<@` разом із `id <> scope_entry_id`, literal escaped `ILIKE` та технічні фільтри, а relative path components сторінки збирає batch-ом.
+- Browse і search читають `limit + 1`, повертають `next_cursor` за наявності наступного entry та не виконують mandatory `COUNT(*)`.
+- Cursor є versioned authenticated base64url payload із query fingerprint і останнім sort tuple. Fingerprint включає device, operation, scope, filters і fixed sort, але не `limit` чи `include_breadcrumbs`; dedicated secret не перевикористовує session-cookie key.
+- Cursor не закріплює database snapshot між HTTP requests: кожна сторінка цілісна, а гарантія відсутності повторів діє за незмінного набору. Конкурентний rename/move може змінити положення entry між сторінками.
+- Недоступність `wd_files` повертає помилку, а не порожній результат. Стабільний UUID є остаточним tie-breaker.
 
-### Синхронізація метаданих файлів
+### Синхронізація метаданих файлів і автоматичне створення ієрархії
 
 `FileMetadataService::sync` не відкриває міжбазову транзакцію:
 
-1. перевіряє `can_write_source_data`, верхньорівневий `device_id` і розмір батча та позначає всі повторені ненульові `file_id`;
-2. через `MainDb` одним запитом перевіряє, що пристрій видимий та активний;
-3. завершує запит до `main` і звільняє з’єднання;
-4. незалежно нормалізує кожен елемент, зберігаючи його позицію та локальну помилку;
-5. обробляє валідні унікальні елементи послідовно в порядку батча, кожен у власній транзакції `FileRegistryDb`;
-6. повертає результат для кожної вхідної позиції в тому самому порядку.
+1. перевіряє `can_write_source_data`, `device_id`, `path_syntax`, розмір batch і повторені `file_id`;
+2. через `MainDb` одним запитом перевіряє видимий активний пристрій, завершує запит і звільняє з’єднання;
+3. незалежно розбирає `absolute_path` кожного file item через `SourcePathParser`, зберігаючи позицію, exact path, canonical root, components та локальну помилку;
+4. обробляє валідні унікальні елементи послідовно, кожен у власній транзакції `FileRegistryDb`;
+5. повертає один ordered result для кожної вхідної позиції; accepted result містить canonical file і його derived root.
 
-Для нового елемента сервіс генерує UUIDv7 до початку його транзакції та вставляє `device_id`, повний набір метаданих, `created_at` і `updated_at`. Якщо драйвер безпечно повторює відкочену транзакцію після serialization failure або deadlock, повтор використовує той самий UUID. Будь-який невідповідний конфлікт первинного ключа повертається як внутрішня помилка й не підміняється на успіх.
+Для нового файла backend генерує file UUIDv7 і candidate UUIDv7 для можливих structure rows до транзакції, забезпечує існування root через `INSERT … ON CONFLICT DO NOTHING`, блокує resolved root row, exact-компонентами знаходить або створює synthetic directory chain і вставляє leaf з exact `absolute_path`. Unique constraints узгоджують конкурентні root/directory inserts; безпечний retry використовує ті самі candidate IDs.
 
-Для елемента з `file_id` транзакція вибирає рядок за парою `(id, device_id)` через `SELECT … FOR UPDATE`. Відсутній рядок повертає помилку цього елемента. Успішне оновлення атомарно замінює всі метадані та встановлює новий `updated_at`, навіть якщо значення збігаються з поточними, бо повтор повного сирого стану є новим прийняттям. `created_at`, UUID і `device_id` лишаються незмінними.
+Для update repository спочатку читає поточний root файла, забезпечує існування target root через `INSERT … ON CONFLICT DO NOTHING`, а потім одним `SELECT … ORDER BY id FOR UPDATE` блокує distinct old/target root rows у bytewise UUID order. Після цього він вибирає file за `(file_id, device_id)` через `FOR UPDATE`; якщо root змінився між initial read і leaf lock, item transaction перезапускається. Після revalidation вона upsert-ить target parent chain, атомарно змінює `parent_id`, `name`, `name_key`, `path_syntax`, `absolute_path`, `hierarchy_path` і metadata leaf та знизу вгору видаляє порожні старі synthetic directories. `file_id`, `device_id`, `created_at`, аналітичні дані й контент не змінюються.
 
-Успіх або помилка одного елемента не відкочує вже зафіксовані елементи й не блокує наступні, якщо з’єднання з реєстром придатне. Якщо `wd_files` недоступна до першого запису, всі валідні елементи отримують явну помилку залежності. Якщо з’єднання втрачене після часткового успіху, вже зафіксовані результати лишаються успішними, а поточний і решта невиконаних елементів отримують помилки; сервіс не видає їх за прийняті.
+Автоматичне знаходження наявного root не змінює його `updated_at`; створення нового root і file відбувається в одній item transaction. Кожен file item має незалежний результат, тому успішний commit ніколи не відкочується через помилку іншої позиції.
 
-Синхронізація файлів не змінює `main.device.updated_at`: ця мітка описує поля самого пристрою, а файловий рядок має власний `updated_at`. Вона також не створює жодного рядка в `main`, якщо пристрій невідомий, невидимий або архівний.
+Повторний update із тим самим `file_id` і значеннями все одно є новим прийнятим сирим станом: leaf отримує новий `updated_at`.
+
+Помилка з невідомим результатом `COMMIT` ніколи не кодується як `rejected`: service через нове з’єднання намагається звірити resolved root ID, file ID і очікуваний canonical state. Якщо факт commit неможливо довести, HTTP request завершується internal/connection failure без хибного per-item результату, а клієнт виконує root list/browse reconciliation перед keyless retry.
+
+Sync не змінює `main.device.updated_at`, нічого не видаляє через відсутність `file_id` у batch і не створює rows у `main`.
 
 ### Транзакції, конкурентність і порядок
 
 - Транзакція `MainDb` ніколи не лишається відкритою під час отримання з’єднання або запиту до `FileRegistryDb`, і навпаки.
-- Зміни одного пристрою серіалізуються row lock на `main.device`; зміни одного файла — row lock на `wd_files.device_file`.
-- Операції, що не перекриваються в часі, зберігають порядок запитів. Конкурентні операції одного об’єкта лінеаризуються в порядку входу в захищену row lock критичну секцію; це і є їхній однозначний серверний порядок отримання. Клієнтські часові мітки не визначають переможця, а остання успішно зафіксована зміна стає поточною.
-- Зміни пристрою блокують `main.device` і за потреби атомарно оновлюють `device_aor` в одній транзакції; файлові зміни не утримують транзакцію `MainDb`.
-- Взаємне блокування або serialization failure не перетворюється на частковий успіх. Retry дозволений лише для помилок, які класифіковані драйвером як безпечні, і повторює всю транзакцію одного об’єкта.
+- Зміни пристрою серіалізуються row lock на `main.device`.
+- Структурні зміни серіалізуються row locks усіх distinct old/target parentless roots одного item, узятих одним `SELECT … ORDER BY id FOR UPDATE` у bytewise UUID order; один root блокується один раз.
+- Новий root захищається unique `(device_id, path_syntax, name_key)` та `INSERT … ON CONFLICT DO NOTHING`; конкурентний insert після очікування вибирає вже створений root замість дубліката.
+- File update після root locks додатково блокує leaf row й повторно перевіряє його поточний root; зміна під час optimistic read спричиняє bounded retry item transaction.
+- Unique synthetic-directory sibling constraint перетворює конкурентне створення того самого chain на один directory entry. Retry повторює всю транзакцію одного file item з уже згенерованими candidate IDs.
+- Readers бачать старе або нове цілісне дерево за MVCC, а не частково переміщений leaf чи напівочищений chain.
+- Елементи одного batch запускаються послідовно в request order. Конкурентні batches можуть чергуватися лише між уже committed item transactions; клієнтські часові мітки не визначають переможця.
+- First-class directory move надалі потребуватиме перевірки циклу та атомарного rewrite всього subtree вартістю `O(descendants)`; етап навмисно не відкриває цю операцію.
 
-Архівування та відновлення не реалізуються цим етапом і не можуть бути залишені доступними через старий маршрут після переключення на дві бази. До ввімкнення цих операцій окрема наступна специфікація повинна визначити протокол координації з `wd_files`; інакше перевірка активності перед файловим записом мала б гонку з конкурентним архівуванням.
+Архівування та відновлення не реалізуються цим етапом і не лишаються доступними через старі маршрути. Їх наступна специфікація повинна визначити координацію з `wd_files`.
 
 ### Помилки та атомарність
 
@@ -364,12 +494,12 @@ DTO створення приймає лише `source_label`, `external_url` і
 
 Неочікувана помилка `FileRegistryDb` не перетворюється на успішний порожній результат. SQL, назви підключень, credentials і внутрішній стек не повертаються користувачу.
 
-Створення або patch пристрою має один результат для всієї команди. Файловий батч має верхньорівневу помилку лише для автентифікації, ролі, невалідного envelope або непридатного цільового пристрою; після початку оброблення кожен елемент має окремий результат:
+Створення або patch пристрою мають один результат для всієї команди. Sync має верхньорівневу помилку лише для автентифікації, ролі, невалідних `device_id`, `path_syntax`, batch envelope або непридатного цільового пристрою; після цього кожен файловий елемент має окремий результат:
 
-- успіх із поточним `file_id` і метаданими;
-- помилка валідації з полями;
-- `not_found` для невідомого, невидимого або належного іншому пристрою ключа;
-- конфлікт конкурентної зміни, якщо його не можна безпечно повторити;
+- успіх із поточним `file_id`, exact absolute path, derived root і метаданими;
+- помилка валідації exact `absolute_path` або іншого item field;
+- `not_found` для невідомого або належного іншому пристрою `file_id`;
+- конфлікт конкурентної зміни, якщо bounded retry вичерпано;
 - помилка залежності або внутрішня помилка без деталей інфраструктури.
 
 Жодна помилка не повинна створювати рядок із порожніми обов’язковими даними, змінювати `main` замість `wd_files` або повертати непідтверджений запис як успішний.
@@ -378,9 +508,9 @@ DTO створення приймає лише `source_label`, `external_url` і
 
 ### Журналювання й спостережуваність
 
-Для кожної операції журналюються тип операції, логін, UUID пристрою, UUID файла за наявності, запитані групи даних, результат, тривалість і цільова база. Для файлового батча окремо рахуються успішні, невалідні, не знайдені та інфраструктурно невдалі елементи.
+Для кожної операції журналюються тип, login, device UUID, root/entry/file UUID за наявності, `path_syntax`, scope kind, кількість повернених рядків, результат, тривалість і цільова база. Для file batch окремо рахуються accepted, validation, not-found, conflict, dependency, internal, retries і lock-wait; для browse/search — page size, cursor presence та returned count.
 
-Значення кастомних полів, шляхи, назви файлів і майбутній контент за замовчуванням не журналюються. Метрики пулів, таймаути й помилки `main` та `wd_files` мають різні мітки, щоб збій файлового реєстру не виглядав як збій основної бази.
+Exact absolute paths, root names, компоненти, file/directory names, custom field values і майбутній content за замовчуванням не журналюються. Метрики pool, timeout і помилки `main` та `wd_files` мають різні labels.
 
 ## Інтерфейс (фронтенд)
 
@@ -393,7 +523,7 @@ DTO створення приймає лише `source_label`, `external_url` і
 - зберігаються Elm-маршрути `/devices` і `/devices/:id` та чинне монтування React custom elements;
 - зберігаються наявні навігація, компонування списку й деталей, MRT-таблиця, drawer створення та редагування, права панель файлів і файловий batch-діалог;
 - не створюються нові сторінки, окремий маршрут редагування, новий layout або повний filter builder;
-- чинні компоненти розширюються лише настільки, щоб через UI можна було перевірити створення й рольове редагування пристрою, читання списку й деталей та створення й оновлення файлових метаданих;
+- чинні компоненти розширюються лише настільки, щоб через UI можна було перевірити створення й рольове редагування пристрою, absolute-path файловий sync, folder browsing, breadcrumbs і scoped search;
 - із наявного UI прибираються елементи, поля й виклики маршрутів, що не входять до етапу: архівування та відновлення пристрою, приховування та відновлення файла, файловий контент, файлова аналітика, `hostname`, `ssh_port`, теги й окремий опис пристрою;
 - значення `hostname`, `ssh_port` або інші довільні джерельні значення можуть існувати лише як звичайні пари `custom_fields`; окремих спеціалізованих контролів для них етап не додає.
 
@@ -413,7 +543,7 @@ Elm-сторінки лишаються тонкими маршрутними о
 
 #### `/devices/:id`
 
-Маршрут показує наявне компонування деталей: відомості пристрою ліворуч і файлові метадані в наявній правій панелі. `/api/device/detail` викликається з `include_archived: true`, щоб той самий стабільний URL відкривав видимий активний або архівний запис. Файли завантажуються окремо через `/api/device/files/list` і не блокують початковий показ уже отриманих деталей пристрою.
+Маршрут показує наявне компонування деталей: відомості пристрою ліворуч і файловий browser у правій панелі. `/api/device/detail` викликається з `include_archived: true`. Після деталей UI окремо завантажує `/api/device/files/roots`, відкриває обраний root через `/files/browse` з його `entry_id` і не блокує початковий показ пристрою помилкою файлового реєстру.
 
 Зміна `id`, повторне завантаження або вихід зі сторінки скасовують чи знецінюють попередні запити, щоб пізня відповідь не замінила стан іншого пристрою.
 
@@ -492,25 +622,37 @@ RFC 3339-рядки форматуються чинним спільним forma
 
 Порожня вкладка «Опис», окремі поля `hostname`, `ssh_port`, теги та дії архівування або відновлення прибираються. Для архівного пристрою вся сторінка лишається доступною для читання, але drawer редагування та файловий sync-діалог недоступні.
 
-### Метадані файлів
+### Файлова ієрархія та синхронізація
 
-Наявна права панель зберігає список і дозавантаження файлів. Для кожного `DeviceFile` вона дозволяє побачити щонайменше `file_id`, `name`, `path`, `mime_type`, `extension`, `file_metadata_created_at`, `file_metadata_modified_at`, `created_at` і `updated_at`. Дати відображаються за тим самим правилом, що й дати пристрою.
+Права панель спочатку показує root selector. Кожен root є звичайною directory з `parent_entry_id: null`, стабільним `entry_id` і видимою `name`. Після вибору UI викликає `/api/device/files/browse` з root `entry_id` як `parent_entry_id`, далі переходить лише за returned `entry_id`, а не формує структурні raw paths.
 
-Наявний файловий batch-діалог стає редактором `/api/device/files/sync` і підтримує в одному батчі:
+Folder browser:
 
-- нові рядки без `file_id`;
-- вибрані наявні файли з незмінним `file_id` і попередньо заповненим повним набором їхніх поточних метаданих.
+- показує directories перед files у серверному порядку;
+- відображає breadcrumbs і дозволяє перейти до будь-якого returned ancestor;
+- дозавантажує `next_cursor`, не очікуючи `total`;
+- має окремі loading, empty та error states;
+- показує дублікати шляху окремими rows із різними `file_id`;
+- не пропонує create/rename/move/delete для вкладених directories або roots.
 
-Кожен рядок містить обов’язковий `path` та необов’язкові `name`, `mime_type`, `extension`, `file_metadata_created_at` і `file_metadata_modified_at`. Порожні необов’язкові текстові поля серіалізуються як `null` або пропускаються, а не передаються як невалідний порожній рядок. Для файлових дат використовується чинний компонент введення дати й часу; значення серіалізується у RFC 3339 UTC, а очищене поле — як `null`.
+Scoped search передає `scope_entry_id` поточної directory, literal `name_query` щонайменше з трьох символів і технічні filters. Search results показують відносні `path_components`; повернення до browse відновлює directory entry ID. Зміна scope/filter очищує cursor та попередні результати.
 
-Після `200` діалог зіставляє кожен `results[index]` із відповідним вхідним рядком:
+Root selector використовується лише для browse/search і не має дії створення. Batch-dialog `/api/device/files/sync` задає один обов’язковий `path_syntax` (`posix` або `windows`) для batch і може прийняти шляхи з кількох автоматично визначених roots.
 
-- `accepted.file` замінює локальний наявний файл або додає новий і показує фактично збережені та виведені backend-ом значення;
-- `rejected` лишає рядок доступним для виправлення, показує `message` і прив’язує `field_errors` до відповідних контролів;
-- частковий успіх показує одночасно підтверджені й відхилені рядки та не оголошує весь батч невдалим;
-- після закриття успішного або частково успішного діалогу список перечитується, щоб відновити серверний порядок, `total` і пагінацію.
+Rows містять:
 
-Кнопка синхронізації доступна лише за `can_write_source_data` для активного пристрою. Дій видалення, приховування, відновлення, передавання контенту або ручного аналізу файла немає.
+- нові files без `file_id`;
+- наявні files із незмінним `file_id`;
+- обов’язковий exact `absolute_path`;
+- optional `mime_type`, `extension`, `file_metadata_created_at`, `file_metadata_modified_at`.
+
+Незалежних inputs `name`, `root_entry_id` або `path_components` немає. UI не split-ить і не join-ить source path для wire-contract; до прийняття він показує exact input, а після прийняття бере filename, root і derived components лише з canonical response.
+
+UI показує root `name` і кожен відносний компонент як окремий segment/breadcrumb. Він не склеює їх у round-trippable pathname й не парсить назад; exact `absolute_path` файла за потреби показується окремим технічним значенням.
+
+Після `200` sync UI зіставляє `results[index]` із input row: `accepted.file` і `accepted.root` замінюють локальний стан, `rejected` лишається для виправлення з exact field errors, а partial success показує одночасно обидва типи результатів. Після закриття UI перечитує roots і active directories; відсутність раніше відомого файла в batch не подається як delete.
+
+Sync доступний лише за `can_write_source_data` для активного пристрою. Content, analytics, hide/restore і directory/root mutation у цьому етапі відсутні.
 
 ### Рольові стани
 
@@ -528,69 +670,75 @@ UI обчислює видимість читання й дій з `can_read`, `
 
 ### Стани, помилки й узгодження стану
 
-- для списку, деталей, файлів і довідників зберігаються явні стани завантаження, порожнього результату й помилки;
-- `401` використовує чинний спільний перехід до входу;
-- верхньорівневі `400`, `403`, `404`, `500` і `503` показуються через наявний `PowerAlert` без маскування текстом успіху;
-- `Form`-шляхи на кшталт `source_label`, `custom_fields["key"]` і `files[2].path` прив’язуються до відповідного поля або рядка; непорівняний шлях також лишається видимим у загальній помилці форми;
-- submit-кнопки блокуються на час власного запиту, але незалежне читання списку або деталей не блокується;
-- UI не застосовує оптимістичний успіх: поточний стан пристрою береться з `DeviceDetails`, а стан файла — з `accepted.file` або наступного `/files/list`;
-- помилка одного незалежного запиту не очищує вже успішно завантажені дані іншого запиту.
+- для device list/detail, roots, browse, search і довідників зберігаються незалежні loading, empty та error states;
+- `401` використовує чинний shared login transition;
+- верхньорівневі `400`, `403`, `404`, `500`, `503` показуються через `PowerAlert`;
+- `Form` path `path_syntax` і per-item paths на кшталт `files[2].absolute_path` прив’язуються до відповідних controls;
+- submit блокується лише на час власного request;
+- UI не застосовує optimistic success: device state береться з `DeviceDetails`, root і file — з `accepted.root` та `accepted.file`, tree — з наступного root list/browse;
+- cursor invalidation очищує лише відповідну page sequence;
+- помилка одного незалежного request не очищує вже успішно завантажені дані іншого.
 
 ### Мінімальна ручна перевірка frontend
 
-Для приймання frontend першого етапу достатньо пройти такі сценарії в браузері:
+У браузері потрібно:
 
-1. відкрити `/devices`, виконати пошук, перемкнути активний та архівний стани, вибрати підрозділ, відсортувати за заголовком, датою створення й датою зміни та дозавантажити наступну сторінку;
-2. відкрити активний і архівний пристрої за `/devices/:id`, побачити всі визначені відомості й окремо завантажений список файлів без позаетапних вкладок і дій;
-3. як `DeviceSource` створити пристрій лише з `source_label`, `external_url` і кількома `custom_fields`, після чого побачити його у списку зі станом «Потребує аналітичної назви»;
-4. як `DeviceSource` змінити джерельні поля й видалити один кастомний ключ без втрати інших, не маючи контролів аналітичних полів;
-5. як `DeviceAnalyst` окремим patch задати, а потім очистити `name`, AOR і підрозділ та побачити оновлені заголовок, список і деталі;
-6. на активному пристрої надіслати один батч із новим і наявним файлом, отримати щонайменше один `accepted` і один навмисно спричинений `rejected`, виправити відхилений рядок і побачити нормалізовані метадані у списку;
-7. перевірити read-only UI для `Cyber`, розділені дії `DeviceSource`, успадковані дії `DeviceAnalyst`, повний набір дій `Admin` та відсутність будь-якого запису для архівного пристрою;
-8. перевірити прив’язану до поля помилку `Form`, видимі `403` і серверну помилку, а також перехід до входу після `401`.
+1. перевірити device list search, active/archive states, unit filter, server sorting і pagination;
+2. відкрити active та archived `/devices/:id` і побачити details незалежно від файлового request;
+3. як `DeviceSource` створити пристрій лише з `source_label`, `external_url`, `custom_fields`;
+4. як `DeviceSource` змінити source fields без analytical controls, а як `DeviceAnalyst` задати й очистити `name`, AOR та unit;
+5. одним POSIX batch створити files у `/var/log` і `/home/user`, а Windows batch — у drive та UNC roots; побачити автоматично створені canonical roots;
+6. у межах одного root синхронізувати nested files із двома однаковими absolute paths і різними `file_id`, перейти щонайменше на два directory levels та скористатися breadcrumbs і cursor pagination;
+7. виконати scoped search, перевірити path context і відсутність entries поза subtree;
+8. перемістити наявний file новим absolute path до іншого root і побачити той самий `file_id`, нові root/parent/name та відсутність empty old directories;
+9. отримати accepted і rejected paths в одному batch, виправити validation error та побачити canonical response;
+10. перевірити read-only `Cyber`, write states ролей, archived read-only mode, field error, `403`, dependency error і `401`.
 
-Повний перебір невалідних JSON-форм, усіх меж довжини, повторів `file_id`, конкурентних змін і відмов баз належить до backend та API contract tests. Для frontend достатньо наведених репрезентативних наскрізних сценаріїв; окремий завершений продуктовий дизайн, нові фільтри або позаетапні аналітичні елементи не є критеріями приймання.
+Повний перебір JSON shapes, limits, cursor tampering, duplicate IDs, concurrency, hierarchy triggers і database failures належить backend/API contract tests.
 
 ## API
 
 ### Нормативний набір маршрутів етапу 1
 
-Усі операції Devices використовують `POST`. Етап 1 додає рівно сім маршрутів:
+Усі Devices operations використовують `POST`. Етап 1 має рівно дев’ять маршрутів:
 
-| Маршрут | Тіло запиту | Успішна відповідь | Необхідна можливість | Призначення |
-| ------- | ----------- | ------------------ | --------------------- | ----------- |
-| `/api/device/list` | `ListDevicesReq` | `ListDevicesRsp` | `can_read` | Пошук, фільтрація, сортування й пагінація пристроїв. |
-| `/api/device/unit-stats` | відсутнє | `DeviceUnitStatsRsp` | `can_read` | Кількості активних пристроїв за підрозділами. |
-| `/api/device/detail` | `DeviceDetailReq` | `DeviceDetails` | `can_read` | Поточні відомості одного пристрою. |
-| `/api/device/create` | `CreateDeviceReq` | `DeviceDetails` | `can_write_source_data` | Створення пристрою лише з технічними відомостями. |
-| `/api/device/update` | `UpdateDeviceReq` | `DeviceDetails` | залежить від фактично переданих груп полів | Атомарний patch активного пристрою. |
-| `/api/device/files/list` | `ListDeviceFilesReq` | `ListDeviceFilesRsp` | `can_read` | Пагінований список поточних технічних метаданих файлів. |
-| `/api/device/files/sync` | `SyncDeviceFilesReq` | `SyncDeviceFilesRsp` | `can_write_source_data` | Частково успішне створення нових і повна заміна метаданих наявних файлів. |
+| Маршрут | Тіло запиту | Успішна відповідь | Можливість | Призначення |
+| ------- | ----------- | ------------------ | ----------- | ----------- |
+| `/api/device/list` | `ListDevicesReq` | `ListDevicesRsp` | `can_read` | Device list/filter/sort/pagination. |
+| `/api/device/unit-stats` | відсутнє | `DeviceUnitStatsRsp` | `can_read` | Active device counts by unit. |
+| `/api/device/detail` | `DeviceDetailReq` | `DeviceDetails` | `can_read` | One current device. |
+| `/api/device/create` | `CreateDeviceReq` | `DeviceDetails` | `can_write_source_data` | Create with technical fields. |
+| `/api/device/update` | `UpdateDeviceReq` | `DeviceDetails` | залежить від fields | Atomic device patch. |
+| `/api/device/files/roots` | `ListDeviceFileRootsReq` | `ListDeviceFileRootsRsp` | `can_read` | Parentless root directories. |
+| `/api/device/files/browse` | `BrowseDeviceFilesReq` | `BrowseDeviceFilesRsp` | `can_read` | Direct children and breadcrumbs. |
+| `/api/device/files/search` | `SearchDeviceFilesReq` | `SearchDeviceFilesRsp` | `can_read` | Scoped hierarchy search. |
+| `/api/device/files/sync` | `SyncDeviceFilesReq` | `SyncDeviceFilesRsp` | `can_write_source_data` | Absolute-path partial file sync з автоматичними roots. |
 
-`/api/device/files/sync` є чистою заміною старого маршруту `/api/device/files/create`: alias або сумісний перехідний маршрут не лишається. `/api/device/archive`, `/api/device/restore`, `/api/device/files/create`, `/api/device/files/delete`, `/api/device/files/restore`, файловий контент, стани контенту й аналітика файлів не входять до етапу, не реєструються в router і повертають звичайний `404`.
+`/api/device/files/list`, `/api/device/files/create` і `/api/device/files/roots/create` видаляються без aliases. Archive/restore, file hide/restore, content і file analytics не реєструються та повертають звичайний `404`.
 
-Для списків доступних варіантів AOR і підрозділів UI повторно використовує чинні `POST /api/sigint/aor` (`ListAreasOfResponsibilityReq` → `AreaOfResponsibility[]`) та `POST /api/sigint/units` (`ListUnitsReq` → `ListUnitsRsp`). Їхній wire-контракт не змінюється. У потоці Devices читання цих довідників дозволяє та сама можливість `can_read`; права їх створення або редагування не змінюються. Devices-відповіді водночас повертають поточні назви разом з ідентифікаторами у `aors` і `unit`, тому для показу вже збережених значень додатковий довідниковий запит не потрібен. Назви не дублюються у `device` і не є історичними знімками; бекенд отримує їх із чинних довідників під час формування відповіді. Request DTO для фільтрації та редагування й надалі приймають лише `aor_ids`, `unit_ids` або `unit_id`.
+UI повторно використовує чинні AOR/unit dictionary endpoints; їх wire-contract і write permissions не змінюються.
 
 ### Загальні wire-правила
 
-- Запити, крім `/api/device/unit-stats`, мають `Content-Type: application/json`; успіх має статус `200` і тіло JSON без універсального envelope на кшталт `data`.
-- Назви всіх JSON-полів і рядкових enum-значень використовують `snake_case`.
-- Усі request DTO відхиляють невідомі поля на кожному структурному рівні. Довільними є лише ключі всередині `custom_fields`.
-- У схемах нижче `?` означає, що поле можна не передавати, а `| null` — що JSON `null` є окремим дозволеним значенням. Поле без цих позначок обов’язкове.
-- У response DTO жодне визначене поле не пропускається: відсутня скалярна величина повертається як `null`, колекція — як `[]`, а об’єкт кастомних полів — як `{}`.
-- UUID передається канонічним рядком у нижньому регістрі з дефісами. Неканонічний або невалідний ключ відхиляється; UUID пристрою чи нового файла генерує тільки ЕХО як UUIDv7.
-- Ідентифікатори AOR і підрозділів у request DTO передаються JSON-цілими числами. У response DTO кожне таке посилання є об’єктом з полями `id` і `name`.
-- Усі часові поля response і файлові часові поля request є рядками дати й часу у форматі RFC 3339. Відповіді нормалізуються до UTC і використовують суфікс `Z`, наприклад `2026-07-19T14:30:00Z`; request приймає RFC 3339 із явним часовим поясом і нормалізує значення до UTC. Назви часових полів не мають суфікса `_ms`. Відсутня файлова дата передається як `null`.
-- Рядкові обмеження рахуються в Unicode scalar values, а не в байтах. Перевірка `trim` не змінює внутрішні пробіли.
-- Відповіді не містять бінарного контенту, стану контенту, ознаки оброблення аналітиком, приховування, файлових категорій, тегів, коментарів, важливості або інших полів поза межами етапу.
+- Запити, крім `/api/device/unit-stats`, мають `Content-Type: application/json`; успіх має `200` і raw JSON без universal `data` envelope.
+- JSON fields і enum values використовують `snake_case`.
+- Request DTO відхиляють unknown fields на кожному structural level; довільними є лише keys усередині `custom_fields`.
+- `?` означає optional field, `| null` — окреме дозволене JSON `null`. Response fields не пропускаються: absent scalar — `null`, collection — `[]`, object — `{}`.
+- UUID передається canonical lowercase з дефісами. Нові device, root, directory і file UUID генерує лише ЕХО як UUIDv7; у schema-only реалізації 0.14 target table лишається порожньою, а root і directory UUID з’являться лише в окремому Logic/API етапі.
+- Усі timestamps є RFC 3339 strings; response нормалізує UTC `Z`, request вимагає explicit timezone.
+- Exact `absolute_path`, root names і path components не trim-яться, не case-fold-яться й не Unicode-normalize-яться; єдиний виняток — uppercase canonical Windows drive letter у root name. NUL заборонений.
+- Cursor є opaque string. Client не декодує та не модифікує його.
+- Responses не містять internal `ltree`, `name_key`, content, content state, analytics, hide state або інших позаетапних fields.
 
-Нормативні спільні response-типи:
+Нормативні спільні response types:
 
 ```ts
 type UUID = string;
 type DateTime = string;
 type FieldError = [path: string, message: string];
 type CustomFields = Record<string, string>;
+type FileEntryKind = "directory" | "file";
+type PathSyntax = "posix" | "windows";
 
 interface AorSummary {
   id: number;
@@ -630,11 +778,48 @@ interface DeviceDetails {
   archived_at: DateTime | null;
 }
 
+interface DeviceFileRoot {
+  entry_id: UUID;
+  device_id: UUID;
+  parent_entry_id: null;
+  kind: "directory";
+  name: string;
+  path_syntax: PathSyntax;
+  created_at: DateTime;
+  updated_at: DateTime;
+}
+
+interface FileBreadcrumb {
+  entry_id: UUID;
+  name: string;
+}
+
+interface DeviceFileTreeEntry {
+  entry_id: UUID;
+  parent_entry_id: UUID;
+  kind: FileEntryKind;
+  file_id: UUID | null;
+  name: string;
+  path_components: string[];
+  path_syntax: PathSyntax | null;
+  absolute_path: string | null;
+  mime_type: string | null;
+  extension: string | null;
+  file_metadata_created_at: DateTime | null;
+  file_metadata_modified_at: DateTime | null;
+  created_at: DateTime;
+  updated_at: DateTime;
+}
+
 interface DeviceFile {
   file_id: UUID;
   device_id: UUID;
+  parent_entry_id: UUID;
+  root_entry_id: UUID;
+  path_syntax: PathSyntax;
+  absolute_path: string;
   name: string;
-  path: string;
+  path_components: string[];
   mime_type: string | null;
   extension: string | null;
   file_metadata_created_at: DateTime | null;
@@ -644,25 +829,30 @@ interface DeviceFile {
 }
 ```
 
-`aors` у response впорядковуються за `id` і не містять дублікатів; `unit` дорівнює `null`, якщо підрозділ не задано. `AorSummary.name` і `UnitSummary.name` є поточними назвами з відповідних довідників. Порядок ключів `custom_fields` не є частиною контракту. Похідний заголовок не передається окремим полем: клієнт використовує `name`, якщо воно не `null`, інакше `source_label`; `name === null` одночасно означає стан «Потребує аналітичної назви».
+Для directory `file_id`, `path_syntax`, `absolute_path` і file-only metadata є `null`; root повертається окремим `DeviceFileRoot` із `parent_entry_id: null` і canonical `path_syntax`, а не як child. Для file `entry_id === file_id`, `absolute_path` є exact значенням останнього sync, а `path_components` починається після root і закінчується `name`.
+
+`aors` sort-яться за `id`; `unit` є `null`, якщо не заданий. `custom_fields` key order не є contract. Device display title клієнт виводить як `name ?? source_label`.
 
 ### Межі значень
 
 | Величина | Межа |
 | -------- | ----: |
-| `filter_text`, `source_label`, аналітична `name` | 255 символів |
-| `external_url` | 4096 символів |
-| Кількість пар у `custom_fields` | 50 |
-| Ключ `custom_fields` після `trim` | 1–128 символів |
-| Значення `custom_fields` | 0–4096 символів |
-| `DeviceFile.name` | 1–1024 символи після `trim` |
-| `DeviceFile.path` | 1–4096 символів після `trim` |
-| Задані `mime_type` та `extension` | 1–255 символів після `trim` |
-| `limit` списку пристроїв або файлів | за замовчуванням 100, діапазон 1–100 |
-| `offset` | за замовчуванням 0, ціле число `>= 0` |
-| Кількість елементів `/files/sync` | 1–100 |
+| `filter_text`, `source_label`, analytical `name` | 255 scalar values |
+| `external_url` | 4096 |
+| `custom_fields` pairs | 50 |
+| custom key/value | 1–128 / 0–4096 |
+| `absolute_path` | 1–16384 scalar values і до 65536 UTF-8 bytes |
+| derived `path_components` count | 1–256 |
+| один derived path component | 1–1024 scalar values без NUL |
+| сума derived component lengths | до 16384 scalar values |
+| explicit `mime_type`, `extension` | 1–255 |
+| `name_query` | 3–255 scalar values після trim |
+| technical filter arrays | до 50 unique values |
+| browse/search `limit` | default 100, range 1–100 |
+| opaque `cursor` | до 4096 bytes |
+| `/files/sync` items | 1–100 |
 
-`external_url` після `trim` має бути абсолютним URL зі схемою `http` або `https`. Ключі `custom_fields` нормалізуються через `trim`; колізія двох початкових ключів після цього відхиляє команду. Значення кастомного поля зберігається як звичайний рядок без перетворення за його назвою.
+Device `offset` зберігається лише в `/api/device/list`. File browse/search не приймають `offset` або `total` flag.
 
 ### Верхньорівневі помилки
 
@@ -678,9 +868,9 @@ interface DeviceFile {
 | `500` | Неочікувана внутрішня помилка | Plain text `Internal server error`. |
 | `503` | Runtime завершує роботу | Plain text `Service unavailable: server is shutting down`. |
 
-Невалідний JSON, невідоме поле або неправильний JSON-тип перетворюються на `Form`, а не на HTML чи технічний текст Actix. Шляхи мають вигляд `device_id`, `custom_fields["hostname"]` і `files[2].path`. Невидимість не відрізняється від відсутності через `404`. SQL, назва бази, credentials, стек та значення заборонених полів ніколи не повертаються.
+Невалідний JSON, unknown field або wrong type перетворюються на `Form`. Paths мають вигляд `device_id`, `path_syntax`, `files[2].absolute_path`. Невидимість не відрізняється від відсутності через `404`; SQL, DB names, credentials, internal paths і protected values не повертаються.
 
-Для `/api/device/files/sync` ця таблиця застосовується лише до envelope і цільового пристрою. Після початку оброблення валідного батча endpoint повертає `200`, а помилки окремих файлових елементів кодує в `SyncDeviceFilesRsp`.
+Для `/api/device/files/sync` верхньорівнева таблиця застосовується до target device, `path_syntax` і batch envelope. Після їх валідації помилки окремих file items кодуються в `SyncDeviceFilesRsp` зі статусом `200`.
 
 ### `POST /api/device/list`
 
@@ -759,7 +949,7 @@ interface DeviceDetailReq {
 // 200: DeviceDetails
 ```
 
-Пропущене або `null` `include_archived` означає `false`. Для архівного пристрою такий запит повертає `404`; `include_archived: true` дозволяє читання архівного запису, але не додає права його змінювати. Відповідь завжди містить поточні значення всіх полів `DeviceDetails` і не містить файлів: вони пагінуються окремо через `/api/device/files/list`.
+Пропущене або `null` `include_archived` означає `false`. Для архівного пристрою такий запит повертає `404`; `include_archived: true` дозволяє read-only відповідь. Files не входять до `DeviceDetails` і читаються через roots/browse/search.
 
 ### `POST /api/device/create`
 
@@ -812,31 +1002,75 @@ DTO не приймає `files`, файлові метадані або сист
 
 Успіх повертає повний поточний `DeviceDetails`, а не лише змінені поля. Якщо всі дозволені нормалізовані значення вже збігаються з поточними, endpoint однаково повертає `200`, але не виконує `UPDATE` і не змінює `updated_at`.
 
-### `POST /api/device/files/list`
+### `POST /api/device/files/roots`
 
 ```ts
-interface ListDeviceFilesReq {
+interface ListDeviceFileRootsReq {
   device_id: UUID;
-  limit?: number | null;
-  offset?: number | null;
 }
 
-interface ListDeviceFilesRsp {
-  list: DeviceFile[];
-  total: number;
-  has_more: boolean;
+interface ListDeviceFileRootsRsp {
+  roots: DeviceFileRoot[];
 }
 ```
 
-Список має фіксований порядок `updated_at DESC, file_id ASC`. `total` є кількістю всіх файлів пристрою, а `has_more` дорівнює `offset + list.length < total`. Метадані архівного видимого пристрою читати дозволено. DTO не приймає старий `deleted_filter`, фільтр стану контенту або аналітичні фільтри, оскільки відповідних станів у схемі етапу немає. Невідомий або невидимий пристрій повертає `404`; помилка `wd_files` повертає `500`, а не порожній список.
+Roots видимого active або archived device sort-яться за `path_syntax`, exact `name`, потім `entry_id`. Для одного `(device_id, path_syntax, canonical name)` існує не більш як один root. Невідомий device повертає `404`; registry failure — `500`, а не empty list.
+
+
+### `POST /api/device/files/browse`
+
+```ts
+interface BrowseDeviceFilesReq {
+  device_id: UUID;
+  parent_entry_id: UUID;
+  include_breadcrumbs?: boolean | null;
+  limit?: number | null;
+  cursor?: string | null;
+}
+
+interface BrowseDeviceFilesRsp {
+  breadcrumbs: FileBreadcrumb[];
+  entries: DeviceFileTreeEntry[];
+  next_cursor: string | null;
+}
+```
+
+`parent_entry_id` required і має бути root або synthetic directory цього device. `include_breadcrumbs` default `true`; якщо `false`, response містить `[]`; якщо `true`, breadcrumbs містять root і current parent.
+
+Fixed order: directory before file, then exact `name_key ASC`, then `entry_id ASC`. Backend reads `limit + 1`; `next_cursor` є authenticated continuation того самого fingerprint і sort tuple. Duplicate files із тим самим name повертаються окремо. Mandatory count і deep `OFFSET` відсутні.
+
+### `POST /api/device/files/search`
+
+```ts
+interface SearchDeviceFilesReq {
+  device_id: UUID;
+  scope_entry_id: UUID;
+  name_query?: string | null;
+  kinds?: FileEntryKind[] | null;
+  mime_types?: string[] | null;
+  extensions?: string[] | null;
+  file_metadata_modified_from?: DateTime | null;
+  file_metadata_modified_to?: DateTime | null;
+  limit?: number | null;
+  cursor?: string | null;
+}
+
+interface SearchDeviceFilesRsp {
+  entries: DeviceFileTreeEntry[];
+  next_cursor: string | null;
+}
+```
+
+Scope required і має бути root/directory цього device. Empty filters не обмежують subtree. Заданий `name_query` містить 3–255 scalar values і є literal case-insensitive substring; `%`, `_` і `\` escape-яться та не мають wildcard semantics. Metadata filters не match-ять directories. Межі modified inclusive; `from > to` є `Form`.
+
+Order і cursor rules ті самі, що browse. Scope реалізує `<@`, name search — trigram index, а `path_components` results будуються batch ancestor query.
 
 ### `POST /api/device/files/sync`
 
 ```ts
 interface SyncDeviceFileItem {
   file_id?: UUID;
-  path: string;
-  name?: string | null;
+  absolute_path: string;
   mime_type?: string | null;
   extension?: string | null;
   file_metadata_created_at?: DateTime | null;
@@ -845,6 +1079,7 @@ interface SyncDeviceFileItem {
 
 interface SyncDeviceFilesReq {
   device_id: UUID;
+  path_syntax: PathSyntax;
   files: SyncDeviceFileItem[];
 }
 
@@ -859,6 +1094,7 @@ interface FileSyncAccepted {
   index: number;
   status: "accepted";
   operation: "created" | "updated";
+  root: DeviceFileRoot;
   file: DeviceFile;
 }
 
@@ -877,121 +1113,124 @@ interface SyncDeviceFilesRsp {
 }
 ```
 
-Верхньорівнево перевіряються автентифікація, `can_write_source_data`, структура root-об’єкта, канонічний `device_id`, межі непорожнього масиву та існування, видимість і активність цільового пристрою. Невалідний envelope повертає `400`, невідомий або невидимий пристрій — `404`, а архівний — `400 Form` за шляхом `device_id`; оброблення файлів у цих випадках не починається.
+Верхньорівнево перевіряються authentication, capability, canonical `device_id`, mandatory `path_syntax`, nonempty batch bounds та active visible device. Invalid envelope — `400`; invisible/unknown device — `404`; archived device — `400 Form`. Один batch може автоматично створити або використати кілька roots одного path syntax.
 
-Після успішної перевірки цілі кожна вхідна позиція обов’язково отримує один `results[index]` у тому самому порядку, а HTTP-статус дорівнює `200`, навіть якщо відхилено всі елементи. Неправильний тип, невідоме поле або невалідне значення всередині окремого елемента є `validation` лише цього елемента, а не помилкою всього батча.
+Після envelope validation кожна input position отримує один ordered result і HTTP `200`, навіть якщо всі files rejected. Root, parent і filename для кожного валідного item backend виводить із exact `absolute_path`; request не приймає жодних directory IDs або components.
+Missing/unknown field, wrong JSON type або неканонічний UUID є structural `400 Form` для всього request із точним path. Після успішного structural decode синтаксично невалідний рядок шляху, повторений `file_id` та невалідні item values стають ordered per-item `rejected` results.
 
-Семантика елемента:
+Семантика item:
 
-- відсутній `file_id` створює новий файл із UUIDv7; `file_id: null` є помилкою валідації;
-- наявний `file_id` адресує файл лише разом із верхньорівневим `device_id` і повністю замінює його поточний набір технічних метаданих;
-- `path` завжди обов’язковий; `name`, якщо пропущено або передано `null`, виводиться з кінцевого компонента `path` і після цього має бути непорожньою;
-- пропущене або `null` `extension` виводиться з ефективної `name`; пропущене або `null` `mime_type` виводиться через `mime_guess`; якщо виведення неможливе, відповідне поле response дорівнює `null`;
-- явно передані непорожні `name`, `extension` і `mime_type` мають пріоритет над виведенням;
-- під час оновлення пропущені або `null` файлові часові мітки очищуються до `null`; старі значення не успадковуються, бо елемент передає повний сирий стан;
-- `device_id`, `created_at` і `file_id` наявного файла не змінюються; успішне оновлення встановлює нову серверну дату `updated_at`, навіть якщо метадані збігаються;
-- однакові метадані, назви або шляхи не утворюють унікальності; два елементи без ключів створюють два різні файли;
-- якщо той самий непорожній `file_id` повторено в батчі, усі його входження відхиляються як `validation`, а незалежні елементи обробляються;
-- відсутність раніше відомого файла в батчі нічого не видаляє й не приховує.
+- absent `file_id` створює UUIDv7 file; `file_id: null` invalid;
+- present `file_id` адресує file цього `device_id` і повністю замінює його technical state;
+- `absolute_path` required, exact і має відповідати batch `path_syntax`; independent `name`, `root_entry_id` і `path_components` є unknown fields;
+- POSIX, Windows drive та Windows UNC форми, separators і заборонені components визначені в нормативній backend-валідації вище;
+- absent/null extension та MIME виводяться з final component; explicit nonempty values override derivation;
+- absent/null file timestamps стають `null`;
+- update зберігає file ID, device identity і `created_at`, але може змінити syntax, root, parent, name, exact path, metadata та `updated_at`;
+- identical syntax/path не unique для files; два keyless items створюють два files;
+- repeated nonnull `file_id` відхиляє всі occurrences;
+- omitted known IDs нічого не видаляють;
+- file іншого device або unknown file повертає `not_found` без disclosure; cross-root update того самого device дозволений.
 
-`FileSyncErrorKind` має таке значення:
+| `kind` | Умова | `field_errors` |
+| ------ | ----- | -------------- |
+| `validation` | Invalid item/path/value або duplicate `file_id`. | Nonempty exact paths. |
+| `not_found` | File absent, invisible або належить іншому device. | `[]`. |
+| `conflict` | Safe retry exhausted. | `[]`. |
+| `dependency` | Registry unavailable/timeout for item. | `[]`. |
+| `internal` | Other unexpected item failure. | `[]`. |
 
-| `kind` | Коли використовується | `field_errors` |
-| ------ | --------------------- | -------------- |
-| `validation` | Невалідна структура або значення елемента, включно з дублем `file_id`. | Непорожній масив точних шляхів `files[index].field`. |
-| `not_found` | Ключ файла не існує, невидимий або належить іншому пристрою. | `[]`; повідомлення не розкриває причину. |
-| `conflict` | Конкурентну зміну не вдалося безпечно завершити після дозволеного retry. | `[]`. |
-| `dependency` | `wd_files` недоступна або перевищила таймаут для цього елемента. | `[]`; без назви бази чи підключення. |
-| `internal` | Інша неочікувана помилка елемента. | `[]`; лише узагальнене повідомлення. |
+Кожен valid item має окрему `wd_files` transaction з ordered old/target root row locks. `accepted.root` і `accepted.file` є єдиним підтвердженням commit та містять canonical root/components поряд з exact source path; failure одного item не відкочує accepted siblings.
 
-Кожен елемент виконується в окремій транзакції `wd_files`. Успіх або помилка одного не відкочує вже підтверджені інші результати й не змінює `main`. `accepted.file` містить фактично збережені нормалізовані або виведені метадані та є єдиним підтвердженням успішного commit.
+Якщо транспорт обривається до отримання response, клієнт не припускає rejection: він перечитує roots і browse цільового derived path перед повтором. Це особливо важливо для keyless file create, оскільки клієнтського operation ID у V1 немає.
 
 ## Наскрізні технічні сценарії
 
-Для кожного сценарію потрібно додати послідовність взаємодії фронтенду або API-клієнта, бекенду, основної бази та `wd_files`:
-
-1. успішне створення пристрою з `name = NULL`, `unit_id = NULL` і порожнім `aor_ids` лише в основній базі;
-2. відхилене створення без обов’язкової `source_label`;
-3. відхилення `name`, `aor_ids` або `unit_id` у команді створення від будь-якої ролі, включно з `DeviceAnalyst` і `Admin`, без часткового запису;
-4. окремий наступний patch `DeviceAnalyst`, який уперше задає `name`, `unit_id` і набір AOR;
-5. атомарний patch `DeviceAnalyst`, який очищує `name` і `unit_id` та повністю замінює набір AOR;
-6. успішний patch `source_label`, зовнішнього посилання й кастомних значень;
-7. створення файла лише з `path`, з якого бекенд виводить обов’язкову `name`, `extension` і відомий `mime_type`;
-8. пріоритет явно переданих файлових `name`, `extension` і `mime_type` над виведеними значеннями;
-9. відхилення файла без переданої та виведеної непорожньої `name`;
-10. оновлення метаданих наявного файла за ключем із повторним обчисленням відсутніх похідних полів;
-11. відхилення невідомого ключа або ключа файла іншого пристрою;
-12. частковий успіх батча з окремою транзакцією кожного елемента;
-13. відмова перевірки в `main` без звернення або запису до `wd_files`;
-14. недоступність `wd_files` з явною помилкою без зміни пристрою в `main`;
-15. пошук і пагінація `/api/device/list` з фільтрами, сортуванням за заголовком, датою створення й датою зміни, детермінованим tie-breaker, `total`, `has_more` і кількостями обох станів;
-16. отримання `/api/device/unit-stats`, де кожен підрозділ має ідентифікатор, поточну назву та кількість активних пристроїв;
-17. отримання `/api/device/detail` та окремого пагінованого `/api/device/files/list` із поточними назвами AOR і підрозділу, RFC 3339-датами та без контенту й позаетапних полів;
-18. повтор тотожного patch пристрою без зміни `updated_at`;
-19. видалення одного кастомного ключа через `null` без втрати інших ключів;
-20. `/api/device/files/sync` із повтореним `file_id`, у якому всі дублікати відхилені, а незалежні елементи оброблені;
-21. конкурентні зміни одного пристрою та одного файла з детермінованим поточним станом після row lock;
-22. читання метаданих архівного пристрою й верхньорівневе відхилення їх синхронізації;
-23. `404` для всіх виключених маршрутів, включно зі старим `/api/device/files/create`, без сумісного alias.
+1. create device with `name = NULL`, `unit_id = NULL`, empty AOR only in `main`;
+2. reject create without `source_label` or with analytical fields;
+3. atomic source/analytical device patches with role separation;
+4. parse POSIX, Windows drive and UNC absolute paths into canonical roots and exact components;
+5. reject relative, mixed-separator, trailing-separator, empty, dot and dot-dot paths;
+6. auto-create one root per device/syntax/canonical name and shared synthetic directory chains;
+7. create one multi-root batch and return a derived root for every accepted item;
+8. create two files with identical syntax/path and distinct UUIDs;
+9. derive name/extension/MIME from final component while preserving exact absolute path;
+10. move a file within one root and across roots/syntax while preserving ID and out-of-stage state;
+11. prune only empty old synthetic directories and retain roots;
+12. reject other-device/unknown file key without disclosure;
+13. keep omitted known files unchanged;
+14. partial batch success with one transaction/result per item;
+15. reject duplicate `file_id` occurrences while accepting independent items;
+16. concurrent root/directory upserts yield one canonical root and one directory per parent/name;
+17. concurrent cross-root file moves preserve parent/path invariant and expose old or new complete tree;
+18. root list for active and archived visible device;
+19. root/direct-child browse with directories-first keyset pagination;
+20. breadcrumbs ordered root-to-parent;
+21. scoped subtree search with escaped literal query and technical filters;
+22. cursor rejection after scope/filter change or tampering;
+23. registry failure is explicit and never an empty success;
+24. `main` failure performs no `wd_files` write;
+25. archived registry read succeeds while sync rejects;
+26. excluded and old `/files/list`, `/files/create` and `/files/roots/create` routes return `404`.
 
 ## Перевірка та критерії приймання
 
 ### Модель даних
 
-- provisioning створює окрему базу з точним ім’ям `wd_files`;
-- основний і файловий мігратори застосовуються та відкочуються лише у своїх базах;
-- після переходу робоча таблиця `device_file` існує у `wd_files` і не використовується в `main`;
-- обмеження, індекси й nullable-семантика відповідають цій схемі: `device.name` і `device.unit_id` можуть бути `NULL`, `device_file.name` є `not null`, а `source_label` і `device.name` не мають унікальності; нова колонка аналітичного опису не створюється;
-- перенесення зберігає UUID і часові мітки, а кількість та контрольні суми збігаються за кожним `device_id`;
-- runtime-користувачі не можуть виконати DDL або звернутися до іншої бази.
+- `main` і `wd_files` використовують чинні окремі config fields, connections та незалежні `seaql_migrations`;
+- наявний `migration::run_migration_1` застосовує обидва migration chains без нового pool, migrator binary або readiness protocol;
+- main migration дає `source_label text not null`, nullable `name`, `custom_fields jsonb not null`, зберігає archive/FK/index invariants і не має `hostname`/`ssh_port`;
+- file migration встановлює `ltree` і `pg_trgm` у `public`, створює порожню `public.file_entry` з target constraints, triggers і десятьма indexes;
+- `main.device_file` та `wd_files.public.device_file` існують без змін, а жоден legacy row не копіюється чи не валідується на coverage;
+- generated `file_entry` entity має детермінований `select_as = "text"` / `save_as = "ltree"` mapping;
+- майбутній file Logic/API cutover є окремою роботою; чинні device file routes і wire DTO не змінюються.
+
 
 ### Бекенд
 
-- типізовані репозиторії використовують лише призначений їм пул;
-- створення й редагування пристрою не звертаються до `wd_files`;
-- файловий батч перевіряє пристрій у `main`, звільняє це з’єднання та виконує окрему транзакцію `wd_files` для кожного елемента;
-- невідомий або чужий ключ, конкуренція, повтор і частковий успіх зберігають визначені інваріанти;
-- відмова будь-якої бази повертається явно, не маскується порожніми даними та не спричиняє запису в іншу базу;
-- ролі щоразу зчитуються із серверного стану й зводяться до `can_read`, `can_write_source_data` та `can_write_analytical_data`;
-- команда створення завжди відхиляє `name`, `aor_ids` і `unit_id` та записує `name = NULL`, `unit_id = NULL` без AOR-зв’язків; лише наступний patch приймає ці поля з `can_write_analytical_data`, а інше позаетапне аналітичне поле відхиляється без часткового запису;
-- валідація повертає точні шляхи полів, перевіряє AOR і підрозділ під блокуванням, гарантує непорожню ефективну назву файла та детерміновано виводить відсутні `name`, `extension` і `mime_type`;
-- відповіді списку, деталей і статистики підрозділів отримують поточні назви AOR і підрозділів із `MainDb` та не покладаються на дубльовані назви у пристрої;
-- тотожний patch пристрою, включно з `name`, `aor_ids` і `unit_id`, не виконує `UPDATE`, а повтор повного стану файла з ключем оновлює лише цей файл;
-- дублікати `file_id` у батчі не записуються, а порядок і результат кожної вхідної позиції зберігаються;
-- row lock серіалізує конкурентні зміни одного пристрою або файла, не утримуючи транзакцію іншої бази;
-- метадані архівного пристрою можна прочитати, але не синхронізувати; старі маршрути архівування вимкнені до окремого протоколу координації;
+- typed repositories use only their designated pool;
+- device create/update never touches registry;
+- file operations release `MainDb` before acquiring `FileRegistryDb`;
+- ordered old/target root row locks і file row locks preserve hierarchy invariants under concurrency;
+- strict source parser preserves exact path/component bytes without trim, case fold, Unicode normalization or local-filesystem access;
+- root/directory upsert, chain prune and same-/cross-root file move are atomic;
+- duplicate paths remain distinct files; omitted IDs remain unchanged;
+- direct children, ancestors, subtree and scoped-name queries use intended indexes under `EXPLAIN (ANALYZE, BUFFERS)` on representative data;
+- browse/search use `limit + 1`, opaque keyset cursor and no mandatory count/deep offset;
+- raw hierarchy predicates and search values are parameterized;
+- failures remain explicit and partial batch order/results are preserved.
 
 ### Фронтенд
 
-- наявні `/devices` і `/devices/:id`, custom elements, layout, MRT-таблиця, drawer-и та файловий діалог адаптовано без нових сторінок або redesign;
-- список перевіряє пошук, active/archive-перемикачі, статистику підрозділів, серверне сортування включно з `created_at`, пагінацію, похідний заголовок і поточні назви AOR та підрозділу;
-- створення надсилає лише `source_label`, `external_url` і `custom_fields`, а редагування надсилає мінімальний patch із коректним вилученням кастомних ключів;
-- рольові стани використовують окремі `can_read`, `can_write_source_data` і `can_write_analytical_data`; архівні записи доступні лише для читання;
-- деталі показують усі поля етапу без `hostname`, `ssh_port`, тегів, порожнього опису та старих архівних дій;
-- `/api/device/files/sync` через наявний діалог створює й оновлює файлові метадані, а UI показує упорядкований результат кожного рядка й не маскує частковий успіх;
-- помилки полів, ролей, автентифікації й залежностей видимі, а успішні response DTO є джерелом локального стану;
-- у браузері пройдено вісім сценаріїв секції «Мінімальна ручна перевірка frontend»; повний перебір API-меж не вимагається від UI.
+- existing routes/layout/custom elements are adapted without a new page;
+- root selector, folder browser, breadcrumbs, scoped search and cursor loading work end to end;
+- duplicate paths are separate rows with different IDs;
+- sync sends mandatory path syntax plus exact absolute paths and no root IDs/components/independent name;
+- accepted results return canonical roots and files; cross-root move preserves selection identity and refreshes affected trees;
+- roles and archived read-only mode gate actions without replacing server checks;
+- all ten browser scenarios pass with visible API errors.
 
 ### API
 
-- router і contract tests фіксують рівно сім маршрутів етапу, а виключені маршрути повертають `404`;
-- для кожного маршруту перевірено точну request/response-схему, `snake_case`, обов’язковість, `null` проти пропущеного поля, відхилення невідомих полів і raw wire-формат `AppError`;
-- `/list` перевіряє пошук за `source_label`, `name` і UUID, усі фільтри етапу, сортування за похідним заголовком, `created_at` і `updated_at`, tie-breaker, пагінацію та `status_counts`;
-- `/unit-stats`, `/detail` і `/files/list` перевіряють видимість, активний або архівний стан, структури `AorSummary` і `UnitSummary`, RFC 3339-формат усіх дат та відсутність позаетапних полів;
-- `/create` і `/update` перевіряють розділення груп полів, рольові можливості та повний `DeviceDetails` у відповіді;
-- `/files/sync` перевіряє верхньорівневі помилки, один упорядкований tagged result на кожну позицію, усі п’ять `FileSyncErrorKind` і частковий успіх;
-- згенеровані frontend bindings, API-клієнт, UI та backend використовують один контракт без ручних копій типів або старих назв маршрутів.
+- router/contract tests fix exactly nine routes and `404` all excluded aliases;
+- schemas enforce snake_case, null/omission, unknown-field rejection and exact field paths;
+- sync auto-creates/upserts canonical roots, returns their stable IDs and never duplicates one device/syntax/root identity;
+- browse tests root/nested parent, ordering, duplicates, breadcrumbs, cursor continuation and invalid cursor;
+- search tests subtree containment, literal wildcard escaping, filters, path context and cursor;
+- sync tests path-syntax parsing, multi-root creation, derivation, duplicate paths, cross-root move, pruning, all five error kinds and partial success;
+- responses never expose `ltree`, `name_key`, content or out-of-scope analytics;
+- generated bindings, client and UI use the single contract without handwritten DTO copies.
 
 ## Розгортання першого етапу
 
-- provisioning `wd_files`, створення ролей і застосування обох ланцюжків міграцій до запуску нового бекенду;
-- перенесення та звірка файлових даних із заблокованими файловими записами;
-- конфігурація окремих пулів, облікових даних, таймаутів і перевірок готовності;
-- перемикання бекенду без подвійного запису;
-- до перемикання одночасно прибираються старі маршрути архівування й відновлення, `/api/device/files/create`, `/api/device/files/delete` та `/api/device/files/restore`; backend, bindings і frontend переходять на `/api/device/files/sync` одним розгортанням без подвійного маршруту;
-- перевірка після розгортання обох баз і файлових маршрутів;
-- умови відкочування.
+1. чинним `oneoff-create-file-registry-database` створити тільки database `wd_files`;
+2. за відсутності mixed-version application processes застосувати чинний startup migration path, який послідовно запускає main та file migration chains;
+3. перевірити, що `main.device` має target fields, `wd_files.public.file_entry` існує порожньою, обидві legacy `device_file` tables не змінилися, а `ltree` і `pg_trgm` встановлені в `public`;
+4. на development `wd` виконати `just gen-seaorm`, а для file database — `just gen-seaorm-files --mode=<mode>` і `just check-seaorm-files --mode=<mode>`;
+5. виконати schema, adapter і generated-entity behavior checks;
+6. розгорнути сумісний backend без перенесення file rows, dual write або API/frontend cutover. Майбутній Logic/API етап працюватиме з `file_entry` окремим deployment.
+
 
 ## Відкриті технічні рішення
 
-Кожне невирішене питання повинно мати стабільний ідентифікатор, опис варіантів, наслідки, відповідального та статус. Відкрите технічне рішення не може непомітно змінювати прийнятий функціональний дизайн.
+Невирішених технічних питань для schema-only підготовки немає: `main.device` має lossless guarded rollback, `file_entry` лишається порожньою, а чинні connection, provisioning і migration paths збережені. Логіка hierarchy, API та frontend cutover є окремим наступним етапом і не можуть непомітно змінювати функціональний дизайн версії 0.13.
