@@ -52,7 +52,19 @@ pub const IDENTITY_DURATION_HOURS: u64 = 12;
 pub const IDENTITY_SALT: &str = "IUBwdub783736#";
 pub const ROLE_ADMIN: &str = "Admin";
 pub const SIGINT_SIGNAL_TIMEOUT_MS: u64 = 1000;
+/// MESSAGE_ATTACHMENT_LIMIT_SYNC: keep this upload limit synchronized with
+/// `RER_MESSAGE_ATTACHMENTS_ZIP_MAX_FILES`, frontend
+/// `MAX_MESSAGE_ATTACHMENTS` in `useMessageUppy.ts`, and
+/// `RER_MESSAGE_ATTACHMENTS_ZIP_MAX_FILES` in `MessageCardMedia.tsx`.
 pub const SIGINT_MESSAGE_MAX_ATTACHMENTS: usize = 20;
+/// MESSAGE_ATTACHMENT_LIMIT_SYNC: keep this archive-download limit synchronized
+/// with `SIGINT_MESSAGE_MAX_ATTACHMENTS`, frontend
+/// `MAX_MESSAGE_ATTACHMENTS` in `useMessageUppy.ts`, and
+/// `RER_MESSAGE_ATTACHMENTS_ZIP_MAX_FILES` in `MessageCardMedia.tsx`.
+pub const RER_MESSAGE_ATTACHMENTS_ZIP_MAX_FILES: usize = 20;
+/// Keep synchronized with
+/// `wdintel-web/src/ts/react/routes/shared/message-card/MessageCardMedia.tsx:RER_MESSAGE_ATTACHMENTS_ZIP_MAX_TOTAL_BYTES`.
+pub const RER_MESSAGE_ATTACHMENTS_ZIP_MAX_TOTAL_BYTES: u64 = 200 * 1024 * 1024;
 pub const CLEANUP_REPORT_DAYS: u64 = 30;
 pub const RER_REPORT_ERROR_CODE_HEADER_NAME: &str = "x-echo-error-code";
 pub const RER_REPORT_PERMISSION_DENIED_ERROR_CODE: &str = "8125378";

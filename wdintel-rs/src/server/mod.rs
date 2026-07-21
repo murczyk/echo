@@ -508,6 +508,7 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::delta::login::fetch_redirect_url)
             .service(crate::delta::login::handle_redirect)
             .service(crate::rer_importer::messenger_media)
+            .service(crate::rer_importer::rer_message_attachments_zip)
             .service(
                 crate::messenger::media_thumbnail::messenger_media_thumbnail,
             )
@@ -1196,6 +1197,36 @@ mod tests {
             .to_request();
         let res = test::call_service(&app, req).await;
 
+        assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[actix_web::test]
+    async fn test_rer_message_attachments_zip_requires_authentication() {
+        let config = crate::config::read_config(Mode::Test).unwrap();
+        let redis_session_store =
+            RedisSessionStore::new(crate::redis_conn_string(&config).unwrap())
+                .await
+                .unwrap();
+        let app = test::init_service(
+            App::new()
+                .wrap(
+                    IdentityMiddleware::builder()
+                        .visit_deadline(Some(std::time::Duration::from_secs(
+                            IDENTITY_DURATION_HOURS * 60 * 60,
+                        )))
+                        .build(),
+                )
+                .wrap(SessionMiddleware::new(
+                    redis_session_store,
+                    Key::generate(),
+                ))
+                .configure(configure_routes),
+        )
+        .await;
+        let req = test::TestRequest::get()
+            .uri("/api/rer-importer/messages/1/attachments.zip")
+            .to_request();
+        let res = test::call_service(&app, req).await;
         assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
     }
 }

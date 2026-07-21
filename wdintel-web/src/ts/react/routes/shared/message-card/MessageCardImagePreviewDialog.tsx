@@ -28,6 +28,7 @@ import { canCopyImageToClipboard, copyImageToClipboard } from './copy-image-to-c
 import { blurActivePreviewDialogElement } from './message-card-preview-shell';
 import { getMessageCardPreviewShellConfig } from './message-card-preview-config';
 import { MessageCardPreviewShell } from './MessageCardPreviewShell';
+import type { MessageCardDownloadGuardProps } from './MessageCardMedia';
 
 type StageSize = {
   width: number;
@@ -41,6 +42,8 @@ export function MessageImagePreviewDialog({
   open,
   onClose,
   onIndexChange,
+  isDownloadStarting,
+  onDownloadStart,
 }: {
   imageHrefs: MessageCardImage[];
   initialIndex?: number;
@@ -48,7 +51,7 @@ export function MessageImagePreviewDialog({
   open: boolean;
   onClose: () => void;
   onIndexChange: (index: number) => void;
-}) {
+} & MessageCardDownloadGuardProps) {
   const imageCount = imageHrefs.length;
   const hasCarousel = imageCount > 1;
   const resolvedIndex = normalizePreviewIndex(currentIndex ?? initialIndex, imageCount);
@@ -404,6 +407,9 @@ export function MessageImagePreviewDialog({
             onGoToNext={() => goToIndex(resolvedIndex + 1)}
             onInfoClick={(event) => setInfoAnchorEl(event.currentTarget)}
             onClose={closeDialog}
+            downloadKey={`media:${String(currentImage?.id ?? '')}`}
+            isDownloadStarting={isDownloadStarting}
+            onDownloadStart={onDownloadStart}
           />
         ) : null
       }

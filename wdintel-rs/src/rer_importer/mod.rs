@@ -20,8 +20,11 @@ use rand::prelude::IndexedRandom;
 use sea_orm::sea_query::{Expr, Func};
 use sea_orm::*;
 use sqlx::Row;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
+use std::io::{BufWriter, Seek, Write};
 use time::{Duration as TimeDuration, OffsetDateTime, PrimitiveDateTime};
+use tokio_util::io::ReaderStream;
+use zip::write::SimpleFileOptions;
 
 pub mod analysis;
 pub mod bgworker;
@@ -392,6 +395,275 @@ async fn serve_small_messenger_media(
     Ok(resp
         .insert_header((header::CONTENT_LENGTH, total.to_string()))
         .body(bytes))
+}
+
+fn safe_zip_entry_name(
+    file_name: Option<&str>,
+    file_ext: Option<&str>,
+    index: usize,
+    used_names: &mut HashSet<String>,
+) -> String {
+    let name = file_name
+        .map(|name| {
+            name.chars()
+                .map(|character| {
+                    if character.is_control() || matches!(character, '/' | '\\')
+                    {
+                        '_'
+                    } else {
+                        character
+                    }
+                })
+                .collect::<String>()
+        })
+        .map(|name| name.trim().trim_matches('.').to_string())
+        .filter(|name| !name.is_empty())
+        .unwrap_or_else(|| {
+            let extension = file_ext
+                .map(str::trim)
+                .map(|extension| {
+                    extension
+                        .chars()
+                        .filter(|character| character.is_ascii_alphanumeric())
+                        .collect::<String>()
+                })
+                .filter(|extension| !extension.is_empty())
+                .map(|extension| format!(".{extension}"))
+                .unwrap_or_default();
+            format!("attachment_{}{extension}", index + 1)
+        });
+    if used_names.insert(name.clone()) {
+        return name;
+    }
+    let path = std::path::Path::new(&name);
+    let stem = path
+        .file_stem()
+        .and_then(|value| value.to_str())
+        .unwrap_or("attachment");
+    let extension = path.extension().and_then(|value| value.to_str());
+    for suffix in 1.. {
+        let candidate = match extension {
+            Some(extension) => format!("{stem}_{suffix}.{extension}"),
+            None => format!("{stem}_{suffix}"),
+        };
+        if used_names.insert(candidate.clone()) {
+            return candidate;
+        }
+    }
+    unreachable!()
+}
+
+fn write_zip_entry<W: Write + Seek>(
+    archive: &mut zip::ZipWriter<W>,
+    options: &SimpleFileOptions,
+    name: String,
+    data: &[u8],
+) -> Result<(), AppError> {
+    archive.start_file(name, *options).c(h!())?;
+    archive.write_all(data).c(h!())?;
+    Ok(())
+}
+
+async fn write_plaintext_zip_entry<W: Write + Seek>(
+    archive: &mut zip::ZipWriter<W>,
+    options: &SimpleFileOptions,
+    name: String,
+    env: &Env,
+    media: &signal_message_media::Model,
+    expected_size: u64,
+    total_bytes: &mut u64,
+) -> Result<(), AppError> {
+    archive.start_file(name, *options).c(h!())?;
+    let mut streamed_size = 0u64;
+    if expected_size > 0 {
+        let mut stream = crate::messenger::media::stream_plaintext_media_range(
+            env,
+            media,
+            0..expected_size,
+        )
+        .await?;
+        while let Some(chunk) = stream.try_next().await.c(h!())? {
+            let chunk_size = u64::try_from(chunk.len()).c(h!())?;
+            streamed_size =
+                checked_attachment_size_total(streamed_size, chunk_size)?;
+            *total_bytes =
+                checked_attachment_size_total(*total_bytes, chunk_size)?;
+            archive.write_all(&chunk).c(h!())?;
+        }
+    }
+    if streamed_size != expected_size {
+        return Err(AppError::BL {
+            msg: format!(
+                "Plaintext attachment {} ended at {} bytes, expected {}",
+                media.id, streamed_size, expected_size
+            ),
+        });
+    }
+    Ok(())
+}
+
+fn attachment_size_limit_error(total_bytes: u64) -> AppError {
+    AppError::BL {
+        msg: format!(
+            "Message attachments are too large: {} bytes, max is {}",
+            total_bytes,
+            crate::config::RER_MESSAGE_ATTACHMENTS_ZIP_MAX_TOTAL_BYTES
+        ),
+    }
+}
+
+fn checked_attachment_size_total(
+    total_bytes: u64,
+    additional_bytes: u64,
+) -> Result<u64, AppError> {
+    let total_bytes = total_bytes
+        .checked_add(additional_bytes)
+        .ok_or_else(|| attachment_size_limit_error(u64::MAX))?;
+    if total_bytes > crate::config::RER_MESSAGE_ATTACHMENTS_ZIP_MAX_TOTAL_BYTES
+    {
+        return Err(attachment_size_limit_error(total_bytes));
+    }
+    Ok(total_bytes)
+}
+
+fn validate_attachment_metadata_sizes(
+    media: &[signal_message_media::Model],
+) -> Result<u64, AppError> {
+    let mut total_bytes = 0;
+    for media in media {
+        let size_bytes =
+            u64::try_from(media.size_bytes).map_err(|_| AppError::BL {
+                msg: format!(
+                    "Invalid attachment size: {} bytes",
+                    media.size_bytes
+                ),
+            })?;
+        total_bytes = checked_attachment_size_total(total_bytes, size_bytes)?;
+    }
+    Ok(total_bytes)
+}
+
+fn message_attachments_archive_name_from_parts(
+    message_uuid: Option<&str>,
+    timestamp: chrono::NaiveDateTime,
+) -> String {
+    let message_uuid = message_uuid
+        .unwrap_or("unknown")
+        .chars()
+        .map(|character| {
+            if character.is_ascii_alphanumeric()
+                || matches!(character, '-' | '_')
+            {
+                character
+            } else {
+                '_'
+            }
+        })
+        .collect::<String>();
+    let timestamp = timestamp.format("%Y%m%d_%H%M%S");
+    format!("attachments_{message_uuid}_{timestamp}.zip")
+}
+
+async fn find_active_attachment_archive_message(
+    dbx: &DatabaseConnection,
+    message_id: i64,
+) -> Result<signal_message::Model, AppError> {
+    signal_message::Entity::find()
+        .filter(signal_message::Column::Id.eq(message_id))
+        .filter(signal_message::Column::Deleted.eq(false))
+        .one(dbx)
+        .await
+        .c(h!())?
+        .ok_or(AppError::NotFound)
+}
+
+#[get("/api/rer-importer/messages/{message_id}/attachments.zip")]
+async fn rer_message_attachments_zip(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+    path: actix_web::web::Path<(i64,)>,
+) -> Result<HttpResponse, AppError> {
+    let login = user.id().c(h!())?;
+    crate::users::has_role(&env.dbx, &login, "Rer")
+        .await
+        .c(h!())?;
+    let message_id = path.0;
+    let message =
+        find_active_attachment_archive_message(&env.dbx, message_id).await?;
+    // Uses the same group-membership gate as individual media downloads; this
+    // endpoint must not grant access merely because a message URL is known.
+    crate::messenger::media::ensure_media_access(&env.dbx, &login, message_id)
+        .await?;
+    let media = signal_message_media::Entity::find()
+        .filter(signal_message_media::Column::SignalMessageId.eq(message_id))
+        .order_by_asc(signal_message_media::Column::CreatedAt)
+        .all(&env.dbx)
+        .await
+        .c(h!())?;
+    if media.len() > crate::config::RER_MESSAGE_ATTACHMENTS_ZIP_MAX_FILES {
+        return Err(AppError::BL {
+            msg: format!(
+                "Too many message attachments: {}, max is {}",
+                media.len(),
+                crate::config::RER_MESSAGE_ATTACHMENTS_ZIP_MAX_FILES
+            ),
+        });
+    }
+    validate_attachment_metadata_sizes(&media)?;
+    let archive_timestamp = Utc::now().naive_utc();
+
+    let zip_file = tempfile::tempfile().c(h!())?;
+    let mut archive = zip::ZipWriter::new(BufWriter::new(zip_file));
+    let options = SimpleFileOptions::default()
+        .compression_method(zip::CompressionMethod::Deflated);
+    let mut used_names = HashSet::new();
+    let mut total_bytes = 0u64;
+    for (index, media) in media.iter().enumerate() {
+        let name = safe_zip_entry_name(
+            media.file_name.as_deref(),
+            media.file_ext.as_deref(),
+            index,
+            &mut used_names,
+        );
+        let expected_size = u64::try_from(media.size_bytes).c(h!())?;
+        if media.is_encrypted {
+            let data =
+                crate::messenger::media::fetch_media_bytes(env.as_ref(), media)
+                    .await?;
+            total_bytes = checked_attachment_size_total(
+                total_bytes,
+                u64::try_from(data.len()).c(h!())?,
+            )?;
+            write_zip_entry(&mut archive, &options, name, &data)?;
+        } else {
+            write_plaintext_zip_entry(
+                &mut archive,
+                &options,
+                name,
+                env.as_ref(),
+                media,
+                expected_size,
+                &mut total_bytes,
+            )
+            .await?;
+        }
+    }
+    let mut zip_file = archive.finish().c(h!())?.into_inner().c(h!())?;
+    let zip_size = zip_file.metadata().c(h!())?.len();
+    zip_file.rewind().c(h!())?;
+    let stream = ReaderStream::new(tokio::fs::File::from_std(zip_file));
+    let archive_name = message_attachments_archive_name_from_parts(
+        message.message_uid.as_deref(),
+        archive_timestamp,
+    );
+    Ok(HttpResponse::Ok()
+        .insert_header((header::CONTENT_TYPE, "application/zip"))
+        .insert_header((
+            header::CONTENT_DISPOSITION,
+            format!("attachment; filename=\"{archive_name}\""),
+        ))
+        .insert_header((header::CONTENT_LENGTH, zip_size.to_string()))
+        .streaming(stream))
 }
 
 #[post("/api/rer-importer/callsigns")]
@@ -1275,12 +1547,26 @@ where
 #[cfg(test)]
 mod messenger_media_tests {
     use super::{
+        checked_attachment_size_total, find_active_attachment_archive_message,
         media_cache_preflight_requested, media_range_not_satisfiable_response,
+        message_attachments_archive_name_from_parts,
         parse_oneoff_reprocess_unit_names_since_ts, parse_single_byte_range,
+        safe_zip_entry_name, validate_attachment_metadata_sizes,
+        write_zip_entry,
     };
+    use crate::entities::signal_message;
+    use crate::entities::signal_message_media;
+    use crate::error::AppError;
+    use crate::functest::tests::{cleanup, mk_signal_message};
     use actix_web::http::{header, StatusCode};
     use actix_web::test::TestRequest;
-    use chrono::NaiveDate;
+    use chrono::{NaiveDate, NaiveDateTime};
+    use sea_orm::{ActiveModelTrait, IntoActiveModel, Set};
+    use serial_test::serial;
+    use std::collections::HashSet;
+    use std::io::{Cursor, Read};
+    use std::iter;
+    use zip::write::SimpleFileOptions;
 
     #[test]
     fn parse_byte_range_from_start() {
@@ -1404,5 +1690,150 @@ mod messenger_media_tests {
                     .unwrap()
             )
         );
+    }
+
+    #[test]
+    fn zip_entry_names_preserve_safe_names_and_deduplicate() {
+        let mut used_names = HashSet::new();
+        assert_eq!(
+            safe_zip_entry_name(
+                Some("../report.txt"),
+                Some("txt"),
+                0,
+                &mut used_names,
+            ),
+            "_report.txt"
+        );
+        assert_eq!(
+            safe_zip_entry_name(
+                Some("../report.txt"),
+                Some("txt"),
+                1,
+                &mut used_names,
+            ),
+            "_report_1.txt"
+        );
+        assert_eq!(
+            safe_zip_entry_name(None, Some("pdf"), 2, &mut used_names),
+            "attachment_3.pdf"
+        );
+    }
+
+    #[test]
+    fn zip_entries_include_all_and_empty_archives_are_valid() {
+        let options = SimpleFileOptions::default()
+            .compression_method(zip::CompressionMethod::Deflated);
+        let mut archive = zip::ZipWriter::new(Cursor::new(Vec::new()));
+        write_zip_entry(&mut archive, &options, "first.txt".into(), b"one")
+            .unwrap();
+        write_zip_entry(&mut archive, &options, "second.txt".into(), b"two")
+            .unwrap();
+        let bytes = archive.finish().unwrap().into_inner();
+        let mut archive = zip::ZipArchive::new(Cursor::new(bytes)).unwrap();
+        assert_eq!(archive.len(), 2);
+        let mut first = String::new();
+        archive
+            .by_name("first.txt")
+            .unwrap()
+            .read_to_string(&mut first)
+            .unwrap();
+        assert_eq!(first, "one");
+        let empty = zip::ZipWriter::new(Cursor::new(Vec::new()))
+            .finish()
+            .unwrap();
+        assert_eq!(
+            zip::ZipArchive::new(Cursor::new(empty.into_inner()))
+                .unwrap()
+                .len(),
+            0
+        );
+    }
+
+    #[test]
+    fn archive_name_uses_message_uuid_and_timestamp() {
+        let timestamp = NaiveDateTime::parse_from_str(
+            "2026-07-20 14:05:06",
+            "%Y-%m-%d %H:%M:%S",
+        )
+        .unwrap();
+        assert_eq!(
+            message_attachments_archive_name_from_parts(
+                Some("550e8400-e29b-41d4-a716-446655440000"),
+                timestamp,
+            ),
+            "attachments_550e8400-e29b-41d4-a716-446655440000_20260720_140506.zip"
+        );
+    }
+
+    #[test]
+    fn attachment_size_validation_accepts_below_and_exact_limit() {
+        let limit = crate::config::RER_MESSAGE_ATTACHMENTS_ZIP_MAX_TOTAL_BYTES;
+        assert_eq!(checked_attachment_size_total(limit - 1, 1).unwrap(), limit);
+        assert_eq!(checked_attachment_size_total(0, limit).unwrap(), limit);
+    }
+
+    #[test]
+    fn attachment_size_validation_rejects_above_limit() {
+        let limit = crate::config::RER_MESSAGE_ATTACHMENTS_ZIP_MAX_TOTAL_BYTES;
+        assert!(checked_attachment_size_total(limit, 1).is_err());
+    }
+
+    #[test]
+    fn attachment_size_validation_rejects_negative_metadata() {
+        let media = iter::once(signal_message_media::Model {
+            id: uuid::Uuid::nil(),
+            signal_message_id: 1,
+            content_type: "text/plain".to_string(),
+            file_ext: Some("txt".to_string()),
+            file_name: Some("negative.txt".to_string()),
+            size_bytes: -1,
+            is_encrypted: false,
+            created_at: chrono::Utc::now().naive_utc(),
+        })
+        .collect::<Vec<_>>();
+        let error = validate_attachment_metadata_sizes(&media).unwrap_err();
+        assert!(error.to_string().contains("Invalid attachment size"));
+    }
+
+    #[test]
+    fn attachment_size_validation_rejects_integer_overflow() {
+        assert!(checked_attachment_size_total(u64::MAX, 1).is_err());
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn archive_message_lookup_excludes_soft_deleted_messages() {
+        let env = cleanup().await.unwrap();
+        let active_message = mk_signal_message(
+            &env.dbx,
+            <signal_message::ActiveModel as Default>::default(),
+        )
+        .await
+        .unwrap();
+        let deleted_message = mk_signal_message(
+            &env.dbx,
+            <signal_message::ActiveModel as Default>::default(),
+        )
+        .await
+        .unwrap();
+        let deleted_message_id = deleted_message.id;
+        let mut deleted_message_active = deleted_message.into_active_model();
+        deleted_message_active.deleted = Set(true);
+        deleted_message_active.update(&env.dbx).await.unwrap();
+
+        assert!(find_active_attachment_archive_message(
+            &env.dbx,
+            active_message.id
+        )
+        .await
+        .is_ok());
+        assert!(matches!(
+            find_active_attachment_archive_message(
+                &env.dbx,
+                deleted_message_id
+            )
+            .await,
+            Err(AppError::NotFound)
+        ));
     }
 }

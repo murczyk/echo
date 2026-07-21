@@ -310,6 +310,7 @@ function MessageCardComponent({
         )}
         <MessageCardHeader {...headerProps} />
         <MessageCardContent
+          messageId={id}
           msg={msg}
           tagsMap={tagsMap}
           tagsOrder={tagsOrder}

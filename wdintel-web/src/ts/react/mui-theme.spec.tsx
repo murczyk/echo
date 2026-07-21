@@ -6,6 +6,8 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   Button,
+  IconButton,
+  Slider,
   Table,
   TableBody,
   TableCell,
@@ -19,6 +21,7 @@ import type { InboxMessage } from '../../Bindings';
 import { MessageCard } from './routes/shared/message-card/MessageCard';
 import { NeoMuiThemeProvider } from './mui-theme';
 import { emptyFilter } from './routes/rer-duty-neo/utils';
+import { MessageCardDisabledControlCursorWrapper } from './routes/shared/message-card/MessageCardDisabledControlCursorWrapper';
 
 function buildMessage(): InboxMessage {
   return {
@@ -63,6 +66,12 @@ function Harness() {
         <Button data-testid="button-sample" variant="contained">
           Button sample
         </Button>
+        <Button data-testid="disabled-button" disabled>
+          Disabled button
+        </Button>
+        <IconButton data-testid="disabled-icon-button" disabled aria-label="Disabled icon">
+          Icon
+        </IconButton>
         <Table data-testid="table-sample" size="small">
           <TableBody>
             <TableRow>
@@ -75,6 +84,15 @@ function Harness() {
           defaultValue="Input sample"
           label="Input sample"
           inputProps={{ 'data-testid': 'input-element' }}
+        />
+        <MessageCardDisabledControlCursorWrapper disabled data-testid="disabled-slider-wrapper">
+          <Slider data-testid="disabled-slider" disabled value={25} />
+        </MessageCardDisabledControlCursorWrapper>
+        <TextField
+          data-testid="disabled-input-sample"
+          disabled
+          defaultValue="Disabled input"
+          inputProps={{ 'data-testid': 'disabled-input-element' }}
         />
         <MessageCard
           id={1}
@@ -166,5 +184,41 @@ describe('mui-theme', () => {
     expect(messageCardFontSize).toBe('14px');
     expect(Number.parseFloat(captionFontSize)).toBeLessThan(Number.parseFloat(body2FontSize));
     expect(tableCellFontSize).toBe(body2FontSize);
+  });
+
+  it('keeps native disabled controls visible with a forbidden cursor', async () => {
+    await act(async () => {
+      root.render(<Harness />);
+    });
+
+    for (const selector of [
+      '[data-testid="disabled-button"]',
+      '[data-testid="disabled-icon-button"]',
+      '[data-testid="disabled-input-element"]',
+    ]) {
+      const control = container.querySelector(selector);
+      expect(control).not.toBeNull();
+      if (!(control instanceof HTMLElement)) throw new Error(`Missing ${selector}`);
+      const styles = window.getComputedStyle(control);
+      expect(styles.cursor).toBe('not-allowed');
+      expect(styles.pointerEvents).toBe('auto');
+    }
+  });
+
+  it('uses the cursor wrapper without re-enabling disabled non-native sliders', async () => {
+    await act(async () => {
+      root.render(<Harness />);
+    });
+
+    const wrapper = container.querySelector('[data-testid="disabled-slider-wrapper"]');
+    const slider = container.querySelector('[data-testid="disabled-slider"]');
+    expect(wrapper).not.toBeNull();
+    expect(slider).not.toBeNull();
+    if (!(wrapper instanceof HTMLElement) || !(slider instanceof HTMLElement)) {
+      throw new Error('Expected disabled slider fixture nodes');
+    }
+
+    expect(window.getComputedStyle(wrapper).cursor).toBe('not-allowed');
+    expect(window.getComputedStyle(slider).pointerEvents).toBe('none');
   });
 });

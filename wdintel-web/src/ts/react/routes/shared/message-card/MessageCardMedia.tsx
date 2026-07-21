@@ -1,16 +1,44 @@
 import { useLayoutEffect, useRef, useState } from 'react';
+import type { MouseEvent } from 'react';
+import DownloadIcon from '@mui/icons-material/Download';
 import DownloadOutlinedIcon from '@mui/icons-material/DownloadOutlined';
 import PlayCircleOutlineIcon from '@mui/icons-material/PlayCircleOutline';
-import { Box, Button, Tooltip } from '@mui/material';
+import { Box, Button, CircularProgress, Tooltip } from '@mui/material';
 
 import type { MessageMediaInfo } from '../../../../../Bindings';
 import { getMuiPaletteMode, useMuiPaletteMode } from '../../../mui-theme';
 import { MessageCardVideoPreviewDialog } from './MessageCardVideoPreviewDialog';
+import { MessageCardDisabledControlCursorWrapper } from './MessageCardDisabledControlCursorWrapper';
 
 const AUDIO_PLAYER_MIN_HEIGHT_PX = 72;
 const AUDIO_PLAYER_TOP_PADDING_PX = 0;
 const AUDIO_PLAYER_Z_INDEX = 0;
 const AUDIO_DERIVED_IMAGE_MAX_SOURCE_SIZE_BYTES = 100 * 1024 * 1024;
+export const MESSAGE_CARD_DOWNLOAD_START_COOLDOWN_MS = 3_000;
+// Keep synchronized with wdintel-rs/src/config.rs:RER_MESSAGE_ATTACHMENTS_ZIP_MAX_FILES
+// and useMessageUppy.ts:MAX_MESSAGE_ATTACHMENTS.
+export const RER_MESSAGE_ATTACHMENTS_ZIP_MAX_FILES = 20;
+// Keep synchronized with wdintel-rs/src/config.rs:RER_MESSAGE_ATTACHMENTS_ZIP_MAX_TOTAL_BYTES.
+export const RER_MESSAGE_ATTACHMENTS_ZIP_MAX_TOTAL_BYTES = 200 * 1024 * 1024;
+
+export type MessageCardDownloadGuardProps = {
+  isDownloadStarting: (downloadKey: string) => boolean;
+  onDownloadStart: (downloadKey: string) => boolean;
+};
+
+export function messageCardMediaDownloadKey(mediaId: string | number): string {
+  return `media:${String(mediaId)}`;
+}
+
+function guardMessageCardDownloadClick(
+  event: MouseEvent<HTMLElement>,
+  downloadKey: string,
+  { isDownloadStarting, onDownloadStart }: MessageCardDownloadGuardProps,
+) {
+  if (isDownloadStarting(downloadKey) || !onDownloadStart(downloadKey)) {
+    event.preventDefault();
+  }
+}
 
 const AUDIO_FILE_EXTENSIONS = [
   '.mp3',
@@ -110,9 +138,28 @@ export function mediaAttachmentDisplayName(m: MessageMediaInfo): string {
   return '<файл без назви>';
 }
 
-function mediaAttachmentSizeBytes(m: MessageMediaInfo): number | null {
+export function mediaAttachmentSizeBytes(m: MessageMediaInfo): number | null {
   const raw = m as MessageMediaInfoRaw;
   return m.sizeBytes ?? raw.size_bytes ?? null;
+}
+
+export function canDownloadAllMessageAttachments(attachments: MessageMediaInfo[]): boolean {
+  if (attachments.length <= 1 || attachments.length > RER_MESSAGE_ATTACHMENTS_ZIP_MAX_FILES) {
+    return false;
+  }
+
+  let totalBytes = 0;
+  for (const attachment of attachments) {
+    const sizeBytes = mediaAttachmentSizeBytes(attachment);
+    if (sizeBytes === null || !Number.isFinite(sizeBytes) || sizeBytes < 0) {
+      return false;
+    }
+    totalBytes += sizeBytes;
+    if (totalBytes > RER_MESSAGE_ATTACHMENTS_ZIP_MAX_TOTAL_BYTES) {
+      return false;
+    }
+  }
+  return true;
 }
 
 const MESSENGER_MEDIA_PATH_RE = /\/api\/messenger\/media\/([^/?#]+)/;
@@ -217,23 +264,118 @@ export function MessageMediaAudioPlayer({ attachment }: { attachment: MessageMed
   );
 }
 
-export function MessageMediaDownloadLink({ attachment }: { attachment: MessageMediaInfo }) {
+export function MessageMediaDownloadLink({
+  attachment,
+  isDownloadStarting,
+  onDownloadStart,
+}: { attachment: MessageMediaInfo } & MessageCardDownloadGuardProps) {
   const displayName = mediaAttachmentDisplayName(attachment);
+  const downloadKey = messageCardMediaDownloadKey(String(attachment.id));
+  const downloading = isDownloadStarting(downloadKey);
   const downloadAttr =
     displayName === '<файл без назви>' ? 'attachment' : displayName.replace(/[/\\]/g, '_');
   return (
     <Tooltip title={displayName} enterDelay={400}>
+      <MessageCardDisabledControlCursorWrapper disabled={downloading}>
+        <Button
+          component="a"
+          size="small"
+          variant="outlined"
+          href={String(attachment.href ?? '')}
+          download={downloadAttr}
+          target="_blank"
+          rel="noopener noreferrer"
+          disabled={downloading}
+          aria-busy={downloading}
+          aria-label={downloading ? 'Завантаження…' : undefined}
+          onClick={(event) =>
+            guardMessageCardDownloadClick(event, downloadKey, {
+              isDownloadStarting,
+              onDownloadStart,
+            })
+          }
+          sx={{
+            mb: 0.5,
+            width: 'fit-content',
+            minWidth: 0,
+            maxWidth: '100%',
+            minHeight: 26,
+            py: 0.25,
+            px: 0.75,
+            fontSize: 11,
+            lineHeight: 1.25,
+            textTransform: 'none',
+            fontWeight: 500,
+            color: 'text.primary',
+            borderColor: 'divider',
+            '&:hover': {
+              backgroundColor: 'action.hover',
+              borderColor: 'text.primary',
+            },
+            alignSelf: 'flex-start',
+            overflow: 'hidden',
+            justifyContent: 'flex-start',
+            '& .MuiButton-startIcon': {
+              mr: 0.35,
+              ml: -0.25,
+              '& svg': { fontSize: 14 },
+            },
+          }}
+          startIcon={
+            downloading ? (
+              <CircularProgress size={14} aria-label="Завантаження…" />
+            ) : (
+              <DownloadOutlinedIcon aria-hidden />
+            )
+          }
+        >
+          <Box
+            component="span"
+            sx={{
+              display: 'block',
+              minWidth: 0,
+              width: '100%',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+              verticalAlign: 'bottom',
+            }}
+          >
+            {displayName}
+          </Box>
+        </Button>
+      </MessageCardDisabledControlCursorWrapper>
+    </Tooltip>
+  );
+}
+
+export function MessageMediaDownloadAllLink({
+  messageId,
+  isDownloadStarting,
+  onDownloadStart,
+}: { messageId: number } & MessageCardDownloadGuardProps) {
+  const downloadKey = 'archive';
+  const downloading = isDownloadStarting(downloadKey);
+  return (
+    <MessageCardDisabledControlCursorWrapper disabled={downloading}>
       <Button
         component="a"
         size="small"
         variant="outlined"
-        href={String(attachment.href ?? '')}
-        download={downloadAttr}
+        href={`/api/rer-importer/messages/${messageId}/attachments.zip`}
+        download="attachments.zip"
         target="_blank"
         rel="noopener noreferrer"
+        disabled={downloading}
+        aria-busy={downloading}
+        aria-label={downloading ? 'Завантаження…' : 'Завантажити все'}
+        onClick={(event) =>
+          guardMessageCardDownloadClick(event, downloadKey, {
+            isDownloadStarting,
+            onDownloadStart,
+          })
+        }
         sx={{
-          mb: 0.5,
-          width: 'fit-content',
           minWidth: 0,
           maxWidth: '100%',
           minHeight: 26,
@@ -243,33 +385,31 @@ export function MessageMediaDownloadLink({ attachment }: { attachment: MessageMe
           lineHeight: 1.25,
           textTransform: 'none',
           fontWeight: 500,
-          alignSelf: 'flex-start',
-          overflow: 'hidden',
-          justifyContent: 'flex-start',
+          color: 'text.primary',
+          borderColor: 'divider',
+          '&:hover': {
+            backgroundColor: 'action.hover',
+            borderColor: 'text.primary',
+          },
+          alignSelf: 'center',
+          flexShrink: 0,
           '& .MuiButton-startIcon': {
             mr: 0.35,
             ml: -0.25,
             '& svg': { fontSize: 14 },
           },
         }}
-        startIcon={<DownloadOutlinedIcon aria-hidden />}
+        startIcon={
+          downloading ? (
+            <CircularProgress size={14} aria-label="Завантаження…" />
+          ) : (
+            <DownloadIcon aria-hidden />
+          )
+        }
       >
-        <Box
-          component="span"
-          sx={{
-            display: 'block',
-            minWidth: 0,
-            width: '100%',
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            whiteSpace: 'nowrap',
-            verticalAlign: 'bottom',
-          }}
-        >
-          {displayName}
-        </Box>
+        {downloading ? 'Завантаження…' : 'Завантажити все'}
       </Button>
-    </Tooltip>
+    </MessageCardDisabledControlCursorWrapper>
   );
 }
 

@@ -32,3 +32,5 @@ Rules:
 - Prefer existing variables such as `--color-action` and `--color-divider` when applicable.
 - If a required semantic theme value is unavailable, add one through the established shared theme/CSS bridge rather than introducing per-card hard-coded styling.
 - Keep leaf MUI components when they provide the required theme, accessibility, or interaction behavior.
+- Use filled MUI icons for actionable controls by default; use outlined variants only where an established visual or semantic convention specifically requires them.
+- MUI buttons rendered as anchors within `.rer-duty` must locally override generic link-inheritance styles with higher-specificity `sx` when using a semantic contained color.
