@@ -81,7 +81,7 @@ fn is_metadata_only_line(line: &str) -> bool {
         static ref RE_METADATA_HEADER_PART: Regex = Regex::new(
             r#"(?ix)
             (?:
-                [cс]{2}\s*:?\s*(?:\d+|нв|-)
+                [cс]{2}\s*:?\s*(?:(?:\d+\s*,\s*)*\d+|нв|-)
               | код\s+кольору\s*:?\s*(?:\d+|нв|-)
               | [iі]d\s*\(\s*[cс]g\s*\)\s*(?:⬅️?)?\s*:?\s*(?:[xх]\s*:)?(?:\d+|нв|-)(?:\s*\([^)]+\))?
               | [iі]d\s+отримувача\s*:?\s*(?:\d+|нв|-)(?:\s*\([^)]+\))?
@@ -122,6 +122,17 @@ pub fn parse_color_code(line: &NormalizedLine) -> Option<MatchedValue> {
     parse_numeric_value_from_standalone_regexes(line, &[&RE_CC_UA])
         .or_else(|| parse_value_from_regexes(line, &[&RE_CC]))
         .or_else(|| parse_numeric_value_from_regexes(line, &[&RE_CC_NO_COLON]))
+}
+
+fn parse_color_codes(line: &NormalizedLine) -> Vec<MatchedValue> {
+    lazy_static! {
+        static ref RE_CC_LIST: Regex =
+            Regex::new(r#"[cCсС]{2}\s*:\s*((?:\d+\s*,\s*)+\d+)"#).unwrap();
+    }
+
+    parse_value_from_regexes(line, &[&RE_CC_LIST])
+        .and_then(|value| split_numeric_metadata_list(&value))
+        .unwrap_or_else(|| parse_color_code(line).into_iter().collect())
 }
 
 pub fn parse_mid(line: &NormalizedLine) -> Option<MatchedValue> {
@@ -342,22 +353,121 @@ pub fn parse_hash_id(line: &NormalizedLine) -> Option<MatchedValue> {
     parse_value_from_regexes(line, &[&RE_HASH_ID])
         .or_else(|| parse_value_from_regexes(line, &[&RE_HASH_ID_EMOJI]))
         .map(MatchedValue::lowercase_value)
+        .filter(|hash_id| hash_id.value.as_deref() != Some("різні"))
 }
 
 pub fn parse_metadata_line(line: &NormalizedLine) -> Vec<WorkingMetadata> {
-    let mut result = vec![WorkingMetadata {
-        cc: parse_color_code(line).unwrap_or_default(),
+    let common = WorkingMetadata {
         id: parse_mid(line).unwrap_or_default(),
         id_name: parse_mid_id(line).unwrap_or_default(),
-        hash_id: parse_hash_id(line).unwrap_or_default(),
         ..Default::default()
-    }];
+    };
+    let mut result = if let Some(abonents) = parse_emoji_abonent_lists(line) {
+        abonents
+            .into_iter()
+            .map(|(sender, receiver)| WorkingMetadata {
+                id: sender,
+                receiver,
+                ..common.clone()
+            })
+            .collect()
+    } else {
+        vec![WorkingMetadata {
+            hash_id: parse_hash_id(line).unwrap_or_default(),
+            ..common
+        }]
+    };
+    result = apply_color_codes(result, parse_color_codes(line));
 
     let mut cg_parts = parse_cg_parts(line);
     cg_parts.sort_by_key(|(start, _)| *start);
     result.extend(cg_parts.into_iter().map(|(_, metadata)| metadata));
 
     result
+}
+
+fn apply_color_codes(
+    items: Vec<WorkingMetadata>,
+    color_codes: Vec<MatchedValue>,
+) -> Vec<WorkingMetadata> {
+    if color_codes.is_empty() {
+        return items;
+    }
+
+    let mut result = vec![];
+    for item in items {
+        for color_code in &color_codes {
+            let mut item = item.clone();
+            item.cc = color_code.clone();
+            result.push(item);
+        }
+    }
+    result
+}
+
+fn parse_emoji_abonent_lists(
+    line: &NormalizedLine,
+) -> Option<Vec<(MatchedValue, MatchedValue)>> {
+    lazy_static! {
+        static ref RE_ABONENT_LIST: Regex = Regex::new(
+            r#"👥\s*:\s*(?:\d{3}\.\d{3,4}\s*(?i:мгц)\s*)?((?:\d+\s*,\s*)+\d+)\s*🔐"#
+        )
+        .unwrap();
+        static ref RE_SEPARATE_ABONENT_LISTS: Regex = Regex::new(
+            r#"👥\s*:\s*(?:\d{3}\.\d{3,4}\s*(?i:мгц)\s*)?(\d+(?:\s*,\s*\d+)*)\s*,?\s*👥\s*:\s*(?:\d{3}\.\d{3,4}\s*(?i:мгц)\s*)?(\d+(?:\s*,\s*\d+)*)\s*🔐"#
+        )
+        .unwrap();
+    }
+
+    if let Some(captures) = RE_SEPARATE_ABONENT_LISTS.captures(&line.text) {
+        let senders =
+            line.build_value(captures.get(1)?, normalize_metadata_value)?;
+        let receivers =
+            line.build_value(captures.get(2)?, normalize_metadata_value)?;
+        let senders = split_numeric_metadata_list(&senders)?;
+        let receivers = split_numeric_metadata_list(&receivers)?;
+        let mut abonents = vec![];
+        for sender in senders {
+            for receiver in &receivers {
+                abonents.push((sender.clone(), receiver.clone()));
+            }
+        }
+        return Some(abonents);
+    }
+
+    let list = parse_value_from_regexes(line, &[&RE_ABONENT_LIST])?;
+    let mut abonents = split_numeric_metadata_list(&list)?.into_iter();
+    let sender = abonents.next()?;
+    Some(
+        abonents
+            .map(|receiver| (sender.clone(), receiver))
+            .collect(),
+    )
+}
+
+fn split_numeric_metadata_list(
+    value: &MatchedValue,
+) -> Option<Vec<MatchedValue>> {
+    let raw_text = value.raw_text.as_ref()?;
+    let start_index = value.start_index?;
+    let chars = raw_text.chars().collect::<Vec<_>>();
+    let ids = split_source_id_part_ranges(&chars)
+        .into_iter()
+        .map(|(part_start, part_end)| {
+            let raw_part =
+                chars[part_start..part_end].iter().collect::<String>();
+            parse_source_id_part(&raw_part, part_start, start_index)
+                .map(|(id, _)| id)
+        })
+        .collect::<Option<Vec<_>>>()?;
+
+    (!ids.is_empty()
+        && ids.iter().all(|id| {
+            id.value.as_ref().is_some_and(|value| {
+                value.chars().all(|ch| ch.is_ascii_digit())
+            })
+        }))
+    .then_some(ids)
 }
 
 pub fn parse_cg_parts(line: &NormalizedLine) -> Vec<(usize, WorkingMetadata)> {
