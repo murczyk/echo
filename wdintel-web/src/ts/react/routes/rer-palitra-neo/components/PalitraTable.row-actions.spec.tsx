@@ -223,7 +223,7 @@ describe('PalitraTable row actions', () => {
 
   it('hides generic conversion retry for a malformed direct GOI import', () => {
     const palitra = makePalitra({
-      goiOwned: true,
+      goiOwned: false,
       goiSourceRefreshRetryAvailable: false,
     });
     const { container } = renderActions(makeRow(palitra));
