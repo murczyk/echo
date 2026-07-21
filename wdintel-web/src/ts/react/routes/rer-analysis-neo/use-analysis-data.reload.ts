@@ -756,7 +756,6 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
       if (isStaleReload() || params.signal?.aborted) return null;
 
       if (
-        inboxRsp.inboxItems.length === 0 &&
         messagePageCursor != null &&
         messagePageIndex != null &&
         !isLastPageCursor(messagePageCursor)
@@ -778,7 +777,6 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
         if (messagePageIndex > newLastPage.pageIndex) {
           messagePageCursor = newLastPage.cursor;
           messagePageIndex = newLastPage.pageIndex;
-          params.setCurrentMessagePage?.(messagePageCursor, messagePageIndex);
           const lastPageRsp = await fetchInboxMessages(
             {
               ...messageInboxReq,
@@ -790,12 +788,7 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
           );
           if (isStaleReload() || params.signal?.aborted) return null;
           inboxRsp = transformMessagePageResponse(lastPageRsp, messagePageCursor);
-          params.setCurrentMessagePage?.(messagePageCursor, messagePageIndex);
         }
-      }
-
-      if (isLastPageCursor(messagePageCursor) && messagePageIndex != null) {
-        params.setCurrentMessagePage?.(messagePageCursor, messagePageIndex);
       }
 
       params.setMessages(inboxRsp.inboxItems ?? []);
@@ -845,6 +838,7 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
           try {
             let rebuiltMessagePageCursor = messagePageCursor;
             let rebuiltMessagePageIndex = messagePageIndex;
+            let rebuiltLastPageIndex: number | null = null;
             if (isLastPageCursor(rebuiltMessagePageCursor)) {
               const rebuiltMessageCount = await fetchInboxCount(
                 { ...rebuiltMessageInboxReq, nolimit: true, newestFirst: params.newestFirst },
@@ -875,7 +869,6 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
             if (isStaleReload() || params.signal?.aborted) return null;
 
             if (
-              rebuiltInboxRsp.inboxItems.length === 0 &&
               rebuiltMessagePageCursor != null &&
               rebuiltMessagePageIndex != null &&
               !isLastPageCursor(rebuiltMessagePageCursor)
@@ -885,16 +878,20 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
                 params.signal ? { signal: params.signal } : undefined,
               );
               if (isStaleReload() || params.signal?.aborted) return null;
-              const rebuiltPage = rebuildLastPageCursor(
-                {
-                  beforeIdNoninclusive: null,
-                  sinceIdNoninclusive: null,
-                  requestNewestFirst: !params.newestFirst,
-                  reverseResults: true,
-                },
-                rebuiltMessageCount.quantity,
+              rebuiltLastPageIndex = Math.max(
+                0,
+                Math.ceil(rebuiltMessageCount.quantity / ANALYSIS_MESSAGES_PAGE_SIZE) - 1,
               );
-              if (rebuiltMessagePageIndex > rebuiltPage.pageIndex) {
+              if (rebuiltMessagePageIndex > rebuiltLastPageIndex) {
+                const rebuiltPage = rebuildLastPageCursor(
+                  {
+                    beforeIdNoninclusive: null,
+                    sinceIdNoninclusive: null,
+                    requestNewestFirst: !params.newestFirst,
+                    reverseResults: true,
+                  },
+                  rebuiltMessageCount.quantity,
+                );
                 rebuiltMessagePageCursor = rebuiltPage.cursor;
                 rebuiltMessagePageIndex = rebuiltPage.pageIndex;
                 rebuiltInboxRsp = await fetchInboxMessages(
@@ -923,9 +920,6 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
             // rebuilt summary/count/map data with the old inbox response.
             messagePageCursor = rebuiltMessagePageCursor;
             messagePageIndex = rebuiltMessagePageIndex;
-            if (isLastPageCursor(messagePageCursor) && messagePageIndex != null) {
-              params.setCurrentMessagePage?.(messagePageCursor, messagePageIndex);
-            }
             params.setMessages(rebuiltMessagePageRsp.inboxItems ?? []);
             params.setProfiles((current) =>
               mergeSignalProfiles(current, rebuiltMessagePageRsp.signalProfiles ?? {}),
@@ -959,6 +953,10 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
             }
           }
         }
+      }
+
+      if (isLastPageCursor(messagePageCursor) && messagePageIndex != null) {
+        params.setCurrentMessagePage?.(messagePageCursor, messagePageIndex);
       }
 
       const effectiveFreqsRsp = resolvedFreqsRsp;

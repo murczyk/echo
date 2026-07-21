@@ -409,8 +409,114 @@ describe('reloadAnalysisData', () => {
     );
 
     expect(setCurrentMessagePage).not.toHaveBeenCalled();
-    expect(mocks.fetchInboxCount).not.toHaveBeenCalled();
+    expect(mocks.fetchInboxCount).toHaveBeenCalledTimes(1);
+    expect(mocks.fetchInboxMessages).toHaveBeenCalledTimes(1);
     expect(setMessages).toHaveBeenCalledWith([[21, { networkIds: [] }]]);
+  });
+
+  it('clamps a nonempty forward page to the refreshed last page', async () => {
+    const setMessages = vi.fn();
+    const setCurrentMessagePage = vi.fn();
+    mocks.fetchInboxCount.mockResolvedValue({ quantity: 25 });
+    mocks.fetchAnalysisCount.mockResolvedValue({});
+    mocks.fetchAnalysisFreqs.mockResolvedValue({ freqs: [] });
+    mocks.fetchInboxMessages
+      .mockResolvedValueOnce({
+        inboxItems: Array.from({ length: 5 }, (_, index) => [40 + index, { networkIds: [] }]),
+        callsigns: [],
+        pageLimit: 20,
+      })
+      .mockResolvedValueOnce({
+        inboxItems: Array.from({ length: 5 }, (_, index) => [20 + index, { networkIds: [] }]),
+        callsigns: [],
+        pageLimit: 20,
+      });
+
+    await reloadAnalysisData(
+      buildReloadParams({
+        messagePageCursor: { beforeIdNoninclusive: 40, sinceIdNoninclusive: null },
+        pageIndex: 2,
+        setMessages,
+        setCurrentMessagePage,
+      }),
+    );
+
+    expect(setCurrentMessagePage).toHaveBeenCalledTimes(1);
+    expect(setCurrentMessagePage).toHaveBeenCalledWith(
+      expect.objectContaining({ reverseResults: true, resultLimit: 5 }),
+      1,
+    );
+    expect(setMessages).toHaveBeenLastCalledWith(
+      Array.from({ length: 5 }, (_, index) => [24 - index, { networkIds: [] }]),
+    );
+    expect(setMessages.mock.lastCall?.[0]).toHaveLength(5);
+    expect(mocks.fetchInboxMessages).toHaveBeenCalledTimes(2);
+  });
+
+  it('clamps a nonempty forward page after rebuilding frequency requests', async () => {
+    const setMessages = vi.fn();
+    const setCurrentMessagePage = vi.fn();
+    mocks.fetchInboxCount
+      .mockResolvedValueOnce({ quantity: 25 })
+      .mockResolvedValueOnce({ quantity: 25 });
+    mocks.fetchAnalysisCount.mockResolvedValue({});
+    mocks.fetchAnalysisFreqs
+      .mockResolvedValueOnce({
+        freqs: [
+          { freq: '150.099', count: 1, isNew: false },
+          { freq: '150.100', count: 1, isNew: false },
+          { freq: '150.101', count: 1, isNew: false },
+        ],
+      })
+      .mockResolvedValueOnce({
+        freqs: [
+          { freq: '150.199', count: 1, isNew: false },
+          { freq: '150.200', count: 1, isNew: false },
+        ],
+      });
+    mocks.fetchInboxMessages
+      .mockResolvedValueOnce({
+        inboxItems: Array.from({ length: 5 }, (_, index) => [40 + index, { networkIds: [] }]),
+        callsigns: [],
+        pageLimit: 20,
+      })
+      .mockResolvedValueOnce({
+        inboxItems: Array.from({ length: 5 }, (_, index) => [50 + index, { networkIds: [] }]),
+        callsigns: [],
+        pageLimit: 20,
+      })
+      .mockResolvedValueOnce({
+        inboxItems: Array.from({ length: 5 }, (_, index) => [20 + index, { networkIds: [] }]),
+        callsigns: [],
+        pageLimit: 20,
+      });
+
+    await reloadAnalysisData(
+      buildReloadParams({
+        messagePageCursor: { beforeIdNoninclusive: 40, sinceIdNoninclusive: null },
+        pageIndex: 2,
+        queryState: {
+          ...emptyQueryState(),
+          fromDateTimeStr: '2026-04-01T00:00',
+          toDateTimeStr: '2026-04-02T00:00',
+          freqsSelected: ['150.100'],
+          adjacentFreqsRange: 0.002,
+        },
+        setMessages,
+        setCurrentMessagePage,
+      }),
+    );
+
+    expect(setCurrentMessagePage).toHaveBeenCalledTimes(1);
+    expect(setCurrentMessagePage).toHaveBeenCalledWith(
+      expect.objectContaining({ reverseResults: true, resultLimit: 5 }),
+      1,
+    );
+    expect(setMessages).toHaveBeenLastCalledWith(
+      Array.from({ length: 5 }, (_, index) => [24 - index, { networkIds: [] }]),
+    );
+    expect(setMessages.mock.lastCall?.[0]).toHaveLength(5);
+    expect(mocks.fetchInboxMessages).toHaveBeenCalledTimes(3);
   });
 
   it('ignores a stale fallback response after a newer reload starts', async () => {
@@ -418,7 +524,9 @@ describe('reloadAnalysisData', () => {
     const oldSetMessages = vi.fn();
     const newSetMessages = vi.fn();
     const reloadRequestRef = { current: 0 };
-    mocks.fetchInboxCount.mockResolvedValue({ quantity: 40 });
+    mocks.fetchInboxCount
+      .mockResolvedValueOnce({ quantity: 40 })
+      .mockResolvedValueOnce({ quantity: 41 });
     mocks.fetchAnalysisCount.mockResolvedValue({});
     mocks.fetchAnalysisFreqs.mockResolvedValue({ freqs: [] });
     mocks.fetchInboxMessages
@@ -438,9 +546,7 @@ describe('reloadAnalysisData', () => {
         setMessages: oldSetMessages,
       }),
     );
-    await Promise.resolve();
-    await Promise.resolve();
-    await Promise.resolve();
+    await vi.waitFor(() => expect(mocks.fetchInboxMessages).toHaveBeenCalledTimes(2));
 
     const newReload = reloadAnalysisData(
       buildReloadParams({
