@@ -40,6 +40,7 @@ use uuid::Uuid;
 mod callsigns_sync;
 mod goi_ssh;
 pub mod integrations;
+pub mod message_uid;
 pub mod shared;
 pub mod types;
 pub mod worker;

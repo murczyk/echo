@@ -300,6 +300,7 @@ mod m20260715_092901_add_sigint_inbox_item_network;
 mod m20260717_111121_goi_palitra_sync_changelog_source;
 mod m20260720_100029_analysis_stats_query_indexes;
 mod m20260720_124323_add_signal_message_media_is_encrypted;
+mod m20260721_191340_goi_association_message_uid;
 
 pub struct Migrator;
 
@@ -638,6 +639,9 @@ impl MigratorTrait for Migrator {
             Box::new(m20260720_100029_analysis_stats_query_indexes::Migration),
             Box::new(
                 m20260720_124323_add_signal_message_media_is_encrypted::Migration,
+            ),
+            Box::new(
+                m20260721_191340_goi_association_message_uid::Migration,
             ),
         ]
     }

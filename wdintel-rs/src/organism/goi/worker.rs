@@ -739,6 +739,7 @@ fn goi_association_active_model(
         source_date: Set(source_date),
         source_created_at_ms: Set(Some(source_created_at_ms)),
         palettes: Set(palettes),
+        message_uid: Set(None),
     })
 }
 

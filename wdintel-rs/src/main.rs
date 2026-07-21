@@ -714,6 +714,7 @@ enum Cmd {
     OneoffFixAreasOfResponsibility(OneoffFixAreasOfResponsibilityPs),
     OneoffPrintOrganismGroups(OneoffPrintOrganismGroupsPs),
     OneoffAssignMessageIds(OneoffAssignMessageIdsPs),
+    OneoffBackfillGoiAssociationMessageUids,
     OneoffGetNetworksActivityStats(OneoffGetNetworksActivityStatsPs),
     OneoffCompareRerCounts(CompareRerCountsPs),
     OneoffPopulateSignalMessageGroupIds,
@@ -1134,6 +1135,12 @@ async fn async_main(
             messenger::id::oneoff_assign_message_ids(
                 mode,
                 ps.dry_run.unwrap_or(true),
+            )
+            .await
+        }
+        Cmd::OneoffBackfillGoiAssociationMessageUids => {
+            organism::goi::message_uid::oneoff_backfill_goi_association_message_uids(
+                mode,
             )
             .await
         }

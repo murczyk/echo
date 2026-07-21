@@ -473,6 +473,16 @@ fn spawn_vault_background_workers(env: Arc<Env>, bg_set: &mut JoinSet<()>) {
         });
     }
     spawn_goi_worker(bg_set, env.clone());
+    if ORGANISM_GOI_MESSAGE_UID_WORKER_ENABLED {
+        let env2 = env.clone();
+        spawn_named_worker(
+            "goi_association_message_uid_worker",
+            bg_set,
+            async move {
+                crate::organism::goi::message_uid::goi_association_message_uid_worker_nofail(env2).await;
+            },
+        );
+    }
     spawn_goi_folder_sync_worker(bg_set, env.clone());
     spawn_palitra_goi_sync_worker(bg_set, env.clone());
     spawn_palitra_conversion_worker(bg_set, env);
