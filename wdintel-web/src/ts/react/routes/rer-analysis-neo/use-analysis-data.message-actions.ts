@@ -169,6 +169,9 @@ export function useAnalysisDataMessageActions(params: Params) {
           return toggleHumanTag(message, tagId, currentUserName, currentUserOrganismId);
         });
 
+        // Do not reload the paginated list after a tag mutation: it must not move the user to
+        // page one. If an active tag filter changes membership, the list reconciles on the next
+        // explicit pagination, filter, or refresh action.
         params.invalidateTagFacetLoad();
       } finally {
         setMessageActionCount((current) => Math.max(0, current - 1));

@@ -52,6 +52,7 @@ import { invalidateNewCallsignsLoadState } from './use-analysis-data.support';
 import { buildSenderFilterOptions } from './message-utils';
 import type {
   AnalysisAorEntry,
+  AnalysisMessagePageCursor,
   AnalysisCountItem,
   AnalysisFilterOption,
   AnalysisFilterOptions,
@@ -545,11 +546,25 @@ export async function loadFilterSectionData(
 
 type Setter<T> = React.Dispatch<React.SetStateAction<T>>;
 
+export function transformMessagePageResponse<
+  T extends { inboxItems: Array<[number, InboxMessage]> },
+>(response: T, cursor: AnalysisMessagePageCursor | undefined): T {
+  if (isNullOrUndefined(cursor)) return response;
+  const limitedMessages = cursor.resultLimit
+    ? response.inboxItems.slice(0, cursor.resultLimit)
+    : response.inboxItems;
+  return {
+    ...response,
+    inboxItems: cursor.reverseResults ? [...limitedMessages].reverse() : limitedMessages,
+  };
+}
+
 type ReloadParams = {
   clearAnalysisResults: () => void;
   invalidateCorrelatedFreqsCache: () => void;
   invalidateCallsignGraph: () => void;
   invalidateMessagePaging: () => void;
+  messagePageCursor?: AnalysisMessagePageCursor;
   centerTab?: import('./types').AnalysisCenterTab;
   rightSidebarVisible?: boolean;
   rightSidebarTab?: import('./types').AnalysisSidebarTab | null;
@@ -679,10 +694,15 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
         params.signal ? { signal: params.signal } : undefined,
       );
       countsPromise.catch(() => undefined);
+      const messagePageCursor = params.messagePageCursor;
       const inboxPromise = fetchInboxMessages(
         {
           ...messageInboxReq,
-          newestFirst: params.newestFirst,
+          beforeIdNoninclusive:
+            messagePageCursor?.beforeIdNoninclusive ?? messageInboxReq.beforeIdNoninclusive,
+          sinceIdNoninclusive:
+            messagePageCursor?.sinceIdNoninclusive ?? messageInboxReq.sinceIdNoninclusive,
+          newestFirst: messagePageCursor?.requestNewestFirst ?? params.newestFirst,
         },
         params.signal ? { signal: params.signal } : undefined,
       );
@@ -694,7 +714,7 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
 
       let inboxRsp: Awaited<ReturnType<typeof fetchInboxMessages>>;
       try {
-        inboxRsp = await inboxPromise;
+        inboxRsp = transformMessagePageResponse(await inboxPromise, messagePageCursor);
       } catch (loadError) {
         if (isAbortError(loadError) || params.signal?.aborted) return null;
         throw loadError;
@@ -750,13 +770,22 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
             const rebuiltInboxRsp = await fetchInboxMessages(
               {
                 ...rebuiltMessageInboxReq,
-                newestFirst: params.newestFirst,
+                beforeIdNoninclusive:
+                  messagePageCursor?.beforeIdNoninclusive ??
+                  rebuiltMessageInboxReq.beforeIdNoninclusive,
+                sinceIdNoninclusive:
+                  messagePageCursor?.sinceIdNoninclusive ??
+                  rebuiltMessageInboxReq.sinceIdNoninclusive,
+                newestFirst: messagePageCursor?.requestNewestFirst ?? params.newestFirst,
               },
               params.signal ? { signal: params.signal } : undefined,
             );
             if (isStaleReload() || params.signal?.aborted) return null;
 
-            const rebuiltMessagePageRsp = rebuiltInboxRsp;
+            const rebuiltMessagePageRsp = transformMessagePageResponse(
+              rebuiltInboxRsp,
+              messagePageCursor,
+            );
             const rebuiltFreqsRsp = await fetchAnalysisFreqs(
               rebuiltAnalysisReq,
               params.signal ? { signal: params.signal } : undefined,

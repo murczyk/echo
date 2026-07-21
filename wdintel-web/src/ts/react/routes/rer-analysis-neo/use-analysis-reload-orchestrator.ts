@@ -62,6 +62,8 @@ type Params = {
     forceReload?: boolean,
   ) => Promise<void>;
   invalidateMessagePaging: () => void;
+  invalidateMessagePageRequests: () => void;
+  getCurrentMessagePageCursor: () => import('./types').AnalysisMessagePageCursor;
   refreshMessageCounts: () => void;
   setAorEntries: Setter<AnalysisAorEntry[]>;
   setCounts: Setter<import('../../../../Bindings').CountStatsRsp | null>;
@@ -107,12 +109,14 @@ export function useAnalysisReloadOrchestrator(params: Params): UseAnalysisReload
     clearAnalysisResults,
     deferInitialLoad,
     getLoadedFilterSections,
+    getCurrentMessagePageCursor,
     getReloadFilterSections,
     invalidateCallsignGraph,
     invalidateCorrelatedFreqsCache,
     invalidateFilterSectionLoads,
     invalidateFilterSectionLoadsForPatch,
     invalidateMessagePaging,
+    invalidateMessagePageRequests,
     invalidateRightSidebarData,
     invalidateSummaryData,
     loadInitialFilterSections,
@@ -177,6 +181,8 @@ export function useAnalysisReloadOrchestrator(params: Params): UseAnalysisReload
       const abortController = new AbortController();
       reloadAbortControllerRef.current = abortController;
       const shouldRefreshMessageCounts = options.refreshMessageCounts !== false;
+      const preserveMessagePage = options.preserveMessagePage === true;
+      const messagePageCursor = preserveMessagePage ? getCurrentMessagePageCursor() : undefined;
 
       if (shouldRefreshMessageCounts) refreshMessageCounts();
 
@@ -185,7 +191,10 @@ export function useAnalysisReloadOrchestrator(params: Params): UseAnalysisReload
           clearAnalysisResults,
           invalidateCallsignGraph,
           invalidateCorrelatedFreqsCache,
-          invalidateMessagePaging,
+          invalidateMessagePaging: preserveMessagePage
+            ? invalidateMessagePageRequests
+            : invalidateMessagePaging,
+          messagePageCursor,
           newestFirst,
           onError,
           onUnauthorized,
@@ -247,12 +256,14 @@ export function useAnalysisReloadOrchestrator(params: Params): UseAnalysisReload
       centerTab,
       clearAnalysisResults,
       getLoadedFilterSections,
+      getCurrentMessagePageCursor,
       getReloadFilterSections,
       invalidateCallsignGraph,
       invalidateCorrelatedFreqsCache,
       invalidateFilterSectionLoads,
       invalidateFilterSectionLoadsForPatch,
       invalidateMessagePaging,
+      invalidateMessagePageRequests,
       invalidateRightSidebarData,
       invalidateSummaryData,
       loadInitialFilterSections,

@@ -403,6 +403,8 @@ export function useAnalysisData({
       clearAnalysisResults,
       loadMessageComments: messageList.loadMessageComments,
       invalidateMessagePaging: messageList.invalidateMessagePaging,
+      invalidateMessagePageRequests: messageList.invalidateMessagePageRequests,
+      getCurrentMessagePageCursor: messageList.getCurrentMessagePageCursor,
       refreshMessageCounts: messageList.refreshMessageCounts,
       setAorEntries: messageList.setAorEntries,
       setCounts: messageList.setCounts,
