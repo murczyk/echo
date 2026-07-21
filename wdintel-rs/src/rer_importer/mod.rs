@@ -464,6 +464,44 @@ fn write_zip_entry<W: Write + Seek>(
     Ok(())
 }
 
+async fn write_plaintext_zip_entry<W: Write + Seek>(
+    archive: &mut zip::ZipWriter<W>,
+    options: &SimpleFileOptions,
+    name: String,
+    env: &Env,
+    media: &signal_message_media::Model,
+    expected_size: u64,
+    total_bytes: &mut u64,
+) -> Result<(), AppError> {
+    archive.start_file(name, *options).c(h!())?;
+    let mut streamed_size = 0u64;
+    if expected_size > 0 {
+        let mut stream = crate::messenger::media::stream_plaintext_media_range(
+            env,
+            media,
+            0..expected_size,
+        )
+        .await?;
+        while let Some(chunk) = stream.try_next().await.c(h!())? {
+            let chunk_size = u64::try_from(chunk.len()).c(h!())?;
+            streamed_size =
+                checked_attachment_size_total(streamed_size, chunk_size)?;
+            *total_bytes =
+                checked_attachment_size_total(*total_bytes, chunk_size)?;
+            archive.write_all(&chunk).c(h!())?;
+        }
+    }
+    if streamed_size != expected_size {
+        return Err(AppError::BL {
+            msg: format!(
+                "Plaintext attachment {} ended at {} bytes, expected {}",
+                media.id, streamed_size, expected_size
+            ),
+        });
+    }
+    Ok(())
+}
+
 fn attachment_size_limit_error(total_bytes: u64) -> AppError {
     AppError::BL {
         msg: format!(
@@ -569,20 +607,34 @@ async fn rer_message_attachments_zip(
     let mut used_names = HashSet::new();
     let mut total_bytes = 0u64;
     for (index, media) in media.iter().enumerate() {
-        let data =
-            crate::messenger::media::fetch_media_bytes(env.as_ref(), media)
-                .await?;
-        total_bytes = checked_attachment_size_total(
-            total_bytes,
-            u64::try_from(data.len()).c(h!())?,
-        )?;
         let name = safe_zip_entry_name(
             media.file_name.as_deref(),
             media.file_ext.as_deref(),
             index,
             &mut used_names,
         );
-        write_zip_entry(&mut archive, &options, name, &data)?;
+        let expected_size = u64::try_from(media.size_bytes).c(h!())?;
+        if media.is_encrypted {
+            let data =
+                crate::messenger::media::fetch_media_bytes(env.as_ref(), media)
+                    .await?;
+            total_bytes = checked_attachment_size_total(
+                total_bytes,
+                u64::try_from(data.len()).c(h!())?,
+            )?;
+            write_zip_entry(&mut archive, &options, name, &data)?;
+        } else {
+            write_plaintext_zip_entry(
+                &mut archive,
+                &options,
+                name,
+                env.as_ref(),
+                media,
+                expected_size,
+                &mut total_bytes,
+            )
+            .await?;
+        }
     }
     let mut zip_file = archive.finish().c(h!())?.into_inner().c(h!())?;
     let zip_size = zip_file.metadata().c(h!())?.len();
