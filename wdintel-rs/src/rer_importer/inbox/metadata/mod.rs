@@ -356,6 +356,20 @@ ID(CG)⬅️:50📣",
     }
 
     #[test]
+    fn named_source_id_lists_are_treated_as_metadata() {
+        let body = "ID➡️: 1 (АЛЬФА), 2 (БРАВО)";
+        let alpha = test_cn_callsign(body, "АЛЬФА", "альфа");
+        let bravo = test_cn_callsign(body, "БРАВО", "браво");
+
+        assert_eq!(
+            parse_metadata_text_callsigns(body),
+            vec!["АЛЬФА".to_string(), "БРАВО".to_string()]
+        );
+        assert!(non_metadata_line_callsign_etalons([&alpha, &bravo], body)
+            .is_empty());
+    }
+
+    #[test]
     fn parse_metadata_text_callsigns_ignores_numeric_only_metadata() {
         let callsigns = parse_metadata_text_callsigns(
             "СС:10\nID➡️:3097968\nID(CG)⬅️3187767",
@@ -535,6 +549,11 @@ ID(CG)⬅️:50📣",
     #[test]
     fn parse_metadata_does_not_match_source_id_inside_word() {
         assert!(parse_metadata_checked("RESOURCE ID: 1, 2").is_empty());
+    }
+
+    #[test]
+    fn parse_metadata_does_not_match_named_id_lists_in_prose() {
+        assert!(parse_metadata_checked("Цілі: 1 (АЛЬФА), 2 (БРАВО)").is_empty());
     }
 
     #[test]

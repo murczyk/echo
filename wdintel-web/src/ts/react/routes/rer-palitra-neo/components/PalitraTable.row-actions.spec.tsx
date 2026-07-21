@@ -220,4 +220,14 @@ describe('PalitraTable row actions', () => {
         ?.dataset.disabled,
     ).toBe('false');
   });
+
+  it('hides generic conversion retry for a malformed direct GOI import', () => {
+    const palitra = makePalitra({
+      goiOwned: false,
+      goiSourceRefreshRetryAvailable: false,
+    });
+    const { container } = renderActions(makeRow(palitra));
+
+    expect(container.querySelector('[data-label="Повторити конвертацію"]')).toBeNull();
+  });
 });

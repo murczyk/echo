@@ -379,7 +379,7 @@ function ActionIconsRow({
     ) : null,
   ].filter((button): button is JSX.Element => button != null);
 
-  const actionGridColumns = 3;
+  const actionGridColumns = displayMode === 'duty' ? 4 : 3;
   const lastRowButtonCount =
     buttons.length === 0
       ? 0
