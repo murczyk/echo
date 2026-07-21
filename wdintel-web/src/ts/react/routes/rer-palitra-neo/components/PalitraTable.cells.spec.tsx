@@ -151,6 +151,7 @@ describe('PalitraTable cells', () => {
         makePalitra({
           conversionStatus: 'error',
           conversionError: 'invalid XML before declaration',
+          goiOwned: false,
         }),
       ),
     );

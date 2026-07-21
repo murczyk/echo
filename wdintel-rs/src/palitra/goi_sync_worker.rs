@@ -2508,6 +2508,9 @@ where
     )
     .await
     .c(h!())?;
+    super::bl::update_palitra_s3_id(dbx, palitra_id, None)
+        .await
+        .c(h!())?;
     upsert_goi_palitra_sync(
         dbx,
         integration_id,
@@ -4091,6 +4094,27 @@ mod tests {
             .unwrap()
             .unwrap();
         let palitra_id = row.palitra_id.unwrap();
+        super::super::bl::update_palitra_s3_id(
+            &env.dbx,
+            palitra_id,
+            Some("stale-source".to_string()),
+        )
+        .await
+        .unwrap();
+        record_direct_goi_palitra_failure(
+            &env.dbx,
+            integration.id,
+            palitra_id,
+            "sector/broken.kml",
+            "kml",
+            false,
+            4,
+            "broken-sha".to_string(),
+            "invalid XML before declaration".to_string(),
+            Some(true),
+        )
+        .await
+        .unwrap();
         let palitra = palitra::Entity::find_by_id(palitra_id)
             .one(&env.dbx)
             .await
@@ -4111,6 +4135,7 @@ mod tests {
         assert!(palitra.imported_from_goi);
         assert_eq!(palitra.conversion_status, PALITRA_CONVERSION_STATUS_ERROR);
         assert_eq!(palitra.source_format.as_deref(), Some("kml"));
+        assert_eq!(palitra.s3_id, None);
         assert_eq!(
             palitra.conversion_error.as_deref(),
             Some("invalid XML before declaration")

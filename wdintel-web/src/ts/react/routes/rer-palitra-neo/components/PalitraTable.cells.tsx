@@ -78,7 +78,7 @@ function renderConversionStatusChip(palitra: Palitra) {
     );
   }
   if (palitra.conversionStatus === 'error') {
-    const label = palitra.goiOwned ? 'Помилка імпорту' : 'Помилка конвертації';
+    const label = palitra.importedFromGoi ? 'Помилка імпорту' : 'Помилка конвертації';
     return (
       <Tooltip title={palitra.conversionError || label}>
         <span>
