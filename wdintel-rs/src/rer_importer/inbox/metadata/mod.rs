@@ -279,6 +279,319 @@ ID(CG)⬅️:50📣",
     }
 
     #[test]
+    fn parse_metadata_handles_emoji_abonent_list() {
+        let metadata = parse_metadata_asserting_spans(
+            "🔺УКХ р/м управління 9 шр 3 мсб 126 мсп 71 мсд 14 АК СС: 8 👥: 15894, 38698, 54500, 79476, 90017🔐",
+        );
+        assert_eq!(
+            metadata,
+            vec![
+                InboxMetadata {
+                    cc: Some("8".to_string()),
+                    cg: Some("38698".to_string()),
+                    id: Some("15894".to_string()),
+                    ..Default::default()
+                },
+                InboxMetadata {
+                    cc: Some("8".to_string()),
+                    cg: Some("54500".to_string()),
+                    id: Some("15894".to_string()),
+                    ..Default::default()
+                },
+                InboxMetadata {
+                    cc: Some("8".to_string()),
+                    cg: Some("79476".to_string()),
+                    id: Some("15894".to_string()),
+                    ..Default::default()
+                },
+                InboxMetadata {
+                    cc: Some("8".to_string()),
+                    cg: Some("90017".to_string()),
+                    id: Some("15894".to_string()),
+                    ..Default::default()
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn parse_metadata_ignores_unknown_emoji_abonents() {
+        let body = "🔸 УКХ р/м управління постами повітряного спостереження зі складу 68 мсд 6 А СС: 2, 10, 14👥: різні🔐";
+
+        assert_eq!(
+            parse_metadata_asserting_spans(body),
+            vec![
+                InboxMetadata {
+                    cc: Some("2".to_string()),
+                    ..Default::default()
+                },
+                InboxMetadata {
+                    cc: Some("10".to_string()),
+                    ..Default::default()
+                },
+                InboxMetadata {
+                    cc: Some("14".to_string()),
+                    ..Default::default()
+                },
+            ]
+        );
+        assert!(parse_metadata_text_callsigns(body).is_empty());
+    }
+
+    #[test]
+    fn parse_metadata_handles_separate_emoji_sender_and_receiver_lists() {
+        let metadata = parse_metadata_asserting_spans(
+            "🔺УКХ р/м управління 2 мсб 37 мсп 67 мсд 25 А 👥: 18655, 👥: 1, 44456, 0, 1310720 🔐. 5118209. 196801.",
+        );
+        assert_eq!(
+            metadata,
+            vec![
+                InboxMetadata {
+                    cg: Some("1".to_string()),
+                    id: Some("18655".to_string()),
+                    ..Default::default()
+                },
+                InboxMetadata {
+                    cg: Some("44456".to_string()),
+                    id: Some("18655".to_string()),
+                    ..Default::default()
+                },
+                InboxMetadata {
+                    cg: Some("0".to_string()),
+                    id: Some("18655".to_string()),
+                    ..Default::default()
+                },
+                InboxMetadata {
+                    cg: Some("1310720".to_string()),
+                    id: Some("18655".to_string()),
+                    ..Default::default()
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn parse_metadata_crosses_multiple_emoji_senders_and_receivers() {
+        let metadata =
+            parse_metadata_asserting_spans("👥: 10, 20, 👥: 30, 40 🔐");
+        assert_eq!(
+            metadata,
+            vec![
+                InboxMetadata {
+                    cg: Some("30".to_string()),
+                    id: Some("10".to_string()),
+                    ..Default::default()
+                },
+                InboxMetadata {
+                    cg: Some("40".to_string()),
+                    id: Some("10".to_string()),
+                    ..Default::default()
+                },
+                InboxMetadata {
+                    cg: Some("30".to_string()),
+                    id: Some("20".to_string()),
+                    ..Default::default()
+                },
+                InboxMetadata {
+                    cg: Some("40".to_string()),
+                    id: Some("20".to_string()),
+                    ..Default::default()
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn parse_metadata_handles_multiple_color_codes() {
+        let metadata = parse_metadata_asserting_spans(
+            "⁉️👾УКХ ╬ р/м рРЕБ 423 мсп ╬ (ЛОЗОВА-СТЕЛЬМАХІВКА) СС:2, 5",
+        );
+        assert_eq!(
+            metadata,
+            vec![
+                InboxMetadata {
+                    cc: Some("2".to_string()),
+                    ..Default::default()
+                },
+                InboxMetadata {
+                    cc: Some("5".to_string()),
+                    ..Default::default()
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn parse_metadata_applies_each_color_code_to_receiver() {
+        let metadata = parse_metadata_asserting_spans("СС:2,5 ID(CG):10");
+        assert_eq!(
+            metadata,
+            vec![
+                InboxMetadata {
+                    cc: Some("2".to_string()),
+                    cg: Some("10".to_string()),
+                    ..Default::default()
+                },
+                InboxMetadata {
+                    cc: Some("5".to_string()),
+                    cg: Some("10".to_string()),
+                    ..Default::default()
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn parse_metadata_applies_each_color_code_to_later_sender() {
+        let metadata = parse_metadata_asserting_spans("СС:2,5\nID:123");
+        assert_eq!(
+            metadata,
+            vec![
+                InboxMetadata {
+                    cc: Some("2".to_string()),
+                    id: Some("123".to_string()),
+                    ..Default::default()
+                },
+                InboxMetadata {
+                    cc: Some("5".to_string()),
+                    id: Some("123".to_string()),
+                    ..Default::default()
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn parse_metadata_handles_repeated_palette_color_codes() {
+        let metadata = parse_metadata_asserting_spans(
+            "🔺УКХ р/м управління мсб 26 тп 47 тд 1 ТА 🎨: 5,👥: 97087. 🎨: 1,👥: 91638 ,97087🔐.",
+        );
+        assert_eq!(
+            metadata,
+            vec![
+                InboxMetadata {
+                    cc: Some("5".to_string()),
+                    cg: Some("97087".to_string()),
+                    id: Some("91638".to_string()),
+                    ..Default::default()
+                },
+                InboxMetadata {
+                    cc: Some("1".to_string()),
+                    cg: Some("97087".to_string()),
+                    id: Some("91638".to_string()),
+                    ..Default::default()
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn parse_metadata_skips_frequency_before_emoji_abonents() {
+        let metadata = parse_metadata_asserting_spans(
+            "🔸УКХ р/м управління 2 мсб 128 омсбр 44 АК СС: 0 👥: 146.500 МГц 8, 16776413, 16776414 🔐",
+        );
+        assert_eq!(
+            metadata,
+            vec![
+                InboxMetadata {
+                    cc: Some("0".to_string()),
+                    cg: Some("16776413".to_string()),
+                    id: Some("8".to_string()),
+                    ..Default::default()
+                },
+                InboxMetadata {
+                    cc: Some("0".to_string()),
+                    cg: Some("16776414".to_string()),
+                    id: Some("8".to_string()),
+                    ..Default::default()
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn parse_metadata_skips_comma_frequency_before_emoji_abonents() {
+        let metadata = parse_metadata_asserting_spans(
+            "СС: 0 👥: 146,500 МГц 8, 16776413, 16776414 🔐",
+        );
+        assert_eq!(
+            metadata,
+            vec![
+                InboxMetadata {
+                    cc: Some("0".to_string()),
+                    cg: Some("16776413".to_string()),
+                    id: Some("8".to_string()),
+                    ..Default::default()
+                },
+                InboxMetadata {
+                    cc: Some("0".to_string()),
+                    cg: Some("16776414".to_string()),
+                    id: Some("8".to_string()),
+                    ..Default::default()
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn parse_metadata_handles_multiple_complete_emoji_abonent_groups() {
+        let metadata = parse_metadata_asserting_spans(
+            "🎨:5 👥:111,222🔐 🎨:1 👥:333,444🔐",
+        );
+        assert_eq!(
+            metadata,
+            vec![
+                InboxMetadata {
+                    cc: Some("5".to_string()),
+                    cg: Some("222".to_string()),
+                    id: Some("111".to_string()),
+                    ..Default::default()
+                },
+                InboxMetadata {
+                    cc: Some("1".to_string()),
+                    cg: Some("222".to_string()),
+                    id: Some("111".to_string()),
+                    ..Default::default()
+                },
+                InboxMetadata {
+                    cc: Some("5".to_string()),
+                    cg: Some("444".to_string()),
+                    id: Some("333".to_string()),
+                    ..Default::default()
+                },
+                InboxMetadata {
+                    cc: Some("1".to_string()),
+                    cg: Some("444".to_string()),
+                    id: Some("333".to_string()),
+                    ..Default::default()
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn parse_metadata_handles_slash_separated_emoji_abonents() {
+        let metadata = parse_metadata_asserting_spans(
+            "Мережа: УКХ р/м управління 2 мсб 41 мсп 72 мсд 44 АК 👥: 67200/62485/67204🔐",
+        );
+        assert_eq!(
+            metadata,
+            vec![
+                InboxMetadata {
+                    cg: Some("62485".to_string()),
+                    id: Some("67200".to_string()),
+                    ..Default::default()
+                },
+                InboxMetadata {
+                    cg: Some("67204".to_string()),
+                    id: Some("67200".to_string()),
+                    ..Default::default()
+                },
+            ]
+        );
+    }
+
+    #[test]
     fn parse_metadata_handles_plain_id_variants_without_arrows() {
         let metadata =
             parse_metadata_asserting_spans("СС:8\nІD:21152\nID(CG):395251");
@@ -735,17 +1048,12 @@ ID(CG)⬅️: 8584772
         );
         assert_eq!(
             metadata,
-            vec![
-                WorkingMetadata {
-                    cc: matched_value("23"),
-                    id: matched_value("1, 33"),
-                    ..Default::default()
-                },
-                WorkingMetadata {
-                    receiver_group: matched_value("6"),
-                    ..Default::default()
-                }
-            ]
+            vec![WorkingMetadata {
+                cc: matched_value("23"),
+                receiver_group: matched_value("6"),
+                id: matched_value("1, 33"),
+                ..Default::default()
+            }]
         );
     }
 
@@ -813,13 +1121,10 @@ ID отримувача: 3359939
         let metadata = parse_metadata_line_asserting_spans("GROUP ID: 0");
         assert_eq!(
             metadata,
-            vec![
-                WorkingMetadata::default(),
-                WorkingMetadata {
-                    receiver_group: matched_value("0"),
-                    ..Default::default()
-                }
-            ]
+            vec![WorkingMetadata {
+                receiver_group: matched_value("0"),
+                ..Default::default()
+            }]
         );
     }
 

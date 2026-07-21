@@ -52,6 +52,7 @@ pub(crate) enum CgKind {
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub(crate) struct WorkingMetadata {
     pub cc: MatchedValue,
+    pub additional_ccs: Vec<MatchedValue>,
     pub receiver: MatchedValue,
     pub receiver_name: MatchedValue,
     pub receiver_group: MatchedValue,
@@ -186,7 +187,7 @@ impl WorkingMetadata {
     }
 
     pub(crate) fn conflicts_with(&self, other: &Self) -> bool {
-        self.cc.conflicts_with(&other.cc)
+        self.color_codes_conflict(other)
             || self.receiver.conflicts_with(&other.receiver)
             || self.receiver_name.conflicts_with(&other.receiver_name)
             || self.receiver_group.conflicts_with(&other.receiver_group)
@@ -199,7 +200,10 @@ impl WorkingMetadata {
     }
 
     pub(crate) fn merge_from(&mut self, other: Self) {
-        self.cc.merge_from(other.cc);
+        if !self.cc.has_value() {
+            self.cc = other.cc;
+            self.additional_ccs = other.additional_ccs;
+        }
         self.receiver.merge_from(other.receiver);
         self.receiver_name.merge_from(other.receiver_name);
         self.receiver_group.merge_from(other.receiver_group);
@@ -208,6 +212,21 @@ impl WorkingMetadata {
         self.id.merge_from(other.id);
         self.id_name.merge_from(other.id_name);
         self.hash_id.merge_from(other.hash_id);
+    }
+
+    fn color_codes_conflict(&self, other: &Self) -> bool {
+        if !self.cc.has_value() || !other.cc.has_value() {
+            return false;
+        }
+
+        self.color_code_values() != other.color_code_values()
+    }
+
+    fn color_code_values(&self) -> Vec<&str> {
+        std::iter::once(&self.cc)
+            .chain(&self.additional_ccs)
+            .filter_map(|cc| cc.value.as_deref())
+            .collect()
     }
 
     pub(crate) fn into_public(self) -> InboxMetadata {
