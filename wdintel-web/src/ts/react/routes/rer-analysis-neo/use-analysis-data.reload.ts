@@ -565,6 +565,7 @@ type ReloadParams = {
   invalidateCallsignGraph: () => void;
   invalidateMessagePaging: () => void;
   messagePageCursor?: AnalysisMessagePageCursor;
+  clearMessagePage?: boolean;
   centerTab?: import('./types').AnalysisCenterTab;
   rightSidebarVisible?: boolean;
   rightSidebarTab?: import('./types').AnalysisSidebarTab | null;
@@ -721,7 +722,8 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
       }
       if (isStaleReload() || params.signal?.aborted) return null;
 
-      params.setMessages(inboxRsp.inboxItems ?? []);
+      const displayedMessages = params.clearMessagePage ? [] : (inboxRsp.inboxItems ?? []);
+      params.setMessages(displayedMessages);
       params.setProfiles((current) => mergeSignalProfiles(current, inboxRsp.signalProfiles ?? {}));
       params.setGroupInfos((current) =>
         mergeSignalGroups(
@@ -730,10 +732,10 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
         ),
       );
       params.setSummaryCallsignsInfo(buildSummaryCallsignsInfo(inboxRsp.callsigns, null));
-      params.setNoMoreToLoad(isAnalysisInboxPageExhausted(inboxRsp.inboxItems, inboxRsp.pageLimit));
+      params.setNoMoreToLoad(isAnalysisInboxPageExhausted(displayedMessages, inboxRsp.pageLimit));
       params.setHasLoadedInitialMessages(true);
       params.setMessagesLoading(false);
-      void params.loadMessageComments?.(inboxRsp.inboxItems ?? [], true);
+      void params.loadMessageComments?.(displayedMessages, true);
 
       let freqsRsp: Awaited<ReturnType<typeof fetchAnalysisFreqs>>;
       try {
@@ -792,7 +794,10 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
             if (isStaleReload() || params.signal?.aborted) return null;
             // Promote rebuilt req/rsp only after the rebuilt inbox succeeds so we never mix
             // rebuilt summary/count/map data with the old inbox response.
-            params.setMessages(rebuiltMessagePageRsp.inboxItems ?? []);
+            const displayedRebuiltMessages = params.clearMessagePage
+              ? []
+              : (rebuiltMessagePageRsp.inboxItems ?? []);
+            params.setMessages(displayedRebuiltMessages);
             params.setProfiles((current) =>
               mergeSignalProfiles(current, rebuiltMessagePageRsp.signalProfiles ?? {}),
             );
@@ -809,7 +814,7 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
             );
             params.setNoMoreToLoad(
               isAnalysisInboxPageExhausted(
-                rebuiltMessagePageRsp.inboxItems,
+                displayedRebuiltMessages,
                 rebuiltMessagePageRsp.pageLimit,
               ),
             );
@@ -817,7 +822,7 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
             resolvedInboxReq = rebuiltInboxReq;
             resolvedInboxRsp = rebuiltMessagePageRsp;
             resolvedFreqsRsp = rebuiltFreqsRsp;
-            void params.loadMessageComments?.(rebuiltMessagePageRsp.inboxItems ?? [], true);
+            void params.loadMessageComments?.(displayedRebuiltMessages, true);
           } catch (loadError) {
             if (isStaleReload() || isAbortError(loadError) || params.signal?.aborted) return null;
             if (!params.onUnauthorized(loadError)) {

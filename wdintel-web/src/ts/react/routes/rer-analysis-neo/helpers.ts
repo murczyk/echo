@@ -349,6 +349,11 @@ export function buildInboxReq(
   };
 }
 
+export function doesTagMutationAffectMessageMembership(queryState: AnalysisQueryState): boolean {
+  const inboxReq = buildInboxReq(queryState, [], true);
+  return inboxReq?.selectedTags != null || inboxReq?.deniedTags != null;
+}
+
 export function buildInboxOverallCountReq(state: AnalysisQueryState): InboxMessagesReq | null {
   return buildInboxReq({
     ...emptyQueryState(),

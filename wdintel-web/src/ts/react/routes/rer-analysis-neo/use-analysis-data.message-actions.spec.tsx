@@ -355,7 +355,7 @@ describe('useAnalysisDataMessageActions', () => {
     expect(apiRef.current!.messages[0]?.[1].tags).toEqual([3, 4]);
   });
 
-  it('reloads and refreshes the tag facet after a successful tag toggle', async () => {
+  it('invalidates the tag facet and reloads after a successful tag toggle', async () => {
     const reload = vi.fn(() => Promise.resolve());
     const invalidateTagFacetLoad = vi.fn();
     const apiRef = await renderHarness(
@@ -369,6 +369,31 @@ describe('useAnalysisDataMessageActions', () => {
 
     expect(hoisted.inboxMessageTagsRm).toHaveBeenCalledWith({ messageId: 1, tagId: 3 });
     expect(invalidateTagFacetLoad).toHaveBeenCalledTimes(1);
+    expect(reload).toHaveBeenCalledWith({
+      preserveMessagePage: true,
+      clearSyntheticLastPage: true,
+    });
+  });
+
+  it('does not request synthetic-last-page clearing without a tag predicate', async () => {
+    const reload = vi.fn(() => Promise.resolve());
+    const apiRef = await renderHarness(
+      [[1, buildMessage({ inboxTags: [buildTag(3, { login: 'tester', organismId: 1 })] })]],
+      {
+        reload,
+        queryState: {
+          ...emptyQueryState(),
+          fromDateTimeStr: '2026-04-01T00:00',
+          toDateTimeStr: '2026-04-02T00:00',
+          tags: [],
+        },
+      },
+    );
+
+    await act(async () => {
+      await apiRef.current!.onToggleMessageTag(1, 3);
+    });
+
     expect(reload).toHaveBeenCalledWith({ preserveMessagePage: true });
   });
 
@@ -392,7 +417,10 @@ describe('useAnalysisDataMessageActions', () => {
       await apiRef.current!.onToggleMessageTag(1, 3);
     });
 
-    expect(apiRef.current!.reload).toHaveBeenCalledWith({ preserveMessagePage: true });
+    expect(apiRef.current!.reload).toHaveBeenCalledWith({
+      preserveMessagePage: true,
+      clearSyntheticLastPage: true,
+    });
     expect(apiRef.current!.pageIndex).toBe(16);
     expect(apiRef.current!.currentCursor).toEqual(originalPage16Cursor);
     expect(apiRef.current!.messages).toEqual([]);

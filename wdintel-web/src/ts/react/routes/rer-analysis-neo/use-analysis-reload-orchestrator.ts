@@ -183,6 +183,10 @@ export function useAnalysisReloadOrchestrator(params: Params): UseAnalysisReload
       const preserveMessagePage = options.preserveMessagePage === true;
       const shouldRefreshMessageCounts = options.refreshMessageCounts !== false;
       const messagePageCursor = preserveMessagePage ? getCurrentMessagePageCursor() : undefined;
+      const clearMessagePage =
+        options.clearSyntheticLastPage === true &&
+        messagePageCursor?.reverseResults === true &&
+        messagePageCursor.resultLimit != null;
 
       if (shouldRefreshMessageCounts) refreshMessageCounts();
 
@@ -194,6 +198,7 @@ export function useAnalysisReloadOrchestrator(params: Params): UseAnalysisReload
           invalidateMessagePaging: preserveMessagePage
             ? invalidateMessagePageRequests
             : invalidateMessagePaging,
+          clearMessagePage,
           messagePageCursor,
           newestFirst,
           onError,
