@@ -171,9 +171,13 @@ export function AnalysisPaginationControl({
     rangeText = `Сторінка ${pageIndex + 1} · ${totalCount} повідомлень`;
   }
 
-  const prevDisabled = !isMessagesTab || pageIndex === 0 || busy;
-  const nextDisabled = !isMessagesTab || noMoreToLoad || busy;
   const lastPageIndex = totalUnknown ? null : Math.max(0, Math.ceil(totalCount / pageSize) - 1);
+  const prevDisabled = !isMessagesTab || pageIndex === 0 || busy;
+  const nextDisabled =
+    !isMessagesTab ||
+    noMoreToLoad ||
+    busy ||
+    (lastPageIndex !== null && pageIndex >= lastPageIndex);
   const menuDisabled = !isMessagesTab || busy;
   const firstDisabled = menuDisabled || pageIndex === 0;
   const lastDisabled =

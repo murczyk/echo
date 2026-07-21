@@ -243,6 +243,18 @@ describe('AnalysisPaginationControl', () => {
     expect((right as HTMLButtonElement).disabled).toBe(true);
   });
 
+  it('disables the right chevron on the known last page', async () => {
+    const view = await renderComponent({
+      ...baseProps(),
+      totalCount: 40,
+      pageIndex: 1,
+      noMoreToLoad: false,
+    });
+    rendered.push(view);
+    const right = view.container.querySelector('[aria-label="Наступна сторінка"]');
+    expect((right as HTMLButtonElement).disabled).toBe(true);
+  });
+
   it('disables the right chevron while busy', async () => {
     const view = await renderComponent({ ...baseProps(), busy: true });
     rendered.push(view);
