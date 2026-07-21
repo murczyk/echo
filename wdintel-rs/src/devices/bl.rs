@@ -1,16 +1,18 @@
 #![allow(dead_code)]
 
-use crate::devices::files::{insert_device_file_rows, touch_device_updated_at};
+use crate::devices::custom_fields::{
+    apply_custom_fields_patch, custom_fields_to_json,
+};
 use crate::devices::query::get_device_details;
 use crate::devices::types::{
-    ArchiveDeviceReq, CreateDeviceFileItem, CreateDeviceReq, DeviceDetailReq,
-    DeviceDetails, DeviceUpdateNullableField, DeviceUpdateRequiredField,
-    RestoreDeviceReq, UpdateDeviceReq,
+    ArchiveDeviceReq, CreateDeviceReq, DeviceDetailReq, DeviceDetails,
+    DeviceUpdateNullableField, DeviceUpdateRequiredField, RestoreDeviceReq,
+    UpdateDeviceReq,
 };
 use crate::devices::validation::{
-    normalize_device_name, normalize_external_url, normalize_hostname,
-    normalize_optional_file_create_items, normalize_tags, parse_device_id,
-    validate_aor_ids, validate_ssh_port, validate_unit_id,
+    normalize_custom_fields, normalize_custom_fields_patch,
+    normalize_device_name, normalize_external_url, normalize_source_label,
+    normalize_tags, parse_device_id, validate_aor_ids, validate_unit_id,
 };
 use crate::entities::{device, device_aor};
 use crate::h;
@@ -22,25 +24,23 @@ use sea_orm::{
 };
 
 struct NormalizedCreateDevice {
+    source_label: String,
     name: String,
     aor_ids: Vec<i64>,
     unit_id: Option<i64>,
     tags: Vec<crate::devices::types::DeviceTag>,
     external_url: Option<String>,
-    hostname: Option<String>,
-    ssh_port: Option<i32>,
-    files: Vec<CreateDeviceFileItem>,
+    custom_fields: BTreeMap<String, String>,
 }
 
 struct NormalizedUpdateDevice {
+    source_label: Option<String>,
     name: Option<String>,
     aor_ids: Option<Vec<i64>>,
     unit_id: Option<Option<i64>>,
     tags: Option<Vec<crate::devices::types::DeviceTag>>,
     external_url: Option<Option<String>>,
-    hostname: Option<Option<String>>,
-    ssh_port: Option<Option<i32>>,
-    files: Vec<CreateDeviceFileItem>,
+    custom_fields: Option<BTreeMap<String, Option<String>>>,
 }
 
 pub async fn create_device(
@@ -50,20 +50,29 @@ pub async fn create_device(
 ) -> Result<DeviceDetails, AppError> {
     validate_created_by(created_by)?;
     let req = normalize_create_device(dbx, req).await?;
+    let NormalizedCreateDevice {
+        source_label,
+        name,
+        aor_ids,
+        unit_id,
+        tags,
+        external_url,
+        custom_fields,
+    } = req;
     let txn = dbx.begin().await.c(h!())?;
 
     let now = Utc::now().naive_utc();
     let device_id = Uuid::now_v7();
-    let tags = serde_json::to_value(req.tags).c(h!())?;
+    let tags = serde_json::to_value(tags).c(h!())?;
     device::ActiveModel {
         id: Set(device_id),
-        name: Set(req.name),
+        source_label: Set(source_label),
+        name: Set(Some(name)),
         created_by: Set(created_by.to_string()),
-        unit_id: Set(req.unit_id),
+        unit_id: Set(unit_id),
         tags: Set(tags),
-        external_url: Set(req.external_url),
-        hostname: Set(req.hostname),
-        ssh_port: Set(req.ssh_port),
+        external_url: Set(external_url),
+        custom_fields: Set(custom_fields_to_json(custom_fields)),
         archived: Set(false),
         archived_at: Set(None),
         created_at: Set(now),
@@ -73,8 +82,7 @@ pub async fn create_device(
     .await
     .c(h!())?;
 
-    replace_device_aors(&txn, device_id, &req.aor_ids).await?;
-    insert_device_file_rows(&txn, device_id, req.files, now).await?;
+    replace_device_aors(&txn, device_id, &aor_ids).await?;
     txn.commit().await.c(h!())?;
 
     get_device_details(dbx, &device_detail_req(device_id, true)).await
@@ -92,7 +100,7 @@ pub async fn update_device(
 
     let device_changes = collect_device_changes(&device, &req)?;
     let has_device_changes = !device_changes.is_empty();
-    if !has_device_changes && req.files.is_empty() {
+    if !has_device_changes {
         txn.commit().await.c(h!())?;
         return get_device_details(dbx, &device_detail_req(device_id, true))
             .await;
@@ -105,12 +113,6 @@ pub async fn update_device(
     }
     if let Some(aor_ids) = aor_ids {
         replace_device_aors(&txn, device_id, &aor_ids).await?;
-    }
-    if !req.files.is_empty() {
-        insert_device_file_rows(&txn, device_id, req.files, now).await?;
-        if !has_device_changes {
-            touch_device_updated_at(&txn, device_id, now).await?;
-        }
     }
 
     txn.commit().await.c(h!())?;
@@ -157,14 +159,13 @@ async fn normalize_create_device(
     req: CreateDeviceReq,
 ) -> Result<NormalizedCreateDevice, AppError> {
     Ok(NormalizedCreateDevice {
+        source_label: normalize_source_label(&req.source_label)?,
         name: normalize_device_name(&req.name)?,
         aor_ids: validate_aor_ids(dbx, req.aor_ids).await?,
         unit_id: validate_unit_id(dbx, req.unit_id).await?,
         tags: normalize_tags(req.tags)?,
         external_url: normalize_external_url(req.external_url)?,
-        hostname: normalize_hostname(req.hostname)?,
-        ssh_port: validate_ssh_port(req.ssh_port)?,
-        files: normalize_optional_file_create_items(req.files)?,
+        custom_fields: normalize_custom_fields(req.custom_fields)?,
     })
 }
 
@@ -173,15 +174,25 @@ async fn normalize_update_device(
     req: UpdateDeviceReq,
 ) -> Result<NormalizedUpdateDevice, AppError> {
     Ok(NormalizedUpdateDevice {
+        source_label: normalize_update_source_label(req.source_label)?,
         name: normalize_update_name(req.name)?,
         aor_ids: normalize_update_aor_ids(dbx, req.aor_ids).await?,
         unit_id: normalize_update_unit_id(dbx, req.unit_id).await?,
         tags: normalize_update_tags(req.tags)?,
         external_url: normalize_update_external_url(req.external_url)?,
-        hostname: normalize_update_hostname(req.hostname)?,
-        ssh_port: normalize_update_ssh_port(req.ssh_port)?,
-        files: normalize_optional_file_create_items(req.files)?,
+        custom_fields: normalize_update_custom_fields(req.custom_fields)?,
     })
+}
+
+fn normalize_update_source_label(
+    source_label: DeviceUpdateRequiredField<String>,
+) -> Result<Option<String>, AppError> {
+    match source_label {
+        DeviceUpdateRequiredField::Missing => Ok(None),
+        DeviceUpdateRequiredField::Value(source_label) => {
+            Ok(Some(normalize_source_label(&source_label)?))
+        }
+    }
 }
 
 fn normalize_update_name(
@@ -243,50 +254,36 @@ fn normalize_update_external_url(
     }
 }
 
-fn normalize_update_hostname(
-    hostname: DeviceUpdateNullableField<String>,
-) -> Result<Option<Option<String>>, AppError> {
-    match hostname {
-        DeviceUpdateNullableField::Missing => Ok(None),
-        DeviceUpdateNullableField::Null => Ok(Some(None)),
-        DeviceUpdateNullableField::Value(hostname) => {
-            Ok(Some(normalize_hostname(Some(hostname))?))
+fn normalize_update_custom_fields(
+    custom_fields: DeviceUpdateRequiredField<BTreeMap<String, Option<String>>>,
+) -> Result<Option<BTreeMap<String, Option<String>>>, AppError> {
+    match custom_fields {
+        DeviceUpdateRequiredField::Missing => Ok(None),
+        DeviceUpdateRequiredField::Value(custom_fields) => {
+            Ok(Some(normalize_custom_fields_patch(custom_fields)?))
         }
     }
 }
 
-fn normalize_update_ssh_port(
-    ssh_port: DeviceUpdateNullableField<i32>,
-) -> Result<Option<Option<i32>>, AppError> {
-    match ssh_port {
-        DeviceUpdateNullableField::Missing => Ok(None),
-        DeviceUpdateNullableField::Null => Ok(Some(None)),
-        DeviceUpdateNullableField::Value(ssh_port) => {
-            Ok(Some(validate_ssh_port(Some(ssh_port))?))
-        }
-    }
-}
-
-#[derive(Clone)]
 struct DeviceChanges {
+    source_label: Option<String>,
     name: Option<String>,
     aor_ids: Option<Vec<i64>>,
     unit_id: Option<Option<i64>>,
     tags: Option<Vec<crate::devices::types::DeviceTag>>,
     external_url: Option<Option<String>>,
-    hostname: Option<Option<String>>,
-    ssh_port: Option<Option<i32>>,
+    custom_fields: Option<serde_json::Value>,
 }
 
 impl DeviceChanges {
     fn is_empty(&self) -> bool {
-        self.name.is_none()
+        self.source_label.is_none()
+            && self.name.is_none()
             && self.aor_ids.is_none()
             && self.unit_id.is_none()
             && self.tags.is_none()
             && self.external_url.is_none()
-            && self.hostname.is_none()
-            && self.ssh_port.is_none()
+            && self.custom_fields.is_none()
     }
 }
 
@@ -295,10 +292,15 @@ fn collect_device_changes(
     req: &NormalizedUpdateDevice,
 ) -> Result<DeviceChanges, AppError> {
     Ok(DeviceChanges {
+        source_label: req
+            .source_label
+            .as_ref()
+            .filter(|source_label| *source_label != &device.source_label)
+            .cloned(),
         name: req
             .name
             .as_ref()
-            .filter(|name| *name != &device.name)
+            .filter(|name| Some(name.as_str()) != device.name.as_deref())
             .cloned(),
         aor_ids: req.aor_ids.clone(),
         unit_id: changed_nullable(req.unit_id, device.unit_id),
@@ -307,11 +309,7 @@ fn collect_device_changes(
             req.external_url.clone(),
             device.external_url.clone(),
         ),
-        hostname: changed_nullable(
-            req.hostname.clone(),
-            device.hostname.clone(),
-        ),
-        ssh_port: changed_nullable(req.ssh_port, device.ssh_port),
+        custom_fields: changed_custom_fields(device, req)?,
     })
 }
 
@@ -345,6 +343,18 @@ fn changed_tags(
     Ok(Some(tags.clone()))
 }
 
+fn changed_custom_fields(
+    device: &device::Model,
+    req: &NormalizedUpdateDevice,
+) -> Result<Option<serde_json::Value>, AppError> {
+    let Some(patch) = &req.custom_fields else {
+        return Ok(None);
+    };
+    let custom_fields =
+        apply_custom_fields_patch(&device.custom_fields, patch.clone())?;
+    Ok((custom_fields != device.custom_fields).then_some(custom_fields))
+}
+
 async fn apply_device_changes<C>(
     db: &C,
     device: device::Model,
@@ -355,26 +365,34 @@ where
     C: sea_orm::ConnectionTrait,
 {
     let mut device = device.into_active_model();
-    if let Some(name) = changes.name {
-        device.name = Set(name);
+    apply_device_change_values(&mut device, &changes)?;
+    device.updated_at = Set(now);
+    Ok(device.update(db).await.c(h!())?)
+}
+
+fn apply_device_change_values(
+    device: &mut device::ActiveModel,
+    changes: &DeviceChanges,
+) -> Result<(), AppError> {
+    if let Some(source_label) = &changes.source_label {
+        device.source_label = Set(source_label.clone());
+    }
+    if let Some(name) = &changes.name {
+        device.name = Set(Some(name.clone()));
     }
     if let Some(unit_id) = changes.unit_id {
         device.unit_id = Set(unit_id);
     }
-    if let Some(tags) = changes.tags {
+    if let Some(tags) = &changes.tags {
         device.tags = Set(serde_json::to_value(tags).c(h!())?);
     }
-    if let Some(external_url) = changes.external_url {
-        device.external_url = Set(external_url);
+    if let Some(external_url) = &changes.external_url {
+        device.external_url = Set(external_url.clone());
     }
-    if let Some(hostname) = changes.hostname {
-        device.hostname = Set(hostname);
+    if let Some(custom_fields) = &changes.custom_fields {
+        device.custom_fields = Set(custom_fields.clone());
     }
-    if let Some(ssh_port) = changes.ssh_port {
-        device.ssh_port = Set(ssh_port);
-    }
-    device.updated_at = Set(now);
-    Ok(device.update(db).await.c(h!())?)
+    Ok(())
 }
 
 async fn replace_device_aors<C>(
@@ -458,4 +476,82 @@ fn form_error(field: &str, message: &str) -> AppError {
         field.to_string(),
         message.to_string(),
     )]))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::NaiveDate;
+    use sea_orm::TryIntoModel;
+    use serde_json::json;
+
+    fn fixture_device() -> device::Model {
+        let now = NaiveDate::from_ymd_opt(2026, 7, 21)
+            .unwrap()
+            .and_hms_opt(12, 0, 0)
+            .unwrap();
+        device::Model {
+            id: Uuid::now_v7(),
+            name: Some("Old name".to_string()),
+            created_by: "operator".to_string(),
+            unit_id: None,
+            tags: json!([]),
+            external_url: None,
+            archived: false,
+            archived_at: None,
+            created_at: now,
+            updated_at: now,
+            source_label: "Source device".to_string(),
+            custom_fields: json!({
+                "inventory_id": "node-1",
+                "transport": "ssh",
+            }),
+        }
+    }
+
+    #[test]
+    fn source_label_update_does_not_change_analytical_name() {
+        let device = fixture_device();
+        let req = NormalizedUpdateDevice {
+            source_label: Some("New source".to_string()),
+            name: None,
+            aor_ids: None,
+            unit_id: None,
+            tags: None,
+            external_url: None,
+            custom_fields: None,
+        };
+
+        let changes = collect_device_changes(&device, &req).unwrap();
+        let mut device = device.into_active_model();
+        apply_device_change_values(&mut device, &changes).unwrap();
+        let device = device.try_into_model().unwrap();
+
+        assert_eq!(device.source_label, "New source");
+        assert_eq!(device.name.as_deref(), Some("Old name"));
+    }
+
+    #[test]
+    fn custom_field_patch_keeps_unrelated_values() {
+        let device = fixture_device();
+        let req = NormalizedUpdateDevice {
+            source_label: None,
+            name: None,
+            aor_ids: None,
+            unit_id: None,
+            tags: None,
+            external_url: None,
+            custom_fields: Some(BTreeMap::from([
+                ("inventory_id".to_string(), None),
+                ("transport".to_string(), Some("https".to_string())),
+            ])),
+        };
+
+        let changes = collect_device_changes(&device, &req).unwrap();
+        let mut device = device.into_active_model();
+        apply_device_change_values(&mut device, &changes).unwrap();
+        let device = device.try_into_model().unwrap();
+
+        assert_eq!(device.custom_fields, json!({"transport": "https"}));
+    }
 }

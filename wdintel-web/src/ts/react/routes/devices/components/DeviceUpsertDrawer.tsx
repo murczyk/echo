@@ -20,19 +20,17 @@ import { pageDrawerBackdropSx } from '../../../components/loadingOverlayStyles';
 import type { DeviceLookupOption } from '../helpers';
 import {
   validateDeviceUpsertForm,
-  DEVICE_HOSTNAME_MAX_CHARS,
-  DEVICE_SSH_PORT_MAX,
-  DEVICE_SSH_PORT_MIN,
-  type DeviceTagDraftError,
-  type DeviceFileDraftError,
+  DEVICE_SOURCE_LABEL_MAX_CHARS,
+  type DeviceCustomFieldDraftError,
   type DeviceServerFieldErrors,
+  type DeviceTagDraftError,
   type DeviceUpsertForm,
 } from '../device-form';
+import { DeviceCustomFieldsEditor } from './DeviceCustomFieldsEditor';
 import { DeviceTagsEditor } from './DeviceTagsEditor';
-import { DeviceFileRowsEditor } from './DeviceFileRowsEditor';
 
+const EMPTY_CUSTOM_FIELD_ROW_ERRORS: Record<string, DeviceCustomFieldDraftError> = {};
 const EMPTY_TAG_ROW_ERRORS: Record<string, DeviceTagDraftError> = {};
-const EMPTY_FILE_ROW_ERRORS: Record<string, DeviceFileDraftError> = {};
 
 type Props = {
   open: boolean;
@@ -50,7 +48,7 @@ type Props = {
   onSave: (form: DeviceUpsertForm) => void;
 };
 
-type TouchedField = 'name' | 'externalUrl' | 'hostname' | 'sshPort';
+type TouchedField = 'sourceLabel' | 'name' | 'externalUrl';
 
 function selectedLookupOptions(options: DeviceLookupOption[], ids: number[]): DeviceLookupOption[] {
   const optionsById = new Map(options.map((option) => [option.id, option]));
@@ -126,18 +124,18 @@ export function DeviceUpsertDrawer({
   const handleSave = () => {
     if (form === null || formBlocked) return;
     setSubmitted(true);
-    setTouched({ name: true, externalUrl: true, hostname: true, sshPort: true });
+    setTouched({ sourceLabel: true, name: true, externalUrl: true });
     if (validation !== null) return;
     onSave(form);
   };
 
   const showCollectionErrors = submitted && validation !== null;
+  const customFieldRows = showCollectionErrors
+    ? (validation?.customFieldRows ?? EMPTY_CUSTOM_FIELD_ROW_ERRORS)
+    : EMPTY_CUSTOM_FIELD_ROW_ERRORS;
   const tagRows = showCollectionErrors
     ? (validation?.tagRows ?? EMPTY_TAG_ROW_ERRORS)
     : EMPTY_TAG_ROW_ERRORS;
-  const fileRows = showCollectionErrors
-    ? (validation?.fileRows ?? EMPTY_FILE_ROW_ERRORS)
-    : EMPTY_FILE_ROW_ERRORS;
   const noEditChanges = mode === 'edit' && form !== null && !hasChanges;
 
   return (
@@ -198,6 +196,20 @@ export function DeviceUpsertDrawer({
           {form ? (
             <>
               <TextField
+                label="Джерельна мітка"
+                value={form.sourceLabel}
+                onChange={(event) => patchForm({ sourceLabel: event.target.value })}
+                onBlur={() => setTouched((current) => ({ ...current, sourceLabel: true }))}
+                disabled={formBlocked}
+                fullWidth
+                size="small"
+                required
+                inputProps={{ maxLength: DEVICE_SOURCE_LABEL_MAX_CHARS }}
+                error={fieldError('sourceLabel') !== undefined}
+                helperText={fieldError('sourceLabel') ?? 'Позначення джерела пристрою.'}
+              />
+
+              <TextField
                 label="Назва"
                 value={form.name}
                 onChange={(event) => patchForm({ name: event.target.value })}
@@ -255,40 +267,6 @@ export function DeviceUpsertDrawer({
                 helperText={fieldError('externalUrl') ?? 'HTTP/HTTPS URL або порожнє значення.'}
               />
 
-              <TextField
-                label="Хостнейм"
-                value={form.hostname}
-                onChange={(event) => patchForm({ hostname: event.target.value })}
-                onBlur={() => setTouched((current) => ({ ...current, hostname: true }))}
-                disabled={formBlocked}
-                fullWidth
-                size="small"
-                inputProps={{ maxLength: DEVICE_HOSTNAME_MAX_CHARS }}
-                error={fieldError('hostname') !== undefined}
-                helperText={fieldError('hostname') ?? 'Необов’язковий, до 255 символів.'}
-              />
-
-              <TextField
-                label="SSH-порт"
-                type="number"
-                value={form.sshPort}
-                onChange={(event) => patchForm({ sshPort: event.target.value })}
-                onBlur={() => setTouched((current) => ({ ...current, sshPort: true }))}
-                disabled={formBlocked}
-                fullWidth
-                size="small"
-                inputProps={{
-                  min: DEVICE_SSH_PORT_MIN,
-                  max: DEVICE_SSH_PORT_MAX,
-                  step: 1,
-                }}
-                error={fieldError('sshPort') !== undefined}
-                helperText={
-                  fieldError('sshPort') ??
-                  `Ціле число від ${DEVICE_SSH_PORT_MIN} до ${DEVICE_SSH_PORT_MAX} або порожнє значення.`
-                }
-              />
-
               <Divider />
               {showCollectionErrors && validation?.tags ? (
                 <PowerAlert severity="error">{validation.tags}</PowerAlert>
@@ -304,23 +282,17 @@ export function DeviceUpsertDrawer({
               />
 
               <Divider />
-              {showCollectionErrors && validation?.files ? (
-                <PowerAlert severity="error">{validation.files}</PowerAlert>
+              {showCollectionErrors && validation?.customFields ? (
+                <PowerAlert severity="error">{validation.customFields}</PowerAlert>
               ) : null}
-              {serverFieldErrors.files ? (
-                <PowerAlert severity="error">{serverFieldErrors.files}</PowerAlert>
+              {serverFieldErrors.customFields ? (
+                <PowerAlert severity="error">{serverFieldErrors.customFields}</PowerAlert>
               ) : null}
-              <DeviceFileRowsEditor
-                rows={form.files}
-                errors={fileRows}
+              <DeviceCustomFieldsEditor
+                rows={form.customFields}
+                errors={customFieldRows}
                 disabled={formBlocked}
-                title={mode === 'create' ? 'Файли для створення разом із пристроєм' : 'Нові файли'}
-                emptyText={
-                  mode === 'create'
-                    ? 'Можна створити пристрій без файлів.'
-                    : 'Існуючі файли не редагуються тут; можна додати тільки нові метадані.'
-                }
-                onChange={(files) => patchForm({ files })}
+                onChange={(customFields) => patchForm({ customFields })}
               />
             </>
           ) : null}

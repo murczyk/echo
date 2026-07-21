@@ -1,6 +1,7 @@
 use elm_rs::{Elm, ElmDecode, ElmEncode};
 use serde::de::Error as DeError;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use std::collections::BTreeMap;
 
 #[derive(
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
@@ -43,27 +44,6 @@ pub enum DeviceArchivedFilter {
     Clone,
     Copy,
 )]
-pub enum DeviceFileDeletedFilter {
-    #[serde(rename = "active_only")]
-    DeviceFileActiveOnly,
-    #[serde(rename = "deleted_only")]
-    DeviceFileDeletedOnly,
-    #[serde(rename = "all")]
-    DeviceFileAll,
-}
-
-#[derive(
-    Elm,
-    ElmEncode,
-    ElmDecode,
-    Debug,
-    Serialize,
-    Deserialize,
-    PartialEq,
-    Eq,
-    Clone,
-    Copy,
-)]
 pub enum DeviceListSortBy {
     #[serde(rename = "name_asc")]
     DeviceNameAsc,
@@ -80,6 +60,7 @@ pub enum DeviceListSortBy {
 )]
 pub struct DeviceListItem {
     pub id: String,
+    pub source_label: String,
     pub name: String,
     pub created_by: String,
     pub aor_ids: Vec<i64>,
@@ -87,8 +68,7 @@ pub struct DeviceListItem {
     pub unit_id: Option<i64>,
     pub unit_name: Option<String>,
     pub external_url: Option<String>,
-    pub hostname: Option<String>,
-    pub ssh_port: Option<i32>,
+    pub custom_fields: BTreeMap<String, String>,
     pub archived: bool,
     pub created_at_ms: i64,
     pub updated_at_ms: i64,
@@ -100,6 +80,7 @@ pub struct DeviceListItem {
 )]
 pub struct DeviceDetails {
     pub id: String,
+    pub source_label: String,
     pub name: String,
     pub created_by: String,
     pub aor_ids: Vec<i64>,
@@ -108,28 +89,11 @@ pub struct DeviceDetails {
     pub unit_name: Option<String>,
     pub tags: Vec<DeviceTag>,
     pub external_url: Option<String>,
-    pub hostname: Option<String>,
-    pub ssh_port: Option<i32>,
+    pub custom_fields: BTreeMap<String, String>,
     pub archived: bool,
     pub created_at_ms: i64,
     pub updated_at_ms: i64,
     pub archived_at_ms: Option<i64>,
-}
-
-#[derive(
-    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
-)]
-pub struct DeviceFileEntry {
-    pub file_id: String,
-    pub device_id: String,
-    pub original_name: Option<String>,
-    pub original_absolute_path: Option<String>,
-    pub original_created_at_ms: Option<i64>,
-    pub original_modified_at_ms: Option<i64>,
-    pub deleted: bool,
-    pub created_at_ms: i64,
-    pub updated_at_ms: i64,
-    pub deleted_at_ms: Option<i64>,
 }
 
 #[derive(
@@ -192,7 +156,9 @@ pub struct DeviceDetailReq {
 #[derive(
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
+#[serde(deny_unknown_fields)]
 pub struct CreateDeviceReq {
+    pub source_label: String,
     pub name: String,
     #[serde(default)]
     pub aor_ids: Vec<i64>,
@@ -200,9 +166,8 @@ pub struct CreateDeviceReq {
     #[serde(default)]
     pub tags: Vec<DeviceTag>,
     pub external_url: Option<String>,
-    pub hostname: Option<String>,
-    pub ssh_port: Option<i32>,
-    pub files: Option<Vec<CreateDeviceFileItem>>,
+    #[serde(default)]
+    pub custom_fields: BTreeMap<String, String>,
 }
 
 #[derive(Debug, PartialEq, Clone, Default)]
@@ -378,8 +343,14 @@ where
 #[derive(
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
+#[serde(deny_unknown_fields)]
 pub struct UpdateDeviceReq {
     pub device_id: String,
+    #[serde(
+        default,
+        skip_serializing_if = "DeviceUpdateRequiredField::is_missing"
+    )]
+    pub source_label: DeviceUpdateRequiredField<String>,
     #[serde(
         default,
         skip_serializing_if = "DeviceUpdateRequiredField::is_missing"
@@ -407,15 +378,10 @@ pub struct UpdateDeviceReq {
     pub external_url: DeviceUpdateNullableField<String>,
     #[serde(
         default,
-        skip_serializing_if = "DeviceUpdateNullableField::is_missing"
+        skip_serializing_if = "DeviceUpdateRequiredField::is_missing"
     )]
-    pub hostname: DeviceUpdateNullableField<String>,
-    #[serde(
-        default,
-        skip_serializing_if = "DeviceUpdateNullableField::is_missing"
-    )]
-    pub ssh_port: DeviceUpdateNullableField<i32>,
-    pub files: Option<Vec<CreateDeviceFileItem>>,
+    pub custom_fields:
+        DeviceUpdateRequiredField<BTreeMap<String, Option<String>>>,
 }
 
 #[derive(
@@ -435,9 +401,26 @@ pub struct RestoreDeviceReq {
 #[derive(
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
+pub struct DeviceFileEntry {
+    pub file_id: String,
+    pub device_id: String,
+    pub parent_id: Option<String>,
+    pub name: String,
+    pub path_syntax: Option<String>,
+    pub absolute_path: Option<String>,
+    pub mime_type: Option<String>,
+    pub extension: Option<String>,
+    pub file_metadata_created_at_ms: Option<i64>,
+    pub file_metadata_modified_at_ms: Option<i64>,
+    pub created_at_ms: i64,
+    pub updated_at_ms: i64,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
 pub struct ListDeviceFilesReq {
     pub device_id: String,
-    pub deleted_filter: Option<DeviceFileDeletedFilter>,
     pub limit: Option<u64>,
     pub offset: Option<u64>,
 }
@@ -451,47 +434,6 @@ pub struct ListDeviceFilesRsp {
     pub has_more: bool,
 }
 
-#[derive(
-    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
-)]
-pub struct CreateDeviceFileItem {
-    pub original_name: Option<String>,
-    pub original_absolute_path: Option<String>,
-    pub original_created_at_ms: Option<i64>,
-    pub original_modified_at_ms: Option<i64>,
-}
-
-#[derive(
-    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
-)]
-pub struct CreateDeviceFilesReq {
-    pub device_id: String,
-    pub files: Vec<CreateDeviceFileItem>,
-}
-
-#[derive(
-    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
-)]
-pub struct CreateDeviceFilesRsp {
-    pub list: Vec<DeviceFileEntry>,
-}
-
-#[derive(
-    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
-)]
-pub struct RestoreDeviceFileReq {
-    pub device_id: String,
-    pub file_id: String,
-}
-
-#[derive(
-    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
-)]
-pub struct DeleteDeviceFileReq {
-    pub device_id: String,
-    pub file_id: String,
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -500,51 +442,66 @@ mod tests {
     fn update_device_req_preserves_missing_null_and_value_fields() {
         let req: UpdateDeviceReq = serde_json::from_value(serde_json::json!({
             "device_id": "018f0000-0000-7000-8000-000000000000",
+            "source_label": "source-device",
             "aor_ids": [],
             "unit_id": 7,
             "external_url": null,
-            "hostname": "device.example",
-            "ssh_port": null,
+            "custom_fields": {
+                "inventory_id": "device.example",
+                "source_port": null
+            },
         }))
         .unwrap();
 
+        assert!(
+            matches!(&req.source_label, DeviceUpdateRequiredField::Value(label) if label == "source-device")
+        );
         assert!(matches!(req.name, DeviceUpdateRequiredField::Missing));
         assert!(
             matches!(req.aor_ids, DeviceUpdateRequiredField::Value(ids) if ids.is_empty())
         );
         assert!(matches!(req.unit_id, DeviceUpdateNullableField::Value(7)));
         assert!(matches!(req.external_url, DeviceUpdateNullableField::Null));
-        assert!(
-            matches!(&req.hostname, DeviceUpdateNullableField::Value(hostname) if hostname == "device.example")
-        );
-        assert!(matches!(req.ssh_port, DeviceUpdateNullableField::Null));
+        assert!(matches!(
+            &req.custom_fields,
+            DeviceUpdateRequiredField::Value(fields)
+                if fields == &BTreeMap::from([
+                    ("inventory_id".to_string(), Some("device.example".to_string())),
+                    ("source_port".to_string(), None),
+                ])
+        ));
         assert!(matches!(req.tags, DeviceUpdateRequiredField::Missing));
     }
 
     #[test]
-    fn update_device_req_rejects_null_required_patch_fields() {
-        let name_err =
+    fn update_device_req_rejects_null_required_patch_fields_and_unknown_fields()
+    {
+        let source_label_err =
             serde_json::from_value::<UpdateDeviceReq>(serde_json::json!({
                 "device_id": "018f0000-0000-7000-8000-000000000000",
-                "name": null
+                "source_label": null
             }))
             .unwrap_err();
-        assert!(name_err.to_string().contains("field cannot be null"));
+        assert!(source_label_err
+            .to_string()
+            .contains("field cannot be null"));
 
-        let aor_ids_err =
+        let custom_fields_err =
             serde_json::from_value::<UpdateDeviceReq>(serde_json::json!({
                 "device_id": "018f0000-0000-7000-8000-000000000000",
-                "aor_ids": null
+                "custom_fields": null
             }))
             .unwrap_err();
-        assert!(aor_ids_err.to_string().contains("field cannot be null"));
+        assert!(custom_fields_err
+            .to_string()
+            .contains("field cannot be null"));
 
-        let tags_err =
+        let unexpected_field_err =
             serde_json::from_value::<UpdateDeviceReq>(serde_json::json!({
                 "device_id": "018f0000-0000-7000-8000-000000000000",
-                "tags": null
+                "unexpected": "value"
             }))
             .unwrap_err();
-        assert!(tags_err.to_string().contains("field cannot be null"));
+        assert!(unexpected_field_err.to_string().contains("unknown field"));
     }
 }

@@ -1593,12 +1593,6 @@ export type DeviceArchivedFilter =
   | 'all'
 ;
 
-export type DeviceFileDeletedFilter =
-  | 'active_only'
-  | 'deleted_only'
-  | 'all'
-;
-
 export type DeviceListSortBy =
   | 'name_asc'
   | 'name_desc'
@@ -1608,6 +1602,7 @@ export type DeviceListSortBy =
 
 export type DeviceListItem = {
   id: string;
+  sourceLabel: string;
   name: string;
   createdBy: string;
   aorIds: Array<number>;
@@ -1615,8 +1610,7 @@ export type DeviceListItem = {
   unitId: number | null;
   unitName: string | null;
   externalUrl: string | null;
-  hostname: string | null;
-  sshPort: number | null;
+  customFields: Record<string, string>;
   archived: boolean;
   createdAtMs: number;
   updatedAtMs: number;
@@ -1625,6 +1619,7 @@ export type DeviceListItem = {
 
 export type DeviceDetails = {
   id: string;
+  sourceLabel: string;
   name: string;
   createdBy: string;
   aorIds: Array<number>;
@@ -1633,25 +1628,11 @@ export type DeviceDetails = {
   unitName: string | null;
   tags: Array<DeviceTag>;
   externalUrl: string | null;
-  hostname: string | null;
-  sshPort: number | null;
+  customFields: Record<string, string>;
   archived: boolean;
   createdAtMs: number;
   updatedAtMs: number;
   archivedAtMs: number | null;
-};
-
-export type DeviceFileEntry = {
-  fileId: string;
-  deviceId: string;
-  originalName: string | null;
-  originalAbsolutePath: string | null;
-  originalCreatedAtMs: number | null;
-  originalModifiedAtMs: number | null;
-  deleted: boolean;
-  createdAtMs: number;
-  updatedAtMs: number;
-  deletedAtMs: number | null;
 };
 
 export type ListDevicesReq = {
@@ -1693,26 +1674,24 @@ export type DeviceDetailReq = {
 };
 
 export type CreateDeviceReq = {
+  sourceLabel: string;
   name: string;
   aorIds: Array<number>;
   unitId: number | null;
   tags: Array<DeviceTag>;
   externalUrl: string | null;
-  hostname: string | null;
-  sshPort: number | null;
-  files: Array<CreateDeviceFileItem> | null;
+  customFields: Record<string, string>;
 };
 
 export type UpdateDeviceReq = {
   deviceId: string;
+  sourceLabel: string | null;
   name: string | null;
   aorIds: Array<number> | null;
   unitId: number | null;
   tags: Array<DeviceTag> | null;
   externalUrl: string | null;
-  hostname: string | null;
-  sshPort: number | null;
-  files: Array<CreateDeviceFileItem> | null;
+  customFields: Record<string, string | null> | null;
 };
 
 export type ArchiveDeviceReq = {
@@ -1723,9 +1702,23 @@ export type RestoreDeviceReq = {
   deviceId: string;
 };
 
+export type DeviceFileEntry = {
+  fileId: string;
+  deviceId: string;
+  parentId: string | null;
+  name: string;
+  pathSyntax: string | null;
+  absolutePath: string | null;
+  mimeType: string | null;
+  extension: string | null;
+  fileMetadataCreatedAtMs: number | null;
+  fileMetadataModifiedAtMs: number | null;
+  createdAtMs: number;
+  updatedAtMs: number;
+};
+
 export type ListDeviceFilesReq = {
   deviceId: string;
-  deletedFilter: DeviceFileDeletedFilter | null;
   limit: number | null;
   offset: number | null;
 };
@@ -1734,32 +1727,6 @@ export type ListDeviceFilesRsp = {
   list: Array<DeviceFileEntry>;
   total: number;
   hasMore: boolean;
-};
-
-export type CreateDeviceFileItem = {
-  originalName: string | null;
-  originalAbsolutePath: string | null;
-  originalCreatedAtMs: number | null;
-  originalModifiedAtMs: number | null;
-};
-
-export type CreateDeviceFilesReq = {
-  deviceId: string;
-  files: Array<CreateDeviceFileItem>;
-};
-
-export type CreateDeviceFilesRsp = {
-  list: Array<DeviceFileEntry>;
-};
-
-export type RestoreDeviceFileReq = {
-  deviceId: string;
-  fileId: string;
-};
-
-export type DeleteDeviceFileReq = {
-  deviceId: string;
-  fileId: string;
 };
 
 export type Organism = {
@@ -4164,4 +4131,3 @@ export type UserDutySettingsDto = {
   showClassicDuty: boolean;
   showClassicAnalysis: boolean;
 };
-

@@ -5,7 +5,7 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { DeviceDetails, DeviceFileEntry } from '../../../../Bindings';
+import type { DeviceDetails } from '../../../../Bindings';
 import { DeviceDetailsPage } from './index';
 
 const DEVICE_ID = '018f0000-0000-7000-8000-000000000000';
@@ -14,31 +14,16 @@ const pageMock = vi.hoisted(() => ({
   useDeviceDetailsPage: vi.fn(),
 }));
 
-const filesMock = vi.hoisted(() => ({
-  useDeviceFiles: vi.fn(),
-}));
-
 let container: HTMLDivElement | null = null;
 let root: Root | null = null;
-
-vi.mock('@mui/material', async () => {
-  const actual = await vi.importActual<typeof import('@mui/material')>('@mui/material');
-  return {
-    ...actual,
-    useMediaQuery: () => true,
-  };
-});
 
 vi.mock('./use-device-details-page', () => ({
   useDeviceDetailsPage: pageMock.useDeviceDetailsPage,
 }));
 
-vi.mock('./use-device-files', () => ({
-  useDeviceFiles: filesMock.useDeviceFiles,
-}));
-
 const activeDevice: DeviceDetails = {
   id: DEVICE_ID,
+  sourceLabel: 'Inventory import',
   name: 'Device Alpha',
   createdBy: 'operator',
   aorIds: [1, 2],
@@ -47,25 +32,11 @@ const activeDevice: DeviceDetails = {
   unitName: 'Unit Seven',
   tags: [{ label: 'IP', value: '10.0.0.1' }],
   externalUrl: 'https://example.test/device-alpha',
-  hostname: 'device.example',
-  sshPort: 22,
+  customFields: { inventory_id: 'node-1' },
   archived: false,
   createdAtMs: 1_700_000_000_000,
   updatedAtMs: 1_700_000_010_000,
   archivedAtMs: null,
-};
-
-const fileEntry: DeviceFileEntry = {
-  fileId: 'file-1',
-  deviceId: DEVICE_ID,
-  originalName: 'manual.pdf',
-  originalAbsolutePath: '/tmp/manual.pdf',
-  originalCreatedAtMs: null,
-  originalModifiedAtMs: null,
-  deleted: false,
-  createdAtMs: 1_700_000_020_000,
-  updatedAtMs: 1_700_000_030_000,
-  deletedAtMs: null,
 };
 
 function buildPage(overrides: Record<string, unknown> = {}) {
@@ -99,43 +70,8 @@ function buildPage(overrides: Record<string, unknown> = {}) {
   };
 }
 
-function buildFiles(overrides: Record<string, unknown> = {}) {
-  return {
-    files: [fileEntry],
-    deletedFilter: 'active',
-    total: 1,
-    hasMore: false,
-    loading: false,
-    refreshing: false,
-    loadingMore: false,
-    status: null,
-    mutatingFileId: null,
-    createDialogOpen: false,
-    createRows: [],
-    createError: null,
-    createServerFieldErrors: {},
-    creatingFiles: false,
-    deleteDialogFile: null,
-    hasFilters: false,
-    initialLoadFailed: false,
-    setDeletedFilter: vi.fn(),
-    reload: vi.fn(),
-    loadMore: vi.fn(),
-    openCreateDialog: vi.fn(),
-    closeCreateDialog: vi.fn(),
-    setCreateRows: vi.fn(),
-    submitCreateFiles: vi.fn(),
-    deleteFile: vi.fn(),
-    closeDeleteDialog: vi.fn(),
-    confirmDeleteFile: vi.fn(),
-    restoreFile: vi.fn(),
-    ...overrides,
-  };
-}
-
 beforeEach(() => {
   pageMock.useDeviceDetailsPage.mockReturnValue(buildPage());
-  filesMock.useDeviceFiles.mockReturnValue(buildFiles());
   container = document.createElement('div');
   document.body.appendChild(container);
   root = createRoot(container);
@@ -155,16 +91,6 @@ function renderPage() {
   });
 }
 
-function clickTab(label: string) {
-  const tab = Array.from(container?.querySelectorAll('[role="tab"]') ?? []).find(
-    (element) => element.textContent === label,
-  );
-  if (!(tab instanceof HTMLElement)) throw new Error(`tab not found: ${label}`);
-  act(() => {
-    tab.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-  });
-}
-
 function openDeviceActionsMenu() {
   const menuButton = container?.querySelector('button[aria-label="Дії з пристроєм"]');
   if (!(menuButton instanceof HTMLElement)) throw new Error('device actions menu button not found');
@@ -180,7 +106,7 @@ function actionMenuLabels() {
 }
 
 describe('DeviceDetailsPage layout', () => {
-  it('renders main information in the left panel and exactly two main tabs', () => {
+  it('renders device metadata without file UI', () => {
     renderPage();
 
     const leftPanel = container?.querySelector('[data-testid="device-details-left-panel"]');
@@ -198,11 +124,13 @@ describe('DeviceDetailsPage layout', () => {
     expect(leftPanelText).toContain('Теги');
     expect(leftPanelText).toContain('IP');
     expect(leftPanelText).toContain('10.0.0.1');
-    expect(leftPanelText).toContain('Пристрій');
-    expect(leftPanelText).toContain('Хостнейм');
-    expect(leftPanelText).toContain('device.example');
-    expect(leftPanelText).toContain('SSH-порт');
-    expect(leftPanelText).toContain('22');
+    expect(leftPanelText).toContain('Джерельна мітка');
+    expect(leftPanelText).toContain('Inventory import');
+    expect(leftPanelText).toContain('Кастомні поля');
+    expect(leftPanelText).toContain('inventory_id');
+    expect(leftPanelText).toContain('node-1');
+    expect(leftPanelText).not.toContain('Хостнейм');
+    expect(leftPanelText).not.toContain('SSH-порт');
     expect(container?.textContent).not.toContain('Зовнішнє посилання');
     expect(container?.textContent).not.toContain('Оновити');
     expect(container?.textContent).not.toContain('Редагувати');
@@ -212,36 +140,23 @@ describe('DeviceDetailsPage layout', () => {
     expect(deviceNameLink?.getAttribute('href')).toBe(activeDevice.externalUrl);
     expect(deviceNameLink?.getAttribute('target')).toBe('_blank');
     expect((leftPanelText ?? '').indexOf('Основне')).toBeLessThan(
-      (leftPanelText ?? '').indexOf('Пристрій'),
-    );
-    expect((leftPanelText ?? '').indexOf('Пристрій')).toBeLessThan(
-      (leftPanelText ?? '').indexOf('Додатково'),
-    );
-    expect((leftPanelText ?? '').indexOf('Додатково')).toBeLessThan(
       (leftPanelText ?? '').indexOf('Теги'),
     );
-    const tabs = Array.from(container?.querySelectorAll('[role="tab"]') ?? []).map((element) =>
-      element.textContent?.trim(),
+    expect((leftPanelText ?? '').indexOf('Теги')).toBeLessThan(
+      (leftPanelText ?? '').indexOf('Кастомні поля'),
     );
-    expect(tabs).toEqual(['Опис', 'Файли']);
-    expect(container?.textContent).not.toContain('Реєстрові поля');
-    expect(
-      container
-        ?.querySelector('[data-testid="device-details-description-tab"]')
-        ?.textContent?.trim(),
-    ).toBe('');
+    expect((leftPanelText ?? '').indexOf('Кастомні поля')).toBeLessThan(
+      (leftPanelText ?? '').indexOf('Додатково'),
+    );
+    expect(container?.querySelectorAll('[role="tab"]')).toHaveLength(0);
+    expect(container?.textContent).not.toContain('Файли');
     expect(container?.textContent).not.toContain('Метадані файлів');
 
     openDeviceActionsMenu();
     expect(actionMenuLabels()).toEqual(['Редагувати', 'Архівувати']);
-
-    clickTab('Файли');
-
-    expect(container?.textContent).toContain('Метадані файлів · знайдено: 1');
-    expect(container?.textContent).toContain('manual.pdf');
   });
 
-  it('keeps archived devices restore-only and blocks file mutations in the files tab', () => {
+  it('keeps archived devices restore-only without file UI', () => {
     pageMock.useDeviceDetailsPage.mockReturnValue(
       buildPage({
         device: {
@@ -254,9 +169,6 @@ describe('DeviceDetailsPage layout', () => {
 
     renderPage();
 
-    expect(filesMock.useDeviceFiles).toHaveBeenCalledWith(
-      expect.objectContaining({ parentArchived: true }),
-    );
     expect(container?.textContent).toContain('Пристрій архівовано');
     expect(container?.textContent).not.toContain('Редагувати');
     expect(container?.textContent).not.toContain('Відновити');
@@ -264,11 +176,5 @@ describe('DeviceDetailsPage layout', () => {
 
     openDeviceActionsMenu();
     expect(actionMenuLabels()).toEqual(['Відновити']);
-
-    clickTab('Файли');
-
-    expect(container?.textContent).toContain(
-      'Відновіть пристрій перед додаванням, видаленням або відновленням файлів.',
-    );
   });
 });

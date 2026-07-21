@@ -3,34 +3,19 @@ import ArchiveOutlinedIcon from '@mui/icons-material/ArchiveOutlined';
 import EditIcon from '@mui/icons-material/Edit';
 import MoreVertOutlinedIcon from '@mui/icons-material/MoreVertOutlined';
 import RestoreIcon from '@mui/icons-material/Restore';
-import {
-  Box,
-  IconButton,
-  Menu,
-  MenuItem,
-  Skeleton,
-  Stack,
-  Tooltip,
-  useMediaQuery,
-} from '@mui/material';
+import { Box, IconButton, Menu, MenuItem, Skeleton, Stack, Tooltip } from '@mui/material';
 import { useState } from 'react';
 
 import { ConfirmDangerDialog } from '../../components/ConfirmDangerDialog';
 import { PageErrorState } from '../../components/PageErrorState';
 import { PageHeader } from '../../components/PageHeader';
-import { PageLoadingState } from '../../components/PageLoadingState';
 import { PowerAlert } from '../../components/PowerAlert';
 import { SectionLoadingOverlay } from '../../components/SectionLoadingOverlay';
-import { SidePanelToggleButton } from '../../components/SidePanelToggleButton';
 import { navigateWithinSpa } from '../../utils/browser';
 import { DeviceUpsertDrawer } from '../devices/components/DeviceUpsertDrawer';
 import { DeviceDetailsLeftPanel } from './components/DeviceDetailsLeftPanel';
-import { DeviceDetailsTabPanel, type DeviceDetailsTab } from './components/DeviceDetailsTabPanel';
-import { DeviceFileBatchCreateDialog } from './components/DeviceFileBatchCreateDialog';
-import { DeviceFilesSection } from './components/DeviceFilesSection';
-import { fileDisplayName, formatDeviceLifecycleLabel } from './helpers';
+import { formatDeviceLifecycleLabel } from './helpers';
 import { useDeviceDetailsPage } from './use-device-details-page';
-import { useDeviceFiles } from './use-device-files';
 
 function DeviceHeaderTitle({
   deviceName,
@@ -94,15 +79,6 @@ export function DeviceDetailsPage({
   authUserRoles?: string[];
 }) {
   const page = useDeviceDetailsPage({ deviceId, authUserRoles });
-  const files = useDeviceFiles({
-    deviceId,
-    canRead: page.permissions.canRead,
-    canEdit: page.permissions.canEdit,
-    parentArchived: page.device?.archived ?? false,
-  });
-  const isMobileLayout = useMediaQuery((theme) => theme.breakpoints.down('sm'));
-  const [leftPanelOpen, setLeftPanelOpen] = useState(true);
-  const [activeTab, setActiveTab] = useState<DeviceDetailsTab>('description');
   const [actionsMenuAnchorEl, setActionsMenuAnchorEl] = useState<HTMLElement | null>(null);
 
   if (!page.permissions.canRead) {
@@ -124,8 +100,6 @@ export function DeviceDetailsPage({
   const showEditAction = page.permissions.canEdit && device !== null && !device.archived;
   const showArchiveAction = page.permissions.canEdit && device !== null && !device.archived;
   const showRestoreAction = page.permissions.canEdit && device !== null && device.archived;
-  const leftPanelVisible = isMobileLayout || leftPanelOpen;
-  const sidePanelLabel = leftPanelVisible ? 'Згорнути ліву панель' : 'Розгорнути ліву панель';
   const actionsMenuOpen = actionsMenuAnchorEl !== null;
   const actionsDisabled = page.mutating || page.editSubmitting;
 
@@ -148,29 +122,6 @@ export function DeviceDetailsPage({
     void page.restoreCurrentDevice();
   }
 
-  const filesPanel = device ? (
-    <DeviceFilesSection
-      files={files.files}
-      deletedFilter={files.deletedFilter}
-      total={files.total}
-      hasMore={files.hasMore}
-      loading={files.loading}
-      refreshing={files.refreshing}
-      loadingMore={files.loadingMore}
-      status={files.status}
-      mutatingFileId={files.mutatingFileId}
-      canEdit={page.permissions.canEdit}
-      parentArchived={device.archived}
-      hasFilters={files.hasFilters}
-      onDeletedFilterChange={files.setDeletedFilter}
-      onCreate={files.openCreateDialog}
-      onReload={files.reload}
-      onLoadMore={files.loadMore}
-      onDelete={files.deleteFile}
-      onRestore={files.restoreFile}
-    />
-  ) : null;
-
   return (
     <Box
       sx={{
@@ -189,17 +140,6 @@ export function DeviceDetailsPage({
             archived={device?.archived ?? false}
           />
         }
-        titleLeadingActions={
-          !isMobileLayout ? (
-            <SidePanelToggleButton
-              side="left"
-              active={leftPanelVisible}
-              label={sidePanelLabel}
-              onClick={() => setLeftPanelOpen((current) => !current)}
-            />
-          ) : null
-        }
-        titleLeadingGap={2}
         actions={
           <Stack direction="row" spacing={1} alignItems="center">
             <Tooltip title="Дії">
@@ -257,8 +197,7 @@ export function DeviceDetailsPage({
       {page.status ? <PowerAlert severity={page.status.kind}>{page.status.text}</PowerAlert> : null}
       {device?.archived ? (
         <PowerAlert severity="warning" autoHideDuration={null}>
-          Пристрій архівовано. Редактори можуть відновити пристрій; життєвий цикл файлів заблоковано
-          до відновлення.
+          Пристрій архівовано. Редактори можуть відновити пристрій.
         </PowerAlert>
       ) : null}
 
@@ -272,50 +211,12 @@ export function DeviceDetailsPage({
         }}
       >
         {page.loading && device === null ? (
-          <Box
-            sx={{
-              flex: 1,
-              minHeight: 0,
-              display: 'grid',
-              gap: 2,
-              gridTemplateColumns: {
-                xs: '1fr',
-                lg: leftPanelVisible ? 'minmax(360px, 420px) minmax(0,1fr)' : 'minmax(0,1fr)',
-              },
-              overflow: 'hidden',
-            }}
-          >
-            {leftPanelVisible ? (
-              <Box sx={{ minHeight: 0, overflow: 'auto' }}>
-                <DeviceDetailsLeftPanel device={null} loading={page.loading} />
-              </Box>
-            ) : null}
-            <PageLoadingState minHeight="100%" />
+          <Box sx={{ flex: 1, minHeight: 0, overflow: 'hidden' }}>
+            <DeviceDetailsLeftPanel device={null} loading={page.loading} />
           </Box>
         ) : device ? (
-          <Box
-            sx={{
-              flex: 1,
-              minHeight: 0,
-              display: 'grid',
-              gap: 2,
-              gridTemplateColumns: {
-                xs: '1fr',
-                lg: leftPanelVisible ? 'minmax(360px, 420px) minmax(0,1fr)' : 'minmax(0,1fr)',
-              },
-              overflow: 'hidden',
-            }}
-          >
-            {leftPanelVisible ? (
-              <Box sx={{ minHeight: 0, overflow: 'auto' }}>
-                <DeviceDetailsLeftPanel device={device} loading={page.loading} />
-              </Box>
-            ) : null}
-            <DeviceDetailsTabPanel
-              activeTab={activeTab}
-              onActiveTabChange={setActiveTab}
-              filesPanel={filesPanel}
-            />
+          <Box sx={{ flex: 1, minHeight: 0, overflow: 'hidden' }}>
+            <DeviceDetailsLeftPanel device={device} loading={page.loading} />
           </Box>
         ) : null}
 
@@ -339,11 +240,7 @@ export function DeviceDetailsPage({
         hasChanges={page.editHasChanges}
         onClose={page.closeEditDrawer}
         onChange={page.setEditForm}
-        onSave={(form) => {
-          void page.saveEditDevice(form).then((saved) => {
-            if (saved) void files.reload();
-          });
-        }}
+        onSave={(form) => void page.saveEditDevice(form)}
       />
 
       <ConfirmDangerDialog
@@ -355,30 +252,6 @@ export function DeviceDetailsPage({
         confirmLabel="Архівувати"
         submitting={page.mutating}
         disabled={device === null}
-      />
-
-      <DeviceFileBatchCreateDialog
-        open={files.createDialogOpen}
-        rows={files.createRows}
-        error={files.createError}
-        serverFieldErrors={files.createServerFieldErrors}
-        submitting={files.creatingFiles}
-        onRowsChange={files.setCreateRows}
-        onClose={files.closeCreateDialog}
-        onSubmit={(rows) => void files.submitCreateFiles(rows)}
-      />
-
-      <ConfirmDangerDialog
-        open={files.deleteDialogFile !== null}
-        onClose={files.closeDeleteDialog}
-        onConfirm={() => void files.confirmDeleteFile()}
-        title="Видалити файл"
-        description={`Ви дійсно хочете видалити файл «${
-          files.deleteDialogFile ? fileDisplayName(files.deleteDialogFile) : ''
-        }»?`}
-        confirmLabel="Видалити файл"
-        submitting={files.mutatingFileId !== null}
-        disabled={files.deleteDialogFile === null}
       />
     </Box>
   );

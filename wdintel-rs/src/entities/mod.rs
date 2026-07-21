@@ -26,7 +26,6 @@ pub mod delta_kv;
 pub mod delta_login;
 pub mod device;
 pub mod device_aor;
-pub mod device_file;
 pub mod device_name;
 pub mod echo_account;
 pub mod echo_api_command;

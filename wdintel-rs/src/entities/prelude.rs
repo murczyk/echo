@@ -24,7 +24,6 @@ pub use super::delta_kv::Entity as DeltaKv;
 pub use super::delta_login::Entity as DeltaLogin;
 pub use super::device::Entity as Device;
 pub use super::device_aor::Entity as DeviceAor;
-pub use super::device_file::Entity as DeviceFile;
 pub use super::device_name::Entity as DeviceName;
 pub use super::echo_account::Entity as EchoAccount;
 pub use super::echo_api_command::Entity as EchoApiCommand;

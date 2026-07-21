@@ -1,26 +1,27 @@
 #![allow(dead_code)]
 
+use crate::devices::custom_fields::custom_fields_from_json;
 use crate::devices::types::{
-    DeviceArchivedFilter, DeviceDetailReq, DeviceDetails,
-    DeviceFileDeletedFilter, DeviceFileEntry, DeviceListItem, DeviceListSortBy,
-    DeviceStatusCountsRsp, DeviceUnitStatRow, DeviceUnitStatsRsp,
-    ListDeviceFilesReq, ListDeviceFilesRsp, ListDevicesReq, ListDevicesRsp,
+    DeviceArchivedFilter, DeviceDetailReq, DeviceDetails, DeviceFileEntry,
+    DeviceListItem, DeviceListSortBy, DeviceStatusCountsRsp, DeviceUnitStatRow,
+    DeviceUnitStatsRsp, ListDeviceFilesReq, ListDeviceFilesRsp, ListDevicesReq,
+    ListDevicesRsp,
 };
 use crate::devices::validation::{
-    normalize_device_list_pagination, normalize_file_list_pagination,
-    parse_device_id,
+    normalize_device_list_pagination, parse_device_id,
 };
 use crate::entities::{
-    area_of_responsibility, device, device_aor, device_file, sigint_unit,
+    area_of_responsibility, device, device_aor, sigint_unit,
 };
+use crate::file_registry::entities::file_entry;
 use crate::h;
 use crate::types::{AppError, BTreeMap, BTreeSet, ShortContext, Uuid};
 use chrono::NaiveDateTime;
 use sea_orm::sea_query::{Alias, Expr, Order};
 use sea_orm::{
-    ColumnTrait, ConnectionTrait, EntityTrait, FromQueryResult, IntoSimpleExpr,
-    JoinType, PaginatorTrait, QueryFilter, QueryOrder, QuerySelect, QueryTrait,
-    RelationTrait, Select,
+    ColumnTrait, ConnectionTrait, DatabaseConnection, EntityTrait,
+    FromQueryResult, IntoSimpleExpr, JoinType, PaginatorTrait, QueryFilter,
+    QueryOrder, QuerySelect, QueryTrait, RelationTrait, Select,
 };
 
 #[derive(Clone)]
@@ -33,11 +34,13 @@ fn render_device_list_item(
     device: device::Model,
     device_aors: &BTreeMap<Uuid, Vec<DeviceAorLabel>>,
     unit_names: &BTreeMap<i64, String>,
-) -> DeviceListItem {
+) -> Result<DeviceListItem, AppError> {
+    let custom_fields = custom_fields_from_json(&device.custom_fields)?;
     let aors = device_aors.get(&device.id).cloned().unwrap_or_default();
-    DeviceListItem {
+    Ok(DeviceListItem {
         id: device.id.to_string(),
-        name: device.name,
+        source_label: device.source_label,
+        name: device.name.unwrap_or_default(),
         created_by: device.created_by,
         aor_ids: aors.iter().map(|aor| aor.id).collect(),
         aor_names: aors
@@ -49,13 +52,12 @@ fn render_device_list_item(
             .and_then(|unit_id| unit_names.get(&unit_id).cloned()),
         unit_id: device.unit_id,
         external_url: device.external_url,
-        hostname: device.hostname,
-        ssh_port: device.ssh_port,
+        custom_fields,
         archived: device.archived,
         created_at_ms: datetime_ms(device.created_at),
         updated_at_ms: datetime_ms(device.updated_at),
         archived_at_ms: device.archived_at.map(datetime_ms),
-    }
+    })
 }
 
 fn render_device_details(
@@ -63,11 +65,13 @@ fn render_device_details(
     device_aors: &BTreeMap<Uuid, Vec<DeviceAorLabel>>,
     unit_names: &BTreeMap<i64, String>,
 ) -> Result<DeviceDetails, AppError> {
+    let custom_fields = custom_fields_from_json(&device.custom_fields)?;
     let aors = device_aors.get(&device.id).cloned().unwrap_or_default();
     let tags = serde_json::from_value(device.tags).c(h!())?;
     Ok(DeviceDetails {
         id: device.id.to_string(),
-        name: device.name,
+        source_label: device.source_label,
+        name: device.name.unwrap_or_default(),
         created_by: device.created_by,
         aor_ids: aors.iter().map(|aor| aor.id).collect(),
         aor_names: aors
@@ -80,8 +84,7 @@ fn render_device_details(
         unit_id: device.unit_id,
         tags,
         external_url: device.external_url,
-        hostname: device.hostname,
-        ssh_port: device.ssh_port,
+        custom_fields,
         archived: device.archived,
         created_at_ms: datetime_ms(device.created_at),
         updated_at_ms: datetime_ms(device.updated_at),
@@ -89,18 +92,24 @@ fn render_device_details(
     })
 }
 
-pub fn render_device_file_entry(file: device_file::Model) -> DeviceFileEntry {
+fn render_device_file_entry(file: file_entry::Model) -> DeviceFileEntry {
     DeviceFileEntry {
         file_id: file.id.to_string(),
         device_id: file.device_id.to_string(),
-        original_name: file.original_name,
-        original_absolute_path: file.original_absolute_path,
-        original_created_at_ms: file.original_created_at.map(datetime_ms),
-        original_modified_at_ms: file.original_modified_at.map(datetime_ms),
-        deleted: file.deleted,
+        parent_id: file.parent_id.map(|parent_id| parent_id.to_string()),
+        name: file.name,
+        path_syntax: file.path_syntax,
+        absolute_path: file.absolute_path,
+        mime_type: file.mime_type,
+        extension: file.extension,
+        file_metadata_created_at_ms: file
+            .file_metadata_created_at
+            .map(datetime_ms),
+        file_metadata_modified_at_ms: file
+            .file_metadata_modified_at
+            .map(datetime_ms),
         created_at_ms: datetime_ms(file.created_at),
         updated_at_ms: datetime_ms(file.updated_at),
-        deleted_at_ms: file.deleted_at.map(datetime_ms),
     }
 }
 
@@ -138,7 +147,7 @@ where
         .map(|device| {
             render_device_list_item(device, &device_aors, &unit_names)
         })
-        .collect();
+        .collect::<Result<Vec<_>, _>>()?;
 
     Ok(ListDevicesRsp {
         list,
@@ -272,39 +281,54 @@ where
 }
 
 pub async fn list_device_files<C>(
-    db: &C,
+    main_db: &C,
+    file_registry_db: &DatabaseConnection,
     req: &ListDeviceFilesReq,
 ) -> Result<ListDeviceFilesRsp, AppError>
 where
     C: ConnectionTrait,
 {
     let device_id = parse_device_id(&req.device_id)?;
-    ensure_device_exists(db, device_id).await?;
+    ensure_device_exists(main_db, device_id).await?;
 
-    let pagination = normalize_file_list_pagination(req.limit, req.offset)?;
-    let query = apply_file_deleted_filter(
-        device_file::Entity::find()
-            .filter(device_file::Column::DeviceId.eq(device_id)),
-        req.deleted_filter,
-        device_file::Column::Deleted,
-    );
-    let total = query.clone().count(db).await.c(h!())?;
+    let pagination = normalize_device_list_pagination(req.limit, req.offset)?;
+    let query = file_entry::Entity::find()
+        .filter(file_entry::Column::DeviceId.eq(device_id))
+        .filter(file_entry::Column::Kind.eq("file"));
+    let total = query.clone().count(file_registry_db).await.c(h!())?;
     let files = query
-        .order_by_desc(device_file::Column::UpdatedAt)
-        .order_by_desc(device_file::Column::Id)
+        .order_by_desc(file_entry::Column::UpdatedAt)
+        .order_by_desc(file_entry::Column::Id)
         .offset(pagination.offset)
         .limit(pagination.limit)
-        .all(db)
+        .all(file_registry_db)
         .await
         .c(h!())?;
     let next_offset = pagination.offset + files.len() as u64;
-    let list = files.into_iter().map(render_device_file_entry).collect();
 
     Ok(ListDeviceFilesRsp {
-        list,
+        list: files.into_iter().map(render_device_file_entry).collect(),
         total,
         has_more: next_offset < total,
     })
+}
+
+async fn ensure_device_exists<C>(
+    db: &C,
+    device_id: Uuid,
+) -> Result<(), AppError>
+where
+    C: ConnectionTrait,
+{
+    let exists = device::Entity::find_by_id(device_id)
+        .one(db)
+        .await
+        .c(h!())?
+        .is_some();
+    if !exists {
+        return Err(AppError::NotFound);
+    }
+    Ok(())
 }
 
 fn apply_device_filters(
@@ -376,28 +400,6 @@ where
     }
 }
 
-fn apply_file_deleted_filter<E, C>(
-    query: Select<E>,
-    deleted_filter: Option<DeviceFileDeletedFilter>,
-    deleted_column: C,
-) -> Select<E>
-where
-    E: EntityTrait,
-    C: ColumnTrait,
-{
-    match deleted_filter
-        .unwrap_or(DeviceFileDeletedFilter::DeviceFileActiveOnly)
-    {
-        DeviceFileDeletedFilter::DeviceFileActiveOnly => {
-            query.filter(deleted_column.eq(false))
-        }
-        DeviceFileDeletedFilter::DeviceFileDeletedOnly => {
-            query.filter(deleted_column.eq(true))
-        }
-        DeviceFileDeletedFilter::DeviceFileAll => query,
-    }
-}
-
 fn parse_uuid_ids(field: &str, ids: &[String]) -> Result<Vec<Uuid>, AppError> {
     ids.iter()
         .map(|id| {
@@ -459,24 +461,6 @@ fn apply_device_sorting(
     }
 
     query.order_by_asc(device::Column::Id)
-}
-
-async fn ensure_device_exists<C>(
-    db: &C,
-    device_id: Uuid,
-) -> Result<(), AppError>
-where
-    C: ConnectionTrait,
-{
-    let exists = device::Entity::find_by_id(device_id)
-        .one(db)
-        .await
-        .c(h!())?
-        .is_some();
-    if !exists {
-        return Err(AppError::NotFound);
-    }
-    Ok(())
 }
 
 async fn load_device_label_maps<C>(
@@ -581,17 +565,21 @@ mod tests {
             .unwrap();
         device::Model {
             id: Uuid::from_u128(0x018f0000000070008000000000000000),
-            name: "Device Alpha".to_string(),
+            name: Some("Device Alpha".to_string()),
             created_by: "operator".to_string(),
             unit_id: Some(7),
             tags: json!([{ "label": "Serial", "value": "123" }]),
             external_url: None,
-            hostname: Some("device.example".to_string()),
-            ssh_port: Some(22),
             archived: false,
             archived_at: None,
             created_at: now,
             updated_at: now,
+            source_label: "Source device".to_string(),
+            custom_fields: json!({
+                "inventory_id": "device.example",
+                "source_port": "22",
+                "transport": "ssh",
+            }),
         }
     }
 
@@ -634,7 +622,8 @@ mod tests {
             device.clone(),
             &BTreeMap::new(),
             &unit_names,
-        );
+        )
+        .unwrap();
         assert!(row.aor_ids.is_empty());
         assert!(row.aor_names.is_empty());
 
@@ -648,12 +637,20 @@ mod tests {
                 DeviceAorLabel { id: 20, name: None },
             ],
         )]);
-        let row = render_device_list_item(device, &device_aors, &unit_names);
+        let row =
+            render_device_list_item(device, &device_aors, &unit_names).unwrap();
 
         assert_eq!(row.aor_ids, vec![10, 20]);
         assert_eq!(row.aor_names, vec!["Alpha", ""]);
-        assert_eq!(row.hostname.as_deref(), Some("device.example"));
-        assert_eq!(row.ssh_port, Some(22));
+        assert_eq!(row.source_label, "Source device");
+        assert_eq!(
+            row.custom_fields.get("inventory_id"),
+            Some(&"device.example".to_string())
+        );
+        assert_eq!(
+            row.custom_fields.get("source_port"),
+            Some(&"22".to_string())
+        );
     }
 
     #[test]
@@ -678,7 +675,68 @@ mod tests {
 
         assert_eq!(details.aor_ids, vec![10, 20]);
         assert_eq!(details.aor_names, vec!["Alpha", "Bravo"]);
-        assert_eq!(details.hostname.as_deref(), Some("device.example"));
-        assert_eq!(details.ssh_port, Some(22));
+        assert_eq!(details.source_label, "Source device");
+        assert_eq!(
+            details.custom_fields.get("transport"),
+            Some(&"ssh".to_string())
+        );
+    }
+
+    #[test]
+    fn render_keeps_source_label_separate_when_name_is_missing() {
+        let mut device = fixture_device();
+        device.name = None;
+        device.source_label = "Source device".to_string();
+
+        let list_item = render_device_list_item(
+            device.clone(),
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+        )
+        .unwrap();
+        let details =
+            render_device_details(device, &BTreeMap::new(), &BTreeMap::new())
+                .unwrap();
+
+        assert_eq!(list_item.source_label, "Source device");
+        assert_eq!(details.source_label, "Source device");
+        assert!(list_item.name.is_empty());
+        assert!(details.name.is_empty());
+    }
+
+    #[test]
+    fn render_device_file_entry_uses_file_entry_fields() {
+        let now = NaiveDate::from_ymd_opt(2026, 7, 7)
+            .unwrap()
+            .and_hms_opt(10, 30, 0)
+            .unwrap();
+        let entry = file_entry::Model {
+            id: Uuid::from_u128(0x018f0000000070008000000000000001),
+            device_id: Uuid::from_u128(
+                0x018f0000000070008000000000000000,
+            ),
+            parent_id: Some(Uuid::from_u128(
+                0x018f0000000070008000000000000002,
+            )),
+            kind: "file".to_string(),
+            name: "report.pdf".to_string(),
+            name_key: b"report.pdf".to_vec(),
+            path_syntax: Some("posix".to_string()),
+            absolute_path: Some("/reports/report.pdf".to_string()),
+            hierarchy_path: "n018f0000000070008000000000000002.n018f0000000070008000000000000001".to_string(),
+            mime_type: Some("application/pdf".to_string()),
+            extension: Some("pdf".to_string()),
+            file_metadata_created_at: Some(now),
+            file_metadata_modified_at: Some(now),
+            created_at: now,
+            updated_at: now,
+        };
+
+        let row = render_device_file_entry(entry);
+
+        assert_eq!(row.name, "report.pdf");
+        assert_eq!(row.absolute_path.as_deref(), Some("/reports/report.pdf"));
+        assert_eq!(row.mime_type.as_deref(), Some("application/pdf"));
+        assert_eq!(row.file_metadata_modified_at_ms, Some(datetime_ms(now)));
     }
 }

@@ -1,20 +1,12 @@
 import type {
-  CreateDeviceFileItem,
-  CreateDeviceFilesReq,
-  CreateDeviceFilesRsp,
-  CreateDeviceReq,
-  DeleteDeviceFileReq,
   ArchiveDeviceReq,
-  DeviceTag,
+  CreateDeviceReq,
   DeviceDetailReq,
   DeviceDetails,
-  DeviceFileEntry,
+  DeviceTag,
   DeviceUnitStatRow,
-  ListDeviceFilesReq,
-  ListDeviceFilesRsp,
   ListDevicesReq,
   ListDevicesRsp,
-  RestoreDeviceFileReq,
   RestoreDeviceReq,
 } from '../../../../Bindings';
 import { transformCamelToSnake, transformSnakeToCamel } from '../../../snake-to-camel';
@@ -23,34 +15,34 @@ import type { RequestOptions } from './client';
 
 export type DeviceUpdatePatchInput = {
   deviceId: string;
+  sourceLabel?: string;
   name?: string;
   aorIds?: number[];
   unitId?: number | null;
   tags?: DeviceTag[];
   externalUrl?: string | null;
-  hostname?: string | null;
-  sshPort?: number | null;
-  files?: CreateDeviceFileItem[];
+  customFields?: Record<string, string | null>;
 };
 
 type DeviceUpdatePatchReq = {
   deviceId: string;
+  sourceLabel?: string;
   name?: string;
   aorIds?: number[];
   unitId?: number | null;
   tags?: DeviceTag[];
   externalUrl?: string | null;
-  hostname?: string | null;
-  sshPort?: number | null;
-  files?: CreateDeviceFileItem[];
+  customFields?: Record<string, string | null>;
 };
 
 export function toDeviceUpdatePatchReq(input: DeviceUpdatePatchInput): DeviceUpdatePatchReq {
   const req: DeviceUpdatePatchReq = { deviceId: input.deviceId };
 
-  const name = (input as { name?: string | null }).name;
-  const tags = (input as { tags?: DeviceTag[] | null }).tags;
+  const { sourceLabel, name, tags } = input;
 
+  if (sourceLabel !== undefined && sourceLabel !== null) {
+    req.sourceLabel = sourceLabel;
+  }
   if (name !== undefined && name !== null) {
     req.name = name;
   }
@@ -66,14 +58,8 @@ export function toDeviceUpdatePatchReq(input: DeviceUpdatePatchInput): DeviceUpd
   if (input.externalUrl !== undefined) {
     req.externalUrl = input.externalUrl;
   }
-  if (input.hostname !== undefined) {
-    req.hostname = input.hostname;
-  }
-  if (input.sshPort !== undefined) {
-    req.sshPort = input.sshPort;
-  }
-  if (Array.isArray(input.files) && input.files.length > 0) {
-    req.files = input.files;
+  if (input.customFields !== undefined) {
+    req.customFields = input.customFields;
   }
 
   return req;
@@ -159,52 +145,4 @@ export async function restoreDevice(
     options,
   );
   return transformSnakeToCamel<DeviceDetails>(data);
-}
-
-export async function listDeviceFiles(
-  req: ListDeviceFilesReq,
-  options?: RequestOptions,
-): Promise<ListDeviceFilesRsp> {
-  const data = await postJson<ListDeviceFilesRsp>(
-    '/api/device/files/list',
-    transformCamelToSnake(req),
-    options,
-  );
-  return transformSnakeToCamel<ListDeviceFilesRsp>(data);
-}
-
-export async function createDeviceFiles(
-  req: CreateDeviceFilesReq,
-  options?: RequestOptions,
-): Promise<CreateDeviceFilesRsp> {
-  const data = await postJson<CreateDeviceFilesRsp>(
-    '/api/device/files/create',
-    transformCamelToSnake(req),
-    options,
-  );
-  return transformSnakeToCamel<CreateDeviceFilesRsp>(data);
-}
-
-export async function deleteDeviceFile(
-  req: DeleteDeviceFileReq,
-  options?: RequestOptions,
-): Promise<DeviceFileEntry> {
-  const data = await postJson<DeviceFileEntry>(
-    '/api/device/files/delete',
-    transformCamelToSnake(req),
-    options,
-  );
-  return transformSnakeToCamel<DeviceFileEntry>(data);
-}
-
-export async function restoreDeviceFile(
-  req: RestoreDeviceFileReq,
-  options?: RequestOptions,
-): Promise<DeviceFileEntry> {
-  const data = await postJson<DeviceFileEntry>(
-    '/api/device/files/restore',
-    transformCamelToSnake(req),
-    options,
-  );
-  return transformSnakeToCamel<DeviceFileEntry>(data);
 }

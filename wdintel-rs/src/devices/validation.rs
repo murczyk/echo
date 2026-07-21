@@ -1,18 +1,15 @@
 #![allow(dead_code)]
 
 use crate::config::{
-    DEVICE_EXTERNAL_URL_MAX_CHARS, DEVICE_FILE_CREATE_BATCH_MAX_COUNT,
-    DEVICE_FILE_LIST_DEFAULT_LIMIT, DEVICE_FILE_LIST_MAX_LIMIT,
-    DEVICE_FILE_ORIGINAL_ABSOLUTE_PATH_MAX_CHARS,
-    DEVICE_FILE_ORIGINAL_NAME_MAX_CHARS, DEVICE_HOSTNAME_MAX_CHARS,
+    DEVICE_CUSTOM_FIELDS_MAX_COUNT, DEVICE_CUSTOM_FIELD_KEY_MAX_CHARS,
+    DEVICE_CUSTOM_FIELD_VALUE_MAX_CHARS, DEVICE_EXTERNAL_URL_MAX_CHARS,
     DEVICE_LIST_DEFAULT_LIMIT, DEVICE_LIST_MAX_LIMIT, DEVICE_NAME_MAX_CHARS,
-    DEVICE_SSH_PORT_MAX, DEVICE_SSH_PORT_MIN, DEVICE_TAGS_MAX_COUNT,
+    DEVICE_SOURCE_LABEL_MAX_CHARS, DEVICE_TAGS_MAX_COUNT,
     DEVICE_TAG_LABEL_MAX_CHARS, DEVICE_TAG_VALUE_MAX_CHARS,
 };
-use crate::devices::types::{CreateDeviceFileItem, DeviceTag};
+use crate::devices::types::DeviceTag;
 use crate::entities::{area_of_responsibility, sigint_unit};
 use crate::types::{AppError, BTreeMap, BTreeSet, Uuid};
-use chrono::{DateTime, Utc};
 use sea_orm::{ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter};
 use url::Url;
 
@@ -47,6 +44,90 @@ pub fn normalize_device_name(name: &str) -> Result<String, AppError> {
     }
     validate_max_chars("name", &name, DEVICE_NAME_MAX_CHARS)?;
     Ok(name)
+}
+
+pub fn normalize_source_label(source_label: &str) -> Result<String, AppError> {
+    let source_label = source_label.trim().to_string();
+    if source_label.is_empty() {
+        return Err(form_error(
+            "source_label",
+            "Джерельна мітка не може бути порожньою",
+        ));
+    }
+    validate_max_chars(
+        "source_label",
+        &source_label,
+        DEVICE_SOURCE_LABEL_MAX_CHARS,
+    )?;
+    Ok(source_label)
+}
+
+pub fn normalize_custom_fields(
+    custom_fields: BTreeMap<String, String>,
+) -> Result<BTreeMap<String, String>, AppError> {
+    if custom_fields.len() > DEVICE_CUSTOM_FIELDS_MAX_COUNT {
+        return Err(form_error("custom_fields", "Забагато кастомних полів"));
+    }
+
+    let mut normalized = BTreeMap::new();
+    for (key, value) in custom_fields {
+        let key = normalize_custom_field_key(&key)?;
+        validate_max_chars(
+            "custom_fields",
+            &value,
+            DEVICE_CUSTOM_FIELD_VALUE_MAX_CHARS,
+        )?;
+        if normalized.insert(key, value).is_some() {
+            return Err(form_error(
+                "custom_fields",
+                "Ключі кастомних полів мають бути унікальними",
+            ));
+        }
+    }
+    Ok(normalized)
+}
+
+pub fn normalize_custom_fields_patch(
+    custom_fields: BTreeMap<String, Option<String>>,
+) -> Result<BTreeMap<String, Option<String>>, AppError> {
+    if custom_fields.len() > DEVICE_CUSTOM_FIELDS_MAX_COUNT {
+        return Err(form_error("custom_fields", "Забагато кастомних полів"));
+    }
+
+    let mut normalized = BTreeMap::new();
+    for (key, value) in custom_fields {
+        let key = normalize_custom_field_key(&key)?;
+        if let Some(value) = &value {
+            validate_max_chars(
+                "custom_fields",
+                value,
+                DEVICE_CUSTOM_FIELD_VALUE_MAX_CHARS,
+            )?;
+        }
+        if normalized.insert(key, value).is_some() {
+            return Err(form_error(
+                "custom_fields",
+                "Ключі кастомних полів мають бути унікальними",
+            ));
+        }
+    }
+    Ok(normalized)
+}
+
+fn normalize_custom_field_key(key: &str) -> Result<String, AppError> {
+    let key = key.trim().to_string();
+    if key.is_empty() {
+        return Err(form_error(
+            "custom_fields",
+            "Ключ кастомного поля не може бути порожнім",
+        ));
+    }
+    validate_max_chars(
+        "custom_fields",
+        &key,
+        DEVICE_CUSTOM_FIELD_KEY_MAX_CHARS,
+    )?;
+    Ok(key)
 }
 
 pub fn normalize_tags(
@@ -126,34 +207,6 @@ pub fn normalize_external_url(
     Ok(Some(external_url))
 }
 
-pub fn normalize_hostname(
-    hostname: Option<String>,
-) -> Result<Option<String>, AppError> {
-    let Some(hostname) = hostname else {
-        return Ok(None);
-    };
-
-    let hostname = hostname.trim().to_string();
-    if hostname.is_empty() {
-        return Ok(None);
-    }
-    validate_max_chars("hostname", &hostname, DEVICE_HOSTNAME_MAX_CHARS)?;
-    Ok(Some(hostname))
-}
-
-pub fn validate_ssh_port(
-    ssh_port: Option<i32>,
-) -> Result<Option<i32>, AppError> {
-    let Some(ssh_port) = ssh_port else {
-        return Ok(None);
-    };
-
-    if !(DEVICE_SSH_PORT_MIN..=DEVICE_SSH_PORT_MAX).contains(&ssh_port) {
-        return Err(form_error("ssh_port", "SSH-порт має бути від 1 до 65535"));
-    }
-    Ok(Some(ssh_port))
-}
-
 pub async fn validate_aor_ids<C>(
     db: &C,
     aor_ids: Vec<i64>,
@@ -214,10 +267,6 @@ pub fn parse_device_id(device_id: &str) -> Result<Uuid, AppError> {
     parse_uuid_field("device_id", device_id)
 }
 
-pub fn parse_file_id(file_id: &str) -> Result<Uuid, AppError> {
-    parse_uuid_field("file_id", file_id)
-}
-
 fn parse_uuid_field(field: &str, value: &str) -> Result<Uuid, AppError> {
     let value = value.trim();
     if value.is_empty() {
@@ -239,19 +288,6 @@ pub fn normalize_device_list_pagination(
     )
 }
 
-pub fn normalize_file_list_pagination(
-    limit: Option<u64>,
-    offset: Option<u64>,
-) -> Result<NormalizedPagination, AppError> {
-    normalize_pagination(
-        limit,
-        offset,
-        DEVICE_FILE_LIST_DEFAULT_LIMIT,
-        DEVICE_FILE_LIST_MAX_LIMIT,
-        "limit",
-    )
-}
-
 fn normalize_pagination(
     limit: Option<u64>,
     offset: Option<u64>,
@@ -267,103 +303,6 @@ fn normalize_pagination(
         limit,
         offset: offset.unwrap_or(0),
     })
-}
-
-pub fn normalize_optional_file_create_items(
-    files: Option<Vec<CreateDeviceFileItem>>,
-) -> Result<Vec<CreateDeviceFileItem>, AppError> {
-    let Some(files) = files else {
-        return Ok(Vec::new());
-    };
-    normalize_file_create_items(files, false)
-}
-
-pub fn normalize_required_file_create_items(
-    files: Vec<CreateDeviceFileItem>,
-) -> Result<Vec<CreateDeviceFileItem>, AppError> {
-    normalize_file_create_items(files, true)
-}
-
-fn normalize_file_create_items(
-    files: Vec<CreateDeviceFileItem>,
-    reject_empty: bool,
-) -> Result<Vec<CreateDeviceFileItem>, AppError> {
-    if reject_empty && files.is_empty() {
-        return Err(form_error("files", "Список файлів не може бути порожнім"));
-    }
-    if files.len() > DEVICE_FILE_CREATE_BATCH_MAX_COUNT {
-        return Err(form_error("files", "Забагато файлів у запиті"));
-    }
-
-    files
-        .into_iter()
-        .enumerate()
-        .map(|(idx, file)| normalize_file_create_item(idx, file))
-        .collect()
-}
-
-fn normalize_file_create_item(
-    idx: usize,
-    file: CreateDeviceFileItem,
-) -> Result<CreateDeviceFileItem, AppError> {
-    let original_name = normalize_optional_text(
-        format!("files.{idx}.original_name"),
-        file.original_name,
-        DEVICE_FILE_ORIGINAL_NAME_MAX_CHARS,
-    )?;
-    let original_absolute_path = normalize_optional_text(
-        format!("files.{idx}.original_absolute_path"),
-        file.original_absolute_path,
-        DEVICE_FILE_ORIGINAL_ABSOLUTE_PATH_MAX_CHARS,
-    )?;
-    if original_name.is_none() && original_absolute_path.is_none() {
-        return Err(form_error(
-            &format!("files.{idx}"),
-            "Потрібна назва файлу або абсолютний шлях",
-        ));
-    }
-
-    Ok(CreateDeviceFileItem {
-        original_name,
-        original_absolute_path,
-        original_created_at_ms: validate_optional_timestamp_ms(
-            format!("files.{idx}.original_created_at_ms"),
-            file.original_created_at_ms,
-        )?,
-        original_modified_at_ms: validate_optional_timestamp_ms(
-            format!("files.{idx}.original_modified_at_ms"),
-            file.original_modified_at_ms,
-        )?,
-    })
-}
-
-fn normalize_optional_text(
-    field: String,
-    value: Option<String>,
-    max_chars: usize,
-) -> Result<Option<String>, AppError> {
-    let Some(value) = value else {
-        return Ok(None);
-    };
-    let value = value.trim().to_string();
-    if value.is_empty() {
-        return Ok(None);
-    }
-    validate_max_chars(&field, &value, max_chars)?;
-    Ok(Some(value))
-}
-
-fn validate_optional_timestamp_ms(
-    field: String,
-    timestamp_ms: Option<i64>,
-) -> Result<Option<i64>, AppError> {
-    let Some(timestamp_ms) = timestamp_ms else {
-        return Ok(None);
-    };
-    if DateTime::<Utc>::from_timestamp_millis(timestamp_ms).is_none() {
-        return Err(form_error(&field, "Некоректний час файлу"));
-    }
-    Ok(Some(timestamp_ms))
 }
 
 #[cfg(test)]
@@ -428,77 +367,48 @@ mod tests {
     }
 
     #[test]
-    fn hostname_is_trimmed_and_ssh_port_is_validated() {
+    fn source_label_and_custom_fields_are_normalized_without_special_keys() {
         assert_eq!(
-            normalize_hostname(Some("  device.example  ".to_string()))
-                .unwrap()
-                .as_deref(),
-            Some("device.example")
+            normalize_source_label("  source-device  ").unwrap(),
+            "source-device"
         );
-        assert_eq!(normalize_hostname(Some("   ".to_string())).unwrap(), None);
         assert_form_field(
-            normalize_hostname(Some("x".repeat(256))).unwrap_err(),
-            "hostname",
+            normalize_source_label("   ").unwrap_err(),
+            "source_label",
         );
 
-        assert_eq!(validate_ssh_port(Some(1)).unwrap(), Some(1));
-        assert_eq!(validate_ssh_port(Some(65_535)).unwrap(), Some(65_535));
-        assert_form_field(validate_ssh_port(Some(0)).unwrap_err(), "ssh_port");
-        assert_form_field(
-            validate_ssh_port(Some(65_536)).unwrap_err(),
-            "ssh_port",
-        );
-    }
-
-    #[test]
-    fn optional_file_batch_allows_empty_and_duplicate_metadata() {
-        assert!(normalize_optional_file_create_items(Some(Vec::new()))
-            .unwrap()
-            .is_empty());
-        let files = normalize_optional_file_create_items(Some(vec![
-            CreateDeviceFileItem {
-                original_name: Some(" file.txt ".to_string()),
-                original_absolute_path: None,
-                original_created_at_ms: Some(0),
-                original_modified_at_ms: None,
-            },
-            CreateDeviceFileItem {
-                original_name: Some(" file.txt ".to_string()),
-                original_absolute_path: None,
-                original_created_at_ms: Some(0),
-                original_modified_at_ms: None,
-            },
+        let fields = normalize_custom_fields(BTreeMap::from([
+            (" inventory_id ".to_string(), "node-1".to_string()),
+            ("source_port".to_string(), "not-a-port".to_string()),
         ]))
         .unwrap();
-        assert_eq!(files.len(), 2);
-        assert_eq!(files[0].original_name.as_deref(), Some("file.txt"));
-    }
+        assert_eq!(
+            fields,
+            BTreeMap::from([
+                ("inventory_id".to_string(), "node-1".to_string()),
+                ("source_port".to_string(), "not-a-port".to_string()),
+            ])
+        );
 
-    #[test]
-    fn required_file_batch_rejects_empty_missing_metadata_and_bad_timestamp() {
-        assert_form_field(
-            normalize_required_file_create_items(Vec::new()).unwrap_err(),
-            "files",
+        let patch = normalize_custom_fields_patch(BTreeMap::from([
+            (" inventory_id ".to_string(), Some("node-2".to_string())),
+            ("source_port".to_string(), None),
+        ]))
+        .unwrap();
+        assert_eq!(
+            patch,
+            BTreeMap::from([
+                ("inventory_id".to_string(), Some("node-2".to_string())),
+                ("source_port".to_string(), None),
+            ])
         );
         assert_form_field(
-            normalize_required_file_create_items(vec![CreateDeviceFileItem {
-                original_name: Some("   ".to_string()),
-                original_absolute_path: None,
-                original_created_at_ms: None,
-                original_modified_at_ms: None,
-            }])
+            normalize_custom_fields(BTreeMap::from([(
+                " ".to_string(),
+                "value".to_string(),
+            )]))
             .unwrap_err(),
-            "files.0",
-        );
-        assert_form_field(
-            normalize_required_file_create_items(vec![CreateDeviceFileItem {
-                original_name: Some("file.txt".to_string()),
-                original_absolute_path: None,
-                original_created_at_ms: Some(i64::MAX),
-                original_modified_at_ms: None,
-            }])
-            .unwrap_err(),
-            "files.0.original_created_at_ms",
+            "custom_fields",
         );
     }
 }

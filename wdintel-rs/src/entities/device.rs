@@ -10,8 +10,8 @@ use serde::{Deserialize, Serialize};
 pub struct Model {
     #[sea_orm(primary_key, auto_increment = false)]
     pub id: Uuid,
-    #[sea_orm(column_type = "Text")]
-    pub name: String,
+    #[sea_orm(column_type = "Text", nullable)]
+    pub name: Option<String>,
     #[sea_orm(column_type = "Text")]
     pub created_by: String,
     pub unit_id: Option<i64>,
@@ -23,17 +23,16 @@ pub struct Model {
     pub archived_at: Option<DateTime>,
     pub created_at: DateTime,
     pub updated_at: DateTime,
-    #[sea_orm(column_type = "Text", nullable)]
-    pub hostname: Option<String>,
-    pub ssh_port: Option<i32>,
+    #[sea_orm(column_type = "Text")]
+    pub source_label: String,
+    #[sea_orm(column_type = "JsonBinary")]
+    pub custom_fields: Json,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {
     #[sea_orm(has_many = "super::device_aor::Entity")]
     DeviceAor,
-    #[sea_orm(has_many = "super::device_file::Entity")]
-    DeviceFile,
     #[sea_orm(
         belongs_to = "super::login::Entity",
         from = "Column::CreatedBy",
@@ -55,12 +54,6 @@ pub enum Relation {
 impl Related<super::device_aor::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::DeviceAor.def()
-    }
-}
-
-impl Related<super::device_file::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::DeviceFile.def()
     }
 }
 

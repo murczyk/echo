@@ -1,11 +1,12 @@
-use super::entities::device_file;
+use super::entities::file_entry;
 use super::*;
-use chrono::{Duration, Utc};
+use chrono::{Duration, NaiveDateTime, Utc};
 use sea_orm::{
-    ActiveModelTrait, ConnectionTrait, DbBackend, EntityTrait, IntoActiveModel,
-    Set, Statement, TransactionTrait,
+    ActiveModelTrait, ConnectionTrait, DatabaseConnection, DatabaseTransaction,
+    DbBackend, DbErr, EntityTrait, IntoActiveModel, Set, Statement,
+    TransactionTrait,
 };
-use std::error::Error as StdError;
+use std::{collections::BTreeMap, error::Error as StdError, future::Future};
 
 #[tokio::test]
 #[serial_test::serial]
@@ -53,6 +54,15 @@ async fn file_registry_schema_and_entity_round_trip() {
     let file_registry_db = connect_runtime(&config, Mode::Test).await.unwrap();
     let connection = file_registry_db.connection();
 
+    assert_migration_versions(connection).await;
+    assert_public_extensions(connection).await;
+    assert_legacy_file_table_is_absent(connection).await;
+    assert_file_entry_schema(connection).await;
+    assert_file_entry_entity_round_trip(connection).await;
+    assert_file_entry_is_empty(connection).await;
+}
+
+async fn assert_migration_versions(connection: &DatabaseConnection) {
     let migration_versions = connection
         .query_all(Statement::from_string(
             DbBackend::Postgres,
@@ -63,21 +73,133 @@ async fn file_registry_schema_and_entity_round_trip() {
         .into_iter()
         .map(|row| row.try_get("", "version").unwrap())
         .collect::<Vec<String>>();
+
     assert_eq!(
         migration_versions,
-        ["m20260719_174625_create_file_registry_device_file"]
+        vec![
+            "m20260719_174625_create_file_registry_device_file".to_string(),
+            "m20260721_124238_create_file_entry".to_string(),
+            "m20260721_124518_drop_legacy_device_file".to_string(),
+        ]
     );
+}
 
-    let columns = connection
+async fn assert_public_extensions(connection: &DatabaseConnection) {
+    let extensions = connection
         .query_all(Statement::from_string(
             DbBackend::Postgres,
             r#"
-select column_name, is_nullable, column_default, data_type
-from information_schema.columns
-where table_schema = 'public' and table_name = 'device_file'
-order by ordinal_position
+select extname, extnamespace::regnamespace::text as schema_name
+from pg_extension
+where extname in ('ltree', 'pg_trgm')
+order by extname
 "#
             .to_string(),
+        ))
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|row| {
+            (
+                row.try_get("", "extname").unwrap(),
+                row.try_get("", "schema_name").unwrap(),
+            )
+        })
+        .collect::<Vec<(String, String)>>();
+
+    assert_eq!(
+        extensions,
+        vec![
+            ("ltree".to_string(), "public".to_string()),
+            ("pg_trgm".to_string(), "public".to_string()),
+        ]
+    );
+}
+
+async fn assert_legacy_file_table_is_absent(connection: &DatabaseConnection) {
+    let legacy_table: Option<String> = connection
+        .query_one(Statement::from_string(
+            DbBackend::Postgres,
+            "select to_regclass('public.device_file')::text as table_name"
+                .to_string(),
+        ))
+        .await
+        .unwrap()
+        .unwrap()
+        .try_get("", "table_name")
+        .unwrap();
+
+    assert_eq!(legacy_table, None);
+}
+
+async fn assert_file_entry_schema(connection: &DatabaseConnection) {
+    assert_exact_columns(
+        connection,
+        "file_entry",
+        &[
+            ("id", "NO", None, "uuid", "uuid"),
+            ("device_id", "NO", None, "uuid", "uuid"),
+            ("parent_id", "YES", None, "uuid", "uuid"),
+            ("kind", "NO", None, "text", "text"),
+            ("name", "NO", None, "text", "text"),
+            ("name_key", "NO", None, "bytea", "bytea"),
+            ("path_syntax", "YES", None, "text", "text"),
+            ("absolute_path", "YES", None, "text", "text"),
+            ("hierarchy_path", "NO", None, "USER-DEFINED", "ltree"),
+            ("mime_type", "YES", None, "text", "text"),
+            ("extension", "YES", None, "text", "text"),
+            (
+                "file_metadata_created_at",
+                "YES",
+                None,
+                "timestamp without time zone",
+                "timestamp",
+            ),
+            (
+                "file_metadata_modified_at",
+                "YES",
+                None,
+                "timestamp without time zone",
+                "timestamp",
+            ),
+            (
+                "created_at",
+                "NO",
+                None,
+                "timestamp without time zone",
+                "timestamp",
+            ),
+            (
+                "updated_at",
+                "NO",
+                None,
+                "timestamp without time zone",
+                "timestamp",
+            ),
+        ],
+    )
+    .await;
+    assert_file_entry_constraints(connection).await;
+    assert_file_entry_triggers(connection).await;
+    assert_file_entry_indexes(connection).await;
+}
+
+async fn assert_exact_columns(
+    connection: &DatabaseConnection,
+    table_name: &str,
+    expected: &[(&str, &str, Option<&str>, &str, &str)],
+) {
+    let columns = connection
+        .query_all(Statement::from_string(
+            DbBackend::Postgres,
+            format!(
+                r#"
+select column_name, is_nullable, column_default, data_type, udt_name
+from information_schema.columns
+where table_schema = 'public' and table_name = '{table_name}'
+order by ordinal_position
+"#
+            ),
         ))
         .await
         .unwrap()
@@ -88,182 +210,621 @@ order by ordinal_position
                 row.try_get("", "is_nullable").unwrap(),
                 row.try_get("", "column_default").unwrap(),
                 row.try_get("", "data_type").unwrap(),
+                row.try_get("", "udt_name").unwrap(),
             )
         })
-        .collect::<Vec<(String, String, Option<String>, String)>>();
-    let expected_columns = [
-        ("id", "NO", None, "uuid"),
-        ("device_id", "NO", None, "uuid"),
-        ("name", "NO", None, "text"),
-        ("path", "NO", None, "text"),
-        ("mime_type", "YES", None, "text"),
-        ("extension", "YES", None, "text"),
-        (
-            "file_metadata_created_at",
-            "YES",
-            None,
-            "timestamp without time zone",
-        ),
-        (
-            "file_metadata_modified_at",
-            "YES",
-            None,
-            "timestamp without time zone",
-        ),
-        ("created_at", "NO", None, "timestamp without time zone"),
-        ("updated_at", "NO", None, "timestamp without time zone"),
-    ]
-    .into_iter()
-    .map(|(name, nullable, default, data_type)| {
-        (
-            name.to_string(),
-            nullable.to_string(),
-            default.map(str::to_string),
-            data_type.to_string(),
-        )
-    })
-    .collect::<Vec<_>>();
-    assert_eq!(columns, expected_columns);
+        .collect::<Vec<(String, String, Option<String>, String, String)>>();
+    let expected = expected
+        .iter()
+        .map(|&(name, nullable, default, data_type, udt_name)| {
+            (
+                name.to_string(),
+                nullable.to_string(),
+                default.map(str::to_string),
+                data_type.to_string(),
+                udt_name.to_string(),
+            )
+        })
+        .collect::<Vec<_>>();
 
-    let check_names = connection
+    assert_eq!(columns, expected);
+}
+
+async fn constraint_names(
+    connection: &DatabaseConnection,
+    table_name: &str,
+    constraint_type: char,
+) -> Vec<String> {
+    connection
         .query_all(Statement::from_string(
             DbBackend::Postgres,
-            r#"
-select conname
-from pg_constraint
-where conrelid = 'public.device_file'::regclass and contype = 'c'
-order by conname
-"#
-            .to_string(),
+            format!(
+                "select conname from pg_constraint where conrelid = 'public.{table_name}'::regclass and contype = '{constraint_type}' order by conname"
+            ),
         ))
         .await
         .unwrap()
         .into_iter()
         .map(|row| row.try_get("", "conname").unwrap())
-        .collect::<Vec<String>>();
+        .collect()
+}
+
+async fn assert_file_entry_constraints(connection: &DatabaseConnection) {
     assert_eq!(
-        check_names,
-        [
-            "device_file_extension_not_empty_check",
-            "device_file_mime_type_not_empty_check",
-            "device_file_name_not_empty_check",
-            "device_file_path_not_empty_check",
+        constraint_names(connection, "file_entry", 'p').await,
+        vec!["file_entry_pkey".to_string()]
+    );
+    assert_eq!(
+        constraint_names(connection, "file_entry", 'u').await,
+        vec!["file_entry_device_id_id_key".to_string()]
+    );
+    assert_eq!(
+        constraint_names(connection, "file_entry", 'f').await,
+        vec!["file_entry_parent_fk".to_string()]
+    );
+    assert_eq!(
+        constraint_names(connection, "file_entry", 'c').await,
+        vec![
+            "file_entry_absolute_path_length_check".to_string(),
+            "file_entry_directory_metadata_null_check".to_string(),
+            "file_entry_extension_check".to_string(),
+            "file_entry_kind_check".to_string(),
+            "file_entry_mime_type_check".to_string(),
+            "file_entry_name_key_check".to_string(),
+            "file_entry_name_not_empty_check".to_string(),
+            "file_entry_path_syntax_check".to_string(),
+            "file_entry_row_shape_check".to_string(),
         ]
     );
 
-    let primary_key_columns = connection
+    let parent_definition: String = connection
+        .query_one(Statement::from_string(
+            DbBackend::Postgres,
+            "select pg_get_constraintdef(oid) as definition from pg_constraint where conname = 'file_entry_parent_fk'".to_string(),
+        ))
+        .await
+        .unwrap()
+        .unwrap()
+        .try_get("", "definition")
+        .unwrap();
+    assert_eq!(
+        parent_definition,
+        "FOREIGN KEY (device_id, parent_id) REFERENCES file_entry(device_id, id) ON DELETE RESTRICT"
+    );
+}
+
+async fn assert_file_entry_triggers(connection: &DatabaseConnection) {
+    let triggers = connection
         .query_all(Statement::from_string(
             DbBackend::Postgres,
             r#"
-select attribute.attname
-from pg_index index
-join pg_attribute attribute
-  on attribute.attrelid = index.indrelid
- and attribute.attnum = any(index.indkey)
-where index.indrelid = 'public.device_file'::regclass
-  and index.indisprimary
-order by array_position(index.indkey, attribute.attnum)
+select tgname, tgdeferrable, tginitdeferred, pg_get_triggerdef(oid) as definition
+from pg_trigger
+where tgrelid = 'public.file_entry'::regclass
+  and not tgisinternal
+order by tgname
 "#
             .to_string(),
         ))
         .await
         .unwrap()
         .into_iter()
-        .map(|row| row.try_get("", "attname").unwrap())
-        .collect::<Vec<String>>();
-    assert_eq!(primary_key_columns, ["id"]);
+        .map(|row| {
+            (
+                row.try_get("", "tgname").unwrap(),
+                row.try_get("", "tgdeferrable").unwrap(),
+                row.try_get("", "tginitdeferred").unwrap(),
+                row.try_get("", "definition").unwrap(),
+            )
+        })
+        .collect::<Vec<(String, bool, bool, String)>>();
 
-    let foreign_key_count: i64 = connection
+    assert_eq!(
+        triggers,
+        vec![
+            (
+                "file_entry_hierarchy_trg".to_string(),
+                true,
+                false,
+                "CREATE CONSTRAINT TRIGGER file_entry_hierarchy_trg AFTER INSERT OR UPDATE ON public.file_entry DEFERRABLE INITIALLY IMMEDIATE FOR EACH ROW EXECUTE FUNCTION file_entry_validate_hierarchy()".to_string(),
+            ),
+            (
+                "file_entry_immutable_update_trg".to_string(),
+                false,
+                false,
+                "CREATE TRIGGER file_entry_immutable_update_trg BEFORE UPDATE ON public.file_entry FOR EACH ROW EXECUTE FUNCTION file_entry_enforce_immutable_update()".to_string(),
+            ),
+        ]
+    );
+}
+
+async fn assert_file_entry_indexes(connection: &DatabaseConnection) {
+    let indexes = connection
+        .query_all(Statement::from_string(
+            DbBackend::Postgres,
+            "select indexname, indexdef from pg_indexes where schemaname = 'public' and tablename = 'file_entry' order by indexname".to_string(),
+        ))
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|row| {
+            (
+                row.try_get("", "indexname").unwrap(),
+                row.try_get("", "indexdef").unwrap(),
+            )
+        })
+        .collect::<BTreeMap<String, String>>();
+
+    assert_eq!(
+        indexes.keys().cloned().collect::<Vec<_>>(),
+        vec![
+            "file_entry_children_idx".to_string(),
+            "file_entry_device_id_id_key".to_string(),
+            "file_entry_directory_sibling_uidx".to_string(),
+            "file_entry_file_extension_idx".to_string(),
+            "file_entry_file_mime_idx".to_string(),
+            "file_entry_file_modified_idx".to_string(),
+            "file_entry_hierarchy_gist_idx".to_string(),
+            "file_entry_hierarchy_uidx".to_string(),
+            "file_entry_name_trgm_idx".to_string(),
+            "file_entry_pkey".to_string(),
+            "file_entry_roots_uidx".to_string(),
+            "file_entry_search_order_idx".to_string(),
+        ]
+    );
+
+    let explicit_indexes = indexes
+        .into_iter()
+        .filter(|(name, _)| {
+            name != "file_entry_device_id_id_key" && name != "file_entry_pkey"
+        })
+        .collect::<BTreeMap<_, _>>();
+    let expected = [
+        (
+            "file_entry_children_idx",
+            "CREATE INDEX file_entry_children_idx ON public.file_entry USING btree (device_id, parent_id, kind, name_key, id) WHERE (parent_id IS NOT NULL)",
+        ),
+        (
+            "file_entry_directory_sibling_uidx",
+            "CREATE UNIQUE INDEX file_entry_directory_sibling_uidx ON public.file_entry USING btree (device_id, parent_id, name_key) WHERE ((kind = 'directory'::text) AND (parent_id IS NOT NULL))",
+        ),
+        (
+            "file_entry_file_extension_idx",
+            "CREATE INDEX file_entry_file_extension_idx ON public.file_entry USING btree (device_id, extension, id) WHERE ((kind = 'file'::text) AND (extension IS NOT NULL))",
+        ),
+        (
+            "file_entry_file_mime_idx",
+            "CREATE INDEX file_entry_file_mime_idx ON public.file_entry USING btree (device_id, mime_type, id) WHERE ((kind = 'file'::text) AND (mime_type IS NOT NULL))",
+        ),
+        (
+            "file_entry_file_modified_idx",
+            "CREATE INDEX file_entry_file_modified_idx ON public.file_entry USING btree (device_id, file_metadata_modified_at, id) WHERE ((kind = 'file'::text) AND (file_metadata_modified_at IS NOT NULL))",
+        ),
+        (
+            "file_entry_hierarchy_gist_idx",
+            "CREATE INDEX file_entry_hierarchy_gist_idx ON public.file_entry USING gist (hierarchy_path)",
+        ),
+        (
+            "file_entry_hierarchy_uidx",
+            "CREATE UNIQUE INDEX file_entry_hierarchy_uidx ON public.file_entry USING btree (device_id, hierarchy_path)",
+        ),
+        (
+            "file_entry_name_trgm_idx",
+            "CREATE INDEX file_entry_name_trgm_idx ON public.file_entry USING gin (name gin_trgm_ops) WHERE (parent_id IS NOT NULL)",
+        ),
+        (
+            "file_entry_roots_uidx",
+            "CREATE UNIQUE INDEX file_entry_roots_uidx ON public.file_entry USING btree (device_id, path_syntax, name_key) WHERE (parent_id IS NULL)",
+        ),
+        (
+            "file_entry_search_order_idx",
+            "CREATE INDEX file_entry_search_order_idx ON public.file_entry USING btree (device_id, kind, name_key, id) WHERE (parent_id IS NOT NULL)",
+        ),
+    ]
+    .into_iter()
+    .map(|(name, definition)| (name.to_string(), definition.to_string()))
+    .collect::<BTreeMap<_, _>>();
+
+    assert_eq!(explicit_indexes, expected);
+}
+
+struct FileEntryTree {
+    device_id: Uuid,
+    root_id: Uuid,
+    directory_id: Uuid,
+    file_id: Uuid,
+    root_hierarchy_path: String,
+    directory_hierarchy_path: String,
+    file_hierarchy_path: String,
+    created_at: NaiveDateTime,
+}
+
+async fn assert_file_entry_entity_round_trip(connection: &DatabaseConnection) {
+    let transaction = connection.begin().await.unwrap();
+    let tree = insert_file_entry_tree(&transaction).await;
+
+    let fetched = file_entry::Entity::find_by_id(tree.file_id)
+        .one(&transaction)
+        .await
+        .unwrap()
+        .unwrap();
+    let hierarchy_path: String = fetched.hierarchy_path;
+    assert_eq!(hierarchy_path, tree.file_hierarchy_path);
+
+    let second_file_id = Uuid::new_v4();
+    let second_file = file_entry_row(
+        second_file_id,
+        tree.device_id,
+        tree.directory_id,
+        &tree.directory_hierarchy_path,
+        "app.log",
+        "/var/app.log",
+        "posix",
+        tree.created_at,
+    )
+    .insert(&transaction)
+    .await
+    .unwrap();
+    assert_eq!(second_file.id, second_file_id);
+    assert_eq!(second_file.name, "app.log");
+    assert_eq!(second_file.name_key, b"app.log");
+    assert_eq!(second_file.absolute_path.as_deref(), Some("/var/app.log"));
+
+    assert_file_entry_rejections(&transaction, &tree).await;
+
+    transaction.rollback().await.unwrap();
+}
+
+async fn insert_file_entry_tree(
+    transaction: &DatabaseTransaction,
+) -> FileEntryTree {
+    let device_id = Uuid::new_v4();
+    let root_id = Uuid::new_v4();
+    let directory_id = Uuid::new_v4();
+    let file_id = Uuid::new_v4();
+    let created_at = Utc::now().naive_utc();
+    let root_hierarchy_path = uuid_label(root_id);
+    let directory_hierarchy_path =
+        format!("{root_hierarchy_path}.{}", uuid_label(directory_id));
+    let file_hierarchy_path =
+        format!("{directory_hierarchy_path}.{}", uuid_label(file_id));
+
+    root_entry(root_id, device_id, created_at)
+        .insert(transaction)
+        .await
+        .unwrap();
+    directory_entry(
+        directory_id,
+        device_id,
+        root_id,
+        &root_hierarchy_path,
+        "var",
+        created_at,
+    )
+    .insert(transaction)
+    .await
+    .unwrap();
+    file_entry_row(
+        file_id,
+        device_id,
+        directory_id,
+        &directory_hierarchy_path,
+        "app.log",
+        "/var/app.log",
+        "posix",
+        created_at,
+    )
+    .insert(transaction)
+    .await
+    .unwrap();
+
+    FileEntryTree {
+        device_id,
+        root_id,
+        directory_id,
+        file_id,
+        root_hierarchy_path,
+        directory_hierarchy_path,
+        file_hierarchy_path,
+        created_at,
+    }
+}
+
+async fn assert_file_entry_rejections(
+    transaction: &DatabaseTransaction,
+    tree: &FileEntryTree,
+) {
+    assert_file_entry_operation_rejected(
+        transaction,
+        root_entry(Uuid::new_v4(), tree.device_id, tree.created_at)
+            .insert(transaction),
+    )
+    .await;
+
+    assert_file_entry_operation_rejected(
+        transaction,
+        directory_entry(
+            Uuid::new_v4(),
+            tree.device_id,
+            tree.root_id,
+            &tree.root_hierarchy_path,
+            "var",
+            tree.created_at,
+        )
+        .insert(transaction),
+    )
+    .await;
+
+    let orphan_id = Uuid::new_v4();
+    assert_file_entry_operation_rejected(
+        transaction,
+        base_file_entry(
+            orphan_id,
+            tree.device_id,
+            None,
+            "file",
+            "orphan.log",
+            Some("posix"),
+            Some("/orphan.log"),
+            uuid_label(orphan_id),
+            tree.created_at,
+        )
+        .insert(transaction),
+    )
+    .await;
+
+    assert_file_entry_operation_rejected(
+        transaction,
+        file_entry_row(
+            Uuid::new_v4(),
+            tree.device_id,
+            tree.file_id,
+            &tree.file_hierarchy_path,
+            "nested.log",
+            "/var/app.log/nested.log",
+            "posix",
+            tree.created_at,
+        )
+        .insert(transaction),
+    )
+    .await;
+
+    assert_file_entry_operation_rejected(
+        transaction,
+        directory_entry(
+            Uuid::new_v4(),
+            Uuid::new_v4(),
+            tree.root_id,
+            &tree.root_hierarchy_path,
+            "cross-device",
+            tree.created_at,
+        )
+        .insert(transaction),
+    )
+    .await;
+
+    let mut bad_name_key = directory_entry(
+        Uuid::new_v4(),
+        tree.device_id,
+        tree.root_id,
+        &tree.root_hierarchy_path,
+        "wrong-name-key",
+        tree.created_at,
+    );
+    bad_name_key.name_key = Set(b"mismatch".to_vec());
+    assert_file_entry_operation_rejected(
+        transaction,
+        bad_name_key.insert(transaction),
+    )
+    .await;
+
+    let wrong_hierarchy_id = Uuid::new_v4();
+    let mut wrong_hierarchy = directory_entry(
+        wrong_hierarchy_id,
+        tree.device_id,
+        tree.root_id,
+        &tree.root_hierarchy_path,
+        "wrong-hierarchy",
+        tree.created_at,
+    );
+    wrong_hierarchy.hierarchy_path = Set(uuid_label(wrong_hierarchy_id));
+    assert_file_entry_operation_rejected(
+        transaction,
+        wrong_hierarchy.insert(transaction),
+    )
+    .await;
+
+    let mut directory_metadata = directory_entry(
+        Uuid::new_v4(),
+        tree.device_id,
+        tree.root_id,
+        &tree.root_hierarchy_path,
+        "metadata-directory",
+        tree.created_at,
+    );
+    directory_metadata.mime_type =
+        Set(Some("application/octet-stream".to_string()));
+    assert_file_entry_operation_rejected(
+        transaction,
+        directory_metadata.insert(transaction),
+    )
+    .await;
+
+    let mut wrong_path_syntax = file_entry_row(
+        Uuid::new_v4(),
+        tree.device_id,
+        tree.root_id,
+        &tree.directory_hierarchy_path,
+        "wrong-path-syntax.log",
+        "/var/wrong-path-syntax.log",
+        "posix",
+        tree.created_at,
+    );
+    wrong_path_syntax.path_syntax = Set(Some("windows".to_string()));
+    assert_file_entry_operation_rejected(
+        transaction,
+        wrong_path_syntax.insert(transaction),
+    )
+    .await;
+
+    let root = file_entry::Entity::find_by_id(tree.root_id)
+        .one(transaction)
+        .await
+        .unwrap()
+        .unwrap();
+    let mut structural_directory_update = root.into_active_model();
+    structural_directory_update.name = Set("renamed-root".to_string());
+    assert_file_entry_operation_rejected(
+        transaction,
+        structural_directory_update.update(transaction),
+    )
+    .await;
+}
+
+async fn assert_file_entry_operation_rejected<T, Operation>(
+    transaction: &DatabaseTransaction,
+    operation: Operation,
+) where
+    Operation: Future<Output = Result<T, DbErr>>,
+{
+    transaction
+        .execute_unprepared("savepoint file_entry_rejection")
+        .await
+        .unwrap();
+    let error = match operation.await {
+        Err(error) => error,
+        Ok(_) => panic!("file_entry operation unexpectedly succeeded"),
+    };
+    assert!(
+        ["23503", "23505", "23514", "P0001"]
+            .iter()
+            .any(|code| has_postgres_error_code(&error, code)),
+        "expected constraint or trigger rejection, got {error:?}"
+    );
+    transaction
+        .execute_unprepared("rollback to savepoint file_entry_rejection")
+        .await
+        .unwrap();
+    transaction
+        .execute_unprepared("release savepoint file_entry_rejection")
+        .await
+        .unwrap();
+}
+
+async fn assert_file_entry_is_empty(connection: &DatabaseConnection) {
+    let count: i64 = connection
         .query_one(Statement::from_string(
             DbBackend::Postgres,
-            "select count(*) as count from pg_constraint where conrelid = 'public.device_file'::regclass and contype = 'f'".to_string(),
+            "select count(*) as count from public.file_entry".to_string(),
         ))
         .await
         .unwrap()
         .unwrap()
         .try_get("", "count")
         .unwrap();
-    assert_eq!(foreign_key_count, 0);
+    assert_eq!(count, 0);
+}
 
-    let index_definition: String = connection
-        .query_one(Statement::from_string(
-            DbBackend::Postgres,
-            "select indexdef from pg_indexes where schemaname = 'public' and tablename = 'device_file' and indexname = 'device_file_device_id_updated_at_id_idx'".to_string(),
-        ))
-        .await
-        .unwrap()
-        .unwrap()
-        .try_get("", "indexdef")
-        .unwrap();
-    assert!(
-        index_definition.contains("(device_id, updated_at DESC, id)"),
-        "{index_definition}"
+fn root_entry(
+    id: Uuid,
+    device_id: Uuid,
+    created_at: NaiveDateTime,
+) -> file_entry::ActiveModel {
+    base_file_entry(
+        id,
+        device_id,
+        None,
+        "directory",
+        "/",
+        Some("posix"),
+        None,
+        uuid_label(id),
+        created_at,
+    )
+}
+
+fn directory_entry(
+    id: Uuid,
+    device_id: Uuid,
+    parent_id: Uuid,
+    parent_hierarchy_path: &str,
+    name: &str,
+    created_at: NaiveDateTime,
+) -> file_entry::ActiveModel {
+    base_file_entry(
+        id,
+        device_id,
+        Some(parent_id),
+        "directory",
+        name,
+        None,
+        None,
+        format!("{parent_hierarchy_path}.{}", uuid_label(id)),
+        created_at,
+    )
+}
+
+fn file_entry_row(
+    id: Uuid,
+    device_id: Uuid,
+    parent_id: Uuid,
+    parent_hierarchy_path: &str,
+    name: &str,
+    absolute_path: &str,
+    path_syntax: &str,
+    created_at: NaiveDateTime,
+) -> file_entry::ActiveModel {
+    let mut entry = base_file_entry(
+        id,
+        device_id,
+        Some(parent_id),
+        "file",
+        name,
+        Some(path_syntax),
+        Some(absolute_path),
+        format!("{parent_hierarchy_path}.{}", uuid_label(id)),
+        created_at,
     );
+    entry.mime_type = Set(Some("text/plain".to_string()));
+    entry.extension = Set(Some("log".to_string()));
+    entry.file_metadata_created_at = Set(Some(created_at - Duration::hours(2)));
+    entry.file_metadata_modified_at =
+        Set(Some(created_at - Duration::hours(1)));
+    entry
+}
 
-    let transaction = connection.begin().await.unwrap();
-    let id = Uuid::new_v4();
-    let device_id = Uuid::new_v4();
-    let created_at = Utc::now().naive_utc();
-    let metadata_created_at = created_at - Duration::hours(2);
-    let metadata_modified_at = created_at - Duration::hours(1);
-    let saved = device_file::ActiveModel {
+fn base_file_entry(
+    id: Uuid,
+    device_id: Uuid,
+    parent_id: Option<Uuid>,
+    kind: &str,
+    name: &str,
+    path_syntax: Option<&str>,
+    absolute_path: Option<&str>,
+    hierarchy_path: String,
+    created_at: NaiveDateTime,
+) -> file_entry::ActiveModel {
+    file_entry::ActiveModel {
         id: Set(id),
         device_id: Set(device_id),
-        name: Set("fully-populated-file".to_string()),
-        path: Set("/opt/source/fully-populated-file.bin".to_string()),
-        mime_type: Set(Some("application/octet-stream".to_string())),
-        extension: Set(Some("bin".to_string())),
-        file_metadata_created_at: Set(Some(metadata_created_at)),
-        file_metadata_modified_at: Set(Some(metadata_modified_at)),
-        created_at: Set(created_at),
-        updated_at: Set(created_at),
-    }
-    .insert(&transaction)
-    .await
-    .unwrap();
-    assert_eq!(saved.id, id);
-    assert_eq!(saved.device_id, device_id);
-    assert_eq!(saved.mime_type.as_deref(), Some("application/octet-stream"));
-    assert_eq!(saved.extension.as_deref(), Some("bin"));
-    assert_eq!(saved.file_metadata_created_at, Some(metadata_created_at));
-    assert_eq!(saved.file_metadata_modified_at, Some(metadata_modified_at));
-
-    let fetched = device_file::Entity::find_by_id(id)
-        .one(&transaction)
-        .await
-        .unwrap()
-        .unwrap();
-    assert_eq!(fetched, saved);
-
-    let updated_at = created_at + Duration::seconds(1);
-    let mut active = fetched.into_active_model();
-    active.path = Set("/opt/source/updated-file.bin".to_string());
-    active.updated_at = Set(updated_at);
-    let updated = active.update(&transaction).await.unwrap();
-    assert_eq!(updated.path, "/opt/source/updated-file.bin");
-    assert_eq!(updated.updated_at, updated_at);
-
-    let error = device_file::ActiveModel {
-        id: Set(Uuid::new_v4()),
-        device_id: Set(Uuid::new_v4()),
-        name: Set("   ".to_string()),
-        path: Set("/opt/source/blank-name.bin".to_string()),
+        parent_id: Set(parent_id),
+        kind: Set(kind.to_string()),
+        name: Set(name.to_string()),
+        name_key: Set(name.as_bytes().to_vec()),
+        path_syntax: Set(path_syntax.map(str::to_string)),
+        absolute_path: Set(absolute_path.map(str::to_string)),
+        hierarchy_path: Set(hierarchy_path),
         mime_type: Set(None),
         extension: Set(None),
         file_metadata_created_at: Set(None),
         file_metadata_modified_at: Set(None),
         created_at: Set(created_at),
-        updated_at: Set(updated_at),
+        updated_at: Set(created_at),
     }
-    .insert(&transaction)
-    .await
-    .unwrap_err();
-    assert!(
-        has_postgres_error_code(&error, "23514"),
-        "expected SQLSTATE 23514, got {error:?}"
-    );
+}
 
-    transaction.rollback().await.unwrap();
+fn uuid_label(id: Uuid) -> String {
+    format!("n{}", id.to_string().replace('-', ""))
 }
 
 fn has_postgres_error_code(

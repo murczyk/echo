@@ -121,6 +121,7 @@ export function buildDeviceRowView(device: DeviceListItem): DeviceRowView {
 export function deviceDetailsToListItem(device: DeviceDetails): DeviceListItem {
   return {
     id: device.id,
+    sourceLabel: device.sourceLabel,
     name: device.name,
     createdBy: device.createdBy,
     aorIds: device.aorIds,
@@ -128,8 +129,7 @@ export function deviceDetailsToListItem(device: DeviceDetails): DeviceListItem {
     unitId: device.unitId,
     unitName: device.unitName,
     externalUrl: device.externalUrl,
-    hostname: device.hostname,
-    sshPort: device.sshPort,
+    customFields: device.customFields,
     archived: device.archived,
     createdAtMs: device.createdAtMs,
     updatedAtMs: device.updatedAtMs,

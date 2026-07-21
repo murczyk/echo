@@ -162,6 +162,11 @@ function DeviceNameValue({ device }: { device: DeviceDetails }) {
 function buildMainFields(device: DeviceDetails): FieldConfig[] {
   return [
     {
+      key: 'sourceLabel',
+      label: 'Джерельна мітка',
+      value: <DeviceTextValue>{device.sourceLabel}</DeviceTextValue>,
+    },
+    {
       key: 'name',
       label: 'Назва',
       value: <DeviceNameValue device={device} />,
@@ -193,27 +198,6 @@ function buildMainFields(device: DeviceDetails): FieldConfig[] {
       key: 'unit',
       label: 'Підрозділ',
       value: <DeviceTextValue>{formatUnitLabel(device.unitId, device.unitName)}</DeviceTextValue>,
-    },
-  ];
-}
-
-function buildDeviceFields(device: DeviceDetails): FieldConfig[] {
-  const hostname = device.hostname?.trim();
-
-  return [
-    {
-      key: 'hostname',
-      label: 'Хостнейм',
-      value: <DeviceTextValue muted={!hostname}>{hostname || '—'}</DeviceTextValue>,
-    },
-    {
-      key: 'sshPort',
-      label: 'SSH-порт',
-      value: (
-        <DeviceTextValue muted={device.sshPort === null}>
-          {device.sshPort?.toString() ?? '—'}
-        </DeviceTextValue>
-      ),
     },
   ];
 }
@@ -266,16 +250,39 @@ function DeviceTagsSection({ device }: { device: DeviceDetails }) {
   );
 }
 
+function DeviceCustomFieldsSection({ device }: { device: DeviceDetails }) {
+  const customFields = Object.entries(device.customFields).sort(([left], [right]) =>
+    left.localeCompare(right),
+  );
+
+  return (
+    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+      <SectionTitle>Кастомні поля</SectionTitle>
+      {customFields.length === 0 ? (
+        <DeviceTextValue muted>Кастомні поля відсутні.</DeviceTextValue>
+      ) : (
+        <FieldList
+          fields={customFields.map(([key, value]) => ({
+            key,
+            label: key,
+            value: <DeviceTextValue muted={value === ''}>{value || '—'}</DeviceTextValue>,
+          }))}
+        />
+      )}
+    </Box>
+  );
+}
+
 function DeviceLeftPanelContent({ device }: { device: DeviceDetails }) {
   return (
     <>
       <DeviceSection title="Основне" fields={buildMainFields(device)} />
       <Divider />
-      <DeviceSection title="Пристрій" fields={buildDeviceFields(device)} />
+      <DeviceTagsSection device={device} />
+      <Divider />
+      <DeviceCustomFieldsSection device={device} />
       <Divider />
       <DeviceSection title="Додатково" fields={buildAdditionalFields(device)} />
-      <Divider />
-      <DeviceTagsSection device={device} />
     </>
   );
 }

@@ -50,14 +50,14 @@ pub enum Relation {
         on_delete = "NoAction"
     )]
     DeltaLogin,
+    #[sea_orm(has_many = "super::device::Entity")]
+    Device,
     #[sea_orm(has_many = "super::device_name::Entity")]
     DeviceName,
     #[sea_orm(has_many = "super::echo_missing_message::Entity")]
     EchoMissingMessage,
     #[sea_orm(has_many = "super::enemy_units_geojson::Entity")]
     EnemyUnitsGeojson,
-    #[sea_orm(has_many = "super::device::Entity")]
-    Device,
     #[sea_orm(has_many = "super::goi_integration::Entity")]
     GoiIntegration,
     #[sea_orm(has_many = "super::goi_integration_access_login::Entity")]
@@ -172,12 +172,6 @@ impl Related<super::delta_login::Entity> for Entity {
     }
 }
 
-impl Related<super::device_name::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::DeviceName.def()
-    }
-}
-
 impl Related<super::echo_missing_message::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::EchoMissingMessage.def()
@@ -193,6 +187,12 @@ impl Related<super::enemy_units_geojson::Entity> for Entity {
 impl Related<super::device::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::Device.def()
+    }
+}
+
+impl Related<super::device_name::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::DeviceName.def()
     }
 }
 

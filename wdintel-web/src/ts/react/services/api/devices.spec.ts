@@ -4,22 +4,17 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
-  createDevice,
-  createDeviceFiles,
   archiveDevice,
-  deleteDeviceFile,
+  createDevice,
   getDeviceDetail,
   getDeviceUnitStats,
-  listDeviceFiles,
   listDevices,
   restoreDevice,
-  restoreDeviceFile,
   toDeviceUpdatePatchReq,
   updateDevice,
 } from './devices';
 
 const DEVICE_ID = '018f0000-0000-7000-8000-000000000000';
-const FILE_ID = '028f0000-0000-7000-8000-000000000000';
 
 function jsonResponse(body: unknown) {
   return new Response(JSON.stringify(body), {
@@ -46,6 +41,7 @@ function requestSignal(index = 0) {
 function mockDeviceDetailsResponse() {
   return {
     id: DEVICE_ID,
+    source_label: 'Source device',
     name: 'Device Alpha',
     created_by: 'operator',
     aor_ids: [4, 5],
@@ -54,8 +50,7 @@ function mockDeviceDetailsResponse() {
     unit_name: 'Unit',
     tags: [{ label: 'Serial', value: '123' }],
     external_url: 'https://example.test/device',
-    hostname: 'device.example',
-    ssh_port: 2222,
+    custom_fields: { inventory_id: 'node-1' },
     archived: false,
     created_at_ms: 10,
     updated_at_ms: 20,
@@ -68,6 +63,7 @@ function mockListDevicesResponse() {
     list: [
       {
         id: DEVICE_ID,
+        source_label: 'Source device',
         name: 'Device Alpha',
         created_by: 'operator',
         aor_ids: [4, 5],
@@ -75,8 +71,7 @@ function mockListDevicesResponse() {
         unit_id: 7,
         unit_name: 'Unit',
         external_url: null,
-        hostname: null,
-        ssh_port: null,
+        custom_fields: {},
         archived: false,
         created_at_ms: 10,
         updated_at_ms: 20,
@@ -101,31 +96,6 @@ function mockDeviceUnitStatsResponse() {
       },
     ],
   };
-}
-
-function mockListDeviceFilesResponse() {
-  return {
-    list: [
-      {
-        file_id: FILE_ID,
-        device_id: DEVICE_ID,
-        original_name: 'scan.pdf',
-        original_absolute_path: '/tmp/scan.pdf',
-        original_created_at_ms: 30,
-        original_modified_at_ms: 40,
-        deleted: false,
-        created_at_ms: 50,
-        updated_at_ms: 60,
-        deleted_at_ms: null,
-      },
-    ],
-    total: 1,
-    has_more: false,
-  };
-}
-
-function mockCreateDeviceFilesResponse() {
-  return { list: mockListDeviceFilesResponse().list };
 }
 
 beforeEach(() => {
@@ -167,7 +137,7 @@ describe('devices API service routes', () => {
       sort_by: ['updated_at_desc'],
     });
     expect(rsp.list[0].createdBy).toBe('operator');
-    expect(rsp.list[0].hostname).toBeNull();
+    expect(rsp.list[0].sourceLabel).toBe('Source device');
     expect(rsp.statusCounts).toEqual({ active: 3, archived: 1 });
     expect(rsp.hasMore).toBe(false);
   });
@@ -190,51 +160,48 @@ describe('devices API service routes', () => {
     expect(fetchMock()).toHaveBeenCalledWith('/api/device/detail', expect.any(Object));
     expect(requestBody()).toEqual({ device_id: DEVICE_ID, include_archived: true });
     expect(rsp.createdAtMs).toBe(10);
-    expect(rsp.sshPort).toBe(2222);
+    expect(rsp.customFields).toEqual({ inventoryId: 'node-1' });
   });
 
   it('createDevice uses /api/device/create', async () => {
     await createDevice({
+      sourceLabel: 'Source device',
       name: 'Device Alpha',
       aorIds: [4, 5],
       unitId: 7,
       tags: [{ label: 'Serial', value: '123' }],
       externalUrl: null,
-      hostname: 'device.example',
-      sshPort: 2222,
-      files: null,
+      customFields: { inventoryId: 'node-1' },
     });
 
     expect(fetchMock()).toHaveBeenCalledWith('/api/device/create', expect.any(Object));
     expect(requestBody()).toMatchObject({
+      source_label: 'Source device',
       name: 'Device Alpha',
       aor_ids: [4, 5],
       unit_id: 7,
       tags: [{ label: 'Serial', value: '123' }],
       external_url: null,
-      hostname: 'device.example',
-      ssh_port: 2222,
-      files: null,
+      custom_fields: { inventory_id: 'node-1' },
     });
   });
 
   it('updateDevice uses /api/device/update and serialized patch body', async () => {
     await updateDevice({
       deviceId: DEVICE_ID,
+      sourceLabel: 'Updated source',
       aorIds: [],
       unitId: 7,
-      hostname: null,
-      sshPort: 2222,
-      files: [],
+      customFields: { inventory_id: null, transport: 'ssh' },
     });
 
     expect(fetchMock()).toHaveBeenCalledWith('/api/device/update', expect.any(Object));
     expect(requestBody()).toEqual({
       device_id: DEVICE_ID,
+      source_label: 'Updated source',
       aor_ids: [],
       unit_id: 7,
-      hostname: null,
-      ssh_port: 2222,
+      custom_fields: { inventory_id: null, transport: 'ssh' },
     });
   });
 
@@ -251,77 +218,6 @@ describe('devices API service routes', () => {
     expect(fetchMock()).toHaveBeenCalledWith('/api/device/restore', expect.any(Object));
     expect(requestBody()).toEqual({ device_id: DEVICE_ID });
   });
-
-  it('listDeviceFiles uses /api/device/files/list and transforms response', async () => {
-    fetchMock().mockResolvedValueOnce(jsonResponse(mockListDeviceFilesResponse()));
-
-    const rsp = await listDeviceFiles({
-      deviceId: DEVICE_ID,
-      deletedFilter: 'all',
-      limit: 50,
-      offset: 10,
-    });
-
-    expect(fetchMock()).toHaveBeenCalledWith('/api/device/files/list', expect.any(Object));
-    expect(requestBody()).toEqual({
-      device_id: DEVICE_ID,
-      deleted_filter: 'all',
-      limit: 50,
-      offset: 10,
-    });
-    expect(rsp.list[0].fileId).toBe(FILE_ID);
-    expect(rsp.list[0].originalAbsolutePath).toBe('/tmp/scan.pdf');
-  });
-
-  it('createDeviceFiles uses /api/device/files/create', async () => {
-    fetchMock().mockResolvedValueOnce(jsonResponse(mockCreateDeviceFilesResponse()));
-
-    const rsp = await createDeviceFiles({
-      deviceId: DEVICE_ID,
-      files: [
-        {
-          originalName: 'scan.pdf',
-          originalAbsolutePath: '/tmp/scan.pdf',
-          originalCreatedAtMs: 30,
-          originalModifiedAtMs: 40,
-        },
-      ],
-    });
-
-    expect(fetchMock()).toHaveBeenCalledWith('/api/device/files/create', expect.any(Object));
-    expect(requestBody()).toEqual({
-      device_id: DEVICE_ID,
-      files: [
-        {
-          original_name: 'scan.pdf',
-          original_absolute_path: '/tmp/scan.pdf',
-          original_created_at_ms: 30,
-          original_modified_at_ms: 40,
-        },
-      ],
-    });
-    expect(rsp.list[0].fileId).toBe(FILE_ID);
-  });
-
-  it('deleteDeviceFile uses /api/device/files/delete and transforms file response', async () => {
-    fetchMock().mockResolvedValueOnce(jsonResponse(mockListDeviceFilesResponse().list[0]));
-
-    const rsp = await deleteDeviceFile({ deviceId: DEVICE_ID, fileId: FILE_ID });
-
-    expect(fetchMock()).toHaveBeenCalledWith('/api/device/files/delete', expect.any(Object));
-    expect(requestBody()).toEqual({ device_id: DEVICE_ID, file_id: FILE_ID });
-    expect(rsp.fileId).toBe(FILE_ID);
-  });
-
-  it('restoreDeviceFile uses /api/device/files/restore and transforms file response', async () => {
-    fetchMock().mockResolvedValueOnce(jsonResponse(mockListDeviceFilesResponse().list[0]));
-
-    const rsp = await restoreDeviceFile({ deviceId: DEVICE_ID, fileId: FILE_ID });
-
-    expect(fetchMock()).toHaveBeenCalledWith('/api/device/files/restore', expect.any(Object));
-    expect(requestBody()).toEqual({ device_id: DEVICE_ID, file_id: FILE_ID });
-    expect(rsp.fileId).toBe(FILE_ID);
-  });
 });
 
 describe('DeviceUpdatePatchInput serialization', () => {
@@ -329,66 +225,34 @@ describe('DeviceUpdatePatchInput serialization', () => {
     expect(
       toDeviceUpdatePatchReq({
         deviceId: DEVICE_ID,
+        sourceLabel: undefined,
         name: undefined,
         aorIds: [],
         unitId: null,
         tags: undefined,
         externalUrl: null,
-        hostname: null,
-        sshPort: 2222,
-        files: [],
+        customFields: { retired: null },
       }),
     ).toEqual({
       deviceId: DEVICE_ID,
       aorIds: [],
       unitId: null,
       externalUrl: null,
-      hostname: null,
-      sshPort: 2222,
+      customFields: { retired: null },
     });
   });
 
-  it('never serializes name null or tags null and clears tags with []', () => {
+  it('serializes empty tag and custom-field patches', () => {
     expect(
       toDeviceUpdatePatchReq({
         deviceId: DEVICE_ID,
-        name: null,
-        tags: null,
-      } as never),
-    ).toEqual({ deviceId: DEVICE_ID });
-
-    expect(toDeviceUpdatePatchReq({ deviceId: DEVICE_ID, tags: [] })).toEqual({
-      deviceId: DEVICE_ID,
-      tags: [],
-    });
-  });
-
-  it('includes files only when non-empty', () => {
-    expect(toDeviceUpdatePatchReq({ deviceId: DEVICE_ID, files: [] })).toEqual({
-      deviceId: DEVICE_ID,
-    });
-    expect(
-      toDeviceUpdatePatchReq({
-        deviceId: DEVICE_ID,
-        files: [
-          {
-            originalName: 'scan.pdf',
-            originalAbsolutePath: null,
-            originalCreatedAtMs: null,
-            originalModifiedAtMs: null,
-          },
-        ],
+        tags: [],
+        customFields: { inventoryId: null },
       }),
     ).toEqual({
       deviceId: DEVICE_ID,
-      files: [
-        {
-          originalName: 'scan.pdf',
-          originalAbsolutePath: null,
-          originalCreatedAtMs: null,
-          originalModifiedAtMs: null,
-        },
-      ],
+      tags: [],
+      customFields: { inventoryId: null },
     });
   });
 });

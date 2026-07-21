@@ -2,4 +2,4 @@
 
 pub mod prelude;
 
-pub mod device_file;
+pub mod file_entry;

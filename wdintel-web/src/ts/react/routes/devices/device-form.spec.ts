@@ -2,16 +2,14 @@ import { describe, expect, it } from 'vitest';
 
 import type { DeviceDetails } from '../../../../Bindings';
 import {
-  buildCreateDeviceFilesReq,
   buildCreateDeviceReq,
   buildUpdateDevicePatch,
   createDefaultDeviceUpsertForm,
+  createDeviceCustomFieldDraft,
   createDeviceTagDraft,
-  createDeviceFileDraft,
   deviceDetailsToUpsertForm,
   hasDeviceUpdatePatchChanges,
   parseDeviceServerFieldErrors,
-  validateDeviceFileRows,
   validateDeviceUpsertForm,
 } from './device-form';
 
@@ -20,6 +18,7 @@ const DEVICE_ID = '018f0000-0000-7000-8000-000000000000';
 function buildDevice(overrides: Partial<DeviceDetails> = {}): DeviceDetails {
   return {
     id: DEVICE_ID,
+    sourceLabel: 'Source device',
     name: 'Device Alpha',
     createdBy: 'operator',
     aorIds: [4],
@@ -28,8 +27,7 @@ function buildDevice(overrides: Partial<DeviceDetails> = {}): DeviceDetails {
     unitName: 'Unit',
     tags: [{ label: 'Serial', value: '123' }],
     externalUrl: 'https://example.test/device',
-    hostname: null,
-    sshPort: null,
+    customFields: { inventory_id: 'node-1', retired: 'no' },
     archived: false,
     createdAtMs: 10,
     updatedAtMs: 20,
@@ -39,149 +37,115 @@ function buildDevice(overrides: Partial<DeviceDetails> = {}): DeviceDetails {
 }
 
 describe('device form helpers', () => {
-  it('builds create request with trimmed fields, null clears, and optional files', () => {
+  it('builds create request with trimmed source metadata', () => {
     const form = createDefaultDeviceUpsertForm();
+    form.sourceLabel = '  Source device  ';
     form.name = '  Device Beta  ';
     form.aorIds = [10, 20];
     form.unitId = null;
     form.externalUrl = '  https://example.test/beta  ';
-    form.hostname = '  device.example  ';
-    form.sshPort = '2222';
-    form.tags = [createDeviceTagDraft({ label: ' Serial ', value: ' 123 ' })];
-    form.files = [
-      createDeviceFileDraft({
-        originalName: ' scan.pdf ',
-        originalAbsolutePath: ' ',
-        originalCreatedAt: '2026-07-07T10:30',
-      }),
+    form.customFields = [
+      createDeviceCustomFieldDraft({ key: ' inventory_id ', value: ' node-2 ' }),
     ];
+    form.tags = [createDeviceTagDraft({ label: ' Serial ', value: ' 123 ' })];
 
-    const req = buildCreateDeviceReq(form);
-
-    expect(req).toMatchObject({
+    expect(buildCreateDeviceReq(form)).toEqual({
+      sourceLabel: 'Source device',
       name: 'Device Beta',
       aorIds: [10, 20],
       unitId: null,
       tags: [{ label: 'Serial', value: '123' }],
       externalUrl: 'https://example.test/beta',
-      hostname: 'device.example',
-      sshPort: 2222,
+      customFields: { inventory_id: ' node-2 ' },
     });
-    expect(req.files).toHaveLength(1);
-    expect(req.files?.[0].originalName).toBe('scan.pdf');
-    expect(req.files?.[0].originalAbsolutePath).toBeNull();
-    expect(req.files?.[0].originalCreatedAtMs).toEqual(expect.any(Number));
   });
 
-  it('submits create tags empty array and files null by default', () => {
+  it('submits empty tags and custom fields by default', () => {
     const form = createDefaultDeviceUpsertForm();
+    form.sourceLabel = 'Source device';
     form.name = 'Device Beta';
 
     expect(buildCreateDeviceReq(form)).toEqual({
+      sourceLabel: 'Source device',
       name: 'Device Beta',
       aorIds: [],
       unitId: null,
       tags: [],
       externalUrl: null,
-      hostname: null,
-      sshPort: null,
-      files: null,
+      customFields: {},
     });
   });
 
-  it('builds update patch with only dirty fields and explicit null clears', () => {
-    const device = buildDevice({ hostname: 'device.example', sshPort: 22 });
+  it('builds update patch with source-label and custom-field changes', () => {
+    const device = buildDevice();
     const form = deviceDetailsToUpsertForm(device);
+    form.sourceLabel = ' Updated source ';
     form.name = ' Device Alpha Prime ';
     form.aorIds = [];
     form.unitId = null;
     form.externalUrl = ' ';
-    form.hostname = ' ';
-    form.sshPort = '';
     form.tags = [];
-    form.files = [createDeviceFileDraft({ originalAbsolutePath: '/tmp/new.bin' })];
+    form.customFields = [
+      createDeviceCustomFieldDraft({ key: 'inventory_id', value: 'node-2' }),
+      createDeviceCustomFieldDraft({ key: 'transport', value: 'ssh' }),
+    ];
 
     expect(buildUpdateDevicePatch(device, form)).toEqual({
       deviceId: DEVICE_ID,
+      sourceLabel: 'Updated source',
       name: 'Device Alpha Prime',
       aorIds: [],
       unitId: null,
       tags: [],
       externalUrl: null,
-      hostname: null,
-      sshPort: null,
-      files: [
-        {
-          originalName: null,
-          originalAbsolutePath: '/tmp/new.bin',
-          originalCreatedAtMs: null,
-          originalModifiedAtMs: null,
-        },
-      ],
+      customFields: { inventory_id: 'node-2', retired: null, transport: 'ssh' },
     });
   });
 
   it('detects no-op update patches', () => {
-    const device = buildDevice({ hostname: 'device.example', sshPort: 22 });
+    const device = buildDevice();
     const patch = buildUpdateDevicePatch(device, deviceDetailsToUpsertForm(device));
 
     expect(patch).toEqual({ deviceId: DEVICE_ID });
     expect(hasDeviceUpdatePatchChanges(patch)).toBe(false);
   });
 
-  it('validates tags, duplicate labels, file rows, and URL', () => {
+  it('validates source metadata, custom fields, tags, and URL', () => {
     const form = createDefaultDeviceUpsertForm();
-    form.name = 'Device';
     form.externalUrl = '/relative';
-    form.hostname = 'x'.repeat(256);
-    form.sshPort = '65536';
     form.tags = [
-      createDeviceTagDraft({ id: 'a', label: 'Serial', value: '1' }),
-      createDeviceTagDraft({ id: 'b', label: ' Serial ', value: '2' }),
+      createDeviceTagDraft({ id: 'tag-a', label: 'Serial', value: '1' }),
+      createDeviceTagDraft({ id: 'tag-b', label: ' Serial ', value: '2' }),
     ];
-    form.files = [createDeviceFileDraft({ id: 'f', originalCreatedAt: 'not-a-date' })];
+    form.customFields = [
+      createDeviceCustomFieldDraft({ id: 'field-a', key: 'inventory_id', value: 'one' }),
+      createDeviceCustomFieldDraft({ id: 'field-b', key: ' inventory_id ', value: 'two' }),
+    ];
 
     const errors = validateDeviceUpsertForm(form);
 
+    expect(errors?.sourceLabel).toBe('Вкажіть джерельну мітку.');
+    expect(errors?.name).toBe('Вкажіть назву пристрою.');
     expect(errors?.externalUrl).toBe('Посилання має бути абсолютним URL');
-    expect(errors?.hostname).toBe('Значення занадто довге');
-    expect(errors?.sshPort).toBe('SSH-порт має бути від 1 до 65535');
-    expect(errors?.tagRows.b.label).toBe('Тег з такою назвою вже існує.');
-    expect(errors?.fileRows.f.row).toBe('Потрібна назва файлу або абсолютний шлях.');
-    expect(errors?.fileRows.f.originalCreatedAt).toBe('Некоректний час файлу.');
-  });
-
-  it('requires file rows for standalone batch create', () => {
-    expect(validateDeviceFileRows([], { rejectEmpty: true }).files).toBe(
-      'Додайте принаймні один файл.',
+    expect(errors?.customFieldRows['field-b'].key).toBe(
+      'Ключі кастомних полів мають бути унікальними.',
     );
-
-    expect(
-      buildCreateDeviceFilesReq(DEVICE_ID, [createDeviceFileDraft({ originalName: 'scan.pdf' })]),
-    ).toEqual({
-      deviceId: DEVICE_ID,
-      files: [
-        {
-          originalName: 'scan.pdf',
-          originalAbsolutePath: null,
-          originalCreatedAtMs: null,
-          originalModifiedAtMs: null,
-        },
-      ],
-    });
+    expect(errors?.tagRows['tag-b'].label).toBe('Тег з такою назвою вже існує.');
   });
 
   it('maps backend form errors to fields', () => {
-    expect(parseDeviceServerFieldErrors(new Error('[["name","invalid"]]'))).toEqual({
+    expect(parseDeviceServerFieldErrors(new Error('[[' + '"name","invalid"' + ']]'))).toEqual({
       name: 'invalid',
     });
     expect(
       parseDeviceServerFieldErrors(
-        new Error('[["hostname","invalid host"],["ssh_port","invalid port"]]'),
+        new Error(
+          '[[' + '"source_label","invalid source"' + '],["custom_fields","invalid fields"]]',
+        ),
       ),
     ).toEqual({
-      hostname: 'invalid host',
-      sshPort: 'invalid port',
+      sourceLabel: 'invalid source',
+      customFields: 'invalid fields',
     });
     expect(parseDeviceServerFieldErrors(new Error('Пристрій з такою назвою вже існує'))).toEqual(
       {},

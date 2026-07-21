@@ -14,7 +14,7 @@
 
 ### Статус реалізації v0.14
 
-Версія 0.14 реалізує лише підготовку схеми даних і сумісний persistence/rendering чинного device API: перетворення `main.device` та створення порожньої `wd_files.public.file_entry`. Логіка file registry, API cutover, frontend і перенесення legacy file rows не входять до цієї реалізації; чинні file routes продовжують працювати з `main.device_file`.
+Версія 0.14 перетворює `main.device`, створює порожню `wd_files.public.file_entry` і видаляє legacy `main.device_file` та `wd_files.public.device_file`. API cutover обмежений read-only `/api/device/files/list`, який читає file rows з `file_entry`; legacy create/delete/restore routes і їхні DTO видалені. Логіка ingest і hierarchy navigation не входить до цієї реалізації.
 
 
 ## Межі першого етапу
@@ -149,7 +149,7 @@
 ### Цільова таблиця `wd_files.public.file_entry`
 
 `file_entry` зберігає весь файловий forest без окремої таблиці namespace. `parent_id IS NULL` є єдиною ознакою кореневої директорії; окремих `namespace_id`, `root_id`, `source_key`, `display_root` або `kind = 'root'` немає. `parent_id` забезпечує direct-child операції та цілісність, а UUID-based `hierarchy_path ltree` є синхронною похідною проєкцією для subtree, ancestors і breadcrumbs. Людські назви ніколи не кодуються в `ltree`.
-У реалізації 0.14 migration створює `file_entry` порожньою: вона не копіює, не імпортує, не зіставляє та не перевіряє coverage рядків із `main.device_file` або `wd_files.public.device_file`.
+У реалізації 0.14 migration створює `file_entry` порожньою, а наступні migrations безпосередньо видаляють legacy `main.device_file` і `wd_files.public.device_file`.
 
 
 | Колонка | Тип і допустимість | Призначення та обмеження |
@@ -286,11 +286,11 @@ CREATE EXTENSION IF NOT EXISTS ltree WITH SCHEMA public;
 CREATE EXTENSION IF NOT EXISTS pg_trgm WITH SCHEMA public;
 ```
 
-Після цього вона створює порожню `public.file_entry` з описаними constraints, triggers та indexes. Вона не читає, не `ALTER`-ить і не `DROP`-ить `public.device_file`; extensions не видаляються під час rollback, бо migration не може довести ownership.
+Після цього наступна migration видаляє `public.device_file`. Rollback відновлює тільки legacy schema.
 
-Нова main migration в одній transaction перетворює саму таблицю `main.device`: додає `source_label` і object `custom_fields`, переносить у них значення чинних `name`/`hostname`/`ssh_port`, а потім прибирає legacy columns. Це не є file backfill і не змінює `updated_at`.
+Нова main migration в одній transaction перетворює саму таблицю `main.device`: додає `source_label` і object `custom_fields`, переносить у них значення чинних `name`/`hostname`/`ssh_port`, а потім прибирає legacy columns. Це не змінює `updated_at`.
 
-`main.device_file` і `wd_files.public.device_file` лишаються незалежними legacy tables: їхні rows не імпортуються, не зіставляються та не перевіряються на coverage. Немає manifest, resumable backfill, checkpoint, checksum, cutover або privilege-phase протоколу. Майбутній окремий Logic/API етап почне писати `file_entry` без автоматичного перенесення legacy rows; до нього чинні file routes залишаються на `main.device_file`.
+Наступна main migration видаляє `main.device_file`. `/api/device/files/list` читає лише `kind = 'file'` з `wd_files.public.file_entry`; legacy create/delete/restore routes не існують.
 
 
 ## Логіка (бекенд)
@@ -1181,9 +1181,9 @@ Missing/unknown field, wrong JSON type або неканонічний UUID є s
 - наявний `migration::run_migration_1` застосовує обидва migration chains без нового pool, migrator binary або readiness protocol;
 - main migration дає `source_label text not null`, nullable `name`, `custom_fields jsonb not null`, зберігає archive/FK/index invariants і не має `hostname`/`ssh_port`;
 - file migration встановлює `ltree` і `pg_trgm` у `public`, створює порожню `public.file_entry` з target constraints, triggers і десятьма indexes;
-- `main.device_file` та `wd_files.public.device_file` існують без змін, а жоден legacy row не копіюється чи не валідується на coverage;
+- наступна file migration видаляє `wd_files.public.device_file`, а main migration видаляє `main.device_file`;
 - generated `file_entry` entity має детермінований `select_as = "text"` / `save_as = "ltree"` mapping;
-- майбутній file Logic/API cutover є окремою роботою; чинні device file routes і wire DTO не змінюються.
+- `/api/device/files/list` читає file rows із `file_entry`; legacy create/delete/restore routes і їхні DTO видалені.
 
 
 ### Бекенд
@@ -1225,12 +1225,12 @@ Missing/unknown field, wrong JSON type або неканонічний UUID є s
 
 1. чинним `oneoff-create-file-registry-database` створити тільки database `wd_files`;
 2. за відсутності mixed-version application processes застосувати чинний startup migration path, який послідовно запускає main та file migration chains;
-3. перевірити, що `main.device` має target fields, `wd_files.public.file_entry` існує порожньою, обидві legacy `device_file` tables не змінилися, а `ltree` і `pg_trgm` встановлені в `public`;
+3. перевірити, що `main.device` має target fields, `wd_files.public.file_entry` існує порожньою, обидві legacy `device_file` tables відсутні, а `ltree` і `pg_trgm` встановлені в `public`;
 4. на development `wd` виконати `just gen-seaorm`, а для file database — `just gen-seaorm-files --mode=<mode>` і `just check-seaorm-files --mode=<mode>`;
 5. виконати schema, adapter і generated-entity behavior checks;
-6. розгорнути сумісний backend без перенесення file rows, dual write або API/frontend cutover. Майбутній Logic/API етап працюватиме з `file_entry` окремим deployment.
+6. розгорнути backend з оновленими migration chains і read-only file list route.
 
 
 ## Відкриті технічні рішення
 
-Невирішених технічних питань для schema-only підготовки немає: `main.device` має lossless guarded rollback, `file_entry` лишається порожньою, а чинні connection, provisioning і migration paths збережені. Логіка hierarchy, API та frontend cutover є окремим наступним етапом і не можуть непомітно змінювати функціональний дизайн версії 0.13.
+Невирішених технічних питань для schema cutover немає: `main.device` має lossless guarded rollback, `file_entry` лишається порожньою до майбутнього ingest, а legacy `device_file` schema і mutation routes видалені. Логіка hierarchy navigation та ingest є окремим наступним етапом.

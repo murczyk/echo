@@ -4155,22 +4155,6 @@ deviceArchivedFilterEncoder enum =
         DeviceAll ->
             Json.Encode.string "all"
 
-type DeviceFileDeletedFilter
-    = DeviceFileActiveOnly
-    | DeviceFileDeletedOnly
-    | DeviceFileAll
-
-
-deviceFileDeletedFilterEncoder : DeviceFileDeletedFilter -> Json.Encode.Value
-deviceFileDeletedFilterEncoder enum =
-    case enum of
-        DeviceFileActiveOnly ->
-            Json.Encode.string "active_only"
-        DeviceFileDeletedOnly ->
-            Json.Encode.string "deleted_only"
-        DeviceFileAll ->
-            Json.Encode.string "all"
-
 type DeviceListSortBy
     = DeviceNameAsc
     | DeviceNameDesc
@@ -4192,6 +4176,7 @@ deviceListSortByEncoder enum =
 
 type alias DeviceListItem =
     { id : String
+    , sourceLabel : String
     , name : String
     , createdBy : String
     , aorIds : List (Int)
@@ -4199,8 +4184,7 @@ type alias DeviceListItem =
     , unitId : Maybe (Int)
     , unitName : Maybe (String)
     , externalUrl : Maybe (String)
-    , hostname : Maybe (String)
-    , sshPort : Maybe (Int)
+    , customFields : Dict String (String)
     , archived : Bool
     , createdAtMs : Int
     , updatedAtMs : Int
@@ -4212,6 +4196,7 @@ deviceListItemEncoder : DeviceListItem -> Json.Encode.Value
 deviceListItemEncoder struct =
     Json.Encode.object
         [ ( "id", (Json.Encode.string) struct.id )
+        , ( "source_label", (Json.Encode.string) struct.sourceLabel )
         , ( "name", (Json.Encode.string) struct.name )
         , ( "created_by", (Json.Encode.string) struct.createdBy )
         , ( "aor_ids", (Json.Encode.list (Json.Encode.int)) struct.aorIds )
@@ -4219,8 +4204,7 @@ deviceListItemEncoder struct =
         , ( "unit_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.unitId )
         , ( "unit_name", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.unitName )
         , ( "external_url", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.externalUrl )
-        , ( "hostname", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.hostname )
-        , ( "ssh_port", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.sshPort )
+        , ( "custom_fields", (Json.Encode.dict identity (Json.Encode.string)) struct.customFields )
         , ( "archived", (Json.Encode.bool) struct.archived )
         , ( "created_at_ms", (Json.Encode.int) struct.createdAtMs )
         , ( "updated_at_ms", (Json.Encode.int) struct.updatedAtMs )
@@ -4230,6 +4214,7 @@ deviceListItemEncoder struct =
 
 type alias DeviceDetails =
     { id : String
+    , sourceLabel : String
     , name : String
     , createdBy : String
     , aorIds : List (Int)
@@ -4238,8 +4223,7 @@ type alias DeviceDetails =
     , unitName : Maybe (String)
     , tags : List (DeviceTag)
     , externalUrl : Maybe (String)
-    , hostname : Maybe (String)
-    , sshPort : Maybe (Int)
+    , customFields : Dict String (String)
     , archived : Bool
     , createdAtMs : Int
     , updatedAtMs : Int
@@ -4251,6 +4235,7 @@ deviceDetailsEncoder : DeviceDetails -> Json.Encode.Value
 deviceDetailsEncoder struct =
     Json.Encode.object
         [ ( "id", (Json.Encode.string) struct.id )
+        , ( "source_label", (Json.Encode.string) struct.sourceLabel )
         , ( "name", (Json.Encode.string) struct.name )
         , ( "created_by", (Json.Encode.string) struct.createdBy )
         , ( "aor_ids", (Json.Encode.list (Json.Encode.int)) struct.aorIds )
@@ -4259,42 +4244,11 @@ deviceDetailsEncoder struct =
         , ( "unit_name", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.unitName )
         , ( "tags", (Json.Encode.list (deviceTagEncoder)) struct.tags )
         , ( "external_url", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.externalUrl )
-        , ( "hostname", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.hostname )
-        , ( "ssh_port", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.sshPort )
+        , ( "custom_fields", (Json.Encode.dict identity (Json.Encode.string)) struct.customFields )
         , ( "archived", (Json.Encode.bool) struct.archived )
         , ( "created_at_ms", (Json.Encode.int) struct.createdAtMs )
         , ( "updated_at_ms", (Json.Encode.int) struct.updatedAtMs )
         , ( "archived_at_ms", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.archivedAtMs )
-        ]
-
-
-type alias DeviceFileEntry =
-    { fileId : String
-    , deviceId : String
-    , originalName : Maybe (String)
-    , originalAbsolutePath : Maybe (String)
-    , originalCreatedAtMs : Maybe (Int)
-    , originalModifiedAtMs : Maybe (Int)
-    , deleted : Bool
-    , createdAtMs : Int
-    , updatedAtMs : Int
-    , deletedAtMs : Maybe (Int)
-    }
-
-
-deviceFileEntryEncoder : DeviceFileEntry -> Json.Encode.Value
-deviceFileEntryEncoder struct =
-    Json.Encode.object
-        [ ( "file_id", (Json.Encode.string) struct.fileId )
-        , ( "device_id", (Json.Encode.string) struct.deviceId )
-        , ( "original_name", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.originalName )
-        , ( "original_absolute_path", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.originalAbsolutePath )
-        , ( "original_created_at_ms", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.originalCreatedAtMs )
-        , ( "original_modified_at_ms", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.originalModifiedAtMs )
-        , ( "deleted", (Json.Encode.bool) struct.deleted )
-        , ( "created_at_ms", (Json.Encode.int) struct.createdAtMs )
-        , ( "updated_at_ms", (Json.Encode.int) struct.updatedAtMs )
-        , ( "deleted_at_ms", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.deletedAtMs )
         ]
 
 
@@ -4399,41 +4353,38 @@ deviceDetailReqEncoder struct =
 
 
 type alias CreateDeviceReq =
-    { name : String
+    { sourceLabel : String
+    , name : String
     , aorIds : List (Int)
     , unitId : Maybe (Int)
     , tags : List (DeviceTag)
     , externalUrl : Maybe (String)
-    , hostname : Maybe (String)
-    , sshPort : Maybe (Int)
-    , files : Maybe (List (CreateDeviceFileItem))
+    , customFields : Dict String (String)
     }
 
 
 createDeviceReqEncoder : CreateDeviceReq -> Json.Encode.Value
 createDeviceReqEncoder struct =
     Json.Encode.object
-        [ ( "name", (Json.Encode.string) struct.name )
+        [ ( "source_label", (Json.Encode.string) struct.sourceLabel )
+        , ( "name", (Json.Encode.string) struct.name )
         , ( "aor_ids", (Json.Encode.list (Json.Encode.int)) struct.aorIds )
         , ( "unit_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.unitId )
         , ( "tags", (Json.Encode.list (deviceTagEncoder)) struct.tags )
         , ( "external_url", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.externalUrl )
-        , ( "hostname", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.hostname )
-        , ( "ssh_port", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.sshPort )
-        , ( "files", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (createDeviceFileItemEncoder))) struct.files )
+        , ( "custom_fields", (Json.Encode.dict identity (Json.Encode.string)) struct.customFields )
         ]
 
 
 type alias UpdateDeviceReq =
     { deviceId : String
+    , sourceLabel : Maybe (String)
     , name : Maybe (String)
     , aorIds : Maybe (List (Int))
     , unitId : Maybe (Int)
     , tags : Maybe (List (DeviceTag))
     , externalUrl : Maybe (String)
-    , hostname : Maybe (String)
-    , sshPort : Maybe (Int)
-    , files : Maybe (List (CreateDeviceFileItem))
+    , customFields : Maybe (Dict String (Maybe (String)))
     }
 
 
@@ -4441,14 +4392,13 @@ updateDeviceReqEncoder : UpdateDeviceReq -> Json.Encode.Value
 updateDeviceReqEncoder struct =
     Json.Encode.object
         [ ( "device_id", (Json.Encode.string) struct.deviceId )
+        , ( "source_label", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.sourceLabel )
         , ( "name", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.name )
         , ( "aor_ids", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.int))) struct.aorIds )
         , ( "unit_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.unitId )
         , ( "tags", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (deviceTagEncoder))) struct.tags )
         , ( "external_url", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.externalUrl )
-        , ( "hostname", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.hostname )
-        , ( "ssh_port", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.sshPort )
-        , ( "files", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (createDeviceFileItemEncoder))) struct.files )
+        , ( "custom_fields", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.dict identity (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)))) struct.customFields )
         ]
 
 
@@ -4476,9 +4426,42 @@ restoreDeviceReqEncoder struct =
         ]
 
 
+type alias DeviceFileEntry =
+    { fileId : String
+    , deviceId : String
+    , parentId : Maybe (String)
+    , name : String
+    , pathSyntax : Maybe (String)
+    , absolutePath : Maybe (String)
+    , mimeType : Maybe (String)
+    , extension : Maybe (String)
+    , fileMetadataCreatedAtMs : Maybe (Int)
+    , fileMetadataModifiedAtMs : Maybe (Int)
+    , createdAtMs : Int
+    , updatedAtMs : Int
+    }
+
+
+deviceFileEntryEncoder : DeviceFileEntry -> Json.Encode.Value
+deviceFileEntryEncoder struct =
+    Json.Encode.object
+        [ ( "file_id", (Json.Encode.string) struct.fileId )
+        , ( "device_id", (Json.Encode.string) struct.deviceId )
+        , ( "parent_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.parentId )
+        , ( "name", (Json.Encode.string) struct.name )
+        , ( "path_syntax", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.pathSyntax )
+        , ( "absolute_path", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.absolutePath )
+        , ( "mime_type", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.mimeType )
+        , ( "extension", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.extension )
+        , ( "file_metadata_created_at_ms", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.fileMetadataCreatedAtMs )
+        , ( "file_metadata_modified_at_ms", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.fileMetadataModifiedAtMs )
+        , ( "created_at_ms", (Json.Encode.int) struct.createdAtMs )
+        , ( "updated_at_ms", (Json.Encode.int) struct.updatedAtMs )
+        ]
+
+
 type alias ListDeviceFilesReq =
     { deviceId : String
-    , deletedFilter : Maybe (DeviceFileDeletedFilter)
     , limit : Maybe (Int)
     , offset : Maybe (Int)
     }
@@ -4488,7 +4471,6 @@ listDeviceFilesReqEncoder : ListDeviceFilesReq -> Json.Encode.Value
 listDeviceFilesReqEncoder struct =
     Json.Encode.object
         [ ( "device_id", (Json.Encode.string) struct.deviceId )
-        , ( "deleted_filter", (Maybe.withDefault Json.Encode.null << Maybe.map (deviceFileDeletedFilterEncoder)) struct.deletedFilter )
         , ( "limit", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.limit )
         , ( "offset", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.offset )
         ]
@@ -4507,78 +4489,6 @@ listDeviceFilesRspEncoder struct =
         [ ( "list", (Json.Encode.list (deviceFileEntryEncoder)) struct.list )
         , ( "total", (Json.Encode.int) struct.total )
         , ( "has_more", (Json.Encode.bool) struct.hasMore )
-        ]
-
-
-type alias CreateDeviceFileItem =
-    { originalName : Maybe (String)
-    , originalAbsolutePath : Maybe (String)
-    , originalCreatedAtMs : Maybe (Int)
-    , originalModifiedAtMs : Maybe (Int)
-    }
-
-
-createDeviceFileItemEncoder : CreateDeviceFileItem -> Json.Encode.Value
-createDeviceFileItemEncoder struct =
-    Json.Encode.object
-        [ ( "original_name", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.originalName )
-        , ( "original_absolute_path", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.originalAbsolutePath )
-        , ( "original_created_at_ms", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.originalCreatedAtMs )
-        , ( "original_modified_at_ms", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.originalModifiedAtMs )
-        ]
-
-
-type alias CreateDeviceFilesReq =
-    { deviceId : String
-    , files : List (CreateDeviceFileItem)
-    }
-
-
-createDeviceFilesReqEncoder : CreateDeviceFilesReq -> Json.Encode.Value
-createDeviceFilesReqEncoder struct =
-    Json.Encode.object
-        [ ( "device_id", (Json.Encode.string) struct.deviceId )
-        , ( "files", (Json.Encode.list (createDeviceFileItemEncoder)) struct.files )
-        ]
-
-
-type alias CreateDeviceFilesRsp =
-    { list : List (DeviceFileEntry)
-    }
-
-
-createDeviceFilesRspEncoder : CreateDeviceFilesRsp -> Json.Encode.Value
-createDeviceFilesRspEncoder struct =
-    Json.Encode.object
-        [ ( "list", (Json.Encode.list (deviceFileEntryEncoder)) struct.list )
-        ]
-
-
-type alias RestoreDeviceFileReq =
-    { deviceId : String
-    , fileId : String
-    }
-
-
-restoreDeviceFileReqEncoder : RestoreDeviceFileReq -> Json.Encode.Value
-restoreDeviceFileReqEncoder struct =
-    Json.Encode.object
-        [ ( "device_id", (Json.Encode.string) struct.deviceId )
-        , ( "file_id", (Json.Encode.string) struct.fileId )
-        ]
-
-
-type alias DeleteDeviceFileReq =
-    { deviceId : String
-    , fileId : String
-    }
-
-
-deleteDeviceFileReqEncoder : DeleteDeviceFileReq -> Json.Encode.Value
-deleteDeviceFileReqEncoder struct =
-    Json.Encode.object
-        [ ( "device_id", (Json.Encode.string) struct.deviceId )
-        , ( "file_id", (Json.Encode.string) struct.fileId )
         ]
 
 
@@ -12808,38 +12718,6 @@ deviceArchivedFilterDecoder =
                 )
         ]
 
-deviceFileDeletedFilterDecoder : Json.Decode.Decoder DeviceFileDeletedFilter
-deviceFileDeletedFilterDecoder =
-    Json.Decode.oneOf
-        [ Json.Decode.string
-            |> Json.Decode.andThen
-                (\x ->
-                    case x of
-                        "active_only" ->
-                            Json.Decode.succeed DeviceFileActiveOnly
-                        unexpected ->
-                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
-                )
-        , Json.Decode.string
-            |> Json.Decode.andThen
-                (\x ->
-                    case x of
-                        "deleted_only" ->
-                            Json.Decode.succeed DeviceFileDeletedOnly
-                        unexpected ->
-                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
-                )
-        , Json.Decode.string
-            |> Json.Decode.andThen
-                (\x ->
-                    case x of
-                        "all" ->
-                            Json.Decode.succeed DeviceFileAll
-                        unexpected ->
-                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
-                )
-        ]
-
 deviceListSortByDecoder : Json.Decode.Decoder DeviceListSortBy
 deviceListSortByDecoder =
     Json.Decode.oneOf
@@ -12885,6 +12763,7 @@ deviceListItemDecoder : Json.Decode.Decoder DeviceListItem
 deviceListItemDecoder =
     Json.Decode.succeed DeviceListItem
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "source_label" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "created_by" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "aor_ids" (Json.Decode.list (Json.Decode.int))))
@@ -12892,8 +12771,7 @@ deviceListItemDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unit_id" (Json.Decode.nullable (Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unit_name" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "external_url" (Json.Decode.nullable (Json.Decode.string))))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "hostname" (Json.Decode.nullable (Json.Decode.string))))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "ssh_port" (Json.Decode.nullable (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "custom_fields" (Json.Decode.dict (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "archived" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "created_at_ms" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "updated_at_ms" (Json.Decode.int)))
@@ -12904,6 +12782,7 @@ deviceDetailsDecoder : Json.Decode.Decoder DeviceDetails
 deviceDetailsDecoder =
     Json.Decode.succeed DeviceDetails
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "source_label" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "created_by" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "aor_ids" (Json.Decode.list (Json.Decode.int))))
@@ -12912,27 +12791,11 @@ deviceDetailsDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unit_name" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "tags" (Json.Decode.list (deviceTagDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "external_url" (Json.Decode.nullable (Json.Decode.string))))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "hostname" (Json.Decode.nullable (Json.Decode.string))))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "ssh_port" (Json.Decode.nullable (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "custom_fields" (Json.Decode.dict (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "archived" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "created_at_ms" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "updated_at_ms" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "archived_at_ms" (Json.Decode.nullable (Json.Decode.int))))
-
-
-deviceFileEntryDecoder : Json.Decode.Decoder DeviceFileEntry
-deviceFileEntryDecoder =
-    Json.Decode.succeed DeviceFileEntry
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "file_id" (Json.Decode.string)))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "device_id" (Json.Decode.string)))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "original_name" (Json.Decode.nullable (Json.Decode.string))))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "original_absolute_path" (Json.Decode.nullable (Json.Decode.string))))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "original_created_at_ms" (Json.Decode.nullable (Json.Decode.int))))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "original_modified_at_ms" (Json.Decode.nullable (Json.Decode.int))))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "deleted" (Json.Decode.bool)))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "created_at_ms" (Json.Decode.int)))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "updated_at_ms" (Json.Decode.int)))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "deleted_at_ms" (Json.Decode.nullable (Json.Decode.int))))
 
 
 listDevicesReqDecoder : Json.Decode.Decoder ListDevicesReq
@@ -12988,28 +12851,26 @@ deviceDetailReqDecoder =
 createDeviceReqDecoder : Json.Decode.Decoder CreateDeviceReq
 createDeviceReqDecoder =
     Json.Decode.succeed CreateDeviceReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "source_label" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "aor_ids" (Json.Decode.list (Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unit_id" (Json.Decode.nullable (Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "tags" (Json.Decode.list (deviceTagDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "external_url" (Json.Decode.nullable (Json.Decode.string))))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "hostname" (Json.Decode.nullable (Json.Decode.string))))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "ssh_port" (Json.Decode.nullable (Json.Decode.int))))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "files" (Json.Decode.nullable (Json.Decode.list (createDeviceFileItemDecoder)))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "custom_fields" (Json.Decode.dict (Json.Decode.string))))
 
 
 updateDeviceReqDecoder : Json.Decode.Decoder UpdateDeviceReq
 updateDeviceReqDecoder =
     Json.Decode.succeed UpdateDeviceReq
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "device_id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "source_label" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "aor_ids" (Json.Decode.nullable (Json.Decode.list (Json.Decode.int)))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unit_id" (Json.Decode.nullable (Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "tags" (Json.Decode.nullable (Json.Decode.list (deviceTagDecoder)))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "external_url" (Json.Decode.nullable (Json.Decode.string))))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "hostname" (Json.Decode.nullable (Json.Decode.string))))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "ssh_port" (Json.Decode.nullable (Json.Decode.int))))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "files" (Json.Decode.nullable (Json.Decode.list (createDeviceFileItemDecoder)))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "custom_fields" (Json.Decode.nullable (Json.Decode.dict (Json.Decode.nullable (Json.Decode.string))))))
 
 
 archiveDeviceReqDecoder : Json.Decode.Decoder ArchiveDeviceReq
@@ -13024,11 +12885,27 @@ restoreDeviceReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "device_id" (Json.Decode.string)))
 
 
+deviceFileEntryDecoder : Json.Decode.Decoder DeviceFileEntry
+deviceFileEntryDecoder =
+    Json.Decode.succeed DeviceFileEntry
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "file_id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "device_id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "parent_id" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "path_syntax" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "absolute_path" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "mime_type" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "extension" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "file_metadata_created_at_ms" (Json.Decode.nullable (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "file_metadata_modified_at_ms" (Json.Decode.nullable (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "created_at_ms" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "updated_at_ms" (Json.Decode.int)))
+
+
 listDeviceFilesReqDecoder : Json.Decode.Decoder ListDeviceFilesReq
 listDeviceFilesReqDecoder =
     Json.Decode.succeed ListDeviceFilesReq
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "device_id" (Json.Decode.string)))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "deleted_filter" (Json.Decode.nullable (deviceFileDeletedFilterDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "limit" (Json.Decode.nullable (Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "offset" (Json.Decode.nullable (Json.Decode.int))))
 
@@ -13039,42 +12916,6 @@ listDeviceFilesRspDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "list" (Json.Decode.list (deviceFileEntryDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "total" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "has_more" (Json.Decode.bool)))
-
-
-createDeviceFileItemDecoder : Json.Decode.Decoder CreateDeviceFileItem
-createDeviceFileItemDecoder =
-    Json.Decode.succeed CreateDeviceFileItem
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "original_name" (Json.Decode.nullable (Json.Decode.string))))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "original_absolute_path" (Json.Decode.nullable (Json.Decode.string))))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "original_created_at_ms" (Json.Decode.nullable (Json.Decode.int))))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "original_modified_at_ms" (Json.Decode.nullable (Json.Decode.int))))
-
-
-createDeviceFilesReqDecoder : Json.Decode.Decoder CreateDeviceFilesReq
-createDeviceFilesReqDecoder =
-    Json.Decode.succeed CreateDeviceFilesReq
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "device_id" (Json.Decode.string)))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "files" (Json.Decode.list (createDeviceFileItemDecoder))))
-
-
-createDeviceFilesRspDecoder : Json.Decode.Decoder CreateDeviceFilesRsp
-createDeviceFilesRspDecoder =
-    Json.Decode.succeed CreateDeviceFilesRsp
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "list" (Json.Decode.list (deviceFileEntryDecoder))))
-
-
-restoreDeviceFileReqDecoder : Json.Decode.Decoder RestoreDeviceFileReq
-restoreDeviceFileReqDecoder =
-    Json.Decode.succeed RestoreDeviceFileReq
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "device_id" (Json.Decode.string)))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "file_id" (Json.Decode.string)))
-
-
-deleteDeviceFileReqDecoder : Json.Decode.Decoder DeleteDeviceFileReq
-deleteDeviceFileReqDecoder =
-    Json.Decode.succeed DeleteDeviceFileReq
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "device_id" (Json.Decode.string)))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "file_id" (Json.Decode.string)))
 
 
 organismDecoder : Json.Decode.Decoder Organism
@@ -15435,7 +15276,7 @@ networkCallsignRelationMessagesReqDecoder =
 
 
 networkCallsignRelationEnrichmentSourceDecoder : Json.Decode.Decoder NetworkCallsignRelationEnrichmentSource
-networkCallsignRelationEnrichmentSourceDecoder = 
+networkCallsignRelationEnrichmentSourceDecoder =
     Json.Decode.oneOf
         [ Json.Decode.string
             |> Json.Decode.andThen

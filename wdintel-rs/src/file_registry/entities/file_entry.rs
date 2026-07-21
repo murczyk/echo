@@ -6,15 +6,28 @@ use serde::{Deserialize, Serialize};
 #[derive(
     Clone, Debug, PartialEq, DeriveEntityModel, Eq, Serialize, Deserialize,
 )]
-#[sea_orm(table_name = "device_file")]
+#[sea_orm(table_name = "file_entry")]
 pub struct Model {
     #[sea_orm(primary_key, auto_increment = false)]
     pub id: Uuid,
     pub device_id: Uuid,
+    pub parent_id: Option<Uuid>,
+    #[sea_orm(column_type = "Text")]
+    pub kind: String,
     #[sea_orm(column_type = "Text")]
     pub name: String,
-    #[sea_orm(column_type = "Text")]
-    pub path: String,
+    #[sea_orm(column_type = "VarBinary(StringLen::None)")]
+    pub name_key: Vec<u8>,
+    #[sea_orm(column_type = "Text", nullable)]
+    pub path_syntax: Option<String>,
+    #[sea_orm(column_type = "Text", nullable)]
+    pub absolute_path: Option<String>,
+    #[sea_orm(
+        column_type = "custom(\"ltree\")",
+        select_as = "text",
+        save_as = "ltree"
+    )]
+    pub hierarchy_path: String,
     #[sea_orm(column_type = "Text", nullable)]
     pub mime_type: Option<String>,
     #[sea_orm(column_type = "Text", nullable)]
@@ -26,6 +39,15 @@ pub struct Model {
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+pub enum Relation {
+    #[sea_orm(
+        belongs_to = "Entity",
+        from = "(Column::DeviceId, Column::ParentId)",
+        to = "(Column::DeviceId, Column::Id)",
+        on_update = "NoAction",
+        on_delete = "Restrict"
+    )]
+    SelfRef,
+}
 
 impl ActiveModelBehavior for ActiveModel {}

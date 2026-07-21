@@ -142,6 +142,7 @@ setup-dev:
     npm install uglify-js -g
 
 gen-seaorm:
+    rm -rf wdintel-rs/src/entities
     (cd wdintel-rs && sea-orm-cli generate entity --with-serde both -u postgres://wd:fee_-_-_-FnoeKFBeebu87bf@localhost:5432/wd -o src/entities)
     python3 deploy/patch_seaorm.py
     just fmt
@@ -179,7 +180,37 @@ gen-seaorm-files mode="debug":
         pg_dbname="$TEST_WDFILE_DB_NAME"
     fi
     database_url="postgresql://$pg_user:$pg_password@$pg_host:$pg_port/$pg_dbname"
-    (cd wdintel-rs && sea-orm-cli generate entity --with-serde both --tables device_file --database-url "$database_url" --output-dir src/file_registry/entities)
+    rm -rf wdintel-rs/src/file_registry/entities
+    (cd wdintel-rs && sea-orm-cli generate entity --with-serde both --tables file_entry --database-url "$database_url" --output-dir src/file_registry/entities)
+    python3 deploy/patch_seaorm_files.py
+    rustfmt --config-path wdintel-rs wdintel-rs/src/file_registry/entities/*.rs
+
+[arg('mode', long='mode')]
+check-seaorm-files mode="debug":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    source deploy/resolve_echo_config_path.sh
+    mode="{{ mode }}"
+    config_path="$(resolve_echo_config_path "$mode")"
+    [[ -f "$config_path" ]] || {
+        echo "Echo config not found: $config_path" >&2
+        exit 1
+    }
+    pg_host="$(tq -r -f "$config_path" pg_wdfile_host)"
+    pg_port="$(tq -r -f "$config_path" pg_wdfile_port)"
+    pg_user="$(tq -r -f "$config_path" pg_wdfile_user)"
+    pg_password="$(tq -r -f "$config_path" pg_wdfile_password)"
+    pg_dbname="$(tq -r -f "$config_path" pg_wdfile_dbname)"
+    if [[ "$mode" == "test" && -n "${TEST_WDFILE_DB_NAME:-}" ]]; then
+        pg_dbname="$TEST_WDFILE_DB_NAME"
+    fi
+    database_url="postgresql://$pg_user:$pg_password@$pg_host:$pg_port/$pg_dbname"
+    entity_dir="$(mktemp -d)"
+    trap 'rm -rf "$entity_dir"' EXIT
+    (cd wdintel-rs && sea-orm-cli generate entity --with-serde both --tables file_entry --database-url "$database_url" --output-dir "$entity_dir")
+    python3 deploy/patch_seaorm_files.py --entity-dir "$entity_dir"
+    rustfmt --config-path wdintel-rs "$entity_dir"/*.rs
+    diff -ru "$entity_dir" wdintel-rs/src/file_registry/entities
 
 gen-front: gen-elm gen-ts
 

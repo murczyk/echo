@@ -70,12 +70,11 @@ vi.mock('../../../components/PowerAlert', () => ({
   PowerAlert: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
 }));
 
+vi.mock('./DeviceCustomFieldsEditor', () => ({
+  DeviceCustomFieldsEditor: () => <div data-testid="device-custom-fields-editor" />,
+}));
 vi.mock('./DeviceTagsEditor', () => ({
   DeviceTagsEditor: () => <div data-testid="device-tags-editor" />,
-}));
-
-vi.mock('./DeviceFileRowsEditor', () => ({
-  DeviceFileRowsEditor: () => <div data-testid="device-file-rows-editor" />,
 }));
 
 import { DeviceUpsertDrawer } from './DeviceUpsertDrawer';
@@ -86,7 +85,7 @@ const rendered: Array<{ container: HTMLDivElement; root: Root }> = [];
 function buildForm(overrides: Partial<DeviceUpsertForm> = {}): DeviceUpsertForm {
   return {
     ...createDefaultDeviceUpsertForm(),
-    name: 'Device Alpha',
+    sourceLabel: 'Source device',
     ...overrides,
   };
 }
@@ -130,20 +129,17 @@ afterEach(() => {
 });
 
 describe('DeviceUpsertDrawer', () => {
-  it('shows hostname and SSH port fields for creation and editing', () => {
+  it('shows source-label fields for creation and editing', () => {
     const createView = renderDrawer(buildForm(), 'create');
     rendered.push(createView);
 
-    expect(inputByLabel(createView.container, 'Хостнейм')?.value).toBe('');
-    expect(inputByLabel(createView.container, 'SSH-порт')?.value).toBe('');
+    expect(inputByLabel(createView.container, 'Джерельна мітка')?.value).toBe('Source device');
+    expect(inputByLabel(createView.container, 'Хостнейм')).toBeNull();
+    expect(inputByLabel(createView.container, 'SSH-порт')).toBeNull();
 
-    const editView = renderDrawer(
-      buildForm({ hostname: 'device.example', sshPort: '2222' }),
-      'edit',
-    );
+    const editView = renderDrawer(buildForm({ sourceLabel: 'Imported source' }), 'edit');
     rendered.push(editView);
 
-    expect(inputByLabel(editView.container, 'Хостнейм')?.value).toBe('device.example');
-    expect(inputByLabel(editView.container, 'SSH-порт')?.value).toBe('2222');
+    expect(inputByLabel(editView.container, 'Джерельна мітка')?.value).toBe('Imported source');
   });
 });

@@ -8,8 +8,10 @@ pub mod types;
 
 mod access;
 mod bl;
-mod files;
+mod custom_fields;
 mod query;
+#[cfg(test)]
+mod schema_tests;
 mod validation;
 
 #[post("/api/device/list")]
@@ -93,41 +95,12 @@ pub async fn device_files_list(
 ) -> Result<Json<ListDeviceFilesRsp>, AppError> {
     access::ensure_device_reader(&env.dbx, &user).await?;
     let req = req.into_inner();
-    Ok(Json(query::list_device_files(&env.dbx, &req).await?))
-}
-
-#[post("/api/device/files/create")]
-pub async fn device_files_create(
-    user: Identity,
-    env: Data<Env>,
-    req: Json<CreateDeviceFilesReq>,
-) -> Result<Json<CreateDeviceFilesRsp>, AppError> {
-    access::ensure_device_editor(&env.dbx, &user).await?;
     Ok(Json(
-        files::create_device_files(&env.dbx, req.into_inner()).await?,
-    ))
-}
-
-#[post("/api/device/files/delete")]
-pub async fn device_files_delete(
-    user: Identity,
-    env: Data<Env>,
-    req: Json<DeleteDeviceFileReq>,
-) -> Result<Json<DeviceFileEntry>, AppError> {
-    access::ensure_device_editor(&env.dbx, &user).await?;
-    Ok(Json(
-        files::delete_device_file(&env.dbx, req.into_inner()).await?,
-    ))
-}
-
-#[post("/api/device/files/restore")]
-pub async fn device_files_restore(
-    user: Identity,
-    env: Data<Env>,
-    req: Json<RestoreDeviceFileReq>,
-) -> Result<Json<DeviceFileEntry>, AppError> {
-    access::ensure_device_editor(&env.dbx, &user).await?;
-    Ok(Json(
-        files::restore_device_file(&env.dbx, req.into_inner()).await?,
+        query::list_device_files(
+            &env.dbx,
+            env.file_registry_db.connection(),
+            &req,
+        )
+        .await?,
     ))
 }

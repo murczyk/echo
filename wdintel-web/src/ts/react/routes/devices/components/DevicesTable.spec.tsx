@@ -45,6 +45,7 @@ const tableStateContext = {
 function buildDeviceRow(): DeviceRowView {
   return {
     id: '018f0000-0000-7000-8000-000000000000',
+    sourceLabel: 'Source device',
     name: 'Device Alpha',
     createdBy: 'tester',
     aorIds: [],
@@ -52,8 +53,7 @@ function buildDeviceRow(): DeviceRowView {
     unitId: null,
     unitName: null,
     externalUrl: null,
-    hostname: null,
-    sshPort: null,
+    customFields: {},
     archived: false,
     createdAtMs: 1,
     updatedAtMs: 2,

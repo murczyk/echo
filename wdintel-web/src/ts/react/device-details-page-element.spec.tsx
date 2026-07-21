@@ -25,6 +25,7 @@ beforeEach(() => {
       if (url === '/api/device/detail') {
         return jsonResponse({
           id: DEVICE_ID,
+          source_label: 'Source device',
           name: 'Device Alpha',
           created_by: 'operator',
           aor_ids: [],
@@ -33,16 +34,12 @@ beforeEach(() => {
           unit_name: null,
           tags: [],
           external_url: null,
-          hostname: null,
-          ssh_port: null,
+          custom_fields: {},
           archived: false,
           created_at_ms: 10,
           updated_at_ms: 20,
           archived_at_ms: null,
         });
-      }
-      if (url === '/api/device/files/list') {
-        return jsonResponse({ list: [], total: 0, has_more: false });
       }
       return jsonResponse({});
     }),
