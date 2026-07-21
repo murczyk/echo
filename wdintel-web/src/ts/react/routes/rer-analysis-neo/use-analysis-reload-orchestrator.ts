@@ -63,10 +63,7 @@ type Params = {
   ) => Promise<void>;
   invalidateMessagePaging: () => void;
   invalidateMessagePageRequests: () => void;
-  getCurrentMessagePage: () => {
-    cursor: import('./types').AnalysisMessagePageCursor;
-    pageIndex: number;
-  };
+  getCurrentMessagePageCursor: () => import('./types').AnalysisMessagePageCursor;
   refreshMessageCounts: () => void;
   setAorEntries: Setter<AnalysisAorEntry[]>;
   setCounts: Setter<import('../../../../Bindings').CountStatsRsp | null>;
@@ -112,7 +109,7 @@ export function useAnalysisReloadOrchestrator(params: Params): UseAnalysisReload
     clearAnalysisResults,
     deferInitialLoad,
     getLoadedFilterSections,
-    getCurrentMessagePage,
+    getCurrentMessagePageCursor,
     getReloadFilterSections,
     invalidateCallsignGraph,
     invalidateCorrelatedFreqsCache,
@@ -185,7 +182,7 @@ export function useAnalysisReloadOrchestrator(params: Params): UseAnalysisReload
       reloadAbortControllerRef.current = abortController;
       const preserveMessagePage = options.preserveMessagePage === true;
       const shouldRefreshMessageCounts = options.refreshMessageCounts !== false;
-      const currentMessagePage = preserveMessagePage ? getCurrentMessagePage() : null;
+      const messagePageCursor = preserveMessagePage ? getCurrentMessagePageCursor() : undefined;
 
       if (shouldRefreshMessageCounts) refreshMessageCounts();
 
@@ -197,7 +194,7 @@ export function useAnalysisReloadOrchestrator(params: Params): UseAnalysisReload
           invalidateMessagePaging: preserveMessagePage
             ? invalidateMessagePageRequests
             : invalidateMessagePaging,
-          messagePageCursor: currentMessagePage?.cursor,
+          messagePageCursor,
           newestFirst,
           onError,
           onUnauthorized,
@@ -258,7 +255,7 @@ export function useAnalysisReloadOrchestrator(params: Params): UseAnalysisReload
     [
       centerTab,
       clearAnalysisResults,
-      getCurrentMessagePage,
+      getCurrentMessagePageCursor,
       getLoadedFilterSections,
       getReloadFilterSections,
       invalidateCallsignGraph,

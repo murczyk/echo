@@ -52,8 +52,6 @@ type HarnessApi = ReturnType<typeof useAnalysisDataMessageActions> & {
   onError: ReturnType<typeof vi.fn>;
   reload: ReturnType<typeof vi.fn>;
   invalidateTagFacetLoad: ReturnType<typeof vi.fn>;
-  refreshTagFacet: ReturnType<typeof vi.fn>;
-  refreshMessageCounts: ReturnType<typeof vi.fn>;
   pageIndex: number;
   currentCursor: { beforeIdNoninclusive: number | null; sinceIdNoninclusive: number | null };
 };
@@ -110,8 +108,6 @@ function TestHarness(props: {
   onError?: ReturnType<typeof vi.fn>;
   reload?: ReturnType<typeof vi.fn>;
   invalidateTagFacetLoad?: ReturnType<typeof vi.fn>;
-  refreshMessageCounts?: ReturnType<typeof vi.fn>;
-  refreshTagFacet?: ReturnType<typeof vi.fn>;
   queryState?: ReturnType<typeof emptyQueryState>;
   initialPageIndex?: number;
   initialCursor?: { beforeIdNoninclusive: number | null; sinceIdNoninclusive: number | null };
@@ -125,8 +121,6 @@ function TestHarness(props: {
   );
   const [onError] = useState(() => props.onError ?? vi.fn());
   const [invalidateTagFacetLoad] = useState(() => props.invalidateTagFacetLoad ?? vi.fn());
-  const [refreshMessageCounts] = useState(() => props.refreshMessageCounts ?? vi.fn());
-  const [refreshTagFacet] = useState(() => props.refreshTagFacet ?? vi.fn(() => Promise.resolve()));
   const [pageIndex] = useState(props.initialPageIndex ?? 0);
   const [currentCursor] = useState(
     props.initialCursor ?? { beforeIdNoninclusive: null, sinceIdNoninclusive: null },
@@ -165,8 +159,6 @@ function TestHarness(props: {
       tags: [3],
     },
     invalidateTagFacetLoad,
-    refreshMessageCounts,
-    refreshTagFacet,
     reload,
     setMapOpenMessages,
     setMessages,
@@ -183,8 +175,6 @@ function TestHarness(props: {
     onError,
     reload,
     invalidateTagFacetLoad,
-    refreshMessageCounts,
-    refreshTagFacet,
     pageIndex,
     currentCursor,
   };
@@ -221,8 +211,6 @@ describe('useAnalysisDataMessageActions', () => {
       currentUser?: User | null;
       reload?: ReturnType<typeof vi.fn>;
       invalidateTagFacetLoad?: ReturnType<typeof vi.fn>;
-      refreshMessageCounts?: ReturnType<typeof vi.fn>;
-      refreshTagFacet?: ReturnType<typeof vi.fn>;
       queryState?: ReturnType<typeof emptyQueryState>;
       initialPageIndex?: number;
       initialCursor?: { beforeIdNoninclusive: number | null; sinceIdNoninclusive: number | null };
@@ -239,8 +227,6 @@ describe('useAnalysisDataMessageActions', () => {
           currentUser={options.currentUser}
           reload={options.reload}
           invalidateTagFacetLoad={options.invalidateTagFacetLoad}
-          refreshMessageCounts={options.refreshMessageCounts}
-          refreshTagFacet={options.refreshTagFacet}
           queryState={options.queryState}
           initialPageIndex={options.initialPageIndex}
           initialCursor={options.initialCursor}
@@ -414,37 +400,6 @@ describe('useAnalysisDataMessageActions', () => {
       expect.objectContaining(originalPage16Cursor),
       expect.anything(),
     );
-  });
-
-  it('keeps the message page when the active query has no tag predicate', async () => {
-    const reload = vi.fn(() => Promise.resolve());
-    const refreshMessageCounts = vi.fn();
-    const refreshTagFacet = vi.fn(() => Promise.resolve());
-    const invalidateTagFacetLoad = vi.fn();
-    const apiRef = await renderHarness(
-      [[1, buildMessage({ inboxTags: [buildTag(3, { login: 'tester', organismId: 1 })] })]],
-      {
-        reload,
-        refreshMessageCounts,
-        refreshTagFacet,
-        invalidateTagFacetLoad,
-        queryState: {
-          ...emptyQueryState(),
-          fromDateTimeStr: '2026-04-01T00:00',
-          toDateTimeStr: '2026-04-02T00:00',
-          tags: [],
-        },
-      },
-    );
-
-    await act(async () => {
-      await apiRef.current!.onToggleMessageTag(1, 3);
-    });
-
-    expect(apiRef.current!.messages[0]?.[1].inboxTags).toEqual([]);
-    expect(reload).toHaveBeenCalledWith({ preserveMessagePage: true });
-    expect(refreshTagFacet).not.toHaveBeenCalled();
-    expect(refreshMessageCounts).not.toHaveBeenCalled();
   });
 
   it('keeps the optimistic tag change and reports the error when only the reload fails', async () => {

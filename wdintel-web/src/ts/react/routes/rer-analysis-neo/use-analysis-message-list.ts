@@ -93,11 +93,6 @@ export function useAnalysisMessageList({
     [pageIndex],
   );
 
-  const getCurrentMessagePage = useCallback(
-    () => ({ cursor: pageCursorsRef.current[pageIndex] ?? FIRST_PAGE_CURSOR, pageIndex }),
-    [pageIndex],
-  );
-
   const loadMessageComments = useCallback(
     async (loadedMessages: Array<[number, InboxMessage]>, forceReload = false) => {
       await loadMissingMessageCommentsForMessages(
@@ -287,7 +282,6 @@ export function useAnalysisMessageList({
     aorEntries,
     counts,
     getCurrentMessagePageCursor,
-    getCurrentMessagePage,
     hasLoadedInitialMessages,
     invalidateMessagePageRequests,
     invalidateMessagePaging,

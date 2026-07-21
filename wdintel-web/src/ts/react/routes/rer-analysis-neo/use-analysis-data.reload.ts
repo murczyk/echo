@@ -546,11 +546,6 @@ export async function loadFilterSectionData(
 
 type Setter<T> = React.Dispatch<React.SetStateAction<T>>;
 
-export type ReloadAnalysisResult = {
-  completed: boolean;
-  finalMessagePageWasEmpty: boolean;
-};
-
 export function transformMessagePageResponse<
   T extends { inboxItems: Array<[number, InboxMessage]> },
 >(response: T, cursor: AnalysisMessagePageCursor | undefined): T {
@@ -632,7 +627,7 @@ type ReloadParams = {
   signal?: AbortSignal;
 };
 
-export async function reloadAnalysisData(params: ReloadParams): Promise<ReloadAnalysisResult> {
+export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
   const requestId = params.reloadRequestRef.current + 1;
   params.reloadRequestRef.current = requestId;
   const isStaleReload = () => requestId !== params.reloadRequestRef.current;
@@ -665,7 +660,6 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<ReloadAn
       freqsRsp: Awaited<ReturnType<typeof fetchAnalysisFreqs>>;
       countsPromise: Promise<CountStatsRsp>;
       resolvedAnalysisReq: NonNullable<ReturnType<typeof buildAnalysisReq>>;
-      finalMessagePageWasEmpty: boolean;
     } | null> => {
       const analysisReq = buildAnalysisReq(params.queryState, allFrequencies);
       const inboxReq = buildInboxReq(params.queryState, allFrequencies);
@@ -700,7 +694,7 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<ReloadAn
         params.signal ? { signal: params.signal } : undefined,
       );
       countsPromise.catch(() => undefined);
-      let messagePageCursor = params.messagePageCursor;
+      const messagePageCursor = params.messagePageCursor;
       const inboxPromise = fetchInboxMessages(
         {
           ...messageInboxReq,
@@ -772,18 +766,16 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<ReloadAn
           isPresent(rebuiltMessageInboxReq)
         ) {
           try {
-            let rebuiltMessagePageCursor = messagePageCursor;
-
-            let rebuiltInboxRsp = await fetchInboxMessages(
+            const rebuiltInboxRsp = await fetchInboxMessages(
               {
                 ...rebuiltMessageInboxReq,
                 beforeIdNoninclusive:
-                  rebuiltMessagePageCursor?.beforeIdNoninclusive ??
+                  messagePageCursor?.beforeIdNoninclusive ??
                   rebuiltMessageInboxReq.beforeIdNoninclusive,
                 sinceIdNoninclusive:
-                  rebuiltMessagePageCursor?.sinceIdNoninclusive ??
+                  messagePageCursor?.sinceIdNoninclusive ??
                   rebuiltMessageInboxReq.sinceIdNoninclusive,
-                newestFirst: rebuiltMessagePageCursor?.requestNewestFirst ?? params.newestFirst,
+                newestFirst: messagePageCursor?.requestNewestFirst ?? params.newestFirst,
               },
               params.signal ? { signal: params.signal } : undefined,
             );
@@ -791,7 +783,7 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<ReloadAn
 
             const rebuiltMessagePageRsp = transformMessagePageResponse(
               rebuiltInboxRsp,
-              rebuiltMessagePageCursor,
+              messagePageCursor,
             );
             const rebuiltFreqsRsp = await fetchAnalysisFreqs(
               rebuiltAnalysisReq,
@@ -800,7 +792,6 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<ReloadAn
             if (isStaleReload() || params.signal?.aborted) return null;
             // Promote rebuilt req/rsp only after the rebuilt inbox succeeds so we never mix
             // rebuilt summary/count/map data with the old inbox response.
-            messagePageCursor = rebuiltMessagePageCursor;
             params.setMessages(rebuiltMessagePageRsp.inboxItems ?? []);
             params.setProfiles((current) =>
               mergeSignalProfiles(current, rebuiltMessagePageRsp.signalProfiles ?? {}),
@@ -895,13 +886,12 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<ReloadAn
         inboxRsp: resolvedInboxRsp,
         freqsRsp: resolvedFreqsRsp,
         resolvedAnalysisReq,
-        finalMessagePageWasEmpty: (resolvedInboxRsp.inboxItems ?? []).length === 0,
       };
     };
 
     const criticalData = await loadCriticalData(params.optionsFreqsRef.current);
     if (isNullOrUndefined(criticalData) || isStaleReload() || params.signal?.aborted) {
-      return { completed: false, finalMessagePageWasEmpty: false };
+      return;
     }
 
     params.optionsFreqsRef.current = criticalData.freqsRsp.freqs.map((item) => item.freq);
@@ -1037,13 +1027,13 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<ReloadAn
       params.setNewCallsignsLoadedKey(null);
     }
     void Promise.all(secondaryLoads);
-    return { completed: true, finalMessagePageWasEmpty: criticalData.finalMessagePageWasEmpty };
+    return;
   } catch (loadError) {
     if (isStaleReload() || params.signal?.aborted) {
-      return { completed: false, finalMessagePageWasEmpty: false };
+      return;
     }
     if (!params.onUnauthorized(loadError)) params.onError(toErrorMessage(loadError));
-    return { completed: false, finalMessagePageWasEmpty: false };
+    return;
   } finally {
     if (!isStaleReload() && !params.signal?.aborted) {
       params.setMessagesLoading(false);

@@ -87,12 +87,9 @@ vi.mock('./use-analysis-message-list', () => ({
       noMoreToLoad: false,
       nolimitShown: false,
       pageIndex: 0,
-      getCurrentMessagePage: vi.fn(() => ({
-        cursor: {
-          beforeIdNoninclusive: null,
-          sinceIdNoninclusive: null,
-        },
-        pageIndex: 0,
+      getCurrentMessagePageCursor: vi.fn(() => ({
+        beforeIdNoninclusive: null,
+        sinceIdNoninclusive: null,
       })),
       invalidateMessagePageRequests: vi.fn(),
       invalidateMessagePaging: vi.fn(),
@@ -100,7 +97,6 @@ vi.mock('./use-analysis-message-list', () => ({
       loadMessageComments: hoisted.loadMessageComments,
       loadNextPage: vi.fn(),
       loadPrevPage: vi.fn(),
-      refreshMessageCounts: vi.fn(),
       setAorEntries: vi.fn(),
       setCounts: vi.fn(),
       setHasLoadedInitialMessages: vi.fn(),

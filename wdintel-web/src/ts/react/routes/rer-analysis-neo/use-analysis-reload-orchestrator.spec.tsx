@@ -29,9 +29,7 @@ import type {
 } from './types';
 
 const reloadAnalysisDataMock = vi.hoisted(() => ({
-  reloadAnalysisData: vi.fn(() =>
-    Promise.resolve({ completed: true, finalMessagePageWasEmpty: false }),
-  ),
+  reloadAnalysisData: vi.fn(() => Promise.resolve()),
 }));
 
 vi.mock('./use-analysis-data.reload', () => reloadAnalysisDataMock);
@@ -79,12 +77,9 @@ function buildParams(overrides: Partial<Parameters<typeof useAnalysisReloadOrche
     loadTopSidebarData: vi.fn().mockResolvedValue(undefined),
     clearAnalysisResults: vi.fn(),
     loadMessageComments: vi.fn().mockResolvedValue(undefined),
-    getCurrentMessagePage: vi.fn(() => ({
-      cursor: {
-        beforeIdNoninclusive: 120,
-        sinceIdNoninclusive: null,
-      },
-      pageIndex: 1,
+    getCurrentMessagePageCursor: vi.fn(() => ({
+      beforeIdNoninclusive: 120,
+      sinceIdNoninclusive: null,
     })),
     invalidateMessagePageRequests: vi.fn(),
     invalidateMessagePaging: vi.fn(),
@@ -200,7 +195,7 @@ describe('useAnalysisReloadOrchestrator', () => {
         messagePageCursor: { beforeIdNoninclusive: 120, sinceIdNoninclusive: null },
       }),
     );
-    expect(params.getCurrentMessagePage).toHaveBeenCalledTimes(1);
+    expect(params.getCurrentMessagePageCursor).toHaveBeenCalledTimes(1);
     expect(params.refreshMessageCounts).toHaveBeenCalledTimes(1);
   });
 

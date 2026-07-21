@@ -14,7 +14,7 @@ import {
   inboxMessageTagsModelError,
   inboxMessageTagsRm,
 } from '../../services/api/analysis';
-import { buildAnalysisReq, doesTagMutationAffectMessageMembership } from './helpers';
+import { buildAnalysisReq } from './helpers';
 import type { User } from '../../../../Bindings';
 import type { AnalysisQueryState, AnalysisReloadOptions } from './types';
 import type { MessageCardBotTagAction } from '../shared/message-card/message-card.types';
@@ -36,8 +36,6 @@ type Params = {
   patchMessages: (updater: (messageId: number, message: InboxMessage) => InboxMessage) => void;
   queryState: AnalysisQueryState;
   invalidateTagFacetLoad: () => void;
-  refreshTagFacet: () => Promise<void>;
-  refreshMessageCounts: () => void;
   reload: (options?: AnalysisReloadOptions) => Promise<void>;
   setMapOpenMessages: React.Dispatch<React.SetStateAction<Array<[number, InboxMessage]>>>;
   setMessages: React.Dispatch<React.SetStateAction<Array<[number, InboxMessage]>>>;
@@ -173,6 +171,10 @@ export function useAnalysisDataMessageActions(params: Params) {
 
         try {
           params.invalidateTagFacetLoad();
+          // Keep the user's cursor and page after a tag mutation. A cursor cannot represent a
+          // stable ordinal page once membership changes, so rebuilding/clamping it from counts
+          // could move the user elsewhere (including page one). Canonical reflow needs
+          // snapshot/offset pagination; this page intentionally favors stable position.
           await params.reload({ preserveMessagePage: true });
         } catch (reloadError) {
           // The tag mutation above already persisted, so the optimistic patch is now the
