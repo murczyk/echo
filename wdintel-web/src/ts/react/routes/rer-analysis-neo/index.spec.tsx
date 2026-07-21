@@ -553,6 +553,84 @@ describe('RerAnalysisNeoPage', () => {
     });
   });
 
+  it('hides the create-message FAB when the visible sidebar tab is the map', async () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    rendered.push(container);
+    const root = createRoot(container);
+    const page = buildPage();
+    page.analysisMapInSidebar = true;
+    page.rightPanelOpen = true;
+    page.rightSidebarTab = 'map';
+    useRerAnalysisNeoPageMock.mockReturnValue(page);
+
+    await act(async () => {
+      root.render(<RerAnalysisNeoPage />);
+    });
+
+    expect(container.querySelectorAll('button[aria-label="create-message-fab"]')).toHaveLength(0);
+
+    await act(async () => {
+      root.unmount();
+    });
+  });
+
+  it('shows the create-message FAB when the sidebar map switches to Stats', async () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    rendered.push(container);
+    const root = createRoot(container);
+    const page = buildPage();
+    page.analysisMapInSidebar = true;
+    page.rightPanelOpen = true;
+    page.rightSidebarTab = 'map';
+    useRerAnalysisNeoPageMock.mockReturnValue(page);
+
+    await act(async () => {
+      root.render(<RerAnalysisNeoPage />);
+    });
+    expect(container.querySelectorAll('button[aria-label="create-message-fab"]')).toHaveLength(0);
+
+    page.rightSidebarTab = 'stats';
+    await act(async () => {
+      root.render(<RerAnalysisNeoPage />);
+    });
+
+    expect(container.querySelectorAll('button[aria-label="create-message-fab"]')).toHaveLength(1);
+
+    await act(async () => {
+      root.unmount();
+    });
+  });
+
+  it('shows the create-message FAB when the desktop right panel closes on the sidebar map', async () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    rendered.push(container);
+    const root = createRoot(container);
+    const page = buildPage();
+    page.analysisMapInSidebar = true;
+    page.rightPanelOpen = true;
+    page.rightSidebarTab = 'map';
+    useRerAnalysisNeoPageMock.mockReturnValue(page);
+
+    await act(async () => {
+      root.render(<RerAnalysisNeoPage />);
+    });
+    expect(container.querySelectorAll('button[aria-label="create-message-fab"]')).toHaveLength(0);
+
+    page.rightPanelOpen = false;
+    await act(async () => {
+      root.render(<RerAnalysisNeoPage />);
+    });
+
+    expect(container.querySelectorAll('button[aria-label="create-message-fab"]')).toHaveLength(1);
+
+    await act(async () => {
+      root.unmount();
+    });
+  });
+
   it('enqueues separate Snackbar notifications for repeated creations', async () => {
     const container = document.createElement('div');
     document.body.appendChild(container);
