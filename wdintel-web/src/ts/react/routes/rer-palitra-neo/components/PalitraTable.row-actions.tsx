@@ -260,7 +260,9 @@ function renderPalitraRowActions(row: PalitraRowView, props: Props) {
             }
           />
         ) : null}
-        {row.palitra.conversionStatus === 'error' && !row.palitra.goiSourceRefreshRetryAvailable ? (
+        {row.palitra.conversionStatus === 'error' &&
+        !row.palitra.goiSourceRefreshRetryAvailable &&
+        !row.palitra.goiOwned ? (
           <MrtRowActionButton
             label="Повторити конвертацію"
             onClick={() => props.onRetryConversion(row.palitra)}

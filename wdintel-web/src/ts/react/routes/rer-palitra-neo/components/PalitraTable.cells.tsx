@@ -78,17 +78,22 @@ function renderConversionStatusChip(palitra: Palitra) {
     );
   }
   if (palitra.conversionStatus === 'error') {
+    const label = palitra.goiOwned ? 'Помилка імпорту' : 'Помилка конвертації';
     return (
-      <PowerChip
-        label="Помилка конвертації"
-        size="small"
-        interactive={false}
-        selected
-        backgroundColor="error.light"
-        selectedBorderColor="error.main"
-        selectedTextColor="error.contrastText"
-        sx={{ '& .MuiChip-label': { px: 1 } }}
-      />
+      <Tooltip title={palitra.conversionError || label}>
+        <span>
+          <PowerChip
+            label={label}
+            size="small"
+            interactive={false}
+            selected
+            backgroundColor="error.light"
+            selectedBorderColor="error.main"
+            selectedTextColor="error.contrastText"
+            sx={{ '& .MuiChip-label': { px: 1 } }}
+          />
+        </span>
+      </Tooltip>
     );
   }
   return null;

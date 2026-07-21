@@ -33,33 +33,49 @@ pub async fn load_coordinates_from_file(
     data: Vec<u8>,
     env: &Env,
 ) -> anyhow::Result<PalitraKmzData> {
+    let mut upload = parse_coordinates_from_file(&file_name, &data).await?;
+    upload.s3_id = store_palitra_source_file(&file_name, &data, env).await?;
+    Ok(upload)
+}
+
+pub(crate) async fn store_palitra_source_file(
+    file_name: &str,
+    data: &[u8],
+    env: &Env,
+) -> anyhow::Result<Option<String>> {
     let storage_dir = std::env::temp_dir()
         .join(PALITRA_STORAGE_DIR_NAME)
         .join(format!("{}", Utc::now().naive_utc().date()));
     tokio::fs::create_dir_all(storage_dir.as_path())
         .await
         .c(h!())?;
-    let safe_file_name = sanitize_upload_filename(&file_name);
+    let safe_file_name = sanitize_upload_filename(file_name);
     // store original palitra file in s3. update in config in order to disable
-    let s3_id = if env
+    if env
         .config
         .store_palitra_in_s3
         .unwrap_or(crate::config::DEFAULT_STORE_PALITRA_IN_S3)
     {
         let file_s3_id = crate::messenger::media::store_asset(
             env,
-            &data,
+            data,
             Some(&safe_file_name),
             Some(crate::config::KMZ_CONTENT_TYPE),
         )
         .await
         .c(h!())?;
         info!("uploaded {safe_file_name} to b2, available at {file_s3_id}");
-        Some(file_s3_id)
+        Ok(Some(file_s3_id))
     } else {
-        None
-    };
+        Ok(None)
+    }
+}
 
+pub(crate) async fn parse_coordinates_from_file(
+    file_name: &str,
+    data: &[u8],
+) -> anyhow::Result<PalitraKmzData> {
+    let safe_file_name = sanitize_upload_filename(file_name);
     let tmp_dir = tempdir()?;
     let path = tmp_dir.path().join(&safe_file_name);
     fs::write(path.as_path(), data).await.c(h!())?;
@@ -77,7 +93,7 @@ pub async fn load_coordinates_from_file(
     Ok(PalitraKmzData {
         points: points.points,
         line_strings: points.line_strings,
-        s3_id,
+        s3_id: None,
     })
 }
 
@@ -738,5 +754,14 @@ mod tests {
         );
 
         Ok(())
+    }
+
+    #[tokio::test]
+    async fn malformed_kml_is_rejected_before_storage() {
+        let data = b"2<?xml version=\"1.0\"?><kml></kml>";
+
+        assert!(parse_coordinates_from_file("broken.kml", data)
+            .await
+            .is_err());
     }
 }

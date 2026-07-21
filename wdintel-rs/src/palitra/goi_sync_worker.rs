@@ -41,6 +41,8 @@ const GOI_PALITRA_MISSING_ECHO_FILE_TEXT: &str =
     "Missing Echo palitra source file for checksum sync";
 const GOI_PALITRA_ECHO_AND_GOI_CHANGED_TEXT: &str =
     "Echo and GOI checksums changed since last sync";
+const GOI_PALITRA_DIRECT_IMPORT_FAILED_TEXT_PREFIX: &str =
+    "Failed to import GOI palitra";
 
 #[derive(Clone)]
 struct GoiSyncTarget {
@@ -62,6 +64,11 @@ struct GoiSourceFileSnapshot {
     file_data: Vec<u8>,
     file_size: i64,
     file_sha256: String,
+}
+
+enum DirectGoiPalitraUpload {
+    Ready(crate::palitra::kmz::PalitraKmzData),
+    Invalid(String),
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -1250,7 +1257,11 @@ fn append_goi_sync_success_resolution_if_needed(
     let Some(latest) = super::goi_changelog::latest_entry(&entries) else {
         return Ok(None);
     };
-    if latest.is_ok {
+    if latest.is_ok
+        || latest
+            .text
+            .starts_with(GOI_PALITRA_DIRECT_IMPORT_FAILED_TEXT_PREFIX)
+    {
         return Ok(None);
     }
     super::goi_changelog::append_to_value(
@@ -1685,9 +1696,40 @@ async fn refresh_direct_goi_palitra_file(
     };
     let retained_palitra_id = palitra.id;
     let upload =
-        load_direct_goi_palitra_upload(env, filename.clone(), file_data)
+        match load_direct_goi_palitra_upload(env, filename.clone(), file_data)
             .await
-            .c(h!())?;
+            .c(h!())?
+        {
+            DirectGoiPalitraUpload::Ready(upload) => upload,
+            DirectGoiPalitraUpload::Invalid(conversion_error) => {
+                let txn = env.dbx.begin().await.c(h!())?;
+                record_direct_goi_palitra_failure(
+                    &txn,
+                    integration.id,
+                    retained_palitra_id,
+                    remote_path,
+                    &extension,
+                    is_archived,
+                    file_size,
+                    file_sha256,
+                    conversion_error,
+                    imported_from_goi_update_for_refresh(tracked_rows),
+                )
+                .await
+                .c(h!())?;
+                delete_stale_tracked_goi_palitras(
+                    &txn,
+                    integration.id,
+                    remote_path,
+                    &palitra_ids,
+                    retained_palitra_id,
+                )
+                .await
+                .c(h!())?;
+                txn.commit().await.c(h!())?;
+                return Ok(());
+            }
+        };
     let uploaded_at = Utc::now();
     let txn = env.dbx.begin().await.c(h!())?;
     update_imported_palitra_fields(
@@ -1730,21 +1772,40 @@ async fn refresh_direct_goi_palitra_file(
     refresh_palitra_missing_in_goi(&txn, retained_palitra_id)
         .await
         .c(h!())?;
-    let stale_palitra_ids = palitra_ids
-        .into_iter()
+    delete_stale_tracked_goi_palitras(
+        &txn,
+        integration.id,
+        remote_path,
+        &palitra_ids,
+        retained_palitra_id,
+    )
+    .await
+    .c(h!())?;
+    txn.commit().await.c(h!())?;
+    Ok(())
+}
+
+async fn delete_stale_tracked_goi_palitras(
+    txn: &DatabaseTransaction,
+    integration_id: i64,
+    remote_path: &str,
+    palitra_ids: &[i64],
+    retained_palitra_id: i64,
+) -> anyhow::Result<()> {
+    for stale_palitra_id in palitra_ids
+        .iter()
+        .copied()
         .filter(|palitra_id| *palitra_id != retained_palitra_id)
-        .collect_vec();
-    for stale_palitra_id in stale_palitra_ids {
+    {
         delete_stale_imported_goi_palitra(
-            &txn,
-            integration.id,
+            txn,
+            integration_id,
             remote_path,
             stale_palitra_id,
         )
         .await
         .c(h!())?;
     }
-    txn.commit().await.c(h!())?;
     Ok(())
 }
 
@@ -1909,10 +1970,21 @@ async fn load_direct_goi_palitra_upload(
     env: &Env,
     filename: String,
     file_data: Vec<u8>,
-) -> anyhow::Result<crate::palitra::kmz::PalitraKmzData> {
-    super::kmz::load_coordinates_from_file(filename, file_data, env)
-        .await
-        .c(h!())
+) -> anyhow::Result<DirectGoiPalitraUpload> {
+    let mut upload =
+        match super::kmz::parse_coordinates_from_file(&filename, &file_data)
+            .await
+        {
+            Ok(upload) => upload,
+            Err(err) => {
+                return Ok(DirectGoiPalitraUpload::Invalid(format!("{err:#}")));
+            }
+        };
+    upload.s3_id =
+        super::kmz::store_palitra_source_file(&filename, &file_data, env)
+            .await
+            .c(h!())?;
+    Ok(DirectGoiPalitraUpload::Ready(upload))
 }
 
 async fn rewrite_direct_goi_palitra_geometries(
@@ -2154,6 +2226,8 @@ async fn import_goi_palitra_file(
         extension,
         file_data,
         is_archived,
+        file_size,
+        file_sha256,
     )
     .await
 }
@@ -2260,11 +2334,32 @@ async fn import_direct_goi_palitra_file(
     extension: String,
     file_data: Vec<u8>,
     is_archived: bool,
+    file_size: i64,
+    file_sha256: String,
 ) -> anyhow::Result<Vec<i64>> {
     let upload =
-        load_direct_goi_palitra_upload(env, filename.clone(), file_data)
+        match load_direct_goi_palitra_upload(env, filename.clone(), file_data)
             .await
-            .c(h!())?;
+            .c(h!())?
+        {
+            DirectGoiPalitraUpload::Ready(upload) => upload,
+            DirectGoiPalitraUpload::Invalid(conversion_error) => {
+                persist_failed_direct_goi_palitra_import(
+                    env,
+                    integration,
+                    remote_path,
+                    filename,
+                    extension,
+                    is_archived,
+                    file_size,
+                    file_sha256,
+                    conversion_error,
+                )
+                .await
+                .c(h!())?;
+                return Ok(vec![]);
+            }
+        };
     let s3_id = upload.s3_id;
     let points_by_color = super::group_palitra_points_by_color(upload.points);
     let line_strings_by_color =
@@ -2324,6 +2419,118 @@ async fn import_direct_goi_palitra_file(
     .c(h!())?;
     txn.commit().await.c(h!())?;
     Ok(vec![palitra.id])
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn persist_failed_direct_goi_palitra_import(
+    env: &Env,
+    integration: &goi_integration::Model,
+    remote_path: &str,
+    filename: String,
+    extension: String,
+    is_archived: bool,
+    file_size: i64,
+    file_sha256: String,
+    conversion_error: String,
+) -> anyhow::Result<()> {
+    let organism_ids =
+        goi_import_access(&env.dbx, integration).await.c(h!())?;
+    let author = integration.maintainer_login.clone().c(h!())?;
+    let txn = env.dbx.begin().await.c(h!())?;
+    let palitra = super::bl::create_palitra(
+        author,
+        CreatePalitraReq {
+            name: goi_palitra_name(remote_path),
+            color_hex: crate::config::PALITRA_POINT_FALLBACK_COLOR_HEX
+                .to_string(),
+            access: PalitraAccess::ByOrganisms { organism_ids },
+            source_file_name: Some(filename),
+            last_uploaded_at_ts: Some(Utc::now().timestamp_millis()),
+        },
+        &txn,
+    )
+    .await
+    .c(h!())?;
+    update_imported_palitra_folder(&txn, palitra.id, remote_path)
+        .await
+        .c(h!())?;
+    record_direct_goi_palitra_failure(
+        &txn,
+        integration.id,
+        palitra.id,
+        remote_path,
+        &extension,
+        is_archived,
+        file_size,
+        file_sha256,
+        conversion_error,
+        Some(true),
+    )
+    .await
+    .c(h!())?;
+    txn.commit().await.c(h!())?;
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn record_direct_goi_palitra_failure<'a, C>(
+    dbx: &'a C,
+    integration_id: i64,
+    palitra_id: i64,
+    remote_path: &str,
+    extension: &str,
+    is_archived: bool,
+    file_size: i64,
+    file_sha256: String,
+    conversion_error: String,
+    imported_from_goi: Option<bool>,
+) -> anyhow::Result<()>
+where
+    C: ConnectionTrait + 'a,
+{
+    update_imported_palitra_fields(
+        dbx,
+        palitra_id,
+        PALITRA_CONVERSION_STATUS_ERROR,
+        extension,
+        is_archived,
+        imported_from_goi,
+    )
+    .await
+    .c(h!())?;
+    super::update_palitra_conversion_status(
+        dbx,
+        palitra_id,
+        PALITRA_CONVERSION_STATUS_ERROR,
+        Some(extension.to_string()),
+        None,
+        Some(conversion_error.clone()),
+    )
+    .await
+    .c(h!())?;
+    upsert_goi_palitra_sync(
+        dbx,
+        integration_id,
+        Some(palitra_id),
+        remote_path,
+        PALITRA_GOI_SYNC_DIRECTION_GOI,
+        PALITRA_GOI_REMOTE_STATUS_PRESENT,
+        Some(file_size),
+        Some(file_sha256),
+        Some(super::goi_changelog::error_entry(
+            format!(
+                "{GOI_PALITRA_DIRECT_IMPORT_FAILED_TEXT_PREFIX}: {conversion_error}"
+            ),
+            "Не вдалося імпортувати файл палітри з ГОІ.",
+        )),
+        None,
+    )
+    .await
+    .c(h!())?;
+    refresh_palitra_missing_in_goi(dbx, palitra_id)
+        .await
+        .c(h!())?;
+    Ok(())
 }
 
 async fn update_imported_palitra_folder<'a, C>(
@@ -3845,6 +4052,108 @@ mod tests {
         );
         assert_eq!(row.goi_source_file_data, Some(vec![9, 8, 7]));
         assert_eq!(row.goi_source_file_sha256.as_deref(), Some("failed-sha"));
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn malformed_direct_goi_import_is_visible_until_source_changes() {
+        let env = cleanup().await.unwrap();
+        let integration = mk_goi_integration_for_test(
+            &env.dbx,
+            "goi-malformed-direct-import-test",
+        )
+        .await;
+
+        persist_failed_direct_goi_palitra_import(
+            env.as_ref(),
+            &integration,
+            "sector/broken.kml",
+            "broken.kml".to_string(),
+            "kml".to_string(),
+            false,
+            4,
+            "broken-sha".to_string(),
+            "invalid XML before declaration".to_string(),
+        )
+        .await
+        .unwrap();
+
+        let row = goi_palitra_sync::Entity::find()
+            .filter(
+                goi_palitra_sync::Column::GoiIntegrationId.eq(integration.id),
+            )
+            .filter(
+                goi_palitra_sync::Column::RemoteRelativePath
+                    .eq("sector/broken.kml"),
+            )
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        let palitra_id = row.palitra_id.unwrap();
+        let palitra = palitra::Entity::find_by_id(palitra_id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        let access = palitra_access_organism::Entity::find()
+            .filter(palitra_access_organism::Column::PalitraId.eq(palitra_id))
+            .all(&env.dbx)
+            .await
+            .unwrap();
+        let entries =
+            super::super::goi_changelog::entries_from_value(&row.changelog);
+        let latest =
+            super::super::goi_changelog::latest_entry(&entries).unwrap();
+
+        assert_eq!(palitra.name, "broken");
+        assert_eq!(palitra.folder.as_deref(), Some("sector"));
+        assert!(palitra.imported_from_goi);
+        assert_eq!(palitra.conversion_status, PALITRA_CONVERSION_STATUS_ERROR);
+        assert_eq!(palitra.source_format.as_deref(), Some("kml"));
+        assert_eq!(
+            palitra.conversion_error.as_deref(),
+            Some("invalid XML before declaration")
+        );
+        assert_eq!(access.len(), 1);
+        assert_eq!(access[0].organism_id, integration.owner_organism_id);
+        assert_eq!(row.direction, PALITRA_GOI_SYNC_DIRECTION_GOI);
+        assert_eq!(row.goi_file_sha256.as_deref(), Some("broken-sha"));
+        assert!(!latest.is_ok);
+        assert!(latest
+            .text
+            .starts_with(GOI_PALITRA_DIRECT_IMPORT_FAILED_TEXT_PREFIX));
+
+        update_tracked_goi_palitra_metadata(
+            &env.dbx,
+            std::slice::from_ref(&row),
+            4,
+            "broken-sha",
+        )
+        .await
+        .unwrap();
+        let unchanged_row = goi_palitra_sync::Entity::find_by_id(row.id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        let entries = super::super::goi_changelog::entries_from_value(
+            &unchanged_row.changelog,
+        );
+        let latest =
+            super::super::goi_changelog::latest_entry(&entries).unwrap();
+
+        assert!(!latest.is_ok);
+        assert!(!tracked_goi_file_needs_refresh(
+            std::slice::from_ref(&unchanged_row),
+            4,
+            "broken-sha"
+        ));
+        assert!(tracked_goi_file_needs_refresh(
+            std::slice::from_ref(&unchanged_row),
+            5,
+            "fixed-sha"
+        ));
     }
 
     fn checksum(file_size: i64, file_sha256: &str) -> FileChecksumRef<'_> {
