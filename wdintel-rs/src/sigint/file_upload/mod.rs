@@ -1,3 +1,5 @@
+use crate::users::ensure_rer_role;
+use crate::users::login_id_from_identity;
 pub mod tus;
 
 use crate::error::AppError;
@@ -40,8 +42,8 @@ async fn handle_tus(
     request_file: Option<String>,
     payload: web::Payload,
 ) -> Result<HttpResponse, AppError> {
-    let login = crate::users::identity_id(&user)?;
-    ensure_request_allowed(&login, &env).await.c(h!())?;
+    let login = login_id_from_identity(&user)?;
+    ensure_request_allowed(&user, &env).await.c(h!())?;
 
     tus::TusHandler::new(env.config.storage_dir.clone(), TUS_PATH_BASE)
         .handle_request(
@@ -55,12 +57,10 @@ async fn handle_tus(
 }
 
 async fn ensure_request_allowed(
-    login: &uuid::Uuid,
+    user: &actix_identity::Identity,
     env: &Env,
 ) -> Result<(), AppError> {
-    crate::users::has_role(&env.dbx, login, "Rer")
-        .await
-        .c(h!())?;
+    ensure_rer_role(&env.dbx, user).await.c(h!())?;
     if env.config.s3_config.is_none() {
         return Err(AppError::BL {
             msg: "s3 config is required for attachment upload".to_string(),

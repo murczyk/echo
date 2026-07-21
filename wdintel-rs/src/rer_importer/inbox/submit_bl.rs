@@ -2,6 +2,7 @@ use crate::entities::datasource;
 use crate::error::AppError;
 use crate::rer_importer::types::*;
 use crate::types::*;
+use crate::users::{has_any_role, login_id_from_identity};
 use actix_identity::Identity;
 use actix_web::web::Data;
 use sea_orm::*;
@@ -18,14 +19,14 @@ pub(crate) async fn submit_generic_inbox(
     env: &Data<Env>,
     item: InboxSubmitItem,
 ) -> Result<GenericInboxSubmitRsp, AppError> {
-    let login = crate::users::identity_id(&user)?;
-    crate::users::has_any_role(
+    has_any_role(
         &env.dbx,
-        &login,
+        &login_id_from_identity(&user)?,
         vec!["Rer", "Api", "ApiAgent"],
     )
     .await
     .c(h!())?;
+    let login = login_id_from_identity(&user)?;
     let logins = crate::users::get_organism_login_ids(&env.dbx, user)
         .await
         .context(h!())?;

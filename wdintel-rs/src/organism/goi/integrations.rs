@@ -36,6 +36,10 @@ use crate::organism::types::{
 };
 use crate::sigint::aor::report_order;
 use crate::types::*;
+use crate::users::{
+    ensure_admin, ensure_rer_role, ensure_rer_role_by_id, has_role,
+    login_id_from_identity,
+};
 use crate::utils::string::{
     normalize_optional_trimmed, normalize_trimmed_or_default,
 };
@@ -78,12 +82,7 @@ pub async fn list_admin_goi_integrations(
     user: actix_identity::Identity,
     env: actix_web::web::Data<Env>,
 ) -> Result<Json<ListGoiAdminIntegrationsRsp>, AppError> {
-    crate::users::has_role(
-        &env.dbx,
-        &crate::users::identity_id(&user)?,
-        "Admin",
-    )
-    .await?;
+    ensure_admin(&env.dbx, &user).await?;
 
     let items = load_integrations_with_owners_all(&env.dbx).await.c(h!())?;
     let mut integrations = Vec::with_capacity(items.len());
@@ -103,12 +102,7 @@ pub async fn get_admin_goi_integration(
     env: actix_web::web::Data<Env>,
     req: Json<GetGoiAdminIntegrationReq>,
 ) -> Result<Json<GoiAdminIntegration>, AppError> {
-    crate::users::has_role(
-        &env.dbx,
-        &crate::users::identity_id(&user)?,
-        "Admin",
-    )
-    .await?;
+    ensure_admin(&env.dbx, &user).await?;
 
     let item = load_integration_with_owner(&env.dbx, req.id)
         .await
@@ -124,12 +118,7 @@ pub async fn upsert_admin_goi_integration(
     env: actix_web::web::Data<Env>,
     req: Json<UpsertGoiAdminIntegrationReq>,
 ) -> Result<Json<GoiAdminIntegration>, AppError> {
-    crate::users::has_role(
-        &env.dbx,
-        &crate::users::identity_id(&user)?,
-        "Admin",
-    )
-    .await?;
+    ensure_admin(&env.dbx, &user).await?;
 
     let req = req.into_inner();
     validate_goi_admin_integration_req(&req)?;
@@ -241,12 +230,7 @@ pub async fn delete_admin_goi_integration(
     env: actix_web::web::Data<Env>,
     req: Json<DeleteGoiAdminIntegrationReq>,
 ) -> Result<Json<()>, AppError> {
-    crate::users::has_role(
-        &env.dbx,
-        &crate::users::identity_id(&user)?,
-        "Admin",
-    )
-    .await?;
+    ensure_admin(&env.dbx, &user).await?;
 
     goi_integration::Entity::delete_many()
         .filter(goi_integration::Column::Id.eq(req.id))
@@ -263,12 +247,7 @@ pub async fn check_goi_integration_connection(
     env: actix_web::web::Data<Env>,
     req: Json<CheckOrganismGoiConnectionReq>,
 ) -> Result<Json<CheckOrganismGoiConnectionRsp>, AppError> {
-    crate::users::has_role(
-        &env.dbx,
-        &crate::users::identity_id(&user)?,
-        "Admin",
-    )
-    .await?;
+    ensure_admin(&env.dbx, &user).await?;
 
     let req = req.into_inner();
     let (listed_entries, error) = match super::goi_validate_connection_req(&req)
@@ -302,12 +281,7 @@ pub async fn setup_goi_integration_worker(
     env: actix_web::web::Data<Env>,
     req: Json<SetupGoiIntegrationWorkerReq>,
 ) -> Result<Json<GoiAdminIntegration>, AppError> {
-    crate::users::has_role(
-        &env.dbx,
-        &crate::users::identity_id(&user)?,
-        "Admin",
-    )
-    .await?;
+    ensure_admin(&env.dbx, &user).await?;
 
     let req = req.into_inner();
     let ssh_req = CheckOrganismGoiConnectionReq {
@@ -379,10 +353,9 @@ pub async fn list_current_user_goi_integrations(
     user: actix_identity::Identity,
     env: actix_web::web::Data<Env>,
 ) -> Result<Json<ListCurrentUserGoiIntegrationsRsp>, AppError> {
-    crate::users::has_role(&env.dbx, &crate::users::identity_id(&user)?, "Rer")
-        .await?;
+    ensure_rer_role(&env.dbx, &user).await?;
 
-    let user_id = crate::users::identity_id(&user)?;
+    let user_id = login_id_from_identity(&user)?;
     let is_admin = goi_pause_worker_user_is_admin(&env.dbx, &user_id).await;
     let items = load_accessible_integrations_for_user(&env.dbx, &user_id)
         .await
@@ -403,10 +376,9 @@ pub async fn update_current_user_goi_pause_worker(
     env: actix_web::web::Data<Env>,
     req: Json<UpdateGoiIntegrationPauseWorkerReq>,
 ) -> Result<Json<GoiUserIntegration>, AppError> {
-    crate::users::has_role(&env.dbx, &crate::users::identity_id(&user)?, "Rer")
-        .await?;
+    ensure_rer_role(&env.dbx, &user).await?;
 
-    let user_id = crate::users::identity_id(&user)?;
+    let user_id = login_id_from_identity(&user)?;
     let req = req.into_inner();
     let item = load_accessible_integration_for_user(
         &env.dbx,
@@ -441,7 +413,7 @@ pub async fn list_goi_report_tab_order(
     env: actix_web::web::Data<Env>,
     req: Json<GoiReportTabOrderListReq>,
 ) -> Result<Json<GoiReportTabOrderListRsp>, AppError> {
-    let user_id = crate::users::identity_id(&user)?;
+    let user_id = login_id_from_identity(&user)?;
     let organism_id = resolve_report_tab_order_organism_id(
         &env.dbx,
         &user_id,
@@ -466,7 +438,7 @@ pub async fn update_goi_report_tab_order(
     env: actix_web::web::Data<Env>,
     req: Json<GoiReportTabOrderUpdateReq>,
 ) -> Result<Json<GoiReportTabOrderListRsp>, AppError> {
-    let user_id = crate::users::identity_id(&user)?;
+    let user_id = login_id_from_identity(&user)?;
     let organism_id = resolve_report_tab_order_organism_id(
         &env.dbx,
         &user_id,
@@ -503,10 +475,9 @@ pub async fn list_current_user_goi_associations(
     env: actix_web::web::Data<Env>,
     req: Json<ListGoiAssociationsReq>,
 ) -> Result<Json<ListGoiAssociationsRsp>, AppError> {
-    crate::users::has_role(&env.dbx, &crate::users::identity_id(&user)?, "Rer")
-        .await?;
+    ensure_rer_role(&env.dbx, &user).await?;
 
-    let user_id = crate::users::identity_id(&user)?;
+    let user_id = login_id_from_identity(&user)?;
     let req = req.into_inner();
     let integrations =
         load_accessible_integrations_for_user(&env.dbx, &user_id)
@@ -554,10 +525,9 @@ pub async fn list_current_user_goi_knowledge(
     env: actix_web::web::Data<Env>,
     req: Json<ListGoiKnowledgeReq>,
 ) -> Result<Json<ListGoiKnowledgeRsp>, AppError> {
-    crate::users::has_role(&env.dbx, &crate::users::identity_id(&user)?, "Rer")
-        .await?;
+    ensure_rer_role(&env.dbx, &user).await?;
 
-    let user_id = crate::users::identity_id(&user)?;
+    let user_id = login_id_from_identity(&user)?;
     let req = req.into_inner();
     let integrations =
         load_accessible_integrations_for_user(&env.dbx, &user_id)
@@ -606,7 +576,7 @@ async fn resolve_report_tab_order_organism_id(
 ) -> Result<Option<i64>, AppError> {
     match integration_id {
         Some(integration_id) => {
-            crate::users::has_role(dbx, user_id, "Rer").await?;
+            ensure_rer_role_by_id(dbx, user_id).await?;
             let integration = load_accessible_integration_for_user(
                 dbx,
                 user_id,
@@ -617,7 +587,7 @@ async fn resolve_report_tab_order_organism_id(
             Ok(Some(integration.integration.owner_organism_id))
         }
         None => {
-            crate::users::has_role(dbx, user_id, "Admin").await?;
+            has_role(dbx, user_id, "Admin").await?;
             Ok(None)
         }
     }
@@ -639,10 +609,9 @@ pub async fn restart_current_user_goi_service(
     env: actix_web::web::Data<Env>,
     req: Json<RestartGoiIntegrationServiceReq>,
 ) -> Result<Json<bool>, AppError> {
-    crate::users::has_role(&env.dbx, &crate::users::identity_id(&user)?, "Rer")
-        .await?;
+    ensure_rer_role(&env.dbx, &user).await?;
 
-    let user_id = crate::users::identity_id(&user)?;
+    let user_id = login_id_from_identity(&user)?;
     let integrations =
         load_accessible_integrations_for_user(&env.dbx, &user_id)
             .await
@@ -675,10 +644,9 @@ pub async fn unlink_current_user_goi_whatsapp(
     env: actix_web::web::Data<Env>,
     req: Json<UnlinkGoiIntegrationWhatsappReq>,
 ) -> Result<Json<bool>, AppError> {
-    crate::users::has_role(&env.dbx, &crate::users::identity_id(&user)?, "Rer")
-        .await?;
+    ensure_rer_role(&env.dbx, &user).await?;
 
-    let user_id = crate::users::identity_id(&user)?;
+    let user_id = login_id_from_identity(&user)?;
     let integrations =
         load_accessible_integrations_for_user(&env.dbx, &user_id)
             .await
@@ -711,10 +679,9 @@ pub async fn download_current_user_goi_palettes(
     env: actix_web::web::Data<Env>,
     req: Json<DownloadGoiIntegrationPalettesReq>,
 ) -> Result<HttpResponse, AppError> {
-    crate::users::has_role(&env.dbx, &crate::users::identity_id(&user)?, "Rer")
-        .await?;
+    ensure_rer_role(&env.dbx, &user).await?;
 
-    let user_id = crate::users::identity_id(&user)?;
+    let user_id = login_id_from_identity(&user)?;
     let req = req.into_inner();
     let integration = load_accessible_integration_for_user(
         &env.dbx,
@@ -751,10 +718,9 @@ pub async fn upload_current_user_goi_categories(
     integration_id: ActixPath<i64>,
     mut payload: Multipart,
 ) -> Result<Json<bool>, AppError> {
-    crate::users::has_role(&env.dbx, &crate::users::identity_id(&user)?, "Rer")
-        .await?;
+    ensure_rer_role(&env.dbx, &user).await?;
 
-    let user_id = crate::users::identity_id(&user)?;
+    let user_id = login_id_from_identity(&user)?;
     let integration = load_accessible_integration_for_user(
         &env.dbx,
         &user_id,
@@ -1386,7 +1352,7 @@ async fn goi_pause_worker_user_is_admin(
     dbx: &DatabaseConnection,
     user_id: &uuid::Uuid,
 ) -> bool {
-    crate::users::has_role(dbx, user_id, "Admin").await.is_ok()
+    has_role(dbx, user_id, "Admin").await.is_ok()
 }
 
 fn goi_pause_worker_can_change(

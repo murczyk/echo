@@ -7,6 +7,7 @@ use crate::palitra::types::*;
 use crate::palitra::{cancel_palitra_conversion, schedule_palitra_goi_delete};
 use crate::sigint::aor::bl::expand_aor_ids_to_descendants;
 use crate::types::*;
+use crate::users::has_role;
 use crate::utils::orm::ArrayColumnOps;
 use crate::{h, nlp};
 use actix_web::web::Data;
@@ -1284,7 +1285,7 @@ async fn has_admin_role(
     login: &uuid::Uuid,
     dbx: &DatabaseConnection,
 ) -> anyhow::Result<bool> {
-    Ok(crate::users::has_role(dbx, login, "Admin").await.is_ok())
+    Ok(has_role(dbx, login, "Admin").await.is_ok())
 }
 
 async fn collect_mutable_palitra_models_for_accessible_login(
@@ -3748,9 +3749,7 @@ mod tests {
         let env = actix_web::web::Data::from(env);
 
         let deleted = super::super::delete_palitra_from_folder_if_allowed(
-            palitra.id,
-            &login.id,
-            &env,
+            palitra.id, &login.id, &env,
         )
         .await
         .unwrap();

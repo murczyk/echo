@@ -2,6 +2,7 @@ use crate::entities::{organism, sigint_key_share_policy};
 use crate::error::AppError;
 use crate::h;
 use crate::types::{Deserialize, Env, Serialize, ShortContext};
+use crate::users::{ensure_admin, login_id_from_identity};
 use actix_web::post;
 use actix_web::web::{Data, Json};
 use elm_rs::{Elm, ElmDecode, ElmEncode};
@@ -39,10 +40,7 @@ pub async fn list_key_share_policies(
     env: Data<Env>,
     _req: Json<()>,
 ) -> Result<Json<Vec<SigintKeySharePolicy>>, AppError> {
-    let login = crate::users::identity_id(&user)?;
-    crate::users::has_role(&env.dbx, &login, "Admin")
-        .await
-        .c(h!())?;
+    ensure_admin(&env.dbx, &user).await.c(h!())?;
 
     let policies = sigint_key_share_policy::Entity::find()
         .filter(sigint_key_share_policy::Column::Deleted.eq(false))
@@ -76,10 +74,8 @@ pub async fn create_key_share_policy(
     env: Data<Env>,
     req: Json<CreateSigintKeySharePolicyReq>,
 ) -> Result<Json<SigintKeySharePolicy>, AppError> {
-    let login = crate::users::identity_id(&user)?;
-    crate::users::has_role(&env.dbx, &login, "Admin")
-        .await
-        .c(h!())?;
+    ensure_admin(&env.dbx, &user).await.c(h!())?;
+    let login = login_id_from_identity(&user)?;
 
     ensure_organism_exists(&env.dbx, req.grant_from).await?;
     ensure_organism_exists(&env.dbx, req.grant_to).await?;
@@ -104,10 +100,8 @@ pub async fn delete_key_share_policy(
     env: Data<Env>,
     req: Json<DeleteSigintKeySharePolicyReq>,
 ) -> Result<Json<()>, AppError> {
-    let login = crate::users::identity_id(&user)?;
-    crate::users::has_role(&env.dbx, &login, "Admin")
-        .await
-        .c(h!())?;
+    ensure_admin(&env.dbx, &user).await.c(h!())?;
+    let login = login_id_from_identity(&user)?;
 
     let policy = sigint_key_share_policy::Entity::find_by_id(req.id)
         .one(&env.dbx)

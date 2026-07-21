@@ -119,9 +119,10 @@ pub async fn report_docx_kind_digest(
     };
     let show_date = check_should_show_date(report_since, report_till);
     let login = *user_login;
-    let login_ids = crate::users::get_organism_login_ids_by_id(&read_db, &login)
-        .await
-        .context(h!())?;
+    let login_ids =
+        crate::users::get_organism_login_ids_by_id(&read_db, &login)
+            .await
+            .context(h!())?;
     let mut request = req.req.clone();
     request.report_tags_only_this_unit = Some(false);
     request.or_with_extended_form = Some(true); // with comments only

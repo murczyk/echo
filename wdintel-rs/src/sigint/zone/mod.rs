@@ -5,6 +5,7 @@ use crate::entities::*;
 use crate::sigint::aor::bl::collect_group_aors;
 use crate::sigint::aor::render_aor;
 use crate::types::*;
+use crate::users::{ensure_admin, has_any_role, login_id_from_identity};
 use crate::utils::orm::ArrayColumnOps;
 use actix_web::post;
 use actix_web::web::Json;
@@ -19,9 +20,9 @@ pub async fn zones_list(
     env: actix_web::web::Data<Env>,
     user: actix_identity::Identity,
 ) -> Result<Json<Vec<(i64, SigintZone)>>, AppError> {
-    crate::users::has_any_role(
+    has_any_role(
         &env.dbx,
-        &crate::users::identity_id(&user)?,
+        &login_id_from_identity(&user)?,
         vec!["Rer", "Api", "Admin"],
     )
     .await?;
@@ -49,9 +50,9 @@ pub async fn zones_datasources_list(
     user: actix_identity::Identity,
     req: Json<i64>,
 ) -> Result<Json<Vec<i64>>, AppError> {
-    crate::users::has_any_role(
+    has_any_role(
         &env.dbx,
-        &crate::users::identity_id(&user)?,
+        &login_id_from_identity(&user)?,
         vec!["Rer", "Api"],
     )
     .await?;
@@ -82,13 +83,7 @@ pub async fn zones_datasources_groups_list(
     user: actix_identity::Identity,
     req: Json<ZoneDatasourceGroupsReq>,
 ) -> Result<Json<ZoneDatasourceGroupListRsp>, AppError> {
-    crate::users::has_role(
-        &env.dbx,
-        &crate::users::identity_id(&user)?,
-        "Admin",
-    )
-    .await
-    .c(h!())?;
+    ensure_admin(&env.dbx, &user).await.c(h!())?;
     let req = req.into_inner();
     let txn = env.dbx.begin().await.c(h!())?;
 
@@ -107,10 +102,8 @@ pub async fn zones_datasources_group_update(
     user: actix_identity::Identity,
     req: Json<ZoneDatasourceGroupUpdateReq>,
 ) -> Result<Json<ZoneDatasourceGroup>, AppError> {
-    let login = crate::users::identity_id(&user)?;
-    crate::users::has_role(&env.dbx, &login, "Admin")
-        .await
-        .c(h!())?;
+    ensure_admin(&env.dbx, &user).await.c(h!())?;
+    let login = login_id_from_identity(&user)?;
     let req = req.into_inner();
 
     let txn = env.dbx.begin().await.c(h!())?;
@@ -152,10 +145,8 @@ pub async fn zones_datasources_group_add(
     user: actix_identity::Identity,
     req: Json<ZoneDatasourceGroupAddReq>,
 ) -> Result<Json<ZoneDatasourceGroupAddRsp>, AppError> {
-    let login = crate::users::identity_id(&user)?;
-    crate::users::has_role(&env.dbx, &login, "Admin")
-        .await
-        .c(h!())?;
+    ensure_admin(&env.dbx, &user).await.c(h!())?;
+    let login = login_id_from_identity(&user)?;
     let req = req.into_inner();
 
     let txn = env.dbx.begin().await.c(h!())?;
@@ -302,10 +293,8 @@ pub async fn zones_datasources_group_delete(
     user: actix_identity::Identity,
     req: Json<i64>,
 ) -> Result<Json<()>, AppError> {
-    let login = crate::users::identity_id(&user)?;
-    crate::users::has_role(&env.dbx, &login, "Admin")
-        .await
-        .c(h!())?;
+    ensure_admin(&env.dbx, &user).await.c(h!())?;
+    let login = login_id_from_identity(&user)?;
 
     let txn = env.dbx.begin().await.c(h!())?;
 
@@ -333,7 +322,7 @@ pub async fn my_admin_groups(
     env: actix_web::web::Data<Env>,
     user: actix_identity::Identity,
 ) -> Result<Json<MyAdminSignalGroupsRsp>, AppError> {
-    let login = crate::users::identity_id(&user)?;
+    let login = login_id_from_identity(&user)?;
 
     let groups = signal_group_admin::Entity::find()
         .join(
@@ -467,7 +456,7 @@ pub async fn my_admin_group_edit_reference(
         ));
     }
 
-    let login = crate::users::identity_id(&user)?;
+    let login = login_id_from_identity(&user)?;
     let req = req.into_inner();
     ensure_my_admin_group_access(&env.dbx, &login, &req.master_key)
         .await
@@ -513,7 +502,7 @@ pub async fn my_admin_group_update(
         ));
     }
 
-    let login = crate::users::identity_id(&user)?;
+    let login = login_id_from_identity(&user)?;
     let req = req.into_inner();
     let txn = env.dbx.begin().await.c(h!())?;
 
@@ -523,7 +512,9 @@ pub async fn my_admin_group_update(
     let admin_logins =
         normalize_my_admin_group_admin_logins(req.admin_logins).c(h!())?;
     let allowed_organism_logins =
-        collect_active_organism_login_ids(&txn, &login).await.c(h!())?;
+        collect_active_organism_login_ids(&txn, &login)
+            .await
+            .c(h!())?;
     let existing_admin_logins =
         bl::collect_signal_group_admins(vec![req.master_key.clone()], &txn)
             .await

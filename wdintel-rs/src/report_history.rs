@@ -17,6 +17,10 @@ use crate::sigint::etalonka::types::{
     EtalonkaJimForksReq, EtalonkaNetworkBatchReq,
 };
 use crate::types::{Env, ShortContext};
+use crate::users::{
+    ensure_admin, ensure_rer_role, ensure_rer_role_by_id, has_role,
+    login_id_from_identity,
+};
 use actix_identity::Identity;
 use actix_web::http::header;
 use actix_web::web::Json;
@@ -1625,10 +1629,8 @@ pub async fn report_history_list(
     user: Identity,
     env: actix_web::web::Data<Env>,
 ) -> Result<Json<Vec<ReportHistoryRow>>, AppError> {
-    let user_login = crate::users::identity_id(&user)?;
-    crate::users::has_role(&env.dbx, &user_login, "Rer")
-        .await
-        .c(h!())?;
+    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    let user_login = login_id_from_identity(&user)?;
     let report_histories = ReportHistory::find()
         .filter(report_history::Column::RequestedByLoginId.eq(user_login))
         .order_by_desc(report_history::Column::CreatedAt)
@@ -1647,10 +1649,7 @@ pub async fn report_history_admin_list(
     env: actix_web::web::Data<Env>,
     req: Json<ReportHistoryAdminListReq>,
 ) -> Result<Json<ReportHistoryAdminListRsp>, AppError> {
-    let user_login = crate::users::identity_id(&user)?;
-    crate::users::has_role(&env.dbx, &user_login, "Admin")
-        .await
-        .c(h!())?;
+    ensure_admin(&env.dbx, &user).await.c(h!())?;
     Ok(Json(list_admin_report_histories(&env.dbx, &req).await?))
 }
 
@@ -1672,10 +1671,8 @@ pub async fn report_history_retry(
     env: actix_web::web::Data<Env>,
     req: Json<ReportHistoryIdReq>,
 ) -> Result<Json<ReportHistoryRow>, AppError> {
-    let user_login = crate::users::identity_id(&user)?;
-    crate::users::has_role(&env.dbx, &user_login, "Rer")
-        .await
-        .c(h!())?;
+    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    let user_login = login_id_from_identity(&user)?;
     let report_history = find_report_for_user(&env.dbx, req.id, &user_login)
         .await?
         .ok_or(AppError::NotFound)?;
@@ -1710,10 +1707,8 @@ pub async fn report_history_cancel(
     env: actix_web::web::Data<Env>,
     req: Json<ReportHistoryIdReq>,
 ) -> Result<Json<ReportHistoryRow>, AppError> {
-    let user_login = crate::users::identity_id(&user)?;
-    crate::users::has_role(&env.dbx, &user_login, "Rer")
-        .await
-        .c(h!())?;
+    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    let user_login = login_id_from_identity(&user)?;
     let report_history = find_report_for_user(&env.dbx, req.id, &user_login)
         .await?
         .ok_or(AppError::NotFound)?;
@@ -1780,7 +1775,7 @@ pub async fn report_history_download(
     env: actix_web::web::Data<Env>,
     req: Json<ReportHistoryIdReq>,
 ) -> Result<HttpResponse, AppError> {
-    let user_login = crate::users::identity_id(&user)?;
+    let user_login = login_id_from_identity(&user)?;
     download_report_for_user_login(&env, &user_login, req.id).await
 }
 
@@ -1789,9 +1784,7 @@ pub async fn download_report_for_user_login(
     user_login: &uuid::Uuid,
     report_history_id: i64,
 ) -> Result<HttpResponse, AppError> {
-    crate::users::has_role(&env.dbx, user_login, "Rer")
-        .await
-        .c(h!())?;
+    ensure_rer_role_by_id(&env.dbx, user_login).await.c(h!())?;
     let report_history =
         find_report_for_user(&env.dbx, report_history_id, user_login)
             .await?
@@ -1819,10 +1812,8 @@ async fn find_current_user_report(
     user: &Identity,
     id: i64,
 ) -> Result<report_history::Model, AppError> {
-    let user_login = crate::users::identity_id(user)?;
-    crate::users::has_role(&env.dbx, &user_login, "Rer")
-        .await
-        .c(h!())?;
+    ensure_rer_role(&env.dbx, user).await.c(h!())?;
+    let user_login = login_id_from_identity(user)?;
     find_report_for_user(&env.dbx, id, &user_login)
         .await?
         .ok_or(AppError::NotFound)
@@ -1833,7 +1824,7 @@ async fn find_report_for_user(
     id: i64,
     user_login: &uuid::Uuid,
 ) -> Result<Option<report_history::Model>, AppError> {
-    match crate::users::has_role(dbx, user_login, "Admin").await {
+    match has_role(dbx, user_login, "Admin").await {
         Ok(()) => Ok(ReportHistory::find_by_id(id).one(dbx).await.c(h!())?),
         Err(AppError::Forbidden(_)) => {
             find_report_for_login(dbx, id, user_login).await

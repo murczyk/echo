@@ -1,3 +1,4 @@
+use crate::users::{has_any_role, login_id_from_identity};
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use crate::entities::*;
@@ -113,14 +114,14 @@ pub async fn network_callsigns_relations(
     env: actix_web::web::Data<Env>,
     req: Json<NetworkCallsignRelationsReq>,
 ) -> Result<Json<NetworkCallsignRelationsRsp>, AppError> {
-    let user_id = crate::users::identity_id(&user)?;
-    crate::users::has_any_role(
+    has_any_role(
         &env.dbx,
-        &user_id,
+        &login_id_from_identity(&user)?,
         vec!["Rer", "Api", "ApiAgent"],
     )
     .await
     .c(h!())?;
+    let user_id = login_id_from_identity(&user)?;
 
     let req = req.into_inner();
     let network_id = req.network_id;
@@ -172,10 +173,9 @@ pub async fn network_callsigns_relation_messages(
     env: actix_web::web::Data<Env>,
     req: Json<NetworkCallsignRelationMessagesReq>,
 ) -> Result<Json<NetworkCallsignRelationMessagesRsp>, AppError> {
-    let user_id = crate::users::identity_id(&user)?;
-    crate::users::has_any_role(
+    has_any_role(
         &env.dbx,
-        &user_id,
+        &login_id_from_identity(&user)?,
         vec!["Rer", "Api", "ApiAgent"],
     )
     .await

@@ -1,3 +1,4 @@
+use crate::users::login_id_from_identity;
 pub mod types;
 
 pub use types::{DutyTagsLayout, UserDutySettingsDto};
@@ -33,7 +34,7 @@ pub async fn user_settings_get(
     env: Data<Env>,
     user: Identity,
 ) -> Result<Json<UserDutySettingsDto>, AppError> {
-    let login_id = crate::users::identity_id(&user)?;
+    let login_id = login_id_from_identity(&user)?;
     load_login(&env.dbx, &login_id).await.c(h!())?;
     let row = user_settings::Entity::find()
         .filter(user_settings::Column::LoginId.eq(login_id))
@@ -53,7 +54,7 @@ pub async fn user_settings_put(
     user: Identity,
     req: Json<UserDutySettingsDto>,
 ) -> Result<Json<UserDutySettingsDto>, AppError> {
-    let login_id = crate::users::identity_id(&user)?;
+    let login_id = login_id_from_identity(&user)?;
     load_login(&env.dbx, &login_id).await.c(h!())?;
     let dto = req.into_inner();
     let now = Utc::now().naive_utc();

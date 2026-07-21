@@ -1,3 +1,4 @@
+use crate::users::{ensure_admin, login_id_from_identity};
 pub mod types;
 pub mod worker;
 
@@ -559,7 +560,7 @@ pub async fn current_system_settings(
     user: Identity,
     env: actix_web::web::Data<Env>,
 ) -> Result<Json<SystemSettingsCurrentRsp>, AppError> {
-    let _login = crate::users::identity_id(&user)?;
+    let _login = login_id_from_identity(&user)?;
     let settings = get_active_system_settings(&env.dbx).await.c(h!())?;
     Ok(Json(match settings {
         Some(settings) => SystemSettingsCurrentRsp {
@@ -623,13 +624,7 @@ pub async fn list_system_settings(
     user: Identity,
     env: actix_web::web::Data<Env>,
 ) -> Result<Json<SystemSettingsListRsp>, AppError> {
-    crate::users::has_role(
-        &env.dbx,
-        &crate::users::identity_id(&user)?,
-        "Admin",
-    )
-    .await
-    .c(h!())?;
+    ensure_admin(&env.dbx, &user).await.c(h!())?;
 
     let items: Vec<SystemSettingsItem> = system_settings::Entity::find()
         .order_by_desc(system_settings::Column::Deleted)
@@ -651,10 +646,8 @@ pub async fn create_system_settings(
     env: actix_web::web::Data<Env>,
     req: Json<CreateSystemSettingsReq>,
 ) -> Result<Json<SystemSettingsItem>, AppError> {
-    let login = crate::users::identity_id(&user)?;
-    crate::users::has_role(&env.dbx, &login, "Admin")
-        .await
-        .c(h!())?;
+    ensure_admin(&env.dbx, &user).await.c(h!())?;
+    let login = login_id_from_identity(&user)?;
 
     let created =
         create_system_settings_for_login(&env.dbx, &login, &req).await?;
@@ -668,10 +661,8 @@ pub async fn activate_system_settings(
     env: actix_web::web::Data<Env>,
     req: Json<ActivateSystemSettingsReq>,
 ) -> Result<Json<SystemSettingsItem>, AppError> {
-    let login = crate::users::identity_id(&user)?;
-    crate::users::has_role(&env.dbx, &login, "Admin")
-        .await
-        .c(h!())?;
+    ensure_admin(&env.dbx, &user).await.c(h!())?;
+    let login = login_id_from_identity(&user)?;
 
     let settings =
         activate_system_settings_for_login(&env.dbx, &login, req.id).await?;

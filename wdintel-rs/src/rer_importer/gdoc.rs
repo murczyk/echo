@@ -2,6 +2,7 @@ use crate::entities::*;
 use crate::error::AppError;
 use crate::rer_importer::types::*;
 use crate::types::*;
+use crate::users::ensure_rer_role;
 use crate::utils::orm::ArrayColumnOps;
 use actix_identity::Identity;
 use actix_web::post;
@@ -14,9 +15,7 @@ async fn rer_callsign_info(
     env: actix_web::web::Data<Env>,
     req: Json<RerCallsignInfoReq>,
 ) -> Result<Json<Vec<CallsignInfo>>, AppError> {
-    crate::users::has_role(&env.dbx, &crate::users::identity_id(&user)?, "Rer")
-        .await
-        .c(h!())?;
+    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
 
     Ok(Json(
         rer_callsign_info_single(&env.dbx, &req.callsign.clone())
@@ -129,9 +128,7 @@ async fn rer_callsign_info_batch(
     env: actix_web::web::Data<Env>,
     req: Json<RerCallsignInfoBatchReq>,
 ) -> Result<Json<Vec<CallsignInfoRes>>, AppError> {
-    crate::users::has_role(&env.dbx, &crate::users::identity_id(&user)?, "Rer")
-        .await
-        .c(h!())?;
+    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
     let network_callsigns = req
         .callsigns
         .iter()

@@ -12,6 +12,9 @@ use crate::sigint::network::bl::*;
 use crate::sigint::network::filter::apply_network_list_filters;
 use crate::sigint::network::merge::*;
 use crate::types::*;
+use crate::users::{
+    ensure_rer_role, has_any_role, has_role, login_id_from_identity,
+};
 use crate::utils::orm::ArrayColumnOps;
 use crate::utils::*;
 use actix_web::post;
@@ -67,13 +70,13 @@ pub async fn network_list(
         archived: i64,
     }
 
-    let user_id = crate::users::identity_id(&user)?;
-    crate::users::has_any_role(
+    has_any_role(
         &env.dbx,
-        &crate::users::identity_id(&user)?,
+        &login_id_from_identity(&user)?,
         vec!["Rer", "Api", "ApiAgent"],
     )
     .await?;
+    let user_id = login_id_from_identity(&user)?;
 
     let networks = build_networks_query(&req, NetworkQueryKind::List)
         .all(&env.dbx)
@@ -190,8 +193,13 @@ pub async fn restore_network(
     env: actix_web::web::Data<Env>,
     req: Json<RestoreNetworkReq>,
 ) -> Result<Json<Network>, AppError> {
-    let user_id = crate::users::identity_id(&user)?;
-    crate::users::has_any_role(&env.dbx, &user_id, vec!["Rer", "Api"]).await?;
+    has_any_role(
+        &env.dbx,
+        &login_id_from_identity(&user)?,
+        vec!["Rer", "Api"],
+    )
+    .await?;
+    let user_id = login_id_from_identity(&user)?;
     let txn = env.dbx.begin().await.context(h!())?;
     let network_id = req.into_inner().network_id;
     let mut network = find_network(&txn, network_id).await.context(h!())?;
@@ -294,13 +302,13 @@ pub async fn network_info_batch_freq(
     env: actix_web::web::Data<Env>,
     req: Json<Vec<String>>,
 ) -> Result<Json<Vec<Network>>, AppError> {
-    let user_id = crate::users::identity_id(&user)?;
-    crate::users::has_any_role(
+    has_any_role(
         &env.dbx,
-        &crate::users::identity_id(&user)?,
+        &login_id_from_identity(&user)?,
         vec!["Rer", "Api", "ApiAgent"],
     )
     .await?;
+    let user_id = login_id_from_identity(&user)?;
     let txn = env.dbx.begin().await.context(h!())?;
     let res = bl_network_info_freqs(req.into_inner(), &txn, &user_id)
         .await
@@ -315,13 +323,13 @@ pub async fn network_info_batch_id(
     env: actix_web::web::Data<Env>,
     req: Json<Vec<i64>>,
 ) -> Result<Json<Vec<Network>>, AppError> {
-    let user_id = crate::users::identity_id(&user)?;
-    crate::users::has_any_role(
+    has_any_role(
         &env.dbx,
-        &crate::users::identity_id(&user)?,
+        &login_id_from_identity(&user)?,
         vec!["Rer", "Api", "ApiAgent"],
     )
     .await?;
+    let user_id = login_id_from_identity(&user)?;
     let txn = env.dbx.begin().await.context(h!())?;
     let res = bl_network_info_batch(req.clone(), &txn, &user_id)
         .await
@@ -336,13 +344,13 @@ pub async fn find_live_networks(
     env: actix_web::web::Data<Env>,
     req: Json<FindLiveNetworksReq>,
 ) -> Result<Json<FindLiveNetworksRsp>, AppError> {
-    let user_id = crate::users::identity_id(&user)?;
-    crate::users::has_any_role(
+    has_any_role(
         &env.dbx,
-        &user_id,
+        &login_id_from_identity(&user)?,
         vec!["Rer", "Api", "ApiAgent"],
     )
     .await?;
+    let user_id = login_id_from_identity(&user)?;
 
     let req = normalize_find_live_networks_req(req.into_inner());
     let groups = crate::messenger::group::get_identity_sigint_groups_noimport(
@@ -781,13 +789,13 @@ pub async fn network_info_one(
     env: actix_web::web::Data<Env>,
     req: Json<i64>,
 ) -> Result<Json<Network>, AppError> {
-    let user_id = crate::users::identity_id(&user)?;
-    crate::users::has_any_role(
+    has_any_role(
         &env.dbx,
-        &crate::users::identity_id(&user)?,
+        &login_id_from_identity(&user)?,
         vec!["Rer", "Api"],
     )
     .await?;
+    let user_id = login_id_from_identity(&user)?;
     let txn = env.dbx.begin().await.context(h!())?;
     let res = bl_network_info_batch(vec![req.0], &txn, &user_id)
         .await
@@ -802,19 +810,13 @@ pub async fn create_network(
     env: actix_web::web::Data<Env>,
     req: Json<CreateNetworkReq>,
 ) -> Result<Json<Network>, AppError> {
-    let user_id = crate::users::identity_id(&user)?;
-    let mut network_descr: Vec<sigint_network_description::ActiveModel> =
-        vec![];
-    crate::users::has_role(&env.dbx, &crate::users::identity_id(&user)?, "Rer")
+    ensure_rer_role(&env.dbx, &user).await.context(h!())?;
+    has_role(&env.dbx, &login_id_from_identity(&user)?, "UnitsEditor")
         .await
         .context(h!())?;
-    crate::users::has_role(
-        &env.dbx,
-        &crate::users::identity_id(&user)?,
-        "UnitsEditor",
-    )
-    .await
-    .context(h!())?;
+    let user_id = login_id_from_identity(&user)?;
+    let mut network_descr: Vec<sigint_network_description::ActiveModel> =
+        vec![];
 
     let txn = env.dbx.begin().await.context(h!())?;
 
@@ -1032,17 +1034,11 @@ pub async fn update_network(
     env: actix_web::web::Data<Env>,
     req: Json<UpdateNetworkReq>,
 ) -> Result<Json<Network>, AppError> {
-    let user_id = crate::users::identity_id(&user)?;
-    crate::users::has_role(&env.dbx, &crate::users::identity_id(&user)?, "Rer")
+    ensure_rer_role(&env.dbx, &user).await.context(h!())?;
+    has_role(&env.dbx, &login_id_from_identity(&user)?, "UnitsEditor")
         .await
         .context(h!())?;
-    crate::users::has_role(
-        &env.dbx,
-        &crate::users::identity_id(&user)?,
-        "UnitsEditor",
-    )
-    .await
-    .context(h!())?;
+    let user_id = login_id_from_identity(&user)?;
 
     let txn = env.dbx.begin().await.context(h!())?;
 
@@ -1084,7 +1080,7 @@ pub async fn update_network(
             Set(serde_json::to_value(unit_mask).context(h!())?);
     }
     network_model.updated_by_login_id =
-        Set(Some(crate::users::identity_id(&user)?));
+        Set(Some(login_id_from_identity(&user)?));
     network_model.updated_at = Set(Utc::now().naive_utc());
     apply_network_status(&mut network_model, req.status.clone());
     if should_reactivate_for_do_not_archive {
@@ -1203,13 +1199,11 @@ pub async fn delete_network(
     env: actix_web::web::Data<Env>,
     req: Json<DeleteNetworkReq>,
 ) -> Result<Json<Network>, AppError> {
-    let user_id = crate::users::identity_id(&user)?;
-    crate::users::has_role(&env.dbx, &user_id, "Rer")
+    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    has_role(&env.dbx, &login_id_from_identity(&user)?, "UnitsEditor")
         .await
         .c(h!())?;
-    crate::users::has_role(&env.dbx, &user_id, "UnitsEditor")
-        .await
-        .c(h!())?;
+    let user_id = login_id_from_identity(&user)?;
     let req: DeleteNetworkReq = req.into_inner();
     let network = find_network(&env.dbx, req.network_id).await.context(h!())?;
     let network_json_old = sigint_network::Entity::find_by_id(network.id)
@@ -1273,9 +1267,7 @@ pub async fn network_callsigns(
     env: actix_web::web::Data<Env>,
     req: Json<NetworkCallsignsReq>,
 ) -> Result<Json<HashMap<String, Vec<String>>>, AppError> {
-    crate::users::has_role(&env.dbx, &crate::users::identity_id(&user)?, "Rer")
-        .await
-        .context(h!())?;
+    ensure_rer_role(&env.dbx, &user).await.context(h!())?;
 
     let groups = crate::messenger::group::get_identity_sigint_groups_noimport(
         &env.dbx,
@@ -1512,9 +1504,7 @@ pub async fn network_freqs_activity_one(
     env: actix_web::web::Data<Env>,
     req: Json<NetworkFreqsActivityReq>,
 ) -> Result<Json<HashMap<String, HashMap<String, i64>>>, AppError> {
-    crate::users::has_role(&env.dbx, &crate::users::identity_id(&user)?, "Rer")
-        .await
-        .context(h!())?;
+    ensure_rer_role(&env.dbx, &user).await.context(h!())?;
 
     let groups = crate::messenger::group::get_identity_sigint_groups_noimport(
         &env.dbx,
@@ -1764,9 +1754,7 @@ pub async fn list_network_points(
     env: actix_web::web::Data<Env>,
     req: Json<ListNetworkPointsReq>,
 ) -> Result<Json<ListNetworkPointsRsp>, AppError> {
-    crate::users::has_role(&env.dbx, &crate::users::identity_id(&user)?, "Rer")
-        .await
-        .context(h!())?;
+    ensure_rer_role(&env.dbx, &user).await.context(h!())?;
 
     let filter = NetworkFreqFilter {
         active_freqs_only: false,
@@ -1805,21 +1793,15 @@ pub async fn update_freq_networks(
     env: actix_web::web::Data<Env>,
     req: Json<UpdateFreqNetworksReq>,
 ) -> Result<Json<Vec<Network>>, AppError> {
-    let user_id = crate::users::identity_id(&user)?;
-    crate::users::has_role(&env.dbx, &crate::users::identity_id(&user)?, "Rer")
+    ensure_rer_role(&env.dbx, &user).await.context(h!())?;
+    has_role(&env.dbx, &login_id_from_identity(&user)?, "UnitsEditor")
         .await
         .context(h!())?;
-    crate::users::has_role(
-        &env.dbx,
-        &crate::users::identity_id(&user)?,
-        "UnitsEditor",
-    )
-    .await
-    .context(h!())?;
+    let user_id = login_id_from_identity(&user)?;
 
     info!(
         "update freq networks; login = {}; req = {:?}",
-        crate::users::identity_id(&user)?,
+        login_id_from_identity(&user)?,
         req
     );
 
@@ -1841,7 +1823,7 @@ pub async fn update_freq_networks(
         if !req_network_ids.contains(&id) {
             let mut network = network.into_active_model();
             network.updated_by_login_id =
-                Set(Some(crate::users::identity_id(&user)?));
+                Set(Some(login_id_from_identity(&user)?));
             network.updated_at = NotSet;
             network.deleted = Set(true);
             network.save(&txn).await.context(h!())?;
@@ -1868,7 +1850,7 @@ pub async fn update_freq_networks(
                 network.radio_station = Set(req_network.radio_station.clone());
                 network.deleted = Set(false);
                 network.updated_by_login_id =
-                    Set(Some(crate::users::identity_id(&user)?));
+                    Set(Some(login_id_from_identity(&user)?));
                 network.updated_at = NotSet;
                 network.save(&txn).await.context(h!())?;
 
@@ -1890,9 +1872,7 @@ pub async fn update_freq_networks(
                 name: Set(req_network.name.clone()),
                 location: Set(req_network.location.clone()),
                 radio_station: Set(req_network.radio_station.clone()),
-                updated_by_login_id: Set(Some(crate::users::identity_id(
-                    &user,
-                )?)),
+                updated_by_login_id: Set(Some(login_id_from_identity(&user)?)),
                 updated_at: NotSet,
                 deleted: Set(false),
                 created_at: NotSet,
@@ -2108,7 +2088,7 @@ async fn load_network_freq_mutation_response(
     .await
     .context(h!())?;
 
-    let user_id = crate::users::identity_id(user)?;
+    let user_id = login_id_from_identity(user)?;
     let mut freq = load_network_freq_row(
         &env.dbx,
         &groups,
@@ -2148,19 +2128,17 @@ pub async fn add_network_freq(
     env: actix_web::web::Data<Env>,
     req: Json<AddNetworkFreqReq>,
 ) -> Result<Json<Network>, AppError> {
-    let user_id = crate::users::identity_id(&user)?;
-    crate::users::has_role(&env.dbx, &user_id, "Rer")
+    ensure_rer_role(&env.dbx, &user).await.context(h!())?;
+    has_role(&env.dbx, &login_id_from_identity(&user)?, "UnitsEditor")
         .await
         .context(h!())?;
-    crate::users::has_role(&env.dbx, &user_id, "UnitsEditor")
-        .await
-        .context(h!())?;
+    let user_id = login_id_from_identity(&user)?;
 
     info!(
         "Adding frequency {} to network {}; user={}",
         req.freq_rec.freq,
         req.network_id,
-        crate::users::identity_id(&user)?
+        login_id_from_identity(&user)?
     );
 
     let txn = env.dbx.begin().await.context(h!())?;
@@ -2301,13 +2279,11 @@ pub async fn add_network_freq_v2(
     env: actix_web::web::Data<Env>,
     req: Json<AddNetworkFreqReq>,
 ) -> Result<Json<NetworkFreqMutationV2Rsp>, AppError> {
-    let user_id = crate::users::identity_id(&user)?;
-    crate::users::has_role(&env.dbx, &user_id, "Rer")
+    ensure_rer_role(&env.dbx, &user).await.context(h!())?;
+    has_role(&env.dbx, &login_id_from_identity(&user)?, "UnitsEditor")
         .await
         .context(h!())?;
-    crate::users::has_role(&env.dbx, &user_id, "UnitsEditor")
-        .await
-        .context(h!())?;
+    let user_id = login_id_from_identity(&user)?;
 
     let req = req.into_inner();
     let txn = env.dbx.begin().await.context(h!())?;
@@ -2441,13 +2417,11 @@ pub async fn reactivate_network_freq(
     env: actix_web::web::Data<Env>,
     req: Json<ReactivateNetworkFreqReq>,
 ) -> Result<Json<Network>, AppError> {
-    let user_id = crate::users::identity_id(&user)?;
-    crate::users::has_role(&env.dbx, &user_id, "Rer")
+    ensure_rer_role(&env.dbx, &user).await.context(h!())?;
+    has_role(&env.dbx, &login_id_from_identity(&user)?, "UnitsEditor")
         .await
         .context(h!())?;
-    crate::users::has_role(&env.dbx, &user_id, "UnitsEditor")
-        .await
-        .context(h!())?;
+    let user_id = login_id_from_identity(&user)?;
 
     let req = req.into_inner();
     let txn = env.dbx.begin().await.context(h!())?;
@@ -2537,9 +2511,7 @@ pub async fn network_unit_stats(
     user: actix_identity::Identity,
     env: actix_web::web::Data<Env>,
 ) -> Result<Json<NetworkUnitStatsRsp>, AppError> {
-    crate::users::has_role(&env.dbx, &crate::users::identity_id(&user)?, "Rer")
-        .await
-        .context(h!())?;
+    ensure_rer_role(&env.dbx, &user).await.context(h!())?;
 
     #[derive(FromQueryResult)]
     struct Row {
@@ -2595,17 +2567,11 @@ pub async fn update_network_freq(
     env: actix_web::web::Data<Env>,
     req: Json<UpdateNetworkFreqReq>,
 ) -> Result<Json<Network>, AppError> {
-    crate::users::has_role(&env.dbx, &crate::users::identity_id(&user)?, "Rer")
+    ensure_rer_role(&env.dbx, &user).await.context(h!())?;
+    has_role(&env.dbx, &login_id_from_identity(&user)?, "UnitsEditor")
         .await
         .context(h!())?;
-    crate::users::has_role(
-        &env.dbx,
-        &crate::users::identity_id(&user)?,
-        "UnitsEditor",
-    )
-    .await
-    .context(h!())?;
-    let user_id = crate::users::identity_id(&user)?;
+    let user_id = login_id_from_identity(&user)?;
 
     info!(
         "Updating frequency id={} freq={} for network {}; user={}",
@@ -2730,17 +2696,11 @@ pub async fn update_network_freq_v2(
     env: actix_web::web::Data<Env>,
     req: Json<UpdateNetworkFreqReq>,
 ) -> Result<Json<NetworkFreqMutationV2Rsp>, AppError> {
-    crate::users::has_role(&env.dbx, &crate::users::identity_id(&user)?, "Rer")
+    ensure_rer_role(&env.dbx, &user).await.context(h!())?;
+    has_role(&env.dbx, &login_id_from_identity(&user)?, "UnitsEditor")
         .await
         .context(h!())?;
-    crate::users::has_role(
-        &env.dbx,
-        &crate::users::identity_id(&user)?,
-        "UnitsEditor",
-    )
-    .await
-    .context(h!())?;
-    let user_id = crate::users::identity_id(&user)?;
+    let user_id = login_id_from_identity(&user)?;
 
     let req = req.into_inner();
     let txn = env.dbx.begin().await.context(h!())?;
@@ -2921,17 +2881,11 @@ pub async fn delete_network_freq(
     env: actix_web::web::Data<Env>,
     req: Json<DeleteNetworkFreqReq>,
 ) -> Result<Json<Network>, AppError> {
-    let user_id = crate::users::identity_id(&user)?;
-    crate::users::has_role(&env.dbx, &crate::users::identity_id(&user)?, "Rer")
+    ensure_rer_role(&env.dbx, &user).await.context(h!())?;
+    has_role(&env.dbx, &login_id_from_identity(&user)?, "UnitsEditor")
         .await
         .context(h!())?;
-    crate::users::has_role(
-        &env.dbx,
-        &crate::users::identity_id(&user)?,
-        "UnitsEditor",
-    )
-    .await
-    .context(h!())?;
+    let user_id = login_id_from_identity(&user)?;
     let req = req.into_inner();
 
     info!(
@@ -2939,7 +2893,7 @@ pub async fn delete_network_freq(
         req.id,
         req.freq,
         req.network_id,
-        crate::users::identity_id(&user)?
+        login_id_from_identity(&user)?
     );
 
     let txn = env.dbx.begin().await.context(h!())?;
@@ -3028,7 +2982,7 @@ pub async fn delete_network_freq(
             let mut network_model = network.into_active_model();
             network_model.updated_at = Set(Utc::now().naive_utc());
             network_model.updated_by_login_id =
-                Set(Some(crate::users::identity_id(&user)?));
+                Set(Some(login_id_from_identity(&user)?));
             network_model.active_from = Set(network_active_from);
             network_model.active_to = Set(network_active_to);
             let network = network_model.update(&txn).await.context(h!())?;
@@ -3380,17 +3334,11 @@ pub async fn merge_network(
     env: actix_web::web::Data<Env>,
     req: Json<MergeNetworkReq>,
 ) -> Result<Json<Network>, AppError> {
-    let user_id = crate::users::identity_id(&user)?;
-    crate::users::has_role(&env.dbx, &crate::users::identity_id(&user)?, "Rer")
+    ensure_rer_role(&env.dbx, &user).await.context(h!())?;
+    has_role(&env.dbx, &login_id_from_identity(&user)?, "UnitsEditor")
         .await
         .context(h!())?;
-    crate::users::has_role(
-        &env.dbx,
-        &crate::users::identity_id(&user)?,
-        "UnitsEditor",
-    )
-    .await
-    .context(h!())?;
+    let user_id = login_id_from_identity(&user)?;
 
     info!(
         "> Merge network {} into {} begin",
@@ -3468,9 +3416,9 @@ pub async fn network_callsigns_list(
     req: Json<SingleNetworkCallsignsReq>,
 ) -> Result<Json<SingleNetworkCallsignsListRsp>, AppError> {
     let req = req.into_inner();
-    crate::users::has_any_role(
+    has_any_role(
         &env.dbx,
-        &crate::users::identity_id(&user)?,
+        &login_id_from_identity(&user)?,
         vec!["Rer", "Api"],
     )
     .await?;
@@ -3524,8 +3472,13 @@ pub async fn network_freqs_list(
     env: actix_web::web::Data<Env>,
     req: Json<SingleNetworkFreqsReq>,
 ) -> Result<Json<SingleNetworkFreqsListRsp>, AppError> {
-    let user_id = crate::users::identity_id(&user)?;
-    crate::users::has_any_role(&env.dbx, &user_id, vec!["Rer", "Api"]).await?;
+    has_any_role(
+        &env.dbx,
+        &login_id_from_identity(&user)?,
+        vec!["Rer", "Api"],
+    )
+    .await?;
+    let user_id = login_id_from_identity(&user)?;
 
     let _network =
         find_network(&env.dbx, req.network_id).await.context(h!())?;
@@ -3698,9 +3651,9 @@ pub async fn network_freq_callsigns(
     env: actix_web::web::Data<Env>,
     req: Json<NetworkFreqCallsignsReq>,
 ) -> Result<Json<NetworkFreqCallsignsRsp>, AppError> {
-    crate::users::has_any_role(
+    has_any_role(
         &env.dbx,
-        &crate::users::identity_id(&user)?,
+        &login_id_from_identity(&user)?,
         vec!["Rer", "Api"],
     )
     .await?;
@@ -3730,9 +3683,9 @@ pub async fn network_freq_callsigns_batch(
     env: actix_web::web::Data<Env>,
     req: Json<NetworkFreqCallsignsBatchReq>,
 ) -> Result<Json<NetworkFreqCallsignsBatchRsp>, AppError> {
-    crate::users::has_any_role(
+    has_any_role(
         &env.dbx,
-        &crate::users::identity_id(&user)?,
+        &login_id_from_identity(&user)?,
         vec!["Rer", "Api"],
     )
     .await?;
@@ -3770,9 +3723,9 @@ pub async fn encryptions_list(
     env: actix_web::web::Data<Env>,
     user: actix_identity::Identity,
 ) -> Result<Json<Vec<EncryptionRec>>, AppError> {
-    crate::users::has_any_role(
+    has_any_role(
         &env.dbx,
-        &crate::users::identity_id(&user)?,
+        &login_id_from_identity(&user)?,
         vec!["Rer", "Api"],
     )
     .await?;
@@ -3798,9 +3751,9 @@ pub async fn network_signals_list(
     env: actix_web::web::Data<Env>,
     req: Json<NetworkSignalsListReq>,
 ) -> Result<Json<NetworkSignalsListRes>, AppError> {
-    crate::users::has_any_role(
+    has_any_role(
         &env.dbx,
-        &crate::users::identity_id(&user)?,
+        &login_id_from_identity(&user)?,
         vec!["Rer", "Api"],
     )
     .await?;
@@ -3822,17 +3775,11 @@ pub async fn update_network_posts(
     env: actix_web::web::Data<Env>,
     req: Json<UpdateNetworkPostsReq>,
 ) -> Result<Json<Network>, AppError> {
-    crate::users::has_role(&env.dbx, &crate::users::identity_id(&user)?, "Rer")
+    ensure_rer_role(&env.dbx, &user).await.context(h!())?;
+    has_role(&env.dbx, &login_id_from_identity(&user)?, "UnitsEditor")
         .await
         .context(h!())?;
-    crate::users::has_role(
-        &env.dbx,
-        &crate::users::identity_id(&user)?,
-        "UnitsEditor",
-    )
-    .await
-    .context(h!())?;
-    let user_id = crate::users::identity_id(&user)?;
+    let user_id = login_id_from_identity(&user)?;
 
     debug!(
         "Update {} posts for network {}; user={}",
@@ -3902,7 +3849,7 @@ pub async fn update_network_posts(
         let mut network_model = network.into_active_model();
         network_model.updated_at = Set(Utc::now().naive_utc());
         network_model.updated_by_login_id =
-            Set(Some(crate::users::identity_id(&user)?));
+            Set(Some(login_id_from_identity(&user)?));
         network = network_model.update(&txn).await.context(h!())?;
     }
 
@@ -3951,17 +3898,11 @@ pub async fn update_network_units(
     env: actix_web::web::Data<Env>,
     req: Json<UpdateNetworkUnitsReq>,
 ) -> Result<Json<Network>, AppError> {
-    crate::users::has_role(&env.dbx, &crate::users::identity_id(&user)?, "Rer")
+    ensure_rer_role(&env.dbx, &user).await.context(h!())?;
+    has_role(&env.dbx, &login_id_from_identity(&user)?, "UnitsEditor")
         .await
         .context(h!())?;
-    crate::users::has_role(
-        &env.dbx,
-        &crate::users::identity_id(&user)?,
-        "UnitsEditor",
-    )
-    .await
-    .context(h!())?;
-    let user_id = crate::users::identity_id(&user)?;
+    let user_id = login_id_from_identity(&user)?;
 
     debug!(
         "Update {} units for network {}; user={}",
@@ -4033,7 +3974,7 @@ pub async fn update_network_units(
         let mut network_model = network.into_active_model();
         network_model.updated_at = Set(Utc::now().naive_utc());
         network_model.updated_by_login_id =
-            Set(Some(crate::users::identity_id(&user)?));
+            Set(Some(login_id_from_identity(&user)?));
         network = network_model.update(&txn).await.context(h!())?;
     }
 
@@ -4067,17 +4008,11 @@ pub async fn add_network_descriptions(
     env: actix_web::web::Data<Env>,
     req: Json<AddNetworkDescriptionsReq>,
 ) -> Result<Json<Network>, AppError> {
-    crate::users::has_role(&env.dbx, &crate::users::identity_id(&user)?, "Rer")
+    ensure_rer_role(&env.dbx, &user).await.context(h!())?;
+    has_role(&env.dbx, &login_id_from_identity(&user)?, "UnitsEditor")
         .await
         .context(h!())?;
-    crate::users::has_role(
-        &env.dbx,
-        &crate::users::identity_id(&user)?,
-        "UnitsEditor",
-    )
-    .await
-    .context(h!())?;
-    let user_id = crate::users::identity_id(&user)?;
+    let user_id = login_id_from_identity(&user)?;
 
     let txn = env.dbx.begin().await.context(h!())?;
 
@@ -4151,17 +4086,11 @@ pub async fn update_network_description(
     env: actix_web::web::Data<Env>,
     req: Json<UpdateNetworkDescriptionReq>,
 ) -> Result<Json<Network>, AppError> {
-    crate::users::has_role(&env.dbx, &crate::users::identity_id(&user)?, "Rer")
+    ensure_rer_role(&env.dbx, &user).await.context(h!())?;
+    has_role(&env.dbx, &login_id_from_identity(&user)?, "UnitsEditor")
         .await
         .context(h!())?;
-    crate::users::has_role(
-        &env.dbx,
-        &crate::users::identity_id(&user)?,
-        "UnitsEditor",
-    )
-    .await
-    .context(h!())?;
-    let user_id = crate::users::identity_id(&user)?;
+    let user_id = login_id_from_identity(&user)?;
 
     info!(
         "Updating description {} for network {}; user={}",
@@ -4228,13 +4157,11 @@ pub async fn delete_network_description(
     env: actix_web::web::Data<Env>,
     req: Json<DeleteNetworkDescriptionReq>,
 ) -> Result<Json<Network>, AppError> {
-    let user_id = crate::users::identity_id(&user)?;
-    crate::users::has_role(&env.dbx, &user_id, "Rer")
+    ensure_rer_role(&env.dbx, &user).await.context(h!())?;
+    has_role(&env.dbx, &login_id_from_identity(&user)?, "UnitsEditor")
         .await
         .context(h!())?;
-    crate::users::has_role(&env.dbx, &user_id, "UnitsEditor")
-        .await
-        .context(h!())?;
+    let user_id = login_id_from_identity(&user)?;
 
     info!(
         "Removing description {} from network {}; user={}",
@@ -4295,10 +4222,8 @@ pub async fn report_networks_goi_task_launch(
     user: actix_identity::Identity,
     env: actix_web::web::Data<Env>,
 ) -> Result<Json<i64>, AppError> {
-    let user_id = crate::users::identity_id(&user)?;
-    crate::users::has_role(&env.dbx, &user_id, "Rer")
-        .await
-        .c(h!())?;
+    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    let user_id = login_id_from_identity(&user)?;
     let filename = format!(
         "goi_report_{}.xlsx",
         Utc::now().format("%Y-%m-%d-%H-%M-%S-%3f")
@@ -4502,13 +4427,9 @@ pub async fn network_search(
     env: actix_web::web::Data<Env>,
     req: Json<NetworkSearchReq>,
 ) -> Result<Json<NetworkSearchRsp>, AppError> {
-    crate::users::has_any_role(
-        &env.dbx,
-        &crate::users::identity_id(&user)?,
-        vec!["Rer"],
-    )
-    .await
-    .c(h!())?;
+    has_any_role(&env.dbx, &login_id_from_identity(&user)?, vec!["Rer"])
+        .await
+        .c(h!())?;
 
     let search_phrase = req.search.trim();
 
@@ -4529,7 +4450,7 @@ pub async fn network_search(
         .await
         .context(h!())?;
 
-    let login = crate::users::identity_id(&user)?;
+    let login = login_id_from_identity(&user)?;
     let networks_full =
         bl::render_networks(networks_db, &env.dbx, &login).await?;
 

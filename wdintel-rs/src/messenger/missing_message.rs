@@ -3,6 +3,7 @@ use crate::entities::*;
 use crate::error::AppError;
 use crate::h;
 use crate::types::{Env, ShortContext};
+use crate::users::{ensure_admin, login_id_from_identity};
 use actix_identity::Identity;
 use actix_web::post;
 use actix_web::web::Json;
@@ -480,10 +481,7 @@ pub async fn echo_missing_message_list(
     env: actix_web::web::Data<Env>,
     req: Json<EchoMissingMessageListReq>,
 ) -> Result<Json<EchoMissingMessageListRsp>, AppError> {
-    let login = crate::users::identity_id(&user)?;
-    crate::users::has_role(&env.dbx, &login, "Admin")
-        .await
-        .c(h!())?;
+    ensure_admin(&env.dbx, &user).await.c(h!())?;
     Ok(Json(EchoMissingMessageListRsp {
         items: list_missing_messages(&env.dbx, req.into_inner()).await?,
     }))
@@ -495,10 +493,7 @@ pub async fn echo_missing_message_counts(
     env: actix_web::web::Data<Env>,
     req: Json<EchoMissingMessageCountsReq>,
 ) -> Result<Json<EchoMissingMessageCountsRsp>, AppError> {
-    let login = crate::users::identity_id(&user)?;
-    crate::users::has_role(&env.dbx, &login, "Admin")
-        .await
-        .c(h!())?;
+    ensure_admin(&env.dbx, &user).await.c(h!())?;
     Ok(Json(EchoMissingMessageCountsRsp {
         items: count_missing_messages_by_day(&env.dbx, req.into_inner())
             .await?,
@@ -511,10 +506,8 @@ pub async fn echo_missing_message_resolve(
     env: actix_web::web::Data<Env>,
     req: Json<EchoMissingMessageResolveReq>,
 ) -> Result<Json<EchoMissingMessageRow>, AppError> {
-    let login = crate::users::identity_id(&user)?;
-    crate::users::has_role(&env.dbx, &login, "Admin")
-        .await
-        .c(h!())?;
+    ensure_admin(&env.dbx, &user).await.c(h!())?;
+    let login = login_id_from_identity(&user)?;
     let missing_message =
         schedule_missing_message_by_id(&env.dbx, req.id, &login).await?;
     Ok(Json(row_by_id(&env.dbx, missing_message.id).await?))

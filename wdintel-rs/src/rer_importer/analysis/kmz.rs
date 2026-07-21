@@ -105,7 +105,9 @@ pub(crate) async fn rer_analysis_kmz_bytes(
     // let res = crate::kml::build_style_maps_per_app6d(&vec![sidc.clone()])?;
 
     let mut nodes = vec![];
-    let login_ids = get_organism_login_ids_by_id(&env.dbx, login).await.c(h!())?;
+    let login_ids = get_organism_login_ids_by_id(&env.dbx, login)
+        .await
+        .c(h!())?;
     for item in items.iter() {
         let Some(ref freq) = item.freq else { continue };
         let Some(ref lat) = item.lat else { continue };

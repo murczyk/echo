@@ -2,6 +2,7 @@
 #![allow(clippy::type_complexity)]
 #![allow(clippy::borrow_interior_mutable_const)]
 #![allow(clippy::ptr_arg)]
+use crate::users::ensure_rer_role_by_id;
 
 use crate::config::*;
 use crate::types::*;
@@ -121,7 +122,7 @@ pub async fn oneoff_compare_rer_counts(
 
     for login in ps.logins.iter() {
         let login_id = users::login_id_by_name(&env.dbx, login).await?;
-        users::has_role(&env.dbx, &login_id, "Rer").await.c(h!())?;
+        ensure_rer_role_by_id(&env.dbx, &login_id).await.c(h!())?;
         let master_keys =
             messenger::group::get_identity_sigint_groups(&env.dbx, &login_id)
                 .await

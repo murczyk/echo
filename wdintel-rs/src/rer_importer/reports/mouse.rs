@@ -62,9 +62,10 @@ pub async fn report_docx_kind_mouse(
         None => info!("Mouse report using primary database"),
     }
     let login = *user_login;
-    let login_ids = crate::users::get_organism_login_ids_by_id(&read_db, &login)
-        .await
-        .c(h!())?;
+    let login_ids =
+        crate::users::get_organism_login_ids_by_id(&read_db, &login)
+            .await
+            .c(h!())?;
     let width_unit = 1870;
     let mut inbox_req = req.req.clone();
     inbox_req.report_tags_only_this_unit = req.report_tags_only_this_unit;

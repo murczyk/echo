@@ -24,6 +24,7 @@ use crate::organism::types::{
     UpdateOrganismGoiSettingsReq,
 };
 use crate::types::*;
+use crate::users::{ensure_admin, ensure_rer_role, login_id_from_identity};
 use crate::utils::string::{
     normalize_optional_trimmed, normalize_trimmed_or_default,
 };
@@ -82,12 +83,7 @@ pub async fn organism_goi_settings(
     env: actix_web::web::Data<Env>,
     req: Json<i64>,
 ) -> Result<Json<OrganismGoiSettings>, AppError> {
-    crate::users::has_role(
-        &env.dbx,
-        &crate::users::identity_id(&user)?,
-        "Admin",
-    )
-    .await?;
+    ensure_admin(&env.dbx, &user).await?;
 
     let organism = organism::Entity::find_by_id(req.into_inner())
         .filter(organism::Column::DeletedPermanently.eq(false))
@@ -105,12 +101,7 @@ pub async fn update_organism_goi_settings(
     env: actix_web::web::Data<Env>,
     req: Json<UpdateOrganismGoiSettingsReq>,
 ) -> Result<Json<OrganismGoiSettings>, AppError> {
-    crate::users::has_role(
-        &env.dbx,
-        &crate::users::identity_id(&user)?,
-        "Admin",
-    )
-    .await?;
+    ensure_admin(&env.dbx, &user).await?;
 
     let req = req.into_inner();
     goi_validate_settings_req(&req)?;
@@ -138,12 +129,7 @@ pub async fn setup_organism_goi_worker(
     env: actix_web::web::Data<Env>,
     req: Json<SetupOrganismGoiWorkerReq>,
 ) -> Result<Json<OrganismGoiSettings>, AppError> {
-    crate::users::has_role(
-        &env.dbx,
-        &crate::users::identity_id(&user)?,
-        "Admin",
-    )
-    .await?;
+    ensure_admin(&env.dbx, &user).await?;
 
     let req = req.into_inner();
     goi_validate_setup_worker_req(&req)?;
@@ -184,12 +170,7 @@ pub async fn check_organism_goi_connection(
     env: actix_web::web::Data<Env>,
     req: Json<CheckOrganismGoiConnectionReq>,
 ) -> Result<Json<CheckOrganismGoiConnectionRsp>, AppError> {
-    crate::users::has_role(
-        &env.dbx,
-        &crate::users::identity_id(&user)?,
-        "Admin",
-    )
-    .await?;
+    ensure_admin(&env.dbx, &user).await?;
 
     let req = req.into_inner();
     let (listed_entries, error) = match goi_validate_connection_req(&req) {
@@ -224,10 +205,9 @@ pub async fn list_current_user_goi_associations(
     env: actix_web::web::Data<Env>,
     req: Json<ListGoiAssociationsReq>,
 ) -> Result<Json<ListGoiAssociationsRsp>, AppError> {
-    crate::users::has_role(&env.dbx, &crate::users::identity_id(&user)?, "Rer")
-        .await?;
+    ensure_rer_role(&env.dbx, &user).await?;
 
-    let user_id = crate::users::identity_id(&user)?;
+    let user_id = login_id_from_identity(&user)?;
     let login = goi_associations_current_login(&env.dbx, &user_id)
         .await
         .c(h!())?;
@@ -267,10 +247,9 @@ pub async fn list_current_user_goi_knowledge(
     env: actix_web::web::Data<Env>,
     req: Json<ListGoiKnowledgeReq>,
 ) -> Result<Json<ListGoiKnowledgeRsp>, AppError> {
-    crate::users::has_role(&env.dbx, &crate::users::identity_id(&user)?, "Rer")
-        .await?;
+    ensure_rer_role(&env.dbx, &user).await?;
 
-    let user_id = crate::users::identity_id(&user)?;
+    let user_id = login_id_from_identity(&user)?;
     let login = goi_associations_current_login(&env.dbx, &user_id)
         .await
         .c(h!())?;
@@ -310,10 +289,9 @@ pub async fn restart_current_user_goi_service(
     env: actix_web::web::Data<Env>,
     req: Json<RestartCurrentUserGoiServiceReq>,
 ) -> Result<Json<bool>, AppError> {
-    crate::users::has_role(&env.dbx, &crate::users::identity_id(&user)?, "Rer")
-        .await?;
+    ensure_rer_role(&env.dbx, &user).await?;
 
-    let user_id = crate::users::identity_id(&user)?;
+    let user_id = login_id_from_identity(&user)?;
     let login = goi_associations_current_login(&env.dbx, &user_id)
         .await
         .c(h!())?;
@@ -343,10 +321,9 @@ pub async fn current_user_goi_control_state(
     user: actix_identity::Identity,
     env: actix_web::web::Data<Env>,
 ) -> Result<Json<CurrentUserGoiControlState>, AppError> {
-    crate::users::has_role(&env.dbx, &crate::users::identity_id(&user)?, "Rer")
-        .await?;
+    ensure_rer_role(&env.dbx, &user).await?;
 
-    let user_id = crate::users::identity_id(&user)?;
+    let user_id = login_id_from_identity(&user)?;
     let login = goi_associations_current_login(&env.dbx, &user_id)
         .await
         .c(h!())?;

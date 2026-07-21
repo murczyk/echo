@@ -4,6 +4,7 @@ use crate::location::types::{
 };
 use crate::location::SettlementsData;
 use crate::types::*;
+use crate::users::ensure_admin;
 use actix_web::post;
 use actix_web::web::Json;
 use sea_orm::{ActiveValue::Set, *};
@@ -151,13 +152,7 @@ pub async fn list_aor_location_configs(
     user: actix_identity::Identity,
     env: actix_web::web::Data<Env>,
 ) -> Result<Json<ListAorLocationConfigRsp>, AppError> {
-    crate::users::has_role(
-        &env.dbx,
-        &crate::users::identity_id(&user)?,
-        "Admin",
-    )
-    .await
-    .c(h!())?;
+    ensure_admin(&env.dbx, &user).await.c(h!())?;
 
     let rows = aor_location_config::Entity::find()
         .all(&env.dbx)
@@ -215,13 +210,7 @@ pub async fn save_aor_location_config(
     env: actix_web::web::Data<Env>,
     req: Json<SaveAorLocationConfigReq>,
 ) -> Result<Json<AorLocationConfigItem>, AppError> {
-    crate::users::has_role(
-        &env.dbx,
-        &crate::users::identity_id(&user)?,
-        "Admin",
-    )
-    .await
-    .c(h!())?;
+    ensure_admin(&env.dbx, &user).await.c(h!())?;
 
     let req = req.into_inner();
 

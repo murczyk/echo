@@ -7,6 +7,7 @@ use crate::h;
 use crate::messenger::types::Message;
 use crate::types::Env;
 use crate::types::ShortContext;
+use crate::users::{has_role, login_id_from_identity};
 use crate::utils::orm::ArrayColumnOps;
 use actix_web::post;
 use actix_web::web::Json;
@@ -24,10 +25,10 @@ async fn message_submit(
     env: actix_web::web::Data<Env>,
     req: Json<types::OperatorInboxMessage>,
 ) -> Result<Json<types::SubmitMessageRsp>, AppError> {
-    let login = crate::users::identity_id(&user)?;
-    crate::users::has_role(&env.dbx, &login, "Api")
+    has_role(&env.dbx, &login_id_from_identity(&user)?, "Api")
         .await
         .c(h!())?;
+    let login = login_id_from_identity(&user)?;
 
     let txn = env.dbx.begin().await.c(h!())?;
     let datasource = ensure_api_datasource(&login, &txn).await.c(h!())?;

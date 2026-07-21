@@ -19,7 +19,7 @@ use uuid::Uuid;
 
 pub mod types;
 
-pub fn identity_id(user: &Identity) -> Result<Uuid, AppError> {
+pub fn login_id_from_identity(user: &Identity) -> Result<Uuid, AppError> {
     let identity = user.id().map_err(|_| AppError::Unauthenticated)?;
     Uuid::parse_str(&identity).map_err(|_| AppError::Unauthenticated)
 }
@@ -99,11 +99,35 @@ where
     has_any_role(dbx, user_id, vec![role]).await
 }
 
+pub async fn ensure_basic_role(
+    dbx: &sea_orm::DatabaseConnection,
+    user: &Identity,
+) -> Result<(), AppError> {
+    has_role(dbx, &login_id_from_identity(user)?, "Basic").await
+}
+
+pub async fn ensure_rer_role(
+    dbx: &sea_orm::DatabaseConnection,
+    user: &Identity,
+) -> Result<(), AppError> {
+    ensure_rer_role_by_id(dbx, &login_id_from_identity(user)?).await
+}
+
+pub async fn ensure_rer_role_by_id<T>(
+    dbx: &sea_orm::DatabaseConnection,
+    user_id: &T,
+) -> Result<(), AppError>
+where
+    T: ToString + ?Sized,
+{
+    has_role(dbx, user_id, "Rer").await
+}
+
 pub async fn ensure_admin(
     dbx: &DatabaseConnection,
     user: &actix_identity::Identity,
 ) -> Result<(), AppError> {
-    has_role(dbx, &identity_id(user)?, "Admin").await
+    has_role(dbx, &login_id_from_identity(user)?, "Admin").await
 }
 
 // WARNING: need to update Auth.elm too
@@ -200,7 +224,7 @@ async fn keep_alive(
     req: Json<KeepAliveReq>,
 ) -> Result<Json<()>, AppError> {
     let req = req.into_inner();
-    let user_id = crate::users::identity_id(&user)?;
+    let user_id = login_id_from_identity(&user)?;
     update_last_active_at(&env.dbx, &user_id).await.c(h!())?;
     record_page_visit(&user_id, &req.page_id, &env, None)
         .await
@@ -214,13 +238,7 @@ pub async fn update_login(
     env: actix_web::web::Data<Env>,
     req: Json<serde_json::Value>,
 ) -> Result<Json<Login>, AppError> {
-    crate::users::has_role(
-        &env.dbx,
-        &crate::users::identity_id(&user)?,
-        "Admin",
-    )
-    .await
-    .c(h!())?;
+    ensure_admin(&env.dbx, &user).await.c(h!())?;
 
     let req = req.into_inner();
     let update_description = has_update_login_description(&req);
@@ -361,13 +379,7 @@ pub async fn delete_login(
     env: actix_web::web::Data<Env>,
     req: Json<String>,
 ) -> Result<Json<()>, AppError> {
-    crate::users::has_role(
-        &env.dbx,
-        &crate::users::identity_id(&user)?,
-        "Admin",
-    )
-    .await
-    .c(h!())?;
+    ensure_admin(&env.dbx, &user).await.c(h!())?;
 
     let txn = env.dbx.begin().await.c(h!())?;
     let login_id = Uuid::parse_str(req.as_str()).c(h!())?;
@@ -394,13 +406,7 @@ pub async fn create_login(
     env: actix_web::web::Data<Env>,
     req: Json<CreateLoginReq>,
 ) -> Result<Json<Login>, AppError> {
-    crate::users::has_role(
-        &env.dbx,
-        &crate::users::identity_id(&user)?,
-        "Admin",
-    )
-    .await
-    .c(h!())?;
+    ensure_admin(&env.dbx, &user).await.c(h!())?;
 
     let salt_s =
         format!("{}{}", crate::config::IDENTITY_SALT, req.login.clone());
@@ -484,7 +490,7 @@ pub async fn create_delta_login(
     env: actix_web::web::Data<Env>,
     req: Json<CreateDeltaLoginReq>,
 ) -> Result<Json<Login>, AppError> {
-    has_role(&env.dbx, &crate::users::identity_id(&user)?, "Admin")
+    has_role(&env.dbx, &login_id_from_identity(&user)?, "Admin")
         .await
         .c(h!())?;
 
@@ -513,13 +519,7 @@ pub async fn list_logins(
     env: actix_web::web::Data<Env>,
     req: Json<ListLoginsReq>,
 ) -> Result<Json<ListLoginsRsp>, AppError> {
-    crate::users::has_role(
-        &env.dbx,
-        &crate::users::identity_id(&user)?,
-        "Admin",
-    )
-    .await
-    .c(h!())?;
+    ensure_admin(&env.dbx, &user).await.c(h!())?;
 
     #[derive(FromQueryResult)]
     struct LoginRes {
@@ -626,7 +626,7 @@ async fn api_user(
     let Some(user) = user else {
         return Err(AppError::Unauthenticated);
     };
-    let user_id = crate::users::identity_id(&user)?;
+    let user_id = login_id_from_identity(&user)?;
     let Some(login_obj) = login::Entity::find_by_id(user_id)
         .filter(login::Column::DeletedPermanently.eq(false))
         .one(&env.dbx)
@@ -669,7 +669,7 @@ pub async fn mark_release_seen(
     user: Identity,
     req: Json<types::MarkReleaseSeenReq>,
 ) -> Result<Json<()>, AppError> {
-    let login_id = crate::users::identity_id(&user)?;
+    let login_id = login_id_from_identity(&user)?;
     let login_obj = login::Entity::find()
         .filter(login::Column::Id.eq(login_id))
         .filter(login::Column::DeletedPermanently.eq(false))
@@ -939,7 +939,7 @@ pub async fn settings_save(
     req: Json<SettingsSaveReq>,
 ) -> Result<Json<()>, AppError> {
     let login_obj = login::Entity::find()
-        .filter(login::Column::Id.eq(crate::users::identity_id(&user)?))
+        .filter(login::Column::Id.eq(login_id_from_identity(&user)?))
         .filter(login::Column::DeletedPermanently.eq(false))
         .one(&env.dbx)
         .await
@@ -998,7 +998,7 @@ pub async fn user_sigint_groups(
     user: Identity,
 ) -> Result<Json<Vec<String>>, AppError> {
     // let res = get_identity_sigint_groups_since(&env.dbx, &user, req.since_date_inclusive_ms).await.c(h!())?;
-    let login = crate::users::identity_id(&user)?;
+    let login = login_id_from_identity(&user)?;
     let all_groups =
         get_identity_sigint_groups(&env.dbx, &login).await.c(h!())?;
     let Some(since_ts) = &req.since_date_inclusive_ms else {
@@ -1030,8 +1030,13 @@ pub async fn user_sigint_groups_detailed(
     user: Identity,
 ) -> Result<Json<Vec<SignalGroupEntryF2>>, AppError> {
     // let res = get_identity_sigint_groups_since(&env.dbx, &user, req.since_date_inclusive_ms).await.c(h!())?;
-    let login = crate::users::identity_id(&user)?;
-    has_any_role(&env.dbx, &login, vec!["Rer", "Admin", "Api"]).await?;
+    has_any_role(
+        &env.dbx,
+        &login_id_from_identity(&user)?,
+        vec!["Rer", "Admin", "Api"],
+    )
+    .await?;
+    let login = login_id_from_identity(&user)?;
     let mut keys =
         get_identity_sigint_groups(&env.dbx, &login).await.c(h!())?;
     if let Some(since_ts) = &req.since_date_inclusive_ms {
@@ -1069,12 +1074,12 @@ pub async fn user_sigint_groups_detailed(
 //     C: ConnectionTrait + 'async_trait,
 // {
 //     let login_obj = login::Entity::find()
-//         .filter(login::Column::Login.eq(crate::users::identity_id(&user)?))
+//         .filter(login::Column::Login.eq(login_id_from_identity(&user)?))
 //         .one(txn)
 //         .await.c(h!())?
 //         .ok_or(AppError::NotFound)?;
 //     let zone_id: i64 = login_obj.sigint_zone_id.ok_or(AppError::BL {
-//         msg: format!("Zone must be set for user: {}", crate::users::identity_id(&user)?),
+//         msg: format!("Zone must be set for user: {}", login_id_from_identity(&user)?),
 //     })?;
 
 //     let since_ms = if let Some(since) = since_date_inclusive_ms {
@@ -1206,7 +1211,7 @@ pub async fn get_organism_login_ids<'a, 'async_trait, C>(
 where
     C: ConnectionTrait + 'async_trait,
 {
-    let login_s = crate::users::identity_id(&user)?;
+    let login_s = login_id_from_identity(&user)?;
     let (login, res) = get_organism_logins_inner(txn, &login_s).await?;
     if login.deleted {
         user.logout();

@@ -4,6 +4,7 @@ use crate::error::AppError;
 use crate::rer_importer::types::{InboxMapItem, MapPointsFilter};
 use crate::sigint::network::types::*;
 use crate::types::*;
+use crate::users::ensure_rer_role;
 use crate::utils::orm::ArrayColumnOps;
 use crate::utils::*;
 use actix_web::web::Json;
@@ -377,9 +378,7 @@ pub async fn network_group_activity_bl(
     env: actix_web::web::Data<Env>,
     req: Json<NetworkGroupsActivityReq>,
 ) -> Result<HashMap<String, HashMap<String, HashMap<String, i64>>>, AppError> {
-    crate::users::has_role(&env.dbx, &crate::users::identity_id(&user)?, "Rer")
-        .await
-        .context(h!())?;
+    ensure_rer_role(&env.dbx, &user).await.context(h!())?;
     let dt_till = if let Some(till) = req.till_date_noninclusive_ms {
         dt_from_millis(till)?
     } else {

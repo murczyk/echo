@@ -2,6 +2,7 @@ use crate::error::AppError;
 use crate::importer::RowInfo;
 use crate::storage;
 use crate::types::*;
+use crate::users::ensure_basic_role;
 use crate::utils::{multipart, trim_lines};
 use actix_multipart::Multipart;
 use actix_web::web::Json;
@@ -315,13 +316,7 @@ async fn parse_terminal_pdf(
     env: actix_web::web::Data<Env>,
     _http_req: HttpRequest,
 ) -> Result<actix_web::HttpResponse, AppError> {
-    crate::users::has_role(
-        &env.dbx,
-        &crate::users::identity_id(&user)?,
-        "Basic",
-    )
-    .await
-    .c(h!())?;
+    ensure_basic_role(&env.dbx, &user).await.c(h!())?;
     // Previously generated a presigned GET; now omitted.
     // Public assets can be accessed via their HTTPS URLs directly.
 
@@ -434,13 +429,7 @@ pub async fn upload_screenshot(
     env: actix_web::web::Data<Env>,
     mut payload: Multipart,
 ) -> Result<Json<UploadScreenshotRes>, AppError> {
-    crate::users::has_role(
-        &env.dbx,
-        &crate::users::identity_id(&user)?,
-        "Basic",
-    )
-    .await
-    .c(h!())?;
+    ensure_basic_role(&env.dbx, &user).await.c(h!())?;
     let (s3_config, s3_operator) = s3_upload_ctx(env.as_ref())?;
 
     let (field, val) = multipart::extract(&mut payload).await.c(h!())?;
@@ -487,13 +476,7 @@ pub async fn upload_pdf(
     env: actix_web::web::Data<Env>,
     mut payload: Multipart,
 ) -> Result<Json<UploadPdfRes>, AppError> {
-    crate::users::has_role(
-        &env.dbx,
-        &crate::users::identity_id(&user)?,
-        "Basic",
-    )
-    .await
-    .c(h!())?;
+    ensure_basic_role(&env.dbx, &user).await.c(h!())?;
     let (s3_config, s3_operator) = s3_upload_ctx(env.as_ref())?;
 
     let (_, val) = multipart::extract(&mut payload).await.c(h!())?;

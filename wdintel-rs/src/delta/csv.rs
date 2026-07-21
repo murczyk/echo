@@ -1,6 +1,7 @@
 use super::types::*;
 use crate::error::AppError;
 use crate::types::*;
+use crate::users::{has_role, login_id_from_identity};
 use crate::utils::multipart;
 use actix_multipart::Multipart;
 use actix_web::{post, HttpRequest};
@@ -179,13 +180,9 @@ pub async fn api_delta_csv_to_kmz(
     env: actix_web::web::Data<Env>,
     mut payload: Multipart,
 ) -> Result<actix_web::HttpResponse, AppError> {
-    crate::users::has_role(
-        &env.dbx,
-        &crate::users::identity_id(&user)?,
-        "Bpla",
-    )
-    .await
-    .c(h!())?;
+    has_role(&env.dbx, &login_id_from_identity(&user)?, "Bpla")
+        .await
+        .c(h!())?;
     let (field, val) = multipart::extract(&mut payload).await.c(h!())?;
     let tmp_dir = TempDir::new()?;
     println!("> tmp_dir {}", &tmp_dir.path().display());

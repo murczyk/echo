@@ -5,6 +5,7 @@ use crate::config::{
 use crate::entities::*;
 use crate::error::AppError;
 use crate::types::*;
+use crate::users::{ensure_rer_role, has_any_role, login_id_from_identity};
 use actix_identity::Identity;
 use actix_web::post;
 use actix_web::web::Json;
@@ -155,7 +156,7 @@ async fn ensure_report_launch_permissions(
     kind: &str,
 ) -> Result<(), AppError> {
     if report_requires_advanced_permissions(kind) {
-        crate::users::has_any_role(
+        has_any_role(
             dbx,
             user_login,
             vec!["UnitsEditor", "CallsignsEditor", "AdvancedReports", "Admin"],
@@ -353,10 +354,8 @@ pub async fn report_docx_task_launch(
     env: actix_web::web::Data<Env>,
     req: Json<types::ReportPreviewReq>,
 ) -> Result<Json<i64>, AppError> {
-    crate::users::has_role(&env.dbx, &crate::users::identity_id(&user)?, "Rer")
-        .await
-        .c(h!())?;
-    let user_login = crate::users::identity_id(&user)?;
+    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    let user_login = login_id_from_identity(&user)?;
     let req_inner = req.into_inner();
     let report_kind = req_inner.kind.clone();
     ensure_report_launch_permissions_with_error_code_header(

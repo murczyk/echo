@@ -3,6 +3,7 @@ use crate::organism::bl::load_organism_group_ids;
 use crate::organism::types::OrganismGroups;
 use crate::sigint::aor::bl::collect_group_aors;
 use crate::types::*;
+use crate::users::login_id_from_identity;
 use crate::utils::orm::ArrayColumnOps;
 use chrono::Utc;
 use echo_migration::{Expr, JoinType};
@@ -598,7 +599,7 @@ pub async fn get_identity_sigint_groups_noimport(
     user: &actix_identity::Identity,
     _config: &crate::config::Config,
 ) -> Result<Vec<String>, AppError> {
-    let login = crate::users::identity_id(user)?;
+    let login = login_id_from_identity(user)?;
     let master_keys = get_identity_sigint_groups(dbx, &login)
         .await
         .context(h!())?;

@@ -236,11 +236,13 @@ pub async fn report_docx_kind_report_1213(
     }
 
     let login = *user_login;
-    let login_ids = crate::users::get_organism_login_ids_by_id(&read_db, &login)
-        .await
-        .c(h!())?;
+    let login_ids =
+        crate::users::get_organism_login_ids_by_id(&read_db, &login)
+            .await
+            .c(h!())?;
     let report_data =
-        collect_report_1213_data(&read_db, &login, &login_ids, env, req).await?;
+        collect_report_1213_data(&read_db, &login, &login_ids, env, req)
+            .await?;
 
     build_report_1213_docx_to_path(&report_data, outpath).context(h!())?;
     Ok(())

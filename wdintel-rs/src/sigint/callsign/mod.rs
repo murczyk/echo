@@ -1,3 +1,6 @@
+use crate::users::{
+    ensure_rer_role, has_any_role, has_role, login_id_from_identity,
+};
 use std::collections::{HashMap, HashSet};
 
 use self::bl::*;
@@ -47,9 +50,9 @@ pub async fn list_callsigns(
     env: actix_web::web::Data<Env>,
     mut req: Json<ListCallsignsReq>,
 ) -> Result<Json<ListCallsignsRsp>, AppError> {
-    crate::users::has_any_role(
+    has_any_role(
         &env.dbx,
-        &crate::users::identity_id(&user)?,
+        &login_id_from_identity(&user)?,
         vec!["Rer", "ApiAgent"],
     )
     .await
@@ -76,9 +79,7 @@ pub async fn list_callsigns_csv(
     req: Json<ListCallsignsReq>,
     http_req: actix_web::HttpRequest,
 ) -> Result<actix_web::HttpResponse, AppError> {
-    crate::users::has_role(&env.dbx, &crate::users::identity_id(&user)?, "Rer")
-        .await
-        .c(h!())?;
+    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
 
     let rows = list_callsigns_export_rows(&env.dbx, &req.0).await.c(h!())?;
 
@@ -117,9 +118,7 @@ pub async fn list_callsigns_xlsx(
     req: Json<ListCallsignsReq>,
     http_req: actix_web::HttpRequest,
 ) -> Result<actix_web::HttpResponse, AppError> {
-    crate::users::has_role(&env.dbx, &crate::users::identity_id(&user)?, "Rer")
-        .await
-        .c(h!())?;
+    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
 
     let rows = list_callsigns_export_rows(&env.dbx, &req.0).await.c(h!())?;
 
@@ -845,10 +844,8 @@ pub async fn get_callsigns_with_units_from_inbox(
     env: actix_web::web::Data<Env>,
     req: Json<GetCallsignsWithUnitsFromInboxReq>,
 ) -> Result<Json<GetCallsignsWithUnitsFromInboxRsp>, AppError> {
-    crate::users::has_role(&env.dbx, &crate::users::identity_id(&user)?, "Rer")
-        .await
-        .c(h!())?;
-    let login = crate::users::identity_id(&user)?;
+    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    let login = login_id_from_identity(&user)?;
 
     if req.callsigns.is_empty() {
         return Ok(Json(GetCallsignsWithUnitsFromInboxRsp {
@@ -974,17 +971,15 @@ pub async fn create_callsign(
     env: actix_web::web::Data<Env>,
     req: Json<CreateCallsignReq>,
 ) -> Result<Json<Callsign>, AppError> {
-    let user_id = crate::users::identity_id(&user)?;
-    crate::users::has_role(&env.dbx, &user_id, "Rer")
+    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    has_role(&env.dbx, &login_id_from_identity(&user)?, "CallsignsEditor")
         .await
         .c(h!())?;
-    crate::users::has_role(&env.dbx, &user_id, "CallsignsEditor")
-        .await
-        .c(h!())?;
+    let user_id = login_id_from_identity(&user)?;
 
     info!(
         "create_callsign; login: {}; req: {:?}",
-        crate::users::identity_id(&user)?,
+        login_id_from_identity(&user)?,
         req
     );
 
@@ -1023,13 +1018,11 @@ pub async fn update_callsign(
     env: actix_web::web::Data<Env>,
     req: Json<UpdateCallsignReq>,
 ) -> Result<Json<Callsign>, AppError> {
-    let user_id = crate::users::identity_id(&user)?;
-    crate::users::has_role(&env.dbx, &user_id, "Rer")
+    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    has_role(&env.dbx, &login_id_from_identity(&user)?, "CallsignsEditor")
         .await
         .c(h!())?;
-    crate::users::has_role(&env.dbx, &user_id, "CallsignsEditor")
-        .await
-        .c(h!())?;
+    let user_id = login_id_from_identity(&user)?;
 
     info!("update_callsign; login: {user_id}; req: {:?}", req);
     let req = req.into_inner();
@@ -1064,20 +1057,14 @@ pub async fn delete_callsign(
     env: actix_web::web::Data<Env>,
     req: Json<i64>,
 ) -> Result<Json<Callsign>, AppError> {
-    crate::users::has_role(&env.dbx, &crate::users::identity_id(&user)?, "Rer")
+    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    has_role(&env.dbx, &login_id_from_identity(&user)?, "CallsignsEditor")
         .await
         .c(h!())?;
-    crate::users::has_role(
-        &env.dbx,
-        &crate::users::identity_id(&user)?,
-        "CallsignsEditor",
-    )
-    .await
-    .c(h!())?;
 
     info!(
         "delete_callsign; login: {}; req: {:?}",
-        crate::users::identity_id(&user)?,
+        login_id_from_identity(&user)?,
         req
     );
 
@@ -1100,7 +1087,7 @@ pub async fn delete_callsign(
     let _changelog = sigint_callsign_changelog::ActiveModel {
         id: NotSet,
         sigint_callsign_id: Set(callsign.id),
-        login_id: Set(crate::users::identity_id(&user)?),
+        login_id: Set(login_id_from_identity(&user)?),
         action: Set("delete".to_string()),
         created_at: NotSet,
         new_value: Set(Some(callsign_json_new)),
@@ -1155,9 +1142,7 @@ pub async fn callsign_unit_stats(
     env: actix_web::web::Data<Env>,
     _req: Json<()>,
 ) -> Result<Json<CallsignUnitStatsRsp>, AppError> {
-    crate::users::has_role(&env.dbx, &crate::users::identity_id(&user)?, "Rer")
-        .await
-        .c(h!())?;
+    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
     let units = list_callsign_unit_stats(&env.dbx).await?;
     Ok(Json(CallsignUnitStatsRsp { units }))
 }
@@ -1228,13 +1213,9 @@ pub async fn callsign_name_search(
     env: actix_web::web::Data<Env>,
     req: Json<CallsignSearchReq>,
 ) -> Result<Json<CallsignSearchRsp>, AppError> {
-    crate::users::has_any_role(
-        &env.dbx,
-        &crate::users::identity_id(&user)?,
-        vec!["Rer"],
-    )
-    .await
-    .c(h!())?;
+    has_any_role(&env.dbx, &login_id_from_identity(&user)?, vec!["Rer"])
+        .await
+        .c(h!())?;
 
     let search_phrase = req.search.trim();
 

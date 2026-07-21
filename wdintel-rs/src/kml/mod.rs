@@ -2,6 +2,7 @@ use crate::delta::bgtask_log2;
 use crate::error::AppError;
 use crate::kml::types::*;
 use crate::types::*;
+use crate::users::{ensure_basic_role, has_role, login_id_from_identity};
 use crate::utils::*;
 use ::zip::CompressionMethod;
 use actix_identity::Identity;
@@ -60,13 +61,9 @@ async fn operatyvka(
     user: Identity,
     env: actix_web::web::Data<Env>,
 ) -> Result<Json<Operatyvka>, AppError> {
-    crate::users::has_role(
-        &env.dbx,
-        &crate::users::identity_id(&user)?,
-        "Bpla",
-    )
-    .await
-    .c(h!())?;
+    has_role(&env.dbx, &login_id_from_identity(&user)?, "Bpla")
+        .await
+        .c(h!())?;
     let kml = read_myplaces(env.mode)?;
     let folders = extract_operatyvka_folders(&kml)?;
     let operatyvka = Operatyvka { folders };
@@ -230,13 +227,9 @@ async fn operatyvka_download(
     http_req: HttpRequest,
     req: actix_web::web::Query<OperatyvkaDownloadReq>,
 ) -> Result<actix_web::HttpResponse, AppError> {
-    crate::users::has_role(
-        &env.dbx,
-        &crate::users::identity_id(&user)?,
-        "Bpla",
-    )
-    .await
-    .c(h!())?;
+    has_role(&env.dbx, &login_id_from_identity(&user)?, "Bpla")
+        .await
+        .c(h!())?;
     let kml = read_myplaces(env.mode)?;
     let folders = extract_operatyvka_folders(&kml)?;
     let style_maps = extract_style_maps(&kml.nodes)?;
@@ -1016,13 +1009,7 @@ pub async fn api_fix_kmz(
     env: actix_web::web::Data<Env>,
     mut payload: Multipart,
 ) -> Result<actix_web::HttpResponse, AppError> {
-    crate::users::has_role(
-        &env.dbx,
-        &crate::users::identity_id(&user)?,
-        "Basic",
-    )
-    .await
-    .c(h!())?;
+    ensure_basic_role(&env.dbx, &user).await.c(h!())?;
     let mut hide_titles: bool = false;
     let mut val = vec![];
     let mut filename: String = "".to_string();

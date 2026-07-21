@@ -4,6 +4,8 @@ use crate::kml::types as kml_types;
 use crate::palitra::bl;
 use crate::palitra::types::{Coords, Palitra, PalitraPoint, PalitraReadV2};
 use crate::types::{Env, ShortContext};
+use crate::users::ensure_rer_role;
+use crate::users::login_id_from_identity;
 use actix_web::post;
 use actix_web::web::{Data, Json};
 use actix_web::HttpResponse;
@@ -59,10 +61,8 @@ pub async fn download_palitras_delta_split(
     env: Data<Env>,
     req: Json<PalitraDeltaSplitDownloadReq>,
 ) -> Result<HttpResponse, AppError> {
-    let login = crate::users::identity_id(&user)?;
-    crate::users::has_role(&env.dbx, &login, "Rer")
-        .await
-        .context(h!())?;
+    ensure_rer_role(&env.dbx, &user).await.context(h!())?;
+    let login = login_id_from_identity(&user)?;
     let palitra_ids = req
         .into_inner()
         .palitra_ids

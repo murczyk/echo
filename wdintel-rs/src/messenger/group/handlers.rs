@@ -5,6 +5,7 @@ use crate::messenger::group::{
 };
 use crate::sigint::aor::bl::collect_group_aors;
 use crate::types::*;
+use crate::users::{has_role, login_id_from_identity};
 use actix_web::post;
 use actix_web::web::Json;
 use chrono::{Duration, Utc};
@@ -27,13 +28,9 @@ pub async fn orphan_signal_groups(
     user: actix_identity::Identity,
     env: actix_web::web::Data<Env>,
 ) -> Result<Json<Vec<OrphanSignalGroupEntry>>, AppError> {
-    crate::users::has_role(
-        &env.dbx,
-        &crate::users::identity_id(&user)?,
-        "Admin",
-    )
-    .await
-    .context(h!())?;
+    has_role(&env.dbx, &login_id_from_identity(&user)?, "Admin")
+        .await
+        .context(h!())?;
 
     Ok(Json(
         collect_orphan_signal_groups(&env.dbx, false)
@@ -47,13 +44,9 @@ pub async fn archived_signal_groups(
     user: actix_identity::Identity,
     env: actix_web::web::Data<Env>,
 ) -> Result<Json<Vec<OrphanSignalGroupEntry>>, AppError> {
-    crate::users::has_role(
-        &env.dbx,
-        &crate::users::identity_id(&user)?,
-        "Admin",
-    )
-    .await
-    .context(h!())?;
+    has_role(&env.dbx, &login_id_from_identity(&user)?, "Admin")
+        .await
+        .context(h!())?;
 
     Ok(Json(
         collect_orphan_signal_groups(&env.dbx, true)
@@ -148,13 +141,9 @@ pub async fn signal_group_archive(
     env: actix_web::web::Data<Env>,
     req: Json<SignalGroupArchiveReq>,
 ) -> Result<Json<()>, AppError> {
-    crate::users::has_role(
-        &env.dbx,
-        &crate::users::identity_id(&user)?,
-        "Admin",
-    )
-    .await
-    .context(h!())?;
+    has_role(&env.dbx, &login_id_from_identity(&user)?, "Admin")
+        .await
+        .context(h!())?;
 
     let req = req.into_inner();
     let master_key = req.master_key.trim().to_string();
@@ -172,13 +161,9 @@ pub async fn signal_group_unarchive(
     env: actix_web::web::Data<Env>,
     req: Json<SignalGroupArchiveReq>,
 ) -> Result<Json<()>, AppError> {
-    crate::users::has_role(
-        &env.dbx,
-        &crate::users::identity_id(&user)?,
-        "Admin",
-    )
-    .await
-    .context(h!())?;
+    has_role(&env.dbx, &login_id_from_identity(&user)?, "Admin")
+        .await
+        .context(h!())?;
 
     let req = req.into_inner();
     let master_key = req.master_key.trim().to_string();
@@ -196,13 +181,9 @@ pub async fn group_stats_timeline(
     env: actix_web::web::Data<Env>,
     req: Json<SignalGroupStatsTimelineReq>,
 ) -> Result<Json<SignalGroupStatsTimelineRsp>, AppError> {
-    crate::users::has_role(
-        &env.dbx,
-        &crate::users::identity_id(&user)?,
-        "Admin",
-    )
-    .await
-    .context(h!())?;
+    has_role(&env.dbx, &login_id_from_identity(&user)?, "Admin")
+        .await
+        .context(h!())?;
 
     let req = req.into_inner();
     let master_keys = req

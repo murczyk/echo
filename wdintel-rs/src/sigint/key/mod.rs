@@ -4,6 +4,9 @@ use crate::error::AppError;
 use crate::h;
 use crate::types::*;
 use crate::types::{Deserialize, Env, Serialize, ShortContext};
+use crate::users::{
+    ensure_rer_role, has_any_role, has_role, login_id_from_identity,
+};
 use actix_web::post;
 use actix_web::web::Json;
 use anyhow::Context;
@@ -76,9 +79,13 @@ pub async fn list_keys(
     env: actix_web::web::Data<Env>,
     req: Json<ListKeysReq>,
 ) -> Result<Json<ListKeysRsp>, AppError> {
-    let user_login = crate::users::identity_id(&user)?;
-    crate::users::has_any_role(&env.dbx, &user_login, vec!["Rer", "Api"])
-        .await?;
+    has_any_role(
+        &env.dbx,
+        &login_id_from_identity(&user)?,
+        vec!["Rer", "Api"],
+    )
+    .await?;
+    let user_login = login_id_from_identity(&user)?;
 
     let keys = load_keys_list(&env.dbx, &user_login, req.sigint_network_id)
         .await
@@ -93,18 +100,12 @@ pub async fn create_key(
     env: actix_web::web::Data<Env>,
     req: Json<CreateEncryptionKeyReq>,
 ) -> Result<Json<EncryptionKeyData>, AppError> {
-    crate::users::has_role(&env.dbx, &crate::users::identity_id(&user)?, "Rer")
+    ensure_rer_role(&env.dbx, &user).await.context(h!())?;
+    has_role(&env.dbx, &login_id_from_identity(&user)?, "UnitsEditor")
         .await
         .context(h!())?;
-    crate::users::has_role(
-        &env.dbx,
-        &crate::users::identity_id(&user)?,
-        "UnitsEditor",
-    )
-    .await
-    .context(h!())?;
 
-    let user_id = crate::users::identity_id(&user)?;
+    let user_id = login_id_from_identity(&user)?;
     let organism_id = load_organism_id(&user_id, &env.dbx).await.c(h!())?;
 
     validate_key_freqs(
@@ -146,18 +147,12 @@ pub async fn update_key(
     env: actix_web::web::Data<Env>,
     req: Json<UpdateEncryptionKeyReq>,
 ) -> Result<Json<EncryptionKeyData>, AppError> {
-    crate::users::has_role(&env.dbx, &crate::users::identity_id(&user)?, "Rer")
+    ensure_rer_role(&env.dbx, &user).await.context(h!())?;
+    has_role(&env.dbx, &login_id_from_identity(&user)?, "UnitsEditor")
         .await
         .context(h!())?;
-    crate::users::has_role(
-        &env.dbx,
-        &crate::users::identity_id(&user)?,
-        "UnitsEditor",
-    )
-    .await
-    .context(h!())?;
 
-    let user_id = crate::users::identity_id(&user)?;
+    let user_id = login_id_from_identity(&user)?;
     let organism_id = load_organism_id(&user_id, &env.dbx).await.c(h!())?;
     let key = sigint_network_encryption_key::Entity::find_by_id(req.id)
         .filter(sigint_network_encryption_key::Column::Deleted.eq(false))
@@ -201,18 +196,12 @@ pub async fn delete_key(
     env: actix_web::web::Data<Env>,
     req: Json<DeleteEncryptionKeyReq>,
 ) -> Result<Json<EncryptionKeyData>, AppError> {
-    crate::users::has_role(&env.dbx, &crate::users::identity_id(&user)?, "Rer")
+    ensure_rer_role(&env.dbx, &user).await.context(h!())?;
+    has_role(&env.dbx, &login_id_from_identity(&user)?, "UnitsEditor")
         .await
         .context(h!())?;
-    crate::users::has_role(
-        &env.dbx,
-        &crate::users::identity_id(&user)?,
-        "UnitsEditor",
-    )
-    .await
-    .context(h!())?;
 
-    let user_id = crate::users::identity_id(&user)?;
+    let user_id = login_id_from_identity(&user)?;
     let organism_id = load_organism_id(&user_id, &env.dbx).await.c(h!())?;
 
     let key = sigint_network_encryption_key::Entity::find_by_id(req.id)

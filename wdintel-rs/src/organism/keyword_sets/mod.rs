@@ -1,3 +1,4 @@
+use crate::users::{has_role, login_id_from_identity};
 pub mod bl;
 pub mod types;
 
@@ -44,7 +45,7 @@ pub async fn resolve_viewer_organism_id(
 }
 
 async fn viewer_is_admin(dbx: &DatabaseConnection, login: &uuid::Uuid) -> bool {
-    crate::users::has_role(dbx, login, "Admin").await.is_ok()
+    has_role(dbx, login, "Admin").await.is_ok()
 }
 
 fn dto_from_model(
@@ -131,7 +132,7 @@ pub async fn list_keyword_sets(
     user: actix_identity::Identity,
     env: Data<Env>,
 ) -> Result<Json<Vec<OrganismKeywordSetDto>>, AppError> {
-    let login = crate::users::identity_id(&user)?;
+    let login = login_id_from_identity(&user)?;
     let is_admin = viewer_is_admin(&env.dbx, &login).await;
     let organism_id = resolve_viewer_organism_id(&env.dbx, &login).await?;
     let rows = organism_keyword_set::Entity::find()
@@ -153,7 +154,7 @@ pub async fn upsert_keyword_set(
     env: Data<Env>,
     req: Json<OrganismKeywordSetUpsertReq>,
 ) -> Result<Json<OrganismKeywordSetDto>, AppError> {
-    let login = crate::users::identity_id(&user)?;
+    let login = login_id_from_identity(&user)?;
     let is_admin = viewer_is_admin(&env.dbx, &login).await;
     let organism_id = resolve_viewer_organism_id(&env.dbx, &login).await?;
     let words = normalize_keyword_words(&req.words)?;
@@ -242,7 +243,7 @@ pub async fn delete_keyword_set(
     env: Data<Env>,
     path: Path<i64>,
 ) -> Result<Json<()>, AppError> {
-    let login = crate::users::identity_id(&user)?;
+    let login = login_id_from_identity(&user)?;
     let is_admin = viewer_is_admin(&env.dbx, &login).await;
     let organism_id = resolve_viewer_organism_id(&env.dbx, &login).await?;
     let id = path.into_inner();
@@ -269,7 +270,7 @@ pub async fn inflect_keyword_set(
     env: Data<Env>,
     req: Json<OrganismKeywordSetInflectReq>,
 ) -> Result<Json<OrganismKeywordSetInflectRsp>, AppError> {
-    let _login = crate::users::identity_id(&user)?;
+    let _login = login_id_from_identity(&user)?;
     let _organism_id = resolve_viewer_organism_id(&env.dbx, &_login).await?;
     let lemmas: Vec<String> = req
         .lemmas

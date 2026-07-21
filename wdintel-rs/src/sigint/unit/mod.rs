@@ -6,6 +6,9 @@ use crate::error::AppError;
 use crate::event_stream::fanout;
 use crate::event_stream::types::*;
 use crate::types::*;
+use crate::users::{
+    ensure_rer_role, has_any_role, has_role, login_id_from_identity,
+};
 use crate::utils::orm::ArrayColumnOps;
 use actix_web::post;
 use actix_web::web::Json;
@@ -61,9 +64,9 @@ pub async fn list_units(
     env: actix_web::web::Data<Env>,
     req: Json<ListUnitsReq>,
 ) -> Result<Json<ListUnitsRsp>, AppError> {
-    crate::users::has_any_role(
+    has_any_role(
         &env.dbx,
-        &crate::users::identity_id(&user)?,
+        &login_id_from_identity(&user)?,
         vec!["Rer", "Api"],
     )
     .await
@@ -162,9 +165,9 @@ pub async fn list_units_by_id(
     env: actix_web::web::Data<Env>,
     req: Json<ListUnitsByIdReq>,
 ) -> Result<Json<ListUnitsByIdRsp>, AppError> {
-    crate::users::has_any_role(
+    has_any_role(
         &env.dbx,
-        &crate::users::identity_id(&user)?,
+        &login_id_from_identity(&user)?,
         vec!["Rer", "Api"],
     )
     .await
@@ -189,13 +192,11 @@ pub async fn create_unit(
     env: actix_web::web::Data<Env>,
     req: Json<CreateUnitReq>,
 ) -> Result<Json<Unit>, AppError> {
-    let login = crate::users::identity_id(&user)?;
-    crate::users::has_role(&env.dbx, &login, "Rer")
+    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    has_role(&env.dbx, &login_id_from_identity(&user)?, "UnitsEditor")
         .await
         .c(h!())?;
-    crate::users::has_role(&env.dbx, &login, "UnitsEditor")
-        .await
-        .c(h!())?;
+    let login = login_id_from_identity(&user)?;
 
     let req = req.into_inner();
     let unit = insert_unit_with_changelog(&env.dbx, &login, &req).await?;
@@ -211,13 +212,11 @@ pub async fn create_unit_with_auto_network(
     env: actix_web::web::Data<Env>,
     req: Json<CreateUnitWithAutoNetworkReq>,
 ) -> Result<Json<CreateUnitWithAutoNetworkRsp>, AppError> {
-    let login = crate::users::identity_id(&user)?;
-    crate::users::has_role(&env.dbx, &login, "Rer")
+    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    has_role(&env.dbx, &login_id_from_identity(&user)?, "UnitsEditor")
         .await
         .c(h!())?;
-    crate::users::has_role(&env.dbx, &login, "UnitsEditor")
-        .await
-        .c(h!())?;
+    let login = login_id_from_identity(&user)?;
 
     Ok(Json(
         create_unit_with_auto_network_for_login(&login, &env, req.into_inner())
@@ -461,16 +460,10 @@ pub async fn update_unit(
     env: actix_web::web::Data<Env>,
     req: Json<Unit>,
 ) -> Result<Json<Unit>, AppError> {
-    crate::users::has_role(&env.dbx, &crate::users::identity_id(&user)?, "Rer")
+    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    has_role(&env.dbx, &login_id_from_identity(&user)?, "UnitsEditor")
         .await
         .c(h!())?;
-    crate::users::has_role(
-        &env.dbx,
-        &crate::users::identity_id(&user)?,
-        "UnitsEditor",
-    )
-    .await
-    .c(h!())?;
     let unit = find_unit(&env.dbx, req.id).await.context(h!())?;
     let unit_json_old = sigint_unit::Entity::find_by_id(req.id)
         .into_json()
@@ -497,7 +490,7 @@ pub async fn update_unit(
     let _changelog = sigint_unit_changelog::ActiveModel {
         id: NotSet,
         sigint_unit_id: Set(req.id),
-        login_id: Set(crate::users::identity_id(&user)?),
+        login_id: Set(login_id_from_identity(&user)?),
         action: Set("update".to_string()),
         created_at: NotSet,
         new_value: Set(Some(unit_json_new)),
@@ -524,16 +517,10 @@ pub async fn delete_unit(
     env: actix_web::web::Data<Env>,
     req: Json<i64>,
 ) -> Result<Json<Unit>, AppError> {
-    crate::users::has_role(&env.dbx, &crate::users::identity_id(&user)?, "Rer")
+    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    has_role(&env.dbx, &login_id_from_identity(&user)?, "UnitsEditor")
         .await
         .c(h!())?;
-    crate::users::has_role(
-        &env.dbx,
-        &crate::users::identity_id(&user)?,
-        "UnitsEditor",
-    )
-    .await
-    .c(h!())?;
     let unit = find_unit(&env.dbx, req.into_inner()).await.context(h!())?;
     let unit_json_old = sigint_unit::Entity::find_by_id(unit.id)
         .into_json()
@@ -553,7 +540,7 @@ pub async fn delete_unit(
     let _changelog = sigint_unit_changelog::ActiveModel {
         id: NotSet,
         sigint_unit_id: Set(unit.id),
-        login_id: Set(crate::users::identity_id(&user)?),
+        login_id: Set(login_id_from_identity(&user)?),
         action: Set("delete".to_string()),
         created_at: NotSet,
         new_value: Set(Some(unit_json_new)),
@@ -576,18 +563,12 @@ pub async fn delete_unit_duplicate(
     env: actix_web::web::Data<Env>,
     req: Json<DeleteUnitDuplicateReq>,
 ) -> Result<Json<Unit>, AppError> {
-    let login = crate::users::identity_id(&user)?;
     let dbx = &env.dbx;
-    crate::users::has_role(dbx, &crate::users::identity_id(&user)?, "Rer")
+    ensure_rer_role(dbx, &user).await.c(h!())?;
+    has_role(dbx, &login_id_from_identity(&user)?, "UnitsEditor")
         .await
         .c(h!())?;
-    crate::users::has_role(
-        dbx,
-        &crate::users::identity_id(&user)?,
-        "UnitsEditor",
-    )
-    .await
-    .c(h!())?;
+    let login = login_id_from_identity(&user)?;
     let req: DeleteUnitDuplicateReq = req.into_inner();
     let unit_to_delete_id = req.clone_to_delete_id;
     let original_id = req.original_id;
@@ -919,13 +900,9 @@ pub async fn units_search(
     env: actix_web::web::Data<Env>,
     req: Json<UnitSearchReq>,
 ) -> Result<Json<ListUnitsByIdRsp>, AppError> {
-    crate::users::has_any_role(
-        &env.dbx,
-        &crate::users::identity_id(&user)?,
-        vec!["Rer"],
-    )
-    .await
-    .c(h!())?;
+    has_any_role(&env.dbx, &login_id_from_identity(&user)?, vec!["Rer"])
+        .await
+        .c(h!())?;
 
     let search_phrase = req.search.trim();
     let mut q = sigint_unit::Entity::find()

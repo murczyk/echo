@@ -87,9 +87,10 @@ pub async fn report_docx_kind_report_125(
     }
 
     let login = *user_login;
-    let login_ids = crate::users::get_organism_login_ids_by_id(&read_db, &login)
-        .await
-        .c(h!())?;
+    let login_ids =
+        crate::users::get_organism_login_ids_by_id(&read_db, &login)
+            .await
+            .c(h!())?;
     let report_data =
         collect_report_125_data(&read_db, &login, &login_ids, env, req).await?;
 

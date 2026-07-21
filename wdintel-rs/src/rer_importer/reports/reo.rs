@@ -157,9 +157,10 @@ pub async fn report_docx_kind_reo(
     let start = Instant::now();
     let read_db = env.dbx.clone();
     let login = *user_login;
-    let login_ids = crate::users::get_organism_login_ids_by_id(&read_db, &login)
-        .await
-        .context(h!())?;
+    let login_ids =
+        crate::users::get_organism_login_ids_by_id(&read_db, &login)
+            .await
+            .context(h!())?;
     info!("get_organism_logins took: {:?}", start.elapsed());
 
     let start = Instant::now();
