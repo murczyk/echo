@@ -584,10 +584,8 @@ async fn rer_message_attachments_zip(
     env: actix_web::web::Data<Env>,
     path: actix_web::web::Path<(i64,)>,
 ) -> Result<HttpResponse, AppError> {
-    let login = user.id().c(h!())?;
-    crate::users::has_role(&env.dbx, &login, "Rer")
-        .await
-        .c(h!())?;
+    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    let login = login_id_from_identity(&user)?;
     let message_id = path.0;
     let message =
         find_active_attachment_archive_message(&env.dbx, message_id).await?;

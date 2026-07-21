@@ -2379,7 +2379,7 @@ async fn persist_failed_direct_goi_palitra_import(
 ) -> anyhow::Result<()> {
     let organism_ids =
         goi_import_access(&env.dbx, integration).await.c(h!())?;
-    let author = integration.maintainer_login.clone().c(h!())?;
+    let author = integration.maintainer_login_id.c(h!())?;
     let txn = env.dbx.begin().await.c(h!())?;
     let palitra = super::bl::create_palitra(
         author,
