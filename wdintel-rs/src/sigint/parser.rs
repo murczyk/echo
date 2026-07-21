@@ -258,6 +258,9 @@ fn normalized_body_lines(body: &str) -> Vec<String> {
 
 fn scan_marker_comment(lines: &[&str]) -> Option<MarkerComment> {
     scan_marker(lines, &COMMENT_MARKER)
+        .filter(|comment| {
+            filter_ignored_comment(Some(comment.text.clone())).is_some()
+        })
         .or_else(|| scan_marker(lines, &INTERCEPTION_TAG_MARKER))
 }
 
@@ -627,6 +630,14 @@ mod tests {
         let res = parse_comments(body);
         assert_eq!(res.top, None);
         assert_eq!(res.bottom, None);
+    }
+
+    #[test]
+    fn bottom_uses_interception_tag_after_ignored_comment() {
+        let body = "24.07.2025, 08:05:21\n149.7300\nУКХ\nНВ\n\n— репліка діалогу\n\nКоментар: службовий радіообмін\n\nМітки перехоплення: 🚙 - Переміщення";
+        let res = parse_comments(body);
+        assert_eq!(res.top, None);
+        assert_eq!(res.bottom.as_deref(), Some("🚙 - Переміщення"));
     }
 
     #[test]
