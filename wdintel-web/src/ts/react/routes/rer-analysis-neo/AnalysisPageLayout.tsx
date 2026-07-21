@@ -154,7 +154,7 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
         onUpdate={page.updateReport}
       />
 
-      <CreateMessageFab onClick={() => setCreateMessageOpen(true)} />
+      {centerTab !== 'map' ? <CreateMessageFab onClick={() => setCreateMessageOpen(true)} /> : null}
       <ManageMessageDrawer
         open={createMessageOpen || isPresent(page.editorMessage)}
         cyberEchoEnabled={page.cyberEchoEnabled}

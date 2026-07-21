@@ -494,6 +494,65 @@ describe('RerAnalysisNeoPage', () => {
     });
   });
 
+  it('hides the create-message FAB on the map tab and restores it on other center tabs', async () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    rendered.push(container);
+    const root = createRoot(container);
+    const page = buildPage();
+    page.analysisMapInSidebar = false;
+    page.centerTab = 'map';
+    useRerAnalysisNeoPageMock.mockReturnValue(page);
+
+    await act(async () => {
+      root.render(<RerAnalysisNeoPage />);
+    });
+
+    expect(container.querySelectorAll('button[aria-label="create-message-fab"]')).toHaveLength(0);
+
+    page.analysisMapInSidebar = true;
+    await act(async () => {
+      root.render(<RerAnalysisNeoPage />);
+    });
+
+    expect(container.querySelectorAll('button[aria-label="create-message-fab"]')).toHaveLength(1);
+
+    page.analysisMapInSidebar = false;
+    page.centerTab = 'messages';
+    await act(async () => {
+      root.render(<RerAnalysisNeoPage />);
+    });
+
+    expect(container.querySelectorAll('button[aria-label="create-message-fab"]')).toHaveLength(1);
+
+    await act(async () => {
+      container
+        .querySelector<HTMLButtonElement>('button[aria-label="create-message-fab"]')
+        ?.click();
+    });
+
+    expect(manageMessageDrawerPropsHistory.at(-1)?.open).toBe(true);
+
+    page.centerTab = 'map';
+    await act(async () => {
+      root.render(<RerAnalysisNeoPage />);
+    });
+
+    expect(container.querySelectorAll('button[aria-label="create-message-fab"]')).toHaveLength(0);
+    expect(manageMessageDrawerPropsHistory.at(-1)?.open).toBe(true);
+
+    page.centerTab = 'summary';
+    await act(async () => {
+      root.render(<RerAnalysisNeoPage />);
+    });
+
+    expect(container.querySelectorAll('button[aria-label="create-message-fab"]')).toHaveLength(1);
+
+    await act(async () => {
+      root.unmount();
+    });
+  });
+
   it('enqueues separate Snackbar notifications for repeated creations', async () => {
     const container = document.createElement('div');
     document.body.appendChild(container);
