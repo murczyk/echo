@@ -439,39 +439,89 @@ fn parse_emoji_abonent_lists(
 ) -> Option<Vec<(MatchedValue, MatchedValue)>> {
     lazy_static! {
         static ref RE_ABONENT_LIST: Regex = Regex::new(
-            r#"👥\s*:\s*(?:\d{3}\.\d{3,4}\s*(?i:мгц)\s*)?((?:\d+\s*[,/]\s*)+\d+)\s*🔐"#
+            r#"👥\s*:\s*(?:\d{3}[.,]\d{3,4}\s*(?i:мгц)\s*)?((?:\d+\s*[,/]\s*)+\d+)\s*🔐"#
         )
         .unwrap();
         static ref RE_SEPARATE_ABONENT_LISTS: Regex = Regex::new(
-            r#"👥\s*:\s*(?:\d{3}\.\d{3,4}\s*(?i:мгц)\s*)?(\d+(?:\s*[,/]\s*\d+)*)\s*[,/]?\s*👥\s*:\s*(?:\d{3}\.\d{3,4}\s*(?i:мгц)\s*)?(\d+(?:\s*[,/]\s*\d+)*)\s*🔐"#
+            r#"👥\s*:\s*(?:\d{3}[.,]\d{3,4}\s*(?i:мгц)\s*)?(\d+(?:\s*[,/]\s*\d+)*)\s*[,/]?\s*👥\s*:\s*(?:\d{3}[.,]\d{3,4}\s*(?i:мгц)\s*)?(\d+(?:\s*[,/]\s*\d+)*)\s*🔐"#
         )
         .unwrap();
     }
 
-    if let Some(captures) = RE_SEPARATE_ABONENT_LISTS.captures(&line.text) {
-        let senders =
-            line.build_value(captures.get(1)?, normalize_metadata_value)?;
-        let receivers =
-            line.build_value(captures.get(2)?, normalize_metadata_value)?;
-        let senders = split_numeric_metadata_list(&senders)?;
-        let receivers = split_numeric_metadata_list(&receivers)?;
-        let mut abonents = vec![];
-        for sender in senders {
-            for receiver in &receivers {
-                abonents.push((sender.clone(), receiver.clone()));
-            }
-        }
-        return Some(abonents);
-    }
+    let separate_groups =
+        parse_separate_emoji_abonent_groups(line, &RE_SEPARATE_ABONENT_LISTS);
+    let separate_spans = separate_groups
+        .iter()
+        .map(|(start, end, _)| (*start, *end))
+        .collect::<Vec<_>>();
+    let mut groups = separate_groups
+        .into_iter()
+        .map(|(start, _, abonents)| (start, abonents))
+        .collect::<Vec<_>>();
+    groups.extend(parse_single_emoji_abonent_groups(
+        line,
+        &RE_ABONENT_LIST,
+        &separate_spans,
+    ));
+    groups.sort_by_key(|(start, _)| *start);
+    let abonents = groups
+        .into_iter()
+        .flat_map(|(_, abonents)| abonents)
+        .collect::<Vec<_>>();
+    (!abonents.is_empty()).then_some(abonents)
+}
 
-    let list = parse_value_from_regexes(line, &[&RE_ABONENT_LIST])?;
-    let mut abonents = split_numeric_metadata_list(&list)?.into_iter();
-    let sender = abonents.next()?;
-    Some(
-        abonents
-            .map(|receiver| (sender.clone(), receiver))
-            .collect(),
-    )
+fn parse_separate_emoji_abonent_groups(
+    line: &NormalizedLine,
+    regex: &Regex,
+) -> Vec<(usize, usize, Vec<(MatchedValue, MatchedValue)>)> {
+    regex
+        .captures_iter(&line.text)
+        .filter_map(|captures| {
+            let full_match = captures.get(0)?;
+            let senders =
+                line.build_value(captures.get(1)?, normalize_metadata_value)?;
+            let receivers =
+                line.build_value(captures.get(2)?, normalize_metadata_value)?;
+            let senders = split_numeric_metadata_list(&senders)?;
+            let receivers = split_numeric_metadata_list(&receivers)?;
+            let mut abonents = vec![];
+            for sender in senders {
+                for receiver in &receivers {
+                    abonents.push((sender.clone(), receiver.clone()));
+                }
+            }
+            Some((full_match.start(), full_match.end(), abonents))
+        })
+        .collect()
+}
+
+fn parse_single_emoji_abonent_groups(
+    line: &NormalizedLine,
+    regex: &Regex,
+    excluded_spans: &[(usize, usize)],
+) -> Vec<(usize, Vec<(MatchedValue, MatchedValue)>)> {
+    regex
+        .captures_iter(&line.text)
+        .filter_map(|captures| {
+            let full_match = captures.get(0)?;
+            if excluded_spans.iter().any(|(start, end)| {
+                full_match.start() >= *start && full_match.end() <= *end
+            }) {
+                return None;
+            }
+            let list =
+                line.build_value(captures.get(1)?, normalize_metadata_value)?;
+            let mut abonents = split_numeric_metadata_list(&list)?.into_iter();
+            let sender = abonents.next()?;
+            Some((
+                full_match.start(),
+                abonents
+                    .map(|receiver| (sender.clone(), receiver))
+                    .collect(),
+            ))
+        })
+        .collect()
 }
 
 fn split_numeric_metadata_list(

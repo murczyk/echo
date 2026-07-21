@@ -490,6 +490,66 @@ ID(CG)⬅️:50📣",
     }
 
     #[test]
+    fn parse_metadata_skips_comma_frequency_before_emoji_abonents() {
+        let metadata = parse_metadata_asserting_spans(
+            "СС: 0 👥: 146,500 МГц 8, 16776413, 16776414 🔐",
+        );
+        assert_eq!(
+            metadata,
+            vec![
+                InboxMetadata {
+                    cc: Some("0".to_string()),
+                    cg: Some("16776413".to_string()),
+                    id: Some("8".to_string()),
+                    ..Default::default()
+                },
+                InboxMetadata {
+                    cc: Some("0".to_string()),
+                    cg: Some("16776414".to_string()),
+                    id: Some("8".to_string()),
+                    ..Default::default()
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn parse_metadata_handles_multiple_complete_emoji_abonent_groups() {
+        let metadata = parse_metadata_asserting_spans(
+            "🎨:5 👥:111,222🔐 🎨:1 👥:333,444🔐",
+        );
+        assert_eq!(
+            metadata,
+            vec![
+                InboxMetadata {
+                    cc: Some("5".to_string()),
+                    cg: Some("222".to_string()),
+                    id: Some("111".to_string()),
+                    ..Default::default()
+                },
+                InboxMetadata {
+                    cc: Some("1".to_string()),
+                    cg: Some("222".to_string()),
+                    id: Some("111".to_string()),
+                    ..Default::default()
+                },
+                InboxMetadata {
+                    cc: Some("5".to_string()),
+                    cg: Some("444".to_string()),
+                    id: Some("333".to_string()),
+                    ..Default::default()
+                },
+                InboxMetadata {
+                    cc: Some("1".to_string()),
+                    cg: Some("444".to_string()),
+                    id: Some("333".to_string()),
+                    ..Default::default()
+                },
+            ]
+        );
+    }
+
+    #[test]
     fn parse_metadata_handles_slash_separated_emoji_abonents() {
         let metadata = parse_metadata_asserting_spans(
             "Мережа: УКХ р/м управління 2 мсб 41 мсп 72 мсд 44 АК 👥: 67200/62485/67204🔐",
