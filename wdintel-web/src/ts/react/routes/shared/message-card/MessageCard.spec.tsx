@@ -196,17 +196,24 @@ vi.mock('@mui/material', () => ({
     children,
     startIcon,
     endIcon,
+    component,
     ...props
   }: { children?: ReactNode; startIcon?: ReactNode; endIcon?: ReactNode } & Record<
     string,
     unknown
-  >) => (
-    <button {...omitMuiLayoutProps(props)}>
-      {startIcon}
-      <span>{children}</span>
-      {endIcon}
-    </button>
-  ),
+  >) => {
+    const Component = component ?? 'button';
+    return (
+      <Component
+        {...(Component === 'button' ? { type: 'button' } : {})}
+        {...omitMuiLayoutProps(props)}
+      >
+        {startIcon}
+        <span>{children}</span>
+        {endIcon}
+      </Component>
+    );
+  },
   ButtonBase: ({ children, component, ...props }: PrimitiveProps) => {
     const Component = component ?? 'button';
     return (
@@ -2405,11 +2412,17 @@ describe('MessageCard', () => {
     });
     rendered.push(multipleAttachments);
 
-    const archiveLink = Array.from(multipleAttachments.container.querySelectorAll('a')).find(
-      (link) => link.textContent?.includes('Завантажити все'),
+    const archiveLink = multipleAttachments.container.querySelector(
+      'a[aria-label="Завантажити все"]',
     );
+    expect(archiveLink).not.toBeNull();
+    expect(archiveLink?.tagName).toBe('A');
     expect(archiveLink?.getAttribute('href')).toBe('/api/rer-importer/messages/42/attachments.zip');
-    expect(archiveLink?.hasAttribute('download')).toBe(true);
+    expect(archiveLink?.getAttribute('download')).toBe('attachments.zip');
+    expect(archiveLink?.querySelector('[data-testid="DownloadIcon"]')).not.toBeNull();
+    expect(archiveLink?.querySelector('[data-testid="DownloadOutlinedIcon"]')).toBeNull();
+    expect(archiveLink?.parentElement?.className).toContain('inline-flex');
+    expect(archiveLink?.parentElement?.className).toContain('max-w-full');
   });
 
   it.each([
@@ -2434,10 +2447,15 @@ describe('MessageCard', () => {
       const archiveLink = view.container.querySelector('a[aria-label="Завантажити все"]');
       expect(archiveLink).not.toBeNull();
       const attachmentArea = archiveLink?.parentElement;
-      expect(attachmentArea?.className).toContain('flex-col');
-      expect(attachmentArea?.className).toContain('sm:flex-row');
+      expect(attachmentArea?.tagName).toBe('DIV');
+      expect(attachmentArea?.className).toContain('inline-flex');
+      expect(attachmentArea?.className).toContain('flex-wrap');
+      expect(attachmentArea?.className).toContain('max-w-full');
       expect(attachmentArea?.children).toHaveLength(2);
-      expect(attachmentArea?.firstElementChild?.className).toContain('flex-1');
+      expect(attachmentArea?.firstElementChild?.className).toContain('inline-flex');
+      expect(attachmentArea?.firstElementChild?.classList.contains('flex-1')).toBe(false);
+      expect(attachmentArea?.firstElementChild?.classList.contains('w-full')).toBe(false);
+      expect(archiveLink?.querySelector('[data-testid="DownloadIcon"]')).not.toBeNull();
     },
   );
 

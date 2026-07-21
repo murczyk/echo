@@ -526,13 +526,6 @@ fn message_attachments_archive_name_from_parts(
     format!("attachments_{message_uuid}_{timestamp}.zip")
 }
 
-fn message_attachments_archive_name(message: &signal_message::Model) -> String {
-    message_attachments_archive_name_from_parts(
-        message.message_uid.as_deref(),
-        message.timestamp.unwrap_or(message.created_at),
-    )
-}
-
 #[get("/api/rer-importer/messages/{message_id}/attachments.zip")]
 async fn rer_message_attachments_zip(
     user: actix_identity::Identity,
@@ -567,6 +560,7 @@ async fn rer_message_attachments_zip(
         });
     }
     validate_attachment_metadata_sizes(&media)?;
+    let archive_timestamp = Utc::now().naive_utc();
 
     let zip_file = tempfile::tempfile().c(h!())?;
     let mut archive = zip::ZipWriter::new(BufWriter::new(zip_file));
@@ -594,7 +588,10 @@ async fn rer_message_attachments_zip(
     let zip_size = zip_file.metadata().c(h!())?.len();
     zip_file.rewind().c(h!())?;
     let stream = ReaderStream::new(tokio::fs::File::from_std(zip_file));
-    let archive_name = message_attachments_archive_name(&message);
+    let archive_name = message_attachments_archive_name_from_parts(
+        message.message_uid.as_deref(),
+        archive_timestamp,
+    );
     Ok(HttpResponse::Ok()
         .insert_header((header::CONTENT_TYPE, "application/zip"))
         .insert_header((
@@ -1721,6 +1718,7 @@ mod messenger_media_tests {
             file_ext: Some("txt".to_string()),
             file_name: Some("negative.txt".to_string()),
             size_bytes: -1,
+            is_encrypted: false,
             created_at: chrono::Utc::now().naive_utc(),
         })
         .collect::<Vec<_>>();

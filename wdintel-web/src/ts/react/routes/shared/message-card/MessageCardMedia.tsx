@@ -1,4 +1,5 @@
 import { useLayoutEffect, useRef, useState } from 'react';
+import DownloadIcon from '@mui/icons-material/Download';
 import DownloadOutlinedIcon from '@mui/icons-material/DownloadOutlined';
 import PlayCircleOutlineIcon from '@mui/icons-material/PlayCircleOutline';
 import { Box, Button, Tooltip } from '@mui/material';
@@ -275,17 +276,37 @@ export function MessageMediaDownloadLink({ attachment }: { attachment: MessageMe
 
 export function MessageMediaDownloadAllLink({ messageId }: { messageId: number }) {
   return (
-    <a
+    <Button
+      component="a"
+      size="small"
+      variant="outlined"
       href={`/api/rer-importer/messages/${messageId}/attachments.zip`}
       download="attachments.zip"
       target="_blank"
       rel="noopener noreferrer"
       aria-label="Завантажити все"
-      className="mb-0.5 inline-flex min-h-[26px] self-center items-center justify-center gap-1 rounded border border-solid border-(--color-divider) px-2 py-0.5 text-[11px] font-medium leading-tight text-(--color-text) no-underline hover:bg-(--color-hover)"
+      sx={{
+        minWidth: 0,
+        maxWidth: '100%',
+        minHeight: 26,
+        py: 0.25,
+        px: 0.75,
+        fontSize: 11,
+        lineHeight: 1.25,
+        textTransform: 'none',
+        fontWeight: 500,
+        alignSelf: 'center',
+        flexShrink: 0,
+        '& .MuiButton-startIcon': {
+          mr: 0.35,
+          ml: -0.25,
+          '& svg': { fontSize: 14 },
+        },
+      }}
+      startIcon={<DownloadIcon aria-hidden />}
     >
-      <DownloadOutlinedIcon aria-hidden fontSize="small" />
       Завантажити все
-    </a>
+    </Button>
   );
 }
 

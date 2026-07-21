@@ -150,8 +150,8 @@ export function MessageCardMessageBody({
   return (
     <div className="flex flex-col min-w-0" style={{ gap: compact ? '12px' : '10px' }}>
       {hasImageOrVideoAttachments ? (
-        <div className="flex min-w-0 w-full flex-col gap-2 sm:flex-row sm:items-center">
-          <div className="min-w-0 flex-1">
+        <div className="inline-flex max-w-full flex-wrap items-center gap-2">
+          <div className="inline-flex max-w-full min-w-0">
             <MessageCardImageList
               images={images}
               videos={videoAttachments}
@@ -186,8 +186,8 @@ export function MessageCardMessageBody({
         />
       ) : null}
       {audioAttachments.length > 0 ? (
-        <div className="mt-1 flex min-w-0 w-full flex-col gap-2 sm:flex-row sm:items-center">
-          <div className="min-w-0 flex-1">
+        <div className="mt-1 inline-flex max-w-full flex-wrap items-center gap-2">
+          <div className="inline-flex max-w-full min-w-0 flex-col items-start">
             {audioAttachments.map((attachment) => (
               <MessageMediaAudioPlayer key={attachment.id} attachment={attachment} />
             ))}
@@ -196,8 +196,8 @@ export function MessageCardMessageBody({
         </div>
       ) : null}
       {documents.length > 0 || downloadAttachments.length > 0 ? (
-        <div className="mt-1 flex min-w-0 w-full flex-col gap-2 sm:flex-row sm:items-center">
-          <div className="min-w-0 flex flex-1 flex-wrap items-start gap-2">
+        <div className="mt-1 inline-flex max-w-full flex-wrap items-center gap-2">
+          <div className="inline-flex max-w-full min-w-0 flex-wrap items-start gap-2">
             {documents.map((document, index) => {
               const previewIndex = previewableDocuments.findIndex(
                 (previewableDocument) => previewableDocument.href === document.href,
