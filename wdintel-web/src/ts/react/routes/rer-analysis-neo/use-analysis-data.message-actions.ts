@@ -169,9 +169,10 @@ export function useAnalysisDataMessageActions(params: Params) {
           return toggleHumanTag(message, tagId, currentUserName, currentUserOrganismId);
         });
 
-        // Do not reload the paginated list after a tag mutation: it must not move the user to
-        // page one. If an active tag filter changes membership, the list reconciles on the next
-        // explicit pagination, filter, or refresh action.
+        // Do not reload the inbox after a tag mutation. The card updates immediately, but an active
+        // tag filter may temporarily show a row that no longer matches it. This is intentional:
+        // default reload returns to page one, while preserved-cursor reload can duplicate or clear
+        // boundary pages. The list reconciles on the next explicit pagination, filter, or refresh action.
         params.invalidateTagFacetLoad();
       } finally {
         setMessageActionCount((current) => Math.max(0, current - 1));
