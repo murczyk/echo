@@ -149,5 +149,6 @@ mod tests {
         assert!(!req.goi_association_message_uid_worker_enabled);
         assert_eq!(req.report_chunking_hours, 24);
         assert!(!req.limit_big_reports);
+        assert!(!req.enable_audio_transcription);
     }
 }

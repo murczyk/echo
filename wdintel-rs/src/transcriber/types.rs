@@ -106,7 +106,7 @@ pub struct QueueStatusRsp {
     pub retrying: u64,
     pub completed: u64,
     pub terminal: u64,
-    pub oldest_due_at: Option<i64>,
+    pub oldest_due_age_seconds: Option<i64>,
 }
 
 impl From<echo_gpu_client::QueueStatus> for QueueStatusRsp {
@@ -117,9 +117,11 @@ impl From<echo_gpu_client::QueueStatus> for QueueStatusRsp {
             retrying: status.retrying,
             completed: status.completed,
             terminal: status.terminal,
-            oldest_due_at: status
-                .oldest_due_at
-                .map(|value| value.and_utc().timestamp_millis()),
+            oldest_due_age_seconds: status.oldest_due_at.map(|value| {
+                (chrono::Utc::now().naive_utc() - value)
+                    .num_seconds()
+                    .max(0)
+            }),
         }
     }
 }

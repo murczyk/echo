@@ -42,6 +42,9 @@ vi.mock('../../components/PowerButton', () => ({
   ),
 }));
 vi.mock('../admin-control-panel-neo', () => ({ AdminControlPanelNeoSection: () => null }));
+vi.mock('./TranscriberInstancesSection', () => ({
+  TranscriberInstancesSection: () => <div>transcriber instances panel</div>,
+}));
 
 import { AdminSystemSettingsNeoPage } from './index';
 
@@ -53,6 +56,20 @@ async function renderPage() {
   await act(async () => Promise.resolve());
   await act(async () => Promise.resolve());
   return { container, root };
+}
+
+function button(container: HTMLElement, text: string): HTMLButtonElement | undefined {
+  return Array.from(container.querySelectorAll('button')).find((item) =>
+    item.textContent?.includes(text),
+  );
+}
+
+function audioSwitch(container: HTMLElement): HTMLInputElement | null {
+  return (
+    Array.from(container.querySelectorAll('label'))
+      .find((label) => label.textContent?.includes('Увімкнути транскрибування аудіо'))
+      ?.querySelector('input') ?? null
+  );
 }
 
 describe('AdminSystemSettingsNeoPage success notifications', () => {
@@ -74,9 +91,7 @@ describe('AdminSystemSettingsNeoPage success notifications', () => {
     const checkbox = container.querySelector<HTMLInputElement>('input[type="checkbox"]');
     expect(checkbox).not.toBeNull();
     await act(async () => checkbox?.click());
-    const saveButton = Array.from(container.querySelectorAll('button')).find((button) =>
-      button.textContent?.includes('зберегти'),
-    );
+    const saveButton = button(container, 'зберегти');
     expect(saveButton).not.toBeUndefined();
     await act(async () => saveButton?.click());
     expect(mocks.save).toHaveBeenCalledTimes(1);
@@ -127,6 +142,37 @@ describe('AdminSystemSettingsNeoPage success notifications', () => {
       }),
     );
     expect(saveButton?.disabled).toBe(true);
+    await act(async () => root.unmount());
+  });
+
+  it('keeps instance administration hidden until enablement is saved', async () => {
+    const { container, root } = await renderPage();
+    const checkbox = audioSwitch(container);
+    expect(checkbox).not.toBeNull();
+    await act(async () => checkbox?.click());
+    expect(container.textContent).toContain('Збережіть налаштування');
+    expect(container.textContent).not.toContain('Транскрибування');
+
+    mocks.save.mockRejectedValueOnce(new Error('save failed'));
+    await act(async () => button(container, 'зберегти')?.click());
+    await act(async () => Promise.resolve());
+    expect(container.textContent).not.toContain('transcriber instances panel');
+    await act(async () => root.unmount());
+  });
+
+  it('shows the instances tab from saved state and resets it after disable', async () => {
+    mocks.list.mockResolvedValueOnce([{ id: 1, deleted: false, enableAudioTranscription: true }]);
+    const { container, root } = await renderPage();
+    await act(async () => button(container, 'Транскрибування')?.click());
+    expect(container.textContent).toContain('transcriber instances panel');
+
+    await act(async () => button(container, 'Основні')?.click());
+    await act(async () => audioSwitch(container)?.click());
+    expect(button(container, 'Транскрибування')).not.toBeUndefined();
+    await act(async () => button(container, 'зберегти')?.click());
+    await act(async () => Promise.resolve());
+    expect(button(container, 'Транскрибування')).toBeUndefined();
+    expect(container.textContent).not.toContain('transcriber instances panel');
     await act(async () => root.unmount());
   });
 });

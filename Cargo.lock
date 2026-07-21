@@ -2445,6 +2445,7 @@ version = "0.1.1-rc.202607241508"
 [[package]]
 name = "echo-gpu-client"
 version = "0.1.0"
+source = "git+ssh://git@github.com/echoua/echo-gpu.git?rev=03e6ae16f3d9a0043a307ced8404ce6f64971e4d#03e6ae16f3d9a0043a307ced8404ce6f64971e4d"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2465,6 +2466,7 @@ dependencies = [
 [[package]]
 name = "echo-gpu-client-migration"
 version = "0.1.0"
+source = "git+ssh://git@github.com/echoua/echo-gpu.git?rev=03e6ae16f3d9a0043a307ced8404ce6f64971e4d#03e6ae16f3d9a0043a307ced8404ce6f64971e4d"
 dependencies = [
  "sea-orm-migration",
  "tokio",

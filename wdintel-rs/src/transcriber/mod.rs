@@ -1,8 +1,9 @@
+pub mod backfill;
 pub mod media_queue;
 pub mod types;
 pub mod worker;
 
-use crate::entities::signal_message_media;
+use crate::entities::{signal_message, signal_message_media};
 use crate::error::AppError;
 use crate::h;
 use crate::transcriber::types::*;
@@ -10,45 +11,70 @@ use crate::types::{Env, ShortContext};
 use actix_identity::Identity;
 use actix_web::{post, web::Json};
 use anyhow::Context;
-use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, TransactionTrait};
+use sea_orm::{
+    ColumnTrait, EntityTrait, QueryFilter, QuerySelect, RelationTrait,
+    TransactionTrait,
+};
 use tokio::process::Command;
 
+#[async_trait::async_trait]
 trait BgworkerRestarter {
-    fn request_restart(&self) -> std::io::Result<()>;
+    async fn request_restart(&self) -> std::io::Result<()>;
 }
 
 struct SystemdBgworkerRestarter;
 
+#[async_trait::async_trait]
 impl BgworkerRestarter for SystemdBgworkerRestarter {
-    fn request_restart(&self) -> std::io::Result<()> {
-        let mut child = Command::new("sudo")
-            .args(["systemctl", "restart", "wdintel-rs-bgworker.service"])
-            .kill_on_drop(false)
-            .spawn()?;
-        tokio::spawn(async move {
-            match child.wait().await {
-                Ok(status) if status.success() => {
-                    log::info!("wdintel-rs-bgworker restart completed")
-                }
-                Ok(status) => log::error!(
-                    "wdintel-rs-bgworker restart failed with status {status}"
-                ),
-                Err(error) => log::error!(
-                    "failed to await wdintel-rs-bgworker restart: {error}"
-                ),
-            }
-        });
-        Ok(())
+    async fn request_restart(&self) -> std::io::Result<()> {
+        let output = Command::new("systemctl")
+            .args([
+                "--no-block",
+                "restart",
+                crate::config::ECHO_AUDIO_TRANSCRIPTION_BGWORKER_SERVICE,
+            ])
+            .output()
+            .await?;
+        if output.status.success() {
+            return Ok(());
+        }
+        let details = String::from_utf8_lossy(&output.stderr);
+        Err(std::io::Error::other(format!(
+            "systemctl restart failed with status {}: {}",
+            output.status,
+            details.trim()
+        )))
     }
 }
 
-fn restart_result(
+async fn mutation_restart_result(
+    reload_error: Option<anyhow::Error>,
     restarter: &dyn BgworkerRestarter,
 ) -> (RestartStatus, Option<String>) {
-    match restarter.request_restart() {
-        Ok(()) => (RestartStatus::Requested, None),
-        Err(error) => (RestartStatus::Failed, Some(error.to_string())),
+    let mut errors = Vec::new();
+    if let Some(error) = reload_error {
+        errors.push(format!("failed to reload GPU instances: {error:#}"));
     }
+    if let Err(error) = restarter.request_restart().await {
+        errors.push(format!("failed to request bgworker restart: {error}"));
+    }
+    if errors.is_empty() {
+        (RestartStatus::Requested, None)
+    } else {
+        let error = errors.join("; ");
+        log::error!("GPU instance configuration was saved, but {error}");
+        (RestartStatus::Failed, Some(error))
+    }
+}
+
+async fn apply_instance_mutation(env: &Env) -> (RestartStatus, Option<String>) {
+    let reload_error = env
+        .echo_gpu_client
+        .reload_instances()
+        .await
+        .map(|_| ())
+        .err();
+    mutation_restart_result(reload_error, &SystemdBgworkerRestarter).await
 }
 
 async fn ensure_admin_enabled(
@@ -101,9 +127,7 @@ pub async fn create_instance(
     .await
     .context(h!())?;
     txn.commit().await.c(h!())?;
-    env.echo_gpu_client.reload_instances().await.context(h!())?;
-    let (restart_status, restart_error) =
-        restart_result(&SystemdBgworkerRestarter);
+    let (restart_status, restart_error) = apply_instance_mutation(&env).await;
     Ok(Json(InstanceMutationRsp {
         instance: Some(instance.into()),
         deleted: false,
@@ -136,9 +160,7 @@ pub async fn update_instance(
     .await
     .context(h!())?;
     txn.commit().await.c(h!())?;
-    env.echo_gpu_client.reload_instances().await.context(h!())?;
-    let (restart_status, restart_error) =
-        restart_result(&SystemdBgworkerRestarter);
+    let (restart_status, restart_error) = apply_instance_mutation(&env).await;
     Ok(Json(InstanceMutationRsp {
         instance: Some(instance.into()),
         deleted: false,
@@ -162,9 +184,7 @@ pub async fn delete_instance(
         return Err(AppError::NotFound);
     }
     txn.commit().await.c(h!())?;
-    env.echo_gpu_client.reload_instances().await.context(h!())?;
-    let (restart_status, restart_error) =
-        restart_result(&SystemdBgworkerRestarter);
+    let (restart_status, restart_error) = apply_instance_mutation(&env).await;
     Ok(Json(InstanceMutationRsp {
         instance: None,
         deleted,
@@ -209,7 +229,7 @@ pub async fn message_transcriptions(
     env: actix_web::web::Data<Env>,
     path: actix_web::web::Path<(i64,)>,
 ) -> Result<Json<Vec<MessageTranscriptionRsp>>, AppError> {
-    let login = user.id().c(h!())?;
+    let login = crate::users::login_id_from_identity(&user)?;
     crate::users::has_role(&env.dbx, &login, "Rer")
         .await
         .c(h!())?;
@@ -220,7 +240,12 @@ pub async fn message_transcriptions(
         .await?;
 
     let media = signal_message_media::Entity::find()
+        .join(
+            sea_orm::JoinType::InnerJoin,
+            signal_message_media::Relation::SignalMessage.def(),
+        )
         .filter(signal_message_media::Column::SignalMessageId.eq(path.0))
+        .filter(signal_message::Column::Deleted.eq(false))
         .all(&env.dbx)
         .await
         .c(h!())?;
@@ -252,16 +277,44 @@ mod tests {
 
     struct FailedRestarter;
 
+    #[async_trait::async_trait]
     impl BgworkerRestarter for FailedRestarter {
-        fn request_restart(&self) -> std::io::Result<()> {
+        async fn request_restart(&self) -> std::io::Result<()> {
             Err(std::io::Error::other("systemd unavailable"))
         }
     }
 
-    #[test]
-    fn restart_failure_is_reported_as_partial_success() {
-        let (status, error) = restart_result(&FailedRestarter);
+    struct SuccessfulRestarter;
+
+    #[async_trait::async_trait]
+    impl BgworkerRestarter for SuccessfulRestarter {
+        async fn request_restart(&self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    #[tokio::test]
+    async fn restart_failure_is_reported_as_partial_success() {
+        let (status, error) =
+            mutation_restart_result(None, &FailedRestarter).await;
         assert!(matches!(status, RestartStatus::Failed));
-        assert_eq!(error.as_deref(), Some("systemd unavailable"));
+        assert_eq!(
+            error.as_deref(),
+            Some("failed to request bgworker restart: systemd unavailable")
+        );
+    }
+
+    #[tokio::test]
+    async fn reload_failure_is_reported_after_the_mutation() {
+        let (status, error) = mutation_restart_result(
+            Some(anyhow::anyhow!("database unavailable")),
+            &SuccessfulRestarter,
+        )
+        .await;
+        assert!(matches!(status, RestartStatus::Failed));
+        assert_eq!(
+            error.as_deref(),
+            Some("failed to reload GPU instances: database unavailable")
+        );
     }
 }

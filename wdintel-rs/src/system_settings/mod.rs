@@ -779,6 +779,20 @@ mod tests {
 
     #[tokio::test]
     #[serial]
+    async fn audio_transcription_is_default_disabled_and_uses_active_setting() {
+        let _guard = TEST_LOCK.lock().await;
+        let env = cleanup().await.unwrap();
+        assert!(!audio_transcription_enabled(&env.dbx).await.unwrap());
+
+        let settings = insert_settings(&env.dbx, old_ts(), false).await;
+        let mut settings: system_settings::ActiveModel = settings.into();
+        settings.enable_audio_transcription = Set(true);
+        settings.update(&env.dbx).await.unwrap();
+        assert!(audio_transcription_enabled(&env.dbx).await.unwrap());
+    }
+
+    #[tokio::test]
+    #[serial]
     async fn echo_im_sync_cursor_advances_only_forward() {
         let _guard = TEST_LOCK.lock().await;
         let env = cleanup().await.unwrap();
@@ -1007,6 +1021,7 @@ mod tests {
             report_chunking_hours:
                 crate::config::RER_REPORT_CHUNKING_HOURS_DEFAULT,
             limit_big_reports: false,
+            enable_audio_transcription: false,
         }
     }
 
@@ -1065,6 +1080,7 @@ mod tests {
                 crate::config::RER_REPORT_CHUNKING_HOURS_DEFAULT as i32,
             ),
             limit_big_reports: Set(false),
+            enable_audio_transcription: Set(false),
         }
         .insert(dbx)
         .await
