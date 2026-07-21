@@ -70,27 +70,41 @@ fn token_like_expr_with_normalized_boundaries(
     )
 }
 
-fn network_name_matches_token(token: &str) -> SimpleExpr {
-    token_like_expr(
-        "lower(sigint_network.name collate \"ru-x-icu\") ilike $1",
-        token,
-    )
+fn column_matches_tokens(
+    column_sql: &str,
+    tokens: &[String],
+    use_normalized_boundaries: bool,
+) -> Condition {
+    tokens.iter().fold(Condition::all(), |condition, token| {
+        let token_expr = if use_normalized_boundaries {
+            token_like_expr_with_normalized_boundaries(column_sql, token)
+        } else {
+            token_like_expr(column_sql, token)
+        };
+        condition.add(token_expr)
+    })
 }
 
-fn network_unit_exists_for_token(
-    token: &str,
+fn network_name_matches_tokens(
+    tokens: &[String],
+    use_normalized_boundaries: bool,
+) -> Condition {
+    let column_sql = if use_normalized_boundaries {
+        "sigint_network.name collate \"ru-x-icu\""
+    } else {
+        "lower(sigint_network.name collate \"ru-x-icu\") ilike $1"
+    };
+    column_matches_tokens(column_sql, tokens, use_normalized_boundaries)
+}
+
+fn network_unit_exists_for_tokens(
+    tokens: &[String],
     use_normalized_boundaries: bool,
 ) -> SimpleExpr {
-    let unit_name_expr = if use_normalized_boundaries {
-        token_like_expr_with_normalized_boundaries(
-            "sigint_unit.name collate \"ru-x-icu\"",
-            token,
-        )
+    let column_sql = if use_normalized_boundaries {
+        "sigint_unit.name collate \"ru-x-icu\""
     } else {
-        token_like_expr(
-            "lower(sigint_unit.name collate \"ru-x-icu\") ilike $1",
-            token,
-        )
+        "lower(sigint_unit.name collate \"ru-x-icu\") ilike $1"
     };
 
     let unit_exists = sigint_network_unit::Entity::find()
@@ -106,22 +120,22 @@ fn network_unit_exists_for_token(
             sigint_network_unit::Relation::SigintUnit.def(),
             Alias::new("sigint_unit"),
         )
-        .filter(unit_name_expr)
+        .filter(column_matches_tokens(
+            column_sql,
+            tokens,
+            use_normalized_boundaries,
+        ))
         .into_query();
     Expr::exists(unit_exists)
 }
 
-fn network_label_matches_token(token: &str) -> Condition {
-    let mut token_condition = Condition::any();
-    token_condition =
-        token_condition.add(token_like_expr_with_normalized_boundaries(
-            "sigint_network.name collate \"ru-x-icu\"",
-            token,
-        ));
-    token_condition.add(network_unit_exists_for_token(token, true))
+fn network_label_matches_tokens(tokens: &[String]) -> Condition {
+    Condition::any()
+        .add(network_name_matches_tokens(tokens, true))
+        .add(network_unit_exists_for_tokens(tokens, true))
 }
 
-fn network_freq_exists_for_token(token: &str) -> SimpleExpr {
+fn network_freq_exists_for_tokens(tokens: &[String]) -> SimpleExpr {
     let freq_exists = sigint_network_freq::Entity::find()
         .select_only()
         .expr(Expr::value(1))
@@ -131,15 +145,16 @@ fn network_freq_exists_for_token(token: &str) -> SimpleExpr {
                 .eq(sigint_network::Column::Id.into_simple_expr()),
         )
         .filter(sigint_network_freq::Column::Deleted.eq(false))
-        .filter(token_like_expr(
+        .filter(column_matches_tokens(
             "lower(sigint_network_freq.freq collate \"ru-x-icu\") ilike $1",
-            token,
+            tokens,
+            false,
         ))
         .into_query();
     Expr::exists(freq_exists)
 }
 
-fn network_aor_exists_for_token(token: &str) -> SimpleExpr {
+fn network_aor_exists_for_tokens(tokens: &[String]) -> SimpleExpr {
     let aor_exists = sigint_network_aor::Entity::find()
         .select_only()
         .expr(Expr::value(1))
@@ -154,25 +169,28 @@ fn network_aor_exists_for_token(token: &str) -> SimpleExpr {
             Alias::new("sigint_aor"),
         )
         .filter(Expr::cust("\"sigint_aor\".\"deleted\" = false"))
-        .filter(token_like_expr(
+        .filter(column_matches_tokens(
             "lower(sigint_aor.name collate \"ru-x-icu\") ilike $1",
-            token,
+            tokens,
+            false,
         ))
         .into_query();
     Expr::exists(aor_exists)
 }
 
-fn network_location_matches_token(token: &str) -> SimpleExpr {
-    token_like_expr(
+fn network_location_matches_tokens(tokens: &[String]) -> Condition {
+    column_matches_tokens(
         "lower(sigint_network.location collate \"ru-x-icu\") ilike $1",
-        token,
+        tokens,
+        false,
     )
 }
 
-fn network_radio_station_matches_token(token: &str) -> SimpleExpr {
-    token_like_expr(
+fn network_radio_station_matches_tokens(tokens: &[String]) -> Condition {
+    column_matches_tokens(
         "lower(sigint_network.radio_station collate \"ru-x-icu\") ilike $1",
-        token,
+        tokens,
+        false,
     )
 }
 
@@ -186,33 +204,17 @@ fn filter_network_tokens(
         return query;
     }
 
-    let condition =
-        tokens
-            .into_iter()
-            .fold(Condition::all(), |condition, token| {
-                let mut token_condition = Condition::any();
-
-                match scope {
-                    SearchScope::Global => {
-                        token_condition = token_condition
-                            .add(network_name_matches_token(&token))
-                            .add(network_location_matches_token(&token))
-                            .add(network_radio_station_matches_token(&token))
-                            .add(network_unit_exists_for_token(&token, false))
-                            .add(network_freq_exists_for_token(&token))
-                            .add(network_aor_exists_for_token(&token));
-                    }
-                    SearchScope::NetworkLabel => {
-                        token_condition = network_label_matches_token(&token);
-                    }
-                    SearchScope::Location => {
-                        token_condition = token_condition
-                            .add(network_location_matches_token(&token));
-                    }
-                }
-
-                condition.add(token_condition)
-            });
+    let condition = match scope {
+        SearchScope::Global => Condition::any()
+            .add(network_name_matches_tokens(&tokens, false))
+            .add(network_location_matches_tokens(&tokens))
+            .add(network_radio_station_matches_tokens(&tokens))
+            .add(network_unit_exists_for_tokens(&tokens, false))
+            .add(network_freq_exists_for_tokens(&tokens))
+            .add(network_aor_exists_for_tokens(&tokens)),
+        SearchScope::NetworkLabel => network_label_matches_tokens(&tokens),
+        SearchScope::Location => network_location_matches_tokens(&tokens),
+    };
 
     query.filter(condition)
 }
