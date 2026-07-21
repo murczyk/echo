@@ -804,9 +804,9 @@ mod tests {
     use crate::entities::*;
     use crate::error::AppError;
     use crate::functest::tests::{
-        cleanup, mk_aor, mk_datasource, mk_login, mk_organism, mk_organism_aor,
-        mk_sigint_zone, mk_sigint_zone_datasource, mk_signal_group,
-        mk_signal_message,
+        cleanup, mk_aor, mk_datasource, mk_datasource_group, mk_login,
+        mk_organism, mk_organism_aor, mk_sigint_zone,
+        mk_sigint_zone_datasource, mk_signal_group, mk_signal_message,
     };
     use crate::types::Env;
     use sea_orm::*;
@@ -894,6 +894,16 @@ mod tests {
         for (datasource, group) in
             [(&datasource_a, &group_a), (&datasource_b, &group_b)]
         {
+            mk_datasource_group(
+                &txn,
+                datasource_group::ActiveModel {
+                    datasource_id: Set(datasource.id),
+                    group_master_key: Set(group.master_key.clone()),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
             mk_sigint_zone_datasource(
                 &txn,
                 sigint_zone_datasource::ActiveModel {
