@@ -27,7 +27,6 @@ const hoisted = vi.hoisted(() => ({
   inboxMessageTagsAdd: vi.fn(),
   inboxMessageTagsModelError: vi.fn(),
   inboxMessageTagsRm: vi.fn(),
-  fetchInboxMessages: vi.fn(),
 }));
 
 vi.mock('../../services/api/analysis', () => ({
@@ -52,8 +51,6 @@ type HarnessApi = ReturnType<typeof useAnalysisDataMessageActions> & {
   onError: ReturnType<typeof vi.fn>;
   reload: ReturnType<typeof vi.fn>;
   invalidateTagFacetLoad: ReturnType<typeof vi.fn>;
-  pageIndex: number;
-  currentCursor: { beforeIdNoninclusive: number | null; sinceIdNoninclusive: number | null };
 };
 
 function buildUser(): User {
@@ -109,9 +106,6 @@ function TestHarness(props: {
   reload?: ReturnType<typeof vi.fn>;
   invalidateTagFacetLoad?: ReturnType<typeof vi.fn>;
   queryState?: ReturnType<typeof emptyQueryState>;
-  initialPageIndex?: number;
-  initialCursor?: { beforeIdNoninclusive: number | null; sinceIdNoninclusive: number | null };
-  reloadCurrentPage?: boolean;
 }) {
   const [messages, setMessages] = useState<Array<[number, InboxMessage]>>(
     props.initialMessages ?? [[1, buildMessage()]],
@@ -121,10 +115,6 @@ function TestHarness(props: {
   );
   const [onError] = useState(() => props.onError ?? vi.fn());
   const [invalidateTagFacetLoad] = useState(() => props.invalidateTagFacetLoad ?? vi.fn());
-  const [pageIndex] = useState(props.initialPageIndex ?? 0);
-  const [currentCursor] = useState(
-    props.initialCursor ?? { beforeIdNoninclusive: null, sinceIdNoninclusive: null },
-  );
   const onUnauthorized = vi.fn(() => false);
   const currentUser = props.currentUser ?? buildUser();
   const patchMessages = useCallback(
@@ -134,15 +124,7 @@ function TestHarness(props: {
     },
     [],
   );
-  const [reload] = useState(
-    () =>
-      props.reload ??
-      vi.fn(async (options?: { preserveMessagePage?: boolean }) => {
-        if (!props.reloadCurrentPage || options?.preserveMessagePage !== true) return;
-        const rsp = await hoisted.fetchInboxMessages({ ...currentCursor }, {});
-        setMessages(rsp.inboxItems ?? []);
-      }),
-  );
+  const [reload] = useState(() => props.reload ?? vi.fn(() => Promise.resolve()));
   const actions = useAnalysisDataMessageActions({
     authUserName: props.authUserName ?? currentUser?.name ?? null,
     currentUser,
@@ -175,8 +157,6 @@ function TestHarness(props: {
     onError,
     reload,
     invalidateTagFacetLoad,
-    pageIndex,
-    currentCursor,
   };
 
   return null;
@@ -212,9 +192,6 @@ describe('useAnalysisDataMessageActions', () => {
       reload?: ReturnType<typeof vi.fn>;
       invalidateTagFacetLoad?: ReturnType<typeof vi.fn>;
       queryState?: ReturnType<typeof emptyQueryState>;
-      initialPageIndex?: number;
-      initialCursor?: { beforeIdNoninclusive: number | null; sinceIdNoninclusive: number | null };
-      reloadCurrentPage?: boolean;
     } = {},
   ) {
     const apiRef: MutableRefObject<HarnessApi | null> = { current: null };
@@ -228,9 +205,6 @@ describe('useAnalysisDataMessageActions', () => {
           reload={options.reload}
           invalidateTagFacetLoad={options.invalidateTagFacetLoad}
           queryState={options.queryState}
-          initialPageIndex={options.initialPageIndex}
-          initialCursor={options.initialCursor}
-          reloadCurrentPage={options.reloadCurrentPage}
         />,
       );
     });
@@ -238,21 +212,17 @@ describe('useAnalysisDataMessageActions', () => {
   }
 
   it('removes only the human contribution, keeps bot rows, and opens the prompt', async () => {
-    const reload = vi.fn(() => Promise.resolve());
-    const apiRef = await renderHarness(
+    const apiRef = await renderHarness([
       [
-        [
-          1,
-          buildMessage({
-            inboxTags: [
-              buildTag(3, { login: 'tester', organismId: 1 }),
-              buildTag(3, { model: 'bot', confidence: 0.92 }),
-            ],
-          }),
-        ],
+        1,
+        buildMessage({
+          inboxTags: [
+            buildTag(3, { login: 'tester', organismId: 1 }),
+            buildTag(3, { model: 'bot', confidence: 0.92 }),
+          ],
+        }),
       ],
-      { reload },
-    );
+    ]);
 
     await act(async () => {
       await apiRef.current!.onToggleMessageTag(1, 3);
@@ -261,7 +231,6 @@ describe('useAnalysisDataMessageActions', () => {
     expect(hoisted.inboxMessageTagsRm).toHaveBeenCalledWith({ messageId: 1, tagId: 3 });
     expect(hoisted.inboxMessageTagsAdd).not.toHaveBeenCalled();
     expect(apiRef.current!.botTagAction).toEqual({ messageId: 1, tagId: 3 });
-    expect(reload).toHaveBeenCalledWith({ preserveMessagePage: true });
     expect(apiRef.current!.messages[0]?.[1].inboxTags).toEqual([
       expect.objectContaining({ tagId: 3, model: 'bot' }),
     ]);
@@ -358,100 +327,6 @@ describe('useAnalysisDataMessageActions', () => {
       expect.objectContaining({ tagId: 3, model: 'bot' }),
     ]);
     expect(apiRef.current!.messages[0]?.[1].tags).toEqual([3, 4]);
-  });
-
-  it('invalidates the tag facet and reloads after a successful tag toggle', async () => {
-    const reload = vi.fn(() => Promise.resolve());
-    const invalidateTagFacetLoad = vi.fn();
-    const apiRef = await renderHarness(
-      [[1, buildMessage({ inboxTags: [buildTag(3, { login: 'tester', organismId: 1 })] })]],
-      { reload, invalidateTagFacetLoad },
-    );
-
-    await act(async () => {
-      await apiRef.current!.onToggleMessageTag(1, 3);
-    });
-
-    expect(hoisted.inboxMessageTagsRm).toHaveBeenCalledWith({ messageId: 1, tagId: 3 });
-    expect(invalidateTagFacetLoad).toHaveBeenCalledTimes(1);
-    expect(reload).toHaveBeenCalledWith({
-      preserveMessagePage: true,
-      clearSyntheticLastPage: true,
-    });
-  });
-
-  it('does not request synthetic-last-page clearing without a tag predicate', async () => {
-    const reload = vi.fn(() => Promise.resolve());
-    const apiRef = await renderHarness(
-      [[1, buildMessage({ inboxTags: [buildTag(3, { login: 'tester', organismId: 1 })] })]],
-      {
-        reload,
-        queryState: {
-          ...emptyQueryState(),
-          fromDateTimeStr: '2026-04-01T00:00',
-          toDateTimeStr: '2026-04-02T00:00',
-          tags: [],
-        },
-      },
-    );
-
-    await act(async () => {
-      await apiRef.current!.onToggleMessageTag(1, 3);
-    });
-
-    expect(reload).toHaveBeenCalledWith({ preserveMessagePage: true });
-  });
-
-  it('preserves an empty current page after a tag toggle', async () => {
-    const originalPage16Cursor = { beforeIdNoninclusive: 160, sinceIdNoninclusive: null };
-    hoisted.fetchInboxMessages.mockResolvedValueOnce({
-      inboxItems: [],
-      callsigns: [],
-      pageLimit: 20,
-    });
-    const apiRef = await renderHarness(
-      [[1, buildMessage({ inboxTags: [buildTag(3, { login: 'tester', organismId: 1 })] })]],
-      {
-        initialPageIndex: 16,
-        initialCursor: originalPage16Cursor,
-        reloadCurrentPage: true,
-      },
-    );
-
-    await act(async () => {
-      await apiRef.current!.onToggleMessageTag(1, 3);
-    });
-
-    expect(apiRef.current!.reload).toHaveBeenCalledWith({
-      preserveMessagePage: true,
-      clearSyntheticLastPage: true,
-    });
-    expect(apiRef.current!.pageIndex).toBe(16);
-    expect(apiRef.current!.currentCursor).toEqual(originalPage16Cursor);
-    expect(apiRef.current!.messages).toEqual([]);
-    expect(hoisted.fetchInboxMessages).toHaveBeenCalledWith(
-      expect.objectContaining(originalPage16Cursor),
-      expect.anything(),
-    );
-  });
-
-  it('keeps the optimistic tag change and reports the error when only the reload fails', async () => {
-    const reload = vi.fn(() => Promise.reject(new Error('reload boom')));
-    const invalidateTagFacetLoad = vi.fn();
-    const apiRef = await renderHarness(
-      [[1, buildMessage({ inboxTags: [buildTag(3, { login: 'tester', organismId: 1 })] })]],
-      { reload, invalidateTagFacetLoad },
-    );
-
-    await act(async () => {
-      await apiRef.current!.onToggleMessageTag(1, 3);
-    });
-
-    expect(hoisted.inboxMessageTagsRm).toHaveBeenCalledWith({ messageId: 1, tagId: 3 });
-    // The mutation succeeded, so the optimistic patch must stick even though reload failed.
-    expect(apiRef.current!.messages[0]?.[1].inboxTags).toEqual([]);
-    expect(apiRef.current!.messages[0]?.[1].tags).toEqual([4]);
-    expect(apiRef.current!.onError).toHaveBeenCalledWith('reload boom');
   });
 
   it('does not reload or invalidate the tag facet when the tag toggle fails', async () => {

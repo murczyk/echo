@@ -166,47 +166,28 @@ describe('useAnalysisData tag pagination', () => {
     vi.clearAllMocks();
   });
 
-  it('preserves an empty non-first page after a real tag mutation reload', async () => {
+  it('does not reload the current page after a real tag mutation', async () => {
     api.fetchInboxMessages
       .mockResolvedValueOnce({ inboxItems: [message(1, 7)], callsigns: [], pageLimit: 20 })
-      .mockResolvedValueOnce({ inboxItems: [message(21, 7)], callsigns: [], pageLimit: 20 });
-    api.fetchInboxCount.mockResolvedValue({ quantity: 21, firstElementTs: null });
+      .mockResolvedValueOnce({ inboxItems: [message(2, 7)], callsigns: [], pageLimit: 20 });
 
     await renderAnalysisData();
     await act(async () => {
       await vi.waitFor(() => expect(api.fetchInboxMessages).toHaveBeenCalledTimes(1));
       await vi.waitFor(() => expect(current!.messages).toHaveLength(1));
     });
-    await vi.waitFor(() => {
-      expect(current!.messagesTotalCount).toBe(21);
-    });
-
-    await act(async () => await current!.loadLastPage());
+    await act(async () => await current!.loadNextPage());
     expect(current!.pageIndex).toBe(1);
-    const navigationRequest = api.fetchInboxMessages.mock.calls.at(-1)?.[0];
-    const capturedLastPageCursor = {
-      beforeIdNoninclusive: navigationRequest.beforeIdNoninclusive,
-      sinceIdNoninclusive: navigationRequest.sinceIdNoninclusive,
-    };
     api.fetchInboxMessages.mockClear();
-    api.fetchInboxCount.mockResolvedValue({ quantity: 20, firstElementTs: null });
-    api.fetchInboxMessages.mockResolvedValueOnce({
-      inboxItems: [message(1, 7)],
-      callsigns: [],
-      pageLimit: 20,
-    });
 
     await act(async () => {
-      await current!.onToggleMessageTag(21, 7);
+      await current!.onToggleMessageTag(2, 7);
     });
 
     expect(current!.pageIndex).toBe(1);
-    expect(current!.messages).toEqual([]);
-    expect(current!.messages.some(([id]) => id === 1)).toBe(false);
-    expect(api.fetchInboxMessages).toHaveBeenCalledTimes(1);
-    expect(api.fetchInboxMessages).toHaveBeenCalledWith(
-      expect.objectContaining(capturedLastPageCursor),
-      expect.anything(),
-    );
+    expect(current!.messages).toHaveLength(1);
+    expect(current!.messages[0]?.[0]).toBe(2);
+    expect(current!.messages[0]?.[1].tags).toEqual([]);
+    expect(api.fetchInboxMessages).not.toHaveBeenCalled();
   });
 });

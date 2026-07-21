@@ -634,7 +634,7 @@ describe('RerAnalysisNeoPage', () => {
       container.querySelector<HTMLButtonElement>('[aria-label="Оновити"]')?.click();
     });
 
-    expect(page.reload).toHaveBeenCalledWith({ preserveMessagePage: true });
+    expect(page.reload).toHaveBeenCalledWith();
 
     await act(async () => {
       root.unmount();

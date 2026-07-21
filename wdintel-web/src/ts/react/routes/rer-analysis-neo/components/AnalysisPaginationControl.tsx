@@ -164,11 +164,15 @@ export function AnalysisPaginationControl({
 }: Props) {
   const isMessagesTab = centerTab === 'messages';
   const totalUnknown = loading || totalLoading || totalCount === null;
+  const start = pageIndex * pageSize + 1;
+  const end = pageIndex * pageSize + messagesCount;
   let rangeText = '';
   if (totalUnknown) {
-    rangeText = `${messagesCount} повідомлень`;
+    rangeText = '— з —';
+  } else if (messagesCount === 0) {
+    rangeText = `0 з ${totalCount}`;
   } else {
-    rangeText = `Сторінка ${pageIndex + 1} · ${totalCount} повідомлень`;
+    rangeText = `${start}-${end} з ${totalCount}`;
   }
 
   const lastPageIndex = totalUnknown ? null : Math.max(0, Math.ceil(totalCount / pageSize) - 1);

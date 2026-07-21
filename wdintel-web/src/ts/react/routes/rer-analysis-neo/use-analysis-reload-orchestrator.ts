@@ -62,8 +62,6 @@ type Params = {
     forceReload?: boolean,
   ) => Promise<void>;
   invalidateMessagePaging: () => void;
-  invalidateMessagePageRequests: () => void;
-  getCurrentMessagePageCursor: () => import('./types').AnalysisMessagePageCursor;
   refreshMessageCounts: () => void;
   setAorEntries: Setter<AnalysisAorEntry[]>;
   setCounts: Setter<import('../../../../Bindings').CountStatsRsp | null>;
@@ -109,14 +107,12 @@ export function useAnalysisReloadOrchestrator(params: Params): UseAnalysisReload
     clearAnalysisResults,
     deferInitialLoad,
     getLoadedFilterSections,
-    getCurrentMessagePageCursor,
     getReloadFilterSections,
     invalidateCallsignGraph,
     invalidateCorrelatedFreqsCache,
     invalidateFilterSectionLoads,
     invalidateFilterSectionLoadsForPatch,
     invalidateMessagePaging,
-    invalidateMessagePageRequests,
     invalidateRightSidebarData,
     invalidateSummaryData,
     loadInitialFilterSections,
@@ -180,13 +176,7 @@ export function useAnalysisReloadOrchestrator(params: Params): UseAnalysisReload
       reloadAbortControllerRef.current?.abort();
       const abortController = new AbortController();
       reloadAbortControllerRef.current = abortController;
-      const preserveMessagePage = options.preserveMessagePage === true;
       const shouldRefreshMessageCounts = options.refreshMessageCounts !== false;
-      const messagePageCursor = preserveMessagePage ? getCurrentMessagePageCursor() : undefined;
-      const clearMessagePage =
-        options.clearSyntheticLastPage === true &&
-        messagePageCursor?.reverseResults === true &&
-        messagePageCursor.resultLimit != null;
 
       if (shouldRefreshMessageCounts) refreshMessageCounts();
 
@@ -195,11 +185,7 @@ export function useAnalysisReloadOrchestrator(params: Params): UseAnalysisReload
           clearAnalysisResults,
           invalidateCallsignGraph,
           invalidateCorrelatedFreqsCache,
-          invalidateMessagePaging: preserveMessagePage
-            ? invalidateMessagePageRequests
-            : invalidateMessagePaging,
-          clearMessagePage,
-          messagePageCursor,
+          invalidateMessagePaging,
           newestFirst,
           onError,
           onUnauthorized,
@@ -260,7 +246,6 @@ export function useAnalysisReloadOrchestrator(params: Params): UseAnalysisReload
     [
       centerTab,
       clearAnalysisResults,
-      getCurrentMessagePageCursor,
       getLoadedFilterSections,
       getReloadFilterSections,
       invalidateCallsignGraph,
@@ -268,7 +253,6 @@ export function useAnalysisReloadOrchestrator(params: Params): UseAnalysisReload
       invalidateFilterSectionLoads,
       invalidateFilterSectionLoadsForPatch,
       invalidateMessagePaging,
-      invalidateMessagePageRequests,
       invalidateRightSidebarData,
       invalidateSummaryData,
       loadInitialFilterSections,

@@ -130,8 +130,6 @@ export type AnalysisMessagePageCursor = {
 };
 
 export type AnalysisReloadOptions = {
-  preserveMessagePage?: boolean;
-  clearSyntheticLastPage?: boolean;
   refreshMessageCounts?: boolean;
 };
 export type AnalysisSidebarTab = 'map' | 'stats' | 'callsigns' | 'newCallsigns';

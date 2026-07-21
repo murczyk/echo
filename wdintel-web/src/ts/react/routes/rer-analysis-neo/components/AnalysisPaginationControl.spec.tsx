@@ -128,7 +128,7 @@ describe('AnalysisPaginationControl', () => {
   it('renders the range text for the first page', async () => {
     const view = await renderComponent(baseProps());
     rendered.push(view);
-    expect(view.container.textContent).toContain('Сторінка 1 · 137 повідомлень');
+    expect(view.container.textContent).toContain('1-20 з 137');
   });
 
   it('renders the range text for a later page', async () => {
@@ -138,7 +138,7 @@ describe('AnalysisPaginationControl', () => {
       <AnalysisPaginationControl {...baseProps()} pageIndex={2} messagesCount={17} />,
     );
     await act(async () => {});
-    expect(view.container.textContent).toContain('Сторінка 3 · 137 повідомлень');
+    expect(view.container.textContent).toContain('41-57 з 137');
   });
 
   it('falls back to em dash while totals are loading', async () => {
@@ -146,20 +146,19 @@ describe('AnalysisPaginationControl', () => {
       baseProps() && { ...baseProps(), totalCount: null, totalLoading: true },
     );
     rendered.push(view);
-    expect(view.container.textContent).toContain('20 повідомлень');
+    expect(view.container.textContent).toContain('— з —');
   });
 
   it('falls back to em dash while replacement messages are loading', async () => {
     const view = await renderComponent({ ...baseProps(), messagesCount: 1, loading: true });
     rendered.push(view);
-    expect(view.container.textContent).toContain('1 повідомлень');
-    expect(view.container.textContent).not.toContain('Сторінка 1 · 137 повідомлень');
+    expect(view.container.textContent).toContain('— з —');
   });
 
   it('always renders a loaded total count', async () => {
     const view = await renderComponent({ ...baseProps(), totalCount: 0, noMoreToLoad: false });
     rendered.push(view);
-    expect(view.container.textContent).toContain('Сторінка 1 · 0 повідомлень');
+    expect(view.container.textContent).toContain('0 з 0');
   });
 
   it('opens the first/last page menu when the counter is clicked or hovered', async () => {

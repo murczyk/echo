@@ -11,7 +11,6 @@ import {
   mergeNetworkFilterOptions,
   replaceNetworkFilterOptionsPreservingSelectedLabels,
   reloadAnalysisData,
-  transformMessagePageResponse,
 } from './use-analysis-data.reload';
 import { buildSummaryCallsignsInfo } from './use-analysis-data.callsigns';
 import { emptyNewCallsigns, emptyOptions } from './use-analysis-data.shared';
@@ -293,13 +292,6 @@ describe('reloadAnalysisData', () => {
       invalidateCorrelatedFreqsCache,
       invalidateCallsignGraph: vi.fn(),
       invalidateMessagePaging: vi.fn(),
-      messagePageCursor: {
-        beforeIdNoninclusive: null,
-        sinceIdNoninclusive: null,
-        requestNewestFirst: false,
-        reverseResults: true,
-        resultLimit: 2,
-      },
       newestFirst: true,
       onError: vi.fn(),
       onUnauthorized: vi.fn().mockReturnValue(false),
@@ -346,7 +338,7 @@ describe('reloadAnalysisData', () => {
     expect(mocks.fetchInboxMessages.mock.calls[0]?.[0]).toMatchObject({
       beforeIdNoninclusive: null,
       sinceIdNoninclusive: null,
-      newestFirst: false,
+      newestFirst: true,
     });
 
     inboxDeferred.resolve({
@@ -362,8 +354,9 @@ describe('reloadAnalysisData', () => {
 
     expect(setHasLoadedInitialMessages).toHaveBeenCalledWith(true);
     expect(setMessages).toHaveBeenCalledWith([
-      [2, { networkIds: [] }],
       [1, { networkIds: [] }],
+      [2, { networkIds: [] }],
+      [3, { networkIds: [] }],
     ]);
     expect(messagesLoadingTransitions).toContain(false);
     expect(mocks.fetchAnalysisCount).toHaveBeenCalledTimes(1);
@@ -417,13 +410,6 @@ describe('reloadAnalysisData', () => {
       invalidateCorrelatedFreqsCache: vi.fn(),
       invalidateCallsignGraph: vi.fn(),
       invalidateMessagePaging: vi.fn(),
-      messagePageCursor: {
-        beforeIdNoninclusive: null,
-        sinceIdNoninclusive: null,
-        requestNewestFirst: false,
-        reverseResults: true,
-        resultLimit: 3,
-      },
       newestFirst: true,
       onError: vi.fn(),
       onUnauthorized: vi.fn().mockReturnValue(false),
@@ -475,7 +461,7 @@ describe('reloadAnalysisData', () => {
     expect(mocks.fetchInboxMessages.mock.calls[0]?.[0]).toMatchObject({
       beforeIdNoninclusive: null,
       sinceIdNoninclusive: null,
-      newestFirst: false,
+      newestFirst: true,
     });
     inboxDeferred.resolve({
       inboxItems: Array.from({ length: 20 }, (_, index) => [index, { networkIds: [] }]),
@@ -494,7 +480,7 @@ describe('reloadAnalysisData', () => {
     expect(mocks.fetchInboxMessages.mock.calls[1]?.[0]).toMatchObject({
       beforeIdNoninclusive: null,
       sinceIdNoninclusive: null,
-      newestFirst: false,
+      newestFirst: true,
     });
     rebuiltInboxDeferred.resolve({
       inboxItems: Array.from({ length: 20 }, (_, index) => [index + 20, { networkIds: [] }]),
@@ -520,12 +506,10 @@ describe('reloadAnalysisData', () => {
     expect(mocks.fetchAnalysisCallsigns).not.toHaveBeenCalled();
     expect(mocks.fetchAnalysisCallsignInfos).not.toHaveBeenCalled();
     expect(mocks.fetchAnalysisFreqs).toHaveBeenCalledTimes(2);
-    expect(setMessages).toHaveBeenLastCalledWith([
-      [22, { networkIds: [] }],
-      [21, { networkIds: [] }],
-      [20, { networkIds: [] }],
-    ]);
-    expect(setMessages.mock.lastCall?.[0]).toHaveLength(3);
+    expect(setMessages).toHaveBeenLastCalledWith(
+      Array.from({ length: 20 }, (_, index) => [index + 20, { networkIds: [] }]),
+    );
+    expect(setMessages.mock.lastCall?.[0]).toHaveLength(20);
   });
 
   it('keeps the original inbox state when rebuilt inbox fetch fails', async () => {
@@ -616,6 +600,7 @@ describe('reloadAnalysisData', () => {
       ],
     });
     await flushPromises();
+    await vi.waitFor(() => expect(mocks.fetchInboxMessages).toHaveBeenCalledTimes(2));
     rebuiltInboxDeferred.reject(new Error('rebuilt inbox failed'));
     await reloadPromise;
     await flushPromises();

@@ -77,11 +77,6 @@ function buildParams(overrides: Partial<Parameters<typeof useAnalysisReloadOrche
     loadTopSidebarData: vi.fn().mockResolvedValue(undefined),
     clearAnalysisResults: vi.fn(),
     loadMessageComments: vi.fn().mockResolvedValue(undefined),
-    getCurrentMessagePageCursor: vi.fn(() => ({
-      beforeIdNoninclusive: 120,
-      sinceIdNoninclusive: null,
-    })),
-    invalidateMessagePageRequests: vi.fn(),
     invalidateMessagePaging: vi.fn(),
     refreshMessageCounts: vi.fn(),
     setAorEntries: noopSetter as Dispatch<SetStateAction<AnalysisAorEntry[]>>,
@@ -178,25 +173,6 @@ describe('useAnalysisReloadOrchestrator', () => {
 
     expect(reloadAnalysisDataMock.reloadAnalysisData).toHaveBeenCalledTimes(1);
     expect(params.refreshMessageCounts).not.toHaveBeenCalled();
-  });
-
-  it('preserves the current message cursor for a manual page refresh', async () => {
-    const params = buildParams();
-    await renderHook(params);
-    reloadAnalysisDataMock.reloadAnalysisData.mockClear();
-
-    await act(async () => {
-      await latestResult?.reload({ preserveMessagePage: true });
-    });
-
-    expect(reloadAnalysisDataMock.reloadAnalysisData).toHaveBeenCalledWith(
-      expect.objectContaining({
-        invalidateMessagePaging: params.invalidateMessagePageRequests,
-        messagePageCursor: { beforeIdNoninclusive: 120, sinceIdNoninclusive: null },
-      }),
-    );
-    expect(params.getCurrentMessagePageCursor).toHaveBeenCalledTimes(1);
-    expect(params.refreshMessageCounts).toHaveBeenCalledTimes(1);
   });
 
   it('loads map palitras on initial eligible load', async () => {

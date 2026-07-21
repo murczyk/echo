@@ -14,7 +14,7 @@ import {
   inboxMessageTagsModelError,
   inboxMessageTagsRm,
 } from '../../services/api/analysis';
-import { buildAnalysisReq, doesTagMutationAffectMessageMembership } from './helpers';
+import { buildAnalysisReq } from './helpers';
 import type { User } from '../../../../Bindings';
 import type { AnalysisQueryState, AnalysisReloadOptions } from './types';
 import type { MessageCardBotTagAction } from '../shared/message-card/message-card.types';
@@ -145,8 +145,6 @@ export function useAnalysisDataMessageActions(params: Params) {
       const currentUserOrganismId = params.currentUser?.organismId ?? null;
       const userHasTag = hasUserTag(sourceMessage, tagId, currentUserName);
       const botHasTag = hasBotTag(sourceMessage, tagId);
-      const canChangeTagMembership =
-        doesTagMutationAffectMessageMembership(params.queryState) && !botHasTag;
       const nextBotTagAction = userHasTag && botHasTag ? { messageId, tagId } : null;
 
       setMessageActionCount((current) => current + 1);
@@ -171,24 +169,7 @@ export function useAnalysisDataMessageActions(params: Params) {
           return toggleHumanTag(message, tagId, currentUserName, currentUserOrganismId);
         });
 
-        try {
-          params.invalidateTagFacetLoad();
-          // Preserve the user's page and cursor after a tag mutation. A synthetic last-page cursor
-          // contains an old resultLimit, so it cannot safely requery a membership-changing result set.
-          // When the mutation changes tag-ID membership, that case intentionally clears the current
-          // page instead of rebuilding/clamping it or moving the user; canonical reflow requires
-          // snapshot/offset pagination.
-          await params.reload({
-            preserveMessagePage: true,
-            ...(canChangeTagMembership ? { clearSyntheticLastPage: true } : {}),
-          });
-        } catch (reloadError) {
-          // The tag mutation above already persisted, so the optimistic patch is now the
-          // correct state — a reload failure must not roll it back. Report the error only.
-          if (!params.onUnauthorized(reloadError)) {
-            params.onError(params.toErrorMessage(reloadError));
-          }
-        }
+        params.invalidateTagFacetLoad();
       } finally {
         setMessageActionCount((current) => Math.max(0, current - 1));
       }
