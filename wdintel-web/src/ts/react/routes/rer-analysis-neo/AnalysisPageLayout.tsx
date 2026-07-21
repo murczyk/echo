@@ -42,6 +42,9 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
   const centerTabs = getAnalysisCenterTabs(page.analysisMapInSidebar);
   const centerTab =
     page.analysisMapInSidebar && page.centerTab === 'map' ? 'messages' : page.centerTab;
+  const analysisMapVisible =
+    centerTab === 'map' ||
+    (page.analysisMapInSidebar && rightPanelVisible && page.rightSidebarTab === 'map');
   const messagesPaneLoading = useMinDurationBusy(page.messagesLoading, 450);
 
   return (
@@ -154,7 +157,7 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
         onUpdate={page.updateReport}
       />
 
-      <CreateMessageFab onClick={() => setCreateMessageOpen(true)} />
+      {!analysisMapVisible ? <CreateMessageFab onClick={() => setCreateMessageOpen(true)} /> : null}
       <ManageMessageDrawer
         open={createMessageOpen || isPresent(page.editorMessage)}
         cyberEchoEnabled={page.cyberEchoEnabled}

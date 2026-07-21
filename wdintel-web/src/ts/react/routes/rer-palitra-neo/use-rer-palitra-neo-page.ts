@@ -43,6 +43,7 @@ import { createPalitraPageActionHandlers } from './use-rer-palitra-neo-page.pali
 import {
   ArchiveView,
   buildFolderActionStatus,
+  filterPalitrasByArchiveView,
   readInitialArchiveViewFromUrl,
   updateArchiveViewInUrl,
 } from './use-rer-palitra-neo-page.shared';
@@ -116,17 +117,10 @@ export function useRerPalitraNeoPage() {
     [user, myScope],
   );
   const expandedFolderPathSet = useMemo(() => new Set(expandedFolderPaths), [expandedFolderPaths]);
-  const visiblePalitras = useMemo(() => {
-    switch (archiveView) {
-      case 'archived':
-        return palitras.filter((palitra) => palitra.isArchived);
-      case 'all':
-        return palitras;
-      case 'active':
-      default:
-        return palitras.filter((palitra) => !palitra.isArchived);
-    }
-  }, [archiveView, palitras]);
+  const visiblePalitras = useMemo(
+    () => filterPalitrasByArchiveView(palitras, archiveView),
+    [archiveView, palitras],
+  );
   const folderTree = useMemo(() => buildFolderTree(palitras, user), [palitras, user]);
   const folderOptions = useMemo(() => getExistingFolderOptions(folderTree), [folderTree]);
   const rows = useMemo<TableRowView[]>(

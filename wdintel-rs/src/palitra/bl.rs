@@ -1,6 +1,6 @@
 use crate::config::{
-    PALITRA_GOI_REMOTE_STATUS_PRESENT, PALITRA_GOI_SYNC_DIRECTION_GOI,
-    PALITRA_POINTS_INSERT_BATCH_SIZE,
+    PALITRA_CONVERSION_STATUS_READY, PALITRA_GOI_REMOTE_STATUS_PRESENT,
+    PALITRA_GOI_SYNC_DIRECTION_GOI, PALITRA_POINTS_INSERT_BATCH_SIZE,
 };
 use crate::entities::*;
 use crate::palitra::types::*;
@@ -380,13 +380,9 @@ pub async fn list_map_palitras_v2(
 ) -> anyhow::Result<Vec<PalitraReadV2>> {
     let palitra_ids =
         collect_accessible_palitra_ids(login, dbx).await.c(h!())?;
-    let unarchived_palitra_ids =
-        filter_unarchived_palitra_ids(palitra_ids, dbx)
-            .await
-            .c(h!())?;
-    list_palitras_v2_by_ids(unarchived_palitra_ids, dbx)
-        .await
-        .c(h!())
+    let map_palitra_ids =
+        filter_map_palitra_ids(palitra_ids, dbx).await.c(h!())?;
+    list_palitras_v2_by_ids(map_palitra_ids, dbx).await.c(h!())
 }
 
 async fn list_palitras_v2_by_ids(
@@ -414,19 +410,23 @@ async fn list_palitras_v2_by_ids(
     Ok(result)
 }
 
-async fn filter_unarchived_palitra_ids(
+async fn filter_map_palitra_ids(
     palitra_ids: Vec<i64>,
     dbx: &DatabaseConnection,
 ) -> anyhow::Result<Vec<i64>> {
     if palitra_ids.is_empty() {
         return Ok(vec![]);
     }
-    let unarchived_palitra_ids = palitra::Entity::find()
+    let map_palitra_ids = palitra::Entity::find()
         .select_only()
         .column(palitra::Column::Id)
         .filter(palitra::Column::Id.is_in(palitra_ids.clone()))
         .filter(palitra::Column::Deleted.eq(false))
         .filter(palitra::Column::IsArchived.eq(false))
+        .filter(
+            palitra::Column::ConversionStatus
+                .eq(PALITRA_CONVERSION_STATUS_READY),
+        )
         .into_tuple::<i64>()
         .all(dbx)
         .await
@@ -435,7 +435,7 @@ async fn filter_unarchived_palitra_ids(
         .collect::<HashSet<_>>();
     Ok(palitra_ids
         .into_iter()
-        .filter(|palitra_id| unarchived_palitra_ids.contains(palitra_id))
+        .filter(|palitra_id| map_palitra_ids.contains(palitra_id))
         .collect())
 }
 
@@ -3317,25 +3317,59 @@ mod tests {
 
     #[serial]
     #[tokio::test]
-    async fn test_list_map_palitras_v2_excludes_archived_palitras() {
+    async fn test_list_map_palitras_v2_only_includes_unarchived_ready_palitras()
+    {
         let env = cleanup().await.unwrap();
         let login = find_test_login(&env.dbx).await.unwrap();
         let palitra = find_test_palitra(&env.dbx).await.unwrap();
         let palitra_id = palitra.id;
 
+        let map_palitras = list_map_palitras_v2(login.login.clone(), &env.dbx)
+            .await
+            .unwrap();
+        assert!(map_palitras
+            .iter()
+            .any(|item| item.palitra.id == palitra_id));
+
         let mut palitra = palitra.into_active_model();
         palitra.is_archived = Set(true);
-        palitra.update(&env.dbx).await.unwrap();
+        let palitra = palitra.update(&env.dbx).await.unwrap();
 
         let all_palitras = list_all_palitras_v2(login.login.clone(), &env.dbx)
             .await
             .unwrap();
-        let map_palitras =
-            list_map_palitras_v2(login.login, &env.dbx).await.unwrap();
+        let map_palitras = list_map_palitras_v2(login.login.clone(), &env.dbx)
+            .await
+            .unwrap();
 
         assert!(all_palitras
             .iter()
             .any(|item| item.palitra.id == palitra_id));
+        assert!(!map_palitras
+            .iter()
+            .any(|item| item.palitra.id == palitra_id));
+
+        let mut palitra = palitra.into_active_model();
+        palitra.is_archived = Set(false);
+        palitra.conversion_status = Set(
+            crate::config::PALITRA_CONVERSION_STATUS_PROCESSING.to_string(),
+        );
+        let palitra = palitra.update(&env.dbx).await.unwrap();
+
+        let map_palitras = list_map_palitras_v2(login.login.clone(), &env.dbx)
+            .await
+            .unwrap();
+        assert!(!map_palitras
+            .iter()
+            .any(|item| item.palitra.id == palitra_id));
+
+        let mut palitra = palitra.into_active_model();
+        palitra.conversion_status =
+            Set(crate::config::PALITRA_CONVERSION_STATUS_ERROR.to_string());
+        palitra.update(&env.dbx).await.unwrap();
+
+        let map_palitras =
+            list_map_palitras_v2(login.login, &env.dbx).await.unwrap();
         assert!(!map_palitras
             .iter()
             .any(|item| item.palitra.id == palitra_id));
