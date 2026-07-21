@@ -201,7 +201,7 @@ describe('useAnalysisReloadOrchestrator', () => {
       }),
     );
     expect(params.getCurrentMessagePage).toHaveBeenCalledTimes(1);
-    expect(params.refreshMessageCounts).not.toHaveBeenCalled();
+    expect(params.refreshMessageCounts).toHaveBeenCalledTimes(1);
   });
 
   it('loads map palitras on initial eligible load', async () => {

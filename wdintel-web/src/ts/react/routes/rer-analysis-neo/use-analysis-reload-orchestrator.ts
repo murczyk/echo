@@ -187,7 +187,7 @@ export function useAnalysisReloadOrchestrator(params: Params): UseAnalysisReload
       const shouldRefreshMessageCounts = options.refreshMessageCounts !== false;
       const currentMessagePage = preserveMessagePage ? getCurrentMessagePage() : null;
 
-      if (shouldRefreshMessageCounts && !preserveMessagePage) refreshMessageCounts();
+      if (shouldRefreshMessageCounts) refreshMessageCounts();
 
       try {
         await reloadAnalysisData({
