@@ -2,7 +2,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
 
 import type { InboxMessage, SignalGroupEntry, SignalProfileEntry } from '../../../../Bindings';
-import { buildAnalysisMapHrefWithSearch, uniquePointEtalonsForMapSearch } from './utils';
+import {
+  buildAnalysisMapHrefWithSearch,
+  sortMessageItemsByTime,
+  uniquePointEtalonsForMapSearch,
+} from './utils';
 import {
   bookmarkAdd,
   bookmarkRemove,
@@ -257,6 +261,22 @@ export function useRerDutyMessageItemActions(params: Params) {
     setBotTagAction(null);
   }, []);
 
+  const handleEditedMessage = useCallback(
+    (messageId: number, message: InboxMessage) => {
+      setMessageFeeds((prev) =>
+        prev.map((feed) => {
+          if (!feed.items.some(([id]) => id === messageId)) return feed;
+          const updatedItems = feed.items.map(
+            ([id, currentMessage]) =>
+              (id === messageId ? [id, message] : [id, currentMessage]) as [number, InboxMessage],
+          );
+          return { ...feed, items: sortMessageItemsByTime(updatedItems) };
+        }),
+      );
+    },
+    [setMessageFeeds],
+  );
+
   const handleOpenPointsOnMap = useCallback((etalons: string[], message: InboxMessage) => {
     const search = uniquePointEtalonsForMapSearch(etalons).join(',');
     if (search === '') return;
@@ -277,6 +297,7 @@ export function useRerDutyMessageItemActions(params: Params) {
     botTagAction,
     onCancelBotTagAction,
     onMarkBotTagWrong,
+    handleEditedMessage,
     commentMessageId,
     commentText,
     setCommentText,

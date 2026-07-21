@@ -811,6 +811,186 @@ describe('useRerDutyFeedState — loading', () => {
     expect(apiRef.current?.error).toBeNull();
   });
 
+  it('reloads every feed with its current filter after an edit', async () => {
+    window.history.replaceState(
+      {},
+      '',
+      '/?state=' +
+        encodeURIComponent(
+          JSON.stringify({
+            messageFeeds: [
+              ['mf-0', { ...emptyFilter(), freqsSelected: ['1.1'] }],
+              ['mf-1', { ...emptyFilter(), unitsSelected: ['unit-1'] }],
+            ],
+          }),
+        ),
+    );
+    hoisted.fetchInboxMessages.mockImplementation((request: any) =>
+      Promise.resolve(
+        inboxRsp([[request.selectedFreqs ? 10 : 20, minimalInboxMessage({ timestamp: 100 })]]),
+      ),
+    );
+    const apiRef: React.MutableRefObject<ReturnType<typeof useRerDutyFeedState> | null> = {
+      current: null,
+    };
+
+    await act(async () => root.render(<TestHarness apiRef={apiRef} />));
+    await act(async () => flushMicrotasks());
+    hoisted.fetchInboxMessages.mockClear();
+
+    await act(async () => apiRef.current?.reloadFeeds());
+    await act(async () => flushMicrotasks());
+
+    expect(hoisted.fetchInboxMessages).toHaveBeenCalledTimes(2);
+    const requests = hoisted.fetchInboxMessages.mock.calls.map(([request]) => request);
+    expect(requests).toEqual(
+      expect.arrayContaining([expect.objectContaining({ selectedFreqs: ['1.1'] })]),
+    );
+    expect(requests).toEqual(
+      expect.arrayContaining([expect.objectContaining({ selectedUnits: ['unit-1'] })]),
+    );
+    expect(apiRef.current?.messageFeeds.map((feed) => feed.items.map(([id]) => id))).toEqual([
+      [10],
+      [20],
+    ]);
+  });
+
+  it('refreshes edits without marking existing unread messages as read', async () => {
+    window.history.replaceState(
+      {},
+      '',
+      '/?state=' +
+        encodeURIComponent(
+          JSON.stringify({
+            messageFeeds: [
+              ['mf-0', { ...emptyFilter(), freqsSelected: ['1.1'] }],
+              ['mf-1', { ...emptyFilter(), unitsSelected: ['unit-1'] }],
+            ],
+          }),
+        ),
+    );
+    hoisted.fetchInboxMessages.mockImplementation((request: any) =>
+      Promise.resolve(
+        inboxRsp(
+          request.selectedFreqs
+            ? [
+                [1, minimalInboxMessage({ timestamp: 100 })],
+                [2, minimalInboxMessage({ timestamp: 200 })],
+              ]
+            : [
+                [10, minimalInboxMessage({ timestamp: 1000 })],
+                [11, minimalInboxMessage({ timestamp: 1100 })],
+              ],
+        ),
+      ),
+    );
+    const apiRef: React.MutableRefObject<ReturnType<typeof useRerDutyFeedState> | null> = {
+      current: null,
+    };
+
+    await act(async () => root.render(<TestHarness apiRef={apiRef} />));
+    await act(async () => flushMicrotasks());
+    await act(async () => {
+      apiRef.current!.setMessageFeeds((feeds) =>
+        feeds.map((feed) =>
+          feed.id === 'mf-0'
+            ? { ...feed, readIds: new Set([1, 2]), unreadCount: 0 }
+            : {
+                ...feed,
+                readIds: new Set([10]),
+                windowedUnreadItems: new Map([
+                  [11, 1100],
+                  [99, 9900],
+                ]),
+                unreadCount: 3,
+              },
+        ),
+      );
+    });
+    hoisted.fetchInboxMessages.mockImplementation((request: any) =>
+      Promise.resolve(
+        inboxRsp(
+          request.selectedFreqs
+            ? [
+                [2, minimalInboxMessage({ timestamp: 50 })],
+                [3, minimalInboxMessage({ timestamp: 300 })],
+              ]
+            : [
+                [10, minimalInboxMessage({ timestamp: 1000 })],
+                [11, minimalInboxMessage({ timestamp: 1100 })],
+                [12, minimalInboxMessage({ timestamp: 1200 })],
+              ],
+        ),
+      ),
+    );
+
+    await act(async () => apiRef.current?.reloadEditedFeeds());
+    await act(async () => flushMicrotasks());
+
+    const [editedFeed, untouchedFeed] = apiRef.current!.messageFeeds;
+    expect(editedFeed.items.map(([id]) => id)).toEqual([2, 3]);
+    expect(editedFeed.readIds).toEqual(new Set([2]));
+    expect(editedFeed.unreadCount).toBe(1);
+    expect(untouchedFeed.readIds).toEqual(new Set([10]));
+    expect(untouchedFeed.windowedUnreadItems).toEqual(
+      new Map([
+        [11, 1100],
+        [99, 9900],
+        [12, 1200],
+      ]),
+    );
+    expect(untouchedFeed.unreadCount).toBe(4);
+  });
+
+  it('completes an edit refresh before requesting unread counts', async () => {
+    hoisted.fetchInboxMessages
+      .mockResolvedValueOnce(inboxRsp([[1, minimalInboxMessage({ timestamp: 100 })]]))
+      .mockResolvedValueOnce(inboxRsp([[1, minimalInboxMessage({ timestamp: 100 })]]));
+    const apiRef: React.MutableRefObject<ReturnType<typeof useRerDutyFeedState> | null> = {
+      current: null,
+    };
+
+    await act(async () => root.render(<TestHarness apiRef={apiRef} />));
+    await act(async () => flushMicrotasks());
+    await act(async () => apiRef.current?.reloadEditedFeeds());
+    await act(async () => flushMicrotasks());
+
+    await act(async () => apiRef.current?.requestValidatedInboxCount('mf-0'));
+
+    expect(hoisted.fetchInboxCount).toHaveBeenCalledTimes(1);
+  });
+
+  it('derives a new unread cursor when an edit moves the old tail earlier', async () => {
+    hoisted.fetchInboxMessages
+      .mockResolvedValueOnce(
+        inboxRsp([
+          [1, minimalInboxMessage({ timestamp: 100 })],
+          [3, minimalInboxMessage({ timestamp: 300 })],
+        ]),
+      )
+      .mockResolvedValueOnce(
+        inboxRsp([
+          [3, minimalInboxMessage({ timestamp: 50 })],
+          [1, minimalInboxMessage({ timestamp: 100 })],
+        ]),
+      );
+    const apiRef: React.MutableRefObject<ReturnType<typeof useRerDutyFeedState> | null> = {
+      current: null,
+    };
+
+    await act(async () => root.render(<TestHarness apiRef={apiRef} />));
+    await act(async () => flushMicrotasks());
+    await act(async () => apiRef.current?.reloadEditedFeeds());
+    await act(async () => flushMicrotasks());
+    hoisted.fetchInboxCount.mockClear();
+
+    await act(async () => apiRef.current?.requestValidatedInboxCount('mf-0'));
+
+    expect(hoisted.fetchInboxCount).toHaveBeenCalledWith(
+      expect.objectContaining({ sinceIdNoninclusive: 1 }),
+    );
+  });
+
   it('invalidates a stale empty-feed initial response during reload', async () => {
     const stale = deferred<InboxMessagesRsp>();
     const fresh = deferred<InboxMessagesRsp>();

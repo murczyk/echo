@@ -187,6 +187,8 @@ vi.mock('./useRerDutyFeedState', () => ({
       createMessageFeed: vi.fn(),
       removeMessageFeed: vi.fn(),
       loadFeedInitialMessages: hoisted.loadFeedInitialMessages,
+      reloadFeeds: vi.fn(),
+      reloadEditedFeeds: vi.fn(),
       loadFeedOlderMessages: vi.fn(),
       applyFilter: hoisted.applyFilterMock,
       toggleGroup: vi.fn(),
@@ -513,6 +515,10 @@ describe('useRerDutyFeeds', () => {
 });
 
 describe('useRerDutyFeeds inbox refreshes', () => {
+  beforeEach(() => {
+    hoisted.fetchMessagesByIds.mockClear();
+  });
+
   it('skips fetching when no visible ids overlap', async () => {
     const localContainer = document.createElement('div');
     const localRoot = createRoot(localContainer);

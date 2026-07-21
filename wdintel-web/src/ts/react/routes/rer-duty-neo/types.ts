@@ -72,6 +72,7 @@ export type FeedColumnModel = {
     onMessageComment: (msgId: number, currentComment: string | null) => void;
     onMessageExcludeEntity: (entity: MessageEntityFilterKind, value: string) => void;
     onMessageToggleTag: (msgId: number, tagId: number) => void;
+    onMessageEdit: (messageId: number, message: InboxMessage) => void;
     onCreateFeed?: () => void;
     onScrollToTop?: () => void;
     /** Called when user scrolls to bottom; use to enable watch mode (same as after arrow click). */

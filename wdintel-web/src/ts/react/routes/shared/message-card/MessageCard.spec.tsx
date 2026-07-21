@@ -1377,8 +1377,8 @@ describe('MessageCard', () => {
     expect(onAddSuggestedCallsign).toHaveBeenCalledWith('BRAVO');
   });
 
-  it('orders duty toolbar actions as comment, important, bookmark, copy, navigate, minus', async () => {
-    const view = await renderCard();
+  it('orders duty toolbar actions as comment, important, bookmark, copy, edit, navigate, minus', async () => {
+    const view = await renderCard({ onEditDetails: vi.fn() });
     rendered.push(view);
 
     const toolbar = view.container.querySelector('[aria-label="Дії повідомлення"]');
@@ -1392,6 +1392,7 @@ describe('MessageCard', () => {
       'Позначити як важливе',
       'Додати в закладки',
       COPY_TITLE,
+      'Редагувати',
       NAVIGATE_TITLE,
       EXCLUDE_TITLE,
     ]);
@@ -1493,7 +1494,7 @@ describe('MessageCard', () => {
     expect(wrappedToolbar.getAttribute('role')).toBe('group');
   });
 
-  it('wraps the compact duty toolbar into a 3-column grid when the action column is narrow', async () => {
+  it('wraps the compact duty toolbar into a 4-column grid when the action column is narrow', async () => {
     vi.stubGlobal('ResizeObserver', ResizeObserverMock as unknown as typeof ResizeObserver);
     vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
       callback(0);
@@ -1516,7 +1517,7 @@ describe('MessageCard', () => {
     const updatedToolbar = view.container.querySelector('[aria-label="Дії повідомлення"]');
     if (!(updatedToolbar instanceof HTMLElement)) throw new Error('toolbar not found after resize');
     expect(updatedToolbar.getAttribute('role')).toBe('group');
-    expect(updatedToolbar.getAttribute('data-action-grid-columns')).toBe('3');
+    expect(updatedToolbar.getAttribute('data-action-grid-columns')).toBe('4');
   });
 
   it('hides overflow in duty mode when no edit or delete actions are available', async () => {
