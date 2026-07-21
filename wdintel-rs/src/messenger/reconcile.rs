@@ -126,6 +126,10 @@ pub async fn reconcile_deleted_message(
     }
 
     let linked_row_count = linked_messages.len();
+    let linked_message_ids = linked_messages
+        .iter()
+        .map(|message| message.id)
+        .collect_vec();
     let mut changed_inbox_item_ids: Vec<i64> =
         linked_messages.iter().map(|message| message.id).collect();
     let mut pending_dedupe_updates = vec![];
@@ -184,6 +188,15 @@ pub async fn reconcile_deleted_message(
         deleted_count,
         promoted_count
     );
+    for signal_message_id in linked_message_ids {
+        crate::transcriber::media_queue::reconcile_message(
+            txn,
+            signal_message_id,
+            &[],
+        )
+        .await
+        .c(h!())?;
+    }
     Ok(ReconcileResult {
         changed_inbox_item_ids,
         superseded_media_ids: vec![],
@@ -962,6 +975,13 @@ pub async fn reconcile_active_message(
                 delete_media_for_message(txn, source_message_id)
                     .await
                     .c(h!())?;
+            crate::transcriber::media_queue::reconcile_message(
+                txn,
+                source_message_id,
+                &superseded_media_ids,
+            )
+            .await
+            .c(h!())?;
             push_unique_inbox_item_ids(
                 &mut retired_inbox_item_ids,
                 vec![source_message_id, unstage_result.message.id],
@@ -1017,6 +1037,13 @@ pub async fn reconcile_active_message(
         let superseded_media_ids = media_replacement.superseded_media_ids;
         let uploaded_files_ready_for_deletion =
             media_replacement.uploaded_files_ready_for_deletion;
+        crate::transcriber::media_queue::reconcile_message(
+            txn,
+            signal_message.id,
+            &superseded_media_ids,
+        )
+        .await
+        .c(h!())?;
         reset_machine_derived_inbox_data(txn, signal_message.id)
             .await
             .c(h!())?;

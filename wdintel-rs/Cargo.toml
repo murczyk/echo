@@ -67,6 +67,7 @@ rust-argon2 = "^3.0.0"
 bytes = "1.11.1"
 docx-rs = "^0.4.19"
 async-recursion = "^1.1.1"
+async-trait = "0.1.89"
 toml = "0.9.12"
 xshell = "0.2.7"
 itertools = "0.14.0"
@@ -114,6 +115,9 @@ rev = "c9efd65ccf72bf447867e5f959eec7779771007e"
 [dependencies.echo-im]
 git = "ssh://git@github.com/echoua/echo-im.git"
 rev = "f6b8802562aa450f4a704e9b61cdab99536120f3"
+
+[dependencies.echo-gpu-client]
+path = "../../echo-gpu/echo-gpu-client"
 
 [dependencies.milgeo-rs]
 git = "ssh://git@github.com/echoua/milgeo-rs.git"

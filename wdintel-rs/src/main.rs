@@ -59,6 +59,7 @@ pub mod system_settings;
 pub mod tags;
 pub mod terminal;
 pub mod tests;
+pub mod transcriber;
 pub mod ts;
 pub mod types;
 pub mod unit;

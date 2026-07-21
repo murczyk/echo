@@ -662,6 +662,7 @@ pub async fn save_attachment_restapi(
 ) -> Result<(), AppError> {
     if let Some(db_message_id) = m_db_message_id {
         if let Some(ref attachment_id) = attachment.id {
+            let txn = dbx.begin().await.c(h!())?;
             let file_path = crate::config::signal_api_attachment_path(config)?
                 .join(attachment_id);
             let path_str = file_path.display().to_string();
@@ -683,11 +684,19 @@ pub async fn save_attachment_restapi(
                 db_message_id,
                 config,
                 s3,
-                dbx,
+                &txn,
                 deletion,
             )
             .await
             .c(h!())?;
+            crate::transcriber::media_queue::reconcile_message(
+                &txn,
+                db_message_id,
+                &[],
+            )
+            .await
+            .c(h!())?;
+            txn.commit().await.c(h!())?;
         }
     }
     Ok(())

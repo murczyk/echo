@@ -520,6 +520,17 @@ async fn finish_direct_submit(
             .c(h!())?;
     }
 
+    crate::transcriber::media_queue::reconcile_message(
+        &txn,
+        signal_message_id,
+        &media_to_delete
+            .iter()
+            .map(|media| media.id)
+            .collect::<Vec<_>>(),
+    )
+    .await
+    .c(h!())?;
+
     crate::sigint::worker::incoming_message_after_insert(
         &txn,
         signal_message_id,

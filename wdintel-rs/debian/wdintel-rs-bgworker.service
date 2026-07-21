@@ -7,6 +7,7 @@ Restart=always
 User=root
 Group=root
 RestartSec=5s
+TimeoutStopSec=120s
 MemoryMax=28G
 Environment=LD_LIBRARY_PATH=/usr/local/lib:/usr/lib
 Environment=RUST_LOG=info,wdintel_rs=debug,actix_session=warn

@@ -47,6 +47,7 @@ type SystemSettingsForm = {
   goiAssociationMessageUidWorkerEnabled: boolean;
   reportChunkingHours: number;
   limitBigReports: boolean;
+  enableAudioTranscription: boolean;
   pelengBoundsEnabled: boolean;
   pelengBoundsTopLeftLat: string;
   pelengBoundsTopLeftLng: string;
@@ -74,6 +75,7 @@ type SystemSettingsPayload = {
   goiAssociationMessageUidWorkerEnabled: boolean;
   reportChunkingHours: number;
   limitBigReports: boolean;
+  enableAudioTranscription: boolean;
   pelengBoundsEnabled: boolean;
   pelengBoundsTopLeftLat: number | null;
   pelengBoundsTopLeftLng: number | null;
@@ -99,6 +101,7 @@ const EMPTY_FORM: SystemSettingsForm = {
   goiAssociationMessageUidWorkerEnabled: false,
   reportChunkingHours: 24,
   limitBigReports: false,
+  enableAudioTranscription: false,
   pelengBoundsEnabled: false,
   pelengBoundsTopLeftLat: '',
   pelengBoundsTopLeftLng: '',
@@ -142,6 +145,7 @@ function formFromSettings(item: SystemSettingsItem | undefined): SystemSettingsF
     goiAssociationMessageUidWorkerEnabled: item?.goiAssociationMessageUidWorkerEnabled ?? false,
     reportChunkingHours: item?.reportChunkingHours ?? 24,
     limitBigReports: item?.limitBigReports ?? false,
+    enableAudioTranscription: item?.enableAudioTranscription ?? false,
     pelengBoundsEnabled: item?.pelengBoundsEnabled ?? false,
     pelengBoundsTopLeftLat: coordinateToInput(item?.pelengBoundsTopLeftLat ?? null),
     pelengBoundsTopLeftLng: coordinateToInput(item?.pelengBoundsTopLeftLng ?? null),
@@ -169,6 +173,7 @@ function formsEqual(a: SystemSettingsForm, b: SystemSettingsForm): boolean {
     a.goiAssociationMessageUidWorkerEnabled === b.goiAssociationMessageUidWorkerEnabled &&
     a.reportChunkingHours === b.reportChunkingHours &&
     a.limitBigReports === b.limitBigReports &&
+    a.enableAudioTranscription === b.enableAudioTranscription &&
     a.pelengBoundsEnabled === b.pelengBoundsEnabled &&
     a.pelengBoundsTopLeftLat === b.pelengBoundsTopLeftLat &&
     a.pelengBoundsTopLeftLng === b.pelengBoundsTopLeftLng &&
@@ -248,6 +253,7 @@ function formToPayload(form: SystemSettingsForm): SystemSettingsPayload {
     goiAssociationMessageUidWorkerEnabled: form.goiAssociationMessageUidWorkerEnabled,
     reportChunkingHours: form.reportChunkingHours,
     limitBigReports: form.limitBigReports,
+    enableAudioTranscription: form.enableAudioTranscription,
     pelengBoundsEnabled: form.pelengBoundsEnabled,
     pelengBoundsTopLeftLat: coordinateToPayload(form.pelengBoundsTopLeftLat),
     pelengBoundsTopLeftLng: coordinateToPayload(form.pelengBoundsTopLeftLng),
@@ -350,6 +356,18 @@ function MainSettingsSection({
           Прапорець «точний збіг за еталонкою» на аналізі увімкнений
         </ButtonBase>
       </Box>
+
+      <FormControlLabel
+        control={
+          <Switch
+            checked={form.enableAudioTranscription}
+            onChange={(_, checked) => {
+              patchForm({ enableAudioTranscription: checked });
+            }}
+          />
+        }
+        label="Увімкнути транскрибування аудіо"
+      />
 
       <FormControlLabel
         control={
@@ -745,6 +763,7 @@ export function AdminSystemSettingsNeoPage() {
         goiAssociationMessageUidWorkerEnabled: payload.goiAssociationMessageUidWorkerEnabled,
         reportChunkingHours: payload.reportChunkingHours,
         limitBigReports: payload.limitBigReports,
+        enableAudioTranscription: payload.enableAudioTranscription,
         pelengBoundsEnabled: payload.pelengBoundsEnabled,
         pelengBoundsTopLeftLat: payload.pelengBoundsTopLeftLat,
         pelengBoundsTopLeftLng: payload.pelengBoundsTopLeftLng,

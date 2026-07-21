@@ -277,6 +277,13 @@ async fn store_queue_media(
     )
     .await
     .c(h!())?;
+    crate::transcriber::media_queue::reconcile_message(
+        txn,
+        signal_message_id,
+        &[],
+    )
+    .await
+    .c(h!())?;
     if delete_uploaded {
         Ok(result.uploaded_files_ready_for_deletion)
     } else {
