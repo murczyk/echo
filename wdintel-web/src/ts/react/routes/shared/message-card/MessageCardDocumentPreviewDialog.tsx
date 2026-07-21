@@ -21,6 +21,7 @@ import { MessageCardDocumentPreviewStage } from './MessageCardDocumentPreviewSta
 import { MessageCardPreviewShell } from './MessageCardPreviewShell';
 import { getMessageCardPreviewShellConfig } from './message-card-preview-config';
 import { blurActivePreviewDialogElement } from './message-card-preview-shell';
+import type { MessageCardDownloadGuardProps } from './MessageCardMedia';
 
 export function MessageCardDocumentPreviewDialog({
   documents,
@@ -29,6 +30,8 @@ export function MessageCardDocumentPreviewDialog({
   open,
   onClose,
   onIndexChange,
+  isDownloadStarting,
+  onDownloadStart,
 }: {
   documents: MessageCardDocument[];
   initialIndex?: number;
@@ -36,7 +39,7 @@ export function MessageCardDocumentPreviewDialog({
   open: boolean;
   onClose: () => void;
   onIndexChange: (index: number) => void;
-}) {
+} & MessageCardDownloadGuardProps) {
   const documentCount = documents.length;
   const hasCarousel = documentCount > 1;
   const resolvedIndex = normalizePreviewIndex(currentIndex ?? initialIndex, documentCount);
@@ -190,6 +193,9 @@ export function MessageCardDocumentPreviewDialog({
             }
             onInfoClick={handleInfoClick}
             onClose={closeDialog}
+            downloadKey={`media:${String(currentDocument?.id ?? '')}`}
+            isDownloadStarting={isDownloadStarting}
+            onDownloadStart={onDownloadStart}
           />
         )
       }

@@ -531,6 +531,9 @@ pub async fn delete_stored_media_files(
     }
 }
 
+/// Authorizes access to a message's media by requiring a group shared by the
+/// user and message. This gate is shared by individual and archive downloads;
+/// knowing a media or message URL alone must never grant access.
 pub(crate) async fn ensure_media_access(
     dbx: &DatabaseConnection,
     login: &str,
@@ -798,6 +801,281 @@ pub async fn store_asset(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::entities::*;
+    use crate::error::AppError;
+    use crate::functest::tests::{
+        cleanup, mk_aor, mk_datasource, mk_datasource_group, mk_login,
+        mk_organism, mk_organism_aor, mk_sigint_zone,
+        mk_sigint_zone_datasource, mk_signal_group, mk_signal_message,
+    };
+    use crate::types::Env;
+    use sea_orm::*;
+    use serial_test::serial;
+
+    struct MediaAccessFixture {
+        env: std::sync::Arc<Env>,
+        login: String,
+        message_id: i64,
+        group_a: String,
+        group_b: String,
+    }
+
+    async fn media_access_fixture(rer_role: bool) -> MediaAccessFixture {
+        let env = cleanup().await.unwrap();
+        let txn = env.dbx.begin().await.unwrap();
+        let aor = mk_aor(
+            &txn,
+            area_of_responsibility::ActiveModel {
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let organism = mk_organism(
+            &txn,
+            organism::ActiveModel {
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        mk_organism_aor(
+            &txn,
+            organism_aor::ActiveModel {
+                organism_id: Set(organism.id),
+                aor_id: Set(aor.id),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let zone = mk_sigint_zone(
+            &txn,
+            sigint_zone::ActiveModel {
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let datasource_a = mk_datasource(
+            &txn,
+            datasource::ActiveModel {
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let datasource_b = mk_datasource(
+            &txn,
+            datasource::ActiveModel {
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let group_a = mk_signal_group(
+            &txn,
+            signal_group::ActiveModel {
+                datasource_id: Set(Some(datasource_a.id)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let group_b = mk_signal_group(
+            &txn,
+            signal_group::ActiveModel {
+                datasource_id: Set(Some(datasource_b.id)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        for (datasource, group) in
+            [(&datasource_a, &group_a), (&datasource_b, &group_b)]
+        {
+            mk_datasource_group(
+                &txn,
+                datasource_group::ActiveModel {
+                    datasource_id: Set(datasource.id),
+                    group_master_key: Set(group.master_key.clone()),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+            mk_sigint_zone_datasource(
+                &txn,
+                sigint_zone_datasource::ActiveModel {
+                    sigint_zone_id: Set(zone.id),
+                    datasource_id: Set(datasource.id),
+                    group_master_key: Set(group.master_key.clone()),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+            signal_group_aor::ActiveModel {
+                master_key: Set(group.master_key.clone()),
+                aor_id: Set(aor.id),
+                ..Default::default()
+            }
+            .insert(&txn)
+            .await
+            .unwrap();
+        }
+        organism_group::ActiveModel {
+            organism_id: Set(organism.id),
+            signal_group_master_key: Set(group_a.master_key.clone()),
+        }
+        .insert(&txn)
+        .await
+        .unwrap();
+        let login = format!("media-access-{}", Uuid::new_v4());
+        let roles = if rer_role {
+            serde_json::json!(["Rer"])
+        } else {
+            serde_json::json!([])
+        };
+        mk_login(
+            &txn,
+            login::ActiveModel {
+                login: Set(login.clone()),
+                roles: Set(roles),
+                sigint_zone_id: Set(Some(zone.id)),
+                organism_id: Set(Some(organism.id)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let message = mk_signal_message(
+            &txn,
+            signal_message::ActiveModel {
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        txn.commit().await.unwrap();
+        signal_message_group::ActiveModel {
+            signal_message_id: Set(message.id),
+            group_master_key: Set(Some(group_a.master_key.clone())),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        MediaAccessFixture {
+            env,
+            login,
+            message_id: message.id,
+            group_a: group_a.master_key,
+            group_b: group_b.master_key,
+        }
+    }
+
+    async fn set_message_groups(
+        env: &Env,
+        message_id: i64,
+        group_master_keys: &[String],
+    ) {
+        signal_message_group::Entity::delete_many()
+            .filter(
+                signal_message_group::Column::SignalMessageId.eq(message_id),
+            )
+            .exec(&env.dbx)
+            .await
+            .unwrap();
+        for group_master_key in group_master_keys {
+            signal_message_group::ActiveModel {
+                signal_message_id: Set(message_id),
+                group_master_key: Set(Some(group_master_key.clone())),
+                ..Default::default()
+            }
+            .insert(&env.dbx)
+            .await
+            .unwrap();
+        }
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn allows_access_when_user_and_message_share_a_sigint_group() {
+        let fixture = media_access_fixture(false).await;
+
+        assert!(ensure_media_access(
+            &fixture.env.dbx,
+            &fixture.login,
+            fixture.message_id,
+        )
+        .await
+        .is_ok());
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn denies_access_when_user_and_message_groups_do_not_overlap() {
+        let fixture = media_access_fixture(false).await;
+        set_message_groups(
+            &fixture.env,
+            fixture.message_id,
+            std::slice::from_ref(&fixture.group_b),
+        )
+        .await;
+
+        assert!(matches!(
+            ensure_media_access(
+                &fixture.env.dbx,
+                &fixture.login,
+                fixture.message_id,
+            )
+            .await,
+            Err(AppError::Forbidden(_))
+        ));
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn denies_access_for_rer_user_without_a_shared_group() {
+        let fixture = media_access_fixture(true).await;
+        set_message_groups(
+            &fixture.env,
+            fixture.message_id,
+            std::slice::from_ref(&fixture.group_b),
+        )
+        .await;
+
+        assert!(matches!(
+            ensure_media_access(
+                &fixture.env.dbx,
+                &fixture.login,
+                fixture.message_id,
+            )
+            .await,
+            Err(AppError::Forbidden(_))
+        ));
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn allows_access_when_message_has_multiple_groups_and_one_matches() {
+        let fixture = media_access_fixture(false).await;
+        set_message_groups(
+            &fixture.env,
+            fixture.message_id,
+            &[fixture.group_a.clone(), fixture.group_b.clone()],
+        )
+        .await;
+
+        assert!(ensure_media_access(
+            &fixture.env.dbx,
+            &fixture.login,
+            fixture.message_id,
+        )
+        .await
+        .is_ok());
+    }
 
     fn media(
         content_type: &str,

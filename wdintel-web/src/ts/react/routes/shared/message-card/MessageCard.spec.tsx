@@ -22,7 +22,13 @@ import { emptyFilter } from '../../rer-duty-neo/utils';
 import { formatMessageCardTooltipTime, MessageCard } from './MessageCard';
 import { MessageCardContent } from './MessageCardContent';
 import { MessageCardHeader } from './MessageCardHeader';
-import { isAudioMediaAttachment, isVideoMediaAttachment } from './MessageCardMedia';
+import {
+  canDownloadAllMessageAttachments,
+  isAudioMediaAttachment,
+  isVideoMediaAttachment,
+  RER_MESSAGE_ATTACHMENTS_ZIP_MAX_FILES,
+  RER_MESSAGE_ATTACHMENTS_ZIP_MAX_TOTAL_BYTES,
+} from './MessageCardMedia';
 import {
   normalizeLocationDisplayValue,
   resolveEtalonBindingDisplayValue,
@@ -41,7 +47,7 @@ const latestMenuProps: Array<{
 const latestDocumentDialogProps: Array<{
   currentIndex?: number;
   open?: boolean;
-  documents?: Array<{ kind: string; href: string }>;
+  documents?: Array<{ id?: string | number | null; kind: string; href: string }>;
 }> = [];
 
 type PrimitiveProps = { children?: ReactNode; component?: string } & Record<string, unknown>;
@@ -98,19 +104,47 @@ vi.mock('./MessageCardDocumentPreviewDialog', () => ({
     currentIndex,
     documents,
     open,
+    isDownloadStarting,
+    onDownloadStart,
   }: {
     currentIndex?: number;
-    documents?: Array<{ kind: string; href: string }>;
+    documents?: Array<{ id?: string | number | null; kind: string; href: string }>;
     open: boolean;
+    isDownloadStarting?: (downloadKey: string) => boolean;
+    onDownloadStart?: (downloadKey: string) => boolean;
   }) => {
+    const currentDocument = documents?.[currentIndex ?? 0];
+    const downloadKey = `media:${String(currentDocument?.id ?? '')}`;
+    const downloading = isDownloadStarting?.(downloadKey) ?? false;
     if (open) {
       latestDocumentDialogProps.push({
         currentIndex,
         open,
-        documents: documents?.map((document) => ({ kind: document.kind, href: document.href })),
+        documents: documents?.map((document) => ({
+          id: document.id,
+          kind: document.kind,
+          href: document.href,
+        })),
       });
     }
-    return open ? <div role="dialog">document-dialog</div> : null;
+    return open ? (
+      <div role="dialog">
+        <a
+          data-preview-download
+          href={currentDocument?.href}
+          download
+          aria-label={downloading ? 'Завантаження…' : 'Завантажити файл'}
+          aria-busy={downloading}
+          disabled={downloading}
+          onClick={(event) => {
+            if (downloading || !onDownloadStart?.(downloadKey)) event.preventDefault();
+          }}
+        >
+          {downloading ? 'spinner' : 'download'}
+        </a>
+        document-dialog
+      </div>
+    ) : null;
   },
 }));
 
@@ -196,17 +230,32 @@ vi.mock('@mui/material', () => ({
     children,
     startIcon,
     endIcon,
+    component,
+    size,
+    variant,
+    color,
+    sx,
     ...props
   }: { children?: ReactNode; startIcon?: ReactNode; endIcon?: ReactNode } & Record<
     string,
     unknown
-  >) => (
-    <button {...omitMuiLayoutProps(props)}>
-      {startIcon}
-      <span>{children}</span>
-      {endIcon}
-    </button>
-  ),
+  >) => {
+    const Component = component ?? 'button';
+    return (
+      <Component
+        {...(Component === 'button' ? { type: 'button' } : {})}
+        data-mui-size={size}
+        data-mui-variant={variant}
+        data-mui-color={color}
+        data-mui-sx={JSON.stringify(sx ?? {})}
+        {...omitMuiLayoutProps(props)}
+      >
+        {startIcon}
+        <span>{children}</span>
+        {endIcon}
+      </Component>
+    );
+  },
   ButtonBase: ({ children, component, ...props }: PrimitiveProps) => {
     const Component = component ?? 'button';
     return (
@@ -222,7 +271,7 @@ vi.mock('@mui/material', () => ({
     const Component = component ?? 'div';
     return <Component {...omitMuiLayoutProps(props)}>{children}</Component>;
   },
-  CircularProgress: () => <span>tags-loading</span>,
+  CircularProgress: (props: Record<string, unknown>) => <span {...props}>tags-loading</span>,
   Collapse: ({ children, in: open }: { children?: ReactNode; in?: boolean }) =>
     open ? <>{children}</> : null,
   Chip: ({
@@ -688,8 +737,16 @@ function getMuiTypographyElementByText(container: HTMLElement, text: string): HT
 
 async function click(element: HTMLElement): Promise<void> {
   await act(async () => {
-    element.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    element.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
   });
+}
+
+async function dispatchCancelableClick(element: HTMLElement): Promise<MouseEvent> {
+  const event = new MouseEvent('click', { bubbles: true, cancelable: true });
+  await act(async () => {
+    element.dispatchEvent(event);
+  });
+  return event;
 }
 
 async function setInputValue(input: HTMLInputElement, value: string): Promise<void> {
@@ -2343,29 +2400,290 @@ describe('MessageCard', () => {
         media: [
           {
             id: 1,
-            href: 'https://example.test/files/HByMR1VD5nrYaiQRyaFV.txt',
-            contentType: 'text/plain',
-            fileName: 'HByMR1VD5nrYaiQRyaFV.txt',
+            href: 'https://example.test/files/HByMR1VD5nrYaiQRyaFV.bin',
+            contentType: 'application/octet-stream',
+            fileName: 'HByMR1VD5nrYaiQRyaFV.bin',
           },
           {
             id: 2,
-            href: 'https://example.test/files/8a7d0703-4f44-4ce8-b95a-8a2e.txt',
-            contentType: 'text/plain',
-            fileName: '8a7d0703-4f44-4ce8-b95a-8a2e.txt',
+            href: 'https://example.test/files/8a7d0703-4f44-4ce8-b95a-8a2e.bin',
+            contentType: 'application/octet-stream',
+            fileName: '8a7d0703-4f44-4ce8-b95a-8a2e.bin',
           },
         ] as InboxMessage['media'],
       },
     });
     rendered.push(view);
 
-    const downloadButtons = Array.from(view.container.querySelectorAll('button')).filter((button) =>
-      button.textContent?.includes('.txt'),
-    );
+    const downloadButtons = Array.from(
+      view.container.querySelectorAll('[data-mui-variant="outlined"]'),
+    ).filter((button) => button.textContent?.includes('.bin'));
     expect(downloadButtons).toHaveLength(2);
     expect(downloadButtons[0]?.querySelector('svg')).not.toBeNull();
     expect(downloadButtons[1]?.querySelector('svg')).not.toBeNull();
-    expect(downloadButtons[0]?.textContent).toContain('HByMR1VD5nrYaiQRyaFV.txt');
-    expect(downloadButtons[1]?.textContent).toContain('8a7d0703-4f44-4ce8-b95a-8a2e.txt');
+    expect(downloadButtons[0]?.getAttribute('data-mui-variant')).toBe('outlined');
+    expect(downloadButtons[1]?.getAttribute('data-mui-variant')).toBe('outlined');
+    expect(downloadButtons[0]?.getAttribute('data-mui-sx')).toContain('text.primary');
+    expect(downloadButtons[0]?.getAttribute('data-mui-sx')).toContain('divider');
+    expect(downloadButtons[0]?.getAttribute('data-mui-sx')).toContain('action.hover');
+    expect(downloadButtons[0]?.textContent).toContain('HByMR1VD5nrYaiQRyaFV.bin');
+    expect(downloadButtons[1]?.textContent).toContain('8a7d0703-4f44-4ce8-b95a-8a2e.bin');
+  });
+
+  it('shows the message attachment archive link only for multiple attachments', async () => {
+    const singleAttachment = await renderCard({
+      msg: {
+        ...buildMessage(),
+        media: [
+          {
+            id: 'single',
+            href: '/api/messenger/media/single',
+            contentType: 'text/plain',
+            fileName: 'single.txt',
+          },
+        ] as InboxMessage['media'],
+      },
+    });
+    rendered.push(singleAttachment);
+    expect(singleAttachment.container.textContent).not.toContain('Завантажити все');
+
+    const multipleAttachments = await renderCard({
+      msg: {
+        ...buildMessage(),
+        media: [
+          {
+            id: 'first',
+            href: '/api/messenger/media/first',
+            contentType: 'text/plain',
+            fileName: 'first.txt',
+            sizeBytes: 1,
+          },
+          {
+            id: 'second',
+            href: '/api/messenger/media/second',
+            contentType: 'text/plain',
+            fileName: 'second.txt',
+            sizeBytes: 1,
+          },
+        ] as InboxMessage['media'],
+      },
+    });
+    rendered.push(multipleAttachments);
+
+    const archiveLink = multipleAttachments.container.querySelector(
+      'a[aria-label="Завантажити все"]',
+    );
+    expect(archiveLink).not.toBeNull();
+    expect(archiveLink?.tagName).toBe('A');
+    expect(archiveLink?.getAttribute('href')).toBe('/api/rer-importer/messages/42/attachments.zip');
+    expect(archiveLink?.getAttribute('download')).toBe('attachments.zip');
+    expect(archiveLink?.querySelector('[data-testid="DownloadIcon"]')).not.toBeNull();
+    expect(archiveLink?.querySelector('[data-testid="DownloadOutlinedIcon"]')).toBeNull();
+    expect(archiveLink?.getAttribute('data-mui-size')).toBe('small');
+    expect(archiveLink?.getAttribute('data-mui-variant')).toBe('outlined');
+    expect(archiveLink?.getAttribute('data-mui-sx')).toContain('text.primary');
+    expect(archiveLink?.getAttribute('data-mui-sx')).toContain('divider');
+    expect(archiveLink?.getAttribute('data-mui-sx')).toContain('action.hover');
+    expect(archiveLink?.parentElement?.parentElement?.className).toContain('mt-1');
+    expect(archiveLink?.parentElement?.parentElement?.className).toContain('items-start');
+  });
+
+  it('guards each download key independently for its own cooldown', async () => {
+    vi.useFakeTimers();
+    const fetchMock = vi.spyOn(window, 'fetch').mockResolvedValue(new Response());
+    try {
+      const firstCard = await renderCard({
+        msg: {
+          ...buildMessage(),
+          media: [
+            {
+              id: 'first',
+              href: 'javascript:void(1)',
+              contentType: 'text/plain',
+              fileName: 'first.txt',
+              sizeBytes: 1,
+            },
+            {
+              id: 'second',
+              href: 'javascript:void(0)',
+              contentType: 'text/plain',
+              fileName: 'second.txt',
+              sizeBytes: 1,
+            },
+          ] as InboxMessage['media'],
+        },
+      });
+      rendered.push(firstCard);
+
+      const archive = firstCard.container.querySelector('a[aria-label="Завантажити все"]');
+      const downloadLinks = Array.from(firstCard.container.querySelectorAll('a[download]'));
+      const individualLinks = downloadLinks.filter((link) => link !== archive);
+      const firstIndividual = individualLinks[0];
+      const secondIndividual = individualLinks[1];
+      expect(archive).not.toBeNull();
+      expect(firstIndividual).not.toBeNull();
+      expect(secondIndividual).not.toBeNull();
+      (archive as HTMLAnchorElement).href = 'javascript:void(0)';
+
+      const firstClick = await dispatchCancelableClick(firstIndividual as HTMLElement);
+      expect(firstIndividual?.getAttribute('aria-label')).toBe('Завантаження…');
+      const duplicateClick = await dispatchCancelableClick(firstIndividual as HTMLElement);
+      expect(firstClick.defaultPrevented).toBe(false);
+      expect(duplicateClick.defaultPrevented).toBe(true);
+      expect(firstIndividual?.getAttribute('aria-label')).toBe('Завантаження…');
+      expect(firstIndividual?.querySelector('[aria-label="Завантаження…"]')).not.toBeNull();
+      expect(
+        firstIndividual?.parentElement?.hasAttribute('data-disabled-control-cursor-wrapper'),
+      ).toBe(true);
+      expect(secondIndividual?.getAttribute('disabled')).toBeNull();
+      expect(archive?.getAttribute('disabled')).toBeNull();
+
+      await act(async () => {
+        vi.advanceTimersByTime(1_000);
+      });
+      const secondClick = await dispatchCancelableClick(secondIndividual as HTMLElement);
+      expect(secondClick.defaultPrevented).toBe(false);
+      expect(secondIndividual?.getAttribute('aria-label')).toBe('Завантаження…');
+      expect(firstIndividual?.getAttribute('disabled')).not.toBeNull();
+      expect(archive?.getAttribute('disabled')).toBeNull();
+
+      await act(async () => {
+        vi.advanceTimersByTime(1_000);
+      });
+      const archiveClick = await dispatchCancelableClick(archive as HTMLElement);
+      expect(archiveClick.defaultPrevented).toBe(false);
+      expect(archive?.getAttribute('aria-label')).toBe('Завантаження…');
+      expect(firstIndividual?.getAttribute('disabled')).not.toBeNull();
+      expect(secondIndividual?.getAttribute('disabled')).not.toBeNull();
+
+      await act(async () => {
+        vi.advanceTimersByTime(1_000);
+      });
+      expect(firstIndividual?.getAttribute('disabled')).toBeNull();
+      expect(secondIndividual?.getAttribute('disabled')).not.toBeNull();
+      expect(archive?.getAttribute('disabled')).not.toBeNull();
+
+      await act(async () => {
+        vi.advanceTimersByTime(1_000);
+      });
+      expect(secondIndividual?.getAttribute('disabled')).toBeNull();
+      expect(archive?.getAttribute('disabled')).not.toBeNull();
+
+      await act(async () => {
+        vi.advanceTimersByTime(1_000);
+      });
+      expect(archive?.getAttribute('aria-label')).toBe('Завантажити все');
+      expect(archive?.getAttribute('disabled')).toBeNull();
+    } finally {
+      fetchMock.mockRestore();
+      vi.useRealTimers();
+    }
+  });
+
+  it.each([
+    ['exactly at the limit', [RER_MESSAGE_ATTACHMENTS_ZIP_MAX_TOTAL_BYTES, 0], true],
+    ['over the limit', [RER_MESSAGE_ATTACHMENTS_ZIP_MAX_TOTAL_BYTES, 1], false],
+    ['missing metadata', [undefined, 1], false],
+    ['negative metadata', [-1, 1], false],
+    ['non-finite metadata', [Number.NaN, 1], false],
+  ])('validates archive visibility for %s metadata', async (_, sizes, expected) => {
+    const attachments = sizes.map((sizeBytes, index) => ({
+      id: `size-${index}`,
+      href: `/api/messenger/media/size-${index}`,
+      contentType: 'text/plain',
+      fileName: `size-${index}.txt`,
+      ...(sizeBytes === undefined ? {} : { sizeBytes }),
+    })) as InboxMessage['media'];
+
+    expect(canDownloadAllMessageAttachments(attachments)).toBe(expected);
+    const view = await renderCard({
+      msg: { ...buildMessage(), media: attachments },
+    });
+    rendered.push(view);
+    expect(view.container.querySelector('a[aria-label="Завантажити все"]') !== null).toBe(expected);
+  });
+
+  it('keeps individual downloads visible when archive metadata is unavailable', async () => {
+    const view = await renderCard({
+      msg: {
+        ...buildMessage(),
+        media: [
+          {
+            id: 'unknown-first',
+            href: '/api/messenger/media/unknown-first',
+            contentType: 'text/plain',
+            fileName: 'first.txt',
+          },
+          {
+            id: 'unknown-second',
+            href: '/api/messenger/media/unknown-second',
+            contentType: 'text/plain',
+            fileName: 'second.txt',
+          },
+        ] as InboxMessage['media'],
+      },
+    });
+    rendered.push(view);
+
+    expect(view.container.querySelector('a[aria-label="Завантажити все"]')).toBeNull();
+    expect(view.container.querySelectorAll('a[download]')).toHaveLength(2);
+  });
+
+  it.each([
+    [RER_MESSAGE_ATTACHMENTS_ZIP_MAX_FILES, true],
+    [RER_MESSAGE_ATTACHMENTS_ZIP_MAX_FILES + 1, false],
+  ])('applies the archive file-count limit at %s attachments', async (count, expected) => {
+    const media = Array.from({ length: count }, (_, index) => ({
+      id: `count-${index}`,
+      href: `/api/messenger/media/count-${index}`,
+      contentType: 'text/plain',
+      fileName: `count-${index}.txt`,
+      sizeBytes: 1,
+    })) as InboxMessage['media'];
+    const view = await renderCard({ msg: { ...buildMessage(), media } });
+    rendered.push(view);
+
+    expect(view.container.querySelector('a[aria-label="Завантажити все"]') !== null).toBe(expected);
+    expect(view.container.querySelectorAll('a[download]')).toHaveLength(count + (expected ? 1 : 0));
+  });
+
+  it.each([
+    ['image', 'image/jpeg', 'image.jpg'],
+    ['audio', 'audio/mpeg', 'audio.mp3'],
+    ['video', 'video/mp4', 'video.mp4'],
+    ['document', 'text/plain', 'document.txt'],
+  ])('places the archive action below the %s attachment area', async (_, contentType, fileName) => {
+    const view = await renderCard({
+      msg: {
+        ...buildMessage(),
+        media: [
+          {
+            id: `${fileName}-1`,
+            href: `/media/${fileName}-1`,
+            contentType,
+            fileName,
+            sizeBytes: 1,
+          },
+          {
+            id: `${fileName}-2`,
+            href: `/media/${fileName}-2`,
+            contentType,
+            fileName,
+            sizeBytes: 1,
+          },
+        ] as InboxMessage['media'],
+      },
+    });
+    rendered.push(view);
+
+    const archiveLink = view.container.querySelector('a[aria-label="Завантажити все"]');
+    expect(archiveLink).not.toBeNull();
+    const attachmentArea = archiveLink?.parentElement?.parentElement;
+    expect(attachmentArea?.tagName).toBe('DIV');
+    expect(attachmentArea?.className).toContain('mt-1');
+    expect(attachmentArea?.className).toContain('items-start');
+    expect(attachmentArea?.children).toHaveLength(1);
+    expect(archiveLink?.querySelector('[data-testid="DownloadIcon"]')).not.toBeNull();
   });
 
   it('renders document attachments with preview and download affordances', async () => {
@@ -2406,6 +2724,49 @@ describe('MessageCard', () => {
     expect(downloadLink?.getAttribute('href')).toBe('https://example.test/files/report.pdf');
     expect(downloadLink?.getAttribute('download')).toBe('report.pdf');
     expect(view.container.querySelector('button[aria-label="Попередній перегляд"]')).toBeNull();
+  });
+
+  it('guards a document preview download when the same file starts in the card', async () => {
+    const view = await renderCard({
+      msg: {
+        ...buildMessage(),
+        media: [
+          {
+            id: 'document-preview-1',
+            href: 'javascript:void(0)',
+            contentType: 'application/pdf',
+            fileName: 'report.pdf',
+            sizeBytes: 2048,
+          },
+        ] as InboxMessage['media'],
+      },
+    });
+    rendered.push(view);
+
+    const documentButton = Array.from(view.container.querySelectorAll('button')).find((button) =>
+      button.textContent?.includes('report.pdf'),
+    );
+    expect(documentButton).not.toBeNull();
+    await click(documentButton as HTMLElement);
+
+    const cardDownload = view.container.querySelector('a[download="report.pdf"]');
+    const previewDownload = document.body.querySelector('a[data-preview-download]');
+    expect(cardDownload).not.toBeNull();
+    expect(previewDownload).not.toBeNull();
+
+    cardDownload?.addEventListener('click', (event) => event.preventDefault(), {
+      capture: true,
+      once: true,
+    });
+    await dispatchCancelableClick(cardDownload as HTMLElement);
+
+    expect(previewDownload?.getAttribute('disabled')).not.toBeNull();
+    expect(previewDownload?.getAttribute('aria-busy')).toBe('true');
+    expect(previewDownload?.getAttribute('aria-label')).toBe('Завантаження…');
+    expect(previewDownload?.textContent).toContain('spinner');
+
+    const duplicateEvent = await dispatchCancelableClick(previewDownload as HTMLElement);
+    expect(duplicateEvent.defaultPrevented).toBe(true);
   });
 
   it('opens mixed previewable documents in the clicked position and preserves order', async () => {

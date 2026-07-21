@@ -80,6 +80,19 @@ a {
   color: inherit;
 }
 
+[data-disabled-control-cursor-wrapper] {
+  display: inline-flex;
+}
+
+[data-disabled-control-cursor-wrapper='true'] {
+  cursor: not-allowed;
+}
+
+[data-disabled-control-cursor-wrapper='true'] .Mui-disabled,
+[data-disabled-control-cursor-wrapper='true'] .Mui-disabled * {
+  cursor: not-allowed;
+}
+
 sup {
   font-size: 0.75em;
   vertical-align: super;

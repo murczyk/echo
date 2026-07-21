@@ -11,6 +11,7 @@ import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import {
   Box,
   Button,
+  CircularProgress,
   DialogActions,
   IconButton,
   Slider,
@@ -23,6 +24,7 @@ import { useTheme } from '@mui/material/styles';
 
 import { ZOOM_MAX, ZOOM_MARKS, ZOOM_MIN, ZOOM_STEP } from './message-card-image-preview-utils';
 import { getMessageCardPreviewActionBarSx } from './message-card-preview-shell';
+import { MessageCardDisabledControlCursorWrapper } from './MessageCardDisabledControlCursorWrapper';
 
 export function MessageCardImagePreviewControls({
   zoom,
@@ -163,6 +165,9 @@ export function MessageCardImagePreviewActions({
   onGoToNext,
   onInfoClick,
   onClose,
+  downloadKey,
+  isDownloadStarting,
+  onDownloadStart,
 }: {
   currentHref: string;
   downloadFileName: string;
@@ -176,7 +181,11 @@ export function MessageCardImagePreviewActions({
   onGoToNext: () => void;
   onInfoClick: (event: MouseEvent<HTMLButtonElement>) => void;
   onClose: () => void;
+  downloadKey: string;
+  isDownloadStarting: (downloadKey: string) => boolean;
+  onDownloadStart: (downloadKey: string) => boolean;
 }) {
+  const downloading = isDownloadStarting(downloadKey);
   const copyTooltip =
     copyStatus === 'copying'
       ? 'Копіювання...'
@@ -253,17 +262,30 @@ export function MessageCardImagePreviewActions({
             <OpenInNewIcon />
           </IconButton>
         </Tooltip>
-        <Tooltip title="Завантажити" enterDelay={300}>
-          <IconButton
-            component="a"
-            href={currentHref}
-            download={downloadFileName}
-            aria-label="Завантажити"
-            size="small"
-            sx={{ color: 'text.secondary' }}
-          >
-            <DownloadIcon />
-          </IconButton>
+        <Tooltip title={downloading ? 'Завантаження…' : 'Завантажити'} enterDelay={300}>
+          <MessageCardDisabledControlCursorWrapper disabled={downloading}>
+            <IconButton
+              component="a"
+              href={currentHref}
+              download={downloadFileName}
+              aria-label={downloading ? 'Завантаження…' : 'Завантажити'}
+              aria-busy={downloading}
+              disabled={downloading}
+              onClick={(event) => {
+                if (isDownloadStarting(downloadKey) || !onDownloadStart(downloadKey)) {
+                  event.preventDefault();
+                }
+              }}
+              size="small"
+              sx={{ color: 'text.secondary' }}
+            >
+              {downloading ? (
+                <CircularProgress size={14} aria-label="Завантаження…" />
+              ) : (
+                <DownloadIcon />
+              )}
+            </IconButton>
+          </MessageCardDisabledControlCursorWrapper>
         </Tooltip>
         {copyLabel !== '' ? (
           <Typography

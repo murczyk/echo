@@ -8,7 +8,7 @@ import type {
 } from '../../../../../Bindings';
 import { CircularProgress, Typography } from '@mui/material';
 import ChatBubbleOutlineOutlinedIcon from '@mui/icons-material/ChatBubbleOutlineOutlined';
-import { memo, useMemo, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { isPresent } from '../../../utils/misc';
 import {
   getPointEtalonsFromMessage,
@@ -24,11 +24,14 @@ import { MessageCardCoordinatePreview } from './MessageCardCoordinatePreview';
 import { hasCoordinatePreviewCandidate } from './message-coordinate-preview';
 import {
   isAudioMediaAttachment,
+  canDownloadAllMessageAttachments,
   isVideoMediaAttachment,
   mediaAttachmentContentType,
   mediaAttachmentDisplayName,
   MessageMediaAudioPlayer,
+  MessageMediaDownloadAllLink,
   MessageMediaDownloadLink,
+  MESSAGE_CARD_DOWNLOAD_START_COOLDOWN_MS,
 } from './MessageCardMedia';
 import { MessageImagePreviewDialog } from './MessageCardImagePreviewDialog';
 import { MessageCardVideoPreviewDialog } from './MessageCardVideoPreviewDialog';
@@ -45,6 +48,7 @@ export type { AnalysisCallsignActions, MessageCardBotTagAction } from './message
 
 export function MessageCardMessageBody({
   compact = false,
+  messageId,
   msg,
   tagsMap,
   tagsOrder,
@@ -65,6 +69,7 @@ export function MessageCardMessageBody({
   onOpenPointsOnMap,
 }: {
   compact?: boolean;
+  messageId: number;
   msg: InboxMessage;
   tagsMap: Record<number, Tag>;
   tagsOrder?: number[];
@@ -85,6 +90,38 @@ export function MessageCardMessageBody({
   onOpenPointsOnMap?: (etalons: string[], message: InboxMessage) => void;
 }) {
   const images = collectMessageImages(msg);
+  const [activeDownloadKeys, setActiveDownloadKeys] = useState<Set<string>>(() => new Set());
+  const activeDownloadKeysRef = useRef<Set<string>>(new Set());
+  const downloadCooldownTimersRef = useRef<Map<string, number>>(new Map());
+  const isDownloadStarting = useCallback(
+    (downloadKey: string) =>
+      activeDownloadKeys.has(downloadKey) || activeDownloadKeysRef.current.has(downloadKey),
+    [activeDownloadKeys],
+  );
+  const onDownloadStart = useCallback((downloadKey: string) => {
+    if (activeDownloadKeysRef.current.has(downloadKey)) return false;
+    const nextActiveDownloadKeys = new Set(activeDownloadKeysRef.current);
+    nextActiveDownloadKeys.add(downloadKey);
+    activeDownloadKeysRef.current = nextActiveDownloadKeys;
+    setActiveDownloadKeys(nextActiveDownloadKeys);
+    const timer = window.setTimeout(() => {
+      const activeKeys = new Set(activeDownloadKeysRef.current);
+      activeKeys.delete(downloadKey);
+      activeDownloadKeysRef.current = activeKeys;
+      setActiveDownloadKeys(activeKeys);
+      downloadCooldownTimersRef.current.delete(downloadKey);
+    }, MESSAGE_CARD_DOWNLOAD_START_COOLDOWN_MS);
+    downloadCooldownTimersRef.current.set(downloadKey, timer);
+    return true;
+  }, []);
+  useEffect(() => {
+    return () => {
+      for (const timer of downloadCooldownTimersRef.current.values()) {
+        window.clearTimeout(timer);
+      }
+      downloadCooldownTimersRef.current.clear();
+    };
+  }, []);
   const [imagePreviewIndex, setImagePreviewIndex] = useState<number | null>(null);
   const [videoPreviewIndex, setVideoPreviewIndex] = useState<number | null>(null);
 
@@ -109,6 +146,8 @@ export function MessageCardMessageBody({
   const downloadAttachments = attachmentMedia.filter(
     (attachment) => !isAudioMediaAttachment(attachment) && !isVideoMediaAttachment(attachment),
   );
+  const canDownloadAllAttachments = canDownloadAllMessageAttachments(msg.media ?? []);
+  const hasImageOrVideoAttachments = images.length > 0 || videoAttachments.length > 0;
 
   const videoPreviewSources = useMemo(() => {
     return videoAttachments.map((a) => {
@@ -141,7 +180,7 @@ export function MessageCardMessageBody({
 
   return (
     <div className="flex flex-col min-w-0" style={{ gap: compact ? '12px' : '10px' }}>
-      {images.length > 0 || videoAttachments.length > 0 ? (
+      {hasImageOrVideoAttachments ? (
         <MessageCardImageList
           images={images}
           videos={videoAttachments}
@@ -160,6 +199,8 @@ export function MessageCardMessageBody({
           open={true}
           onClose={() => setImagePreviewIndex(null)}
           onIndexChange={(index) => setImagePreviewIndex(index)}
+          isDownloadStarting={isDownloadStarting}
+          onDownloadStart={onDownloadStart}
         />
       ) : null}
       {documentPreviewIndex != null && previewableDocuments.length > 0 ? (
@@ -170,6 +211,8 @@ export function MessageCardMessageBody({
           open={true}
           onClose={() => setDocumentPreviewIndex(null)}
           onIndexChange={(index) => setDocumentPreviewIndex(index)}
+          isDownloadStarting={isDownloadStarting}
+          onDownloadStart={onDownloadStart}
         />
       ) : null}
       {audioAttachments.length > 0 ? (
@@ -198,12 +241,28 @@ export function MessageCardMessageBody({
                       }
                     : undefined
                 }
+                isDownloadStarting={isDownloadStarting}
+                onDownloadStart={onDownloadStart}
               />
             );
           })}
           {downloadAttachments.map((attachment) => (
-            <MessageMediaDownloadLink key={attachment.id} attachment={attachment} />
+            <MessageMediaDownloadLink
+              key={attachment.id}
+              attachment={attachment}
+              isDownloadStarting={isDownloadStarting}
+              onDownloadStart={onDownloadStart}
+            />
           ))}
+        </div>
+      ) : null}
+      {canDownloadAllAttachments ? (
+        <div className="mt-1 flex items-start w-full">
+          <MessageMediaDownloadAllLink
+            messageId={messageId}
+            isDownloadStarting={isDownloadStarting}
+            onDownloadStart={onDownloadStart}
+          />
         </div>
       ) : null}
       {videoPreviewIndex !== null ? (
@@ -213,6 +272,8 @@ export function MessageCardMessageBody({
           videos={videoPreviewSources}
           currentIndex={videoPreviewIndex ?? 0}
           onIndexChange={(idx) => setVideoPreviewIndex(idx)}
+          isDownloadStarting={isDownloadStarting}
+          onDownloadStart={onDownloadStart}
         />
       ) : null}
       {hasTextPrimary ? (

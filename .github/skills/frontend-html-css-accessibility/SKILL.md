@@ -24,6 +24,7 @@ Use when changing markup, classes, layout, spacing, colors, or interaction state
 - Keep semantic structure:
 - Correct element types for buttons/links/headings.
 - Labels/aria for form controls and icon-only actions.
+- Use filled MUI icons for actionable controls by default; use outlined variants only where an established visual or semantic convention specifically requires them.
 - Preserve visible focus indicators; do not remove outlines without replacement.
 - Keep contrast and readability aligned with existing theme variables:
 - Prefer MUI palette tokens, theme CSS vars, or existing design-system tokens for all light/dark UI work.
