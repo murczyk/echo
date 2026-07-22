@@ -4646,6 +4646,7 @@ type alias MessageMediaInfo =
     , fileName : Maybe (String)
     , sizeBytes : Int
     , href : String
+    , transcription : Maybe (String)
     }
 
 
@@ -4657,6 +4658,7 @@ messageMediaInfoEncoder struct =
         , ( "file_name", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.fileName )
         , ( "size_bytes", (Json.Encode.int) struct.sizeBytes )
         , ( "href", (Json.Encode.string) struct.href )
+        , ( "transcription", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.transcription )
         ]
 
 
@@ -12169,6 +12171,7 @@ messageMediaInfoDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "file_name" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "size_bytes" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "href" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "transcription" (Json.Decode.nullable (Json.Decode.string))))
 
 
 sigintZoneDecoder : Json.Decode.Decoder SigintZone

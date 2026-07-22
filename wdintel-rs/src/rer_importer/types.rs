@@ -184,6 +184,8 @@ pub struct MessageMediaInfo {
     pub file_name: Option<String>,
     pub size_bytes: i64,
     pub href: String,
+    #[serde(default)]
+    pub transcription: Option<String>,
 }
 
 #[derive(

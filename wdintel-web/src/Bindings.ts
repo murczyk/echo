@@ -1789,6 +1789,7 @@ export type MessageMediaInfo = {
   fileName: string | null;
   sizeBytes: number;
   href: string;
+  transcription: string | null;
 };
 
 export type SigintZone = {

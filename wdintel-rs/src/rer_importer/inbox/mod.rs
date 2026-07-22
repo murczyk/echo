@@ -2207,11 +2207,12 @@ async fn get_freq_pelengs_summary(
 mod tests {
     use super::*;
     use crate::entities::{
-        datasource, datasource_group, login, organism, organism_group,
-        sigint_comment, sigint_inbox_item, sigint_inbox_item_metadata,
-        sigint_inbox_item_point_token, sigint_inbox_item_tag, sigint_peleng,
-        sigint_zone_datasource, signal_group, signal_message,
-        signal_message_group, signal_message_media, tag,
+        datasource, datasource_group, echo_gpu_transcription_queue, login,
+        organism, organism_group, sigint_comment, sigint_inbox_item,
+        sigint_inbox_item_metadata, sigint_inbox_item_point_token,
+        sigint_inbox_item_tag, sigint_peleng, sigint_zone_datasource,
+        signal_group, signal_message, signal_message_group,
+        signal_message_media, tag,
     };
     use crate::functest::tests::*;
     use chrono::{DateTime, SecondsFormat, Utc};
@@ -3529,6 +3530,80 @@ mod tests {
         assert!(media_ids.contains(&video_message.id));
         assert!(media_ids.contains(&pdf_message.id));
         assert!(!media_ids.contains(&no_media_message.id));
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn inbox_media_includes_only_completed_audio_transcriptions() {
+        let env = cleanup().await.unwrap();
+        let login = find_test_login(&env.dbx).await.unwrap();
+        let datasource_group =
+            find_test_datasource_group(&env.dbx).await.unwrap();
+        let audio_message = seed_message_with_media(
+            &env,
+            &datasource_group,
+            Some("audio/ogg"),
+            "transcribed-audio",
+        )
+        .await
+        .unwrap();
+        let image_message = seed_message_with_media(
+            &env,
+            &datasource_group,
+            Some("image/png"),
+            "transcribed-image",
+        )
+        .await
+        .unwrap();
+        let media = signal_message_media::Entity::find()
+            .filter(
+                signal_message_media::Column::SignalMessageId
+                    .is_in([audio_message.id, image_message.id]),
+            )
+            .all(&env.dbx)
+            .await
+            .unwrap();
+        for media in &media {
+            echo_gpu_transcription_queue::ActiveModel {
+                source_id: Set(media.id),
+                state: Set(echo_gpu_client::QueueState::Completed
+                    .as_str()
+                    .to_string()),
+                transcribed_value: Set(Some(format!(
+                    "transcription for {}",
+                    media.content_type
+                ))),
+                ..Default::default()
+            }
+            .insert(&env.dbx)
+            .await
+            .unwrap();
+        }
+
+        let logins = vec![login.login.clone()];
+        let messages = messages_by_id_bl(
+            &login.login,
+            &logins,
+            &env,
+            &[audio_message.id, image_message.id],
+            &messages_by_id_default_req(),
+        )
+        .await
+        .unwrap();
+        let audio = messages
+            .iter()
+            .find(|(id, _)| *id == audio_message.id)
+            .unwrap();
+        let image = messages
+            .iter()
+            .find(|(id, _)| *id == image_message.id)
+            .unwrap();
+
+        assert_eq!(
+            audio.1.media[0].transcription.as_deref(),
+            Some("transcription for audio/ogg")
+        );
+        assert_eq!(image.1.media[0].transcription, None);
     }
 
     #[serial]

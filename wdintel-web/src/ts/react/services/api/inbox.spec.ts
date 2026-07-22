@@ -205,6 +205,7 @@ describe('inbox API normalization', () => {
                 file_name: 'recording.mp3',
                 size_bytes: 1024,
                 href: '/api/messenger/media/audio-1',
+                transcription: 'recognized speech',
               },
             ],
           }),
@@ -226,6 +227,7 @@ describe('inbox API normalization', () => {
         fileName: 'recording.mp3',
         sizeBytes: 1024,
         href: '/api/messenger/media/audio-1',
+        transcription: 'recognized speech',
       },
     ]);
   });
@@ -285,6 +287,7 @@ describe('normalizeMessageMediaInfo', () => {
       fileName: 'clip.wav',
       sizeBytes: 2048,
       href: '/api/messenger/media/m1',
+      transcription: null,
     });
   });
 });
