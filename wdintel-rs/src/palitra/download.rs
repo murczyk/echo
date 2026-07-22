@@ -335,7 +335,7 @@ fn build_delta_split_kmz_name(
     )
 }
 
-fn force_kmz_extension(file_name: &str) -> String {
+pub(super) fn force_kmz_extension(file_name: &str) -> String {
     let path = std::path::Path::new(file_name);
     let stem = path
         .file_stem()
@@ -358,6 +358,22 @@ fn build_delta_split_kmz_bytes(
     zip.start_file("doc.kml", options).c(h!())?;
     zip.write_all(rendered_kml.as_bytes()).c(h!())?;
     Ok(zip.finish().c(h!())?.into_inner())
+}
+
+pub(super) fn build_geometry_palitra_kmz_bytes(
+    palitra_read: &PalitraReadV2,
+) -> Result<Vec<u8>, AppError> {
+    let features = collect_delta_split_features(palitra_read);
+    if features.is_empty() {
+        return Err(AppError::BL {
+            msg: format!(
+                "Palitra has no source file or geometry to download: palitra_id={}",
+                palitra_read.palitra.id
+            ),
+        });
+    }
+    let name = build_delta_split_kmz_name(&palitra_read.palitra, 0, 1);
+    build_delta_split_kmz_bytes(&name, &features)
 }
 
 fn build_delta_split_kml(
@@ -534,6 +550,7 @@ fn normalized_hex_color_body(color_hex: &str) -> &str {
 mod tests {
     use super::*;
     use crate::palitra::types::{Geometry, PalitraGeometryDetails};
+    use std::io::Read;
 
     fn test_palitra(name: &str) -> Palitra {
         Palitra {
@@ -628,6 +645,28 @@ mod tests {
                 .and_then(|coordinates| coordinates.body.as_deref()),
             Some("30.52,50.45,0\n30.53,50.46,0")
         );
+    }
+
+    #[test]
+    fn builds_unsplit_kmz_from_stored_geometry() {
+        let mut palitra_read = test_palitra_read(vec![]);
+        palitra_read.geometries[0].points.push(PalitraPoint {
+            coords: test_coords(50.45, 30.52),
+            label: Some("Alpha".to_string()),
+            color: Some("#112233".to_string()),
+        });
+
+        let bytes = build_geometry_palitra_kmz_bytes(&palitra_read).unwrap();
+        let mut archive = zip::ZipArchive::new(Cursor::new(bytes)).unwrap();
+        let mut rendered_kml = String::new();
+        archive
+            .by_name("doc.kml")
+            .unwrap()
+            .read_to_string(&mut rendered_kml)
+            .unwrap();
+
+        assert!(rendered_kml.contains("Alpha"));
+        assert!(rendered_kml.contains("30.52,50.45,0"));
     }
 
     #[test]

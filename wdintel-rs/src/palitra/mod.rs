@@ -28,7 +28,7 @@ use actix_web::HttpResponse;
 use anyhow::{bail, Context};
 use chrono::{NaiveDateTime, Utc};
 use futures_util::StreamExt;
-use itertools::Itertools;
+use itertools::{Either, Itertools};
 use sea_orm::prelude::Expr;
 use sea_orm::*;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
@@ -1463,80 +1463,35 @@ pub async fn download_palitras(
     let mut total_bytes = 0u64;
 
     for (palitra, geometry) in palitras {
-        let Some(s3_id) = palitra.s3_id.as_deref() else {
-            continue;
-        };
-        let Some(encrypted_file_bytes) =
-            crate::storage::stat_s3_object_size_with_operator(
-                &env.s3,
-                &env.s3_config,
-                s3_id,
-            )
-            .await
-            .c(h!())?
-        else {
-            continue;
-        };
-        if encrypted_file_bytes > crate::config::PALITRA_DOWNLOAD_MAX_FILE_BYTES
-        {
-            return Err(AppError::BL {
-                msg: format!(
-                    "Palitra file is too large to download in one request: palitra_id={}, bytes={}, max={}",
-                    palitra.id,
-                    encrypted_file_bytes,
-                    crate::config::PALITRA_DOWNLOAD_MAX_FILE_BYTES
-                ),
-            });
-        }
-        total_encrypted_bytes =
-            total_encrypted_bytes.saturating_add(encrypted_file_bytes);
-        if total_encrypted_bytes
-            > crate::config::PALITRA_DOWNLOAD_MAX_TOTAL_BYTES
-        {
-            return Err(AppError::BL {
-                msg: format!(
-                    "Requested palitra download is too large: bytes={}, max={}",
-                    total_encrypted_bytes,
-                    crate::config::PALITRA_DOWNLOAD_MAX_TOTAL_BYTES
-                ),
-            });
-        }
-        let bytes = crate::storage::download_and_decrypt_from_s3_with_operator(
-            &env.s3,
-            &env.s3_config,
+        let stored_bytes = download_stored_palitra_bytes(
+            &env,
             &strongbox_key,
-            s3_id,
+            &palitra,
+            &mut total_encrypted_bytes,
         )
-        .await
-        .c(h!())?;
-        if bytes.is_empty() {
-            continue;
-        }
+        .await?;
+        let is_generated = stored_bytes.is_none();
+        let bytes = match stored_bytes {
+            Some(bytes) => bytes,
+            None => {
+                let palitra_read = bl::render_palitra_v2(
+                    Either::Left(palitra.clone()),
+                    &env.dbx,
+                )
+                .await
+                .c(h!())?;
+                download::build_geometry_palitra_kmz_bytes(&palitra_read)?
+            }
+        };
         let file_bytes = bytes.len() as u64;
-        if file_bytes > crate::config::PALITRA_DOWNLOAD_MAX_FILE_BYTES {
-            return Err(AppError::BL {
-                msg: format!(
-                    "Palitra file is too large to download in one request: palitra_id={}, bytes={}, max={}",
-                    palitra.id,
-                    file_bytes,
-                    crate::config::PALITRA_DOWNLOAD_MAX_FILE_BYTES
-                ),
-            });
+        add_palitra_download_bytes(palitra.id, file_bytes, &mut total_bytes)?;
+        let mut file_name =
+            bl::build_palitra_download_file_name(&palitra, geometry.as_ref());
+        if is_generated {
+            file_name = download::force_kmz_extension(&file_name);
         }
-        total_bytes = total_bytes.saturating_add(file_bytes);
-        if total_bytes > crate::config::PALITRA_DOWNLOAD_MAX_TOTAL_BYTES {
-            return Err(AppError::BL {
-                msg: format!(
-                    "Requested palitra download is too large: bytes={}, max={}",
-                    total_bytes,
-                    crate::config::PALITRA_DOWNLOAD_MAX_TOTAL_BYTES
-                ),
-            });
-        }
-        let file_name = ensure_unique_zip_entry_name(
-            &mut used_file_names,
-            bl::build_palitra_download_file_name(&palitra, geometry.as_ref()),
-        );
+        let file_name =
+            ensure_unique_zip_entry_name(&mut used_file_names, file_name);
         zip.start_file(file_name, options.clone()).c(h!())?;
         zip.write_all(&bytes).c(h!())?;
     }
@@ -1555,6 +1510,68 @@ pub async fn download_palitras(
         ))
         .insert_header(("Content-Length", zip_size.to_string()))
         .streaming(stream))
+}
+
+async fn download_stored_palitra_bytes(
+    env: &Data<Env>,
+    strongbox_key: &str,
+    palitra: &palitra::Model,
+    total_encrypted_bytes: &mut u64,
+) -> Result<Option<Vec<u8>>, AppError> {
+    let Some(s3_id) = palitra.s3_id.as_deref() else {
+        return Ok(None);
+    };
+    let Some(encrypted_file_bytes) =
+        crate::storage::stat_s3_object_size_with_operator(
+            &env.s3,
+            &env.s3_config,
+            s3_id,
+        )
+        .await
+        .c(h!())?
+    else {
+        return Ok(None);
+    };
+    add_palitra_download_bytes(
+        palitra.id,
+        encrypted_file_bytes,
+        total_encrypted_bytes,
+    )?;
+    let bytes = crate::storage::download_and_decrypt_from_s3_with_operator(
+        &env.s3,
+        &env.s3_config,
+        strongbox_key,
+        s3_id,
+    )
+    .await
+    .c(h!())?;
+    Ok((!bytes.is_empty()).then_some(bytes))
+}
+
+fn add_palitra_download_bytes(
+    palitra_id: i64,
+    file_bytes: u64,
+    total_bytes: &mut u64,
+) -> Result<(), AppError> {
+    if file_bytes > crate::config::PALITRA_DOWNLOAD_MAX_FILE_BYTES {
+        return Err(AppError::BL {
+            msg: format!(
+                "Palitra file is too large to download in one request: palitra_id={palitra_id}, bytes={file_bytes}, max={}",
+                crate::config::PALITRA_DOWNLOAD_MAX_FILE_BYTES
+            ),
+        });
+    }
+    *total_bytes = total_bytes.saturating_add(file_bytes);
+    if *total_bytes > crate::config::PALITRA_DOWNLOAD_MAX_TOTAL_BYTES {
+        return Err(AppError::BL {
+            msg: format!(
+                "Requested palitra download is too large: bytes={}, max={}",
+                *total_bytes,
+                crate::config::PALITRA_DOWNLOAD_MAX_TOTAL_BYTES
+            ),
+        });
+    }
+    Ok(())
 }
 
 #[post("/api/palitra/update/{palitra_id}")]
