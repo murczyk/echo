@@ -635,6 +635,7 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::sigint::file_upload::tus_file)
             .service(crate::sigint::device_name::device_name_create)
             .service(crate::sigint::device_name::device_name_search)
+            .service(crate::sigint::location::location_search)
             .service(crate::users::list_logins)
             .service(crate::users::create_login)
             .service(crate::users::create_delta_login)

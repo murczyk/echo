@@ -35,6 +35,7 @@ pub mod file_upload;
 pub mod freq;
 pub(crate) mod import;
 pub(crate) mod key;
+pub mod location;
 pub mod network;
 pub mod oneoff;
 pub mod parser;
