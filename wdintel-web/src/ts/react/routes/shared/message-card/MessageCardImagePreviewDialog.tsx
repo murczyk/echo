@@ -322,7 +322,7 @@ export function MessageImagePreviewDialog({
     return () => {
       stageEl.removeEventListener('wheel', handleStageWheelNative);
     };
-  }, [open, stageEl]);
+  }, [imageSize, open, stageEl]);
 
   useEffect(() => removePointerListeners, [removePointerListeners]);
 

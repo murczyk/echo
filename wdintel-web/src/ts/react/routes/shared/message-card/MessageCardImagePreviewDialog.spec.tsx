@@ -501,6 +501,60 @@ describe('MessageImagePreviewDialog', () => {
     root.unmount();
   });
 
+  it('uses fitted image dimensions after the image loads for wheel pan clamping', async () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <MessageImagePreviewDialog
+          imageHrefs={[{ href: 'https://example.test/image.png' } as never]}
+          open
+          onClose={vi.fn()}
+          onIndexChange={vi.fn()}
+        />,
+      );
+    });
+
+    const stage = document.body.querySelector('[data-stage]') as HTMLDivElement;
+    Object.defineProperties(stage, {
+      clientWidth: { configurable: true, value: 800 },
+      clientHeight: { configurable: true, value: 600 },
+    });
+    stage.getBoundingClientRect = () =>
+      ({ left: 100, top: 100, width: 800, height: 600 }) as DOMRect;
+
+    await act(async () => {
+      latestStageProps?.onImageLoad(loadedImage);
+      await Promise.resolve();
+    });
+
+    const wheelToZoom = (deltaY: number) => {
+      const wheelEvent = new WheelEvent('wheel', { bubbles: true, deltaY });
+      Object.defineProperties(wheelEvent, {
+        clientX: { value: 500 },
+        clientY: { value: 700 },
+      });
+      stage.dispatchEvent(wheelEvent);
+    };
+
+    await act(async () => {
+      wheelToZoom(-Math.log(2) / 0.0015);
+    });
+
+    expect(latestStageProps?.zoom).toBeCloseTo(200, 8);
+    expect(latestStageProps?.pan.y).toBeCloseTo(-233 - 1 / 3, 6);
+
+    await act(async () => {
+      wheelToZoom(-Math.log(2) / 0.0015);
+    });
+
+    expect(latestStageProps?.zoom).toBeCloseTo(400, 8);
+    expect(latestStageProps?.pan.y).toBeCloseTo(-766 - 2 / 3, 6);
+    root.unmount();
+  });
+
   it('shows copy errors and resets the status when the carousel index changes', async () => {
     const container = document.createElement('div');
     document.body.appendChild(container);
