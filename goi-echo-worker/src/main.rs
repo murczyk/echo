@@ -3,12 +3,20 @@ mod db;
 mod entities;
 mod http_api;
 mod migration;
+mod remote_api;
 mod worker;
 
 use actix_web::{web, App, HttpServer};
 use anyhow::Result;
 use http_api::{
     import_signed_frequencies, list_associations, list_knowledge, AppState,
+};
+use remote_api::{
+    acquire_sync_lock, delete_palette_file, download_categories,
+    download_knowledge_workbook, download_palette_file,
+    download_palettes_archive, list_palette_files, move_palette_file,
+    refresh_sync_lock, release_sync_lock, restart_service, unlink_whatsapp,
+    upload_categories, upload_knowledge_workbook, upload_palette_file,
 };
 
 #[actix_web::main]
@@ -47,9 +55,25 @@ async fn main() -> Result<()> {
     HttpServer::new(move || {
         App::new()
             .app_data(web::Data::new(state.clone()))
+            .app_data(web::PayloadConfig::new(config::API_FILE_BODY_MAX_BYTES))
             .service(list_associations)
             .service(list_knowledge)
             .service(import_signed_frequencies)
+            .service(list_palette_files)
+            .service(download_palette_file)
+            .service(upload_palette_file)
+            .service(delete_palette_file)
+            .service(move_palette_file)
+            .service(download_palettes_archive)
+            .service(download_knowledge_workbook)
+            .service(upload_knowledge_workbook)
+            .service(download_categories)
+            .service(upload_categories)
+            .service(acquire_sync_lock)
+            .service(refresh_sync_lock)
+            .service(release_sync_lock)
+            .service(restart_service)
+            .service(unlink_whatsapp)
     })
     .bind((config.listen_host(), config.listen_port()))?
     .run()

@@ -1,12 +1,11 @@
 use crate::config::{
     ORGANISM_GOI_API_PORT_DEFAULT,
     ORGANISM_GOI_ASSOCIATIONS_PAGE_LIMIT_DEFAULT,
-    ORGANISM_GOI_ASSOCIATIONS_PAGE_LIMIT_MAX, ORGANISM_GOI_FILE_LIST_LIMIT,
+    ORGANISM_GOI_ASSOCIATIONS_PAGE_LIMIT_MAX,
+    ORGANISM_GOI_CATEGORIES_FILE_NAME,
     ORGANISM_GOI_KNOWLEDGE_PAGE_LIMIT_DEFAULT,
     ORGANISM_GOI_KNOWLEDGE_PAGE_LIMIT_MAX, ORGANISM_GOI_PATH_DEFAULT,
     ORGANISM_GOI_SSH_PORT_DEFAULT, ORGANISM_GOI_SSH_SETUP_TIMEOUT_MS,
-    ORGANISM_GOI_SSH_TIMEOUT_MS, PALITRA_GOI_SYNC_LOCK_LIVE_TTL_SEC,
-    PALITRA_GOI_SYNC_LOCK_MAX_DELAY_SEC, PALITRA_GOI_SYNC_LOCK_MIN_DELAY_SEC,
 };
 use crate::entities::{goi_association, goi_knowledge, login, organism};
 use crate::error::AppError;
@@ -30,14 +29,14 @@ use crate::utils::string::{
 };
 use actix_web::post;
 use actix_web::web::Json;
-use rand::Rng;
 use sea_orm::*;
 use sea_query::{extension::postgres::PgExpr, Expr};
 use serde::{Deserialize, Serialize};
-use std::time::Duration;
+use std::path::Path;
 use uuid::Uuid;
 
 mod callsigns_sync;
+pub mod goi_api;
 mod goi_ssh;
 pub mod integrations;
 pub mod message_uid;
@@ -55,11 +54,6 @@ struct GoiSettingsInput {
     api_port: i32,
     api_login: Option<String>,
     api_password: Option<String>,
-}
-
-pub struct GoiSyncLock {
-    req: CheckOrganismGoiConnectionReq,
-    lock_id: String,
 }
 
 #[derive(Debug, Deserialize, PartialEq, Clone)]
@@ -149,7 +143,7 @@ pub async fn setup_organism_goi_worker(
         path: req.path.clone(),
     };
     let setup_command =
-        goi_build_setup_worker_command(&pg_password, &api_password);
+        goi_build_setup_worker_command(&pg_password, &api_password, &req.path);
 
     goi_run_setup_worker(ssh_req, setup_command).await?;
 
@@ -304,15 +298,19 @@ pub async fn restart_current_user_goi_service(
         msg: "Для користувача не налаштовано організм".to_string(),
     })?;
     let organism = goi_find_organism(&env.dbx, organism_id).await.c(h!())?;
-    let ssh_req = goi_connection_req_from_organism(&organism)?;
     let req = req.into_inner();
-
-    goi_run_command(
-        ssh_req,
-        goi_restart_service_command(&req.service).to_string(),
-        goi_restart_service_error_context(&req.service),
-    )
-    .await?;
+    let api_target =
+        goi_api::GoiApiTarget::from_organism(env.rq.clone(), &organism)
+            .c(h!())?;
+    api_target
+        .restart_service((&req.service).into())
+        .await
+        .map_err(|err| AppError::BL {
+            msg: format!(
+                "{}: {err:#}",
+                goi_restart_service_error_context(&req.service)
+            ),
+        })?;
 
     Ok(Json(true))
 }
@@ -342,299 +340,14 @@ pub async fn current_user_goi_control_state(
     Ok(Json(goi_control_state_from_organism(&organism)))
 }
 
-pub async fn goi_upload_file(
-    req: CheckOrganismGoiConnectionReq,
-    remote_file_path: String,
-    file_data: Vec<u8>,
-) -> anyhow::Result<()> {
-    goi_validate_connection_req(&req)?;
-
-    tokio::task::spawn_blocking(move || {
-        goi_ssh::goi_upload_file_sync(req, remote_file_path, file_data)
-    })
-    .await
-    .c(h!())?
-}
-
-pub async fn goi_upload_file_loose(
-    req: CheckOrganismGoiConnectionReq,
-    remote_file_path: String,
-    file_data: Vec<u8>,
-) {
-    let ssh_target = format!("{}:{}", req.ssh_host, req.ssh_port);
-    let remote_file_path_for_log = remote_file_path.clone();
-    if let Err(err) = goi_upload_file(req, remote_file_path, file_data).await {
-        warn!(
-            "Skipping GOI file upload for {ssh_target} {remote_file_path_for_log}: {err:#}"
-        );
-    }
-}
-
-pub async fn goi_download_file(
-    req: CheckOrganismGoiConnectionReq,
-    remote_file_path: String,
-) -> anyhow::Result<Vec<u8>> {
-    goi_validate_connection_req(&req)?;
-
-    tokio::task::spawn_blocking(move || {
-        goi_ssh::goi_download_file_sync(req, remote_file_path)
-    })
-    .await
-    .c(h!())?
-}
-
-pub async fn goi_file_exists(
-    req: CheckOrganismGoiConnectionReq,
-    remote_file_path: String,
-) -> anyhow::Result<bool> {
-    goi_validate_connection_req(&req)?;
-
-    tokio::task::spawn_blocking(move || {
-        goi_ssh::goi_file_exists_sync(req, remote_file_path)
-    })
-    .await
-    .c(h!())?
-}
-
-pub async fn goi_delete_file(
-    req: CheckOrganismGoiConnectionReq,
-    remote_file_path: String,
-) -> anyhow::Result<()> {
-    goi_validate_connection_req(&req)?;
-
-    tokio::task::spawn_blocking(move || {
-        goi_ssh::goi_delete_file_sync(req, remote_file_path)
-    })
-    .await
-    .c(h!())?
-}
-
-pub async fn goi_delete_file_loose(
-    req: CheckOrganismGoiConnectionReq,
-    remote_file_path: String,
-) {
-    let ssh_target = format!("{}:{}", req.ssh_host, req.ssh_port);
-    let remote_file_path_for_log = remote_file_path.clone();
-    if let Err(err) = goi_delete_file(req, remote_file_path).await {
-        warn!(
-            "Skipping GOI file delete for {ssh_target} {remote_file_path_for_log}: {err:#}"
-        );
-    }
-}
-
-pub async fn goi_list_relative_files(
-    req: CheckOrganismGoiConnectionReq,
-) -> anyhow::Result<Vec<String>> {
-    goi_validate_connection_req(&req)?;
-    let command = format!(
-        "cd {} && find . -mindepth 1 -type f -print",
-        goi_shell_quote_single(req.path.trim())
-    );
-    tokio::task::spawn_blocking(move || {
-        goi_ssh::goi_exec_command_sync_capped_strict(
-            req,
-            command,
-            ORGANISM_GOI_SSH_TIMEOUT_MS,
-            ORGANISM_GOI_FILE_LIST_LIMIT,
-        )
-    })
-    .await
-    .c(h!())?
-}
-
-pub async fn goi_try_acquire_sync_lock(
-    req: CheckOrganismGoiConnectionReq,
-) -> anyhow::Result<Option<GoiSyncLock>> {
-    goi_validate_connection_req(&req)?;
-    goi_ensure_sync_lock_table(req.clone()).await.c(h!())?;
-    if goi_has_live_sync_lock(req.clone(), None).await.c(h!())? {
-        info!(
-            "Skipping GOI sync for {}:{}: live sync lock exists",
-            req.ssh_host, req.ssh_port
-        );
-        return Ok(None);
-    }
-
-    let lock_id = Uuid::new_v4().to_string();
-    goi_insert_sync_lock(req.clone(), &lock_id).await.c(h!())?;
-    goi_random_sync_lock_delay().await;
-
-    if goi_has_live_sync_lock(req.clone(), Some(&lock_id))
-        .await
-        .c(h!())?
-    {
-        let lock = GoiSyncLock { req, lock_id };
-        lock.release().await.c(h!())?;
-        info!(
-            "Skipping GOI sync for {}: conflicting sync lock appeared",
-            lock.target()
-        );
-        return Ok(None);
-    }
-
-    Ok(Some(GoiSyncLock { req, lock_id }))
-}
-
-impl GoiSyncLock {
-    pub fn target(&self) -> String {
-        format!("{}:{}", self.req.ssh_host, self.req.ssh_port)
-    }
-
-    pub async fn refresh(&self) -> anyhow::Result<()> {
-        goi_run_psql(
-            self.req.clone(),
-            format!(
-                "update sync_lock set updated_at = now() where id = {} and released_at is null",
-                goi_sql_quote_uuid(&self.lock_id),
-            ),
-        )
-        .await
-        .c(h!())?;
-        Ok(())
-    }
-
-    pub async fn release(&self) -> anyhow::Result<()> {
-        goi_run_psql(
-            self.req.clone(),
-            format!(
-                "update sync_lock set updated_at = now(), released_at = now() where id = {} and released_at is null",
-                goi_sql_quote_uuid(&self.lock_id),
-            ),
-        )
-        .await
-        .c(h!())?;
-        Ok(())
-    }
-}
-
-async fn goi_ensure_sync_lock_table(
-    req: CheckOrganismGoiConnectionReq,
-) -> anyhow::Result<()> {
-    goi_run_psql(req, goi_sync_lock_table_sql()).await.c(h!())?;
-    Ok(())
-}
-
-async fn goi_insert_sync_lock(
-    req: CheckOrganismGoiConnectionReq,
-    lock_id: &str,
-) -> anyhow::Result<()> {
-    goi_run_psql(
-        req,
-        format!(
-            "insert into sync_lock (id, created_at, updated_at) values ({}, now(), now())",
-            goi_sql_quote_uuid(lock_id),
-        ),
-    )
-    .await
-    .c(h!())?;
-    Ok(())
-}
-
-async fn goi_has_live_sync_lock(
-    req: CheckOrganismGoiConnectionReq,
-    exclude_lock_id: Option<&str>,
-) -> anyhow::Result<bool> {
-    let mut sql = format!(
-        "select count(*) from sync_lock where released_at is null and updated_at >= now() - interval '{} seconds'",
-        PALITRA_GOI_SYNC_LOCK_LIVE_TTL_SEC
-    );
-    if let Some(exclude_lock_id) = exclude_lock_id {
-        sql.push_str(" and id <> ");
-        sql.push_str(&goi_sql_quote_uuid(exclude_lock_id));
-    }
-    let lines = goi_run_psql(req, sql).await.c(h!())?;
-    let count = lines
-        .first()
-        .map(|line| line.trim())
-        .unwrap_or("0")
-        .parse::<i64>()
-        .c(h!())?;
-    Ok(count > 0)
-}
-
-async fn goi_run_psql(
-    req: CheckOrganismGoiConnectionReq,
-    sql: String,
-) -> anyhow::Result<Vec<String>> {
-    let command = format!(
-        "sudo -n -u postgres psql -v ON_ERROR_STOP=1 -d goi -Atc {}",
-        goi_shell_quote_single(&sql),
-    );
-    tokio::task::spawn_blocking(move || {
-        goi_ssh::goi_exec_command_sync_capped_strict(
-            req,
-            command,
-            ORGANISM_GOI_SSH_TIMEOUT_MS,
-            ORGANISM_GOI_FILE_LIST_LIMIT,
-        )
-    })
-    .await
-    .c(h!())?
-}
-
-async fn goi_random_sync_lock_delay() {
-    let delay_sec = {
-        let mut rng = rand::rng();
-        rng.random_range(
-            PALITRA_GOI_SYNC_LOCK_MIN_DELAY_SEC
-                ..=PALITRA_GOI_SYNC_LOCK_MAX_DELAY_SEC,
-        )
-    };
-    tokio::time::sleep(Duration::from_secs(delay_sec)).await;
-}
-
-fn goi_sql_quote_uuid(value: &str) -> String {
-    format!("{}::uuid", goi_sql_quote_single(value))
-}
-
-fn goi_sql_quote_single(value: &str) -> String {
-    let escaped = value.replace('\'', "''");
-    format!("'{escaped}'")
-}
-
-fn goi_sync_lock_table_sql() -> String {
-    r#"
-create table if not exists sync_lock (
-    id uuid primary key,
-    created_at timestamptz not null,
-    updated_at timestamptz not null,
-    released_at timestamptz
-);
-create index if not exists idx_sync_lock_live
-    on sync_lock (released_at, updated_at);
-"#
-    .to_string()
-}
-
-pub async fn goi_move_file_to_folder(
-    req: CheckOrganismGoiConnectionReq,
-    source_file_names: Vec<String>,
-    target_file_name: String,
-    target_folder: Option<String>,
-    source_folder_hint: Option<String>,
-) -> anyhow::Result<()> {
-    goi_validate_connection_req(&req)?;
-    let mut entries = goi_list_relative_files(req.clone()).await.c(h!())?;
-    goi_move_file_to_folder_with_entries(
-        req,
-        source_file_names,
-        target_file_name,
-        target_folder,
-        source_folder_hint,
-        &mut entries,
-    )
-    .await
-}
-
 pub async fn goi_move_file_to_folder_with_entries(
-    req: CheckOrganismGoiConnectionReq,
+    api_target: goi_api::GoiApiTarget,
     source_file_names: Vec<String>,
     target_file_name: String,
     target_folder: Option<String>,
     source_folder_hint: Option<String>,
     entries: &mut Vec<String>,
 ) -> anyhow::Result<()> {
-    goi_validate_connection_req(&req)?;
     let source_file_names =
         normalize_goi_file_names(source_file_names).c(h!())?;
     let target_file_name = normalize_goi_file_name(target_file_name).c(h!())?;
@@ -658,15 +371,8 @@ pub async fn goi_move_file_to_folder_with_entries(
         );
     }
 
-    let target_dir = goi_relative_parent_dir(&target_rel_path);
-    let command = format!(
-        "cd {} && mkdir -p -- {} && mv -f -- {} {}",
-        goi_shell_quote_single(req.path.trim()),
-        goi_shell_quote_single(&target_dir),
-        goi_shell_quote_single(&current_rel_path),
-        goi_shell_quote_single(&target_rel_path),
-    );
-    goi_run_command(req, command, "GOI file move failed")
+    api_target
+        .move_palette_file(&current_rel_path, &target_rel_path)
         .await
         .c(h!())?;
     goi_replace_cached_relative_path(
@@ -784,30 +490,6 @@ fn normalize_goi_file_names(
     Ok(normalized)
 }
 
-pub(super) async fn goi_run_command(
-    ssh_req: CheckOrganismGoiConnectionReq,
-    command: String,
-    error_context: &'static str,
-) -> Result<(), AppError> {
-    match tokio::task::spawn_blocking(move || {
-        goi_ssh::goi_exec_command_sync(
-            ssh_req,
-            command,
-            ORGANISM_GOI_SSH_TIMEOUT_MS,
-        )
-    })
-    .await
-    {
-        Ok(Ok(_)) => Ok(()),
-        Ok(Err(err)) => Err(AppError::BL {
-            msg: format!("{error_context}: {err:#}"),
-        }),
-        Err(err) => Err(AppError::BL {
-            msg: format!("{error_context}: {err}"),
-        }),
-    }
-}
-
 pub(super) fn goi_parse_relative_file_entry(
     entry: &str,
 ) -> Option<(Option<String>, String)> {
@@ -863,18 +545,6 @@ fn goi_validate_relative_folder(folder: &str) -> anyhow::Result<()> {
         }
     }
     Ok(())
-}
-
-fn goi_relative_parent_dir(path: &str) -> String {
-    path.rsplit_once('/')
-        .map(|(dir, _)| dir.to_string())
-        .filter(|dir| !dir.trim().is_empty())
-        .unwrap_or_else(|| ".".to_string())
-}
-
-fn goi_shell_quote_single(value: &str) -> String {
-    let escaped = value.replace('\'', "'\\''");
-    format!("'{escaped}'")
 }
 
 async fn goi_find_organism(
@@ -1290,7 +960,7 @@ pub(super) async fn goi_run_setup_worker(
     setup_command: String,
 ) -> Result<(), AppError> {
     match tokio::task::spawn_blocking(move || {
-        goi_ssh::goi_exec_command_sync(
+        goi_ssh::goi_setup_worker_sync(
             ssh_req,
             setup_command,
             ORGANISM_GOI_SSH_SETUP_TIMEOUT_MS,
@@ -1428,63 +1098,31 @@ fn goi_settings_from_organism(
     }
 }
 
-fn goi_connection_req_from_organism(
-    organism: &organism::Model,
-) -> Result<CheckOrganismGoiConnectionReq, AppError> {
-    if goi_integration_type(organism) != GoiIntegrationType::Full {
-        return Err(AppError::BL {
-            msg: "Для простої інтеграції ГОІ SSH недоступний".to_string(),
-        });
-    }
-    let settings = goi_settings_from_organism(organism);
-    let ssh_host = settings.ssh_host.ok_or_else(|| AppError::BL {
-        msg: "Для вашого організму не налаштовано GOI SSH host".to_string(),
-    })?;
-    let ssh_user = settings.ssh_user.ok_or_else(|| AppError::BL {
-        msg: "Для вашого організму не налаштовано GOI SSH user".to_string(),
-    })?;
-    let req = CheckOrganismGoiConnectionReq {
-        ssh_host,
-        ssh_user,
-        ssh_port: settings.ssh_port,
-        path: settings.path,
-    };
-    goi_validate_connection_req(&req)?;
-    Ok(req)
-}
-
 fn goi_control_state_from_organism(
     organism: &organism::Model,
 ) -> CurrentUserGoiControlState {
-    match goi_connection_req_from_organism(organism) {
-        Ok(_) => CurrentUserGoiControlState {
+    if organism_has_goi_api_config(organism) {
+        CurrentUserGoiControlState {
             can_restart: true,
             restart_unavailable_reason: None,
-        },
-        Err(AppError::BL { msg }) => CurrentUserGoiControlState {
-            can_restart: false,
-            restart_unavailable_reason: Some(msg),
-        },
-        Err(_) => CurrentUserGoiControlState {
+        }
+    } else {
+        CurrentUserGoiControlState {
             can_restart: false,
             restart_unavailable_reason: Some(
-                "Не вдалося визначити доступність перезапуску GOI".to_string(),
+                "Для вашого організму не налаштовано GOI HTTPS API".to_string(),
             ),
-        },
+        }
     }
 }
 
-pub(super) fn goi_restart_service_command(
-    service: &RestartCurrentUserGoiService,
-) -> &'static str {
-    match service {
-        RestartCurrentUserGoiService::Swapp => "sudo systemctl restart swapp",
-        RestartCurrentUserGoiService::SwappAlt => {
-            "sudo systemctl restart swapp-alt"
-        }
-        RestartCurrentUserGoiService::Goi => "sudo systemctl restart goi",
-        RestartCurrentUserGoiService::EchoSwapp => {
-            "sudo systemctl restart echo-swapp"
+impl From<&RestartCurrentUserGoiService> for goi_echo_worker::api::GoiService {
+    fn from(service: &RestartCurrentUserGoiService) -> Self {
+        match service {
+            RestartCurrentUserGoiService::Swapp => Self::Swapp,
+            RestartCurrentUserGoiService::SwappAlt => Self::SwappAlt,
+            RestartCurrentUserGoiService::Goi => Self::Goi,
+            RestartCurrentUserGoiService::EchoSwapp => Self::EchoSwapp,
         }
     }
 }
@@ -1504,42 +1142,6 @@ pub(super) fn goi_restart_service_error_context(
         }
         RestartCurrentUserGoiService::EchoSwapp => {
             "Не вдалося перезапустити Месенджери на інстансі ГОІ"
-        }
-    }
-}
-
-pub(super) fn goi_unlink_whatsapp_command(
-    service: &RestartCurrentUserGoiService,
-) -> Result<&'static str, AppError> {
-    match service {
-        RestartCurrentUserGoiService::Swapp => {
-            Ok("(cd /etc/swapp && npm run whatsapp:delete)")
-        }
-        RestartCurrentUserGoiService::SwappAlt => {
-            Ok("(cd /etc/swapp-alt && npm run whatsapp:delete)")
-        }
-        RestartCurrentUserGoiService::Goi
-        | RestartCurrentUserGoiService::EchoSwapp => Err(AppError::BL {
-            msg: "Відв'язування доступне лише для SWAPP".to_string(),
-        }),
-    }
-}
-
-pub(super) fn goi_unlink_whatsapp_error_context(
-    service: &RestartCurrentUserGoiService,
-) -> &'static str {
-    match service {
-        RestartCurrentUserGoiService::Swapp => {
-            "Не вдалося відв'язати SWAPP на інстансі ГОІ"
-        }
-        RestartCurrentUserGoiService::SwappAlt => {
-            "Не вдалося відв'язати SWAPP 4003 на інстансі ГОІ"
-        }
-        RestartCurrentUserGoiService::Goi => {
-            "Не вдалося відв'язати GOI на інстансі ГОІ"
-        }
-        RestartCurrentUserGoiService::EchoSwapp => {
-            "Не вдалося відв'язати Месенджери на інстансі ГОІ"
         }
     }
 }
@@ -1616,7 +1218,16 @@ pub(super) fn goi_generate_worker_secret() -> String {
 pub(super) fn goi_build_setup_worker_command(
     pg_password: &str,
     api_password: &str,
+    palettes_path: &str,
 ) -> String {
+    let palettes_path = palettes_path.trim();
+    let categories_path = Path::new(palettes_path)
+        .parent()
+        .unwrap_or_else(|| Path::new(""))
+        .join(ORGANISM_GOI_CATEGORIES_FILE_NAME);
+    let palettes_path = toml::Value::String(palettes_path.to_string());
+    let categories_path =
+        toml::Value::String(categories_path.to_string_lossy().into_owned());
     let worker_config = format!(
         concat!(
             "pg_host = \"127.0.0.1\"\n",
@@ -1630,12 +1241,16 @@ pub(super) fn goi_build_setup_worker_command(
             "\n",
             "associations_xlsx_path = \"/etc/goi/data/xlsx/associations.xlsx\"\n",
             "knowledge_xlsx_path = \"/etc/goi/data/xlsx/knowledge.xlsx\"\n",
+            "palettes_path = {}\n",
+            "categories_path = {}\n",
             "listen_host = \"0.0.0.0\"\n",
             "listen_port = 8088\n",
             "poll_sleep_ms = 1000\n"
         ),
         pg_password,
         api_password,
+        palettes_path,
+        categories_path,
     );
 
     format!(
@@ -1782,15 +1397,6 @@ mod tests {
             parsed,
             (Some("North/Sub".to_string()), "palitra.kmz".to_string())
         );
-    }
-
-    #[test]
-    fn goi_relative_parent_dir_supports_nested_folders() {
-        assert_eq!(
-            goi_relative_parent_dir("North/Sub/palitra.kmz"),
-            "North/Sub".to_string()
-        );
-        assert_eq!(goi_relative_parent_dir("palitra.kmz"), ".".to_string());
     }
 
     #[test]

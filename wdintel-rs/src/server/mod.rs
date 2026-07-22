@@ -226,23 +226,25 @@ fn spawn_group_stats_worker(bg_set: &mut JoinSet<()>, mode: Mode) {
     });
 }
 
-fn spawn_goi_worker(bg_set: &mut JoinSet<()>, env: Arc<Env>) {
-    spawn_named_worker("goi_association_worker", bg_set, async move {
-        crate::organism::goi::worker::goi_association_worker_nofail(env).await;
-    });
-}
-
-fn spawn_goi_folder_sync_worker(bg_set: &mut JoinSet<()>, env: Arc<Env>) {
-    spawn_named_worker("goi_folder_sync_worker", bg_set, async move {
-        crate::organism::goi::worker::goi_folder_sync_worker_nofail(env).await;
-    });
-}
-
-fn spawn_palitra_goi_sync_worker(bg_set: &mut JoinSet<()>, env: Arc<Env>) {
-    spawn_named_worker("palitra_goi_sync_worker", bg_set, async move {
-        crate::palitra::goi_sync_worker::palitra_goi_sync_worker_nofail(env)
-            .await;
-    });
+fn spawn_goi_sync_worker_pool(bg_set: &mut JoinSet<()>, env: Arc<Env>) {
+    let coordinator = Arc::new(
+        crate::organism::goi::worker::GoiSyncWorkerCoordinator::default(),
+    );
+    for worker_index in 0..ORGANISM_GOI_SYNC_WORKER_COUNT {
+        let env = env.clone();
+        let coordinator = coordinator.clone();
+        spawn_named_worker(
+            format!("goi_sync_worker_{worker_index}"),
+            bg_set,
+            async move {
+                crate::organism::goi::worker::goi_sync_worker_nofail(
+                    env,
+                    coordinator,
+                )
+                .await;
+            },
+        );
+    }
 }
 
 fn spawn_palitra_conversion_worker(bg_set: &mut JoinSet<()>, env: Arc<Env>) {
@@ -287,6 +289,7 @@ fn spawn_background_workers(
     cancel_token: CancellationToken,
     shutdown_handle: Handle,
     should_spawn_group_stats_worker: bool,
+    should_spawn_goi_workers: bool,
     bg_set: &mut JoinSet<()>,
 ) {
     let config = env.config.clone();
@@ -460,10 +463,21 @@ fn spawn_background_workers(
         });
     }
 
-    // In debug/test, run only GOI folder sync to avoid API/report mutations.
-    spawn_goi_folder_sync_worker(bg_set, env.clone());
-    spawn_palitra_goi_sync_worker(bg_set, env.clone());
-    spawn_palitra_conversion_worker(bg_set, env);
+    if should_spawn_goi_workers {
+        spawn_goi_sync_worker_pool(bg_set, env.clone());
+        let message_uid_env = env.clone();
+        spawn_named_worker(
+            "goi_association_message_uid_worker",
+            bg_set,
+            async move {
+                crate::organism::goi::message_uid::goi_association_message_uid_worker_nofail(
+                    message_uid_env,
+                )
+                .await;
+            },
+        );
+        spawn_palitra_conversion_worker(bg_set, env);
+    }
 }
 
 fn spawn_vault_background_workers(env: Arc<Env>, bg_set: &mut JoinSet<()>) {
@@ -472,18 +486,6 @@ fn spawn_vault_background_workers(env: Arc<Env>, bg_set: &mut JoinSet<()>) {
             crate::secret::secret_worker(secret_config).await
         });
     }
-    spawn_goi_worker(bg_set, env.clone());
-    let env2 = env.clone();
-    spawn_named_worker(
-        "goi_association_message_uid_worker",
-        bg_set,
-        async move {
-            crate::organism::goi::message_uid::goi_association_message_uid_worker_nofail(env2).await;
-        },
-    );
-    spawn_goi_folder_sync_worker(bg_set, env.clone());
-    spawn_palitra_goi_sync_worker(bg_set, env.clone());
-    spawn_palitra_conversion_worker(bg_set, env);
 }
 
 fn configure_routes(cfg: &mut web::ServiceConfig) {
@@ -930,6 +932,7 @@ pub async fn main_server(
                 cancel_token.clone(),
                 shutdown_handle.clone(),
                 true,
+                false,
                 &mut background_tasks,
             ),
         }
@@ -1062,6 +1065,7 @@ pub async fn main_bgworker(
         cancel_token.clone(),
         shutdown_handle.clone(),
         false,
+        true,
         &mut background_tasks,
     );
     let group_stats_startup_rx = spawn_group_stats_worker_after_startup_recalc(

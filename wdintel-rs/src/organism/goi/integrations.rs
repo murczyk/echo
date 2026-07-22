@@ -5,8 +5,8 @@ use crate::config::{
     ORGANISM_GOI_CATEGORIES_FILE_NAME, ORGANISM_GOI_CATEGORIES_JSON_MAX_BYTES,
     ORGANISM_GOI_CATEGORIES_UPLOAD_MAX_BYTES,
     ORGANISM_GOI_KNOWLEDGE_PAGE_LIMIT_DEFAULT,
-    ORGANISM_GOI_KNOWLEDGE_PAGE_LIMIT_MAX, ORGANISM_GOI_PALETTES_DIR_NAME,
-    ORGANISM_GOI_PATH_DEFAULT, ORGANISM_GOI_SSH_PORT_DEFAULT,
+    ORGANISM_GOI_KNOWLEDGE_PAGE_LIMIT_MAX, ORGANISM_GOI_PATH_DEFAULT,
+    ORGANISM_GOI_SSH_PORT_DEFAULT,
 };
 use crate::entities::{
     goi_association, goi_integration, goi_integration_access_login,
@@ -49,7 +49,6 @@ use sea_orm::*;
 use sea_query::{extension::postgres::PgExpr, Expr};
 use serde::Serialize;
 use std::collections::{HashMap, HashSet};
-use std::path::Path;
 
 #[derive(Clone)]
 struct GoiIntegrationWithOwner {
@@ -303,6 +302,7 @@ pub async fn setup_goi_integration_worker(
     let setup_command = super::goi_build_setup_worker_command(
         &super::goi_generate_worker_secret(),
         &api_password,
+        &req.path,
     );
     super::goi_run_setup_worker(ssh_req, setup_command).await?;
 
@@ -613,17 +613,18 @@ pub async fn restart_current_user_goi_service(
         .ok_or_else(|| AppError::BL {
             msg: "Інтеграцію ГОІ не знайдено або доступ відсутній".to_string(),
         })?;
-    let ssh_req =
-        goi_connection_req_from_integration(&integration.integration)?;
-    let service = parse_goi_service(&req.service)?;
-    let service_kind: super::RestartCurrentUserGoiService = (&service).into();
-
-    super::goi_run_command(
-        ssh_req,
-        super::goi_restart_service_command(&service_kind).to_string(),
-        super::goi_restart_service_error_context(&service_kind),
+    let api_target = super::goi_api::GoiApiTarget::from_integration(
+        env.rq.clone(),
+        &integration.integration,
     )
-    .await?;
+    .c(h!())?;
+    let service = parse_goi_service(&req.service)?;
+    api_target
+        .restart_service((&service).into())
+        .await
+        .map_err(|err| AppError::BL {
+            msg: format!("Не вдалося перезапустити сервіс ГОІ: {err:#}"),
+        })?;
 
     Ok(Json(true))
 }
@@ -647,17 +648,18 @@ pub async fn unlink_current_user_goi_whatsapp(
         .ok_or_else(|| AppError::BL {
             msg: "Інтеграцію ГОІ не знайдено або доступ відсутній".to_string(),
         })?;
-    let ssh_req =
-        goi_connection_req_from_integration(&integration.integration)?;
-    let service = parse_goi_service(&req.service)?;
-    let service_kind: super::RestartCurrentUserGoiService = (&service).into();
-
-    super::goi_run_command(
-        ssh_req,
-        super::goi_unlink_whatsapp_command(&service_kind)?.to_string(),
-        super::goi_unlink_whatsapp_error_context(&service_kind),
+    let api_target = super::goi_api::GoiApiTarget::from_integration(
+        env.rq.clone(),
+        &integration.integration,
     )
-    .await?;
+    .c(h!())?;
+    let service = parse_goi_service(&req.service)?;
+    api_target
+        .unlink_whatsapp((&service).into())
+        .await
+        .map_err(|err| AppError::BL {
+            msg: format!("Не вдалося відв'язати WhatsApp на ГОІ: {err:#}"),
+        })?;
 
     Ok(Json(true))
 }
@@ -679,9 +681,20 @@ pub async fn download_current_user_goi_palettes(
     )
     .await
     .c(h!())?;
-    let ssh_req =
-        goi_connection_req_from_integration(&integration.integration)?;
-    let archive = download_goi_palettes_archive(ssh_req).await?;
+    let api_target = super::goi_api::GoiApiTarget::from_integration(
+        env.rq.clone(),
+        &integration.integration,
+    )
+    .c(h!())?;
+    let archive =
+        api_target
+            .download_palettes_archive()
+            .await
+            .map_err(|err| AppError::BL {
+                msg: format!(
+                    "Не вдалося завантажити архів палітр ГОІ: {err:#}"
+                ),
+            })?;
 
     Ok(make_goi_zip_response(
         format!("goi-palettes-{}.zip", integration.integration.id),
@@ -706,13 +719,15 @@ pub async fn upload_current_user_goi_categories(
     )
     .await
     .c(h!())?;
-    let ssh_req =
-        goi_connection_req_from_integration(&integration.integration)?;
+    let api_target = super::goi_api::GoiApiTarget::from_integration(
+        env.rq.clone(),
+        &integration.integration,
+    )
+    .c(h!())?;
     let upload = read_goi_categories_upload(&mut payload).await?;
     let categories_json = extract_categories_json_upload(upload)?;
-    let categories_path = goi_categories_remote_path(&ssh_req.path);
-
-    super::goi_upload_file(ssh_req, categories_path, categories_json)
+    api_target
+        .upload_categories(categories_json)
         .await
         .map_err(|err| AppError::BL {
             msg: format!(
@@ -755,96 +770,6 @@ async fn load_accessible_integration_for_user(
         .ok_or_else(|| AppError::BL {
             msg: "Інтеграцію ГОІ не знайдено або доступ відсутній".to_string(),
         })
-}
-
-async fn download_goi_palettes_archive(
-    ssh_req: CheckOrganismGoiConnectionReq,
-) -> Result<Vec<u8>, AppError> {
-    let remote_zip_path =
-        format!("/tmp/echo-goi-palettes-{}.zip", Uuid::new_v4());
-    let command =
-        build_goi_palettes_archive_command(&ssh_req.path, &remote_zip_path);
-    let create_result = super::goi_run_command(
-        ssh_req.clone(),
-        command,
-        "Не вдалося створити архів палітр ГОІ",
-    )
-    .await;
-    if let Err(err) = create_result {
-        super::goi_delete_file_loose(ssh_req, remote_zip_path).await;
-        return Err(err);
-    }
-
-    let download_result =
-        super::goi_download_file(ssh_req.clone(), remote_zip_path.clone())
-            .await;
-    super::goi_delete_file_loose(ssh_req, remote_zip_path).await;
-
-    download_result.map_err(|err| AppError::BL {
-        msg: format!("Не вдалося завантажити архів палітр ГОІ: {err:#}"),
-    })
-}
-
-fn build_goi_palettes_archive_command(
-    goi_path: &str,
-    remote_zip_path: &str,
-) -> String {
-    let data_dir = goi_remote_data_dir(goi_path);
-    format!(
-        "\
-set -eu; \
-data_dir={data_dir}; \
-palettes_dir_name={palettes_dir_name}; \
-palette_dir=\"$data_dir/$palettes_dir_name\"; \
-archive={archive}; \
-if [ ! -d \"$palette_dir\" ]; then \
-echo \"GOI palettes folder not found: $palette_dir\" >&2; \
-exit 1; \
-fi; \
-rm -f -- \"$archive\"; \
-cd \"$data_dir\"; \
-python3 -m zipfile -c \"$archive\" \"$palettes_dir_name/\"\
-",
-        data_dir = super::goi_ssh::goi_shell_quote_single(&data_dir),
-        palettes_dir_name = super::goi_ssh::goi_shell_quote_single(
-            ORGANISM_GOI_PALETTES_DIR_NAME,
-        ),
-        archive = super::goi_ssh::goi_shell_quote_single(remote_zip_path),
-    )
-}
-
-fn goi_remote_data_dir(goi_path: &str) -> String {
-    let goi_path = normalize_trimmed_or_default(
-        goi_path.to_string(),
-        ORGANISM_GOI_PATH_DEFAULT,
-    );
-    let goi_path = goi_path.trim_end_matches('/');
-    if goi_path.ends_with(&format!("/{ORGANISM_GOI_PALETTES_DIR_NAME}")) {
-        Path::new(goi_path)
-            .parent()
-            .and_then(|parent| parent.to_str())
-            .map(|parent| parent.to_string())
-            .unwrap_or_else(|| goi_path.to_string())
-    } else {
-        goi_path.to_string()
-    }
-}
-
-fn goi_categories_remote_path(goi_path: &str) -> String {
-    goi_join_remote_path(
-        &goi_remote_data_dir(goi_path),
-        ORGANISM_GOI_CATEGORIES_FILE_NAME,
-    )
-}
-
-fn goi_join_remote_path(dir: &str, file_name: &str) -> String {
-    let dir = dir.trim_end_matches('/');
-    let file_name = file_name.trim_start_matches('/');
-    if dir.is_empty() {
-        format!("/{file_name}")
-    } else {
-        format!("{dir}/{file_name}")
-    }
 }
 
 fn make_goi_zip_response(filename: String, archive: Vec<u8>) -> HttpResponse {
@@ -1432,15 +1357,9 @@ fn user_goi_integration_from_item(
     user_id: &str,
     is_admin: bool,
 ) -> GoiUserIntegration {
-    let can_restart =
-        goi_connection_req_from_integration(&item.integration).is_ok();
-    let restart_unavailable_reason =
-        goi_connection_req_from_integration(&item.integration)
-            .err()
-            .and_then(|err| match err {
-                AppError::BL { msg } => Some(msg),
-                _ => None,
-            });
+    let can_restart = goi_integration_has_api_config(&item.integration);
+    let restart_unavailable_reason = (!can_restart)
+        .then(|| "Для інтеграції ГОІ не налаштовано HTTPS API".to_string());
     let pause_worker = goi_integration_worker_paused(&item.integration);
     GoiUserIntegration {
         id: item.integration.id,
@@ -1463,39 +1382,6 @@ fn user_goi_integration_from_item(
     }
 }
 
-fn goi_connection_req_from_integration(
-    integration: &goi_integration::Model,
-) -> Result<CheckOrganismGoiConnectionReq, AppError> {
-    if goi_integration_model_type(integration) != GoiIntegrationType::Full {
-        return Err(AppError::BL {
-            msg: "Для простої інтеграції ГОІ SSH недоступний".to_string(),
-        });
-    }
-    let ssh_host = normalize_optional_trimmed(integration.ssh_host.clone())
-        .ok_or_else(|| AppError::BL {
-            msg: "Для інтеграції ГОІ не налаштовано SSH host".to_string(),
-        })?;
-    let ssh_user = normalize_optional_trimmed(integration.ssh_user.clone())
-        .ok_or_else(|| AppError::BL {
-            msg: "Для інтеграції ГОІ не налаштовано SSH user".to_string(),
-        })?;
-    let req = CheckOrganismGoiConnectionReq {
-        ssh_host,
-        ssh_user,
-        ssh_port: if integration.ssh_port > 0 {
-            integration.ssh_port
-        } else {
-            ORGANISM_GOI_SSH_PORT_DEFAULT
-        },
-        path: normalize_trimmed_or_default(
-            integration.path.clone(),
-            ORGANISM_GOI_PATH_DEFAULT,
-        ),
-    };
-    super::goi_validate_connection_req(&req)?;
-    Ok(req)
-}
-
 fn parse_goi_service(raw: &str) -> Result<GoiService, AppError> {
     match raw.trim() {
         "swapp" => Ok(GoiService::Swapp),
@@ -1508,17 +1394,13 @@ fn parse_goi_service(raw: &str) -> Result<GoiService, AppError> {
     }
 }
 
-impl From<&GoiService> for super::RestartCurrentUserGoiService {
+impl From<&GoiService> for goi_echo_worker::api::GoiService {
     fn from(value: &GoiService) -> Self {
         match value {
-            GoiService::Swapp => super::RestartCurrentUserGoiService::Swapp,
-            GoiService::SwappAlt => {
-                super::RestartCurrentUserGoiService::SwappAlt
-            }
-            GoiService::Goi => super::RestartCurrentUserGoiService::Goi,
-            GoiService::EchoSwapp => {
-                super::RestartCurrentUserGoiService::EchoSwapp
-            }
+            GoiService::Swapp => Self::Swapp,
+            GoiService::SwappAlt => Self::SwappAlt,
+            GoiService::Goi => Self::Goi,
+            GoiService::EchoSwapp => Self::EchoSwapp,
         }
     }
 }
@@ -2283,38 +2165,6 @@ fn goi_integration_type_value(
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn goi_categories_remote_path_uses_configured_palette_parent() {
-        assert_eq!(
-            goi_categories_remote_path("/opt/goi/data/palettes"),
-            "/opt/goi/data/categories.json"
-        );
-    }
-
-    #[test]
-    fn goi_categories_remote_path_accepts_configured_data_dir() {
-        assert_eq!(
-            goi_categories_remote_path("/opt/goi/data"),
-            "/opt/goi/data/categories.json"
-        );
-    }
-
-    #[test]
-    fn goi_palettes_archive_command_uses_configured_data_dir() {
-        let command = build_goi_palettes_archive_command(
-            "/opt/goi/data/palettes",
-            "/tmp/palettes.zip",
-        );
-
-        assert!(command.contains("data_dir='/opt/goi/data'"));
-        assert!(command.contains("palettes_dir_name='palettes'"));
-        assert!(command.contains(
-            "python3 -m zipfile -c \"$archive\" \"$palettes_dir_name/\""
-        ));
-        assert!(!command.contains("zip -"));
-        assert!(!command.contains("/etc/goi/data"));
-    }
 
     #[test]
     fn goi_categories_upload_accepts_json_file() {
