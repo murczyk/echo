@@ -250,32 +250,9 @@ pub async fn bl_zones_datasources_group_update_or_add(
 
     if let Some(group) = m_group {
         let master_key = group.master_key.clone();
-
-        let m_group = group_admin_data::Entity::find()
-            .filter(
-                group_admin_data::Column::GroupMasterKey.eq(master_key.clone()),
-            )
-            .one(txn)
+        update_group_admin_data(txn, &master_key, short_note, long_note)
             .await
             .c(h!())?;
-        let mut group_data = match m_group {
-            Some(group) => group,
-            None => group_admin_data::ActiveModel {
-                group_master_key: Set(Some(master_key.clone())),
-                short_note: Set(short_note.clone()),
-                long_note: Set(long_note.clone()),
-                id: NotSet,
-                created_at: NotSet,
-            }
-            .insert(txn)
-            .await
-            .c(h!())?,
-        }
-        .into_active_model();
-
-        group_data.short_note = Set(short_note);
-        group_data.long_note = Set(long_note);
-        group_data.update(txn).await.c(h!())?;
 
         update_signal_group_access_and_admins(
             user_logins,
@@ -288,6 +265,79 @@ pub async fn bl_zones_datasources_group_update_or_add(
         .await
         .c(h!())?;
     }
+    Ok(())
+}
+
+pub async fn bl_zones_datasources_group_add(
+    user_logins: Vec<String>,
+    organism_ids: Vec<i64>,
+    admin_logins: Vec<String>,
+    is_secret: bool,
+    short_note: Option<String>,
+    long_note: Option<String>,
+    szd: &sigint_zone_datasource::Model,
+    txn: &DatabaseTransaction,
+) -> Result<bool, AppError> {
+    let group = signal_group::Entity::find()
+        .filter(signal_group::Column::Deleted.eq(false))
+        .filter(signal_group::Column::IsArchived.eq(false))
+        .filter(
+            signal_group::Column::MasterKey.eq(szd.group_master_key.clone()),
+        )
+        .one(txn)
+        .await
+        .c(h!())?
+        .c(h!())?;
+    update_group_admin_data(txn, &group.master_key, short_note, long_note)
+        .await
+        .c(h!())?;
+
+    if group.is_secret {
+        return Ok(true);
+    }
+
+    update_signal_group_access_and_admins(
+        user_logins,
+        organism_ids,
+        admin_logins,
+        is_secret,
+        &group.master_key,
+        txn,
+    )
+    .await
+    .c(h!())?;
+    Ok(is_secret)
+}
+
+async fn update_group_admin_data(
+    txn: &DatabaseTransaction,
+    master_key: &str,
+    short_note: Option<String>,
+    long_note: Option<String>,
+) -> Result<(), AppError> {
+    let group_data = group_admin_data::Entity::find()
+        .filter(group_admin_data::Column::GroupMasterKey.eq(master_key))
+        .one(txn)
+        .await
+        .c(h!())?;
+    let mut group_data = match group_data {
+        Some(group_data) => group_data,
+        None => group_admin_data::ActiveModel {
+            group_master_key: Set(Some(master_key.to_string())),
+            short_note: Set(short_note.clone()),
+            long_note: Set(long_note.clone()),
+            id: NotSet,
+            created_at: NotSet,
+        }
+        .insert(txn)
+        .await
+        .c(h!())?,
+    }
+    .into_active_model();
+
+    group_data.short_note = Set(short_note);
+    group_data.long_note = Set(long_note);
+    group_data.update(txn).await.c(h!())?;
     Ok(())
 }
 
