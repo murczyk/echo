@@ -71,13 +71,16 @@ export function useRerNetworkDetailsNeoPageCallsignActions({
 
   const openCallsignDrawerForCreate = useCallback(
     (overrides?: Partial<NetworkCallsignDrawerForm>) => {
-      if (!canManageCallsignActions || !state.network) return;
+      const network = state.network;
+      if (!canManageCallsignActions || !network) return;
+      const networkUnitIds = network.unitIds ?? [];
+      const defaultUnitId = networkUnitIds.length === 1 ? networkUnitIds[0] : null;
       setState((current) => ({
         ...current,
         callsignDrawerOpen: true,
         callsignDrawerMode: 'create',
         callsignDrawerForm: {
-          ...createDefaultNetworkCallsignDrawerForm(state.network?.id ?? 0, null),
+          ...createDefaultNetworkCallsignDrawerForm(network.id, defaultUnitId),
           ...(overrides ?? {}),
         },
         callsignDrawerSaving: false,
