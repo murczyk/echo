@@ -19,6 +19,7 @@ validate_identifier SOURCE_USER "$SOURCE_USER"
 validate_identifier SOURCE_PUBLICATION "$SOURCE_PUBLICATION"
 validate_ipv4_address SOURCE_LISTEN_ADDRESS "$SOURCE_LISTEN_ADDRESS"
 validate_ipv4_address ANALYTICS_ADDRESS "$ANALYTICS_ADDRESS"
+install_default_source_exclusions
 require_analytics_heartbeat_table
 read_local_source_tables
 require_analytics_heartbeat_selected
@@ -110,63 +111,9 @@ SQL
   -v source_user="$SOURCE_USER" \
   -v source_db="$SOURCE_DB"
 
-log "Resetting the dedicated role to the selected table set"
-source_local_psql \
-  -q \
-  -v ON_ERROR_STOP=1 \
-  -v source_user="$SOURCE_USER" <<'SQL'
-SELECT format('GRANT USAGE ON SCHEMA %I TO %I', n.nspname, :'source_user')
-FROM pg_namespace n
-WHERE n.nspname <> 'information_schema' AND n.nspname !~ '^pg_'
-  AND EXISTS (SELECT FROM pg_class c WHERE c.relnamespace = n.oid AND c.relkind IN ('r', 'p'))
-\gexec
-
-SELECT format('REVOKE SELECT ON ALL TABLES IN SCHEMA %I FROM %I', n.nspname, :'source_user')
-FROM pg_namespace n
-WHERE n.nspname <> 'information_schema' AND n.nspname !~ '^pg_'
-  AND EXISTS (SELECT FROM pg_class c WHERE c.relnamespace = n.oid AND c.relkind IN ('r', 'p'))
-\gexec
-SQL
-
-table_list=$(printf '%s, ' "${SOURCE_TABLES[@]}")
-table_list=${table_list%, }
-source_local_psql \
-  -q \
-  -v ON_ERROR_STOP=1 \
-  -v source_user="$SOURCE_USER" \
-  -v table_list="$table_list" <<'SQL'
-SELECT format('GRANT SELECT ON TABLE %s TO %I', :'table_list', :'source_user') \gexec
-SELECT format(
-  'REVOKE ALL PRIVILEGES ON TABLE echo_analytics.heartbeat FROM %I',
-  :'source_user'
-) \gexec
-SELECT format(
-  'GRANT SELECT, UPDATE (nonce, updated_at) ON TABLE echo_analytics.heartbeat TO %I',
-  :'source_user'
-) \gexec
-SQL
-
-log "Reconciling publication $SOURCE_PUBLICATION and full replica identities"
-source_local_psql \
-  -q \
-  -v ON_ERROR_STOP=1 \
-  -v publication="$SOURCE_PUBLICATION" \
-  -v table_list="$table_list" <<'SQL'
-SELECT CASE
-  WHEN EXISTS (SELECT FROM pg_publication WHERE pubname = :'publication')
-    THEN format('ALTER PUBLICATION %I SET TABLE %s', :'publication', :'table_list')
-  ELSE format('CREATE PUBLICATION %I FOR TABLE %s', :'publication', :'table_list')
-END \gexec
-
-SELECT format(
-  'ALTER TABLE %I.%I REPLICA IDENTITY FULL',
-  publication_table.schemaname,
-  publication_table.tablename
-)
-FROM pg_publication_tables publication_table
-WHERE publication_table.pubname = :'publication'
-\gexec
-SQL
+reconcile_source_table_access
+reconcile_source_publication
+reset_excluded_replica_identities
 
 source_local_psql -q -v ON_ERROR_STOP=1 \
   -c "SELECT pg_logical_emit_message(true, 'echo_peerdb_preflight', 'configured')"

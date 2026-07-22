@@ -29,7 +29,10 @@ read_local_source_tables
 require_analytics_heartbeat_selected
 printf 'Selected source tables: %s\n' "${#SOURCE_TABLES[@]}"
 
-tables_without_identity=$(source_local_psql -Atq <<'SQL'
+selected_tables=$(printf '%s,' "${SOURCE_TABLES[@]}")
+selected_tables=${selected_tables%,}
+tables_without_identity=$(source_local_psql -Atq \
+  -v selected_tables="$selected_tables" <<'SQL'
 SELECT format('%I.%I', n.nspname, c.relname)
 FROM pg_class c
 JOIN pg_namespace n ON n.oid = c.relnamespace
@@ -37,6 +40,7 @@ WHERE c.relkind IN ('r', 'p')
   AND n.nspname <> 'information_schema'
   AND n.nspname !~ '^pg_'
   AND c.relreplident <> 'f'
+  AND n.nspname || '.' || c.relname = ANY(string_to_array(:'selected_tables', ','))
   AND NOT EXISTS (
     SELECT FROM pg_index i
     WHERE i.indrelid = c.oid AND i.indisprimary

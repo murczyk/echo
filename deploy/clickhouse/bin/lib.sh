@@ -10,6 +10,7 @@ INSTANCE_FILE=${ECHO_ANALYTICS_INSTANCE_FILE:-$CONFIG_DIR/instance.env}
 CLICKHOUSE_SECRETS_FILE=${ECHO_ANALYTICS_CLICKHOUSE_SECRETS_FILE:-$CONFIG_DIR/clickhouse.env}
 PEERDB_SECRETS_FILE=${ECHO_ANALYTICS_PEERDB_SECRETS_FILE:-$CONFIG_DIR/peerdb.env}
 SOURCE_CONFIG_FILE=${ECHO_PEERDB_SOURCE_CONFIG_FILE:-/etc/echo-peerdb/source.env}
+DEFAULT_SOURCE_TABLE_EXCLUDE_FILE=$BUNDLE_DIR/env/tables-exclude.txt.example
 ANALYTICS_HEARTBEAT_SOURCE_SCHEMA=echo_analytics
 ANALYTICS_HEARTBEAT_SOURCE_TABLE=heartbeat
 ANALYTICS_HEARTBEAT_TARGET_TABLE=echo_analytics__heartbeat
@@ -188,7 +189,9 @@ source_local_psql() {
 }
 
 read_local_source_tables() {
-  read_exclusions "$SOURCE_TABLE_EXCLUDE_FILE"
+  local exclude_file
+  exclude_file=$(effective_source_exclude_file)
+  read_exclusions "$exclude_file"
 
   declare -ga SOURCE_TABLES=()
   declare -gA DISCOVERED_TABLE_LOOKUP=()
@@ -383,7 +386,7 @@ clickhouse_admin_http() {
     die "ClickHouse HTTP query failed"
   fi
   rm -f -- "$config"
-  printf '%s' "$response"
+  [[ -z "$response" ]] || printf '%s\n' "$response"
 }
 
 clickhouse_peerdb() {
@@ -428,6 +431,123 @@ read_exclusions() {
       || die "invalid exclusion in $exclude_file: $table"
     EXCLUDED_TABLE_LOOKUP["$table"]=1
   done < <(read_protected_file "$exclude_file")
+}
+
+effective_source_exclude_file() {
+  if protected_file_exists "$SOURCE_TABLE_EXCLUDE_FILE"; then
+    printf '%s' "$SOURCE_TABLE_EXCLUDE_FILE"
+  else
+    printf '%s' "$DEFAULT_SOURCE_TABLE_EXCLUDE_FILE"
+  fi
+}
+
+install_default_source_exclusions() {
+  protected_file_exists "$SOURCE_TABLE_EXCLUDE_FILE" && return 0
+  require_file "$DEFAULT_SOURCE_TABLE_EXCLUDE_FILE"
+  sudo install -d -o root -g root -m 0755 \
+    "$(dirname "$SOURCE_TABLE_EXCLUDE_FILE")"
+  sudo install -o root -g root -m 0600 \
+    "$DEFAULT_SOURCE_TABLE_EXCLUDE_FILE" "$SOURCE_TABLE_EXCLUDE_FILE"
+  log "Installed the default table exclusions at $SOURCE_TABLE_EXCLUDE_FILE"
+}
+
+source_table_target() {
+  local table=$1 schema relation target
+  [[ "$table" =~ ^[a-z_][a-z0-9_]*\.[a-z_][a-z0-9_]*$ ]] \
+    || die "table requires quoted PeerDB mapping support: $table"
+  schema=${table%%.*}
+  relation=${table##*.}
+  target=$relation
+  [[ "$schema" == public ]] || target="${schema}__${relation}"
+  validate_identifier target "$target"
+  printf '%s' "$target"
+}
+
+selected_source_table_list() {
+  local table_list
+  table_list=$(printf '%s, ' "${SOURCE_TABLES[@]}")
+  printf '%s' "${table_list%, }"
+}
+
+reconcile_source_table_access() {
+  local table_list
+  table_list=$(selected_source_table_list)
+
+  log "Resetting the dedicated role to the selected table set"
+  source_local_psql \
+    -q \
+    -v ON_ERROR_STOP=1 \
+    -v source_user="$SOURCE_USER" \
+    -v table_list="$table_list" <<'SQL'
+SELECT format('GRANT USAGE ON SCHEMA %I TO %I', n.nspname, :'source_user')
+FROM pg_namespace n
+WHERE n.nspname <> 'information_schema' AND n.nspname !~ '^pg_'
+  AND EXISTS (SELECT FROM pg_class c WHERE c.relnamespace = n.oid AND c.relkind IN ('r', 'p'))
+\gexec
+
+SELECT format('REVOKE SELECT ON ALL TABLES IN SCHEMA %I FROM %I', n.nspname, :'source_user')
+FROM pg_namespace n
+WHERE n.nspname <> 'information_schema' AND n.nspname !~ '^pg_'
+  AND EXISTS (SELECT FROM pg_class c WHERE c.relnamespace = n.oid AND c.relkind IN ('r', 'p'))
+\gexec
+
+SELECT format('GRANT SELECT ON TABLE %s TO %I', :'table_list', :'source_user') \gexec
+SELECT format(
+  'REVOKE ALL PRIVILEGES ON TABLE echo_analytics.heartbeat FROM %I',
+  :'source_user'
+) \gexec
+SELECT format(
+  'GRANT SELECT, UPDATE (nonce, updated_at) ON TABLE echo_analytics.heartbeat TO %I',
+  :'source_user'
+) \gexec
+SQL
+}
+
+reconcile_source_publication() {
+  local table_list
+  table_list=$(selected_source_table_list)
+
+  log "Reconciling publication $SOURCE_PUBLICATION and full replica identities"
+  source_local_psql \
+    -q \
+    -v ON_ERROR_STOP=1 \
+    -v publication="$SOURCE_PUBLICATION" \
+    -v table_list="$table_list" <<'SQL'
+SELECT CASE
+  WHEN EXISTS (SELECT FROM pg_publication WHERE pubname = :'publication')
+    THEN format('ALTER PUBLICATION %I SET TABLE %s', :'publication', :'table_list')
+  ELSE format('CREATE PUBLICATION %I FOR TABLE %s', :'publication', :'table_list')
+END \gexec
+
+SELECT format(
+  'ALTER TABLE %I.%I REPLICA IDENTITY FULL',
+  publication_table.schemaname,
+  publication_table.tablename
+)
+FROM pg_publication_tables publication_table
+WHERE publication_table.pubname = :'publication'
+\gexec
+SQL
+}
+
+reset_excluded_replica_identities() {
+  ((${#EXCLUDED_TABLE_LOOKUP[@]} > 0)) || return 0
+  local excluded_csv
+  excluded_csv=$(printf '%s,' "${!EXCLUDED_TABLE_LOOKUP[@]}")
+  excluded_csv=${excluded_csv%,}
+
+  log "Resetting excluded tables that still use REPLICA IDENTITY FULL"
+  source_local_psql \
+    -q \
+    -v ON_ERROR_STOP=1 \
+    -v excluded_csv="$excluded_csv" <<'SQL'
+SELECT format('ALTER TABLE %I.%I REPLICA IDENTITY DEFAULT', n.nspname, c.relname)
+FROM unnest(string_to_array(:'excluded_csv', ',')) excluded(table_name)
+JOIN pg_class c ON c.oid = to_regclass(excluded.table_name)
+JOIN pg_namespace n ON n.oid = c.relnamespace
+WHERE c.relreplident = 'f'
+\gexec
+SQL
 }
 
 read_source_tables() {

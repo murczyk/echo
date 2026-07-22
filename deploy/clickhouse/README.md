@@ -125,8 +125,12 @@ set its ID in `PEERDB_CURRENT_ENC_KEY_ID`.
 The source needs the replication password while it creates/rotates the role.
 Deploy [source.env.example](env/source.env.example) as
 `/etc/echo-peerdb/source.env`, owned by `root`, mode `0600`, and an exclusion
-file as `/etc/echo-peerdb/tables-exclude.txt`. The analytics copy of the same
-password stays in `echo-peerdb-<source-hostname>`.
+file as `/etc/echo-peerdb/tables-exclude.txt`. If the exclusion file is absent,
+`source-configure.sh` installs the shipped
+[default exclusions](env/tables-exclude.txt.example), which omit superseded
+PostgreSQL aggregates, the highly mutable GOI knowledge table, and transient
+worker queues. Customize that file before the first snapshot. The analytics
+copy of the same password stays in `echo-peerdb-<source-hostname>`.
 
 ## Build artifacts
 
@@ -196,7 +200,9 @@ later, but `echo_analytics.heartbeat` is mandatory and cannot be excluded. Both
 source preflight and configuration fail if its migration is missing or the table
 is excluded. The managed HBA rules precede existing rules and explicitly reject
 the replication role from other addresses. It also installs a one-minute
-systemd WAL monitor. Rerun reconciliation after creating a source table.
+systemd WAL monitor. Use the day-two table-selection command below after
+creating a table or changing the exclusion file; rerunning only
+`source-configure.sh` does not update an existing PeerDB mirror mapping.
 
 When a Tailscale address is used in `listen_addresses`, order the PostgreSQL
 unit after `tailscaled.service` on that host and verify the listener after a
@@ -337,9 +343,8 @@ bin/table-status.sh
 Bootstrap creates the dedicated MinIO bucket and a 14-day safety lifecycle,
 enables WAL heartbeat and nullable-column preservation, keeps source JSON/JSONB
 string-backed in ClickHouse, and submits an all-selected-tables initial snapshot.
-The final development rebuild contains 173 replicated tables: 172 application
-tables plus the dedicated `echo_analytics.heartbeat` table, exposed through the
-gateway as `public.echo_analytics__heartbeat`.
+The dedicated `echo_analytics.heartbeat` table is always selected and is exposed
+through the gateway as `public.echo_analytics__heartbeat`.
 Native ClickHouse JSON
 is deliberately disabled because it rejects valid PostgreSQL JSON values such
 as top-level arrays and scalars. Changing this mapping on an established
@@ -475,6 +480,39 @@ bin/refresh-gateway.sh
 bin/resync.sh --yes
 bin/finish-resync.sh
 ```
+
+### The correct day-two table-selection solution
+
+`/etc/echo-peerdb/tables-exclude.txt` on the Echo source is the source of
+truth. After adding or removing entries, run this on that source host from the
+Echo checkout:
+
+```bash
+just analytics-reconcile-tables
+```
+
+The command pauses the existing mirror, reconciles the restricted source role
+and custom PostgreSQL publication, and asks PeerDB to edit its table mappings.
+Newly included tables receive their own initial snapshot; existing selected
+tables are not resnapshotted. Newly excluded tables stop receiving CDC, their
+raw and current ClickHouse objects are dropped, and the gateway compatibility
+views are rebuilt. Source PostgreSQL tables and their data are never dropped.
+After PeerDB confirms the change, excluded tables no longer needed by this
+mirror are returned from `REPLICA IDENTITY FULL` to the PostgreSQL default.
+
+Do not implement a day-two exclusion by editing the file and running only
+`source-configure.sh`, `refresh-current-views.sh`, or `RESYNC MIRROR`. The first
+changes only the custom publication, the refresh scripts do not edit PeerDB's
+mapping, and a resync retains the mirror's existing table settings. The
+coordinated command uses PeerDB's
+[supported paused-mirror edit API](https://docs.peerdb.io/peerdb-api/endpoints/change-mirror-state)
+and then reconciles ClickHouse and the PostgreSQL gateway.
+
+While the mirror is paused or snapshotting a newly included table, its logical
+slot retains WAL. If reconciliation fails, the command deliberately leaves the
+mirror paused instead of resuming a mismatched mapping. Fix the reported error
+and rerun the same command promptly. If the slot becomes `lost`, use the full
+`resync.sh --yes` recovery path instead.
 
 ### Replacing a development source database
 

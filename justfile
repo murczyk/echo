@@ -2167,6 +2167,9 @@ analytics-secrets-deploy source_server analytics_server:
     ssh "{{ analytics_server }}" \
       'cd /opt/echo-analytics/deploy && bin/02-configure-analytics.sh && bin/03-install-services.sh'
 
+analytics-reconcile-tables:
+    deploy/clickhouse/bin/source-reconcile-tables.sh --yes
+
 setup-vault:
     just is_dev='false' app="echo" server={{ server }} vault_server=srv-vault vault_addr='https://srv-vault.golden-banded.ts.net:7300' _setup-vault
 

@@ -155,10 +155,12 @@ flowchart LR
 
 ## Bgworkers
 
-The live server and dedicated bgworker processes both own background tasks.
-Solid arrows show tasks that are always spawned in that process; dotted arrows
-show tasks gated by configuration or used only during startup. Report-history
-workers are separate concurrent tasks, including a second Etalonka worker.
+In a packaged live deployment, the API process owns only request-adjacent
+workers and the optional Vault secret worker. Long-running application, GOI,
+and report workers belong to the dedicated bgworker process. Solid arrows show
+tasks that are always spawned in that process; dotted arrows show tasks gated
+by configuration or used only during startup. Each process also starts its own
+`worker_metrics_logger`.
 
 ```mermaid
 flowchart TB
@@ -166,16 +168,14 @@ flowchart TB
     bg["wdintel-rs-bgworker.service"]
 
     api --> api_workers["Request-adjacent workers<br/>session_activity_worker<br/>messenger_media_cache_cleanup_worker<br/>messenger_media_thumbnail_worker"]
-    api --> api_goi["API integration worker<br/>goi_association_worker"]
-    api --> shared_workers["Workers spawned by both processes<br/>goi_folder_sync_worker<br/>palitra_goi_sync_worker<br/>palitra_conversion_worker<br/>worker_metrics_logger"]
-    bg --> shared_workers
-    api -.-> vault_worker["secret_worker<br/>when Vault is configured"]
-    bg -.-> vault_worker
+    api -.-> api_vault_worker["secret_worker<br/>when Vault is configured"]
+    bg -.-> bg_vault_worker["secret_worker<br/>when Vault is configured"]
 
     bg --> core_workers["Core workers<br/>healthcheck_worker<br/>worker_calculate_group_stats<br/>iggy_integration_worker<br/>aor_assignments_worker<br/>operator_inbox_worker<br/>rer_duty_historical_interceptions_worker<br/>unit_tag_queue_worker"]
     bg --> messenger_workers["Messenger workers<br/>messenger_receive_worker<br/>process_queue_nofail<br/>echo_im_cleanup"]
     bg --> network_workers["Network workers<br/>recent_inbox_network_worker<br/>old_inbox_network_worker<br/>inbox_network_daily_consistency_worker"]
     bg --> palitra_workers["Palitra worker<br/>palitra_highlight_worker"]
+    bg --> goi_workers["GOI workers<br/>goi_sync_worker_0..N<br/>goi_association_message_uid_worker<br/>palitra_conversion_worker"]
 
     bg -.-> configured_workers["Configuration-gated workers<br/>activity_details_worker · GreptimeDB<br/>cleanup_networks_worker<br/>fill_comp_freq_worker<br/>inactive_users_worker<br/>location_v2_worker<br/>suggest_message_tags_worker<br/>refresh_models_worker · AI models<br/>cleanup_tmp_worker · in-memory tmp"]
     bg -.-> startup_workers["Startup task<br/>signal_cli_verbose_logger"]
@@ -185,7 +185,7 @@ flowchart TB
     bg --> report_workers_c["Report-history workers<br/>report_history_worker_kmz<br/>report_history_worker_geojson<br/>report_history_worker_etalonka<br/>report_history_worker_etalonka_1<br/>report_history_worker_goi<br/>report_history_worker_unknown<br/>report_history_timeout_worker"]
 
     classDef optional stroke-dasharray:6 4
-    class vault_worker,configured_workers,startup_workers optional
+    class api_vault_worker,bg_vault_worker,configured_workers,startup_workers optional
 ```
 
 ## GOI integration
@@ -203,9 +203,9 @@ flowchart LR
         api["wdintel-rs.service"]
         bg["wdintel-rs-bgworker.service"]
 
-        association["goi_association_worker<br/>pull associations + knowledge<br/>push signed frequencies"]
-        folder["goi_folder_sync_worker<br/>sync Echo callsigns into GOI knowledge"]
-        palitra_sync["palitra_goi_sync_worker<br/>reconcile · import · upload · move · delete"]
+        routes["GOI API routes<br/>setup · configuration · pause controls"]
+        sync["goi_sync_worker_0..N<br/>associations + knowledge<br/>signed-frequency reports<br/>callsign workbooks<br/>palette reconcile + transfer"]
+        message_uid["goi_association_message_uid_worker<br/>backfill message links when enabled"]
         conversion["palitra_conversion_worker<br/>convert imported palette sources"]
         report["report_history_worker_goi<br/>generate requested GOI reports"]
         echo_im["Echo IM<br/>Signal + WhatsApp bot integration"]
@@ -213,18 +213,15 @@ flowchart LR
         echo_pg[("PostgreSQL 18 · wd<br/>goi_integration · goi_association · goi_knowledge<br/>goi_palitra_sync · source blobs · converted geometry<br/>palitra sync/conversion queues")]
         report_store[("Backblaze B2 / S3<br/>generated GOI reports · optional")]
 
-        api --> association
-        api --> folder
-        api --> palitra_sync
-        api --> conversion
-        bg --> folder
-        bg --> palitra_sync
+        api --> routes
+        bg --> sync
+        bg --> message_uid
         bg --> conversion
         bg --> report
 
-        association --> echo_pg
-        folder --> echo_pg
-        palitra_sync --> echo_pg
+        routes --> echo_pg
+        sync --> echo_pg
+        message_uid --> echo_pg
         conversion --> echo_pg
         report --> echo_pg
         report -.-> report_store
@@ -249,22 +246,22 @@ flowchart LR
         goi_worker -->|write signed frequencies| goi_files
     end
 
-    association <-->|Basic-auth HTTP<br/>associations · knowledge · signed frequencies| goi_worker
-    folder <-->|SSH · knowledge workbook| goi_files
-    palitra_sync <-->|SSH · palette files| goi_files
-    palitra_sync -.->|SSH · remote sync lock| goi_pg
+    sync <-->|Basic-auth HTTP<br/>associations · knowledge · signed frequencies| goi_worker
+    sync <-->|SSH · knowledge workbook + palette files| goi_files
+    sync -.->|SSH · remote sync lock| goi_pg
     goi_app <-->|messenger bot integration| echo_im
 
     style echo_lxc stroke-width:2px
     style goi_lxc stroke-width:2px,stroke-dasharray:8 5
 ```
 
-In the current packaged live deployment, `goi_folder_sync_worker`,
-`palitra_goi_sync_worker`, and `palitra_conversion_worker` are started by both
-Echo processes. Palette queue claims use PostgreSQL row locking and remote
-palette operations use the GOI `sync_lock`; nevertheless, worker ownership
-should be consolidated into `wdintel-rs-bgworker.service` to avoid duplicate
-loops and reconciliation work.
+Fresh `main` consolidates GOI background work in
+`wdintel-rs-bgworker.service`: the `goi_sync_worker_0..N` pool replaces the old
+folder, association, and palette-sync loops, while the message-UID and palette
+conversion workers run beside it. `wdintel-rs.service` exposes GOI request
+routes but does not start GOI background workers in live mode. Debug/test
+server mode can still run the general worker set for local development, with
+the GOI pool disabled.
 
 ## Optional analytics LXC systemd graph
 
