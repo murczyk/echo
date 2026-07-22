@@ -12,6 +12,7 @@ dry_run=false
 dump_file=
 analytics_enabled=false
 analytics_ssh_target=
+table_reconcile_timer_should_start=false
 
 usage() {
   cat <<'EOF'
@@ -109,6 +110,7 @@ load_optional_analytics() {
   source "$CLICKHOUSE_DIR/bin/lib.sh"
   load_source_config
   require_command ssh
+  require_command systemctl
   require_command timeout
   analytics_enabled=true
   analytics_ssh_target=${ANALYTICS_SSH_TARGET:-echo@${ANALYTICS_ADDRESS%/*}}
@@ -118,6 +120,34 @@ load_optional_analytics() {
     || restore_die "invalid ANALYTICS_SSH_TARGET: $analytics_ssh_target"
   restore_log \
     "PeerDB source configuration found; analytics target is $analytics_ssh_target"
+}
+
+resume_table_reconcile_timer() {
+  local status=$?
+  trap - EXIT
+  if $table_reconcile_timer_should_start && ! $dry_run; then
+    sudo systemctl start echo-peerdb-table-reconcile.timer \
+      || restore_log "WARNING: could not restart automatic table reconciliation"
+  fi
+  exit "$status"
+}
+
+pause_table_reconcile_timer() {
+  if ! $analytics_enabled; then
+    return 0
+  fi
+  if $dry_run; then
+    restore_log "Would pause automatic table reconciliation"
+    return 0
+  fi
+
+  if systemctl is-active --quiet echo-peerdb-table-reconcile.timer \
+    || systemctl is-enabled --quiet echo-peerdb-table-reconcile.timer; then
+    table_reconcile_timer_should_start=true
+  fi
+  trap resume_table_reconcile_timer EXIT
+  sudo systemctl stop echo-peerdb-table-reconcile.timer 2>/dev/null || true
+  acquire_source_reconcile_lock
 }
 
 run_remote_analytics_command() {
@@ -217,6 +247,8 @@ reconfigure_analytics_source() {
   fi
   restore_log "Recreating PeerDB source grants and publication"
   "$CLICKHOUSE_DIR/bin/source-configure.sh" --yes
+  table_reconcile_timer_should_start=true
+  sudo systemctl stop echo-peerdb-table-reconcile.timer
 }
 
 start_and_resync_analytics() {
@@ -248,6 +280,7 @@ main() {
   load_optional_analytics
   preflight_analytics
   confirm_restore
+  pause_table_reconcile_timer
   stop_analytics
   wait_for_inactive_logical_slots
   restore_database

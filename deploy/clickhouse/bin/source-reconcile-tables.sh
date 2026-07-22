@@ -8,6 +8,10 @@ source "$SCRIPT_DIR/lib.sh"
 load_source_config
 ensure_yes "${1:-}"
 
+if [[ ${ECHO_PEERDB_RECONCILE_LOCK_HELD:-false} != true ]]; then
+  acquire_source_reconcile_lock
+fi
+
 require_cmd ssh
 require_cmd sudo
 require_cmd timeout
@@ -70,6 +74,7 @@ run_remote_reconcile --yes
 reset_excluded_replica_identities
 source_local_psql -q -v ON_ERROR_STOP=1 \
   -c "SELECT pg_logical_emit_message(true, 'echo_peerdb_table_selection', 'reconciled')"
+record_source_table_selection_fingerprint
 
 reconciliation_complete=true
 log "Source and analytics table selections are reconciled"

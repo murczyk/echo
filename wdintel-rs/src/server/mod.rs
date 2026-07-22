@@ -1075,6 +1075,7 @@ pub async fn main_bgworker(
 ) -> Result<(), AppError> {
     crate::use_bgworker_pg_pool_limits();
     let env = init_runtime_env(mode).await.c(h!())?;
+    crate::migration::request_analytics_table_reconciliation().await;
     let group_stats_dbx = env.dbx.clone();
     let report_history_env = env.clone();
     let mut background_tasks: JoinSet<()> = JoinSet::new();

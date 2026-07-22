@@ -11,6 +11,9 @@ CLICKHOUSE_SECRETS_FILE=${ECHO_ANALYTICS_CLICKHOUSE_SECRETS_FILE:-$CONFIG_DIR/cl
 PEERDB_SECRETS_FILE=${ECHO_ANALYTICS_PEERDB_SECRETS_FILE:-$CONFIG_DIR/peerdb.env}
 SOURCE_CONFIG_FILE=${ECHO_PEERDB_SOURCE_CONFIG_FILE:-/etc/echo-peerdb/source.env}
 SOURCE_TABLE_EXCLUDE_REPO_FILE=$BUNDLE_DIR/env/tables-exclude.txt
+SOURCE_RECONCILE_STATE_DIR=${ECHO_PEERDB_RECONCILE_STATE_DIR:-/var/lib/echo-peerdb}
+SOURCE_RECONCILE_FINGERPRINT_FILE=$SOURCE_RECONCILE_STATE_DIR/table-selection.sha256
+SOURCE_RECONCILE_LOCK_FILE=$SOURCE_RECONCILE_STATE_DIR/table-selection.lock
 ANALYTICS_HEARTBEAT_SOURCE_SCHEMA=echo_analytics
 ANALYTICS_HEARTBEAT_SOURCE_TABLE=heartbeat
 ANALYTICS_HEARTBEAT_TARGET_TABLE=echo_analytics__heartbeat
@@ -221,6 +224,48 @@ SQL
       || die "excluded table does not exist: $excluded"
   done
   ((${#SOURCE_TABLES[@]} > 0)) || die "no source tables selected"
+}
+
+source_table_selection_fingerprint() {
+  require_cmd awk
+  require_cmd sha256sum
+  printf '%s\n' "${SOURCE_TABLES[@]}" | sha256sum | awk '{print $1}'
+}
+
+source_publication_fingerprint() {
+  require_cmd awk
+  require_cmd sha256sum
+  source_local_psql -Atq -v ON_ERROR_STOP=1 \
+    -v publication="$SOURCE_PUBLICATION" <<'SQL' \
+    | sha256sum | awk '{print $1}'
+SELECT schemaname || '.' || tablename
+FROM pg_catalog.pg_publication_tables
+WHERE pubname = :'publication'
+ORDER BY schemaname, tablename;
+SQL
+}
+
+ensure_source_reconcile_state_dir() {
+  [[ -d "$SOURCE_RECONCILE_STATE_DIR" ]] && return 0
+  sudo install -d -o "$(id -un)" -g "$(id -gn)" -m 0750 \
+    "$SOURCE_RECONCILE_STATE_DIR"
+}
+
+acquire_source_reconcile_lock() {
+  require_cmd flock
+  ensure_source_reconcile_state_dir
+  exec 9>"$SOURCE_RECONCILE_LOCK_FILE"
+  flock -n 9 || die "another table-selection reconciliation is already running"
+}
+
+record_source_table_selection_fingerprint() {
+  local fingerprint temporary_file
+  fingerprint=$(source_table_selection_fingerprint)
+  ensure_source_reconcile_state_dir
+  temporary_file=$(mktemp "$SOURCE_RECONCILE_STATE_DIR/.table-selection.XXXXXX")
+  printf '%s\n' "$fingerprint" >"$temporary_file"
+  chmod 0600 "$temporary_file"
+  mv -f -- "$temporary_file" "$SOURCE_RECONCILE_FINGERPRINT_FILE"
 }
 
 require_analytics_heartbeat_table() {

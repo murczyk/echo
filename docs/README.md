@@ -139,6 +139,10 @@ flowchart LR
     bg -.->|activity batches<br/>PostgreSQL protocol| greptime
     wal_timer["echo-peerdb-wal-monitor.timer<br/>with analytics only"] -.-> wal_check["echo-peerdb-wal-monitor.service"]
     wal_check --> postgres
+    bg -.->|post-migration request| table_timer["echo-peerdb-table-reconcile.timer<br/>with analytics only"]
+    table_timer -.-> table_reconcile["echo-peerdb-table-reconcile.service"]
+    table_reconcile --> postgres
+    table_reconcile -.->|SSH · table mapping| analytics["paired analytics LXC"]
 
     postgres --> postgres_data[("wd application tables<br/>users · domain records · reports")]
     postgres --> echo_im_data[("Echo IM tables in wd<br/>echo_account · echo_client · echo_client_config<br/>echo_client_lock · echo_inbox_message<br/>echo_whatsapp_queue + attachments")]
@@ -150,7 +154,7 @@ flowchart LR
     bg -.->|optional durable media upload| s3[("S3-compatible object storage<br/>optional")]
 
     classDef optional stroke-dasharray:6 4
-    class socket,nlp,iggy,promin,signal,whatsapp,vector,signoz,greptime,s3,wal_timer,wal_check optional
+    class socket,nlp,iggy,promin,signal,whatsapp,vector,signoz,greptime,s3,wal_timer,wal_check,table_timer,table_reconcile,analytics optional
 ```
 
 ## Bgworkers

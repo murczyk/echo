@@ -133,6 +133,13 @@ worker queues. The repository file is canonical; deploy it before the first
 snapshot with `just setup-analytics-reconcile-tables`. The analytics copy of
 the same password stays in `echo-peerdb-<source-hostname>`.
 
+The source monitor installer records its invoking Unix account in a systemd
+drop-in. Automatic table reconciliation runs as that account so it can reuse
+the same SSH identity and known-hosts file as manual reconciliation. Run the
+installer from the normal Echo administration account, verify that account can
+reach `ANALYTICS_SSH_TARGET` non-interactively, and override the selection with
+`ECHO_PEERDB_AUTOMATION_USER` only when necessary.
+
 ## Build artifacts
 
 The Debian runtime receives no compiler. Build on
@@ -201,9 +208,13 @@ later, but `echo_analytics.heartbeat` is mandatory and cannot be excluded. Both
 source preflight and configuration fail if its migration is missing or the table
 is excluded. The managed HBA rules precede existing rules and explicitly reject
 the replication role from other addresses. It also installs a one-minute
-systemd WAL monitor. Use the day-two table-selection command below after
-creating a table or changing the exclusion file; rerunning only
-`source-configure.sh` does not update an existing PeerDB mirror mapping.
+systemd WAL monitor and a one-minute table-selection reconciliation timer.
+After a successful migration, `wdintel-rs-bgworker` also requests the same
+reconciliation asynchronously. New non-excluded tables are therefore added to
+the publication and existing PeerDB mirror without blocking Echo startup.
+Changing the exclusion file remains the explicit day-two operation below;
+rerunning only `source-configure.sh` does not update an existing PeerDB mirror
+mapping.
 
 When a Tailscale address is used in `listen_addresses`, order the PostgreSQL
 unit after `tailscaled.service` on that host and verify the listener after a
@@ -475,6 +486,8 @@ bin/stop.sh
 bin/status.sh
 bin/logs.sh echo-peer-flow-worker.service
 systemctl status echo-analytics-health.timer
+systemctl status echo-peerdb-table-reconcile.timer
+journalctl -u echo-peerdb-table-reconcile.service
 bin/table-status.sh
 bin/refresh-current-views.sh
 bin/refresh-gateway.sh
@@ -521,6 +534,22 @@ and rerun the same command promptly. If the slot becomes `lost`, use the full
 whatever file is already installed under `/etc/echo-peerdb` without replacing
 it from the repository.
 
+Table creation does not require that explicit command. The source timer
+compares all current non-excluded PostgreSQL tables with the publication and a
+fingerprint recorded after the last complete reconciliation. A mismatch runs
+the same locked, coordinated operation. The bgworker merely requests the
+oneshot after migrations and never waits for PeerDB or ClickHouse. If the
+analytics container is unavailable, Echo starts normally and analytical
+requests fall back to PostgreSQL; the timer retries every minute. A failed
+reconciliation does not update the fingerprint, so it cannot be mistaken for
+success.
+
+The timer uses the already deployed `/etc/echo-peerdb/tables-exclude.txt` and
+does not copy the repository file during an application deploy. Rerun
+`deploy/clickhouse/bin/install-source-monitor.sh --yes` once on an existing
+source to install this automation. Its invoking account must have passwordless
+sudo and working non-interactive SSH to the paired analytics host.
+
 ### Replacing a development source database
 
 `just copy-db --server <source>` downloads a dump and prints a pasteable block
@@ -539,11 +568,13 @@ For a separately entered command that retains confirmation, use
 `deploy/restore-copied-db.sh` checks for `/etc/echo-peerdb/source.env`. When it
 is absent, it performs a PostgreSQL-only restore and current Echo/echo-im
 migrations. When present, it verifies SSH and every required recovery script
-before confirmation or mutation. It then stops the paired analytics stack and
-waits for its logical slot to become inactive, restores and migrates `wd`,
-reconciles the source role/publication, starts analytics, and requests a clean
-PeerDB resync. It waits for the replacement snapshot, refreshes both view
-layers, and runs the end-to-end replication health check before returning.
+before confirmation or mutation. It then pauses automatic table reconciliation
+under the shared lock, stops the paired analytics stack, and waits for its
+logical slot to become inactive. It restores and migrates `wd`, reconciles the
+source role/publication, starts analytics, requests a clean PeerDB resync, and
+finally re-enables the table timer. It waits for the replacement snapshot,
+refreshes both view layers, and runs the end-to-end replication health check
+before returning.
 Echo continues through PostgreSQL fallback while the command waits. The default
 resync timeout is two hours; override it with `MIRROR_RESYNC_TIMEOUT_SECONDS` in
 the analytics instance configuration. Transient freshness failures are retried
@@ -559,14 +590,12 @@ fails early when the copied server is newer; fetch/update the checkout and run
 the printed command again. Never delete unknown rows from
 `seaql_migrations` to bypass that compatibility check.
 
-After adding/removing an exclusion, rerun source publication reconciliation.
-Changing an established mirror's table mapping requires a reviewed PeerDB
-table-add/remove operation or dropping and recreating the mirror and raw
-tables from the newly rendered mapping. `RESYNC MIRROR` only snapshots the
-existing mapping; it does not add or remove tables. `table-status.sh` reports
-drift and never mutates the mirror. After source DDL, wait for PeerDB schema
-propagation, refresh the current views, refresh the gateway compatibility
-views, and compare results.
+After adding/removing an exclusion, run the explicit setup reconciliation
+above. `RESYNC MIRROR` only snapshots the existing mapping; it does not add or
+remove tables. `table-status.sh` reports drift and never mutates the mirror.
+Added columns continue through PeerDB schema propagation and the analytics
+health timer refreshes stale current and gateway definitions. New tables are
+handled by the source reconciliation timer.
 
 ### Credential rotation
 

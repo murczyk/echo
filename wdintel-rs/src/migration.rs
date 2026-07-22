@@ -1,6 +1,8 @@
 use crate::config::read_config;
 use crate::types::*;
 use sea_orm_migration::MigratorTrait;
+use std::path::Path;
+use tokio::process::Command;
 // use std::env;
 
 pub async fn run_migration(mode: Mode) -> Result<(), AppError> {
@@ -23,4 +25,35 @@ pub async fn run_migration_1(mode: Mode) -> Result<(), AppError> {
         .context(h!())?;
     println!("Running migration: done");
     Ok(())
+}
+
+pub async fn request_analytics_table_reconciliation() {
+    if !Path::new(crate::config::ANALYTICS_SOURCE_CONFIG_PATH).exists() {
+        return;
+    }
+
+    match Command::new("sudo")
+        .args([
+            "-n",
+            "systemctl",
+            "start",
+            "--no-block",
+            crate::config::ANALYTICS_TABLE_RECONCILE_SERVICE,
+        ])
+        .output()
+        .await
+    {
+        Ok(output) if output.status.success() => {
+            debug!("requested analytics table reconciliation");
+        }
+        Ok(output) => {
+            warn!(
+                "could not request analytics table reconciliation: {}",
+                String::from_utf8_lossy(&output.stderr).trim()
+            );
+        }
+        Err(error) => {
+            warn!("could not request analytics table reconciliation: {error}");
+        }
+    }
 }

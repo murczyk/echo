@@ -2,6 +2,11 @@
 
 ## Replicated PostgreSQL migrations
 
+For `CREATE TABLE`, confirm whether the table belongs in
+`deploy/clickhouse/env/tables-exclude.txt`. Non-excluded tables are added to
+PeerDB automatically after migration; exclusion changes remain an explicit
+deployment operation.
+
 Flag `ALTER TABLE ... ADD COLUMN ... DEFAULT ...` on PeerDB-replicated tables.
 PeerDB propagates the column, but it does not populate existing ClickHouse rows
 with the PostgreSQL default. Require an explicit source-row backfill or a full
@@ -14,3 +19,7 @@ or external integrations to update [docs/README.md](docs/README.md). Changes to
 the optional analytics stack must also update
 [deploy/clickhouse/README.md](deploy/clickhouse/README.md) and its operational
 scripts when applicable.
+
+For changes requiring manual deployment actions, verify that `CHANGELOG.md`
+contains clear deployment instructions marked with 👷 (“Потребує мануальних
+дій при деплої”).
