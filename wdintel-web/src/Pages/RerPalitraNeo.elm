@@ -69,7 +69,9 @@ view : Model -> View Msg
 view _ =
     { title = "Палітри"
     , body =
-        [ div [ class "app-shell-fill-height box-border min-h-0 px-6 w-full overflow-hidden" ]
-            [ node "rer-palitra-neo" [] [] ]
+        [ div [ class "app-shell-fill-height box-border min-h-0 px-6 w-full flex flex-col overflow-hidden" ]
+            [ div [ class "flex-1 min-h-0 w-full" ]
+                [ node "rer-palitra-neo" [ class "react-fill-host block w-full h-full" ] [] ]
+            ]
         ]
     }

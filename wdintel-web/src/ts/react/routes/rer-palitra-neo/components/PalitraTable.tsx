@@ -140,7 +140,6 @@ export function PalitraTable({
   const isInitialLoading = loading && visibleRows.length === 0;
   const showTableOverlay = loading;
   const tableRows = isInitialLoading ? buildLoadingRows() : visibleRows;
-  const tableLayout = isInitialLoading ? 'workspace' : 'list';
 
   useEffect(() => {
     if (selectedPalitraIds.length === 0) return;
@@ -244,7 +243,7 @@ export function PalitraTable({
       },
     },
     muiTablePaperProps: ({ table }) => {
-      const paperProps = getDefaultMrtPaperProps({ table, loading, layout: tableLayout });
+      const paperProps = getDefaultMrtPaperProps({ table, loading, layout: 'workspace' });
       return {
         ...paperProps,
         sx: {
@@ -253,8 +252,8 @@ export function PalitraTable({
           width: '100%',
           maxWidth: '100%',
           minWidth: 0,
-          height: isInitialLoading ? '100%' : 'auto',
-          minHeight: isInitialLoading ? '100%' : 0,
+          height: '100%',
+          minHeight: 0,
           ...(isInitialLoading
             ? {
                 backgroundImage: 'none',
@@ -272,7 +271,7 @@ export function PalitraTable({
     muiTableContainerProps: ({ table }) => {
       const containerProps = getDefaultMrtContainerProps({
         loading: showTableOverlay,
-        layout: tableLayout,
+        layout: 'workspace',
         fullScreen: table.getState().isFullScreen,
         hasRows: rows.length > 0,
       });
@@ -280,10 +279,11 @@ export function PalitraTable({
         ...containerProps,
         sx: {
           ...((containerProps as { sx?: object }).sx ?? {}),
-          height: isInitialLoading ? '100%' : 'auto',
-          minHeight: isInitialLoading ? 0 : 'auto',
+          height: '100%',
+          minHeight: 0,
+          maxHeight: '100%',
           overflowX: 'auto',
-          overflowY: isInitialLoading ? 'auto' : 'visible',
+          overflowY: 'auto',
           '& .MuiTableBody-root .MuiTableRow-root:last-of-type > .MuiTableCell-root': {
             borderBottom: '1px solid var(--bs-border-color)',
           },
@@ -341,8 +341,7 @@ export function PalitraTable({
         flexDirection: 'column',
         height: '100%',
         minHeight: 0,
-        overflowY: showTableOverlay ? 'hidden' : 'auto',
-        overflowX: showTableOverlay ? 'hidden' : 'auto',
+        overflow: 'hidden',
       }}
     >
       <MaterialReactTable table={table} />
