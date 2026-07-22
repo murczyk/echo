@@ -222,20 +222,21 @@ pub(in crate::devices::filesystem) async fn resolve_cursor_entry_sort_key(
         .ok_or_else(FilesystemError::invalid_cursor)?;
     let entry = model::map_tree_model(entry)?;
 
-    Ok(entry_sort_key(entry))
+    Ok(entry_sort_key(&entry))
 }
 
-#[allow(dead_code)]
-fn entry_sort_key(entry: TreeEntry) -> EntrySortKey {
+pub(super) fn entry_sort_key(entry: &TreeEntry) -> EntrySortKey {
     match entry {
         TreeEntry::Directory(directory) => EntrySortKey::new(
             FileEntryKind::Directory,
-            directory.name_key,
+            directory.name_key.clone(),
             directory.entry_id,
         ),
-        TreeEntry::File(file) => {
-            EntrySortKey::new(FileEntryKind::File, file.name_key, file.file_id)
-        }
+        TreeEntry::File(file) => EntrySortKey::new(
+            FileEntryKind::File,
+            file.name_key.clone(),
+            file.file_id,
+        ),
     }
 }
 

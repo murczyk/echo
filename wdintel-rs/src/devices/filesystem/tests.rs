@@ -1,7 +1,8 @@
 use super::{
-    ancestor_expr, descendant_expr, query, EntryQueryScope, EntrySortKey,
-    FileCursorCodec, FileEntryKind, FileSearchFilters, FilesystemError,
-    FilesystemRepository, OffsetPageRequest, RawFileSearchFilters,
+    ancestor_expr, descendant_expr, query, Breadcrumb, EntryQueryScope,
+    EntrySortKey, FileCursorCodec, FileEntryKind, FileSearchFilters,
+    FilesystemError, FilesystemRepository, KeysetPageRequest,
+    OffsetPageRequest, PathSyntax, RawFileSearchFilters, TreeEntry,
 };
 use crate::config::read_config;
 use crate::devices::query::list_device_files;
@@ -497,6 +498,43 @@ async fn stage_two_runtime_scopes_filters_ltree_and_cursor_contracts() {
     )
     .await;
     assert_file_move_round_trip(db, &tree, timestamp).await;
+
+    db.execute_unprepared("truncate table public.file_entry")
+        .await
+        .unwrap();
+}
+
+#[tokio::test]
+#[serial_test::serial]
+async fn stage_three_root_listing_browse_and_breadcrumbs() {
+    let config = read_config(Mode::Test).unwrap();
+    run_migrations(&config, Mode::Test).await.unwrap();
+    let file_registry_db = connect_runtime(&config, Mode::Test).await.unwrap();
+    let db = file_registry_db.connection();
+    db.execute_unprepared("truncate table public.file_entry")
+        .await
+        .unwrap();
+
+    let timestamp = NaiveDate::from_ymd_opt(2026, 7, 21)
+        .unwrap()
+        .and_hms_milli_opt(12, 30, 45, 123)
+        .unwrap();
+    let forest = insert_stage_three_forest(db, timestamp).await;
+    let repository = FilesystemRepository::new(&file_registry_db);
+
+    assert_stage_three_root_listing(&repository, &forest).await;
+    let navigation_scope = repository
+        .find_directory_scope(forest.target_device_id, forest.navigation_id)
+        .await
+        .unwrap();
+    let same_scope = repository
+        .find_directory_scope(forest.target_device_id, forest.same_directory_id)
+        .await
+        .unwrap();
+    assert_stage_three_direct_children(&repository, &navigation_scope, &forest)
+        .await;
+    assert_stage_three_invalid_directory_scopes(&repository, &forest).await;
+    assert_stage_three_breadcrumbs(&repository, &same_scope, &forest).await;
 
     db.execute_unprepared("truncate table public.file_entry")
         .await
@@ -1054,5 +1092,474 @@ async fn scoped_entry_ids(
         .unwrap()
         .into_iter()
         .map(|entry| entry.id)
+        .collect()
+}
+
+struct StageThreeForest {
+    empty_device_id: Uuid,
+    single_root_device_id: Uuid,
+    target_device_id: Uuid,
+    other_device_id: Uuid,
+    single_root_id: Uuid,
+    target_posix_root_id: Uuid,
+    target_windows_drive_root_id: Uuid,
+    target_windows_unc_root_id: Uuid,
+    other_root_id: Uuid,
+    navigation_id: Uuid,
+    same_directory_id: Uuid,
+    zeta_directory_id: Uuid,
+    aaa_file_id: Uuid,
+    same_file_ids: [Uuid; 3],
+    nested_file_id: Uuid,
+    sibling_file_id: Uuid,
+    other_file_id: Uuid,
+}
+
+async fn insert_stage_three_forest(
+    db: &DatabaseConnection,
+    timestamp: NaiveDateTime,
+) -> StageThreeForest {
+    let empty_device_id =
+        Uuid::from_u128(0x018f_0000_0000_7000_8000_0000_0000_3000);
+    let single_root_device_id =
+        Uuid::from_u128(0x018f_0000_0000_7000_8000_0000_0000_3100);
+    let target_device_id =
+        Uuid::from_u128(0x018f_0000_0000_7000_8000_0000_0000_3200);
+    let other_device_id =
+        Uuid::from_u128(0x018f_0000_0000_7000_8000_0000_0000_3300);
+    let single_root_id =
+        Uuid::from_u128(0x018f_0000_0000_7000_8000_0000_0000_3400);
+    let target_posix_root_id =
+        Uuid::from_u128(0x018f_0000_0000_7000_8000_0000_0000_3500);
+    let target_windows_drive_root_id =
+        Uuid::from_u128(0x018f_0000_0000_7000_8000_0000_0000_3600);
+    let target_windows_unc_root_id =
+        Uuid::from_u128(0x018f_0000_0000_7000_8000_0000_0000_3700);
+    let other_root_id =
+        Uuid::from_u128(0x018f_0000_0000_7000_8000_0000_0000_3800);
+    let navigation_id =
+        Uuid::from_u128(0x018f_0000_0000_7000_8000_0000_0000_3900);
+    let same_directory_id =
+        Uuid::from_u128(0x018f_0000_0000_7000_8000_0000_0000_3a00);
+    let zeta_directory_id =
+        Uuid::from_u128(0x018f_0000_0000_7000_8000_0000_0000_3b00);
+    let aaa_file_id =
+        Uuid::from_u128(0x018f_0000_0000_7000_8000_0000_0000_3c00);
+    let same_file_ids = [
+        Uuid::from_u128(0x018f_0000_0000_7000_8000_0000_0000_3d00),
+        Uuid::from_u128(0x018f_0000_0000_7000_8000_0000_0000_3e00),
+        Uuid::from_u128(0x018f_0000_0000_7000_8000_0000_0000_3f00),
+    ];
+    let nested_file_id =
+        Uuid::from_u128(0x018f_0000_0000_7000_8000_0000_0000_4000);
+    let sibling_file_id =
+        Uuid::from_u128(0x018f_0000_0000_7000_8000_0000_0000_4100);
+    let other_file_id =
+        Uuid::from_u128(0x018f_0000_0000_7000_8000_0000_0000_4200);
+    let single_root_path = uuid_label(single_root_id);
+    let target_posix_root_path = uuid_label(target_posix_root_id);
+    let navigation_path =
+        format!("{target_posix_root_path}.{}", uuid_label(navigation_id));
+    let same_path =
+        format!("{navigation_path}.{}", uuid_label(same_directory_id));
+    let other_root_path = uuid_label(other_root_id);
+
+    insert_file_entry(
+        db,
+        base_file_entry(
+            single_root_id,
+            single_root_device_id,
+            None,
+            "directory",
+            "/",
+            Some("posix"),
+            None,
+            single_root_path,
+            timestamp,
+        ),
+    )
+    .await;
+    insert_file_entry(
+        db,
+        root_entry(target_posix_root_id, target_device_id, timestamp),
+    )
+    .await;
+    insert_file_entry(
+        db,
+        base_file_entry(
+            target_windows_drive_root_id,
+            target_device_id,
+            None,
+            "directory",
+            "C:\\",
+            Some("windows"),
+            None,
+            uuid_label(target_windows_drive_root_id),
+            timestamp,
+        ),
+    )
+    .await;
+    insert_file_entry(
+        db,
+        base_file_entry(
+            target_windows_unc_root_id,
+            target_device_id,
+            None,
+            "directory",
+            "\\\\server\\share\\",
+            Some("windows"),
+            None,
+            uuid_label(target_windows_unc_root_id),
+            timestamp,
+        ),
+    )
+    .await;
+    insert_file_entry(
+        db,
+        directory_entry(
+            navigation_id,
+            target_device_id,
+            target_posix_root_id,
+            &target_posix_root_path,
+            "navigation",
+            timestamp,
+        ),
+    )
+    .await;
+    insert_file_entry(
+        db,
+        directory_entry(
+            same_directory_id,
+            target_device_id,
+            navigation_id,
+            &navigation_path,
+            "same",
+            timestamp,
+        ),
+    )
+    .await;
+    insert_file_entry(
+        db,
+        directory_entry(
+            zeta_directory_id,
+            target_device_id,
+            navigation_id,
+            &navigation_path,
+            "zeta",
+            timestamp,
+        ),
+    )
+    .await;
+    insert_file_entry(
+        db,
+        file_entry_row(
+            aaa_file_id,
+            target_device_id,
+            navigation_id,
+            &navigation_path,
+            "aaa",
+            "/navigation/aaa",
+            timestamp,
+        ),
+    )
+    .await;
+    for same_file_id in same_file_ids {
+        insert_file_entry(
+            db,
+            file_entry_row(
+                same_file_id,
+                target_device_id,
+                navigation_id,
+                &navigation_path,
+                "same",
+                "/navigation/same",
+                timestamp,
+            ),
+        )
+        .await;
+    }
+    insert_file_entry(
+        db,
+        file_entry_row(
+            nested_file_id,
+            target_device_id,
+            same_directory_id,
+            &same_path,
+            "nested",
+            "/navigation/same/nested",
+            timestamp,
+        ),
+    )
+    .await;
+    insert_file_entry(
+        db,
+        file_entry_row(
+            sibling_file_id,
+            target_device_id,
+            target_posix_root_id,
+            &target_posix_root_path,
+            "sibling",
+            "/sibling",
+            timestamp,
+        ),
+    )
+    .await;
+    insert_file_entry(
+        db,
+        root_entry(other_root_id, other_device_id, timestamp),
+    )
+    .await;
+    insert_file_entry(
+        db,
+        file_entry_row(
+            other_file_id,
+            other_device_id,
+            other_root_id,
+            &other_root_path,
+            "other",
+            "/other",
+            timestamp,
+        ),
+    )
+    .await;
+
+    StageThreeForest {
+        empty_device_id,
+        single_root_device_id,
+        target_device_id,
+        other_device_id,
+        single_root_id,
+        target_posix_root_id,
+        target_windows_drive_root_id,
+        target_windows_unc_root_id,
+        other_root_id,
+        navigation_id,
+        same_directory_id,
+        zeta_directory_id,
+        aaa_file_id,
+        same_file_ids,
+        nested_file_id,
+        sibling_file_id,
+        other_file_id,
+    }
+}
+
+async fn assert_stage_three_root_listing(
+    repository: &FilesystemRepository<'_>,
+    forest: &StageThreeForest,
+) {
+    assert_eq!(
+        repository.list_roots(forest.empty_device_id).await.unwrap(),
+        Vec::new()
+    );
+    assert_eq!(
+        repository
+            .list_roots(forest.single_root_device_id)
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|root| root.entry_id)
+            .collect::<Vec<_>>(),
+        vec![forest.single_root_id]
+    );
+
+    let roots = repository
+        .list_roots(forest.target_device_id)
+        .await
+        .unwrap();
+    assert_eq!(
+        roots
+            .iter()
+            .map(|root| (
+                root.path_syntax,
+                root.name_key.clone(),
+                root.entry_id
+            ))
+            .collect::<Vec<_>>(),
+        vec![
+            (
+                PathSyntax::Posix,
+                b"/".to_vec(),
+                forest.target_posix_root_id,
+            ),
+            (
+                PathSyntax::Windows,
+                b"C:\\".to_vec(),
+                forest.target_windows_drive_root_id,
+            ),
+            (
+                PathSyntax::Windows,
+                b"\\\\server\\share\\".to_vec(),
+                forest.target_windows_unc_root_id,
+            ),
+        ]
+    );
+    assert!(!roots
+        .iter()
+        .any(|root| root.entry_id == forest.other_root_id));
+}
+
+async fn assert_stage_three_direct_children(
+    repository: &FilesystemRepository<'_>,
+    scope: &super::DirectoryScope,
+    forest: &StageThreeForest,
+) {
+    let first_page = repository
+        .list_children(
+            scope,
+            KeysetPageRequest::<EntrySortKey>::try_new(Some(2), None).unwrap(),
+        )
+        .await
+        .unwrap();
+    let first_entry_ids = tree_entry_ids(&first_page.entries);
+    assert_eq!(
+        first_entry_ids,
+        vec![forest.same_directory_id, forest.zeta_directory_id]
+    );
+    let first_after = resolve_browse_after(
+        repository,
+        scope,
+        first_page
+            .next
+            .expect("first page must continue")
+            .entry_id(),
+    )
+    .await;
+
+    let second_page = repository
+        .list_children(
+            scope,
+            KeysetPageRequest::try_new(Some(2), Some(first_after)).unwrap(),
+        )
+        .await
+        .unwrap();
+    let second_entry_ids = tree_entry_ids(&second_page.entries);
+    assert_eq!(
+        second_entry_ids,
+        vec![forest.aaa_file_id, forest.same_file_ids[0]]
+    );
+    let second_after = resolve_browse_after(
+        repository,
+        scope,
+        second_page
+            .next
+            .expect("second page must continue")
+            .entry_id(),
+    )
+    .await;
+
+    let third_page = repository
+        .list_children(
+            scope,
+            KeysetPageRequest::try_new(Some(2), Some(second_after)).unwrap(),
+        )
+        .await
+        .unwrap();
+    let third_entry_ids = tree_entry_ids(&third_page.entries);
+    assert_eq!(
+        third_entry_ids,
+        vec![forest.same_file_ids[1], forest.same_file_ids[2]]
+    );
+    assert!(third_page.next.is_none());
+
+    let entry_ids =
+        [first_entry_ids, second_entry_ids, third_entry_ids].concat();
+    assert_eq!(
+        entry_ids,
+        vec![
+            forest.same_directory_id,
+            forest.zeta_directory_id,
+            forest.aaa_file_id,
+            forest.same_file_ids[0],
+            forest.same_file_ids[1],
+            forest.same_file_ids[2],
+        ]
+    );
+    assert!(!entry_ids.contains(&forest.nested_file_id));
+    assert!(!entry_ids.contains(&forest.sibling_file_id));
+    assert!(!entry_ids.contains(&forest.other_file_id));
+}
+
+async fn resolve_browse_after(
+    repository: &FilesystemRepository<'_>,
+    scope: &super::DirectoryScope,
+    boundary_entry_id: Uuid,
+) -> EntrySortKey {
+    let cursor = FileCursorCodec::encode(boundary_entry_id);
+    let boundary_entry_id = FileCursorCodec::decode(&cursor).unwrap();
+    let query_scope = EntryQueryScope::Browse(scope);
+
+    repository
+        .resolve_cursor_entry_sort_key(boundary_entry_id, &query_scope)
+        .await
+        .unwrap()
+}
+
+async fn assert_stage_three_invalid_directory_scopes(
+    repository: &FilesystemRepository<'_>,
+    forest: &StageThreeForest,
+) {
+    assert!(matches!(
+        repository
+            .find_directory_scope(forest.target_device_id, forest.aaa_file_id)
+            .await,
+        Err(FilesystemError::NotFound)
+    ));
+    assert!(matches!(
+        repository
+            .find_directory_scope(
+                forest.other_device_id,
+                forest.same_directory_id
+            )
+            .await,
+        Err(FilesystemError::NotFound)
+    ));
+}
+
+async fn assert_stage_three_breadcrumbs(
+    repository: &FilesystemRepository<'_>,
+    same_scope: &super::DirectoryScope,
+    forest: &StageThreeForest,
+) {
+    let root_scope = repository
+        .find_directory_scope(
+            forest.target_device_id,
+            forest.target_posix_root_id,
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        repository.list_breadcrumbs(&root_scope).await.unwrap(),
+        vec![Breadcrumb {
+            entry_id: forest.target_posix_root_id,
+            name: "/".to_string(),
+        }]
+    );
+    assert_eq!(
+        repository.list_breadcrumbs(same_scope).await.unwrap(),
+        vec![
+            Breadcrumb {
+                entry_id: forest.target_posix_root_id,
+                name: "/".to_string(),
+            },
+            Breadcrumb {
+                entry_id: forest.navigation_id,
+                name: "navigation".to_string(),
+            },
+            Breadcrumb {
+                entry_id: forest.same_directory_id,
+                name: "same".to_string(),
+            },
+        ]
+    );
+}
+
+fn tree_entry_ids(entries: &[TreeEntry]) -> Vec<Uuid> {
+    entries
+        .iter()
+        .map(|entry| match entry {
+            TreeEntry::Directory(directory) => directory.entry_id,
+            TreeEntry::File(file) => file.file_id,
+        })
         .collect()
 }
