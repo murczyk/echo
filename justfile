@@ -2406,6 +2406,7 @@ transcriber-smoke server:
 [arg('branch', long='branch')]
 deploy-transcriber-stg branch:
     just branch={{ branch }} deploy-stg
+    ssh "echo-staging" 'sudo /usr/bin/wdintel-rs --mode=live migrate'
     just transcriber-smoke --server=echo-staging
 
 export-datasource-to-target:
