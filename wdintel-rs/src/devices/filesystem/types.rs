@@ -437,6 +437,20 @@ impl ParsedSourcePath {
 
 #[allow(dead_code)]
 #[derive(Clone, Debug, PartialEq, Eq)]
+pub(in crate::devices) struct SyncFilesCommand {
+    pub(in crate::devices) device_id: Uuid,
+    pub(in crate::devices) path_syntax: PathSyntax,
+    pub(in crate::devices) files: Vec<SyncFileItemCommand>,
+}
+
+#[allow(dead_code)]
+#[derive(Clone, Debug, PartialEq)]
+pub(in crate::devices) struct SyncFilesResult {
+    pub(in crate::devices) results: Vec<SyncFileItemResult>,
+}
+
+#[allow(dead_code)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub(in crate::devices) struct SyncFileItemCommand {
     pub(in crate::devices) file_id: Option<Uuid>,
     pub(in crate::devices) absolute_path: String,

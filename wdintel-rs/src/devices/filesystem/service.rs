@@ -1,7 +1,10 @@
+use super::sync::sync_files;
+use super::validation::{duplicate_file_ids, validate_sync_batch_size};
 use super::{
     BrowseFilesCommand, BrowseFilesResult, EntryQueryScope, FileCursorCodec,
-    FileSearchFilters, FilesystemError, FilesystemRepository,
-    KeysetPageRequest, RootEntry, SearchFilesCommand, SearchFilesResult,
+    FileSearchFilters, FilesystemError, FilesystemFieldError,
+    FilesystemRepository, KeysetPageRequest, RootEntry, SearchFilesCommand,
+    SearchFilesResult, SyncFilesCommand, SyncFilesResult,
 };
 use crate::devices::access::DeviceActor;
 use crate::devices::main_db::MainDb;
@@ -161,16 +164,54 @@ impl FileMetadataService {
             }),
         })
     }
+    pub(in crate::devices) async fn sync(
+        main_db: MainDb<'_, DatabaseConnection>,
+        file_registry_db: &FileRegistryDb,
+        actor: &DeviceActor,
+        command: SyncFilesCommand,
+    ) -> Result<SyncFilesResult, AppError> {
+        actor.require_source_write()?;
+        validate_sync_batch_size(command.files.len())
+            .map_err(map_sync_error)?;
+        let duplicate_file_ids = duplicate_file_ids(&command.files);
+        let SyncFilesCommand {
+            device_id,
+            path_syntax,
+            files,
+        } = command;
+        let device_id = DeviceVisibility::verify_file_registry_access(
+            main_db,
+            actor,
+            device_id,
+            FileRegistryDeviceAccess::SourceWrite,
+        )
+        .await?;
+
+        let repository = FilesystemRepository::new(file_registry_db);
+        sync_files(
+            &repository,
+            device_id,
+            path_syntax,
+            files,
+            duplicate_file_ids,
+        )
+        .await
+        .map_err(map_sync_error)
+    }
+}
+
+fn validation_form(errors: Vec<FilesystemFieldError>) -> AppError {
+    AppError::Form(
+        errors
+            .into_iter()
+            .map(|error| (error.path, error.message))
+            .collect(),
+    )
 }
 
 fn map_read_error(error: FilesystemError) -> AppError {
     match error {
-        FilesystemError::Validation(errors) => AppError::Form(
-            errors
-                .into_iter()
-                .map(|error| (error.path, error.message))
-                .collect(),
-        ),
+        FilesystemError::Validation(errors) => validation_form(errors),
         FilesystemError::NotFound => AppError::NotFound,
         FilesystemError::Invariant(_) => AppError::BL {
             msg: "device filesystem invariant violated".to_string(),
@@ -181,6 +222,23 @@ fn map_read_error(error: FilesystemError) -> AppError {
         | FilesystemError::CommitUncertain(_)) => AppError::AnyhowError {
             source: anyhow::Error::new(error)
                 .context("failed to read device filesystem"),
+        },
+    }
+}
+
+fn map_sync_error(error: FilesystemError) -> AppError {
+    match error {
+        FilesystemError::Validation(errors) => validation_form(errors),
+        FilesystemError::NotFound => AppError::NotFound,
+        FilesystemError::Invariant(_) => AppError::BL {
+            msg: "device filesystem invariant violated".to_string(),
+        },
+        error @ (FilesystemError::Conflict
+        | FilesystemError::Dependency(_)
+        | FilesystemError::Internal(_)
+        | FilesystemError::CommitUncertain(_)) => AppError::AnyhowError {
+            source: anyhow::Error::new(error)
+                .context("failed to sync device filesystem"),
         },
     }
 }

@@ -1,6 +1,6 @@
 use super::{
     error::{FilesystemError, FilesystemFieldError},
-    types::{FileSearchFilters, RawFileSearchFilters},
+    types::{FileSearchFilters, RawFileSearchFilters, SyncFileItemCommand},
 };
 use crate::config::{
     DEVICE_FILE_ABSOLUTE_PATH_MAX_BYTES, DEVICE_FILE_ABSOLUTE_PATH_MAX_CHARS,
@@ -8,8 +8,10 @@ use crate::config::{
     DEVICE_FILE_PATH_COMPONENT_MAX_CHARS, DEVICE_FILE_PATH_COMPONENT_MAX_COUNT,
     DEVICE_FILE_SEARCH_FILTER_MAX_VALUES,
     DEVICE_FILE_SEARCH_NAME_QUERY_MAX_CHARS,
-    DEVICE_FILE_SEARCH_NAME_QUERY_MIN_CHARS,
+    DEVICE_FILE_SEARCH_NAME_QUERY_MIN_CHARS, DEVICE_FILE_SYNC_BATCH_MAX_COUNT,
 };
+use std::collections::HashSet;
+use uuid::Uuid;
 
 pub(super) fn validate_absolute_path_limits(
     absolute_path: &str,
@@ -74,6 +76,38 @@ pub(super) fn validate_path_component_limits(
     }
 
     Ok(())
+}
+
+pub(super) fn validate_sync_batch_size(
+    item_count: usize,
+) -> Result<(), FilesystemError> {
+    if !(1..=DEVICE_FILE_SYNC_BATCH_MAX_COUNT).contains(&item_count) {
+        return Err(validation_error(
+            "files",
+            format!(
+                "must contain between 1 and {DEVICE_FILE_SYNC_BATCH_MAX_COUNT} items"
+            ),
+        ));
+    }
+
+    Ok(())
+}
+
+pub(super) fn duplicate_file_ids(
+    files: &[SyncFileItemCommand],
+) -> HashSet<Uuid> {
+    let mut seen = HashSet::new();
+    let mut duplicates = HashSet::new();
+
+    for file in files {
+        if let Some(file_id) = file.file_id {
+            if !seen.insert(file_id) {
+                duplicates.insert(file_id);
+            }
+        }
+    }
+
+    duplicates
 }
 
 fn validation_error(field_path: &str, message: String) -> FilesystemError {
@@ -172,6 +206,7 @@ mod tests {
         EntrySortKey, FileEntryKind, KeysetPageRequest,
     };
     use chrono::NaiveDate;
+    use uuid::Uuid;
 
     fn raw_filters() -> RawFileSearchFilters {
         RawFileSearchFilters {
@@ -389,6 +424,56 @@ mod tests {
                     "path components must contain at most {DEVICE_FILE_PATH_COMPONENTS_MAX_CHARS} Unicode scalar values in total"
                 ),
             }]
+        );
+    }
+
+    fn sync_file(file_id: Option<Uuid>) -> SyncFileItemCommand {
+        SyncFileItemCommand {
+            file_id,
+            absolute_path: "/logs/a.log".to_string(),
+            mime_type: None,
+            extension: None,
+            file_metadata_created_at: None,
+            file_metadata_modified_at: None,
+        }
+    }
+
+    #[test]
+    fn sync_batch_size_enforces_configured_boundaries() {
+        for item_count in [1, DEVICE_FILE_SYNC_BATCH_MAX_COUNT] {
+            validate_sync_batch_size(item_count).unwrap();
+        }
+
+        for item_count in [0, DEVICE_FILE_SYNC_BATCH_MAX_COUNT + 1] {
+            assert_eq!(
+                path_validation_errors(validate_sync_batch_size(item_count)),
+                vec![FilesystemFieldError {
+                    path: "files".to_string(),
+                    message: format!(
+                        "must contain between 1 and {DEVICE_FILE_SYNC_BATCH_MAX_COUNT} items"
+                    ),
+                }]
+            );
+        }
+    }
+
+    #[test]
+    fn duplicate_file_ids_mark_only_repeated_supplied_ids() {
+        let first = Uuid::from_u128(1);
+        let second = Uuid::from_u128(2);
+        let files = vec![
+            sync_file(Some(first)),
+            sync_file(None),
+            sync_file(Some(second)),
+            sync_file(Some(first)),
+            sync_file(None),
+            sync_file(Some(second)),
+            sync_file(Some(first)),
+        ];
+
+        assert_eq!(
+            duplicate_file_ids(&files),
+            std::collections::HashSet::from([first, second])
         );
     }
 }

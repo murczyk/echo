@@ -1,10 +1,12 @@
 use super::{
     ancestor_expr, descendant_expr, normalize_file_metadata, query, Breadcrumb,
     BrowseFilesCommand, EntryQueryScope, EntrySortKey, FileCursorCodec,
-    FileEntryKind, FileMetadataService, FileSearchFilters, FilesystemError,
-    FilesystemRepository, KeysetPageRequest, OffsetPageRequest, PathSyntax,
-    PreparedFileMutation, RawFileSearchFilters, SearchEntry,
-    SearchFilesCommand, SourcePathParser, SyncFileOperation, TreeEntry,
+    FileEntry, FileEntryKind, FileMetadataService, FileSearchFilters,
+    FilesystemError, FilesystemRepository, KeysetPageRequest,
+    OffsetPageRequest, PathSyntax, PreparedFileMutation, RawFileSearchFilters,
+    SearchEntry, SearchFilesCommand, SourcePathParser, SyncFileItemCommand,
+    SyncFileItemOutcome, SyncFileItemResult, SyncFileOperation,
+    SyncFileRejectionKind, SyncFilesCommand, TreeEntry,
 };
 use crate::config::{
     read_config, DEVICE_FILE_CURSOR_MAX_BYTES, DEVICE_FILE_PAGE_MAX_LIMIT,
@@ -3488,4 +3490,678 @@ async fn stage_nine_mutation_repository_serializes_concurrent_structure_changes(
     }
 
     assert_ne!(first.file.file_id, second.file.file_id);
+}
+
+fn stage_ten_command(
+    device_id: Uuid,
+    path_syntax: PathSyntax,
+    files: Vec<SyncFileItemCommand>,
+) -> SyncFilesCommand {
+    SyncFilesCommand {
+        device_id,
+        path_syntax,
+        files,
+    }
+}
+
+fn stage_ten_file(
+    file_id: Option<Uuid>,
+    absolute_path: &str,
+) -> SyncFileItemCommand {
+    SyncFileItemCommand {
+        file_id,
+        absolute_path: absolute_path.to_string(),
+        mime_type: None,
+        extension: None,
+        file_metadata_created_at: None,
+        file_metadata_modified_at: None,
+    }
+}
+
+fn stage_ten_accepted_file<'a>(
+    result: &'a SyncFileItemResult,
+    index: usize,
+    operation: SyncFileOperation,
+    root_name: &str,
+    absolute_path: &str,
+    expected_path_components: &[&str],
+) -> &'a FileEntry {
+    assert_eq!(result.index, index);
+    let SyncFileItemOutcome::Accepted {
+        operation: actual_operation,
+        root,
+        file,
+        path_components,
+    } = &result.outcome
+    else {
+        panic!("expected accepted sync result");
+    };
+
+    assert_eq!(*actual_operation, operation);
+    assert_eq!(root.name, root_name);
+    assert_eq!(file.absolute_path, absolute_path);
+    assert_eq!(file.path_syntax, root.path_syntax);
+    assert_eq!(
+        path_components,
+        &expected_path_components
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>()
+    );
+    file
+}
+
+fn assert_stage_ten_rejected(
+    result: &SyncFileItemResult,
+    index: usize,
+    kind: SyncFileRejectionKind,
+    message: &str,
+    retry: bool,
+    expected_field_paths: &[&str],
+) {
+    assert_eq!(result.index, index);
+    let SyncFileItemOutcome::Rejected {
+        kind: actual_kind,
+        message: actual_message,
+        retry: actual_retry,
+        field_errors,
+    } = &result.outcome
+    else {
+        panic!("expected rejected sync result");
+    };
+
+    assert_eq!(*actual_kind, kind);
+    assert_eq!(actual_message, message);
+    assert_eq!(*actual_retry, retry);
+    assert_eq!(
+        field_errors
+            .iter()
+            .map(|error| error.path.as_str())
+            .collect::<Vec<_>>(),
+        expected_field_paths
+    );
+}
+
+async fn stage_ten_registry_snapshot(
+    db: &DatabaseConnection,
+) -> Vec<file_entry::Model> {
+    file_entry::Entity::find()
+        .order_by_asc(file_entry::Column::Id)
+        .all(db)
+        .await
+        .unwrap()
+}
+
+#[tokio::test]
+#[serial_test::serial]
+async fn stage_ten_sync_service_returns_ordered_partial_results() {
+    let (env, _guard) = cleanup_locked().await.unwrap();
+    let timestamp = stage_eight_timestamp();
+    let owner = mk_login(
+        &env.dbx,
+        login::ActiveModel {
+            login: Set(format!("filesystem-stage-ten-{}", Uuid::now_v7())),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let device_id = Uuid::now_v7();
+    insert_device(
+        &env.dbx,
+        device_id,
+        &owner.login,
+        "stage-ten-ordered-results",
+        timestamp,
+    )
+    .await;
+    let actor =
+        DeviceActor::from_roles_for_test(&owner.login, &[ROLE_DEVICE_SOURCE]);
+    let result = FileMetadataService::sync(
+        MainDb::new(&env.dbx),
+        &env.file_registry_db,
+        &actor,
+        stage_ten_command(
+            device_id,
+            PathSyntax::Windows,
+            vec![
+                stage_ten_file(None, r"C:\logs\a.log"),
+                stage_ten_file(None, "relative.log"),
+                stage_ten_file(None, r"\\server\share\dir\b.txt"),
+                stage_ten_file(None, r"C:\logs\a.log"),
+            ],
+        ),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        result
+            .results
+            .iter()
+            .map(|result| result.index)
+            .collect::<Vec<_>>(),
+        vec![0, 1, 2, 3]
+    );
+    let first = stage_ten_accepted_file(
+        &result.results[0],
+        0,
+        SyncFileOperation::Created,
+        "C:\\",
+        r"C:\logs\a.log",
+        &["logs", "a.log"],
+    );
+    assert_eq!(first.path_syntax, PathSyntax::Windows);
+    assert_stage_ten_rejected(
+        &result.results[1],
+        1,
+        SyncFileRejectionKind::Validation,
+        "filesystem validation failed",
+        false,
+        &["files[1].absolute_path"],
+    );
+    let unc = stage_ten_accepted_file(
+        &result.results[2],
+        2,
+        SyncFileOperation::Created,
+        "\\\\server\\share\\",
+        r"\\server\share\dir\b.txt",
+        &["dir", "b.txt"],
+    );
+    assert_eq!(unc.path_syntax, PathSyntax::Windows);
+    let repeated = stage_ten_accepted_file(
+        &result.results[3],
+        3,
+        SyncFileOperation::Created,
+        "C:\\",
+        r"C:\logs\a.log",
+        &["logs", "a.log"],
+    );
+    assert_ne!(first.file_id, repeated.file_id);
+
+    let entries =
+        stage_nine_entries(env.file_registry_db.connection(), device_id).await;
+    assert_eq!(
+        entries
+            .iter()
+            .filter(|entry| entry.kind == FileEntryKind::File.as_db_str())
+            .count(),
+        3
+    );
+    assert_eq!(
+        entries
+            .iter()
+            .filter(|entry| {
+                entry.parent_id.is_none()
+                    && entry.kind == FileEntryKind::Directory.as_db_str()
+            })
+            .count(),
+        2
+    );
+}
+
+#[tokio::test]
+#[serial_test::serial]
+async fn stage_ten_sync_service_rejects_duplicates_and_isolates_item_failures()
+{
+    let (env, _guard) = cleanup_locked().await.unwrap();
+    let timestamp = stage_eight_timestamp();
+    let owner = mk_login(
+        &env.dbx,
+        login::ActiveModel {
+            login: Set(format!("filesystem-stage-ten-{}", Uuid::now_v7())),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let target_device_id = Uuid::now_v7();
+    let other_device_id = Uuid::now_v7();
+    insert_device(
+        &env.dbx,
+        target_device_id,
+        &owner.login,
+        "stage-ten-target",
+        timestamp,
+    )
+    .await;
+    insert_device(
+        &env.dbx,
+        other_device_id,
+        &owner.login,
+        "stage-ten-other",
+        timestamp,
+    )
+    .await;
+    let actor =
+        DeviceActor::from_roles_for_test(&owner.login, &[ROLE_DEVICE_SOURCE]);
+    let repository = FilesystemRepository::new(&env.file_registry_db);
+    let metadata_created_at = timestamp - Duration::hours(2);
+    let metadata_modified_at = timestamp - Duration::hours(1);
+    let duplicate = repository
+        .mutate_file(&stage_nine_mutation(
+            target_device_id,
+            None,
+            PathSyntax::Posix,
+            "/seed/duplicate.log",
+            Some("text/plain"),
+            Some("log"),
+            None,
+            None,
+        ))
+        .await
+        .unwrap();
+    let updated = repository
+        .mutate_file(&stage_nine_mutation(
+            target_device_id,
+            None,
+            PathSyntax::Posix,
+            "/existing/README.txt",
+            Some("text/plain"),
+            Some("txt"),
+            Some(metadata_created_at),
+            Some(metadata_modified_at),
+        ))
+        .await
+        .unwrap();
+    let omitted = repository
+        .mutate_file(&stage_nine_mutation(
+            target_device_id,
+            None,
+            PathSyntax::Posix,
+            "/omitted/keep.log",
+            Some("text/plain"),
+            Some("log"),
+            None,
+            None,
+        ))
+        .await
+        .unwrap();
+    let foreign = repository
+        .mutate_file(&stage_nine_mutation(
+            other_device_id,
+            None,
+            PathSyntax::Posix,
+            "/foreign/private.log",
+            Some("text/plain"),
+            Some("log"),
+            None,
+            None,
+        ))
+        .await
+        .unwrap();
+    let target_before =
+        stage_nine_entries(env.file_registry_db.connection(), target_device_id)
+            .await;
+    let duplicate_before = target_before
+        .iter()
+        .find(|entry| entry.id == duplicate.file.file_id)
+        .unwrap()
+        .clone();
+    let omitted_before = target_before
+        .iter()
+        .find(|entry| entry.id == omitted.file.file_id)
+        .unwrap()
+        .clone();
+    let foreign_before =
+        stage_nine_entries(env.file_registry_db.connection(), other_device_id)
+            .await;
+    let device_updated_at_before = device::Entity::find_by_id(target_device_id)
+        .one(&env.dbx)
+        .await
+        .unwrap()
+        .unwrap()
+        .updated_at;
+
+    tokio::time::sleep(std::time::Duration::from_millis(2)).await;
+    let result = FileMetadataService::sync(
+        MainDb::new(&env.dbx),
+        &env.file_registry_db,
+        &actor,
+        stage_ten_command(
+            target_device_id,
+            PathSyntax::Windows,
+            vec![
+                stage_ten_file(
+                    Some(duplicate.file.file_id),
+                    r"C:\duplicate\ignored.log",
+                ),
+                stage_ten_file(None, r"C:\new\created.txt"),
+                stage_ten_file(
+                    Some(duplicate.file.file_id),
+                    r"C:\duplicate\ignored-again.log",
+                ),
+                stage_ten_file(Some(Uuid::now_v7()), r"C:\unknown\missing.txt"),
+                stage_ten_file(Some(updated.file.file_id), r"D:\moved\README"),
+                stage_ten_file(
+                    Some(foreign.file.file_id),
+                    r"C:\foreign\private.txt",
+                ),
+            ],
+        ),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        result
+            .results
+            .iter()
+            .map(|result| result.index)
+            .collect::<Vec<_>>(),
+        vec![0, 1, 2, 3, 4, 5]
+    );
+    assert_stage_ten_rejected(
+        &result.results[0],
+        0,
+        SyncFileRejectionKind::Validation,
+        "filesystem validation failed",
+        false,
+        &["files[0].file_id"],
+    );
+    let SyncFileItemOutcome::Rejected { field_errors, .. } =
+        &result.results[0].outcome
+    else {
+        panic!("expected duplicate rejection");
+    };
+    assert_eq!(field_errors[0].message, "must be unique within the batch");
+    let created = stage_ten_accepted_file(
+        &result.results[1],
+        1,
+        SyncFileOperation::Created,
+        "C:\\",
+        r"C:\new\created.txt",
+        &["new", "created.txt"],
+    );
+    let created_file_id = created.file_id;
+    assert_stage_ten_rejected(
+        &result.results[2],
+        2,
+        SyncFileRejectionKind::Validation,
+        "filesystem validation failed",
+        false,
+        &["files[2].file_id"],
+    );
+    let SyncFileItemOutcome::Rejected { field_errors, .. } =
+        &result.results[2].outcome
+    else {
+        panic!("expected duplicate rejection");
+    };
+    assert_eq!(field_errors[0].message, "must be unique within the batch");
+    assert_stage_ten_rejected(
+        &result.results[3],
+        3,
+        SyncFileRejectionKind::NotFound,
+        "filesystem entry not found",
+        false,
+        &[],
+    );
+    let moved = stage_ten_accepted_file(
+        &result.results[4],
+        4,
+        SyncFileOperation::Updated,
+        "D:\\",
+        r"D:\moved\README",
+        &["moved", "README"],
+    );
+    assert_eq!(moved.file_id, updated.file.file_id);
+    assert_eq!(moved.created_at, updated.file.created_at);
+    assert!(moved.updated_at > updated.file.updated_at);
+    assert_eq!(moved.mime_type, None);
+    assert_eq!(moved.extension, None);
+    assert_eq!(moved.file_metadata_created_at, None);
+    assert_eq!(moved.file_metadata_modified_at, None);
+    let moved_updated_at = moved.updated_at;
+    assert_stage_ten_rejected(
+        &result.results[5],
+        5,
+        SyncFileRejectionKind::NotFound,
+        "filesystem entry not found",
+        false,
+        &[],
+    );
+
+    let target_after =
+        stage_nine_entries(env.file_registry_db.connection(), target_device_id)
+            .await;
+    assert_eq!(
+        target_after
+            .iter()
+            .find(|entry| entry.id == duplicate.file.file_id)
+            .unwrap(),
+        &duplicate_before
+    );
+    assert_eq!(
+        target_after
+            .iter()
+            .find(|entry| entry.id == omitted.file.file_id)
+            .unwrap(),
+        &omitted_before
+    );
+    assert!(target_after.iter().any(|entry| entry.id == created_file_id));
+    assert!(target_after.iter().any(|entry| {
+        entry.id == updated.file.file_id
+            && entry.absolute_path.as_deref() == Some(r"D:\moved\README")
+    }));
+    assert_eq!(
+        stage_nine_entries(env.file_registry_db.connection(), other_device_id)
+            .await,
+        foreign_before
+    );
+    assert_eq!(
+        device::Entity::find_by_id(target_device_id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap()
+            .updated_at,
+        device_updated_at_before
+    );
+
+    tokio::time::sleep(std::time::Duration::from_millis(2)).await;
+    let repeated = FileMetadataService::sync(
+        MainDb::new(&env.dbx),
+        &env.file_registry_db,
+        &actor,
+        stage_ten_command(
+            target_device_id,
+            PathSyntax::Windows,
+            vec![stage_ten_file(
+                Some(updated.file.file_id),
+                r"D:\moved\README",
+            )],
+        ),
+    )
+    .await
+    .unwrap();
+    let repeated = stage_ten_accepted_file(
+        &repeated.results[0],
+        0,
+        SyncFileOperation::Updated,
+        "D:\\",
+        r"D:\moved\README",
+        &["moved", "README"],
+    );
+    assert_eq!(repeated.file_id, updated.file.file_id);
+    assert_eq!(repeated.created_at, updated.file.created_at);
+    assert!(repeated.updated_at > moved_updated_at);
+}
+
+#[tokio::test]
+#[serial_test::serial]
+async fn stage_ten_sync_service_gates_registry_writes() {
+    let (env, _guard) = cleanup_locked().await.unwrap();
+    let timestamp = stage_eight_timestamp();
+    let owner = mk_login(
+        &env.dbx,
+        login::ActiveModel {
+            login: Set(format!("filesystem-stage-ten-{}", Uuid::now_v7())),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let device_id = Uuid::now_v7();
+    let archived_device_id = Uuid::now_v7();
+    insert_device(
+        &env.dbx,
+        device_id,
+        &owner.login,
+        "stage-ten-active",
+        timestamp,
+    )
+    .await;
+    insert_device(
+        &env.dbx,
+        archived_device_id,
+        &owner.login,
+        "stage-ten-archived",
+        timestamp,
+    )
+    .await;
+    archive_device(&env.dbx, archived_device_id, timestamp).await;
+    let source =
+        DeviceActor::from_roles_for_test(&owner.login, &[ROLE_DEVICE_SOURCE]);
+    let unauthorized = DeviceActor::from_roles_for_test("stage-ten-none", &[]);
+    let outage_db = connect_runtime(&env.config, Mode::Test).await.unwrap();
+    outage_db.connection().clone().close().await.unwrap();
+
+    assert_forbidden(
+        FileMetadataService::sync(
+            MainDb::new(&env.dbx),
+            &outage_db,
+            &unauthorized,
+            stage_ten_command(device_id, PathSyntax::Windows, Vec::new()),
+        )
+        .await
+        .unwrap_err(),
+    );
+    assert_form_error(
+        FileMetadataService::sync(
+            MainDb::new(&env.dbx),
+            &outage_db,
+            &source,
+            stage_ten_command(device_id, PathSyntax::Windows, Vec::new()),
+        )
+        .await
+        .unwrap_err(),
+        "files",
+        "must contain between 1 and 100 items",
+    );
+    assert_form_error(
+        FileMetadataService::sync(
+            MainDb::new(&env.dbx),
+            &outage_db,
+            &source,
+            stage_ten_command(
+                device_id,
+                PathSyntax::Windows,
+                vec![stage_ten_file(None, r"C:\logs\a.log"); 101],
+            ),
+        )
+        .await
+        .unwrap_err(),
+        "files",
+        "must contain between 1 and 100 items",
+    );
+    assert_not_found(
+        FileMetadataService::sync(
+            MainDb::new(&env.dbx),
+            &outage_db,
+            &source,
+            stage_ten_command(
+                Uuid::now_v7(),
+                PathSyntax::Windows,
+                vec![stage_ten_file(None, r"C:\logs\a.log")],
+            ),
+        )
+        .await
+        .unwrap_err(),
+    );
+    assert_form_error(
+        FileMetadataService::sync(
+            MainDb::new(&env.dbx),
+            &outage_db,
+            &source,
+            stage_ten_command(
+                archived_device_id,
+                PathSyntax::Windows,
+                vec![stage_ten_file(None, r"C:\logs\a.log")],
+            ),
+        )
+        .await
+        .unwrap_err(),
+        "device_id",
+        "Архівований пристрій не можна редагувати",
+    );
+
+    let before =
+        stage_ten_registry_snapshot(env.file_registry_db.connection()).await;
+    assert_form_error(
+        FileMetadataService::sync(
+            MainDb::new(&env.dbx),
+            &env.file_registry_db,
+            &source,
+            stage_ten_command(device_id, PathSyntax::Windows, Vec::new()),
+        )
+        .await
+        .unwrap_err(),
+        "files",
+        "must contain between 1 and 100 items",
+    );
+    assert_eq!(
+        stage_ten_registry_snapshot(env.file_registry_db.connection()).await,
+        before
+    );
+}
+
+#[tokio::test]
+#[serial_test::serial]
+async fn stage_ten_sync_service_main_db_outage_short_circuits_registry() {
+    let (env, _guard) = cleanup_locked().await.unwrap();
+    let timestamp = stage_eight_timestamp();
+    let owner = mk_login(
+        &env.dbx,
+        login::ActiveModel {
+            login: Set(format!("filesystem-stage-ten-{}", Uuid::now_v7())),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let device_id = Uuid::now_v7();
+    insert_device(
+        &env.dbx,
+        device_id,
+        &owner.login,
+        "stage-ten-main-outage",
+        timestamp,
+    )
+    .await;
+    let source =
+        DeviceActor::from_roles_for_test(&owner.login, &[ROLE_DEVICE_SOURCE]);
+    let outage_main =
+        crate::new_pg_pool_from_config(&env.config).await.unwrap();
+    outage_main.clone().close().await.unwrap();
+    let before =
+        stage_ten_registry_snapshot(env.file_registry_db.connection()).await;
+
+    let error = FileMetadataService::sync(
+        MainDb::new(&outage_main),
+        &env.file_registry_db,
+        &source,
+        stage_ten_command(
+            device_id,
+            PathSyntax::Windows,
+            vec![stage_ten_file(None, r"C:\logs\a.log")],
+        ),
+    )
+    .await
+    .unwrap_err();
+
+    assert!(matches!(error, AppError::AnyhowError { .. }));
+    assert_eq!(
+        stage_ten_registry_snapshot(env.file_registry_db.connection()).await,
+        before
+    );
 }

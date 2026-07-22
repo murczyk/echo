@@ -8,6 +8,7 @@ mod query;
 mod repository;
 #[allow(dead_code)]
 mod service;
+mod sync;
 
 mod types;
 mod validation;
@@ -36,7 +37,7 @@ pub(in crate::devices) use types::{
     ParsedSourcePath, RawFileSearchFilters, RootEntry, RootSortKey,
     SearchEntry, SearchFilesCommand, SearchFilesResult, SyncFileItemCommand,
     SyncFileItemOutcome, SyncFileItemResult, SyncFileOperation,
-    SyncFileRejectionKind, TreeEntry,
+    SyncFileRejectionKind, SyncFilesCommand, SyncFilesResult, TreeEntry,
 };
 pub(in crate::devices) use types::{
     FileEntry, FileEntryKind, OffsetPage, OffsetPageRequest, PathSyntax,
