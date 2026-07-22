@@ -322,6 +322,7 @@ const INDEX_HTML: &str = r#"<!doctype html>
     let globalPaused = false;
     let currentQrName = null;
     let activeTab = 'integrations';
+    let messengers = [];
     let automations = [];
     let automationAccounts = [];
     let automationGroups = [];
@@ -367,6 +368,7 @@ const INDEX_HTML: &str = r#"<!doctype html>
       list.innerHTML = '<div class="p-4 text-sm text-zinc-400">Завантаження...</div>';
       try {
         const data = await request(appUrl('/ui-api/messengers'));
+        messengers = data;
         if (data.length === 0) {
           list.innerHTML = '<div class="p-4 text-sm text-zinc-400">Месенджерів ще немає.</div>';
           return;
@@ -617,6 +619,11 @@ const INDEX_HTML: &str = r#"<!doctype html>
       updateGlobalPauseButton();
     }
 
+    function messengerDisplayName(name) {
+      const item = messengers.find(messenger => messenger.name === name);
+      return item?.displayName || name;
+    }
+
     function renderRow(item) {
       const row = document.createElement('article');
       row.className = 'grid gap-3 rounded-md border border-zinc-800 bg-zinc-950 p-4';
@@ -624,7 +631,7 @@ const INDEX_HTML: &str = r#"<!doctype html>
         <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div class="min-w-0">
             <div class="flex flex-wrap items-center gap-2">
-              <h3 class="truncate text-base font-medium">${item.name}</h3>
+              <h3 class="truncate text-base font-medium">${item.displayName || item.name}</h3>
               <span class="rounded bg-zinc-800 px-2 py-0.5 text-xs text-zinc-300">${item.kind}</span>
               <span class="${item.isLinked ? 'text-emerald-400' : 'text-amber-400'} text-sm">${item.isLinked ? 'підключено' : 'не підключено'}</span>
               ${item.isPaused ? '<span class="text-sm text-amber-300">синхронізацію зупинено</span>' : ''}
@@ -839,7 +846,7 @@ const INDEX_HTML: &str = r#"<!doctype html>
         await request(appUrl('/ui-api/messengers'), {
           method: 'POST',
           body: JSON.stringify({
-            name: document.getElementById('nameInput').value.trim(),
+            name: document.getElementById('nameInput').value,
             kind: document.getElementById('kindInput').value,
             phone: document.getElementById('phoneInput').value.trim(),
           }),
@@ -1016,12 +1023,12 @@ const INDEX_HTML: &str = r#"<!doctype html>
         setTimeout(() => button.innerHTML = copyIcon(), 1200);
       }
       if (deleteName) {
-        if (!confirm(`Видалити месенджер ${deleteName}?`)) return;
+        if (!confirm(`Видалити месенджер ${messengerDisplayName(deleteName)}?`)) return;
         await request(appUrl(`/ui-api/messengers/${deleteName}`), { method: 'DELETE' });
         await load();
       }
       if (unlinkName) {
-        if (!confirm(`Відключити месенджер ${unlinkName}?`)) return;
+        if (!confirm(`Відключити месенджер ${messengerDisplayName(unlinkName)}?`)) return;
         await request(appUrl(`/ui-api/messengers/${unlinkName}/unlink`), { method: 'POST' });
         await load();
       }

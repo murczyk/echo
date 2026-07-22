@@ -65,6 +65,7 @@ pub struct CreateMessengerReq {
 #[serde(rename_all = "camelCase")]
 pub struct MessengerView {
     pub name: String,
+    pub display_name: String,
     pub kind: MessengerKind,
     pub phone: Option<String>,
     pub is_linked: bool,
@@ -86,9 +87,17 @@ pub struct ChatView {
     pub name: String,
 }
 
-pub async fn ensure_pause_state_storage(db: &DatabaseConnection) -> Result<()> {
+pub async fn ensure_schema(db: &DatabaseConnection) -> Result<()> {
     db.execute_unprepared(
         "
+        alter table echo_client
+            add column if not exists display_name text;
+
+        update echo_client
+        set display_name = regexp_replace(name, '^echo-swapp-', '')
+        where name like 'echo-swapp-%'
+            and display_name is null;
+
         create table if not exists echo_swapp_sync_state (
             key text primary key,
             paused boolean not null default false,
@@ -106,9 +115,11 @@ pub async fn create(
     config: &Config,
     req: CreateMessengerReq,
 ) -> Result<MessengerView> {
-    validate_name(&req.name).c(h!())?;
+    let display_name = req.name.clone();
+    let name = available_public_name(db, &display_name).await.c(h!())?;
+    validate_name(&name).c(h!())?;
     validate_phone(&req.phone).c(h!())?;
-    let client_name = owned_client_name(&req.name);
+    let client_name = owned_client_name(&name);
     ensure_client_available(db, &client_name).await.c(h!())?;
 
     let txn = db.begin().await.c(h!())?;
@@ -135,6 +146,9 @@ pub async fn create(
     .await
     .map_err(|err| anyhow::anyhow!("{err}"))
     .c(h!())?;
+    persist_display_name(&txn, &client_name, &display_name)
+        .await
+        .c(h!())?;
     echo_im::set_account_phone(
         req.phone,
         &client_name,
@@ -154,7 +168,7 @@ pub async fn create(
         .c(h!())?;
     wait_for_signal_client(req.kind, port).await.c(h!())?;
     txn.commit().await.c(h!())?;
-    load(db, &req.name).await.c(h!())
+    load(db, &name).await.c(h!())
 }
 
 pub async fn delete(
@@ -454,9 +468,11 @@ async fn load_optional_owned(
         .unwrap_or_else(|| kind_from_process_name(&config.process_name));
 
     let is_paused = is_client_paused(db, client_name).await.c(h!())?;
+    let display_name = load_display_name(db, client.id, &name).await.c(h!())?;
 
     Ok(Some(MessengerView {
         name,
+        display_name,
         kind,
         phone: account.as_ref().map(|account| account.phone_number.clone()),
         is_paused,
@@ -495,6 +511,93 @@ pub async fn set_paused(
         .await
         .c(h!())?;
     Ok(is_paused)
+}
+
+async fn available_public_name(
+    db: &DatabaseConnection,
+    display_name: &str,
+) -> Result<String> {
+    let name = normalize_public_name(display_name);
+    for suffix in 0..1000 {
+        let name = public_name_with_suffix(&name, suffix);
+        let client_name = owned_client_name(&name);
+        if !client_exists(db, &client_name).await.c(h!())? {
+            return Ok(name);
+        }
+    }
+    bail!("unable to find available messenger name");
+}
+
+fn public_name_with_suffix(name: &str, suffix: usize) -> String {
+    if suffix == 0 {
+        return name.to_string();
+    }
+    let suffix = format!("-{}", suffix + 1);
+    let base_limit = 50usize.saturating_sub(suffix.len());
+    let mut name = trim_engine_name(&name[..name.len().min(base_limit)]);
+    if name.is_empty() {
+        name = "integration".to_string();
+    }
+    format!("{name}{suffix}")
+}
+
+async fn client_exists<C>(db: &C, name: &str) -> Result<bool>
+where
+    C: ConnectionTrait,
+{
+    let existing = echo_client::Entity::find()
+        .filter(echo_client::Column::Name.eq(name))
+        .filter(echo_client::Column::Deleted.eq(false))
+        .one(db)
+        .await
+        .c(h!())?;
+    Ok(existing.is_some())
+}
+
+async fn persist_display_name<C>(
+    db: &C,
+    client_name: &str,
+    display_name: &str,
+) -> Result<()>
+where
+    C: ConnectionTrait,
+{
+    db.execute(Statement::from_sql_and_values(
+        DatabaseBackend::Postgres,
+        "update echo_client set display_name = $1 where name = $2",
+        vec![
+            display_name.to_string().into(),
+            client_name.to_string().into(),
+        ],
+    ))
+    .await
+    .c(h!())?;
+    Ok(())
+}
+
+async fn load_display_name<C>(
+    db: &C,
+    client_id: i32,
+    fallback: &str,
+) -> Result<String>
+where
+    C: ConnectionTrait,
+{
+    let row = db
+        .query_one(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            "
+            select coalesce(nullif(display_name, ''), $2) as display_name
+            from echo_client
+            where id = $1
+            ",
+            vec![client_id.into(), fallback.to_string().into()],
+        ))
+        .await
+        .c(h!())?
+        .context("echo client display name query did not return a row")
+        .c(h!())?;
+    row.try_get("", "display_name").c(h!())
 }
 
 async fn ensure_client_available(
@@ -716,6 +819,87 @@ fn validate_name(name: &str) -> Result<()> {
     Ok(())
 }
 
+fn normalize_public_name(display_name: &str) -> String {
+    let mut name = String::new();
+    let mut last_was_separator = false;
+    for ch in display_name.trim().chars() {
+        if ch.is_ascii_alphanumeric() {
+            name.push(ch.to_ascii_lowercase());
+            last_was_separator = false;
+        } else if ch.is_whitespace() || ch == '-' || ch == '_' {
+            if !name.is_empty() && !last_was_separator {
+                name.push(if ch == '_' { '_' } else { '-' });
+                last_was_separator = true;
+            }
+        } else if let Some(token) = transliterate_cyrillic(ch) {
+            if !token.is_empty() {
+                name.push_str(token);
+                last_was_separator = false;
+            }
+        }
+    }
+    name = trim_engine_name(&name);
+    while name.starts_with(OWNED_CLIENT_PREFIX) {
+        name = trim_engine_name(&name[OWNED_CLIENT_PREFIX.len()..]);
+    }
+    if name.is_empty() {
+        name = "integration".to_string();
+    }
+    if name.len() > 50 {
+        name = trim_engine_name(&name[..50]);
+    }
+    if name.len() < 3 {
+        name = format!("{name}-im");
+    }
+    trim_engine_name(&name)
+}
+
+fn trim_engine_name(name: &str) -> String {
+    name.trim_matches(|ch| ch == '-' || ch == '_').to_string()
+}
+
+fn transliterate_cyrillic(ch: char) -> Option<&'static str> {
+    match ch {
+        'а' | 'А' => Some("a"),
+        'б' | 'Б' => Some("b"),
+        'в' | 'В' => Some("v"),
+        'г' | 'Г' => Some("h"),
+        'ґ' | 'Ґ' => Some("g"),
+        'д' | 'Д' => Some("d"),
+        'е' | 'Е' => Some("e"),
+        'є' | 'Є' => Some("ye"),
+        'ж' | 'Ж' => Some("zh"),
+        'з' | 'З' => Some("z"),
+        'и' | 'И' => Some("y"),
+        'і' | 'І' => Some("i"),
+        'ї' | 'Ї' => Some("yi"),
+        'й' | 'Й' => Some("y"),
+        'к' | 'К' => Some("k"),
+        'л' | 'Л' => Some("l"),
+        'м' | 'М' => Some("m"),
+        'н' | 'Н' => Some("n"),
+        'о' | 'О' => Some("o"),
+        'п' | 'П' => Some("p"),
+        'р' | 'Р' => Some("r"),
+        'с' | 'С' => Some("s"),
+        'т' | 'Т' => Some("t"),
+        'у' | 'У' => Some("u"),
+        'ф' | 'Ф' => Some("f"),
+        'х' | 'Х' => Some("kh"),
+        'ц' | 'Ц' => Some("ts"),
+        'ч' | 'Ч' => Some("ch"),
+        'ш' | 'Ш' => Some("sh"),
+        'щ' | 'Щ' => Some("shch"),
+        'ь' | 'Ь' | 'ъ' | 'Ъ' => Some(""),
+        'ю' | 'Ю' => Some("yu"),
+        'я' | 'Я' => Some("ya"),
+        'ё' | 'Ё' => Some("yo"),
+        'э' | 'Э' => Some("e"),
+        'ы' | 'Ы' => Some("y"),
+        _ => None,
+    }
+}
+
 fn validate_phone(phone: &str) -> Result<()> {
     let re = Regex::new(r"^\+38\d{10}$").c(h!())?;
     if !re.is_match(phone) {
@@ -819,4 +1003,20 @@ fn public_client_name(client_name: &str) -> Option<String> {
     client_name
         .strip_prefix(OWNED_CLIENT_PREFIX)
         .map(ToOwned::to_owned)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn normalizes_display_name_to_engine_name() {
+        assert_eq!(
+            normalize_public_name(" Гої Signal 333 омбр! "),
+            "hoyi-signal-333-ombr"
+        );
+        assert_eq!(normalize_public_name("echo-swapp-Тест"), "test");
+        assert_eq!(normalize_public_name("!!!"), "integration");
+        assert_eq!(normalize_public_name("Я"), "ya-im");
+    }
 }

@@ -447,7 +447,7 @@ pub async fn group_options(
             eg.account_id,
             eg.group_id,
             coalesce(nullif(eg.name, ''), eg.group_id) as name,
-            regexp_replace(ec.name, '^echo-swapp-', '') as messenger_name,
+            coalesce(nullif(ec.display_name, ''), regexp_replace(ec.name, '^echo-swapp-', '')) as messenger_name,
             ea.source::text as messenger_kind
         from echo_group eg
         join echo_account ea on ea.id = eg.account_id
@@ -483,7 +483,7 @@ pub async fn account_options(
         r#"
         select
             ea.id,
-            regexp_replace(ec.name, '^echo-swapp-', '') as name,
+            coalesce(nullif(ec.display_name, ''), regexp_replace(ec.name, '^echo-swapp-', '')) as name,
             ea.source::text as messenger_kind,
             ea.phone_number as phone,
             ea.is_linked
@@ -511,11 +511,198 @@ pub async fn account_options(
 }
 
 pub async fn ensure_schema(db: &DatabaseConnection) -> Result<()> {
+    ensure_automation_columns(db).await.c(h!())?;
+    ensure_automation_polygon_schema(db).await.c(h!())?;
+    ensure_automation_delivery_schema(db).await.c(h!())?;
+    drop_legacy_automation_schema(db).await.c(h!())?;
+    Ok(())
+}
+
+async fn ensure_automation_columns(db: &DatabaseConnection) -> Result<()> {
     db.execute_unprepared(
-        "
+        r#"
         alter table echo_automation
-            drop constraint if exists echo_automation_tokens_chk;
-        ",
+            add column if not exists stale_message_cutoff_minutes integer,
+            add column if not exists resend_attachments boolean,
+            add column if not exists coordinate_presence_mode text,
+            add column if not exists polygon_filter_mode text,
+            add column if not exists polygon_id bigint,
+            add column if not exists is_paused boolean,
+            add column if not exists status text,
+            add column if not exists last_processed_inbox_message_id integer,
+            add column if not exists checkpoint_at timestamp without time zone,
+            add column if not exists created_at timestamp without time zone,
+            add column if not exists updated_at timestamp without time zone;
+
+        update echo_automation
+        set stale_message_cutoff_minutes = coalesce(stale_message_cutoff_minutes, 60),
+            resend_attachments = coalesce(resend_attachments, false),
+            coordinate_presence_mode = coalesce(coordinate_presence_mode, 'any'),
+            polygon_filter_mode = coalesce(polygon_filter_mode, 'none'),
+            is_paused = coalesce(is_paused, false),
+            status = coalesce(status, 'idle'),
+            last_processed_inbox_message_id = coalesce(last_processed_inbox_message_id, 0),
+            checkpoint_at = coalesce(checkpoint_at, last_processed_at, '1970-01-01 00:00:00'),
+            created_at = coalesce(created_at, now() at time zone 'utc'),
+            updated_at = coalesce(updated_at, now() at time zone 'utc');
+
+        alter table echo_automation
+            alter column stale_message_cutoff_minutes set default 60,
+            alter column stale_message_cutoff_minutes set not null,
+            alter column resend_attachments set default false,
+            alter column resend_attachments set not null,
+            alter column coordinate_presence_mode set default 'any',
+            alter column coordinate_presence_mode set not null,
+            alter column polygon_filter_mode set default 'none',
+            alter column polygon_filter_mode set not null,
+            alter column is_paused set default false,
+            alter column is_paused set not null,
+            alter column status set default 'idle',
+            alter column status set not null,
+            alter column last_processed_inbox_message_id set default 0,
+            alter column last_processed_inbox_message_id set not null,
+            alter column checkpoint_at set default '1970-01-01 00:00:00',
+            alter column checkpoint_at set not null,
+            alter column created_at set default (now() at time zone 'utc'),
+            alter column created_at set not null,
+            alter column updated_at set default (now() at time zone 'utc'),
+            alter column updated_at set not null;
+
+        create index if not exists echo_automation_checkpoint_idx
+            on echo_automation (is_paused, source_group_id, checkpoint_at, last_processed_inbox_message_id);
+        "#,
+    )
+    .await
+    .c(h!())?;
+    Ok(())
+}
+
+async fn ensure_automation_polygon_schema(
+    db: &DatabaseConnection,
+) -> Result<()> {
+    db.execute_unprepared(
+        r#"
+        create table if not exists echo_automation_polygon (
+            id bigserial primary key,
+            name text not null default '',
+            coordinates jsonb not null,
+            created_at timestamp without time zone default (now() at time zone 'utc') not null,
+            updated_at timestamp without time zone default (now() at time zone 'utc') not null,
+            constraint echo_automation_polygon_coordinates_chk
+                check (jsonb_array_length(coordinates) >= 3)
+        );
+
+        do $$
+        declare
+            automation record;
+            inserted_polygon_id bigint;
+        begin
+            if exists (
+                select 1
+                from pg_attribute
+                where attrelid = 'echo_automation'::regclass
+                    and attname = 'polygon_coordinates'
+                    and not attisdropped
+            ) then
+                for automation in
+                    execute '
+                        select id, polygon_coordinates
+                        from echo_automation
+                        where polygon_id is null
+                            and polygon_coordinates is not null
+                    '
+                loop
+                    insert into echo_automation_polygon (name, coordinates)
+                    values ('', automation.polygon_coordinates)
+                    returning id into inserted_polygon_id;
+
+                    update echo_automation
+                    set polygon_id = inserted_polygon_id
+                    where id = automation.id;
+                end loop;
+            end if;
+        end $$;
+
+        do $$
+        begin
+            if not exists (
+                select 1
+                from pg_constraint
+                where conrelid = 'echo_automation'::regclass
+                    and conname = 'echo_automation_polygon_fk'
+            ) then
+                alter table echo_automation
+                    add constraint echo_automation_polygon_fk
+                    foreign key (polygon_id)
+                    references echo_automation_polygon(id);
+            end if;
+
+            if not exists (
+                select 1
+                from pg_constraint
+                where conrelid = 'echo_automation'::regclass
+                    and conname = 'echo_automation_polygon_ref_chk'
+            ) then
+                alter table echo_automation
+                    add constraint echo_automation_polygon_ref_chk
+                    check (polygon_filter_mode = 'none' or polygon_id is not null);
+            end if;
+        end $$;
+
+        create index if not exists echo_automation_polygon_idx
+            on echo_automation (polygon_id);
+        "#,
+    )
+    .await
+    .c(h!())?;
+    Ok(())
+}
+
+async fn ensure_automation_delivery_schema(
+    db: &DatabaseConnection,
+) -> Result<()> {
+    db.execute_unprepared(
+        r#"
+        alter table echo_automation_delivery
+            add column if not exists source_internal_id text,
+            add column if not exists source_message_at timestamp without time zone,
+            add column if not exists created_at timestamp without time zone,
+            add column if not exists updated_at timestamp without time zone;
+
+        update echo_automation_delivery
+        set created_at = coalesce(created_at, now() at time zone 'utc'),
+            updated_at = coalesce(updated_at, now() at time zone 'utc');
+
+        alter table echo_automation_delivery
+            alter column created_at set default (now() at time zone 'utc'),
+            alter column created_at set not null,
+            alter column updated_at set default (now() at time zone 'utc'),
+            alter column updated_at set not null;
+
+        drop index if exists echo_automation_delivery_internal_uq;
+
+        create unique index if not exists echo_automation_delivery_sent_internal_uq
+            on echo_automation_delivery (automation_id, source_internal_id)
+            where source_internal_id is not null
+                and status = 'sent';
+
+        create index if not exists echo_automation_delivery_source_at_idx
+            on echo_automation_delivery (automation_id, source_message_at);
+        "#,
+    )
+    .await
+    .c(h!())?;
+    Ok(())
+}
+
+async fn drop_legacy_automation_schema(db: &DatabaseConnection) -> Result<()> {
+    db.execute_unprepared(
+        r#"
+        alter table echo_automation
+            drop constraint if exists echo_automation_tokens_chk,
+            drop constraint if exists echo_automation_polygon_coords_chk,
+            drop column if exists polygon_coordinates;
+        "#,
     )
     .await
     .c(h!())?;
@@ -1752,14 +1939,14 @@ fn list_sql_head() -> &'static str {
         a.id,
         a.name,
         a.source_account_id,
-        regexp_replace(source_client.name, '^echo-swapp-', '') as source_account_name,
+        coalesce(nullif(source_client.display_name, ''), regexp_replace(source_client.name, '^echo-swapp-', '')) as source_account_name,
         source_account.phone_number as source_account_phone,
         source_account.is_linked as source_account_is_linked,
         a.source_group_id,
         coalesce(nullif(source_group.name, ''), source_group.group_id) as source_group_name,
         source_account.source::text as source_messenger_kind,
         a.target_account_id,
-        regexp_replace(target_client.name, '^echo-swapp-', '') as target_account_name,
+        coalesce(nullif(target_client.display_name, ''), regexp_replace(target_client.name, '^echo-swapp-', '')) as target_account_name,
         target_account.phone_number as target_account_phone,
         target_account.is_linked as target_account_is_linked,
         a.target_group_id,
@@ -1885,7 +2072,10 @@ mod tests {
     async fn test_db() -> Result<DatabaseConnection> {
         let url = std::env::var("ECHO_SWAPP_TEST_DATABASE_URL")
             .unwrap_or_else(|_| DEFAULT_TEST_DATABASE_URL.to_string());
-        Database::connect(url).await.c(h!())
+        let db = Database::connect(url).await.c(h!())?;
+        crate::automation::ensure_schema(&db).await.c(h!())?;
+        crate::messenger::ensure_schema(&db).await.c(h!())?;
+        Ok(db)
     }
 
     fn test_namespace() -> String {
@@ -2061,9 +2251,14 @@ mod tests {
                 target_account_id,
                 target_group_id,
                 keyword_tokens,
-                frequency_tokens
+                frequency_tokens,
+                stale_message_cutoff_minutes,
+                resend_attachments,
+                coordinate_presence_mode,
+                polygon_filter_mode,
+                polygon_id
             )
-            values ($1, $2, $3, $4, $5, '["alpha"]'::jsonb, '[]'::jsonb)
+            values ($1, $2, $3, $4, $5, '["alpha"]'::jsonb, '[]'::jsonb, 60, false, 'any', 'none', null)
             returning id
             "#,
             vec![
