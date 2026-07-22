@@ -53,9 +53,7 @@ async fn find_locations_prefix(
     env: actix_web::web::Data<Env>,
     req: Json<FindSettlementReq>,
 ) -> Result<Json<Vec<SettlementDetails>>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
-        .await
-        .c(h!())?;
+    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
     let req = req.into_inner();
     let locations = find_locations_by_prefix(
         env.settlements.clone(),
