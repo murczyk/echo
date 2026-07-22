@@ -25,6 +25,7 @@ async fn main() -> Result<()> {
     let config = config::read_config().c(h!())?;
     let db = db::connect(&config).await.c(h!())?;
     echo_im::run_migration(&db).await.c(h!())?;
+    automation::ensure_schema(&db).await.c(h!())?;
     messenger::ensure_pause_state_storage(&db).await.c(h!())?;
     worker::spawn_workers(db.clone());
     let state = web::Data::new(AppState {
