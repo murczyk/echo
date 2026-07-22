@@ -84,31 +84,7 @@ async fn load_completed_audio_transcriptions(
         return Ok(HashMap::new());
     }
 
-    let transcriptions = echo_gpu_transcription_queue::Entity::find()
-        .filter(
-            echo_gpu_transcription_queue::Column::SourceId
-                .is_in(audio_media_ids),
-        )
-        .filter(
-            echo_gpu_transcription_queue::Column::State
-                .eq(echo_gpu_client::QueueState::Completed.as_str()),
-        )
-        .filter(
-            echo_gpu_transcription_queue::Column::TranscribedValue
-                .is_not_null(),
-        )
-        .all(dbx)
-        .await
-        .c(h!())?;
-
-    Ok(transcriptions
-        .into_iter()
-        .filter_map(|transcription| {
-            transcription
-                .transcribed_value
-                .map(|text| (transcription.source_id, text))
-        })
-        .collect())
+    crate::transcriber::completed_transcriptions(dbx, &audio_media_ids).await
 }
 
 pub async fn get_inbox_map_items(

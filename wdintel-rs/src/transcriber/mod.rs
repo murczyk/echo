@@ -3,18 +3,21 @@ pub mod media_queue;
 pub mod types;
 pub mod worker;
 
-use crate::entities::{signal_message, signal_message_media};
+use crate::entities::{
+    echo_gpu_transcription_queue, signal_message, signal_message_media,
+};
 use crate::error::AppError;
 use crate::h;
 use crate::transcriber::types::*;
-use crate::types::{Env, ShortContext};
+use crate::types::{Env, ShortContext, Uuid};
 use actix_identity::Identity;
 use actix_web::{post, web::Json};
 use anyhow::Context;
 use sea_orm::{
-    ColumnTrait, EntityTrait, QueryFilter, QuerySelect, RelationTrait,
-    TransactionTrait,
+    ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter, QuerySelect,
+    RelationTrait, TransactionTrait,
 };
+use std::collections::HashMap;
 use tokio::process::Command;
 
 #[async_trait::async_trait]
@@ -86,6 +89,41 @@ async fn ensure_admin_enabled(
         .await
         .c(h!())?;
     Ok(())
+}
+
+pub async fn completed_transcriptions<C>(
+    dbx: &C,
+    source_ids: &[Uuid],
+) -> Result<HashMap<Uuid, String>, AppError>
+where
+    C: ConnectionTrait,
+{
+    if source_ids.is_empty() {
+        return Ok(HashMap::new());
+    }
+    Ok(echo_gpu_transcription_queue::Entity::find()
+        .filter(
+            echo_gpu_transcription_queue::Column::SourceId
+                .is_in(source_ids.iter().copied()),
+        )
+        .filter(
+            echo_gpu_transcription_queue::Column::State
+                .eq(echo_gpu_client::QueueState::Completed.as_str()),
+        )
+        .filter(
+            echo_gpu_transcription_queue::Column::TranscribedValue
+                .is_not_null(),
+        )
+        .all(dbx)
+        .await
+        .c(h!())?
+        .into_iter()
+        .filter_map(|transcription| {
+            transcription
+                .transcribed_value
+                .map(|text| (transcription.source_id, text))
+        })
+        .collect())
 }
 
 #[post("/api/admin/transcriber/instances/list")]
@@ -249,31 +287,30 @@ pub async fn message_transcriptions(
         .all(&env.dbx)
         .await
         .c(h!())?;
-    let mut transcriptions = Vec::new();
-    for media in media {
-        let Some(item) = echo_gpu_client::lookup(&env.dbx, media.id)
-            .await
-            .context(h!())?
-        else {
-            continue;
-        };
-        if item.state().context(h!())? != echo_gpu_client::QueueState::Completed
-        {
-            continue;
-        }
-        if let Some(text) = item.0.transcribed_value {
-            transcriptions.push(MessageTranscriptionRsp {
-                media_id: media.id,
-                text,
-            });
-        }
-    }
+    let transcriptions_by_media = completed_transcriptions(
+        &env.dbx,
+        &media.iter().map(|media| media.id).collect::<Vec<_>>(),
+    )
+    .await
+    .c(h!())?;
+    let transcriptions = media
+        .into_iter()
+        .filter_map(|media| {
+            transcriptions_by_media.get(&media.id).map(|text| {
+                MessageTranscriptionRsp {
+                    media_id: media.id,
+                    text: text.clone(),
+                }
+            })
+        })
+        .collect();
     Ok(Json(transcriptions))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use sea_orm::{ActiveModelTrait, ActiveValue::Set};
 
     struct FailedRestarter;
 
@@ -315,6 +352,47 @@ mod tests {
         assert_eq!(
             error.as_deref(),
             Some("failed to reload GPU instances: database unavailable")
+        );
+    }
+
+    #[tokio::test]
+    async fn completed_transcriptions_omit_pending_and_empty_results() {
+        let (env, _guard) =
+            crate::functest::tests::cleanup_locked().await.unwrap();
+        let completed_id = Uuid::now_v7();
+        let pending_id = Uuid::now_v7();
+        let empty_id = Uuid::now_v7();
+        for (source_id, state, transcribed_value) in [
+            (
+                completed_id,
+                echo_gpu_client::QueueState::Completed,
+                Some("recognized speech"),
+            ),
+            (pending_id, echo_gpu_client::QueueState::Queued, None),
+            (empty_id, echo_gpu_client::QueueState::Completed, None),
+        ] {
+            echo_gpu_transcription_queue::ActiveModel {
+                source_id: Set(source_id),
+                state: Set(state.as_str().to_string()),
+                transcribed_value: Set(transcribed_value.map(str::to_string)),
+                ..Default::default()
+            }
+            .insert(&env.dbx)
+            .await
+            .unwrap();
+        }
+
+        let transcriptions = completed_transcriptions(
+            &env.dbx,
+            &[completed_id, pending_id, empty_id],
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(transcriptions.len(), 1);
+        assert_eq!(
+            transcriptions.get(&completed_id).map(String::as_str),
+            Some("recognized speech")
         );
     }
 }

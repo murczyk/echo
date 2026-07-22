@@ -200,7 +200,7 @@ test-be:
 test: test-fe test-be
 
 test-transcriber:
-    cargo test -p wdintel-rs transcriber -- --nocapture
+    cargo test -p wdintel-rs transcri -- --nocapture
     cd wdintel-web && npm run test:ts -- src/ts/react/routes/admin-system-settings-neo src/ts/react/services/api
 
 verify-transcriber:

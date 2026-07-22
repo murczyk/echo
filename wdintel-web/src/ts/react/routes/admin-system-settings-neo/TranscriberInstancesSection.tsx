@@ -29,6 +29,9 @@ import {
   updateTranscriberInstance,
 } from '../../services/api/transcriber';
 
+const GPU_INSTANCE_TEXT_MAX_CHARS = 255;
+const POSTGRES_INTEGER_MAX = 2_147_483_647;
+
 function emptyInputForInstances(instances: TranscriberInstance[]): TranscriberInstanceInput {
   return {
     name: '',
@@ -46,8 +49,18 @@ function errorMessage(error: unknown): string {
 function validate(input: TranscriberInstanceInput): string | null {
   if (!input.name.trim()) return 'Вкажіть назву інстансу.';
   if (!input.host.trim()) return 'Вкажіть хост інстансу.';
-  if (!Number.isInteger(input.ordering) || input.ordering < 1) {
-    return 'Порядок має бути цілим числом від 1.';
+  if (
+    [...input.name].length > GPU_INSTANCE_TEXT_MAX_CHARS ||
+    [...input.host].length > GPU_INSTANCE_TEXT_MAX_CHARS
+  ) {
+    return `Назва та хост мають містити не більше ${GPU_INSTANCE_TEXT_MAX_CHARS} символів.`;
+  }
+  if (
+    !Number.isInteger(input.ordering) ||
+    input.ordering < 1 ||
+    input.ordering > POSTGRES_INTEGER_MAX
+  ) {
+    return `Порядок має бути цілим числом від 1 до ${POSTGRES_INTEGER_MAX}.`;
   }
   if (
     ![input.rs_port, input.py_port].every(
@@ -69,8 +82,18 @@ function healthText(health: TranscriberInstanceHealth['rust']): string {
 
 type PendingMutation = {
   title: string;
+  instanceId?: string;
   run: () => Promise<TranscriberMutationResult>;
 };
+
+function sortInstances(instances: TranscriberInstance[]): TranscriberInstance[] {
+  return [...instances].sort(
+    (left, right) =>
+      left.ordering - right.ordering ||
+      left.created_at - right.created_at ||
+      left.id.localeCompare(right.id),
+  );
+}
 
 export function TranscriberInstancesSection() {
   const [instances, setInstances] = useState<TranscriberInstance[]>([]);
@@ -89,6 +112,7 @@ export function TranscriberInstancesSection() {
     try {
       const nextInstances = await listTranscriberInstances();
       setInstances(nextInstances);
+      setHealth({});
       return nextInstances;
     } catch (nextError) {
       setError(`Помилка завантаження GPU інстансів: ${errorMessage(nextError)}`);
@@ -115,11 +139,13 @@ export function TranscriberInstancesSection() {
       setError(validationError);
       return;
     }
+    const instanceId = editingId ?? undefined;
     setPendingMutation({
       title: editingId ? 'Зберегти зміни GPU інстансу?' : 'Створити GPU інстанс?',
+      instanceId,
       run: () =>
-        editingId
-          ? updateTranscriberInstance(editingId, normalized)
+        instanceId
+          ? updateTranscriberInstance(instanceId, normalized)
           : createTranscriberInstance(normalized),
     });
   }
@@ -144,10 +170,26 @@ export function TranscriberInstancesSection() {
         });
       }
       setEditingId(null);
+      const affectedInstanceId = result.instance?.id ?? mutation.instanceId;
+      const knownInstances = sortInstances(
+        result.instance
+          ? [
+              ...instances.filter((instance) => instance.id !== result.instance?.id),
+              result.instance,
+            ]
+          : result.deleted && mutation.instanceId
+            ? instances.filter((instance) => instance.id !== mutation.instanceId)
+            : instances,
+      );
+      setInstances(knownInstances);
+      if (affectedInstanceId) {
+        setHealth((current) => {
+          const next = { ...current };
+          delete next[affectedInstanceId];
+          return next;
+        });
+      }
       const nextInstances = await refresh();
-      const knownInstances = result.instance
-        ? [...instances.filter((instance) => instance.id !== result.instance?.id), result.instance]
-        : instances;
       setInput(emptyInputForInstances(nextInstances ?? knownInstances));
     } catch (nextError) {
       setError(`Помилка зміни GPU інстансу: ${errorMessage(nextError)}`);
@@ -159,6 +201,11 @@ export function TranscriberInstancesSection() {
   async function check(instance: TranscriberInstance) {
     setLoading(true);
     setError(null);
+    setHealth((current) => {
+      const next = { ...current };
+      delete next[instance.id];
+      return next;
+    });
     try {
       const result = await checkTranscriberInstance(instance.id);
       setHealth((current) => ({ ...current, [instance.id]: result }));
@@ -208,6 +255,7 @@ export function TranscriberInstancesSection() {
           label="Порядок"
           type="number"
           value={input.ordering}
+          slotProps={{ htmlInput: { min: 1, max: POSTGRES_INTEGER_MAX } }}
           onChange={(event) =>
             setInput((value) => ({ ...value, ordering: Number(event.target.value) }))
           }
@@ -254,6 +302,7 @@ export function TranscriberInstancesSection() {
                           title: is_active
                             ? 'Активувати GPU інстанс?'
                             : 'Деактивувати GPU інстанс?',
+                          instanceId: instance.id,
                           run: () => updateTranscriberInstance(instance.id, { is_active }),
                         })
                       }
@@ -292,6 +341,7 @@ export function TranscriberInstancesSection() {
                     onClick={() =>
                       setPendingMutation({
                         title: 'Видалити GPU інстанс?',
+                        instanceId: instance.id,
                         run: () => deleteTranscriberInstance(instance.id),
                       })
                     }

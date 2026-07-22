@@ -123,6 +123,26 @@ describe('TranscriberInstancesSection', () => {
     await act(async () => root.unmount());
   });
 
+  it('rejects values outside backend text and ordering limits', async () => {
+    const { container, root } = await renderSection();
+    const inputs = container.querySelectorAll<HTMLInputElement>('input');
+    await act(async () => {
+      setInput(inputs[0], 'я'.repeat(256));
+      setInput(inputs[1], 'gpu-1.local');
+    });
+    await act(async () => button('додати інстанс')?.click());
+    expect(container.textContent).toContain('не більше 255 символів');
+
+    await act(async () => {
+      setInput(inputs[0], 'GPU 1');
+      setInput(inputs[4], '2147483648');
+    });
+    await act(async () => button('додати інстанс')?.click());
+    expect(container.textContent).toContain('2147483647');
+    expect(mocks.create).not.toHaveBeenCalled();
+    await act(async () => root.unmount());
+  });
+
   it('checks both services without mutation confirmation', async () => {
     mocks.list.mockResolvedValue([instance]);
     mocks.check.mockResolvedValue({
@@ -135,6 +155,26 @@ describe('TranscriberInstancesSection', () => {
     expect(mocks.check).toHaveBeenCalledWith(instance.id);
     expect(document.body.textContent).not.toContain('wdintel-rs-bgworker');
     expect(container.textContent).toContain('Rust: доступний; Python: недоступний');
+    await act(async () => root.unmount());
+  });
+
+  it('clears stale health when a repeated check fails', async () => {
+    mocks.list.mockResolvedValue([instance]);
+    mocks.check
+      .mockResolvedValueOnce({
+        rust: { ok: true, status: 200, error: null },
+        python: { ok: true, status: 200, error: null },
+      })
+      .mockRejectedValueOnce(new Error('probe failed'));
+    const { container, root } = await renderSection();
+    await act(async () => button('перевірити')?.click());
+    await act(async () => Promise.resolve());
+    expect(container.textContent).toContain('Rust: доступний');
+
+    await act(async () => button('перевірити')?.click());
+    await act(async () => Promise.resolve());
+    expect(container.textContent).not.toContain('Rust: доступний');
+    expect(container.textContent).toContain('probe failed');
     await act(async () => root.unmount());
   });
 
@@ -188,6 +228,25 @@ describe('TranscriberInstancesSection', () => {
     await confirmMutation();
     expect(mocks.remove).toHaveBeenCalledWith(instance.id);
     await act(async () => second.root.unmount());
+  });
+
+  it('keeps a successful deletion when the follow-up refresh fails', async () => {
+    mocks.list.mockResolvedValueOnce([instance]).mockRejectedValueOnce(new Error('refresh failed'));
+    mocks.remove.mockResolvedValue({
+      instance: null,
+      deleted: true,
+      restart_status: 'requested',
+      restart_error: null,
+    });
+    const { container, root } = await renderSection();
+    expect(container.textContent).toContain(instance.name);
+
+    await act(async () => button('видалити')?.click());
+    await confirmMutation();
+
+    expect(container.textContent).not.toContain(instance.name);
+    expect(container.textContent).toContain('refresh failed');
+    await act(async () => root.unmount());
   });
 
   it('disables mutation controls while a request is in flight', async () => {
