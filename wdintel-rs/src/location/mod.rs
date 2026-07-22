@@ -1,3 +1,4 @@
+use crate::config::SETTLEMENT_PREFIX_SEARCH_LIMIT;
 use crate::location::trie::Trie;
 use crate::location::types::Language;
 pub use crate::location::types::SettlementsDataConfig;
@@ -45,6 +46,42 @@ async fn find_locations(
     )
     .c(h!())?;
     Ok(Json(locations))
+}
+
+#[post("/api/settlement/find-prefix")]
+async fn find_locations_prefix(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<FindSettlementReq>,
+) -> Result<Json<Vec<SettlementDetails>>, AppError> {
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
+        .await
+        .c(h!())?;
+    let req = req.into_inner();
+    let query = req.query.trim().to_string();
+    let locations = find_locations_by_name(
+        env.settlements.clone(),
+        query.clone(),
+        req.region,
+        req.related_coordinates,
+        req.aor_id,
+    )
+    .c(h!())?;
+
+    Ok(Json(filter_prefix_matches(locations, &query)))
+}
+
+fn filter_prefix_matches(
+    mut locations: Vec<SettlementDetails>,
+    query: &str,
+) -> Vec<SettlementDetails> {
+    let query = query.trim().to_uppercase();
+    locations.retain(|location| location.name.starts_with(&query));
+    locations.sort_by(|a, b| {
+        a.name.cmp(&b.name).then_with(|| a.region.cmp(&b.region))
+    });
+    locations.truncate(SETTLEMENT_PREFIX_SEARCH_LIMIT);
+    locations
 }
 
 #[derive(Debug, Deserialize)]
@@ -652,6 +689,27 @@ fn deduplicate_settlement_names(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn filters_settlements_by_case_insensitive_prefix() {
+        let locations = ["ЛИМАН ПЕРШИЙ", "МЕРЕФА", "ЛИМАН ДРУГИЙ"]
+            .into_iter()
+            .map(|name| SettlementDetails {
+                name: name.to_string(),
+                ..Default::default()
+            })
+            .collect();
+
+        let locations = filter_prefix_matches(locations, " лиман ");
+
+        assert_eq!(
+            locations
+                .into_iter()
+                .map(|location| location.name)
+                .collect_vec(),
+            vec!["ЛИМАН ДРУГИЙ", "ЛИМАН ПЕРШИЙ"]
+        );
+    }
 
     #[test]
     fn standard_location_context_terms_include_direction_abbreviations() {

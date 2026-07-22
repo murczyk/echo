@@ -5740,30 +5740,6 @@ createDeviceNameRspEncoder struct =
         ]
 
 
-type alias LocationSearchReq =
-    { search : String
-    }
-
-
-locationSearchReqEncoder : LocationSearchReq -> Json.Encode.Value
-locationSearchReqEncoder struct =
-    Json.Encode.object
-        [ ( "search", (Json.Encode.string) struct.search )
-        ]
-
-
-type alias LocationSearchRsp =
-    { locations : List (String)
-    }
-
-
-locationSearchRspEncoder : LocationSearchRsp -> Json.Encode.Value
-locationSearchRspEncoder struct =
-    Json.Encode.object
-        [ ( "locations", (Json.Encode.list (Json.Encode.string)) struct.locations )
-        ]
-
-
 type alias AddAsKnownNetworkCallsignReq =
     { networkId : Int
     , knownCallsignIds : List (Int)
@@ -12693,18 +12669,6 @@ createDeviceNameRspDecoder : Json.Decode.Decoder CreateDeviceNameRsp
 createDeviceNameRspDecoder =
     Json.Decode.succeed CreateDeviceNameRsp
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "device" (deviceNameSearchResultDecoder)))
-
-
-locationSearchReqDecoder : Json.Decode.Decoder LocationSearchReq
-locationSearchReqDecoder =
-    Json.Decode.succeed LocationSearchReq
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "search" (Json.Decode.string)))
-
-
-locationSearchRspDecoder : Json.Decode.Decoder LocationSearchRsp
-locationSearchRspDecoder =
-    Json.Decode.succeed LocationSearchRsp
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "locations" (Json.Decode.list (Json.Decode.string))))
 
 
 addAsKnownNetworkCallsignReqDecoder : Json.Decode.Decoder AddAsKnownNetworkCallsignReq

@@ -2204,14 +2204,6 @@ export type CreateDeviceNameRsp = {
   device: DeviceNameSearchResult;
 };
 
-export type LocationSearchReq = {
-  search: string;
-};
-
-export type LocationSearchRsp = {
-  locations: Array<string>;
-};
-
 export type AddAsKnownNetworkCallsignReq = {
   networkId: number;
   knownCallsignIds: Array<number>;
