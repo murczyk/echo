@@ -727,32 +727,33 @@ async fn normalize_req(req: SaveAutomationReq) -> Result<NormalizedAutomation> {
     }
     let keyword_tokens = normalize_tokens(req.keyword_tokens);
     let frequency_tokens = normalize_tokens(req.frequency_tokens);
-    if keyword_tokens.is_empty() && frequency_tokens.is_empty() {
-        bail!("at least one keyword or frequency token is required");
-    }
     let coordinate_presence_mode = CoordinatePresenceMode::parse(
         req.coordinate_presence_mode
             .as_deref()
             .unwrap_or(CoordinatePresenceMode::Any.as_str()),
     )
     .c(h!())?;
-    let polygon_filter_mode = PolygonFilterMode::parse(
-        req.polygon_filter_mode
-            .as_deref()
-            .unwrap_or(PolygonFilterMode::None.as_str()),
-    )
-    .c(h!())?;
+    let polygon_id = req.polygon_id.filter(|polygon_id| *polygon_id > 0);
+    let polygon_filter_mode = if polygon_id.is_some() {
+        PolygonFilterMode::parse(
+            req.polygon_filter_mode
+                .as_deref()
+                .unwrap_or(PolygonFilterMode::None.as_str()),
+        )
+        .c(h!())?
+    } else {
+        PolygonFilterMode::None
+    };
     if coordinate_presence_mode == CoordinatePresenceMode::SkipWithCoordinates
         && polygon_filter_mode != PolygonFilterMode::None
     {
         bail!("polygon filter is not allowed when messages with coordinates are ignored");
     }
-    let polygon_id = (polygon_filter_mode != PolygonFilterMode::None)
-        .then_some(
-            req.polygon_id
-                .context("polygon is required when polygon filter is enabled")
-                .c(h!())?,
-        );
+    let polygon_id = if polygon_filter_mode == PolygonFilterMode::None {
+        None
+    } else {
+        polygon_id
+    };
     Ok(NormalizedAutomation {
         name: req.name.unwrap_or_default().trim().to_string(),
         source_account_id: req.source_account_id,
@@ -1398,11 +1399,14 @@ fn message_matches_filters(
     if is_stale(message_at, now, automation.stale_message_cutoff_minutes) {
         return MatchDecision::Skip("message is older than cutoff");
     }
-    if !matches_any_token(
-        body,
-        &automation.keyword_tokens,
-        &automation.frequency_tokens,
-    ) {
+    if (!automation.keyword_tokens.is_empty()
+        || !automation.frequency_tokens.is_empty())
+        && !matches_any_token(
+            body,
+            &automation.keyword_tokens,
+            &automation.frequency_tokens,
+        )
+    {
         return MatchDecision::Skip("keyword/frequency filters did not match");
     }
     let has_coords = !coords.is_empty();
@@ -1846,6 +1850,26 @@ mod tests {
         }
     }
 
+    fn save_automation_req(
+        polygon_filter_mode: Option<&str>,
+        polygon_id: Option<i64>,
+    ) -> SaveAutomationReq {
+        SaveAutomationReq {
+            name: None,
+            source_account_id: 1,
+            source_group_id: 2,
+            target_account_id: 3,
+            target_group_id: 4,
+            keyword_tokens: vec!["alpha".to_string()],
+            frequency_tokens: vec![],
+            stale_message_cutoff_minutes: 60,
+            resend_attachments: false,
+            coordinate_presence_mode: None,
+            polygon_filter_mode: polygon_filter_mode.map(str::to_string),
+            polygon_id,
+        }
+    }
+
     async fn test_db() -> Result<DatabaseConnection> {
         let url = std::env::var("ECHO_SWAPP_TEST_DATABASE_URL")
             .unwrap_or_else(|_| DEFAULT_TEST_DATABASE_URL.to_string());
@@ -2169,6 +2193,56 @@ mod tests {
             ]),
             vec!["alpha".to_string(), "bravo".to_string()]
         );
+    }
+
+    #[tokio::test]
+    async fn missing_polygon_selection_disables_polygon_filter() -> Result<()> {
+        let mut req = save_automation_req(Some("inside"), None);
+        req.coordinate_presence_mode =
+            Some("skip_with_coordinates".to_string());
+
+        let automation = normalize_req(req).await.c(h!())?;
+
+        assert_eq!(
+            automation.coordinate_presence_mode,
+            CoordinatePresenceMode::SkipWithCoordinates
+        );
+        assert_eq!(automation.polygon_filter_mode, PolygonFilterMode::None);
+        assert_eq!(automation.polygon_id, None);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn empty_keyword_and_frequency_filters_are_allowed() -> Result<()> {
+        let mut req = save_automation_req(None, None);
+        req.keyword_tokens = vec![];
+        req.frequency_tokens = vec![];
+
+        let automation = normalize_req(req).await.c(h!())?;
+
+        assert_eq!(automation.keyword_tokens, Vec::<String>::new());
+        assert_eq!(automation.frequency_tokens, Vec::<String>::new());
+        Ok(())
+    }
+
+    #[test]
+    fn empty_keyword_and_frequency_filters_match_message() {
+        let automation = AutomationFilter {
+            keyword_tokens: vec![],
+            frequency_tokens: vec![],
+            ..filter()
+        };
+        let now = Utc::now().naive_utc();
+
+        let decision = message_matches_filters(
+            &automation,
+            "No configured token filters",
+            now,
+            now,
+            &[],
+        );
+
+        assert_eq!(decision, MatchDecision::Send);
     }
 
     #[test]

@@ -82,7 +82,7 @@ const INDEX_HTML: &str = r#"<!doctype html>
     <section id="automationsTab" class="hidden grid gap-4 lg:grid-cols-[360px_1fr]">
       <form id="automationForm" class="rounded-lg border border-zinc-800 bg-zinc-900/70 p-4">
         <p class="mb-4 rounded-md border border-zinc-800 bg-zinc-800/70 p-3 text-sm text-zinc-300">
-          Автоматизація пересилає нові повідомлення з вибраної групи у цільову, якщо текст містить задані ключові слова або частоти. Можна враховувати координати, район інтересу, вік повідомлення та вкладення.
+          Автоматизація пересилає нові повідомлення з вибраної групи у цільову. Можна обмежити пересилання ключовими словами, частотами, координатами, районом інтересу та віком повідомлення.
         </p>
         <h2 class="text-base font-medium">Нова автоматизація</h2>
         <div class="mt-4 grid gap-3">
@@ -129,17 +129,19 @@ const INDEX_HTML: &str = r#"<!doctype html>
             </select>
           </label>
           <label class="grid gap-1 text-sm">
-            <span class="text-zinc-400">Режим району інтересу</span>
-            <select id="polygonModeInput" class="h-10 rounded-md border border-zinc-700 bg-zinc-950 px-3 text-zinc-100 outline-none focus:border-sky-500">
-              <option value="none" style="color:#71717a">Не фільтрувати</option>
-              <option value="inside">Ігнорувати всередині</option>
-              <option value="outside">Ігнорувати зовні</option>
-            </select>
-          </label>
-          <label class="grid gap-1 text-sm">
             <span class="text-zinc-400">Район Інтересу</span>
             <select id="polygonInput" class="h-10 rounded-md border border-zinc-700 bg-zinc-950 px-3 text-zinc-100 outline-none focus:border-sky-500"></select>
           </label>
+          <div id="polygonFilterFields" class="hidden grid gap-3">
+            <label class="grid gap-1 text-sm">
+              <span class="text-zinc-400">Режим району інтересу</span>
+              <select id="polygonModeInput" class="h-10 rounded-md border border-zinc-700 bg-zinc-950 px-3 text-zinc-100 outline-none focus:border-sky-500">
+                <option value="none" style="color:#71717a">Не фільтрувати</option>
+                <option value="inside">Ігнорувати всередині</option>
+                <option value="outside">Ігнорувати зовні</option>
+              </select>
+            </label>
+          </div>
           <label class="flex items-center gap-2 text-sm text-zinc-300">
             <input id="resendAttachmentsInput" type="checkbox" class="h-4 w-4 rounded border-zinc-700 bg-zinc-950" />
             Пересилати вкладення
@@ -248,17 +250,19 @@ const INDEX_HTML: &str = r#"<!doctype html>
           </select>
         </label>
         <label class="grid gap-1 text-sm">
-          <span class="text-zinc-400">Режим району інтересу</span>
-          <select id="editPolygonModeInput" class="h-10 rounded-md border border-zinc-700 bg-zinc-950 px-3 text-zinc-100 outline-none focus:border-sky-500">
-            <option value="none" style="color:#71717a">Не фільтрувати</option>
-            <option value="inside">Ігнорувати всередині</option>
-            <option value="outside">Ігнорувати зовні</option>
-          </select>
-        </label>
-        <label class="grid gap-1 text-sm">
           <span class="text-zinc-400">Район Інтересу</span>
           <select id="editPolygonInput" class="h-10 rounded-md border border-zinc-700 bg-zinc-950 px-3 text-zinc-100 outline-none focus:border-sky-500"></select>
         </label>
+        <div id="editPolygonFilterFields" class="hidden grid gap-3">
+          <label class="grid gap-1 text-sm">
+            <span class="text-zinc-400">Режим району інтересу</span>
+            <select id="editPolygonModeInput" class="h-10 rounded-md border border-zinc-700 bg-zinc-950 px-3 text-zinc-100 outline-none focus:border-sky-500">
+              <option value="none" style="color:#71717a">Не фільтрувати</option>
+              <option value="inside">Ігнорувати всередині</option>
+              <option value="outside">Ігнорувати зовні</option>
+            </select>
+          </label>
+        </div>
         <label class="flex items-center gap-2 text-sm text-zinc-300">
           <input id="editResendAttachmentsInput" type="checkbox" class="h-4 w-4 rounded border-zinc-700 bg-zinc-950" />
           Пересилати вкладення
@@ -408,6 +412,8 @@ const INDEX_HTML: &str = r#"<!doctype html>
         polygons = data;
         renderPolygonSelect(document.getElementById('polygonInput'));
         renderPolygonSelect(document.getElementById('editPolygonInput'));
+        updatePolygonAvailability();
+        updateEditPolygonAvailability();
         if (data.length === 0) {
           polygonList.innerHTML = '<div class="p-4 text-sm text-zinc-400">Районів інтересу ще немає.</div>';
           return;
@@ -488,8 +494,8 @@ const INDEX_HTML: &str = r#"<!doctype html>
     }
 
     function polygonIdValue(selectId) {
-      const value = document.getElementById(selectId).value;
-      return value ? Number(value) : null;
+      const value = Number(document.getElementById(selectId).value);
+      return polygons.some(polygon => polygon.id === value) ? value : null;
     }
 
     function coordinateLines(textareaId) {
@@ -705,7 +711,7 @@ const INDEX_HTML: &str = r#"<!doctype html>
       const checkpoint = item.checkpointAt > 0
         ? new Date(item.checkpointAt).toLocaleString('uk-UA')
         : 'ще не синхронізовано';
-      const filters = [...item.keywordTokens, ...item.frequencyTokens].join(', ');
+      const filters = [...item.keywordTokens, ...item.frequencyTokens].join(', ') || 'Усі повідомлення';
       const warnings = [];
       if (!item.isPaused && !item.sourceAccountIsLinked) {
         warnings.push('Акаунт читання не підключено: нові повідомлення не синхронізуються.');
@@ -747,6 +753,7 @@ const INDEX_HTML: &str = r#"<!doctype html>
     }
 
     function automationPayload() {
+      const polygonId = polygonIdValue('polygonInput');
       return {
         name: document.getElementById('automationNameInput').value.trim(),
         sourceAccountId: Number(document.getElementById('sourceAccountInput').value),
@@ -758,12 +765,13 @@ const INDEX_HTML: &str = r#"<!doctype html>
         staleMessageCutoffMinutes: Number(document.getElementById('staleMinutesInput').value),
         resendAttachments: document.getElementById('resendAttachmentsInput').checked,
         coordinatePresenceMode: document.getElementById('coordinatePresenceInput').value,
-        polygonFilterMode: document.getElementById('polygonModeInput').value,
-        polygonId: polygonIdValue('polygonInput'),
+        polygonFilterMode: polygonId === null ? 'none' : document.getElementById('polygonModeInput').value,
+        polygonId,
       };
     }
 
     function editAutomationPayload() {
+      const polygonId = polygonIdValue('editPolygonInput');
       return {
         name: document.getElementById('editAutomationNameInput').value.trim(),
         sourceAccountId: Number(document.getElementById('editSourceAccountInput').value),
@@ -775,8 +783,8 @@ const INDEX_HTML: &str = r#"<!doctype html>
         staleMessageCutoffMinutes: Number(document.getElementById('editStaleMinutesInput').value),
         resendAttachments: document.getElementById('editResendAttachmentsInput').checked,
         coordinatePresenceMode: document.getElementById('editCoordinatePresenceInput').value,
-        polygonFilterMode: document.getElementById('editPolygonModeInput').value,
-        polygonId: polygonIdValue('editPolygonInput'),
+        polygonFilterMode: polygonId === null ? 'none' : document.getElementById('editPolygonModeInput').value,
+        polygonId,
       };
     }
 
@@ -880,9 +888,9 @@ const INDEX_HTML: &str = r#"<!doctype html>
         replaceTokens(frequencyTokens, []);
         renderToken('keywordTokens', keywordTokens, 'keyword');
         renderToken('frequencyTokens', frequencyTokens, 'frequency');
-        updatePolygonAvailability();
         renderAutomationFormSelects();
         renderPolygonSelect(document.getElementById('polygonInput'));
+        updatePolygonAvailability();
         await loadAutomations();
       } catch (err) {
         automationFormMsg.textContent = err.message;
@@ -1022,27 +1030,29 @@ const INDEX_HTML: &str = r#"<!doctype html>
 
     function updatePolygonAvailability() {
       const skipCoordinates = document.getElementById('coordinatePresenceInput').value === 'skip_with_coordinates';
-      const noPolygonFilter = document.getElementById('polygonModeInput').value === 'none';
-      document.getElementById('polygonModeInput').disabled = skipCoordinates;
-      document.getElementById('polygonInput').disabled = skipCoordinates || noPolygonFilter;
       if (skipCoordinates) {
-        document.getElementById('polygonModeInput').value = 'none';
-      }
-      if (skipCoordinates || noPolygonFilter) {
         document.getElementById('polygonInput').value = '';
+      }
+      const noPolygon = polygonIdValue('polygonInput') === null;
+      document.getElementById('polygonInput').disabled = skipCoordinates;
+      document.getElementById('polygonModeInput').disabled = noPolygon;
+      document.getElementById('polygonFilterFields').classList.toggle('hidden', noPolygon);
+      if (noPolygon) {
+        document.getElementById('polygonModeInput').value = 'none';
       }
     }
 
     function updateEditPolygonAvailability() {
       const skipCoordinates = document.getElementById('editCoordinatePresenceInput').value === 'skip_with_coordinates';
-      const noPolygonFilter = document.getElementById('editPolygonModeInput').value === 'none';
-      document.getElementById('editPolygonModeInput').disabled = skipCoordinates;
-      document.getElementById('editPolygonInput').disabled = skipCoordinates || noPolygonFilter;
       if (skipCoordinates) {
-        document.getElementById('editPolygonModeInput').value = 'none';
-      }
-      if (skipCoordinates || noPolygonFilter) {
         document.getElementById('editPolygonInput').value = '';
+      }
+      const noPolygon = polygonIdValue('editPolygonInput') === null;
+      document.getElementById('editPolygonInput').disabled = skipCoordinates;
+      document.getElementById('editPolygonModeInput').disabled = noPolygon;
+      document.getElementById('editPolygonFilterFields').classList.toggle('hidden', noPolygon);
+      if (noPolygon) {
+        document.getElementById('editPolygonModeInput').value = 'none';
       }
     }
 
@@ -1142,8 +1152,10 @@ const INDEX_HTML: &str = r#"<!doctype html>
     document.getElementById('automationsTabBtn').addEventListener('click', () => setActiveTab('automations'));
     document.getElementById('polygonsTabBtn').addEventListener('click', () => setActiveTab('polygons'));
     document.getElementById('coordinatePresenceInput').addEventListener('change', updatePolygonAvailability);
+    document.getElementById('polygonInput').addEventListener('change', updatePolygonAvailability);
     document.getElementById('polygonModeInput').addEventListener('change', updatePolygonAvailability);
     document.getElementById('editCoordinatePresenceInput').addEventListener('change', updateEditPolygonAvailability);
+    document.getElementById('editPolygonInput').addEventListener('change', updateEditPolygonAvailability);
     document.getElementById('editPolygonModeInput').addEventListener('change', updateEditPolygonAvailability);
     bindTokenInput('keywordTokenInput', keywordTokens, 'keywordTokens', 'keyword');
     bindTokenInput('frequencyTokenInput', frequencyTokens, 'frequencyTokens', 'frequency');

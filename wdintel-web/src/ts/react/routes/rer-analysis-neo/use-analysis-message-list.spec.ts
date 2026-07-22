@@ -4,7 +4,6 @@
 import { act, createElement, useState } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-
 import { useAnalysisMessageList } from './use-analysis-message-list';
 import { emptyQueryState } from './helpers';
 import type { InboxMessage } from '../../../../Bindings';

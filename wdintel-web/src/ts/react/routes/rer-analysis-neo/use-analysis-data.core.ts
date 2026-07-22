@@ -17,7 +17,7 @@ import {
   buildAnalysisActionsParams,
   buildReloadOrchestratorParams,
 } from './use-analysis-data.wiring';
-import type { AnalysisQueryState } from './types';
+import type { AnalysisQueryState, AnalysisReloadOptions } from './types';
 import type { UseAnalysisDataProps, UseAnalysisDataResult } from './use-analysis-data.types';
 import { useInboxChangedMessageIds } from '../shared/useInboxChangedMessageIds';
 
@@ -289,7 +289,9 @@ export function useAnalysisData({
   );
   const [filtersLoading, setFiltersLoading] = useState(false);
   const [countsLoading, setCountsLoading] = useState(false);
-  const reloadRef = useRef<() => Promise<void>>(async () => undefined);
+  const reloadRef = useRef<(options?: AnalysisReloadOptions) => Promise<void>>(
+    async () => undefined,
+  );
 
   const loadMissingNetworksForMessages = useLoadMissingNetworksForMessages({
     networksRef: referenceState.networksRef,
@@ -320,9 +322,9 @@ export function useAnalysisData({
     getReloadFilterSections,
     invalidateFilterSectionLoads,
     invalidateFilterSectionLoadsForPatch,
-    invalidateTagFacetLoad,
     loadFilterSection,
     loadInitialFilterSections,
+    refreshTagFacet,
   } = useAnalysisFilterSections({
     queryState,
     optionsFreqValues,
@@ -364,7 +366,7 @@ export function useAnalysisData({
       onError,
       onUnauthorized,
       queryState,
-      invalidateTagFacetLoad,
+      refreshTagFacet,
       reloadRef,
       referenceState,
       messageList,
@@ -400,9 +402,9 @@ export function useAnalysisData({
       loadTopSidebarData: sidebarData.loadTopSidebarData,
       clearAnalysisResults,
       loadMessageComments: messageList.loadMessageComments,
-      getCurrentMessagePageCursor: messageList.getCurrentMessagePageCursor,
-      invalidateMessagePageRequests: messageList.invalidateMessagePageRequests,
       invalidateMessagePaging: messageList.invalidateMessagePaging,
+      invalidateMessagePageRequests: messageList.invalidateMessagePageRequests,
+      getCurrentMessagePageCursor: messageList.getCurrentMessagePageCursor,
       refreshMessageCounts: messageList.refreshMessageCounts,
       setAorEntries: messageList.setAorEntries,
       setCounts: messageList.setCounts,

@@ -180,8 +180,9 @@ export function useAnalysisReloadOrchestrator(params: Params): UseAnalysisReload
       reloadAbortControllerRef.current?.abort();
       const abortController = new AbortController();
       reloadAbortControllerRef.current = abortController;
-      const preserveMessagePage = options.preserveMessagePage === true;
       const shouldRefreshMessageCounts = options.refreshMessageCounts !== false;
+      const preserveMessagePage = options.preserveMessagePage === true;
+      const messagePageCursor = preserveMessagePage ? getCurrentMessagePageCursor() : undefined;
 
       if (shouldRefreshMessageCounts) refreshMessageCounts();
 
@@ -193,7 +194,7 @@ export function useAnalysisReloadOrchestrator(params: Params): UseAnalysisReload
           invalidateMessagePaging: preserveMessagePage
             ? invalidateMessagePageRequests
             : invalidateMessagePaging,
-          messagePageCursor: preserveMessagePage ? getCurrentMessagePageCursor() : undefined,
+          messagePageCursor,
           newestFirst,
           onError,
           onUnauthorized,
@@ -254,8 +255,8 @@ export function useAnalysisReloadOrchestrator(params: Params): UseAnalysisReload
     [
       centerTab,
       clearAnalysisResults,
-      getCurrentMessagePageCursor,
       getLoadedFilterSections,
+      getCurrentMessagePageCursor,
       getReloadFilterSections,
       invalidateCallsignGraph,
       invalidateCorrelatedFreqsCache,

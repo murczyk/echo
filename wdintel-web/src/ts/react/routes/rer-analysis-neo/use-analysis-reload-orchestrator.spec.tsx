@@ -192,10 +192,7 @@ describe('useAnalysisReloadOrchestrator', () => {
     expect(reloadAnalysisDataMock.reloadAnalysisData).toHaveBeenCalledWith(
       expect.objectContaining({
         invalidateMessagePaging: params.invalidateMessagePageRequests,
-        messagePageCursor: {
-          beforeIdNoninclusive: 120,
-          sinceIdNoninclusive: null,
-        },
+        messagePageCursor: { beforeIdNoninclusive: 120, sinceIdNoninclusive: null },
       }),
     );
     expect(params.getCurrentMessagePageCursor).toHaveBeenCalledTimes(1);
