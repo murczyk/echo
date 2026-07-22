@@ -40,6 +40,22 @@ iggy_default_rev := "k-bx/2026-06-18-poll-option"
 default:
     @just --list
 
+prepare-workspace:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{ justfile_directory() }}"
+
+    limit_kib=$((75 * 1024 * 1024))
+    used_kib=$(du -sk . | awk '{print $1}')
+    used_gib=$(awk -v kib="$used_kib" 'BEGIN { printf "%.1f", kib / 1024 / 1024 }')
+
+    if (( used_kib > limit_kib )); then
+        echo "Project uses ${used_gib} GiB, above 75 GiB; running cargo clean."
+        cargo clean
+    else
+        echo "Project uses ${used_gib} GiB, below 75 GiB; skipping cargo clean."
+    fi
+
 # setup pgBackRest: runs on `--server`; `--backup-name` selects which host's backup/stanza config will be installed (defaults to `--server`)
 [arg('backup_name', long='backup-name')]
 [arg('daily_restore', long='daily-restore', value='true')]
@@ -84,7 +100,7 @@ build-front:
 
 [arg('log_sql', long='log-sql', value='true')]
 [arg('quiet', long='quiet', value='true')]
-dev-back quiet="false" log_sql="false" *args:
+dev-back quiet="false" log_sql="false" *args: prepare-workspace
     bash deploy/dev-back.sh --quiet="{{ quiet }}" --log-sql="{{ log_sql }}" -- {{ dev_back_args }} {{ args }}
 
 [arg('log_sql', long='log-sql', value='true')]
@@ -1546,8 +1562,9 @@ _echo-generic-deploy-front:
     ssh {{ builder }} '(cd workspace/echo && git fetch origin && git clean -df && git checkout {{ branch }} && git pull)'
     ssh {{ builder }} '(cd workspace/echo/wdintel-web && . ~/.nvm/nvm.sh && npx npm ci && npm run build)'
 
-_echo-generic-build-rs:
+_echo-generic-build-rs: prepare-workspace
     ssh {{ builder }} '(cd workspace/echo && git fetch origin && git clean -df && git checkout {{ branch }} && git pull)'
+    ssh {{ builder }} '(cd workspace/echo && just prepare-workspace)'
     ssh {{ builder }} '(cd workspace/echo && touch wdintel-rs/build.rs && $HOME/.cargo/bin/cargo deb -p wdintel-rs --fast)'
 
     # TODO: determine version from Cargo.toml
@@ -1901,10 +1918,11 @@ dev-docs:
 docs-deb: docs
     cd docs/echo-docs && cargo deb && cp target/debian/echo-docs_0.1.0-1_amd64.deb ~/Downloads/echo-docs_0.1.0-1_amd64.deb
 
-builder-build-docs:
+builder-build-docs: prepare-workspace
     #!/bin/bash
     if [[ "{{ builder }}" == "echo-gpu" ]]; then
       ssh {{ builder }} '(cd ~/workspace/echo && git fetch origin && git clean -df && git checkout {{ branch }} && git pull)'
+      ssh {{ builder }} '(cd ~/workspace/echo && just prepare-workspace)'
       ssh {{ builder }} '(cd ~/workspace/echo/docs && zola build)'
       ssh {{ builder }} '(cd ~/workspace/echo/docs/echo-docs && PATH=$HOME/.local/bin:$PATH /home/ubuntu/.cargo/bin/cargo deb)'
       rsync {{ builder }}:~/workspace/echo/docs/echo-docs/target/debian/echo-docs_0.1.0-1_amd64.deb ~/Downloads/
@@ -2210,13 +2228,14 @@ oneoff-reprocess-units-search-index:
     ssh echo-donetsk2 -t 'wdintel-rs --mode=live oneoff-reprocess-units-search-index' || echo 'skipping...'
 
 # build and copy deb and binary for echo-install
-builder-build-echo-install:
+builder-build-echo-install: prepare-workspace
     #!/bin/bash
     set -euxo pipefail
     if [[ "{{ builder }}" == "" ]] ; then
         echo "❌ builder parameter not recognized. value: {{ builder }}"; exit 1;
     fi
     ssh {{ builder }} '(cd ~/workspace/echo && git fetch origin && git clean -df && git checkout {{ branch }} && git pull)'
+    ssh {{ builder }} '(cd ~/workspace/echo && just prepare-workspace)'
     ssh {{ builder }} '(cd ~/workspace/echo && /home/ubuntu/.cargo/bin/cargo deb -p echo-install)'
     rsync --progress {{ builder }}:~/workspace/echo/target/debian/echo-install_0.1.0-1_amd64.deb /tmp/
     rsync --progress {{ builder }}:~/workspace/echo/target/release/echo-install /tmp/
@@ -2249,7 +2268,7 @@ deploy-echo-install-package:
     ssh {{ server }} "rm -rf $TGT_DIR_SERVER || true && mkdir -p $TGT_DIR_SERVER"
     rsync -r $TGT_DIR/ {{ server }}:$TGT_DIR_SERVER/
 
-deploy-stg:
+deploy-stg: prepare-workspace
     #!/bin/bash
     set -euxo pipefail
     ssh echo-build-main "cd ~/workspace/krab/echo-feature/echo && \
@@ -2263,7 +2282,7 @@ deploy-stg:
         npx npm ci && \
         npm run build && \
         cd .. && \
-        \$HOME/.cargo/bin/cargo clean && \
+        just prepare-workspace && \
         touch wdintel-rs/build.rs && \
         \$HOME/.cargo/bin/cargo deb -p wdintel-rs --fast"
     scp echo-build-main:~/workspace/krab/echo-feature/echo/target/debian/wdintel-rs*.deb "echo-staging":/var/tmp
