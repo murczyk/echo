@@ -55,6 +55,15 @@ export function attachmentIcon(name: string, mimeType: string | undefined): SvgI
   return InsertDriveFileOutlinedIcon;
 }
 
+export type MediaKind = 'image' | 'video';
+
+export function mediaKind(mimeType: string | undefined): MediaKind | null {
+  const type = (mimeType ?? '').toLowerCase();
+  if (type.startsWith('image/')) return 'image';
+  if (type.startsWith('video/')) return 'video';
+  return null;
+}
+
 export function formatFileSize(bytes: number | null | undefined): string {
   if (bytes == null || !Number.isFinite(bytes) || bytes <= 0) return '';
   const units = ['Б', 'КБ', 'МБ', 'ГБ'];
