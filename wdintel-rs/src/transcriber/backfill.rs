@@ -30,22 +30,24 @@ pub async fn run(
 ) -> Result<(), AppError> {
     let since = parse_since_ts(&ps.since_ts)?;
     let dbx = crate::new_pg_pool_from_mode(mode).await.c(h!())?;
-    if !ps.dry_run
-        && !ps.yes
-        && !Confirm::with_theme(&ColorfulTheme::default())
+    let confirmed = ps.dry_run
+        || ps.yes
+        || Confirm::with_theme(&ColorfulTheme::default())
             .with_prompt(format!(
                 "Queue eligible audio created at or after {} UTC?",
                 ps.since_ts
             ))
             .default(false)
             .interact()
-            .c(h!())?
-    {
+            .c(h!())?;
+    let Some(counts) = scan_confirmed(&dbx, since, ps.dry_run, confirmed)
+        .await
+        .c(h!())?
+    else {
         println!("Backfill cancelled; no changes made.");
         return Ok(());
-    }
+    };
 
-    let counts = scan(&dbx, since, ps.dry_run).await.c(h!())?;
     println!(
         "eligible={} oversized={} non_audio={} already_queued={} processing={} completed={} terminal={} newly_queued={} dry_run={}",
         counts.eligible,
@@ -59,6 +61,18 @@ pub async fn run(
         ps.dry_run
     );
     Ok(())
+}
+
+async fn scan_confirmed(
+    dbx: &sea_orm::DatabaseConnection,
+    since: NaiveDateTime,
+    dry_run: bool,
+    confirmed: bool,
+) -> anyhow::Result<Option<BackfillCounts>> {
+    if !dry_run && !confirmed {
+        return Ok(None);
+    }
+    Ok(Some(scan(dbx, since, dry_run).await.context(h!())?))
 }
 
 fn parse_since_ts(value: &str) -> Result<NaiveDateTime, AppError> {
@@ -223,6 +237,8 @@ pub async fn retranscribe_completed(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::entities::signal_message_media;
+    use sea_orm::{ActiveValue::Set, EntityTrait};
 
     #[test]
     fn parses_utc_timestamp_without_an_implicit_timezone() {
@@ -272,5 +288,114 @@ mod tests {
         assert_eq!(counts.processing, 1);
         assert_eq!(counts.completed, 1);
         assert_eq!(counts.terminal, 1);
+    }
+
+    #[tokio::test]
+    async fn database_scan_is_inclusive_batched_and_confirmation_safe() {
+        let (env, _guard) =
+            crate::functest::tests::cleanup_locked().await.unwrap();
+        let message = crate::functest::tests::mk_signal_message(
+            &env.dbx,
+            Default::default(),
+        )
+        .await
+        .unwrap();
+        let since = chrono::Utc::now().naive_utc();
+        let mut rows = Vec::new();
+        let exact_id = Uuid::now_v7();
+        rows.push(signal_message_media::ActiveModel {
+            id: Set(exact_id),
+            signal_message_id: Set(message.id),
+            content_type: Set("audio/ogg".into()),
+            file_ext: Set(Some("ogg".into())),
+            file_name: Set(Some("exact.ogg".into())),
+            size_bytes: Set(104_857_600),
+            is_encrypted: Set(false),
+            created_at: Set(since),
+        });
+        for _ in 0..ECHO_AUDIO_TRANSCRIPTION_BACKFILL_BATCH_SIZE {
+            rows.push(signal_message_media::ActiveModel {
+                id: Set(Uuid::now_v7()),
+                signal_message_id: Set(message.id),
+                content_type: Set("audio/ogg".into()),
+                file_ext: Set(Some("ogg".into())),
+                file_name: Set(Some("batch.ogg".into())),
+                size_bytes: Set(1),
+                is_encrypted: Set(false),
+                created_at: Set(since),
+            });
+        }
+        rows.push(signal_message_media::ActiveModel {
+            id: Set(Uuid::now_v7()),
+            signal_message_id: Set(message.id),
+            content_type: Set("audio/ogg".into()),
+            file_ext: Set(Some("ogg".into())),
+            file_name: Set(Some("large.ogg".into())),
+            size_bytes: Set(104_857_601),
+            is_encrypted: Set(false),
+            created_at: Set(since),
+        });
+        rows.push(signal_message_media::ActiveModel {
+            id: Set(Uuid::now_v7()),
+            signal_message_id: Set(message.id),
+            content_type: Set("text/plain".into()),
+            file_ext: Set(Some("txt".into())),
+            file_name: Set(Some("note.txt".into())),
+            size_bytes: Set(1),
+            is_encrypted: Set(false),
+            created_at: Set(since),
+        });
+        rows.push(signal_message_media::ActiveModel {
+            id: Set(Uuid::now_v7()),
+            signal_message_id: Set(message.id),
+            content_type: Set("audio/ogg".into()),
+            file_ext: Set(Some("ogg".into())),
+            file_name: Set(Some("old.ogg".into())),
+            size_bytes: Set(1),
+            is_encrypted: Set(false),
+            created_at: Set(since - chrono::Duration::seconds(1)),
+        });
+        signal_message_media::Entity::insert_many(rows)
+            .exec(&env.dbx)
+            .await
+            .unwrap();
+
+        assert!(scan_confirmed(&env.dbx, since, false, false)
+            .await
+            .unwrap()
+            .is_none());
+        assert!(echo_gpu_client::lookup(&env.dbx, exact_id)
+            .await
+            .unwrap()
+            .is_none());
+
+        let dry_run = scan_confirmed(&env.dbx, since, true, false)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(dry_run.eligible, 201);
+        assert_eq!(dry_run.oversized, 1);
+        assert_eq!(dry_run.non_audio, 1);
+        assert_eq!(dry_run.newly_queued, 0);
+
+        let live = scan_confirmed(&env.dbx, since, false, true)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(live.eligible, 201);
+        assert_eq!(live.newly_queued, 201);
+        assert_eq!(live.oversized, 1);
+        assert_eq!(live.non_audio, 1);
+
+        let rerun = scan(&env.dbx, since, false).await.unwrap();
+        assert_eq!(rerun.newly_queued, 0);
+        assert_eq!(rerun.already_queued, 201);
+        assert_eq!(
+            echo_gpu_client::queue_status(&env.dbx)
+                .await
+                .unwrap()
+                .queued,
+            201
+        );
     }
 }

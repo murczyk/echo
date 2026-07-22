@@ -2396,7 +2396,7 @@ transcriber-smoke server:
     ssh "{{ server }}" 'sudo -u postgres psql -d wd -v ON_ERROR_STOP=1 -Atc "select uuid_generate_v7() is not null;" | grep -qx t'
     ssh "{{ server }}" 'sudo -u postgres psql -d wd -v ON_ERROR_STOP=1 -Atc "select count(*) = 2 from seaql_echo_gpu_migrations where version in ('"'"'m20260721_000001_create_gpu_config'"'"', '"'"'m20260721_000002_create_transcription_queue'"'"');" | grep -qx t'
     ssh "{{ server }}" 'sudo -u postgres psql -d wd -v ON_ERROR_STOP=1 -AtF "|" -c "select to_regclass('"'"'gpu_config'"'"'), to_regclass('"'"'echo_gpu_transcription_queue'"'"');" | grep -qx "gpu_config|echo_gpu_transcription_queue"'
-    ssh "{{ server }}" 'sudo -u postgres psql -d wd -v ON_ERROR_STOP=1 -c "select coalesce((select enable_audio_transcription from system_settings where not deleted order by updated_at desc limit 1), false) enable_audio_transcription;"'
+    ssh "{{ server }}" 'sudo -u postgres psql -d wd -v ON_ERROR_STOP=1 -Atc "select coalesce((select enable_audio_transcription from system_settings where not deleted order by updated_at desc limit 1), false);" | grep -Eq "^[tf]$"'
     ssh "{{ server }}" 'sudo -u postgres psql -d wd -v ON_ERROR_STOP=1 -c "select state, count(*) from echo_gpu_transcription_queue group by state order by state;"'
     ssh "{{ server }}" 'sudo -u postgres psql -d wd -v ON_ERROR_STOP=1 -c "select greatest(0, extract(epoch from ((now() at time zone '"'"'utc'"'"') - min(coalesce(next_retry_at, created_at)))))::bigint oldest_due_age_seconds from echo_gpu_transcription_queue where state in ('"'"'queued'"'"', '"'"'retrying'"'"');"'
     ssh "{{ server }}" 'systemctl is-active wdintel-rs.socket wdintel-rs-bgworker.service'

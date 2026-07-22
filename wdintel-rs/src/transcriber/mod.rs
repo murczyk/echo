@@ -3,9 +3,7 @@ pub mod media_queue;
 pub mod types;
 pub mod worker;
 
-use crate::entities::{
-    echo_gpu_transcription_queue, signal_message, signal_message_media,
-};
+use crate::entities::{signal_message, signal_message_media};
 use crate::error::AppError;
 use crate::h;
 use crate::transcriber::types::*;
@@ -98,31 +96,11 @@ pub async fn completed_transcriptions<C>(
 where
     C: ConnectionTrait,
 {
-    if source_ids.is_empty() {
-        return Ok(HashMap::new());
-    }
-    Ok(echo_gpu_transcription_queue::Entity::find()
-        .filter(
-            echo_gpu_transcription_queue::Column::SourceId
-                .is_in(source_ids.iter().copied()),
-        )
-        .filter(
-            echo_gpu_transcription_queue::Column::State
-                .eq(echo_gpu_client::QueueState::Completed.as_str()),
-        )
-        .filter(
-            echo_gpu_transcription_queue::Column::TranscribedValue
-                .is_not_null(),
-        )
-        .all(dbx)
+    Ok(echo_gpu_client::lookup_completed(dbx, source_ids)
         .await
         .c(h!())?
         .into_iter()
-        .filter_map(|transcription| {
-            transcription
-                .transcribed_value
-                .map(|text| (transcription.source_id, text))
-        })
+        .map(|transcription| (transcription.source_id, transcription.value))
         .collect())
 }
 
@@ -310,7 +288,13 @@ pub async fn message_transcriptions(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sea_orm::{ActiveModelTrait, ActiveValue::Set};
+    use crate::entities::{login, system_settings};
+    use actix_identity::IdentityMiddleware;
+    use actix_session::{storage::RedisSessionStore, SessionMiddleware};
+    use actix_web::{cookie::Key, http::StatusCode, test, web, App};
+    use sea_orm::{
+        ActiveModelTrait, ActiveValue::Set, EntityTrait, IntoActiveModel,
+    };
 
     struct FailedRestarter;
 
@@ -355,39 +339,199 @@ mod tests {
         );
     }
 
+    #[actix_web::test]
+    async fn endpoints_enforce_auth_role_feature_and_message_access() {
+        let (env, _guard) =
+            crate::functest::tests::cleanup_locked().await.unwrap();
+        let password = "transcriber-http-test";
+        let salt = format!("{}Tester", crate::config::IDENTITY_SALT);
+        let password_hash = argon2::hash_encoded(
+            password.as_bytes(),
+            salt.as_bytes(),
+            &argon2::Config::original(),
+        )
+        .unwrap();
+        let mut login: login::ActiveModel = login::Entity::find_by_id("Tester")
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap()
+            .into_active_model();
+        login.password = Set(Some(password_hash));
+        login.roles = Set(serde_json::json!(["Admin", "Api"]));
+        login.update(&env.dbx).await.unwrap();
+
+        let session_store = RedisSessionStore::new(
+            crate::redis_conn_string(&env.config).unwrap(),
+        )
+        .await
+        .unwrap();
+        let app = test::init_service(
+            App::new()
+                .wrap(IdentityMiddleware::default())
+                .wrap(SessionMiddleware::new(session_store, Key::generate()))
+                .app_data(web::Data::from(env.clone()))
+                .service(crate::users::user_test_api_login)
+                .service(queue_status)
+                .service(message_transcriptions),
+        )
+        .await;
+
+        let response = test::call_service(
+            &app,
+            test::TestRequest::post()
+                .uri("/api/admin/transcriber/status")
+                .to_request(),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+
+        let response = test::call_service(
+            &app,
+            test::TestRequest::post()
+                .uri("/api/user/test-api-login")
+                .set_json(crate::users::types::LoginReq {
+                    user: "Tester".into(),
+                    password: password.into(),
+                })
+                .to_request(),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::OK);
+        let cookie = response.response().cookies().next().unwrap().into_owned();
+
+        let response = test::call_service(
+            &app,
+            test::TestRequest::post()
+                .uri("/api/admin/transcriber/status")
+                .cookie(cookie.clone())
+                .to_request(),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+
+        system_settings::ActiveModel {
+            enable_audio_transcription: Set(true),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        let response = test::call_service(
+            &app,
+            test::TestRequest::post()
+                .uri("/api/admin/transcriber/status")
+                .cookie(cookie.clone())
+                .to_request(),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let mut login: login::ActiveModel = login::Entity::find_by_id("Tester")
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap()
+            .into_active_model();
+        login.roles = Set(serde_json::json!(["Api"]));
+        login.update(&env.dbx).await.unwrap();
+        let response = test::call_service(
+            &app,
+            test::TestRequest::post()
+                .uri("/api/admin/transcriber/status")
+                .cookie(cookie.clone())
+                .to_request(),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+
+        let message = crate::functest::tests::mk_signal_message(
+            &env.dbx,
+            Default::default(),
+        )
+        .await
+        .unwrap();
+        let response = test::call_service(
+            &app,
+            test::TestRequest::post()
+                .uri(&format!("/api/transcriber/messages/{}", message.id))
+                .cookie(cookie.clone())
+                .to_request(),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+
+        let mut login: login::ActiveModel = login::Entity::find_by_id("Tester")
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap()
+            .into_active_model();
+        login.roles = Set(serde_json::json!(["Rer"]));
+        login.update(&env.dbx).await.unwrap();
+        let response = test::call_service(
+            &app,
+            test::TestRequest::post()
+                .uri(&format!("/api/transcriber/messages/{}", message.id))
+                .cookie(cookie)
+                .to_request(),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    }
+
     #[tokio::test]
-    async fn completed_transcriptions_omit_pending_and_empty_results() {
+    async fn completed_transcriptions_omit_pending_results() {
         let (env, _guard) =
             crate::functest::tests::cleanup_locked().await.unwrap();
         let completed_id = Uuid::now_v7();
         let pending_id = Uuid::now_v7();
-        let empty_id = Uuid::now_v7();
-        for (source_id, state, transcribed_value) in [
-            (
-                completed_id,
-                echo_gpu_client::QueueState::Completed,
-                Some("recognized speech"),
-            ),
-            (pending_id, echo_gpu_client::QueueState::Queued, None),
-            (empty_id, echo_gpu_client::QueueState::Completed, None),
-        ] {
-            echo_gpu_transcription_queue::ActiveModel {
-                source_id: Set(source_id),
-                state: Set(state.as_str().to_string()),
-                transcribed_value: Set(transcribed_value.map(str::to_string)),
-                ..Default::default()
-            }
-            .insert(&env.dbx)
-            .await
-            .unwrap();
-        }
-
-        let transcriptions = completed_transcriptions(
+        let instance = echo_gpu_client::create_instance(
             &env.dbx,
-            &[completed_id, pending_id, empty_id],
+            echo_gpu_client::CreateInstance {
+                name: format!("test-{}", Uuid::now_v7()),
+                host: format!("test-{}.invalid", Uuid::now_v7()),
+                rs_port: 1,
+                py_port: 2,
+                train: false,
+                ordering: Some(1),
+            },
         )
         .await
         .unwrap();
+        echo_gpu_client::enqueue(&env.dbx, completed_id)
+            .await
+            .unwrap();
+        let claim = echo_gpu_client::claim_one(&env.dbx, Uuid::now_v7())
+            .await
+            .unwrap()
+            .unwrap();
+        let audio_id = Uuid::now_v7();
+        echo_gpu_client::complete(
+            &env.dbx,
+            claim.fence(),
+            &echo_gpu_client::CompletedTranscription {
+                value: "recognized speech".into(),
+                instance_id: instance.id,
+                audio_id,
+                checksum: "a".repeat(64),
+                response: echo_gpu_client::GuessResponse {
+                    audio_id: audio_id.to_string(),
+                    full_phrase: "recognized speech".into(),
+                    segments: Vec::new(),
+                },
+            },
+        )
+        .await
+        .unwrap();
+        echo_gpu_client::enqueue(&env.dbx, pending_id)
+            .await
+            .unwrap();
+
+        let transcriptions =
+            completed_transcriptions(&env.dbx, &[completed_id, pending_id])
+                .await
+                .unwrap();
 
         assert_eq!(transcriptions.len(), 1);
         assert_eq!(

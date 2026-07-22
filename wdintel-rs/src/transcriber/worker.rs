@@ -91,6 +91,7 @@ impl EchoTranscriptionAdapter {
         &self,
         media: &signal_message_media::Model,
     ) -> Result<Vec<u8>> {
+        ensure_storage_available(self.env.as_ref())?;
         if media.is_encrypted {
             return crate::messenger::media::fetch_media_bytes(
                 self.env.as_ref(),
@@ -133,6 +134,26 @@ impl EchoTranscriptionAdapter {
                 ))
                 .into()
             })
+    }
+}
+
+fn ensure_storage_available(env: &Env) -> Result<()> {
+    storage_configuration(
+        env.config.s3_config.is_some(),
+        env.s3.is_some(),
+        env.s3_config.is_some(),
+    )
+}
+
+fn storage_configuration(
+    has_app_config: bool,
+    has_operator: bool,
+    has_storage_config: bool,
+) -> Result<()> {
+    if has_app_config && has_operator && has_storage_config {
+        Ok(())
+    } else {
+        Err(WorkError::terminal("S3 storage is not configured").into())
     }
 }
 
@@ -566,6 +587,80 @@ async fn wait_or_cancel(cancel_token: &CancellationToken, sleep_ms: u64) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::entities::echo_gpu_transcription_queue;
+    use opendal::{services::Memory, Operator};
+    use sea_orm::{
+        ActiveModelTrait, ActiveValue::Set, ColumnTrait, EntityTrait,
+        QueryFilter,
+    };
+
+    fn cache_only_env(env: &Arc<Env>, path: &Path) -> Arc<Env> {
+        let mut env = env.as_ref().clone();
+        env.config.storage_dir = path.display().to_string();
+        env.config.s3_config = None;
+        env.s3 = None;
+        env.s3_config = None;
+        Arc::new(env)
+    }
+
+    fn configured_storage_env(env: &Arc<Env>, path: &Path) -> Arc<Env> {
+        let mut env = env.as_ref().clone();
+        env.config.storage_dir = path.display().to_string();
+        let config = crate::config::S3Config {
+            s3_access_key_id: "test".into(),
+            s3_secret_access_key: "test".into(),
+            s3_endpoint: String::new(),
+            s3_region: String::new(),
+            s3_bucket: "test".into(),
+            strongbox_key: crate::storage::generate_strongbox_key_b64(),
+        };
+        env.s3_config = Some(crate::storage::S3Config::from(&config));
+        env.s3 = Some(Operator::new(Memory::default()).unwrap().finish());
+        env.config.s3_config = Some(config);
+        Arc::new(env)
+    }
+
+    async fn insert_audio(
+        env: &Env,
+        is_encrypted: bool,
+        size_bytes: i64,
+    ) -> signal_message_media::Model {
+        let message = crate::functest::tests::mk_signal_message(
+            &env.dbx,
+            Default::default(),
+        )
+        .await
+        .unwrap();
+        signal_message_media::ActiveModel {
+            id: Set(Uuid::now_v7()),
+            signal_message_id: Set(message.id),
+            content_type: Set("audio/ogg".into()),
+            file_ext: Set(Some("ogg".into())),
+            file_name: Set(Some("recording.ogg".into())),
+            size_bytes: Set(size_bytes),
+            is_encrypted: Set(is_encrypted),
+            created_at: Set(chrono::Utc::now().naive_utc()),
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap()
+    }
+
+    async fn create_instance(env: &Env) {
+        echo_gpu_client::create_instance(
+            &env.dbx,
+            echo_gpu_client::CreateInstance {
+                name: format!("worker-test-{}", Uuid::now_v7()),
+                host: format!("worker-test-{}.invalid", Uuid::now_v7()),
+                rs_port: 1,
+                py_port: 2,
+                train: false,
+                ordering: Some(1),
+            },
+        )
+        .await
+        .unwrap();
+    }
 
     fn media_with_extension(
         extension: Option<&str>,
@@ -670,5 +765,326 @@ mod tests {
             policy.max_error_len,
             ECHO_AUDIO_TRANSCRIPTION_MAX_ERROR_LEN
         );
+    }
+
+    #[test]
+    fn missing_s3_configuration_is_terminal() {
+        for parts in [
+            (false, false, false),
+            (true, false, true),
+            (true, true, false),
+        ] {
+            let error =
+                storage_configuration(parts.0, parts.1, parts.2).unwrap_err();
+            let error = error.downcast_ref::<WorkError>().unwrap();
+            assert!(!error.retryable);
+            assert_eq!(error.message, "S3 storage is not configured");
+        }
+        assert!(storage_configuration(true, true, true).is_ok());
+    }
+
+    #[tokio::test]
+    async fn materializes_and_releases_encrypted_and_plaintext_media() {
+        let (base_env, _guard) =
+            crate::functest::tests::cleanup_locked().await.unwrap();
+        let temp = tempfile::tempdir().unwrap();
+        let env = configured_storage_env(&base_env, temp.path());
+        let encrypted = insert_audio(&env, true, 9).await;
+        let plaintext = insert_audio(&env, false, 9).await;
+        let encrypted_data = b"encrypted";
+        let plaintext_data = b"plaintext";
+        crate::storage::upload_encrypted_to_s3_with_operator(
+            &env.s3,
+            env.s3_config.as_ref().unwrap(),
+            &env.config.s3_config.as_ref().unwrap().strongbox_key,
+            &crate::messenger::media::media_object_key(&encrypted),
+            encrypted_data,
+        )
+        .await
+        .unwrap();
+        crate::storage::upload_plaintext_to_s3_with_operator(
+            &env.s3,
+            env.s3_config.as_ref().unwrap(),
+            &crate::messenger::media::media_object_key(&plaintext),
+            plaintext_data.to_vec(),
+        )
+        .await
+        .unwrap();
+        echo_gpu_client::enqueue(&env.dbx, encrypted.id)
+            .await
+            .unwrap();
+        echo_gpu_client::enqueue(&env.dbx, plaintext.id)
+            .await
+            .unwrap();
+
+        let worker_id = Uuid::now_v7();
+        let adapter =
+            EchoTranscriptionAdapter::new(env, worker_id).await.unwrap();
+        for (media, expected) in [
+            (encrypted, encrypted_data.as_slice()),
+            (plaintext, plaintext_data.as_slice()),
+        ] {
+            let materialized =
+                adapter.materialize(media.id, worker_id, 1).await.unwrap();
+            assert_eq!(
+                tokio::fs::read(&materialized.path).await.unwrap(),
+                expected
+            );
+            assert_eq!(materialized.file_name, format!("{}.ogg", media.id));
+            assert_eq!(
+                tokio::fs::metadata(&materialized.path)
+                    .await
+                    .unwrap()
+                    .permissions()
+                    .mode()
+                    & 0o777,
+                0o600
+            );
+            adapter
+                .release_materialized(media.id, worker_id, 1)
+                .await
+                .unwrap();
+            assert!(!materialized.path.exists());
+        }
+    }
+
+    #[tokio::test]
+    async fn worker_terminals_missing_config_and_retries_storage_io() {
+        let (base_env, _guard) =
+            crate::functest::tests::cleanup_locked().await.unwrap();
+        let temp = tempfile::tempdir().unwrap();
+        let missing_config_env = cache_only_env(&base_env, temp.path());
+        create_instance(&missing_config_env).await;
+        let missing_config_media =
+            insert_audio(&missing_config_env, true, 3).await;
+        echo_gpu_client::enqueue(
+            &missing_config_env.dbx,
+            missing_config_media.id,
+        )
+        .await
+        .unwrap();
+        let worker_id = Uuid::now_v7();
+        let adapter = EchoTranscriptionAdapter::new(
+            missing_config_env.clone(),
+            worker_id,
+        )
+        .await
+        .unwrap();
+        assert!(matches!(
+            echo_gpu_client::run_transcriber_worker_once(
+                missing_config_env.echo_gpu_client.as_ref(),
+                worker_id,
+                &worker_policy(),
+                &adapter,
+            )
+            .await
+            .unwrap(),
+            WorkerRunResult::Terminal { source_id }
+                if source_id == missing_config_media.id
+        ));
+        let item = echo_gpu_client::lookup(
+            &missing_config_env.dbx,
+            missing_config_media.id,
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        assert_eq!(
+            item.state().unwrap(),
+            echo_gpu_client::QueueState::Terminal
+        );
+        assert!(item.0.next_retry_at.is_none());
+
+        let configured_env = configured_storage_env(&base_env, temp.path());
+        let unavailable_media = insert_audio(&configured_env, false, 3).await;
+        echo_gpu_client::enqueue(&configured_env.dbx, unavailable_media.id)
+            .await
+            .unwrap();
+        let adapter =
+            EchoTranscriptionAdapter::new(configured_env.clone(), worker_id)
+                .await
+                .unwrap();
+        assert!(matches!(
+            echo_gpu_client::run_transcriber_worker_once(
+                configured_env.echo_gpu_client.as_ref(),
+                worker_id,
+                &worker_policy(),
+                &adapter,
+            )
+            .await
+            .unwrap(),
+            WorkerRunResult::Retrying { source_id, .. }
+                if source_id == unavailable_media.id
+        ));
+        let item =
+            echo_gpu_client::lookup(&configured_env.dbx, unavailable_media.id)
+                .await
+                .unwrap()
+                .unwrap();
+        assert_eq!(
+            item.state().unwrap(),
+            echo_gpu_client::QueueState::Retrying
+        );
+        assert!(item.0.next_retry_at.is_some());
+    }
+
+    #[tokio::test]
+    async fn stale_processing_work_is_recovered_before_the_next_claim() {
+        let (base_env, _guard) =
+            crate::functest::tests::cleanup_locked().await.unwrap();
+        let temp = tempfile::tempdir().unwrap();
+        let env = cache_only_env(&base_env, temp.path());
+        create_instance(&env).await;
+        let source_id = Uuid::now_v7();
+        echo_gpu_client::enqueue(&env.dbx, source_id).await.unwrap();
+        echo_gpu_client::claim_one(&env.dbx, Uuid::now_v7())
+            .await
+            .unwrap()
+            .unwrap();
+        echo_gpu_transcription_queue::Entity::update_many()
+            .col_expr(
+                echo_gpu_transcription_queue::Column::HeartbeatAt,
+                sea_orm::sea_query::Expr::value(
+                    chrono::Utc::now().naive_utc() - chrono::Duration::hours(1),
+                ),
+            )
+            .filter(
+                echo_gpu_transcription_queue::Column::SourceId.eq(source_id),
+            )
+            .exec(&env.dbx)
+            .await
+            .unwrap();
+
+        let worker_id = Uuid::now_v7();
+        let adapter = EchoTranscriptionAdapter::new(env.clone(), worker_id)
+            .await
+            .unwrap();
+        assert!(matches!(
+            echo_gpu_client::run_transcriber_worker_once(
+                env.echo_gpu_client.as_ref(),
+                worker_id,
+                &worker_policy(),
+                &adapter,
+            )
+            .await
+            .unwrap(),
+            WorkerRunResult::Terminal { source_id: id } if id == source_id
+        ));
+        let item = echo_gpu_client::lookup(&env.dbx, source_id)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(item.0.attempt_count, 2);
+        assert_eq!(
+            item.state().unwrap(),
+            echo_gpu_client::QueueState::Terminal
+        );
+    }
+
+    #[tokio::test]
+    async fn cleanup_enforces_retention_and_removes_orphans() {
+        let (env, _guard) =
+            crate::functest::tests::cleanup_locked().await.unwrap();
+        let old_id = Uuid::now_v7();
+        let recent_id = Uuid::now_v7();
+        let active_id = Uuid::now_v7();
+        let orphan_id = Uuid::now_v7();
+        for id in [old_id, recent_id, active_id, orphan_id] {
+            echo_gpu_client::enqueue(&env.dbx, id).await.unwrap();
+        }
+        for (id, state, finished_at) in [
+            (
+                old_id,
+                echo_gpu_client::QueueState::Completed,
+                chrono::Utc::now().naive_utc() - chrono::Duration::days(3),
+            ),
+            (
+                recent_id,
+                echo_gpu_client::QueueState::Terminal,
+                chrono::Utc::now().naive_utc() - chrono::Duration::days(1),
+            ),
+            (
+                active_id,
+                echo_gpu_client::QueueState::Queued,
+                chrono::Utc::now().naive_utc() - chrono::Duration::days(3),
+            ),
+        ] {
+            echo_gpu_transcription_queue::Entity::update_many()
+                .col_expr(
+                    echo_gpu_transcription_queue::Column::State,
+                    sea_orm::sea_query::Expr::value(state.as_str()),
+                )
+                .col_expr(
+                    echo_gpu_transcription_queue::Column::FinishedAt,
+                    sea_orm::sea_query::Expr::value(finished_at),
+                )
+                .filter(echo_gpu_transcription_queue::Column::SourceId.eq(id))
+                .exec(&env.dbx)
+                .await
+                .unwrap();
+        }
+        let existing = insert_audio(&env, false, 1).await;
+        echo_gpu_transcription_queue::Entity::update_many()
+            .col_expr(
+                echo_gpu_transcription_queue::Column::SourceId,
+                sea_orm::sea_query::Expr::value(existing.id),
+            )
+            .filter(
+                echo_gpu_transcription_queue::Column::SourceId.eq(recent_id),
+            )
+            .exec(&env.dbx)
+            .await
+            .unwrap();
+
+        assert_eq!(cleanup_finished(&env).await.unwrap(), 1);
+        assert!(echo_gpu_client::lookup(&env.dbx, old_id)
+            .await
+            .unwrap()
+            .is_none());
+        assert!(echo_gpu_client::lookup(&env.dbx, active_id)
+            .await
+            .unwrap()
+            .is_some());
+        assert!(echo_gpu_client::lookup(&env.dbx, existing.id)
+            .await
+            .unwrap()
+            .is_some());
+
+        let mut cursor = None;
+        while !cleanup_orphans(&env, &mut cursor).await.unwrap().1 {}
+        assert!(echo_gpu_client::lookup(&env.dbx, orphan_id)
+            .await
+            .unwrap()
+            .is_none());
+        assert!(echo_gpu_client::lookup(&env.dbx, existing.id)
+            .await
+            .unwrap()
+            .is_some());
+    }
+
+    #[tokio::test]
+    async fn cancellation_stops_before_claiming_new_work() {
+        let (base_env, _guard) =
+            crate::functest::tests::cleanup_locked().await.unwrap();
+        let temp = tempfile::tempdir().unwrap();
+        let env = cache_only_env(&base_env, temp.path());
+        create_instance(&env).await;
+        let media = insert_audio(&env, false, 1).await;
+        echo_gpu_client::enqueue(&env.dbx, media.id).await.unwrap();
+        let cancel = CancellationToken::new();
+        cancel.cancel();
+        tokio::time::timeout(
+            Duration::from_secs(2),
+            run(env.clone(), Uuid::now_v7(), cancel),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        let item = echo_gpu_client::lookup(&env.dbx, media.id)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(item.state().unwrap(), echo_gpu_client::QueueState::Queued);
+        assert_eq!(item.0.attempt_count, 0);
     }
 }

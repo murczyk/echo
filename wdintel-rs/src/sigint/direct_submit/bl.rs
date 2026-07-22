@@ -607,7 +607,7 @@ mod tests {
     use crate::entities::{
         device_name, palitra, palitra_highlight_worker_job, sigint_comment,
         sigint_inbox_item, sigint_inbox_item_point_token,
-        sigint_inbox_item_tag, signal_message, tag,
+        sigint_inbox_item_tag, signal_message, signal_message_media, tag,
         tag_suggestion_worker_queue,
     };
     use crate::functest::tests::cleanup;
@@ -1014,5 +1014,54 @@ mod tests {
                 .unwrap();
         assert_eq!(inbox_item.date, None);
         assert_eq!(inbox_item.time, None);
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn direct_edit_removes_transcription_work_for_deleted_media() {
+        let env = cleanup().await.unwrap();
+        let created = submit_signal_message(
+            TEST_LOGIN,
+            &env,
+            direct_submit_payload("original body"),
+        )
+        .await
+        .unwrap();
+        let media_id = Uuid::now_v7();
+        signal_message_media::ActiveModel {
+            id: Set(media_id),
+            signal_message_id: Set(created.signal_message_id),
+            content_type: Set("audio/ogg".into()),
+            file_ext: Set(Some("ogg".into())),
+            file_name: Set(Some("recording.ogg".into())),
+            size_bytes: Set(1),
+            is_encrypted: Set(false),
+            created_at: Set(chrono::Utc::now().naive_utc()),
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        echo_gpu_client::enqueue(&env.dbx, media_id).await.unwrap();
+
+        let mut payload = direct_submit_payload("updated body");
+        payload.deleted_media_ids = Some(vec![media_id]);
+        edit_signal_message(
+            TEST_LOGIN,
+            &env,
+            created.signal_message_id,
+            payload,
+        )
+        .await
+        .unwrap();
+
+        assert!(signal_message_media::Entity::find_by_id(media_id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .is_none());
+        assert!(echo_gpu_client::lookup(&env.dbx, media_id)
+            .await
+            .unwrap()
+            .is_none());
     }
 }

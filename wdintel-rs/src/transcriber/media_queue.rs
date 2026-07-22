@@ -107,8 +107,13 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::{media_eligibility, reconcile, MediaEligibility};
-    use crate::entities::signal_message_media;
+    use super::{
+        media_eligibility, reconcile, reconcile_message, MediaEligibility,
+    };
+    use crate::entities::{signal_message_media, system_settings};
+    use sea_orm::{
+        ActiveModelTrait, ActiveValue::Set, EntityTrait, IntoActiveModel,
+    };
     use uuid::Uuid;
 
     fn audio(size_bytes: i64) -> signal_message_media::Model {
@@ -152,6 +157,87 @@ mod tests {
         reconcile(&env.dbx, &[], &[source_id]).await.unwrap();
 
         assert!(echo_gpu_client::lookup(&env.dbx, source_id)
+            .await
+            .unwrap()
+            .is_none());
+    }
+
+    #[tokio::test]
+    async fn enabled_reconcile_is_idempotent_and_tracks_final_media_state() {
+        let (env, _guard) =
+            crate::functest::tests::cleanup_locked().await.unwrap();
+        system_settings::ActiveModel {
+            enable_audio_transcription: Set(true),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        let message = crate::functest::tests::mk_signal_message(
+            &env.dbx,
+            Default::default(),
+        )
+        .await
+        .unwrap();
+        let mut eligible = audio(104_857_600);
+        eligible.signal_message_id = message.id;
+        let eligible =
+            eligible.into_active_model().insert(&env.dbx).await.unwrap();
+        let mut oversized = audio(104_857_601);
+        oversized.signal_message_id = message.id;
+        oversized
+            .into_active_model()
+            .insert(&env.dbx)
+            .await
+            .unwrap();
+        let mut non_audio = audio(1);
+        non_audio.signal_message_id = message.id;
+        non_audio.content_type = "text/plain".into();
+        non_audio.file_ext = Some("txt".into());
+        non_audio.file_name = Some("note.txt".into());
+        non_audio
+            .into_active_model()
+            .insert(&env.dbx)
+            .await
+            .unwrap();
+
+        let first = reconcile_message(&env.dbx, message.id, &[]).await.unwrap();
+        assert_eq!(first.queued, 1);
+        assert_eq!(first.skipped_oversized, 1);
+        let second =
+            reconcile_message(&env.dbx, message.id, &[]).await.unwrap();
+        assert_eq!(second.queued, 0);
+        assert_eq!(second.skipped_oversized, 1);
+
+        signal_message_media::Entity::delete_by_id(eligible.id)
+            .exec(&env.dbx)
+            .await
+            .unwrap();
+        reconcile_message(&env.dbx, message.id, &[eligible.id])
+            .await
+            .unwrap();
+        assert!(echo_gpu_client::lookup(&env.dbx, eligible.id)
+            .await
+            .unwrap()
+            .is_none());
+
+        let replacement = audio(1);
+        let replacement_id = replacement.id;
+        let mut replacement = replacement.into_active_model();
+        replacement.signal_message_id = Set(message.id);
+        replacement.insert(&env.dbx).await.unwrap();
+        reconcile_message(&env.dbx, message.id, &[]).await.unwrap();
+        assert!(echo_gpu_client::lookup(&env.dbx, replacement_id)
+            .await
+            .unwrap()
+            .is_some());
+
+        let message_id = message.id;
+        let mut message = message.into_active_model();
+        message.deleted = Set(true);
+        message.update(&env.dbx).await.unwrap();
+        reconcile_message(&env.dbx, message_id, &[]).await.unwrap();
+        assert!(echo_gpu_client::lookup(&env.dbx, replacement_id)
             .await
             .unwrap()
             .is_none());
