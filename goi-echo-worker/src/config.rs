@@ -13,7 +13,6 @@ pub const DEFAULT_KNOWLEDGE_XLSX_PATH: &str =
     "/etc/goi/data/xlsx/knowledge.xlsx";
 pub const DEFAULT_FREQUENCIES_XLSX_PATH: &str =
     "/etc/goi/data/xlsx/frequencies.xlsx";
-pub const DEFAULT_PALETTES_PATH: &str = "/etc/goi/data/palettes";
 pub const DEFAULT_CATEGORIES_PATH: &str = "/etc/goi/data/categories.json";
 pub const DEFAULT_LISTEN_HOST: &str = "0.0.0.0";
 pub const DEFAULT_LISTEN_PORT: u16 = 8088;
@@ -91,10 +90,10 @@ impl Config {
         preferred_readonly_xlsx_path(self.frequencies_xlsx_path())
     }
 
-    pub fn palettes_path(&self) -> &str {
+    pub fn palettes_path(&self) -> Result<&str> {
         self.palettes_path
             .as_deref()
-            .unwrap_or(DEFAULT_PALETTES_PATH)
+            .context("palettes_path is missing; rerun GOI worker setup")
     }
 
     pub fn categories_path(&self) -> &str {
@@ -166,6 +165,22 @@ mod tests {
     use super::*;
     use std::fs;
     use std::time::{SystemTime, UNIX_EPOCH};
+
+    #[test]
+    fn legacy_config_requires_explicit_palettes_path() {
+        let config = toml::from_str::<Config>(
+            r#"
+api_login = "login"
+api_password = "password"
+"#,
+        )
+        .expect("legacy config");
+
+        assert_eq!(
+            config.palettes_path().unwrap_err().to_string(),
+            "palettes_path is missing; rerun GOI worker setup"
+        );
+    }
 
     #[test]
     fn preferred_readonly_xlsx_path_uses_readonly_sibling_when_present() {

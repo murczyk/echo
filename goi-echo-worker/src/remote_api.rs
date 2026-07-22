@@ -424,7 +424,7 @@ async fn run_process(
 }
 
 async fn ensure_palette_root(config: &Config) -> anyhow::Result<PathBuf> {
-    let root = PathBuf::from(config.palettes_path());
+    let root = PathBuf::from(config.palettes_path()?);
     tokio::fs::create_dir_all(&root).await?;
     tokio::fs::canonicalize(root)
         .await
