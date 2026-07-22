@@ -253,7 +253,12 @@ export function ManageMessageDrawer(props: Props) {
                   setUnitLocked={drawerState.setUnitLocked}
                 />
 
-                <LocationsSection busy={busy} recentValues={recentValues} />
+                <LocationsSection
+                  busy={busy}
+                  recentValues={recentValues}
+                  open={props.open}
+                  onError={setErrorMsg}
+                />
 
                 <CommentSection busy={busy} />
 
