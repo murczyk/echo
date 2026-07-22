@@ -12,10 +12,10 @@ import {
 } from './message-card-image-utils';
 import { shouldIgnoreArrowNavigation } from './document-preview-utils';
 import {
+  getNextWheelZoom,
   isInteractivePreviewTarget,
   ZOOM_MAX,
   ZOOM_MIN,
-  ZOOM_STEP,
   type DragState,
 } from './message-card-image-preview-utils';
 import {
@@ -34,6 +34,25 @@ type StageSize = {
   width: number;
   height: number;
 };
+
+function getFittedImageSize(imageSize: StageSize | null, stage: HTMLDivElement): StageSize {
+  if (
+    imageSize === null ||
+    !Number.isFinite(imageSize.width) ||
+    !Number.isFinite(imageSize.height) ||
+    imageSize.width <= 0 ||
+    imageSize.height <= 0
+  ) {
+    return { width: stage.clientWidth, height: stage.clientHeight };
+  }
+  const fitScale = Math.min(
+    stage.clientWidth / imageSize.width,
+    stage.clientHeight / imageSize.height,
+  );
+  return Number.isFinite(fitScale)
+    ? { width: imageSize.width * fitScale, height: imageSize.height * fitScale }
+    : { width: stage.clientWidth, height: stage.clientHeight };
+}
 
 export function MessageImagePreviewDialog({
   imageHrefs,
@@ -72,6 +91,7 @@ export function MessageImagePreviewDialog({
   const copyRequestKeyRef = useRef<string | null>(null);
   const currentHrefRef = useRef(currentHref);
   const zoomRef = useRef(zoom);
+  const panRef = useRef(pan);
   const dragRef = useRef<DragState | null>(null);
   const pointerListenersRef = useRef<{
     move: (event: PointerEvent) => void;
@@ -110,6 +130,7 @@ export function MessageImagePreviewDialog({
     setZoom(ZOOM_MIN);
     zoomRef.current = ZOOM_MIN;
     setPan({ x: 0, y: 0 });
+    panRef.current = { x: 0, y: 0 };
     setFailedHref(null);
     setImageSize(null);
     setLoadedImage(null);
@@ -136,10 +157,13 @@ export function MessageImagePreviewDialog({
           x: drag.origin.x + (event.clientX - drag.startX),
           y: drag.origin.y + (event.clientY - drag.startY),
         },
+        drag.fittedImageWidth,
+        drag.fittedImageHeight,
         drag.stageWidth,
         drag.stageHeight,
         zoomRef.current,
       );
+      panRef.current = nextPan;
       setPan(nextPan);
     };
 
@@ -180,7 +204,11 @@ export function MessageImagePreviewDialog({
     zoomRef.current = zoom;
   }, [zoom]);
 
-  const setPreviewZoom = (nextZoom: number) => {
+  useEffect(() => {
+    panRef.current = pan;
+  }, [pan]);
+
+  const setPreviewZoom = (nextZoom: number, cursorPoint: Point = { x: 0, y: 0 }) => {
     const clampedZoom = clamp(nextZoom, ZOOM_MIN, ZOOM_MAX);
     const stage = stageRef.current;
     const currentZoom = zoomRef.current;
@@ -188,15 +216,29 @@ export function MessageImagePreviewDialog({
     if (clampedZoom === ZOOM_MIN) {
       setZoom(ZOOM_MIN);
       setPan({ x: 0, y: 0 });
+      panRef.current = { x: 0, y: 0 };
       zoomRef.current = ZOOM_MIN;
       return;
     }
 
-    if (clampedZoom < currentZoom && stage != null) {
-      setPan((currentPan) =>
-        clampPan(currentPan, stage.clientWidth, stage.clientHeight, clampedZoom),
-      );
-    }
+    const currentPan = panRef.current;
+    const fittedImageSize = stage === null ? null : getFittedImageSize(imageSize, stage);
+    const nextPan =
+      stage === null
+        ? currentPan
+        : clampPan(
+            {
+              x: cursorPoint.x - (clampedZoom / currentZoom) * (cursorPoint.x - currentPan.x),
+              y: cursorPoint.y - (clampedZoom / currentZoom) * (cursorPoint.y - currentPan.y),
+            },
+            fittedImageSize?.width ?? 0,
+            fittedImageSize?.height ?? 0,
+            stage.clientWidth,
+            stage.clientHeight,
+            clampedZoom,
+          );
+    panRef.current = nextPan;
+    setPan(nextPan);
 
     zoomRef.current = clampedZoom;
     setZoom(clampedZoom);
@@ -264,11 +306,14 @@ export function MessageImagePreviewDialog({
     const handleStageWheelNative = (event: WheelEvent) => {
       if (isInteractivePreviewTarget(event.target)) return;
       event.preventDefault();
-      if (event.deltaY < 0) {
-        setPreviewZoom(zoomRef.current + ZOOM_STEP);
-      } else if (event.deltaY > 0) {
-        setPreviewZoom(zoomRef.current - ZOOM_STEP);
-      }
+      const rect = stageEl.getBoundingClientRect();
+      setPreviewZoom(
+        getNextWheelZoom(zoomRef.current, event.deltaY, event.deltaMode, rect.height),
+        {
+          x: event.clientX - (rect.left + rect.width / 2),
+          y: event.clientY - (rect.top + rect.height / 2),
+        },
+      );
     };
 
     stageEl.addEventListener('wheel', handleStageWheelNative, {
@@ -277,7 +322,7 @@ export function MessageImagePreviewDialog({
     return () => {
       stageEl.removeEventListener('wheel', handleStageWheelNative);
     };
-  }, [open, stageEl]);
+  }, [imageSize, open, stageEl]);
 
   useEffect(() => removePointerListeners, [removePointerListeners]);
 
@@ -324,11 +369,14 @@ export function MessageImagePreviewDialog({
     if (zoom === ZOOM_MIN) return;
     const stage = stageRef.current;
     if (stage === null) return;
+    const fittedImageSize = getFittedImageSize(imageSize, stage);
     dragRef.current = {
       pointerId: event.pointerId,
       startX: event.clientX,
       startY: event.clientY,
       origin: pan,
+      fittedImageWidth: fittedImageSize.width,
+      fittedImageHeight: fittedImageSize.height,
       stageWidth: stage.clientWidth,
       stageHeight: stage.clientHeight,
     };
