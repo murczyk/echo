@@ -1,7 +1,6 @@
 use self::types::{LocationSearchReq, LocationSearchRsp};
 use crate::error::AppError;
 use crate::types::*;
-use crate::users::{has_any_role, login_id_from_identity};
 use actix_web::post;
 use actix_web::web::Json;
 
@@ -14,7 +13,8 @@ pub async fn location_search(
     env: actix_web::web::Data<Env>,
     req: Json<LocationSearchReq>,
 ) -> Result<Json<LocationSearchRsp>, AppError> {
-    has_any_role(&env.dbx, &login_id_from_identity(&user)?, vec!["Rer"])
+    let login = user.id().c(h!())?;
+    crate::users::has_any_role(&env.dbx, &login, vec!["Rer"])
         .await
         .c(h!())?;
 
