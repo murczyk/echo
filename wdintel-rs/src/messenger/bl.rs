@@ -369,10 +369,10 @@ pub async fn get_qr_code(
     let messenger = parse_message_source(&account.messenger).c(h!())?;
     let system_service_name = account.system_service_name.c(h!())?;
 
-    let txn = db.begin().await.c(h!())?;
-    let code = echo_im::link_account(&system_service_name, messenger, &txn)
+    let code = echo_im::link_account(&system_service_name, messenger, db)
         .await
         .c(h!())?;
+    let txn = db.begin().await.c(h!())?;
     let m_login = Some(login.to_string());
     datasource::Entity::update_many()
         .filter(datasource::Column::Id.eq(account.id))
