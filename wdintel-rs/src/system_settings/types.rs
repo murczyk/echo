@@ -24,6 +24,7 @@ pub struct SystemSettingsCurrentRsp {
     pub devices_section_enabled: bool,
     pub sigint_comment_parsing_enabled: bool,
     pub do_not_store_duplicate_echoim_failures: bool,
+    pub goi_association_message_uid_worker_enabled: bool,
 }
 
 #[derive(
@@ -54,6 +55,7 @@ pub struct SystemSettingsItem {
     pub echo_restapi_error_discord_webhook_url: Option<String>,
     pub sigint_comment_parsing_enabled: bool,
     pub do_not_store_duplicate_echoim_failures: bool,
+    pub goi_association_message_uid_worker_enabled: bool,
 }
 
 #[derive(
@@ -94,6 +96,8 @@ pub struct CreateSystemSettingsReq {
     pub sigint_comment_parsing_enabled: bool,
     #[serde(default)]
     pub do_not_store_duplicate_echoim_failures: bool,
+    #[serde(default)]
+    pub goi_association_message_uid_worker_enabled: bool,
 }
 
 fn default_sigint_comment_parsing_enabled() -> bool {
@@ -113,7 +117,7 @@ mod tests {
     use serde_json::json;
 
     #[test]
-    fn missing_sigint_comment_parsing_enabled_defaults_to_false() {
+    fn missing_boolean_settings_default_to_false() {
         let req: CreateSystemSettingsReq = serde_json::from_value(json!({
             "rer_analysis_units_exact_match_only_default": true,
             "rer_duty_test_enabled": false,
@@ -126,5 +130,6 @@ mod tests {
         .unwrap();
 
         assert!(!req.sigint_comment_parsing_enabled);
+        assert!(!req.goi_association_message_uid_worker_enabled);
     }
 }

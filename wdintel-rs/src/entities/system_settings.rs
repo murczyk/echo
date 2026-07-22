@@ -41,6 +41,7 @@ pub struct Model {
     pub echo_restapi_error_discord_webhook_url: Option<String>,
     pub sigint_comment_parsing_enabled: bool,
     pub do_not_store_duplicate_echoim_failures: bool,
+    pub goi_association_message_uid_worker_enabled: bool,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

@@ -88,6 +88,8 @@ fn map_system_settings_item(
         sigint_comment_parsing_enabled: settings.sigint_comment_parsing_enabled,
         do_not_store_duplicate_echoim_failures: settings
             .do_not_store_duplicate_echoim_failures,
+        goi_association_message_uid_worker_enabled: settings
+            .goi_association_message_uid_worker_enabled,
     })
 }
 
@@ -225,6 +227,18 @@ where
     let settings = get_active_system_settings(dbx).await.c(h!())?;
     Ok(settings
         .map(|settings| settings.do_not_store_duplicate_echoim_failures)
+        .unwrap_or(false))
+}
+
+pub async fn goi_association_message_uid_worker_enabled<C>(
+    dbx: &C,
+) -> Result<bool, AppError>
+where
+    C: ConnectionTrait,
+{
+    let settings = get_active_system_settings(dbx).await.c(h!())?;
+    Ok(settings
+        .map(|settings| settings.goi_association_message_uid_worker_enabled)
         .unwrap_or(false))
 }
 
@@ -444,6 +458,9 @@ fn system_settings_active_model(
         do_not_store_duplicate_echoim_failures: Set(
             req.do_not_store_duplicate_echoim_failures
         ),
+        goi_association_message_uid_worker_enabled: Set(
+            req.goi_association_message_uid_worker_enabled
+        ),
     }
 }
 
@@ -571,6 +588,8 @@ pub async fn current_system_settings(
                 .sigint_comment_parsing_enabled,
             do_not_store_duplicate_echoim_failures: settings
                 .do_not_store_duplicate_echoim_failures,
+            goi_association_message_uid_worker_enabled: settings
+                .goi_association_message_uid_worker_enabled,
         },
         None => SystemSettingsCurrentRsp {
             id: None,
@@ -592,6 +611,7 @@ pub async fn current_system_settings(
             devices_section_enabled: false,
             sigint_comment_parsing_enabled: false,
             do_not_store_duplicate_echoim_failures: false,
+            goi_association_message_uid_worker_enabled: false,
         },
     }))
 }
@@ -868,6 +888,7 @@ mod tests {
             echo_restapi_error_discord_webhook_url: None,
             sigint_comment_parsing_enabled: true,
             do_not_store_duplicate_echoim_failures: false,
+            goi_association_message_uid_worker_enabled: false,
         }
     }
 
@@ -921,6 +942,7 @@ mod tests {
             echo_restapi_error_discord_webhook_url: Set(None),
             sigint_comment_parsing_enabled: Set(true),
             do_not_store_duplicate_echoim_failures: Set(false),
+            goi_association_message_uid_worker_enabled: Set(false),
         }
         .insert(dbx)
         .await
