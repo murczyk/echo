@@ -1,0 +1,367 @@
+# Echo architecture
+
+Echo is a SIGINT analytical web application deployed as one application
+container per installation. PostgreSQL 18 is the system of record. An
+installation may also have one paired analytics container that maintains a
+derived ClickHouse copy for expensive counters and reports.
+
+The analytics container is optional: omitting the `[analytics]` section from
+Echo configuration leaves the application on its existing PostgreSQL path.
+Failure to connect to analytics at startup does not prevent Echo from starting,
+and supported analytical requests retry through PostgreSQL when analytics is
+stale, unavailable, or too slow.
+
+## Deployment topology
+
+The operator creates and sizes the LXC containers in Proxmox or Incus. Echo's
+deployment tooling installs application packages and native systemd services;
+it does not create containers and does not run Docker or Podman inside them.
+The application and analytics stacks run in separate operating-system
+containers; the analytics services are never installed inside the Echo LXC.
+The paired containers should communicate over a private Proxmox network in
+production. Tailscale is also supported and is used by the development pair.
+
+```mermaid
+flowchart LR
+    browser["Analyst browser"]
+    vault[("HashiCorp Vault<br/>central secrets service")]
+    promin["PROMIN<br/>optional external integration"]
+    backblaze[("Backblaze B2<br/>optional S3-compatible object storage")]
+    echo_operator["echo-operator<br/>optional external message source"]
+    goi["GOI instance<br/>optional external system<br/>goi-echo-worker API + shared files"]
+
+    subgraph echo_lxc["LXC 1 · Echo application · required"]
+        direction LR
+        web["Web application<br/>wdintel-web + nginx"]
+        api["Echo API<br/>wdintel-rs"]
+        bg["Background workers<br/>wdintel-rs-bgworker"]
+        postgres[("PostgreSQL 18<br/>system of record")]
+        redis[("Redis<br/>sessions + transient state")]
+        nlp["wdintel-py<br/>optional NLP API"]
+        iggy["Iggy<br/>optional event streaming"]
+        echo_im["Echo IM<br/>messenger accounts · clients · queues"]
+        signal["Signal<br/>linked accounts + message media"]
+        whatsapp["WhatsApp<br/>linked clients + message media"]
+        vector["Vector<br/>system + PostgreSQL logs"]
+
+        web --> api
+        api -->|transactions and queries| postgres
+        bg -->|queues and message state| postgres
+        api --> redis
+        bg --> redis
+        api -.->|tokenization and inference| nlp
+        bg -.->|tokenization and inference| nlp
+        bg -.->|optional integration| iggy
+        bg <-->|messenger jobs| echo_im
+        echo_im -->|messenger tables| postgres
+        echo_im <-->|receive + send| signal
+        echo_im <-->|receive + send| whatsapp
+        api -.->|journald| vector
+        bg -.->|journald| vector
+        postgres -.->|log files| vector
+    end
+
+    subgraph greptime_lxc["LXC · Shared GreptimeDB · OPTIONAL"]
+        greptime[("GreptimeDB<br/>activity telemetry + time-series")]
+    end
+
+    subgraph signoz_lxc["LXC · Shared SigNoz · OPTIONAL"]
+        signoz["SigNoz<br/>central logs + dashboards"]
+    end
+
+    subgraph analytics_lxc["LXC 2 · Secondary analytics · OPTIONAL · Debian 13"]
+        direction LR
+        replication["Replication pipeline<br/>PeerDB + Temporal"]
+        staging[("MinIO<br/>transient staging")]
+        clickhouse[("ClickHouse<br/>analytical copy")]
+        gateway["PostgreSQL gateway<br/>pg_clickhouse"]
+
+        replication --> staging --> clickhouse
+        gateway -->|analytical SQL| clickhouse
+    end
+
+    browser -->|HTTPS| web
+    vault -.->|runtime secrets| api
+    vault -.->|runtime secrets| bg
+    postgres ==>|logical CDC<br/>private network| replication
+    api -.->|optional analytical queries<br/>PostgreSQL syntax| gateway
+    api -.->|activity events<br/>PostgreSQL protocol| greptime
+    bg -.->|activity batches<br/>PostgreSQL protocol| greptime
+    vector -.->|HTTP JSON logs| signoz
+    iggy <-->|consume + produce events| promin
+    api <-->|uploads + downloads| backblaze
+    bg <-->|media + generated reports| backblaze
+    echo_operator -->|authenticated message submit API| api
+    api <-->|associations · knowledge · frequencies| goi
+    bg <-->|palitra + folder sync| goi
+    echo_im <-->|messenger bot integration| goi
+
+    style echo_lxc stroke-width:2px
+    style analytics_lxc stroke-width:2px,stroke-dasharray:8 5
+    style greptime_lxc stroke-width:2px,stroke-dasharray:8 5
+    style signoz_lxc stroke-width:2px,stroke-dasharray:8 5
+    classDef canonical stroke-width:3px
+    classDef optional stroke-dasharray:6 4
+    class postgres canonical
+    class nlp,iggy,signal,whatsapp,vector,greptime,signoz,promin,backblaze,echo_operator,goi optional
+```
+
+The diagram focuses on the core web, worker, messenger, storage, observability,
+and analytics paths. Other instance-specific integrations are configured
+independently.
+
+## Echo LXC systemd graph
+
+```mermaid
+flowchart LR
+    browser["HTTPS client"] --> nginx["nginx.service"]
+    nginx -->|:8081| api["wdintel-rs.service"]
+    socket["wdintel-rs.socket<br/>optional socket activation"] -.-> api
+    api --> postgres["postgresql@18-main.service"]
+    bg["wdintel-rs-bgworker.service"] --> postgres
+    api --> redis["redis-server.service"]
+    bg --> redis
+    api -.-> nlp["wdintel-py.service<br/>127.0.0.1:5000"]
+    bg -.-> nlp
+    api -.-> vault["external HashiCorp Vault"]
+    bg -.-> vault
+    api -.-> iggy["echo-iggy.service<br/>optional"]
+    bg -.-> iggy
+    iggy <-->|consume + produce events| promin["PROMIN<br/>optional external integration"]
+    api -.->|admin + monitoring| echo_im["echo-im<br/>embedded messenger library<br/>account + client orchestration"]
+    bg <-->|ingest + send queues| echo_im
+    echo_im <-->|per-client local API| signal["echo-signal-bot@.service<br/>Signal REST API"]
+    echo_im <-->|per-client local API| whatsapp["echo-whatsapp-bot@.service<br/>WhatsApp client"]
+    journal["systemd journal<br/>all native units"] --> vector["echo-vector.service<br/>optional log collector"]
+    postgres -.->|PostgreSQL log files| vector
+    vector -.->|HTTP JSON when enabled| signoz["SigNoz LXC<br/>central logs + dashboards"]
+    api -.->|activity events<br/>PostgreSQL protocol| greptime[("GreptimeDB LXC<br/>echo-greptimedb.service<br/>activity_page_visit · activity_details<br/>per-minute flow aggregates")]
+    bg -.->|activity batches<br/>PostgreSQL protocol| greptime
+    wal_timer["echo-peerdb-wal-monitor.timer<br/>with analytics only"] -.-> wal_check["echo-peerdb-wal-monitor.service"]
+    wal_check --> postgres
+
+    postgres --> postgres_data[("wd application tables<br/>users · domain records · reports")]
+    postgres --> echo_im_data[("Echo IM tables in wd<br/>echo_account · echo_client · echo_client_config<br/>echo_client_lock · echo_inbox_message<br/>echo_whatsapp_queue + attachments")]
+    echo_im --> echo_im_data
+    signal --> signal_data[("Signal client state + attachments<br/>/etc/echo/signal-cli-data/%i/")]
+    whatsapp --> whatsapp_data[("WhatsApp client state<br/>/etc/echo/whatsapp-cli-data/%i/client_data/")]
+    api --> app_storage[("Echo application storage<br/>configured storage_dir<br/>media cache · uploads · generated assets")]
+    bg --> app_storage
+    bg -.->|optional durable media upload| s3[("S3-compatible object storage<br/>optional")]
+
+    classDef optional stroke-dasharray:6 4
+    class socket,nlp,iggy,promin,signal,whatsapp,vector,signoz,greptime,s3,wal_timer,wal_check optional
+```
+
+## Bgworkers
+
+The live server and dedicated bgworker processes both own background tasks.
+Solid arrows show tasks that are always spawned in that process; dotted arrows
+show tasks gated by configuration or used only during startup. Report-history
+workers are separate concurrent tasks, including a second Etalonka worker.
+
+```mermaid
+flowchart TB
+    api["wdintel-rs.service"]
+    bg["wdintel-rs-bgworker.service"]
+
+    api --> api_workers["Request-adjacent workers<br/>session_activity_worker<br/>messenger_media_cache_cleanup_worker<br/>messenger_media_thumbnail_worker"]
+    api --> api_goi["API integration worker<br/>goi_association_worker"]
+    api --> shared_workers["Workers spawned by both processes<br/>goi_folder_sync_worker<br/>palitra_goi_sync_worker<br/>palitra_conversion_worker<br/>worker_metrics_logger"]
+    bg --> shared_workers
+    api -.-> vault_worker["secret_worker<br/>when Vault is configured"]
+    bg -.-> vault_worker
+
+    bg --> core_workers["Core workers<br/>healthcheck_worker<br/>worker_calculate_group_stats<br/>iggy_integration_worker<br/>aor_assignments_worker<br/>operator_inbox_worker<br/>rer_duty_historical_interceptions_worker<br/>unit_tag_queue_worker"]
+    bg --> messenger_workers["Messenger workers<br/>messenger_receive_worker<br/>process_queue_nofail<br/>echo_im_cleanup"]
+    bg --> network_workers["Network workers<br/>recent_inbox_network_worker<br/>old_inbox_network_worker<br/>inbox_network_daily_consistency_worker"]
+    bg --> palitra_workers["Palitra worker<br/>palitra_highlight_worker"]
+
+    bg -.-> configured_workers["Configuration-gated workers<br/>activity_details_worker · GreptimeDB<br/>cleanup_networks_worker<br/>fill_comp_freq_worker<br/>inactive_users_worker<br/>location_v2_worker<br/>suggest_message_tags_worker<br/>refresh_models_worker · AI models<br/>cleanup_tmp_worker · in-memory tmp"]
+    bg -.-> startup_workers["Startup task<br/>signal_cli_verbose_logger"]
+
+    bg --> report_workers_a["Report-history workers<br/>report_history_worker_tags<br/>report_history_worker_interception<br/>report_history_worker_babak<br/>report_history_worker_mouse<br/>report_history_worker_pelengs<br/>report_history_worker_senders<br/>report_history_worker_posts<br/>report_history_worker_naushnom<br/>report_history_worker_reo<br/>report_history_worker_digest"]
+    bg --> report_workers_b["Report-history workers<br/>report_history_worker_rer_report<br/>report_history_worker_sposob<br/>report_history_worker_posts_docx<br/>report_history_worker_active_networks<br/>report_history_worker_network_frequencies<br/>report_history_worker_report_125<br/>report_history_worker_report_1213<br/>report_history_worker_summary_table"]
+    bg --> report_workers_c["Report-history workers<br/>report_history_worker_kmz<br/>report_history_worker_geojson<br/>report_history_worker_etalonka<br/>report_history_worker_etalonka_1<br/>report_history_worker_goi<br/>report_history_worker_unknown<br/>report_history_timeout_worker"]
+
+    classDef optional stroke-dasharray:6 4
+    class vault_worker,configured_workers,startup_workers optional
+```
+
+## GOI integration
+
+GOI integration is optional and configured per GOI instance in Echo. The
+diagram shows a full integration; a link-only integration omits the API and SSH
+sync paths. The HTTP API uses Basic authentication, while workbook and palette
+operations use SSH. See [GOI messenger setup](content/goi-messengers.md) for
+the user-facing Signal and WhatsApp connection flow.
+
+```mermaid
+flowchart LR
+    subgraph echo_lxc["Echo LXC"]
+        direction TB
+        api["wdintel-rs.service"]
+        bg["wdintel-rs-bgworker.service"]
+
+        association["goi_association_worker<br/>pull associations + knowledge<br/>push signed frequencies"]
+        folder["goi_folder_sync_worker<br/>sync Echo callsigns into GOI knowledge"]
+        palitra_sync["palitra_goi_sync_worker<br/>reconcile · import · upload · move · delete"]
+        conversion["palitra_conversion_worker<br/>convert imported palette sources"]
+        report["report_history_worker_goi<br/>generate requested GOI reports"]
+        echo_im["Echo IM<br/>Signal + WhatsApp bot integration"]
+
+        echo_pg[("PostgreSQL 18 · wd<br/>goi_integration · goi_association · goi_knowledge<br/>goi_palitra_sync · source blobs · converted geometry<br/>palitra sync/conversion queues")]
+        report_store[("Backblaze B2 / S3<br/>generated GOI reports · optional")]
+
+        api --> association
+        api --> folder
+        api --> palitra_sync
+        api --> conversion
+        bg --> folder
+        bg --> palitra_sync
+        bg --> conversion
+        bg --> report
+
+        association --> echo_pg
+        folder --> echo_pg
+        palitra_sync --> echo_pg
+        conversion --> echo_pg
+        report --> echo_pg
+        report -.-> report_store
+        echo_im --> echo_pg
+    end
+
+    subgraph goi_lxc["GOI LXC · external"]
+        direction TB
+        goi_app["GOI application"]
+        goi_worker["goi-echo-worker.service<br/>HTTP API · :8088"]
+        goi_watchers["Internal workers<br/>associations_worker_nofail<br/>knowledge_worker_nofail"]
+        goi_postgres["postgresql.service"]
+        goi_pg[("PostgreSQL · goi<br/>association · knowledge · sync_lock")]
+        goi_files[("GOI filesystem<br/>/etc/goi/data/xlsx/<br/>associations · knowledge · frequencies<br/>/etc/goi/data/palettes/")]
+
+        goi_app <--> goi_files
+        goi_worker --> goi_watchers
+        goi_worker --> goi_postgres
+        goi_postgres --> goi_pg
+        goi_watchers --> goi_pg
+        goi_files -->|watch associations + knowledge| goi_watchers
+        goi_worker -->|write signed frequencies| goi_files
+    end
+
+    association <-->|Basic-auth HTTP<br/>associations · knowledge · signed frequencies| goi_worker
+    folder <-->|SSH · knowledge workbook| goi_files
+    palitra_sync <-->|SSH · palette files| goi_files
+    palitra_sync -.->|SSH · remote sync lock| goi_pg
+    goi_app <-->|messenger bot integration| echo_im
+
+    style echo_lxc stroke-width:2px
+    style goi_lxc stroke-width:2px,stroke-dasharray:8 5
+```
+
+In the current packaged live deployment, `goi_folder_sync_worker`,
+`palitra_goi_sync_worker`, and `palitra_conversion_worker` are started by both
+Echo processes. Palette queue claims use PostgreSQL row locking and remote
+palette operations use the GOI `sync_lock`; nevertheless, worker ownership
+should be consolidated into `wdintel-rs-bgworker.service` to avoid duplicate
+loops and reconciliation work.
+
+## Optional analytics LXC systemd graph
+
+`echo-analytics.target` groups the native services below. Dotted arrows show
+target membership; solid arrows show principal startup dependencies rather
+than every systemd `Wants` and `After` relationship.
+
+```mermaid
+flowchart LR
+    target["echo-analytics.target"]
+
+    postgres["postgresql@18-main.service"]
+    clickhouse["clickhouse-server.service"]
+    firewall["echo-analytics-firewall.service"]
+    temporal["echo-temporal.service"]
+    minio["echo-minio.service"]
+    migrate["echo-peerdb-migrate.service"]
+    api["echo-peer-flow-api.service"]
+    worker["echo-peer-flow-worker.service"]
+    snapshot["echo-peer-flow-snapshot-worker.service"]
+    peerdb["echo-peerdb-server.service"]
+    health_timer["echo-analytics-health.timer"]
+    health["echo-analytics-health.service"]
+
+    postgres_store[("PostgreSQL 18<br/>peerdb_catalog · temporal · temporal_visibility<br/>echo_analytics_gateway + pg_clickhouse")]
+    clickhouse_store[("ClickHouse<br/>echo_cdc raw tables · echo_analytics current views")]
+    minio_store[("MinIO<br/>echo-peerdb-stage transient bucket")]
+
+    target -.-> postgres
+    target -.-> clickhouse
+    target -.-> firewall
+    target -.-> temporal
+    target -.-> minio
+    target -.-> migrate
+    target -.-> api
+    target -.-> worker
+    target -.-> snapshot
+    target -.-> peerdb
+    target -.-> health_timer
+
+    postgres --> temporal
+    postgres --> migrate
+    postgres --> api
+    clickhouse --> api
+    firewall --> api
+    temporal --> api
+    minio --> api
+    migrate --> api
+    api --> peerdb
+    postgres --> worker
+    clickhouse --> worker
+    temporal --> worker
+    minio --> worker
+    migrate --> worker
+    postgres --> snapshot
+    clickhouse --> snapshot
+    temporal --> snapshot
+    minio --> snapshot
+    migrate --> snapshot
+    postgres --> peerdb
+    migrate --> peerdb
+    health_timer --> health
+    postgres --> health
+    clickhouse --> health
+    temporal --> health
+    worker --> health
+    peerdb --> health
+
+    postgres --> postgres_store
+    clickhouse --> clickhouse_store
+    minio --> minio_store
+
+    migrate --> postgres_store
+    temporal --> postgres_store
+    api --> postgres_store
+    worker --> postgres_store
+    snapshot --> postgres_store
+    peerdb --> postgres_store
+    health --> postgres_store
+    worker --> minio_store
+    snapshot --> minio_store
+    minio_store -->|staged batches| clickhouse_store
+    postgres_store -->|pg_clickhouse queries| clickhouse_store
+    health --> clickhouse_store
+```
+
+## Deployment and operations
+
+- [Echo installation](INSTALL_ZIP.md)
+- [PostgreSQL setup and recovery](POSTGRESQL.md)
+- [Optional ClickHouse/PeerDB deployment and runbook](../deploy/clickhouse/README.md)
+- [Analytics implementation decision record](../archive/2026-07-21-peerdb-clickhouse/README.md)
+- [Monitoring](MONITORING.md)
+
+Analytics artifacts are produced on the dedicated Debian 13 builder
+`echo-build-deb13-main`; runtime containers contain no compiler. Secrets are
+stored as separate Bitwarden Secure Notes and rendered to root-owned
+environment files by deployment commands. Each participating Echo instance
+receives its own analytics container, credentials, publication, replication
+slot, ClickHouse data, and recovery lifecycle.

@@ -1,0 +1,564 @@
+# Echo optional ClickHouse analytics stack
+
+This bundle installs one native, Docker-free analytics stack for one Echo
+PostgreSQL instance. The analytics host is a Debian 13 systemd container
+created by an operator. These scripts never create an Incus/LXC/Proxmox
+container.
+
+The source PostgreSQL database remains the system of record. PeerDB streams
+logical changes through a private MinIO staging bucket into ClickHouse. A
+local PostgreSQL 18 gateway uses `pg_clickhouse` to expose current-state
+ClickHouse views with PostgreSQL syntax. Echo connects only to that gateway;
+instances without an `[analytics]` section continue to use PostgreSQL only.
+
+```text
+Echo -> source PostgreSQL 18 (transactions and fallback)
+  |                         |
+  |                         +-- logical publication/slot
+  |                                           |
+  +-> PostgreSQL 18 gateway                  PeerDB
+         + public compatibility views         |
+         + private pg_clickhouse tables       |
+                |                        MinIO staging
+                +----------------------> ClickHouse
+                                           echo_cdc raw tables
+                                           echo_analytics current views
+```
+
+## Supported topology
+
+- One optional Debian 13 analytics container per Echo source container.
+- Native packages and systemd only; no Docker or Podman.
+- `amd64` runtime.
+- Source PostgreSQL 18 and local gateway PostgreSQL 18.
+- Tailscale or an equally private routed network in both directions.
+- The operator creates the container, DNS/IPs, storage, backups, and SSH
+  access before using this bundle.
+
+The first development pair is `ziggy-dev-echo-clickhouse` at Tailscale address
+`100.104.2.38` and source `ziggy-dev-echo` at `100.69.44.87`. Treat these as
+instance values, not global defaults; size each later pair from its source data,
+WAL rate, retention target, and query workload.
+
+The future staging host `100.85.35.99` is not a clean staging target. At the
+user's request it retains copied Ziggy secrets and raw replicated Ziggy data
+from the mistaken first deployment. Before reusing it for staging, wipe or
+replace the container and rotate every Ziggy credential copied there; merely
+stopping the services is not sanitization.
+
+## Pinned components
+
+All pins and downloadable checksums live in [versions.env](versions.env):
+
+- ClickHouse `26.3.12.3` LTS from its signed apt repository.
+- PeerDB `v0.37.1` at its release commit.
+- `pg_clickhouse` `v0.3.2`, built specifically for PostgreSQL 18 from a
+  temporary `agent/v0.3.2-foreign-scan-rte` fork branch. The pinned commit
+  backports the pending upstream fix so pushed-down joins skip synthetic
+  PostgreSQL join RTEs when selecting the execution-time foreign server.
+  Without it, affected mixed joins plan successfully but fail with
+  `cache lookup failed for foreign table 0` when executed. Return the source
+  URL and commit pin to upstream after the fix is released. PostgreSQL 16+
+  uses the core `fs_base_relids` set intended for this purpose; the fork keeps
+  a filtered `fs_relids` fallback for PostgreSQL 13–15.
+- Temporal Server `1.31.2` with PostgreSQL persistence and Temporal CLI
+  `1.8.0`.
+- MinIO security release `RELEASE.2025-10-15T17-29-55Z`, built from its
+  pinned commit because that release has no official Linux binary asset.
+- MinIO client `RELEASE.2025-08-13T08-35-41Z` from its checksummed asset.
+- Builder Go `1.26.5`, Rust `1.93.0`, and buf `1.60.0`.
+
+Exact ClickHouse packages are held after installation. Upgrades are explicit:
+update pins/checksums, rebuild artifacts, test in development, then staging.
+
+## Network and ports
+
+| Port | Bind/reachability | Purpose |
+| --- | --- | --- |
+| Source `5432` | analytics IP only in source HBA | PeerDB CDC |
+| Gateway `5432` | loopback plus source Echo IP | application analytics SQL |
+| `9000`, `8123` | loopback | ClickHouse native/HTTP |
+| `7233` | loopback | Temporal |
+| `9002`, `9003` | loopback | MinIO API/console |
+| `9900` | loopback | PeerDB PostgreSQL-wire API |
+| `8112`, `8113` | PeerDB binds broadly; nftables drops non-loopback | Flow gRPC/HTTP |
+
+`echo-analytics-firewall.service` owns only a dedicated nftables table. It
+drops non-loopback traffic to `8112/8113`, permits the paired Echo address to
+the gateway, and drops other non-loopback gateway traffic. It does not change
+the host's default firewall policy or SSH rules. ClickHouse listener addresses
+are checked after configuration.
+
+## Secrets
+
+Keep two exact Bitwarden Secure Note names per source hostname:
+
+- `echo-clickhouse-<source-hostname>`: contents matching
+  [clickhouse.env.example](env/clickhouse.env.example).
+- `echo-peerdb-<source-hostname>`: contents matching
+  [peerdb.env.example](env/peerdb.env.example).
+
+Deploy the notes without merging them:
+
+```text
+/etc/echo-analytics/clickhouse.env  root:echo-analytics 0640
+/etc/echo-analytics/peerdb.env      root:echo-analytics 0640
+```
+
+Deploy non-secret [instance.env.example](env/instance.env.example) as
+`/etc/echo-analytics/instance.env` with the same ownership/mode. Deploy both
+notes with `just analytics-secrets-deploy --source-server <source>
+--analytics-server <analytics>`; it uses the existing
+`echo-install-utils bw-sync` integration. Never put rendered notes or mirror
+SQL in Git.
+
+Configuration files are parsed as literal `KEY=VALUE` data, not executed as
+shell. Single or double quotes surrounding the complete value are removed;
+shell interpolation and escape processing are intentionally unsupported.
+Generate passwords with `openssl rand -hex 32` so notes remain portable, and
+keep `PEERDB_ENC_KEYS` single-quoted as shown in the example.
+
+PeerDB credentials stored in its catalog are encrypted. Generate a 32-byte
+key with `openssl rand -base64 32`, put it in the JSON `PEERDB_ENC_KEYS`, and
+set its ID in `PEERDB_CURRENT_ENC_KEY_ID`.
+
+The source needs the replication password while it creates/rotates the role.
+Deploy [source.env.example](env/source.env.example) as
+`/etc/echo-peerdb/source.env`, owned by `root`, mode `0600`, and an exclusion
+file as `/etc/echo-peerdb/tables-exclude.txt`. The analytics copy of the same
+password stays in `echo-peerdb-<source-hostname>`.
+
+## Build artifacts
+
+The Debian runtime receives no compiler. Build on
+`echo@echo-build-deb13-main.eagle-atria.ts.net`, a dedicated Debian 13
+builder matching the analytics runtime's distribution and glibc. The artifact
+install step still runs `ldd` and binary smoke tests, and the PostgreSQL 18
+extension load test runs in `02-configure-analytics.sh`. Do not install a
+compiler on the analytics host as a workaround.
+
+Prepare and build on the builder:
+
+```bash
+deploy/clickhouse/bin/prepare-builder.sh
+deploy/clickhouse/bin/build-artifacts.sh
+```
+
+Default output is `/srv/echo-clickhouse-build/v0.37.1/artifacts`. It contains
+four archives plus `SHA256SUMS`:
+
+```text
+peerdb-v0.37.1-linux-amd64.tar.gz
+pg_clickhouse-v0.3.2-pg18-linux-amd64.tar.gz
+minio-RELEASE.2025-10-15T17-29-55Z-linux-amd64.tar.gz
+mc-RELEASE.2025-08-13T08-35-41Z-linux-amd64.tar.gz
+```
+
+Pull and verify them locally with:
+
+```bash
+deploy/clickhouse/bin/copy-artifacts.sh
+```
+
+Then copy the complete `deploy/clickhouse` directory, including
+`build/artifacts`, to the analytics host.
+
+## Installation order
+
+All mutating steps are explicit. Run read-only preflights first.
+
+### 1. Source PostgreSQL
+
+Before configuring logical replication, apply Echo migrations through
+`m20260721_141920_echo_analytics_heartbeat`. It creates the mandatory singleton
+`echo_analytics.heartbeat` table used by the end-to-end freshness probe. On a
+checked-out source deployment, the normal command is:
+
+```bash
+just migrate-up
+```
+
+Then, on the Echo source host:
+
+```bash
+deploy/clickhouse/bin/source-preflight.sh
+deploy/clickhouse/bin/source-configure.sh --yes
+deploy/clickhouse/bin/wal-status.sh
+```
+
+`source-configure.sh` performs one PostgreSQL restart. It preserves larger
+existing values for `max_replication_slots` and `max_wal_senders`, enables
+logical WAL, installs a narrow HBA block, creates a `REPLICATION BYPASSRLS`
+restricted role, grants selected table reads plus column-level updates only on
+the heartbeat nonce/timestamp, and reconciles an explicit publication. It does
+not use `FOR ALL TABLES`, so exclusions can be introduced
+later, but `echo_analytics.heartbeat` is mandatory and cannot be excluded. Both
+source preflight and configuration fail if its migration is missing or the table
+is excluded. The managed HBA rules precede existing rules and explicitly reject
+the replication role from other addresses. It also installs a one-minute
+systemd WAL monitor. Rerun reconciliation after creating a source table.
+
+When a Tailscale address is used in `listen_addresses`, order the PostgreSQL
+unit after `tailscaled.service` on that host and verify the listener after a
+reboot. PostgreSQL skips an address that is absent when it starts. A stable
+private Proxmox address avoids that startup dependency in production.
+
+Before continuing, verify from the analytics host that the source TCP port is
+reachable and the replication credentials can run `SELECT 1`.
+
+### 2. Analytics runtime and artifacts
+
+Deploy `instance.env` before the read-only preflight. Then, on the Debian 13
+analytics host from this directory:
+
+```bash
+bin/analytics-preflight.sh
+bin/01-install-runtime.sh
+bin/install-artifacts.sh build/artifacts
+```
+
+The runtime step installs signed, pinned ClickHouse packages, PostgreSQL 18,
+its client required by PeerDB, Temporal binaries/schemas, and
+runtime libraries including GEOS. The artifact step verifies all four archive
+checksums and rejects absolute/parent-traversal members before installation.
+
+#### Existing PostgreSQL 17 gateway upgrade
+
+Hosts installed from the earlier bundle must preserve the PeerDB catalog,
+Temporal databases, and gateway definitions rather than initialize an empty
+PostgreSQL 18 cluster. First rebuild and copy the PostgreSQL 18
+`pg_clickhouse` artifact, sync the updated bundle, then install the target
+server and extension:
+
+```bash
+sudo apt-get update
+sudo apt-get install postgresql-18 postgresql-client-18
+bin/install-artifacts.sh build/artifacts
+```
+
+If package installation created `18/main`, inspect it before proceeding. The
+upgrade command deliberately refuses to remove an existing target cluster.
+Only after proving that cluster is the unused package-created default may an
+operator remove it with `sudo pg_dropcluster --stop 18 main`.
+
+For an active analytics host, run:
+
+```bash
+bin/upgrade-gateway-postgresql.sh 17 --yes
+bin/02-configure-analytics.sh
+bin/03-install-services.sh
+bin/status.sh
+```
+
+The upgrade command stops analytics writers, creates a root-only full logical
+backup under `/var/backups/echo-analytics`, verifies a clean PostgreSQL 17
+shutdown, and uses Debian's safe dump/restore major-upgrade method. PostgreSQL
+17 remains offline in `manual` startup mode on an alternate port for rollback;
+do not drop it until the PostgreSQL 18 gateway, Temporal, PeerDB mirror, source
+slot, table parity, and end-to-end heartbeat have passed a soak period. The
+logical backup contains role passwords and must remain root-only.
+
+For a parked host, use this order. The temporary PostgreSQL 18 start is only
+for local catalog and extension validation; do not bootstrap or resume a
+mirror:
+
+```bash
+sudo systemctl unmask postgresql@17-main.service
+bin/upgrade-gateway-postgresql.sh 17 --no-start --yes
+
+sudo systemctl start postgresql@18-main.service
+sudo -u postgres /usr/lib/postgresql/18/bin/psql -X -d postgres \
+  -c 'SHOW server_version' -c '\l'
+sudo -u postgres /usr/lib/postgresql/18/bin/psql -X \
+  -d echo_analytics_gateway -c 'SELECT pgch.pgch_version()'
+
+bin/03-install-services.sh --no-start
+sudo systemctl disable --now echo-analytics.target clickhouse-server.service
+sudo pg_ctlcluster --mode fast 18 main stop
+sudo systemctl mask \
+  postgresql@17-main.service postgresql@18-main.service
+
+pg_lsclusters
+systemctl is-enabled echo-analytics.target clickhouse-server.service \
+  postgresql@17-main.service postgresql@18-main.service
+systemctl is-active echo-analytics.target clickhouse-server.service \
+  postgresql@17-main.service postgresql@18-main.service
+sudo env LC_ALL=C /usr/lib/postgresql/17/bin/pg_controldata \
+  /var/lib/postgresql/17/main | grep 'Database cluster state.*shut down'
+sudo env LC_ALL=C /usr/lib/postgresql/18/bin/pg_controldata \
+  /var/lib/postgresql/18/main | grep 'Database cluster state.*shut down'
+if ss -H -ltn \
+  | grep -Eq ':(5432|5433|7233|8112|8113|8123|9000|9002|9003|9900)$'; then
+  echo 'unexpected analytics listener remains' >&2
+  exit 1
+fi
+```
+
+Both clusters must be down and cleanly shut down; the target and ClickHouse
+must be disabled/inactive, both cluster units masked, and no analytics port
+listening. `03-install-services.sh --no-start` only installs units—it does not
+disable a target that was previously enabled.
+
+### 3. Local databases and native services
+
+After deploying the three configuration files:
+
+```bash
+bin/02-configure-analytics.sh
+bin/03-install-services.sh
+```
+
+This creates separate local databases for the PeerDB catalog, Temporal,
+Temporal visibility, and `echo_analytics_gateway`. Temporal runs as a real
+server with PostgreSQL persistence; SQLite/start-dev is not used. The default
+Temporal namespace (7-day retention) and PeerDB's `MirrorName` search
+attribute are created idempotently. PeerDB Flow processes wait until that
+namespace is queryable instead of racing Temporal startup.
+
+The gateway application role owns nothing. It has only database connect,
+public-schema usage, foreign-server usage, compatibility-view select, and
+analytics-health-table select privileges. Its default 25-second PostgreSQL
+`statement_timeout` stays below Echo's default 30-second whole-bundle timeout;
+keep `ANALYTICS_GATEWAY_STATEMENT_TIMEOUT_MS` below the application's
+`query_timeout_ms` when changing either value. `pg_clickhouse`
+is installed in the `pgch` schema; imported foreign tables stay in the private
+`echo_clickhouse_foreign` schema and `public` is reserved for same-name views.
+The freshness probe runs as the local `postgres` OS user with an empty Linux
+capability bounding set; its executable and library chain are root-owned.
+
+### 4. Mirror, current views, and gateway
+
+```bash
+bin/04-bootstrap-mirror.sh
+bin/status.sh
+bin/table-status.sh
+```
+
+Bootstrap creates the dedicated MinIO bucket and a 14-day safety lifecycle,
+enables WAL heartbeat and nullable-column preservation, keeps source JSON/JSONB
+string-backed in ClickHouse, and submits an all-selected-tables initial snapshot.
+The final development rebuild contains 173 replicated tables: 172 application
+tables plus the dedicated `echo_analytics.heartbeat` table, exposed through the
+gateway as `public.echo_analytics__heartbeat`.
+Native ClickHouse JSON
+is deliberately disabled because it rejects valid PostgreSQL JSON values such
+as top-level arrays and scalars. Changing this mapping on an established
+mirror requires rebuilding the raw tables with a full resync. Nullable
+preservation is also mandatory: without it, ClickHouse substitutes type
+defaults for PostgreSQL `NULL`, changing query semantics.
+Published source tables use `REPLICA IDENTITY FULL` so updates cannot erase
+unchanged TOAST values, and primary-key-update handling is enabled in PeerDB.
+This increases WAL volume for updates and must be included when sizing the
+slot cap.
+The generated SQL contains passwords and exists only in a mode-0600 temporary
+file that is deleted immediately. Its table mapping is derived from the
+source publication, so the source exclusion file remains the only exclusion
+source of truth.
+
+Current-state ClickHouse views may be refreshed while snapshot tables appear:
+
+```bash
+bin/refresh-current-views.sh
+```
+
+Wait until `table-status.sh` reports no missing or unexpected raw tables,
+refresh the current-state views once more, and only then publish the gateway
+definitions. PeerDB's `_peerdb_*` internal tables are reported separately and
+do not count as drift.
+
+```bash
+bin/refresh-current-views.sh
+bin/refresh-gateway.sh
+```
+
+Current views use `FINAL`, exclude rows marked `_peerdb_is_deleted`, and hide
+PeerDB metadata columns. The mirror explicitly creates `_peerdb_synced_at`,
+`_peerdb_is_deleted`, and `_peerdb_version`. Gateway refresh replaces the
+private foreign tables and public compatibility views in one PostgreSQL
+transaction. It reads the source publication metadata and casts string-backed
+JSON/JSONB and `tsvector` columns back to their PostgreSQL types, and imports
+raw ClickHouse strings as `bytea` for source binary columns. A
+source/view table or column mismatch aborts the transaction and preserves the
+previous working gateway definitions.
+
+### 5. Echo configuration
+
+Copy [app-analytics.toml.example](env/app-analytics.toml.example) into the
+source Echo config, using `GATEWAY_PASSWORD`. Restart Echo only after an
+operator compares PostgreSQL and gateway counts. The application initializes
+analytics best-effort and retries the complete count query through PostgreSQL
+when analytics fails. Every 15–60 seconds, a native timer writes a fresh UUID
+nonce to the migrated source table `echo_analytics.heartbeat`, waits for the
+mirror slot, and queries `public.echo_analytics__heartbeat` through PostgreSQL
+18 and `pg_clickhouse`. It records success only when that exact nonce is visible
+from ClickHouse, making this an end-to-end data-plane probe rather than only a
+WAL acknowledgement check. Echo requires that record to be healthy and newer than
+`freshness_max_age_ms` before using analytical results, so a stalled but still
+queryable ClickHouse also falls back. Failed attempts open a short per-process
+cooldown instead of making every request wait for the unavailable gateway.
+Keep `ANALYTICS_HEALTH_STALE_AFTER_SECONDS` and `freshness_max_age_ms` aligned;
+the supplied values are 90 seconds. Initially only
+`/api/rer/analysis/stats/count` uses this path; existing five-minute aggregate
+generation remains intact.
+
+## WAL retention and recovery
+
+A logical replication slot prevents PostgreSQL from deleting WAL PeerDB has
+not acknowledged. If PeerDB, MinIO, the network, or ClickHouse stops, retained
+WAL grows under the source data filesystem.
+
+Without a finite cap, `pg_wal` can consume the disk and PostgreSQL writes may
+stop. With `max_slot_wal_keep_size`, a checkpoint eventually removes WAL past
+the cap and marks the slot `lost`; PostgreSQL stays writable, but ClickHouse
+can no longer catch up incrementally.
+
+Size the cap per instance:
+
+```text
+observed peak WAL/hour × tolerated outage hours + safety margin
+```
+
+Keep that result below disk space intentionally reserved for WAL. The 8 GiB
+development example is chosen because the audited source had about 44 GiB
+free; it is not a production default. `source-preflight.sh` reports average
+WAL generation since `pg_stat_wal.stats_reset` and filesystem space.
+`wal-status.sh` reports retained bytes, percentage of cap, `safe_wal_size`,
+activity, `wal_status`, and `invalidation_reason`; defaults warn at 75% and
+fail at 90%. `echo-peerdb-wal-monitor.timer` runs it every minute on the source;
+alert on a failed `echo-peerdb-wal-monitor.service` unit.
+
+`max_slot_wal_keep_size` and `idle_replication_slot_timeout` are PostgreSQL
+cluster-wide settings, not per-mirror settings. Audit every existing slot
+before changing them: the cap or timeout can invalidate unrelated replication
+consumers on the same cluster.
+
+Recovery rules:
+
+- Valid slot: restore the failed component and allow PeerDB to catch up.
+- Lost slot: repair the stack, then run `bin/resync.sh --yes`; this creates a
+  fresh snapshot. Refresh current views/gateway after tables are ready.
+- Never use `pg_replication_slot_advance()` to free space. It skips changes
+  and silently makes analytics inconsistent.
+- `idle_replication_slot_timeout=7d` invalidates abandoned slots on PostgreSQL
+  18 at checkpoint. An intentional outage longer than that therefore requires
+  resync.
+
+## Why MinIO remains required
+
+PeerDB's OSS ClickHouse connector batches snapshots and CDC records into an
+S3-compatible stage before ClickHouse loads them. Removing MinIO means using a
+different external S3 service or replacing PeerDB's connector; it is not an
+optional cache in this design. Its data is transient and rebuildable, not a
+backup. An outage stalls replication and consequently increases retained
+source WAL.
+
+## Day-two operations
+
+```bash
+bin/start.sh
+bin/stop.sh
+bin/status.sh
+bin/logs.sh echo-peer-flow-worker.service
+systemctl status echo-analytics-health.timer
+bin/table-status.sh
+bin/refresh-current-views.sh
+bin/refresh-gateway.sh
+bin/resync.sh --yes
+bin/finish-resync.sh
+```
+
+### Replacing a development source database
+
+`just copy-db --server <source>` downloads a dump and prints a pasteable block
+selected from the local configuration. Without `/etc/echo-peerdb/source.env`,
+it prints the original PostgreSQL commands. With PeerDB configured, it prints
+the non-interactive coordinated restore command; do not manually drop and
+restore `wd` while PeerDB is attached:
+
+```bash
+deploy/restore-copied-db.sh --yes /var/tmp/wd-<timestamp>.pgrestore
+```
+
+For a separately entered command that retains confirmation, use
+`just restore-copied-db --dump /var/tmp/wd-<timestamp>.pgrestore`.
+
+`deploy/restore-copied-db.sh` checks for `/etc/echo-peerdb/source.env`. When it
+is absent, it performs a PostgreSQL-only restore and current Echo/echo-im
+migrations. When present, it verifies SSH and every required recovery script
+before confirmation or mutation. It then stops the paired analytics stack and
+waits for its logical slot to become inactive, restores and migrates `wd`,
+reconciles the source role/publication, starts analytics, and requests a clean
+PeerDB resync. It waits for the replacement snapshot, refreshes both view
+layers, and runs the end-to-end replication health check before returning.
+Echo continues through PostgreSQL fallback while the command waits. The default
+resync timeout is two hours; override it with `MIRROR_RESYNC_TIMEOUT_SECONDS` in
+the analytics instance configuration. Transient freshness failures are retried
+three times. `resync.sh` also waits for PeerDB to leave the previous `RUNNING`
+state before the completion waiter starts, because `RESYNC MIRROR` is accepted
+asynchronously. Set `ANALYTICS_SSH_TARGET` in
+`source.env` only when
+`echo@<ANALYTICS_ADDRESS>` is not the correct SSH destination.
+
+Before confirmation or any service/database mutation, the helper compares the
+dump's applied Echo migrations with the migration files in the checkout. It
+fails early when the copied server is newer; fetch/update the checkout and run
+the printed command again. Never delete unknown rows from
+`seaql_migrations` to bypass that compatibility check.
+
+After adding/removing an exclusion, rerun source publication reconciliation.
+Changing an established mirror's table mapping requires a reviewed PeerDB
+table-add/remove operation or dropping and recreating the mirror and raw
+tables from the newly rendered mapping. `RESYNC MIRROR` only snapshots the
+existing mapping; it does not add or remove tables. `table-status.sh` reports
+drift and never mutates the mirror. After source DDL, wait for PeerDB schema
+propagation, refresh the current views, refresh the gateway compatibility
+views, and compare results.
+
+### Credential rotation
+
+`just analytics-secrets-deploy` reconciles local PostgreSQL and ClickHouse
+users and restarts the native services, but it cannot atomically rotate every
+external consumer:
+
+- After changing `GATEWAY_PASSWORD`, deploy the matching Echo application
+  configuration before restarting Echo.
+- After changing `CLICKHOUSE_GATEWAY_PASSWORD`, run
+  `refresh-gateway.sh`; its foreign-server user mapping contains that secret.
+- `CREATE PEER IF NOT EXISTS` does not update credentials already encrypted in
+  the PeerDB catalog. A `SOURCE_PASSWORD` or
+  `CLICKHOUSE_PEERDB_PASSWORD` rotation therefore needs a maintenance window,
+  a reviewed PeerDB peer update/recreate procedure, and a resync if the mirror
+  cannot continue. Simply rerunning bootstrap is insufficient.
+- When rotating `PEERDB_ENC_KEYS`, add the new key and make it current first.
+  Retain every old key until all catalog secrets have been re-encrypted and a
+  restart has proved they remain readable.
+
+Monitor source slot WAL, ClickHouse/MinIO disk, systemd service health,
+Temporal workflows, mirror status, `echo_analytics_health` age, fallback
+count, and query latency. `status.sh` exits nonzero when the freshness record
+is unhealthy or older than the configured threshold.
+
+## Consistency and type limits
+
+The target is eventually consistent; 5–60 seconds of lag is acceptable for
+the initial counter. `FINAL` produces current rows but is more expensive than
+querying raw MergeTree parts. Validate pushdown with PostgreSQL `EXPLAIN
+(VERBOSE)` before routing each report. PostgreSQL-side JSON and `tsvector`
+conversion prevents those expressions from being pushed into ClickHouse, so
+measure those filters separately; ordinary relational filters and aggregates
+can still be pushed down.
+
+The initial publication includes sensitive, binary, spatial, JSONB, array,
+enum, tsvector, and audit data. Network and filesystem access must therefore
+be treated like production database access. Replication support and
+PostgreSQL→ClickHouse→`pg_clickhouse` round-tripping are separate questions:
+test every type used by an analytical query before routing it. Do not route
+generic SeaORM entity loads through this gateway. PostGIS and PostgreSQL enum
+columns remain ClickHouse/PostgreSQL text in this first implementation.
+
+## Rollback
+
+Remove or disable `[analytics]` in Echo and restart it. PostgreSQL operation is
+unchanged. Stop the analytics target afterward if desired. Keep the source
+slot only while planning to resume; otherwise deliberately drop the mirror
+and verify the slot is gone so WAL is no longer retained.

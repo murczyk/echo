@@ -1,0 +1,10 @@
+# Add to /etc/echo/config.toml only after the gateway passes validation.
+[analytics]
+pg_host = "100.104.2.38"
+pg_port = 5432
+pg_user = "echo_analytics"
+pg_password = "value-from-echo-peerdb-source-hostname"
+pg_dbname = "echo_analytics_gateway"
+query_timeout_ms = 30000
+freshness_max_age_ms = 90000
+retry_cooldown_ms = 30000

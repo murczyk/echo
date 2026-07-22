@@ -120,6 +120,7 @@ pub struct Env {
     pub version: String,
     pub callsigns_whitelist: HashSet<String>,
     pub replicas: Vec<ReplicaPool>,
+    pub analytics: Option<AnalyticsPool>,
     pub tag_keyword_regex_cache: Arc<RwLock<TagKeywordRegexCache>>,
     pub session_activity_tx:
         Option<tokio::sync::mpsc::Sender<SessionActivityEvent>>,
@@ -131,6 +132,12 @@ pub struct Env {
     pub session_activity_dropped: Arc<std::sync::atomic::AtomicU64>,
     pub session_activity_enqueued: Arc<std::sync::atomic::AtomicU64>,
     pub palitra_worker_context: Arc<PalitraWorkerContext>,
+}
+
+#[derive(Clone)]
+pub struct AnalyticsPool {
+    pub conn: sea_orm::DatabaseConnection,
+    pub retry_after_unix_ms: Arc<std::sync::atomic::AtomicU64>,
 }
 
 #[derive(Debug)]

@@ -1,0 +1,12 @@
+[Unit]
+Description=Monitor Echo PeerDB retained WAL every minute
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=1min
+AccuracySec=10s
+Persistent=true
+Unit=echo-peerdb-wal-monitor.service
+
+[Install]
+WantedBy=timers.target

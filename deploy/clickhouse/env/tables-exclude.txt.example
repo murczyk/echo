@@ -1,0 +1,2 @@
+# One schema.table per line. Keep empty to mirror all non-system tables.
+# public.large_non_analytical_table

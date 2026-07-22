@@ -55,6 +55,45 @@ pub async fn fetch_groups_for_login(
         .c(h!())?;
         return Ok(result);
     }
+    fetch_groups_for_login_with_db(
+        req,
+        login_str,
+        &env.dbx,
+        master_keys,
+        dt_since,
+        dt_till,
+    )
+    .await
+}
+
+pub(super) async fn fetch_groups_raw_with_db(
+    req: &Json<AnalysisStatsReq>,
+    user: &Identity,
+    db: &DatabaseConnection,
+    master_keys: Vec<String>,
+) -> Result<Vec<AnalysisStatsGroup>, AppError> {
+    let login_value = user.id().c(h!())?;
+    let dt_since = dt_from_millis(req.since_date_inclusive_ms).c(h!())?;
+    let dt_till = dt_from_millis(req.till_date_noninclusive_ms).c(h!())?;
+    fetch_groups_for_login_with_db(
+        &req.0,
+        login_value.as_str(),
+        db,
+        master_keys,
+        dt_since,
+        dt_till,
+    )
+    .await
+}
+
+async fn fetch_groups_for_login_with_db(
+    req: &AnalysisStatsReq,
+    login_str: &str,
+    db: &DatabaseConnection,
+    master_keys: Vec<String>,
+    dt_since: NaiveDateTime,
+    dt_till: NaiveDateTime,
+) -> Result<Vec<AnalysisStatsGroup>, AppError> {
     let instant = std::time::Instant::now();
     trace!("get identity master keys op took: {:?}", instant.elapsed());
     #[derive(FromQueryResult)]
@@ -67,11 +106,8 @@ pub async fn fetch_groups_for_login(
     let groups_res =
         build_groups_query(req, login_str, dt_since, dt_till, master_keys)?;
 
-    let groups_res: Vec<GroupsRes> = groups_res
-        .into_model::<GroupsRes>()
-        .all(&env.dbx)
-        .await
-        .c(h!())?;
+    let groups_res: Vec<GroupsRes> =
+        groups_res.into_model::<GroupsRes>().all(db).await.c(h!())?;
     let mut groups = vec![];
     for x in groups_res {
         let Some(master_key) = x.master_key else {
@@ -485,10 +521,19 @@ pub async fn count_senders(
     env: &actix_web::web::Data<Env>,
     master_keys: Vec<String>,
 ) -> Result<i64, AppError> {
+    let read_db = env.replica();
+    count_senders_with_db(req, user, &read_db, master_keys).await
+}
+
+pub(super) async fn count_senders_with_db(
+    req: &Json<AnalysisStatsReq>,
+    user: &Identity,
+    db: &DatabaseConnection,
+    master_keys: Vec<String>,
+) -> Result<i64, AppError> {
     let dt_since = dt_from_millis(req.since_date_inclusive_ms).context(h!())?;
     let dt_till =
         dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
-    let read_db = env.replica();
     let login_value = user.id().context(h!())?;
 
     let instant = std::time::Instant::now();
@@ -500,7 +545,7 @@ pub async fn count_senders(
         dt_till,
         master_keys,
     )?;
-    let count = groups_res.count(&read_db).await.context(h!())?;
+    let count = groups_res.count(db).await.context(h!())?;
     Ok(count as i64)
 }
 
@@ -745,16 +790,25 @@ pub async fn count_posts(
     env: &actix_web::web::Data<Env>,
     master_keys: Vec<String>,
 ) -> Result<i64, AppError> {
+    let read_db = env.replica();
+    count_posts_with_db(req, user, &read_db, master_keys).await
+}
+
+pub(super) async fn count_posts_with_db(
+    req: &Json<AnalysisStatsReq>,
+    user: &Identity,
+    db: &DatabaseConnection,
+    master_keys: Vec<String>,
+) -> Result<i64, AppError> {
     let dt_since = dt_from_millis(req.since_date_inclusive_ms).context(h!())?;
     let dt_till =
         dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
-    let read_db = env.replica();
 
     let instant = std::time::Instant::now();
     trace!("get identity master keys op took: {:?}", instant.elapsed());
     let groups_res =
         build_posts_query(&req, &user, master_keys, dt_since, dt_till)?;
-    let count = groups_res.count(&read_db).await.context(h!())?;
+    let count = groups_res.count(db).await.context(h!())?;
     Ok(count as i64)
 }
 fn build_posts_query(
@@ -964,10 +1018,19 @@ pub async fn count_freqs(
     env: &actix_web::web::Data<Env>,
     master_keys: Vec<String>,
 ) -> Result<i64, AppError> {
+    let read_db = env.replica();
+    count_freqs_with_db(req, user, &read_db, master_keys).await
+}
+
+pub(super) async fn count_freqs_with_db(
+    req: &Json<AnalysisStatsReq>,
+    user: &Identity,
+    db: &DatabaseConnection,
+    master_keys: Vec<String>,
+) -> Result<i64, AppError> {
     let dt_since = dt_from_millis(req.since_date_inclusive_ms).context(h!())?;
     let dt_till =
         dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
-    let read_db = env.replica();
 
     let instant = std::time::Instant::now();
     trace!("get identity master keys op took: {:?}", instant.elapsed());
@@ -979,7 +1042,7 @@ pub async fn count_freqs(
         dt_till,
         master_keys,
     )?;
-    let count = groups_res.count(&read_db).await.context(h!())?;
+    let count = groups_res.count(db).await.context(h!())?;
     Ok(count as i64)
 }
 
@@ -1141,11 +1204,20 @@ pub async fn count_callsigns(
     env: &actix_web::web::Data<Env>,
     master_keys: Vec<String>,
 ) -> Result<i64, AppError> {
+    let read_db = env.replica();
+    count_callsigns_with_db(req, user, &read_db, master_keys).await
+}
+
+pub(super) async fn count_callsigns_with_db(
+    req: &Json<AnalysisStatsReq>,
+    user: &Identity,
+    db: &DatabaseConnection,
+    master_keys: Vec<String>,
+) -> Result<i64, AppError> {
     let login_value = user.id().c(h!())?;
     let dt_since = dt_from_millis(req.since_date_inclusive_ms).context(h!())?;
     let dt_till =
         dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
-    let read_db = env.replica();
 
     let instant = std::time::Instant::now();
     trace!("get identity master keys op took: {:?}", instant.elapsed());
@@ -1156,7 +1228,7 @@ pub async fn count_callsigns(
         dt_till,
         master_keys,
     )?;
-    let count = groups_res.count(&read_db).await.context(h!())?;
+    let count = groups_res.count(db).await.context(h!())?;
     Ok(count as i64)
 }
 
@@ -1587,11 +1659,20 @@ pub async fn count_tags(
     env: &actix_web::web::Data<Env>,
     master_keys: Vec<String>,
 ) -> Result<i64, AppError> {
+    let read_db = env.replica();
+    count_tags_with_db(req, user, &read_db, master_keys).await
+}
+
+pub(super) async fn count_tags_with_db(
+    req: &Json<AnalysisStatsReq>,
+    user: &Identity,
+    db: &DatabaseConnection,
+    master_keys: Vec<String>,
+) -> Result<i64, AppError> {
     let login_value = user.id().c(h!())?;
     let dt_since = dt_from_millis(req.since_date_inclusive_ms).context(h!())?;
     let dt_till =
         dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
-    let read_db = env.replica();
 
     let instant = std::time::Instant::now();
     trace!("get identity master keys op took: {:?}", instant.elapsed());
@@ -1602,7 +1683,7 @@ pub async fn count_tags(
         dt_till,
         master_keys,
     )?;
-    let count = groups_res.count(&read_db).await.context(h!())?;
+    let count = groups_res.count(db).await.context(h!())?;
     Ok(count as i64)
 }
 
@@ -1762,16 +1843,25 @@ pub async fn count_units(
     env: &actix_web::web::Data<Env>,
     master_keys: Vec<String>,
 ) -> Result<i64, AppError> {
+    let read_db = env.replica();
+    count_units_with_db(req, user, &read_db, master_keys).await
+}
+
+pub(super) async fn count_units_with_db(
+    req: &Json<AnalysisStatsReq>,
+    user: &Identity,
+    db: &DatabaseConnection,
+    master_keys: Vec<String>,
+) -> Result<i64, AppError> {
     let dt_since = dt_from_millis(req.since_date_inclusive_ms).context(h!())?;
     let dt_till =
         dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
-    let read_db = env.replica();
 
     let instant = std::time::Instant::now();
     trace!("get identity master keys op took: {:?}", instant.elapsed());
     let groups_res =
         build_units_query(&req, &user, dt_since, dt_till, master_keys)?;
-    let count = groups_res.count(&read_db).await.context(h!())?;
+    let count = groups_res.count(db).await.context(h!())?;
     Ok(count as i64)
 }
 
@@ -1799,6 +1889,44 @@ pub async fn count_unit_exact_match_breakdown(
         (total_matches_count - exact_matches_count).max(0);
 
     Ok((exact_matches_count, non_exact_matches_count))
+}
+
+pub(super) async fn count_unit_exact_match_breakdown_raw_with_db(
+    req: &Json<AnalysisStatsReq>,
+    user: &Identity,
+    env: &Env,
+    db: &DatabaseConnection,
+    master_keys: Vec<String>,
+) -> Result<(i64, i64), AppError> {
+    let login_value = user.id().c(h!())?;
+    let mut exact_req = req.0.clone();
+    exact_req.units_exact_match_only = Some(true);
+    let (_, exact_matches_count) = fetch_counts_for_login_with_conn(
+        &Json(exact_req),
+        login_value.as_str(),
+        master_keys.clone(),
+        env,
+        db,
+        false,
+    )
+    .await?;
+
+    let mut combined_req = req.0.clone();
+    combined_req.units_exact_match_only = Some(false);
+    let (_, total_matches_count) = fetch_counts_for_login_with_conn(
+        &Json(combined_req),
+        login_value.as_str(),
+        master_keys,
+        env,
+        db,
+        false,
+    )
+    .await?;
+
+    Ok((
+        exact_matches_count,
+        (total_matches_count - exact_matches_count).max(0),
+    ))
 }
 
 fn build_units_query(
@@ -1960,16 +2088,25 @@ pub async fn count_locations(
     env: &actix_web::web::Data<Env>,
     master_keys: Vec<String>,
 ) -> Result<i64, AppError> {
+    let read_db = env.replica();
+    count_locations_with_db(req, user, &read_db, master_keys).await
+}
+
+pub(super) async fn count_locations_with_db(
+    req: &Json<AnalysisStatsReq>,
+    user: &Identity,
+    db: &DatabaseConnection,
+    master_keys: Vec<String>,
+) -> Result<i64, AppError> {
     let dt_since = dt_from_millis(req.since_date_inclusive_ms).context(h!())?;
     let dt_till =
         dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
-    let read_db = env.replica();
 
     let instant = std::time::Instant::now();
     trace!("get identity master keys op took: {:?}", instant.elapsed());
     let groups_res =
         build_locations_query(&req, &user, dt_since, dt_till, master_keys)?;
-    let count = groups_res.count(&read_db).await.context(h!())?;
+    let count = groups_res.count(db).await.context(h!())?;
     Ok(count as i64)
 }
 
@@ -2155,6 +2292,30 @@ pub async fn count_aors(
         return Ok(aors.len() as i64);
     }
 
+    count_aors_with_db(req, user, &read_db, master_keys, dt_since, dt_till)
+        .await
+}
+
+pub(super) async fn count_aors_raw_with_db(
+    req: &Json<AnalysisStatsReq>,
+    user: &Identity,
+    db: &DatabaseConnection,
+    master_keys: Vec<String>,
+) -> Result<i64, AppError> {
+    let dt_since = dt_from_millis(req.since_date_inclusive_ms).context(h!())?;
+    let dt_till =
+        dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
+    count_aors_with_db(req, user, db, master_keys, dt_since, dt_till).await
+}
+
+async fn count_aors_with_db(
+    req: &Json<AnalysisStatsReq>,
+    user: &Identity,
+    db: &DatabaseConnection,
+    master_keys: Vec<String>,
+    dt_since: NaiveDateTime,
+    dt_till: NaiveDateTime,
+) -> Result<i64, AppError> {
     let login_value = user.id().c(h!())?;
     let stmt = build_aors_query(
         &req.0,
@@ -2164,7 +2325,7 @@ pub async fn count_aors(
         master_keys,
     )?;
     let count = AorsRes::find_by_statement(stmt)
-        .all(&read_db)
+        .all(db)
         .await
         .context(h!())?
         .len();
@@ -2493,10 +2654,19 @@ pub async fn count_networks(
     env: &actix_web::web::Data<Env>,
     master_keys: Vec<String>,
 ) -> Result<i64, AppError> {
+    let read_db = env.replica();
+    count_networks_with_db(req, user, &read_db, master_keys).await
+}
+
+pub(super) async fn count_networks_with_db(
+    req: &Json<AnalysisStatsReq>,
+    user: &Identity,
+    db: &DatabaseConnection,
+    master_keys: Vec<String>,
+) -> Result<i64, AppError> {
     let dt_since = dt_from_millis(req.since_date_inclusive_ms).context(h!())?;
     let dt_till =
         dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
-    let read_db = env.replica();
 
     let networks_query =
         build_networks_query(&req.0, user, dt_since, dt_till, master_keys)?;
@@ -2511,10 +2681,8 @@ pub async fn count_networks(
         networks_query.to_string(PostgresQueryBuilder),
     );
 
-    let networks_res: Vec<NetworksRes> = NetworksRes::find_by_statement(stmt)
-        .all(&read_db)
-        .await
-        .c(h!())?;
+    let networks_res: Vec<NetworksRes> =
+        NetworksRes::find_by_statement(stmt).all(db).await.c(h!())?;
 
     let res = networks_res.len() as i64;
 
@@ -3016,7 +3184,8 @@ pub async fn fetch_counts_for_login(
         login_str,
         master_keys.clone(),
         env,
-        replica_conn,
+        &replica_conn,
+        true,
     )
     .await
     {
@@ -3033,7 +3202,8 @@ pub async fn fetch_counts_for_login(
                 login_str,
                 master_keys,
                 env,
-                env.dbx.clone(),
+                &env.dbx,
+                true,
             )
             .await
         }
@@ -3046,20 +3216,21 @@ async fn fetch_counts_for_login_with_conn(
     login_str: &str,
     master_keys: Vec<String>,
     env: &Env,
-    db_conn: DatabaseConnection,
+    db: &DatabaseConnection,
+    allow_stats_aggregated: bool,
 ) -> Result<(i64, i64), AppError> {
     let dt_since = dt_from_millis(req.since_date_inclusive_ms).context(h!())?;
     let dt_till =
         dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
     let include_peleng_locations =
         req.include_peleng_locations.unwrap_or(false);
-    let read_stats_aggregated =
-        can_read_stats_aggregated(&env.config, dt_since, dt_till)
-            && is_5min_stats_bucket_range_aligned(dt_since, dt_till);
+    let read_stats_aggregated = allow_stats_aggregated
+        && can_read_stats_aggregated(&env.config, dt_since, dt_till)
+        && is_5min_stats_bucket_range_aligned(dt_since, dt_till);
 
     let instant = std::time::Instant::now();
     let count_overall: i64 = fetch_count_overall(
-        &db_conn,
+        db,
         dt_since,
         dt_till,
         master_keys.clone(),
@@ -3175,7 +3346,7 @@ async fn fetch_counts_for_login_with_conn(
     //);
     let selected_count_res: SelectedCountRes = selected_count_res
         .into_model::<SelectedCountRes>()
-        .one(&db_conn)
+        .one(db)
         .await
         .context(h!())?
         .unwrap_or(SelectedCountRes { count: 0 });
@@ -3185,6 +3356,25 @@ async fn fetch_counts_for_login_with_conn(
         debug!("count selected op took: {:?}", instant.elapsed());
     }
     Ok((count_overall, count_selected))
+}
+
+pub(super) async fn fetch_counts_raw_with_db(
+    req: &Json<AnalysisStatsReq>,
+    user: &Identity,
+    env: &Env,
+    db: &DatabaseConnection,
+    master_keys: Vec<String>,
+) -> Result<(i64, i64), AppError> {
+    let login_value = user.id().c(h!())?;
+    fetch_counts_for_login_with_conn(
+        req,
+        login_value.as_str(),
+        master_keys,
+        env,
+        db,
+        false,
+    )
+    .await
 }
 
 async fn fetch_count_overall(
