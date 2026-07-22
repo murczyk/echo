@@ -69,6 +69,44 @@ pub(super) fn verify_hierarchy_path(
 }
 
 #[allow(dead_code)]
+pub(super) fn hierarchy_entry_ids(
+    hierarchy_path: &str,
+) -> Result<Vec<Uuid>, FilesystemError> {
+    let entry_ids = hierarchy_path
+        .split('.')
+        .map(|label| {
+            let Some(entry_id) = label.strip_prefix('n') else {
+                return Err(FilesystemError::Invariant(
+                    "hierarchy_path_mismatch",
+                ));
+            };
+            if entry_id.len() != 32
+                || !entry_id.bytes().all(|character| {
+                    character.is_ascii_digit()
+                        || (b'a'..=b'f').contains(&character)
+                })
+            {
+                return Err(FilesystemError::Invariant(
+                    "hierarchy_path_mismatch",
+                ));
+            }
+            let entry_id = Uuid::parse_str(entry_id).map_err(|_| {
+                FilesystemError::Invariant("hierarchy_path_mismatch")
+            })?;
+            if uuid_label(entry_id) != label {
+                return Err(FilesystemError::Invariant(
+                    "hierarchy_path_mismatch",
+                ));
+            }
+            Ok(entry_id)
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    verify_hierarchy_path(&entry_ids, hierarchy_path)
+        .map_err(|_| FilesystemError::Invariant("hierarchy_path_mismatch"))?;
+    Ok(entry_ids)
+}
+
+#[allow(dead_code)]
 pub(super) fn descendant_expr(hierarchy_path: &str) -> SimpleExpr {
     Expr::cust_with_values(
         r#""file_entry"."hierarchy_path" <@ $1::ltree"#,
@@ -124,5 +162,29 @@ mod tests {
             verify_hierarchy_path(&[root_id, directory_id], "nwrong"),
             Err(FilesystemError::Invariant("hierarchy_path_mismatch"))
         ));
+    }
+
+    #[test]
+    fn hierarchy_entry_ids_requires_canonical_nonempty_labels() {
+        let root_id = Uuid::from_u128(1);
+        let directory_id = Uuid::from_u128(2);
+        let hierarchy_path =
+            expected_hierarchy_path(&[root_id, directory_id]).unwrap();
+
+        assert_eq!(
+            hierarchy_entry_ids(&hierarchy_path).unwrap(),
+            vec![root_id, directory_id]
+        );
+        for hierarchy_path in [
+            "",
+            "nwrong",
+            "n0000000000000000000000000000000A",
+            "n00000000000000000000000000000001..n00000000000000000000000000000002",
+        ] {
+            assert!(matches!(
+                hierarchy_entry_ids(hierarchy_path),
+                Err(FilesystemError::Invariant("hierarchy_path_mismatch"))
+            ));
+        }
     }
 }

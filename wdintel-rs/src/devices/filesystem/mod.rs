@@ -20,9 +20,9 @@ pub(in crate::devices) use repository::FilesystemRepository;
 pub(in crate::devices) use types::{
     Breadcrumb, DirectoryEntry, DirectoryScope, EntryQueryScope, EntrySortKey,
     FileSearchFilters, KeysetPage, KeysetPageRequest, ParsedSourcePath,
-    RawFileSearchFilters, RootEntry, RootSortKey, SyncFileItemCommand,
-    SyncFileItemOutcome, SyncFileItemResult, SyncFileOperation,
-    SyncFileRejectionKind, TreeEntry,
+    RawFileSearchFilters, RootEntry, RootSortKey, SearchEntry,
+    SyncFileItemCommand, SyncFileItemOutcome, SyncFileItemResult,
+    SyncFileOperation, SyncFileRejectionKind, TreeEntry,
 };
 pub(in crate::devices) use types::{
     FileEntry, FileEntryKind, OffsetPage, OffsetPageRequest, PathSyntax,

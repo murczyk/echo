@@ -140,6 +140,13 @@ pub(in crate::devices) enum TreeEntry {
 
 #[allow(dead_code)]
 #[derive(Clone, Debug, PartialEq, Eq)]
+pub(in crate::devices) struct SearchEntry {
+    pub(in crate::devices) entry: TreeEntry,
+    pub(in crate::devices) path_components: Vec<String>,
+}
+
+#[allow(dead_code)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub(in crate::devices) struct Breadcrumb {
     pub(in crate::devices) entry_id: Uuid,
     pub(in crate::devices) name: String,

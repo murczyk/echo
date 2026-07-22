@@ -2,7 +2,8 @@ use super::{
     ancestor_expr, descendant_expr, query, Breadcrumb, EntryQueryScope,
     EntrySortKey, FileCursorCodec, FileEntryKind, FileSearchFilters,
     FilesystemError, FilesystemRepository, KeysetPageRequest,
-    OffsetPageRequest, PathSyntax, RawFileSearchFilters, TreeEntry,
+    OffsetPageRequest, PathSyntax, RawFileSearchFilters, SearchEntry,
+    TreeEntry,
 };
 use crate::config::read_config;
 use crate::devices::query::list_device_files;
@@ -20,6 +21,10 @@ use sea_orm::{
     EntityTrait, IntoActiveModel, QueryFilter, QuerySelect,
 };
 use serde_json::json;
+use std::sync::{
+    atomic::{AtomicUsize, Ordering},
+    Arc,
+};
 
 #[tokio::test]
 #[serial_test::serial]
@@ -506,6 +511,40 @@ async fn stage_two_runtime_scopes_filters_ltree_and_cursor_contracts() {
 
 #[tokio::test]
 #[serial_test::serial]
+async fn stage_four_scoped_search_filters_paths_and_cursor() {
+    let config = read_config(Mode::Test).unwrap();
+    run_migrations(&config, Mode::Test).await.unwrap();
+    let file_registry_db = connect_runtime(&config, Mode::Test).await.unwrap();
+    let db = file_registry_db.connection();
+    db.execute_unprepared("truncate table public.file_entry")
+        .await
+        .unwrap();
+
+    let timestamp = NaiveDate::from_ymd_opt(2026, 7, 21)
+        .unwrap()
+        .and_hms_milli_opt(12, 30, 45, 123)
+        .unwrap();
+    let tree = insert_stage_two_tree(db, timestamp).await;
+    let repository = FilesystemRepository::new(&file_registry_db);
+    let reports_scope = repository
+        .find_directory_scope(tree.device_id, tree.reports_id)
+        .await
+        .unwrap();
+
+    assert_stage_four_subtree_and_paths(&repository, &reports_scope, &tree)
+        .await;
+    assert_stage_four_filters(&repository, &reports_scope, &tree).await;
+    assert_stage_four_duplicate_pagination(&repository, &reports_scope, &tree)
+        .await;
+    assert_stage_four_query_counts(db, &reports_scope).await;
+
+    db.execute_unprepared("truncate table public.file_entry")
+        .await
+        .unwrap();
+}
+
+#[tokio::test]
+#[serial_test::serial]
 async fn stage_three_root_listing_browse_and_breadcrumbs() {
     let config = read_config(Mode::Test).unwrap();
     run_migrations(&config, Mode::Test).await.unwrap();
@@ -547,15 +586,21 @@ struct StageTwoTree {
     root_id: Uuid,
     reports_id: Uuid,
     archive_id: Uuid,
+    archive_file_id: Uuid,
     nested_file_id: Uuid,
     duplicate_file_ids: [Uuid; 3],
     percent_file_id: Uuid,
+    percent_noise_file_id: Uuid,
     underscore_file_id: Uuid,
+    underscore_noise_file_id: Uuid,
     backslash_file_id: Uuid,
+    backslash_noise_file_id: Uuid,
     metadata_file_id: Uuid,
+    metadata_noise_file_id: Uuid,
     metadata_modified_at: NaiveDateTime,
     movable_file_id: Uuid,
     outside_file_id: Uuid,
+    same_device_sibling_file_id: Uuid,
     reports_path: String,
     archive_path: String,
 }
@@ -570,6 +615,8 @@ async fn insert_stage_two_tree(
     let root_id = Uuid::from_u128(0x018f_0000_0000_7000_8000_0000_0000_1200);
     let reports_id = Uuid::from_u128(0x018f_0000_0000_7000_8000_0000_0000_1300);
     let archive_id = Uuid::from_u128(0x018f_0000_0000_7000_8000_0000_0000_1400);
+    let archive_file_id =
+        Uuid::from_u128(0x018f_0000_0000_7000_8000_0000_0000_2400);
     let nested_file_id =
         Uuid::from_u128(0x018f_0000_0000_7000_8000_0000_0000_1500);
     let duplicate_file_ids = [
@@ -595,6 +642,8 @@ async fn insert_stage_two_tree(
         Uuid::from_u128(0x018f_0000_0000_7000_8000_0000_0000_2000);
     let movable_file_id =
         Uuid::from_u128(0x018f_0000_0000_7000_8000_0000_0000_2100);
+    let same_device_sibling_file_id =
+        Uuid::from_u128(0x018f_0000_0000_7000_8000_0000_0000_2500);
     let other_root_id =
         Uuid::from_u128(0x018f_0000_0000_7000_8000_0000_0000_2200);
     let outside_file_id =
@@ -623,6 +672,20 @@ async fn insert_stage_two_tree(
             "archive",
             timestamp,
         ),
+    )
+    .await;
+    insert_stage_two_file(
+        db,
+        archive_file_id,
+        device_id,
+        reports_id,
+        &reports_path,
+        "archive",
+        "/reports/archive",
+        "text/plain",
+        "log",
+        timestamp,
+        timestamp,
     )
     .await;
     insert_stage_two_file(
@@ -781,6 +844,20 @@ async fn insert_stage_two_tree(
         timestamp,
     )
     .await;
+    insert_stage_two_file(
+        db,
+        same_device_sibling_file_id,
+        device_id,
+        root_id,
+        &root_path,
+        "sibling.log",
+        "/sibling.log",
+        "text/plain",
+        "log",
+        timestamp,
+        timestamp,
+    )
+    .await;
     insert_file_entry(
         db,
         root_entry(other_root_id, other_device_id, timestamp),
@@ -807,15 +884,21 @@ async fn insert_stage_two_tree(
         root_id,
         reports_id,
         archive_id,
+        archive_file_id,
         nested_file_id,
         duplicate_file_ids,
         percent_file_id,
+        percent_noise_file_id,
         underscore_file_id,
+        underscore_noise_file_id,
         backslash_file_id,
+        backslash_noise_file_id,
         metadata_file_id,
+        metadata_noise_file_id,
         metadata_modified_at,
         movable_file_id,
         outside_file_id,
+        same_device_sibling_file_id,
         reports_path,
         archive_path,
     }
@@ -1054,6 +1137,304 @@ async fn assert_file_move_round_trip(
     assert_eq!(moved.hierarchy_path, expected_hierarchy_path);
 }
 
+async fn assert_stage_four_subtree_and_paths(
+    repository: &FilesystemRepository<'_>,
+    reports_scope: &super::DirectoryScope,
+    tree: &StageTwoTree,
+) {
+    let filters = search_filters_with_kinds(&[], None, &[], &[], None, None);
+    let page = repository
+        .search_entries(
+            reports_scope,
+            &filters,
+            KeysetPageRequest::try_new(Some(100), None).unwrap(),
+        )
+        .await
+        .unwrap();
+    let entry_ids = search_entry_ids(&page.entries);
+    let expected_ids = [
+        tree.archive_id,
+        tree.archive_file_id,
+        tree.nested_file_id,
+        tree.duplicate_file_ids[0],
+        tree.duplicate_file_ids[1],
+        tree.duplicate_file_ids[2],
+        tree.percent_file_id,
+        tree.percent_noise_file_id,
+        tree.underscore_file_id,
+        tree.underscore_noise_file_id,
+        tree.backslash_file_id,
+        tree.backslash_noise_file_id,
+        tree.metadata_file_id,
+        tree.metadata_noise_file_id,
+        tree.movable_file_id,
+    ];
+    assert_eq!(entry_ids.len(), expected_ids.len());
+    for expected_id in expected_ids {
+        assert!(entry_ids.contains(&expected_id));
+    }
+    for excluded_id in [
+        tree.root_id,
+        tree.reports_id,
+        tree.same_device_sibling_file_id,
+        tree.outside_file_id,
+    ] {
+        assert!(!entry_ids.contains(&excluded_id));
+    }
+
+    let archive_directory_index = entry_ids
+        .iter()
+        .position(|entry_id| *entry_id == tree.archive_id)
+        .unwrap();
+    let archive_file_index = entry_ids
+        .iter()
+        .position(|entry_id| *entry_id == tree.archive_file_id)
+        .unwrap();
+    assert!(archive_directory_index < archive_file_index);
+    let duplicate_ids = entry_ids
+        .iter()
+        .copied()
+        .filter(|entry_id| tree.duplicate_file_ids.contains(entry_id))
+        .collect::<Vec<_>>();
+    assert_eq!(duplicate_ids, tree.duplicate_file_ids);
+    assert_eq!(
+        find_search_entry(&page.entries, tree.archive_id).path_components,
+        vec!["reports".to_string(), "archive".to_string()]
+    );
+    assert_eq!(
+        find_search_entry(&page.entries, tree.archive_file_id).path_components,
+        vec!["reports".to_string(), "archive".to_string()]
+    );
+    assert_eq!(
+        find_search_entry(&page.entries, tree.nested_file_id).path_components,
+        vec![
+            "reports".to_string(),
+            "archive".to_string(),
+            "nested.log".to_string(),
+        ]
+    );
+}
+
+async fn assert_stage_four_filters(
+    repository: &FilesystemRepository<'_>,
+    reports_scope: &super::DirectoryScope,
+    tree: &StageTwoTree,
+) {
+    for (name_query, expected_id) in [
+        ("literal%value", tree.percent_file_id),
+        ("under_score", tree.underscore_file_id),
+        (r"back\slash", tree.backslash_file_id),
+    ] {
+        let filters = search_filters_with_kinds(
+            &[],
+            Some(name_query),
+            &[],
+            &[],
+            None,
+            None,
+        );
+        let page = repository
+            .search_entries(
+                reports_scope,
+                &filters,
+                KeysetPageRequest::try_new(None, None).unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(search_entry_ids(&page.entries), vec![expected_id]);
+    }
+
+    let metadata_filters = search_filters_with_kinds(
+        &[],
+        None,
+        &["application/pdf"],
+        &["pdf"],
+        Some(tree.metadata_modified_at),
+        Some(tree.metadata_modified_at),
+    );
+    let metadata_page = repository
+        .search_entries(
+            reports_scope,
+            &metadata_filters,
+            KeysetPageRequest::try_new(None, None).unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        search_entry_ids(&metadata_page.entries),
+        vec![tree.metadata_file_id]
+    );
+    assert!(matches!(
+        &metadata_page.entries[0].entry,
+        TreeEntry::File(_)
+    ));
+
+    let directory_filters = search_filters_with_kinds(
+        &[FileEntryKind::Directory],
+        None,
+        &[],
+        &[],
+        None,
+        None,
+    );
+    let directory_page = repository
+        .search_entries(
+            reports_scope,
+            &directory_filters,
+            KeysetPageRequest::try_new(None, None).unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        search_entry_ids(&directory_page.entries),
+        vec![tree.archive_id]
+    );
+}
+
+async fn assert_stage_four_duplicate_pagination(
+    repository: &FilesystemRepository<'_>,
+    reports_scope: &super::DirectoryScope,
+    tree: &StageTwoTree,
+) {
+    let filters =
+        search_filters_with_kinds(&[], Some("duplicate"), &[], &[], None, None);
+    let first_page = repository
+        .search_entries(
+            reports_scope,
+            &filters,
+            KeysetPageRequest::try_new(Some(2), None).unwrap(),
+        )
+        .await
+        .unwrap();
+    let first_entry_ids = search_entry_ids(&first_page.entries);
+    assert_eq!(
+        first_entry_ids,
+        vec![tree.duplicate_file_ids[0], tree.duplicate_file_ids[1]]
+    );
+    let next = first_page.next.clone().unwrap();
+    let cursor = FileCursorCodec::encode(next.entry_id());
+    let boundary_entry_id = FileCursorCodec::decode(&cursor).unwrap();
+    let query_scope = EntryQueryScope::Search {
+        directory: reports_scope,
+        filters: &filters,
+    };
+    let after = repository
+        .resolve_cursor_entry_sort_key(boundary_entry_id, &query_scope)
+        .await
+        .unwrap();
+    assert_eq!(after, next);
+    let second_page = repository
+        .search_entries(
+            reports_scope,
+            &filters,
+            KeysetPageRequest::try_new(Some(2), Some(after)).unwrap(),
+        )
+        .await
+        .unwrap();
+    let second_entry_ids = search_entry_ids(&second_page.entries);
+    assert_eq!(second_entry_ids, vec![tree.duplicate_file_ids[2]]);
+    assert_eq!(
+        [first_entry_ids, second_entry_ids].concat(),
+        tree.duplicate_file_ids
+    );
+
+    let changed_filters =
+        search_filters_with_kinds(&[], Some("archive"), &[], &[], None, None);
+    let changed_filter_scope = EntryQueryScope::Search {
+        directory: reports_scope,
+        filters: &changed_filters,
+    };
+    assert!(matches!(
+        repository
+            .resolve_cursor_entry_sort_key(
+                boundary_entry_id,
+                &changed_filter_scope
+            )
+            .await,
+        Err(FilesystemError::Validation(_))
+    ));
+    let archive_scope = repository
+        .find_directory_scope(tree.device_id, tree.archive_id)
+        .await
+        .unwrap();
+    let changed_directory_scope = EntryQueryScope::Search {
+        directory: &archive_scope,
+        filters: &filters,
+    };
+    assert!(matches!(
+        repository
+            .resolve_cursor_entry_sort_key(
+                boundary_entry_id,
+                &changed_directory_scope
+            )
+            .await,
+        Err(FilesystemError::Validation(_))
+    ));
+}
+
+async fn assert_stage_four_query_counts(
+    db: &DatabaseConnection,
+    reports_scope: &super::DirectoryScope,
+) {
+    let filters =
+        search_filters_with_kinds(&[], Some("duplicate"), &[], &[], None, None);
+    let query_count = Arc::new(AtomicUsize::new(0));
+    let callback_count = Arc::clone(&query_count);
+    let mut measured_db = db.clone();
+    measured_db.set_metric_callback(move |_| {
+        callback_count.fetch_add(1, Ordering::SeqCst);
+    });
+
+    let nonempty_page = query::search_entries(
+        &measured_db,
+        reports_scope,
+        &filters,
+        KeysetPageRequest::try_new(Some(2), None).unwrap(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(nonempty_page.entries.len(), 2);
+    assert_eq!(query_count.load(Ordering::SeqCst), 2);
+
+    query_count.store(0, Ordering::SeqCst);
+    let empty_filters = search_filters_with_kinds(
+        &[],
+        Some("not-present"),
+        &[],
+        &[],
+        None,
+        None,
+    );
+    let empty_page = query::search_entries(
+        &measured_db,
+        reports_scope,
+        &empty_filters,
+        KeysetPageRequest::try_new(None, None).unwrap(),
+    )
+    .await
+    .unwrap();
+    assert!(empty_page.entries.is_empty());
+    assert_eq!(query_count.load(Ordering::SeqCst), 1);
+}
+
+fn search_entry_ids(entries: &[SearchEntry]) -> Vec<Uuid> {
+    entries.iter().map(search_entry_id).collect()
+}
+
+fn search_entry_id(entry: &SearchEntry) -> Uuid {
+    match &entry.entry {
+        TreeEntry::Directory(directory) => directory.entry_id,
+        TreeEntry::File(file) => file.file_id,
+    }
+}
+
+fn find_search_entry(entries: &[SearchEntry], entry_id: Uuid) -> &SearchEntry {
+    entries
+        .iter()
+        .find(|entry| search_entry_id(entry) == entry_id)
+        .unwrap()
+}
+
 fn search_filters(
     name_query: Option<&str>,
     mime_types: &[&str],
@@ -1061,8 +1442,26 @@ fn search_filters(
     file_metadata_modified_from: Option<NaiveDateTime>,
     file_metadata_modified_to: Option<NaiveDateTime>,
 ) -> FileSearchFilters {
+    search_filters_with_kinds(
+        &[FileEntryKind::File],
+        name_query,
+        mime_types,
+        extensions,
+        file_metadata_modified_from,
+        file_metadata_modified_to,
+    )
+}
+
+fn search_filters_with_kinds(
+    kinds: &[FileEntryKind],
+    name_query: Option<&str>,
+    mime_types: &[&str],
+    extensions: &[&str],
+    file_metadata_modified_from: Option<NaiveDateTime>,
+    file_metadata_modified_to: Option<NaiveDateTime>,
+) -> FileSearchFilters {
     FileSearchFilters::try_from(RawFileSearchFilters {
-        kinds: vec![FileEntryKind::File],
+        kinds: kinds.to_vec(),
         name_query: name_query.map(str::to_string),
         mime_types: mime_types.iter().map(ToString::to_string).collect(),
         extensions: extensions.iter().map(ToString::to_string).collect(),

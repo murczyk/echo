@@ -1,7 +1,8 @@
 use super::{
     query, Breadcrumb, DirectoryScope, EntryQueryScope, EntrySortKey,
-    FileEntry, FilesystemError, KeysetPage, KeysetPageRequest, OffsetPage,
-    OffsetPageRequest, RootEntry, TreeEntry,
+    FileEntry, FileSearchFilters, FilesystemError, KeysetPage,
+    KeysetPageRequest, OffsetPage, OffsetPageRequest, RootEntry, SearchEntry,
+    TreeEntry,
 };
 use crate::file_registry::FileRegistryDb;
 use uuid::Uuid;
@@ -46,6 +47,22 @@ impl<'db> FilesystemRepository<'db> {
     ) -> Result<KeysetPage<TreeEntry, EntrySortKey>, FilesystemError> {
         query::list_children(self.file_registry_db.connection(), scope, page)
             .await
+    }
+
+    #[allow(dead_code)]
+    pub(in crate::devices) async fn search_entries(
+        &self,
+        scope: &DirectoryScope,
+        filters: &FileSearchFilters,
+        page: KeysetPageRequest<EntrySortKey>,
+    ) -> Result<KeysetPage<SearchEntry, EntrySortKey>, FilesystemError> {
+        query::search_entries(
+            self.file_registry_db.connection(),
+            scope,
+            filters,
+            page,
+        )
+        .await
     }
 
     #[allow(dead_code)]
