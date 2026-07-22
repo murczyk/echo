@@ -225,7 +225,13 @@ async fn keep_alive(
 ) -> Result<Json<()>, AppError> {
     let req = req.into_inner();
     let user_id = login_id_from_identity(&user)?;
-    update_last_active_at(&env.dbx, &user_id).await.c(h!())?;
+    match update_last_active_at(&env.dbx, &user_id).await {
+        Err(AppError::Unauthenticated) => {
+            user.logout();
+            return Err(AppError::Unauthenticated);
+        }
+        result => result?,
+    }
     record_page_visit(&user_id, &req.page_id, &env, None)
         .await
         .c(h!())?;
@@ -923,7 +929,7 @@ pub async fn user_login(
     .await
     .c(h!())?;
 
-    update_last_active_at(&env.dbx, &account_id).await.c(h!())?;
+    update_last_active_at(&env.dbx, &account_id).await?;
 
     record_new_session(&account_id, session_id, &env)
         .await
@@ -1724,14 +1730,13 @@ async fn inactive_users_worker_1(
 pub async fn update_last_active_at(
     dbx: &DatabaseConnection,
     user_id: &Uuid,
-) -> anyhow::Result<()> {
+) -> Result<(), AppError> {
     let mut user: login::ActiveModel = login::Entity::find_by_id(*user_id)
         .filter(login::Column::DeletedPermanently.eq(false))
         .one(dbx)
         .await
         .c(h!())?
-        .ok_or(AppError::NotFound)
-        .c(h!())?
+        .ok_or(AppError::Unauthenticated)?
         .into_active_model();
 
     user.last_active_at = Set(Some(Utc::now().naive_utc()));
