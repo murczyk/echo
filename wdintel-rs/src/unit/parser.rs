@@ -2831,6 +2831,7 @@ DMR управління вогнем гадн 70 мсп 42 мсд 58 А
             vec![],
             trie,
             details_by_id,
+            BTreeMap::new(),
         ));
         let mut settlements_config =
             crate::location::SettlementsDataConfig::default();
