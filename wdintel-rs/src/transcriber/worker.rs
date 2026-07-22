@@ -435,7 +435,11 @@ pub async fn run_nofail(
             log::error!(
                 "audio transcription worker cycle failed worker_id={worker_id}: {error:#}"
             );
-            wait_or_cancel(&cancel_token).await;
+            wait_or_cancel(
+                &cancel_token,
+                ECHO_AUDIO_TRANSCRIPTION_IDLE_SLEEP_MS,
+            )
+            .await;
         }
     }
 }
@@ -469,6 +473,11 @@ async fn run(
             break;
         }
         if !orphan_scan_complete {
+            wait_or_cancel(
+                &cancel_token,
+                ECHO_AUDIO_TRANSCRIPTION_ACTIVE_SLEEP_MS,
+            )
+            .await;
             continue;
         }
         log_queue_status(env.as_ref(), worker_id, &mut last_status_log)
@@ -478,7 +487,11 @@ async fn run(
             .await
             .c(h!())?
         {
-            wait_or_cancel(&cancel_token).await;
+            wait_or_cancel(
+                &cancel_token,
+                ECHO_AUDIO_TRANSCRIPTION_IDLE_SLEEP_MS,
+            )
+            .await;
             continue;
         }
 
@@ -490,14 +503,7 @@ async fn run(
         )
         .await
         .context(h!())?;
-        match result {
-            WorkerRunResult::Idle(_) | WorkerRunResult::Retrying { .. } => {
-                wait_or_cancel(&cancel_token).await
-            }
-            WorkerRunResult::Completed { .. }
-            | WorkerRunResult::Terminal { .. }
-            | WorkerRunResult::Stale { .. } => {}
-        }
+        wait_or_cancel(&cancel_token, worker_result_sleep_ms(&result)).await;
     }
 
     log::info!("audio transcription worker drained worker_id={worker_id}");
@@ -537,12 +543,23 @@ async fn log_queue_status(
     Ok(())
 }
 
-async fn wait_or_cancel(cancel_token: &CancellationToken) {
+fn worker_result_sleep_ms(result: &WorkerRunResult) -> u64 {
+    match result {
+        WorkerRunResult::Idle(_) | WorkerRunResult::Retrying { .. } => {
+            ECHO_AUDIO_TRANSCRIPTION_IDLE_SLEEP_MS
+        }
+        WorkerRunResult::Completed { .. }
+        | WorkerRunResult::Terminal { .. }
+        | WorkerRunResult::Stale { .. } => {
+            ECHO_AUDIO_TRANSCRIPTION_ACTIVE_SLEEP_MS
+        }
+    }
+}
+
+async fn wait_or_cancel(cancel_token: &CancellationToken, sleep_ms: u64) {
     tokio::select! {
         _ = cancel_token.cancelled() => {}
-        _ = tokio::time::sleep(Duration::from_millis(
-            ECHO_AUDIO_TRANSCRIPTION_IDLE_SLEEP_MS,
-        )) => {}
+        _ = tokio::time::sleep(Duration::from_millis(sleep_ms)) => {}
     }
 }
 
@@ -568,6 +585,22 @@ mod tests {
     #[test]
     fn task_count_is_controlled_by_the_config_constant() {
         assert_eq!(ECHO_AUDIO_TRANSCRIPTION_CONCURRENCY, 1);
+    }
+
+    #[test]
+    fn worker_result_sleep_distinguishes_idle_and_active_iterations() {
+        assert_eq!(
+            worker_result_sleep_ms(&WorkerRunResult::Idle(
+                echo_gpu_client::IdleReason::NoActiveInstance,
+            )),
+            ECHO_AUDIO_TRANSCRIPTION_IDLE_SLEEP_MS,
+        );
+        assert_eq!(
+            worker_result_sleep_ms(&WorkerRunResult::Completed {
+                source_id: Uuid::now_v7(),
+            }),
+            ECHO_AUDIO_TRANSCRIPTION_ACTIVE_SLEEP_MS,
+        );
     }
 
     #[test]
