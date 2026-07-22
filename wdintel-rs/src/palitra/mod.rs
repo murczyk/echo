@@ -2608,7 +2608,7 @@ async fn sync_move_palitra_files_to_connected_organisms(
         palitra_ids.insert(item.palitra_id);
     }
     let mut tasks_by_target: BTreeMap<
-        String,
+        i64,
         (ConnectedGoiTarget, Vec<GoiMoveTask>),
     > = BTreeMap::new();
     for palitra_id in palitra_ids {
@@ -2664,7 +2664,7 @@ async fn sync_move_palitra_files_to_connected_organisms(
                 .await
                 .c(h!())?;
         for target in goi_targets {
-            let target_key = target.api.label().to_string();
+            let target_key = target.integration_id;
             let tracked_relative_paths = tracked_relative_paths_by_integration
                 .get(&target.integration_id)
                 .map(Vec::as_slice)
