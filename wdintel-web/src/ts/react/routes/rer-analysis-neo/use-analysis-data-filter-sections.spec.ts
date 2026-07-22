@@ -505,6 +505,31 @@ describe('useAnalysisFilterSections', () => {
     expect(analysisApiMocks.fetchAnalysisTags).not.toHaveBeenCalled();
   });
 
+  it('refreshes an already-loaded tags facet', async () => {
+    await renderHook();
+
+    await act(async () => {
+      await latest?.loadFilterSection('tags');
+    });
+    expect(analysisApiMocks.fetchAnalysisTags).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      await latest?.refreshTagFacet();
+    });
+
+    expect(analysisApiMocks.fetchAnalysisTags).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not refresh an unopened tags facet', async () => {
+    await renderHook();
+
+    await act(async () => {
+      await latest?.refreshTagFacet();
+    });
+
+    expect(analysisApiMocks.fetchAnalysisTags).not.toHaveBeenCalled();
+  });
+
   it('moves an in-flight invalidated section to stale and keeps it queued for reload', async () => {
     const callsignsDeferred = deferred<{ callsigns: Array<{ callsign: string; res: [] }> }>();
     analysisApiMocks.fetchAnalysisCallsigns.mockImplementationOnce(() => callsignsDeferred.promise);
