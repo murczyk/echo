@@ -14,6 +14,8 @@ mod main_db;
 mod query;
 #[cfg(test)]
 mod schema_tests;
+#[allow(dead_code)]
+mod service;
 mod validation;
 mod visibility;
 

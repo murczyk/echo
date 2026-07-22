@@ -62,12 +62,19 @@ pub fn normalize_source_label(source_label: &str) -> Result<String, AppError> {
     Ok(source_label)
 }
 
-pub fn normalize_custom_fields(
-    custom_fields: BTreeMap<String, String>,
-) -> Result<BTreeMap<String, String>, AppError> {
+pub(in crate::devices) fn validate_custom_fields_count(
+    custom_fields: &BTreeMap<String, String>,
+) -> Result<(), AppError> {
     if custom_fields.len() > DEVICE_CUSTOM_FIELDS_MAX_COUNT {
         return Err(form_error("custom_fields", "Забагато кастомних полів"));
     }
+    Ok(())
+}
+
+pub fn normalize_custom_fields(
+    custom_fields: BTreeMap<String, String>,
+) -> Result<BTreeMap<String, String>, AppError> {
+    validate_custom_fields_count(&custom_fields)?;
 
     let mut normalized = BTreeMap::new();
     for (key, value) in custom_fields {
@@ -169,6 +176,19 @@ fn normalize_tag(
     Ok(DeviceTag { label, value })
 }
 
+pub fn normalize_present_external_url(
+    external_url: String,
+) -> Result<String, AppError> {
+    let external_url = external_url.trim();
+    if external_url.is_empty() {
+        return Err(form_error(
+            "external_url",
+            "Посилання не може бути порожнім",
+        ));
+    }
+    normalize_nonempty_external_url(external_url)
+}
+
 pub fn normalize_external_url(
     external_url: Option<String>,
 ) -> Result<Option<String>, AppError> {
@@ -180,6 +200,12 @@ pub fn normalize_external_url(
     if external_url.is_empty() {
         return Ok(None);
     }
+    Ok(Some(normalize_nonempty_external_url(external_url)?))
+}
+
+fn normalize_nonempty_external_url(
+    external_url: &str,
+) -> Result<String, AppError> {
     validate_max_chars(
         "external_url",
         external_url,
@@ -204,7 +230,19 @@ pub fn normalize_external_url(
         &external_url,
         DEVICE_EXTERNAL_URL_MAX_CHARS,
     )?;
-    Ok(Some(external_url))
+    Ok(external_url)
+}
+
+pub fn normalize_unique_aor_ids(
+    aor_ids: Vec<i64>,
+) -> Result<Vec<i64>, AppError> {
+    let mut unique_ids = BTreeSet::new();
+    for aor_id in aor_ids {
+        if !unique_ids.insert(aor_id) {
+            return Err(form_error("aor_ids", "Смуги не можуть повторюватися"));
+        }
+    }
+    Ok(unique_ids.into_iter().collect())
 }
 
 pub async fn validate_aor_ids<C>(
@@ -367,6 +405,56 @@ mod tests {
     }
 
     #[test]
+    fn present_external_url_requires_nonempty_http_url_with_host() {
+        assert_eq!(
+            normalize_present_external_url(" https://example.com ".to_string())
+                .unwrap(),
+            "https://example.com/"
+        );
+
+        let empty =
+            normalize_present_external_url("   ".to_string()).unwrap_err();
+        match empty {
+            AppError::Form(errors) => assert_eq!(
+                errors.get("external_url").map(String::as_str),
+                Some("Посилання не може бути порожнім")
+            ),
+            err => panic!("unexpected error: {err:?}"),
+        }
+        assert_form_field(
+            normalize_present_external_url("ftp://example.com".to_string())
+                .unwrap_err(),
+            "external_url",
+        );
+        assert_form_field(
+            normalize_present_external_url("https:///".to_string())
+                .unwrap_err(),
+            "external_url",
+        );
+        assert_form_field(
+            normalize_present_external_url(format!(
+                "https://{}/",
+                "a".repeat(DEVICE_EXTERNAL_URL_MAX_CHARS)
+            ))
+            .unwrap_err(),
+            "external_url",
+        );
+    }
+
+    #[test]
+    fn unique_aor_ids_are_sorted_and_reject_duplicates() {
+        assert_eq!(normalize_unique_aor_ids(vec![9, 2, 5]).unwrap(), [2, 5, 9]);
+        assert_eq!(
+            normalize_unique_aor_ids(Vec::new()).unwrap(),
+            Vec::<i64>::new()
+        );
+        assert_form_field(
+            normalize_unique_aor_ids(vec![2, 2]).unwrap_err(),
+            "aor_ids",
+        );
+    }
+
+    #[test]
     fn source_label_and_custom_fields_are_normalized_without_special_keys() {
         assert_eq!(
             normalize_source_label("  source-device  ").unwrap(),
@@ -407,6 +495,14 @@ mod tests {
                 " ".to_string(),
                 "value".to_string(),
             )]))
+            .unwrap_err(),
+            "custom_fields",
+        );
+        assert_form_field(
+            normalize_custom_fields_patch(BTreeMap::from([
+                (" inventory_id ".to_string(), Some("node-1".to_string())),
+                ("inventory_id".to_string(), Some("node-2".to_string())),
+            ]))
             .unwrap_err(),
             "custom_fields",
         );
