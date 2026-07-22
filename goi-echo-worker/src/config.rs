@@ -13,9 +13,14 @@ pub const DEFAULT_KNOWLEDGE_XLSX_PATH: &str =
     "/etc/goi/data/xlsx/knowledge.xlsx";
 pub const DEFAULT_FREQUENCIES_XLSX_PATH: &str =
     "/etc/goi/data/xlsx/frequencies.xlsx";
+pub const DEFAULT_CATEGORIES_PATH: &str = "/etc/goi/data/categories.json";
 pub const DEFAULT_LISTEN_HOST: &str = "0.0.0.0";
 pub const DEFAULT_LISTEN_PORT: u16 = 8088;
 pub const DEFAULT_POLL_SLEEP_MS: u64 = 1_000;
+pub const API_FILE_BODY_MAX_BYTES: usize = 100 * 1024 * 1024;
+pub const PALETTE_FILE_LIST_LIMIT: usize = 50_000;
+pub const SYNC_LOCK_LIVE_TTL_SECS: i64 = 300;
+pub const SYNC_LOCK_ADVISORY_KEY: i64 = 1_096_138_319;
 pub const GOI_ASSOCIATIONS_INSERT_BATCH_SIZE: usize = 20_000;
 pub const GOI_KNOWLEDGE_SYNC_MAX_AGE_DAYS: i64 = 30;
 
@@ -31,6 +36,8 @@ pub struct Config {
     pub associations_xlsx_path: Option<String>,
     pub knowledge_xlsx_path: Option<String>,
     pub frequencies_xlsx_path: Option<String>,
+    pub palettes_path: Option<String>,
+    pub categories_path: Option<String>,
     pub listen_host: Option<String>,
     pub listen_port: Option<u16>,
     pub poll_sleep_ms: Option<u64>,
@@ -81,6 +88,18 @@ impl Config {
 
     pub fn preferred_frequencies_xlsx_path(&self) -> PathBuf {
         preferred_readonly_xlsx_path(self.frequencies_xlsx_path())
+    }
+
+    pub fn palettes_path(&self) -> Result<&str> {
+        self.palettes_path
+            .as_deref()
+            .context("palettes_path is missing; rerun GOI worker setup")
+    }
+
+    pub fn categories_path(&self) -> &str {
+        self.categories_path
+            .as_deref()
+            .unwrap_or(DEFAULT_CATEGORIES_PATH)
     }
 
     pub fn listen_host(&self) -> &str {
@@ -146,6 +165,22 @@ mod tests {
     use super::*;
     use std::fs;
     use std::time::{SystemTime, UNIX_EPOCH};
+
+    #[test]
+    fn legacy_config_requires_explicit_palettes_path() {
+        let config = toml::from_str::<Config>(
+            r#"
+api_login = "login"
+api_password = "password"
+"#,
+        )
+        .expect("legacy config");
+
+        assert_eq!(
+            config.palettes_path().unwrap_err().to_string(),
+            "palettes_path is missing; rerun GOI worker setup"
+        );
+    }
 
     #[test]
     fn preferred_readonly_xlsx_path_uses_readonly_sibling_when_present() {

@@ -176,7 +176,7 @@ fn to_knowledge_api_item(
     })
 }
 
-fn require_basic_auth(
+pub(crate) fn require_basic_auth(
     http_req: &HttpRequest,
     config: &Config,
 ) -> Result<(), Error> {
@@ -298,6 +298,8 @@ mod tests {
                 frequencies_xlsx_path: Some(
                     frequencies_path.display().to_string(),
                 ),
+                palettes_path: None,
+                categories_path: None,
                 listen_host: None,
                 listen_port: None,
                 poll_sleep_ms: None,

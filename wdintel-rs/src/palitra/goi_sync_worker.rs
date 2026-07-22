@@ -1,25 +1,21 @@
 use crate::config::{
-    ORGANISM_GOI_INTEGRATION_TYPE_FULL, ORGANISM_GOI_PATH_DEFAULT,
-    ORGANISM_GOI_SSH_PORT_DEFAULT, PALITRA_ALLOWED_UPLOAD_EXTENSIONS,
+    ORGANISM_GOI_INTEGRATION_TYPE_FULL, PALITRA_ALLOWED_UPLOAD_EXTENSIONS,
     PALITRA_BLOCKED_UNSTABLE_UPLOAD_EXTENSIONS,
     PALITRA_CONVERSION_STATUS_ERROR, PALITRA_CONVERSION_STATUS_PROCESSING,
-    PALITRA_CONVERSION_STATUS_READY, PALITRA_GOI_RECONCILE_INTERVAL_SEC,
-    PALITRA_GOI_REMOTE_STATUS_MISSING, PALITRA_GOI_REMOTE_STATUS_PRESENT,
-    PALITRA_GOI_SYNC_DIRECTION_ECHO, PALITRA_GOI_SYNC_DIRECTION_GOI,
-    PALITRA_GOI_SYNC_JOB_KIND_DELETE, PALITRA_GOI_SYNC_JOB_KIND_MOVE,
-    PALITRA_GOI_SYNC_JOB_KIND_UPLOAD, PALITRA_GOI_SYNC_JOB_RETRY_DELAY_SEC,
-    PALITRA_GOI_SYNC_WORKER_SLEEP_SEC,
+    PALITRA_CONVERSION_STATUS_READY, PALITRA_GOI_REMOTE_STATUS_MISSING,
+    PALITRA_GOI_REMOTE_STATUS_PRESENT, PALITRA_GOI_SYNC_DIRECTION_ECHO,
+    PALITRA_GOI_SYNC_DIRECTION_GOI, PALITRA_GOI_SYNC_JOB_KIND_DELETE,
+    PALITRA_GOI_SYNC_JOB_KIND_MOVE, PALITRA_GOI_SYNC_JOB_KIND_UPLOAD,
+    PALITRA_GOI_SYNC_JOB_RETRY_DELAY_SEC,
 };
 use crate::entities::*;
 use crate::error::AppError;
-use crate::organism::goi;
+use crate::organism::goi::goi_api::{GoiApiTarget, GoiSyncLock};
 use crate::organism::goi::shared::goi_integration_worker_paused;
-use crate::organism::types::CheckOrganismGoiConnectionReq;
 use crate::palitra::types::{
     CreatePalitraReq, PalitraAccess, PalitraChangelogEntry,
 };
 use crate::types::*;
-use crate::utils::string::normalize_trimmed_or_default;
 use chrono::Utc;
 use itertools::Itertools;
 use sea_orm::prelude::Expr;
@@ -27,7 +23,6 @@ use sea_orm::Statement;
 use sea_orm::*;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
-use std::time::{Duration, Instant};
 
 const GOI_PALITRA_DUPLICATE_REMOTE_PATH_CONFLICT_TEXT: &str =
     "Duplicate GOI remote path tracking conflict";
@@ -47,7 +42,7 @@ const GOI_PALITRA_DIRECT_IMPORT_FAILED_TEXT_PREFIX: &str =
 #[derive(Clone)]
 struct GoiSyncTarget {
     integration: goi_integration::Model,
-    req: CheckOrganismGoiConnectionReq,
+    api: GoiApiTarget,
 }
 
 struct DownloadedGoiPalitraFile {
@@ -136,51 +131,20 @@ struct EchoOriginGoiSyncDecision {
     current_echo_file_data: Option<Vec<u8>>,
 }
 
-pub async fn palitra_goi_sync_worker_nofail(env: Arc<Env>) {
-    let mut last_reconcile_at = None;
-    loop {
-        let no_jobs = match palitra_goi_sync_worker_step(
-            env.as_ref(),
-            &mut last_reconcile_at,
-        )
-        .await
-        {
-            Ok(no_jobs) => no_jobs,
-            Err(err) => {
-                warn!("palitra_goi_sync_worker failed: {err:#}");
-                true
-            }
-        };
-        if no_jobs {
-            tokio::time::sleep(Duration::from_secs(
-                PALITRA_GOI_SYNC_WORKER_SLEEP_SEC,
-            ))
-            .await;
-        }
-    }
-}
-
-async fn palitra_goi_sync_worker_step(
+pub(crate) async fn process_next_goi_sync_job(
     env: &Env,
-    last_reconcile_at: &mut Option<Instant>,
 ) -> Result<bool, AppError> {
     let txn = env.dbx.begin().await.c(h!())?;
     let Some(job) = take_next_job(&txn).await.c(h!())? else {
         txn.commit().await.c(h!())?;
-        if should_reconcile_goi_palitras(*last_reconcile_at) {
-            *last_reconcile_at = Some(Instant::now());
-            reconcile_goi_palitras(env).await.c(h!())?;
-        }
         return Ok(true);
     };
     txn.commit().await.c(h!())?;
 
     let result = match job.kind.as_str() {
         PALITRA_GOI_SYNC_JOB_KIND_UPLOAD => sync_upload_job(env, &job).await,
-        PALITRA_GOI_SYNC_JOB_KIND_MOVE => sync_move_job(&env.dbx, &job).await,
-        PALITRA_GOI_SYNC_JOB_KIND_DELETE => {
-            sync_delete_job(&env.dbx, &job).await
-        }
+        PALITRA_GOI_SYNC_JOB_KIND_MOVE => sync_move_job(env, &job).await,
+        PALITRA_GOI_SYNC_JOB_KIND_DELETE => sync_delete_job(env, &job).await,
         kind => Err(anyhow::anyhow!(
             "unknown palitra GOI sync job kind '{kind}'"
         )
@@ -227,16 +191,6 @@ async fn palitra_goi_sync_worker_step(
     Ok(false)
 }
 
-fn should_reconcile_goi_palitras(last_reconcile_at: Option<Instant>) -> bool {
-    match last_reconcile_at {
-        Some(last_reconcile_at) => {
-            last_reconcile_at.elapsed()
-                >= Duration::from_secs(PALITRA_GOI_RECONCILE_INTERVAL_SEC)
-        }
-        None => true,
-    }
-}
-
 async fn take_next_job(
     txn: &DatabaseTransaction,
 ) -> anyhow::Result<Option<palitra_goi_sync_job::Model>> {
@@ -270,8 +224,8 @@ async fn take_next_job(
         .c(h!())
 }
 
-async fn reconcile_goi_palitras(env: &Env) -> anyhow::Result<()> {
-    let targets = collect_all_goi_sync_targets(&env.dbx).await.c(h!())?;
+pub(crate) async fn reconcile_goi_palitras(env: &Env) -> anyhow::Result<()> {
+    let targets = collect_all_goi_sync_targets(env).await.c(h!())?;
     for target in targets {
         if let Err(err) = reconcile_goi_target(env, &target).await {
             warn!(
@@ -292,10 +246,7 @@ async fn reconcile_goi_target(
         return reconcile_goi_target_files(env, target, None).await.c(h!());
     }
 
-    let Some(lock) = goi::goi_try_acquire_sync_lock(target.req.clone())
-        .await
-        .c(h!())?
-    else {
+    let Some(lock) = target.api.try_acquire_sync_lock().await.c(h!())? else {
         return Ok(());
     };
     let result = reconcile_goi_target_files(env, target, Some(&lock)).await;
@@ -306,11 +257,9 @@ async fn reconcile_goi_target(
 async fn reconcile_goi_target_files(
     env: &Env,
     target: &GoiSyncTarget,
-    lock: Option<&goi::GoiSyncLock>,
+    lock: Option<&GoiSyncLock>,
 ) -> anyhow::Result<()> {
-    let entries = goi::goi_list_relative_files(target.req.clone())
-        .await
-        .c(h!())?;
+    let entries = target.api.list_palette_files().await.c(h!())?;
     refresh_goi_sync_lock(lock).await.c(h!())?;
     let remote_paths = entries
         .into_iter()
@@ -371,7 +320,7 @@ async fn reconcile_echo_palitras_missing_in_goi(
     env: &Env,
     target: &GoiSyncTarget,
     remote_paths: &BTreeSet<String>,
-    lock: Option<&goi::GoiSyncLock>,
+    lock: Option<&GoiSyncLock>,
 ) -> anyhow::Result<()> {
     let palitras = find_echo_palitras_for_goi_target(
         &env.dbx,
@@ -452,11 +401,8 @@ async fn reconcile_echo_palitra_missing_in_goi(
 
     let relative_path =
         compose_relative_path(target_folder.as_deref(), remote_file_name);
-    let remote_file_path = compose_remote_path(
-        &target.req,
-        target_folder.as_deref(),
-        remote_file_name,
-    );
+    let remote_file_path =
+        compose_relative_path(target_folder.as_deref(), remote_file_name);
     let file_data = load_palitra_file_data(env, palitra).await.c(h!())?;
     upload_palitra_to_goi_target(
         &env.dbx,
@@ -564,7 +510,7 @@ async fn find_present_tracked_palitras(
 }
 
 async fn refresh_goi_sync_lock(
-    lock: Option<&goi::GoiSyncLock>,
+    lock: Option<&GoiSyncLock>,
 ) -> anyhow::Result<()> {
     if let Some(lock) = lock {
         lock.refresh().await.c(h!())?;
@@ -680,9 +626,9 @@ async fn download_goi_palitra_file(
     target: &GoiSyncTarget,
     remote_path: &str,
 ) -> anyhow::Result<DownloadedGoiPalitraFile> {
-    let remote_file_path =
-        super::compose_goi_palette_remote_path(&target.req.path, remote_path);
-    let data = goi::goi_download_file(target.req.clone(), remote_file_path)
+    let data = target
+        .api
+        .download_palette_file(remote_path)
         .await
         .c(h!())?;
     Ok(DownloadedGoiPalitraFile {
@@ -818,12 +764,11 @@ async fn refresh_tracked_goi_palitra_if_changed(
         .await
         .c(h!())?;
 
-    let remote_file_path =
-        super::compose_goi_palette_remote_path(&target.req.path, remote_path);
-    let file_data =
-        goi::goi_download_file(target.req.clone(), remote_file_path)
-            .await
-            .c(h!())?;
+    let file_data = target
+        .api
+        .download_palette_file(remote_path)
+        .await
+        .c(h!())?;
     let file_size = file_data.len() as i64;
     let file_sha256 = sha256::digest(&file_data);
     if tracked_goi_palitra_ids(tracked_rows).is_empty() {
@@ -2130,12 +2075,11 @@ async fn import_goi_palitra(
     target: &GoiSyncTarget,
     remote_path: &str,
 ) -> anyhow::Result<()> {
-    let remote_file_path =
-        super::compose_goi_palette_remote_path(&target.req.path, remote_path);
-    let file_data =
-        goi::goi_download_file(target.req.clone(), remote_file_path)
-            .await
-            .c(h!())?;
+    let file_data = target
+        .api
+        .download_palette_file(remote_path)
+        .await
+        .c(h!())?;
     let file_size = file_data.len() as i64;
     let file_sha256 = sha256::digest(&file_data);
     let goi_source = goi_source_snapshot_for_remote_path(
@@ -2753,7 +2697,7 @@ fn remote_path_is_in_archive_folder(remote_path: &str) -> bool {
 }
 
 async fn collect_all_goi_sync_targets(
-    dbx: &DatabaseConnection,
+    env: &Env,
 ) -> anyhow::Result<Vec<GoiSyncTarget>> {
     let worker_active = goi_integration::Column::PauseWorker.eq(false);
     let integrations = goi_integration::Entity::find()
@@ -2762,14 +2706,14 @@ async fn collect_all_goi_sync_targets(
             goi_integration::Column::IntegrationType
                 .eq(ORGANISM_GOI_INTEGRATION_TYPE_FULL),
         )
-        .all(dbx)
+        .all(&env.dbx)
         .await
         .c(h!())?;
-    collect_valid_goi_sync_targets(integrations)
+    collect_valid_goi_sync_targets(env.rq.clone(), integrations)
 }
 
 async fn collect_goi_sync_targets_for_organisms(
-    dbx: &DatabaseConnection,
+    env: &Env,
     organism_ids: &[i64],
 ) -> anyhow::Result<Vec<GoiSyncTarget>> {
     if organism_ids.is_empty() {
@@ -2786,19 +2730,20 @@ async fn collect_goi_sync_targets_for_organisms(
             goi_integration::Column::IntegrationType
                 .eq(ORGANISM_GOI_INTEGRATION_TYPE_FULL),
         )
-        .all(dbx)
+        .all(&env.dbx)
         .await
         .c(h!())?;
-    collect_valid_goi_sync_targets(integrations)
+    collect_valid_goi_sync_targets(env.rq.clone(), integrations)
 }
 
 fn collect_valid_goi_sync_targets(
+    rq: reqwest::Client,
     integrations: Vec<goi_integration::Model>,
 ) -> anyhow::Result<Vec<GoiSyncTarget>> {
     let mut targets = Vec::with_capacity(integrations.len());
     for integration in integrations {
         let Some(target) =
-            goi_sync_target_from_integration(integration).c(h!())?
+            goi_sync_target_from_integration(rq.clone(), integration)
         else {
             continue;
         };
@@ -2808,46 +2753,22 @@ fn collect_valid_goi_sync_targets(
 }
 
 fn goi_sync_target_from_integration(
+    rq: reqwest::Client,
     integration: goi_integration::Model,
-) -> anyhow::Result<Option<GoiSyncTarget>> {
+) -> Option<GoiSyncTarget> {
     if goi_integration_worker_paused(&integration) {
-        return Ok(None);
+        return None;
     }
-    let ssh_host = integration
-        .ssh_host
-        .as_ref()
-        .map(|value| value.trim())
-        .filter(|value| !value.is_empty())
-        .map(str::to_string);
-    let ssh_user = integration
-        .ssh_user
-        .as_ref()
-        .map(|value| value.trim())
-        .filter(|value| !value.is_empty())
-        .map(str::to_string);
-    let Some(ssh_host) = ssh_host else {
-        return Ok(None);
-    };
-    let Some(ssh_user) = ssh_user else {
-        return Ok(None);
-    };
-    let path = normalize_trimmed_or_default(
-        integration.path.clone(),
-        ORGANISM_GOI_PATH_DEFAULT,
-    );
-    let ssh_port = if integration.ssh_port > 0 {
-        integration.ssh_port
-    } else {
-        ORGANISM_GOI_SSH_PORT_DEFAULT
-    };
-    let req = CheckOrganismGoiConnectionReq {
-        ssh_host,
-        ssh_user,
-        ssh_port,
-        path,
-    };
-    super::goi_validate_connection_req(&req).c(h!())?;
-    Ok(Some(GoiSyncTarget { integration, req }))
+    match GoiApiTarget::from_integration(rq, &integration) {
+        Ok(api) => Some(GoiSyncTarget { integration, api }),
+        Err(err) => {
+            warn!(
+                "Skipping GOI sync target for integration {} ({}): {err:#}",
+                integration.id, integration.server_label
+            );
+            None
+        }
+    }
 }
 
 async fn upsert_goi_palitra_sync<'a, C>(
@@ -3084,7 +3005,7 @@ async fn sync_upload_job(
         super::bl::normalize_palitra_folder_from_db(palitra.folder.clone());
     let file_data = load_upload_file_data(env, job, &palitra).await.c(h!())?;
     upload_palitra_to_connected_organisms_strict(
-        &env.dbx,
+        env,
         palitra.id,
         &organism_ids,
         &remote_file_name,
@@ -3144,12 +3065,12 @@ async fn maybe_load_palitra_file_data(
 }
 
 async fn sync_move_job(
-    dbx: &DatabaseConnection,
+    env: &Env,
     job: &palitra_goi_sync_job::Model,
 ) -> anyhow::Result<()> {
     let Some(palitra) = palitra::Entity::find_by_id(job.palitra_id)
         .filter(palitra::Column::Deleted.eq(false))
-        .one(dbx)
+        .one(&env.dbx)
         .await
         .c(h!())?
     else {
@@ -3165,7 +3086,7 @@ async fn sync_move_job(
         },
     };
     super::sync_move_palitra_files_to_connected_organisms(
-        dbx,
+        env,
         std::slice::from_ref(&sync_item),
     )
     .await
@@ -3173,17 +3094,17 @@ async fn sync_move_job(
 }
 
 async fn sync_delete_job(
-    dbx: &DatabaseConnection,
+    env: &Env,
     job: &palitra_goi_sync_job::Model,
 ) -> anyhow::Result<()> {
     let Some(palitra) = palitra::Entity::find_by_id(job.palitra_id)
-        .one(dbx)
+        .one(&env.dbx)
         .await
         .c(h!())?
     else {
         return Ok(());
     };
-    let organism_ids = read_palitra_goi_organism_ids(dbx, palitra.id)
+    let organism_ids = read_palitra_goi_organism_ids(&env.dbx, palitra.id)
         .await
         .c(h!())?;
     let target_folders = if job.source_folder.is_empty() {
@@ -3201,18 +3122,20 @@ async fn sync_delete_job(
     };
     let source_file_names = palitra_geometry::Entity::find()
         .filter(palitra_geometry::Column::PalitraId.eq(palitra.id))
-        .all(dbx)
+        .all(&env.dbx)
         .await
         .c(h!())?
         .into_iter()
         .map(|geometry| geometry.source_file_name)
         .collect::<Vec<_>>();
     let tracked_relative_paths_by_integration =
-        read_tracked_goi_palitra_relative_paths_by_integration(dbx, palitra.id)
-            .await
-            .c(h!())?;
+        read_tracked_goi_palitra_relative_paths_by_integration(
+            &env.dbx, palitra.id,
+        )
+        .await
+        .c(h!())?;
     delete_palitra_from_connected_organisms_strict(
-        dbx,
+        env,
         palitra.id,
         &palitra.name,
         &organism_ids,
@@ -3260,7 +3183,7 @@ where
 }
 
 async fn upload_palitra_to_connected_organisms_strict(
-    dbx: &DatabaseConnection,
+    env: &Env,
     palitra_id: i64,
     organism_ids: &[i64],
     remote_file_name: &str,
@@ -3270,7 +3193,7 @@ async fn upload_palitra_to_connected_organisms_strict(
     if organism_ids.is_empty() {
         return Ok(());
     }
-    let goi_targets = collect_goi_sync_targets_for_organisms(dbx, organism_ids)
+    let goi_targets = collect_goi_sync_targets_for_organisms(env, organism_ids)
         .await
         .c(h!())?;
     let mut errors = Vec::new();
@@ -3278,10 +3201,10 @@ async fn upload_palitra_to_connected_organisms_strict(
         let relative_path =
             compose_relative_path(target_folder, remote_file_name);
         let remote_file_path =
-            compose_remote_path(&target.req, target_folder, remote_file_name);
+            compose_relative_path(target_folder, remote_file_name);
         if target.integration.disable_goi_to_echo_palitra_sync {
             if let Err(err) = upload_palitra_to_goi_target(
-                dbx,
+                &env.dbx,
                 &target,
                 palitra_id,
                 &relative_path,
@@ -3291,33 +3214,32 @@ async fn upload_palitra_to_connected_organisms_strict(
             .await
             {
                 errors.push(format!(
-                    "{}:{} {}: {err:#}",
-                    target.req.ssh_host, target.req.ssh_port, remote_file_path
+                    "{} {}: {err:#}",
+                    target.api.label(),
+                    remote_file_path
                 ));
             }
             continue;
         }
-        let Some(lock) =
-            (match goi::goi_try_acquire_sync_lock(target.req.clone()).await {
-                Ok(lock) => lock,
-                Err(err) => {
-                    errors.push(format!(
-                        "{}:{} acquire sync lock: {err:#}",
-                        target.req.ssh_host, target.req.ssh_port
-                    ));
-                    continue;
-                }
-            })
-        else {
+        let Some(lock) = (match target.api.try_acquire_sync_lock().await {
+            Ok(lock) => lock,
+            Err(err) => {
+                errors.push(format!(
+                    "{} acquire sync lock: {err:#}",
+                    target.api.label()
+                ));
+                continue;
+            }
+        }) else {
             errors.push(format!(
-                "{}:{} sync lock is held by another worker",
-                target.req.ssh_host, target.req.ssh_port
+                "{} sync lock is held by another worker",
+                target.api.label()
             ));
             continue;
         };
         let sync_result = async {
             upload_palitra_to_goi_target(
-                dbx,
+                &env.dbx,
                 &target,
                 palitra_id,
                 &relative_path,
@@ -3333,8 +3255,9 @@ async fn upload_palitra_to_connected_organisms_strict(
         release_goi_sync_lock(lock).await;
         if let Err(err) = sync_result {
             errors.push(format!(
-                "{}:{} {}: {err:#}",
-                target.req.ssh_host, target.req.ssh_port, remote_file_path
+                "{} {}: {err:#}",
+                target.api.label(),
+                remote_file_path
             ));
         }
     }
@@ -3352,13 +3275,11 @@ async fn upload_palitra_to_goi_target(
     remote_file_path: &str,
     file_data: &[u8],
 ) -> anyhow::Result<()> {
-    goi::goi_upload_file(
-        target.req.clone(),
-        remote_file_path.to_string(),
-        file_data.to_vec(),
-    )
-    .await
-    .c(h!())?;
+    target
+        .api
+        .upload_palette_file(remote_file_path, file_data.to_vec())
+        .await
+        .c(h!())?;
     upsert_goi_palitra_sync(
         dbx,
         target.integration.id,
@@ -3380,7 +3301,7 @@ async fn upload_palitra_to_goi_target(
 }
 
 async fn delete_palitra_from_connected_organisms_strict(
-    dbx: &DatabaseConnection,
+    env: &Env,
     palitra_id: i64,
     palitra_name: &str,
     organism_ids: &[i64],
@@ -3391,14 +3312,14 @@ async fn delete_palitra_from_connected_organisms_strict(
     if organism_ids.is_empty() {
         return Ok(());
     }
-    let goi_targets = super::collect_connected_goi_targets(dbx, organism_ids)
+    let goi_targets = collect_goi_sync_targets_for_organisms(env, organism_ids)
         .await
         .c(h!())?;
 
     let mut errors = Vec::new();
     for target in goi_targets {
         let tracked_relative_paths = tracked_relative_paths_by_integration
-            .get(&target.integration_id)
+            .get(&target.integration.id)
             .map(Vec::as_slice)
             .unwrap_or_default();
         let relative_paths = delete_relative_path_candidates(
@@ -3411,58 +3332,46 @@ async fn delete_palitra_from_connected_organisms_strict(
         if relative_paths.is_empty() {
             continue;
         }
-        if target.disable_goi_to_echo_palitra_sync {
+        if target.integration.disable_goi_to_echo_palitra_sync {
             if let Err(err) = delete_palitra_from_goi_target(
-                target.req.clone(),
+                target.api.clone(),
                 &relative_paths,
             )
             .await
             {
-                errors.push(format!(
-                    "{}:{} {err:#}",
-                    target.req.ssh_host, target.req.ssh_port
-                ));
+                errors.push(format!("{} {err:#}", target.api.label()));
             }
             continue;
         }
-        let Some(lock) =
-            (match goi::goi_try_acquire_sync_lock(target.req.clone()).await {
-                Ok(lock) => lock,
-                Err(err) => {
-                    errors.push(format!(
-                        "{}:{} acquire sync lock: {err:#}",
-                        target.req.ssh_host, target.req.ssh_port
-                    ));
-                    continue;
-                }
-            })
-        else {
+        let Some(lock) = (match target.api.try_acquire_sync_lock().await {
+            Ok(lock) => lock,
+            Err(err) => {
+                errors.push(format!(
+                    "{} acquire sync lock: {err:#}",
+                    target.api.label()
+                ));
+                continue;
+            }
+        }) else {
             errors.push(format!(
-                "{}:{} sync lock is held by another worker",
-                target.req.ssh_host, target.req.ssh_port
+                "{} sync lock is held by another worker",
+                target.api.label()
             ));
             continue;
         };
         let sync_result = async {
-            let entries =
-                match goi::goi_list_relative_files(target.req.clone()).await {
-                    Ok(entries) => entries,
-                    Err(err) => anyhow::bail!("list relative files: {err:#}"),
-                };
+            let entries = match target.api.list_palette_files().await {
+                Ok(entries) => entries,
+                Err(err) => anyhow::bail!("list relative files: {err:#}"),
+            };
             lock.refresh().await.c(h!())?;
             for entry in entries {
                 if !matches_remote_relative_path(&entry, &relative_paths) {
                     continue;
                 }
-                let remote_file_path = super::compose_goi_palette_remote_path(
-                    &target.req.path,
-                    &entry,
-                );
-                if let Err(err) = goi::goi_delete_file(
-                    target.req.clone(),
-                    remote_file_path.clone(),
-                )
-                .await
+                let remote_file_path = entry.clone();
+                if let Err(err) =
+                    target.api.delete_palette_file(&remote_file_path).await
                 {
                     anyhow::bail!("{remote_file_path}: {err:#}");
                 }
@@ -3473,10 +3382,7 @@ async fn delete_palitra_from_connected_organisms_strict(
         .await;
         release_goi_sync_lock(lock).await;
         if let Err(err) = sync_result {
-            errors.push(format!(
-                "{}:{} {err:#}",
-                target.req.ssh_host, target.req.ssh_port
-            ));
+            errors.push(format!("{} {err:#}", target.api.label()));
         }
     }
     if errors.is_empty() {
@@ -3516,10 +3422,10 @@ fn delete_relative_path_candidates(
 }
 
 async fn delete_palitra_from_goi_target(
-    target: CheckOrganismGoiConnectionReq,
+    target: GoiApiTarget,
     relative_paths: &BTreeSet<String>,
 ) -> anyhow::Result<()> {
-    let entries = match goi::goi_list_relative_files(target.clone()).await {
+    let entries = match target.list_palette_files().await {
         Ok(entries) => entries,
         Err(err) => anyhow::bail!("list relative files: {err:#}"),
     };
@@ -3527,19 +3433,16 @@ async fn delete_palitra_from_goi_target(
         if !matches_remote_relative_path(&entry, relative_paths) {
             continue;
         }
-        let remote_file_path =
-            super::compose_goi_palette_remote_path(&target.path, &entry);
-        if let Err(err) =
-            goi::goi_delete_file(target.clone(), remote_file_path.clone()).await
-        {
+        let remote_file_path = entry.clone();
+        if let Err(err) = target.delete_palette_file(&remote_file_path).await {
             anyhow::bail!("{remote_file_path}: {err:#}");
         }
     }
     Ok(())
 }
 
-async fn release_goi_sync_lock(lock: goi::GoiSyncLock) {
-    let target = lock.target();
+async fn release_goi_sync_lock(lock: GoiSyncLock) {
+    let target = lock.target().to_string();
     if let Err(err) = lock.release().await {
         warn!("Failed to release GOI sync lock for {target}: {err:#}");
     }
@@ -3558,21 +3461,6 @@ fn compose_relative_path(
         Some(folder) => format!("{folder}/{file_name}"),
         None => file_name.to_string(),
     }
-}
-
-fn compose_remote_path(
-    target: &CheckOrganismGoiConnectionReq,
-    target_folder: Option<&str>,
-    remote_file_name: &str,
-) -> String {
-    let relative_path = match target_folder
-        .map(str::trim)
-        .filter(|folder| !folder.is_empty())
-    {
-        Some(folder) => format!("{folder}/{remote_file_name}"),
-        None => remote_file_name.to_string(),
-    };
-    super::compose_goi_palette_remote_path(&target.path, &relative_path)
 }
 
 fn matches_remote_relative_path(
@@ -3669,16 +3557,6 @@ mod tests {
         .insert(dbx)
         .await
         .unwrap()
-    }
-
-    #[test]
-    fn goi_reconciliation_is_due_on_start_and_after_interval() {
-        assert!(should_reconcile_goi_palitras(None));
-        assert!(!should_reconcile_goi_palitras(Some(Instant::now())));
-        assert!(should_reconcile_goi_palitras(Some(
-            Instant::now()
-                - Duration::from_secs(PALITRA_GOI_RECONCILE_INTERVAL_SEC)
-        )));
     }
 
     #[test]
