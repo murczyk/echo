@@ -322,7 +322,7 @@ pub fn goi_api_base_url(host: &str, port: i32) -> anyhow::Result<Url> {
     {
         Url::parse(host)?
     } else {
-        Url::parse(&format!("https://{host}"))?
+        Url::parse(&format!("http://{host}"))?
     };
     if url.port().is_none() {
         url.set_port(Some(port as u16))
@@ -358,10 +358,10 @@ mod tests {
     use super::*;
 
     #[test]
-    fn api_url_defaults_to_https() {
+    fn api_url_defaults_to_http() {
         assert_eq!(
             goi_api_base_url("goi.example", 8088).unwrap().as_str(),
-            "https://goi.example:8088/"
+            "http://goi.example:8088/"
         );
     }
 
