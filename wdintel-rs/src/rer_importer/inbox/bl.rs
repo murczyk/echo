@@ -77,6 +77,12 @@ async fn load_completed_audio_transcriptions(
     if audio_media_ids.is_empty() {
         return Ok(HashMap::new());
     }
+    if !crate::system_settings::audio_transcription_enabled(dbx)
+        .await
+        .c(h!())?
+    {
+        return Ok(HashMap::new());
+    }
 
     let transcriptions = echo_gpu_transcription_queue::Entity::find()
         .filter(

@@ -2212,7 +2212,7 @@ mod tests {
         sigint_inbox_item_metadata, sigint_inbox_item_point_token,
         sigint_inbox_item_tag, sigint_peleng, sigint_zone_datasource,
         signal_group, signal_message, signal_message_group,
-        signal_message_media, tag,
+        signal_message_media, system_settings, tag,
     };
     use crate::functest::tests::*;
     use chrono::{DateTime, SecondsFormat, Utc};
@@ -3537,6 +3537,13 @@ mod tests {
     async fn inbox_media_includes_only_completed_audio_transcriptions() {
         let env = cleanup().await.unwrap();
         let login = find_test_login(&env.dbx).await.unwrap();
+        let settings = system_settings::ActiveModel {
+            enable_audio_transcription: Set(true),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
         let datasource_group =
             find_test_datasource_group(&env.dbx).await.unwrap();
         let audio_message = seed_message_with_media(
@@ -3604,6 +3611,20 @@ mod tests {
             Some("transcription for audio/ogg")
         );
         assert_eq!(image.1.media[0].transcription, None);
+
+        let mut settings: system_settings::ActiveModel = settings.into();
+        settings.enable_audio_transcription = Set(false);
+        settings.update(&env.dbx).await.unwrap();
+        let messages = messages_by_id_bl(
+            &login.login,
+            &logins,
+            &env,
+            &[audio_message.id],
+            &messages_by_id_default_req(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(messages[0].1.media[0].transcription, None);
     }
 
     #[serial]
