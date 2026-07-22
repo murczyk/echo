@@ -16,7 +16,7 @@ import {
 } from '../../services/api/analysis';
 import { buildAnalysisReq } from './helpers';
 import type { User } from '../../../../Bindings';
-import type { AnalysisQueryState } from './types';
+import type { AnalysisQueryState, AnalysisReloadOptions } from './types';
 import type { MessageCardBotTagAction } from '../shared/message-card/message-card.types';
 import {
   hasBotTag,
@@ -35,8 +35,8 @@ type Params = {
   onUnauthorized: (error: unknown) => boolean;
   patchMessages: (updater: (messageId: number, message: InboxMessage) => InboxMessage) => void;
   queryState: AnalysisQueryState;
-  invalidateTagFacetLoad: () => void;
-  reload: () => Promise<void>;
+  refreshTagFacet: () => Promise<void>;
+  reload: (options?: AnalysisReloadOptions) => Promise<void>;
   setMapOpenMessages: React.Dispatch<React.SetStateAction<Array<[number, InboxMessage]>>>;
   setMessages: React.Dispatch<React.SetStateAction<Array<[number, InboxMessage]>>>;
   setSummaryRows: React.Dispatch<React.SetStateAction<SummaryTableFreqRow[]>>;
@@ -169,22 +169,10 @@ export function useAnalysisDataMessageActions(params: Params) {
           return toggleHumanTag(message, tagId, currentUserName, currentUserOrganismId);
         });
 
-        try {
-          // Re-run the filtered query after the optimistic patch: when a tag filter is
-          // active, changing a message's tag can move it in or out of the result set and
-          // recompute the tag facet. The patch keeps the toggle instant; the reload keeps
-          // the list and filter options correct. The tag toggle leaves `analysisReq`
-          // unchanged, so the cached 'tags' facet would otherwise be reused with stale
-          // counters — invalidate it before the reload so its counts re-fetch.
-          params.invalidateTagFacetLoad();
-          await params.reload();
-        } catch (reloadError) {
-          // The tag mutation above already persisted, so the optimistic patch is now the
-          // correct state — a reload failure must not roll it back. Report the error only.
-          if (!params.onUnauthorized(reloadError)) {
-            params.onError(params.toErrorMessage(reloadError));
-          }
-        }
+        // Do not reload the inbox after a tag mutation. The Tags facet refreshes immediately when it
+        // is already open; the paginated message list reconciles on the next explicit pagination,
+        // filter, or page refresh action.
+        await params.refreshTagFacet();
       } finally {
         setMessageActionCount((current) => Math.max(0, current - 1));
       }

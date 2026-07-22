@@ -162,24 +162,26 @@ export function AnalysisPaginationControl({
   onPrevPage,
   onNextPage,
 }: Props) {
-  const start = pageIndex * pageSize + 1;
-  const end = pageIndex * pageSize + messagesCount;
-
   const isMessagesTab = centerTab === 'messages';
   const totalUnknown = loading || totalLoading || totalCount === null;
+  const start = pageIndex * pageSize + 1;
+  const end = pageIndex * pageSize + messagesCount;
   let rangeText = '';
   if (totalUnknown) {
-    rangeText = `— з —`;
+    rangeText = '— з —';
   } else if (messagesCount === 0) {
     rangeText = `0 з ${totalCount}`;
   } else {
     rangeText = `${start}-${end} з ${totalCount}`;
   }
 
+  const lastPageIndex = totalUnknown ? null : Math.max(0, Math.ceil(totalCount / pageSize) - 1);
   const prevDisabled = !isMessagesTab || pageIndex === 0 || busy;
   const nextDisabled =
-    !isMessagesTab || noMoreToLoad || busy || (!totalUnknown && end >= totalCount);
-  const lastPageIndex = totalUnknown ? null : Math.max(0, Math.ceil(totalCount / pageSize) - 1);
+    !isMessagesTab ||
+    noMoreToLoad ||
+    busy ||
+    (lastPageIndex !== null && pageIndex >= lastPageIndex);
   const menuDisabled = !isMessagesTab || busy;
   const firstDisabled = menuDisabled || pageIndex === 0;
   const lastDisabled =

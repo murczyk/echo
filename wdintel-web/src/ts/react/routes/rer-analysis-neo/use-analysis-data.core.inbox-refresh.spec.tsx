@@ -97,7 +97,6 @@ vi.mock('./use-analysis-message-list', () => ({
       loadMessageComments: hoisted.loadMessageComments,
       loadNextPage: vi.fn(),
       loadPrevPage: vi.fn(),
-      refreshMessageCounts: vi.fn(),
       setAorEntries: vi.fn(),
       setCounts: vi.fn(),
       setHasLoadedInitialMessages: vi.fn(),

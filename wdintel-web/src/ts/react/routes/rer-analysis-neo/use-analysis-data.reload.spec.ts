@@ -11,6 +11,7 @@ import {
   mergeNetworkFilterOptions,
   replaceNetworkFilterOptionsPreservingSelectedLabels,
   reloadAnalysisData,
+  transformMessagePageResponse,
 } from './use-analysis-data.reload';
 import { buildSummaryCallsignsInfo } from './use-analysis-data.callsigns';
 import { emptyNewCallsigns, emptyOptions } from './use-analysis-data.shared';
@@ -32,6 +33,7 @@ const mocks = vi.hoisted(() => ({
   fetchAnalysisSummaryTable: vi.fn(),
   fetchAnalysisTags: vi.fn(),
   fetchAnalysisUnits: vi.fn(),
+  fetchInboxCount: vi.fn(),
   fetchInboxMessages: vi.fn(),
   fetchNetworksByIds: vi.fn(),
   getLatestSenders: vi.fn(),
@@ -57,6 +59,7 @@ vi.mock('../../services/api/analysis', () => ({
   fetchAnalysisSummaryTable: mocks.fetchAnalysisSummaryTable,
   fetchAnalysisTags: mocks.fetchAnalysisTags,
   fetchAnalysisUnits: mocks.fetchAnalysisUnits,
+  fetchInboxCount: mocks.fetchInboxCount,
   fetchInboxMessages: mocks.fetchInboxMessages,
   fetchNetworksByIds: mocks.fetchNetworksByIds,
   getLatestSenders: mocks.getLatestSenders,
@@ -100,6 +103,7 @@ afterEach(() => {
 });
 
 beforeEach(() => {
+  mocks.fetchInboxCount.mockResolvedValue({ quantity: 42 });
   mocks.fetchAnalysisNetworks.mockResolvedValue({ networks: [], networkNames: [] });
   mocks.fetchAnalysisCallsigns.mockResolvedValue({ callsigns: [] });
   mocks.fetchAnalysisCallsignInfos.mockResolvedValue([]);
@@ -406,12 +410,20 @@ describe('reloadAnalysisData', () => {
     });
 
     const setSummaryCallsignsInfo = vi.fn();
+    const setMessages = vi.fn();
 
     const reloadPromise = reloadAnalysisData({
       clearAnalysisResults: vi.fn(),
       invalidateCorrelatedFreqsCache: vi.fn(),
       invalidateCallsignGraph: vi.fn(),
       invalidateMessagePaging: vi.fn(),
+      messagePageCursor: {
+        beforeIdNoninclusive: null,
+        sinceIdNoninclusive: null,
+        requestNewestFirst: false,
+        reverseResults: true,
+        resultLimit: 3,
+      },
       newestFirst: true,
       onError: vi.fn(),
       onUnauthorized: vi.fn().mockReturnValue(false),
@@ -434,7 +446,7 @@ describe('reloadAnalysisData', () => {
       setMapNetworkUnits: vi.fn(),
       setMapOpenMessages: vi.fn(),
       setMapPoints: vi.fn(),
-      setMessages: vi.fn(),
+      setMessages,
       setMessagesLoading: vi.fn(),
       setNetworks: vi.fn(),
       setUnitsMap: vi.fn(),
@@ -460,8 +472,13 @@ describe('reloadAnalysisData', () => {
     });
 
     await flushPromises();
+    expect(mocks.fetchInboxMessages.mock.calls[0]?.[0]).toMatchObject({
+      beforeIdNoninclusive: null,
+      sinceIdNoninclusive: null,
+      newestFirst: false,
+    });
     inboxDeferred.resolve({
-      inboxItems: [[1, { networkIds: [] }]],
+      inboxItems: Array.from({ length: 20 }, (_, index) => [index, { networkIds: [] }]),
       callsigns: [{ callsign: 'alpha', res: [] }],
       pageLimit: 20,
     });
@@ -474,8 +491,13 @@ describe('reloadAnalysisData', () => {
       ],
     });
     await flushPromises();
+    expect(mocks.fetchInboxMessages.mock.calls[1]?.[0]).toMatchObject({
+      beforeIdNoninclusive: null,
+      sinceIdNoninclusive: null,
+      newestFirst: false,
+    });
     rebuiltInboxDeferred.resolve({
-      inboxItems: [[2, { networkIds: [] }]],
+      inboxItems: Array.from({ length: 20 }, (_, index) => [index + 20, { networkIds: [] }]),
       callsigns: [{ callsign: 'bravo', res: [] }],
       pageLimit: 20,
     });
@@ -498,6 +520,12 @@ describe('reloadAnalysisData', () => {
     expect(mocks.fetchAnalysisCallsigns).not.toHaveBeenCalled();
     expect(mocks.fetchAnalysisCallsignInfos).not.toHaveBeenCalled();
     expect(mocks.fetchAnalysisFreqs).toHaveBeenCalledTimes(2);
+    expect(setMessages).toHaveBeenLastCalledWith([
+      [22, { networkIds: [] }],
+      [21, { networkIds: [] }],
+      [20, { networkIds: [] }],
+    ]);
+    expect(setMessages.mock.lastCall?.[0]).toHaveLength(3);
   });
 
   it('keeps the original inbox state when rebuilt inbox fetch fails', async () => {
@@ -588,6 +616,7 @@ describe('reloadAnalysisData', () => {
       ],
     });
     await flushPromises();
+    await vi.waitFor(() => expect(mocks.fetchInboxMessages).toHaveBeenCalledTimes(2));
     rebuiltInboxDeferred.reject(new Error('rebuilt inbox failed'));
     await reloadPromise;
     await flushPromises();
@@ -701,6 +730,7 @@ describe('reloadAnalysisData', () => {
     mocks.fetchAnalysisCount.mockResolvedValue({});
     mocks.fetchAnalysisSummaryTable.mockResolvedValue({ rows: [] });
     mocks.fetchAnalysisMapPoints.mockResolvedValue({ points: [], networkUnits: [] });
+    mocks.getUnitsList.mockResolvedValue([]);
 
     const setOptions = vi.fn((update) => {
       currentOptions = typeof update === 'function' ? update(currentOptions) : update;

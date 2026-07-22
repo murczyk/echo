@@ -461,6 +461,12 @@ export function useAnalysisFilterSections({
     ],
   );
 
+  const refreshTagFacet = useCallback(async () => {
+    if (!hasLoadedSection('tags')) return;
+    invalidateTagFacetLoad();
+    await loadFilterSection('tags');
+  }, [hasLoadedSection, invalidateTagFacetLoad, loadFilterSection]);
+
   return {
     filterSectionLoadStates,
     isFilterSectionLoading: (section: AnalysisFilterSectionId) =>
@@ -476,6 +482,7 @@ export function useAnalysisFilterSections({
     invalidateFilterSectionLoads,
     invalidateFilterSectionLoadsForPatch,
     invalidateTagFacetLoad,
+    refreshTagFacet,
     loadFilterSection,
     loadInitialFilterSections,
   };

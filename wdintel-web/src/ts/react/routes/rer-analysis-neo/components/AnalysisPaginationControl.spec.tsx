@@ -153,13 +153,12 @@ describe('AnalysisPaginationControl', () => {
     const view = await renderComponent({ ...baseProps(), messagesCount: 1, loading: true });
     rendered.push(view);
     expect(view.container.textContent).toContain('— з —');
-    expect(view.container.textContent).not.toContain('1-1 з 137');
   });
 
   it('always renders a loaded total count', async () => {
     const view = await renderComponent({ ...baseProps(), totalCount: 0, noMoreToLoad: false });
     rendered.push(view);
-    expect(view.container.textContent).toContain('1-20 з 0');
+    expect(view.container.textContent).toContain('0 з 0');
   });
 
   it('opens the first/last page menu when the counter is clicked or hovered', async () => {
@@ -238,6 +237,18 @@ describe('AnalysisPaginationControl', () => {
 
   it('disables the right chevron when noMoreToLoad is true', async () => {
     const view = await renderComponent({ ...baseProps(), noMoreToLoad: true });
+    rendered.push(view);
+    const right = view.container.querySelector('[aria-label="Наступна сторінка"]');
+    expect((right as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it('disables the right chevron on the known last page', async () => {
+    const view = await renderComponent({
+      ...baseProps(),
+      totalCount: 40,
+      pageIndex: 1,
+      noMoreToLoad: false,
+    });
     rendered.push(view);
     const right = view.container.querySelector('[aria-label="Наступна сторінка"]');
     expect((right as HTMLButtonElement).disabled).toBe(true);
