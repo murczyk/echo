@@ -11,7 +11,10 @@ impl MigrationTrait for Migration {
             .execute_unprepared(
                 r#"
                 create index if not exists sigint_inbox_item_location_v2_prefix_idx
-                    on sigint_inbox_item ((location_v2 collate "C"))
+                    on sigint_inbox_item (
+                        (lower(location_v2) collate "C"),
+                        (location_v2 collate "C")
+                    )
                     where location_v2 is not null and location_v2 <> '';
                 "#,
             )

@@ -1,7 +1,9 @@
 use crate::config::LOCATION_SEARCH_LIMIT;
+use crate::entities::sigint_inbox_item;
 use crate::error::AppError;
 use crate::types::*;
-use sea_orm::{ConnectionTrait, DbBackend, Statement};
+use sea_orm::*;
+use sea_query::{Alias, Expr, Order, SimpleExpr};
 
 pub async fn search<C>(
     dbx: &C,
@@ -11,28 +13,37 @@ where
     C: ConnectionTrait,
 {
     let prefix = format!("{}%", escape_like(search_phrase));
-    let rows = dbx
-        .query_all(Statement::from_sql_and_values(
-            DbBackend::Postgres,
-            r#"
-                select distinct location_v2 collate "C" as location_v2
-                from sigint_inbox_item
-                where location_v2 is not null
-                  and location_v2 <> ''
-                  and location_v2 collate "C" like $1 escape '\'
-                order by location_v2 collate "C"
-                limit $2
-            "#,
-            [prefix.into(), LOCATION_SEARCH_LIMIT.into()],
-        ))
-        .await
-        .c(h!())?;
+    let normalized_location = Alias::new("normalized_location");
 
-    rows.into_iter()
-        .map(|row| -> Result<String, AppError> {
-            Ok(row.try_get("", "location_v2").context(h!())?)
-        })
-        .collect()
+    Ok(sigint_inbox_item::Entity::find()
+        .select_only()
+        .column(sigint_inbox_item::Column::LocationV2)
+        .column_as(normalized_location_expr(), "normalized_location")
+        .filter(sigint_inbox_item::Column::LocationV2.is_not_null())
+        .filter(sigint_inbox_item::Column::LocationV2.ne(""))
+        .filter(Expr::cust_with_values(
+            r#"lower("sigint_inbox_item"."location_v2") collate "C" like lower($1) collate "C" escape '\'"#,
+            [prefix],
+        ))
+        .distinct_on([normalized_location.clone()])
+        .order_by(Expr::col(normalized_location), Order::Asc)
+        .order_by(location_expr(), Order::Asc)
+        .limit(LOCATION_SEARCH_LIMIT)
+        .into_tuple::<(Option<String>, String)>()
+        .all(dbx)
+        .await
+        .c(h!())?
+        .into_iter()
+        .filter_map(|(location, _)| location)
+        .collect())
+}
+
+fn normalized_location_expr() -> SimpleExpr {
+    Expr::cust(r#"lower("sigint_inbox_item"."location_v2") collate "C""#)
+}
+
+fn location_expr() -> SimpleExpr {
+    Expr::cust(r#""sigint_inbox_item"."location_v2" collate "C""#)
 }
 
 fn escape_like(input: &str) -> String {
