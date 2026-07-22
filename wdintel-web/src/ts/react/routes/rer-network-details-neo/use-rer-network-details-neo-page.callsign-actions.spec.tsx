@@ -26,10 +26,10 @@ let root: Root | null = null;
 let latestActions: HookResult | null = null;
 let latestState: NetworkDetailsNeoPageState | null = null;
 
-function Harness() {
+function Harness({ unitIds }: { unitIds: number[] }) {
   const [state, setState] = useState<NetworkDetailsNeoPageState>({
     ...EMPTY_STATE,
-    network: { id: 17, unitIds: [101, 102] } as Network,
+    network: { id: 17, unitIds } as Network,
     currentUser: { roles: ['Admin'] } as User,
   });
 
@@ -43,13 +43,13 @@ function Harness() {
   return null;
 }
 
-function renderHarness() {
+function renderHarness(unitIds: number[]) {
   const container = document.createElement('div');
   document.body.appendChild(container);
   root = createRoot(container);
 
   act(() => {
-    root?.render(createElement(Harness));
+    root?.render(createElement(Harness, { unitIds }));
   });
 }
 
@@ -65,8 +65,8 @@ afterEach(() => {
 });
 
 describe('useRerNetworkDetailsNeoPageCallsignActions', () => {
-  it('defaults a new callsign to the first network unit', () => {
-    renderHarness();
+  it('defaults a new callsign when the network has exactly one unit', () => {
+    renderHarness([101]);
 
     act(() => {
       latestActions?.openCallsignDrawerForCreate({ developing: false });
@@ -75,6 +75,20 @@ describe('useRerNetworkDetailsNeoPageCallsignActions', () => {
     expect(latestState?.callsignDrawerForm).toMatchObject({
       networkId: 17,
       unitId: 101,
+      developing: false,
+    });
+  });
+
+  it('requires an explicit unit choice when the network has multiple units', () => {
+    renderHarness([101, 102]);
+
+    act(() => {
+      latestActions?.openCallsignDrawerForCreate({ developing: false });
+    });
+
+    expect(latestState?.callsignDrawerForm).toMatchObject({
+      networkId: 17,
+      unitId: null,
       developing: false,
     });
   });

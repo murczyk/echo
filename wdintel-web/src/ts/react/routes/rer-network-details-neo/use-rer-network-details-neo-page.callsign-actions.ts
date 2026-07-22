@@ -73,7 +73,8 @@ export function useRerNetworkDetailsNeoPageCallsignActions({
     (overrides?: Partial<NetworkCallsignDrawerForm>) => {
       const network = state.network;
       if (!canManageCallsignActions || !network) return;
-      const defaultUnitId = network.unitIds?.[0] ?? null;
+      const networkUnitIds = network.unitIds ?? [];
+      const defaultUnitId = networkUnitIds.length === 1 ? networkUnitIds[0] : null;
       setState((current) => ({
         ...current,
         callsignDrawerOpen: true,

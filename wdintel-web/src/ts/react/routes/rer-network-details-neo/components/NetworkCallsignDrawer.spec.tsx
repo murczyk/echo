@@ -175,7 +175,7 @@ describe('NetworkCallsignDrawer', () => {
     expect(saveButton?.disabled).toBe(false);
   });
 
-  it('requires source for catalog rows before save', () => {
+  it('requires source and unit for catalog rows before save', () => {
     const view = renderHarness({
       ...createDefaultNetworkCallsignDrawerForm(10, null),
       callsign: 'СОКІЛ',
@@ -188,6 +188,34 @@ describe('NetworkCallsignDrawer', () => {
     ) as HTMLButtonElement | undefined;
 
     expect(saveButton?.disabled).toBe(true);
+
+    const viewWithSource = renderHarness({
+      ...createDefaultNetworkCallsignDrawerForm(10, null),
+      callsign: 'СОКІЛ',
+      sourceId: 1,
+      developing: false,
+    });
+    rendered.push(viewWithSource);
+
+    const saveButtonWithoutUnit = [...viewWithSource.container.querySelectorAll('button')].find(
+      (button) => button.textContent === 'Зберегти',
+    ) as HTMLButtonElement | undefined;
+
+    expect(saveButtonWithoutUnit?.disabled).toBe(true);
+
+    const validView = renderHarness({
+      ...createDefaultNetworkCallsignDrawerForm(10, 1),
+      callsign: 'СОКІЛ',
+      sourceId: 1,
+      developing: false,
+    });
+    rendered.push(validView);
+
+    const validSaveButton = [...validView.container.querySelectorAll('button')].find(
+      (button) => button.textContent === 'Зберегти',
+    ) as HTMLButtonElement | undefined;
+
+    expect(validSaveButton?.disabled).toBe(false);
   });
 
   it('shows the source label without an asterisk for developing rows', () => {

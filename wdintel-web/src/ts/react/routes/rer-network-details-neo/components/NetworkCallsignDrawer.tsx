@@ -26,6 +26,7 @@ import {
   getNetworkCallsignMarkerMode,
   getNetworkCallsignMarkerState,
   isNetworkCallsignSourceRequired,
+  isNetworkCallsignUnitRequired,
 } from '../network-callsigns.forms';
 import type {
   NetworkCallsignDrawerForm,
@@ -295,6 +296,7 @@ export function NetworkCallsignDrawer({
   const isRoSource = sourceId === NetworkCallsignSourceId.RO;
   const [radioFreqTouched, setRadioFreqTouched] = useState(false);
   const [sourceTouched, setSourceTouched] = useState(false);
+  const [unitTouched, setUnitTouched] = useState(false);
   const radioFreqValidationError =
     isRoSource && form ? getFrequencyFormatError(form.radioFreq) : null;
   const radioFreqError = radioFreqTouched ? radioFreqValidationError : null;
@@ -303,10 +305,16 @@ export function NetworkCallsignDrawer({
     sourceRequired && sourceId === null ? 'Джерело є обовʼязковим' : null;
   const showSourceValidationError =
     sourceValidationError !== null && (sourceTouched || error === sourceValidationError);
+  const unitRequired = form ? isNetworkCallsignUnitRequired(form) : false;
+  const unitValidationError =
+    unitRequired && form?.unitId === null ? 'Підрозділ є обовʼязковим' : null;
+  const showUnitValidationError =
+    unitValidationError !== null && (unitTouched || error === unitValidationError);
   const canSave = Boolean(
     form &&
     normalizeCallsignDisplay(form.callsign) !== '' &&
     (!sourceRequired || sourceId !== null) &&
+    (!unitRequired || form.unitId !== null) &&
     (!isRoSource || radioFreqValidationError === null),
   );
   const title = mode === 'edit' ? 'Редагувати позивний мережі' : 'Створити позивний мережі';
@@ -317,6 +325,7 @@ export function NetworkCallsignDrawer({
     if (!open) return;
     setRadioFreqTouched(false);
     setSourceTouched(false);
+    setUnitTouched(false);
   }, [open]);
 
   return (
@@ -441,11 +450,15 @@ export function NetworkCallsignDrawer({
                   label="Підрозділ"
                   options={unitOptions}
                   valueId={selectedUnitId}
-                  onValueIdChange={(unitId) =>
-                    updateForm(form, { unitId: unitId === 0 ? null : unitId }, onChange)
-                  }
+                  onValueIdChange={(unitId) => {
+                    setUnitTouched(true);
+                    updateForm(form, { unitId: unitId === 0 ? null : unitId }, onChange);
+                  }}
                   getOptionLabel={(unit) => unit.label}
                   disabled={saving}
+                  required={unitRequired}
+                  error={showUnitValidationError}
+                  helperText={showUnitValidationError ? unitValidationError : undefined}
                   placeholder="Оберіть підрозділ"
                   slotProps={NEO_AUTOCOMPLETE_SLOT_PROPS}
                 />
