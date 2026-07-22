@@ -1359,7 +1359,7 @@ fn user_goi_integration_from_item(
 ) -> GoiUserIntegration {
     let can_restart = goi_integration_has_api_config(&item.integration);
     let restart_unavailable_reason = (!can_restart)
-        .then(|| "Для інтеграції ГОІ не налаштовано HTTPS API".to_string());
+        .then(|| "Для інтеграції ГОІ не налаштовано API".to_string());
     let pause_worker = goi_integration_worker_paused(&item.integration);
     GoiUserIntegration {
         id: item.integration.id,

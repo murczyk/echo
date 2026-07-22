@@ -1110,7 +1110,7 @@ fn goi_control_state_from_organism(
         CurrentUserGoiControlState {
             can_restart: false,
             restart_unavailable_reason: Some(
-                "Для вашого організму не налаштовано GOI HTTPS API".to_string(),
+                "Для вашого організму не налаштовано GOI API".to_string(),
             ),
         }
     }
@@ -1220,38 +1220,8 @@ pub(super) fn goi_build_setup_worker_command(
     api_password: &str,
     palettes_path: &str,
 ) -> String {
-    let palettes_path = palettes_path.trim();
-    let categories_path = Path::new(palettes_path)
-        .parent()
-        .unwrap_or_else(|| Path::new(""))
-        .join(ORGANISM_GOI_CATEGORIES_FILE_NAME);
-    let palettes_path = toml::Value::String(palettes_path.to_string());
-    let categories_path =
-        toml::Value::String(categories_path.to_string_lossy().into_owned());
-    let worker_config = format!(
-        concat!(
-            "pg_host = \"127.0.0.1\"\n",
-            "pg_port = 5432\n",
-            "pg_user = \"goi\"\n",
-            "pg_password = \"{}\"\n",
-            "pg_dbname = \"goi\"\n",
-            "\n",
-            "api_login = \"goi\"\n",
-            "api_password = \"{}\"\n",
-            "\n",
-            "associations_xlsx_path = \"/etc/goi/data/xlsx/associations.xlsx\"\n",
-            "knowledge_xlsx_path = \"/etc/goi/data/xlsx/knowledge.xlsx\"\n",
-            "palettes_path = {}\n",
-            "categories_path = {}\n",
-            "listen_host = \"0.0.0.0\"\n",
-            "listen_port = 8088\n",
-            "poll_sleep_ms = 1000\n"
-        ),
-        pg_password,
-        api_password,
-        palettes_path,
-        categories_path,
-    );
+    let worker_config =
+        goi_worker_config(pg_password, api_password, palettes_path);
 
     format!(
         r#"bash -se <<'GOI_ECHO_WORKER_SETUP'
@@ -1326,9 +1296,86 @@ GOI_ECHO_WORKER_SETUP"#,
     )
 }
 
+fn goi_worker_config(
+    pg_password: &str,
+    api_password: &str,
+    palettes_path: &str,
+) -> String {
+    let palettes_path = Path::new(palettes_path.trim());
+    let data_path = palettes_path.parent().unwrap_or_else(|| Path::new(""));
+    let xlsx_path = data_path.join("xlsx");
+    let path_value =
+        |path: &Path| toml::Value::String(path.to_string_lossy().into_owned());
+    let associations_path = path_value(&xlsx_path.join("associations.xlsx"));
+    let knowledge_path = path_value(&xlsx_path.join("knowledge.xlsx"));
+    let frequencies_path = path_value(&xlsx_path.join("frequencies.xlsx"));
+    let palettes_path = path_value(palettes_path);
+    let categories_path =
+        path_value(&data_path.join(ORGANISM_GOI_CATEGORIES_FILE_NAME));
+    format!(
+        concat!(
+            "pg_host = \"127.0.0.1\"\n",
+            "pg_port = 5432\n",
+            "pg_user = \"goi\"\n",
+            "pg_password = \"{}\"\n",
+            "pg_dbname = \"goi\"\n",
+            "\n",
+            "api_login = \"goi\"\n",
+            "api_password = \"{}\"\n",
+            "\n",
+            "associations_xlsx_path = {}\n",
+            "knowledge_xlsx_path = {}\n",
+            "frequencies_xlsx_path = {}\n",
+            "palettes_path = {}\n",
+            "categories_path = {}\n",
+            "listen_host = \"0.0.0.0\"\n",
+            "listen_port = 8088\n",
+            "poll_sleep_ms = 1000\n"
+        ),
+        pg_password,
+        api_password,
+        associations_path,
+        knowledge_path,
+        frequencies_path,
+        palettes_path,
+        categories_path,
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn goi_worker_config_uses_custom_data_paths() {
+        let config = goi_worker_config(
+            "pg-password",
+            "api-password",
+            "/opt/goi/data/palettes",
+        );
+        let config = toml::from_str::<toml::Value>(&config).unwrap();
+
+        assert_eq!(
+            config["associations_xlsx_path"].as_str(),
+            Some("/opt/goi/data/xlsx/associations.xlsx")
+        );
+        assert_eq!(
+            config["knowledge_xlsx_path"].as_str(),
+            Some("/opt/goi/data/xlsx/knowledge.xlsx")
+        );
+        assert_eq!(
+            config["frequencies_xlsx_path"].as_str(),
+            Some("/opt/goi/data/xlsx/frequencies.xlsx")
+        );
+        assert_eq!(
+            config["categories_path"].as_str(),
+            Some("/opt/goi/data/categories.json")
+        );
+        assert_eq!(
+            config["palettes_path"].as_str(),
+            Some("/opt/goi/data/palettes")
+        );
+    }
 
     #[test]
     fn goi_find_source_relative_path_returns_single_match() {

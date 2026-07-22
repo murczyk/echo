@@ -476,8 +476,8 @@ fn spawn_background_workers(
                 .await;
             },
         );
-        spawn_palitra_conversion_worker(bg_set, env);
     }
+    spawn_palitra_conversion_worker(bg_set, env);
 }
 
 fn spawn_vault_background_workers(env: Arc<Env>, bg_set: &mut JoinSet<()>) {
