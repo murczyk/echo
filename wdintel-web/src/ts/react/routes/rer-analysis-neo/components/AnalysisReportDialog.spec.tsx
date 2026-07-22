@@ -190,6 +190,17 @@ describe('AnalysisReportDialog', () => {
     });
   });
 
+  it('keeps the generic export action visibly labelled', () => {
+    const view = renderDialog({ report: buildReport({ template: 'summary_table' }) });
+
+    const downloadButton = Array.from(
+      view.container.querySelectorAll<HTMLButtonElement>('button'),
+    ).find((button) => button.textContent?.includes('Завантажити'));
+    expect(downloadButton?.textContent).toContain('Завантажити');
+
+    act(() => view.root.unmount());
+  });
+
   it('shows report 1.2.5 as an advanced report option', () => {
     const view = renderDialog();
     const report125Button = Array.from(

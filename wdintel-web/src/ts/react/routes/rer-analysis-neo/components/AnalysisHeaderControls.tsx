@@ -6,24 +6,29 @@ import type { AnalysisPageActions, AnalysisPageState } from '../types';
 import { DateTimeRangeControl } from '../../../components/DateTimeRangeControl';
 
 type Props = Pick<AnalysisPageState, 'queryState'> & Pick<AnalysisPageActions, 'updateQueryState'>;
+type AnalysisHeaderControlsProps = Props & { isCompactLayout?: boolean };
 
-export function AnalysisHeaderControls({ queryState, updateQueryState }: Props) {
+export function AnalysisHeaderControls({
+  queryState,
+  updateQueryState,
+  isCompactLayout = false,
+}: AnalysisHeaderControlsProps) {
   return (
     <Stack
-      direction={{ xs: 'column', sm: 'row' }}
+      direction={isCompactLayout ? 'column' : { xs: 'column', sm: 'row' }}
       spacing={1}
-      alignItems={{ xs: 'stretch', sm: 'center' }}
+      alignItems={isCompactLayout ? 'stretch' : { xs: 'stretch', sm: 'center' }}
       sx={{
-        width: { xs: '100%', sm: 'fit-content' },
+        width: isCompactLayout ? '100%' : { xs: '100%', sm: 'fit-content' },
         maxWidth: '100%',
         minWidth: 0,
-        flexWrap: { xs: 'nowrap', sm: 'wrap' },
+        flexWrap: isCompactLayout ? 'nowrap' : { xs: 'nowrap', sm: 'wrap' },
         justifyContent: 'flex-start',
       }}
     >
       <Box
         sx={{
-          width: { xs: '100%', sm: 220 },
+          width: isCompactLayout ? '100%' : { xs: '100%', sm: 220 },
           minWidth: 0,
           flexShrink: 0,
           display: 'flex',
@@ -78,7 +83,7 @@ export function AnalysisHeaderControls({ queryState, updateQueryState }: Props) 
       </Box>
       <Box
         sx={{
-          width: { xs: '100%', sm: 280 },
+          width: isCompactLayout ? '100%' : { xs: '100%', sm: 280 },
           minWidth: 0,
           flexShrink: 0,
           display: 'flex',

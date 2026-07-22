@@ -26,6 +26,34 @@ export interface SearchControl extends L.Control {
   updatePlaceholder: (placeholder: string) => void;
 }
 
+function isNarrowMapViewport(): boolean {
+  return window.matchMedia?.('(max-width: 599.95px)')?.matches === true;
+}
+
+function createNarrowControlToggle(label: string, iconPath: string): HTMLButtonElement {
+  const toggle = document.createElement('button');
+  toggle.type = 'button';
+  toggle.className = 'analysis-map-control-toggle';
+  toggle.setAttribute('aria-label', label);
+  toggle.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="${iconPath}" /></svg>`;
+  return toggle;
+}
+
+function initializeNarrowControlToggle(
+  container: HTMLElement,
+  toggle: HTMLButtonElement,
+  controlClass: string,
+): void {
+  container.classList.add(controlClass);
+  if (isNarrowMapViewport()) {
+    container.classList.add('narrow-map-control--collapsed');
+  }
+  L.DomEvent.on(toggle, 'click', L.DomEvent.stopPropagation);
+  L.DomEvent.on(toggle, 'click', () => {
+    container.classList.remove('narrow-map-control--collapsed');
+  });
+}
+
 /** Creates a map control that hosts <analysis-map-search>. */
 export function createSearchControl(): SearchControl {
   const SearchControlClass = L.Control.extend({
@@ -39,6 +67,12 @@ export function createSearchControl(): SearchControl {
       | null,
     onAdd: function (_map: L.Map) {
       this._container = L.DomUtil.create('div', 'leaflet-bar leaflet-control search-control');
+      const toggle = createNarrowControlToggle(
+        'Розгорнути пошук на мапі',
+        'M10 4a6 6 0 1 0 3.87 10.58l4.78 4.78 1.42-1.42-4.78-4.78A6 6 0 0 0 10 4Zm0 2a4 4 0 1 1 0 8 4 4 0 0 1 0-8Z',
+      );
+      this._container.appendChild(toggle);
+      initializeNarrowControlToggle(this._container, toggle, 'narrow-map-search-control');
       const searchEl = document.createElement('analysis-map-search') as HTMLElement & {
         setResultsCount?: (count: number | null) => void;
         setSearchLoading?: (isLoading: boolean) => void;
@@ -79,6 +113,12 @@ export function createTimeswitchControl(
   const TimeswitchControl = L.Control.extend({
     onAdd: function (map: L.Map) {
       this._container = L.DomUtil.create('div', 'control-container');
+      const toggle = createNarrowControlToggle(
+        'Розгорнути діапазон дат на мапі',
+        'M19 4h-1V2h-2v2H8V2H6v2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2Zm0 16H5V9h14v11Zm0-13H5V6h14v1Z',
+      );
+      this._container.appendChild(toggle);
+      initializeNarrowControlToggle(this._container, toggle, 'narrow-map-date-control');
 
       this._dateRangeSelector = L.DomUtil.create('date-range-selector');
 

@@ -12,7 +12,8 @@ type Props = {
   page: AnalysisPageViewModel;
   centerTab: AnalysisCenterTab;
   centerTabs: AnalysisCenterTab[];
-  isMobileLayout: boolean;
+  isCompactLayout?: boolean;
+  isNarrowLayout: boolean;
   rightPanelVisible: boolean;
   messagesPaneLoading: boolean;
   messagesPanelId: string;
@@ -27,7 +28,8 @@ export function AnalysisCenterPanel({
   page,
   centerTab,
   centerTabs,
-  isMobileLayout,
+  isCompactLayout = false,
+  isNarrowLayout,
   rightPanelVisible,
   messagesPaneLoading,
   messagesPanelId,
@@ -58,71 +60,73 @@ export function AnalysisCenterPanel({
       }
     >
       <Stack
-        direction="row"
-        alignItems="center"
+        direction={{ xs: 'column', lg: 'row' }}
+        alignItems={{ xs: 'stretch', lg: 'center' }}
         justifyContent="space-between"
         spacing={1}
-        sx={{ px: { xs: 1, lg: 2 }, pt: 0, mb: 0 }}
+        sx={{ px: { xs: 1, lg: 2 }, pt: 0, mb: 0, flexShrink: 0 }}
       >
-        <Tabs
-          value={centerTab}
-          onChange={(_event, value) => page.setCenterTab(value)}
-          variant="scrollable"
-          scrollButtons={isMobileLayout ? false : 'auto'}
-          sx={{
-            minHeight: 0,
-            flex: 1,
-            minWidth: 0,
-            ml: 0,
-            '& .MuiTabs-flexContainer': { gap: 1 },
-            '& .MuiTab-root': { minHeight: 40, px: 1, py: 0.5, whiteSpace: 'nowrap' },
-            '& .MuiTab-iconWrapper': { mr: 0.75, mb: 0 },
-          }}
-          aria-label="Центральна панель аналізу"
-        >
-          {centerTabs.map((tab) => {
-            const meta = ANALYSIS_CENTER_TAB_META[tab];
-            const Icon = meta.icon;
-            if (tab === 'messages') {
+        <Box sx={{ flex: 1, minWidth: 0 }}>
+          <Tabs
+            value={centerTab}
+            onChange={(_event, value) => page.setCenterTab(value)}
+            variant="scrollable"
+            scrollButtons={isCompactLayout ? false : 'auto'}
+            sx={{
+              minHeight: 0,
+              flex: 1,
+              minWidth: 0,
+              ml: 0,
+              '& .MuiTabs-flexContainer': { gap: 1 },
+              '& .MuiTab-root': { minHeight: 40, px: 1, py: 0.5, whiteSpace: 'nowrap' },
+              '& .MuiTab-iconWrapper': { mr: 0.75, mb: 0 },
+            }}
+            aria-label="Центральна панель аналізу"
+          >
+            {centerTabs.map((tab) => {
+              const meta = ANALYSIS_CENTER_TAB_META[tab];
+              const Icon = meta.icon;
+              if (tab === 'messages') {
+                return (
+                  <Tab
+                    key={tab}
+                    id={messagesTabId}
+                    aria-controls={messagesPanelId}
+                    value="messages"
+                    icon={<Icon />}
+                    iconPosition="start"
+                    label={meta.label}
+                  />
+                );
+              }
+              if (tab === 'summary') {
+                return (
+                  <Tab
+                    key={tab}
+                    id={summaryTabId}
+                    aria-controls={summaryPanelId}
+                    value="summary"
+                    icon={<Icon sx={{ fontSize: 20 }} />}
+                    iconPosition="start"
+                    label={meta.label}
+                  />
+                );
+              }
               return (
                 <Tab
                   key={tab}
-                  id={messagesTabId}
-                  aria-controls={messagesPanelId}
-                  value="messages"
+                  id={mapTabId}
+                  aria-controls={mapPanelId}
+                  value="map"
                   icon={<Icon />}
                   iconPosition="start"
                   label={meta.label}
                 />
               );
-            }
-            if (tab === 'summary') {
-              return (
-                <Tab
-                  key={tab}
-                  id={summaryTabId}
-                  aria-controls={summaryPanelId}
-                  value="summary"
-                  icon={<Icon sx={{ fontSize: 20 }} />}
-                  iconPosition="start"
-                  label={meta.label}
-                />
-              );
-            }
-            return (
-              <Tab
-                key={tab}
-                id={mapTabId}
-                aria-controls={mapPanelId}
-                value="map"
-                icon={<Icon />}
-                iconPosition="start"
-                label={meta.label}
-              />
-            );
-          })}
-        </Tabs>
-        {centerTab === 'messages' ? (
+            })}
+          </Tabs>
+        </Box>
+        {centerTab === 'messages' && !isNarrowLayout ? (
           <FormControlLabel
             control={
               <Switch
@@ -143,6 +147,7 @@ export function AnalysisCenterPanel({
                 fontWeight: 500,
                 lineHeight: 1.2,
               },
+              alignSelf: { xs: 'flex-end', lg: 'auto' },
             }}
           />
         ) : null}
@@ -151,11 +156,13 @@ export function AnalysisCenterPanel({
       <Box
         sx={{
           flex: 1,
+          width: '100%',
+          maxWidth: '100%',
+          minWidth: 0,
           minHeight: 0,
           display: 'flex',
           flexDirection: 'column',
-          overflowY: { xs: 'auto', lg: 'hidden' },
-          overflowX: 'hidden',
+          overflow: 'hidden',
           WebkitOverflowScrolling: 'touch',
           overscrollBehavior: { xs: 'contain', lg: 'auto' },
         }}
@@ -167,9 +174,12 @@ export function AnalysisCenterPanel({
           aria-labelledby={messagesTabId}
           sx={{
             flex: 1,
+            height: '100%',
             minWidth: 0,
+            width: '100%',
+            maxWidth: '100%',
             minHeight: 0,
-            px: { xs: 1, lg: 2 },
+            px: 1,
             pb: { xs: 1, lg: 0 },
             pt: { xs: 0.5, lg: 1 },
             display: centerTab === 'messages' ? 'flex' : 'none',
@@ -218,7 +228,10 @@ export function AnalysisCenterPanel({
           aria-labelledby={summaryTabId}
           sx={{
             flex: 1,
+            height: '100%',
             minWidth: 0,
+            width: '100%',
+            maxWidth: '100%',
             minHeight: 0,
             px: { xs: 1, lg: 2 },
             pb: { xs: 1, lg: 2 },
@@ -254,6 +267,7 @@ export function AnalysisCenterPanel({
           aria-labelledby={mapTabId}
           sx={{
             flex: 1,
+            height: { xs: '100%', sm: '100%', lg: 'auto' },
             minWidth: 0,
             minHeight: 0,
             px: 0,

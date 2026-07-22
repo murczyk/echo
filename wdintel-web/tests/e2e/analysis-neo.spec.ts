@@ -1,6 +1,10 @@
 import { expect, test } from '@playwright/test';
 
-import { createLoadedInboxResponse, installAnalysisNeoApiMocks } from './analysis-neo.fixtures';
+import {
+  createLoadedInboxResponse,
+  createOverflowingInboxResponse,
+  installAnalysisNeoApiMocks,
+} from './analysis-neo.fixtures';
 
 async function setupAnalysisNeoPage(
   page: Parameters<typeof installAnalysisNeoApiMocks>[0],
@@ -28,5 +32,168 @@ test.describe('@smoke', () => {
     await expect(summaryPanel.getByRole('table', { name: 'Таблиця частот аналізу' })).toBeVisible();
     await expect(summaryPanel.getByText('123.4', { exact: true })).toBeVisible();
     await expect(summaryPanel.getByText('ALPHA', { exact: true })).toBeVisible();
+  });
+
+  test('analysis neo keeps narrow controls fixed while messages scroll', async ({ page }) => {
+    await page.setViewportSize({ width: 375, height: 844 });
+    await setupAnalysisNeoPage(page, { inboxResponse: createOverflowingInboxResponse() });
+    await page.goto('/rer-analysis-neo');
+
+    const messageList = page.locator('section[aria-labelledby] ul').first();
+    const messageScrollContainer = messageList.locator('..');
+    await expect(messageList.locator('li')).toHaveCount(20);
+    await expect
+      .poll(() =>
+        messageScrollContainer.evaluate((element) => element.scrollHeight > element.clientHeight),
+      )
+      .toBe(true);
+
+    const tab = page.getByRole('tab', { name: 'Повідомлення' });
+    const tabBoxBefore = await tab.boundingBox();
+    const card = messageList.locator('li').first();
+    const cardBox = await card.boundingBox();
+    expect(tabBoxBefore).not.toBeNull();
+    expect(cardBox).not.toBeNull();
+
+    const scrollBefore = await messageScrollContainer.evaluate((element) => element.scrollTop);
+    const documentScrollBefore = await page.evaluate(
+      () => document.scrollingElement?.scrollTop ?? 0,
+    );
+    await page.mouse.move(cardBox!.x + cardBox!.width / 2, cardBox!.y + cardBox!.height / 2);
+    await page.mouse.wheel(0, 600);
+    await expect
+      .poll(() => messageScrollContainer.evaluate((element) => element.scrollTop))
+      .toBeGreaterThan(scrollBefore);
+
+    const tabBoxAfter = await tab.boundingBox();
+    const documentScrollAfter = await page.evaluate(
+      () => document.scrollingElement?.scrollTop ?? 0,
+    );
+    expect(tabBoxAfter?.y).toBe(tabBoxBefore!.y);
+    expect(documentScrollAfter).toBe(documentScrollBefore);
+
+    const cardBoxes = await messageList.locator('li').evaluateAll((items) =>
+      items.map((item) => {
+        const box = item.getBoundingClientRect();
+        return { left: box.left, right: box.right };
+      }),
+    );
+    expect(cardBoxes.every(({ left, right }) => left >= 0 && right <= 375)).toBe(true);
+  });
+
+  test('analysis neo skeleton keeps an 8px narrow outer gutter', async ({ page }) => {
+    await page.setViewportSize({ width: 375, height: 844 });
+    await setupAnalysisNeoPage(page, {
+      inboxDelayMs: 1000,
+      inboxResponse: createLoadedInboxResponse(),
+    });
+    await page.goto('/rer-analysis-neo');
+
+    const skeleton = page.getByRole('region', { name: 'Центральна секція' });
+    await expect(skeleton).toBeVisible();
+    const box = await skeleton.boundingBox();
+    expect(box).not.toBeNull();
+    expect(box!.x).toBeGreaterThanOrEqual(8);
+    expect(375 - (box!.x + box!.width)).toBeGreaterThanOrEqual(8);
+  });
+
+  test('analysis neo keeps the narrow right-panel header fixed', async ({ page }) => {
+    await page.setViewportSize({ width: 375, height: 844 });
+    await setupAnalysisNeoPage(page, { inboxResponse: createLoadedInboxResponse() });
+    await page.goto('/rer-analysis-neo');
+
+    const expandButton = page.getByRole('button', { name: 'Розгорнути праву панель' });
+    await expandButton.click();
+
+    const panel = page.locator('[data-analysis-right-panel]');
+    const firstTab = panel.getByRole('tab').first();
+    const collapseButton = panel.getByRole('button', { name: 'Згорнути праву панель' });
+    const body = panel.locator('[data-analysis-sidebar-scroll-body]');
+    await expect(panel).toBeVisible();
+    await expect(collapseButton).toBeVisible();
+
+    const metrics = await Promise.all([
+      firstTab.boundingBox(),
+      collapseButton.boundingBox(),
+      panel.boundingBox(),
+      body.evaluate((element) => {
+        const style = getComputedStyle(element);
+        return {
+          height: element.clientHeight,
+          overflowY: style.overflowY,
+          overflowX: style.overflowX,
+        };
+      }),
+    ]);
+    expect(metrics[0]).not.toBeNull();
+    expect(metrics[1]).not.toBeNull();
+    expect(metrics[2]).not.toBeNull();
+    expect(Math.abs(metrics[1]!.y - metrics[0]!.y)).toBeLessThanOrEqual(2);
+    expect(metrics[1]!.x + metrics[1]!.width).toBeLessThanOrEqual(375);
+    expect(metrics[2]!.height).toBeGreaterThan(0);
+    expect(metrics[3]).toEqual({
+      height: expect.any(Number),
+      overflowY: 'auto',
+      overflowX: 'hidden',
+    });
+
+    await collapseButton.click();
+    await expect(page.getByRole('button', { name: 'Розгорнути праву панель' })).toBeVisible();
+  });
+
+  test('analysis neo keeps narrow message actions on one line', async ({ page }) => {
+    await page.setViewportSize({ width: 375, height: 844 });
+    await setupAnalysisNeoPage(page, { inboxResponse: createLoadedInboxResponse() });
+    await page.goto('/rer-analysis-neo');
+
+    const actions = page.locator('[data-analysis-header-actions]');
+    await expect(actions.getByRole('checkbox', { name: 'Спочатку нові' })).toBeVisible();
+    const newestFirstLabel = page.getByText('спочатку нові', { exact: true });
+    await expect(newestFirstLabel).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Розгорнути праву панель' })).toBeVisible();
+
+    const actionBox = await actions.boundingBox();
+    const labelBox = await newestFirstLabel.boundingBox();
+    const refreshBox = await page.getByRole('button', { name: 'Оновити' }).boundingBox();
+    expect(actionBox).not.toBeNull();
+    expect(labelBox).not.toBeNull();
+    expect(refreshBox).not.toBeNull();
+    expect(labelBox!.x).toBeLessThan(refreshBox!.x);
+    expect(actionBox!.x + actionBox!.width).toBeLessThanOrEqual(375);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
+      375,
+    );
+  });
+
+  test('analysis neo preserves compact and desktop breakpoint handoffs', async ({ page }) => {
+    await setupAnalysisNeoPage(page, { inboxResponse: createLoadedInboxResponse() });
+    await page.goto('/rer-analysis-neo');
+
+    for (const width of [599, 600, 829, 830, 899]) {
+      await page.setViewportSize({ width, height: 844 });
+      await expect(page.getByRole('button', { name: 'Конструктор', exact: true })).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Розгорнути ліву панель' })).toHaveCount(0);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
+        width,
+      );
+    }
+
+    for (const width of [900, 1199]) {
+      await page.setViewportSize({ width, height: 844 });
+      await expect(page.getByRole('button', { name: 'Конструктор', exact: true })).toHaveCount(0);
+      await expect(page.getByRole('button', { name: 'Конструктор звітів' })).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Згорнути ліву панель' })).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Розгорнути праву панель' })).toBeVisible();
+      expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
+        width,
+      );
+    }
+
+    await page.setViewportSize({ width: 1200, height: 844 });
+    await expect(page.getByRole('button', { name: 'Конструктор', exact: true })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Конструктор звітів' })).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
+      1200,
+    );
   });
 });

@@ -1,5 +1,5 @@
 import { Box } from '@mui/material';
-import { useId, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { useMediaQuery } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
 
@@ -27,7 +27,8 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
   const theme = useTheme();
   const [createMessageOpen, setCreateMessageOpen] = useState(false);
   const { notify } = usePowerSnackbar();
-  const isMobileLayout = useMediaQuery(theme.breakpoints.down('sm'));
+  const isAnalysisCompactLayout = useMediaQuery(theme.breakpoints.down('md'));
+  const isNarrowLayout = useMediaQuery(theme.breakpoints.down('lg'));
   const centerTabsId = useId().replace(/:/g, '-');
   const messagesTabId = `${centerTabsId}-messages-tab`;
   const summaryTabId = `${centerTabsId}-summary-tab`;
@@ -37,8 +38,8 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
   const mapPanelId = `${centerTabsId}-map-panel`;
   const showLoadingSkeletons =
     !page.hasLoadedInitialMessages && page.error == null && page.messages.length === 0;
-  const leftPanelVisible = isMobileLayout || page.leftPanelOpen;
-  const rightPanelVisible = isMobileLayout || page.rightPanelOpen;
+  const leftPanelVisible = isAnalysisCompactLayout || page.leftPanelOpen;
+  const rightPanelVisible = page.rightPanelOpen;
   const centerTabs = getAnalysisCenterTabs(page.analysisMapInSidebar);
   const centerTab =
     page.analysisMapInSidebar && page.centerTab === 'map' ? 'messages' : page.centerTab;
@@ -46,6 +47,22 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
     centerTab === 'map' ||
     (page.analysisMapInSidebar && rightPanelVisible && page.rightSidebarTab === 'map');
   const messagesPaneLoading = useMinDurationBusy(page.messagesLoading, 450);
+  const previousRightPanelOpenRef = useRef(page.rightPanelOpen);
+
+  useEffect(() => {
+    const wasOpen = previousRightPanelOpenRef.current;
+    previousRightPanelOpenRef.current = rightPanelVisible;
+    if (wasOpen || !rightPanelVisible || window.innerWidth >= 1200) return;
+
+    const rightPanel = document.querySelector<HTMLElement>('[data-analysis-right-panel]');
+    if (!rightPanel) return;
+    const prefersReducedMotion =
+      window.matchMedia?.('(prefers-reduced-motion: no-preference)')?.matches === true;
+    rightPanel.scrollIntoView({
+      behavior: prefersReducedMotion ? 'smooth' : 'auto',
+      block: 'start',
+    });
+  }, [rightPanelVisible]);
 
   return (
     <Box
@@ -59,11 +76,12 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
         overflow: 'hidden',
       }}
     >
-      <Box sx={{ px: { xs: 1, lg: 2 } }}>
+      <Box sx={{ px: { xs: 1, lg: 2 }, pt: 0.5 }}>
         <AnalysisPageHeader
           page={page}
           centerTab={centerTab}
-          isMobileLayout={isMobileLayout}
+          isCompactLayout={isAnalysisCompactLayout}
+          isNarrowLayout={isNarrowLayout}
           leftPanelVisible={leftPanelVisible}
           rightPanelVisible={rightPanelVisible}
         />
@@ -86,6 +104,8 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
           minHeight: 0,
           position: 'relative',
           overflow: 'hidden',
+          overflowX: 'hidden',
+          overscrollBehavior: 'none',
         }}
         aria-busy={
           page.messagesLoading ||
@@ -99,11 +119,21 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
             height: '100%',
             minHeight: 0,
             display: 'grid',
-            gap: { xs: 2, lg: 0 },
+            gap: 0,
             overflow: 'hidden',
             alignItems: 'stretch',
+            gridTemplateRows: {
+              xs: [
+                leftPanelVisible ? 'auto' : null,
+                'minmax(0,1fr)',
+                rightPanelVisible ? 'minmax(0,1fr)' : null,
+              ]
+                .filter(Boolean)
+                .join(' '),
+              lg: '1fr',
+            },
             gridTemplateColumns: {
-              xs: '1fr',
+              xs: 'minmax(0,1fr)',
               lg: [
                 leftPanelVisible ? '400px' : null,
                 'minmax(0,1fr)',
@@ -114,7 +144,11 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
             },
           }}
         >
-          <AnalysisLeftPanel page={page} leftPanelVisible={leftPanelVisible} />
+          <AnalysisLeftPanel
+            page={page}
+            leftPanelVisible={leftPanelVisible}
+            isCompactLayout={isAnalysisCompactLayout}
+          />
           {showLoadingSkeletons ? (
             <AnalysisLoadingSkeletons rightPanelVisible={rightPanelVisible} />
           ) : (
@@ -122,7 +156,8 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
               page={page}
               centerTab={centerTab}
               centerTabs={centerTabs}
-              isMobileLayout={isMobileLayout}
+              isCompactLayout={isAnalysisCompactLayout}
+              isNarrowLayout={isNarrowLayout}
               rightPanelVisible={rightPanelVisible}
               messagesPaneLoading={messagesPaneLoading}
               messagesPanelId={messagesPanelId}
@@ -134,7 +169,11 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
             />
           )}
           {!showLoadingSkeletons ? (
-            <AnalysisRightPanel page={page} rightPanelVisible={rightPanelVisible} />
+            <AnalysisRightPanel
+              page={page}
+              rightPanelVisible={rightPanelVisible}
+              isCompactLayout={isAnalysisCompactLayout}
+            />
           ) : null}
         </Box>
       </Box>

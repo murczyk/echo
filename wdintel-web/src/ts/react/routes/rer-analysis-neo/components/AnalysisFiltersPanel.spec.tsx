@@ -10,6 +10,8 @@ import type { SavedFilter, SignalGroupEntry } from '../../../../../Bindings';
 import type { AnalysisPageActions, AnalysisPageState } from '../types';
 import { emptyQueryState } from '../helpers';
 
+const useMediaQueryMock = vi.hoisted(() => vi.fn(() => false));
+
 const analysisFilterFieldSpy = vi.fn();
 const accordionSpy = vi.fn();
 const powerChipSpy = vi.fn();
@@ -31,8 +33,14 @@ vi.mock('@mui/material', () => ({
   AccordionSummary: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   Box: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   Badge: ({ children }: { children: ReactNode }) => <div>{children}</div>,
-  Button: (props: { children: ReactNode; disabled?: boolean; onClick?: () => void }) => (
+  Button: (props: {
+    children: ReactNode;
+    disabled?: boolean;
+    onClick?: () => void;
+    startIcon?: ReactNode;
+  }) => (
     <button type="button" disabled={props.disabled} onClick={props.onClick}>
+      {props.startIcon}
       {props.children}
     </button>
   ),
@@ -132,10 +140,14 @@ vi.mock('@mui/material', () => ({
     </label>
   ),
   Tooltip: ({ children }: { children: ReactNode }) => <>{children}</>,
-  useMediaQuery: () => false,
+  useMediaQuery: useMediaQueryMock,
   Typography: ({ children, role }: { children: ReactNode; role?: string }) => (
     <div role={role}>{children}</div>
   ),
+}));
+
+vi.mock('@mui/icons-material/FilterAlt', () => ({
+  default: () => <span data-testid="filled-filter-icon" />,
 }));
 
 vi.mock('@mui/icons-material/Search', () => ({
@@ -1439,5 +1451,12 @@ describe('AnalysisFiltersPanel', () => {
       'Теги',
       'Метадані',
     ]);
+  });
+
+  it('renders the filled filter icon on the narrow filter toggle', async () => {
+    const view = await renderComponent({ ...buildProps(), isCompactLayout: true });
+    rendered.push(view);
+
+    expect(view.container.querySelector('[data-testid="filled-filter-icon"]')).not.toBeNull();
   });
 });

@@ -64,6 +64,44 @@ div [id='map-container-analysis'] {
   border: none;
 }
 
+.analysis-map-control-toggle {
+  display: none;
+  width: 48px;
+  height: 48px;
+  padding: 0;
+  align-items: center;
+  justify-content: center;
+  color: var(--bs-body-color);
+  background: var(--bs-card-bg, var(--bs-body-bg));
+  border: 1px solid var(--bs-border-color);
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  cursor: pointer;
+}
+
+.analysis-map-control-toggle svg {
+  width: 24px;
+  height: 24px;
+  fill: currentColor;
+}
+
+@media (max-width: 599.95px) {
+  #analysis-map .narrow-map-control--collapsed > .analysis-map-control-toggle {
+    display: inline-flex;
+  }
+
+  #analysis-map .narrow-map-control--collapsed analysis-map-search,
+  #analysis-map .narrow-map-control--collapsed date-range-selector {
+    display: none !important;
+  }
+
+  #analysis-map .leaflet-top.leaflet-left > .narrow-map-search-control,
+  #analysis-map .leaflet-top.leaflet-left > .narrow-map-date-control {
+    width: 48px;
+    height: 48px;
+  }
+}
+
 .analysis-map-search-wrap {
   display: flex;
   flex-direction: column;

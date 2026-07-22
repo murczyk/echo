@@ -14,6 +14,8 @@ type Props = {
   middleGap?: ResponsiveSpacing;
   middle?: ReactNode;
   actions?: ReactNode;
+  compactLayout?: boolean;
+  fullWidthActions?: boolean;
   className?: string;
   titleClassName?: string;
 };
@@ -28,6 +30,8 @@ export function PageHeader({
   middleGap = 2,
   middle,
   actions,
+  compactLayout = false,
+  fullWidthActions = false,
   className,
   titleClassName,
 }: Props) {
@@ -50,7 +54,7 @@ export function PageHeader({
           alignItems: 'center',
           flexShrink: 0,
           minWidth: 0,
-          width: { xs: '100%', sm: 'auto' },
+          width: compactLayout ? '100%' : { xs: '100%', sm: 'auto' },
         }}
       >
         {titleLeadingActions ? (
@@ -112,11 +116,11 @@ export function PageHeader({
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'flex-start',
-            width: { xs: '100%', sm: 'fit-content' },
+            width: compactLayout ? '100%' : { xs: '100%', sm: 'fit-content' },
             maxWidth: '100%',
             flexShrink: 0,
-            flexBasis: { xs: '100%', sm: 'auto' },
-            ml: { xs: 0, sm: middleGap },
+            flexBasis: compactLayout ? '100%' : { xs: '100%', sm: 'auto' },
+            ml: compactLayout ? 0 : { xs: 0, sm: middleGap },
           }}
         >
           {middle}
@@ -130,6 +134,7 @@ export function PageHeader({
           justifyContent: 'flex-end',
           marginLeft: 'auto',
           flexShrink: 0,
+          ...(fullWidthActions ? { width: '100%', marginLeft: 0 } : {}),
         }}
       >
         {actions ?? null}

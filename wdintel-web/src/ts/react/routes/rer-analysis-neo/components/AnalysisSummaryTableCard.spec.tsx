@@ -10,6 +10,8 @@ import type { CallsignInfoRes, Network, SummaryTableFreqRow, Unit } from '../../
 import { CallsignChipsCell, CompactListCell } from './analysis-summary-table-cells';
 
 const capturedRowActionProps: Array<{ label: string; opensModal?: boolean }> = [];
+const capturedTableOptions: Array<Record<string, any>> = [];
+const originalInnerWidth = window.innerWidth;
 
 vi.mock('@mui/icons-material/DownloadOutlined', () => ({ default: () => <span>download</span> }));
 vi.mock('@mui/icons-material/EditOutlined', () => ({ default: () => <span>edit</span> }));
@@ -96,7 +98,10 @@ vi.mock('@mui/material', () => ({
 }));
 
 vi.mock('material-react-table', () => ({
-  useMaterialReactTable: (options: unknown) => options,
+  useMaterialReactTable: (options: Record<string, any>) => {
+    capturedTableOptions.push(options);
+    return options;
+  },
   MaterialReactTable: ({ table }: { table: any }) => {
     const columns = table.columns as Array<any>;
     const data = table.data as Array<any>;
@@ -373,6 +378,47 @@ describe('AnalysisSummaryTableCard', () => {
       item.container.remove();
     }
     capturedRowActionProps.splice(0);
+    capturedTableOptions.splice(0);
+    window.innerWidth = originalInnerWidth;
+  });
+
+  function getPaginationProps(): Record<string, any> {
+    const options = capturedTableOptions.at(-1);
+    if (!options) throw new Error('MRT options were not captured');
+    const paginationProps = options.muiPaginationProps;
+    return typeof paginationProps === 'function'
+      ? paginationProps({ table: options })
+      : paginationProps;
+  }
+
+  async function renderAtWidth(width: number): Promise<Rendered> {
+    window.innerWidth = width;
+    return renderComponent(buildProps());
+  }
+
+  it('hides the page-size selector and prevents wrapping below 600px', async () => {
+    const view = await renderAtWidth(599);
+    rendered.push(view);
+
+    const paginationProps = getPaginationProps();
+    expect(paginationProps.showRowsPerPage).toBe(false);
+    expect(paginationProps.sx['@media (max-width: 599.95px)'].flexWrap).toBe('nowrap');
+  });
+
+  it('keeps the page-size selector at the 600px breakpoint', async () => {
+    const view = await renderAtWidth(600);
+    rendered.push(view);
+
+    expect(getPaginationProps().showRowsPerPage).toBe(true);
+  });
+
+  it('preserves desktop page-size options', async () => {
+    const view = await renderAtWidth(1200);
+    rendered.push(view);
+
+    const paginationProps = getPaginationProps();
+    expect(paginationProps.rowsPerPageOptions).toEqual([25, 50, 100]);
+    expect(paginationProps.showRowsPerPage).toBe(true);
   });
 
   it('renders the MRT frequency columns and keeps export actions', async () => {

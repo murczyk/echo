@@ -81,10 +81,9 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
     onError: setPageError,
     onUnauthorized: handleUnauthorized,
     rightPanelOpen,
-    rightSidebarVisible: rightPanelOpen || isMobileLayout,
+    rightSidebarVisible: rightPanelOpen,
     rightSidebarTab,
-    shouldLoadNewCallsigns:
-      (rightPanelOpen || isMobileLayout) && rightSidebarTab === 'newCallsigns',
+    shouldLoadNewCallsigns: rightPanelOpen && rightSidebarTab === 'newCallsigns',
     queryState,
   });
   const dataFreqValues = useMemo(
@@ -206,7 +205,7 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
         setRightPanelOpen(true);
         setRightSidebarTab('map');
       }
-      if ((rightPanelOpen || isMobileLayout) && isNullOrUndefined(rightSidebarTab)) {
+      if (rightPanelOpen && isNullOrUndefined(rightSidebarTab)) {
         setRightSidebarTab(getAnalysisSidebarTabs(true)[0]);
       }
       return;
@@ -426,7 +425,7 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
   }, [dutySettings.analysisMapInSidebar, rightSidebarTab]);
 
   useEffect(() => {
-    if (!(rightPanelOpen || isMobileLayout) || rightSidebarTab !== 'newCallsigns') return;
+    if (!rightPanelOpen || rightSidebarTab !== 'newCallsigns') return;
     void data.loadNewCallsigns();
   }, [data.loadNewCallsigns, isMobileLayout, rightPanelOpen, rightSidebarTab]);
 

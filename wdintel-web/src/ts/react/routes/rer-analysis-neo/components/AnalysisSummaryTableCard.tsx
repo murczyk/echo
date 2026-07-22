@@ -338,9 +338,26 @@ function AnalysisSummaryTableCardInner({
         backgroundColor: 'var(--bs-body-bg)',
       },
     },
-    muiPaginationProps: {
+    muiPaginationProps: () => ({
       rowsPerPageOptions: [25, 50, 100],
-    },
+      showRowsPerPage: typeof window === 'undefined' || window.innerWidth >= 600,
+      sx: {
+        '@media (max-width: 599.95px)': {
+          flexWrap: 'nowrap',
+          justifyContent: 'space-between',
+          '& > .MuiBox-root:last-child': {
+            display: 'flex',
+            alignItems: 'center',
+          },
+          '& .MuiTypography-root': {
+            minWidth: 'auto',
+          },
+          '& .MuiBox-root': {
+            flexWrap: 'nowrap',
+          },
+        },
+      },
+    }),
     muiTableProps: {
       'aria-label': 'Таблиця частот аналізу',
       sx: {

@@ -327,6 +327,16 @@ export function AnalysisReportDialog({
           : report.template === 'geojson'
             ? 'Завантажити GeoJSON'
             : 'Завантажити docx/xlsx';
+  const mobileDownloadLabel =
+    builderMode === 'exports'
+      ? 'Завантажити'
+      : report.template === 'summary_table'
+        ? 'XLSX'
+        : report.template === 'kmz'
+          ? 'KMZ'
+          : report.template === 'geojson'
+            ? 'GEOJSON'
+            : 'DOCX/XLSX';
 
   return (
     <Dialog
@@ -984,28 +994,47 @@ export function AnalysisReportDialog({
       <DialogActions
         sx={{
           ...(STANDARD_DIALOG_ACTIONS_SX as Record<string, unknown>),
-          gap: 2,
+          gap: { xs: 1, sm: 2 },
           justifyContent: 'space-between',
           alignItems: 'center',
-          flexWrap: 'wrap',
+          flexWrap: { xs: 'nowrap', sm: 'wrap' },
+          flexDirection: { xs: 'column', sm: 'row' },
+          overflowX: 'hidden',
         }}
       >
         <Typography
           variant="caption"
           color="text.secondary"
-          sx={{ flex: '1 1 320px', minWidth: 0 }}
+          sx={{ width: { xs: '100%', sm: 'auto' }, flex: '1 1 320px', minWidth: 0 }}
         >
           {appliedFilters.globalHint}
         </Typography>
-        <Stack direction="row" spacing={1.5} alignItems="center" sx={{ flexShrink: 0 }}>
+        <Stack
+          direction="row"
+          spacing={{ xs: 0.5, sm: 1.5 }}
+          alignItems="center"
+          justifyContent="flex-end"
+          sx={{ width: { xs: '100%', sm: 'auto' }, flexShrink: 0 }}
+        >
           <Button onClick={onClose}>Закрити</Button>
           <Button
             variant="contained"
             startIcon={<DownloadIcon />}
             onClick={onDownload}
             disabled={downloadInFlight || isSposobUnitNameMissing}
+            aria-label={builderMode === 'exports' ? 'Завантажити' : undefined}
+            title={builderMode === 'exports' ? 'Завантажити' : undefined}
           >
-            {downloadInFlight ? PREPARING_TEXT : downloadButtonLabel}
+            <Box component="span" sx={{ display: { xs: 'none', sm: 'inline' } }}>
+              {downloadInFlight ? PREPARING_TEXT : downloadButtonLabel}
+            </Box>
+            <Box
+              component="span"
+              sx={{ display: { xs: 'inline', sm: 'none' } }}
+              aria-hidden={downloadInFlight ? true : undefined}
+            >
+              {downloadInFlight ? PREPARING_TEXT : mobileDownloadLabel}
+            </Box>
           </Button>
         </Stack>
       </DialogActions>

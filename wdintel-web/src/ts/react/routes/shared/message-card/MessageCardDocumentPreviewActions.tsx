@@ -277,7 +277,11 @@ export function MessageCardDocumentPreviewActions({
         )}
       </Stack>
 
-      <Stack direction="row" justifyContent="flex-end" sx={{ justifySelf: 'end' }}>
+      <Stack
+        direction="row"
+        justifyContent="flex-end"
+        sx={{ justifySelf: 'end', minWidth: 'max-content' }}
+      >
         <Button aria-label="Закрити" onClick={onClose}>
           Закрити
         </Button>

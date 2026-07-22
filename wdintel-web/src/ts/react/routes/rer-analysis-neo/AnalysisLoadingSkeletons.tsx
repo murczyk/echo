@@ -11,7 +11,26 @@ const messageCardSkeletons = [
   { lines: [220, 180], bodyHeight: 76 },
 ];
 
+export function getAnalysisLoadingSkeletonCount(viewportWidth: number): number {
+  return viewportWidth < 600 ? 2 : 3;
+}
+
+export const analysisLoadingSkeletonTabsSx = {
+  minHeight: 40,
+  alignItems: 'center',
+  overflow: 'hidden',
+  flexWrap: 'nowrap',
+} as const;
+
+export const analysisLoadingSkeletonPaperSx = {
+  mx: 1,
+  width: 'auto',
+} as const;
+
 export function AnalysisLoadingSkeletons({ rightPanelVisible }: Props) {
+  const skeletonCount = getAnalysisLoadingSkeletonCount(
+    typeof window === 'undefined' ? 1024 : window.innerWidth,
+  );
   return (
     <>
       <Paper
@@ -20,22 +39,18 @@ export function AnalysisLoadingSkeletons({ rightPanelVisible }: Props) {
         aria-label="Центральна секція"
         aria-disabled="true"
         sx={{
+          ...analysisLoadingSkeletonPaperSx,
           minHeight: 0,
           minWidth: 0,
-          height: '100%',
+          height: { xs: 'auto', lg: '100%' },
           display: 'flex',
           flexDirection: 'column',
           overflow: 'hidden',
           position: 'relative',
         }}
       >
-        <Stack spacing={0.75} sx={{ px: { xs: 1, lg: 2 }, pt: { xs: 0.5, lg: 1 }, mb: 0.25 }}>
-          <Stack
-            direction="row"
-            spacing={1}
-            flexWrap="wrap"
-            sx={{ minHeight: 40, alignItems: 'center' }}
-          >
+        <Stack spacing={0.75} sx={{ px: 1, pt: { xs: 0.5, lg: 1 }, mb: 0.25 }}>
+          <Stack direction="row" spacing={1} flexWrap="nowrap" sx={analysisLoadingSkeletonTabsSx}>
             <Skeleton variant="rounded" width={180} height={32} />
             <Skeleton variant="rounded" width={108} height={32} />
             <Skeleton variant="rounded" width={160} height={32} />
@@ -45,14 +60,14 @@ export function AnalysisLoadingSkeletons({ rightPanelVisible }: Props) {
           sx={{
             flex: 1,
             minHeight: 0,
-            px: { xs: 1, lg: 2 },
+            px: 1,
             pb: { xs: 1, lg: 2 },
             pt: { xs: 0.5, lg: 1 },
             overflow: 'hidden',
           }}
         >
           <Stack spacing={1.25}>
-            {messageCardSkeletons.map((card, index) => (
+            {messageCardSkeletons.slice(0, skeletonCount).map((card, index) => (
               <Box
                 key={index}
                 sx={{

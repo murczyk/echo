@@ -351,6 +351,59 @@ describe('useRerAnalysisNeoPage', () => {
     expect(latest?.rightSidebarTab).toBe('stats');
   });
 
+  it('closes and reopens the narrow right panel without losing its selected tab', async () => {
+    mediaQueryMock.useMediaQuery.mockReturnValue(true);
+    renderHook();
+    await flushEffects();
+
+    expect(latest?.rightPanelOpen).toBe(false);
+    expect(latest?.rightSidebarTab).toBeNull();
+
+    await act(async () => latest?.toggleRightPanel());
+    await flushEffects();
+    expect(latest?.rightPanelOpen).toBe(true);
+    expect(latest?.rightSidebarTab).toBe('stats');
+
+    await act(async () => latest?.setRightSidebarTab('callsigns'));
+    await flushEffects();
+    await act(async () => latest?.toggleRightPanel());
+    await flushEffects();
+
+    expect(latest?.rightPanelOpen).toBe(false);
+    expect(latest?.rightSidebarTab).toBe('callsigns');
+
+    await act(async () => latest?.toggleRightPanel());
+    await flushEffects();
+    expect(latest?.rightPanelOpen).toBe(true);
+    expect(latest?.rightSidebarTab).toBe('callsigns');
+  });
+
+  it('keeps the sidebar map selected while closing and reopening map-in-sidebar mode', async () => {
+    mediaQueryMock.useMediaQuery.mockReturnValue(true);
+    userSettingsMock.fetchUserSettings.mockResolvedValueOnce({
+      tagsLayout: 'compact',
+      disableAutoScroll: false,
+      analysisMapInSidebar: true,
+    });
+    renderHook();
+    await flushEffects();
+
+    await act(async () => latest?.toggleRightPanel());
+    await flushEffects();
+    await act(async () => latest?.setRightSidebarTab('map'));
+    await flushEffects();
+    await act(async () => latest?.toggleRightPanel());
+    await flushEffects();
+
+    expect(latest?.rightPanelOpen).toBe(false);
+    expect(latest?.rightSidebarTab).toBe('map');
+
+    await act(async () => latest?.toggleRightPanel());
+    await flushEffects();
+    expect(latest?.rightPanelOpen).toBe(true);
+    expect(latest?.rightSidebarTab).toBe('map');
+  });
+
   it('folds the filters by default when they would stack above content', async () => {
     mediaQueryMock.useMediaQuery.mockImplementation((query: string) => query === '(down:lg)');
 
