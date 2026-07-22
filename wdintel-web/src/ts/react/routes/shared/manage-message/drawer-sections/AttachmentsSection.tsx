@@ -278,18 +278,17 @@ export function AttachmentsSection({
                 }}
               >
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, width: '100%' }}>
-                  {preview ? (
+                  <FileIcon fontSize="small" sx={{ color: 'text.secondary', flexShrink: 0 }} />
+                  <Typography variant="body2" noWrap title={fileName} sx={{ flex: 1, minWidth: 0 }}>
+                    {fileName}
+                  </Typography>
+                  {preview && (
                     <LocalMediaPreview
                       file={f}
                       previewUrl={preview.url}
                       onError={() => failPreview(f.id)}
                     />
-                  ) : (
-                    <FileIcon fontSize="small" sx={{ color: 'text.secondary', flexShrink: 0 }} />
                   )}
-                  <Typography variant="body2" noWrap title={fileName} sx={{ flex: 1, minWidth: 0 }}>
-                    {fileName}
-                  </Typography>
                   {meta && (
                     <Typography
                       variant="caption"

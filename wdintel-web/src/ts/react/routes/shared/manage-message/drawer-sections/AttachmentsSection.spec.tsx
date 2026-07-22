@@ -61,7 +61,14 @@ describe('AttachmentsSection local media previews', () => {
     ]);
 
     expect(createObjectURL).toHaveBeenCalledOnce();
-    expect(container.querySelector('img[src="blob:local"]')).not.toBeNull();
+    const row = container.querySelector('button[aria-label="Видалити photo.JPG"]')?.parentElement;
+    const preview = container.querySelector('img[src="blob:local"]');
+    const filename = container.querySelector('p[title="photo.JPG"]');
+    const metadata = row?.querySelector('span');
+    expect(row?.firstElementChild?.tagName).toBe('svg');
+    expect(preview).not.toBeNull();
+    expect(filename?.compareDocumentPosition(preview!)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    expect(preview?.compareDocumentPosition(metadata!)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
     expect(createObjectURL).toHaveBeenCalledOnce();
     act(() => root.unmount());
     expect(revokeObjectURL).toHaveBeenCalledWith('blob:local');
@@ -72,10 +79,12 @@ describe('AttachmentsSection local media previews', () => {
       pendingFile('video', 'clip.MP4', 'video/mp4'),
     ]);
     const video = container.querySelector('video');
+    const row = container.querySelector('button[aria-label="Видалити clip.MP4"]')?.parentElement;
 
     expect(video?.getAttribute('src')).toBe('blob:local');
     expect(video?.getAttribute('autoplay')).toBeNull();
     expect(video?.muted).toBe(true);
+    expect(row?.firstElementChild?.tagName).toBe('svg');
     expect(container.querySelector('svg')).not.toBeNull();
     act(() => root.unmount());
   });
