@@ -329,7 +329,7 @@ async fn assert_device_check_fails(
     transaction.rollback().await.unwrap();
 }
 
-fn device_active_model(
+pub(in crate::devices) fn device_active_model(
     created_by: &str,
     source_label: &str,
     name: Option<&str>,

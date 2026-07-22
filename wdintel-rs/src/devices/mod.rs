@@ -10,10 +10,12 @@ mod access;
 mod bl;
 mod custom_fields;
 mod filesystem;
+mod main_db;
 mod query;
 #[cfg(test)]
 mod schema_tests;
 mod validation;
+mod visibility;
 
 #[post("/api/device/list")]
 pub async fn device_list(
