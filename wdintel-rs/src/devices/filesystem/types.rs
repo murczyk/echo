@@ -466,6 +466,85 @@ pub(in crate::devices) enum SyncFileOperation {
 
 #[allow(dead_code)]
 #[derive(Clone, Debug, PartialEq, Eq)]
+pub(in crate::devices) struct PreparedFileMutation {
+    pub(super) device_id: Uuid,
+    pub(super) operation: SyncFileOperation,
+    pub(super) file_id: Uuid,
+    pub(super) candidate_root_entry_id: Uuid,
+    pub(super) candidate_directory_entry_ids: Vec<Uuid>,
+    pub(super) source_path: ParsedSourcePath,
+    pub(super) metadata: NormalizedFileMetadata,
+}
+
+#[allow(dead_code)]
+impl PreparedFileMutation {
+    pub(in crate::devices) fn for_create(
+        device_id: Uuid,
+        source_path: ParsedSourcePath,
+        metadata: NormalizedFileMetadata,
+    ) -> Self {
+        Self::new(
+            device_id,
+            SyncFileOperation::Created,
+            Uuid::now_v7(),
+            source_path,
+            metadata,
+        )
+    }
+
+    pub(in crate::devices) fn for_update(
+        device_id: Uuid,
+        file_id: Uuid,
+        source_path: ParsedSourcePath,
+        metadata: NormalizedFileMetadata,
+    ) -> Self {
+        Self::new(
+            device_id,
+            SyncFileOperation::Updated,
+            file_id,
+            source_path,
+            metadata,
+        )
+    }
+
+    fn new(
+        device_id: Uuid,
+        operation: SyncFileOperation,
+        file_id: Uuid,
+        source_path: ParsedSourcePath,
+        metadata: NormalizedFileMetadata,
+    ) -> Self {
+        let candidate_directory_count = source_path
+            .components
+            .len()
+            .checked_sub(1)
+            .expect("parsed source path has a file component");
+
+        Self {
+            device_id,
+            operation,
+            file_id,
+            candidate_root_entry_id: Uuid::now_v7(),
+            candidate_directory_entry_ids: (0..candidate_directory_count)
+                .map(|_| Uuid::now_v7())
+                .collect(),
+            source_path,
+            metadata,
+        }
+    }
+}
+
+#[allow(dead_code)]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(in crate::devices) struct FileMutationResult {
+    pub(in crate::devices) operation: SyncFileOperation,
+    pub(in crate::devices) root: RootEntry,
+    pub(in crate::devices) file: FileEntry,
+    pub(in crate::devices) path_components: Vec<String>,
+}
+
+#[allow(dead_code)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub(in crate::devices) struct SyncFileItemResult {
     pub(in crate::devices) index: usize,
     pub(in crate::devices) outcome: SyncFileItemOutcome,

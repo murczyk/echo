@@ -16,6 +16,9 @@ pub(in crate::devices::filesystem) use core::{
     find_directory_scope, resolve_cursor_entry_sort_key,
 };
 pub(in crate::devices::filesystem) use flat_list::list_files_offset;
+pub(in crate::devices::filesystem) use model::{
+    map_directory_model, map_file_model, map_root_model,
+};
 pub(in crate::devices::filesystem) use search::search_entries;
 
 pub(in crate::devices::filesystem) use roots::list_roots;

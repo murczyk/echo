@@ -1,9 +1,10 @@
 use super::{
-    ancestor_expr, descendant_expr, query, Breadcrumb, BrowseFilesCommand,
-    EntryQueryScope, EntrySortKey, FileCursorCodec, FileEntryKind,
-    FileMetadataService, FileSearchFilters, FilesystemError,
+    ancestor_expr, descendant_expr, normalize_file_metadata, query, Breadcrumb,
+    BrowseFilesCommand, EntryQueryScope, EntrySortKey, FileCursorCodec,
+    FileEntryKind, FileMetadataService, FileSearchFilters, FilesystemError,
     FilesystemRepository, KeysetPageRequest, OffsetPageRequest, PathSyntax,
-    RawFileSearchFilters, SearchEntry, SearchFilesCommand, TreeEntry,
+    PreparedFileMutation, RawFileSearchFilters, SearchEntry,
+    SearchFilesCommand, SourcePathParser, SyncFileOperation, TreeEntry,
 };
 use crate::config::{
     read_config, DEVICE_FILE_CURSOR_MAX_BYTES, DEVICE_FILE_PAGE_MAX_LIMIT,
@@ -22,10 +23,12 @@ use crate::functest::tests::{cleanup_locked, mk_login};
 use crate::types::{AppError, Mode, Uuid};
 use chrono::{Duration, NaiveDate, NaiveDateTime};
 use sea_orm::{
-    ActiveModelTrait, ActiveValue::Set, ConnectionTrait, DatabaseConnection,
-    EntityTrait, IntoActiveModel, QueryFilter, QuerySelect,
+    ActiveModelTrait, ActiveValue::Set, ColumnTrait, ConnectionTrait,
+    DatabaseConnection, EntityTrait, IntoActiveModel, QueryFilter, QueryOrder,
+    QuerySelect,
 };
 use serde_json::json;
+use std::collections::{BTreeMap, HashSet};
 use std::sync::{
     atomic::{AtomicUsize, Ordering},
     Arc,
@@ -2928,4 +2931,561 @@ fn assert_internal_filesystem_error(error: AppError) {
         error.downcast_ref::<FilesystemError>(),
         Some(FilesystemError::Internal(_))
     )));
+}
+
+fn stage_nine_mutation(
+    device_id: Uuid,
+    file_id: Option<Uuid>,
+    path_syntax: PathSyntax,
+    absolute_path: &str,
+    mime_type: Option<&str>,
+    extension: Option<&str>,
+    file_metadata_created_at: Option<NaiveDateTime>,
+    file_metadata_modified_at: Option<NaiveDateTime>,
+) -> PreparedFileMutation {
+    let source_path = SourcePathParser::parse(
+        path_syntax,
+        absolute_path.to_string(),
+        "absolute_path",
+    )
+    .unwrap();
+    let metadata = normalize_file_metadata(
+        source_path.file_name(),
+        mime_type.map(str::to_string),
+        extension.map(str::to_string),
+        file_metadata_created_at.map(stage_nine_datetime),
+        file_metadata_modified_at.map(stage_nine_datetime),
+        "metadata",
+    )
+    .unwrap();
+
+    match file_id {
+        Some(file_id) => PreparedFileMutation::for_update(
+            device_id,
+            file_id,
+            source_path,
+            metadata,
+        ),
+        None => {
+            PreparedFileMutation::for_create(device_id, source_path, metadata)
+        }
+    }
+}
+
+fn stage_nine_datetime(
+    timestamp: NaiveDateTime,
+) -> chrono::DateTime<chrono::FixedOffset> {
+    chrono::DateTime::from_naive_utc_and_offset(
+        timestamp,
+        chrono::FixedOffset::east_opt(0).unwrap(),
+    )
+}
+
+async fn stage_nine_entries(
+    db: &DatabaseConnection,
+    device_id: Uuid,
+) -> Vec<file_entry::Model> {
+    file_entry::Entity::find()
+        .filter(file_entry::Column::DeviceId.eq(device_id))
+        .order_by_asc(file_entry::Column::Id)
+        .all(db)
+        .await
+        .unwrap()
+}
+
+fn stage_nine_root<'a>(
+    entries: &'a [file_entry::Model],
+    path_syntax: PathSyntax,
+    name: &str,
+) -> &'a file_entry::Model {
+    entries
+        .iter()
+        .find(|entry| {
+            entry.parent_id.is_none()
+                && entry.kind == FileEntryKind::Directory.as_db_str()
+                && entry.path_syntax.as_deref() == Some(path_syntax.as_db_str())
+                && entry.name == name
+        })
+        .unwrap()
+}
+
+fn stage_nine_directory<'a>(
+    entries: &'a [file_entry::Model],
+    parent_id: Uuid,
+    name: &str,
+) -> &'a file_entry::Model {
+    entries
+        .iter()
+        .find(|entry| {
+            entry.parent_id == Some(parent_id)
+                && entry.kind == FileEntryKind::Directory.as_db_str()
+                && entry.name == name
+        })
+        .unwrap()
+}
+
+fn stage_nine_structure_timestamps(
+    entries: &[file_entry::Model],
+) -> BTreeMap<Uuid, NaiveDateTime> {
+    entries
+        .iter()
+        .filter(|entry| entry.kind == FileEntryKind::Directory.as_db_str())
+        .map(|entry| (entry.id, entry.updated_at))
+        .collect()
+}
+
+#[tokio::test]
+#[serial_test::serial]
+async fn stage_nine_mutation_repository_creates_and_reuses_canonical_hierarchy()
+{
+    let (env, _guard) = cleanup_locked().await.unwrap();
+    let device_id = Uuid::now_v7();
+    let repository = FilesystemRepository::new(&env.file_registry_db);
+
+    let first = repository
+        .mutate_file(&stage_nine_mutation(
+            device_id,
+            None,
+            PathSyntax::Posix,
+            "/var/log/app/first.log",
+            Some("text/plain"),
+            Some("log"),
+            None,
+            None,
+        ))
+        .await
+        .unwrap();
+    assert_eq!(first.operation, SyncFileOperation::Created);
+
+    let before =
+        stage_nine_entries(env.file_registry_db.connection(), device_id).await;
+    let root_id = stage_nine_root(&before, PathSyntax::Posix, "/").id;
+    let var_id = stage_nine_directory(&before, root_id, "var").id;
+    let log_id = stage_nine_directory(&before, var_id, "log").id;
+    let app_id = stage_nine_directory(&before, log_id, "app").id;
+    let structure_timestamps = stage_nine_structure_timestamps(&before);
+
+    let second = repository
+        .mutate_file(&stage_nine_mutation(
+            device_id,
+            None,
+            PathSyntax::Posix,
+            "/var/log/app/first.log",
+            Some("text/plain"),
+            Some("log"),
+            None,
+            None,
+        ))
+        .await
+        .unwrap();
+    let file_log = repository
+        .mutate_file(&stage_nine_mutation(
+            device_id,
+            None,
+            PathSyntax::Posix,
+            "/var/log",
+            Some("text/plain"),
+            Some("log"),
+            None,
+            None,
+        ))
+        .await
+        .unwrap();
+    let after =
+        stage_nine_entries(env.file_registry_db.connection(), device_id).await;
+
+    assert_eq!(second.operation, SyncFileOperation::Created);
+    assert_ne!(first.file.file_id, second.file.file_id);
+    assert_eq!(first.root.entry_id, second.root.entry_id);
+    assert_eq!(first.root.updated_at, second.root.updated_at);
+    assert_eq!(
+        stage_nine_structure_timestamps(&after),
+        structure_timestamps,
+    );
+    assert_eq!(
+        after
+            .iter()
+            .filter(|entry| {
+                entry.parent_id.is_none()
+                    && entry.kind == FileEntryKind::Directory.as_db_str()
+            })
+            .count(),
+        1,
+    );
+    assert_eq!(
+        after
+            .iter()
+            .filter(|entry| {
+                entry.parent_id.is_some()
+                    && entry.kind == FileEntryKind::Directory.as_db_str()
+            })
+            .count(),
+        3,
+    );
+    assert_eq!(
+        after
+            .iter()
+            .filter(|entry| entry.kind == FileEntryKind::File.as_db_str())
+            .count(),
+        3,
+    );
+
+    let directory_log = stage_nine_directory(&after, var_id, "log");
+    let file_log_entry = after
+        .iter()
+        .find(|entry| {
+            entry.id == file_log.file.file_id
+                && entry.kind == FileEntryKind::File.as_db_str()
+        })
+        .unwrap();
+    assert_eq!(directory_log.id, log_id);
+    assert_eq!(directory_log.parent_id, file_log_entry.parent_id);
+    assert_eq!(directory_log.name, file_log_entry.name);
+    assert_eq!(directory_log.name_key, file_log_entry.name_key);
+    assert_eq!(stage_nine_directory(&after, log_id, "app").id, app_id);
+}
+
+#[tokio::test]
+#[serial_test::serial]
+async fn stage_nine_mutation_repository_moves_and_prunes_atomically() {
+    let (env, _guard) = cleanup_locked().await.unwrap();
+    let device_id = Uuid::now_v7();
+    let repository = FilesystemRepository::new(&env.file_registry_db);
+    let initial_metadata_created_at = NaiveDate::from_ymd_opt(2026, 7, 22)
+        .unwrap()
+        .and_hms_milli_opt(8, 0, 0, 0)
+        .unwrap();
+    let initial_metadata_modified_at =
+        initial_metadata_created_at + Duration::minutes(30);
+    let updated_metadata_created_at =
+        initial_metadata_created_at + Duration::hours(1);
+    let updated_metadata_modified_at =
+        initial_metadata_created_at + Duration::hours(2);
+    let cross_metadata_created_at =
+        initial_metadata_created_at + Duration::hours(3);
+    let cross_metadata_modified_at =
+        initial_metadata_created_at + Duration::hours(4);
+
+    let initial = repository
+        .mutate_file(&stage_nine_mutation(
+            device_id,
+            None,
+            PathSyntax::Posix,
+            "/old/shared/nested/original.log",
+            Some("text/plain"),
+            Some("log"),
+            Some(initial_metadata_created_at),
+            Some(initial_metadata_modified_at),
+        ))
+        .await
+        .unwrap();
+    repository
+        .mutate_file(&stage_nine_mutation(
+            device_id,
+            None,
+            PathSyntax::Posix,
+            "/old/shared/keep.log",
+            Some("text/plain"),
+            Some("log"),
+            None,
+            None,
+        ))
+        .await
+        .unwrap();
+    let initial_entries =
+        stage_nine_entries(env.file_registry_db.connection(), device_id).await;
+    let posix_root_id =
+        stage_nine_root(&initial_entries, PathSyntax::Posix, "/").id;
+    let old_id =
+        stage_nine_directory(&initial_entries, posix_root_id, "old").id;
+    let shared_id = stage_nine_directory(&initial_entries, old_id, "shared").id;
+    let nested_id =
+        stage_nine_directory(&initial_entries, shared_id, "nested").id;
+
+    tokio::time::sleep(std::time::Duration::from_millis(2)).await;
+    let same_root = repository
+        .mutate_file(&stage_nine_mutation(
+            device_id,
+            Some(initial.file.file_id),
+            PathSyntax::Posix,
+            "/old/other/same-root.json",
+            Some("application/json"),
+            Some("json"),
+            Some(updated_metadata_created_at),
+            Some(updated_metadata_modified_at),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(same_root.operation, SyncFileOperation::Updated);
+    assert_eq!(same_root.file.file_id, initial.file.file_id);
+    assert_eq!(same_root.file.device_id, initial.file.device_id);
+    assert_eq!(same_root.file.created_at, initial.file.created_at);
+    assert!(same_root.file.updated_at > initial.file.updated_at);
+    let after_same =
+        stage_nine_entries(env.file_registry_db.connection(), device_id).await;
+    let other_id = stage_nine_directory(&after_same, old_id, "other").id;
+    assert!(!after_same.iter().any(|entry| entry.id == nested_id));
+    assert!(after_same.iter().any(|entry| entry.id == shared_id));
+
+    let cross_root_mutation = stage_nine_mutation(
+        device_id,
+        Some(initial.file.file_id),
+        PathSyntax::Windows,
+        r"C:\archive\cross-root.bin",
+        Some("application/octet-stream"),
+        Some("bin"),
+        Some(cross_metadata_created_at),
+        Some(cross_metadata_modified_at),
+    );
+    tokio::time::sleep(std::time::Duration::from_millis(2)).await;
+    let cross_root =
+        repository.mutate_file(&cross_root_mutation).await.unwrap();
+    tokio::time::sleep(std::time::Duration::from_millis(2)).await;
+    let repeated = repository.mutate_file(&cross_root_mutation).await.unwrap();
+
+    assert_eq!(cross_root.file.file_id, initial.file.file_id);
+    assert_eq!(cross_root.file.device_id, initial.file.device_id);
+    assert_eq!(cross_root.file.created_at, initial.file.created_at);
+    assert!(cross_root.file.updated_at > same_root.file.updated_at);
+    assert!(repeated.file.updated_at > cross_root.file.updated_at);
+    assert_eq!(repeated.file.path_syntax, PathSyntax::Windows);
+    assert_eq!(repeated.file.absolute_path, r"C:\archive\cross-root.bin");
+    assert_eq!(
+        repeated.file.mime_type.as_deref(),
+        Some("application/octet-stream"),
+    );
+    assert_eq!(repeated.file.extension.as_deref(), Some("bin"));
+    assert_eq!(
+        repeated.file.file_metadata_created_at,
+        Some(cross_metadata_created_at),
+    );
+    assert_eq!(
+        repeated.file.file_metadata_modified_at,
+        Some(cross_metadata_modified_at),
+    );
+
+    let after_cross =
+        stage_nine_entries(env.file_registry_db.connection(), device_id).await;
+    assert_eq!(
+        after_cross
+            .iter()
+            .filter(|entry| {
+                entry.parent_id.is_none()
+                    && entry.kind == FileEntryKind::Directory.as_db_str()
+            })
+            .count(),
+        2,
+    );
+    assert_eq!(
+        stage_nine_root(&after_cross, PathSyntax::Posix, "/").id,
+        posix_root_id,
+    );
+    assert_eq!(
+        stage_nine_root(&after_cross, PathSyntax::Windows, "C:\\").id,
+        repeated.root.entry_id,
+    );
+    assert!(after_cross.iter().any(|entry| entry.id == old_id));
+    assert!(after_cross.iter().any(|entry| entry.id == shared_id));
+    assert!(!after_cross.iter().any(|entry| entry.id == nested_id));
+    assert!(!after_cross.iter().any(|entry| entry.id == other_id));
+
+    let other_device_file = repository
+        .mutate_file(&stage_nine_mutation(
+            Uuid::now_v7(),
+            None,
+            PathSyntax::Posix,
+            "/other-device/file.log",
+            Some("text/plain"),
+            Some("log"),
+            None,
+            None,
+        ))
+        .await
+        .unwrap();
+    let before_not_found =
+        stage_nine_entries(env.file_registry_db.connection(), device_id).await;
+    for file_id in [Uuid::now_v7(), shared_id, other_device_file.file.file_id] {
+        let error = repository
+            .mutate_file(&stage_nine_mutation(
+                device_id,
+                Some(file_id),
+                PathSyntax::Posix,
+                "/missing/path.log",
+                Some("text/plain"),
+                Some("log"),
+                None,
+                None,
+            ))
+            .await
+            .unwrap_err();
+        assert!(matches!(error, FilesystemError::NotFound));
+    }
+    assert_eq!(
+        stage_nine_entries(env.file_registry_db.connection(), device_id).await,
+        before_not_found,
+    );
+}
+
+#[tokio::test]
+#[serial_test::serial]
+async fn stage_nine_mutation_repository_serializes_concurrent_structure_changes(
+) {
+    let (env, _guard) = cleanup_locked().await.unwrap();
+    let device_id = Uuid::now_v7();
+    let first_file_registry_db =
+        connect_runtime(&env.config, Mode::Test).await.unwrap();
+    let second_file_registry_db =
+        connect_runtime(&env.config, Mode::Test).await.unwrap();
+    let first_repository = FilesystemRepository::new(&first_file_registry_db);
+    let second_repository = FilesystemRepository::new(&second_file_registry_db);
+    let first_create = stage_nine_mutation(
+        device_id,
+        None,
+        PathSyntax::Posix,
+        "/concurrent/shared/one.log",
+        Some("text/plain"),
+        Some("log"),
+        None,
+        None,
+    );
+    let second_create = stage_nine_mutation(
+        device_id,
+        None,
+        PathSyntax::Posix,
+        "/concurrent/shared/two.log",
+        Some("text/plain"),
+        Some("log"),
+        None,
+        None,
+    );
+    let (first, second) =
+        tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            tokio::join!(
+                first_repository.mutate_file(&first_create),
+                second_repository.mutate_file(&second_create),
+            )
+        })
+        .await
+        .expect("concurrent creates timed out");
+    let first = first.unwrap();
+    let second = second.unwrap();
+
+    let seed_repository = FilesystemRepository::new(&env.file_registry_db);
+    let windows = seed_repository
+        .mutate_file(&stage_nine_mutation(
+            device_id,
+            None,
+            PathSyntax::Windows,
+            r"C:\source\windows.log",
+            Some("text/plain"),
+            Some("log"),
+            None,
+            None,
+        ))
+        .await
+        .unwrap();
+    let first_move = stage_nine_mutation(
+        device_id,
+        Some(first.file.file_id),
+        PathSyntax::Windows,
+        r"C:\destination\posix.log",
+        Some("application/json"),
+        Some("json"),
+        None,
+        None,
+    );
+    let second_move = stage_nine_mutation(
+        device_id,
+        Some(windows.file.file_id),
+        PathSyntax::Posix,
+        "/concurrent/destination/windows.log",
+        Some("application/json"),
+        Some("json"),
+        None,
+        None,
+    );
+    let (first_move, second_move) =
+        tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            tokio::join!(
+                first_repository.mutate_file(&first_move),
+                second_repository.mutate_file(&second_move),
+            )
+        })
+        .await
+        .expect("opposite root moves timed out");
+    let first_move = first_move.unwrap();
+    let second_move = second_move.unwrap();
+
+    assert_eq!(first_move.file.file_id, first.file.file_id);
+    assert_eq!(second_move.file.file_id, windows.file.file_id);
+    let entries =
+        stage_nine_entries(env.file_registry_db.connection(), device_id).await;
+    let roots = entries
+        .iter()
+        .filter(|entry| {
+            entry.parent_id.is_none()
+                && entry.kind == FileEntryKind::Directory.as_db_str()
+        })
+        .collect::<Vec<_>>();
+    let root_identities = roots
+        .iter()
+        .map(|entry| (entry.path_syntax.clone(), entry.name_key.clone()))
+        .collect::<HashSet<_>>();
+    assert_eq!(roots.len(), 2);
+    assert_eq!(root_identities.len(), roots.len());
+
+    let directories = entries
+        .iter()
+        .filter(|entry| {
+            entry.parent_id.is_some()
+                && entry.kind == FileEntryKind::Directory.as_db_str()
+        })
+        .collect::<Vec<_>>();
+    let directory_identities = directories
+        .iter()
+        .map(|entry| (entry.parent_id.unwrap(), entry.name_key.clone()))
+        .collect::<HashSet<_>>();
+    assert_eq!(directory_identities.len(), directories.len());
+
+    let files = entries
+        .iter()
+        .filter(|entry| entry.kind == FileEntryKind::File.as_db_str())
+        .collect::<Vec<_>>();
+    let expected_paths = [
+        "/concurrent/shared/two.log",
+        r"C:\destination\posix.log",
+        "/concurrent/destination/windows.log",
+    ]
+    .into_iter()
+    .map(str::to_string)
+    .collect::<HashSet<_>>();
+    let actual_paths = files
+        .iter()
+        .map(|entry| entry.absolute_path.clone().unwrap())
+        .collect::<HashSet<_>>();
+    assert_eq!(files.len(), 3);
+    assert_eq!(actual_paths, expected_paths);
+    for file in files {
+        let parent = entries
+            .iter()
+            .find(|entry| {
+                entry.id == file.parent_id.unwrap()
+                    && entry.device_id == device_id
+                    && entry.kind == FileEntryKind::Directory.as_db_str()
+            })
+            .unwrap();
+        assert_eq!(
+            file.hierarchy_path,
+            format!("{}.{}", parent.hierarchy_path, uuid_label(file.id)),
+        );
+        let root_label = file.hierarchy_path.split('.').next().unwrap();
+        let root = roots
+            .iter()
+            .find(|entry| entry.hierarchy_path == root_label)
+            .unwrap();
+        assert_eq!(file.path_syntax, root.path_syntax);
+        assert!(file.absolute_path.is_some());
+    }
+
+    assert_ne!(first.file.file_id, second.file.file_id);
 }

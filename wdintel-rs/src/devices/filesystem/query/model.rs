@@ -4,7 +4,7 @@ use crate::devices::filesystem::{
 };
 use crate::file_registry::entities::file_entry;
 
-pub(super) fn map_root_model(
+pub(in crate::devices::filesystem) fn map_root_model(
     entry: file_entry::Model,
 ) -> Result<RootEntry, FilesystemError> {
     ensure_directory_kind(&entry, "root_non_directory_entry")?;
@@ -29,7 +29,7 @@ pub(super) fn map_root_model(
     })
 }
 
-pub(super) fn map_directory_model(
+pub(in crate::devices::filesystem) fn map_directory_model(
     entry: file_entry::Model,
 ) -> Result<DirectoryEntry, FilesystemError> {
     ensure_directory_kind(&entry, "directory_non_directory_entry")?;
@@ -63,7 +63,7 @@ pub(super) fn map_directory_model(
     })
 }
 
-pub(super) fn map_file_model(
+pub(in crate::devices::filesystem) fn map_file_model(
     entry: file_entry::Model,
 ) -> Result<FileEntry, FilesystemError> {
     if FileEntryKind::try_from(entry.kind.as_str())? != FileEntryKind::File {

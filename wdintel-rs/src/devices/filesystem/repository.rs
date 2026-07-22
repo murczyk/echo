@@ -1,10 +1,13 @@
 use super::{
-    query, Breadcrumb, DirectoryScope, EntryQueryScope, EntrySortKey,
-    FileEntry, FileSearchFilters, FilesystemError, KeysetPage,
-    KeysetPageRequest, OffsetPage, OffsetPageRequest, RootEntry, SearchEntry,
-    TreeEntry,
+    mutation, query, Breadcrumb, DirectoryScope, EntryQueryScope, EntrySortKey,
+    FileEntry, FileMutationResult, FileSearchFilters, FilesystemError,
+    KeysetPage, KeysetPageRequest, OffsetPage, OffsetPageRequest,
+    PreparedFileMutation, RootEntry, SearchEntry, TreeEntry,
 };
 use crate::file_registry::FileRegistryDb;
+use crate::h;
+use crate::types::ShortContext;
+use sea_orm::TransactionTrait;
 use uuid::Uuid;
 
 pub(in crate::devices) struct FilesystemRepository<'db> {
@@ -16,6 +19,38 @@ impl<'db> FilesystemRepository<'db> {
         file_registry_db: &'db FileRegistryDb,
     ) -> Self {
         Self { file_registry_db }
+    }
+
+    #[allow(dead_code)]
+    pub(in crate::devices) async fn mutate_file(
+        &self,
+        mutation: &PreparedFileMutation,
+    ) -> Result<FileMutationResult, FilesystemError> {
+        let transaction = self
+            .file_registry_db
+            .connection()
+            .begin()
+            .await
+            .c(h!())
+            .map_err(FilesystemError::Internal)?;
+        let result = match mutation::mutate_file(&transaction, mutation).await {
+            Ok(result) => result,
+            Err(error) => {
+                transaction
+                    .rollback()
+                    .await
+                    .c(h!())
+                    .map_err(FilesystemError::Internal)?;
+                return Err(error);
+            }
+        };
+
+        transaction
+            .commit()
+            .await
+            .c(h!())
+            .map_err(FilesystemError::CommitUncertain)?;
+        Ok(result)
     }
 
     pub(in crate::devices) async fn list_files_offset(

@@ -2,6 +2,7 @@ mod cursor;
 mod error;
 mod ltree;
 mod metadata;
+mod mutation;
 mod path;
 mod query;
 mod repository;
@@ -30,15 +31,16 @@ pub(in crate::devices) use service::FileMetadataService;
 #[allow(unused_imports)]
 pub(in crate::devices) use types::{
     Breadcrumb, BrowseFilesCommand, BrowseFilesResult, DirectoryEntry,
-    DirectoryScope, EntryQueryScope, EntrySortKey, FileSearchFilters,
-    KeysetPage, KeysetPageRequest, NormalizedFileMetadata, ParsedSourcePath,
-    RawFileSearchFilters, RootEntry, RootSortKey, SearchEntry,
-    SearchFilesCommand, SearchFilesResult, SyncFileItemCommand,
+    DirectoryScope, EntryQueryScope, EntrySortKey, FileMutationResult,
+    FileSearchFilters, KeysetPage, KeysetPageRequest, NormalizedFileMetadata,
+    ParsedSourcePath, RawFileSearchFilters, RootEntry, RootSortKey,
+    SearchEntry, SearchFilesCommand, SearchFilesResult, SyncFileItemCommand,
     SyncFileItemOutcome, SyncFileItemResult, SyncFileOperation,
     SyncFileRejectionKind, TreeEntry,
 };
 pub(in crate::devices) use types::{
     FileEntry, FileEntryKind, OffsetPage, OffsetPageRequest, PathSyntax,
+    PreparedFileMutation,
 };
 
 #[cfg(test)]
