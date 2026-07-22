@@ -510,6 +510,18 @@ pub async fn account_options(
         .collect())
 }
 
+pub async fn ensure_schema(db: &DatabaseConnection) -> Result<()> {
+    db.execute_unprepared(
+        "
+        alter table echo_automation
+            drop constraint if exists echo_automation_tokens_chk;
+        ",
+    )
+    .await
+    .c(h!())?;
+    Ok(())
+}
+
 pub async fn create(
     db: &DatabaseConnection,
     req: SaveAutomationReq,

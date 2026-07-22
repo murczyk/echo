@@ -918,6 +918,46 @@ describe('MessageCard', () => {
     expect(view.container.querySelector('button[aria-label="Відкрити мапу"]')).toBeNull();
   });
 
+  it.each([
+    ['classic', '/rer-analysis', true],
+    ['neo', '/rer-analysis-neo', false],
+  ] as const)(
+    'builds %s duty analysis menu links',
+    async (analysisDestination, pathname, legacy) => {
+      const view = await renderCard({
+        analysisDestination,
+        msg: buildMessage({ messageUid: 'message-uid-1', pointTokens: [] }),
+      });
+      rendered.push(view);
+
+      const navigateButton = view.container.querySelector<HTMLButtonElement>(
+        `button[aria-label="${NAVIGATE_TITLE}"]`,
+      );
+      if (navigateButton == null) throw new Error('Navigate button not found');
+      await click(navigateButton);
+
+      const links = Array.from(view.container.querySelectorAll<HTMLAnchorElement>('a')).filter(
+        (link) => link.pathname === pathname,
+      );
+      expect(links).toHaveLength(2);
+      const [mapUrl, analysisUrl] = links.map((link) => new URL(link.href));
+      expect(mapUrl.searchParams.get('state') != null).toBe(legacy);
+      expect(analysisUrl.searchParams.get('state') != null).toBe(legacy);
+      expect(mapUrl.searchParams.get('search')).toBe(legacy ? null : 'message-uid-1');
+      expect(analysisUrl.searchParams.get('search')).toBe(legacy ? null : 'message-uid-1');
+      expect(mapUrl.searchParams.get('freqs')).toBe(legacy ? null : '153.6250');
+      expect(analysisUrl.searchParams.get('freqs')).toBe(legacy ? null : '153.6250');
+      expect(mapUrl.searchParams.get('showMap')).toBe('true');
+      expect(analysisUrl.searchParams.get('showMap')).toBeNull();
+      expect(mapUrl.searchParams.get('fromDateTime')).toBe(
+        legacy ? null : analysisUrl.searchParams.get('fromDateTime'),
+      );
+      expect(mapUrl.searchParams.get('toDateTime')).toBe(
+        legacy ? null : analysisUrl.searchParams.get('toDateTime'),
+      );
+    },
+  );
+
   it('keeps deferred off-screen layout limited to analysis cards', async () => {
     const view = await renderCard({ displayMode: 'analysis' });
     rendered.push(view);

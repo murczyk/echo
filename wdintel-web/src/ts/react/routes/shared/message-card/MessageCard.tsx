@@ -27,6 +27,8 @@ import { APP_TIME_ZONE, isPresent, NO_DATA_LABEL } from '../../../utils/misc';
 import {
   buildClassicAnalysisHref,
   buildClassicAnalysisMapHrefWithSearch,
+  buildAnalysisHref,
+  buildAnalysisMapHrefWithSearch,
   buildVisibleExcludeMenuOptions,
   emptyFilter,
   getPointEtalonsFromMessage,
@@ -81,6 +83,7 @@ export type MessageCardProps = {
   feedCount?: number;
   /** Duty vs analysis: controls stacked action icon grid width (4 vs 3 columns). */
   displayMode?: MessageCardDisplayMode;
+  analysisDestination?: 'classic' | 'neo';
   /** Tag chips section visual density mode. */
   tagsLayout?: TagsLayoutVariant;
   tagsLoading?: boolean;
@@ -134,6 +137,7 @@ function MessageCardComponent({
   readOnly = false,
   feedCount = 1,
   displayMode = 'duty',
+  analysisDestination = 'classic',
   tagsLayout = 'full',
   tagsLoading = false,
   referenceTimeMs,
@@ -214,10 +218,14 @@ function MessageCardComponent({
     () =>
       displayMode === 'duty'
         ? pointEtalons.length > 0
-          ? buildClassicAnalysisMapHrefWithSearch(pointEtalons, msg)
-          : buildClassicAnalysisHref(msg, true)
+          ? analysisDestination === 'neo'
+            ? buildAnalysisMapHrefWithSearch(pointEtalons, msg)
+            : buildClassicAnalysisMapHrefWithSearch(pointEtalons, msg)
+          : analysisDestination === 'neo'
+            ? buildAnalysisHref(msg, true)
+            : buildClassicAnalysisHref(msg, true)
         : undefined,
-    [displayMode, pointEtalons, msg],
+    [analysisDestination, displayMode, pointEtalons, msg],
   );
   const watermarkUserName = authUserName?.trim() ?? '';
   const timeDistance =
@@ -253,8 +261,13 @@ function MessageCardComponent({
     );
 
   const analysisHref = useMemo(
-    () => (displayMode === 'duty' ? buildClassicAnalysisHref(msg, false) : undefined),
-    [displayMode, msg],
+    () =>
+      displayMode === 'duty'
+        ? analysisDestination === 'neo'
+          ? buildAnalysisHref(msg, false)
+          : buildClassicAnalysisHref(msg, false)
+        : undefined,
+    [analysisDestination, displayMode, msg],
   );
   const metadataTrigger =
     displayMode === 'analysis' && hasVisibleDmrMetadata(msg) ? (

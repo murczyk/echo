@@ -160,6 +160,7 @@ const DutyMessageCardItem = memo(function DutyMessageCardItem({
     <DutyMessageCard
       id={id}
       msg={msg}
+      analysisDestination="neo"
       feedCount={feedCount}
       tagsLayout={tagsLayout}
       botTagAction={botTagAction?.messageId === id ? botTagAction : null}
