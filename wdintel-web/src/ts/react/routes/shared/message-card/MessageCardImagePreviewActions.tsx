@@ -71,7 +71,7 @@ export function MessageCardImagePreviewControls({
         value={zoom}
         min={ZOOM_MIN}
         max={ZOOM_MAX}
-        step={ZOOM_STEP}
+        step={1}
         marks={ZOOM_MARKS.map((m) => ({ value: m.value }))}
         aria-label="Масштаб"
         onChange={(_, value) => {

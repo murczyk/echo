@@ -3230,7 +3230,7 @@ describe('MessageCard', () => {
       dialog
         ?.querySelector('img[data-image-preview-image]')
         ?.getAttribute('data-image-preview-zoom'),
-    ).toBe('125');
+    ).toBeCloseTo(100 * Math.exp(120 * 0.0015), 6);
     expect(dialog?.querySelector('[data-image-preview-nav="prev"]')).not.toBeNull();
     expect(dialog?.querySelector('[data-image-preview-nav="next"]')).not.toBeNull();
 

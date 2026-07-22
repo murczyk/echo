@@ -448,7 +448,56 @@ describe('MessageImagePreviewDialog', () => {
       stage.dispatchEvent(new WheelEvent('wheel', { deltaY: -1, bubbles: true }));
     });
 
-    expect(stage.getAttribute('data-zoom')).toBe('125');
+    expect(Number(stage.getAttribute('data-zoom'))).toBeCloseTo(100.1501, 3);
+    root.unmount();
+  });
+
+  it('preserves the image point under an off-centre wheel cursor', async () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <MessageImagePreviewDialog
+          imageHrefs={[{ href: 'https://example.test/image.png' } as never]}
+          open
+          onClose={vi.fn()}
+          onIndexChange={vi.fn()}
+        />,
+      );
+    });
+
+    await act(async () => {
+      latestStageProps?.onImageLoad(loadedImage);
+      await Promise.resolve();
+    });
+
+    const stage = document.body.querySelector('[data-stage]') as HTMLDivElement;
+    Object.defineProperties(stage, {
+      clientWidth: { configurable: true, value: 800 },
+      clientHeight: { configurable: true, value: 400 },
+    });
+    stage.getBoundingClientRect = () =>
+      ({ left: 100, top: 100, width: 800, height: 400 }) as DOMRect;
+
+    await act(async () => {
+      latestControlsProps?.onSetPreviewZoom(200);
+    });
+
+    await act(async () => {
+      const wheelEvent = new WheelEvent('wheel', { bubbles: true, deltaY: -10 });
+      Object.defineProperties(wheelEvent, {
+        clientX: { value: 600 },
+        clientY: { value: 300 },
+      });
+      stage.dispatchEvent(wheelEvent);
+    });
+
+    const nextZoom = 200 * Math.exp(10 * 0.0015);
+    expect(latestStageProps?.zoom).toBeCloseTo(nextZoom, 8);
+    expect(latestStageProps?.pan.x).toBeCloseTo(100 - (nextZoom / 200) * 100, 8);
+    expect(latestStageProps?.pan.y).toBe(0);
     root.unmount();
   });
 
