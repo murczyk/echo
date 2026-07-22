@@ -139,7 +139,9 @@ pub async fn upsert_signal_groups(
                     rec.name = Set(Some(name));
                 }
                 rec.ignore_operativny = Set(new_group.ignore_operativny);
-                rec.is_secret = Set(new_group.is_secret);
+                if new_group.is_secret {
+                    rec.is_secret = Set(true);
+                }
                 if let Err(e) = rec.update(db).await.context(h!()) {
                     error!(
                         "failed to update group {source_master_key} : {:?}",
@@ -530,7 +532,8 @@ async fn load_existing_imported_messages(
 mod tests {
     use super::*;
     use crate::functest::tests::{
-        cleanup, mk_datasource, mk_datasource_group, mk_signal_message,
+        cleanup, mk_datasource, mk_datasource_group, mk_login, mk_organism,
+        mk_signal_group, mk_signal_message,
     };
     use serial_test::serial;
 
@@ -575,5 +578,101 @@ mod tests {
                 .unwrap();
 
         assert!(existing.is_empty());
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn importing_existing_group_preserves_secret_access() {
+        let env = cleanup().await.unwrap();
+        let datasource = mk_datasource(
+            &env.dbx,
+            datasource::ActiveModel {
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let group = mk_signal_group(
+            &env.dbx,
+            signal_group::ActiveModel {
+                datasource_id: Set(Some(datasource.id)),
+                is_secret: Set(true),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let login = mk_login(
+            &env.dbx,
+            login::ActiveModel {
+                login: Set("import-secret-user".to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let organism = mk_organism(
+            &env.dbx,
+            organism::ActiveModel {
+                name: Set("import-secret-organism".to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let txn = env.dbx.begin().await.unwrap();
+        crate::sigint::zone::bl::update_signal_group_access_and_admins(
+            vec![login.login],
+            vec![organism.id],
+            vec![],
+            true,
+            &group.master_key,
+            &txn,
+        )
+        .await
+        .unwrap();
+        txn.commit().await.unwrap();
+
+        let access = secret_group_access(&env.dbx, &group.master_key).await;
+        let mut imported_group = group.clone();
+        imported_group.is_secret = false;
+
+        upsert_signal_groups(&env.dbx, vec![imported_group], datasource.id)
+            .await
+            .unwrap();
+
+        assert_eq!(
+            secret_group_access(&env.dbx, &group.master_key).await,
+            access
+        );
+    }
+
+    async fn secret_group_access(
+        db: &DatabaseConnection,
+        master_key: &str,
+    ) -> (bool, Vec<String>, Vec<i64>) {
+        let group = signal_group::Entity::find_by_id(master_key.to_string())
+            .one(db)
+            .await
+            .unwrap()
+            .unwrap();
+        let users = crate::sigint::zone::bl::collect_direct_secret_group_users(
+            vec![master_key.to_string()],
+            db,
+        )
+        .await
+        .unwrap()
+        .remove(master_key)
+        .unwrap_or_default();
+        let organisms =
+            crate::sigint::zone::bl::collect_secret_group_organism_ids(
+                vec![master_key.to_string()],
+                db,
+            )
+            .await
+            .unwrap()
+            .remove(master_key)
+            .unwrap_or_default();
+        (group.is_secret, users, organisms)
     }
 }

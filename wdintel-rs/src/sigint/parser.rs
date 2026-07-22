@@ -232,7 +232,7 @@ pub fn extract_text_without_top_comment(
     let lines = normalized_body_lines(body);
     let lines: Vec<&str> = lines.iter().map(String::as_str).collect();
     let mut excluded_lines = top_comment_line_indices(&lines);
-    excluded_lines.extend(pre_datetime_location_header_line_indices(&lines));
+    excluded_lines.extend(pre_datetime_context_line_indices(&lines));
     crate::rer_importer::body_noheader::extract_text_excluding_lines(
         body,
         &excluded_lines,
@@ -354,15 +354,18 @@ fn top_comment_line_indices(lines: &[&str]) -> BTreeSet<usize> {
         .unwrap_or_default()
 }
 
-fn pre_datetime_location_header_line_indices(
-    lines: &[&str],
-) -> BTreeSet<usize> {
+fn pre_datetime_context_line_indices(lines: &[&str]) -> BTreeSet<usize> {
     let Some(anchor) = lines.iter().position(|l| is_datetime_header_line(l))
     else {
         return BTreeSet::new();
     };
-    (0..anchor)
-        .filter(|idx| is_pre_datetime_location_header_line(lines, *idx, anchor))
+
+    lines[..anchor]
+        .iter()
+        .enumerate()
+        .filter_map(|(i, _l)| {
+            is_pre_datetime_location_header_line(lines, i, anchor).then_some(i)
+        })
         .collect()
 }
 
@@ -977,6 +980,27 @@ mod tests {
             .collect();
 
         assert_eq!(parsed_comments, Vec::<(&str, ParsedComments)>::new());
+    }
+
+    #[test]
+    fn new_inter_csv_location_context_is_not_message_body() {
+        let body = r#"🤿УКХ р/м управління 1 мсб 423 мсп 4 тд 1 ТА
+145.799 МГц
+АНДРІЇВКА - ЛОЗОВА - БОРІВСЬКА АНДРІЇВКА
+16.07.2026 15:08:46
+
+Отримувач: НВ
+Відправник: НВ
+
+1. Це службова перевірка.
+2. Прийняв."#;
+
+        let comments = parse_comments(body);
+        assert!(comments.is_empty());
+
+        let res = extract_text_without_top_comment(body).unwrap();
+        assert!(!res.body.contains("АНДРІЇВКА"));
+        assert!(res.body.contains("1. Це службова перевірка."));
     }
 
     #[test]

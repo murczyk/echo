@@ -80,6 +80,7 @@ impl Default for SettlementsDataConfig {
             vec![],
             crate::location::trie::Trie::new(),
             BTreeMap::new(),
+            BTreeMap::new(),
         ));
         Self {
             aor_id_to_settlements_data: HashMap::new(),

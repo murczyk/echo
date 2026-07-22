@@ -1,6 +1,5 @@
 use crate::config::{
-    ORGANISM_GOI_INTEGRATION_TYPE_FULL, ORGANISM_GOI_PATH_DEFAULT,
-    ORGANISM_GOI_SSH_PORT_DEFAULT, PALITRA_ALLOWED_UPLOAD_EXTENSIONS,
+    ORGANISM_GOI_INTEGRATION_TYPE_FULL, PALITRA_ALLOWED_UPLOAD_EXTENSIONS,
     PALITRA_BLOCKED_UNSTABLE_UPLOAD_EXTENSIONS,
     PALITRA_CONVERSION_JOB_STATUS_PENDING, PALITRA_CONVERSION_STATUS_ERROR,
     PALITRA_CONVERSION_STATUS_PROCESSING, PALITRA_CONVERSION_STATUS_READY,
@@ -11,8 +10,7 @@ use crate::config::{
 use crate::entities::*;
 use crate::error::AppError;
 use crate::h;
-use crate::organism::goi::shared::goi_integration_web_host;
-use crate::organism::types::CheckOrganismGoiConnectionReq;
+use crate::organism::goi::goi_api::GoiApiTarget;
 use crate::palitra::bl::{
     palitra_search_cache_key, palitra_suggest_cache_key, read_cached_json,
     write_cached_json,
@@ -20,7 +18,6 @@ use crate::palitra::bl::{
 use crate::palitra::types::*;
 use crate::types::*;
 use crate::utils::multipart;
-use crate::utils::string::normalize_trimmed_or_default;
 use actix_multipart::{Field, Multipart};
 use actix_web::post;
 use actix_web::web::{Data, Json};
@@ -28,7 +25,7 @@ use actix_web::HttpResponse;
 use anyhow::{bail, Context};
 use chrono::{NaiveDateTime, Utc};
 use futures_util::StreamExt;
-use itertools::Itertools;
+use itertools::{Either, Itertools};
 use sea_orm::prelude::Expr;
 use sea_orm::*;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
@@ -69,7 +66,7 @@ struct UserScope {
 
 struct ConnectedGoiTarget {
     integration_id: i64,
-    req: CheckOrganismGoiConnectionReq,
+    api: GoiApiTarget,
     disable_goi_to_echo_palitra_sync: bool,
 }
 
@@ -1463,80 +1460,35 @@ pub async fn download_palitras(
     let mut total_bytes = 0u64;
 
     for (palitra, geometry) in palitras {
-        let Some(s3_id) = palitra.s3_id.as_deref() else {
-            continue;
-        };
-        let Some(encrypted_file_bytes) =
-            crate::storage::stat_s3_object_size_with_operator(
-                &env.s3,
-                &env.s3_config,
-                s3_id,
-            )
-            .await
-            .c(h!())?
-        else {
-            continue;
-        };
-        if encrypted_file_bytes > crate::config::PALITRA_DOWNLOAD_MAX_FILE_BYTES
-        {
-            return Err(AppError::BL {
-                msg: format!(
-                    "Palitra file is too large to download in one request: palitra_id={}, bytes={}, max={}",
-                    palitra.id,
-                    encrypted_file_bytes,
-                    crate::config::PALITRA_DOWNLOAD_MAX_FILE_BYTES
-                ),
-            });
-        }
-        total_encrypted_bytes =
-            total_encrypted_bytes.saturating_add(encrypted_file_bytes);
-        if total_encrypted_bytes
-            > crate::config::PALITRA_DOWNLOAD_MAX_TOTAL_BYTES
-        {
-            return Err(AppError::BL {
-                msg: format!(
-                    "Requested palitra download is too large: bytes={}, max={}",
-                    total_encrypted_bytes,
-                    crate::config::PALITRA_DOWNLOAD_MAX_TOTAL_BYTES
-                ),
-            });
-        }
-        let bytes = crate::storage::download_and_decrypt_from_s3_with_operator(
-            &env.s3,
-            &env.s3_config,
+        let stored_bytes = download_stored_palitra_bytes(
+            &env,
             &strongbox_key,
-            s3_id,
+            &palitra,
+            &mut total_encrypted_bytes,
         )
-        .await
-        .c(h!())?;
-        if bytes.is_empty() {
-            continue;
-        }
+        .await?;
+        let is_generated = stored_bytes.is_none();
+        let bytes = match stored_bytes {
+            Some(bytes) => bytes,
+            None => {
+                let palitra_read = bl::render_palitra_v2(
+                    Either::Left(palitra.clone()),
+                    &env.dbx,
+                )
+                .await
+                .c(h!())?;
+                download::build_geometry_palitra_kmz_bytes(&palitra_read)?
+            }
+        };
         let file_bytes = bytes.len() as u64;
-        if file_bytes > crate::config::PALITRA_DOWNLOAD_MAX_FILE_BYTES {
-            return Err(AppError::BL {
-                msg: format!(
-                    "Palitra file is too large to download in one request: palitra_id={}, bytes={}, max={}",
-                    palitra.id,
-                    file_bytes,
-                    crate::config::PALITRA_DOWNLOAD_MAX_FILE_BYTES
-                ),
-            });
+        add_palitra_download_bytes(palitra.id, file_bytes, &mut total_bytes)?;
+        let mut file_name =
+            bl::build_palitra_download_file_name(&palitra, geometry.as_ref());
+        if is_generated {
+            file_name = download::force_kmz_extension(&file_name);
         }
-        total_bytes = total_bytes.saturating_add(file_bytes);
-        if total_bytes > crate::config::PALITRA_DOWNLOAD_MAX_TOTAL_BYTES {
-            return Err(AppError::BL {
-                msg: format!(
-                    "Requested palitra download is too large: bytes={}, max={}",
-                    total_bytes,
-                    crate::config::PALITRA_DOWNLOAD_MAX_TOTAL_BYTES
-                ),
-            });
-        }
-        let file_name = ensure_unique_zip_entry_name(
-            &mut used_file_names,
-            bl::build_palitra_download_file_name(&palitra, geometry.as_ref()),
-        );
+        let file_name =
+            ensure_unique_zip_entry_name(&mut used_file_names, file_name);
         zip.start_file(file_name, options.clone()).c(h!())?;
         zip.write_all(&bytes).c(h!())?;
     }
@@ -1555,6 +1507,68 @@ pub async fn download_palitras(
         ))
         .insert_header(("Content-Length", zip_size.to_string()))
         .streaming(stream))
+}
+
+async fn download_stored_palitra_bytes(
+    env: &Data<Env>,
+    strongbox_key: &str,
+    palitra: &palitra::Model,
+    total_encrypted_bytes: &mut u64,
+) -> Result<Option<Vec<u8>>, AppError> {
+    let Some(s3_id) = palitra.s3_id.as_deref() else {
+        return Ok(None);
+    };
+    let Some(encrypted_file_bytes) =
+        crate::storage::stat_s3_object_size_with_operator(
+            &env.s3,
+            &env.s3_config,
+            s3_id,
+        )
+        .await
+        .c(h!())?
+    else {
+        return Ok(None);
+    };
+    add_palitra_download_bytes(
+        palitra.id,
+        encrypted_file_bytes,
+        total_encrypted_bytes,
+    )?;
+    let bytes = crate::storage::download_and_decrypt_from_s3_with_operator(
+        &env.s3,
+        &env.s3_config,
+        strongbox_key,
+        s3_id,
+    )
+    .await
+    .c(h!())?;
+    Ok((!bytes.is_empty()).then_some(bytes))
+}
+
+fn add_palitra_download_bytes(
+    palitra_id: i64,
+    file_bytes: u64,
+    total_bytes: &mut u64,
+) -> Result<(), AppError> {
+    if file_bytes > crate::config::PALITRA_DOWNLOAD_MAX_FILE_BYTES {
+        return Err(AppError::BL {
+            msg: format!(
+                "Palitra file is too large to download in one request: palitra_id={palitra_id}, bytes={file_bytes}, max={}",
+                crate::config::PALITRA_DOWNLOAD_MAX_FILE_BYTES
+            ),
+        });
+    }
+    *total_bytes = total_bytes.saturating_add(file_bytes);
+    if *total_bytes > crate::config::PALITRA_DOWNLOAD_MAX_TOTAL_BYTES {
+        return Err(AppError::BL {
+            msg: format!(
+                "Requested palitra download is too large: bytes={}, max={}",
+                *total_bytes,
+                crate::config::PALITRA_DOWNLOAD_MAX_TOTAL_BYTES
+            ),
+        });
+    }
+    Ok(())
 }
 
 #[post("/api/palitra/update/{palitra_id}")]
@@ -2602,19 +2616,16 @@ pub(crate) async fn schedule_palitra_goi_delete(
     Ok(())
 }
 
-async fn sync_move_palitra_files_to_connected_organisms<'a, C>(
-    dbx: &'a C,
+async fn sync_move_palitra_files_to_connected_organisms(
+    env: &Env,
     sync_items: &[bl::PalitraFolderSyncItem],
-) -> anyhow::Result<()>
-where
-    C: ConnectionTrait + 'a,
-{
+) -> anyhow::Result<()> {
     let mut palitra_ids = std::collections::BTreeSet::new();
     for item in sync_items {
         palitra_ids.insert(item.palitra_id);
     }
     let mut tasks_by_target: BTreeMap<
-        String,
+        i64,
         (ConnectedGoiTarget, Vec<GoiMoveTask>),
     > = BTreeMap::new();
     for palitra_id in palitra_ids {
@@ -2624,14 +2635,14 @@ where
             .map(|item| item.source_folder.clone().unwrap_or_default());
         let Some(palitra) = palitra::Entity::find_by_id(palitra_id)
             .filter(palitra::Column::Deleted.eq(false))
-            .one(dbx)
+            .one(&env.dbx)
             .await
             .c(h!())?
         else {
             continue;
         };
         let geometry = match read_latest_palitra_geometry_with_warning(
-            dbx, palitra.id,
+            &env.dbx, palitra.id,
         )
         .await
         {
@@ -2647,7 +2658,7 @@ where
         let Some(source_file_name) = geometry.source_file_name else {
             continue;
         };
-        let access = read_palitra_access(dbx, palitra.id).await.c(h!())?;
+        let access = read_palitra_access(&env.dbx, palitra.id).await.c(h!())?;
         let PalitraAccess::ByOrganisms { organism_ids } = &access else {
             continue;
         };
@@ -2661,22 +2672,16 @@ where
         let target_file_name = source_file_names.first().cloned().c(h!())?;
         let tracked_relative_paths_by_integration =
             read_tracked_goi_palitra_relative_paths_by_integration(
-                dbx, palitra.id,
+                &env.dbx, palitra.id,
             )
             .await
             .c(h!())?;
         let goi_targets =
-            collect_connected_goi_targets(dbx, organism_ids.as_slice())
+            collect_connected_goi_targets(env, organism_ids.as_slice())
                 .await
                 .c(h!())?;
         for target in goi_targets {
-            let target_key = format!(
-                "{}|{}|{}|{}",
-                target.req.ssh_host,
-                target.req.ssh_user,
-                target.req.ssh_port,
-                target.req.path
-            );
+            let target_key = target.integration_id;
             let tracked_relative_paths = tracked_relative_paths_by_integration
                 .get(&target.integration_id)
                 .map(Vec::as_slice)
@@ -2718,39 +2723,29 @@ where
     for (_, (target, tasks)) in tasks_by_target {
         if target.disable_goi_to_echo_palitra_sync {
             if let Err(err) =
-                move_palitra_files_to_goi_target(dbx, &target, tasks).await
+                move_palitra_files_to_goi_target(&env.dbx, &target, tasks).await
             {
-                errors.push(format!(
-                    "{}:{} {err:#}",
-                    target.req.ssh_host, target.req.ssh_port
-                ));
+                errors.push(format!("{} {err:#}", target.api.label()));
             }
             continue;
         }
-        let Some(lock) =
-            crate::organism::goi::goi_try_acquire_sync_lock(target.req.clone())
-                .await
-                .c(h!())?
+        let Some(lock) = target.api.try_acquire_sync_lock().await.c(h!())?
         else {
             errors.push(format!(
-                "{}:{} sync lock is held by another worker",
-                target.req.ssh_host, target.req.ssh_port
+                "{} sync lock is held by another worker",
+                target.api.label()
             ));
             continue;
         };
         let sync_result = async {
-            let mut entries = crate::organism::goi::goi_list_relative_files(
-                target.req.clone(),
-            )
-            .await
-            .c(h!())?;
+            let mut entries = target.api.list_palette_files().await.c(h!())?;
             lock.refresh().await.c(h!())?;
 
             for task in tasks {
                 let tracking_update = goi_move_task_tracking_update(&task);
                 let palitra_id = task.palitra_id;
                 crate::organism::goi::goi_move_file_to_folder_with_entries(
-                    target.req.clone(),
+                    target.api.clone(),
                     task.source_file_names,
                     task.target_file_name,
                     task.target_folder,
@@ -2763,7 +2758,7 @@ where
                     tracking_update
                 {
                     update_tracked_goi_move_path(
-                        dbx,
+                        &env.dbx,
                         target.integration_id,
                         palitra_id,
                         &source_relative_path,
@@ -2777,15 +2772,12 @@ where
             Ok::<(), anyhow::Error>(())
         }
         .await;
-        let lock_target = lock.target();
+        let lock_target = lock.target().to_string();
         if let Err(err) = lock.release().await {
             warn!("Failed to release GOI sync lock for {lock_target}: {err:#}");
         }
         if let Err(err) = sync_result {
-            errors.push(format!(
-                "{}:{} {err:#}",
-                target.req.ssh_host, target.req.ssh_port
-            ));
+            errors.push(format!("{} {err:#}", target.api.label()));
         }
     }
     if errors.is_empty() {
@@ -2799,16 +2791,13 @@ async fn move_palitra_files_to_goi_target(
     target: &ConnectedGoiTarget,
     tasks: Vec<GoiMoveTask>,
 ) -> anyhow::Result<()> {
-    let mut entries =
-        crate::organism::goi::goi_list_relative_files(target.req.clone())
-            .await
-            .c(h!())?;
+    let mut entries = target.api.list_palette_files().await.c(h!())?;
 
     for task in tasks {
         let tracking_update = goi_move_task_tracking_update(&task);
         let palitra_id = task.palitra_id;
         crate::organism::goi::goi_move_file_to_folder_with_entries(
-            target.req.clone(),
+            target.api.clone(),
             task.source_file_names,
             task.target_file_name,
             task.target_folder,
@@ -3016,13 +3005,10 @@ fn compose_goi_relative_path(
     }
 }
 
-async fn collect_connected_goi_targets<'a, C>(
-    dbx: &'a C,
+async fn collect_connected_goi_targets(
+    env: &Env,
     organism_ids: &[i64],
-) -> anyhow::Result<Vec<ConnectedGoiTarget>>
-where
-    C: ConnectionTrait + 'a,
-{
+) -> anyhow::Result<Vec<ConnectedGoiTarget>> {
     if organism_ids.is_empty() {
         return Ok(vec![]);
     }
@@ -3036,61 +3022,24 @@ where
             goi_integration::Column::IntegrationType
                 .eq(ORGANISM_GOI_INTEGRATION_TYPE_FULL),
         )
-        .all(dbx)
+        .all(&env.dbx)
         .await
         .c(h!())?;
 
     let mut goi_targets = Vec::with_capacity(integrations.len());
     for integration in integrations {
         let integration_id = integration.id;
-        let ssh_host = integration
-            .ssh_host
-            .as_ref()
-            .map(|value| value.trim())
-            .filter(|value| !value.is_empty())
-            .map(str::to_string);
-        let ssh_user = integration
-            .ssh_user
-            .as_ref()
-            .map(|value| value.trim())
-            .filter(|value| !value.is_empty())
-            .map(str::to_string);
-
-        let Some(ssh_host) = ssh_host else { continue };
-        let Some(ssh_user) = ssh_user else { continue };
-
-        let path = normalize_trimmed_or_default(
-            integration.path.clone(),
-            ORGANISM_GOI_PATH_DEFAULT,
-        );
-        if path.trim().is_empty() {
-            continue;
-        }
-
-        let ssh_port = if integration.ssh_port > 0 {
-            integration.ssh_port
-        } else {
-            ORGANISM_GOI_SSH_PORT_DEFAULT
-        };
-
-        let req = CheckOrganismGoiConnectionReq {
-            ssh_host,
-            ssh_user,
-            ssh_port,
-            path,
-        };
-        match goi_validate_connection_req(&req) {
-            Ok(()) => goi_targets.push(ConnectedGoiTarget {
+        match GoiApiTarget::from_integration(env.rq.clone(), &integration) {
+            Ok(api) => goi_targets.push(ConnectedGoiTarget {
                 integration_id,
-                req,
+                api,
                 disable_goi_to_echo_palitra_sync: integration
                     .disable_goi_to_echo_palitra_sync,
             }),
             Err(err) => {
                 warn!(
                     "Skipping GOI sync target for integration {} ({}): {err:#}",
-                    integration_id,
-                    goi_integration_web_host(&integration).unwrap_or_default()
+                    integration_id, integration.server_label
                 );
             }
         }
@@ -3199,19 +3148,6 @@ fn palitra_goi_remote_file_names(
     file_names
 }
 
-fn compose_goi_palette_remote_path(path: &str, file_name: &str) -> String {
-    let trimmed_path = path.trim().trim_end_matches('/');
-    let trimmed_file = file_name.trim().trim_start_matches('/');
-    if trimmed_file.is_empty() {
-        return trimmed_path.to_string();
-    }
-    if trimmed_path.is_empty() {
-        format!("/{trimmed_file}")
-    } else {
-        format!("{trimmed_path}/{trimmed_file}")
-    }
-}
-
 fn ensure_unique_zip_entry_name(
     used_file_names: &mut HashSet<String>,
     file_name: String,
@@ -3239,24 +3175,6 @@ fn ensure_unique_zip_entry_name(
         }
     }
     unreachable!("zip entry deduplication loop must terminate");
-}
-
-fn goi_validate_connection_req(
-    req: &CheckOrganismGoiConnectionReq,
-) -> anyhow::Result<()> {
-    if req.ssh_host.trim().is_empty() {
-        bail!("SSH host is required");
-    }
-    if req.ssh_user.trim().is_empty() {
-        bail!("SSH user is required");
-    }
-    if req.path.trim().is_empty() {
-        bail!("GOI path is required");
-    }
-    if !(1..=65535).contains(&req.ssh_port) {
-        bail!("invalid SSH port: {}", req.ssh_port);
-    }
-    Ok(())
 }
 
 #[cfg(test)]

@@ -2319,7 +2319,7 @@ where
     })
 }
 
-async fn render_palitra_v2<'a, 'async_trait, C>(
+pub(super) async fn render_palitra_v2<'a, 'async_trait, C>(
     e_palitra_model: Either<palitra::Model, i64>,
     dbx: &'a C,
 ) -> anyhow::Result<PalitraReadV2>

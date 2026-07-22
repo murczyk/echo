@@ -58,6 +58,12 @@ export function isNetworkCallsignSourceRequired(
   return !form.developing;
 }
 
+export function isNetworkCallsignUnitRequired(
+  form: Pick<NetworkCallsignDrawerForm, 'developing'>,
+): boolean {
+  return !form.developing;
+}
+
 export function createNetworkCallsignDrawerForm(
   networkId: number,
   networkCallsign: NetworkCallsignRowView,
@@ -95,6 +101,8 @@ export function getNetworkCallsignDrawerSaveError(
   if (callsign === '') return 'Позивний є обовʼязковим';
   if (isNetworkCallsignSourceRequired(form) && form.sourceId === null)
     return 'Джерело є обовʼязковим';
+  if (isNetworkCallsignUnitRequired(form) && form.unitId === null)
+    return 'Підрозділ є обовʼязковим';
   if (form.sourceId === NetworkCallsignSourceId.RO && form.radioFreq.trim() === '') {
     return 'Для джерела "РО" частота є обовʼязковою';
   }

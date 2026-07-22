@@ -239,18 +239,16 @@ pub async fn link(
     wait_for_signal_client(messenger.kind, messenger.signal_port)
         .await
         .c(h!())?;
-    let txn = db.begin().await.c(h!())?;
-    persist_is_linked(&txn, &client_name, messenger.kind, false)
+    persist_is_linked(db, &client_name, messenger.kind, false)
         .await
         .c(h!())?;
     let qr_code_base64 = echo_im::link_account(
         &client_name,
         messenger.kind.message_source(),
-        &txn,
+        db,
     )
     .await
     .c(h!())?;
-    txn.commit().await.c(h!())?;
     Ok(QrRsp { qr_code_base64 })
 }
 

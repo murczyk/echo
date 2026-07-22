@@ -174,14 +174,14 @@ pub async fn zones_datasources_group_add(
     .await
     .c(h!())?;
 
-    bl_zones_datasources_group_update_or_add(
+    let is_secret = bl_zones_datasources_group_add(
         req.user_logins.clone(),
         req.organism_ids.clone(),
         req.admin_logins.clone(),
         req.is_secret,
         req.short_note,
         req.long_note,
-        szd.clone(),
+        &szd,
         &txn,
     )
     .await
@@ -278,7 +278,7 @@ pub async fn zones_datasources_group_add(
         group_name,
         zone_datasource_group: ZoneDatasourceGroup {
             sigint_zone_datasource_id: szd.id,
-            is_group_secret: req.is_secret,
+            is_group_secret: is_secret,
             interseption_kind,
             disable_network_assignment,
             areas_of_responsibility,

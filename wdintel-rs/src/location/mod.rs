@@ -24,6 +24,7 @@ pub type SettlementsData = (
     Vec<String>,
     Trie<SettlementDetails>,
     BTreeMap<i32, SettlementDetails>,
+    BTreeMap<String, Vec<SettlementDetails>>,
 );
 
 #[post("/api/settlement/find")]
@@ -45,6 +46,56 @@ async fn find_locations(
     )
     .c(h!())?;
     Ok(Json(locations))
+}
+
+#[post("/api/settlement/find-prefix")]
+async fn find_locations_prefix(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<FindSettlementReq>,
+) -> Result<Json<Vec<SettlementDetails>>, AppError> {
+    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
+        .await
+        .c(h!())?;
+    let req = req.into_inner();
+    let locations = find_locations_by_prefix(
+        env.settlements.clone(),
+        req.query,
+        req.region,
+        req.related_coordinates,
+        req.aor_id,
+    )
+    .c(h!())?;
+
+    Ok(Json(locations))
+}
+
+fn find_locations_by_prefix(
+    settlements: Arc<RwLock<SettlementsDataConfig>>,
+    query: String,
+    m_region: Option<String>,
+    m_src_coords: Option<(f64, f64)>,
+    m_aor_id: Option<i64>,
+) -> anyhow::Result<Vec<SettlementDetails>> {
+    let query = query.trim().to_uppercase();
+    if query.is_empty() {
+        return Ok(vec![]);
+    }
+    let settlements_lock = settlements
+        .read()
+        .map_err(|e| AppError::from(format!("{e:?}")))
+        .c(h!())?;
+    let config = select_settlements_data(&settlements_lock, m_aor_id);
+    let (_, _, _, _, settlements_by_name) = config;
+    let mut locations = vec![];
+    for (name, settlements) in settlements_by_name.range(query.clone()..) {
+        if !name.starts_with(&query) {
+            break;
+        }
+        locations.extend(settlements.iter().cloned());
+    }
+    let locations = filter_locations_by_region(locations, m_region);
+    Ok(rank_locations_by_coordinates(locations, m_src_coords))
 }
 
 #[derive(Debug, Deserialize)]
@@ -95,7 +146,7 @@ fn get_region_names(
         .map_err(|e| AppError::from(format!("{e:?}")))
         .c(h!())?;
     let config = select_settlements_data(&settlements_lock, m_aor_id);
-    let (region_names, _, _, _) = config;
+    let (region_names, _, _, _, _) = config;
     Ok(region_names.clone())
 }
 
@@ -111,47 +162,54 @@ fn find_locations_by_name(
         .map_err(|e| AppError::from(format!("{e:?}")))
         .c(h!())?;
     let config = select_settlements_data(&settlements_lock, m_aor_id);
-    let (_, _, _, settlements) = config;
+    let (_, _, _, settlements, _) = config;
     let mut matches: Vec<SettlementDetails> = Vec::new();
     for s in settlements.values() {
         if s.name.contains(&query.to_uppercase()) {
             matches.push(s.clone());
         }
     }
+    let matches = filter_locations_by_region(matches, m_region);
+    Ok(rank_locations_by_coordinates(matches, m_src_coords))
+}
+
+fn filter_locations_by_region(
+    mut locations: Vec<SettlementDetails>,
+    m_region: Option<String>,
+) -> Vec<SettlementDetails> {
     if let Some(region) = m_region {
-        if !matches.is_empty() {
-            let mut filtered = vec![];
-            for m in matches {
-                if m.region.eq(&region) {
-                    filtered.push(m);
-                }
-            }
-            matches = filtered;
-        }
+        locations.retain(|location| location.region == region);
     }
+    locations
+}
+
+fn rank_locations_by_coordinates(
+    mut locations: Vec<SettlementDetails>,
+    m_src_coords: Option<(f64, f64)>,
+) -> Vec<SettlementDetails> {
     if let Some((lat, lon)) = m_src_coords {
-        if matches.len() > 1 {
+        if locations.len() > 1 {
             let mut new_result = vec![];
             let mut min_distance = -1.0;
-            for m in matches {
-                if let Some((lat_a, lon_a)) = m.coords {
+            for location in locations {
+                if let Some((lat_a, lon_a)) = location.coords {
                     let new_distance =
                         (lat - lat_a).abs() + (lon - lon_a).abs();
                     if min_distance < 0.0 || min_distance / new_distance > 5.0 {
                         min_distance = new_distance;
-                        new_result = vec![m];
+                        new_result = vec![location];
                     } else if new_distance < min_distance {
                         min_distance = new_distance;
-                        new_result.insert(0, m);
+                        new_result.insert(0, location);
                     } else {
-                        new_result.push(m);
+                        new_result.push(location);
                     }
                 }
             }
-            matches = new_result;
+            locations = new_result;
         }
     }
-    Ok(matches)
+    locations
 }
 
 pub fn parse_location_with_aor(
@@ -250,7 +308,7 @@ fn find_matching_settlements(
     words: Vec<String>,
     config: &SettlementsData,
 ) -> anyhow::Result<Vec<SettlementDetails>> {
-    let (_region_names, regions, trie, _) = config;
+    let (_region_names, regions, trie, _, _) = config;
     if words.is_empty() {
         return Ok(vec![]);
     }
@@ -415,6 +473,8 @@ pub fn load_from_file(
     let mut region_names = BTreeSet::new();
 
     let mut settlements = BTreeMap::new();
+    let mut settlements_by_name: BTreeMap<String, Vec<SettlementDetails>> =
+        BTreeMap::new();
 
     for source in settlements_paths {
         let path = root_dir.join(source.clone());
@@ -451,6 +511,10 @@ pub fn load_from_file(
                 if let Some(id) = &d.id {
                     settlements.insert(*id, details.clone());
                 }
+                settlements_by_name
+                    .entry(name.clone())
+                    .or_default()
+                    .push(details.clone());
                 trie.insert(&name.clone(), details);
             }
             let region = region.to_uppercase();
@@ -484,7 +548,13 @@ pub fn load_from_file(
     let mut region_names = region_names.into_iter().collect_vec();
     region_names.sort();
 
-    Ok((region_names, regions, trie, settlements))
+    Ok((
+        region_names,
+        regions,
+        trie,
+        settlements,
+        settlements_by_name,
+    ))
 }
 
 pub fn load_settlements_data_config(
@@ -652,6 +722,216 @@ fn deduplicate_settlement_names(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn filters_settlements_by_case_insensitive_prefix() {
+        let mut settlements_by_name = BTreeMap::new();
+        for name in ["ЛИМАН ПЕРШИЙ", "МЕРЕФА", "ЛИМАН ДРУГИЙ"]
+        {
+            settlements_by_name.insert(
+                name.to_string(),
+                vec![SettlementDetails {
+                    name: name.to_string(),
+                    ..Default::default()
+                }],
+            );
+        }
+        let settlements_data = Arc::new((
+            vec![],
+            vec![],
+            Trie::new(),
+            BTreeMap::new(),
+            settlements_by_name,
+        ));
+        let settlements = Arc::new(RwLock::new(SettlementsDataConfig {
+            default_settlements_data: settlements_data,
+            ..Default::default()
+        }));
+
+        let locations = find_locations_by_prefix(
+            settlements,
+            " лиман ".to_string(),
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+
+        assert_eq!(
+            locations
+                .into_iter()
+                .map(|location| location.name)
+                .collect_vec(),
+            vec!["ЛИМАН ДРУГИЙ", "ЛИМАН ПЕРШИЙ"]
+        );
+    }
+
+    #[test]
+    fn preserves_duplicate_settlement_names_when_filtering_by_region() {
+        let settlements_by_name = BTreeMap::from([(
+            "МИРНЕ".to_string(),
+            vec![
+                SettlementDetails {
+                    name: "МИРНЕ".to_string(),
+                    region: "ДОНЕЦЬКА".to_string(),
+                    id: Some(1),
+                    ..Default::default()
+                },
+                SettlementDetails {
+                    name: "МИРНЕ".to_string(),
+                    region: "ЗАПОРІЗЬКА".to_string(),
+                    id: Some(2),
+                    ..Default::default()
+                },
+            ],
+        )]);
+        let settlements_data = Arc::new((
+            vec![],
+            vec![],
+            Trie::new(),
+            BTreeMap::new(),
+            settlements_by_name,
+        ));
+        let settlements = Arc::new(RwLock::new(SettlementsDataConfig {
+            default_settlements_data: settlements_data,
+            ..Default::default()
+        }));
+
+        let locations = find_locations_by_prefix(
+            settlements,
+            "мир".to_string(),
+            Some("ДОНЕЦЬКА".to_string()),
+            None,
+            None,
+        )
+        .unwrap();
+
+        assert_eq!(locations.len(), 1);
+        assert_eq!(locations[0].id, Some(1));
+    }
+
+    #[test]
+    fn excludes_parser_region_aliases_from_prefix_results() {
+        let mut parser_trie = Trie::new();
+        parser_trie.insert(
+            "ХАРКІВСЬКА ОБЛ",
+            SettlementDetails {
+                name: "ХАРКІВСЬКА ОБЛ".to_string(),
+                id: None,
+                ..Default::default()
+            },
+        );
+        let settlements_data = Arc::new((
+            vec![],
+            vec![],
+            parser_trie,
+            BTreeMap::new(),
+            BTreeMap::new(),
+        ));
+        let settlements = Arc::new(RwLock::new(SettlementsDataConfig {
+            default_settlements_data: settlements_data,
+            ..Default::default()
+        }));
+
+        let locations = find_locations_by_prefix(
+            settlements,
+            "харківс".to_string(),
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+
+        assert!(locations.is_empty());
+    }
+
+    #[test]
+    fn preserves_coordinate_ranked_prefix_order() {
+        let settlements_by_name = BTreeMap::from([
+            (
+                "ЛИМАН АЛЬФА".to_string(),
+                vec![SettlementDetails {
+                    name: "ЛИМАН АЛЬФА".to_string(),
+                    coords: Some((2.0, 2.0)),
+                    ..Default::default()
+                }],
+            ),
+            (
+                "ЛИМАН ЯНТАР".to_string(),
+                vec![SettlementDetails {
+                    name: "ЛИМАН ЯНТАР".to_string(),
+                    coords: Some((1.0, 1.0)),
+                    ..Default::default()
+                }],
+            ),
+        ]);
+        let settlements_data = Arc::new((
+            vec![],
+            vec![],
+            Trie::new(),
+            BTreeMap::new(),
+            settlements_by_name,
+        ));
+        let settlements = Arc::new(RwLock::new(SettlementsDataConfig {
+            default_settlements_data: settlements_data,
+            ..Default::default()
+        }));
+
+        let locations = find_locations_by_prefix(
+            settlements,
+            "лиман".to_string(),
+            None,
+            Some((0.0, 0.0)),
+            None,
+        )
+        .unwrap();
+
+        assert_eq!(
+            locations
+                .into_iter()
+                .map(|location| location.name)
+                .collect_vec(),
+            vec!["ЛИМАН ЯНТАР", "ЛИМАН АЛЬФА"]
+        );
+    }
+
+    #[test]
+    fn returns_all_prefix_matches() {
+        let settlements_by_name = (0..101)
+            .map(|index| {
+                let name = format!("ЛОКАЦІЯ {index:03}");
+                (
+                    name.clone(),
+                    vec![SettlementDetails {
+                        name,
+                        ..Default::default()
+                    }],
+                )
+            })
+            .collect();
+        let settlements_data = Arc::new((
+            vec![],
+            vec![],
+            Trie::new(),
+            BTreeMap::new(),
+            settlements_by_name,
+        ));
+        let settlements = Arc::new(RwLock::new(SettlementsDataConfig {
+            default_settlements_data: settlements_data,
+            ..Default::default()
+        }));
+
+        let locations = find_locations_by_prefix(
+            settlements,
+            "локація".to_string(),
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+
+        assert_eq!(locations.len(), 101);
+    }
 
     #[test]
     fn standard_location_context_terms_include_direction_abbreviations() {

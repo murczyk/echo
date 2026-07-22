@@ -1,13 +1,11 @@
-use crate::config::{
-    get_tz, ORGANISM_GOI_PATH_DEFAULT, ORGANISM_GOI_SSH_PORT_DEFAULT,
-};
+use crate::config::get_tz;
 use crate::entities::{
     goi_integration, sigint_callsign, sigint_network, sigint_network_callsign,
     sigint_network_freq, sigint_unit, source,
 };
 use crate::error::AppError;
 use crate::h;
-use crate::organism::types::CheckOrganismGoiConnectionReq;
+use crate::organism::goi::goi_api::GoiApiTarget;
 use crate::types::{info, warn, Env, ShortContext};
 use crate::utils::string::normalize_optional_trimmed;
 use calamine::{Data, Reader, Xlsx};
@@ -21,7 +19,6 @@ use sea_orm::{sea_query::Expr, *};
 use sea_query::{Alias, JoinType};
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::{Cursor, Read, Write};
-use std::path::Path;
 use zip::write::FileOptions;
 use zip::{CompressionMethod, ZipArchive, ZipWriter};
 
@@ -77,11 +74,6 @@ pub(super) struct GoiCallsignDiff {
     pub deleted_ids: Vec<i64>,
 }
 
-#[derive(Debug)]
-struct GoiRemoteDataPaths {
-    knowledge_xlsx: String,
-}
-
 #[derive(Debug, Clone)]
 enum WorkbookCellValue {
     Empty,
@@ -119,15 +111,14 @@ pub(super) async fn sync_goi_callsigns_knowledge(
     env: &Env,
     integration: &goi_integration::Model,
 ) -> Result<(), AppError> {
-    let ssh_req = goi_ssh_req_from_integration(integration)?;
-    let remote_paths = goi_remote_data_paths(ssh_req.clone(), integration)
-        .await
-        .c(h!())?;
+    let api_target =
+        GoiApiTarget::from_integration(env.rq.clone(), integration).c(h!())?;
+    let knowledge_source = "GOI knowledge workbook API";
     let integration_label = goi_integration_log_label(integration);
     let sync_timestamp = goi_sync_timestamp_kyiv();
     info!(
         "[goi-sync] Starting GOI callsigns knowledge sync for {integration_label}; remote workbook={}",
-        remote_paths.knowledge_xlsx
+        knowledge_source
     );
 
     let current_callsigns = load_live_goi_callsigns(&env.dbx).await.c(h!())?;
@@ -144,19 +135,16 @@ pub(super) async fn sync_goi_callsigns_knowledge(
 
     info!(
         "[goi-sync] Downloading GOI knowledge workbook for {integration_label} from {}",
-        remote_paths.knowledge_xlsx
+        knowledge_source
     );
-    let knowledge_xlsx = download_or_create_knowledge_xlsx(
-        ssh_req.clone(),
-        &remote_paths.knowledge_xlsx,
-        &integration_label,
-    )
-    .await
-    .c(h!())?;
+    let knowledge_xlsx =
+        download_or_create_knowledge_xlsx(&api_target, &integration_label)
+            .await
+            .c(h!())?;
     info!(
         "[goi-sync] Downloaded GOI knowledge workbook for {integration_label}: {} bytes from {}",
         knowledge_xlsx.len(),
-        remote_paths.knowledge_xlsx
+        knowledge_source
     );
     let workbook =
         KnowledgeWorkbookData::from_xlsx_bytes(&knowledge_xlsx).c(h!())?;
@@ -179,7 +167,7 @@ pub(super) async fn sync_goi_callsigns_knowledge(
 
     info!(
         "[goi-sync] GOI callsigns diff for {integration_label} {}\nnew callsigns - {}\nedited callsigns - {}\ndeleted callsigns - {}",
-        remote_paths.knowledge_xlsx,
+        knowledge_source,
         format_goi_callsign_id_summary(&diff.new_ids),
         format_goi_callsign_id_summary(&diff.edited_ids),
         format_goi_callsign_id_summary(&diff.deleted_ids),
@@ -203,15 +191,12 @@ pub(super) async fn sync_goi_callsigns_knowledge(
     validate_knowledge_xlsx_bytes(&knowledge_xlsx).c(h!())?;
     info!(
         "[goi-sync] Uploading GOI knowledge workbook for {integration_label} to {}",
-        remote_paths.knowledge_xlsx
+        knowledge_source
     );
-    super::goi_upload_file(
-        ssh_req,
-        remote_paths.knowledge_xlsx,
-        knowledge_xlsx,
-    )
-    .await
-    .c(h!())?;
+    api_target
+        .upload_knowledge_workbook(knowledge_xlsx)
+        .await
+        .c(h!())?;
     info!(
         "[goi-sync] Finished GOI callsigns knowledge sync for {integration_label}"
     );
@@ -219,58 +204,30 @@ pub(super) async fn sync_goi_callsigns_knowledge(
 }
 
 async fn download_or_create_knowledge_xlsx(
-    ssh_req: CheckOrganismGoiConnectionReq,
-    knowledge_xlsx_path: &str,
+    api_target: &GoiApiTarget,
     integration_label: &str,
 ) -> Result<Vec<u8>, AppError> {
-    if !super::goi_file_exists(ssh_req.clone(), knowledge_xlsx_path.to_string())
-        .await
-        .c(h!())?
-    {
-        return create_knowledge_xlsx(
-            ssh_req,
-            knowledge_xlsx_path,
-            integration_label,
-        )
-        .await;
-    }
-
-    match super::goi_download_file(
-        ssh_req.clone(),
-        knowledge_xlsx_path.to_string(),
-    )
-    .await
-    {
+    match api_target.download_knowledge_workbook().await {
         Ok(file_data) => Ok(file_data),
         Err(err) if goi_download_error_is_missing_file(&err) => {
-            create_knowledge_xlsx(
-                ssh_req,
-                knowledge_xlsx_path,
-                integration_label,
-            )
-            .await
+            create_knowledge_xlsx(api_target, integration_label).await
         }
         Err(err) => Err(AppError::from(err)),
     }
 }
 
 async fn create_knowledge_xlsx(
-    ssh_req: CheckOrganismGoiConnectionReq,
-    knowledge_xlsx_path: &str,
+    api_target: &GoiApiTarget,
     integration_label: &str,
 ) -> Result<Vec<u8>, AppError> {
     info!(
-        "[goi-sync] GOI knowledge workbook is missing for {integration_label}; creating {}",
-        knowledge_xlsx_path
+        "[goi-sync] GOI knowledge workbook is missing for {integration_label}; creating it"
     );
     let file_data = empty_xlsx_buffer().c(h!())?;
-    super::goi_upload_file(
-        ssh_req,
-        knowledge_xlsx_path.to_string(),
-        file_data.clone(),
-    )
-    .await
-    .c(h!())?;
+    api_target
+        .upload_knowledge_workbook(file_data.clone())
+        .await
+        .c(h!())?;
     Ok(file_data)
 }
 
@@ -279,89 +236,6 @@ fn goi_download_error_is_missing_file(err: &anyhow::Error) -> bool {
     message.contains("no such file")
         || message.contains("not found")
         || message.contains("does not exist")
-}
-
-fn goi_ssh_req_from_integration(
-    integration: &goi_integration::Model,
-) -> Result<CheckOrganismGoiConnectionReq, AppError> {
-    let ssh_host = normalize_optional_trimmed(integration.ssh_host.clone())
-        .ok_or_else(|| AppError::BL {
-            msg: format!(
-                "GOI SSH host is missing for integration {}",
-                integration.id
-            ),
-        })?;
-    let ssh_user = normalize_optional_trimmed(integration.ssh_user.clone())
-        .ok_or_else(|| AppError::BL {
-            msg: format!(
-                "GOI SSH user is missing for integration {}",
-                integration.id
-            ),
-        })?;
-    Ok(CheckOrganismGoiConnectionReq {
-        ssh_host,
-        ssh_user,
-        ssh_port: if integration.ssh_port > 0 {
-            integration.ssh_port
-        } else {
-            ORGANISM_GOI_SSH_PORT_DEFAULT
-        },
-        path: integration.path.clone(),
-    })
-}
-
-async fn goi_remote_data_paths(
-    ssh_req: CheckOrganismGoiConnectionReq,
-    integration: &goi_integration::Model,
-) -> Result<GoiRemoteDataPaths, AppError> {
-    let data_dir = goi_remote_data_dir(&integration.path);
-    let knowledge_xlsx = goi_remote_readonly_xlsx_path_if_exists(
-        ssh_req,
-        format!("{data_dir}/xlsx/knowledge.xlsx"),
-    )
-    .await
-    .c(h!())?;
-    Ok(GoiRemoteDataPaths { knowledge_xlsx })
-}
-
-async fn goi_remote_readonly_xlsx_path_if_exists(
-    ssh_req: CheckOrganismGoiConnectionReq,
-    path: String,
-) -> Result<String, AppError> {
-    let readonly_path = readonly_xlsx_path(&path);
-    if readonly_path != path
-        && super::goi_file_exists(ssh_req, readonly_path.clone())
-            .await
-            .c(h!())?
-    {
-        Ok(readonly_path)
-    } else {
-        Ok(path)
-    }
-}
-
-fn readonly_xlsx_path(path: &str) -> String {
-    if path.ends_with("-readonly.xlsx") {
-        return path.to_string();
-    }
-    path.strip_suffix(".xlsx")
-        .map(|path| format!("{path}-readonly.xlsx"))
-        .unwrap_or_else(|| path.to_string())
-}
-
-fn goi_remote_data_dir(path: &str) -> String {
-    let path = normalize_optional_trimmed(Some(path.to_string()))
-        .unwrap_or_else(|| ORGANISM_GOI_PATH_DEFAULT.to_string());
-    let path = path.trim_end_matches('/');
-    if path.ends_with("/palettes") {
-        Path::new(path)
-            .parent()
-            .and_then(|parent| parent.to_str())
-            .map(|parent| parent.to_string())
-            .unwrap_or_else(|| path.to_string())
-    } else {
-        path.to_string()
-    }
 }
 
 async fn load_live_goi_callsigns(
@@ -1778,22 +1652,6 @@ mod tests {
     }
 
     #[test]
-    fn readonly_xlsx_path_rewrites_standard_xlsx_path() {
-        assert_eq!(
-            readonly_xlsx_path("/etc/goi/data/xlsx/knowledge.xlsx"),
-            "/etc/goi/data/xlsx/knowledge-readonly.xlsx"
-        );
-    }
-
-    #[test]
-    fn readonly_xlsx_path_keeps_readonly_xlsx_path() {
-        assert_eq!(
-            readonly_xlsx_path("/etc/goi/data/xlsx/knowledge-readonly.xlsx"),
-            "/etc/goi/data/xlsx/knowledge-readonly.xlsx"
-        );
-    }
-
-    #[test]
     fn diff_goi_callsigns_reports_all_real_ids() {
         let previous = vec![
             sample_callsign(2, "BETA", Some(2)),
@@ -1816,7 +1674,7 @@ mod tests {
     }
 
     #[test]
-    fn goi_download_error_is_missing_file_matches_expected_ssh_errors() {
+    fn goi_download_error_is_missing_file_matches_remote_file_errors() {
         assert!(goi_download_error_is_missing_file(&anyhow::anyhow!(
             "scp_recv failed: No such file"
         )));

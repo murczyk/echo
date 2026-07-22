@@ -8,6 +8,7 @@ import EditIcon from '@mui/icons-material/Edit';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import HistoryIcon from '@mui/icons-material/History';
 import ReplayIcon from '@mui/icons-material/Replay';
+import VisibilityOffOutlinedIcon from '@mui/icons-material/VisibilityOffOutlined';
 import VisibilityOutlinedIcon from '@mui/icons-material/VisibilityOutlined';
 import UnarchiveOutlinedIcon from '@mui/icons-material/UnarchiveOutlined';
 import { Box, CircularProgress, Tooltip } from '@mui/material';
@@ -41,7 +42,10 @@ type Props = {
 
 function renderFolderRowActions(row: FolderTableRowView, props: Props) {
   return (
-    <Box sx={{ display: 'flex', justifyContent: 'center' }}>
+    <Box
+      sx={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}
+    >
+      {renderPreviewButton()}
       <MrtRowActions>
         <MrtRowActionButton
           label={row.isExpanded ? 'Згорнути папку' : 'Розгорнути папку'}
@@ -99,6 +103,7 @@ function isPalitraRowMutationDisabled(row: PalitraRowView, props: Props): boolea
 function isPalitraRowPreviewDisabled(row: PalitraRowView, props: Props): boolean {
   return (
     !row.canSelect ||
+    row.palitra.conversionStatus === 'error' ||
     row.archiveInFlight ||
     row.deleteInFlight ||
     row.downloadInFlight ||
@@ -107,6 +112,58 @@ function isPalitraRowPreviewDisabled(row: PalitraRowView, props: Props): boolean
     row.retryInFlight ||
     props.bulkDeleteInFlight ||
     props.externalBusy
+  );
+}
+
+function renderPreviewButton(
+  palitra?: Palitra,
+  disabled = true,
+  onRequestPreview?: Props['onRequestPreview'],
+) {
+  const title = disabled ? 'Попередній перегляд недоступний' : 'Попередній перегляд';
+
+  return (
+    <Tooltip title={title}>
+      <span style={{ display: 'inline-flex' }}>
+        <PowerIconButton
+          size="small"
+          aria-label={title}
+          title={title}
+          onClick={
+            palitra && onRequestPreview
+              ? (event) => {
+                  event.stopPropagation();
+                  onRequestPreview(palitra);
+                }
+              : undefined
+          }
+          disabled={disabled}
+          sx={(theme) => ({
+            width: 28,
+            height: 28,
+            borderRadius: '50%',
+            color: theme.palette.text.primary,
+            '&:hover': {
+              backgroundColor: theme.palette.action.hover,
+              color: theme.palette.text.primary,
+            },
+            '&:focus-visible': {
+              outline: `2px solid ${theme.palette.primary.main}`,
+              outlineOffset: 1,
+            },
+            '&.Mui-disabled': {
+              color: theme.palette.action.disabled,
+            },
+          })}
+        >
+          {disabled ? (
+            <VisibilityOffOutlinedIcon fontSize="small" />
+          ) : (
+            <VisibilityOutlinedIcon fontSize="small" />
+          )}
+        </PowerIconButton>
+      </span>
+    </Tooltip>
   );
 }
 
@@ -128,39 +185,7 @@ function renderPalitraRowActions(row: PalitraRowView, props: Props) {
     <Box
       sx={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}
     >
-      <Tooltip title="Попередній перегляд">
-        <span style={{ display: 'inline-flex' }}>
-          <PowerIconButton
-            size="small"
-            aria-label="Попередній перегляд"
-            title="Попередній перегляд"
-            onClick={(event) => {
-              event.stopPropagation();
-              props.onRequestPreview(row.palitra);
-            }}
-            disabled={previewDisabled}
-            sx={(theme) => ({
-              width: 28,
-              height: 28,
-              borderRadius: '50%',
-              color: theme.palette.text.primary,
-              '&:hover': {
-                backgroundColor: theme.palette.action.hover,
-                color: theme.palette.text.primary,
-              },
-              '&:focus-visible': {
-                outline: `2px solid ${theme.palette.primary.main}`,
-                outlineOffset: 1,
-              },
-              '&.Mui-disabled': {
-                color: theme.palette.action.disabled,
-              },
-            })}
-          >
-            <VisibilityOutlinedIcon fontSize="small" />
-          </PowerIconButton>
-        </span>
-      </Tooltip>
+      {renderPreviewButton(row.palitra, previewDisabled, props.onRequestPreview)}
       <MrtRowActions forceMenu>
         <MrtRowActionButton
           label="Редагувати"

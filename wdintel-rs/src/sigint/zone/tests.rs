@@ -372,6 +372,101 @@ async fn test_secret_group_organism_invite_materializes_direct_and_derived_users
 
 #[serial]
 #[tokio::test]
+async fn test_adding_existing_secret_group_preserves_access() {
+    let env = cleanup().await.unwrap();
+    let txn = env.dbx.begin().await.unwrap();
+    let organism = mk_organism(
+        &txn,
+        organism::ActiveModel {
+            name: Set("readded-secret-group-organism".to_string()),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let login = mk_login(
+        &txn,
+        login::ActiveModel {
+            login: Set("readded-secret-group-user".to_string()),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let szd = mk_sigint_zone_datasource(
+        &txn,
+        sigint_zone_datasource::ActiveModel {
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+
+    update_signal_group_access_and_admins(
+        vec![login.login.clone()],
+        vec![organism.id],
+        vec![login.login],
+        true,
+        &szd.group_master_key,
+        &txn,
+    )
+    .await
+    .unwrap();
+    let access = secret_group_access(&txn, &szd.group_master_key).await;
+
+    let is_secret = bl_zones_datasources_group_add(
+        vec![],
+        vec![],
+        vec![],
+        false,
+        None,
+        None,
+        &szd,
+        &txn,
+    )
+    .await
+    .unwrap();
+
+    assert!(is_secret);
+    assert_eq!(
+        secret_group_access(&txn, &szd.group_master_key).await,
+        access
+    );
+
+    txn.rollback().await.unwrap();
+}
+
+async fn secret_group_access(
+    txn: &DatabaseTransaction,
+    master_key: &str,
+) -> (bool, Vec<String>, Vec<i64>, Vec<String>) {
+    let group = signal_group::Entity::find_by_id(master_key.to_string())
+        .one(txn)
+        .await
+        .unwrap()
+        .unwrap();
+    let users =
+        collect_direct_secret_group_users(vec![master_key.to_string()], txn)
+            .await
+            .unwrap()
+            .remove(master_key)
+            .unwrap_or_default();
+    let organisms =
+        collect_secret_group_organism_ids(vec![master_key.to_string()], txn)
+            .await
+            .unwrap()
+            .remove(master_key)
+            .unwrap_or_default();
+    let admins = collect_signal_group_admins(vec![master_key.to_string()], txn)
+        .await
+        .unwrap()
+        .remove(master_key)
+        .unwrap_or_default();
+    (group.is_secret, users, organisms, admins)
+}
+
+#[serial]
+#[tokio::test]
 async fn test_refresh_secret_group_memberships_removes_moved_deleted_and_disabled(
 ) {
     let env = cleanup().await.unwrap();

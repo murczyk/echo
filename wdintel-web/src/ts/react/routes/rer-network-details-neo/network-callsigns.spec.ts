@@ -222,7 +222,7 @@ describe('network-callsigns helpers', () => {
     expect(Boolean(form.mainRadioStation && form.commandControl)).toBe(false);
   });
 
-  it('requires a callsign and RO radio frequency before saving a drawer form, and only requires source for catalog rows', () => {
+  it('requires a callsign, source and unit for catalog rows and RO radio frequency', () => {
     expect(getNetworkCallsignDrawerSaveError(null)).toBeNull();
     expect(
       getNetworkCallsignDrawerSaveError({
@@ -243,6 +243,22 @@ describe('network-callsigns helpers', () => {
         developing: false,
       }),
     ).toBe('Джерело є обовʼязковим');
+    expect(
+      getNetworkCallsignDrawerSaveError({
+        ...createDefaultNetworkCallsignDrawerForm(10, null),
+        callsign: 'СОКІЛ',
+        sourceId: 1,
+        developing: false,
+      }),
+    ).toBe('Підрозділ є обовʼязковим');
+    expect(
+      getNetworkCallsignDrawerSaveError({
+        ...createDefaultNetworkCallsignDrawerForm(10, 4),
+        callsign: 'СОКІЛ',
+        sourceId: 1,
+        developing: false,
+      }),
+    ).toBeNull();
     expect(
       getNetworkCallsignDrawerSaveError({
         ...createDefaultNetworkCallsignDrawerForm(10, null),

@@ -6,13 +6,13 @@ use crate::config::{
     ORGANISM_GOI_KNOWLEDGE_SYNC_MAX_AGE_DAYS,
     ORGANISM_GOI_KNOWLEDGE_UPSERT_BATCH_SIZE,
     ORGANISM_GOI_PALITRA_FOLDER_SYNC_INTERVAL_SEC,
-    ORGANISM_GOI_REPORT_PUSH_INTERVAL_SEC,
+    ORGANISM_GOI_REPORT_PUSH_INTERVAL_SEC, PALITRA_GOI_RECONCILE_INTERVAL_SEC,
 };
 use crate::entities::{goi_association, goi_integration, goi_knowledge};
 use crate::error::AppError;
+use crate::organism::goi::goi_api::goi_api_base_url;
 use crate::organism::goi::shared::{
     goi_integration_api_host, goi_integration_api_port,
-    goi_integration_has_api_config, goi_integration_worker_paused,
 };
 use crate::types::*;
 use crate::utils::string::normalize_optional_trimmed;
@@ -25,10 +25,9 @@ use goi_echo_worker::api::{
 use sea_orm::sea_query::OnConflict;
 use sea_orm::*;
 use sea_query::Expr;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::time::{Duration, Instant};
-use tokio::task::JoinSet;
-use url::Url;
+use tokio::sync::Mutex;
 
 const GOI_FREQUENCIES_IMPORT_PATH: &str = "/api/frequencies/signed/import";
 const GOI_XLSX_CONTENT_TYPE: &str =
@@ -39,103 +38,152 @@ struct GoiWorkerState {
     last_knowledge_sync_attempt_at: HashMap<i64, Instant>,
     last_report_push_attempt_at: HashMap<i64, Instant>,
     last_palitra_folder_sync_attempt_at: HashMap<i64, Instant>,
+    last_integration_sync_attempt_at: HashMap<i64, Instant>,
+    integrations_in_progress: HashSet<i64>,
+    palitra_lane_in_progress: bool,
+    last_palitra_reconcile_attempt_at: Option<Instant>,
+}
+
+#[derive(Default)]
+pub struct GoiSyncWorkerCoordinator {
+    state: Mutex<GoiWorkerState>,
 }
 
 struct GoiApiJob {
     integration: goi_integration::Model,
     sync_knowledge: bool,
     push_report: bool,
+    sync_palitra_folders: bool,
 }
 
-pub async fn goi_association_worker_nofail(env: Arc<Env>) {
-    goi_worker_nofail(env, true).await;
-}
-
-pub async fn goi_folder_sync_worker_nofail(env: Arc<Env>) {
-    goi_worker_nofail(env, false).await;
-}
-
-async fn goi_worker_nofail(env: Arc<Env>, with_api_jobs: bool) {
-    let mut state = GoiWorkerState::default();
+pub async fn goi_sync_worker_nofail(
+    env: Arc<Env>,
+    coordinator: Arc<GoiSyncWorkerCoordinator>,
+) {
     loop {
-        if let Err(err) =
-            goi_association_worker_step(&env, &mut state, with_api_jobs).await
-        {
-            warn!("GOI association worker step failed: {:#?}", err);
+        if let Err(err) = goi_sync_worker_step(&env, &coordinator).await {
+            warn!("GOI sync worker step failed: {:#?}", err);
             tokio::time::sleep(goi_worker_sleep_duration()).await;
         }
     }
 }
 
-async fn goi_association_worker_step(
+async fn goi_sync_worker_step(
     env: &Arc<Env>,
-    state: &mut GoiWorkerState,
-    with_api_jobs: bool,
+    coordinator: &GoiSyncWorkerCoordinator,
 ) -> Result<(), AppError> {
-    let integrations =
-        load_goi_worker_integrations(&env.as_ref().dbx, with_api_jobs)
-            .await
-            .c(h!())?;
-    if integrations.is_empty() {
-        trace!("[goi_association_worker] no configured integrations, skipping");
+    if try_claim_palitra_lane(coordinator).await {
+        let palitra_result = run_palitra_sync_lane(env, coordinator).await;
+        release_palitra_lane(coordinator).await;
+        if palitra_result.c(h!())? {
+            return Ok(());
+        }
+    }
+
+    let Some(job) = claim_next_goi_api_job(&env.dbx, coordinator)
+        .await
+        .c(h!())?
+    else {
+        trace!("[goi_sync_worker] no configured integrations, skipping");
         tokio::time::sleep(goi_worker_sleep_duration()).await;
         return Ok(());
-    }
-
-    if with_api_jobs {
-        run_goi_api_jobs(env, state, integrations).await;
-    } else {
-        run_goi_folder_sync_jobs(env.as_ref(), state, integrations).await;
-    }
-
-    debug!("[goi_association_worker] synced integrations successfully");
+    };
+    let integration_id = job.integration.id;
+    run_goi_api_job(env.as_ref(), job).await;
+    release_goi_integration(coordinator, integration_id).await;
     tokio::time::sleep(goi_worker_sleep_duration()).await;
     Ok(())
 }
 
-async fn run_goi_api_jobs(
-    env: &Arc<Env>,
-    state: &mut GoiWorkerState,
-    integrations: Vec<goi_integration::Model>,
-) {
-    let mut job_set = JoinSet::new();
-    for integration in integrations {
-        if goi_integration_worker_paused(&integration)
-            || !goi_integration_has_api_config(&integration)
-        {
-            continue;
-        }
-        let job = plan_goi_api_job(state, integration);
-        let env = env.clone();
-        job_set.spawn(async move {
-            run_goi_api_job(env, job).await;
-        });
-        tokio::time::sleep(goi_worker_sleep_duration()).await;
+async fn run_palitra_sync_lane(
+    env: &Env,
+    coordinator: &GoiSyncWorkerCoordinator,
+) -> Result<bool, AppError> {
+    let no_jobs =
+        crate::palitra::goi_sync_worker::process_next_goi_sync_job(env)
+            .await
+            .c(h!())?;
+    if !no_jobs {
+        return Ok(true);
     }
-    while let Some(job_result) = job_set.join_next().await {
-        if let Err(err) = job_result {
-            warn!("GOI API job join failed: {:#?}", err);
-        }
+    if claim_palitra_reconcile_if_due(coordinator).await {
+        crate::palitra::goi_sync_worker::reconcile_goi_palitras(env)
+            .await
+            .c(h!())?;
+        return Ok(true);
     }
+    Ok(false)
 }
 
-async fn run_goi_folder_sync_jobs(
-    env: &Env,
-    state: &mut GoiWorkerState,
-    integrations: Vec<goi_integration::Model>,
-) {
-    for integration in integrations {
-        if let Err(err) =
-            sync_goi_palitra_folders_if_due(env, &integration, state).await
-        {
-            let label = integration.server_label.clone();
-            warn!(
-                "[goi-sync] Skipping GOI palitra folder sync for {label}: {:#?}",
-                err
-            );
-        }
-        tokio::time::sleep(goi_worker_sleep_duration()).await;
+async fn try_claim_palitra_lane(
+    coordinator: &GoiSyncWorkerCoordinator,
+) -> bool {
+    let mut state = coordinator.state.lock().await;
+    if state.palitra_lane_in_progress {
+        return false;
     }
+    state.palitra_lane_in_progress = true;
+    true
+}
+
+async fn release_palitra_lane(coordinator: &GoiSyncWorkerCoordinator) {
+    coordinator.state.lock().await.palitra_lane_in_progress = false;
+}
+
+async fn claim_palitra_reconcile_if_due(
+    coordinator: &GoiSyncWorkerCoordinator,
+) -> bool {
+    let mut state = coordinator.state.lock().await;
+    let is_due = state
+        .last_palitra_reconcile_attempt_at
+        .map(|attempt_at| {
+            attempt_at.elapsed()
+                >= Duration::from_secs(PALITRA_GOI_RECONCILE_INTERVAL_SEC)
+        })
+        .unwrap_or(true);
+    if is_due {
+        state.last_palitra_reconcile_attempt_at = Some(Instant::now());
+    }
+    is_due
+}
+
+async fn claim_next_goi_api_job(
+    db: &DatabaseConnection,
+    coordinator: &GoiSyncWorkerCoordinator,
+) -> Result<Option<GoiApiJob>, AppError> {
+    let integrations = load_goi_worker_integrations(db).await.c(h!())?;
+    let mut state = coordinator.state.lock().await;
+    let integration = integrations
+        .into_iter()
+        .filter(|integration| {
+            !state.integrations_in_progress.contains(&integration.id)
+        })
+        .min_by_key(|integration| {
+            state
+                .last_integration_sync_attempt_at
+                .get(&integration.id)
+                .copied()
+        });
+    let Some(integration) = integration else {
+        return Ok(None);
+    };
+    state.integrations_in_progress.insert(integration.id);
+    state
+        .last_integration_sync_attempt_at
+        .insert(integration.id, Instant::now());
+    Ok(Some(plan_goi_api_job(&mut state, integration)))
+}
+
+async fn release_goi_integration(
+    coordinator: &GoiSyncWorkerCoordinator,
+    integration_id: i64,
+) {
+    coordinator
+        .state
+        .lock()
+        .await
+        .integrations_in_progress
+        .remove(&integration_id);
 }
 
 fn plan_goi_api_job(
@@ -156,17 +204,24 @@ fn plan_goi_api_job(
             .insert(integration.id, Instant::now());
     }
 
+    let sync_palitra_folders =
+        goi_palitra_folder_sync_is_due(state, integration.id);
+    if sync_palitra_folders {
+        state
+            .last_palitra_folder_sync_attempt_at
+            .insert(integration.id, Instant::now());
+    }
+
     GoiApiJob {
         integration,
         sync_knowledge,
         push_report,
+        sync_palitra_folders,
     }
 }
 
-async fn run_goi_api_job(env: Arc<Env>, job: GoiApiJob) {
-    if let Err(err) =
-        sync_goi_associations(env.as_ref(), &job.integration).await
-    {
+async fn run_goi_api_job(env: &Env, job: GoiApiJob) {
+    if let Err(err) = sync_goi_associations(env, &job.integration).await {
         let label = job.integration.server_label.clone();
         warn!(
             "[goi_association_worker] Skipping GOI association sync for {label}: {:#?}",
@@ -174,15 +229,13 @@ async fn run_goi_api_job(env: Arc<Env>, job: GoiApiJob) {
         );
     }
     if job.sync_knowledge {
-        if let Err(err) =
-            sync_goi_knowledge(env.as_ref(), &job.integration).await
-        {
+        if let Err(err) = sync_goi_knowledge(env, &job.integration).await {
             let label = job.integration.server_label.clone();
             warn!("[goi_association_worker] Skipping GOI knowledge sync for {label}: {:#?}", err);
         }
     }
     if job.push_report {
-        match push_goi_report(env.as_ref(), &job.integration).await {
+        match push_goi_report(env, &job.integration).await {
             Ok(response) => {
                 info!(
                     "Pushed GOI signed frequencies report for {} to {} ({} bytes)",
@@ -197,33 +250,25 @@ async fn run_goi_api_job(env: Arc<Env>, job: GoiApiJob) {
             }
         }
     }
-}
-
-async fn sync_goi_palitra_folders_if_due(
-    env: &Env,
-    integration: &goi_integration::Model,
-    state: &mut GoiWorkerState,
-) -> Result<(), AppError> {
-    if goi_integration_worker_paused(integration)
-        || !goi_palitra_folder_sync_is_due(state, integration.id)
-    {
-        return Ok(());
+    if job.sync_palitra_folders {
+        if let Err(err) =
+            crate::organism::goi::callsigns_sync::sync_goi_callsigns_knowledge(
+                env,
+                &job.integration,
+            )
+            .await
+        {
+            let label = job.integration.server_label.clone();
+            warn!(
+                "[goi-sync] Skipping GOI palitra folder sync for {label}: {:#?}",
+                err
+            );
+        }
     }
-    state
-        .last_palitra_folder_sync_attempt_at
-        .insert(integration.id, Instant::now());
-    crate::organism::goi::callsigns_sync::sync_goi_callsigns_knowledge(
-        env,
-        integration,
-    )
-    .await
-    .c(h!())?;
-    Ok(())
 }
 
 async fn load_goi_worker_integrations(
     db: &DatabaseConnection,
-    with_api_jobs: bool,
 ) -> Result<Vec<goi_integration::Model>, AppError> {
     let is_full_integration = Condition::all().add(
         goi_integration::Column::IntegrationType
@@ -235,11 +280,7 @@ async fn load_goi_worker_integrations(
     let has_ssh_host = Condition::all()
         .add(goi_integration::Column::SshHost.is_not_null())
         .add(goi_integration::Column::SshHost.ne(""));
-    let has_ssh_user = Condition::all()
-        .add(goi_integration::Column::SshUser.is_not_null())
-        .add(goi_integration::Column::SshUser.ne(""));
-    let has_host_for_api =
-        Condition::any().add(has_api_host).add(has_ssh_host.clone());
+    let has_host_for_api = Condition::any().add(has_api_host).add(has_ssh_host);
     let has_api_login = Condition::all()
         .add(goi_integration::Column::ApiLogin.is_not_null())
         .add(goi_integration::Column::ApiLogin.ne(""));
@@ -247,22 +288,15 @@ async fn load_goi_worker_integrations(
         .add(goi_integration::Column::ApiPassword.is_not_null())
         .add(goi_integration::Column::ApiPassword.ne(""));
     let worker_active = goi_integration::Column::PauseWorker.eq(false);
-    let filter = if with_api_jobs {
-        Condition::all()
-            .add(worker_active)
-            .add(is_full_integration)
-            .add(has_host_for_api)
-            .add(has_api_login)
-            .add(has_api_password)
-    } else {
-        Condition::all()
-            .add(worker_active)
-            .add(is_full_integration)
-            .add(has_ssh_host)
-            .add(has_ssh_user)
-    };
     Ok(goi_integration::Entity::find()
-        .filter(filter)
+        .filter(
+            Condition::all()
+                .add(worker_active)
+                .add(is_full_integration)
+                .add(has_host_for_api)
+                .add(has_api_login)
+                .add(has_api_password),
+        )
         .all(db)
         .await
         .c(h!())?)
@@ -522,17 +556,7 @@ fn goi_api_url(
             ),
         })?;
     let port = goi_integration_api_port(integration);
-    let mut url = if host.starts_with("http://") || host.starts_with("https://")
-    {
-        Url::parse(&host).c(h!())?
-    } else {
-        Url::parse(&format!("http://{host}")).c(h!())?
-    };
-    if url.port().is_none() {
-        url.set_port(Some(port as u16)).map_err(|_| AppError::BL {
-            msg: format!("invalid GOI API port: {port}"),
-        })?;
-    }
+    let mut url = goi_api_base_url(&host, port).c(h!())?;
     url.set_path(path);
     url.set_query(None);
     Ok(url.to_string())

@@ -7,7 +7,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { Palitra } from '../../../../../Bindings';
-import type { PalitraRowView } from '../types';
+import type { FolderTableRowView, PalitraRowView } from '../types';
 import { renderPalitraTableRowActions } from './PalitraTable.row-actions';
 
 vi.mock('@mui/material', () => ({
@@ -26,6 +26,9 @@ vi.mock('@mui/icons-material/Edit', () => ({ default: () => <span>edit</span> })
 vi.mock('@mui/icons-material/ExpandMore', () => ({ default: () => <span>expand</span> }));
 vi.mock('@mui/icons-material/History', () => ({ default: () => <span>history</span> }));
 vi.mock('@mui/icons-material/Replay', () => ({ default: () => <span>replay</span> }));
+vi.mock('@mui/icons-material/VisibilityOffOutlined', () => ({
+  default: () => <span>preview unavailable</span>,
+}));
 vi.mock('@mui/icons-material/VisibilityOutlined', () => ({ default: () => <span>preview</span> }));
 vi.mock('@mui/icons-material/UnarchiveOutlined', () => ({ default: () => <span>unarchive</span> }));
 
@@ -115,7 +118,37 @@ function makeRow(
   };
 }
 
-function renderActions(row: PalitraRowView, overrides: Record<string, unknown> = {}) {
+function makeFolderRow(): FolderTableRowView {
+  return {
+    id: 'folder:GOI',
+    kind: 'folder',
+    folderPath: 'GOI',
+    hiddenByCollapsedFolder: false,
+    name: 'GOI',
+    depth: 0,
+    totalCount: 1,
+    modifiableCount: 1,
+    childCount: 0,
+    isExpanded: true,
+    canSelect: false,
+    canModify: true,
+    archiveInFlight: false,
+    deleteInFlight: false,
+    downloadInFlight: false,
+    uploadInFlight: false,
+    retryInFlight: false,
+    colorHex: null,
+    sourceFileName: null,
+    lastUploadedAtTs: null,
+    author: null,
+    accessSummary: 'У папці: 1',
+  };
+}
+
+function renderActions(
+  row: PalitraRowView | FolderTableRowView,
+  overrides: Record<string, unknown> = {},
+) {
   const container = document.createElement('div');
   document.body.appendChild(container);
   root = createRoot(container);
@@ -156,6 +189,51 @@ afterEach(() => {
 });
 
 describe('PalitraTable row actions', () => {
+  it('disables preview with a crossed-out icon for failed imports', () => {
+    const onRequestPreview = vi.fn();
+    const { container } = renderActions(makeRow(makePalitra()), { onRequestPreview });
+    const previewButton = container.querySelector<HTMLButtonElement>(
+      '[aria-label="Попередній перегляд недоступний"]',
+    );
+
+    expect(previewButton?.disabled).toBe(true);
+    expect(previewButton?.textContent).toBe('preview unavailable');
+
+    act(() => {
+      previewButton?.click();
+    });
+
+    expect(onRequestPreview).not.toHaveBeenCalled();
+  });
+
+  it('shows a disabled crossed-out preview icon for folders', () => {
+    const { container } = renderActions(makeFolderRow());
+    const previewButton = container.querySelector<HTMLButtonElement>(
+      '[aria-label="Попередній перегляд недоступний"]',
+    );
+
+    expect(previewButton?.disabled).toBe(true);
+    expect(previewButton?.textContent).toBe('preview unavailable');
+  });
+
+  it('keeps successful palette previews active', () => {
+    const onRequestPreview = vi.fn();
+    const palitra = makePalitra({ conversionStatus: 'success' });
+    const { container } = renderActions(makeRow(palitra), { onRequestPreview });
+    const previewButton = container.querySelector<HTMLButtonElement>(
+      '[aria-label="Попередній перегляд"]',
+    );
+
+    expect(previewButton?.disabled).toBe(false);
+    expect(previewButton?.textContent).toBe('preview');
+
+    act(() => {
+      previewButton?.click();
+    });
+
+    expect(onRequestPreview).toHaveBeenCalledWith(palitra);
+  });
+
   it('shows history and GOI source retry while hiding generic conversion retry', () => {
     const onRetryGoiSourceConversion = vi.fn();
     const onOpenHistory = vi.fn();
