@@ -132,6 +132,10 @@ WHERE singleton
 SQL
   )
   if [[ "$destination_visible" == t ]]; then
+    if ! "$SCRIPT_DIR/reconcile-schema.sh"; then
+      fail_health "analytics schema reconciliation failed" \
+        "$source_lsn" "$confirmed_flush_lsn"
+    fi
     record_health true "source heartbeat visible through ClickHouse gateway" \
       "$source_lsn" "$confirmed_flush_lsn"
     log "End-to-end replication probe visible at $confirmed_flush_lsn"

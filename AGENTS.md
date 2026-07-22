@@ -22,6 +22,10 @@
   datasource.into_active_model()`, but prefer same `datasource` for
   both if possible
 
+## Code Review Rules
+
+- Follow [CODE_REVIEW.md](./CODE_REVIEW.md).
+
 ## Git
 
 - **Never Commit or Push Without Permission**

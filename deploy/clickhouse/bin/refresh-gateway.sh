@@ -13,7 +13,7 @@ metadata_sql=$(mktemp /tmp/echo-analytics-source-columns.XXXXXX)
 trap 'rm -f -- "$metadata_sql"' EXIT
 chmod 0600 "$metadata_sql"
 
-view_count=$(clickhouse_admin --format TSVRaw --query \
+view_count=$(clickhouse_admin_http \
   "SELECT count() FROM system.tables WHERE database = '$CLICKHOUSE_CURRENT_DB' AND engine = 'View'")
 [[ "$view_count" =~ ^[0-9]+$ ]] || die "ClickHouse returned an invalid view count"
 ((view_count > 0)) || die "no current-state ClickHouse views exist"

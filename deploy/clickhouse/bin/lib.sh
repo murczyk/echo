@@ -361,6 +361,31 @@ clickhouse_admin() {
     "$@"
 }
 
+clickhouse_admin_http() {
+  local query=$1 auth config response
+  require_cmd base64
+  require_cmd curl
+
+  auth=$(printf 'default:%s' "$CLICKHOUSE_ADMIN_PASSWORD" | base64 -w 0)
+  config=$(mktemp /tmp/echo-analytics-curl.XXXXXX)
+  chmod 0600 "$config"
+  printf 'header = "Authorization: Basic %s"\n' "$auth" >"$config"
+  if ! response=$(printf '%s' "$query" | curl \
+    --silent \
+    --show-error \
+    --fail-with-body \
+    --connect-timeout 5 \
+    --max-time 60 \
+    --config "$config" \
+    --data-binary @- \
+    "http://127.0.0.1:${CLICKHOUSE_HTTP_PORT:-8123}/?default_format=TSVRaw"); then
+    rm -f -- "$config"
+    die "ClickHouse HTTP query failed"
+  fi
+  rm -f -- "$config"
+  printf '%s' "$response"
+}
+
 clickhouse_peerdb() {
   CLICKHOUSE_PASSWORD="$CLICKHOUSE_PEERDB_PASSWORD" clickhouse-client \
     --host 127.0.0.1 \

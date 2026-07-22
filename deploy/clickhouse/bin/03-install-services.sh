@@ -34,7 +34,10 @@ for wrapper in \
   run-peerdb-server.sh \
   run-minio.sh \
   apply-firewall.sh \
-  check-analytics-health.sh
+  check-analytics-health.sh \
+  reconcile-schema.sh \
+  refresh-current-views.sh \
+  refresh-gateway.sh
 do
   sudo install -m 0755 "$SCRIPT_DIR/$wrapper" "/opt/echo-analytics/bin/$wrapper"
 done

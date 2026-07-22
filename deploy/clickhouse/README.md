@@ -381,6 +381,15 @@ raw ClickHouse strings as `bytea` for source binary columns. A
 source/view table or column mismatch aborts the transaction and preserves the
 previous working gateway definitions.
 
+The health timer automatically compares the source publication, raw
+ClickHouse tables, current-state views, and gateway compatibility views after
+each successful replication probe. Once PeerDB propagates a simple added
+column, it refreshes stale current and gateway definitions without operator
+action. Normal and local package deploys do not wait for this asynchronous
+step; queries that use the new column fall back to PostgreSQL until analytics
+is reconciled. Columns added with a PostgreSQL default still require an
+explicit historical backfill or full mirror resync.
+
 ### 5. Echo configuration
 
 Copy [app-analytics.toml.example](env/app-analytics.toml.example) into the
