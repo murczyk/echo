@@ -16,6 +16,7 @@ use goi_echo_worker::api::{
 };
 use sea_orm::{
     ConnectionTrait, DatabaseBackend, Statement, TransactionTrait, TryGetable,
+    Value,
 };
 use std::io::{Cursor, Read, Write};
 use std::path::{Component, Path, PathBuf};
@@ -359,17 +360,26 @@ async fn update_sync_lock(
     lock_id: &str,
     release: bool,
 ) -> Result<(), Error> {
-    let sql = if release {
-        "update sync_lock set updated_at = now(), released_at = now() where id = $1::uuid and released_at is null"
+    let (sql, values): (&str, Vec<Value>) = if release {
+        (
+            "update sync_lock set updated_at = now(), released_at = now() where id = $1::uuid and released_at is null",
+            vec![lock_id.to_string().into()],
+        )
     } else {
-        "update sync_lock set updated_at = now() where id = $1::uuid and released_at is null"
+        (
+            "update sync_lock set updated_at = now() where id = $1::uuid and released_at is null and updated_at >= now() - make_interval(secs => $2::double precision)",
+            vec![
+                lock_id.to_string().into(),
+                SYNC_LOCK_LIVE_TTL_SECS.into(),
+            ],
+        )
     };
     let result = state
         .db
         .execute(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             sql,
-            [lock_id.to_string().into()],
+            values,
         ))
         .await
         .map_err(ErrorInternalServerError)?;
