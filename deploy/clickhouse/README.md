@@ -127,10 +127,11 @@ Deploy [source.env.example](env/source.env.example) as
 `/etc/echo-peerdb/source.env`, owned by `root`, mode `0600`, and an exclusion
 file as `/etc/echo-peerdb/tables-exclude.txt`. If the exclusion file is absent,
 `source-configure.sh` installs the shipped
-[default exclusions](env/tables-exclude.txt.example), which omit superseded
+[default exclusions](env/tables-exclude.txt), which omit superseded
 PostgreSQL aggregates, the highly mutable GOI knowledge table, and transient
-worker queues. Customize that file before the first snapshot. The analytics
-copy of the same password stays in `echo-peerdb-<source-hostname>`.
+worker queues. The repository file is canonical; deploy it before the first
+snapshot with `just setup-analytics-reconcile-tables`. The analytics copy of
+the same password stays in `echo-peerdb-<source-hostname>`.
 
 ## Build artifacts
 
@@ -483,16 +484,18 @@ bin/finish-resync.sh
 
 ### The correct day-two table-selection solution
 
-`/etc/echo-peerdb/tables-exclude.txt` on the Echo source is the source of
-truth. After adding or removing entries, run this on that source host from the
-Echo checkout:
+[env/tables-exclude.txt](env/tables-exclude.txt) is the versioned source of
+truth. After adding or removing entries, run this on the Echo source host from
+the Echo checkout:
 
 ```bash
-just analytics-reconcile-tables
+just setup-analytics-reconcile-tables
 ```
 
-The command pauses the existing mirror, reconciles the restricted source role
-and custom PostgreSQL publication, and asks PeerDB to edit its table mappings.
+The command installs the repository file as
+`/etc/echo-peerdb/tables-exclude.txt`, pauses the existing mirror, reconciles
+the restricted source role and custom PostgreSQL publication, and asks PeerDB
+to edit its table mappings.
 Newly included tables receive their own initial snapshot; existing selected
 tables are not resnapshotted. Newly excluded tables stop receiving CDC, their
 raw and current ClickHouse objects are dropped, and the gateway compatibility
@@ -513,6 +516,10 @@ slot retains WAL. If reconciliation fails, the command deliberately leaves the
 mirror paused instead of resuming a mismatched mapping. Fix the reported error
 and rerun the same command promptly. If the slot becomes `lost`, use the full
 `resync.sh --yes` recovery path instead.
+
+`just analytics-reconcile-tables` is the lower-level repair command. It applies
+whatever file is already installed under `/etc/echo-peerdb` without replacing
+it from the repository.
 
 ### Replacing a development source database
 

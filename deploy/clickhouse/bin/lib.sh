@@ -10,7 +10,7 @@ INSTANCE_FILE=${ECHO_ANALYTICS_INSTANCE_FILE:-$CONFIG_DIR/instance.env}
 CLICKHOUSE_SECRETS_FILE=${ECHO_ANALYTICS_CLICKHOUSE_SECRETS_FILE:-$CONFIG_DIR/clickhouse.env}
 PEERDB_SECRETS_FILE=${ECHO_ANALYTICS_PEERDB_SECRETS_FILE:-$CONFIG_DIR/peerdb.env}
 SOURCE_CONFIG_FILE=${ECHO_PEERDB_SOURCE_CONFIG_FILE:-/etc/echo-peerdb/source.env}
-DEFAULT_SOURCE_TABLE_EXCLUDE_FILE=$BUNDLE_DIR/env/tables-exclude.txt.example
+SOURCE_TABLE_EXCLUDE_REPO_FILE=$BUNDLE_DIR/env/tables-exclude.txt
 ANALYTICS_HEARTBEAT_SOURCE_SCHEMA=echo_analytics
 ANALYTICS_HEARTBEAT_SOURCE_TABLE=heartbeat
 ANALYTICS_HEARTBEAT_TARGET_TABLE=echo_analytics__heartbeat
@@ -437,17 +437,17 @@ effective_source_exclude_file() {
   if protected_file_exists "$SOURCE_TABLE_EXCLUDE_FILE"; then
     printf '%s' "$SOURCE_TABLE_EXCLUDE_FILE"
   else
-    printf '%s' "$DEFAULT_SOURCE_TABLE_EXCLUDE_FILE"
+    printf '%s' "$SOURCE_TABLE_EXCLUDE_REPO_FILE"
   fi
 }
 
 install_default_source_exclusions() {
   protected_file_exists "$SOURCE_TABLE_EXCLUDE_FILE" && return 0
-  require_file "$DEFAULT_SOURCE_TABLE_EXCLUDE_FILE"
+  require_file "$SOURCE_TABLE_EXCLUDE_REPO_FILE"
   sudo install -d -o root -g root -m 0755 \
     "$(dirname "$SOURCE_TABLE_EXCLUDE_FILE")"
   sudo install -o root -g root -m 0600 \
-    "$DEFAULT_SOURCE_TABLE_EXCLUDE_FILE" "$SOURCE_TABLE_EXCLUDE_FILE"
+    "$SOURCE_TABLE_EXCLUDE_REPO_FILE" "$SOURCE_TABLE_EXCLUDE_FILE"
   log "Installed the default table exclusions at $SOURCE_TABLE_EXCLUDE_FILE"
 }
 
