@@ -1,4 +1,3 @@
-use crate::config::SETTLEMENT_PREFIX_SEARCH_LIMIT;
 use crate::location::trie::Trie;
 use crate::location::types::Language;
 pub use crate::location::types::SettlementsDataConfig;
@@ -96,12 +95,7 @@ fn find_locations_by_prefix(
         locations.extend(settlements.iter().cloned());
     }
     let locations = filter_locations_by_region(locations, m_region);
-    let mut locations = rank_locations_by_coordinates(locations, m_src_coords);
-    locations.sort_by(|a, b| {
-        a.name.cmp(&b.name).then_with(|| a.region.cmp(&b.region))
-    });
-    locations.truncate(SETTLEMENT_PREFIX_SEARCH_LIMIT);
-    Ok(locations)
+    Ok(rank_locations_by_coordinates(locations, m_src_coords))
 }
 
 #[derive(Debug, Deserialize)]
@@ -849,6 +843,94 @@ mod tests {
         .unwrap();
 
         assert!(locations.is_empty());
+    }
+
+    #[test]
+    fn preserves_coordinate_ranked_prefix_order() {
+        let settlements_by_name = BTreeMap::from([
+            (
+                "ЛИМАН АЛЬФА".to_string(),
+                vec![SettlementDetails {
+                    name: "ЛИМАН АЛЬФА".to_string(),
+                    coords: Some((2.0, 2.0)),
+                    ..Default::default()
+                }],
+            ),
+            (
+                "ЛИМАН ЯНТАР".to_string(),
+                vec![SettlementDetails {
+                    name: "ЛИМАН ЯНТАР".to_string(),
+                    coords: Some((1.0, 1.0)),
+                    ..Default::default()
+                }],
+            ),
+        ]);
+        let settlements_data = Arc::new((
+            vec![],
+            vec![],
+            Trie::new(),
+            BTreeMap::new(),
+            settlements_by_name,
+        ));
+        let settlements = Arc::new(RwLock::new(SettlementsDataConfig {
+            default_settlements_data: settlements_data,
+            ..Default::default()
+        }));
+
+        let locations = find_locations_by_prefix(
+            settlements,
+            "лиман".to_string(),
+            None,
+            Some((0.0, 0.0)),
+            None,
+        )
+        .unwrap();
+
+        assert_eq!(
+            locations
+                .into_iter()
+                .map(|location| location.name)
+                .collect_vec(),
+            vec!["ЛИМАН ЯНТАР", "ЛИМАН АЛЬФА"]
+        );
+    }
+
+    #[test]
+    fn returns_all_prefix_matches() {
+        let settlements_by_name = (0..101)
+            .map(|index| {
+                let name = format!("ЛОКАЦІЯ {index:03}");
+                (
+                    name.clone(),
+                    vec![SettlementDetails {
+                        name,
+                        ..Default::default()
+                    }],
+                )
+            })
+            .collect();
+        let settlements_data = Arc::new((
+            vec![],
+            vec![],
+            Trie::new(),
+            BTreeMap::new(),
+            settlements_by_name,
+        ));
+        let settlements = Arc::new(RwLock::new(SettlementsDataConfig {
+            default_settlements_data: settlements_data,
+            ..Default::default()
+        }));
+
+        let locations = find_locations_by_prefix(
+            settlements,
+            "локація".to_string(),
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+
+        assert_eq!(locations.len(), 101);
     }
 
     #[test]
