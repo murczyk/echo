@@ -290,6 +290,40 @@ pub(in crate::devices) struct RawFileSearchFilters {
     pub(in crate::devices) file_metadata_modified_from: Option<NaiveDateTime>,
     pub(in crate::devices) file_metadata_modified_to: Option<NaiveDateTime>,
 }
+#[allow(dead_code)]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(in crate::devices) struct BrowseFilesCommand {
+    pub(in crate::devices) device_id: Uuid,
+    pub(in crate::devices) parent_entry_id: Uuid,
+    pub(in crate::devices) include_breadcrumbs: bool,
+    pub(in crate::devices) limit: Option<u64>,
+    pub(in crate::devices) cursor: Option<String>,
+}
+
+#[allow(dead_code)]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(in crate::devices) struct BrowseFilesResult {
+    pub(in crate::devices) breadcrumbs: Vec<Breadcrumb>,
+    pub(in crate::devices) entries: Vec<TreeEntry>,
+    pub(in crate::devices) next_cursor: Option<String>,
+}
+
+#[allow(dead_code)]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(in crate::devices) struct SearchFilesCommand {
+    pub(in crate::devices) device_id: Uuid,
+    pub(in crate::devices) scope_entry_id: Uuid,
+    pub(in crate::devices) filters: RawFileSearchFilters,
+    pub(in crate::devices) limit: Option<u64>,
+    pub(in crate::devices) cursor: Option<String>,
+}
+
+#[allow(dead_code)]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(in crate::devices) struct SearchFilesResult {
+    pub(in crate::devices) entries: Vec<SearchEntry>,
+    pub(in crate::devices) next_cursor: Option<String>,
+}
 
 #[allow(dead_code)]
 #[derive(Clone, Debug, PartialEq, Eq)]

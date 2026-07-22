@@ -5,6 +5,9 @@ mod metadata;
 mod path;
 mod query;
 mod repository;
+#[allow(dead_code)]
+mod service;
+
 mod types;
 mod validation;
 
@@ -23,12 +26,16 @@ pub(in crate::devices) use metadata::normalize_file_metadata;
 pub(in crate::devices) use path::SourcePathParser;
 pub(in crate::devices) use repository::FilesystemRepository;
 #[allow(unused_imports)]
+pub(in crate::devices) use service::FileMetadataService;
+#[allow(unused_imports)]
 pub(in crate::devices) use types::{
-    Breadcrumb, DirectoryEntry, DirectoryScope, EntryQueryScope, EntrySortKey,
-    FileSearchFilters, KeysetPage, KeysetPageRequest, NormalizedFileMetadata,
-    ParsedSourcePath, RawFileSearchFilters, RootEntry, RootSortKey,
-    SearchEntry, SyncFileItemCommand, SyncFileItemOutcome, SyncFileItemResult,
-    SyncFileOperation, SyncFileRejectionKind, TreeEntry,
+    Breadcrumb, BrowseFilesCommand, BrowseFilesResult, DirectoryEntry,
+    DirectoryScope, EntryQueryScope, EntrySortKey, FileSearchFilters,
+    KeysetPage, KeysetPageRequest, NormalizedFileMetadata, ParsedSourcePath,
+    RawFileSearchFilters, RootEntry, RootSortKey, SearchEntry,
+    SearchFilesCommand, SearchFilesResult, SyncFileItemCommand,
+    SyncFileItemOutcome, SyncFileItemResult, SyncFileOperation,
+    SyncFileRejectionKind, TreeEntry,
 };
 pub(in crate::devices) use types::{
     FileEntry, FileEntryKind, OffsetPage, OffsetPageRequest, PathSyntax,

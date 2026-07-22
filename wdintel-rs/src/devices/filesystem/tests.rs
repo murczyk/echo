@@ -1,18 +1,23 @@
 use super::{
-    ancestor_expr, descendant_expr, query, Breadcrumb, EntryQueryScope,
-    EntrySortKey, FileCursorCodec, FileEntryKind, FileSearchFilters,
-    FilesystemError, FilesystemRepository, KeysetPageRequest,
-    OffsetPageRequest, PathSyntax, RawFileSearchFilters, SearchEntry,
-    TreeEntry,
+    ancestor_expr, descendant_expr, query, Breadcrumb, BrowseFilesCommand,
+    EntryQueryScope, EntrySortKey, FileCursorCodec, FileEntryKind,
+    FileMetadataService, FileSearchFilters, FilesystemError,
+    FilesystemRepository, KeysetPageRequest, OffsetPageRequest, PathSyntax,
+    RawFileSearchFilters, SearchEntry, SearchFilesCommand, TreeEntry,
 };
-use crate::config::read_config;
+use crate::config::{
+    read_config, DEVICE_FILE_CURSOR_MAX_BYTES, DEVICE_FILE_PAGE_MAX_LIMIT,
+    ROLE_ADMIN, ROLE_CYBER, ROLE_DEVICE_ANALYST, ROLE_DEVICE_SOURCE,
+};
+use crate::devices::access::DeviceActor;
+use crate::devices::main_db::MainDb;
 use crate::devices::query::list_device_files;
 use crate::devices::types::{
     DeviceFileEntry, ListDeviceFilesReq, ListDeviceFilesRsp,
 };
 use crate::entities::{device, login};
 use crate::file_registry::entities::file_entry;
-use crate::file_registry::{connect_runtime, run_migrations};
+use crate::file_registry::{connect_runtime, run_migrations, FileRegistryDb};
 use crate::functest::tests::{cleanup_locked, mk_login};
 use crate::types::{AppError, Mode, Uuid};
 use chrono::{Duration, NaiveDate, NaiveDateTime};
@@ -578,6 +583,152 @@ async fn stage_three_root_listing_browse_and_breadcrumbs() {
     db.execute_unprepared("truncate table public.file_entry")
         .await
         .unwrap();
+}
+
+#[tokio::test]
+#[serial_test::serial]
+async fn stage_eight_read_service_authorizes_and_composes_roots_browse_search()
+{
+    let (env, _guard) = cleanup_locked().await.unwrap();
+    let timestamp = stage_eight_timestamp();
+    let owner = mk_login(
+        &env.dbx,
+        login::ActiveModel {
+            login: Set(format!("filesystem-stage-eight-{}", Uuid::now_v7())),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let forest =
+        insert_stage_three_forest(env.file_registry_db.connection(), timestamp)
+            .await;
+    let tree =
+        insert_stage_two_tree(env.file_registry_db.connection(), timestamp)
+            .await;
+    insert_device(
+        &env.dbx,
+        forest.target_device_id,
+        &owner.login,
+        "stage-eight-active",
+        timestamp,
+    )
+    .await;
+    insert_device(
+        &env.dbx,
+        tree.device_id,
+        &owner.login,
+        "stage-eight-archived",
+        timestamp,
+    )
+    .await;
+    archive_device(&env.dbx, tree.device_id, timestamp).await;
+
+    for (login, roles) in [
+        ("stage-eight-cyber", &[ROLE_CYBER][..]),
+        ("stage-eight-source", &[ROLE_DEVICE_SOURCE][..]),
+        ("stage-eight-analyst", &[ROLE_DEVICE_ANALYST][..]),
+        ("stage-eight-admin", &[ROLE_ADMIN][..]),
+    ] {
+        let actor = DeviceActor::from_roles_for_test(login, roles);
+        assert_stage_eight_actor_reads(
+            &env.dbx,
+            &env.file_registry_db,
+            &actor,
+            &forest,
+            &tree,
+        )
+        .await;
+    }
+
+    let admin =
+        DeviceActor::from_roles_for_test("stage-eight-admin", &[ROLE_ADMIN]);
+    assert_stage_eight_browse_composition(
+        &env.dbx,
+        &env.file_registry_db,
+        &admin,
+        &forest,
+    )
+    .await;
+    let duplicate_cursor = assert_stage_eight_search_composition(
+        &env.dbx,
+        &env.file_registry_db,
+        &admin,
+        &tree,
+    )
+    .await;
+    assert_stage_eight_validation_contract(
+        &env.dbx,
+        &env.file_registry_db,
+        &admin,
+        &forest,
+        &tree,
+        &duplicate_cursor,
+        timestamp,
+    )
+    .await;
+}
+
+#[tokio::test]
+#[serial_test::serial]
+async fn stage_eight_read_service_short_circuits_and_preserves_safe_errors() {
+    let (env, _guard) = cleanup_locked().await.unwrap();
+    let timestamp = stage_eight_timestamp();
+    let owner = mk_login(
+        &env.dbx,
+        login::ActiveModel {
+            login: Set(format!("filesystem-stage-eight-{}", Uuid::now_v7())),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let tree =
+        insert_stage_two_tree(env.file_registry_db.connection(), timestamp)
+            .await;
+    let forest =
+        insert_stage_three_forest(env.file_registry_db.connection(), timestamp)
+            .await;
+    insert_device(
+        &env.dbx,
+        tree.device_id,
+        &owner.login,
+        "stage-eight-visible",
+        timestamp,
+    )
+    .await;
+    insert_device(
+        &env.dbx,
+        tree.other_device_id,
+        &owner.login,
+        "stage-eight-other",
+        timestamp,
+    )
+    .await;
+
+    let actor =
+        DeviceActor::from_roles_for_test("stage-eight-admin", &[ROLE_ADMIN]);
+    assert_stage_eight_live_scope_errors(
+        &env.dbx,
+        &env.file_registry_db,
+        &actor,
+        &tree,
+    )
+    .await;
+
+    let outage_db = connect_runtime(&env.config, Mode::Test).await.unwrap();
+    outage_db.connection().clone().close().await.unwrap();
+    let unauthorized =
+        DeviceActor::from_roles_for_test("stage-eight-none", &[]);
+    assert_stage_eight_outage_short_circuits(
+        &env.dbx,
+        &outage_db,
+        &unauthorized,
+        &actor,
+        &tree,
+        &forest,
+    )
+    .await;
 }
 
 struct StageTwoTree {
@@ -1961,4 +2112,820 @@ fn tree_entry_ids(entries: &[TreeEntry]) -> Vec<Uuid> {
             TreeEntry::File(file) => file.file_id,
         })
         .collect()
+}
+
+fn stage_eight_timestamp() -> NaiveDateTime {
+    NaiveDate::from_ymd_opt(2026, 7, 22)
+        .unwrap()
+        .and_hms_milli_opt(12, 30, 45, 123)
+        .unwrap()
+}
+
+async fn archive_device(
+    db: &DatabaseConnection,
+    device_id: Uuid,
+    timestamp: NaiveDateTime,
+) {
+    let mut device = device::Entity::find_by_id(device_id)
+        .one(db)
+        .await
+        .unwrap()
+        .unwrap()
+        .into_active_model();
+    device.archived = Set(true);
+    device.archived_at = Set(Some(timestamp));
+    device.update(db).await.unwrap();
+}
+
+async fn assert_stage_eight_actor_reads(
+    main_db: &DatabaseConnection,
+    file_registry_db: &FileRegistryDb,
+    actor: &DeviceActor,
+    forest: &StageThreeForest,
+    tree: &StageTwoTree,
+) {
+    let active_roots = FileMetadataService::list_roots(
+        MainDb::new(main_db),
+        file_registry_db,
+        actor,
+        forest.target_device_id,
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        active_roots
+            .iter()
+            .map(|root| root.entry_id)
+            .collect::<Vec<_>>(),
+        vec![
+            forest.target_posix_root_id,
+            forest.target_windows_drive_root_id,
+            forest.target_windows_unc_root_id,
+        ]
+    );
+
+    let archived_roots = FileMetadataService::list_roots(
+        MainDb::new(main_db),
+        file_registry_db,
+        actor,
+        tree.device_id,
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        archived_roots
+            .iter()
+            .map(|root| root.entry_id)
+            .collect::<Vec<_>>(),
+        vec![tree.root_id]
+    );
+
+    let active_browse = FileMetadataService::browse(
+        MainDb::new(main_db),
+        file_registry_db,
+        actor,
+        BrowseFilesCommand {
+            device_id: forest.target_device_id,
+            parent_entry_id: forest.same_directory_id,
+            include_breadcrumbs: false,
+            limit: None,
+            cursor: None,
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        tree_entry_ids(&active_browse.entries),
+        vec![forest.nested_file_id]
+    );
+
+    let archived_browse = FileMetadataService::browse(
+        MainDb::new(main_db),
+        file_registry_db,
+        actor,
+        BrowseFilesCommand {
+            device_id: tree.device_id,
+            parent_entry_id: tree.reports_id,
+            include_breadcrumbs: false,
+            limit: Some(1),
+            cursor: None,
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        tree_entry_ids(&archived_browse.entries),
+        vec![tree.archive_id]
+    );
+
+    let active_search = FileMetadataService::search(
+        MainDb::new(main_db),
+        file_registry_db,
+        actor,
+        SearchFilesCommand {
+            device_id: forest.target_device_id,
+            scope_entry_id: forest.navigation_id,
+            filters: raw_search_filters(Some("same"), &[], &[], None, None),
+            limit: None,
+            cursor: None,
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        search_entry_ids(&active_search.entries),
+        vec![
+            forest.same_directory_id,
+            forest.same_file_ids[0],
+            forest.same_file_ids[1],
+            forest.same_file_ids[2],
+        ]
+    );
+
+    let archived_search = FileMetadataService::search(
+        MainDb::new(main_db),
+        file_registry_db,
+        actor,
+        SearchFilesCommand {
+            device_id: tree.device_id,
+            scope_entry_id: tree.reports_id,
+            filters: raw_search_filters(Some("archive"), &[], &[], None, None),
+            limit: None,
+            cursor: None,
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        search_entry_ids(&archived_search.entries),
+        vec![tree.archive_id, tree.archive_file_id]
+    );
+}
+
+async fn assert_stage_eight_browse_composition(
+    main_db: &DatabaseConnection,
+    file_registry_db: &FileRegistryDb,
+    actor: &DeviceActor,
+    forest: &StageThreeForest,
+) {
+    let default_page = FileMetadataService::browse(
+        MainDb::new(main_db),
+        file_registry_db,
+        actor,
+        BrowseFilesCommand {
+            device_id: forest.target_device_id,
+            parent_entry_id: forest.same_directory_id,
+            include_breadcrumbs: true,
+            limit: None,
+            cursor: None,
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        default_page.breadcrumbs,
+        vec![
+            Breadcrumb {
+                entry_id: forest.target_posix_root_id,
+                name: "/".to_string(),
+            },
+            Breadcrumb {
+                entry_id: forest.navigation_id,
+                name: "navigation".to_string(),
+            },
+            Breadcrumb {
+                entry_id: forest.same_directory_id,
+                name: "same".to_string(),
+            },
+        ]
+    );
+    assert_eq!(
+        tree_entry_ids(&default_page.entries),
+        vec![forest.nested_file_id]
+    );
+    assert!(default_page.next_cursor.is_none());
+
+    let without_breadcrumbs = FileMetadataService::browse(
+        MainDb::new(main_db),
+        file_registry_db,
+        actor,
+        BrowseFilesCommand {
+            device_id: forest.target_device_id,
+            parent_entry_id: forest.same_directory_id,
+            include_breadcrumbs: false,
+            limit: None,
+            cursor: None,
+        },
+    )
+    .await
+    .unwrap();
+    assert!(without_breadcrumbs.breadcrumbs.is_empty());
+    assert_eq!(
+        tree_entry_ids(&without_breadcrumbs.entries),
+        vec![forest.nested_file_id]
+    );
+
+    let first_page = FileMetadataService::browse(
+        MainDb::new(main_db),
+        file_registry_db,
+        actor,
+        BrowseFilesCommand {
+            device_id: forest.target_device_id,
+            parent_entry_id: forest.navigation_id,
+            include_breadcrumbs: false,
+            limit: Some(2),
+            cursor: None,
+        },
+    )
+    .await
+    .unwrap();
+    let first_cursor = first_page
+        .next_cursor
+        .clone()
+        .expect("first browse page must continue");
+    let first_entry_ids = tree_entry_ids(&first_page.entries);
+    assert_eq!(
+        first_entry_ids,
+        vec![forest.same_directory_id, forest.zeta_directory_id]
+    );
+
+    let second_page = FileMetadataService::browse(
+        MainDb::new(main_db),
+        file_registry_db,
+        actor,
+        BrowseFilesCommand {
+            device_id: forest.target_device_id,
+            parent_entry_id: forest.navigation_id,
+            include_breadcrumbs: false,
+            limit: Some(2),
+            cursor: Some(first_cursor),
+        },
+    )
+    .await
+    .unwrap();
+    let second_cursor = second_page
+        .next_cursor
+        .clone()
+        .expect("second browse page must continue");
+    let second_entry_ids = tree_entry_ids(&second_page.entries);
+    assert_eq!(
+        second_entry_ids,
+        vec![forest.aaa_file_id, forest.same_file_ids[0]]
+    );
+
+    let third_page = FileMetadataService::browse(
+        MainDb::new(main_db),
+        file_registry_db,
+        actor,
+        BrowseFilesCommand {
+            device_id: forest.target_device_id,
+            parent_entry_id: forest.navigation_id,
+            include_breadcrumbs: false,
+            limit: Some(2),
+            cursor: Some(second_cursor),
+        },
+    )
+    .await
+    .unwrap();
+    let third_entry_ids = tree_entry_ids(&third_page.entries);
+    assert_eq!(
+        third_entry_ids,
+        vec![forest.same_file_ids[1], forest.same_file_ids[2]]
+    );
+    assert!(third_page.next_cursor.is_none());
+    assert_eq!(
+        [first_entry_ids, second_entry_ids, third_entry_ids].concat(),
+        vec![
+            forest.same_directory_id,
+            forest.zeta_directory_id,
+            forest.aaa_file_id,
+            forest.same_file_ids[0],
+            forest.same_file_ids[1],
+            forest.same_file_ids[2],
+        ]
+    );
+}
+
+async fn assert_stage_eight_search_composition(
+    main_db: &DatabaseConnection,
+    file_registry_db: &FileRegistryDb,
+    actor: &DeviceActor,
+    tree: &StageTwoTree,
+) -> String {
+    let scoped_search = FileMetadataService::search(
+        MainDb::new(main_db),
+        file_registry_db,
+        actor,
+        SearchFilesCommand {
+            device_id: tree.device_id,
+            scope_entry_id: tree.reports_id,
+            filters: raw_search_filters(None, &[], &[], None, None),
+            limit: Some(100),
+            cursor: None,
+        },
+    )
+    .await
+    .unwrap();
+    let scoped_entry_ids = search_entry_ids(&scoped_search.entries);
+    assert!(scoped_entry_ids.contains(&tree.archive_id));
+    assert!(scoped_entry_ids.contains(&tree.nested_file_id));
+    assert!(!scoped_entry_ids.contains(&tree.reports_id));
+    assert_eq!(
+        find_search_entry(&scoped_search.entries, tree.nested_file_id)
+            .path_components,
+        vec![
+            "reports".to_string(),
+            "archive".to_string(),
+            "nested.log".to_string(),
+        ]
+    );
+
+    let literal_search = FileMetadataService::search(
+        MainDb::new(main_db),
+        file_registry_db,
+        actor,
+        SearchFilesCommand {
+            device_id: tree.device_id,
+            scope_entry_id: tree.reports_id,
+            filters: raw_search_filters(
+                Some("literal%value"),
+                &[],
+                &[],
+                None,
+                None,
+            ),
+            limit: None,
+            cursor: None,
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        search_entry_ids(&literal_search.entries),
+        vec![tree.percent_file_id]
+    );
+
+    let technical_search = FileMetadataService::search(
+        MainDb::new(main_db),
+        file_registry_db,
+        actor,
+        SearchFilesCommand {
+            device_id: tree.device_id,
+            scope_entry_id: tree.reports_id,
+            filters: raw_search_filters(
+                None,
+                &["application/pdf"],
+                &["pdf"],
+                Some(tree.metadata_modified_at),
+                Some(tree.metadata_modified_at),
+            ),
+            limit: None,
+            cursor: None,
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        search_entry_ids(&technical_search.entries),
+        vec![tree.metadata_file_id]
+    );
+
+    let first_page = FileMetadataService::search(
+        MainDb::new(main_db),
+        file_registry_db,
+        actor,
+        SearchFilesCommand {
+            device_id: tree.device_id,
+            scope_entry_id: tree.reports_id,
+            filters: raw_search_filters(
+                Some("duplicate"),
+                &[],
+                &[],
+                None,
+                None,
+            ),
+            limit: Some(2),
+            cursor: None,
+        },
+    )
+    .await
+    .unwrap();
+    let duplicate_cursor = first_page
+        .next_cursor
+        .clone()
+        .expect("first duplicate search page must continue");
+    let first_entry_ids = search_entry_ids(&first_page.entries);
+    assert_eq!(
+        first_entry_ids,
+        vec![tree.duplicate_file_ids[0], tree.duplicate_file_ids[1]]
+    );
+
+    let second_page = FileMetadataService::search(
+        MainDb::new(main_db),
+        file_registry_db,
+        actor,
+        SearchFilesCommand {
+            device_id: tree.device_id,
+            scope_entry_id: tree.reports_id,
+            filters: raw_search_filters(
+                Some("duplicate"),
+                &[],
+                &[],
+                None,
+                None,
+            ),
+            limit: Some(2),
+            cursor: Some(duplicate_cursor.clone()),
+        },
+    )
+    .await
+    .unwrap();
+    let second_entry_ids = search_entry_ids(&second_page.entries);
+    assert_eq!(second_entry_ids, vec![tree.duplicate_file_ids[2]]);
+    assert_eq!(
+        [first_entry_ids, second_entry_ids].concat(),
+        tree.duplicate_file_ids.to_vec()
+    );
+
+    duplicate_cursor
+}
+
+async fn assert_stage_eight_validation_contract(
+    main_db: &DatabaseConnection,
+    file_registry_db: &FileRegistryDb,
+    actor: &DeviceActor,
+    forest: &StageThreeForest,
+    tree: &StageTwoTree,
+    duplicate_cursor: &str,
+    timestamp: NaiveDateTime,
+) {
+    assert_form_error(
+        FileMetadataService::browse(
+            MainDb::new(main_db),
+            file_registry_db,
+            actor,
+            BrowseFilesCommand {
+                device_id: forest.target_device_id,
+                parent_entry_id: forest.navigation_id,
+                include_breadcrumbs: false,
+                limit: None,
+                cursor: Some("not-a-uuid".to_string()),
+            },
+        )
+        .await
+        .unwrap_err(),
+        "cursor",
+        "invalid cursor",
+    );
+    assert_form_error(
+        FileMetadataService::browse(
+            MainDb::new(main_db),
+            file_registry_db,
+            actor,
+            BrowseFilesCommand {
+                device_id: forest.target_device_id,
+                parent_entry_id: forest.navigation_id,
+                include_breadcrumbs: false,
+                limit: None,
+                cursor: Some("a".repeat(DEVICE_FILE_CURSOR_MAX_BYTES + 1)),
+            },
+        )
+        .await
+        .unwrap_err(),
+        "cursor",
+        "invalid cursor",
+    );
+    assert_form_error(
+        FileMetadataService::browse(
+            MainDb::new(main_db),
+            file_registry_db,
+            actor,
+            BrowseFilesCommand {
+                device_id: forest.target_device_id,
+                parent_entry_id: forest.navigation_id,
+                include_breadcrumbs: false,
+                limit: Some(0),
+                cursor: None,
+            },
+        )
+        .await
+        .unwrap_err(),
+        "limit",
+        &format!("must be between 1 and {DEVICE_FILE_PAGE_MAX_LIMIT}"),
+    );
+    assert_form_error(
+        FileMetadataService::search(
+            MainDb::new(main_db),
+            file_registry_db,
+            actor,
+            SearchFilesCommand {
+                device_id: tree.device_id,
+                scope_entry_id: tree.reports_id,
+                filters: raw_search_filters(
+                    Some("archive"),
+                    &[],
+                    &[],
+                    None,
+                    None,
+                ),
+                limit: Some(2),
+                cursor: Some(duplicate_cursor.to_string()),
+            },
+        )
+        .await
+        .unwrap_err(),
+        "cursor",
+        "invalid cursor",
+    );
+    assert_form_error(
+        FileMetadataService::search(
+            MainDb::new(main_db),
+            file_registry_db,
+            actor,
+            SearchFilesCommand {
+                device_id: tree.device_id,
+                scope_entry_id: tree.archive_id,
+                filters: raw_search_filters(
+                    Some("duplicate"),
+                    &[],
+                    &[],
+                    None,
+                    None,
+                ),
+                limit: Some(2),
+                cursor: Some(duplicate_cursor.to_string()),
+            },
+        )
+        .await
+        .unwrap_err(),
+        "cursor",
+        "invalid cursor",
+    );
+    assert_form_error(
+        FileMetadataService::search(
+            MainDb::new(main_db),
+            file_registry_db,
+            actor,
+            SearchFilesCommand {
+                device_id: tree.device_id,
+                scope_entry_id: tree.reports_id,
+                filters: raw_search_filters(
+                    None,
+                    &[],
+                    &[],
+                    Some(timestamp + Duration::seconds(1)),
+                    Some(timestamp),
+                ),
+                limit: None,
+                cursor: None,
+            },
+        )
+        .await
+        .unwrap_err(),
+        "filters.file_metadata_modified_from",
+        "must be before or equal to filters.file_metadata_modified_to",
+    );
+}
+
+async fn assert_stage_eight_live_scope_errors(
+    main_db: &DatabaseConnection,
+    file_registry_db: &FileRegistryDb,
+    actor: &DeviceActor,
+    tree: &StageTwoTree,
+) {
+    assert_not_found(
+        FileMetadataService::browse(
+            MainDb::new(main_db),
+            file_registry_db,
+            actor,
+            BrowseFilesCommand {
+                device_id: tree.other_device_id,
+                parent_entry_id: tree.reports_id,
+                include_breadcrumbs: false,
+                limit: None,
+                cursor: None,
+            },
+        )
+        .await
+        .unwrap_err(),
+    );
+    assert_not_found(
+        FileMetadataService::browse(
+            MainDb::new(main_db),
+            file_registry_db,
+            actor,
+            BrowseFilesCommand {
+                device_id: tree.device_id,
+                parent_entry_id: tree.archive_file_id,
+                include_breadcrumbs: false,
+                limit: None,
+                cursor: None,
+            },
+        )
+        .await
+        .unwrap_err(),
+    );
+    assert_not_found(
+        FileMetadataService::search(
+            MainDb::new(main_db),
+            file_registry_db,
+            actor,
+            SearchFilesCommand {
+                device_id: tree.device_id,
+                scope_entry_id: Uuid::from_u128(
+                    0x018f_0000_0000_7000_8000_0000_0000_9000,
+                ),
+                filters: raw_search_filters(None, &[], &[], None, None),
+                limit: None,
+                cursor: None,
+            },
+        )
+        .await
+        .unwrap_err(),
+    );
+}
+
+async fn assert_stage_eight_outage_short_circuits(
+    main_db: &DatabaseConnection,
+    outage_db: &FileRegistryDb,
+    unauthorized: &DeviceActor,
+    actor: &DeviceActor,
+    tree: &StageTwoTree,
+    forest: &StageThreeForest,
+) {
+    assert_forbidden(
+        FileMetadataService::list_roots(
+            MainDb::new(main_db),
+            outage_db,
+            unauthorized,
+            tree.device_id,
+        )
+        .await
+        .unwrap_err(),
+    );
+    assert_forbidden(
+        FileMetadataService::browse(
+            MainDb::new(main_db),
+            outage_db,
+            unauthorized,
+            BrowseFilesCommand {
+                device_id: tree.device_id,
+                parent_entry_id: tree.reports_id,
+                include_breadcrumbs: false,
+                limit: None,
+                cursor: None,
+            },
+        )
+        .await
+        .unwrap_err(),
+    );
+    assert_forbidden(
+        FileMetadataService::search(
+            MainDb::new(main_db),
+            outage_db,
+            unauthorized,
+            SearchFilesCommand {
+                device_id: tree.device_id,
+                scope_entry_id: tree.reports_id,
+                filters: raw_search_filters(None, &[], &[], None, None),
+                limit: None,
+                cursor: None,
+            },
+        )
+        .await
+        .unwrap_err(),
+    );
+
+    assert_not_found(
+        FileMetadataService::list_roots(
+            MainDb::new(main_db),
+            outage_db,
+            actor,
+            forest.single_root_device_id,
+        )
+        .await
+        .unwrap_err(),
+    );
+    assert_not_found(
+        FileMetadataService::browse(
+            MainDb::new(main_db),
+            outage_db,
+            actor,
+            BrowseFilesCommand {
+                device_id: forest.single_root_device_id,
+                parent_entry_id: forest.single_root_id,
+                include_breadcrumbs: false,
+                limit: None,
+                cursor: None,
+            },
+        )
+        .await
+        .unwrap_err(),
+    );
+    assert_not_found(
+        FileMetadataService::search(
+            MainDb::new(main_db),
+            outage_db,
+            actor,
+            SearchFilesCommand {
+                device_id: forest.single_root_device_id,
+                scope_entry_id: forest.single_root_id,
+                filters: raw_search_filters(None, &[], &[], None, None),
+                limit: None,
+                cursor: None,
+            },
+        )
+        .await
+        .unwrap_err(),
+    );
+
+    assert_internal_filesystem_error(
+        FileMetadataService::list_roots(
+            MainDb::new(main_db),
+            outage_db,
+            actor,
+            tree.device_id,
+        )
+        .await
+        .unwrap_err(),
+    );
+    assert_internal_filesystem_error(
+        FileMetadataService::browse(
+            MainDb::new(main_db),
+            outage_db,
+            actor,
+            BrowseFilesCommand {
+                device_id: tree.device_id,
+                parent_entry_id: tree.reports_id,
+                include_breadcrumbs: false,
+                limit: None,
+                cursor: None,
+            },
+        )
+        .await
+        .unwrap_err(),
+    );
+    assert_internal_filesystem_error(
+        FileMetadataService::search(
+            MainDb::new(main_db),
+            outage_db,
+            actor,
+            SearchFilesCommand {
+                device_id: tree.device_id,
+                scope_entry_id: tree.reports_id,
+                filters: raw_search_filters(None, &[], &[], None, None),
+                limit: None,
+                cursor: None,
+            },
+        )
+        .await
+        .unwrap_err(),
+    );
+}
+
+fn raw_search_filters(
+    name_query: Option<&str>,
+    mime_types: &[&str],
+    extensions: &[&str],
+    file_metadata_modified_from: Option<NaiveDateTime>,
+    file_metadata_modified_to: Option<NaiveDateTime>,
+) -> RawFileSearchFilters {
+    RawFileSearchFilters {
+        kinds: Vec::new(),
+        name_query: name_query.map(str::to_string),
+        mime_types: mime_types.iter().map(ToString::to_string).collect(),
+        extensions: extensions.iter().map(ToString::to_string).collect(),
+        file_metadata_modified_from,
+        file_metadata_modified_to,
+    }
+}
+
+fn assert_form_error(error: AppError, path: &str, message: &str) {
+    let AppError::Form(errors) = error else {
+        panic!("expected form error");
+    };
+    assert_eq!(errors.len(), 1);
+    assert_eq!(errors.get(path), Some(&message.to_string()));
+}
+
+fn assert_forbidden(error: AppError) {
+    assert!(matches!(
+        error,
+        AppError::Forbidden(message) if message == "device operation is forbidden"
+    ));
+}
+
+fn assert_not_found(error: AppError) {
+    assert!(matches!(error, AppError::NotFound));
+}
+
+fn assert_internal_filesystem_error(error: AppError) {
+    let AppError::AnyhowError { source } = error else {
+        panic!("expected internal application error");
+    };
+    assert_eq!(source.to_string(), "failed to read device filesystem");
+    assert!(source.chain().any(|error| matches!(
+        error.downcast_ref::<FilesystemError>(),
+        Some(FilesystemError::Internal(_))
+    )));
 }
