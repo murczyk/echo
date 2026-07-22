@@ -1,5 +1,5 @@
 use super::error::{FilesystemError, FilesystemFieldError};
-use chrono::NaiveDateTime;
+use chrono::{DateTime, FixedOffset, NaiveDateTime};
 use uuid::Uuid;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -393,10 +393,30 @@ pub(in crate::devices) struct ParsedSourcePath {
 }
 
 #[allow(dead_code)]
+impl ParsedSourcePath {
+    pub(in crate::devices) fn file_name(&self) -> &str {
+        self.components
+            .last()
+            .expect("parsed source path has a file component")
+    }
+}
+
+#[allow(dead_code)]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(in crate::devices) struct SyncFileItemCommand {
     pub(in crate::devices) file_id: Option<Uuid>,
     pub(in crate::devices) absolute_path: String,
+    pub(in crate::devices) mime_type: Option<String>,
+    pub(in crate::devices) extension: Option<String>,
+    pub(in crate::devices) file_metadata_created_at:
+        Option<DateTime<FixedOffset>>,
+    pub(in crate::devices) file_metadata_modified_at:
+        Option<DateTime<FixedOffset>>,
+}
+
+#[allow(dead_code)]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(in crate::devices) struct NormalizedFileMetadata {
     pub(in crate::devices) mime_type: Option<String>,
     pub(in crate::devices) extension: Option<String>,
     pub(in crate::devices) file_metadata_created_at: Option<NaiveDateTime>,

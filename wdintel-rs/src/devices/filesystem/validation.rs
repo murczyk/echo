@@ -3,11 +3,85 @@ use super::{
     types::{FileSearchFilters, RawFileSearchFilters},
 };
 use crate::config::{
+    DEVICE_FILE_ABSOLUTE_PATH_MAX_BYTES, DEVICE_FILE_ABSOLUTE_PATH_MAX_CHARS,
+    DEVICE_FILE_PATH_COMPONENTS_MAX_CHARS,
+    DEVICE_FILE_PATH_COMPONENT_MAX_CHARS, DEVICE_FILE_PATH_COMPONENT_MAX_COUNT,
     DEVICE_FILE_SEARCH_FILTER_MAX_VALUES,
     DEVICE_FILE_SEARCH_NAME_QUERY_MAX_CHARS,
     DEVICE_FILE_SEARCH_NAME_QUERY_MIN_CHARS,
 };
 
+pub(super) fn validate_absolute_path_limits(
+    absolute_path: &str,
+    field_path: &str,
+) -> Result<(), FilesystemError> {
+    if absolute_path.len() > DEVICE_FILE_ABSOLUTE_PATH_MAX_BYTES {
+        return Err(validation_error(
+            field_path,
+            format!(
+                "must contain at most {DEVICE_FILE_ABSOLUTE_PATH_MAX_BYTES} UTF-8 bytes"
+            ),
+        ));
+    }
+
+    let char_count = absolute_path.chars().count();
+    if !(1..=DEVICE_FILE_ABSOLUTE_PATH_MAX_CHARS).contains(&char_count) {
+        return Err(validation_error(
+            field_path,
+            format!(
+                "must contain between 1 and {DEVICE_FILE_ABSOLUTE_PATH_MAX_CHARS} Unicode scalar values"
+            ),
+        ));
+    }
+
+    Ok(())
+}
+
+pub(super) fn validate_path_component_limits(
+    components: &[&str],
+    field_path: &str,
+) -> Result<(), FilesystemError> {
+    if !(1..=DEVICE_FILE_PATH_COMPONENT_MAX_COUNT).contains(&components.len()) {
+        return Err(validation_error(
+            field_path,
+            format!(
+                "must contain between 1 and {DEVICE_FILE_PATH_COMPONENT_MAX_COUNT} path components"
+            ),
+        ));
+    }
+
+    let mut total_char_count = 0;
+    for component in components {
+        let char_count = component.chars().count();
+        if !(1..=DEVICE_FILE_PATH_COMPONENT_MAX_CHARS).contains(&char_count) {
+            return Err(validation_error(
+                field_path,
+                format!(
+                    "each path component must contain between 1 and {DEVICE_FILE_PATH_COMPONENT_MAX_CHARS} Unicode scalar values"
+                ),
+            ));
+        }
+        total_char_count += char_count;
+    }
+
+    if total_char_count > DEVICE_FILE_PATH_COMPONENTS_MAX_CHARS {
+        return Err(validation_error(
+            field_path,
+            format!(
+                "path components must contain at most {DEVICE_FILE_PATH_COMPONENTS_MAX_CHARS} Unicode scalar values in total"
+            ),
+        ));
+    }
+
+    Ok(())
+}
+
+fn validation_error(field_path: &str, message: String) -> FilesystemError {
+    FilesystemError::Validation(vec![FilesystemFieldError {
+        path: field_path.to_string(),
+        message,
+    }])
+}
 impl TryFrom<RawFileSearchFilters> for FileSearchFilters {
     type Error = FilesystemError;
 
@@ -88,6 +162,12 @@ fn canonicalize_values<T: Ord>(mut values: Vec<T>) -> Vec<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::{
+        DEVICE_FILE_ABSOLUTE_PATH_MAX_BYTES,
+        DEVICE_FILE_ABSOLUTE_PATH_MAX_CHARS,
+        DEVICE_FILE_PATH_COMPONENTS_MAX_CHARS,
+        DEVICE_FILE_PATH_COMPONENT_MAX_CHARS,
+    };
     use crate::devices::filesystem::types::{
         EntrySortKey, FileEntryKind, KeysetPageRequest,
     };
@@ -239,6 +319,75 @@ mod tests {
             vec![FilesystemFieldError {
                 path: "filters.file_metadata_modified_from".to_string(),
                 message: "must be before or equal to filters.file_metadata_modified_to".to_string(),
+            }]
+        );
+    }
+
+    fn path_validation_errors(
+        result: Result<(), FilesystemError>,
+    ) -> Vec<FilesystemFieldError> {
+        match result {
+            Err(FilesystemError::Validation(errors)) => errors,
+            _ => panic!("expected filesystem validation error"),
+        }
+    }
+
+    #[test]
+    fn absolute_path_limits_enforce_utf8_bytes_before_scalar_values() {
+        let max_path = "\u{10ffff}".repeat(DEVICE_FILE_ABSOLUTE_PATH_MAX_CHARS);
+        assert_eq!(max_path.len(), DEVICE_FILE_ABSOLUTE_PATH_MAX_BYTES);
+        validate_absolute_path_limits(&max_path, "files[0].absolute_path")
+            .unwrap();
+
+        let byte_overflow = format!("{max_path}\u{10ffff}");
+        assert_eq!(
+            path_validation_errors(validate_absolute_path_limits(
+                &byte_overflow,
+                "files[0].absolute_path",
+            )),
+            vec![FilesystemFieldError {
+                path: "files[0].absolute_path".to_string(),
+                message: format!(
+                    "must contain at most {DEVICE_FILE_ABSOLUTE_PATH_MAX_BYTES} UTF-8 bytes"
+                ),
+            }]
+        );
+
+        assert_eq!(
+            path_validation_errors(validate_absolute_path_limits(
+                "",
+                "files[1].absolute_path",
+            )),
+            vec![FilesystemFieldError {
+                path: "files[1].absolute_path".to_string(),
+                message: format!(
+                    "must contain between 1 and {DEVICE_FILE_ABSOLUTE_PATH_MAX_CHARS} Unicode scalar values"
+                ),
+            }]
+        );
+    }
+
+    #[test]
+    fn path_component_limits_enforce_aggregate_scalar_boundary() {
+        let component = "💾".repeat(DEVICE_FILE_PATH_COMPONENT_MAX_CHARS);
+        let component_count = DEVICE_FILE_PATH_COMPONENTS_MAX_CHARS
+            / DEVICE_FILE_PATH_COMPONENT_MAX_CHARS;
+        let components = vec![component.as_str(); component_count];
+        validate_path_component_limits(&components, "files[2].absolute_path")
+            .unwrap();
+
+        let mut aggregate_overflow = components;
+        aggregate_overflow.push("a");
+        assert_eq!(
+            path_validation_errors(validate_path_component_limits(
+                &aggregate_overflow,
+                "files[2].absolute_path",
+            )),
+            vec![FilesystemFieldError {
+                path: "files[2].absolute_path".to_string(),
+                message: format!(
+                    "path components must contain at most {DEVICE_FILE_PATH_COMPONENTS_MAX_CHARS} Unicode scalar values in total"
+                ),
             }]
         );
     }

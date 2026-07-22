@@ -1,6 +1,8 @@
 mod cursor;
 mod error;
 mod ltree;
+mod metadata;
+mod path;
 mod query;
 mod repository;
 mod types;
@@ -15,13 +17,17 @@ pub(in crate::devices) use error::FilesystemFieldError;
 pub(in crate::devices::filesystem) use ltree::{
     ancestor_expr, descendant_expr,
 };
+#[allow(unused_imports)]
+pub(in crate::devices) use metadata::normalize_file_metadata;
+#[allow(unused_imports)]
+pub(in crate::devices) use path::SourcePathParser;
 pub(in crate::devices) use repository::FilesystemRepository;
 #[allow(unused_imports)]
 pub(in crate::devices) use types::{
     Breadcrumb, DirectoryEntry, DirectoryScope, EntryQueryScope, EntrySortKey,
-    FileSearchFilters, KeysetPage, KeysetPageRequest, ParsedSourcePath,
-    RawFileSearchFilters, RootEntry, RootSortKey, SearchEntry,
-    SyncFileItemCommand, SyncFileItemOutcome, SyncFileItemResult,
+    FileSearchFilters, KeysetPage, KeysetPageRequest, NormalizedFileMetadata,
+    ParsedSourcePath, RawFileSearchFilters, RootEntry, RootSortKey,
+    SearchEntry, SyncFileItemCommand, SyncFileItemOutcome, SyncFileItemResult,
     SyncFileOperation, SyncFileRejectionKind, TreeEntry,
 };
 pub(in crate::devices) use types::{
