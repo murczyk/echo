@@ -25,6 +25,7 @@ pub type SettlementsData = (
     Vec<String>,
     Trie<SettlementDetails>,
     BTreeMap<i32, SettlementDetails>,
+    BTreeMap<String, Vec<SettlementDetails>>,
 );
 
 #[post("/api/settlement/find")]
@@ -86,12 +87,14 @@ fn find_locations_by_prefix(
         .map_err(|e| AppError::from(format!("{e:?}")))
         .c(h!())?;
     let config = select_settlements_data(&settlements_lock, m_aor_id);
-    let (_, _, trie, _) = config;
-    let locations = trie
-        .find_prefix_matches(&query)
-        .into_iter()
-        .map(|(_, location)| location)
-        .collect();
+    let (_, _, _, _, settlements_by_name) = config;
+    let mut locations = vec![];
+    for (name, settlements) in settlements_by_name.range(query.clone()..) {
+        if !name.starts_with(&query) {
+            break;
+        }
+        locations.extend(settlements.iter().cloned());
+    }
     let locations = filter_locations_by_region(locations, m_region);
     let mut locations = rank_locations_by_coordinates(locations, m_src_coords);
     locations.sort_by(|a, b| {
@@ -149,7 +152,7 @@ fn get_region_names(
         .map_err(|e| AppError::from(format!("{e:?}")))
         .c(h!())?;
     let config = select_settlements_data(&settlements_lock, m_aor_id);
-    let (region_names, _, _, _) = config;
+    let (region_names, _, _, _, _) = config;
     Ok(region_names.clone())
 }
 
@@ -165,7 +168,7 @@ fn find_locations_by_name(
         .map_err(|e| AppError::from(format!("{e:?}")))
         .c(h!())?;
     let config = select_settlements_data(&settlements_lock, m_aor_id);
-    let (_, _, _, settlements) = config;
+    let (_, _, _, settlements, _) = config;
     let mut matches: Vec<SettlementDetails> = Vec::new();
     for s in settlements.values() {
         if s.name.contains(&query.to_uppercase()) {
@@ -311,7 +314,7 @@ fn find_matching_settlements(
     words: Vec<String>,
     config: &SettlementsData,
 ) -> anyhow::Result<Vec<SettlementDetails>> {
-    let (_region_names, regions, trie, _) = config;
+    let (_region_names, regions, trie, _, _) = config;
     if words.is_empty() {
         return Ok(vec![]);
     }
@@ -476,6 +479,8 @@ pub fn load_from_file(
     let mut region_names = BTreeSet::new();
 
     let mut settlements = BTreeMap::new();
+    let mut settlements_by_name: BTreeMap<String, Vec<SettlementDetails>> =
+        BTreeMap::new();
 
     for source in settlements_paths {
         let path = root_dir.join(source.clone());
@@ -512,6 +517,10 @@ pub fn load_from_file(
                 if let Some(id) = &d.id {
                     settlements.insert(*id, details.clone());
                 }
+                settlements_by_name
+                    .entry(name.clone())
+                    .or_default()
+                    .push(details.clone());
                 trie.insert(&name.clone(), details);
             }
             let region = region.to_uppercase();
@@ -545,7 +554,13 @@ pub fn load_from_file(
     let mut region_names = region_names.into_iter().collect_vec();
     region_names.sort();
 
-    Ok((region_names, regions, trie, settlements))
+    Ok((
+        region_names,
+        regions,
+        trie,
+        settlements,
+        settlements_by_name,
+    ))
 }
 
 pub fn load_settlements_data_config(
@@ -716,19 +731,24 @@ mod tests {
 
     #[test]
     fn filters_settlements_by_case_insensitive_prefix() {
-        let mut trie = Trie::new();
+        let mut settlements_by_name = BTreeMap::new();
         for name in ["ЛИМАН ПЕРШИЙ", "МЕРЕФА", "ЛИМАН ДРУГИЙ"]
         {
-            trie.insert(
-                name,
-                SettlementDetails {
+            settlements_by_name.insert(
+                name.to_string(),
+                vec![SettlementDetails {
                     name: name.to_string(),
                     ..Default::default()
-                },
+                }],
             );
         }
-        let settlements_data =
-            Arc::new((vec![], vec![], trie, BTreeMap::new()));
+        let settlements_data = Arc::new((
+            vec![],
+            vec![],
+            Trie::new(),
+            BTreeMap::new(),
+            settlements_by_name,
+        ));
         let settlements = Arc::new(RwLock::new(SettlementsDataConfig {
             default_settlements_data: settlements_data,
             ..Default::default()
@@ -750,6 +770,85 @@ mod tests {
                 .collect_vec(),
             vec!["ЛИМАН ДРУГИЙ", "ЛИМАН ПЕРШИЙ"]
         );
+    }
+
+    #[test]
+    fn preserves_duplicate_settlement_names_when_filtering_by_region() {
+        let settlements_by_name = BTreeMap::from([(
+            "МИРНЕ".to_string(),
+            vec![
+                SettlementDetails {
+                    name: "МИРНЕ".to_string(),
+                    region: "ДОНЕЦЬКА".to_string(),
+                    id: Some(1),
+                    ..Default::default()
+                },
+                SettlementDetails {
+                    name: "МИРНЕ".to_string(),
+                    region: "ЗАПОРІЗЬКА".to_string(),
+                    id: Some(2),
+                    ..Default::default()
+                },
+            ],
+        )]);
+        let settlements_data = Arc::new((
+            vec![],
+            vec![],
+            Trie::new(),
+            BTreeMap::new(),
+            settlements_by_name,
+        ));
+        let settlements = Arc::new(RwLock::new(SettlementsDataConfig {
+            default_settlements_data: settlements_data,
+            ..Default::default()
+        }));
+
+        let locations = find_locations_by_prefix(
+            settlements,
+            "мир".to_string(),
+            Some("ДОНЕЦЬКА".to_string()),
+            None,
+            None,
+        )
+        .unwrap();
+
+        assert_eq!(locations.len(), 1);
+        assert_eq!(locations[0].id, Some(1));
+    }
+
+    #[test]
+    fn excludes_parser_region_aliases_from_prefix_results() {
+        let mut parser_trie = Trie::new();
+        parser_trie.insert(
+            "ХАРКІВСЬКА ОБЛ",
+            SettlementDetails {
+                name: "ХАРКІВСЬКА ОБЛ".to_string(),
+                id: None,
+                ..Default::default()
+            },
+        );
+        let settlements_data = Arc::new((
+            vec![],
+            vec![],
+            parser_trie,
+            BTreeMap::new(),
+            BTreeMap::new(),
+        ));
+        let settlements = Arc::new(RwLock::new(SettlementsDataConfig {
+            default_settlements_data: settlements_data,
+            ..Default::default()
+        }));
+
+        let locations = find_locations_by_prefix(
+            settlements,
+            "харківс".to_string(),
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+
+        assert!(locations.is_empty());
     }
 
     #[test]

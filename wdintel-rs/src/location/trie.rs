@@ -40,35 +40,6 @@ impl<D: Default + Clone> Trie<D> {
         current_node.data = data;
     }
 
-    pub fn find_prefix_matches(&self, prefix: &str) -> Vec<(String, D)> {
-        let mut current_node = &self.root;
-        for symbol in prefix.chars() {
-            let Some(node) = current_node.children.get(&symbol) else {
-                return vec![];
-            };
-            current_node = node;
-        }
-
-        let mut result = vec![];
-        Self::collect_words(current_node, prefix.to_string(), &mut result);
-        result
-    }
-
-    fn collect_words(
-        current_node: &TrieNode<D>,
-        word: String,
-        result: &mut Vec<(String, D)>,
-    ) {
-        if current_node.is_end_of_word {
-            result.push((word.clone(), current_node.data.clone()));
-        }
-        for (symbol, node) in &current_node.children {
-            let mut word = word.clone();
-            word.push(*symbol);
-            Self::collect_words(node, word, result);
-        }
-    }
-
     // max_distance arg is Levenshtein distance, if 0 - performs exact search
     pub fn find_matches(
         &self,
@@ -247,21 +218,5 @@ mod tests {
         assert!(result.data.is_empty());
         let result = trie.find_matches(&String::from("Робоботине"), None);
         assert!(result.data.is_empty());
-    }
-
-    #[test]
-    pub fn test_prefix_matches() {
-        let mut trie = Trie::<i32>::new();
-        trie.insert("ІВАЦЕВИЧІ", 1);
-        trie.insert("ІВАНКІВ", 2);
-        trie.insert("ВАСИЛЬКІВ", 3);
-
-        let mut result = trie.find_prefix_matches("ІВА");
-        result.sort();
-
-        assert_eq!(
-            result,
-            vec![("ІВАНКІВ".to_string(), 2), ("ІВАЦЕВИЧІ".to_string(), 1)]
-        );
     }
 }
