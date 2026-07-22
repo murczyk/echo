@@ -2394,7 +2394,7 @@ transcriber-smoke server:
     #!/bin/bash
     set -euo pipefail
     ssh "{{ server }}" 'sudo -u postgres psql -d wd -v ON_ERROR_STOP=1 -Atc "select uuid_generate_v7() is not null;" | grep -qx t'
-    ssh "{{ server }}" 'sudo -u postgres psql -d wd -v ON_ERROR_STOP=1 -Atc "select count(*) >= 2 from seaql_echo_gpu_migrations;" | grep -qx t'
+    ssh "{{ server }}" 'sudo -u postgres psql -d wd -v ON_ERROR_STOP=1 -Atc "select count(*) = 2 from seaql_echo_gpu_migrations where version in ('"'"'m20260721_000001_create_gpu_config'"'"', '"'"'m20260721_000002_create_transcription_queue'"'"');" | grep -qx t'
     ssh "{{ server }}" 'sudo -u postgres psql -d wd -v ON_ERROR_STOP=1 -AtF "|" -c "select to_regclass('"'"'gpu_config'"'"'), to_regclass('"'"'echo_gpu_transcription_queue'"'"');" | grep -qx "gpu_config|echo_gpu_transcription_queue"'
     ssh "{{ server }}" 'sudo -u postgres psql -d wd -v ON_ERROR_STOP=1 -c "select coalesce((select enable_audio_transcription from system_settings where not deleted order by updated_at desc limit 1), false) enable_audio_transcription;"'
     ssh "{{ server }}" 'sudo -u postgres psql -d wd -v ON_ERROR_STOP=1 -c "select state, count(*) from echo_gpu_transcription_queue group by state order by state;"'
