@@ -1329,11 +1329,22 @@ fn prepare_goi_callsigns_for_write(
             callsign.source_date_raw = previous_callsigns
                 .get(&callsign.id)
                 .filter(|previous| !goi_callsign_changed(previous, &callsign))
-                .and_then(|previous| previous.source_date_raw.clone())
+                .and_then(|previous| previous.source_date_raw.as_deref())
+                .and_then(normalize_goi_source_date)
                 .or_else(|| Some(sync_timestamp.to_string()));
             callsign
         })
         .collect()
+}
+
+fn normalize_goi_source_date(source_date: &str) -> Option<String> {
+    let source_date = source_date.trim();
+    NaiveDateTime::parse_from_str(source_date, "%d.%m.%Y %H:%M:%S")
+        .or_else(|_| {
+            NaiveDateTime::parse_from_str(source_date, "%Y-%m-%d %H:%M:%S%.f")
+        })
+        .ok()
+        .map(|source_date| source_date.format("%d.%m.%Y %H:%M:%S").to_string())
 }
 
 fn rewrite_sheet_xml(
@@ -1743,15 +1754,18 @@ mod tests {
     #[test]
     fn prepare_goi_callsigns_for_write_preserves_only_unchanged_timestamps() {
         let mut unchanged = sample_callsign(2, "BETA", Some(2));
-        unchanged.source_date_raw = Some("16.03.2026 12:00:00".to_string());
+        unchanged.source_date_raw = Some("2026-03-16 12:00:00".to_string());
         let mut edited = sample_callsign(3, "GAMMA", Some(3));
         edited.source_date_raw = Some("16.03.2026 12:00:00".to_string());
-        let previous = vec![unchanged, edited.clone()];
+        let mut invalid = sample_callsign(5, "EPSILON", Some(5));
+        invalid.source_date_raw = Some("invalid".to_string());
+        let previous = vec![unchanged, edited.clone(), invalid];
         edited.comment = "edited".to_string();
         let current = vec![
             sample_callsign(4, "DELTA", None),
             sample_callsign(2, "BETA", None),
             edited,
+            sample_callsign(5, "EPSILON", None),
         ];
 
         let callsigns = prepare_goi_callsigns_for_write(
@@ -1773,6 +1787,11 @@ mod tests {
         assert_eq!(callsigns[2].id, 4);
         assert_eq!(
             callsigns[2].source_date_raw.as_deref(),
+            Some(TEST_GOI_SYNC_TIMESTAMP)
+        );
+        assert_eq!(callsigns[3].id, 5);
+        assert_eq!(
+            callsigns[3].source_date_raw.as_deref(),
             Some(TEST_GOI_SYNC_TIMESTAMP)
         );
     }
