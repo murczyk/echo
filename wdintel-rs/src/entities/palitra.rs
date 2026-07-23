@@ -68,6 +68,8 @@ pub enum Relation {
     PalitraGeometry,
     #[sea_orm(has_many = "super::palitra_goi_sync_job::Entity")]
     PalitraGoiSyncJob,
+    #[sea_orm(has_many = "super::palitra_highlight_blacklist::Entity")]
+    PalitraHighlightBlacklist,
     #[sea_orm(has_many = "super::palitra_point::Entity")]
     PalitraPoint,
     #[sea_orm(has_many = "super::sigint_inbox_item_point_token::Entity")]
@@ -119,6 +121,12 @@ impl Related<super::palitra_geometry::Entity> for Entity {
 impl Related<super::palitra_goi_sync_job::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::PalitraGoiSyncJob.def()
+    }
+}
+
+impl Related<super::palitra_highlight_blacklist::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::PalitraHighlightBlacklist.def()
     }
 }
 
