@@ -4,6 +4,7 @@ use super::{
     SyncFileItemCommand, SyncFileItemOutcome, SyncFileItemResult,
     SyncFileRejectionKind, SyncFilesResult,
 };
+use crate::config::DEVICE_FILE_SYNC_ITEM_MAX_ATTEMPTS;
 use std::collections::HashSet;
 use uuid::Uuid;
 
@@ -30,24 +31,43 @@ pub(super) async fn sync_files(
         match prepared_file {
             PreparedSyncFileItem::Rejected(result) => results.push(result),
             PreparedSyncFileItem::Mutation { index, mutation } => {
-                let result = match repository.mutate_file(&mutation).await {
-                    Ok(result) => SyncFileItemResult {
-                        index,
-                        outcome: SyncFileItemOutcome::Accepted {
-                            operation: result.operation,
-                            root: result.root,
-                            file: result.file,
-                            path_components: result.path_components,
+                let result =
+                    match mutate_file_with_retry(repository, &mutation).await {
+                        Ok(result) => SyncFileItemResult {
+                            index,
+                            outcome: SyncFileItemOutcome::Accepted {
+                                operation: result.operation,
+                                root: result.root,
+                                file: result.file,
+                                path_components: result.path_components,
+                            },
                         },
-                    },
-                    Err(error) => map_sync_item_error(index, error)?,
-                };
+                        Err(error) => map_sync_item_error(index, error)?,
+                    };
                 results.push(result);
             }
         }
     }
 
     Ok(SyncFilesResult { results })
+}
+
+async fn mutate_file_with_retry(
+    repository: &FilesystemRepository<'_>,
+    mutation: &PreparedFileMutation,
+) -> Result<super::FileMutationResult, FilesystemError> {
+    for attempt in 1..=DEVICE_FILE_SYNC_ITEM_MAX_ATTEMPTS {
+        match repository.mutate_file(mutation).await {
+            Err(FilesystemError::Conflict)
+                if attempt < DEVICE_FILE_SYNC_ITEM_MAX_ATTEMPTS =>
+            {
+                continue;
+            }
+            result => return result,
+        }
+    }
+
+    unreachable!("retry attempt range is non-empty")
 }
 
 fn prepare_sync_items(

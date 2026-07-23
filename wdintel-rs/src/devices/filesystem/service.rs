@@ -291,4 +291,22 @@ mod tests {
             Some(FilesystemError::Internal(_))
         )));
     }
+
+    #[test]
+    fn sync_commit_uncertainty_remains_fatal_with_its_source() {
+        let error = map_sync_error(FilesystemError::CommitUncertain(
+            anyhow::anyhow!("stage-eleven-uncertain"),
+        ));
+        let AppError::AnyhowError { source } = error else {
+            panic!("commit uncertainty must remain a top-level error");
+        };
+        assert_eq!(source.to_string(), "failed to sync device filesystem");
+        assert!(source.chain().any(|error| matches!(
+            error.downcast_ref::<FilesystemError>(),
+            Some(FilesystemError::CommitUncertain(_))
+        )));
+        assert!(source
+            .chain()
+            .any(|error| error.to_string().contains("stage-eleven-uncertain")));
+    }
 }

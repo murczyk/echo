@@ -18,6 +18,10 @@ pub(in crate::devices) use cursor::FileCursorCodec;
 pub(in crate::devices) use error::FilesystemError;
 #[allow(unused_imports)]
 pub(in crate::devices) use error::FilesystemFieldError;
+pub(in crate::devices::filesystem) use error::{
+    classify_transaction_error, map_transaction_body_error,
+    TransactionErrorClass,
+};
 #[cfg(test)]
 pub(in crate::devices::filesystem) use ltree::{
     ancestor_expr, descendant_expr,

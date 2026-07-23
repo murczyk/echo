@@ -1,3 +1,4 @@
+use anyhow::Error as AnyhowError;
 use thiserror::Error;
 
 #[allow(dead_code)]
@@ -5,6 +6,46 @@ use thiserror::Error;
 pub(in crate::devices) struct FilesystemFieldError {
     pub(in crate::devices) path: String,
     pub(in crate::devices) message: String,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(in crate::devices::filesystem) enum TransactionErrorClass {
+    Retryable,
+    OutcomeUncertain,
+    DatabaseFailure,
+}
+
+pub(in crate::devices::filesystem) fn classify_transaction_error(
+    error: &AnyhowError,
+) -> TransactionErrorClass {
+    for source in error.chain() {
+        if let Some(sqlx::Error::Database(database_error)) =
+            source.downcast_ref::<sqlx::Error>()
+        {
+            return match database_error.code().as_deref() {
+                Some("40001" | "40P01") => TransactionErrorClass::Retryable,
+                Some(code) if code == "40003" || code.starts_with("08") => {
+                    TransactionErrorClass::OutcomeUncertain
+                }
+                Some(_) => TransactionErrorClass::DatabaseFailure,
+                None => TransactionErrorClass::OutcomeUncertain,
+            };
+        }
+    }
+
+    TransactionErrorClass::OutcomeUncertain
+}
+
+pub(in crate::devices::filesystem) fn map_transaction_body_error(
+    error: AnyhowError,
+) -> FilesystemError {
+    match classify_transaction_error(&error) {
+        TransactionErrorClass::Retryable => FilesystemError::Conflict,
+        TransactionErrorClass::OutcomeUncertain
+        | TransactionErrorClass::DatabaseFailure => {
+            FilesystemError::Internal(error)
+        }
+    }
 }
 
 #[derive(Debug, Error)]

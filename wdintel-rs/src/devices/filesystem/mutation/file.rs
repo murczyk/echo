@@ -1,5 +1,6 @@
 use super::super::{
     ltree::child_hierarchy_path,
+    map_transaction_body_error,
     path::name_key,
     query::{map_file_model, map_root_model},
     FileEntryKind, FileMutationResult, FilesystemError, PreparedFileMutation,
@@ -9,13 +10,16 @@ use super::hierarchy::{
     ensure_directory_chain, ensure_target_root, lock_roots,
     prune_empty_directory_chain, root_entry_id, DirectoryParent,
 };
+#[cfg(test)]
+use super::MutationAttemptTestControl;
 use crate::file_registry::entities::file_entry;
 use crate::h;
 use crate::types::ShortContext;
 use chrono::NaiveDateTime;
 use sea_orm::{
-    ActiveModelTrait, ActiveValue::Set, ColumnTrait, DatabaseTransaction,
-    EntityTrait, IntoActiveModel, QueryFilter, QuerySelect, Select,
+    ActiveModelTrait, ActiveValue::Set, ColumnTrait, ConnectionTrait,
+    DatabaseConnection, DatabaseTransaction, DbBackend, EntityTrait,
+    IntoActiveModel, QueryFilter, QuerySelect, Select, Statement,
 };
 use uuid::Uuid;
 
@@ -46,16 +50,22 @@ pub(super) async fn update_file(
     transaction: &DatabaseTransaction,
     mutation: &PreparedFileMutation,
     now: NaiveDateTime,
+    #[cfg(test)] test_control: Option<&MutationAttemptTestControl>,
 ) -> Result<FileMutationResult, FilesystemError> {
     let optimistic_file = file_query(mutation.device_id, mutation.file_id)
         .one(transaction)
         .await
         .c(h!())
-        .map_err(FilesystemError::Internal)?
+        .map_err(map_transaction_body_error)?
         .ok_or(FilesystemError::NotFound)?;
     let optimistic_file = map_file_model(optimistic_file)?;
     let optimistic_root_entry_id =
         root_entry_id(&optimistic_file.hierarchy_path)?;
+
+    #[cfg(test)]
+    if let Some(test_control) = test_control {
+        test_control.pause_after_optimistic_read(mutation).await;
+    }
 
     let target_root_entry_id =
         ensure_target_root(transaction, mutation, now).await?;
@@ -72,7 +82,7 @@ pub(super) async fn update_file(
         .one(transaction)
         .await
         .c(h!())
-        .map_err(FilesystemError::Internal)?
+        .map_err(map_transaction_body_error)?
         .ok_or(FilesystemError::NotFound)?;
     let locked_file_entry = map_file_model(locked_file.clone())?;
     if root_entry_id(&locked_file_entry.hierarchy_path)?
@@ -102,6 +112,66 @@ pub(super) async fn update_file(
         file,
         path_components: mutation.source_path.components.clone(),
     })
+}
+
+pub(super) async fn reconcile_file_mutation(
+    db: &DatabaseConnection,
+    expected: &FileMutationResult,
+    transaction_id: &str,
+) -> Result<bool, FilesystemError> {
+    let status = db
+        .query_one(Statement::from_sql_and_values(
+            DbBackend::Postgres,
+            "select pg_xact_status($1::text::xid8) as status",
+            [transaction_id.into()],
+        ))
+        .await
+        .c(h!())
+        .map_err(FilesystemError::Internal)?;
+    let Some(status) = status else {
+        return Ok(false);
+    };
+    let status: Option<String> = status
+        .try_get("", "status")
+        .c(h!())
+        .map_err(FilesystemError::Internal)?;
+    if status.as_deref() != Some("committed") {
+        return Ok(false);
+    }
+
+    let leaf = file_query(expected.file.device_id, expected.file.file_id)
+        .one(db)
+        .await
+        .c(h!())
+        .map_err(FilesystemError::Internal)?;
+    let Some(leaf) = leaf else {
+        return Ok(false);
+    };
+    let Ok(file) = map_file_model(leaf) else {
+        return Ok(false);
+    };
+    let Ok(root_entry_id) = root_entry_id(&file.hierarchy_path) else {
+        return Ok(false);
+    };
+    let root = file_entry::Entity::find()
+        .filter(file_entry::Column::DeviceId.eq(expected.file.device_id))
+        .filter(file_entry::Column::Id.eq(root_entry_id))
+        .filter(file_entry::Column::ParentId.is_null())
+        .filter(
+            file_entry::Column::Kind.eq(FileEntryKind::Directory.as_db_str()),
+        )
+        .one(db)
+        .await
+        .c(h!())
+        .map_err(FilesystemError::Internal)?;
+    let Some(root) = root else {
+        return Ok(false);
+    };
+    let Ok(root) = map_root_model(root) else {
+        return Ok(false);
+    };
+
+    Ok(file == expected.file && root == expected.root)
 }
 
 fn file_query(device_id: Uuid, file_id: Uuid) -> Select<file_entry::Entity> {
@@ -157,7 +227,7 @@ async fn insert_file(
     .insert(transaction)
     .await
     .c(h!())
-    .map_err(FilesystemError::Internal)?;
+    .map_err(map_transaction_body_error)?;
 
     map_file_model(file)
 }
@@ -192,7 +262,7 @@ async fn update_file_row(
         .update(transaction)
         .await
         .c(h!())
-        .map_err(FilesystemError::Internal)?;
+        .map_err(map_transaction_body_error)?;
 
     map_file_model(file)
 }

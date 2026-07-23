@@ -1,5 +1,6 @@
 use super::super::{
     ltree::{child_hierarchy_path, hierarchy_entry_ids, root_hierarchy_path},
+    map_transaction_body_error,
     path::name_key,
     query::{map_directory_model, map_root_model},
     FileEntryKind, FilesystemError, PreparedFileMutation, RootEntry,
@@ -81,7 +82,7 @@ pub(super) async fn ensure_target_root(
         .execute(statement)
         .await
         .c(h!())
-        .map_err(FilesystemError::Internal)?;
+        .map_err(map_transaction_body_error)?;
 
     let root = file_entry::Entity::find()
         .filter(file_entry::Column::DeviceId.eq(mutation.device_id))
@@ -97,7 +98,7 @@ pub(super) async fn ensure_target_root(
         .one(transaction)
         .await
         .c(h!())
-        .map_err(FilesystemError::Internal)?
+        .map_err(map_transaction_body_error)?
         .ok_or(FilesystemError::Invariant(
             "mutation_root_resolution_failed",
         ))?;
@@ -126,7 +127,7 @@ pub(super) async fn lock_roots(
         .all(transaction)
         .await
         .c(h!())
-        .map_err(FilesystemError::Internal)?;
+        .map_err(map_transaction_body_error)?;
 
     if roots.len() != root_entry_ids.len() {
         return Err(FilesystemError::Invariant("mutation_root_lock_mismatch"));
@@ -233,7 +234,7 @@ pub(super) async fn ensure_directory_chain(
             .execute(statement)
             .await
             .c(h!())
-            .map_err(FilesystemError::Internal)?;
+            .map_err(map_transaction_body_error)?;
 
         let directory = file_entry::Entity::find()
             .filter(file_entry::Column::DeviceId.eq(mutation.device_id))
@@ -246,7 +247,7 @@ pub(super) async fn ensure_directory_chain(
             .one(transaction)
             .await
             .c(h!())
-            .map_err(FilesystemError::Internal)?
+            .map_err(map_transaction_body_error)?
             .ok_or(FilesystemError::Invariant(
                 "mutation_directory_resolution_failed",
             ))?;
@@ -277,7 +278,7 @@ pub(super) async fn prune_empty_directory_chain(
             .one(transaction)
             .await
             .c(h!())
-            .map_err(FilesystemError::Internal)?
+            .map_err(map_transaction_body_error)?
             .ok_or(FilesystemError::Invariant(
                 "mutation_prune_directory_missing",
             ))?;
@@ -292,7 +293,7 @@ pub(super) async fn prune_empty_directory_chain(
             .one(transaction)
             .await
             .c(h!())
-            .map_err(FilesystemError::Internal)?
+            .map_err(map_transaction_body_error)?
             .is_some();
         if has_child {
             return Ok(());
@@ -308,7 +309,7 @@ pub(super) async fn prune_empty_directory_chain(
             .exec(transaction)
             .await
             .c(h!())
-            .map_err(FilesystemError::Internal)?;
+            .map_err(map_transaction_body_error)?;
         if delete_result.rows_affected != 1 {
             return Err(FilesystemError::Invariant(
                 "mutation_prune_delete_mismatch",
