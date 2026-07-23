@@ -14,9 +14,10 @@ import {
   Select,
   Stack,
   TextField,
+  useMediaQuery,
   type SxProps,
 } from '@mui/material';
-import type { Theme } from '@mui/material/styles';
+import { type Theme, useTheme } from '@mui/material/styles';
 import { MaterialReactTable, useMaterialReactTable } from 'material-react-table';
 import { memo, useCallback, useEffect, useId, useMemo, useState } from 'react';
 
@@ -157,6 +158,8 @@ function AnalysisSummaryTableCardInner({
       }),
     [onSelectFreq, onShowFreqOnMap, openRenameDialog],
   );
+  const theme = useTheme();
+  const isNarrowPaginationLayout = useMediaQuery(theme.breakpoints.down('sm'));
 
   const saveRename = useCallback(async () => {
     if (!renameDialog) return;
@@ -338,9 +341,26 @@ function AnalysisSummaryTableCardInner({
         backgroundColor: 'var(--bs-body-bg)',
       },
     },
-    muiPaginationProps: {
+    muiPaginationProps: () => ({
       rowsPerPageOptions: [25, 50, 100],
-    },
+      showRowsPerPage: !isNarrowPaginationLayout,
+      sx: {
+        '@media (max-width: 599.95px)': {
+          flexWrap: 'nowrap',
+          justifyContent: 'space-between',
+          '& > .MuiBox-root:last-child': {
+            display: 'flex',
+            alignItems: 'center',
+          },
+          '& .MuiTypography-root': {
+            minWidth: 'auto',
+          },
+          '& .MuiBox-root': {
+            flexWrap: 'nowrap',
+          },
+        },
+      },
+    }),
     muiTableProps: {
       'aria-label': 'Таблиця частот аналізу',
       sx: {

@@ -10,6 +10,8 @@ import type { CallsignInfoRes, Network, SummaryTableFreqRow, Unit } from '../../
 import { CallsignChipsCell, CompactListCell } from './analysis-summary-table-cells';
 
 const capturedRowActionProps: Array<{ label: string; opensModal?: boolean }> = [];
+const capturedTableOptions: Array<Record<string, any>> = [];
+const useMediaQueryMock = vi.hoisted(() => vi.fn(() => false));
 
 vi.mock('@mui/icons-material/DownloadOutlined', () => ({ default: () => <span>download</span> }));
 vi.mock('@mui/icons-material/EditOutlined', () => ({ default: () => <span>edit</span> }));
@@ -93,10 +95,18 @@ vi.mock('@mui/material', () => ({
   },
   Tooltip: ({ children }: { children: ReactNode }) => <>{children}</>,
   Typography: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  useMediaQuery: useMediaQueryMock,
+}));
+
+vi.mock('@mui/material/styles', () => ({
+  useTheme: () => ({ breakpoints: { down: vi.fn(() => 'down-sm') } }),
 }));
 
 vi.mock('material-react-table', () => ({
-  useMaterialReactTable: (options: unknown) => options,
+  useMaterialReactTable: (options: Record<string, any>) => {
+    capturedTableOptions.push(options);
+    return options;
+  },
   MaterialReactTable: ({ table }: { table: any }) => {
     const columns = table.columns as Array<any>;
     const data = table.data as Array<any>;
@@ -373,6 +383,62 @@ describe('AnalysisSummaryTableCard', () => {
       item.container.remove();
     }
     capturedRowActionProps.splice(0);
+    capturedTableOptions.splice(0);
+    useMediaQueryMock.mockReturnValue(false);
+  });
+
+  function getPaginationProps(): Record<string, any> {
+    const options = capturedTableOptions.at(-1);
+    if (!options) throw new Error('MRT options were not captured');
+    const paginationProps = options.muiPaginationProps;
+    return typeof paginationProps === 'function'
+      ? paginationProps({ table: options })
+      : paginationProps;
+  }
+
+  async function renderAtWidth(width: number): Promise<Rendered> {
+    useMediaQueryMock.mockReturnValue(width < 600);
+    return renderComponent(buildProps());
+  }
+
+  it('hides the page-size selector and prevents wrapping below 600px', async () => {
+    const view = await renderAtWidth(599);
+    rendered.push(view);
+
+    const paginationProps = getPaginationProps();
+    expect(paginationProps.showRowsPerPage).toBe(false);
+    expect(paginationProps.sx['@media (max-width: 599.95px)'].flexWrap).toBe('nowrap');
+  });
+
+  it('keeps the page-size selector at the 600px breakpoint', async () => {
+    const view = await renderAtWidth(600);
+    rendered.push(view);
+
+    expect(getPaginationProps().showRowsPerPage).toBe(true);
+  });
+
+  it('recalculates page-size visibility when the mounted table crosses the breakpoint', async () => {
+    useMediaQueryMock.mockReturnValue(false);
+    const props = buildProps();
+    const view = await renderComponent(props);
+    rendered.push(view);
+    expect(getPaginationProps().showRowsPerPage).toBe(true);
+
+    useMediaQueryMock.mockReturnValue(true);
+    await act(async () => {
+      view.root.render(<AnalysisSummaryTableCard {...props} sx={{}} />);
+    });
+
+    expect(getPaginationProps().showRowsPerPage).toBe(false);
+  });
+
+  it('preserves desktop page-size options', async () => {
+    const view = await renderAtWidth(1200);
+    rendered.push(view);
+
+    const paginationProps = getPaginationProps();
+    expect(paginationProps.rowsPerPageOptions).toEqual([25, 50, 100]);
+    expect(paginationProps.showRowsPerPage).toBe(true);
   });
 
   it('renders the MRT frequency columns and keeps export actions', async () => {

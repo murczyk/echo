@@ -2,8 +2,7 @@ import BarChartOutlinedIcon from '@mui/icons-material/BarChartOutlined';
 import MapOutlinedIcon from '@mui/icons-material/MapOutlined';
 import PeopleOutlineOutlinedIcon from '@mui/icons-material/PeopleOutlineOutlined';
 import PersonAddOutlinedIcon from '@mui/icons-material/PersonAddOutlined';
-import { Box, Tab, Tabs, useMediaQuery } from '@mui/material';
-import { useTheme } from '@mui/material/styles';
+import { Box, Tab, Tabs } from '@mui/material';
 
 import type { AnalysisPageActions, AnalysisPageState } from '../types';
 import { getAnalysisSidebarTabs } from '../types';
@@ -11,6 +10,7 @@ import { AnalysisCallsignsPane } from './AnalysisCallsignsPane';
 import { AnalysisMapPane } from './AnalysisMapPane';
 import { AnalysisStatsPane } from './AnalysisStatsPane';
 import { AnalysisNewCallsignsCard } from './AnalysisNewCallsignsCard';
+import { AnalysisRightPanelToggle } from './AnalysisRightPanelToggle';
 
 type Props = Pick<
   AnalysisPageState,
@@ -50,7 +50,22 @@ type Props = Pick<
     | 'refreshMapDateRange'
     | 'toggleCallsignGraphNolimit'
     | 'toggleUnitFromMap'
-  >;
+    | 'toggleRightPanel'
+  > & { isCompactLayout?: boolean };
+
+export const analysisSidebarRootSx = {
+  minHeight: 0,
+  height: '100%',
+  overflow: 'hidden',
+} as const;
+
+export const analysisSidebarContentSx = {
+  flex: 1,
+  minHeight: 0,
+  minWidth: 0,
+  overflowY: 'auto',
+  overflowX: 'hidden',
+} as const;
 
 export function AnalysisSidebar({
   callsignGraph,
@@ -86,10 +101,10 @@ export function AnalysisSidebar({
   refreshMapDateRange,
   toggleCallsignGraphNolimit,
   toggleUnitFromMap,
+  toggleRightPanel,
+  isCompactLayout = false,
 }: Props) {
-  const theme = useTheme();
-  const isMobileLayout = useMediaQuery(theme.breakpoints.down('sm'));
-  const isSidebarVisible = rightPanelOpen || isMobileLayout;
+  const isSidebarVisible = rightPanelOpen;
   const sidebarTabs = getAnalysisSidebarTabs(analysisMapInSidebar);
   const sidebarTab = analysisMapInSidebar || rightSidebarTab !== 'map' ? rightSidebarTab : 'stats';
   const keepMapPaneMounted = analysisMapInSidebar && isSidebarVisible;
@@ -99,23 +114,25 @@ export function AnalysisSidebar({
       component="aside"
       aria-label="Аналітична бічна панель"
       sx={{
-        minHeight: 0,
-        height: '100%',
-        overflow: 'hidden',
+        ...analysisSidebarRootSx,
         display: 'flex',
         flexDirection: 'column',
       }}
     >
-      <Box sx={{ pt: 1 }}>
+      <Box
+        data-analysis-sidebar-tabs
+        sx={{ pt: 1, display: 'flex', alignItems: 'center', flexShrink: 0 }}
+      >
         <Tabs
           value={sidebarTab ?? false}
           onChange={(_event, value) => setRightSidebarTab(value as (typeof sidebarTabs)[number])}
           variant="scrollable"
-          scrollButtons={isMobileLayout ? false : 'auto'}
+          scrollButtons={isCompactLayout ? false : 'auto'}
           aria-label="Вкладки правої панелі аналізу"
           sx={{
             minHeight: 0,
-            width: '100%',
+            flex: 1,
+            minWidth: 0,
             px: { xs: 0.5, sm: 1, md: 1.5 },
             '& .MuiTabs-flexContainer': {
               gap: 1,
@@ -189,12 +206,15 @@ export function AnalysisSidebar({
             );
           })}
         </Tabs>
+        <AnalysisRightPanelToggle
+          expanded
+          onClick={toggleRightPanel}
+          sx={{ display: { xs: 'inline-flex', lg: 'none' }, mr: { xs: 1, lg: 0 } }}
+        />
       </Box>
       <Box
         sx={{
-          flex: 1,
-          minHeight: 0,
-          overflow: 'auto',
+          ...analysisSidebarContentSx,
           '& > *': {
             borderBottom: '1px solid',
             borderColor: 'divider',
@@ -209,10 +229,17 @@ export function AnalysisSidebar({
             backgroundColor: 'transparent',
           },
         }}
+        data-analysis-sidebar-scroll-body
       >
         {keepMapPaneMounted ? (
           <Box
-            sx={{ height: '100%', minHeight: 0, display: sidebarTab === 'map' ? 'flex' : 'none' }}
+            sx={{
+              height: '100%',
+              flex: 1,
+              minHeight: 0,
+              display: sidebarTab === 'map' ? 'flex' : 'none',
+              overflow: 'hidden',
+            }}
           >
             <AnalysisMapPane
               mapAttrs={mapAttrs}

@@ -1,18 +1,8 @@
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
-import FilterAltOutlinedIcon from '@mui/icons-material/FilterAltOutlined';
-import {
-  Badge,
-  Box,
-  Button,
-  Divider,
-  Paper,
-  Stack,
-  Typography,
-  useMediaQuery,
-} from '@mui/material';
+import FilterAltIcon from '@mui/icons-material/FilterAlt';
+import { Badge, Box, Button, Divider, Paper, Stack, Typography } from '@mui/material';
 import { useEffect, useMemo, useState } from 'react';
-import { useTheme } from '@mui/material/styles';
 
 import { PowerChip } from '../../../components/PowerChip';
 import { AnalysisSavedFiltersCard } from './AnalysisSavedFiltersCard';
@@ -24,7 +14,27 @@ import {
   type FilterSectionId,
 } from './analysis-filters-panel-shared';
 
-export function AnalysisFiltersPanel({ page }: AnalysisFiltersPanelProps) {
+export const analysisCompactFiltersContentSx = {
+  minHeight: 0,
+  maxHeight: '50dvh',
+  overflowY: 'auto',
+  overflowX: 'hidden',
+  overscrollBehaviorY: 'contain',
+  WebkitOverflowScrolling: 'touch',
+} as const;
+
+export const analysisFiltersPaperSx = {
+  px: { xs: 1, lg: 1.5 },
+  pb: { xs: 0, lg: 1.5 },
+  pt: 0,
+  overflow: { xs: 'visible', md: 'auto' },
+  minHeight: 0,
+  height: { xs: 'auto', md: '50dvh', lg: '100%' },
+  display: 'flex',
+  flexDirection: 'column',
+} as const;
+
+export function AnalysisFiltersPanel({ page, isCompactLayout = false }: AnalysisFiltersPanelProps) {
   const {
     isDirty,
     counts,
@@ -60,8 +70,6 @@ export function AnalysisFiltersPanel({ page }: AnalysisFiltersPanelProps) {
     updateExisting,
     updateQueryState,
   } = page;
-  const theme = useTheme();
-  const isMobileLayout = useMediaQuery(theme.breakpoints.down('sm'));
   const [expandedSections, setExpandedSections] = useState(() => getInitialExpandedSections());
   const [mobileExpanded, setMobileExpanded] = useState(false);
   const derived = useMemo(
@@ -83,31 +91,25 @@ export function AnalysisFiltersPanel({ page }: AnalysisFiltersPanelProps) {
   };
 
   useEffect(() => {
-    setMobileExpanded(!isMobileLayout);
-  }, [isMobileLayout]);
+    setMobileExpanded(!isCompactLayout);
+  }, [isCompactLayout]);
 
-  const showCompactToggle = isMobileLayout;
+  const showCompactToggle = isCompactLayout;
   const showFilterContent = !showCompactToggle || mobileExpanded;
 
   return (
     <Paper
       variant="outlined"
       sx={{
-        px: { xs: 1, lg: 1.5 },
-        pb: { xs: 1, lg: 1.5 },
-        pt: 0,
-        overflow: { xs: 'hidden', sm: 'auto' },
-        minHeight: 0,
-        height: '100%',
-        display: 'flex',
-        flexDirection: 'column',
+        ...analysisFiltersPaperSx,
         border: 'none',
         borderRadius: 0,
         boxShadow: 'none',
         backgroundColor: 'transparent',
       }}
+      data-analysis-filters-scroll-container
     >
-      <Stack spacing={1.5} sx={{ flex: 1, minHeight: 0 }}>
+      <Stack spacing={1.5} sx={{ minHeight: 0, flex: { lg: 1 } }}>
         <Stack
           direction="row"
           spacing={1}
@@ -125,7 +127,7 @@ export function AnalysisFiltersPanel({ page }: AnalysisFiltersPanelProps) {
               aria-label={showFilterContent ? 'Згорнути фільтри' : 'Розгорнути фільтри'}
               startIcon={
                 <Badge color="error" variant="dot" invisible={!canResetFilters}>
-                  <FilterAltOutlinedIcon sx={{ fontSize: 18 }} />
+                  <FilterAltIcon sx={{ fontSize: 18 }} />
                 </Badge>
               }
               endIcon={
@@ -174,41 +176,14 @@ export function AnalysisFiltersPanel({ page }: AnalysisFiltersPanelProps) {
           showCompactToggle ? (
             <Box
               sx={{
-                flex: 1,
-                minHeight: 0,
+                ...analysisCompactFiltersContentSx,
                 display: 'flex',
                 flexDirection: 'column',
-                overflowY: 'auto',
-                overflowX: 'hidden',
-                overscrollBehavior: 'contain',
-                WebkitOverflowScrolling: 'touch',
                 pr: 0.25,
                 pb: 0.5,
               }}
             >
-              <Box sx={{ display: 'flex', flexDirection: 'column', minHeight: 0 }}>
-                {loadedSavedFilter ? (
-                  <Stack
-                    direction="row"
-                    spacing={0.75}
-                    alignItems="center"
-                    sx={{ alignSelf: 'flex-start', mb: 1 }}
-                  >
-                    <Typography
-                      variant="caption"
-                      sx={{ color: 'text.secondary', whiteSpace: 'nowrap' }}
-                    >
-                      Обраний фільтр:
-                    </Typography>
-                    <PowerChip
-                      label={loadedSavedFilter.name}
-                      selected
-                      color="default"
-                      title={`Збережений фільтр: ${loadedSavedFilter.name}`}
-                    />
-                  </Stack>
-                ) : null}
-
+              <Box sx={{ display: 'flex', flexDirection: 'column' }}>
                 <AnalysisFiltersPanelSections
                   counts={counts}
                   countsLoading={countsLoading}
@@ -232,6 +207,24 @@ export function AnalysisFiltersPanel({ page }: AnalysisFiltersPanelProps) {
               <Divider sx={{ my: 1, flexShrink: 0 }} />
 
               <Box sx={{ display: 'flex', flexDirection: 'column', flexShrink: 0, pb: 1.5 }}>
+                {loadedSavedFilter ? (
+                  <Stack
+                    direction="row"
+                    spacing={0.75}
+                    alignItems="center"
+                    sx={{ alignSelf: 'flex-start', mb: 1 }}
+                  >
+                    <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+                      Обраний фільтр:
+                    </Typography>
+                    <PowerChip
+                      label={loadedSavedFilter.name}
+                      selected
+                      color="default"
+                      title={`Збережений фільтр: ${loadedSavedFilter.name}`}
+                    />
+                  </Stack>
+                ) : null}
                 <AnalysisSavedFiltersCard
                   canSaveAsNew={canResetFilters}
                   isDirty={isDirty}
@@ -251,28 +244,6 @@ export function AnalysisFiltersPanel({ page }: AnalysisFiltersPanelProps) {
           ) : (
             <>
               <Box sx={{ display: 'flex', flexDirection: 'column' }}>
-                {loadedSavedFilter ? (
-                  <Stack
-                    direction="row"
-                    spacing={0.75}
-                    alignItems="center"
-                    sx={{ alignSelf: 'flex-start', mb: 1 }}
-                  >
-                    <Typography
-                      variant="caption"
-                      sx={{ color: 'text.secondary', whiteSpace: 'nowrap' }}
-                    >
-                      Обраний фільтр:
-                    </Typography>
-                    <PowerChip
-                      label={loadedSavedFilter.name}
-                      selected
-                      color="default"
-                      title={`Збережений фільтр: ${loadedSavedFilter.name}`}
-                    />
-                  </Stack>
-                ) : null}
-
                 <AnalysisFiltersPanelSections
                   counts={counts}
                   countsLoading={countsLoading}
@@ -296,6 +267,24 @@ export function AnalysisFiltersPanel({ page }: AnalysisFiltersPanelProps) {
               <Divider sx={{ my: 1.25 }} />
 
               <Box sx={{ pb: 1.5 }}>
+                {loadedSavedFilter ? (
+                  <Stack
+                    direction="row"
+                    spacing={0.75}
+                    alignItems="center"
+                    sx={{ alignSelf: 'flex-start', mb: 1 }}
+                  >
+                    <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+                      Обраний фільтр:
+                    </Typography>
+                    <PowerChip
+                      label={loadedSavedFilter.name}
+                      selected
+                      color="default"
+                      title={`Збережений фільтр: ${loadedSavedFilter.name}`}
+                    />
+                  </Stack>
+                ) : null}
                 <AnalysisSavedFiltersCard
                   canSaveAsNew={canResetFilters}
                   isDirty={isDirty}

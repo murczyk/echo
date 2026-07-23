@@ -13,9 +13,25 @@ import type { InboxMessage, SignalGroupEntry } from '../../../../../Bindings';
 vi.mock('@mui/material', () => ({
   Alert: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   Backdrop: ({ children }: { children: ReactNode }) => <div>{children}</div>,
-  Box: forwardRef<HTMLDivElement, { children: ReactNode; component?: string }>(
-    ({ children, component }, ref) =>
-      component === 'ul' ? <ul>{children}</ul> : <div ref={ref}>{children}</div>,
+  Box: forwardRef<
+    HTMLDivElement,
+    {
+      children: ReactNode;
+      component?: string;
+      role?: string;
+      'aria-label'?: string;
+      'aria-live'?: string;
+    }
+  >(({ children, component, role, 'aria-label': ariaLabel, 'aria-live': ariaLive }, ref) =>
+    component === 'ul' ? (
+      <ul role={role} aria-label={ariaLabel} aria-live={ariaLive}>
+        {children}
+      </ul>
+    ) : (
+      <div ref={ref} role={role} aria-label={ariaLabel} aria-live={ariaLive}>
+        {children}
+      </div>
+    ),
   ),
   Button: (props: {
     children: ReactNode;
@@ -251,6 +267,26 @@ describe('AnalysisMessagesPane', () => {
     expect(view.container.textContent).not.toContain('Немає жодного повідомлення для аналізу.');
   });
 
+  it('shows an accessible narrow refresh indicator over loaded messages', async () => {
+    const view = await renderComponent(
+      buildProps({ messages: [[7, buildMessage()]], loading: true }),
+    );
+    rendered.push(view);
+
+    expect(view.container.querySelector('[aria-label="Оновлення повідомлень"]')).not.toBeNull();
+  });
+
+  it('shows a distinct indicator while loading another page', async () => {
+    const view = await renderComponent(
+      buildProps({ messages: [[7, buildMessage()]], paginationLoading: true }),
+    );
+    rendered.push(view);
+
+    expect(
+      view.container.querySelector('[aria-label="Завантаження ще повідомлень"]'),
+    ).not.toBeNull();
+  });
+
   it('uses a theme-aware scrollbar thumb in the messages pane', () => {
     const lightTheme = createTheme({ palette: { mode: 'light' } });
     const darkTheme = createTheme({ palette: { mode: 'dark' } });
@@ -266,6 +302,16 @@ describe('AnalysisMessagesPane', () => {
       border: '3px solid transparent',
       backgroundClip: 'content-box',
     });
+  });
+
+  it('uses the narrow message list as its scroll container', () => {
+    const sx = getAnalysisMessagesScrollSx(createTheme());
+
+    expect(sx.height).toBe('100%');
+    expect(sx.minHeight).toBe(0);
+    expect(sx.overflowY).toBe('auto');
+    expect(sx.overflowX).toBe('hidden');
+    expect(sx.WebkitOverflowScrolling).toBe('touch');
   });
 
   it('passes the tags layout through to analysis message cards', async () => {

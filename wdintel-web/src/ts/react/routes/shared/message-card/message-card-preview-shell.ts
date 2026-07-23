@@ -23,13 +23,19 @@ export function getMessageCardPreviewStageSx(theme: Theme, isFullscreen: boolean
 
 export function getMessageCardPreviewActionBarSx(theme: Theme): SxProps<Theme> {
   return {
-    px: 3,
+    px: { xs: 1, sm: 3 },
     py: 2.5,
     backgroundColor: 'transparent',
     display: 'grid',
     gridTemplateColumns: '1fr auto 1fr',
     alignItems: 'center',
     gap: 1,
+    '& > :first-child': { minWidth: 0 },
+    '& > :last-child': { minWidth: 'max-content' },
+    '@media (max-width: 599.95px)': {
+      gap: 0.5,
+      alignItems: 'flex-start',
+    },
   };
 }
 

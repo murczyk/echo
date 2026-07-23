@@ -8,6 +8,19 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('@mui/material', () => ({
   Box: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
+  IconButton: ({
+    children,
+    onClick,
+    'aria-label': ariaLabel,
+  }: {
+    children: ReactNode;
+    onClick?: () => void;
+    'aria-label'?: string;
+  }) => (
+    <button type="button" aria-label={ariaLabel} onClick={onClick}>
+      {children}
+    </button>
+  ),
   Tab: (props: { label: ReactNode; value: string; onClick?: () => void }) => (
     <button type="button" onClick={props.onClick} data-value={props.value}>
       {props.label}
@@ -35,8 +48,12 @@ vi.mock('@mui/material', () => ({
         : props.children}
     </div>
   ),
+  Tooltip: ({ children }: { children: ReactNode }) => <>{children}</>,
   useMediaQuery: () => false,
 }));
+
+vi.mock('@mui/icons-material/KeyboardArrowUp', () => ({ default: () => <span /> }));
+vi.mock('@mui/icons-material/KeyboardArrowDown', () => ({ default: () => <span /> }));
 
 vi.mock('./AnalysisStatsPane', () => ({
   AnalysisStatsPane: () => <div>charts-panel</div>,
@@ -54,7 +71,11 @@ vi.mock('./AnalysisNewCallsignsCard', () => ({
   AnalysisNewCallsignsCard: () => <div>new-callsigns-card</div>,
 }));
 
-import { AnalysisSidebar } from './AnalysisSidebar';
+import {
+  AnalysisSidebar,
+  analysisSidebarContentSx,
+  analysisSidebarRootSx,
+} from './AnalysisSidebar';
 
 type Rendered = {
   container: HTMLDivElement;
@@ -109,6 +130,7 @@ function buildProps(
     refreshMapDateRange: vi.fn(),
     toggleCallsignGraphNolimit: vi.fn(),
     toggleUnitFromMap: vi.fn(),
+    toggleRightPanel: vi.fn(),
     ...overrides,
   };
 }
@@ -214,6 +236,27 @@ describe('AnalysisSidebar', () => {
     await click(statsTab as HTMLButtonElement);
 
     expect(setRightSidebarTab).toHaveBeenCalledWith('stats');
+  });
+
+  it('closes the sidebar from its narrow-layout control', async () => {
+    const toggleRightPanel = vi.fn();
+    const view = await renderComponent(buildProps({ toggleRightPanel }));
+    rendered.push(view);
+
+    const closeButton = view.container.querySelector<HTMLButtonElement>(
+      '[aria-label="Згорнути праву панель"]',
+    );
+    expect(closeButton).not.toBeNull();
+
+    await click(closeButton as HTMLButtonElement);
+    expect(toggleRightPanel).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the sidebar body as the narrow vertical scroll owner', () => {
+    expect(analysisSidebarRootSx.height).toBe('100%');
+    expect(analysisSidebarRootSx.overflow).toBe('hidden');
+    expect(analysisSidebarContentSx.overflowY).toBe('auto');
+    expect(analysisSidebarContentSx.overflowX).toBe('hidden');
   });
 
   it('allows a null tab while the right panel is closed', async () => {

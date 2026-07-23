@@ -21,7 +21,7 @@ export type SearchInputProps = {
   isInputLoading?: boolean;
   disabled?: boolean;
   debounceMs?: number;
-  minWidth?: number;
+  minWidth?: number | string;
   clearOnEscape?: boolean;
   emptyEndAdornment?: ReactNode;
 };

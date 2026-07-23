@@ -12,6 +12,8 @@ type Props = {
   onUnitClick: (unitName: string | null) => void;
 };
 
+export const ANALYSIS_NARROW_MAP_HEIGHT = 'clamp(360px, 55svh, 520px)';
+
 export function AnalysisMapPane({
   mapAttrs,
   search,
@@ -46,6 +48,14 @@ export function AnalysisMapPane({
     return () => {
       window.cancelAnimationFrame(frameId);
     };
+  }, [visible]);
+
+  useEffect(() => {
+    if (!visible) return;
+    const frameId = window.requestAnimationFrame(() => {
+      window.dispatchEvent(new Event('resize'));
+    });
+    return () => window.cancelAnimationFrame(frameId);
   }, [visible]);
 
   useEffect(() => {
@@ -102,7 +112,13 @@ export function AnalysisMapPane({
     <Box
       component="section"
       aria-label="Мапа аналізу"
-      sx={{ flex: 1, minHeight: 0, display: 'flex', height: '100%', position: 'relative' }}
+      sx={{
+        flex: 1,
+        minHeight: 0,
+        height: '100%',
+        display: 'flex',
+        position: 'relative',
+      }}
     >
       {createElement('analysis-map', {
         ref: hostRef,
