@@ -1669,13 +1669,8 @@ pub(super) async fn count_tags_with_db(
 
     let instant = std::time::Instant::now();
     trace!("get identity master keys op took: {:?}", instant.elapsed());
-    let groups_res = build_tags_query(
-        &req.0,
-        &login_value,
-        dt_since,
-        dt_till,
-        master_keys,
-    )?;
+    let groups_res =
+        build_tags_query(&req.0, &login_value, dt_since, dt_till, master_keys)?;
     let count = groups_res.count(db).await.context(h!())?;
     Ok(count as i64)
 }
