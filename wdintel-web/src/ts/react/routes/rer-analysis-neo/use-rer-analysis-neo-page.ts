@@ -226,8 +226,10 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
 
   const updateQueryState = useCallback(
     (patch: Partial<AnalysisQueryState>) => {
-      data.invalidateFilterSectionLoadsForPatch(patch);
-      setQueryState((current) => normalizeQueryState({ ...current, ...patch }));
+      const normalizedPatch =
+        patch.unitsSelected?.length === 0 ? { ...patch, unitsExactMatchOnly: null } : patch;
+      data.invalidateFilterSectionLoadsForPatch(normalizedPatch);
+      setQueryState((current) => normalizeQueryState({ ...current, ...normalizedPatch }));
     },
     [data.invalidateFilterSectionLoadsForPatch],
   );
