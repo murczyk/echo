@@ -8,7 +8,7 @@ import {
   filterSectionsForInitialLoad,
   loadFilterSectionData,
   mergeSignalProfiles,
-  mergeNetworkFilterOptions,
+  mergeHydratedNetworkFilterOptions,
   replaceNetworkFilterOptionsPreservingSelectedLabels,
   reloadAnalysisData,
   transformMessagePageResponse,
@@ -641,36 +641,35 @@ describe('reloadAnalysisData', () => {
     ).toEqual([{ value: '2852', label: 'управління', count: 0 }]);
   });
 
-  it('keeps hydrated labels when stats later provide fallback labels', () => {
+  it('keeps stats labels when hydration provides a shorter real label', () => {
     expect(
-      mergeNetworkFilterOptions(
+      mergeHydratedNetworkFilterOptions(
+        [{ value: '2852', label: 'управління 23 с6 35 омсбр 41 А', count: 293 }],
         [{ value: '2852', label: 'управління', count: 0 }],
-        [{ value: '2852', label: 'Network 2852', count: 3 }],
       ),
-    ).toEqual([{ value: '2852', label: 'управління', count: 3, values: ['2852'] }]);
+    ).toEqual([
+      { value: '2852', label: 'управління 23 с6 35 омсбр 41 А', count: 293, values: ['2852'] },
+    ]);
   });
 
-  it('prefers stats labels over hydrated placeholders when stats provide a real name', () => {
+  it('repairs a stats fallback with a hydrated real label', () => {
     expect(
-      mergeNetworkFilterOptions(
+      mergeHydratedNetworkFilterOptions(
+        [{ value: '2852', label: 'Network 2852', count: 293 }],
         [{ value: '2852', label: 'управління', count: 0 }],
-        [{ value: '2852', label: 'р/м управління 2 гсад', count: 3 }],
       ),
-    ).toEqual([{ value: '2852', label: 'р/м управління 2 гсад', count: 3, values: ['2852'] }]);
+    ).toEqual([{ value: '2852', label: 'управління', count: 293, values: ['2852'] }]);
   });
 
-  it('updates fallback labels when hydration arrives after stats', () => {
+  it('adds an absent hydrated network option', () => {
     expect(
-      mergeNetworkFilterOptions(
-        [{ value: '2852', label: 'Network 2852', count: 3 }],
-        [{ value: '2852', label: 'управління', count: 0 }],
-      ),
-    ).toEqual([{ value: '2852', label: 'управління', count: 3, values: ['2852'] }]);
+      mergeHydratedNetworkFilterOptions([], [{ value: '2852', label: 'управління', count: 0 }]),
+    ).toEqual([{ value: '2852', label: 'управління', count: 0 }]);
   });
 
   it('merges option values when both inputs provide them', () => {
     expect(
-      mergeNetworkFilterOptions(
+      mergeHydratedNetworkFilterOptions(
         [{ value: '2852', label: 'управління', count: 0, values: ['2852'] }],
         [{ value: '2852', label: 'управління', count: 3, values: ['2852', '2852-alt'] }],
       ),
@@ -715,9 +714,15 @@ describe('reloadAnalysisData', () => {
 
   it('hydrates selected network labels through reloadAnalysisData', async () => {
     const networksDeferred = deferred<Array<{ id: number; name: string }>>();
-    let currentOptions = structuredClone(emptyOptions);
+    let currentOptions = {
+      ...structuredClone(emptyOptions),
+      networks: [{ value: '2852', label: 'управління 23 с6 35 омсбр 41 А', count: 293 }],
+    };
 
-    mocks.fetchAnalysisNetworks.mockResolvedValue({ networks: [], networkNames: [] });
+    mocks.fetchAnalysisNetworks.mockResolvedValue({
+      networks: [{ networkId: 2852, count: 293 }],
+      networkNames: [{ id: 2852, name: 'управління 23 с6 35 омсбр 41 А' }],
+    });
     mocks.fetchNetworksByIds.mockImplementationOnce(() => networksDeferred.promise);
     mocks.fetchInboxMessages.mockResolvedValue({
       inboxItems: [],
@@ -794,7 +799,9 @@ describe('reloadAnalysisData', () => {
     networksDeferred.resolve([{ id: 2852, name: 'управління' }]);
     await flushPromises();
 
-    expect(currentOptions.networks).toEqual([{ value: '2852', label: 'управління', count: 0 }]);
+    expect(currentOptions.networks).toEqual([
+      { value: '2852', label: 'управління 23 с6 35 омсбр 41 А', count: 293, values: ['2852'] },
+    ]);
   });
 
   it('does not load map points when the map is hidden', async () => {
