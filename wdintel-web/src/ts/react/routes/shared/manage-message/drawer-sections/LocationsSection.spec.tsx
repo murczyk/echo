@@ -13,6 +13,8 @@ import { useSettlementAutocomplete } from './useSettlementAutocomplete';
 const mocks = vi.hoisted(() => ({
   autocompleteProps: undefined as Record<string, any> | undefined,
   settlementOptions: [] as SettlementDetails[],
+  loading: false,
+  hasLocationQuery: false,
   onInputChange: vi.fn(),
 }));
 
@@ -22,6 +24,7 @@ vi.mock('@mui/material', () => ({
     props.renderInput?.({});
     return null;
   },
+  CircularProgress: ({ size }: { size?: number }) => createElement('span', { 'data-size': size }),
   Box: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
   Stack: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
   TextField: () => null,
@@ -31,7 +34,8 @@ vi.mock('@mui/material', () => ({
 vi.mock('./useSettlementAutocomplete', () => ({
   useSettlementAutocomplete: vi.fn(() => ({
     settlementOptions: mocks.settlementOptions,
-    loading: false,
+    loading: mocks.loading,
+    hasLocationQuery: mocks.hasLocationQuery,
     onInputChange: mocks.onInputChange,
   })),
 }));
@@ -95,6 +99,8 @@ describe('LocationsSection', () => {
   beforeEach(() => {
     mocks.autocompleteProps = undefined;
     mocks.settlementOptions = settlements;
+    mocks.loading = false;
+    mocks.hasLocationQuery = false;
     mocks.onInputChange.mockReset();
     vi.mocked(useSettlementAutocomplete).mockClear();
     signalGroupMasterKey = null;
@@ -133,6 +139,31 @@ describe('LocationsSection', () => {
     ]);
     expect(props.filterOptions(props.options)).toBe(props.options);
     expect(props.forcePopupIcon).toBe(true);
+  });
+
+  it('hides recent options during an active query', async () => {
+    mocks.loading = true;
+    mocks.hasLocationQuery = true;
+    const props = await renderSection();
+
+    expect(props.options).toEqual([
+      expect.objectContaining({ kind: 'settlement', settlement: settlements[0] }),
+      expect.objectContaining({ kind: 'settlement', settlement: settlements[1] }),
+    ]);
+    expect(props.filterOptions(props.options)).toBe(props.options);
+  });
+
+  it('shows progress while preserving MUI input controls', async () => {
+    mocks.loading = true;
+    mocks.hasLocationQuery = true;
+    const props = await renderSection();
+    const paramsInputProps = { endAdornment: createElement('button', null, 'controls') };
+    const textField = props.renderInput({ InputProps: paramsInputProps }) as any;
+    const adornment = textField.props.slotProps.input.endAdornment;
+    const markup = renderToStaticMarkup(adornment);
+
+    expect(markup).toContain('data-size="20"');
+    expect(markup).toContain('controls');
   });
 
   it('renders settlement name and region and generates distinct keys', async () => {

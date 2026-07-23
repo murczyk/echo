@@ -19,6 +19,7 @@ type UseSettlementAutocompleteParams = {
 type UseSettlementAutocompleteResult = {
   settlementOptions: SettlementDetails[];
   loading: boolean;
+  hasLocationQuery: boolean;
   onInputChange: (value: string, reason: AutocompleteInputChangeReason) => void;
 };
 
@@ -43,6 +44,7 @@ export function useSettlementAutocomplete({
 }: UseSettlementAutocompleteParams): UseSettlementAutocompleteResult {
   const [settlementOptions, setSettlementOptions] = useState<SettlementDetails[]>([]);
   const [loading, setLoading] = useState(false);
+  const [hasLocationQuery, setHasLocationQuery] = useState(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
   const coordsTextRef = useRef(coordsText);
@@ -123,12 +125,13 @@ export function useSettlementAutocomplete({
     if (value.trim().length < MIN_SETTLEMENT_QUERY_LENGTH) return;
     setLoading(true);
     scheduleSearch(value);
-  }, [signalGroupMasterKey, busy, cancelSearch, open, scheduleSearch]);
+  }, [coordsText, signalGroupMasterKey, busy, cancelSearch, open, scheduleSearch]);
 
   const onInputChange = useCallback(
     (value: string, reason: AutocompleteInputChangeReason) => {
       if (reason !== 'input' && value.trim() === '') {
         inputValueRef.current = '';
+        setHasLocationQuery(false);
         cancelSearch();
         setSettlementOptions([]);
         setLoading(false);
@@ -136,11 +139,12 @@ export function useSettlementAutocomplete({
       }
       if (reason !== 'input') return;
       inputValueRef.current = value;
+      setHasLocationQuery(value.trim().length > 0);
       cancelSearch();
+      setSettlementOptions([]);
+      setLoading(false);
       const query = value.trim();
       if (!open || busy || query.length < MIN_SETTLEMENT_QUERY_LENGTH) {
-        setSettlementOptions([]);
-        setLoading(false);
         return;
       }
 
@@ -150,5 +154,5 @@ export function useSettlementAutocomplete({
     [busy, cancelSearch, open, scheduleSearch],
   );
 
-  return { settlementOptions, loading, onInputChange };
+  return { settlementOptions, loading, hasLocationQuery, onInputChange };
 }

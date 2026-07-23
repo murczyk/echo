@@ -154,6 +154,89 @@ describe('useSettlementAutocomplete', () => {
     expect(latest?.loading).toBe(false);
   });
 
+  it('clears old results and shows loading immediately for eligible input', async () => {
+    const request = deferred<SettlementDetails[]>();
+    findSettlementPrefixMock.mockReturnValueOnce(request.promise);
+    await render();
+    await input('мер');
+    await advance(300);
+    await act(async () => request.resolve([merefaKharkiv]));
+    expect(latest?.settlementOptions).toEqual([merefaKharkiv]);
+
+    await input('мере');
+
+    expect(latest?.settlementOptions).toEqual([]);
+    expect(latest?.loading).toBe(true);
+  });
+
+  it('requeries with new coordinates and clears old results', async () => {
+    const requestA = deferred<SettlementDetails[]>();
+    const requestB = deferred<SettlementDetails[]>();
+    findSettlementPrefixMock
+      .mockReturnValueOnce(requestA.promise)
+      .mockReturnValueOnce(requestB.promise);
+    await render();
+    await input('мер');
+    await advance(300);
+    await act(async () => requestA.resolve([merefaKharkiv]));
+    expect(latest?.settlementOptions).toEqual([merefaKharkiv]);
+
+    await render({ coordsText: '49.82, 36.05' });
+    expect(latest?.settlementOptions).toEqual([]);
+    expect(latest?.loading).toBe(true);
+    await advance(300);
+
+    expect(findSettlementPrefixMock).toHaveBeenCalledTimes(2);
+    expect(findSettlementPrefixMock.mock.calls[1][0].relatedCoordinates).toEqual([49.82, 36.05]);
+  });
+
+  it('aborts an in-flight request when coordinates change', async () => {
+    const requestA = deferred<SettlementDetails[]>();
+    const requestB = deferred<SettlementDetails[]>();
+    findSettlementPrefixMock
+      .mockReturnValueOnce(requestA.promise)
+      .mockReturnValueOnce(requestB.promise);
+    await render();
+    await input('мер');
+    await advance(300);
+    const signalA = findSettlementPrefixMock.mock.calls[0][0].signal;
+
+    await render({ coordsText: '49.82, 36.05' });
+    expect(signalA?.aborted).toBe(true);
+    expect(latest?.settlementOptions).toEqual([]);
+    await act(async () => requestA.resolve([merefaOtherRegion]));
+    expect(latest?.settlementOptions).toEqual([]);
+    await advance(300);
+    expect(findSettlementPrefixMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('requeries with null coordinates when valid coordinates are cleared', async () => {
+    const requestA = deferred<SettlementDetails[]>();
+    const requestB = deferred<SettlementDetails[]>();
+    findSettlementPrefixMock
+      .mockReturnValueOnce(requestA.promise)
+      .mockReturnValueOnce(requestB.promise);
+    await render({ coordsText: '49.82, 36.05' });
+    await input('мер');
+    await advance(300);
+    await act(async () => requestA.resolve([merefaKharkiv]));
+
+    await render({ coordsText: '' });
+    await advance(300);
+
+    expect(findSettlementPrefixMock).toHaveBeenCalledTimes(2);
+    expect(findSettlementPrefixMock.mock.calls[1][0].relatedCoordinates).toBeNull();
+  });
+
+  it('does not requery on coordinate changes for an ineligible cached query', async () => {
+    await render();
+    await input('м');
+    await render({ coordsText: '49.82, 36.05' });
+    await advance(300);
+
+    expect(findSettlementPrefixMock).not.toHaveBeenCalled();
+  });
+
   it('replaces a pending timer with the latest input', async () => {
     const request = deferred<SettlementDetails[]>();
     findSettlementPrefixMock.mockReturnValueOnce(request.promise);

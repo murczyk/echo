@@ -1,4 +1,4 @@
-import { Box, TextField, Autocomplete, Typography } from '@mui/material';
+import { Box, TextField, Autocomplete, CircularProgress, Typography } from '@mui/material';
 import { useFormContext, Controller, useWatch } from 'react-hook-form';
 import { FormSectionWrapper } from './FormSectionWrapper';
 import { normalizeMultiValue, type MessageFormData } from '../manage-message-drawer.schema';
@@ -35,19 +35,23 @@ export function LocationsSection({ busy, recentValues, open, onError }: Props) {
   } = useFormContext<MessageFormData>();
   const coordsText = useWatch({ control, name: 'coords' });
   const signalGroupMasterKey = useWatch({ control, name: 'signalGroupMasterKey' });
-  const { settlementOptions, loading, onInputChange } = useSettlementAutocomplete({
-    open,
-    busy,
-    coordsText,
-    signalGroupMasterKey: signalGroupMasterKey?.trim() || null,
-    onError,
-  });
+  const { settlementOptions, loading, hasLocationQuery, onInputChange } = useSettlementAutocomplete(
+    {
+      open,
+      busy,
+      coordsText,
+      signalGroupMasterKey: signalGroupMasterKey?.trim() || null,
+      onError,
+    },
+  );
   const options: LocationAutocompleteOption[] = [
-    ...(recentValues?.locations ?? []).map((name: string, index: number) => ({
-      kind: 'recent' as const,
-      key: `recent:${name}:${index}`,
-      name,
-    })),
+    ...(hasLocationQuery
+      ? []
+      : (recentValues?.locations ?? []).map((name: string, index: number) => ({
+          kind: 'recent' as const,
+          key: `recent:${name}:${index}`,
+          name,
+        }))),
     ...settlementOptions.map((settlement, index) => ({
       kind: 'settlement' as const,
       key: [
@@ -109,7 +113,24 @@ export function LocationsSection({ busy, recentValues, open, onError }: Props) {
             )}
             noOptionsText="Немає варіантів"
             loadingText="Пошук локацій…"
-            renderInput={(params) => <TextField {...params} label="Назви локацій" size="small" />}
+            renderInput={(params) => (
+              <TextField
+                {...params}
+                label="Назви локацій"
+                size="small"
+                slotProps={{
+                  input: {
+                    ...params.InputProps,
+                    endAdornment: (
+                      <>
+                        {loading ? <CircularProgress color="inherit" size={20} /> : null}
+                        {params.InputProps?.endAdornment}
+                      </>
+                    ),
+                  },
+                }}
+              />
+            )}
             disabled={busy}
           />
         )}
