@@ -51,19 +51,36 @@ fn log_access_event(
     user_agent: Option<&str>,
     error: Option<&str>,
 ) {
-    match error {
-        Some(err) => info!(
-            target: "access_log",
-            "method={method} path={path} status={status} duration_ms={elapsed_ms} ip={} ua={} error={err}",
-            client_ip.unwrap_or("-"),
-            user_agent.unwrap_or("-"),
-        ),
-        None => info!(
-            target: "access_log",
-            "method={method} path={path} status={status} duration_ms={elapsed_ms} ip={} ua={}",
-            client_ip.unwrap_or("-"),
-            user_agent.unwrap_or("-"),
-        ),
+    if status >= 400 {
+        match error {
+            Some(err) => warn!(
+                target: "access_log",
+                "method={method} path={path} status={status} duration_ms={elapsed_ms} ip={} ua={} error={err}",
+                client_ip.unwrap_or("-"),
+                user_agent.unwrap_or("-"),
+            ),
+            None => warn!(
+                target: "access_log",
+                "method={method} path={path} status={status} duration_ms={elapsed_ms} ip={} ua={}",
+                client_ip.unwrap_or("-"),
+                user_agent.unwrap_or("-"),
+            ),
+        }
+    } else {
+        match error {
+            Some(err) => info!(
+                target: "access_log",
+                "method={method} path={path} status={status} duration_ms={elapsed_ms} ip={} ua={} error={err}",
+                client_ip.unwrap_or("-"),
+                user_agent.unwrap_or("-"),
+            ),
+            None => info!(
+                target: "access_log",
+                "method={method} path={path} status={status} duration_ms={elapsed_ms} ip={} ua={}",
+                client_ip.unwrap_or("-"),
+                user_agent.unwrap_or("-"),
+            ),
+        }
     }
 }
 
