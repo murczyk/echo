@@ -4,7 +4,9 @@ use anyhow::{Context, Result};
 use goi_echo_worker::knowledge::{read_knowledge_rows, KnowledgeRow};
 use goi_echo_worker::row::{read_association_rows, AssociationRow};
 use goi_echo_worker::xlsx::empty_xlsx_buffer;
-use sea_orm::sea_query::{Expr, OnConflict};
+use sea_orm::sea_query::{
+    Alias, BinOper, Condition, Expr, OnConflict, SimpleExpr,
+};
 use sea_orm::{
     ColumnTrait, DatabaseConnection, DatabaseTransaction, EntityTrait, NotSet,
     QueryFilter, Set, TransactionTrait, TryInsertResult,
@@ -328,8 +330,10 @@ async fn sync_knowledge_rows(
                     knowledge::Column::UpdatedAt,
                     knowledge::Column::Deleted,
                 ])
+                .action_cond_where(knowledge_upsert_has_changes())
                 .to_owned(),
         )
+        .on_empty_do_nothing()
         .exec(&tx)
         .await
         .context("upserting knowledge rows")?;
@@ -339,6 +343,19 @@ async fn sync_knowledge_rows(
         dedupe_keys.len()
     );
     Ok(())
+}
+
+fn knowledge_upsert_has_changes() -> Condition {
+    Condition::any()
+        .add(knowledge_column_is_distinct(knowledge::Column::Row))
+        .add(knowledge_column_is_distinct(knowledge::Column::Deleted))
+}
+
+fn knowledge_column_is_distinct(column: knowledge::Column) -> SimpleExpr {
+    Expr::col((knowledge::Entity, column)).binary(
+        BinOper::Custom("IS DISTINCT FROM"),
+        Expr::col((Alias::new("excluded"), column)),
+    )
 }
 
 async fn mark_missing_knowledge_rows_deleted(
@@ -395,6 +412,9 @@ fn knowledge_row_is_recent(
     now: &chrono::DateTime<chrono::Utc>,
     knowledge_row: &KnowledgeRow,
 ) -> bool {
+    if knowledge_row.is_worker_managed_callsign() {
+        return true;
+    }
     match knowledge_row.source_date() {
         Some(source_date) => {
             source_date
@@ -433,8 +453,35 @@ fn log_insert_result(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use goi_echo_worker::knowledge::read_knowledge_rows;
+    use goi_echo_worker::knowledge::{
+        read_knowledge_rows, KNOWLEDGE_KIND_CALL_SIGN, KNOWLEDGE_WORKER_AUTHOR,
+    };
     use goi_echo_worker::row::read_association_rows;
+
+    #[test]
+    fn worker_managed_callsigns_ignore_knowledge_age_cutoff() {
+        let now =
+            chrono::DateTime::parse_from_rfc3339("2026-03-01T00:00:00+00:00")
+                .expect("now")
+                .to_utc();
+        let mut knowledge_row = KnowledgeRow {
+            sheet_name: "Knowledge".to_string(),
+            row_num: 1,
+            cells: Vec::new(),
+            name: Some("BARS".to_string()),
+            key: None,
+            knowledge_type: Some(KNOWLEDGE_KIND_CALL_SIGN.to_string()),
+            author: Some(KNOWLEDGE_WORKER_AUTHOR.to_string()),
+            note: None,
+            source_date_raw: Some("01.01.2026 00:00:00".to_string()),
+            formation: None,
+        };
+
+        assert!(knowledge_row_is_recent(&now, &knowledge_row));
+
+        knowledge_row.author = Some("USER".to_string());
+        assert!(!knowledge_row_is_recent(&now, &knowledge_row));
+    }
 
     #[tokio::test]
     async fn ensure_xlsx_file_exists_creates_valid_empty_workbook() {

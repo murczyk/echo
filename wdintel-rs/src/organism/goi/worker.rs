@@ -2,6 +2,7 @@ use crate::config::{
     ORGANISM_GOI_API_TIMEOUT_SEC, ORGANISM_GOI_ASSOCIATIONS_INSERT_BATCH_SIZE,
     ORGANISM_GOI_ASSOCIATION_WORKER_SLEEP_MS,
     ORGANISM_GOI_INTEGRATION_TYPE_FULL,
+    ORGANISM_GOI_KNOWLEDGE_PRUNE_BATCH_SIZE,
     ORGANISM_GOI_KNOWLEDGE_SYNC_INTERVAL_SEC,
     ORGANISM_GOI_KNOWLEDGE_SYNC_MAX_AGE_DAYS,
     ORGANISM_GOI_KNOWLEDGE_UPSERT_BATCH_SIZE,
@@ -24,7 +25,7 @@ use goi_echo_worker::api::{
 };
 use sea_orm::sea_query::OnConflict;
 use sea_orm::*;
-use sea_query::Expr;
+use sea_query::{Alias, BinOper, Expr, SimpleExpr};
 use std::collections::{HashMap, HashSet};
 use std::time::{Duration, Instant};
 use tokio::sync::Mutex;
@@ -84,7 +85,7 @@ async fn goi_sync_worker_step(
         .await
         .c(h!())?
     else {
-        trace!("[goi_sync_worker] no configured integrations, skipping");
+        trace!("[goi_sync_worker] no available integrations, skipping");
         tokio::time::sleep(goi_worker_sleep_duration()).await;
         return Ok(());
     };
@@ -153,6 +154,13 @@ async fn claim_next_goi_api_job(
 ) -> Result<Option<GoiApiJob>, AppError> {
     let integrations = load_goi_worker_integrations(db).await.c(h!())?;
     let mut state = coordinator.state.lock().await;
+    Ok(claim_goi_api_job(&mut state, integrations))
+}
+
+fn claim_goi_api_job(
+    state: &mut GoiWorkerState,
+    integrations: Vec<goi_integration::Model>,
+) -> Option<GoiApiJob> {
     let integration = integrations
         .into_iter()
         .filter(|integration| {
@@ -164,14 +172,12 @@ async fn claim_next_goi_api_job(
                 .get(&integration.id)
                 .copied()
         });
-    let Some(integration) = integration else {
-        return Ok(None);
-    };
+    let integration = integration?;
     state.integrations_in_progress.insert(integration.id);
     state
         .last_integration_sync_attempt_at
         .insert(integration.id, Instant::now());
-    Ok(Some(plan_goi_api_job(&mut state, integration)))
+    Some(plan_goi_api_job(state, integration))
 }
 
 async fn release_goi_integration(
@@ -660,14 +666,46 @@ async fn upsert_goi_knowledge_snapshot(
                     goi_knowledge::Column::SourceDate,
                     goi_knowledge::Column::Formation,
                 ])
+                .action_cond_where(goi_knowledge_upsert_has_changes())
                 .to_owned(),
             )
+            .on_empty_do_nothing()
             .exec(&tx)
             .await
             .c(h!())?;
     }
     tx.commit().await.c(h!())?;
     Ok(())
+}
+
+fn goi_knowledge_upsert_has_changes() -> Condition {
+    [
+        goi_knowledge::Column::SourceCreatedAt,
+        goi_knowledge::Column::Row,
+        goi_knowledge::Column::Deleted,
+        goi_knowledge::Column::DeletedAt,
+        goi_knowledge::Column::Name,
+        goi_knowledge::Column::Key,
+        goi_knowledge::Column::KnowledgeType,
+        goi_knowledge::Column::Author,
+        goi_knowledge::Column::Note,
+        goi_knowledge::Column::SourceDateRaw,
+        goi_knowledge::Column::SourceDate,
+        goi_knowledge::Column::Formation,
+    ]
+    .into_iter()
+    .fold(Condition::any(), |condition, column| {
+        condition.add(goi_knowledge_column_is_distinct(column))
+    })
+}
+
+fn goi_knowledge_column_is_distinct(
+    column: goi_knowledge::Column,
+) -> SimpleExpr {
+    Expr::col((goi_knowledge::Entity, column)).binary(
+        BinOper::Custom("IS DISTINCT FROM"),
+        Expr::col((Alias::new("excluded"), column)),
+    )
 }
 
 fn goi_knowledge_upsert_batches<T>(items: &[T]) -> std::slice::Chunks<'_, T> {
@@ -701,15 +739,37 @@ async fn prune_old_deleted_goi_knowledge(
     db: &DatabaseConnection,
     integration_id: i64,
 ) -> Result<(), AppError> {
-    let cutoff = goi_knowledge_sync_cutoff();
-    goi_knowledge::Entity::delete_many()
-        .filter(goi_knowledge::Column::IntegrationId.eq(integration_id))
-        .filter(goi_knowledge::Column::Deleted.eq(true))
-        .filter(goi_knowledge::Column::DeletedAt.is_not_null())
-        .filter(goi_knowledge::Column::DeletedAt.lt(cutoff))
-        .exec(db)
+    let deleted = db
+        .execute(Statement::from_sql_and_values(
+            DbBackend::Postgres,
+            r#"
+                delete from goi_knowledge
+                where id in (
+                    select id
+                    from goi_knowledge
+                    where integration_id = $1
+                        and deleted = true
+                        and deleted_at < now() - ($2::bigint * interval '1 day')
+                    order by deleted_at, id
+                    limit $3
+                    for update skip locked
+                )
+            "#,
+            [
+                integration_id.into(),
+                ORGANISM_GOI_KNOWLEDGE_SYNC_MAX_AGE_DAYS.into(),
+                ORGANISM_GOI_KNOWLEDGE_PRUNE_BATCH_SIZE.into(),
+            ],
+        ))
         .await
         .c(h!())?;
+    if deleted.rows_affected() > 0 {
+        info!(
+            "Pruned {} stale GOI knowledge rows for integration {}",
+            deleted.rows_affected(),
+            integration_id
+        );
+    }
     Ok(())
 }
 
@@ -824,15 +884,51 @@ fn goi_palitra_folder_sync_interval() -> Duration {
     Duration::from_secs(ORGANISM_GOI_PALITRA_FOLDER_SYNC_INTERVAL_SEC)
 }
 
-fn goi_knowledge_sync_cutoff() -> chrono::DateTime<chrono::FixedOffset> {
-    (chrono::Utc::now()
-        - chrono::Duration::days(ORGANISM_GOI_KNOWLEDGE_SYNC_MAX_AGE_DAYS))
-    .fixed_offset()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn test_goi_integration(id: i64) -> goi_integration::Model {
+        goi_integration::Model {
+            id,
+            owner_organism_id: id,
+            created_at: chrono::Utc::now().fixed_offset(),
+            integration_type: ORGANISM_GOI_INTEGRATION_TYPE_FULL.to_string(),
+            server_key: format!("server-{id}"),
+            server_label: format!("Server {id}"),
+            ssh_host: None,
+            ssh_user: None,
+            ssh_port: 22,
+            path: String::new(),
+            api_host: Some(format!("server-{id}")),
+            api_port: 8088,
+            api_login: Some("login".to_string()),
+            api_password: Some("password".to_string()),
+            disable_goi_to_echo_palitra_sync: false,
+            maintainer_login_id: None,
+            pause_worker: false,
+        }
+    }
+
+    #[test]
+    fn goi_api_jobs_are_exclusive_per_integration() {
+        let integrations =
+            vec![test_goi_integration(1), test_goi_integration(2)];
+        let mut state = GoiWorkerState::default();
+
+        let first =
+            claim_goi_api_job(&mut state, integrations.clone()).expect("first");
+        let second = claim_goi_api_job(&mut state, integrations.clone())
+            .expect("second");
+
+        assert_ne!(first.integration.id, second.integration.id);
+        assert!(claim_goi_api_job(&mut state, integrations.clone()).is_none());
+
+        state.integrations_in_progress.remove(&first.integration.id);
+        let reclaimed =
+            claim_goi_api_job(&mut state, integrations).expect("reclaimed");
+        assert_eq!(reclaimed.integration.id, first.integration.id);
+    }
 
     #[test]
     fn goi_knowledge_upsert_batches_split_oversized_snapshots() {

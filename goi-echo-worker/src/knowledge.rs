@@ -5,6 +5,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::path::Path;
 
+pub const KNOWLEDGE_KIND_CALL_SIGN: &str = "CALL_SIGN";
+pub const KNOWLEDGE_WORKER_AUTHOR: &str = "EXO";
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct KnowledgeCell {
     pub kind: String,
@@ -26,6 +29,11 @@ pub struct KnowledgeRow {
 }
 
 impl KnowledgeRow {
+    pub fn is_worker_managed_callsign(&self) -> bool {
+        self.knowledge_type.as_deref() == Some(KNOWLEDGE_KIND_CALL_SIGN)
+            && self.author.as_deref() == Some(KNOWLEDGE_WORKER_AUTHOR)
+    }
+
     pub fn is_meaningful(&self) -> bool {
         self.name.is_some()
             || self.key.is_some()

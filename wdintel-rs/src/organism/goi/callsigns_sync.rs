@@ -10,6 +10,9 @@ use crate::types::{info, warn, Env, ShortContext};
 use crate::utils::string::normalize_optional_trimmed;
 use calamine::{Data, Reader, Xlsx};
 use chrono::{NaiveDateTime, TimeZone, Utc};
+use goi_echo_worker::knowledge::{
+    KNOWLEDGE_KIND_CALL_SIGN, KNOWLEDGE_WORKER_AUTHOR,
+};
 use goi_echo_worker::xlsx::empty_xlsx_buffer;
 use quick_xml::events::Event;
 use quick_xml::name::QName;
@@ -22,10 +25,9 @@ use std::io::{Cursor, Read, Write};
 use zip::write::FileOptions;
 use zip::{CompressionMethod, ZipArchive, ZipWriter};
 
-const KNOWLEDGE_KIND_CALL_SIGN: &str = "CALL_SIGN";
-const KNOWLEDGE_WORKER_AUTHOR: &str = "EXO";
 const KNOWLEDGE_WORKER_ID_PREFIX: &str = "EXO ID ";
 const KNOWLEDGE_COMMENT_COL_IDX: usize = 4;
+const KNOWLEDGE_SOURCE_DATE_COL_IDX: usize = 5;
 const KNOWLEDGE_UNIT_COL_IDX: usize = 6;
 const KNOWLEDGE_POSITION_COL_IDX: usize = 7;
 const KNOWLEDGE_WORKER_ID_COL_IDX: usize = 8;
@@ -40,6 +42,7 @@ pub(super) struct GoiCallsignState {
     pub unit: String,
     pub position: String,
     pub comment: String,
+    pub source_date_raw: Option<String>,
     pub row_ref: Option<GoiWorkbookRowRef>,
 }
 
@@ -72,6 +75,16 @@ pub(super) struct GoiCallsignDiff {
     pub new_ids: Vec<i64>,
     pub edited_ids: Vec<i64>,
     pub deleted_ids: Vec<i64>,
+    pub duplicate_ids: Vec<i64>,
+}
+
+impl GoiCallsignDiff {
+    fn is_empty(&self) -> bool {
+        self.new_ids.is_empty()
+            && self.edited_ids.is_empty()
+            && self.deleted_ids.is_empty()
+            && self.duplicate_ids.is_empty()
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -164,14 +177,28 @@ pub(super) async fn sync_goi_callsigns_knowledge(
         );
     }
     let diff = diff_goi_callsigns(&previous_callsigns, &current_callsigns);
+    let worker_rows_need_rewrite = workbook.worker_rows_need_rewrite();
 
     info!(
-        "[goi-sync] GOI callsigns diff for {integration_label} {}\nnew callsigns - {}\nedited callsigns - {}\ndeleted callsigns - {}",
+        "[goi-sync] GOI callsigns diff for {integration_label} {}\nnew callsigns - {}\nedited callsigns - {}\ndeleted callsigns - {}\nduplicate callsigns - {}",
         knowledge_source,
         format_goi_callsign_id_summary(&diff.new_ids),
         format_goi_callsign_id_summary(&diff.edited_ids),
         format_goi_callsign_id_summary(&diff.deleted_ids),
+        format_goi_callsign_id_summary(&diff.duplicate_ids),
     );
+
+    if diff.is_empty() && !worker_rows_need_rewrite {
+        info!(
+            "[goi-sync] Skipping unchanged GOI callsigns workbook for {integration_label}"
+        );
+        return Ok(());
+    }
+    if worker_rows_need_rewrite {
+        info!(
+            "[goi-sync] Rewriting noncanonical GOI callsign rows for {integration_label}"
+        );
+    }
 
     info!(
         "[goi-sync] Rebuilding GOI knowledge workbook for {integration_label}"
@@ -297,6 +324,7 @@ async fn load_live_goi_callsigns(
                 comment.as_deref(),
                 source_name.as_deref(),
             ),
+            source_date_raw: None,
             row_ref: None,
         };
         info!(
@@ -593,6 +621,7 @@ pub(super) fn diff_goi_callsigns(
     previous: &[GoiCallsignState],
     current: &[GoiCallsignState],
 ) -> GoiCallsignDiff {
+    let duplicate_ids = duplicate_goi_callsign_ids(previous);
     let previous = previous
         .iter()
         .map(|callsign| (callsign.id, callsign))
@@ -601,7 +630,10 @@ pub(super) fn diff_goi_callsigns(
         .iter()
         .map(|callsign| (callsign.id, callsign))
         .collect::<BTreeMap<_, _>>();
-    let mut diff = GoiCallsignDiff::default();
+    let mut diff = GoiCallsignDiff {
+        duplicate_ids,
+        ..Default::default()
+    };
     let ids = previous
         .keys()
         .chain(current.keys())
@@ -621,6 +653,18 @@ pub(super) fn diff_goi_callsigns(
         }
     }
     diff
+}
+
+fn duplicate_goi_callsign_ids(callsigns: &[GoiCallsignState]) -> Vec<i64> {
+    let mut seen_ids = BTreeSet::new();
+    callsigns
+        .iter()
+        .filter_map(|callsign| {
+            (!seen_ids.insert(callsign.id)).then_some(callsign.id)
+        })
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect()
 }
 
 fn goi_callsign_changed(
@@ -737,6 +781,11 @@ impl KnowledgeWorkbookData {
                     unit: workbook_cell_text(row.get(KNOWLEDGE_UNIT_COL_IDX)),
                     position: extract_goi_callsign_position(row),
                     comment: extract_goi_callsign_comment(row),
+                    source_date_raw: normalize_optional_trimmed(Some(
+                        workbook_cell_text(
+                            row.get(KNOWLEDGE_SOURCE_DATE_COL_IDX),
+                        ),
+                    )),
                     row_ref: Some(GoiWorkbookRowRef {
                         sheet_name: sheet.name.clone(),
                         row_num: (row_idx + 1) as u32,
@@ -762,6 +811,14 @@ impl KnowledgeWorkbookData {
             }
         }
         rows_by_sheet
+    }
+
+    fn worker_rows_need_rewrite(&self) -> bool {
+        self.sheets
+            .iter()
+            .flat_map(|sheet| &sheet.rows)
+            .filter(|row| is_worker_callsign_row(row))
+            .any(|row| worker_row_needs_rewrite(row))
     }
 
     fn default_target_sheet_name(
@@ -818,7 +875,11 @@ impl KnowledgeWorkbookData {
             .cloned()
             .collect::<BTreeSet<_>>();
         affected_sheet_names.insert(target_sheet_name.clone());
-        let current_callsigns = unique_sorted_goi_callsigns(current_callsigns);
+        let current_callsigns = prepare_goi_callsigns_for_write(
+            previous_callsigns,
+            current_callsigns,
+            TEST_GOI_SYNC_TIMESTAMP,
+        );
 
         for sheet_name in affected_sheet_names {
             let current_sheet_callsigns = if sheet_name == target_sheet_name {
@@ -881,7 +942,12 @@ fn build_worker_row_cells_for_tests(
         WorkbookCellValue::String(KNOWLEDGE_KIND_CALL_SIGN.to_string()),
         WorkbookCellValue::String(KNOWLEDGE_WORKER_AUTHOR.to_string()),
         WorkbookCellValue::String(callsign.comment.clone()),
-        WorkbookCellValue::String(sync_timestamp.to_string()),
+        WorkbookCellValue::String(
+            callsign
+                .source_date_raw
+                .clone()
+                .unwrap_or_else(|| sync_timestamp.to_string()),
+        ),
         WorkbookCellValue::String(callsign.unit.clone()),
         WorkbookCellValue::String(callsign.position.clone()),
         WorkbookCellValue::String(format!(
@@ -902,7 +968,11 @@ fn apply_goi_callsigns_to_xlsx(
         .default_target_sheet_name(previous_callsigns)
         .c(h!())?;
     let worker_row_nums_by_sheet = workbook.worker_row_nums_by_sheet();
-    let current_callsigns = unique_sorted_goi_callsigns(current_callsigns);
+    let current_callsigns = prepare_goi_callsigns_for_write(
+        previous_callsigns,
+        current_callsigns,
+        sync_timestamp,
+    );
     let mut archive = XlsxArchive::from_bytes(file_data).c(h!())?;
     let sheet_paths = archive.sheet_paths_by_name().c(h!())?;
 
@@ -1265,10 +1335,7 @@ fn unique_sorted_goi_callsigns(
 ) -> Vec<GoiCallsignState> {
     let mut current_callsigns = current_callsigns.to_vec();
     current_callsigns.sort_by_key(|callsign| callsign.id);
-    let duplicate_ids = current_callsigns
-        .windows(2)
-        .filter_map(|pair| (pair[0].id == pair[1].id).then_some(pair[0].id))
-        .collect::<BTreeSet<_>>();
+    let duplicate_ids = duplicate_goi_callsign_ids(&current_callsigns);
     if !duplicate_ids.is_empty() {
         warn!(
             "[goi-sync] Deduplicating GOI knowledge callsign rows by EXO ID before workbook write: duplicate_ids={duplicate_ids:?}"
@@ -1276,6 +1343,57 @@ fn unique_sorted_goi_callsigns(
         current_callsigns.dedup_by_key(|callsign| callsign.id);
     }
     current_callsigns
+}
+
+fn prepare_goi_callsigns_for_write(
+    previous_callsigns: &[GoiCallsignState],
+    current_callsigns: &[GoiCallsignState],
+    sync_timestamp: &str,
+) -> Vec<GoiCallsignState> {
+    let previous_callsigns = previous_callsigns
+        .iter()
+        .map(|callsign| (callsign.id, callsign))
+        .collect::<BTreeMap<_, _>>();
+    unique_sorted_goi_callsigns(current_callsigns)
+        .into_iter()
+        .map(|mut callsign| {
+            callsign.source_date_raw = previous_callsigns
+                .get(&callsign.id)
+                .filter(|previous| !goi_callsign_changed(previous, &callsign))
+                .and_then(|previous| previous.source_date_raw.as_deref())
+                .and_then(normalize_goi_source_date)
+                .or_else(|| Some(sync_timestamp.to_string()));
+            callsign
+        })
+        .collect()
+}
+
+fn normalize_goi_source_date(source_date: &str) -> Option<String> {
+    let source_date = source_date.trim();
+    NaiveDateTime::parse_from_str(source_date, "%d.%m.%Y %H:%M:%S")
+        .or_else(|_| {
+            NaiveDateTime::parse_from_str(source_date, "%Y-%m-%d %H:%M:%S%.f")
+        })
+        .ok()
+        .map(|source_date| source_date.format("%d.%m.%Y %H:%M:%S").to_string())
+}
+
+fn worker_row_needs_rewrite(row: &[WorkbookCellValue]) -> bool {
+    let worker_id = workbook_cell_text(row.get(KNOWLEDGE_WORKER_ID_COL_IDX));
+    let canonical_worker_id =
+        parse_goi_callsign_id(row.get(KNOWLEDGE_WORKER_ID_COL_IDX))
+            .map(|id| format!("{KNOWLEDGE_WORKER_ID_PREFIX}{id}"));
+    if canonical_worker_id.as_deref() != Some(worker_id.as_str())
+        || parse_legacy_h_goi_callsign_id(row.get(KNOWLEDGE_POSITION_COL_IDX))
+            .is_some()
+    {
+        return true;
+    }
+
+    let source_date =
+        workbook_cell_text(row.get(KNOWLEDGE_SOURCE_DATE_COL_IDX));
+    normalize_goi_source_date(&source_date).as_deref()
+        != Some(source_date.as_str())
 }
 
 fn rewrite_sheet_xml(
@@ -1407,7 +1525,15 @@ fn build_worker_row_xml(
     push_inline_string_cell(&mut cells, "C", row_num, KNOWLEDGE_KIND_CALL_SIGN);
     push_inline_string_cell(&mut cells, "D", row_num, KNOWLEDGE_WORKER_AUTHOR);
     push_inline_string_cell(&mut cells, "E", row_num, &callsign.comment);
-    push_inline_string_cell(&mut cells, "F", row_num, sync_timestamp);
+    push_inline_string_cell(
+        &mut cells,
+        "F",
+        row_num,
+        callsign
+            .source_date_raw
+            .as_deref()
+            .unwrap_or(sync_timestamp),
+    );
     push_inline_string_cell(&mut cells, "G", row_num, &callsign.unit);
     push_inline_string_cell(&mut cells, "H", row_num, &callsign.position);
     push_inline_string_cell(
@@ -1625,6 +1751,7 @@ mod tests {
             unit: "3 ОМСБр".to_string(),
             position: "КР".to_string(),
             comment: "джерело: Пролом".to_string(),
+            source_date_raw: None,
             row_ref: row_num.map(|row_num| GoiWorkbookRowRef {
                 sheet_name: "Knowledge".to_string(),
                 row_num,
@@ -1671,6 +1798,69 @@ mod tests {
         assert_eq!(diff.new_ids, vec![1]);
         assert_eq!(diff.edited_ids, vec![3]);
         assert_eq!(diff.deleted_ids, vec![4]);
+        assert!(diff.duplicate_ids.is_empty());
+    }
+
+    #[test]
+    fn diff_goi_callsigns_reports_duplicate_previous_ids() {
+        let previous = vec![
+            sample_callsign(2, "BETA OLD", Some(2)),
+            sample_callsign(2, "BETA", Some(3)),
+        ];
+        let current = vec![sample_callsign(2, "BETA", None)];
+
+        let diff = diff_goi_callsigns(&previous, &current);
+
+        assert!(diff.new_ids.is_empty());
+        assert!(diff.edited_ids.is_empty());
+        assert!(diff.deleted_ids.is_empty());
+        assert_eq!(diff.duplicate_ids, vec![2]);
+        assert!(!diff.is_empty());
+    }
+
+    #[test]
+    fn prepare_goi_callsigns_for_write_preserves_only_unchanged_timestamps() {
+        let mut unchanged = sample_callsign(2, "BETA", Some(2));
+        unchanged.source_date_raw = Some("2026-03-16 12:00:00".to_string());
+        let mut edited = sample_callsign(3, "GAMMA", Some(3));
+        edited.source_date_raw = Some("16.03.2026 12:00:00".to_string());
+        let mut invalid = sample_callsign(5, "EPSILON", Some(5));
+        invalid.source_date_raw = Some("invalid".to_string());
+        let previous = vec![unchanged, edited.clone(), invalid];
+        edited.comment = "edited".to_string();
+        let current = vec![
+            sample_callsign(4, "DELTA", None),
+            sample_callsign(2, "BETA", None),
+            edited,
+            sample_callsign(5, "EPSILON", None),
+        ];
+
+        let callsigns = prepare_goi_callsigns_for_write(
+            &previous,
+            &current,
+            TEST_GOI_SYNC_TIMESTAMP,
+        );
+
+        assert_eq!(callsigns[0].id, 2);
+        assert_eq!(
+            callsigns[0].source_date_raw.as_deref(),
+            Some("16.03.2026 12:00:00")
+        );
+        assert_eq!(callsigns[1].id, 3);
+        assert_eq!(
+            callsigns[1].source_date_raw.as_deref(),
+            Some(TEST_GOI_SYNC_TIMESTAMP)
+        );
+        assert_eq!(callsigns[2].id, 4);
+        assert_eq!(
+            callsigns[2].source_date_raw.as_deref(),
+            Some(TEST_GOI_SYNC_TIMESTAMP)
+        );
+        assert_eq!(callsigns[3].id, 5);
+        assert_eq!(
+            callsigns[3].source_date_raw.as_deref(),
+            Some(TEST_GOI_SYNC_TIMESTAMP)
+        );
     }
 
     #[test]
@@ -2015,6 +2205,38 @@ mod tests {
         assert_eq!(state[0].id, 2);
         assert_eq!(state[0].position, "");
         assert_eq!(state[0].comment, "джерело: Пролом");
+    }
+
+    #[test]
+    fn worker_rows_need_rewrite_detects_noncanonical_rows() {
+        let canonical_row = build_worker_row_cells_for_tests(
+            &sample_callsign(2, "BETA", None),
+            TEST_GOI_SYNC_TIMESTAMP,
+        );
+        let workbook = |row| KnowledgeWorkbookData {
+            sheets: vec![WorkbookSheetData {
+                name: "Knowledge".to_string(),
+                rows: vec![row],
+            }],
+        };
+
+        assert!(!workbook(canonical_row.clone()).worker_rows_need_rewrite());
+
+        let mut legacy_id_row = canonical_row.clone();
+        legacy_id_row.pop();
+        legacy_id_row[KNOWLEDGE_POSITION_COL_IDX] =
+            WorkbookCellValue::String("EXO ID 2".to_string());
+        assert!(workbook(legacy_id_row).worker_rows_need_rewrite());
+
+        let mut invalid_id_row = canonical_row.clone();
+        invalid_id_row[KNOWLEDGE_WORKER_ID_COL_IDX] =
+            WorkbookCellValue::String("invalid".to_string());
+        assert!(workbook(invalid_id_row).worker_rows_need_rewrite());
+
+        let mut invalid_date_row = canonical_row;
+        invalid_date_row[KNOWLEDGE_SOURCE_DATE_COL_IDX] =
+            WorkbookCellValue::String("invalid".to_string());
+        assert!(workbook(invalid_date_row).worker_rows_need_rewrite());
     }
 
     #[test]
