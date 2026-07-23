@@ -50,15 +50,52 @@ postgres_psql --dbname "$GATEWAY_DB" \
 BEGIN;
 CREATE SCHEMA IF NOT EXISTS echo_clickhouse_derived AUTHORIZATION postgres;
 REVOKE ALL ON SCHEMA echo_clickhouse_derived FROM PUBLIC;
-CREATE FOREIGN TABLE IF NOT EXISTS echo_clickhouse_derived.message_callsign (
+CREATE SCHEMA IF NOT EXISTS echo_clickhouse_derived_foreign
+  AUTHORIZATION postgres;
+REVOKE ALL ON SCHEMA echo_clickhouse_derived_foreign FROM PUBLIC;
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM pg_class
+    JOIN pg_namespace ON pg_namespace.oid = pg_class.relnamespace
+    WHERE pg_namespace.nspname = 'echo_clickhouse_derived'
+      AND pg_class.relname = 'message_callsign'
+      AND pg_class.relkind = 'f'
+  ) THEN
+    DROP FOREIGN TABLE echo_clickhouse_derived.message_callsign;
+  END IF;
+END
+$$;
+CREATE FOREIGN TABLE IF NOT EXISTS
+echo_clickhouse_derived_foreign.message_callsign (
   sigint_inbox_item_id bigint NOT NULL,
   callsign text
 )
 SERVER echo_clickhouse
 OPTIONS (
   database :'derived_database',
-  table_name :'message_callsign_view'
+  table_name :'message_callsign_view',
+  engine 'View'
 );
+REVOKE ALL ON TABLE echo_clickhouse_derived_foreign.message_callsign
+  FROM PUBLIC;
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_class
+    JOIN pg_namespace ON pg_namespace.oid = pg_class.relnamespace
+    WHERE pg_namespace.nspname = 'echo_clickhouse_derived'
+      AND pg_class.relname = 'message_callsign'
+      AND pg_class.relkind = 'v'
+  ) THEN
+    CREATE VIEW echo_clickhouse_derived.message_callsign AS
+    SELECT sigint_inbox_item_id, callsign
+    FROM echo_clickhouse_derived_foreign.message_callsign;
+  END IF;
+END
+$$;
 REVOKE ALL ON TABLE echo_clickhouse_derived.message_callsign FROM PUBLIC;
 SELECT format(
   'GRANT USAGE ON SCHEMA echo_clickhouse_derived TO %I',

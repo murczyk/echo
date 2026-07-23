@@ -412,10 +412,12 @@ explicit historical backfill or full mirror resync.
 
 The same reconciliation installs a versioned ClickHouse callsign-expansion
 view and exposes it privately as
-`echo_clickhouse_derived.message_callsign` in the gateway. This keeps JSON
-array expansion and distinct aggregation inside ClickHouse. The derived
-foreign table is created only when missing, so the periodic check does not
-invalidate running gateway queries.
+`echo_clickhouse_derived.message_callsign` in the gateway. The gateway object
+is an owner-owned compatibility view over a private foreign table, matching
+the replicated-table gateway pattern so joins and distinct aggregation remain
+pushdown-safe. Existing objects are replaced only when upgrading from the
+earlier direct-foreign-table layout; periodic checks leave the compatibility
+view unchanged.
 Package deployments install the source and remote reconciliation scripts.
 For checkout-based development, `just dev-back` runs the repository copy as a
 bounded best-effort preflight when `/etc/echo-peerdb/source.env` exists; without
