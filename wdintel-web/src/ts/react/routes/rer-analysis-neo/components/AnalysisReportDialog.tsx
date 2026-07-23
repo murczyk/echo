@@ -49,6 +49,12 @@ const PREPARING_TEXT = `Готуємо${ELLIPSIS}`;
 const QUEUED_TEXT = 'Очікує запуску';
 const REPORT_HISTORY_URL = '/my-reports';
 
+export const analysisReportDialogHintSx = {
+  width: { xs: '100%', sm: 'auto' },
+  flex: { xs: '0 1 auto', sm: '1 1 320px' },
+  minWidth: 0,
+} as const;
+
 type Props = {
   aors: AnalysisAorEntry[];
   downloadInFlight: boolean;
@@ -1007,11 +1013,7 @@ export function AnalysisReportDialog({
           overflowX: 'hidden',
         }}
       >
-        <Typography
-          variant="caption"
-          color="text.secondary"
-          sx={{ width: { xs: '100%', sm: 'auto' }, flex: '1 1 320px', minWidth: 0 }}
-        >
+        <Typography variant="caption" color="text.secondary" sx={analysisReportDialogHintSx}>
           {appliedFilters.globalHint}
         </Typography>
         <Stack
