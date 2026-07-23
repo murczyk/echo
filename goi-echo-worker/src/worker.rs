@@ -333,6 +333,7 @@ async fn sync_knowledge_rows(
                 .action_cond_where(knowledge_upsert_has_changes())
                 .to_owned(),
         )
+        .on_empty_do_nothing()
         .exec(&tx)
         .await
         .context("upserting knowledge rows")?;

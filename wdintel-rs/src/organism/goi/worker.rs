@@ -673,6 +673,7 @@ async fn upsert_goi_knowledge_snapshot(
                 .action_cond_where(goi_knowledge_upsert_has_changes())
                 .to_owned(),
             )
+            .on_empty_do_nothing()
             .exec(&tx)
             .await
             .c(h!())?;
