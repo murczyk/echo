@@ -8,6 +8,7 @@ use crate::utils::orm::ArrayColumnOps;
 use chrono::Utc;
 use echo_migration::{Expr, JoinType};
 use sea_orm::*;
+use std::collections::BTreeSet;
 
 pub mod handlers;
 pub mod oneoff;
@@ -27,7 +28,20 @@ pub async fn resolve_group_aor_id<C>(
 where
     C: ConnectionTrait,
 {
-    Ok(signal_group_aor::Entity::find()
+    Ok(resolve_group_aor_ids(dbx, signal_group_master_key)
+        .await?
+        .into_iter()
+        .next())
+}
+
+pub async fn resolve_group_aor_ids<C>(
+    dbx: &C,
+    signal_group_master_key: &str,
+) -> Result<Vec<i64>, AppError>
+where
+    C: ConnectionTrait,
+{
+    let aor_ids = signal_group_aor::Entity::find()
         .join(
             JoinType::InnerJoin,
             signal_group_aor::Relation::AreaOfResponsibility.def(),
@@ -38,9 +52,14 @@ where
         .select_only()
         .column(signal_group_aor::Column::AorId)
         .into_tuple::<i64>()
-        .one(dbx)
+        .all(dbx)
         .await
-        .c(h!())?)
+        .c(h!())?;
+    let mut unique_aor_ids = BTreeSet::new();
+    Ok(aor_ids
+        .into_iter()
+        .filter(|aor_id| unique_aor_ids.insert(*aor_id))
+        .collect())
 }
 
 pub async fn ensure_identity_group_available<C>(
