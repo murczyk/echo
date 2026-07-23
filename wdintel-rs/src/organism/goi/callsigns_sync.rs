@@ -26,6 +26,7 @@ const KNOWLEDGE_KIND_CALL_SIGN: &str = "CALL_SIGN";
 const KNOWLEDGE_WORKER_AUTHOR: &str = "EXO";
 const KNOWLEDGE_WORKER_ID_PREFIX: &str = "EXO ID ";
 const KNOWLEDGE_COMMENT_COL_IDX: usize = 4;
+const KNOWLEDGE_SOURCE_DATE_COL_IDX: usize = 5;
 const KNOWLEDGE_UNIT_COL_IDX: usize = 6;
 const KNOWLEDGE_POSITION_COL_IDX: usize = 7;
 const KNOWLEDGE_WORKER_ID_COL_IDX: usize = 8;
@@ -40,6 +41,7 @@ pub(super) struct GoiCallsignState {
     pub unit: String,
     pub position: String,
     pub comment: String,
+    pub source_date_raw: Option<String>,
     pub row_ref: Option<GoiWorkbookRowRef>,
 }
 
@@ -72,6 +74,14 @@ pub(super) struct GoiCallsignDiff {
     pub new_ids: Vec<i64>,
     pub edited_ids: Vec<i64>,
     pub deleted_ids: Vec<i64>,
+}
+
+impl GoiCallsignDiff {
+    fn is_empty(&self) -> bool {
+        self.new_ids.is_empty()
+            && self.edited_ids.is_empty()
+            && self.deleted_ids.is_empty()
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -172,6 +182,13 @@ pub(super) async fn sync_goi_callsigns_knowledge(
         format_goi_callsign_id_summary(&diff.edited_ids),
         format_goi_callsign_id_summary(&diff.deleted_ids),
     );
+
+    if diff.is_empty() {
+        info!(
+            "[goi-sync] Skipping unchanged GOI callsigns workbook for {integration_label}"
+        );
+        return Ok(());
+    }
 
     info!(
         "[goi-sync] Rebuilding GOI knowledge workbook for {integration_label}"
@@ -297,6 +314,7 @@ async fn load_live_goi_callsigns(
                 comment.as_deref(),
                 source_name.as_deref(),
             ),
+            source_date_raw: None,
             row_ref: None,
         };
         info!(
@@ -737,6 +755,11 @@ impl KnowledgeWorkbookData {
                     unit: workbook_cell_text(row.get(KNOWLEDGE_UNIT_COL_IDX)),
                     position: extract_goi_callsign_position(row),
                     comment: extract_goi_callsign_comment(row),
+                    source_date_raw: normalize_optional_trimmed(Some(
+                        workbook_cell_text(
+                            row.get(KNOWLEDGE_SOURCE_DATE_COL_IDX),
+                        ),
+                    )),
                     row_ref: Some(GoiWorkbookRowRef {
                         sheet_name: sheet.name.clone(),
                         row_num: (row_idx + 1) as u32,
@@ -818,7 +841,11 @@ impl KnowledgeWorkbookData {
             .cloned()
             .collect::<BTreeSet<_>>();
         affected_sheet_names.insert(target_sheet_name.clone());
-        let current_callsigns = unique_sorted_goi_callsigns(current_callsigns);
+        let current_callsigns = prepare_goi_callsigns_for_write(
+            previous_callsigns,
+            current_callsigns,
+            TEST_GOI_SYNC_TIMESTAMP,
+        );
 
         for sheet_name in affected_sheet_names {
             let current_sheet_callsigns = if sheet_name == target_sheet_name {
@@ -881,7 +908,12 @@ fn build_worker_row_cells_for_tests(
         WorkbookCellValue::String(KNOWLEDGE_KIND_CALL_SIGN.to_string()),
         WorkbookCellValue::String(KNOWLEDGE_WORKER_AUTHOR.to_string()),
         WorkbookCellValue::String(callsign.comment.clone()),
-        WorkbookCellValue::String(sync_timestamp.to_string()),
+        WorkbookCellValue::String(
+            callsign
+                .source_date_raw
+                .clone()
+                .unwrap_or_else(|| sync_timestamp.to_string()),
+        ),
         WorkbookCellValue::String(callsign.unit.clone()),
         WorkbookCellValue::String(callsign.position.clone()),
         WorkbookCellValue::String(format!(
@@ -902,7 +934,11 @@ fn apply_goi_callsigns_to_xlsx(
         .default_target_sheet_name(previous_callsigns)
         .c(h!())?;
     let worker_row_nums_by_sheet = workbook.worker_row_nums_by_sheet();
-    let current_callsigns = unique_sorted_goi_callsigns(current_callsigns);
+    let current_callsigns = prepare_goi_callsigns_for_write(
+        previous_callsigns,
+        current_callsigns,
+        sync_timestamp,
+    );
     let mut archive = XlsxArchive::from_bytes(file_data).c(h!())?;
     let sheet_paths = archive.sheet_paths_by_name().c(h!())?;
 
@@ -1278,6 +1314,28 @@ fn unique_sorted_goi_callsigns(
     current_callsigns
 }
 
+fn prepare_goi_callsigns_for_write(
+    previous_callsigns: &[GoiCallsignState],
+    current_callsigns: &[GoiCallsignState],
+    sync_timestamp: &str,
+) -> Vec<GoiCallsignState> {
+    let previous_callsigns = previous_callsigns
+        .iter()
+        .map(|callsign| (callsign.id, callsign))
+        .collect::<BTreeMap<_, _>>();
+    unique_sorted_goi_callsigns(current_callsigns)
+        .into_iter()
+        .map(|mut callsign| {
+            callsign.source_date_raw = previous_callsigns
+                .get(&callsign.id)
+                .filter(|previous| !goi_callsign_changed(previous, &callsign))
+                .and_then(|previous| previous.source_date_raw.clone())
+                .or_else(|| Some(sync_timestamp.to_string()));
+            callsign
+        })
+        .collect()
+}
+
 fn rewrite_sheet_xml(
     sheet_xml: &str,
     worker_row_nums: &BTreeSet<u32>,
@@ -1407,7 +1465,15 @@ fn build_worker_row_xml(
     push_inline_string_cell(&mut cells, "C", row_num, KNOWLEDGE_KIND_CALL_SIGN);
     push_inline_string_cell(&mut cells, "D", row_num, KNOWLEDGE_WORKER_AUTHOR);
     push_inline_string_cell(&mut cells, "E", row_num, &callsign.comment);
-    push_inline_string_cell(&mut cells, "F", row_num, sync_timestamp);
+    push_inline_string_cell(
+        &mut cells,
+        "F",
+        row_num,
+        callsign
+            .source_date_raw
+            .as_deref()
+            .unwrap_or(sync_timestamp),
+    );
     push_inline_string_cell(&mut cells, "G", row_num, &callsign.unit);
     push_inline_string_cell(&mut cells, "H", row_num, &callsign.position);
     push_inline_string_cell(
@@ -1625,6 +1691,7 @@ mod tests {
             unit: "3 ОМСБр".to_string(),
             position: "КР".to_string(),
             comment: "джерело: Пролом".to_string(),
+            source_date_raw: None,
             row_ref: row_num.map(|row_num| GoiWorkbookRowRef {
                 sheet_name: "Knowledge".to_string(),
                 row_num,
@@ -1671,6 +1738,43 @@ mod tests {
         assert_eq!(diff.new_ids, vec![1]);
         assert_eq!(diff.edited_ids, vec![3]);
         assert_eq!(diff.deleted_ids, vec![4]);
+    }
+
+    #[test]
+    fn prepare_goi_callsigns_for_write_preserves_only_unchanged_timestamps() {
+        let mut unchanged = sample_callsign(2, "BETA", Some(2));
+        unchanged.source_date_raw = Some("16.03.2026 12:00:00".to_string());
+        let mut edited = sample_callsign(3, "GAMMA", Some(3));
+        edited.source_date_raw = Some("16.03.2026 12:00:00".to_string());
+        let previous = vec![unchanged, edited.clone()];
+        edited.comment = "edited".to_string();
+        let current = vec![
+            sample_callsign(4, "DELTA", None),
+            sample_callsign(2, "BETA", None),
+            edited,
+        ];
+
+        let callsigns = prepare_goi_callsigns_for_write(
+            &previous,
+            &current,
+            TEST_GOI_SYNC_TIMESTAMP,
+        );
+
+        assert_eq!(callsigns[0].id, 2);
+        assert_eq!(
+            callsigns[0].source_date_raw.as_deref(),
+            Some("16.03.2026 12:00:00")
+        );
+        assert_eq!(callsigns[1].id, 3);
+        assert_eq!(
+            callsigns[1].source_date_raw.as_deref(),
+            Some(TEST_GOI_SYNC_TIMESTAMP)
+        );
+        assert_eq!(callsigns[2].id, 4);
+        assert_eq!(
+            callsigns[2].source_date_raw.as_deref(),
+            Some(TEST_GOI_SYNC_TIMESTAMP)
+        );
     }
 
     #[test]

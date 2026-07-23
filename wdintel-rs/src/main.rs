@@ -497,6 +497,25 @@ pub struct OneoffBackfillGoiAssociationMessageUidsPs {
 }
 
 #[derive(clap::Parser, Debug)]
+pub struct OneoffDeleteDeletedGoiKnowledgePs {
+    #[arg(long)]
+    pub integration_id: Option<i64>,
+    #[arg(
+        long,
+        default_value_t = ONEOFF_GOI_KNOWLEDGE_DELETE_BATCH_SIZE_DEFAULT
+    )]
+    pub batch_size: u64,
+    #[arg(
+        long,
+        default_value_t = ONEOFF_GOI_KNOWLEDGE_DELETE_SLEEP_MS_DEFAULT
+    )]
+    pub sleep_ms: u64,
+    /// Delete rows. Without this flag, only report matching rows.
+    #[arg(long, action)]
+    pub execute: bool,
+}
+
+#[derive(clap::Parser, Debug)]
 pub struct OneoffPrintOrganismGroupsPs {
     #[arg(long, value_enum)]
     pub organism_name: String,
@@ -726,6 +745,7 @@ enum Cmd {
     OneoffBackfillGoiAssociationMessageUids(
         OneoffBackfillGoiAssociationMessageUidsPs,
     ),
+    OneoffDeleteDeletedGoiKnowledge(OneoffDeleteDeletedGoiKnowledgePs),
     OneoffGetNetworksActivityStats(OneoffGetNetworksActivityStatsPs),
     OneoffCompareRerCounts(CompareRerCountsPs),
     OneoffPopulateSignalMessageGroupIds,
@@ -1194,6 +1214,10 @@ async fn async_main(
                 ps.since_ts.as_deref(),
             )
             .await
+        }
+        Cmd::OneoffDeleteDeletedGoiKnowledge(ps) => {
+            organism::oneoff::oneoff_delete_deleted_goi_knowledge(mode, &ps)
+                .await
         }
         Cmd::OneoffGetNetworksActivityStats(ps) => {
             sigint::network::oneoff::oneoff_network_activity_stat(mode, &ps)

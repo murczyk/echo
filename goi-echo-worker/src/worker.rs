@@ -4,7 +4,9 @@ use anyhow::{Context, Result};
 use goi_echo_worker::knowledge::{read_knowledge_rows, KnowledgeRow};
 use goi_echo_worker::row::{read_association_rows, AssociationRow};
 use goi_echo_worker::xlsx::empty_xlsx_buffer;
-use sea_orm::sea_query::{Expr, OnConflict};
+use sea_orm::sea_query::{
+    Alias, BinOper, Condition, Expr, OnConflict, SimpleExpr,
+};
 use sea_orm::{
     ColumnTrait, DatabaseConnection, DatabaseTransaction, EntityTrait, NotSet,
     QueryFilter, Set, TransactionTrait, TryInsertResult,
@@ -328,6 +330,7 @@ async fn sync_knowledge_rows(
                     knowledge::Column::UpdatedAt,
                     knowledge::Column::Deleted,
                 ])
+                .action_cond_where(knowledge_upsert_has_changes())
                 .to_owned(),
         )
         .exec(&tx)
@@ -339,6 +342,19 @@ async fn sync_knowledge_rows(
         dedupe_keys.len()
     );
     Ok(())
+}
+
+fn knowledge_upsert_has_changes() -> Condition {
+    Condition::any()
+        .add(knowledge_column_is_distinct(knowledge::Column::Row))
+        .add(knowledge_column_is_distinct(knowledge::Column::Deleted))
+}
+
+fn knowledge_column_is_distinct(column: knowledge::Column) -> SimpleExpr {
+    Expr::col((knowledge::Entity, column)).binary(
+        BinOper::Custom("IS DISTINCT FROM"),
+        Expr::col((Alias::new("excluded"), column)),
+    )
 }
 
 async fn mark_missing_knowledge_rows_deleted(
