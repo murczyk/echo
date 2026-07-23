@@ -236,6 +236,7 @@ test.describe('@smoke', () => {
 
     await searchControl.getByRole('button', { name: 'Розгорнути пошук на мапі' }).click();
     await expect(searchControl).not.toHaveClass(/narrow-map-control--collapsed/);
+    await expect(dateControl).toHaveClass(/narrow-map-control--collapsed/);
     const expandedSearchBox = await searchControl.boundingBox();
     expect(expandedSearchBox).not.toBeNull();
     expect(expandedSearchBox!.x).toBeGreaterThanOrEqual(0);
@@ -243,6 +244,7 @@ test.describe('@smoke', () => {
 
     await dateControl.getByRole('button', { name: 'Розгорнути діапазон дат на мапі' }).click();
     await expect(dateControl).not.toHaveClass(/narrow-map-control--collapsed/);
+    await expect(searchControl).toHaveClass(/narrow-map-control--collapsed/);
     const expandedDateBox = await dateControl.boundingBox();
     expect(expandedDateBox).not.toBeNull();
     expect(expandedDateBox!.x).toBeGreaterThanOrEqual(0);

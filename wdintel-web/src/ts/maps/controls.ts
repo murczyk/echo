@@ -55,6 +55,16 @@ function initializeNarrowControlToggle(
 
   L.DomEvent.on(toggle, 'click', L.DomEvent.stopPropagation);
   L.DomEvent.on(toggle, 'click', () => {
+    if (narrowViewportQuery.matches) {
+      const narrowControls = container.parentElement?.querySelectorAll<HTMLElement>(
+        '.narrow-map-search-control, .narrow-map-date-control',
+      );
+      for (const peer of narrowControls ?? []) {
+        if (peer !== container) {
+          peer.classList.add('narrow-map-control--collapsed');
+        }
+      }
+    }
     container.classList.remove('narrow-map-control--collapsed');
   });
 
