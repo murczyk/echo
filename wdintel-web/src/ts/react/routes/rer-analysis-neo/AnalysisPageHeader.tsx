@@ -22,6 +22,7 @@ type Props = {
   page: AnalysisPageViewModel;
   centerTab: AnalysisCenterTab;
   isCompactLayout?: boolean;
+  isInitialLoading?: boolean;
   isNarrowLayout: boolean;
   leftPanelVisible: boolean;
   rightPanelVisible: boolean;
@@ -31,12 +32,14 @@ export function AnalysisPageHeader({
   page,
   centerTab,
   isCompactLayout = false,
+  isInitialLoading = false,
   isNarrowLayout,
   leftPanelVisible,
   rightPanelVisible,
 }: Props) {
   const loading = page.countsLoading || page.messagesLoading || page.summaryLoading;
   const showPagination = !isNarrowLayout || centerTab === 'messages';
+  const showCompactRightPanelToggle = isCompactLayout && (!rightPanelVisible || isInitialLoading);
   return (
     <PageHeader
       title="Аналіз"
@@ -181,8 +184,11 @@ export function AnalysisPageHeader({
                 onClick={() => page.toggleRightPanel()}
               />
             ) : null}
-            {isCompactLayout && !rightPanelVisible ? (
-              <AnalysisRightPanelToggle expanded={false} onClick={() => page.toggleRightPanel()} />
+            {showCompactRightPanelToggle ? (
+              <AnalysisRightPanelToggle
+                expanded={rightPanelVisible}
+                onClick={() => page.toggleRightPanel()}
+              />
             ) : null}
           </Stack>
         </Stack>

@@ -81,6 +81,7 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
           page={page}
           centerTab={centerTab}
           isCompactLayout={isAnalysisCompactLayout}
+          isInitialLoading={showLoadingSkeletons}
           isNarrowLayout={isNarrowLayout}
           leftPanelVisible={leftPanelVisible}
           rightPanelVisible={rightPanelVisible}

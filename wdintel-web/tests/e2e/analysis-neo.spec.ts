@@ -97,6 +97,27 @@ test.describe('@smoke', () => {
     expect(375 - (box!.x + box!.width)).toBeGreaterThanOrEqual(8);
   });
 
+  test('analysis neo keeps the compact panel toggle available during initial loading', async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 375, height: 844 });
+    await setupAnalysisNeoPage(page, {
+      inboxDelayMs: 2000,
+      inboxResponse: createLoadedInboxResponse(),
+    });
+    await page.goto('/rer-analysis-neo');
+
+    await expect(page.getByRole('region', { name: 'Центральна секція' })).toBeVisible();
+    const expandButton = page.getByRole('button', { name: 'Розгорнути праву панель' });
+    await expect(expandButton).toBeVisible();
+    await expandButton.click();
+
+    const collapseButton = page.getByRole('button', { name: 'Згорнути праву панель' });
+    await expect(collapseButton).toBeVisible();
+    await collapseButton.click();
+    await expect(page.getByRole('button', { name: 'Розгорнути праву панель' })).toBeVisible();
+  });
+
   test('analysis neo keeps the narrow right-panel header fixed', async ({ page }) => {
     await page.setViewportSize({ width: 375, height: 844 });
     await setupAnalysisNeoPage(page, { inboxResponse: createLoadedInboxResponse() });

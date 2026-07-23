@@ -118,6 +118,7 @@ function renderHeader(
   isCompactLayout: boolean,
   rightPanelVisible: boolean,
   centerTab: 'messages' | 'summary' | 'map' = 'messages',
+  isInitialLoading = false,
 ) {
   const container = document.createElement('div');
   document.body.appendChild(container);
@@ -128,6 +129,7 @@ function renderHeader(
         page={page}
         centerTab={centerTab}
         isCompactLayout={isCompactLayout}
+        isInitialLoading={isInitialLoading}
         isNarrowLayout={isCompactLayout}
         leftPanelVisible
         rightPanelVisible={rightPanelVisible}
@@ -196,6 +198,22 @@ describe('AnalysisPageHeader', () => {
     );
     expect(openButton).not.toBeNull();
     expect(openButton?.tagName).toBe('BUTTON');
+  });
+
+  it('keeps a compact collapse control available while the initial skeleton is visible', () => {
+    const page = buildPage();
+    const view = renderHeader(page, true, true, 'messages', true);
+    rendered.push(view);
+
+    expect(view.container.querySelectorAll('[aria-label="Згорнути праву панель"]')).toHaveLength(1);
+  });
+
+  it('leaves compact panel collapse to the mounted sidebar after loading', () => {
+    const page = buildPage();
+    const view = renderHeader(page, true, true, 'messages', false);
+    rendered.push(view);
+
+    expect(view.container.querySelector('[aria-label="Згорнути праву панель"]')).toBeNull();
   });
 
   it('moves newest-first into narrow message actions without duplicating it in tabs', () => {
