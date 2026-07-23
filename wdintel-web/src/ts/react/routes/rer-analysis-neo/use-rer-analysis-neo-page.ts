@@ -258,12 +258,14 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
       setQueryState((current) => {
         const normalizedUnits = normalizeUnknownUnitSelections(current.unitsSelected);
         const isSelected = normalizedUnits.includes(normalizedUnitName);
+        const unitsSelected = isSelected
+          ? normalizedUnits.filter((item) => item !== normalizedUnitName)
+          : [...normalizedUnits, normalizedUnitName];
         return {
           ...current,
-          unitsExactMatchOnly: isSelected ? current.unitsExactMatchOnly : false,
-          unitsSelected: isSelected
-            ? normalizedUnits.filter((item) => item !== normalizedUnitName)
-            : [...normalizedUnits, normalizedUnitName],
+          unitsExactMatchOnly:
+            unitsSelected.length === 0 ? null : isSelected ? current.unitsExactMatchOnly : false,
+          unitsSelected,
         };
       });
     },
