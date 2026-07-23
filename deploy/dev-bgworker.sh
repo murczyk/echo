@@ -5,7 +5,7 @@ quiet="false"
 log_sql="false"
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
-pidfile="${repo_root}/.dev-pids/dev-bgworker.pid"
+pidfile="${repo_root}/.dev-runtime/dev-bgworker.pid"
 
 usage() {
     cat >&2 <<'EOF'

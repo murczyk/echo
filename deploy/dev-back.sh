@@ -5,10 +5,10 @@ quiet="false"
 log_sql="false"
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
-pidfile="${repo_root}/.dev-pids/dev-back.pid"
+pidfile="${repo_root}/.dev-runtime/dev-back.pid"
 server_port="${ECHO_SERVER_PORT:-8081}"
 server_ping_url="http://127.0.0.1:${server_port}/api/ping"
-server_logfile="${repo_root}/.dev-pids/dev-back.log"
+server_logfile="${repo_root}/.dev-runtime/dev-back.log"
 
 usage() {
     cat >&2 <<'EOF'

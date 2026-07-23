@@ -189,6 +189,10 @@ pub async fn activity_middleware<B>(
 where
     B: MessageBody,
 {
+    if matches!(req.path(), "/api/ping" | "/api-public/ping") {
+        return next.call(req).await;
+    }
+
     let start_time = Instant::now();
     let request_id = Uuid::new_v4().to_string();
     let timestamp = chrono::Utc::now().timestamp();
