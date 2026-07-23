@@ -1,0 +1,23 @@
+[Unit]
+Description=Echo analytics Temporal server
+After=network-online.target postgresql@18-main.service
+Wants=network-online.target postgresql@18-main.service
+PartOf=echo-analytics.target
+ConditionPathExists=/etc/echo-analytics/temporal.yaml
+
+[Service]
+Type=simple
+User=echo-analytics
+Group=echo-analytics
+ExecStart=/opt/temporal/bin/temporal-server --config-file /etc/echo-analytics/temporal.yaml --allow-no-auth start
+WorkingDirectory=/var/lib/echo-analytics
+Restart=on-failure
+RestartSec=5
+UMask=0027
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+
+[Install]
+WantedBy=echo-analytics.target

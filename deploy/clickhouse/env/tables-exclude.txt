@@ -1,0 +1,41 @@
+# PostgreSQL aggregates replaced by raw ClickHouse queries.
+public.stats_group_5min
+public.stats_group_day
+public.stats_group_aor_id_5min
+public.stats_group_aor_id_day
+public.stats_group_callsign_5min
+public.stats_group_callsign_day
+public.stats_group_freq_5min
+public.stats_group_freq_day
+public.stats_group_location_5min
+public.stats_group_location_day
+public.stats_group_network_callsign_day
+public.stats_group_network_day
+public.stats_group_network_freq_day
+public.stats_group_post_id_5min
+public.stats_group_post_id_day
+public.stats_group_sender_5min
+public.stats_group_sender_day
+public.stats_group_tag_5min
+public.stats_group_tag_day
+public.stats_group_unit_5min
+public.stats_group_unit_day
+
+# Large, highly mutable GOI dataset; unused by the RER counter.
+public.goi_knowledge
+
+# Transient operational state.
+public.bgtask
+public.bgtask_res
+public.report_history
+public.network_invalidation_task
+public.network_invalidation_worker
+public.palitra_highlight_worker_job
+public.tag_suggestion_worker_queue
+public.signal_message_queue
+public.signal_message_queue_attachment
+public.echo_whatsapp_queue
+public.echo_whatsapp_queue_attachment
+public.palitra_goi_sync_job
+public.palitra_conversion_job
+public.goi_palitra_sync

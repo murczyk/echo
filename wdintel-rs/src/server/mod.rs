@@ -94,6 +94,7 @@ pub async fn new_env(mode: Mode) -> Result<Arc<Env>, AppError> {
             }
         }
     }
+    let analytics = connect_analytics(&config).await;
     let rq: reqwest::Client = reqwest::Client::builder()
         .timeout(core::time::Duration::from_secs(RQ_TIMEOUT))
         .build()
@@ -170,6 +171,7 @@ pub async fn new_env(mode: Mode) -> Result<Arc<Env>, AppError> {
         callsigns_whitelist: callsigns_whitelist.clone(),
         version: version.clone(),
         replicas,
+        analytics,
         tag_keyword_regex_cache: Arc::new(RwLock::new(Default::default())),
         session_activity_tx,
         session_activity_rx: Arc::new(tokio::sync::Mutex::new(
@@ -190,6 +192,30 @@ pub async fn new_env(mode: Mode) -> Result<Arc<Env>, AppError> {
     .await
     .c(h!())?;
     Ok(Arc::new(env))
+}
+
+async fn connect_analytics(config: &Config) -> Option<AnalyticsPool> {
+    let analytics = config.analytics.as_ref()?;
+    let host = &analytics.pg_host;
+    let port = analytics.pg_port.unwrap_or(DEFAULT_PG_PORT);
+    match crate::new_pg_pool_from_analytics(analytics).await {
+        Ok(pool) => {
+            info!("analytics pool configured {host}:{port}");
+            Some(AnalyticsPool {
+                conn: pool,
+                retry_after_unix_ms: Arc::new(
+                    std::sync::atomic::AtomicU64::new(0),
+                ),
+            })
+        }
+        Err(err) => {
+            warn!(
+                "failed to connect optional analytics database {host}:{port}: {:?}",
+                err
+            );
+            None
+        }
+    }
 }
 
 async fn init_runtime_env(mode: Mode) -> Result<Arc<Env>, AppError> {
@@ -1049,6 +1075,7 @@ pub async fn main_bgworker(
 ) -> Result<(), AppError> {
     crate::use_bgworker_pg_pool_limits();
     let env = init_runtime_env(mode).await.c(h!())?;
+    crate::migration::request_analytics_table_reconciliation().await;
     let group_stats_dbx = env.dbx.clone();
     let report_history_env = env.clone();
     let mut background_tasks: JoinSet<()> = JoinSet::new();

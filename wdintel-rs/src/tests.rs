@@ -1,8 +1,11 @@
 #[cfg(test)]
 pub mod test {
     // use crate::entities::user;
-    use crate::mk_conn_string;
+    use crate::config::AnalyticsConfig;
     use crate::types::Mode;
+    use crate::{
+        mk_analytics_conn_string, mk_conn_string, new_pg_pool_from_analytics,
+    };
     use ctor::ctor;
     use echo_migration::*;
     use sea_orm::*;
@@ -88,6 +91,43 @@ pub mod test {
         //     };
         //     let _ = user.save(&db).await.unwrap();
         // }
+    }
+
+    #[test]
+    fn analytics_connection_string_encodes_credentials() {
+        let analytics = AnalyticsConfig {
+            pg_host: "echo-dev-clickhouse".to_string(),
+            pg_port: Some(5433),
+            pg_user: "echo@analytics".to_string(),
+            pg_password: "secret:/?#[]@".to_string(),
+            pg_dbname: "echo analytics".to_string(),
+            connect_timeout_ms: None,
+            query_timeout_ms: None,
+            freshness_max_age_ms: None,
+            retry_cooldown_ms: None,
+        };
+
+        assert_eq!(
+            mk_analytics_conn_string(&analytics),
+            "postgresql://echo%40analytics:secret%3A%2F%3F%23%5B%5D%40@echo-dev-clickhouse:5433/echo%20analytics"
+        );
+    }
+
+    #[tokio::test]
+    async fn analytics_pool_does_not_require_gateway_at_startup() {
+        let analytics = AnalyticsConfig {
+            pg_host: "127.0.0.1".to_string(),
+            pg_port: Some(1),
+            pg_user: "echo_analytics".to_string(),
+            pg_password: "secret".to_string(),
+            pg_dbname: "echo_analytics_gateway".to_string(),
+            connect_timeout_ms: Some(1),
+            query_timeout_ms: None,
+            freshness_max_age_ms: None,
+            retry_cooldown_ms: None,
+        };
+
+        assert!(new_pg_pool_from_analytics(&analytics).await.is_ok());
     }
 
     #[ctor]

@@ -1183,16 +1183,34 @@ copy-db server:
             ;;
     esac
     { set +x; } 2>/dev/null
-    cat <<'COMMANDS'
+    if [[ -f /etc/echo-peerdb/source.env ]] \
+      || sudo -n test -f /etc/echo-peerdb/source.env 2>/dev/null; then
+        cat <<'COMMANDS'
 
-    # Restore database; optionally disable messengers and GOI sync afterward
+    # PeerDB is configured. This block is safe to paste all at once.
+    deploy/restore-copied-db.sh --yes /var/tmp/wd-{{ dt1 }}.pgrestore
+
+    # Optional but recommended when copying a live/staging database into dev:
+    cargo run -p wdintel-rs -- --mode=debug oneoff-disable-im-and-goi
+
+    COMMANDS
+    else
+        cat <<'COMMANDS'
+
+    # PostgreSQL-only restore. This block is safe to paste all at once.
     sudo -u postgres dropdb --force wd
     sudo -u postgres psql postgres -c "CREATE DATABASE wd"
     sudo -u postgres pg_restore -d wd /var/tmp/wd-{{ dt1 }}.pgrestore
 
+    # Optional but recommended when copying a live/staging database into dev:
     cargo run -p wdintel-rs -- --mode=debug oneoff-disable-im-and-goi
 
     COMMANDS
+    fi
+
+[arg('dump', long='dump')]
+restore-copied-db dump:
+    deploy/restore-copied-db.sh "{{ dump }}"
 
 # _jvln-copy-db:
 #     ssh -t jvln '(cd /fast/kon/Downloads && PGPASSWORD="{{ pgpwd }}" pg_dump --user wd -Fc wd > wd-{{ dt1 }}.pgrestore && ls -lah wd-{{ dt1 }}.pgrestore)'
@@ -2126,6 +2144,34 @@ config-deploy server:
       '{{ discord_webhook_infra }}' || true
     # bw_sync "{{ server }}" "echo-config-{{ server }}" "/etc/echo/config.toml" "wdintel-rs"
     echo-install-utils bw-sync "{{ server }}" "echo-config-{{ server }}" "/etc/echo/config.toml" "wdintel-rs"
+
+[arg('analytics_server', long='analytics-server')]
+[arg('source_server', long='source-server')]
+analytics-secrets-deploy source_server analytics_server:
+    #!/bin/bash
+    set -euo pipefail
+    if [[ -z "{{ source_server }}" || -z "{{ analytics_server }}" ]]; then
+        echo "both --source-server and --analytics-server are required" >&2
+        exit 1
+    fi
+    echo-install-utils bw-sync \
+      "{{ analytics_server }}" \
+      "echo-clickhouse-{{ source_server }}" \
+      "/etc/echo-analytics/clickhouse.env" \
+      --no-restart
+    echo-install-utils bw-sync \
+      "{{ analytics_server }}" \
+      "echo-peerdb-{{ source_server }}" \
+      "/etc/echo-analytics/peerdb.env" \
+      --no-restart
+    ssh "{{ analytics_server }}" \
+      'cd /opt/echo-analytics/deploy && bin/02-configure-analytics.sh && bin/03-install-services.sh'
+
+analytics-reconcile-tables:
+    deploy/clickhouse/bin/source-reconcile-tables.sh --yes
+
+setup-analytics-reconcile-tables:
+    deploy/clickhouse/bin/source-sync-exclusions.sh --yes
 
 setup-vault:
     just is_dev='false' app="echo" server={{ server }} vault_server=srv-vault vault_addr='https://srv-vault.golden-banded.ts.net:7300' _setup-vault

@@ -28,6 +28,7 @@ use sea_orm::sea_query::extension::postgres::PgExpr;
 use sea_orm::{prelude::Expr, sea_query::Alias, *};
 use sea_query::*;
 use std::collections::{BTreeMap, HashSet};
+use std::sync::atomic::{AtomicU64, Ordering};
 use tempfile::TempDir;
 
 pub mod geojson;
@@ -4506,82 +4507,524 @@ async fn count_stats(
             .await
             .context(h!())?;
 
-    let groups =
-        stats::fetch_groups(&req, &user, &env, master_keys_noimport.clone())
+    let access = CountStatsAccess {
+        master_keys,
+        master_keys_noimport,
+    };
+    let analytics_config = env.config.analytics.as_ref();
+    let analytics_attempt = env.analytics.as_ref().and_then(|analytics| {
+        analytics_retry_attempt(&analytics.retry_after_unix_ms)
+            .map(|retry_attempt| (analytics, retry_attempt))
+    });
+    let freshness_max_age_ms = analytics_config
+        .map(AnalyticsConfig::freshness_max_age_ms)
+        .unwrap_or(ANALYTICS_FRESHNESS_MAX_AGE_MS_DEFAULT);
+    let analytics_query = analytics_attempt.map(|(analytics, _)| {
+        query_count_stats_raw(
+            &req,
+            &user,
+            &env,
+            &analytics.conn,
+            access.clone(),
+            freshness_max_age_ms,
+        )
+    });
+    let timeout_ms = analytics_config
+        .map(AnalyticsConfig::query_timeout_ms)
+        .unwrap_or(ANALYTICS_QUERY_TIMEOUT_MS_DEFAULT);
+    let retry_cooldown_ms = analytics_config
+        .map(AnalyticsConfig::retry_cooldown_ms)
+        .unwrap_or(ANALYTICS_RETRY_COOLDOWN_MS_DEFAULT);
+    let postgres_query = query_count_stats_postgres(&req, &user, &env, access);
+    let response = with_count_stats_analytics_fallback(
+        analytics_query,
+        core::time::Duration::from_millis(timeout_ms),
+        postgres_query,
+        analytics_attempt.map(|(_, retry_attempt)| retry_attempt),
+        core::time::Duration::from_millis(retry_cooldown_ms),
+    )
+    .await?;
+
+    Ok(Json(response))
+}
+
+#[derive(Clone)]
+struct CountStatsAccess {
+    master_keys: Vec<String>,
+    master_keys_noimport: Vec<String>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum AnalyticsRetryAttemptKind {
+    Closed,
+    HalfOpen,
+}
+
+#[derive(Clone, Copy)]
+struct AnalyticsRetryAttempt<'a> {
+    retry_state: &'a AtomicU64,
+    kind: AnalyticsRetryAttemptKind,
+}
+
+impl AnalyticsRetryAttempt<'_> {
+    fn record_success(self) {
+        if self.kind == AnalyticsRetryAttemptKind::HalfOpen {
+            let _ = self.retry_state.compare_exchange(
+                u64::MAX,
+                0,
+                Ordering::AcqRel,
+                Ordering::Acquire,
+            );
+        }
+    }
+
+    fn record_failure(self, retry_cooldown: core::time::Duration) {
+        let expected = match self.kind {
+            AnalyticsRetryAttemptKind::Closed => 0,
+            AnalyticsRetryAttemptKind::HalfOpen => u64::MAX,
+        };
+        let _ = self.retry_state.compare_exchange(
+            expected,
+            analytics_retry_deadline(retry_cooldown),
+            Ordering::AcqRel,
+            Ordering::Acquire,
+        );
+    }
+}
+
+async fn with_count_stats_analytics_fallback<T, A, P>(
+    analytics_query: Option<A>,
+    timeout: core::time::Duration,
+    postgres_query: P,
+    retry_attempt: Option<AnalyticsRetryAttempt<'_>>,
+    retry_cooldown: core::time::Duration,
+) -> Result<T, AppError>
+where
+    A: std::future::Future<Output = Result<T, AppError>>,
+    P: std::future::Future<Output = Result<T, AppError>>,
+{
+    if let Some(analytics_query) = analytics_query {
+        let started = std::time::Instant::now();
+        match tokio::time::timeout(timeout, analytics_query).await {
+            Ok(Ok(response)) => {
+                if let Some(retry_attempt) = retry_attempt {
+                    retry_attempt.record_success();
+                }
+                debug!(
+                    "analysis stats count used analytics in {:?}",
+                    started.elapsed()
+                );
+                return Ok(response);
+            }
+            Ok(Err(err)) => warn!(
+                "analysis stats count analytics query failed after {:?}, retrying via PostgreSQL: {:?}",
+                started.elapsed(),
+                err
+            ),
+            Err(_) => warn!(
+                "analysis stats count analytics query timed out after {:?}, retrying via PostgreSQL",
+                started.elapsed()
+            ),
+        }
+        if let Some(retry_attempt) = retry_attempt {
+            retry_attempt.record_failure(retry_cooldown);
+        }
+    }
+
+    postgres_query.await
+}
+
+fn analytics_retry_attempt(
+    retry_state: &AtomicU64,
+) -> Option<AnalyticsRetryAttempt<'_>> {
+    loop {
+        let state = retry_state.load(Ordering::Acquire);
+        if state == 0 {
+            return Some(AnalyticsRetryAttempt {
+                retry_state,
+                kind: AnalyticsRetryAttemptKind::Closed,
+            });
+        }
+        if state == u64::MAX || state > analytics_unix_ms() {
+            return None;
+        }
+        if retry_state
+            .compare_exchange(
+                state,
+                u64::MAX,
+                Ordering::AcqRel,
+                Ordering::Acquire,
+            )
+            .is_ok()
+        {
+            return Some(AnalyticsRetryAttempt {
+                retry_state,
+                kind: AnalyticsRetryAttemptKind::HalfOpen,
+            });
+        }
+    }
+}
+
+fn analytics_retry_deadline(retry_cooldown: core::time::Duration) -> u64 {
+    let retry_cooldown_ms = <u64 as std::convert::TryFrom<u128>>::try_from(
+        retry_cooldown.as_millis(),
+    )
+    .unwrap_or(u64::MAX);
+    analytics_unix_ms()
+        .saturating_add(retry_cooldown_ms)
+        .min(u64::MAX - 1)
+}
+
+fn analytics_unix_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| {
+            <u64 as std::convert::TryFrom<u128>>::try_from(duration.as_millis())
+                .unwrap_or(u64::MAX)
+        })
+        .unwrap_or(0)
+}
+
+async fn query_count_stats_postgres(
+    req: &Json<AnalysisStatsReq>,
+    user: &Identity,
+    env: &actix_web::web::Data<Env>,
+    access: CountStatsAccess,
+) -> Result<CountStatsRsp, AppError> {
+    let started = std::time::Instant::now();
+    let groups_count = query_count_stats_groups_postgres(
+        req,
+        user,
+        env,
+        access.master_keys_noimport.clone(),
+    )
+    .await?;
+    let message_dimensions = query_count_stats_message_dimensions_postgres(
+        req,
+        user,
+        env,
+        access.master_keys.clone(),
+    )
+    .await?;
+    let catalog_dimensions = query_count_stats_catalog_dimensions_postgres(
+        req,
+        user,
+        env,
+        access.master_keys.clone(),
+    )
+    .await?;
+    let (count_overall, count_selected) =
+        stats::fetch_counts(req, user, env, access.master_keys)
             .await
             .context(h!())?;
-    let groups = if should_include_missing_secret_groups(&req) {
-        include_missing_secret_groups(&env.dbx, groups, &master_keys_noimport)
+    debug!(
+        "analysis stats count used PostgreSQL in {:?}",
+        started.elapsed()
+    );
+
+    Ok(CountStatsRsp {
+        count_overall,
+        count_selected,
+        groups_count,
+        senders_count: message_dimensions.senders,
+        freqs_count: message_dimensions.freqs,
+        posts_count: message_dimensions.posts,
+        callsigns_count: message_dimensions.callsigns,
+        units_count: catalog_dimensions.units,
+        units_exact_matches_count: catalog_dimensions.units_exact_matches,
+        units_non_exact_matches_count: catalog_dimensions
+            .units_non_exact_matches,
+        locations_count: catalog_dimensions.locations,
+        tags_count: catalog_dimensions.tags,
+        aors_count: catalog_dimensions.aors,
+        networks_count: catalog_dimensions.networks,
+    })
+}
+
+async fn query_count_stats_raw(
+    req: &Json<AnalysisStatsReq>,
+    user: &Identity,
+    env: &actix_web::web::Data<Env>,
+    db: &DatabaseConnection,
+    access: CountStatsAccess,
+    freshness_max_age_ms: u64,
+) -> Result<CountStatsRsp, AppError> {
+    ensure_analytics_fresh(db, freshness_max_age_ms).await?;
+    let groups_count = query_count_stats_groups(
+        req,
+        user,
+        db,
+        access.master_keys_noimport.clone(),
+    )
+    .await?;
+    let message_dimensions = query_count_stats_message_dimensions(
+        req,
+        user,
+        db,
+        access.master_keys.clone(),
+    )
+    .await?;
+    let catalog_dimensions = query_count_stats_catalog_dimensions(
+        req,
+        user,
+        env,
+        db,
+        access.master_keys.clone(),
+    )
+    .await?;
+    let (count_overall, count_selected) =
+        stats::fetch_counts_raw_with_db(req, user, env, db, access.master_keys)
+            .await
+            .context(h!())?;
+
+    Ok(CountStatsRsp {
+        count_overall,
+        count_selected,
+        groups_count,
+        senders_count: message_dimensions.senders,
+        freqs_count: message_dimensions.freqs,
+        posts_count: message_dimensions.posts,
+        callsigns_count: message_dimensions.callsigns,
+        units_count: catalog_dimensions.units,
+        units_exact_matches_count: catalog_dimensions.units_exact_matches,
+        units_non_exact_matches_count: catalog_dimensions
+            .units_non_exact_matches,
+        locations_count: catalog_dimensions.locations,
+        tags_count: catalog_dimensions.tags,
+        aors_count: catalog_dimensions.aors,
+        networks_count: catalog_dimensions.networks,
+    })
+}
+
+async fn ensure_analytics_fresh(
+    db: &DatabaseConnection,
+    freshness_max_age_ms: u64,
+) -> Result<(), AppError> {
+    let freshness_max_age_ms =
+        <i64 as std::convert::TryFrom<u64>>::try_from(freshness_max_age_ms)
+            .c(h!())?;
+    let health = db
+        .query_one(Statement::from_sql_and_values(
+            DbBackend::Postgres,
+            r#"
+SELECT healthy
+       AND checked_at >= CURRENT_TIMESTAMP
+           - ($1::bigint * INTERVAL '1 millisecond') AS is_fresh
+FROM public.echo_analytics_health
+WHERE singleton
+"#,
+            [freshness_max_age_ms.into()],
+        ))
+        .await
+        .c(h!())?
+        .c(h!())?;
+    let is_fresh: bool = health.try_get("", "is_fresh").c(h!())?;
+    if !is_fresh {
+        return Err(anyhow!(
+            "analytics replication health is stale or unhealthy"
+        )
+        .into());
+    }
+    Ok(())
+}
+
+async fn query_count_stats_groups(
+    req: &Json<AnalysisStatsReq>,
+    user: &Identity,
+    db: &DatabaseConnection,
+    master_keys: Vec<String>,
+) -> Result<i64, AppError> {
+    let groups =
+        stats::fetch_groups_raw_with_db(req, user, db, master_keys.clone())
+            .await
+            .context(h!())?;
+    let groups = if should_include_missing_secret_groups(req) {
+        include_missing_secret_groups(db, groups, &master_keys)
             .await
             .context(h!())?
     } else {
         groups
     };
-    let groups_count = groups.len() as i64;
-    let senders_count =
-        stats::count_senders(&req, &user, &env, master_keys.clone())
+    Ok(groups.len() as i64)
+}
+
+async fn query_count_stats_groups_postgres(
+    req: &Json<AnalysisStatsReq>,
+    user: &Identity,
+    env: &actix_web::web::Data<Env>,
+    master_keys: Vec<String>,
+) -> Result<i64, AppError> {
+    let groups = stats::fetch_groups(req, user, env, master_keys.clone())
+        .await
+        .context(h!())?;
+    let groups = if should_include_missing_secret_groups(req) {
+        include_missing_secret_groups(&env.dbx, groups, &master_keys)
+            .await
+            .context(h!())?
+    } else {
+        groups
+    };
+    Ok(groups.len() as i64)
+}
+
+struct CountStatsMessageDimensions {
+    senders: i64,
+    freqs: i64,
+    posts: i64,
+    callsigns: i64,
+}
+
+async fn query_count_stats_message_dimensions(
+    req: &Json<AnalysisStatsReq>,
+    user: &Identity,
+    db: &DatabaseConnection,
+    master_keys: Vec<String>,
+) -> Result<CountStatsMessageDimensions, AppError> {
+    let senders =
+        stats::count_senders_with_db(req, user, db, master_keys.clone())
             .await
             .context(h!())?;
-    let freqs_count =
-        stats::count_freqs(&req, &user, &env, master_keys.clone())
-            .await
-            .context(h!())?;
-    let posts_count =
-        stats::count_posts(&req, &user, &env, master_keys.clone())
-            .await
-            .context(h!())?;
-    let callsigns_count =
-        stats::count_callsigns(&req, &user, &env, master_keys.clone())
-            .await
-            .context(h!())?;
-    let units_count =
-        stats::count_units(&req, &user, &env, master_keys.clone())
-            .await
-            .context(h!())?;
-    let (units_exact_matches_count, units_non_exact_matches_count) =
-        stats::count_unit_exact_match_breakdown(
-            &req,
-            &user,
-            &env,
+    let freqs = stats::count_freqs_with_db(req, user, db, master_keys.clone())
+        .await
+        .context(h!())?;
+    let posts = stats::count_posts_with_db(req, user, db, master_keys.clone())
+        .await
+        .context(h!())?;
+    let callsigns = stats::count_callsigns_with_db(req, user, db, master_keys)
+        .await
+        .context(h!())?;
+
+    Ok(CountStatsMessageDimensions {
+        senders,
+        freqs,
+        posts,
+        callsigns,
+    })
+}
+
+async fn query_count_stats_message_dimensions_postgres(
+    req: &Json<AnalysisStatsReq>,
+    user: &Identity,
+    env: &actix_web::web::Data<Env>,
+    master_keys: Vec<String>,
+) -> Result<CountStatsMessageDimensions, AppError> {
+    let senders = stats::count_senders(req, user, env, master_keys.clone())
+        .await
+        .context(h!())?;
+    let freqs = stats::count_freqs(req, user, env, master_keys.clone())
+        .await
+        .context(h!())?;
+    let posts = stats::count_posts(req, user, env, master_keys.clone())
+        .await
+        .context(h!())?;
+    let callsigns = stats::count_callsigns(req, user, env, master_keys)
+        .await
+        .context(h!())?;
+
+    Ok(CountStatsMessageDimensions {
+        senders,
+        freqs,
+        posts,
+        callsigns,
+    })
+}
+
+struct CountStatsCatalogDimensions {
+    units: i64,
+    units_exact_matches: i64,
+    units_non_exact_matches: i64,
+    locations: i64,
+    tags: i64,
+    aors: i64,
+    networks: i64,
+}
+
+async fn query_count_stats_catalog_dimensions(
+    req: &Json<AnalysisStatsReq>,
+    user: &Identity,
+    env: &Env,
+    db: &DatabaseConnection,
+    master_keys: Vec<String>,
+) -> Result<CountStatsCatalogDimensions, AppError> {
+    let units = stats::count_units_with_db(req, user, db, master_keys.clone())
+        .await
+        .context(h!())?;
+    let (units_exact_matches, units_non_exact_matches) =
+        stats::count_unit_exact_match_breakdown_raw_with_db(
+            req,
+            user,
+            env,
+            db,
             master_keys.clone(),
         )
         .await
         .context(h!())?;
-    let locations_count =
-        stats::count_locations(&req, &user, &env, master_keys.clone())
+    let locations =
+        stats::count_locations_with_db(req, user, db, master_keys.clone())
             .await
             .context(h!())?;
-    let tags_count = stats::count_tags(&req, &user, &env, master_keys.clone())
+    let tags = stats::count_tags_with_db(req, user, db, master_keys.clone())
         .await
         .context(h!())?;
-    let aors_count = stats::count_aors(&req, &user, &env, master_keys.clone())
+    let aors =
+        stats::count_aors_raw_with_db(req, user, db, master_keys.clone())
+            .await
+            .context(h!())?;
+    let networks = stats::count_networks_with_db(req, user, db, master_keys)
         .await
         .context(h!())?;
-    let networks_count =
-        stats::count_networks(&req, &user, &env, master_keys.clone())
-            .await
-            .context(h!())?;
-    let (count_overall, count_selected) =
-        stats::fetch_counts(&req, &user, &env, master_keys.clone())
-            .await
-            .context(h!())?;
 
-    Ok(Json(CountStatsRsp {
-        count_overall,
-        count_selected,
-        groups_count,
-        senders_count,
-        freqs_count,
-        posts_count,
-        callsigns_count,
-        units_count,
-        units_exact_matches_count,
-        units_non_exact_matches_count,
-        locations_count,
-        tags_count,
-        aors_count,
-        networks_count,
-    }))
+    Ok(CountStatsCatalogDimensions {
+        units,
+        units_exact_matches,
+        units_non_exact_matches,
+        locations,
+        tags,
+        aors,
+        networks,
+    })
+}
+
+async fn query_count_stats_catalog_dimensions_postgres(
+    req: &Json<AnalysisStatsReq>,
+    user: &Identity,
+    env: &actix_web::web::Data<Env>,
+    master_keys: Vec<String>,
+) -> Result<CountStatsCatalogDimensions, AppError> {
+    let units = stats::count_units(req, user, env, master_keys.clone())
+        .await
+        .context(h!())?;
+    let (units_exact_matches, units_non_exact_matches) =
+        stats::count_unit_exact_match_breakdown(
+            req,
+            user,
+            env,
+            master_keys.clone(),
+        )
+        .await
+        .context(h!())?;
+    let locations = stats::count_locations(req, user, env, master_keys.clone())
+        .await
+        .context(h!())?;
+    let tags = stats::count_tags(req, user, env, master_keys.clone())
+        .await
+        .context(h!())?;
+    let aors = stats::count_aors(req, user, env, master_keys.clone())
+        .await
+        .context(h!())?;
+    let networks = stats::count_networks(req, user, env, master_keys)
+        .await
+        .context(h!())?;
+
+    Ok(CountStatsCatalogDimensions {
+        units,
+        units_exact_matches,
+        units_non_exact_matches,
+        locations,
+        tags,
+        aors,
+        networks,
+    })
 }
 
 /// STATS

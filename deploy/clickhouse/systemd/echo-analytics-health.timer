@@ -1,0 +1,12 @@
+[Unit]
+Description=Run Echo analytics replication freshness probes
+PartOf=echo-analytics.target
+
+[Timer]
+OnBootSec=15s
+OnUnitInactiveSec=15s
+AccuracySec=1s
+Unit=echo-analytics-health.service
+
+[Install]
+WantedBy=echo-analytics.target

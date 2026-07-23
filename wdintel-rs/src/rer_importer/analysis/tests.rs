@@ -4916,3 +4916,195 @@ async fn rer_duty_short_state_get_works_without_hash_key() {
         Some(vec!["group-1".to_string()])
     );
 }
+
+#[tokio::test]
+async fn count_stats_analytics_success_skips_postgres() {
+    let postgres_polled = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let postgres_polled_query = postgres_polled.clone();
+    let retry_state = std::sync::atomic::AtomicU64::new(1);
+    let retry_attempt = analytics_retry_attempt(&retry_state).unwrap();
+    let analytics_query = async { Ok::<_, AppError>("analytics") };
+    let postgres_query = async move {
+        postgres_polled_query.store(true, std::sync::atomic::Ordering::SeqCst);
+        Ok::<_, AppError>("postgres")
+    };
+
+    let result = with_count_stats_analytics_fallback(
+        Some(analytics_query),
+        core::time::Duration::from_secs(1),
+        postgres_query,
+        Some(retry_attempt),
+        core::time::Duration::from_secs(30),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(result, "analytics");
+    assert!(!postgres_polled.load(std::sync::atomic::Ordering::SeqCst));
+    assert_eq!(retry_state.load(std::sync::atomic::Ordering::Acquire), 0);
+}
+
+#[tokio::test]
+async fn count_stats_analytics_error_retries_postgres_once() {
+    let postgres_attempts = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let postgres_attempts_query = postgres_attempts.clone();
+    let retry_state = std::sync::atomic::AtomicU64::new(0);
+    let retry_attempt = analytics_retry_attempt(&retry_state).unwrap();
+    let analytics_query = async {
+        Err::<&str, AppError>(anyhow::anyhow!("analytics unavailable").into())
+    };
+    let postgres_query = async move {
+        postgres_attempts_query
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        Ok::<_, AppError>("postgres")
+    };
+
+    let result = with_count_stats_analytics_fallback(
+        Some(analytics_query),
+        core::time::Duration::from_secs(1),
+        postgres_query,
+        Some(retry_attempt),
+        core::time::Duration::from_secs(30),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(result, "postgres");
+    assert_eq!(
+        postgres_attempts.load(std::sync::atomic::Ordering::SeqCst),
+        1
+    );
+    assert!(
+        retry_state.load(std::sync::atomic::Ordering::Acquire)
+            > analytics_unix_ms()
+    );
+    assert!(analytics_retry_attempt(&retry_state).is_none());
+}
+
+#[tokio::test]
+async fn count_stats_without_analytics_uses_postgres() {
+    let result = with_count_stats_analytics_fallback(
+        None::<std::future::Ready<Result<&str, AppError>>>,
+        core::time::Duration::from_secs(1),
+        async { Ok::<_, AppError>("postgres") },
+        None,
+        core::time::Duration::from_secs(30),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(result, "postgres");
+}
+
+#[tokio::test]
+async fn count_stats_analytics_timeout_retries_postgres() {
+    let analytics_query = std::future::pending::<Result<&str, AppError>>();
+    let result = with_count_stats_analytics_fallback(
+        Some(analytics_query),
+        core::time::Duration::ZERO,
+        async { Ok::<_, AppError>("postgres") },
+        None,
+        core::time::Duration::from_secs(30),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(result, "postgres");
+}
+
+#[test]
+fn count_stats_closed_circuit_allows_concurrent_analytics_attempts() {
+    let retry_state = std::sync::atomic::AtomicU64::new(0);
+
+    let first = analytics_retry_attempt(&retry_state).unwrap();
+    let second = analytics_retry_attempt(&retry_state).unwrap();
+
+    assert_eq!(first.kind, AnalyticsRetryAttemptKind::Closed);
+    assert_eq!(second.kind, AnalyticsRetryAttemptKind::Closed);
+}
+
+#[test]
+fn count_stats_analytics_open_circuit_allows_one_half_open_attempt() {
+    const ATTEMPT_COUNT: usize = 8;
+    let retry_state = Arc::new(std::sync::atomic::AtomicU64::new(1));
+    let barrier = Arc::new(std::sync::Barrier::new(ATTEMPT_COUNT));
+    let winners = std::thread::scope(|scope| {
+        let attempts = (0..ATTEMPT_COUNT)
+            .map(|_| {
+                let retry_state = retry_state.clone();
+                let barrier = barrier.clone();
+                scope.spawn(move || {
+                    barrier.wait();
+                    analytics_retry_attempt(&retry_state).is_some()
+                })
+            })
+            .collect::<Vec<_>>();
+        attempts
+            .into_iter()
+            .map(|attempt| attempt.join().unwrap())
+            .filter(|won| *won)
+            .count()
+    });
+
+    assert_eq!(winners, 1);
+    assert_eq!(
+        retry_state.load(std::sync::atomic::Ordering::Acquire),
+        u64::MAX
+    );
+    assert!(analytics_retry_attempt(&retry_state).is_none());
+}
+
+#[tokio::test]
+async fn count_stats_analytics_closed_success_does_not_clear_concurrent_failure(
+) {
+    let retry_state = std::sync::atomic::AtomicU64::new(0);
+    let retry_attempt = analytics_retry_attempt(&retry_state).unwrap();
+    let concurrent_deadline =
+        analytics_retry_deadline(core::time::Duration::from_secs(60));
+    let analytics_query = async {
+        retry_state
+            .store(concurrent_deadline, std::sync::atomic::Ordering::Release);
+        Ok::<_, AppError>("analytics")
+    };
+
+    let result = with_count_stats_analytics_fallback(
+        Some(analytics_query),
+        core::time::Duration::from_secs(1),
+        async { Ok::<_, AppError>("postgres") },
+        Some(retry_attempt),
+        core::time::Duration::from_secs(30),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(result, "analytics");
+    assert_eq!(
+        retry_state.load(std::sync::atomic::Ordering::Acquire),
+        concurrent_deadline
+    );
+}
+
+#[tokio::test]
+async fn count_stats_analytics_half_open_failure_reopens_circuit() {
+    let retry_state = std::sync::atomic::AtomicU64::new(1);
+    let retry_attempt = analytics_retry_attempt(&retry_state).unwrap();
+
+    let result = with_count_stats_analytics_fallback(
+        Some(async {
+            Err::<&str, AppError>(
+                anyhow::anyhow!("analytics unavailable").into(),
+            )
+        }),
+        core::time::Duration::from_secs(1),
+        async { Ok::<_, AppError>("postgres") },
+        Some(retry_attempt),
+        core::time::Duration::from_secs(30),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(result, "postgres");
+    let retry_deadline = retry_state.load(std::sync::atomic::Ordering::Acquire);
+    assert_ne!(retry_deadline, u64::MAX);
+    assert!(retry_deadline > analytics_unix_ms());
+}

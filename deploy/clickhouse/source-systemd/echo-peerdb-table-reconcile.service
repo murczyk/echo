@@ -1,0 +1,15 @@
+[Unit]
+Description=Reconcile Echo PeerDB table selection
+Wants=network-online.target
+After=network-online.target postgresql.service
+
+[Service]
+Type=oneshot
+ExecStart=/opt/echo-peerdb/bin/source-reconcile-if-needed.sh
+TimeoutStartSec=7500s
+PrivateTmp=true
+ProtectHome=read-only
+ProtectSystem=strict
+ReadWritePaths=/var/lib/echo-peerdb
+StateDirectory=echo-peerdb
+StateDirectoryMode=0750
