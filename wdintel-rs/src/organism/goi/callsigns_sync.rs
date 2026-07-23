@@ -10,6 +10,9 @@ use crate::types::{info, warn, Env, ShortContext};
 use crate::utils::string::normalize_optional_trimmed;
 use calamine::{Data, Reader, Xlsx};
 use chrono::{NaiveDateTime, TimeZone, Utc};
+use goi_echo_worker::knowledge::{
+    KNOWLEDGE_KIND_CALL_SIGN, KNOWLEDGE_WORKER_AUTHOR,
+};
 use goi_echo_worker::xlsx::empty_xlsx_buffer;
 use quick_xml::events::Event;
 use quick_xml::name::QName;
@@ -22,8 +25,6 @@ use std::io::{Cursor, Read, Write};
 use zip::write::FileOptions;
 use zip::{CompressionMethod, ZipArchive, ZipWriter};
 
-const KNOWLEDGE_KIND_CALL_SIGN: &str = "CALL_SIGN";
-const KNOWLEDGE_WORKER_AUTHOR: &str = "EXO";
 const KNOWLEDGE_WORKER_ID_PREFIX: &str = "EXO ID ";
 const KNOWLEDGE_COMMENT_COL_IDX: usize = 4;
 const KNOWLEDGE_SOURCE_DATE_COL_IDX: usize = 5;
