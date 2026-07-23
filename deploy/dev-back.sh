@@ -5,8 +5,10 @@ quiet="false"
 log_sql="false"
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
-pidfile="${repo_root}/.dev-pids/dev-back.pid"
+pidfile="${repo_root}/.dev-runtime/dev-back.pid"
 server_port="${ECHO_SERVER_PORT:-8081}"
+server_ping_url="http://127.0.0.1:${server_port}/api/ping"
+server_logfile="${repo_root}/.dev-runtime/dev-back.log"
 
 usage() {
     cat >&2 <<'EOF'
@@ -174,69 +176,49 @@ stop_existing_server() {
     stop_port_listener_fallback
 }
 
-filter_quiet_output() {
-    awk '
-        function is_http_error(line) {
-            return line ~ /access_log/ &&
-                line ~ /status=[45][0-9][0-9]/
-        }
+server_is_ready() {
+    curl --fail --silent --show-error --max-time 1 --noproxy '*' "$server_ping_url" \
+        | grep -qx 'pong'
+}
 
-        function is_build_error(line, lower) {
-            lower = tolower(line)
-            return lower ~ /^error(\[[^]]+\])?:/ ||
-                lower ~ /^error: /
-        }
+monitor_server_readiness() {
+    local server_pid="$1"
+    local was_ready="false"
+    local seconds_waiting=0
 
-        function is_build_continuation(line) {
-            return line ~ /^[[:space:]]/ ||
-                line ~ /^= note:/ ||
-                line ~ /^= help:/ ||
-                line ~ /^note:/ ||
-                line ~ /^help:/
-        }
+    echo "waiting for backend readiness at ${server_ping_url}..." >&2
 
-        function is_panic(line) {
-            return line ~ /^thread .* panicked at / ||
-                line ~ /^panic:/
-        }
+    while pid_exists "$server_pid"; do
+        if server_is_ready 2>/dev/null; then
+            if [ "$was_ready" != "true" ]; then
+                echo "✅ backend READY: ${server_ping_url}" >&2
+            fi
+            was_ready="true"
+            seconds_waiting=0
+        else
+            if [ "$was_ready" = "true" ]; then
+                echo "⚠️ backend UNAVAILABLE: ${server_ping_url}; browser requests may return 502 until it is ready again" >&2
+            fi
+            was_ready="false"
+            seconds_waiting=$((seconds_waiting + 1))
+            if [ "$seconds_waiting" -eq 30 ]; then
+                echo "⚠️ backend is still not ready after 30 seconds: ${server_ping_url}; check build errors above" >&2
+            fi
+        fi
+        sleep 1
+    done
 
-        function emit(line) {
-            print line
-            fflush()
-        }
-
-        {
-            if (is_http_error($0)) {
-                emit($0)
-                keep_continuation = 0
-                next
-            }
-
-            if (is_build_error($0)) {
-                emit($0)
-                keep_continuation = 1
-                next
-            }
-
-            if (is_panic($0)) {
-                emit($0)
-                keep_continuation = 1
-                next
-            }
-
-            if (keep_continuation && is_build_continuation($0)) {
-                emit($0)
-                next
-            }
-
-            keep_continuation = 0
-        }
-    '
+    if [ "$was_ready" != "true" ]; then
+        echo "❌ backend process exited before becoming ready: ${server_ping_url}" >&2
+    fi
 }
 
 run_server() {
     local server_args=("$@")
     local pid
+    local readiness_monitor_pid=""
+    local follow_server_log="false"
+    local server_log_tail_pid=""
     local cmd='cd "$REPO_ROOT/wdintel-rs" && RUST_BACKTRACE=0 cargo watch -- cargo run -- --mode=debug server --no-bgworker "$@"'
 
     ensure_pid_dir
@@ -244,12 +226,15 @@ run_server() {
 
     if [ "$quiet" = "true" ]; then
         export ECHO_DEV_BACK_REST_ONLY=true
-        export RUST_LOG=error,access_log=info
+        export RUST_LOG=warn
 
-        echo "starting backend in quiet mode on port ${server_port}; only HTTP 4xx/5xx responses, build errors, and panics will be shown" >&2
+        echo "starting backend in quiet mode on port ${server_port}; successful HTTP access logs are hidden" >&2
         echo "report workers run separately: just dev-bgworker" >&2
 
-        setsid env REPO_ROOT="$repo_root" bash -lc "$cmd" bash "${server_args[@]}" > >(filter_quiet_output) 2>&1 &
+        : > "$server_logfile"
+        setsid env REPO_ROOT="$repo_root" bash -lc "$cmd" bash "${server_args[@]}" > "$server_logfile" 2>&1 &
+        pid=$!
+        follow_server_log="true"
     else
         if [ "$log_sql" = "true" ]; then
             export RUST_LOG=sqlx=trace,seaorm=trace
@@ -259,12 +244,23 @@ run_server() {
         echo "report workers run separately: just dev-bgworker" >&2
 
         setsid env REPO_ROOT="$repo_root" bash -lc "$cmd" bash "${server_args[@]}" &
+        pid=$!
     fi
 
-    pid=$!
     echo "$pid" > "$pidfile"
 
+    monitor_server_readiness "$pid" &
+    readiness_monitor_pid=$!
+
     cleanup() {
+        if [ -n "$server_log_tail_pid" ]; then
+            kill "$server_log_tail_pid" 2>/dev/null || true
+            wait "$server_log_tail_pid" 2>/dev/null || true
+        fi
+        if [ -n "$readiness_monitor_pid" ]; then
+            kill "$readiness_monitor_pid" 2>/dev/null || true
+            wait "$readiness_monitor_pid" 2>/dev/null || true
+        fi
         if is_expected_process "$pid"; then
             stop_pid_and_group "$pid"
         fi
@@ -273,7 +269,16 @@ run_server() {
 
     trap cleanup EXIT INT TERM
 
-    wait "$pid"
+    if [ "$follow_server_log" = "true" ]; then
+        tail -n +1 -f "$server_logfile" &
+        server_log_tail_pid=$!
+    fi
+
+    if wait "$pid"; then
+        :
+    else
+        exit $?
+    fi
 }
 
 cd "$repo_root"
