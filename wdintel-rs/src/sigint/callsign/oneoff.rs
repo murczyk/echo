@@ -120,6 +120,8 @@ async fn fix_callsign(
         callsign: network_callsign.sigint_callsign.clone(),
         position: network_callsign.position.clone(),
         comment: network_callsign.comment.clone(),
+        full_name: network_callsign.full_name.clone(),
+        full_name_is_missing: false,
         source_id: network_callsign.source_id,
         radio_freq: network_callsign.radio_freq.clone(),
         unit_id: Some(unit_id),

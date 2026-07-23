@@ -49,6 +49,7 @@ function createNetworkCallsign(
     id: 1,
     networkId: 42,
     callsign: 'сокіл-1',
+    fullName: '',
     knownCallsignId: null,
     position: 'Командир',
     comment: '',

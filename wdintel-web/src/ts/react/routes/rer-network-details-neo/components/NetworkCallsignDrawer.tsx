@@ -496,6 +496,16 @@ export function NetworkCallsignDrawer({
               />
 
               <TextField
+                label="ПІП"
+                value={form.fullName}
+                onChange={(event) => updateForm(form, { fullName: event.target.value }, onChange)}
+                disabled={saving}
+                fullWidth
+                size="small"
+                placeholder="Введіть ПІП"
+              />
+
+              <TextField
                 label="Коментар"
                 value={form.comment}
                 onChange={(event) => updateForm(form, { comment: event.target.value }, onChange)}

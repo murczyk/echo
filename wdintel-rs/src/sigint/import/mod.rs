@@ -1537,6 +1537,7 @@ where
             sigint_callsign: Set(rec.sigint_callsign),
             position: Set(rec.position),
             comment: Set(rec.comment),
+            full_name: Set(rec.full_name),
             source_id: Set(rec.source_id),
             radio_freq: Set(rec.radio_freq),
             developing: Set(rec.developing),

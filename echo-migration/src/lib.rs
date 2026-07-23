@@ -306,6 +306,7 @@ mod m20260721_191340_goi_association_message_uid;
 mod m20260721_200001_goi_message_uid_worker_setting;
 mod m20260721_200002_goi_message_uid_lookup_indexes;
 mod m20260723_134939_goi_knowledge_prune_index;
+mod m20260723_151016_add_full_name_to_sigint_network_callsign;
 
 pub struct Migrator;
 
@@ -658,6 +659,9 @@ impl MigratorTrait for Migrator {
             ),
             Box::new(
                 m20260723_134939_goi_knowledge_prune_index::Migration,
+            ),
+            Box::new(
+                m20260723_151016_add_full_name_to_sigint_network_callsign::Migration,
             ),
         ]
     }

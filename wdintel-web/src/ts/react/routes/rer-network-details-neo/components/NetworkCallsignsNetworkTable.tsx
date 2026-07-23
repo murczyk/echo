@@ -49,7 +49,6 @@ import { NetworkCallsignSourceCell } from './NetworkCallsignSourceUi';
 import { NetworkCallsignStatusDot } from './NetworkCallsignStatusUi';
 import { countNetworkCallsignStatusRows } from '../network-callsigns.rows';
 import { formatNetworkCallsignDatetime } from '../network-callsigns.search';
-import { hasNetworkCallsignMarker } from '../network-callsigns.forms';
 
 const defaultMRTOptions = getDefaultMRTOptions<NetworkCallsignRowView>();
 const NETWORK_MRT_LOCALIZATION = {
@@ -119,6 +118,7 @@ export function NetworkCallsignsNetworkTable({
         dataColumnIds: [
           'callsign',
           'position',
+          'fullName',
           'unitName',
           'lastDatetime',
           'messageCount',
@@ -245,6 +245,13 @@ function NetworkCallsignsNetworkTableContent({
         ),
       },
       {
+        header: 'ПІП',
+        accessorKey: 'fullName',
+        id: 'fullName',
+        size: NETWORK_CALLSIGN_COLUMN_SIZES.fullName,
+        Cell: ({ row }) => renderMrtCellTextValue(row.original.fullName),
+      },
+      {
         header: 'Посада',
         accessorKey: 'position',
         id: 'position',
@@ -334,8 +341,6 @@ function NetworkCallsignsNetworkTableContent({
       if (!canManage) return <Box sx={{ minHeight: 28 }} />;
       const editDisabled = inFlightUpdateIds.includes(networkCallsign.id);
       const markerDisabled = editDisabled;
-      const clearMarkerDisabled =
-        editDisabled || (!networkCallsign.mainRadioStation && !networkCallsign.commandControl);
       return (
         <MrtRowActions>
           <MrtRowActionButton
@@ -367,21 +372,6 @@ function NetworkCallsignsNetworkTableContent({
             disabled={markerDisabled}
             icon={<MilitaryTechOutlinedIcon fontSize="small" />}
           />
-          {hasNetworkCallsignMarker(networkCallsign) ? (
-            <MrtRowActionButton
-              label="Очистити маркер"
-              onClick={() => onSetMarkerMode(networkCallsign, 'none')}
-              disabled={clearMarkerDisabled}
-              icon={
-                <Box
-                  component="span"
-                  sx={{ width: 18, display: 'inline-flex', justifyContent: 'center' }}
-                >
-                  −
-                </Box>
-              }
-            />
-          ) : null}
           <MrtRowActionButton
             label="Видалити"
             onClick={() => onOpenDeleteDialog(networkCallsign)}
@@ -458,6 +448,7 @@ function NetworkCallsignsNetworkTableContent({
         dataColumnIds: [
           'callsign',
           'position',
+          'fullName',
           'unitName',
           'lastDatetime',
           'messageCount',
