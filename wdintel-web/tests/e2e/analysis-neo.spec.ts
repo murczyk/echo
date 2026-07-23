@@ -182,7 +182,7 @@ test.describe('@smoke', () => {
       await page.setViewportSize({ width, height: 844 });
       await expect(page.getByRole('button', { name: 'Конструктор', exact: true })).toHaveCount(0);
       await expect(page.getByRole('button', { name: 'Конструктор звітів' })).toBeVisible();
-      await expect(page.getByRole('button', { name: 'Згорнути ліву панель' })).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Розгорнути ліву панель' })).toBeVisible();
       await expect(page.getByRole('button', { name: 'Розгорнути праву панель' })).toBeVisible();
       expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
         width,

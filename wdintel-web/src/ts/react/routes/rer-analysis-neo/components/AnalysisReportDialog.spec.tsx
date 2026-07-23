@@ -201,6 +201,17 @@ describe('AnalysisReportDialog', () => {
     act(() => view.root.unmount());
   });
 
+  it('labels the download button while a non-export report is preparing', () => {
+    const view = renderDialog({ downloadInFlight: true });
+    const downloadButton = view.container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Готуємо…"]',
+    );
+
+    expect(downloadButton).not.toBeNull();
+
+    act(() => view.root.unmount());
+  });
+
   it('shows report 1.2.5 as an advanced report option', () => {
     const view = renderDialog();
     const report125Button = Array.from(

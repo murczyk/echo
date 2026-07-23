@@ -337,6 +337,11 @@ export function AnalysisReportDialog({
           : report.template === 'geojson'
             ? 'GEOJSON'
             : 'DOCX/XLSX';
+  const downloadButtonAriaLabel = downloadInFlight
+    ? PREPARING_TEXT
+    : builderMode === 'exports'
+      ? 'Завантажити'
+      : undefined;
 
   return (
     <Dialog
@@ -1022,7 +1027,7 @@ export function AnalysisReportDialog({
             startIcon={<DownloadIcon />}
             onClick={onDownload}
             disabled={downloadInFlight || isSposobUnitNameMissing}
-            aria-label={builderMode === 'exports' ? 'Завантажити' : undefined}
+            aria-label={downloadButtonAriaLabel}
             title={builderMode === 'exports' ? 'Завантажити' : undefined}
           >
             <Box component="span" sx={{ display: { xs: 'none', sm: 'inline' } }}>
