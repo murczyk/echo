@@ -6,7 +6,7 @@ use anyhow::{bail, Context, Result};
 use async_trait::async_trait;
 use echo_gpu_client::{
     MaterializedAudio, QueueEvent, QueueSourceCursor, TranscriptionAdapter,
-    WorkError, WorkerPolicy, WorkerRunResult,
+    WorkError, WorkerIterationResult, WorkerPolicy,
 };
 use futures_util::TryStreamExt;
 use sea_orm::{
@@ -516,7 +516,7 @@ async fn run(
             continue;
         }
 
-        let result = echo_gpu_client::run_transcriber_worker_once(
+        let result = echo_gpu_client::run_transcriber_worker_iteration(
             env.echo_gpu_client.as_ref(),
             worker_id,
             &policy,
@@ -524,7 +524,7 @@ async fn run(
         )
         .await
         .context(h!())?;
-        wait_or_cancel(&cancel_token, worker_result_sleep_ms(&result)).await;
+        wait_or_cancel(&cancel_token, worker_iteration_sleep_ms(&result)).await;
     }
 
     log::info!("audio transcription worker drained worker_id={worker_id}");
@@ -564,16 +564,17 @@ async fn log_queue_status(
     Ok(())
 }
 
-fn worker_result_sleep_ms(result: &WorkerRunResult) -> u64 {
+fn worker_iteration_sleep_ms(result: &WorkerIterationResult) -> u64 {
     match result {
-        WorkerRunResult::Idle(_) | WorkerRunResult::Retrying { .. } => {
-            ECHO_AUDIO_TRANSCRIPTION_IDLE_SLEEP_MS
-        }
-        WorkerRunResult::Completed { .. }
-        | WorkerRunResult::Terminal { .. }
-        | WorkerRunResult::Stale { .. } => {
-            ECHO_AUDIO_TRANSCRIPTION_ACTIVE_SLEEP_MS
-        }
+        WorkerIterationResult::Idle(_)
+        | WorkerIterationResult::Processed {
+            queue_drained: true,
+            ..
+        } => ECHO_AUDIO_TRANSCRIPTION_IDLE_SLEEP_MS,
+        WorkerIterationResult::Processed {
+            queue_drained: false,
+            ..
+        } => ECHO_AUDIO_TRANSCRIPTION_ACTIVE_SLEEP_MS,
     }
 }
 
@@ -588,6 +589,7 @@ async fn wait_or_cancel(cancel_token: &CancellationToken, sleep_ms: u64) {
 mod tests {
     use super::*;
     use crate::entities::echo_gpu_transcription_queue;
+    use echo_gpu_client::WorkerRunResult;
     use opendal::{services::Memory, Operator};
     use sea_orm::{
         ActiveModelTrait, ActiveValue::Set, ColumnTrait, EntityTrait,
@@ -683,16 +685,28 @@ mod tests {
     }
 
     #[test]
-    fn worker_result_sleep_distinguishes_idle_and_active_iterations() {
+    fn worker_iteration_sleep_distinguishes_drained_and_active_batches() {
         assert_eq!(
-            worker_result_sleep_ms(&WorkerRunResult::Idle(
+            worker_iteration_sleep_ms(&WorkerIterationResult::Idle(
                 echo_gpu_client::IdleReason::NoActiveInstance,
             )),
             ECHO_AUDIO_TRANSCRIPTION_IDLE_SLEEP_MS,
         );
         assert_eq!(
-            worker_result_sleep_ms(&WorkerRunResult::Completed {
-                source_id: Uuid::now_v7(),
+            worker_iteration_sleep_ms(&WorkerIterationResult::Processed {
+                results: vec![WorkerRunResult::Completed {
+                    source_id: Uuid::now_v7(),
+                }],
+                queue_drained: true,
+            }),
+            ECHO_AUDIO_TRANSCRIPTION_IDLE_SLEEP_MS,
+        );
+        assert_eq!(
+            worker_iteration_sleep_ms(&WorkerIterationResult::Processed {
+                results: vec![WorkerRunResult::Completed {
+                    source_id: Uuid::now_v7(),
+                }],
+                queue_drained: false,
             }),
             ECHO_AUDIO_TRANSCRIPTION_ACTIVE_SLEEP_MS,
         );
