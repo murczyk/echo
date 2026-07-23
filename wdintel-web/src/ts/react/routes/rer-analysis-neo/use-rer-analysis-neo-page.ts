@@ -226,8 +226,10 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
 
   const updateQueryState = useCallback(
     (patch: Partial<AnalysisQueryState>) => {
-      data.invalidateFilterSectionLoadsForPatch(patch);
-      setQueryState((current) => normalizeQueryState({ ...current, ...patch }));
+      const normalizedPatch =
+        patch.unitsSelected?.length === 0 ? { ...patch, unitsExactMatchOnly: null } : patch;
+      data.invalidateFilterSectionLoadsForPatch(normalizedPatch);
+      setQueryState((current) => normalizeQueryState({ ...current, ...normalizedPatch }));
     },
     [data.invalidateFilterSectionLoadsForPatch],
   );
@@ -251,16 +253,23 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
     (unitName: string | null) => {
       if (unitName === null) return;
       const normalizedUnitName = normalizeUnknownUnitFilterValue(unitName);
-      data.invalidateFilterSectionLoadsForPatch({ unitsSelected: [] });
-      setQueryState((current) => ({
-        ...current,
-        unitsSelected: (() => {
-          const normalizedUnits = normalizeUnknownUnitSelections(current.unitsSelected);
-          return normalizedUnits.includes(normalizedUnitName)
-            ? normalizedUnits.filter((item) => item !== normalizedUnitName)
-            : [...normalizedUnits, normalizedUnitName];
-        })(),
-      }));
+      data.invalidateFilterSectionLoadsForPatch({
+        unitsExactMatchOnly: false,
+        unitsSelected: [],
+      });
+      setQueryState((current) => {
+        const normalizedUnits = normalizeUnknownUnitSelections(current.unitsSelected);
+        const isSelected = normalizedUnits.includes(normalizedUnitName);
+        const unitsSelected = isSelected
+          ? normalizedUnits.filter((item) => item !== normalizedUnitName)
+          : [...normalizedUnits, normalizedUnitName];
+        return {
+          ...current,
+          unitsExactMatchOnly:
+            unitsSelected.length === 0 ? null : isSelected ? current.unitsExactMatchOnly : false,
+          unitsSelected,
+        };
+      });
     },
     [data.invalidateFilterSectionLoadsForPatch],
   );
