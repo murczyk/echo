@@ -26,10 +26,6 @@ export interface SearchControl extends L.Control {
   updatePlaceholder: (placeholder: string) => void;
 }
 
-function isNarrowMapViewport(): boolean {
-  return window.matchMedia?.('(max-width: 599.95px)')?.matches === true;
-}
-
 function createNarrowControlToggle(label: string, iconPath: string): HTMLButtonElement {
   const toggle = document.createElement('button');
   toggle.type = 'button';
@@ -43,15 +39,28 @@ function initializeNarrowControlToggle(
   container: HTMLElement,
   toggle: HTMLButtonElement,
   controlClass: string,
-): void {
+): () => void {
+  const narrowViewportQuery = window.matchMedia('(max-width: 599.95px)');
+
+  const syncCollapsedState = () => {
+    container.classList.toggle('narrow-map-control--collapsed', narrowViewportQuery.matches);
+  };
+
   container.classList.add(controlClass);
-  if (isNarrowMapViewport()) {
-    container.classList.add('narrow-map-control--collapsed');
-  }
+  syncCollapsedState();
+  const onViewportChange = () => {
+    syncCollapsedState();
+  };
+  narrowViewportQuery.addEventListener('change', onViewportChange);
+
   L.DomEvent.on(toggle, 'click', L.DomEvent.stopPropagation);
   L.DomEvent.on(toggle, 'click', () => {
     container.classList.remove('narrow-map-control--collapsed');
   });
+
+  return () => {
+    narrowViewportQuery.removeEventListener('change', onViewportChange);
+  };
 }
 
 /** Creates a map control that hosts <analysis-map-search>. */
@@ -65,6 +74,7 @@ export function createSearchControl(): SearchControl {
           setPlaceholder?: (placeholder: string) => void;
         })
       | null,
+    _disposeNarrowControlToggle: null as (() => void) | null,
     onAdd: function (_map: L.Map) {
       this._container = L.DomUtil.create('div', 'leaflet-bar leaflet-control search-control');
       const toggle = createNarrowControlToggle(
@@ -72,7 +82,11 @@ export function createSearchControl(): SearchControl {
         'M10 4a6 6 0 1 0 3.87 10.58l4.78 4.78 1.42-1.42-4.78-4.78A6 6 0 0 0 10 4Zm0 2a4 4 0 1 1 0 8 4 4 0 0 1 0-8Z',
       );
       this._container.appendChild(toggle);
-      initializeNarrowControlToggle(this._container, toggle, 'narrow-map-search-control');
+      this._disposeNarrowControlToggle = initializeNarrowControlToggle(
+        this._container,
+        toggle,
+        'narrow-map-search-control',
+      );
       const searchEl = document.createElement('analysis-map-search') as HTMLElement & {
         setResultsCount?: (count: number | null) => void;
         setSearchLoading?: (isLoading: boolean) => void;
@@ -84,6 +98,10 @@ export function createSearchControl(): SearchControl {
       L.DomEvent.disableClickPropagation(this._container);
       L.DomEvent.disableScrollPropagation(this._container);
       return this._container;
+    },
+    onRemove: function () {
+      this._disposeNarrowControlToggle?.();
+      this._disposeNarrowControlToggle = null;
     },
     updateResultsCount: function (count: number | null) {
       this._searchElement?.setResultsCount?.(count);
@@ -111,6 +129,7 @@ export function createTimeswitchControl(
   isLoading = false,
 ) {
   const TimeswitchControl = L.Control.extend({
+    _disposeNarrowControlToggle: null as (() => void) | null,
     onAdd: function (map: L.Map) {
       this._container = L.DomUtil.create('div', 'control-container');
       const toggle = createNarrowControlToggle(
@@ -118,7 +137,11 @@ export function createTimeswitchControl(
         'M19 4h-1V2h-2v2H8V2H6v2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2Zm0 16H5V9h14v11Zm0-13H5V6h14v1Z',
       );
       this._container.appendChild(toggle);
-      initializeNarrowControlToggle(this._container, toggle, 'narrow-map-date-control');
+      this._disposeNarrowControlToggle = initializeNarrowControlToggle(
+        this._container,
+        toggle,
+        'narrow-map-date-control',
+      );
 
       this._dateRangeSelector = L.DomUtil.create('date-range-selector');
 
@@ -135,6 +158,8 @@ export function createTimeswitchControl(
       return this._container;
     },
     onRemove: function (map: L.Map) {
+      this._disposeNarrowControlToggle?.();
+      this._disposeNarrowControlToggle = null;
       L.DomEvent.off(this._container, 'click', L.DomEvent.stopPropagation);
       L.DomEvent.off(this._container, 'dblclick', L.DomEvent.stopPropagation);
     },
