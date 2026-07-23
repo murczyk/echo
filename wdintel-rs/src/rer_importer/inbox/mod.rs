@@ -3587,9 +3587,9 @@ mod tests {
             .unwrap();
         }
 
-        let logins = vec![login.login.clone()];
+        let logins = vec![login.id];
         let messages = messages_by_id_bl(
-            &login.login,
+            &login.id,
             &logins,
             &env,
             &[audio_message.id, image_message.id],
@@ -3616,7 +3616,7 @@ mod tests {
         settings.enable_audio_transcription = Set(false);
         settings.update(&env.dbx).await.unwrap();
         let messages = messages_by_id_bl(
-            &login.login,
+            &login.id,
             &logins,
             &env,
             &[audio_message.id],

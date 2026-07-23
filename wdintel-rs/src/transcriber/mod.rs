@@ -343,6 +343,9 @@ mod tests {
     async fn endpoints_enforce_auth_role_feature_and_message_access() {
         let (env, _guard) =
             crate::functest::tests::cleanup_locked().await.unwrap();
+        let login_id = crate::users::login_id_by_name(&env.dbx, "Tester")
+            .await
+            .unwrap();
         let password = "transcriber-http-test";
         let salt = format!("{}Tester", crate::config::IDENTITY_SALT);
         let password_hash = argon2::hash_encoded(
@@ -351,7 +354,7 @@ mod tests {
             &argon2::Config::original(),
         )
         .unwrap();
-        let mut login: login::ActiveModel = login::Entity::find_by_id("Tester")
+        let mut login: login::ActiveModel = login::Entity::find_by_id(login_id)
             .one(&env.dbx)
             .await
             .unwrap()
@@ -427,7 +430,7 @@ mod tests {
         .await;
         assert_eq!(response.status(), StatusCode::OK);
 
-        let mut login: login::ActiveModel = login::Entity::find_by_id("Tester")
+        let mut login: login::ActiveModel = login::Entity::find_by_id(login_id)
             .one(&env.dbx)
             .await
             .unwrap()
@@ -461,7 +464,7 @@ mod tests {
         .await;
         assert_eq!(response.status(), StatusCode::FORBIDDEN);
 
-        let mut login: login::ActiveModel = login::Entity::find_by_id("Tester")
+        let mut login: login::ActiveModel = login::Entity::find_by_id(login_id)
             .one(&env.dbx)
             .await
             .unwrap()

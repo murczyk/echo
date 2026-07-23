@@ -1020,8 +1020,11 @@ mod tests {
     #[serial]
     async fn direct_edit_removes_transcription_work_for_deleted_media() {
         let env = cleanup().await.unwrap();
+        let login_id = crate::users::login_id_by_name(&env.dbx, TEST_LOGIN)
+            .await
+            .unwrap();
         let created = submit_signal_message(
-            TEST_LOGIN,
+            &login_id,
             &env,
             direct_submit_payload("original body"),
         )
@@ -1044,9 +1047,9 @@ mod tests {
         echo_gpu_client::enqueue(&env.dbx, media_id).await.unwrap();
 
         let mut payload = direct_submit_payload("updated body");
-        payload.deleted_media_ids = Some(vec![media_id]);
+        payload.deleted_media_ids = Some(vec![media_id.to_string()]);
         edit_signal_message(
-            TEST_LOGIN,
+            &login_id,
             &env,
             created.signal_message_id,
             payload,
