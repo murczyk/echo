@@ -145,6 +145,44 @@ describe('AppNavbar', () => {
     expect(content.indexOf('API інтеграції')).toBeLessThan(content.indexOf('Echo GPU Сервери'));
   });
 
+  it('updates Echo GPU servers when shared transcription settings change', () => {
+    currentSettingsMock.mockReturnValue(new Promise(() => {}));
+    const props = {
+      ...defaultProps,
+      user: { ...defaultProps.user, roles: ['Admin'] },
+      shared: {
+        ...defaultProps.shared,
+        systemSettings: {
+          defaultNeoAnalysis: false,
+          enableAudioTranscription: false,
+        },
+      },
+    };
+    const { container, root } = renderComponent(props);
+    expect(container.textContent).not.toContain('Echo GPU Сервери');
+
+    act(() => {
+      root.render(
+        <AppNavbar
+          {...props}
+          shared={{
+            ...props.shared,
+            systemSettings: {
+              ...props.shared.systemSettings,
+              enableAudioTranscription: true,
+            },
+          }}
+        />,
+      );
+    });
+    expect(container.textContent).toContain('Echo GPU Сервери');
+
+    act(() => {
+      root.render(<AppNavbar {...props} />);
+    });
+    expect(container.textContent).not.toContain('Echo GPU Сервери');
+  });
+
   it('toggles mobile menu on click', () => {
     const { container } = renderComponent(defaultProps);
     const mobileButton = container.querySelector('button[aria-controls="app-navbar-links-panel"]');

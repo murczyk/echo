@@ -11,7 +11,15 @@ impl MigrationTrait for Migration {
             .execute_unprepared(
                 r#"
                 alter table system_settings
-                    add column if not exists enable_audio_transcription boolean not null default false;
+                    add column if not exists enable_audio_transcription boolean;
+
+                update system_settings
+                set enable_audio_transcription = false
+                where enable_audio_transcription is null;
+
+                alter table system_settings
+                    alter column enable_audio_transcription set default false,
+                    alter column enable_audio_transcription set not null;
                 "#,
             )
             .await?;

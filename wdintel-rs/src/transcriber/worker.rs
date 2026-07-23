@@ -595,6 +595,39 @@ mod tests {
         ActiveModelTrait, ActiveValue::Set, ColumnTrait, EntityTrait,
         QueryFilter,
     };
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    struct HealthServer {
+        port: i32,
+        task: tokio::task::JoinHandle<()>,
+    }
+
+    impl Drop for HealthServer {
+        fn drop(&mut self) {
+            self.task.abort();
+        }
+    }
+
+    async fn start_health_server() -> HealthServer {
+        let listener =
+            tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port() as i32;
+        let task = tokio::spawn(async move {
+            while let Ok((mut stream, _)) = listener.accept().await {
+                tokio::spawn(async move {
+                    let mut request = [0; 1024];
+                    if stream.read(&mut request).await.is_ok() {
+                        let _ = stream
+                            .write_all(
+                                b"HTTP/1.1 200 OK\r\nContent-Length: 14\r\nConnection: close\r\n\r\npong I'm alive",
+                            )
+                            .await;
+                    }
+                });
+            }
+        });
+        HealthServer { port, task }
+    }
 
     fn cache_only_env(env: &Arc<Env>, path: &Path) -> Arc<Env> {
         let mut env = env.as_ref().clone();
@@ -648,14 +681,14 @@ mod tests {
         .unwrap()
     }
 
-    async fn create_instance(env: &Env) {
+    async fn create_instance(env: &Env, port: i32) {
         echo_gpu_client::create_instance(
             &env.dbx,
             echo_gpu_client::CreateInstance {
                 name: format!("worker-test-{}", Uuid::now_v7()),
-                host: format!("worker-test-{}.invalid", Uuid::now_v7()),
-                rs_port: 1,
-                py_port: 2,
+                host: "127.0.0.1".into(),
+                rs_port: port,
+                py_port: port,
                 train: false,
                 ordering: Some(1),
             },
@@ -868,7 +901,8 @@ mod tests {
             crate::functest::tests::cleanup_locked().await.unwrap();
         let temp = tempfile::tempdir().unwrap();
         let missing_config_env = cache_only_env(&base_env, temp.path());
-        create_instance(&missing_config_env).await;
+        let health_server = start_health_server().await;
+        create_instance(&missing_config_env, health_server.port).await;
         let missing_config_media =
             insert_audio(&missing_config_env, true, 3).await;
         echo_gpu_client::enqueue(
@@ -948,7 +982,8 @@ mod tests {
             crate::functest::tests::cleanup_locked().await.unwrap();
         let temp = tempfile::tempdir().unwrap();
         let env = cache_only_env(&base_env, temp.path());
-        create_instance(&env).await;
+        let health_server = start_health_server().await;
+        create_instance(&env, health_server.port).await;
         let source_id = Uuid::now_v7();
         echo_gpu_client::enqueue(&env.dbx, source_id).await.unwrap();
         echo_gpu_client::claim_one(&env.dbx, Uuid::now_v7())
@@ -1082,7 +1117,8 @@ mod tests {
             crate::functest::tests::cleanup_locked().await.unwrap();
         let temp = tempfile::tempdir().unwrap();
         let env = cache_only_env(&base_env, temp.path());
-        create_instance(&env).await;
+        let health_server = start_health_server().await;
+        create_instance(&env, health_server.port).await;
         let media = insert_audio(&env, false, 1).await;
         echo_gpu_client::enqueue(&env.dbx, media.id).await.unwrap();
         let cancel = CancellationToken::new();

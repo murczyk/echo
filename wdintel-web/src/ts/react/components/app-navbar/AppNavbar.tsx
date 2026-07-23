@@ -74,9 +74,7 @@ export function AppNavbar({
       setLoadedNeoAnalysis((prev) =>
         prev === null ? shared.systemSettings!.defaultNeoAnalysis : prev,
       );
-      setLoadedAudioTranscription((prev) =>
-        prev === null ? shared.systemSettings!.enableAudioTranscription : prev,
-      );
+      setLoadedAudioTranscription(shared.systemSettings.enableAudioTranscription);
     }
   }, [shared?.systemSettings]);
 
