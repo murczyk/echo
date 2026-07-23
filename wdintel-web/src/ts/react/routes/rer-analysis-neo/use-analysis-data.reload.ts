@@ -113,7 +113,7 @@ function mergeNetworkOptionValues(
   return mergedValues.length > 0 ? mergedValues : undefined;
 }
 
-export function mergeNetworkFilterOptions(
+export function mergeHydratedNetworkFilterOptions(
   existing: AnalysisFilterOption[],
   next: AnalysisFilterOption[],
 ): AnalysisFilterOption[] {
@@ -132,12 +132,7 @@ export function mergeNetworkFilterOptions(
 
     const currentIsFallback = isFallbackNetworkLabel(current);
     const nextIsFallback = isFallbackNetworkLabel(option);
-    const label =
-      currentIsFallback && !nextIsFallback
-        ? option.label
-        : !currentIsFallback && nextIsFallback
-          ? current.label
-          : option.label;
+    const label = currentIsFallback && !nextIsFallback ? option.label : current.label;
 
     merged.set(option.value, {
       value: option.value,
@@ -966,7 +961,7 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
         if (hydratedNetworkOptions.length > 0) {
           params.setOptions((current) => ({
             ...current,
-            networks: mergeNetworkFilterOptions(current.networks, hydratedNetworkOptions),
+            networks: mergeHydratedNetworkFilterOptions(current.networks, hydratedNetworkOptions),
           }));
         }
       } catch (loadError) {
