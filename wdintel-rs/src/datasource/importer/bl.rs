@@ -622,7 +622,7 @@ mod tests {
         .unwrap();
         let txn = env.dbx.begin().await.unwrap();
         crate::sigint::zone::bl::update_signal_group_access_and_admins(
-            vec![login.login],
+            vec![login.id.to_string()],
             vec![organism.id],
             vec![],
             true,

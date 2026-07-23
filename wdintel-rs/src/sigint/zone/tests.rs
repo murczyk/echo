@@ -414,9 +414,9 @@ async fn test_adding_existing_secret_group_preserves_access() {
     .unwrap();
 
     update_signal_group_access_and_admins(
-        vec![login.login.clone()],
+        vec![login.id.to_string()],
         vec![organism.id],
-        vec![login.login],
+        vec![login.id.to_string()],
         true,
         &szd.group_master_key,
         &txn,
