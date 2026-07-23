@@ -4,6 +4,7 @@ import { createRoot } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
+  currentSettings: vi.fn(),
   list: vi.fn(),
   create: vi.fn(),
   update: vi.fn(),
@@ -19,6 +20,9 @@ vi.mock('../../services/api/transcriber', () => ({
   deleteTranscriberInstance: mocks.remove,
   checkTranscriberInstance: mocks.check,
 }));
+vi.mock('../../services/api/system-settings', () => ({
+  currentSystemSettings: mocks.currentSettings,
+}));
 vi.mock('../../components/PowerSnackbar', () => ({
   usePowerSnackbar: () => ({ notify: mocks.notify }),
 }));
@@ -26,7 +30,7 @@ vi.mock('../../components/PowerAlert', () => ({
   PowerAlert: ({ children }: { children: unknown }) => <div role="alert">{children}</div>,
 }));
 
-import { TranscriberInstancesSection } from './TranscriberInstancesSection';
+import { AdminTranscriptionSettingsPage } from './index';
 
 const instance = {
   id: '01900000-0000-7000-8000-000000000001',
@@ -39,11 +43,11 @@ const instance = {
   ordering: 1,
 };
 
-async function renderSection() {
+async function renderPage() {
   const container = document.createElement('div');
   document.body.appendChild(container);
   const root = createRoot(container);
-  await act(async () => root.render(<TranscriberInstancesSection />));
+  await act(async () => root.render(<AdminTranscriptionSettingsPage />));
   await act(async () => Promise.resolve());
   await act(async () => Promise.resolve());
   return { container, root };
@@ -85,8 +89,9 @@ async function confirmMutation() {
   await clickButton('Підтвердити');
 }
 
-describe('TranscriberInstancesSection', () => {
+describe('AdminTranscriptionSettingsPage', () => {
   beforeEach(() => {
+    window.history.replaceState({}, '', '/admin/transcription-settings');
     const storage = new Map<string, string>();
     Object.defineProperty(window, 'localStorage', {
       configurable: true,
@@ -103,6 +108,7 @@ describe('TranscriberInstancesSection', () => {
         },
       },
     });
+    mocks.currentSettings.mockReset().mockResolvedValue({ enableAudioTranscription: true });
     mocks.list.mockReset().mockResolvedValue([]);
     mocks.create.mockReset();
     mocks.update.mockReset();
@@ -116,6 +122,14 @@ describe('TranscriberInstancesSection', () => {
     delete (window as { localStorage?: Storage }).localStorage;
   });
 
+  it('redirects to system settings when transcription is disabled', async () => {
+    mocks.currentSettings.mockResolvedValue({ enableAudioTranscription: false });
+    const { root } = await renderPage();
+    expect(window.location.pathname).toBe('/admin/system-settings-neo');
+    expect(mocks.list).not.toHaveBeenCalled();
+    await act(async () => root.unmount());
+  });
+
   it('uses a common table with an add dialog and reports restart failure after create', async () => {
     mocks.create.mockResolvedValue({
       instance,
@@ -123,7 +137,7 @@ describe('TranscriberInstancesSection', () => {
       restart_status: 'failed',
       restart_error: 'systemd unavailable',
     });
-    const { container, root } = await renderSection();
+    const { container, root } = await renderPage();
     expect(container.querySelector('table')).not.toBeNull();
     expect(button('Додати інстанс')).toBeDefined();
 
@@ -153,7 +167,7 @@ describe('TranscriberInstancesSection', () => {
 
   it('uses operator defaults and the next available ordering in the add dialog', async () => {
     mocks.list.mockResolvedValue([{ ...instance, ordering: 4 }]);
-    const { root } = await renderSection();
+    const { root } = await renderPage();
     await clickButton('Додати інстанс');
     const inputs = editorInputs();
     expect(inputs[2].value).toBe('3001');
@@ -163,7 +177,7 @@ describe('TranscriberInstancesSection', () => {
   });
 
   it('rejects values outside backend text and ordering limits', async () => {
-    const { root } = await renderSection();
+    const { root } = await renderPage();
     await clickButton('Додати інстанс');
     const inputs = editorInputs();
     await act(async () => {
@@ -189,7 +203,7 @@ describe('TranscriberInstancesSection', () => {
       rust: { ok: true, status: 200, error: null },
       python: { ok: false, status: 503, error: 'busy' },
     });
-    const { root } = await renderSection();
+    const { root } = await renderPage();
     await clickButton('Редагувати');
     await clickButton('Перевірити');
     expect(mocks.check).toHaveBeenCalledWith(instance.id);
@@ -206,7 +220,7 @@ describe('TranscriberInstancesSection', () => {
         python: { ok: true, status: 200, error: null },
       })
       .mockRejectedValueOnce(new Error('probe failed'));
-    const { root } = await renderSection();
+    const { root } = await renderPage();
     await clickButton('Редагувати');
     await clickButton('Перевірити');
     expect(document.body.textContent).toContain('Rust: доступний');
@@ -225,7 +239,7 @@ describe('TranscriberInstancesSection', () => {
       restart_status: 'requested',
       restart_error: null,
     });
-    const { root } = await renderSection();
+    const { root } = await renderPage();
     await clickButton('Редагувати');
     await clickButton('Зберегти');
     expect(mocks.update).not.toHaveBeenCalled();
@@ -255,7 +269,7 @@ describe('TranscriberInstancesSection', () => {
       restart_status: 'requested',
       restart_error: null,
     });
-    const first = await renderSection();
+    const first = await renderPage();
     await clickButton('Редагувати');
     const activeSwitch = editorDialog().querySelector<HTMLInputElement>('input[type="checkbox"]');
     await act(async () => activeSwitch?.click());
@@ -271,7 +285,7 @@ describe('TranscriberInstancesSection', () => {
     });
     await act(async () => first.root.unmount());
 
-    const second = await renderSection();
+    const second = await renderPage();
     await clickButton('Видалити');
     expect(mocks.remove).not.toHaveBeenCalled();
     await confirmMutation();
@@ -287,7 +301,7 @@ describe('TranscriberInstancesSection', () => {
       restart_status: 'requested',
       restart_error: null,
     });
-    const { container, root } = await renderSection();
+    const { container, root } = await renderPage();
     expect(container.textContent).toContain(instance.name);
 
     await clickButton('Видалити');
@@ -306,7 +320,7 @@ describe('TranscriberInstancesSection', () => {
         finishCheck = resolve;
       }),
     );
-    const { root } = await renderSection();
+    const { root } = await renderPage();
     await clickButton('Редагувати');
     await act(async () => {
       button('Перевірити')?.click();

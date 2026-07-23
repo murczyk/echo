@@ -27,9 +27,8 @@ import {
   type SystemSettingsItem,
 } from '../../services/api/system-settings';
 import { AdminControlPanelNeoSection } from '../admin-control-panel-neo';
-import { TranscriberInstancesSection } from './TranscriberInstancesSection';
 
-type SystemSettingsTab = 'main' | 'duty' | 'control' | 'pelengs' | 'notifications' | 'transcriber';
+type SystemSettingsTab = 'main' | 'duty' | 'control' | 'pelengs' | 'notifications';
 
 type SystemSettingsForm = {
   exactMatchOnlyDefault: boolean;
@@ -373,7 +372,7 @@ function MainSettingsSection({
       />
       {form.enableAudioTranscription && !audioTranscriptionSaved ? (
         <PowerAlert severity="info">
-          Збережіть налаштування, щоб налаштувати GPU інстанси.
+          Збережіть налаштування, щоб відкрити «Echo GPU Сервери» в меню «Адмін».
         </PowerAlert>
       ) : null}
 
@@ -781,9 +780,6 @@ export function AdminSystemSettingsNeoPage() {
       });
       setForm(nextForm);
       setSaved(nextForm);
-      if (!nextForm.enableAudioTranscription) {
-        setActiveTab('main');
-      }
       notify({
         severity: 'success',
         message: 'Нове системне налаштування збережено.',
@@ -851,14 +847,6 @@ export function AdminSystemSettingsNeoPage() {
                 id="system-settings-neo-tab-notifications"
                 aria-controls="system-settings-neo-panel-notifications"
               />
-              {saved.enableAudioTranscription ? (
-                <Tab
-                  value="transcriber"
-                  label="Транскрибування"
-                  id="system-settings-neo-tab-transcriber"
-                  aria-controls="system-settings-neo-panel-transcriber"
-                />
-              ) : null}
             </Tabs>
 
             <CardContent sx={{ p: 3, '&:last-child': { pb: 3 } }}>
@@ -879,17 +867,6 @@ export function AdminSystemSettingsNeoPage() {
                         audioTranscriptionSaved={saved.enableAudioTranscription}
                       />
                     </Stack>
-                  ) : null}
-                </Box>
-
-                <Box
-                  id="system-settings-neo-panel-transcriber"
-                  role="tabpanel"
-                  hidden={activeTab !== 'transcriber'}
-                  aria-labelledby="system-settings-neo-tab-transcriber"
-                >
-                  {activeTab === 'transcriber' && saved.enableAudioTranscription ? (
-                    <TranscriberInstancesSection />
                   ) : null}
                 </Box>
 

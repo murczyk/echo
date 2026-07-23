@@ -46,6 +46,7 @@ import './ts/react/my-reports-element';
 import './ts/react/admin-echo-missing-messages-element';
 import './ts/react/settings-neo-element';
 import './ts/react/system-settings-neo-element';
+import './ts/react/transcription-settings-element';
 import './ts/react/tags-neo-element';
 import './ts/react/tags-neo-edit-element';
 import './ts/react/tags-neo-keyword-edit-element';

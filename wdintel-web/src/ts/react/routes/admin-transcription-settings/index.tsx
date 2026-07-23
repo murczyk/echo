@@ -18,6 +18,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { STANDARD_DIALOG_ACTIONS_SX } from '../../components/dialogStyles';
 import { MrtRowActionButton } from '../../components/MrtRowActionButton';
+import { PageErrorState } from '../../components/PageErrorState';
+import { PageLoadingState } from '../../components/PageLoadingState';
 import { PowerAlert } from '../../components/PowerAlert';
 import { PowerButton } from '../../components/PowerButton';
 import { usePowerSnackbar } from '../../components/PowerSnackbar';
@@ -47,6 +49,7 @@ import {
   type TranscriberMutationResult,
   updateTranscriberInstance,
 } from '../../services/api/transcriber';
+import { currentSystemSettings } from '../../services/api/system-settings';
 
 const GPU_INSTANCE_TEXT_MAX_CHARS = 255;
 const POSTGRES_INTEGER_MAX = 2_147_483_647;
@@ -231,11 +234,12 @@ function TranscriberInstancesTable({
         }),
       },
     },
-    muiTablePaperProps: ({ table }) => getDefaultMrtPaperProps({ table, loading, layout: 'list' }),
+    muiTablePaperProps: ({ table }) =>
+      getDefaultMrtPaperProps({ table, loading, layout: 'workspace' }),
     muiTableContainerProps: ({ table }) =>
       getDefaultMrtContainerProps({
         loading,
-        layout: 'list',
+        layout: 'workspace',
         fullScreen: table.getState().isFullScreen,
         hasRows: instances.length > 0,
       }),
@@ -403,7 +407,7 @@ function MutationConfirmDialog({
   );
 }
 
-function TranscriberInstancesSectionBody() {
+function AdminTranscriptionSettingsPageBody() {
   const [instances, setInstances] = useState<TranscriberInstance[]>([]);
   const [input, setInput] = useState(() => emptyInputForInstances([]));
   const [formIsActive, setFormIsActive] = useState(true);
@@ -569,66 +573,131 @@ function TranscriberInstancesSectionBody() {
 
   const editingHealth = editingId ? health[editingId] : undefined;
   return (
-    <Stack spacing={2}>
-      {error ? <PowerAlert severity="error">{error}</PowerAlert> : null}
-      {restartWarning ? <PowerAlert severity="warning">{restartWarning}</PowerAlert> : null}
+    <Box
+      className="w-full"
+      sx={{
+        height: { xs: 'auto', lg: '100%' },
+        minHeight: 0,
+        overflow: { xs: 'visible', lg: 'hidden' },
+      }}
+    >
+      <Stack
+        spacing={3}
+        useFlexGap
+        sx={{
+          height: { xs: 'auto', lg: '100%' },
+          minHeight: 0,
+          overflow: { xs: 'visible', lg: 'hidden' },
+        }}
+      >
+        {error ? <PowerAlert severity="error">{error}</PowerAlert> : null}
+        {restartWarning ? <PowerAlert severity="warning">{restartWarning}</PowerAlert> : null}
 
-      <TablePageToolbar
-        title="Echo GPU інстанси"
-        withGlobalTextFilter
-        hideGlobalTextFilter={loading && instances.length === 0}
-        internalActionsDisabled={loading && instances.length === 0}
-        actions={
-          <>
-            <PowerButton type="button" variant="outlined" disabled={loading} onClick={refresh}>
-              Оновити
-            </PowerButton>
-            <PowerButton type="button" variant="contained" disabled={loading} onClick={openCreate}>
-              Додати інстанс
-            </PowerButton>
-          </>
-        }
-      />
-
-      <Box sx={{ width: '100%', minWidth: 0 }}>
-        <TranscriberInstancesTable
-          instances={instances}
-          loading={loading}
-          onEdit={openEdit}
-          onDelete={(instance) =>
-            setPendingMutation({
-              title: 'Видалити GPU інстанс?',
-              instanceId: instance.id,
-              run: () => deleteTranscriberInstance(instance.id),
-            })
+        <TablePageToolbar
+          title="Echo GPU Сервери"
+          withGlobalTextFilter
+          hideGlobalTextFilter={loading && instances.length === 0}
+          internalActionsDisabled={loading && instances.length === 0}
+          actions={
+            <>
+              <PowerButton type="button" variant="outlined" disabled={loading} onClick={refresh}>
+                Оновити
+              </PowerButton>
+              <PowerButton
+                type="button"
+                variant="contained"
+                disabled={loading}
+                onClick={openCreate}
+              >
+                Додати інстанс
+              </PowerButton>
+            </>
           }
         />
-      </Box>
 
-      <InstanceEditorDialog
-        mode={editorMode}
-        input={input}
-        isActive={formIsActive}
-        loading={loading}
-        error={formError}
-        health={editingHealth}
-        onInputChange={(patch) => setInput((current) => ({ ...current, ...patch }))}
-        onIsActiveChange={setFormIsActive}
-        onCheck={checkEditingInstance}
-        onClose={closeEditor}
-        onSave={requestSave}
-      />
+        <Box sx={{ flex: 1, minHeight: { xs: 'auto', lg: 0 }, minWidth: 0, display: 'flex' }}>
+          <TranscriberInstancesTable
+            instances={instances}
+            loading={loading}
+            onEdit={openEdit}
+            onDelete={(instance) =>
+              setPendingMutation({
+                title: 'Видалити GPU інстанс?',
+                instanceId: instance.id,
+                run: () => deleteTranscriberInstance(instance.id),
+              })
+            }
+          />
+        </Box>
 
-      <MutationConfirmDialog
-        mutation={pendingMutation}
-        onCancel={() => setPendingMutation(null)}
-        onConfirm={runConfirmedMutation}
-      />
-    </Stack>
+        <InstanceEditorDialog
+          mode={editorMode}
+          input={input}
+          isActive={formIsActive}
+          loading={loading}
+          error={formError}
+          health={editingHealth}
+          onInputChange={(patch) => setInput((current) => ({ ...current, ...patch }))}
+          onIsActiveChange={setFormIsActive}
+          onCheck={checkEditingInstance}
+          onClose={closeEditor}
+          onSave={requestSave}
+        />
+
+        <MutationConfirmDialog
+          mutation={pendingMutation}
+          onCancel={() => setPendingMutation(null)}
+          onConfirm={runConfirmedMutation}
+        />
+      </Stack>
+    </Box>
   );
 }
 
-export function TranscriberInstancesSection() {
+type AccessStatus = 'loading' | 'enabled' | 'error';
+
+export function AdminTranscriptionSettingsPage() {
+  const [accessStatus, setAccessStatus] = useState<AccessStatus>('loading');
+  const [accessError, setAccessError] = useState<string | null>(null);
+
+  const checkAccess = useCallback(async () => {
+    setAccessStatus('loading');
+    setAccessError(null);
+    try {
+      const settings = await currentSystemSettings();
+      if (!settings.enableAudioTranscription) {
+        window.history.replaceState({}, '', '/admin/system-settings-neo');
+        window.dispatchEvent(new PopStateEvent('popstate'));
+        return;
+      }
+      setAccessStatus('enabled');
+    } catch (nextError) {
+      setAccessError(
+        `Не вдалося перевірити, чи увімкнено транскрибування: ${errorMessage(nextError)}`,
+      );
+      setAccessStatus('error');
+    }
+  }, []);
+
+  useEffect(() => {
+    void checkAccess();
+  }, [checkAccess]);
+
+  if (accessStatus === 'loading') {
+    return <PageLoadingState minHeight="100%" />;
+  }
+
+  if (accessStatus === 'error') {
+    return (
+      <PageErrorState
+        message={accessError ?? 'Не вдалося перевірити, чи увімкнено транскрибування.'}
+        actionLabel="Спробувати ще раз"
+        onAction={checkAccess}
+        minHeight="100%"
+      />
+    );
+  }
+
   return (
     <TableStateProvider
       tableId="admin-transcriber-instances"
@@ -636,7 +705,7 @@ export function TranscriberInstancesSection() {
       defaultColumnVisibility={DEFAULT_COLUMNS_VISIBILITY}
       defaultEnableColumnOrdering={false}
     >
-      <TranscriberInstancesSectionBody />
+      <AdminTranscriptionSettingsPageBody />
     </TableStateProvider>
   );
 }

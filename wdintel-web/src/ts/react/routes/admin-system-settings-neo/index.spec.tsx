@@ -42,9 +42,6 @@ vi.mock('../../components/PowerButton', () => ({
   ),
 }));
 vi.mock('../admin-control-panel-neo', () => ({ AdminControlPanelNeoSection: () => null }));
-vi.mock('./TranscriberInstancesSection', () => ({
-  TranscriberInstancesSection: () => <div>transcriber instances panel</div>,
-}));
 
 import { AdminSystemSettingsNeoPage } from './index';
 
@@ -145,7 +142,7 @@ describe('AdminSystemSettingsNeoPage success notifications', () => {
     await act(async () => root.unmount());
   });
 
-  it('keeps instance administration hidden until enablement is saved', async () => {
+  it('keeps the enablement warning until transcription is saved', async () => {
     const { container, root } = await renderPage();
     const checkbox = audioSwitch(container);
     expect(checkbox).not.toBeNull();
@@ -156,23 +153,13 @@ describe('AdminSystemSettingsNeoPage success notifications', () => {
     mocks.save.mockRejectedValueOnce(new Error('save failed'));
     await act(async () => button(container, 'зберегти')?.click());
     await act(async () => Promise.resolve());
-    expect(container.textContent).not.toContain('transcriber instances panel');
     await act(async () => root.unmount());
   });
 
-  it('shows the instances tab from saved state and resets it after disable', async () => {
+  it('does not embed instance administration when transcription is enabled', async () => {
     mocks.list.mockResolvedValueOnce([{ id: 1, deleted: false, enableAudioTranscription: true }]);
     const { container, root } = await renderPage();
-    await act(async () => button(container, 'Транскрибування')?.click());
-    expect(container.textContent).toContain('transcriber instances panel');
-
-    await act(async () => button(container, 'Основні')?.click());
-    await act(async () => audioSwitch(container)?.click());
-    expect(button(container, 'Транскрибування')).not.toBeUndefined();
-    await act(async () => button(container, 'зберегти')?.click());
-    await act(async () => Promise.resolve());
     expect(button(container, 'Транскрибування')).toBeUndefined();
-    expect(container.textContent).not.toContain('transcriber instances panel');
     await act(async () => root.unmount());
   });
 });

@@ -189,6 +189,12 @@ export const adminSubs: Menu[] = [
   },
   {
     type: 'item',
+    link: { type: 'internal', path: '/admin/transcription-settings' },
+    activeName: 'transcription-settings',
+    label: 'Echo GPU Сервери',
+  },
+  {
+    type: 'item',
     link: { type: 'internal', path: '/admin/all-reports' },
     activeName: 'all-reports',
     label: 'Всі звіти',

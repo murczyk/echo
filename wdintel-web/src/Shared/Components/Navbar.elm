@@ -165,20 +165,29 @@ navBar user shared activeName props =
             ]
 
         adminSubs =
-            [ internalMenu Route.Path.Admin_DirectionsNeo "zones" "Напрямки"
-            , internalMenu Route.Path.Admin_OrganismsNeo "organisms-neo" "Організми"
-            , internalMenu Route.Path.Admin_UsersNeo "users-neo" "Користувачі"
-            , internalMenu Route.Path.Admin_MessengerNeo "messenger-neo" "Месенджери"
-            , internalMenu Route.Path.Admin_AorNeo "aor-neo" "Смуги"
-            , internalMenu Route.Path.Admin_SystemSettingsNeo "system-settings-neo" "Налаштування системи"
-            , MenuSeparator
-            , internalMenu Route.Path.Admin_ApiIntegrations "api-integrations" "API інтеграції"
-            , internalMenu Route.Path.Admin_AllReports "all-reports" "Всі звіти"
-            , internalMenu Route.Path.Admin_GoiIntegrationsNeo "goi-integrations-neo" "ГОІ"
-            , internalMenu Route.Path.Admin_KeysNeo "keys-neo" "Ключі"
-            , internalMenu Route.Path.Admin_LocationConfigsNeo "location-config-neo" "Населені пункти смуг"
-            , internalMenu Route.Path.Admin_TagsNeo "tags-neo" "Теги"
-            ]
+            List.concat
+                [ [ internalMenu Route.Path.Admin_DirectionsNeo "zones" "Напрямки"
+                  , internalMenu Route.Path.Admin_OrganismsNeo "organisms-neo" "Організми"
+                  , internalMenu Route.Path.Admin_UsersNeo "users-neo" "Користувачі"
+                  , internalMenu Route.Path.Admin_MessengerNeo "messenger-neo" "Месенджери"
+                  , internalMenu Route.Path.Admin_AorNeo "aor-neo" "Смуги"
+                  , internalMenu Route.Path.Admin_SystemSettingsNeo "system-settings-neo" "Налаштування системи"
+                  , MenuSeparator
+                  , internalMenu Route.Path.Admin_ApiIntegrations "api-integrations" "API інтеграції"
+                  ]
+                , ifOrEmpty
+                    (shared.systemSettings
+                        |> Maybe.map .enableAudioTranscription
+                        |> Maybe.withDefault False
+                    )
+                    [ internalMenu Route.Path.Admin_TranscriptionSettings "transcription-settings" "Echo GPU Сервери" ]
+                , [ internalMenu Route.Path.Admin_AllReports "all-reports" "Всі звіти"
+                  , internalMenu Route.Path.Admin_GoiIntegrationsNeo "goi-integrations-neo" "ГОІ"
+                  , internalMenu Route.Path.Admin_KeysNeo "keys-neo" "Ключі"
+                  , internalMenu Route.Path.Admin_LocationConfigsNeo "location-config-neo" "Населені пункти смуг"
+                  , internalMenu Route.Path.Admin_TagsNeo "tags-neo" "Теги"
+                  ]
+                ]
 
         databaseSubs =
             List.concat
