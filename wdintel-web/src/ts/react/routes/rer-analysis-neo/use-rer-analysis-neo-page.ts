@@ -251,16 +251,21 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
     (unitName: string | null) => {
       if (unitName === null) return;
       const normalizedUnitName = normalizeUnknownUnitFilterValue(unitName);
-      data.invalidateFilterSectionLoadsForPatch({ unitsSelected: [] });
-      setQueryState((current) => ({
-        ...current,
-        unitsSelected: (() => {
-          const normalizedUnits = normalizeUnknownUnitSelections(current.unitsSelected);
-          return normalizedUnits.includes(normalizedUnitName)
+      data.invalidateFilterSectionLoadsForPatch({
+        unitsExactMatchOnly: false,
+        unitsSelected: [],
+      });
+      setQueryState((current) => {
+        const normalizedUnits = normalizeUnknownUnitSelections(current.unitsSelected);
+        const isSelected = normalizedUnits.includes(normalizedUnitName);
+        return {
+          ...current,
+          unitsExactMatchOnly: isSelected ? current.unitsExactMatchOnly : false,
+          unitsSelected: isSelected
             ? normalizedUnits.filter((item) => item !== normalizedUnitName)
-            : [...normalizedUnits, normalizedUnitName];
-        })(),
-      }));
+            : [...normalizedUnits, normalizedUnitName],
+        };
+      });
     },
     [data.invalidateFilterSectionLoadsForPatch],
   );

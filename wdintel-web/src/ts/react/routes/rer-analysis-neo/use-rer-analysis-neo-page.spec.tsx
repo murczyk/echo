@@ -576,6 +576,29 @@ describe('useRerAnalysisNeoPage', () => {
     expect(latest?.queryState.unitsSelected).toEqual([]);
   });
 
+  it('includes the message-header unit when adding it from the map', async () => {
+    renderHook();
+    await flushEffects();
+
+    await act(async () => {
+      latest?.updateQueryState({ unitsExactMatchOnly: true });
+    });
+    await flushEffects();
+
+    currentAnalysisData?.invalidateFilterSectionLoadsForPatch.mockClear();
+    await act(async () => {
+      latest?.toggleUnitFromMap('Header Unit');
+    });
+    await flushEffects();
+
+    expect(currentAnalysisData?.invalidateFilterSectionLoadsForPatch).toHaveBeenCalledWith({
+      unitsExactMatchOnly: false,
+      unitsSelected: [],
+    });
+    expect(latest?.queryState.unitsExactMatchOnly).toBe(false);
+    expect(latest?.queryState.unitsSelected).toEqual(['Header Unit']);
+  });
+
   it('keeps the exact-match query value unset after the system default loads', async () => {
     const originalUrl = window.location.href;
     window.history.replaceState({}, '', window.location.pathname);
