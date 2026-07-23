@@ -1447,6 +1447,17 @@ pub struct CallsignInfo {
 pub struct CallsignInfoRes {
     pub callsign: String,
     pub res: Vec<CallsignInfo>,
+    pub network_hints: Option<Vec<CallsignNetworkHint>>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct CallsignNetworkHint {
+    pub network_id: i64,
+    pub callsign: String,
+    pub position: String,
+    pub formation: String,
 }
 
 #[derive(

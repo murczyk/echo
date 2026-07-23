@@ -178,6 +178,10 @@ pub async fn load_callsigns(
     }
 
     let callsign_ids = callsigns.iter().map(|(c, _)| c.id).collect::<Vec<_>>();
+    let catalog_by_id = callsigns
+        .iter()
+        .map(|(callsign, unit)| (callsign.id, (callsign, unit)))
+        .collect::<HashMap<_, _>>();
     let mut network_ids_reported_in: HashMap<i64, Vec<i64>> = HashMap::new();
     sigint_network_callsign::Entity::find()
         .filter(
@@ -200,11 +204,44 @@ pub async fn load_callsigns(
                 .or_insert(vec![network_id]);
         });
 
+    let network_callsigns = sigint_network_callsign::Entity::find()
+        .find_also_related(sigint_network::Entity)
+        .filter(sigint_network_callsign::Column::Deleted.eq(false))
+        .filter(sigint_network::Column::Deleted.eq(false))
+        .filter(sigint_network::Column::ActiveTo.is_null())
+        .filter(
+            sigint_network_callsign::Column::SigintCallsign.eq_any(
+                callsigns_data
+                    .iter()
+                    .map(|c| c.callsign.to_lowercase())
+                    .collect::<Vec<_>>(),
+            ),
+        )
+        .all(dbx)
+        .await
+        .c(h!())?;
+    let network_unit_ids = network_callsigns
+        .iter()
+        .filter_map(|(network_callsign, _)| network_callsign.unit_id)
+        .unique()
+        .collect_vec();
+    let network_unit_names = sigint_unit::Entity::find()
+        .filter(sigint_unit::Column::Id.is_in(network_unit_ids))
+        .filter(sigint_unit::Column::Deleted.eq(false))
+        .filter(sigint_unit::Column::Active.eq(true))
+        .all(dbx)
+        .await
+        .c(h!())?
+        .into_iter()
+        .map(|unit| (unit.id, unit.name))
+        .collect::<HashMap<_, _>>();
+
     for rec in callsigns_data {
         let c = rec.callsign;
         let mut res_single = CallsignInfoRes {
             callsign: c.clone(),
             res: Vec::new(),
+            network_hints: Some(Vec::new()),
         };
         for (callsign, is_unit) in callsigns.iter() {
             if callsign.callsign == c.to_lowercase() {
@@ -230,9 +267,95 @@ pub async fn load_callsigns(
                 }
             }
         }
+        for (network_callsign, _) in &network_callsigns {
+            if network_callsign.sigint_callsign == c.to_lowercase() {
+                let catalog = network_callsign
+                    .sigint_callsign_id
+                    .and_then(|id| catalog_by_id.get(&id));
+                let network_formation = network_callsign
+                    .unit_id
+                    .and_then(|unit_id| network_unit_names.get(&unit_id))
+                    .map(String::as_str);
+                let catalog_formation = catalog.and_then(|(_, unit)| {
+                    unit.as_ref().map(|unit| unit.name.as_str())
+                });
+                let formation = resolve_network_hint_formation(
+                    network_formation,
+                    catalog_formation,
+                );
+                res_single
+                    .network_hints
+                    .as_mut()
+                    .expect("initialized")
+                    .push(CallsignNetworkHint {
+                        network_id: network_callsign.sigint_network_id,
+                        callsign: network_callsign.sigint_callsign.clone(),
+                        position: network_callsign
+                            .position
+                            .clone()
+                            .filter(|position| !position.trim().is_empty())
+                            .or_else(|| {
+                                catalog.map(|(callsign, _)| {
+                                    callsign.position.clone()
+                                })
+                            })
+                            .unwrap_or_default(),
+                        formation,
+                    });
+            }
+        }
         res.push(res_single);
     }
     Ok(res)
+}
+
+fn resolve_network_hint_formation(
+    network_unit_name: Option<&str>,
+    catalog_unit_name: Option<&str>,
+) -> String {
+    network_unit_name
+        .filter(|name| !name.trim().is_empty())
+        .or_else(|| catalog_unit_name.filter(|name| !name.trim().is_empty()))
+        .unwrap_or_default()
+        .to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::resolve_network_hint_formation;
+
+    #[test]
+    fn uses_network_unit_when_catalog_result_is_empty() {
+        assert_eq!(
+            resolve_network_hint_formation(Some("4 мср"), None),
+            "4 мср"
+        );
+    }
+
+    #[test]
+    fn network_unit_wins_over_catalog_unit() {
+        assert_eq!(
+            resolve_network_hint_formation(Some("4 мср"), Some("каталог")),
+            "4 мср"
+        );
+    }
+
+    #[test]
+    fn falls_back_to_catalog_unit_when_network_unit_is_missing() {
+        assert_eq!(
+            resolve_network_hint_formation(None, Some("каталог")),
+            "каталог"
+        );
+    }
+
+    #[test]
+    fn ignores_blank_unit_names() {
+        assert_eq!(
+            resolve_network_hint_formation(Some("  "), Some(" каталог ")),
+            " каталог "
+        );
+        assert_eq!(resolve_network_hint_formation(Some("  "), Some(" ")), "");
+    }
 }
 
 // sql accepts max of ~65500 entries in where statement

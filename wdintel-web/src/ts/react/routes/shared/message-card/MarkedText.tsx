@@ -453,7 +453,7 @@ function CallsignWithHint({
   return (
     <Box
       component="span"
-      sx={{ position: 'relative', display: 'inline-block', verticalAlign: 'baseline', pr: '8px' }}
+      sx={{ display: 'inline-flex', alignItems: 'baseline', verticalAlign: 'baseline' }}
     >
       {wrapSearchHighlighted(callsignDisplay)}
       <Tooltip
@@ -523,10 +523,8 @@ function CallsignWithHint({
           size="small"
           disableRipple
           sx={{
-            position: 'absolute',
-            right: 0,
-            top: 0,
-            transform: 'translate(45%, -35%)',
+            flex: '0 0 auto',
+            ml: 0.25,
             width: 18,
             height: 18,
             minWidth: 18,

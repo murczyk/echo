@@ -255,6 +255,7 @@ describe('MarkedText', () => {
                   networkIdsReportedIn: [10],
                 },
               ],
+              networkHints: [{ networkId: 10, callsign: 'wolf', position: 'cmd', formation: 'u1' }],
             },
           }}
           networks={networks}
@@ -368,6 +369,7 @@ describe('MarkedText', () => {
                   networkIdsReportedIn: [10],
                 },
               ],
+              networkHints: [{ networkId: 10, callsign: 'wolf', position: 'cmd', formation: 'u1' }],
             },
           }}
           networks={networks}
@@ -478,7 +480,7 @@ describe('MarkedText', () => {
     expect(container.querySelector('[data-testid="callsign-hint-badge-network"]')).toBeNull();
   });
 
-  it('renders an outlined badge for catalog-only callsigns even when message networks are present', async () => {
+  it('does not render a badge for catalog-only callsigns when message networks are present', async () => {
     await act(async () => {
       root.render(
         <TestHost
@@ -524,7 +526,7 @@ describe('MarkedText', () => {
     });
 
     expect(container.querySelector('a.content-token--ADP')?.textContent).toBe('FOX');
-    expect(container.querySelector('[data-testid="callsign-hint-badge-system"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="callsign-hint-badge-system"]')).toBeNull();
     expect(container.querySelector('[data-testid="callsign-hint-badge-network"]')).toBeNull();
   });
 
@@ -646,6 +648,9 @@ describe('MarkedText', () => {
                   unitId: 1,
                   networkIdsReportedIn: [10],
                 },
+              ],
+              networkHints: [
+                { networkId: 10, callsign: 'РЖАВИЙ', position: 'sys', formation: 's1' },
               ],
             },
           }}

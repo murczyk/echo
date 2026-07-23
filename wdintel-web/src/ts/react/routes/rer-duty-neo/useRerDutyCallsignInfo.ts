@@ -53,6 +53,7 @@ export function mergeDutyCallsignInfoEntry(
   return {
     callsign: incoming.callsign || current.callsign,
     res: [...rowsById.values()],
+    networkHints: incoming.networkHints ?? current.networkHints,
   };
 }
 
