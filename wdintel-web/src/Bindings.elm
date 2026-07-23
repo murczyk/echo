@@ -3386,6 +3386,34 @@ palitraBulkActionRspEncoder struct =
         ]
 
 
+type alias PalitraHighlightBlacklistEntry =
+    { id : Int
+    , palitraId : Int
+    , label : String
+    }
+
+
+palitraHighlightBlacklistEntryEncoder : PalitraHighlightBlacklistEntry -> Json.Encode.Value
+palitraHighlightBlacklistEntryEncoder struct =
+    Json.Encode.object
+        [ ( "id", (Json.Encode.int) struct.id )
+        , ( "palitra_id", (Json.Encode.int) struct.palitraId )
+        , ( "label", (Json.Encode.string) struct.label )
+        ]
+
+
+type alias PalitraHighlightBlacklistAddReq =
+    { label : String
+    }
+
+
+palitraHighlightBlacklistAddReqEncoder : PalitraHighlightBlacklistAddReq -> Json.Encode.Value
+palitraHighlightBlacklistAddReqEncoder struct =
+    Json.Encode.object
+        [ ( "label", (Json.Encode.string) struct.label )
+        ]
+
+
 type alias NoHeadersBody =
     { body : String
     , start : Int
@@ -11121,6 +11149,20 @@ palitraBulkActionRspDecoder : Json.Decode.Decoder PalitraBulkActionRsp
 palitraBulkActionRspDecoder =
     Json.Decode.succeed PalitraBulkActionRsp
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "palitra_ids" (Json.Decode.list (Json.Decode.int))))
+
+
+palitraHighlightBlacklistEntryDecoder : Json.Decode.Decoder PalitraHighlightBlacklistEntry
+palitraHighlightBlacklistEntryDecoder =
+    Json.Decode.succeed PalitraHighlightBlacklistEntry
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "palitra_id" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "label" (Json.Decode.string)))
+
+
+palitraHighlightBlacklistAddReqDecoder : Json.Decode.Decoder PalitraHighlightBlacklistAddReq
+palitraHighlightBlacklistAddReqDecoder =
+    Json.Decode.succeed PalitraHighlightBlacklistAddReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "label" (Json.Decode.string)))
 
 
 noHeadersBodyDecoder : Json.Decode.Decoder NoHeadersBody

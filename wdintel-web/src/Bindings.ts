@@ -1300,6 +1300,16 @@ export type PalitraBulkActionRsp = {
   palitraIds: Array<number>;
 };
 
+export type PalitraHighlightBlacklistEntry = {
+  id: number;
+  palitraId: number;
+  label: string;
+};
+
+export type PalitraHighlightBlacklistAddReq = {
+  label: string;
+};
+
 export type NoHeadersBody = {
   body: string;
   start: number;
