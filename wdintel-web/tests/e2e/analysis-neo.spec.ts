@@ -230,4 +230,40 @@ test.describe('@smoke', () => {
       375,
     );
   });
+
+  test('analysis neo gives tablet filters their own bounded scroll container', async ({ page }) => {
+    await setupAnalysisNeoPage(page, { inboxResponse: createLoadedInboxResponse() });
+    await page.goto('/rer-analysis-neo');
+
+    for (const width of [900, 1199]) {
+      await page.setViewportSize({ width, height: 844 });
+      await page.getByRole('button', { name: 'Розгорнути ліву панель' }).click();
+
+      const filters = page.locator('[data-analysis-filters-scroll-container]');
+      await expect(filters).toBeVisible();
+      await expect
+        .poll(() =>
+          filters.evaluate((element) => {
+            const style = getComputedStyle(element);
+            return {
+              scrollable: element.scrollHeight > element.clientHeight,
+              overflowY: style.overflowY,
+            };
+          }),
+        )
+        .toEqual({ scrollable: true, overflowY: 'auto' });
+
+      const scrollBefore = await filters.evaluate((element) => element.scrollTop);
+      await filters.evaluate((element) => {
+        element.scrollTop = 240;
+      });
+      await expect
+        .poll(() => filters.evaluate((element) => element.scrollTop))
+        .toBeGreaterThan(scrollBefore);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
+        width,
+      );
+      await page.getByRole('button', { name: 'Згорнути ліву панель' }).click();
+    }
+  });
 });

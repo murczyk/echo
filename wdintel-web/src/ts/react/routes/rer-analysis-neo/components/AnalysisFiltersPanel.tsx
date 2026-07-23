@@ -23,6 +23,17 @@ export const analysisCompactFiltersContentSx = {
   WebkitOverflowScrolling: 'touch',
 } as const;
 
+export const analysisFiltersPaperSx = {
+  px: { xs: 1, lg: 1.5 },
+  pb: { xs: 0, lg: 1.5 },
+  pt: 0,
+  overflow: { xs: 'visible', md: 'auto' },
+  minHeight: 0,
+  height: { xs: 'auto', md: '50dvh', lg: '100%' },
+  display: 'flex',
+  flexDirection: 'column',
+} as const;
+
 export function AnalysisFiltersPanel({ page, isCompactLayout = false }: AnalysisFiltersPanelProps) {
   const {
     isDirty,
@@ -90,19 +101,13 @@ export function AnalysisFiltersPanel({ page, isCompactLayout = false }: Analysis
     <Paper
       variant="outlined"
       sx={{
-        px: { xs: 1, lg: 1.5 },
-        pb: { xs: 0, lg: 1.5 },
-        pt: 0,
-        overflow: { xs: 'visible', lg: 'auto' },
-        minHeight: 0,
-        height: { xs: 'auto', lg: '100%' },
-        display: 'flex',
-        flexDirection: 'column',
+        ...analysisFiltersPaperSx,
         border: 'none',
         borderRadius: 0,
         boxShadow: 'none',
         backgroundColor: 'transparent',
       }}
+      data-analysis-filters-scroll-container
     >
       <Stack spacing={1.5} sx={{ minHeight: 0, flex: { lg: 1 } }}>
         <Stack

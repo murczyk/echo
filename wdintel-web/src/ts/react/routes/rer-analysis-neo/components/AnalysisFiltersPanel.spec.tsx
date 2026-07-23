@@ -189,7 +189,11 @@ vi.mock('../../../components/PowerChip', () => ({
   },
 }));
 
-import { AnalysisFiltersPanel, analysisCompactFiltersContentSx } from './AnalysisFiltersPanel';
+import {
+  AnalysisFiltersPanel,
+  analysisCompactFiltersContentSx,
+  analysisFiltersPaperSx,
+} from './AnalysisFiltersPanel';
 
 type Rendered = {
   container: HTMLDivElement;
@@ -1468,5 +1472,10 @@ describe('AnalysisFiltersPanel', () => {
       overscrollBehaviorY: 'contain',
       WebkitOverflowScrolling: 'touch',
     });
+  });
+
+  it('bounds the non-compact tablet filter paper before desktop', () => {
+    expect(analysisFiltersPaperSx.height).toEqual({ xs: 'auto', md: '50dvh', lg: '100%' });
+    expect(analysisFiltersPaperSx.overflow).toEqual({ xs: 'visible', md: 'auto' });
   });
 });
