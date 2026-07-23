@@ -95,8 +95,10 @@ div [id='map-container-analysis'] {
     display: none !important;
   }
 
-  #analysis-map .leaflet-top.leaflet-left > .narrow-map-search-control,
-  #analysis-map .leaflet-top.leaflet-left > .narrow-map-date-control {
+  #analysis-map
+    .leaflet-top.leaflet-left
+    > .narrow-map-search-control.narrow-map-control--collapsed,
+  #analysis-map .leaflet-top.leaflet-left > .narrow-map-date-control.narrow-map-control--collapsed {
     width: 48px;
     height: 48px;
   }

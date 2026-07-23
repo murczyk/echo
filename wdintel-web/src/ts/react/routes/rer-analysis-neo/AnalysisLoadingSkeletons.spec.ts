@@ -14,8 +14,8 @@ describe('AnalysisLoadingSkeletons', () => {
     expect(analysisLoadingSkeletonTabsSx.overflow).toBe('hidden');
   });
 
-  it('uses an external narrow gutter without changing desktop margin', () => {
-    expect(analysisLoadingSkeletonPaperSx.mx).toEqual({ xs: 1, lg: 0 });
+  it('uses an external 8px gutter at all breakpoints', () => {
+    expect(analysisLoadingSkeletonPaperSx.mx).toBe(1);
     expect(analysisLoadingSkeletonPaperSx.width).toBe('auto');
   });
 });

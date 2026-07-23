@@ -189,7 +189,7 @@ vi.mock('../../../components/PowerChip', () => ({
   },
 }));
 
-import { AnalysisFiltersPanel } from './AnalysisFiltersPanel';
+import { AnalysisFiltersPanel, analysisCompactFiltersContentSx } from './AnalysisFiltersPanel';
 
 type Rendered = {
   container: HTMLDivElement;
@@ -1458,5 +1458,15 @@ describe('AnalysisFiltersPanel', () => {
     rendered.push(view);
 
     expect(view.container.querySelector('[data-testid="filled-filter-icon"]')).not.toBeNull();
+  });
+
+  it('gives expanded compact filter content its own bounded scroll container', () => {
+    expect(analysisCompactFiltersContentSx).toMatchObject({
+      maxHeight: '50dvh',
+      overflowY: 'auto',
+      overflowX: 'hidden',
+      overscrollBehaviorY: 'contain',
+      WebkitOverflowScrolling: 'touch',
+    });
   });
 });

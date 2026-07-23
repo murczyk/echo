@@ -196,4 +196,38 @@ test.describe('@smoke', () => {
       1200,
     );
   });
+
+  test('analysis neo expands phone map search and date controls without overflow', async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 375, height: 844 });
+    await setupAnalysisNeoPage(page, { inboxResponse: createLoadedInboxResponse() });
+    await page.goto('/rer-analysis-neo');
+    await page.getByRole('tab', { name: 'Мапа' }).click();
+
+    const map = page.locator('#analysis-map');
+    const searchControl = map.locator('.narrow-map-search-control');
+    const dateControl = map.locator('.narrow-map-date-control');
+    await expect(searchControl).toHaveClass(/narrow-map-control--collapsed/);
+    await expect(dateControl).toHaveClass(/narrow-map-control--collapsed/);
+    expect(await searchControl.boundingBox()).toMatchObject({ width: 48, height: 48 });
+    expect(await dateControl.boundingBox()).toMatchObject({ width: 48, height: 48 });
+
+    await searchControl.getByRole('button', { name: 'Розгорнути пошук на мапі' }).click();
+    await expect(searchControl).not.toHaveClass(/narrow-map-control--collapsed/);
+    const expandedSearchBox = await searchControl.boundingBox();
+    expect(expandedSearchBox).not.toBeNull();
+    expect(expandedSearchBox!.x).toBeGreaterThanOrEqual(0);
+    expect(expandedSearchBox!.x + expandedSearchBox!.width).toBeLessThanOrEqual(375);
+
+    await dateControl.getByRole('button', { name: 'Розгорнути діапазон дат на мапі' }).click();
+    await expect(dateControl).not.toHaveClass(/narrow-map-control--collapsed/);
+    const expandedDateBox = await dateControl.boundingBox();
+    expect(expandedDateBox).not.toBeNull();
+    expect(expandedDateBox!.x).toBeGreaterThanOrEqual(0);
+    expect(expandedDateBox!.x + expandedDateBox!.width).toBeLessThanOrEqual(375);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
+      375,
+    );
+  });
 });

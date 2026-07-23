@@ -14,6 +14,15 @@ import {
   type FilterSectionId,
 } from './analysis-filters-panel-shared';
 
+export const analysisCompactFiltersContentSx = {
+  minHeight: 0,
+  maxHeight: '50dvh',
+  overflowY: 'auto',
+  overflowX: 'hidden',
+  overscrollBehaviorY: 'contain',
+  WebkitOverflowScrolling: 'touch',
+} as const;
+
 export function AnalysisFiltersPanel({ page, isCompactLayout = false }: AnalysisFiltersPanelProps) {
   const {
     isDirty,
@@ -162,13 +171,9 @@ export function AnalysisFiltersPanel({ page, isCompactLayout = false }: Analysis
           showCompactToggle ? (
             <Box
               sx={{
-                minHeight: 0,
+                ...analysisCompactFiltersContentSx,
                 display: 'flex',
                 flexDirection: 'column',
-                overflowY: 'visible',
-                overflowX: 'hidden',
-                overscrollBehavior: 'contain',
-                WebkitOverflowScrolling: 'touch',
                 pr: 0.25,
                 pb: 0.5,
               }}
