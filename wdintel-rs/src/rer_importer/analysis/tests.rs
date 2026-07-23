@@ -5114,6 +5114,19 @@ async fn count_stats_without_analytics_uses_postgres() {
     assert_eq!(result, "postgres");
 }
 
+#[test]
+fn count_stats_analytics_rejects_filters_without_safe_pushdown() {
+    let mut req = mk_analysis_stats_req(0, 1);
+    assert!(analytics_count_request_supported(&req));
+
+    req.search = Some("callsign".to_string());
+    assert!(!analytics_count_request_supported(&req));
+
+    req.search = None;
+    req.selected_callsigns = Some(vec!["ALPHA".to_string()]);
+    assert!(!analytics_count_request_supported(&req));
+}
+
 #[tokio::test]
 async fn count_stats_analytics_timeout_retries_postgres() {
     let analytics_query = std::future::pending::<Result<&str, AppError>>();

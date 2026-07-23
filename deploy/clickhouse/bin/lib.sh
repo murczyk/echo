@@ -565,6 +565,11 @@ SELECT CASE
 END \gexec
 
 SELECT format(
+  'ALTER PUBLICATION %I SET (publish_generated_columns = stored)',
+  :'publication'
+) \gexec
+
+SELECT format(
   'ALTER TABLE %I.%I REPLICA IDENTITY FULL',
   publication_table.schemaname,
   publication_table.tablename
@@ -573,6 +578,35 @@ FROM pg_publication_tables publication_table
 WHERE publication_table.pubname = :'publication'
 \gexec
 SQL
+}
+
+ensure_source_publication_generated_columns() {
+  [[ "$SOURCE_PG_MAJOR" =~ ^[0-9]+$ ]] \
+    || die "SOURCE_PG_MAJOR must be numeric"
+  ((SOURCE_PG_MAJOR >= 18)) || return 0
+
+  local generated_columns
+  generated_columns=$(source_local_psql \
+    -Atq \
+    -v ON_ERROR_STOP=1 \
+    -v publication="$SOURCE_PUBLICATION" <<'SQL'
+SELECT pubgencols
+FROM pg_publication
+WHERE pubname = :'publication';
+SQL
+  )
+  [[ "$generated_columns" == s ]] || {
+    log "Enabling stored generated columns in publication $SOURCE_PUBLICATION"
+    source_local_psql \
+      -q \
+      -v ON_ERROR_STOP=1 \
+      -v publication="$SOURCE_PUBLICATION" <<'SQL'
+SELECT format(
+  'ALTER PUBLICATION %I SET (publish_generated_columns = stored)',
+  :'publication'
+) \gexec
+SQL
+  }
 }
 
 reset_excluded_replica_identities() {

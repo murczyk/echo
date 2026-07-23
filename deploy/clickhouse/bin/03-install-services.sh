@@ -36,6 +36,7 @@ for wrapper in \
   apply-firewall.sh \
   check-analytics-health.sh \
   reconcile-schema.sh \
+  reconcile-derived-schema.sh \
   reconcile-table-selection.sh \
   refresh-current-views.sh \
   refresh-gateway.sh

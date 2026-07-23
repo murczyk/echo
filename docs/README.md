@@ -73,7 +73,7 @@ flowchart LR
         direction LR
         replication["Replication pipeline<br/>PeerDB + Temporal"]
         staging[("MinIO<br/>transient staging")]
-        clickhouse[("ClickHouse<br/>analytical copy")]
+        clickhouse[("ClickHouse<br/>raw · current · derived analytical data")]
         gateway["PostgreSQL gateway<br/>pg_clickhouse"]
 
         replication --> staging --> clickhouse
@@ -291,7 +291,7 @@ flowchart LR
     health["echo-analytics-health.service"]
 
     postgres_store[("PostgreSQL 18<br/>peerdb_catalog · temporal · temporal_visibility<br/>echo_analytics_gateway + pg_clickhouse")]
-    clickhouse_store[("ClickHouse<br/>echo_cdc raw tables · echo_analytics current views")]
+    clickhouse_store[("ClickHouse<br/>echo_cdc raw tables · echo_analytics current views<br/>derived callsign expansion")]
     minio_store[("MinIO<br/>echo-peerdb-stage transient bucket")]
 
     target -.-> postgres

@@ -31,6 +31,12 @@ sudo install -o root -g root -m 0755 \
 sudo install -o root -g root -m 0755 \
   "$SCRIPT_DIR/source-reconcile-if-needed.sh" \
   /opt/echo-peerdb/bin/source-reconcile-if-needed.sh
+sudo install -o root -g root -m 0755 \
+  "$SCRIPT_DIR/source-reconcile-derived-schema.sh" \
+  /opt/echo-peerdb/bin/source-reconcile-derived-schema.sh
+sudo install -o root -g root -m 0755 \
+  "$SCRIPT_DIR/reconcile-derived-schema.sh" \
+  /opt/echo-peerdb/bin/reconcile-derived-schema-remote.sh
 sudo install -o root -g root -m 0644 \
   "$BUNDLE_DIR/env/tables-exclude.txt" \
   /opt/echo-peerdb/env/tables-exclude.txt

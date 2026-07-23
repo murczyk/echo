@@ -365,6 +365,9 @@ preservation is also mandatory: without it, ClickHouse substitutes type
 defaults for PostgreSQL `NULL`, changing query semantics.
 Published source tables use `REPLICA IDENTITY FULL` so updates cannot erase
 unchanged TOAST values, and primary-key-update handling is enabled in PeerDB.
+PostgreSQL 18 publications include stored generated columns; this is required
+when a full replica identity contains one, otherwise PostgreSQL rejects updates
+to that table before they reach PeerDB.
 This increases WAL volume for updates and must be included when sizing the
 slot cap.
 The generated SQL contains passwords and exists only in a mode-0600 temporary
@@ -407,6 +410,18 @@ step; queries that use the new column fall back to PostgreSQL until analytics
 is reconciled. Columns added with a PostgreSQL default still require an
 explicit historical backfill or full mirror resync.
 
+The same reconciliation installs a versioned ClickHouse callsign-expansion
+view and exposes it privately as
+`echo_clickhouse_derived.message_callsign` in the gateway. This keeps JSON
+array expansion and distinct aggregation inside ClickHouse. The derived
+foreign table is created only when missing, so the periodic check does not
+invalidate running gateway queries.
+Package deployments install the source and remote reconciliation scripts.
+For checkout-based development, `just dev-back` runs the repository copy as a
+bounded best-effort preflight when `/etc/echo-peerdb/source.env` exists; without
+that file it does nothing. Operators can also run
+`just analytics-reconcile-derived-schema` explicitly.
+
 ### 5. Echo configuration
 
 Copy [app-analytics.toml.example](env/app-analytics.toml.example) into the
@@ -425,7 +440,10 @@ cooldown instead of making every request wait for the unavailable gateway.
 Keep `ANALYTICS_HEALTH_STALE_AFTER_SECONDS` and `freshness_max_age_ms` aligned;
 the supplied values are 90 seconds. Initially only
 `/api/rer/analysis/stats/count` uses this path; existing five-minute aggregate
-generation remains intact.
+generation remains intact. Its dimension totals use scalar
+`COUNT(DISTINCT ...)` queries so the gateway receives aggregates rather than
+message-ID sets. Filter shapes without a verified ClickHouse pushdown, such as
+free-text search and selected callsigns, use PostgreSQL directly.
 
 ## WAL retention and recovery
 

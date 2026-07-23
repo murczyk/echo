@@ -23,6 +23,41 @@ use crate::rer_importer::analysis::*;
 use crate::stats::*;
 use crate::types::Env;
 
+#[derive(FromQueryResult)]
+struct DistinctCountRes {
+    count: i64,
+}
+
+async fn count_distinct_with_db<E>(
+    query: Select<E>,
+    expression: SimpleExpr,
+    db: &DatabaseConnection,
+) -> Result<i64, AppError>
+where
+    E: EntityTrait,
+{
+    let result = build_distinct_count_query(query, expression)
+        .into_model::<DistinctCountRes>()
+        .one(db)
+        .await
+        .context(h!())?
+        .unwrap_or(DistinctCountRes { count: 0 });
+    Ok(result.count)
+}
+
+fn build_distinct_count_query<E>(
+    query: Select<E>,
+    expression: SimpleExpr,
+) -> Select<E>
+where
+    E: EntityTrait,
+{
+    query.select_only().column_as(
+        Expr::cust_with_expr("COUNT(DISTINCT $1)", expression),
+        "count",
+    )
+}
+
 pub async fn fetch_groups(
     req: &Json<AnalysisStatsReq>,
     user: &Identity,
@@ -538,18 +573,49 @@ pub(super) async fn count_senders_with_db(
 
     let instant = std::time::Instant::now();
     trace!("get identity master keys op took: {:?}", instant.elapsed());
-    let groups_res = build_senders_query(
+    let senders_res = build_senders_filtered_query(
         &req,
         &login_value,
         dt_since,
         dt_till,
         master_keys,
     )?;
-    let count = groups_res.count(db).await.context(h!())?;
-    Ok(count as i64)
+    count_distinct_with_db(
+        senders_res,
+        Expr::col((
+            signal_message_group::Entity,
+            signal_message_group::Column::Sender,
+        ))
+        .into(),
+        db,
+    )
+    .await
 }
 
 fn build_senders_query(
+    req: &&Json<AnalysisStatsReq>,
+    login_str: &uuid::Uuid,
+    dt_since: NaiveDateTime,
+    dt_till: NaiveDateTime,
+    master_keys: Vec<String>,
+) -> Result<Select<sigint_inbox_item::Entity>, AppError> {
+    Ok(build_senders_filtered_query(
+        req,
+        login_str,
+        dt_since,
+        dt_till,
+        master_keys,
+    )?
+    .select_only()
+    .column_as(signal_message_group::Column::Sender, "uuid")
+    .column_as(
+        Expr::cust(r#"COUNT(DISTINCT "signal_message"."id")"#),
+        "count",
+    )
+    .group_by(signal_message_group::Column::Sender))
+}
+
+fn build_senders_filtered_query(
     req: &&Json<AnalysisStatsReq>,
     login_str: &uuid::Uuid,
     dt_since: NaiveDateTime,
@@ -561,17 +627,9 @@ fn build_senders_query(
     let sender_stats_groups = sender_stats_groups(req, &master_keys);
     let senders_res =
         build_join_for_sender_stats(&sender_stats_groups, &req.selected_aors)
-            .select_only()
-            .column_as(signal_message_group::Column::Sender, "uuid")
-            .column_as(
-                Expr::cust(r#"COUNT(DISTINCT "signal_message"."id")"#),
-                "count",
-            )
             // .filter(signal_message::Column::DuplicateOf.is_null())
             .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
-            .filter(sigint_inbox_item::Column::Datetime.lt(dt_till))
-            // .filter(sigint_inbox_item::Column::Checked.eq(Some(true)))
-            .group_by(signal_message_group::Column::Sender);
+            .filter(sigint_inbox_item::Column::Datetime.lt(dt_till));
     let senders_res = apply_sender_dimension_filters(senders_res, req);
     let senders_res = filter_selected_groups_and_senders_with_access(
         senders_res,
@@ -806,12 +864,45 @@ pub(super) async fn count_posts_with_db(
 
     let instant = std::time::Instant::now();
     trace!("get identity master keys op took: {:?}", instant.elapsed());
-    let groups_res =
-        build_posts_query(&req, &user, master_keys, dt_since, dt_till)?;
-    let count = groups_res.count(db).await.context(h!())?;
-    Ok(count as i64)
+    let posts_res = build_posts_filtered_query(
+        &req,
+        &user,
+        master_keys,
+        dt_since,
+        dt_till,
+    )?;
+    count_distinct_with_db(
+        posts_res,
+        Expr::col((sigint_post::Entity, sigint_post::Column::Name)).if_null(""),
+        db,
+    )
+    .await
 }
+
 fn build_posts_query(
+    req: &&Json<AnalysisStatsReq>,
+    user: &&Identity,
+    master_keys: Vec<String>,
+    dt_since: NaiveDateTime,
+    dt_till: NaiveDateTime,
+) -> Result<Select<sigint_inbox_item::Entity>, AppError> {
+    Ok(
+        build_posts_filtered_query(req, user, master_keys, dt_since, dt_till)?
+            .select_only()
+            .column_as(
+                Expr::col((sigint_post::Entity, sigint_post::Column::Name))
+                    .if_null(""),
+                "post",
+            )
+            .column_as(
+                Expr::cust(r#"COUNT(DISTINCT "signal_message"."id")"#),
+                "count",
+            )
+            .group_by(Expr::cust("1")),
+    )
+}
+
+fn build_posts_filtered_query(
     req: &&Json<AnalysisStatsReq>,
     user: &&Identity,
     master_keys: Vec<String>,
@@ -829,23 +920,11 @@ fn build_posts_query(
             JoinType::InnerJoin,
             sigint_inbox_item::Relation::SigintPost.def(),
         )
-        .select_only()
-        .column_as(
-            Expr::col((sigint_post::Entity, sigint_post::Column::Name))
-                .if_null(""),
-            "post",
-        )
-        .column_as(
-            Expr::cust(r#"COUNT(DISTINCT "signal_message"."id")"#),
-            "count",
-        )
         .filter(message_in_groups_exists(master_keys.clone()))
         .filter(signal_message::Column::Deleted.eq(false))
         // .filter(signal_message::Column::DuplicateOf.is_null())
         .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
-        .filter(sigint_inbox_item::Column::Datetime.lt(dt_till))
-        // .filter(sigint_inbox_item::Column::Checked.eq(Some(true)))
-        .group_by(Expr::cust("1"));
+        .filter(sigint_inbox_item::Column::Datetime.lt(dt_till));
     let post_res = filter_selected_groups_and_senders_with_access(
         post_res,
         &req.selected_groups,
@@ -1035,18 +1114,48 @@ pub(super) async fn count_freqs_with_db(
     let instant = std::time::Instant::now();
     trace!("get identity master keys op took: {:?}", instant.elapsed());
     let login_value = login_id_from_identity(user)?;
-    let groups_res = build_freqs_query(
+    let freqs_res = build_freqs_filtered_query(
         &req.0,
         &login_value,
         dt_since,
         dt_till,
         master_keys,
     )?;
-    let count = groups_res.count(db).await.context(h!())?;
-    Ok(count as i64)
+    count_distinct_with_db(
+        freqs_res,
+        Expr::col(sigint_inbox_item::Column::Freq).if_null(""),
+        db,
+    )
+    .await
 }
 
 fn build_freqs_query(
+    req: &AnalysisStatsReq,
+    login_str: &uuid::Uuid,
+    dt_since: NaiveDateTime,
+    dt_till: NaiveDateTime,
+    master_keys: Vec<String>,
+) -> Result<Select<sigint_inbox_item::Entity>, AppError> {
+    Ok(build_freqs_filtered_query(
+        req,
+        login_str,
+        dt_since,
+        dt_till,
+        master_keys,
+    )?
+    .select_only()
+    .column_as(
+        Expr::col(sigint_inbox_item::Column::Freq).if_null(""),
+        "freq",
+    )
+    .column_as(
+        Expr::cust(r#"COUNT(DISTINCT "signal_message"."id")"#),
+        "count",
+    )
+    .group_by(Expr::cust("1")))
+}
+
+fn build_freqs_filtered_query(
     req: &AnalysisStatsReq,
     login_str: &uuid::Uuid,
     dt_since: NaiveDateTime,
@@ -1064,22 +1173,11 @@ fn build_freqs_query(
             JoinType::LeftJoin,
             sigint_inbox_item::Relation::SigintPost.def(),
         )
-        .select_only()
-        .column_as(
-            Expr::col(sigint_inbox_item::Column::Freq).if_null(""),
-            "freq",
-        )
-        .column_as(
-            Expr::cust(r#"COUNT(DISTINCT "signal_message"."id")"#),
-            "count",
-        )
         .filter(message_in_groups_exists(master_keys.clone()))
         .filter(signal_message::Column::Deleted.eq(false))
         // .filter(signal_message::Column::DuplicateOf.is_null())
         .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
-        .filter(sigint_inbox_item::Column::Datetime.lt(dt_till))
-        // .filter(sigint_inbox_item::Column::Checked.eq(Some(true)))
-        .group_by(Expr::cust("1"));
+        .filter(sigint_inbox_item::Column::Datetime.lt(dt_till));
     let freqs_res = filter_selected_groups_and_senders_with_access(
         freqs_res,
         &req.selected_groups,
@@ -1229,6 +1327,55 @@ pub(super) async fn count_callsigns_with_db(
     )?;
     let count = groups_res.count(db).await.context(h!())?;
     Ok(count as i64)
+}
+
+pub(super) async fn count_callsigns_analytics_with_db(
+    req: &Json<AnalysisStatsReq>,
+    user: &Identity,
+    db: &DatabaseConnection,
+    master_keys: Vec<String>,
+) -> Result<i64, AppError> {
+    let login_value = login_id_from_identity(user)?;
+    let dt_since = dt_from_millis(req.since_date_inclusive_ms).context(h!())?;
+    let dt_till =
+        dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
+    let mut callsigns_res = build_callsigns_filtered_query(
+        &req.0,
+        &login_value,
+        dt_since,
+        dt_till,
+        master_keys,
+    )?;
+    let callsign_alias = Alias::new("analytics_callsign");
+    QuerySelect::query(&mut callsigns_res)
+        .join_as(
+            JoinType::InnerJoin,
+            (
+                Alias::new("echo_clickhouse_derived"),
+                Alias::new("message_callsign"),
+            ),
+            callsign_alias.clone(),
+            Expr::col((
+                callsign_alias.clone(),
+                Alias::new("sigint_inbox_item_id"),
+            ))
+            .equals((sigint_inbox_item::Entity, sigint_inbox_item::Column::Id)),
+        )
+        .clear_selects()
+        .expr_as(
+            Expr::cust_with_expr(
+                "COUNT(DISTINCT $1)",
+                Expr::col((callsign_alias, Alias::new("callsign"))),
+            ),
+            Alias::new("count"),
+        );
+    let result = callsigns_res
+        .into_model::<DistinctCountRes>()
+        .one(db)
+        .await
+        .context(h!())?
+        .unwrap_or(DistinctCountRes { count: 0 });
+    Ok(result.count)
 }
 
 pub async fn fetch_metadata_stats(
@@ -1501,6 +1648,32 @@ fn build_callsigns_query(
     dt_till: NaiveDateTime,
     master_keys: Vec<String>,
 ) -> Result<Select<sigint_inbox_item::Entity>, AppError> {
+    Ok(build_callsigns_filtered_query(
+        req,
+        login_str,
+        dt_since,
+        dt_till,
+        master_keys,
+    )?
+    .select_only()
+    .column_as(
+        Expr::cust("jsonb_array_elements_text(callsigns)"),
+        "callsign",
+    )
+    .column_as(
+        Expr::cust(r#"COUNT(DISTINCT "signal_message"."id")"#),
+        "count",
+    )
+    .group_by(SimpleExpr::Custom("callsign".to_string())))
+}
+
+fn build_callsigns_filtered_query(
+    req: &AnalysisStatsReq,
+    login_str: &uuid::Uuid,
+    dt_since: NaiveDateTime,
+    dt_till: NaiveDateTime,
+    master_keys: Vec<String>,
+) -> Result<Select<sigint_inbox_item::Entity>, AppError> {
     let include_peleng_locations =
         req.include_peleng_locations.unwrap_or(false);
     let callsigns_res = sigint_inbox_item::Entity::find()
@@ -1512,22 +1685,11 @@ fn build_callsigns_query(
             JoinType::LeftJoin,
             sigint_inbox_item::Relation::SigintPost.def(),
         )
-        .select_only()
-        .column_as(
-            Expr::cust("jsonb_array_elements_text(callsigns)"),
-            "callsign",
-        )
-        .column_as(
-            Expr::cust(r#"COUNT(DISTINCT "signal_message"."id")"#),
-            "count",
-        )
         .filter(message_in_groups_exists(master_keys.clone()))
         .filter(signal_message::Column::Deleted.eq(false))
         // .filter(signal_message::Column::DuplicateOf.is_null())
         .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
-        .filter(sigint_inbox_item::Column::Datetime.lt(dt_till))
-        // .filter(sigint_inbox_item::Column::Checked.eq(Some(true)))
-        .group_by(SimpleExpr::Custom("callsign".to_string()));
+        .filter(sigint_inbox_item::Column::Datetime.lt(dt_till));
     let callsigns_res = filter_selected_groups_and_senders_with_access(
         callsigns_res,
         &req.selected_groups,
@@ -1669,13 +1831,42 @@ pub(super) async fn count_tags_with_db(
 
     let instant = std::time::Instant::now();
     trace!("get identity master keys op took: {:?}", instant.elapsed());
-    let groups_res =
-        build_tags_query(&req.0, &login_value, dt_since, dt_till, master_keys)?;
-    let count = groups_res.count(db).await.context(h!())?;
-    Ok(count as i64)
+    let tags_res = build_tags_filtered_query(
+        &req.0,
+        &login_value,
+        dt_since,
+        dt_till,
+        master_keys,
+    )?;
+    count_distinct_with_db(
+        tags_res,
+        Expr::col(sigint_inbox_item_tag::Column::TagId).into(),
+        db,
+    )
+    .await
 }
 
 fn build_tags_query(
+    req: &AnalysisStatsReq,
+    login_str: &uuid::Uuid,
+    dt_since: NaiveDateTime,
+    dt_till: NaiveDateTime,
+    master_keys: Vec<String>,
+) -> Result<Select<sigint_inbox_item::Entity>, AppError> {
+    Ok(build_tags_filtered_query(
+        req,
+        login_str,
+        dt_since,
+        dt_till,
+        master_keys,
+    )?
+    .select_only()
+    .column(sigint_inbox_item_tag::Column::TagId)
+    .column_as(Expr::count(Expr::val(1)), "count")
+    .group_by(sigint_inbox_item_tag::Column::TagId))
+}
+
+fn build_tags_filtered_query(
     req: &AnalysisStatsReq,
     login_str: &uuid::Uuid,
     dt_since: NaiveDateTime,
@@ -1711,16 +1902,12 @@ fn build_tags_query(
             JoinType::InnerJoin,
             sigint_inbox_item_tag::Relation::Tag.def(),
         )
-        .select_only()
-        .column(sigint_inbox_item_tag::Column::TagId)
-        .column_as(Expr::count(Expr::val(1)), "count")
         .filter(accessible_tag_owner_condition(login_str))
         .filter(message_in_groups_exists(master_keys.clone()))
         .filter(signal_message::Column::Deleted.eq(false))
         // .filter(signal_message::Column::DuplicateOf.is_null())
         .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
-        .filter(sigint_inbox_item::Column::Datetime.lt(dt_till))
-        .group_by(sigint_inbox_item_tag::Column::TagId);
+        .filter(sigint_inbox_item::Column::Datetime.lt(dt_till));
     // .filter(sigint_inbox_item::Column::Checked.eq(Some(true)))
     if req.without_model_tags == Some(true) {
         tags_res =
@@ -1847,10 +2034,19 @@ pub(super) async fn count_units_with_db(
 
     let instant = std::time::Instant::now();
     trace!("get identity master keys op took: {:?}", instant.elapsed());
-    let groups_res =
-        build_units_query(&req, &user, dt_since, dt_till, master_keys)?;
-    let count = groups_res.count(db).await.context(h!())?;
-    Ok(count as i64)
+    let units_res = build_units_filtered_query(
+        &req,
+        &user,
+        dt_since,
+        dt_till,
+        master_keys,
+    )?;
+    count_distinct_with_db(
+        units_res,
+        Expr::col(sigint_inbox_item::Column::UnitV2).if_null(""),
+        db,
+    )
+    .await
 }
 
 pub async fn count_unit_exact_match_breakdown(
@@ -1924,6 +2120,28 @@ fn build_units_query(
     dt_till: NaiveDateTime,
     master_keys: Vec<String>,
 ) -> Result<Select<sigint_inbox_item::Entity>, AppError> {
+    Ok(
+        build_units_filtered_query(req, user, dt_since, dt_till, master_keys)?
+            .select_only()
+            .column_as(
+                Expr::col(sigint_inbox_item::Column::UnitV2).if_null(""),
+                "unit",
+            )
+            .column_as(
+                Expr::cust(r#"COUNT(DISTINCT "signal_message"."id")"#),
+                "count",
+            )
+            .group_by(Expr::cust("1")),
+    )
+}
+
+fn build_units_filtered_query(
+    req: &&Json<AnalysisStatsReq>,
+    user: &&Identity,
+    dt_since: NaiveDateTime,
+    dt_till: NaiveDateTime,
+    master_keys: Vec<String>,
+) -> Result<Select<sigint_inbox_item::Entity>, AppError> {
     let include_peleng_locations =
         req.include_peleng_locations.unwrap_or(false);
     let units_res = sigint_inbox_item::Entity::find()
@@ -1935,22 +2153,11 @@ fn build_units_query(
             JoinType::LeftJoin,
             sigint_inbox_item::Relation::SigintPost.def(),
         )
-        .select_only()
-        .column_as(
-            Expr::col(sigint_inbox_item::Column::UnitV2).if_null(""),
-            "unit",
-        )
-        .column_as(
-            Expr::cust(r#"COUNT(DISTINCT "signal_message"."id")"#),
-            "count",
-        )
         .filter(message_in_groups_exists(master_keys.clone()))
         .filter(signal_message::Column::Deleted.eq(false))
         // .filter(signal_message::Column::DuplicateOf.is_null())
         .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
-        .filter(sigint_inbox_item::Column::Datetime.lt(dt_till))
-        // .filter(sigint_inbox_item::Column::Checked.eq(Some(true)))
-        .group_by(Expr::cust("1"));
+        .filter(sigint_inbox_item::Column::Datetime.lt(dt_till));
     let units_res = filter_selected_groups_and_senders_with_access(
         units_res,
         &req.selected_groups,
@@ -2091,13 +2298,48 @@ pub(super) async fn count_locations_with_db(
 
     let instant = std::time::Instant::now();
     trace!("get identity master keys op took: {:?}", instant.elapsed());
-    let groups_res =
-        build_locations_query(&req, &user, dt_since, dt_till, master_keys)?;
-    let count = groups_res.count(db).await.context(h!())?;
-    Ok(count as i64)
+    let locations_res = build_locations_filtered_query(
+        &req,
+        &user,
+        dt_since,
+        dt_till,
+        master_keys,
+    )?;
+    count_distinct_with_db(
+        locations_res,
+        Expr::col(sigint_inbox_item::Column::LocationV2).if_null(""),
+        db,
+    )
+    .await
 }
 
-fn build_locations_query(
+fn build_locations_query_for_login(
+    req: &AnalysisStatsReq,
+    login_str: &uuid::Uuid,
+    dt_since: NaiveDateTime,
+    dt_till: NaiveDateTime,
+    master_keys: Vec<String>,
+) -> Result<Select<sigint_inbox_item::Entity>, AppError> {
+    Ok(build_locations_filtered_query_for_login(
+        req,
+        login_str,
+        dt_since,
+        dt_till,
+        master_keys,
+    )?
+    .select_only()
+    .column_as(
+        Expr::col(sigint_inbox_item::Column::LocationV2).if_null(""),
+        "location",
+    )
+    .column_as(
+        Expr::cust(r#"COUNT(DISTINCT "signal_message"."id")"#),
+        "count",
+    )
+    .group_by(Expr::cust("1")))
+}
+
+fn build_locations_filtered_query(
     req: &&Json<AnalysisStatsReq>,
     user: &&Identity,
     dt_since: NaiveDateTime,
@@ -2105,7 +2347,7 @@ fn build_locations_query(
     master_keys: Vec<String>,
 ) -> Result<Select<sigint_inbox_item::Entity>, AppError> {
     let login_value = login_id_from_identity(user)?;
-    build_locations_query_for_login(
+    build_locations_filtered_query_for_login(
         &req.0,
         &login_value,
         dt_since,
@@ -2114,7 +2356,7 @@ fn build_locations_query(
     )
 }
 
-fn build_locations_query_for_login(
+fn build_locations_filtered_query_for_login(
     req: &AnalysisStatsReq,
     login_str: &uuid::Uuid,
     dt_since: NaiveDateTime,
@@ -2130,22 +2372,11 @@ fn build_locations_query_for_login(
             JoinType::LeftJoin,
             sigint_inbox_item::Relation::SigintPost.def(),
         )
-        .select_only()
-        .column_as(
-            Expr::col(sigint_inbox_item::Column::LocationV2).if_null(""),
-            "location",
-        )
-        .column_as(
-            Expr::cust(r#"COUNT(DISTINCT "signal_message"."id")"#),
-            "count",
-        )
         .filter(message_in_groups_exists(master_keys.clone()))
         .filter(signal_message::Column::Deleted.eq(false))
         // .filter(signal_message::Column::DuplicateOf.is_null())
         .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
-        .filter(sigint_inbox_item::Column::Datetime.lt(dt_till))
-        // .filter(sigint_inbox_item::Column::Checked.eq(Some(true)))
-        .group_by(Expr::cust("1"));
+        .filter(sigint_inbox_item::Column::Datetime.lt(dt_till));
     let locations_res = filter_selected_groups_and_senders_with_access(
         locations_res,
         &req.selected_groups,
@@ -3423,4 +3654,23 @@ fn build_join_for_sigint_inbox_item() -> Select<Entity> {
             sigint_inbox_item::Relation::SigintPost.def(),
         )
         .filter(signal_message::Column::Deleted.eq(false))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn distinct_count_query_aggregates_without_grouping() {
+        let query = build_distinct_count_query(
+            sigint_inbox_item::Entity::find(),
+            Expr::col(sigint_inbox_item::Column::Freq).into(),
+        )
+        .build(DbBackend::Postgres)
+        .to_string();
+
+        assert!(query.contains("COUNT(DISTINCT"));
+        assert!(query.contains(r#""freq""#));
+        assert!(!query.contains("GROUP BY"));
+    }
 }
