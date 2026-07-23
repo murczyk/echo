@@ -319,4 +319,23 @@ test.describe('@smoke', () => {
       await page.getByRole('button', { name: 'Згорнути ліву панель' }).click();
     }
   });
+
+  test('analysis neo updates summary page-size controls across phone resize', async ({ page }) => {
+    await page.setViewportSize({ width: 844, height: 844 });
+    await setupAnalysisNeoPage(page, { inboxResponse: createLoadedInboxResponse() });
+    await page.goto('/rer-analysis-neo');
+    await page.getByRole('tab', { name: 'Зведена таблиця' }).click();
+
+    const rowsPerPageSelect = page.getByText('Рядків на сторінці:', { exact: true });
+    await expect(rowsPerPageSelect).toBeVisible();
+
+    await page.setViewportSize({ width: 390, height: 844 });
+    await expect(rowsPerPageSelect).toBeHidden();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
+      390,
+    );
+
+    await page.setViewportSize({ width: 844, height: 844 });
+    await expect(rowsPerPageSelect).toBeVisible();
+  });
 });

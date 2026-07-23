@@ -11,7 +11,7 @@ import { CallsignChipsCell, CompactListCell } from './analysis-summary-table-cel
 
 const capturedRowActionProps: Array<{ label: string; opensModal?: boolean }> = [];
 const capturedTableOptions: Array<Record<string, any>> = [];
-const originalInnerWidth = window.innerWidth;
+const useMediaQueryMock = vi.hoisted(() => vi.fn(() => false));
 
 vi.mock('@mui/icons-material/DownloadOutlined', () => ({ default: () => <span>download</span> }));
 vi.mock('@mui/icons-material/EditOutlined', () => ({ default: () => <span>edit</span> }));
@@ -95,6 +95,11 @@ vi.mock('@mui/material', () => ({
   },
   Tooltip: ({ children }: { children: ReactNode }) => <>{children}</>,
   Typography: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  useMediaQuery: useMediaQueryMock,
+}));
+
+vi.mock('@mui/material/styles', () => ({
+  useTheme: () => ({ breakpoints: { down: vi.fn(() => 'down-sm') } }),
 }));
 
 vi.mock('material-react-table', () => ({
@@ -379,7 +384,7 @@ describe('AnalysisSummaryTableCard', () => {
     }
     capturedRowActionProps.splice(0);
     capturedTableOptions.splice(0);
-    window.innerWidth = originalInnerWidth;
+    useMediaQueryMock.mockReturnValue(false);
   });
 
   function getPaginationProps(): Record<string, any> {
@@ -392,7 +397,7 @@ describe('AnalysisSummaryTableCard', () => {
   }
 
   async function renderAtWidth(width: number): Promise<Rendered> {
-    window.innerWidth = width;
+    useMediaQueryMock.mockReturnValue(width < 600);
     return renderComponent(buildProps());
   }
 
@@ -410,6 +415,21 @@ describe('AnalysisSummaryTableCard', () => {
     rendered.push(view);
 
     expect(getPaginationProps().showRowsPerPage).toBe(true);
+  });
+
+  it('recalculates page-size visibility when the mounted table crosses the breakpoint', async () => {
+    useMediaQueryMock.mockReturnValue(false);
+    const props = buildProps();
+    const view = await renderComponent(props);
+    rendered.push(view);
+    expect(getPaginationProps().showRowsPerPage).toBe(true);
+
+    useMediaQueryMock.mockReturnValue(true);
+    await act(async () => {
+      view.root.render(<AnalysisSummaryTableCard {...props} sx={{}} />);
+    });
+
+    expect(getPaginationProps().showRowsPerPage).toBe(false);
   });
 
   it('preserves desktop page-size options', async () => {
