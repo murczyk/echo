@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import type { AutocompleteInputChangeReason } from '@mui/material/Autocomplete';
 import { findSettlementPrefix, type SettlementDetails } from '../../../../services/api/settlements';
 import { HttpRequestError, isAbortError } from '../../../../services/api/client';
 import { parseCoordLine } from '../manage-message-drawer.schema';
@@ -18,7 +19,7 @@ type UseSettlementAutocompleteParams = {
 type UseSettlementAutocompleteResult = {
   settlementOptions: SettlementDetails[];
   loading: boolean;
-  onInputChange: (value: string, reason: string) => void;
+  onInputChange: (value: string, reason: AutocompleteInputChangeReason) => void;
 };
 
 function relatedCoordinates(coordsText: string | undefined): [number, number] | null {
@@ -125,7 +126,14 @@ export function useSettlementAutocomplete({
   }, [signalGroupMasterKey, busy, cancelSearch, open, scheduleSearch]);
 
   const onInputChange = useCallback(
-    (value: string, reason: string) => {
+    (value: string, reason: AutocompleteInputChangeReason) => {
+      if (reason !== 'input' && value.trim() === '') {
+        inputValueRef.current = '';
+        cancelSearch();
+        setSettlementOptions([]);
+        setLoading(false);
+        return;
+      }
       if (reason !== 'input') return;
       inputValueRef.current = value;
       cancelSearch();

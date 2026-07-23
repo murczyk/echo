@@ -106,6 +106,12 @@ describe('useSettlementAutocomplete', () => {
     });
   }
 
+  async function inputEvent(value: string, reason: 'clear' | 'reset' | 'selectOption') {
+    await act(async () => {
+      latest?.onInputChange(value, reason);
+    });
+  }
+
   async function advance(ms: number) {
     await act(async () => {
       await vi.advanceTimersByTimeAsync(ms);
@@ -263,6 +269,68 @@ describe('useSettlementAutocomplete', () => {
     await act(async () => request.resolve([merefaKharkiv]));
     expect(latest?.settlementOptions).toEqual([]);
     expect(onError).not.toHaveBeenCalled();
+  });
+
+  it.each(['clear', 'reset', 'selectOption'] as const)(
+    'clears loaded options for an empty %s event',
+    async (reason) => {
+      findSettlementPrefixMock.mockResolvedValueOnce([merefaKharkiv]);
+      await render();
+      await input('мер');
+      await advance(300);
+      expect(latest?.settlementOptions).toEqual([merefaKharkiv]);
+
+      await inputEvent('', reason);
+
+      expect(latest?.settlementOptions).toEqual([]);
+      expect(latest?.loading).toBe(false);
+    },
+  );
+
+  it.each(['clear', 'reset', 'selectOption'] as const)(
+    'aborts an active request for an empty %s event and ignores its result',
+    async (reason) => {
+      const request = deferred<SettlementDetails[]>();
+      findSettlementPrefixMock.mockReturnValueOnce(request.promise);
+      await render();
+      await input('мер');
+      await advance(300);
+      const signal = findSettlementPrefixMock.mock.calls[0][0].signal;
+
+      await inputEvent('', reason);
+
+      expect(signal?.aborted).toBe(true);
+      expect(latest?.settlementOptions).toEqual([]);
+      expect(latest?.loading).toBe(false);
+      await act(async () => request.resolve([merefaKharkiv]));
+      expect(latest?.settlementOptions).toEqual([]);
+    },
+  );
+
+  it.each(['clear', 'reset', 'selectOption'] as const)(
+    'does not restart a cleared prefix after a group change from an empty %s event',
+    async (reason) => {
+      const request = deferred<SettlementDetails[]>();
+      findSettlementPrefixMock.mockReturnValueOnce(request.promise);
+      await render({ signalGroupMasterKey: 'group-1' });
+      await input('мер');
+      await advance(300);
+      await inputEvent('', reason);
+
+      await render({ signalGroupMasterKey: 'group-2' });
+      await advance(300);
+
+      expect(findSettlementPrefixMock).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it('ignores a non-empty reset event', async () => {
+    await render();
+
+    await inputEvent('МЕРЕФА', 'reset');
+    await advance(300);
+
+    expect(findSettlementPrefixMock).not.toHaveBeenCalled();
   });
 
   it('restarts the current query with a new group after aborting the old request', async () => {
