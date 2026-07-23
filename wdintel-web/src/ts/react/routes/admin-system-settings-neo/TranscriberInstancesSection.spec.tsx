@@ -49,10 +49,29 @@ async function renderSection() {
   return { container, root };
 }
 
-function button(text: string): HTMLButtonElement | undefined {
+function button(label: string): HTMLButtonElement | undefined {
   return Array.from(document.querySelectorAll('button')).find(
-    (item) => item.textContent?.trim() === text,
+    (item) => item.textContent?.trim() === label || item.getAttribute('aria-label') === label,
   );
+}
+
+async function clickButton(label: string) {
+  await act(async () => {
+    button(label)?.click();
+    await new Promise((resolve) => window.setTimeout(resolve, 410));
+  });
+}
+
+function editorDialog(): HTMLElement {
+  const dialog = Array.from(document.querySelectorAll<HTMLElement>('[role="dialog"]')).find(
+    (item) => item.textContent?.includes('Echo GPU інстанс'),
+  );
+  if (!dialog) throw new Error('Editor dialog was not found');
+  return dialog;
+}
+
+function editorInputs(): NodeListOf<HTMLInputElement> {
+  return editorDialog().querySelectorAll<HTMLInputElement>('input:not([type="checkbox"])');
 }
 
 function setInput(input: HTMLInputElement, value: string) {
@@ -63,13 +82,27 @@ function setInput(input: HTMLInputElement, value: string) {
 
 async function confirmMutation() {
   expect(document.body.textContent).toContain('wdintel-rs-bgworker');
-  await act(async () => button('підтвердити')?.click());
-  await act(async () => Promise.resolve());
-  await act(async () => Promise.resolve());
+  await clickButton('Підтвердити');
 }
 
 describe('TranscriberInstancesSection', () => {
   beforeEach(() => {
+    const storage = new Map<string, string>();
+    Object.defineProperty(window, 'localStorage', {
+      configurable: true,
+      value: {
+        getItem: (key: string) => storage.get(key) ?? null,
+        setItem: (key: string, value: string) => {
+          storage.set(key, value);
+        },
+        removeItem: (key: string) => {
+          storage.delete(key);
+        },
+        clear: () => {
+          storage.clear();
+        },
+      },
+    });
     mocks.list.mockReset().mockResolvedValue([]);
     mocks.create.mockReset();
     mocks.update.mockReset();
@@ -80,9 +113,10 @@ describe('TranscriberInstancesSection', () => {
 
   afterEach(() => {
     document.body.innerHTML = '';
+    delete (window as { localStorage?: Storage }).localStorage;
   });
 
-  it('validates input and confirms create before reporting restart failure', async () => {
+  it('uses a common table with an add dialog and reports restart failure after create', async () => {
     mocks.create.mockResolvedValue({
       instance,
       deleted: false,
@@ -90,16 +124,20 @@ describe('TranscriberInstancesSection', () => {
       restart_error: 'systemd unavailable',
     });
     const { container, root } = await renderSection();
-    await act(async () => button('додати інстанс')?.click());
-    expect(mocks.create).not.toHaveBeenCalled();
-    expect(container.textContent).toContain('Вкажіть назву інстансу');
+    expect(container.querySelector('table')).not.toBeNull();
+    expect(button('Додати інстанс')).toBeDefined();
 
-    const inputs = container.querySelectorAll<HTMLInputElement>('input');
+    await clickButton('Додати інстанс');
+    await clickButton('Додати');
+    expect(mocks.create).not.toHaveBeenCalled();
+    expect(document.body.textContent).toContain('Вкажіть назву інстансу');
+
+    const inputs = editorInputs();
     await act(async () => {
       setInput(inputs[0], 'GPU 1');
       setInput(inputs[1], 'gpu-1.local');
     });
-    await act(async () => button('додати інстанс')?.click());
+    await clickButton('Додати');
     expect(mocks.create).not.toHaveBeenCalled();
     await confirmMutation();
     expect(mocks.create).toHaveBeenCalledWith({
@@ -113,10 +151,11 @@ describe('TranscriberInstancesSection', () => {
     await act(async () => root.unmount());
   });
 
-  it('uses operator defaults and the next available ordering', async () => {
+  it('uses operator defaults and the next available ordering in the add dialog', async () => {
     mocks.list.mockResolvedValue([{ ...instance, ordering: 4 }]);
-    const { container, root } = await renderSection();
-    const inputs = container.querySelectorAll<HTMLInputElement>('input');
+    const { root } = await renderSection();
+    await clickButton('Додати інстанс');
+    const inputs = editorInputs();
     expect(inputs[2].value).toBe('3001');
     expect(inputs[3].value).toBe('3000');
     expect(inputs[4].value).toBe('5');
@@ -124,37 +163,38 @@ describe('TranscriberInstancesSection', () => {
   });
 
   it('rejects values outside backend text and ordering limits', async () => {
-    const { container, root } = await renderSection();
-    const inputs = container.querySelectorAll<HTMLInputElement>('input');
+    const { root } = await renderSection();
+    await clickButton('Додати інстанс');
+    const inputs = editorInputs();
     await act(async () => {
       setInput(inputs[0], 'я'.repeat(256));
       setInput(inputs[1], 'gpu-1.local');
     });
-    await act(async () => button('додати інстанс')?.click());
-    expect(container.textContent).toContain('не більше 255 символів');
+    await clickButton('Додати');
+    expect(document.body.textContent).toContain('не більше 255 символів');
 
     await act(async () => {
       setInput(inputs[0], 'GPU 1');
       setInput(inputs[4], '2147483648');
     });
-    await act(async () => button('додати інстанс')?.click());
-    expect(container.textContent).toContain('2147483647');
+    await clickButton('Додати');
+    expect(document.body.textContent).toContain('2147483647');
     expect(mocks.create).not.toHaveBeenCalled();
     await act(async () => root.unmount());
   });
 
-  it('checks both services without mutation confirmation', async () => {
+  it('checks both services from the edit dialog without mutation confirmation', async () => {
     mocks.list.mockResolvedValue([instance]);
     mocks.check.mockResolvedValue({
       rust: { ok: true, status: 200, error: null },
       python: { ok: false, status: 503, error: 'busy' },
     });
-    const { container, root } = await renderSection();
-    await act(async () => button('перевірити')?.click());
-    await act(async () => Promise.resolve());
+    const { root } = await renderSection();
+    await clickButton('Редагувати');
+    await clickButton('Перевірити');
     expect(mocks.check).toHaveBeenCalledWith(instance.id);
     expect(document.body.textContent).not.toContain('wdintel-rs-bgworker');
-    expect(container.textContent).toContain('Rust: доступний; Python: недоступний');
+    expect(document.body.textContent).toContain('Rust: доступний; Python: недоступний');
     await act(async () => root.unmount());
   });
 
@@ -166,15 +206,14 @@ describe('TranscriberInstancesSection', () => {
         python: { ok: true, status: 200, error: null },
       })
       .mockRejectedValueOnce(new Error('probe failed'));
-    const { container, root } = await renderSection();
-    await act(async () => button('перевірити')?.click());
-    await act(async () => Promise.resolve());
-    expect(container.textContent).toContain('Rust: доступний');
+    const { root } = await renderSection();
+    await clickButton('Редагувати');
+    await clickButton('Перевірити');
+    expect(document.body.textContent).toContain('Rust: доступний');
 
-    await act(async () => button('перевірити')?.click());
-    await act(async () => Promise.resolve());
-    expect(container.textContent).not.toContain('Rust: доступний');
-    expect(container.textContent).toContain('probe failed');
+    await clickButton('Перевірити');
+    expect(document.body.textContent).not.toContain('Rust: доступний');
+    expect(document.body.textContent).toContain('probe failed');
     await act(async () => root.unmount());
   });
 
@@ -187,8 +226,8 @@ describe('TranscriberInstancesSection', () => {
       restart_error: null,
     });
     const { root } = await renderSection();
-    await act(async () => button('редагувати')?.click());
-    await act(async () => button('зберегти інстанс')?.click());
+    await clickButton('Редагувати');
+    await clickButton('Зберегти');
     expect(mocks.update).not.toHaveBeenCalled();
     await confirmMutation();
     expect(mocks.update).toHaveBeenCalledWith(instance.id, {
@@ -197,6 +236,7 @@ describe('TranscriberInstancesSection', () => {
       rs_port: instance.rs_port,
       py_port: instance.py_port,
       ordering: instance.ordering,
+      is_active: true,
     });
     await act(async () => root.unmount());
   });
@@ -216,14 +256,23 @@ describe('TranscriberInstancesSection', () => {
       restart_error: null,
     });
     const first = await renderSection();
-    const activeSwitch = first.container.querySelector<HTMLInputElement>('input[type="checkbox"]');
+    await clickButton('Редагувати');
+    const activeSwitch = editorDialog().querySelector<HTMLInputElement>('input[type="checkbox"]');
     await act(async () => activeSwitch?.click());
+    await clickButton('Зберегти');
     await confirmMutation();
-    expect(mocks.update).toHaveBeenCalledWith(instance.id, { is_active: false });
+    expect(mocks.update).toHaveBeenCalledWith(instance.id, {
+      name: instance.name,
+      host: instance.host,
+      rs_port: instance.rs_port,
+      py_port: instance.py_port,
+      ordering: instance.ordering,
+      is_active: false,
+    });
     await act(async () => first.root.unmount());
 
     const second = await renderSection();
-    await act(async () => button('видалити')?.click());
+    await clickButton('Видалити');
     expect(mocks.remove).not.toHaveBeenCalled();
     await confirmMutation();
     expect(mocks.remove).toHaveBeenCalledWith(instance.id);
@@ -241,7 +290,7 @@ describe('TranscriberInstancesSection', () => {
     const { container, root } = await renderSection();
     expect(container.textContent).toContain(instance.name);
 
-    await act(async () => button('видалити')?.click());
+    await clickButton('Видалити');
     await confirmMutation();
 
     expect(container.textContent).not.toContain(instance.name);
@@ -249,7 +298,7 @@ describe('TranscriberInstancesSection', () => {
     await act(async () => root.unmount());
   });
 
-  it('disables mutation controls while a request is in flight', async () => {
+  it('disables editor mutation controls while a request is in flight', async () => {
     mocks.list.mockResolvedValue([instance]);
     let finishCheck: ((health: unknown) => void) | undefined;
     mocks.check.mockReturnValue(
@@ -257,15 +306,16 @@ describe('TranscriberInstancesSection', () => {
         finishCheck = resolve;
       }),
     );
-    const { container, root } = await renderSection();
+    const { root } = await renderSection();
+    await clickButton('Редагувати');
     await act(async () => {
-      button('перевірити')?.click();
+      button('Перевірити')?.click();
       await Promise.resolve();
     });
 
-    expect(button('редагувати')?.disabled).toBe(true);
-    expect(button('видалити')?.disabled).toBe(true);
-    expect(container.querySelector<HTMLInputElement>('input[type="checkbox"]')?.disabled).toBe(
+    expect(button('Зберегти')?.disabled).toBe(true);
+    expect(button('Скасувати')?.disabled).toBe(true);
+    expect(editorDialog().querySelector<HTMLInputElement>('input[type="checkbox"]')?.disabled).toBe(
       true,
     );
 

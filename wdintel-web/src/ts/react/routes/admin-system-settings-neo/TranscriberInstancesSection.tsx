@@ -1,7 +1,7 @@
+import DeleteIcon from '@mui/icons-material/Delete';
+import EditIcon from '@mui/icons-material/Edit';
 import {
-  Button,
-  Card,
-  CardContent,
+  Box,
   Dialog,
   DialogActions,
   DialogContent,
@@ -13,10 +13,29 @@ import {
   TextField,
   Typography,
 } from '@mui/material';
-import { useCallback, useEffect, useState } from 'react';
+import { MRT_ColumnDef, MaterialReactTable, useMaterialReactTable } from 'material-react-table';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
+import { STANDARD_DIALOG_ACTIONS_SX } from '../../components/dialogStyles';
+import { MrtRowActionButton } from '../../components/MrtRowActionButton';
 import { PowerAlert } from '../../components/PowerAlert';
+import { PowerButton } from '../../components/PowerButton';
 import { usePowerSnackbar } from '../../components/PowerSnackbar';
+import { TablePageToolbar } from '../../components/TablePageToolbar';
+import {
+  CUSTOM_CELL_STYLES,
+  CUSTOM_STYLES,
+  getDefaultMrtContainerProps,
+  getDefaultMrtPaperProps,
+} from '../../components/mui-customized/table/custom-styles';
+import {
+  getDefaultMRTOptions,
+  renderColumnActionsMenuItems,
+} from '../../components/mui-customized/table/get-default-table-options';
+import {
+  TableStateProvider,
+  useTableStateContext,
+} from '../../components/mui-customized/table/table-state-provider';
 import {
   checkTranscriberInstance,
   createTranscriberInstance,
@@ -31,6 +50,37 @@ import {
 
 const GPU_INSTANCE_TEXT_MAX_CHARS = 255;
 const POSTGRES_INTEGER_MAX = 2_147_483_647;
+
+const DEFAULT_COLUMNS_VISIBILITY = {
+  ordering: true,
+  name: true,
+  host: true,
+  rs_port: true,
+  py_port: true,
+  is_active: true,
+};
+
+const DEFAULT_COLUMN_ORDER = [
+  'mrt-row-numbers',
+  'mrt-row-actions',
+  'ordering',
+  'name',
+  'host',
+  'rs_port',
+  'py_port',
+  'is_active',
+];
+
+const defaultMRTOptions = getDefaultMRTOptions<TranscriberInstance>();
+
+type EditorMode = 'create' | 'edit' | null;
+
+type PendingMutation = {
+  title: string;
+  instanceId?: string;
+  closeEditorOnSuccess?: boolean;
+  run: () => Promise<TranscriberMutationResult>;
+};
 
 function emptyInputForInstances(instances: TranscriberInstance[]): TranscriberInstanceInput {
   return {
@@ -80,12 +130,6 @@ function healthText(health: TranscriberInstanceHealth['rust']): string {
   return details.length > 0 ? `недоступний (${details.join(': ')})` : 'недоступний';
 }
 
-type PendingMutation = {
-  title: string;
-  instanceId?: string;
-  run: () => Promise<TranscriberMutationResult>;
-};
-
 function sortInstances(instances: TranscriberInstance[]): TranscriberInstance[] {
   return [...instances].sort(
     (left, right) =>
@@ -95,11 +139,278 @@ function sortInstances(instances: TranscriberInstance[]): TranscriberInstance[] 
   );
 }
 
-export function TranscriberInstancesSection() {
+function TranscriberInstancesTable({
+  instances,
+  loading,
+  onEdit,
+  onDelete,
+}: {
+  instances: TranscriberInstance[];
+  loading: boolean;
+  onEdit: (instance: TranscriberInstance) => void;
+  onDelete: (instance: TranscriberInstance) => void;
+}) {
+  const tableStateContext = useTableStateContext();
+  const columns = useMemo<MRT_ColumnDef<TranscriberInstance>[]>(
+    () => [
+      { header: 'Порядок', accessorKey: 'ordering', size: 90 },
+      { header: 'Назва', accessorKey: 'name', size: 180 },
+      { header: 'Хост', accessorKey: 'host', size: 220 },
+      { header: 'Rust порт', accessorKey: 'rs_port', size: 110 },
+      { header: 'Python порт', accessorKey: 'py_port', size: 120 },
+      {
+        header: 'Активний',
+        accessorKey: 'is_active',
+        size: 110,
+        Cell: ({ cell }) => (cell.getValue<boolean>() ? 'Так' : 'Ні'),
+      },
+    ],
+    [],
+  );
+
+  const table = useMaterialReactTable({
+    columns,
+    data: instances,
+    ...defaultMRTOptions,
+    enableSorting: true,
+    enableColumnActions: true,
+    enableRowNumbers: true,
+    enableColumnFilters: true,
+    enableColumnFilterModes: true,
+    enableFacetedValues: true,
+    enableRowVirtualization: false,
+    enableRowActions: true,
+    positionActionsColumn: 'first',
+    renderRowActions: ({ row }) => (
+      <Stack direction="row" spacing={0.5}>
+        <MrtRowActionButton
+          label="Редагувати"
+          onClick={() => onEdit(row.original)}
+          icon={<EditIcon fontSize="small" />}
+          disabled={loading}
+          opensModal
+        />
+        <MrtRowActionButton
+          label="Видалити"
+          onClick={() => onDelete(row.original)}
+          icon={<DeleteIcon fontSize="small" />}
+          disabled={loading}
+          tone="danger"
+          opensModal
+        />
+      </Stack>
+    ),
+    enableColumnOrdering: tableStateContext.enableColumnOrdering,
+    enableColumnResizing: tableStateContext.enableColumnResizing,
+    columnFilterDisplayMode: 'popover',
+    globalFilterFn: 'contains',
+    onColumnVisibilityChange: tableStateContext.onColumnVisibilityChange,
+    onColumnFiltersChange: tableStateContext.onColumnFiltersChange,
+    onColumnOrderChange: tableStateContext.onColumnOrderChange,
+    onColumnSizingChange: tableStateContext.onColumnSizingChange,
+    onSortingChange: tableStateContext.onSortingChange,
+    onGlobalFilterChange: tableStateContext.onChangeGlobalFilter,
+    getColumnCanGlobalFilter: (column) => column.getIsVisible(),
+    defaultColumn: {
+      size: 180,
+      renderColumnActionsMenuItems,
+    },
+    displayColumnDefOptions: {
+      ...CUSTOM_STYLES.displayColumnDefOptions,
+      'mrt-row-actions': {
+        ...CUSTOM_STYLES.displayColumnDefOptions['mrt-row-actions'],
+        size: 80,
+      },
+      'mrt-row-numbers': {
+        ...CUSTOM_STYLES.displayColumnDefOptions['mrt-row-numbers'],
+        muiTableBodyCellProps: () => ({
+          sx: {
+            justifyContent: 'center',
+            ...CUSTOM_CELL_STYLES,
+          },
+        }),
+      },
+    },
+    muiTablePaperProps: ({ table }) => getDefaultMrtPaperProps({ table, loading, layout: 'list' }),
+    muiTableContainerProps: ({ table }) =>
+      getDefaultMrtContainerProps({
+        loading,
+        layout: 'list',
+        fullScreen: table.getState().isFullScreen,
+        hasRows: instances.length > 0,
+      }),
+    state: {
+      showAlertBanner: false,
+      isLoading: loading && instances.length === 0,
+      showProgressBars: loading,
+      globalFilter: tableStateContext.globalFilter,
+      columnVisibility: tableStateContext.columnVisibility,
+      columnFilters: tableStateContext.columnFilters,
+      density: tableStateContext.density,
+      sorting: tableStateContext.sorting,
+      columnOrder: tableStateContext.columnOrder,
+      columnSizing: tableStateContext.columnSizing,
+    },
+  });
+
+  useEffect(() => {
+    tableStateContext.onTableInitialized(table);
+  }, [table]);
+
+  return <MaterialReactTable table={table} />;
+}
+
+function InstanceEditorDialog({
+  mode,
+  input,
+  isActive,
+  loading,
+  error,
+  health,
+  onInputChange,
+  onIsActiveChange,
+  onCheck,
+  onClose,
+  onSave,
+}: {
+  mode: EditorMode;
+  input: TranscriberInstanceInput;
+  isActive: boolean;
+  loading: boolean;
+  error: string | null;
+  health?: TranscriberInstanceHealth;
+  onInputChange: (patch: Partial<TranscriberInstanceInput>) => void;
+  onIsActiveChange: (checked: boolean) => void;
+  onCheck: () => void;
+  onClose: () => void;
+  onSave: () => void;
+}) {
+  const isCreateMode = mode === 'create';
+
+  return (
+    <Dialog open={mode !== null} onClose={onClose} fullWidth maxWidth="sm" disableRestoreFocus>
+      <DialogTitle>
+        {isCreateMode ? 'Додати Echo GPU інстанс' : 'Редагувати Echo GPU інстанс'}
+      </DialogTitle>
+      <DialogContent>
+        <Stack spacing={2} sx={{ pt: 1 }}>
+          {error ? <PowerAlert severity="error">{error}</PowerAlert> : null}
+          <TextField
+            autoFocus
+            fullWidth
+            label="Назва"
+            value={input.name}
+            disabled={loading}
+            onChange={(event) => onInputChange({ name: event.target.value })}
+          />
+          <TextField
+            fullWidth
+            label="Хост"
+            value={input.host}
+            disabled={loading}
+            onChange={(event) => onInputChange({ host: event.target.value })}
+          />
+          <TextField
+            fullWidth
+            label="Rust порт"
+            type="number"
+            value={input.rs_port}
+            disabled={loading}
+            slotProps={{ htmlInput: { min: 1, max: 65535 } }}
+            onChange={(event) => onInputChange({ rs_port: Number(event.target.value) })}
+          />
+          <TextField
+            fullWidth
+            label="Python порт"
+            type="number"
+            value={input.py_port}
+            disabled={loading}
+            slotProps={{ htmlInput: { min: 1, max: 65535 } }}
+            onChange={(event) => onInputChange({ py_port: Number(event.target.value) })}
+          />
+          <TextField
+            fullWidth
+            label="Порядок"
+            type="number"
+            value={input.ordering}
+            disabled={loading}
+            slotProps={{ htmlInput: { min: 1, max: POSTGRES_INTEGER_MAX } }}
+            onChange={(event) => onInputChange({ ordering: Number(event.target.value) })}
+          />
+          {!isCreateMode ? (
+            <FormControlLabel
+              control={
+                <Switch
+                  checked={isActive}
+                  disabled={loading}
+                  onChange={(_, checked) => onIsActiveChange(checked)}
+                />
+              }
+              label="Активний"
+            />
+          ) : null}
+          {health ? (
+            <Typography variant="body2">
+              Rust: {healthText(health.rust)}; Python: {healthText(health.python)}
+            </Typography>
+          ) : null}
+        </Stack>
+      </DialogContent>
+      <DialogActions sx={STANDARD_DIALOG_ACTIONS_SX}>
+        {!isCreateMode ? (
+          <PowerButton type="button" variant="outlined" disabled={loading} onClick={onCheck}>
+            Перевірити
+          </PowerButton>
+        ) : null}
+        <PowerButton type="button" disabled={loading} onClick={onClose}>
+          Скасувати
+        </PowerButton>
+        <PowerButton type="button" variant="contained" disabled={loading} onClick={onSave}>
+          {isCreateMode ? 'Додати' : 'Зберегти'}
+        </PowerButton>
+      </DialogActions>
+    </Dialog>
+  );
+}
+
+function MutationConfirmDialog({
+  mutation,
+  onCancel,
+  onConfirm,
+}: {
+  mutation: PendingMutation | null;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <Dialog open={mutation !== null} onClose={onCancel}>
+      <DialogTitle>{mutation?.title}</DialogTitle>
+      <DialogContent>
+        <DialogContentText>
+          Після підтвердження wdintel-rs-bgworker буде коректно перезапущено. Поточне
+          транскрибування матиме час завершитися.
+        </DialogContentText>
+      </DialogContent>
+      <DialogActions sx={STANDARD_DIALOG_ACTIONS_SX}>
+        <PowerButton type="button" onClick={onCancel}>
+          Скасувати
+        </PowerButton>
+        <PowerButton type="button" variant="contained" onClick={onConfirm}>
+          Підтвердити
+        </PowerButton>
+      </DialogActions>
+    </Dialog>
+  );
+}
+
+function TranscriberInstancesSectionBody() {
   const [instances, setInstances] = useState<TranscriberInstance[]>([]);
   const [input, setInput] = useState(() => emptyInputForInstances([]));
+  const [formIsActive, setFormIsActive] = useState(true);
+  const [editorMode, setEditorMode] = useState<EditorMode>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [formError, setFormError] = useState<string | null>(null);
   const [restartWarning, setRestartWarning] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [pendingMutation, setPendingMutation] = useState<PendingMutation | null>(null);
@@ -110,7 +421,7 @@ export function TranscriberInstancesSection() {
     setLoading(true);
     setError(null);
     try {
-      const nextInstances = await listTranscriberInstances();
+      const nextInstances = sortInstances(await listTranscriberInstances());
       setInstances(nextInstances);
       setHealth({});
       return nextInstances;
@@ -123,29 +434,57 @@ export function TranscriberInstancesSection() {
   }, []);
 
   useEffect(() => {
-    void refresh().then((nextInstances) => {
-      if (nextInstances) {
-        setInput((current) =>
-          current.name || current.host ? current : emptyInputForInstances(nextInstances),
-        );
-      }
-    });
+    void refresh();
   }, [refresh]);
+
+  function openCreate() {
+    setInput(emptyInputForInstances(instances));
+    setFormIsActive(true);
+    setEditingId(null);
+    setFormError(null);
+    setEditorMode('create');
+  }
+
+  function openEdit(instance: TranscriberInstance) {
+    setInput({
+      name: instance.name,
+      host: instance.host,
+      rs_port: instance.rs_port,
+      py_port: instance.py_port,
+      ordering: instance.ordering,
+    });
+    setFormIsActive(instance.is_active);
+    setEditingId(instance.id);
+    setFormError(null);
+    setEditorMode('edit');
+  }
+
+  function closeEditor() {
+    if (loading) return;
+    setEditorMode(null);
+    setEditingId(null);
+    setFormError(null);
+  }
 
   function requestSave() {
     const normalized = { ...input, name: input.name.trim(), host: input.host.trim() };
     const validationError = validate(normalized);
     if (validationError) {
-      setError(validationError);
+      setFormError(validationError);
       return;
     }
+
     const instanceId = editingId ?? undefined;
     setPendingMutation({
-      title: editingId ? 'Зберегти зміни GPU інстансу?' : 'Створити GPU інстанс?',
+      title: instanceId ? 'Зберегти зміни GPU інстансу?' : 'Створити GPU інстанс?',
       instanceId,
+      closeEditorOnSuccess: true,
       run: () =>
         instanceId
-          ? updateTranscriberInstance(instanceId, normalized)
+          ? updateTranscriberInstance(instanceId, {
+              ...normalized,
+              is_active: formIsActive,
+            })
           : createTranscriberInstance(normalized),
     });
   }
@@ -156,6 +495,7 @@ export function TranscriberInstancesSection() {
     setPendingMutation(null);
     setLoading(true);
     setError(null);
+    setFormError(null);
     setRestartWarning(null);
     try {
       const result = await mutation.run();
@@ -169,7 +509,7 @@ export function TranscriberInstancesSection() {
           message: 'Конфігурацію GPU збережено; воркер перезапускається.',
         });
       }
-      setEditingId(null);
+
       const affectedInstanceId = result.instance?.id ?? mutation.instanceId;
       const knownInstances = sortInstances(
         result.instance
@@ -189,187 +529,114 @@ export function TranscriberInstancesSection() {
           return next;
         });
       }
+
       const nextInstances = await refresh();
       setInput(emptyInputForInstances(nextInstances ?? knownInstances));
+      if (mutation.closeEditorOnSuccess) {
+        setEditorMode(null);
+        setEditingId(null);
+      }
     } catch (nextError) {
-      setError(`Помилка зміни GPU інстансу: ${errorMessage(nextError)}`);
+      const message = `Помилка зміни GPU інстансу: ${errorMessage(nextError)}`;
+      if (editorMode) {
+        setFormError(message);
+      } else {
+        setError(message);
+      }
     } finally {
       setLoading(false);
     }
   }
 
-  async function check(instance: TranscriberInstance) {
+  async function checkEditingInstance() {
+    if (!editingId) return;
     setLoading(true);
-    setError(null);
+    setFormError(null);
     setHealth((current) => {
       const next = { ...current };
-      delete next[instance.id];
+      delete next[editingId];
       return next;
     });
     try {
-      const result = await checkTranscriberInstance(instance.id);
-      setHealth((current) => ({ ...current, [instance.id]: result }));
+      const result = await checkTranscriberInstance(editingId);
+      setHealth((current) => ({ ...current, [editingId]: result }));
     } catch (nextError) {
-      setError(`Помилка перевірки інстансу: ${errorMessage(nextError)}`);
+      setFormError(`Помилка перевірки інстансу: ${errorMessage(nextError)}`);
     } finally {
       setLoading(false);
     }
   }
 
+  const editingHealth = editingId ? health[editingId] : undefined;
   return (
     <Stack spacing={2}>
-      <Typography component="h2" variant="subtitle1" sx={{ fontWeight: 600 }}>
-        Echo GPU інстанси
-      </Typography>
       {error ? <PowerAlert severity="error">{error}</PowerAlert> : null}
       {restartWarning ? <PowerAlert severity="warning">{restartWarning}</PowerAlert> : null}
 
-      <Stack direction={{ xs: 'column', md: 'row' }} spacing={1}>
-        <TextField
-          label="Назва"
-          value={input.name}
-          onChange={(event) => setInput((value) => ({ ...value, name: event.target.value }))}
-        />
-        <TextField
-          label="Хост"
-          value={input.host}
-          onChange={(event) => setInput((value) => ({ ...value, host: event.target.value }))}
-        />
-        <TextField
-          label="Rust порт"
-          type="number"
-          value={input.rs_port}
-          onChange={(event) =>
-            setInput((value) => ({ ...value, rs_port: Number(event.target.value) }))
-          }
-        />
-        <TextField
-          label="Python порт"
-          type="number"
-          value={input.py_port}
-          onChange={(event) =>
-            setInput((value) => ({ ...value, py_port: Number(event.target.value) }))
-          }
-        />
-        <TextField
-          label="Порядок"
-          type="number"
-          value={input.ordering}
-          slotProps={{ htmlInput: { min: 1, max: POSTGRES_INTEGER_MAX } }}
-          onChange={(event) =>
-            setInput((value) => ({ ...value, ordering: Number(event.target.value) }))
-          }
-        />
-      </Stack>
-      <Stack direction="row" spacing={1}>
-        <Button variant="contained" disabled={loading} onClick={requestSave}>
-          {editingId ? 'зберегти інстанс' : 'додати інстанс'}
-        </Button>
-        {editingId ? (
-          <Button
-            onClick={() => {
-              setEditingId(null);
-              setInput(emptyInputForInstances(instances));
-            }}
-            disabled={loading}
-          >
-            скасувати
-          </Button>
-        ) : null}
-        <Button disabled={loading} onClick={() => void refresh()}>
-          оновити
-        </Button>
-      </Stack>
+      <TablePageToolbar
+        title="Echo GPU інстанси"
+        withGlobalTextFilter
+        hideGlobalTextFilter={loading && instances.length === 0}
+        internalActionsDisabled={loading && instances.length === 0}
+        actions={
+          <>
+            <PowerButton type="button" variant="outlined" disabled={loading} onClick={refresh}>
+              Оновити
+            </PowerButton>
+            <PowerButton type="button" variant="contained" disabled={loading} onClick={openCreate}>
+              Додати інстанс
+            </PowerButton>
+          </>
+        }
+      />
 
-      {instances.map((instance) => {
-        const instanceHealth = health[instance.id];
-        return (
-          <Card key={instance.id} variant="outlined">
-            <CardContent>
-              <Stack spacing={1}>
-                <Typography sx={{ fontWeight: 600 }}>{instance.name}</Typography>
-                <Typography variant="body2">
-                  {instance.host}:{instance.rs_port} / {instance.py_port}; порядок{' '}
-                  {instance.ordering}
-                </Typography>
-                <FormControlLabel
-                  control={
-                    <Switch
-                      checked={instance.is_active}
-                      disabled={loading}
-                      onChange={(_, is_active) =>
-                        setPendingMutation({
-                          title: is_active
-                            ? 'Активувати GPU інстанс?'
-                            : 'Деактивувати GPU інстанс?',
-                          instanceId: instance.id,
-                          run: () => updateTranscriberInstance(instance.id, { is_active }),
-                        })
-                      }
-                    />
-                  }
-                  label="Активний"
-                />
-                {instanceHealth ? (
-                  <Typography variant="body2">
-                    Rust: {healthText(instanceHealth.rust)}; Python:{' '}
-                    {healthText(instanceHealth.python)}
-                  </Typography>
-                ) : null}
-                <Stack direction="row" spacing={1}>
-                  <Button
-                    disabled={loading}
-                    onClick={() => {
-                      setEditingId(instance.id);
-                      setInput({
-                        name: instance.name,
-                        host: instance.host,
-                        rs_port: instance.rs_port,
-                        py_port: instance.py_port,
-                        ordering: instance.ordering,
-                      });
-                    }}
-                  >
-                    редагувати
-                  </Button>
-                  <Button disabled={loading} onClick={() => void check(instance)}>
-                    перевірити
-                  </Button>
-                  <Button
-                    color="error"
-                    disabled={loading}
-                    onClick={() =>
-                      setPendingMutation({
-                        title: 'Видалити GPU інстанс?',
-                        instanceId: instance.id,
-                        run: () => deleteTranscriberInstance(instance.id),
-                      })
-                    }
-                  >
-                    видалити
-                  </Button>
-                </Stack>
-              </Stack>
-            </CardContent>
-          </Card>
-        );
-      })}
+      <Box sx={{ width: '100%', minWidth: 0 }}>
+        <TranscriberInstancesTable
+          instances={instances}
+          loading={loading}
+          onEdit={openEdit}
+          onDelete={(instance) =>
+            setPendingMutation({
+              title: 'Видалити GPU інстанс?',
+              instanceId: instance.id,
+              run: () => deleteTranscriberInstance(instance.id),
+            })
+          }
+        />
+      </Box>
 
-      <Dialog open={pendingMutation !== null} onClose={() => setPendingMutation(null)}>
-        <DialogTitle>{pendingMutation?.title}</DialogTitle>
-        <DialogContent>
-          <DialogContentText>
-            Після підтвердження wdintel-rs-bgworker буде коректно перезапущено. Поточне
-            транскрибування матиме час завершитися.
-          </DialogContentText>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setPendingMutation(null)}>скасувати</Button>
-          <Button variant="contained" onClick={() => void runConfirmedMutation()}>
-            підтвердити
-          </Button>
-        </DialogActions>
-      </Dialog>
+      <InstanceEditorDialog
+        mode={editorMode}
+        input={input}
+        isActive={formIsActive}
+        loading={loading}
+        error={formError}
+        health={editingHealth}
+        onInputChange={(patch) => setInput((current) => ({ ...current, ...patch }))}
+        onIsActiveChange={setFormIsActive}
+        onCheck={checkEditingInstance}
+        onClose={closeEditor}
+        onSave={requestSave}
+      />
+
+      <MutationConfirmDialog
+        mutation={pendingMutation}
+        onCancel={() => setPendingMutation(null)}
+        onConfirm={runConfirmedMutation}
+      />
     </Stack>
+  );
+}
+
+export function TranscriberInstancesSection() {
+  return (
+    <TableStateProvider
+      tableId="admin-transcriber-instances"
+      defaultColumnOrder={DEFAULT_COLUMN_ORDER}
+      defaultColumnVisibility={DEFAULT_COLUMNS_VISIBILITY}
+      defaultEnableColumnOrdering={false}
+    >
+      <TranscriberInstancesSectionBody />
+    </TableStateProvider>
   );
 }
