@@ -218,6 +218,7 @@ run_server() {
     local pid
     local readiness_monitor_pid=""
     local follow_server_log="false"
+    local server_log_tail_pid=""
     local cmd='cd "$REPO_ROOT/wdintel-rs" && RUST_BACKTRACE=0 cargo watch -- cargo run -- --mode=debug server --no-bgworker "$@"'
 
     ensure_pid_dir
@@ -252,6 +253,10 @@ run_server() {
     readiness_monitor_pid=$!
 
     cleanup() {
+        if [ -n "$server_log_tail_pid" ]; then
+            kill "$server_log_tail_pid" 2>/dev/null || true
+            wait "$server_log_tail_pid" 2>/dev/null || true
+        fi
         if [ -n "$readiness_monitor_pid" ]; then
             kill "$readiness_monitor_pid" 2>/dev/null || true
             wait "$readiness_monitor_pid" 2>/dev/null || true
@@ -265,10 +270,15 @@ run_server() {
     trap cleanup EXIT INT TERM
 
     if [ "$follow_server_log" = "true" ]; then
-        tail --pid="$pid" -n +1 -f "$server_logfile"
+        tail -n +1 -f "$server_logfile" &
+        server_log_tail_pid=$!
     fi
 
-    wait "$pid"
+    if wait "$pid"; then
+        :
+    else
+        exit $?
+    fi
 }
 
 cd "$repo_root"
