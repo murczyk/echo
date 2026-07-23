@@ -5,7 +5,7 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { AnalysisMapPane } from './AnalysisMapPane';
+import { ANALYSIS_NARROW_MAP_HEIGHT, AnalysisMapPane } from './AnalysisMapPane';
 
 function buildProps(
   overrides: Partial<Parameters<typeof AnalysisMapPane>[0]> = {},
@@ -54,6 +54,10 @@ describe('AnalysisMapPane', () => {
     });
     container.remove();
     vi.useRealTimers();
+  });
+
+  it('uses a bounded narrow-screen height that leaves room for map controls', () => {
+    expect(ANALYSIS_NARROW_MAP_HEIGHT).toBe('clamp(360px, 55svh, 520px)');
   });
 
   it('delays visibility until the next frame', async () => {

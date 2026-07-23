@@ -1,5 +1,6 @@
 import { Box, Button } from '@mui/material';
-import { alpha, type Theme } from '@mui/material/styles';
+import { CircularProgress } from '@mui/material';
+import { alpha, type Theme, useTheme } from '@mui/material/styles';
 import { memo, useCallback, useEffect, useRef, useState } from 'react';
 import { isNullOrUndefined, isPresent } from '../../../utils/misc';
 import type {
@@ -45,6 +46,52 @@ function filterOtherMessageComments(
   });
 }
 
+function NarrowMessagesLoadingIndicator({
+  loading,
+  paginationLoading,
+}: {
+  loading: boolean;
+  paginationLoading: boolean;
+}) {
+  if (!loading && !paginationLoading) return null;
+  const label = loading ? 'Оновлення повідомлень' : 'Завантаження ще повідомлень';
+
+  return (
+    <Box
+      sx={{
+        display: { xs: 'block', lg: 'none' },
+        position: 'sticky',
+        top: 0,
+        height: 0,
+        overflow: 'visible',
+        zIndex: 3,
+        pointerEvents: 'none',
+      }}
+    >
+      <Box
+        role="status"
+        aria-live="polite"
+        aria-label={label}
+        sx={{
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          right: 0,
+          height: 28,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: 1,
+          bgcolor: 'background.paper',
+        }}
+      >
+        <CircularProgress size={16} />
+        {label}
+      </Box>
+    </Box>
+  );
+}
+
 export function getAnalysisMessagesScrollSx(theme: Theme) {
   const thumbColor =
     theme.palette.mode === 'light'
@@ -53,7 +100,10 @@ export function getAnalysisMessagesScrollSx(theme: Theme) {
 
   return {
     height: '100%',
-    overflow: 'auto',
+    minHeight: 0,
+    overflowY: 'auto',
+    overflowX: 'hidden',
+    WebkitOverflowScrolling: 'touch',
     scrollbarColor: `${thumbColor} transparent`,
     '&::-webkit-scrollbar': {
       width: 12,
@@ -349,6 +399,7 @@ function AnalysisMessagesPaneComponent({
   networks,
   unitsMap,
 }: Props) {
+  const theme = useTheme();
   const [commentDraft, setCommentDraft] = useState('');
   const [commentMessage, setCommentMessage] = useState<{
     id: number;
@@ -430,9 +481,45 @@ function AnalysisMessagesPaneComponent({
   }
 
   return (
-    <Box sx={{ flex: 1, minHeight: 0, overflow: 'hidden', px: 0, position: 'relative' }}>
-      <Box ref={scrollContainerRef} sx={getAnalysisMessagesScrollSx}>
-        <Box component="ul" sx={{ m: 0, p: 0, listStyle: 'none' }}>
+    <Box
+      sx={{
+        flex: 1,
+        height: '100%',
+        minHeight: 0,
+        overflow: 'hidden',
+        px: 0,
+        position: 'relative',
+        width: '100%',
+        maxWidth: '100%',
+        minWidth: 0,
+      }}
+    >
+      <Box
+        ref={scrollContainerRef}
+        sx={{
+          ...getAnalysisMessagesScrollSx(theme),
+          width: '100%',
+          maxWidth: '100%',
+          minWidth: 0,
+        }}
+      >
+        <NarrowMessagesLoadingIndicator loading={loading} paginationLoading={paginationLoading} />
+        <Box
+          component="ul"
+          sx={{
+            m: 0,
+            p: 0,
+            listStyle: 'none',
+            width: '100%',
+            maxWidth: '100%',
+            minWidth: 0,
+            '& > li': {
+              width: '100%',
+              maxWidth: '100%',
+              minWidth: 0,
+            },
+          }}
+        >
           {messages.map(([id, message]) => (
             <AnalysisMessageCardItem
               key={id}
@@ -473,10 +560,18 @@ function AnalysisMessagesPaneComponent({
       </Box>
 
       {loading ? (
-        <SectionLoadingOverlay open ariaLabel="Оновлення повідомлень" sx={{ zIndex: 2 }} />
+        <SectionLoadingOverlay
+          open
+          ariaLabel="Оновлення повідомлень"
+          sx={{ zIndex: 2, display: { xs: 'none', lg: 'flex' } }}
+        />
       ) : null}
       {paginationLoading ? (
-        <SectionLoadingOverlay open ariaLabel="Завантаження ще повідомлень" sx={{ zIndex: 2 }} />
+        <SectionLoadingOverlay
+          open
+          ariaLabel="Завантаження ще повідомлень"
+          sx={{ zIndex: 2, display: { xs: 'none', lg: 'flex' } }}
+        />
       ) : null}
 
       <CommentDialog

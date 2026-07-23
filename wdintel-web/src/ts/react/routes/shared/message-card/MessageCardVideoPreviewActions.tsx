@@ -160,12 +160,13 @@ export function MessageCardVideoPreviewActions({
   return (
     <DialogActions
       sx={{
-        px: 2,
+        px: { xs: 1, sm: 2 },
         py: '20px',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
-        gap: 2,
+        gap: { xs: 0.5, sm: 2 },
+        flexWrap: 'nowrap',
       }}
     >
       <Box
@@ -174,6 +175,8 @@ export function MessageCardVideoPreviewActions({
           display: 'flex',
           justifyContent: 'flex-start',
           gap: 0.5,
+          minWidth: 0,
+          flexWrap: 'wrap',
         }}
       >
         <Tooltip title="Інформація" enterDelay={300}>
@@ -254,7 +257,7 @@ export function MessageCardVideoPreviewActions({
           </Tooltip>
         </Box>
       )}
-      <Box sx={{ flex: 1, display: 'flex', justifyContent: 'flex-end' }}>
+      <Box sx={{ flex: '0 0 auto', display: 'flex', justifyContent: 'flex-end' }}>
         <Button onClick={onClose} sx={{ flexShrink: 0, ml: 1 }}>
           Закрити
         </Button>

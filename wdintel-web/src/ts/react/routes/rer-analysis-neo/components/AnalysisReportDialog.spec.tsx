@@ -9,7 +9,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { AnalysisReportState } from '../report-helpers';
 import { createDefaultReportState } from '../report-helpers';
 import { createResetQueryState } from '../helpers';
-import { AnalysisReportDialog } from './AnalysisReportDialog';
+import { AnalysisReportDialog, analysisReportDialogHintSx } from './AnalysisReportDialog';
 
 const dialogProps: Array<Record<string, unknown>> = [];
 
@@ -83,6 +83,11 @@ describe('AnalysisReportDialog', () => {
     dialogProps.splice(0);
     document.body.innerHTML = '';
     vi.clearAllMocks();
+  });
+
+  it('keeps the mobile applied-filters hint from reserving a vertical flex basis', () => {
+    expect(analysisReportDialogHintSx.flex).toEqual({ xs: '0 1 auto', sm: '1 1 320px' });
+    expect(analysisReportDialogHintSx.width).toEqual({ xs: '100%', sm: 'auto' });
   });
 
   it('blocks backdrop and escape close while queued', () => {
@@ -188,6 +193,28 @@ describe('AnalysisReportDialog', () => {
     act(() => {
       view.root.unmount();
     });
+  });
+
+  it('keeps the generic export action visibly labelled', () => {
+    const view = renderDialog({ report: buildReport({ template: 'summary_table' }) });
+
+    const downloadButton = Array.from(
+      view.container.querySelectorAll<HTMLButtonElement>('button'),
+    ).find((button) => button.textContent?.includes('Завантажити'));
+    expect(downloadButton?.textContent).toContain('Завантажити');
+
+    act(() => view.root.unmount());
+  });
+
+  it('labels the download button while a non-export report is preparing', () => {
+    const view = renderDialog({ downloadInFlight: true });
+    const downloadButton = view.container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Готуємо…"]',
+    );
+
+    expect(downloadButton).not.toBeNull();
+
+    act(() => view.root.unmount());
   });
 
   it('shows report 1.2.5 as an advanced report option', () => {

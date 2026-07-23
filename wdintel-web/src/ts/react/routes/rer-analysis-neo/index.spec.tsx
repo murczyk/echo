@@ -25,7 +25,9 @@ const manageMessageDrawerPropsHistory = vi.hoisted(
 
 vi.mock('@mui/material', () => ({
   Badge: ({ children }: { children: ReactNode }) => <div>{children}</div>,
-  Box: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  Box: ({ children, ...props }: { children: ReactNode } & Record<string, unknown>) => (
+    <div {...props}>{children}</div>
+  ),
   ButtonBase: ({
     children,
     onClick,
@@ -164,6 +166,7 @@ vi.mock('./components/AnalysisHeaderControls', () => ({
 }));
 
 vi.mock('./components/AnalysisMapPane', () => ({
+  ANALYSIS_NARROW_MAP_HEIGHT: 'clamp(480px, 70svh, 720px)',
   AnalysisMapPane: () => <div data-testid="map-pane" />,
 }));
 
@@ -405,6 +408,65 @@ describe('RerAnalysisNeoPage', () => {
     for (const container of rendered.splice(0)) {
       document.body.removeChild(container);
     }
+  });
+
+  it('collapses the narrow sidebar and restores the FAB around a sidebar map', async () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    rendered.push(container);
+    const root = createRoot(container);
+    const page = buildPage();
+    useRerAnalysisNeoPageMock.mockReturnValue(page);
+
+    await act(async () => {
+      root.render(<RerAnalysisNeoPage />);
+    });
+
+    expect(container.querySelector('[data-testid="sidebar"]')).toBeNull();
+    expect(container.querySelector('button[aria-label="create-message-fab"]')).not.toBeNull();
+
+    page.analysisMapInSidebar = true;
+    page.rightPanelOpen = true;
+    page.rightSidebarTab = 'map';
+    await act(async () => {
+      root.render(<RerAnalysisNeoPage />);
+    });
+
+    expect(container.querySelector('[data-testid="sidebar"]')).not.toBeNull();
+    expect(container.querySelector('button[aria-label="create-message-fab"]')).toBeNull();
+
+    await act(async () => root.unmount());
+  });
+
+  it('reveals the opened narrow right panel exactly once', async () => {
+    const originalWidth = window.innerWidth;
+    const originalScrollIntoView = HTMLElement.prototype.scrollIntoView;
+    const scrollIntoView = vi.fn();
+    Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
+      configurable: true,
+      value: scrollIntoView,
+    });
+    window.innerWidth = 768;
+
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    rendered.push(container);
+    const root = createRoot(container);
+    const page = buildPage();
+    useRerAnalysisNeoPageMock.mockReturnValue(page);
+
+    await act(async () => root.render(<RerAnalysisNeoPage />));
+    page.rightPanelOpen = true;
+    await act(async () => root.render(<RerAnalysisNeoPage />));
+
+    expect(scrollIntoView).toHaveBeenCalledTimes(1);
+
+    await act(async () => root.unmount());
+    window.innerWidth = originalWidth;
+    Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
+      configurable: true,
+      value: originalScrollIntoView,
+    });
   });
 
   it('wires the header toggle buttons to the existing panel handlers', async () => {

@@ -5,6 +5,7 @@ import { networkSettingsResponse } from './fixture-responses';
 type AnalysisNeoMockOptions = {
   summaryDelayMs?: number;
   sidebarDelayMs?: number;
+  inboxDelayMs?: number;
   inboxResponse?: InboxMessagesRspRaw | null;
 };
 
@@ -105,6 +106,22 @@ export function createLoadedInboxResponse(): InboxMessagesRspRaw {
     signal_groups: [],
     freq_pelengs_summary: null,
     page_limit: 20,
+  };
+}
+
+export function createOverflowingInboxResponse(): InboxMessagesRspRaw {
+  const response = createLoadedInboxResponse();
+  const [, message] = response.inbox_items[0];
+  return {
+    ...response,
+    inbox_items: Array.from({ length: 20 }, (_, index) => [
+      101 + index,
+      {
+        ...message,
+        messageUid: `analysis-narrow-e2e-message-${index}`,
+        text: `Analysis narrow fixture message ${index}`,
+      },
+    ]) as InboxMessagesRspRaw['inbox_items'],
   };
 }
 
@@ -288,7 +305,11 @@ export async function installAnalysisNeoApiMocks(
     }
 
     if (pathname === '/api/rer-importer/get-inbox') {
-      await fulfillJson(route, options.inboxResponse ?? createEmptyInboxResponse());
+      await fulfillJson(
+        route,
+        options.inboxResponse ?? createEmptyInboxResponse(),
+        options.inboxDelayMs,
+      );
       return;
     }
 

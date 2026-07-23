@@ -26,6 +26,61 @@ export interface SearchControl extends L.Control {
   updatePlaceholder: (placeholder: string) => void;
 }
 
+function createNarrowControlToggle(label: string, iconPath: string): HTMLButtonElement {
+  const toggle = document.createElement('button');
+  toggle.type = 'button';
+  toggle.className = 'analysis-map-control-toggle';
+  toggle.setAttribute('aria-label', label);
+  toggle.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="${iconPath}" /></svg>`;
+  return toggle;
+}
+
+function initializeNarrowControlToggle(
+  container: HTMLElement,
+  toggle: HTMLButtonElement,
+  controlClass: string,
+  map: L.Map,
+): () => void {
+  const narrowViewportQuery = window.matchMedia('(max-width: 599.95px)');
+
+  const syncCollapsedState = () => {
+    container.classList.toggle('narrow-map-control--collapsed', narrowViewportQuery.matches);
+  };
+
+  container.classList.add(controlClass);
+  syncCollapsedState();
+  const onViewportChange = () => {
+    syncCollapsedState();
+  };
+  narrowViewportQuery.addEventListener('change', onViewportChange);
+
+  L.DomEvent.on(toggle, 'click', L.DomEvent.stopPropagation);
+  L.DomEvent.on(toggle, 'click', () => {
+    if (narrowViewportQuery.matches) {
+      const narrowControls = container.parentElement?.querySelectorAll<HTMLElement>(
+        '.narrow-map-search-control, .narrow-map-date-control',
+      );
+      for (const peer of narrowControls ?? []) {
+        if (peer !== container) {
+          peer.classList.add('narrow-map-control--collapsed');
+        }
+      }
+    }
+    container.classList.remove('narrow-map-control--collapsed');
+  });
+  const onMapClick = () => {
+    if (narrowViewportQuery.matches) {
+      container.classList.add('narrow-map-control--collapsed');
+    }
+  };
+  map.on('click', onMapClick);
+
+  return () => {
+    narrowViewportQuery.removeEventListener('change', onViewportChange);
+    map.off('click', onMapClick);
+  };
+}
+
 /** Creates a map control that hosts <analysis-map-search>. */
 export function createSearchControl(): SearchControl {
   const SearchControlClass = L.Control.extend({
@@ -37,8 +92,20 @@ export function createSearchControl(): SearchControl {
           setPlaceholder?: (placeholder: string) => void;
         })
       | null,
-    onAdd: function (_map: L.Map) {
+    _disposeNarrowControlToggle: null as (() => void) | null,
+    onAdd: function (map: L.Map) {
       this._container = L.DomUtil.create('div', 'leaflet-bar leaflet-control search-control');
+      const toggle = createNarrowControlToggle(
+        'Розгорнути пошук на мапі',
+        'M10 4a6 6 0 1 0 3.87 10.58l4.78 4.78 1.42-1.42-4.78-4.78A6 6 0 0 0 10 4Zm0 2a4 4 0 1 1 0 8 4 4 0 0 1 0-8Z',
+      );
+      this._container.appendChild(toggle);
+      this._disposeNarrowControlToggle = initializeNarrowControlToggle(
+        this._container,
+        toggle,
+        'narrow-map-search-control',
+        map,
+      );
       const searchEl = document.createElement('analysis-map-search') as HTMLElement & {
         setResultsCount?: (count: number | null) => void;
         setSearchLoading?: (isLoading: boolean) => void;
@@ -50,6 +117,10 @@ export function createSearchControl(): SearchControl {
       L.DomEvent.disableClickPropagation(this._container);
       L.DomEvent.disableScrollPropagation(this._container);
       return this._container;
+    },
+    onRemove: function () {
+      this._disposeNarrowControlToggle?.();
+      this._disposeNarrowControlToggle = null;
     },
     updateResultsCount: function (count: number | null) {
       this._searchElement?.setResultsCount?.(count);
@@ -77,8 +148,20 @@ export function createTimeswitchControl(
   isLoading = false,
 ) {
   const TimeswitchControl = L.Control.extend({
+    _disposeNarrowControlToggle: null as (() => void) | null,
     onAdd: function (map: L.Map) {
       this._container = L.DomUtil.create('div', 'control-container');
+      const toggle = createNarrowControlToggle(
+        'Розгорнути діапазон дат на мапі',
+        'M19 4h-1V2h-2v2H8V2H6v2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2Zm0 16H5V9h14v11Zm0-13H5V6h14v1Z',
+      );
+      this._container.appendChild(toggle);
+      this._disposeNarrowControlToggle = initializeNarrowControlToggle(
+        this._container,
+        toggle,
+        'narrow-map-date-control',
+        map,
+      );
 
       this._dateRangeSelector = L.DomUtil.create('date-range-selector');
 
@@ -95,6 +178,8 @@ export function createTimeswitchControl(
       return this._container;
     },
     onRemove: function (map: L.Map) {
+      this._disposeNarrowControlToggle?.();
+      this._disposeNarrowControlToggle = null;
       L.DomEvent.off(this._container, 'click', L.DomEvent.stopPropagation);
       L.DomEvent.off(this._container, 'dblclick', L.DomEvent.stopPropagation);
     },
