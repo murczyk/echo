@@ -424,6 +424,13 @@ pub const NETWORK_INVALIDATION_TASK_WAIT_SLEEP_SEC: u64 = 600;
 pub const NETWORK_INVALIDATION_TASK_TAG_OLD: &str = "old";
 pub const NETWORK_INVALIDATION_TASK_TAG_RECENT: &str = "recent";
 pub const NETWORK_INVALIDATION_TASK_TAG_UNASSIGNED: &str = "unassigned";
+pub const ANALYTICS_CONNECT_TIMEOUT_MS_DEFAULT: u64 = 5_000;
+pub const ANALYTICS_QUERY_TIMEOUT_MS_DEFAULT: u64 = 30_000;
+pub const ANALYTICS_FRESHNESS_MAX_AGE_MS_DEFAULT: u64 = 90_000;
+pub const ANALYTICS_RETRY_COOLDOWN_MS_DEFAULT: u64 = 30_000;
+pub const ANALYTICS_SOURCE_CONFIG_PATH: &str = "/etc/echo-peerdb/source.env";
+pub const ANALYTICS_TABLE_RECONCILE_SERVICE: &str =
+    "echo-peerdb-table-reconcile.service";
 
 /// Dynamic config that's different on different deployments
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
@@ -478,6 +485,7 @@ pub struct Config {
     pub is_slave: Option<bool>,
     pub disable_inactive_users_worker: Option<bool>,
     pub replicas: Option<Vec<ReplicaConfig>>,
+    pub analytics: Option<AnalyticsConfig>,
     /// A unique identifier for the server.
     ///
     /// This is an arbitrary integer value in the range **1-16**.
@@ -520,6 +528,41 @@ pub struct ReplicaConfig {
     pub pg_user: Option<String>,
     pub pg_password: Option<String>,
     pub pg_dbname: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
+pub struct AnalyticsConfig {
+    pub pg_host: String,
+    pub pg_port: Option<u16>,
+    pub pg_user: String,
+    pub pg_password: String,
+    pub pg_dbname: String,
+    pub connect_timeout_ms: Option<u64>,
+    pub query_timeout_ms: Option<u64>,
+    pub freshness_max_age_ms: Option<u64>,
+    pub retry_cooldown_ms: Option<u64>,
+}
+
+impl AnalyticsConfig {
+    pub fn connect_timeout_ms(&self) -> u64 {
+        self.connect_timeout_ms
+            .unwrap_or(ANALYTICS_CONNECT_TIMEOUT_MS_DEFAULT)
+    }
+
+    pub fn query_timeout_ms(&self) -> u64 {
+        self.query_timeout_ms
+            .unwrap_or(ANALYTICS_QUERY_TIMEOUT_MS_DEFAULT)
+    }
+
+    pub fn freshness_max_age_ms(&self) -> u64 {
+        self.freshness_max_age_ms
+            .unwrap_or(ANALYTICS_FRESHNESS_MAX_AGE_MS_DEFAULT)
+    }
+
+    pub fn retry_cooldown_ms(&self) -> u64 {
+        self.retry_cooldown_ms
+            .unwrap_or(ANALYTICS_RETRY_COOLDOWN_MS_DEFAULT)
+    }
 }
 
 impl Config {
@@ -854,5 +897,36 @@ migrated = "database"
         assert!(warning.contains("WARNING: UNUSED CONFIG KEYS"));
         assert!(warning.contains("  - removed"));
         assert!(warning.contains("removed or migrated to the database"));
+    }
+
+    #[test]
+    fn analytics_config_uses_bounded_default_timeouts() {
+        let analytics: AnalyticsConfig = toml::from_str(
+            r#"
+pg_host = "echo-dev-clickhouse"
+pg_user = "echo_analytics"
+pg_password = "secret"
+pg_dbname = "echo_analytics_gateway"
+"#,
+        )
+        .unwrap();
+
+        assert_eq!(analytics.pg_port, None);
+        assert_eq!(
+            analytics.connect_timeout_ms(),
+            ANALYTICS_CONNECT_TIMEOUT_MS_DEFAULT
+        );
+        assert_eq!(
+            analytics.query_timeout_ms(),
+            ANALYTICS_QUERY_TIMEOUT_MS_DEFAULT
+        );
+        assert_eq!(
+            analytics.freshness_max_age_ms(),
+            ANALYTICS_FRESHNESS_MAX_AGE_MS_DEFAULT
+        );
+        assert_eq!(
+            analytics.retry_cooldown_ms(),
+            ANALYTICS_RETRY_COOLDOWN_MS_DEFAULT
+        );
     }
 }

@@ -789,8 +789,30 @@ pub async fn new_pg_pool_from_replica(
     new_pg_pool_from_conn_string(conn_string).await
 }
 
+pub async fn new_pg_pool_from_analytics(
+    analytics: &AnalyticsConfig,
+) -> Result<sea_orm::DatabaseConnection, AppError> {
+    let conn_string = mk_analytics_conn_string(analytics);
+    new_pg_pool_from_conn_string_with_timeout(
+        conn_string,
+        Some(core::time::Duration::from_millis(
+            analytics.connect_timeout_ms(),
+        )),
+        true,
+    )
+    .await
+}
+
 async fn new_pg_pool_from_conn_string(
     conn_string: String,
+) -> Result<sea_orm::DatabaseConnection, AppError> {
+    new_pg_pool_from_conn_string_with_timeout(conn_string, None, false).await
+}
+
+async fn new_pg_pool_from_conn_string_with_timeout(
+    conn_string: String,
+    connect_timeout: Option<core::time::Duration>,
+    connect_lazy: bool,
 ) -> Result<sea_orm::DatabaseConnection, AppError> {
     let mut opt = sea_orm::ConnectOptions::new(conn_string);
     opt.max_connections(pg_pool_max_connections())
@@ -802,6 +824,11 @@ async fn new_pg_pool_from_conn_string(
             LevelFilter::Off,
             core::time::Duration::from_millis(PG_SLOW_STATEMENT_THRESHOLD_MS),
         );
+    if let Some(connect_timeout) = connect_timeout {
+        opt.connect_timeout(connect_timeout)
+            .acquire_timeout(connect_timeout);
+    }
+    opt.connect_lazy(connect_lazy);
 
     let db = sea_orm::Database::connect(opt).await.c(h!())?;
     Ok(db)
@@ -892,6 +919,18 @@ fn mk_replica_conn_string(config: &Config, replica: &ReplicaConfig) -> String {
             pg_dbname = test_db_name;
         }
     }
+
+    format!(
+        "postgresql://{pg_user}:{pg_password}@{pg_host}:{pg_port}/{pg_dbname}",
+    )
+}
+
+fn mk_analytics_conn_string(analytics: &AnalyticsConfig) -> String {
+    let pg_port = analytics.pg_port.unwrap_or(DEFAULT_PG_PORT);
+    let pg_host = &analytics.pg_host;
+    let pg_user = urlencoding::encode(&analytics.pg_user);
+    let pg_password = urlencoding::encode(&analytics.pg_password);
+    let pg_dbname = urlencoding::encode(&analytics.pg_dbname);
 
     format!(
         "postgresql://{pg_user}:{pg_password}@{pg_host}:{pg_port}/{pg_dbname}",

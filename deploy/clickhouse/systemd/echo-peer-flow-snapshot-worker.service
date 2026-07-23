@@ -1,0 +1,27 @@
+[Unit]
+Description=Echo analytics PeerDB snapshot worker
+After=network-online.target postgresql@18-main.service clickhouse-server.service echo-temporal.service echo-minio.service echo-peerdb-migrate.service
+Wants=network-online.target postgresql@18-main.service clickhouse-server.service echo-temporal.service echo-minio.service echo-peerdb-migrate.service
+PartOf=echo-analytics.target
+ConditionPathExists=/etc/echo-analytics/peerdb.env
+
+[Service]
+Type=simple
+User=echo-analytics
+Group=echo-analytics
+EnvironmentFile=/etc/echo-analytics/instance.env
+EnvironmentFile=/etc/echo-analytics/clickhouse.env
+EnvironmentFile=/etc/echo-analytics/peerdb.env
+ExecStart=/opt/echo-analytics/bin/run-peer-flow.sh snapshot-worker
+WorkingDirectory=/var/lib/echo-analytics
+Restart=on-failure
+RestartSec=5
+UMask=0027
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/echo-analytics /var/log/echo-analytics
+
+[Install]
+WantedBy=echo-analytics.target

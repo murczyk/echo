@@ -1,0 +1,21 @@
+[Unit]
+Description=Verify Echo analytics end-to-end replication freshness
+After=network-online.target postgresql@18-main.service clickhouse-server.service echo-temporal.service echo-peer-flow-worker.service echo-peerdb-server.service
+Wants=network-online.target
+PartOf=echo-analytics.target
+
+[Service]
+Type=oneshot
+User=postgres
+Group=postgres
+SupplementaryGroups=echo-analytics
+ExecStart=/opt/echo-analytics/bin/check-analytics-health.sh
+TimeoutStartSec=120s
+UMask=0027
+NoNewPrivileges=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+RestrictSUIDSGID=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict

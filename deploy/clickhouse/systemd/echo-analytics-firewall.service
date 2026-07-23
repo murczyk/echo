@@ -1,0 +1,14 @@
+[Unit]
+Description=Restrict unauthenticated PeerDB API ports to loopback
+Before=echo-peer-flow-api.service
+PartOf=echo-analytics.target
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/echo-analytics/instance.env
+ExecStart=/opt/echo-analytics/bin/apply-firewall.sh
+ExecStop=-/usr/sbin/nft delete table inet echo_analytics_guard
+RemainAfterExit=true
+
+[Install]
+WantedBy=echo-analytics.target

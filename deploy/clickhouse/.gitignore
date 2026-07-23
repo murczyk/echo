@@ -1,0 +1,4 @@
+/build/
+/env/instance.env
+/env/clickhouse.env
+/env/peerdb.env

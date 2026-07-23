@@ -6,6 +6,7 @@ SIGINT analytical platform webapp.
 
 ## Deploy
 
+- Архітектура: [docs/README.md](./docs/README.md)
 - Встановлення (apt): [docs/INSTALL_APT.md](./docs/INSTALL_APT.md)
 - **рекомендовано** Встановлення (zip): [docs/INSTALL_ZIP.md](./docs/INSTALL_ZIP.md)
 
