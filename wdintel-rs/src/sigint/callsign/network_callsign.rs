@@ -1,6 +1,9 @@
 use crate::sigint::callsign::bl_network_callsign::*;
 use crate::sigint::callsign::types::*;
 use crate::types::*;
+use crate::users::{
+    ensure_rer_role, has_any_role, has_role, login_id_from_identity,
+};
 use actix_web::post;
 use actix_web::web::Json;
 use sea_orm::*;
@@ -26,10 +29,14 @@ pub async fn list_network_callsigns(
     env: actix_web::web::Data<Env>,
     req: Json<ListNetworkCallsignsReq>,
 ) -> Result<Json<ListNetworkCallsignsRes>, AppError> {
-    let user_id = user.id().c(h!())?;
-    crate::users::has_any_role(&env.dbx, &user_id, vec!["Rer", "ApiAgent"])
-        .await
-        .c(h!())?;
+    has_any_role(
+        &env.dbx,
+        &login_id_from_identity(&user)?,
+        vec!["Rer", "ApiAgent"],
+    )
+    .await
+    .c(h!())?;
+    let user_id = login_id_from_identity(&user)?;
 
     trace!("network_callsigns; login: {user_id}; req: {:?}", req);
     let req = req.into_inner();
@@ -67,13 +74,11 @@ pub async fn create_network_callsign(
     env: actix_web::web::Data<Env>,
     req: Json<CreateNetworkCallsignReq>,
 ) -> Result<Json<NetworkCallsign>, AppError> {
-    let user_id = user.id().c(h!())?;
-    crate::users::has_role(&env.dbx, &user_id, "Rer")
+    ensure_rer_role(&env.dbx, &user).await.context(h!())?;
+    has_role(&env.dbx, &login_id_from_identity(&user)?, "UnitsEditor")
         .await
         .context(h!())?;
-    crate::users::has_role(&env.dbx, &user_id, "UnitsEditor")
-        .await
-        .context(h!())?;
+    let user_id = login_id_from_identity(&user)?;
 
     info!(
         "Adding callsign {} to network {}; user={}",
@@ -128,13 +133,11 @@ pub async fn add_as_known_network_callsigns(
     env: actix_web::web::Data<Env>,
     req: Json<AddAsKnownNetworkCallsignReq>,
 ) -> Result<Json<Vec<NetworkCallsign>>, AppError> {
-    let user_id = user.id().c(h!())?;
-    crate::users::has_role(&env.dbx, &user_id, "Rer")
+    ensure_rer_role(&env.dbx, &user).await.context(h!())?;
+    has_role(&env.dbx, &login_id_from_identity(&user)?, "UnitsEditor")
         .await
         .context(h!())?;
-    crate::users::has_role(&env.dbx, &user_id, "UnitsEditor")
-        .await
-        .context(h!())?;
+    let user_id = login_id_from_identity(&user)?;
 
     info!(
         "Adding known network callsigns {} to network {}; user={}",
@@ -189,13 +192,11 @@ pub async fn update_network_callsign(
     env: actix_web::web::Data<Env>,
     req: Json<UpdateNetworkCallsignReq>,
 ) -> Result<Json<NetworkCallsign>, AppError> {
-    let user_id = user.id().c(h!())?;
-    crate::users::has_role(&env.dbx, &user_id, "Rer")
+    ensure_rer_role(&env.dbx, &user).await.context(h!())?;
+    has_role(&env.dbx, &login_id_from_identity(&user)?, "UnitsEditor")
         .await
         .context(h!())?;
-    crate::users::has_role(&env.dbx, &user_id, "UnitsEditor")
-        .await
-        .context(h!())?;
+    let user_id = login_id_from_identity(&user)?;
 
     info!(
         "Updating callsign {} in network {}; user={}",
@@ -249,13 +250,11 @@ pub async fn delete_network_callsign(
     env: actix_web::web::Data<Env>,
     req: Json<i64>,
 ) -> Result<Json<NetworkCallsign>, AppError> {
-    let user_id = user.id().c(h!())?;
-    crate::users::has_role(&env.dbx, &user_id, "Rer")
+    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    has_role(&env.dbx, &login_id_from_identity(&user)?, "UnitsEditor")
         .await
         .c(h!())?;
-    crate::users::has_role(&env.dbx, &user_id, "UnitsEditor")
-        .await
-        .c(h!())?;
+    let user_id = login_id_from_identity(&user)?;
 
     info!("Delete network callsign; login: {user_id}; req: {:?}", req);
     let txn = env.dbx.begin().await.context(h!())?;
@@ -302,10 +301,8 @@ pub async fn network_callsigns_activity(
     env: actix_web::web::Data<Env>,
     req: Json<NetworkCallsignsActivityReq>,
 ) -> Result<Json<NetworkCallsignsActivityRsp>, AppError> {
-    let user_id = user.id().c(h!())?;
-    crate::users::has_role(&env.dbx, &user_id, "Rer")
-        .await
-        .c(h!())?;
+    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    let user_id = login_id_from_identity(&user)?;
 
     trace!(
         "network callsigns activity; login: {user_id}; req: {:?}",

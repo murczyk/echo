@@ -6,6 +6,7 @@ use crate::h;
 use crate::types::error;
 use crate::types::{info, warn};
 use crate::types::{Env, ShortContext};
+use crate::users::ensure_basic_role;
 use actix_files::NamedFile;
 use actix_web::{web, HttpRequest, HttpResponse, Responder};
 use opendal::Operator;
@@ -95,10 +96,7 @@ pub async fn serve_assets(
     req: HttpRequest,
     env: web::Data<Env>,
 ) -> Result<impl Responder, AppError> {
-    let login = user.id().c(h!())?;
-    crate::users::has_role(&env.dbx, &login, "Basic")
-        .await
-        .c(h!())?;
+    ensure_basic_role(&env.dbx, &user).await.c(h!())?;
 
     let filename = req.match_info().query("filename");
     let path: PathBuf = match filename.parse() {

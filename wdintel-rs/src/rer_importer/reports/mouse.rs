@@ -51,7 +51,7 @@ struct MouseInboxTagRow {
 }
 
 pub async fn report_docx_kind_mouse(
-    user_login: &str,
+    user_login: &uuid::Uuid,
     env: &Env,
     req: &super::types::ReportPreviewReq,
     outpath: &Path,
@@ -61,10 +61,11 @@ pub async fn report_docx_kind_mouse(
         Some(label) => info!("Mouse report using replica {label}"),
         None => info!("Mouse report using primary database"),
     }
-    let login = user_login.to_string();
-    let logins = crate::users::get_organism_logins_by_login(&read_db, &login)
-        .await
-        .c(h!())?;
+    let login = *user_login;
+    let login_ids =
+        crate::users::get_organism_login_ids_by_id(&read_db, &login)
+            .await
+            .c(h!())?;
     let width_unit = 1870;
     let mut inbox_req = req.req.clone();
     inbox_req.report_tags_only_this_unit = req.report_tags_only_this_unit;
@@ -212,7 +213,7 @@ pub async fn report_docx_kind_mouse(
             .context(h!())?;
 
     let importants = sigint_important::Entity::find()
-        .filter(sigint_important::Column::UserId.eq(&login))
+        .filter(sigint_important::Column::LoginId.eq(login))
         .join(
             JoinType::InnerJoin,
             sigint_important::Relation::SignalMessage.def(),
@@ -240,7 +241,7 @@ pub async fn report_docx_kind_mouse(
         .collect();
 
     let bookmarks = sigint_bookmark::Entity::find()
-        .filter(sigint_bookmark::Column::UserId.eq(&login))
+        .filter(sigint_bookmark::Column::LoginId.eq(login))
         .join(
             JoinType::InnerJoin,
             sigint_bookmark::Relation::SignalMessage.def(),
@@ -572,7 +573,7 @@ pub async fn report_docx_kind_mouse(
             .filter(
                 sigint_comment::Column::SignalMessageId.eq_any(all_message_ids),
             )
-            .filter(sigint_comment::Column::Login.eq_any(logins.clone()))
+            .filter(sigint_comment::Column::LoginId.eq_any(login_ids.clone()))
             .all(&read_db)
             .await
             .context(h!())?;
@@ -1100,7 +1101,7 @@ pub async fn report_docx_kind_mouse(
 
 async fn load_mouse_report_messages(
     dbx: &DatabaseConnection,
-    login: &str,
+    login: &uuid::Uuid,
     env: &Env,
     req: &InboxMessagesReq,
     include_tags: bool,
@@ -1155,7 +1156,7 @@ async fn load_mouse_report_messages(
 }
 
 fn ensure_mouse_report_message_limit(
-    user_login: &str,
+    user_login: &uuid::Uuid,
     message_count: usize,
 ) -> Result<(), AppError> {
     if message_count <= RER_MOUSE_REPORT_MESSAGE_MAX {
@@ -1174,7 +1175,7 @@ fn ensure_mouse_report_message_limit(
 
 async fn load_mouse_inbox_tags(
     dbx: &DatabaseConnection,
-    login: &str,
+    login: &uuid::Uuid,
     req: &InboxMessagesReq,
     message_ids: &[i64],
 ) -> Result<BTreeMap<i64, Vec<InboxMessageTag>>, AppError> {
@@ -1217,7 +1218,7 @@ async fn load_mouse_inbox_tags(
             .column(sigint_inbox_item_tag::Column::Id)
             .column(sigint_inbox_item_tag::Column::TagId)
             .column(sigint_inbox_item_tag::Column::Confidence)
-            .column(sigint_inbox_item_tag::Column::Login)
+            .column(sigint_inbox_item_tag::Column::LoginId)
             .column(sigint_inbox_item_tag::Column::Model)
             .column_as(login::Column::OrganismId, "organism_id")
             .into_model::<MouseInboxTagRow>()
@@ -1244,13 +1245,13 @@ async fn load_mouse_inbox_tags(
 
 // report_xlsx_kind_pelengs
 pub async fn report_xlsx_kind_pelengs(
-    user_login: &str,
+    user_login: &uuid::Uuid,
     env: &Env,
     req: &super::types::ReportPreviewReq,
     _outpath: &PathBuf, // Marked as unused
 ) -> Result<(), AppError> {
     let read_db = env.replica();
-    let login = user_login.to_string();
+    let login = *user_login;
     let mut inbox_req = req.req.clone();
     inbox_req.report_tags_only_this_unit = req.report_tags_only_this_unit;
     let messages = load_mouse_report_messages(
@@ -1421,7 +1422,7 @@ mod tests {
     #[test]
     fn mouse_report_message_limit_allows_maximum() {
         assert!(ensure_mouse_report_message_limit(
-            "operator",
+            &uuid::Uuid::nil(),
             RER_MOUSE_REPORT_MESSAGE_MAX,
         )
         .is_ok());
@@ -1430,7 +1431,7 @@ mod tests {
     #[test]
     fn mouse_report_message_limit_rejects_overflow() {
         assert!(ensure_mouse_report_message_limit(
-            "operator",
+            &uuid::Uuid::nil(),
             RER_MOUSE_REPORT_MESSAGE_MAX + 1,
         )
         .is_err());

@@ -2,6 +2,7 @@ use self::types::*;
 use crate::entities::*;
 use crate::error::AppError;
 use crate::types::*;
+use crate::users::{has_any_role, login_id_from_identity};
 use actix_web::post;
 use actix_web::web::Json;
 use sea_orm::*;
@@ -14,9 +15,9 @@ pub async fn list_sources(
     env: actix_web::web::Data<Env>,
     _req: Json<()>,
 ) -> Result<Json<ListSourcesRsp>, AppError> {
-    crate::users::has_any_role(
+    has_any_role(
         &env.dbx,
-        &user.id().c(h!())?,
+        &login_id_from_identity(&user)?,
         vec!["Rer", "Api"],
     )
     .await

@@ -1,3 +1,6 @@
+use crate::users::{
+    ensure_rer_role, has_any_role, has_role, login_id_from_identity,
+};
 use std::collections::{HashMap, HashSet};
 
 use self::bl::*;
@@ -47,9 +50,9 @@ pub async fn list_callsigns(
     env: actix_web::web::Data<Env>,
     mut req: Json<ListCallsignsReq>,
 ) -> Result<Json<ListCallsignsRsp>, AppError> {
-    crate::users::has_any_role(
+    has_any_role(
         &env.dbx,
-        &user.id().c(h!())?,
+        &login_id_from_identity(&user)?,
         vec!["Rer", "ApiAgent"],
     )
     .await
@@ -76,9 +79,7 @@ pub async fn list_callsigns_csv(
     req: Json<ListCallsignsReq>,
     http_req: actix_web::HttpRequest,
 ) -> Result<actix_web::HttpResponse, AppError> {
-    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
-        .await
-        .c(h!())?;
+    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
 
     let rows = list_callsigns_export_rows(&env.dbx, &req.0).await.c(h!())?;
 
@@ -117,9 +118,7 @@ pub async fn list_callsigns_xlsx(
     req: Json<ListCallsignsReq>,
     http_req: actix_web::HttpRequest,
 ) -> Result<actix_web::HttpResponse, AppError> {
-    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
-        .await
-        .c(h!())?;
+    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
 
     let rows = list_callsigns_export_rows(&env.dbx, &req.0).await.c(h!())?;
 
@@ -845,10 +844,8 @@ pub async fn get_callsigns_with_units_from_inbox(
     env: actix_web::web::Data<Env>,
     req: Json<GetCallsignsWithUnitsFromInboxReq>,
 ) -> Result<Json<GetCallsignsWithUnitsFromInboxRsp>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
-        .await
-        .c(h!())?;
-    let login = user.id().c(h!())?;
+    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    let login = login_id_from_identity(&user)?;
 
     if req.callsigns.is_empty() {
         return Ok(Json(GetCallsignsWithUnitsFromInboxRsp {
@@ -974,17 +971,15 @@ pub async fn create_callsign(
     env: actix_web::web::Data<Env>,
     req: Json<CreateCallsignReq>,
 ) -> Result<Json<Callsign>, AppError> {
-    let user_id = user.id().c(h!())?;
-    crate::users::has_role(&env.dbx, &user_id, "Rer")
+    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    has_role(&env.dbx, &login_id_from_identity(&user)?, "CallsignsEditor")
         .await
         .c(h!())?;
-    crate::users::has_role(&env.dbx, &user_id, "CallsignsEditor")
-        .await
-        .c(h!())?;
+    let user_id = login_id_from_identity(&user)?;
 
     info!(
         "create_callsign; login: {}; req: {:?}",
-        user.id().c(h!())?,
+        login_id_from_identity(&user)?,
         req
     );
 
@@ -1023,13 +1018,11 @@ pub async fn update_callsign(
     env: actix_web::web::Data<Env>,
     req: Json<UpdateCallsignReq>,
 ) -> Result<Json<Callsign>, AppError> {
-    let user_id = user.id().c(h!())?;
-    crate::users::has_role(&env.dbx, &user_id, "Rer")
+    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    has_role(&env.dbx, &login_id_from_identity(&user)?, "CallsignsEditor")
         .await
         .c(h!())?;
-    crate::users::has_role(&env.dbx, &user_id, "CallsignsEditor")
-        .await
-        .c(h!())?;
+    let user_id = login_id_from_identity(&user)?;
 
     info!("update_callsign; login: {user_id}; req: {:?}", req);
     let req = req.into_inner();
@@ -1064,16 +1057,14 @@ pub async fn delete_callsign(
     env: actix_web::web::Data<Env>,
     req: Json<i64>,
 ) -> Result<Json<Callsign>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
-        .await
-        .c(h!())?;
-    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "CallsignsEditor")
+    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    has_role(&env.dbx, &login_id_from_identity(&user)?, "CallsignsEditor")
         .await
         .c(h!())?;
 
     info!(
         "delete_callsign; login: {}; req: {:?}",
-        user.id().c(h!())?,
+        login_id_from_identity(&user)?,
         req
     );
 
@@ -1096,7 +1087,7 @@ pub async fn delete_callsign(
     let _changelog = sigint_callsign_changelog::ActiveModel {
         id: NotSet,
         sigint_callsign_id: Set(callsign.id),
-        login: Set(user.id().c(h!())?.to_string()),
+        login_id: Set(login_id_from_identity(&user)?),
         action: Set("delete".to_string()),
         created_at: NotSet,
         new_value: Set(Some(callsign_json_new)),
@@ -1151,9 +1142,7 @@ pub async fn callsign_unit_stats(
     env: actix_web::web::Data<Env>,
     _req: Json<()>,
 ) -> Result<Json<CallsignUnitStatsRsp>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
-        .await
-        .c(h!())?;
+    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
     let units = list_callsign_unit_stats(&env.dbx).await?;
     Ok(Json(CallsignUnitStatsRsp { units }))
 }
@@ -1224,7 +1213,7 @@ pub async fn callsign_name_search(
     env: actix_web::web::Data<Env>,
     req: Json<CallsignSearchReq>,
 ) -> Result<Json<CallsignSearchRsp>, AppError> {
-    crate::users::has_any_role(&env.dbx, &user.id().c(h!())?, vec!["Rer"])
+    has_any_role(&env.dbx, &login_id_from_identity(&user)?, vec!["Rer"])
         .await
         .c(h!())?;
 
@@ -1266,7 +1255,7 @@ mod tests {
 
     async fn insert_test_unit(
         dbx: &DatabaseConnection,
-        login: &str,
+        login: &uuid::Uuid,
         name: &str,
     ) -> sigint_unit::Model {
         sigint_unit::ActiveModel {
@@ -1277,7 +1266,7 @@ mod tests {
             active: Set(true),
             deleted: Set(false),
             created_at: Set(Utc::now().naive_utc()),
-            created_by: Set(login.to_string()),
+            created_by_login_id: Set(*login),
             name: Set(name.to_string()),
             comment: Set(String::new()),
             battalion: Set("B".to_string()),
@@ -1388,7 +1377,7 @@ mod tests {
         let env = cleanup().await.unwrap();
         let login = find_test_login(&env.dbx).await.unwrap();
         let unit =
-            insert_test_unit(&env.dbx, &login.login, "CallsignTestUnit").await;
+            insert_test_unit(&env.dbx, &login.id, "CallsignTestUnit").await;
         let now = Utc::now().naive_utc();
 
         let callsign_alpha =
@@ -1404,7 +1393,7 @@ mod tests {
 
         sigint_callsign_changelog::ActiveModel {
             sigint_callsign_id: Set(callsign_alpha.id),
-            login: Set(login.login.clone()),
+            login_id: Set(login.id),
             action: Set("update".to_string()),
             created_at: Set(now + Duration::minutes(120)),
             new_value: Set(None),
@@ -1420,7 +1409,7 @@ mod tests {
 
         sigint_callsign_changelog::ActiveModel {
             sigint_callsign_id: Set(callsign_alpha.id),
-            login: Set(login.login.clone()),
+            login_id: Set(login.id),
             action: Set("update".to_string()),
             created_at: Set(now + Duration::minutes(60)),
             new_value: Set(None),
@@ -1455,9 +1444,9 @@ mod tests {
         let env = cleanup().await.unwrap();
         let login = find_test_login(&env.dbx).await.unwrap();
         let active_unit =
-            insert_test_unit(&env.dbx, &login.login, "ActiveUnit").await;
+            insert_test_unit(&env.dbx, &login.id, "ActiveUnit").await;
         let deleted_unit =
-            insert_test_unit(&env.dbx, &login.login, "DeletedUnit").await;
+            insert_test_unit(&env.dbx, &login.id, "DeletedUnit").await;
         let now = Utc::now().naive_utc();
 
         sigint_unit::ActiveModel {
@@ -1517,7 +1506,7 @@ mod tests {
         let env = cleanup().await.unwrap();
         let login = find_test_login(&env.dbx).await.unwrap();
         let unit =
-            insert_test_unit(&env.dbx, &login.login, "CallsignTestUnit").await;
+            insert_test_unit(&env.dbx, &login.id, "CallsignTestUnit").await;
         let now = Utc::now().naive_utc();
 
         insert_test_callsign(&env.dbx, unit.id, "alpha", now, "   ").await;
@@ -1571,7 +1560,7 @@ mod tests {
             active: Set(true),
             deleted: Set(false),
             created_at: Set(now),
-            created_by: Set(login.login.clone()),
+            created_by_login_id: Set(login.id),
             name: Set("MatchingUnit".to_string()),
             comment: Set(String::new()),
             battalion: Set("B".to_string()),
@@ -1589,7 +1578,7 @@ mod tests {
             active: Set(true),
             deleted: Set(false),
             created_at: Set(now),
-            created_by: Set(login.login.clone()),
+            created_by_login_id: Set(login.id),
             name: Set("OtherDivisionUnit".to_string()),
             comment: Set(String::new()),
             battalion: Set("B".to_string()),
@@ -1627,7 +1616,7 @@ mod tests {
         let env = cleanup().await.unwrap();
         let login = find_test_login(&env.dbx).await.unwrap();
         let unit =
-            insert_test_unit(&env.dbx, &login.login, "CallsignTestUnit").await;
+            insert_test_unit(&env.dbx, &login.id, "CallsignTestUnit").await;
         let now = Utc::now().naive_utc();
 
         insert_test_callsign_with_full_name(

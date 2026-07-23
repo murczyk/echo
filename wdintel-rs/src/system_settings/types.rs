@@ -40,7 +40,7 @@ pub struct SystemSettingsItem {
     pub rer_duty_poll_interval_sec: i64,
     pub created_at: i64,
     pub updated_at: i64,
-    pub updated_by: Option<String>,
+    pub updated_by_login_id: Option<String>,
     pub deleted: bool,
     pub short_url_enabled: bool,
     pub support_non_rer_interceptions: bool,

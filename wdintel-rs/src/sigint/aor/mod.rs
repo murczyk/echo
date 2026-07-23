@@ -1,6 +1,7 @@
 use self::types::*;
 use crate::entities::*;
 use crate::types::*;
+use crate::users::{ensure_admin, has_any_role, login_id_from_identity};
 use actix_web::post;
 use actix_web::web::{Data, Json};
 use milgeo_rs::coord_util::LatLng;
@@ -19,9 +20,9 @@ pub async fn aor_list(
     env: Data<Env>,
     req: Json<ListAreasOfResponsibilityReq>,
 ) -> Result<Json<Vec<AreaOfResponsibility>>, AppError> {
-    crate::users::has_any_role(
+    has_any_role(
         &env.dbx,
-        &user.id().c(h!())?,
+        &login_id_from_identity(&user)?,
         vec!["Admin", "UnitsEditor", "Rer", "Api"],
     )
     .await?;
@@ -55,9 +56,7 @@ pub async fn create_aor(
     env: Data<Env>,
     req: Json<AreaOfResponsibilityInsert>,
 ) -> Result<Json<AreaOfResponsibility>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Admin")
-        .await
-        .c(h!())?;
+    ensure_admin(&env.dbx, &user).await.c(h!())?;
     let model = map_insert(&env, &req, NotSet).await.c(h!())?;
     let aor = model.insert(&env.dbx).await.c(h!())?;
     Ok(Json(render_aor(aor)))
@@ -69,9 +68,7 @@ pub async fn update_aor(
     env: Data<Env>,
     req: Json<UpdateAreaOfResponsibilityReq>,
 ) -> Result<Json<AreaOfResponsibility>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Admin")
-        .await
-        .c(h!())?;
+    ensure_admin(&env.dbx, &user).await.c(h!())?;
 
     let model = map_insert(&env, &req.insert, Set(req.id)).await.c(h!())?;
     let aor = model.update(&env.dbx).await.c(h!())?;
@@ -91,9 +88,7 @@ pub async fn delete_aor(
     env: Data<Env>,
     req: Json<DeleteAreaOfResponsibilityReq>,
 ) -> Result<Json<()>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Admin")
-        .await
-        .c(h!())?;
+    ensure_admin(&env.dbx, &user).await.c(h!())?;
 
     let aor_obj = area_of_responsibility::Entity::find()
         .filter(area_of_responsibility::Column::Id.eq(req.id))
@@ -121,14 +116,15 @@ pub async fn update_aor_report_order(
     env: Data<Env>,
     req: Json<UpdateAreaOfResponsibilityReportOrderReq>,
 ) -> Result<Json<Vec<AreaOfResponsibility>>, AppError> {
-    let user_id = user.id().c(h!())?;
-    crate::users::has_any_role(&env.dbx, &user_id, vec!["Admin", "Rer"])
-        .await
-        .c(h!())?;
-
-    crate::users::has_role(&env.dbx, &user_id, "Admin")
-        .await
-        .c(h!())?;
+    has_any_role(
+        &env.dbx,
+        &login_id_from_identity(&user)?,
+        vec!["Admin", "Rer"],
+    )
+    .await
+    .c(h!())?;
+    ensure_admin(&env.dbx, &user).await.c(h!())?;
+    let user_id = login_id_from_identity(&user)?;
 
     let items = req
         .items
@@ -315,7 +311,7 @@ async fn map_insert(
         right_lon: Set(right_lon),
         left_settlement: Set(left_settlement),
         right_settlement: Set(right_settlement),
-        updated_by: NotSet,
+        updated_by_login_id: NotSet,
         updated_at: NotSet,
         created_at: NotSet,
         deleted: Set(false),

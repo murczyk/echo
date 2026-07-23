@@ -4,6 +4,8 @@ use crate::error::AppError;
 use crate::rer_importer::analysis::*;
 use crate::rer_importer::types::*;
 use crate::types::*;
+use crate::users::ensure_rer_role;
+use crate::users::login_id_from_identity;
 use crate::utils::orm::ArrayColumnOps;
 use crate::utils::string::*;
 use crate::utils::*;
@@ -1434,10 +1436,8 @@ pub async fn callsigns_graph(
     env: actix_web::web::Data<Env>,
     req: Json<CallsignsGraphReq>,
 ) -> Result<Json<NetJSONGraphAndMeta>, AppError> {
-    let login = user.id().c(h!())?;
-    crate::users::has_role(&env.dbx, &login, "Rer")
-        .await
-        .c(h!())?;
+    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    let login = login_id_from_identity(&user)?;
     let dt_since = dt_from_millis(req.since_date_inclusive_ms)?;
     let dt_till = dt_from_millis(req.till_date_noninclusive_ms)?;
     let req2 = AnalysisStatsReq {

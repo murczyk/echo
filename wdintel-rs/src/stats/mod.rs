@@ -1085,7 +1085,7 @@ pub async fn read_callsign_stats_aggregated(
 
 pub async fn read_tag_stats_aggregated(
     env: &actix_web::web::Data<Env>,
-    login: &str,
+    login: &uuid::Uuid,
     master_keys: Vec<String>,
     dt_since: NaiveDateTime,
     dt_till: NaiveDateTime,

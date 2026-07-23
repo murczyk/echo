@@ -3,6 +3,7 @@ use crate::entities::*;
 use crate::error::AppError;
 use crate::h;
 use crate::types::{Env, ShortContext};
+use crate::users::{ensure_admin, login_id_from_identity};
 use actix_identity::Identity;
 use actix_web::post;
 use actix_web::web::Json;
@@ -122,9 +123,9 @@ impl From<EchoMissingMessageDayCountRow> for EchoMissingMessageDayCount {
 pub async fn record_missing_message(
     dbx: &impl ConnectionTrait,
     message_id: i32,
-    scheduled_by: Option<&str>,
+    scheduled_by_login_id: Option<&uuid::Uuid>,
 ) -> Result<echo_missing_message::Model, AppError> {
-    let status = if scheduled_by.is_some() {
+    let status = if scheduled_by_login_id.is_some() {
         EchoMissingMessageStatus::Scheduled
     } else {
         EchoMissingMessageStatus::Pending
@@ -135,7 +136,7 @@ pub async fn record_missing_message(
         created_at: sea_orm::ActiveValue::NotSet,
         is_resolved: Set(false),
         resolved_at: Set(None),
-        scheduled_by: Set(scheduled_by.map(str::to_string)),
+        scheduled_by_login_id: Set(scheduled_by_login_id.copied()),
         status: Set(status),
         error: Set(None),
     };
@@ -168,7 +169,7 @@ pub async fn record_missing_message(
 pub async fn schedule_missing_message(
     dbx: &impl ConnectionTrait,
     missing_message: echo_missing_message::Model,
-    scheduled_by: &str,
+    scheduled_by_login_id: &uuid::Uuid,
 ) -> Result<echo_missing_message::Model, AppError> {
     if missing_message.is_resolved {
         return Ok(missing_message);
@@ -176,7 +177,7 @@ pub async fn schedule_missing_message(
     let mut missing_message: echo_missing_message::ActiveModel =
         missing_message.into();
     missing_message.status = Set(EchoMissingMessageStatus::Scheduled);
-    missing_message.scheduled_by = Set(Some(scheduled_by.to_string()));
+    missing_message.scheduled_by_login_id = Set(Some(*scheduled_by_login_id));
     missing_message.error = Set(None);
     missing_message.resolved_at = Set(None);
     missing_message.is_resolved = Set(false);
@@ -373,14 +374,14 @@ async fn find_or_record_missing_message(
 pub async fn schedule_missing_message_by_id(
     dbx: &DatabaseConnection,
     id: i64,
-    scheduled_by: &str,
+    scheduled_by_login_id: &uuid::Uuid,
 ) -> Result<echo_missing_message::Model, AppError> {
     let missing_message = echo_missing_message::Entity::find_by_id(id)
         .one(dbx)
         .await
         .c(h!())?
         .ok_or(AppError::NotFound)?;
-    schedule_missing_message(dbx, missing_message, scheduled_by).await
+    schedule_missing_message(dbx, missing_message, scheduled_by_login_id).await
 }
 
 pub(crate) async fn list_missing_messages(
@@ -401,10 +402,11 @@ pub(crate) async fn list_missing_messages(
             emm.created_at,
             emm.is_resolved,
             emm.resolved_at,
-            emm.scheduled_by,
+            scheduler.login as scheduled_by,
             emm.status::text as status,
             emm.error
         from echo_missing_message emm
+        left join login scheduler on scheduler.id = emm.scheduled_by_login_id
         left join echo_inbox_message eim on eim.id = emm.message_id
         left join lateral (
             select string_agg(
@@ -479,10 +481,7 @@ pub async fn echo_missing_message_list(
     env: actix_web::web::Data<Env>,
     req: Json<EchoMissingMessageListReq>,
 ) -> Result<Json<EchoMissingMessageListRsp>, AppError> {
-    let login = user.id().c(h!())?;
-    crate::users::has_role(&env.dbx, &login, "Admin")
-        .await
-        .c(h!())?;
+    ensure_admin(&env.dbx, &user).await.c(h!())?;
     Ok(Json(EchoMissingMessageListRsp {
         items: list_missing_messages(&env.dbx, req.into_inner()).await?,
     }))
@@ -494,10 +493,7 @@ pub async fn echo_missing_message_counts(
     env: actix_web::web::Data<Env>,
     req: Json<EchoMissingMessageCountsReq>,
 ) -> Result<Json<EchoMissingMessageCountsRsp>, AppError> {
-    let login = user.id().c(h!())?;
-    crate::users::has_role(&env.dbx, &login, "Admin")
-        .await
-        .c(h!())?;
+    ensure_admin(&env.dbx, &user).await.c(h!())?;
     Ok(Json(EchoMissingMessageCountsRsp {
         items: count_missing_messages_by_day(&env.dbx, req.into_inner())
             .await?,
@@ -510,10 +506,8 @@ pub async fn echo_missing_message_resolve(
     env: actix_web::web::Data<Env>,
     req: Json<EchoMissingMessageResolveReq>,
 ) -> Result<Json<EchoMissingMessageRow>, AppError> {
-    let login = user.id().c(h!())?;
-    crate::users::has_role(&env.dbx, &login, "Admin")
-        .await
-        .c(h!())?;
+    ensure_admin(&env.dbx, &user).await.c(h!())?;
+    let login = login_id_from_identity(&user)?;
     let missing_message =
         schedule_missing_message_by_id(&env.dbx, req.id, &login).await?;
     Ok(Json(row_by_id(&env.dbx, missing_message.id).await?))
@@ -532,10 +526,11 @@ async fn row_by_id(
             emm.created_at,
             emm.is_resolved,
             emm.resolved_at,
-            emm.scheduled_by,
+            scheduler.login as scheduled_by,
             emm.status::text as status,
             emm.error
         from echo_missing_message emm
+        left join login scheduler on scheduler.id = emm.scheduled_by_login_id
         left join echo_inbox_message eim on eim.id = emm.message_id
         left join lateral (
             select string_agg(

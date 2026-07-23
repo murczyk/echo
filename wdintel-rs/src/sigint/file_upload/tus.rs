@@ -115,7 +115,7 @@ impl TusHandler {
 
     pub async fn handle_request(
         &self,
-        login: &str,
+        login: &uuid::Uuid,
         method: &Method,
         headers: &HeaderMap,
         request_file: Option<String>,
@@ -149,7 +149,7 @@ impl TusHandler {
 
     pub async fn open_completed_url(
         &self,
-        login: &str,
+        login: &uuid::Uuid,
         upload_url: &str,
     ) -> Result<Option<TusUpload>, AppError> {
         let Some(request_file) = upload_url.strip_prefix(&self.prefix) else {
@@ -160,7 +160,7 @@ impl TusHandler {
 
     pub async fn resolve_completed_uploads(
         &self,
-        login: &str,
+        login: &uuid::Uuid,
         upload_urls: &[String],
     ) -> Result<Vec<MediaUploadInput>, AppError> {
         if upload_urls.len() > SIGINT_MESSAGE_MAX_ATTACHMENTS {
@@ -190,7 +190,7 @@ impl TusHandler {
 
     pub async fn open_completed_file(
         &self,
-        login: &str,
+        login: &uuid::Uuid,
         request_file: &str,
     ) -> Result<Option<TusUpload>, AppError> {
         let now = Utc::now();
@@ -213,7 +213,7 @@ impl TusHandler {
     async fn open_tus_upload(
         &self,
         file_id: Uuid,
-        login: &str,
+        login: &uuid::Uuid,
         upload_length: u64,
         file_path: PathBuf,
     ) -> Result<TusUpload, AppError> {
@@ -237,7 +237,7 @@ impl TusHandler {
 
     async fn process_head_request(
         &self,
-        login: &str,
+        login: &uuid::Uuid,
         headers: &HeaderMap,
         request_file: &str,
     ) -> Result<HttpResponse, AppError> {
@@ -285,7 +285,7 @@ impl TusHandler {
 
     async fn process_patch_request(
         &self,
-        login: &str,
+        login: &uuid::Uuid,
         headers: &HeaderMap,
         request_file: &str,
         payload: web::Payload,
@@ -397,7 +397,7 @@ impl TusHandler {
     async fn add_completed(
         &self,
         file_id: Uuid,
-        login: &str,
+        login: &uuid::Uuid,
         file_path: PathBuf,
         upload_length: u64,
     ) -> Result<(), AppError> {
@@ -417,7 +417,7 @@ impl TusHandler {
 
     async fn process_delete_request(
         &self,
-        login: &str,
+        login: &uuid::Uuid,
         headers: &HeaderMap,
         request_file: &str,
     ) -> Result<HttpResponse, AppError> {
@@ -452,7 +452,7 @@ impl TusHandler {
 
     async fn process_post_request(
         &self,
-        login: &str,
+        login: &uuid::Uuid,
         headers: &HeaderMap,
     ) -> Result<HttpResponse, AppError> {
         if !self.is_valid_protocol_version(headers) {
@@ -517,7 +517,7 @@ impl TusHandler {
 
     async fn parse_request_file_path(
         &self,
-        login: &str,
+        login: &uuid::Uuid,
         request_file: &str,
         pending: bool,
     ) -> Result<Option<(PathBuf, Uuid, u64)>, AppError> {
@@ -543,7 +543,7 @@ impl TusHandler {
     async fn create_file_path(
         &self,
         file_id: Uuid,
-        login: &str,
+        login: &uuid::Uuid,
         upload_length: u64,
         pending: bool,
     ) -> Result<(PathBuf, String), AppError> {
@@ -691,6 +691,6 @@ fn media_upload_input_from_tus_upload(upload: TusUpload) -> MediaUploadInput {
     }
 }
 
-fn login_dir(login: &str) -> String {
+fn login_dir(login: &uuid::Uuid) -> String {
     base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(login.as_bytes())
 }

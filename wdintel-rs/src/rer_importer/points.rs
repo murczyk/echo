@@ -185,7 +185,8 @@ pub fn build_palitra_access_filter(
         PalitraAccess::ByLogins { logins } => {
             let by_login = palitra_access_login::Entity::find()
                 .filter(
-                    palitra_access_login::Column::Login.eq_any(logins.clone()),
+                    palitra_access_login::Column::LoginId
+                        .eq_any(logins.clone()),
                 )
                 .join(
                     JoinType::InnerJoin,

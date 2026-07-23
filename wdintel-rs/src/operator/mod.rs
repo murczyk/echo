@@ -7,6 +7,7 @@ use crate::h;
 use crate::messenger::types::Message;
 use crate::types::Env;
 use crate::types::ShortContext;
+use crate::users::{has_role, login_id_from_identity};
 use crate::utils::orm::ArrayColumnOps;
 use actix_web::post;
 use actix_web::web::Json;
@@ -24,10 +25,10 @@ async fn message_submit(
     env: actix_web::web::Data<Env>,
     req: Json<types::OperatorInboxMessage>,
 ) -> Result<Json<types::SubmitMessageRsp>, AppError> {
-    let login = user.id().c(h!())?;
-    crate::users::has_role(&env.dbx, &login, "Api")
+    has_role(&env.dbx, &login_id_from_identity(&user)?, "Api")
         .await
         .c(h!())?;
+    let login = login_id_from_identity(&user)?;
 
     let txn = env.dbx.begin().await.c(h!())?;
     let datasource = ensure_api_datasource(&login, &txn).await.c(h!())?;
@@ -122,12 +123,12 @@ async fn enqueue_message_dmr_metadata(
 }
 
 async fn ensure_api_datasource(
-    login: &str,
+    login: &uuid::Uuid,
     txn: &DatabaseTransaction,
 ) -> Result<datasource::Model, AppError> {
     let now = chrono::Utc::now().naive_utc();
     let maybe_datasource = datasource::Entity::find()
-        .filter(datasource::Column::ApiLogin.eq(login))
+        .filter(datasource::Column::ApiLoginId.eq(*login))
         .filter(datasource::Column::Kind.eq("echo_operator"))
         .one(txn)
         .await
@@ -138,7 +139,7 @@ async fn ensure_api_datasource(
         if is_deleted {
             // ressurect but not re-enable datasource
             updated_datasource.deleted = Set(false);
-            updated_datasource.updated_by = Set(Some(login.to_string()));
+            updated_datasource.updated_by_login_id = Set(Some(*login));
             updated_datasource.enabled = Set(Some(false));
         } else {
             updated_datasource.last_sync_at = Set(Some(now));
@@ -150,8 +151,8 @@ async fn ensure_api_datasource(
             kind: Set("echo_operator".to_string()),
             display_name: Set(format!("EХО Оператор {login}")),
             enabled: Set(Some(true)),
-            api_login: Set(Some(login.to_string())),
-            updated_by: Set(Some(login.to_string())),
+            api_login_id: Set(Some(*login)),
+            updated_by_login_id: Set(Some(*login)),
             last_sync_at: Set(Some(now)),
             deleted: Set(false),
             ..Default::default()

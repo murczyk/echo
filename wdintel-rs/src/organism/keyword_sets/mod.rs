@@ -1,3 +1,4 @@
+use crate::users::{has_role, login_id_from_identity};
 pub mod bl;
 pub mod types;
 
@@ -20,10 +21,10 @@ use sea_orm::*;
 
 pub async fn try_resolve_viewer_organism_id(
     dbx: &DatabaseConnection,
-    login: &str,
+    login: &uuid::Uuid,
 ) -> Result<Option<i64>, AppError> {
     let login_obj = login::Entity::find()
-        .filter(login::Column::Login.eq(login.to_string()))
+        .filter(login::Column::Id.eq(*login))
         .filter(login::Column::DeletedPermanently.eq(false))
         .one(dbx)
         .await
@@ -34,7 +35,7 @@ pub async fn try_resolve_viewer_organism_id(
 
 pub async fn resolve_viewer_organism_id(
     dbx: &DatabaseConnection,
-    login: &str,
+    login: &uuid::Uuid,
 ) -> Result<i64, AppError> {
     try_resolve_viewer_organism_id(dbx, login)
         .await?
@@ -43,25 +44,27 @@ pub async fn resolve_viewer_organism_id(
         })
 }
 
-async fn viewer_is_admin(dbx: &DatabaseConnection, login: &str) -> bool {
-    crate::users::has_role(dbx, login, "Admin").await.is_ok()
+async fn viewer_is_admin(dbx: &DatabaseConnection, login: &uuid::Uuid) -> bool {
+    has_role(dbx, login, "Admin").await.is_ok()
 }
 
 fn dto_from_model(
     row: organism_keyword_set::Model,
-    login: &str,
+    login: &uuid::Uuid,
     is_admin: bool,
 ) -> OrganismKeywordSetDto {
     let words = row.words.clone();
     let can_edit =
-        keyword_set_can_edit(row.author_login.as_deref(), login, is_admin);
+        keyword_set_can_edit(row.author_login_id.as_ref(), login, is_admin);
     let can_delete =
-        keyword_set_can_delete(row.author_login.as_deref(), login, is_admin);
+        keyword_set_can_delete(row.author_login_id.as_ref(), login, is_admin);
     OrganismKeywordSetDto {
         id: row.id,
         name: row.name,
         words,
-        author_login: row.author_login,
+        author_login_id: row
+            .author_login_id
+            .map(|login_id| login_id.to_string()),
         can_edit,
         can_delete,
     }
@@ -129,7 +132,7 @@ pub async fn list_keyword_sets(
     user: actix_identity::Identity,
     env: Data<Env>,
 ) -> Result<Json<Vec<OrganismKeywordSetDto>>, AppError> {
-    let login = user.id().c(h!())?;
+    let login = login_id_from_identity(&user)?;
     let is_admin = viewer_is_admin(&env.dbx, &login).await;
     let organism_id = resolve_viewer_organism_id(&env.dbx, &login).await?;
     let rows = organism_keyword_set::Entity::find()
@@ -151,7 +154,7 @@ pub async fn upsert_keyword_set(
     env: Data<Env>,
     req: Json<OrganismKeywordSetUpsertReq>,
 ) -> Result<Json<OrganismKeywordSetDto>, AppError> {
-    let login = user.id().c(h!())?;
+    let login = login_id_from_identity(&user)?;
     let is_admin = viewer_is_admin(&env.dbx, &login).await;
     let organism_id = resolve_viewer_organism_id(&env.dbx, &login).await?;
     let words = normalize_keyword_words(&req.words)?;
@@ -168,7 +171,7 @@ pub async fn upsert_keyword_set(
             let existing =
                 load_set_for_viewer(&env.dbx, organism_id, id).await?;
             if !keyword_set_can_edit(
-                existing.author_login.as_deref(),
+                existing.author_login_id.as_ref(),
                 &login,
                 is_admin,
             ) {
@@ -220,7 +223,7 @@ pub async fn upsert_keyword_set(
             organism_keyword_set::ActiveModel {
                 id: NotSet,
                 organism_id: Set(organism_id),
-                author_login: Set(Some(login.clone())),
+                author_login_id: Set(Some(login)),
                 name: Set(name.to_string()),
                 words: Set(words),
                 updated_at: Set(now),
@@ -240,13 +243,13 @@ pub async fn delete_keyword_set(
     env: Data<Env>,
     path: Path<i64>,
 ) -> Result<Json<()>, AppError> {
-    let login = user.id().c(h!())?;
+    let login = login_id_from_identity(&user)?;
     let is_admin = viewer_is_admin(&env.dbx, &login).await;
     let organism_id = resolve_viewer_organism_id(&env.dbx, &login).await?;
     let id = path.into_inner();
     let existing = load_set_for_viewer(&env.dbx, organism_id, id).await?;
     if !keyword_set_can_delete(
-        existing.author_login.as_deref(),
+        existing.author_login_id.as_ref(),
         &login,
         is_admin,
     ) {
@@ -267,7 +270,7 @@ pub async fn inflect_keyword_set(
     env: Data<Env>,
     req: Json<OrganismKeywordSetInflectReq>,
 ) -> Result<Json<OrganismKeywordSetInflectRsp>, AppError> {
-    let _login = user.id().c(h!())?;
+    let _login = login_id_from_identity(&user)?;
     let _organism_id = resolve_viewer_organism_id(&env.dbx, &_login).await?;
     let lemmas: Vec<String> = req
         .lemmas

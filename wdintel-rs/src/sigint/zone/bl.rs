@@ -402,11 +402,11 @@ async fn replace_secret_group_access(
         return Ok(());
     }
 
-    for login in normalize_login_list(user_logins) {
+    for login in normalize_login_list(user_logins)? {
         secret_group_user::Entity::insert(secret_group_user::ActiveModel {
             id: NotSet,
             master_key: Set(master_key.to_string()),
-            login: Set(login),
+            login_id: Set(login),
             secret_group_organism_id: Set(None),
         })
         .on_conflict_do_nothing()
@@ -436,14 +436,21 @@ async fn replace_secret_group_access(
     Ok(())
 }
 
-fn normalize_login_list(logins: Vec<String>) -> Vec<String> {
+fn normalize_login_list(
+    logins: Vec<String>,
+) -> Result<Vec<uuid::Uuid>, AppError> {
     logins
         .into_iter()
         .map(|login| login.trim().to_string())
         .filter(|login| !login.is_empty())
         .collect::<BTreeSet<_>>()
         .into_iter()
-        .collect()
+        .map(|login| {
+            uuid::Uuid::parse_str(&login)
+                .map_err(anyhow::Error::from)
+                .map_err(AppError::from)
+        })
+        .collect::<Result<Vec<_>, AppError>>()
 }
 
 async fn load_active_organism_ids(
@@ -491,9 +498,10 @@ pub async fn replace_group_admin_logins(
         .c(h!())?;
 
     for login in admin_logins {
+        let login = uuid::Uuid::parse_str(&login).c(h!())?;
         let existing = signal_group_admin::Entity::find_by_id((
             master_key.to_string(),
-            login.clone(),
+            login,
         ))
         .one(txn)
         .await
@@ -508,7 +516,7 @@ pub async fn replace_group_admin_logins(
 
         signal_group_admin::ActiveModel {
             signal_group_id: Set(master_key.to_string()),
-            login: Set(login),
+            login_id: Set(login),
             deleted: Set(false),
             created_at: NotSet,
         }
@@ -536,16 +544,16 @@ where
         .filter(signal_group_admin::Column::SignalGroupId.eq_any(master_keys))
         .select_only()
         .column(signal_group_admin::Column::SignalGroupId)
-        .column(signal_group_admin::Column::Login)
-        .order_by_asc(signal_group_admin::Column::Login)
-        .into_tuple::<(String, String)>()
+        .column(signal_group_admin::Column::LoginId)
+        .order_by_asc(signal_group_admin::Column::LoginId)
+        .into_tuple::<(String, uuid::Uuid)>()
         .all(dbx)
         .await
         .c(h!())?;
 
     let mut res = HashMap::<String, Vec<String>>::new();
     for (master_key, login) in rows {
-        res.entry(master_key).or_default().push(login);
+        res.entry(master_key).or_default().push(login.to_string());
     }
     Ok(res)
 }
@@ -566,16 +574,16 @@ where
         .filter(secret_group_user::Column::SecretGroupOrganismId.is_null())
         .select_only()
         .column(secret_group_user::Column::MasterKey)
-        .column(secret_group_user::Column::Login)
-        .order_by_asc(secret_group_user::Column::Login)
-        .into_tuple::<(String, String)>()
+        .column(secret_group_user::Column::LoginId)
+        .order_by_asc(secret_group_user::Column::LoginId)
+        .into_tuple::<(String, uuid::Uuid)>()
         .all(dbx)
         .await
         .c(h!())?;
 
     let mut res = HashMap::<String, Vec<String>>::new();
     for (master_key, login) in rows {
-        res.entry(master_key).or_default().push(login);
+        res.entry(master_key).or_default().push(login.to_string());
     }
     Ok(res)
 }
@@ -660,27 +668,23 @@ pub async fn refresh_secret_group_memberships(
         .all(txn)
         .await
         .c(h!())?;
-    let mut logins_by_organism = HashMap::<i64, Vec<String>>::new();
+    let mut logins_by_organism = HashMap::<i64, Vec<uuid::Uuid>>::new();
     for login in logins {
         if let Some(organism_id) = login.organism_id {
             logins_by_organism
                 .entry(organism_id)
                 .or_default()
-                .push(login.login);
+                .push(login.id);
         }
     }
 
-    let mut desired = HashSet::<(i64, String, String)>::new();
+    let mut desired = HashSet::<(i64, String, uuid::Uuid)>::new();
     for invite in &valid_invites {
         let Some(logins) = logins_by_organism.get(&invite.organism_id) else {
             continue;
         };
         for login in logins {
-            desired.insert((
-                invite.id,
-                invite.master_key.clone(),
-                login.clone(),
-            ));
+            desired.insert((invite.id, invite.master_key.clone(), *login));
         }
     }
 
@@ -699,7 +703,7 @@ pub async fn refresh_secret_group_memberships(
         let key = (
             secret_group_organism_id,
             secret_group_user.master_key.clone(),
-            secret_group_user.login.clone(),
+            secret_group_user.login_id,
         );
         if desired.contains(&key) {
             existing_keys.insert(key);
@@ -712,14 +716,14 @@ pub async fn refresh_secret_group_memberships(
         if existing_keys.contains(&(
             secret_group_organism_id,
             master_key.clone(),
-            login.clone(),
+            login,
         )) {
             continue;
         }
         secret_group_user::Entity::insert(secret_group_user::ActiveModel {
             id: NotSet,
             master_key: Set(master_key),
-            login: Set(login),
+            login_id: Set(login),
             secret_group_organism_id: Set(Some(secret_group_organism_id)),
         })
         .on_conflict_do_nothing()

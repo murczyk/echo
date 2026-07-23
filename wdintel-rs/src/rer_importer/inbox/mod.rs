@@ -1,6 +1,9 @@
 use crate::entities::{prelude::*, *};
 use crate::palitra::worker::do_palitra_highlight;
 use crate::rer_importer::types::*;
+use crate::users::{
+    ensure_rer_role, has_any_role, has_role, login_id_from_identity,
+};
 
 use crate::config::*;
 use crate::error::AppError;
@@ -62,7 +65,8 @@ async fn get_inbox_map(
     env: actix_web::web::Data<Env>,
     req: Json<MapPointsReq>,
 ) -> Result<Json<MapPointsRsp>, AppError> {
-    let user_id = user.id().c(h!())?;
+    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    let user_id = login_id_from_identity(&user)?;
     let page_id = req.page_id.clone();
     let req = req.into_inner();
 
@@ -70,10 +74,7 @@ async fn get_inbox_map(
     record_page_visit(&user_id, &page_id, &env, Some(payload))
         .await
         .context(h!())?;
-    crate::users::has_role(&env.dbx, &user_id, "Rer")
-        .await
-        .c(h!())?;
-    let login = user.id().c(h!())?;
+    let login = user_id;
 
     let mut filter = req.inbox_items_filter.clone();
     filter.nolimit = Some(true); // fetch all points
@@ -160,10 +161,14 @@ async fn inbox_item_context(
     env: actix_web::web::Data<Env>,
     req: Json<InboxItemContextReq>,
 ) -> Result<Json<InboxItemContextRsp>, AppError> {
-    let login = user.id().c(h!())?;
-    crate::users::has_any_role(&env.dbx, &login, vec!["Rer", "ApiAgent"])
-        .await
-        .c(h!())?;
+    has_any_role(
+        &env.dbx,
+        &login_id_from_identity(&user)?,
+        vec!["Rer", "ApiAgent"],
+    )
+    .await
+    .c(h!())?;
+    let login = login_id_from_identity(&user)?;
     let Some(message_uid) =
         normalized_optional_string(Some(req.message_uid.as_str()))
     else {
@@ -176,7 +181,7 @@ async fn inbox_item_context(
 
 async fn inbox_item_context_bl(
     dbx: &DatabaseConnection,
-    login: &str,
+    login: &uuid::Uuid,
     message_uid: &str,
 ) -> Result<InboxItemContextRsp, AppError> {
     let allowed_groups =
@@ -317,15 +322,15 @@ async fn messages_by_id(
     env: actix_web::web::Data<Env>,
     req: Json<MessageIdsReq>,
 ) -> Result<Json<MessageIdsRsp>, AppError> {
-    crate::users::has_any_role(
+    has_any_role(
         &env.dbx,
-        &user.id().c(h!())?,
+        &login_id_from_identity(&user)?,
         vec!["Rer", "ApiAgent"],
     )
     .await
     .c(h!())?;
-    let login = user.id().c(h!())?;
-    let logins = crate::users::get_organism_logins(&env.dbx, user)
+    let login = login_id_from_identity(&user)?;
+    let logins = crate::users::get_organism_login_ids(&env.dbx, user)
         .await
         .context(h!())?;
 
@@ -341,8 +346,8 @@ async fn messages_by_id(
 }
 
 pub(crate) async fn messages_by_id_bl(
-    login: &str,
-    logins: &Vec<String>,
+    login: &uuid::Uuid,
+    logins: &Vec<uuid::Uuid>,
     env: &Env,
     message_ids: &[i64],
     req: &InboxMessagesReq,
@@ -433,7 +438,7 @@ pub(crate) async fn messages_by_id_bl(
                     .into_simple_expr(),
                     Expr::col((
                         sigint_inbox_item_tag::Entity,
-                        sigint_inbox_item_tag::Column::Login,
+                        sigint_inbox_item_tag::Column::LoginId,
                     ))
                     .into_simple_expr(),
                     Expr::col((
@@ -497,7 +502,17 @@ async fn inbox_messages(
     env: actix_web::web::Data<Env>,
     req: Json<InboxMessagesReq>,
 ) -> Result<Json<InboxMessagesRsp>, AppError> {
-    let user_id = user.id().c(h!())?;
+    has_any_role(
+        &env.dbx,
+        &login_id_from_identity(&user)?,
+        vec!["Rer", "ApiAgent"],
+    )
+    .await
+    .c(h!())?;
+    let is_admin = has_role(&env.dbx, &login_id_from_identity(&user)?, "Admin")
+        .await
+        .is_ok();
+    let user_id = login_id_from_identity(&user)?;
     let page_id = req.page_id.clone();
     let mut req = req.into_inner();
     let skip_group_stats = req.skip_group_stats.unwrap_or(false);
@@ -506,15 +521,8 @@ async fn inbox_messages(
     record_page_visit(&user_id, &page_id, &env, Some(payload))
         .await
         .context(h!())?;
-    crate::users::has_any_role(&env.dbx, &user_id, vec!["Rer", "ApiAgent"])
-        .await
-        .c(h!())?;
-    let is_admin =
-        crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Admin")
-            .await
-            .is_ok();
-    let login = user.id().c(h!())?;
-    let logins = crate::users::get_organism_logins(&env.dbx, user)
+    let login = user_id;
+    let logins = crate::users::get_organism_login_ids(&env.dbx, user)
         .await
         .context(h!())?;
     let test_limit = apply_test_inbox_settings(&env, &mut req).await?;
@@ -573,10 +581,8 @@ async fn inbox_group_stats(
     user: Identity,
     env: actix_web::web::Data<Env>,
 ) -> Result<Json<InboxByGroupDigestRsp>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
-        .await
-        .c(h!())?;
-    let login = user.id().c(h!())?;
+    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    let login = login_id_from_identity(&user)?;
     let master_keys =
         crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
             .await
@@ -643,7 +649,14 @@ async fn inbox_messages_count(
     env: actix_web::web::Data<Env>,
     req: Json<InboxMessagesReq>,
 ) -> Result<Json<InboxMessagesDigestRsp>, AppError> {
-    let user_id = user.id().c(h!())?;
+    has_any_role(
+        &env.dbx,
+        &login_id_from_identity(&user)?,
+        vec!["Rer", "ApiAgent"],
+    )
+    .await
+    .c(h!())?;
+    let user_id = login_id_from_identity(&user)?;
     let page_id = req.page_id.clone();
     let mut req = req.into_inner();
 
@@ -651,9 +664,6 @@ async fn inbox_messages_count(
     record_page_visit(&user_id, &page_id, &env, Some(payload))
         .await
         .context(h!())?;
-    crate::users::has_any_role(&env.dbx, &user_id, vec!["Rer", "ApiAgent"])
-        .await
-        .c(h!())?;
     let login = user_id;
 
     let test_limit = apply_test_inbox_settings(&env, &mut req).await?;
@@ -693,9 +703,7 @@ async fn delete_message(
     env: actix_web::web::Data<Env>,
     req: Json<InboxDeleteReq>,
 ) -> Result<Json<()>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
-        .await
-        .c(h!())?;
+    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
     let txn = env.dbx.begin().await.context(h!())?;
     let result = match signal_message::Entity::find_by_id(req.id)
         .filter(signal_message::Column::Deleted.eq(false))
@@ -913,7 +921,7 @@ fn submit_item_callsigns(item: &InboxSubmitItem) -> Vec<String> {
 async fn add_submit_tags(
     txn: &DatabaseTransaction,
     inbox_id: i64,
-    login: &str,
+    login: &uuid::Uuid,
     tag_ids: Option<Vec<i64>>,
 ) -> Result<(), AppError> {
     let Some(tag_ids) = tag_ids else {
@@ -926,10 +934,7 @@ async fn add_submit_tags(
                 sigint_inbox_item_tag::Column::SigintInboxItemId.eq(inbox_id),
             )
             .filter(sigint_inbox_item_tag::Column::TagId.eq(tag_id))
-            .filter(
-                sigint_inbox_item_tag::Column::Login
-                    .eq(Some(login.to_string())),
-            )
+            .filter(sigint_inbox_item_tag::Column::LoginId.eq(Some(*login)))
             .filter(sigint_inbox_item_tag::Column::Model.is_null())
             .one(txn)
             .await
@@ -942,7 +947,7 @@ async fn add_submit_tags(
             sigint_inbox_item_id: Set(inbox_id),
             tag_id: Set(tag_id),
             confidence: Set(1.0),
-            login: Set(Some(login.to_string())),
+            login_id: Set(Some(*login)),
             model: Set(None),
             ..Default::default()
         }
@@ -956,7 +961,7 @@ async fn add_submit_tags(
 async fn replace_submit_tags(
     txn: &DatabaseTransaction,
     inbox_id: i64,
-    login: &str,
+    login: &uuid::Uuid,
     tag_ids: Option<Vec<i64>>,
 ) -> Result<(), AppError> {
     let Some(tag_ids) = tag_ids else {
@@ -964,9 +969,7 @@ async fn replace_submit_tags(
     };
     sigint_inbox_item_tag::Entity::delete_many()
         .filter(sigint_inbox_item_tag::Column::SigintInboxItemId.eq(inbox_id))
-        .filter(
-            sigint_inbox_item_tag::Column::Login.eq(Some(login.to_string())),
-        )
+        .filter(sigint_inbox_item_tag::Column::LoginId.eq(Some(*login)))
         .filter(sigint_inbox_item_tag::Column::Model.is_null())
         .exec(txn)
         .await
@@ -1027,7 +1030,7 @@ fn validate_submit_dmr_timestamps(
 async fn ensure_submit_groups(
     txn: &DatabaseTransaction,
     datasource: &datasource::Model,
-    login: &str,
+    login: &uuid::Uuid,
     group_names: &[String],
 ) -> Result<Vec<(String, i64)>, AppError> {
     let mut groups = vec![];
@@ -1058,7 +1061,7 @@ async fn ensure_submit_groups(
     Ok(groups)
 }
 
-fn submit_group_master_key(login: &str, group_name: &str) -> String {
+fn submit_group_master_key(login: &uuid::Uuid, group_name: &str) -> String {
     let digest = sha256::digest(format!("{login}:{group_name}"));
     format!("echo.{}", &digest[..32])
 }
@@ -1733,7 +1736,7 @@ fn submit_dmr_metadata_model(
 
 async fn ensure_comment_save_access(
     env: &Env,
-    login: &str,
+    login: &uuid::Uuid,
     sigint_groups: &[String],
     message_id: i64,
 ) -> Result<(), AppError> {
@@ -1794,10 +1797,8 @@ async fn comment_save(
     env: actix_web::web::Data<Env>,
     req: Json<InboxCommentSaveReq>,
 ) -> Result<Json<()>, AppError> {
-    let login = user.id().c(h!())?;
-    crate::users::has_role(&env.dbx, &login, "Rer")
-        .await
-        .c(h!())?;
+    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    let login = login_id_from_identity(&user)?;
     let sigint_groups =
         crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
             .await
@@ -1806,7 +1807,7 @@ async fn comment_save(
     ensure_comment_save_access(&env, &login, &sigint_groups, req.message_id)
         .await?;
 
-    let logins = crate::users::get_organism_logins_by_login(&env.dbx, &login)
+    let logins = crate::users::get_organism_login_ids_by_id(&env.dbx, &login)
         .await
         .c(h!())?;
     let txn = env.dbx.begin().await.c(h!())?;
@@ -1843,11 +1844,9 @@ async fn submit_legacy_inbox(
     env: &Data<Env>,
     req: InboxSubmitReq,
 ) -> Result<InboxSubmitRsp, AppError> {
-    let login = user.id().c(h!())?;
-    crate::users::has_role(&env.dbx, &login, "Rer")
-        .await
-        .c(h!())?;
-    let logins = crate::users::get_organism_logins(&env.dbx, user)
+    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    let login = login_id_from_identity(&user)?;
+    let logins = crate::users::get_organism_login_ids(&env.dbx, user)
         .await
         .context(h!())?;
     submit_legacy_inbox_messages(env, &login, &logins, req).await
@@ -1855,8 +1854,8 @@ async fn submit_legacy_inbox(
 
 async fn submit_legacy_inbox_messages(
     env: &Data<Env>,
-    login: &str,
-    logins: &Vec<String>,
+    login: &uuid::Uuid,
+    logins: &Vec<uuid::Uuid>,
     req: InboxSubmitReq,
 ) -> Result<InboxSubmitRsp, AppError> {
     let txn = env.dbx.begin().await.c(h!())?;
@@ -1982,9 +1981,7 @@ async fn inbox_cursor(
     user: actix_identity::Identity,
     env: actix_web::web::Data<Env>,
 ) -> Result<Json<Option<i64>>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
-        .await
-        .c(h!())?;
+    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
     // no op
     let since_id_noninclusive = None;
     Ok(Json(since_id_noninclusive))
@@ -1997,17 +1994,15 @@ async fn update_inbox_cursor(
     env: actix_web::web::Data<Env>,
     _req: Json<UpdateCursorReq>,
 ) -> Result<Json<()>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
-        .await
-        .c(h!())?;
+    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
 
     // no op
     Ok(Json(()))
 }
 
 pub async fn get_inbox_messages(
-    login: &str,
-    logins: &Vec<String>,
+    login: &uuid::Uuid,
+    logins: &Vec<uuid::Uuid>,
     env: &Env,
     req: &InboxMessagesReq,
 ) -> Result<Vec<(i64, InboxMessage)>, AppError> {
@@ -2015,8 +2010,8 @@ pub async fn get_inbox_messages(
 }
 
 pub async fn get_inbox_messages_created_between(
-    login: &str,
-    logins: &Vec<String>,
+    login: &uuid::Uuid,
+    logins: &Vec<uuid::Uuid>,
     env: &Env,
     req: &InboxMessagesReq,
     created_after: NaiveDateTime,
@@ -2042,8 +2037,8 @@ pub async fn get_inbox_messages_created_between(
 
 pub async fn get_inbox_messages_with_conn(
     dbx: &DatabaseConnection,
-    login: &str,
-    logins: &Vec<String>,
+    login: &uuid::Uuid,
+    logins: &Vec<uuid::Uuid>,
     env: &Env,
     req: &InboxMessagesReq,
 ) -> Result<Vec<(i64, InboxMessage)>, AppError> {
@@ -2069,8 +2064,8 @@ pub(crate) fn format_inbox_message_location(
 }
 
 async fn get_inbox_messages_limited(
-    login: &str,
-    logins: &Vec<String>,
+    login: &uuid::Uuid,
+    logins: &Vec<uuid::Uuid>,
     env: &Env,
     req: &InboxMessagesReq,
     limit: i64,
@@ -2086,8 +2081,8 @@ async fn get_inbox_messages_limited(
 
 async fn fetch_inbox_messages_with_query(
     dbx: &DatabaseConnection,
-    login: &str,
-    logins: &Vec<String>,
+    login: &uuid::Uuid,
+    logins: &Vec<uuid::Uuid>,
     env: &Env,
     req: &InboxMessagesReq,
     q: &str,
@@ -2105,8 +2100,8 @@ async fn fetch_inbox_messages_with_query(
 
 async fn fetch_inbox_messages_with_statement(
     dbx: &DatabaseConnection,
-    login: &str,
-    logins: &Vec<String>,
+    login: &uuid::Uuid,
+    logins: &Vec<uuid::Uuid>,
     env: &Env,
     req: &InboxMessagesReq,
     statement: Statement,
@@ -2152,10 +2147,8 @@ async fn get_freq_pelengs_summary(
     env: actix_web::web::Data<Env>,
     req: Json<InboxMessagesReq>,
 ) -> Result<Json<FreqPelengsActivityRsp>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
-        .await
-        .c(h!())?;
-    let login = user.id().c(h!())?;
+    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    let login = login_id_from_identity(&user)?;
 
     let q = build_inbox_query(&login, &env, &req.into_inner())
         .await
@@ -2550,11 +2543,11 @@ mod tests {
             post: Some("SC1".to_string()),
             ..Default::default()
         });
-        let logins = vec![login.login.clone()];
+        let logins = vec![login.id];
 
         let rsp = submit_legacy_inbox_messages(
             &env_data,
-            &login.login,
+            &login.id,
             &logins,
             InboxSubmitReq {
                 messages: vec![(message.id, inbox_message)],
@@ -2605,7 +2598,7 @@ mod tests {
             location: Some("Робоботине".to_string()),
             ..Default::default()
         });
-        let logins = vec![login.login.clone()];
+        let logins = vec![login.id];
         let txn = env.dbx.begin().await.unwrap();
 
         submit_upsert_inbox_item(
@@ -2613,7 +2606,7 @@ mod tests {
             &txn,
             message.id,
             &inbox_message,
-            &login.login,
+            &login.id,
             &logins,
             InboxLocationSubmitMode::PreserveTyped,
             true,
@@ -2655,7 +2648,7 @@ mod tests {
             location: Some("Робоботине".to_string()),
             ..Default::default()
         });
-        let logins = vec![login.login.clone()];
+        let logins = vec![login.id];
         let txn = env.dbx.begin().await.unwrap();
 
         submit_upsert_inbox_item(
@@ -2663,7 +2656,7 @@ mod tests {
             &txn,
             message.id,
             &inbox_message,
-            &login.login,
+            &login.id,
             &logins,
             InboxLocationSubmitMode::Parse,
             true,
@@ -2690,6 +2683,7 @@ mod tests {
         let peer_login = mk_login(
             &env.dbx,
             login::ActiveModel {
+                id: NotSet,
                 login: Set("LegacySubmitPeer".to_string()),
                 organism_id: Set(login.organism_id),
                 sigint_zone_id: Set(login.sigint_zone_id),
@@ -2719,7 +2713,7 @@ mod tests {
         mk_sigint_comment(
             &env.dbx,
             sigint_comment::ActiveModel {
-                login: Set(peer_login.login.clone()),
+                login_id: Set(peer_login.id),
                 signal_message_id: Set(message.id),
                 comment: Set("peer comment must stay".to_string()),
                 created_at: Set(Utc::now().naive_utc()),
@@ -2735,7 +2729,7 @@ mod tests {
             sender: Some("legacy peer sender".to_string()),
             ..Default::default()
         });
-        let logins = vec![login.login.clone(), peer_login.login.clone()];
+        let logins = vec![login.id, peer_login.id];
         let txn = env.dbx.begin().await.unwrap();
 
         submit_upsert_inbox_item(
@@ -2743,7 +2737,7 @@ mod tests {
             &txn,
             message.id,
             &inbox_message,
-            &login.login,
+            &login.id,
             &logins,
             InboxLocationSubmitMode::PreserveTyped,
             true,
@@ -2755,7 +2749,7 @@ mod tests {
 
         let peer_comment = sigint_comment::Entity::find()
             .filter(sigint_comment::Column::SignalMessageId.eq(message.id))
-            .filter(sigint_comment::Column::Login.eq(peer_login.login.clone()))
+            .filter(sigint_comment::Column::LoginId.eq(peer_login.id))
             .one(&env.dbx)
             .await
             .unwrap()
@@ -2764,7 +2758,7 @@ mod tests {
 
         let current_comment_count = sigint_comment::Entity::find()
             .filter(sigint_comment::Column::SignalMessageId.eq(message.id))
-            .filter(sigint_comment::Column::Login.eq(login.login.clone()))
+            .filter(sigint_comment::Column::LoginId.eq(login.id))
             .count(&env.dbx)
             .await
             .unwrap();
@@ -2779,6 +2773,7 @@ mod tests {
         let peer_login = mk_login(
             &env.dbx,
             login::ActiveModel {
+                id: NotSet,
                 login: Set(format!("CommentMergePeer{}", Uuid::new_v4())),
                 organism_id: Set(login.organism_id),
                 sigint_zone_id: Set(login.sigint_zone_id),
@@ -2804,7 +2799,7 @@ mod tests {
         mk_sigint_comment(
             &env.dbx,
             sigint_comment::ActiveModel {
-                login: Set(peer_login.login.clone()),
+                login_id: Set(peer_login.id),
                 signal_message_id: Set(message.id),
                 comment: Set("peer old".to_string()),
                 created_at: Set(now - Duration::minutes(2)),
@@ -2816,7 +2811,7 @@ mod tests {
         mk_sigint_comment(
             &env.dbx,
             sigint_comment::ActiveModel {
-                login: Set(login.login.clone()),
+                login_id: Set(login.id),
                 signal_message_id: Set(message.id),
                 comment: Set("current old".to_string()),
                 created_at: Set(now - Duration::minutes(1)),
@@ -2826,11 +2821,11 @@ mod tests {
         .await
         .unwrap();
 
-        let logins = vec![login.login.clone(), peer_login.login.clone()];
+        let logins = vec![login.id, peer_login.id];
         upsert_editable_sigint_comment(
             &env.dbx,
             message.id,
-            &login.login,
+            &login.id,
             &logins,
             "merged comment",
         )
@@ -2843,7 +2838,7 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(comments.len(), 1);
-        assert_eq!(comments[0].login, login.login);
+        assert_eq!(comments[0].login_id, login.id);
         assert_eq!(comments[0].comment, "merged comment");
     }
 
@@ -2856,6 +2851,7 @@ mod tests {
         let peer_login = mk_login(
             &env.dbx,
             login::ActiveModel {
+                id: NotSet,
                 login: Set(format!("CommentDeletePeer{}", Uuid::new_v4())),
                 organism_id: Set(login.organism_id),
                 sigint_zone_id: Set(login.sigint_zone_id),
@@ -2878,6 +2874,7 @@ mod tests {
         let other_login = mk_login(
             &env.dbx,
             login::ActiveModel {
+                id: NotSet,
                 login: Set(format!("CommentDeleteOther{}", Uuid::new_v4())),
                 organism_id: Set(Some(other_organism.id)),
                 sigint_zone_id: Set(login.sigint_zone_id),
@@ -2901,14 +2898,14 @@ mod tests {
         .unwrap();
 
         for (login_value, comment) in [
-            (login.login.clone(), "current comment"),
-            (peer_login.login.clone(), "peer comment"),
-            (other_login.login.clone(), "other comment"),
+            (login.id, "current comment"),
+            (peer_login.id, "peer comment"),
+            (other_login.id, "other comment"),
         ] {
             mk_sigint_comment(
                 &env.dbx,
                 sigint_comment::ActiveModel {
-                    login: Set(login_value),
+                    login_id: Set(login_value),
                     signal_message_id: Set(message.id),
                     comment: Set(comment.to_string()),
                     created_at: Set(now),
@@ -2919,12 +2916,9 @@ mod tests {
             .unwrap();
         }
 
-        let logins = vec![login.login.clone(), peer_login.login.clone()];
+        let logins = vec![login.id, peer_login.id];
         delete_editable_sigint_comments(
-            &env.dbx,
-            message.id,
-            &login.login,
-            &logins,
+            &env.dbx, message.id, &login.id, &logins,
         )
         .await
         .unwrap();
@@ -2935,7 +2929,7 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(comments.len(), 1);
-        assert_eq!(comments[0].login, other_login.login);
+        assert_eq!(comments[0].login_id, other_login.id);
         assert_eq!(comments[0].comment, "other comment");
     }
 
@@ -2947,7 +2941,7 @@ mod tests {
         let env_data = Data::from(env.clone());
         let login = find_test_login(&env.dbx).await.unwrap();
         let datasource = find_test_datasource(&env.dbx).await.unwrap();
-        let logins = vec![login.login.clone()];
+        let logins = vec![login.id];
         let now = Utc::now().naive_utc();
         let tag_label = format!("submit-tag-{}", Uuid::new_v4());
         let tag = mk_tag(
@@ -3005,7 +2999,7 @@ mod tests {
             &env_data,
             &txn,
             &datasource,
-            &login.login,
+            &login.id,
             &logins,
             item,
         )
@@ -3080,7 +3074,7 @@ mod tests {
                 sigint_inbox_item_tag::Column::SigintInboxItemId
                     .eq(submitted.inbox_id),
             )
-            .filter(sigint_inbox_item_tag::Column::Login.eq(Some(login.login)))
+            .filter(sigint_inbox_item_tag::Column::LoginId.eq(Some(login.id)))
             .all(&env.dbx)
             .await
             .unwrap();
@@ -3162,15 +3156,15 @@ mod tests {
         let login = find_test_login(&env.dbx).await.unwrap();
         let datasource = find_test_datasource(&env.dbx).await.unwrap();
         let mut datasource = datasource.into_active_model();
-        datasource.api_login = Set(Some(login.login.clone()));
+        datasource.api_login_id = Set(Some(login.id));
         datasource.enabled = Set(Some(false));
         datasource.deleted = Set(false);
         let datasource = datasource.update(&env.dbx).await.unwrap();
-        let logins = vec![login.login.clone()];
+        let logins = vec![login.id];
 
         let err = submit_generic_inbox_message(
             &env_data,
-            &login.login,
+            &login.id,
             &logins,
             generic_submit_req(),
         )
@@ -3186,7 +3180,7 @@ mod tests {
 
         let err = submit_generic_inbox_message(
             &env_data,
-            &login.login,
+            &login.id,
             &logins,
             generic_submit_req(),
         )
@@ -3253,7 +3247,7 @@ mod tests {
         let groups = ensure_submit_groups(
             &txn,
             &datasource,
-            &login.login,
+            &login.id,
             &["owned group".to_string()],
         )
         .await
@@ -3348,7 +3342,7 @@ mod tests {
                 sigint_inbox_item_id: Set(message.id),
                 tag_id: Set(tag.id),
                 confidence: Set(1.0),
-                login: Set(Some(login_model.login.clone())),
+                login_id: Set(Some(login_model.id)),
                 model: Set(None),
                 ..Default::default()
             }
@@ -3478,14 +3472,14 @@ mod tests {
         .await
         .unwrap();
 
-        let logins = vec![login.login.clone()];
+        let logins = vec![login.id];
         let base_req = InboxMessagesReq {
             nolimit: Some(true),
             ..Default::default()
         };
 
         let all_messages =
-            get_inbox_messages(&login.login, &logins, &env, &base_req)
+            get_inbox_messages(&login.id, &logins, &env, &base_req)
                 .await
                 .unwrap();
         assert_eq!(all_messages.len(), 5);
@@ -3495,7 +3489,7 @@ mod tests {
             ..base_req.clone()
         };
         let false_messages =
-            get_inbox_messages(&login.login, &logins, &env, &false_req)
+            get_inbox_messages(&login.id, &logins, &env, &false_req)
                 .await
                 .unwrap();
         assert_eq!(false_messages.len(), 5);
@@ -3505,7 +3499,7 @@ mod tests {
             ..base_req
         };
         let media_messages =
-            get_inbox_messages(&login.login, &logins, &env, &media_req)
+            get_inbox_messages(&login.id, &logins, &env, &media_req)
                 .await
                 .unwrap();
         let media_ids =
@@ -3619,7 +3613,7 @@ mod tests {
             ..Default::default()
         };
         let initial_items =
-            get_inbox_map_items(&login.login, &env, &req).await.unwrap();
+            get_inbox_map_items(&login.id, &env, &req).await.unwrap();
         assert!(initial_items
             .iter()
             .any(|item| item.id == visible_message.id));
@@ -3638,7 +3632,7 @@ mod tests {
         .unwrap();
 
         let reduced_items =
-            get_inbox_map_items(&login.login, &env, &req).await.unwrap();
+            get_inbox_map_items(&login.id, &env, &req).await.unwrap();
         assert!(reduced_items
             .iter()
             .any(|item| item.id == visible_message.id));
@@ -3660,9 +3654,9 @@ mod tests {
             .iter()
             .any(|point| point.message_id == hidden_message.id));
 
-        let logins = vec![login.login.clone()];
+        let logins = vec![login.id];
         let hidden_messages = messages_by_id_bl(
-            &login.login,
+            &login.id,
             &logins,
             &env,
             &[hidden_message.id],
@@ -3691,12 +3685,12 @@ mod tests {
         .await
         .unwrap();
         let logins =
-            crate::users::get_organism_logins_by_login(&env.dbx, &login.login)
+            crate::users::get_organism_login_ids_by_id(&env.dbx, &login.id)
                 .await
                 .unwrap();
 
         let messages = messages_by_id_bl(
-            &login.login,
+            &login.id,
             &logins,
             &env,
             &[message.id],
@@ -3713,7 +3707,7 @@ mod tests {
             .expect("inbox tags must be present");
         let tag_entry = inbox_tags
             .iter()
-            .find(|t| t.login == Some(login.login.clone()))
+            .find(|t| t.login == Some(login.id.to_string()))
             .expect("tag by login must be present");
         assert_eq!(tag_entry.organism_id, login.organism_id);
     }
@@ -3752,11 +3746,11 @@ mod tests {
         .unwrap();
 
         let logins =
-            crate::users::get_organism_logins_by_login(&env.dbx, &login.login)
+            crate::users::get_organism_login_ids_by_id(&env.dbx, &login.id)
                 .await
                 .unwrap();
         let messages = messages_by_id_bl(
-            &login.login,
+            &login.id,
             &logins,
             &env,
             &[message.id],
@@ -3771,7 +3765,7 @@ mod tests {
         palitra.update(&env.dbx).await.unwrap();
 
         let messages = messages_by_id_bl(
-            &login.login,
+            &login.id,
             &logins,
             &env,
             &[message.id],
@@ -3821,6 +3815,7 @@ mod tests {
         let other_login = mk_login(
             &env.dbx,
             login::ActiveModel {
+                id: NotSet,
                 login: Set("OtherTester".to_string()),
                 organism_id: Set(Some(other_org.id)),
                 sigint_zone_id: Set(Some(sigint_zone.id)),
@@ -3844,8 +3839,8 @@ mod tests {
             nolimit: Some(true),
             ..Default::default()
         };
-        let logins = vec![login.login.clone()];
-        let messages = get_inbox_messages(&login.login, &logins, &env, &req)
+        let logins = vec![login.id];
+        let messages = get_inbox_messages(&login.id, &logins, &env, &req)
             .await
             .unwrap();
 
@@ -3859,14 +3854,14 @@ mod tests {
         assert!(
             inbox_tags
                 .iter()
-                .any(|t| t.login == Some(login.login.clone())
+                .any(|t| t.login == Some(login.id.to_string())
                     && t.organism_id == login.organism_id),
             "expected tag from primary login with organism id"
         );
         assert!(
             inbox_tags
                 .iter()
-                .any(|t| t.login == Some(other_login.login.clone())
+                .any(|t| t.login == Some(other_login.id.to_string())
                     && t.organism_id == Some(other_org.id)),
             "expected tag from other login with its organism id"
         );
@@ -3880,6 +3875,7 @@ mod tests {
         let peer_login = mk_login(
             &env.dbx,
             login::ActiveModel {
+                id: NotSet,
                 login: Set("PeerTester".to_string()),
                 organism_id: Set(login.organism_id),
                 sigint_zone_id: Set(login.sigint_zone_id),
@@ -3941,7 +3937,7 @@ mod tests {
         mk_sigint_comment(
             &env.dbx,
             sigint_comment::ActiveModel {
-                login: Set(login.login.clone()),
+                login_id: Set(login.id),
                 signal_message_id: Set(current_message.id),
                 comment: Set("my editable comment".to_string()),
                 created_at: Set(Utc::now().naive_utc()),
@@ -3953,7 +3949,7 @@ mod tests {
         mk_sigint_comment(
             &env.dbx,
             sigint_comment::ActiveModel {
-                login: Set(peer_login.login.clone()),
+                login_id: Set(peer_login.id),
                 signal_message_id: Set(current_message.id),
                 comment: Set("peer comment".to_string()),
                 created_at: Set(Utc::now().naive_utc()),
@@ -4012,7 +4008,7 @@ mod tests {
         mk_sigint_comment(
             &env.dbx,
             sigint_comment::ActiveModel {
-                login: Set(peer_login.login.clone()),
+                login_id: Set(peer_login.id),
                 signal_message_id: Set(peer_only_message.id),
                 comment: Set("peer only editable comment".to_string()),
                 created_at: Set(Utc::now().naive_utc()),
@@ -4022,12 +4018,12 @@ mod tests {
         .await
         .unwrap();
 
-        let logins = vec![login.login.clone(), peer_login.login.clone()];
+        let logins = vec![login.id, peer_login.id];
         let req = InboxMessagesReq {
             nolimit: Some(true),
             ..Default::default()
         };
-        let messages = get_inbox_messages(&login.login, &logins, &env, &req)
+        let messages = get_inbox_messages(&login.id, &logins, &env, &req)
             .await
             .unwrap();
 
@@ -4061,6 +4057,7 @@ mod tests {
         let peer_login = mk_login(
             &env.dbx,
             login::ActiveModel {
+                id: NotSet,
                 login: Set("PeerTester".to_string()),
                 organism_id: Set(login.organism_id),
                 sigint_zone_id: Set(login.sigint_zone_id),
@@ -4105,7 +4102,7 @@ mod tests {
         mk_sigint_comment(
             &env.dbx,
             sigint_comment::ActiveModel {
-                login: Set(peer_login.login.clone()),
+                login_id: Set(peer_login.id),
                 signal_message_id: Set(message.id),
                 comment: Set("peer visible comment".to_string()),
                 created_at: Set(Utc::now().naive_utc()),
@@ -4116,7 +4113,7 @@ mod tests {
         .unwrap();
 
         let organism_logins =
-            crate::users::get_organism_logins_by_login(&env.dbx, &login.login)
+            crate::users::get_organism_login_ids_by_id(&env.dbx, &login.id)
                 .await
                 .unwrap();
         let comment = find_sigint_comment_by_signal_message_id_and_logins(
@@ -4128,7 +4125,7 @@ mod tests {
         .unwrap()
         .expect("organism login lookup must return peer comment");
 
-        assert_eq!(comment.login, peer_login.login);
+        assert_eq!(comment.login_id, peer_login.id);
         assert_eq!(comment.comment, "peer visible comment");
     }
 
@@ -4238,7 +4235,7 @@ mod tests {
         .await
         .unwrap();
 
-        let logins = vec![login.login.clone()];
+        let logins = vec![login.id];
         let wrong_sender_req = InboxMessagesReq {
             nolimit: Some(true),
             selected_groups: Some(vec![datasource_group
@@ -4248,7 +4245,7 @@ mod tests {
             ..Default::default()
         };
         let wrong_sender_messages =
-            get_inbox_messages(&login.login, &logins, &env, &wrong_sender_req)
+            get_inbox_messages(&login.id, &logins, &env, &wrong_sender_req)
                 .await
                 .unwrap();
         assert!(
@@ -4264,14 +4261,10 @@ mod tests {
             selected_senders: Some(vec!["sender-c".to_string()]),
             ..Default::default()
         };
-        let matching_sender_messages = get_inbox_messages(
-            &login.login,
-            &logins,
-            &env,
-            &matching_sender_req,
-        )
-        .await
-        .unwrap();
+        let matching_sender_messages =
+            get_inbox_messages(&login.id, &logins, &env, &matching_sender_req)
+                .await
+                .unwrap();
         assert_eq!(matching_sender_messages.len(), 1);
         assert_eq!(
             matching_sender_messages[0].1.sender.as_deref(),

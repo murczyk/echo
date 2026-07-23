@@ -13,7 +13,7 @@ use super::types::*;
 
 pub async fn bl_callsigns_for_filter(
     dbx: &DatabaseConnection,
-    user_id: &str,
+    user_id: &uuid::Uuid,
     req: &CallsignsForFreqReq,
 ) -> Result<Vec<FreqCallsign>, AppError> {
     let dt_since = dt_from_millis(req.since_date_inclusive_ms)?;

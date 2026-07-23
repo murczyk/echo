@@ -536,7 +536,7 @@ pub async fn delete_stored_media_files(
 /// knowing a media or message URL alone must never grant access.
 pub(crate) async fn ensure_media_access(
     dbx: &DatabaseConnection,
-    login: &str,
+    login: &uuid::Uuid,
     signal_message_id: i64,
 ) -> Result<(), AppError> {
     let allowed_groups =
@@ -814,7 +814,7 @@ mod tests {
 
     struct MediaAccessFixture {
         env: std::sync::Arc<Env>,
-        login: String,
+        login: Uuid,
         message_id: i64,
         group_a: String,
         group_b: String,
@@ -931,16 +931,16 @@ mod tests {
         .insert(&txn)
         .await
         .unwrap();
-        let login = format!("media-access-{}", Uuid::new_v4());
+        let login_name = format!("media-access-{}", Uuid::new_v4());
         let roles = if rer_role {
             serde_json::json!(["Rer"])
         } else {
             serde_json::json!([])
         };
-        mk_login(
+        let login = mk_login(
             &txn,
             login::ActiveModel {
-                login: Set(login.clone()),
+                login: Set(login_name),
                 roles: Set(roles),
                 sigint_zone_id: Set(Some(zone.id)),
                 organism_id: Set(Some(organism.id)),
@@ -968,7 +968,7 @@ mod tests {
         .unwrap();
         MediaAccessFixture {
             env,
-            login,
+            login: login.id,
             message_id: message.id,
             group_a: group_a.master_key,
             group_b: group_b.master_key,

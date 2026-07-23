@@ -6,6 +6,8 @@ use crate::error::AppError;
 use crate::h;
 use crate::types::Env;
 use crate::types::ShortContext;
+use crate::users::ensure_rer_role;
+use crate::users::login_id_from_identity;
 use actix_identity::Identity;
 use actix_web::post;
 use actix_web::web::Json;
@@ -35,10 +37,8 @@ pub async fn report_networks_task_launch(
     env: actix_web::web::Data<Env>,
     req: Json<EtalonkaJimForksReq>,
 ) -> Result<Json<i64>, AppError> {
-    let user_login = user.id().c(h!())?;
-    crate::users::has_role(&env.dbx, &user_login, "Rer")
-        .await
-        .c(h!())?;
+    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    let user_login = login_id_from_identity(&user)?;
     let req = req.into_inner();
     let report_history = crate::report_history::enqueue_report(
         &env.dbx,
@@ -61,10 +61,8 @@ pub async fn report_networks_batch_id_task_launch(
     env: actix_web::web::Data<Env>,
     req: Json<EtalonkaNetworkBatchReq>,
 ) -> Result<Json<i64>, AppError> {
-    let user_login = user.id().c(h!())?;
-    crate::users::has_role(&env.dbx, &user_login, "Rer")
-        .await
-        .c(h!())?;
+    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    let user_login = login_id_from_identity(&user)?;
     let req = req.into_inner();
     let report_history = crate::report_history::enqueue_report(
         &env.dbx,

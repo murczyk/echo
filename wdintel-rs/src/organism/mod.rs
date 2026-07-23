@@ -3,6 +3,10 @@ use crate::entities::*;
 use crate::error::AppError;
 use crate::organism::bl::*;
 use crate::types::*;
+use crate::users::{
+    ensure_admin, ensure_rer_role, has_any_role, has_role,
+    login_id_from_identity,
+};
 use crate::utils::orm::ArrayColumnOps;
 use actix_web::post;
 use actix_web::web::Json;
@@ -22,9 +26,7 @@ pub async fn add_group_to_organism(
     env: actix_web::web::Data<Env>,
     req: Json<AddGroupToOrganismReq>,
 ) -> Result<Json<()>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Admin")
-        .await
-        .c(h!())?;
+    ensure_admin(&env.dbx, &user).await.c(h!())?;
     debug!(
         "Adding group {} to organism {}",
         req.group_name, req.organism_id
@@ -79,9 +81,7 @@ pub async fn remove_group_from_organism(
     env: actix_web::web::Data<Env>,
     req: Json<RemoveGroupFromOrganismReq>,
 ) -> Result<Json<()>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Admin")
-        .await
-        .c(h!())?;
+    ensure_admin(&env.dbx, &user).await.c(h!())?;
 
     let (organism, children) =
         load_organism_with_children(req.organism_id, &env.dbx)
@@ -109,9 +109,7 @@ pub async fn delete_organism(
     env: actix_web::web::Data<Env>,
     req: Json<i64>,
 ) -> Result<Json<()>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Admin")
-        .await
-        .c(h!())?;
+    ensure_admin(&env.dbx, &user).await.c(h!())?;
 
     let txn = env.dbx.begin().await.c(h!())?;
     if let Some(model) = organism::Entity::find_by_id(req.0)
@@ -138,9 +136,7 @@ pub async fn organism_active_logins(
     env: actix_web::web::Data<Env>,
     req: Json<i64>,
 ) -> Result<Json<Vec<String>>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Admin")
-        .await
-        .c(h!())?;
+    ensure_admin(&env.dbx, &user).await.c(h!())?;
 
     let logins = login::Entity::find()
         .filter(login::Column::OrganismId.eq(req.0))
@@ -161,22 +157,25 @@ pub async fn organism_logins(
     user: actix_identity::Identity,
     env: actix_web::web::Data<Env>,
 ) -> Result<Json<Vec<String>>, AppError> {
-    let login = user.id().c(h!())?;
-    let is_admin = match crate::users::has_role(&env.dbx, &login, "Admin").await
+    let is_admin = match has_role(
+        &env.dbx,
+        &login_id_from_identity(&user)?,
+        "Admin",
+    )
+    .await
     {
         Ok(()) => true,
         Err(AppError::Forbidden(_)) => false,
         Err(err) => return Err(err),
     };
-    let has_palitra_access =
-        match crate::users::has_role(&env.dbx, &login, "Rer").await {
-            Ok(()) => true,
-            Err(AppError::Forbidden(_)) => false,
-            Err(err) => return Err(err),
-        };
-    let has_editor_access = match crate::users::has_any_role(
+    let has_palitra_access = match ensure_rer_role(&env.dbx, &user).await {
+        Ok(()) => true,
+        Err(AppError::Forbidden(_)) => false,
+        Err(err) => return Err(err),
+    };
+    let has_editor_access = match has_any_role(
         &env.dbx,
-        &login,
+        &login_id_from_identity(&user)?,
         vec!["UnitsEditor", "CallsignsEditor"],
     )
     .await
@@ -192,8 +191,9 @@ pub async fn organism_logins(
         ));
     }
 
+    let login = login_id_from_identity(&user)?;
     let login = login::Entity::find()
-        .filter(login::Column::Login.eq(login))
+        .filter(login::Column::Id.eq(login))
         .filter(login::Column::DeletedPermanently.eq(false))
         .one(&env.dbx)
         .await
@@ -223,10 +223,10 @@ pub async fn my_scope(
     user: actix_identity::Identity,
     env: actix_web::web::Data<Env>,
 ) -> Result<Json<MyScope>, AppError> {
-    let login = user.id().c(h!())?;
+    let login = login_id_from_identity(&user)?;
 
     let login_obj = login::Entity::find()
-        .filter(login::Column::Login.eq(login.to_string()))
+        .filter(login::Column::Id.eq(login))
         .filter(login::Column::DeletedPermanently.eq(false))
         .one(&env.dbx)
         .await
@@ -285,9 +285,7 @@ pub async fn update_organism(
     env: actix_web::web::Data<Env>,
     req: Json<UpdateOrganismReq>,
 ) -> Result<Json<Organism>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Admin")
-        .await
-        .c(h!())?;
+    ensure_admin(&env.dbx, &user).await.c(h!())?;
 
     let txn = env.dbx.begin().await.c(h!())?;
     let organism = bl::update_organism(&txn, &req).await.c(h!())?;
@@ -318,9 +316,7 @@ pub async fn group_list(
     user: actix_identity::Identity,
     env: actix_web::web::Data<Env>,
 ) -> Result<Json<Vec<SignalGroupFull>>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Admin")
-        .await
-        .c(h!())?;
+    ensure_admin(&env.dbx, &user).await.c(h!())?;
 
     Ok(Json(
         signal_group::Entity::find()
@@ -343,9 +339,7 @@ pub async fn organism_group_list(
     user: actix_identity::Identity,
     env: actix_web::web::Data<Env>,
 ) -> Result<Json<Vec<OrganismGroup>>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Admin")
-        .await
-        .c(h!())?;
+    ensure_admin(&env.dbx, &user).await.c(h!())?;
 
     Ok(Json(
         organism_group::Entity::find()
@@ -368,9 +362,7 @@ pub async fn organism_available_groups(
     env: actix_web::web::Data<Env>,
     req: Json<i64>,
 ) -> Result<Json<Vec<SignalGroupFull>>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Admin")
-        .await
-        .c(h!())?;
+    ensure_admin(&env.dbx, &user).await.c(h!())?;
     let groups = load_organism_group_ids(&env.dbx, req.into_inner())
         .await
         .c(h!())?;
@@ -400,9 +392,7 @@ pub async fn organism_compute_available_groups(
     env: actix_web::web::Data<Env>,
     req: Json<UpdateOrganismReq>,
 ) -> Result<Json<Vec<SignalGroupFull>>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Admin")
-        .await
-        .c(h!())?;
+    ensure_admin(&env.dbx, &user).await.c(h!())?;
 
     let txn = env.dbx.begin().await.c(h!())?; // DO NOT COMMIT IT!!!
     let organism = bl::update_organism(&txn, &req).await.c(h!())?;
@@ -434,9 +424,7 @@ pub async fn organism_compute_available_groups_for_new(
     env: actix_web::web::Data<Env>,
     req: Json<CreateOrganismReq>,
 ) -> Result<Json<Vec<SignalGroupFull>>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Admin")
-        .await
-        .c(h!())?;
+    ensure_admin(&env.dbx, &user).await.c(h!())?;
 
     // ===== DO NOT REMOVE =====
     // We only emulate the organism to calculate group availability, so we must
@@ -470,9 +458,7 @@ pub async fn organism_available_groups_batch(
     env: actix_web::web::Data<Env>,
     req: Json<Vec<i64>>,
 ) -> Result<Json<HashMap<i64, Vec<SignalGroupFull>>>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Admin")
-        .await
-        .c(h!())?;
+    ensure_admin(&env.dbx, &user).await.c(h!())?;
     let mut keys_map = HashMap::new();
     let mut keys_list = HashSet::new();
     for organism_id in req.into_inner() {
@@ -523,9 +509,7 @@ pub async fn create_organism(
     env: actix_web::web::Data<Env>,
     req: Json<CreateOrganismReq>,
 ) -> Result<Json<Organism>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Admin")
-        .await
-        .c(h!())?;
+    ensure_admin(&env.dbx, &user).await.c(h!())?;
 
     let organism = bl::create_organism(&env.dbx, &req).await.c(h!())?;
 
@@ -547,9 +531,7 @@ pub async fn list_organisms(
     env: actix_web::web::Data<Env>,
     req: Json<ListOrganismsReq>,
 ) -> Result<Json<Vec<Organism>>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Admin")
-        .await
-        .c(h!())?;
+    ensure_admin(&env.dbx, &user).await.c(h!())?;
     let default_sorting = req.sort_by.is_none();
 
     let (sort_by, order) = match req.sort_by {

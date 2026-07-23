@@ -27,7 +27,7 @@ pub struct BabakReportData {
 }
 
 pub async fn bl_babak_report(
-    user_login: &str,
+    user_login: &uuid::Uuid,
     env: &Env,
     req: &super::types::ReportPreviewReq,
 ) -> Result<BabakReportData, AppError> {
@@ -102,7 +102,7 @@ pub async fn bl_babak_report(
 }
 
 pub async fn report_docx_kind_babak(
-    user_login: &str,
+    user_login: &uuid::Uuid,
     env: &Env,
     req: &super::types::ReportPreviewReq,
     outpath: &Path,
@@ -691,14 +691,14 @@ fn dedup_babak_comment_values(
 }
 
 pub async fn get_inbox_messages_report_unit(
-    login: &str,
+    login: &uuid::Uuid,
     env: &Env,
     req: &InboxMessagesReq,
 ) -> Result<Vec<StatsPerUnitReport>, AppError> {
     let read_db = env.replica();
     let include_peleng_locations =
         req.include_peleng_locations.unwrap_or(false);
-    let logins = crate::users::get_organism_logins_by_login(&read_db, login)
+    let login_ids = crate::users::get_organism_login_ids_by_id(&read_db, login)
         .await
         .context(h!())?;
     let sigint_groups =
@@ -829,9 +829,9 @@ pub async fn get_inbox_messages_report_unit(
     );
 
     if req.report_tags_only_this_unit == Some(true) {
-        q = q.filter(sigint_comment::Column::Login.eq_any(logins.clone()));
+        q = q.filter(sigint_comment::Column::LoginId.eq_any(login_ids.clone()));
         q = q.filter(
-            sigint_inbox_item_tag::Column::Login.eq_any(logins.clone()),
+            sigint_inbox_item_tag::Column::LoginId.eq_any(login_ids.clone()),
         );
     }
     if req.without_model_tags == Some(true) {
@@ -1173,7 +1173,7 @@ mod tests {
             sposob_unit_name: None,
         };
 
-        let res = bl_babak_report(&login.login, &env, &req).await.unwrap();
+        let res = bl_babak_report(&login.id, &env, &req).await.unwrap();
 
         assert_eq!(res.units.len(), 1);
         let unit = &res.units[0];

@@ -2,6 +2,7 @@ use crate::error::AppError;
 use crate::here;
 use crate::kml::types::*;
 use crate::types::*;
+use crate::users::ensure_basic_role;
 use crate::utils::trim_lines;
 use actix_web::post;
 use actix_web::web::Json;
@@ -47,9 +48,7 @@ async fn download_kmz(
     http_req: HttpRequest,
     req: Json<DownloadKmzReq>,
 ) -> Result<actix_web::HttpResponse, AppError> {
-    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Basic")
-        .await
-        .c(h!())?;
+    ensure_basic_role(&env.dbx, &user).await.c(h!())?;
     let mut nodes = vec![];
     let mut style_ids = BTreeMap::new();
     for row in req.rows.iter() {

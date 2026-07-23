@@ -1,3 +1,4 @@
+use crate::users::{ensure_rer_role, login_id_from_identity};
 use std::path::{Path, PathBuf};
 
 use crate::config::MESSENGER_MEDIA_AUDIO_PNG_TMP_DIR;
@@ -114,7 +115,7 @@ fn ensure_audio_png_source_supported(
 
 async fn load_authorized_audio_media_meta(
     env: &Env,
-    login: &str,
+    login: &uuid::Uuid,
     media_id: Uuid,
 ) -> Result<signal_message_media::Model, AppError> {
     let media = signal_message_media::Entity::find_by_id(media_id)
@@ -151,7 +152,7 @@ enum AudioPngKind {
 
 async fn serve_cached_or_generate_png(
     env: &Env,
-    login: &str,
+    login: &uuid::Uuid,
     media_id: Uuid,
     output_path: &Path,
     kind: AudioPngKind,
@@ -181,10 +182,8 @@ pub async fn messenger_media_wave(
     env: actix_web::web::Data<Env>,
     path: actix_web::web::Path<(Uuid,)>,
 ) -> Result<HttpResponse, AppError> {
-    let login = user.id().c(h!())?;
-    crate::users::has_role(&env.dbx, &login, "Rer")
-        .await
-        .c(h!())?;
+    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    let login = login_id_from_identity(&user)?;
     let media_id = path.0;
     serve_cached_or_generate_png(
         env.as_ref(),
@@ -202,10 +201,8 @@ pub async fn messenger_media_spectrogram(
     env: actix_web::web::Data<Env>,
     path: actix_web::web::Path<(Uuid,)>,
 ) -> Result<HttpResponse, AppError> {
-    let login = user.id().c(h!())?;
-    crate::users::has_role(&env.dbx, &login, "Rer")
-        .await
-        .c(h!())?;
+    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    let login = login_id_from_identity(&user)?;
     let media_id = path.0;
     serve_cached_or_generate_png(
         env.as_ref(),

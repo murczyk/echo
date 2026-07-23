@@ -60,13 +60,13 @@ fn collect_reference_network_keys(
 }
 
 pub async fn report_docx_kind_posts(
-    user_login: &str,
+    user_login: &uuid::Uuid,
     env: &Env,
     req: &ReportPreviewReq,
     outpath: &Path,
 ) -> Result<(), AppError> {
     let read_db = env.replica();
-    let login = user_login.to_string();
+    let login = *user_login;
     let mut current_req = req.req.clone();
     current_req.report_tags_only_this_unit = req.report_tags_only_this_unit;
     let Some(since_date_inclusive_ms) = current_req.since_date_inclusive_ms
@@ -178,7 +178,7 @@ pub async fn report_docx_kind_posts(
 
 async fn load_post_report_messages(
     dbx: &DatabaseConnection,
-    login: &str,
+    login: &uuid::Uuid,
     env: &Env,
     req: &crate::rer_importer::types::InboxMessagesReq,
 ) -> Result<Vec<(i64, InboxMessage)>, AppError> {

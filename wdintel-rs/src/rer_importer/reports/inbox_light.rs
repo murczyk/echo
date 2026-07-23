@@ -70,7 +70,7 @@ where
 
 pub(crate) async fn load_message_group_info(
     dbx: &DatabaseConnection,
-    login: &str,
+    login: &uuid::Uuid,
     req: &InboxMessagesReq,
     message_ids: &[i64],
 ) -> Result<HashMap<i64, ReportMessageGroupInfo>, AppError> {

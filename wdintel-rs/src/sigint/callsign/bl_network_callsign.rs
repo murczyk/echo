@@ -50,7 +50,7 @@ pub struct NetworkCallsignResult {
 /// Create a network callsign, optionally linking to a known callsign if unit_id is provided and unit_developing is false
 pub async fn bl_create_network_callsign(
     req: &CreateNetworkCallsignReq,
-    user_id: &str,
+    user_id: &uuid::Uuid,
     txn: &DatabaseTransaction,
 ) -> Result<i64, AppError> {
     // If callsign status is developing or unit_developing or no unit_id provided for a callsign
@@ -98,7 +98,7 @@ pub async fn bl_create_network_callsign(
 /// Create a network callsign without linking to any known callsign in sigint_callsign catalog table
 async fn create_network_callsign_not_linked(
     req: &CreateNetworkCallsignReq,
-    user_id: &str,
+    user_id: &uuid::Uuid,
     txn: &DatabaseTransaction,
 ) -> Result<i64, AppError> {
     let network = find_network(txn, req.network_id).await.context(h!())?;
@@ -146,7 +146,7 @@ async fn create_network_callsign_not_linked(
     // Update the network's updated_at timestamp
     let mut network_record = network.into_active_model();
     network_record.updated_at = Set(Utc::now().naive_utc());
-    network_record.updated_by = Set(Some(user_id.to_string()));
+    network_record.updated_by_login_id = Set(Some(*user_id));
     network_record.update(txn).await.context(h!())?;
 
     Ok(network_callsign.id)
@@ -158,7 +158,7 @@ async fn create_network_callsign_linked(
     sigint_callsign_id: i64,
     main_radio_station: bool,
     command_control: bool,
-    user_id: &str,
+    user_id: &uuid::Uuid,
     txn: &DatabaseTransaction,
 ) -> Result<i64, AppError> {
     let network_callsign = sigint_network_callsign::ActiveModel {
@@ -207,7 +207,7 @@ async fn create_network_callsign_linked(
 pub async fn bl_add_as_known_network_callsigns(
     network_id: i64,
     known_callsign_ids: Vec<i64>,
-    user_id: &str,
+    user_id: &uuid::Uuid,
     txn: &DatabaseTransaction,
 ) -> Result<Vec<i64>, AppError> {
     let network = find_network(txn, network_id).await.context(h!())?;
@@ -235,7 +235,7 @@ pub async fn bl_add_as_known_network_callsigns(
     // Update the network's updated_at timestamp
     let mut network_record = network.into_active_model();
     network_record.updated_at = Set(Utc::now().naive_utc());
-    network_record.updated_by = Set(Some(user_id.to_string()));
+    network_record.updated_by_login_id = Set(Some(*user_id));
     network_record.update(txn).await.context(h!())?;
 
     Ok(res)
@@ -243,7 +243,7 @@ pub async fn bl_add_as_known_network_callsigns(
 
 pub async fn bl_update_network_callsign(
     req: &UpdateNetworkCallsignReq,
-    user_id: &str,
+    user_id: &uuid::Uuid,
     txn: &DatabaseTransaction,
 ) -> Result<i64, AppError> {
     let network_callsign = sigint_network_callsign::Entity::find_by_id(req.id)
@@ -341,7 +341,7 @@ pub async fn bl_update_network_callsign(
 
 pub(crate) async fn ensure_callsign(
     req: &UpdateNetworkCallsignReq,
-    user_id: &str,
+    user_id: &uuid::Uuid,
     txn: &DatabaseTransaction,
     network_callsign: &sigint_network_callsign::Model,
     unit_id: i64,
@@ -390,7 +390,7 @@ pub(crate) async fn ensure_callsign(
 
 async fn update_network_callsign_linked(
     req: &UpdateNetworkCallsignReq,
-    user_id: &str,
+    user_id: &uuid::Uuid,
     txn: &DatabaseTransaction,
     network_callsign: sigint_network_callsign::Model,
     known_callsign: sigint_callsign::Model,
@@ -460,7 +460,7 @@ async fn update_network_callsign_linked(
 
 async fn update_network_callsign_not_linked(
     req: &UpdateNetworkCallsignReq,
-    user_id: &str,
+    user_id: &uuid::Uuid,
     txn: &DatabaseTransaction,
 ) -> Result<i64, AppError> {
     let network = find_network(txn, req.network_id).await.context(h!())?;
@@ -511,7 +511,7 @@ async fn update_network_callsign_not_linked(
     // Update the network's updated_at timestamp as well as new active_from and active_to
     let mut network_record = network.clone().into_active_model();
     network_record.updated_at = Set(Utc::now().naive_utc());
-    network_record.updated_by = Set(Some(user_id.to_string()));
+    network_record.updated_by_login_id = Set(Some(*user_id));
     network_record.update(txn).await.context(h!())?;
 
     Ok(network_callsign.id)
@@ -519,7 +519,7 @@ async fn update_network_callsign_not_linked(
 
 pub async fn bl_delete_network_callsign(
     id: i64,
-    user_id: &str,
+    user_id: &uuid::Uuid,
     txn: &DatabaseTransaction,
 ) -> Result<sigint_network_callsign::Model, AppError> {
     let network_callsign = sigint_network_callsign::Entity::find_by_id(id)
@@ -554,7 +554,7 @@ pub async fn bl_delete_network_callsign(
 
 pub async fn bl_get_network_callsigns_list(
     req: &ListNetworkCallsignsReq,
-    user_id: &str,
+    user_id: &uuid::Uuid,
     dbx: &DatabaseConnection,
 ) -> Result<Vec<NetworkCallsign>, AppError> {
     let mut query = sigint_network_callsign::Entity::find()
@@ -805,7 +805,7 @@ fn network_callsigns_activity_targets(
 
 pub async fn bl_get_network_callsigns_info_batch<'a, 'async_trait, C>(
     txn: &'a C,
-    user_id: &str,
+    user_id: &uuid::Uuid,
     network_id: i64,
     network_callsign_ids: Vec<i64>,
 ) -> Result<Vec<NetworkCallsign>, AppError>
@@ -1027,7 +1027,7 @@ async fn get_network_callsign_rec_json(
 }
 async fn create_network_callsign_changelog(
     id: i64,
-    user_id: &str,
+    user_id: &uuid::Uuid,
     action: ChangelogActionEnum,
     old_json: Option<serde_json::Value>,
     new_json: Option<serde_json::Value>,
@@ -1037,7 +1037,7 @@ async fn create_network_callsign_changelog(
     let changelog = sigint_network_callsign_changelog::ActiveModel {
         id: NotSet,
         sigint_network_callsign_id: Set(id),
-        login: Set(user_id.to_string()),
+        login_id: Set(*user_id),
         action: Set(action),
         old_value: Set(old_json),
         new_value: Set(new_json),

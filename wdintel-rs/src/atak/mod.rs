@@ -2,6 +2,7 @@ use self::types::*;
 use crate::error::AppError;
 use crate::h;
 use crate::types::*;
+use crate::users::{has_role, login_id_from_identity};
 use actix_web::get;
 use actix_web::HttpRequest;
 use chrono::SecondsFormat;
@@ -297,7 +298,7 @@ async fn operatyvka_download(
     http_req: HttpRequest,
     req: actix_web::web::Query<OperatyvkaDownloadReq>,
 ) -> Result<actix_web::HttpResponse, AppError> {
-    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Bpla")
+    has_role(&env.dbx, &login_id_from_identity(&user)?, "Bpla")
         .await
         .c(h!())?;
     let kml = crate::kml::read_myplaces(env.mode)?;

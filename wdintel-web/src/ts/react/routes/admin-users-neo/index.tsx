@@ -144,6 +144,7 @@ type AddUserErrors = {
 };
 
 type EditUserForm = {
+  id: string;
   login: string;
   password: string;
   roles: string[];
@@ -155,6 +156,7 @@ type EditUserForm = {
 };
 
 type EditUserErrors = {
+  login?: string;
   roles?: string;
   zone?: string;
   organism?: string;
@@ -185,6 +187,7 @@ function renderLookupAutocompleteOption(
 
 function buildUserLoadingRows(): Login[] {
   return Array.from({ length: FULL_HEIGHT_LOADING_ROW_COUNT }, (_, index) => ({
+    id: `loading-${index}`,
     login: `loading-${index}`,
     roles: [],
     deleted: false,
@@ -299,6 +302,10 @@ function toCreateLoginReq(form: AddUserForm): CreateLoginReq {
 function buildEditUserErrors(form: EditUserForm): EditUserErrors {
   const errors: EditUserErrors = {};
 
+  if (!form.login.trim()) {
+    errors.login = 'Логін не може бути пустим';
+  }
+
   if (form.roles.length === 0) {
     errors.roles = 'Виберіть хочаб 1 роль';
   }
@@ -322,7 +329,8 @@ function toUpdateLoginReq(form: EditUserForm): UpdateLoginReq {
   const deactivationReason: DeactivationReasonType | null = form.deleted ? 'Admin' : null;
 
   return {
-    login: form.login,
+    id: form.id,
+    login: form.login.trim(),
     roles: form.roles,
     sigintZoneId: form.sigintZoneId,
     organismId: form.organismId,
@@ -789,6 +797,7 @@ function EditUserDialog(props: {
     }
 
     setForm({
+      id: login.id,
       login: login.login,
       password: '',
       roles: login.roles ?? [],
@@ -874,8 +883,14 @@ function EditUserDialog(props: {
             <TextField
               label="Логін"
               value={form.login}
+              onChange={(event) => {
+                setForm((prev) => (prev ? { ...prev, login: event.target.value } : prev));
+                setErrors((prev) => ({ ...prev, login: undefined }));
+              }}
               fullWidth
-              disabled
+              error={Boolean(errors.login)}
+              helperText={errors.login || ' '}
+              disabled={isSubmitting}
               className="xl:col-span-2"
             />
 
@@ -1272,7 +1287,7 @@ function AdminUsersNeoPageBody() {
           login={editingLogin}
           onClose={() => setEditingLogin(null)}
           onUserUpdated={(login) =>
-            setLogins((prev) => prev.map((item) => (item.login === login.login ? login : item)))
+            setLogins((prev) => prev.map((item) => (item.id === login.id ? login : item)))
           }
           lookups={lookups}
           disableRestoreFocus

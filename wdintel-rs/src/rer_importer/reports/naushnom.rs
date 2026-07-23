@@ -25,7 +25,7 @@ fn split_into_lines(mut cell: TableCell, text: &str) -> TableCell {
 }
 
 pub async fn report_docx_kind_naushnom(
-    user_login: &str,
+    user_login: &uuid::Uuid,
     env: &Env,
     req: &super::types::ReportPreviewReq,
     outpath: &PathBuf,
@@ -217,7 +217,7 @@ pub struct NetworkMessagesReport {
 }
 
 pub async fn get_inbox_messages_report_network(
-    user_login: &str,
+    user_login: &uuid::Uuid,
     env: &Env,
     req: &crate::rer_importer::types::InboxMessagesReq,
 ) -> Result<
@@ -232,7 +232,7 @@ pub async fn get_inbox_messages_report_network(
     AppError,
 > {
     let read_db = env.replica();
-    let login = user_login.to_string();
+    let login = *user_login;
     let include_peleng_locations =
         req.include_peleng_locations.unwrap_or(false);
 

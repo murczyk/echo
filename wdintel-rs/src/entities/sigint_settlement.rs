@@ -20,8 +20,7 @@ pub struct Model {
     pub alt_names: Json,
     pub deleted: bool,
     pub openstreetmap_id: Option<i32>,
-    #[sea_orm(column_type = "Text", nullable)]
-    pub updated_by: Option<String>,
+    pub updated_by_login_id: Option<Uuid>,
     pub updated_at: DateTime,
     pub created_at: DateTime,
 }
@@ -30,8 +29,8 @@ pub struct Model {
 pub enum Relation {
     #[sea_orm(
         belongs_to = "super::login::Entity",
-        from = "Column::UpdatedBy",
-        to = "super::login::Column::Login",
+        from = "Column::UpdatedByLoginId",
+        to = "super::login::Column::Id",
         on_update = "NoAction",
         on_delete = "NoAction"
     )]

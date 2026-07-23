@@ -12,7 +12,7 @@ pub struct Model {
     #[sea_orm(primary_key)]
     pub id: i64,
     pub sigint_signal_id: i64,
-    pub login: String,
+    pub login_id: Uuid,
     pub action: SigintSignalChangelogActionEnum,
     pub created_at: DateTime,
     #[sea_orm(column_type = "JsonBinary", nullable)]
@@ -29,8 +29,8 @@ pub struct Model {
 pub enum Relation {
     #[sea_orm(
         belongs_to = "super::login::Entity",
-        from = "Column::Login",
-        to = "super::login::Column::Login",
+        from = "Column::LoginId",
+        to = "super::login::Column::Id",
         on_update = "NoAction",
         on_delete = "NoAction"
     )]

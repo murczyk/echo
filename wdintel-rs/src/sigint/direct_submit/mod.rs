@@ -1,3 +1,5 @@
+use crate::users::ensure_rer_role;
+use crate::users::login_id_from_identity;
 mod api_error;
 pub mod bl;
 pub mod query;
@@ -18,13 +20,11 @@ pub async fn submit_direct(
     payload: web::Json<DirectSubmitPayload>,
 ) -> Result<web::Json<DirectSubmitRsp>, DirectSubmitApiError> {
     let action = DirectSubmitAction::Save;
-    let login = user
-        .id()
-        .c(h!())
-        .map_err(|err| DirectSubmitApiError::new(err, action))?;
-    crate::users::has_role(&env.dbx, &login, "Rer")
+    ensure_rer_role(&env.dbx, &user)
         .await
         .c(h!())
+        .map_err(|err| DirectSubmitApiError::new(err, action))?;
+    let login = login_id_from_identity(&user)
         .map_err(|err| DirectSubmitApiError::new(err, action))?;
     Ok(web::Json(
         bl::submit_signal_message(&login, &env, payload.into_inner())
@@ -42,13 +42,11 @@ pub async fn edit_message(
     payload: web::Json<DirectSubmitPayload>,
 ) -> Result<web::Json<DirectSubmitRsp>, DirectSubmitApiError> {
     let action = DirectSubmitAction::Edit;
-    let login = user
-        .id()
-        .c(h!())
-        .map_err(|err| DirectSubmitApiError::new(err, action))?;
-    crate::users::has_role(&env.dbx, &login, "Rer")
+    ensure_rer_role(&env.dbx, &user)
         .await
         .c(h!())
+        .map_err(|err| DirectSubmitApiError::new(err, action))?;
+    let login = login_id_from_identity(&user)
         .map_err(|err| DirectSubmitApiError::new(err, action))?;
     Ok(web::Json(
         bl::edit_signal_message(
@@ -70,13 +68,11 @@ pub async fn parse_direct_submit(
     payload: web::Json<DirectSubmitParsePayload>,
 ) -> Result<web::Json<DirectSubmitParseRsp>, DirectSubmitApiError> {
     let action = DirectSubmitAction::Parse;
-    let login = user
-        .id()
-        .c(h!())
-        .map_err(|err| DirectSubmitApiError::new(err, action))?;
-    crate::users::has_role(&env.dbx, &login, "Rer")
+    ensure_rer_role(&env.dbx, &user)
         .await
         .c(h!())
+        .map_err(|err| DirectSubmitApiError::new(err, action))?;
+    let login = login_id_from_identity(&user)
         .map_err(|err| DirectSubmitApiError::new(err, action))?;
     Ok(web::Json(
         bl::parse_signal_message(&login, &env, payload.into_inner())

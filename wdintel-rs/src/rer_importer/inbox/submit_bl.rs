@@ -2,6 +2,7 @@ use crate::entities::datasource;
 use crate::error::AppError;
 use crate::rer_importer::types::*;
 use crate::types::*;
+use crate::users::{has_any_role, login_id_from_identity};
 use actix_identity::Identity;
 use actix_web::web::Data;
 use sea_orm::*;
@@ -18,15 +19,15 @@ pub(crate) async fn submit_generic_inbox(
     env: &Data<Env>,
     item: InboxSubmitItem,
 ) -> Result<GenericInboxSubmitRsp, AppError> {
-    let login = user.id().c(h!())?;
-    crate::users::has_any_role(
+    has_any_role(
         &env.dbx,
-        &login,
+        &login_id_from_identity(&user)?,
         vec!["Rer", "Api", "ApiAgent"],
     )
     .await
     .c(h!())?;
-    let logins = crate::users::get_organism_logins(&env.dbx, user)
+    let login = login_id_from_identity(&user)?;
+    let logins = crate::users::get_organism_login_ids(&env.dbx, user)
         .await
         .context(h!())?;
     let submitted =
@@ -38,13 +39,13 @@ pub(crate) async fn submit_generic_inbox(
 
 pub(crate) async fn submit_generic_inbox_message(
     env: &Data<Env>,
-    login: &str,
-    logins: &Vec<String>,
+    login: &uuid::Uuid,
+    logins: &Vec<uuid::Uuid>,
     item: InboxSubmitItem,
 ) -> Result<SubmittedInboxItem, AppError> {
     let txn = env.dbx.begin().await.c(h!())?;
     let datasource = datasource::Entity::find()
-        .filter(datasource::Column::ApiLogin.eq(login))
+        .filter(datasource::Column::ApiLoginId.eq(*login))
         .filter(datasource::Column::Enabled.eq(true))
         .filter(datasource::Column::Deleted.eq(false))
         .one(&txn)
@@ -66,8 +67,8 @@ pub(crate) async fn submit_generic_inbox_item(
     env: &Data<Env>,
     txn: &DatabaseTransaction,
     datasource: &datasource::Model,
-    login: &str,
-    logins: &Vec<String>,
+    login: &uuid::Uuid,
+    logins: &Vec<uuid::Uuid>,
     item: InboxSubmitItem,
 ) -> Result<SubmittedInboxItem, AppError> {
     super::validate_generic_submit_item(&item)?;
@@ -97,8 +98,8 @@ pub(crate) async fn submit_inbox_item_with_groups(
     txn: &DatabaseTransaction,
     datasource_id: i64,
     groups: &[(String, i64)],
-    login: &str,
-    logins: &Vec<String>,
+    login: &uuid::Uuid,
+    logins: &Vec<uuid::Uuid>,
     item: InboxSubmitItem,
     allow_empty_content: bool,
 ) -> Result<SubmittedInboxItem, AppError> {
@@ -123,8 +124,8 @@ pub(crate) async fn edit_inbox_item_with_groups(
     signal_message_id: i64,
     datasource_id: i64,
     groups: &[(String, i64)],
-    login: &str,
-    logins: &Vec<String>,
+    login: &uuid::Uuid,
+    logins: &Vec<uuid::Uuid>,
     item: InboxSubmitItem,
     allow_empty_content: bool,
     keep_timestamp_missing: bool,
@@ -149,8 +150,8 @@ async fn submit_inbox_item_with_groups_inner(
     txn: &DatabaseTransaction,
     datasource_id: i64,
     groups: &[(String, i64)],
-    login: &str,
-    logins: &Vec<String>,
+    login: &uuid::Uuid,
+    logins: &Vec<uuid::Uuid>,
     item: InboxSubmitItem,
     signal_message_id: Option<i64>,
     allow_empty_content: bool,
@@ -242,8 +243,8 @@ async fn submit_inbox_item_with_groups_inner(
 async fn delete_cleared_edit_comment(
     txn: &DatabaseTransaction,
     signal_message_id: i64,
-    login: &str,
-    logins: &[String],
+    login: &uuid::Uuid,
+    logins: &[uuid::Uuid],
     message: &mut InboxMessage,
 ) -> Result<(), AppError> {
     if message

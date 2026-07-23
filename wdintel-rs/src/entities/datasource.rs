@@ -30,10 +30,8 @@ pub struct Model {
     pub echo_client_lock_id: Option<i64>,
     pub created_at: DateTime,
     pub default_aor_id: Option<i64>,
-    #[sea_orm(column_type = "Text", nullable, unique)]
-    pub api_login: Option<String>,
-    #[sea_orm(column_type = "Text", nullable)]
-    pub updated_by: Option<String>,
+    pub api_login_id: Option<Uuid>,
+    pub updated_by_login_id: Option<Uuid>,
     pub deleted: bool,
     pub last_sync_at: Option<DateTime>,
 }
@@ -60,16 +58,16 @@ pub enum Relation {
     EchoClientLock,
     #[sea_orm(
         belongs_to = "super::login::Entity",
-        from = "Column::ApiLogin",
-        to = "super::login::Column::Login",
+        from = "Column::ApiLoginId",
+        to = "super::login::Column::Id",
         on_update = "NoAction",
         on_delete = "NoAction"
     )]
     Login2,
     #[sea_orm(
         belongs_to = "super::login::Entity",
-        from = "Column::UpdatedBy",
-        to = "super::login::Column::Login",
+        from = "Column::UpdatedByLoginId",
+        to = "super::login::Column::Id",
         on_update = "NoAction",
         on_delete = "NoAction"
     )]

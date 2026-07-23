@@ -22,14 +22,28 @@ pub struct Model {
     pub created_at: DateTime,
     #[sea_orm(column_type = "Text", nullable)]
     pub google_client_id: Option<String>,
-    #[sea_orm(column_type = "Text")]
-    pub user_id: String,
+    pub login_id: Uuid,
     #[sea_orm(column_type = "Text", nullable)]
     pub restreamer_host: Option<String>,
     pub remote_pid: Option<i64>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+pub enum Relation {
+    #[sea_orm(
+        belongs_to = "super::login::Entity",
+        from = "Column::LoginId",
+        to = "super::login::Column::Id",
+        on_update = "NoAction",
+        on_delete = "NoAction"
+    )]
+    Login,
+}
+
+impl Related<super::login::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::Login.def()
+    }
+}
 
 impl ActiveModelBehavior for ActiveModel {}

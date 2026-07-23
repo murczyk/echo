@@ -12,8 +12,7 @@ pub struct Model {
     pub id: i64,
     #[sea_orm(column_type = "Text", nullable)]
     pub description: Option<String>,
-    #[sea_orm(column_type = "Text")]
-    pub api_user: String,
+    pub api_user_login_id: Uuid,
     pub has_iggy_connection: bool,
     #[sea_orm(column_type = "Text", nullable)]
     pub iggy_url: Option<String>,
@@ -35,8 +34,8 @@ pub struct Model {
 pub enum Relation {
     #[sea_orm(
         belongs_to = "super::login::Entity",
-        from = "Column::ApiUser",
-        to = "super::login::Column::Login",
+        from = "Column::ApiUserLoginId",
+        to = "super::login::Column::Id",
         on_update = "NoAction",
         on_delete = "NoAction"
     )]

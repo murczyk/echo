@@ -11,8 +11,7 @@ pub struct Model {
     #[sea_orm(primary_key)]
     pub id: i64,
     pub organism_id: i64,
-    #[sea_orm(column_type = "Text", nullable)]
-    pub author_login: Option<String>,
+    pub author_login_id: Option<Uuid>,
     #[sea_orm(column_type = "Text")]
     pub name: String,
     pub words: Vec<String>,
@@ -23,8 +22,8 @@ pub struct Model {
 pub enum Relation {
     #[sea_orm(
         belongs_to = "super::login::Entity",
-        from = "Column::AuthorLogin",
-        to = "super::login::Column::Login",
+        from = "Column::AuthorLoginId",
+        to = "super::login::Column::Id",
         on_update = "NoAction",
         on_delete = "SetNull"
     )]

@@ -209,7 +209,7 @@ where
     if crate::rer_importer::important::is_important(&body) {
         sigint_important::Entity::insert(sigint_important::ActiveModel {
             id: NotSet,
-            user_id: NotSet,
+            login_id: NotSet,
             signal_message_id: Set(message_id),
             deleted: Set(false),
             created_at: NotSet,
@@ -532,6 +532,7 @@ async fn insert_missing_auto_comments<'a, 'async_trait, C>(
 where
     C: ConnectionTrait + 'async_trait,
 {
+    let system_login_id = crate::users::system_login_id(txn).await.c(h!())?;
     let parsed = crate::sigint::parser::parse_comments(body);
     let mut texts = vec![];
     for text in [parsed.top, parsed.bottom].into_iter().flatten() {
@@ -545,7 +546,7 @@ where
             .filter(
                 sigint_comment::Column::SignalMessageId.eq(signal_message_id),
             )
-            .filter(sigint_comment::Column::Login.eq(SYSTEM_LOGIN_NAME))
+            .filter(sigint_comment::Column::LoginId.eq(system_login_id))
             .filter(sigint_comment::Column::Comment.eq(text.clone()))
             .one(txn)
             .await
@@ -557,7 +558,7 @@ where
         sigint_comment::ActiveModel {
             id: NotSet,
             signal_message_id: Set(signal_message_id),
-            login: Set(SYSTEM_LOGIN_NAME.to_string()),
+            login_id: Set(system_login_id),
             comment: Set(text),
             created_at: NotSet,
             sigint_post_id: Set(sigint_post_id),

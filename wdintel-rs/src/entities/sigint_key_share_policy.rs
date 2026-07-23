@@ -12,8 +12,7 @@ pub struct Model {
     pub id: i64,
     pub grant_from: i64,
     pub grant_to: i64,
-    #[sea_orm(column_type = "Text")]
-    pub author: String,
+    pub author_login_id: Uuid,
     pub deleted: bool,
     pub created_at: DateTime,
 }
@@ -22,8 +21,8 @@ pub struct Model {
 pub enum Relation {
     #[sea_orm(
         belongs_to = "super::login::Entity",
-        from = "Column::Author",
-        to = "super::login::Column::Login",
+        from = "Column::AuthorLoginId",
+        to = "super::login::Column::Id",
         on_update = "NoAction",
         on_delete = "NoAction"
     )]

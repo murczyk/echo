@@ -12,8 +12,7 @@ pub struct Model {
     pub id: i64,
     #[sea_orm(column_type = "Text")]
     pub report_kind: String,
-    #[sea_orm(column_type = "Text")]
-    pub requested_by: String,
+    pub requested_by_login_id: Uuid,
     #[sea_orm(column_type = "JsonBinary")]
     pub request: Json,
     pub created_at: DateTime,
@@ -52,8 +51,8 @@ pub enum Relation {
     Bgtask,
     #[sea_orm(
         belongs_to = "super::login::Entity",
-        from = "Column::RequestedBy",
-        to = "super::login::Column::Login",
+        from = "Column::RequestedByLoginId",
+        to = "super::login::Column::Id",
         on_update = "NoAction",
         on_delete = "NoAction"
     )]

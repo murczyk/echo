@@ -1,6 +1,6 @@
 module Auth exposing
     ( User
-    , onPageLoad, viewCustomPage
+    , onPageLoad, viewCustomPage, viewLoadingPage
     )
 
 {-|
@@ -65,4 +65,9 @@ onPageLoad shared route =
 -}
 viewCustomPage : Shared.Model -> Route () -> View Never
 viewCustomPage _ _ =
+    View.none
+
+
+viewLoadingPage : Shared.Model -> Route () -> View Never
+viewLoadingPage _ _ =
     View.none

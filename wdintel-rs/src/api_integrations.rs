@@ -8,6 +8,7 @@ use chrono::Utc;
 use elm_rs::{Elm, ElmDecode, ElmEncode};
 use sea_orm::*;
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
 #[derive(
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
@@ -15,7 +16,7 @@ use serde::{Deserialize, Serialize};
 pub struct ApiIntegration {
     pub id: i64,
     pub description: Option<String>,
-    pub api_user: String,
+    pub api_user_login_id: String,
     pub has_iggy_connection: bool,
     pub iggy_url: Option<String>,
     pub iggy_login: Option<String>,
@@ -41,7 +42,7 @@ pub struct ListApiIntegrationsRsp {
 pub struct UpsertApiIntegrationReq {
     pub id: Option<i64>,
     pub description: Option<String>,
-    pub api_user: String,
+    pub api_user_login_id: String,
     pub has_iggy_connection: bool,
     pub iggy_url: Option<String>,
     pub iggy_login: Option<String>,
@@ -69,7 +70,7 @@ pub struct TestIggyConnectionReq {
 
 struct ApiIntegrationValues {
     description: Option<String>,
-    api_user: String,
+    api_user_login_id: Uuid,
     has_iggy_connection: bool,
     iggy_url: Option<String>,
     iggy_login: Option<String>,
@@ -136,7 +137,7 @@ pub async fn upsert_api_integration(
         let mut api_integration = api_integration::ActiveModel {
             id: NotSet,
             description: NotSet,
-            api_user: NotSet,
+            api_user_login_id: NotSet,
             has_iggy_connection: NotSet,
             iggy_url: NotSet,
             iggy_login: NotSet,
@@ -251,8 +252,13 @@ async fn validate_and_normalize(
     dbx: &DatabaseConnection,
     req: &UpsertApiIntegrationReq,
 ) -> Result<ApiIntegrationValues, AppError> {
-    let api_user = required_trimmed(&req.api_user, "Вкажіть API користувача")?;
-    ensure_api_user(dbx, &api_user).await?;
+    let api_user_login_id =
+        required_trimmed(&req.api_user_login_id, "Вкажіть API користувача")?;
+    let api_user_login_id =
+        Uuid::parse_str(&api_user_login_id).map_err(|_| AppError::BL {
+            msg: "Некоректний ID API користувача".to_string(),
+        })?;
+    ensure_api_user(dbx, &api_user_login_id).await?;
     let sync_enabled = normalize_sync_enabled(
         req.id,
         req.sync_enabled,
@@ -261,7 +267,7 @@ async fn validate_and_normalize(
 
     let mut values = ApiIntegrationValues {
         description: normalize_optional_trimmed(req.description.clone()),
-        api_user,
+        api_user_login_id,
         has_iggy_connection: req.has_iggy_connection,
         iggy_url: None,
         iggy_login: None,
@@ -311,15 +317,16 @@ fn normalize_sync_enabled(
 
 async fn ensure_api_user(
     dbx: &DatabaseConnection,
-    api_user: &str,
+    api_user_login_id: &Uuid,
 ) -> Result<(), AppError> {
-    let api_user = login::Entity::find_by_id(api_user)
+    let api_user_login = login::Entity::find_by_id(*api_user_login_id)
         .filter(login::Column::DeletedPermanently.eq(false))
         .one(dbx)
         .await
         .c(h!())?
         .ok_or(AppError::NotFound)?;
-    let roles: Vec<String> = serde_json::from_value(api_user.roles).c(h!())?;
+    let roles: Vec<String> =
+        serde_json::from_value(api_user_login.roles).c(h!())?;
     if !roles.iter().any(|role| role == "Api") {
         return Err(AppError::BL {
             msg: "Обраний користувач не має ролі Api".to_string(),
@@ -352,7 +359,7 @@ fn apply_values(
     values: ApiIntegrationValues,
 ) {
     api_integration.description = Set(values.description);
-    api_integration.api_user = Set(values.api_user);
+    api_integration.api_user_login_id = Set(values.api_user_login_id);
     api_integration.has_iggy_connection = Set(values.has_iggy_connection);
     api_integration.iggy_url = Set(values.iggy_url);
     api_integration.iggy_login = Set(values.iggy_login);
@@ -379,7 +386,7 @@ impl From<api_integration::Model> for ApiIntegration {
         Self {
             id: api_integration.id,
             description: api_integration.description,
-            api_user: api_integration.api_user,
+            api_user_login_id: api_integration.api_user_login_id.to_string(),
             has_iggy_connection: api_integration.has_iggy_connection,
             iggy_url: api_integration.iggy_url,
             iggy_login: api_integration.iggy_login,

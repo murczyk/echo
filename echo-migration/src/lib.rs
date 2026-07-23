@@ -297,6 +297,7 @@ mod m20260711_120000_add_sigint_comment_parsing_to_system_settings;
 mod m20260712_204007_add_do_not_store_duplicate_echoim_failures;
 mod m20260713_152932_rename_cyber_echo_enabled_to_devices_section_enabled;
 mod m20260715_092901_add_sigint_inbox_item_network;
+mod m20260716_161040_login_uuid_v7;
 mod m20260717_111121_goi_palitra_sync_changelog_source;
 mod m20260720_100029_analysis_stats_query_indexes;
 mod m20260720_124323_add_signal_message_media_is_encrypted;
@@ -636,6 +637,7 @@ impl MigratorTrait for Migrator {
                 m20260713_152932_rename_cyber_echo_enabled_to_devices_section_enabled::Migration,
             ),
             Box::new(m20260715_092901_add_sigint_inbox_item_network::Migration),
+            Box::new(m20260716_161040_login_uuid_v7::Migration),
             Box::new(
                 m20260717_111121_goi_palitra_sync_changelog_source::Migration,
             ),

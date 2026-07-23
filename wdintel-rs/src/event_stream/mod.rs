@@ -1,6 +1,7 @@
 use self::types::*;
 use crate::config::*;
 use crate::types::*;
+use crate::users::{ensure_basic_role, login_id_from_identity};
 use actix_web::post;
 use actix_web::web::Json;
 use chrono::prelude::*;
@@ -45,10 +46,8 @@ async fn long_poll(
     session: actix_session::Session,
     req: Json<LongPollReq>,
 ) -> Result<Json<LongPollRsp>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Basic")
-        .await
-        .c(h!())?;
-    let user_id = user.id().c(h!())?;
+    ensure_basic_role(&env.dbx, &user).await.c(h!())?;
+    let user_id = login_id_from_identity(&user)?;
     let account_id = user_id;
     let Some(session_id) = get_session_id(&session).c(h!())? else {
         tokio::time::sleep(tokio::time::Duration::from_millis(

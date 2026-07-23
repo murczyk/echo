@@ -3,6 +3,7 @@ use crate::entities::sea_orm_active_enums::AccountStatus;
 use crate::entities::*;
 use crate::error::AppError;
 use crate::types::*;
+use crate::users::{ensure_basic_role, has_role, login_id_from_identity};
 use crate::utils::orm::ArrayColumnOps;
 use crate::{config, h};
 use actix_web::post;
@@ -18,9 +19,7 @@ pub async fn list_datasources(
     env: actix_web::web::Data<Env>,
     user: actix_identity::Identity,
 ) -> Result<Json<Vec<(i64, Datasource)>>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Basic")
-        .await
-        .c(h!())?;
+    ensure_basic_role(&env.dbx, &user).await.c(h!())?;
     let datasources = datasource::Entity::find()
         // .filter(datasource::Column::Enabled.eq(true))
         .all(&env.dbx)
@@ -47,13 +46,10 @@ pub async fn datasource_group_list(
     user: actix_identity::Identity,
     req: Json<i64>,
 ) -> Result<Json<Vec<String>>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Basic")
+    ensure_basic_role(&env.dbx, &user).await.c(h!())?;
+    let is_admin = has_role(&env.dbx, &login_id_from_identity(&user)?, "Admin")
         .await
-        .c(h!())?;
-    let is_admin =
-        crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Admin")
-            .await
-            .is_ok();
+        .is_ok();
     let datasource_id: i64 = req.into_inner();
     let datasource = datasource::Entity::find_by_id(datasource_id)
         .one(&env.dbx)
@@ -84,7 +80,7 @@ pub async fn datasource_group_list(
                 datasource_group::Column::GroupMasterKey.eq_any(
                     crate::messenger::group::get_identity_sigint_groups(
                         &env.dbx,
-                        &user.id().c(h!())?,
+                        &login_id_from_identity(&user)?,
                     )
                     .await
                     .c(h!())?,

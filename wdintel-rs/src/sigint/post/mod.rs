@@ -1,6 +1,7 @@
 use self::types::*;
 use crate::entities::*;
 use crate::types::*;
+use crate::users::{has_any_role, has_role, login_id_from_identity};
 use actix_web::post;
 use actix_web::web::Json;
 use sea_orm::{
@@ -78,9 +79,9 @@ pub async fn post_list(
     env: actix_web::web::Data<Env>,
     req: Json<ListPostsReq>,
 ) -> Result<Json<Vec<Post>>, AppError> {
-    crate::users::has_any_role(
+    has_any_role(
         &env.dbx,
-        &user.id().c(h!())?,
+        &login_id_from_identity(&user)?,
         vec!["Rer", "Api"],
     )
     .await?;
@@ -122,7 +123,7 @@ pub async fn create_post(
     env: actix_web::web::Data<Env>,
     req: Json<CreatePostReq>,
 ) -> Result<Json<Post>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Admin")
+    has_role(&env.dbx, &login_id_from_identity(&user)?, "Admin")
         .await
         .context(h!())?;
 
@@ -156,7 +157,7 @@ pub async fn update_post(
     env: actix_web::web::Data<Env>,
     req: Json<UpdatePostReq>,
 ) -> Result<Json<Post>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Admin")
+    has_role(&env.dbx, &login_id_from_identity(&user)?, "Admin")
         .await
         .context(h!())?;
 
@@ -197,7 +198,7 @@ pub async fn delete_post(
     env: actix_web::web::Data<Env>,
     req: Json<DeletePostReq>,
 ) -> Result<Json<()>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Admin")
+    has_role(&env.dbx, &login_id_from_identity(&user)?, "Admin")
         .await
         .context(h!())?;
 
@@ -220,7 +221,7 @@ pub async fn post_name_search(
     env: actix_web::web::Data<Env>,
     req: Json<PostSearchReq>,
 ) -> Result<Json<PostSearchRsp>, AppError> {
-    crate::users::has_any_role(&env.dbx, &user.id().c(h!())?, vec!["Rer"])
+    has_any_role(&env.dbx, &login_id_from_identity(&user)?, vec!["Rer"])
         .await
         .c(h!())?;
 

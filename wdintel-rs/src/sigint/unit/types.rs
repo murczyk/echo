@@ -15,7 +15,7 @@ pub struct Unit {
     pub name: String,
     pub active: bool,
     pub created_at: i64,
-    pub created_by: String,
+    pub created_by_login_id: String,
 }
 
 #[derive(

@@ -441,7 +441,7 @@ describe('SettingsNeoPage', () => {
           disableNetworkAssignment: false,
           allowedUsers: [],
           allowedOrganismIds: [],
-          adminLogins: [{ login: 'DeltaUser', deltaLogin: null }],
+          adminLogins: [{ loginId: 'admin-id', login: 'DeltaUser', deltaLogin: null }],
           areasOfResponsibility: null,
         },
       ],
@@ -486,11 +486,11 @@ describe('SettingsNeoPage', () => {
           isGroupSecret: true,
           disableNetworkAssignment: false,
           allowedUsers: [
-            { login: 'user-a', deltaLogin: 'DeltaUserA' },
-            { login: 'user-b', deltaLogin: 'USER-B' },
+            { loginId: 'user-a-id', login: 'user-a', deltaLogin: 'DeltaUserA' },
+            { loginId: 'user-b-id', login: 'user-b', deltaLogin: 'USER-B' },
           ],
           allowedOrganismIds: [],
-          adminLogins: [{ login: 'DeltaUser', deltaLogin: 'AdminDelta' }],
+          adminLogins: [{ loginId: 'admin-id', login: 'DeltaUser', deltaLogin: 'AdminDelta' }],
           areasOfResponsibility: [{ id: 1, name: 'AOR 1' }],
         },
       ],
@@ -529,15 +529,18 @@ describe('SettingsNeoPage', () => {
           datasourceKind: 'signal',
           isGroupSecret: true,
           disableNetworkAssignment: false,
-          allowedUsers: [{ login: 'user-a', deltaLogin: null }],
+          allowedUsers: [{ loginId: 'user-a-id', login: 'user-a', deltaLogin: null }],
           allowedOrganismIds: [],
-          adminLogins: [{ login: 'admin-a', deltaLogin: null }],
+          adminLogins: [{ loginId: 'admin-a-id', login: 'admin-a', deltaLogin: null }],
           areasOfResponsibility: [{ id: 1, name: 'AOR 1' }],
         },
       ],
     });
     fetchMyAdminGroupEditReferenceMock.mockResolvedValue({
-      logins: ['admin-a', 'user-a'],
+      logins: [
+        { loginId: 'admin-a-id', login: 'admin-a', deltaLogin: null },
+        { loginId: 'user-a-id', login: 'user-a', deltaLogin: null },
+      ],
       organisms: [],
       areasOfResponsibility: [{ id: 1, name: 'AOR 1' }],
     });
@@ -592,13 +595,13 @@ describe('SettingsNeoPage', () => {
           disableNetworkAssignment: false,
           allowedUsers: [],
           allowedOrganismIds: [7],
-          adminLogins: [{ login: 'admin-a', deltaLogin: null }],
+          adminLogins: [{ loginId: 'admin-a-id', login: 'admin-a', deltaLogin: null }],
           areasOfResponsibility: null,
         },
       ],
     });
     fetchMyAdminGroupEditReferenceMock.mockResolvedValue({
-      logins: ['admin-a'],
+      logins: [{ loginId: 'admin-a-id', login: 'admin-a', deltaLogin: null }],
       organisms: [{ id: 7, name: 'Own Org' }],
       areasOfResponsibility: [],
     });
@@ -643,7 +646,7 @@ describe('SettingsNeoPage', () => {
         isSecret: true,
         userLogins: [],
         organismIds: [7],
-        adminLogins: ['admin-a'],
+        adminLogins: ['admin-a-id'],
       }),
     );
   });
@@ -677,7 +680,7 @@ describe('SettingsNeoPage', () => {
       ],
     });
     fetchMyAdminGroupEditReferenceMock.mockResolvedValue({
-      logins: ['admin-a'],
+      logins: [{ loginId: 'admin-a-id', login: 'admin-a', deltaLogin: null }],
       organisms: [],
       areasOfResponsibility: [],
     });

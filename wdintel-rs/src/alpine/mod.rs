@@ -4,6 +4,7 @@ use crate::error::AppError;
 use crate::h;
 use crate::types::info;
 use crate::types::{Deserialize, Env, Serialize, ShortContext};
+use crate::users::ensure_rer_role;
 use actix_multipart::Multipart;
 use actix_web::http::header;
 use actix_web::post;
@@ -75,10 +76,7 @@ async fn convert_alpinequest_file(
     mut payload: Multipart,
 ) -> Result<Json<i64>, AppError> {
     info!("convert_alpinequest_file started");
-    let login = user.id().c(h!())?;
-    crate::users::has_role(&env.dbx, &login, "Rer")
-        .await
-        .c(h!())?;
+    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
     let converter_url = env.config.alpine_converter_url.clone().c(h!())?;
     let upload = read_payload(&mut payload).await.c(h!())?;
 
@@ -157,9 +155,7 @@ async fn download_alpine_result(
     env: actix_web::web::Data<Env>,
     req: Json<AlpineDownloadResultReq>,
 ) -> Result<HttpResponse, AppError> {
-    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
-        .await
-        .c(h!())?;
+    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
     let res = bgtask_res::Entity::find_by_id(req.bgtask_id)
         .one(&env.dbx)
         .await

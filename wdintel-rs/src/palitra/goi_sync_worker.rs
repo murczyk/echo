@@ -2191,7 +2191,7 @@ async fn import_convertible_goi_palitra_file(
 ) -> anyhow::Result<Vec<i64>> {
     let organism_ids =
         goi_import_access(&env.dbx, integration).await.c(h!())?;
-    let author = integration.maintainer_login.clone().c(h!())?;
+    let author = integration.maintainer_login_id.c(h!())?;
     let txn = env.dbx.begin().await.c(h!())?;
     let palitra = super::bl::create_palitra(
         author,
@@ -2322,7 +2322,7 @@ async fn import_direct_goi_palitra_file(
 
     let organism_ids =
         goi_import_access(&env.dbx, integration).await.c(h!())?;
-    let author = integration.maintainer_login.clone().c(h!())?;
+    let author = integration.maintainer_login_id.c(h!())?;
     let uploaded_at = Utc::now();
     let txn = env.dbx.begin().await.c(h!())?;
     let palitra = super::bl::create_palitra(
@@ -2379,7 +2379,7 @@ async fn persist_failed_direct_goi_palitra_import(
 ) -> anyhow::Result<()> {
     let organism_ids =
         goi_import_access(&env.dbx, integration).await.c(h!())?;
-    let author = integration.maintainer_login.clone().c(h!())?;
+    let author = integration.maintainer_login_id.c(h!())?;
     let txn = env.dbx.begin().await.c(h!())?;
     let palitra = super::bl::create_palitra(
         author,
@@ -3551,7 +3551,7 @@ mod tests {
             api_login: Set(None),
             api_password: Set(None),
             disable_goi_to_echo_palitra_sync: Set(false),
-            maintainer_login: Set(Some(login.login)),
+            maintainer_login_id: Set(Some(login.id)),
             pause_worker: Set(false),
         }
         .insert(dbx)

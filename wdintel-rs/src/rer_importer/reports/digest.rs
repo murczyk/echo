@@ -100,7 +100,7 @@ struct DigestMessageRow {
 }
 
 pub async fn report_docx_kind_digest(
-    user_login: &str,
+    user_login: &uuid::Uuid,
     env: &Env,
     req: &super::types::ReportPreviewReq,
     outpath: &Path,
@@ -118,10 +118,11 @@ pub async fn report_docx_kind_digest(
         }
     };
     let show_date = check_should_show_date(report_since, report_till);
-    let login = user_login.to_string();
-    let logins = crate::users::get_organism_logins_by_login(&read_db, &login)
-        .await
-        .context(h!())?;
+    let login = *user_login;
+    let login_ids =
+        crate::users::get_organism_login_ids_by_id(&read_db, &login)
+            .await
+            .context(h!())?;
     let mut request = req.req.clone();
     request.report_tags_only_this_unit = Some(false);
     request.or_with_extended_form = Some(true); // with comments only
@@ -130,7 +131,7 @@ pub async fn report_docx_kind_digest(
         .context(h!())?;
     let report = collect_report(
         messages,
-        logins.clone(),
+        login_ids.clone(),
         req.report_tags_only_this_unit.unwrap_or(false),
         &read_db,
     )
@@ -290,7 +291,7 @@ pub async fn report_docx_kind_digest(
 
 async fn load_digest_messages(
     dbx: &DatabaseConnection,
-    login: &str,
+    login: &uuid::Uuid,
     env: &Env,
     req: &InboxMessagesReq,
 ) -> Result<Vec<(i64, InboxMessage)>, AppError> {
@@ -462,7 +463,7 @@ fn check_should_show_date(since: DateTime<Utc>, till: DateTime<Utc>) -> bool {
 
 async fn collect_report(
     messages: Vec<(i64, InboxMessage)>,
-    logins: Vec<String>,
+    logins: Vec<uuid::Uuid>,
     comments_only_this_unit: bool,
     dbx: &DatabaseConnection,
 ) -> anyhow::Result<Report> {
@@ -888,7 +889,7 @@ async fn load_aors(
 async fn load_messages_with_comments(
     messages: Vec<(i64, InboxMessage)>,
     dbx: &DatabaseConnection,
-    allowed_comment_logins: Option<&[String]>,
+    allowed_comment_logins: Option<&[uuid::Uuid]>,
 ) -> anyhow::Result<(Vec<(i64, String)>, Vec<(i64, InboxMessage)>)> {
     let message_ids = messages
         .iter()
@@ -919,7 +920,7 @@ async fn load_messages_with_comments(
             .column(sigint_inbox_item::Column::BodyNoheader)
             .apply_if(allowed_comment_logins, |query, logins| {
                 query.filter(
-                    sigint_comment::Column::Login.eq_any(logins.to_vec()),
+                    sigint_comment::Column::LoginId.eq_any(logins.to_vec()),
                 )
             })
             .into_tuple::<(i64, String, Option<Json>)>()
@@ -1430,6 +1431,7 @@ mod tests {
         let other_login = mk_login(
             &env.dbx,
             login::ActiveModel {
+                id: NotSet,
                 login: Set("OtherDigestTester".to_string()),
                 organism_id: Set(Some(other_organism.id)),
                 sigint_zone_id: Set(Some(sigint_zone.id)),
@@ -1455,7 +1457,7 @@ mod tests {
         .await;
         let now = Utc::now().naive_utc();
         sigint_comment::ActiveModel {
-            login: Set(login.login.clone()),
+            login_id: Set(login.id),
             signal_message_id: Set(own_message.id),
             comment: Set("own comment".to_string()),
             created_at: Set(now),
@@ -1465,7 +1467,7 @@ mod tests {
         .await
         .unwrap();
         sigint_comment::ActiveModel {
-            login: Set(other_login.login.clone()),
+            login_id: Set(other_login.id),
             signal_message_id: Set(other_message.id),
             comment: Set("other comment".to_string()),
             created_at: Set(now),
@@ -1481,7 +1483,7 @@ mod tests {
                 test_inbox_message(other_message.id, "raw other body"),
             ],
             &env.dbx,
-            Some(std::slice::from_ref(&login.login)),
+            Some(std::slice::from_ref(&login.id)),
         )
         .await
         .unwrap();
