@@ -325,13 +325,9 @@ async fn sync_goi_knowledge(
     env: &Env,
     integration: &goi_integration::Model,
 ) -> Result<(), AppError> {
-    prune_old_deleted_goi_knowledge(
-        &env.dbx,
-        integration.id,
-        integration.owner_organism_id,
-    )
-    .await
-    .c(h!())?;
+    prune_old_deleted_goi_knowledge(&env.dbx, integration.id)
+        .await
+        .c(h!())?;
     let items = fetch_goi_knowledge(env, integration).await.c(h!())?;
     upsert_goi_knowledge_snapshot(
         &env.dbx,
@@ -742,7 +738,6 @@ async fn mark_missing_goi_knowledge_deleted(
 async fn prune_old_deleted_goi_knowledge(
     db: &DatabaseConnection,
     integration_id: i64,
-    organism_id: i64,
 ) -> Result<(), AppError> {
     let deleted = db
         .execute(Statement::from_sql_and_values(
@@ -752,17 +747,15 @@ async fn prune_old_deleted_goi_knowledge(
                 where id in (
                     select id
                     from goi_knowledge
-                    where organism_id = $1
-                        and integration_id = $2
+                    where integration_id = $1
                         and deleted = true
-                        and deleted_at < now() - ($3::bigint * interval '1 day')
+                        and deleted_at < now() - ($2::bigint * interval '1 day')
                     order by deleted_at, id
-                    limit $4
+                    limit $3
                     for update skip locked
                 )
             "#,
             [
-                organism_id.into(),
                 integration_id.into(),
                 ORGANISM_GOI_KNOWLEDGE_SYNC_MAX_AGE_DAYS.into(),
                 ORGANISM_GOI_KNOWLEDGE_PRUNE_BATCH_SIZE.into(),
@@ -912,7 +905,7 @@ mod tests {
             api_login: Some("login".to_string()),
             api_password: Some("password".to_string()),
             disable_goi_to_echo_palitra_sync: false,
-            maintainer_login: None,
+            maintainer_login_id: None,
             pause_worker: false,
         }
     }
