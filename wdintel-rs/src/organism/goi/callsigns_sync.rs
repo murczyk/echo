@@ -75,6 +75,7 @@ pub(super) struct GoiCallsignDiff {
     pub new_ids: Vec<i64>,
     pub edited_ids: Vec<i64>,
     pub deleted_ids: Vec<i64>,
+    pub duplicate_ids: Vec<i64>,
 }
 
 impl GoiCallsignDiff {
@@ -82,6 +83,7 @@ impl GoiCallsignDiff {
         self.new_ids.is_empty()
             && self.edited_ids.is_empty()
             && self.deleted_ids.is_empty()
+            && self.duplicate_ids.is_empty()
     }
 }
 
@@ -177,11 +179,12 @@ pub(super) async fn sync_goi_callsigns_knowledge(
     let diff = diff_goi_callsigns(&previous_callsigns, &current_callsigns);
 
     info!(
-        "[goi-sync] GOI callsigns diff for {integration_label} {}\nnew callsigns - {}\nedited callsigns - {}\ndeleted callsigns - {}",
+        "[goi-sync] GOI callsigns diff for {integration_label} {}\nnew callsigns - {}\nedited callsigns - {}\ndeleted callsigns - {}\nduplicate callsigns - {}",
         knowledge_source,
         format_goi_callsign_id_summary(&diff.new_ids),
         format_goi_callsign_id_summary(&diff.edited_ids),
         format_goi_callsign_id_summary(&diff.deleted_ids),
+        format_goi_callsign_id_summary(&diff.duplicate_ids),
     );
 
     if diff.is_empty() {
@@ -612,6 +615,7 @@ pub(super) fn diff_goi_callsigns(
     previous: &[GoiCallsignState],
     current: &[GoiCallsignState],
 ) -> GoiCallsignDiff {
+    let duplicate_ids = duplicate_goi_callsign_ids(previous);
     let previous = previous
         .iter()
         .map(|callsign| (callsign.id, callsign))
@@ -620,7 +624,10 @@ pub(super) fn diff_goi_callsigns(
         .iter()
         .map(|callsign| (callsign.id, callsign))
         .collect::<BTreeMap<_, _>>();
-    let mut diff = GoiCallsignDiff::default();
+    let mut diff = GoiCallsignDiff {
+        duplicate_ids,
+        ..Default::default()
+    };
     let ids = previous
         .keys()
         .chain(current.keys())
@@ -640,6 +647,18 @@ pub(super) fn diff_goi_callsigns(
         }
     }
     diff
+}
+
+fn duplicate_goi_callsign_ids(callsigns: &[GoiCallsignState]) -> Vec<i64> {
+    let mut seen_ids = BTreeSet::new();
+    callsigns
+        .iter()
+        .filter_map(|callsign| {
+            (!seen_ids.insert(callsign.id)).then_some(callsign.id)
+        })
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect()
 }
 
 fn goi_callsign_changed(
@@ -1302,10 +1321,7 @@ fn unique_sorted_goi_callsigns(
 ) -> Vec<GoiCallsignState> {
     let mut current_callsigns = current_callsigns.to_vec();
     current_callsigns.sort_by_key(|callsign| callsign.id);
-    let duplicate_ids = current_callsigns
-        .windows(2)
-        .filter_map(|pair| (pair[0].id == pair[1].id).then_some(pair[0].id))
-        .collect::<BTreeSet<_>>();
+    let duplicate_ids = duplicate_goi_callsign_ids(&current_callsigns);
     if !duplicate_ids.is_empty() {
         warn!(
             "[goi-sync] Deduplicating GOI knowledge callsign rows by EXO ID before workbook write: duplicate_ids={duplicate_ids:?}"
@@ -1750,6 +1766,24 @@ mod tests {
         assert_eq!(diff.new_ids, vec![1]);
         assert_eq!(diff.edited_ids, vec![3]);
         assert_eq!(diff.deleted_ids, vec![4]);
+        assert!(diff.duplicate_ids.is_empty());
+    }
+
+    #[test]
+    fn diff_goi_callsigns_reports_duplicate_previous_ids() {
+        let previous = vec![
+            sample_callsign(2, "BETA OLD", Some(2)),
+            sample_callsign(2, "BETA", Some(3)),
+        ];
+        let current = vec![sample_callsign(2, "BETA", None)];
+
+        let diff = diff_goi_callsigns(&previous, &current);
+
+        assert!(diff.new_ids.is_empty());
+        assert!(diff.edited_ids.is_empty());
+        assert!(diff.deleted_ids.is_empty());
+        assert_eq!(diff.duplicate_ids, vec![2]);
+        assert!(!diff.is_empty());
     }
 
     #[test]
