@@ -41,6 +41,7 @@ pub mod conversion_worker;
 mod download;
 pub(crate) mod goi_changelog;
 pub mod goi_sync_worker;
+pub mod highlight_blacklist;
 mod kmz;
 pub mod oneoff;
 pub mod types;

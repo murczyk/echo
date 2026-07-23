@@ -242,6 +242,22 @@ pub struct PalitraBulkActionRsp {
     pub palitra_ids: Vec<i64>,
 }
 
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct PalitraHighlightBlacklistEntry {
+    pub id: i64,
+    pub palitra_id: i64,
+    pub label: String,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct PalitraHighlightBlacklistAddReq {
+    pub label: String,
+}
+
 impl Coords {
     pub fn from_csv(csv: &str) -> anyhow::Result<Coords> {
         // KML stores coordinates as "lon,lat[,alt]" so parse in that order.

@@ -865,6 +865,15 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::palitra::read_palitra_goi_sync_history)
             .service(crate::palitra::read_palitra_v2)
             .service(crate::palitra::read_palitra_preview_v2)
+            .service(
+                crate::palitra::highlight_blacklist::list_palitra_highlight_blacklist,
+            )
+            .service(
+                crate::palitra::highlight_blacklist::add_palitra_highlight_blacklist_entry,
+            )
+            .service(
+                crate::palitra::highlight_blacklist::delete_palitra_highlight_blacklist_entry,
+            )
             .service(crate::palitra::list_palitra_points)
             .service(crate::palitra::suggest_palitra_point_labels)
             .service(crate::palitra::search_palitra_points)
