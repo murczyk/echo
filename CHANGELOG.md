@@ -10,6 +10,7 @@
 
 ## NEXT
 
+- [#2742](https://github.com/echoua/echo/issues/2742) ✅ Оперативний, Аналіз: додано підтримку пошуку локацій при створенні повідомлення.
 - [#2865](https://github.com/echoua/echo/issues/2865) 🐞 Аналіз: виправлено фільтр мереж.
 - [#2781](https://github.com/echoua/echo/issues/2781) 🐞 Аналіз: покращення адаптації до екранів різних розмірів.
 - [#1973](https://github.com/echoua/echo/issues/1973) 👷🐞 Позивні: після деплою запустити `sudo wdintel-rs --mode=live oneoff-fix-network-callsigns` для прив’язки пропущених позивних мереж до каталогу.

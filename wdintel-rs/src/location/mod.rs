@@ -11,6 +11,8 @@ use actix_web::{get, post, HttpRequest};
 use itertools::Itertools;
 use lazy_static::lazy_static;
 use regex::Regex;
+use sea_orm::ConnectionTrait;
+use std::collections::BTreeSet;
 use std::fs;
 
 pub mod aor_config;
@@ -34,14 +36,19 @@ async fn find_locations(
     env: actix_web::web::Data<Env>,
     req: Json<FindSettlementReq>,
 ) -> Result<Json<Vec<SettlementDetails>>, AppError> {
-    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    let login = crate::users::login_id_from_identity(&user)?;
+    crate::users::ensure_rer_role_by_id(&env.dbx, &login)
+        .await
+        .c(h!())?;
     let req = req.into_inner();
-    let locations = find_locations_by_name(
+    let aor_scope =
+        resolve_settlement_request_aor_scope(&env.dbx, &login, &req).await?;
+    let locations = find_settlements_by_name_scope(
         env.settlements.clone(),
         req.query,
         req.region,
         req.related_coordinates,
-        req.aor_id,
+        aor_scope.as_deref(),
     )
     .c(h!())?;
     Ok(Json(locations))
@@ -53,26 +60,79 @@ async fn find_locations_prefix(
     env: actix_web::web::Data<Env>,
     req: Json<FindSettlementReq>,
 ) -> Result<Json<Vec<SettlementDetails>>, AppError> {
-    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    let login = crate::users::login_id_from_identity(&user)?;
+    crate::users::ensure_rer_role_by_id(&env.dbx, &login)
+        .await
+        .c(h!())?;
     let req = req.into_inner();
-    let locations = find_locations_by_prefix(
+    let aor_scope =
+        resolve_settlement_request_aor_scope(&env.dbx, &login, &req).await?;
+    let locations = find_settlements_by_prefix_scope(
         env.settlements.clone(),
         req.query,
         req.region,
         req.related_coordinates,
-        req.aor_id,
+        aor_scope.as_deref(),
     )
     .c(h!())?;
 
     Ok(Json(locations))
 }
 
-fn find_locations_by_prefix(
+async fn resolve_settlement_request_aor_scope<C>(
+    dbx: &C,
+    login: &uuid::Uuid,
+    req: &FindSettlementReq,
+) -> Result<Option<Vec<i64>>, AppError>
+where
+    C: ConnectionTrait,
+{
+    let group_key = req
+        .signal_group_master_key
+        .as_deref()
+        .map(str::trim)
+        .filter(|key| !key.is_empty());
+    if group_key.is_some() && req.aor_id.is_some() {
+        return Err(AppError::BL {
+            msg: "Не можна одночасно передавати signal_group_master_key та aor_id."
+                .to_string(),
+        });
+    }
+    let Some(group_key) = group_key else {
+        return Ok(req.aor_id.map(|aor_id| vec![aor_id]));
+    };
+    crate::messenger::group::ensure_identity_group_available(
+        dbx, login, group_key,
+    )
+    .await?;
+    let aor_ids =
+        crate::messenger::group::resolve_group_aor_ids(dbx, group_key).await?;
+    Ok((!aor_ids.is_empty()).then_some(aor_ids))
+}
+
+#[cfg(test)]
+fn find_settlements_by_prefix(
     settlements: Arc<RwLock<SettlementsDataConfig>>,
     query: String,
     m_region: Option<String>,
     m_src_coords: Option<(f64, f64)>,
     m_aor_id: Option<i64>,
+) -> anyhow::Result<Vec<SettlementDetails>> {
+    find_settlements_by_prefix_scope(
+        settlements,
+        query,
+        m_region,
+        m_src_coords,
+        m_aor_id.map(|aor_id| vec![aor_id]).as_deref(),
+    )
+}
+
+fn find_settlements_by_prefix_scope(
+    settlements: Arc<RwLock<SettlementsDataConfig>>,
+    query: String,
+    m_region: Option<String>,
+    m_src_coords: Option<(f64, f64)>,
+    m_aor_ids: Option<&[i64]>,
 ) -> anyhow::Result<Vec<SettlementDetails>> {
     let query = query.trim().to_uppercase();
     if query.is_empty() {
@@ -82,17 +142,22 @@ fn find_locations_by_prefix(
         .read()
         .map_err(|e| AppError::from(format!("{e:?}")))
         .c(h!())?;
-    let config = select_settlements_data(&settlements_lock, m_aor_id);
-    let (_, _, _, _, settlements_by_name) = config;
+    let sources = select_settlements_sources(&settlements_lock, m_aor_ids);
     let mut locations = vec![];
-    for (name, settlements) in settlements_by_name.range(query.clone()..) {
-        if !name.starts_with(&query) {
-            break;
+    for source in sources {
+        let (_, _, _, _, settlements_by_name) = source;
+        for (name, settlements) in settlements_by_name.range(query.clone()..) {
+            if !name.starts_with(&query) {
+                break;
+            }
+            locations.extend(settlements.iter().cloned());
         }
-        locations.extend(settlements.iter().cloned());
     }
-    let locations = filter_locations_by_region(locations, m_region);
-    Ok(rank_locations_by_coordinates(locations, m_src_coords))
+    Ok(finalize_settlement_search(
+        locations,
+        m_region,
+        m_src_coords,
+    ))
 }
 
 #[derive(Debug, Deserialize)]
@@ -132,6 +197,30 @@ fn select_settlements_data(
     }
 }
 
+fn select_settlements_sources<'a>(
+    config: &'a SettlementsDataConfig,
+    m_aor_ids: Option<&[i64]>,
+) -> Vec<&'a SettlementsData> {
+    let Some(aor_ids) = m_aor_ids else {
+        return vec![config.default_settlements_data.as_ref()];
+    };
+    if aor_ids.is_empty() {
+        return vec![config.default_settlements_data.as_ref()];
+    }
+
+    let mut sources = vec![];
+    let mut default_added = false;
+    for aor_id in aor_ids {
+        if let Some(data) = config.aor_id_to_settlements_data.get(aor_id) {
+            sources.push(data.as_ref());
+        } else if !default_added {
+            sources.push(config.default_settlements_data.as_ref());
+            default_added = true;
+        }
+    }
+    sources
+}
+
 fn get_region_names(
     settlements: Arc<RwLock<SettlementsDataConfig>>,
     m_aor_id: Option<i64>,
@@ -145,27 +234,73 @@ fn get_region_names(
     Ok(region_names.clone())
 }
 
-fn find_locations_by_name(
+fn find_settlements_by_name_scope(
     settlements: Arc<RwLock<SettlementsDataConfig>>,
     query: String,
     m_region: Option<String>,
     m_src_coords: Option<(f64, f64)>,
-    m_aor_id: Option<i64>,
+    m_aor_ids: Option<&[i64]>,
 ) -> anyhow::Result<Vec<SettlementDetails>> {
     let settlements_lock = settlements
         .read()
         .map_err(|e| AppError::from(format!("{e:?}")))
         .c(h!())?;
-    let config = select_settlements_data(&settlements_lock, m_aor_id);
-    let (_, _, _, settlements, _) = config;
+    let sources = select_settlements_sources(&settlements_lock, m_aor_ids);
     let mut matches: Vec<SettlementDetails> = Vec::new();
-    for s in settlements.values() {
-        if s.name.contains(&query.to_uppercase()) {
-            matches.push(s.clone());
+    let query = query.to_uppercase();
+    for source in sources {
+        let (_, _, _, settlements, _) = source;
+        for s in settlements.values() {
+            if s.name.contains(&query) {
+                matches.push(s.clone());
+            }
         }
     }
-    let matches = filter_locations_by_region(matches, m_region);
-    Ok(rank_locations_by_coordinates(matches, m_src_coords))
+    Ok(finalize_settlement_search(matches, m_region, m_src_coords))
+}
+
+fn finalize_settlement_search(
+    locations: Vec<SettlementDetails>,
+    m_region: Option<String>,
+    m_src_coords: Option<(f64, f64)>,
+) -> Vec<SettlementDetails> {
+    let locations = filter_locations_by_region(locations, m_region);
+    let mut seen = BTreeSet::new();
+    let mut unique_locations = vec![];
+    for location in locations {
+        if seen.insert(settlement_dedup_key(&location)) {
+            unique_locations.push(location);
+        }
+    }
+    unique_locations.sort_by(|left, right| {
+        left.name
+            .cmp(&right.name)
+            .then_with(|| left.region.cmp(&right.region))
+            .then_with(|| left.language.cmp(&right.language))
+            .then_with(|| left.id.cmp(&right.id))
+            .then_with(|| {
+                settlement_coords_key(left).cmp(&settlement_coords_key(right))
+            })
+    });
+    rank_locations_by_coordinates(unique_locations, m_src_coords)
+}
+
+fn settlement_coords_key(location: &SettlementDetails) -> Option<(u64, u64)> {
+    location
+        .coords
+        .map(|(lat, lon)| (lat.to_bits(), lon.to_bits()))
+}
+
+fn settlement_dedup_key(
+    location: &SettlementDetails,
+) -> (Option<i32>, String, String, Language, Option<(u64, u64)>) {
+    (
+        location.id,
+        location.name.clone(),
+        location.region.clone(),
+        location.language.clone(),
+        settlement_coords_key(location),
+    )
 }
 
 fn filter_locations_by_region(
@@ -717,6 +852,314 @@ fn deduplicate_settlement_names(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::entities::*;
+    use crate::functest::tests::*;
+    use sea_orm::*;
+    use serial_test::serial;
+
+    struct SettlementResolverFixture {
+        env: Arc<Env>,
+        login: uuid::Uuid,
+        accessible_group_key: String,
+        inaccessible_group_key: String,
+        first_active_aor_id: i64,
+        second_active_aor_id: i64,
+    }
+
+    async fn settlement_resolver_fixture() -> SettlementResolverFixture {
+        let env = cleanup().await.unwrap();
+        let txn = env.dbx.begin().await.unwrap();
+        let zone = mk_sigint_zone(
+            &txn,
+            sigint_zone::ActiveModel {
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let datasource = mk_datasource(
+            &txn,
+            datasource::ActiveModel {
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let organism = mk_organism(
+            &txn,
+            organism::ActiveModel {
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let login = mk_login(
+            &txn,
+            login::ActiveModel {
+                login: Set("settlement-resolver-user".to_string()),
+                id: Set(uuid::Uuid::new_v4()),
+                sigint_zone_id: Set(Some(zone.id)),
+                organism_id: Set(Some(organism.id)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let accessible_group = mk_signal_group(
+            &txn,
+            signal_group::ActiveModel {
+                datasource_id: Set(Some(datasource.id)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let inaccessible_group = mk_signal_group(
+            &txn,
+            signal_group::ActiveModel {
+                datasource_id: Set(Some(datasource.id)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        for group in [&accessible_group, &inaccessible_group] {
+            mk_datasource_group(
+                &txn,
+                datasource_group::ActiveModel {
+                    datasource_id: Set(datasource.id),
+                    group_master_key: Set(group.master_key.clone()),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+        }
+        mk_sigint_zone_datasource(
+            &txn,
+            sigint_zone_datasource::ActiveModel {
+                sigint_zone_id: Set(zone.id),
+                datasource_id: Set(datasource.id),
+                group_master_key: Set(accessible_group.master_key.clone()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        crate::sigint::zone::bl::update_signal_group_access_and_admins(
+            vec![],
+            vec![organism.id],
+            vec![],
+            true,
+            &accessible_group.master_key,
+            &txn,
+        )
+        .await
+        .unwrap();
+
+        let deleted_aor = mk_aor(
+            &txn,
+            area_of_responsibility::ActiveModel {
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let first_active_aor = mk_aor(
+            &txn,
+            area_of_responsibility::ActiveModel {
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let second_active_aor = mk_aor(
+            &txn,
+            area_of_responsibility::ActiveModel {
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let mut deleted_aor_active = deleted_aor.into_active_model();
+        let deleted_aor_id = deleted_aor_active.id.clone().unwrap();
+        deleted_aor_active.deleted = Set(true);
+        deleted_aor_active.update(&txn).await.unwrap();
+        for aor_id in
+            [deleted_aor_id, first_active_aor.id, second_active_aor.id]
+        {
+            mk_signal_group_aor(
+                &txn,
+                signal_group_aor::ActiveModel {
+                    master_key: Set(accessible_group.master_key.clone()),
+                    aor_id: Set(aor_id),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+        }
+        mk_signal_group_aor(
+            &txn,
+            signal_group_aor::ActiveModel {
+                master_key: Set(accessible_group.master_key.clone()),
+                aor_id: Set(first_active_aor.id),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        txn.commit().await.unwrap();
+        SettlementResolverFixture {
+            env,
+            login: login.id,
+            accessible_group_key: accessible_group.master_key,
+            inaccessible_group_key: inaccessible_group.master_key,
+            first_active_aor_id: first_active_aor.id,
+            second_active_aor_id: second_active_aor.id,
+        }
+    }
+
+    fn settlement_request(
+        signal_group_master_key: Option<String>,
+        aor_id: Option<i64>,
+    ) -> FindSettlementReq {
+        FindSettlementReq {
+            query: "мер".to_string(),
+            region: None,
+            related_coordinates: None,
+            aor_id,
+            signal_group_master_key,
+        }
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn settlement_resolver_matches_group_aor_selection() {
+        let fixture = settlement_resolver_fixture().await;
+        let req = settlement_request(
+            Some(fixture.accessible_group_key.clone()),
+            None,
+        );
+
+        let resolved = resolve_settlement_request_aor_scope(
+            &fixture.env.dbx,
+            &fixture.login,
+            &req,
+        )
+        .await
+        .unwrap();
+        let parser_aor = crate::messenger::group::resolve_group_aor_id(
+            &fixture.env.dbx,
+            &fixture.accessible_group_key,
+        )
+        .await
+        .unwrap();
+        let parser_aors = crate::messenger::group::resolve_group_aor_ids(
+            &fixture.env.dbx,
+            &fixture.accessible_group_key,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(
+            resolved,
+            Some(vec![
+                fixture.first_active_aor_id,
+                fixture.second_active_aor_id,
+            ])
+        );
+        assert_eq!(parser_aor, Some(fixture.first_active_aor_id));
+        assert_eq!(
+            parser_aors,
+            vec![fixture.first_active_aor_id, fixture.second_active_aor_id]
+        );
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn settlement_resolver_uses_default_for_no_active_aor() {
+        let fixture = settlement_resolver_fixture().await;
+        signal_group_aor::Entity::delete_many()
+            .filter(
+                signal_group_aor::Column::MasterKey
+                    .eq(fixture.accessible_group_key.clone()),
+            )
+            .exec(&fixture.env.dbx)
+            .await
+            .unwrap();
+        let req = settlement_request(Some(fixture.accessible_group_key), None);
+
+        assert_eq!(
+            resolve_settlement_request_aor_scope(
+                &fixture.env.dbx,
+                &fixture.login,
+                &req
+            )
+            .await
+            .unwrap(),
+            None
+        );
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn settlement_resolver_preserves_explicit_and_blank_legacy_selectors()
+    {
+        let fixture = settlement_resolver_fixture().await;
+        for (group_key, aor_id, expected) in [
+            (None, Some(42), Some(vec![42])),
+            (None, None, None),
+            (Some("   ".to_string()), Some(42), Some(vec![42])),
+            (Some("   ".to_string()), None, None),
+        ] {
+            let req = settlement_request(group_key, aor_id);
+            assert_eq!(
+                resolve_settlement_request_aor_scope(
+                    &fixture.env.dbx,
+                    &fixture.login,
+                    &req,
+                )
+                .await
+                .unwrap(),
+                expected
+            );
+        }
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn settlement_resolver_rejects_conflicting_selectors() {
+        let fixture = settlement_resolver_fixture().await;
+        let req =
+            settlement_request(Some(fixture.accessible_group_key), Some(42));
+
+        let error = resolve_settlement_request_aor_scope(
+            &fixture.env.dbx,
+            &fixture.login,
+            &req,
+        )
+        .await
+        .unwrap_err();
+        assert!(matches!(error, AppError::BL { .. }));
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn settlement_resolver_forbids_inaccessible_group() {
+        let fixture = settlement_resolver_fixture().await;
+        let req =
+            settlement_request(Some(fixture.inaccessible_group_key), None);
+
+        let error = resolve_settlement_request_aor_scope(
+            &fixture.env.dbx,
+            &fixture.login,
+            &req,
+        )
+        .await
+        .unwrap_err();
+        assert!(matches!(error, AppError::Forbidden(_)));
+    }
 
     #[test]
     fn filters_settlements_by_case_insensitive_prefix() {
@@ -743,7 +1186,7 @@ mod tests {
             ..Default::default()
         }));
 
-        let locations = find_locations_by_prefix(
+        let locations = find_settlements_by_prefix(
             settlements,
             " лиман ".to_string(),
             None,
@@ -792,7 +1235,7 @@ mod tests {
             ..Default::default()
         }));
 
-        let locations = find_locations_by_prefix(
+        let locations = find_settlements_by_prefix(
             settlements,
             "мир".to_string(),
             Some("ДОНЕЦЬКА".to_string()),
@@ -828,7 +1271,7 @@ mod tests {
             ..Default::default()
         }));
 
-        let locations = find_locations_by_prefix(
+        let locations = find_settlements_by_prefix(
             settlements,
             "харківс".to_string(),
             None,
@@ -872,7 +1315,7 @@ mod tests {
             ..Default::default()
         }));
 
-        let locations = find_locations_by_prefix(
+        let locations = find_settlements_by_prefix(
             settlements,
             "лиман".to_string(),
             None,
@@ -887,6 +1330,183 @@ mod tests {
                 .map(|location| location.name)
                 .collect_vec(),
             vec!["ЛИМАН ЯНТАР", "ЛИМАН АЛЬФА"]
+        );
+    }
+
+    fn settlement_source(
+        settlements: Vec<SettlementDetails>,
+    ) -> Arc<SettlementsData> {
+        let mut by_id = BTreeMap::new();
+        let mut by_name: BTreeMap<String, Vec<SettlementDetails>> =
+            BTreeMap::new();
+        for settlement in settlements {
+            by_id.insert(settlement.id.unwrap(), settlement.clone());
+            by_name
+                .entry(settlement.name.clone())
+                .or_default()
+                .push(settlement);
+        }
+        Arc::new((vec![], vec![], Trie::new(), by_id, by_name))
+    }
+
+    #[test]
+    fn searches_all_aor_sources_in_global_order_and_deduplicates_exact_rows() {
+        let duplicate = SettlementDetails {
+            id: Some(1),
+            name: "ЛІС".to_string(),
+            language: Language::Ua,
+            ..Default::default()
+        };
+        let transliterated = SettlementDetails {
+            id: Some(1),
+            name: "ЛІС".to_string(),
+            language: Language::UaTranslit,
+            ..Default::default()
+        };
+        let settlements = Arc::new(RwLock::new(SettlementsDataConfig {
+            default_settlements_data: settlement_source(vec![]),
+            aor_id_to_settlements_data: HashMap::from([
+                (
+                    10,
+                    settlement_source(vec![duplicate.clone(), transliterated]),
+                ),
+                (
+                    20,
+                    settlement_source(vec![
+                        duplicate,
+                        SettlementDetails {
+                            id: Some(2),
+                            name: "ЛЯВА".to_string(),
+                            language: Language::Ua,
+                            ..Default::default()
+                        },
+                        SettlementDetails {
+                            id: Some(3),
+                            name: "ЛІС".to_string(),
+                            region: "Черкаська область".to_string(),
+                            language: Language::Ua,
+                            ..Default::default()
+                        },
+                    ]),
+                ),
+            ]),
+            ..Default::default()
+        }));
+
+        let locations = find_settlements_by_prefix_scope(
+            settlements,
+            "л".to_string(),
+            None,
+            None,
+            Some(&[20, 10]),
+        )
+        .unwrap();
+
+        assert_eq!(
+            locations
+                .iter()
+                .map(|location| (
+                    location.id,
+                    location.name.clone(),
+                    location.region.clone(),
+                    location.language.clone()
+                ))
+                .collect_vec(),
+            vec![
+                (Some(1), "ЛІС".to_string(), "".to_string(), Language::Ua),
+                (
+                    Some(1),
+                    "ЛІС".to_string(),
+                    "".to_string(),
+                    Language::UaTranslit,
+                ),
+                (
+                    Some(3),
+                    "ЛІС".to_string(),
+                    "Черкаська область".to_string(),
+                    Language::Ua,
+                ),
+                (Some(2), "ЛЯВА".to_string(), "".to_string(), Language::Ua),
+            ]
+        );
+    }
+
+    #[test]
+    fn ranks_the_merged_aor_sources_once() {
+        let settlements = Arc::new(RwLock::new(SettlementsDataConfig {
+            default_settlements_data: settlement_source(vec![]),
+            aor_id_to_settlements_data: HashMap::from([
+                (
+                    10,
+                    settlement_source(vec![SettlementDetails {
+                        id: Some(10),
+                        name: "ЛІС".to_string(),
+                        coords: Some((2.0, 2.0)),
+                        ..Default::default()
+                    }]),
+                ),
+                (
+                    20,
+                    settlement_source(vec![SettlementDetails {
+                        id: Some(20),
+                        name: "ЛЯВА".to_string(),
+                        coords: Some((1.0, 1.0)),
+                        ..Default::default()
+                    }]),
+                ),
+            ]),
+            ..Default::default()
+        }));
+
+        let locations = find_settlements_by_prefix_scope(
+            settlements,
+            "л".to_string(),
+            None,
+            Some((0.0, 0.0)),
+            Some(&[10, 20]),
+        )
+        .unwrap();
+
+        assert_eq!(locations[0].name, "ЛЯВА");
+        assert_eq!(locations[1].name, "ЛІС");
+    }
+
+    #[test]
+    fn adds_default_source_once_for_aors_without_configuration() {
+        let settlements = Arc::new(RwLock::new(SettlementsDataConfig {
+            default_settlements_data: settlement_source(vec![
+                SettlementDetails {
+                    id: Some(1),
+                    name: "ДЕФОЛТ".to_string(),
+                    ..Default::default()
+                },
+            ]),
+            aor_id_to_settlements_data: HashMap::from([(
+                10,
+                settlement_source(vec![SettlementDetails {
+                    id: Some(10),
+                    name: "ДОДАТКОВИЙ".to_string(),
+                    ..Default::default()
+                }]),
+            )]),
+            ..Default::default()
+        }));
+
+        let locations = find_settlements_by_name_scope(
+            settlements,
+            "Д".to_string(),
+            None,
+            None,
+            Some(&[10, 20, 30]),
+        )
+        .unwrap();
+
+        assert_eq!(
+            locations
+                .iter()
+                .map(|location| location.name.as_str())
+                .collect_vec(),
+            vec!["ДЕФОЛТ", "ДОДАТКОВИЙ"]
         );
     }
 
@@ -916,7 +1536,7 @@ mod tests {
             ..Default::default()
         }));
 
-        let locations = find_locations_by_prefix(
+        let locations = find_settlements_by_prefix(
             settlements,
             "локація".to_string(),
             None,

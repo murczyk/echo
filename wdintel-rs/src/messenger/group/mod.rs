@@ -8,6 +8,7 @@ use crate::utils::orm::ArrayColumnOps;
 use chrono::Utc;
 use echo_migration::{Expr, JoinType};
 use sea_orm::*;
+use std::collections::BTreeSet;
 
 pub mod handlers;
 pub mod oneoff;
@@ -18,6 +19,68 @@ pub mod types;
 #[derive(Clone, Copy, Default)]
 pub struct CollectGroupsOpts {
     pub skip_group_stats: bool,
+}
+
+pub async fn resolve_group_aor_id<C>(
+    dbx: &C,
+    signal_group_master_key: &str,
+) -> Result<Option<i64>, AppError>
+where
+    C: ConnectionTrait,
+{
+    Ok(resolve_group_aor_ids(dbx, signal_group_master_key)
+        .await?
+        .into_iter()
+        .next())
+}
+
+pub async fn resolve_group_aor_ids<C>(
+    dbx: &C,
+    signal_group_master_key: &str,
+) -> Result<Vec<i64>, AppError>
+where
+    C: ConnectionTrait,
+{
+    let aor_ids = signal_group_aor::Entity::find()
+        .join(
+            JoinType::InnerJoin,
+            signal_group_aor::Relation::AreaOfResponsibility.def(),
+        )
+        .filter(signal_group_aor::Column::MasterKey.eq(signal_group_master_key))
+        .filter(area_of_responsibility::Column::Deleted.eq(false))
+        .order_by_asc(signal_group_aor::Column::Id)
+        .select_only()
+        .column(signal_group_aor::Column::AorId)
+        .into_tuple::<i64>()
+        .all(dbx)
+        .await
+        .c(h!())?;
+    let mut unique_aor_ids = BTreeSet::new();
+    Ok(aor_ids
+        .into_iter()
+        .filter(|aor_id| unique_aor_ids.insert(*aor_id))
+        .collect())
+}
+
+pub async fn ensure_identity_group_available<C>(
+    dbx: &C,
+    login: &uuid::Uuid,
+    signal_group_master_key: &str,
+) -> Result<(), AppError>
+where
+    C: ConnectionTrait,
+{
+    let available_groups =
+        get_identity_sigint_groups(dbx, login).await.c(h!())?;
+    if !available_groups
+        .iter()
+        .any(|key| key == signal_group_master_key)
+    {
+        return Err(AppError::Forbidden(
+            "signal group is not available for user".to_string(),
+        ));
+    }
+    Ok(())
 }
 
 pub async fn collect_groups(
@@ -44,7 +107,6 @@ pub async fn collect_groups(
     } else {
         BTreeMap::new()
     };
-
     let group_admin_data = if is_admin {
         collect_group_admin_data(keys, txn).await.context(h!())?
     } else {

@@ -39,7 +39,7 @@ pub async fn parse_signal_message(
     // The group only refines unit/location extraction; parsing works without it.
     let aor_id = if let Some(master_key) = master_key {
         query::find_available_signal_group(&env.dbx, login, master_key).await?;
-        query::resolve_group_aor_id(&env.dbx, master_key)
+        crate::messenger::group::resolve_group_aor_id(&env.dbx, master_key)
             .await
             .c(h!())?
     } else {

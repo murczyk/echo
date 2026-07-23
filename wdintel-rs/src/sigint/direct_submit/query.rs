@@ -1,7 +1,6 @@
 use crate::entities::{
-    area_of_responsibility, datasource_group, device_name, sigint_inbox_item,
-    signal_group, signal_group_aor, signal_message, signal_message_group,
-    signal_message_media, signal_profile,
+    datasource_group, device_name, sigint_inbox_item, signal_group,
+    signal_message, signal_message_group, signal_message_media, signal_profile,
 };
 use crate::error::AppError;
 use crate::types::*;
@@ -25,15 +24,12 @@ where
         .c(h!())?
         .ok_or(AppError::NotFound)?;
 
-    let available_groups =
-        crate::messenger::group::get_identity_sigint_groups(dbx, login)
-            .await
-            .c(h!())?;
-    if !available_groups.contains(&signal_group.master_key) {
-        return Err(AppError::Forbidden(
-            "signal group is not available for user".to_string(),
-        ));
-    }
+    crate::messenger::group::ensure_identity_group_available(
+        dbx,
+        login,
+        &signal_group.master_key,
+    )
+    .await?;
 
     Ok(signal_group)
 }
@@ -201,27 +197,4 @@ where
         .await
         .c(h!())?;
     Ok(media)
-}
-
-pub async fn resolve_group_aor_id<C>(
-    dbx: &C,
-    signal_group_master_key: &str,
-) -> Result<Option<i64>, AppError>
-where
-    C: ConnectionTrait,
-{
-    Ok(signal_group_aor::Entity::find()
-        .join(
-            JoinType::InnerJoin,
-            signal_group_aor::Relation::AreaOfResponsibility.def(),
-        )
-        .filter(signal_group_aor::Column::MasterKey.eq(signal_group_master_key))
-        .filter(area_of_responsibility::Column::Deleted.eq(false))
-        .order_by_asc(signal_group_aor::Column::Id)
-        .select_only()
-        .column(signal_group_aor::Column::AorId)
-        .into_tuple::<i64>()
-        .one(dbx)
-        .await
-        .c(h!())?)
 }
