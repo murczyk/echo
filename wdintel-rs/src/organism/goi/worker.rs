@@ -85,7 +85,7 @@ async fn goi_sync_worker_step(
         .await
         .c(h!())?
     else {
-        trace!("[goi_sync_worker] no configured integrations, skipping");
+        trace!("[goi_sync_worker] no available integrations, skipping");
         tokio::time::sleep(goi_worker_sleep_duration()).await;
         return Ok(());
     };

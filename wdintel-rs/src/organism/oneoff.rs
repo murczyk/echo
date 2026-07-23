@@ -153,6 +153,7 @@ async fn delete_deleted_goi_knowledge_batch(
                     delete from goi_knowledge
                     using batch
                     where goi_knowledge.id = batch.id
+                        and goi_knowledge.deleted = true
                     returning goi_knowledge.id
                 )
                 select

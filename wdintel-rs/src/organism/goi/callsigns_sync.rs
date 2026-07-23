@@ -177,6 +177,7 @@ pub(super) async fn sync_goi_callsigns_knowledge(
         );
     }
     let diff = diff_goi_callsigns(&previous_callsigns, &current_callsigns);
+    let worker_rows_need_rewrite = workbook.worker_rows_need_rewrite();
 
     info!(
         "[goi-sync] GOI callsigns diff for {integration_label} {}\nnew callsigns - {}\nedited callsigns - {}\ndeleted callsigns - {}\nduplicate callsigns - {}",
@@ -187,11 +188,16 @@ pub(super) async fn sync_goi_callsigns_knowledge(
         format_goi_callsign_id_summary(&diff.duplicate_ids),
     );
 
-    if diff.is_empty() {
+    if diff.is_empty() && !worker_rows_need_rewrite {
         info!(
             "[goi-sync] Skipping unchanged GOI callsigns workbook for {integration_label}"
         );
         return Ok(());
+    }
+    if worker_rows_need_rewrite {
+        info!(
+            "[goi-sync] Rewriting noncanonical GOI callsign rows for {integration_label}"
+        );
     }
 
     info!(
@@ -807,6 +813,14 @@ impl KnowledgeWorkbookData {
         rows_by_sheet
     }
 
+    fn worker_rows_need_rewrite(&self) -> bool {
+        self.sheets
+            .iter()
+            .flat_map(|sheet| &sheet.rows)
+            .filter(|row| is_worker_callsign_row(row))
+            .any(|row| worker_row_needs_rewrite(row))
+    }
+
     fn default_target_sheet_name(
         &self,
         previous_callsigns: &[GoiCallsignState],
@@ -1362,6 +1376,24 @@ fn normalize_goi_source_date(source_date: &str) -> Option<String> {
         })
         .ok()
         .map(|source_date| source_date.format("%d.%m.%Y %H:%M:%S").to_string())
+}
+
+fn worker_row_needs_rewrite(row: &[WorkbookCellValue]) -> bool {
+    let worker_id = workbook_cell_text(row.get(KNOWLEDGE_WORKER_ID_COL_IDX));
+    let canonical_worker_id =
+        parse_goi_callsign_id(row.get(KNOWLEDGE_WORKER_ID_COL_IDX))
+            .map(|id| format!("{KNOWLEDGE_WORKER_ID_PREFIX}{id}"));
+    if canonical_worker_id.as_deref() != Some(worker_id.as_str())
+        || parse_legacy_h_goi_callsign_id(row.get(KNOWLEDGE_POSITION_COL_IDX))
+            .is_some()
+    {
+        return true;
+    }
+
+    let source_date =
+        workbook_cell_text(row.get(KNOWLEDGE_SOURCE_DATE_COL_IDX));
+    normalize_goi_source_date(&source_date).as_deref()
+        != Some(source_date.as_str())
 }
 
 fn rewrite_sheet_xml(
@@ -2173,6 +2205,38 @@ mod tests {
         assert_eq!(state[0].id, 2);
         assert_eq!(state[0].position, "");
         assert_eq!(state[0].comment, "джерело: Пролом");
+    }
+
+    #[test]
+    fn worker_rows_need_rewrite_detects_noncanonical_rows() {
+        let canonical_row = build_worker_row_cells_for_tests(
+            &sample_callsign(2, "BETA", None),
+            TEST_GOI_SYNC_TIMESTAMP,
+        );
+        let workbook = |row| KnowledgeWorkbookData {
+            sheets: vec![WorkbookSheetData {
+                name: "Knowledge".to_string(),
+                rows: vec![row],
+            }],
+        };
+
+        assert!(!workbook(canonical_row.clone()).worker_rows_need_rewrite());
+
+        let mut legacy_id_row = canonical_row.clone();
+        legacy_id_row.pop();
+        legacy_id_row[KNOWLEDGE_POSITION_COL_IDX] =
+            WorkbookCellValue::String("EXO ID 2".to_string());
+        assert!(workbook(legacy_id_row).worker_rows_need_rewrite());
+
+        let mut invalid_id_row = canonical_row.clone();
+        invalid_id_row[KNOWLEDGE_WORKER_ID_COL_IDX] =
+            WorkbookCellValue::String("invalid".to_string());
+        assert!(workbook(invalid_id_row).worker_rows_need_rewrite());
+
+        let mut invalid_date_row = canonical_row;
+        invalid_date_row[KNOWLEDGE_SOURCE_DATE_COL_IDX] =
+            WorkbookCellValue::String("invalid".to_string());
+        assert!(workbook(invalid_date_row).worker_rows_need_rewrite());
     }
 
     #[test]
