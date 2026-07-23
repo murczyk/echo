@@ -1,40 +1,31 @@
 use super::{super::ltree, model};
 use crate::devices::filesystem::{
-    Breadcrumb, DirectoryScope, FileEntryKind, FilesystemError, RootEntry,
-    TreeEntry,
+    map_database_error, Breadcrumb, DirectoryScope, FileEntryKind,
+    FilesystemError, RootEntry, TreeEntry,
 };
 use crate::file_registry::entities::file_entry;
 use crate::h;
-use crate::types::ShortContext;
 use sea_orm::sea_query::Expr;
 use sea_orm::{
-    ColumnTrait, Condition, DatabaseConnection, EntityTrait, QueryFilter,
+    ColumnTrait, Condition, ConnectionTrait, EntityTrait, QueryFilter,
     QueryOrder, Select,
 };
 use std::collections::HashMap;
 use uuid::Uuid;
 
 pub(in crate::devices::filesystem) async fn list_breadcrumbs(
-    db: &DatabaseConnection,
+    db: &impl ConnectionTrait,
     scope: &DirectoryScope,
 ) -> Result<Vec<Breadcrumb>, FilesystemError> {
-    let rows = file_entry::Entity::find()
-        .filter(file_entry::Column::DeviceId.eq(scope.device_id()))
-        .filter(
-            file_entry::Column::Kind.eq(FileEntryKind::Directory.as_db_str()),
-        )
-        .filter(ltree::ancestor_expr(scope.hierarchy_path()))
-        .order_by_asc(Expr::cust(r#"nlevel("file_entry"."hierarchy_path")"#))
-        .all(db)
-        .await
-        .c(h!())
-        .map_err(FilesystemError::Internal)?;
+    let rows = breadcrumbs_query(scope).all(db).await.map_err(|error| {
+        map_database_error(anyhow::Error::new(error).context(h!()))
+    })?;
 
     map_breadcrumb_chain(scope, rows)
 }
 
 pub(super) async fn load_path_components(
-    db: &DatabaseConnection,
+    db: &impl ConnectionTrait,
     entries: &[TreeEntry],
 ) -> Result<Vec<Vec<String>>, FilesystemError> {
     let Some(first_entry) = entries.first() else {
@@ -54,13 +45,14 @@ pub(super) async fn load_path_components(
     let rows = path_context_query(device_id, &hierarchy_paths)
         .all(db)
         .await
-        .c(h!())
-        .map_err(FilesystemError::Internal)?;
+        .map_err(|error| {
+            map_database_error(anyhow::Error::new(error).context(h!()))
+        })?;
 
     map_path_components(entries, rows)
 }
 
-fn path_context_query(
+pub(super) fn path_context_query(
     device_id: Uuid,
     hierarchy_paths: &[&str],
 ) -> Select<file_entry::Entity> {
@@ -76,6 +68,18 @@ fn path_context_query(
         .filter(path_conditions)
         .order_by_asc(Expr::cust(r#"nlevel("file_entry"."hierarchy_path")"#))
         .order_by_asc(file_entry::Column::Id)
+}
+
+pub(super) fn breadcrumbs_query(
+    scope: &DirectoryScope,
+) -> Select<file_entry::Entity> {
+    file_entry::Entity::find()
+        .filter(file_entry::Column::DeviceId.eq(scope.device_id()))
+        .filter(
+            file_entry::Column::Kind.eq(FileEntryKind::Directory.as_db_str()),
+        )
+        .filter(ltree::ancestor_expr(scope.hierarchy_path()))
+        .order_by_asc(Expr::cust(r#"nlevel("file_entry"."hierarchy_path")"#))
 }
 
 pub(super) fn map_path_components(
@@ -661,16 +665,20 @@ mod tests {
         root_id: Uuid,
         current_id: Uuid,
     ) -> DirectoryScope {
-        DirectoryScope::Directory(DirectoryEntry {
-            entry_id: current_id,
-            device_id,
-            parent_entry_id: root_id,
-            name: "current".to_string(),
-            name_key: b"current".to_vec(),
-            hierarchy_path: hierarchy_path(&[root_id, current_id]),
-            created_at: timestamp(),
-            updated_at: timestamp(),
-        })
+        DirectoryScope::Directory {
+            entry: DirectoryEntry {
+                entry_id: current_id,
+                device_id,
+                parent_entry_id: root_id,
+                name: "current".to_string(),
+                name_key: b"current".to_vec(),
+                hierarchy_path: hierarchy_path(&[root_id, current_id]),
+                created_at: timestamp(),
+                updated_at: timestamp(),
+            },
+            root_id,
+            path_syntax: PathSyntax::Posix,
+        }
     }
 
     fn root_model(device_id: Uuid, root_id: Uuid) -> file_entry::Model {

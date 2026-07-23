@@ -2854,7 +2854,7 @@ async fn assert_stage_eight_outage_short_circuits(
         .unwrap_err(),
     );
 
-    assert_internal_filesystem_error(
+    assert_dependency_filesystem_error(
         FileMetadataService::list_roots(
             MainDb::new(main_db),
             outage_db,
@@ -2864,7 +2864,7 @@ async fn assert_stage_eight_outage_short_circuits(
         .await
         .unwrap_err(),
     );
-    assert_internal_filesystem_error(
+    assert_dependency_filesystem_error(
         FileMetadataService::browse(
             MainDb::new(main_db),
             outage_db,
@@ -2880,7 +2880,7 @@ async fn assert_stage_eight_outage_short_circuits(
         .await
         .unwrap_err(),
     );
-    assert_internal_filesystem_error(
+    assert_dependency_filesystem_error(
         FileMetadataService::search(
             MainDb::new(main_db),
             outage_db,
@@ -2934,14 +2934,14 @@ fn assert_not_found(error: AppError) {
     assert!(matches!(error, AppError::NotFound));
 }
 
-fn assert_internal_filesystem_error(error: AppError) {
+fn assert_dependency_filesystem_error(error: AppError) {
     let AppError::AnyhowError { source } = error else {
-        panic!("expected internal application error");
+        panic!("expected dependency application error");
     };
     assert_eq!(source.to_string(), "failed to read device filesystem");
     assert!(source.chain().any(|error| matches!(
         error.downcast_ref::<FilesystemError>(),
-        Some(FilesystemError::Internal(_))
+        Some(FilesystemError::Dependency(_))
     )));
 }
 
@@ -4376,7 +4376,7 @@ async fn stage_eleven_dispatches_transaction_errors_by_phase() {
             FilesystemError::Conflict
         ));
     }
-    for code in ["40003", "08006", "08007", "22012"] {
+    for code in ["40003", "22012"] {
         let error = map_transaction_body_error(
             stage_eleven_sqlstate_error(
                 env.file_registry_db.connection(),
@@ -4386,6 +4386,21 @@ async fn stage_eleven_dispatches_transaction_errors_by_phase() {
         );
         let FilesystemError::Internal(source) = error else {
             panic!("body error must retain an internal source");
+        };
+        assert!(source
+            .chain()
+            .any(|source| source.downcast_ref::<sqlx::Error>().is_some()));
+    }
+    for code in ["08006", "08007"] {
+        let error = map_transaction_body_error(
+            stage_eleven_sqlstate_error(
+                env.file_registry_db.connection(),
+                code,
+            )
+            .await,
+        );
+        let FilesystemError::Dependency(source) = error else {
+            panic!("connection error must remain a dependency");
         };
         assert!(source
             .chain()

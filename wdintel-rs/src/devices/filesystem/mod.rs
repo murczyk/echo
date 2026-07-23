@@ -19,7 +19,7 @@ pub(in crate::devices) use error::FilesystemError;
 #[allow(unused_imports)]
 pub(in crate::devices) use error::FilesystemFieldError;
 pub(in crate::devices::filesystem) use error::{
-    classify_transaction_error, map_transaction_body_error,
+    classify_transaction_error, map_database_error, map_transaction_body_error,
     TransactionErrorClass,
 };
 #[cfg(test)]

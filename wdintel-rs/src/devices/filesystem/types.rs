@@ -86,7 +86,11 @@ pub(in crate::devices) struct DirectoryEntry {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(in crate::devices) enum DirectoryScope {
     Root(RootEntry),
-    Directory(DirectoryEntry),
+    Directory {
+        entry: DirectoryEntry,
+        root_id: Uuid,
+        path_syntax: PathSyntax,
+    },
 }
 
 #[allow(dead_code)]
@@ -94,21 +98,35 @@ impl DirectoryScope {
     pub(in crate::devices) fn device_id(&self) -> Uuid {
         match self {
             Self::Root(root) => root.device_id,
-            Self::Directory(directory) => directory.device_id,
+            Self::Directory { entry, .. } => entry.device_id,
         }
     }
 
     pub(in crate::devices) fn entry_id(&self) -> Uuid {
         match self {
             Self::Root(root) => root.entry_id,
-            Self::Directory(directory) => directory.entry_id,
+            Self::Directory { entry, .. } => entry.entry_id,
+        }
+    }
+
+    pub(in crate::devices) fn root_id(&self) -> Uuid {
+        match self {
+            Self::Root(root) => root.entry_id,
+            Self::Directory { root_id, .. } => *root_id,
+        }
+    }
+
+    pub(in crate::devices) fn path_syntax(&self) -> PathSyntax {
+        match self {
+            Self::Root(root) => root.path_syntax,
+            Self::Directory { path_syntax, .. } => *path_syntax,
         }
     }
 
     pub(super) fn hierarchy_path(&self) -> &str {
         match self {
             Self::Root(root) => &root.hierarchy_path,
-            Self::Directory(directory) => &directory.hierarchy_path,
+            Self::Directory { entry, .. } => &entry.hierarchy_path,
         }
     }
 }
@@ -378,6 +396,13 @@ impl FileSearchFilters {
 
     pub(super) fn file_metadata_modified_to(&self) -> Option<NaiveDateTime> {
         self.file_metadata_modified_to
+    }
+
+    pub(super) fn requires_file_metadata(&self) -> bool {
+        !self.mime_types.is_empty()
+            || !self.extensions.is_empty()
+            || self.file_metadata_modified_from.is_some()
+            || self.file_metadata_modified_to.is_some()
     }
 }
 
@@ -708,18 +733,22 @@ mod tests {
             created_at: timestamp,
             updated_at: timestamp,
         });
-        let directory_scope = DirectoryScope::Directory(DirectoryEntry {
-            entry_id: directory_id,
-            device_id,
-            parent_entry_id: root_id,
-            name: "directory".to_string(),
-            name_key: b"directory".to_vec(),
-            hierarchy_path:
-                "n00000000000000000000000000000002.n00000000000000000000000000000003"
-                    .to_string(),
-            created_at: timestamp,
-            updated_at: timestamp,
-        });
+        let directory_scope = DirectoryScope::Directory {
+            entry: DirectoryEntry {
+                entry_id: directory_id,
+                device_id,
+                parent_entry_id: root_id,
+                name: "directory".to_string(),
+                name_key: b"directory".to_vec(),
+                hierarchy_path:
+                    "n00000000000000000000000000000002.n00000000000000000000000000000003"
+                        .to_string(),
+                created_at: timestamp,
+                updated_at: timestamp,
+            },
+            root_id,
+            path_syntax: PathSyntax::Posix,
+        };
         let filters = FileSearchFilters::try_from(RawFileSearchFilters {
             kinds: vec![FileEntryKind::File],
             name_query: Some("abc".to_string()),
@@ -752,5 +781,7 @@ mod tests {
             directory_scope.hierarchy_path(),
             "n00000000000000000000000000000002.n00000000000000000000000000000003"
         );
+        assert_eq!(directory_scope.root_id(), root_id);
+        assert_eq!(directory_scope.path_syntax(), PathSyntax::Posix);
     }
 }

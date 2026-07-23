@@ -651,51 +651,37 @@ Create/update/read device logic повністю відповідає норма
 
 Sync має визначену поведінку для конкурентних races і commit uncertainty та не повідомляє клієнтському шару неправдивий остаточний результат.
 
-### Етап 12. Помилки, журналювання, метрики та query-plan hardening
+### Етап 12. Filesystem DB errors і query-shape hardening
 
 #### Мета
 
-Зробити завершену логіку придатною до експлуатації, не змінюючи її доменну семантику.
+Зробити збої `wd_files` явними та стабілізувати runtime query shapes без зміни доменної семантики, схеми БД, API або frontend.
 
 #### Роботи
 
-1. Завершити єдину error taxonomy:
-   - unauthenticated;
-   - forbidden;
-   - privacy-safe not found;
-   - field validation із точним path;
-   - conflict;
-   - dependency unavailable;
-   - invariant violation;
-   - internal failure;
-   - commit uncertainty.
-2. На межі прикладного шару конвертувати infrastructure errors у taxonomy з project-standard context; SQL, credentials, pool names і stack details не виходять у domain result.
-3. Додати structured logs для operation kind, login, device/root/entry/file UUID, `path_syntax`, scope kind, target database, duration, page size, returned count і cursor presence.
-4. Для sync окремо рахувати accepted, validation, not-found, conflict, dependency, internal, retry і lock-wait.
-5. Не журналювати exact path, root/name/components, search query, custom values або cursor secret/payload.
-6. Розділити pool, timeout і failure metrics для `main` та `wd_files`.
-7. На representative PostgreSQL fixture перевірити `EXPLAIN (ANALYZE, BUFFERS)` для:
-   - root listing;
-   - direct children;
-   - ancestors;
-   - selective subtree;
-   - scoped trigram name search;
-   - MIME, extension і modified filters.
-8. Підтвердити використання передбачених B-tree, GiST, GIN і partial indexes. Змінювати query shape раніше, ніж параметри індексів; schema tuning відкривати лише як окремо погоджений scope, якщо наявних індексів недостатньо.
-9. Додати representative cardinality/depth fixtures, які ловлять N+1, accidental sequential full-tree scan і deep-offset regression.
+1. Централізувати typed mapping database errors усередині `devices/filesystem/`:
+   - SQLSTATE `40001` і `40P01` → conflict;
+   - pool/connection failures, SQLSTATE class `08`, `53300` і `57P01`–`57P03` → dependency unavailable;
+   - інші database failures → internal;
+   - outcome-uncertain commit conditions зберігають retry/reconciliation policy етапу 11.
+2. У query, repository і mutation seams передавати concrete DB error із project-standard context до спільного mapper-а, не змінюючи safe `FilesystemError::Display`.
+3. Після успішної main visibility check повертати явну dependency failure при недоступному registry замість empty success.
+4. Для nested directory scope окремо резолвити лише root UUID і `path_syntax`; names, paths та інші root fields не завантажувати.
+5. Використовувати спільні runtime query builders для roots, directory scope, children, search, breadcrumbs і batched path context; executors приймають `ConnectionTrait`.
+6. Додати до runtime queries структурні predicates для наявних partial indexes, залишивши request/filter/cursor values bound parameters.
+7. Використовувати parameterized row-value keyset predicates для fixed order `(kind, name_key, id)` та не додавати `OFFSET` до roots, browse або search.
 
 #### Перевірка
 
-- registry outage не стає empty success;
-- logs/metrics містять operational identifiers і не містять sensitive names/paths;
-- error details не розкривають ownership або infrastructure;
-- query plans відповідають індексам, визначеним технічною специфікацією;
-- page cost залежить від page/filter selectivity, а не від повного розміру subtree;
-- full backend regression не показує pool starvation між двома базами.
+- registry outage після успішної visibility check повертає dependency failure для roots, browse і search;
+- retryable SQLSTATE, connection failures, definite internal failures і commit uncertainty зберігають визначену taxonomy та policy етапу 11;
+- nested directory scope повертає незмінні rows і коректний root context;
+- query-builder tests перевіряють bound request values, structural partial-index predicates, tuple keyset order і відсутність `OFFSET`;
+- focused filesystem unit/database tests, `cargo check` і `cargo clippy` проходять.
 
 #### Робочий стан після етапу
 
-Backend logic готова до production integration: збої явні, поведінка спостережувана, приватні значення захищені, а ключові query shapes перевірені на реальній PostgreSQL.
+Збої файлової БД не маскуються успішною відповіддю, а roots, browse, breadcrumbs і scoped search використовують спільні parameterized query shapes із fixed keyset order.
 
 ### Етап 13. Фінальне приймання внутрішньої логіки
 

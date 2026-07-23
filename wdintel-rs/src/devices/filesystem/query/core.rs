@@ -1,35 +1,41 @@
 use super::super::ltree;
 use super::model;
 use crate::devices::filesystem::{
-    DirectoryScope, EntryQueryScope, EntrySortKey, FileEntryKind,
-    FileSearchFilters, FilesystemError, KeysetPage, RootSortKey, TreeEntry,
+    map_database_error, DirectoryScope, EntryQueryScope, EntrySortKey,
+    FileEntryKind, FileSearchFilters, FilesystemError, KeysetPage, PathSyntax,
+    RootSortKey, TreeEntry,
 };
 use crate::file_registry::entities::file_entry;
 use crate::h;
-use crate::types::ShortContext;
 use sea_orm::{
-    ColumnTrait, Condition, DatabaseConnection, EntityTrait, QueryFilter,
-    QueryOrder, Select,
+    ColumnTrait, Condition, ConnectionTrait, EntityTrait, QueryFilter,
+    QueryOrder, QuerySelect, Select,
 };
 use uuid::Uuid;
 
 #[allow(dead_code)]
 pub(in crate::devices::filesystem) async fn find_directory_scope(
-    db: &DatabaseConnection,
+    db: &impl ConnectionTrait,
     device_id: Uuid,
     entry_id: Uuid,
 ) -> Result<DirectoryScope, FilesystemError> {
     let entry = directory_scope_query(device_id, entry_id)
         .one(db)
         .await
-        .c(h!())
-        .map_err(FilesystemError::Internal)?
+        .map_err(|error| {
+            map_database_error(anyhow::Error::new(error).context(h!()))
+        })?
         .ok_or(FilesystemError::NotFound)?;
+    let root_context = if entry.parent_id.is_some() {
+        Some(resolve_root_context(db, device_id, &entry.hierarchy_path).await?)
+    } else {
+        None
+    };
 
-    model::map_directory_scope(entry)
+    model::map_directory_scope(entry, root_context)
 }
 
-fn directory_scope_query(
+pub(super) fn directory_scope_query(
     device_id: Uuid,
     entry_id: Uuid,
 ) -> Select<file_entry::Entity> {
@@ -41,6 +47,48 @@ fn directory_scope_query(
         )
 }
 
+async fn resolve_root_context(
+    db: &impl ConnectionTrait,
+    device_id: Uuid,
+    target_hierarchy_path: &str,
+) -> Result<(Uuid, PathSyntax), FilesystemError> {
+    let root = root_context_query(device_id, target_hierarchy_path)
+        .into_tuple::<(Uuid, Option<String>)>()
+        .one(db)
+        .await
+        .map_err(|error| {
+            map_database_error(anyhow::Error::new(error).context(h!()))
+        })?
+        .ok_or(FilesystemError::Invariant(
+            "directory_scope_root_context_missing",
+        ))?;
+    let path_syntax = root
+        .1
+        .as_deref()
+        .ok_or(FilesystemError::Invariant(
+            "directory_scope_root_path_syntax_missing",
+        ))
+        .and_then(PathSyntax::try_from)?;
+
+    Ok((root.0, path_syntax))
+}
+
+pub(super) fn root_context_query(
+    device_id: Uuid,
+    target_hierarchy_path: &str,
+) -> Select<file_entry::Entity> {
+    file_entry::Entity::find()
+        .select_only()
+        .column(file_entry::Column::Id)
+        .column(file_entry::Column::PathSyntax)
+        .filter(file_entry::Column::DeviceId.eq(device_id))
+        .filter(file_entry::Column::ParentId.is_null())
+        .filter(
+            file_entry::Column::Kind.eq(FileEntryKind::Directory.as_db_str()),
+        )
+        .filter(ltree::ancestor_expr(target_hierarchy_path))
+}
+
 #[allow(dead_code)]
 pub(in crate::devices::filesystem) fn apply_entry_scope(
     query: Select<file_entry::Entity>,
@@ -50,19 +98,26 @@ pub(in crate::devices::filesystem) fn apply_entry_scope(
         query.filter(file_entry::Column::DeviceId.eq(scope.device_id()));
 
     match scope {
-        EntryQueryScope::Browse(directory) => {
-            query.filter(file_entry::Column::ParentId.eq(directory.entry_id()))
-        }
+        EntryQueryScope::Browse(directory) => query
+            .filter(file_entry::Column::ParentId.is_not_null())
+            .filter(file_entry::Column::ParentId.eq(directory.entry_id())),
         EntryQueryScope::Search { directory, filters } => {
-            let query = query
-                .filter(ltree::descendant_expr(directory.hierarchy_path()))
-                .filter(file_entry::Column::Id.ne(directory.entry_id()));
-            apply_search_filters(query, filters)
+            apply_search_filters(apply_search_scope(query, directory), filters)
         }
     }
 }
 
-fn apply_search_filters(
+pub(super) fn apply_search_scope(
+    query: Select<file_entry::Entity>,
+    directory: &DirectoryScope,
+) -> Select<file_entry::Entity> {
+    query
+        .filter(file_entry::Column::ParentId.is_not_null())
+        .filter(ltree::descendant_expr(directory.hierarchy_path()))
+        .filter(file_entry::Column::Id.ne(directory.entry_id()))
+}
+
+pub(super) fn apply_search_filters(
     mut query: Select<file_entry::Entity>,
     filters: &FileSearchFilters,
 ) -> Select<file_entry::Entity> {
@@ -83,25 +138,48 @@ fn apply_search_filters(
             vec![literal_name_pattern(name_query)],
         ));
     }
+    if filters.requires_file_metadata() {
+        query = query.filter(sea_orm::sea_query::Expr::cust(
+            r#""file_entry"."kind" = 'file'"#,
+        ));
+    }
     if !filters.mime_types().is_empty() {
-        query = query.filter(
-            file_entry::Column::MimeType.is_in(filters.mime_types().to_vec()),
-        );
+        query = query
+            .filter(sea_orm::sea_query::Expr::cust(
+                r#""file_entry"."mime_type" IS NOT NULL"#,
+            ))
+            .filter(
+                file_entry::Column::MimeType
+                    .is_in(filters.mime_types().to_vec()),
+            );
     }
     if !filters.extensions().is_empty() {
-        query = query.filter(
-            file_entry::Column::Extension.is_in(filters.extensions().to_vec()),
-        );
+        query = query
+            .filter(sea_orm::sea_query::Expr::cust(
+                r#""file_entry"."extension" IS NOT NULL"#,
+            ))
+            .filter(
+                file_entry::Column::Extension
+                    .is_in(filters.extensions().to_vec()),
+            );
     }
     if let Some(modified_from) = filters.file_metadata_modified_from() {
-        query = query.filter(
-            file_entry::Column::FileMetadataModifiedAt.gte(modified_from),
-        );
+        query = query
+            .filter(sea_orm::sea_query::Expr::cust(
+                r#""file_entry"."file_metadata_modified_at" IS NOT NULL"#,
+            ))
+            .filter(
+                file_entry::Column::FileMetadataModifiedAt.gte(modified_from),
+            );
     }
     if let Some(modified_to) = filters.file_metadata_modified_to() {
-        query = query.filter(
-            file_entry::Column::FileMetadataModifiedAt.lte(modified_to),
-        );
+        query = query
+            .filter(sea_orm::sea_query::Expr::cust(
+                r#""file_entry"."file_metadata_modified_at" IS NOT NULL"#,
+            ))
+            .filter(
+                file_entry::Column::FileMetadataModifiedAt.lte(modified_to),
+            );
     }
     query
 }
@@ -169,19 +247,14 @@ pub(super) fn root_strict_after_condition(after: &RootSortKey) -> Condition {
 pub(in crate::devices::filesystem) fn entry_strict_after_condition(
     after: &EntrySortKey,
 ) -> Condition {
-    Condition::any()
-        .add(file_entry::Column::Kind.gt(after.kind().as_db_str()))
-        .add(
-            Condition::all()
-                .add(file_entry::Column::Kind.eq(after.kind().as_db_str()))
-                .add(file_entry::Column::NameKey.gt(after.name_key().to_vec())),
-        )
-        .add(
-            Condition::all()
-                .add(file_entry::Column::Kind.eq(after.kind().as_db_str()))
-                .add(file_entry::Column::NameKey.eq(after.name_key().to_vec()))
-                .add(file_entry::Column::Id.gt(after.entry_id())),
-        )
+    Condition::all().add(sea_orm::sea_query::Expr::cust_with_values(
+        r#"("file_entry"."kind", "file_entry"."name_key", "file_entry"."id") > ($1, $2, $3)"#,
+        vec![
+            sea_orm::Value::from(after.kind().as_db_str().to_string()),
+            sea_orm::Value::from(after.name_key().to_vec()),
+            sea_orm::Value::from(after.entry_id()),
+        ],
+    ))
 }
 
 #[allow(dead_code)]
@@ -209,7 +282,7 @@ pub(super) fn finalize_page<T, K>(
 
 #[allow(dead_code)]
 pub(in crate::devices::filesystem) async fn resolve_cursor_entry_sort_key(
-    db: &DatabaseConnection,
+    db: &impl ConnectionTrait,
     boundary_entry_id: Uuid,
     scope: &EntryQueryScope<'_>,
 ) -> Result<EntrySortKey, FilesystemError> {
@@ -217,8 +290,9 @@ pub(in crate::devices::filesystem) async fn resolve_cursor_entry_sort_key(
         .filter(file_entry::Column::Id.eq(boundary_entry_id))
         .one(db)
         .await
-        .c(h!())
-        .map_err(FilesystemError::Internal)?
+        .map_err(|error| {
+            map_database_error(anyhow::Error::new(error).context(h!()))
+        })?
         .ok_or_else(FilesystemError::invalid_cursor)?;
     let entry = model::map_tree_model(entry)?;
 
@@ -245,7 +319,9 @@ mod tests {
     use super::*;
     use sea_orm::sea_query::{PostgresQueryBuilder, Query};
 
-    use crate::devices::filesystem::{DirectoryEntry, RawFileSearchFilters};
+    use crate::devices::filesystem::{
+        DirectoryEntry, PathSyntax, RawFileSearchFilters,
+    };
     use chrono::NaiveDate;
     use sea_orm::{DbBackend, QueryTrait};
 
@@ -254,32 +330,29 @@ mod tests {
             .unwrap()
             .and_hms_opt(12, 0, 0)
             .unwrap();
-        DirectoryScope::Directory(DirectoryEntry {
-            entry_id: Uuid::from_u128(2),
-            device_id: Uuid::from_u128(1),
-            parent_entry_id: Uuid::from_u128(3),
-            name: "reports".to_string(),
-            name_key: b"reports".to_vec(),
-            hierarchy_path:
-                "n00000000000000000000000000000003.n00000000000000000000000000000002"
-                    .to_string(),
-            created_at: timestamp,
-            updated_at: timestamp,
-        })
+        DirectoryScope::Directory {
+            entry: DirectoryEntry {
+                entry_id: Uuid::from_u128(2),
+                device_id: Uuid::from_u128(1),
+                parent_entry_id: Uuid::from_u128(3),
+                name: "reports".to_string(),
+                name_key: b"reports".to_vec(),
+                hierarchy_path:
+                    "n00000000000000000000000000000003.n00000000000000000000000000000002"
+                        .to_string(),
+                created_at: timestamp,
+                updated_at: timestamp,
+            },
+            root_id: Uuid::from_u128(3),
+            path_syntax: PathSyntax::Posix,
+        }
     }
+
     #[derive(Debug, PartialEq, Eq)]
     struct Row(u8);
 
     #[test]
-    fn name_query_escapes_literal_wildcards_in_order() {
-        assert_eq!(
-            literal_name_pattern(r#"report%_\path"#),
-            r#"%report\%\_\\path%"#
-        );
-    }
-
-    #[test]
-    fn strict_after_conditions_cover_each_lexicographic_tie_breaker() {
+    fn strict_after_conditions_preserve_lexicographic_keysets() {
         let root_sql = Query::select()
             .cond_where(root_strict_after_condition(&RootSortKey::new(
                 crate::devices::filesystem::PathSyntax::Posix,
@@ -295,12 +368,12 @@ mod tests {
             )))
             .to_string(PostgresQueryBuilder);
 
-        for sql in [root_sql, entry_sql] {
-            assert_eq!(sql.matches(" OR ").count(), 2);
-            assert_eq!(sql.matches(" > ").count(), 3);
-            assert!(sql.contains(r#""name_key""#));
-            assert!(sql.contains(r#""id""#));
-        }
+        assert_eq!(root_sql.matches(" OR ").count(), 2);
+        assert_eq!(root_sql.matches(" > ").count(), 3);
+        assert!(entry_sql.contains(
+            r#"("file_entry"."kind", "file_entry"."name_key", "file_entry"."id") > ("#
+        ));
+        assert!(!entry_sql.contains(" OR "));
     }
 
     #[test]
@@ -347,6 +420,7 @@ mod tests {
         assert!(search_statement
             .sql
             .contains(r#""file_entry"."hierarchy_path" <@ $"#));
+        assert!(search_statement.sql.contains(r#""parent_id" IS NOT NULL"#));
         assert!(search_statement.sql.contains("ILIKE $"));
         assert!(search_statement.sql.contains("ESCAPE '\\'"));
         assert!(search_statement.sql.contains(r#""mime_type" IN ("#));

@@ -1,9 +1,10 @@
 use super::{
-    classify_transaction_error, map_transaction_body_error, mutation, query,
-    Breadcrumb, DirectoryScope, EntryQueryScope, EntrySortKey, FileEntry,
-    FileMutationResult, FileSearchFilters, FilesystemError, KeysetPage,
-    KeysetPageRequest, OffsetPage, OffsetPageRequest, PreparedFileMutation,
-    RootEntry, SearchEntry, TransactionErrorClass, TreeEntry,
+    classify_transaction_error, map_database_error, map_transaction_body_error,
+    mutation, query, Breadcrumb, DirectoryScope, EntryQueryScope, EntrySortKey,
+    FileEntry, FileMutationResult, FileSearchFilters, FilesystemError,
+    KeysetPage, KeysetPageRequest, OffsetPage, OffsetPageRequest,
+    PreparedFileMutation, RootEntry, SearchEntry, TransactionErrorClass,
+    TreeEntry,
 };
 use crate::file_registry::FileRegistryDb;
 use crate::h;
@@ -52,13 +53,12 @@ impl<'db> FilesystemRepository<'db> {
         &self,
         mutation: &PreparedFileMutation,
     ) -> Result<FileMutationResult, FilesystemError> {
-        let transaction = self
-            .file_registry_db
-            .connection()
-            .begin()
-            .await
-            .c(h!())
-            .map_err(FilesystemError::Internal)?;
+        let transaction =
+            self.file_registry_db.connection().begin().await.map_err(
+                |error| {
+                    map_database_error(anyhow::Error::new(error).context(h!()))
+                },
+            )?;
         let result = match mutation::mutate_file(
             &transaction,
             mutation,
@@ -98,7 +98,8 @@ impl<'db> FilesystemRepository<'db> {
                 Some(
                     mutation::MutationCommitFault::LoseCommitAcknowledgement,
                 ) => {
-                    return match transaction.commit().await.c(h!()) {
+                    let committed = transaction.commit().await;
+                    return match committed {
                         Ok(()) => {
                             self.handle_commit_error(
                                 attempt,
@@ -109,18 +110,23 @@ impl<'db> FilesystemRepository<'db> {
                             .await
                         }
                         Err(error) => {
-                            self.handle_commit_error(attempt, error).await
+                            self.handle_commit_error(
+                                attempt,
+                                anyhow::Error::new(error).context(h!()),
+                            )
+                            .await
                         }
                     };
                 }
                 Some(mutation::MutationCommitFault::UnknownWithoutCommit {
                     after_rollback,
                 }) => {
-                    transaction
-                        .rollback()
-                        .await
-                        .c(h!())
-                        .map_err(FilesystemError::Internal)?;
+                    let rollback = transaction.rollback().await;
+                    rollback.map_err(|error| {
+                        map_database_error(
+                            anyhow::Error::new(error).context(h!()),
+                        )
+                    })?;
                     if let Some(after_rollback) = after_rollback {
                         after_rollback.entered.wait().await;
                         after_rollback.resume.wait().await;
@@ -138,9 +144,16 @@ impl<'db> FilesystemRepository<'db> {
             }
         }
 
-        match transaction.commit().await.c(h!()) {
+        let committed = transaction.commit().await;
+        match committed {
             Ok(()) => Ok(attempt.result),
-            Err(error) => self.handle_commit_error(attempt, error).await,
+            Err(error) => {
+                self.handle_commit_error(
+                    attempt,
+                    anyhow::Error::new(error).context(h!()),
+                )
+                .await
+            }
         }
     }
 
@@ -154,8 +167,11 @@ impl<'db> FilesystemRepository<'db> {
                     .to_string(),
             ))
             .await
-            .c(h!())
-            .map_err(map_transaction_body_error)?
+            .map_err(|error| {
+                map_transaction_body_error(
+                    anyhow::Error::new(error).context(h!()),
+                )
+            })?
             .ok_or_else(|| {
                 map_transaction_body_error(anyhow::anyhow!(
                     "pg_current_xact_id returned no row"
@@ -170,14 +186,14 @@ impl<'db> FilesystemRepository<'db> {
         transaction: DatabaseTransaction,
         error: FilesystemError,
     ) -> FilesystemError {
-        let rollback_error = transaction.rollback().await.c(h!()).err();
+        let rollback_error = transaction.rollback().await.err().map(|error| {
+            map_database_error(anyhow::Error::new(error).context(h!()))
+        });
         if matches!(&error, FilesystemError::Conflict) {
             return error;
         }
 
-        rollback_error
-            .map(FilesystemError::Internal)
-            .unwrap_or(error)
+        rollback_error.unwrap_or(error)
     }
 
     async fn handle_commit_error(
@@ -185,10 +201,11 @@ impl<'db> FilesystemRepository<'db> {
         attempt: MutationAttemptResult,
         error: anyhow::Error,
     ) -> Result<FileMutationResult, FilesystemError> {
-        match classify_transaction_error(&error) {
+        let transaction_error_class = classify_transaction_error(&error);
+        match transaction_error_class {
             TransactionErrorClass::Retryable => Err(FilesystemError::Conflict),
             TransactionErrorClass::DatabaseFailure => {
-                Err(FilesystemError::Internal(error))
+                Err(map_database_error(error))
             }
             TransactionErrorClass::OutcomeUncertain => {
                 let reconciled = mutation::reconcile_file_mutation(

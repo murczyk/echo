@@ -1,6 +1,6 @@
 use super::super::{
     ltree::child_hierarchy_path,
-    map_transaction_body_error,
+    map_database_error, map_transaction_body_error,
     path::name_key,
     query::{map_file_model, map_root_model},
     FileEntryKind, FileMutationResult, FilesystemError, PreparedFileMutation,
@@ -55,8 +55,9 @@ pub(super) async fn update_file(
     let optimistic_file = file_query(mutation.device_id, mutation.file_id)
         .one(transaction)
         .await
-        .c(h!())
-        .map_err(map_transaction_body_error)?
+        .map_err(|error| {
+            map_transaction_body_error(anyhow::Error::new(error).context(h!()))
+        })?
         .ok_or(FilesystemError::NotFound)?;
     let optimistic_file = map_file_model(optimistic_file)?;
     let optimistic_root_entry_id =
@@ -81,8 +82,9 @@ pub(super) async fn update_file(
         .lock_exclusive()
         .one(transaction)
         .await
-        .c(h!())
-        .map_err(map_transaction_body_error)?
+        .map_err(|error| {
+            map_transaction_body_error(anyhow::Error::new(error).context(h!()))
+        })?
         .ok_or(FilesystemError::NotFound)?;
     let locked_file_entry = map_file_model(locked_file.clone())?;
     if root_entry_id(&locked_file_entry.hierarchy_path)?
@@ -126,8 +128,9 @@ pub(super) async fn reconcile_file_mutation(
             [transaction_id.into()],
         ))
         .await
-        .c(h!())
-        .map_err(FilesystemError::Internal)?;
+        .map_err(|error| {
+            map_database_error(anyhow::Error::new(error).context(h!()))
+        })?;
     let Some(status) = status else {
         return Ok(false);
     };
@@ -142,8 +145,9 @@ pub(super) async fn reconcile_file_mutation(
     let leaf = file_query(expected.file.device_id, expected.file.file_id)
         .one(db)
         .await
-        .c(h!())
-        .map_err(FilesystemError::Internal)?;
+        .map_err(|error| {
+            map_database_error(anyhow::Error::new(error).context(h!()))
+        })?;
     let Some(leaf) = leaf else {
         return Ok(false);
     };
@@ -162,8 +166,9 @@ pub(super) async fn reconcile_file_mutation(
         )
         .one(db)
         .await
-        .c(h!())
-        .map_err(FilesystemError::Internal)?;
+        .map_err(|error| {
+            map_database_error(anyhow::Error::new(error).context(h!()))
+        })?;
     let Some(root) = root else {
         return Ok(false);
     };
@@ -226,8 +231,9 @@ async fn insert_file(
     }
     .insert(transaction)
     .await
-    .c(h!())
-    .map_err(map_transaction_body_error)?;
+    .map_err(|error| {
+        map_transaction_body_error(anyhow::Error::new(error).context(h!()))
+    })?;
 
     map_file_model(file)
 }
@@ -258,11 +264,9 @@ async fn update_file_row(
     file.file_metadata_modified_at =
         Set(mutation.metadata.file_metadata_modified_at);
     file.updated_at = Set(now);
-    let file = file
-        .update(transaction)
-        .await
-        .c(h!())
-        .map_err(map_transaction_body_error)?;
+    let file = file.update(transaction).await.map_err(|error| {
+        map_transaction_body_error(anyhow::Error::new(error).context(h!()))
+    })?;
 
     map_file_model(file)
 }

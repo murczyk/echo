@@ -1,10 +1,10 @@
 use super::model;
 use crate::devices::filesystem::{
-    FileEntry, FileEntryKind, FilesystemError, OffsetPage, OffsetPageRequest,
+    map_database_error, FileEntry, FileEntryKind, FilesystemError, OffsetPage,
+    OffsetPageRequest,
 };
 use crate::file_registry::entities::file_entry;
 use crate::h;
-use crate::types::ShortContext;
 use sea_orm::{
     ColumnTrait, DatabaseConnection, EntityTrait, PaginatorTrait, QueryFilter,
     QueryOrder, QuerySelect,
@@ -19,12 +19,9 @@ pub(in crate::devices::filesystem) async fn list_files_offset(
     let query = file_entry::Entity::find()
         .filter(file_entry::Column::DeviceId.eq(device_id))
         .filter(file_entry::Column::Kind.eq(FileEntryKind::File.as_db_str()));
-    let total = query
-        .clone()
-        .count(db)
-        .await
-        .c(h!())
-        .map_err(FilesystemError::Internal)?;
+    let total = query.clone().count(db).await.map_err(|error| {
+        map_database_error(anyhow::Error::new(error).context(h!()))
+    })?;
     let files = query
         .order_by_desc(file_entry::Column::UpdatedAt)
         .order_by_desc(file_entry::Column::Id)
@@ -32,8 +29,9 @@ pub(in crate::devices::filesystem) async fn list_files_offset(
         .limit(page.limit)
         .all(db)
         .await
-        .c(h!())
-        .map_err(FilesystemError::Internal)?;
+        .map_err(|error| {
+            map_database_error(anyhow::Error::new(error).context(h!()))
+        })?;
     let returned_len = files.len() as u64;
     let entries = files
         .into_iter()

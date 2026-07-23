@@ -1,4 +1,5 @@
 use anyhow::Error as AnyhowError;
+use sea_orm::{ConnAcquireErr, DbErr};
 use thiserror::Error;
 
 #[allow(dead_code)]
@@ -18,34 +19,99 @@ pub(in crate::devices::filesystem) enum TransactionErrorClass {
 pub(in crate::devices::filesystem) fn classify_transaction_error(
     error: &AnyhowError,
 ) -> TransactionErrorClass {
-    for source in error.chain() {
-        if let Some(sqlx::Error::Database(database_error)) =
-            source.downcast_ref::<sqlx::Error>()
-        {
-            return match database_error.code().as_deref() {
-                Some("40001" | "40P01") => TransactionErrorClass::Retryable,
-                Some(code) if code == "40003" || code.starts_with("08") => {
-                    TransactionErrorClass::OutcomeUncertain
-                }
-                Some(_) => TransactionErrorClass::DatabaseFailure,
-                None => TransactionErrorClass::OutcomeUncertain,
-            };
+    match classify_database_error(error) {
+        Some(DatabaseErrorClass::Conflict) => TransactionErrorClass::Retryable,
+        _ if has_outcome_uncertain_transaction_error(error) => {
+            TransactionErrorClass::OutcomeUncertain
+        }
+        Some(_) => TransactionErrorClass::DatabaseFailure,
+        None => TransactionErrorClass::OutcomeUncertain,
+    }
+}
+
+pub(in crate::devices::filesystem) fn map_database_error(
+    error: AnyhowError,
+) -> FilesystemError {
+    match classify_database_error(&error) {
+        Some(DatabaseErrorClass::Conflict) => FilesystemError::Conflict,
+        Some(DatabaseErrorClass::Dependency) => {
+            FilesystemError::Dependency(error)
+        }
+        Some(DatabaseErrorClass::Internal) | None => {
+            FilesystemError::Internal(error)
         }
     }
+}
 
-    TransactionErrorClass::OutcomeUncertain
+#[derive(Clone, Copy)]
+enum DatabaseErrorClass {
+    Conflict,
+    Dependency,
+    Internal,
+}
+
+fn classify_database_error(error: &AnyhowError) -> Option<DatabaseErrorClass> {
+    for source in error.chain() {
+        if matches!(
+            source.downcast_ref::<DbErr>(),
+            Some(DbErr::ConnectionAcquire(_) | DbErr::Conn(_))
+        ) || source.downcast_ref::<ConnAcquireErr>().is_some()
+        {
+            return Some(DatabaseErrorClass::Dependency);
+        }
+        if let Some(error) = source.downcast_ref::<sqlx::Error>() {
+            return Some(classify_sqlx_error(error));
+        }
+    }
+    None
+}
+
+fn classify_sqlx_error(error: &sqlx::Error) -> DatabaseErrorClass {
+    match error {
+        sqlx::Error::Database(error) => match error.code().as_deref() {
+            Some("40001" | "40P01") => DatabaseErrorClass::Conflict,
+            Some(code)
+                if code.starts_with("08")
+                    || matches!(
+                        code,
+                        "53300" | "57P01" | "57P02" | "57P03"
+                    ) =>
+            {
+                DatabaseErrorClass::Dependency
+            }
+            Some(_) | None => DatabaseErrorClass::Internal,
+        },
+        sqlx::Error::Configuration(_)
+        | sqlx::Error::Io(_)
+        | sqlx::Error::Tls(_)
+        | sqlx::Error::Protocol(_)
+        | sqlx::Error::PoolTimedOut
+        | sqlx::Error::PoolClosed
+        | sqlx::Error::WorkerCrashed
+        | sqlx::Error::BeginFailed => DatabaseErrorClass::Dependency,
+        _ => DatabaseErrorClass::Internal,
+    }
 }
 
 pub(in crate::devices::filesystem) fn map_transaction_body_error(
     error: AnyhowError,
 ) -> FilesystemError {
-    match classify_transaction_error(&error) {
-        TransactionErrorClass::Retryable => FilesystemError::Conflict,
-        TransactionErrorClass::OutcomeUncertain
-        | TransactionErrorClass::DatabaseFailure => {
-            FilesystemError::Internal(error)
+    map_database_error(error)
+}
+
+fn has_outcome_uncertain_transaction_error(error: &AnyhowError) -> bool {
+    error.chain().any(|source| {
+        let Some(sqlx::Error::Database(database_error)) =
+            source.downcast_ref::<sqlx::Error>()
+        else {
+            return false;
+        };
+        match database_error.code().as_deref() {
+            Some("40003") => true,
+            Some(code) => code.starts_with("08"),
+            None => true,
         }
-    }
+    })
 }
 
 #[derive(Debug, Error)]
@@ -96,36 +162,39 @@ mod tests {
                     message: "invalid".to_string(),
                 }]),
                 "filesystem validation failed",
+                false,
             ),
-            (FilesystemError::NotFound, "filesystem entry not found"),
-            (FilesystemError::Conflict, "filesystem conflict"),
+            (
+                FilesystemError::NotFound,
+                "filesystem entry not found",
+                false,
+            ),
+            (FilesystemError::Conflict, "filesystem conflict", false),
             (
                 FilesystemError::Dependency(anyhow::anyhow!(SENTINEL_SECRET)),
                 "filesystem dependency failed",
+                true,
             ),
             (
                 FilesystemError::Invariant("safe_invariant_code"),
                 "filesystem invariant failed: safe_invariant_code",
+                false,
             ),
             (
                 FilesystemError::Internal(anyhow::anyhow!(SENTINEL_SECRET)),
                 "filesystem internal failure",
+                true,
             ),
             (
                 FilesystemError::CommitUncertain(anyhow::anyhow!(
                     SENTINEL_SECRET
                 )),
                 "filesystem commit outcome uncertain",
+                true,
             ),
         ];
 
-        for (error, expected_display) in cases {
-            let has_source = matches!(
-                &error,
-                FilesystemError::Dependency(_)
-                    | FilesystemError::Internal(_)
-                    | FilesystemError::CommitUncertain(_)
-            );
+        for (error, expected_display, has_source) in cases {
             assert_eq!(error.to_string(), expected_display);
             assert!(!error.to_string().contains(SENTINEL_SECRET));
 
@@ -133,6 +202,8 @@ mod tests {
                 let source =
                     error.source().expect("source error must be retained");
                 assert!(format!("{source:#}").contains(SENTINEL_SECRET));
+            } else {
+                assert!(error.source().is_none());
             }
         }
     }

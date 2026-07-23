@@ -13,8 +13,6 @@ use super::map_transaction_body_error;
 #[cfg(test)]
 use crate::h;
 #[cfg(test)]
-use crate::types::ShortContext;
-#[cfg(test)]
 use chrono::NaiveDateTime;
 #[cfg(test)]
 use sea_orm::{ConnectionTrait, DbBackend, Statement};
@@ -253,11 +251,9 @@ impl MutationAttemptTestControl {
                 "do $$ begin raise sqlstate '40P01'; end $$;".to_string(),
             ),
         };
-        transaction
-            .execute(statement)
-            .await
-            .c(h!())
-            .map_err(map_transaction_body_error)?;
+        transaction.execute(statement).await.map_err(|error| {
+            map_transaction_body_error(anyhow::Error::new(error).context(h!()))
+        })?;
         Ok(())
     }
 

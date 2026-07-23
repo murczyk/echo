@@ -112,6 +112,7 @@ pub(super) fn map_tree_model(
 
 pub(super) fn map_directory_scope(
     entry: file_entry::Model,
+    root_context: Option<(uuid::Uuid, PathSyntax)>,
 ) -> Result<DirectoryScope, FilesystemError> {
     match FileEntryKind::try_from(entry.kind.as_str())? {
         FileEntryKind::File => Err(FilesystemError::Invariant(
@@ -121,7 +122,15 @@ pub(super) fn map_directory_scope(
             map_root_model(entry).map(DirectoryScope::Root)
         }
         FileEntryKind::Directory => {
-            map_directory_model(entry).map(DirectoryScope::Directory)
+            let (root_id, path_syntax) =
+                root_context.ok_or(FilesystemError::Invariant(
+                    "directory_scope_root_context_missing",
+                ))?;
+            map_directory_model(entry).map(|entry| DirectoryScope::Directory {
+                entry,
+                root_id,
+                path_syntax,
+            })
         }
     }
 }
@@ -258,12 +267,15 @@ mod tests {
             Ok(TreeEntry::File(_))
         ));
         assert!(matches!(
-            map_directory_scope(root_model()),
+            map_directory_scope(root_model(), None),
             Ok(DirectoryScope::Root(_))
         ));
         assert!(matches!(
-            map_directory_scope(directory_model()),
-            Ok(DirectoryScope::Directory(_))
+            map_directory_scope(
+                directory_model(),
+                Some((Uuid::from_u128(1), PathSyntax::Posix)),
+            ),
+            Ok(DirectoryScope::Directory { .. })
         ));
     }
 
@@ -331,8 +343,12 @@ mod tests {
         );
         assert_invariant(map_tree_model(root_model()), "tree_root_entry");
         assert_invariant(
-            map_directory_scope(file_model()),
+            map_directory_scope(file_model(), None),
             "directory_scope_non_directory_entry",
+        );
+        assert_invariant(
+            map_directory_scope(directory_model(), None),
+            "directory_scope_root_context_missing",
         );
     }
 }

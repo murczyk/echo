@@ -7,7 +7,6 @@ use super::super::{
 };
 use crate::file_registry::entities::file_entry;
 use crate::h;
-use crate::types::ShortContext;
 use chrono::NaiveDateTime;
 use sea_orm::{
     ColumnTrait, ConnectionTrait, DatabaseTransaction, DbBackend, EntityTrait,
@@ -78,11 +77,9 @@ pub(super) async fn ensure_target_root(
             now.into(),
         ],
     );
-    transaction
-        .execute(statement)
-        .await
-        .c(h!())
-        .map_err(map_transaction_body_error)?;
+    transaction.execute(statement).await.map_err(|error| {
+        map_transaction_body_error(anyhow::Error::new(error).context(h!()))
+    })?;
 
     let root = file_entry::Entity::find()
         .filter(file_entry::Column::DeviceId.eq(mutation.device_id))
@@ -97,8 +94,9 @@ pub(super) async fn ensure_target_root(
         .filter(file_entry::Column::NameKey.eq(root_name_key))
         .one(transaction)
         .await
-        .c(h!())
-        .map_err(map_transaction_body_error)?
+        .map_err(|error| {
+            map_transaction_body_error(anyhow::Error::new(error).context(h!()))
+        })?
         .ok_or(FilesystemError::Invariant(
             "mutation_root_resolution_failed",
         ))?;
@@ -126,8 +124,9 @@ pub(super) async fn lock_roots(
         .lock_exclusive()
         .all(transaction)
         .await
-        .c(h!())
-        .map_err(map_transaction_body_error)?;
+        .map_err(|error| {
+            map_transaction_body_error(anyhow::Error::new(error).context(h!()))
+        })?;
 
     if roots.len() != root_entry_ids.len() {
         return Err(FilesystemError::Invariant("mutation_root_lock_mismatch"));
@@ -230,11 +229,9 @@ pub(super) async fn ensure_directory_chain(
                 now.into(),
             ],
         );
-        transaction
-            .execute(statement)
-            .await
-            .c(h!())
-            .map_err(map_transaction_body_error)?;
+        transaction.execute(statement).await.map_err(|error| {
+            map_transaction_body_error(anyhow::Error::new(error).context(h!()))
+        })?;
 
         let directory = file_entry::Entity::find()
             .filter(file_entry::Column::DeviceId.eq(mutation.device_id))
@@ -246,8 +243,11 @@ pub(super) async fn ensure_directory_chain(
             .filter(file_entry::Column::NameKey.eq(component_name_key))
             .one(transaction)
             .await
-            .c(h!())
-            .map_err(map_transaction_body_error)?
+            .map_err(|error| {
+                map_transaction_body_error(
+                    anyhow::Error::new(error).context(h!()),
+                )
+            })?
             .ok_or(FilesystemError::Invariant(
                 "mutation_directory_resolution_failed",
             ))?;
@@ -277,8 +277,11 @@ pub(super) async fn prune_empty_directory_chain(
             .lock_exclusive()
             .one(transaction)
             .await
-            .c(h!())
-            .map_err(map_transaction_body_error)?
+            .map_err(|error| {
+                map_transaction_body_error(
+                    anyhow::Error::new(error).context(h!()),
+                )
+            })?
             .ok_or(FilesystemError::Invariant(
                 "mutation_prune_directory_missing",
             ))?;
@@ -292,8 +295,11 @@ pub(super) async fn prune_empty_directory_chain(
             .filter(file_entry::Column::ParentId.eq(directory.entry_id))
             .one(transaction)
             .await
-            .c(h!())
-            .map_err(map_transaction_body_error)?
+            .map_err(|error| {
+                map_transaction_body_error(
+                    anyhow::Error::new(error).context(h!()),
+                )
+            })?
             .is_some();
         if has_child {
             return Ok(());
@@ -308,8 +314,11 @@ pub(super) async fn prune_empty_directory_chain(
             )
             .exec(transaction)
             .await
-            .c(h!())
-            .map_err(map_transaction_body_error)?;
+            .map_err(|error| {
+                map_transaction_body_error(
+                    anyhow::Error::new(error).context(h!()),
+                )
+            })?;
         if delete_result.rows_affected != 1 {
             return Err(FilesystemError::Invariant(
                 "mutation_prune_delete_mismatch",
