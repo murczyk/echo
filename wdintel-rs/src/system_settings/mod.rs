@@ -1,3 +1,4 @@
+use crate::users::{ensure_admin, login_id_from_identity};
 pub mod types;
 pub mod worker;
 
@@ -70,7 +71,9 @@ fn map_system_settings_item(
         rer_duty_poll_interval_sec: settings.rer_duty_poll_interval_sec,
         created_at: settings.created_at.and_utc().timestamp_millis(),
         updated_at: settings.updated_at.and_utc().timestamp_millis(),
-        updated_by: settings.updated_by,
+        updated_by_login_id: settings
+            .updated_by_login_id
+            .map(|login_id| login_id.to_string()),
         deleted: settings.deleted,
         short_url_enabled: settings.short_url_enabled,
         support_non_rer_interceptions: settings.support_non_rer_interceptions,
@@ -413,7 +416,7 @@ fn validate_peleng_bounds(
 }
 
 fn system_settings_active_model(
-    login: &str,
+    login: &uuid::Uuid,
     req: &CreateSystemSettingsReq,
     echo_im_sync_cursor: EchoImSyncCursor,
 ) -> system_settings::ActiveModel {
@@ -435,7 +438,7 @@ fn system_settings_active_model(
         echo_im_sync_since_inbox_message_id: Set(
             echo_im_sync_cursor.inbox_message_id
         ),
-        updated_by: Set(Some(login.to_string())),
+        updated_by_login_id: Set(Some(*login)),
         deleted: Set(false),
         short_url_enabled: Set(req.short_url_enabled),
         support_non_rer_interceptions: Set(req.support_non_rer_interceptions),
@@ -470,7 +473,7 @@ fn now_utc() -> chrono::NaiveDateTime {
 
 async fn deactivate_active_settings<C>(
     dbx: &C,
-    updated_by: &str,
+    updated_by_login_id: &uuid::Uuid,
 ) -> Result<(), AppError>
 where
     C: sea_orm::ConnectionTrait,
@@ -484,7 +487,7 @@ where
     for row in active_rows {
         let mut row: system_settings::ActiveModel = row.into();
         row.deleted = Set(true);
-        row.updated_by = Set(Some(updated_by.to_string()));
+        row.updated_by_login_id = Set(Some(*updated_by_login_id));
         row.updated_at = Set(now_utc());
         row.update(dbx).await.c(h!())?;
     }
@@ -494,7 +497,7 @@ where
 
 async fn create_system_settings_for_login(
     dbx: &DatabaseConnection,
-    login: &str,
+    login: &uuid::Uuid,
     req: &CreateSystemSettingsReq,
 ) -> Result<system_settings::Model, AppError> {
     validate_peleng_bounds(req)?;
@@ -519,7 +522,7 @@ async fn create_system_settings_for_login(
 
 async fn activate_system_settings_for_login(
     dbx: &DatabaseConnection,
-    login: &str,
+    login: &uuid::Uuid,
     id: i64,
 ) -> Result<system_settings::Model, AppError> {
     let txn = dbx.begin().await.c(h!())?;
@@ -534,7 +537,7 @@ async fn activate_system_settings_for_login(
 
     let mut settings: system_settings::ActiveModel = settings.into();
     settings.deleted = Set(false);
-    settings.updated_by = Set(Some(login.to_string()));
+    settings.updated_by_login_id = Set(Some(*login));
     settings.updated_at = Set(now_utc());
     settings.echo_im_sync_since = Set(echo_im_sync_cursor.created_at);
     settings.echo_im_sync_since_inbox_message_id =
@@ -557,7 +560,7 @@ pub async fn current_system_settings(
     user: Identity,
     env: actix_web::web::Data<Env>,
 ) -> Result<Json<SystemSettingsCurrentRsp>, AppError> {
-    let _login = user.id().c(h!())?;
+    let _login = login_id_from_identity(&user)?;
     let settings = get_active_system_settings(&env.dbx).await.c(h!())?;
     Ok(Json(match settings {
         Some(settings) => SystemSettingsCurrentRsp {
@@ -621,9 +624,7 @@ pub async fn list_system_settings(
     user: Identity,
     env: actix_web::web::Data<Env>,
 ) -> Result<Json<SystemSettingsListRsp>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Admin")
-        .await
-        .c(h!())?;
+    ensure_admin(&env.dbx, &user).await.c(h!())?;
 
     let items: Vec<SystemSettingsItem> = system_settings::Entity::find()
         .order_by_desc(system_settings::Column::Deleted)
@@ -645,10 +646,8 @@ pub async fn create_system_settings(
     env: actix_web::web::Data<Env>,
     req: Json<CreateSystemSettingsReq>,
 ) -> Result<Json<SystemSettingsItem>, AppError> {
-    let login = user.id().c(h!())?;
-    crate::users::has_role(&env.dbx, &login, "Admin")
-        .await
-        .c(h!())?;
+    ensure_admin(&env.dbx, &user).await.c(h!())?;
+    let login = login_id_from_identity(&user)?;
 
     let created =
         create_system_settings_for_login(&env.dbx, &login, &req).await?;
@@ -662,10 +661,8 @@ pub async fn activate_system_settings(
     env: actix_web::web::Data<Env>,
     req: Json<ActivateSystemSettingsReq>,
 ) -> Result<Json<SystemSettingsItem>, AppError> {
-    let login = user.id().c(h!())?;
-    crate::users::has_role(&env.dbx, &login, "Admin")
-        .await
-        .c(h!())?;
+    ensure_admin(&env.dbx, &user).await.c(h!())?;
+    let login = login_id_from_identity(&user)?;
 
     let settings =
         activate_system_settings_for_login(&env.dbx, &login, req.id).await?;
@@ -684,6 +681,12 @@ mod tests {
 
     static TEST_LOCK: tokio::sync::Mutex<()> =
         tokio::sync::Mutex::const_new(());
+
+    async fn test_login_id(env: &Env) -> uuid::Uuid {
+        crate::users::login_id_by_name(&env.dbx, "Tester")
+            .await
+            .unwrap()
+    }
 
     #[tokio::test]
     #[serial]
@@ -765,10 +768,11 @@ mod tests {
         )
         .await;
         let inactive = insert_settings(&env.dbx, stale_cursor, true).await;
+        let login_id = test_login_id(&env).await;
 
         let created = create_system_settings_for_login(
             &env.dbx,
-            "Tester",
+            &login_id,
             &settings_req(false),
         )
         .await
@@ -789,10 +793,13 @@ mod tests {
         .await
         .unwrap();
         let current_cursor = get_echo_im_sync_cursor(&env.dbx).await.unwrap();
-        let activated =
-            activate_system_settings_for_login(&env.dbx, "Tester", inactive.id)
-                .await
-                .unwrap();
+        let activated = activate_system_settings_for_login(
+            &env.dbx,
+            &login_id,
+            inactive.id,
+        )
+        .await
+        .unwrap();
 
         assert_eq!(activated.echo_im_sync_since, current_cursor.created_at);
         assert_eq!(
@@ -832,8 +839,9 @@ mod tests {
             .await;
         let mut req = settings_req(false);
         req.do_not_store_duplicate_echoim_failures = true;
+        let login_id = test_login_id(&env).await;
 
-        create_system_settings_for_login(&env.dbx, "Tester", &req)
+        create_system_settings_for_login(&env.dbx, &login_id, &req)
             .await
             .unwrap();
 
@@ -922,7 +930,7 @@ mod tests {
             echo_im_sync_since_inbox_message_id: Set(
                 echo_im_sync_cursor.inbox_message_id
             ),
-            updated_by: Set(None),
+            updated_by_login_id: Set(None),
             deleted: Set(deleted),
             rer_duty_test_enabled: Set(false),
             rer_duty_test_since_ms: Set(0),
@@ -970,7 +978,7 @@ mod tests {
             } else {
                 None
             }),
-            scheduled_by: Set(None),
+            scheduled_by_login_id: Set(None),
             status: Set(status),
             error: Set(None),
         }

@@ -53,7 +53,7 @@ gdocCallsigns =
         ]
 
 
-unitA : { active : Bool, army : String, battalion : String, comment : String, company : String, createdAt : number, createdBy : String, division : String, id : number, name : String, regiment : String }
+unitA : { active : Bool, army : String, battalion : String, comment : String, company : String, createdAt : number, createdByLoginId : String, division : String, id : number, name : String, regiment : String }
 unitA =
     { active = True
     , army = ""
@@ -61,7 +61,7 @@ unitA =
     , comment = ""
     , company = "РОТА1"
     , createdAt = 1712829002117
-    , createdBy = "hiro"
+    , createdByLoginId = "hiro"
     , division = ""
     , id = 1
     , name = "РОТА1 БАТ1 ПОЛК1"
@@ -69,7 +69,7 @@ unitA =
     }
 
 
-unitCConnectedToA : { active : Bool, army : String, battalion : String, comment : String, company : String, createdAt : number, createdBy : String, division : String, id : number, name : String, regiment : String }
+unitCConnectedToA : { active : Bool, army : String, battalion : String, comment : String, company : String, createdAt : number, createdByLoginId : String, division : String, id : number, name : String, regiment : String }
 unitCConnectedToA =
     { active = True
     , army = ""
@@ -77,7 +77,7 @@ unitCConnectedToA =
     , comment = ""
     , company = "РОТА1"
     , createdAt = 1712829002117
-    , createdBy = "hiro"
+    , createdByLoginId = "hiro"
     , division = ""
     , id = 3
     , name = "РОТА1 БАТ1 ПОЛК1"
@@ -85,7 +85,7 @@ unitCConnectedToA =
     }
 
 
-masterUnits : Dict.Dict number { active : Bool, army : String, battalion : String, comment : String, company : String, createdAt : number, createdBy : String, division : String, id : number, name : String, regiment : String }
+masterUnits : Dict.Dict number { active : Bool, army : String, battalion : String, comment : String, company : String, createdAt : number, createdByLoginId : String, division : String, id : number, name : String, regiment : String }
 masterUnits =
     Dict.fromList
         [ ( 1

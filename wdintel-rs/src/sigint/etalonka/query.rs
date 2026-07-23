@@ -145,7 +145,7 @@ pub async fn load_freqs(
     groups: &Vec<String>,
     network_id: i64,
     filter: Option<&NetworkFreqFilter>,
-    user_login: &str,
+    user_login: &uuid::Uuid,
     include_callsigns: bool,
 ) -> Result<Vec<NetworkFreqsRes>, AppError> {
     load_freqs_impl(
@@ -165,7 +165,7 @@ pub async fn load_freqs_with_stats(
     groups: &Vec<String>,
     network_id: i64,
     filter: Option<&NetworkFreqFilter>,
-    user_login: &str,
+    user_login: &uuid::Uuid,
     freq_counts: HashMap<i64, i64>,
     include_callsigns: bool,
 ) -> Result<Vec<NetworkFreqsRes>, AppError> {
@@ -186,7 +186,7 @@ async fn load_freqs_impl(
     groups: &Vec<String>,
     network_id: i64,
     filter: Option<&NetworkFreqFilter>,
-    user_login: &str,
+    user_login: &uuid::Uuid,
     freq_counts: Option<HashMap<i64, i64>>,
     include_callsigns: bool,
 ) -> Result<Vec<NetworkFreqsRes>, AppError> {
@@ -232,7 +232,7 @@ pub async fn load_network_freq_row(
     groups: &Vec<String>,
     network_id: i64,
     network_freq_id: i64,
-    user_login: &str,
+    user_login: &uuid::Uuid,
     include_callsigns: bool,
 ) -> Result<Option<NetworkFreqsRes>, AppError> {
     let combined_query = build_network_freqs_query(
@@ -488,7 +488,7 @@ async fn load_freqs_with_cached_activity(
     db: &DatabaseConnection,
     network_id: i64,
     filter: Option<&NetworkFreqFilter>,
-    user_login: &str,
+    user_login: &uuid::Uuid,
     freq_counts: HashMap<i64, i64>,
 ) -> Result<Vec<NetworkFreqsRes>, AppError> {
     let main_query = build_network_freqs_base_query(network_id, filter)
@@ -603,7 +603,7 @@ fn build_network_freqs_base_query(
 async fn load_network_freq_rows(
     db: &DatabaseConnection,
     rows: Vec<QueryResult>,
-    user_login: &str,
+    user_login: &uuid::Uuid,
     freq_counts: Option<HashMap<i64, i64>>,
 ) -> Result<Vec<NetworkFreqsRes>, AppError> {
     let mut freq_ids = vec![];

@@ -13,7 +13,7 @@ use crate::messenger::missing_message::{
     mark_missing_message_error, mark_missing_message_resolved,
     mark_or_delete_duplicate_missing_message, record_deleted_missing_message,
     record_missing_message, record_or_delete_duplicate_missing_message,
-    schedule_missing_message, SYSTEM_SCHEDULED_BY,
+    schedule_missing_message,
 };
 use crate::messenger::types::{EchoAccountF1, Message};
 use crate::types::*;
@@ -443,6 +443,11 @@ async fn process_candidates(
         missing_count: 0,
         max_processed_cursor: None,
     };
+    let scheduled_by_login_id = if autofix_enabled {
+        Some(crate::users::system_login_id(dbx).await.c(h!())?)
+    } else {
+        None
+    };
     for inbox_message in inbox_messages {
         if result.missing_count >= ECHO_IM_SYNC_RECOVERY_BATCH_SIZE as usize {
             break;
@@ -492,20 +497,18 @@ async fn process_candidates(
             }
             continue;
         }
-        let scheduled_by = if autofix_enabled {
-            Some(SYSTEM_SCHEDULED_BY)
-        } else {
-            None
-        };
-        let missing_message =
-            record_missing_message(dbx, inbox_message.id, scheduled_by)
-                .await
-                .c(h!())?;
+        let missing_message = record_missing_message(
+            dbx,
+            inbox_message.id,
+            scheduled_by_login_id.as_ref(),
+        )
+        .await
+        .c(h!())?;
         if autofix_enabled && !missing_message.is_resolved {
             let missing_message = schedule_missing_message(
                 dbx,
                 missing_message,
-                SYSTEM_SCHEDULED_BY,
+                scheduled_by_login_id.as_ref().c(h!())?,
             )
             .await
             .c(h!())?;
@@ -1571,8 +1574,8 @@ mod tests {
         assert!(missing_message.is_resolved);
         assert_eq!(missing_message.status, EchoMissingMessageStatus::Resolved);
         assert_eq!(
-            missing_message.scheduled_by,
-            Some(SYSTEM_SCHEDULED_BY.to_string())
+            missing_message.scheduled_by_login_id,
+            Some(crate::users::system_login_id(&env.dbx).await.unwrap())
         );
     }
 
@@ -1613,7 +1616,7 @@ mod tests {
             .unwrap();
         assert!(!missing_message.is_resolved);
         assert_eq!(missing_message.status, EchoMissingMessageStatus::Pending);
-        assert_eq!(missing_message.scheduled_by, None);
+        assert_eq!(missing_message.scheduled_by_login_id, None);
     }
 
     #[tokio::test]
@@ -1647,7 +1650,7 @@ mod tests {
         assert!(missing_message.is_resolved);
         assert_eq!(missing_message.status, EchoMissingMessageStatus::Deleted);
         assert_eq!(missing_message.error, None);
-        assert_eq!(missing_message.scheduled_by, None);
+        assert_eq!(missing_message.scheduled_by_login_id, None);
     }
 
     #[tokio::test]
@@ -1722,10 +1725,13 @@ mod tests {
         )
         .await;
         update_inbox_flags(&env.dbx, inbox.id, true, None).await;
-        let missing_message =
-            record_missing_message(&env.dbx, inbox.id, Some("ManualUser"))
-                .await
-                .unwrap();
+        let missing_message = record_missing_message(
+            &env.dbx,
+            inbox.id,
+            Some(&crate::users::system_login_id(&env.dbx).await.unwrap()),
+        )
+        .await
+        .unwrap();
 
         let missing_count = run_recovery(&env, &[account.id]).await;
 
@@ -1740,8 +1746,8 @@ mod tests {
         assert_eq!(missing_message.status, EchoMissingMessageStatus::Deleted);
         assert_eq!(missing_message.error, None);
         assert_eq!(
-            missing_message.scheduled_by,
-            Some("ManualUser".to_string())
+            missing_message.scheduled_by_login_id,
+            Some(crate::users::system_login_id(&env.dbx).await.unwrap())
         );
     }
 
@@ -1774,10 +1780,13 @@ mod tests {
         .await;
         update_inbox_flags(&env.dbx, duplicate.id, false, Some(original.id))
             .await;
-        let missing_message =
-            record_missing_message(&env.dbx, duplicate.id, Some("ManualUser"))
-                .await
-                .unwrap();
+        let missing_message = record_missing_message(
+            &env.dbx,
+            duplicate.id,
+            Some(&crate::users::system_login_id(&env.dbx).await.unwrap()),
+        )
+        .await
+        .unwrap();
 
         let missing_count = run_recovery(&env, &[account.id]).await;
 
@@ -1792,8 +1801,8 @@ mod tests {
         assert_eq!(missing_message.status, EchoMissingMessageStatus::Duplicate);
         assert_eq!(missing_message.error, None);
         assert_eq!(
-            missing_message.scheduled_by,
-            Some("ManualUser".to_string())
+            missing_message.scheduled_by_login_id,
+            Some(crate::users::system_login_id(&env.dbx).await.unwrap())
         );
     }
 
@@ -1885,10 +1894,13 @@ mod tests {
             false,
         )
         .await;
-        let missing_message =
-            record_missing_message(&env.dbx, inbox.id, Some("ManualUser"))
-                .await
-                .unwrap();
+        let missing_message = record_missing_message(
+            &env.dbx,
+            inbox.id,
+            Some(&crate::users::system_login_id(&env.dbx).await.unwrap()),
+        )
+        .await
+        .unwrap();
 
         let missing_count = run_recovery(&env, &[account.id]).await;
 
@@ -1974,10 +1986,13 @@ mod tests {
             false,
         )
         .await;
-        let missing_message =
-            record_missing_message(&env.dbx, inbox.id, Some("ManualUser"))
-                .await
-                .unwrap();
+        let missing_message = record_missing_message(
+            &env.dbx,
+            inbox.id,
+            Some(&crate::users::system_login_id(&env.dbx).await.unwrap()),
+        )
+        .await
+        .unwrap();
 
         let missing_count = run_recovery(&env, &[account.id]).await;
 
@@ -2011,10 +2026,13 @@ mod tests {
             cursor + chrono::TimeDelta::minutes(1),
         )
         .await;
-        let missing_message =
-            record_missing_message(&env.dbx, inbox.id, Some("ManualUser"))
-                .await
-                .unwrap();
+        let missing_message = record_missing_message(
+            &env.dbx,
+            inbox.id,
+            Some(&crate::users::system_login_id(&env.dbx).await.unwrap()),
+        )
+        .await
+        .unwrap();
         echo_inbox_message::Entity::delete_by_id(inbox.id)
             .exec(&env.dbx)
             .await
@@ -2033,8 +2051,8 @@ mod tests {
         assert_eq!(missing_message.status, EchoMissingMessageStatus::Deleted);
         assert_eq!(missing_message.error, None);
         assert_eq!(
-            missing_message.scheduled_by,
-            Some("ManualUser".to_string())
+            missing_message.scheduled_by_login_id,
+            Some(crate::users::system_login_id(&env.dbx).await.unwrap())
         );
     }
 
@@ -2181,7 +2199,7 @@ mod tests {
         let second = record_missing_message(
             &env.dbx,
             inbox.id,
-            Some(SYSTEM_SCHEDULED_BY),
+            Some(&crate::users::system_login_id(&env.dbx).await.unwrap()),
         )
         .await
         .unwrap();
@@ -2220,7 +2238,7 @@ mod tests {
         crate::messenger::missing_message::schedule_missing_message_by_id(
             &env.dbx,
             missing_message.id,
-            "ManualUser",
+            &crate::users::system_login_id(&env.dbx).await.unwrap(),
         )
         .await
         .unwrap();
@@ -2245,8 +2263,8 @@ mod tests {
         assert!(missing_message.is_resolved);
         assert_eq!(missing_message.status, EchoMissingMessageStatus::Resolved);
         assert_eq!(
-            missing_message.scheduled_by,
-            Some("ManualUser".to_string())
+            missing_message.scheduled_by_login_id,
+            Some(crate::users::system_login_id(&env.dbx).await.unwrap())
         );
     }
 
@@ -2359,10 +2377,13 @@ mod tests {
             cursor + chrono::TimeDelta::minutes(2),
         )
         .await;
-        let missing_message =
-            record_missing_message(&env.dbx, inbox.id, Some("ManualUser"))
-                .await
-                .unwrap();
+        let missing_message = record_missing_message(
+            &env.dbx,
+            inbox.id,
+            Some(&crate::users::system_login_id(&env.dbx).await.unwrap()),
+        )
+        .await
+        .unwrap();
 
         let missing_count = run_recovery(&env, &[account.id]).await;
 
@@ -2575,8 +2596,8 @@ mod tests {
             echo_client_lock_id: Set(Some(i64::from(lock.id))),
             created_at: Set(Utc::now().naive_utc()),
             default_aor_id: Set(None),
-            api_login: Set(None),
-            updated_by: Set(None),
+            api_login_id: Set(None),
+            updated_by_login_id: Set(None),
             deleted: Set(false),
             last_sync_at: Set(None),
         }
@@ -2841,7 +2862,7 @@ mod tests {
             updated_at: Set(Utc::now().naive_utc()),
             echo_im_sync_since: Set(echo_im_sync_since),
             echo_im_sync_since_inbox_message_id: Set(0),
-            updated_by: Set(None),
+            updated_by_login_id: Set(None),
             deleted: Set(deleted),
             rer_duty_test_enabled: Set(false),
             rer_duty_test_since_ms: Set(0),

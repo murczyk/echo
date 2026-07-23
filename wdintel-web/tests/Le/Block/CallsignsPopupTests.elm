@@ -30,7 +30,7 @@ createUnit id army division regiment battalion company =
     , name = name
     , active = True
     , createdAt = 0
-    , createdBy = ""
+    , createdByLoginId = ""
     }
 
 

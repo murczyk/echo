@@ -47,7 +47,7 @@ struct SheetRowData<'a> {
 }
 
 pub async fn report_xlsx_kind_interception(
-    user_login: &str,
+    user_login: &uuid::Uuid,
     env: &Env,
     req: &super::types::ReportPreviewReq,
     outpath: &PathBuf,
@@ -236,7 +236,7 @@ async fn get_all_tags(
 }
 
 async fn get_inbox_messages_report(
-    user_login: &str,
+    user_login: &uuid::Uuid,
     env: &Env,
     req: &InboxMessagesReq,
 ) -> Result<Vec<InboxMessage>, AppError> {
@@ -313,7 +313,7 @@ fn process_messages_for_interception_report(
 }
 
 fn ensure_interception_report_row_limit(
-    user_login: &str,
+    user_login: &uuid::Uuid,
     rows_count: usize,
 ) -> Result<(), AppError> {
     let max_rows =
@@ -344,14 +344,14 @@ fn get_parsed_date(date: &String) -> Result<ExcelDateTime, AppError> {
 }
 
 async fn build_inbox_messages_report_sql(
-    login: &str,
+    login: &uuid::Uuid,
     env: &Env,
     req: &InboxMessagesReq,
 ) -> Result<String, AppError> {
     let include_peleng_locations =
         req.include_peleng_locations.unwrap_or(false);
     let read_db = env.replica();
-    let logins = crate::users::get_organism_logins_by_login(&read_db, login)
+    let login_ids = crate::users::get_organism_login_ids_by_id(&read_db, login)
         .await
         .context(h!())?;
     let owner_organism_id =
@@ -367,11 +367,11 @@ async fn build_inbox_messages_report_sql(
         ));
     let report_tags_only_this_unit =
         req.report_tags_only_this_unit == Some(true);
-    let logins2 = logins.clone();
+    let logins2 = login_ids.clone();
     let comment_join = if report_tags_only_this_unit {
         signal_message::Relation::SigintComment.def().on_condition(
             move |_left, right| {
-                Expr::col((right, sigint_comment::Column::Login))
+                Expr::col((right, sigint_comment::Column::LoginId))
                     .is_in(logins2.clone())
                     .into_condition()
             },
@@ -398,8 +398,8 @@ async fn build_inbox_messages_report_sql(
             );
             if report_tags_only_this_unit {
                 condition = condition.add(
-                    Expr::col((right, sigint_inbox_item_tag::Column::Login))
-                        .is_in(logins.clone()),
+                    Expr::col((right, sigint_inbox_item_tag::Column::LoginId))
+                        .is_in(login_ids.clone()),
                 );
             }
             condition
@@ -1197,7 +1197,7 @@ y:73-71279
     #[test]
     fn interception_report_row_limit_allows_excel_max_data_rows() {
         assert!(ensure_interception_report_row_limit(
-            "operator",
+            &uuid::Uuid::nil(),
             XLSX_WORKSHEET_ROW_MAX - 1
         )
         .is_ok());
@@ -1206,7 +1206,7 @@ y:73-71279
     #[test]
     fn interception_report_row_limit_rejects_overflow() {
         assert!(ensure_interception_report_row_limit(
-            "operator",
+            &uuid::Uuid::nil(),
             XLSX_WORKSHEET_ROW_MAX
         )
         .is_err());

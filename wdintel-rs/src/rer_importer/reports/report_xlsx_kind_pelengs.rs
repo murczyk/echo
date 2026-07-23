@@ -34,11 +34,11 @@ struct Message {
 }
 
 pub async fn get_inbox_messages_report(
-    user_login: &str,
+    user_login: &uuid::Uuid,
     env: &Env,
     req: &InboxMessagesReq,
 ) -> Result<Vec<(i64, Option<(f64, f64)>, InboxMessage)>, AppError> {
-    let login = user_login.to_string();
+    let login = *user_login;
     let include_peleng_locations =
         req.include_peleng_locations.unwrap_or(false);
     let read_db = env.replica();
@@ -350,7 +350,7 @@ fn xls_title() -> rust_xlsxwriter::Format {
 
 /// XLSX report for "пеленги" with sender column ("Відправник")
 pub async fn report_xlsx_kind_pelengs1(
-    user_login: &str,
+    user_login: &uuid::Uuid,
     env: &Env,
     req: &super::types::ReportPreviewReq,
     outpath: &PathBuf,
@@ -721,7 +721,7 @@ mod tests {
         .unwrap();
 
         let messages = get_inbox_messages_report(
-            &login.login,
+            &login.id,
             &env,
             &InboxMessagesReq {
                 nolimit: Some(true),

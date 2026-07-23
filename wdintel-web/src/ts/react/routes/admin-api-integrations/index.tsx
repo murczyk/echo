@@ -59,7 +59,7 @@ function toForm(integration: ApiIntegration): ApiIntegrationForm {
   return {
     id: integration.id,
     description: integration.description ?? '',
-    apiUser: integration.apiUser,
+    apiUser: integration.apiUserLoginId,
     hasIggyConnection: integration.hasIggyConnection,
     iggyUrl: integration.iggyUrl ?? '',
     iggyLogin: integration.iggyLogin ?? '',
@@ -75,7 +75,7 @@ function toSaveReq(form: ApiIntegrationForm): UpsertApiIntegrationReq {
   return {
     id: form.id,
     description: form.description.trim() || null,
-    apiUser: form.apiUser,
+    apiUserLoginId: form.apiUser,
     hasIggyConnection: form.hasIggyConnection,
     iggyUrl: iggyValue(form.iggyUrl),
     iggyLogin: iggyValue(form.iggyLogin),
@@ -232,7 +232,7 @@ export function AdminApiIntegrationsPage() {
 
   if (loading) return <PowerAlert severity="info">Завантажую API інтеграції...</PowerAlert>;
 
-  const selectedApiUser = apiUsers.find((user) => user.login === form.apiUser) ?? null;
+  const selectedApiUser = apiUsers.find((user) => user.id === form.apiUser) ?? null;
   const disabled = saving || checking;
 
   return (
@@ -267,7 +267,9 @@ export function AdminApiIntegrationsPage() {
                     variant={integration.id === selectedId ? 'contained' : 'outlined'}
                     onClick={() => selectIntegration(integration.id)}
                   >
-                    {integration.description || integration.apiUser}
+                    {integration.description ||
+                      apiUsers.find((user) => user.id === integration.apiUserLoginId)?.login ||
+                      integration.apiUserLoginId}
                   </PowerButton>
                 ))}
               </div>
@@ -298,10 +300,10 @@ export function AdminApiIntegrationsPage() {
               options={apiUsers}
               value={selectedApiUser}
               onChange={(_, option) =>
-                setForm((previous) => ({ ...previous, apiUser: option?.login ?? '' }))
+                setForm((previous) => ({ ...previous, apiUser: option?.id ?? '' }))
               }
               getOptionLabel={(option) => option.login}
-              isOptionEqualToValue={(option, value) => option.login === value.login}
+              isOptionEqualToValue={(option, value) => option.id === value.id}
               renderInput={(params) => (
                 <TextField {...params} label="API користувач" required fullWidth />
               )}

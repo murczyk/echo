@@ -1046,7 +1046,7 @@ mod tests {
                 .unwrap()
                 .and_hms_opt(0, 0, 0)
                 .unwrap(),
-            created_by: "test".to_string(),
+            created_by_login_id: uuid::Uuid::nil(),
             name: name.to_string(),
             comment: String::new(),
             battalion: String::new(),

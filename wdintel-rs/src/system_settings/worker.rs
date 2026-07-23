@@ -418,7 +418,7 @@ async fn replay_source_message(
             sigint_inbox_item_id: Set(inserted.id),
             tag_id: Set(tag.tag_id),
             confidence: Set(tag.confidence),
-            login: Set(tag.login.clone()),
+            login_id: Set(tag.login_id),
             model: Set(tag.model.clone()),
         }
         .insert(&txn)

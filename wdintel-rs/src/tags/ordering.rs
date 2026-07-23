@@ -13,7 +13,7 @@ use std::collections::BTreeMap;
 type OrderingData = Vec<i64>;
 
 pub async fn collect_tags_list(
-    user_id: &str,
+    user_id: &uuid::Uuid,
     db: &DatabaseConnection,
 ) -> anyhow::Result<Vec<(tag::Model, Vec<tag_keyword::Model>)>> {
     let owner_organism_id =
@@ -67,28 +67,23 @@ pub async fn oneoff_ensure_tags_ordering(mode: Mode) -> Result<(), AppError> {
             collect_enabled_regular_tags(&db, login.organism_id)
                 .await
                 .c(h!())?;
-        ensure_matching_ordering(
-            &login.login,
-            &db,
-            tag_ids_string.clone(),
-            &tags,
-        )
-        .await
-        .c(h!())?;
+        ensure_matching_ordering(&login.id, &db, tag_ids_string.clone(), &tags)
+            .await
+            .c(h!())?;
     }
     info!("> oneoff_ensure_tags_ordering completed");
     Ok(())
 }
 
 async fn ensure_matching_ordering(
-    user_id: &str,
+    user_id: &uuid::Uuid,
     db: &DatabaseConnection,
     tag_ids_string: String,
     tags: &BTreeMap<i64, tag::Model>,
 ) -> anyhow::Result<tags_ordering::Model> {
     let mut matching_ordering = None;
     let orderings = tags_ordering::Entity::find()
-        .filter(tags_ordering::Column::Login.eq(user_id))
+        .filter(tags_ordering::Column::LoginId.eq(*user_id))
         .filter(tags_ordering::Column::DeprecatedAt.is_null())
         .all(db)
         .await
@@ -138,10 +133,10 @@ async fn collect_enabled_regular_tags(
 
 async fn load_login_organism_id(
     db: &DatabaseConnection,
-    user_id: &str,
+    user_id: &uuid::Uuid,
 ) -> anyhow::Result<Option<i64>> {
     login::Entity::find()
-        .filter(login::Column::Login.eq(user_id))
+        .filter(login::Column::Id.eq(*user_id))
         .filter(login::Column::DeletedPermanently.eq(false))
         .select_only()
         .column(login::Column::OrganismId)
@@ -156,7 +151,7 @@ async fn load_login_organism_id(
 async fn mk_new_ordering(
     tag_ids_list: String,
     tags: &BTreeMap<i64, tag::Model>,
-    user_id: &str,
+    user_id: &uuid::Uuid,
     db: &DatabaseConnection,
 ) -> anyhow::Result<tags_ordering::Model> {
     let known_seeds = tags_ordering::Entity::find()
@@ -175,7 +170,7 @@ async fn mk_new_ordering(
         ordering: Set(ordering),
         tag_ids_list: Set(tag_ids_list),
         seed: Set(seed),
-        login: Set(user_id.to_string()),
+        login_id: Set(*user_id),
         id: NotSet,
         created_at: NotSet,
         deprecated_at: NotSet,

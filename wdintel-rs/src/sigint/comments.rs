@@ -15,7 +15,7 @@ use std::collections::{HashMap, HashSet};
 
 #[derive(Debug, FromQueryResult)]
 struct CommentExportRow {
-    login: String,
+    login: uuid::Uuid,
     comment: String,
     body: Option<String>,
     message_created_at: NaiveDateTime,
@@ -80,11 +80,12 @@ pub async fn oneoff_export_sigint_comments(
             signal_message::Relation::SigintInboxItem.def(),
         )
         .filter(
-            sigint_comment::Column::Login.is_in(logins.keys().cloned().clone()),
+            sigint_comment::Column::LoginId
+                .is_in(logins.keys().cloned().clone()),
         )
         .filter(time_condition)
         .select_only()
-        .column(sigint_comment::Column::Login)
+        .column(sigint_comment::Column::LoginId)
         .column(sigint_comment::Column::Comment)
         .column_as(
             Expr::col((signal_message::Entity, signal_message::Column::Body)),
@@ -151,7 +152,7 @@ pub async fn oneoff_export_sigint_comments(
             comment: row.comment.clone(),
             message_ts: message_ts.format("%Y-%m-%dT%H:%M:%S").to_string(),
             source_organism: source_organism.clone(),
-            source_login: row.login.clone(),
+            source_login: row.login.to_string(),
         };
         writer.serialize(&csv_row).c(h!())?;
         exported += 1;
@@ -278,18 +279,18 @@ pub async fn oneoff_import_sigint_comments(
             excluded += 1;
             continue;
         }
-        let login: String;
+        let login_name: String;
         let organism_mapping = organism_login_mapping
             .entry(source_organism.clone())
             .or_default();
 
         if let Some(target_login) = organism_mapping.get(&row.source_login) {
-            login = target_login.clone();
+            login_name = target_login.clone();
         } else if let Some(target_organism_id) =
             login_to_organism_id.get(&row.source_login)
         {
             let target_login = source_login.clone();
-            login = target_login.clone();
+            login_name = target_login.clone();
             let target_organism = &organisms[target_organism_id];
 
             info!("detected mapping{dry_run} '{source_organism}/{source_login}' to '{target_organism}/{target_login}'");
@@ -304,6 +305,7 @@ pub async fn oneoff_import_sigint_comments(
             continue;
         }
 
+        let login = crate::users::login_id_by_name(&dbx, &login_name).await?;
         let message_ts = match parse_naive_datetime(&row.message_ts) {
             Ok(ts) => ts,
             Err(err) => {
@@ -332,7 +334,7 @@ pub async fn oneoff_import_sigint_comments(
 
         if let Some(existing) = sigint_comment::Entity::find()
             .filter(sigint_comment::Column::SignalMessageId.eq(message.id))
-            .filter(sigint_comment::Column::Login.eq(login.clone()))
+            .filter(sigint_comment::Column::LoginId.eq(login))
             .one(&dbx)
             .await
             .c(h!())?
@@ -366,7 +368,7 @@ pub async fn oneoff_import_sigint_comments(
         } else {
             let active = sigint_comment::ActiveModel {
                 id: NotSet,
-                login: Set(login),
+                login_id: Set(login),
                 signal_message_id: Set(message.id),
                 comment: Set(row.comment.clone()),
                 created_at: NotSet,
@@ -460,7 +462,7 @@ fn message_time_condition(
 async fn load_organism_logins<'a, 'async_trait, C>(
     txn: &'a C,
     organism_ids: Vec<i64>,
-) -> Result<HashMap<String, i64>, AppError>
+) -> Result<HashMap<uuid::Uuid, i64>, AppError>
 where
     C: ConnectionTrait + 'async_trait,
 {
@@ -470,9 +472,9 @@ where
         .filter(login::Column::DeletedPermanently.eq(false))
         .filter(login::Column::OrganismId.is_not_null())
         .select_only()
-        .column(login::Column::Login)
+        .column(login::Column::Id)
         .column(login::Column::OrganismId)
-        .into_tuple::<(String, i64)>()
+        .into_tuple::<(uuid::Uuid, i64)>()
         .all(txn)
         .await
         .c(h!())?;

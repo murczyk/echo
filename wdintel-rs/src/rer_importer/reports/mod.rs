@@ -5,6 +5,7 @@ use crate::config::{
 use crate::entities::*;
 use crate::error::AppError;
 use crate::types::*;
+use crate::users::{ensure_rer_role, has_any_role, login_id_from_identity};
 use actix_identity::Identity;
 use actix_web::post;
 use actix_web::web::Json;
@@ -151,11 +152,11 @@ fn report_requires_advanced_permissions(kind: &str) -> bool {
 
 async fn ensure_report_launch_permissions(
     dbx: &DatabaseConnection,
-    user_login: &str,
+    user_login: &uuid::Uuid,
     kind: &str,
 ) -> Result<(), AppError> {
     if report_requires_advanced_permissions(kind) {
-        crate::users::has_any_role(
+        has_any_role(
             dbx,
             user_login,
             vec!["UnitsEditor", "CallsignsEditor", "AdvancedReports", "Admin"],
@@ -167,7 +168,7 @@ async fn ensure_report_launch_permissions(
 }
 
 pub(crate) async fn report_docx_generate_file(
-    user_login: String,
+    user_login: uuid::Uuid,
     env: &Env,
     mut req: types::ReportPreviewReq,
     save_legacy_log: bool,
@@ -353,10 +354,8 @@ pub async fn report_docx_task_launch(
     env: actix_web::web::Data<Env>,
     req: Json<types::ReportPreviewReq>,
 ) -> Result<Json<i64>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
-        .await
-        .c(h!())?;
-    let user_login = user.id().c(h!())?;
+    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    let user_login = login_id_from_identity(&user)?;
     let req_inner = req.into_inner();
     let report_kind = req_inner.kind.clone();
     ensure_report_launch_permissions_with_error_code_header(
@@ -383,7 +382,7 @@ pub async fn report_docx_task_launch(
 
 async fn ensure_report_launch_permissions_with_error_code_header(
     dbx: &DatabaseConnection,
-    user_login: &str,
+    user_login: &uuid::Uuid,
     report_kind: &str,
 ) -> Result<(), AppError> {
     match ensure_report_launch_permissions(dbx, user_login, report_kind).await {
@@ -410,11 +409,11 @@ pub(crate) async fn save_report_log(
     dbx: &DatabaseConnection,
     filepath_relative_to_storage: String,
     report_query: &str,
-    login: &str,
+    login: &uuid::Uuid,
 ) -> Result<(), AppError> {
     let log_active_model = log_users_report_generation::ActiveModel {
         id: NotSet,
-        login: Set(login.to_string()),
+        login_id: Set(*login),
         report_query: Set(report_query.to_string()),
         report_path: Set(filepath_relative_to_storage),
         created_at: Set(Utc::now().naive_utc()),

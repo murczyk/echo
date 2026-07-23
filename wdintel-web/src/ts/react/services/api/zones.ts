@@ -177,6 +177,8 @@ type ZoneDatasourceGroupListRspLike = {
 type SignalGroupLoginLike =
   | string
   | {
+      loginId?: string;
+      login_id?: string;
       login?: string;
       deltaLogin?: string | null;
       delta_login?: string | null;
@@ -209,7 +211,7 @@ type MyAdminSignalGroupsRspLike = {
 };
 
 type MyAdminSignalGroupEditReferenceRspLike = {
-  logins?: string[] | null;
+  logins?: SignalGroupLoginLike[] | null;
   organisms?: MyOrganismLike[] | null;
   areasOfResponsibility?: AreaOfResponsibilityLike[] | null;
   areas_of_responsibility?: AreaOfResponsibilityLike[] | null;
@@ -597,9 +599,10 @@ function normalizeZoneDatasourceGroupAddRsp(
 
 function normalizeSignalGroupLogin(raw: SignalGroupLoginLike): SignalGroupLogin {
   if (typeof raw === 'string') {
-    return { login: raw, deltaLogin: null };
+    return { loginId: raw, login: raw, deltaLogin: null };
   }
   return {
+    loginId: raw.loginId ?? raw.login_id ?? raw.login ?? '',
     login: raw.login ?? '',
     deltaLogin: raw.deltaLogin ?? raw.delta_login ?? null,
   };
@@ -695,7 +698,7 @@ export async function fetchMyAdminGroupEditReference(
     toMyAdminSignalGroupEditReferenceReqBody({ masterKey }),
   );
   return {
-    logins: data?.logins ?? [],
+    logins: (data?.logins ?? []).map(normalizeSignalGroupLogin),
     organisms: (data?.organisms ?? []).map(normalizeMyOrganism),
     areasOfResponsibility: (data?.areasOfResponsibility ?? data?.areas_of_responsibility ?? []).map(
       normalizeAor,

@@ -51,7 +51,7 @@ pub struct DirectSubmitPayload {
     #[serde(default)]
     pub upload_urls: Option<Vec<String>>,
     #[serde(default)]
-    pub deleted_media_ids: Option<Vec<uuid::Uuid>>,
+    pub deleted_media_ids: Option<Vec<String>>,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]

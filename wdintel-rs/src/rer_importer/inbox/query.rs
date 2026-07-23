@@ -83,7 +83,7 @@ fn inbox_date_lte_expr(
 
 pub(crate) async fn build_filtered_inbox_query<'a, 'async_trait, C>(
     dbx: &'a C,
-    login: &str,
+    login: &uuid::Uuid,
     env: &Env,
     req: &InboxMessagesReq,
 ) -> Result<Select<signal_message::Entity>, AppError>
@@ -216,7 +216,7 @@ where
 }
 
 pub(crate) async fn build_inbox_digest_query(
-    login: &str,
+    login: &uuid::Uuid,
     env: &Env,
     req: &InboxMessagesReq,
 ) -> Result<String, AppError> {
@@ -234,7 +234,7 @@ pub(crate) async fn build_inbox_digest_query(
 }
 
 pub(crate) async fn build_inbox_query(
-    login: &str,
+    login: &uuid::Uuid,
     env: &Env,
     req: &InboxMessagesReq,
 ) -> Result<String, AppError> {
@@ -243,7 +243,7 @@ pub(crate) async fn build_inbox_query(
 
 pub(crate) async fn build_inbox_query_with_conn<'a, 'async_trait, C>(
     dbx: &'a C,
-    login: &str,
+    login: &uuid::Uuid,
     env: &Env,
     req: &InboxMessagesReq,
 ) -> Result<String, AppError>
@@ -309,7 +309,7 @@ where
                     .into_simple_expr(),
                     Expr::col((
                         sigint_inbox_item_tag::Entity,
-                        sigint_inbox_item_tag::Column::Login,
+                        sigint_inbox_item_tag::Column::LoginId,
                     ))
                     .into_simple_expr(),
                     Expr::col((

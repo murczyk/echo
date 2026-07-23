@@ -84,7 +84,7 @@ pub async fn effective_report_order_map(
 
 pub async fn update_report_order(
     dbx: &DatabaseConnection,
-    updated_by: &str,
+    updated_by_login_id: &uuid::Uuid,
     organism_id: Option<i64>,
     items: &[AorReportOrderUpdate],
 ) -> Result<Vec<AorReportOrderRow>, AppError> {
@@ -113,7 +113,7 @@ pub async fn update_report_order(
                 area_of_responsibility_id: Set(item.aor_id),
                 organism_id: Set(organism_id),
                 order_for_report: Set(item.order_for_report),
-                updated_by: Set(Some(updated_by.to_string())),
+                updated_by_login_id: Set(Some(*updated_by_login_id)),
                 updated_at: Set(now),
                 created_at: Set(now),
             }

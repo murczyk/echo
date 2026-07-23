@@ -1,6 +1,7 @@
 use crate::error::AppError;
 use crate::h;
 use crate::types::{Env, ShortContext};
+use crate::users::ensure_admin;
 use actix_identity::Identity;
 use actix_web::post;
 use actix_web::web::Json;
@@ -210,10 +211,7 @@ pub async fn signal_restapi_error_list(
     env: actix_web::web::Data<Env>,
     req: Json<SignalRestapiErrorListReq>,
 ) -> Result<Json<SignalRestapiErrorListRsp>, AppError> {
-    let login = user.id().c(h!())?;
-    crate::users::has_role(&env.dbx, &login, "Admin")
-        .await
-        .c(h!())?;
+    ensure_admin(&env.dbx, &user).await.c(h!())?;
     Ok(Json(SignalRestapiErrorListRsp {
         items: list_signal_restapi_errors(&env.dbx, req.into_inner()).await?,
     }))
@@ -224,10 +222,7 @@ pub async fn signal_restapi_error_latest(
     user: Identity,
     env: actix_web::web::Data<Env>,
 ) -> Result<Json<SignalRestapiErrorLatestRsp>, AppError> {
-    let login = user.id().c(h!())?;
-    crate::users::has_role(&env.dbx, &login, "Admin")
-        .await
-        .c(h!())?;
+    ensure_admin(&env.dbx, &user).await.c(h!())?;
     Ok(Json(SignalRestapiErrorLatestRsp {
         created_at: latest_signal_restapi_error_created_at(&env.dbx).await?,
     }))
@@ -239,10 +234,7 @@ pub async fn signal_restapi_error_counts(
     env: actix_web::web::Data<Env>,
     req: Json<SignalRestapiErrorCountsReq>,
 ) -> Result<Json<SignalRestapiErrorCountsRsp>, AppError> {
-    let login = user.id().c(h!())?;
-    crate::users::has_role(&env.dbx, &login, "Admin")
-        .await
-        .c(h!())?;
+    ensure_admin(&env.dbx, &user).await.c(h!())?;
     Ok(Json(SignalRestapiErrorCountsRsp {
         items: count_signal_restapi_errors_by_day(&env.dbx, req.into_inner())
             .await?,

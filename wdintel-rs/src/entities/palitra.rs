@@ -14,8 +14,7 @@ pub struct Model {
     pub name: String,
     #[sea_orm(column_type = "Text", nullable)]
     pub hex_legacy: Option<String>,
-    #[sea_orm(column_type = "Text", nullable)]
-    pub author: Option<String>,
+    pub author_login_id: Option<Uuid>,
     #[sea_orm(column_type = "Text", nullable)]
     pub source_file_name_legacy: Option<String>,
     pub deleted: bool,
@@ -51,8 +50,8 @@ pub enum Relation {
     GoiPalitraSync,
     #[sea_orm(
         belongs_to = "super::login::Entity",
-        from = "Column::Author",
-        to = "super::login::Column::Login",
+        from = "Column::AuthorLoginId",
+        to = "super::login::Column::Id",
         on_update = "NoAction",
         on_delete = "SetNull"
     )]

@@ -5,6 +5,7 @@ pub(crate) use crate::location::types::{
     FindSettlementReq, SettlementDetails, SettlementFileRow,
 };
 use crate::types::*;
+use crate::users::ensure_rer_role;
 use actix_web::web::Json;
 use actix_web::{get, post, HttpRequest};
 use itertools::Itertools;
@@ -34,8 +35,8 @@ async fn find_locations(
     env: actix_web::web::Data<Env>,
     req: Json<FindSettlementReq>,
 ) -> Result<Json<Vec<SettlementDetails>>, AppError> {
-    let login = user.id().c(h!())?;
-    crate::users::has_role(&env.dbx, &login, "Rer")
+    let login = crate::users::login_id_from_identity(&user)?;
+    crate::users::ensure_rer_role_by_id(&env.dbx, &login)
         .await
         .c(h!())?;
     let req = req.into_inner();
@@ -58,8 +59,8 @@ async fn find_locations_prefix(
     env: actix_web::web::Data<Env>,
     req: Json<FindSettlementReq>,
 ) -> Result<Json<Vec<SettlementDetails>>, AppError> {
-    let login = user.id().c(h!())?;
-    crate::users::has_role(&env.dbx, &login, "Rer")
+    let login = crate::users::login_id_from_identity(&user)?;
+    crate::users::ensure_rer_role_by_id(&env.dbx, &login)
         .await
         .c(h!())?;
     let req = req.into_inner();
@@ -79,7 +80,7 @@ async fn find_locations_prefix(
 
 async fn resolve_settlement_request_aor_id<C>(
     dbx: &C,
-    login: &str,
+    login: &uuid::Uuid,
     req: &FindSettlementReq,
 ) -> Result<Option<i64>, AppError>
 where
@@ -146,9 +147,7 @@ async fn fetch_regions(
     req: actix_web::web::Query<FetchRegionsReq>,
     env: actix_web::web::Data<Env>,
 ) -> Result<Json<Vec<String>>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
-        .await
-        .c(h!())?;
+    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
     let region_names =
         get_region_names(env.settlements.clone(), req.aor_id).c(h!())?;
     Ok(Json(region_names))

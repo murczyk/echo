@@ -3622,7 +3622,8 @@ loginReqEncoder struct =
 
 
 type alias User =
-    { name : String
+    { id : String
+    , name : String
     , roles : List (String)
     , sigintZoneId : Maybe (Int)
     , organismId : Maybe (Int)
@@ -3638,7 +3639,8 @@ type alias User =
 userEncoder : User -> Json.Encode.Value
 userEncoder struct =
     Json.Encode.object
-        [ ( "name", (Json.Encode.string) struct.name )
+        [ ( "id", (Json.Encode.string) struct.id )
+        , ( "name", (Json.Encode.string) struct.name )
         , ( "roles", (Json.Encode.list (Json.Encode.string)) struct.roles )
         , ( "sigint_zone_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.sigintZoneId )
         , ( "organism_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.organismId )
@@ -3764,7 +3766,8 @@ userInfoReqEncoder struct =
 
 
 type alias Login =
-    { login : String
+    { id : String
+    , login : String
     , roles : List (String)
     , createdAt : Int
     , deleted : Bool
@@ -3783,7 +3786,8 @@ type alias Login =
 loginEncoder : Login -> Json.Encode.Value
 loginEncoder struct =
     Json.Encode.object
-        [ ( "login", (Json.Encode.string) struct.login )
+        [ ( "id", (Json.Encode.string) struct.id )
+        , ( "login", (Json.Encode.string) struct.login )
         , ( "roles", (Json.Encode.list (Json.Encode.string)) struct.roles )
         , ( "created_at", (Json.Encode.int) struct.createdAt )
         , ( "deleted", (Json.Encode.bool) struct.deleted )
@@ -3861,7 +3865,8 @@ createLoginReqEncoder struct =
 
 
 type alias UpdateLoginReq =
-    { login : String
+    { id : String
+    , login : String
     , roles : Maybe (List (String))
     , sigintZoneId : Maybe (Int)
     , organismId : Int
@@ -3876,7 +3881,8 @@ type alias UpdateLoginReq =
 updateLoginReqEncoder : UpdateLoginReq -> Json.Encode.Value
 updateLoginReqEncoder struct =
     Json.Encode.object
-        [ ( "login", (Json.Encode.string) struct.login )
+        [ ( "id", (Json.Encode.string) struct.id )
+        , ( "login", (Json.Encode.string) struct.login )
         , ( "roles", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.string))) struct.roles )
         , ( "sigint_zone_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.sigintZoneId )
         , ( "organism_id", (Json.Encode.int) struct.organismId )
@@ -3940,7 +3946,7 @@ deactivationReasonTypeEncoder enum =
 type alias ApiIntegration =
     { id : Int
     , description : Maybe (String)
-    , apiUser : String
+    , apiUserLoginId : String
     , hasIggyConnection : Bool
     , iggyUrl : Maybe (String)
     , iggyLogin : Maybe (String)
@@ -3959,7 +3965,7 @@ apiIntegrationEncoder struct =
     Json.Encode.object
         [ ( "id", (Json.Encode.int) struct.id )
         , ( "description", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.description )
-        , ( "api_user", (Json.Encode.string) struct.apiUser )
+        , ( "api_user_login_id", (Json.Encode.string) struct.apiUserLoginId )
         , ( "has_iggy_connection", (Json.Encode.bool) struct.hasIggyConnection )
         , ( "iggy_url", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.iggyUrl )
         , ( "iggy_login", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.iggyLogin )
@@ -3988,7 +3994,7 @@ listApiIntegrationsRspEncoder struct =
 type alias UpsertApiIntegrationReq =
     { id : Maybe (Int)
     , description : Maybe (String)
-    , apiUser : String
+    , apiUserLoginId : String
     , hasIggyConnection : Bool
     , iggyUrl : Maybe (String)
     , iggyLogin : Maybe (String)
@@ -4004,7 +4010,7 @@ upsertApiIntegrationReqEncoder struct =
     Json.Encode.object
         [ ( "id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.id )
         , ( "description", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.description )
-        , ( "api_user", (Json.Encode.string) struct.apiUser )
+        , ( "api_user_login_id", (Json.Encode.string) struct.apiUserLoginId )
         , ( "has_iggy_connection", (Json.Encode.bool) struct.hasIggyConnection )
         , ( "iggy_url", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.iggyUrl )
         , ( "iggy_login", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.iggyLogin )
@@ -4246,7 +4252,7 @@ type alias OrganismKeywordSetDto =
     { id : Int
     , name : String
     , words : List (String)
-    , authorLogin : Maybe (String)
+    , authorLoginId : Maybe (String)
     , canEdit : Bool
     , canDelete : Bool
     }
@@ -4258,7 +4264,7 @@ organismKeywordSetDtoEncoder struct =
         [ ( "id", (Json.Encode.int) struct.id )
         , ( "name", (Json.Encode.string) struct.name )
         , ( "words", (Json.Encode.list (Json.Encode.string)) struct.words )
-        , ( "author_login", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.authorLogin )
+        , ( "author_login_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.authorLoginId )
         , ( "can_edit", (Json.Encode.bool) struct.canEdit )
         , ( "can_delete", (Json.Encode.bool) struct.canDelete )
         ]
@@ -4792,7 +4798,8 @@ zoneDatasourceGroupUpdateReqEncoder struct =
 
 
 type alias SignalGroupLogin =
-    { login : String
+    { loginId : String
+    , login : String
     , deltaLogin : Maybe (String)
     }
 
@@ -4800,7 +4807,8 @@ type alias SignalGroupLogin =
 signalGroupLoginEncoder : SignalGroupLogin -> Json.Encode.Value
 signalGroupLoginEncoder struct =
     Json.Encode.object
-        [ ( "login", (Json.Encode.string) struct.login )
+        [ ( "login_id", (Json.Encode.string) struct.loginId )
+        , ( "login", (Json.Encode.string) struct.login )
         , ( "delta_login", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.deltaLogin )
         ]
 
@@ -4872,7 +4880,7 @@ myAdminSignalGroupEditReferenceReqEncoder struct =
 
 
 type alias MyAdminSignalGroupEditReferenceRsp =
-    { logins : List (String)
+    { logins : List (SignalGroupLogin)
     , organisms : List (MyOrganism)
     , areasOfResponsibility : List (AreaOfResponsibility)
     }
@@ -4881,7 +4889,7 @@ type alias MyAdminSignalGroupEditReferenceRsp =
 myAdminSignalGroupEditReferenceRspEncoder : MyAdminSignalGroupEditReferenceRsp -> Json.Encode.Value
 myAdminSignalGroupEditReferenceRspEncoder struct =
     Json.Encode.object
-        [ ( "logins", (Json.Encode.list (Json.Encode.string)) struct.logins )
+        [ ( "logins", (Json.Encode.list (signalGroupLoginEncoder)) struct.logins )
         , ( "organisms", (Json.Encode.list (myOrganismEncoder)) struct.organisms )
         , ( "areas_of_responsibility", (Json.Encode.list (areaOfResponsibilityEncoder)) struct.areasOfResponsibility )
         ]
@@ -5388,7 +5396,7 @@ type alias Unit =
     , name : String
     , active : Bool
     , createdAt : Int
-    , createdBy : String
+    , createdByLoginId : String
     }
 
 
@@ -5405,7 +5413,7 @@ unitEncoder struct =
         , ( "name", (Json.Encode.string) struct.name )
         , ( "active", (Json.Encode.bool) struct.active )
         , ( "created_at", (Json.Encode.int) struct.createdAt )
-        , ( "created_by", (Json.Encode.string) struct.createdBy )
+        , ( "created_by_login_id", (Json.Encode.string) struct.createdByLoginId )
         ]
 
 
@@ -8552,7 +8560,7 @@ type alias SystemSettingsItem =
     , rerDutyPollIntervalSec : Int
     , createdAt : Int
     , updatedAt : Int
-    , updatedBy : Maybe (String)
+    , updatedByLoginId : Maybe (String)
     , deleted : Bool
     , shortUrlEnabled : Bool
     , supportNonRerInterceptions : Bool
@@ -8583,7 +8591,7 @@ systemSettingsItemEncoder struct =
         , ( "rer_duty_poll_interval_sec", (Json.Encode.int) struct.rerDutyPollIntervalSec )
         , ( "created_at", (Json.Encode.int) struct.createdAt )
         , ( "updated_at", (Json.Encode.int) struct.updatedAt )
-        , ( "updated_by", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.updatedBy )
+        , ( "updated_by_login_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.updatedByLoginId )
         , ( "deleted", (Json.Encode.bool) struct.deleted )
         , ( "short_url_enabled", (Json.Encode.bool) struct.shortUrlEnabled )
         , ( "support_non_rer_interceptions", (Json.Encode.bool) struct.supportNonRerInterceptions )
@@ -11242,6 +11250,7 @@ loginReqDecoder =
 userDecoder : Json.Decode.Decoder User
 userDecoder =
     Json.Decode.succeed User
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "roles" (Json.Decode.list (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sigint_zone_id" (Json.Decode.nullable (Json.Decode.int))))
@@ -11313,6 +11322,7 @@ userInfoReqDecoder =
 loginDecoder : Json.Decode.Decoder Login
 loginDecoder =
     Json.Decode.succeed Login
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "login" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "roles" (Json.Decode.list (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "created_at" (Json.Decode.int)))
@@ -11378,6 +11388,7 @@ createLoginReqDecoder =
 updateLoginReqDecoder : Json.Decode.Decoder UpdateLoginReq
 updateLoginReqDecoder =
     Json.Decode.succeed UpdateLoginReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "login" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "roles" (Json.Decode.nullable (Json.Decode.list (Json.Decode.string)))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sigint_zone_id" (Json.Decode.nullable (Json.Decode.int))))
@@ -11567,7 +11578,7 @@ organismKeywordSetDtoDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "words" (Json.Decode.list (Json.Decode.string))))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "author_login" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "author_login_id" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "can_edit" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "can_delete" (Json.Decode.bool)))
 
@@ -12113,6 +12124,7 @@ zoneDatasourceGroupUpdateReqDecoder =
 signalGroupLoginDecoder : Json.Decode.Decoder SignalGroupLogin
 signalGroupLoginDecoder =
     Json.Decode.succeed SignalGroupLogin
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "login_id" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "login" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "delta_login" (Json.Decode.nullable (Json.Decode.string))))
 
@@ -12153,7 +12165,7 @@ myAdminSignalGroupEditReferenceReqDecoder =
 myAdminSignalGroupEditReferenceRspDecoder : Json.Decode.Decoder MyAdminSignalGroupEditReferenceRsp
 myAdminSignalGroupEditReferenceRspDecoder =
     Json.Decode.succeed MyAdminSignalGroupEditReferenceRsp
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "logins" (Json.Decode.list (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "logins" (Json.Decode.list (signalGroupLoginDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "organisms" (Json.Decode.list (myOrganismDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "areas_of_responsibility" (Json.Decode.list (areaOfResponsibilityDecoder))))
 
@@ -12499,7 +12511,7 @@ unitDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "active" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "created_at" (Json.Decode.int)))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "created_by" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "created_by_login_id" (Json.Decode.string)))
 
 
 listUnitsReqDecoder : Json.Decode.Decoder ListUnitsReq
@@ -14402,7 +14414,7 @@ systemSettingsItemDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "rer_duty_poll_interval_sec" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "created_at" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "updated_at" (Json.Decode.int)))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "updated_by" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "updated_by_login_id" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "deleted" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "short_url_enabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "support_non_rer_interceptions" (Json.Decode.bool)))

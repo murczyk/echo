@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 pub struct Model {
     #[sea_orm(primary_key)]
     pub id: i64,
-    pub user_id: Option<String>,
+    pub login_id: Option<Uuid>,
     pub signal_message_id: i64,
     pub created_at: DateTime,
     pub deleted: bool,
@@ -19,6 +19,14 @@ pub struct Model {
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {
     #[sea_orm(
+        belongs_to = "super::login::Entity",
+        from = "Column::LoginId",
+        to = "super::login::Column::Id",
+        on_update = "NoAction",
+        on_delete = "NoAction"
+    )]
+    Login,
+    #[sea_orm(
         belongs_to = "super::signal_message::Entity",
         from = "Column::SignalMessageId",
         to = "super::signal_message::Column::Id",
@@ -26,6 +34,12 @@ pub enum Relation {
         on_delete = "NoAction"
     )]
     SignalMessage,
+}
+
+impl Related<super::login::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::Login.def()
+    }
 }
 
 impl Related<super::signal_message::Entity> for Entity {

@@ -5,6 +5,7 @@ use crate::messenger::group::{
 };
 use crate::sigint::aor::bl::collect_group_aors;
 use crate::types::*;
+use crate::users::{has_role, login_id_from_identity};
 use actix_web::post;
 use actix_web::web::Json;
 use chrono::{Duration, Utc};
@@ -27,7 +28,7 @@ pub async fn orphan_signal_groups(
     user: actix_identity::Identity,
     env: actix_web::web::Data<Env>,
 ) -> Result<Json<Vec<OrphanSignalGroupEntry>>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Admin")
+    has_role(&env.dbx, &login_id_from_identity(&user)?, "Admin")
         .await
         .context(h!())?;
 
@@ -43,7 +44,7 @@ pub async fn archived_signal_groups(
     user: actix_identity::Identity,
     env: actix_web::web::Data<Env>,
 ) -> Result<Json<Vec<OrphanSignalGroupEntry>>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Admin")
+    has_role(&env.dbx, &login_id_from_identity(&user)?, "Admin")
         .await
         .context(h!())?;
 
@@ -140,7 +141,7 @@ pub async fn signal_group_archive(
     env: actix_web::web::Data<Env>,
     req: Json<SignalGroupArchiveReq>,
 ) -> Result<Json<()>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Admin")
+    has_role(&env.dbx, &login_id_from_identity(&user)?, "Admin")
         .await
         .context(h!())?;
 
@@ -160,7 +161,7 @@ pub async fn signal_group_unarchive(
     env: actix_web::web::Data<Env>,
     req: Json<SignalGroupArchiveReq>,
 ) -> Result<Json<()>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Admin")
+    has_role(&env.dbx, &login_id_from_identity(&user)?, "Admin")
         .await
         .context(h!())?;
 
@@ -180,7 +181,7 @@ pub async fn group_stats_timeline(
     env: actix_web::web::Data<Env>,
     req: Json<SignalGroupStatsTimelineReq>,
 ) -> Result<Json<SignalGroupStatsTimelineRsp>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Admin")
+    has_role(&env.dbx, &login_id_from_identity(&user)?, "Admin")
         .await
         .context(h!())?;
 

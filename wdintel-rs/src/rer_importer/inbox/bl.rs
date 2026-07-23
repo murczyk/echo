@@ -66,7 +66,7 @@ pub struct InboxMessageDesc {
 }
 
 pub async fn get_inbox_map_items(
-    login: &str,
+    login: &uuid::Uuid,
     env: &Env,
     req: &InboxMessagesReq,
 ) -> Result<Vec<InboxMapItem>, AppError> {
@@ -98,9 +98,9 @@ pub async fn get_inbox_map_items(
 }
 
 pub async fn aggregate_to_inbox_messages(
-    login: &str,
+    login: &uuid::Uuid,
     messages: Vec<InboxMessageDesc>,
-    logins: &Vec<String>,
+    logins: &Vec<uuid::Uuid>,
     req: &&InboxMessagesReq,
     env: &&Env,
 ) -> Result<Vec<(i64, InboxMessage)>, AppError> {
@@ -139,7 +139,7 @@ pub async fn aggregate_to_inbox_messages(
             sigint_bookmark::Column::SignalMessageId
                 .eq_any(message_ids.clone()),
         )
-        .filter(sigint_bookmark::Column::UserId.eq(login.to_string()))
+        .filter(sigint_bookmark::Column::LoginId.eq(*login))
         .filter(sigint_bookmark::Column::Deleted.eq(false))
         .all(&env.dbx)
         .await
@@ -248,13 +248,9 @@ pub async fn aggregate_to_inbox_messages(
 
     let highlight_points = req.highlight_points.unwrap_or(false);
     let mut palitra_points_by_message = if highlight_points {
-        get_palitra_points_by_message(
-            &env.dbx,
-            login.to_string(),
-            message_ids.clone(),
-        )
-        .await
-        .context(h!())?
+        get_palitra_points_by_message(&env.dbx, *login, message_ids.clone())
+            .await
+            .context(h!())?
     } else {
         Default::default()
     };
@@ -460,11 +456,14 @@ pub async fn aggregate_to_inbox_messages(
     Ok(res)
 }
 
-fn comment_ownership_logins(login: &str, logins: &[String]) -> Vec<String> {
-    let mut res = vec![login.to_string()];
+fn comment_ownership_logins(
+    login: &uuid::Uuid,
+    logins: &[uuid::Uuid],
+) -> Vec<uuid::Uuid> {
+    let mut res = vec![*login];
     for login in logins {
         if !res.contains(login) {
-            res.push(login.clone());
+            res.push(*login);
         }
     }
     res
@@ -477,8 +476,8 @@ pub(crate) async fn find_editable_sigint_comments_by_signal_message_id_and_login
 >(
     db: &'a C,
     item_id: i64,
-    login: &str,
-    logins: &[String],
+    login: &uuid::Uuid,
+    logins: &[uuid::Uuid],
 ) -> Result<Vec<sigint_comment::Model>, AppError>
 where
     C: ConnectionTrait + 'async_trait,
@@ -486,15 +485,15 @@ where
     let owner_logins = comment_ownership_logins(login, logins);
     let mut comments = sigint_comment::Entity::find()
         .filter(sigint_comment::Column::SignalMessageId.eq(item_id))
-        .filter(sigint_comment::Column::Login.eq_any(owner_logins))
+        .filter(sigint_comment::Column::LoginId.eq_any(owner_logins))
         .filter(sigint_comment::Column::SigintPostId.is_null())
         .all(db)
         .await
         .c(h!())?;
 
     comments.sort_by(|a, b| {
-        let a_rank = if a.login == login { 0 } else { 1 };
-        let b_rank = if b.login == login { 0 } else { 1 };
+        let a_rank = if a.login_id == *login { 0 } else { 1 };
+        let b_rank = if b.login_id == *login { 0 } else { 1 };
         a_rank
             .cmp(&b_rank)
             .then(a.created_at.cmp(&b.created_at))
@@ -511,8 +510,8 @@ pub(crate) async fn find_editable_sigint_comment_by_signal_message_id_and_logins
 >(
     db: &'a C,
     item_id: i64,
-    login: &str,
-    logins: &[String],
+    login: &uuid::Uuid,
+    logins: &[uuid::Uuid],
 ) -> Result<Option<sigint_comment::Model>, AppError>
 where
     C: ConnectionTrait + 'async_trait,
@@ -530,8 +529,8 @@ where
 pub(crate) async fn upsert_editable_sigint_comment<'a, 'async_trait, C>(
     db: &'a C,
     item_id: i64,
-    login: &str,
-    logins: &[String],
+    login: &uuid::Uuid,
+    logins: &[uuid::Uuid],
     comment: &str,
 ) -> Result<(), AppError>
 where
@@ -546,7 +545,7 @@ where
         sigint_comment::ActiveModel {
             id: NotSet,
             signal_message_id: Set(item_id),
-            login: Set(login.to_string()),
+            login_id: Set(*login),
             comment: Set(comment.to_string()),
             created_at: NotSet,
             sigint_post_id: NotSet,
@@ -560,7 +559,7 @@ where
     sigint_comment::ActiveModel {
         id: Set(comment_to_update.id),
         signal_message_id: Set(item_id),
-        login: Set(comment_to_update.login),
+        login_id: Set(comment_to_update.login_id),
         comment: Set(comment.to_string()),
         created_at: NotSet,
         sigint_post_id: NotSet,
@@ -576,8 +575,8 @@ where
 pub(crate) async fn delete_editable_sigint_comments<'a, 'async_trait, C>(
     db: &'a C,
     item_id: i64,
-    login: &str,
-    logins: &[String],
+    login: &uuid::Uuid,
+    logins: &[uuid::Uuid],
 ) -> Result<(), AppError>
 where
     C: ConnectionTrait + 'async_trait,
@@ -614,11 +613,11 @@ where
 pub(crate) async fn find_sigint_comment_by_signal_message_id_and_logins(
     env: &Env,
     item_id: i64,
-    logins: &[String],
+    logins: &[uuid::Uuid],
 ) -> Result<Option<sigint_comment::Model>, AppError> {
-    let login = logins.first().map(String::as_str).unwrap_or_default();
+    let login = logins.first().copied().unwrap_or_default();
     find_editable_sigint_comment_by_signal_message_id_and_logins(
-        &env.dbx, item_id, login, logins,
+        &env.dbx, item_id, &login, logins,
     )
     .await
 }
@@ -655,7 +654,7 @@ pub async fn fill_callsigns(
 
 async fn get_palitra_points_by_message(
     dbx: &DatabaseConnection,
-    login: String,
+    login: uuid::Uuid,
     message_ids: Vec<i64>,
 ) -> Result<HashMap<i64, Vec<CNPoint>>, AppError> {
     let palitra_ids = collect_accessible_palitra_ids(login, dbx)
@@ -956,8 +955,8 @@ pub async fn submit_upsert_inbox_item(
     txn: &DatabaseTransaction,
     id: i64,
     message: &InboxMessage,
-    login: &str,
-    logins: &Vec<String>,
+    login: &uuid::Uuid,
+    logins: &Vec<uuid::Uuid>,
     location_mode: InboxLocationSubmitMode,
     parse_body_coordinates: bool,
     invalidate_body_derived_fields: bool,

@@ -34,9 +34,9 @@ pub async fn report_xlsx_networks_goi_to_buffer(
 
 pub async fn login_organism_id(
     dbx: &DatabaseConnection,
-    user_id: &str,
+    user_id: &uuid::Uuid,
 ) -> Result<Option<i64>, AppError> {
-    Ok(login::Entity::find_by_id(user_id.to_string())
+    Ok(login::Entity::find_by_id(*user_id)
         .one(dbx)
         .await
         .c(h!())?

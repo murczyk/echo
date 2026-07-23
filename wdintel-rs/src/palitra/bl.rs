@@ -7,6 +7,7 @@ use crate::palitra::types::*;
 use crate::palitra::{cancel_palitra_conversion, schedule_palitra_goi_delete};
 use crate::sigint::aor::bl::expand_aor_ids_to_descendants;
 use crate::types::*;
+use crate::users::has_role;
 use crate::utils::orm::ArrayColumnOps;
 use crate::{h, nlp};
 use actix_web::web::Data;
@@ -120,15 +121,15 @@ pub(crate) struct PalitraGoiSyncSummary {
 pub async fn collect_palitra_access_logins<'a, 'async_trait, C>(
     txn: &'a C,
     palitra_id: i64,
-) -> anyhow::Result<Vec<String>>
+) -> anyhow::Result<Vec<uuid::Uuid>>
 where
     C: ConnectionTrait + 'async_trait,
 {
     crate::entities::palitra_access_login::Entity::find()
         .filter(palitra_access_login::Column::PalitraId.eq(palitra_id))
         .select_only()
-        .column(palitra_access_login::Column::Login)
-        .into_tuple::<String>()
+        .column(palitra_access_login::Column::LoginId)
+        .into_tuple::<uuid::Uuid>()
         .all(txn)
         .await
         .c(h!())
@@ -356,7 +357,7 @@ pub async fn update_palitra_v2(
 }
 
 pub async fn list_all_palitras_detailed(
-    login: String,
+    login: uuid::Uuid,
     dbx: &DatabaseConnection,
 ) -> anyhow::Result<Vec<PalitraDetails>> {
     let palitra_ids =
@@ -366,7 +367,7 @@ pub async fn list_all_palitras_detailed(
 }
 
 pub async fn list_all_palitras_v2(
-    login: String,
+    login: uuid::Uuid,
     dbx: &DatabaseConnection,
 ) -> anyhow::Result<Vec<PalitraReadV2>> {
     let palitra_ids =
@@ -375,7 +376,7 @@ pub async fn list_all_palitras_v2(
 }
 
 pub async fn list_map_palitras_v2(
-    login: String,
+    login: uuid::Uuid,
     dbx: &DatabaseConnection,
 ) -> anyhow::Result<Vec<PalitraReadV2>> {
     let palitra_ids =
@@ -440,7 +441,7 @@ async fn filter_map_palitra_ids(
 }
 
 pub async fn read_palitra_v2(
-    login: String,
+    login: uuid::Uuid,
     palitra_id: i64,
     dbx: &DatabaseConnection,
 ) -> anyhow::Result<PalitraReadV2> {
@@ -457,7 +458,7 @@ pub async fn read_palitra_v2(
 }
 
 pub async fn read_palitra_preview_v2(
-    login: String,
+    login: uuid::Uuid,
     palitra_id: i64,
     dbx: &DatabaseConnection,
 ) -> anyhow::Result<PalitraReadV2> {
@@ -474,7 +475,7 @@ pub async fn read_palitra_preview_v2(
 }
 
 pub async fn search_palitra_points_by_labels(
-    login: String,
+    login: uuid::Uuid,
     req: PalitraSearchPointsReq,
     dbx: &DatabaseConnection,
 ) -> anyhow::Result<Vec<PalitraPoints>> {
@@ -603,7 +604,7 @@ pub async fn search_palitra_points_by_labels(
 }
 
 pub async fn suggest_palitra_point_labels(
-    login: String,
+    login: uuid::Uuid,
     req: PalitraPointLabelSuggestReq,
     dbx: &DatabaseConnection,
 ) -> anyhow::Result<Vec<PalitraPointLabelSuggestRsp>> {
@@ -771,7 +772,7 @@ fn build_label_pattern(label: &str, surround: bool) -> String {
 }
 
 pub(crate) fn palitra_search_cache_key(
-    login: &str,
+    login: &uuid::Uuid,
     req: &PalitraSearchPointsReq,
 ) -> String {
     let mut palitra_ids = req.palitra_ids.clone();
@@ -797,7 +798,7 @@ pub(crate) fn palitra_search_cache_key(
 }
 
 pub(crate) fn palitra_suggest_cache_key(
-    login: &str,
+    login: &uuid::Uuid,
     req: &PalitraPointLabelSuggestReq,
 ) -> String {
     let mut palitra_ids = req.palitra_ids.clone();
@@ -835,7 +836,7 @@ pub(crate) async fn write_cached_json<T: Serialize>(
 }
 
 pub async fn list_palitra_points_by_viewport_bounds(
-    login: String,
+    login: uuid::Uuid,
     req: PalitraPointsReq,
     dbx: &DatabaseConnection,
 ) -> anyhow::Result<Vec<PalitraPoints>> {
@@ -927,7 +928,7 @@ pub async fn list_palitra_points_by_viewport_bounds(
 }
 
 pub async fn list_all_palitras(
-    login: String,
+    login: uuid::Uuid,
     dbx: &DatabaseConnection,
 ) -> anyhow::Result<Vec<Palitra>> {
     let palitra_ids =
@@ -996,7 +997,7 @@ pub async fn delete_palitra(
 }
 
 pub async fn create_palitra<'a, 'async_trait, C>(
-    author_login: String,
+    author_login_id: uuid::Uuid,
     req: CreatePalitraReq,
     dbx: &'a C,
 ) -> anyhow::Result<Palitra>
@@ -1004,7 +1005,7 @@ where
     C: ConnectionTrait + 'async_trait,
 {
     let palitra_am = palitra::ActiveModel {
-        author: Set(Some(author_login)),
+        author_login_id: Set(Some(author_login_id)),
         ..Default::default()
     };
     let palitra = update_palitra_from_req(
@@ -1100,7 +1101,7 @@ pub struct PalitraFolderSyncItem {
 }
 
 pub async fn update_accessible_palitra_archive_flag(
-    login: String,
+    login: uuid::Uuid,
     palitra_id: i64,
     is_archived: bool,
     dbx: &DatabaseConnection,
@@ -1124,7 +1125,7 @@ pub async fn update_accessible_palitra_archive_flag(
 }
 
 pub async fn assign_folder_to_accessible_palitras(
-    login: String,
+    login: uuid::Uuid,
     palitra_ids: Vec<i64>,
     folder: String,
     dbx: &DatabaseConnection,
@@ -1157,7 +1158,7 @@ pub async fn assign_folder_to_accessible_palitras(
 }
 
 pub async fn rename_accessible_palitra_folder(
-    login: String,
+    login: uuid::Uuid,
     from_folder: String,
     to_folder: String,
     dbx: &DatabaseConnection,
@@ -1213,14 +1214,14 @@ pub async fn rename_accessible_palitra_folder(
 }
 
 pub async fn archive_accessible_palitra_folder(
-    login: String,
+    login: uuid::Uuid,
     folder: String,
     is_archived: bool,
     dbx: &DatabaseConnection,
     txn: &DatabaseTransaction,
 ) -> anyhow::Result<Vec<i64>> {
     let palitra_ids =
-        collect_accessible_palitra_ids_in_folder(login.clone(), folder, dbx)
+        collect_accessible_palitra_ids_in_folder(login, folder, dbx)
             .await
             .c(h!())?;
     let palitra_ids = collect_mutable_palitra_models(login, palitra_ids, dbx)
@@ -1281,14 +1282,14 @@ async fn collect_goi_owned_convertible_palitra_ids(
 }
 
 async fn has_admin_role(
-    login: &str,
+    login: &uuid::Uuid,
     dbx: &DatabaseConnection,
 ) -> anyhow::Result<bool> {
-    Ok(crate::users::has_role(dbx, login, "Admin").await.is_ok())
+    Ok(has_role(dbx, login, "Admin").await.is_ok())
 }
 
 async fn collect_mutable_palitra_models_for_accessible_login(
-    login: String,
+    login: uuid::Uuid,
     dbx: &DatabaseConnection,
 ) -> anyhow::Result<Vec<palitra::Model>> {
     if has_admin_role(&login, dbx).await.c(h!())? {
@@ -1300,7 +1301,7 @@ async fn collect_mutable_palitra_models_for_accessible_login(
     }
     let login_filter = login;
     palitra::Entity::find()
-        .filter(palitra::Column::Author.eq(login_filter))
+        .filter(palitra::Column::AuthorLoginId.eq(login_filter))
         .filter(palitra::Column::Deleted.eq(false))
         .all(dbx)
         .await
@@ -1308,13 +1309,12 @@ async fn collect_mutable_palitra_models_for_accessible_login(
 }
 
 async fn collect_accessible_requested_palitra_ids(
-    login: String,
+    login: uuid::Uuid,
     palitra_ids: Vec<i64>,
     dbx: &DatabaseConnection,
 ) -> anyhow::Result<Vec<i64>> {
-    let accessible_ids = collect_accessible_palitra_ids(login.clone(), dbx)
-        .await
-        .c(h!())?;
+    let accessible_ids =
+        collect_accessible_palitra_ids(login, dbx).await.c(h!())?;
     let accessible_ids: HashSet<i64> = accessible_ids.into_iter().collect();
     Ok(palitra_ids
         .into_iter()
@@ -1323,7 +1323,7 @@ async fn collect_accessible_requested_palitra_ids(
 }
 
 async fn collect_mutable_palitra_models(
-    login: String,
+    login: uuid::Uuid,
     palitra_ids: Vec<i64>,
     dbx: &DatabaseConnection,
 ) -> anyhow::Result<Vec<palitra::Model>> {
@@ -1339,13 +1339,10 @@ async fn collect_mutable_palitra_models(
             .await
             .c(h!());
     }
-    let palitra_ids = collect_accessible_requested_palitra_ids(
-        login.clone(),
-        palitra_ids,
-        dbx,
-    )
-    .await
-    .c(h!())?;
+    let palitra_ids =
+        collect_accessible_requested_palitra_ids(login, palitra_ids, dbx)
+            .await
+            .c(h!())?;
     if palitra_ids.is_empty() {
         return Ok(vec![]);
     }
@@ -1355,13 +1352,12 @@ async fn collect_mutable_palitra_models(
         .all(dbx)
         .await
         .c(h!())?;
-    palitras
-        .retain(|palitra| palitra.author.as_deref() == Some(login.as_str()));
+    palitras.retain(|palitra| palitra.author_login_id == Some(login));
     Ok(palitras)
 }
 
 pub async fn collect_accessible_palitra_ids_in_folder(
-    login: String,
+    login: uuid::Uuid,
     folder: String,
     dbx: &DatabaseConnection,
 ) -> anyhow::Result<Vec<i64>> {
@@ -1393,7 +1389,7 @@ pub async fn collect_accessible_palitra_ids_in_folder(
 }
 
 pub async fn collect_downloadable_palitra_files(
-    login: String,
+    login: uuid::Uuid,
     palitra_ids: Vec<i64>,
     dbx: &DatabaseConnection,
 ) -> anyhow::Result<Vec<(palitra::Model, Option<palitra_geometry::Model>)>> {
@@ -1426,7 +1422,7 @@ pub async fn collect_downloadable_palitra_files(
 }
 
 pub async fn collect_downloadable_palitra_details(
-    login: String,
+    login: uuid::Uuid,
     palitra_ids: Vec<i64>,
     dbx: &DatabaseConnection,
 ) -> anyhow::Result<Vec<PalitraReadV2>> {
@@ -2293,13 +2289,21 @@ where
                 .await
                 .c(h!())?
         };
+    let author = match palitra_model.author_login_id {
+        Some(author_login_id) => {
+            crate::users::login_names_by_ids(dbx, vec![author_login_id])
+                .await?
+                .remove(&author_login_id)
+        }
+        None => None,
+    };
     Ok(Palitra {
         id: palitra_id,
         name: palitra_model.name,
         folder: normalize_palitra_folder_from_db(palitra_model.folder),
         is_archived: palitra_model.is_archived,
         color_hex,
-        author: palitra_model.author,
+        author,
         source_file_name,
         last_uploaded_at_ts,
         conversion_status: palitra_model.conversion_status,
@@ -2315,7 +2319,10 @@ where
         geometry,
         access_aor_id: access_aor_ids,
         access_organism_ids,
-        access_logins,
+        access_logins: access_logins
+            .into_iter()
+            .map(|login_id| login_id.to_string())
+            .collect(),
     })
 }
 
@@ -2471,7 +2478,7 @@ where
 }
 
 pub(crate) async fn collect_accessible_palitra_ids<'a, 'async_trait, C>(
-    login: String,
+    login: uuid::Uuid,
     dbx: &'a C,
 ) -> anyhow::Result<Vec<i64>>
 where
@@ -2479,9 +2486,9 @@ where
 {
     let scope = load_login_access_scope(dbx, &login).await.c(h!())?;
     let mut filter = Condition::any()
-        .add(palitra::Column::Author.eq(login.clone()))
+        .add(palitra::Column::AuthorLoginId.eq(login))
         .add(
-            Expr::exists(build_palitra_access_login_exists(login.clone()))
+            Expr::exists(build_palitra_access_login_exists(login))
                 .into_condition(),
         )
         .add(
@@ -2519,7 +2526,7 @@ where
 
 async fn load_login_access_scope<'a, 'async_trait, C>(
     dbx: &'a C,
-    login_name: &str,
+    login_id: &uuid::Uuid,
 ) -> anyhow::Result<LoginAccessScope>
 where
     C: ConnectionTrait + 'async_trait,
@@ -2527,7 +2534,7 @@ where
     let organism_aors = organism_aor::Entity::find()
         .join(JoinType::InnerJoin, organism_aor::Relation::Organism.def())
         .join(JoinType::InnerJoin, organism::Relation::Login.def())
-        .filter(login::Column::Login.eq(login_name.to_string()))
+        .filter(login::Column::Id.eq(*login_id))
         .all(dbx)
         .await
         .c(h!())?;
@@ -2567,9 +2574,9 @@ fn build_palitra_access_organism_exists(
         .into_query()
 }
 
-fn build_palitra_access_login_exists(login: String) -> SelectStatement {
+fn build_palitra_access_login_exists(login: uuid::Uuid) -> SelectStatement {
     palitra_access_login::Entity::find()
-        .filter(palitra_access_login::Column::Login.eq(login))
+        .filter(palitra_access_login::Column::LoginId.eq(login))
         .filter(
             Expr::col((
                 palitra_access_login::Entity,
@@ -2582,9 +2589,9 @@ fn build_palitra_access_login_exists(login: String) -> SelectStatement {
         .into_query()
 }
 
-fn build_goi_import_access_login_exists(login: String) -> SelectStatement {
+fn build_goi_import_access_login_exists(login: uuid::Uuid) -> SelectStatement {
     let access_exists = goi_integration_access_login::Entity::find()
-        .filter(goi_integration_access_login::Column::Login.eq(login))
+        .filter(goi_integration_access_login::Column::LoginId.eq(login))
         .filter(
             Expr::col((
                 goi_integration_access_login::Entity,
@@ -2804,10 +2811,13 @@ where
             }
             let logins = logins
                 .into_iter()
+                .map(|login_id| Uuid::parse_str(&login_id).c(h!()))
+                .collect::<Result<Vec<_>, _>>()?
+                .into_iter()
                 .map(|login| palitra_access_login::ActiveModel {
                     id: NotSet,
                     palitra_id: Set(palitra_id),
-                    login: Set(login),
+                    login_id: Set(login),
                     created_at: NotSet,
                 })
                 .collect_vec();
@@ -2932,7 +2942,7 @@ mod tests {
         let req =
             create_palitra_search_request(palitra.id, vec![label.clone()])
                 .await;
-        let res = search_palitra_points_by_labels(login.login, req, &env.dbx)
+        let res = search_palitra_points_by_labels(login.id, req, &env.dbx)
             .await
             .unwrap();
         assert_eq!(res.len(), 1);
@@ -2961,7 +2971,7 @@ mod tests {
             vec![label_search.clone()],
         )
         .await;
-        let res = search_palitra_points_by_labels(login.login, req, &env.dbx)
+        let res = search_palitra_points_by_labels(login.id, req, &env.dbx)
             .await
             .unwrap();
         assert_eq!(res.len(), 1);
@@ -2991,7 +3001,7 @@ mod tests {
             vec![label_search.clone()],
         )
         .await;
-        let res = search_palitra_points_by_labels(login.login, req, &env.dbx)
+        let res = search_palitra_points_by_labels(login.id, req, &env.dbx)
             .await
             .unwrap();
         assert_eq!(res.len(), 1);
@@ -3021,7 +3031,7 @@ mod tests {
             vec![label_search.clone()],
         )
         .await;
-        let res = search_palitra_points_by_labels(login.login, req, &env.dbx)
+        let res = search_palitra_points_by_labels(login.id, req, &env.dbx)
             .await
             .unwrap();
         assert_eq!(res.len(), 1);
@@ -3041,7 +3051,7 @@ mod tests {
             name: "Updated Palitra".to_string(),
             color_hex: "#00ff00".to_string(),
             access: PalitraAccess::ByLogins {
-                logins: vec![login.login.clone()],
+                logins: vec![login.id.to_string()],
             },
             source_file_name: None,
             last_uploaded_at_ts: None,
@@ -3085,7 +3095,7 @@ mod tests {
             name: "Updated Palitra V2".to_string(),
             color_hex: "#abcdef".to_string(),
             access: PalitraAccess::ByLogins {
-                logins: vec![login.login.clone()],
+                logins: vec![login.id.to_string()],
             },
             source_file_name: Some("updated-file.kmz".to_string()),
             last_uploaded_at_ts: None,
@@ -3129,7 +3139,7 @@ mod tests {
             .unwrap();
 
         let login = find_test_login(&env.dbx).await.unwrap();
-        let palitra_ids = collect_accessible_palitra_ids(login.login, &env.dbx)
+        let palitra_ids = collect_accessible_palitra_ids(login.id, &env.dbx)
             .await
             .unwrap();
 
@@ -3147,7 +3157,7 @@ mod tests {
             palitra::ActiveModel {
                 name: Set("Login Scoped Palitra".to_string()),
                 hex_legacy: Set(Some("#abcdef".into())),
-                author: Set(None),
+                author_login_id: Set(None),
                 deleted: Set(false),
                 created_at: Set(now),
                 ..Default::default()
@@ -3169,14 +3179,14 @@ mod tests {
         palitra_access_login::ActiveModel {
             id: NotSet,
             palitra_id: Set(palitra.id),
-            login: Set(login.login.clone()),
+            login_id: Set(login.id),
             created_at: Set(now),
         }
         .insert(&env.dbx)
         .await
         .unwrap();
 
-        let palitra_ids = collect_accessible_palitra_ids(login.login, &env.dbx)
+        let palitra_ids = collect_accessible_palitra_ids(login.id, &env.dbx)
             .await
             .unwrap();
 
@@ -3196,7 +3206,7 @@ mod tests {
             palitra::ActiveModel {
                 name: Set("Organism Scoped Palitra".to_string()),
                 hex_legacy: Set(Some("#123abc".into())),
-                author: Set(None),
+                author_login_id: Set(None),
                 deleted: Set(false),
                 created_at: Set(now),
                 ..Default::default()
@@ -3225,7 +3235,7 @@ mod tests {
         .await
         .unwrap();
 
-        let palitra_ids = collect_accessible_palitra_ids(login.login, &env.dbx)
+        let palitra_ids = collect_accessible_palitra_ids(login.id, &env.dbx)
             .await
             .unwrap();
 
@@ -3266,6 +3276,7 @@ mod tests {
         let parent_login = mk_login(
             &env.dbx,
             login::ActiveModel {
+                id: NotSet,
                 login: Set("parent-aor-login".to_string()),
                 organism_id: Set(Some(parent_organism.id)),
                 created_at: Set(now),
@@ -3308,7 +3319,7 @@ mod tests {
         .unwrap();
 
         let palitra_ids =
-            collect_accessible_palitra_ids(parent_login.login, &env.dbx)
+            collect_accessible_palitra_ids(parent_login.id, &env.dbx)
                 .await
                 .unwrap();
 
@@ -3324,9 +3335,8 @@ mod tests {
         let palitra = find_test_palitra(&env.dbx).await.unwrap();
         let palitra_id = palitra.id;
 
-        let map_palitras = list_map_palitras_v2(login.login.clone(), &env.dbx)
-            .await
-            .unwrap();
+        let map_palitras =
+            list_map_palitras_v2(login.id, &env.dbx).await.unwrap();
         assert!(map_palitras
             .iter()
             .any(|item| item.palitra.id == palitra_id));
@@ -3335,12 +3345,10 @@ mod tests {
         palitra.is_archived = Set(true);
         let palitra = palitra.update(&env.dbx).await.unwrap();
 
-        let all_palitras = list_all_palitras_v2(login.login.clone(), &env.dbx)
-            .await
-            .unwrap();
-        let map_palitras = list_map_palitras_v2(login.login.clone(), &env.dbx)
-            .await
-            .unwrap();
+        let all_palitras =
+            list_all_palitras_v2(login.id, &env.dbx).await.unwrap();
+        let map_palitras =
+            list_map_palitras_v2(login.id, &env.dbx).await.unwrap();
 
         assert!(all_palitras
             .iter()
@@ -3356,9 +3364,8 @@ mod tests {
         );
         let palitra = palitra.update(&env.dbx).await.unwrap();
 
-        let map_palitras = list_map_palitras_v2(login.login.clone(), &env.dbx)
-            .await
-            .unwrap();
+        let map_palitras =
+            list_map_palitras_v2(login.id, &env.dbx).await.unwrap();
         assert!(!map_palitras
             .iter()
             .any(|item| item.palitra.id == palitra_id));
@@ -3369,7 +3376,7 @@ mod tests {
         palitra.update(&env.dbx).await.unwrap();
 
         let map_palitras =
-            list_map_palitras_v2(login.login, &env.dbx).await.unwrap();
+            list_map_palitras_v2(login.id, &env.dbx).await.unwrap();
         assert!(!map_palitras
             .iter()
             .any(|item| item.palitra.id == palitra_id));
@@ -3388,7 +3395,7 @@ mod tests {
     async fn mk_folder_palitra_for_test(
         dbx: &sea_orm::DatabaseConnection,
         name: &str,
-        author: &str,
+        author_login_id: uuid::Uuid,
         folder: &str,
     ) -> palitra::Model {
         mk_palitra(
@@ -3396,7 +3403,7 @@ mod tests {
             palitra::ActiveModel {
                 name: Set(name.to_string()),
                 hex_legacy: Set(Some("#ffffff".to_string())),
-                author: Set(Some(author.to_string())),
+                author_login_id: Set(Some(author_login_id)),
                 deleted: Set(false),
                 folder: Set(Some(folder.to_string())),
                 created_at: Set(Utc::now().naive_utc()),
@@ -3431,7 +3438,7 @@ mod tests {
             api_login: Set(None),
             api_password: Set(None),
             disable_goi_to_echo_palitra_sync: Set(false),
-            maintainer_login: Set(Some(login.login)),
+            maintainer_login_id: Set(Some(login.id)),
             pause_worker: Set(false),
         }
         .insert(dbx)
@@ -3596,14 +3603,14 @@ mod tests {
         let editable = mk_folder_palitra_for_test(
             &env.dbx,
             "mixed-rename-editable",
-            &login.login,
+            login.id,
             folder,
         )
         .await;
         let goi_owned = mk_folder_palitra_for_test(
             &env.dbx,
             "mixed-rename-goi-owned",
-            &login.login,
+            login.id,
             folder,
         )
         .await;
@@ -3622,7 +3629,7 @@ mod tests {
 
         let txn = env.dbx.begin().await.unwrap();
         let sync_items = rename_accessible_palitra_folder(
-            login.login,
+            login.id,
             folder.to_string(),
             "mixed-renamed".to_string(),
             &env.dbx,
@@ -3662,14 +3669,14 @@ mod tests {
         let editable = mk_folder_palitra_for_test(
             &env.dbx,
             "mixed-archive-editable",
-            &login.login,
+            login.id,
             folder,
         )
         .await;
         let goi_owned = mk_folder_palitra_for_test(
             &env.dbx,
             "mixed-archive-goi-owned",
-            &login.login,
+            login.id,
             folder,
         )
         .await;
@@ -3688,7 +3695,7 @@ mod tests {
 
         let txn = env.dbx.begin().await.unwrap();
         let palitra_ids = archive_accessible_palitra_folder(
-            login.login,
+            login.id,
             folder.to_string(),
             true,
             &env.dbx,
@@ -3721,7 +3728,7 @@ mod tests {
         let palitra = mk_folder_palitra_for_test(
             &env.dbx,
             "mixed-delete-goi-owned",
-            &login.login,
+            login.id,
             "mixed-delete",
         )
         .await;
@@ -3740,9 +3747,7 @@ mod tests {
         let env = actix_web::web::Data::from(env);
 
         let deleted = super::super::delete_palitra_from_folder_if_allowed(
-            palitra.id,
-            &login.login,
-            &env,
+            palitra.id, &login.id, &env,
         )
         .await
         .unwrap();
@@ -3933,7 +3938,7 @@ mod tests {
         palitra.update(&env.dbx).await.unwrap();
 
         let palitra_ids = collect_accessible_palitra_ids_in_folder(
-            login.login,
+            login.id,
             "North/Sub".to_string(),
             &env.dbx,
         )

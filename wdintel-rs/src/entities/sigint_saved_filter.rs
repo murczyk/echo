@@ -16,12 +16,26 @@ pub struct Model {
     pub name: String,
     #[sea_orm(column_type = "JsonBinary")]
     pub req: Json,
-    #[sea_orm(column_type = "Text", nullable)]
-    pub login: Option<String>,
+    pub login_id: Option<Uuid>,
     pub r#type: Option<SigintSavedFilterTypeEnum>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+pub enum Relation {
+    #[sea_orm(
+        belongs_to = "super::login::Entity",
+        from = "Column::LoginId",
+        to = "super::login::Column::Id",
+        on_update = "NoAction",
+        on_delete = "NoAction"
+    )]
+    Login,
+}
+
+impl Related<super::login::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::Login.def()
+    }
+}
 
 impl ActiveModelBehavior for ActiveModel {}

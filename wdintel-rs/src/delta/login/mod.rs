@@ -132,7 +132,7 @@ async fn perform_login(
     }
     if let Some(login) = login_validation.login_model {
         let extensions = req.extensions();
-        Identity::login(&extensions, login.login).context(h!())?;
+        Identity::login(&extensions, login.id.to_string()).context(h!())?;
         return Ok(None);
     }
     let mut login_obfuscated = login.clone();

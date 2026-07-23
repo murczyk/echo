@@ -135,7 +135,6 @@ pub async fn oneoff_tag_messages_report(
 ) -> Result<(), AppError> {
     info!("starting oneoff_tag_messages_report...");
     let db = crate::new_pg_pool_from_mode(mode).await.c(h!())?;
-
     let start_date = parse_local_date(&ps.start).c(h!())?;
     let end_date = parse_local_date(&ps.end).c(h!())?;
     if end_date < start_date {
@@ -169,6 +168,7 @@ pub async fn oneoff_etalonka_report_networks_from_rer_analysis(
 ) -> Result<(), AppError> {
     info!("starting oneoff_etalonka_report_networks_from_rer_analysis...");
     let db = crate::new_pg_pool_from_mode(mode).await.c(h!())?;
+    let login_id = crate::users::login_id_by_name(&db, &ps.login).await?;
 
     let (start_date, end_date, start_ms, end_ms) =
         parse_date_range_to_millis(&ps.start, &ps.end).c(h!())?;
@@ -182,7 +182,7 @@ pub async fn oneoff_etalonka_report_networks_from_rer_analysis(
 
     pb.set_message("resolving groups");
     let groups =
-        crate::messenger::group::get_identity_sigint_groups(&db, &ps.login)
+        crate::messenger::group::get_identity_sigint_groups(&db, &login_id)
             .await
             .c(h!())?;
     pb.inc(1);
@@ -193,7 +193,7 @@ pub async fn oneoff_etalonka_report_networks_from_rer_analysis(
     let networks =
         crate::rer_importer::analysis::stats::fetch_networks_for_login(
             &analysis_req,
-            &ps.login,
+            &login_id,
             &db,
             groups.clone(),
         )
@@ -221,7 +221,7 @@ pub async fn oneoff_etalonka_report_networks_from_rer_analysis(
     let etalonka_data =
         crate::sigint::etalonka::collect_etalonka_data_with_progress(
             &db,
-            &ps.login,
+            &login_id,
             groups,
             networks_data,
             &report_req.etalonka_type,

@@ -17,7 +17,7 @@ pub struct NetworkDetails {
     pub operation_mode: Option<String>,
     pub operation_type: Option<String>,
     pub operation_period: Option<String>,
-    pub updated_by: Option<String>,
+    pub updated_by_login_id: Option<String>,
     pub updated_at: NaiveDateTime,
     pub active_from: Option<NaiveDateTime>,
     pub active_to: Option<NaiveDateTime>,

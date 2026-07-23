@@ -16,14 +16,28 @@ pub struct Model {
     pub created_at: DateTime,
     pub is_resolved: bool,
     pub resolved_at: Option<DateTime>,
-    #[sea_orm(column_type = "Text", nullable)]
-    pub scheduled_by: Option<String>,
+    pub scheduled_by_login_id: Option<Uuid>,
     pub status: EchoMissingMessageStatus,
     #[sea_orm(column_type = "Text", nullable)]
     pub error: Option<String>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+pub enum Relation {
+    #[sea_orm(
+        belongs_to = "super::login::Entity",
+        from = "Column::ScheduledByLoginId",
+        to = "super::login::Column::Id",
+        on_update = "NoAction",
+        on_delete = "NoAction"
+    )]
+    Login,
+}
+
+impl Related<super::login::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::Login.def()
+    }
+}
 
 impl ActiveModelBehavior for ActiveModel {}

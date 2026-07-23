@@ -990,7 +990,7 @@ async fn import_sigint_network_descriptions(
         descriptions_to_create.push(sigint_network_description::ActiveModel {
             id: NotSet,
             network_id: Set(*network_id),
-            login: Set(SYSTEM_LOGIN_NAME.to_string()),
+            login_id: Set(crate::users::system_login_id(db).await?),
             r#type: Set(import_desc.r#type),
             topic: Set(import_desc.topic),
             description: Set(import_desc.description),
@@ -1608,7 +1608,7 @@ where
         let Some(rec) = network_models.get(&row.recording.id) else {
             continue;
         };
-        if let Some(login) = rec.updated_by.as_ref() {
+        if let Some(login) = rec.updated_by_login_id.as_ref() {
             required_logins.insert(login.to_string());
         }
     }
@@ -1637,6 +1637,7 @@ where
     let to_insert = missing_logins
         .into_iter()
         .map(|login| login::ActiveModel {
+            id: Set(uuid::Uuid::now_v7()),
             login: Set(login),
             password: Set(None),
             roles: Set(json!([])),
@@ -2311,7 +2312,7 @@ async fn merge_all(
                 match kind {
                     DataKind::Units => {
                         crate::sigint::unit::merge_units(
-                            "system".to_string(),
+                            crate::users::system_login_id(db).await?,
                             db,
                             id_2,
                             id_1,
@@ -2322,7 +2323,12 @@ async fn merge_all(
                     DataKind::Networks => {
                         let txn = db.begin().await.c(h!())?;
                         crate::sigint::network::merge::merge_two_networks(
-                            &txn, "system", false, true, id_2, id_1,
+                            &txn,
+                            &crate::users::system_login_id(db).await?,
+                            false,
+                            true,
+                            id_2,
+                            id_1,
                         )
                         .await
                         .c(h!())?;

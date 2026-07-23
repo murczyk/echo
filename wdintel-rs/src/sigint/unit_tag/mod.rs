@@ -817,7 +817,7 @@ mod tests {
             location: String::new(),
             deleted: false,
             created_at: dt,
-            updated_by: None,
+            updated_by_login_id: None,
             updated_at: dt,
             radio_station: None,
             purpose: None,

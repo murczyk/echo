@@ -13,7 +13,7 @@ use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, QuerySelect};
 
 pub async fn merge_two_networks(
     txn: &DatabaseTransaction,
-    login: &str,
+    login: &uuid::Uuid,
     perform_merge_check: bool,
     merge_inactive: bool,
     network_id_from: i64,
@@ -119,7 +119,7 @@ pub async fn merge_two_networks(
     network_to_model.location = Set(new_location.unwrap_or_default());
     network_to_model.radio_station = Set(new_radio_station);
     network_to_model.updated_at = Set(Utc::now().naive_utc());
-    network_to_model.updated_by = Set(Some(login.to_string()));
+    network_to_model.updated_by_login_id = Set(Some(*login));
     network_to_model.active_from = Set(network_active_from);
     network_to_model.active_to = Set(network_active_to);
     network_to_model.update(txn).await.context(h!())?;
@@ -130,7 +130,7 @@ pub async fn merge_two_networks(
     network_from_model.deleted = Set(true);
     network_from_model.merged_to = Set(Some(network_id_to));
     network_from_model.updated_at = Set(Utc::now().naive_utc());
-    network_from_model.updated_by = Set(Some(login.to_string()));
+    network_from_model.updated_by_login_id = Set(Some(*login));
     network_from_model.update(txn).await.context(h!())?;
 
     info!("✅ Merged network {network_id_from} into {network_id_to}");
@@ -294,7 +294,7 @@ async fn reassign_encryption_key_freqs(
 ///Reassign frequencies from the old networt to the new one
 async fn reassign_freqs(
     txn: &DatabaseTransaction,
-    login: &str,
+    login: &uuid::Uuid,
     merge_inactive: bool,
     network_id_from: i64,
     network_id_to: i64,
@@ -346,7 +346,7 @@ async fn reassign_freqs(
         sigint_network_freq_changelog::ActiveModel {
             id: NotSet,
             sigint_network_freq_id: Set(id),
-            login: Set(login.to_string()),
+            login_id: Set(*login),
             action: Set(ChangelogActionEnum::Merge),
             created_at: NotSet,
             new_value: Set(Some(json_new)),
@@ -540,7 +540,7 @@ async fn reassign_descriptions(
 /// Reassign network callsigns from the old networt to the new one
 async fn reassign_callsigns(
     txn: &DatabaseTransaction,
-    login: &str,
+    login: &uuid::Uuid,
     merge_inactive: bool,
     network_id_from: i64,
     network_id_to: i64,
@@ -598,7 +598,7 @@ async fn reassign_callsigns(
         sigint_network_callsign_changelog::ActiveModel {
             id: NotSet,
             sigint_network_callsign_id: Set(id),
-            login: Set(login.to_string()),
+            login_id: Set(*login),
             action: Set(ChangelogActionEnum::Merge),
             created_at: NotSet,
             new_value: Set(Some(json_new)),

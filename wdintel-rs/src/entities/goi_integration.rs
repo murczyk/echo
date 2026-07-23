@@ -33,8 +33,7 @@ pub struct Model {
     #[sea_orm(column_type = "Text", nullable)]
     pub api_password: Option<String>,
     pub disable_goi_to_echo_palitra_sync: bool,
-    #[sea_orm(column_type = "Text", nullable)]
-    pub maintainer_login: Option<String>,
+    pub maintainer_login_id: Option<Uuid>,
     pub pause_worker: bool,
 }
 
@@ -52,8 +51,8 @@ pub enum Relation {
     GoiPalitraSync,
     #[sea_orm(
         belongs_to = "super::login::Entity",
-        from = "Column::MaintainerLogin",
-        to = "super::login::Column::Login",
+        from = "Column::MaintainerLoginId",
+        to = "super::login::Column::Id",
         on_update = "NoAction",
         on_delete = "SetNull"
     )]

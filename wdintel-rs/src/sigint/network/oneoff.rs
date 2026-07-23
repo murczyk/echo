@@ -19,6 +19,8 @@ pub async fn oneoff_merge_all_possible_networks(
     info!("> merge_all_possible_networks start");
     let dbx = crate::new_pg_pool_from_mode(mode).await.context(h!())?;
     let txn = dbx.begin().await.context(h!())?;
+    let merge_login_id =
+        crate::users::login_id_by_name(&txn, MERGE_NETWORKS_API_LOGIN).await?;
 
     // Fetch all active networks (deleted = false) with their unit_id
     let networks_list = sigint_network::Entity::find()
@@ -66,7 +68,7 @@ pub async fn oneoff_merge_all_possible_networks(
                     // Merge networks
                     if let Err(e) = merge_two_networks(
                         &txn,
-                        MERGE_NETWORKS_API_LOGIN,
+                        &merge_login_id,
                         true,
                         false,
                         secondary_id,
@@ -105,10 +107,12 @@ pub async fn oneoff_merge_two_networks(
     let txn = dbx.begin().await.context(h!())?;
     let config = crate::config::read_config(mode).context(h!())?;
     let mut redis = crate::new_redis(&config).await.context(h!())?;
+    let merge_login_id =
+        crate::users::login_id_by_name(&txn, MERGE_NETWORKS_API_LOGIN).await?;
 
     match merge_two_networks(
         &txn,
-        MERGE_NETWORKS_API_LOGIN,
+        &merge_login_id,
         true,
         false,
         ps.network_id_from,
@@ -150,8 +154,9 @@ pub async fn oneoff_network_activity_stat(
             .context(h!())?;
 
     let dbx = crate::new_pg_pool_from_mode(mode).await.context(h!())?;
+    let login_id = crate::users::login_id_by_name(&dbx, &ps.login).await?;
     let groups =
-        crate::messenger::group::get_identity_sigint_groups(&dbx, &ps.login)
+        crate::messenger::group::get_identity_sigint_groups(&dbx, &login_id)
             .await
             .context(h!())?;
 

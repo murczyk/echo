@@ -4,6 +4,7 @@ use crate::error::AppError;
 use crate::rer_importer::types::{InboxMapItem, MapPointsFilter};
 use crate::sigint::network::types::*;
 use crate::types::*;
+use crate::users::ensure_rer_role;
 use crate::utils::orm::ArrayColumnOps;
 use crate::utils::*;
 use actix_web::web::Json;
@@ -16,7 +17,7 @@ use sea_query::Expr as SeaExpr;
 pub async fn render_networks<'a, 'async_trait, C>(
     networks: Vec<sigint_network::Model>,
     txn: &'a C,
-    user_login: &str,
+    user_login: &uuid::Uuid,
 ) -> Result<Vec<Network>, AppError>
 where
     C: ConnectionTrait + 'async_trait,
@@ -66,7 +67,9 @@ where
             operation_type: network.operation_type.clone(),
             operation_period: network.operation_period.clone(),
             last_updated_at: network.updated_at.and_utc().timestamp_millis(),
-            last_updated_by: network.updated_by.clone(),
+            last_updated_by: network
+                .updated_by_login_id
+                .map(|login_id| login_id.to_string()),
             active_from: network
                 .active_from
                 .map(|d| d.and_utc().timestamp_millis()),
@@ -96,7 +99,7 @@ where
 async fn get_networks_freqs<'a, 'async_trait, C>(
     txn: &'a C,
     network_ids: &[i64],
-    user_login: &str,
+    user_login: &uuid::Uuid,
 ) -> Result<HashMap<i64, Vec<NetworkFreq>>, AppError>
 where
     C: ConnectionTrait + 'async_trait,
@@ -268,6 +271,14 @@ where
         .all(txn)
         .await
         .context(h!())?;
+    let login_names = crate::users::login_names_by_ids(
+        txn,
+        network_descriptions
+            .iter()
+            .map(|item| item.login_id)
+            .collect(),
+    )
+    .await?;
 
     let mut descr_map: HashMap<i64, Vec<NetworkDescription>> = HashMap::new();
 
@@ -284,7 +295,7 @@ where
             },
             description: x.description.clone(),
             // comment: x.comment.clone(),
-            login: x.login.clone(),
+            login: login_names[&x.login_id].clone(),
             created_at: x.created_at.and_utc().timestamp_millis(),
         };
 
@@ -312,7 +323,7 @@ where
 pub async fn bl_network_info_freqs(
     freqs: Vec<String>,
     txn: &DatabaseTransaction,
-    user_login: &str,
+    user_login: &uuid::Uuid,
 ) -> Result<Vec<Network>, AppError> {
     let sel = sigint_network_freq::Entity::find()
         .filter(
@@ -345,7 +356,7 @@ pub async fn bl_network_info_freqs(
 pub async fn bl_network_info_batch(
     network_ids: Vec<i64>,
     txn: &DatabaseTransaction,
-    user_login: &str,
+    user_login: &uuid::Uuid,
 ) -> Result<Vec<Network>, AppError> {
     let networks = sigint_network::Entity::find()
         .filter(sigint_network::Column::Id.eq_any(network_ids));
@@ -367,9 +378,7 @@ pub async fn network_group_activity_bl(
     env: actix_web::web::Data<Env>,
     req: Json<NetworkGroupsActivityReq>,
 ) -> Result<HashMap<String, HashMap<String, HashMap<String, i64>>>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
-        .await
-        .context(h!())?;
+    ensure_rer_role(&env.dbx, &user).await.context(h!())?;
     let dt_till = if let Some(till) = req.till_date_noninclusive_ms {
         dt_from_millis(till)?
     } else {

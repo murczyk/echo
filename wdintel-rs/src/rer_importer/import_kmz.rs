@@ -3,6 +3,7 @@ use crate::delta::finish_bgtask;
 use crate::kml::types::*;
 use crate::messenger::id;
 use crate::rer_importer::bgtask_log;
+use crate::users::ensure_rer_role;
 use crate::utils::*;
 use crate::{entities::*, error::*, types::*};
 use actix_multipart::Multipart;
@@ -20,9 +21,7 @@ pub async fn rer_delta_kmz_import(
     env: actix_web::web::Data<Env>,
     mut payload: Multipart,
 ) -> Result<Json<i64>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
-        .await
-        .c(h!())?;
+    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
     let (field, val) = multipart::extract(&mut payload).await.c(h!())?;
     let tmp_dir = TempDir::new()?;
     println!("> tmp_dir {}", &tmp_dir.path().display());

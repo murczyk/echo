@@ -21,8 +21,7 @@ pub struct Model {
     pub active: bool,
     pub deleted: bool,
     pub created_at: DateTime,
-    #[sea_orm(column_type = "Text")]
-    pub created_by: String,
+    pub created_by_login_id: Uuid,
     #[sea_orm(column_type = "Text")]
     pub name: String,
     #[sea_orm(column_type = "Text")]
@@ -35,6 +34,14 @@ pub struct Model {
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {
+    #[sea_orm(
+        belongs_to = "super::login::Entity",
+        from = "Column::CreatedByLoginId",
+        to = "super::login::Column::Id",
+        on_update = "NoAction",
+        on_delete = "NoAction"
+    )]
+    Login,
     #[sea_orm(has_many = "super::sigint_callsign::Entity")]
     SigintCallsign,
     #[sea_orm(has_many = "super::sigint_network_callsign::Entity")]
@@ -53,6 +60,12 @@ pub enum Relation {
     SigintSignal,
     #[sea_orm(has_many = "super::sigint_unit_changelog::Entity")]
     SigintUnitChangelog,
+}
+
+impl Related<super::login::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::Login.def()
+    }
 }
 
 impl Related<super::sigint_callsign::Entity> for Entity {

@@ -3,6 +3,7 @@ use crate::organism::bl::load_organism_group_ids;
 use crate::organism::types::OrganismGroups;
 use crate::sigint::aor::bl::collect_group_aors;
 use crate::types::*;
+use crate::users::login_id_from_identity;
 use crate::utils::orm::ArrayColumnOps;
 use chrono::Utc;
 use echo_migration::{Expr, JoinType};
@@ -44,7 +45,7 @@ where
 
 pub async fn ensure_identity_group_available<C>(
     dbx: &C,
-    login: &str,
+    login: &uuid::Uuid,
     signal_group_master_key: &str,
 ) -> Result<(), AppError>
 where
@@ -534,13 +535,13 @@ where
 
 pub async fn get_identity_sigint_groups<'a, 'async_trait, C>(
     txn: &'a C,
-    login: &str,
+    login: &uuid::Uuid,
 ) -> Result<Vec<String>, AppError>
 where
     C: ConnectionTrait + 'async_trait,
 {
     let login_obj = login::Entity::find()
-        .filter(login::Column::Login.eq(login))
+        .filter(login::Column::Id.eq(*login))
         .filter(login::Column::DeletedPermanently.eq(false))
         .one(txn)
         .await
@@ -641,7 +642,7 @@ pub async fn get_identity_sigint_groups_noimport(
     user: &actix_identity::Identity,
     _config: &crate::config::Config,
 ) -> Result<Vec<String>, AppError> {
-    let login = user.id().c(h!())?;
+    let login = login_id_from_identity(user)?;
     let master_keys = get_identity_sigint_groups(dbx, &login)
         .await
         .context(h!())?;

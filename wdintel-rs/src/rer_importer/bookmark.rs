@@ -1,6 +1,8 @@
 use crate::config::RER_IMPORTER_BOOKMARK_LIST_LIMIT;
 use crate::error::AppError;
 use crate::types::*;
+use crate::users::ensure_rer_role;
+use crate::users::login_id_from_identity;
 use crate::utils::orm::ArrayColumnOps;
 use crate::{entities::*, utils::*};
 use actix_identity::Identity;
@@ -24,10 +26,8 @@ async fn bookmark_add(
     env: actix_web::web::Data<Env>,
     req: Json<BookmarkAddReq>,
 ) -> Result<Json<()>, AppError> {
-    let login = user.id().c(h!())?;
-    crate::users::has_role(&env.dbx, &login, "Rer")
-        .await
-        .c(h!())?;
+    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    let login = login_id_from_identity(&user)?;
     let txn = env.dbx.begin().await.c(h!())?;
 
     let bookmarks =
@@ -37,7 +37,7 @@ async fn bookmark_add(
             .into_iter()
             .map(|id| sigint_bookmark::ActiveModel {
                 id: NotSet,
-                user_id: Set(login.to_string()),
+                login_id: Set(login),
                 signal_message_id: Set(id),
                 deleted: Set(false),
                 created_at: NotSet,
@@ -81,14 +81,12 @@ async fn bookmarks_list(
     env: actix_web::web::Data<Env>,
     req: Json<BookmarkListReq>,
 ) -> Result<Json<Vec<Bookmark>>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
-        .await
-        .c(h!())?;
+    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
     Ok(Json(
         sigint_bookmark::Entity::find()
             .filter(
-                sigint_bookmark::Column::UserId
-                    .eq(user.id().c(h!())?.to_string()),
+                sigint_bookmark::Column::LoginId
+                    .eq(login_id_from_identity(&user)?),
             )
             .filter(sigint_bookmark::Column::CreatedAt.gte(
                 if let Some(since_ts_millis) = req.since_ts_millis {
@@ -124,15 +122,13 @@ async fn bookmark_rm(
     env: actix_web::web::Data<Env>,
     req: Json<BookmarkRmReq>,
 ) -> Result<Json<()>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
-        .await
-        .c(h!())?;
+    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
     let txn = env.dbx.begin().await.c(h!())?;
 
     sigint_bookmark::Entity::update_many()
         .col_expr(sigint_bookmark::Column::Deleted, Expr::value(true))
         .filter(
-            sigint_bookmark::Column::UserId.eq(user.id().c(h!())?.to_string()),
+            sigint_bookmark::Column::LoginId.eq(login_id_from_identity(&user)?),
         )
         .filter(
             sigint_bookmark::Column::SignalMessageId.eq_any(
@@ -152,7 +148,7 @@ async fn bookmark_rm(
     println!(
         "Bookmark removed for message_id: {} by {}",
         req.message_id,
-        user.id().c(h!())?
+        login_id_from_identity(&user)?
     );
     txn.commit().await.c(h!())?;
 
