@@ -1,4 +1,6 @@
-use crate::entities::{sigint_network_callsign, sigint_network_unit};
+use crate::entities::{
+    sigint_network_callsign, sigint_network_unit, sigint_unit,
+};
 use crate::error::AppError;
 use crate::h;
 use crate::sigint::callsign::types::UpdateNetworkCallsignReq;
@@ -65,12 +67,17 @@ async fn load_network_unit_ids(
         .map(|callsign| callsign.sigint_network_id)
         .collect::<Vec<_>>();
     let network_units = sigint_network_unit::Entity::find()
+        .join(
+            JoinType::InnerJoin,
+            sigint_network_unit::Relation::SigintUnit.def(),
+        )
         .select_only()
         .columns([
             sigint_network_unit::Column::NetworkId,
             sigint_network_unit::Column::UnitId,
         ])
         .filter(sigint_network_unit::Column::NetworkId.is_in(network_ids))
+        .filter(sigint_unit::Column::Deleted.eq(false))
         .distinct()
         .into_tuple::<(i64, i64)>()
         .all(dbx)
