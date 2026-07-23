@@ -677,16 +677,34 @@ async fn get_palitra_points_by_message(
         .filter(palitra::Column::Id.eq_any(palitra_ids))
         .select_only()
         .column(sigint_inbox_item_point_token::Column::SigintInboxItemId)
+        .column(sigint_inbox_item_point_token::Column::PalitraId)
         .column(sigint_inbox_item_point_token::Column::PointTokens)
-        .into_tuple::<(i64, serde_json::Value)>()
+        .into_tuple::<(i64, i64, serde_json::Value)>()
         .all(dbx)
         .await
         .context(h!())?;
+    let point_palitra_ids = palitra_points
+        .iter()
+        .map(|(_, palitra_id, _)| *palitra_id)
+        .unique()
+        .collect();
+    let blacklisted_labels =
+        crate::palitra::highlight_blacklist::load_blacklisted_labels(
+            dbx,
+            point_palitra_ids,
+        )
+        .await
+        .c(h!())?;
     let mut palitra_points_by_message: HashMap<i64, Vec<CNPoint>> =
         HashMap::new();
-    for (sigint_inbox_item_id, points) in palitra_points {
+    for (sigint_inbox_item_id, palitra_id, points) in palitra_points {
         let mut points: Vec<CNPoint> = serde_json::from_value(points)
             .map_err(|e| anyhow::anyhow!("json convert error: {e}"))?;
+        crate::palitra::highlight_blacklist::filter_blacklisted_points(
+            &blacklisted_labels,
+            palitra_id,
+            &mut points,
+        );
         palitra_points_by_message
             .entry(sigint_inbox_item_id)
             .or_default()
