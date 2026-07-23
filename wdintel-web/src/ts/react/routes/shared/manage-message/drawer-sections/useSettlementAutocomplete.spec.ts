@@ -34,13 +34,26 @@ type HarnessProps = {
   open?: boolean;
   busy?: boolean;
   coordsText?: string;
+  signalGroupMasterKey?: string | null;
   onError: (message: string) => void;
 };
 
 let latest: ReturnType<typeof useSettlementAutocomplete> | undefined;
 
-function Harness({ open = true, busy = false, coordsText, onError }: HarnessProps) {
-  const result = useSettlementAutocomplete({ open, busy, coordsText, onError });
+function Harness({
+  open = true,
+  busy = false,
+  coordsText,
+  signalGroupMasterKey = null,
+  onError,
+}: HarnessProps) {
+  const result = useSettlementAutocomplete({
+    open,
+    busy,
+    coordsText,
+    signalGroupMasterKey,
+    onError,
+  });
   useEffect(() => {
     latest = result;
   });
@@ -125,6 +138,7 @@ describe('useSettlementAutocomplete', () => {
     expect(findSettlementPrefixMock).toHaveBeenCalledWith({
       query: ' мер',
       relatedCoordinates: [49.82, 36.05],
+      signalGroupMasterKey: null,
       signal: expect.any(AbortSignal),
     });
     expect(latest?.loading).toBe(true);
@@ -248,6 +262,32 @@ describe('useSettlementAutocomplete', () => {
     expect(latest?.loading).toBe(false);
     await act(async () => request.resolve([merefaKharkiv]));
     expect(latest?.settlementOptions).toEqual([]);
+    expect(onError).not.toHaveBeenCalled();
+  });
+
+  it('restarts the current query with a new group after aborting the old request', async () => {
+    const requestA = deferred<SettlementDetails[]>();
+    const requestB = deferred<SettlementDetails[]>();
+    findSettlementPrefixMock
+      .mockReturnValueOnce(requestA.promise)
+      .mockReturnValueOnce(requestB.promise);
+    await render({ signalGroupMasterKey: 'group-1' });
+    await input('мер');
+    await advance(300);
+    const signalA = findSettlementPrefixMock.mock.calls[0][0].signal;
+    expect(findSettlementPrefixMock.mock.calls[0][0].signalGroupMasterKey).toBe('group-1');
+
+    await render({ signalGroupMasterKey: 'group-2' });
+    expect(signalA?.aborted).toBe(true);
+    expect(latest?.settlementOptions).toEqual([]);
+    await advance(300);
+
+    expect(findSettlementPrefixMock).toHaveBeenCalledTimes(2);
+    expect(findSettlementPrefixMock.mock.calls[1][0].signalGroupMasterKey).toBe('group-2');
+    await act(async () => requestA.resolve([merefaOtherRegion]));
+    expect(latest?.settlementOptions).toEqual([]);
+    await act(async () => requestB.resolve([merefaKharkiv]));
+    expect(latest?.settlementOptions).toEqual([merefaKharkiv]);
     expect(onError).not.toHaveBeenCalled();
   });
 

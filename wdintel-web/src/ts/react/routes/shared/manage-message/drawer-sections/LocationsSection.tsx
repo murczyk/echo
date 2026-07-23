@@ -34,10 +34,12 @@ export function LocationsSection({ busy, recentValues, open, onError }: Props) {
     formState: { errors },
   } = useFormContext<MessageFormData>();
   const coordsText = useWatch({ control, name: 'coords' });
+  const signalGroupMasterKey = useWatch({ control, name: 'signalGroupMasterKey' });
   const { settlementOptions, loading, onInputChange } = useSettlementAutocomplete({
     open,
     busy,
     coordsText,
+    signalGroupMasterKey: signalGroupMasterKey?.trim() || null,
     onError,
   });
   const options: LocationAutocompleteOption[] = [

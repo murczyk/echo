@@ -11,6 +11,7 @@ type UseSettlementAutocompleteParams = {
   open: boolean;
   busy: boolean;
   coordsText: string | undefined;
+  signalGroupMasterKey: string | null;
   onError: (message: string) => void;
 };
 
@@ -36,6 +37,7 @@ export function useSettlementAutocomplete({
   open,
   busy,
   coordsText,
+  signalGroupMasterKey,
   onError,
 }: UseSettlementAutocompleteParams): UseSettlementAutocompleteResult {
   const [settlementOptions, setSettlementOptions] = useState<SettlementDetails[]>([]);
@@ -43,10 +45,48 @@ export function useSettlementAutocomplete({
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
   const coordsTextRef = useRef(coordsText);
+  const signalGroupMasterKeyRef = useRef(signalGroupMasterKey);
+  const inputValueRef = useRef('');
   const requestIdRef = useRef(0);
   const mountedRef = useRef(true);
 
   coordsTextRef.current = coordsText;
+  signalGroupMasterKeyRef.current = signalGroupMasterKey;
+
+  const scheduleSearch = useCallback(
+    (value: string) => {
+      timerRef.current = setTimeout(async () => {
+        timerRef.current = null;
+        const controller = new AbortController();
+        abortControllerRef.current = controller;
+        const requestId = requestIdRef.current;
+        try {
+          const results = await findSettlementPrefix({
+            query: value,
+            relatedCoordinates: relatedCoordinates(coordsTextRef.current),
+            signalGroupMasterKey: signalGroupMasterKeyRef.current,
+            signal: controller.signal,
+          });
+          if (mountedRef.current && requestId === requestIdRef.current) {
+            setSettlementOptions(results);
+          }
+        } catch (error) {
+          if (mountedRef.current && requestId === requestIdRef.current && !isAbortError(error)) {
+            setSettlementOptions([]);
+            onError(formatSettlementError(error));
+          }
+        } finally {
+          if (mountedRef.current && requestId === requestIdRef.current) {
+            setLoading(false);
+          }
+          if (abortControllerRef.current === controller) {
+            abortControllerRef.current = null;
+          }
+        }
+      }, SETTLEMENT_SEARCH_DEBOUNCE_MS);
+    },
+    [onError],
+  );
 
   const cancelSearch = useCallback(() => {
     if (timerRef.current !== null) {
@@ -73,9 +113,21 @@ export function useSettlementAutocomplete({
     setLoading(false);
   }, [busy, cancelSearch, open]);
 
+  useEffect(() => {
+    if (!open || busy) return;
+    cancelSearch();
+    setSettlementOptions([]);
+    setLoading(false);
+    const value = inputValueRef.current;
+    if (value.trim().length < MIN_SETTLEMENT_QUERY_LENGTH) return;
+    setLoading(true);
+    scheduleSearch(value);
+  }, [signalGroupMasterKey, busy, cancelSearch, open, scheduleSearch]);
+
   const onInputChange = useCallback(
     (value: string, reason: string) => {
       if (reason !== 'input') return;
+      inputValueRef.current = value;
       cancelSearch();
       const query = value.trim();
       if (!open || busy || query.length < MIN_SETTLEMENT_QUERY_LENGTH) {
@@ -85,36 +137,9 @@ export function useSettlementAutocomplete({
       }
 
       setLoading(true);
-      const requestId = requestIdRef.current;
-      timerRef.current = setTimeout(async () => {
-        timerRef.current = null;
-        const controller = new AbortController();
-        abortControllerRef.current = controller;
-        try {
-          const results = await findSettlementPrefix({
-            query: value,
-            relatedCoordinates: relatedCoordinates(coordsTextRef.current),
-            signal: controller.signal,
-          });
-          if (mountedRef.current && requestId === requestIdRef.current) {
-            setSettlementOptions(results);
-          }
-        } catch (error) {
-          if (mountedRef.current && requestId === requestIdRef.current && !isAbortError(error)) {
-            setSettlementOptions([]);
-            onError(formatSettlementError(error));
-          }
-        } finally {
-          if (mountedRef.current && requestId === requestIdRef.current) {
-            setLoading(false);
-          }
-          if (abortControllerRef.current === controller) {
-            abortControllerRef.current = null;
-          }
-        }
-      }, SETTLEMENT_SEARCH_DEBOUNCE_MS);
+      scheduleSearch(value);
     },
-    [busy, cancelSearch, onError, open],
+    [busy, cancelSearch, open, scheduleSearch],
   );
 
   return { settlementOptions, loading, onInputChange };

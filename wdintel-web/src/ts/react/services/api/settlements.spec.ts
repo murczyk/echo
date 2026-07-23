@@ -30,6 +30,7 @@ describe('settlement API helpers', () => {
     const result = await findSettlementPrefix({
       query: ' мер',
       relatedCoordinates: [49.82, 36.05],
+      signalGroupMasterKey: 'group-1',
       signal: controller.signal,
     });
 
@@ -40,6 +41,7 @@ describe('settlement API helpers', () => {
         region: null,
         related_coordinates: [49.82, 36.05],
         aor_id: null,
+        signal_group_master_key: 'group-1',
       },
       { signal: controller.signal },
     );
@@ -49,7 +51,11 @@ describe('settlement API helpers', () => {
   it('passes null coordinates through unchanged', async () => {
     postJsonMock.mockResolvedValueOnce([]);
 
-    await findSettlementPrefix({ query: 'ме', relatedCoordinates: null });
+    await findSettlementPrefix({
+      query: 'ме',
+      relatedCoordinates: null,
+      signalGroupMasterKey: null,
+    });
 
     expect(postJsonMock).toHaveBeenCalledWith(
       '/api/settlement/find-prefix',
@@ -58,6 +64,7 @@ describe('settlement API helpers', () => {
         region: null,
         related_coordinates: null,
         aor_id: null,
+        signal_group_master_key: null,
       },
       undefined,
     );

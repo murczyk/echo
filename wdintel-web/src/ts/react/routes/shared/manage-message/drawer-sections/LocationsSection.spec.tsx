@@ -8,6 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { SettlementDetails } from '../../../../services/api/settlements';
 import { EMPTY_FORM_VALUES, type MessageFormData } from '../manage-message-drawer.schema';
 import { LocationsSection } from './LocationsSection';
+import { useSettlementAutocomplete } from './useSettlementAutocomplete';
 
 const mocks = vi.hoisted(() => ({
   autocompleteProps: undefined as Record<string, any> | undefined,
@@ -72,9 +73,12 @@ const sameSettlementVariants: SettlementDetails[] = [
 let root: Root;
 let container: HTMLDivElement;
 let methods: UseFormReturn<MessageFormData>;
+let signalGroupMasterKey: string | null = null;
 
 function Harness() {
-  methods = useForm<MessageFormData>({ defaultValues: EMPTY_FORM_VALUES });
+  methods = useForm<MessageFormData>({
+    defaultValues: { ...EMPTY_FORM_VALUES, signalGroupMasterKey },
+  });
   return createElement(
     FormProvider,
     methods,
@@ -92,6 +96,8 @@ describe('LocationsSection', () => {
     mocks.autocompleteProps = undefined;
     mocks.settlementOptions = settlements;
     mocks.onInputChange.mockReset();
+    vi.mocked(useSettlementAutocomplete).mockClear();
+    signalGroupMasterKey = null;
     container = document.createElement('div');
     document.body.appendChild(container);
     root = createRoot(container);
@@ -170,5 +176,14 @@ describe('LocationsSection', () => {
       props.onChange(null, [props.options[0]]);
     });
     expect(methods.getValues('locations')).toEqual(['Раніше']);
+  });
+
+  it('passes the selected group key to the settlement hook', async () => {
+    signalGroupMasterKey = ' group-1 ';
+    await renderSection();
+
+    expect(vi.mocked(useSettlementAutocomplete)).toHaveBeenCalledWith(
+      expect.objectContaining({ signalGroupMasterKey: 'group-1' }),
+    );
   });
 });

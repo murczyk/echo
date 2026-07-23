@@ -10,6 +10,7 @@ use actix_web::{get, post, HttpRequest};
 use itertools::Itertools;
 use lazy_static::lazy_static;
 use regex::Regex;
+use sea_orm::ConnectionTrait;
 use std::fs;
 
 pub mod aor_config;
@@ -33,16 +34,19 @@ async fn find_locations(
     env: actix_web::web::Data<Env>,
     req: Json<FindSettlementReq>,
 ) -> Result<Json<Vec<SettlementDetails>>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
+    let login = user.id().c(h!())?;
+    crate::users::has_role(&env.dbx, &login, "Rer")
         .await
         .c(h!())?;
     let req = req.into_inner();
+    let aor_id =
+        resolve_settlement_request_aor_id(&env.dbx, &login, &req).await?;
     let locations = find_locations_by_name(
         env.settlements.clone(),
         req.query,
         req.region,
         req.related_coordinates,
-        req.aor_id,
+        aor_id,
     )
     .c(h!())?;
     Ok(Json(locations))
@@ -54,20 +58,52 @@ async fn find_locations_prefix(
     env: actix_web::web::Data<Env>,
     req: Json<FindSettlementReq>,
 ) -> Result<Json<Vec<SettlementDetails>>, AppError> {
-    crate::users::has_role(&env.dbx, &user.id().c(h!())?, "Rer")
+    let login = user.id().c(h!())?;
+    crate::users::has_role(&env.dbx, &login, "Rer")
         .await
         .c(h!())?;
     let req = req.into_inner();
+    let aor_id =
+        resolve_settlement_request_aor_id(&env.dbx, &login, &req).await?;
     let locations = find_locations_by_prefix(
         env.settlements.clone(),
         req.query,
         req.region,
         req.related_coordinates,
-        req.aor_id,
+        aor_id,
     )
     .c(h!())?;
 
     Ok(Json(locations))
+}
+
+async fn resolve_settlement_request_aor_id<C>(
+    dbx: &C,
+    login: &str,
+    req: &FindSettlementReq,
+) -> Result<Option<i64>, AppError>
+where
+    C: ConnectionTrait,
+{
+    let group_key = req
+        .signal_group_master_key
+        .as_deref()
+        .map(str::trim)
+        .filter(|key| !key.is_empty());
+    if group_key.is_some() && req.aor_id.is_some() {
+        return Err(AppError::BL {
+            msg: "Не можна одночасно передавати signal_group_master_key та aor_id."
+                .to_string(),
+        });
+    }
+    let Some(group_key) = group_key else {
+        return Ok(req.aor_id);
+    };
+    crate::messenger::group::ensure_identity_group_available(
+        dbx, login, group_key,
+    )
+    .await?;
+    crate::messenger::group::resolve_group_aor_id(dbx, group_key).await
 }
 
 fn find_locations_by_prefix(
@@ -722,6 +758,288 @@ fn deduplicate_settlement_names(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::entities::*;
+    use crate::functest::tests::*;
+    use sea_orm::*;
+    use serial_test::serial;
+
+    struct SettlementResolverFixture {
+        env: Arc<Env>,
+        login: String,
+        accessible_group_key: String,
+        inaccessible_group_key: String,
+        first_active_aor_id: i64,
+    }
+
+    async fn settlement_resolver_fixture() -> SettlementResolverFixture {
+        let env = cleanup().await.unwrap();
+        let txn = env.dbx.begin().await.unwrap();
+        let zone = mk_sigint_zone(
+            &txn,
+            sigint_zone::ActiveModel {
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let datasource = mk_datasource(
+            &txn,
+            datasource::ActiveModel {
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let organism = mk_organism(
+            &txn,
+            organism::ActiveModel {
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let login = mk_login(
+            &txn,
+            login::ActiveModel {
+                login: Set("settlement-resolver-user".to_string()),
+                sigint_zone_id: Set(Some(zone.id)),
+                organism_id: Set(Some(organism.id)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let accessible_group = mk_signal_group(
+            &txn,
+            signal_group::ActiveModel {
+                datasource_id: Set(Some(datasource.id)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let inaccessible_group = mk_signal_group(
+            &txn,
+            signal_group::ActiveModel {
+                datasource_id: Set(Some(datasource.id)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        for group in [&accessible_group, &inaccessible_group] {
+            mk_datasource_group(
+                &txn,
+                datasource_group::ActiveModel {
+                    datasource_id: Set(datasource.id),
+                    group_master_key: Set(group.master_key.clone()),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+        }
+        mk_sigint_zone_datasource(
+            &txn,
+            sigint_zone_datasource::ActiveModel {
+                sigint_zone_id: Set(zone.id),
+                datasource_id: Set(datasource.id),
+                group_master_key: Set(accessible_group.master_key.clone()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        crate::sigint::zone::bl::update_signal_group_access_and_admins(
+            vec![],
+            vec![organism.id],
+            vec![],
+            true,
+            &accessible_group.master_key,
+            &txn,
+        )
+        .await
+        .unwrap();
+
+        let deleted_aor = mk_aor(
+            &txn,
+            area_of_responsibility::ActiveModel {
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let first_active_aor = mk_aor(
+            &txn,
+            area_of_responsibility::ActiveModel {
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let second_active_aor = mk_aor(
+            &txn,
+            area_of_responsibility::ActiveModel {
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let mut deleted_aor_active = deleted_aor.into_active_model();
+        let deleted_aor_id = deleted_aor_active.id.clone().unwrap();
+        deleted_aor_active.deleted = Set(true);
+        deleted_aor_active.update(&txn).await.unwrap();
+        for aor_id in
+            [deleted_aor_id, first_active_aor.id, second_active_aor.id]
+        {
+            mk_signal_group_aor(
+                &txn,
+                signal_group_aor::ActiveModel {
+                    master_key: Set(accessible_group.master_key.clone()),
+                    aor_id: Set(aor_id),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+        }
+        txn.commit().await.unwrap();
+        SettlementResolverFixture {
+            env,
+            login: login.login,
+            accessible_group_key: accessible_group.master_key,
+            inaccessible_group_key: inaccessible_group.master_key,
+            first_active_aor_id: first_active_aor.id,
+        }
+    }
+
+    fn settlement_request(
+        signal_group_master_key: Option<String>,
+        aor_id: Option<i64>,
+    ) -> FindSettlementReq {
+        FindSettlementReq {
+            query: "мер".to_string(),
+            region: None,
+            related_coordinates: None,
+            aor_id,
+            signal_group_master_key,
+        }
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn settlement_resolver_matches_group_aor_selection() {
+        let fixture = settlement_resolver_fixture().await;
+        let req = settlement_request(
+            Some(fixture.accessible_group_key.clone()),
+            None,
+        );
+
+        let resolved = resolve_settlement_request_aor_id(
+            &fixture.env.dbx,
+            &fixture.login,
+            &req,
+        )
+        .await
+        .unwrap();
+        let parser_aor = crate::messenger::group::resolve_group_aor_id(
+            &fixture.env.dbx,
+            &fixture.accessible_group_key,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(resolved, Some(fixture.first_active_aor_id));
+        assert_eq!(resolved, parser_aor);
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn settlement_resolver_uses_default_for_no_active_aor() {
+        let fixture = settlement_resolver_fixture().await;
+        signal_group_aor::Entity::delete_many()
+            .filter(
+                signal_group_aor::Column::MasterKey
+                    .eq(fixture.accessible_group_key.clone()),
+            )
+            .exec(&fixture.env.dbx)
+            .await
+            .unwrap();
+        let req = settlement_request(Some(fixture.accessible_group_key), None);
+
+        assert_eq!(
+            resolve_settlement_request_aor_id(
+                &fixture.env.dbx,
+                &fixture.login,
+                &req
+            )
+            .await
+            .unwrap(),
+            None
+        );
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn settlement_resolver_preserves_explicit_and_blank_legacy_selectors()
+    {
+        let fixture = settlement_resolver_fixture().await;
+        for (group_key, aor_id, expected) in [
+            (None, Some(42), Some(42)),
+            (None, None, None),
+            (Some("   ".to_string()), Some(42), Some(42)),
+            (Some("   ".to_string()), None, None),
+        ] {
+            let req = settlement_request(group_key, aor_id);
+            assert_eq!(
+                resolve_settlement_request_aor_id(
+                    &fixture.env.dbx,
+                    &fixture.login,
+                    &req,
+                )
+                .await
+                .unwrap(),
+                expected
+            );
+        }
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn settlement_resolver_rejects_conflicting_selectors() {
+        let fixture = settlement_resolver_fixture().await;
+        let req =
+            settlement_request(Some(fixture.accessible_group_key), Some(42));
+
+        let error = resolve_settlement_request_aor_id(
+            &fixture.env.dbx,
+            &fixture.login,
+            &req,
+        )
+        .await
+        .unwrap_err();
+        assert!(matches!(error, AppError::BL { .. }));
+        let error_text = error.to_string();
+        assert!(error_text.contains("signal_group_master_key"));
+        assert!(error_text.contains("aor_id"));
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn settlement_resolver_forbids_inaccessible_group() {
+        let fixture = settlement_resolver_fixture().await;
+        let req =
+            settlement_request(Some(fixture.inaccessible_group_key), None);
+
+        let error = resolve_settlement_request_aor_id(
+            &fixture.env.dbx,
+            &fixture.login,
+            &req,
+        )
+        .await
+        .unwrap_err();
+        assert!(matches!(error, AppError::Forbidden(_)));
+    }
 
     #[test]
     fn filters_settlements_by_case_insensitive_prefix() {

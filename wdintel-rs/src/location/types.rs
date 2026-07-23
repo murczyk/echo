@@ -34,6 +34,8 @@ pub struct FindSettlementReq {
     pub region: Option<String>,
     pub related_coordinates: Option<(f64, f64)>,
     pub aor_id: Option<i64>,
+    #[serde(default)]
+    pub signal_group_master_key: Option<String>,
 }
 
 #[derive(

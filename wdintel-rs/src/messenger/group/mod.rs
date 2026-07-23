@@ -19,6 +19,50 @@ pub struct CollectGroupsOpts {
     pub skip_group_stats: bool,
 }
 
+pub async fn resolve_group_aor_id<C>(
+    dbx: &C,
+    signal_group_master_key: &str,
+) -> Result<Option<i64>, AppError>
+where
+    C: ConnectionTrait,
+{
+    Ok(signal_group_aor::Entity::find()
+        .join(
+            JoinType::InnerJoin,
+            signal_group_aor::Relation::AreaOfResponsibility.def(),
+        )
+        .filter(signal_group_aor::Column::MasterKey.eq(signal_group_master_key))
+        .filter(area_of_responsibility::Column::Deleted.eq(false))
+        .order_by_asc(signal_group_aor::Column::Id)
+        .select_only()
+        .column(signal_group_aor::Column::AorId)
+        .into_tuple::<i64>()
+        .one(dbx)
+        .await
+        .c(h!())?)
+}
+
+pub async fn ensure_identity_group_available<C>(
+    dbx: &C,
+    login: &str,
+    signal_group_master_key: &str,
+) -> Result<(), AppError>
+where
+    C: ConnectionTrait,
+{
+    let available_groups =
+        get_identity_sigint_groups(dbx, login).await.c(h!())?;
+    if !available_groups
+        .iter()
+        .any(|key| key == signal_group_master_key)
+    {
+        return Err(AppError::Forbidden(
+            "signal group is not available for user".to_string(),
+        ));
+    }
+    Ok(())
+}
+
 pub async fn collect_groups(
     keys: Vec<String>,
     txn: &DatabaseConnection,
@@ -43,7 +87,6 @@ pub async fn collect_groups(
     } else {
         BTreeMap::new()
     };
-
     let group_admin_data = if is_admin {
         collect_group_admin_data(keys, txn).await.context(h!())?
     } else {

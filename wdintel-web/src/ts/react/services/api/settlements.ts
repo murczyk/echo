@@ -13,6 +13,7 @@ export type SettlementDetails = {
 export type FindSettlementPrefixParams = {
   query: string;
   relatedCoordinates: [number, number] | null;
+  signalGroupMasterKey: string | null;
   signal?: AbortSignal;
 };
 
@@ -27,6 +28,7 @@ export async function findSettlementPrefix(
       region: null,
       related_coordinates: params.relatedCoordinates,
       aor_id: null,
+      signal_group_master_key: params.signalGroupMasterKey,
     },
     options,
   );
