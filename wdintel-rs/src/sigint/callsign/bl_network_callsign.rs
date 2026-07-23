@@ -396,6 +396,10 @@ async fn update_network_callsign_linked(
     known_callsign: sigint_callsign::Model,
     clear_position_comment: bool,
 ) -> Result<i64, AppError> {
+    let callsign_additional_sources =
+        list_callsign_additional_source_ids(txn, known_callsign.id)
+            .await
+            .context(h!())?;
     let known_callsing_req = UpdateCallsignReq {
         id: known_callsign.id,
         callsign: req.callsign.clone(),
@@ -406,7 +410,7 @@ async fn update_network_callsign_linked(
         unit_id: req.unit_id.unwrap_or(known_callsign.unit_id),
         active: known_callsign.deleted,
         source_id: req.source_id.map(|v| v as i32),
-        callsign_additional_sources: vec![],
+        callsign_additional_sources,
         created_at: known_callsign.created_at.and_utc().timestamp_millis(),
         developing: req.developing,
         radio_freq: req.radio_freq.clone(),
