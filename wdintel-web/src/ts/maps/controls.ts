@@ -39,6 +39,7 @@ function initializeNarrowControlToggle(
   container: HTMLElement,
   toggle: HTMLButtonElement,
   controlClass: string,
+  map: L.Map,
 ): () => void {
   const narrowViewportQuery = window.matchMedia('(max-width: 599.95px)');
 
@@ -67,9 +68,16 @@ function initializeNarrowControlToggle(
     }
     container.classList.remove('narrow-map-control--collapsed');
   });
+  const onMapClick = () => {
+    if (narrowViewportQuery.matches) {
+      container.classList.add('narrow-map-control--collapsed');
+    }
+  };
+  map.on('click', onMapClick);
 
   return () => {
     narrowViewportQuery.removeEventListener('change', onViewportChange);
+    map.off('click', onMapClick);
   };
 }
 
@@ -85,7 +93,7 @@ export function createSearchControl(): SearchControl {
         })
       | null,
     _disposeNarrowControlToggle: null as (() => void) | null,
-    onAdd: function (_map: L.Map) {
+    onAdd: function (map: L.Map) {
       this._container = L.DomUtil.create('div', 'leaflet-bar leaflet-control search-control');
       const toggle = createNarrowControlToggle(
         'Розгорнути пошук на мапі',
@@ -96,6 +104,7 @@ export function createSearchControl(): SearchControl {
         this._container,
         toggle,
         'narrow-map-search-control',
+        map,
       );
       const searchEl = document.createElement('analysis-map-search') as HTMLElement & {
         setResultsCount?: (count: number | null) => void;
@@ -151,6 +160,7 @@ export function createTimeswitchControl(
         this._container,
         toggle,
         'narrow-map-date-control',
+        map,
       );
 
       this._dateRangeSelector = L.DomUtil.create('date-range-selector');

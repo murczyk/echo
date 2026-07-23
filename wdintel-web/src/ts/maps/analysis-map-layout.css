@@ -102,6 +102,15 @@ div [id='map-container-analysis'] {
     width: 48px;
     height: 48px;
   }
+
+  #analysis-map
+    .leaflet-top.leaflet-left:has(> .narrow-map-search-control:not(.narrow-map-control--collapsed))
+    > .narrow-map-date-control,
+  #analysis-map
+    .leaflet-top.leaflet-left:has(> .narrow-map-date-control:not(.narrow-map-control--collapsed))
+    > .narrow-map-search-control {
+    display: none;
+  }
 }
 
 .analysis-map-search-wrap {
