@@ -1,3 +1,4 @@
+import ClearOutlinedIcon from '@mui/icons-material/ClearOutlined';
 import {
   Box,
   Button,
@@ -7,10 +8,13 @@ import {
   DialogActions,
   DialogContent,
   DialogTitle,
+  IconButton,
+  InputAdornment,
   List,
   ListItemButton,
   Stack,
   TextField,
+  Tooltip,
   Typography,
 } from '@mui/material';
 import { useEffect, useState } from 'react';
@@ -68,10 +72,14 @@ export function PalitraHighlightBlacklistDialog({
 
   return (
     <Dialog open={palitra !== null} onClose={onClose} disableRestoreFocus fullWidth maxWidth="sm">
-      <DialogTitle>Чорний список підсвічування</DialogTitle>
+      <DialogTitle>Чорний список</DialogTitle>
       <DialogContent>
         <Stack spacing={2} sx={{ pt: 1 }}>
           <Typography variant="subtitle1">{palitra?.name ?? ''}</Typography>
+          <Typography variant="body2" color="text.secondary">
+            Позначені точки не підсвічуються в картках повідомлень. Зніміть позначку, щоб повернути
+            підсвітку.
+          </Typography>
           {loading ? (
             <Stack direction="row" spacing={1.5} alignItems="center">
               <CircularProgress size={18} />
@@ -90,6 +98,25 @@ export function PalitraHighlightBlacklistDialog({
                 autoFocus
                 fullWidth
                 size="small"
+                slotProps={{
+                  input: {
+                    endAdornment:
+                      search !== '' ? (
+                        <InputAdornment position="end">
+                          <Tooltip title="Очистити пошук" arrow>
+                            <IconButton
+                              aria-label="Очистити пошук точок"
+                              size="small"
+                              onClick={() => setSearch('')}
+                              edge="end"
+                            >
+                              <ClearOutlinedIcon fontSize="small" />
+                            </IconButton>
+                          </Tooltip>
+                        </InputAdornment>
+                      ) : undefined,
+                  },
+                }}
               />
               {mutationError ? (
                 <PowerAlert severity="error">
@@ -126,13 +153,17 @@ export function PalitraHighlightBlacklistDialog({
                           ? `${point.label}: Прибрати з чорного списку`
                           : `${point.label}: Додати до чорного списку`
                       }
+                      selected={entry !== null}
+                      sx={{ alignItems: 'center', gap: 1, px: 1, py: 0.75, borderRadius: 1 }}
                     >
-                      <Checkbox checked={entry !== null} tabIndex={-1} disableRipple />
+                      <Checkbox
+                        checked={entry !== null}
+                        tabIndex={-1}
+                        disableRipple
+                        sx={{ p: 0.5 }}
+                      />
                       <Box sx={{ flex: 1 }}>
                         <Typography>{point.label}</Typography>
-                        <Typography variant="caption" color="text.secondary">
-                          {entry ? 'Прибрати з чорного списку' : 'Додати до чорного списку'}
-                        </Typography>
                       </Box>
                       {pending ? <CircularProgress size={18} /> : null}
                     </ListItemButton>
@@ -141,20 +172,29 @@ export function PalitraHighlightBlacklistDialog({
               </List>
               {missingEntries.length > 0 ? (
                 <Stack spacing={0.75}>
-                  <Typography variant="subtitle2">Не знайдено серед поточних точок</Typography>
+                  <Typography variant="subtitle2">
+                    У чорному списку, але точки вже немає в палітрі
+                  </Typography>
                   {missingEntries.map((entry) => (
                     <ListItemButton
                       key={entry.id}
                       onClick={() => onToggle(entry.label, entry)}
                       disabled={mutationBlocked || pendingEntryIds.has(entry.id)}
+                      role="checkbox"
+                      aria-checked
                       aria-label={`${entry.label}: Прибрати з чорного списку`}
-                      sx={{ border: 1, borderColor: 'divider', borderRadius: 1 }}
+                      selected
+                      sx={{
+                        alignItems: 'center',
+                        gap: 1,
+                        border: 1,
+                        borderColor: 'divider',
+                        px: 1,
+                      }}
                     >
+                      <Checkbox checked tabIndex={-1} disableRipple sx={{ p: 0.5 }} />
                       <Box sx={{ flex: 1 }}>
                         <Typography>{entry.label}</Typography>
-                        <Typography variant="caption" color="text.secondary">
-                          Прибрати з чорного списку
-                        </Typography>
                       </Box>
                       {pendingEntryIds.has(entry.id) ? <CircularProgress size={18} /> : null}
                     </ListItemButton>
