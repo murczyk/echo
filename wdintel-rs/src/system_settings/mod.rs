@@ -453,6 +453,12 @@ fn validate_report_generation_settings(
                 .to_string(),
         });
     }
+    if req.report_chunking_hours > crate::config::RER_REPORT_CHUNKING_HOURS_MAX
+    {
+        return Err(AppError::BL {
+            msg: "Вікно обробки звітів завелике".to_string(),
+        });
+    }
     Ok(())
 }
 
@@ -460,8 +466,8 @@ fn system_settings_active_model(
     login: &uuid::Uuid,
     req: &CreateSystemSettingsReq,
     echo_im_sync_cursor: EchoImSyncCursor,
-) -> system_settings::ActiveModel {
-    system_settings::ActiveModel {
+) -> Result<system_settings::ActiveModel, AppError> {
+    Ok(system_settings::ActiveModel {
         id: sea_orm::ActiveValue::NotSet,
         rer_analysis_units_exact_match_only_default: Set(
             req.rer_analysis_units_exact_match_only_default
@@ -507,11 +513,10 @@ fn system_settings_active_model(
         ),
         report_chunking_hours: Set(req
             .report_chunking_hours
-            .max(crate::config::RER_REPORT_CHUNKING_HOURS_MIN)
             .try_into()
-            .unwrap_or(i32::MAX)),
+            .c(h!())?),
         limit_big_reports: Set(req.limit_big_reports),
-    }
+    })
 }
 
 fn now_utc() -> chrono::NaiveDateTime {
@@ -552,10 +557,11 @@ async fn create_system_settings_for_login(
     let txn = dbx.begin().await.c(h!())?;
     let echo_im_sync_cursor = get_echo_im_sync_cursor(&txn).await.c(h!())?;
     deactivate_active_settings(&txn, login).await.c(h!())?;
-    let created = system_settings_active_model(login, req, echo_im_sync_cursor)
-        .insert(&txn)
-        .await
-        .c(h!())?;
+    let created =
+        system_settings_active_model(login, req, echo_im_sync_cursor)?
+            .insert(&txn)
+            .await
+            .c(h!())?;
     if created.do_not_store_duplicate_echoim_failures {
         crate::messenger::missing_message::delete_duplicate_missing_messages(
             &txn,
@@ -931,6 +937,10 @@ mod tests {
 
         req.report_chunking_hours = 1;
         assert!(validate_report_generation_settings(&req).is_ok());
+
+        req.report_chunking_hours =
+            crate::config::RER_REPORT_CHUNKING_HOURS_MAX + 1;
+        assert!(validate_report_generation_settings(&req).is_err());
     }
 
     fn old_ts() -> chrono::NaiveDateTime {

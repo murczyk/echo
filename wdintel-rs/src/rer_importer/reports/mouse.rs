@@ -1300,9 +1300,15 @@ async fn load_mouse_report_messages_chunk(
         let till = req.till_date_inclusive_ms.ok_or_else(|| AppError::BL {
             msg: "Until date must be specified".to_string(),
         })?;
-        query.filter(
-            sigint_inbox_item::Column::Datetime.lt(dt_from_millis(till)?),
-        )
+        let till = dt_from_millis(till)?;
+        match req.sort_by.unwrap_or(InboxMessagesSortBy::IMSDatetime) {
+            InboxMessagesSortBy::IMSDatetime => {
+                query.filter(sigint_inbox_item::Column::Datetime.lt(till))
+            }
+            InboxMessagesSortBy::IMSTimestamp => {
+                query.filter(signal_message::Column::Timestamp.lt(till))
+            }
+        }
     } else {
         query
     };
@@ -1713,6 +1719,7 @@ mod tests {
         let first = Utc::now().naive_utc() - chrono::Duration::hours(2);
         let second = first + chrono::Duration::hours(2);
         for (index, datetime) in [first, second].into_iter().enumerate() {
+            let inbox_datetime = if index == 0 { second } else { datetime };
             let message = mk_signal_message(
                 &env.dbx,
                 signal_message::ActiveModel {
@@ -1735,9 +1742,9 @@ mod tests {
                     callsigns: Set(Some(serde_json::json!([format!(
                         "Mouse{index}"
                     )]))),
-                    date: Set(Some(datetime.date().to_string())),
+                    date: Set(Some(inbox_datetime.date().to_string())),
                     time: Set(Some(
-                        datetime.time().format("%H:%M:%S").to_string(),
+                        inbox_datetime.time().format("%H:%M:%S").to_string(),
                     )),
                     unit_v2: Set(Some(format!("MouseUnit{index}"))),
                     checked: Set(Some(true)),
@@ -1762,6 +1769,7 @@ mod tests {
                         .and_utc()
                         .timestamp_millis(),
                 ),
+                sort_by: Some(InboxMessagesSortBy::IMSTimestamp),
                 nolimit: Some(true),
                 ..Default::default()
             },

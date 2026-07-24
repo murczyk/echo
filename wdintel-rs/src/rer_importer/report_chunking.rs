@@ -36,8 +36,20 @@ pub fn report_period_chunks(
             msg: "Некоректний період звіту".to_string(),
         });
     }
+    let period_ms = i128::from(till_ms) - i128::from(since_ms);
+    let window_ms_i128 = i128::from(window_ms);
+    let chunk_count = if period_ms == 0 {
+        1
+    } else {
+        (period_ms + window_ms_i128 - 1) / window_ms_i128
+    };
+    if chunk_count > crate::config::RER_REPORT_CHUNKS_MAX as i128 {
+        return Err(AppError::BL {
+            msg: "Період звіту утворює забагато частин".to_string(),
+        });
+    }
 
-    let mut chunks = Vec::new();
+    let mut chunks = Vec::with_capacity(chunk_count as usize);
     let mut chunk_since = since_ms;
     loop {
         let chunk_limit = chunk_since.checked_add(window_ms).unwrap_or(till_ms);
@@ -152,6 +164,13 @@ mod tests {
             HOUR,
             1,
             ReportPeriodEnd::NonInclusive
+        )
+        .is_err());
+        assert!(report_period_chunks(
+            0,
+            (crate::config::RER_REPORT_CHUNKS_MAX as i64 + 1) * HOUR,
+            1,
+            ReportPeriodEnd::NonInclusive,
         )
         .is_err());
     }

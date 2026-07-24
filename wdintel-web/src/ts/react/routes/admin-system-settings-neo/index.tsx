@@ -111,6 +111,7 @@ const SUPPORT_NON_RER_TOOLTIP =
   "Потрібно для кібер роботи. Вмикає підтримку перехоплень добутих з альтернативних джерел. Якщо група має саме такі перехоплення а не традиційний РЕР - змініть категорію групи в її налаштуваннях, тоді перехоплення з такої групи буде прив'язано до мережі по масці підрозділу; налаштування маски підрозділу - в Оперативних Параметрах мережі, в Базі Даних";
 const REPORT_CHUNKING_TOOLTIP =
   'якщо звіт охоплює більший період - ми розбиваємо цей період на вікна вказаного розміру, обраховуємо їх окремо і агрегуємо в цілий звіт';
+const REPORT_CHUNKING_HOURS_MAX = 2_147_483_647;
 
 function InfoLabel({ label, tooltip }: { label: string; tooltip: string }) {
   return (
@@ -217,7 +218,10 @@ function normalizeForm(form: SystemSettingsForm): SystemSettingsForm {
     dutyTestSinceMs: Math.max(0, Math.floor(form.dutyTestSinceMs) || 0),
     dutyTestLimit: Math.max(1, Math.floor(form.dutyTestLimit) || 1),
     dutyPollIntervalSec: Math.max(1, Math.floor(form.dutyPollIntervalSec) || 1),
-    reportChunkingHours: Math.max(1, Math.floor(form.reportChunkingHours) || 24),
+    reportChunkingHours: Math.min(
+      REPORT_CHUNKING_HOURS_MAX,
+      Math.max(1, Math.floor(form.reportChunkingHours) || 24),
+    ),
     pelengBoundsTopLeftLat: normalizeCoordinateInput(form.pelengBoundsTopLeftLat),
     pelengBoundsTopLeftLng: normalizeCoordinateInput(form.pelengBoundsTopLeftLng),
     pelengBoundsBottomRightLat: normalizeCoordinateInput(form.pelengBoundsBottomRightLat),
@@ -434,7 +438,7 @@ function MainSettingsSection({
           const next = Number(event.target.value);
           patchForm({ reportChunkingHours: Number.isFinite(next) ? next : 24 });
         }}
-        inputProps={{ min: 1, step: 1 }}
+        inputProps={{ min: 1, max: REPORT_CHUNKING_HOURS_MAX, step: 1 }}
       />
 
       <FormControlLabel
