@@ -5,6 +5,7 @@ import {
   formatCallsignHintTooltip,
   formatCallsignHintTooltipData,
   getCallsignHintResult,
+  resolveNetworkCallsignHints,
 } from './callsign-hints';
 import {
   formatLegacyCallsignTooltipLine,
@@ -141,6 +142,21 @@ function createCallsignInfoMap(
 }
 
 describe('rer-analysis-neo callsign hints', () => {
+  it('accepts grouped network hints whose source text differs from the lookup text', () => {
+    const callsignInfo = {
+      callsign: 'ВЕТЕР',
+      res: [],
+      networkHints: [
+        { networkId: 10, callsign: 'Ветер-1', position: 'командир', formation: '4 мср' },
+        { networkId: 20, callsign: 'Ветер-1', position: 'інша', formation: 'інша' },
+      ],
+    };
+
+    expect(resolveNetworkCallsignHints('ВЕТЕР', [10], callsignInfo)).toEqual([
+      callsignInfo.networkHints[0],
+    ]);
+  });
+
   it('formats a network-only callsign hint', () => {
     const result = getCallsignHintResult({
       hintContext: 'message',

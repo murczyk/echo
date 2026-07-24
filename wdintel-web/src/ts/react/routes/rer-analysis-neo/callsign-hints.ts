@@ -40,12 +40,8 @@ export function resolveNetworkCallsignHints(
   networkIds: number[],
   callsignInfo: CallsignInfoRes,
 ): CallsignNetworkHint[] {
-  const normalizedCallsign = normalizeCallsignLookupValue(callsign);
-  return (callsignInfo.networkHints ?? []).filter(
-    (hint) =>
-      normalizeCallsignLookupValue(hint.callsign) === normalizedCallsign &&
-      networkIds.includes(hint.networkId),
-  );
+  void callsign;
+  return (callsignInfo.networkHints ?? []).filter((hint) => networkIds.includes(hint.networkId));
 }
 
 function filterNetworksByFreq(networks: Network[], freq: string | null): Network[] {

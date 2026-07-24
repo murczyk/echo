@@ -180,6 +180,16 @@ pub async fn load_callsigns(
         .iter()
         .map(|(callsign, unit)| (callsign.id, (callsign, unit)))
         .collect::<HashMap<_, _>>();
+    let catalog_ids_by_requested = callsigns.iter().fold(
+        HashMap::<String, Vec<i64>>::new(),
+        |mut ids_by_callsign, (callsign, _)| {
+            ids_by_callsign
+                .entry(callsign.callsign.to_lowercase())
+                .or_default()
+                .push(callsign.id);
+            ids_by_callsign
+        },
+    );
     let mut network_ids_reported_in: HashMap<i64, Vec<i64>> = HashMap::new();
     sigint_network_callsign::Entity::find()
         .filter(
@@ -224,6 +234,40 @@ pub async fn load_callsigns(
                 .c(h!())?,
         );
     }
+    let mut network_callsigns_by_id = HashMap::new();
+    let mut catalog_ids_to_query = catalog_ids_by_requested
+        .values()
+        .flatten()
+        .copied()
+        .unique()
+        .collect_vec();
+    while !catalog_ids_to_query.is_empty() {
+        let (catalog_ids_chunk, remaining_catalog_ids) =
+            cap_vector(catalog_ids_to_query);
+        catalog_ids_to_query = remaining_catalog_ids;
+        for network_callsign in sigint_network_callsign::Entity::find()
+            .find_also_related(sigint_network::Entity)
+            .filter(sigint_network_callsign::Column::Deleted.eq(false))
+            .filter(sigint_network::Column::Deleted.eq(false))
+            .filter(
+                sigint_network_callsign::Column::SigintCallsignId
+                    .is_in(catalog_ids_chunk),
+            )
+            .all(dbx)
+            .await
+            .c(h!())?
+        {
+            network_callsigns_by_id
+                .entry(network_callsign.0.id)
+                .or_insert(network_callsign);
+        }
+    }
+    for network_callsign in network_callsigns {
+        network_callsigns_by_id
+            .entry(network_callsign.0.id)
+            .or_insert(network_callsign);
+    }
+    let network_callsigns = network_callsigns_by_id.into_values().collect_vec();
     let network_unit_ids = network_callsigns
         .iter()
         .filter_map(|(network_callsign, _)| network_callsign.unit_id)
@@ -278,7 +322,13 @@ pub async fn load_callsigns(
             }
         }
         for (network_callsign, _) in &network_callsigns {
-            if callsign_text_matches(&network_callsign.sigint_callsign, &c) {
+            let requested_callsign = c.to_lowercase();
+            if network_hint_matches_requested(
+                &network_callsign.sigint_callsign,
+                &c,
+                network_callsign.sigint_callsign_id,
+                catalog_ids_by_requested.get(&requested_callsign),
+            ) {
                 let catalog = network_callsign
                     .sigint_callsign_id
                     .and_then(|id| catalog_by_id.get(&id));
@@ -342,6 +392,19 @@ fn callsign_text_matches(left: &str, right: &str) -> bool {
     left.to_lowercase() == right.to_lowercase()
 }
 
+fn network_hint_matches_requested(
+    network_callsign: &str,
+    requested_callsign: &str,
+    network_catalog_id: Option<i64>,
+    requested_catalog_ids: Option<&Vec<i64>>,
+) -> bool {
+    callsign_text_matches(network_callsign, requested_callsign)
+        || network_catalog_id.is_some_and(|id| {
+            requested_catalog_ids
+                .is_some_and(|catalog_ids| catalog_ids.contains(&id))
+        })
+}
+
 // sql accepts max of ~65500 entries in where statement
 fn cap_string_vector(source: Vec<String>) -> (Vec<String>, Vec<String>) {
     cap_vector(source)
@@ -361,7 +424,8 @@ fn cap_vector<T: Clone>(source: Vec<T>) -> (Vec<T>, Vec<T>) {
 #[cfg(test)]
 mod tests {
     use super::{
-        callsign_text_matches, cap_string_vector, requested_callsigns,
+        callsign_text_matches, cap_string_vector,
+        network_hint_matches_requested, requested_callsigns,
         resolve_network_hint_formation,
     };
     use crate::rer_importer::types::CallsignNetworks;
@@ -427,5 +491,21 @@ mod tests {
         assert!(callsign_text_matches("ВЕТЕР", "ветер"));
         assert!(callsign_text_matches("MiXeD", "mixed"));
         assert!(!callsign_text_matches("ВЕТЕР", "БУРЯ"));
+    }
+
+    #[test]
+    fn matches_linked_catalog_id_when_text_differs() {
+        assert!(network_hint_matches_requested(
+            "Ветер-1",
+            "ветер",
+            Some(7),
+            Some(&vec![7]),
+        ));
+        assert!(!network_hint_matches_requested(
+            "Ветер-1",
+            "ветер",
+            Some(8),
+            Some(&vec![7]),
+        ));
     }
 }
