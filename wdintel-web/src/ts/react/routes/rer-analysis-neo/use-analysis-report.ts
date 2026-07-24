@@ -56,7 +56,7 @@ type ReportRunSnapshot = {
   toDateTimeStr: string;
 };
 
-type ReportTaskErrorCode = 'no_default_aor';
+type ReportTaskErrorCode = 'mouse_report_message_limit' | 'no_default_aor';
 
 class ReportTaskError extends Error {
   code: ReportTaskErrorCode | null;
@@ -69,15 +69,19 @@ class ReportTaskError extends Error {
 }
 
 function normalizeReportTaskErrorCode(code: string | null): ReportTaskErrorCode | null {
+  if (code?.includes('mouse_report_message_limit')) return 'mouse_report_message_limit';
   return code === 'no_default_aor' ? code : null;
 }
 
 function toErrorMessage(error: unknown): string {
   if (error instanceof ReportTaskError) {
+    if (error.code === 'mouse_report_message_limit') {
+      return 'Звіт містить понад 10 000 повідомлень. Зменшіть період або звузьте фільтри.';
+    }
     if (error.code === 'no_default_aor') {
       return 'Не знайдено AOR за замовчуванням для формування цього звіту.';
     }
-    return error.message || 'Сталася помилка під час формування звіту.';
+    return 'Сталася помилка під час формування звіту.';
   }
   if (error instanceof Error) return error.message || 'Сталася помилка під час формування звіту.';
   return 'Сталася помилка під час формування звіту.';
@@ -333,7 +337,7 @@ export function useAnalysisReport({
             const message = toErrorMessage(
               new ReportTaskError(
                 historyRow.lastError ?? 'Сталася помилка під час формування звіту.',
-                null,
+                normalizeReportTaskErrorCode(historyRow.lastError),
               ),
             );
             updateReportTaskRuns((current) =>
@@ -357,7 +361,7 @@ export function useAnalysisReport({
             );
             throw new ReportTaskError(
               historyRow.lastError ?? 'Сталася помилка під час формування звіту.',
-              null,
+              normalizeReportTaskErrorCode(historyRow.lastError),
             );
           }
           if (historyRow.status === 'done') {

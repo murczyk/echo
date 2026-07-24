@@ -3718,7 +3718,10 @@ update user shared route msg model =
 
         ReportDownloadDocxDone (Err e) ->
             ( { model | reportDownloadInProgress = False }
-            , if List.member reportPermissionDeniedErrorCode e.errors then
+            , if List.any (String.contains mouseReportMessageLimitErrorCode) e.errors then
+                E.showError mouseReportMessageLimitMessage
+
+              else if List.member reportPermissionDeniedErrorCode e.errors then
                 E.showError reportPermissionDeniedMessage
 
               else

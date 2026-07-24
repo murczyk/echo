@@ -1,4 +1,4 @@
-module Pages_.RerAnalysis.Constants exposing (correlatedFreqsLimit, reportPermissionDeniedErrorCode, reportPermissionDeniedMessage, reportTemplateToString)
+module Pages_.RerAnalysis.Constants exposing (correlatedFreqsLimit, mouseReportMessageLimitErrorCode, mouseReportMessageLimitMessage, reportPermissionDeniedErrorCode, reportPermissionDeniedMessage, reportTemplateToString)
 
 import Pages_.RerAnalysis.Model exposing (..)
 
@@ -6,6 +6,16 @@ import Pages_.RerAnalysis.Model exposing (..)
 correlatedFreqsLimit : number
 correlatedFreqsLimit =
     20
+
+
+mouseReportMessageLimitErrorCode : String
+mouseReportMessageLimitErrorCode =
+    "mouse_report_message_limit"
+
+
+mouseReportMessageLimitMessage : String
+mouseReportMessageLimitMessage =
+    "Звіт містить понад 10 000 повідомлень. Зменшіть період або звузьте фільтри."
 
 
 reportPermissionDeniedErrorCode : String

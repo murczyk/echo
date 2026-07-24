@@ -746,6 +746,7 @@ pub async fn bgtask_log2(
 )]
 #[serde(rename_all = "snake_case")]
 pub enum BgtaskErrorCode {
+    MouseReportMessageLimit,
     NoDefaultAor,
 }
 
@@ -753,7 +754,11 @@ fn bgtask_error_code_from_message(
     finished_with_error: Option<&String>,
 ) -> Option<BgtaskErrorCode> {
     let message = finished_with_error?;
-    if message.contains("No default AOR found") {
+    if message
+        .contains(crate::config::RER_MOUSE_REPORT_MESSAGE_LIMIT_ERROR_CODE)
+    {
+        Some(BgtaskErrorCode::MouseReportMessageLimit)
+    } else if message.contains("No default AOR found") {
         Some(BgtaskErrorCode::NoDefaultAor)
     } else {
         None
