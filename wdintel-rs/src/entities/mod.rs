@@ -124,6 +124,8 @@ pub mod sigint_settlement;
 pub mod sigint_signal;
 pub mod sigint_signal_changelog;
 pub mod sigint_unit;
+pub mod sigint_unit_attachment;
+pub mod sigint_unit_attachment_aor;
 pub mod sigint_unit_changelog;
 pub mod sigint_zone;
 pub mod sigint_zone_aor;

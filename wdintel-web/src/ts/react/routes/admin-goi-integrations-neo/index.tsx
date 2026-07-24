@@ -13,7 +13,7 @@ import {
 } from '@mui/material';
 import React from 'react';
 
-import { Organism } from '../../../../Bindings';
+import { Login, Organism } from '../../../../Bindings';
 import { PageHeader } from '../../components/PageHeader';
 import { PowerButton } from '../../components/PowerButton';
 import {
@@ -33,6 +33,7 @@ import {
   GOI_INTEGRATION_TYPE_SIMPLE,
   type GoiIntegrationType,
 } from '../../services/api/organisms';
+import { buildLoginOptions, selectedLoginIds, selectLoginOptions } from '../../utils/login-options';
 
 const GOI_SSH_PORT_DEFAULT = 22;
 const GOI_API_PORT_DEFAULT = 8088;
@@ -57,7 +58,7 @@ type GoiForm = {
   apiPassword: string;
   disableGoiToEchoPalitraSync: boolean;
   pauseWorker: boolean;
-  maintainerLogin: string;
+  maintainerLoginId: string;
   accessOrganismIds: number[];
   accessLogins: string[];
 };
@@ -76,7 +77,7 @@ const emptyForm: GoiForm = {
   apiPassword: '',
   disableGoiToEchoPalitraSync: true,
   pauseWorker: false,
-  maintainerLogin: '',
+  maintainerLoginId: '',
   accessOrganismIds: [],
   accessLogins: [],
 };
@@ -114,7 +115,7 @@ function toForm(integration: GoiAdminIntegration): GoiForm {
     apiPassword: integration.apiPassword,
     disableGoiToEchoPalitraSync: integration.disableGoiToEchoPalitraSync,
     pauseWorker: integration.pauseWorker,
-    maintainerLogin: integration.maintainerLogin,
+    maintainerLoginId: integration.maintainerLoginId,
     accessOrganismIds: integration.accessOrganismIds,
     accessLogins: integration.accessLogins,
   };
@@ -126,7 +127,7 @@ function hasAnyApiSettings(form: GoiForm): boolean {
 }
 
 function hasMaintainerLogin(form: GoiForm): boolean {
-  return form.maintainerLogin.trim().length > 0;
+  return form.maintainerLoginId.trim().length > 0;
 }
 
 function disableGoiToEchoPalitraSyncValue(form: GoiForm): boolean {
@@ -153,7 +154,7 @@ function toSaveReq(form: GoiForm): UpsertGoiAdminIntegrationReq {
       apiPassword: '',
       disableGoiToEchoPalitraSync: disableGoiToEchoPalitraSyncValue(form),
       pauseWorker: form.pauseWorker,
-      maintainerLogin: form.maintainerLogin,
+      maintainerLoginId: form.maintainerLoginId,
       accessOrganismIds: form.accessOrganismIds,
       accessLogins: form.accessLogins,
     };
@@ -172,7 +173,7 @@ function toSaveReq(form: GoiForm): UpsertGoiAdminIntegrationReq {
     apiPassword: form.apiPassword,
     disableGoiToEchoPalitraSync: disableGoiToEchoPalitraSyncValue(form),
     pauseWorker: form.pauseWorker,
-    maintainerLogin: form.maintainerLogin,
+    maintainerLoginId: form.maintainerLoginId,
     accessOrganismIds: form.accessOrganismIds,
     accessLogins: form.accessLogins,
   };
@@ -205,7 +206,7 @@ function validateForm(form: GoiForm): string | null {
 export function AdminGoiIntegrationsNeoPage() {
   const [integrations, setIntegrations] = React.useState<GoiAdminIntegration[]>([]);
   const [organisms, setOrganisms] = React.useState<Organism[]>([]);
-  const [logins, setLogins] = React.useState<string[]>([]);
+  const [logins, setLogins] = React.useState<Login[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [saving, setSaving] = React.useState(false);
   const [checking, setChecking] = React.useState(false);
@@ -224,11 +225,7 @@ export function AdminGoiIntegrationsNeoPage() {
         ]);
         setIntegrations(nextIntegrations);
         setOrganisms(nextOrganisms);
-        setLogins(
-          Array.from(new Set(nextLogins.users.map((user) => user.login))).sort((a, b) =>
-            a.localeCompare(b, 'uk'),
-          ),
-        );
+        setLogins(buildLoginOptions(nextLogins.users));
         if (nextIntegrations.length > 0) {
           setSelectedId(nextIntegrations[0].id);
           setForm(toForm(nextIntegrations[0]));
@@ -469,19 +466,28 @@ export function AdminGoiIntegrationsNeoPage() {
 
             <Autocomplete
               options={logins}
-              value={form.maintainerLogin || null}
+              value={
+                form.maintainerLoginId
+                  ? selectLoginOptions([form.maintainerLoginId], logins)[0]
+                  : null
+              }
               onChange={(_, value) =>
                 setForm((prev) => ({
                   ...prev,
-                  maintainerLogin: value ?? '',
+                  maintainerLoginId: value?.id ?? '',
                   disableGoiToEchoPalitraSync: value ? prev.disableGoiToEchoPalitraSync : true,
                 }))
               }
-              renderOption={(props, option) => (
-                <li {...props} key={option}>
-                  {option}
-                </li>
-              )}
+              getOptionLabel={(option) => option.login}
+              isOptionEqualToValue={(option, value) => option.id === value.id}
+              renderOption={(props, option) => {
+                const { key: _unusedKey, ...optionProps } = props;
+                return (
+                  <li {...optionProps} key={option.id}>
+                    {option.login}
+                  </li>
+                );
+              }}
               renderInput={(params) => (
                 <TextField {...params} label="Відповідальний логін" fullWidth />
               )}
@@ -641,13 +647,20 @@ export function AdminGoiIntegrationsNeoPage() {
             <Autocomplete
               multiple
               options={logins}
-              value={form.accessLogins}
-              onChange={(_, values) => setForm((prev) => ({ ...prev, accessLogins: values }))}
-              renderOption={(props, option) => (
-                <li {...props} key={option}>
-                  {option}
-                </li>
-              )}
+              value={selectLoginOptions(form.accessLogins, logins)}
+              onChange={(_, values) =>
+                setForm((prev) => ({ ...prev, accessLogins: selectedLoginIds(values) }))
+              }
+              getOptionLabel={(option) => option.login}
+              isOptionEqualToValue={(option, value) => option.id === value.id}
+              renderOption={(props, option) => {
+                const { key: _unusedKey, ...optionProps } = props;
+                return (
+                  <li {...optionProps} key={option.id}>
+                    {option.login}
+                  </li>
+                );
+              }}
               renderInput={(params) => (
                 <TextField {...params} label="Доступ для логінів" fullWidth />
               )}

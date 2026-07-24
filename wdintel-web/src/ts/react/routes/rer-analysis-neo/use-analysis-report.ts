@@ -56,7 +56,8 @@ type ReportRunSnapshot = {
   toDateTimeStr: string;
 };
 
-type ReportTaskErrorCode = 'mouse_report_message_limit' | 'no_default_aor';
+type ReportTaskErrorCode =
+  'mouse_report_message_limit' | 'summary_table_report_message_limit' | 'no_default_aor';
 
 class ReportTaskError extends Error {
   code: ReportTaskErrorCode | null;
@@ -70,12 +71,18 @@ class ReportTaskError extends Error {
 
 function normalizeReportTaskErrorCode(code: string | null): ReportTaskErrorCode | null {
   if (code?.includes('mouse_report_message_limit')) return 'mouse_report_message_limit';
+  if (code?.includes('summary_table_report_message_limit')) {
+    return 'summary_table_report_message_limit';
+  }
   return code === 'no_default_aor' ? code : null;
 }
 
 function toErrorMessage(error: unknown): string {
   if (error instanceof ReportTaskError) {
-    if (error.code === 'mouse_report_message_limit') {
+    if (
+      error.code === 'mouse_report_message_limit' ||
+      error.code === 'summary_table_report_message_limit'
+    ) {
       return 'Звіт містить понад 10 000 повідомлень. Зменшіть період або звузьте фільтри.';
     }
     if (error.code === 'no_default_aor') {

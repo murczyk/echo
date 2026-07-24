@@ -34,11 +34,29 @@ pub async fn report_docx_kind_network_frequencies(
     let started_at = Instant::now();
     info!("report_docx_kind_network_frequencies started");
 
-    let db = env.dbx.clone();
     let since_dt = format_to_native_date(req.req.since_date_inclusive_ms)?;
     let till_dt = format_to_native_date(req.req.till_date_inclusive_ms)?;
-    let aor_data =
-        get_aor_network_frequency_rows(&db, req, since_dt, till_dt).await?;
+    let analytics_req = req;
+    let postgres_req = req;
+    let aor_data = crate::rer_importer::analysis::with_analytics_read_fallback(
+        env,
+        "network frequencies report",
+        true,
+        |db| async move {
+            get_aor_network_frequency_rows(
+                &db,
+                analytics_req,
+                since_dt,
+                till_dt,
+            )
+            .await
+        },
+        |db| async move {
+            get_aor_network_frequency_rows(&db, postgres_req, since_dt, till_dt)
+                .await
+        },
+    )
+    .await?;
 
     let mut docx = get_docx_document(req);
 

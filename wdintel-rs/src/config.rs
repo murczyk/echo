@@ -79,6 +79,9 @@ pub const RER_INTERCEPTION_REPORT_HEADER_ROWS_NUM: usize = 1;
 pub const RER_MOUSE_REPORT_MESSAGE_MAX: usize = 10_000;
 pub const RER_MOUSE_REPORT_MESSAGE_LIMIT_ERROR_CODE: &str =
     "mouse_report_message_limit";
+pub const RER_SUMMARY_TABLE_REPORT_MESSAGE_MAX: usize = 10_000;
+pub const RER_SUMMARY_TABLE_REPORT_MESSAGE_LIMIT_ERROR_CODE: &str =
+    "summary_table_report_message_limit";
 pub const REPORT_HISTORY_LIST_LIMIT: u64 = 200;
 pub const RER_DUTY_TEST_SOURCE_WINDOW_MINUTES_DEFAULT: i64 = 10;
 pub const RER_DUTY_REPLAY_RECENT_WINDOW_MINUTES: i64 = 10;
@@ -277,6 +280,14 @@ pub const INACTIVE_USERS_DEACTIVATE_DURATION_SEC: u64 = 3600;
 pub const INACTIVE_USERS_DEACTIVATE_AFTER_DAYS: i64 = 30;
 /// Default root prefix for encrypted messenger media stored on S3
 pub const S3_MEDIA_ROOT_PREFIX: &str = "message-media";
+pub const SIGINT_UNIT_ATTACHMENT_MAX_FILE_BYTES: usize = 50 * 1024 * 1024;
+pub const SIGINT_UNIT_ATTACHMENT_MAX_ENCRYPTED_BYTES: u64 = 51 * 1024 * 1024;
+pub const SIGINT_UNIT_ATTACHMENT_DOWNLOAD_TIMEOUT_SECS: u64 = 60;
+pub const SIGINT_UNIT_ATTACHMENT_MAX_FILENAME_CHARS: usize = 255;
+pub const SIGINT_UNIT_ATTACHMENT_MAX_SHORT_DESCRIPTION_CHARS: usize = 500;
+pub const SIGINT_UNIT_ATTACHMENT_MAX_FULL_DESCRIPTION_CHARS: usize = 20_000;
+pub const SIGINT_UNIT_ATTACHMENT_MAX_AORS: usize = 100;
+pub const SIGINT_UNIT_ATTACHMENT_MAX_METADATA_FIELD_BYTES: usize = 80 * 1024;
 pub const SIGNAL_CLIENT_DIR: &str = "/etc/echo/signal-cli-data";
 pub const WHATSAPP_CLIENT_DIR: &str = "/etc/echo/whatsapp-cli-data";
 pub const SIGNAL_UNIT_NAME: &str = "echo-signal-bot";

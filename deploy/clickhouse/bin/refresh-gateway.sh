@@ -42,6 +42,7 @@ SELECT pg_catalog.format(
     WHEN 'pg_catalog.jsonb'::pg_catalog.regtype THEN 'jsonb'
     WHEN 'pg_catalog.bytea'::pg_catalog.regtype THEN 'bytea'
     WHEN 'pg_catalog.tsvector'::pg_catalog.regtype THEN 'tsvector'
+    WHEN 'pg_catalog.timestamp'::pg_catalog.regtype THEN 'timestamp'
     ELSE NULL
   END
 )
@@ -74,7 +75,9 @@ CREATE TEMP TABLE source_column_metadata (
   column_name text NOT NULL,
   ordinal_position integer NOT NULL,
   compatibility_type text CHECK (
-    compatibility_type IN ('json', 'jsonb', 'bytea', 'tsvector')
+    compatibility_type IN (
+      'json', 'jsonb', 'bytea', 'tsvector', 'timestamp'
+    )
   )
 ) ON COMMIT DROP;
 CREATE TEMP TABLE gateway_refresh_config (
@@ -142,6 +145,16 @@ WHERE metadata.compatibility_type = 'bytea'
 ORDER BY metadata.target_table, metadata.ordinal_position
 \gexec
 
+SELECT format(
+  'ALTER FOREIGN TABLE echo_clickhouse_foreign.%I ALTER COLUMN %I TYPE pg_catalog.timestamp',
+  metadata.target_table,
+  metadata.column_name
+)
+FROM source_column_metadata metadata
+WHERE metadata.compatibility_type = 'timestamp'
+ORDER BY metadata.target_table, metadata.ordinal_position
+\gexec
+
 DO $do$
 DECLARE
   foreign_table record;
@@ -187,7 +200,7 @@ BEGIN
     SELECT string_agg(
       CASE
         WHEN metadata.compatibility_type IS NULL
-          OR metadata.compatibility_type = 'bytea'
+          OR metadata.compatibility_type IN ('bytea', 'timestamp')
           THEN format('foreign_row.%I', column_info.column_name)
         WHEN metadata.compatibility_type = 'json'
           THEN format(

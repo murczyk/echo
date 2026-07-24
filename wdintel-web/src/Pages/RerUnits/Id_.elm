@@ -1,0 +1,548 @@
+module Pages.RerUnits.Id_ exposing (Model, Msg, page)
+
+import Api
+import Auth
+import Bindings as B
+import Bytes exposing (Bytes)
+import Core.Auth
+import Core.Types exposing (ApiError)
+import Dict
+import Effect as E exposing (Effect)
+import File.Download as Download
+import Html exposing (..)
+import Html.Attributes as Attr exposing (..)
+import Html.Events exposing (on, onClick)
+import Json.Decode as Decode
+import Layouts
+import Page exposing (Page)
+import Route exposing (Route)
+import Route.Path
+import Shared
+import Shared.Components.Spinner
+import Time
+import Utils.Api.ErrorHandling
+import Utils.Time
+import View exposing (View)
+
+
+page : Auth.User -> Shared.Model -> Route { id : String } -> Page Model Msg
+page user shared route =
+    Page.new
+        { init = init user route
+        , update = update
+        , subscriptions = subscriptions
+        , view = view user shared
+        }
+        |> Page.withLayout (toLayout user)
+
+
+toLayout : Auth.User -> Model -> Layouts.Layout Msg
+toLayout user _ =
+    Layouts.Navbar
+        { user = user
+        , activeName = "rer-units"
+        }
+
+
+type Tab
+    = Overview
+    | Files
+
+
+type alias Model =
+    { unitId : Maybe Int
+    , details : Maybe B.UnitDetailsRsp
+    , detailsLoading : Bool
+    , detailsLoadFailed : Bool
+    , activeTab : Tab
+    , downloadInProgress : Maybe Int
+    }
+
+
+init : Auth.User -> Route { id : String } -> () -> ( Model, Effect Msg )
+init _ route _ =
+    let
+        unitId =
+            route.params.id
+                |> String.toInt
+                |> Maybe.andThen positiveInt
+
+        initialEffects =
+            case unitId of
+                Just id ->
+                    [ loadDetails id ]
+
+                Nothing ->
+                    []
+    in
+    ( { unitId = unitId
+      , details = Nothing
+      , detailsLoading = unitId /= Nothing
+      , detailsLoadFailed = False
+      , activeTab =
+            if Dict.get "tab" route.query == Just "files" then
+                Files
+
+            else
+                Overview
+      , downloadInProgress = Nothing
+      }
+    , E.batch initialEffects
+    )
+
+
+positiveInt : Int -> Maybe Int
+positiveInt value =
+    if value > 0 then
+        Just value
+
+    else
+        Nothing
+
+
+loadDetails : Int -> Effect Msg
+loadDetails unitId =
+    E.sendCmd <|
+        Api.sigint_unit_details DetailsReturnedByApi
+            { unitId = unitId
+            }
+
+
+type Msg
+    = DetailsReturnedByApi (Result ApiError B.UnitDetailsRsp)
+    | RetryDetails
+    | ChangeTab Tab
+    | AttachmentsUploaded
+    | DownloadAttachment B.UnitAttachment
+    | AttachmentDownloaded B.UnitAttachment (Result ApiError Bytes)
+
+
+update : Msg -> Model -> ( Model, Effect Msg )
+update msg model =
+    case msg of
+        DetailsReturnedByApi result ->
+            updateDetails result model
+
+        RetryDetails ->
+            retryDetails model
+
+        ChangeTab tab ->
+            ( { model | activeTab = tab }, E.none )
+
+        AttachmentsUploaded ->
+            reloadAttachments model
+
+        DownloadAttachment attachment ->
+            downloadAttachment attachment model
+
+        AttachmentDownloaded attachment result ->
+            attachmentDownloaded attachment result model
+
+
+updateDetails : Result ApiError B.UnitDetailsRsp -> Model -> ( Model, Effect Msg )
+updateDetails result model =
+    case result of
+        Err err ->
+            ( { model
+                | detailsLoading = False
+                , detailsLoadFailed = True
+              }
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження підрозділу" err
+            )
+
+        Ok details ->
+            ( { model
+                | details = Just details
+                , detailsLoading = False
+                , detailsLoadFailed = False
+              }
+            , E.none
+            )
+
+
+retryDetails : Model -> ( Model, Effect Msg )
+retryDetails model =
+    case model.unitId of
+        Nothing ->
+            ( model, E.none )
+
+        Just unitId ->
+            ( { model
+                | detailsLoading = True
+                , detailsLoadFailed = False
+              }
+            , loadDetails unitId
+            )
+
+
+reloadAttachments : Model -> ( Model, Effect Msg )
+reloadAttachments model =
+    case model.unitId of
+        Nothing ->
+            ( model, E.none )
+
+        Just unitId ->
+            ( model, loadDetails unitId )
+
+
+downloadAttachment : B.UnitAttachment -> Model -> ( Model, Effect Msg )
+downloadAttachment attachment model =
+    if model.downloadInProgress /= Nothing then
+        ( model, E.none )
+
+    else
+        ( { model | downloadInProgress = Just attachment.id }
+        , E.sendCmd <|
+            Api.sigint_unit_attachment_download
+                (AttachmentDownloaded attachment)
+                { attachmentId = attachment.id
+                }
+        )
+
+
+attachmentDownloaded : B.UnitAttachment -> Result ApiError Bytes -> Model -> ( Model, Effect Msg )
+attachmentDownloaded attachment result model =
+    case result of
+        Err err ->
+            ( { model | downloadInProgress = Nothing }
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження файлу" err
+            )
+
+        Ok bytes ->
+            ( { model | downloadInProgress = Nothing }
+            , E.sendCmd <|
+                Download.bytes
+                    (downloadFileName attachment)
+                    (downloadContentType attachment)
+                    bytes
+            )
+
+
+downloadFileName : B.UnitAttachment -> String
+downloadFileName attachment =
+    if String.isEmpty (String.trim attachment.fileName) then
+        "attachment-" ++ String.fromInt attachment.id
+
+    else
+        attachment.fileName
+
+
+downloadContentType : B.UnitAttachment -> String
+downloadContentType attachment =
+    if String.isEmpty (String.trim attachment.contentType) then
+        "application/octet-stream"
+
+    else
+        attachment.contentType
+
+
+subscriptions : Model -> Sub Msg
+subscriptions _ =
+    Sub.none
+
+
+view : Auth.User -> Shared.Model -> Model -> View Msg
+view user shared model =
+    { title = "Підрозділ противника"
+    , body =
+        [ div [ class "page-rer-unit-details w-5/6 mx-auto py-4" ]
+            [ case ( model.unitId, model.details ) of
+                ( Nothing, _ ) ->
+                    invalidUnitView
+
+                ( Just _, Just details ) ->
+                    detailsView user shared model details
+
+                ( Just _, Nothing ) ->
+                    if model.detailsLoading then
+                        loadingView
+
+                    else
+                        detailsErrorView model.detailsLoadFailed
+            ]
+        ]
+    }
+
+
+invalidUnitView : Html Msg
+invalidUnitView =
+    div [ class "alert alert-danger" ]
+        [ text "Некоректний ID підрозділу." ]
+
+
+loadingView : Html Msg
+loadingView =
+    div [ class "flex justify-center py-12" ]
+        [ Shared.Components.Spinner.loadingSpinner ]
+
+
+detailsErrorView : Bool -> Html Msg
+detailsErrorView loadFailed =
+    div [ class "alert alert-danger d-flex align-items-center justify-content-between" ]
+        [ text
+            (if loadFailed then
+                "Не вдалося завантажити підрозділ."
+
+             else
+                "Підрозділ не знайдено."
+            )
+        , button
+            [ class "btn btn-outline-danger btn-sm"
+            , type_ "button"
+            , onClick RetryDetails
+            ]
+            [ text "Спробувати ще раз" ]
+        ]
+
+
+detailsView : Auth.User -> Shared.Model -> Model -> B.UnitDetailsRsp -> Html Msg
+detailsView user shared model details =
+    div [ class "flex flex-col gap-4" ]
+        [ detailsHeader details.unit
+        , tabsView model.activeTab
+        , case model.activeTab of
+            Overview ->
+                overviewTab shared details.unit
+
+            Files ->
+                filesTab user shared model details.attachments
+        ]
+
+
+detailsHeader : B.Unit -> Html Msg
+detailsHeader unit =
+    div [ class "d-flex align-items-center gap-3" ]
+        [ a
+            [ class "btn btn-outline-secondary btn-sm"
+            , Route.href
+                { path = Route.Path.RerUnits
+                , query = Dict.empty
+                , hash = Nothing
+                }
+            ]
+            [ i [ class "bi bi-arrow-left me-2" ] []
+            , text "До підрозділів"
+            ]
+        , h1 [ class "mb-0" ] [ text unit.name ]
+        ]
+
+
+tabsView : Tab -> Html Msg
+tabsView activeTab =
+    let
+        tabButton tab label =
+            button
+                [ class "px-4 py-2 text-sm font-medium border-b-2 bg-transparent"
+                , classList
+                    [ ( "border-primary text-primary", activeTab == tab )
+                    , ( "border-transparent text-secondary", activeTab /= tab )
+                    ]
+                , type_ "button"
+                , attribute "role" "tab"
+                , attribute "aria-selected"
+                    (if activeTab == tab then
+                        "true"
+
+                     else
+                        "false"
+                    )
+                , onClick (ChangeTab tab)
+                ]
+                [ text label ]
+    in
+    nav
+        [ class "d-flex border-bottom"
+        , attribute "role" "tablist"
+        ]
+        [ tabButton Overview "Огляд"
+        , tabButton Files "Файли"
+        ]
+
+
+overviewTab : Shared.Model -> B.Unit -> Html Msg
+overviewTab shared unit =
+    div
+        [ class "border rounded p-4 bg-card"
+        , attribute "role" "tabpanel"
+        ]
+        [ div [ class "row g-4" ]
+            [ overviewField "Рота, взвод" unit.company
+            , overviewField "Батальйон" unit.battalion
+            , overviewField "Полк/Бригада" unit.regiment
+            , overviewField "Дивізія" unit.division
+            , overviewField "Корпус/Армія" unit.army
+            , overviewField
+                "Статус"
+                (if unit.active then
+                    "Активний"
+
+                 else
+                    "Неактивний"
+                )
+            , overviewField
+                "Дата внесення"
+                (Utils.Time.renderDateTimeF1 shared.timeZone
+                    (Time.millisToPosix unit.createdAt)
+                )
+            , div [ class "col-12" ]
+                [ div [ class "text-secondary text-sm mb-1" ] [ text "Коментар" ]
+                , div
+                    [ class "border rounded p-3"
+                    , style "min-height" "96px"
+                    , style "white-space" "pre-wrap"
+                    , style "overflow-wrap" "anywhere"
+                    ]
+                    [ text (textOrDash unit.comment) ]
+                ]
+            ]
+        ]
+
+
+overviewField : String -> String -> Html Msg
+overviewField labelText value =
+    div [ class "col-md-6" ]
+        [ div [ class "text-secondary text-sm mb-1" ] [ text labelText ]
+        , div [ class "fw-semibold" ] [ text (textOrDash value) ]
+        ]
+
+
+filesTab : Auth.User -> Shared.Model -> Model -> List B.UnitAttachment -> Html Msg
+filesTab user shared model attachments =
+    div
+        [ class "flex flex-col gap-4"
+        , attribute "role" "tabpanel"
+        ]
+        [ if Core.Auth.hasRole "Admin" user then
+            uploadForm model
+
+          else
+            text ""
+        , attachmentsTable shared model attachments
+        ]
+
+
+uploadForm : Model -> Html Msg
+uploadForm model =
+    case model.unitId of
+        Nothing ->
+            text ""
+
+        Just unitId ->
+            node "unit-attachment-upload"
+                [ attribute "data-unit-id" (String.fromInt unitId)
+                , on "unit-attachments-uploaded" (Decode.succeed AttachmentsUploaded)
+                ]
+                []
+
+
+attachmentsTable : Shared.Model -> Model -> List B.UnitAttachment -> Html Msg
+attachmentsTable shared model attachments =
+    if List.isEmpty attachments then
+        div [ class "border rounded p-5 text-center text-secondary" ]
+            [ text "Файлів немає." ]
+
+    else
+        div [ class "table-responsive" ]
+            [ table [ class "table table-bordered align-middle mb-0" ]
+                [ thead []
+                    [ tr []
+                        [ th [ scope "col" ] [ text "Файл" ]
+                        , th [ scope "col" ] [ text "Короткий опис" ]
+                        , th [ scope "col" ] [ text "Повний опис" ]
+                        , th [ scope "col" ] [ text "Смуги (AOR)" ]
+                        , th [ scope "col", class "text-nowrap" ] [ text "Дата внесення" ]
+                        ]
+                    ]
+                , tbody []
+                    (List.map (attachmentRow shared model) attachments)
+                ]
+            ]
+
+
+attachmentRow : Shared.Model -> Model -> B.UnitAttachment -> Html Msg
+attachmentRow shared model attachment =
+    let
+        isDownloading =
+            model.downloadInProgress == Just attachment.id
+
+        anyDownloadInProgress =
+            model.downloadInProgress /= Nothing
+
+        aorNames =
+            attachment.aors
+                |> List.map .name
+                |> String.join "\n"
+    in
+    tr [ style "height" "96px" ]
+        [ td tallCellAttributes
+            [ button
+                [ class "btn btn-link p-0 text-start d-inline-flex align-items-center gap-2"
+                , type_ "button"
+                , Attr.disabled anyDownloadInProgress
+                , onClick (DownloadAttachment attachment)
+                ]
+                [ if isDownloading then
+                    span
+                        [ class "spinner-border spinner-border-sm"
+                        , attribute "role" "status"
+                        ]
+                        []
+
+                  else
+                    i [ class "bi bi-download" ] []
+                , span [ class "text-break" ] [ text (downloadFileName attachment) ]
+                ]
+            , div [ class "small text-secondary mt-2" ]
+                [ text (formatFileSize attachment.sizeBytes) ]
+            ]
+        , descriptionCell attachment.shortDescription
+        , descriptionCell attachment.fullDescription
+        , descriptionCell aorNames
+        , td tallCellAttributes
+            [ text <|
+                Utils.Time.renderDateTimeF1 shared.timeZone
+                    (Time.millisToPosix attachment.createdAt)
+            ]
+        ]
+
+
+tallCellAttributes : List (Html.Attribute msg)
+tallCellAttributes =
+    [ class "align-top"
+    , style "height" "96px"
+    , style "min-height" "96px"
+    , style "vertical-align" "top"
+    ]
+
+
+descriptionCell : String -> Html msg
+descriptionCell value =
+    td tallCellAttributes
+        [ div
+            [ style "white-space" "pre-wrap"
+            , style "overflow-wrap" "anywhere"
+            , style "word-break" "break-word"
+            ]
+            [ text (textOrDash value) ]
+        ]
+
+
+textOrDash : String -> String
+textOrDash value =
+    if String.isEmpty (String.trim value) then
+        "—"
+
+    else
+        value
+
+
+formatFileSize : Int -> String
+formatFileSize sizeBytes =
+    if sizeBytes >= 1024 * 1024 then
+        String.fromInt (sizeBytes // (1024 * 1024)) ++ " МБ"
+
+    else if sizeBytes >= 1024 then
+        String.fromInt (sizeBytes // 1024) ++ " КБ"
+
+    else
+        String.fromInt sizeBytes ++ " Б"

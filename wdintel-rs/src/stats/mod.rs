@@ -383,6 +383,92 @@ pub async fn read_group_stats_timeline_cached(
         .collect())
 }
 
+#[derive(FromQueryResult)]
+struct GroupStatsTimelineRawRow {
+    master_key: String,
+    bucket: NaiveDateTime,
+    count: i64,
+}
+
+pub async fn read_group_stats_timeline_raw(
+    dbx: &DatabaseConnection,
+    master_keys: Vec<String>,
+    dt_since: NaiveDateTime,
+    dt_till: NaiveDateTime,
+) -> anyhow::Result<Vec<SignalGroupStatsTimelineEntry>> {
+    let master_keys = master_keys.into_iter().unique().collect_vec();
+    if master_keys.is_empty() {
+        return Ok(vec![]);
+    }
+
+    let bucket_expr = Expr::cust(
+        "DATE_TRUNC('minute', \
+         COALESCE(\"sigint_inbox_item\".\"datetime\", \
+         \"signal_message\".\"created_at\"))",
+    );
+    let rows = signal_message::Entity::find()
+        .join(
+            JoinType::InnerJoin,
+            signal_message::Relation::SigintInboxItem.def(),
+        )
+        .join(
+            JoinType::InnerJoin,
+            signal_message::Relation::SignalMessageGroup.def(),
+        )
+        .select_only()
+        .column_as(signal_message_group::Column::GroupMasterKey, "master_key")
+        .column_as(bucket_expr.clone(), "bucket")
+        .column_as(
+            Expr::cust(r#"COUNT(DISTINCT "signal_message"."id")"#),
+            "count",
+        )
+        .filter(signal_message::Column::Deleted.eq(false))
+        .filter(
+            signal_message_group::Column::GroupMasterKey
+                .eq_any(master_keys.clone()),
+        )
+        .filter(Expr::cust_with_values(
+            "COALESCE(\"sigint_inbox_item\".\"datetime\", \
+             \"signal_message\".\"created_at\") >= $1 \
+             AND COALESCE(\"sigint_inbox_item\".\"datetime\", \
+             \"signal_message\".\"created_at\") < $2",
+            vec![dt_since, dt_till],
+        ))
+        .group_by(signal_message_group::Column::GroupMasterKey)
+        .group_by(bucket_expr)
+        .into_model::<GroupStatsTimelineRawRow>()
+        .all(dbx)
+        .await
+        .c(h!())?;
+
+    let mut grouped_points = master_keys
+        .into_iter()
+        .map(|master_key| (master_key, BTreeMap::<NaiveDateTime, i64>::new()))
+        .collect::<BTreeMap<_, _>>();
+    for row in rows {
+        let bucket = round_to_5min(row.bucket).c(h!())?;
+        *grouped_points
+            .entry(row.master_key)
+            .or_default()
+            .entry(bucket)
+            .or_insert(0) += row.count;
+    }
+
+    Ok(grouped_points
+        .into_iter()
+        .map(|(master_key, points)| SignalGroupStatsTimelineEntry {
+            master_key,
+            points: points
+                .into_iter()
+                .map(|(timestamp, count)| SignalGroupStatsTimelinePoint {
+                    timestamp: timestamp.and_utc().timestamp_millis(),
+                    count,
+                })
+                .collect(),
+        })
+        .collect())
+}
+
 pub(crate) async fn collect_signal_group_batches(
     master_keys: Vec<String>,
     dbx: &DatabaseConnection,

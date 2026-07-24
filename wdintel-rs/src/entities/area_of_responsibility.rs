@@ -74,6 +74,8 @@ pub enum Relation {
         on_delete = "SetNull"
     )]
     SigintOrigin,
+    #[sea_orm(has_many = "super::sigint_unit_attachment_aor::Entity")]
+    SigintUnitAttachmentAor,
     #[sea_orm(has_many = "super::sigint_zone_aor::Entity")]
     SigintZoneAor,
     #[sea_orm(has_many = "super::signal_group_aor::Entity")]
@@ -135,6 +137,12 @@ impl Related<super::sigint_network_aor::Entity> for Entity {
 impl Related<super::sigint_origin::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::SigintOrigin.def()
+    }
+}
+
+impl Related<super::sigint_unit_attachment_aor::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::SigintUnitAttachmentAor.def()
     }
 }
 

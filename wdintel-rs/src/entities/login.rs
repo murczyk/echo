@@ -29,6 +29,7 @@ pub struct Model {
     pub description: Option<String>,
     #[sea_orm(primary_key, auto_increment = false)]
     pub id: Uuid,
+    pub password_auth_enabled: bool,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
@@ -113,6 +114,8 @@ pub enum Relation {
     SigintSignalChangelog,
     #[sea_orm(has_many = "super::sigint_unit::Entity")]
     SigintUnit,
+    #[sea_orm(has_many = "super::sigint_unit_attachment::Entity")]
+    SigintUnitAttachment,
     #[sea_orm(has_many = "super::sigint_unit_changelog::Entity")]
     SigintUnitChangelog,
     #[sea_orm(
@@ -336,6 +339,12 @@ impl Related<super::sigint_signal_changelog::Entity> for Entity {
 impl Related<super::sigint_unit::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::SigintUnit.def()
+    }
+}
+
+impl Related<super::sigint_unit_attachment::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::SigintUnitAttachment.def()
     }
 }
 
