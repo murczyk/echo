@@ -9,6 +9,9 @@ use crate::config::*;
 use crate::error::AppError;
 use crate::event_stream::fanout_mult;
 use crate::event_stream::types::{EventMsg, EventType};
+use crate::rer_importer::analysis::{
+    analytics_inbox_request_supported, with_analytics_read_fallback,
+};
 use crate::rer_importer::inbox::bl::*;
 use crate::rer_importer::inbox::query::*;
 use crate::session::record_page_visit;
@@ -643,6 +646,21 @@ fn print_ts(ts: NaiveDateTime) -> String {
         .to_string()
 }
 
+async fn query_inbox_digest(
+    db: DatabaseConnection,
+    query: String,
+) -> Result<(i64, Option<NaiveDateTime>), AppError> {
+    let query_res = db
+        .query_one(Statement::from_string(DatabaseBackend::Postgres, query))
+        .await
+        .c(h!())?
+        .context(h!())?;
+    Ok((
+        query_res.try_get("", "count")?,
+        query_res.try_get("", "first_element_ts")?,
+    ))
+}
+
 #[post("/api/rer-importer/get-inbox-count")]
 async fn inbox_messages_count(
     user: Identity,
@@ -676,19 +694,19 @@ async fn inbox_messages_count(
     let q = build_inbox_digest_query(&login, &env, &req)
         .await
         .context(h!())?;
-
-    let query_res: Option<QueryResult> = env
-        .dbx
-        .query_one(Statement::from_string(DatabaseBackend::Postgres, q))
-        .await
-        .c(h!())?;
-    let query_res = query_res.unwrap();
-    let mut quantity: i64 = query_res.try_get("", "count")?;
+    let analytics_q = q.clone();
+    let (mut quantity, first_element_ts) = with_analytics_read_fallback(
+        env.get_ref(),
+        "inbox messages count",
+        analytics_inbox_request_supported(&req),
+        |db| query_inbox_digest(db, analytics_q),
+        |db| query_inbox_digest(db, q),
+    )
+    .await
+    .context(h!())?;
     if let Some(limit) = test_limit {
         quantity = quantity.min(limit);
     }
-    let first_element_ts: Option<NaiveDateTime> =
-        query_res.try_get("", "first_element_ts")?;
     let first_element_ts =
         first_element_ts.map(|x| x.and_utc().timestamp_millis());
     Ok(Json(InboxMessagesDigestRsp {

@@ -1175,7 +1175,8 @@ fn apply_report_history_admin_sorting(
 }
 
 async fn list_admin_report_histories(
-    dbx: &DatabaseConnection,
+    list_db: &DatabaseConnection,
+    detail_db: &DatabaseConnection,
     req: &ReportHistoryAdminListReq,
 ) -> Result<ReportHistoryAdminListRsp, AppError> {
     let offset = report_history_list_offset(req);
@@ -1185,17 +1186,20 @@ async fn list_admin_report_histories(
             .join(JoinType::LeftJoin, report_history::Relation::Login.def()),
         req,
     );
-    let total = filtered_query.clone().count(dbx).await.c(h!())?;
+    let total = filtered_query.clone().count(list_db).await.c(h!())?;
 
     let report_histories =
         apply_report_history_admin_sorting(filtered_query, &req.sorting)
             .offset(offset)
             .limit(limit)
-            .all(dbx)
+            .all(list_db)
             .await
             .c(h!())?;
     let next_offset = offset + report_histories.len() as u64;
-    let rows = build_report_history_rows(dbx, report_histories, true).await?;
+    let report_histories =
+        reload_report_histories(detail_db, report_histories).await?;
+    let rows =
+        build_report_history_rows(detail_db, report_histories, true).await?;
 
     Ok(ReportHistoryAdminListRsp {
         rows,
@@ -1631,16 +1635,62 @@ pub async fn report_history_list(
 ) -> Result<Json<Vec<ReportHistoryRow>>, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
     let user_login = login_id_from_identity(&user)?;
-    let report_histories = ReportHistory::find()
-        .filter(report_history::Column::RequestedByLoginId.eq(user_login))
-        .order_by_desc(report_history::Column::CreatedAt)
-        .limit(REPORT_HISTORY_LIST_LIMIT)
-        .all(&env.dbx)
-        .await
-        .c(h!())?;
+    let report_histories =
+        crate::rer_importer::analysis::with_analytics_read_fallback(
+            env.get_ref(),
+            "report history dashboard",
+            true,
+            |db| async move { load_report_history_list(&db, user_login).await },
+            |db| async move { load_report_history_list(&db, user_login).await },
+        )
+        .await?;
+    let report_histories =
+        reload_report_histories(&env.dbx, report_histories).await?;
     let rows =
         build_report_history_rows(&env.dbx, report_histories, false).await?;
     Ok(Json(rows))
+}
+
+async fn reload_report_histories(
+    db: &DatabaseConnection,
+    report_histories: Vec<report_history::Model>,
+) -> Result<Vec<report_history::Model>, AppError> {
+    if report_histories.is_empty() {
+        return Ok(report_histories);
+    }
+    let ids = report_histories
+        .iter()
+        .map(|report_history| report_history.id)
+        .collect::<Vec<_>>();
+    let mut current_by_id = ReportHistory::find()
+        .filter(report_history::Column::Id.is_in(ids))
+        .all(db)
+        .await
+        .c(h!())?
+        .into_iter()
+        .map(|report_history| (report_history.id, report_history))
+        .collect::<HashMap<_, _>>();
+    Ok(report_histories
+        .into_iter()
+        .map(|report_history| {
+            current_by_id
+                .remove(&report_history.id)
+                .unwrap_or(report_history)
+        })
+        .collect())
+}
+
+async fn load_report_history_list(
+    db: &DatabaseConnection,
+    user_login: uuid::Uuid,
+) -> Result<Vec<report_history::Model>, AppError> {
+    Ok(ReportHistory::find()
+        .filter(report_history::Column::RequestedByLoginId.eq(user_login))
+        .order_by_desc(report_history::Column::CreatedAt)
+        .limit(REPORT_HISTORY_LIST_LIMIT)
+        .all(db)
+        .await
+        .c(h!())?)
 }
 
 #[post("/api/admin/report-history/list")]
@@ -1650,7 +1700,34 @@ pub async fn report_history_admin_list(
     req: Json<ReportHistoryAdminListReq>,
 ) -> Result<Json<ReportHistoryAdminListRsp>, AppError> {
     ensure_admin(&env.dbx, &user).await.c(h!())?;
-    Ok(Json(list_admin_report_histories(&env.dbx, &req).await?))
+    let analytics_req = &req;
+    let postgres_req = &req;
+    let analytics_detail_db = &env.dbx;
+    let postgres_detail_db = &env.dbx;
+    Ok(Json(
+        crate::rer_importer::analysis::with_analytics_read_fallback(
+            env.get_ref(),
+            "admin report history dashboard",
+            true,
+            |db| async move {
+                list_admin_report_histories(
+                    &db,
+                    analytics_detail_db,
+                    analytics_req,
+                )
+                .await
+            },
+            |db| async move {
+                list_admin_report_histories(
+                    &db,
+                    postgres_detail_db,
+                    postgres_req,
+                )
+                .await
+            },
+        )
+        .await?,
+    ))
 }
 
 #[post("/api/report-history/status")]

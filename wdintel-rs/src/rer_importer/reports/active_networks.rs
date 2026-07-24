@@ -30,10 +30,21 @@ pub async fn report_docx_kind_active_networks(
     let start_total = Instant::now();
     info!("report_docx_kind_active_networks_report started");
 
-    let read_db = env.dbx.clone();
-
+    let analytics_req = req;
+    let postgres_req = req;
     let aor_data: Vec<AreaOfResponsibilityNetworkComments> =
-        get_aor_network_comments(&read_db, req).await?;
+        crate::rer_importer::analysis::with_analytics_read_fallback(
+            env,
+            "active networks report",
+            true,
+            |db| async move {
+                get_aor_network_comments(&db, analytics_req).await
+            },
+            |db| async move {
+                get_aor_network_comments(&db, postgres_req).await
+            },
+        )
+        .await?;
 
     let mut docx = get_docx_document(req);
 

@@ -4453,9 +4453,37 @@ async fn post_stats(
         crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
             .await
             .context(h!())?;
-    let posts = stats::fetch_posts(&req, &user, &env, master_keys)
-        .await
-        .context(h!())?;
+    let analytics_master_keys = master_keys.clone();
+    let analytics_req = &req;
+    let postgres_req = &req;
+    let analytics_user = &user;
+    let postgres_user = &user;
+    let postgres_env = &env;
+    let posts = with_analytics_read_fallback(
+        env.get_ref(),
+        "analysis stats posts",
+        analytics_count_request_supported(&req),
+        |db| async move {
+            stats::fetch_posts_raw_with_db(
+                analytics_req,
+                analytics_user,
+                &db,
+                analytics_master_keys,
+            )
+            .await
+        },
+        |_db| async move {
+            stats::fetch_posts(
+                postgres_req,
+                postgres_user,
+                postgres_env,
+                master_keys,
+            )
+            .await
+        },
+    )
+    .await
+    .context(h!())?;
     Ok(Json(PostStatsRsp { posts }))
 }
 
@@ -4523,9 +4551,37 @@ async fn callsign_stats(
         crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
             .await
             .c(h!())?;
-    let callsigns = stats::fetch_callsigns(&req, &user, &env, master_keys)
-        .await
-        .context(h!())?;
+    let analytics_master_keys = master_keys.clone();
+    let analytics_req = &req;
+    let postgres_req = &req;
+    let analytics_user = &user;
+    let postgres_user = &user;
+    let postgres_env = &env;
+    let callsigns = with_analytics_read_fallback(
+        env.get_ref(),
+        "analysis stats callsigns",
+        analytics_count_request_supported(&req),
+        |db| async move {
+            stats::fetch_callsigns_raw_with_db(
+                analytics_req,
+                analytics_user,
+                &db,
+                analytics_master_keys,
+            )
+            .await
+        },
+        |_db| async move {
+            stats::fetch_callsigns(
+                postgres_req,
+                postgres_user,
+                postgres_env,
+                master_keys,
+            )
+            .await
+        },
+    )
+    .await
+    .context(h!())?;
     Ok(Json(CallsignStatsRsp { callsigns }))
 }
 
@@ -4559,9 +4615,40 @@ async fn tag_stats(
         crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
             .await
             .c(h!())?;
-    let tags = stats::fetch_tags(&req, &user, &env, master_keys)
-        .await
-        .context(h!())?;
+    let analytics_tag_access =
+        resolve_analytics_tag_access_if_enabled(&env, &req, &login).await?;
+    let analytics_master_keys = master_keys.clone();
+    let analytics_req = &req;
+    let postgres_req = &req;
+    let analytics_user = &user;
+    let postgres_user = &user;
+    let postgres_env = &env;
+    let tags = with_analytics_read_fallback(
+        env.get_ref(),
+        "analysis stats tags",
+        analytics_count_request_supported(&req),
+        |db| async move {
+            stats::fetch_tags_raw_with_db(
+                analytics_req,
+                analytics_user,
+                &db,
+                analytics_master_keys,
+                analytics_tag_access.as_ref().c(h!())?,
+            )
+            .await
+        },
+        |_db| async move {
+            stats::fetch_tags(
+                postgres_req,
+                postgres_user,
+                postgres_env,
+                master_keys,
+            )
+            .await
+        },
+    )
+    .await
+    .context(h!())?;
     Ok(Json(TagStatsRsp { tags }))
 }
 
@@ -4577,9 +4664,37 @@ async fn unit_stats(
         crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
             .await
             .context(h!())?;
-    let units = stats::fetch_units(&req, &user, &env, master_keys)
-        .await
-        .context(h!())?;
+    let analytics_master_keys = master_keys.clone();
+    let analytics_req = &req;
+    let postgres_req = &req;
+    let analytics_user = &user;
+    let postgres_user = &user;
+    let postgres_env = &env;
+    let units = with_analytics_read_fallback(
+        env.get_ref(),
+        "analysis stats units",
+        analytics_count_request_supported(&req),
+        |db| async move {
+            stats::fetch_units_raw_with_db(
+                analytics_req,
+                analytics_user,
+                &db,
+                analytics_master_keys,
+            )
+            .await
+        },
+        |_db| async move {
+            stats::fetch_units(
+                postgres_req,
+                postgres_user,
+                postgres_env,
+                master_keys,
+            )
+            .await
+        },
+    )
+    .await
+    .context(h!())?;
     Ok(Json(UnitStatsRsp { units }))
 }
 
@@ -4595,9 +4710,38 @@ async fn location_stats(
         crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
             .await
             .context(h!())?;
-    let locations = fetch_locations(&user, &env, &req, master_keys)
-        .await
-        .c(h!())?;
+    let analytics_master_keys = master_keys.clone();
+    let analytics_req = &req;
+    let postgres_req = &req;
+    let analytics_user = &user;
+    let postgres_user = &user;
+    let postgres_env = &env;
+    let locations = with_analytics_read_fallback(
+        env.get_ref(),
+        "analysis stats locations",
+        analytics_count_request_supported(&req),
+        |db| async move {
+            stats::fetch_locations_raw_with_db(
+                analytics_req,
+                analytics_user,
+                &db,
+                analytics_master_keys,
+            )
+            .await
+        },
+        |_db| async move {
+            stats::fetch_locations(
+                postgres_req,
+                postgres_user,
+                postgres_env,
+                master_keys,
+            )
+            .await
+        },
+    )
+    .await
+    .map(merge_locations)
+    .c(h!())?;
     Ok(Json(LocationStatsRsp { locations }))
 }
 
@@ -4628,9 +4772,37 @@ async fn aor_stats(
         crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
             .await
             .context(h!())?;
-    let aors = stats::fetch_aors(&req, &user, &env, master_keys)
-        .await
-        .context(h!())?;
+    let analytics_master_keys = master_keys.clone();
+    let analytics_req = &req;
+    let postgres_req = &req;
+    let analytics_user = &user;
+    let postgres_user = &user;
+    let postgres_env = &env;
+    let aors = with_analytics_read_fallback(
+        env.get_ref(),
+        "analysis stats aors",
+        analytics_count_request_supported(&req),
+        |db| async move {
+            stats::fetch_aors_raw_with_db(
+                analytics_req,
+                analytics_user,
+                &db,
+                analytics_master_keys,
+            )
+            .await
+        },
+        |_db| async move {
+            stats::fetch_aors(
+                postgres_req,
+                postgres_user,
+                postgres_env,
+                master_keys,
+            )
+            .await
+        },
+    )
+    .await
+    .context(h!())?;
     let aor_names = collect_aor_names(&aors, &env.dbx).await.context(h!())?;
     Ok(Json(AreaOfResponsibilityStatsRsp { aors, aor_names }))
 }
@@ -4641,22 +4813,27 @@ async fn fetch_locations(
     req: &Json<AnalysisStatsReq>,
     master_keys: Vec<String>,
 ) -> Result<Vec<AnalysisStatsLocation>, AppError> {
+    Ok(merge_locations(
+        stats::fetch_locations(req, user, env, master_keys)
+            .await
+            .context(h!())?,
+    ))
+}
+
+fn merge_locations(
+    locations: Vec<AnalysisStatsLocation>,
+) -> Vec<AnalysisStatsLocation> {
     let mut locations_map = BTreeMap::new();
-    stats::fetch_locations(req, user, env, master_keys)
-        .await
-        .context(h!())?
-        .into_iter()
-        .for_each(|stat| {
-            let location = stat.location;
-            let old_count = locations_map.get(&location).unwrap_or(&0);
-            let count = old_count + stat.count;
-            locations_map.insert(location, count);
-        });
-    let locations = locations_map
+    locations.into_iter().for_each(|stat| {
+        let location = stat.location;
+        let old_count = locations_map.get(&location).unwrap_or(&0);
+        let count = old_count + stat.count;
+        locations_map.insert(location, count);
+    });
+    locations_map
         .into_iter()
         .map(|(location, count)| AnalysisStatsLocation { location, count })
-        .collect_vec();
-    Ok(locations)
+        .collect_vec()
 }
 
 /// Отримання доступних значень для фільтра мереж зі статистикою.
@@ -4686,9 +4863,40 @@ async fn network_stats(
         crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
             .await
             .context(h!())?;
-    let networks = stats::fetch_networks(&req, &user, &env, master_keys)
-        .await
-        .context(h!())?;
+    let analytics_tag_access =
+        resolve_analytics_tag_access_if_enabled(&env, &req, &login).await?;
+    let analytics_master_keys = master_keys.clone();
+    let analytics_req = &req;
+    let postgres_req = &req;
+    let analytics_user = &user;
+    let postgres_user = &user;
+    let postgres_env = &env;
+    let networks = with_analytics_read_fallback(
+        env.get_ref(),
+        "analysis stats networks",
+        analytics_count_request_supported(&req),
+        |db| async move {
+            stats::fetch_networks_analytics_with_db(
+                analytics_req,
+                analytics_user,
+                &db,
+                analytics_master_keys,
+                analytics_tag_access.as_ref().c(h!())?,
+            )
+            .await
+        },
+        |_db| async move {
+            stats::fetch_networks(
+                postgres_req,
+                postgres_user,
+                postgres_env,
+                master_keys,
+            )
+            .await
+        },
+    )
+    .await
+    .context(h!())?;
     let network_names = collect_network_names(&networks, &env.dbx)
         .await
         .context(h!())?;
@@ -4836,6 +5044,24 @@ fn analytics_count_request_supported(req: &AnalysisStatsReq) -> bool {
         .is_none_or(|search| search.trim().is_empty())
 }
 
+async fn resolve_analytics_tag_access_if_enabled(
+    env: &actix_web::web::Data<Env>,
+    req: &AnalysisStatsReq,
+    login: &uuid::Uuid,
+) -> Result<Option<stats::AnalyticsTagAccess>, AppError> {
+    if env.analytics.is_none() || !analytics_count_request_supported(req) {
+        return Ok(None);
+    }
+    Ok(Some(
+        stats::resolve_analytics_tag_access(
+            &env.dbx,
+            login,
+            req.report_tags_only_this_unit.unwrap_or(false),
+        )
+        .await?,
+    ))
+}
+
 pub(crate) fn analytics_inbox_request_supported(
     req: &InboxMessagesReq,
 ) -> bool {
@@ -4862,7 +5088,33 @@ struct AnalyticsRetryAttempt<'a> {
     kind: AnalyticsRetryAttemptKind,
 }
 
+struct AnalyticsRetryCancellationGuard<'a> {
+    retry_state: &'a AtomicU64,
+    releases_half_open_attempt: bool,
+}
+
+impl Drop for AnalyticsRetryCancellationGuard<'_> {
+    fn drop(&mut self) {
+        if self.releases_half_open_attempt {
+            let _ = self.retry_state.compare_exchange(
+                u64::MAX,
+                0,
+                Ordering::AcqRel,
+                Ordering::Acquire,
+            );
+        }
+    }
+}
+
 impl AnalyticsRetryAttempt<'_> {
+    fn cancellation_guard(&self) -> AnalyticsRetryCancellationGuard<'_> {
+        AnalyticsRetryCancellationGuard {
+            retry_state: self.retry_state,
+            releases_half_open_attempt: self.kind
+                == AnalyticsRetryAttemptKind::HalfOpen,
+        }
+    }
+
     fn record_success(self) {
         if self.kind == AnalyticsRetryAttemptKind::HalfOpen {
             let _ = self.retry_state.compare_exchange(
@@ -4899,6 +5151,9 @@ where
     A: std::future::Future<Output = Result<T, AppError>>,
     P: std::future::Future<Output = Result<T, AppError>>,
 {
+    let _retry_cancellation_guard = retry_attempt
+        .as_ref()
+        .map(AnalyticsRetryAttempt::cancellation_guard);
     if let Some(analytics_query) = analytics_query {
         let started = std::time::Instant::now();
         match tokio::time::timeout(timeout, analytics_query).await {
@@ -4952,6 +5207,7 @@ where
         });
 
     if let Some((analytics, retry_attempt)) = analytics_attempt {
+        let _retry_cancellation_guard = retry_attempt.cancellation_guard();
         let started = std::time::Instant::now();
         let analytics_config = env.config.analytics.as_ref();
         let timeout = core::time::Duration::from_millis(
@@ -5424,15 +5680,38 @@ async fn group_stats_count(
         get_identity_sigint_groups_noimport(&env.dbx, &user, &env.config)
             .await
             .context(h!())?;
-    let groups =
-        stats::fetch_groups(&req, &user, &env, master_keys_noimport.clone())
+    let analytics_master_keys = master_keys_noimport.clone();
+    let postgres_master_keys = master_keys_noimport.clone();
+    let analytics_req = &req;
+    let postgres_req = &req;
+    let analytics_user = &user;
+    let postgres_user = &user;
+    let postgres_env = &env;
+    let groups_count = with_analytics_read_fallback(
+        env.get_ref(),
+        "analysis stats groups count",
+        analytics_count_request_supported(&req),
+        |db| async move {
+            query_count_stats_groups(
+                analytics_req,
+                analytics_user,
+                &db,
+                analytics_master_keys,
+            )
             .await
-            .context(h!())?;
-    let groups =
-        include_missing_secret_groups(&env.dbx, groups, &master_keys_noimport)
+        },
+        |_db| async move {
+            query_count_stats_groups_postgres(
+                postgres_req,
+                postgres_user,
+                postgres_env,
+                postgres_master_keys,
+            )
             .await
-            .context(h!())?;
-    let groups_count = groups.len() as i64;
+        },
+    )
+    .await
+    .context(h!())?;
     Ok(Json(groups_count))
 }
 
@@ -5447,9 +5726,37 @@ async fn sender_stats_count(
     let master_keys: Vec<String> = get_identity_sigint_groups(&env.dbx, &login)
         .await
         .context(h!())?;
-    let senders_count = stats::count_senders(&req, &user, &env, master_keys)
-        .await
-        .context(h!())?;
+    let analytics_master_keys = master_keys.clone();
+    let analytics_req = &req;
+    let postgres_req = &req;
+    let analytics_user = &user;
+    let postgres_user = &user;
+    let postgres_env = &env;
+    let senders_count = with_analytics_read_fallback(
+        env.get_ref(),
+        "analysis stats senders count",
+        analytics_count_request_supported(&req),
+        |db| async move {
+            stats::count_senders_with_db(
+                analytics_req,
+                analytics_user,
+                &db,
+                analytics_master_keys,
+            )
+            .await
+        },
+        |_db| async move {
+            stats::count_senders(
+                postgres_req,
+                postgres_user,
+                postgres_env,
+                master_keys,
+            )
+            .await
+        },
+    )
+    .await
+    .context(h!())?;
     Ok(Json(senders_count))
 }
 
@@ -5465,9 +5772,37 @@ async fn post_stats_count(
         crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
             .await
             .context(h!())?;
-    let posts_count = stats::count_posts(&req, &user, &env, master_keys)
-        .await
-        .context(h!())?;
+    let analytics_master_keys = master_keys.clone();
+    let analytics_req = &req;
+    let postgres_req = &req;
+    let analytics_user = &user;
+    let postgres_user = &user;
+    let postgres_env = &env;
+    let posts_count = with_analytics_read_fallback(
+        env.get_ref(),
+        "analysis stats posts count",
+        analytics_count_request_supported(&req),
+        |db| async move {
+            stats::count_posts_with_db(
+                analytics_req,
+                analytics_user,
+                &db,
+                analytics_master_keys,
+            )
+            .await
+        },
+        |_db| async move {
+            stats::count_posts(
+                postgres_req,
+                postgres_user,
+                postgres_env,
+                master_keys,
+            )
+            .await
+        },
+    )
+    .await
+    .context(h!())?;
     Ok(Json(posts_count))
 }
 
@@ -5489,9 +5824,37 @@ async fn freq_stats_count(
         crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
             .await
             .context(h!())?;
-    let freqs_count = stats::count_freqs(&req, &user, &env, master_keys)
-        .await
-        .context(h!())?;
+    let analytics_master_keys = master_keys.clone();
+    let analytics_req = &req;
+    let postgres_req = &req;
+    let analytics_user = &user;
+    let postgres_user = &user;
+    let postgres_env = &env;
+    let freqs_count = with_analytics_read_fallback(
+        env.get_ref(),
+        "analysis stats freqs count",
+        analytics_count_request_supported(&req),
+        |db| async move {
+            stats::count_freqs_with_db(
+                analytics_req,
+                analytics_user,
+                &db,
+                analytics_master_keys,
+            )
+            .await
+        },
+        |_db| async move {
+            stats::count_freqs(
+                postgres_req,
+                postgres_user,
+                postgres_env,
+                master_keys,
+            )
+            .await
+        },
+    )
+    .await
+    .context(h!())?;
     Ok(Json(freqs_count))
 }
 
@@ -5507,10 +5870,37 @@ async fn callsign_stats_count(
         crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
             .await
             .c(h!())?;
-    let callsigns_count =
-        stats::count_callsigns(&req, &user, &env, master_keys)
+    let analytics_master_keys = master_keys.clone();
+    let analytics_req = &req;
+    let postgres_req = &req;
+    let analytics_user = &user;
+    let postgres_user = &user;
+    let postgres_env = &env;
+    let callsigns_count = with_analytics_read_fallback(
+        env.get_ref(),
+        "analysis stats callsigns count",
+        analytics_count_request_supported(&req),
+        |db| async move {
+            stats::count_callsigns_analytics_with_db(
+                analytics_req,
+                analytics_user,
+                &db,
+                analytics_master_keys,
+            )
             .await
-            .context(h!())?;
+        },
+        |_db| async move {
+            stats::count_callsigns(
+                postgres_req,
+                postgres_user,
+                postgres_env,
+                master_keys,
+            )
+            .await
+        },
+    )
+    .await
+    .context(h!())?;
     Ok(Json(callsigns_count))
 }
 
@@ -5526,9 +5916,40 @@ async fn tag_stats_count(
         crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
             .await
             .c(h!())?;
-    let tags_count = stats::count_tags(&req, &user, &env, master_keys)
-        .await
-        .context(h!())?;
+    let analytics_tag_access =
+        resolve_analytics_tag_access_if_enabled(&env, &req, &login).await?;
+    let analytics_master_keys = master_keys.clone();
+    let analytics_req = &req;
+    let postgres_req = &req;
+    let analytics_user = &user;
+    let postgres_user = &user;
+    let postgres_env = &env;
+    let tags_count = with_analytics_read_fallback(
+        env.get_ref(),
+        "analysis stats tags count",
+        analytics_count_request_supported(&req),
+        |db| async move {
+            stats::count_tags_analytics_with_db(
+                analytics_req,
+                analytics_user,
+                &db,
+                analytics_master_keys,
+                analytics_tag_access.as_ref().c(h!())?,
+            )
+            .await
+        },
+        |_db| async move {
+            stats::count_tags(
+                postgres_req,
+                postgres_user,
+                postgres_env,
+                master_keys,
+            )
+            .await
+        },
+    )
+    .await
+    .context(h!())?;
     Ok(Json(tags_count))
 }
 
@@ -5544,9 +5965,37 @@ async fn unit_stats_count(
         crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
             .await
             .context(h!())?;
-    let units_count = stats::count_units(&req, &user, &env, master_keys)
-        .await
-        .context(h!())?;
+    let analytics_master_keys = master_keys.clone();
+    let analytics_req = &req;
+    let postgres_req = &req;
+    let analytics_user = &user;
+    let postgres_user = &user;
+    let postgres_env = &env;
+    let units_count = with_analytics_read_fallback(
+        env.get_ref(),
+        "analysis stats units count",
+        analytics_count_request_supported(&req),
+        |db| async move {
+            stats::count_units_with_db(
+                analytics_req,
+                analytics_user,
+                &db,
+                analytics_master_keys,
+            )
+            .await
+        },
+        |_db| async move {
+            stats::count_units(
+                postgres_req,
+                postgres_user,
+                postgres_env,
+                master_keys,
+            )
+            .await
+        },
+    )
+    .await
+    .context(h!())?;
     Ok(Json(units_count))
 }
 
@@ -5562,10 +6011,37 @@ async fn location_stats_count(
         crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
             .await
             .context(h!())?;
-    let locations_count =
-        stats::count_locations(&req, &user, &env, master_keys)
+    let analytics_master_keys = master_keys.clone();
+    let analytics_req = &req;
+    let postgres_req = &req;
+    let analytics_user = &user;
+    let postgres_user = &user;
+    let postgres_env = &env;
+    let locations_count = with_analytics_read_fallback(
+        env.get_ref(),
+        "analysis stats locations count",
+        analytics_count_request_supported(&req),
+        |db| async move {
+            stats::count_locations_with_db(
+                analytics_req,
+                analytics_user,
+                &db,
+                analytics_master_keys,
+            )
             .await
-            .context(h!())?;
+        },
+        |_db| async move {
+            stats::count_locations(
+                postgres_req,
+                postgres_user,
+                postgres_env,
+                master_keys,
+            )
+            .await
+        },
+    )
+    .await
+    .context(h!())?;
     Ok(Json(locations_count))
 }
 
@@ -5595,9 +6071,37 @@ async fn aor_stats_count(
         crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
             .await
             .context(h!())?;
-    let aors_count = stats::count_aors(&req, &user, &env, master_keys)
-        .await
-        .context(h!())?;
+    let analytics_master_keys = master_keys.clone();
+    let analytics_req = &req;
+    let postgres_req = &req;
+    let analytics_user = &user;
+    let postgres_user = &user;
+    let postgres_env = &env;
+    let aors_count = with_analytics_read_fallback(
+        env.get_ref(),
+        "analysis stats aors count",
+        analytics_count_request_supported(&req),
+        |db| async move {
+            stats::count_aors_raw_with_db(
+                analytics_req,
+                analytics_user,
+                &db,
+                analytics_master_keys,
+            )
+            .await
+        },
+        |_db| async move {
+            stats::count_aors(
+                postgres_req,
+                postgres_user,
+                postgres_env,
+                master_keys,
+            )
+            .await
+        },
+    )
+    .await
+    .context(h!())?;
     Ok(Json(aors_count))
 }
 /// Отримання загальної кількості повідомлень по фільтру мереж.
@@ -5626,9 +6130,40 @@ async fn network_stats_count(
         crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
             .await
             .context(h!())?;
-    let networks_count = stats::count_networks(&req, &user, &env, master_keys)
-        .await
-        .context(h!())?;
+    let analytics_tag_access =
+        resolve_analytics_tag_access_if_enabled(&env, &req, &login).await?;
+    let analytics_master_keys = master_keys.clone();
+    let analytics_req = &req;
+    let postgres_req = &req;
+    let analytics_user = &user;
+    let postgres_user = &user;
+    let postgres_env = &env;
+    let networks_count = with_analytics_read_fallback(
+        env.get_ref(),
+        "analysis stats networks count",
+        analytics_count_request_supported(&req),
+        |db| async move {
+            stats::count_networks_analytics_with_db(
+                analytics_req,
+                analytics_user,
+                &db,
+                analytics_master_keys,
+                analytics_tag_access.as_ref().c(h!())?,
+            )
+            .await
+        },
+        |_db| async move {
+            stats::count_networks(
+                postgres_req,
+                postgres_user,
+                postgres_env,
+                master_keys,
+            )
+            .await
+        },
+    )
+    .await
+    .context(h!())?;
     Ok(Json(networks_count))
 }
 

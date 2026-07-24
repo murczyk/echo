@@ -960,6 +960,42 @@ async fn fetch_analytics_network_count_for_req(
         .unwrap_or(0))
 }
 
+async fn fetch_analytics_network_counts_for_req(
+    env: &Arc<Env>,
+    req: &AnalysisStatsReq,
+) -> Result<BTreeMap<i64, i64>, AppError> {
+    #[derive(FromQueryResult)]
+    struct NetworkQueryResult {
+        network_id: i64,
+        msg_count: i64,
+    }
+
+    let (login, master_keys) = analysis_login_and_master_keys(env).await?;
+    let tag_access = stats::resolve_analytics_tag_access(
+        &env.dbx,
+        &login,
+        req.report_tags_only_this_unit.unwrap_or(false),
+    )
+    .await?;
+    let statement = stats::build_networks_analytics_query(
+        req,
+        &login,
+        &tag_access.accessible_tag_ids,
+        &tag_access.unit_login_ids,
+        crate::utils::dt_from_millis(req.since_date_inclusive_ms)?,
+        crate::utils::dt_from_millis(req.till_date_noninclusive_ms)?,
+        master_keys,
+        false,
+    )?;
+    Ok(NetworkQueryResult::find_by_statement(statement)
+        .all(&env.dbx)
+        .await
+        .context(h!())?
+        .into_iter()
+        .map(|row| (row.network_id, row.msg_count))
+        .collect())
+}
+
 async fn fetch_analytics_tag_count_for_req(
     env: &Arc<Env>,
     req: &AnalysisStatsReq,
@@ -3151,6 +3187,36 @@ async fn rer_analysis_sender_callsign_and_post_filters_recalculate_values() {
 
 #[tokio::test]
 #[serial]
+async fn rer_analysis_sender_breakdowns_sum_to_sender_total() {
+    let fixture = mk_rer_analysis_fixture().await.unwrap();
+    let (login, master_keys) =
+        analysis_login_and_master_keys(&fixture.env).await.unwrap();
+    let env = Data::from(fixture.env.clone());
+    let stats_senders = stats::fetch_senders_for_login(
+        &analysis_stats_req0(&fixture),
+        &login,
+        &env,
+        master_keys,
+    )
+    .await
+    .unwrap();
+
+    assert!(!stats_senders.is_empty());
+    for sender in stats_senders {
+        assert_eq!(sender.count, sender.per_day.values().copied().sum::<i64>());
+        assert_eq!(
+            sender.count,
+            sender
+                .freq_breakdown
+                .iter()
+                .map(|breakdown| breakdown.count)
+                .sum::<i64>()
+        );
+    }
+}
+
+#[tokio::test]
+#[serial]
 async fn rer_analysis_sender_and_group_filters_share_same_group_row() {
     let fixture = mk_aor_filter_fixture().await.unwrap();
     let db = &fixture.env.dbx;
@@ -5003,15 +5069,21 @@ async fn rer_analysis_analytics_network_count_matches_postgres_query() {
     let db = &fixture.env.dbx;
 
     let req = analysis_stats_req0(&fixture);
-    let expected = fetch_network_counts_for_req(&fixture.env, &req)
+    let expected_counts = fetch_network_counts_for_req(&fixture.env, &req)
         .await
-        .unwrap()
-        .len() as i64;
+        .unwrap();
+    let expected = expected_counts.len() as i64;
     assert_eq!(
         fetch_analytics_network_count_for_req(&fixture.env, &req)
             .await
             .unwrap(),
         expected
+    );
+    assert_eq!(
+        fetch_analytics_network_counts_for_req(&fixture.env, &req)
+            .await
+            .unwrap(),
+        expected_counts
     );
 
     let login = find_test_login(db).await.unwrap();
@@ -5071,6 +5143,49 @@ async fn rer_analysis_analytics_network_count_matches_postgres_query() {
             .unwrap(),
         expected
     );
+}
+
+#[tokio::test]
+#[serial]
+async fn group_stats_raw_timeline_matches_message_activity() {
+    let fixture = mk_rer_analysis_fixture().await.unwrap();
+    let dt_since =
+        crate::utils::dt_from_millis(fixture.since_date_inclusive_ms).unwrap();
+    let dt_till =
+        crate::utils::dt_from_millis(fixture.till_date_noninclusive_ms)
+            .unwrap();
+
+    let timelines = crate::stats::read_group_stats_timeline_raw(
+        &fixture.env.dbx,
+        vec![
+            fixture.alpha.signal_group.master_key.clone(),
+            fixture.beta.signal_group.master_key.clone(),
+            fixture.secret_empty.signal_group.master_key.clone(),
+        ],
+        dt_since,
+        dt_till,
+    )
+    .await
+    .unwrap()
+    .into_iter()
+    .map(|timeline| (timeline.master_key, timeline.points))
+    .collect::<BTreeMap<_, _>>();
+
+    assert_eq!(
+        timelines[&fixture.alpha.signal_group.master_key]
+            .iter()
+            .map(|point| point.count)
+            .collect::<Vec<_>>(),
+        vec![3]
+    );
+    assert_eq!(
+        timelines[&fixture.beta.signal_group.master_key]
+            .iter()
+            .map(|point| point.count)
+            .collect::<Vec<_>>(),
+        vec![2, 2]
+    );
+    assert!(timelines[&fixture.secret_empty.signal_group.master_key].is_empty());
 }
 
 #[tokio::test]
@@ -5743,6 +5858,23 @@ fn count_stats_analytics_open_circuit_allows_one_half_open_attempt() {
         u64::MAX
     );
     assert!(analytics_retry_attempt(&retry_state).is_none());
+}
+
+#[test]
+fn dropping_half_open_cancellation_guard_releases_retry_probe() {
+    let retry_state = std::sync::atomic::AtomicU64::new(1);
+    let retry_attempt = analytics_retry_attempt(&retry_state).unwrap();
+
+    {
+        let _retry_cancellation_guard = retry_attempt.cancellation_guard();
+        assert_eq!(
+            retry_state.load(std::sync::atomic::Ordering::Acquire),
+            u64::MAX
+        );
+    }
+
+    assert_eq!(retry_state.load(std::sync::atomic::Ordering::Acquire), 0);
+    assert!(analytics_retry_attempt(&retry_state).is_some());
 }
 
 #[tokio::test]

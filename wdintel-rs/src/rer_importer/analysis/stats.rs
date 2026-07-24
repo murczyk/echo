@@ -467,84 +467,26 @@ async fn fetch_senders_for_login_with_db(
         dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
 
     #[derive(FromQueryResult)]
-    struct SendersRes {
-        uuid: Option<String>,
-        count: i64,
-    }
-    #[derive(FromQueryResult)]
-    struct SenderFreqRes {
+    struct SenderBreakdownRes {
         uuid: Option<String>,
         freq: Option<String>,
         post_id: Option<i64>,
-        count: i64,
-    }
-    #[derive(FromQueryResult)]
-    struct SenderPerDayRes {
-        uuid: Option<String>,
         date: String,
         count: i64,
     }
 
     let instant = std::time::Instant::now();
-    let senders_query = build_senders_query(
-        &req,
-        login_str,
-        dt_since,
-        dt_till,
-        master_keys.clone(),
-    )?;
-    // println!(
-    //     "> senders_res: {}",
-    //     senders_res.build(DbBackend::Postgres).to_string()
-    // );
-    // println!(
-    //     "> senders_res: {}",
-    //     senders_res.build(DbBackend::Postgres).to_string()
-    // );
-    let senders_res: Vec<SendersRes> = senders_query
-        .into_model::<SendersRes>()
-        .all(db)
-        .await
-        .context(h!())?;
-
     let sender_stats_groups = sender_stats_groups(req, &master_keys);
-
-    let freq_query =
+    let per_day_expr = Expr::cust_with_exprs(
+        "to_char(($1 AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Kyiv')::date, 'DD.MM.YYYY')",
+        [Expr::col(sigint_inbox_item::Column::Datetime).into_simple_expr()],
+    );
+    let breakdown_query =
         build_join_for_sender_stats(&sender_stats_groups, &req.selected_aors)
             .select_only()
             .column_as(signal_message_group::Column::Sender, "uuid")
             .column(sigint_inbox_item::Column::Freq)
             .column(sigint_inbox_item::Column::PostId)
-            .column_as(
-                Expr::cust(r#"COUNT(DISTINCT "signal_message"."id")"#),
-                "count",
-            )
-            .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
-            .filter(sigint_inbox_item::Column::Datetime.lt(dt_till))
-            .group_by(signal_message_group::Column::Sender)
-            .group_by(sigint_inbox_item::Column::Freq)
-            .group_by(sigint_inbox_item::Column::PostId);
-    let freq_query = apply_sender_dimension_filters(freq_query, req);
-    let freq_query = apply_sender_filters_for_login(
-        freq_query,
-        req,
-        login_str,
-        master_keys.clone(),
-    )?;
-    let freq_rows: Vec<SenderFreqRes> = freq_query
-        .into_model::<SenderFreqRes>()
-        .all(db)
-        .await
-        .context(h!())?;
-
-    let per_day_expr = Expr::cust_with_exprs(
-        "to_char(($1 AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Kyiv')::date, 'DD.MM.YYYY')",
-        [Expr::col(sigint_inbox_item::Column::Datetime).into_simple_expr()],
-    );
-    let per_day_query =
-        build_join_for_sender_stats(&sender_stats_groups, &req.selected_aors)
-            .select_only()
-            .column_as(signal_message_group::Column::Sender, "uuid")
             .column_as(per_day_expr.clone(), "date")
             .column_as(
                 Expr::cust(r#"COUNT(DISTINCT "signal_message"."id")"#),
@@ -553,21 +495,23 @@ async fn fetch_senders_for_login_with_db(
             .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
             .filter(sigint_inbox_item::Column::Datetime.lt(dt_till))
             .group_by(signal_message_group::Column::Sender)
+            .group_by(sigint_inbox_item::Column::Freq)
+            .group_by(sigint_inbox_item::Column::PostId)
             .group_by(per_day_expr);
-    let per_day_query = apply_sender_dimension_filters(per_day_query, req);
-    let per_day_query = apply_sender_filters_for_login(
-        per_day_query,
+    let breakdown_query = apply_sender_dimension_filters(breakdown_query, req);
+    let breakdown_query = apply_sender_filters_for_login(
+        breakdown_query,
         req,
         login_str,
         master_keys,
     )?;
-    let per_day_rows: Vec<SenderPerDayRes> = per_day_query
-        .into_model::<SenderPerDayRes>()
+    let breakdown_rows: Vec<SenderBreakdownRes> = breakdown_query
+        .into_model::<SenderBreakdownRes>()
         .all(db)
         .await
         .context(h!())?;
 
-    let post_ids = freq_rows
+    let post_ids = breakdown_rows
         .iter()
         .filter_map(|row| row.post_id)
         .collect::<BTreeSet<_>>();
@@ -584,25 +528,23 @@ async fn fetch_senders_for_login_with_db(
             .map(|post| (post.id, post.name))
             .collect::<BTreeMap<_, _>>()
     };
-    let mut freq_map: BTreeMap<String, Vec<SenderFrequencyBreakdown>> =
-        BTreeMap::new();
-    for row in freq_rows {
-        let Some(uuid) = row.uuid else { continue };
-        let post = row.post_id.and_then(|id| post_names.get(&id).cloned());
-        freq_map
-            .entry(uuid)
-            .or_default()
-            .push(SenderFrequencyBreakdown {
-                freq: row.freq,
-                post,
-                count: row.count,
-            });
-    }
-
+    let mut sender_counts = BTreeMap::<String, i64>::new();
+    let mut freq_map =
+        BTreeMap::<String, BTreeMap<(Option<String>, Option<i64>), i64>>::new();
     let mut per_day_map: BTreeMap<String, BTreeMap<String, i64>> =
         BTreeMap::new();
-    for row in per_day_rows {
+    for row in breakdown_rows {
         let Some(uuid) = row.uuid else { continue };
+        sender_counts
+            .entry(uuid.clone())
+            .and_modify(|count| *count += row.count)
+            .or_insert(row.count);
+        freq_map
+            .entry(uuid.clone())
+            .or_default()
+            .entry((row.freq, row.post_id))
+            .and_modify(|count| *count += row.count)
+            .or_insert(row.count);
         per_day_map
             .entry(uuid)
             .or_default()
@@ -612,13 +554,21 @@ async fn fetch_senders_for_login_with_db(
     }
 
     let mut senders = vec![];
-    for x in senders_res {
-        let Some(uuid) = x.uuid else { continue };
-        let freq_breakdown = freq_map.get(&uuid).cloned().unwrap_or_default();
-        let per_day = per_day_map.get(&uuid).cloned().unwrap_or_default();
+    for (uuid, count) in sender_counts {
+        let freq_breakdown = freq_map
+            .remove(&uuid)
+            .unwrap_or_default()
+            .into_iter()
+            .map(|((freq, post_id), count)| SenderFrequencyBreakdown {
+                freq,
+                post: post_id.and_then(|id| post_names.get(&id).cloned()),
+                count,
+            })
+            .collect();
+        let per_day = per_day_map.remove(&uuid).unwrap_or_default();
         senders.push(AnalysisStatsSender {
             uuid,
-            count: x.count,
+            count,
             freq_breakdown,
             per_day,
         });
@@ -667,29 +617,6 @@ pub(super) async fn count_senders_with_db(
         db,
     )
     .await
-}
-
-fn build_senders_query(
-    req: &&Json<AnalysisStatsReq>,
-    login_str: &uuid::Uuid,
-    dt_since: NaiveDateTime,
-    dt_till: NaiveDateTime,
-    master_keys: Vec<String>,
-) -> Result<Select<sigint_inbox_item::Entity>, AppError> {
-    Ok(build_senders_filtered_query(
-        req,
-        login_str,
-        dt_since,
-        dt_till,
-        master_keys,
-    )?
-    .select_only()
-    .column_as(signal_message_group::Column::Sender, "uuid")
-    .column_as(
-        Expr::cust(r#"COUNT(DISTINCT "signal_message"."id")"#),
-        "count",
-    )
-    .group_by(signal_message_group::Column::Sender))
 }
 
 fn build_senders_filtered_query(
@@ -875,6 +802,12 @@ where
     Ok(query)
 }
 
+#[derive(FromQueryResult)]
+struct PostsRes {
+    post: String,
+    count: i64,
+}
+
 pub async fn fetch_posts(
     req: &Json<AnalysisStatsReq>,
     user: &Identity,
@@ -893,19 +826,33 @@ pub async fn fetch_posts(
         return Ok(result);
     }
 
-    let instant = std::time::Instant::now();
+    fetch_posts_with_db(req, user, &env.dbx, master_keys).await
+}
 
-    #[derive(FromQueryResult)]
-    struct PostsRes {
-        post: String,
-        count: i64,
-    }
+pub(super) async fn fetch_posts_raw_with_db(
+    req: &Json<AnalysisStatsReq>,
+    user: &Identity,
+    db: &DatabaseConnection,
+    master_keys: Vec<String>,
+) -> Result<Vec<AnalysisStatsPost>, AppError> {
+    fetch_posts_with_db(req, user, db, master_keys).await
+}
+
+async fn fetch_posts_with_db(
+    req: &Json<AnalysisStatsReq>,
+    user: &Identity,
+    db: &DatabaseConnection,
+    master_keys: Vec<String>,
+) -> Result<Vec<AnalysisStatsPost>, AppError> {
+    let dt_since = dt_from_millis(req.since_date_inclusive_ms).context(h!())?;
+    let dt_till =
+        dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
+    let instant = std::time::Instant::now();
     let post_res =
         build_posts_query(&req, &user, master_keys, dt_since, dt_till)?;
-    println!("test q: {}", post_res.build(DbBackend::Postgres));
     let post_res: Vec<PostsRes> = post_res
         .into_model::<PostsRes>()
-        .all(&env.dbx)
+        .all(db)
         .await
         .context(h!())?;
     let mut posts = vec![];
@@ -1327,6 +1274,12 @@ fn build_freqs_filtered_query(
     Ok(freqs_res)
 }
 
+#[derive(FromQueryResult)]
+struct CallsignsRes {
+    callsign: Option<String>,
+    count: i64,
+}
+
 pub async fn fetch_callsigns(
     req: &Json<AnalysisStatsReq>,
     user: &Identity,
@@ -1356,27 +1309,29 @@ pub async fn fetch_callsigns_for_login(
         return Ok(result);
     }
 
-    let instant = std::time::Instant::now();
+    fetch_callsigns_for_login_with_db(&req.0, login_str, &env.dbx, master_keys)
+        .await
+}
 
-    #[derive(FromQueryResult)]
-    struct CallsignsRes {
-        callsign: Option<String>,
-        count: i64,
-    }
-    let callsigns_res = build_callsigns_query(
-        &req.0,
-        login_str,
-        dt_since,
-        dt_till,
-        master_keys,
-    )?;
+async fn fetch_callsigns_for_login_with_db(
+    req: &AnalysisStatsReq,
+    login_str: &uuid::Uuid,
+    db: &DatabaseConnection,
+    master_keys: Vec<String>,
+) -> Result<Vec<AnalysisStatsCallsign>, AppError> {
+    let dt_since = dt_from_millis(req.since_date_inclusive_ms).context(h!())?;
+    let dt_till =
+        dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
+    let instant = std::time::Instant::now();
+    let callsigns_res =
+        build_callsigns_query(req, login_str, dt_since, dt_till, master_keys)?;
     // println!(
     //     "> callsigns_res: {}",
     //     callsigns_res.build(DbBackend::Postgres).to_string()
     // );
     let callsigns_res: Vec<CallsignsRes> = callsigns_res
         .into_model::<CallsignsRes>()
-        .all(&env.dbx)
+        .all(db)
         .await
         .c(h!())?;
     let mut callsigns = vec![];
@@ -1390,6 +1345,67 @@ pub async fn fetch_callsigns_for_login(
 
     debug!("callsigns op took: {:?}", instant.elapsed());
     Ok(callsigns)
+}
+
+pub(super) async fn fetch_callsigns_raw_with_db(
+    req: &Json<AnalysisStatsReq>,
+    user: &Identity,
+    db: &DatabaseConnection,
+    master_keys: Vec<String>,
+) -> Result<Vec<AnalysisStatsCallsign>, AppError> {
+    let login_value = login_id_from_identity(user)?;
+    let dt_since = dt_from_millis(req.since_date_inclusive_ms).context(h!())?;
+    let dt_till =
+        dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
+    let mut callsigns_res = build_callsigns_filtered_query(
+        &req.0,
+        &login_value,
+        dt_since,
+        dt_till,
+        master_keys,
+    )?;
+    let callsign_alias = Alias::new("analytics_callsign");
+    QuerySelect::query(&mut callsigns_res)
+        .join_as(
+            JoinType::InnerJoin,
+            (
+                Alias::new("echo_clickhouse_derived"),
+                Alias::new("message_callsign"),
+            ),
+            callsign_alias.clone(),
+            Expr::col((
+                callsign_alias.clone(),
+                Alias::new("sigint_inbox_item_id"),
+            ))
+            .equals((sigint_inbox_item::Entity, sigint_inbox_item::Column::Id)),
+        )
+        .clear_selects()
+        .expr_as(
+            Expr::col((callsign_alias.clone(), Alias::new("callsign"))),
+            Alias::new("callsign"),
+        )
+        .expr_as(
+            Expr::cust_with_expr(
+                "COUNT(DISTINCT $1)",
+                Expr::col((signal_message::Entity, signal_message::Column::Id)),
+            ),
+            Alias::new("count"),
+        )
+        .group_by_col((callsign_alias, Alias::new("callsign")));
+
+    Ok(callsigns_res
+        .into_model::<CallsignsRes>()
+        .all(db)
+        .await
+        .context(h!())?
+        .into_iter()
+        .filter_map(|row| {
+            row.callsign.map(|callsign| AnalysisStatsCallsign {
+                callsign,
+                count: row.count,
+            })
+        })
+        .collect())
 }
 
 pub async fn count_callsigns(
@@ -1836,6 +1852,12 @@ fn build_callsigns_filtered_query(
     Ok(callsigns_res)
 }
 
+#[derive(FromQueryResult)]
+struct TagsRes {
+    tag_id: i64,
+    count: i64,
+}
+
 pub async fn fetch_tags(
     req: &Json<AnalysisStatsReq>,
     user: &Identity,
@@ -1872,21 +1894,41 @@ pub async fn fetch_tags_for_login(
         return Ok(result);
     }
 
-    let instant = std::time::Instant::now();
-
-    #[derive(FromQueryResult)]
-    struct TagsRes {
-        tag_id: i64,
-        count: i64,
-    }
-    let tags_res =
-        build_tags_query(&req.0, login_str, dt_since, dt_till, master_keys)?;
-
-    let tags_res: Vec<TagsRes> = tags_res
-        .into_model::<TagsRes>()
-        .all(&env.dbx)
+    fetch_tags_for_login_with_db(&req.0, login_str, &env.dbx, master_keys, None)
         .await
-        .c(h!())?;
+}
+
+async fn fetch_tags_for_login_with_db(
+    req: &AnalysisStatsReq,
+    login_str: &uuid::Uuid,
+    db: &DatabaseConnection,
+    master_keys: Vec<String>,
+    tag_access: Option<&AnalyticsTagAccess>,
+) -> Result<Vec<AnalysisStatsTag>, AppError> {
+    let dt_since = dt_from_millis(req.since_date_inclusive_ms).context(h!())?;
+    let dt_till =
+        dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
+    let instant = std::time::Instant::now();
+    let tags_res = if let Some(tag_access) = tag_access {
+        build_tags_analytics_filtered_query(
+            req,
+            login_str,
+            &tag_access.accessible_tag_ids,
+            &tag_access.unit_login_ids,
+            dt_since,
+            dt_till,
+            master_keys,
+        )?
+        .select_only()
+        .column(sigint_inbox_item_tag::Column::TagId)
+        .column_as(Expr::count(Expr::val(1)), "count")
+        .group_by(sigint_inbox_item_tag::Column::TagId)
+    } else {
+        build_tags_query(req, login_str, dt_since, dt_till, master_keys)?
+    };
+
+    let tags_res: Vec<TagsRes> =
+        tags_res.into_model::<TagsRes>().all(db).await.c(h!())?;
 
     let tags: Vec<_> = tags_res
         .iter()
@@ -1903,6 +1945,24 @@ pub async fn fetch_tags_for_login(
     }
 
     Ok(tags)
+}
+
+pub(super) async fn fetch_tags_raw_with_db(
+    req: &Json<AnalysisStatsReq>,
+    user: &Identity,
+    db: &DatabaseConnection,
+    master_keys: Vec<String>,
+    tag_access: &AnalyticsTagAccess,
+) -> Result<Vec<AnalysisStatsTag>, AppError> {
+    let login_value = login_id_from_identity(user)?;
+    fetch_tags_for_login_with_db(
+        &req.0,
+        &login_value,
+        db,
+        master_keys,
+        Some(tag_access),
+    )
+    .await
 }
 
 pub async fn count_tags(
@@ -2174,6 +2234,12 @@ fn build_tags_filtered_query_with_owner_condition(
     Ok(tags_res)
 }
 
+#[derive(FromQueryResult)]
+struct UnitsRes {
+    unit: Option<String>,
+    count: i64,
+}
+
 pub async fn fetch_units(
     req: &Json<AnalysisStatsReq>,
     user: &Identity,
@@ -2192,13 +2258,28 @@ pub async fn fetch_units(
         return Ok(result);
     }
 
-    let instant = std::time::Instant::now();
+    fetch_units_with_db(req, user, &env.dbx, master_keys).await
+}
 
-    #[derive(FromQueryResult)]
-    struct UnitsRes {
-        unit: Option<String>,
-        count: i64,
-    }
+pub(super) async fn fetch_units_raw_with_db(
+    req: &Json<AnalysisStatsReq>,
+    user: &Identity,
+    db: &DatabaseConnection,
+    master_keys: Vec<String>,
+) -> Result<Vec<AnalysisStatsUnit>, AppError> {
+    fetch_units_with_db(req, user, db, master_keys).await
+}
+
+async fn fetch_units_with_db(
+    req: &Json<AnalysisStatsReq>,
+    user: &Identity,
+    db: &DatabaseConnection,
+    master_keys: Vec<String>,
+) -> Result<Vec<AnalysisStatsUnit>, AppError> {
+    let dt_since = dt_from_millis(req.since_date_inclusive_ms).context(h!())?;
+    let dt_till =
+        dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
+    let instant = std::time::Instant::now();
     let units_res =
         build_units_query(&req, &user, dt_since, dt_till, master_keys)?;
     // println!(
@@ -2207,7 +2288,7 @@ pub async fn fetch_units(
     // );
     let units_res: Vec<UnitsRes> = units_res
         .into_model::<UnitsRes>()
-        .all(&env.dbx)
+        .all(db)
         .await
         .context(h!())?;
     let mut units = vec![];
@@ -2420,6 +2501,12 @@ fn build_units_filtered_query(
     Ok(units_res)
 }
 
+#[derive(FromQueryResult)]
+struct LocationsRes {
+    location: Option<String>,
+    count: i64,
+}
+
 pub async fn fetch_locations(
     req: &Json<AnalysisStatsReq>,
     user: &Identity,
@@ -2449,15 +2536,33 @@ pub async fn fetch_locations_for_login(
         return Ok(result);
     }
 
-    let instant = std::time::Instant::now();
+    fetch_locations_for_login_with_db(&req.0, login_str, &env.dbx, master_keys)
+        .await
+}
 
-    #[derive(FromQueryResult)]
-    struct LocationsRes {
-        location: Option<String>,
-        count: i64,
-    }
+pub(super) async fn fetch_locations_raw_with_db(
+    req: &Json<AnalysisStatsReq>,
+    user: &Identity,
+    db: &DatabaseConnection,
+    master_keys: Vec<String>,
+) -> Result<Vec<AnalysisStatsLocation>, AppError> {
+    let login_value = login_id_from_identity(user)?;
+    fetch_locations_for_login_with_db(&req.0, &login_value, db, master_keys)
+        .await
+}
+
+async fn fetch_locations_for_login_with_db(
+    req: &AnalysisStatsReq,
+    login_str: &uuid::Uuid,
+    db: &DatabaseConnection,
+    master_keys: Vec<String>,
+) -> Result<Vec<AnalysisStatsLocation>, AppError> {
+    let dt_since = dt_from_millis(req.since_date_inclusive_ms).context(h!())?;
+    let dt_till =
+        dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
+    let instant = std::time::Instant::now();
     let locations_res = build_locations_query_for_login(
-        &req.0,
+        req,
         login_str,
         dt_since,
         dt_till,
@@ -2469,7 +2574,7 @@ pub async fn fetch_locations_for_login(
     // );
     let locations_res = locations_res
         .into_model::<LocationsRes>()
-        .all(&env.dbx)
+        .all(db)
         .await
         .context(h!())?
         .into_iter()
@@ -2680,11 +2785,34 @@ pub async fn fetch_aors_for_login(
         return Ok(result);
     }
 
+    fetch_aors_for_login_with_db(req, login_str, &env.dbx, master_keys, false)
+        .await
+}
+
+async fn fetch_aors_for_login_with_db(
+    req: &AnalysisStatsReq,
+    login_str: &uuid::Uuid,
+    db: &DatabaseConnection,
+    master_keys: Vec<String>,
+    analytics: bool,
+) -> Result<Vec<AnalysisStatsAor>, AppError> {
+    let dt_since = dt_from_millis(req.since_date_inclusive_ms).context(h!())?;
+    let dt_till =
+        dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
     let instant = std::time::Instant::now();
-    let stmt =
-        build_aors_query(req, login_str, dt_since, dt_till, master_keys)?;
+    let stmt = if analytics {
+        build_aors_analytics_query(
+            req,
+            login_str,
+            dt_since,
+            dt_till,
+            master_keys,
+        )?
+    } else {
+        build_aors_query(req, login_str, dt_since, dt_till, master_keys)?
+    };
     let aors_res: Vec<AorsRes> = AorsRes::find_by_statement(stmt)
-        .all(&env.dbx)
+        .all(db)
         .await
         .context(h!())?;
     let mut aors = vec![];
@@ -2696,6 +2824,17 @@ pub async fn fetch_aors_for_login(
     }
     debug!("aors op took: {:?}", instant.elapsed());
     Ok(aors)
+}
+
+pub(super) async fn fetch_aors_raw_with_db(
+    req: &Json<AnalysisStatsReq>,
+    user: &Identity,
+    db: &DatabaseConnection,
+    master_keys: Vec<String>,
+) -> Result<Vec<AnalysisStatsAor>, AppError> {
+    let login_value = login_id_from_identity(user)?;
+    fetch_aors_for_login_with_db(&req.0, &login_value, db, master_keys, true)
+        .await
 }
 
 #[derive(FromQueryResult)]
@@ -3369,6 +3508,41 @@ pub(super) async fn count_networks_analytics_with_db(
     Ok(result.count)
 }
 
+pub(super) async fn fetch_networks_analytics_with_db(
+    req: &Json<AnalysisStatsReq>,
+    user: &Identity,
+    db: &DatabaseConnection,
+    master_keys: Vec<String>,
+    tag_access: &AnalyticsTagAccess,
+) -> Result<Vec<AnalysisStatsNetwork>, AppError> {
+    let login_value = login_id_from_identity(user)?;
+    let dt_since = dt_from_millis(req.since_date_inclusive_ms).context(h!())?;
+    let dt_till =
+        dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
+    let statement = build_networks_analytics_query(
+        &req.0,
+        &login_value,
+        &tag_access.accessible_tag_ids,
+        &tag_access.unit_login_ids,
+        dt_since,
+        dt_till,
+        master_keys,
+        false,
+    )?;
+    Ok(NetworksRes::find_by_statement(statement)
+        .all(db)
+        .await
+        .context(h!())?
+        .into_iter()
+        .filter_map(|row| {
+            row.network_id.map(|network_id| AnalysisStatsNetwork {
+                network_id,
+                count: row.msg_count,
+            })
+        })
+        .collect())
+}
+
 pub(super) fn build_networks_analytics_count_query(
     req: &AnalysisStatsReq,
     login_str: &uuid::Uuid,
@@ -3377,6 +3551,28 @@ pub(super) fn build_networks_analytics_count_query(
     dt_since: NaiveDateTime,
     dt_till: NaiveDateTime,
     master_keys: Vec<String>,
+) -> Result<Statement, AppError> {
+    build_networks_analytics_query(
+        req,
+        login_str,
+        accessible_tag_ids,
+        unit_login_ids,
+        dt_since,
+        dt_till,
+        master_keys,
+        true,
+    )
+}
+
+pub(super) fn build_networks_analytics_query(
+    req: &AnalysisStatsReq,
+    login_str: &uuid::Uuid,
+    accessible_tag_ids: &[i64],
+    unit_login_ids: &[uuid::Uuid],
+    dt_since: NaiveDateTime,
+    dt_till: NaiveDateTime,
+    master_keys: Vec<String>,
+    count_only: bool,
 ) -> Result<Statement, AppError> {
     let messages = build_network_analytics_messages_query(
         req,
@@ -3399,9 +3595,18 @@ pub(super) fn build_networks_analytics_count_query(
         groups,
         &req.selected_aors,
     );
+    let (projection, group_by) = if count_only {
+        ("COUNT(DISTINCT network_id) AS count", "")
+    } else {
+        (
+            "network_id, COUNT(DISTINCT dedup_key) AS msg_count",
+            " GROUP BY network_id",
+        )
+    };
     let sql = format!(
-        "SELECT COUNT(DISTINCT network_id) AS count \
-         FROM ({frequency_sql} UNION ALL {linked_sql}) AS message_networks",
+        "SELECT {projection} \
+         FROM ({frequency_sql} UNION ALL {linked_sql}) AS message_networks\
+         {group_by}",
         frequency_sql = frequency_matches.to_string(PostgresQueryBuilder),
         linked_sql = linked_matches.to_string(PostgresQueryBuilder),
     );
@@ -3638,6 +3843,10 @@ fn build_network_frequency_analytics_arm(
             Expr::col((network_alias.clone(), Alias::new("network_id"))),
             Alias::new("network_id"),
         )
+        .expr_as(
+            Expr::col((message_alias.clone(), Alias::new("dedup_key"))),
+            Alias::new("dedup_key"),
+        )
         .from_subquery(
             project_network_analytics_messages(messages),
             message_alias.clone(),
@@ -3703,6 +3912,10 @@ fn build_network_linked_analytics_arm(
                 sigint_inbox_item_network::Column::SigintNetworkId,
             )),
             Alias::new("network_id"),
+        )
+        .expr_as(
+            Expr::col((message_alias.clone(), Alias::new("dedup_key"))),
+            Alias::new("dedup_key"),
         )
         .from_subquery(
             project_network_analytics_messages(messages),

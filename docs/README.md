@@ -10,6 +10,9 @@ Echo configuration leaves the application on its existing PostgreSQL path.
 Failure to connect to analytics at startup does not prevent Echo from starting,
 and supported analytical requests retry through PostgreSQL when analytics is
 stale, unavailable, or too slow.
+Those requests include RER result/facet counts and lists, long-range messenger
+activity timelines, report-history list scans, and replicated-data report
+queries; operational writes and live queue/progress state remain on PostgreSQL.
 
 ## Deployment topology
 

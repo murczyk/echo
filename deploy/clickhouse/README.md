@@ -451,19 +451,28 @@ cooldown instead of making every request wait for the unavailable gateway.
 Keep `ANALYTICS_HEALTH_STALE_AFTER_SECONDS` and `freshness_max_age_ms` aligned;
 the supplied values are 90 seconds.
 
-The count, group, sender, and frequency analysis endpoints use this path:
+Gateway refresh reads the published source schema and restores compatibility
+types that ClickHouse cannot distinguish on its own, including JSON/JSONB,
+bytea, tsvector, and `timestamp without time zone`. This keeps application
+decoding and PostgreSQL query semantics consistent with the source database.
 
+The analysis result, facet, and dedicated facet-count endpoints use this path:
+
+- `/api/rer-importer/get-inbox-count`
 - `/api/rer/analysis/stats/count`
-- `/api/rer/analysis/stats/groups`
-- `/api/rer/analysis/stats/senders`
-- `/api/rer/analysis/stats/freqs`
+- `/api/rer/analysis/stats/{groups,senders,posts,freqs,callsigns,tags,units,locations,aors,networks}`
+- `/api/rer/analysis/stats/{groups,senders,posts,freqs,callsigns,tags,units,locations,aors,networks}/count`
 
 The expensive replicated-data reads for the interception, sender, posts, REO,
-digest, RER, Sposob, 1.2.5, and 1.2.13 reports also prefer analytics. Small
-catalog lookups, report rendering, mutable cache operations, PostGIS reports,
-and reports requiring a repeatable PostgreSQL snapshot remain on PostgreSQL.
-An analytical report read is retried from the beginning on PostgreSQL, so a
-failed attempt cannot mix partial analytical and PostgreSQL result sets.
+digest, RER, Sposob, active-network, network-frequency, 1.2.5, and 1.2.13
+reports also prefer analytics. The messenger account/group timelines and the
+historical portions of the user/admin report-history dashboards read raw
+replicated data; live report progress, queue state, file operations, and
+mutations stay on PostgreSQL. Small catalog lookups, report rendering, mutable
+cache operations, PostGIS reports, and reports requiring a repeatable
+PostgreSQL snapshot remain on PostgreSQL. An analytical operation is retried
+from the beginning on PostgreSQL, so a failed attempt cannot mix partial
+analytical and PostgreSQL result sets.
 
 Existing five-minute aggregate generation remains intact. Count dimension totals use scalar
 `COUNT(DISTINCT ...)` queries so the gateway receives aggregates rather than
@@ -542,14 +551,16 @@ bin/finish-resync.sh
 ### The correct day-two table-selection solution
 
 [env/tables-exclude.txt](env/tables-exclude.txt) is the versioned source of
-truth. After adding or removing entries, run this on the Echo source host from
-the Echo checkout:
+truth. After adding or removing entries, deploy the updated Echo package and
+run this on the Echo source host:
 
 ```bash
-just setup-analytics-reconcile-tables
+/opt/echo-peerdb/bin/source-sync-exclusions.sh --yes
 ```
 
-The command installs the repository file as
+From an Echo checkout, `just setup-analytics-reconcile-tables` performs the
+same operation directly from the working tree. The command installs the
+versioned file as
 `/etc/echo-peerdb/tables-exclude.txt`, pauses the existing mirror, reconciles
 the restricted source role and custom PostgreSQL publication, and asks PeerDB
 to edit its table mappings.

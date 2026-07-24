@@ -197,14 +197,32 @@ pub async fn group_stats_timeline(
     let dt_till = Utc::now().naive_utc();
     let dt_since = dt_till - Duration::hours(period_hours);
 
-    let mut data = crate::stats::read_group_stats_timeline_cached(
-        &env.dbx,
-        master_keys.clone(),
-        dt_since,
-        dt_till,
+    let analytics_master_keys = master_keys.clone();
+    let postgres_master_keys = master_keys.clone();
+    let mut data = crate::rer_importer::analysis::with_analytics_read_fallback(
+        env.get_ref(),
+        "group stats timeline",
+        true,
+        |db| async move {
+            Ok(crate::stats::read_group_stats_timeline_raw(
+                &db,
+                analytics_master_keys,
+                dt_since,
+                dt_till,
+            )
+            .await?)
+        },
+        |db| async move {
+            Ok(crate::stats::read_group_stats_timeline_cached(
+                &db,
+                postgres_master_keys,
+                dt_since,
+                dt_till,
+            )
+            .await?)
+        },
     )
-    .await
-    .context(h!())?;
+    .await?;
 
     let mut data_by_key = data
         .drain(..)
