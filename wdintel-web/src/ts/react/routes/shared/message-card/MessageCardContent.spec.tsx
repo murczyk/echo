@@ -175,6 +175,7 @@ describe('MessageCardContent point blacklist actions', () => {
   it('keeps direct success feedback visible after the route callback resolves', async () => {
     const onAdd = vi.fn(() => Promise.resolve());
     ({ root: activeRoot, container: activeContainer } = renderMessage([7], onAdd));
+    expect(document.body.querySelector('[role="dialog"]')).toBeNull();
     await openPointMenu(activeContainer);
     Array.from(document.body.querySelectorAll('[role="menuitem"]'))
       .find((item) => item.textContent?.includes('Додати до чорного списку'))

@@ -80,7 +80,7 @@ function PointBlacklistPaletteDialog({
   onChoose,
   onClose,
 }: {
-  state: PointBlacklistDialogState | null;
+  state: PointBlacklistDialogState;
   palitras: Palitra[];
   loading: boolean;
   error: string | null;
@@ -91,14 +91,12 @@ function PointBlacklistPaletteDialog({
   onClose: () => void;
 }) {
   return (
-    <Dialog open={state != null} onClose={onClose} disableRestoreFocus>
+    <Dialog open={true} onClose={onClose} disableRestoreFocus>
       <DialogTitle>Додати до чорного списку</DialogTitle>
       <DialogContent>
-        {state ? (
-          <Typography variant="body2" sx={{ mb: 1.5 }}>
-            Точка: {state.request.etalon}
-          </Typography>
-        ) : null}
+        <Typography variant="body2" sx={{ mb: 1.5 }}>
+          Точка: {state.request.etalon}
+        </Typography>
         {loading ? <CircularProgress size={24} aria-label="Завантаження палітр" /> : null}
         {error ? (
           <PowerAlert
@@ -109,25 +107,23 @@ function PointBlacklistPaletteDialog({
             {error}
           </PowerAlert>
         ) : null}
-        {state ? (
-          <List disablePadding>
-            {state.palitraIds.map((palitraId) => {
-              const palitra = palitras.find((entry) => entry.id === palitraId);
-              return (
-                <ListItemButton
-                  key={palitraId}
-                  disabled={palitraId <= 0 || pendingPalitraIds.has(palitraId)}
-                  onClick={() => onChoose(palitraId)}
-                >
-                  {pendingPalitraIds.has(palitraId) ? (
-                    <CircularProgress size={18} sx={{ mr: 1 }} />
-                  ) : null}
-                  <ListItemText primary={palitra?.name?.trim() || `Палітра #${palitraId}`} />
-                </ListItemButton>
-              );
-            })}
-          </List>
-        ) : null}
+        <List disablePadding>
+          {state.palitraIds.map((palitraId) => {
+            const palitra = palitras.find((entry) => entry.id === palitraId);
+            return (
+              <ListItemButton
+                key={palitraId}
+                disabled={palitraId <= 0 || pendingPalitraIds.has(palitraId)}
+                onClick={() => onChoose(palitraId)}
+              >
+                {pendingPalitraIds.has(palitraId) ? (
+                  <CircularProgress size={18} sx={{ mr: 1 }} />
+                ) : null}
+                <ListItemText primary={palitra?.name?.trim() || `Палітра #${palitraId}`} />
+              </ListItemButton>
+            );
+          })}
+        </List>
         {mutationError ? (
           <PowerAlert severity="error" autoHideDuration={null}>
             {mutationError}
@@ -417,21 +413,23 @@ export function MessageCardMessageBody({
 
   return (
     <div className="flex flex-col min-w-0" style={{ gap: compact ? '12px' : '10px' }}>
-      <PointBlacklistPaletteDialog
-        state={pointBlacklistDialog}
-        palitras={pointBlacklistPalitras}
-        loading={pointBlacklistLoading}
-        error={pointBlacklistLoadError}
-        pendingPalitraIds={pointBlacklistPendingPalitraIds}
-        mutationError={pointBlacklistMutationError}
-        onRetry={retryPointBlacklistPalitras}
-        onChoose={choosePointBlacklistPalitra}
-        onClose={() => {
-          setPointBlacklistDialog(null);
-          setPointBlacklistPendingPalitraIds(new Set());
-          setPointBlacklistMutationError(null);
-        }}
-      />
+      {pointBlacklistDialog ? (
+        <PointBlacklistPaletteDialog
+          state={pointBlacklistDialog}
+          palitras={pointBlacklistPalitras}
+          loading={pointBlacklistLoading}
+          error={pointBlacklistLoadError}
+          pendingPalitraIds={pointBlacklistPendingPalitraIds}
+          mutationError={pointBlacklistMutationError}
+          onRetry={retryPointBlacklistPalitras}
+          onChoose={choosePointBlacklistPalitra}
+          onClose={() => {
+            setPointBlacklistDialog(null);
+            setPointBlacklistPendingPalitraIds(new Set());
+            setPointBlacklistMutationError(null);
+          }}
+        />
+      ) : null}
       {hasImageOrVideoAttachments ? (
         <MessageCardImageList
           images={images}
