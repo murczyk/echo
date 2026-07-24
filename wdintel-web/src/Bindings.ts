@@ -1456,6 +1456,7 @@ export type Login = {
   lastActiveAt: number | null;
   deactivationReason: DeactivationReasonType | null;
   description: string | null;
+  passwordAuthEnabled: boolean;
 };
 
 export type ListLoginsSortBy =
@@ -1492,6 +1493,7 @@ export type UpdateLoginReq = {
   deltaLogin: string | null;
   deactivationReason: DeactivationReasonType | null;
   description: string | null;
+  passwordAuthEnabled: boolean | null;
 };
 
 export type SigintGroupsReq = {
