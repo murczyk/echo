@@ -16,6 +16,7 @@ use sea_orm::*;
 use sea_query::types::IntoColumnRef;
 use sea_query::{Expr, SimpleExpr};
 
+pub mod attachment;
 pub mod types;
 
 pub fn unit_name(unit: &Unit) -> String {
@@ -785,6 +786,16 @@ async fn swap_units(
         .await
         .context(h!())?;
     }
+
+    sigint_unit_attachment::Entity::update_many()
+        .col_expr(
+            sigint_unit_attachment::Column::UnitId,
+            Expr::value(new_unit_id),
+        )
+        .filter(sigint_unit_attachment::Column::UnitId.eq(old_unit_id))
+        .exec(dbx)
+        .await
+        .context(h!())?;
 
     Ok(())
 }

@@ -2140,6 +2140,40 @@ export type UnitSearchReq = {
   search: string;
 };
 
+export type UnitDetailsReq = {
+  unitId: number;
+};
+
+export type UnitAttachmentAor = {
+  id: number;
+  name: string;
+};
+
+export type UnitAttachment = {
+  id: number;
+  unitId: number;
+  fileName: string;
+  contentType: string;
+  sizeBytes: number;
+  shortDescription: string;
+  fullDescription: string;
+  aors: Array<UnitAttachmentAor>;
+  createdAt: number;
+};
+
+export type UnitDetailsRsp = {
+  unit: Unit;
+  attachments: Array<UnitAttachment>;
+};
+
+export type UnitAttachmentUnitIdsRsp = {
+  unitIds: Array<number>;
+};
+
+export type UnitAttachmentDownloadReq = {
+  attachmentId: number;
+};
+
 export type ListSignalsSortBy =
   | 'SignalsCreatedAtAsc'
   | 'SignalsCreatedAtDesc'

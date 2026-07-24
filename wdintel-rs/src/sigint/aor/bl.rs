@@ -3,7 +3,10 @@ use crate::sigint::aor::render_aor;
 use crate::sigint::aor::types::AreaOfResponsibility;
 use crate::types::*;
 use crate::utils::orm::ArrayColumnOps;
-use sea_orm::{ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter};
+use sea_orm::{
+    ColumnTrait, ConnectionTrait, EntityTrait, JoinType, QueryFilter,
+    QuerySelect, RelationTrait,
+};
 use std::collections::{BTreeMap, HashSet};
 
 pub async fn collect_group_aors<'a, 'async_trait, C>(
@@ -84,6 +87,26 @@ where
         })
         .map(|aor| aor.id)
         .collect())
+}
+
+pub async fn login_aor_ids_with_descendants<'a, 'async_trait, C>(
+    dbx: &'a C,
+    login_id: &uuid::Uuid,
+) -> anyhow::Result<HashSet<i64>>
+where
+    C: ConnectionTrait + 'async_trait,
+{
+    let direct_aor_ids = organism_aor::Entity::find()
+        .join(JoinType::InnerJoin, organism_aor::Relation::Organism.def())
+        .join(JoinType::InnerJoin, organism::Relation::Login.def())
+        .filter(login::Column::Id.eq(*login_id))
+        .select_only()
+        .column(organism_aor::Column::AorId)
+        .into_tuple::<i64>()
+        .all(dbx)
+        .await
+        .c(h!())?;
+    expand_aor_ids_to_descendants(dbx, &direct_aor_ids).await
 }
 
 #[cfg(test)]

@@ -5563,6 +5563,98 @@ unitSearchReqEncoder struct =
         ]
 
 
+type alias UnitDetailsReq =
+    { unitId : Int
+    }
+
+
+unitDetailsReqEncoder : UnitDetailsReq -> Json.Encode.Value
+unitDetailsReqEncoder struct =
+    Json.Encode.object
+        [ ( "unit_id", (Json.Encode.int) struct.unitId )
+        ]
+
+
+type alias UnitAttachmentAor =
+    { id : Int
+    , name : String
+    }
+
+
+unitAttachmentAorEncoder : UnitAttachmentAor -> Json.Encode.Value
+unitAttachmentAorEncoder struct =
+    Json.Encode.object
+        [ ( "id", (Json.Encode.int) struct.id )
+        , ( "name", (Json.Encode.string) struct.name )
+        ]
+
+
+type alias UnitAttachment =
+    { id : Int
+    , unitId : Int
+    , fileName : String
+    , contentType : String
+    , sizeBytes : Int
+    , shortDescription : String
+    , fullDescription : String
+    , aors : List (UnitAttachmentAor)
+    , createdAt : Int
+    }
+
+
+unitAttachmentEncoder : UnitAttachment -> Json.Encode.Value
+unitAttachmentEncoder struct =
+    Json.Encode.object
+        [ ( "id", (Json.Encode.int) struct.id )
+        , ( "unit_id", (Json.Encode.int) struct.unitId )
+        , ( "file_name", (Json.Encode.string) struct.fileName )
+        , ( "content_type", (Json.Encode.string) struct.contentType )
+        , ( "size_bytes", (Json.Encode.int) struct.sizeBytes )
+        , ( "short_description", (Json.Encode.string) struct.shortDescription )
+        , ( "full_description", (Json.Encode.string) struct.fullDescription )
+        , ( "aors", (Json.Encode.list (unitAttachmentAorEncoder)) struct.aors )
+        , ( "created_at", (Json.Encode.int) struct.createdAt )
+        ]
+
+
+type alias UnitDetailsRsp =
+    { unit : Unit
+    , attachments : List (UnitAttachment)
+    }
+
+
+unitDetailsRspEncoder : UnitDetailsRsp -> Json.Encode.Value
+unitDetailsRspEncoder struct =
+    Json.Encode.object
+        [ ( "unit", (unitEncoder) struct.unit )
+        , ( "attachments", (Json.Encode.list (unitAttachmentEncoder)) struct.attachments )
+        ]
+
+
+type alias UnitAttachmentUnitIdsRsp =
+    { unitIds : List (Int)
+    }
+
+
+unitAttachmentUnitIdsRspEncoder : UnitAttachmentUnitIdsRsp -> Json.Encode.Value
+unitAttachmentUnitIdsRspEncoder struct =
+    Json.Encode.object
+        [ ( "unit_ids", (Json.Encode.list (Json.Encode.int)) struct.unitIds )
+        ]
+
+
+type alias UnitAttachmentDownloadReq =
+    { attachmentId : Int
+    }
+
+
+unitAttachmentDownloadReqEncoder : UnitAttachmentDownloadReq -> Json.Encode.Value
+unitAttachmentDownloadReqEncoder struct =
+    Json.Encode.object
+        [ ( "attachment_id", (Json.Encode.int) struct.attachmentId )
+        ]
+
+
 type ListSignalsSortBy
     = SignalsCreatedAtAsc
     | SignalsCreatedAtDesc
@@ -12603,6 +12695,52 @@ unitSearchReqDecoder : Json.Decode.Decoder UnitSearchReq
 unitSearchReqDecoder =
     Json.Decode.succeed UnitSearchReq
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "search" (Json.Decode.string)))
+
+
+unitDetailsReqDecoder : Json.Decode.Decoder UnitDetailsReq
+unitDetailsReqDecoder =
+    Json.Decode.succeed UnitDetailsReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unit_id" (Json.Decode.int)))
+
+
+unitAttachmentAorDecoder : Json.Decode.Decoder UnitAttachmentAor
+unitAttachmentAorDecoder =
+    Json.Decode.succeed UnitAttachmentAor
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" (Json.Decode.string)))
+
+
+unitAttachmentDecoder : Json.Decode.Decoder UnitAttachment
+unitAttachmentDecoder =
+    Json.Decode.succeed UnitAttachment
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unit_id" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "file_name" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "content_type" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "size_bytes" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "short_description" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "full_description" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "aors" (Json.Decode.list (unitAttachmentAorDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "created_at" (Json.Decode.int)))
+
+
+unitDetailsRspDecoder : Json.Decode.Decoder UnitDetailsRsp
+unitDetailsRspDecoder =
+    Json.Decode.succeed UnitDetailsRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unit" (unitDecoder)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "attachments" (Json.Decode.list (unitAttachmentDecoder))))
+
+
+unitAttachmentUnitIdsRspDecoder : Json.Decode.Decoder UnitAttachmentUnitIdsRsp
+unitAttachmentUnitIdsRspDecoder =
+    Json.Decode.succeed UnitAttachmentUnitIdsRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unit_ids" (Json.Decode.list (Json.Decode.int))))
+
+
+unitAttachmentDownloadReqDecoder : Json.Decode.Decoder UnitAttachmentDownloadReq
+unitAttachmentDownloadReqDecoder =
+    Json.Decode.succeed UnitAttachmentDownloadReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "attachment_id" (Json.Decode.int)))
 
 
 listSignalsSortByDecoder : Json.Decode.Decoder ListSignalsSortBy

@@ -739,6 +739,62 @@ sigint_unit_delete_duplicate toMsg req =
         }
 
 
+sigint_unit_details :
+    (Result ApiError UnitDetailsRsp -> msg)
+    -> UnitDetailsReq
+    -> Cmd msg
+sigint_unit_details toMsg req =
+    Http.post
+        { url = "/api/sigint/unit/details"
+        , body = Http.jsonBody (unitDetailsReqEncoder req)
+        , expect = leExpectJson toMsg unitDetailsRspDecoder
+        }
+
+
+type alias UnitAttachmentUploadForm =
+    { unitId : Int
+    , shortDescription : String
+    , fullDescription : String
+    , aorIds : List Int
+    }
+
+
+sigint_unit_attachment_upload :
+    (Result ApiError UnitAttachment -> msg)
+    -> UnitAttachmentUploadForm
+    -> File
+    -> Cmd msg
+sigint_unit_attachment_upload toMsg form file =
+    Http.request
+        { method = "POST"
+        , headers = []
+        , url = "/api/sigint/unit/attachment/upload"
+        , body =
+            Http.multipartBody
+                [ Http.stringPart "unit_id" (String.fromInt form.unitId)
+                , Http.stringPart "short_description" form.shortDescription
+                , Http.stringPart "full_description" form.fullDescription
+                , Http.stringPart "aor_ids" (Encode.encode 0 (Encode.list Encode.int form.aorIds))
+                , Http.filePart "file" file
+                ]
+        , expect = leExpectJson toMsg unitAttachmentDecoder
+        , timeout = Nothing
+        , tracker = Nothing
+        }
+
+
+sigint_unit_attachment_download :
+    (Result ApiError Bytes -> msg)
+    -> UnitAttachmentDownloadReq
+    -> Cmd msg
+sigint_unit_attachment_download toMsg req =
+    Http.post
+        { url = "/api/sigint/unit/attachment/download"
+        , body = Http.jsonBody (unitAttachmentDownloadReqEncoder req)
+        , expect = Http.expectBytesResponse toMsg (resolve Ok)
+        }
+
+
 
 -- POST /api/sigint/signals
 

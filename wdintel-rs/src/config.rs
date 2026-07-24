@@ -280,6 +280,14 @@ pub const INACTIVE_USERS_DEACTIVATE_DURATION_SEC: u64 = 3600;
 pub const INACTIVE_USERS_DEACTIVATE_AFTER_DAYS: i64 = 30;
 /// Default root prefix for encrypted messenger media stored on S3
 pub const S3_MEDIA_ROOT_PREFIX: &str = "message-media";
+pub const SIGINT_UNIT_ATTACHMENT_MAX_FILE_BYTES: usize = 50 * 1024 * 1024;
+pub const SIGINT_UNIT_ATTACHMENT_MAX_ENCRYPTED_BYTES: u64 = 51 * 1024 * 1024;
+pub const SIGINT_UNIT_ATTACHMENT_DOWNLOAD_TIMEOUT_SECS: u64 = 60;
+pub const SIGINT_UNIT_ATTACHMENT_MAX_FILENAME_CHARS: usize = 255;
+pub const SIGINT_UNIT_ATTACHMENT_MAX_SHORT_DESCRIPTION_CHARS: usize = 500;
+pub const SIGINT_UNIT_ATTACHMENT_MAX_FULL_DESCRIPTION_CHARS: usize = 20_000;
+pub const SIGINT_UNIT_ATTACHMENT_MAX_AORS: usize = 100;
+pub const SIGINT_UNIT_ATTACHMENT_MAX_METADATA_FIELD_BYTES: usize = 80 * 1024;
 pub const SIGNAL_CLIENT_DIR: &str = "/etc/echo/signal-cli-data";
 pub const WHATSAPP_CLIENT_DIR: &str = "/etc/echo/whatsapp-cli-data";
 pub const SIGNAL_UNIT_NAME: &str = "echo-signal-bot";

@@ -11,6 +11,8 @@ const ENTRYPOINTS = [
   { modulePath: './rer-analysis-neo-element', tag: 'rer-analysis-neo' },
   { modulePath: './rer-network-details-neo-element', tag: 'rer-network-details-neo' },
   { modulePath: './rer-networks-neo-element', tag: 'rer-networks-neo' },
+  { modulePath: './rer-units-neo-element', tag: 'rer-units-neo' },
+  { modulePath: './unit-attachment-upload-element', tag: 'unit-attachment-upload' },
   { modulePath: './tags-neo-element', tag: 'tags-neo' },
   { modulePath: './admin-all-reports-element', tag: 'admin-all-reports' },
   { modulePath: './admin-echo-missing-messages-element', tag: 'admin-echo-missing-messages' },
