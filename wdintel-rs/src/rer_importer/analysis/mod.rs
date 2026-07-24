@@ -4492,6 +4492,14 @@ async fn count_stats(
         analytics_retry_attempt(&analytics.retry_after_unix_ms)
             .map(|retry_attempt| (analytics, retry_attempt))
     });
+    let analytics_attempt = if analytics_count_request_supported(&req) {
+        analytics_attempt
+    } else {
+        debug!(
+            "analysis stats count uses PostgreSQL for an unsupported analytics filter"
+        );
+        None
+    };
     let freshness_max_age_ms = analytics_config
         .map(AnalyticsConfig::freshness_max_age_ms)
         .unwrap_or(ANALYTICS_FRESHNESS_MAX_AGE_MS_DEFAULT);
@@ -4522,6 +4530,16 @@ async fn count_stats(
     .await?;
 
     Ok(Json(response))
+}
+
+fn analytics_count_request_supported(req: &AnalysisStatsReq) -> bool {
+    req.selected_callsigns
+        .as_ref()
+        .is_none_or(|callsigns| callsigns.is_empty())
+        && req
+            .search
+            .as_ref()
+            .is_none_or(|search| search.trim().is_empty())
 }
 
 #[derive(Clone)]
@@ -4866,9 +4884,10 @@ async fn query_count_stats_message_dimensions(
     let posts = stats::count_posts_with_db(req, user, db, master_keys.clone())
         .await
         .context(h!())?;
-    let callsigns = stats::count_callsigns_with_db(req, user, db, master_keys)
-        .await
-        .context(h!())?;
+    let callsigns =
+        stats::count_callsigns_analytics_with_db(req, user, db, master_keys)
+            .await
+            .context(h!())?;
 
     Ok(CountStatsMessageDimensions {
         senders,

@@ -52,15 +52,15 @@ All pins and downloadable checksums live in [versions.env](versions.env):
 
 - ClickHouse `26.3.12.3` LTS from its signed apt repository.
 - PeerDB `v0.37.1` at its release commit.
-- `pg_clickhouse` `v0.3.2`, built specifically for PostgreSQL 18 from a
-  temporary `agent/v0.3.2-foreign-scan-rte` fork branch. The pinned commit
-  backports the pending upstream fix so pushed-down joins skip synthetic
-  PostgreSQL join RTEs when selecting the execution-time foreign server.
-  Without it, affected mixed joins plan successfully but fail with
-  `cache lookup failed for foreign table 0` when executed. Return the source
-  URL and commit pin to upstream after the fix is released. PostgreSQL 16+
-  uses the core `fs_base_relids` set intended for this purpose; the fork keeps
-  a filtered `fs_relids` fallback for PostgreSQL 13–15.
+- `pg_clickhouse` `v0.3.2`, built specifically for PostgreSQL 18 from the
+  temporary `agent/v0.3.2-echo-backports` fork branch. The pinned commit
+  includes the foreign-scan RTE fix from upstream PR #319 and the concurrent
+  binary-scan fix from upstream PR #296. The first prevents
+  `cache lookup failed for foreign table 0` in affected pushed-down joins and
+  uses PostgreSQL's executor-populated user and foreign-server metadata.
+  The second gives simultaneously active scans separate native connections,
+  preventing crossed result blocks and rescan memory corruption. Return the
+  source URL and commit pin to upstream after both fixes are released.
 - Temporal Server `1.31.2` with PostgreSQL persistence and Temporal CLI
   `1.8.0`.
 - MinIO security release `RELEASE.2025-10-15T17-29-55Z`, built from its
@@ -365,6 +365,9 @@ preservation is also mandatory: without it, ClickHouse substitutes type
 defaults for PostgreSQL `NULL`, changing query semantics.
 Published source tables use `REPLICA IDENTITY FULL` so updates cannot erase
 unchanged TOAST values, and primary-key-update handling is enabled in PeerDB.
+PostgreSQL 18 publications include stored generated columns; this is required
+when a full replica identity contains one, otherwise PostgreSQL rejects updates
+to that table before they reach PeerDB.
 This increases WAL volume for updates and must be included when sizing the
 slot cap.
 The generated SQL contains passwords and exists only in a mode-0600 temporary
@@ -407,6 +410,20 @@ step; queries that use the new column fall back to PostgreSQL until analytics
 is reconciled. Columns added with a PostgreSQL default still require an
 explicit historical backfill or full mirror resync.
 
+The same reconciliation installs a versioned ClickHouse callsign-expansion
+view and exposes it privately as
+`echo_clickhouse_derived.message_callsign` in the gateway. The gateway object
+is an owner-owned compatibility view over a private foreign table, matching
+the replicated-table gateway pattern so joins and distinct aggregation remain
+pushdown-safe. Existing objects are replaced only when upgrading from the
+earlier direct-foreign-table layout; periodic checks leave the compatibility
+view unchanged.
+Package deployments install the source and remote reconciliation scripts.
+For checkout-based development, `just dev-back` runs the repository copy as a
+bounded best-effort preflight when `/etc/echo-peerdb/source.env` exists; without
+that file it does nothing. Operators can also run
+`just analytics-reconcile-derived-schema` explicitly.
+
 ### 5. Echo configuration
 
 Copy [app-analytics.toml.example](env/app-analytics.toml.example) into the
@@ -425,7 +442,10 @@ cooldown instead of making every request wait for the unavailable gateway.
 Keep `ANALYTICS_HEALTH_STALE_AFTER_SECONDS` and `freshness_max_age_ms` aligned;
 the supplied values are 90 seconds. Initially only
 `/api/rer/analysis/stats/count` uses this path; existing five-minute aggregate
-generation remains intact.
+generation remains intact. Its dimension totals use scalar
+`COUNT(DISTINCT ...)` queries so the gateway receives aggregates rather than
+message-ID sets. Filter shapes without a verified ClickHouse pushdown, such as
+free-text search and selected callsigns, use PostgreSQL directly.
 
 ## WAL retention and recovery
 

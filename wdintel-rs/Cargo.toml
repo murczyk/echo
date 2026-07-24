@@ -180,4 +180,9 @@ assets = [
 	[ "../echo-migration/src/settlement_data.sql", "usr/share/echo/migration/settlement_data.sql", "755", ],
 	[ "../echo-migration/src/settlement_data_rf.sql", "usr/share/echo/migration/settlement_data_rf.sql", "755", ],
 	[ "../echo-migration/src/settlements_data_rf_rb.sql", "usr/share/echo/migration/settlements_data_rf_rb.sql", "755", ],
+	[ "../deploy/clickhouse/bin/lib.sh", "opt/echo-peerdb/bin/lib.sh", "644", ],
+	[ "../deploy/clickhouse/bin/source-reconcile-tables.sh", "opt/echo-peerdb/bin/source-reconcile-tables.sh", "755", ],
+	[ "../deploy/clickhouse/bin/source-reconcile-if-needed.sh", "opt/echo-peerdb/bin/source-reconcile-if-needed.sh", "755", ],
+	[ "../deploy/clickhouse/bin/source-reconcile-derived-schema.sh", "opt/echo-peerdb/bin/source-reconcile-derived-schema.sh", "755", ],
+	[ "../deploy/clickhouse/bin/reconcile-derived-schema.sh", "opt/echo-peerdb/bin/reconcile-derived-schema-remote.sh", "755", ],
 ]

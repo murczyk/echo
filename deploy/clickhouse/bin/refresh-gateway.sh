@@ -279,6 +279,8 @@ SQL
   -v clickhouse_db="$CLICKHOUSE_CURRENT_DB" \
   -v clickhouse_port="${CLICKHOUSE_NATIVE_PORT:-9000}"
 
+"$SCRIPT_DIR/reconcile-derived-schema.sh"
+
 gateway_view_count_matches=$(PGPASSWORD=$GATEWAY_PASSWORD psql -X \
   --host 127.0.0.1 \
   --port "${ANALYTICS_GATEWAY_PORT:-5432}" \

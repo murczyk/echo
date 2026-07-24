@@ -2170,6 +2170,9 @@ analytics-secrets-deploy source_server analytics_server:
 analytics-reconcile-tables:
     deploy/clickhouse/bin/source-reconcile-tables.sh --yes
 
+analytics-reconcile-derived-schema:
+    bash deploy/clickhouse/bin/source-reconcile-derived-schema.sh
+
 setup-analytics-reconcile-tables:
     deploy/clickhouse/bin/source-sync-exclusions.sh --yes
 

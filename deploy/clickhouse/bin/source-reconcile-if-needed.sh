@@ -23,11 +23,13 @@ if [[ -r "$SOURCE_RECONCILE_FINGERPRINT_FILE" ]]; then
   read -r recorded_fingerprint <"$SOURCE_RECONCILE_FINGERPRINT_FILE"
 fi
 
-if [[ "$desired_fingerprint" == "$publication_fingerprint" \
-  && "$desired_fingerprint" == "$recorded_fingerprint" ]]; then
-  exit 0
+# Both installed state fingerprints must independently match the desired file.
+# shellcheck disable=SC2055
+if [[ "$desired_fingerprint" != "$publication_fingerprint" \
+  || "$desired_fingerprint" != "$recorded_fingerprint" ]]; then
+  log "Table-selection drift detected; starting coordinated reconciliation"
+  ECHO_PEERDB_RECONCILE_LOCK_HELD=true \
+    "$SCRIPT_DIR/source-reconcile-tables.sh" --yes
 fi
 
-log "Table-selection drift detected; starting coordinated reconciliation"
-ECHO_PEERDB_RECONCILE_LOCK_HELD=true \
-  "$SCRIPT_DIR/source-reconcile-tables.sh" --yes
+"$SCRIPT_DIR/source-reconcile-derived-schema.sh"

@@ -136,6 +136,10 @@ SQL
       fail_health "analytics schema reconciliation failed" \
         "$source_lsn" "$confirmed_flush_lsn"
     fi
+    if ! "$SCRIPT_DIR/reconcile-derived-schema.sh"; then
+      fail_health "derived analytics schema reconciliation failed" \
+        "$source_lsn" "$confirmed_flush_lsn"
+    fi
     record_health true "source heartbeat visible through ClickHouse gateway" \
       "$source_lsn" "$confirmed_flush_lsn"
     log "End-to-end replication probe visible at $confirmed_flush_lsn"
