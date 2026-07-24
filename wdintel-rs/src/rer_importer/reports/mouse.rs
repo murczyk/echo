@@ -1583,7 +1583,10 @@ fn message_full_text(
     datasource: &datasource::Model,
     m_comment: Option<&sigint_comment::Model>,
 ) -> Result<String, AppError> {
-    if datasource.kind == "signal" || datasource.kind == "whatsapp" {
+    if datasource.kind == "signal"
+        || datasource.kind == "whatsapp"
+        || datasource.kind == "echo_operator"
+    {
         let extended_form = m_comment.map(|x| x.comment.as_str());
         Ok(format!(
             "{}\n\n{}",
