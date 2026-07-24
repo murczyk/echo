@@ -3390,6 +3390,8 @@ type alias PalitraHighlightBlacklistEntry =
     { id : Int
     , palitraId : Int
     , label : String
+    , createdByLoginId : String
+    , createdByLogin : String
     }
 
 
@@ -3399,6 +3401,8 @@ palitraHighlightBlacklistEntryEncoder struct =
         [ ( "id", (Json.Encode.int) struct.id )
         , ( "palitra_id", (Json.Encode.int) struct.palitraId )
         , ( "label", (Json.Encode.string) struct.label )
+        , ( "created_by_login_id", (Json.Encode.string) struct.createdByLoginId )
+        , ( "created_by_login", (Json.Encode.string) struct.createdByLogin )
         ]
 
 
@@ -11157,6 +11161,8 @@ palitraHighlightBlacklistEntryDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "palitra_id" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "label" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "created_by_login_id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "created_by_login" (Json.Decode.string)))
 
 
 palitraHighlightBlacklistAddReqDecoder : Json.Decode.Decoder PalitraHighlightBlacklistAddReq

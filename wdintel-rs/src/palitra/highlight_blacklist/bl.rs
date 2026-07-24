@@ -59,16 +59,21 @@ pub async fn list_entries<C>(
 where
     C: ConnectionTrait,
 {
-    Ok(query::list_entries(dbx, palitra_id)
+    query::list_entries(dbx, palitra_id)
         .await?
         .into_iter()
-        .map(map_entry)
-        .collect())
+        .map(|(entry, login)| {
+            login
+                .map(|login| map_entry(entry, login.login))
+                .ok_or(AppError::NotFound)
+        })
+        .collect()
 }
 
 pub async fn add_entry<C>(
     dbx: &C,
     palitra_id: i64,
+    created_by_login_id: uuid::Uuid,
     requested_label: &str,
 ) -> Result<PalitraHighlightBlacklistEntry, AppError>
 where
@@ -89,11 +94,13 @@ where
     let entry = query::upsert_entry(
         dbx,
         palitra_id,
+        created_by_login_id,
         label.trim().to_string(),
         normalized_label,
     )
     .await?;
-    Ok(map_entry(entry))
+    let login = query::login_name(dbx, entry.created_by_login_id).await?;
+    Ok(map_entry(entry, login))
 }
 
 pub async fn delete_entry<C>(
@@ -112,11 +119,14 @@ where
 
 fn map_entry(
     entry: palitra_highlight_blacklist::Model,
+    created_by_login: String,
 ) -> PalitraHighlightBlacklistEntry {
     PalitraHighlightBlacklistEntry {
         id: entry.id,
         palitra_id: entry.palitra_id,
         label: entry.label,
+        created_by_login_id: entry.created_by_login_id.to_string(),
+        created_by_login,
     }
 }
 
@@ -177,18 +187,22 @@ mod tests {
     async fn validates_and_loads_normalized_existing_label() {
         let env = cleanup().await.unwrap();
         let palitra = find_test_palitra(&env.dbx).await.unwrap();
+        let login_id = crate::users::system_login_id(&env.dbx).await.unwrap();
         mk_palitra_point("Пункт Альфа".to_string(), palitra.id, &env.dbx)
             .await
             .unwrap();
 
-        let first = add_entry(&env.dbx, palitra.id, "  ПУНКТ АЛЬФА ")
+        let first = add_entry(&env.dbx, palitra.id, login_id, "  ПУНКТ АЛЬФА ")
             .await
             .unwrap();
         assert_eq!(first.label, "Пункт Альфа");
+        assert_eq!(first.created_by_login_id, login_id.to_string());
+        assert_eq!(first.created_by_login, "system");
 
-        let duplicate = add_entry(&env.dbx, palitra.id, "ПУНКТ АЛЬФА")
-            .await
-            .unwrap();
+        let duplicate =
+            add_entry(&env.dbx, palitra.id, login_id, "ПУНКТ АЛЬФА")
+                .await
+                .unwrap();
         assert_eq!(duplicate.id, first.id);
 
         let labels = load_blacklisted_labels(&env.dbx, vec![palitra.id, -1])
@@ -198,7 +212,7 @@ mod tests {
             labels.get(&palitra.id),
             Some(&HashSet::from(["пункт альфа".to_string()]))
         );
-        assert!(add_entry(&env.dbx, palitra.id, "Невідома точка")
+        assert!(add_entry(&env.dbx, palitra.id, login_id, "Невідома точка")
             .await
             .is_err());
     }

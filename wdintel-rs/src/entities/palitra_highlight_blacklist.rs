@@ -15,10 +15,19 @@ pub struct Model {
     pub label: String,
     #[sea_orm(column_type = "Text")]
     pub normalized_label: String,
+    pub created_by_login_id: Uuid,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {
+    #[sea_orm(
+        belongs_to = "super::login::Entity",
+        from = "Column::CreatedByLoginId",
+        to = "super::login::Column::Id",
+        on_update = "NoAction",
+        on_delete = "NoAction"
+    )]
+    Login,
     #[sea_orm(
         belongs_to = "super::palitra::Entity",
         from = "Column::PalitraId",
@@ -27,6 +36,12 @@ pub enum Relation {
         on_delete = "Cascade"
     )]
     Palitra,
+}
+
+impl Related<super::login::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::Login.def()
+    }
 }
 
 impl Related<super::palitra::Entity> for Entity {

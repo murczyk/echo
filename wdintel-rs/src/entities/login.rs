@@ -73,6 +73,8 @@ pub enum Relation {
     Palitra,
     #[sea_orm(has_many = "super::palitra_access_login::Entity")]
     PalitraAccessLogin,
+    #[sea_orm(has_many = "super::palitra_highlight_blacklist::Entity")]
+    PalitraHighlightBlacklist,
     #[sea_orm(has_many = "super::report_history::Entity")]
     ReportHistory,
     #[sea_orm(has_many = "super::restream::Entity")]
@@ -216,6 +218,12 @@ impl Related<super::palitra::Entity> for Entity {
 impl Related<super::palitra_access_login::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::PalitraAccessLogin.def()
+    }
+}
+
+impl Related<super::palitra_highlight_blacklist::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::PalitraHighlightBlacklist.def()
     }
 }
 

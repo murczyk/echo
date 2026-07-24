@@ -249,6 +249,8 @@ pub struct PalitraHighlightBlacklistEntry {
     pub id: i64,
     pub palitra_id: i64,
     pub label: String,
+    pub created_by_login_id: String,
+    pub created_by_login: String,
 }
 
 #[derive(

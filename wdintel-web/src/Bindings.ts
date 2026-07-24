@@ -1304,6 +1304,8 @@ export type PalitraHighlightBlacklistEntry = {
   id: number;
   palitraId: number;
   label: string;
+  createdByLoginId: string;
+  createdByLogin: string;
 };
 
 export type PalitraHighlightBlacklistAddReq = {

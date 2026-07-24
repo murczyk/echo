@@ -33,9 +33,11 @@ pub async fn add_palitra_highlight_blacklist_entry(
     req: Json<PalitraHighlightBlacklistAddReq>,
 ) -> Result<Json<PalitraHighlightBlacklistEntry>, AppError> {
     let palitra_id = path.into_inner();
-    ensure_access(&user, &env, palitra_id).await?;
+    let login_id = ensure_access(&user, &env, palitra_id).await?;
 
-    Ok(Json(bl::add_entry(&env.dbx, palitra_id, &req.label).await?))
+    Ok(Json(
+        bl::add_entry(&env.dbx, palitra_id, login_id, &req.label).await?,
+    ))
 }
 
 #[delete("/api/palitra/{palitra_id}/highlight-blacklist/{blacklist_entry_id}")]
@@ -55,7 +57,7 @@ async fn ensure_access(
     user: &actix_identity::Identity,
     env: &Data<Env>,
     palitra_id: i64,
-) -> Result<(), AppError> {
+) -> Result<uuid::Uuid, AppError> {
     ensure_rer_role(&env.dbx, user).await.c(h!())?;
     let login = login_id_from_identity(user)?;
     let accessible_palitra_ids =
@@ -67,5 +69,5 @@ async fn ensure_access(
             "Palitra highlight blacklist is not accessible".into(),
         ));
     }
-    Ok(())
+    Ok(login)
 }

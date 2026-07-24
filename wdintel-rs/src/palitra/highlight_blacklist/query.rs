@@ -1,5 +1,5 @@
 use crate::entities::{
-    palitra_geometry, palitra_highlight_blacklist, palitra_point,
+    login, palitra_geometry, palitra_highlight_blacklist, palitra_point,
 };
 use crate::error::AppError;
 use crate::h;
@@ -35,7 +35,10 @@ where
 pub async fn list_entries<C>(
     dbx: &C,
     palitra_id: i64,
-) -> Result<Vec<palitra_highlight_blacklist::Model>, AppError>
+) -> Result<
+    Vec<(palitra_highlight_blacklist::Model, Option<login::Model>)>,
+    AppError,
+>
 where
     C: ConnectionTrait,
 {
@@ -43,6 +46,7 @@ where
         .filter(palitra_highlight_blacklist::Column::PalitraId.eq(palitra_id))
         .order_by_asc(palitra_highlight_blacklist::Column::NormalizedLabel)
         .order_by_asc(palitra_highlight_blacklist::Column::Id)
+        .find_also_related(login::Entity)
         .all(dbx)
         .await
         .c(h!())?)
@@ -81,6 +85,7 @@ where
 pub async fn upsert_entry<C>(
     dbx: &C,
     palitra_id: i64,
+    created_by_login_id: uuid::Uuid,
     label: String,
     normalized_label: String,
 ) -> Result<palitra_highlight_blacklist::Model, AppError>
@@ -92,6 +97,7 @@ where
             palitra_id: Set(palitra_id),
             label: Set(label),
             normalized_label: Set(normalized_label),
+            created_by_login_id: Set(created_by_login_id),
             ..Default::default()
         },
     )
@@ -106,6 +112,23 @@ where
     .exec_with_returning(dbx)
     .await
     .c(h!())?)
+}
+
+pub async fn login_name<C>(
+    dbx: &C,
+    login_id: uuid::Uuid,
+) -> Result<String, AppError>
+where
+    C: ConnectionTrait,
+{
+    login::Entity::find_by_id(login_id)
+        .select_only()
+        .column(login::Column::Login)
+        .into_tuple()
+        .one(dbx)
+        .await
+        .c(h!())?
+        .ok_or(AppError::NotFound)
 }
 
 pub async fn delete_entry<C>(
