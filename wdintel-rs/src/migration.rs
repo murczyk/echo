@@ -1,5 +1,6 @@
 use crate::config::read_config;
 use crate::types::*;
+use sea_orm::{ConnectionTrait, DatabaseConnection};
 use sea_orm_migration::MigratorTrait;
 use std::path::Path;
 use tokio::process::Command;
@@ -20,11 +21,37 @@ pub async fn run_migration_1(mode: Mode) -> Result<(), AppError> {
     let dbx = crate::new_pg_pool_from_mode(mode).await.context(h!())?;
 
     echo_im::run_migration(&dbx).await.context(h!())?;
+    ensure_echo_gpu_uuid_v7_generator(&dbx)
+        .await
+        .context(h!())?;
     echo_gpu_client::run_migration(&dbx).await.context(h!())?;
     echo_migration::Migrator::up(&dbx, None)
         .await
         .context(h!())?;
     println!("Running migration: done");
+    Ok(())
+}
+
+async fn ensure_echo_gpu_uuid_v7_generator(
+    dbx: &DatabaseConnection,
+) -> Result<(), AppError> {
+    dbx.execute_unprepared(
+        r#"
+do $$
+begin
+    if to_regprocedure('uuid_generate_v7()') is null then
+        if to_regprocedure('uuidv7()') is not null then
+            execute 'create function uuid_generate_v7() returns uuid language sql volatile parallel safe as ''select pg_catalog.uuidv7()''';
+        else
+            create extension if not exists pg_uuidv7;
+        end if;
+    end if;
+end
+$$;
+"#,
+    )
+    .await
+    .context(h!())?;
     Ok(())
 }
 
