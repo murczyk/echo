@@ -2489,37 +2489,325 @@ async fn summary_table_freq_by_login_with_coordinate_loading(
     master_keys: &[String],
     load_coordinates: bool,
 ) -> Result<SummaryTableFreq, AppError> {
-    #[derive(FromQueryResult)]
-    struct Row {
-        freq: Option<String>,
-        count: i64,
-        callsigns: Vec<serde_json::Value>,
-        units: Vec<String>,
-        locations: Vec<String>,
-    }
+    let analytics_supported = analytics_count_request_supported(req);
+    let analytics_tag_access = if env.analytics.is_some() && analytics_supported
+    {
+        Some(
+            stats::resolve_analytics_tag_access(
+                &env.dbx,
+                login,
+                req.report_tags_only_this_unit.unwrap_or(false),
+            )
+            .await?,
+        )
+    } else {
+        None
+    };
+    with_analytics_read_fallback(
+        env,
+        "analysis summary table freq",
+        analytics_supported,
+        |db| async move {
+            query_summary_table_freq_analytics(
+                login,
+                env,
+                req,
+                master_keys,
+                &db,
+                analytics_tag_access.as_ref().c(h!())?,
+                load_coordinates,
+            )
+            .await
+        },
+        |db| async move {
+            let rows = query_summary_table_freq_rows(
+                login,
+                req,
+                master_keys,
+                &db,
+                None,
+            )
+            .await?;
+            let coordinate_data = if load_coordinates {
+                summary_table_coordinate_data_by_freq(
+                    login,
+                    env,
+                    req,
+                    master_keys,
+                )
+                .await?
+            } else {
+                BTreeMap::new()
+            };
+            build_summary_table_freq(rows, coordinate_data)
+        },
+    )
+    .await
+}
 
+#[derive(FromQueryResult)]
+struct SummaryTableFreqQueryRow {
+    freq: Option<String>,
+    count: i64,
+    callsigns: Vec<serde_json::Value>,
+    units: Vec<String>,
+    locations: Vec<String>,
+}
+
+#[derive(FromQueryResult)]
+struct SummaryTableFreqCountRow {
+    freq: Option<String>,
+    count: i64,
+}
+
+#[derive(FromQueryResult)]
+struct SummaryTableFreqValueRow {
+    freq: Option<String>,
+    value: Option<String>,
+}
+
+async fn query_summary_table_freq_analytics(
+    login: &uuid::Uuid,
+    env: &Env,
+    req: &AnalysisStatsReq,
+    master_keys: &[String],
+    db: &DatabaseConnection,
+    tag_access: &stats::AnalyticsTagAccess,
+    load_coordinates: bool,
+) -> Result<SummaryTableFreq, AppError> {
+    let filtered_messages =
+        build_summary_table_filtered_messages_query_with_access(
+            login,
+            req,
+            master_keys,
+            Some(tag_access),
+        )?;
+    let counts = filtered_messages
+        .clone()
+        .select_only()
+        .column(sigint_inbox_item::Column::Freq)
+        .column_as(
+            Expr::cust_with_expr(
+                "COUNT(DISTINCT $1)",
+                Expr::col((signal_message::Entity, signal_message::Column::Id)),
+            ),
+            "count",
+        )
+        .group_by(sigint_inbox_item::Column::Freq)
+        .into_model::<SummaryTableFreqCountRow>()
+        .all(db);
+    let units = summary_table_freq_distinct_values_query(
+        filtered_messages.clone(),
+        sigint_inbox_item::Column::UnitV2,
+    )
+    .into_model::<SummaryTableFreqValueRow>()
+    .all(db);
+    let locations = summary_table_freq_distinct_values_query(
+        filtered_messages.clone(),
+        sigint_inbox_item::Column::LocationV2,
+    )
+    .into_model::<SummaryTableFreqValueRow>()
+    .all(db);
+    let callsigns =
+        summary_table_freq_callsigns_query(filtered_messages.clone())
+            .into_model::<SummaryTableFreqValueRow>()
+            .all(db);
+    let coordinate_rows = async {
+        if load_coordinates {
+            summary_table_freq_coordinate_query(filtered_messages)
+                .into_model::<SummaryTableCoordinateRow>()
+                .all(db)
+                .await
+        } else {
+            Ok(vec![])
+        }
+    };
+    let (counts, units, locations, callsigns, coordinate_rows) =
+        tokio::try_join!(counts, units, locations, callsigns, coordinate_rows)
+            .c(h!())?;
+    let nominatimres_by_id =
+        load_summary_table_nominatimres(&env.dbx, &coordinate_rows).await?;
+    let coordinate_data = collect_summary_table_coordinate_data(
+        coordinate_rows,
+        &nominatimres_by_id,
+    );
+
+    Ok(build_summary_table_freq_from_analytics_rows(
+        counts,
+        units,
+        locations,
+        callsigns,
+        coordinate_data,
+    ))
+}
+
+fn summary_table_freq_distinct_values_query(
+    filtered_messages: Select<signal_message::Entity>,
+    column: sigint_inbox_item::Column,
+) -> Select<signal_message::Entity> {
+    filtered_messages
+        .select_only()
+        .column(sigint_inbox_item::Column::Freq)
+        .column_as(column, "value")
+        .distinct()
+}
+
+fn summary_table_freq_callsigns_query(
+    mut filtered_messages: Select<signal_message::Entity>,
+) -> Select<signal_message::Entity> {
+    let callsign_alias = Alias::new("summary_table_callsign");
+    QuerySelect::query(&mut filtered_messages).join_as(
+        JoinType::InnerJoin,
+        (
+            Alias::new("echo_clickhouse_derived"),
+            Alias::new("message_callsign"),
+        ),
+        callsign_alias.clone(),
+        Expr::col((callsign_alias.clone(), Alias::new("sigint_inbox_item_id")))
+            .equals((sigint_inbox_item::Entity, sigint_inbox_item::Column::Id)),
+    );
+    filtered_messages
+        .select_only()
+        .column(sigint_inbox_item::Column::Freq)
+        .column_as(Expr::col((callsign_alias, Alias::new("callsign"))), "value")
+        .distinct()
+}
+
+fn summary_table_freq_coordinate_query(
+    filtered_messages: Select<signal_message::Entity>,
+) -> Select<signal_message::Entity> {
+    filtered_messages
+        .select_only()
+        .column(sigint_inbox_item::Column::Freq)
+        .column(sigint_inbox_item::Column::Lat)
+        .column(sigint_inbox_item::Column::Lng)
+        .column(sigint_inbox_item::Column::NominatimresId)
+        .column_as(
+            Expr::cust_with_expr(
+                "COUNT(DISTINCT $1)",
+                Expr::col((signal_message::Entity, signal_message::Column::Id)),
+            ),
+            "count",
+        )
+        .filter(sigint_inbox_item::Column::Lat.is_not_null())
+        .filter(sigint_inbox_item::Column::Lng.is_not_null())
+        .group_by(sigint_inbox_item::Column::Freq)
+        .group_by(sigint_inbox_item::Column::Lat)
+        .group_by(sigint_inbox_item::Column::Lng)
+        .group_by(sigint_inbox_item::Column::NominatimresId)
+}
+
+fn build_summary_table_freq_from_analytics_rows(
+    counts: Vec<SummaryTableFreqCountRow>,
+    units: Vec<SummaryTableFreqValueRow>,
+    locations: Vec<SummaryTableFreqValueRow>,
+    callsigns: Vec<SummaryTableFreqValueRow>,
+    mut coordinate_data: BTreeMap<String, SummaryTableCoordinateData>,
+) -> SummaryTableFreq {
+    let mut rows = counts
+        .into_iter()
+        .filter_map(|row| {
+            row.freq.map(|freq| {
+                let coordinate_data =
+                    coordinate_data.remove(&freq).unwrap_or_default();
+                (
+                    freq.clone(),
+                    SummaryTableFreqRow {
+                        freq,
+                        count: row.count,
+                        callsigns: vec![],
+                        units: vec![],
+                        locations: vec![],
+                        coords: coordinate_data.coords,
+                        locality_coords: coordinate_data.locality_coords,
+                    },
+                )
+            })
+        })
+        .collect::<BTreeMap<_, _>>();
+    append_summary_table_freq_values(&mut rows, units, |row| &mut row.units);
+    append_summary_table_freq_locations(&mut rows, locations);
+    append_summary_table_freq_values(&mut rows, callsigns, |row| {
+        &mut row.callsigns
+    });
+    SummaryTableFreq {
+        rows: rows.into_values().collect(),
+    }
+}
+
+fn append_summary_table_freq_values(
+    rows: &mut BTreeMap<String, SummaryTableFreqRow>,
+    values: Vec<SummaryTableFreqValueRow>,
+    field: impl Fn(&mut SummaryTableFreqRow) -> &mut Vec<String>,
+) {
+    for value in values {
+        let (Some(freq), Some(value)) = (value.freq, value.value) else {
+            continue;
+        };
+        if value.trim().is_empty() {
+            continue;
+        }
+        if let Some(row) = rows.get_mut(&freq) {
+            let values = field(row);
+            if !values.contains(&value) {
+                values.push(value);
+            }
+        }
+    }
+}
+
+fn append_summary_table_freq_locations(
+    rows: &mut BTreeMap<String, SummaryTableFreqRow>,
+    locations: Vec<SummaryTableFreqValueRow>,
+) {
+    for location in locations {
+        let (Some(freq), Some(location)) = (location.freq, location.value)
+        else {
+            continue;
+        };
+        let Some(row) = rows.get_mut(&freq) else {
+            continue;
+        };
+        for location in to_location_list(&location) {
+            if !location.trim().is_empty() && !row.locations.contains(&location)
+            {
+                row.locations.push(location);
+            }
+        }
+    }
+}
+
+async fn query_summary_table_freq_rows(
+    login: &uuid::Uuid,
+    req: &AnalysisStatsReq,
+    master_keys: &[String],
+    db: &DatabaseConnection,
+    analytics_tag_access: Option<&stats::AnalyticsTagAccess>,
+) -> Result<Vec<SummaryTableFreqQueryRow>, AppError> {
     let dedup_key_alias = Alias::new("dedup_key");
     let dedup_subquery =
-        build_summary_table_filtered_messages_query(login, req, master_keys)?
-            .select_only()
-            .column_as(Expr::col(sigint_inbox_item::Column::Freq), "freq")
-            .column_as(
-                Expr::col(sigint_inbox_item::Column::Callsigns),
-                "callsigns",
-            )
-            .column_as(Expr::col(sigint_inbox_item::Column::UnitV2), "unit_v2")
-            .column_as(
-                Expr::col(sigint_inbox_item::Column::LocationV2),
-                "location_v2",
-            )
-            .column_as(
-                Expr::col((signal_message::Entity, signal_message::Column::Id)),
-                "dedup_key",
-            )
-            .distinct_on([dedup_key_alias.clone()])
-            .order_by(Expr::cust("dedup_key"), Order::Asc)
-            // emulate NULLS FIRST: order nulls before non-nulls
-            .order_by(sigint_inbox_item::Column::Datetime, Order::Asc);
+        build_summary_table_filtered_messages_query_with_access(
+            login,
+            req,
+            master_keys,
+            analytics_tag_access,
+        )?
+        .select_only()
+        .column_as(Expr::col(sigint_inbox_item::Column::Freq), "freq")
+        .column_as(Expr::col(sigint_inbox_item::Column::Callsigns), "callsigns")
+        .column_as(Expr::col(sigint_inbox_item::Column::UnitV2), "unit_v2")
+        .column_as(
+            Expr::col(sigint_inbox_item::Column::LocationV2),
+            "location_v2",
+        )
+        .column_as(
+            Expr::col((signal_message::Entity, signal_message::Column::Id)),
+            "dedup_key",
+        )
+        .distinct_on([dedup_key_alias.clone()])
+        .order_by(Expr::cust("dedup_key"), Order::Asc)
+        // emulate NULLS FIRST: order nulls before non-nulls
+        .order_by(sigint_inbox_item::Column::Datetime, Order::Asc);
     // println!(
     //     "> summary table dedup_subquery sql: {}",
     //     dedup_subquery.build(DbBackend::Postgres).to_string()
@@ -2549,18 +2837,22 @@ async fn summary_table_freq_by_login_with_coordinate_loading(
     let sql = main_query.to_string(PostgresQueryBuilder);
     // println!("> summary table main_query sql: {}", sql);
 
-    let main_query_res = env
-        .dbx
+    let main_query_res = db
         .query_all(Statement::from_string(DbBackend::Postgres, sql))
         .await
         .c(h!())?;
 
-    let rows_res: Vec<Row> = main_query_res
+    Ok(main_query_res
         .into_iter()
-        .map(|qr| Row::from_query_result(&qr, ""))
+        .map(|qr| SummaryTableFreqQueryRow::from_query_result(&qr, ""))
         .collect::<Result<Vec<_>, sea_orm::DbErr>>()
-        .c(h!())?;
+        .c(h!())?)
+}
 
+fn build_summary_table_freq(
+    rows_res: Vec<SummaryTableFreqQueryRow>,
+    mut coordinate_data: BTreeMap<String, SummaryTableCoordinateData>,
+) -> Result<SummaryTableFreq, AppError> {
     let mut callsigns_per_freq: BTreeMap<String, Vec<String>> = BTreeMap::new();
     let mut units_per_freq: BTreeMap<String, Vec<String>> = BTreeMap::new();
     let mut locations_per_freq: BTreeMap<String, Vec<String>> = BTreeMap::new();
@@ -2628,12 +2920,6 @@ async fn summary_table_freq_by_login_with_coordinate_loading(
         }
     }
 
-    let mut coordinate_data = if load_coordinates {
-        summary_table_coordinate_data_by_freq(login, env, req, master_keys)
-            .await?
-    } else {
-        BTreeMap::new()
-    };
     let mut rows = vec![];
     for (freq, count) in count_per_freq.iter() {
         let coordinate_data = coordinate_data.remove(freq).unwrap_or_default();
@@ -2812,6 +3098,20 @@ pub(crate) fn build_summary_table_filtered_messages_query(
     req: &AnalysisStatsReq,
     master_keys: &[String],
 ) -> Result<Select<signal_message::Entity>, AppError> {
+    build_summary_table_filtered_messages_query_with_access(
+        login,
+        req,
+        master_keys,
+        None,
+    )
+}
+
+fn build_summary_table_filtered_messages_query_with_access(
+    login: &uuid::Uuid,
+    req: &AnalysisStatsReq,
+    master_keys: &[String],
+    analytics_tag_access: Option<&stats::AnalyticsTagAccess>,
+) -> Result<Select<signal_message::Entity>, AppError> {
     let dt_since = dt_from_millis(req.since_date_inclusive_ms)?;
     let dt_till = dt_from_millis(req.till_date_noninclusive_ms)?;
     let include_peleng_locations =
@@ -2849,21 +3149,41 @@ pub(crate) fn build_summary_table_filtered_messages_query(
         include_peleng_locations,
     )?;
     let q = filter_selected_callsigns(q, &req.selected_callsigns)?;
-    let q = filter_selected_tags(
-        q,
-        &req.selected_tags,
-        &req.denied_tags,
-        &req.tag_presence,
-        &req.or_bookmarked,
-        &req.or_important,
-        &req.or_with_coords,
-        &req.or_without_coords,
-        &req.or_with_extended_form,
-        &req.filter_tags_option,
-        &req.without_model_tags,
-        login,
-        req.report_tags_only_this_unit.unwrap_or(false),
-    )?;
+    let q = if let Some(tag_access) = analytics_tag_access {
+        filter_selected_tags_analytics(
+            q,
+            &req.selected_tags,
+            &req.denied_tags,
+            &req.tag_presence,
+            &req.or_bookmarked,
+            &req.or_important,
+            &req.or_with_coords,
+            &req.or_without_coords,
+            &req.or_with_extended_form,
+            &req.filter_tags_option,
+            &req.without_model_tags,
+            login,
+            req.report_tags_only_this_unit.unwrap_or(false),
+            &tag_access.accessible_tag_ids,
+            &tag_access.unit_login_ids,
+        )?
+    } else {
+        filter_selected_tags(
+            q,
+            &req.selected_tags,
+            &req.denied_tags,
+            &req.tag_presence,
+            &req.or_bookmarked,
+            &req.or_important,
+            &req.or_with_coords,
+            &req.or_without_coords,
+            &req.or_with_extended_form,
+            &req.filter_tags_option,
+            &req.without_model_tags,
+            login,
+            req.report_tags_only_this_unit.unwrap_or(false),
+        )?
+    };
     let q = filter_selected_aors(q, &req.selected_aors).context(h!())?;
     let q = filter_selected_networks(
         q,

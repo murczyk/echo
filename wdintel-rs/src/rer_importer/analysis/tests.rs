@@ -4479,6 +4479,36 @@ async fn summary_table_uses_message_groups_for_access() {
 }
 
 #[test]
+fn summary_table_analytics_rows_build_expected_response() {
+    let summary = build_summary_table_freq_from_analytics_rows(
+        vec![SummaryTableFreqCountRow {
+            freq: Some("111.1".to_string()),
+            count: 3,
+        }],
+        vec![SummaryTableFreqValueRow {
+            freq: Some("111.1".to_string()),
+            value: Some("unit".to_string()),
+        }],
+        vec![SummaryTableFreqValueRow {
+            freq: Some("111.1".to_string()),
+            value: Some("|one|two|".to_string()),
+        }],
+        vec![SummaryTableFreqValueRow {
+            freq: Some("111.1".to_string()),
+            value: Some("callsign".to_string()),
+        }],
+        BTreeMap::new(),
+    );
+
+    assert_eq!(summary.rows.len(), 1);
+    assert_eq!(summary.rows[0].freq, "111.1");
+    assert_eq!(summary.rows[0].count, 3);
+    assert_eq!(summary.rows[0].units, vec!["unit"]);
+    assert_eq!(summary.rows[0].locations, vec!["one", "two"]);
+    assert_eq!(summary.rows[0].callsigns, vec!["callsign"]);
+}
+
+#[test]
 fn summary_table_report_message_limit_allows_maximum() {
     assert!(ensure_summary_table_report_message_limit(
         &uuid::Uuid::nil(),
