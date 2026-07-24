@@ -3780,6 +3780,7 @@ type alias Login =
     , lastActiveAt : Maybe (Int)
     , deactivationReason : Maybe (DeactivationReasonType)
     , description : Maybe (String)
+    , passwordAuthEnabled : Bool
     }
 
 
@@ -3800,6 +3801,7 @@ loginEncoder struct =
         , ( "last_active_at", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.lastActiveAt )
         , ( "deactivation_reason", (Maybe.withDefault Json.Encode.null << Maybe.map (deactivationReasonTypeEncoder)) struct.deactivationReason )
         , ( "description", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.description )
+        , ( "password_auth_enabled", (Json.Encode.bool) struct.passwordAuthEnabled )
         ]
 
 
@@ -3875,6 +3877,7 @@ type alias UpdateLoginReq =
     , deltaLogin : Maybe (String)
     , deactivationReason : Maybe (DeactivationReasonType)
     , description : Maybe (String)
+    , passwordAuthEnabled : Maybe (Bool)
     }
 
 
@@ -3891,6 +3894,7 @@ updateLoginReqEncoder struct =
         , ( "delta_login", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.deltaLogin )
         , ( "deactivation_reason", (Maybe.withDefault Json.Encode.null << Maybe.map (deactivationReasonTypeEncoder)) struct.deactivationReason )
         , ( "description", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.description )
+        , ( "password_auth_enabled", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.passwordAuthEnabled )
         ]
 
 
@@ -11336,6 +11340,7 @@ loginDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "last_active_at" (Json.Decode.nullable (Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "deactivation_reason" (Json.Decode.nullable (deactivationReasonTypeDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "description" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "password_auth_enabled" (Json.Decode.bool)))
 
 
 listLoginsSortByDecoder : Json.Decode.Decoder ListLoginsSortBy
@@ -11398,6 +11403,7 @@ updateLoginReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "delta_login" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "deactivation_reason" (Json.Decode.nullable (deactivationReasonTypeDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "description" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "password_auth_enabled" (Json.Decode.nullable (Json.Decode.bool))))
 
 
 sigintGroupsReqDecoder : Json.Decode.Decoder SigintGroupsReq

@@ -1651,6 +1651,7 @@ where
             deleted_permanently: Set(false),
             last_release_seen: NotSet,
             description: NotSet,
+            password_auth_enabled: NotSet,
         })
         .collect::<Vec<_>>();
 
