@@ -1331,6 +1331,80 @@ async fn rer_analysis_group_stats_hide_unrelated_and_secret_groups() {
 
 #[tokio::test]
 #[serial]
+async fn collect_group_names_prefers_signal_group_over_whatsapp_name() {
+    let fixture = mk_rer_analysis_fixture().await.unwrap();
+    let alpha_key = fixture.alpha.signal_group.master_key.clone();
+    let beta_key = fixture.beta.signal_group.master_key.clone();
+    let unresolved_key = "whatsapp-only-group-master-key".to_string();
+    let alpha_signal_name = fixture.alpha.signal_group.name.clone().unwrap();
+    let whatsapp_only_name = "Whatsapp Only Group".to_string();
+
+    whatsapp_group::Entity::delete_many()
+        .filter(whatsapp_group::Column::Jid.eq_any(vec![
+            alpha_key.clone(),
+            beta_key.clone(),
+            unresolved_key.clone(),
+        ]))
+        .exec(&fixture.env.dbx)
+        .await
+        .unwrap();
+
+    whatsapp_group::ActiveModel {
+        jid: Set(alpha_key.clone()),
+        owner_jid: Set(None),
+        name: Set("Stale Whatsapp Group".to_string()),
+        created_at: Set(test_dt(2026, 3, 1, 7, 0)),
+        deleted: Set(false),
+    }
+    .insert(&fixture.env.dbx)
+    .await
+    .unwrap();
+    whatsapp_group::ActiveModel {
+        jid: Set(unresolved_key.clone()),
+        owner_jid: Set(None),
+        name: Set(whatsapp_only_name.clone()),
+        created_at: Set(test_dt(2026, 3, 1, 7, 0)),
+        deleted: Set(false),
+    }
+    .insert(&fixture.env.dbx)
+    .await
+    .unwrap();
+
+    let groups = vec![
+        AnalysisStatsGroup {
+            master_key: alpha_key.clone(),
+            count: 3,
+        },
+        AnalysisStatsGroup {
+            master_key: beta_key,
+            count: 4,
+        },
+        AnalysisStatsGroup {
+            master_key: unresolved_key.clone(),
+            count: 1,
+        },
+    ];
+    let group_names = collect_group_names(&groups, &fixture.env.dbx, false)
+        .await
+        .unwrap();
+
+    let alpha_names = group_names
+        .iter()
+        .filter(|group| group.master_key == alpha_key)
+        .map(|group| group.name.clone())
+        .collect::<Vec<_>>();
+    let unresolved_names = group_names
+        .iter()
+        .filter(|group| group.master_key == unresolved_key)
+        .map(|group| group.name.clone())
+        .collect::<Vec<_>>();
+
+    assert_eq!(alpha_names, vec![alpha_signal_name]);
+    assert_eq!(unresolved_names, vec![whatsapp_only_name]);
+}
+
+#[tokio::test]
+#[serial]
 async fn rer_analysis_aor_filter_hides_groups_outside_selected_aor() {
     let fixture = mk_aor_filter_fixture().await.unwrap();
     let db = &fixture.env.dbx;
