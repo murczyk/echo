@@ -14,25 +14,26 @@ import {
 } from '../../components/mui-customized/table/table-state-provider';
 import type { ActiveFilterDescriptor } from '../../components/mui-customized/table/components/table-top-toolbar/components/internal-actions/components/active-filters-utils';
 import { UnitStatsSidebar } from '../rer-callsigns-neo/components/UnitStatsSidebar';
-import { DEFAULT_DEVICES_SORTING } from './helpers';
+import { DEFAULT_DEVICES_SORTING, sanitizeDevicesColumnFilters } from './helpers';
 import { DeviceUpsertDrawer } from './components/DeviceUpsertDrawer';
 import { DevicesTable } from './components/DevicesTable';
 import { DevicesToolbar } from './components/DevicesToolbar';
 import { useDevicesPage } from './use-devices-page';
 
 const columnOrder = buildDefaultColumnOrder({
-  dataColumnIds: ['name', 'createdBy', 'aors', 'unit', 'updatedAt', 'lifecycle'],
+  dataColumnIds: ['name', 'sourceLabel', 'aors', 'unit', 'createdAt', 'updatedAt', 'lifecycle'],
   withRowNumbers: true,
   withRowActions: true,
 });
 
 const defaultColumnVisibility = {
   name: true,
-  createdBy: true,
+  sourceLabel: true,
   aors: true,
   unit: true,
   updatedAt: true,
-  lifecycle: false,
+  createdAt: true,
+  lifecycle: true,
 };
 
 function DevicesPageBody({ authUserRoles = [] }: { authUserRoles?: string[] }) {
@@ -135,6 +136,19 @@ function DevicesPageBody({ authUserRoles = [] }: { authUserRoles?: string[] }) {
         {page.status ? (
           <PowerAlert severity={page.status.kind}>{page.status.text}</PowerAlert>
         ) : null}
+        {page.sidebarError ? (
+          <PowerAlert
+            severity="error"
+            autoHideDuration={null}
+            action={
+              <PowerButton size="small" onClick={() => void page.reloadSidebar()}>
+                Повторити
+              </PowerButton>
+            }
+          >
+            {page.sidebarError}
+          </PowerAlert>
+        ) : null}
 
         <DeviceUpsertDrawer
           open={page.createDialogOpen}
@@ -144,9 +158,7 @@ function DevicesPageBody({ authUserRoles = [] }: { authUserRoles?: string[] }) {
           saving={page.creating}
           error={page.createError}
           serverFieldErrors={page.createServerFieldErrors}
-          referenceLoading={
-            page.loading && page.aorOptions.length === 0 && page.unitOptions.length === 0
-          }
+          referenceLoading={false}
           aorOptions={page.aorOptions}
           unitOptions={page.unitOptions}
           onClose={page.closeCreateDialog}
@@ -162,9 +174,7 @@ function DevicesPageBody({ authUserRoles = [] }: { authUserRoles?: string[] }) {
           saving={page.editSubmitting}
           error={page.editError}
           serverFieldErrors={page.editServerFieldErrors}
-          referenceLoading={
-            page.loading && page.aorOptions.length === 0 && page.unitOptions.length === 0
-          }
+          referenceLoading={page.lookupsLoading}
           aorOptions={page.aorOptions}
           unitOptions={page.unitOptions}
           hasChanges={page.editHasChanges}
@@ -188,7 +198,7 @@ function DevicesPageBody({ authUserRoles = [] }: { authUserRoles?: string[] }) {
                   stats={page.unitStatsView}
                   open={page.sidebarOpen}
                   isDesktopLayout={isDesktopLayout}
-                  loading={page.refreshing || (page.loading && page.unitStatsView.length === 0)}
+                  loading={page.sidebarLoading}
                   onPickUnitFilter={page.onPickUnitFilter}
                   showInvestigatingFilter={false}
                   selectedUnitFilter={page.selectedSidebarUnitFilter ?? undefined}
@@ -201,7 +211,7 @@ function DevicesPageBody({ authUserRoles = [] }: { authUserRoles?: string[] }) {
               stats={page.unitStatsView}
               open={page.sidebarOpen}
               isDesktopLayout={isDesktopLayout}
-              loading={page.refreshing || (page.loading && page.unitStatsView.length === 0)}
+              loading={page.sidebarLoading}
               onPickUnitFilter={page.onPickUnitFilter}
               showInvestigatingFilter={false}
               onToggleOpen={() => page.setSidebarOpen((prev: boolean) => !prev)}
@@ -252,7 +262,6 @@ function DevicesPageBody({ authUserRoles = [] }: { authUserRoles?: string[] }) {
                 total={page.total}
                 canEdit={page.permissions.canEdit}
                 mutatingDeviceId={page.busyDeviceId}
-                showLifecycle={page.filters.archivedFilter !== 'active'}
                 hasFilters={page.hasFilters}
                 tableStateContext={tableStateContext}
                 onEdit={page.openEditRow}
@@ -276,6 +285,7 @@ export function DevicesPage({ authUserRoles = [] }: { authUserRoles?: string[] }
       defaultColumnVisibility={defaultColumnVisibility}
       defaultColumnOrder={columnOrder}
       defaultSorting={DEFAULT_DEVICES_SORTING}
+      sanitizeColumnFilters={sanitizeDevicesColumnFilters}
     >
       <DevicesPageBody authUserRoles={authUserRoles} />
     </TableStateProvider>

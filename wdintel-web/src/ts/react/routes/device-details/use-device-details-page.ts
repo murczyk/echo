@@ -3,8 +3,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { AreaOfResponsibility, DeviceDetails, Unit } from '../../../../Bindings';
 import { listAors } from '../../services/api/aor';
 import { getDeviceDetail, updateDevice } from '../../services/api/devices';
+import { isNetworkRequestError } from '../../services/api/client';
 import { getUnitsList } from '../../services/api/units';
-import { canReadDevices, hasRole } from '../../utils/roles';
+import { resolveDevicesCapabilities } from '../../utils/roles';
 import {
   buildUpdateDevicePatch,
   deviceDetailsToUpsertForm,
@@ -32,19 +33,19 @@ export function useDeviceDetailsPage({
   deviceId: string;
   authUserRoles?: string[];
 }) {
-  const permissions = useMemo(() => {
-    const canRead = canReadDevices(authUserRoles);
-    const canEditSource = hasRole(authUserRoles, 'DeviceSource');
-    const canEditAnalytical = hasRole(authUserRoles, 'DeviceAnalyst');
-    return {
-      canRead,
-      canEdit: canEditSource || canEditAnalytical,
+  const capabilities = useMemo(() => resolveDevicesCapabilities(authUserRoles), [authUserRoles]);
+  const permissions = useMemo(
+    () => ({
+      canRead: capabilities.canRead,
+      canEdit: capabilities.canWriteSourceData || capabilities.canWriteAnalyticalData,
+      canSyncFiles: capabilities.canWriteSourceData,
       fieldPermissions: {
-        sourceData: canEditSource,
-        analyticalData: canEditAnalytical,
+        sourceData: capabilities.canWriteSourceData,
+        analyticalData: capabilities.canWriteAnalyticalData,
       },
-    };
-  }, [authUserRoles]);
+    }),
+    [capabilities],
+  );
 
   const [device, setDevice] = useState<DeviceDetails | null>(null);
   const [loading, setLoading] = useState(true);
@@ -204,19 +205,23 @@ export function useDeviceDetailsPage({
         setStatus({ kind: 'success', text: 'Пристрій оновлено.' });
         return true;
       } catch (error) {
+        const resultUncertain = isNetworkRequestError(error);
         const fieldErrors = parseDeviceServerFieldErrors(error);
         setEditServerFieldErrors(fieldErrors);
         setEditError(
           Object.keys(fieldErrors).length > 0
             ? null
-            : `Помилка оновлення пристрою: ${formatDeviceErrorMessage(error)}`,
+            : resultUncertain
+              ? `Результат оновлення пристрою невідомий. Дані перезавантажено для перевірки. ${formatDeviceErrorMessage(error)}`
+              : `Помилка оновлення пристрою: ${formatDeviceErrorMessage(error)}`,
         );
+        if (resultUncertain) await loadDevice({ preserveData: true });
         return false;
       } finally {
         setEditSubmitting(false);
       }
     },
-    [device, editSubmitting, permissions],
+    [device, editSubmitting, loadDevice, permissions],
   );
 
   const initialLoadFailed = !loading && device === null && status?.kind === 'error';

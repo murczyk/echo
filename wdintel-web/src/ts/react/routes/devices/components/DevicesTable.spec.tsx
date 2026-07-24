@@ -75,7 +75,6 @@ function renderTable() {
         total={1}
         canEdit={false}
         mutatingDeviceId={null}
-        showLifecycle={false}
         hasFilters={false}
         tableStateContext={tableStateContext as never}
         onEdit={vi.fn()}
@@ -115,15 +114,70 @@ describe('DevicesTable', () => {
 
     expect(columns.map((column) => column.id)).toEqual([
       'name',
-      'createdBy',
+      'sourceLabel',
       'aors',
       'unit',
+      'createdAt',
       'updatedAt',
       'lifecycle',
     ]);
     expect(columns.map((column) => column.header)).not.toEqual(
-      expect.arrayContaining(['ID', 'Посилання', 'Створено', 'Архівовано', 'AOR ID', 'Unit ID']),
+      expect.arrayContaining(['ID', 'Посилання', 'Архівовано', 'AOR ID', 'Unit ID']),
     );
+  });
+
+  it('marks a missing analytical name while keeping the source label visible', () => {
+    renderTable();
+    const columns = capturedOptions?.columns as Array<{
+      id: string;
+      Cell?: (props: { row: { original: DeviceRowView } }) => ReactNode;
+    }>;
+    const nameColumn = columns.find((column) => column.id === 'name');
+    const nameHost = document.createElement('div');
+    document.body.appendChild(nameHost);
+    const nameRoot = createRoot(nameHost);
+
+    try {
+      act(() => {
+        nameRoot.render(
+          createElement(nameColumn!.Cell!, {
+            row: { original: { ...buildDeviceRow(), name: null } },
+          }),
+        );
+      });
+
+      expect(nameHost.textContent).toContain('Source device');
+      expect(nameHost.querySelector('[aria-label="Потребує аналітичної назви"]')).not.toBeNull();
+    } finally {
+      act(() => nameRoot.unmount());
+      nameHost.remove();
+    }
+  });
+  it('renders a textual lifecycle indicator for every row', () => {
+    renderTable();
+    const columns = capturedOptions?.columns as Array<{
+      id: string;
+      Cell?: (props: { row: { original: DeviceRowView } }) => ReactNode;
+    }>;
+    const lifecycleColumn = columns.find((column) => column.id === 'lifecycle');
+
+    act(() => {
+      root?.render(
+        createElement(lifecycleColumn!.Cell!, {
+          row: { original: buildDeviceRow() },
+        }),
+      );
+    });
+    expect(container?.textContent).toContain('Активний');
+
+    act(() => {
+      root?.render(
+        createElement(lifecycleColumn!.Cell!, {
+          row: { original: { ...buildDeviceRow(), archived: true } },
+        }),
+      );
+    });
+    expect(container?.textContent).toContain('Архівний');
   });
 
   it('provides only the supported edit action for active rows', () => {

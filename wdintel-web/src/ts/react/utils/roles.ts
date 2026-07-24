@@ -62,6 +62,28 @@ export function canReadDevices(roles: readonly string[] | null | undefined): boo
   return hasAnyRole(roles, ['Cyber', 'DeviceSource', 'DeviceAnalyst']);
 }
 
+export type DevicesCapabilities = {
+  canRead: boolean;
+  canWriteSourceData: boolean;
+  canWriteAnalyticalData: boolean;
+};
+
+export function resolveDevicesCapabilities(
+  roles: readonly string[] | null | undefined,
+): DevicesCapabilities {
+  const hasAssignedRole = (role: 'Admin' | 'DeviceSource' | 'DeviceAnalyst') =>
+    Boolean(roles?.includes(role));
+
+  return {
+    canRead: canReadDevices(roles),
+    canWriteSourceData:
+      hasAssignedRole('Admin') ||
+      hasAssignedRole('DeviceSource') ||
+      hasAssignedRole('DeviceAnalyst'),
+    canWriteAnalyticalData: hasAssignedRole('Admin') || hasAssignedRole('DeviceAnalyst'),
+  };
+}
+
 export function hasAnyRole(
   roles: readonly string[] | null | undefined,
   requiredRoles: readonly UserRole[],

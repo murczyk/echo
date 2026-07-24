@@ -1,4 +1,4 @@
-import type { MRT_SortingState } from 'material-react-table';
+import type { MRT_ColumnFiltersState, MRT_SortingState } from 'material-react-table';
 
 import type {
   AorSummary,
@@ -54,6 +54,64 @@ export function createDefaultDevicesFilterState(): DevicesFilterState {
     unitIds: [],
   };
 }
+export function resolveDevicesColumnFilters(columnFilters: MRT_ColumnFiltersState): {
+  archivedFilter: DeviceArchivedFilterValue;
+  selectedSidebarUnitFilter: SelectedSidebarUnitFilter | null;
+} {
+  const lifecycleValue = columnFilters.find((filter) => filter.id === 'lifecycle')?.value;
+  const archivedFilter: DeviceArchivedFilterValue =
+    lifecycleValue === 'archived' || lifecycleValue === 'all' ? lifecycleValue : 'active';
+  const unitValue = columnFilters.find((filter) => filter.id === 'unit')?.value;
+
+  return {
+    archivedFilter,
+    selectedSidebarUnitFilter: isSelectedSidebarUnitFilter(unitValue) ? unitValue : null,
+  };
+}
+
+export function buildDevicesColumnFilters({
+  archivedFilter,
+  selectedSidebarUnitFilter,
+}: {
+  archivedFilter: DeviceArchivedFilterValue;
+  selectedSidebarUnitFilter: SelectedSidebarUnitFilter | null;
+}): MRT_ColumnFiltersState {
+  return [
+    ...(archivedFilter === 'active' ? [] : [{ id: 'lifecycle', value: archivedFilter }]),
+    ...(selectedSidebarUnitFilter === null
+      ? []
+      : [{ id: 'unit', value: selectedSidebarUnitFilter }]),
+  ];
+}
+
+export function sanitizeDevicesColumnFilters(
+  columnFilters: MRT_ColumnFiltersState,
+): MRT_ColumnFiltersState {
+  return buildDevicesColumnFilters(resolveDevicesColumnFilters(columnFilters));
+}
+
+function isSelectedSidebarUnitFilter(value: unknown): value is SelectedSidebarUnitFilter {
+  if (typeof value !== 'object' || value === null) return false;
+  const filter = value as Record<string, unknown>;
+  if (typeof filter.label !== 'string') return false;
+  if (filter.kind === 'leaf') {
+    return (
+      typeof filter.unitName === 'string' &&
+      (filter.unitId === undefined || Number.isInteger(filter.unitId))
+    );
+  }
+  if (
+    filter.kind !== 'group' ||
+    typeof filter.hierarchy !== 'object' ||
+    filter.hierarchy === null
+  ) {
+    return false;
+  }
+  const hierarchy = filter.hierarchy as Record<string, unknown>;
+  return DEVICE_UNIT_HIERARCHY_KEYS.every(
+    (key) => hierarchy[key] === null || typeof hierarchy[key] === 'string',
+  );
+}
 
 export function formatDeviceDateTime(value: string | null | undefined): string {
   if (!value) return '—';
@@ -71,6 +129,8 @@ export function buildDevicesSortBy(sorting: MRT_SortingState): DeviceListSortBy[
       return [current.desc ? 'display_title_desc' : 'display_title_asc'];
     case 'updatedAt':
       return [current.desc ? 'updated_at_desc' : 'updated_at_asc'];
+    case 'createdAt':
+      return [current.desc ? 'created_at_desc' : 'created_at_asc'];
     default:
       return ['updated_at_desc'];
   }

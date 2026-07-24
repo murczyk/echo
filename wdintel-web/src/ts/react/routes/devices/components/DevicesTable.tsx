@@ -37,7 +37,6 @@ type Props = {
   total: number;
   canEdit: boolean;
   mutatingDeviceId: string | null;
-  showLifecycle: boolean;
   hasFilters: boolean;
   tableStateContext: ReturnType<typeof useTableStateContext>;
   onEdit: (deviceId: string) => void;
@@ -47,7 +46,7 @@ type Props = {
   columnOrder: MRT_ColumnOrderState;
 };
 
-function useDevicesTableColumns(showLifecycle: boolean): MRT_ColumnDef<DeviceRowView>[] {
+function useDevicesTableColumns(): MRT_ColumnDef<DeviceRowView>[] {
   return useMemo(
     () => [
       {
@@ -57,29 +56,43 @@ function useDevicesTableColumns(showLifecycle: boolean): MRT_ColumnDef<DeviceRow
         size: 260,
         Cell: ({ row }) => {
           const href = `/devices/${row.original.id}`;
+          const displayName = row.original.name?.trim() || row.original.sourceLabel;
+          const analyticalNameMissing = !row.original.name?.trim();
           return (
-            <Link
-              href={href}
-              underline="hover"
-              fontWeight={600}
-              onClick={(event) => handleNavigateWithinSpaClick(event, href)}
-            >
-              {row.original.name || row.original.sourceLabel}
-            </Link>
+            <Box sx={{ display: 'flex', minWidth: 0, flexDirection: 'column', gap: 0.25 }}>
+              <Link
+                href={href}
+                underline="hover"
+                fontWeight={600}
+                onClick={(event) => handleNavigateWithinSpaClick(event, href)}
+              >
+                {displayName}
+              </Link>
+              {analyticalNameMissing ? (
+                <Typography
+                  component="span"
+                  variant="caption"
+                  color="text.secondary"
+                  aria-label="Потребує аналітичної назви"
+                >
+                  Потребує аналітичної назви
+                </Typography>
+              ) : null}
+            </Box>
           );
         },
       },
       {
-        id: 'createdBy',
-        accessorKey: 'createdBy',
-        header: 'Створив',
-        size: 160,
+        id: 'sourceLabel',
+        accessorKey: 'sourceLabel',
+        header: 'Джерельна мітка',
+        size: 220,
         enableSorting: false,
       },
       {
         id: 'aors',
         accessorKey: 'aorLabel',
-        header: 'Смуги',
+        header: 'AOR',
         size: 240,
         enableSorting: false,
         Cell: ({ cell }) => (
@@ -107,6 +120,13 @@ function useDevicesTableColumns(showLifecycle: boolean): MRT_ColumnDef<DeviceRow
         ),
       },
       {
+        id: 'createdAt',
+        accessorKey: 'createdAt',
+        header: 'Створено',
+        size: 170,
+        Cell: ({ row }) => row.original.createdAtLabel,
+      },
+      {
         id: 'updatedAt',
         accessorKey: 'updatedAt',
         header: 'Оновлено',
@@ -120,16 +140,14 @@ function useDevicesTableColumns(showLifecycle: boolean): MRT_ColumnDef<DeviceRow
         size: 120,
         enableSorting: false,
         Cell: ({ row }) =>
-          showLifecycle ? (
-            row.original.archived ? (
-              <PowerChip label="Архівний" color="warning" selected />
-            ) : (
-              <PowerChip label="Активний" color="success" selected />
-            )
-          ) : null,
+          row.original.archived ? (
+            <PowerChip label="Архівний" color="warning" selected />
+          ) : (
+            <PowerChip label="Активний" color="success" selected />
+          ),
       },
     ],
-    [showLifecycle],
+    [],
   );
 }
 
@@ -142,7 +160,6 @@ export function DevicesTable({
   total,
   canEdit,
   mutatingDeviceId,
-  showLifecycle,
   hasFilters,
   tableStateContext,
   onEdit,
@@ -151,7 +168,7 @@ export function DevicesTable({
   onTableInitialized,
   columnOrder,
 }: Props) {
-  const columns = useDevicesTableColumns(showLifecycle);
+  const columns = useDevicesTableColumns();
   const isInitialLoading = loading && rows.length === 0;
   const isEmptyResult = !isInitialLoading && rows.length === 0;
   const showLoadMore = !isInitialLoading && hasMore;
@@ -289,10 +306,7 @@ export function DevicesTable({
       sorting: tableStateContext.sorting,
       columnOrder: tableStateContext.columnOrder ?? columnOrder,
       columnSizing: tableStateContext.columnSizing ?? {},
-      columnVisibility: {
-        ...(tableStateContext.columnVisibility ?? {}),
-        lifecycle: showLifecycle,
-      },
+      columnVisibility: tableStateContext.columnVisibility ?? {},
     },
   });
 

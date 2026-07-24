@@ -336,6 +336,14 @@ describe('device filesystem API service routes', () => {
           fileMetadataCreatedAt: CREATED_AT,
           fileMetadataModifiedAt: UPDATED_AT,
         },
+        {
+          fileId: FILE_ID,
+          absolutePath: '/moved.log',
+          mimeType: null,
+          extension: null,
+          fileMetadataCreatedAt: null,
+          fileMetadataModifiedAt: null,
+        },
       ],
     });
 
@@ -349,6 +357,14 @@ describe('device filesystem API service routes', () => {
           extension: 'log',
           file_metadata_created_at: CREATED_AT,
           file_metadata_modified_at: UPDATED_AT,
+        },
+        {
+          file_id: FILE_ID,
+          absolute_path: '/moved.log',
+          mime_type: null,
+          extension: null,
+          file_metadata_created_at: null,
+          file_metadata_modified_at: null,
         },
       ],
     });

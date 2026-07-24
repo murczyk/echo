@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { canReadDevices, hasAnyRole, hasRole } from './roles';
+import { canReadDevices, hasAnyRole, hasRole, resolveDevicesCapabilities } from './roles';
 
 describe('roles', () => {
   it('keeps the frontend hierarchy aligned with backend role checks', () => {
@@ -32,6 +32,34 @@ describe('roles', () => {
     expect(canReadDevices(['Api'])).toBe(false);
     expect(hasRole(['Full'], 'DeleteMsg')).toBe(true);
     expect(hasRole(['Admin'], 'NoAutoLogout')).toBe(false);
+  });
+
+  it('resolves Devices capabilities by action instead of role inheritance', () => {
+    expect(resolveDevicesCapabilities(['Cyber'])).toEqual({
+      canRead: true,
+      canWriteSourceData: false,
+      canWriteAnalyticalData: false,
+    });
+    expect(resolveDevicesCapabilities(['DeviceSource'])).toEqual({
+      canRead: true,
+      canWriteSourceData: true,
+      canWriteAnalyticalData: false,
+    });
+    expect(resolveDevicesCapabilities(['DeviceAnalyst'])).toEqual({
+      canRead: true,
+      canWriteSourceData: true,
+      canWriteAnalyticalData: true,
+    });
+    expect(resolveDevicesCapabilities(['DeviceSource', 'DeviceAnalyst'])).toEqual({
+      canRead: true,
+      canWriteSourceData: true,
+      canWriteAnalyticalData: true,
+    });
+    expect(resolveDevicesCapabilities(['Admin'])).toEqual({
+      canRead: true,
+      canWriteSourceData: true,
+      canWriteAnalyticalData: true,
+    });
   });
 
   it('checks any role through the same hierarchy', () => {

@@ -2,11 +2,14 @@ import { describe, expect, it } from 'vitest';
 
 import type { Unit } from '../../../../Bindings';
 import {
+  buildDevicesColumnFilters,
   buildDevicesListReq,
   buildDevicesSortBy,
   createDefaultDevicesFilterState,
   formatAorsLabel,
   hasActiveDevicesFilters,
+  resolveDevicesColumnFilters,
+  sanitizeDevicesColumnFilters,
   resolveDeviceSidebarUnitIds,
 } from './helpers';
 
@@ -113,6 +116,7 @@ describe('devices list query mapping', () => {
   it('maps supported sorts and resets unsupported sorts', () => {
     expect(buildDevicesSortBy([{ id: 'name', desc: true }])).toEqual(['display_title_desc']);
     expect(buildDevicesSortBy([{ id: 'updatedAt', desc: false }])).toEqual(['updated_at_asc']);
+    expect(buildDevicesSortBy([{ id: 'createdAt', desc: true }])).toEqual(['created_at_desc']);
     expect(buildDevicesSortBy([{ id: 'createdBy', desc: true }])).toEqual(['updated_at_desc']);
   });
 
@@ -142,6 +146,29 @@ describe('devices list query mapping', () => {
         units,
       ),
     ).toEqual([2, 4]);
+  });
+
+  it('round-trips shareable lifecycle and unit filters and drops malformed values', () => {
+    const selectedSidebarUnitFilter = {
+      kind: 'group' as const,
+      label: 'Army A',
+      hierarchy: { army: 'A', division: null, regiment: null, battalion: null },
+    };
+    const columnFilters = buildDevicesColumnFilters({
+      archivedFilter: 'archived',
+      selectedSidebarUnitFilter,
+    });
+
+    expect(resolveDevicesColumnFilters(columnFilters)).toEqual({
+      archivedFilter: 'archived',
+      selectedSidebarUnitFilter,
+    });
+    expect(
+      sanitizeDevicesColumnFilters([
+        { id: 'lifecycle', value: 'unknown' },
+        { id: 'unit', value: { kind: 'leaf', label: 1 } },
+      ]),
+    ).toEqual([]);
   });
 
   it('detects active filters for empty states', () => {

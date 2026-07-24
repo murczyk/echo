@@ -5,16 +5,24 @@ import type {
   DeviceDetails,
   DeviceListItem,
   DeviceStatusCounts,
-  DeviceUnitStat,
   Unit,
 } from '../../../../Bindings';
 import { useTableStateContext } from '../../components/mui-customized/table/table-state-provider';
+import { redirectToLogin } from '../../auth-redirect';
+import { listAors } from '../../services/api/aor';
+import {
+  isAbortError,
+  isNetworkRequestError,
+  isUnauthorizedError,
+} from '../../services/api/client';
+import { getUnitsList } from '../../services/api/units';
 import { createDevice, getDeviceDetail, updateDevice } from '../../services/api/devices';
 import { navigateWithinSpa } from '../../utils/browser';
-import { canReadDevices, hasRole } from '../../utils/roles';
+import { resolveDevicesCapabilities } from '../../utils/roles';
 import {
   buildDeviceRowView,
-  createDefaultDevicesFilterState,
+  buildDevicesColumnFilters,
+  resolveDevicesColumnFilters,
   deviceDetailsToListItem,
   formatDeviceErrorMessage,
   hasActiveDevicesFilters,
@@ -43,43 +51,40 @@ import {
   type DevicesQuerySnapshot,
   type DevicesUiMessage,
 } from './use-devices-page.load';
+import { useDevicesSidebarResource } from './use-devices-sidebar-resource';
 import type { SelectedSidebarUnitFilter } from '../rer-callsigns-neo/types';
 
 export function useDevicesPage({ authUserRoles = [] }: { authUserRoles?: string[] } = {}) {
   const tableStateContext = useTableStateContext();
-  const permissions = useMemo(() => {
-    const canRead = canReadDevices(authUserRoles);
-    const canEditSource = hasRole(authUserRoles, 'DeviceSource');
-    const canEditAnalytical = hasRole(authUserRoles, 'DeviceAnalyst');
-    return {
-      canRead,
-      canCreate: canEditSource,
-      canEdit: canEditSource || canEditAnalytical,
+  const capabilities = useMemo(() => resolveDevicesCapabilities(authUserRoles), [authUserRoles]);
+  const permissions = useMemo(
+    () => ({
+      canRead: capabilities.canRead,
+      canCreate: capabilities.canWriteSourceData,
+      canEdit: capabilities.canWriteSourceData || capabilities.canWriteAnalyticalData,
+      canSyncFiles: capabilities.canWriteSourceData,
       fieldPermissions: {
-        sourceData: canEditSource,
-        analyticalData: canEditAnalytical,
+        sourceData: capabilities.canWriteSourceData,
+        analyticalData: capabilities.canWriteAnalyticalData,
       },
-    };
-  }, [authUserRoles]);
+    }),
+    [capabilities],
+  );
+  const sidebarResource = useDevicesSidebarResource(permissions.canRead);
 
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [devices, setDevices] = useState<DeviceListItem[]>([]);
   const [aors, setAors] = useState<AreaOfResponsibility[]>([]);
-  const [units, setUnits] = useState<Unit[]>([]);
-  const [unitStats, setUnitStats] = useState<DeviceUnitStat[]>([]);
+  const [lookupUnits, setLookupUnits] = useState<Unit[]>([]);
+  const [lookupsLoading, setLookupsLoading] = useState(false);
+  const [lookupsLoaded, setLookupsLoaded] = useState(false);
   const [total, setTotal] = useState(0);
   const [hasMore, setHasMore] = useState(false);
   const [statusCounts, setStatusCounts] = useState<DeviceStatusCounts | null>(null);
-  const [filters, setFilters] = useState<DevicesFilterState>(() =>
-    createDefaultDevicesFilterState(),
-  );
   const [status, setStatus] = useState<DevicesUiMessage>(null);
-  const [bootstrapLoaded, setBootstrapLoaded] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [selectedSidebarUnitFilter, setSelectedSidebarUnitFilter] =
-    useState<SelectedSidebarUnitFilter | null>(null);
   const [createForm, setCreateForm] = useState<DeviceUpsertForm | null>(null);
   const [createError, setCreateError] = useState<string | null>(null);
   const [createServerFieldErrors, setCreateServerFieldErrors] = useState<DeviceServerFieldErrors>(
@@ -92,31 +97,65 @@ export function useDevicesPage({ authUserRoles = [] }: { authUserRoles?: string[
   const [editError, setEditError] = useState<string | null>(null);
   const [editServerFieldErrors, setEditServerFieldErrors] = useState<DeviceServerFieldErrors>({});
   const [editSubmitting, setEditSubmitting] = useState(false);
+  const persistedFilters = useMemo(
+    () => resolveDevicesColumnFilters(tableStateContext.columnFilters),
+    [tableStateContext.columnFilters],
+  );
+  const selectedSidebarUnitFilter = persistedFilters.selectedSidebarUnitFilter;
+  const filters = useMemo<DevicesFilterState>(
+    () => ({
+      archivedFilter: persistedFilters.archivedFilter,
+      unitIds: resolveDeviceSidebarUnitIds(selectedSidebarUnitFilter, sidebarResource.units),
+    }),
+    [persistedFilters.archivedFilter, selectedSidebarUnitFilter, sidebarResource.units],
+  );
+  const persistFilters = useCallback(
+    (
+      archivedFilter: DeviceArchivedFilterValue,
+      selectedUnitFilter: SelectedSidebarUnitFilter | null,
+    ) => {
+      tableStateContext.onColumnFiltersChange(
+        buildDevicesColumnFilters({
+          archivedFilter,
+          selectedSidebarUnitFilter: selectedUnitFilter,
+        }),
+      );
+    },
+    [tableStateContext],
+  );
+  const setFilters = useCallback(
+    (updater: DevicesFilterState | ((current: DevicesFilterState) => DevicesFilterState)) => {
+      const nextFilters = typeof updater === 'function' ? updater(filters) : updater;
+      persistFilters(nextFilters.archivedFilter, selectedSidebarUnitFilter);
+    },
+    [filters, persistFilters, selectedSidebarUnitFilter],
+  );
 
   const requestSeqRef = useRef(0);
-  const bootstrapLoadedRef = useRef(false);
   const mainAbortRef = useRef<AbortController | null>(null);
+  const lookupsAbortRef = useRef<AbortController | null>(null);
   const loadMoreAbortRef = useRef<AbortController | null>(null);
   const devicesLengthRef = useRef(0);
   const latestQuerySnapshotRef = useRef<DevicesQuerySnapshot | null>(null);
   const lastExecutedFullQueryKeyRef = useRef<string | null>(null);
-  const filtersRef = useRef(filters);
 
   useEffect(() => {
     devicesLengthRef.current = devices.length;
   }, [devices.length]);
 
-  useEffect(() => {
-    filtersRef.current = filters;
-  }, [filters]);
-
   const rows = useMemo(() => devices.map(buildDeviceRowView), [devices]);
-  const unitsById = useMemo(() => new Map(units.map((unit) => [unit.id, unit])), [units]);
+  const unitsById = useMemo(
+    () => new Map(sidebarResource.units.map((unit) => [unit.id, unit])),
+    [sidebarResource.units],
+  );
   const aorOptions = useMemo<DeviceLookupOption[]>(() => resolveAorOptions(aors), [aors]);
-  const unitOptions = useMemo<DeviceLookupOption[]>(() => resolveUnitOptions(units), [units]);
+  const unitOptions = useMemo<DeviceLookupOption[]>(
+    () => resolveUnitOptions(lookupsLoaded ? lookupUnits : sidebarResource.units),
+    [lookupUnits, lookupsLoaded, sidebarResource.units],
+  );
   const unitStatsView = useMemo(
-    () => mergeDeviceUnitStatsWithUnits(unitStats, unitsById),
-    [unitStats, unitsById],
+    () => mergeDeviceUnitStatsWithUnits(sidebarResource.unitStats, unitsById),
+    [sidebarResource.unitStats, unitsById],
   );
   const editHasChanges = useMemo(() => {
     if (editDevice === null || editForm === null) return false;
@@ -125,18 +164,19 @@ export function useDevicesPage({ authUserRoles = [] }: { authUserRoles?: string[
     );
   }, [editDevice, editForm, permissions.fieldPermissions]);
 
+  const normalizedGlobalFilter = tableStateContext.globalFilter.trim();
   const querySnapshot = useMemo<DevicesQuerySnapshot>(
     () => ({
-      globalFilter: tableStateContext.globalFilter,
+      globalFilter: normalizedGlobalFilter,
       filters,
       sorting: tableStateContext.sorting,
       fullQueryKey: JSON.stringify({
-        globalFilter: tableStateContext.globalFilter,
+        globalFilter: normalizedGlobalFilter,
         filters,
         sorting: tableStateContext.sorting,
       }),
     }),
-    [filters, tableStateContext.globalFilter, tableStateContext.sorting],
+    [filters, normalizedGlobalFilter, tableStateContext.sorting],
   );
 
   useEffect(() => {
@@ -148,7 +188,6 @@ export function useDevicesPage({ authUserRoles = [] }: { authUserRoles?: string[
       createDevicesLoadActions({
         latestQuerySnapshotRef,
         requestSeqRef,
-        bootstrapLoadedRef,
         mainAbortRef,
         loadMoreAbortRef,
         devicesLengthRef,
@@ -157,14 +196,10 @@ export function useDevicesPage({ authUserRoles = [] }: { authUserRoles?: string[
         setRefreshing,
         setLoadingMore,
         setDevices,
-        setAors,
-        setUnits,
-        setUnitStats,
         setTotal,
         setHasMore,
         setStatusCounts,
         setStatus,
-        setBootstrapLoaded,
       }),
     [],
   );
@@ -176,50 +211,55 @@ export function useDevicesPage({ authUserRoles = [] }: { authUserRoles?: string[
       return;
     }
 
+    if (lastExecutedFullQueryKeyRef.current === null) {
+      void loadActions.loadDevices(querySnapshot);
+      return;
+    }
+
     const timeoutId = window.setTimeout(() => {
-      void loadActions.loadDevices(querySnapshot, {
-        includeLookups: !bootstrapLoadedRef.current,
-      });
+      void loadActions.loadDevices(querySnapshot);
     }, 250);
 
     return () => window.clearTimeout(timeoutId);
   }, [loadActions, permissions.canRead, querySnapshot]);
 
-  useEffect(() => () => loadActions.dispose(), [loadActions]);
+  useEffect(
+    () => () => {
+      loadActions.dispose();
+      lookupsAbortRef.current?.abort();
+    },
+    [loadActions],
+  );
 
-  const setArchivedFilter = useCallback((archivedFilter: DeviceArchivedFilterValue) => {
-    setFilters((current) => ({ ...current, archivedFilter }));
-  }, []);
+  const setArchivedFilter = useCallback(
+    (archivedFilter: DeviceArchivedFilterValue) => {
+      persistFilters(archivedFilter, selectedSidebarUnitFilter);
+    },
+    [persistFilters, selectedSidebarUnitFilter],
+  );
 
   const onPickUnitFilter = useCallback(
     (filter: SelectedSidebarUnitFilter) => {
-      if (isSameDeviceSidebarUnitFilter(selectedSidebarUnitFilter, filter)) {
-        setSelectedSidebarUnitFilter(null);
-        setFilters((current) => ({ ...current, unitIds: [] }));
-        return;
-      }
-
-      setSelectedSidebarUnitFilter(filter);
-      setFilters((current) => ({
-        ...current,
-        unitIds: resolveDeviceSidebarUnitIds(filter, units),
-      }));
+      persistFilters(
+        filters.archivedFilter,
+        isSameDeviceSidebarUnitFilter(selectedSidebarUnitFilter, filter) ? null : filter,
+      );
     },
-    [selectedSidebarUnitFilter, units],
+    [filters.archivedFilter, persistFilters, selectedSidebarUnitFilter],
   );
 
   const onClearUnitFilter = useCallback(() => {
-    setSelectedSidebarUnitFilter(null);
-    setFilters((current) => ({ ...current, unitIds: [] }));
-  }, []);
+    persistFilters(filters.archivedFilter, null);
+  }, [filters.archivedFilter, persistFilters]);
 
   const clearFilters = useCallback(() => {
     tableStateContext.onChangeGlobalFilter('');
-    setSelectedSidebarUnitFilter(null);
-    setFilters(createDefaultDevicesFilterState());
-  }, [tableStateContext]);
+    persistFilters('active', null);
+  }, [persistFilters, tableStateContext]);
 
-  const reload = useCallback(() => loadActions.reloadDevices(), [loadActions]);
+  const reload = useCallback(async () => {
+    await Promise.all([loadActions.reloadDevices(), sidebarResource.reload()]);
+  }, [loadActions, sidebarResource]);
   const loadMore = useCallback(() => loadActions.loadMoreDevices(), [loadActions]);
 
   const openCreateDialog = useCallback(() => {
@@ -256,21 +296,58 @@ export function useDevicesPage({ authUserRoles = [] }: { authUserRoles?: string[
       setStatus(null);
       try {
         const device = await createDevice(buildCreateDeviceReq(form));
+        await loadActions.reloadDevices();
         navigateWithinSpa(`/devices/${device.id}`);
       } catch (error) {
         const fieldErrors = parseDeviceServerFieldErrors(error);
+        const resultUncertain = isNetworkRequestError(error);
         setCreateServerFieldErrors(fieldErrors);
         setCreateError(
           Object.keys(fieldErrors).length > 0
             ? null
-            : `Помилка створення пристрою: ${formatDeviceErrorMessage(error)}`,
+            : resultUncertain
+              ? `Результат створення пристрою невідомий. Перевірте список перед повторною спробою. ${formatDeviceErrorMessage(error)}`
+              : `Помилка створення пристрою: ${formatDeviceErrorMessage(error)}`,
         );
+        if (resultUncertain) await loadActions.reloadDevices();
       } finally {
         setCreating(false);
       }
     },
-    [creating, permissions.canCreate],
+    [creating, loadActions, permissions.canCreate],
   );
+
+  const loadAnalyticalLookups = useCallback(async (): Promise<string | null> => {
+    if (!permissions.fieldPermissions.analyticalData || lookupsLoaded) return null;
+
+    lookupsAbortRef.current?.abort();
+    const controller = new AbortController();
+    lookupsAbortRef.current = controller;
+    setLookupsLoading(true);
+
+    try {
+      const [nextAors, nextUnits] = await Promise.all([
+        listAors({ sortBy: null }, controller.signal),
+        getUnitsList({ signal: controller.signal }),
+      ]);
+      if (controller.signal.aborted) return null;
+
+      setAors(nextAors);
+      setLookupUnits(nextUnits);
+      setLookupsLoaded(true);
+      return null;
+    } catch (error) {
+      if (controller.signal.aborted || isAbortError(error)) return null;
+      if (isUnauthorizedError(error)) {
+        redirectToLogin();
+        return null;
+      }
+      return `Помилка завантаження довідників пристрою: ${formatDeviceErrorMessage(error)}`;
+    } finally {
+      if (lookupsAbortRef.current === controller) lookupsAbortRef.current = null;
+      if (!controller.signal.aborted) setLookupsLoading(false);
+    }
+  }, [lookupsLoaded, permissions.fieldPermissions.analyticalData]);
 
   const openEditRow = useCallback(
     async (deviceId: string) => {
@@ -283,13 +360,17 @@ export function useDevicesPage({ authUserRoles = [] }: { authUserRoles?: string[
       setEditError(null);
       setEditServerFieldErrors({});
       try {
-        const device = await getDeviceDetail({ deviceId, includeArchived: true });
+        const [device, lookupError] = await Promise.all([
+          getDeviceDetail({ deviceId, includeArchived: true }),
+          loadAnalyticalLookups(),
+        ]);
         if (device.archived) {
           setStatus({ kind: 'error', text: 'Архівований пристрій потрібно спочатку відновити.' });
           return;
         }
         setEditDevice(device);
         setEditForm(deviceDetailsToUpsertForm(device));
+        setEditError(lookupError);
       } catch (error) {
         setStatus({
           kind: 'error',
@@ -299,7 +380,7 @@ export function useDevicesPage({ authUserRoles = [] }: { authUserRoles?: string[
         setEditLoadingDeviceId(null);
       }
     },
-    [editLoadingDeviceId, editSubmitting, permissions.canEdit],
+    [editLoadingDeviceId, editSubmitting, loadAnalyticalLookups, permissions.canEdit],
   );
 
   const closeEditDialog = useCallback(() => {
@@ -344,20 +425,26 @@ export function useDevicesPage({ authUserRoles = [] }: { authUserRoles?: string[
         setEditDevice(null);
         setEditForm(null);
         setStatus({ kind: 'success', text: 'Пристрій оновлено.' });
-        await loadActions.reloadDevices({ includeUnitStats: true });
+        await Promise.all([loadActions.reloadDevices(), sidebarResource.reload()]);
       } catch (error) {
+        const resultUncertain = isNetworkRequestError(error);
         const fieldErrors = parseDeviceServerFieldErrors(error);
         setEditServerFieldErrors(fieldErrors);
         setEditError(
           Object.keys(fieldErrors).length > 0
             ? null
-            : `Помилка оновлення пристрою: ${formatDeviceErrorMessage(error)}`,
+            : resultUncertain
+              ? `Результат оновлення пристрою невідомий. Дані перезавантажено для перевірки. ${formatDeviceErrorMessage(error)}`
+              : `Помилка оновлення пристрою: ${formatDeviceErrorMessage(error)}`,
         );
+        if (resultUncertain) {
+          await Promise.all([loadActions.reloadDevices(), sidebarResource.reload()]);
+        }
       } finally {
         setEditSubmitting(false);
       }
     },
-    [editDevice, editSubmitting, loadActions, permissions],
+    [editDevice, editSubmitting, loadActions, permissions, sidebarResource],
   );
 
   const hasFilters = hasActiveDevicesFilters(tableStateContext.globalFilter, filters);
@@ -379,7 +466,11 @@ export function useDevicesPage({ authUserRoles = [] }: { authUserRoles?: string[
     setFilters,
     status,
     statusCounts,
-    bootstrapLoaded,
+    bootstrapLoaded: sidebarResource.loaded,
+    sidebarLoading: sidebarResource.loading,
+    sidebarError: sidebarResource.error,
+    reloadSidebar: sidebarResource.reload,
+    lookupsLoading,
     creating,
     createDialogOpen: createForm !== null,
     createForm,

@@ -158,6 +158,11 @@ function DeviceExternalUrlValue({ device }: { device: DeviceDetails }) {
 function buildMainFields(device: DeviceDetails): FieldConfig[] {
   return [
     {
+      key: 'id',
+      label: 'ID',
+      value: <DeviceTextValue>{device.id}</DeviceTextValue>,
+    },
+    {
       key: 'sourceLabel',
       label: 'Джерельна мітка',
       value: <DeviceTextValue>{device.sourceLabel}</DeviceTextValue>,

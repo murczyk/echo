@@ -1,18 +1,10 @@
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 import type { MRT_SortingState } from 'material-react-table';
 
-import type {
-  AreaOfResponsibility,
-  DeviceListItem,
-  DeviceStatusCounts,
-  DeviceUnitStat,
-  Unit,
-} from '../../../../Bindings';
+import type { DeviceListItem, DeviceStatusCounts } from '../../../../Bindings';
 import { redirectToLogin } from '../../auth-redirect';
-import { listAors } from '../../services/api/aor';
 import { isAbortError, isUnauthorizedError } from '../../services/api/client';
-import { getDeviceUnitStats, listDevices } from '../../services/api/devices';
-import { getUnitsList } from '../../services/api/units';
+import { listDevices } from '../../services/api/devices';
 import {
   buildDevicesListReq,
   DEVICES_LIST_PAGE_SIZE,
@@ -35,7 +27,6 @@ export type DevicesUiMessage = {
 type LoadArgs = {
   latestQuerySnapshotRef: MutableRefObject<DevicesQuerySnapshot | null>;
   requestSeqRef: MutableRefObject<number>;
-  bootstrapLoadedRef: MutableRefObject<boolean>;
   mainAbortRef: MutableRefObject<AbortController | null>;
   loadMoreAbortRef: MutableRefObject<AbortController | null>;
   devicesLengthRef: MutableRefObject<number>;
@@ -44,37 +35,21 @@ type LoadArgs = {
   setRefreshing: Dispatch<SetStateAction<boolean>>;
   setLoadingMore: Dispatch<SetStateAction<boolean>>;
   setDevices: Dispatch<SetStateAction<DeviceListItem[]>>;
-  setAors: Dispatch<SetStateAction<AreaOfResponsibility[]>>;
-  setUnits: Dispatch<SetStateAction<Unit[]>>;
-  setUnitStats: Dispatch<SetStateAction<DeviceUnitStat[]>>;
   setTotal: Dispatch<SetStateAction<number>>;
   setHasMore: Dispatch<SetStateAction<boolean>>;
   setStatusCounts: Dispatch<SetStateAction<DeviceStatusCounts | null>>;
   setStatus: Dispatch<SetStateAction<DevicesUiMessage>>;
-  setBootstrapLoaded: Dispatch<SetStateAction<boolean>>;
 };
 
 export function createDevicesLoadActions(args: LoadArgs) {
   const loadDevices = async (
     snapshot: DevicesQuerySnapshot,
-    options?: {
-      includeLookups?: boolean;
-      includeUnitStats?: boolean;
-      append?: boolean;
-      force?: boolean;
-    },
+    options?: { append?: boolean; force?: boolean },
   ) => {
-    const includeLookups = options?.includeLookups ?? false;
-    const includeUnitStats = options?.includeUnitStats ?? includeLookups;
     const append = options?.append ?? false;
     const force = options?.force ?? false;
 
-    if (
-      args.lastExecutedFullQueryKeyRef.current === snapshot.fullQueryKey &&
-      !append &&
-      !includeLookups &&
-      !force
-    ) {
+    if (args.lastExecutedFullQueryKeyRef.current === snapshot.fullQueryKey && !append && !force) {
       return;
     }
 
@@ -97,8 +72,9 @@ export function createDevicesLoadActions(args: LoadArgs) {
       limit: DEVICES_LIST_PAGE_SIZE,
       offset: append ? args.devicesLengthRef.current : 0,
     });
+    const initialLoad = !append && args.lastExecutedFullQueryKeyRef.current === null;
 
-    if (includeLookups) {
+    if (initialLoad) {
       args.setLoading(true);
     } else if (append) {
       args.setLoadingMore(true);
@@ -108,69 +84,14 @@ export function createDevicesLoadActions(args: LoadArgs) {
     args.setStatus(null);
 
     try {
-      const lookupsPromise = includeLookups
-        ? Promise.all([
-            listAors({ sortBy: null }, controller.signal),
-            getUnitsList({ signal: controller.signal }),
-            getDeviceUnitStats({ signal: controller.signal }),
-          ])
-        : null;
-      const unitStatsPromise =
-        !includeLookups && includeUnitStats
-          ? getDeviceUnitStats({ signal: controller.signal })
-          : null;
       const rsp = await listDevices(req, { signal: controller.signal });
-
       if (args.requestSeqRef.current !== seq) return;
 
       args.setTotal(rsp.total);
       args.setHasMore(rsp.hasMore);
       args.setStatusCounts(rsp.statusCounts);
       args.setDevices((current) => (append ? [...current, ...rsp.list] : rsp.list));
-
-      if (!append) {
-        args.lastExecutedFullQueryKeyRef.current = snapshot.fullQueryKey;
-      }
-
-      if (lookupsPromise !== null) {
-        try {
-          const [aors, units, unitStats] = await lookupsPromise;
-          if (args.requestSeqRef.current !== seq) return;
-          args.setAors(aors);
-          args.setUnits(units);
-          args.setUnitStats(unitStats);
-          args.bootstrapLoadedRef.current = true;
-          args.setBootstrapLoaded(true);
-        } catch (error) {
-          if (controller.signal.aborted || isAbortError(error)) return;
-          if (isUnauthorizedError(error)) {
-            redirectToLogin();
-            return;
-          }
-          args.setStatus({
-            kind: 'error',
-            text: `Помилка завантаження довідників пристроїв: ${formatDeviceErrorMessage(error)}`,
-          });
-        }
-      }
-
-      if (unitStatsPromise !== null) {
-        try {
-          const unitStats = await unitStatsPromise;
-          if (args.requestSeqRef.current !== seq) return;
-          args.setUnitStats(unitStats);
-        } catch (error) {
-          if (controller.signal.aborted || isAbortError(error)) return;
-          if (isUnauthorizedError(error)) {
-            redirectToLogin();
-            return;
-          }
-          args.setStatus({
-            kind: 'error',
-            text: `Помилка оновлення статистики підрозділів: ${formatDeviceErrorMessage(error)}`,
-          });
-        }
-      }
+      if (!append) args.lastExecutedFullQueryKeyRef.current = snapshot.fullQueryKey;
     } catch (error) {
       if (args.requestSeqRef.current !== seq) return;
       if (controller.signal.aborted || isAbortError(error)) return;
@@ -203,14 +124,10 @@ export function createDevicesLoadActions(args: LoadArgs) {
     await loadDevices(snapshot, { append: true });
   };
 
-  const reloadDevices = async (options?: { includeUnitStats?: boolean }) => {
+  const reloadDevices = async () => {
     const snapshot = args.latestQuerySnapshotRef.current;
     if (snapshot === null) return;
-    await loadDevices(snapshot, {
-      includeLookups: !args.bootstrapLoadedRef.current,
-      includeUnitStats: options?.includeUnitStats,
-      force: true,
-    });
+    await loadDevices(snapshot, { force: true });
   };
 
   const dispose = () => {

@@ -117,6 +117,10 @@ function buildPageReturn(overrides: Record<string, unknown> = {}) {
     status: null,
     statusCounts: { active: 3, archived: 1 },
     bootstrapLoaded: true,
+    sidebarLoading: false,
+    sidebarError: null,
+    reloadSidebar: vi.fn(),
+    lookupsLoading: false,
     creating: false,
     createDialogOpen: false,
     createForm: null,
@@ -221,5 +225,17 @@ describe('DevicesPage layout', () => {
     });
     expect(capturedDevicesTableProps).not.toHaveProperty('onArchive');
     expect(capturedDevicesTableProps).not.toHaveProperty('onRestore');
+  });
+  it('keeps the list mounted when unit statistics fail', () => {
+    pageMock.useDevicesPage.mockReturnValue(
+      buildPageReturn({ sidebarError: 'Статистика недоступна' }),
+    );
+
+    act(() => {
+      root?.render(<DevicesPage authUserRoles={['DeviceSource']} />);
+    });
+
+    expect(container?.textContent).toContain('Статистика недоступна');
+    expect(capturedDevicesTableProps).not.toBeNull();
   });
 });

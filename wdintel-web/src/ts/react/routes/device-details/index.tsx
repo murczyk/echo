@@ -9,6 +9,7 @@ import { PowerIconButton } from '../../components/PowerIconButton';
 import { SectionLoadingOverlay } from '../../components/SectionLoadingOverlay';
 import { navigateWithinSpa } from '../../utils/browser';
 import { DeviceUpsertDrawer } from '../devices/components/DeviceUpsertDrawer';
+import { DeviceFilesPanel } from '../device-files';
 import { DeviceDetailsLeftPanel } from './components/DeviceDetailsLeftPanel';
 import { formatDeviceLifecycleLabel } from './helpers';
 import { useDeviceDetailsPage } from './use-device-details-page';
@@ -143,18 +144,33 @@ export function DeviceDetailsPage({
           position: 'relative',
           flex: 1,
           minHeight: 0,
-          display: 'flex',
-          overflow: 'hidden',
+          display: 'grid',
+          gridTemplateColumns: {
+            xs: 'minmax(0, 1fr)',
+            lg: 'minmax(320px, 0.8fr) minmax(0, 1.2fr)',
+          },
+          gridTemplateRows: { xs: 'auto minmax(420px, 1fr)', lg: 'minmax(0, 1fr)' },
+          gap: 2,
+          overflow: { xs: 'auto', lg: 'hidden' },
         }}
       >
         {page.loading && device === null ? (
-          <Box sx={{ flex: 1, minHeight: 0, overflow: 'hidden' }}>
+          <Box sx={{ minHeight: 420, overflow: 'hidden' }}>
             <DeviceDetailsLeftPanel device={null} loading={page.loading} />
           </Box>
         ) : device ? (
-          <Box sx={{ flex: 1, minHeight: 0, overflow: 'hidden' }}>
-            <DeviceDetailsLeftPanel device={device} loading={page.loading} />
-          </Box>
+          <>
+            <Box sx={{ minHeight: 0, overflow: 'hidden' }}>
+              <DeviceDetailsLeftPanel device={device} loading={page.loading} />
+            </Box>
+            <Box sx={{ minHeight: 0, minWidth: 0, overflow: 'hidden' }}>
+              <DeviceFilesPanel
+                deviceId={device.id}
+                canRead={page.permissions.canRead}
+                canSync={page.permissions.canSyncFiles && !device.archived}
+              />
+            </Box>
+          </>
         ) : null}
 
         <SectionLoadingOverlay

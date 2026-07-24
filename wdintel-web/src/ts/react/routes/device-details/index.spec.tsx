@@ -21,6 +21,14 @@ vi.mock('./use-device-details-page', () => ({
   useDeviceDetailsPage: pageMock.useDeviceDetailsPage,
 }));
 
+vi.mock('../device-files', () => ({
+  DeviceFilesPanel: ({ canSync }: { canSync: boolean }) => (
+    <div data-testid="device-files-panel" data-can-sync={String(canSync)}>
+      Файли
+    </div>
+  ),
+}));
+
 const activeDevice: DeviceDetails = {
   id: DEVICE_ID,
   sourceLabel: 'Inventory import',
@@ -44,6 +52,7 @@ function buildPage(overrides: Record<string, unknown> = {}) {
     permissions: {
       canRead: true,
       canEdit: true,
+      canSyncFiles: true,
       fieldPermissions: { sourceData: true, analyticalData: true },
     },
     device: activeDevice,
@@ -100,6 +109,7 @@ describe('DeviceDetailsPage layout', () => {
     );
 
     expect(leftPanelText).toContain('Device Alpha');
+    expect(leftPanelText).toContain(DEVICE_ID);
     expect(leftPanelText).toContain('Активний');
     expect(leftPanelText).toContain('Північ');
     expect(leftPanelText).toContain('Південь');
@@ -121,7 +131,10 @@ describe('DeviceDetailsPage layout', () => {
     expect(leftPanelText.indexOf('Основне')).toBeLessThan(leftPanelText.indexOf('Кастомні поля'));
     expect(leftPanelText.indexOf('Кастомні поля')).toBeLessThan(leftPanelText.indexOf('Додатково'));
     expect(container?.querySelectorAll('[role="tab"]')).toHaveLength(0);
-    expect(container?.textContent).not.toContain('Файли');
+    expect(container?.querySelector('[data-testid="device-files-panel"]')).not.toBeNull();
+    expect(
+      container?.querySelector('[data-testid="device-files-panel"]')?.getAttribute('data-can-sync'),
+    ).toBe('true');
   });
 
   it('keeps archived devices read-only', () => {
@@ -141,5 +154,8 @@ describe('DeviceDetailsPage layout', () => {
     expect(container?.querySelector('button[aria-label="Редагувати пристрій"]')).toBeNull();
     expect(container?.textContent).not.toContain('Відновити');
     expect(container?.querySelector('[aria-label="Архівний"]')).not.toBeNull();
+    expect(
+      container?.querySelector('[data-testid="device-files-panel"]')?.getAttribute('data-can-sync'),
+    ).toBe('false');
   });
 });
