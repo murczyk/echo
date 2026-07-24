@@ -21,6 +21,10 @@ function mergeDutyCallsignTextField(
   return incomingTrimmed.length > existingTrimmed.length ? incomingValue : existingValue;
 }
 
+export function hasResolvedDutyCallsignInfo(item: CallsignInfoRes): boolean {
+  return item.res.length > 0 || (item.networkHints?.length ?? 0) > 0;
+}
+
 export function mergeDutyCallsignInfoEntry(
   current: CallsignInfoRes | undefined,
   incoming: CallsignInfoRes,
@@ -99,7 +103,7 @@ export function updateDutyResolvedCallsignInfoMap(
   const next = { ...prev };
   items.forEach((item) => {
     const key = normalizeCallsignLookupValue(item.callsign);
-    if (item.res.length === 0) {
+    if (!hasResolvedDutyCallsignInfo(item)) {
       delete next[key];
       return;
     }

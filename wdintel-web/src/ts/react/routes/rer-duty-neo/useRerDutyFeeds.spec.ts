@@ -386,6 +386,48 @@ describe('useRerDutyFeeds', () => {
     expect(hoisted.fetchAnalysisCallsignInfos).toHaveBeenNthCalledWith(2, ['борода']);
   });
 
+  it('enriches network-only callsign results without scheduling a retry', async () => {
+    hoisted.fetchAnalysisCallsignInfos.mockReset().mockResolvedValueOnce([
+      {
+        callsign: 'ВЕТЕР',
+        res: [],
+        networkHints: [
+          { networkId: 10, callsign: 'ВЕТЕР', position: 'командир', formation: '4 мср' },
+        ],
+      },
+    ]);
+    hoisted.messageFeeds = [
+      {
+        id: 'mf-0',
+        items: [[1, { textMarked: [{ CNCallsignC: { text: 'ВЕТЕР' } }] }]],
+        filter: {},
+      },
+    ];
+
+    await act(async () => {
+      root.render(React.createElement(TestHarness));
+      await flushMicrotasks();
+    });
+
+    expect(hoisted.fetchAnalysisCallsignInfos).toHaveBeenCalledTimes(1);
+    expect(hoisted.mergeResolvedCallsigns).toHaveBeenCalledWith([
+      expect.objectContaining({
+        callsign: 'ВЕТЕР',
+        res: [],
+        networkHints: [
+          { networkId: 10, callsign: 'ВЕТЕР', position: 'командир', formation: '4 мср' },
+        ],
+      }),
+    ]);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(30_000);
+      await flushMicrotasks();
+    });
+
+    expect(hoisted.fetchAnalysisCallsignInfos).toHaveBeenCalledTimes(1);
+  });
+
   it('adds a frequency to the selected feed filter without duplicating it', async () => {
     hoisted.messageFeeds = [
       {

@@ -24,7 +24,7 @@ function callsignInfoRow(
 }
 
 function callsignInfo(callsign: string, rows: CallsignInfoRes['res']): CallsignInfoRes {
-  return { callsign, res: rows };
+  return { callsign, res: rows, networkHints: null };
 }
 
 describe('mergeDutyCallsignInfoMap', () => {
@@ -252,5 +252,19 @@ describe('updateDutyResolvedCallsignInfoMap', () => {
     const next = updateDutyResolvedCallsignInfoMap(prev, [callsignInfo('БОРОДА', [])]);
 
     expect(next).toEqual({});
+  });
+
+  it('keeps a network-only resolved result', () => {
+    const networkOnly = {
+      callsign: 'ВЕТЕР',
+      res: [],
+      networkHints: [
+        { networkId: 10, callsign: 'ВЕТЕР', position: 'командир', formation: '4 мср' },
+      ],
+    };
+
+    const next = updateDutyResolvedCallsignInfoMap({}, [networkOnly]);
+
+    expect(next['ветер']).toEqual(networkOnly);
   });
 });

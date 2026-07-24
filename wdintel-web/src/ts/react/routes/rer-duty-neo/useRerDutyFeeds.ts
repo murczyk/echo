@@ -15,6 +15,7 @@ import { useRerDutyMessageActions } from './useRerDutyMessageActions';
 import { collectUniqueCallsignsFromMessages, MAX_MESSAGE_FEEDS, stableStringify } from './utils';
 import { useDutySettings } from '../../hooks/use-duty-settings';
 import { useInboxChangedMessageIds } from '../shared/useInboxChangedMessageIds';
+import { hasResolvedDutyCallsignInfo } from './useRerDutyCallsignInfo';
 
 const CALLSIGN_LOOKUP_RETRY_BACKOFF_MS = 30_000;
 
@@ -268,7 +269,7 @@ export function useRerDutyFeeds(authUserName: string | null) {
         );
         items.forEach((item) => {
           const key = normalizeCallsignLookupValue(item.callsign);
-          if (item.res.length > 0) {
+          if (hasResolvedDutyCallsignInfo(item)) {
             enrichedCallsignsRef.current.add(key);
             retryMapChanged = emptyResultRetryAfterMsRef.current.delete(key) || retryMapChanged;
             return;
