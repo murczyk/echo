@@ -353,10 +353,21 @@ async fn load_report(
     bgtask_id: Option<i64>,
 ) -> Result<RerReport, AppError> {
     let dbx = &env.dbx;
-    let item_ids =
-        load_candidate_item_ids(dbx, user_login, env, req, true, true)
-            .await
-            .c(h!())?;
+    let item_ids = crate::rer_importer::analysis::with_analytics_read_fallback(
+        env,
+        "RER report candidate scan",
+        crate::rer_importer::analysis::analytics_inbox_request_supported(
+            &req.req,
+        ),
+        |db| async move {
+            load_candidate_item_ids(&db, user_login, env, req, true, true).await
+        },
+        |db| async move {
+            load_candidate_item_ids(&db, user_login, env, req, true, true).await
+        },
+    )
+    .await
+    .c(h!())?;
     let mut report = RerReport::default();
     for item_id in item_ids {
         if item_has_other_tag(dbx, item_id).await.c(h!())? {
@@ -414,10 +425,23 @@ async fn load_sposob_report(
 ) -> Result<SposobReport, AppError> {
     let dbx = &env.dbx;
     let unit_name = sposob_report_unit_name(req)?;
-    let item_ids =
-        load_candidate_item_ids(dbx, user_login, env, req, false, false)
-            .await
-            .c(h!())?;
+    let item_ids = crate::rer_importer::analysis::with_analytics_read_fallback(
+        env,
+        "Sposob report candidate scan",
+        crate::rer_importer::analysis::analytics_inbox_request_supported(
+            &req.req,
+        ),
+        |db| async move {
+            load_candidate_item_ids(&db, user_login, env, req, false, false)
+                .await
+        },
+        |db| async move {
+            load_candidate_item_ids(&db, user_login, env, req, false, false)
+                .await
+        },
+    )
+    .await
+    .c(h!())?;
     let mut report = SposobReport {
         unit_name,
         messages: BTreeMap::new(),

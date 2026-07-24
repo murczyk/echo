@@ -10,6 +10,8 @@
 
 ## NEXT
 
+- [#2308](https://github.com/echoua/echo/issues/2308) ✅👷 Аналіз, Звіти: лічильники, списки груп, відправників і частот та великі вибірки звітів використовують ClickHouse з автоматичним fallback на PostgreSQL; перед деплоєм на інстанси з ClickHouse перебудувати та скопіювати артефакти з `deploy/clickhouse`, виконати `bin/install-artifacts.sh build/artifacts` на відповідному analytics LXC і перезапустити `postgresql@18-main.service`.
+
 ## 2026-07-23
 
 - [#2742](https://github.com/echoua/echo/issues/2742) ✅ Оперативний, Аналіз: додано підтримку пошуку локацій при створенні повідомлення.

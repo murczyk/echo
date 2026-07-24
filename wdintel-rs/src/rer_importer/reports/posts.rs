@@ -65,7 +65,6 @@ pub async fn report_docx_kind_posts(
     req: &ReportPreviewReq,
     outpath: &Path,
 ) -> Result<(), AppError> {
-    let read_db = env.replica();
     let login = *user_login;
     let mut current_req = req.req.clone();
     current_req.report_tags_only_this_unit = req.report_tags_only_this_unit;
@@ -79,17 +78,61 @@ pub async fn report_docx_kind_posts(
     };
 
     current_req.return_duplicates = Some(false);
-
-    let current_messages =
-        load_post_report_messages(&read_db, &login, env, &current_req)
-            .await
-            .c(h!())?;
-
     let previous_req = build_shifted_req(&current_req, -DAY_MS)?;
-    let previous_messages =
-        load_post_report_messages(&read_db, &login, env, &previous_req)
-            .await
-            .c(h!())?;
+    let analytics_supported =
+        crate::rer_importer::analysis::analytics_inbox_request_supported(
+            &current_req,
+        ) && crate::rer_importer::analysis::analytics_inbox_request_supported(
+            &previous_req,
+        );
+    let analytics_current_req = &current_req;
+    let analytics_previous_req = &previous_req;
+    let postgres_current_req = &current_req;
+    let postgres_previous_req = &previous_req;
+    let (current_messages, previous_messages) =
+        crate::rer_importer::analysis::with_analytics_read_fallback(
+            env,
+            "posts report interception scans",
+            analytics_supported,
+            |db| async move {
+                Ok((
+                    load_post_report_messages(
+                        &db,
+                        &login,
+                        env,
+                        analytics_current_req,
+                    )
+                    .await?,
+                    load_post_report_messages(
+                        &db,
+                        &login,
+                        env,
+                        analytics_previous_req,
+                    )
+                    .await?,
+                ))
+            },
+            |db| async move {
+                Ok((
+                    load_post_report_messages(
+                        &db,
+                        &login,
+                        env,
+                        postgres_current_req,
+                    )
+                    .await?,
+                    load_post_report_messages(
+                        &db,
+                        &login,
+                        env,
+                        postgres_previous_req,
+                    )
+                    .await?,
+                ))
+            },
+        )
+        .await
+        .c(h!())?;
 
     let strict_networks = env.config.feature_strict_networks.unwrap_or(false);
 

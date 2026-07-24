@@ -1104,7 +1104,7 @@ fn get_related_tag_items_filter(
     tag_filter_option: TagFilterOption,
     without_model_tags: bool,
     report_tags_only_this_unit: bool,
-    user_id: &uuid::Uuid,
+    access: TagFilterAccess<'_>,
 ) -> SimpleExpr {
     let expected_count = unique_tags.len();
 
@@ -1128,7 +1128,7 @@ fn get_related_tag_items_filter(
             sigint_inbox_item_tag::Column::Confidence
                 .gte(TAG_MINIMUM_CONFIDENCE),
         )
-        .filter(accessible_tag_owner_condition(user_id))
+        .filter(access.owner_condition())
         .select_only();
 
     if without_model_tags {
@@ -1136,26 +1136,7 @@ fn get_related_tag_items_filter(
     }
 
     if report_tags_only_this_unit {
-        let user_alias = Alias::new("u2");
-
-        let mut query = Query::select();
-        query
-            .column((login::Entity, login::Column::Id))
-            .from(login::Entity)
-            .join_as(
-                JoinType::InnerJoin,
-                login::Entity,
-                user_alias.clone(),
-                Expr::col((login::Entity, login::Column::OrganismId))
-                    .equals((user_alias.clone(), login::Column::OrganismId)),
-            )
-            .and_where(Expr::col((user_alias, login::Column::Id)).eq(*user_id));
-
-        info!(
-            "filtering tags for {user_id}: {}",
-            query.to_string(PostgresQueryBuilder)
-        );
-        q = q.filter(sigint_inbox_item_tag::Column::LoginId.in_subquery(query));
+        q = q.filter(access.unit_login_condition("u2", true));
     }
 
     match tag_filter_option {
@@ -1194,16 +1175,22 @@ pub(crate) fn accessible_tag_owner_condition(
         .add(tag::Column::OwnerOrganismId.in_subquery(organism_query))
 }
 
-fn tags_from_user_organism_exists(user_id: &uuid::Uuid) -> SimpleExpr {
-    tag_presence_exists(false, true, user_id)
+pub(crate) fn accessible_tag_ids_condition(
+    accessible_tag_ids: &[i64],
+) -> Condition {
+    if accessible_tag_ids.is_empty() {
+        Condition::all().add(Expr::cust("FALSE"))
+    } else {
+        Condition::all()
+            .add(tag::Column::Id.eq_any(accessible_tag_ids.to_vec()))
+    }
 }
 
 fn tag_presence_exists(
     without_model_tags: bool,
     report_tags_only_this_unit: bool,
-    user_id: &uuid::Uuid,
+    access: TagFilterAccess<'_>,
 ) -> SimpleExpr {
-    let user_alias = Alias::new("t_user");
     let mut q = sigint_inbox_item_tag::Entity::find()
         .select_only()
         .expr(Expr::value(1))
@@ -1224,21 +1211,7 @@ fn tag_presence_exists(
     }
 
     if report_tags_only_this_unit {
-        let allowed_logins = Query::select()
-            .column((login::Entity, login::Column::Id))
-            .from(login::Entity)
-            .join_as(
-                JoinType::InnerJoin,
-                login::Entity,
-                user_alias.clone(),
-                Expr::col((login::Entity, login::Column::OrganismId))
-                    .equals((user_alias.clone(), login::Column::OrganismId)),
-            )
-            .and_where(Expr::col((user_alias, login::Column::Id)).eq(*user_id))
-            .to_owned();
-        q = q.filter(
-            sigint_inbox_item_tag::Column::LoginId.in_subquery(allowed_logins),
-        );
+        q = q.filter(access.unit_login_condition("t_user", false));
     }
 
     Expr::exists(q.into_query())
@@ -1262,6 +1235,83 @@ pub fn filter_selected_tags<Q>(
 where
     Q: QueryFilter + QuerySelect + Clone,
 {
+    filter_selected_tags_with_access(
+        q,
+        selected_tags,
+        denied_tags,
+        tag_presence,
+        or_bookmarked,
+        or_important,
+        or_with_coords,
+        or_without_coords,
+        or_with_extended_form,
+        filter_tags_option,
+        without_model_tags,
+        report_tags_only_this_unit,
+        TagFilterAccess::Unresolved { user_id },
+    )
+}
+
+pub fn filter_selected_tags_analytics<Q>(
+    q: Q,
+    selected_tags: &Option<Vec<i64>>,
+    denied_tags: &Option<Vec<i64>>,
+    tag_presence: &Option<TagPresenceFilter>,
+    or_bookmarked: &Option<bool>,
+    or_important: &Option<bool>,
+    or_with_coords: &Option<bool>,
+    or_without_coords: &Option<bool>,
+    or_with_extended_form: &Option<bool>,
+    filter_tags_option: &Option<TagFilterOption>,
+    without_model_tags: &Option<bool>,
+    user_id: &uuid::Uuid,
+    report_tags_only_this_unit: bool,
+    accessible_tag_ids: &[i64],
+    unit_login_ids: &[uuid::Uuid],
+) -> Result<Q, AppError>
+where
+    Q: QueryFilter + QuerySelect + Clone,
+{
+    filter_selected_tags_with_access(
+        q,
+        selected_tags,
+        denied_tags,
+        tag_presence,
+        or_bookmarked,
+        or_important,
+        or_with_coords,
+        or_without_coords,
+        or_with_extended_form,
+        filter_tags_option,
+        without_model_tags,
+        report_tags_only_this_unit,
+        TagFilterAccess::Resolved {
+            user_id,
+            accessible_tag_ids,
+            unit_login_ids,
+        },
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn filter_selected_tags_with_access<Q>(
+    q: Q,
+    selected_tags: &Option<Vec<i64>>,
+    denied_tags: &Option<Vec<i64>>,
+    tag_presence: &Option<TagPresenceFilter>,
+    or_bookmarked: &Option<bool>,
+    or_important: &Option<bool>,
+    or_with_coords: &Option<bool>,
+    or_without_coords: &Option<bool>,
+    or_with_extended_form: &Option<bool>,
+    filter_tags_option: &Option<TagFilterOption>,
+    without_model_tags: &Option<bool>,
+    report_tags_only_this_unit: bool,
+    access: TagFilterAccess<'_>,
+) -> Result<Q, AppError>
+where
+    Q: QueryFilter + QuerySelect + Clone,
+{
     let mut q = q.clone();
     let mut m_inner_expr = None;
     let mut m_access_expr = None;
@@ -1271,7 +1321,7 @@ where
                 selected_tags.iter().cloned().collect();
             m_access_expr = Some(selected_tags_accessible_expr(
                 unique_tags.clone(),
-                user_id,
+                access,
             ));
             let tag_filter_option =
                 filter_tags_option.unwrap_or(TagFilterOption::OneOfTags);
@@ -1281,7 +1331,7 @@ where
                 tag_filter_option,
                 without_model_tags,
                 report_tags_only_this_unit,
-                user_id,
+                access,
             ));
         }
     }
@@ -1297,7 +1347,7 @@ where
                 .equals((signal_message::Entity, signal_message::Column::Id)),
             )
             .filter(sigint_bookmark::Column::Deleted.eq(false))
-            .filter(sigint_bookmark::Column::LoginId.eq(*user_id))
+            .filter(sigint_bookmark::Column::LoginId.eq(*access.user_id()))
             .into_query();
         let bookmark_exists_expr = Expr::exists(bookmark_exists);
 
@@ -1369,7 +1419,7 @@ where
                     TagFilterOption::OneOfTags,
                     without_model_tags,
                     report_tags_only_this_unit,
-                    user_id,
+                    access,
                 )
                 .not(),
             );
@@ -1380,7 +1430,7 @@ where
         let exists = tag_presence_exists(
             without_model_tags.unwrap_or(false),
             report_tags_only_this_unit,
-            user_id,
+            access,
         );
         q = match tag_presence {
             TagPresenceFilter::WithTags => q.filter(exists),
@@ -1392,7 +1442,7 @@ where
         && m_inner_expr.is_none()
         && tag_presence.is_none()
     {
-        q = q.filter(tags_from_user_organism_exists(user_id));
+        q = q.filter(tag_presence_exists(false, true, access));
     }
     // println!(
     //     "> filter_selected_tags q sql: {}",
@@ -1403,18 +1453,96 @@ where
 
 fn selected_tags_accessible_expr(
     unique_tags: BTreeSet<i64>,
-    user_id: &uuid::Uuid,
+    access: TagFilterAccess<'_>,
 ) -> SimpleExpr {
     let expected_count = unique_tags.len();
     let subquery = tag::Entity::find()
         .filter(tag::Column::Id.eq_any(unique_tags.into_iter().collect()))
-        .filter(accessible_tag_owner_condition(user_id))
+        .filter(access.owner_condition())
         .select_only()
         .expr(Expr::col((tag::Entity, tag::Column::Id)).count())
         .into_query()
         .into_sub_query_statement();
 
     SimpleExpr::SubQuery(None, Box::new(subquery)).eq(expected_count as u64)
+}
+
+#[derive(Clone, Copy)]
+enum TagFilterAccess<'a> {
+    Unresolved {
+        user_id: &'a uuid::Uuid,
+    },
+    Resolved {
+        user_id: &'a uuid::Uuid,
+        accessible_tag_ids: &'a [i64],
+        unit_login_ids: &'a [uuid::Uuid],
+    },
+}
+
+impl<'a> TagFilterAccess<'a> {
+    fn user_id(self) -> &'a uuid::Uuid {
+        match self {
+            Self::Unresolved { user_id } | Self::Resolved { user_id, .. } => {
+                user_id
+            }
+        }
+    }
+
+    fn owner_condition(self) -> Condition {
+        match self {
+            Self::Unresolved { user_id } => {
+                accessible_tag_owner_condition(user_id)
+            }
+            Self::Resolved {
+                accessible_tag_ids, ..
+            } => accessible_tag_ids_condition(accessible_tag_ids),
+        }
+    }
+
+    fn unit_login_condition(
+        self,
+        user_alias: &str,
+        log_query: bool,
+    ) -> SimpleExpr {
+        match self {
+            Self::Unresolved { user_id } => {
+                let user_alias = Alias::new(user_alias);
+                let allowed_logins = Query::select()
+                    .column((login::Entity, login::Column::Id))
+                    .from(login::Entity)
+                    .join_as(
+                        JoinType::InnerJoin,
+                        login::Entity,
+                        user_alias.clone(),
+                        Expr::col((login::Entity, login::Column::OrganismId))
+                            .equals((
+                                user_alias.clone(),
+                                login::Column::OrganismId,
+                            )),
+                    )
+                    .and_where(
+                        Expr::col((user_alias, login::Column::Id)).eq(*user_id),
+                    )
+                    .to_owned();
+                if log_query {
+                    info!(
+                        "filtering tags for {user_id}: {}",
+                        allowed_logins.to_string(PostgresQueryBuilder)
+                    );
+                }
+                sigint_inbox_item_tag::Column::LoginId
+                    .in_subquery(allowed_logins)
+            }
+            Self::Resolved { unit_login_ids, .. } => {
+                if unit_login_ids.is_empty() {
+                    Expr::cust("FALSE")
+                } else {
+                    sigint_inbox_item_tag::Column::LoginId
+                        .is_in(unit_login_ids.to_vec())
+                }
+            }
+        }
+    }
 }
 
 fn build_selected_aor_overlap_exists(
@@ -4157,10 +4285,38 @@ async fn group_stats(
         .context(h!())?
         .context(h!())?;
     let master_keys_noimport_count = master_keys_noimport.len();
-    let groups =
-        stats::fetch_groups(&req, &user, &env, master_keys_noimport.clone())
+    let analytics_master_keys = master_keys_noimport.clone();
+    let postgres_master_keys = master_keys_noimport.clone();
+    let analytics_req = &req;
+    let postgres_req = &req;
+    let analytics_user = &user;
+    let postgres_user = &user;
+    let postgres_env = &env;
+    let groups = with_analytics_read_fallback(
+        env.get_ref(),
+        "analysis stats groups",
+        analytics_count_request_supported(&req),
+        |db| async move {
+            stats::fetch_groups_raw_with_db(
+                analytics_req,
+                analytics_user,
+                &db,
+                analytics_master_keys,
+            )
             .await
-            .context(h!())?;
+        },
+        |_db| async move {
+            stats::fetch_groups(
+                postgres_req,
+                postgres_user,
+                postgres_env,
+                postgres_master_keys,
+            )
+            .await
+        },
+    )
+    .await
+    .context(h!())?;
     let groups = if should_include_missing_secret_groups(&req) {
         include_missing_secret_groups(&env.dbx, groups, &master_keys_noimport)
             .await
@@ -4243,9 +4399,39 @@ async fn sender_stats(
     let master_keys: Vec<String> = get_identity_sigint_groups(&env.dbx, &login)
         .await
         .context(h!())?;
-    let senders = stats::fetch_senders(&req, &user, &env, master_keys)
-        .await
-        .context(h!())?;
+    let analytics_master_keys = master_keys.clone();
+    let analytics_req = &req;
+    let postgres_req = &req;
+    let analytics_user = &user;
+    let postgres_user = &user;
+    let analytics_env = env.get_ref();
+    let postgres_env = &env;
+    let senders = with_analytics_read_fallback(
+        env.get_ref(),
+        "analysis stats senders",
+        analytics_count_request_supported(&req),
+        |db| async move {
+            stats::fetch_senders_raw_with_db(
+                analytics_req,
+                analytics_user,
+                analytics_env,
+                &db,
+                analytics_master_keys,
+            )
+            .await
+        },
+        |_db| async move {
+            stats::fetch_senders(
+                postgres_req,
+                postgres_user,
+                postgres_env,
+                master_keys,
+            )
+            .await
+        },
+    )
+    .await
+    .context(h!())?;
     let sender_names = collect_sender_names(&senders, &env.dbx)
         .await
         .context(h!())?;
@@ -4291,9 +4477,37 @@ async fn freq_stats(
         crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
             .await
             .context(h!())?;
-    let freqs = stats::fetch_freqs(&req, &user, &env, master_keys)
-        .await
-        .context(h!())?;
+    let analytics_master_keys = master_keys.clone();
+    let analytics_req = &req;
+    let postgres_req = &req;
+    let analytics_user = &user;
+    let postgres_user = &user;
+    let postgres_env = &env;
+    let freqs = with_analytics_read_fallback(
+        env.get_ref(),
+        "analysis stats freqs",
+        analytics_count_request_supported(&req),
+        |db| async move {
+            stats::fetch_freqs_raw_with_db(
+                analytics_req,
+                analytics_user,
+                &db,
+                analytics_master_keys,
+            )
+            .await
+        },
+        |_db| async move {
+            stats::fetch_freqs(
+                postgres_req,
+                postgres_user,
+                postgres_env,
+                master_keys,
+            )
+            .await
+        },
+    )
+    .await
+    .context(h!())?;
     Ok(Json(FreqStatsRsp { freqs }))
 }
 
@@ -4557,31 +4771,46 @@ async fn count_stats(
         master_keys_noimport,
     };
     let analytics_config = env.config.analytics.as_ref();
-    let analytics_attempt = env.analytics.as_ref().and_then(|analytics| {
-        analytics_retry_attempt(&analytics.retry_after_unix_ms)
-            .map(|retry_attempt| (analytics, retry_attempt))
-    });
-    let analytics_attempt = if analytics_count_request_supported(&req) {
-        analytics_attempt
+    let analytics = if analytics_count_request_supported(&req) {
+        env.analytics.as_ref()
     } else {
         debug!(
             "analysis stats count uses PostgreSQL for an unsupported analytics filter"
         );
         None
     };
+    let analytics_tag_access = if analytics.is_some() {
+        Some(
+            stats::resolve_analytics_tag_access(
+                &env.dbx,
+                &login,
+                req.report_tags_only_this_unit.unwrap_or(false),
+            )
+            .await?,
+        )
+    } else {
+        None
+    };
+    let analytics_attempt = analytics.and_then(|analytics| {
+        analytics_retry_attempt(&analytics.retry_after_unix_ms)
+            .map(|retry_attempt| (analytics, retry_attempt))
+    });
     let freshness_max_age_ms = analytics_config
         .map(AnalyticsConfig::freshness_max_age_ms)
         .unwrap_or(ANALYTICS_FRESHNESS_MAX_AGE_MS_DEFAULT);
-    let analytics_query = analytics_attempt.map(|(analytics, _)| {
-        query_count_stats_raw(
-            &req,
-            &user,
-            &env,
-            &analytics.conn,
-            access.clone(),
-            freshness_max_age_ms,
-        )
-    });
+    let analytics_query = analytics_attempt.zip(analytics_tag_access).map(
+        |((analytics, _), analytics_tag_access)| {
+            query_count_stats_raw(
+                &req,
+                &user,
+                &env,
+                &analytics.conn,
+                access.clone(),
+                analytics_tag_access,
+                freshness_max_age_ms,
+            )
+        },
+    );
     let timeout_ms = analytics_config
         .map(AnalyticsConfig::query_timeout_ms)
         .unwrap_or(ANALYTICS_QUERY_TIMEOUT_MS_DEFAULT);
@@ -4602,13 +4831,17 @@ async fn count_stats(
 }
 
 fn analytics_count_request_supported(req: &AnalysisStatsReq) -> bool {
-    req.selected_callsigns
+    req.search
         .as_ref()
-        .is_none_or(|callsigns| callsigns.is_empty())
-        && req
-            .search
-            .as_ref()
-            .is_none_or(|search| search.trim().is_empty())
+        .is_none_or(|search| search.trim().is_empty())
+}
+
+pub(crate) fn analytics_inbox_request_supported(
+    req: &InboxMessagesReq,
+) -> bool {
+    req.search
+        .as_ref()
+        .is_none_or(|search| search.trim().is_empty())
 }
 
 #[derive(Clone)]
@@ -4695,6 +4928,79 @@ where
     }
 
     postgres_query.await
+}
+
+pub(crate) async fn with_analytics_read_fallback<T, A, AFut, P, PFut>(
+    env: &Env,
+    operation: &str,
+    analytics_supported: bool,
+    analytics_query: A,
+    postgres_query: P,
+) -> Result<T, AppError>
+where
+    A: FnOnce(DatabaseConnection) -> AFut,
+    AFut: std::future::Future<Output = Result<T, AppError>>,
+    P: FnOnce(DatabaseConnection) -> PFut,
+    PFut: std::future::Future<Output = Result<T, AppError>>,
+{
+    let analytics_attempt = analytics_supported
+        .then_some(env.analytics.as_ref())
+        .flatten()
+        .and_then(|analytics| {
+            analytics_retry_attempt(&analytics.retry_after_unix_ms)
+                .map(|retry_attempt| (analytics, retry_attempt))
+        });
+
+    if let Some((analytics, retry_attempt)) = analytics_attempt {
+        let started = std::time::Instant::now();
+        let analytics_config = env.config.analytics.as_ref();
+        let timeout = core::time::Duration::from_millis(
+            analytics_config
+                .map(AnalyticsConfig::query_timeout_ms)
+                .unwrap_or(ANALYTICS_QUERY_TIMEOUT_MS_DEFAULT),
+        );
+        let freshness_max_age_ms = analytics_config
+            .map(AnalyticsConfig::freshness_max_age_ms)
+            .unwrap_or(ANALYTICS_FRESHNESS_MAX_AGE_MS_DEFAULT);
+        let analytics_conn = analytics.conn.clone();
+        let query = async move {
+            ensure_analytics_fresh(&analytics_conn, freshness_max_age_ms)
+                .await?;
+            analytics_query(analytics_conn).await
+        };
+
+        match tokio::time::timeout(timeout, query).await {
+            Ok(Ok(response)) => {
+                retry_attempt.record_success();
+                debug!("{operation} used analytics in {:?}", started.elapsed());
+                return Ok(response);
+            }
+            Ok(Err(err)) => warn!(
+                "{operation} analytics query failed after {:?}, retrying via PostgreSQL: {:?}",
+                started.elapsed(),
+                err
+            ),
+            Err(_) => warn!(
+                "{operation} analytics query timed out after {:?}, retrying via PostgreSQL",
+                started.elapsed()
+            ),
+        }
+        let retry_cooldown = core::time::Duration::from_millis(
+            analytics_config
+                .map(AnalyticsConfig::retry_cooldown_ms)
+                .unwrap_or(ANALYTICS_RETRY_COOLDOWN_MS_DEFAULT),
+        );
+        retry_attempt.record_failure(retry_cooldown);
+    } else if env.analytics.is_some() && !analytics_supported {
+        debug!(
+            "{operation} uses PostgreSQL for an unsupported analytics query"
+        );
+    }
+
+    let started = std::time::Instant::now();
+    let response = postgres_query(env.replica()).await?;
+    debug!("{operation} used PostgreSQL in {:?}", started.elapsed());
+    Ok(response)
 }
 
 fn analytics_retry_attempt(
@@ -4810,6 +5116,7 @@ async fn query_count_stats_raw(
     env: &actix_web::web::Data<Env>,
     db: &DatabaseConnection,
     access: CountStatsAccess,
+    analytics_tag_access: stats::AnalyticsTagAccess,
     freshness_max_age_ms: u64,
 ) -> Result<CountStatsRsp, AppError> {
     ensure_analytics_fresh(db, freshness_max_age_ms).await?;
@@ -4833,6 +5140,7 @@ async fn query_count_stats_raw(
         env,
         db,
         access.master_keys.clone(),
+        &analytics_tag_access,
     )
     .await?;
     let (count_overall, count_selected) =
@@ -5009,6 +5317,7 @@ async fn query_count_stats_catalog_dimensions(
     env: &Env,
     db: &DatabaseConnection,
     master_keys: Vec<String>,
+    analytics_tag_access: &stats::AnalyticsTagAccess,
 ) -> Result<CountStatsCatalogDimensions, AppError> {
     let units = stats::count_units_with_db(req, user, db, master_keys.clone())
         .await
@@ -5027,16 +5336,28 @@ async fn query_count_stats_catalog_dimensions(
         stats::count_locations_with_db(req, user, db, master_keys.clone())
             .await
             .context(h!())?;
-    let tags = stats::count_tags_with_db(req, user, db, master_keys.clone())
-        .await
-        .context(h!())?;
+    let tags = stats::count_tags_analytics_with_db(
+        req,
+        user,
+        db,
+        master_keys.clone(),
+        analytics_tag_access,
+    )
+    .await
+    .context(h!())?;
     let aors =
         stats::count_aors_raw_with_db(req, user, db, master_keys.clone())
             .await
             .context(h!())?;
-    let networks = stats::count_networks_with_db(req, user, db, master_keys)
-        .await
-        .context(h!())?;
+    let networks = stats::count_networks_analytics_with_db(
+        req,
+        user,
+        db,
+        master_keys,
+        analytics_tag_access,
+    )
+    .await
+    .context(h!())?;
 
     Ok(CountStatsCatalogDimensions {
         units,

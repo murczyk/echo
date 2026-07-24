@@ -53,14 +53,23 @@ All pins and downloadable checksums live in [versions.env](versions.env):
 - ClickHouse `26.3.12.3` LTS from its signed apt repository.
 - PeerDB `v0.37.1` at its release commit.
 - `pg_clickhouse` `v0.3.2`, built specifically for PostgreSQL 18 from the
-  temporary `agent/v0.3.2-echo-backports` fork branch. The pinned commit
-  includes the foreign-scan RTE fix from upstream PR #319 and the concurrent
-  binary-scan fix from upstream PR #296. The first prevents
+  temporary `agent/v0.3.2-analytics-backports` fork branch. The pinned commit
+  includes the foreign-scan RTE fix from upstream PR #319, the concurrent
+  binary-scan fix from upstream PR #296, local compatible `DISTINCT` pushdown,
+  `UNION` plus grouped-set-operation pushdown from upstream PR #324, and
+  upstream SubPlan pushdown for compatible correlated and uncorrelated
+  subqueries. It also backports JSONB top-level existence (`?`) pushdown from
+  upstream PR #325 for native ClickHouse JSON and String-backed compatibility
+  views. The first prevents
   `cache lookup failed for foreign table 0` in affected pushed-down joins and
   uses PostgreSQL's executor-populated user and foreign-server metadata.
   The second gives simultaneously active scans separate native connections,
-  preventing crossed result blocks and rescan memory corruption. Return the
-  source URL and commit pin to upstream after both fixes are released.
+  preventing crossed result blocks and rescan memory corruption. The set
+  operation support keeps compatible unions and their final aggregation inside
+  ClickHouse instead of transferring each arm to PostgreSQL. SubPlan support
+  keeps compatible tag-filter `EXISTS`, `NOT EXISTS`, and scalar subqueries in
+  the same remote query. Return the source URL and commit pin to upstream after
+  these changes are released.
 - Temporal Server `1.31.2` with PostgreSQL persistence and Temporal CLI
   `1.8.0`.
 - MinIO security release `RELEASE.2025-10-15T17-29-55Z`, built from its
@@ -429,8 +438,8 @@ that file it does nothing. Operators can also run
 Copy [app-analytics.toml.example](env/app-analytics.toml.example) into the
 source Echo config, using `GATEWAY_PASSWORD`. Restart Echo only after an
 operator compares PostgreSQL and gateway counts. The application initializes
-analytics best-effort and retries the complete count query through PostgreSQL
-when analytics fails. Every 15–60 seconds, a native timer writes a fresh UUID
+analytics best-effort and retries each complete analytical operation through
+PostgreSQL when analytics fails. Every 15–60 seconds, a native timer writes a fresh UUID
 nonce to the migrated source table `echo_analytics.heartbeat`, waits for the
 mirror slot, and queries `public.echo_analytics__heartbeat` through PostgreSQL
 18 and `pg_clickhouse`. It records success only when that exact nonce is visible
@@ -440,12 +449,27 @@ WAL acknowledgement check. Echo requires that record to be healthy and newer tha
 queryable ClickHouse also falls back. Failed attempts open a short per-process
 cooldown instead of making every request wait for the unavailable gateway.
 Keep `ANALYTICS_HEALTH_STALE_AFTER_SECONDS` and `freshness_max_age_ms` aligned;
-the supplied values are 90 seconds. Initially only
-`/api/rer/analysis/stats/count` uses this path; existing five-minute aggregate
-generation remains intact. Its dimension totals use scalar
+the supplied values are 90 seconds.
+
+The count, group, sender, and frequency analysis endpoints use this path:
+
+- `/api/rer/analysis/stats/count`
+- `/api/rer/analysis/stats/groups`
+- `/api/rer/analysis/stats/senders`
+- `/api/rer/analysis/stats/freqs`
+
+The expensive replicated-data reads for the interception, sender, posts, REO,
+digest, RER, Sposob, 1.2.5, and 1.2.13 reports also prefer analytics. Small
+catalog lookups, report rendering, mutable cache operations, PostGIS reports,
+and reports requiring a repeatable PostgreSQL snapshot remain on PostgreSQL.
+An analytical report read is retried from the beginning on PostgreSQL, so a
+failed attempt cannot mix partial analytical and PostgreSQL result sets.
+
+Existing five-minute aggregate generation remains intact. Count dimension totals use scalar
 `COUNT(DISTINCT ...)` queries so the gateway receives aggregates rather than
-message-ID sets. Filter shapes without a verified ClickHouse pushdown, such as
-free-text search and selected callsigns, use PostgreSQL directly.
+message-ID sets. Selected-callsign filters use pushed-down JSONB top-level
+existence predicates. Filter shapes without a verified ClickHouse pushdown,
+such as free-text search, use PostgreSQL directly.
 
 ## WAL retention and recovery
 
@@ -644,7 +668,7 @@ is unhealthy or older than the configured threshold.
 ## Consistency and type limits
 
 The target is eventually consistent; 5–60 seconds of lag is acceptable for
-the initial counter. `FINAL` produces current rows but is more expensive than
+analytical counters, facets, and reports. `FINAL` produces current rows but is more expensive than
 querying raw MergeTree parts. Validate pushdown with PostgreSQL `EXPLAIN
 (VERBOSE)` before routing each report. PostgreSQL-side JSON and `tsvector`
 conversion prevents those expressions from being pushed into ClickHouse, so

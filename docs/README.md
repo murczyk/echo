@@ -366,3 +366,11 @@ stored as separate Bitwarden Secure Notes and rendered to root-owned
 environment files by deployment commands. Each participating Echo instance
 receives its own analytics container, credentials, publication, replication
 slot, ClickHouse data, and recovery lifecycle.
+
+When configured and fresh, ClickHouse serves the expensive analysis count,
+group, sender, and frequency facets plus the replicated-data scans used by the
+interception, sender, posts, REO, digest, RER, Sposob, 1.2.5, and 1.2.13
+reports. PostgreSQL remains responsible for transactions, authoritative
+catalog and comment lookups, mutable caches, PostGIS processing, and
+repeatable-read report snapshots. Each analytical operation falls back as a
+whole, preventing mixed partial results.

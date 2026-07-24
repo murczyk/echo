@@ -240,9 +240,37 @@ pub async fn report_docx_kind_report_1213(
         crate::users::get_organism_login_ids_by_id(&read_db, &login)
             .await
             .c(h!())?;
+    let analytics_login_ids = &login_ids;
+    let postgres_login_ids = &login_ids;
     let report_data =
-        collect_report_1213_data(&read_db, &login, &login_ids, env, req)
-            .await?;
+        crate::rer_importer::analysis::with_analytics_read_fallback(
+            env,
+            "report 1.2.13 data collection",
+            crate::rer_importer::analysis::analytics_inbox_request_supported(
+                &req.req,
+            ),
+            |db| async move {
+                collect_report_1213_data(
+                    &db,
+                    &login,
+                    analytics_login_ids,
+                    env,
+                    req,
+                )
+                .await
+            },
+            |db| async move {
+                collect_report_1213_data(
+                    &db,
+                    &login,
+                    postgres_login_ids,
+                    env,
+                    req,
+                )
+                .await
+            },
+        )
+        .await?;
 
     build_report_1213_docx_to_path(&report_data, outpath).context(h!())?;
     Ok(())

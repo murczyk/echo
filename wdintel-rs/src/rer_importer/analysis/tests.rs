@@ -4,7 +4,9 @@ use crate::h;
 use crate::rer_importer::analysis::*;
 use crate::rer_importer::*;
 use actix_web::web::{Data, Json};
-use sea_orm::{ActiveModelTrait, ActiveValue::Set, EntityTrait};
+use sea_orm::{
+    ActiveModelTrait, ActiveValue::Set, EntityTrait, FromQueryResult,
+};
 use serial_test::serial;
 
 struct GroupFixture {
@@ -889,6 +891,107 @@ async fn fetch_aor_counts_for_req(
         .await
         .context(h!())?;
     Ok(aor_counts(aors))
+}
+
+async fn fetch_analytics_aor_counts_for_req(
+    env: &Arc<Env>,
+    req: &AnalysisStatsReq,
+) -> Result<BTreeMap<i64, i64>, AppError> {
+    #[derive(FromQueryResult)]
+    struct AorQueryResult {
+        aor_id: i64,
+        count: i64,
+    }
+
+    let (login, master_keys) = analysis_login_and_master_keys(env).await?;
+    let statement = stats::build_aors_analytics_query(
+        req,
+        &login,
+        crate::utils::dt_from_millis(req.since_date_inclusive_ms)?,
+        crate::utils::dt_from_millis(req.till_date_noninclusive_ms)?,
+        master_keys,
+    )?;
+    let aors = AorQueryResult::find_by_statement(statement)
+        .all(&env.dbx)
+        .await
+        .context(h!())?;
+    Ok(aors
+        .into_iter()
+        .map(|aor| (aor.aor_id, aor.count))
+        .collect())
+}
+
+#[derive(FromQueryResult)]
+struct AnalyticsCountQueryResult {
+    count: i64,
+}
+
+async fn fetch_analytics_network_count_for_req(
+    env: &Arc<Env>,
+    req: &AnalysisStatsReq,
+) -> Result<i64, AppError> {
+    let (login, master_keys) = analysis_login_and_master_keys(env).await?;
+    let tag_access = stats::resolve_analytics_tag_access(
+        &env.dbx,
+        &login,
+        req.report_tags_only_this_unit.unwrap_or(false),
+    )
+    .await?;
+    let statement = stats::build_networks_analytics_count_query(
+        req,
+        &login,
+        &tag_access.accessible_tag_ids,
+        &tag_access.unit_login_ids,
+        crate::utils::dt_from_millis(req.since_date_inclusive_ms)?,
+        crate::utils::dt_from_millis(req.till_date_noninclusive_ms)?,
+        master_keys,
+    )?;
+    assert!(statement.sql.contains("UNION ALL"));
+    assert!(statement.sql.contains("COUNT(DISTINCT network_id)"));
+    assert!(!statement.sql.contains("SELECT DISTINCT"));
+    assert!(!statement.sql.contains("WITH "));
+    assert!(!statement.sql.contains("FROM \"login\""));
+    assert!(!statement.sql.contains("JOIN \"login\""));
+    Ok(AnalyticsCountQueryResult::find_by_statement(statement)
+        .one(&env.dbx)
+        .await
+        .context(h!())?
+        .map(|result| result.count)
+        .unwrap_or(0))
+}
+
+async fn fetch_analytics_tag_count_for_req(
+    env: &Arc<Env>,
+    req: &AnalysisStatsReq,
+) -> Result<i64, AppError> {
+    let (login_id, master_keys) = analysis_login_and_master_keys(env).await?;
+    let tag_access = stats::resolve_analytics_tag_access(
+        &env.dbx,
+        &login_id,
+        req.report_tags_only_this_unit.unwrap_or(false),
+    )
+    .await?;
+    let query = stats::build_tags_analytics_count_query(
+        req,
+        &login_id,
+        &tag_access.accessible_tag_ids,
+        &tag_access.unit_login_ids,
+        crate::utils::dt_from_millis(req.since_date_inclusive_ms)?,
+        crate::utils::dt_from_millis(req.till_date_noninclusive_ms)?,
+        master_keys,
+    )?;
+    let statement = query.build(DbBackend::Postgres);
+    assert!(statement.sql.contains("COUNT(DISTINCT"));
+    assert!(!statement.sql.contains("owner_organism_id"));
+    assert!(!statement.sql.contains("FROM \"login\""));
+    assert!(!statement.sql.contains("JOIN \"login\""));
+    Ok(query
+        .into_model::<AnalyticsCountQueryResult>()
+        .one(&env.dbx)
+        .await
+        .context(h!())?
+        .map(|result| result.count)
+        .unwrap_or(0))
 }
 
 async fn fetch_network_counts_for_req(
@@ -4857,6 +4960,366 @@ async fn rer_analysis_aor_and_network_stats_render_only_relevant_values() {
 
 #[tokio::test]
 #[serial]
+async fn rer_analysis_analytics_aor_query_matches_postgres_query() {
+    let fixture = mk_rer_analysis_fixture().await.unwrap();
+
+    let mut req = analysis_stats_req0(&fixture);
+    req.selected_freqs = Some(vec!["555.5".to_string()]);
+    req.selected_groups =
+        Some(vec![fixture.alpha.signal_group.master_key.clone()]);
+    req.selected_senders = Some(vec!["msg-multi-group-sender".to_string()]);
+    let expected =
+        BTreeMap::from([(fixture.north_aor.id, 1), (fixture.south_aor.id, 1)]);
+    assert_eq!(
+        fetch_aor_counts_for_req(&fixture.env, &req).await.unwrap(),
+        expected
+    );
+    assert_eq!(
+        fetch_analytics_aor_counts_for_req(&fixture.env, &req)
+            .await
+            .unwrap(),
+        expected
+    );
+
+    let mut req = analysis_stats_req0(&fixture);
+    req.selected_freqs = Some(vec!["444.4".to_string()]);
+    let expected = BTreeMap::from([(fixture.south_aor.id, 1)]);
+    assert_eq!(
+        fetch_aor_counts_for_req(&fixture.env, &req).await.unwrap(),
+        expected
+    );
+    assert_eq!(
+        fetch_analytics_aor_counts_for_req(&fixture.env, &req)
+            .await
+            .unwrap(),
+        expected
+    );
+}
+
+#[tokio::test]
+#[serial]
+async fn rer_analysis_analytics_network_count_matches_postgres_query() {
+    let fixture = mk_rer_analysis_fixture().await.unwrap();
+    let db = &fixture.env.dbx;
+
+    let req = analysis_stats_req0(&fixture);
+    let expected = fetch_network_counts_for_req(&fixture.env, &req)
+        .await
+        .unwrap()
+        .len() as i64;
+    assert_eq!(
+        fetch_analytics_network_count_for_req(&fixture.env, &req)
+            .await
+            .unwrap(),
+        expected
+    );
+
+    let login = find_test_login(db).await.unwrap();
+    let public_tag = mk_tag(
+        db,
+        tag::ActiveModel {
+            label: Set("Analytics network filter tag".to_string()),
+            enabled: Set(true),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let message = signal_message::Entity::find()
+        .filter(signal_message::Column::MessageUid.eq("msg-wide-network"))
+        .one(db)
+        .await
+        .unwrap()
+        .unwrap();
+    mk_sigint_inbox_item_tag(
+        db,
+        sigint_inbox_item_tag::ActiveModel {
+            sigint_inbox_item_id: Set(message.id),
+            tag_id: Set(public_tag.id),
+            login_id: Set(Some(login.id)),
+            model: Set(None),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+
+    let mut req = analysis_stats_req0(&fixture);
+    req.selected_tags = Some(vec![public_tag.id]);
+    req.report_tags_only_this_unit = Some(true);
+    let expected = fetch_network_counts_for_req(&fixture.env, &req)
+        .await
+        .unwrap()
+        .len() as i64;
+    assert_eq!(expected, 1);
+    assert_eq!(
+        fetch_analytics_network_count_for_req(&fixture.env, &req)
+            .await
+            .unwrap(),
+        expected
+    );
+
+    let mut req = analysis_stats_req0(&fixture);
+    req.selected_aors = Some(vec![fixture.south_aor.id]);
+    let expected = fetch_network_counts_for_req(&fixture.env, &req)
+        .await
+        .unwrap()
+        .len() as i64;
+    assert_eq!(
+        fetch_analytics_network_count_for_req(&fixture.env, &req)
+            .await
+            .unwrap(),
+        expected
+    );
+}
+
+#[tokio::test]
+#[serial]
+async fn rer_analysis_analytics_tag_count_matches_postgres_query() {
+    let fixture = mk_rer_analysis_fixture().await.unwrap();
+    let db = &fixture.env.dbx;
+    let login = find_test_login(db).await.unwrap();
+    let owner_organism_id = login.organism_id.unwrap();
+    let other_organism = mk_organism(
+        db,
+        organism::ActiveModel {
+            name: Set("Other tag owner".to_string()),
+            enabled: Set(true),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let public_tag = mk_tag(
+        db,
+        tag::ActiveModel {
+            label: Set("Analytics public tag".to_string()),
+            enabled: Set(true),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let owner_tag = mk_tag(
+        db,
+        tag::ActiveModel {
+            label: Set("Analytics owner tag".to_string()),
+            enabled: Set(true),
+            owner_organism_id: Set(Some(owner_organism_id)),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let inaccessible_tag = mk_tag(
+        db,
+        tag::ActiveModel {
+            label: Set("Analytics inaccessible tag".to_string()),
+            enabled: Set(true),
+            owner_organism_id: Set(Some(other_organism.id)),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let message = mk_analysis_message(
+        db,
+        "msg-analytics-tags",
+        "919.1",
+        test_dt(2026, 3, 1, 10, 8),
+        &[&fixture.alpha],
+        &[],
+        false,
+    )
+    .await
+    .unwrap();
+    for tag_id in [public_tag.id, owner_tag.id, inaccessible_tag.id] {
+        mk_sigint_inbox_item_tag(
+            db,
+            sigint_inbox_item_tag::ActiveModel {
+                sigint_inbox_item_id: Set(message.id),
+                tag_id: Set(tag_id),
+                login_id: Set(Some(login.id)),
+                model: Set(None),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+    }
+
+    let req = analysis_stats_req0(&fixture);
+    let expected = fetch_tag_counts_for_req(&fixture.env, &req)
+        .await
+        .unwrap()
+        .len() as i64;
+    assert_eq!(expected, 2);
+    assert_eq!(
+        fetch_analytics_tag_count_for_req(&fixture.env, &req)
+            .await
+            .unwrap(),
+        expected
+    );
+
+    let mut req = analysis_stats_req0(&fixture);
+    req.selected_tags = Some(vec![public_tag.id, owner_tag.id]);
+    req.tag_presence = Some(TagPresenceFilter::WithTags);
+    req.report_tags_only_this_unit = Some(true);
+    let expected = fetch_tag_counts_for_req(&fixture.env, &req)
+        .await
+        .unwrap()
+        .len() as i64;
+    assert_eq!(expected, 2);
+    assert_eq!(
+        fetch_analytics_tag_count_for_req(&fixture.env, &req)
+            .await
+            .unwrap(),
+        expected
+    );
+}
+
+#[tokio::test]
+#[serial]
+async fn rer_analysis_analytics_tag_access_matches_source_authorization() {
+    let fixture = mk_rer_analysis_fixture().await.unwrap();
+    let db = &fixture.env.dbx;
+    let login = find_test_login(db).await.unwrap();
+    let organism_id = login.organism_id.unwrap();
+    let other_organism = mk_organism(
+        db,
+        organism::ActiveModel {
+            name: Set("Other analytics tag access organism".to_string()),
+            enabled: Set(true),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let same_organism_login = mk_login(
+        db,
+        login::ActiveModel {
+            login: Set("AnalyticsSameOrganism".to_string()),
+            organism_id: Set(Some(organism_id)),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let other_organism_login = mk_login(
+        db,
+        login::ActiveModel {
+            login: Set("AnalyticsOtherOrganism".to_string()),
+            organism_id: Set(Some(other_organism.id)),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let no_organism_login = mk_login(
+        db,
+        login::ActiveModel {
+            login: Set("AnalyticsNoOrganism".to_string()),
+            organism_id: Set(None),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let deleted_login = mk_login(
+        db,
+        login::ActiveModel {
+            login: Set("AnalyticsDeletedLogin".to_string()),
+            organism_id: Set(Some(organism_id)),
+            deleted_permanently: Set(true),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let public_tag = mk_tag(
+        db,
+        tag::ActiveModel {
+            label: Set("Analytics access public tag".to_string()),
+            enabled: Set(true),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let owner_tag = mk_tag(
+        db,
+        tag::ActiveModel {
+            label: Set("Analytics access owner tag".to_string()),
+            enabled: Set(true),
+            owner_organism_id: Set(Some(organism_id)),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let other_tag = mk_tag(
+        db,
+        tag::ActiveModel {
+            label: Set("Analytics access other tag".to_string()),
+            enabled: Set(true),
+            owner_organism_id: Set(Some(other_organism.id)),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+
+    let access = stats::resolve_analytics_tag_access(db, &login.id, true)
+        .await
+        .unwrap();
+    assert!(access.accessible_tag_ids.contains(&public_tag.id));
+    assert!(access.accessible_tag_ids.contains(&owner_tag.id));
+    assert!(!access.accessible_tag_ids.contains(&other_tag.id));
+    assert!(access.unit_login_ids.contains(&login.id));
+    assert!(access.unit_login_ids.contains(&same_organism_login.id));
+    assert!(access.unit_login_ids.contains(&deleted_login.id));
+    assert!(!access.unit_login_ids.contains(&other_organism_login.id));
+    assert!(!access.unit_login_ids.contains(&no_organism_login.id));
+
+    let access =
+        stats::resolve_analytics_tag_access(db, &other_organism_login.id, true)
+            .await
+            .unwrap();
+    assert!(access.accessible_tag_ids.contains(&public_tag.id));
+    assert!(!access.accessible_tag_ids.contains(&owner_tag.id));
+    assert!(access.accessible_tag_ids.contains(&other_tag.id));
+    assert!(access.unit_login_ids.contains(&other_organism_login.id));
+    assert!(!access.unit_login_ids.contains(&login.id));
+
+    let access =
+        stats::resolve_analytics_tag_access(db, &no_organism_login.id, true)
+            .await
+            .unwrap();
+    assert!(access.accessible_tag_ids.contains(&public_tag.id));
+    assert!(!access.accessible_tag_ids.contains(&owner_tag.id));
+    assert!(!access.accessible_tag_ids.contains(&other_tag.id));
+    assert!(access.unit_login_ids.is_empty());
+
+    let access =
+        stats::resolve_analytics_tag_access(db, &deleted_login.id, true)
+            .await
+            .unwrap();
+    assert!(access.accessible_tag_ids.contains(&public_tag.id));
+    assert!(!access.accessible_tag_ids.contains(&owner_tag.id));
+    assert!(!access.accessible_tag_ids.contains(&other_tag.id));
+    assert!(access.unit_login_ids.contains(&login.id));
+
+    let mut owner_tag = owner_tag.into_active_model();
+    owner_tag.owner_organism_id = Set(Some(other_organism.id));
+    let owner_tag = owner_tag.update(db).await.unwrap();
+    let access = stats::resolve_analytics_tag_access(db, &login.id, false)
+        .await
+        .unwrap();
+    assert!(!access.accessible_tag_ids.contains(&owner_tag.id));
+}
+
+#[tokio::test]
+#[serial]
 async fn rer_duty_short_state_dedup_reuses_id_and_refreshes_ttl() {
     let env = cleanup().await.unwrap();
     let state = short_state(Some(vec!["group-1".to_string()]));
@@ -5138,16 +5601,90 @@ async fn count_stats_without_analytics_uses_postgres() {
 }
 
 #[test]
-fn count_stats_analytics_rejects_filters_without_safe_pushdown() {
+fn count_stats_analytics_supports_tag_filters() {
     let mut req = mk_analysis_stats_req(0, 1);
     assert!(analytics_count_request_supported(&req));
+
+    req.selected_tags = Some(vec![1]);
+    assert!(analytics_count_request_supported(&req));
+
+    req.selected_tags = None;
+    req.denied_tags = Some(vec![1]);
+    assert!(analytics_count_request_supported(&req));
+
+    req.denied_tags = None;
+    req.tag_presence = Some(TagPresenceFilter::WithTags);
+    assert!(analytics_count_request_supported(&req));
+
+    req.tag_presence = None;
+    req.or_bookmarked = Some(true);
+    assert!(analytics_count_request_supported(&req));
+
+    req.or_bookmarked = None;
+    req.or_important = Some(true);
+    assert!(analytics_count_request_supported(&req));
+
+    req.or_important = None;
+    req.or_with_coords = Some(true);
+    assert!(analytics_count_request_supported(&req));
+
+    req.or_with_coords = None;
+    req.or_without_coords = Some(true);
+    assert!(analytics_count_request_supported(&req));
+
+    req.or_without_coords = None;
+    req.or_with_extended_form = Some(true);
+    assert!(analytics_count_request_supported(&req));
+
+    req.or_with_extended_form = None;
+    req.report_tags_only_this_unit = Some(true);
+    assert!(analytics_count_request_supported(&req));
+}
+
+#[test]
+fn count_stats_analytics_supports_callsign_filters_but_rejects_search() {
+    let mut req = mk_analysis_stats_req(0, 1);
 
     req.search = Some("callsign".to_string());
     assert!(!analytics_count_request_supported(&req));
 
     req.search = None;
     req.selected_callsigns = Some(vec!["ALPHA".to_string()]);
-    assert!(!analytics_count_request_supported(&req));
+    assert!(analytics_count_request_supported(&req));
+}
+
+#[test]
+fn analytical_inbox_reads_support_callsign_filters_but_reject_search() {
+    let mut req = InboxMessagesReq::default();
+    assert!(analytics_inbox_request_supported(&req));
+
+    req.search = Some("callsign".to_string());
+    assert!(!analytics_inbox_request_supported(&req));
+
+    req.search = None;
+    req.selected_callsigns = Some(vec!["ALPHA".to_string()]);
+    assert!(analytics_inbox_request_supported(&req));
+}
+
+#[tokio::test]
+#[serial]
+async fn analytics_read_without_pool_uses_postgres_path() {
+    let fixture = mk_rer_analysis_fixture().await.unwrap();
+    assert!(fixture.env.analytics.is_none());
+
+    let result = with_analytics_read_fallback(
+        &fixture.env,
+        "analytics fallback test",
+        true,
+        |_db| async {
+            panic!("analytics must not run without a configured pool")
+        },
+        |_db| async { Ok::<_, AppError>("postgres") },
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(result, "postgres");
 }
 
 #[tokio::test]
