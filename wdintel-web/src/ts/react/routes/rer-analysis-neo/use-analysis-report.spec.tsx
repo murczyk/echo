@@ -95,6 +95,46 @@ afterEach(() => {
 });
 
 describe('useAnalysisReport', () => {
+  it('maps the mouse report limit code to frontend-owned text', async () => {
+    renderHook();
+
+    analysisApiMock.launchAnalysisReportTask.mockResolvedValueOnce(123);
+    reportHistoryApiMock.fetchReportHistoryStatus.mockResolvedValueOnce({
+      id: 123,
+      reportKind: 'mouse',
+      requestedBy: 'tester',
+      createdAt: '2026-06-01 10:00:00',
+      startedAt: '2026-06-01 10:00:05',
+      plannedForTs: null,
+      queuePosition: null,
+      blockedByReportId: null,
+      blockedByStartedAt: null,
+      blockedByBgtaskId: null,
+      status: 'failed',
+      completedAt: '2026-06-01 10:02:00',
+      hasFile: false,
+      fileName: null,
+      contentType: null,
+      bgtaskId: 77,
+      lastError: 'BL { msg: "mouse_report_message_limit" }',
+      isCancelled: false,
+      details: '',
+      progress: 0,
+      errorLog: null,
+    });
+    reportHistoryApiMock.isCancelledReportHistory.mockReturnValue(false);
+
+    await act(async () => {
+      await latest?.downloadReport();
+      await Promise.resolve();
+    });
+
+    const message = 'Звіт містить понад 10 000 повідомлень. Зменшіть період або звузьте фільтри.';
+    expect(onError).toHaveBeenCalledWith(message);
+    expect(latest?.reportTaskRuns[0]?.error).toBe(message);
+    expect(onError).not.toHaveBeenCalledWith(expect.stringContaining('BL {'));
+  });
+
   it('marks a failed report as cancelled without surfacing an error', async () => {
     renderHook();
 

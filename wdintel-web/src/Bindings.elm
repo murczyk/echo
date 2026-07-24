@@ -836,12 +836,15 @@ uploadPdfResEncoder struct =
 
 
 type BgtaskErrorCode
-    = NoDefaultAor
+    = MouseReportMessageLimit
+    | NoDefaultAor
 
 
 bgtaskErrorCodeEncoder : BgtaskErrorCode -> Json.Encode.Value
 bgtaskErrorCodeEncoder enum =
     case enum of
+        MouseReportMessageLimit ->
+            Json.Encode.string "mouse_report_message_limit"
         NoDefaultAor ->
             Json.Encode.string "no_default_aor"
 
@@ -9909,6 +9912,15 @@ bgtaskErrorCodeDecoder : Json.Decode.Decoder BgtaskErrorCode
 bgtaskErrorCodeDecoder = 
     Json.Decode.oneOf
         [ Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "mouse_report_message_limit" ->
+                            Json.Decode.succeed MouseReportMessageLimit
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
             |> Json.Decode.andThen
                 (\x ->
                     case x of

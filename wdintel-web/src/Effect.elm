@@ -813,7 +813,7 @@ type alias ReportHistoryStatus =
 
 reportHistoryError : ReportHistoryStatus -> ApiError
 reportHistoryError row =
-    { httpError = Http.BadBody (Maybe.withDefault "Report generation failed" row.lastError)
+    { httpError = Http.BadStatus 500
     , formErrors = Dict.empty
     , errors = Maybe.withDefault [] (Maybe.map List.singleton row.lastError)
     }

@@ -1167,9 +1167,7 @@ fn ensure_mouse_report_message_limit(
         "mouse report message limit exceeded: user={user_login}, messages={message_count}, max_messages={RER_MOUSE_REPORT_MESSAGE_MAX}",
     );
     Err(AppError::BL {
-        msg: format!(
-            "Звіт містить понад {RER_MOUSE_REPORT_MESSAGE_MAX} повідомлень. Зменшіть період або звузьте фільтри."
-        ),
+        msg: RER_MOUSE_REPORT_MESSAGE_LIMIT_ERROR_CODE.to_string(),
     })
 }
 
@@ -1430,10 +1428,15 @@ mod tests {
 
     #[test]
     fn mouse_report_message_limit_rejects_overflow() {
-        assert!(ensure_mouse_report_message_limit(
+        let err = ensure_mouse_report_message_limit(
             &uuid::Uuid::nil(),
             RER_MOUSE_REPORT_MESSAGE_MAX + 1,
         )
-        .is_err());
+        .unwrap_err();
+        assert!(matches!(
+            err,
+            AppError::BL { msg }
+                if msg == RER_MOUSE_REPORT_MESSAGE_LIMIT_ERROR_CODE
+        ));
     }
 }
