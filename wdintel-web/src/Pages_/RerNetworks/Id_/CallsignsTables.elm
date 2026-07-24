@@ -1679,6 +1679,16 @@ networkCallsignsTableConfig shared model _ =
                 }
                 |> Table.withColumnWidth "14%"
             , Table.veryCustomColumn
+                { name = "ПІП"
+                , viewData =
+                    \row ->
+                        { attributes = []
+                        , children = [ text (Maybe.withDefault "-" row.fullName) ]
+                        }
+                , sorter = TableSorter.unsortable
+                }
+                |> Table.withColumnWidth "14%"
+            , Table.veryCustomColumn
                 { name = "Підрозділ"
                 , viewData =
                     \row ->
@@ -2063,6 +2073,32 @@ callsignCreateSidebarContent shared model _ =
                         []
                     ]
                 , div []
+                    [ label [ class "block text-sm font-medium mb-1" ] [ text "ПІП" ]
+                    , input
+                        [ type_ "text"
+                        , class "w-full p-2 border border-border rounded"
+                        , placeholder "Введіть ПІП (необов'язково)"
+                        , value (Maybe.andThen .fullName model.callsignCreateState |> Maybe.withDefault "")
+                        , onInput <|
+                            UpdateCallsignCreateField
+                                << (\v maybeState ->
+                                        Maybe.map
+                                            (\s ->
+                                                { s
+                                                    | fullName =
+                                                        if String.trim v == "" then
+                                                            Nothing
+
+                                                        else
+                                                            Just v
+                                                }
+                                            )
+                                            maybeState
+                                   )
+                        ]
+                        []
+                    ]
+                , div []
                     [ label [ class "block text-sm font-medium mb-1" ] [ text "Коментар" ]
                     , textarea
                         [ class "w-full p-2 border border-border rounded resize-none"
@@ -2361,6 +2397,32 @@ editCallsignSidebarContent shared model _ =
                                             (\s ->
                                                 { s
                                                     | position =
+                                                        if String.trim v == "" then
+                                                            Nothing
+
+                                                        else
+                                                            Just v
+                                                }
+                                            )
+                                            maybeState
+                                   )
+                        ]
+                        []
+                    ]
+                , div []
+                    [ label [ class "block text-sm font-medium mb-1" ] [ text "ПІП" ]
+                    , input
+                        [ type_ "text"
+                        , class "w-full p-2 border border-border rounded"
+                        , placeholder "Введіть ПІП (необов'язково)"
+                        , value (Maybe.andThen .fullName model.editCallsignState |> Maybe.withDefault "")
+                        , onInput <|
+                            UpdateEditCallsignField
+                                << (\v maybeState ->
+                                        Maybe.map
+                                            (\s ->
+                                                { s
+                                                    | fullName =
                                                         if String.trim v == "" then
                                                             Nothing
 

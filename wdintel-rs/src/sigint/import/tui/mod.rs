@@ -745,7 +745,7 @@ async fn import_network_callsigns(
             sigint_callsign: Set(import_signal.sigint_callsign),
             position: Set(import_signal.position),
             comment: Set(import_signal.comment),
-            full_name: NotSet,
+            full_name: Set(import_signal.full_name),
             sigint_callsign_id: Set(sigint_callsign_id),
             source_id: NotSet,
             radio_freq: Set(import_signal.radio_freq),
