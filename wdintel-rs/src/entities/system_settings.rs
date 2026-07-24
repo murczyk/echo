@@ -41,6 +41,8 @@ pub struct Model {
     pub sigint_comment_parsing_enabled: bool,
     pub do_not_store_duplicate_echoim_failures: bool,
     pub goi_association_message_uid_worker_enabled: bool,
+    pub report_chunking_hours: i32,
+    pub limit_big_reports: bool,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
