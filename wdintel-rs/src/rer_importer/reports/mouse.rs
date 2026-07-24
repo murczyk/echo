@@ -50,12 +50,37 @@ struct MouseInboxTagRow {
     organism_id: Option<i64>,
 }
 
+struct MouseReportData {
+    messages: Vec<(i64, InboxMessage)>,
+    date_to: String,
+    highlighted_message_ids: BTreeSet<i64>,
+    uniq_freqs_sorted: Vec<String>,
+    freq_first_seen: BTreeMap<String, NaiveDateTime>,
+    freq_callsign_first_seen: BTreeMap<(String, String), NaiveDateTime>,
+    important_ids: BTreeSet<i64>,
+    bookmark_ids: BTreeSet<i64>,
+    datasource_map: BTreeMap<i64, datasource::Model>,
+    message_map: BTreeMap<i64, signal_message::Model>,
+    inbox_map: BTreeMap<i64, sigint_inbox_item::Model>,
+    comments_map: BTreeMap<i64, sigint_comment::Model>,
+    group_datasources_map: HashMap<i64, i64>,
+}
+
 pub async fn report_docx_kind_mouse(
     user_login: &uuid::Uuid,
     env: &Env,
     req: &super::types::ReportPreviewReq,
     outpath: &Path,
 ) -> Result<(), AppError> {
+    let data = collect_mouse_report_data(user_login, env, req).await?;
+    build_mouse_report(&data, outpath)
+}
+
+async fn collect_mouse_report_data(
+    user_login: &uuid::Uuid,
+    env: &Env,
+    req: &super::types::ReportPreviewReq,
+) -> Result<MouseReportData, AppError> {
     let (read_db, replica_label) = env.replica_with_label();
     match replica_label {
         Some(label) => info!("Mouse report using replica {label}"),
@@ -66,7 +91,6 @@ pub async fn report_docx_kind_mouse(
         crate::users::get_organism_login_ids_by_id(&read_db, &login)
             .await
             .c(h!())?;
-    let width_unit = 1870;
     let mut inbox_req = req.req.clone();
     inbox_req.report_tags_only_this_unit = req.report_tags_only_this_unit;
     let messages = load_mouse_report_messages(
@@ -93,7 +117,6 @@ pub async fn report_docx_kind_mouse(
         .format("%H:%M %d.%m.%Y")
         .to_string();
 
-    let file = std::fs::File::create(outpath)?;
     let without_model_tags = inbox_req.without_model_tags.unwrap_or(false);
 
     let highlighted_message_ids: BTreeSet<i64> = messages
@@ -115,13 +138,8 @@ pub async fn report_docx_kind_mouse(
         BTreeSet::from_iter(messages.iter().map(|(_message_id, message)| {
             message.freq.clone().unwrap_or("".to_string())
         }));
-    let network_count = uniq_freqs.len();
     let mut uniq_freqs_sorted: Vec<String> = uniq_freqs.into_iter().collect();
     uniq_freqs_sorted.sort();
-    let mut per_freq_callsigns: BTreeMap<String, BTreeSet<String>> =
-        BTreeMap::new();
-    let mut per_freq_messages: BTreeMap<String, Vec<(i64, &InboxMessage)>> =
-        BTreeMap::new();
     let Some(zone_id) = crate::sigint::zone::get_user_zone_id(&read_db, &login)
         .await
         .c(h!())?
@@ -163,49 +181,6 @@ pub async fn report_docx_kind_mouse(
                 })
             })
             .collect();
-    for (message_id, message) in messages.iter() {
-        let freq = message.freq.clone().unwrap_or("".to_string());
-        for callsign in message.callsigns.iter() {
-            per_freq_callsigns
-                .entry(freq.clone())
-                .or_default()
-                .insert(callsign.clone());
-        }
-        per_freq_messages
-            .entry(freq.clone())
-            .or_default()
-            .push((*message_id, message));
-    }
-    // fill per_freq_units_counted
-    let mut per_freq_units_counted: BTreeMap<String, BTreeMap<String, i64>> =
-        BTreeMap::new();
-    for (_message_id, message) in messages.iter() {
-        let Some(ref unit) = message.unit.as_ref() else {
-            continue;
-        };
-        if unit.trim().is_empty() {
-            continue;
-        }
-        let Some(freq) = message.freq.clone() else {
-            continue;
-        };
-        if freq.is_empty() {
-            continue;
-        }
-        per_freq_units_counted
-            .entry(freq)
-            .and_modify(|units_counted| {
-                units_counted
-                    .entry(unit.to_string())
-                    .and_modify(|count| *count += 1)
-                    .or_insert(1);
-            })
-            .or_insert_with(|| {
-                let mut units_counted = BTreeMap::new();
-                units_counted.insert(unit.to_string(), 1);
-                units_counted
-            });
-    }
 
     let groups =
         crate::messenger::group::get_identity_sigint_groups(&read_db, &login)
@@ -267,6 +242,140 @@ pub async fn report_docx_kind_mouse(
         .iter()
         .map(|bookmark| bookmark.signal_message_id)
         .collect();
+
+    let all_message_ids: Vec<i64> =
+        messages.iter().map(|(id, _)| *id).collect();
+    let datasource_map: BTreeMap<i64, datasource::Model> =
+        datasource::Entity::find()
+            .all(&read_db)
+            .await
+            .context(h!())?
+            .into_iter()
+            .map(|datasource| (datasource.id, datasource))
+            .collect();
+    let message_map: BTreeMap<i64, signal_message::Model> =
+        signal_message::Entity::find()
+            .filter(signal_message::Column::Deleted.eq(false))
+            .filter(signal_message::Column::Id.eq_any(all_message_ids.clone()))
+            .all(&read_db)
+            .await
+            .context(h!())?
+            .into_iter()
+            .map(|item| (item.id, item))
+            .collect();
+    let inbox_map: BTreeMap<i64, sigint_inbox_item::Model> =
+        sigint_inbox_item::Entity::find()
+            .filter(
+                sigint_inbox_item::Column::Id.eq_any(all_message_ids.clone()),
+            )
+            .all(&read_db)
+            .await
+            .context(h!())?
+            .into_iter()
+            .map(|item| (item.id, item))
+            .collect();
+    let comments_map: BTreeMap<i64, sigint_comment::Model> =
+        sigint_comment::Entity::find()
+            .filter(
+                sigint_comment::Column::SignalMessageId.eq_any(all_message_ids),
+            )
+            .filter(sigint_comment::Column::LoginId.eq_any(login_ids))
+            .all(&read_db)
+            .await
+            .context(h!())?
+            .into_iter()
+            .map(|comment| (comment.signal_message_id, comment))
+            .collect();
+    let group_datasources_map: HashMap<i64, i64> =
+        datasource_group::Entity::find()
+            .select_only()
+            .column(datasource_group::Column::Id)
+            .column(datasource_group::Column::DatasourceId)
+            .into_tuple::<(i64, i64)>()
+            .all(&read_db)
+            .await
+            .context(h!())?
+            .into_iter()
+            .collect();
+
+    Ok(MouseReportData {
+        messages,
+        date_to,
+        highlighted_message_ids,
+        uniq_freqs_sorted,
+        freq_first_seen,
+        freq_callsign_first_seen,
+        important_ids,
+        bookmark_ids,
+        datasource_map,
+        message_map,
+        inbox_map,
+        comments_map,
+        group_datasources_map,
+    })
+}
+
+fn build_mouse_report(
+    data: &MouseReportData,
+    outpath: &Path,
+) -> Result<(), AppError> {
+    let MouseReportData {
+        messages,
+        date_to,
+        highlighted_message_ids,
+        uniq_freqs_sorted,
+        freq_first_seen,
+        freq_callsign_first_seen,
+        important_ids,
+        bookmark_ids,
+        datasource_map,
+        message_map,
+        inbox_map,
+        comments_map,
+        group_datasources_map,
+    } = data;
+    let file = std::fs::File::create(outpath)?;
+    let width_unit = 1870;
+    let network_count = uniq_freqs_sorted.len();
+    let mut per_freq_callsigns: BTreeMap<String, BTreeSet<String>> =
+        BTreeMap::new();
+    let mut per_freq_messages: BTreeMap<String, Vec<(i64, &InboxMessage)>> =
+        BTreeMap::new();
+    for (message_id, message) in messages {
+        let freq = message.freq.clone().unwrap_or_default();
+        for callsign in &message.callsigns {
+            per_freq_callsigns
+                .entry(freq.clone())
+                .or_default()
+                .insert(callsign.clone());
+        }
+        per_freq_messages
+            .entry(freq)
+            .or_default()
+            .push((*message_id, message));
+    }
+    let mut per_freq_units_counted: BTreeMap<String, BTreeMap<String, i64>> =
+        BTreeMap::new();
+    for (_message_id, message) in messages {
+        let Some(unit) = message.unit.as_ref() else {
+            continue;
+        };
+        if unit.trim().is_empty() {
+            continue;
+        }
+        let Some(freq) = message.freq.clone() else {
+            continue;
+        };
+        if freq.is_empty() {
+            continue;
+        }
+        per_freq_units_counted
+            .entry(freq)
+            .or_default()
+            .entry(unit.clone())
+            .and_modify(|count| *count += 1)
+            .or_insert(1);
+    }
 
     let mut rows: Vec<TableRow> = vec![];
     rows.push(TableRow::new(vec![
@@ -531,69 +640,6 @@ pub async fn report_docx_kind_mouse(
             )]));
     }
     let table = Table::new(rows).width(width_unit * 12, WidthType::Dxa);
-
-    // Bulk load all data once to avoid N+1 queries
-    let all_message_ids: Vec<i64> =
-        messages.iter().map(|(id, _)| *id).collect();
-
-    let datasource_map: BTreeMap<i64, datasource::Model> =
-        datasource::Entity::find()
-            .all(&read_db)
-            .await
-            .context(h!())?
-            .into_iter()
-            .map(|datasource| (datasource.id, datasource))
-            .collect();
-
-    let message_map: BTreeMap<i64, signal_message::Model> =
-        signal_message::Entity::find()
-            .filter(signal_message::Column::Deleted.eq(false))
-            .filter(signal_message::Column::Id.eq_any(all_message_ids.clone()))
-            .all(&read_db)
-            .await
-            .context(h!())?
-            .into_iter()
-            .map(|item| (item.id, item))
-            .collect();
-
-    let inbox_map: BTreeMap<i64, sigint_inbox_item::Model> =
-        sigint_inbox_item::Entity::find()
-            .filter(
-                sigint_inbox_item::Column::Id.eq_any(all_message_ids.clone()),
-            )
-            .all(&read_db)
-            .await
-            .context(h!())?
-            .into_iter()
-            .map(|item| (item.id, item))
-            .collect();
-
-    let all_comments: Vec<sigint_comment::Model> =
-        sigint_comment::Entity::find()
-            .filter(
-                sigint_comment::Column::SignalMessageId.eq_any(all_message_ids),
-            )
-            .filter(sigint_comment::Column::LoginId.eq_any(login_ids.clone()))
-            .all(&read_db)
-            .await
-            .context(h!())?;
-
-    let comments_map: BTreeMap<i64, sigint_comment::Model> = all_comments
-        .into_iter()
-        .map(|comment| (comment.signal_message_id, comment))
-        .collect();
-
-    let group_datasources_map: HashMap<i64, i64> =
-        datasource_group::Entity::find()
-            .select_only()
-            .column(datasource_group::Column::Id)
-            .column(datasource_group::Column::DatasourceId)
-            .into_tuple::<(i64, i64)>()
-            .all(&read_db)
-            .await
-            .context(h!())?
-            .into_iter()
-            .collect();
 
     let mut rows2: Vec<TableRow> = vec![];
     rows2.push(TableRow::new(vec![
