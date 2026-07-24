@@ -6,7 +6,9 @@ use crate::devices::filesystem::{
 };
 use crate::file_registry::entities::file_entry;
 use crate::h;
-use sea_orm::sea_query::{Alias, CommonTableExpression, Expr, JoinType};
+use sea_orm::sea_query::{
+    Alias, CommonTableExpression, Condition, Expr, JoinType,
+};
 use sea_orm::{
     ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter, QuerySelect,
     QueryTrait, Select,
@@ -120,14 +122,17 @@ fn materialized_candidate_query(
         .query(candidates.into_query())
         .materialized(true)
         .to_owned();
-    QueryTrait::query(&mut query)
-        .join(
-            JoinType::InnerJoin,
-            cte_name,
-            Expr::cust(
-                r#""file_entry"."device_id" = "scoped_file_entry"."device_id" AND "file_entry"."id" = "scoped_file_entry"."id""#,
-            ),
+    let join_condition = Condition::all()
+        .add(
+            Expr::col((file_entry::Entity, file_entry::Column::DeviceId))
+                .eq(Expr::col((cte_name.clone(), Alias::new("device_id")))),
         )
+        .add(
+            Expr::col((file_entry::Entity, file_entry::Column::Id))
+                .eq(Expr::col((cte_name.clone(), Alias::new("id")))),
+        );
+    QueryTrait::query(&mut query)
+        .join(JoinType::InnerJoin, cte_name, join_condition)
         .with_cte(cte);
     query
 }

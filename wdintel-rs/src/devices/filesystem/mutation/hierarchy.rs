@@ -8,9 +8,10 @@ use super::super::{
 use crate::file_registry::entities::file_entry;
 use crate::h;
 use chrono::NaiveDateTime;
+use sea_orm::sea_query::{Expr, OnConflict, SimpleExpr};
 use sea_orm::{
-    ColumnTrait, ConnectionTrait, DatabaseTransaction, DbBackend, EntityTrait,
-    QueryFilter, QueryOrder, QuerySelect, Statement,
+    ActiveValue::Set, ColumnTrait, DatabaseTransaction, EntityTrait,
+    QueryFilter, QueryOrder, QuerySelect,
 };
 use uuid::Uuid;
 
@@ -27,57 +28,36 @@ pub(super) async fn ensure_target_root(
     let source_path = &mutation.source_path;
     let root_name_key = name_key(&source_path.root_name);
     let hierarchy_path = root_hierarchy_path(mutation.candidate_root_entry_id);
-    let statement = Statement::from_sql_and_values(
-        DbBackend::Postgres,
-        r#"
-        insert into public.file_entry (
-            id,
-            device_id,
-            parent_id,
-            kind,
-            name,
-            name_key,
-            path_syntax,
-            absolute_path,
-            hierarchy_path,
-            mime_type,
-            extension,
-            file_metadata_created_at,
-            file_metadata_modified_at,
-            created_at,
-            updated_at
-        ) values (
-            $1,
-            $2,
-            null,
-            'directory',
-            $3,
-            $4,
-            $5,
-            null,
-            $6::public.ltree,
-            null,
-            null,
-            null,
-            null,
-            $7,
-            $7
-        )
-        on conflict (device_id, path_syntax, name_key)
-            where parent_id is null
-            do nothing
-        "#,
-        [
-            mutation.candidate_root_entry_id.into(),
-            mutation.device_id.into(),
-            source_path.root_name.clone().into(),
-            root_name_key.clone().into(),
-            source_path.path_syntax.as_db_str().into(),
-            hierarchy_path.into(),
-            now.into(),
-        ],
-    );
-    transaction.execute(statement).await.map_err(|error| {
+    file_entry::Entity::insert(file_entry::ActiveModel {
+        id: Set(mutation.candidate_root_entry_id),
+        device_id: Set(mutation.device_id),
+        parent_id: Set(None),
+        kind: Set(FileEntryKind::Directory.as_db_str().to_string()),
+        name: Set(source_path.root_name.clone()),
+        name_key: Set(root_name_key.clone()),
+        path_syntax: Set(Some(source_path.path_syntax.as_db_str().to_string())),
+        absolute_path: Set(None),
+        hierarchy_path: Set(hierarchy_path),
+        mime_type: Set(None),
+        extension: Set(None),
+        file_metadata_created_at: Set(None),
+        file_metadata_modified_at: Set(None),
+        created_at: Set(now),
+        updated_at: Set(now),
+    })
+    .on_conflict(
+        OnConflict::columns([
+            file_entry::Column::DeviceId,
+            file_entry::Column::PathSyntax,
+            file_entry::Column::NameKey,
+        ])
+        .target_and_where(file_entry::Column::ParentId.is_null())
+        .do_nothing()
+        .to_owned(),
+    )
+    .exec_without_returning(transaction)
+    .await
+    .map_err(|error| {
         map_transaction_body_error(anyhow::Error::new(error).context(h!()))
     })?;
 
@@ -179,57 +159,42 @@ pub(super) async fn ensure_directory_chain(
             &parent.hierarchy_path,
             *candidate_directory_entry_id,
         );
-        let statement = Statement::from_sql_and_values(
-            DbBackend::Postgres,
-            r#"
-            insert into public.file_entry (
-                id,
-                device_id,
-                parent_id,
-                kind,
-                name,
-                name_key,
-                path_syntax,
-                absolute_path,
-                hierarchy_path,
-                mime_type,
-                extension,
-                file_metadata_created_at,
-                file_metadata_modified_at,
-                created_at,
-                updated_at
-            ) values (
-                $1,
-                $2,
-                $3,
-                'directory',
-                $4,
-                $5,
-                null,
-                null,
-                $6::public.ltree,
-                null,
-                null,
-                null,
-                null,
-                $7,
-                $7
+        file_entry::Entity::insert(file_entry::ActiveModel {
+            id: Set(*candidate_directory_entry_id),
+            device_id: Set(mutation.device_id),
+            parent_id: Set(Some(parent.entry_id)),
+            kind: Set(FileEntryKind::Directory.as_db_str().to_string()),
+            name: Set(component.to_string()),
+            name_key: Set(component_name_key.clone()),
+            path_syntax: Set(None),
+            absolute_path: Set(None),
+            hierarchy_path: Set(hierarchy_path),
+            mime_type: Set(None),
+            extension: Set(None),
+            file_metadata_created_at: Set(None),
+            file_metadata_modified_at: Set(None),
+            created_at: Set(now),
+            updated_at: Set(now),
+        })
+        .on_conflict(
+            OnConflict::columns([
+                file_entry::Column::DeviceId,
+                file_entry::Column::ParentId,
+                file_entry::Column::NameKey,
+            ])
+            .target_and_where(
+                Expr::col(file_entry::Column::Kind)
+                    .eq(SimpleExpr::Constant(
+                        FileEntryKind::Directory.as_db_str().to_string().into(),
+                    ))
+                    .and(file_entry::Column::ParentId.is_not_null()),
             )
-            on conflict (device_id, parent_id, name_key)
-                where kind = 'directory' and parent_id is not null
-                do nothing
-            "#,
-            [
-                (*candidate_directory_entry_id).into(),
-                mutation.device_id.into(),
-                parent.entry_id.into(),
-                component.to_string().into(),
-                component_name_key.clone().into(),
-                hierarchy_path.into(),
-                now.into(),
-            ],
-        );
-        transaction.execute(statement).await.map_err(|error| {
+            .do_nothing()
+            .to_owned(),
+        )
+        .exec_without_returning(transaction)
+        .await
+        .map_err(|error| {
             map_transaction_body_error(anyhow::Error::new(error).context(h!()))
         })?;
 

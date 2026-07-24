@@ -15,7 +15,9 @@ use crate::entities::{
 use crate::error::AppError;
 use crate::h;
 use crate::types::{BTreeMap, BTreeSet, ShortContext, Uuid};
-use sea_orm::sea_query::{Expr, Order};
+use sea_orm::sea_query::{
+    extension::postgres::PgExpr, Alias, Expr, Func, LikeExpr, Order, SimpleExpr,
+};
 use sea_orm::{
     ColumnTrait, Condition, ConnectionTrait, DatabaseConnection, EntityTrait,
     FromQueryResult, IntoSimpleExpr, JoinType, PaginatorTrait, QueryFilter,
@@ -374,18 +376,19 @@ fn apply_list_filters(
         let pattern = literal_substring_pattern(filter_text);
         query = query.filter(
             Condition::any()
-                .add(Expr::cust_with_values(
-                    r#""device"."source_label" ILIKE $1 ESCAPE '\'"#,
-                    vec![pattern.clone()],
-                ))
-                .add(Expr::cust_with_values(
-                    r#""device"."name" ILIKE $1 ESCAPE '\'"#,
-                    vec![pattern.clone()],
-                ))
-                .add(Expr::cust_with_values(
-                    r#""device"."id"::text LIKE $1 ESCAPE '\'"#,
-                    vec![pattern],
-                )),
+                .add(
+                    Expr::col((device::Entity, device::Column::SourceLabel))
+                        .ilike(LikeExpr::new(pattern.clone())),
+                )
+                .add(
+                    Expr::col((device::Entity, device::Column::Name))
+                        .ilike(LikeExpr::new(pattern.clone())),
+                )
+                .add(
+                    Expr::col((device::Entity, device::Column::Id))
+                        .cast_as(Alias::new("text"))
+                        .like(LikeExpr::new(pattern).escape('\\')),
+                ),
         );
     }
     query
@@ -412,18 +415,12 @@ fn apply_list_sort(
 ) -> Select<device::Entity> {
     for sort in sort_by {
         query = match sort {
-            DeviceListSort::DisplayTitleAsc => query.order_by(
-                Expr::cust(
-                    r#"lower(COALESCE("device"."name", "device"."source_label"))"#,
-                ),
-                Order::Asc,
-            ),
-            DeviceListSort::DisplayTitleDesc => query.order_by(
-                Expr::cust(
-                    r#"lower(COALESCE("device"."name", "device"."source_label"))"#,
-                ),
-                Order::Desc,
-            ),
+            DeviceListSort::DisplayTitleAsc => {
+                query.order_by(display_title_sort_expr(), Order::Asc)
+            }
+            DeviceListSort::DisplayTitleDesc => {
+                query.order_by(display_title_sort_expr(), Order::Desc)
+            }
             DeviceListSort::CreatedAtAsc => {
                 query.order_by_asc(device::Column::CreatedAt)
             }
@@ -441,22 +438,22 @@ fn apply_list_sort(
     query.order_by_asc(device::Column::Id)
 }
 
+fn display_title_sort_expr() -> SimpleExpr {
+    Func::lower(Func::coalesce([
+        Expr::col((device::Entity, device::Column::Name)).into(),
+        Expr::col((device::Entity, device::Column::SourceLabel)).into(),
+    ]))
+    .into()
+}
+
 async fn load_status_counts(
     main_db: &MainDb<'_, DatabaseConnection>,
     query: Select<device::Entity>,
 ) -> Result<DeviceStatusCounts, AppError> {
     let row = query
         .select_only()
-        .column_as(
-            Expr::cust(
-                r#"COUNT(*) FILTER (WHERE "device"."archived" = false)"#,
-            ),
-            "active",
-        )
-        .column_as(
-            Expr::cust(r#"COUNT(*) FILTER (WHERE "device"."archived" = true)"#),
-            "archived",
-        )
+        .column_as(archived_count_expr(false), "active")
+        .column_as(archived_count_expr(true), "archived")
         .into_model::<DeviceStatusCountsRow>()
         .one(main_db.connection())
         .await
@@ -469,6 +466,18 @@ async fn load_status_counts(
         active: row.active,
         archived: row.archived,
     })
+}
+
+fn archived_count_expr(archived: bool) -> SimpleExpr {
+    let count: SimpleExpr = Func::sum(
+        Expr::case(
+            Expr::col((device::Entity, device::Column::Archived)).eq(archived),
+            1_i32,
+        )
+        .finally(0_i32),
+    )
+    .into();
+    Func::coalesce([count, Expr::val(0_i64).into()]).into()
 }
 
 fn literal_substring_pattern(value: &str) -> String {

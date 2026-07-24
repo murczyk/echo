@@ -5,6 +5,7 @@ use crate::devices::filesystem::{
 };
 use crate::file_registry::entities::file_entry;
 use crate::h;
+use sea_orm::sea_query::Expr;
 use sea_orm::{
     Condition, ConnectionTrait, EntityTrait, QueryFilter, QuerySelect, Select,
 };
@@ -50,13 +51,19 @@ fn children_strict_after_condition(
     parent_id: uuid::Uuid,
     after: &EntrySortKey,
 ) -> Condition {
-    Condition::all().add(sea_orm::sea_query::Expr::cust_with_values(
-        r#"("file_entry"."parent_id", "file_entry"."kind", "file_entry"."name_key", "file_entry"."id") > ($1, $2, $3, $4)"#,
-        vec![
-            sea_orm::Value::from(parent_id),
-            sea_orm::Value::from(after.kind().as_db_str().to_string()),
-            sea_orm::Value::from(after.name_key().to_vec()),
-            sea_orm::Value::from(after.entry_id()),
-        ],
-    ))
+    Condition::all().add(
+        Expr::tuple([
+            Expr::col((file_entry::Entity, file_entry::Column::ParentId))
+                .into(),
+            Expr::col((file_entry::Entity, file_entry::Column::Kind)).into(),
+            Expr::col((file_entry::Entity, file_entry::Column::NameKey)).into(),
+            Expr::col((file_entry::Entity, file_entry::Column::Id)).into(),
+        ])
+        .gt(Expr::tuple([
+            Expr::val(parent_id).into(),
+            Expr::val(after.kind().as_db_str()).into(),
+            Expr::val(after.name_key().to_vec()).into(),
+            Expr::val(after.entry_id()).into(),
+        ])),
+    )
 }

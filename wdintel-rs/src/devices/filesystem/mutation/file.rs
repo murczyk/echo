@@ -10,8 +10,6 @@ use super::hierarchy::{
     ensure_directory_chain, ensure_target_root, lock_roots,
     prune_empty_directory_chain, root_entry_id, DirectoryParent,
 };
-#[cfg(test)]
-use super::MutationAttemptTestControl;
 use crate::file_registry::entities::file_entry;
 use crate::h;
 use crate::types::ShortContext;
@@ -50,7 +48,6 @@ pub(super) async fn update_file(
     transaction: &DatabaseTransaction,
     mutation: &PreparedFileMutation,
     now: NaiveDateTime,
-    #[cfg(test)] test_control: Option<&MutationAttemptTestControl>,
 ) -> Result<FileMutationResult, FilesystemError> {
     let optimistic_file = file_query(mutation.device_id, mutation.file_id)
         .one(transaction)
@@ -62,11 +59,6 @@ pub(super) async fn update_file(
     let optimistic_file = map_file_model(optimistic_file)?;
     let optimistic_root_entry_id =
         root_entry_id(&optimistic_file.hierarchy_path)?;
-
-    #[cfg(test)]
-    if let Some(test_control) = test_control {
-        test_control.pause_after_optimistic_read(mutation).await;
-    }
 
     let target_root_entry_id =
         ensure_target_root(transaction, mutation, now).await?;
@@ -87,11 +79,10 @@ pub(super) async fn update_file(
         })?
         .ok_or(FilesystemError::NotFound)?;
     let locked_file_entry = map_file_model(locked_file.clone())?;
-    if root_entry_id(&locked_file_entry.hierarchy_path)?
-        != optimistic_root_entry_id
-    {
-        return Err(FilesystemError::Conflict);
-    }
+    ensure_file_root_unchanged(
+        optimistic_root_entry_id,
+        &locked_file_entry.hierarchy_path,
+    )?;
 
     let parent =
         ensure_directory_chain(transaction, mutation, &root, now).await?;
@@ -114,6 +105,17 @@ pub(super) async fn update_file(
         file,
         path_components: mutation.source_path.components.clone(),
     })
+}
+
+fn ensure_file_root_unchanged(
+    optimistic_root_entry_id: Uuid,
+    locked_hierarchy_path: &str,
+) -> Result<(), FilesystemError> {
+    if root_entry_id(locked_hierarchy_path)? == optimistic_root_entry_id {
+        Ok(())
+    } else {
+        Err(FilesystemError::Conflict)
+    }
 }
 
 pub(super) async fn reconcile_file_mutation(
@@ -270,3 +272,6 @@ async fn update_file_row(
 
     map_file_model(file)
 }
+
+#[cfg(test)]
+mod tests;

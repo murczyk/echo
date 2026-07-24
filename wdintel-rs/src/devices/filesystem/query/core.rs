@@ -3,10 +3,11 @@ use super::model;
 use crate::devices::filesystem::{
     map_database_error, DirectoryScope, EntryQueryScope, EntrySortKey,
     FileEntryKind, FileSearchFilters, FilesystemError, KeysetPage, PathSyntax,
-    RootSortKey, TreeEntry,
+    TreeEntry,
 };
 use crate::file_registry::entities::file_entry;
 use crate::h;
+use sea_orm::sea_query::{extension::postgres::PgExpr, Expr, LikeExpr};
 use sea_orm::{
     ColumnTrait, Condition, ConnectionTrait, EntityTrait, QueryFilter,
     QueryOrder, QuerySelect, Select,
@@ -133,53 +134,35 @@ pub(super) fn apply_search_filters(
         );
     }
     if let Some(name_query) = filters.name_query() {
-        query = query.filter(sea_orm::sea_query::Expr::cust_with_values(
-            r#""file_entry"."name" ILIKE $1 ESCAPE '\'"#,
-            vec![literal_name_pattern(name_query)],
-        ));
+        query = query.filter(
+            Expr::col((file_entry::Entity, file_entry::Column::Name))
+                .ilike(LikeExpr::new(literal_name_pattern(name_query))),
+        );
     }
     if filters.requires_file_metadata() {
-        query = query.filter(sea_orm::sea_query::Expr::cust(
-            r#""file_entry"."kind" = 'file'"#,
-        ));
+        query = query.filter(
+            file_entry::Column::Kind.eq(FileEntryKind::File.as_db_str()),
+        );
     }
     if !filters.mime_types().is_empty() {
-        query = query
-            .filter(sea_orm::sea_query::Expr::cust(
-                r#""file_entry"."mime_type" IS NOT NULL"#,
-            ))
-            .filter(
-                file_entry::Column::MimeType
-                    .is_in(filters.mime_types().to_vec()),
-            );
+        query = query.filter(
+            file_entry::Column::MimeType.is_in(filters.mime_types().to_vec()),
+        );
     }
     if !filters.extensions().is_empty() {
-        query = query
-            .filter(sea_orm::sea_query::Expr::cust(
-                r#""file_entry"."extension" IS NOT NULL"#,
-            ))
-            .filter(
-                file_entry::Column::Extension
-                    .is_in(filters.extensions().to_vec()),
-            );
+        query = query.filter(
+            file_entry::Column::Extension.is_in(filters.extensions().to_vec()),
+        );
     }
     if let Some(modified_from) = filters.file_metadata_modified_from() {
-        query = query
-            .filter(sea_orm::sea_query::Expr::cust(
-                r#""file_entry"."file_metadata_modified_at" IS NOT NULL"#,
-            ))
-            .filter(
-                file_entry::Column::FileMetadataModifiedAt.gte(modified_from),
-            );
+        query = query.filter(
+            file_entry::Column::FileMetadataModifiedAt.gte(modified_from),
+        );
     }
     if let Some(modified_to) = filters.file_metadata_modified_to() {
-        query = query
-            .filter(sea_orm::sea_query::Expr::cust(
-                r#""file_entry"."file_metadata_modified_at" IS NOT NULL"#,
-            ))
-            .filter(
-                file_entry::Column::FileMetadataModifiedAt.lte(modified_to),
-            );
+        query = query.filter(
+            file_entry::Column::FileMetadataModifiedAt.lte(modified_to),
+        );
     }
     query
 }
@@ -221,40 +204,21 @@ pub(in crate::devices::filesystem) fn apply_entry_order(
 }
 
 #[allow(dead_code)]
-pub(super) fn root_strict_after_condition(after: &RootSortKey) -> Condition {
-    Condition::any()
-        .add(file_entry::Column::PathSyntax.gt(after.path_syntax().as_db_str()))
-        .add(
-            Condition::all()
-                .add(
-                    file_entry::Column::PathSyntax
-                        .eq(after.path_syntax().as_db_str()),
-                )
-                .add(file_entry::Column::NameKey.gt(after.name_key().to_vec())),
-        )
-        .add(
-            Condition::all()
-                .add(
-                    file_entry::Column::PathSyntax
-                        .eq(after.path_syntax().as_db_str()),
-                )
-                .add(file_entry::Column::NameKey.eq(after.name_key().to_vec()))
-                .add(file_entry::Column::Id.gt(after.entry_id())),
-        )
-}
-
-#[allow(dead_code)]
 pub(in crate::devices::filesystem) fn entry_strict_after_condition(
     after: &EntrySortKey,
 ) -> Condition {
-    Condition::all().add(sea_orm::sea_query::Expr::cust_with_values(
-        r#"("file_entry"."kind", "file_entry"."name_key", "file_entry"."id") > ($1, $2, $3)"#,
-        vec![
-            sea_orm::Value::from(after.kind().as_db_str().to_string()),
-            sea_orm::Value::from(after.name_key().to_vec()),
-            sea_orm::Value::from(after.entry_id()),
-        ],
-    ))
+    Condition::all().add(
+        Expr::tuple([
+            Expr::col((file_entry::Entity, file_entry::Column::Kind)).into(),
+            Expr::col((file_entry::Entity, file_entry::Column::NameKey)).into(),
+            Expr::col((file_entry::Entity, file_entry::Column::Id)).into(),
+        ])
+        .gt(Expr::tuple([
+            Expr::val(after.kind().as_db_str()).into(),
+            Expr::val(after.name_key().to_vec()).into(),
+            Expr::val(after.entry_id()).into(),
+        ])),
+    )
 }
 
 #[allow(dead_code)]
@@ -315,143 +279,4 @@ pub(super) fn entry_sort_key(entry: &TreeEntry) -> EntrySortKey {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use sea_orm::sea_query::{PostgresQueryBuilder, Query};
-
-    use crate::devices::filesystem::{
-        DirectoryEntry, PathSyntax, RawFileSearchFilters,
-    };
-    use chrono::NaiveDate;
-    use sea_orm::{DbBackend, QueryTrait};
-
-    fn directory_scope() -> DirectoryScope {
-        let timestamp = NaiveDate::from_ymd_opt(2026, 7, 21)
-            .unwrap()
-            .and_hms_opt(12, 0, 0)
-            .unwrap();
-        DirectoryScope::Directory {
-            entry: DirectoryEntry {
-                entry_id: Uuid::from_u128(2),
-                device_id: Uuid::from_u128(1),
-                parent_entry_id: Uuid::from_u128(3),
-                name: "reports".to_string(),
-                name_key: b"reports".to_vec(),
-                hierarchy_path:
-                    "n00000000000000000000000000000003.n00000000000000000000000000000002"
-                        .to_string(),
-                created_at: timestamp,
-                updated_at: timestamp,
-            },
-            root_id: Uuid::from_u128(3),
-            path_syntax: PathSyntax::Posix,
-        }
-    }
-
-    #[derive(Debug, PartialEq, Eq)]
-    struct Row(u8);
-
-    #[test]
-    fn strict_after_conditions_preserve_lexicographic_keysets() {
-        let root_sql = Query::select()
-            .cond_where(root_strict_after_condition(&RootSortKey::new(
-                crate::devices::filesystem::PathSyntax::Posix,
-                b"same".to_vec(),
-                Uuid::from_u128(1),
-            )))
-            .to_string(PostgresQueryBuilder);
-        let entry_sql = Query::select()
-            .cond_where(entry_strict_after_condition(&EntrySortKey::new(
-                FileEntryKind::Directory,
-                b"same".to_vec(),
-                Uuid::from_u128(1),
-            )))
-            .to_string(PostgresQueryBuilder);
-
-        assert_eq!(root_sql.matches(" OR ").count(), 2);
-        assert_eq!(root_sql.matches(" > ").count(), 3);
-        assert!(entry_sql.contains(
-            r#"("file_entry"."kind", "file_entry"."name_key", "file_entry"."id") > ("#
-        ));
-        assert!(!entry_sql.contains(" OR "));
-    }
-
-    #[test]
-    fn page_finalizer_uses_returned_boundary_only_when_more_rows_exist() {
-        let page = finalize_page(vec![Row(1), Row(2), Row(3)], 2, |row| row.0);
-        assert_eq!(page.entries, vec![Row(1), Row(2)]);
-        assert_eq!(page.next, Some(2));
-
-        let page = finalize_page(vec![Row(1), Row(2)], 2, |row| row.0);
-        assert_eq!(page.entries, vec![Row(1), Row(2)]);
-        assert_eq!(page.next, None);
-    }
-
-    #[test]
-    fn scoped_queries_bind_navigation_and_filter_values() {
-        let directory = directory_scope();
-        let filters = FileSearchFilters::try_from(RawFileSearchFilters {
-            kinds: vec![FileEntryKind::File],
-            name_query: Some(r#"report%_\path"#.to_string()),
-            mime_types: vec!["application/json".to_string()],
-            extensions: vec!["json".to_string()],
-            file_metadata_modified_from: Some(
-                NaiveDate::from_ymd_opt(2026, 7, 20)
-                    .unwrap()
-                    .and_hms_opt(0, 0, 0)
-                    .unwrap(),
-            ),
-            file_metadata_modified_to: Some(
-                NaiveDate::from_ymd_opt(2026, 7, 21)
-                    .unwrap()
-                    .and_hms_opt(0, 0, 0)
-                    .unwrap(),
-            ),
-        })
-        .unwrap();
-        let search = EntryQueryScope::Search {
-            directory: &directory,
-            filters: &filters,
-        };
-        let search_statement =
-            apply_entry_scope(file_entry::Entity::find(), &search)
-                .build(DbBackend::Postgres);
-
-        assert!(search_statement
-            .sql
-            .contains(r#""file_entry"."hierarchy_path" <@ $"#));
-        assert!(search_statement.sql.contains(r#""parent_id" IS NOT NULL"#));
-        assert!(search_statement.sql.contains("ILIKE $"));
-        assert!(search_statement.sql.contains("ESCAPE '\\'"));
-        assert!(search_statement.sql.contains(r#""mime_type" IN ("#));
-        assert!(search_statement.sql.contains(r#""extension" IN ("#));
-        assert!(search_statement
-            .sql
-            .contains(r#""file_metadata_modified_at" >= $"#));
-        assert!(search_statement
-            .sql
-            .contains(r#""file_metadata_modified_at" <= $"#));
-        assert!(!search_statement.sql.contains(r#"report%_\path"#));
-        assert!(search_statement.values.is_some());
-
-        let browse = EntryQueryScope::Browse(&directory);
-        let browse_statement =
-            apply_entry_scope(file_entry::Entity::find(), &browse)
-                .build(DbBackend::Postgres);
-        assert!(browse_statement.sql.contains(r#""parent_id" = $"#));
-        assert!(!browse_statement.sql.contains(" <@ "));
-        assert!(browse_statement.values.is_some());
-    }
-
-    #[test]
-    fn directory_scope_lookup_query_binds_device_entry_and_kind() {
-        let statement =
-            directory_scope_query(Uuid::from_u128(1), Uuid::from_u128(2))
-                .build(DbBackend::Postgres);
-
-        assert!(statement.sql.contains(r#""device_id" = $"#));
-        assert!(statement.sql.contains(r#""id" = $"#));
-        assert!(statement.sql.contains(r#""kind" = $"#));
-        assert!(statement.values.is_some());
-    }
-}
+mod tests;

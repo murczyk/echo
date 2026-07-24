@@ -6,7 +6,7 @@ use super::{
 };
 use crate::config::DEVICE_FILE_SYNC_ITEM_MAX_ATTEMPTS;
 use chrono::{DateTime, FixedOffset};
-use std::collections::HashSet;
+use std::{collections::HashSet, future::Future};
 use uuid::Uuid;
 
 enum PreparedSyncFileItem {
@@ -24,6 +24,27 @@ pub(super) async fn sync_files(
     files: Vec<SyncFileItemCommand>,
     duplicate_file_ids: HashSet<Uuid>,
 ) -> Result<SyncFilesResult, FilesystemError> {
+    sync_files_with_mutator(
+        device_id,
+        path_syntax,
+        files,
+        duplicate_file_ids,
+        |mutation| async move { repository.mutate_file(&mutation).await },
+    )
+    .await
+}
+
+async fn sync_files_with_mutator<M, Fut>(
+    device_id: Uuid,
+    path_syntax: PathSyntax,
+    files: Vec<SyncFileItemCommand>,
+    duplicate_file_ids: HashSet<Uuid>,
+    mut mutate_file: M,
+) -> Result<SyncFilesResult, FilesystemError>
+where
+    M: FnMut(PreparedFileMutation) -> Fut,
+    Fut: Future<Output = Result<super::FileMutationResult, FilesystemError>>,
+{
     let prepared_files =
         prepare_sync_items(device_id, path_syntax, files, &duplicate_file_ids)?;
     let mut results = Vec::with_capacity(prepared_files.len());
@@ -33,7 +54,9 @@ pub(super) async fn sync_files(
             PreparedSyncFileItem::Rejected(result) => results.push(result),
             PreparedSyncFileItem::Mutation { index, mutation } => {
                 let result =
-                    match mutate_file_with_retry(repository, &mutation).await {
+                    match mutate_file_with_retry(&mutation, &mut mutate_file)
+                        .await
+                    {
                         Ok(result) => SyncFileItemResult {
                             index,
                             outcome: SyncFileItemOutcome::Accepted {
@@ -53,12 +76,16 @@ pub(super) async fn sync_files(
     Ok(SyncFilesResult { results })
 }
 
-async fn mutate_file_with_retry(
-    repository: &FilesystemRepository<'_>,
+async fn mutate_file_with_retry<T, M, Fut>(
     mutation: &PreparedFileMutation,
-) -> Result<super::FileMutationResult, FilesystemError> {
+    mutate_file: &mut M,
+) -> Result<T, FilesystemError>
+where
+    M: FnMut(PreparedFileMutation) -> Fut,
+    Fut: Future<Output = Result<T, FilesystemError>>,
+{
     for attempt in 1..=DEVICE_FILE_SYNC_ITEM_MAX_ATTEMPTS {
-        match repository.mutate_file(mutation).await {
+        match mutate_file(mutation.clone()).await {
             Err(FilesystemError::Conflict)
                 if attempt < DEVICE_FILE_SYNC_ITEM_MAX_ATTEMPTS =>
             {
@@ -275,204 +302,4 @@ fn rejected_result(
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn sync_file(
-        file_id: Option<Uuid>,
-        absolute_path: &str,
-        mime_type: Option<&str>,
-        extension: Option<&str>,
-    ) -> SyncFileItemCommand {
-        SyncFileItemCommand {
-            file_id,
-            absolute_path: absolute_path.to_string(),
-            mime_type: mime_type.map(str::to_string),
-            extension: extension.map(str::to_string),
-            file_metadata_created_at: None,
-            file_metadata_modified_at: None,
-        }
-    }
-
-    fn field_error(path: &str) -> FilesystemFieldError {
-        FilesystemFieldError {
-            path: path.to_string(),
-            message: "invalid".to_string(),
-        }
-    }
-
-    #[test]
-    fn preparation_keeps_duplicate_and_item_validation_errors_ordered() {
-        let file_id = Uuid::now_v7();
-        let duplicate_file_ids = HashSet::from([file_id]);
-        let files = vec![
-            sync_file(
-                Some(file_id),
-                "C:\\logs\\a.log",
-                Some("   "),
-                Some(".log"),
-            ),
-            sync_file(Some(file_id), "relative.log", None, None),
-        ];
-
-        let prepared = prepare_sync_items(
-            Uuid::now_v7(),
-            PathSyntax::Windows,
-            files,
-            &duplicate_file_ids,
-        )
-        .unwrap();
-        let error_paths = prepared
-            .into_iter()
-            .map(|prepared| match prepared {
-                PreparedSyncFileItem::Rejected(SyncFileItemResult {
-                    outcome: SyncFileItemOutcome::Rejected { field_errors, .. },
-                    ..
-                }) => field_errors
-                    .into_iter()
-                    .map(|error| error.path)
-                    .collect::<Vec<_>>(),
-                PreparedSyncFileItem::Mutation { .. } => {
-                    panic!("expected rejected item")
-                }
-                PreparedSyncFileItem::Rejected(_) => {
-                    panic!("expected validation rejection")
-                }
-            })
-            .collect::<Vec<_>>();
-
-        assert_eq!(
-            error_paths,
-            vec![
-                vec![
-                    "files[0].file_id",
-                    "files[0].mime_type",
-                    "files[0].extension",
-                ],
-                vec!["files[1].file_id", "files[1].absolute_path"],
-            ]
-        );
-    }
-
-    #[test]
-    fn invalid_timestamp_string_is_an_item_validation_rejection() {
-        let mut file = sync_file(None, "/logs/a.log", None, None);
-        file.file_metadata_created_at = Some("not-a-timestamp".to_string());
-        file.file_metadata_modified_at =
-            Some("2026-07-23T12:00:00+03:00".to_string());
-
-        let prepared = prepare_sync_items(
-            Uuid::now_v7(),
-            PathSyntax::Posix,
-            vec![file],
-            &HashSet::new(),
-        )
-        .unwrap();
-        let PreparedSyncFileItem::Rejected(SyncFileItemResult {
-            outcome:
-                SyncFileItemOutcome::Rejected {
-                    kind, field_errors, ..
-                },
-            ..
-        }) = prepared.into_iter().next().unwrap()
-        else {
-            panic!("expected timestamp validation rejection");
-        };
-
-        assert_eq!(kind, SyncFileRejectionKind::Validation);
-        assert_eq!(
-            field_errors
-                .into_iter()
-                .map(|error| error.path)
-                .collect::<Vec<_>>(),
-            vec!["files[0].file_metadata_created_at"],
-        );
-    }
-
-    #[test]
-    fn item_error_mapping_is_safe_and_commit_uncertainty_is_fatal() {
-        let cases = vec![
-            (
-                FilesystemError::Validation(vec![field_error(
-                    "files[0].absolute_path",
-                )]),
-                SyncFileRejectionKind::Validation,
-                "filesystem validation failed",
-                false,
-                vec![field_error("files[0].absolute_path")],
-            ),
-            (
-                FilesystemError::NotFound,
-                SyncFileRejectionKind::NotFound,
-                "filesystem entry not found",
-                false,
-                Vec::new(),
-            ),
-            (
-                FilesystemError::Conflict,
-                SyncFileRejectionKind::Conflict,
-                "filesystem conflict",
-                true,
-                Vec::new(),
-            ),
-            (
-                FilesystemError::Dependency(anyhow::anyhow!("dependency")),
-                SyncFileRejectionKind::Dependency,
-                "filesystem dependency failed",
-                false,
-                Vec::new(),
-            ),
-            (
-                FilesystemError::Invariant("invariant"),
-                SyncFileRejectionKind::Internal,
-                "filesystem internal failure",
-                false,
-                Vec::new(),
-            ),
-            (
-                FilesystemError::Internal(anyhow::anyhow!("internal")),
-                SyncFileRejectionKind::Internal,
-                "filesystem internal failure",
-                false,
-                Vec::new(),
-            ),
-        ];
-
-        for (
-            error,
-            expected_kind,
-            expected_message,
-            expected_retry,
-            expected_errors,
-        ) in cases
-        {
-            let SyncFileItemResult {
-                index,
-                outcome:
-                    SyncFileItemOutcome::Rejected {
-                        kind,
-                        message,
-                        retry,
-                        field_errors,
-                    },
-            } = map_sync_item_error(7, error).unwrap()
-            else {
-                panic!("expected rejected item result")
-            };
-
-            assert_eq!(index, 7);
-            assert_eq!(kind, expected_kind);
-            assert_eq!(message, expected_message);
-            assert_eq!(retry, expected_retry);
-            assert_eq!(field_errors, expected_errors);
-        }
-
-        assert!(matches!(
-            map_sync_item_error(
-                0,
-                FilesystemError::CommitUncertain(anyhow::anyhow!("uncertain")),
-            ),
-            Err(FilesystemError::CommitUncertain(_))
-        ));
-    }
-}
+mod tests;

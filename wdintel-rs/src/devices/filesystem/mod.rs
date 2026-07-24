@@ -22,10 +22,6 @@ pub(in crate::devices::filesystem) use error::{
     classify_transaction_error, map_database_error, map_transaction_body_error,
     TransactionErrorClass,
 };
-#[cfg(test)]
-pub(in crate::devices::filesystem) use ltree::{
-    ancestor_expr, descendant_expr,
-};
 #[allow(unused_imports)]
 pub(in crate::devices) use metadata::normalize_file_metadata;
 #[allow(unused_imports)]
@@ -38,8 +34,8 @@ pub(in crate::devices) use types::{
     Breadcrumb, BrowseFilesCommand, BrowseFilesResult, DirectoryEntry,
     DirectoryScope, EntryQueryScope, EntrySortKey, FileMutationResult,
     FileSearchFilters, KeysetPage, KeysetPageRequest, NormalizedFileMetadata,
-    ParsedSourcePath, RawFileSearchFilters, RootEntry, RootSortKey,
-    SearchEntry, SearchFilesCommand, SearchFilesResult, SyncFileItemCommand,
+    ParsedSourcePath, RawFileSearchFilters, RootEntry, SearchEntry,
+    SearchFilesCommand, SearchFilesResult, SyncFileItemCommand,
     SyncFileItemOutcome, SyncFileItemResult, SyncFileOperation,
     SyncFileRejectionKind, SyncFilesCommand, SyncFilesResult, TreeEntry,
 };

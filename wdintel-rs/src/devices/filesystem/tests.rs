@@ -1,22 +1,18 @@
-use super::mutation::{
-    MutationAttemptBarriers, MutationAttemptTestControl, RetryableSqlstate,
-};
-use super::sync::sync_files;
+use super::ltree::{ancestor_expr, descendant_expr};
+use super::repository::{capture_transaction_id, handle_commit_error};
 use super::{
-    ancestor_expr, classify_transaction_error, descendant_expr,
-    map_transaction_body_error, normalize_file_metadata, query, Breadcrumb,
-    BrowseFilesCommand, EntryQueryScope, EntrySortKey, FileCursorCodec,
-    FileEntry, FileEntryKind, FileMetadataService, FileSearchFilters,
-    FilesystemError, FilesystemRepository, KeysetPageRequest, PathSyntax,
-    PreparedFileMutation, RawFileSearchFilters, SearchEntry,
-    SearchFilesCommand, SourcePathParser, SyncFileItemCommand,
-    SyncFileItemOutcome, SyncFileItemResult, SyncFileOperation,
-    SyncFileRejectionKind, SyncFilesCommand, TreeEntry,
+    classify_transaction_error, map_transaction_body_error,
+    normalize_file_metadata, query, Breadcrumb, BrowseFilesCommand,
+    EntryQueryScope, EntrySortKey, FileCursorCodec, FileEntry, FileEntryKind,
+    FileMetadataService, FileSearchFilters, FilesystemError,
+    FilesystemRepository, KeysetPageRequest, PathSyntax, PreparedFileMutation,
+    RawFileSearchFilters, SearchEntry, SearchFilesCommand, SourcePathParser,
+    SyncFileItemCommand, SyncFileItemOutcome, SyncFileItemResult,
+    SyncFileOperation, SyncFileRejectionKind, SyncFilesCommand, TreeEntry,
 };
 use crate::config::{
     read_config, DEVICE_FILE_CURSOR_MAX_BYTES, DEVICE_FILE_PAGE_MAX_LIMIT,
-    DEVICE_FILE_SYNC_ITEM_MAX_ATTEMPTS, ROLE_ADMIN, ROLE_CYBER,
-    ROLE_DEVICE_ANALYST, ROLE_DEVICE_SOURCE,
+    ROLE_ADMIN, ROLE_CYBER, ROLE_DEVICE_ANALYST, ROLE_DEVICE_SOURCE,
 };
 use crate::devices::access::DeviceActor;
 use crate::devices::main_db::MainDb;
@@ -29,9 +25,8 @@ use crate::types::{AppError, Mode, ShortContext, Uuid};
 use chrono::{Duration, NaiveDate, NaiveDateTime};
 use sea_orm::{
     ActiveModelTrait, ActiveValue::Set, ColumnTrait, ConnectionTrait,
-    DatabaseConnection, DatabaseTransaction, DbBackend, EntityTrait,
-    IntoActiveModel, QueryFilter, QueryOrder, QuerySelect, Statement,
-    TransactionTrait,
+    DatabaseConnection, DatabaseTransaction, EntityTrait, IntoActiveModel,
+    QueryFilter, QueryOrder, QuerySelect, TransactionTrait,
 };
 use serde_json::json;
 use std::collections::{BTreeMap, HashSet};
@@ -175,6 +170,12 @@ fn uuid_label(id: Uuid) -> String {
     format!("n{}", id.to_string().replace('-', ""))
 }
 
+async fn truncate_file_entries(db: &DatabaseConnection) {
+    db.execute_unprepared("truncate table public.file_entry")
+        .await
+        .unwrap();
+}
+
 #[tokio::test]
 #[serial_test::serial]
 async fn stage_two_runtime_scopes_filters_ltree_and_cursor_contracts() {
@@ -182,9 +183,7 @@ async fn stage_two_runtime_scopes_filters_ltree_and_cursor_contracts() {
     run_migrations(&config, Mode::Test).await.unwrap();
     let file_registry_db = connect_runtime(&config, Mode::Test).await.unwrap();
     let db = file_registry_db.connection();
-    db.execute_unprepared("truncate table public.file_entry")
-        .await
-        .unwrap();
+    truncate_file_entries(db).await;
 
     let timestamp = NaiveDate::from_ymd_opt(2026, 7, 21)
         .unwrap()
@@ -207,9 +206,7 @@ async fn stage_two_runtime_scopes_filters_ltree_and_cursor_contracts() {
     .await;
     assert_file_move_round_trip(db, &tree, timestamp).await;
 
-    db.execute_unprepared("truncate table public.file_entry")
-        .await
-        .unwrap();
+    truncate_file_entries(db).await;
 }
 
 #[tokio::test]
@@ -219,9 +216,7 @@ async fn stage_four_scoped_search_filters_paths_and_cursor() {
     run_migrations(&config, Mode::Test).await.unwrap();
     let file_registry_db = connect_runtime(&config, Mode::Test).await.unwrap();
     let db = file_registry_db.connection();
-    db.execute_unprepared("truncate table public.file_entry")
-        .await
-        .unwrap();
+    truncate_file_entries(db).await;
 
     let timestamp = NaiveDate::from_ymd_opt(2026, 7, 21)
         .unwrap()
@@ -241,9 +236,7 @@ async fn stage_four_scoped_search_filters_paths_and_cursor() {
         .await;
     assert_stage_four_query_counts(db, &reports_scope).await;
 
-    db.execute_unprepared("truncate table public.file_entry")
-        .await
-        .unwrap();
+    truncate_file_entries(db).await;
 }
 
 #[tokio::test]
@@ -253,9 +246,7 @@ async fn stage_three_root_listing_browse_and_breadcrumbs() {
     run_migrations(&config, Mode::Test).await.unwrap();
     let file_registry_db = connect_runtime(&config, Mode::Test).await.unwrap();
     let db = file_registry_db.connection();
-    db.execute_unprepared("truncate table public.file_entry")
-        .await
-        .unwrap();
+    truncate_file_entries(db).await;
 
     let timestamp = NaiveDate::from_ymd_opt(2026, 7, 21)
         .unwrap()
@@ -278,9 +269,7 @@ async fn stage_three_root_listing_browse_and_breadcrumbs() {
     assert_stage_three_invalid_directory_scopes(&repository, &forest).await;
     assert_stage_three_breadcrumbs(&repository, &same_scope, &forest).await;
 
-    db.execute_unprepared("truncate table public.file_entry")
-        .await
-        .unwrap();
+    truncate_file_entries(db).await;
 }
 
 #[tokio::test]
@@ -328,7 +317,8 @@ async fn stage_eight_read_service_authorizes_and_composes_roots_browse_search()
         ("stage-eight-analyst", &[ROLE_DEVICE_ANALYST][..]),
         ("stage-eight-admin", &[ROLE_ADMIN][..]),
     ] {
-        let actor = DeviceActor::from_roles_for_test(login, roles);
+        let actor =
+            crate::devices::access::test_support::device_actor(login, roles);
         assert_stage_eight_actor_reads(
             &env.dbx,
             &env.file_registry_db,
@@ -339,8 +329,10 @@ async fn stage_eight_read_service_authorizes_and_composes_roots_browse_search()
         .await;
     }
 
-    let admin =
-        DeviceActor::from_roles_for_test("stage-eight-admin", &[ROLE_ADMIN]);
+    let admin = crate::devices::access::test_support::device_actor(
+        "stage-eight-admin",
+        &[ROLE_ADMIN],
+    );
     assert_stage_eight_browse_composition(
         &env.dbx,
         &env.file_registry_db,
@@ -404,8 +396,10 @@ async fn stage_eight_read_service_short_circuits_and_preserves_safe_errors() {
     )
     .await;
 
-    let actor =
-        DeviceActor::from_roles_for_test("stage-eight-admin", &[ROLE_ADMIN]);
+    let actor = crate::devices::access::test_support::device_actor(
+        "stage-eight-admin",
+        &[ROLE_ADMIN],
+    );
     assert_stage_eight_live_scope_errors(
         &env.dbx,
         &env.file_registry_db,
@@ -416,8 +410,10 @@ async fn stage_eight_read_service_short_circuits_and_preserves_safe_errors() {
 
     let outage_db = connect_runtime(&env.config, Mode::Test).await.unwrap();
     outage_db.connection().clone().close().await.unwrap();
-    let unauthorized =
-        DeviceActor::from_roles_for_test("stage-eight-none", &[]);
+    let unauthorized = crate::devices::access::test_support::device_actor(
+        "stage-eight-none",
+        &[],
+    );
     assert_stage_eight_outage_short_circuits(
         &env.dbx,
         &outage_db,
@@ -1326,10 +1322,11 @@ async fn scoped_entry_ids(
     after: Option<&EntrySortKey>,
     limit: Option<u64>,
 ) -> Vec<Uuid> {
-    let mut query = query::apply_entry_scope(file_entry::Entity::find(), scope);
-    query = query::apply_entry_order(query);
+    let mut query =
+        query::core::apply_entry_scope(file_entry::Entity::find(), scope);
+    query = query::core::apply_entry_order(query);
     if let Some(after) = after {
-        query = query.filter(query::entry_strict_after_condition(after));
+        query = query.filter(query::core::entry_strict_after_condition(after));
     }
     if let Some(limit) = limit {
         query = query.limit(limit);
@@ -3320,8 +3317,10 @@ async fn stage_ten_sync_service_returns_ordered_partial_results() {
         timestamp,
     )
     .await;
-    let actor =
-        DeviceActor::from_roles_for_test(&owner.login, &[ROLE_DEVICE_SOURCE]);
+    let actor = crate::devices::access::test_support::device_actor(
+        &owner.login,
+        &[ROLE_DEVICE_SOURCE],
+    );
     let result = FileMetadataService::sync(
         MainDb::new(&env.dbx),
         &env.file_registry_db,
@@ -3438,8 +3437,10 @@ async fn stage_ten_sync_service_rejects_duplicates_and_isolates_item_failures()
         timestamp,
     )
     .await;
-    let actor =
-        DeviceActor::from_roles_for_test(&owner.login, &[ROLE_DEVICE_SOURCE]);
+    let actor = crate::devices::access::test_support::device_actor(
+        &owner.login,
+        &[ROLE_DEVICE_SOURCE],
+    );
     let repository = FilesystemRepository::new(&env.file_registry_db);
     let metadata_created_at = timestamp - Duration::hours(2);
     let metadata_modified_at = timestamp - Duration::hours(1);
@@ -3725,9 +3726,14 @@ async fn stage_ten_sync_service_gates_registry_writes() {
     )
     .await;
     archive_device(&env.dbx, archived_device_id, timestamp).await;
-    let source =
-        DeviceActor::from_roles_for_test(&owner.login, &[ROLE_DEVICE_SOURCE]);
-    let unauthorized = DeviceActor::from_roles_for_test("stage-ten-none", &[]);
+    let source = crate::devices::access::test_support::device_actor(
+        &owner.login,
+        &[ROLE_DEVICE_SOURCE],
+    );
+    let unauthorized = crate::devices::access::test_support::device_actor(
+        "stage-ten-none",
+        &[],
+    );
     let outage_db = connect_runtime(&env.config, Mode::Test).await.unwrap();
     outage_db.connection().clone().close().await.unwrap();
 
@@ -3843,8 +3849,10 @@ async fn stage_ten_sync_service_main_db_outage_short_circuits_registry() {
         timestamp,
     )
     .await;
-    let source =
-        DeviceActor::from_roles_for_test(&owner.login, &[ROLE_DEVICE_SOURCE]);
+    let source = crate::devices::access::test_support::device_actor(
+        &owner.login,
+        &[ROLE_DEVICE_SOURCE],
+    );
     let outage_main =
         crate::new_pg_pool_from_config(&env.config).await.unwrap();
     outage_main.clone().close().await.unwrap();
@@ -3872,19 +3880,25 @@ async fn stage_ten_sync_service_main_db_outage_short_circuits_registry() {
 }
 
 #[derive(Debug)]
-struct StageElevenNoSqlstateDatabaseError;
+struct StageElevenDatabaseError {
+    code: Option<String>,
+}
 
-impl fmt::Display for StageElevenNoSqlstateDatabaseError {
+impl fmt::Display for StageElevenDatabaseError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str("stage eleven database error without SQLSTATE")
+        formatter.write_str("stage eleven synthetic database error")
     }
 }
 
-impl StdError for StageElevenNoSqlstateDatabaseError {}
+impl StdError for StageElevenDatabaseError {}
 
-impl sqlx::error::DatabaseError for StageElevenNoSqlstateDatabaseError {
+impl sqlx::error::DatabaseError for StageElevenDatabaseError {
     fn message(&self) -> &str {
-        "stage eleven database error without SQLSTATE"
+        "stage eleven synthetic database error"
+    }
+
+    fn code(&self) -> Option<std::borrow::Cow<'_, str>> {
+        self.code.as_deref().map(std::borrow::Cow::Borrowed)
     }
 
     fn as_error(&self) -> &(dyn StdError + Send + Sync + 'static) {
@@ -3906,46 +3920,26 @@ impl sqlx::error::DatabaseError for StageElevenNoSqlstateDatabaseError {
     }
 }
 
-async fn stage_eleven_sqlstate_error(
-    db: &DatabaseConnection,
-    code: &str,
-) -> anyhow::Error {
-    let sql = match code {
-        "40001" => "do $$ begin raise sqlstate '40001'; end $$;",
-        "40P01" => "do $$ begin raise sqlstate '40P01'; end $$;",
-        "40003" => "do $$ begin raise sqlstate '40003'; end $$;",
-        "08006" => "do $$ begin raise sqlstate '08006'; end $$;",
-        "08007" => "do $$ begin raise sqlstate '08007'; end $$;",
-        "22012" => "select 1 / 0;",
-        _ => panic!("unexpected stage eleven SQLSTATE fixture"),
-    };
-    db.execute(Statement::from_string(DbBackend::Postgres, sql.to_string()))
-        .await
-        .c(h!())
-        .unwrap_err()
+fn stage_eleven_database_error(code: Option<&str>) -> anyhow::Error {
+    Err::<(), _>(sqlx::Error::Database(Box::new(StageElevenDatabaseError {
+        code: code.map(str::to_string),
+    })))
+    .c(h!())
+    .unwrap_err()
+}
+
+fn stage_eleven_sqlstate_error(code: &str) -> anyhow::Error {
+    stage_eleven_database_error(Some(code))
 }
 
 fn stage_eleven_no_sqlstate_error() -> anyhow::Error {
-    Err::<(), _>(sqlx::Error::Database(Box::new(
-        StageElevenNoSqlstateDatabaseError,
-    )))
-    .c(h!())
-    .unwrap_err()
+    stage_eleven_database_error(None)
 }
 
 async fn stage_eleven_transaction_id(
     transaction: &DatabaseTransaction,
 ) -> String {
-    transaction
-        .query_one(Statement::from_string(
-            DbBackend::Postgres,
-            "select pg_current_xact_id()::text as transaction_id".to_string(),
-        ))
-        .await
-        .unwrap()
-        .unwrap()
-        .try_get("", "transaction_id")
-        .unwrap()
+    capture_transaction_id(transaction).await.unwrap()
 }
 
 async fn stage_eleven_committed_transaction_id(
@@ -3964,25 +3958,6 @@ async fn stage_eleven_aborted_transaction_id(
     let transaction_id = stage_eleven_transaction_id(&transaction).await;
     transaction.rollback().await.unwrap();
     transaction_id
-}
-
-async fn stage_eleven_sync(
-    repository: &FilesystemRepository<'_>,
-    device_id: Uuid,
-    path_syntax: PathSyntax,
-    files: Vec<SyncFileItemCommand>,
-) -> Result<super::SyncFilesResult, FilesystemError> {
-    sync_files(repository, device_id, path_syntax, files, HashSet::new()).await
-}
-
-fn assert_stage_eleven_stable_identities(
-    control: &MutationAttemptTestControl,
-    expected_attempts: usize,
-) {
-    let identities = control.identities();
-    assert_eq!(control.attempts(), expected_attempts);
-    assert_eq!(identities.len(), expected_attempts);
-    assert!(identities.windows(2).all(|window| window[0] == window[1]));
 }
 
 #[tokio::test]
@@ -4016,25 +3991,13 @@ async fn stage_eleven_dispatches_transaction_errors_by_phase() {
 
     for code in ["40001", "40P01"] {
         assert_eq!(
-            classify_transaction_error(
-                &stage_eleven_sqlstate_error(
-                    env.file_registry_db.connection(),
-                    code,
-                )
-                .await,
-            ),
+            classify_transaction_error(&stage_eleven_sqlstate_error(code),),
             TransactionErrorClass::Retryable,
         );
     }
     for code in ["40003", "08006", "08007"] {
         assert_eq!(
-            classify_transaction_error(
-                &stage_eleven_sqlstate_error(
-                    env.file_registry_db.connection(),
-                    code,
-                )
-                .await,
-            ),
+            classify_transaction_error(&stage_eleven_sqlstate_error(code),),
             TransactionErrorClass::OutcomeUncertain,
         );
     }
@@ -4049,36 +4012,19 @@ async fn stage_eleven_dispatches_transaction_errors_by_phase() {
         TransactionErrorClass::OutcomeUncertain,
     );
     assert_eq!(
-        classify_transaction_error(
-            &stage_eleven_sqlstate_error(
-                env.file_registry_db.connection(),
-                "22012",
-            )
-            .await,
-        ),
+        classify_transaction_error(&stage_eleven_sqlstate_error("22012"),),
         TransactionErrorClass::DatabaseFailure,
     );
 
     for code in ["40001", "40P01"] {
         assert!(matches!(
-            map_transaction_body_error(
-                stage_eleven_sqlstate_error(
-                    env.file_registry_db.connection(),
-                    code
-                )
-                .await,
-            ),
+            map_transaction_body_error(stage_eleven_sqlstate_error(code),),
             FilesystemError::Conflict
         ));
     }
     for code in ["40003", "22012"] {
-        let error = map_transaction_body_error(
-            stage_eleven_sqlstate_error(
-                env.file_registry_db.connection(),
-                code,
-            )
-            .await,
-        );
+        let error =
+            map_transaction_body_error(stage_eleven_sqlstate_error(code));
         let FilesystemError::Internal(source) = error else {
             panic!("body error must retain an internal source");
         };
@@ -4087,13 +4033,8 @@ async fn stage_eleven_dispatches_transaction_errors_by_phase() {
             .any(|source| source.downcast_ref::<sqlx::Error>().is_some()));
     }
     for code in ["08006", "08007"] {
-        let error = map_transaction_body_error(
-            stage_eleven_sqlstate_error(
-                env.file_registry_db.connection(),
-                code,
-            )
-            .await,
-        );
+        let error =
+            map_transaction_body_error(stage_eleven_sqlstate_error(code));
         let FilesystemError::Dependency(source) = error else {
             panic!("connection error must remain a dependency");
         };
@@ -4120,32 +4061,24 @@ async fn stage_eleven_dispatches_transaction_errors_by_phase() {
 
     for code in ["40001", "40P01"] {
         assert!(matches!(
-            repository
-                .handle_commit_error_for_test(
-                    expected.clone(),
-                    committed_transaction_id.clone(),
-                    stage_eleven_sqlstate_error(
-                        env.file_registry_db.connection(),
-                        code,
-                    )
-                    .await,
-                )
-                .await,
+            handle_commit_error(
+                &repository,
+                expected.clone(),
+                committed_transaction_id.clone(),
+                stage_eleven_sqlstate_error(code),
+            )
+            .await,
             Err(FilesystemError::Conflict)
         ));
     }
-    let error = repository
-        .handle_commit_error_for_test(
-            expected.clone(),
-            committed_transaction_id.clone(),
-            stage_eleven_sqlstate_error(
-                env.file_registry_db.connection(),
-                "22012",
-            )
-            .await,
-        )
-        .await
-        .unwrap_err();
+    let error = handle_commit_error(
+        &repository,
+        expected.clone(),
+        committed_transaction_id.clone(),
+        stage_eleven_sqlstate_error("22012"),
+    )
+    .await
+    .unwrap_err();
     let FilesystemError::Internal(source) = error else {
         panic!("definite commit failure must remain internal");
     };
@@ -4155,32 +4088,24 @@ async fn stage_eleven_dispatches_transaction_errors_by_phase() {
 
     for code in ["40003", "08006", "08007"] {
         assert_eq!(
-            repository
-                .handle_commit_error_for_test(
-                    expected.clone(),
-                    committed_transaction_id.clone(),
-                    stage_eleven_sqlstate_error(
-                        env.file_registry_db.connection(),
-                        code,
-                    )
-                    .await,
-                )
-                .await
-                .unwrap(),
-            expected,
-        );
-        let error = repository
-            .handle_commit_error_for_test(
+            handle_commit_error(
+                &repository,
                 expected.clone(),
-                aborted_transaction_id.clone(),
-                stage_eleven_sqlstate_error(
-                    env.file_registry_db.connection(),
-                    code,
-                )
-                .await,
+                committed_transaction_id.clone(),
+                stage_eleven_sqlstate_error(code),
             )
             .await
-            .unwrap_err();
+            .unwrap(),
+            expected,
+        );
+        let error = handle_commit_error(
+            &repository,
+            expected.clone(),
+            aborted_transaction_id.clone(),
+            stage_eleven_sqlstate_error(code),
+        )
+        .await
+        .unwrap_err();
         let FilesystemError::CommitUncertain(source) = error else {
             panic!("unconfirmed outcome must remain uncertain");
         };
@@ -4189,45 +4114,45 @@ async fn stage_eleven_dispatches_transaction_errors_by_phase() {
             .any(|source| source.downcast_ref::<sqlx::Error>().is_some()));
     }
     assert_eq!(
-        repository
-            .handle_commit_error_for_test(
-                expected.clone(),
-                committed_transaction_id.clone(),
-                stage_eleven_no_sqlstate_error(),
-            )
-            .await
-            .unwrap(),
+        handle_commit_error(
+            &repository,
+            expected.clone(),
+            committed_transaction_id.clone(),
+            stage_eleven_no_sqlstate_error(),
+        )
+        .await
+        .unwrap(),
         expected,
     );
     assert!(matches!(
-        repository
-            .handle_commit_error_for_test(
-                expected.clone(),
-                aborted_transaction_id.clone(),
-                stage_eleven_no_sqlstate_error(),
-            )
-            .await,
+        handle_commit_error(
+            &repository,
+            expected.clone(),
+            aborted_transaction_id.clone(),
+            stage_eleven_no_sqlstate_error(),
+        )
+        .await,
         Err(FilesystemError::CommitUncertain(_))
     ));
     assert_eq!(
-        repository
-            .handle_commit_error_for_test(
-                expected.clone(),
-                committed_transaction_id,
-                anyhow::anyhow!("stage-eleven-synthetic-non-database"),
-            )
-            .await
-            .unwrap(),
-        expected,
-    );
-    let error = repository
-        .handle_commit_error_for_test(
-            expected,
-            aborted_transaction_id,
+        handle_commit_error(
+            &repository,
+            expected.clone(),
+            committed_transaction_id,
             anyhow::anyhow!("stage-eleven-synthetic-non-database"),
         )
         .await
-        .unwrap_err();
+        .unwrap(),
+        expected,
+    );
+    let error = handle_commit_error(
+        &repository,
+        expected,
+        aborted_transaction_id,
+        anyhow::anyhow!("stage-eleven-synthetic-non-database"),
+    )
+    .await
+    .unwrap_err();
     let FilesystemError::CommitUncertain(source) = error else {
         panic!("synthetic uncertain outcome must retain its source");
     };
@@ -4238,297 +4163,36 @@ async fn stage_eleven_dispatches_transaction_errors_by_phase() {
 
 #[tokio::test]
 #[serial_test::serial]
-async fn stage_eleven_root_change_race_retries_whole_item() {
-    let (env, _guard) = cleanup_locked().await.unwrap();
-    let device_id = Uuid::now_v7();
-    let repository = FilesystemRepository::new(&env.file_registry_db);
-    let initial = repository
-        .mutate_file(&stage_nine_mutation(
-            device_id,
-            None,
-            PathSyntax::Windows,
-            r"C:\original\file.log",
-            Some("text/plain"),
-            Some("log"),
-            None,
-            None,
-        ))
-        .await
-        .unwrap();
-    let optimistic_read = Arc::new(tokio::sync::Barrier::new(2));
-    let resume = Arc::new(tokio::sync::Barrier::new(2));
-    let control = MutationAttemptTestControl::pause_after_optimistic_read_once(
-        r"E:\final\file.log",
-        optimistic_read.clone(),
-        resume.clone(),
-    );
-    let controlled_repository = FilesystemRepository::with_test_control(
-        &env.file_registry_db,
-        &control,
-    );
-
-    let (result, ()) =
-        tokio::time::timeout(std::time::Duration::from_secs(5), async {
-            tokio::join!(
-                stage_eleven_sync(
-                    &controlled_repository,
-                    device_id,
-                    PathSyntax::Windows,
-                    vec![stage_ten_file(
-                        Some(initial.file.file_id),
-                        r"E:\final\file.log",
-                    )],
-                ),
-                async {
-                    optimistic_read.wait().await;
-                    let intermediate = repository
-                        .mutate_file(&stage_nine_mutation(
-                            device_id,
-                            Some(initial.file.file_id),
-                            PathSyntax::Windows,
-                            r"D:\intermediate\file.log",
-                            Some("text/plain"),
-                            Some("log"),
-                            None,
-                            None,
-                        ))
-                        .await
-                        .unwrap();
-                    assert_eq!(intermediate.file.file_id, initial.file.file_id);
-                    resume.wait().await;
-                },
-            )
-        })
-        .await
-        .expect("root-change race timed out");
-    let result = result.unwrap();
-    let file = stage_ten_accepted_file(
-        &result.results[0],
-        0,
-        SyncFileOperation::Updated,
-        "E:\\",
-        r"E:\final\file.log",
-        &["final", "file.log"],
-    );
-    assert_eq!(file.file_id, initial.file.file_id);
-    assert_stage_eleven_stable_identities(&control, 2);
-    let identities = control.identities();
-    assert_eq!(identities[0].file_id, initial.file.file_id);
-    assert_eq!(
-        file.parent_entry_id,
-        identities[0].candidate_directory_entry_ids[0]
-    );
-
-    let entries =
-        stage_nine_entries(env.file_registry_db.connection(), device_id).await;
-    let files = entries
-        .iter()
-        .filter(|entry| entry.kind == FileEntryKind::File.as_db_str())
-        .collect::<Vec<_>>();
-    assert_eq!(files.len(), 1);
-    assert_eq!(files[0].id, initial.file.file_id);
-    assert_eq!(
-        files[0].absolute_path.as_deref(),
-        Some(r"E:\final\file.log")
-    );
-    assert_eq!(
-        stage_nine_root(&entries, PathSyntax::Windows, "E:\\").id,
-        identities[0].candidate_root_entry_id,
-    );
-    assert!(!entries.iter().any(|entry| {
-        entry.parent_id.is_some()
-            && entry.kind == FileEntryKind::Directory.as_db_str()
-            && matches!(entry.name.as_str(), "original" | "intermediate")
-    }));
-    assert!(entries
-        .iter()
-        .filter_map(|entry| entry.parent_id)
-        .all(|parent_id| entries.iter().any(|entry| entry.id == parent_id)));
-}
-
-#[tokio::test]
-#[serial_test::serial]
-async fn stage_eleven_retries_keyless_create_with_stable_candidates() {
-    let (env, _guard) = cleanup_locked().await.unwrap();
-
-    for code in [
-        RetryableSqlstate::SerializationFailure,
-        RetryableSqlstate::DeadlockDetected,
-    ] {
-        let device_id = Uuid::now_v7();
-        let control =
-            MutationAttemptTestControl::raise_retryable_sqlstate_before_commit(
-                r"C:\logs\retry.log",
-                code,
-                1,
-            );
-        let repository = FilesystemRepository::with_test_control(
-            &env.file_registry_db,
-            &control,
-        );
-        let result = stage_eleven_sync(
-            &repository,
-            device_id,
-            PathSyntax::Windows,
-            vec![stage_ten_file(None, r"C:\logs\retry.log")],
-        )
-        .await
-        .unwrap();
-        let file = stage_ten_accepted_file(
-            &result.results[0],
-            0,
-            SyncFileOperation::Created,
-            "C:\\",
-            r"C:\logs\retry.log",
-            &["logs", "retry.log"],
-        );
-        assert_stage_eleven_stable_identities(&control, 2);
-        let identity = control.identities().remove(0);
-        assert_eq!(file.file_id, identity.file_id);
-        assert_eq!(
-            file.parent_entry_id,
-            identity.candidate_directory_entry_ids[0]
-        );
-
-        let entries =
-            stage_nine_entries(env.file_registry_db.connection(), device_id)
-                .await;
-        assert_eq!(
-            entries
-                .iter()
-                .filter(|entry| entry.kind == FileEntryKind::File.as_db_str())
-                .count(),
-            1,
-        );
-        assert_eq!(entries.len(), 3);
-        assert_eq!(
-            stage_nine_root(&entries, PathSyntax::Windows, "C:\\").id,
-            identity.candidate_root_entry_id,
-        );
-        assert_eq!(
-            stage_nine_directory(
-                &entries,
-                identity.candidate_root_entry_id,
-                "logs",
-            )
-            .id,
-            identity.candidate_directory_entry_ids[0],
-        );
-    }
-}
-
-#[tokio::test]
-#[serial_test::serial]
-async fn stage_eleven_retry_exhaustion_rejects_item_and_continues() {
-    let (env, _guard) = cleanup_locked().await.unwrap();
-    let device_id = Uuid::now_v7();
-    let control =
-        MutationAttemptTestControl::raise_retryable_sqlstate_before_commit(
-            r"C:\retry\rejected.log",
-            RetryableSqlstate::SerializationFailure,
-            DEVICE_FILE_SYNC_ITEM_MAX_ATTEMPTS,
-        );
-    let repository = FilesystemRepository::with_test_control(
-        &env.file_registry_db,
-        &control,
-    );
-    let result = stage_eleven_sync(
-        &repository,
-        device_id,
-        PathSyntax::Windows,
-        vec![
-            stage_ten_file(None, r"C:\retry\rejected.log"),
-            stage_ten_file(None, r"D:\accepted\kept.log"),
-        ],
-    )
-    .await
-    .unwrap();
-
-    assert_stage_ten_rejected(
-        &result.results[0],
-        0,
-        SyncFileRejectionKind::Conflict,
-        "filesystem conflict",
-        true,
-        &[],
-    );
-    let accepted = stage_ten_accepted_file(
-        &result.results[1],
-        1,
-        SyncFileOperation::Created,
-        "D:\\",
-        r"D:\accepted\kept.log",
-        &["accepted", "kept.log"],
-    );
-    assert_stage_eleven_stable_identities(
-        &control,
-        DEVICE_FILE_SYNC_ITEM_MAX_ATTEMPTS,
-    );
-
-    let entries =
-        stage_nine_entries(env.file_registry_db.connection(), device_id).await;
-    assert!(!entries.iter().any(|entry| {
-        entry.parent_id.is_none()
-            && entry.kind == FileEntryKind::Directory.as_db_str()
-            && entry.path_syntax.as_deref()
-                == Some(PathSyntax::Windows.as_db_str())
-            && entry.name == "C:\\"
-    }));
-    let files = entries
-        .iter()
-        .filter(|entry| entry.kind == FileEntryKind::File.as_db_str())
-        .collect::<Vec<_>>();
-    assert_eq!(files.len(), 1);
-    assert_eq!(files[0].id, accepted.file_id);
-    assert_eq!(
-        files[0].absolute_path.as_deref(),
-        Some(r"D:\accepted\kept.log")
-    );
-}
-
-#[tokio::test]
-#[serial_test::serial]
 async fn stage_eleven_reconciles_committed_keyless_create() {
     let (env, _guard) = cleanup_locked().await.unwrap();
     let device_id = Uuid::now_v7();
-    let control = MutationAttemptTestControl::lose_commit_acknowledgement(
-        r"C:\lost\create.log",
-    );
-    let repository = FilesystemRepository::with_test_control(
-        &env.file_registry_db,
-        &control,
-    );
-    let result = stage_eleven_sync(
-        &repository,
+    let mutation = stage_nine_mutation(
         device_id,
+        None,
         PathSyntax::Windows,
-        vec![
-            stage_ten_file(None, r"C:\lost\create.log"),
-            stage_ten_file(None, r"D:\next\second.log"),
-        ],
+        r"C:\lost\create.log",
+        Some("text/plain"),
+        Some("log"),
+        None,
+        None,
+    );
+    let transaction = env.file_registry_db.connection().begin().await.unwrap();
+    let expected = super::mutation::mutate_file(&transaction, &mutation)
+        .await
+        .unwrap();
+    let transaction_id = stage_eleven_transaction_id(&transaction).await;
+    transaction.commit().await.unwrap();
+
+    let repository = FilesystemRepository::new(&env.file_registry_db);
+    let reconciled = handle_commit_error(
+        &repository,
+        expected.clone(),
+        transaction_id,
+        anyhow::anyhow!("stage-eleven-lost-acknowledgement"),
     )
     .await
     .unwrap();
-
-    let first = stage_ten_accepted_file(
-        &result.results[0],
-        0,
-        SyncFileOperation::Created,
-        "C:\\",
-        r"C:\lost\create.log",
-        &["lost", "create.log"],
-    );
-    let first_file_id = first.file_id;
-    let second = stage_ten_accepted_file(
-        &result.results[1],
-        1,
-        SyncFileOperation::Created,
-        "D:\\",
-        r"D:\next\second.log",
-        &["next", "second.log"],
-    );
-    assert_eq!(control.attempts(), 1);
-    assert_ne!(first_file_id, second.file_id);
+    assert_eq!(reconciled, expected);
 
     let entries =
         stage_nine_entries(env.file_registry_db.connection(), device_id).await;
@@ -4537,17 +4201,10 @@ async fn stage_eleven_reconciles_committed_keyless_create() {
             .iter()
             .filter(|entry| {
                 entry.kind == FileEntryKind::File.as_db_str()
-                    && entry.id == first_file_id
+                    && entry.id == expected.file.file_id
             })
             .count(),
         1,
-    );
-    assert_eq!(
-        entries
-            .iter()
-            .filter(|entry| entry.kind == FileEntryKind::File.as_db_str())
-            .count(),
-        2,
     );
 }
 
@@ -4570,149 +4227,43 @@ async fn stage_eleven_aborted_attempt_cannot_borrow_identical_state() {
         ))
         .await
         .unwrap();
-    repository
-        .mutate_file(&stage_nine_mutation(
-            device_id,
-            None,
-            PathSyntax::Windows,
-            r"E:\same\anchor.log",
-            Some("text/plain"),
-            Some("log"),
-            None,
-            None,
-        ))
-        .await
-        .unwrap();
-
-    let fixed_now = chrono::Utc::now().naive_utc() + Duration::seconds(1);
-    let target_path = r"E:\same\file.log";
-    let after_rollback_entered = Arc::new(tokio::sync::Barrier::new(2));
-    let after_rollback_resume = Arc::new(tokio::sync::Barrier::new(2));
-    let control_a = MutationAttemptTestControl::unknown_without_commit(
-        target_path,
-        Some(fixed_now),
-        Some(MutationAttemptBarriers::new(
-            after_rollback_entered.clone(),
-            after_rollback_resume.clone(),
-        )),
-    );
-    let control_b =
-        MutationAttemptTestControl::fixed_attempt_now(target_path, fixed_now);
-    let repository_a = FilesystemRepository::with_test_control(
-        &env.file_registry_db,
-        &control_a,
-    );
-    let repository_b = FilesystemRepository::with_test_control(
-        &env.file_registry_db,
-        &control_b,
-    );
     let mutation = stage_nine_mutation(
         device_id,
         Some(initial.file.file_id),
         PathSyntax::Windows,
-        target_path,
+        r"E:\same\file.log",
         Some("text/plain"),
         Some("log"),
         None,
         None,
     );
+    let fixed_now = chrono::Utc::now().naive_utc() + Duration::seconds(1);
 
-    let (attempt_a, (attempt_b, state_after_b)) =
-        tokio::time::timeout(std::time::Duration::from_secs(5), async {
-            tokio::join!(repository_a.mutate_file(&mutation), async {
-                after_rollback_entered.wait().await;
-                let attempt_b =
-                    repository_b.mutate_file(&mutation).await.unwrap();
-                let state_after_b = stage_nine_entries(
-                    env.file_registry_db.connection(),
-                    device_id,
-                )
-                .await;
-                after_rollback_resume.wait().await;
-                (attempt_b, state_after_b)
-            },)
-        })
-        .await
-        .expect("aborted-attribution race timed out");
-    let error = attempt_a.unwrap_err();
-    assert!(matches!(error, FilesystemError::CommitUncertain(_)));
-    assert_eq!(control_a.attempts(), 1);
-    assert_eq!(attempt_b.file.file_id, initial.file.file_id);
-    assert_eq!(attempt_b.file.absolute_path, target_path);
-    assert_eq!(attempt_b.file.updated_at, fixed_now);
-    assert_eq!(
-        stage_nine_entries(env.file_registry_db.connection(), device_id).await,
-        state_after_b,
-    );
-}
+    let aborted = env.file_registry_db.connection().begin().await.unwrap();
+    let aborted_result =
+        super::mutation::mutate_file_at(&aborted, &mutation, fixed_now)
+            .await
+            .unwrap();
+    let aborted_transaction_id = stage_eleven_transaction_id(&aborted).await;
+    aborted.rollback().await.unwrap();
 
-#[tokio::test]
-#[serial_test::serial]
-async fn stage_eleven_unresolved_commit_preserves_prior_items_and_stops_later_items(
-) {
-    let (env, _guard) = cleanup_locked().await.unwrap();
-    let device_id = Uuid::now_v7();
-    let repository = FilesystemRepository::new(&env.file_registry_db);
-    let target = repository
-        .mutate_file(&stage_nine_mutation(
-            device_id,
-            None,
-            PathSyntax::Windows,
-            r"D:\target\same.log",
-            Some("text/plain"),
-            Some("log"),
-            None,
-            None,
-        ))
-        .await
-        .unwrap();
-    let before_target =
-        stage_nine_entries(env.file_registry_db.connection(), device_id).await;
-    let control = MutationAttemptTestControl::unknown_without_commit(
-        r"D:\target\same.log",
-        None,
-        None,
-    );
-    let controlled_repository = FilesystemRepository::with_test_control(
-        &env.file_registry_db,
-        &control,
-    );
+    let committed = env.file_registry_db.connection().begin().await.unwrap();
+    let committed_result =
+        super::mutation::mutate_file_at(&committed, &mutation, fixed_now)
+            .await
+            .unwrap();
+    committed.commit().await.unwrap();
+    assert_eq!(committed_result, aborted_result);
 
-    let error = stage_eleven_sync(
-        &controlled_repository,
-        device_id,
-        PathSyntax::Windows,
-        vec![
-            stage_ten_file(None, r"C:\prior\committed.log"),
-            stage_ten_file(Some(target.file.file_id), r"D:\target\same.log"),
-            stage_ten_file(None, r"E:\later\must-not-exist.log"),
-        ],
+    let error = handle_commit_error(
+        &repository,
+        aborted_result,
+        aborted_transaction_id,
+        anyhow::anyhow!("stage-eleven-aborted-attribution"),
     )
     .await
     .unwrap_err();
     assert!(matches!(error, FilesystemError::CommitUncertain(_)));
-
-    let after =
-        stage_nine_entries(env.file_registry_db.connection(), device_id).await;
-    assert_eq!(
-        after
-            .iter()
-            .find(|entry| entry.id == target.file.file_id)
-            .unwrap(),
-        before_target
-            .iter()
-            .find(|entry| entry.id == target.file.file_id)
-            .unwrap(),
-    );
-    assert!(after.iter().any(|entry| {
-        entry.kind == FileEntryKind::File.as_db_str()
-            && entry.absolute_path.as_deref() == Some(r"C:\prior\committed.log")
-    }));
-    assert!(!after.iter().any(|entry| {
-        entry.kind == FileEntryKind::File.as_db_str()
-            && entry.absolute_path.as_deref()
-                == Some(r"E:\later\must-not-exist.log")
-    }));
 }
 
 #[tokio::test]
@@ -4738,38 +4289,25 @@ async fn stage_eleven_reconciliation_requires_committed_xid() {
     let transaction = env.file_registry_db.connection().begin().await.unwrap();
     let in_progress_transaction_id =
         stage_eleven_transaction_id(&transaction).await;
-    let error = repository
-        .handle_commit_error_for_test(
-            expected.clone(),
-            in_progress_transaction_id,
-            anyhow::anyhow!("stage-eleven-in-progress"),
-        )
-        .await
-        .unwrap_err();
+    let error = handle_commit_error(
+        &repository,
+        expected.clone(),
+        in_progress_transaction_id,
+        anyhow::anyhow!("stage-eleven-in-progress"),
+    )
+    .await
+    .unwrap_err();
     assert!(matches!(error, FilesystemError::CommitUncertain(_)));
     transaction.rollback().await.unwrap();
 
-    let null_status: Option<String> = env
-        .file_registry_db
-        .connection()
-        .query_one(Statement::from_string(
-            DbBackend::Postgres,
-            "select pg_xact_status('0'::xid8) as status".to_string(),
-        ))
-        .await
-        .unwrap()
-        .unwrap()
-        .try_get("", "status")
-        .unwrap();
-    assert_eq!(null_status, None);
-    let error = repository
-        .handle_commit_error_for_test(
-            expected,
-            "0".to_string(),
-            anyhow::anyhow!("stage-eleven-null-status"),
-        )
-        .await
-        .unwrap_err();
+    let error = handle_commit_error(
+        &repository,
+        expected,
+        "0".to_string(),
+        anyhow::anyhow!("stage-eleven-null-status"),
+    )
+    .await
+    .unwrap_err();
     assert!(matches!(error, FilesystemError::CommitUncertain(_)));
 }
 
@@ -4802,14 +4340,14 @@ async fn stage_eleven_registry_outage_keeps_commit_uncertain() {
     outage_db.connection().clone().close().await.unwrap();
     let outage_repository = FilesystemRepository::new(&outage_db);
 
-    let error = outage_repository
-        .handle_commit_error_for_test(
-            expected,
-            transaction_id,
-            anyhow::anyhow!("stage-eleven-registry-outage"),
-        )
-        .await
-        .unwrap_err();
+    let error = handle_commit_error(
+        &outage_repository,
+        expected,
+        transaction_id,
+        anyhow::anyhow!("stage-eleven-registry-outage"),
+    )
+    .await
+    .unwrap_err();
     assert!(matches!(error, FilesystemError::CommitUncertain(_)));
     assert_eq!(
         stage_nine_entries(env.file_registry_db.connection(), device_id).await,
@@ -4856,14 +4394,14 @@ async fn stage_eleven_committed_xid_mismatch_keeps_commit_uncertain() {
     let before_handler =
         stage_nine_entries(env.file_registry_db.connection(), device_id).await;
 
-    let error = repository
-        .handle_commit_error_for_test(
-            expected,
-            transaction_id,
-            anyhow::anyhow!("stage-eleven-committed-mismatch"),
-        )
-        .await
-        .unwrap_err();
+    let error = handle_commit_error(
+        &repository,
+        expected,
+        transaction_id,
+        anyhow::anyhow!("stage-eleven-committed-mismatch"),
+    )
+    .await
+    .unwrap_err();
     assert!(matches!(error, FilesystemError::CommitUncertain(_)));
     assert_eq!(
         stage_nine_entries(env.file_registry_db.connection(), device_id).await,

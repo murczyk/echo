@@ -37,7 +37,7 @@ fn update_command(device_id: Uuid) -> UpdateDeviceCommand {
 }
 
 fn actor(login: &str, roles: &[&str]) -> DeviceActor {
-    DeviceActor::from_roles_for_test(login, roles)
+    crate::devices::access::test_support::device_actor(login, roles)
 }
 
 fn list_command() -> ListDevicesCommand {
@@ -129,7 +129,7 @@ async fn batch_hydration_preserves_input_order_and_current_references() {
     )
     .await
     .unwrap();
-    let actor = DeviceActor::from_roles_for_test(
+    let actor = crate::devices::access::test_support::device_actor(
         &source_login.login,
         &[ROLE_DEVICE_SOURCE],
     );
@@ -253,7 +253,7 @@ async fn source_create_persists_only_normalized_source_state() {
     )
     .await
     .unwrap();
-    let actor = DeviceActor::from_roles_for_test(
+    let actor = crate::devices::access::test_support::device_actor(
         &source_login.login,
         &[ROLE_DEVICE_SOURCE],
     );
@@ -334,11 +334,11 @@ async fn analyst_mixed_update_is_atomic_and_source_cannot_change_analysis() {
     )
     .await
     .unwrap();
-    let source = DeviceActor::from_roles_for_test(
+    let source = crate::devices::access::test_support::device_actor(
         &source_login.login,
         &[ROLE_DEVICE_SOURCE],
     );
-    let analyst = DeviceActor::from_roles_for_test(
+    let analyst = crate::devices::access::test_support::device_actor(
         &analyst_login.login,
         &[ROLE_DEVICE_ANALYST],
     );
