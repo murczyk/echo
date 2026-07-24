@@ -361,6 +361,7 @@ mod tests {
             .unwrap()
             .into_active_model();
         login.password = Set(Some(password_hash));
+        login.password_auth_enabled = Set(true);
         login.roles = Set(serde_json::json!(["Admin", "Api"]));
         login.update(&env.dbx).await.unwrap();
 
