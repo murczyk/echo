@@ -10,10 +10,7 @@ import {
   Typography,
 } from '@mui/material';
 import type { FormEvent, ReactNode } from 'react';
-import {
-  STANDARD_DIALOG_ACTIONS_SX,
-  STANDARD_DIALOG_FORM_STACK_SX,
-} from '../../components/dialogStyles';
+import { STANDARD_DIALOG_FORM_STACK_SX } from '../../components/dialogStyles';
 import { PowerForm } from '../../components/PowerForm';
 import { ELLIPSIS } from '../../utils/misc';
 import { blurActiveElement } from '../../utils/focus';
@@ -44,7 +41,7 @@ export function DeleteConfirmDialog({
     <Dialog open={open} onClose={confirmDisabled ? undefined : onClose} disableRestoreFocus>
       <DialogTitle>{title}</DialogTitle>
       <DialogContent>{content}</DialogContent>
-      <DialogActions sx={STANDARD_DIALOG_ACTIONS_SX}>
+      <DialogActions>
         <Button
           size={actionSize}
           variant={cancelVariant}
@@ -178,7 +175,7 @@ export function CommentDialog({
             />
           </Stack>
         </DialogContent>
-        <DialogActions sx={STANDARD_DIALOG_ACTIONS_SX}>
+        <DialogActions>
           <Button
             type="button"
             onClick={() => {

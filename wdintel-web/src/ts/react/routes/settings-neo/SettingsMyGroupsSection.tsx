@@ -34,7 +34,6 @@ import { PowerButton } from '../../components/PowerButton';
 import { PowerAlert } from '../../components/PowerAlert';
 import { PowerIconButton } from '../../components/PowerIconButton';
 import { PowerMenu } from '../../components/PowerMenu';
-import { STANDARD_DIALOG_ACTIONS_SX } from '../../components/dialogStyles';
 import { TableStateProvider } from '../../components/mui-customized/table/table-state-provider';
 import { fetchMyAdminGroupEditReference, updateMyAdminGroup } from '../../services/api/zones';
 import { SettingsNeoTable } from './SettingsNeoTable';
@@ -467,7 +466,7 @@ function MyGroupEditDialog(props: {
           isOptionEqualToValue={(option, value) => option.id === value.id}
         />
       </DialogContent>
-      <DialogActions sx={STANDARD_DIALOG_ACTIONS_SX}>
+      <DialogActions>
         <PowerButton
           variant="outlined"
           onClick={() => setEditDialog(null)}

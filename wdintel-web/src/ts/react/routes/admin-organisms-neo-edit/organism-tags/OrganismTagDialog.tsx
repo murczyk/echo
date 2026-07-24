@@ -13,7 +13,6 @@ import { useCallback, useEffect, useState } from 'react';
 
 import type { TagAdmin, TagUpsertReq } from '../../../../../Bindings';
 import { PowerButton } from '../../../components/PowerButton';
-import { STANDARD_DIALOG_ACTIONS_SX } from '../../../components/dialogStyles';
 import { type TagFormState, emptyTagForm, formFromTag, parseOrdValue } from './types';
 
 function TagOptionToggle({
@@ -156,7 +155,7 @@ export function OrganismTagDialog({
           </Stack>
         </Stack>
       </DialogContent>
-      <DialogActions sx={STANDARD_DIALOG_ACTIONS_SX}>
+      <DialogActions>
         <PowerButton variant="outlined" onClick={onClose} disabled={saveInFlight}>
           Скасувати
         </PowerButton>

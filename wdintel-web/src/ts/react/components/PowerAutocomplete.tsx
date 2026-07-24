@@ -25,7 +25,6 @@ import type { MouseEvent as ReactMouseEvent, ReactNode } from 'react';
 import { PowerButton } from './PowerButton';
 import { PowerIconButton } from './PowerIconButton';
 import { PowerMenu } from './PowerMenu';
-import { STANDARD_DIALOG_ACTIONS_SX } from './dialogStyles';
 
 type BulkPasteResolution<T> = {
   tokens: string[];
@@ -494,7 +493,7 @@ export function PowerAutocomplete<T>(props: PowerAutocompleteProps<T>) {
                 </Box>
               </Box>
             </DialogContent>
-            <DialogActions sx={STANDARD_DIALOG_ACTIONS_SX}>
+            <DialogActions>
               <PowerButton onClick={closeBulkDialog}>Скасувати</PowerButton>
               <PowerButton
                 variant="contained"

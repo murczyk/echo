@@ -26,7 +26,6 @@ import { type ReactNode, useEffect, useState } from 'react';
 
 import { PowerDateTimePicker } from '../../../components/PowerDateTimePicker';
 import { PowerAlert } from '../../../components/PowerAlert';
-import { STANDARD_DIALOG_ACTIONS_SX } from '../../../components/dialogStyles';
 import type { BgtaskProgressStage } from '../../../services/api/bgtask';
 import { parseBgtaskProgressStages } from '../../../services/api/bgtask';
 import { parseUtcDateTime } from '../../../services/api/report-history';
@@ -695,15 +694,7 @@ export function NetworkEtalonkaReportDialog({
         </Stack>
       </DialogContent>
 
-      <DialogActions
-        sx={{
-          ...(STANDARD_DIALOG_ACTIONS_SX as Record<string, unknown>),
-          gap: 2,
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          flexWrap: 'wrap',
-        }}
-      >
+      <DialogActions>
         <Typography
           variant="caption"
           color="text.secondary"

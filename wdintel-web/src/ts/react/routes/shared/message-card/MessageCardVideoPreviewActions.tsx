@@ -14,6 +14,7 @@ import {
   Tooltip,
   Typography,
 } from '@mui/material';
+import { useTheme } from '@mui/material/styles';
 import type { VideoPreviewSource, VideoPlayerState } from './message-card-video-utils';
 import { formatVideoTime, downloadOriginalVideo } from './message-card-video-utils';
 import {
@@ -24,6 +25,7 @@ import {
   VideoProgressSlider,
 } from './MessageCardVideoControls';
 import { MessageCardDisabledControlCursorWrapper } from './MessageCardDisabledControlCursorWrapper';
+import { getMessageCardPreviewActionBarSx } from './message-card-preview-shell';
 
 export function MessageCardVideoPreviewControls({
   playerState,
@@ -157,18 +159,9 @@ export function MessageCardVideoPreviewActions({
   onDownloadStart: (downloadKey: string) => boolean;
 }) {
   const downloading = isDownloadStarting(downloadKey);
+  const theme = useTheme();
   return (
-    <DialogActions
-      sx={{
-        px: { xs: 1, sm: 2 },
-        py: '20px',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        gap: { xs: 0.5, sm: 2 },
-        flexWrap: 'nowrap',
-      }}
-    >
+    <DialogActions sx={getMessageCardPreviewActionBarSx(theme)}>
       <Box
         sx={{
           flex: 1,
@@ -229,34 +222,36 @@ export function MessageCardVideoPreviewActions({
           </MessageCardDisabledControlCursorWrapper>
         </Tooltip>
       </Box>
-      {hasCarousel && (
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-          <Tooltip title="Попереднє" enterDelay={300}>
-            <IconButton size="small" onClick={onGoToPrevious} sx={{ color: 'text.secondary' }}>
-              <ChevronLeftIcon />
-            </IconButton>
-          </Tooltip>
-          <Typography
-            variant="body2"
-            sx={{
-              backgroundColor: 'action.hover',
-              color: 'text.primary',
-              fontWeight: 700,
-              letterSpacing: 0,
-              px: 1,
-              py: 0.25,
-              borderRadius: 1,
-            }}
-          >
-            {`${resolvedIndex + 1} / ${videoCount}`}
-          </Typography>
-          <Tooltip title="Наступне" enterDelay={300}>
-            <IconButton size="small" onClick={onGoToNext} sx={{ color: 'text.secondary' }}>
-              <ChevronRightIcon />
-            </IconButton>
-          </Tooltip>
-        </Box>
-      )}
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+        {hasCarousel && (
+          <>
+            <Tooltip title="Попереднє" enterDelay={300}>
+              <IconButton size="small" onClick={onGoToPrevious} sx={{ color: 'text.secondary' }}>
+                <ChevronLeftIcon />
+              </IconButton>
+            </Tooltip>
+            <Typography
+              variant="body2"
+              sx={{
+                backgroundColor: 'action.hover',
+                color: 'text.primary',
+                fontWeight: 700,
+                letterSpacing: 0,
+                px: 1,
+                py: 0.25,
+                borderRadius: 1,
+              }}
+            >
+              {`${resolvedIndex + 1} / ${videoCount}`}
+            </Typography>
+            <Tooltip title="Наступне" enterDelay={300}>
+              <IconButton size="small" onClick={onGoToNext} sx={{ color: 'text.secondary' }}>
+                <ChevronRightIcon />
+              </IconButton>
+            </Tooltip>
+          </>
+        )}
+      </Box>
       <Box sx={{ flex: '0 0 auto', display: 'flex', justifyContent: 'flex-end' }}>
         <Button onClick={onClose} sx={{ flexShrink: 0, ml: 1 }}>
           Закрити

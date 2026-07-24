@@ -185,6 +185,7 @@ export function MessageCardImagePreviewActions({
   isDownloadStarting: (downloadKey: string) => boolean;
   onDownloadStart: (downloadKey: string) => boolean;
 }) {
+  const theme = useTheme();
   const downloading = isDownloadStarting(downloadKey);
   const copyTooltip =
     copyStatus === 'copying'
@@ -208,17 +209,7 @@ export function MessageCardImagePreviewActions({
         : 'text.secondary';
 
   return (
-    <DialogActions
-      sx={{
-        px: { xs: 1, sm: 2 },
-        py: '20px',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        gap: { xs: 0.5, sm: 2 },
-        flexWrap: 'nowrap',
-      }}
-    >
+    <DialogActions sx={getMessageCardPreviewActionBarSx(theme)}>
       <Box
         sx={{
           flex: 1,

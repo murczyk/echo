@@ -56,7 +56,6 @@ import { PageErrorState } from '../../components/PageErrorState';
 import { SectionEmptyState } from '../../components/SectionEmptyState';
 import { SectionLoadingOverlay } from '../../components/SectionLoadingOverlay';
 import { TablePageToolbar } from '../../components/TablePageToolbar';
-import { STANDARD_DIALOG_ACTIONS_SX } from '../../components/dialogStyles';
 import { GlobalFilterTextField } from '../../components/mui-customized/table/components/table-top-toolbar/components/global-filter-text-field';
 import { ConfirmDangerDialog } from '../../components/ConfirmDangerDialog';
 import { PowerButton } from '../../components/PowerButton';
@@ -2250,7 +2249,7 @@ function AdminDirectionsNeoPageBody() {
             }
           />
         </DialogContent>
-        <DialogActions sx={STANDARD_DIALOG_ACTIONS_SX}>
+        <DialogActions>
           <PowerButton
             variant="outlined"
             onClick={() => setEditDialog(null)}
@@ -2362,7 +2361,7 @@ function AdminDirectionsNeoPageBody() {
             }
           />
         </DialogContent>
-        <DialogActions sx={STANDARD_DIALOG_ACTIONS_SX}>
+        <DialogActions>
           <PowerButton
             variant="outlined"
             onClick={() => setOrphanEditDialog(null)}
@@ -2487,7 +2486,7 @@ function AdminDirectionsNeoPageBody() {
             renderInput={(params) => <TextField {...params} label="Адміністратори групи" />}
           />
         </DialogContent>
-        <DialogActions sx={STANDARD_DIALOG_ACTIONS_SX}>
+        <DialogActions>
           <PowerButton
             variant="outlined"
             onClick={() => setAssignDialog(null)}

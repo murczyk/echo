@@ -20,7 +20,6 @@ import { Info } from '../../components/info';
 import { PageErrorState } from '../../components/PageErrorState';
 import { PageLoadingState } from '../../components/PageLoadingState';
 import { SectionEmptyState } from '../../components/SectionEmptyState';
-import { STANDARD_DIALOG_ACTIONS_SX } from '../../components/dialogStyles';
 import { PowerButton } from '../../components/PowerButton';
 import {
   createTag,
@@ -338,7 +337,7 @@ function KeywordDeleteDialog(props: {
     <Dialog open={props.open} onClose={props.onClose}>
       <DialogTitle>Підтвердження видалення</DialogTitle>
       <DialogContent>Видалити ключове слово?</DialogContent>
-      <DialogActions sx={STANDARD_DIALOG_ACTIONS_SX}>
+      <DialogActions>
         <PowerButton onClick={props.onClose}>Скасувати</PowerButton>
         <PowerButton
           variant="contained"

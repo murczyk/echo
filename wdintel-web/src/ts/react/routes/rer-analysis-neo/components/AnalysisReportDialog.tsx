@@ -32,7 +32,6 @@ import { useId } from 'react';
 import type { User } from '../../../../../Bindings';
 import { ELLIPSIS } from '../../../utils/misc';
 import { hasAnyRole } from '../../../utils/roles';
-import { STANDARD_DIALOG_ACTIONS_SX } from '../../../components/dialogStyles';
 import { parseUtcDateTime } from '../../../services/api/report-history';
 import {
   describeAppliedReportFilters,
@@ -1002,17 +1001,7 @@ export function AnalysisReportDialog({
           ) : null}
         </Stack>
       </DialogContent>
-      <DialogActions
-        sx={{
-          ...(STANDARD_DIALOG_ACTIONS_SX as Record<string, unknown>),
-          gap: { xs: 1, sm: 2 },
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          flexWrap: { xs: 'nowrap', sm: 'wrap' },
-          flexDirection: { xs: 'column', sm: 'row' },
-          overflowX: 'hidden',
-        }}
-      >
+      <DialogActions>
         <Typography variant="caption" color="text.secondary" sx={analysisReportDialogHintSx}>
           {appliedFilters.globalHint}
         </Typography>

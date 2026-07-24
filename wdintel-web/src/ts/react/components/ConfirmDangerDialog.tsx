@@ -8,7 +8,6 @@ import {
   DialogTitle,
 } from '@mui/material';
 import type { ReactNode } from 'react';
-import { STANDARD_DIALOG_ACTIONS_SX } from './dialogStyles';
 
 type Props = {
   open: boolean;
@@ -61,7 +60,7 @@ export function ConfirmDangerDialog({
           <div className={description ? 'mt-3 space-y-3' : 'space-y-3'}>{children}</div>
         ) : null}
       </DialogContent>
-      <DialogActions sx={STANDARD_DIALOG_ACTIONS_SX}>
+      <DialogActions>
         <Button onClick={onClose} disabled={blocked}>
           {cancelLabel}
         </Button>
