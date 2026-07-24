@@ -148,11 +148,8 @@ pub async fn load_callsigns(
     let dbx = &env.dbx.clone();
 
     let mut res: Vec<CallsignInfoRes> = Vec::new();
-    let mut lowercased = callsigns_data
-        .iter()
-        .map(|c| c.callsign.to_lowercase())
-        .unique()
-        .collect::<Vec<String>>();
+    let requested_callsigns = requested_callsigns(&callsigns_data);
+    let mut lowercased = requested_callsigns.clone();
 
     let mut callsigns = vec![];
 
@@ -204,37 +201,47 @@ pub async fn load_callsigns(
                 .or_insert(vec![network_id]);
         });
 
-    let network_callsigns = sigint_network_callsign::Entity::find()
-        .find_also_related(sigint_network::Entity)
-        .filter(sigint_network_callsign::Column::Deleted.eq(false))
-        .filter(sigint_network::Column::Deleted.eq(false))
-        .filter(sigint_network::Column::ActiveTo.is_null())
-        .filter(
-            sigint_network_callsign::Column::SigintCallsign.eq_any(
-                callsigns_data
-                    .iter()
-                    .map(|c| c.callsign.to_lowercase())
-                    .collect::<Vec<_>>(),
-            ),
-        )
-        .all(dbx)
-        .await
-        .c(h!())?;
+    let mut network_callsigns = Vec::new();
+    let mut network_callsigns_to_query = requested_callsigns.clone();
+    while !network_callsigns_to_query.is_empty() {
+        let (callsigns_to_query, remaining_callsigns) =
+            cap_string_vector(network_callsigns_to_query);
+        network_callsigns_to_query = remaining_callsigns;
+        network_callsigns.extend(
+            sigint_network_callsign::Entity::find()
+                .find_also_related(sigint_network::Entity)
+                .filter(sigint_network_callsign::Column::Deleted.eq(false))
+                .filter(sigint_network::Column::Deleted.eq(false))
+                .filter(
+                    sigint_network_callsign::Column::SigintCallsign
+                        .eq_any(callsigns_to_query),
+                )
+                .all(dbx)
+                .await
+                .c(h!())?,
+        );
+    }
     let network_unit_ids = network_callsigns
         .iter()
         .filter_map(|(network_callsign, _)| network_callsign.unit_id)
         .unique()
         .collect_vec();
-    let network_unit_names = sigint_unit::Entity::find()
-        .filter(sigint_unit::Column::Id.is_in(network_unit_ids))
-        .filter(sigint_unit::Column::Deleted.eq(false))
-        .filter(sigint_unit::Column::Active.eq(true))
-        .all(dbx)
-        .await
-        .c(h!())?
-        .into_iter()
-        .map(|unit| (unit.id, unit.name))
-        .collect::<HashMap<_, _>>();
+    let mut network_unit_names = HashMap::new();
+    let mut network_unit_ids_to_query = network_unit_ids;
+    while !network_unit_ids_to_query.is_empty() {
+        let (unit_ids_to_query, remaining_unit_ids) =
+            cap_vector(network_unit_ids_to_query);
+        network_unit_ids_to_query = remaining_unit_ids;
+        let units = sigint_unit::Entity::find()
+            .filter(sigint_unit::Column::Id.is_in(unit_ids_to_query))
+            .filter(sigint_unit::Column::Deleted.eq(false))
+            .filter(sigint_unit::Column::Active.eq(true))
+            .all(dbx)
+            .await
+            .c(h!())?;
+        network_unit_names
+            .extend(units.into_iter().map(|unit| (unit.id, unit.name)));
+    }
 
     for rec in callsigns_data {
         let c = rec.callsign;
@@ -320,9 +327,36 @@ fn resolve_network_hint_formation(
         .to_string()
 }
 
+fn requested_callsigns(callsigns_data: &[CallsignNetworks]) -> Vec<String> {
+    callsigns_data
+        .iter()
+        .map(|item| item.callsign.to_lowercase())
+        .unique()
+        .collect_vec()
+}
+
+// sql accepts max of ~65500 entries in where statement
+fn cap_string_vector(source: Vec<String>) -> (Vec<String>, Vec<String>) {
+    cap_vector(source)
+}
+
+fn cap_vector<T: Clone>(source: Vec<T>) -> (Vec<T>, Vec<T>) {
+    let len = source.len();
+    if len <= 65000 {
+        (source, Vec::new())
+    } else {
+        let first_part = source[0..65000].to_vec();
+        let second_part = source[65000..].to_vec();
+        (first_part, second_part)
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::resolve_network_hint_formation;
+    use super::{
+        cap_string_vector, requested_callsigns, resolve_network_hint_formation,
+    };
+    use crate::rer_importer::types::CallsignNetworks;
 
     #[test]
     fn uses_network_unit_when_catalog_result_is_empty() {
@@ -356,16 +390,27 @@ mod tests {
         );
         assert_eq!(resolve_network_hint_formation(Some("  "), Some(" ")), "");
     }
-}
 
-// sql accepts max of ~65500 entries in where statement
-fn cap_string_vector(source: Vec<String>) -> (Vec<String>, Vec<String>) {
-    let len = source.len();
-    if len <= 65000 {
-        (source, Vec::new())
-    } else {
-        let first_part = source[0..65000].to_vec();
-        let second_part = source[65000..].to_vec();
-        (first_part, second_part)
+    #[test]
+    fn deduplicates_requested_callsigns() {
+        let callsigns = vec![
+            CallsignNetworks {
+                callsign: "ВЕТЕР".to_string(),
+                network_ids: vec![],
+            },
+            CallsignNetworks {
+                callsign: "ветер".to_string(),
+                network_ids: vec![],
+            },
+        ];
+        assert_eq!(requested_callsigns(&callsigns), vec!["ветер"]);
+    }
+
+    #[test]
+    fn chunks_at_the_sql_parameter_boundary() {
+        let source = (0..65_001).map(|id| id.to_string()).collect::<Vec<_>>();
+        let (first, second) = cap_string_vector(source);
+        assert_eq!(first.len(), 65_000);
+        assert_eq!(second.len(), 1);
     }
 }
