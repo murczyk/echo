@@ -4308,6 +4308,29 @@ async fn summary_table_uses_message_groups_for_access() {
     assert_eq!(ids, vec![message.id]);
 }
 
+#[test]
+fn summary_table_report_message_limit_allows_maximum() {
+    assert!(ensure_summary_table_report_message_limit(
+        &uuid::Uuid::nil(),
+        RER_SUMMARY_TABLE_REPORT_MESSAGE_MAX,
+    )
+    .is_ok());
+}
+
+#[test]
+fn summary_table_report_message_limit_rejects_overflow() {
+    let err = ensure_summary_table_report_message_limit(
+        &uuid::Uuid::nil(),
+        RER_SUMMARY_TABLE_REPORT_MESSAGE_MAX + 1,
+    )
+    .unwrap_err();
+    assert!(matches!(
+        err,
+        AppError::BL { msg }
+            if msg == RER_SUMMARY_TABLE_REPORT_MESSAGE_LIMIT_ERROR_CODE
+    ));
+}
+
 #[tokio::test]
 #[serial]
 async fn rer_analysis_count_stats_follow_aor_frequency_and_peleng_filters() {

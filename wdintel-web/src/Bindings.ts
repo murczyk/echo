@@ -300,6 +300,7 @@ export type UploadPdfRes = {
 
 export type BgtaskErrorCode =
   | 'mouse_report_message_limit'
+  | 'summary_table_report_message_limit'
   | 'no_default_aor'
 ;
 

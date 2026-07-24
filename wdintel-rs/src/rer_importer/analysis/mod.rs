@@ -2865,6 +2865,9 @@ pub(crate) async fn summary_table_xlsx_bytes(
         crate::messenger::group::get_identity_sigint_groups(&env.dbx, login)
             .await
             .c(h!())?;
+    check_summary_table_report_message_limit(login, env, &req, &master_keys)
+        .await
+        .c(h!())?;
     let summary_table: SummaryTableFreq =
         summary_table_freq_by_login(login, env, &req, &master_keys)
             .await
@@ -2990,6 +2993,41 @@ pub(crate) async fn summary_table_xlsx_bytes(
     workbook.save(&outpath).context(h!())?;
     let bytes = tokio::fs::read(&outpath).await.c(h!())?;
     Ok(bytes)
+}
+
+async fn check_summary_table_report_message_limit(
+    login: &uuid::Uuid,
+    env: &Env,
+    req: &AnalysisStatsReq,
+    master_keys: &[String],
+) -> Result<(), AppError> {
+    let message_count =
+        build_summary_table_filtered_messages_query(login, req, master_keys)?
+            .select_only()
+            .column(signal_message::Column::Id)
+            .limit((RER_SUMMARY_TABLE_REPORT_MESSAGE_MAX + 1) as u64)
+            .into_tuple::<i64>()
+            .all(&env.dbx)
+            .await
+            .c(h!())?
+            .len();
+    ensure_summary_table_report_message_limit(login, message_count)
+}
+
+fn ensure_summary_table_report_message_limit(
+    user_login: &uuid::Uuid,
+    message_count: usize,
+) -> Result<(), AppError> {
+    if message_count <= RER_SUMMARY_TABLE_REPORT_MESSAGE_MAX {
+        return Ok(());
+    }
+
+    log::error!(
+        "summary table report message limit exceeded: user={user_login}, messages={message_count}, max_messages={RER_SUMMARY_TABLE_REPORT_MESSAGE_MAX}",
+    );
+    Err(AppError::BL {
+        msg: RER_SUMMARY_TABLE_REPORT_MESSAGE_LIMIT_ERROR_CODE.to_string(),
+    })
 }
 
 #[post("/api/rer/analysis/summary-table-task-launch")]

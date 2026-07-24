@@ -79,6 +79,9 @@ pub const RER_INTERCEPTION_REPORT_HEADER_ROWS_NUM: usize = 1;
 pub const RER_MOUSE_REPORT_MESSAGE_MAX: usize = 10_000;
 pub const RER_MOUSE_REPORT_MESSAGE_LIMIT_ERROR_CODE: &str =
     "mouse_report_message_limit";
+pub const RER_SUMMARY_TABLE_REPORT_MESSAGE_MAX: usize = 10_000;
+pub const RER_SUMMARY_TABLE_REPORT_MESSAGE_LIMIT_ERROR_CODE: &str =
+    "summary_table_report_message_limit";
 pub const REPORT_HISTORY_LIST_LIMIT: u64 = 200;
 pub const RER_DUTY_TEST_SOURCE_WINDOW_MINUTES_DEFAULT: i64 = 10;
 pub const RER_DUTY_REPLAY_RECENT_WINDOW_MINUTES: i64 = 10;

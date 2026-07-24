@@ -747,6 +747,7 @@ pub async fn bgtask_log2(
 #[serde(rename_all = "snake_case")]
 pub enum BgtaskErrorCode {
     MouseReportMessageLimit,
+    SummaryTableReportMessageLimit,
     NoDefaultAor,
 }
 
@@ -758,6 +759,10 @@ fn bgtask_error_code_from_message(
         .contains(crate::config::RER_MOUSE_REPORT_MESSAGE_LIMIT_ERROR_CODE)
     {
         Some(BgtaskErrorCode::MouseReportMessageLimit)
+    } else if message.contains(
+        crate::config::RER_SUMMARY_TABLE_REPORT_MESSAGE_LIMIT_ERROR_CODE,
+    ) {
+        Some(BgtaskErrorCode::SummaryTableReportMessageLimit)
     } else if message.contains("No default AOR found") {
         Some(BgtaskErrorCode::NoDefaultAor)
     } else {
@@ -1809,6 +1814,19 @@ async fn download_layer_result(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn summary_table_report_limit_error_has_structured_code() {
+        let error = format!(
+            "BL {{ msg: \"{}\" }}",
+            crate::config::RER_SUMMARY_TABLE_REPORT_MESSAGE_LIMIT_ERROR_CODE
+        );
+
+        assert_eq!(
+            bgtask_error_code_from_message(Some(&error)),
+            Some(BgtaskErrorCode::SummaryTableReportMessageLimit)
+        );
+    }
 
     #[test]
     fn extract_comments_parse_html_comment() {
