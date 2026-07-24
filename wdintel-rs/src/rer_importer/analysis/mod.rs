@@ -2856,26 +2856,42 @@ async fn summary_table_related_networks_by_freq_by_login(
     Ok(networks_by_freq)
 }
 
+struct SummaryTableReportData {
+    description: String,
+    summary_table: SummaryTableFreq,
+    last_datetime_by_freq: BTreeMap<String, NaiveDateTime>,
+    related_networks_by_freq: BTreeMap<String, Vec<String>>,
+}
+
 pub(crate) async fn summary_table_xlsx_bytes(
     login: &uuid::Uuid,
     env: &Env,
     req: AnalysisStatsReq,
 ) -> Result<Vec<u8>, AppError> {
+    let data = collect_summary_table_report_data(login, env, &req).await?;
+    build_summary_table_report(&data).await
+}
+
+async fn collect_summary_table_report_data(
+    login: &uuid::Uuid,
+    env: &Env,
+    req: &AnalysisStatsReq,
+) -> Result<SummaryTableReportData, AppError> {
     let master_keys =
         crate::messenger::group::get_identity_sigint_groups(&env.dbx, login)
             .await
             .c(h!())?;
-    check_summary_table_report_message_limit(login, env, &req, &master_keys)
+    check_summary_table_report_message_limit(login, env, req, &master_keys)
         .await
         .c(h!())?;
     let summary_table: SummaryTableFreq =
-        summary_table_freq_by_login(login, env, &req, &master_keys)
+        summary_table_freq_by_login(login, env, req, &master_keys)
             .await
             .c(h!())?;
     let last_datetime_by_freq = summary_table_last_datetime_by_freq_by_login(
         login,
         env,
-        &req,
+        req,
         &master_keys,
     )
     .await
@@ -2884,12 +2900,29 @@ pub(crate) async fn summary_table_xlsx_bytes(
         summary_table_related_networks_by_freq_by_login(
             login,
             env,
-            &req,
+            req,
             &master_keys,
         )
         .await
         .c(h!())?;
 
+    Ok(SummaryTableReportData {
+        description: describe_analysis_stats_req(req.clone())?,
+        summary_table,
+        last_datetime_by_freq,
+        related_networks_by_freq,
+    })
+}
+
+async fn build_summary_table_report(
+    data: &SummaryTableReportData,
+) -> Result<Vec<u8>, AppError> {
+    let SummaryTableReportData {
+        description,
+        summary_table,
+        last_datetime_by_freq,
+        related_networks_by_freq,
+    } = data;
     let tmp_dir = TempDir::new()?;
     let outpath = tmp_dir.path().join("summary-table.xlsx");
     let mut workbook = Workbook::new(); // No argument needed here
@@ -2903,9 +2936,7 @@ pub(crate) async fn summary_table_xlsx_bytes(
     sheet1.set_name("Частоти").context(h!())?;
 
     // Write data and apply formats
-    sheet1
-        .write_string(0, 0, &describe_analysis_stats_req(req.clone())?)
-        .context(h!())?;
+    sheet1.write_string(0, 0, description).context(h!())?;
 
     sheet1
         .write_string_with_format(2, 0, "Частота", &format_bold)
