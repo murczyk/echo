@@ -1,12 +1,13 @@
 mod ancestors;
 mod browse;
 mod core;
-mod flat_list;
 mod model;
 mod roots;
 mod search;
 
-pub(in crate::devices::filesystem) use ancestors::list_breadcrumbs;
+pub(in crate::devices::filesystem) use ancestors::{
+    list_breadcrumbs, load_path_components,
+};
 pub(in crate::devices::filesystem) use browse::list_children;
 #[cfg(test)]
 pub(in crate::devices::filesystem) use core::{
@@ -15,7 +16,6 @@ pub(in crate::devices::filesystem) use core::{
 pub(in crate::devices::filesystem) use core::{
     find_directory_scope, resolve_cursor_entry_sort_key,
 };
-pub(in crate::devices::filesystem) use flat_list::list_files_offset;
 pub(in crate::devices::filesystem) use model::{
     map_directory_model, map_file_model, map_root_model,
 };

@@ -131,9 +131,9 @@ impl TryFrom<RawFileSearchFilters> for FileSearchFilters {
         let mut errors = Vec::new();
 
         for (path, value_count) in [
-            ("filters.kinds", kinds.len()),
-            ("filters.mime_types", mime_types.len()),
-            ("filters.extensions", extensions.len()),
+            ("kinds", kinds.len()),
+            ("mime_types", mime_types.len()),
+            ("extensions", extensions.len()),
         ] {
             if value_count > DEVICE_FILE_SEARCH_FILTER_MAX_VALUES {
                 errors.push(FilesystemFieldError {
@@ -153,7 +153,7 @@ impl TryFrom<RawFileSearchFilters> for FileSearchFilters {
                 .contains(&char_count)
             {
                 errors.push(FilesystemFieldError {
-                    path: "filters.name_query".to_string(),
+                    path: "name_query".to_string(),
                     message: format!(
                         "must contain between {DEVICE_FILE_SEARCH_NAME_QUERY_MIN_CHARS} and {DEVICE_FILE_SEARCH_NAME_QUERY_MAX_CHARS} Unicode scalar values"
                     ),
@@ -167,8 +167,9 @@ impl TryFrom<RawFileSearchFilters> for FileSearchFilters {
             (Some(from), Some(to)) if from > to
         ) {
             errors.push(FilesystemFieldError {
-                path: "filters.file_metadata_modified_from".to_string(),
-                message: "must be before or equal to filters.file_metadata_modified_to".to_string(),
+                path: "file_metadata_modified_from".to_string(),
+                message: "must be before or equal to file_metadata_modified_to"
+                    .to_string(),
             });
         }
 
@@ -266,7 +267,7 @@ mod tests {
                 .into_iter()
                 .map(|error| error.path)
                 .collect::<Vec<_>>(),
-            vec!["filters.kinds", "filters.mime_types", "filters.extensions",]
+            vec!["kinds", "mime_types", "extensions",]
         );
     }
 
@@ -326,7 +327,7 @@ mod tests {
                 .try_into(),
             );
             assert_eq!(errors.len(), 1);
-            assert_eq!(errors[0].path, "filters.name_query");
+            assert_eq!(errors[0].path, "name_query");
         }
     }
 
@@ -352,8 +353,9 @@ mod tests {
         assert_eq!(
             errors,
             vec![FilesystemFieldError {
-                path: "filters.file_metadata_modified_from".to_string(),
-                message: "must be before or equal to filters.file_metadata_modified_to".to_string(),
+                path: "file_metadata_modified_from".to_string(),
+                message: "must be before or equal to file_metadata_modified_to"
+                    .to_string(),
             }]
         );
     }

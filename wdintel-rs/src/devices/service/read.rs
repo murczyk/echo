@@ -1,9 +1,13 @@
 use super::{
-    DeviceAorReference, DeviceCurrentState, DeviceService, DeviceUnitReference,
+    DeviceAorReference, DeviceArchivedScope, DeviceCurrentState,
+    DeviceListSort, DeviceService, DeviceStatusCounts, DeviceUnitReference,
+    DeviceUnitStat, ListDevicesCommand, ListDevicesResult,
 };
+use crate::config::DEVICE_SOURCE_LABEL_MAX_CHARS;
 use crate::devices::access::DeviceActor;
 use crate::devices::custom_fields::custom_fields_from_json;
 use crate::devices::main_db::MainDb;
+use crate::devices::validation::normalize_device_list_pagination;
 use crate::devices::visibility::{DeviceReadScope, DeviceVisibility};
 use crate::entities::{
     area_of_responsibility, device, device_aor, sigint_unit,
@@ -11,9 +15,11 @@ use crate::entities::{
 use crate::error::AppError;
 use crate::h;
 use crate::types::{BTreeMap, BTreeSet, ShortContext, Uuid};
+use sea_orm::sea_query::{Expr, Order};
 use sea_orm::{
-    ColumnTrait, ConnectionTrait, DatabaseConnection, EntityTrait, QueryFilter,
-    QueryOrder,
+    ColumnTrait, Condition, ConnectionTrait, DatabaseConnection, EntityTrait,
+    FromQueryResult, IntoSimpleExpr, JoinType, PaginatorTrait, QueryFilter,
+    QueryOrder, QuerySelect, QueryTrait, RelationTrait, Select,
 };
 
 impl DeviceService {
@@ -31,6 +37,79 @@ impl DeviceService {
             .pop()
             .ok_or_else(|| anyhow::anyhow!("device hydrator lost its input"))
             .c(h!())?)
+    }
+
+    pub(in crate::devices) async fn list(
+        main_db: &MainDb<'_, DatabaseConnection>,
+        actor: &DeviceActor,
+        command: ListDevicesCommand,
+    ) -> Result<ListDevicesResult, AppError> {
+        let command = normalize_list_command(command)?;
+        let query = apply_list_filters(
+            DeviceVisibility::query(actor, DeviceReadScope::IncludeArchived)?,
+            &command,
+        );
+        let status_counts = load_status_counts(main_db, query.clone()).await?;
+        let query = apply_archived_scope(query, command.archived_scope);
+        let total = query.clone().count(main_db.connection()).await.c(h!())?;
+        let devices = apply_list_sort(query, &command.sort_by)
+            .offset(command.offset)
+            .limit(command.limit)
+            .all(main_db.connection())
+            .await
+            .c(h!())?;
+        let has_more =
+            command.offset.saturating_add(devices.len() as u64) < total;
+        let devices = hydrate_devices(main_db, devices).await?;
+
+        Ok(ListDevicesResult {
+            devices,
+            total,
+            has_more,
+            status_counts,
+        })
+    }
+
+    pub(in crate::devices) async fn unit_stats(
+        main_db: &MainDb<'_, DatabaseConnection>,
+        actor: &DeviceActor,
+    ) -> Result<Vec<DeviceUnitStat>, AppError> {
+        let units =
+            DeviceVisibility::query(actor, DeviceReadScope::ActiveOnly)?
+                .join(JoinType::InnerJoin, device::Relation::SigintUnit.def())
+                .filter(sigint_unit::Column::Active.eq(true))
+                .filter(sigint_unit::Column::Deleted.eq(false))
+                .select_only()
+                .column_as(sigint_unit::Column::Id, "unit_id")
+                .column_as(sigint_unit::Column::Name, "unit_name")
+                .column_as(device::Column::Id.count(), "count")
+                .group_by(sigint_unit::Column::Id)
+                .group_by(sigint_unit::Column::Name)
+                .group_by(sigint_unit::Column::Army)
+                .group_by(sigint_unit::Column::Division)
+                .group_by(sigint_unit::Column::Regiment)
+                .group_by(sigint_unit::Column::Battalion)
+                .group_by(sigint_unit::Column::Company)
+                .order_by_asc(sigint_unit::Column::Army)
+                .order_by_asc(sigint_unit::Column::Division)
+                .order_by_asc(sigint_unit::Column::Regiment)
+                .order_by_asc(sigint_unit::Column::Battalion)
+                .order_by_asc(sigint_unit::Column::Company)
+                .order_by_asc(sigint_unit::Column::Id)
+                .into_model::<DeviceUnitStatRow>()
+                .all(main_db.connection())
+                .await
+                .c(h!())?
+                .into_iter()
+                .map(|row| DeviceUnitStat {
+                    unit: DeviceUnitReference {
+                        id: row.unit_id,
+                        name: row.unit_name,
+                    },
+                    count: row.count,
+                })
+                .collect();
+        Ok(units)
     }
 }
 
@@ -153,4 +232,253 @@ fn hydrate_device(
         created_at: device.created_at,
         updated_at: device.updated_at,
     })
+}
+
+struct NormalizedListDevicesCommand {
+    filter_text: Option<String>,
+    archived_scope: DeviceArchivedScope,
+    needs_analytical_name: Option<bool>,
+    aor_ids: Vec<i64>,
+    unit_ids: Vec<i64>,
+    limit: u64,
+    offset: u64,
+    sort_by: Vec<DeviceListSort>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+enum DeviceSortField {
+    DisplayTitle,
+    CreatedAt,
+    UpdatedAt,
+}
+
+#[derive(FromQueryResult)]
+struct DeviceStatusCountsRow {
+    active: i64,
+    archived: i64,
+}
+
+#[derive(FromQueryResult)]
+struct DeviceUnitStatRow {
+    unit_id: i64,
+    unit_name: String,
+    count: i64,
+}
+
+fn normalize_list_command(
+    command: ListDevicesCommand,
+) -> Result<NormalizedListDevicesCommand, AppError> {
+    let pagination =
+        normalize_device_list_pagination(command.limit, command.offset)?;
+    let filter_text = command
+        .filter_text
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty());
+    if filter_text.as_ref().is_some_and(|value| {
+        value.chars().count() > DEVICE_SOURCE_LABEL_MAX_CHARS
+    }) {
+        return Err(form_error("filter_text", "Значення пошуку задовге"));
+    }
+
+    Ok(NormalizedListDevicesCommand {
+        filter_text,
+        archived_scope: command.archived_scope,
+        needs_analytical_name: command.needs_analytical_name,
+        aor_ids: command
+            .aor_ids
+            .into_iter()
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect(),
+        unit_ids: command
+            .unit_ids
+            .into_iter()
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect(),
+        limit: pagination.limit,
+        offset: pagination.offset,
+        sort_by: normalize_list_sort(command.sort_by)?,
+    })
+}
+
+fn normalize_list_sort(
+    sort_by: Vec<DeviceListSort>,
+) -> Result<Vec<DeviceListSort>, AppError> {
+    let sort_by = if sort_by.is_empty() {
+        vec![DeviceListSort::UpdatedAtDesc]
+    } else {
+        sort_by
+    };
+    let mut directions = BTreeMap::new();
+    let mut normalized = Vec::with_capacity(sort_by.len());
+    for sort in sort_by {
+        let (field, descending) = match sort {
+            DeviceListSort::DisplayTitleAsc => {
+                (DeviceSortField::DisplayTitle, false)
+            }
+            DeviceListSort::DisplayTitleDesc => {
+                (DeviceSortField::DisplayTitle, true)
+            }
+            DeviceListSort::CreatedAtAsc => (DeviceSortField::CreatedAt, false),
+            DeviceListSort::CreatedAtDesc => (DeviceSortField::CreatedAt, true),
+            DeviceListSort::UpdatedAtAsc => (DeviceSortField::UpdatedAt, false),
+            DeviceListSort::UpdatedAtDesc => (DeviceSortField::UpdatedAt, true),
+        };
+        match directions.get(&field) {
+            Some(previous) if *previous != descending => {
+                return Err(form_error(
+                    "sort_by",
+                    "Один критерій сортування не може мати різні напрямки",
+                ));
+            }
+            Some(_) => continue,
+            None => {
+                directions.insert(field, descending);
+                normalized.push(sort);
+            }
+        }
+    }
+    Ok(normalized)
+}
+
+fn apply_list_filters(
+    mut query: Select<device::Entity>,
+    command: &NormalizedListDevicesCommand,
+) -> Select<device::Entity> {
+    if let Some(needs_analytical_name) = command.needs_analytical_name {
+        query = if needs_analytical_name {
+            query.filter(device::Column::Name.is_null())
+        } else {
+            query.filter(device::Column::Name.is_not_null())
+        };
+    }
+    if !command.aor_ids.is_empty() {
+        let matching_aor = device_aor::Entity::find()
+            .select_only()
+            .expr(Expr::value(1))
+            .filter(
+                device_aor::Column::DeviceId
+                    .into_simple_expr()
+                    .eq(device::Column::Id.into_simple_expr()),
+            )
+            .filter(device_aor::Column::AorId.is_in(command.aor_ids.clone()))
+            .into_query();
+        query = query.filter(Expr::exists(matching_aor));
+    }
+    if !command.unit_ids.is_empty() {
+        query = query
+            .filter(device::Column::UnitId.is_in(command.unit_ids.clone()));
+    }
+    if let Some(filter_text) = &command.filter_text {
+        let pattern = literal_substring_pattern(filter_text);
+        query = query.filter(
+            Condition::any()
+                .add(Expr::cust_with_values(
+                    r#""device"."source_label" ILIKE $1 ESCAPE '\'"#,
+                    vec![pattern.clone()],
+                ))
+                .add(Expr::cust_with_values(
+                    r#""device"."name" ILIKE $1 ESCAPE '\'"#,
+                    vec![pattern.clone()],
+                ))
+                .add(Expr::cust_with_values(
+                    r#""device"."id"::text LIKE $1 ESCAPE '\'"#,
+                    vec![pattern],
+                )),
+        );
+    }
+    query
+}
+
+fn apply_archived_scope(
+    query: Select<device::Entity>,
+    archived_scope: DeviceArchivedScope,
+) -> Select<device::Entity> {
+    match archived_scope {
+        DeviceArchivedScope::ActiveOnly => {
+            query.filter(device::Column::Archived.eq(false))
+        }
+        DeviceArchivedScope::ArchivedOnly => {
+            query.filter(device::Column::Archived.eq(true))
+        }
+        DeviceArchivedScope::All => query,
+    }
+}
+
+fn apply_list_sort(
+    mut query: Select<device::Entity>,
+    sort_by: &[DeviceListSort],
+) -> Select<device::Entity> {
+    for sort in sort_by {
+        query = match sort {
+            DeviceListSort::DisplayTitleAsc => query.order_by(
+                Expr::cust(
+                    r#"lower(COALESCE("device"."name", "device"."source_label"))"#,
+                ),
+                Order::Asc,
+            ),
+            DeviceListSort::DisplayTitleDesc => query.order_by(
+                Expr::cust(
+                    r#"lower(COALESCE("device"."name", "device"."source_label"))"#,
+                ),
+                Order::Desc,
+            ),
+            DeviceListSort::CreatedAtAsc => {
+                query.order_by_asc(device::Column::CreatedAt)
+            }
+            DeviceListSort::CreatedAtDesc => {
+                query.order_by_desc(device::Column::CreatedAt)
+            }
+            DeviceListSort::UpdatedAtAsc => {
+                query.order_by_asc(device::Column::UpdatedAt)
+            }
+            DeviceListSort::UpdatedAtDesc => {
+                query.order_by_desc(device::Column::UpdatedAt)
+            }
+        };
+    }
+    query.order_by_asc(device::Column::Id)
+}
+
+async fn load_status_counts(
+    main_db: &MainDb<'_, DatabaseConnection>,
+    query: Select<device::Entity>,
+) -> Result<DeviceStatusCounts, AppError> {
+    let row = query
+        .select_only()
+        .column_as(
+            Expr::cust(
+                r#"COUNT(*) FILTER (WHERE "device"."archived" = false)"#,
+            ),
+            "active",
+        )
+        .column_as(
+            Expr::cust(r#"COUNT(*) FILTER (WHERE "device"."archived" = true)"#),
+            "archived",
+        )
+        .into_model::<DeviceStatusCountsRow>()
+        .one(main_db.connection())
+        .await
+        .c(h!())?
+        .unwrap_or(DeviceStatusCountsRow {
+            active: 0,
+            archived: 0,
+        });
+    Ok(DeviceStatusCounts {
+        active: row.active,
+        archived: row.archived,
+    })
+}
+
+fn literal_substring_pattern(value: &str) -> String {
+    let escaped = value
+        .replace('\\', "\\\\")
+        .replace('%', "\\%")
+        .replace('_', "\\_");
+    format!("%{escaped}%")
+}
+
+fn form_error(path: &str, message: &str) -> AppError {
+    AppError::Form(BTreeMap::from([(path.to_string(), message.to_string())]))
 }

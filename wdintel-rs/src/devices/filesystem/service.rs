@@ -85,6 +85,10 @@ impl FileMetadataService {
             .list_children(&scope, page)
             .await
             .map_err(map_read_error)?;
+        let entry_path_components = repository
+            .load_path_components(&page.entries)
+            .await
+            .map_err(map_read_error)?;
         let breadcrumbs = if include_breadcrumbs {
             repository
                 .list_breadcrumbs(&scope)
@@ -97,6 +101,7 @@ impl FileMetadataService {
         Ok(BrowseFilesResult {
             breadcrumbs,
             entries: page.entries,
+            entry_path_components,
             next_cursor: page.next.map(|entry_sort_key| {
                 FileCursorCodec::encode(entry_sort_key.entry_id())
             }),
@@ -256,7 +261,7 @@ mod tests {
                 message: "invalid cursor".to_string(),
             },
             FilesystemFieldError {
-                path: "filters.name_query".to_string(),
+                path: "name_query".to_string(),
                 message: "must not be empty".to_string(),
             },
         ]));
@@ -265,7 +270,7 @@ mod tests {
         };
         assert_eq!(errors.get("cursor"), Some(&"invalid cursor".to_string()));
         assert_eq!(
-            errors.get("filters.name_query"),
+            errors.get("name_query"),
             Some(&"must not be empty".to_string())
         );
 

@@ -47,17 +47,13 @@ function buildDeviceRow(): DeviceRowView {
     id: '018f0000-0000-7000-8000-000000000000',
     sourceLabel: 'Source device',
     name: 'Device Alpha',
+    aors: [],
+    unit: null,
     createdBy: 'tester',
-    aorIds: [],
-    aorNames: [],
-    unitId: null,
-    unitName: null,
-    externalUrl: null,
-    customFields: {},
     archived: false,
-    createdAtMs: 1,
-    updatedAtMs: 2,
-    archivedAtMs: null,
+    archivedAt: null,
+    createdAt: '2026-01-01T00:00:00Z',
+    updatedAt: '2026-01-02T00:00:00Z',
     aorLabel: '—',
     unitLabel: '—',
     createdAtLabel: '01.01.1970, 00:00:00',
@@ -83,8 +79,6 @@ function renderTable() {
         hasFilters={false}
         tableStateContext={tableStateContext as never}
         onEdit={vi.fn()}
-        onArchive={vi.fn()}
-        onRestore={vi.fn()}
         onLoadMore={() => Promise.resolve()}
         onClearFilters={vi.fn()}
         onTableInitialized={vi.fn()}
@@ -132,24 +126,13 @@ describe('DevicesTable', () => {
     );
   });
 
-  it('provides edit/archive row actions for active rows', () => {
+  it('provides only the supported edit action for active rows', () => {
     renderTable();
     const row = buildDeviceRow();
     const onEdit = vi.fn();
-    const onArchive = vi.fn();
-    const onRestore = vi.fn();
 
     act(() => {
-      root?.render(
-        <DeviceRowActions
-          row={row}
-          canEdit
-          disabled={false}
-          onEdit={onEdit}
-          onArchive={onArchive}
-          onRestore={onRestore}
-        />,
-      );
+      root?.render(<DeviceRowActions row={row} canEdit disabled={false} onEdit={onEdit} />);
     });
 
     const menuButton = container?.querySelector('button[aria-label="Дії"]');
@@ -161,17 +144,14 @@ describe('DevicesTable', () => {
 
     const menuItems = Array.from(document.querySelectorAll('[role="menuitem"]'));
     const editItem = menuItems.find((item) => item.textContent?.includes('Редагувати'));
-    const deleteItem = menuItems.find((item) => item.textContent?.includes('Архівувати'));
-    expect(editItem).not.toBeUndefined();
-    expect(deleteItem).not.toBeUndefined();
 
     act(() => {
       editItem?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
     });
 
     expect(onEdit).toHaveBeenCalledWith(row.id);
-    expect(onArchive).not.toHaveBeenCalled();
-    expect(onRestore).not.toHaveBeenCalled();
+    expect(document.body.textContent).not.toContain('Архівувати');
+    expect(document.body.textContent).not.toContain('Відновити');
   });
 
   it('navigates to detail through SPA history from the name link', () => {

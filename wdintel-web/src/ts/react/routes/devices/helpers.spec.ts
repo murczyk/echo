@@ -40,10 +40,9 @@ describe('devices list query mapping', () => {
     ).toEqual({
       filterText: null,
       archivedFilter: 'active_only',
+      needsAnalyticalName: null,
       aorIds: null,
       unitIds: null,
-      createdBy: null,
-      ids: null,
       limit: 100,
       offset: 0,
       sortBy: ['updated_at_desc'],
@@ -72,7 +71,7 @@ describe('devices list query mapping', () => {
     ).toBe('all');
   });
 
-  it('trims search/status/unit filters and sends removed smuha/creator filters as null', () => {
+  it('trims search and maps unit filters and display-title sorting', () => {
     expect(
       buildDevicesListReq({
         searchText: '  drone  ',
@@ -89,24 +88,30 @@ describe('devices list query mapping', () => {
       archivedFilter: 'all',
       aorIds: null,
       unitIds: [30],
-      createdBy: null,
       limit: 50,
       offset: 100,
-      sortBy: ['name_asc'],
+      sortBy: ['display_title_asc'],
     });
   });
 
-  it('formats smuha labels from names with id fallback', () => {
-    expect(formatAorsLabel([1, 2], ['Alpha', 'Beta'])).toBe('Alpha, Beta');
-    expect(formatAorsLabel([1, 2], ['Alpha', ''])).toBe('Alpha, AOR #2 — назва недоступна');
-    expect(formatAorsLabel([1, 2], [])).toBe(
-      'AOR #1 — назва недоступна, AOR #2 — назва недоступна',
-    );
-    expect(formatAorsLabel([], [])).toBe('—');
+  it('formats AOR summaries with id fallback', () => {
+    expect(
+      formatAorsLabel([
+        { id: 1, name: 'Alpha' },
+        { id: 2, name: 'Beta' },
+      ]),
+    ).toBe('Alpha, Beta');
+    expect(
+      formatAorsLabel([
+        { id: 1, name: 'Alpha' },
+        { id: 2, name: '' },
+      ]),
+    ).toBe('Alpha, AOR #2 — назва недоступна');
+    expect(formatAorsLabel([])).toBe('—');
   });
 
   it('maps supported sorts and resets unsupported sorts', () => {
-    expect(buildDevicesSortBy([{ id: 'name', desc: true }])).toEqual(['name_desc']);
+    expect(buildDevicesSortBy([{ id: 'name', desc: true }])).toEqual(['display_title_desc']);
     expect(buildDevicesSortBy([{ id: 'updatedAt', desc: false }])).toEqual(['updated_at_asc']);
     expect(buildDevicesSortBy([{ id: 'createdBy', desc: true }])).toEqual(['updated_at_desc']);
   });

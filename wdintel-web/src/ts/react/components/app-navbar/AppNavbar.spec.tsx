@@ -311,7 +311,7 @@ describe('AppNavbar', () => {
   it('hides Devices when the Devices section is disabled or read role is missing', () => {
     const disabledGate = renderComponent({
       ...defaultProps,
-      user: { ...defaultProps.user, roles: ['DevicesEditor'] },
+      user: { ...defaultProps.user, roles: ['DeviceSource'] },
       shared: {
         ...defaultProps.shared,
         systemSettings: {
@@ -388,7 +388,7 @@ describe('AppNavbar', () => {
 
     const { container } = renderComponent({
       ...defaultProps,
-      user: { ...defaultProps.user, roles: ['DevicesEditor'] },
+      user: { ...defaultProps.user, roles: ['DeviceSource'] },
       shared: {
         ...defaultProps.shared,
         systemSettings: {

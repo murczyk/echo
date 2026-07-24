@@ -2,14 +2,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import type { AreaOfResponsibility, DeviceDetails, Unit } from '../../../../Bindings';
 import { listAors } from '../../services/api/aor';
-import {
-  archiveDevice,
-  getDeviceDetail,
-  restoreDevice,
-  updateDevice,
-} from '../../services/api/devices';
+import { getDeviceDetail, updateDevice } from '../../services/api/devices';
 import { getUnitsList } from '../../services/api/units';
-import { hasRole } from '../../utils/roles';
+import { canReadDevices, hasRole } from '../../utils/roles';
 import {
   buildUpdateDevicePatch,
   deviceDetailsToUpsertForm,
@@ -37,19 +32,24 @@ export function useDeviceDetailsPage({
   deviceId: string;
   authUserRoles?: string[];
 }) {
-  const permissions = useMemo(
-    () => ({
-      canRead: hasRole(authUserRoles, 'Cyber') || hasRole(authUserRoles, 'DevicesEditor'),
-      canEdit: hasRole(authUserRoles, 'DevicesEditor'),
-    }),
-    [authUserRoles],
-  );
+  const permissions = useMemo(() => {
+    const canRead = canReadDevices(authUserRoles);
+    const canEditSource = hasRole(authUserRoles, 'DeviceSource');
+    const canEditAnalytical = hasRole(authUserRoles, 'DeviceAnalyst');
+    return {
+      canRead,
+      canEdit: canEditSource || canEditAnalytical,
+      fieldPermissions: {
+        sourceData: canEditSource,
+        analyticalData: canEditAnalytical,
+      },
+    };
+  }, [authUserRoles]);
 
   const [device, setDevice] = useState<DeviceDetails | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [status, setStatus] = useState<DeviceDetailsUiMessage>(null);
-  const [mutating, setMutating] = useState(false);
   const [aors, setAors] = useState<AreaOfResponsibility[]>([]);
   const [units, setUnits] = useState<Unit[]>([]);
   const [lookupsLoading, setLookupsLoading] = useState(false);
@@ -58,7 +58,6 @@ export function useDeviceDetailsPage({
   const [editError, setEditError] = useState<string | null>(null);
   const [editServerFieldErrors, setEditServerFieldErrors] = useState<DeviceServerFieldErrors>({});
   const [editSubmitting, setEditSubmitting] = useState(false);
-  const [archiveDialogOpen, setArchiveDialogOpen] = useState(false);
 
   const requestSeqRef = useRef(0);
   const abortRef = useRef<AbortController | null>(null);
@@ -67,8 +66,10 @@ export function useDeviceDetailsPage({
   const unitOptions = useMemo(() => resolveUnitOptions(units), [units]);
   const editHasChanges = useMemo(() => {
     if (device === null || editForm === null) return false;
-    return hasDeviceUpdatePatchChanges(buildUpdateDevicePatch(device, editForm));
-  }, [device, editForm]);
+    return hasDeviceUpdatePatchChanges(
+      buildUpdateDevicePatch(device, editForm, permissions.fieldPermissions),
+    );
+  }, [device, editForm, permissions.fieldPermissions]);
 
   useEffect(() => {
     setDevice(null);
@@ -77,7 +78,6 @@ export function useDeviceDetailsPage({
     setEditForm(null);
     setEditError(null);
     setEditServerFieldErrors({});
-    setArchiveDialogOpen(false);
     abortRef.current?.abort();
   }, [deviceId]);
 
@@ -137,7 +137,13 @@ export function useDeviceDetailsPage({
   );
 
   const loadLookups = useCallback(async () => {
-    if (!permissions.canEdit || lookupsLoaded || lookupsLoading) return;
+    if (
+      !permissions.canEdit ||
+      !permissions.fieldPermissions.analyticalData ||
+      lookupsLoaded ||
+      lookupsLoading
+    )
+      return;
 
     setLookupsLoading(true);
     try {
@@ -150,15 +156,15 @@ export function useDeviceDetailsPage({
     } finally {
       setLookupsLoading(false);
     }
-  }, [lookupsLoaded, lookupsLoading, permissions.canEdit]);
+  }, [lookupsLoaded, lookupsLoading, permissions]);
 
   const openEditDrawer = useCallback(() => {
     if (!permissions.canEdit || !device || device.archived) return;
     setEditForm(deviceDetailsToUpsertForm(device));
     setEditError(null);
     setEditServerFieldErrors({});
-    void loadLookups();
-  }, [device, loadLookups, permissions.canEdit]);
+    if (permissions.fieldPermissions.analyticalData) void loadLookups();
+  }, [device, loadLookups, permissions]);
 
   const closeEditDrawer = useCallback(() => {
     if (editSubmitting) return;
@@ -176,12 +182,12 @@ export function useDeviceDetailsPage({
   const saveEditDevice = useCallback(
     async (form: DeviceUpsertForm): Promise<boolean> => {
       if (!permissions.canEdit || !device || device.archived || editSubmitting) return false;
-      if (validateDeviceUpsertForm(form) !== null) {
+      if (validateDeviceUpsertForm(form, permissions.fieldPermissions) !== null) {
         setEditError('Перевірте поля форми.');
         return false;
       }
 
-      const patch = buildUpdateDevicePatch(device, form);
+      const patch = buildUpdateDevicePatch(device, form, permissions.fieldPermissions);
       if (!hasDeviceUpdatePatchChanges(patch)) {
         setEditError('Немає змін для збереження.');
         return false;
@@ -210,57 +216,8 @@ export function useDeviceDetailsPage({
         setEditSubmitting(false);
       }
     },
-    [device, editSubmitting, permissions.canEdit],
+    [device, editSubmitting, permissions],
   );
-
-  const openArchiveDialog = useCallback(() => {
-    if (!permissions.canEdit || !device || device.archived || mutating) return;
-    setArchiveDialogOpen(true);
-  }, [device, mutating, permissions.canEdit]);
-
-  const closeArchiveDialog = useCallback(() => {
-    if (mutating) return;
-    setArchiveDialogOpen(false);
-  }, [mutating]);
-
-  const confirmArchiveCurrentDevice = useCallback(async () => {
-    if (!permissions.canEdit || !device || device.archived || mutating) return;
-
-    setMutating(true);
-    setStatus(null);
-    try {
-      const nextDevice = await archiveDevice({ deviceId });
-      setDevice(nextDevice);
-      setArchiveDialogOpen(false);
-      setStatus({ kind: 'success', text: 'Пристрій архівовано.' });
-    } catch (error) {
-      setStatus({
-        kind: 'error',
-        text: `Помилка архівування пристрою: ${formatDeviceErrorMessage(error)}`,
-      });
-    } finally {
-      setMutating(false);
-    }
-  }, [device, deviceId, mutating, permissions.canEdit]);
-
-  const restoreCurrentDevice = useCallback(async () => {
-    if (!permissions.canEdit || !device || !device.archived || mutating) return;
-
-    setMutating(true);
-    setStatus(null);
-    try {
-      const nextDevice = await restoreDevice({ deviceId });
-      setDevice(nextDevice);
-      setStatus({ kind: 'success', text: 'Пристрій відновлено.' });
-    } catch (error) {
-      setStatus({
-        kind: 'error',
-        text: `Помилка відновлення пристрою: ${formatDeviceErrorMessage(error)}`,
-      });
-    } finally {
-      setMutating(false);
-    }
-  }, [device, deviceId, mutating, permissions.canEdit]);
 
   const initialLoadFailed = !loading && device === null && status?.kind === 'error';
 
@@ -270,7 +227,6 @@ export function useDeviceDetailsPage({
     loading,
     refreshing,
     status,
-    mutating,
     aorOptions,
     unitOptions,
     lookupsLoading,
@@ -279,16 +235,11 @@ export function useDeviceDetailsPage({
     editServerFieldErrors,
     editSubmitting,
     editHasChanges,
-    archiveDialogOpen,
     initialLoadFailed,
     reload,
     openEditDrawer,
     closeEditDrawer,
     setEditForm: changeEditForm,
     saveEditDevice,
-    openArchiveDialog,
-    closeArchiveDialog,
-    confirmArchiveCurrentDevice,
-    restoreCurrentDevice,
   };
 }

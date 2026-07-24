@@ -1,5 +1,5 @@
 use super::error::{FilesystemError, FilesystemFieldError};
-use chrono::{DateTime, FixedOffset, NaiveDateTime};
+use chrono::NaiveDateTime;
 use uuid::Uuid;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -285,19 +285,6 @@ pub(in crate::devices) struct KeysetPage<T, K> {
     pub(in crate::devices) next: Option<K>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub(in crate::devices) struct OffsetPageRequest {
-    pub(in crate::devices) limit: u64,
-    pub(in crate::devices) offset: u64,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub(in crate::devices) struct OffsetPage<T> {
-    pub(in crate::devices) entries: Vec<T>,
-    pub(in crate::devices) total: u64,
-    pub(in crate::devices) has_more: bool,
-}
-
 #[allow(dead_code)]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(in crate::devices) struct RawFileSearchFilters {
@@ -323,6 +310,7 @@ pub(in crate::devices) struct BrowseFilesCommand {
 pub(in crate::devices) struct BrowseFilesResult {
     pub(in crate::devices) breadcrumbs: Vec<Breadcrumb>,
     pub(in crate::devices) entries: Vec<TreeEntry>,
+    pub(in crate::devices) entry_path_components: Vec<Vec<String>>,
     pub(in crate::devices) next_cursor: Option<String>,
 }
 
@@ -481,10 +469,8 @@ pub(in crate::devices) struct SyncFileItemCommand {
     pub(in crate::devices) absolute_path: String,
     pub(in crate::devices) mime_type: Option<String>,
     pub(in crate::devices) extension: Option<String>,
-    pub(in crate::devices) file_metadata_created_at:
-        Option<DateTime<FixedOffset>>,
-    pub(in crate::devices) file_metadata_modified_at:
-        Option<DateTime<FixedOffset>>,
+    pub(in crate::devices) file_metadata_created_at: Option<String>,
+    pub(in crate::devices) file_metadata_modified_at: Option<String>,
 }
 
 #[allow(dead_code)]

@@ -4,17 +4,24 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
-  archiveDevice,
+  browseDeviceFiles,
   createDevice,
   getDeviceDetail,
   getDeviceUnitStats,
+  listDeviceFileRoots,
   listDevices,
-  restoreDevice,
+  searchDeviceFiles,
+  syncDeviceFiles,
   toDeviceUpdatePatchReq,
   updateDevice,
 } from './devices';
 
 const DEVICE_ID = '018f0000-0000-7000-8000-000000000000';
+const ROOT_ID = '018f0000-0000-7000-8000-000000000001';
+const ENTRY_ID = '018f0000-0000-7000-8000-000000000002';
+const FILE_ID = '018f0000-0000-7000-8000-000000000003';
+const CREATED_AT = '2026-07-24T06:00:00Z';
+const UPDATED_AT = '2026-07-24T07:00:00Z';
 
 function jsonResponse(body: unknown) {
   return new Response(JSON.stringify(body), {
@@ -43,58 +50,47 @@ function mockDeviceDetailsResponse() {
     id: DEVICE_ID,
     source_label: 'Source device',
     name: 'Device Alpha',
-    created_by: 'operator',
-    aor_ids: [4, 5],
-    aor_names: ['AOR', 'AOR 2'],
-    unit_id: 7,
-    unit_name: 'Unit',
-    tags: [{ label: 'Serial', value: '123' }],
+    aors: [{ id: 4, name: 'AOR' }],
+    unit: { id: 7, name: 'Unit' },
     external_url: 'https://example.test/device',
     custom_fields: { inventory_id: 'node-1' },
+    created_by: 'operator',
     archived: false,
-    created_at_ms: 10,
-    updated_at_ms: 20,
-    archived_at_ms: null,
+    created_at: CREATED_AT,
+    updated_at: UPDATED_AT,
+    archived_at: null,
   };
 }
 
-function mockListDevicesResponse() {
+function mockRootResponse() {
   return {
-    list: [
-      {
-        id: DEVICE_ID,
-        source_label: 'Source device',
-        name: 'Device Alpha',
-        created_by: 'operator',
-        aor_ids: [4, 5],
-        aor_names: ['AOR', 'AOR 2'],
-        unit_id: 7,
-        unit_name: 'Unit',
-        external_url: null,
-        custom_fields: {},
-        archived: false,
-        created_at_ms: 10,
-        updated_at_ms: 20,
-        archived_at_ms: null,
-      },
-    ],
-    total: 1,
-    has_more: false,
-    status_counts: {
-      active: 3,
-      archived: 1,
-    },
+    entry_id: ROOT_ID,
+    device_id: DEVICE_ID,
+    parent_entry_id: null,
+    kind: 'directory',
+    name: '/',
+    path_syntax: 'posix',
+    created_at: CREATED_AT,
+    updated_at: UPDATED_AT,
   };
 }
 
-function mockDeviceUnitStatsResponse() {
+function mockFileResponse() {
   return {
-    units: [
-      {
-        unit_id: 7,
-        count: 3,
-      },
-    ],
+    file_id: FILE_ID,
+    device_id: DEVICE_ID,
+    parent_entry_id: ROOT_ID,
+    root_entry_id: ROOT_ID,
+    path_syntax: 'posix',
+    absolute_path: '/report.log',
+    name: 'report.log',
+    path_components: ['report.log'],
+    mime_type: 'text/plain',
+    extension: 'log',
+    file_metadata_created_at: CREATED_AT,
+    file_metadata_modified_at: UPDATED_AT,
+    created_at: CREATED_AT,
+    updated_at: UPDATED_AT,
   };
 }
 
@@ -104,18 +100,37 @@ beforeEach(() => {
 });
 
 describe('devices API service routes', () => {
-  it('listDevices uses /api/device/list and transforms request/response', async () => {
+  it('lists devices using only the target request and response fields', async () => {
     const controller = new AbortController();
-    fetchMock().mockResolvedValueOnce(jsonResponse(mockListDevicesResponse()));
+    fetchMock().mockResolvedValueOnce(
+      jsonResponse({
+        list: [
+          {
+            id: DEVICE_ID,
+            source_label: 'Source device',
+            name: 'Device Alpha',
+            aors: [{ id: 4, name: 'AOR' }],
+            unit: { id: 7, name: 'Unit' },
+            created_by: 'operator',
+            archived: false,
+            created_at: CREATED_AT,
+            updated_at: UPDATED_AT,
+            archived_at: null,
+          },
+        ],
+        total: 1,
+        has_more: false,
+        status_counts: { active: 3, archived: 1 },
+      }),
+    );
 
     const rsp = await listDevices(
       {
         filterText: 'alpha',
         archivedFilter: 'active_only',
+        needsAnalyticalName: null,
         aorIds: [4],
         unitIds: [7],
-        createdBy: 'operator',
-        ids: [DEVICE_ID],
         limit: 25,
         offset: 0,
         sortBy: ['updated_at_desc'],
@@ -125,98 +140,238 @@ describe('devices API service routes', () => {
 
     expect(fetchMock()).toHaveBeenCalledWith('/api/device/list', expect.any(Object));
     expect(requestSignal()).toBe(controller.signal);
-    expect(requestBody()).toMatchObject({
+    expect(requestBody()).toEqual({
       filter_text: 'alpha',
       archived_filter: 'active_only',
+      needs_analytical_name: null,
       aor_ids: [4],
       unit_ids: [7],
-      created_by: 'operator',
-      ids: [DEVICE_ID],
       limit: 25,
       offset: 0,
       sort_by: ['updated_at_desc'],
     });
-    expect(rsp.list[0].createdBy).toBe('operator');
-    expect(rsp.list[0].sourceLabel).toBe('Source device');
+    expect(rsp.list[0]).toMatchObject({
+      sourceLabel: 'Source device',
+      aors: [{ id: 4, name: 'AOR' }],
+      unit: { id: 7, name: 'Unit' },
+      updatedAt: UPDATED_AT,
+    });
     expect(rsp.statusCounts).toEqual({ active: 3, archived: 1 });
-    expect(rsp.hasMore).toBe(false);
   });
 
-  it('getDeviceUnitStats uses /api/device/unit-stats and transforms response', async () => {
-    const controller = new AbortController();
-    fetchMock().mockResolvedValueOnce(jsonResponse(mockDeviceUnitStatsResponse()));
+  it('loads nested unit statistics without a request body', async () => {
+    fetchMock().mockResolvedValueOnce(
+      jsonResponse({ units: [{ unit: { id: 7, name: 'Unit' }, count: 3 }] }),
+    );
 
-    const rsp = await getDeviceUnitStats({ signal: controller.signal });
+    const rsp = await getDeviceUnitStats();
 
-    expect(fetchMock()).toHaveBeenCalledWith('/api/device/unit-stats', expect.any(Object));
-    expect(requestSignal()).toBe(controller.signal);
     expect(requestBody()).toBeUndefined();
-    expect(rsp).toEqual([{ unitId: 7, count: 3 }]);
+    expect(rsp).toEqual([{ unit: { id: 7, name: 'Unit' }, count: 3 }]);
   });
 
-  it('getDeviceDetail uses /api/device/detail', async () => {
+  it('normalizes details while preserving arbitrary custom-field keys', async () => {
     const rsp = await getDeviceDetail({ deviceId: DEVICE_ID, includeArchived: true });
 
-    expect(fetchMock()).toHaveBeenCalledWith('/api/device/detail', expect.any(Object));
     expect(requestBody()).toEqual({ device_id: DEVICE_ID, include_archived: true });
-    expect(rsp.createdAtMs).toBe(10);
-    expect(rsp.customFields).toEqual({ inventoryId: 'node-1' });
+    expect(rsp.createdAt).toBe(CREATED_AT);
+    expect(rsp.aors).toEqual([{ id: 4, name: 'AOR' }]);
+    expect(rsp.customFields).toEqual({ inventory_id: 'node-1' });
   });
 
-  it('createDevice uses /api/device/create', async () => {
+  it('creates a device with source fields only', async () => {
     await createDevice({
       sourceLabel: 'Source device',
-      name: 'Device Alpha',
-      aorIds: [4, 5],
-      unitId: 7,
-      tags: [{ label: 'Serial', value: '123' }],
       externalUrl: null,
-      customFields: { inventoryId: 'node-1' },
+      customFields: { inventory_id: 'node-1' },
     });
 
-    expect(fetchMock()).toHaveBeenCalledWith('/api/device/create', expect.any(Object));
-    expect(requestBody()).toMatchObject({
+    expect(requestBody()).toEqual({
       source_label: 'Source device',
-      name: 'Device Alpha',
-      aor_ids: [4, 5],
-      unit_id: 7,
-      tags: [{ label: 'Serial', value: '123' }],
       external_url: null,
       custom_fields: { inventory_id: 'node-1' },
     });
   });
 
-  it('updateDevice uses /api/device/update and serialized patch body', async () => {
+  it('serializes a presence-aware update without changing custom-field keys', async () => {
     await updateDevice({
       deviceId: DEVICE_ID,
       sourceLabel: 'Updated source',
+      name: null,
       aorIds: [],
-      unitId: 7,
-      customFields: { inventory_id: null, transport: 'ssh' },
+      unitId: null,
+      customFields: { inventory_id: null, transportType: 'ssh' },
     });
 
-    expect(fetchMock()).toHaveBeenCalledWith('/api/device/update', expect.any(Object));
     expect(requestBody()).toEqual({
       device_id: DEVICE_ID,
       source_label: 'Updated source',
+      name: null,
       aor_ids: [],
-      unit_id: 7,
-      custom_fields: { inventory_id: null, transport: 'ssh' },
+      unit_id: null,
+      custom_fields: { inventory_id: null, transportType: 'ssh' },
+    });
+  });
+});
+
+describe('device filesystem API service routes', () => {
+  it('loads roots and transforms canonical root fields', async () => {
+    fetchMock().mockResolvedValueOnce(jsonResponse({ roots: [mockRootResponse()] }));
+
+    const rsp = await listDeviceFileRoots({ deviceId: DEVICE_ID });
+
+    expect(fetchMock()).toHaveBeenCalledWith('/api/device/files/roots', expect.any(Object));
+    expect(requestBody()).toEqual({ device_id: DEVICE_ID });
+    expect(rsp.roots[0]).toMatchObject({ entryId: ROOT_ID, pathSyntax: 'posix' });
+  });
+
+  it('browses a directory with keyset pagination', async () => {
+    fetchMock().mockResolvedValueOnce(
+      jsonResponse({
+        breadcrumbs: [{ entry_id: ROOT_ID, name: '/' }],
+        entries: [
+          {
+            entry_id: ENTRY_ID,
+            parent_entry_id: ROOT_ID,
+            kind: 'file',
+            file_id: FILE_ID,
+            name: 'report.log',
+            path_components: ['report.log'],
+            path_syntax: 'posix',
+            absolute_path: '/report.log',
+            mime_type: 'text/plain',
+            extension: 'log',
+            file_metadata_created_at: CREATED_AT,
+            file_metadata_modified_at: UPDATED_AT,
+            created_at: CREATED_AT,
+            updated_at: UPDATED_AT,
+          },
+        ],
+        next_cursor: 'next',
+      }),
+    );
+
+    const rsp = await browseDeviceFiles({
+      deviceId: DEVICE_ID,
+      parentEntryId: ROOT_ID,
+      includeBreadcrumbs: true,
+      limit: 25,
+      cursor: null,
+    });
+
+    expect(requestBody()).toEqual({
+      device_id: DEVICE_ID,
+      parent_entry_id: ROOT_ID,
+      include_breadcrumbs: true,
+      limit: 25,
+      cursor: null,
+    });
+    expect(rsp.entries[0].fileId).toBe(FILE_ID);
+    expect(rsp.nextCursor).toBe('next');
+  });
+
+  it('searches a subtree with canonical filters', async () => {
+    fetchMock().mockResolvedValueOnce(jsonResponse({ entries: [], next_cursor: null }));
+
+    await searchDeviceFiles({
+      deviceId: DEVICE_ID,
+      scopeEntryId: ROOT_ID,
+      nameQuery: 'log',
+      kinds: ['file'],
+      mimeTypes: ['text/plain'],
+      extensions: ['log'],
+      fileMetadataModifiedFrom: CREATED_AT,
+      fileMetadataModifiedTo: UPDATED_AT,
+      limit: 10,
+      cursor: null,
+    });
+
+    expect(requestBody()).toEqual({
+      device_id: DEVICE_ID,
+      scope_entry_id: ROOT_ID,
+      name_query: 'log',
+      kinds: ['file'],
+      mime_types: ['text/plain'],
+      extensions: ['log'],
+      file_metadata_modified_from: CREATED_AT,
+      file_metadata_modified_to: UPDATED_AT,
+      limit: 10,
+      cursor: null,
     });
   });
 
-  it('archiveDevice uses /api/device/archive', async () => {
-    await archiveDevice({ deviceId: DEVICE_ID });
+  it('omits a create file_id and normalizes tagged sync outcomes', async () => {
+    fetchMock().mockResolvedValueOnce(
+      jsonResponse({
+        results: [
+          {
+            status: 'accepted',
+            index: 0,
+            operation: 'created',
+            root: mockRootResponse(),
+            file: mockFileResponse(),
+          },
+          {
+            status: 'rejected',
+            index: 1,
+            error: {
+              kind: 'validation',
+              message: 'filesystem validation failed',
+              field_errors: [['files[1].absolute_path', 'invalid']],
+            },
+          },
+        ],
+      }),
+    );
 
-    expect(fetchMock()).toHaveBeenCalledWith('/api/device/archive', expect.any(Object));
-    expect(requestBody()).toEqual({ device_id: DEVICE_ID });
-  });
+    const rsp = await syncDeviceFiles({
+      deviceId: DEVICE_ID,
+      pathSyntax: 'posix',
+      files: [
+        {
+          fileId: null,
+          absolutePath: '/report.log',
+          mimeType: 'text/plain',
+          extension: 'log',
+          fileMetadataCreatedAt: CREATED_AT,
+          fileMetadataModifiedAt: UPDATED_AT,
+        },
+      ],
+    });
 
-  it('restoreDevice uses /api/device/restore', async () => {
-    await restoreDevice({ deviceId: DEVICE_ID });
-
-    expect(fetchMock()).toHaveBeenCalledWith('/api/device/restore', expect.any(Object));
-    expect(requestBody()).toEqual({ device_id: DEVICE_ID });
+    expect(requestBody()).toEqual({
+      device_id: DEVICE_ID,
+      path_syntax: 'posix',
+      files: [
+        {
+          absolute_path: '/report.log',
+          mime_type: 'text/plain',
+          extension: 'log',
+          file_metadata_created_at: CREATED_AT,
+          file_metadata_modified_at: UPDATED_AT,
+        },
+      ],
+    });
+    expect(rsp.results).toEqual([
+      {
+        Accepted: {
+          index: 0,
+          operation: 'created',
+          root: expect.objectContaining({ entryId: ROOT_ID }),
+          file: expect.objectContaining({ fileId: FILE_ID }),
+        },
+      },
+      {
+        Rejected: {
+          index: 1,
+          error: {
+            kind: 'validation',
+            message: 'filesystem validation failed',
+            fieldErrors: [['files[1].absolute_path', 'invalid']],
+          },
+        },
+      },
+    ]);
   });
 });
 
@@ -226,33 +381,19 @@ describe('DeviceUpdatePatchInput serialization', () => {
       toDeviceUpdatePatchReq({
         deviceId: DEVICE_ID,
         sourceLabel: undefined,
-        name: undefined,
+        name: null,
         aorIds: [],
         unitId: null,
-        tags: undefined,
         externalUrl: null,
         customFields: { retired: null },
       }),
     ).toEqual({
       deviceId: DEVICE_ID,
+      name: null,
       aorIds: [],
       unitId: null,
       externalUrl: null,
       customFields: { retired: null },
-    });
-  });
-
-  it('serializes empty tag and custom-field patches', () => {
-    expect(
-      toDeviceUpdatePatchReq({
-        deviceId: DEVICE_ID,
-        tags: [],
-        customFields: { inventoryId: null },
-      }),
-    ).toEqual({
-      deviceId: DEVICE_ID,
-      tags: [],
-      customFields: { inventoryId: null },
     });
   });
 });

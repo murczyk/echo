@@ -91,17 +91,18 @@ vi.mock('./components/DeviceUpsertDrawer', () => ({
   DeviceUpsertDrawer: () => null,
 }));
 
-vi.mock('../../components/ConfirmDangerDialog', () => ({
-  ConfirmDangerDialog: () => null,
-}));
-
 vi.mock('./use-devices-page', () => ({
   useDevicesPage: pageMock.useDevicesPage,
 }));
 
 function buildPageReturn(overrides: Record<string, unknown> = {}) {
   return {
-    permissions: { canRead: true, canEdit: true },
+    permissions: {
+      canRead: true,
+      canCreate: true,
+      canEdit: true,
+      fieldPermissions: { sourceData: true, analyticalData: false },
+    },
     loading: false,
     refreshing: false,
     loadingMore: false,
@@ -128,8 +129,6 @@ function buildPageReturn(overrides: Record<string, unknown> = {}) {
     editSubmitting: false,
     editHasChanges: false,
     editLoadingDeviceId: null,
-    archiveDialogDevice: null,
-    mutatingDeviceId: null,
     busyDeviceId: null,
     aorOptions: [],
     unitOptions: [],
@@ -161,10 +160,6 @@ function buildPageReturn(overrides: Record<string, unknown> = {}) {
     closeEditDialog: vi.fn(),
     setEditForm: vi.fn(),
     submitEditDialog: vi.fn(),
-    archiveRow: vi.fn(),
-    closeArchiveDialog: vi.fn(),
-    confirmArchiveRow: vi.fn(),
-    restoreRow: vi.fn(),
     ...overrides,
   };
 }
@@ -192,7 +187,7 @@ afterEach(() => {
 describe('DevicesPage layout', () => {
   it('uses Networks-like toolbar/sidebar layout with only status and sidebar unit filters', () => {
     act(() => {
-      root?.render(<DevicesPage authUserRoles={['DevicesEditor']} />);
+      root?.render(<DevicesPage authUserRoles={['DeviceSource']} />);
     });
 
     expect(capturedTableStateProviderProps).toMatchObject({ tableId: 'devices' });
@@ -223,8 +218,8 @@ describe('DevicesPage layout', () => {
     );
     expect(capturedDevicesTableProps).toMatchObject({
       onEdit: expect.any(Function),
-      onArchive: expect.any(Function),
-      onRestore: expect.any(Function),
     });
+    expect(capturedDevicesTableProps).not.toHaveProperty('onArchive');
+    expect(capturedDevicesTableProps).not.toHaveProperty('onRestore');
   });
 });

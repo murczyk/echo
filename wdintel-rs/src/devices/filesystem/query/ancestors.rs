@@ -24,7 +24,7 @@ pub(in crate::devices::filesystem) async fn list_breadcrumbs(
     map_breadcrumb_chain(scope, rows)
 }
 
-pub(super) async fn load_path_components(
+pub(in crate::devices::filesystem) async fn load_path_components(
     db: &impl ConnectionTrait,
     entries: &[TreeEntry],
 ) -> Result<Vec<Vec<String>>, FilesystemError> {

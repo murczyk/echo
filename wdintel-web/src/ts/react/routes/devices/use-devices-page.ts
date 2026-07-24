@@ -4,20 +4,14 @@ import type {
   AreaOfResponsibility,
   DeviceDetails,
   DeviceListItem,
-  DeviceStatusCountsRsp,
-  DeviceUnitStatRow,
+  DeviceStatusCounts,
+  DeviceUnitStat,
   Unit,
 } from '../../../../Bindings';
 import { useTableStateContext } from '../../components/mui-customized/table/table-state-provider';
-import {
-  createDevice,
-  archiveDevice,
-  getDeviceDetail,
-  restoreDevice,
-  updateDevice,
-} from '../../services/api/devices';
+import { createDevice, getDeviceDetail, updateDevice } from '../../services/api/devices';
 import { navigateWithinSpa } from '../../utils/browser';
-import { hasRole } from '../../utils/roles';
+import { canReadDevices, hasRole } from '../../utils/roles';
 import {
   buildDeviceRowView,
   createDefaultDevicesFilterState,
@@ -53,13 +47,20 @@ import type { SelectedSidebarUnitFilter } from '../rer-callsigns-neo/types';
 
 export function useDevicesPage({ authUserRoles = [] }: { authUserRoles?: string[] } = {}) {
   const tableStateContext = useTableStateContext();
-  const permissions = useMemo(
-    () => ({
-      canRead: hasRole(authUserRoles, 'Cyber') || hasRole(authUserRoles, 'DevicesEditor'),
-      canEdit: hasRole(authUserRoles, 'DevicesEditor'),
-    }),
-    [authUserRoles],
-  );
+  const permissions = useMemo(() => {
+    const canRead = canReadDevices(authUserRoles);
+    const canEditSource = hasRole(authUserRoles, 'DeviceSource');
+    const canEditAnalytical = hasRole(authUserRoles, 'DeviceAnalyst');
+    return {
+      canRead,
+      canCreate: canEditSource,
+      canEdit: canEditSource || canEditAnalytical,
+      fieldPermissions: {
+        sourceData: canEditSource,
+        analyticalData: canEditAnalytical,
+      },
+    };
+  }, [authUserRoles]);
 
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -67,10 +68,10 @@ export function useDevicesPage({ authUserRoles = [] }: { authUserRoles?: string[
   const [devices, setDevices] = useState<DeviceListItem[]>([]);
   const [aors, setAors] = useState<AreaOfResponsibility[]>([]);
   const [units, setUnits] = useState<Unit[]>([]);
-  const [unitStats, setUnitStats] = useState<DeviceUnitStatRow[]>([]);
+  const [unitStats, setUnitStats] = useState<DeviceUnitStat[]>([]);
   const [total, setTotal] = useState(0);
   const [hasMore, setHasMore] = useState(false);
-  const [statusCounts, setStatusCounts] = useState<DeviceStatusCountsRsp | null>(null);
+  const [statusCounts, setStatusCounts] = useState<DeviceStatusCounts | null>(null);
   const [filters, setFilters] = useState<DevicesFilterState>(() =>
     createDefaultDevicesFilterState(),
   );
@@ -79,7 +80,6 @@ export function useDevicesPage({ authUserRoles = [] }: { authUserRoles?: string[
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [selectedSidebarUnitFilter, setSelectedSidebarUnitFilter] =
     useState<SelectedSidebarUnitFilter | null>(null);
-  const [mutatingDeviceId, setMutatingDeviceId] = useState<string | null>(null);
   const [createForm, setCreateForm] = useState<DeviceUpsertForm | null>(null);
   const [createError, setCreateError] = useState<string | null>(null);
   const [createServerFieldErrors, setCreateServerFieldErrors] = useState<DeviceServerFieldErrors>(
@@ -92,10 +92,6 @@ export function useDevicesPage({ authUserRoles = [] }: { authUserRoles?: string[
   const [editError, setEditError] = useState<string | null>(null);
   const [editServerFieldErrors, setEditServerFieldErrors] = useState<DeviceServerFieldErrors>({});
   const [editSubmitting, setEditSubmitting] = useState(false);
-  const [archiveDialogDevice, setArchiveDialogDevice] = useState<{
-    id: string;
-    name: string;
-  } | null>(null);
 
   const requestSeqRef = useRef(0);
   const bootstrapLoadedRef = useRef(false);
@@ -124,8 +120,10 @@ export function useDevicesPage({ authUserRoles = [] }: { authUserRoles?: string[
   );
   const editHasChanges = useMemo(() => {
     if (editDevice === null || editForm === null) return false;
-    return hasDeviceUpdatePatchChanges(buildUpdateDevicePatch(editDevice, editForm));
-  }, [editDevice, editForm]);
+    return hasDeviceUpdatePatchChanges(
+      buildUpdateDevicePatch(editDevice, editForm, permissions.fieldPermissions),
+    );
+  }, [editDevice, editForm, permissions.fieldPermissions]);
 
   const querySnapshot = useMemo<DevicesQuerySnapshot>(
     () => ({
@@ -225,11 +223,11 @@ export function useDevicesPage({ authUserRoles = [] }: { authUserRoles?: string[
   const loadMore = useCallback(() => loadActions.loadMoreDevices(), [loadActions]);
 
   const openCreateDialog = useCallback(() => {
-    if (!permissions.canEdit) return;
+    if (!permissions.canCreate) return;
     setCreateForm(createDefaultDeviceUpsertForm());
     setCreateError(null);
     setCreateServerFieldErrors({});
-  }, [permissions.canEdit]);
+  }, [permissions.canCreate]);
 
   const closeCreateDialog = useCallback(() => {
     if (creating) return;
@@ -246,8 +244,8 @@ export function useDevicesPage({ authUserRoles = [] }: { authUserRoles?: string[
 
   const submitCreateDialog = useCallback(
     async (form: DeviceUpsertForm) => {
-      if (!permissions.canEdit || creating) return;
-      if (validateDeviceUpsertForm(form) !== null) {
+      if (!permissions.canCreate || creating) return;
+      if (validateDeviceUpsertForm(form, { sourceData: true, analyticalData: false }) !== null) {
         setCreateError('Перевірте поля форми.');
         return;
       }
@@ -271,29 +269,12 @@ export function useDevicesPage({ authUserRoles = [] }: { authUserRoles?: string[
         setCreating(false);
       }
     },
-    [creating, permissions.canEdit],
-  );
-
-  const refreshAfterLifecycleMutation = useCallback(
-    async (device: DeviceListItem) => {
-      setDevices((current) => {
-        const exists = current.some((item) => item.id === device.id);
-        if (!exists) return current;
-        return current.map((item) => (item.id === device.id ? device : item));
-      });
-      await loadActions.reloadDevices({ includeUnitStats: true });
-    },
-    [loadActions],
+    [creating, permissions.canCreate],
   );
 
   const openEditRow = useCallback(
     async (deviceId: string) => {
-      if (
-        !permissions.canEdit ||
-        mutatingDeviceId !== null ||
-        editLoadingDeviceId !== null ||
-        editSubmitting
-      ) {
+      if (!permissions.canEdit || editLoadingDeviceId !== null || editSubmitting) {
         return;
       }
 
@@ -318,7 +299,7 @@ export function useDevicesPage({ authUserRoles = [] }: { authUserRoles?: string[
         setEditLoadingDeviceId(null);
       }
     },
-    [editLoadingDeviceId, editSubmitting, mutatingDeviceId, permissions.canEdit],
+    [editLoadingDeviceId, editSubmitting, permissions.canEdit],
   );
 
   const closeEditDialog = useCallback(() => {
@@ -340,12 +321,12 @@ export function useDevicesPage({ authUserRoles = [] }: { authUserRoles?: string[
       if (!permissions.canEdit || editDevice === null || editDevice.archived || editSubmitting) {
         return;
       }
-      if (validateDeviceUpsertForm(form) !== null) {
+      if (validateDeviceUpsertForm(form, permissions.fieldPermissions) !== null) {
         setEditError('Перевірте поля форми.');
         return;
       }
 
-      const patch = buildUpdateDevicePatch(editDevice, form);
+      const patch = buildUpdateDevicePatch(editDevice, form, permissions.fieldPermissions);
       if (!hasDeviceUpdatePatchChanges(patch)) {
         setEditError('Немає змін для збереження.');
         return;
@@ -376,68 +357,12 @@ export function useDevicesPage({ authUserRoles = [] }: { authUserRoles?: string[
         setEditSubmitting(false);
       }
     },
-    [editDevice, editSubmitting, loadActions, permissions.canEdit],
-  );
-
-  const archiveRow = useCallback(
-    (deviceId: string, deviceName: string) => {
-      if (!permissions.canEdit || mutatingDeviceId !== null || editLoadingDeviceId !== null) return;
-      setArchiveDialogDevice({ id: deviceId, name: deviceName });
-    },
-    [editLoadingDeviceId, mutatingDeviceId, permissions.canEdit],
-  );
-
-  const closeArchiveDialog = useCallback(() => {
-    if (mutatingDeviceId !== null) return;
-    setArchiveDialogDevice(null);
-  }, [mutatingDeviceId]);
-
-  const confirmArchiveRow = useCallback(async () => {
-    if (!permissions.canEdit || archiveDialogDevice === null || mutatingDeviceId !== null) return;
-
-    setMutatingDeviceId(archiveDialogDevice.id);
-    setStatus(null);
-    try {
-      const device = await archiveDevice({ deviceId: archiveDialogDevice.id });
-      await refreshAfterLifecycleMutation(deviceDetailsToListItem(device));
-      setArchiveDialogDevice(null);
-      setStatus({ kind: 'success', text: 'Пристрій архівовано.' });
-    } catch (error) {
-      setStatus({
-        kind: 'error',
-        text: `Помилка архівування пристрою: ${formatDeviceErrorMessage(error)}`,
-      });
-    } finally {
-      setMutatingDeviceId(null);
-    }
-  }, [archiveDialogDevice, mutatingDeviceId, permissions.canEdit, refreshAfterLifecycleMutation]);
-
-  const restoreRow = useCallback(
-    async (deviceId: string) => {
-      if (!permissions.canEdit || mutatingDeviceId !== null) return;
-
-      setMutatingDeviceId(deviceId);
-      setStatus(null);
-      try {
-        const device = await restoreDevice({ deviceId });
-        await refreshAfterLifecycleMutation(deviceDetailsToListItem(device));
-        setStatus({ kind: 'success', text: 'Пристрій відновлено.' });
-      } catch (error) {
-        setStatus({
-          kind: 'error',
-          text: `Помилка відновлення пристрою: ${formatDeviceErrorMessage(error)}`,
-        });
-      } finally {
-        setMutatingDeviceId(null);
-      }
-    },
-    [mutatingDeviceId, permissions.canEdit, refreshAfterLifecycleMutation],
+    [editDevice, editSubmitting, loadActions, permissions],
   );
 
   const hasFilters = hasActiveDevicesFilters(tableStateContext.globalFilter, filters);
   const initialLoadFailed = !loading && rows.length === 0 && status?.kind === 'error';
-  const busyDeviceId =
-    mutatingDeviceId ?? editLoadingDeviceId ?? (editSubmitting ? (editDevice?.id ?? null) : null);
+  const busyDeviceId = editLoadingDeviceId ?? (editSubmitting ? (editDevice?.id ?? null) : null);
 
   return {
     permissions,
@@ -467,8 +392,6 @@ export function useDevicesPage({ authUserRoles = [] }: { authUserRoles?: string[
     editSubmitting,
     editHasChanges,
     editLoadingDeviceId,
-    archiveDialogDevice,
-    mutatingDeviceId,
     busyDeviceId,
     aorOptions,
     unitOptions,
@@ -491,9 +414,5 @@ export function useDevicesPage({ authUserRoles = [] }: { authUserRoles?: string[
     closeEditDialog,
     setEditForm: changeEditForm,
     submitEditDialog,
-    archiveRow,
-    closeArchiveDialog,
-    confirmArchiveRow,
-    restoreRow,
   };
 }

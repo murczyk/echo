@@ -1,13 +1,15 @@
 import type { MRT_SortingState } from 'material-react-table';
 
 import type {
+  AorSummary,
   AreaOfResponsibility,
   DeviceDetails,
   DeviceListItem,
   DeviceListSortBy,
-  DeviceUnitStatRow,
+  DeviceUnitStat,
   ListDevicesReq,
   Unit,
+  UnitSummary,
 } from '../../../../Bindings';
 import { buildSelectableUnitOptions, getUnitDisplayLabel } from '../../utils/unit-search';
 import type { SelectedSidebarUnitFilter, UnitHierarchyFilter } from '../rer-callsigns-neo/types';
@@ -53,7 +55,7 @@ export function createDefaultDevicesFilterState(): DevicesFilterState {
   };
 }
 
-export function formatDeviceDateTime(value: number | null | undefined): string {
+export function formatDeviceDateTime(value: string | null | undefined): string {
   if (!value) return '—';
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return '—';
@@ -66,7 +68,7 @@ export function buildDevicesSortBy(sorting: MRT_SortingState): DeviceListSortBy[
 
   switch (current.id) {
     case 'name':
-      return [current.desc ? 'name_desc' : 'name_asc'];
+      return [current.desc ? 'display_title_desc' : 'display_title_asc'];
     case 'updatedAt':
       return [current.desc ? 'updated_at_desc' : 'updated_at_asc'];
     default:
@@ -91,10 +93,9 @@ export function buildDevicesListReq(params: {
         : params.filters.archivedFilter === 'all'
           ? 'all'
           : 'active_only',
+    needsAnalyticalName: null,
     aorIds: null,
     unitIds: params.filters.unitIds.length > 0 ? params.filters.unitIds : null,
-    createdBy: null,
-    ids: null,
     limit: params.limit,
     offset: params.offset,
     sortBy: buildDevicesSortBy(params.sorting),
@@ -110,11 +111,11 @@ export function hasActiveDevicesFilters(searchText: string, filters: DevicesFilt
 export function buildDeviceRowView(device: DeviceListItem): DeviceRowView {
   return {
     ...device,
-    aorLabel: formatAorsLabel(device.aorIds, device.aorNames),
-    unitLabel: formatUnitLabel(device.unitId, device.unitName),
-    updatedAtLabel: formatDeviceDateTime(device.updatedAtMs),
-    createdAtLabel: formatDeviceDateTime(device.createdAtMs),
-    archivedAtLabel: formatDeviceDateTime(device.archivedAtMs),
+    aorLabel: formatAorsLabel(device.aors),
+    unitLabel: formatUnitLabel(device.unit),
+    updatedAtLabel: formatDeviceDateTime(device.updatedAt),
+    createdAtLabel: formatDeviceDateTime(device.createdAt),
+    archivedAtLabel: formatDeviceDateTime(device.archivedAt),
   };
 }
 
@@ -123,17 +124,13 @@ export function deviceDetailsToListItem(device: DeviceDetails): DeviceListItem {
     id: device.id,
     sourceLabel: device.sourceLabel,
     name: device.name,
+    aors: device.aors,
+    unit: device.unit,
     createdBy: device.createdBy,
-    aorIds: device.aorIds,
-    aorNames: device.aorNames,
-    unitId: device.unitId,
-    unitName: device.unitName,
-    externalUrl: device.externalUrl,
-    customFields: device.customFields,
     archived: device.archived,
-    createdAtMs: device.createdAtMs,
-    updatedAtMs: device.updatedAtMs,
-    archivedAtMs: device.archivedAtMs,
+    createdAt: device.createdAt,
+    updatedAt: device.updatedAt,
+    archivedAt: device.archivedAt,
   };
 }
 
@@ -152,17 +149,17 @@ export function resolveUnitOptions(units: Unit[]): DeviceLookupOption[] {
 }
 
 export function mergeDeviceUnitStatsWithUnits(
-  unitStats: DeviceUnitStatRow[],
+  unitStats: DeviceUnitStat[],
   unitsById: Map<number, Unit>,
 ): DeviceUnitStatView[] {
   return unitStats
     .map((stat) => {
-      const unit = unitsById.get(stat.unitId);
+      const unit = unitsById.get(stat.unit.id);
       if (!unit) return null;
 
       return {
-        unitId: stat.unitId,
-        unitName: unit.name,
+        unitId: stat.unit.id,
+        unitName: stat.unit.name,
         army: unit.army,
         division: unit.division,
         regiment: unit.regiment,
@@ -240,22 +237,12 @@ export function isSafeExternalUrl(value: string | null | undefined): value is st
   }
 }
 
-export function formatAorsLabel(ids: number[], names: string[]): string {
-  if (ids.length > 0) {
-    return ids
-      .map((id, index) => {
-        const name = names[index]?.trim();
-        return name || `AOR #${id} — назва недоступна`;
-      })
-      .join(', ');
-  }
-  const visibleNames = names.map((name) => name.trim()).filter((name) => name !== '');
-  if (visibleNames.length > 0) return visibleNames.join(', ');
-  return '—';
+export function formatAorsLabel(aors: AorSummary[]): string {
+  if (aors.length === 0) return '—';
+  return aors.map((aor) => aor.name.trim() || `AOR #${aor.id} — назва недоступна`).join(', ');
 }
 
-function formatUnitLabel(id: number | null, name: string | null): string {
-  if (name?.trim()) return name.trim();
-  if (id !== null) return `Підрозділ #${id} — назва недоступна`;
-  return '—';
+export function formatUnitLabel(unit: UnitSummary | null): string {
+  if (unit === null) return '—';
+  return unit.name.trim() || `Підрозділ #${unit.id} — назва недоступна`;
 }

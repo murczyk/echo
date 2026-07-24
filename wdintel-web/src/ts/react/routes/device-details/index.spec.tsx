@@ -25,28 +25,31 @@ const activeDevice: DeviceDetails = {
   id: DEVICE_ID,
   sourceLabel: 'Inventory import',
   name: 'Device Alpha',
-  createdBy: 'operator',
-  aorIds: [1, 2],
-  aorNames: ['Північ', 'Південь'],
-  unitId: 7,
-  unitName: 'Unit Seven',
-  tags: [{ label: 'IP', value: '10.0.0.1' }],
+  aors: [
+    { id: 1, name: 'Північ' },
+    { id: 2, name: 'Південь' },
+  ],
+  unit: { id: 7, name: 'Unit Seven' },
   externalUrl: 'https://example.test/device-alpha',
   customFields: { inventory_id: 'node-1' },
+  createdBy: 'operator',
   archived: false,
-  createdAtMs: 1_700_000_000_000,
-  updatedAtMs: 1_700_000_010_000,
-  archivedAtMs: null,
+  archivedAt: null,
+  createdAt: '2026-01-01T00:00:00Z',
+  updatedAt: '2026-01-02T00:00:00Z',
 };
 
 function buildPage(overrides: Record<string, unknown> = {}) {
   return {
-    permissions: { canRead: true, canEdit: true },
+    permissions: {
+      canRead: true,
+      canEdit: true,
+      fieldPermissions: { sourceData: true, analyticalData: true },
+    },
     device: activeDevice,
     loading: false,
     refreshing: false,
     status: null,
-    mutating: false,
     aorOptions: [],
     unitOptions: [],
     lookupsLoading: false,
@@ -55,17 +58,12 @@ function buildPage(overrides: Record<string, unknown> = {}) {
     editServerFieldErrors: {},
     editSubmitting: false,
     editHasChanges: false,
-    archiveDialogOpen: false,
     initialLoadFailed: false,
     reload: vi.fn(),
     openEditDrawer: vi.fn(),
     closeEditDrawer: vi.fn(),
     setEditForm: vi.fn(),
     saveEditDevice: vi.fn(),
-    openArchiveDialog: vi.fn(),
-    closeArchiveDialog: vi.fn(),
-    confirmArchiveCurrentDevice: vi.fn(),
-    restoreCurrentDevice: vi.fn(),
     ...overrides,
   };
 }
@@ -87,32 +85,18 @@ afterEach(() => {
 
 function renderPage() {
   act(() => {
-    root?.render(<DeviceDetailsPage deviceId={DEVICE_ID} authUserRoles={['DevicesEditor']} />);
+    root?.render(<DeviceDetailsPage deviceId={DEVICE_ID} authUserRoles={['DeviceAnalyst']} />);
   });
-}
-
-function openDeviceActionsMenu() {
-  const menuButton = container?.querySelector('button[aria-label="Дії з пристроєм"]');
-  if (!(menuButton instanceof HTMLElement)) throw new Error('device actions menu button not found');
-  act(() => {
-    menuButton.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
-  });
-}
-
-function actionMenuLabels() {
-  return Array.from(document.querySelectorAll('[role="menuitem"]')).map((element) =>
-    element.textContent?.trim(),
-  );
 }
 
 describe('DeviceDetailsPage layout', () => {
-  it('renders device metadata without file UI', () => {
+  it('renders target device metadata and only the supported edit action', () => {
     renderPage();
 
     const leftPanel = container?.querySelector('[data-testid="device-details-left-panel"]');
-    const leftPanelText = leftPanel?.textContent;
-    const deviceNameLink = Array.from(leftPanel?.querySelectorAll('a') ?? []).find(
-      (element) => element.textContent === 'Device Alpha',
+    const leftPanelText = leftPanel?.textContent ?? '';
+    const externalLink = Array.from(leftPanel?.querySelectorAll('a') ?? []).find(
+      (element) => element.textContent === activeDevice.externalUrl,
     );
 
     expect(leftPanelText).toContain('Device Alpha');
@@ -121,60 +105,41 @@ describe('DeviceDetailsPage layout', () => {
     expect(leftPanelText).toContain('Південь');
     expect(leftPanelText).toContain('Unit Seven');
     expect(leftPanelText).toContain('operator');
-    expect(leftPanelText).toContain('Теги');
-    expect(leftPanelText).toContain('IP');
-    expect(leftPanelText).toContain('10.0.0.1');
     expect(leftPanelText).toContain('Джерельна мітка');
     expect(leftPanelText).toContain('Inventory import');
+    expect(leftPanelText).toContain('Зовнішнє посилання');
     expect(leftPanelText).toContain('Кастомні поля');
     expect(leftPanelText).toContain('inventory_id');
     expect(leftPanelText).toContain('node-1');
-    expect(leftPanelText).not.toContain('Хостнейм');
-    expect(leftPanelText).not.toContain('SSH-порт');
-    expect(container?.textContent).not.toContain('Зовнішнє посилання');
-    expect(container?.textContent).not.toContain('Оновити');
-    expect(container?.textContent).not.toContain('Редагувати');
+    expect(leftPanelText).not.toContain('Теги');
     expect(container?.textContent).not.toContain('Архівувати');
+    expect(container?.textContent).not.toContain('Відновити');
     expect(container?.querySelector('[aria-label="Активний"]')).not.toBeNull();
-    expect(container?.querySelector('button[aria-label="Дії з пристроєм"]')).not.toBeNull();
-    expect(deviceNameLink?.getAttribute('href')).toBe(activeDevice.externalUrl);
-    expect(deviceNameLink?.getAttribute('target')).toBe('_blank');
-    expect((leftPanelText ?? '').indexOf('Основне')).toBeLessThan(
-      (leftPanelText ?? '').indexOf('Теги'),
-    );
-    expect((leftPanelText ?? '').indexOf('Теги')).toBeLessThan(
-      (leftPanelText ?? '').indexOf('Кастомні поля'),
-    );
-    expect((leftPanelText ?? '').indexOf('Кастомні поля')).toBeLessThan(
-      (leftPanelText ?? '').indexOf('Додатково'),
-    );
+    expect(container?.querySelector('button[aria-label="Редагувати пристрій"]')).not.toBeNull();
+    expect(externalLink?.getAttribute('href')).toBe(activeDevice.externalUrl);
+    expect(externalLink?.getAttribute('target')).toBe('_blank');
+    expect(leftPanelText.indexOf('Основне')).toBeLessThan(leftPanelText.indexOf('Кастомні поля'));
+    expect(leftPanelText.indexOf('Кастомні поля')).toBeLessThan(leftPanelText.indexOf('Додатково'));
     expect(container?.querySelectorAll('[role="tab"]')).toHaveLength(0);
     expect(container?.textContent).not.toContain('Файли');
-    expect(container?.textContent).not.toContain('Метадані файлів');
-
-    openDeviceActionsMenu();
-    expect(actionMenuLabels()).toEqual(['Редагувати', 'Архівувати']);
   });
 
-  it('keeps archived devices restore-only without file UI', () => {
+  it('keeps archived devices read-only', () => {
     pageMock.useDeviceDetailsPage.mockReturnValue(
       buildPage({
         device: {
           ...activeDevice,
           archived: true,
-          archivedAtMs: 1_700_000_040_000,
+          archivedAt: '2026-01-03T00:00:00Z',
         },
       }),
     );
 
     renderPage();
 
-    expect(container?.textContent).toContain('Пристрій архівовано');
-    expect(container?.textContent).not.toContain('Редагувати');
+    expect(container?.textContent).toContain('Пристрій архівовано. Редагування недоступне.');
+    expect(container?.querySelector('button[aria-label="Редагувати пристрій"]')).toBeNull();
     expect(container?.textContent).not.toContain('Відновити');
     expect(container?.querySelector('[aria-label="Архівний"]')).not.toBeNull();
-
-    openDeviceActionsMenu();
-    expect(actionMenuLabels()).toEqual(['Відновити']);
   });
 });

@@ -44,8 +44,7 @@ pub(in crate::devices) use types::{
     SyncFileRejectionKind, SyncFilesCommand, SyncFilesResult, TreeEntry,
 };
 pub(in crate::devices) use types::{
-    FileEntry, FileEntryKind, OffsetPage, OffsetPageRequest, PathSyntax,
-    PreparedFileMutation,
+    FileEntry, FileEntryKind, PathSyntax, PreparedFileMutation,
 };
 
 #[cfg(test)]

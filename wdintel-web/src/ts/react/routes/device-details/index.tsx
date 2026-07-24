@@ -1,15 +1,11 @@
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
-import ArchiveOutlinedIcon from '@mui/icons-material/ArchiveOutlined';
 import EditIcon from '@mui/icons-material/Edit';
-import MoreVertOutlinedIcon from '@mui/icons-material/MoreVertOutlined';
-import RestoreIcon from '@mui/icons-material/Restore';
-import { Box, IconButton, Menu, MenuItem, Skeleton, Stack, Tooltip } from '@mui/material';
-import { useState } from 'react';
+import { Box, Skeleton, Stack, Tooltip } from '@mui/material';
 
-import { ConfirmDangerDialog } from '../../components/ConfirmDangerDialog';
 import { PageErrorState } from '../../components/PageErrorState';
 import { PageHeader } from '../../components/PageHeader';
 import { PowerAlert } from '../../components/PowerAlert';
+import { PowerIconButton } from '../../components/PowerIconButton';
 import { SectionLoadingOverlay } from '../../components/SectionLoadingOverlay';
 import { navigateWithinSpa } from '../../utils/browser';
 import { DeviceUpsertDrawer } from '../devices/components/DeviceUpsertDrawer';
@@ -32,14 +28,14 @@ function DeviceHeaderTitle({
       sx={{ display: 'flex', alignItems: 'center', gap: 1, minWidth: 0, lineHeight: 'inherit' }}
     >
       <Tooltip title="До списку пристроїв" arrow placement="bottom-start">
-        <IconButton
+        <PowerIconButton
           aria-label="До списку пристроїв"
           onClick={() => navigateWithinSpa('/devices')}
           size="small"
           sx={{ flexShrink: 0 }}
         >
           <ArrowBackIcon fontSize="small" />
-        </IconButton>
+        </PowerIconButton>
       </Tooltip>
       {deviceName === null ? (
         <Skeleton width={240} />
@@ -79,7 +75,6 @@ export function DeviceDetailsPage({
   authUserRoles?: string[];
 }) {
   const page = useDeviceDetailsPage({ deviceId, authUserRoles });
-  const [actionsMenuAnchorEl, setActionsMenuAnchorEl] = useState<HTMLElement | null>(null);
 
   if (!page.permissions.canRead) {
     return <PageErrorState message="Немає доступу до пристроїв." minHeight="100%" />;
@@ -98,29 +93,6 @@ export function DeviceDetailsPage({
 
   const device = page.device;
   const showEditAction = page.permissions.canEdit && device !== null && !device.archived;
-  const showArchiveAction = page.permissions.canEdit && device !== null && !device.archived;
-  const showRestoreAction = page.permissions.canEdit && device !== null && device.archived;
-  const actionsMenuOpen = actionsMenuAnchorEl !== null;
-  const actionsDisabled = page.mutating || page.editSubmitting;
-
-  function closeActionsMenu() {
-    setActionsMenuAnchorEl(null);
-  }
-
-  function openEditDrawer() {
-    closeActionsMenu();
-    page.openEditDrawer();
-  }
-
-  function openArchiveDialog() {
-    closeActionsMenu();
-    page.openArchiveDialog();
-  }
-
-  function restoreDevice() {
-    closeActionsMenu();
-    void page.restoreCurrentDevice();
-  }
 
   return (
     <Box
@@ -136,68 +108,33 @@ export function DeviceDetailsPage({
       <PageHeader
         title={
           <DeviceHeaderTitle
-            deviceName={device?.name ?? null}
+            deviceName={device ? device.name || device.sourceLabel : null}
             archived={device?.archived ?? false}
           />
         }
         actions={
-          <Stack direction="row" spacing={1} alignItems="center">
-            <Tooltip title="Дії">
-              <IconButton
-                onClick={(event) => setActionsMenuAnchorEl(event.currentTarget)}
-                aria-haspopup="true"
-                aria-controls={actionsMenuOpen ? 'device-details-actions-menu' : undefined}
-                aria-label="Дії з пристроєм"
-              >
-                <MoreVertOutlinedIcon fontSize="small" />
-              </IconButton>
-            </Tooltip>
-            <Menu
-              id="device-details-actions-menu"
-              open={actionsMenuOpen}
-              anchorEl={actionsMenuAnchorEl}
-              onClose={closeActionsMenu}
-            >
-              {device?.archived ? (
-                <MenuItem
-                  onClick={restoreDevice}
-                  disabled={!showRestoreAction || actionsDisabled}
-                  sx={{ color: showRestoreAction ? 'primary.main' : undefined }}
-                >
-                  <Stack direction="row" spacing={1} alignItems="center">
-                    <RestoreIcon fontSize="small" />
-                    <span>Відновити</span>
-                  </Stack>
-                </MenuItem>
-              ) : (
-                <>
-                  <MenuItem onClick={openEditDrawer} disabled={!showEditAction || actionsDisabled}>
-                    <Stack direction="row" spacing={1} alignItems="center">
-                      <EditIcon fontSize="small" />
-                      <span>Редагувати</span>
-                    </Stack>
-                  </MenuItem>
-                  <MenuItem
-                    onClick={openArchiveDialog}
-                    disabled={!showArchiveAction || actionsDisabled}
-                    sx={{ color: showArchiveAction ? 'error.main' : undefined }}
+          showEditAction ? (
+            <Stack direction="row" spacing={1} alignItems="center">
+              <Tooltip title="Редагувати">
+                <span>
+                  <PowerIconButton
+                    onClick={page.openEditDrawer}
+                    disabled={page.editSubmitting}
+                    aria-label="Редагувати пристрій"
                   >
-                    <Stack direction="row" spacing={1} alignItems="center">
-                      <ArchiveOutlinedIcon fontSize="small" />
-                      <span>Архівувати</span>
-                    </Stack>
-                  </MenuItem>
-                </>
-              )}
-            </Menu>
-          </Stack>
+                    <EditIcon fontSize="small" />
+                  </PowerIconButton>
+                </span>
+              </Tooltip>
+            </Stack>
+          ) : undefined
         }
       />
 
       {page.status ? <PowerAlert severity={page.status.kind}>{page.status.text}</PowerAlert> : null}
       {device?.archived ? (
         <PowerAlert severity="warning" autoHideDuration={null}>
-          Пристрій архівовано. Редактори можуть відновити пристрій.
+          Пристрій архівовано. Редагування недоступне.
         </PowerAlert>
       ) : null}
 
@@ -230,6 +167,7 @@ export function DeviceDetailsPage({
       <DeviceUpsertDrawer
         open={page.editForm !== null}
         mode="edit"
+        fieldPermissions={page.permissions.fieldPermissions}
         form={page.editForm}
         saving={page.editSubmitting}
         error={page.editError}
@@ -241,17 +179,6 @@ export function DeviceDetailsPage({
         onClose={page.closeEditDrawer}
         onChange={page.setEditForm}
         onSave={(form) => void page.saveEditDevice(form)}
-      />
-
-      <ConfirmDangerDialog
-        open={page.archiveDialogOpen}
-        onClose={page.closeArchiveDialog}
-        onConfirm={() => void page.confirmArchiveCurrentDevice()}
-        title="Архівувати пристрій"
-        description={`Ви дійсно хочете архівувати пристрій «${device?.name ?? ''}»?`}
-        confirmLabel="Архівувати"
-        submitting={page.mutating}
-        disabled={device === null}
       />
     </Box>
   );

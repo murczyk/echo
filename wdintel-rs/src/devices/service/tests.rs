@@ -40,6 +40,19 @@ fn actor(login: &str, roles: &[&str]) -> DeviceActor {
     DeviceActor::from_roles_for_test(login, roles)
 }
 
+fn list_command() -> ListDevicesCommand {
+    ListDevicesCommand {
+        filter_text: None,
+        archived_scope: DeviceArchivedScope::ActiveOnly,
+        needs_analytical_name: None,
+        aor_ids: Vec::new(),
+        unit_ids: Vec::new(),
+        limit: None,
+        offset: None,
+        sort_by: Vec::new(),
+    }
+}
+
 async fn insert_login(
     dbx: &DatabaseConnection,
     roles: &[&str],
@@ -1070,6 +1083,174 @@ async fn read_handles_archives_nullable_names_and_deleted_references() {
     );
     assert!(state.archived);
     assert!(state.archived_at.is_some());
+}
+
+#[tokio::test]
+#[serial_test::serial]
+async fn list_and_unit_stats_follow_target_filters_sorts_and_counts() {
+    let (env, _guard) = cleanup_locked().await.unwrap();
+    let reader = insert_login(&env.dbx, &[ROLE_CYBER]).await;
+    let actor = actor(&reader.login, &[ROLE_CYBER]);
+    let active_unit = mk_sigint_unit(
+        &env.dbx,
+        sigint_unit::ActiveModel {
+            created_by: Set(reader.login.clone()),
+            name: Set("Active target unit".to_string()),
+            active: Set(true),
+            deleted: Set(false),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let inactive_unit = mk_sigint_unit(
+        &env.dbx,
+        sigint_unit::ActiveModel {
+            created_by: Set(reader.login.clone()),
+            name: Set("Inactive target unit".to_string()),
+            active: Set(false),
+            deleted: Set(false),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let aor = mk_aor(
+        &env.dbx,
+        area_of_responsibility::ActiveModel {
+            name: Set("Target list AOR".to_string()),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let now = Utc::now().naive_utc();
+
+    let mut missing_name = device_active_model(
+        &reader.login,
+        "literal%source",
+        None,
+        json!({}),
+        false,
+        None,
+    );
+    missing_name.unit_id = Set(Some(active_unit.id));
+    missing_name.created_at = Set(now - chrono::Duration::hours(4));
+    missing_name.updated_at = Set(now - chrono::Duration::hours(4));
+    let missing_name = missing_name.insert(&env.dbx).await.unwrap();
+    link_device_aor(&env.dbx, missing_name.id, aor.id).await;
+
+    let mut named = device_active_model(
+        &reader.login,
+        "ordinary-source",
+        Some("Needle Alpha"),
+        json!({}),
+        false,
+        None,
+    );
+    named.unit_id = Set(Some(inactive_unit.id));
+    named.created_at = Set(now - chrono::Duration::hours(3));
+    named.updated_at = Set(now - chrono::Duration::hours(3));
+    let named = named.insert(&env.dbx).await.unwrap();
+
+    let mut uuid_match = device_active_model(
+        &reader.login,
+        "uuid-source",
+        Some("UUID device"),
+        json!({}),
+        false,
+        None,
+    );
+    uuid_match.created_at = Set(now - chrono::Duration::hours(2));
+    uuid_match.updated_at = Set(now - chrono::Duration::hours(2));
+    let uuid_match = uuid_match.insert(&env.dbx).await.unwrap();
+
+    let mut archived = device_active_model(
+        &reader.login,
+        "archived-source",
+        Some("Archived device"),
+        json!({}),
+        true,
+        Some(now),
+    );
+    archived.unit_id = Set(Some(active_unit.id));
+    archived.created_at = Set(now - chrono::Duration::hours(1));
+    archived.updated_at = Set(now - chrono::Duration::hours(1));
+    archived.insert(&env.dbx).await.unwrap();
+
+    let main_db = MainDb::new(&env.dbx);
+    let mut command = list_command();
+    command.needs_analytical_name = Some(true);
+    command.sort_by = vec![DeviceListSort::CreatedAtAsc];
+    let result = DeviceService::list(&main_db, &actor, command)
+        .await
+        .unwrap();
+    assert_eq!(
+        result
+            .devices
+            .iter()
+            .map(|device| device.id)
+            .collect::<Vec<_>>(),
+        vec![missing_name.id],
+    );
+    assert_eq!(result.status_counts.active, 1);
+    assert_eq!(result.status_counts.archived, 0);
+
+    let result = DeviceService::list(&main_db, &actor, list_command())
+        .await
+        .unwrap();
+    assert_eq!(result.status_counts.active, 3);
+    assert_eq!(result.status_counts.archived, 1);
+
+    for (filter_text, expected_id) in [
+        ("%".to_string(), missing_name.id),
+        ("Needle Alpha".to_string(), named.id),
+        (uuid_match.id.to_string(), uuid_match.id),
+    ] {
+        let mut command = list_command();
+        command.filter_text = Some(filter_text);
+        let result = DeviceService::list(&main_db, &actor, command)
+            .await
+            .unwrap();
+        assert_eq!(
+            result
+                .devices
+                .iter()
+                .map(|device| device.id)
+                .collect::<Vec<_>>(),
+            vec![expected_id],
+        );
+    }
+
+    let mut command = list_command();
+    command.aor_ids = vec![aor.id];
+    let result = DeviceService::list(&main_db, &actor, command)
+        .await
+        .unwrap();
+    assert_eq!(
+        result
+            .devices
+            .iter()
+            .map(|device| device.id)
+            .collect::<Vec<_>>(),
+        vec![missing_name.id],
+    );
+
+    let stats = DeviceService::unit_stats(&main_db, &actor).await.unwrap();
+    assert_eq!(stats.len(), 1);
+    assert_eq!(stats[0].unit.id, active_unit.id);
+    assert_eq!(stats[0].count, 1);
+
+    let mut command = list_command();
+    command.sort_by =
+        vec![DeviceListSort::CreatedAtAsc, DeviceListSort::CreatedAtDesc];
+    assert_form_error(
+        DeviceService::list(&main_db, &actor, command)
+            .await
+            .unwrap_err(),
+        "sort_by",
+        "Один критерій сортування не може мати різні напрямки",
+    );
 }
 
 #[test]

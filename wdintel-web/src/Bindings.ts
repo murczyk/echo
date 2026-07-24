@@ -1582,10 +1582,25 @@ export type TestIggyConnectionReq = {
   password: string;
 };
 
-export type DeviceTag = {
-  label: string;
-  value: string;
+export type AorSummary = {
+  id: number;
+  name: string;
 };
+
+export type UnitSummary = {
+  id: number;
+  name: string;
+};
+
+export type FileEntryKind =
+  | 'directory'
+  | 'file'
+;
+
+export type PathSyntax =
+  | 'posix'
+  | 'windows'
+;
 
 export type DeviceArchivedFilter =
   | 'active_only'
@@ -1594,78 +1609,72 @@ export type DeviceArchivedFilter =
 ;
 
 export type DeviceListSortBy =
-  | 'name_asc'
-  | 'name_desc'
+  | 'display_title_asc'
+  | 'display_title_desc'
+  | 'created_at_asc'
+  | 'created_at_desc'
   | 'updated_at_asc'
   | 'updated_at_desc'
 ;
 
+export type DeviceStatusCounts = {
+  active: number;
+  archived: number;
+};
+
 export type DeviceListItem = {
   id: string;
   sourceLabel: string;
-  name: string;
+  name: string | null;
+  aors: Array<AorSummary>;
+  unit: UnitSummary | null;
   createdBy: string;
-  aorIds: Array<number>;
-  aorNames: Array<string>;
-  unitId: number | null;
-  unitName: string | null;
-  externalUrl: string | null;
-  customFields: Record<string, string>;
   archived: boolean;
-  createdAtMs: number;
-  updatedAtMs: number;
-  archivedAtMs: number | null;
+  createdAt: string;
+  updatedAt: string;
+  archivedAt: string | null;
 };
 
 export type DeviceDetails = {
   id: string;
   sourceLabel: string;
-  name: string;
-  createdBy: string;
-  aorIds: Array<number>;
-  aorNames: Array<string>;
-  unitId: number | null;
-  unitName: string | null;
-  tags: Array<DeviceTag>;
+  name: string | null;
+  aors: Array<AorSummary>;
+  unit: UnitSummary | null;
   externalUrl: string | null;
   customFields: Record<string, string>;
+  createdBy: string;
   archived: boolean;
-  createdAtMs: number;
-  updatedAtMs: number;
-  archivedAtMs: number | null;
+  createdAt: string;
+  updatedAt: string;
+  archivedAt: string | null;
+};
+
+export type DeviceUnitStat = {
+  unit: UnitSummary;
+  count: number;
 };
 
 export type ListDevicesReq = {
   filterText: string | null;
   archivedFilter: DeviceArchivedFilter | null;
+  needsAnalyticalName: boolean | null;
   aorIds: Array<number> | null;
   unitIds: Array<number> | null;
-  createdBy: string | null;
-  ids: Array<string> | null;
   limit: number | null;
   offset: number | null;
   sortBy: Array<DeviceListSortBy>;
-};
-
-export type DeviceStatusCountsRsp = {
-  active: number;
-  archived: number;
 };
 
 export type ListDevicesRsp = {
   list: Array<DeviceListItem>;
   total: number;
   hasMore: boolean;
-  statusCounts: DeviceStatusCountsRsp;
+  statusCounts: DeviceStatusCounts;
 };
 
 export type DeviceUnitStatsRsp = {
-  units: Array<DeviceUnitStatRow>;
-};
-
-export type DeviceUnitStatRow = {
-  unitId: number;
-  count: number;
+  units: Array<DeviceUnitStat>;
 };
 
 export type DeviceDetailReq = {
@@ -1675,58 +1684,151 @@ export type DeviceDetailReq = {
 
 export type CreateDeviceReq = {
   sourceLabel: string;
-  name: string;
-  aorIds: Array<number>;
-  unitId: number | null;
-  tags: Array<DeviceTag>;
   externalUrl: string | null;
-  customFields: Record<string, string>;
+  customFields: Record<string, string> | null;
 };
 
 export type UpdateDeviceReq = {
   deviceId: string;
   sourceLabel: string | null;
+  externalUrl: string | null;
+  customFields: Record<string, string | null> | null;
   name: string | null;
   aorIds: Array<number> | null;
   unitId: number | null;
-  tags: Array<DeviceTag> | null;
-  externalUrl: string | null;
-  customFields: Record<string, string | null> | null;
 };
 
-export type ArchiveDeviceReq = {
+export type DeviceFileRoot = {
+  entryId: string;
   deviceId: string;
-};
-
-export type RestoreDeviceReq = {
-  deviceId: string;
-};
-
-export type DeviceFileEntry = {
-  fileId: string;
-  deviceId: string;
-  parentId: string | null;
+  parentEntryId: string | null;
+  kind: FileEntryKind;
   name: string;
-  pathSyntax: string | null;
+  pathSyntax: PathSyntax;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type FileBreadcrumb = {
+  entryId: string;
+  name: string;
+};
+
+export type DeviceFileTreeEntry = {
+  entryId: string;
+  parentEntryId: string;
+  kind: FileEntryKind;
+  fileId: string | null;
+  name: string;
+  pathComponents: Array<string>;
+  pathSyntax: PathSyntax | null;
   absolutePath: string | null;
   mimeType: string | null;
   extension: string | null;
-  fileMetadataCreatedAtMs: number | null;
-  fileMetadataModifiedAtMs: number | null;
-  createdAtMs: number;
-  updatedAtMs: number;
+  fileMetadataCreatedAt: string | null;
+  fileMetadataModifiedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
 };
 
-export type ListDeviceFilesReq = {
+export type DeviceFile = {
+  fileId: string;
   deviceId: string;
-  limit: number | null;
-  offset: number | null;
+  parentEntryId: string;
+  rootEntryId: string;
+  pathSyntax: PathSyntax;
+  absolutePath: string;
+  name: string;
+  pathComponents: Array<string>;
+  mimeType: string | null;
+  extension: string | null;
+  fileMetadataCreatedAt: string | null;
+  fileMetadataModifiedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
 };
 
-export type ListDeviceFilesRsp = {
-  list: Array<DeviceFileEntry>;
-  total: number;
-  hasMore: boolean;
+export type ListDeviceFileRootsReq = {
+  deviceId: string;
+};
+
+export type ListDeviceFileRootsRsp = {
+  roots: Array<DeviceFileRoot>;
+};
+
+export type BrowseDeviceFilesReq = {
+  deviceId: string;
+  parentEntryId: string;
+  includeBreadcrumbs: boolean | null;
+  limit: number | null;
+  cursor: string | null;
+};
+
+export type BrowseDeviceFilesRsp = {
+  breadcrumbs: Array<FileBreadcrumb>;
+  entries: Array<DeviceFileTreeEntry>;
+  nextCursor: string | null;
+};
+
+export type SearchDeviceFilesReq = {
+  deviceId: string;
+  scopeEntryId: string;
+  nameQuery: string | null;
+  kinds: Array<FileEntryKind> | null;
+  mimeTypes: Array<string> | null;
+  extensions: Array<string> | null;
+  fileMetadataModifiedFrom: string | null;
+  fileMetadataModifiedTo: string | null;
+  limit: number | null;
+  cursor: string | null;
+};
+
+export type SearchDeviceFilesRsp = {
+  entries: Array<DeviceFileTreeEntry>;
+  nextCursor: string | null;
+};
+
+export type SyncDeviceFileItem = {
+  fileId: string | null;
+  absolutePath: string;
+  mimeType: string | null;
+  extension: string | null;
+  fileMetadataCreatedAt: string | null;
+  fileMetadataModifiedAt: string | null;
+};
+
+export type FileSyncOperation =
+  | 'created'
+  | 'updated'
+;
+
+export type FileSyncErrorKind =
+  | 'validation'
+  | 'not_found'
+  | 'conflict'
+  | 'dependency'
+  | 'internal'
+;
+
+export type FileSyncError = {
+  kind: FileSyncErrorKind;
+  message: string;
+  fieldErrors: Array<[string, string]>;
+};
+
+export type FileSyncResult =
+  | { Accepted: { index: number; operation: FileSyncOperation; root: DeviceFileRoot; file: DeviceFile } }
+  | { Rejected: { index: number; error: FileSyncError } }
+;
+
+export type SyncDeviceFilesReq = {
+  deviceId: string;
+  pathSyntax: PathSyntax;
+  files: Array<SyncDeviceFileItem>;
+};
+
+export type SyncDeviceFilesRsp = {
+  results: Array<FileSyncResult>;
 };
 
 export type Organism = {

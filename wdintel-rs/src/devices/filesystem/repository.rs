@@ -1,10 +1,9 @@
 use super::{
     classify_transaction_error, map_database_error, map_transaction_body_error,
     mutation, query, Breadcrumb, DirectoryScope, EntryQueryScope, EntrySortKey,
-    FileEntry, FileMutationResult, FileSearchFilters, FilesystemError,
-    KeysetPage, KeysetPageRequest, OffsetPage, OffsetPageRequest,
-    PreparedFileMutation, RootEntry, SearchEntry, TransactionErrorClass,
-    TreeEntry,
+    FileMutationResult, FileSearchFilters, FilesystemError, KeysetPage,
+    KeysetPageRequest, PreparedFileMutation, RootEntry, SearchEntry,
+    TransactionErrorClass, TreeEntry,
 };
 use crate::file_registry::FileRegistryDb;
 use crate::h;
@@ -240,19 +239,6 @@ impl<'db> FilesystemRepository<'db> {
         .await
     }
 
-    pub(in crate::devices) async fn list_files_offset(
-        &self,
-        device_id: Uuid,
-        page: OffsetPageRequest,
-    ) -> Result<OffsetPage<FileEntry>, FilesystemError> {
-        query::list_files_offset(
-            self.file_registry_db.connection(),
-            device_id,
-            page,
-        )
-        .await
-    }
-
     #[allow(dead_code)]
     pub(in crate::devices) async fn list_roots(
         &self,
@@ -268,6 +254,15 @@ impl<'db> FilesystemRepository<'db> {
         page: KeysetPageRequest<EntrySortKey>,
     ) -> Result<KeysetPage<TreeEntry, EntrySortKey>, FilesystemError> {
         query::list_children(self.file_registry_db.connection(), scope, page)
+            .await
+    }
+
+    #[allow(dead_code)]
+    pub(in crate::devices) async fn load_path_components(
+        &self,
+        entries: &[TreeEntry],
+    ) -> Result<Vec<Vec<String>>, FilesystemError> {
+        query::load_path_components(self.file_registry_db.connection(), entries)
             .await
     }
 

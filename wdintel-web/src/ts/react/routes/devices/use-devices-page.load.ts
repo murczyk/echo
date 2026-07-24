@@ -4,8 +4,8 @@ import type { MRT_SortingState } from 'material-react-table';
 import type {
   AreaOfResponsibility,
   DeviceListItem,
-  DeviceStatusCountsRsp,
-  DeviceUnitStatRow,
+  DeviceStatusCounts,
+  DeviceUnitStat,
   Unit,
 } from '../../../../Bindings';
 import { redirectToLogin } from '../../auth-redirect';
@@ -46,10 +46,10 @@ type LoadArgs = {
   setDevices: Dispatch<SetStateAction<DeviceListItem[]>>;
   setAors: Dispatch<SetStateAction<AreaOfResponsibility[]>>;
   setUnits: Dispatch<SetStateAction<Unit[]>>;
-  setUnitStats: Dispatch<SetStateAction<DeviceUnitStatRow[]>>;
+  setUnitStats: Dispatch<SetStateAction<DeviceUnitStat[]>>;
   setTotal: Dispatch<SetStateAction<number>>;
   setHasMore: Dispatch<SetStateAction<boolean>>;
-  setStatusCounts: Dispatch<SetStateAction<DeviceStatusCountsRsp | null>>;
+  setStatusCounts: Dispatch<SetStateAction<DeviceStatusCounts | null>>;
   setStatus: Dispatch<SetStateAction<DevicesUiMessage>>;
   setBootstrapLoaded: Dispatch<SetStateAction<boolean>>;
 };

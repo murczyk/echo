@@ -2,8 +2,8 @@ import { Box, Chip, Divider, Link, Paper, Skeleton, Stack, Typography } from '@m
 import type { ReactNode } from 'react';
 
 import type { DeviceDetails } from '../../../../../Bindings';
-import { formatDeviceDateTime, isSafeExternalUrl } from '../../devices/helpers';
-import { formatDeviceLifecycleLabel, formatUnitLabel } from '../helpers';
+import { formatDeviceDateTime, formatUnitLabel, isSafeExternalUrl } from '../../devices/helpers';
+import { formatDeviceLifecycleLabel } from '../helpers';
 
 type Props = {
   device: DeviceDetails | null;
@@ -110,16 +110,10 @@ function DeviceTextValue({ children, muted = false }: { children: ReactNode; mut
 }
 
 function buildAorItems(device: DeviceDetails): Array<{ id: number; label: string }> {
-  if (device.aorIds.length > 0) {
-    return device.aorIds.map((id, index) => ({
-      id,
-      label: device.aorNames[index]?.trim() || `AOR #${id} — назва недоступна`,
-    }));
-  }
-
-  return device.aorNames
-    .map((name, index) => ({ id: index, label: name.trim() }))
-    .filter((item) => item.label !== '');
+  return device.aors.map((aor) => ({
+    id: aor.id,
+    label: aor.name.trim() || `AOR #${aor.id} — назва недоступна`,
+  }));
 }
 
 function DeviceAorsValue({ device }: { device: DeviceDetails }) {
@@ -139,11 +133,13 @@ function DeviceAorsValue({ device }: { device: DeviceDetails }) {
 }
 
 function DeviceNameValue({ device }: { device: DeviceDetails }) {
-  const externalUrl = device.externalUrl?.trim() ?? '';
+  return <DeviceTextValue muted={device.name === null}>{device.name ?? '—'}</DeviceTextValue>;
+}
 
-  if (!isSafeExternalUrl(externalUrl)) {
-    return <DeviceTextValue>{device.name}</DeviceTextValue>;
-  }
+function DeviceExternalUrlValue({ device }: { device: DeviceDetails }) {
+  const externalUrl = device.externalUrl?.trim() ?? '';
+  if (externalUrl === '') return <DeviceTextValue muted>—</DeviceTextValue>;
+  if (!isSafeExternalUrl(externalUrl)) return <DeviceTextValue>{externalUrl}</DeviceTextValue>;
 
   return (
     <Link
@@ -154,7 +150,7 @@ function DeviceNameValue({ device }: { device: DeviceDetails }) {
       variant="body2"
       sx={{ overflowWrap: 'anywhere', wordBreak: 'break-word' }}
     >
-      {device.name}
+      {externalUrl}
     </Link>
   );
 }
@@ -167,8 +163,13 @@ function buildMainFields(device: DeviceDetails): FieldConfig[] {
       value: <DeviceTextValue>{device.sourceLabel}</DeviceTextValue>,
     },
     {
+      key: 'externalUrl',
+      label: 'Зовнішнє посилання',
+      value: <DeviceExternalUrlValue device={device} />,
+    },
+    {
       key: 'name',
-      label: 'Назва',
+      label: 'Аналітична назва',
       value: <DeviceNameValue device={device} />,
     },
     {
@@ -197,7 +198,7 @@ function buildMainFields(device: DeviceDetails): FieldConfig[] {
     {
       key: 'unit',
       label: 'Підрозділ',
-      value: <DeviceTextValue>{formatUnitLabel(device.unitId, device.unitName)}</DeviceTextValue>,
+      value: <DeviceTextValue>{formatUnitLabel(device.unit)}</DeviceTextValue>,
     },
   ];
 }
@@ -212,42 +213,23 @@ function buildAdditionalFields(device: DeviceDetails): FieldConfig[] {
     {
       key: 'createdAt',
       label: 'Створено',
-      value: <DeviceTextValue>{formatDeviceDateTime(device.createdAtMs)}</DeviceTextValue>,
+      value: <DeviceTextValue>{formatDeviceDateTime(device.createdAt)}</DeviceTextValue>,
     },
     {
       key: 'updatedAt',
       label: 'Оновлено',
-      value: <DeviceTextValue>{formatDeviceDateTime(device.updatedAtMs)}</DeviceTextValue>,
+      value: <DeviceTextValue>{formatDeviceDateTime(device.updatedAt)}</DeviceTextValue>,
     },
     ...(device.archived
       ? [
           {
             key: 'archivedAt',
             label: 'Архівовано',
-            value: <DeviceTextValue>{formatDeviceDateTime(device.archivedAtMs)}</DeviceTextValue>,
+            value: <DeviceTextValue>{formatDeviceDateTime(device.archivedAt)}</DeviceTextValue>,
           },
         ]
       : []),
   ];
-}
-
-function DeviceTagsSection({ device }: { device: DeviceDetails }) {
-  return (
-    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-      <SectionTitle>Теги</SectionTitle>
-      {device.tags.length === 0 ? (
-        <DeviceTextValue muted>Теги відсутні.</DeviceTextValue>
-      ) : (
-        <FieldList
-          fields={device.tags.map((tag, index) => ({
-            key: `${tag.label}-${index}`,
-            label: tag.label,
-            value: <DeviceTextValue muted={tag.value === ''}>{tag.value || '—'}</DeviceTextValue>,
-          }))}
-        />
-      )}
-    </Box>
-  );
 }
 
 function DeviceCustomFieldsSection({ device }: { device: DeviceDetails }) {
@@ -277,8 +259,6 @@ function DeviceLeftPanelContent({ device }: { device: DeviceDetails }) {
   return (
     <>
       <DeviceSection title="Основне" fields={buildMainFields(device)} />
-      <Divider />
-      <DeviceTagsSection device={device} />
       <Divider />
       <DeviceCustomFieldsSection device={device} />
       <Divider />

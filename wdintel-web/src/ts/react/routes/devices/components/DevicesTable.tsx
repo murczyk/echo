@@ -1,10 +1,11 @@
-import { Box, Button, CircularProgress, Link, Typography } from '@mui/material';
+import { Box, CircularProgress, Link, Typography } from '@mui/material';
 import type { MRT_ColumnDef, MRT_ColumnOrderState, MRT_TableInstance } from 'material-react-table';
 import { MaterialReactTable, useMaterialReactTable } from 'material-react-table';
 import { useEffect, useMemo, useRef } from 'react';
 
 import { mrtRowActionsColumnSize } from '../../../components/MrtRowActionButton';
 import { PowerChip } from '../../../components/PowerChip';
+import { PowerButton } from '../../../components/PowerButton';
 import { SectionLoadingOverlay } from '../../../components/SectionLoadingOverlay';
 import { TableEmptyState } from '../../../components/TableEmptyState';
 import { handleNavigateWithinSpaClick } from '../../../utils/browser';
@@ -40,8 +41,6 @@ type Props = {
   hasFilters: boolean;
   tableStateContext: ReturnType<typeof useTableStateContext>;
   onEdit: (deviceId: string) => void;
-  onArchive: (deviceId: string, deviceName: string) => void;
-  onRestore: (deviceId: string) => void;
   onLoadMore: () => Promise<void>;
   onClearFilters: () => void;
   onTableInitialized: (table: MRT_TableInstance<DeviceRowView>) => void;
@@ -53,7 +52,7 @@ function useDevicesTableColumns(showLifecycle: boolean): MRT_ColumnDef<DeviceRow
     () => [
       {
         id: 'name',
-        accessorKey: 'name',
+        accessorFn: (row) => row.name || row.sourceLabel,
         header: 'Назва',
         size: 260,
         Cell: ({ row }) => {
@@ -65,7 +64,7 @@ function useDevicesTableColumns(showLifecycle: boolean): MRT_ColumnDef<DeviceRow
               fontWeight={600}
               onClick={(event) => handleNavigateWithinSpaClick(event, href)}
             >
-              {row.original.name || '—'}
+              {row.original.name || row.original.sourceLabel}
             </Link>
           );
         },
@@ -109,7 +108,7 @@ function useDevicesTableColumns(showLifecycle: boolean): MRT_ColumnDef<DeviceRow
       },
       {
         id: 'updatedAt',
-        accessorKey: 'updatedAtMs',
+        accessorKey: 'updatedAt',
         header: 'Оновлено',
         size: 170,
         Cell: ({ row }) => row.original.updatedAtLabel,
@@ -147,8 +146,6 @@ export function DevicesTable({
   hasFilters,
   tableStateContext,
   onEdit,
-  onArchive,
-  onRestore,
   onLoadMore,
   onClearFilters,
   onTableInitialized,
@@ -197,8 +194,6 @@ export function DevicesTable({
         canEdit={canEdit}
         disabled={mutatingDeviceId !== null}
         onEdit={onEdit}
-        onArchive={onArchive}
-        onRestore={onRestore}
       />
     ),
     defaultColumn: {
@@ -213,7 +208,7 @@ export function DevicesTable({
       },
       'mrt-row-actions': {
         ...CUSTOM_STYLES.displayColumnDefOptions['mrt-row-actions'],
-        size: mrtRowActionsColumnSize(2),
+        size: mrtRowActionsColumnSize(1),
         enableResizing: false,
       },
     },
@@ -355,14 +350,14 @@ export function DevicesTable({
             <Typography variant="body2" color="text.secondary">
               Показано {rows.length} з {total}
             </Typography>
-            <Button
+            <PowerButton
               variant="outlined"
               onClick={() => void onLoadMore()}
               disabled={loadingMore || loading || refreshing}
               startIcon={loadingMore ? <CircularProgress size={16} color="inherit" /> : null}
             >
-              {loadingMore ? 'Завантаження...' : 'Завантажити ще'}
-            </Button>
+              {loadingMore ? 'Завантаження…' : 'Завантажити ще'}
+            </PowerButton>
           </Box>
         ) : rows.length > 0 ? (
           <Box

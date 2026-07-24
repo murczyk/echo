@@ -3,11 +3,9 @@ import SaveIcon from '@mui/icons-material/Save';
 import {
   Autocomplete,
   Box,
-  Button,
   CircularProgress,
   Divider,
   Drawer,
-  IconButton,
   Stack,
   TextField,
   Tooltip,
@@ -16,25 +14,27 @@ import {
 import { useEffect, useMemo, useState, type SyntheticEvent } from 'react';
 
 import { PowerAlert } from '../../../components/PowerAlert';
+import { PowerButton } from '../../../components/PowerButton';
+import { PowerIconButton } from '../../../components/PowerIconButton';
 import { pageDrawerBackdropSx } from '../../../components/loadingOverlayStyles';
 import type { DeviceLookupOption } from '../helpers';
 import {
   validateDeviceUpsertForm,
+  DEVICE_NAME_MAX_CHARS,
   DEVICE_SOURCE_LABEL_MAX_CHARS,
   type DeviceCustomFieldDraftError,
+  type DeviceFieldPermissions,
   type DeviceServerFieldErrors,
-  type DeviceTagDraftError,
   type DeviceUpsertForm,
 } from '../device-form';
 import { DeviceCustomFieldsEditor } from './DeviceCustomFieldsEditor';
-import { DeviceTagsEditor } from './DeviceTagsEditor';
 
 const EMPTY_CUSTOM_FIELD_ROW_ERRORS: Record<string, DeviceCustomFieldDraftError> = {};
-const EMPTY_TAG_ROW_ERRORS: Record<string, DeviceTagDraftError> = {};
 
 type Props = {
   open: boolean;
   mode: 'create' | 'edit';
+  fieldPermissions: DeviceFieldPermissions;
   form: DeviceUpsertForm | null;
   saving: boolean;
   error: string | null;
@@ -66,6 +66,7 @@ function selectedLookupOption(
 export function DeviceUpsertDrawer({
   open,
   mode,
+  fieldPermissions,
   form,
   saving,
   error,
@@ -81,8 +82,11 @@ export function DeviceUpsertDrawer({
   const titleId = 'device-upsert-drawer-title';
   const [submitted, setSubmitted] = useState(false);
   const [touched, setTouched] = useState<Partial<Record<TouchedField, true>>>({});
-  const validation = useMemo(() => validateDeviceUpsertForm(form), [form]);
-  const formBlocked = saving || referenceLoading;
+  const validation = useMemo(
+    () => validateDeviceUpsertForm(form, fieldPermissions),
+    [fieldPermissions, form],
+  );
+  const formBlocked = saving || (fieldPermissions.analyticalData && referenceLoading);
   const saveLabel = mode === 'create' ? 'Створити' : 'Зберегти';
   const drawerTitle = mode === 'create' ? 'Створити пристрій' : 'Редагувати пристрій';
   const canTrySave = form !== null && !formBlocked && (mode === 'create' || hasChanges);
@@ -133,9 +137,6 @@ export function DeviceUpsertDrawer({
   const customFieldRows = showCollectionErrors
     ? (validation?.customFieldRows ?? EMPTY_CUSTOM_FIELD_ROW_ERRORS)
     : EMPTY_CUSTOM_FIELD_ROW_ERRORS;
-  const tagRows = showCollectionErrors
-    ? (validation?.tagRows ?? EMPTY_TAG_ROW_ERRORS)
-    : EMPTY_TAG_ROW_ERRORS;
   const noEditChanges = mode === 'edit' && form !== null && !hasChanges;
 
   return (
@@ -164,14 +165,14 @@ export function DeviceUpsertDrawer({
           </Typography>
           <Tooltip title="Закрити">
             <span>
-              <IconButton
+              <PowerIconButton
                 size="small"
                 onClick={onClose}
                 disabled={saving}
                 aria-label="Закрити форму"
               >
                 <CloseIcon fontSize="small" />
-              </IconButton>
+              </PowerIconButton>
             </span>
           </Tooltip>
         </Stack>
@@ -180,120 +181,116 @@ export function DeviceUpsertDrawer({
       <Box sx={{ p: 2.5, flex: 1, overflowY: 'auto' }}>
         <Stack spacing={2.5}>
           {error ? <PowerAlert severity="error">{error}</PowerAlert> : null}
-          {referenceLoading ? (
+          {fieldPermissions.analyticalData && referenceLoading ? (
             <PowerAlert severity="info">Завантажуємо довідники…</PowerAlert>
           ) : null}
           {noEditChanges ? (
             <PowerAlert severity="info">Немає змін для збереження.</PowerAlert>
           ) : null}
-          {serverFieldErrors.aorIds ? (
+          {fieldPermissions.analyticalData && serverFieldErrors.aorIds ? (
             <PowerAlert severity="error">{serverFieldErrors.aorIds}</PowerAlert>
           ) : null}
-          {serverFieldErrors.unitId ? (
+          {fieldPermissions.analyticalData && serverFieldErrors.unitId ? (
             <PowerAlert severity="error">{serverFieldErrors.unitId}</PowerAlert>
           ) : null}
 
           {form ? (
             <>
-              <TextField
-                label="Джерельна мітка"
-                value={form.sourceLabel}
-                onChange={(event) => patchForm({ sourceLabel: event.target.value })}
-                onBlur={() => setTouched((current) => ({ ...current, sourceLabel: true }))}
-                disabled={formBlocked}
-                fullWidth
-                size="small"
-                required
-                inputProps={{ maxLength: DEVICE_SOURCE_LABEL_MAX_CHARS }}
-                error={fieldError('sourceLabel') !== undefined}
-                helperText={fieldError('sourceLabel') ?? 'Позначення джерела пристрою.'}
-              />
+              {fieldPermissions.sourceData ? (
+                <>
+                  <TextField
+                    label="Джерельна мітка"
+                    value={form.sourceLabel}
+                    onChange={(event) => patchForm({ sourceLabel: event.target.value })}
+                    onBlur={() => setTouched((current) => ({ ...current, sourceLabel: true }))}
+                    disabled={formBlocked}
+                    fullWidth
+                    size="small"
+                    required
+                    inputProps={{ maxLength: DEVICE_SOURCE_LABEL_MAX_CHARS }}
+                    error={fieldError('sourceLabel') !== undefined}
+                    helperText={fieldError('sourceLabel') ?? 'Позначення джерела пристрою.'}
+                  />
 
-              <TextField
-                label="Назва"
-                value={form.name}
-                onChange={(event) => patchForm({ name: event.target.value })}
-                onBlur={() => setTouched((current) => ({ ...current, name: true }))}
-                disabled={formBlocked}
-                fullWidth
-                size="small"
-                required
-                error={fieldError('name') !== undefined}
-                helperText={fieldError('name')}
-              />
+                  <TextField
+                    label="Зовнішнє посилання"
+                    value={form.externalUrl}
+                    onChange={(event) => patchForm({ externalUrl: event.target.value })}
+                    onBlur={() => setTouched((current) => ({ ...current, externalUrl: true }))}
+                    disabled={formBlocked}
+                    fullWidth
+                    size="small"
+                    error={fieldError('externalUrl') !== undefined}
+                    helperText={fieldError('externalUrl') ?? 'HTTP/HTTPS URL або порожнє значення.'}
+                  />
 
-              <Autocomplete<DeviceLookupOption, true, false, false>
-                multiple
-                disableCloseOnSelect
-                filterSelectedOptions
-                fullWidth
-                size="small"
-                options={aorOptions}
-                value={selectedAors}
-                loading={referenceLoading}
-                disabled={formBlocked}
-                getOptionLabel={(option) => option.label}
-                isOptionEqualToValue={(option, value) => option.id === value.id}
-                onChange={handleAorChange}
-                renderInput={(params) => (
-                  <TextField {...params} label="Смуги" placeholder="Смуга" />
-                )}
-              />
-
-              <Autocomplete<DeviceLookupOption, false, false, false>
-                fullWidth
-                size="small"
-                options={unitOptions}
-                value={selectedUnit}
-                loading={referenceLoading}
-                disabled={formBlocked}
-                getOptionLabel={(option) => option.label}
-                isOptionEqualToValue={(option, value) => option.id === value.id}
-                onChange={handleUnitChange}
-                renderInput={(params) => (
-                  <TextField {...params} label="Підрозділ" placeholder="Без підрозділу" />
-                )}
-              />
-
-              <TextField
-                label="Зовнішнє посилання"
-                value={form.externalUrl}
-                onChange={(event) => patchForm({ externalUrl: event.target.value })}
-                onBlur={() => setTouched((current) => ({ ...current, externalUrl: true }))}
-                disabled={formBlocked}
-                fullWidth
-                size="small"
-                error={fieldError('externalUrl') !== undefined}
-                helperText={fieldError('externalUrl') ?? 'HTTP/HTTPS URL або порожнє значення.'}
-              />
-
-              <Divider />
-              {showCollectionErrors && validation?.tags ? (
-                <PowerAlert severity="error">{validation.tags}</PowerAlert>
+                  <Divider />
+                  {showCollectionErrors && validation?.customFields ? (
+                    <PowerAlert severity="error">{validation.customFields}</PowerAlert>
+                  ) : null}
+                  {serverFieldErrors.customFields ? (
+                    <PowerAlert severity="error">{serverFieldErrors.customFields}</PowerAlert>
+                  ) : null}
+                  <DeviceCustomFieldsEditor
+                    rows={form.customFields}
+                    errors={customFieldRows}
+                    disabled={formBlocked}
+                    onChange={(customFields) => patchForm({ customFields })}
+                  />
+                </>
               ) : null}
-              {serverFieldErrors.tags ? (
-                <PowerAlert severity="error">{serverFieldErrors.tags}</PowerAlert>
-              ) : null}
-              <DeviceTagsEditor
-                rows={form.tags}
-                errors={tagRows}
-                disabled={formBlocked}
-                onChange={(tags) => patchForm({ tags })}
-              />
 
-              <Divider />
-              {showCollectionErrors && validation?.customFields ? (
-                <PowerAlert severity="error">{validation.customFields}</PowerAlert>
+              {fieldPermissions.sourceData && fieldPermissions.analyticalData ? <Divider /> : null}
+
+              {fieldPermissions.analyticalData ? (
+                <>
+                  <TextField
+                    label="Аналітична назва"
+                    value={form.name}
+                    onChange={(event) => patchForm({ name: event.target.value })}
+                    onBlur={() => setTouched((current) => ({ ...current, name: true }))}
+                    disabled={formBlocked}
+                    fullWidth
+                    size="small"
+                    inputProps={{ maxLength: DEVICE_NAME_MAX_CHARS }}
+                    error={fieldError('name') !== undefined}
+                    helperText={fieldError('name') ?? 'Порожнє значення очистить аналітичну назву.'}
+                  />
+
+                  <Autocomplete<DeviceLookupOption, true, false, false>
+                    multiple
+                    disableCloseOnSelect
+                    filterSelectedOptions
+                    fullWidth
+                    size="small"
+                    options={aorOptions}
+                    value={selectedAors}
+                    loading={referenceLoading}
+                    disabled={formBlocked}
+                    getOptionLabel={(option) => option.label}
+                    isOptionEqualToValue={(option, value) => option.id === value.id}
+                    onChange={handleAorChange}
+                    renderInput={(params) => (
+                      <TextField {...params} label="Смуги" placeholder="Смуга" />
+                    )}
+                  />
+
+                  <Autocomplete<DeviceLookupOption, false, false, false>
+                    fullWidth
+                    size="small"
+                    options={unitOptions}
+                    value={selectedUnit}
+                    loading={referenceLoading}
+                    disabled={formBlocked}
+                    getOptionLabel={(option) => option.label}
+                    isOptionEqualToValue={(option, value) => option.id === value.id}
+                    onChange={handleUnitChange}
+                    renderInput={(params) => (
+                      <TextField {...params} label="Підрозділ" placeholder="Без підрозділу" />
+                    )}
+                  />
+                </>
               ) : null}
-              {serverFieldErrors.customFields ? (
-                <PowerAlert severity="error">{serverFieldErrors.customFields}</PowerAlert>
-              ) : null}
-              <DeviceCustomFieldsEditor
-                rows={form.customFields}
-                errors={customFieldRows}
-                disabled={formBlocked}
-                onChange={(customFields) => patchForm({ customFields })}
-              />
             </>
           ) : null}
         </Stack>
@@ -301,17 +298,17 @@ export function DeviceUpsertDrawer({
 
       <Box sx={{ p: 2.5, borderTop: '1px solid', borderColor: 'divider' }}>
         <Stack direction="row" spacing={1} justifyContent="flex-end">
-          <Button onClick={onClose} disabled={saving}>
+          <PowerButton onClick={onClose} disabled={saving}>
             Скасувати
-          </Button>
-          <Button
+          </PowerButton>
+          <PowerButton
             variant="contained"
             onClick={handleSave}
             disabled={!canTrySave}
             startIcon={saving ? <CircularProgress size={16} color="inherit" /> : <SaveIcon />}
           >
             {saving ? 'Збереження…' : saveLabel}
-          </Button>
+          </PowerButton>
         </Stack>
       </Box>
     </Drawer>

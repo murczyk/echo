@@ -27,18 +27,15 @@ beforeEach(() => {
           id: DEVICE_ID,
           source_label: 'Source device',
           name: 'Device Alpha',
-          created_by: 'operator',
-          aor_ids: [],
-          aor_names: [],
-          unit_id: null,
-          unit_name: null,
-          tags: [],
+          aors: [],
+          unit: null,
           external_url: null,
           custom_fields: {},
+          created_by: 'operator',
           archived: false,
-          created_at_ms: 10,
-          updated_at_ms: 20,
-          archived_at_ms: null,
+          archived_at: null,
+          created_at: '2026-01-01T00:00:00Z',
+          updated_at: '2026-01-02T00:00:00Z',
         });
       }
       return jsonResponse({});
@@ -76,7 +73,7 @@ describe('device-details-page custom element', () => {
   it('trims and accepts UUID device IDs', async () => {
     const element = document.createElement('device-details-page');
     element.setAttribute('device-id', ` ${DEVICE_ID} `);
-    element.setAttribute('data-auth-user-roles', 'DevicesEditor');
+    element.setAttribute('data-auth-user-roles', 'DeviceSource');
 
     await mount(element);
 

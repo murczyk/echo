@@ -73,12 +73,13 @@ vi.mock('../../../components/PowerAlert', () => ({
 vi.mock('./DeviceCustomFieldsEditor', () => ({
   DeviceCustomFieldsEditor: () => <div data-testid="device-custom-fields-editor" />,
 }));
-vi.mock('./DeviceTagsEditor', () => ({
-  DeviceTagsEditor: () => <div data-testid="device-tags-editor" />,
-}));
 
 import { DeviceUpsertDrawer } from './DeviceUpsertDrawer';
-import { createDefaultDeviceUpsertForm, type DeviceUpsertForm } from '../device-form';
+import {
+  createDefaultDeviceUpsertForm,
+  type DeviceFieldPermissions,
+  type DeviceUpsertForm,
+} from '../device-form';
 
 const rendered: Array<{ container: HTMLDivElement; root: Root }> = [];
 
@@ -90,7 +91,11 @@ function buildForm(overrides: Partial<DeviceUpsertForm> = {}): DeviceUpsertForm 
   };
 }
 
-function renderDrawer(form: DeviceUpsertForm, mode: 'create' | 'edit') {
+function renderDrawer(
+  form: DeviceUpsertForm,
+  mode: 'create' | 'edit',
+  fieldPermissions: DeviceFieldPermissions,
+) {
   const container = document.createElement('div');
   document.body.appendChild(container);
   const root = createRoot(container);
@@ -100,6 +105,7 @@ function renderDrawer(form: DeviceUpsertForm, mode: 'create' | 'edit') {
       <DeviceUpsertDrawer
         open
         mode={mode}
+        fieldPermissions={fieldPermissions}
         form={form}
         saving={false}
         error={null}
@@ -129,17 +135,32 @@ afterEach(() => {
 });
 
 describe('DeviceUpsertDrawer', () => {
-  it('shows source-label fields for creation and editing', () => {
-    const createView = renderDrawer(buildForm(), 'create');
+  it('shows only the permitted field groups', () => {
+    const createView = renderDrawer(buildForm(), 'create', {
+      sourceData: true,
+      analyticalData: false,
+    });
     rendered.push(createView);
 
     expect(inputByLabel(createView.container, 'Джерельна мітка')?.value).toBe('Source device');
-    expect(inputByLabel(createView.container, 'Хостнейм')).toBeNull();
-    expect(inputByLabel(createView.container, 'SSH-порт')).toBeNull();
+    expect(inputByLabel(createView.container, 'Зовнішнє посилання')).not.toBeNull();
+    expect(inputByLabel(createView.container, 'Аналітична назва')).toBeNull();
+    expect(
+      createView.container.querySelector('[data-testid="device-custom-fields-editor"]'),
+    ).not.toBeNull();
 
-    const editView = renderDrawer(buildForm({ sourceLabel: 'Imported source' }), 'edit');
-    rendered.push(editView);
+    const analyticalView = renderDrawer(buildForm({ name: 'Analytical name' }), 'edit', {
+      sourceData: false,
+      analyticalData: true,
+    });
+    rendered.push(analyticalView);
 
-    expect(inputByLabel(editView.container, 'Джерельна мітка')?.value).toBe('Imported source');
+    expect(inputByLabel(analyticalView.container, 'Джерельна мітка')).toBeNull();
+    expect(inputByLabel(analyticalView.container, 'Аналітична назва')?.value).toBe(
+      'Analytical name',
+    );
+    expect(
+      analyticalView.container.querySelector('[data-testid="device-custom-fields-editor"]'),
+    ).toBeNull();
   });
 });

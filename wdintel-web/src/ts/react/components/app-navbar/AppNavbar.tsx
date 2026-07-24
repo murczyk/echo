@@ -15,7 +15,7 @@ import { ChangelogDropdown } from './ChangelogDropdown';
 import { ProfileDropdown } from './ProfileDropdown';
 import { currentSystemSettings } from '../../services/api/system-settings';
 import { fetchUserSettings, USER_SETTINGS_UPDATED_EVENT } from '../../services/api/user-settings';
-import { hasRole } from '../../utils/roles';
+import { canReadDevices, hasRole } from '../../utils/roles';
 
 export interface AppNavbarProps {
   user: {
@@ -174,9 +174,9 @@ export function AppNavbar({
   const isAdminMenuVisible = hasRole(user?.roles, 'Admin');
   const isBasic = hasRole(user?.roles, 'Basic');
   const isRer = hasRole(user?.roles, 'Rer');
-  const canReadDevices = hasRole(user?.roles, 'Cyber') || hasRole(user?.roles, 'DevicesEditor');
+  const devicesReadable = canReadDevices(user?.roles);
   const devicesMenuIsVisible =
-    serverModeIsLive && loadedDevicesSectionEnabled === true && canReadDevices;
+    serverModeIsLive && loadedDevicesSectionEnabled === true && devicesReadable;
   const databaseMenuSubs = getDatabaseSubs({
     includeRerItems: serverModeIsLive && isRer,
     includeDevicesItem: devicesMenuIsVisible,

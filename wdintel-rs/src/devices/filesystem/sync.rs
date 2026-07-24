@@ -5,6 +5,7 @@ use super::{
     SyncFileRejectionKind, SyncFilesResult,
 };
 use crate::config::DEVICE_FILE_SYNC_ITEM_MAX_ATTEMPTS;
+use chrono::{DateTime, FixedOffset};
 use std::collections::HashSet;
 use uuid::Uuid;
 
@@ -108,6 +109,16 @@ fn prepare_sync_item(
     } = file;
     let field_prefix = format!("files[{index}]");
     let mut errors = Vec::new();
+    let file_metadata_created_at = parse_item_timestamp(
+        file_metadata_created_at,
+        &format!("{field_prefix}.file_metadata_created_at"),
+        &mut errors,
+    );
+    let file_metadata_modified_at = parse_item_timestamp(
+        file_metadata_modified_at,
+        &format!("{field_prefix}.file_metadata_modified_at"),
+        &mut errors,
+    );
 
     if let Some(file_id) = file_id {
         if duplicate_file_ids.contains(&file_id) {
@@ -175,6 +186,26 @@ fn prepare_sync_item(
     };
 
     Ok(PreparedSyncFileItem::Mutation { index, mutation })
+}
+
+fn parse_item_timestamp(
+    value: Option<String>,
+    path: &str,
+    errors: &mut Vec<FilesystemFieldError>,
+) -> Option<DateTime<FixedOffset>> {
+    let value = value?;
+    match DateTime::parse_from_rfc3339(&value) {
+        Ok(value) => Some(value),
+        Err(_) => {
+            errors.push(FilesystemFieldError {
+                path: path.to_string(),
+                message:
+                    "must be an RFC 3339 timestamp with an explicit timezone"
+                        .to_string(),
+            });
+            None
+        }
+    }
 }
 
 fn map_sync_item_error(
@@ -320,6 +351,41 @@ mod tests {
                 ],
                 vec!["files[1].file_id", "files[1].absolute_path"],
             ]
+        );
+    }
+
+    #[test]
+    fn invalid_timestamp_string_is_an_item_validation_rejection() {
+        let mut file = sync_file(None, "/logs/a.log", None, None);
+        file.file_metadata_created_at = Some("not-a-timestamp".to_string());
+        file.file_metadata_modified_at =
+            Some("2026-07-23T12:00:00+03:00".to_string());
+
+        let prepared = prepare_sync_items(
+            Uuid::now_v7(),
+            PathSyntax::Posix,
+            vec![file],
+            &HashSet::new(),
+        )
+        .unwrap();
+        let PreparedSyncFileItem::Rejected(SyncFileItemResult {
+            outcome:
+                SyncFileItemOutcome::Rejected {
+                    kind, field_errors, ..
+                },
+            ..
+        }) = prepared.into_iter().next().unwrap()
+        else {
+            panic!("expected timestamp validation rejection");
+        };
+
+        assert_eq!(kind, SyncFileRejectionKind::Validation);
+        assert_eq!(
+            field_errors
+                .into_iter()
+                .map(|error| error.path)
+                .collect::<Vec<_>>(),
+            vec!["files[0].file_metadata_created_at"],
         );
     }
 

@@ -1,4 +1,4 @@
-module Core.Auth exposing (hasRole, serverModeIs)
+module Core.Auth exposing (canReadDevices, hasRole, serverModeIs)
 
 import Bindings as B exposing (User)
 
@@ -54,9 +54,14 @@ hasRole role user =
             List.member "Admin" user.roles
                 || List.member "Cyber" user.roles
 
-        "DevicesEditor" ->
+        "DeviceSource" ->
             List.member "Admin" user.roles
-                || List.member "DevicesEditor" user.roles
+                || List.member "DeviceSource" user.roles
+                || List.member "DeviceAnalyst" user.roles
+
+        "DeviceAnalyst" ->
+            List.member "Admin" user.roles
+                || List.member "DeviceAnalyst" user.roles
 
         "AdvancedReports" ->
             List.member "Admin" user.roles
@@ -77,6 +82,13 @@ hasRole role user =
         _ ->
             -- impossible! unknown role
             False
+
+
+canReadDevices : User -> Bool
+canReadDevices user =
+    hasRole "Cyber" user
+        || hasRole "DeviceSource" user
+        || hasRole "DeviceAnalyst" user
 
 
 serverModeIs : String -> Maybe B.ServerInfo -> Bool

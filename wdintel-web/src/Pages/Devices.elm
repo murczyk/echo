@@ -18,14 +18,11 @@ type alias Model =
     {}
 
 
-canReadDevices : Auth.User -> Bool
-canReadDevices user =
-    Core.Auth.hasRole "Cyber" user || Core.Auth.hasRole "DevicesEditor" user
 
 
 init : Auth.User -> () -> ( Model, Effect Msg )
 init user _ =
-    if user.name == "anonymous" || canReadDevices user then
+    if user.name == "anonymous" || Core.Auth.canReadDevices user then
         ( {}, E.none )
 
     else
@@ -84,7 +81,7 @@ devicesBody user shared =
                     [ text "Завантаження налаштувань…" ]
 
             Just settings ->
-                if not (canReadDevices user) then
+                if not (Core.Auth.canReadDevices user) then
                     div [] []
 
                 else if not settings.devicesSectionEnabled then

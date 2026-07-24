@@ -6,134 +6,136 @@ import {
   buildUpdateDevicePatch,
   createDefaultDeviceUpsertForm,
   createDeviceCustomFieldDraft,
-  createDeviceTagDraft,
   deviceDetailsToUpsertForm,
   hasDeviceUpdatePatchChanges,
   parseDeviceServerFieldErrors,
   validateDeviceUpsertForm,
+  type DeviceFieldPermissions,
 } from './device-form';
 
 const DEVICE_ID = '018f0000-0000-7000-8000-000000000000';
+const ALL_FIELDS: DeviceFieldPermissions = { sourceData: true, analyticalData: true };
+const SOURCE_FIELDS: DeviceFieldPermissions = { sourceData: true, analyticalData: false };
 
 function buildDevice(overrides: Partial<DeviceDetails> = {}): DeviceDetails {
   return {
     id: DEVICE_ID,
     sourceLabel: 'Source device',
     name: 'Device Alpha',
-    createdBy: 'operator',
-    aorIds: [4],
-    aorNames: ['AOR'],
-    unitId: 7,
-    unitName: 'Unit',
-    tags: [{ label: 'Serial', value: '123' }],
+    aors: [{ id: 4, name: 'AOR' }],
+    unit: { id: 7, name: 'Unit' },
     externalUrl: 'https://example.test/device',
     customFields: { inventory_id: 'node-1', retired: 'no' },
+    createdBy: 'operator',
     archived: false,
-    createdAtMs: 10,
-    updatedAtMs: 20,
-    archivedAtMs: null,
+    archivedAt: null,
+    createdAt: '2026-01-01T00:00:00Z',
+    updatedAt: '2026-01-02T00:00:00Z',
     ...overrides,
   };
 }
 
 describe('device form helpers', () => {
-  it('builds create request with trimmed source metadata', () => {
+  it('builds create requests from source fields only', () => {
     const form = createDefaultDeviceUpsertForm();
     form.sourceLabel = '  Source device  ';
     form.name = '  Device Beta  ';
     form.aorIds = [10, 20];
-    form.unitId = null;
+    form.unitId = 7;
     form.externalUrl = '  https://example.test/beta  ';
     form.customFields = [
       createDeviceCustomFieldDraft({ key: ' inventory_id ', value: ' node-2 ' }),
     ];
-    form.tags = [createDeviceTagDraft({ label: ' Serial ', value: ' 123 ' })];
 
     expect(buildCreateDeviceReq(form)).toEqual({
       sourceLabel: 'Source device',
-      name: 'Device Beta',
-      aorIds: [10, 20],
-      unitId: null,
-      tags: [{ label: 'Serial', value: '123' }],
       externalUrl: 'https://example.test/beta',
       customFields: { inventory_id: ' node-2 ' },
     });
   });
 
-  it('submits empty tags and custom fields by default', () => {
+  it('submits empty optional source fields explicitly', () => {
     const form = createDefaultDeviceUpsertForm();
     form.sourceLabel = 'Source device';
-    form.name = 'Device Beta';
 
     expect(buildCreateDeviceReq(form)).toEqual({
       sourceLabel: 'Source device',
-      name: 'Device Beta',
-      aorIds: [],
-      unitId: null,
-      tags: [],
       externalUrl: null,
       customFields: {},
     });
   });
 
-  it('builds update patch with source-label and custom-field changes', () => {
+  it('builds a presence-aware update patch for every permitted field group', () => {
     const device = buildDevice();
     const form = deviceDetailsToUpsertForm(device);
     form.sourceLabel = ' Updated source ';
-    form.name = ' Device Alpha Prime ';
+    form.name = ' ';
     form.aorIds = [];
     form.unitId = null;
     form.externalUrl = ' ';
-    form.tags = [];
     form.customFields = [
       createDeviceCustomFieldDraft({ key: 'inventory_id', value: 'node-2' }),
       createDeviceCustomFieldDraft({ key: 'transport', value: 'ssh' }),
     ];
 
-    expect(buildUpdateDevicePatch(device, form)).toEqual({
+    expect(buildUpdateDevicePatch(device, form, ALL_FIELDS)).toEqual({
       deviceId: DEVICE_ID,
       sourceLabel: 'Updated source',
-      name: 'Device Alpha Prime',
+      name: null,
       aorIds: [],
       unitId: null,
-      tags: [],
       externalUrl: null,
       customFields: { inventory_id: 'node-2', retired: null, transport: 'ssh' },
     });
   });
 
+  it('does not send changes from a field group without permission', () => {
+    const device = buildDevice();
+    const form = deviceDetailsToUpsertForm(device);
+    form.sourceLabel = 'Updated source';
+    form.name = 'Changed analytical name';
+    form.aorIds = [];
+    form.unitId = null;
+
+    expect(buildUpdateDevicePatch(device, form, SOURCE_FIELDS)).toEqual({
+      deviceId: DEVICE_ID,
+      sourceLabel: 'Updated source',
+    });
+  });
+
   it('detects no-op update patches', () => {
     const device = buildDevice();
-    const patch = buildUpdateDevicePatch(device, deviceDetailsToUpsertForm(device));
+    const patch = buildUpdateDevicePatch(device, deviceDetailsToUpsertForm(device), ALL_FIELDS);
 
     expect(patch).toEqual({ deviceId: DEVICE_ID });
     expect(hasDeviceUpdatePatchChanges(patch)).toBe(false);
   });
 
-  it('validates source metadata, custom fields, tags, and URL', () => {
+  it('validates only permitted source fields and allows an empty analytical name', () => {
     const form = createDefaultDeviceUpsertForm();
     form.externalUrl = '/relative';
-    form.tags = [
-      createDeviceTagDraft({ id: 'tag-a', label: 'Serial', value: '1' }),
-      createDeviceTagDraft({ id: 'tag-b', label: ' Serial ', value: '2' }),
-    ];
     form.customFields = [
       createDeviceCustomFieldDraft({ id: 'field-a', key: 'inventory_id', value: 'one' }),
       createDeviceCustomFieldDraft({ id: 'field-b', key: ' inventory_id ', value: 'two' }),
     ];
 
-    const errors = validateDeviceUpsertForm(form);
+    const errors = validateDeviceUpsertForm(form, ALL_FIELDS);
 
     expect(errors?.sourceLabel).toBe('Вкажіть джерельну мітку.');
-    expect(errors?.name).toBe('Вкажіть назву пристрою.');
+    expect(errors?.name).toBeUndefined();
     expect(errors?.externalUrl).toBe('Посилання має бути абсолютним URL');
     expect(errors?.customFieldRows['field-b'].key).toBe(
       'Ключі кастомних полів мають бути унікальними.',
     );
-    expect(errors?.tagRows['tag-b'].label).toBe('Тег з такою назвою вже існує.');
+    expect(
+      validateDeviceUpsertForm(
+        { ...form, sourceLabel: '', externalUrl: '/relative' },
+        { sourceData: false, analyticalData: true },
+      ),
+    ).toBeNull();
   });
 
-  it('maps backend form errors to fields', () => {
+  it('maps backend form errors to editable fields', () => {
     expect(parseDeviceServerFieldErrors(new Error('[[' + '"name","invalid"' + ']]'))).toEqual({
       name: 'invalid',
     });

@@ -11,7 +11,8 @@ export type UserRole =
   | 'NetworkEditor'
   | 'CallsignsEditor'
   | 'Cyber'
-  | 'DevicesEditor'
+  | 'DeviceSource'
+  | 'DeviceAnalyst'
   | 'AdvancedReports'
   | 'Orbit'
   | 'NoAutoLogout';
@@ -44,8 +45,10 @@ export function hasRole(roles: readonly string[] | null | undefined, role: UserR
       return has('Admin') || has('CallsignsEditor');
     case 'Cyber':
       return has('Admin') || has('Cyber');
-    case 'DevicesEditor':
-      return has('Admin') || has('DevicesEditor');
+    case 'DeviceSource':
+      return has('Admin') || has('DeviceSource') || has('DeviceAnalyst');
+    case 'DeviceAnalyst':
+      return has('Admin') || has('DeviceAnalyst');
     case 'AdvancedReports':
       return has('Admin') || has('AdvancedReports');
     case 'Orbit':
@@ -53,6 +56,10 @@ export function hasRole(roles: readonly string[] | null | undefined, role: UserR
     case 'NoAutoLogout':
       return has('NoAutoLogout');
   }
+}
+
+export function canReadDevices(roles: readonly string[] | null | undefined): boolean {
+  return hasAnyRole(roles, ['Cyber', 'DeviceSource', 'DeviceAnalyst']);
 }
 
 export function hasAnyRole(

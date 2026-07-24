@@ -1,7 +1,6 @@
 use super::main_db::MainDb;
 use crate::config::{
-    ROLE_ADMIN, ROLE_CYBER, ROLE_DEVICES_EDITOR, ROLE_DEVICE_ANALYST,
-    ROLE_DEVICE_SOURCE,
+    ROLE_ADMIN, ROLE_CYBER, ROLE_DEVICE_ANALYST, ROLE_DEVICE_SOURCE,
 };
 use crate::error::AppError;
 use crate::h;
@@ -174,42 +173,12 @@ async fn resolve_current_login(
     let roles: Vec<String> = serde_json::from_value(login.roles).c(h!())?;
     Ok(DeviceActor::from_roles(login.login, &roles))
 }
-#[allow(dead_code)]
-pub async fn ensure_device_reader(
-    dbx: &DatabaseConnection,
-    user: &Identity,
-) -> Result<String, AppError> {
-    let login = user.id().c(h!())?;
-    ensure_devices_section_enabled(dbx).await.c(h!())?;
-    crate::users::has_any_role(
-        dbx,
-        &login,
-        vec![ROLE_CYBER, ROLE_DEVICES_EDITOR],
-    )
-    .await
-    .c(h!())?;
-    Ok(login)
-}
-
-#[allow(dead_code)]
-pub async fn ensure_device_editor(
-    dbx: &DatabaseConnection,
-    user: &Identity,
-) -> Result<String, AppError> {
-    let login = user.id().c(h!())?;
-    ensure_devices_section_enabled(dbx).await.c(h!())?;
-    crate::users::has_role(dbx, &login, ROLE_DEVICES_EDITOR)
-        .await
-        .c(h!())?;
-    Ok(login)
-}
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::config::{
-        ROLE_ADMIN, ROLE_CYBER, ROLE_DEVICES_EDITOR, ROLE_DEVICE_ANALYST,
-        ROLE_DEVICE_SOURCE,
+        ROLE_ADMIN, ROLE_CYBER, ROLE_DEVICE_ANALYST, ROLE_DEVICE_SOURCE,
     };
     use crate::entities::{login, organism, system_settings};
     use crate::functest::tests::{cleanup_locked, mk_login, mk_organism};
@@ -286,7 +255,7 @@ mod tests {
     #[test]
     fn actor_ignores_legacy_and_unrelated_roles() {
         let cases = vec![
-            vec![ROLE_DEVICES_EDITOR],
+            vec!["DevicesEditor"],
             vec!["Unrelated"],
             vec!["deviceanalyst"],
         ];

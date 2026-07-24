@@ -702,7 +702,7 @@ Sync має визначену поведінку для конкурентни�
 
 - виконати наскрізні backend scenarios зі специфікації для create/update, parser, multi-root sync, duplicate paths, same-/cross-root move, prune, partial batch, concurrency, roots, browse, breadcrumbs, search і cursor;
 - виконати `cargo fmt --all -- --check`, `cargo check --workspace` і `cargo clippy --workspace --all-targets -- -D warnings`;
-- виконати focused unit/database/concurrency tests змінених modules, а після них повний `just test-be`;
+- виконати focused unit/database/concurrency acceptance suite для `devices::service::tests` і `devices::filesystem`;
 - окремо smoke-test чинні endpoints, не додаючи нових routes і не змінюючи їхні DTO;
 - звірити реалізовані operations із `DEV-FILE-019`–`DEV-FILE-025`, `DEV-INT-005`, `DEV-INT-012`, `DEV-INT-019`–`DEV-INT-022`, `DEV-NFR-004`, `DEV-NFR-005` і `DEV-NFR-009`.
 
@@ -740,7 +740,7 @@ flowchart TD
     E6 --> E10[10. Batch sync]
     E9 --> E10
     E10 --> E11[11. Retry і reconciliation]
-    E7 --> E12[12. Errors, telemetry, plans]
+    E7 --> E12[12. Filesystem DB errors і query shapes]
     E8 --> E12
     E11 --> E12
     E12 --> E13[13. Backend acceptance]

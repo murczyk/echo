@@ -5,8 +5,10 @@ mod types;
 mod write;
 
 pub(in crate::devices) use types::{
-    CreateDeviceCommand, DeviceAorReference, DeviceCurrentState,
-    DevicePatchField, DeviceUnitReference, UpdateDeviceCommand,
+    CreateDeviceCommand, DeviceAorReference, DeviceArchivedScope,
+    DeviceCurrentState, DeviceListSort, DevicePatchField, DeviceStatusCounts,
+    DeviceUnitReference, DeviceUnitStat, ListDevicesCommand, ListDevicesResult,
+    UpdateDeviceCommand,
 };
 
 pub(in crate::devices) struct DeviceService;

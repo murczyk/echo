@@ -60,6 +60,54 @@ impl UpdateDeviceCommand {
             }
     }
 }
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(in crate::devices) enum DeviceArchivedScope {
+    ActiveOnly,
+    ArchivedOnly,
+    All,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(in crate::devices) enum DeviceListSort {
+    DisplayTitleAsc,
+    DisplayTitleDesc,
+    CreatedAtAsc,
+    CreatedAtDesc,
+    UpdatedAtAsc,
+    UpdatedAtDesc,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub(in crate::devices) struct ListDevicesCommand {
+    pub(in crate::devices) filter_text: Option<String>,
+    pub(in crate::devices) archived_scope: DeviceArchivedScope,
+    pub(in crate::devices) needs_analytical_name: Option<bool>,
+    pub(in crate::devices) aor_ids: Vec<i64>,
+    pub(in crate::devices) unit_ids: Vec<i64>,
+    pub(in crate::devices) limit: Option<u64>,
+    pub(in crate::devices) offset: Option<u64>,
+    pub(in crate::devices) sort_by: Vec<DeviceListSort>,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub(in crate::devices) struct DeviceStatusCounts {
+    pub(in crate::devices) active: i64,
+    pub(in crate::devices) archived: i64,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub(in crate::devices) struct ListDevicesResult {
+    pub(in crate::devices) devices: Vec<DeviceCurrentState>,
+    pub(in crate::devices) total: u64,
+    pub(in crate::devices) has_more: bool,
+    pub(in crate::devices) status_counts: DeviceStatusCounts,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub(in crate::devices) struct DeviceUnitStat {
+    pub(in crate::devices) unit: DeviceUnitReference,
+    pub(in crate::devices) count: i64,
+}
 
 #[derive(Debug, PartialEq, Eq)]
 pub(in crate::devices) struct DeviceAorReference {

@@ -1,10 +1,10 @@
 import AddIcon from '@mui/icons-material/Add';
-import { Box, Button, CircularProgress, Stack, Typography, useMediaQuery } from '@mui/material';
+import { Box, CircularProgress, Stack, Typography, useMediaQuery } from '@mui/material';
 import { useMemo } from 'react';
 
-import { ConfirmDangerDialog } from '../../components/ConfirmDangerDialog';
 import { PageErrorState } from '../../components/PageErrorState';
 import { PowerAlert } from '../../components/PowerAlert';
+import { PowerButton } from '../../components/PowerButton';
 import { SidePanelToggleButton } from '../../components/SidePanelToggleButton';
 import { TablePageToolbar } from '../../components/TablePageToolbar';
 import { buildDefaultColumnOrder } from '../../components/mui-customized/table/get-default-table-options';
@@ -119,15 +119,15 @@ function DevicesPageBody({ authUserRoles = [] }: { authUserRoles?: string[] }) {
           titleLeadingGap={2}
           internalActionsHidden
           actions={
-            page.permissions.canEdit ? (
-              <Button
+            page.permissions.canCreate ? (
+              <PowerButton
                 variant="contained"
                 onClick={page.openCreateDialog}
                 disabled={page.creating || page.loading}
                 startIcon={page.creating ? <CircularProgress size={16} /> : <AddIcon />}
               >
                 Створити пристрій
-              </Button>
+              </PowerButton>
             ) : null
           }
         />
@@ -139,6 +139,7 @@ function DevicesPageBody({ authUserRoles = [] }: { authUserRoles?: string[] }) {
         <DeviceUpsertDrawer
           open={page.createDialogOpen}
           mode="create"
+          fieldPermissions={{ sourceData: true, analyticalData: false }}
           form={page.createForm}
           saving={page.creating}
           error={page.createError}
@@ -156,6 +157,7 @@ function DevicesPageBody({ authUserRoles = [] }: { authUserRoles?: string[] }) {
         <DeviceUpsertDrawer
           open={page.editDialogOpen}
           mode="edit"
+          fieldPermissions={page.permissions.fieldPermissions}
           form={page.editForm}
           saving={page.editSubmitting}
           error={page.editError}
@@ -169,17 +171,6 @@ function DevicesPageBody({ authUserRoles = [] }: { authUserRoles?: string[] }) {
           onClose={page.closeEditDialog}
           onChange={page.setEditForm}
           onSave={(form) => void page.submitEditDialog(form)}
-        />
-
-        <ConfirmDangerDialog
-          open={page.archiveDialogDevice !== null}
-          onClose={page.closeArchiveDialog}
-          onConfirm={() => void page.confirmArchiveRow()}
-          title="Архівувати пристрій"
-          description={`Ви дійсно хочете архівувати пристрій «${page.archiveDialogDevice?.name ?? ''}»?`}
-          confirmLabel="Архівувати"
-          submitting={page.mutatingDeviceId !== null}
-          disabled={page.archiveDialogDevice === null}
         />
 
         <Stack
@@ -265,8 +256,6 @@ function DevicesPageBody({ authUserRoles = [] }: { authUserRoles?: string[] }) {
                 hasFilters={page.hasFilters}
                 tableStateContext={tableStateContext}
                 onEdit={page.openEditRow}
-                onArchive={page.archiveRow}
-                onRestore={page.restoreRow}
                 onLoadMore={page.loadMore}
                 onClearFilters={page.clearFilters}
                 onTableInitialized={tableStateContext.onTableInitialized}
