@@ -38,6 +38,7 @@ import {
   AreaOfResponsibility,
   Datasource,
   InterseptionKind,
+  Login,
   Organism,
   OrphanSignalGroupEntry,
   SigintZone,
@@ -95,6 +96,12 @@ import {
   unarchiveSignalGroup,
 } from '../../services/api/zones';
 import { NO_DATA_LABEL, formatDate } from '../../utils/misc';
+import {
+  buildLoginOptions,
+  formatLoginIds,
+  selectedLoginIds,
+  selectLoginOptions,
+} from '../../utils/login-options';
 import { PowerAlert } from '../../components/PowerAlert';
 import { DatasourceKindIcon } from '../../components/icons';
 import { GroupStatsTimelineCell } from './GroupStatsTimelineCell';
@@ -412,9 +419,10 @@ function buildAccessLabel(
   users: string[] | null | undefined,
   organismIds: number[] | null | undefined,
   organismById: OrganismById,
+  loginById: Map<string, Login>,
 ) {
   const parts: string[] = [];
-  if (users && users.length > 0) parts.push(users.join(', '));
+  if (users && users.length > 0) parts.push(formatLoginIds(users, loginById));
 
   const organismLabels = (organismIds ?? []).map((id) => getOrganismLabel(id, organismById));
   if (organismLabels.length > 0) parts.push(`Організми: ${organismLabels.join(', ')}`);
@@ -426,6 +434,33 @@ function selectedOrganisms(selectedIds: number[], options: Organism[]) {
   return selectedIds
     .map((id) => options.find((organism) => organism.id === id))
     .filter(Boolean) as Organism[];
+}
+
+function LoginAutocomplete(props: {
+  label: string;
+  options: Login[];
+  selectedIds: string[];
+  onChange: (loginIds: string[]) => void;
+}) {
+  return (
+    <Autocomplete
+      multiple
+      options={props.options}
+      value={selectLoginOptions(props.selectedIds, props.options)}
+      onChange={(_, value) => props.onChange(selectedLoginIds(value))}
+      getOptionLabel={(option) => option.login}
+      isOptionEqualToValue={(option, value) => option.id === value.id}
+      renderOption={(optionProps, option) => {
+        const { key: _unusedKey, ...restOptionProps } = optionProps;
+        return (
+          <Box component="li" {...restOptionProps} key={option.id}>
+            {option.login}
+          </Box>
+        );
+      }}
+      renderInput={(params) => <TextField {...params} label={props.label} />}
+    />
+  );
 }
 
 function renderDatasourceCell(
@@ -926,6 +961,7 @@ function ZoneGroupsTable(props: {
   loading?: boolean;
   datasourceById: Map<number, Datasource>;
   organismById: OrganismById;
+  loginById: Map<string, Login>;
   groupInfos: Map<string, SignalGroupEntry>;
   aorFilterOptions: { text: string; value: string }[];
   onEdit: (zoneId: number, datasourceId: number, group: ZoneDatasourceGroup) => void;
@@ -1055,12 +1091,14 @@ function ZoneGroupsTable(props: {
             row?.group?.allowedUsers,
             row?.group?.allowedOrganismIds,
             props.organismById,
+            props.loginById,
           ),
         Cell: ({ row }) => {
           const label = buildAccessLabel(
             row.original?.group?.allowedUsers,
             row.original?.group?.allowedOrganismIds,
             props.organismById,
+            props.loginById,
           );
           return (
             <Tooltip title={label}>
@@ -1074,11 +1112,13 @@ function ZoneGroupsTable(props: {
         header: 'Адміни',
         id: 'admins',
         accessorFn: (row) =>
-          row?.group?.adminLogins?.length > 0 ? row.group.adminLogins.join(', ') : NO_DATA_LABEL,
+          row?.group?.adminLogins?.length > 0
+            ? formatLoginIds(row.group.adminLogins, props.loginById)
+            : NO_DATA_LABEL,
         Cell: ({ row }) => {
           const label =
             row.original?.group?.adminLogins?.length > 0
-              ? row.original.group.adminLogins.join(', ')
+              ? formatLoginIds(row.original.group.adminLogins, props.loginById)
               : NO_DATA_LABEL;
           return (
             <Tooltip title={label}>
@@ -1145,6 +1185,7 @@ function ZoneGroupsTable(props: {
       isLoading,
       props.datasourceById,
       props.organismById,
+      props.loginById,
       props.groupInfos,
       props.aorFilterOptions,
       timeline.data,
@@ -1358,6 +1399,7 @@ function ZoneGroupsSection(props: {
   loading?: boolean;
   datasourceById: Map<number, Datasource>;
   organismById: OrganismById;
+  loginById: Map<string, Login>;
   groupInfos: Map<string, SignalGroupEntry>;
   aorFilterOptions: { text: string; value: string }[];
   onEdit: (zoneId: number, datasourceId: number, group: ZoneDatasourceGroup) => void;
@@ -1378,6 +1420,7 @@ function ZoneGroupsSection(props: {
           loading={props.loading}
           datasourceById={props.datasourceById}
           organismById={props.organismById}
+          loginById={props.loginById}
           groupInfos={props.groupInfos}
           aorFilterOptions={props.aorFilterOptions}
           onEdit={props.onEdit}
@@ -1427,8 +1470,7 @@ function AdminDirectionsNeoPageBody() {
   const [unarchiveInFlightMasterKey, setUnarchiveInFlightMasterKey] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState(0);
 
-  const [logins, setLogins] = useState<string[]>([]);
-  const [loginsStatus, setLoginsStatus] = useState<LoadingStatus>('idle');
+  const [logins, setLogins] = useState<Login[]>([]);
   const [supportNonRerInterceptions, setSupportNonRerInterceptions] = useState(false);
 
   const datasourceById = useMemo(() => new Map(datasources), [datasources]);
@@ -1436,6 +1478,7 @@ function AdminDirectionsNeoPageBody() {
     () => new Map(organisms.map((organism) => [organism.id, organism])),
     [organisms],
   );
+  const loginById = useMemo(() => new Map(logins.map((login) => [login.id, login])), [logins]);
   const activeOrganismOptions = useMemo(
     () => organisms.filter((organism) => organism.enabled),
     [organisms],
@@ -1535,6 +1578,7 @@ function AdminDirectionsNeoPageBody() {
               rows={filteredRows}
               datasourceById={datasourceById}
               organismById={organismById}
+              loginById={loginById}
               groupInfos={groupInfos}
               aorFilterOptions={aorFilterOptions}
               onEdit={openEditDialog}
@@ -1570,6 +1614,7 @@ function AdminDirectionsNeoPageBody() {
     archivedGroups,
     datasourceById,
     groupInfos,
+    loginById,
     organismById,
     orphanGroups,
     unarchiveInFlightMasterKey,
@@ -1582,32 +1627,29 @@ function AdminDirectionsNeoPageBody() {
     setActiveTab((current) => Math.min(current, Math.max(directionTabs.length - 1, 0)));
   }, [directionTabs.length]);
 
-  async function ensureLoginsLoaded() {
-    if (loginsStatus === 'loading' || loginsStatus === 'success') return;
-    setLoginsStatus('loading');
-    try {
-      const rsp = await listLogins({ sortBy: null, filterByRoles: null });
-      setLogins((rsp.users || []).map((login) => login.login));
-      setLoginsStatus('success');
-    } catch (err) {
-      setLoginsStatus('error');
-    }
-  }
-
   async function loadData() {
     setStatus('loading');
     setError(null);
     try {
-      const [datasourceList, zoneList, orphanList, archivedList, aorList, organismList, settings] =
-        await Promise.all([
-          listDatasources(),
-          listSigintZones(),
-          listOrphanSignalGroups(),
-          listArchivedSignalGroups(),
-          listAors({ sortBy: null }),
-          listOrganisms({ sortBy: null }),
-          currentSystemSettings(),
-        ]);
+      const [
+        datasourceList,
+        zoneList,
+        orphanList,
+        archivedList,
+        aorList,
+        organismList,
+        settings,
+        loginList,
+      ] = await Promise.all([
+        listDatasources(),
+        listSigintZones(),
+        listOrphanSignalGroups(),
+        listArchivedSignalGroups(),
+        listAors({ sortBy: null }),
+        listOrganisms({ sortBy: null }),
+        currentSystemSettings(),
+        listLogins({ sortBy: null, filterByRoles: null }),
+      ]);
 
       setDatasources(datasourceList);
       setZones(zoneList);
@@ -1615,6 +1657,7 @@ function AdminDirectionsNeoPageBody() {
       setArchivedGroups(archivedList);
       setAors(aorList);
       setOrganisms(organismList);
+      setLogins(buildLoginOptions(loginList.users));
       setSupportNonRerInterceptions(settings.supportNonRerInterceptions);
 
       const zoneDatasourceEntries = await Promise.all(
@@ -1695,7 +1738,6 @@ function AdminDirectionsNeoPageBody() {
       isSaving: false,
       error: null,
     });
-    void ensureLoginsLoaded();
   }
 
   function openOrphanEditDialog(group: OrphanSignalGroupEntry) {
@@ -1728,7 +1770,6 @@ function AdminDirectionsNeoPageBody() {
       isSaving: false,
       error: null,
     });
-    void ensureLoginsLoaded();
   }
 
   function openArchiveOrphanDialog(group: OrphanSignalGroupEntry) {
@@ -2160,14 +2201,17 @@ function AdminDirectionsNeoPageBody() {
             label={<DisableNetworkAssignmentLabel />}
           />
           {editDialog?.isSecret ? (
-            <Autocomplete
-              multiple
+            <LoginAutocomplete
+              label="Користувачі"
               options={logins}
-              value={editDialog?.selectedUsers ?? []}
-              onChange={(_, value) =>
-                editDialog && setEditDialog({ ...editDialog, selectedUsers: value })
+              selectedIds={editDialog.selectedUsers}
+              onChange={(selectedUsers) =>
+                editDialog &&
+                setEditDialog({
+                  ...editDialog,
+                  selectedUsers,
+                })
               }
-              renderInput={(params) => <TextField {...params} label="Користувачі" />}
             />
           ) : null}
           {editDialog?.isSecret ? (
@@ -2195,14 +2239,17 @@ function AdminDirectionsNeoPageBody() {
               isOptionEqualToValue={(option, value) => option.id === value.id}
             />
           ) : null}
-          <Autocomplete
-            multiple
+          <LoginAutocomplete
+            label="Адміністратори групи"
             options={logins}
-            value={editDialog?.selectedAdmins ?? []}
-            onChange={(_, value) =>
-              editDialog && setEditDialog({ ...editDialog, selectedAdmins: value })
+            selectedIds={editDialog?.selectedAdmins ?? []}
+            onChange={(selectedAdmins) =>
+              editDialog &&
+              setEditDialog({
+                ...editDialog,
+                selectedAdmins,
+              })
             }
-            renderInput={(params) => <TextField {...params} label="Адміністратори групи" />}
           />
           <Autocomplete
             multiple
@@ -2442,14 +2489,17 @@ function AdminDirectionsNeoPageBody() {
             />
           ) : null}
           {assignDialog?.isSecret ? (
-            <Autocomplete
-              multiple
+            <LoginAutocomplete
+              label="Користувачі"
               options={logins}
-              value={assignDialog?.selectedUsers ?? []}
-              onChange={(_, value) =>
-                assignDialog && setAssignDialog({ ...assignDialog, selectedUsers: value })
+              selectedIds={assignDialog.selectedUsers}
+              onChange={(selectedUsers) =>
+                assignDialog &&
+                setAssignDialog({
+                  ...assignDialog,
+                  selectedUsers,
+                })
               }
-              renderInput={(params) => <TextField {...params} label="Користувачі" />}
             />
           ) : null}
           {assignDialog?.isSecret ? (
@@ -2477,14 +2527,17 @@ function AdminDirectionsNeoPageBody() {
               isOptionEqualToValue={(option, value) => option.id === value.id}
             />
           ) : null}
-          <Autocomplete
-            multiple
+          <LoginAutocomplete
+            label="Адміністратори групи"
             options={logins}
-            value={assignDialog?.selectedAdmins ?? []}
-            onChange={(_, value) =>
-              assignDialog && setAssignDialog({ ...assignDialog, selectedAdmins: value })
+            selectedIds={assignDialog?.selectedAdmins ?? []}
+            onChange={(selectedAdmins) =>
+              assignDialog &&
+              setAssignDialog({
+                ...assignDialog,
+                selectedAdmins,
+              })
             }
-            renderInput={(params) => <TextField {...params} label="Адміністратори групи" />}
           />
         </DialogContent>
         <DialogActions sx={STANDARD_DIALOG_ACTIONS_SX}>
