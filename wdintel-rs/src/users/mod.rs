@@ -446,7 +446,7 @@ pub async fn create_login(
             description: Set(normalize_login_description(
                 req.description.clone(),
             )),
-            password_auth_enabled: NotSet,
+            password_auth_enabled: Set(true),
         },
     )
     .await
@@ -1000,7 +1000,7 @@ pub async fn register_user(
         deleted_permanently: NotSet,
         last_release_seen: NotSet,
         description: NotSet,
-        password_auth_enabled: NotSet,
+        password_auth_enabled: Set(true),
     }
     .insert(&txn)
     .await
@@ -1392,7 +1392,7 @@ async fn register_delta_user(
             deleted_permanently: NotSet,
             last_release_seen: NotSet,
             description: Set(normalize_login_description(description)),
-            password_auth_enabled: NotSet,
+            password_auth_enabled: Set(false),
         },
     )
     .await
@@ -1816,6 +1816,7 @@ mod tests {
                 deleted_permanently: Set(false),
                 last_release_seen: Default::default(),
                 description: Default::default(),
+                password_auth_enabled: Set(false),
             },
         )
         .await
@@ -1889,6 +1890,7 @@ mod tests {
                     deleted_permanently: Set(false),
                     last_release_seen: Default::default(),
                     description: Default::default(),
+                    password_auth_enabled: Set(false),
                 },
             )
             .await
@@ -1960,6 +1962,7 @@ mod tests {
                     deleted_permanently: Set(false),
                     last_release_seen: Default::default(),
                     description: Default::default(),
+                    password_auth_enabled: Set(false),
                 },
             )
             .await
@@ -1983,6 +1986,7 @@ mod tests {
                 deleted_permanently: Set(false),
                 last_release_seen: Default::default(),
                 description: Default::default(),
+                password_auth_enabled: Set(false),
             },
         )
         .await
@@ -2035,6 +2039,7 @@ mod tests {
             deleted_permanently: Set(true),
             last_release_seen: Default::default(),
             description: Default::default(),
+            password_auth_enabled: Set(false),
         }
         .insert(&env.dbx)
         .await
@@ -2057,6 +2062,7 @@ mod tests {
                 deleted_permanently: NotSet,
                 last_release_seen: Default::default(),
                 description: Default::default(),
+                password_auth_enabled: Set(false),
             },
         )
         .await

@@ -18,7 +18,7 @@ impl MigrationTrait for Migration {
 
                 alter table login
                     alter column password_auth_enabled set not null,
-                    alter column password_auth_enabled set default true;
+                    alter column password_auth_enabled set default false;
                 ",
             )
             .await?;
