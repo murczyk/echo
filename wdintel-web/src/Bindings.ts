@@ -3330,6 +3330,8 @@ export type SystemSettingsCurrentRsp = {
   sigintCommentParsingEnabled: boolean;
   doNotStoreDuplicateEchoimFailures: boolean;
   goiAssociationMessageUidWorkerEnabled: boolean;
+  reportChunkingHours: number;
+  limitBigReports: boolean;
 };
 
 export type SystemSettingsItem = {
@@ -3358,6 +3360,8 @@ export type SystemSettingsItem = {
   sigintCommentParsingEnabled: boolean;
   doNotStoreDuplicateEchoimFailures: boolean;
   goiAssociationMessageUidWorkerEnabled: boolean;
+  reportChunkingHours: number;
+  limitBigReports: boolean;
 };
 
 export type SystemSettingsListRsp = {
@@ -3385,6 +3389,8 @@ export type CreateSystemSettingsReq = {
   sigintCommentParsingEnabled: boolean;
   doNotStoreDuplicateEchoimFailures: boolean;
   goiAssociationMessageUidWorkerEnabled: boolean;
+  reportChunkingHours: number;
+  limitBigReports: boolean;
 };
 
 export type ActivateSystemSettingsReq = {

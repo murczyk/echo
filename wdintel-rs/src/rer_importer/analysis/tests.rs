@@ -5,7 +5,8 @@ use crate::rer_importer::analysis::*;
 use crate::rer_importer::*;
 use actix_web::web::{Data, Json};
 use sea_orm::{
-    ActiveModelTrait, ActiveValue::Set, EntityTrait, FromQueryResult,
+    ActiveModelTrait, ActiveValue::Set, ColumnTrait, EntityTrait,
+    FromQueryResult, QueryFilter,
 };
 use serial_test::serial;
 
@@ -4498,6 +4499,149 @@ fn summary_table_report_message_limit_rejects_overflow() {
         AppError::BL { msg }
             if msg == RER_SUMMARY_TABLE_REPORT_MESSAGE_LIMIT_ERROR_CODE
     ));
+}
+
+#[test]
+fn summary_table_chunks_merge_frequency_data_deterministically() {
+    let first_dt = test_dt(2026, 3, 1, 10, 0);
+    let last_dt = test_dt(2026, 3, 1, 11, 0);
+    let row =
+        |count, callsigns: Vec<&str>, units: Vec<&str>| SummaryTableFreqRow {
+            freq: "111.1".to_string(),
+            count,
+            callsigns: callsigns.into_iter().map(str::to_string).collect(),
+            units: units.into_iter().map(str::to_string).collect(),
+            locations: vec!["Location".to_string()],
+            coords: vec![],
+            locality_coords: vec![],
+        };
+    let chunks = vec![
+        SummaryTableChunkData {
+            summary_table: SummaryTableFreq {
+                rows: vec![row(2, vec!["Zulu"], vec!["B"])],
+            },
+            last_datetime_by_freq: BTreeMap::from([(
+                "111.1".to_string(),
+                first_dt,
+            )]),
+            related_networks_by_freq: BTreeMap::from([(
+                "111.1".to_string(),
+                vec!["Network B".to_string()],
+            )]),
+        },
+        SummaryTableChunkData {
+            summary_table: SummaryTableFreq {
+                rows: vec![row(3, vec!["Alpha", "Zulu"], vec!["A"])],
+            },
+            last_datetime_by_freq: BTreeMap::from([(
+                "111.1".to_string(),
+                last_dt,
+            )]),
+            related_networks_by_freq: BTreeMap::from([(
+                "111.1".to_string(),
+                vec!["Network A".to_string(), "Network B".to_string()],
+            )]),
+        },
+    ];
+
+    let merged =
+        merge_summary_table_chunks("description".to_string(), chunks).unwrap();
+
+    assert_eq!(merged.summary_table.rows[0].count, 5);
+    assert_eq!(
+        merged.summary_table.rows[0].callsigns,
+        vec!["Alpha".to_string(), "Zulu".to_string()]
+    );
+    assert_eq!(
+        merged.summary_table.rows[0].units,
+        vec!["A".to_string(), "B".to_string()]
+    );
+    assert_eq!(merged.last_datetime_by_freq["111.1"], last_dt);
+    assert_eq!(
+        merged.related_networks_by_freq["111.1"],
+        vec!["Network A".to_string(), "Network B".to_string()]
+    );
+}
+
+#[tokio::test]
+#[serial]
+async fn summary_table_chunked_collection_matches_single_window() {
+    let fixture = mk_rer_analysis_fixture().await.unwrap();
+    let db = &fixture.env.dbx;
+    let login = find_test_login(db).await.unwrap();
+    let mut req = analysis_stats_req0(&fixture);
+    req.since_date_inclusive_ms =
+        test_dt(2026, 3, 1, 9, 0).and_utc().timestamp_millis();
+    req.till_date_noninclusive_ms =
+        test_dt(2026, 3, 1, 12, 0).and_utc().timestamp_millis();
+
+    set_report_chunking_hours(db, 24).await;
+    let single =
+        collect_summary_table_report_data(&login.id, &fixture.env, &req)
+            .await
+            .unwrap();
+
+    set_report_chunking_hours(db, 1).await;
+    let chunked =
+        collect_summary_table_report_data(&login.id, &fixture.env, &req)
+            .await
+            .unwrap();
+
+    assert_eq!(chunked.description, single.description);
+    assert_eq!(chunked.summary_table, single.summary_table);
+    assert_eq!(chunked.last_datetime_by_freq, single.last_datetime_by_freq);
+    assert_eq!(
+        chunked.related_networks_by_freq,
+        single.related_networks_by_freq
+    );
+}
+
+async fn set_report_chunking_hours(db: &DatabaseConnection, hours: i32) {
+    let result = system_settings::Entity::update_many()
+        .col_expr(
+            system_settings::Column::ReportChunkingHours,
+            Expr::value(hours),
+        )
+        .filter(system_settings::Column::Deleted.eq(false))
+        .exec(db)
+        .await
+        .unwrap();
+    if result.rows_affected == 0 {
+        system_settings::ActiveModel {
+            report_chunking_hours: Set(hours),
+            limit_big_reports: Set(false),
+            ..Default::default()
+        }
+        .insert(db)
+        .await
+        .unwrap();
+    }
+}
+
+#[test]
+fn new_callsigns_are_classified_relative_to_original_report_start() {
+    let report_since = test_dt(2026, 3, 2, 12, 0);
+    let callsigns = BTreeSet::from([
+        "new".to_string(),
+        "week".to_string(),
+        "recent".to_string(),
+    ]);
+    let last_seen = BTreeMap::from([
+        (
+            "recent".to_string(),
+            report_since - chrono::Duration::hours(1),
+        ),
+        ("week".to_string(), report_since - chrono::Duration::days(2)),
+    ]);
+
+    let result = classify_new_callsigns(callsigns, &last_seen, report_since);
+
+    assert_eq!(
+        result.not_seen_24h,
+        vec!["new".to_string(), "week".to_string()]
+    );
+    assert_eq!(result.not_seen_7days, vec!["new".to_string()]);
+    assert_eq!(result.not_seen_30days, vec!["new".to_string()]);
 }
 
 #[tokio::test]

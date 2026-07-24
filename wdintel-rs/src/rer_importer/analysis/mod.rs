@@ -9,6 +9,9 @@ use crate::messenger::group::collect_group_admin_data;
 use crate::messenger::group::types::SignalGroupEntry;
 use crate::messenger::group::types::*;
 use crate::messenger::group::*;
+use crate::rer_importer::report_chunking::{
+    report_period_chunks, ReportPeriodEnd,
+};
 use crate::sigint::aor::bl::collect_group_aors;
 use crate::types::*;
 use crate::users::{
@@ -30,7 +33,7 @@ use rust_xlsxwriter::{Format, Workbook};
 use sea_orm::sea_query::extension::postgres::PgExpr;
 use sea_orm::{prelude::Expr, sea_query::Alias, *};
 use sea_query::*;
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::sync::atomic::{AtomicU64, Ordering};
 use tempfile::TempDir;
 
@@ -2441,9 +2444,6 @@ async fn summary_table_freq_by_login(
     #[derive(FromQueryResult)]
     struct Row {
         freq: Option<String>,
-        lat: Option<f64>,
-        lng: Option<f64>,
-        nominatimres_id: Option<i64>,
         count: i64,
         callsigns: Vec<serde_json::Value>,
         units: Vec<String>,
@@ -2455,12 +2455,6 @@ async fn summary_table_freq_by_login(
         build_summary_table_filtered_messages_query(login, req, master_keys)?
             .select_only()
             .column_as(Expr::col(sigint_inbox_item::Column::Freq), "freq")
-            .column_as(Expr::col(sigint_inbox_item::Column::Lat), "lat")
-            .column_as(Expr::col(sigint_inbox_item::Column::Lng), "lng")
-            .column_as(
-                Expr::col(sigint_inbox_item::Column::NominatimresId),
-                "nominatimres_id",
-            )
             .column_as(
                 Expr::col(sigint_inbox_item::Column::Callsigns),
                 "callsigns",
@@ -2487,9 +2481,6 @@ async fn summary_table_freq_by_login(
 
     let main_query: SelectStatement = Query::select()
         .column((uniq_alias.clone(), "freq"))
-        .column((uniq_alias.clone(), "lat"))
-        .column((uniq_alias.clone(), "lng"))
-        .column((uniq_alias.clone(), "nominatimres_id"))
         .expr_as(
             Expr::cust("array_agg(distinct uniq.callsigns)"),
             "callsigns",
@@ -2504,7 +2495,7 @@ async fn summary_table_freq_by_login(
         )
         .expr_as(Expr::cust("count(1)"), "count")
         .from_subquery(dedup_subquery.into_query(), uniq_alias.clone())
-        .add_group_by([Expr::cust("1, 2, 3, 4")])
+        .add_group_by([Expr::cust("1")])
         .to_owned();
 
     let sql = main_query.to_string(PostgresQueryBuilder);
@@ -2526,43 +2517,6 @@ async fn summary_table_freq_by_login(
     let mut units_per_freq: BTreeMap<String, Vec<String>> = BTreeMap::new();
     let mut locations_per_freq: BTreeMap<String, Vec<String>> = BTreeMap::new();
     let mut count_per_freq: BTreeMap<String, i64> = BTreeMap::new();
-    #[derive(PartialEq, Clone)]
-    struct LatLngNominatim {
-        lat: f64,
-        lng: f64,
-        nominatimres_id: Option<i64>,
-    }
-    let mut latlng_per_freq: BTreeMap<String, Vec<LatLngNominatim>> =
-        BTreeMap::new();
-    let mut nominatimres_per_id: BTreeMap<i64, nominatimres::Model> =
-        BTreeMap::new();
-    let mut nominatimres_per_freq: BTreeMap<String, Vec<i64>> = BTreeMap::new();
-    for nominatimres_id in uniq_via_btreeset(
-        &rows_res
-            .iter()
-            .filter_map(|x| x.nominatimres_id)
-            .collect::<Vec<i64>>(),
-    ) {
-        let m_nominatimres = nominatimres::Entity::find_by_id(nominatimres_id)
-            .one(&env.dbx)
-            .await
-            .c(h!())?;
-        if let Some(nominatimres) = m_nominatimres {
-            nominatimres_per_id.insert(nominatimres_id, nominatimres);
-        }
-    }
-    nominatimres_per_id.insert(
-        0,
-        nominatimres::Model {
-            id: 0,
-            created_at: Utc::now()
-                .date_naive()
-                .and_hms_opt(0, 0, 0)
-                .ok_or("err 91734")?,
-            res: serde_json::Value::Null,
-            nominatim_display_name: "Невідомо".to_string(),
-        },
-    );
     for row in rows_res.iter() {
         let Some(freq) = row.freq.clone() else {
             continue;
@@ -2624,95 +2578,10 @@ async fn summary_table_freq_by_login(
                     .or_insert(vec![callsign.clone()]);
             }
         }
-        if let (Some(lat), Some(lng)) = (row.lat, row.lng) {
-            // println!("> some freq {freq} lat lng: {lat} {lng}");
-            let m_nominatimres_id = row.nominatimres_id;
-            let v = LatLngNominatim {
-                lat,
-                lng,
-                nominatimres_id: m_nominatimres_id,
-            };
-            latlng_per_freq
-                .entry(freq.clone())
-                .and_modify(|xs| {
-                    if !xs.contains(&v) {
-                        xs.push(v.clone());
-                    }
-                })
-                .or_insert(vec![v.clone()]);
-        }
-        let nominatimres_id = row.nominatimres_id.unwrap_or(0);
-        nominatimres_per_freq
-            .entry(freq.clone())
-            .and_modify(|xs| {
-                if !xs.contains(&nominatimres_id) {
-                    xs.push(nominatimres_id);
-                }
-            })
-            .or_insert(vec![nominatimres_id]);
     }
 
     let mut rows = vec![];
     for (freq, count) in count_per_freq.iter() {
-        // let coords = latlng_per_freq
-        //     .get(freq)
-        //     .unwrap_or(&vec![])
-        //     .iter()
-        //     .map(|x| {
-        //         LatLng {
-        //             lat: x.lat,
-        //             lng: x.lng,
-        //         }
-        //         .clone()
-        //     })
-        //     .take(crate::config::COORDS_PER_FREQ_LIMIT)
-        //     .collect();
-        // // println!("> freq: {freq}, coords: {coords:?}");
-        // let nominatimids =
-        //     nominatimres_per_freq.get(freq).unwrap_or(&vec![0]).clone();
-        // let mut locality_coords_hm: BTreeMap<String, Vec<LatLng>> =
-        //     BTreeMap::new();
-        // for nomresid in nominatimids.iter() {
-        //     if let Some(nominatimres) = nominatimres_per_id.get(nomresid) {
-        //         let m_nomresid = if *nomresid == 0 {
-        //             None
-        //         } else {
-        //             Some(*nomresid)
-        //         };
-        //         // gather coords per freq which are in this nominatimres
-        //         let latlngs: Vec<LatLngNominatim> = latlng_per_freq
-        //             .get(freq)
-        //             .unwrap_or(&vec![])
-        //             .iter()
-        //             .filter(|x| x.nominatimres_id == m_nomresid)
-        //             .cloned()
-        //             .collect();
-        //         for latlngnom in latlngs {
-        //             let latlng = LatLng {
-        //                 lat: latlngnom.lat,
-        //                 lng: latlngnom.lng,
-        //             };
-        //             locality_coords_hm
-        //                 .entry(nominatimres.nominatim_display_name.clone())
-        //                 .and_modify(|xs| {
-        //                     if !xs.contains(&latlng) {
-        //                         xs.push(latlng.clone());
-        //                     }
-        //                 })
-        //                 .or_insert(vec![latlng.clone()]);
-        //         }
-        //     }
-        // }
-        // let locality_coords_len = locality_coords_hm.len();
-        // let locality_coords = locality_coords_hm
-        //     .iter()
-        //     .map(|(k, v)| LocalityCoords {
-        //         locality: k.to_string(),
-        //         count: locality_coords_len as i64,
-        //         coords: v.to_vec(),
-        //     })
-        //     .take(crate::config::COORDS_PER_FREQ_PER_LOC_LIMIT)
-        //     .collect();
         rows.push(SummaryTableFreqRow {
             freq: freq.clone(),
             count: *count,
@@ -2991,6 +2860,19 @@ struct SummaryTableReportData {
     related_networks_by_freq: BTreeMap<String, Vec<String>>,
 }
 
+struct SummaryTableChunkData {
+    summary_table: SummaryTableFreq,
+    last_datetime_by_freq: BTreeMap<String, NaiveDateTime>,
+    related_networks_by_freq: BTreeMap<String, Vec<String>>,
+}
+
+#[derive(Default)]
+struct SummaryTableAccumulator {
+    rows_by_freq: BTreeMap<String, SummaryTableFreqRow>,
+    last_datetime_by_freq: BTreeMap<String, NaiveDateTime>,
+    networks_by_freq: BTreeMap<String, BTreeSet<String>>,
+}
+
 pub(crate) async fn summary_table_xlsx_bytes(
     login: &uuid::Uuid,
     env: &Env,
@@ -3009,37 +2891,155 @@ async fn collect_summary_table_report_data(
         crate::messenger::group::get_identity_sigint_groups(&env.dbx, login)
             .await
             .c(h!())?;
-    check_summary_table_report_message_limit(login, env, req, &master_keys)
-        .await
-        .c(h!())?;
-    let summary_table: SummaryTableFreq =
-        summary_table_freq_by_login(login, env, req, &master_keys)
+    let report_settings =
+        crate::system_settings::get_report_generation_settings(&env.dbx)
             .await
             .c(h!())?;
-    let last_datetime_by_freq = summary_table_last_datetime_by_freq_by_login(
-        login,
-        env,
-        req,
-        &master_keys,
-    )
-    .await
-    .c(h!())?;
-    let related_networks_by_freq =
-        summary_table_related_networks_by_freq_by_login(
-            login,
-            env,
-            req,
-            &master_keys,
-        )
-        .await
-        .c(h!())?;
+    let chunks = report_period_chunks(
+        req.since_date_inclusive_ms,
+        req.till_date_noninclusive_ms,
+        report_settings.chunking_hours,
+        ReportPeriodEnd::NonInclusive,
+    )?;
+    let mut message_count = 0_usize;
+    let mut accumulator = SummaryTableAccumulator::default();
+    for (index, chunk) in chunks.iter().enumerate() {
+        log::info!(
+            "Summary Table report chunk {}/{}: {}..{}",
+            index + 1,
+            chunks.len(),
+            chunk.since_ms,
+            chunk.till_ms
+        );
+        let mut chunk_req = req.clone();
+        chunk_req.since_date_inclusive_ms = chunk.since_ms;
+        chunk_req.till_date_noninclusive_ms = chunk.till_ms;
+        if report_settings.limit_big_reports {
+            message_count = message_count.saturating_add(
+                summary_table_report_message_count(
+                    login,
+                    env,
+                    &chunk_req,
+                    &master_keys,
+                )
+                .await
+                .c(h!())?,
+            );
+            ensure_summary_table_report_message_limit(login, message_count)?;
+        }
+        let chunk_data = SummaryTableChunkData {
+            summary_table: summary_table_freq_by_login(
+                login,
+                env,
+                &chunk_req,
+                &master_keys,
+            )
+            .await
+            .c(h!())?,
+            last_datetime_by_freq:
+                summary_table_last_datetime_by_freq_by_login(
+                    login,
+                    env,
+                    &chunk_req,
+                    &master_keys,
+                )
+                .await
+                .c(h!())?,
+            related_networks_by_freq:
+                summary_table_related_networks_by_freq_by_login(
+                    login,
+                    env,
+                    &chunk_req,
+                    &master_keys,
+                )
+                .await
+                .c(h!())?,
+        };
+        merge_summary_table_chunk(&mut accumulator, chunk_data);
+    }
 
-    Ok(SummaryTableReportData {
-        description: describe_analysis_stats_req(req.clone())?,
-        summary_table,
-        last_datetime_by_freq,
-        related_networks_by_freq,
-    })
+    Ok(finish_summary_table_merge(
+        describe_analysis_stats_req(req.clone())?,
+        accumulator,
+    ))
+}
+
+#[cfg(test)]
+fn merge_summary_table_chunks(
+    description: String,
+    chunks: Vec<SummaryTableChunkData>,
+) -> Result<SummaryTableReportData, AppError> {
+    let mut accumulator = SummaryTableAccumulator::default();
+    for chunk in chunks {
+        merge_summary_table_chunk(&mut accumulator, chunk);
+    }
+    Ok(finish_summary_table_merge(description, accumulator))
+}
+
+fn merge_summary_table_chunk(
+    accumulator: &mut SummaryTableAccumulator,
+    chunk: SummaryTableChunkData,
+) {
+    for row in chunk.summary_table.rows {
+        match accumulator.rows_by_freq.entry(row.freq.clone()) {
+            std::collections::btree_map::Entry::Occupied(mut entry) => {
+                let existing = entry.get_mut();
+                existing.count += row.count;
+                existing.callsigns.extend(row.callsigns);
+                existing.units.extend(row.units);
+                existing.locations.extend(row.locations);
+            }
+            std::collections::btree_map::Entry::Vacant(entry) => {
+                entry.insert(row);
+            }
+        }
+    }
+    for (freq, datetime) in chunk.last_datetime_by_freq {
+        accumulator
+            .last_datetime_by_freq
+            .entry(freq)
+            .and_modify(|existing| {
+                if *existing < datetime {
+                    *existing = datetime;
+                }
+            })
+            .or_insert(datetime);
+    }
+    for (freq, networks) in chunk.related_networks_by_freq {
+        accumulator
+            .networks_by_freq
+            .entry(freq)
+            .or_default()
+            .extend(networks);
+    }
+}
+
+fn finish_summary_table_merge(
+    description: String,
+    mut accumulator: SummaryTableAccumulator,
+) -> SummaryTableReportData {
+    for row in accumulator.rows_by_freq.values_mut() {
+        row.callsigns.sort();
+        row.callsigns.dedup();
+        row.units.sort();
+        row.units.dedup();
+        row.locations.sort();
+        row.locations.dedup();
+        row.coords.clear();
+        row.locality_coords.clear();
+    }
+    SummaryTableReportData {
+        description,
+        summary_table: SummaryTableFreq {
+            rows: accumulator.rows_by_freq.into_values().collect(),
+        },
+        last_datetime_by_freq: accumulator.last_datetime_by_freq,
+        related_networks_by_freq: accumulator
+            .networks_by_freq
+            .into_iter()
+            .map(|(freq, networks)| (freq, networks.into_iter().collect()))
+            .collect(),
+    }
 }
 
 async fn build_summary_table_report(
@@ -3154,12 +3154,12 @@ async fn build_summary_table_report(
     Ok(bytes)
 }
 
-async fn check_summary_table_report_message_limit(
+async fn summary_table_report_message_count(
     login: &uuid::Uuid,
     env: &Env,
     req: &AnalysisStatsReq,
     master_keys: &[String],
-) -> Result<(), AppError> {
+) -> Result<usize, AppError> {
     let message_count =
         build_summary_table_filtered_messages_query(login, req, master_keys)?
             .select_only()
@@ -3170,7 +3170,7 @@ async fn check_summary_table_report_message_limit(
             .await
             .c(h!())?
             .len();
-    ensure_summary_table_report_message_limit(login, message_count)
+    Ok(message_count)
 }
 
 fn ensure_summary_table_report_message_limit(
@@ -4042,6 +4042,217 @@ pub async fn bi_new_callsigns(
         not_seen_7days,
         not_seen_30days,
     })
+}
+
+#[derive(FromQueryResult)]
+struct NewCallsignQueryRow {
+    callsigns: Option<serde_json::Value>,
+    timestamp: Option<NaiveDateTime>,
+}
+
+pub async fn bi_new_callsigns_chunked(
+    user_id: &uuid::Uuid,
+    env: &Env,
+    req: &AnalysisStatsReq,
+    chunking_hours: i64,
+) -> Result<NewCallsignsRes, AppError> {
+    ensure_rer_role_by_id(&env.dbx, user_id).await.c(h!())?;
+    let report_chunks = report_period_chunks(
+        req.since_date_inclusive_ms,
+        req.till_date_noninclusive_ms,
+        chunking_hours,
+        ReportPeriodEnd::NonInclusive,
+    )?;
+    let mut callsigns_in_period = BTreeSet::new();
+    for (index, chunk) in report_chunks.iter().enumerate() {
+        log::info!(
+            "Babak new-callsigns report chunk {}/{}: {}..{}",
+            index + 1,
+            report_chunks.len(),
+            chunk.since_ms,
+            chunk.till_ms
+        );
+        for row in load_new_callsign_rows(
+            user_id,
+            env,
+            req,
+            chunk.since_ms,
+            chunk.till_ms,
+        )
+        .await?
+        {
+            let Some(callsigns) = row.callsigns else {
+                continue;
+            };
+            callsigns_in_period.extend(
+                serde_json::from_value::<Vec<String>>(callsigns).c(h!())?,
+            );
+        }
+    }
+
+    let lookback_since = req
+        .since_date_inclusive_ms
+        .checked_sub(chrono::Duration::days(30).num_milliseconds())
+        .ok_or_else(|| AppError::BL {
+            msg: "Некоректний період пошуку нових позивних".to_string(),
+        })?;
+    let lookback_chunks = report_period_chunks(
+        lookback_since,
+        req.since_date_inclusive_ms,
+        chunking_hours,
+        ReportPeriodEnd::NonInclusive,
+    )?;
+    let mut callsign_last_seen = BTreeMap::new();
+    for (index, chunk) in lookback_chunks.iter().enumerate() {
+        log::info!(
+            "Babak new-callsigns lookback chunk {}/{}: {}..{}",
+            index + 1,
+            lookback_chunks.len(),
+            chunk.since_ms,
+            chunk.till_ms
+        );
+        for row in load_new_callsign_rows(
+            user_id,
+            env,
+            req,
+            chunk.since_ms,
+            chunk.till_ms,
+        )
+        .await?
+        {
+            let (Some(callsigns), Some(timestamp)) =
+                (row.callsigns, row.timestamp)
+            else {
+                continue;
+            };
+            for callsign in
+                serde_json::from_value::<Vec<String>>(callsigns).c(h!())?
+            {
+                callsign_last_seen
+                    .entry(callsign)
+                    .and_modify(|last_seen| {
+                        if *last_seen < timestamp {
+                            *last_seen = timestamp;
+                        }
+                    })
+                    .or_insert(timestamp);
+            }
+        }
+    }
+
+    let report_since = dt_from_millis(req.since_date_inclusive_ms)?;
+    Ok(classify_new_callsigns(
+        callsigns_in_period,
+        &callsign_last_seen,
+        report_since,
+    ))
+}
+
+async fn load_new_callsign_rows(
+    user_id: &uuid::Uuid,
+    env: &Env,
+    req: &AnalysisStatsReq,
+    since_ms: i64,
+    till_ms: i64,
+) -> Result<Vec<NewCallsignQueryRow>, AppError> {
+    let include_peleng_locations =
+        req.include_peleng_locations.unwrap_or(false);
+    let rows = signal_message::Entity::find()
+        .join(
+            JoinType::InnerJoin,
+            signal_message::Relation::SigintInboxItem.def(),
+        )
+        .join(
+            JoinType::InnerJoin,
+            signal_message::Relation::DatasourceGroup.def(),
+        )
+        .join(
+            JoinType::LeftJoin,
+            sigint_inbox_item::Relation::SigintPost.def(),
+        )
+        .select_only()
+        .column_as(sigint_inbox_item::Column::Callsigns, "callsigns")
+        .column_as(sigint_inbox_item::Column::Datetime, "timestamp")
+        .filter(
+            datasource_group::Column::GroupMasterKey.eq_any(
+                get_identity_sigint_groups(&env.dbx, user_id)
+                    .await
+                    .c(h!())?,
+            ),
+        )
+        .filter(signal_message::Column::Deleted.eq(false))
+        .filter(
+            sigint_inbox_item::Column::Datetime.gte(dt_from_millis(since_ms)?),
+        )
+        .filter(
+            sigint_inbox_item::Column::Datetime.lt(dt_from_millis(till_ms)?),
+        );
+    let rows = filter_selected_senders(rows, &req.selected_senders)?;
+    let rows = filter_selected_freqs(rows, &req.selected_freqs)?;
+    let rows = filter_selected_posts(rows, &req.selected_posts)?;
+    let rows = filter_selected_units(
+        rows,
+        &req.selected_units,
+        &req.units_exact_match_only,
+    )?;
+    let rows = filter_selected_locations(
+        rows,
+        &req.selected_locations,
+        include_peleng_locations,
+    )?;
+    let rows = filter_selected_callsigns(rows, &req.selected_callsigns)?;
+    let rows = filter_search(rows, &req.search)?;
+    let rows = filter_selected_tags(
+        rows,
+        &req.selected_tags,
+        &req.denied_tags,
+        &req.tag_presence,
+        &req.or_bookmarked,
+        &req.or_important,
+        &req.or_with_coords,
+        &req.or_without_coords,
+        &req.or_with_extended_form,
+        &req.filter_tags_option,
+        &req.without_model_tags,
+        user_id,
+        req.report_tags_only_this_unit.unwrap_or(false),
+    )?;
+    let rows = filter_selected_aors(rows, &req.selected_aors).c(h!())?;
+    let rows = filter_selected_networks(
+        rows,
+        &req.selected_networks,
+        &req.without_network,
+    )
+    .c(h!())?;
+    let rows = filter_selected_metadata_for_analysis_stats(rows, req)?;
+    Ok(rows
+        .into_model::<NewCallsignQueryRow>()
+        .all(&env.dbx)
+        .await
+        .c(h!())?)
+}
+
+fn classify_new_callsigns(
+    callsigns_in_period: BTreeSet<String>,
+    callsign_last_seen: &BTreeMap<String, NaiveDateTime>,
+    report_since: NaiveDateTime,
+) -> NewCallsignsRes {
+    let not_seen_since = |duration: chrono::Duration| {
+        callsigns_in_period
+            .iter()
+            .filter(|callsign| {
+                callsign_last_seen.get(*callsign).is_none_or(|last_seen| {
+                    *last_seen <= report_since - duration
+                })
+            })
+            .cloned()
+            .collect()
+    };
+    NewCallsignsRes {
+        not_seen_24h: not_seen_since(chrono::Duration::hours(24)),
+        not_seen_7days: not_seen_since(chrono::Duration::days(7)),
+        not_seen_30days: not_seen_since(chrono::Duration::days(30)),
+    }
 }
 
 #[post("/api/rer/message/comments-batch")]

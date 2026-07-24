@@ -45,6 +45,8 @@ type SystemSettingsForm = {
   sigintCommentParsingEnabled: boolean;
   doNotStoreDuplicateEchoimFailures: boolean;
   goiAssociationMessageUidWorkerEnabled: boolean;
+  reportChunkingHours: number;
+  limitBigReports: boolean;
   pelengBoundsEnabled: boolean;
   pelengBoundsTopLeftLat: string;
   pelengBoundsTopLeftLng: string;
@@ -70,6 +72,8 @@ type SystemSettingsPayload = {
   sigintCommentParsingEnabled: boolean;
   doNotStoreDuplicateEchoimFailures: boolean;
   goiAssociationMessageUidWorkerEnabled: boolean;
+  reportChunkingHours: number;
+  limitBigReports: boolean;
   pelengBoundsEnabled: boolean;
   pelengBoundsTopLeftLat: number | null;
   pelengBoundsTopLeftLng: number | null;
@@ -93,6 +97,8 @@ const EMPTY_FORM: SystemSettingsForm = {
   sigintCommentParsingEnabled: true,
   doNotStoreDuplicateEchoimFailures: false,
   goiAssociationMessageUidWorkerEnabled: false,
+  reportChunkingHours: 24,
+  limitBigReports: false,
   pelengBoundsEnabled: false,
   pelengBoundsTopLeftLat: '',
   pelengBoundsTopLeftLng: '',
@@ -103,6 +109,8 @@ const EMPTY_FORM: SystemSettingsForm = {
 
 const SUPPORT_NON_RER_TOOLTIP =
   "Потрібно для кібер роботи. Вмикає підтримку перехоплень добутих з альтернативних джерел. Якщо група має саме такі перехоплення а не традиційний РЕР - змініть категорію групи в її налаштуваннях, тоді перехоплення з такої групи буде прив'язано до мережі по масці підрозділу; налаштування маски підрозділу - в Оперативних Параметрах мережі, в Базі Даних";
+const REPORT_CHUNKING_TOOLTIP =
+  'якщо звіт охоплює більший період - ми розбиваємо цей період на вікна вказаного розміру, обраховуємо їх окремо і агрегуємо в цілий звіт';
 
 function InfoLabel({ label, tooltip }: { label: string; tooltip: string }) {
   return (
@@ -131,6 +139,8 @@ function formFromSettings(item: SystemSettingsItem | undefined): SystemSettingsF
     sigintCommentParsingEnabled: item?.sigintCommentParsingEnabled ?? true,
     doNotStoreDuplicateEchoimFailures: item?.doNotStoreDuplicateEchoimFailures ?? false,
     goiAssociationMessageUidWorkerEnabled: item?.goiAssociationMessageUidWorkerEnabled ?? false,
+    reportChunkingHours: item?.reportChunkingHours ?? 24,
+    limitBigReports: item?.limitBigReports ?? false,
     pelengBoundsEnabled: item?.pelengBoundsEnabled ?? false,
     pelengBoundsTopLeftLat: coordinateToInput(item?.pelengBoundsTopLeftLat ?? null),
     pelengBoundsTopLeftLng: coordinateToInput(item?.pelengBoundsTopLeftLng ?? null),
@@ -156,6 +166,8 @@ function formsEqual(a: SystemSettingsForm, b: SystemSettingsForm): boolean {
     a.sigintCommentParsingEnabled === b.sigintCommentParsingEnabled &&
     a.doNotStoreDuplicateEchoimFailures === b.doNotStoreDuplicateEchoimFailures &&
     a.goiAssociationMessageUidWorkerEnabled === b.goiAssociationMessageUidWorkerEnabled &&
+    a.reportChunkingHours === b.reportChunkingHours &&
+    a.limitBigReports === b.limitBigReports &&
     a.pelengBoundsEnabled === b.pelengBoundsEnabled &&
     a.pelengBoundsTopLeftLat === b.pelengBoundsTopLeftLat &&
     a.pelengBoundsTopLeftLng === b.pelengBoundsTopLeftLng &&
@@ -205,6 +217,7 @@ function normalizeForm(form: SystemSettingsForm): SystemSettingsForm {
     dutyTestSinceMs: Math.max(0, Math.floor(form.dutyTestSinceMs) || 0),
     dutyTestLimit: Math.max(1, Math.floor(form.dutyTestLimit) || 1),
     dutyPollIntervalSec: Math.max(1, Math.floor(form.dutyPollIntervalSec) || 1),
+    reportChunkingHours: Math.max(1, Math.floor(form.reportChunkingHours) || 24),
     pelengBoundsTopLeftLat: normalizeCoordinateInput(form.pelengBoundsTopLeftLat),
     pelengBoundsTopLeftLng: normalizeCoordinateInput(form.pelengBoundsTopLeftLng),
     pelengBoundsBottomRightLat: normalizeCoordinateInput(form.pelengBoundsBottomRightLat),
@@ -229,6 +242,8 @@ function formToPayload(form: SystemSettingsForm): SystemSettingsPayload {
     sigintCommentParsingEnabled: form.sigintCommentParsingEnabled,
     doNotStoreDuplicateEchoimFailures: form.doNotStoreDuplicateEchoimFailures,
     goiAssociationMessageUidWorkerEnabled: form.goiAssociationMessageUidWorkerEnabled,
+    reportChunkingHours: form.reportChunkingHours,
+    limitBigReports: form.limitBigReports,
     pelengBoundsEnabled: form.pelengBoundsEnabled,
     pelengBoundsTopLeftLat: coordinateToPayload(form.pelengBoundsTopLeftLat),
     pelengBoundsTopLeftLng: coordinateToPayload(form.pelengBoundsTopLeftLng),
@@ -407,6 +422,31 @@ function MainSettingsSection({
           />
         }
         label="Заповнювати UID повідомлень висновків GOI"
+      />
+
+      <TextField
+        label={
+          <InfoLabel label="Вікно обробки звітів (в годинах)" tooltip={REPORT_CHUNKING_TOOLTIP} />
+        }
+        type="number"
+        value={form.reportChunkingHours}
+        onChange={(event) => {
+          const next = Number(event.target.value);
+          patchForm({ reportChunkingHours: Number.isFinite(next) ? next : 24 });
+        }}
+        inputProps={{ min: 1, step: 1 }}
+      />
+
+      <FormControlLabel
+        control={
+          <Switch
+            checked={form.limitBigReports}
+            onChange={(_, checked) => {
+              patchForm({ limitBigReports: checked });
+            }}
+          />
+        }
+        label="Обмежити неоптимізовані звіти лімітом в 10тис рядків"
       />
     </>
   );
@@ -699,6 +739,8 @@ export function AdminSystemSettingsNeoPage() {
         sigintCommentParsingEnabled: payload.sigintCommentParsingEnabled,
         doNotStoreDuplicateEchoimFailures: payload.doNotStoreDuplicateEchoimFailures,
         goiAssociationMessageUidWorkerEnabled: payload.goiAssociationMessageUidWorkerEnabled,
+        reportChunkingHours: payload.reportChunkingHours,
+        limitBigReports: payload.limitBigReports,
         pelengBoundsEnabled: payload.pelengBoundsEnabled,
         pelengBoundsTopLeftLat: payload.pelengBoundsTopLeftLat,
         pelengBoundsTopLeftLng: payload.pelengBoundsTopLeftLng,

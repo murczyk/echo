@@ -19,6 +19,12 @@ use sea_orm::{
     DatabaseConnection, EntityTrait, QueryFilter, QueryOrder, TransactionTrait,
 };
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ReportGenerationSettings {
+    pub chunking_hours: i64,
+    pub limit_big_reports: bool,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct PelengBounds {
     min_lat: f64,
@@ -93,6 +99,8 @@ fn map_system_settings_item(
             .do_not_store_duplicate_echoim_failures,
         goi_association_message_uid_worker_enabled: settings
             .goi_association_message_uid_worker_enabled,
+        report_chunking_hours: i64::from(settings.report_chunking_hours),
+        limit_big_reports: settings.limit_big_reports,
     })
 }
 
@@ -115,6 +123,26 @@ where
         .one(dbx)
         .await
         .c(h!())?)
+}
+
+pub async fn get_report_generation_settings<C>(
+    dbx: &C,
+) -> Result<ReportGenerationSettings, AppError>
+where
+    C: ConnectionTrait,
+{
+    Ok(get_active_system_settings(dbx)
+        .await
+        .c(h!())?
+        .map(|settings| ReportGenerationSettings {
+            chunking_hours: i64::from(settings.report_chunking_hours)
+                .max(crate::config::RER_REPORT_CHUNKING_HOURS_MIN),
+            limit_big_reports: settings.limit_big_reports,
+        })
+        .unwrap_or(ReportGenerationSettings {
+            chunking_hours: crate::config::RER_REPORT_CHUNKING_HOURS_DEFAULT,
+            limit_big_reports: false,
+        }))
 }
 
 pub async fn get_echo_im_sync_since<C>(
@@ -415,6 +443,19 @@ fn validate_peleng_bounds(
     Ok(())
 }
 
+fn validate_report_generation_settings(
+    req: &CreateSystemSettingsReq,
+) -> Result<(), AppError> {
+    if req.report_chunking_hours < crate::config::RER_REPORT_CHUNKING_HOURS_MIN
+    {
+        return Err(AppError::BL {
+            msg: "Вікно обробки звітів має бути не менше однієї години"
+                .to_string(),
+        });
+    }
+    Ok(())
+}
+
 fn system_settings_active_model(
     login: &uuid::Uuid,
     req: &CreateSystemSettingsReq,
@@ -464,6 +505,12 @@ fn system_settings_active_model(
         goi_association_message_uid_worker_enabled: Set(
             req.goi_association_message_uid_worker_enabled
         ),
+        report_chunking_hours: Set(req
+            .report_chunking_hours
+            .max(crate::config::RER_REPORT_CHUNKING_HOURS_MIN)
+            .try_into()
+            .unwrap_or(i32::MAX)),
+        limit_big_reports: Set(req.limit_big_reports),
     }
 }
 
@@ -501,6 +548,7 @@ async fn create_system_settings_for_login(
     req: &CreateSystemSettingsReq,
 ) -> Result<system_settings::Model, AppError> {
     validate_peleng_bounds(req)?;
+    validate_report_generation_settings(req)?;
     let txn = dbx.begin().await.c(h!())?;
     let echo_im_sync_cursor = get_echo_im_sync_cursor(&txn).await.c(h!())?;
     deactivate_active_settings(&txn, login).await.c(h!())?;
@@ -593,6 +641,8 @@ pub async fn current_system_settings(
                 .do_not_store_duplicate_echoim_failures,
             goi_association_message_uid_worker_enabled: settings
                 .goi_association_message_uid_worker_enabled,
+            report_chunking_hours: i64::from(settings.report_chunking_hours),
+            limit_big_reports: settings.limit_big_reports,
         },
         None => SystemSettingsCurrentRsp {
             id: None,
@@ -615,6 +665,9 @@ pub async fn current_system_settings(
             sigint_comment_parsing_enabled: false,
             do_not_store_duplicate_echoim_failures: false,
             goi_association_message_uid_worker_enabled: false,
+            report_chunking_hours:
+                crate::config::RER_REPORT_CHUNKING_HOURS_DEFAULT,
+            limit_big_reports: false,
         },
     }))
 }
@@ -866,6 +919,20 @@ mod tests {
         );
     }
 
+    #[test]
+    fn report_generation_settings_require_positive_chunk_hours() {
+        let mut req = settings_req(false);
+        req.report_chunking_hours = 0;
+
+        assert!(matches!(
+            validate_report_generation_settings(&req),
+            Err(AppError::BL { .. })
+        ));
+
+        req.report_chunking_hours = 1;
+        assert!(validate_report_generation_settings(&req).is_ok());
+    }
+
     fn old_ts() -> chrono::NaiveDateTime {
         chrono::DateTime::<chrono::Utc>::from_timestamp_micros(
             Utc::now().timestamp_micros(),
@@ -897,6 +964,9 @@ mod tests {
             sigint_comment_parsing_enabled: true,
             do_not_store_duplicate_echoim_failures: false,
             goi_association_message_uid_worker_enabled: false,
+            report_chunking_hours:
+                crate::config::RER_REPORT_CHUNKING_HOURS_DEFAULT,
+            limit_big_reports: false,
         }
     }
 
@@ -951,6 +1021,10 @@ mod tests {
             sigint_comment_parsing_enabled: Set(true),
             do_not_store_duplicate_echoim_failures: Set(false),
             goi_association_message_uid_worker_enabled: Set(false),
+            report_chunking_hours: Set(
+                crate::config::RER_REPORT_CHUNKING_HOURS_DEFAULT as i32,
+            ),
+            limit_big_reports: Set(false),
         }
         .insert(dbx)
         .await

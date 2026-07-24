@@ -308,6 +308,7 @@ mod m20260721_200002_goi_message_uid_lookup_indexes;
 mod m20260723_134939_goi_knowledge_prune_index;
 mod m20260723_185734_sigint_unit_attachments;
 mod m20260724_080724_add_login_password_auth_enabled;
+mod m20260724_095619_add_report_generation_settings;
 
 pub struct Migrator;
 
@@ -666,6 +667,9 @@ impl MigratorTrait for Migrator {
             ),
             Box::new(
                 m20260724_080724_add_login_password_auth_enabled::Migration,
+            ),
+            Box::new(
+                m20260724_095619_add_report_generation_settings::Migration,
             ),
         ]
     }

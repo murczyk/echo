@@ -57,6 +57,8 @@ async function renderPage() {
 
 describe('AdminSystemSettingsNeoPage success notifications', () => {
   beforeEach(() => {
+    mocks.list.mockReset();
+    mocks.save.mockReset();
     mocks.list.mockResolvedValue([]);
     mocks.save.mockResolvedValue(undefined);
     mocks.notify.mockReset();
@@ -85,6 +87,46 @@ describe('AdminSystemSettingsNeoPage success notifications', () => {
       severity: 'success',
       message: 'Нове системне налаштування збережено.',
     });
+    await act(async () => root.unmount());
+  });
+
+  it('loads report defaults and saves normalized report settings', async () => {
+    const { container, root } = await renderPage();
+    const hoursInput = container.querySelector<HTMLInputElement>('input[type="number"]');
+    const limitLabel = Array.from(container.querySelectorAll('label')).find((label) =>
+      label.textContent?.includes('Обмежити неоптимізовані звіти'),
+    );
+    const limitInput = limitLabel?.querySelector<HTMLInputElement>('input[type="checkbox"]');
+    const saveButton = Array.from(container.querySelectorAll('button')).find((button) =>
+      button.textContent?.includes('зберегти'),
+    );
+
+    expect(hoursInput?.value).toBe('24');
+    expect(limitInput?.checked).toBe(false);
+    expect(saveButton?.disabled).toBe(true);
+
+    await act(async () => {
+      if (hoursInput) {
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(
+          hoursInput,
+          '36.8',
+        );
+        hoursInput.dispatchEvent(new Event('input', { bubbles: true }));
+        hoursInput.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+      limitInput?.click();
+    });
+    expect(saveButton?.disabled).toBe(false);
+
+    await act(async () => saveButton?.click());
+
+    expect(mocks.save).toHaveBeenCalledWith(
+      expect.objectContaining({
+        reportChunkingHours: 36,
+        limitBigReports: true,
+      }),
+    );
+    expect(saveButton?.disabled).toBe(true);
     await act(async () => root.unmount());
   });
 });

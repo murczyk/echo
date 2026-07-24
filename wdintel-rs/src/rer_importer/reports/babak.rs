@@ -2,6 +2,9 @@ use crate::config::*;
 use crate::entities::*;
 use crate::error::AppError;
 use crate::rer_importer::analysis::*;
+use crate::rer_importer::report_chunking::{
+    report_period_chunks, ReportPeriodEnd,
+};
 use crate::rer_importer::types::{
     AnalysisStatsReq, InboxMessagesReq, NewCallsignsRes,
 };
@@ -15,7 +18,7 @@ use sea_orm::{sea_query::PostgresQueryBuilder, *};
 use sea_query::{Alias, CommonTableExpression, Expr, Func, Query, SimpleExpr};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Debug;
 use std::path::Path;
 
@@ -24,9 +27,10 @@ pub struct BabakReportData {
     pub new_callsigns: NewCallsignsRes,
     pub date_from: NaiveDateTime,
     pub date_to: NaiveDateTime,
+    pub without_comments: bool,
 }
 
-pub async fn bl_babak_report(
+pub async fn collect_babak_report_data(
     user_login: &uuid::Uuid,
     env: &Env,
     req: &super::types::ReportPreviewReq,
@@ -48,9 +52,41 @@ pub async fn bl_babak_report(
         req.report_tags_only_this_unit
     };
 
-    let units = get_inbox_messages_report_unit(user_login, env, &inbox_req)
+    let report_settings =
+        crate::system_settings::get_report_generation_settings(&env.dbx)
+            .await
+            .c(h!())?;
+    let chunks = report_period_chunks(
+        since_date_inclusive_ms,
+        till_date_inclusive_ms,
+        report_settings.chunking_hours,
+        ReportPeriodEnd::Inclusive,
+    )?;
+    let mut units_by_name = BTreeMap::new();
+    for (index, chunk) in chunks.iter().enumerate() {
+        log::info!(
+            "Babak report chunk {}/{}: {}..{} ({:?})",
+            index + 1,
+            chunks.len(),
+            chunk.since_ms,
+            chunk.till_ms,
+            chunk.end
+        );
+        let mut chunk_req = inbox_req.clone();
+        chunk_req.since_date_inclusive_ms = Some(chunk.since_ms);
+        chunk_req.till_date_inclusive_ms = Some(chunk.till_ms);
+        let chunk_units = get_inbox_messages_report_unit_chunk(
+            user_login, env, &chunk_req, chunk.end,
+        )
         .await
         .c(h!())?;
+        merge_babak_report_unit_chunk(&mut units_by_name, chunk_units)
+            .c(h!())?;
+    }
+    let mut units = units_by_name.into_values().collect::<Vec<_>>();
+    if inbox_req.report_tags_only_this_unit == Some(true) {
+        dedup_babak_comments_across_units(&mut units);
+    }
 
     let new_callsing_req = AnalysisStatsReq {
         since_date_inclusive_ms: inbox_req.since_date_inclusive_ms.unwrap_or(0),
@@ -88,17 +124,30 @@ pub async fn bl_babak_report(
         without_model_tags: inbox_req.without_model_tags,
         report_tags_only_this_unit: inbox_req.report_tags_only_this_unit,
     };
-    let new_callsigns_res =
-        bi_new_callsigns(user_login, env, &new_callsing_req)
-            .await
-            .context(h!())?;
+    let new_callsigns_res = bi_new_callsigns_chunked(
+        user_login,
+        env,
+        &new_callsing_req,
+        report_settings.chunking_hours,
+    )
+    .await
+    .context(h!())?;
 
     Ok(BabakReportData {
         units,
         new_callsigns: new_callsigns_res,
         date_from: date_from_dt,
         date_to: date_to_dt,
+        without_comments,
     })
+}
+
+pub async fn bl_babak_report(
+    user_login: &uuid::Uuid,
+    env: &Env,
+    req: &super::types::ReportPreviewReq,
+) -> Result<BabakReportData, AppError> {
+    collect_babak_report_data(user_login, env, req).await
 }
 
 pub async fn report_docx_kind_babak(
@@ -107,14 +156,22 @@ pub async fn report_docx_kind_babak(
     req: &super::types::ReportPreviewReq,
     outpath: &Path,
 ) -> Result<(), AppError> {
+    let data = collect_babak_report_data(user_login, env, req).await?;
+    build_babak_report(data, outpath)
+}
+
+pub fn build_babak_report(
+    data: BabakReportData,
+    outpath: &Path,
+) -> Result<(), AppError> {
     let BabakReportData {
         units,
         new_callsigns: new_callsigns_res,
         date_from,
         date_to,
-    } = bl_babak_report(user_login, env, req).await?;
+        without_comments,
+    } = data;
     let tz = crate::config::get_tz();
-    let without_comments = req.without_comments.unwrap_or(false);
     let date_from_dt_tz = Utc.from_utc_datetime(&date_from).with_timezone(&tz);
     let date_to_dt_tz = Utc.from_utc_datetime(&date_to).with_timezone(&tz);
 
@@ -690,10 +747,100 @@ fn dedup_babak_comment_values(
     serde_json::to_value(deduped).ok().or(Some(original))
 }
 
+#[cfg(test)]
+fn merge_babak_report_units(
+    chunks: Vec<Vec<StatsPerUnitReport>>,
+) -> Result<Vec<StatsPerUnitReport>, AppError> {
+    let mut units = BTreeMap::<String, StatsPerUnitReport>::new();
+    for chunk in chunks {
+        merge_babak_report_unit_chunk(&mut units, chunk)?;
+    }
+    Ok(units.into_values().collect())
+}
+
+fn merge_babak_report_unit_chunk(
+    units: &mut BTreeMap<String, StatsPerUnitReport>,
+    chunk: Vec<StatsPerUnitReport>,
+) -> Result<(), AppError> {
+    for mut incoming in chunk {
+        let unit_name =
+            incoming.unit.clone().unwrap_or_else(|| "НВ".to_string());
+        incoming.unit = Some(unit_name.clone());
+        if let Some(unit) = units.get_mut(&unit_name) {
+            unit.count += incoming.count;
+            unit.bpla += incoming.bpla;
+            unit.reb += incoming.reb;
+            unit.arta += incoming.arta;
+            unit.software += incoming.software;
+            unit.losses += incoming.losses;
+            unit.comments = merge_babak_comment_values(
+                unit.comments.take(),
+                incoming.comments,
+            )?;
+            unit.others_comments = merge_babak_comment_values(
+                unit.others_comments.take(),
+                incoming.others_comments,
+            )?;
+            unit.losses_comments = merge_babak_comment_values(
+                unit.losses_comments.take(),
+                incoming.losses_comments,
+            )?;
+        } else {
+            incoming.comments =
+                merge_babak_comment_values(None, incoming.comments)?;
+            incoming.others_comments =
+                merge_babak_comment_values(None, incoming.others_comments)?;
+            incoming.losses_comments =
+                merge_babak_comment_values(None, incoming.losses_comments)?;
+            units.insert(unit_name, incoming);
+        }
+    }
+    Ok(())
+}
+
+fn merge_babak_comment_values(
+    left: Option<Value>,
+    right: Option<Value>,
+) -> Result<Option<Value>, AppError> {
+    let mut comments = BTreeSet::new();
+    for value in [left, right].into_iter().flatten() {
+        let values: Vec<BabakComment> =
+            serde_json::from_value(value).c(h!())?;
+        comments.extend(values);
+    }
+    if comments.is_empty() {
+        Ok(None)
+    } else {
+        Ok(Some(
+            serde_json::to_value(comments.into_iter().collect::<Vec<_>>())
+                .c(h!())?,
+        ))
+    }
+}
+
 pub async fn get_inbox_messages_report_unit(
     login: &uuid::Uuid,
     env: &Env,
     req: &InboxMessagesReq,
+) -> Result<Vec<StatsPerUnitReport>, AppError> {
+    let mut units = get_inbox_messages_report_unit_chunk(
+        login,
+        env,
+        req,
+        ReportPeriodEnd::Inclusive,
+    )
+    .await?;
+    if req.report_tags_only_this_unit == Some(true) {
+        dedup_babak_comments_across_units(&mut units);
+    }
+    Ok(units)
+}
+
+async fn get_inbox_messages_report_unit_chunk(
+    login: &uuid::Uuid,
+    env: &Env,
+    req: &InboxMessagesReq,
+    period_end: ReportPeriodEnd,
 ) -> Result<Vec<StatsPerUnitReport>, AppError> {
     let read_db = env.replica();
     let include_peleng_locations =
@@ -886,10 +1033,15 @@ pub async fn get_inbox_messages_report_unit(
         );
     }
     if let Some(till_date_inclusive_ms) = req.till_date_inclusive_ms {
-        q = q.filter(
-            sigint_inbox_item::Column::Datetime
-                .lte(dt_from_millis(till_date_inclusive_ms)?),
-        );
+        let till = dt_from_millis(till_date_inclusive_ms)?;
+        q = match period_end {
+            ReportPeriodEnd::Inclusive => {
+                q.filter(sigint_inbox_item::Column::Datetime.lte(till))
+            }
+            ReportPeriodEnd::NonInclusive => {
+                q.filter(sigint_inbox_item::Column::Datetime.lt(till))
+            }
+        };
     }
     let q = filter_selected_locations(
         q,
@@ -1075,17 +1227,13 @@ pub async fn get_inbox_messages_report_unit(
 
     let raw_query = combined_query.to_string(PostgresQueryBuilder);
 
-    let mut units = read_db
+    let units = read_db
         .query_all(Statement::from_string(DatabaseBackend::Postgres, raw_query))
         .await
         .c(h!())?
         .iter()
         .map(|row| StatsPerUnitReport::from_query_result(row, "").unwrap())
         .collect::<Vec<StatsPerUnitReport>>();
-
-    if req.report_tags_only_this_unit == Some(true) {
-        dedup_babak_comments_across_units(&mut units);
-    }
 
     Ok(units)
 }
@@ -1097,15 +1245,82 @@ mod tests {
     use crate::rer_importer::reports::types::ReportPreviewReq;
     use crate::rer_importer::types::InboxMessagesReq;
     use chrono::Utc;
+    use sea_orm::prelude::Expr;
     use sea_orm::ActiveValue::Set;
     use serde_json::json;
     use serial_test::serial;
+
+    fn stats(unit: &str, count: i64, comments: Value) -> StatsPerUnitReport {
+        StatsPerUnitReport {
+            unit: Some(unit.to_string()),
+            count,
+            bpla: count,
+            reb: count,
+            arta: count,
+            software: count,
+            losses: count,
+            comments: Some(comments),
+            others_comments: None,
+            losses_comments: None,
+        }
+    }
+
+    #[test]
+    fn merges_babak_chunks_by_unit_and_orders_unique_comments() {
+        let early = json!({
+            "datetime": "2026-01-01T10:00:00",
+            "comment": "early",
+            "text": "a"
+        });
+        let late = json!({
+            "datetime": "2026-01-01T11:00:00",
+            "comment": "late",
+            "text": "b"
+        });
+        let units = merge_babak_report_units(vec![
+            vec![stats("A", 2, json!([late.clone()]))],
+            vec![stats("A", 3, json!([early, late]))],
+        ])
+        .unwrap();
+
+        assert_eq!(units.len(), 1);
+        assert_eq!(units[0].count, 5);
+        assert_eq!(units[0].bpla, 5);
+        let comments: Vec<BabakComment> =
+            serde_json::from_value(units[0].comments.clone().unwrap()).unwrap();
+        assert_eq!(comments.len(), 2);
+        assert_eq!(comments[0].comment.as_deref(), Some("early"));
+        assert_eq!(comments[1].comment.as_deref(), Some("late"));
+    }
+
+    #[test]
+    fn deduplicates_babak_comments_across_units_after_merge() {
+        let comment = json!({
+            "datetime": "2026-01-01T10:00:00",
+            "comment": "same",
+            "text": "body"
+        });
+        let mut units = merge_babak_report_units(vec![
+            vec![stats("A", 1, json!([comment.clone()]))],
+            vec![stats("B", 1, json!([comment]))],
+        ])
+        .unwrap();
+
+        dedup_babak_comments_across_units(&mut units);
+
+        let first: Vec<BabakComment> =
+            serde_json::from_value(units[0].comments.clone().unwrap()).unwrap();
+        let second: Vec<BabakComment> =
+            serde_json::from_value(units[1].comments.clone().unwrap()).unwrap();
+        assert_eq!(first.len(), 1);
+        assert!(second.is_empty());
+    }
 
     #[serial]
     #[tokio::test]
     async fn test_bl_babak_report_returns_unit_stats() {
         let env = cleanup().await.unwrap();
-        let now = Utc::now().naive_utc();
+        let now = Utc::now().naive_utc() - chrono::Duration::hours(20);
 
         let login = find_test_login(&env.dbx).await.unwrap();
         let datasource_group =
@@ -1147,17 +1362,60 @@ mod tests {
         )
         .await
         .unwrap();
+        let second_datetime = now + chrono::Duration::hours(20);
+        let second_message = mk_signal_message(
+            &env.dbx,
+            signal_message::ActiveModel {
+                body: Set(Some("second test message".to_string())),
+                created_at: Set(second_datetime),
+                timestamp: Set(Some(second_datetime)),
+                sender: Set(Some("sender".to_string())),
+                message_uid: Set(Some("uid-2".to_string())),
+                datasource_group_id: Set(Some(datasource_group.id)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let second_inbox_item = mk_sigint_inbox_item(
+            &env.dbx,
+            sigint_inbox_item::ActiveModel {
+                id: Set(second_message.id),
+                freq: Set(Some("123.45".to_string())),
+                callsigns: Set(Some(json!(["Alpha"]))),
+                lat: Set(Some(50.0)),
+                lng: Set(Some(30.0)),
+                tags: Set(Some(json!([bpla_tag.id]))),
+                date: Set(Some(second_datetime.date().to_string())),
+                time: Set(Some(
+                    second_datetime.time().format("%H:%M:%S").to_string(),
+                )),
+                unit_v2: Set(Some("TestUnit".to_string())),
+                checked: Set(Some(true)),
+                reviewed: Set(Some(true)),
+                parsed_unit_v2: Set(false),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
 
         let datetime = inbox_item
             .datetime
             .expect("expected auto-set datetime on sigint_inbox_item");
-        let ts = datetime.and_utc().timestamp_millis();
+        let second_datetime = second_inbox_item
+            .datetime
+            .expect("expected auto-set datetime on second sigint_inbox_item");
 
         let req = ReportPreviewReq {
             kind: "babak".to_string(),
             req: InboxMessagesReq {
-                since_date_inclusive_ms: Some(ts - 1_000),
-                till_date_inclusive_ms: Some(ts + 1_000),
+                since_date_inclusive_ms: Some(
+                    datetime.and_utc().timestamp_millis() - 1_000,
+                ),
+                till_date_inclusive_ms: Some(
+                    second_datetime.and_utc().timestamp_millis() + 1_000,
+                ),
                 nolimit: Some(true),
                 ..Default::default()
             },
@@ -1173,17 +1431,54 @@ mod tests {
             sposob_unit_name: None,
         };
 
+        set_report_chunking_hours(&env.dbx, 24).await;
+        let single = bl_babak_report(&login.id, &env, &req).await.unwrap();
+        set_report_chunking_hours(&env.dbx, 12).await;
         let res = bl_babak_report(&login.id, &env, &req).await.unwrap();
 
         assert_eq!(res.units.len(), 1);
         let unit = &res.units[0];
         assert_eq!(unit.unit.as_deref(), Some("TestUnit"));
-        assert_eq!(unit.count, 1);
+        assert_eq!(unit.count, 2);
+        let single_unit = &single.units[0];
+        assert_eq!(unit.unit, single_unit.unit);
+        assert_eq!(unit.count, single_unit.count);
+        assert_eq!(unit.bpla, single_unit.bpla);
+        assert_eq!(unit.reb, single_unit.reb);
+        assert_eq!(unit.arta, single_unit.arta);
+        assert_eq!(unit.software, single_unit.software);
+        assert_eq!(unit.losses, single_unit.losses);
+        assert_eq!(unit.comments, single_unit.comments);
+        assert_eq!(unit.others_comments, single_unit.others_comments);
+        assert_eq!(unit.losses_comments, single_unit.losses_comments);
+        assert_eq!(res.new_callsigns, single.new_callsigns);
         assert!(
             res.new_callsigns
                 .not_seen_7days
                 .contains(&"Alpha".to_string()),
             "expected Alpha to be reported as new callsign"
         );
+    }
+
+    async fn set_report_chunking_hours(db: &DatabaseConnection, hours: i32) {
+        let result = system_settings::Entity::update_many()
+            .col_expr(
+                system_settings::Column::ReportChunkingHours,
+                Expr::value(hours),
+            )
+            .filter(system_settings::Column::Deleted.eq(false))
+            .exec(db)
+            .await
+            .unwrap();
+        if result.rows_affected == 0 {
+            system_settings::ActiveModel {
+                report_chunking_hours: Set(hours),
+                limit_big_reports: Set(false),
+                ..Default::default()
+            }
+            .insert(db)
+            .await
+            .unwrap();
+        }
     }
 }

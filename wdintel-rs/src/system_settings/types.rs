@@ -25,6 +25,8 @@ pub struct SystemSettingsCurrentRsp {
     pub sigint_comment_parsing_enabled: bool,
     pub do_not_store_duplicate_echoim_failures: bool,
     pub goi_association_message_uid_worker_enabled: bool,
+    pub report_chunking_hours: i64,
+    pub limit_big_reports: bool,
 }
 
 #[derive(
@@ -56,6 +58,8 @@ pub struct SystemSettingsItem {
     pub sigint_comment_parsing_enabled: bool,
     pub do_not_store_duplicate_echoim_failures: bool,
     pub goi_association_message_uid_worker_enabled: bool,
+    pub report_chunking_hours: i64,
+    pub limit_big_reports: bool,
 }
 
 #[derive(
@@ -98,10 +102,18 @@ pub struct CreateSystemSettingsReq {
     pub do_not_store_duplicate_echoim_failures: bool,
     #[serde(default)]
     pub goi_association_message_uid_worker_enabled: bool,
+    #[serde(default = "default_report_chunking_hours")]
+    pub report_chunking_hours: i64,
+    #[serde(default)]
+    pub limit_big_reports: bool,
 }
 
 fn default_sigint_comment_parsing_enabled() -> bool {
     false
+}
+
+fn default_report_chunking_hours() -> i64 {
+    crate::config::RER_REPORT_CHUNKING_HOURS_DEFAULT
 }
 
 #[derive(
@@ -131,5 +143,7 @@ mod tests {
 
         assert!(!req.sigint_comment_parsing_enabled);
         assert!(!req.goi_association_message_uid_worker_enabled);
+        assert_eq!(req.report_chunking_hours, 24);
+        assert!(!req.limit_big_reports);
     }
 }

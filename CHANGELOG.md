@@ -11,6 +11,7 @@
 ## NEXT
 
 - [#2308](https://github.com/echoua/echo/issues/2308) ✅👷 Аналіз, Звіти: лічильник вхідних, лічильники й усі списки фільтрів аналізу, довгі таймлайни, історія звітів та великі вибірки звітів використовують ClickHouse з автоматичним fallback на PostgreSQL; перед деплоєм на інстанси з ClickHouse перебудувати та скопіювати артефакти з `deploy/clickhouse`, виконати `bin/install-artifacts.sh build/artifacts` на відповідному analytics LXC, перезапустити `postgresql@18-main.service`, а після деплою Echo виконати `/opt/echo-peerdb/bin/source-sync-exclusions.sh --yes`, щоб додати `report_history` до дзеркала.
+- [#2958](https://github.com/echoua/echo/issues/2958) 🛡️ Звіти: великі звіти «Mouse», «Babak» та «Підсумкова таблиця» генеруються частинами; до системних налаштувань додано розмір частини та обмеження великих звітів.
 
 ## 2026-07-23
 

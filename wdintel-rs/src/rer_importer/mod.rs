@@ -48,6 +48,7 @@ pub mod meow_format;
 pub mod multimessage;
 pub mod points;
 pub mod post;
+pub mod report_chunking;
 pub mod reports;
 pub mod search;
 pub mod signals;
