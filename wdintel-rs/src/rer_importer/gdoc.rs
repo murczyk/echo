@@ -7,6 +7,7 @@ use crate::utils::orm::ArrayColumnOps;
 use actix_identity::Identity;
 use actix_web::post;
 use actix_web::web::{Data, Json};
+use sea_orm::sea_query::{Expr, ExprTrait};
 use sea_orm::*;
 
 #[post("/api/rer/callsign-info")]
@@ -213,8 +214,10 @@ pub async fn load_callsigns(
                 .filter(sigint_network_callsign::Column::Deleted.eq(false))
                 .filter(sigint_network::Column::Deleted.eq(false))
                 .filter(
-                    sigint_network_callsign::Column::SigintCallsign
-                        .eq_any(callsigns_to_query),
+                    Expr::cust(
+                        "lower(sigint_network_callsign.sigint_callsign)",
+                    )
+                    .is_in(callsigns_to_query),
                 )
                 .all(dbx)
                 .await
@@ -275,7 +278,7 @@ pub async fn load_callsigns(
             }
         }
         for (network_callsign, _) in &network_callsigns {
-            if network_callsign.sigint_callsign == c.to_lowercase() {
+            if callsign_text_matches(&network_callsign.sigint_callsign, &c) {
                 let catalog = network_callsign
                     .sigint_callsign_id
                     .and_then(|id| catalog_by_id.get(&id));
@@ -335,6 +338,10 @@ fn requested_callsigns(callsigns_data: &[CallsignNetworks]) -> Vec<String> {
         .collect_vec()
 }
 
+fn callsign_text_matches(left: &str, right: &str) -> bool {
+    left.to_lowercase() == right.to_lowercase()
+}
+
 // sql accepts max of ~65500 entries in where statement
 fn cap_string_vector(source: Vec<String>) -> (Vec<String>, Vec<String>) {
     cap_vector(source)
@@ -354,7 +361,8 @@ fn cap_vector<T: Clone>(source: Vec<T>) -> (Vec<T>, Vec<T>) {
 #[cfg(test)]
 mod tests {
     use super::{
-        cap_string_vector, requested_callsigns, resolve_network_hint_formation,
+        callsign_text_matches, cap_string_vector, requested_callsigns,
+        resolve_network_hint_formation,
     };
     use crate::rer_importer::types::CallsignNetworks;
 
@@ -412,5 +420,12 @@ mod tests {
         let (first, second) = cap_string_vector(source);
         assert_eq!(first.len(), 65_000);
         assert_eq!(second.len(), 1);
+    }
+
+    #[test]
+    fn matches_callsign_text_case_insensitively() {
+        assert!(callsign_text_matches("ВЕТЕР", "ветер"));
+        assert!(callsign_text_matches("MiXeD", "mixed"));
+        assert!(!callsign_text_matches("ВЕТЕР", "БУРЯ"));
     }
 }
