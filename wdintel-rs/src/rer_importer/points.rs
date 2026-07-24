@@ -62,6 +62,7 @@ pub async fn highlight_points(
                                 text: text.clone(),
                                 begin: offset + first.start,
                                 end: offset + last.end,
+                                palitra_ids: vec![],
                             };
                             points.push(point);
                         }

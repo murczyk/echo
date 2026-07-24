@@ -3571,6 +3571,7 @@ type alias CnPoint =
     , end : Int
     , etalon : String
     , text : String
+    , palitraIds : List (Int)
     }
 
 
@@ -3581,6 +3582,7 @@ cnPointEncoder struct =
         , ( "end", (Json.Encode.int) struct.end )
         , ( "etalon", (Json.Encode.string) struct.etalon )
         , ( "text", (Json.Encode.string) struct.text )
+        , ( "palitra_ids", (Json.Encode.list (Json.Encode.int)) struct.palitraIds )
         ]
 
 
@@ -11377,6 +11379,7 @@ cnPointDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "end" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "etalon" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "text" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "palitra_ids" (Json.Decode.list (Json.Decode.int))))
 
 
 contentNodeDecoder : Json.Decode.Decoder ContentNode

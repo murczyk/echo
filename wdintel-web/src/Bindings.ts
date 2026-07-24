@@ -1368,6 +1368,7 @@ export type CnPoint = {
   end: number;
   etalon: string;
   text: string;
+  palitraIds: Array<number>;
 };
 
 export type CnHighlight = {

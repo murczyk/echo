@@ -179,6 +179,7 @@ mod tests {
             end,
             etalon: etalon.to_string(),
             text: etalon.to_string(),
+            palitra_ids: vec![],
         }
     }
 
