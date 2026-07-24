@@ -156,6 +156,33 @@ describe('useDeviceFilesSync', () => {
     expect(onCommitted).toHaveBeenCalledTimes(2);
   });
 
+  it('submits the selected Windows syntax with the exact path', async () => {
+    const absolutePath =
+      'D:\\Counter-Strike Source v34 HD\\cstrike\\sound\\weapons\\csgo\\c4\\c4_disarm.wav';
+    apiMock.syncDeviceFiles.mockResolvedValue({ results: [] });
+    await renderHarness();
+    act(() => latest?.openSync());
+    const rowId = latest!.rows[0].localId;
+    act(() => {
+      latest?.setPathSyntax('windows');
+      latest?.changeRowField(rowId, 'absolutePath', absolutePath);
+    });
+
+    await act(async () => {
+      await latest?.submit();
+    });
+
+    expect(apiMock.syncDeviceFiles).toHaveBeenCalledWith({
+      deviceId: DEVICE_ID,
+      pathSyntax: 'windows',
+      files: [
+        expect.objectContaining({
+          absolutePath,
+        }),
+      ],
+    });
+  });
+
   it('blocks duplicate submit and row mutation while a request is in flight', async () => {
     const pending = deferred<SyncDeviceFilesRsp>();
     apiMock.syncDeviceFiles.mockReturnValue(pending.promise);

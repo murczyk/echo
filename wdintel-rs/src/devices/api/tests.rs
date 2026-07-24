@@ -281,6 +281,34 @@ async fn target_api_smoke_covers_all_routes_and_boundary_precedence() {
     assert_eq!(search["entries"][0]["name"], "good.txt");
     assert!(search["entries"][0].get("path_components").is_some());
 
+    let response = post_json!(
+        "/api/device/files/sync",
+        json!({
+            "device_id": device_id,
+            "path_syntax": "windows",
+            "files": [
+                {
+                    "absolute_path": r"D:\Counter-Strike Source v34 HD\cstrike\sound\weapons\csgo\c4\c4_disarm.wav"
+                },
+                {
+                    "absolute_path": r"D:\Counter-Strike Source v34 HD\cstrike\sound\weapons\csgo\c4\c4_plant.wav"
+                }
+            ]
+        })
+    );
+    assert_eq!(response.status(), StatusCode::OK);
+    let sync: Value = test::read_body_json(response).await;
+    assert_eq!(sync["results"][0]["status"], "accepted");
+    assert_eq!(sync["results"][1]["status"], "accepted");
+    assert_eq!(
+        sync["results"][0]["file"]["absolute_path"],
+        r"D:\Counter-Strike Source v34 HD\cstrike\sound\weapons\csgo\c4\c4_disarm.wav"
+    );
+    assert_eq!(
+        sync["results"][1]["file"]["absolute_path"],
+        r"D:\Counter-Strike Source v34 HD\cstrike\sound\weapons\csgo\c4\c4_plant.wav"
+    );
+
     let mut login = login.into_active_model();
     login.roles = Set(json!([ROLE_DEVICE_SOURCE]));
     login.update(&env.dbx).await.unwrap();

@@ -389,6 +389,40 @@ describe('device filesystem API service routes', () => {
       },
     ]);
   });
+  it('preserves Windows paths in sync request values', async () => {
+    fetchMock().mockResolvedValueOnce(jsonResponse({ results: [] }));
+    const absolutePath =
+      'D:\\Counter-Strike Source v34 HD\\cstrike\\sound\\weapons\\csgo\\c4\\c4_plant.wav';
+
+    await syncDeviceFiles({
+      deviceId: DEVICE_ID,
+      pathSyntax: 'windows',
+      files: [
+        {
+          fileId: null,
+          absolutePath,
+          mimeType: null,
+          extension: null,
+          fileMetadataCreatedAt: null,
+          fileMetadataModifiedAt: null,
+        },
+      ],
+    });
+
+    expect(requestBody()).toEqual({
+      device_id: DEVICE_ID,
+      path_syntax: 'windows',
+      files: [
+        {
+          absolute_path: absolutePath,
+          mime_type: null,
+          extension: null,
+          file_metadata_created_at: null,
+          file_metadata_modified_at: null,
+        },
+      ],
+    });
+  });
 });
 
 describe('DeviceUpdatePatchInput serialization', () => {
