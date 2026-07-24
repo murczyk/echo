@@ -59,6 +59,7 @@ pub mod system_settings;
 pub mod tags;
 pub mod terminal;
 pub mod tests;
+pub mod transcriber;
 pub mod ts;
 pub mod types;
 pub mod unit;
@@ -652,6 +653,28 @@ pub struct OneoffMigrateLargeMediaToPlaintextPs {
 }
 
 #[derive(clap::Args, Debug, Clone)]
+pub struct OneoffBackfillAudioTranscriberPs {
+    #[arg(long)]
+    pub since_ts: String,
+    #[arg(long, action)]
+    pub dry_run: bool,
+    #[arg(long, action)]
+    pub yes: bool,
+}
+
+#[derive(clap::Args, Debug, Clone)]
+pub struct OneoffReprocessAudioTranscriberPs {
+    #[arg(long)]
+    pub source_id: Uuid,
+    #[arg(long)]
+    pub requester: String,
+    #[arg(long)]
+    pub reason: String,
+    #[arg(long, action)]
+    pub yes: bool,
+}
+
+#[derive(clap::Args, Debug, Clone)]
 pub struct BackupPs {
     /// Skip the configured sleep_before_backup_mins delay.
     #[arg(long, action)]
@@ -775,6 +798,9 @@ enum Cmd {
     OneoffRefreshAiModels,
     OneoffMigrateModulationToEncryption(OneoffMigrateModulationToEncryptionPs),
     OneoffMigrateLargeMediaToPlaintext(OneoffMigrateLargeMediaToPlaintextPs),
+    OneoffBackfillAudioTranscriber(OneoffBackfillAudioTranscriberPs),
+    OneoffRequeueAudioTranscriber(OneoffReprocessAudioTranscriberPs),
+    OneoffRetranscribeAudioTranscriber(OneoffReprocessAudioTranscriberPs),
     OneoffMergeDatasourceGroup(OneoffMergeDatasourceGroupPs),
     OneoffCompactDatasourceGroup,
     OneoffEnsureApiIntegrationIggyTopics,
@@ -1346,6 +1372,15 @@ async fn async_main(
             )
             .await
         },
+        Cmd::OneoffBackfillAudioTranscriber(ps) => {
+            transcriber::backfill::run(mode, ps).await
+        }
+        Cmd::OneoffRequeueAudioTranscriber(ps) => {
+            transcriber::backfill::requeue_terminal(mode, ps).await
+        }
+        Cmd::OneoffRetranscribeAudioTranscriber(ps) => {
+            transcriber::backfill::retranscribe_completed(mode, ps).await
+        }
         Cmd::OneoffMergeDatasourceGroup(ps) => {
             operator::oneoff::oneoff_merge_datasource_group(mode, ps).await
         }

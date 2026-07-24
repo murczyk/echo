@@ -17,6 +17,7 @@
 
 - [#2742](https://github.com/echoua/echo/issues/2742) ✅ Оперативний, Аналіз: додано підтримку пошуку локацій при створенні повідомлення.
 - [#2865](https://github.com/echoua/echo/issues/2865) 🐞 Аналіз: виправлено фільтр мереж.
+- [#2731](https://github.com/echoua/echo/issues/2731) 👷 Транскрипція: на серверах з аналітикою перед міграцією запустити `just setup-analytics-reconcile-tables`, потім `sudo /usr/bin/wdintel-rs --mode=live migrate` і `just transcriber-smoke --server=<server>`; для staging перед `just deploy-transcriber-stg --branch=<branch>` синхронізувати виключення аналітики вручну.
 - [#2781](https://github.com/echoua/echo/issues/2781) 🐞 Аналіз: покращення адаптації до екранів різних розмірів.
 - [#1973](https://github.com/echoua/echo/issues/1973) 👷🐞 Позивні: після деплою запустити `sudo wdintel-rs --mode=live oneoff-fix-network-callsigns` для прив’язки пропущених позивних мереж до каталогу.
 - [#2768](https://github.com/echoua/echo/issues/2768) 👷🚨 Авторизація: ідентифікатори логінів та всі внутрішні зв’язки перенесено на UUIDv7; після оновлення всім користувачам потрібно увійти повторно.

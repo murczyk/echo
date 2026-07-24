@@ -2889,6 +2889,7 @@ mod tests {
                 crate::config::RER_REPORT_CHUNKING_HOURS_DEFAULT as i32,
             ),
             limit_big_reports: Set(false),
+            enable_audio_transcription: Set(false),
         }
         .insert(dbx)
         .await

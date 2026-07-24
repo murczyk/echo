@@ -70,6 +70,14 @@ pub async fn new_env(mode: Mode) -> Result<Arc<Env>, AppError> {
     };
     let mil_geo = MilGeo::new(&mk_conn_string(&config)[..]);
     let dbx = crate::new_pg_pool_from_config(&config).await.c(h!())?;
+    let echo_gpu_client = Arc::new(
+        echo_gpu_client::EchoGpuClient::new(
+            dbx.clone(),
+            echo_gpu_client::EchoGpuClientOptions::default(),
+        )
+        .await
+        .c(h!())?,
+    );
     let mut replicas = vec![];
     if let Some(replica_configs) = config.replicas.clone() {
         for replica in replica_configs {
@@ -163,6 +171,7 @@ pub async fn new_env(mode: Mode) -> Result<Arc<Env>, AppError> {
         s3_config,
         mil_geo: mil_geo.clone(),
         dbx: dbx.clone(),
+        echo_gpu_client,
         rq,
         rq_goi_associations,
         config: config.clone(),
@@ -649,6 +658,13 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::system_settings::list_system_settings)
             .service(crate::system_settings::create_system_settings)
             .service(crate::system_settings::activate_system_settings)
+            .service(crate::transcriber::list_instances)
+            .service(crate::transcriber::create_instance)
+            .service(crate::transcriber::update_instance)
+            .service(crate::transcriber::delete_instance)
+            .service(crate::transcriber::check_instance)
+            .service(crate::transcriber::queue_status)
+            .service(crate::transcriber::message_transcriptions)
             .service(crate::messenger::missing_message::echo_missing_message_list)
             .service(crate::messenger::missing_message::echo_missing_message_counts)
             .service(crate::messenger::missing_message::echo_missing_message_resolve)
@@ -1085,6 +1101,7 @@ pub async fn main_bgworker(
     let group_stats_dbx = env.dbx.clone();
     let report_history_env = env.clone();
     let mut background_tasks: JoinSet<()> = JoinSet::new();
+    let mut transcriber_tasks: JoinSet<()> = JoinSet::new();
     crate::report_history::reset_in_progress_nofail(
         report_history_env.as_ref(),
     )
@@ -1095,13 +1112,33 @@ pub async fn main_bgworker(
     );
     spawn_background_workers(
         mode,
-        env,
+        env.clone(),
         cancel_token.clone(),
         shutdown_handle.clone(),
         false,
         true,
         &mut background_tasks,
     );
+    let transcriber_worker_id = Uuid::now_v7();
+    info!(
+        "starting audio transcription process worker_id={transcriber_worker_id} tasks={ECHO_AUDIO_TRANSCRIPTION_CONCURRENCY}"
+    );
+    for index in 0..ECHO_AUDIO_TRANSCRIPTION_CONCURRENCY {
+        let worker_env = env.clone();
+        let worker_token = cancel_token.clone();
+        spawn_named_worker(
+            format!("audio_transcription_worker_{index}"),
+            &mut transcriber_tasks,
+            async move {
+                crate::transcriber::worker::run_nofail(
+                    worker_env,
+                    transcriber_worker_id,
+                    worker_token,
+                )
+                .await;
+            },
+        );
+    }
     let group_stats_startup_rx = spawn_group_stats_worker_after_startup_recalc(
         &mut background_tasks,
         group_stats_dbx,
@@ -1109,9 +1146,7 @@ pub async fn main_bgworker(
     );
 
     let task_completion_future = async move {
-        while background_tasks.join_next().await.is_some() {
-            // do nothing
-        }
+        while background_tasks.join_next().await.is_some() {}
         info!("[Background] All tasks in JoinSet completed on their own.");
     };
     let group_stats_startup_failure = async move {
@@ -1156,6 +1191,25 @@ pub async fn main_bgworker(
                 _ = task_completion_future => {
                     info!("[Bgworker] All background tasks finished.");
                 }
+            }
+
+            cancel_token.cancel();
+            let drain = async {
+                while transcriber_tasks.join_next().await.is_some() {}
+            };
+            if tokio::time::timeout(
+                core::time::Duration::from_secs(
+                    ECHO_AUDIO_TRANSCRIPTION_SHUTDOWN_GRACE_SECS,
+                ),
+                drain,
+            )
+            .await
+            .is_err()
+            {
+                warn!(
+                    "audio transcription drain exceeded {} seconds",
+                    ECHO_AUDIO_TRANSCRIPTION_SHUTDOWN_GRACE_SECS
+                );
             }
         })
         .await

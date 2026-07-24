@@ -32,6 +32,7 @@ flowchart LR
     backblaze[("Backblaze B2<br/>optional S3-compatible object storage")]
     echo_operator["echo-operator<br/>optional external message source"]
     goi["GOI instance<br/>optional external system<br/>goi-echo-worker API + shared files"]
+    echo_gpu["Echo GPU cluster<br/>optional audio transcription"]
 
     subgraph echo_lxc["LXC 1 · Echo application · required"]
         direction LR
@@ -98,6 +99,7 @@ flowchart LR
     api <-->|associations · knowledge · frequencies| goi
     bg <-->|palitra + folder sync| goi
     echo_im <-->|messenger bot integration| goi
+    bg <-->|health · audio upload · transcription| echo_gpu
 
     style echo_lxc stroke-width:2px
     style analytics_lxc stroke-width:2px,stroke-dasharray:8 5
@@ -106,12 +108,15 @@ flowchart LR
     classDef canonical stroke-width:3px
     classDef optional stroke-dasharray:6 4
     class postgres canonical
-    class nlp,iggy,signal,whatsapp,vector,greptime,signoz,promin,backblaze,echo_operator,goi optional
+    class nlp,iggy,signal,whatsapp,vector,greptime,signoz,promin,backblaze,echo_operator,goi,echo_gpu optional
 ```
 
 The diagram focuses on the core web, worker, messenger, storage, observability,
 and analytics paths. Other instance-specific integrations are configured
 independently.
+
+See [Echo GPU audio transcription](ECHO_GPU_TRANSCRIPTION.md) for its
+configuration, network requirements, queue, cache, retry, and REST API flow.
 
 ## Echo LXC systemd graph
 

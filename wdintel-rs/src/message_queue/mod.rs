@@ -277,9 +277,85 @@ async fn store_queue_media(
     )
     .await
     .c(h!())?;
+    crate::transcriber::media_queue::reconcile_message(
+        txn,
+        signal_message_id,
+        &[],
+    )
+    .await
+    .c(h!())?;
     if delete_uploaded {
         Ok(result.uploaded_files_ready_for_deletion)
     } else {
         Ok(vec![])
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use opendal::{services::Memory, Operator};
+
+    #[tokio::test]
+    async fn queue_ingestion_enqueues_stored_audio_before_commit() {
+        let (env, _guard) =
+            crate::functest::tests::cleanup_locked().await.unwrap();
+        system_settings::ActiveModel {
+            enable_audio_transcription: Set(true),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        let message = crate::functest::tests::mk_signal_message(
+            &env.dbx,
+            Default::default(),
+        )
+        .await
+        .unwrap();
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("queue-audio.ogg");
+        tokio::fs::write(&path, b"queue audio").await.unwrap();
+        let mut config = env.config.clone();
+        config.s3_config = Some(crate::config::S3Config {
+            s3_access_key_id: "test".into(),
+            s3_secret_access_key: "test".into(),
+            s3_endpoint: String::new(),
+            s3_region: String::new(),
+            s3_bucket: "test".into(),
+            strongbox_key: crate::storage::generate_strongbox_key_b64(),
+        });
+        let s3 = Some(Operator::new(Memory::default()).unwrap().finish());
+        let txn = env.dbx.begin().await.unwrap();
+
+        store_queue_media(
+            &txn,
+            &config,
+            &s3,
+            message.id,
+            &[MessageAttachmentF1 {
+                path: path.display().to_string(),
+                name: Some("queue-audio.ogg".into()),
+            }],
+        )
+        .await
+        .unwrap();
+        let media = signal_message_media::Entity::find()
+            .filter(
+                signal_message_media::Column::SignalMessageId.eq(message.id),
+            )
+            .one(&txn)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(echo_gpu_client::lookup(&txn, media.id)
+            .await
+            .unwrap()
+            .is_some());
+        txn.commit().await.unwrap();
+        assert!(echo_gpu_client::lookup(&env.dbx, media.id)
+            .await
+            .unwrap()
+            .is_some());
     }
 }

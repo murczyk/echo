@@ -55,6 +55,20 @@ async function renderPage() {
   return { container, root };
 }
 
+function button(container: HTMLElement, text: string): HTMLButtonElement | undefined {
+  return Array.from(container.querySelectorAll('button')).find((item) =>
+    item.textContent?.includes(text),
+  );
+}
+
+function audioSwitch(container: HTMLElement): HTMLInputElement | null {
+  return (
+    Array.from(container.querySelectorAll('label'))
+      .find((label) => label.textContent?.includes('Увімкнути транскрибування аудіо'))
+      ?.querySelector('input') ?? null
+  );
+}
+
 describe('AdminSystemSettingsNeoPage success notifications', () => {
   beforeEach(() => {
     mocks.list.mockReset();
@@ -74,9 +88,7 @@ describe('AdminSystemSettingsNeoPage success notifications', () => {
     const checkbox = container.querySelector<HTMLInputElement>('input[type="checkbox"]');
     expect(checkbox).not.toBeNull();
     await act(async () => checkbox?.click());
-    const saveButton = Array.from(container.querySelectorAll('button')).find((button) =>
-      button.textContent?.includes('зберегти'),
-    );
+    const saveButton = button(container, 'зберегти');
     expect(saveButton).not.toBeUndefined();
     await act(async () => saveButton?.click());
     expect(mocks.save).toHaveBeenCalledTimes(1);
@@ -127,6 +139,27 @@ describe('AdminSystemSettingsNeoPage success notifications', () => {
       }),
     );
     expect(saveButton?.disabled).toBe(true);
+    await act(async () => root.unmount());
+  });
+
+  it('keeps the enablement warning until transcription is saved', async () => {
+    const { container, root } = await renderPage();
+    const checkbox = audioSwitch(container);
+    expect(checkbox).not.toBeNull();
+    await act(async () => checkbox?.click());
+    expect(container.textContent).toContain('Збережіть налаштування');
+    expect(container.textContent).not.toContain('Транскрибування');
+
+    mocks.save.mockRejectedValueOnce(new Error('save failed'));
+    await act(async () => button(container, 'зберегти')?.click());
+    await act(async () => Promise.resolve());
+    await act(async () => root.unmount());
+  });
+
+  it('does not embed instance administration when transcription is enabled', async () => {
+    mocks.list.mockResolvedValueOnce([{ id: 1, deleted: false, enableAudioTranscription: true }]);
+    const { container, root } = await renderPage();
+    expect(button(container, 'Транскрибування')).toBeUndefined();
     await act(async () => root.unmount());
   });
 });

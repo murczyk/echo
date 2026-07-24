@@ -101,6 +101,7 @@ fn map_system_settings_item(
             .goi_association_message_uid_worker_enabled,
         report_chunking_hours: i64::from(settings.report_chunking_hours),
         limit_big_reports: settings.limit_big_reports,
+        enable_audio_transcription: settings.enable_audio_transcription,
     })
 }
 
@@ -271,6 +272,32 @@ where
     Ok(settings
         .map(|settings| settings.goi_association_message_uid_worker_enabled)
         .unwrap_or(false))
+}
+
+pub async fn audio_transcription_enabled<C>(dbx: &C) -> Result<bool, AppError>
+where
+    C: ConnectionTrait,
+{
+    Ok(get_active_system_settings(dbx)
+        .await
+        .c(h!())?
+        .map(|settings| settings.enable_audio_transcription)
+        .unwrap_or(false))
+}
+
+pub async fn ensure_audio_transcription_enabled<C>(
+    dbx: &C,
+) -> Result<(), AppError>
+where
+    C: ConnectionTrait,
+{
+    if audio_transcription_enabled(dbx).await.c(h!())? {
+        Ok(())
+    } else {
+        Err(AppError::Forbidden(
+            "audio transcription is disabled".to_string(),
+        ))
+    }
 }
 
 pub async fn get_rer_analysis_units_exact_match_only_default<C>(
@@ -516,6 +543,7 @@ fn system_settings_active_model(
             .try_into()
             .c(h!())?),
         limit_big_reports: Set(req.limit_big_reports),
+        enable_audio_transcription: Set(req.enable_audio_transcription),
     })
 }
 
@@ -649,6 +677,7 @@ pub async fn current_system_settings(
                 .goi_association_message_uid_worker_enabled,
             report_chunking_hours: i64::from(settings.report_chunking_hours),
             limit_big_reports: settings.limit_big_reports,
+            enable_audio_transcription: settings.enable_audio_transcription,
         },
         None => SystemSettingsCurrentRsp {
             id: None,
@@ -674,6 +703,7 @@ pub async fn current_system_settings(
             report_chunking_hours:
                 crate::config::RER_REPORT_CHUNKING_HOURS_DEFAULT,
             limit_big_reports: false,
+            enable_audio_transcription: false,
         },
     }))
 }
@@ -745,6 +775,20 @@ mod tests {
         crate::users::login_id_by_name(&env.dbx, "Tester")
             .await
             .unwrap()
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn audio_transcription_is_default_disabled_and_uses_active_setting() {
+        let _guard = TEST_LOCK.lock().await;
+        let env = cleanup().await.unwrap();
+        assert!(!audio_transcription_enabled(&env.dbx).await.unwrap());
+
+        let settings = insert_settings(&env.dbx, old_ts(), false).await;
+        let mut settings: system_settings::ActiveModel = settings.into();
+        settings.enable_audio_transcription = Set(true);
+        settings.update(&env.dbx).await.unwrap();
+        assert!(audio_transcription_enabled(&env.dbx).await.unwrap());
     }
 
     #[tokio::test]
@@ -977,6 +1021,7 @@ mod tests {
             report_chunking_hours:
                 crate::config::RER_REPORT_CHUNKING_HOURS_DEFAULT,
             limit_big_reports: false,
+            enable_audio_transcription: false,
         }
     }
 
@@ -1035,6 +1080,7 @@ mod tests {
                 crate::config::RER_REPORT_CHUNKING_HOURS_DEFAULT as i32,
             ),
             limit_big_reports: Set(false),
+            enable_audio_transcription: Set(false),
         }
         .insert(dbx)
         .await

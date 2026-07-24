@@ -108,6 +108,7 @@ pub struct Env {
     pub s3: Option<opendal::Operator>,
     pub s3_config: Option<crate::storage::S3Config>,
     pub dbx: sea_orm::DatabaseConnection,
+    pub echo_gpu_client: Arc<echo_gpu_client::EchoGpuClient>,
     /// GreptimeDB connection via Postgresql driver
     pub greptimedb: Arc<RwLock<Option<deadpool_postgres::Pool>>>,
     pub rq: reqwest::Client,

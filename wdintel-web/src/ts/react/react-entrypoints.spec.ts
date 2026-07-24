@@ -17,6 +17,7 @@ const ENTRYPOINTS = [
   { modulePath: './admin-all-reports-element', tag: 'admin-all-reports' },
   { modulePath: './admin-echo-missing-messages-element', tag: 'admin-echo-missing-messages' },
   { modulePath: './admin-directions-neo-element', tag: 'admin-directions-neo' },
+  { modulePath: './transcription-settings-element', tag: 'transcription-settings' },
   { modulePath: './goi-knowledge-element', tag: 'goi-knowledge' },
   { modulePath: './goi-integrations-neo-element', tag: 'goi-integrations-neo' },
   { modulePath: './api-integrations-element', tag: 'api-integrations' },

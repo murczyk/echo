@@ -4646,6 +4646,7 @@ type alias MessageMediaInfo =
     , fileName : Maybe (String)
     , sizeBytes : Int
     , href : String
+    , transcription : Maybe (String)
     }
 
 
@@ -4657,6 +4658,7 @@ messageMediaInfoEncoder struct =
         , ( "file_name", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.fileName )
         , ( "size_bytes", (Json.Encode.int) struct.sizeBytes )
         , ( "href", (Json.Encode.string) struct.href )
+        , ( "transcription", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.transcription )
         ]
 
 
@@ -8625,6 +8627,7 @@ type alias SystemSettingsCurrentRsp =
     , goiAssociationMessageUidWorkerEnabled : Bool
     , reportChunkingHours : Int
     , limitBigReports : Bool
+    , enableAudioTranscription : Bool
     }
 
 
@@ -8653,6 +8656,7 @@ systemSettingsCurrentRspEncoder struct =
         , ( "goi_association_message_uid_worker_enabled", (Json.Encode.bool) struct.goiAssociationMessageUidWorkerEnabled )
         , ( "report_chunking_hours", (Json.Encode.int) struct.reportChunkingHours )
         , ( "limit_big_reports", (Json.Encode.bool) struct.limitBigReports )
+        , ( "enable_audio_transcription", (Json.Encode.bool) struct.enableAudioTranscription )
         ]
 
 
@@ -8684,6 +8688,7 @@ type alias SystemSettingsItem =
     , goiAssociationMessageUidWorkerEnabled : Bool
     , reportChunkingHours : Int
     , limitBigReports : Bool
+    , enableAudioTranscription : Bool
     }
 
 
@@ -8717,6 +8722,7 @@ systemSettingsItemEncoder struct =
         , ( "goi_association_message_uid_worker_enabled", (Json.Encode.bool) struct.goiAssociationMessageUidWorkerEnabled )
         , ( "report_chunking_hours", (Json.Encode.int) struct.reportChunkingHours )
         , ( "limit_big_reports", (Json.Encode.bool) struct.limitBigReports )
+        , ( "enable_audio_transcription", (Json.Encode.bool) struct.enableAudioTranscription )
         ]
 
 
@@ -8755,6 +8761,7 @@ type alias CreateSystemSettingsReq =
     , goiAssociationMessageUidWorkerEnabled : Bool
     , reportChunkingHours : Int
     , limitBigReports : Bool
+    , enableAudioTranscription : Bool
     }
 
 
@@ -8783,6 +8790,7 @@ createSystemSettingsReqEncoder struct =
         , ( "goi_association_message_uid_worker_enabled", (Json.Encode.bool) struct.goiAssociationMessageUidWorkerEnabled )
         , ( "report_chunking_hours", (Json.Encode.int) struct.reportChunkingHours )
         , ( "limit_big_reports", (Json.Encode.bool) struct.limitBigReports )
+        , ( "enable_audio_transcription", (Json.Encode.bool) struct.enableAudioTranscription )
         ]
 
 
@@ -12163,6 +12171,7 @@ messageMediaInfoDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "file_name" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "size_bytes" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "href" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "transcription" (Json.Decode.nullable (Json.Decode.string))))
 
 
 sigintZoneDecoder : Json.Decode.Decoder SigintZone
@@ -14582,6 +14591,7 @@ systemSettingsCurrentRspDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "goi_association_message_uid_worker_enabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "report_chunking_hours" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "limit_big_reports" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "enable_audio_transcription" (Json.Decode.bool)))
 
 
 systemSettingsItemDecoder : Json.Decode.Decoder SystemSettingsItem
@@ -14614,6 +14624,7 @@ systemSettingsItemDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "goi_association_message_uid_worker_enabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "report_chunking_hours" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "limit_big_reports" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "enable_audio_transcription" (Json.Decode.bool)))
 
 
 systemSettingsListRspDecoder : Json.Decode.Decoder SystemSettingsListRsp
@@ -14647,6 +14658,7 @@ createSystemSettingsReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "goi_association_message_uid_worker_enabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "report_chunking_hours" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "limit_big_reports" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "enable_audio_transcription" (Json.Decode.bool)))
 
 
 activateSystemSettingsReqDecoder : Json.Decode.Decoder ActivateSystemSettingsReq

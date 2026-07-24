@@ -27,6 +27,7 @@ pub struct SystemSettingsCurrentRsp {
     pub goi_association_message_uid_worker_enabled: bool,
     pub report_chunking_hours: i64,
     pub limit_big_reports: bool,
+    pub enable_audio_transcription: bool,
 }
 
 #[derive(
@@ -60,6 +61,7 @@ pub struct SystemSettingsItem {
     pub goi_association_message_uid_worker_enabled: bool,
     pub report_chunking_hours: i64,
     pub limit_big_reports: bool,
+    pub enable_audio_transcription: bool,
 }
 
 #[derive(
@@ -106,6 +108,8 @@ pub struct CreateSystemSettingsReq {
     pub report_chunking_hours: i64,
     #[serde(default)]
     pub limit_big_reports: bool,
+    #[serde(default)]
+    pub enable_audio_transcription: bool,
 }
 
 fn default_sigint_comment_parsing_enabled() -> bool {
@@ -145,5 +149,6 @@ mod tests {
         assert!(!req.goi_association_message_uid_worker_enabled);
         assert_eq!(req.report_chunking_hours, 24);
         assert!(!req.limit_big_reports);
+        assert!(!req.enable_audio_transcription);
     }
 }
