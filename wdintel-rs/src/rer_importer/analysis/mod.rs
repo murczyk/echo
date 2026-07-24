@@ -6787,12 +6787,16 @@ async fn collect_group_names(
             });
         }
     }
-    let whatsapp_groups = whatsapp_group::Entity::find()
+    let mut whatsapp_groups = whatsapp_group::Entity::find()
         .filter(whatsapp_group::Column::Deleted.eq(false))
         .select_only()
         .columns([whatsapp_group::Column::Jid, whatsapp_group::Column::Name])
-        .filter(whatsapp_group::Column::Jid.eq_any(group_keys.clone()))
-        .filter(whatsapp_group::Column::Jid.ne_any(resolved_keys))
+        .filter(whatsapp_group::Column::Jid.eq_any(group_keys.clone()));
+    if !resolved_keys.is_empty() {
+        whatsapp_groups = whatsapp_groups
+            .filter(whatsapp_group::Column::Jid.is_not_in(resolved_keys));
+    }
+    let whatsapp_groups = whatsapp_groups
         .into_tuple::<(String, String)>()
         .all(txn)
         .await
