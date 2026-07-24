@@ -857,9 +857,9 @@ pub async fn get_inbox_messages_report_unit(
     );
 
     if req.report_tags_only_this_unit == Some(true) {
-        q = q.filter(sigint_comment::Column::LoginId.eq_any(login_ids.clone()));
+        q = q.filter(sigint_comment::Column::LoginId.is_in(login_ids.clone()));
         q = q.filter(
-            sigint_inbox_item_tag::Column::LoginId.eq_any(login_ids.clone()),
+            sigint_inbox_item_tag::Column::LoginId.is_in(login_ids.clone()),
         );
     }
     if req.without_model_tags == Some(true) {
@@ -1128,6 +1128,38 @@ mod tests {
     use serde_json::json;
     use serial_test::serial;
 
+    async fn seed_babak_unit_report_data(
+        db: &DatabaseConnection,
+        login_id: uuid::Uuid,
+        message_id: i64,
+        tag_id: i64,
+        created_at: NaiveDateTime,
+        comment: &str,
+    ) -> Result<(), AppError> {
+        mk_sigint_comment(
+            db,
+            sigint_comment::ActiveModel {
+                login_id: Set(login_id),
+                signal_message_id: Set(message_id),
+                comment: Set(comment.to_string()),
+                created_at: Set(created_at),
+                ..Default::default()
+            },
+        )
+        .await?;
+        mk_sigint_inbox_item_tag(
+            db,
+            sigint_inbox_item_tag::ActiveModel {
+                sigint_inbox_item_id: Set(message_id),
+                tag_id: Set(tag_id),
+                login_id: Set(Some(login_id)),
+                ..Default::default()
+            },
+        )
+        .await?;
+        Ok(())
+    }
+
     #[serial]
     #[tokio::test]
     async fn test_bl_babak_report_returns_unit_stats() {
@@ -1211,6 +1243,26 @@ mod tests {
         )
         .await
         .unwrap();
+        seed_babak_unit_report_data(
+            &env.dbx,
+            login.id,
+            message.id,
+            bpla_tag.id,
+            now,
+            "first comment",
+        )
+        .await
+        .unwrap();
+        seed_babak_unit_report_data(
+            &env.dbx,
+            login.id,
+            second_message.id,
+            bpla_tag.id,
+            second_datetime,
+            "second comment",
+        )
+        .await
+        .unwrap();
 
         let datetime = inbox_item
             .datetime
@@ -1232,7 +1284,7 @@ mod tests {
                 ..Default::default()
             },
             report_type: None,
-            report_tags_only_this_unit: Some(false),
+            report_tags_only_this_unit: Some(true),
             tag_report_sort_by: None,
             report_1213_linked_networks_only: None,
             without_comments: Some(false),
