@@ -10,6 +10,7 @@ import {
   PalitraChangelogEntry,
   PalitraDetails,
   PalitraGeometryDetails,
+  PalitraHighlightBlacklistEntry,
   PalitraReadV2,
   PalitraPoints,
   User,
@@ -19,6 +20,8 @@ import { transformSnakeToCamel } from '../../../snake-to-camel';
 import { listAors } from './aor';
 import {
   HttpRequestError,
+  deleteVoid,
+  getJson,
   postBytes,
   postJson,
   postVoid,
@@ -142,6 +145,19 @@ type PalitraReadWithGeometriesLike = {
 type PalitraReadV2Like = {
   palitra?: PalitraLike;
   geometries?: PalitraGeometryDetailsLike[] | null;
+};
+
+type PalitraHighlightBlacklistEntryLike = {
+  id?: number | string;
+  palitraId?: number | string;
+  palitra_id?: number | string;
+  entryId?: number | string;
+  entry_id?: number | string;
+  label?: string;
+  createdByLoginId?: string;
+  created_by_login_id?: string;
+  createdByLogin?: string;
+  created_by_login?: string;
 };
 
 type CoordsLike = {
@@ -349,6 +365,49 @@ function normalizePalitraReadV2(raw: PalitraReadV2Like | null | undefined): Pali
   };
 }
 
+function normalizeHighlightBlacklistEntry(
+  raw: PalitraHighlightBlacklistEntryLike | null | undefined,
+): PalitraHighlightBlacklistEntry | null {
+  const id = normalizeOptionalNumber(raw?.id ?? raw?.entryId ?? raw?.entry_id);
+  const palitraId = normalizeOptionalNumber(raw?.palitraId ?? raw?.palitra_id);
+  const label = raw?.label?.trim() ?? '';
+  return id !== null && palitraId !== null && label !== ''
+    ? {
+        id,
+        palitraId,
+        label,
+        createdByLoginId: raw?.createdByLoginId ?? raw?.created_by_login_id ?? '',
+        createdByLogin: raw?.createdByLogin ?? raw?.created_by_login ?? '',
+      }
+    : null;
+}
+
+export function highlightBlacklistLabelKey(label: string): string {
+  return label.trim().toLowerCase();
+}
+
+function normalizeHighlightBlacklist(raw: unknown): PalitraHighlightBlacklistEntry[] {
+  const values = Array.isArray(raw)
+    ? raw
+    : raw && typeof raw === 'object' && Array.isArray((raw as { entries?: unknown }).entries)
+      ? (raw as { entries: unknown[] }).entries
+      : [];
+  const entries = values
+    .map((value) =>
+      typeof value === 'string'
+        ? normalizeHighlightBlacklistEntry({ id: undefined, palitraId: undefined, label: value })
+        : normalizeHighlightBlacklistEntry(value as PalitraHighlightBlacklistEntryLike),
+    )
+    .filter(isPresent);
+  const seen = new Set<string>();
+  return entries.filter((entry) => {
+    const key = highlightBlacklistLabelKey(entry.label);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 function normalizeKmzColor(raw: KmzColorInfoLike | null | undefined): KmzColorInfo {
   return {
     colorHex: raw?.colorHex ?? raw?.color_hex ?? '#00bcd4',
@@ -473,6 +532,30 @@ export async function readPalitraV2(palitraId: number): Promise<PalitraReadV2> {
 export async function readPalitraPreviewV2(palitraId: number): Promise<PalitraReadV2> {
   const data = await postJson<PalitraReadV2Like>(`/api/palitra/v2/read-preview/${palitraId}`);
   return normalizePalitraReadV2(data);
+}
+
+export async function getPalitraHighlightBlacklist(
+  palitraId: number,
+): Promise<PalitraHighlightBlacklistEntry[]> {
+  const data = await getJson<unknown>(`/api/palitra/${palitraId}/highlight-blacklist`);
+  return normalizeHighlightBlacklist(data);
+}
+
+export async function addPalitraHighlightBlacklistEntry(
+  palitraId: number,
+  label: string,
+): Promise<PalitraHighlightBlacklistEntry> {
+  const data = await postJson<unknown>(`/api/palitra/${palitraId}/highlight-blacklist`, { label });
+  const entry = normalizeHighlightBlacklistEntry(data as PalitraHighlightBlacklistEntryLike);
+  if (!entry) throw new Error('Сервер не повернув доданий запис чорного списку.');
+  return entry;
+}
+
+export async function deletePalitraHighlightBlacklistEntry(
+  palitraId: number,
+  entryId: number,
+): Promise<void> {
+  await deleteVoid(`/api/palitra/${palitraId}/highlight-blacklist/${entryId}`);
 }
 
 export async function fetchPalitraGoiSyncHistory(

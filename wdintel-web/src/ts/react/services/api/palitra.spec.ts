@@ -3,7 +3,14 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { analyzePalitraKmz, downloadPalitras, fetchPalitraReferenceData } from './palitra';
+import {
+  addPalitraHighlightBlacklistEntry,
+  analyzePalitraKmz,
+  deletePalitraHighlightBlacklistEntry,
+  downloadPalitras,
+  fetchPalitraReferenceData,
+  getPalitraHighlightBlacklist,
+} from './palitra';
 
 describe('palitra API 401 handling', () => {
   beforeEach(() => {
@@ -113,5 +120,86 @@ describe('palitra downloads', () => {
     await downloadPalitras([42], { splitForDelta: true });
 
     expect(requestedUrls).toEqual(['/api/palitra/download-delta-split']);
+  });
+});
+
+describe('palitra highlight blacklist', () => {
+  beforeEach(() => vi.restoreAllMocks());
+
+  it('normalizes and deduplicates blacklist entries', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify([
+            {
+              id: '4',
+              palitra_id: '42',
+              label: ' Точка ',
+              created_by_login_id: 'a',
+              created_by_login: 'b',
+            },
+            {
+              id: 5,
+              palitra_id: 42,
+              label: 'точка',
+              created_by_login_id: 'c',
+              created_by_login: 'd',
+            },
+          ]),
+          { status: 200 },
+        ),
+      ),
+    );
+
+    await expect(getPalitraHighlightBlacklist(42)).resolves.toEqual([
+      {
+        id: 4,
+        palitraId: 42,
+        label: 'Точка',
+        createdByLoginId: 'a',
+        createdByLogin: 'b',
+      },
+    ]);
+  });
+
+  it('uses the atomic add and delete endpoints', async () => {
+    const requested: Array<{ url: string; method: string; body?: string }> = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        requested.push({
+          url: String(input),
+          method: init?.method ?? 'GET',
+          body: init?.body as string,
+        });
+        return new Response(
+          JSON.stringify({
+            id: 8,
+            palitra_id: 42,
+            label: 'Точка',
+            created_by_login_id: 'a',
+            created_by_login: 'b',
+          }),
+          { status: 200 },
+        );
+      }),
+    );
+
+    await addPalitraHighlightBlacklistEntry(42, 'Точка');
+    await deletePalitraHighlightBlacklistEntry(42, 8);
+
+    expect(requested).toEqual([
+      {
+        url: '/api/palitra/42/highlight-blacklist',
+        method: 'POST',
+        body: JSON.stringify({ label: 'Точка' }),
+      },
+      {
+        url: '/api/palitra/42/highlight-blacklist/8',
+        method: 'DELETE',
+        body: undefined,
+      },
+    ]);
   });
 });

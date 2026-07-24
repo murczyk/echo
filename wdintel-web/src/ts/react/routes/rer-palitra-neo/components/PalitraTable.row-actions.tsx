@@ -33,6 +33,7 @@ type Props = {
   onRetryConversion: (palitra: Palitra) => void;
   onRetryGoiSourceConversion: (palitra: Palitra) => void;
   onOpenHistory: (palitra: Palitra) => void;
+  onOpenHighlightBlacklist: (palitra: Palitra) => void;
   onDelete: (palitra: Palitra) => void;
   onToggleFolderExpanded: (path: string) => void;
   onRequestRenameFolder: (path: string) => void;
@@ -115,6 +116,10 @@ function isPalitraRowPreviewDisabled(row: PalitraRowView, props: Props): boolean
   );
 }
 
+function isHighlightBlacklistDisabled(row: PalitraRowView, props: Props): boolean {
+  return !row.canSelect || row.id <= 0 || props.loading || props.externalBusy;
+}
+
 function renderPreviewButton(
   palitra?: Palitra,
   disabled = true,
@@ -180,6 +185,7 @@ function isGoiSourceRetryDisabled(row: PalitraRowView, props: Props): boolean {
 function renderPalitraRowActions(row: PalitraRowView, props: Props) {
   const mutationDisabled = isPalitraRowMutationDisabled(row, props);
   const previewDisabled = isPalitraRowPreviewDisabled(row, props);
+  const highlightBlacklistDisabled = isHighlightBlacklistDisabled(row, props);
 
   return (
     <Box
@@ -199,6 +205,13 @@ function renderPalitraRowActions(row: PalitraRowView, props: Props) {
           onClick={() => props.onOpenHistory(row.palitra)}
           disabled={props.loading || props.externalBusy}
           icon={<HistoryIcon fontSize="small" />}
+          opensModal
+        />
+        <MrtRowActionButton
+          label="Чорний список"
+          onClick={() => props.onOpenHighlightBlacklist(row.palitra)}
+          disabled={highlightBlacklistDisabled}
+          icon={<VisibilityOffOutlinedIcon fontSize="small" />}
           opensModal
         />
         <MrtRowActionButton

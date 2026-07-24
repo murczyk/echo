@@ -63,6 +63,7 @@ type Props = {
   onRetryConversion: (palitra: Palitra) => void;
   onRetryGoiSourceConversion: (palitra: Palitra) => void;
   onOpenHistory: (palitra: Palitra) => void;
+  onOpenHighlightBlacklist: (palitra: Palitra) => void;
   onDelete: (palitra: Palitra) => void;
   onSetSelectedPalitraIds: (palitraIds: number[]) => void;
   onToggleFolderExpanded: (path: string) => void;
@@ -93,6 +94,7 @@ export function PalitraTable({
   onRetryConversion,
   onRetryGoiSourceConversion,
   onOpenHistory,
+  onOpenHighlightBlacklist,
   onDelete,
   onSetSelectedPalitraIds,
   onToggleFolderExpanded,
@@ -213,6 +215,7 @@ export function PalitraTable({
         onRetryConversion,
         onRetryGoiSourceConversion,
         onOpenHistory,
+        onOpenHighlightBlacklist,
         onDelete,
         onToggleFolderExpanded,
         onRequestRenameFolder,

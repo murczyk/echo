@@ -35,6 +35,7 @@ import { TableStateProvider } from '../../components/mui-customized/table/table-
 import { CreatePalitraDrawer } from './components/CreatePalitraDrawer';
 import { EditPalitraDrawer } from './components/EditPalitraDrawer';
 import { PalitraFolderActionDialog } from './components/PalitraFolderActionDialog';
+import { PalitraHighlightBlacklistDialog } from './components/PalitraHighlightBlacklistDialog';
 import { PalitraPreviewDialog } from './components/PalitraPreviewDialog';
 import {
   DEFAULT_PALITRA_COLUMN_ORDER,
@@ -331,6 +332,7 @@ function RerPalitraNeoPageBody() {
             onRetryConversion={page.handleRetryConversion}
             onRetryGoiSourceConversion={page.handleRetryGoiSourceConversion}
             onOpenHistory={page.openHistory}
+            onOpenHighlightBlacklist={page.openHighlightBlacklist}
             onDelete={page.requestDelete}
             onSetSelectedPalitraIds={page.setSelectedPalitraIds}
             onToggleFolderExpanded={page.toggleFolderExpanded}
@@ -365,6 +367,21 @@ function RerPalitraNeoPageBody() {
         loading={page.historyLoading}
         error={page.historyError}
         onClose={page.closeHistory}
+      />
+
+      <PalitraHighlightBlacklistDialog
+        palitra={page.highlightBlacklistPalitra}
+        data={page.highlightBlacklistData}
+        entries={page.highlightBlacklistEntries}
+        loading={page.highlightBlacklistLoading}
+        error={page.highlightBlacklistError}
+        mutationError={page.highlightBlacklistMutationError}
+        mutationBlocked={page.highlightBlacklistMutationBlocked}
+        pendingEntryIds={page.highlightBlacklistPendingIds}
+        pendingLabels={page.highlightBlacklistPendingLabels}
+        onRetry={page.loadHighlightBlacklist}
+        onToggle={page.toggleHighlightBlacklist}
+        onClose={page.closeHighlightBlacklist}
       />
 
       <Dialog

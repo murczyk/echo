@@ -167,6 +167,7 @@ function renderActions(
     onRetryConversion: vi.fn(),
     onRetryGoiSourceConversion: vi.fn(),
     onOpenHistory: vi.fn(),
+    onOpenHighlightBlacklist: vi.fn(),
     onDelete: vi.fn(),
     onToggleFolderExpanded: vi.fn(),
     onRequestRenameFolder: vi.fn(),
@@ -297,6 +298,17 @@ describe('PalitraTable row actions', () => {
       container.querySelector<HTMLButtonElement>('[data-label="Повторити оновлення з ГОІ"]')
         ?.dataset.disabled,
     ).toBe('false');
+  });
+
+  it('shows the highlight blacklist action for accessible read-only palettes', () => {
+    const onOpenHighlightBlacklist = vi.fn();
+    const palitra = makePalitra({ goiOwned: true });
+    const { container } = renderActions(makeRow(palitra, false), { onOpenHighlightBlacklist });
+    const action = container.querySelector<HTMLButtonElement>('[data-label="Чорний список"]');
+
+    expect(action?.dataset.disabled).toBe('false');
+    act(() => action?.click());
+    expect(onOpenHighlightBlacklist).toHaveBeenCalledWith(palitra);
   });
 
   it('hides generic conversion retry for a malformed direct GOI import', () => {
