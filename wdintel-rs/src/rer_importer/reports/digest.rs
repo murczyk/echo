@@ -126,9 +126,23 @@ pub async fn report_docx_kind_digest(
     let mut request = req.req.clone();
     request.report_tags_only_this_unit = Some(false);
     request.or_with_extended_form = Some(true); // with comments only
-    let messages = load_digest_messages(&read_db, &login, env, &request)
-        .await
-        .context(h!())?;
+    let analytics_req = &request;
+    let postgres_req = &request;
+    let messages = crate::rer_importer::analysis::with_analytics_read_fallback(
+        env,
+        "digest report interception scan",
+        crate::rer_importer::analysis::analytics_inbox_request_supported(
+            &request,
+        ),
+        |db| async move {
+            load_digest_messages(&db, &login, env, analytics_req).await
+        },
+        |db| async move {
+            load_digest_messages(&db, &login, env, postgres_req).await
+        },
+    )
+    .await
+    .context(h!())?;
     let report = collect_report(
         messages,
         login_ids.clone(),

@@ -66,9 +66,23 @@ pub async fn report_xlsx_kind_interception(
     let read_db = env.replica();
     let all_tags = get_all_tags(&read_db).await?;
 
-    let messages = get_inbox_messages_report(user_login, env, &inbox_req)
-        .await
-        .context(h!())?;
+    let analytics_req = &inbox_req;
+    let postgres_req = &inbox_req;
+    let messages = crate::rer_importer::analysis::with_analytics_read_fallback(
+        env,
+        "interception report message scan",
+        crate::rer_importer::analysis::analytics_inbox_request_supported(
+            &inbox_req,
+        ),
+        |db| async move {
+            get_inbox_messages_report(&db, user_login, env, analytics_req).await
+        },
+        |db| async move {
+            get_inbox_messages_report(&db, user_login, env, postgres_req).await
+        },
+    )
+    .await
+    .context(h!())?;
     ensure_interception_report_row_limit(user_login, messages.len())?;
     process_messages_for_interception_report(
         sheet1,
@@ -236,13 +250,13 @@ async fn get_all_tags(
 }
 
 async fn get_inbox_messages_report(
+    read_db: &DatabaseConnection,
     user_login: &uuid::Uuid,
     env: &Env,
     req: &InboxMessagesReq,
 ) -> Result<Vec<InboxMessage>, AppError> {
     let combined_query =
         build_inbox_messages_report_sql(user_login, env, req).await?;
-    let read_db = env.replica();
 
     let results = read_db
         .query_all(Statement::from_string(

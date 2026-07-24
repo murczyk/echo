@@ -737,6 +737,12 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::sigint::unit::delete_unit)
             .service(crate::sigint::unit::delete_unit_duplicate)
             .service(crate::sigint::unit::units_search)
+            .service(crate::sigint::unit::attachment::unit_details)
+            .service(
+                crate::sigint::unit::attachment::unit_attachment_unit_ids,
+            )
+            .service(crate::sigint::unit::attachment::upload_unit_attachment)
+            .service(crate::sigint::unit::attachment::download_unit_attachment)
             .service(crate::sigint::callsign::list_callsigns)
             .service(crate::sigint::callsign::callsign_name_search)
             .service(crate::sigint::callsign::list_callsigns_csv)

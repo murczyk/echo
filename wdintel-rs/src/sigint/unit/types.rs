@@ -103,3 +103,55 @@ pub struct DeleteUnitDuplicateReq {
 pub struct UnitSearchReq {
     pub search: String,
 }
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct UnitDetailsReq {
+    pub unit_id: i64,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct UnitAttachmentAor {
+    pub id: i64,
+    pub name: String,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct UnitAttachment {
+    pub id: i64,
+    pub unit_id: i64,
+    pub file_name: String,
+    pub content_type: String,
+    pub size_bytes: i64,
+    pub short_description: String,
+    pub full_description: String,
+    pub aors: Vec<UnitAttachmentAor>,
+    pub created_at: i64,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct UnitDetailsRsp {
+    pub unit: Unit,
+    pub attachments: Vec<UnitAttachment>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct UnitAttachmentUnitIdsRsp {
+    pub unit_ids: Vec<i64>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct UnitAttachmentDownloadReq {
+    pub attachment_id: i64,
+}

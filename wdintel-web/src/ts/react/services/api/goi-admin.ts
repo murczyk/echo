@@ -22,7 +22,7 @@ export type GoiAdminIntegration = {
   apiPassword: string;
   disableGoiToEchoPalitraSync: boolean;
   pauseWorker: boolean;
-  maintainerLogin: string;
+  maintainerLoginId: string;
   accessOrganismIds: number[];
   accessLogins: string[];
 };
@@ -41,7 +41,7 @@ export type UpsertGoiAdminIntegrationReq = {
   apiPassword: string;
   disableGoiToEchoPalitraSync: boolean;
   pauseWorker: boolean;
-  maintainerLogin: string;
+  maintainerLoginId: string;
   accessOrganismIds: number[];
   accessLogins: string[];
 };
@@ -100,6 +100,8 @@ type GoiAdminIntegrationLike = {
   disable_goi_to_echo_palitra_sync?: boolean;
   pauseWorker?: boolean;
   pause_worker?: boolean;
+  maintainerLoginId?: string | null;
+  maintainer_login_id?: string | null;
   maintainerLogin?: string | null;
   maintainer_login?: string | null;
   accessOrganismIds?: Array<number | string> | null;
@@ -173,7 +175,12 @@ function normalizeGoiAdminIntegration(
     disableGoiToEchoPalitraSync:
       raw?.disableGoiToEchoPalitraSync ?? raw?.disable_goi_to_echo_palitra_sync ?? true,
     pauseWorker: raw?.pauseWorker ?? raw?.pause_worker ?? false,
-    maintainerLogin: normalizeString(raw?.maintainerLogin ?? raw?.maintainer_login),
+    maintainerLoginId: normalizeString(
+      raw?.maintainerLoginId ??
+        raw?.maintainer_login_id ??
+        raw?.maintainerLogin ??
+        raw?.maintainer_login,
+    ),
     accessOrganismIds: normalizeNumberArray(raw?.accessOrganismIds ?? raw?.access_organism_ids),
     accessLogins: normalizeStringArray(raw?.accessLogins ?? raw?.access_logins),
   };
@@ -194,7 +201,7 @@ function toUpsertReqBody(req: UpsertGoiAdminIntegrationReq) {
     api_password: normalizeString(req.apiPassword) || null,
     disable_goi_to_echo_palitra_sync: req.disableGoiToEchoPalitraSync,
     pause_worker: req.pauseWorker,
-    maintainer_login: normalizeString(req.maintainerLogin) || null,
+    maintainer_login_id: normalizeString(req.maintainerLoginId) || null,
     access_organism_ids: req.accessOrganismIds,
     access_logins: req.accessLogins,
   };

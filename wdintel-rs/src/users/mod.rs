@@ -332,6 +332,9 @@ pub async fn update_login(
         login_obj.description =
             Set(normalize_login_description(req.description.clone()));
     }
+    if let Some(password_auth_enabled) = req.password_auth_enabled {
+        login_obj.password_auth_enabled = Set(password_auth_enabled);
+    }
     let res = login_obj.update(&txn).await.c(h!())?;
     if let Some(delta_id) = delta_id {
         unlink_deleted_logins_from_shared_delta_login(&txn, delta_id)
@@ -376,6 +379,7 @@ pub async fn update_login(
             .deactivation_reason
             .map(DeactivationReasonType::from),
         description: res.description,
+        password_auth_enabled: res.password_auth_enabled,
     }))
 }
 
@@ -442,6 +446,7 @@ pub async fn create_login(
             description: Set(normalize_login_description(
                 req.description.clone(),
             )),
+            password_auth_enabled: Set(true),
         },
     )
     .await
@@ -482,6 +487,7 @@ pub async fn create_login(
             .deactivation_reason
             .map(DeactivationReasonType::from),
         description: res.description,
+        password_auth_enabled: res.password_auth_enabled,
     };
     crate::sigint::zone::bl::refresh_secret_group_memberships(&txn)
         .await
@@ -543,6 +549,7 @@ pub async fn list_logins(
         organism_enabled: Option<bool>,
         delta_login: Option<String>,
         description: Option<String>,
+        password_auth_enabled: bool,
     }
 
     let users_iter = login::Entity::find()
@@ -563,6 +570,7 @@ pub async fn list_logins(
             login::Column::LastActiveAt,
             login::Column::DeactivationReason,
             login::Column::Description,
+            login::Column::PasswordAuthEnabled,
         ])
         .column_as(sigint_zone::Column::Name, "sigint_zone_name")
         .column_as(organism::Column::Name, "organism_name")
@@ -618,6 +626,7 @@ pub async fn list_logins(
                 .deactivation_reason
                 .map(DeactivationReasonType::from),
             description: login.description,
+            password_auth_enabled: login.password_auth_enabled,
         };
         users.push(user);
     }
@@ -816,14 +825,18 @@ pub async fn user_test_api_login(
         return Err(err);
     }
     let login_obj = login_obj.login_model.c(h!())?;
-    let password = login_obj.password.clone().ok_or_else(|| {
-        let errors = BTreeMap::from_iter([(
-            "login".to_string(),
-            "Не вдалося залогінитись".to_string(),
-        )]);
-        log_login_form_error(&user_id, &errors);
-        AppError::Form(errors)
-    })?;
+    let password = login_obj
+        .password
+        .clone()
+        .filter(|_| login_obj.password_auth_enabled)
+        .ok_or_else(|| {
+            let errors = BTreeMap::from_iter([(
+                "login".to_string(),
+                "Не вдалося залогінитись".to_string(),
+            )]);
+            log_login_form_error(&user_id, &errors);
+            AppError::Form(errors)
+        })?;
     let is_valid =
         argon2::verify_encoded(&password, req.password.as_bytes()).c(h!())?;
     if !is_valid {
@@ -885,6 +898,7 @@ pub async fn user_login(
     let password = login_obj
         .password
         .clone()
+        .filter(|_| login_obj.password_auth_enabled)
         .ok_or_else(|| {
             let errors = BTreeMap::from_iter([(
                 "login".to_string(),
@@ -986,6 +1000,7 @@ pub async fn register_user(
         deleted_permanently: NotSet,
         last_release_seen: NotSet,
         description: NotSet,
+        password_auth_enabled: Set(true),
     }
     .insert(&txn)
     .await
@@ -1377,6 +1392,7 @@ async fn register_delta_user(
             deleted_permanently: NotSet,
             last_release_seen: NotSet,
             description: Set(normalize_login_description(description)),
+            password_auth_enabled: Set(false),
         },
     )
     .await
@@ -1438,6 +1454,7 @@ async fn register_delta_user(
             .deactivation_reason
             .map(DeactivationReasonType::from),
         description: res.description,
+        password_auth_enabled: res.password_auth_enabled,
     };
     crate::sigint::zone::bl::refresh_secret_group_memberships(&txn)
         .await
@@ -1799,6 +1816,7 @@ mod tests {
                 deleted_permanently: Set(false),
                 last_release_seen: Default::default(),
                 description: Default::default(),
+                password_auth_enabled: Set(false),
             },
         )
         .await
@@ -1872,6 +1890,7 @@ mod tests {
                     deleted_permanently: Set(false),
                     last_release_seen: Default::default(),
                     description: Default::default(),
+                    password_auth_enabled: Set(false),
                 },
             )
             .await
@@ -1943,6 +1962,7 @@ mod tests {
                     deleted_permanently: Set(false),
                     last_release_seen: Default::default(),
                     description: Default::default(),
+                    password_auth_enabled: Set(false),
                 },
             )
             .await
@@ -1966,6 +1986,7 @@ mod tests {
                 deleted_permanently: Set(false),
                 last_release_seen: Default::default(),
                 description: Default::default(),
+                password_auth_enabled: Set(false),
             },
         )
         .await
@@ -2018,6 +2039,7 @@ mod tests {
             deleted_permanently: Set(true),
             last_release_seen: Default::default(),
             description: Default::default(),
+            password_auth_enabled: Set(false),
         }
         .insert(&env.dbx)
         .await
@@ -2040,6 +2062,7 @@ mod tests {
                 deleted_permanently: NotSet,
                 last_release_seen: Default::default(),
                 description: Default::default(),
+                password_auth_enabled: Set(false),
             },
         )
         .await

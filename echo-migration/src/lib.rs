@@ -307,6 +307,8 @@ mod m20260721_200001_goi_message_uid_worker_setting;
 mod m20260721_200002_goi_message_uid_lookup_indexes;
 mod m20260723_125003_palitra_highlight_blacklist;
 mod m20260723_134939_goi_knowledge_prune_index;
+mod m20260723_185734_sigint_unit_attachments;
+mod m20260724_080724_add_login_password_auth_enabled;
 
 pub struct Migrator;
 
@@ -660,6 +662,12 @@ impl MigratorTrait for Migrator {
             Box::new(m20260723_125003_palitra_highlight_blacklist::Migration),
             Box::new(
                 m20260723_134939_goi_knowledge_prune_index::Migration,
+            ),
+            Box::new(
+                m20260723_185734_sigint_unit_attachments::Migration,
+            ),
+            Box::new(
+                m20260724_080724_add_login_password_auth_enabled::Migration,
             ),
         ]
     }

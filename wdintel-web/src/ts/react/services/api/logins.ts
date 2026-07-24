@@ -34,6 +34,7 @@ type UpdateLoginReqBody = {
   delta_login: string | null;
   deactivation_reason: DeactivationReasonType | null;
   description: string | null;
+  password_auth_enabled: boolean | null;
 };
 
 type LoginLike = {
@@ -60,6 +61,8 @@ type LoginLike = {
   deactivationReason?: DeactivationReasonType | null;
   deactivation_reason?: DeactivationReasonType | null;
   description?: string | null;
+  passwordAuthEnabled?: boolean;
+  password_auth_enabled?: boolean;
 };
 
 type ListLoginsRspLike = {
@@ -92,6 +95,7 @@ function toUpdateLoginReqBody(req: UpdateLoginReq): UpdateLoginReqBody {
     delta_login: req.deltaLogin,
     deactivation_reason: req.deactivationReason,
     description: req.description,
+    password_auth_enabled: req.passwordAuthEnabled,
   };
 }
 
@@ -130,6 +134,7 @@ function normalizeLogin(raw: LoginLike): Login {
     lastActiveAt: normalizeOptionalNumber(raw.lastActiveAt ?? raw.last_active_at),
     deactivationReason: raw.deactivationReason ?? raw.deactivation_reason ?? null,
     description: raw.description ?? null,
+    passwordAuthEnabled: raw.passwordAuthEnabled ?? raw.password_auth_enabled ?? true,
   };
 }
 

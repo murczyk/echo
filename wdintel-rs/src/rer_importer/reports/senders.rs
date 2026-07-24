@@ -55,7 +55,6 @@ pub async fn report_xlsx_kind_senders(
     outpath: &PathBuf,
 ) -> Result<(), AppError> {
     info!("[report_xlsx_kind_senders] {}: started", Utc::now());
-    let read_db = env.replica();
     let login = *user_login;
     let mut req = req.to_owned();
     req.return_duplicates = Some(false);
@@ -65,10 +64,26 @@ pub async fn report_xlsx_kind_senders(
     let Some(till_date_inclusive_ms) = req.till_date_inclusive_ms else {
         return Err("Until date must be specified".into());
     };
-    let messages = load_message_stats(&read_db, &login, env, &req)
+    let analytics_req = &req;
+    let postgres_req = &req;
+    let messages =
+        crate::rer_importer::analysis::with_analytics_read_fallback(
+            env,
+            "senders report message aggregation",
+            crate::rer_importer::analysis::analytics_inbox_request_supported(
+                &req,
+            ),
+            |db| async move {
+                load_message_stats(&db, &login, env, analytics_req).await
+            },
+            |db| async move {
+                load_message_stats(&db, &login, env, postgres_req).await
+            },
+        )
         .await
         .context(h!())?;
 
+    let read_db = env.replica();
     let senders = map_senders(&aggregation_kind, &read_db, &messages)
         .await
         .c(h!())?;

@@ -168,9 +168,23 @@ pub async fn report_docx_kind_reo(
         req.report_tags_only_this_unit.unwrap_or(false);
     let mut current_req = req.req.clone();
     current_req.report_tags_only_this_unit = Some(false);
-    let messages = load_reo_inbox_messages(&read_db, &login, env, &current_req)
-        .await
-        .context(h!())?;
+    let analytics_req = &current_req;
+    let postgres_req = &current_req;
+    let messages = crate::rer_importer::analysis::with_analytics_read_fallback(
+        env,
+        "REO report interception scan",
+        crate::rer_importer::analysis::analytics_inbox_request_supported(
+            &current_req,
+        ),
+        |db| async move {
+            load_reo_inbox_messages(&db, &login, env, analytics_req).await
+        },
+        |db| async move {
+            load_reo_inbox_messages(&db, &login, env, postgres_req).await
+        },
+    )
+    .await
+    .context(h!())?;
     info!(
         "load_reo_inbox_messages took: {:?}, messages count: {}",
         start.elapsed(),

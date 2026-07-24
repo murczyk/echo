@@ -75,6 +75,7 @@ pub struct Login {
     pub last_active_at: Option<i64>,
     pub deactivation_reason: Option<DeactivationReasonType>,
     pub description: Option<String>,
+    pub password_auth_enabled: bool,
 }
 
 #[derive(
@@ -137,6 +138,7 @@ pub struct UpdateLoginReq {
     pub delta_login: Option<String>,
     pub deactivation_reason: Option<DeactivationReasonType>,
     pub description: Option<String>,
+    pub password_auth_enabled: Option<bool>,
 }
 
 #[derive(

@@ -1,13 +1,13 @@
 import * as z from 'zod';
-import type { SvgIconComponent } from '@mui/icons-material';
-import ImageOutlinedIcon from '@mui/icons-material/ImageOutlined';
-import MovieOutlinedIcon from '@mui/icons-material/MovieOutlined';
-import AudiotrackOutlinedIcon from '@mui/icons-material/AudiotrackOutlined';
-import PictureAsPdfOutlinedIcon from '@mui/icons-material/PictureAsPdfOutlined';
-import TableChartOutlinedIcon from '@mui/icons-material/TableChartOutlined';
-import DescriptionOutlinedIcon from '@mui/icons-material/DescriptionOutlined';
-import InsertDriveFileOutlinedIcon from '@mui/icons-material/InsertDriveFileOutlined';
 import { parseCoordinateInput } from '../../../../maps/coordinate-search';
+
+export {
+  attachmentIcon,
+  fileExtension,
+  formatFileSize,
+  mediaKind,
+  type MediaKind,
+} from '../../../components/attachment-files';
 
 export const FREQ_FORMAT_REGEX = /^\d+([.,]\d+)?$/;
 
@@ -36,45 +36,6 @@ export function normalizeMultiValue(values: string[]): string[] {
 
 export function normalizeCallsign(value: string): string {
   return value.trim().toUpperCase();
-}
-
-export function fileExtension(name: string): string {
-  const dot = name.lastIndexOf('.');
-  return dot > 0 && dot < name.length - 1 ? name.slice(dot + 1).toUpperCase() : '';
-}
-
-export function attachmentIcon(name: string, mimeType: string | undefined): SvgIconComponent {
-  const type = (mimeType ?? '').toLowerCase();
-  if (type.startsWith('image/')) return ImageOutlinedIcon;
-  if (type.startsWith('video/')) return MovieOutlinedIcon;
-  if (type.startsWith('audio/')) return AudiotrackOutlinedIcon;
-  const ext = fileExtension(name).toLowerCase();
-  if (type === 'application/pdf' || ext === 'pdf') return PictureAsPdfOutlinedIcon;
-  if (['xlsx', 'xls', 'csv', 'ods'].includes(ext)) return TableChartOutlinedIcon;
-  if (['doc', 'docx', 'odt', 'rtf', 'txt'].includes(ext)) return DescriptionOutlinedIcon;
-  return InsertDriveFileOutlinedIcon;
-}
-
-export type MediaKind = 'image' | 'video';
-
-export function mediaKind(mimeType: string | undefined): MediaKind | null {
-  const type = (mimeType ?? '').toLowerCase();
-  if (type.startsWith('image/')) return 'image';
-  if (type.startsWith('video/')) return 'video';
-  return null;
-}
-
-export function formatFileSize(bytes: number | null | undefined): string {
-  if (bytes == null || !Number.isFinite(bytes) || bytes <= 0) return '';
-  const units = ['Б', 'КБ', 'МБ', 'ГБ'];
-  let size = bytes;
-  let unitIndex = 0;
-  while (size >= 1024 && unitIndex < units.length - 1) {
-    size /= 1024;
-    unitIndex += 1;
-  }
-  const rounded = size >= 10 || unitIndex === 0 ? Math.round(size) : Math.round(size * 10) / 10;
-  return `${rounded} ${units[unitIndex]}`;
 }
 
 const optionalDmrText = z.string().optional();

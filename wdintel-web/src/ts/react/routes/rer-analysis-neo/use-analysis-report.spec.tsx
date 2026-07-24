@@ -5,7 +5,7 @@ import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { InboxMessagesReq } from '../../../../Bindings';
+import type { AnalysisStatsReq, InboxMessagesReq } from '../../../../Bindings';
 import { useAnalysisReport } from './use-analysis-report';
 
 const analysisApiMock = vi.hoisted(() => ({
@@ -44,7 +44,7 @@ const onUnauthorized = vi.fn(() => false);
 
 function Harness() {
   latest = useAnalysisReport({
-    analysisReq: null,
+    analysisReq: {} as AnalysisStatsReq,
     fromDateTimeStr: '2026-06-01T10:00',
     inboxReq: { limit: 50 } as unknown as InboxMessagesReq,
     onError,
@@ -95,6 +95,31 @@ afterEach(() => {
 });
 
 describe('useAnalysisReport', () => {
+  it('maps the summary table report limit code to frontend-owned text', async () => {
+    renderHook();
+
+    act(() => {
+      latest?.updateReport({ template: 'summary_table' });
+    });
+    analysisApiMock.launchAnalysisSummaryTableTask.mockResolvedValueOnce(123);
+    analysisApiMock.fetchAnalysisReportTaskStatus.mockResolvedValueOnce({
+      running: false,
+      loglines: [],
+      finishedWithError: 'BL { msg: "summary_table_report_message_limit" }',
+      finishedWithErrorCode: 'summary_table_report_message_limit',
+      progress: 0,
+    });
+
+    await act(async () => {
+      await latest?.downloadReport();
+    });
+
+    expect(onError).toHaveBeenCalledWith(
+      'Звіт містить понад 10 000 повідомлень. Зменшіть період або звузьте фільтри.',
+    );
+    expect(onError).not.toHaveBeenCalledWith(expect.stringContaining('BL {'));
+  });
+
   it('maps the mouse report limit code to frontend-owned text', async () => {
     renderHook();
 

@@ -150,6 +150,14 @@ pub mod tests {
             .exec(&env.dbx)
             .await
             .context(h!())?;
+        sigint_unit_attachment_aor::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .context(h!())?;
+        sigint_unit_attachment::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .context(h!())?;
         sigint_unit::Entity::delete_many()
             .exec(&env.dbx)
             .await

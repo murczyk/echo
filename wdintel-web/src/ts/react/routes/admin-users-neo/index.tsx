@@ -152,6 +152,7 @@ type EditUserForm = {
   deltaLogin: string;
   deleted: boolean;
   description: string;
+  passwordAuthEnabled: boolean;
 };
 
 type EditUserErrors = {
@@ -192,6 +193,7 @@ function buildUserLoadingRows(): Login[] {
     deleted: false,
     deactivationReason: null,
     description: null,
+    passwordAuthEnabled: true,
     organismEnabled: true,
     sigintZoneId: null,
     organismName: null,
@@ -338,6 +340,7 @@ function toUpdateLoginReq(form: EditUserForm): UpdateLoginReq {
     deltaLogin: trimmedDelta ? trimmedDelta : null,
     deactivationReason,
     description: form.description.trim() || null,
+    passwordAuthEnabled: form.passwordAuthEnabled,
   };
 }
 
@@ -805,6 +808,7 @@ function EditUserDialog(props: {
       deltaLogin: login.deltaLogin ?? '',
       deleted: login.deleted,
       description: login.description ?? '',
+      passwordAuthEnabled: login.passwordAuthEnabled,
     });
     setErrors({});
     setSubmitError(null);
@@ -998,6 +1002,22 @@ function EditUserDialog(props: {
               disabled={isSubmitting}
               className="xl:col-span-2"
             />
+
+            <div className="flex items-center xl:col-span-2">
+              <FormControlLabel
+                control={
+                  <Checkbox
+                    checked={form.passwordAuthEnabled}
+                    onChange={(event) => {
+                      setForm((prev) =>
+                        prev ? { ...prev, passwordAuthEnabled: event.target.checked } : prev,
+                      );
+                    }}
+                  />
+                }
+                label="Вхід по паролю"
+              />
+            </div>
 
             <div className="flex items-center xl:col-span-2">
               <FormControlLabel

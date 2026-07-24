@@ -98,14 +98,32 @@ pub async fn accounts_stats_timeline(
         .collect::<HashSet<_>>()
         .into_iter()
         .collect::<Vec<_>>();
-    let timelines = crate::stats::read_group_stats_timeline_cached(
-        &env.dbx,
-        master_keys,
-        dt_since,
-        dt_till,
-    )
-    .await
-    .c(h!())?;
+    let analytics_master_keys = master_keys.clone();
+    let timelines =
+        crate::rer_importer::analysis::with_analytics_read_fallback(
+            env.get_ref(),
+            "messenger account stats timeline",
+            true,
+            |db| async move {
+                Ok(crate::stats::read_group_stats_timeline_raw(
+                    &db,
+                    analytics_master_keys,
+                    dt_since,
+                    dt_till,
+                )
+                .await?)
+            },
+            |db| async move {
+                Ok(crate::stats::read_group_stats_timeline_cached(
+                    &db,
+                    master_keys,
+                    dt_since,
+                    dt_till,
+                )
+                .await?)
+            },
+        )
+        .await?;
     let timeline_by_key = timelines
         .into_iter()
         .map(|timeline| (timeline.master_key, timeline.points))
