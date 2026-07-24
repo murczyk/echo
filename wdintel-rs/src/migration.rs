@@ -1,6 +1,5 @@
 use crate::config::read_config;
 use crate::types::*;
-use sea_orm::ConnectionTrait;
 use sea_orm_migration::MigratorTrait;
 use std::path::Path;
 use tokio::process::Command;
@@ -21,9 +20,6 @@ pub async fn run_migration_1(mode: Mode) -> Result<(), AppError> {
     let dbx = crate::new_pg_pool_from_mode(mode).await.context(h!())?;
 
     echo_im::run_migration(&dbx).await.context(h!())?;
-    dbx.execute_unprepared(r#"CREATE EXTENSION IF NOT EXISTS "pg_uuidv7";"#)
-        .await
-        .context(h!())?;
     echo_gpu_client::run_migration(&dbx).await.context(h!())?;
     echo_migration::Migrator::up(&dbx, None)
         .await
