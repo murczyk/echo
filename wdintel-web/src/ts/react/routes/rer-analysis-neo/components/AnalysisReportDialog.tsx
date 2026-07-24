@@ -464,8 +464,8 @@ export function AnalysisReportDialog({
                   })
                 }
               >
-                <MenuItem value="ByTime">За Часом</MenuItem>
-                <MenuItem value="ByFreqThenTime">За Частотою Та Часом</MenuItem>
+                <MenuItem value="ByTime">За часом</MenuItem>
+                <MenuItem value="ByFreqThenTime">За частотою та часом</MenuItem>
               </Select>
             </FormControl>
           ) : null}

@@ -629,10 +629,10 @@ view user model shared route =
                     sortLabel sortBy =
                         case sortBy of
                             B.ByTime ->
-                                "За Часом"
+                                "За часом"
 
                             B.ByFreqThenTime ->
-                                "За Частотою Та Часом"
+                                "За частотою та часом"
 
                     selDescription =
                         p
