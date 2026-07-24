@@ -581,6 +581,7 @@ export function useAnalysisData({
     onToggleMessageBookmark: messageActionState.onToggleMessageBookmark,
     onToggleMessageImportant: messageActionState.onToggleMessageImportant,
     onToggleMessageTag: messageActionState.onToggleMessageTag,
+    onAddPointHighlightBlacklist: messageActionState.onAddPointHighlightBlacklist,
     options: referenceState.options,
     profiles: referenceState.profiles,
     refreshMapDateRange: mapData.refreshMapDateRange,

@@ -33,6 +33,9 @@ import { hasRole } from '../../utils/roles';
 import { listLogins } from './logins';
 import { listOrganisms } from './organisms';
 import { fetchCurrentUser } from './user';
+import { pointBlacklistLabelKey } from '../../routes/shared/message-card/point-highlight-blacklist';
+
+export { pointBlacklistLabelKey as highlightBlacklistLabelKey } from '../../routes/shared/message-card/point-highlight-blacklist';
 
 type CreatePalitraReqBody = {
   name: string;
@@ -382,10 +385,6 @@ function normalizeHighlightBlacklistEntry(
     : null;
 }
 
-export function highlightBlacklistLabelKey(label: string): string {
-  return label.trim().toLowerCase();
-}
-
 function normalizeHighlightBlacklist(raw: unknown): PalitraHighlightBlacklistEntry[] {
   const values = Array.isArray(raw)
     ? raw
@@ -401,7 +400,7 @@ function normalizeHighlightBlacklist(raw: unknown): PalitraHighlightBlacklistEnt
     .filter(isPresent);
   const seen = new Set<string>();
   return entries.filter((entry) => {
-    const key = highlightBlacklistLabelKey(entry.label);
+    const key = pointBlacklistLabelKey(entry.label);
     if (seen.has(key)) return false;
     seen.add(key);
     return true;

@@ -18,6 +18,7 @@ import {
   inboxMessageTagsModelError,
   inboxMessageTagsRm,
 } from '../../services/api/inbox';
+import { addPalitraHighlightBlacklistEntry } from '../../services/api/palitra';
 import { copyTextToClipboard } from '../../../copy-to-clipboard';
 import { buildMessageCardDisplayLabels } from '../shared/message-card/message-card-labels';
 import type { MessageCardBotTagAction } from '../shared/message-card/message-card.types';
@@ -28,6 +29,11 @@ import {
   toggleHumanTag,
 } from '../shared/message-card/message-card-tag-actions';
 import type { MessageFeedState } from './utils';
+import {
+  pointBlacklistLabelKey,
+  removePointHighlightSourceFromMessage,
+  type AddPointHighlightBlacklistRequest,
+} from '../shared/message-card/point-highlight-blacklist';
 
 function getMessageByFeedId(messageFeeds: MessageFeedState[], feedId: string, msgId: number) {
   return (
@@ -73,6 +79,7 @@ export function useRerDutyMessageItemActions(params: Params) {
   const [copiedFeedbackId, setCopiedFeedbackId] = useState<string | null>(null);
   const [botTagAction, setBotTagAction] = useState<MessageCardBotTagAction | null>(null);
   const copiedFeedbackTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pointBlacklistRequestsRef = useRef<Map<string, Promise<void>>>(new Map());
 
   useEffect(() => {
     return () => {
@@ -283,6 +290,41 @@ export function useRerDutyMessageItemActions(params: Params) {
     window.location.assign(buildAnalysisMapHrefWithSearch(search, message));
   }, []);
 
+  const onAddPointHighlightBlacklist = useCallback(
+    (request: AddPointHighlightBlacklistRequest) => {
+      const key = `${request.messageId}:${pointBlacklistLabelKey(request.etalon)}:${request.palitraId}`;
+      const existing = pointBlacklistRequestsRef.current.get(key);
+      if (existing) return existing;
+
+      let promise!: Promise<void>;
+      promise = (async () => {
+        try {
+          await addPalitraHighlightBlacklistEntry(request.palitraId, request.etalon);
+          setMessageFeeds((prev) =>
+            prev.map((feed) => ({
+              ...feed,
+              items: feed.items.map(([id, message]) =>
+                id === request.messageId
+                  ? [id, removePointHighlightSourceFromMessage(message, request)]
+                  : [id, message],
+              ),
+            })),
+          );
+        } catch (error) {
+          setError(error instanceof Error ? error.message : String(error));
+          throw error;
+        } finally {
+          if (pointBlacklistRequestsRef.current.get(key) === promise) {
+            pointBlacklistRequestsRef.current.delete(key);
+          }
+        }
+      })();
+      pointBlacklistRequestsRef.current.set(key, promise);
+      return promise;
+    },
+    [setError, setMessageFeeds],
+  );
+
   return {
     handleMessageBookmark,
     handleMessageImportant,
@@ -307,5 +349,6 @@ export function useRerDutyMessageItemActions(params: Params) {
     deleteConfirmFeedId,
     copiedFeedbackId,
     handleOpenPointsOnMap,
+    onAddPointHighlightBlacklist,
   };
 }

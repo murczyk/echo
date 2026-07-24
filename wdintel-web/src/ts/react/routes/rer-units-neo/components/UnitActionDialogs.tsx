@@ -14,7 +14,6 @@ import { useEffect, useState } from 'react';
 import type { Unit } from '../../../../../Bindings';
 import { ConfirmDangerDialog } from '../../../components/ConfirmDangerDialog';
 import { PowerAlert } from '../../../components/PowerAlert';
-import { STANDARD_DIALOG_ACTIONS_SX } from '../../../components/dialogStyles';
 
 export function DeleteUnitDialog({
   unit,
@@ -94,7 +93,7 @@ export function MergeUnitDialog({
           {error ? <PowerAlert severity="error">{error}</PowerAlert> : null}
         </Stack>
       </DialogContent>
-      <DialogActions sx={STANDARD_DIALOG_ACTIONS_SX}>
+      <DialogActions>
         <Button onClick={onClose} disabled={submitting}>
           Скасувати
         </Button>

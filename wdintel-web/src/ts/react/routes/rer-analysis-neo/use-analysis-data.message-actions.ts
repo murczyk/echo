@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { isNullOrUndefined } from '../../utils/misc';
 
 import type { InboxMessage, SummaryTableFreqRow } from '../../../../Bindings';
@@ -14,6 +14,7 @@ import {
   inboxMessageTagsModelError,
   inboxMessageTagsRm,
 } from '../../services/api/analysis';
+import { addPalitraHighlightBlacklistEntry } from '../../services/api/palitra';
 import { buildAnalysisReq } from './helpers';
 import type { User } from '../../../../Bindings';
 import type { AnalysisQueryState, AnalysisReloadOptions } from './types';
@@ -24,6 +25,11 @@ import {
   removeBotTags,
   toggleHumanTag,
 } from '../shared/message-card/message-card-tag-actions';
+import {
+  pointBlacklistLabelKey,
+  removePointHighlightSourceFromMessage,
+  type AddPointHighlightBlacklistRequest,
+} from '../shared/message-card/point-highlight-blacklist';
 
 type Params = {
   currentUser: User | null;
@@ -46,6 +52,7 @@ type Params = {
 export function useAnalysisDataMessageActions(params: Params) {
   const [messageActionCount, setMessageActionCount] = useState(0);
   const [botTagAction, setBotTagAction] = useState<MessageCardBotTagAction | null>(null);
+  const pointBlacklistRequestsRef = useRef<Map<string, Promise<void>>>(new Map());
 
   const onDeleteMessage = useCallback(
     async (messageId: number) => {
@@ -62,6 +69,36 @@ export function useAnalysisDataMessageActions(params: Params) {
       } finally {
         setMessageActionCount((current) => Math.max(0, current - 1));
       }
+    },
+    [params],
+  );
+
+  const onAddPointHighlightBlacklist = useCallback(
+    (request: AddPointHighlightBlacklistRequest) => {
+      const key = `${request.messageId}:${pointBlacklistLabelKey(request.etalon)}:${request.palitraId}`;
+      const existing = pointBlacklistRequestsRef.current.get(key);
+      if (existing) return existing;
+
+      let promise!: Promise<void>;
+      promise = (async () => {
+        try {
+          await addPalitraHighlightBlacklistEntry(request.palitraId, request.etalon);
+          params.patchMessages((messageId, message) =>
+            messageId === request.messageId
+              ? removePointHighlightSourceFromMessage(message, request)
+              : message,
+          );
+        } catch (error) {
+          if (!params.onUnauthorized(error)) params.onError(params.toErrorMessage(error));
+          throw error;
+        } finally {
+          if (pointBlacklistRequestsRef.current.get(key) === promise) {
+            pointBlacklistRequestsRef.current.delete(key);
+          }
+        }
+      })();
+      pointBlacklistRequestsRef.current.set(key, promise);
+      return promise;
     },
     [params],
   );
@@ -254,5 +291,6 @@ export function useAnalysisDataMessageActions(params: Params) {
     onToggleMessageImportant,
     onToggleMessageTag,
     renameSummaryUnit,
+    onAddPointHighlightBlacklist,
   };
 }

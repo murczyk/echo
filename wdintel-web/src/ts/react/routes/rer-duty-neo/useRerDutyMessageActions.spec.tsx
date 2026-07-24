@@ -16,6 +16,7 @@ import type {
 import { minimalInboxMessage } from './inbox-message-mocks';
 import { buildInboxReq, emptyFilter, type MessageFeedState } from './utils';
 import { useRerDutyMessageActions } from './useRerDutyMessageActions';
+import { HttpRequestError } from '../../services/api/client';
 
 const hoisted = vi.hoisted(() => ({
   deleteMessage: vi.fn(),
@@ -39,6 +40,7 @@ const hoisted = vi.hoisted(() => ({
   setWatchModeByFeedId: vi.fn(),
   setLoadingNewerFeedIds: vi.fn(),
   beginFollowTail: vi.fn(() => 17),
+  addPalitraHighlightBlacklistEntry: vi.fn(),
 }));
 
 vi.mock('../../services/api/inbox', () => ({
@@ -63,6 +65,10 @@ vi.mock('../../../copy-to-clipboard', () => ({
 
 vi.mock('../../services/api/analysis', () => ({
   fetchAnalysisCallsignInfos: vi.fn(() => Promise.resolve([])),
+}));
+
+vi.mock('../../services/api/palitra', () => ({
+  addPalitraHighlightBlacklistEntry: hoisted.addPalitraHighlightBlacklistEntry,
 }));
 
 vi.mock('../../services/api/user-settings', () => ({
@@ -99,6 +105,7 @@ type HarnessApi = ReturnType<typeof useRerDutyMessageActions> & {
   botTagAction: ReturnType<typeof useRerDutyMessageActions>['botTagAction'];
   onCancelBotTagAction: ReturnType<typeof useRerDutyMessageActions>['onCancelBotTagAction'];
   onMarkBotTagWrong: ReturnType<typeof useRerDutyMessageActions>['onMarkBotTagWrong'];
+  setError: ReturnType<typeof vi.fn>;
 };
 
 function buildReqForFeed(_feed: MessageFeedState, opts: BuildReqOpts): InboxMessagesReq {
@@ -157,6 +164,7 @@ function TestHarness(props: {
   initialFeeds?: MessageFeedState[];
   initialSavedFilters?: SavedFilterDuty[];
   authUserName?: string | null;
+  errorRef?: MutableRefObject<ReturnType<typeof vi.fn> | null>;
   columnRefsRef?: MutableRefObject<
     Record<string, { scrollToEnd: (behavior?: ScrollBehavior) => void } | null>
   >;
@@ -175,10 +183,11 @@ function TestHarness(props: {
     Record<string, { scrollToEnd: (behavior?: ScrollBehavior) => void } | null>
   >({});
   const columnRefsRef = props.columnRefsRef ?? fallbackColumnRefsRef;
+  const setError = props.errorRef?.current ?? vi.fn();
   const actions = useRerDutyMessageActions({
     messageFeeds,
     setMessageFeeds,
-    setError: vi.fn(),
+    setError,
     applyFilter: vi.fn(),
     loadFeedInitialMessages: hoisted.loadFeedInitialMessages,
     loadFeedNewerMessages: hoisted.loadFeedNewerMessages,
@@ -219,6 +228,7 @@ function TestHarness(props: {
     botTagAction: actions.botTagAction,
     onCancelBotTagAction: actions.onCancelBotTagAction,
     onMarkBotTagWrong: actions.onMarkBotTagWrong,
+    setError,
   };
   return null;
 }
@@ -1028,5 +1038,94 @@ describe('useRerDutyMessageActions', () => {
     expect(apiRef.current!.botTagAction).toBeNull();
     expect(apiRef.current!.messageFeeds[0].items[0]?.[1].inboxTags).toEqual([]);
     expect(apiRef.current!.messageFeeds[0].items[0]?.[1].tags).toEqual([4]);
+  });
+
+  it('adds a blacklist entry once and patches every loaded feed copy', async () => {
+    const message = buildMessage({
+      textMarked: [{ CNPointC: { etalon: ' Пункт Альфа ', text: 'Альфа', palitraIds: [7, 12] } }],
+      pointTokens: [{ etalon: 'ПУНКТ АЛЬФА', text: 'Альфа', palitraIds: [7, 12] }],
+    });
+    const initialFeeds = [
+      buildFeed({ id: 'mf-a', items: [[42, message]] }),
+      buildFeed({
+        id: 'mf-b',
+        items: [
+          [42, message],
+          [99, buildMessage()],
+        ],
+      }),
+    ];
+    const apiRef: MutableRefObject<HarnessApi | null> = { current: null };
+    hoisted.addPalitraHighlightBlacklistEntry.mockResolvedValue(undefined);
+
+    await act(async () => {
+      root.render(<TestHarness apiRef={apiRef} initialFeeds={initialFeeds} />);
+    });
+    const first = apiRef.current!.onAddPointHighlightBlacklist({
+      messageId: 42,
+      etalon: 'Пункт Альфа',
+      palitraId: 7,
+    });
+    const second = apiRef.current!.onAddPointHighlightBlacklist({
+      messageId: 42,
+      etalon: ' пункт альфа ',
+      palitraId: 7,
+    });
+    expect(second).toBe(first);
+    await act(async () => {
+      await first;
+    });
+
+    expect(hoisted.addPalitraHighlightBlacklistEntry).toHaveBeenCalledTimes(1);
+    expect(hoisted.addPalitraHighlightBlacklistEntry).toHaveBeenCalledWith(7, 'Пункт Альфа');
+    expect(apiRef.current!.messageFeeds[0].items[0]?.[1].pointTokens).toEqual([
+      { etalon: 'ПУНКТ АЛЬФА', text: 'Альфа', palitraIds: [12] },
+    ]);
+    expect(apiRef.current!.messageFeeds[1].items[0]?.[1].pointTokens).toEqual([
+      { etalon: 'ПУНКТ АЛЬФА', text: 'Альфа', palitraIds: [12] },
+    ]);
+    expect(apiRef.current!.messageFeeds[1].items[1]?.[1]).toBe(initialFeeds[1].items[1]?.[1]);
+  });
+
+  it('leaves feeds unchanged and reports a failed blacklist request', async () => {
+    const errorRef: MutableRefObject<ReturnType<typeof vi.fn> | null> = { current: vi.fn() };
+    const initialFeeds = [buildFeed({ items: [[42, buildMessage()]] })];
+    const apiRef: MutableRefObject<HarnessApi | null> = { current: null };
+    hoisted.addPalitraHighlightBlacklistEntry.mockRejectedValueOnce(new Error('boom'));
+    await act(async () => {
+      root.render(<TestHarness apiRef={apiRef} initialFeeds={initialFeeds} errorRef={errorRef} />);
+    });
+    const original = apiRef.current!.messageFeeds[0].items[0]?.[1];
+    await expect(
+      apiRef.current!.onAddPointHighlightBlacklist({
+        messageId: 42,
+        etalon: 'Альфа',
+        palitraId: 7,
+      }),
+    ).rejects.toThrow('boom');
+    expect(apiRef.current!.messageFeeds[0].items[0]?.[1]).toBe(original);
+    expect(errorRef.current).toHaveBeenCalledWith('boom');
+  });
+
+  it('rejects an unauthorized blacklist request without patching feeds', async () => {
+    hoisted.addPalitraHighlightBlacklistEntry.mockImplementationOnce(async () => {
+      throw new HttpRequestError(401, 'unauthorized');
+    });
+    const initialFeeds = [buildFeed({ items: [[42, buildMessage()]] })];
+    const apiRef: MutableRefObject<HarnessApi | null> = { current: null };
+    await act(async () => {
+      root.render(<TestHarness apiRef={apiRef} initialFeeds={initialFeeds} />);
+    });
+    const original = apiRef.current!.messageFeeds[0].items[0]?.[1];
+    const error = await apiRef
+      .current!.onAddPointHighlightBlacklist({
+        messageId: 42,
+        etalon: 'Альфа',
+        palitraId: 7,
+      })
+      .catch((value) => value);
+    expect(error).toBeInstanceOf(HttpRequestError);
+    expect(error).toMatchObject({ status: 401 });
+    expect(apiRef.current!.messageFeeds[0].items[0]?.[1]).toBe(original);
   });
 });

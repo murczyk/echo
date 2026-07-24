@@ -24,7 +24,6 @@ import { useEffect, useMemo, useState } from 'react';
 
 import type { CreateUnitReq, Unit } from '../../../../../Bindings';
 import { PowerAlert } from '../../../components/PowerAlert';
-import { STANDARD_DIALOG_ACTIONS_SX } from '../../../components/dialogStyles';
 import { handleNavigateWithinSpaClick } from '../../../utils/browser';
 import {
   defaultUnitMasks,
@@ -355,7 +354,7 @@ export function UnitFormDialog({
           {error ? <PowerAlert severity="error">{error}</PowerAlert> : null}
         </Stack>
       </DialogContent>
-      <DialogActions sx={STANDARD_DIALOG_ACTIONS_SX}>
+      <DialogActions>
         {networkStep ? (
           <Button
             onClick={() => setNetworkStep(false)}

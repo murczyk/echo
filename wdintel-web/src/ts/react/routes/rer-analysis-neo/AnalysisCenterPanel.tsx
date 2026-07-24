@@ -203,6 +203,7 @@ export function AnalysisCenterPanel({
             onMarkBotTagWrong={page.onMarkBotTagWrong}
             onOpenEditor={page.openEditor}
             onOpenPointsOnMap={page.openPointsOnMap}
+            onAddPointHighlightBlacklist={page.onAddPointHighlightBlacklist}
             onSaveMessageUpdate={page.saveMessageUpdate}
             onSaveMessageComment={page.onSaveMessageComment}
             onToggleMessageBookmark={page.onToggleMessageBookmark}

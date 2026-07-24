@@ -1,4 +1,4 @@
-import { Box, IconButton, Menu, MenuItem, Tooltip, Typography } from '@mui/material';
+import { Box, IconButton, ListItemText, MenuItem, Tooltip, Typography } from '@mui/material';
 import InfoIcon from '@mui/icons-material/Info';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import { useId, useState } from 'react';
@@ -24,6 +24,11 @@ import {
   isCallsignRelatedToNetworks,
 } from '../../rer-analysis-neo/callsign-hints';
 import { renderLinkifiedText } from './message-card-linkify';
+import {
+  pointBlacklistLabelKey,
+  type PointBlacklistRequestSource,
+} from './point-highlight-blacklist';
+import { PowerMenu } from '../../../components/PowerMenu';
 
 const ORANGE_TOKEN_BG = '#fd884f';
 const ORANGE_TOKEN_FG = '#000';
@@ -191,6 +196,10 @@ function PointToken({
   message,
   etalonsAll,
   etalonSingle,
+  palitraIds,
+  messageId,
+  onRequestPointBlacklist,
+  pendingBlacklistKeys,
 }: {
   text: string;
   hrefAll: string;
@@ -201,9 +210,26 @@ function PointToken({
   message?: InboxMessage;
   etalonsAll: string[];
   etalonSingle: string;
+  palitraIds: number[];
+  messageId: number;
+  onRequestPointBlacklist?: (source: PointBlacklistRequestSource) => void;
+  pendingBlacklistKeys: Set<string>;
 }) {
   const [menuAnchorEl, setMenuAnchorEl] = useState<HTMLElement | null>(null);
   const menuId = useId();
+  const sourcePalitraIds = Array.from(new Set(palitraIds));
+  const blacklistLabel = etalonSingle.trim();
+  const directBlacklistKey = `${messageId}:${pointBlacklistLabelKey(blacklistLabel)}:${sourcePalitraIds[0] ?? ''}`;
+
+  function chooseBlacklistPalette() {
+    if (!onRequestPointBlacklist) return;
+    setMenuAnchorEl(null);
+    const activeElement = document.activeElement;
+    if (activeElement instanceof HTMLElement) activeElement.blur();
+    window.setTimeout(() => {
+      onRequestPointBlacklist({ messageId, etalon: blacklistLabel, palitraIds: sourcePalitraIds });
+    }, 0);
+  }
 
   function openMenu(event: SyntheticEvent<HTMLElement>) {
     event.preventDefault();
@@ -254,12 +280,12 @@ function PointToken({
           </span>
         </IconButton>
       </span>
-      <Menu
+      <PowerMenu
         id={menuId}
         anchorEl={menuAnchorEl}
-        open={isPresent(menuAnchorEl)}
+        open={menuAnchorEl !== null}
         onClose={() => setMenuAnchorEl(null)}
-        MenuListProps={{ 'aria-label': 'Дії з точкою' }}
+        slotProps={{ list: { 'aria-label': 'Дії з точкою' } }}
       >
         {hasMultiplePoints ? (
           onOpenPointsOnMap && message ? (
@@ -323,7 +349,35 @@ function PointToken({
             Показати на мапі
           </MenuItem>
         )}
-      </Menu>
+        {onRequestPointBlacklist ? (
+          sourcePalitraIds.length === 0 ? (
+            <MenuItem disabled>
+              <ListItemText
+                primary="Додати до чорного списку"
+                secondary="Неможливо визначити палітру-джерело"
+              />
+            </MenuItem>
+          ) : sourcePalitraIds.length === 1 ? (
+            <MenuItem
+              onClick={() => {
+                setMenuAnchorEl(null);
+                onRequestPointBlacklist({
+                  messageId,
+                  etalon: blacklistLabel,
+                  palitraIds: sourcePalitraIds,
+                });
+              }}
+              disabled={pendingBlacklistKeys.has(directBlacklistKey)}
+            >
+              {pendingBlacklistKeys.has(directBlacklistKey)
+                ? 'Додавання…'
+                : 'Додати до чорного списку'}
+            </MenuItem>
+          ) : (
+            <MenuItem onClick={chooseBlacklistPalette}>Додати до чорного списку…</MenuItem>
+          )
+        ) : null}
+      </PowerMenu>
     </>
   );
 }
@@ -559,6 +613,9 @@ export function renderMarkedText(
     linkCallsigns?: boolean;
     message?: InboxMessage;
     onOpenPointsOnMap?: (etalons: string[], message: InboxMessage) => void;
+    messageId?: number;
+    onRequestPointBlacklist?: (source: PointBlacklistRequestSource) => void;
+    pendingBlacklistKeys?: Set<string>;
     callsignInfoMap?: Record<string, CallsignInfoRes>;
     networks?: Network[];
     unitsMap?: Record<number, Unit>;
@@ -664,6 +721,10 @@ export function renderMarkedText(
           message={messageForMap}
           etalonsAll={etalonsForUrl}
           etalonSingle={cleanEtalon}
+          palitraIds={node.CNPointC.palitraIds}
+          messageId={options?.messageId ?? 0}
+          onRequestPointBlacklist={options?.onRequestPointBlacklist}
+          pendingBlacklistKeys={options?.pendingBlacklistKeys ?? new Set()}
         />,
       );
     }

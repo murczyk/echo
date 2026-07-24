@@ -202,4 +202,30 @@ describe('palitra highlight blacklist', () => {
       },
     ]);
   });
+
+  it('accepts the generated camel-case blacklist response shape', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            id: 8,
+            palitraId: 42,
+            label: 'Точка',
+            createdByLoginId: 'a',
+            createdByLogin: 'b',
+          }),
+          { status: 200 },
+        ),
+      ),
+    );
+
+    await expect(addPalitraHighlightBlacklistEntry(42, 'Точка')).resolves.toEqual({
+      id: 8,
+      palitraId: 42,
+      label: 'Точка',
+      createdByLoginId: 'a',
+      createdByLogin: 'b',
+    });
+  });
 });

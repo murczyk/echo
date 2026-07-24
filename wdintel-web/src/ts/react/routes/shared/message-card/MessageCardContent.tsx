@@ -6,7 +6,18 @@ import type {
   Tag,
   Unit,
 } from '../../../../../Bindings';
-import { CircularProgress, Typography } from '@mui/material';
+import {
+  Button,
+  CircularProgress,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
+  List,
+  ListItemButton,
+  ListItemText,
+  Typography,
+} from '@mui/material';
 import ChatBubbleOutlineOutlinedIcon from '@mui/icons-material/ChatBubbleOutlineOutlined';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { isPresent } from '../../../utils/misc';
@@ -43,6 +54,92 @@ import { MessageMediaDocumentLink } from './MessageMediaDocumentLink';
 import { MessageCardDocumentPreviewDialog } from './MessageCardDocumentPreviewDialog';
 import { collectMessageDocuments } from './message-card-document-utils';
 import { blurActiveElement } from '../../../utils/focus';
+import { PowerAlert } from '../../../components/PowerAlert';
+import { useOptionalPowerSnackbar } from '../../../components/PowerSnackbar';
+import { listPalitras } from '../../../services/api/palitra';
+import type { Palitra } from '../../../../../Bindings';
+import {
+  pointBlacklistLabelKey,
+  type AddPointHighlightBlacklistRequest,
+  type PointBlacklistRequestSource,
+} from './point-highlight-blacklist';
+
+type PointBlacklistDialogState = {
+  request: AddPointHighlightBlacklistRequest;
+  palitraIds: number[];
+};
+
+function PointBlacklistPaletteDialog({
+  state,
+  palitras,
+  loading,
+  error,
+  pendingPalitraIds,
+  mutationError,
+  onRetry,
+  onChoose,
+  onClose,
+}: {
+  state: PointBlacklistDialogState | null;
+  palitras: Palitra[];
+  loading: boolean;
+  error: string | null;
+  pendingPalitraIds: Set<number>;
+  mutationError: string | null;
+  onRetry: () => void;
+  onChoose: (palitraId: number) => void;
+  onClose: () => void;
+}) {
+  return (
+    <Dialog open={state != null} onClose={onClose} disableRestoreFocus>
+      <DialogTitle>Додати до чорного списку</DialogTitle>
+      <DialogContent>
+        {state ? (
+          <Typography variant="body2" sx={{ mb: 1.5 }}>
+            Точка: {state.request.etalon}
+          </Typography>
+        ) : null}
+        {loading ? <CircularProgress size={24} aria-label="Завантаження палітр" /> : null}
+        {error ? (
+          <PowerAlert
+            severity="warning"
+            autoHideDuration={null}
+            action={<Button onClick={onRetry}>Повторити</Button>}
+          >
+            {error}
+          </PowerAlert>
+        ) : null}
+        {state ? (
+          <List disablePadding>
+            {state.palitraIds.map((palitraId) => {
+              const palitra = palitras.find((entry) => entry.id === palitraId);
+              return (
+                <ListItemButton
+                  key={palitraId}
+                  disabled={palitraId <= 0 || pendingPalitraIds.has(palitraId)}
+                  onClick={() => onChoose(palitraId)}
+                >
+                  {pendingPalitraIds.has(palitraId) ? (
+                    <CircularProgress size={18} sx={{ mr: 1 }} />
+                  ) : null}
+                  <ListItemText primary={palitra?.name?.trim() || `Палітра #${palitraId}`} />
+                </ListItemButton>
+              );
+            })}
+          </List>
+        ) : null}
+        {mutationError ? (
+          <PowerAlert severity="error" autoHideDuration={null}>
+            {mutationError}
+          </PowerAlert>
+        ) : null}
+      </DialogContent>
+      <DialogActions>
+        <Button onClick={onClose}>Закрити</Button>
+      </DialogActions>
+    </Dialog>
+  );
+}
 
 export type { AnalysisCallsignActions, MessageCardBotTagAction } from './message-card.types';
 
@@ -67,6 +164,7 @@ export function MessageCardMessageBody({
   signalMessageSenderLabel,
   searchText,
   onOpenPointsOnMap,
+  onAddPointHighlightBlacklist,
 }: {
   compact?: boolean;
   messageId: number;
@@ -88,7 +186,9 @@ export function MessageCardMessageBody({
   signalMessageSenderLabel?: string | null;
   searchText?: string | null;
   onOpenPointsOnMap?: (etalons: string[], message: InboxMessage) => void;
+  onAddPointHighlightBlacklist?: (request: AddPointHighlightBlacklistRequest) => Promise<void>;
 }) {
+  const { notify } = useOptionalPowerSnackbar();
   const images = collectMessageImages(msg);
   const [activeDownloadKeys, setActiveDownloadKeys] = useState<Set<string>>(() => new Set());
   const activeDownloadKeysRef = useRef<Set<string>>(new Set());
@@ -124,6 +224,140 @@ export function MessageCardMessageBody({
   }, []);
   const [imagePreviewIndex, setImagePreviewIndex] = useState<number | null>(null);
   const [videoPreviewIndex, setVideoPreviewIndex] = useState<number | null>(null);
+  const [pointBlacklistDialog, setPointBlacklistDialog] =
+    useState<PointBlacklistDialogState | null>(null);
+  const [pointBlacklistPalitras, setPointBlacklistPalitras] = useState<Palitra[]>([]);
+  const [pointBlacklistLoading, setPointBlacklistLoading] = useState(false);
+  const [pointBlacklistLoadError, setPointBlacklistLoadError] = useState<string | null>(null);
+  const [pointBlacklistPendingPalitraIds, setPointBlacklistPendingPalitraIds] = useState<
+    Set<number>
+  >(new Set());
+  const [pointBlacklistPendingKeys, setPointBlacklistPendingKeys] = useState<Set<string>>(
+    new Set(),
+  );
+  const [pointBlacklistMutationError, setPointBlacklistMutationError] = useState<string | null>(
+    null,
+  );
+  const pointBlacklistPalitrasPromiseRef = useRef<Promise<Palitra[]> | null>(null);
+  const pointBlacklistPendingKeysRef = useRef<Set<string>>(new Set());
+  const mountedRef = useRef(true);
+
+  useEffect(() => {
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
+  const loadPointBlacklistPalitras = useCallback(() => {
+    if (pointBlacklistPalitrasPromiseRef.current) return;
+    setPointBlacklistLoading(true);
+    setPointBlacklistLoadError(null);
+    const promise = listPalitras();
+    pointBlacklistPalitrasPromiseRef.current = promise;
+    promise
+      .then((palitras) => {
+        if (!mountedRef.current) return;
+        setPointBlacklistPalitras(palitras);
+      })
+      .catch((error: unknown) => {
+        if (!mountedRef.current) return;
+        setPointBlacklistLoadError(error instanceof Error ? error.message : String(error));
+      })
+      .finally(() => {
+        if (mountedRef.current) setPointBlacklistLoading(false);
+      });
+  }, []);
+
+  const requestPointBlacklist = useCallback(
+    (source: PointBlacklistRequestSource) => {
+      const palitraIds = Array.from(new Set(source.palitraIds));
+      if (!onAddPointHighlightBlacklist || palitraIds.length === 0) return;
+      if (palitraIds.length > 1) {
+        setPointBlacklistMutationError(null);
+        setPointBlacklistDialog({
+          request: { messageId: source.messageId, etalon: source.etalon, palitraId: palitraIds[0] },
+          palitraIds,
+        });
+        loadPointBlacklistPalitras();
+        return;
+      }
+
+      const request = {
+        messageId: source.messageId,
+        etalon: source.etalon,
+        palitraId: palitraIds[0],
+      };
+      const key = `${request.messageId}:${pointBlacklistLabelKey(request.etalon)}:${request.palitraId}`;
+      if (pointBlacklistPendingKeysRef.current.has(key)) return;
+      pointBlacklistPendingKeysRef.current.add(key);
+      setPointBlacklistPendingKeys((current) => new Set(current).add(key));
+      setPointBlacklistMutationError(null);
+      void onAddPointHighlightBlacklist(request)
+        .then(() => {
+          notify({ severity: 'success', message: 'Точку додано до чорного списку.' });
+        })
+        .catch((error: unknown) => {
+          notify({
+            severity: 'error',
+            message: `Не вдалося додати точку до чорного списку: ${error instanceof Error ? error.message : String(error)}`,
+          });
+        })
+        .finally(() => {
+          pointBlacklistPendingKeysRef.current.delete(key);
+          if (mountedRef.current) {
+            setPointBlacklistPendingKeys((current) => {
+              const next = new Set(current);
+              next.delete(key);
+              return next;
+            });
+          }
+        });
+    },
+    [loadPointBlacklistPalitras, notify, onAddPointHighlightBlacklist],
+  );
+
+  const choosePointBlacklistPalitra = useCallback(
+    async (palitraId: number) => {
+      if (!pointBlacklistDialog || !onAddPointHighlightBlacklist || palitraId <= 0) return;
+      const request = { ...pointBlacklistDialog.request, palitraId };
+      const key = `${request.messageId}:${pointBlacklistLabelKey(request.etalon)}:${request.palitraId}`;
+      if (pointBlacklistPendingKeysRef.current.has(key)) return;
+      pointBlacklistPendingKeysRef.current.add(key);
+      setPointBlacklistPendingPalitraIds((current) => new Set(current).add(palitraId));
+      setPointBlacklistMutationError(null);
+      try {
+        await onAddPointHighlightBlacklist(request);
+        if (mountedRef.current) {
+          setPointBlacklistDialog(null);
+          notify({ severity: 'success', message: 'Точку додано до чорного списку.' });
+        }
+      } catch (error: unknown) {
+        if (mountedRef.current) {
+          const message = error instanceof Error ? error.message : String(error);
+          setPointBlacklistMutationError(`Не вдалося додати точку до чорного списку: ${message}`);
+          notify({
+            severity: 'error',
+            message: `Не вдалося додати точку до чорного списку: ${message}`,
+          });
+        }
+      } finally {
+        pointBlacklistPendingKeysRef.current.delete(key);
+        if (mountedRef.current) {
+          setPointBlacklistPendingPalitraIds((current) => {
+            const next = new Set(current);
+            next.delete(palitraId);
+            return next;
+          });
+        }
+      }
+    },
+    [notify, onAddPointHighlightBlacklist, pointBlacklistDialog],
+  );
+
+  const retryPointBlacklistPalitras = useCallback(() => {
+    pointBlacklistPalitrasPromiseRef.current = null;
+    loadPointBlacklistPalitras();
+  }, [loadPointBlacklistPalitras]);
 
   const imageHrefSet = useMemo(() => new Set(images.map((image) => image.href)), [images]);
   const documents = collectMessageDocuments(msg);
@@ -166,6 +400,7 @@ export function MessageCardMessageBody({
   const hasTags = tagsLayout !== 'hidden' && Object.keys(tagsMap).length > 0;
   const textPrimary = useMemoText(
     msg,
+    messageId,
     tagsMap,
     showPointLinks,
     callsignInfoMap,
@@ -173,6 +408,8 @@ export function MessageCardMessageBody({
     unitsMap,
     searchText,
     onOpenPointsOnMap,
+    requestPointBlacklist,
+    pointBlacklistPendingKeys,
   );
   const hasTextPrimary = Array.isArray(textPrimary)
     ? textPrimary.some((node) => isPresent(node))
@@ -180,6 +417,21 @@ export function MessageCardMessageBody({
 
   return (
     <div className="flex flex-col min-w-0" style={{ gap: compact ? '12px' : '10px' }}>
+      <PointBlacklistPaletteDialog
+        state={pointBlacklistDialog}
+        palitras={pointBlacklistPalitras}
+        loading={pointBlacklistLoading}
+        error={pointBlacklistLoadError}
+        pendingPalitraIds={pointBlacklistPendingPalitraIds}
+        mutationError={pointBlacklistMutationError}
+        onRetry={retryPointBlacklistPalitras}
+        onChoose={choosePointBlacklistPalitra}
+        onClose={() => {
+          setPointBlacklistDialog(null);
+          setPointBlacklistPendingPalitraIds(new Set());
+          setPointBlacklistMutationError(null);
+        }}
+      />
       {hasImageOrVideoAttachments ? (
         <MessageCardImageList
           images={images}
@@ -352,6 +604,7 @@ export function MessageCardMessageBody({
 
 function useMemoText(
   msg: InboxMessage,
+  messageId: number,
   tagsMap: Record<number, Tag>,
   showPointLinks: boolean,
   callsignInfoMap?: Record<string, CallsignInfoRes>,
@@ -359,12 +612,17 @@ function useMemoText(
   unitsMap?: Record<number, Unit>,
   searchText?: string | null,
   onOpenPointsOnMap?: (etalons: string[], message: InboxMessage) => void,
+  onRequestPointBlacklist?: (source: PointBlacklistRequestSource) => void,
+  pendingBlacklistKeys?: Set<string>,
 ) {
   return msg.textMarked && msg.textMarked.length > 0
     ? renderMarkedText(msg.textMarked, msg.text ?? '', getPointEtalonsFromMessage(msg, tagsMap), {
         showPointLinks,
         message: msg,
         onOpenPointsOnMap,
+        messageId,
+        onRequestPointBlacklist,
+        pendingBlacklistKeys,
         callsignInfoMap,
         networks,
         unitsMap,
