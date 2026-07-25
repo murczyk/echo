@@ -7,6 +7,7 @@ import {
   deleteNetworkCallsign,
   updateNetworkCallsign,
 } from '../../services/api/callsigns';
+import { blurActiveElement } from '../../utils/focus';
 import {
   formatErrorMessage,
   canManageNetworkCallsignActions,
@@ -111,6 +112,10 @@ export function useRerNetworkDetailsNeoPageCallsignActions({
   );
 
   const closeCallsignDrawer = useCallback(() => {
+    if (state.callsignDrawerSaving) return;
+
+    blurActiveElement();
+
     setState((current) => {
       if (current.callsignDrawerSaving) return current;
       return {
@@ -122,7 +127,7 @@ export function useRerNetworkDetailsNeoPageCallsignActions({
         callsignDrawerError: null,
       };
     });
-  }, [setState]);
+  }, [setState, state.callsignDrawerSaving]);
 
   const setCallsignDrawerForm = useCallback(
     (callsignDrawerForm: NetworkDetailsNeoPageState['callsignDrawerForm']) => {
@@ -181,6 +186,7 @@ export function useRerNetworkDetailsNeoPageCallsignActions({
       {
         networkId: network.id,
         callsign,
+        fullName: form.fullName,
         position: form.position,
         comment: form.comment,
         sourceId: form.sourceId,
@@ -218,6 +224,7 @@ export function useRerNetworkDetailsNeoPageCallsignActions({
           ...payload,
         });
       }
+      blurActiveElement();
       setState((current) => ({
         ...current,
         callsignDrawerOpen: false,

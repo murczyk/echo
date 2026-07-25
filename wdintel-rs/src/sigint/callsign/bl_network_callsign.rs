@@ -23,6 +23,7 @@ pub struct NetworkCallsignResult {
     pub sigint_callsign_id: Option<i64>,
     pub position: Option<String>,
     pub comment: Option<String>,
+    pub full_name: Option<String>,
     pub source_id: Option<i64>,
     pub radio_freq: Option<String>,
     pub developing: bool,
@@ -35,6 +36,7 @@ pub struct NetworkCallsignResult {
     pub sc_callsign: Option<String>,
     pub sc_position: Option<String>,
     pub sc_comment: Option<String>,
+    pub sc_full_name: Option<String>,
     pub sc_source_id: Option<i32>,
     pub sc_radio_freq: Option<String>,
     pub sc_developing: Option<bool>,
@@ -68,7 +70,7 @@ pub async fn bl_create_network_callsign(
         callsign: req.callsign.clone(),
         position: req.position.clone().unwrap_or_default(),
         comment: req.comment.clone().unwrap_or_default(),
-        full_name: String::new(),
+        full_name: req.full_name.clone().unwrap_or_default(),
         unit_id,
         source_id: req.source_id.map(|v| v as i32),
         callsign_additional_sources: vec![],
@@ -112,6 +114,7 @@ async fn create_network_callsign_not_linked(
         sigint_callsign_id: NotSet,
         position: Set(req.position.clone()),
         comment: Set(req.comment.clone()),
+        full_name: Set(req.full_name.clone()),
         source_id: Set(req.source_id),
         radio_freq: Set(req.radio_freq.clone()),
         unit_id: Set(req.unit_id),
@@ -170,6 +173,7 @@ async fn create_network_callsign_linked(
         sigint_callsign_id: Set(Some(sigint_callsign_id)),
         position: NotSet,
         comment: NotSet,
+        full_name: NotSet,
         source_id: NotSet,
         radio_freq: NotSet,
         developing: NotSet,
@@ -363,7 +367,11 @@ pub(crate) async fn ensure_callsign(
             callsign: req.callsign.clone(),
             position: req.position.clone().unwrap_or_default(),
             comment: req.comment.clone().unwrap_or_default(),
-            full_name: String::new(),
+            full_name: if req.full_name_is_missing {
+                network_callsign.full_name.clone().unwrap_or_default()
+            } else {
+                req.full_name.clone().unwrap_or_default()
+            },
             unit_id,
             source_id: req.source_id.map(|v| v as i32),
             callsign_additional_sources: vec![],
@@ -400,12 +408,20 @@ async fn update_network_callsign_linked(
         list_callsign_additional_source_ids(txn, known_callsign.id)
             .await
             .context(h!())?;
+    let full_name = if req.full_name_is_missing {
+        network_callsign
+            .full_name
+            .clone()
+            .unwrap_or_else(|| known_callsign.full_name.clone())
+    } else {
+        req.full_name.clone().unwrap_or_default()
+    };
     let known_callsing_req = UpdateCallsignReq {
         id: known_callsign.id,
         callsign: req.callsign.clone(),
         position: req.position.clone().unwrap_or_default(),
         comment: req.comment.clone().unwrap_or_default(),
-        full_name: Some(known_callsign.full_name.clone()),
+        full_name: Some(full_name),
         full_name_is_missing: false,
         unit_id: req.unit_id.unwrap_or(known_callsign.unit_id),
         active: known_callsign.deleted,
@@ -436,6 +452,7 @@ async fn update_network_callsign_linked(
     if clear_position_comment {
         network_callsign_record.position = Set(None);
         network_callsign_record.comment = Set(None);
+        network_callsign_record.full_name = Set(None);
     }
     let network_callsign =
         network_callsign_record.update(txn).await.context(h!())?;
@@ -471,6 +488,21 @@ async fn update_network_callsign_not_linked(
         .context(h!())?
         .ok_or(AppError::NotFound)?;
 
+    let linked_full_name = if req.full_name_is_missing {
+        if let Some(callsign_id) = network_callsign.sigint_callsign_id {
+            Some(
+                find_callsign(txn, callsign_id)
+                    .await
+                    .context(h!())?
+                    .full_name,
+            )
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
     let network_callsign_json_old = get_network_callsign_rec_json(req.id, txn)
         .await
         .context(h!())?;
@@ -482,6 +514,11 @@ async fn update_network_callsign_not_linked(
         Set(req.callsign.clone().trim().to_lowercase());
     network_callsign_record.position = Set(req.position.clone());
     network_callsign_record.comment = Set(req.comment.clone());
+    if !req.full_name_is_missing {
+        network_callsign_record.full_name = Set(req.full_name.clone());
+    } else if let Some(full_name) = linked_full_name {
+        network_callsign_record.full_name = Set(Some(full_name));
+    }
     network_callsign_record.source_id = Set(req.source_id);
     network_callsign_record.radio_freq = Set(req.radio_freq.clone());
     network_callsign_record.unit_id = Set(req.unit_id);
@@ -714,6 +751,7 @@ where
             sigint_network_callsign::Column::SigintCallsignId,
             sigint_network_callsign::Column::Position,
             sigint_network_callsign::Column::Comment,
+            sigint_network_callsign::Column::FullName,
             sigint_network_callsign::Column::SourceId,
             sigint_network_callsign::Column::RadioFreq,
             sigint_network_callsign::Column::Developing,
@@ -744,6 +782,13 @@ where
                 sigint_callsign::Column::Comment,
             )),
             "sc_comment",
+        )
+        .column_as(
+            Expr::col((
+                sigint_callsign::Entity,
+                sigint_callsign::Column::FullName,
+            )),
+            "sc_full_name",
         )
         .column_as(
             Expr::col((
@@ -986,6 +1031,10 @@ pub fn render_network_callsign(
             .comment
             .clone()
             .or(network_callsign.sc_comment.clone()),
+        full_name: network_callsign
+            .full_name
+            .clone()
+            .or(network_callsign.sc_full_name.clone()),
         unit_id: network_callsign.unit_id.or(network_callsign.sc_unit_id),
         unit_name: network_callsign
             .unit_name
@@ -1079,4 +1128,47 @@ pub async fn bl_get_network_callsigns_activity(
     .collect();
 
     Ok(res)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn linked_network_callsign_reload_uses_updated_catalog_full_name() {
+        let network_callsign = NetworkCallsignResult {
+            id: 1,
+            sigint_network_id: 2,
+            sigint_callsign: "сокіл-1".to_string(),
+            sigint_callsign_id: Some(3),
+            position: None,
+            comment: None,
+            full_name: None,
+            source_id: None,
+            radio_freq: None,
+            developing: false,
+            unit_developing: false,
+            main_radio_station: false,
+            command_control: false,
+            created_at: NaiveDateTime::default(),
+            deleted: false,
+            sc_callsign: Some("сокіл-1".to_string()),
+            sc_position: None,
+            sc_comment: None,
+            sc_full_name: Some("Петренко Петро".to_string()),
+            sc_source_id: None,
+            sc_radio_freq: None,
+            sc_developing: Some(false),
+            sc_deleted: Some(false),
+            sc_unit_id: None,
+            sc_unit_name: None,
+            unit_id: None,
+            unit_name: None,
+        };
+
+        let rendered =
+            render_network_callsign(&network_callsign, None).unwrap();
+
+        assert_eq!(rendered.full_name, Some("Петренко Петро".to_string()));
+    }
 }

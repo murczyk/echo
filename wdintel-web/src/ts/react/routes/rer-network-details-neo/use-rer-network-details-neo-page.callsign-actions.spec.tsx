@@ -17,8 +17,15 @@ vi.mock('../../services/api/callsigns', () => ({
   deleteNetworkCallsign: vi.fn(),
   updateNetworkCallsign: vi.fn(),
 }));
+vi.mock('../../utils/focus', () => ({
+  blurActiveElement: vi.fn(),
+}));
 
 import { useRerNetworkDetailsNeoPageCallsignActions } from './use-rer-network-details-neo-page.callsign-actions';
+import { createNetworkCallsign, updateNetworkCallsign } from '../../services/api/callsigns';
+import { blurActiveElement } from '../../utils/focus';
+import { createDefaultNetworkCallsignDrawerForm } from './network-callsigns.forms';
+import type { NetworkCallsignDrawerForm } from './network-callsigns.types';
 
 type HookResult = ReturnType<typeof useRerNetworkDetailsNeoPageCallsignActions>;
 
@@ -26,9 +33,16 @@ let root: Root | null = null;
 let latestActions: HookResult | null = null;
 let latestState: NetworkDetailsNeoPageState | null = null;
 
-function Harness({ unitIds }: { unitIds: number[] }) {
+function Harness({
+  unitIds,
+  initialState = {},
+}: {
+  unitIds: number[];
+  initialState?: Partial<NetworkDetailsNeoPageState>;
+}) {
   const [state, setState] = useState<NetworkDetailsNeoPageState>({
     ...EMPTY_STATE,
+    ...initialState,
     network: { id: 17, unitIds } as Network,
     currentUser: { roles: ['Admin'] } as User,
   });
@@ -43,13 +57,13 @@ function Harness({ unitIds }: { unitIds: number[] }) {
   return null;
 }
 
-function renderHarness(unitIds: number[]) {
+function renderHarness(unitIds: number[], initialState?: Partial<NetworkDetailsNeoPageState>) {
   const container = document.createElement('div');
   document.body.appendChild(container);
   root = createRoot(container);
 
   act(() => {
-    root?.render(createElement(Harness, { unitIds }));
+    root?.render(createElement(Harness, { unitIds, initialState }));
   });
 }
 
@@ -91,5 +105,80 @@ describe('useRerNetworkDetailsNeoPageCallsignActions', () => {
       unitId: null,
       developing: false,
     });
+  });
+
+  it('blurs focus before closing a non-saving drawer', () => {
+    renderHarness([101]);
+    act(() => {
+      latestActions?.openCallsignDrawerForCreate();
+    });
+    vi.mocked(blurActiveElement).mockImplementation(() => {
+      expect(latestState?.callsignDrawerOpen).toBe(true);
+    });
+
+    act(() => {
+      latestActions?.closeCallsignDrawer();
+    });
+
+    expect(blurActiveElement).toHaveBeenCalledOnce();
+    expect(latestState?.callsignDrawerOpen).toBe(false);
+  });
+
+  it('does not blur or close a saving drawer', () => {
+    const form = createDefaultNetworkCallsignDrawerForm(17, 101);
+    renderHarness([101], {
+      callsignDrawerOpen: true,
+      callsignDrawerSaving: true,
+      callsignDrawerForm: form,
+    });
+
+    act(() => {
+      latestActions?.closeCallsignDrawer();
+    });
+
+    expect(blurActiveElement).not.toHaveBeenCalled();
+    expect(latestState?.callsignDrawerOpen).toBe(true);
+  });
+
+  it.each([
+    ['create', createNetworkCallsign],
+    ['edit', updateNetworkCallsign],
+  ] as const)('blurs focus after a successful %s save', async (mode, apiCall) => {
+    vi.mocked(apiCall).mockResolvedValue({} as never);
+    const form: NetworkCallsignDrawerForm = {
+      ...createDefaultNetworkCallsignDrawerForm(17, 101),
+      id: mode === 'edit' ? 4 : null,
+      callsign: 'СОКІЛ',
+    };
+    renderHarness([101], {
+      callsignDrawerOpen: true,
+      callsignDrawerMode: mode,
+      callsignDrawerForm: form,
+    });
+    vi.mocked(blurActiveElement).mockImplementation(() => {
+      expect(latestState?.callsignDrawerOpen).toBe(true);
+    });
+
+    await act(async () => {
+      await latestActions?.saveCallsignDrawer();
+    });
+
+    expect(blurActiveElement).toHaveBeenCalledOnce();
+    expect(latestState?.callsignDrawerOpen).toBe(false);
+  });
+
+  it('does not blur when saving fails', async () => {
+    vi.mocked(createNetworkCallsign).mockRejectedValue(new Error('failed'));
+    renderHarness([101]);
+    act(() => {
+      latestActions?.openCallsignDrawerForCreate({ callsign: 'СОКІЛ' });
+    });
+
+    await act(async () => {
+      await latestActions?.saveCallsignDrawer();
+    });
+
+    expect(blurActiveElement).not.toHaveBeenCalled();
+    expect(latestState?.callsignDrawerOpen).toBe(true);
   });
 });

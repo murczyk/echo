@@ -2,6 +2,7 @@ export type NetworkCallsignWritePayload = {
   id?: number;
   networkId: number;
   callsign: string;
+  fullName: string | null;
   position: string | null;
   comment: string | null;
   sourceId: number | null;
@@ -16,6 +17,7 @@ export type NetworkCallsignWritePayload = {
 type BuildNetworkCallsignWritePayloadInput = {
   networkId: number;
   callsign: string;
+  fullName: string;
   position: string;
   comment: string;
   sourceId: number | null;
@@ -44,6 +46,7 @@ export function buildNetworkCallsignWritePayload(
   return {
     networkId: input.networkId,
     callsign: input.callsign,
+    fullName: trimOrNull(input.fullName),
     position: trimOrNull(input.position),
     comment: trimOrNull(input.comment),
     sourceId: input.sourceId,

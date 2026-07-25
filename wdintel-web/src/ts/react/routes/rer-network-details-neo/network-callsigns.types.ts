@@ -21,6 +21,7 @@ export type NetworkCallsignDrawerForm = {
   id: number | null;
   networkId: number;
   callsign: string;
+  fullName: string;
   position: string;
   comment: string;
   sourceId: number | null;
@@ -35,6 +36,7 @@ export type NetworkCallsignDrawerForm = {
 export type NetworkCallsignRowView = {
   id: number;
   callsign: string;
+  fullName: string;
   status: NetworkCallsignStatus;
   statusLabel: string;
   position: string;

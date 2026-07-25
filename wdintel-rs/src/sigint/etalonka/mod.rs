@@ -2017,6 +2017,7 @@ mod tests {
             known_callsign_id: None,
             position: None,
             comment: None,
+            full_name: None,
             unit_id: None,
             unit_name: None,
             source_id: None,

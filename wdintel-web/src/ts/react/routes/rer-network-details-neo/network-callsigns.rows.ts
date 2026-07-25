@@ -31,6 +31,7 @@ export function buildNetworkCallsignRowViews(
     return {
       id: networkCallsign.id,
       callsign: normalizeCallsignDisplay(networkCallsign.callsign),
+      fullName: networkCallsign.fullName?.trim() ?? '',
       status,
       statusLabel: getNetworkCallsignStatusLabel(status),
       position: networkCallsign.position?.trim() ?? '',
