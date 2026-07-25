@@ -16,3 +16,12 @@ export function formatNetworkCallsignTooltipLine(
 ): string {
   return `🐷 ${[hint.position, hint.formation].map(toTooltipText).filter(Boolean).join(' ')}`;
 }
+
+export function mergeCallsignNetworkHints(
+  current: CallsignNetworkHint[] | null | undefined,
+  incoming: CallsignNetworkHint[] | null | undefined,
+): CallsignNetworkHint[] {
+  const hintsById = new Map((current ?? []).map((hint) => [hint.id, hint]));
+  (incoming ?? []).forEach((hint) => hintsById.set(hint.id, hint));
+  return [...hintsById.values()].sort((left, right) => left.id - right.id);
+}

@@ -3,6 +3,7 @@ import { isNullOrUndefined } from '../../utils/misc';
 
 import type { CallsignInfoRes } from '../../../../Bindings';
 import { normalizeCallsignLookupValue } from '../../utils/callsign-normalization';
+import { mergeCallsignNetworkHints } from '../rer-analysis-neo/callsign-hints-utils';
 
 function normalizeDutyCallsignText(value: string | null | undefined): string {
   return typeof value === 'string' ? value : '';
@@ -57,7 +58,7 @@ export function mergeDutyCallsignInfoEntry(
   return {
     callsign: incoming.callsign || current.callsign,
     res: [...rowsById.values()],
-    networkHints: incoming.networkHints ?? current.networkHints,
+    networkHints: mergeCallsignNetworkHints(current.networkHints, incoming.networkHints),
   };
 }
 

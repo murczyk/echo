@@ -142,19 +142,17 @@ function createCallsignInfoMap(
 }
 
 describe('rer-analysis-neo callsign hints', () => {
-  it('accepts grouped network hints whose source text differs from the lookup text', () => {
+  it('keeps only hints in the requested network scope', () => {
     const callsignInfo = {
       callsign: 'ВЕТЕР',
       res: [],
       networkHints: [
-        { networkId: 10, callsign: 'Ветер-1', position: 'командир', formation: '4 мср' },
-        { networkId: 20, callsign: 'Ветер-1', position: 'інша', formation: 'інша' },
+        { id: 1, networkId: 10, position: 'командир', formation: '4 мср' },
+        { id: 2, networkId: 20, position: 'інша', formation: 'інша' },
       ],
     };
 
-    expect(resolveNetworkCallsignHints('ВЕТЕР', [10], callsignInfo)).toEqual([
-      callsignInfo.networkHints[0],
-    ]);
+    expect(resolveNetworkCallsignHints([10], callsignInfo)).toEqual([callsignInfo.networkHints[0]]);
   });
 
   it('formats a network-only callsign hint', () => {
@@ -170,8 +168,8 @@ describe('rer-analysis-neo callsign hints', () => {
           res: [],
           networkHints: [
             {
+              id: 1,
               networkId: 10,
-              callsign: 'ВЕТЕР',
               position: 'командир',
               formation: '4 мср',
             },
@@ -348,8 +346,8 @@ describe('rer-analysis-neo callsign hints', () => {
           ],
         },
         [
-          { networkId: 10, callsign: 'wolf', position: 'командир', formation: '1 рота' },
-          { networkId: 20, callsign: 'wolf', position: 'заступник', formation: '2 рота' },
+          { id: 1, networkId: 10, position: 'командир', formation: '1 рота' },
+          { id: 2, networkId: 20, position: 'заступник', formation: '2 рота' },
         ],
       ),
       callsign: 'wolf',
@@ -387,7 +385,7 @@ describe('rer-analysis-neo callsign hints', () => {
             },
           ],
         },
-        [{ networkId: 10, callsign: 'wolf', position: 'командир', formation: '1 рота' }],
+        [{ id: 1, networkId: 10, position: 'командир', formation: '1 рота' }],
       ),
       callsign: 'wolf',
     });
@@ -396,7 +394,7 @@ describe('rer-analysis-neo callsign hints', () => {
     expect(result.prioritizedCallsigns.map((item) => item.id)).toEqual([1]);
   });
 
-  it('returns network tooltip in frequency context when message networks exist, even without frequency matching', () => {
+  it('returns a system tooltip when no network matches the frequency context', () => {
     const result = getCallsignHintResult({
       hintContext: 'frequency',
       freq: '999.999',
@@ -428,7 +426,7 @@ describe('rer-analysis-neo callsign hints', () => {
             },
           ],
         },
-        [{ networkId: 10, callsign: 'wolf', position: 'командир взводу', formation: '3 тр' }],
+        [{ id: 1, networkId: 10, position: 'командир взводу', formation: '3 тр' }],
       ),
       callsign: 'wolf',
     });
@@ -469,7 +467,7 @@ describe('rer-analysis-neo callsign hints', () => {
             },
           ],
         },
-        [{ networkId: 10, callsign: 'wolf', position: 'командир взводу', formation: '3 тр' }],
+        [{ id: 1, networkId: 10, position: 'командир взводу', formation: '3 тр' }],
       ),
       callsign: 'wolf',
     });

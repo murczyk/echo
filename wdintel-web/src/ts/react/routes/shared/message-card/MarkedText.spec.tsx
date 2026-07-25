@@ -255,7 +255,7 @@ describe('MarkedText', () => {
                   networkIdsReportedIn: [10],
                 },
               ],
-              networkHints: [{ networkId: 10, callsign: 'wolf', position: 'cmd', formation: 'u1' }],
+              networkHints: [{ id: 1, networkId: 10, position: 'cmd', formation: 'u1' }],
             },
           }}
           networks={networks}
@@ -369,7 +369,7 @@ describe('MarkedText', () => {
                   networkIdsReportedIn: [10],
                 },
               ],
-              networkHints: [{ networkId: 10, callsign: 'wolf', position: 'cmd', formation: 'u1' }],
+              networkHints: [{ id: 1, networkId: 10, position: 'cmd', formation: 'u1' }],
             },
           }}
           networks={networks}
@@ -649,9 +649,7 @@ describe('MarkedText', () => {
                   networkIdsReportedIn: [10],
                 },
               ],
-              networkHints: [
-                { networkId: 10, callsign: 'РЖАВИЙ', position: 'sys', formation: 's1' },
-              ],
+              networkHints: [{ id: 1, networkId: 10, position: 'sys', formation: 's1' }],
             },
           }}
           networks={networks}

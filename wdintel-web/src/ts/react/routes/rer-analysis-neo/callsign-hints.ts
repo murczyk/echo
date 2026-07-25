@@ -36,11 +36,9 @@ function getMessageNetworkIds(networkIds?: number[] | null): number[] | null {
 }
 
 export function resolveNetworkCallsignHints(
-  callsign: string,
   networkIds: number[],
   callsignInfo: CallsignInfoRes,
 ): CallsignNetworkHint[] {
-  void callsign;
   return (callsignInfo.networkHints ?? []).filter((hint) => networkIds.includes(hint.networkId));
 }
 
@@ -223,7 +221,7 @@ export function getCallsignHintResult(params: {
       : filterNetworksByFreq(params.networks, params.freq).map((network) => network.id);
   if (scopedNetworkIds && scopedNetworkIds.length > 0) {
     const networkHints = callsignResponse
-      ? resolveNetworkCallsignHints(params.callsign, scopedNetworkIds, callsignResponse)
+      ? resolveNetworkCallsignHints(scopedNetworkIds, callsignResponse)
       : [];
     return {
       strategy: networkHints.length > 0 ? 'network' : 'none',

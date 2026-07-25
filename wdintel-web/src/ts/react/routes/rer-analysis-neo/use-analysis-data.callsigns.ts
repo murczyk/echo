@@ -1,6 +1,7 @@
 import type { CallsignInfoRes } from '../../../../Bindings';
 import { normalizeCallsignLookupValue } from '../../utils/callsign-normalization';
 import { isNullOrUndefined } from '../../utils/misc';
+import { mergeCallsignNetworkHints } from './callsign-hints-utils';
 
 export function mergeAnalysisCallsignInfoEntry(
   current: CallsignInfoRes | undefined,
@@ -34,7 +35,7 @@ export function mergeAnalysisCallsignInfoEntry(
   return {
     callsign: incoming.callsign || current.callsign,
     res: [...rowsById.values()],
-    networkHints: incoming.networkHints ?? current.networkHints,
+    networkHints: mergeCallsignNetworkHints(current.networkHints, incoming.networkHints),
   };
 }
 

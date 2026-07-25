@@ -391,9 +391,7 @@ describe('useRerDutyFeeds', () => {
       {
         callsign: 'ВЕТЕР',
         res: [],
-        networkHints: [
-          { networkId: 10, callsign: 'ВЕТЕР', position: 'командир', formation: '4 мср' },
-        ],
+        networkHints: [{ id: 1, networkId: 10, position: 'командир', formation: '4 мср' }],
       },
     ]);
     hoisted.messageFeeds = [
@@ -414,9 +412,7 @@ describe('useRerDutyFeeds', () => {
       expect.objectContaining({
         callsign: 'ВЕТЕР',
         res: [],
-        networkHints: [
-          { networkId: 10, callsign: 'ВЕТЕР', position: 'командир', formation: '4 мср' },
-        ],
+        networkHints: [{ id: 1, networkId: 10, position: 'командир', formation: '4 мср' }],
       }),
     ]);
 
