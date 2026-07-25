@@ -5,8 +5,8 @@ use crate::types::{Env, ShortContext};
 use anyhow::{bail, Context, Result};
 use async_trait::async_trait;
 use echo_gpu_client::{
-    MaterializedAudio, QueueEvent, QueueSourceCursor, TranscriptionAdapter,
-    WorkError, WorkerIterationResult, WorkerPolicy,
+    CompletedTranscription, MaterializedAudio, QueueEvent, QueueSourceCursor,
+    TranscriptionAdapter, WorkError, WorkerIterationResult, WorkerPolicy,
 };
 use futures_util::TryStreamExt;
 use sea_orm::{
@@ -135,6 +135,16 @@ impl EchoTranscriptionAdapter {
                 .into()
             })
     }
+
+    async fn notify_inbox_item_updated(&self, source_id: Uuid) -> Result<()> {
+        let media = self.find_media(source_id).await.context(h!())?;
+        crate::inbox::fanout_inbox_changed(
+            &mut self.env.redis.clone(),
+            media.signal_message_id,
+        )
+        .await
+        .context(h!())
+    }
 }
 
 fn ensure_storage_available(env: &Env) -> Result<()> {
@@ -240,6 +250,16 @@ impl TranscriptionAdapter for EchoTranscriptionAdapter {
             remove_attempt_path(&partial_path).await.context(h!())?;
         }
         Ok(())
+    }
+
+    async fn completed(
+        &self,
+        event: &QueueEvent,
+        _result: &CompletedTranscription,
+    ) -> Result<()> {
+        self.notify_inbox_item_updated(event.source_id)
+            .await
+            .context(h!())
     }
 
     async fn retrying(&self, event: &QueueEvent) -> Result<()> {
@@ -589,8 +609,10 @@ async fn wait_or_cancel(cancel_token: &CancellationToken, sleep_ms: u64) {
 mod tests {
     use super::*;
     use crate::entities::echo_gpu_transcription_queue;
-    use echo_gpu_client::WorkerRunResult;
+    use crate::event_stream::types::{EventMsg, EventType};
+    use echo_gpu_client::{GuessResponse, WorkerRunResult};
     use opendal::{services::Memory, Operator};
+    use redis::{streams::StreamRangeReply, AsyncCommands};
     use sea_orm::{
         ActiveModelTrait, ActiveValue::Set, ColumnTrait, EntityTrait,
         QueryFilter,
@@ -893,6 +915,93 @@ mod tests {
                 .unwrap();
             assert!(!materialized.path.exists());
         }
+    }
+
+    #[tokio::test]
+    async fn completed_transcription_notifies_inbox_item_updated() {
+        let (base_env, _guard) =
+            crate::functest::tests::cleanup_locked().await.unwrap();
+        let temp = tempfile::tempdir().unwrap();
+        let env = cache_only_env(&base_env, temp.path());
+        let media = insert_audio(&env, false, 1).await;
+        crate::functest::tests::mk_sigint_inbox_item(
+            &env.dbx,
+            crate::entities::sigint_inbox_item::ActiveModel {
+                id: Set(media.signal_message_id),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let session_id = Uuid::now_v7();
+        crate::session::add_session(
+            &mut env.redis.clone(),
+            session_id,
+            &Uuid::now_v7(),
+        )
+        .await
+        .unwrap();
+        crate::event_stream::create_redis_stream(
+            &mut env.redis.clone(),
+            session_id,
+        )
+        .await
+        .unwrap();
+
+        let adapter =
+            EchoTranscriptionAdapter::new(env.clone(), Uuid::now_v7())
+                .await
+                .unwrap();
+        adapter
+            .completed(
+                &QueueEvent {
+                    source_id: media.id,
+                    attempt_count: 1,
+                    instance_id: None,
+                    audio_id: None,
+                    checksum: None,
+                    message: None,
+                    retry_at: None,
+                },
+                &CompletedTranscription {
+                    value: "transcript".into(),
+                    instance_id: Uuid::now_v7(),
+                    audio_id: Uuid::now_v7(),
+                    checksum: "checksum".into(),
+                    response: GuessResponse {
+                        audio_id: "audio".into(),
+                        full_phrase: "transcript".into(),
+                        segments: vec![],
+                    },
+                },
+            )
+            .await
+            .unwrap();
+
+        let mut redis = env.redis.clone();
+        let stream_id = crate::event_stream::session_stream_id(session_id);
+        let reply: StreamRangeReply =
+            redis.xrange_all(&stream_id).await.unwrap();
+        let redis::Value::BulkString(event) =
+            reply.ids[0].map.get("v").unwrap()
+        else {
+            panic!("event stream value is not bytes");
+        };
+        let event: EventMsg = serde_json::from_slice(event).unwrap();
+        redis.del::<_, ()>(&stream_id).await.unwrap();
+        redis
+            .del::<_, ()>(crate::event_stream::get_sess_key(session_id))
+            .await
+            .unwrap();
+        redis
+            .srem::<_, _, ()>(REDIS_SESSIONS_KEY, session_id.to_string())
+            .await
+            .unwrap();
+
+        assert_eq!(
+            event.event_type,
+            EventType::ETInboxChanged(media.signal_message_id)
+        );
     }
 
     #[tokio::test]
