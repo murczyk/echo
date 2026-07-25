@@ -99,12 +99,26 @@ describe('mapInboxMessageToForm', () => {
     expect(values.tags).toEqual(['арта']);
   });
 
-  it('converts the UTC timestamp to Kyiv date and time', () => {
+  it('prefers parsed date and time over the ingest timestamp', () => {
     const values = mapInboxMessageToForm(
       buildMessage({
         timestamp: Date.parse('2026-07-01T10:45:00Z'),
-        date: '2000-01-01',
-        time: '00:00',
+        date: '2026-07-01',
+        time: '07:50',
+      }),
+      tagsMap,
+    );
+
+    expect(values.date?.format('YYYY-MM-DD')).toBe('2026-07-01');
+    expect(values.time?.format('HH:mm')).toBe('07:50');
+  });
+
+  it('falls back to the UTC timestamp when parsed date and time are missing', () => {
+    const values = mapInboxMessageToForm(
+      buildMessage({
+        timestamp: Date.parse('2026-07-01T10:45:00Z'),
+        date: null,
+        time: null,
       }),
       tagsMap,
     );
