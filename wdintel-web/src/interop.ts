@@ -28,6 +28,7 @@ import './ts/react/analysis-map-settings-element';
 import './ts/react/analysis-map-layer-switch-element';
 import './ts/react/analysis-map-window-control-element';
 import './ts/react/analysis-count-chip-element';
+import './ts/react/audio-transcription-element';
 import './ts/web-components/modal-dialog.ts';
 import './ts/web-components/dashboard-chart.ts';
 import './ts/web-components/small-map.ts';

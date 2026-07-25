@@ -11,6 +11,9 @@ import type { SigintZone } from '../../../../Bindings';
 
 const saveUserDutySettings = vi.hoisted(() => vi.fn());
 const fetchServerInfoMock = vi.hoisted(() => vi.fn().mockResolvedValue({ version: '1.0.0' }));
+const currentSystemSettingsMock = vi.hoisted(() =>
+  vi.fn().mockResolvedValue({ enableAudioTranscription: true }),
+);
 const fetchCurrentUserMock = vi.hoisted(() =>
   vi.fn().mockResolvedValue({ sigintZoneId: 1, roles: [] }),
 );
@@ -190,6 +193,10 @@ vi.mock('../../services/api/server-info', () => ({
   fetchServerInfo: fetchServerInfoMock,
 }));
 
+vi.mock('../../services/api/system-settings', () => ({
+  currentSystemSettings: currentSystemSettingsMock,
+}));
+
 vi.mock('../../services/api/user', () => ({
   fetchCurrentUser: fetchCurrentUserMock,
   saveUserSettings: vi.fn().mockResolvedValue(undefined),
@@ -201,6 +208,8 @@ vi.mock('../../services/api/user-settings', () => ({
     tagsLayout: 'compact',
     disableAutoScroll: false,
     analysisMapInSidebar: false,
+    dutyAudioTranscriptionCollapsed: false,
+    analysisAudioTranscriptionCollapsed: false,
   }),
   saveUserSettings: saveUserDutySettings,
 }));
@@ -216,6 +225,8 @@ vi.mock('./SettingsDutySection', () => ({
   SettingsDutySection: (props: {
     onTagsLayoutChange: (layout: 'full' | 'compact' | 'hidden') => void;
     onDisableAutoScrollChange: (value: boolean) => void;
+    onAudioTranscriptionCollapsedChange: (value: boolean) => void;
+    showAudioTranscriptionSettings: boolean;
   }) => (
     <div>
       <button type="button" onClick={() => props.onTagsLayoutChange('full')}>
@@ -224,6 +235,11 @@ vi.mock('./SettingsDutySection', () => ({
       <button type="button" onClick={() => props.onDisableAutoScrollChange(true)}>
         change-scroll
       </button>
+      {props.showAudioTranscriptionSettings ? (
+        <button type="button" onClick={() => props.onAudioTranscriptionCollapsedChange(true)}>
+          change-duty-transcription
+        </button>
+      ) : null}
     </div>
   ),
 }));
@@ -256,9 +272,11 @@ describe('SettingsNeoPage', () => {
   beforeEach(() => {
     window.history.replaceState({}, '', '/settings-neo');
     saveUserDutySettings.mockReset();
-    saveUserDutySettings.mockResolvedValue(undefined);
+    saveUserDutySettings.mockImplementation(async (settings) => settings);
     fetchServerInfoMock.mockReset();
     fetchServerInfoMock.mockResolvedValue({ version: '1.0.0' });
+    currentSystemSettingsMock.mockReset();
+    currentSystemSettingsMock.mockResolvedValue({ enableAudioTranscription: true });
     fetchCurrentUserMock.mockReset();
     fetchCurrentUserMock.mockResolvedValue({ sigintZoneId: 1, roles: [] });
     listMyAdminGroupsMock.mockReset();
@@ -324,6 +342,8 @@ describe('SettingsNeoPage', () => {
       tagsLayout: 'full',
       disableAutoScroll: true,
       analysisMapInSidebar: false,
+      dutyAudioTranscriptionCollapsed: false,
+      analysisAudioTranscriptionCollapsed: false,
     });
 
     await act(async () => {
@@ -341,9 +361,10 @@ describe('SettingsNeoPage', () => {
       await Promise.resolve();
     });
 
-    const switchButton = Array.from(container.querySelectorAll('button')).find(
+    const switchButtons = Array.from(container.querySelectorAll('button')).filter(
       (button) => button.textContent === 'off',
     );
+    const switchButton = switchButtons[switchButtons.length - 1];
     expect(switchButton).toBeTruthy();
 
     await act(async () => {
@@ -359,7 +380,84 @@ describe('SettingsNeoPage', () => {
       tagsLayout: 'compact',
       disableAutoScroll: false,
       analysisMapInSidebar: true,
+      dutyAudioTranscriptionCollapsed: false,
+      analysisAudioTranscriptionCollapsed: false,
     });
+  });
+
+  it('saves separate duty and analysis transcription defaults', async () => {
+    await act(async () => {
+      root.render(<SettingsNeoPage section="duty" />);
+    });
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    const dutyButton = Array.from(container.querySelectorAll('button')).find((button) =>
+      button.textContent?.includes('change-duty-transcription'),
+    );
+    expect(dutyButton).toBeTruthy();
+
+    await act(async () => {
+      dutyButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await Promise.resolve();
+    });
+
+    expect(saveUserDutySettings).toHaveBeenLastCalledWith({
+      tagsLayout: 'compact',
+      disableAutoScroll: false,
+      analysisMapInSidebar: false,
+      dutyAudioTranscriptionCollapsed: true,
+      analysisAudioTranscriptionCollapsed: false,
+    });
+
+    saveUserDutySettings.mockClear();
+    await act(async () => {
+      root.render(<SettingsNeoPage section="analysis" />);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    const analysisSwitch = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent === 'off',
+    );
+    expect(analysisSwitch).toBeTruthy();
+
+    await act(async () => {
+      analysisSwitch?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await Promise.resolve();
+    });
+
+    expect(saveUserDutySettings).toHaveBeenLastCalledWith({
+      tagsLayout: 'compact',
+      disableAutoScroll: false,
+      analysisMapInSidebar: false,
+      dutyAudioTranscriptionCollapsed: true,
+      analysisAudioTranscriptionCollapsed: true,
+    });
+  });
+
+  it('hides transcription preferences when audio transcription is disabled', async () => {
+    currentSystemSettingsMock.mockResolvedValueOnce({ enableAudioTranscription: false });
+
+    await act(async () => {
+      root.render(<SettingsNeoPage section="duty" />);
+    });
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(container.textContent).not.toContain('change-duty-transcription');
+
+    await act(async () => {
+      root.render(<SettingsNeoPage section="analysis" />);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(container.textContent).not.toContain('Транскрипція аудіо');
   });
 
   it('hides general settings and opens my groups for the legacy general section', async () => {

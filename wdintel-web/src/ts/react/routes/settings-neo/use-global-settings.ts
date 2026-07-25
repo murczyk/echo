@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import type { SettingsSaveReq, SigintZone } from '../../../../Bindings';
 import { fetchServerInfo } from '../../services/api/server-info';
+import { currentSystemSettings } from '../../services/api/system-settings';
 import { fetchCurrentUser, saveUserSettings as saveAccountSettings } from '../../services/api/user';
 import { listSigintZones } from '../../services/api/zones';
 
@@ -18,6 +19,7 @@ export type GlobalSettingsHook = {
   saveInProgress: boolean;
   versionText: string;
   featureMyAdminGroupsEdit: boolean;
+  audioTranscriptionEnabled: boolean;
   userRoles: string[];
   isDirty: boolean;
   setZoneId: (value: number | null) => void;
@@ -40,6 +42,7 @@ export function useGlobalSetting(): GlobalSettingsHook {
   const [initialZoneId, setInitialZoneId] = useState<number | null>(null);
   const [versionText, setVersionText] = useState<string>('невідома версія');
   const [featureMyAdminGroupsEdit, setFeatureMyAdminGroupsEdit] = useState(false);
+  const [audioTranscriptionEnabled, setAudioTranscriptionEnabled] = useState(false);
   const [userRoles, setUserRoles] = useState<string[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [loadInProgress, setLoadInProgress] = useState(true);
@@ -83,6 +86,15 @@ export function useGlobalSetting(): GlobalSettingsHook {
             if (abortController.signal.aborted) return;
             setVersionText('невідома версія');
             setFeatureMyAdminGroupsEdit(false);
+          });
+        void currentSystemSettings()
+          .then((systemSettings) => {
+            if (abortController.signal.aborted) return;
+            setAudioTranscriptionEnabled(systemSettings.enableAudioTranscription ?? false);
+          })
+          .catch(() => {
+            if (abortController.signal.aborted) return;
+            setAudioTranscriptionEnabled(false);
           });
       } catch (error) {
         if (abortController.signal.aborted) return;
@@ -133,6 +145,7 @@ export function useGlobalSetting(): GlobalSettingsHook {
     saveInProgress,
     versionText,
     featureMyAdminGroupsEdit,
+    audioTranscriptionEnabled,
     userRoles,
     isDirty,
     setZoneId,

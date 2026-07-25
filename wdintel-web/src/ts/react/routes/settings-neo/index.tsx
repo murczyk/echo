@@ -9,9 +9,11 @@ import { PageHeader } from '../../components/PageHeader';
 import { SettingsMyGroupsSection } from './SettingsMyGroupsSection';
 import { SettingsMyOrganismSection } from './SettingsMyOrganismSection';
 import { SettingsDutySection } from './SettingsDutySection';
+import { SettingsAudioTranscriptionCard } from './SettingsAudioTranscriptionCard';
 import { SettingsSharedTagsLayoutCard } from './SettingsSharedTagsLayoutCard';
 import { useGlobalSetting } from './use-global-settings';
 import { useDutySettings } from '../../hooks/use-duty-settings';
+import type { UserDutySettings } from '../../services/api/user-settings';
 import { listMyAdminGroups } from '../../services/api/zones';
 
 export type SettingsSection =
@@ -87,6 +89,16 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
   );
 
   const dutySettings = useDutySettings();
+  const scheduleDutySettingsSave = (overrides: Partial<UserDutySettings>) => {
+    dutySettings.scheduleSave({
+      tagsLayout: dutySettings.tagsLayout,
+      disableAutoScroll: dutySettings.disableAutoScroll,
+      analysisMapInSidebar: dutySettings.analysisMapInSidebar,
+      dutyAudioTranscriptionCollapsed: dutySettings.dutyAudioTranscriptionCollapsed,
+      analysisAudioTranscriptionCollapsed: dutySettings.analysisAudioTranscriptionCollapsed,
+      ...overrides,
+    });
+  };
   const globalSettings = useGlobalSetting();
   const [myGroupsStatus, setMyGroupsStatus] = useState<'idle' | 'loading' | 'success' | 'error'>(
     'idle',
@@ -249,20 +261,18 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
               tagsLayout={dutySettings.tagsLayout}
               onTagsLayoutChange={(layout) => {
                 dutySettings.setTagsLayout(layout);
-                dutySettings.scheduleSave({
-                  tagsLayout: layout,
-                  disableAutoScroll: dutySettings.disableAutoScroll,
-                  analysisMapInSidebar: dutySettings.analysisMapInSidebar,
-                });
+                scheduleDutySettingsSave({ tagsLayout: layout });
               }}
               disableAutoScroll={dutySettings.disableAutoScroll}
               onDisableAutoScrollChange={(value) => {
                 dutySettings.setDisableAutoScroll(value);
-                dutySettings.scheduleSave({
-                  tagsLayout: dutySettings.tagsLayout,
-                  disableAutoScroll: value,
-                  analysisMapInSidebar: dutySettings.analysisMapInSidebar,
-                });
+                scheduleDutySettingsSave({ disableAutoScroll: value });
+              }}
+              audioTranscriptionCollapsed={dutySettings.dutyAudioTranscriptionCollapsed}
+              showAudioTranscriptionSettings={globalSettings.audioTranscriptionEnabled}
+              onAudioTranscriptionCollapsedChange={(value) => {
+                dutySettings.setDutyAudioTranscriptionCollapsed(value);
+                scheduleDutySettingsSave({ dutyAudioTranscriptionCollapsed: value });
               }}
             />
           ) : null}
@@ -286,14 +296,20 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
                     tagsLayout={dutySettings.tagsLayout}
                     onTagsLayoutChange={(layout) => {
                       dutySettings.setTagsLayout(layout);
-                      dutySettings.scheduleSave({
-                        tagsLayout: layout,
-                        disableAutoScroll: dutySettings.disableAutoScroll,
-                        analysisMapInSidebar: dutySettings.analysisMapInSidebar,
-                      });
+                      scheduleDutySettingsSave({ tagsLayout: layout });
                     }}
                     loadInProgress={globalSettings.loadInProgress || dutySettings.loadInProgress}
                   />
+                  {globalSettings.audioTranscriptionEnabled ? (
+                    <SettingsAudioTranscriptionCard
+                      collapsedByDefault={dutySettings.analysisAudioTranscriptionCollapsed}
+                      loadInProgress={globalSettings.loadInProgress || dutySettings.loadInProgress}
+                      onCollapsedByDefaultChange={(value) => {
+                        dutySettings.setAnalysisAudioTranscriptionCollapsed(value);
+                        scheduleDutySettingsSave({ analysisAudioTranscriptionCollapsed: value });
+                      }}
+                    />
+                  ) : null}
                   <Box
                     sx={{
                       border: 1,
@@ -322,11 +338,7 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
                             checked={dutySettings.analysisMapInSidebar}
                             onChange={(_, checked) => {
                               dutySettings.setAnalysisMapInSidebar(checked);
-                              dutySettings.scheduleSave({
-                                tagsLayout: dutySettings.tagsLayout,
-                                disableAutoScroll: dutySettings.disableAutoScroll,
-                                analysisMapInSidebar: checked,
-                              });
+                              scheduleDutySettingsSave({ analysisMapInSidebar: checked });
                             }}
                             disabled={globalSettings.loadInProgress || dutySettings.loadInProgress}
                           />

@@ -93,6 +93,136 @@ a {
   cursor: not-allowed;
 }
 
+.audio-transcription {
+  color: var(--text-color);
+  background-color: color-mix(in srgb, var(--card-color) 90%, var(--action-color));
+  border-left: 3px solid var(--action-color);
+  border-radius: 0 0.25rem 0.25rem 0;
+}
+
+.audio-transcription-control {
+  position: relative;
+  width: 100%;
+  min-width: 0;
+  min-height: 28px;
+}
+
+.audio-transcription-toggle {
+  position: absolute;
+  z-index: 1;
+  top: 50%;
+  left: 0.5rem;
+  min-width: 34px;
+  height: 26px;
+  padding: 0 0.4rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--action-color);
+  background-color: color-mix(in srgb, var(--card-color) 84%, var(--action-color));
+  border: 1px solid color-mix(in srgb, var(--action-color) 62%, transparent);
+  border-radius: 0.3rem;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  transform: translateY(-50%);
+  transition:
+    color 150ms ease,
+    background-color 150ms ease,
+    border-color 150ms ease,
+    top 180ms ease,
+    transform 180ms ease;
+}
+
+.audio-transcription-toggle:hover {
+  color: var(--action-hovered-color);
+  background-color: color-mix(in srgb, var(--card-color) 72%, var(--action-color));
+  border-color: var(--action-hovered-color);
+}
+
+.audio-transcription-toggle:focus-visible {
+  outline: 2px solid var(--action-color);
+  outline-offset: 2px;
+}
+
+.audio-transcription-control--visible .audio-transcription-toggle {
+  top: 0;
+  transform: translateY(-50%);
+}
+
+.audio-transcription--with-toggle {
+  padding-top: 1.5rem;
+}
+
+.audio-transcription-text {
+  display: block;
+}
+
+.audio-transcription--clamped .audio-transcription-text {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+}
+
+.audio-transcription-show-more {
+  display: block;
+  margin-top: 0.3rem;
+  color: var(--action-color);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.message-card-root {
+  container-type: inline-size;
+}
+
+.audio-transcription-beside-player .audio-transcription-layout {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  max-width: none;
+}
+
+.audio-transcription-beside-player .audio-transcription-layout > [data-audio-player-host] {
+  flex: 1 1 460px;
+  max-width: 460px;
+}
+
+.audio-transcription-beside-player
+  .audio-transcription-layout
+  > [data-audio-transcription-control] {
+  flex: 1 1 220px;
+  align-self: stretch;
+  min-width: 0;
+}
+
+.audio-transcription-beside-player
+  .audio-transcription-layout
+  > [data-audio-transcription-control]
+  [data-audio-transcription] {
+  margin-top: 0;
+}
+
+@container (max-width: 720px) {
+  .audio-transcription-beside-player .audio-transcription-layout {
+    flex-direction: column;
+  }
+
+  .audio-transcription-beside-player .audio-transcription-layout > [data-audio-player-host],
+  .audio-transcription-beside-player
+    .audio-transcription-layout
+    > [data-audio-transcription-control] {
+    flex: 0 0 auto;
+    align-self: auto;
+    width: 100%;
+    max-width: 100%;
+  }
+}
+
 sup {
   font-size: 0.75em;
   vertical-align: super;

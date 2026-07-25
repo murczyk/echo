@@ -17,6 +17,7 @@ import { ManageMessageDrawer } from '../shared/manage-message/ManageMessageDrawe
 import { getAnalysisCenterTabs } from './types';
 import { useMinDurationBusy } from './use-min-duration-busy';
 import { useRerAnalysisNeoPage } from './use-rer-analysis-neo-page';
+import { AudioTranscriptionPreferencesProvider } from '../shared/message-card/MessageCardAudioTranscription';
 
 export type RerAnalysisNeoPageProps = {
   authUserName?: string | null;
@@ -153,21 +154,26 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
           {showLoadingSkeletons ? (
             <AnalysisLoadingSkeletons rightPanelVisible={rightPanelVisible} />
           ) : (
-            <AnalysisCenterPanel
-              page={page}
-              centerTab={centerTab}
-              centerTabs={centerTabs}
-              isCompactLayout={isAnalysisCompactLayout}
-              isNarrowLayout={isNarrowLayout}
-              rightPanelVisible={rightPanelVisible}
-              messagesPaneLoading={messagesPaneLoading}
-              messagesPanelId={messagesPanelId}
-              messagesTabId={messagesTabId}
-              summaryPanelId={summaryPanelId}
-              summaryTabId={summaryTabId}
-              mapPanelId={mapPanelId}
-              mapTabId={mapTabId}
-            />
+            <AudioTranscriptionPreferencesProvider
+              collapsedByDefault={page.audioTranscriptionCollapsed}
+              enabled={page.audioTranscriptionEnabled}
+            >
+              <AnalysisCenterPanel
+                page={page}
+                centerTab={centerTab}
+                centerTabs={centerTabs}
+                isCompactLayout={isAnalysisCompactLayout}
+                isNarrowLayout={isNarrowLayout}
+                rightPanelVisible={rightPanelVisible}
+                messagesPaneLoading={messagesPaneLoading}
+                messagesPanelId={messagesPanelId}
+                messagesTabId={messagesTabId}
+                summaryPanelId={summaryPanelId}
+                summaryTabId={summaryTabId}
+                mapPanelId={mapPanelId}
+                mapTabId={mapTabId}
+              />
+            </AudioTranscriptionPreferencesProvider>
           )}
           {!showLoadingSkeletons ? (
             <AnalysisRightPanel

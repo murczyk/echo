@@ -1,9 +1,10 @@
 module Pages.RerDutyNeo exposing (Model, Msg, page)
 
 import Auth
+import Config
 import Effect as E exposing (Effect)
 import Html exposing (div, node)
-import Html.Attributes exposing (class)
+import Html.Attributes exposing (class, classList)
 import Layouts
 import Page exposing (Page)
 import Route exposing (Route)
@@ -59,7 +60,10 @@ view : Model -> View Msg
 view _ =
     { title = "РЕР-оперативний"
     , body =
-        [ div [ class "bg-background flex rer-duty flex-1 px-2 w-full" ]
+        [ div
+            [ class "bg-background flex rer-duty flex-1 px-2 w-full"
+            , classList [ ( "audio-transcription-beside-player", Config.featureAudioTranscriptionBesidePlayer ) ]
+            ]
             [ node "rer-duty-neo" [] [] ]
         ]
     }

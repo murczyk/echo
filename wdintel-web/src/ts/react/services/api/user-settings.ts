@@ -10,12 +10,22 @@ export type UserDutySettings = {
   tagsLayout: TagsLayoutVariant;
   disableAutoScroll: boolean;
   analysisMapInSidebar: boolean;
+  dutyAudioTranscriptionCollapsed: boolean;
+  analysisAudioTranscriptionCollapsed: boolean;
 };
 
 type DutyTagsLayoutWire = DutyTagsLayout | 'full' | 'compact' | 'hidden';
-type UserDutySettingsWire = Omit<UserDutySettingsDto, 'tagsLayout' | 'analysisMapInSidebar'> & {
+type UserDutySettingsWire = Omit<
+  UserDutySettingsDto,
+  | 'tagsLayout'
+  | 'analysisMapInSidebar'
+  | 'dutyAudioTranscriptionCollapsed'
+  | 'analysisAudioTranscriptionCollapsed'
+> & {
   tagsLayout: DutyTagsLayoutWire;
   analysisMapInSidebar?: boolean | null;
+  dutyAudioTranscriptionCollapsed?: boolean | null;
+  analysisAudioTranscriptionCollapsed?: boolean | null;
 };
 
 function normalizeTagsLayout(tagsLayout: DutyTagsLayoutWire | null | undefined): TagsLayoutVariant {
@@ -52,6 +62,8 @@ function normalizeUserDutySettings(raw: UserDutySettingsWire): UserDutySettings 
     tagsLayout: normalizeTagsLayout(raw.tagsLayout),
     disableAutoScroll: raw.disableAutoScroll,
     analysisMapInSidebar: raw.analysisMapInSidebar ?? false,
+    dutyAudioTranscriptionCollapsed: raw.dutyAudioTranscriptionCollapsed ?? false,
+    analysisAudioTranscriptionCollapsed: raw.analysisAudioTranscriptionCollapsed ?? false,
   };
 }
 
@@ -70,6 +82,8 @@ export async function saveUserSettings(
       tagsLayout: serializeTagsLayout(body.tagsLayout),
       disableAutoScroll: body.disableAutoScroll,
       analysisMapInSidebar: body.analysisMapInSidebar,
+      dutyAudioTranscriptionCollapsed: body.dutyAudioTranscriptionCollapsed,
+      analysisAudioTranscriptionCollapsed: body.analysisAudioTranscriptionCollapsed,
     },
     { signal },
   );

@@ -15229,6 +15229,8 @@ type alias UserDutySettingsDto =
     { tagsLayout : DutyTagsLayout
     , disableAutoScroll : Bool
     , analysisMapInSidebar : Bool
+    , dutyAudioTranscriptionCollapsed : Bool
+    , analysisAudioTranscriptionCollapsed : Bool
     }
 
 
@@ -15238,3 +15240,5 @@ userDutySettingsDtoDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "tagsLayout" (dutyTagsLayoutDecoder)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "disableAutoScroll" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "analysisMapInSidebar" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "dutyAudioTranscriptionCollapsed" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "analysisAudioTranscriptionCollapsed" (Json.Decode.bool)))

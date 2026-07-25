@@ -290,6 +290,8 @@ init route _ =
             , unitsExactMatchOnly = True
             , unitsExactMatchOnlyExplicit = False
             , systemSettingsLoaded = False
+            , audioTranscriptionEnabled = False
+            , analysisAudioTranscriptionCollapsed = False
             , withoutModelTags = False
             , editSidebar = Nothing
             , eventLastId = Nothing
@@ -1139,12 +1141,16 @@ update user shared route msg model =
             let
                 m2 =
                     if model.unitsExactMatchOnlyExplicit then
-                        { model | systemSettingsLoaded = True }
+                        { model
+                            | systemSettingsLoaded = True
+                            , audioTranscriptionEnabled = rsp.enableAudioTranscription
+                        }
 
                     else
                         { model
                             | unitsExactMatchOnly = rsp.rerAnalysisUnitsExactMatchOnlyDefault
                             , systemSettingsLoaded = True
+                            , audioTranscriptionEnabled = rsp.enableAudioTranscription
                         }
 
                 ( m3, eff3 ) =
@@ -1154,8 +1160,29 @@ update user shared route msg model =
 
                         Nothing ->
                             ( m2, E.none )
+
+                userSettingsEff =
+                    if rsp.enableAudioTranscription then
+                        E.sendCmd <|
+                            Http.get
+                                { url = "/api/user/settings"
+                                , expect = leExpectJson GotUserDutySettings B.userDutySettingsDtoDecoder
+                                }
+
+                    else
+                        E.none
             in
-            ( m3, eff3 )
+            ( m3, E.batch [ eff3, userSettingsEff ] )
+
+        GotUserDutySettings (Err e) ->
+            ( model
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження налаштувань транскрипції" e
+            )
+
+        GotUserDutySettings (Ok settings) ->
+            ( { model | analysisAudioTranscriptionCollapsed = settings.analysisAudioTranscriptionCollapsed }
+            , E.none
+            )
 
         DateRangePickerMsg imsg ->
             let
@@ -1758,6 +1785,8 @@ update user shared route msg model =
                     , networkDetailsViewPreference = shared.rerNetworkDetailsPreferredView
                     , currentRoute = Just route
                     , pointTokenClickUrlFor = RerAnalysisUtils.buildPointTokenClickUrlFor model.tags route
+                    , audioTranscriptionEnabled = model.audioTranscriptionEnabled
+                    , audioTranscriptionCollapsed = model.analysisAudioTranscriptionCollapsed
                     }
 
                 res =
