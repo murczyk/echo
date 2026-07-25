@@ -505,4 +505,46 @@ describe('useAnalysisData tag pagination', () => {
       expect(api.fetchInboxMessages).not.toHaveBeenCalled();
     },
   );
+
+  it('ignores an unrelated event on page 2 but reloads for the visible page message', async () => {
+    api.fetchInboxMessages
+      .mockResolvedValueOnce({ inboxItems: [message(1, 7)], callsigns: [], pageLimit: 20 })
+      .mockResolvedValueOnce({ inboxItems: [message(2, 7)], callsigns: [], pageLimit: 20 });
+
+    await renderAnalysisData();
+    await act(async () => {
+      await vi.waitFor(() => expect(api.fetchInboxMessages).toHaveBeenCalledTimes(1));
+      await vi.waitFor(() => expect(current!.messages).toHaveLength(1));
+    });
+    await act(async () => await current!.loadNextPage());
+    expect(current!.pageIndex).toBe(1);
+    api.fetchInboxMessages.mockClear();
+
+    await act(async () => {
+      window.dispatchEvent(
+        new CustomEvent('echo-inbox-changed', {
+          detail: { events: [{ messageId: 999, origin: 'foreign-tab.origin' }] },
+        }),
+      );
+      await Promise.resolve();
+    });
+
+    expect(current!.pageIndex).toBe(1);
+    expect(api.fetchInboxMessages).not.toHaveBeenCalled();
+    expect(api.fetchMessagesByIds).not.toHaveBeenCalled();
+
+    api.fetchInboxMessages.mockResolvedValueOnce({
+      inboxItems: [message(1, 7)],
+      callsigns: [],
+      pageLimit: 20,
+    });
+    await act(async () => {
+      window.dispatchEvent(
+        new CustomEvent('echo-inbox-changed', {
+          detail: { events: [{ messageId: 2, origin: 'foreign-tab.origin' }] },
+        }),
+      );
+      await vi.waitFor(() => expect(api.fetchInboxMessages).toHaveBeenCalledOnce());
+    });
+  });
 });

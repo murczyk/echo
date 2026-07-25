@@ -438,6 +438,13 @@ export function useAnalysisData({
 
   const refreshVisibleChangedMessages = useCallback(
     async (changedMessageIds: number[]) => {
+      const visibleMessageIds = collectVisibleChangedMessageIds(
+        changedMessageIds,
+        messageList.messages,
+        mapData.mapOpenMessages,
+      );
+      if (visibleMessageIds.length === 0) return;
+
       if (!requiresServerFilteredInboxRefresh(queryState)) {
         await refreshVisibleChangedMessagesTargeted(changedMessageIds);
         return;
@@ -449,7 +456,14 @@ export function useAnalysisData({
         if (!onUnauthorized(loadError)) onError(toErrorMessage(loadError));
       }
     },
-    [onError, onUnauthorized, queryState, refreshVisibleChangedMessagesTargeted],
+    [
+      mapData.mapOpenMessages,
+      messageList.messages,
+      onError,
+      onUnauthorized,
+      queryState,
+      refreshVisibleChangedMessagesTargeted,
+    ],
   );
 
   const { clearAnalysisResults, onUpdateLocalMessage, messageActionState } = useAnalysisActions(
