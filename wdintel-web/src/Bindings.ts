@@ -3734,5 +3734,7 @@ export type UserDutySettingsDto = {
   tagsLayout: DutyTagsLayout;
   disableAutoScroll: boolean;
   analysisMapInSidebar: boolean;
+  dutyAudioTranscriptionCollapsed: boolean;
+  analysisAudioTranscriptionCollapsed: boolean;
 };
 

@@ -18,7 +18,7 @@ describe('user-settings api', () => {
     mocks.putJson.mockReset();
   });
 
-  it('defaults table row numbers to enabled when the backend omits the field', async () => {
+  it('defaults optional settings when the backend omits them', async () => {
     mocks.getJson.mockResolvedValueOnce({
       tagsLayout: 'compact',
       disableAutoScroll: false,
@@ -29,6 +29,8 @@ describe('user-settings api', () => {
       tagsLayout: 'compact',
       disableAutoScroll: false,
       analysisMapInSidebar: true,
+      dutyAudioTranscriptionCollapsed: false,
+      analysisAudioTranscriptionCollapsed: false,
     });
   });
 
@@ -37,12 +39,16 @@ describe('user-settings api', () => {
       tagsLayout: 'compact',
       disableAutoScroll: true,
       analysisMapInSidebar: false,
+      dutyAudioTranscriptionCollapsed: true,
+      analysisAudioTranscriptionCollapsed: false,
     });
 
     await saveUserSettings({
       tagsLayout: 'full',
       disableAutoScroll: true,
       analysisMapInSidebar: false,
+      dutyAudioTranscriptionCollapsed: true,
+      analysisAudioTranscriptionCollapsed: false,
     });
 
     expect(mocks.putJson).toHaveBeenCalledWith(
@@ -51,6 +57,8 @@ describe('user-settings api', () => {
         tagsLayout: 'full',
         disableAutoScroll: true,
         analysisMapInSidebar: false,
+        dutyAudioTranscriptionCollapsed: true,
+        analysisAudioTranscriptionCollapsed: false,
       },
       { signal: undefined },
     );

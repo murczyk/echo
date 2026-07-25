@@ -21,7 +21,9 @@ vi.mock('../../services/api/user', () => ({
   fetchCurrentUser: vi.fn().mockResolvedValue(null),
 }));
 vi.mock('../../services/api/system-settings', () => ({
-  currentSystemSettings: vi.fn().mockResolvedValue({ devicesSectionEnabled: false }),
+  currentSystemSettings: vi
+    .fn()
+    .mockResolvedValue({ devicesSectionEnabled: false, enableAudioTranscription: true }),
 }));
 vi.mock('./useRerDutyFeeds', () => ({
   useRerDutyFeeds: useRerDutyFeedsMock,

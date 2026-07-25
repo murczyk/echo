@@ -49,6 +49,8 @@ type alias ViewParams =
     , networkDetailsViewPreference : Shared.Model.RerNetworkDetailsPreferredView
     , currentRoute : Maybe (Route ())
     , pointTokenClickUrlFor : B.InboxMessage -> Maybe (String -> String)
+    , audioTranscriptionEnabled : Bool
+    , audioTranscriptionCollapsed : Bool
     }
 
 
@@ -1035,6 +1037,46 @@ removeBotTags msgId tagId messages =
     messages |> updateV msgId updateMessage
 
 
+renderMediaTranscription : Bool -> Bool -> Bool -> MessageMediaInfo -> List (Html msg)
+renderMediaTranscription enabled collapsedByDefault besidePlayer attachment =
+    let
+        transcription =
+            attachment.transcription
+                |> Maybe.map String.trim
+                |> Maybe.withDefault ""
+    in
+    if not enabled || String.isEmpty transcription then
+        []
+
+    else if besidePlayer then
+        [ node "audio-transcription-widget"
+            [ class "min-w-0 flex-1"
+            , attribute "collapsed-by-default"
+                (if collapsedByDefault then
+                    "true"
+
+                 else
+                    "false"
+                )
+            , attribute "data-audio-transcription-control" ""
+            , attribute "transcription" transcription
+            ]
+            []
+        ]
+
+    else
+        [ blockquote
+            [ class "audio-transcription m-0 px-2 py-1.5 text-sm leading-[1.4] whitespace-pre-wrap break-words"
+            , classList
+                [ ( "mt-0.5", not besidePlayer )
+                , ( "min-w-0 flex-1", besidePlayer )
+                ]
+            , attribute "data-audio-transcription" ""
+            ]
+            [ text transcription ]
+        ]
+
+
 renderRow :
     ViewParams
     -> RenderParams
@@ -1091,16 +1133,43 @@ renderRow vps _ model ( i_, ( msgId, message ) ) =
             let
                 displayFileName =
                     withDefault "<файл без назви>" attachment.fileName
+
+                transcriptionBesidePlayer =
+                    Config.featureAudioTranscriptionBesidePlayer
+                        && vps.audioTranscriptionEnabled
+                        && (attachment.transcription
+                                |> Maybe.map (not << String.isEmpty << String.trim)
+                                |> Maybe.withDefault False
+                           )
+
+                downloadLink =
+                    a
+                        [ class "btn btn-outline-secondary btn-sm shrink-0"
+                        , href attachment.href
+                        , download displayFileName
+                        , target "_blank"
+                        ]
+                        [ i [ class "bi bi-download me-2" ] []
+                        , text displayFileName
+                        ]
             in
-            a
-                [ class "btn btn-outline-secondary btn-sm mb-2"
-                , href attachment.href
-                , download displayFileName
-                , target "_blank"
-                ]
-                [ i [ class "bi bi-download me-2" ] []
-                , text displayFileName
-                ]
+            if transcriptionBesidePlayer then
+                div [ class "mb-2 flex w-full items-start gap-2" ] <|
+                    [ downloadLink ]
+                        ++ renderMediaTranscription
+                            vps.audioTranscriptionEnabled
+                            vps.audioTranscriptionCollapsed
+                            True
+                            attachment
+
+            else
+                div [ class "mb-2 w-full max-w-[460px]" ] <|
+                    [ downloadLink ]
+                        ++ renderMediaTranscription
+                            vps.audioTranscriptionEnabled
+                            vps.audioTranscriptionCollapsed
+                            False
+                            attachment
 
         renderMedia : MessageMediaInfo -> Maybe (Html msg)
         renderMedia attachment =

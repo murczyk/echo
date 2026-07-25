@@ -47,11 +47,13 @@ export function mapInboxMessageToForm(
   tagsMap: Record<number, Tag>,
 ): MessageFormValues {
   const timestamp = message.timestamp == null ? null : dayjs(message.timestamp).tz(APP_TIME_ZONE);
+  const date = parseDay(message.date, 'YYYY-MM-DD') ?? (timestamp?.isValid() ? timestamp : null);
+  const time = parseDay(message.time, 'HH:mm') ?? (timestamp?.isValid() ? timestamp : null);
   return {
     full_body: message.text ?? '',
     comment: message.extendedForm ?? '',
-    date: timestamp?.isValid() ? timestamp : parseDay(message.date, 'YYYY-MM-DD'),
-    time: timestamp?.isValid() ? timestamp : parseDay(message.time, 'HH:mm'),
+    date,
+    time,
     freq: message.freq ?? '',
     coords: message.coords ?? '',
     callsigns: message.callsigns ?? [],

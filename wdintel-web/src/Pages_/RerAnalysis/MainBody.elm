@@ -124,6 +124,8 @@ mainBody user model shared route =
                         , networkDetailsViewPreference = shared.rerNetworkDetailsPreferredView
                         , currentRoute = Just route
                         , pointTokenClickUrlFor = Pages_.RerAnalysis.Utils.buildPointTokenClickUrlFor model.tags route
+                        , audioTranscriptionEnabled = model.audioTranscriptionEnabled
+                        , audioTranscriptionCollapsed = model.analysisAudioTranscriptionCollapsed
                         }
 
                     renderPs =

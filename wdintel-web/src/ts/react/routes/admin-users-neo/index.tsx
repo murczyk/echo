@@ -1,3 +1,4 @@
+import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import EditIcon from '@mui/icons-material/Edit';
 import {
   Autocomplete,
@@ -9,6 +10,8 @@ import {
   DialogContent,
   DialogTitle,
   FormControlLabel,
+  IconButton,
+  InputAdornment,
   MenuItem,
   Stack,
   TextField,
@@ -50,6 +53,7 @@ import { createLogin, createLoginDelta, listLogins, updateLogin } from '../../se
 import { listOrganisms } from '../../services/api/organisms';
 import { listSigintZones } from '../../services/api/zones';
 import { PowerAlert } from '../../components/PowerAlert';
+import { copyTextToClipboard } from '../../../copy-to-clipboard';
 
 type LoadingStatus = 'idle' | 'loading' | 'success' | 'error';
 
@@ -79,6 +83,7 @@ const STATUS_FILTER_OPTIONS = [
 
 const DEFAULT_COLUMNS_VISIBILITY = {
   login: true,
+  id: true,
   roles: true,
   organism: true,
   zone: true,
@@ -92,6 +97,7 @@ const DEFAULT_COLUMN_ORDER = [
   'mrt-row-numbers',
   'mrt-row-actions',
   'login',
+  'id',
   'roles',
   'organism',
   'zone',
@@ -246,6 +252,42 @@ function formatOptionalLabel(value: string | null | undefined): string {
   return value;
 }
 
+function formatUuidShort(uuid: string): string {
+  if (uuid.length <= 13) return uuid;
+  return `${uuid.slice(0, 5)}...${uuid.slice(-5)}`;
+}
+
+function CopyUuidButton({ uuid, className }: { uuid: string; className?: string }) {
+  const [copyStatus, setCopyStatus] = useState<'idle' | 'copied' | 'error'>('idle');
+  const copyLabel =
+    copyStatus === 'copied'
+      ? 'UUID скопійовано'
+      : copyStatus === 'error'
+        ? 'Не вдалося скопіювати UUID'
+        : 'Копіювати UUID';
+
+  return (
+    <Tooltip title={copyLabel}>
+      <IconButton
+        className={className}
+        size="small"
+        aria-label={copyLabel}
+        onClick={(event) => {
+          event.stopPropagation();
+          event.currentTarget.blur();
+          void copyTextToClipboard(uuid)
+            .then(() => setCopyStatus('copied'))
+            .catch(() => setCopyStatus('error'));
+        }}
+        onBlur={() => setCopyStatus('idle')}
+        onMouseLeave={() => setCopyStatus('idle')}
+      >
+        <ContentCopyIcon fontSize="small" />
+      </IconButton>
+    </Tooltip>
+  );
+}
+
 function asStringArray(value: unknown): string[] {
   if (Array.isArray(value)) return value.map((item) => String(item));
   if (typeof value === 'string') {
@@ -376,6 +418,37 @@ function useUsersColumns(): MRT_ColumnDef<Login>[] {
         header: 'Логін',
         accessorKey: 'login',
         size: 200,
+      },
+      {
+        header: 'UUID',
+        accessorKey: 'id',
+        Cell: ({ row }) => (
+          <Box
+            sx={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 0.5,
+              width: '100%',
+              '& .uuid-copy-button': {
+                opacity: 0,
+                pointerEvents: 'none',
+                transition: 'opacity 120ms ease',
+              },
+              '&:hover .uuid-copy-button, &:focus-within .uuid-copy-button': {
+                opacity: 1,
+                pointerEvents: 'auto',
+              },
+            }}
+          >
+            <Tooltip title={row.original.id}>
+              <Box component="span" sx={{ fontFamily: 'monospace', whiteSpace: 'nowrap' }}>
+                {formatUuidShort(row.original.id)}
+              </Box>
+            </Tooltip>
+            <CopyUuidButton uuid={row.original.id} className="uuid-copy-button" />
+          </Box>
+        ),
+        size: 190,
       },
       {
         header: 'Ролі',
@@ -884,6 +957,23 @@ function EditUserDialog(props: {
         {form ? (
           <div className="mt-3 grid gap-4 md:grid-cols-2 xl:grid-cols-6">
             <TextField
+              label="UUID"
+              value={form.id}
+              helperText="Ідентифікатор користувача"
+              fullWidth
+              className="xl:col-span-3"
+              InputProps={{
+                readOnly: true,
+                endAdornment: (
+                  <InputAdornment position="end">
+                    <CopyUuidButton uuid={form.id} />
+                  </InputAdornment>
+                ),
+              }}
+            />
+            <div aria-hidden className="hidden md:block xl:col-span-3" />
+
+            <TextField
               label="Логін"
               value={form.login}
               onChange={(event) => {
@@ -894,7 +984,7 @@ function EditUserDialog(props: {
               error={Boolean(errors.login)}
               helperText={errors.login || ' '}
               disabled={isSubmitting}
-              className="xl:col-span-2"
+              className="xl:col-span-3"
             />
 
             <TextField
@@ -907,7 +997,7 @@ function EditUserDialog(props: {
               helperText="Залиште пустим, щоб не змінювати"
               fullWidth
               disabled={isSubmitting}
-              className="xl:col-span-2"
+              className="xl:col-span-3"
             />
 
             <TextField
@@ -928,7 +1018,7 @@ function EditUserDialog(props: {
               error={Boolean(errors.roles)}
               helperText={errors.roles || ' '}
               disabled={isSubmitting}
-              className="xl:col-span-2"
+              className="xl:col-span-3"
             >
               {ROLE_OPTIONS.map((role) => (
                 <MenuItem key={role} value={role}>
@@ -950,7 +1040,7 @@ function EditUserDialog(props: {
               disabled={isSubmitting}
               isOptionEqualToValue={(option, value) => option.id === value.id}
               getOptionLabel={(option) => option.label}
-              className="xl:col-span-2"
+              className="xl:col-span-3"
               renderOption={(props, option) =>
                 renderLookupAutocompleteOption(props, option, 'edit-zone')
               }

@@ -29,6 +29,7 @@ import {
   RER_MESSAGE_ATTACHMENTS_ZIP_MAX_FILES,
   RER_MESSAGE_ATTACHMENTS_ZIP_MAX_TOTAL_BYTES,
 } from './MessageCardMedia';
+import { AudioTranscriptionPreferencesProvider } from './MessageCardAudioTranscription';
 import {
   normalizeLocationDisplayValue,
   resolveEtalonBindingDisplayValue,
@@ -600,6 +601,10 @@ function buildMetadata(overrides: Partial<InboxMessageMetadata> = {}): InboxMess
 
 async function renderCard(
   overrides: Partial<ComponentProps<typeof MessageCard>> = {},
+  options: {
+    audioTranscriptionCollapsed?: boolean;
+    audioTranscriptionEnabled?: boolean;
+  } = {},
 ): Promise<Rendered> {
   const container = document.createElement('div');
   document.body.appendChild(container);
@@ -641,7 +646,14 @@ async function renderCard(
   };
 
   await act(async () => {
-    root.render(<MessageCard {...props} />);
+    root.render(
+      <AudioTranscriptionPreferencesProvider
+        collapsedByDefault={options.audioTranscriptionCollapsed ?? false}
+        enabled={options.audioTranscriptionEnabled ?? true}
+      >
+        <MessageCard {...props} />
+      </AudioTranscriptionPreferencesProvider>,
+    );
   });
 
   return { container, root, props };
@@ -2337,6 +2349,149 @@ describe('MessageCard', () => {
     ).toBe(false);
   });
 
+  it('renders a non-empty transcription with its audio player', async () => {
+    const view = await renderCard({
+      msg: {
+        ...buildMessage(),
+        media: [
+          {
+            id: 'audio-transcribed',
+            href: '/api/messenger/media/audio-transcribed',
+            contentType: 'audio/mpeg',
+            fileName: 'transcribed.mp3',
+            sizeBytes: 1024,
+            transcription: '  Перший рядок.\nДругий рядок.  ',
+          },
+          {
+            id: 'audio-blank-transcription',
+            href: '/api/messenger/media/audio-blank-transcription',
+            contentType: 'audio/mpeg',
+            fileName: 'blank.mp3',
+            sizeBytes: 1024,
+            transcription: '   ',
+          },
+        ],
+      },
+    });
+    rendered.push(view);
+
+    const transcriptions = view.container.querySelectorAll('[data-audio-transcription]');
+    expect(transcriptions).toHaveLength(1);
+    expect(transcriptions[0]?.tagName).toBe('BLOCKQUOTE');
+    expect(transcriptions[0]?.classList).toContain('audio-transcription');
+    expect(transcriptions[0]?.textContent).toBe('Перший рядок.\nДругий рядок.');
+    expect(
+      transcriptions[0]?.parentElement?.previousElementSibling?.hasAttribute(
+        'data-audio-player-host',
+      ),
+    ).toBe(true);
+    expect(view.container.querySelector('button[aria-label="Транскрибувати аудіо"]')).toBeNull();
+  });
+
+  it('keeps transcription collapsed by default and toggles it from the audio control', async () => {
+    const view = await renderCard(
+      {
+        msg: {
+          ...buildMessage(),
+          media: [
+            {
+              id: 'audio-collapsed',
+              href: '/api/messenger/media/audio-collapsed',
+              contentType: 'audio/mpeg',
+              fileName: 'collapsed.mp3',
+              sizeBytes: 1024,
+              transcription: 'Прихований текст',
+            },
+          ],
+        },
+      },
+      { audioTranscriptionCollapsed: true },
+    );
+    rendered.push(view);
+
+    const toggle = view.container.querySelector(
+      'button[aria-label="Транскрибувати аудіо"]',
+    ) as HTMLButtonElement;
+    expect(toggle.querySelector('[data-testid="SubtitlesIcon"]')).not.toBeNull();
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    expect(view.container.querySelector('[data-audio-transcription]')).toBeNull();
+
+    await click(toggle);
+
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    const transcription = view.container.querySelector('[data-audio-transcription]');
+    expect(transcription?.textContent).toBe('Прихований текст');
+    expect(transcription?.classList).toContain('audio-transcription--with-toggle');
+
+    await click(toggle);
+
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    expect(view.container.querySelector('[data-audio-transcription]')).toBeNull();
+  });
+
+  it('does not render transcription controls when audio transcription is disabled', async () => {
+    const view = await renderCard(
+      {
+        msg: {
+          ...buildMessage(),
+          media: [
+            {
+              id: 'audio-disabled-transcription',
+              href: '/api/messenger/media/audio-disabled-transcription',
+              contentType: 'audio/mpeg',
+              fileName: 'disabled.mp3',
+              sizeBytes: 1024,
+              transcription: 'Текст не має відображатися',
+            },
+          ],
+        },
+      },
+      { audioTranscriptionEnabled: false },
+    );
+    rendered.push(view);
+
+    expect(view.container.querySelector('custom-audio-player')).not.toBeNull();
+    expect(view.container.querySelector('[data-audio-transcription]')).toBeNull();
+    expect(view.container.querySelector('button[aria-label="Транскрибувати аудіо"]')).toBeNull();
+    expect(view.container.querySelector('.audio-transcription-layout')).toBeNull();
+  });
+
+  it('toggles transcriptions longer than three rows between clamped and full text', async () => {
+    const view = await renderCard({
+      msg: {
+        ...buildMessage(),
+        media: [
+          {
+            id: 'audio-long-transcription',
+            href: '/api/messenger/media/audio-long-transcription',
+            contentType: 'audio/mpeg',
+            fileName: 'long.mp3',
+            sizeBytes: 1024,
+            transcription: 'Перший\nДругий\nТретій\nЧетвертий',
+          },
+        ],
+      },
+    });
+    rendered.push(view);
+
+    const transcription = view.container.querySelector('[data-audio-transcription]') as HTMLElement;
+    expect(transcription.classList).toContain('audio-transcription--clamped');
+    expect(transcription.textContent).toContain('ПОКАЗАТИ БІЛЬШЕ');
+    expect(transcription.getAttribute('aria-expanded')).toBe('false');
+
+    await click(transcription);
+
+    expect(transcription.classList).not.toContain('audio-transcription--clamped');
+    expect(transcription.textContent).not.toContain('ПОКАЗАТИ БІЛЬШЕ');
+    expect(transcription.getAttribute('aria-expanded')).toBe('true');
+
+    await click(transcription);
+
+    expect(transcription.classList).toContain('audio-transcription--clamped');
+    expect(transcription.textContent).toContain('ПОКАЗАТИ БІЛЬШЕ');
+    expect(transcription.getAttribute('aria-expanded')).toBe('false');
+  });
+
   it('does not request derived images for audio attachments larger than 100 MiB', async () => {
     const view = await renderCard({
       msg: {
@@ -2939,7 +3094,11 @@ describe('MessageCard', () => {
       };
 
       await act(async () => {
-        view.root.render(<MessageCard {...nextProps} />);
+        view.root.render(
+          <AudioTranscriptionPreferencesProvider collapsedByDefault={false}>
+            <MessageCard {...nextProps} />
+          </AudioTranscriptionPreferencesProvider>,
+        );
       });
 
       const after = getTagButtonLabels(view.container).slice(0, 4);

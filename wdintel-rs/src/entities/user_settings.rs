@@ -16,6 +16,8 @@ pub struct Model {
     pub disable_auto_scroll: bool,
     pub updated_at: DateTime,
     pub analysis_map_in_sidebar: bool,
+    pub duty_audio_transcription_collapsed: bool,
+    pub analysis_audio_transcription_collapsed: bool,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

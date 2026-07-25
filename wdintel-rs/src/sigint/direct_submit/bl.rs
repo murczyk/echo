@@ -441,7 +441,7 @@ async fn persist_direct_submit_item(
     let groups = [(signal_group.master_key.clone(), datasource_group_id)];
     Ok(match signal_message_id {
         Some(signal_message_id) => {
-            crate::rer_importer::inbox::submit_bl::edit_inbox_item_with_groups(
+            crate::rer_importer::inbox::submit_bl::edit_inbox_item_with_groups_location_mode(
                 env,
                 txn,
                 signal_message_id,
@@ -452,12 +452,13 @@ async fn persist_direct_submit_item(
                 submit_item,
                 allow_empty_content,
                 keep_timestamp_missing,
+                crate::rer_importer::inbox::bl::InboxLocationSubmitMode::PreserveTyped,
             )
             .await
             .c(h!())?
         }
         None => {
-            crate::rer_importer::inbox::submit_bl::submit_inbox_item_with_groups(
+            crate::rer_importer::inbox::submit_bl::submit_inbox_item_with_groups_location_mode(
                 env,
                 txn,
                 datasource_id,
@@ -466,6 +467,7 @@ async fn persist_direct_submit_item(
                 logins,
                 submit_item,
                 allow_empty_content,
+                crate::rer_importer::inbox::bl::InboxLocationSubmitMode::PreserveTyped,
             )
             .await
             .c(h!())?
@@ -714,6 +716,42 @@ mod tests {
         assert_eq!(parsed.to, vec!["ярус".to_string(), "светлый".to_string()]);
         assert!(parsed.text.contains("Текст повідомлення"));
         assert!(parsed.timestamp.is_some());
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn direct_submit_preserves_typed_locations_without_parsing() {
+        let env = cleanup().await.unwrap();
+        let login_id = crate::users::login_id_by_name(&env.dbx, TEST_LOGIN)
+            .await
+            .unwrap();
+        let mut payload = direct_submit_payload("body");
+        payload.timestamp = Some("2026-07-11T12:34:56Z".to_string());
+        payload.locations =
+            vec!["Робоботине".to_string(), "район 1".to_string()];
+
+        let created = submit_signal_message(&login_id, &env, payload)
+            .await
+            .unwrap();
+
+        assert_eq!(
+            created
+                .message
+                .as_ref()
+                .and_then(|message| message.location.as_deref()),
+            Some("Робоботине, район 1")
+        );
+        let inbox_item =
+            sigint_inbox_item::Entity::find_by_id(created.signal_message_id)
+                .one(&env.dbx)
+                .await
+                .unwrap()
+                .unwrap();
+        assert_eq!(inbox_item.location.as_deref(), Some("Робоботине, район 1"));
+        assert_eq!(
+            inbox_item.location_v2.as_deref(),
+            Some("|Робоботине|район 1|")
+        );
     }
 
     #[tokio::test]
