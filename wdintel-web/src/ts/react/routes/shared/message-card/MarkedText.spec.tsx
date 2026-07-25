@@ -269,6 +269,38 @@ describe('MarkedText', () => {
     expect(container.querySelector('[data-testid="callsign-hint-badge-system"]')).toBeNull();
   });
 
+  it('links exact network callsigns without tooltip details', async () => {
+    await act(async () => {
+      root.render(
+        <TestHost
+          nodes={[{ CNCallsignC: { text: 'ghost', begin: 0, end: 5, etalon: 'ghost' } }]}
+          bodyText="ghost"
+          message={{ freq: '100.000', networkIds: [10] } as InboxMessage}
+          callsignInfoMap={{
+            ghost: {
+              callsign: 'ghost',
+              res: [],
+              networkHints: [
+                {
+                  id: 2,
+                  networkId: 10,
+                  position: null as never,
+                  formation: null as never,
+                },
+              ],
+            },
+          }}
+          networks={networks}
+          unitsMap={unitsMap}
+        />,
+      );
+    });
+
+    expect(container.querySelector('a.content-token--ADP')?.textContent).toBe('GHOST');
+    expect(container.querySelector('[data-testid="callsign-hint-plain-missing"]')).toBeNull();
+    expect(container.querySelector('[data-testid="callsign-hint-badge-network"]')).toBeNull();
+  });
+
   it('uses the in-app map action when provided and falls back to a normal map link otherwise', async () => {
     const message = {
       freq: null,

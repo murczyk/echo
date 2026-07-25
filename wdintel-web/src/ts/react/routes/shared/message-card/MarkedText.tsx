@@ -418,7 +418,8 @@ function CallsignWithHint({
 
   const tooltipText = formatCallsignHintTooltipData(hintResult);
   const isNetworkHint = hintResult.strategy === 'network';
-  const shouldLinkCallsign = linkCallsigns && (isPresent(tooltipText) || hasCatalogMatch);
+  const shouldLinkCallsign =
+    linkCallsigns && (isNetworkHint || isPresent(tooltipText) || hasCatalogMatch);
   const callsignDisplay = shouldLinkCallsign ? (
     <a
       href={href}
@@ -436,7 +437,7 @@ function CallsignWithHint({
 
   if (isNullOrUndefined(tooltipText)) {
     if (hasMessageNetworks) {
-      if (!hasCatalogMatch) {
+      if (!isNetworkHint && !hasCatalogMatch) {
         return wrapSearchHighlighted(
           renderPlainCallsign(displayText, { testId: 'callsign-hint-plain-missing' }),
         );
