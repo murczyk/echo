@@ -1,4 +1,5 @@
 import { Tooltip } from '@mui/material';
+import SubtitlesIcon from '@mui/icons-material/Subtitles';
 import {
   createContext,
   type KeyboardEvent,
@@ -6,6 +7,7 @@ import {
   useContext,
   useEffect,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
 } from 'react';
@@ -29,8 +31,13 @@ export function AudioTranscriptionPreferencesProvider({
   collapsedByDefault: boolean;
   enabled?: boolean;
 }) {
+  const preferences = useMemo(
+    () => ({ collapsedByDefault, enabled }),
+    [collapsedByDefault, enabled],
+  );
+
   return (
-    <AudioTranscriptionPreferencesContext.Provider value={{ collapsedByDefault, enabled }}>
+    <AudioTranscriptionPreferencesContext.Provider value={preferences}>
       {children}
     </AudioTranscriptionPreferencesContext.Provider>
   );
@@ -112,7 +119,7 @@ export function MessageCardAudioTranscription({ transcription }: { transcription
               setExpanded(false);
             }}
           >
-            a→
+            <SubtitlesIcon fontSize="small" aria-hidden="true" />
           </button>
         </Tooltip>
       ) : null}
@@ -122,7 +129,7 @@ export function MessageCardAudioTranscription({ transcription }: { transcription
           className={
             'audio-transcription m-0 mt-0.5 mb-1 px-2 py-1.5 text-sm leading-[1.4] ' +
             'whitespace-pre-wrap wrap-break-word' +
-            (collapsedByDefault ? ' pl-12' : '') +
+            (collapsedByDefault ? ' audio-transcription--with-toggle' : '') +
             (!expanded ? ' audio-transcription--clamped' : '') +
             (hasOverflow ? ' cursor-pointer' : '')
           }

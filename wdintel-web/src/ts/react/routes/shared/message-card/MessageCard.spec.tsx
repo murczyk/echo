@@ -2412,16 +2412,16 @@ describe('MessageCard', () => {
     const toggle = view.container.querySelector(
       'button[aria-label="Транскрибувати аудіо"]',
     ) as HTMLButtonElement;
-    expect(toggle.textContent).toBe('a→');
+    expect(toggle.querySelector('[data-testid="SubtitlesIcon"]')).not.toBeNull();
     expect(toggle.getAttribute('aria-expanded')).toBe('false');
     expect(view.container.querySelector('[data-audio-transcription]')).toBeNull();
 
     await click(toggle);
 
     expect(toggle.getAttribute('aria-expanded')).toBe('true');
-    expect(view.container.querySelector('[data-audio-transcription]')?.textContent).toBe(
-      'Прихований текст',
-    );
+    const transcription = view.container.querySelector('[data-audio-transcription]');
+    expect(transcription?.textContent).toBe('Прихований текст');
+    expect(transcription?.classList).toContain('audio-transcription--with-toggle');
 
     await click(toggle);
 
