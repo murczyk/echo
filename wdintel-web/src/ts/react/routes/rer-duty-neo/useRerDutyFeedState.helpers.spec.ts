@@ -24,10 +24,27 @@ function callsignInfoRow(
 }
 
 function callsignInfo(callsign: string, rows: CallsignInfoRes['res']): CallsignInfoRes {
-  return { callsign, res: rows };
+  return { callsign, res: rows, networkHints: [] };
 }
 
 describe('mergeDutyCallsignInfoMap', () => {
+  it('merges partial network hints by stable id', () => {
+    const current = callsignInfo('ВЕТЕР', []);
+    current.networkHints = [{ id: 2, networkId: 20, position: 'old', formation: 'unit' }];
+    const incoming = callsignInfo('ВЕТЕР', []);
+    incoming.networkHints = [
+      { id: 1, networkId: 10, position: 'first', formation: 'unit' },
+      { id: 2, networkId: 20, position: 'updated', formation: 'unit' },
+    ];
+
+    const next = mergeDutyCallsignInfoMap({ ветер: current }, [incoming]);
+
+    expect(next['ветер'].networkHints).toEqual([
+      { id: 1, networkId: 10, position: 'first', formation: 'unit' },
+      { id: 2, networkId: 20, position: 'updated', formation: 'unit' },
+    ]);
+  });
+
   it('unions network ids and preserves richer existing row data for the same callsign', () => {
     const prev = {
       борода: callsignInfo('БОРОДА', [
@@ -252,5 +269,17 @@ describe('updateDutyResolvedCallsignInfoMap', () => {
     const next = updateDutyResolvedCallsignInfoMap(prev, [callsignInfo('БОРОДА', [])]);
 
     expect(next).toEqual({});
+  });
+
+  it('keeps a network-only resolved result', () => {
+    const networkOnly = {
+      callsign: 'ВЕТЕР',
+      res: [],
+      networkHints: [{ id: 1, networkId: 10, position: 'командир', formation: '4 мср' }],
+    };
+
+    const next = updateDutyResolvedCallsignInfoMap({}, [networkOnly]);
+
+    expect(next['ветер']).toEqual(networkOnly);
   });
 });

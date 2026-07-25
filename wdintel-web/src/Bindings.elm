@@ -2760,9 +2760,28 @@ callsignInfoEncoder struct =
         ]
 
 
+type alias CallsignNetworkHint =
+    { id : Int
+    , networkId : Int
+    , position : String
+    , formation : String
+    }
+
+
+callsignNetworkHintEncoder : CallsignNetworkHint -> Json.Encode.Value
+callsignNetworkHintEncoder struct =
+    Json.Encode.object
+        [ ( "id", (Json.Encode.int) struct.id )
+        , ( "network_id", (Json.Encode.int) struct.networkId )
+        , ( "position", (Json.Encode.string) struct.position )
+        , ( "formation", (Json.Encode.string) struct.formation )
+        ]
+
+
 type alias CallsignInfoRes =
     { callsign : String
     , res : List (CallsignInfo)
+    , networkHints : List (CallsignNetworkHint)
     }
 
 
@@ -2771,6 +2790,7 @@ callsignInfoResEncoder struct =
     Json.Encode.object
         [ ( "callsign", (Json.Encode.string) struct.callsign )
         , ( "res", (Json.Encode.list (callsignInfoEncoder)) struct.res )
+        , ( "network_hints", (Json.Encode.list (callsignNetworkHintEncoder)) struct.networkHints )
         ]
 
 
@@ -10979,11 +10999,21 @@ callsignInfoDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "network_ids_reported_in" (Json.Decode.list (Json.Decode.int))))
 
 
+callsignNetworkHintDecoder : Json.Decode.Decoder CallsignNetworkHint
+callsignNetworkHintDecoder =
+    Json.Decode.succeed CallsignNetworkHint
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "network_id" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "position" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "formation" (Json.Decode.string)))
+
+
 callsignInfoResDecoder : Json.Decode.Decoder CallsignInfoRes
 callsignInfoResDecoder =
     Json.Decode.succeed CallsignInfoRes
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "callsign" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "res" (Json.Decode.list (callsignInfoDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "network_hints" (Json.Decode.list (callsignNetworkHintDecoder))))
 
 
 messageCommentDecoder : Json.Decode.Decoder MessageComment

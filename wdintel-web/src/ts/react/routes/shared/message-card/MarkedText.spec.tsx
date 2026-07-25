@@ -255,6 +255,7 @@ describe('MarkedText', () => {
                   networkIdsReportedIn: [10],
                 },
               ],
+              networkHints: [{ id: 1, networkId: 10, position: 'cmd', formation: 'u1' }],
             },
           }}
           networks={networks}
@@ -266,6 +267,38 @@ describe('MarkedText', () => {
     expect(container.querySelector('a.content-token--ADP')?.textContent).toBe('WOLF');
     expect(container.querySelector('[data-testid="callsign-hint-badge-network"]')).not.toBeNull();
     expect(container.querySelector('[data-testid="callsign-hint-badge-system"]')).toBeNull();
+  });
+
+  it('links exact network callsigns without tooltip details', async () => {
+    await act(async () => {
+      root.render(
+        <TestHost
+          nodes={[{ CNCallsignC: { text: 'ghost', begin: 0, end: 5, etalon: 'ghost' } }]}
+          bodyText="ghost"
+          message={{ freq: '100.000', networkIds: [10] } as InboxMessage}
+          callsignInfoMap={{
+            ghost: {
+              callsign: 'ghost',
+              res: [],
+              networkHints: [
+                {
+                  id: 2,
+                  networkId: 10,
+                  position: null as never,
+                  formation: null as never,
+                },
+              ],
+            },
+          }}
+          networks={networks}
+          unitsMap={unitsMap}
+        />,
+      );
+    });
+
+    expect(container.querySelector('a.content-token--ADP')?.textContent).toBe('GHOST');
+    expect(container.querySelector('[data-testid="callsign-hint-plain-missing"]')).toBeNull();
+    expect(container.querySelector('[data-testid="callsign-hint-badge-network"]')).toBeNull();
   });
 
   it('uses the in-app map action when provided and falls back to a normal map link otherwise', async () => {
@@ -368,6 +401,7 @@ describe('MarkedText', () => {
                   networkIdsReportedIn: [10],
                 },
               ],
+              networkHints: [{ id: 1, networkId: 10, position: 'cmd', formation: 'u1' }],
             },
           }}
           networks={networks}
@@ -478,7 +512,7 @@ describe('MarkedText', () => {
     expect(container.querySelector('[data-testid="callsign-hint-badge-network"]')).toBeNull();
   });
 
-  it('renders an outlined badge for catalog-only callsigns even when message networks are present', async () => {
+  it('does not render a badge for catalog-only callsigns when message networks are present', async () => {
     await act(async () => {
       root.render(
         <TestHost
@@ -524,7 +558,7 @@ describe('MarkedText', () => {
     });
 
     expect(container.querySelector('a.content-token--ADP')?.textContent).toBe('FOX');
-    expect(container.querySelector('[data-testid="callsign-hint-badge-system"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="callsign-hint-badge-system"]')).toBeNull();
     expect(container.querySelector('[data-testid="callsign-hint-badge-network"]')).toBeNull();
   });
 
@@ -647,6 +681,7 @@ describe('MarkedText', () => {
                   networkIdsReportedIn: [10],
                 },
               ],
+              networkHints: [{ id: 1, networkId: 10, position: 'sys', formation: 's1' }],
             },
           }}
           networks={networks}

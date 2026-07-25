@@ -1,6 +1,15 @@
-import type { CallsignInfo, CallsignInfoRes, Network, Unit } from '../../../../Bindings';
+import type {
+  CallsignInfo,
+  CallsignInfoRes,
+  CallsignNetworkHint,
+  Network,
+  Unit,
+} from '../../../../Bindings';
 import { normalizeCallsignLookupValue } from '../../utils/callsign-normalization';
-import { formatLegacyCallsignTooltipLine } from './callsign-hints-utils';
+import {
+  formatLegacyCallsignTooltipLine,
+  formatNetworkCallsignTooltipLine,
+} from './callsign-hints-utils';
 import { isPresent } from '../../utils/misc';
 
 export type CallsignHintContext = 'message' | 'frequency';
@@ -8,7 +17,7 @@ export type CallsignHintStrategy = 'network' | 'system' | 'none';
 
 export type CallsignHintResult = {
   strategy: CallsignHintStrategy;
-  prioritizedCallsigns: CallsignInfo[];
+  prioritizedCallsigns: Array<CallsignInfo | CallsignNetworkHint>;
   iconClass: string;
 };
 
@@ -24,6 +33,13 @@ function getReportedNetworkIds(callsignInfo: Pick<CallsignInfo, 'networkIdsRepor
 function getMessageNetworkIds(networkIds?: number[] | null): number[] | null {
   if (!networkIds || networkIds.length === 0) return null;
   return networkIds;
+}
+
+export function resolveNetworkCallsignHints(
+  networkIds: number[],
+  callsignInfo: CallsignInfoRes,
+): CallsignNetworkHint[] {
+  return (callsignInfo.networkHints ?? []).filter((hint) => networkIds.includes(hint.networkId));
 }
 
 function filterNetworksByFreq(networks: Network[], freq: string | null): Network[] {
@@ -197,12 +213,26 @@ export function getCallsignHintResult(params: {
   callsignInfoMap?: Record<string, CallsignInfoRes>;
   callsign: string;
 }): CallsignHintResult {
-  const callsignInfo =
-    params.callsignInfoMap?.[normalizeCallsignLookupValue(params.callsign)]?.res ?? null;
+  const callsignResponse = params.callsignInfoMap?.[normalizeCallsignLookupValue(params.callsign)];
+  const callsignInfo = callsignResponse?.res ?? null;
+  const scopedNetworkIds =
+    params.hintContext === 'message'
+      ? getMessageNetworkIds(params.networkIds)
+      : filterNetworksByFreq(params.networks, params.freq).map((network) => network.id);
+  if (scopedNetworkIds && scopedNetworkIds.length > 0) {
+    const networkHints = callsignResponse
+      ? resolveNetworkCallsignHints(scopedNetworkIds, callsignResponse)
+      : [];
+    return {
+      strategy: networkHints.length > 0 ? 'network' : 'none',
+      prioritizedCallsigns: networkHints,
+      iconClass: getIconClass(networkHints.length > 0 ? 'network' : 'none'),
+    };
+  }
   const strategy = determineHintStrategyForCallsign({
     hintContext: params.hintContext,
     freq: params.freq,
-    networkIds: params.networkIds,
+    networkIds: params.hintContext === 'message' ? params.networkIds : undefined,
     networks: params.networks,
     unitsMap: params.unitsMap,
     callsignInfo,
@@ -232,7 +262,11 @@ export function formatCallsignHintTooltipData(
   const header =
     result.strategy === 'network' ? 'Позивні підрозділів мережі:' : 'Позивні з каталогу:';
   const items = result.prioritizedCallsigns
-    .map(formatLegacyCallsignTooltipLine)
+    .map((item) =>
+      'networkId' in item
+        ? formatNetworkCallsignTooltipLine(item)
+        : formatLegacyCallsignTooltipLine(item),
+    )
     .filter(isTooltipLineVisible);
   if (items.length === 0) return null;
 

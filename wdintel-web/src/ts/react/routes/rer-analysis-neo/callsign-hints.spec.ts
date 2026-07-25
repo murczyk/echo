@@ -5,8 +5,12 @@ import {
   formatCallsignHintTooltip,
   formatCallsignHintTooltipData,
   getCallsignHintResult,
+  resolveNetworkCallsignHints,
 } from './callsign-hints';
-import { formatLegacyCallsignTooltipLine } from './callsign-hints-utils';
+import {
+  formatLegacyCallsignTooltipLine,
+  formatNetworkCallsignTooltipLine,
+} from './callsign-hints-utils';
 
 const unitsMap: Record<number, Unit> = {
   1: {
@@ -123,6 +127,7 @@ const networks: Network[] = [
 
 function createCallsignInfoMap(
   items: Record<string, CallsignInfoRes['res']>,
+  networkHints: CallsignInfoRes['networkHints'] = [],
 ): Record<string, CallsignInfoRes> {
   return Object.fromEntries(
     Object.entries(items).map(([callsign, res]) => [
@@ -130,12 +135,58 @@ function createCallsignInfoMap(
       {
         callsign,
         res,
+        networkHints,
       },
     ]),
   );
 }
 
 describe('rer-analysis-neo callsign hints', () => {
+  it('keeps only hints in the requested network scope', () => {
+    const callsignInfo = {
+      callsign: 'ВЕТЕР',
+      res: [],
+      networkHints: [
+        { id: 1, networkId: 10, position: 'командир', formation: '4 мср' },
+        { id: 2, networkId: 20, position: 'інша', formation: 'інша' },
+      ],
+    };
+
+    expect(resolveNetworkCallsignHints([10], callsignInfo)).toEqual([callsignInfo.networkHints[0]]);
+  });
+
+  it('formats a network-only callsign hint', () => {
+    const result = getCallsignHintResult({
+      hintContext: 'message',
+      freq: null,
+      networkIds: [10],
+      networks,
+      unitsMap,
+      callsignInfoMap: {
+        ветер: {
+          callsign: 'ВЕТЕР',
+          res: [],
+          networkHints: [
+            {
+              id: 1,
+              networkId: 10,
+              position: 'командир',
+              formation: '4 мср',
+            },
+          ],
+        },
+      },
+      callsign: 'ВЕТЕР',
+    });
+
+    expect(formatCallsignHintTooltip(result)).toBe(
+      'Позивні підрозділів мережі:\n🐷 командир 4 мср',
+    );
+    expect(formatNetworkCallsignTooltipLine(result.prioritizedCallsigns[0] as never)).toBe(
+      '🐷 командир 4 мср',
+    );
+  });
+
   it('formats tooltip line exactly like the legacy Elm component', () => {
     expect(
       formatLegacyCallsignTooltipLine({
@@ -217,7 +268,7 @@ describe('rer-analysis-neo callsign hints', () => {
     expect(formatCallsignHintTooltip(result)).toBeNull();
   });
 
-  it('returns system tooltip in message context for catalog-only callsigns even when message networks exist', () => {
+  it('returns no tooltip for catalog-only callsigns when message networks exist', () => {
     const result = getCallsignHintResult({
       hintContext: 'message',
       freq: null,
@@ -256,10 +307,10 @@ describe('rer-analysis-neo callsign hints', () => {
       callsign: 'fox',
     });
 
-    expect(result.strategy).toBe('system');
-    expect(result.iconClass).toBe('info-circle');
-    expect(result.prioritizedCallsigns.map((item) => item.id)).toEqual([3]);
-    expect(formatCallsignHintTooltip(result)).toBe('Позивні з каталогу:\n🐷 начальник штаб ');
+    expect(result.strategy).toBe('none');
+    expect(result.iconClass).toBe('');
+    expect(result.prioritizedCallsigns).toEqual([]);
+    expect(formatCallsignHintTooltip(result)).toBeNull();
   });
 
   it('returns network tooltip in message context and keeps only rows from message networks', () => {
@@ -269,38 +320,46 @@ describe('rer-analysis-neo callsign hints', () => {
       networkIds: [10],
       networks,
       unitsMap,
-      callsignInfoMap: createCallsignInfoMap({
-        wolf: [
-          {
-            id: 1,
-            callsign: 'wolf',
-            position: 'командир',
-            comment: '',
-            unit1: '1 рота',
-            unit2: '',
-            unitId: 1,
-            networkIdsReportedIn: [10],
-          },
-          {
-            id: 2,
-            callsign: 'wolf',
-            position: 'заступник',
-            comment: '',
-            unit1: '2 рота',
-            unit2: '',
-            unitId: 3,
-            networkIdsReportedIn: [20],
-          },
+      callsignInfoMap: createCallsignInfoMap(
+        {
+          wolf: [
+            {
+              id: 1,
+              callsign: 'wolf',
+              position: 'командир',
+              comment: '',
+              unit1: '1 рота',
+              unit2: '',
+              unitId: 1,
+              networkIdsReportedIn: [10],
+            },
+            {
+              id: 2,
+              callsign: 'wolf',
+              position: 'заступник',
+              comment: '',
+              unit1: '2 рота',
+              unit2: '',
+              unitId: 3,
+              networkIdsReportedIn: [20],
+            },
+          ],
+        },
+        [
+          { id: 1, networkId: 10, position: 'командир', formation: '1 рота' },
+          { id: 2, networkId: 20, position: 'заступник', formation: '2 рота' },
         ],
-      }),
+      ),
       callsign: 'wolf',
     });
 
     expect(result.strategy).toBe('network');
     expect(result.iconClass).toBe('info-circle-fill');
-    expect(result.prioritizedCallsigns.map((item) => item.id)).toEqual([1]);
+    expect(
+      result.prioritizedCallsigns.map((item) => 'networkId' in item && item.networkId),
+    ).toEqual([10]);
     expect(formatCallsignHintTooltip(result)).toBe(
-      'Позивні підрозділів мережі:\n🐷 командир 1 рота ',
+      'Позивні підрозділів мережі:\n🐷 командир 1 рота',
     );
   });
 
@@ -311,20 +370,23 @@ describe('rer-analysis-neo callsign hints', () => {
       networkIds: [],
       networks,
       unitsMap,
-      callsignInfoMap: createCallsignInfoMap({
-        wolf: [
-          {
-            id: 1,
-            callsign: 'wolf',
-            position: 'командир',
-            comment: '',
-            unit1: '1 рота',
-            unit2: '',
-            unitId: 1,
-            networkIdsReportedIn: [10],
-          },
-        ],
-      }),
+      callsignInfoMap: createCallsignInfoMap(
+        {
+          wolf: [
+            {
+              id: 1,
+              callsign: 'wolf',
+              position: 'командир',
+              comment: '',
+              unit1: '1 рота',
+              unit2: '',
+              unitId: 1,
+              networkIdsReportedIn: [10],
+            },
+          ],
+        },
+        [{ id: 1, networkId: 10, position: 'командир', formation: '1 рота' }],
+      ),
       callsign: 'wolf',
     });
 
@@ -332,43 +394,46 @@ describe('rer-analysis-neo callsign hints', () => {
     expect(result.prioritizedCallsigns.map((item) => item.id)).toEqual([1]);
   });
 
-  it('returns network tooltip in frequency context when message networks exist, even without frequency matching', () => {
+  it('returns a system tooltip when no network matches the frequency context', () => {
     const result = getCallsignHintResult({
       hintContext: 'frequency',
       freq: '999.999',
       networkIds: [10],
       networks,
       unitsMap,
-      callsignInfoMap: createCallsignInfoMap({
-        wolf: [
-          {
-            id: 1,
-            callsign: 'wolf',
-            position: 'командир',
-            comment: '',
-            unit1: '1 рота',
-            unit2: '',
-            unitId: 1,
-            networkIdsReportedIn: [10],
-          },
-          {
-            id: 2,
-            callsign: 'wolf',
-            position: 'заступник',
-            comment: '',
-            unit1: '3 рота',
-            unit2: '',
-            unitId: 3,
-            networkIdsReportedIn: [20],
-          },
-        ],
-      }),
+      callsignInfoMap: createCallsignInfoMap(
+        {
+          wolf: [
+            {
+              id: 1,
+              callsign: 'wolf',
+              position: 'командир',
+              comment: '',
+              unit1: '1 рота',
+              unit2: '',
+              unitId: 1,
+              networkIdsReportedIn: [10],
+            },
+            {
+              id: 2,
+              callsign: 'wolf',
+              position: 'заступник',
+              comment: '',
+              unit1: '3 рота',
+              unit2: '',
+              unitId: 3,
+              networkIdsReportedIn: [20],
+            },
+          ],
+        },
+        [{ id: 1, networkId: 10, position: 'командир взводу', formation: '3 тр' }],
+      ),
       callsign: 'wolf',
     });
 
-    expect(result.strategy).toBe('network');
-    expect(result.iconClass).toBe('info-circle-fill');
-    expect(result.prioritizedCallsigns.map((item) => item.id)).toEqual([1]);
+    expect(result.strategy).toBe('system');
+    expect(result.iconClass).toBe('info-circle');
+    expect(result.prioritizedCallsigns.map((item) => item.id)).toEqual([1, 2]);
   });
 
   it('returns network tooltip in frequency context when the callsign unit is same or child of the network unit', () => {
@@ -377,42 +442,47 @@ describe('rer-analysis-neo callsign hints', () => {
       freq: '100.000',
       networks,
       unitsMap,
-      callsignInfoMap: createCallsignInfoMap({
-        wolf: [
-          {
-            id: 1,
-            callsign: 'wolf',
-            position: 'командир взводу',
-            comment: '',
-            unit1: '3 тр',
-            unit2: '',
-            unitId: 2,
-            networkIdsReportedIn: [999],
-          },
-          {
-            id: 2,
-            callsign: 'wolf',
-            position: 'командир',
-            comment: '',
-            unit1: 'сторонній',
-            unit2: '',
-            unitId: 3,
-            networkIdsReportedIn: [20],
-          },
-        ],
-      }),
+      callsignInfoMap: createCallsignInfoMap(
+        {
+          wolf: [
+            {
+              id: 1,
+              callsign: 'wolf',
+              position: 'командир взводу',
+              comment: '',
+              unit1: '3 тр',
+              unit2: '',
+              unitId: 2,
+              networkIdsReportedIn: [999],
+            },
+            {
+              id: 2,
+              callsign: 'wolf',
+              position: 'командир',
+              comment: '',
+              unit1: 'сторонній',
+              unit2: '',
+              unitId: 3,
+              networkIdsReportedIn: [20],
+            },
+          ],
+        },
+        [{ id: 1, networkId: 10, position: 'командир взводу', formation: '3 тр' }],
+      ),
       callsign: 'wolf',
     });
 
     expect(result.strategy).toBe('network');
     expect(result.iconClass).toBe('info-circle-fill');
-    expect(result.prioritizedCallsigns.map((item) => item.id)).toEqual([1]);
+    expect(
+      result.prioritizedCallsigns.map((item) => 'networkId' in item && item.networkId),
+    ).toEqual([10]);
     expect(formatCallsignHintTooltip(result)).toBe(
-      'Позивні підрозділів мережі:\n🐷 командир взводу 3 тр ',
+      'Позивні підрозділів мережі:\n🐷 командир взводу 3 тр',
     );
   });
 
-  it('returns system tooltip in frequency context when the callsign is not related to frequency networks', () => {
+  it('returns no tooltip when a catalog-only callsign is absent from the frequency network', () => {
     const result = getCallsignHintResult({
       hintContext: 'frequency',
       freq: '100.000',
@@ -435,10 +505,10 @@ describe('rer-analysis-neo callsign hints', () => {
       callsign: 'fox',
     });
 
-    expect(result.strategy).toBe('system');
-    expect(result.iconClass).toBe('info-circle');
-    expect(result.prioritizedCallsigns.map((item) => item.id)).toEqual([3]);
-    expect(formatCallsignHintTooltip(result)).toBe('Позивні з каталогу:\n🐷 начальник штаб ');
+    expect(result.strategy).toBe('none');
+    expect(result.iconClass).toBe('');
+    expect(result.prioritizedCallsigns).toEqual([]);
+    expect(formatCallsignHintTooltip(result)).toBeNull();
   });
 
   it('returns system tooltip in frequency context when there are no frequency networks', () => {

@@ -1064,9 +1064,17 @@ export type CallsignInfo = {
   networkIdsReportedIn: Array<number>;
 };
 
+export type CallsignNetworkHint = {
+  id: number;
+  networkId: number;
+  position: string;
+  formation: string;
+};
+
 export type CallsignInfoRes = {
   callsign: string;
   res: Array<CallsignInfo>;
+  networkHints: Array<CallsignNetworkHint>;
 };
 
 export type MessageComment = {
