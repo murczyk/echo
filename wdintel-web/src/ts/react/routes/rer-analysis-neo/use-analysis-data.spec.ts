@@ -19,7 +19,7 @@ function callsignInfoRow(
 }
 
 function callsignInfo(callsign: string, rows: CallsignInfoRes['res']): CallsignInfoRes {
-  return { callsign, res: rows };
+  return { callsign, res: rows, networkHints: [] };
 }
 
 describe('mergeAnalysisCallsignInfoMap', () => {
@@ -108,6 +108,23 @@ describe('mergeAnalysisCallsignInfoMap', () => {
 
     expect(next['бетон']).toBeDefined();
     expect(next['бетон'].callsign).toBe('  БеТоН  ');
+  });
+
+  it('merges partial network hints by stable id', () => {
+    const prev = callsignInfo('ВЕТЕР', []);
+    prev.networkHints = [{ id: 2, networkId: 20, position: 'old', formation: 'unit' }];
+    const incoming = callsignInfo('ВЕТЕР', []);
+    incoming.networkHints = [
+      { id: 1, networkId: 10, position: 'first', formation: 'unit' },
+      { id: 2, networkId: 20, position: 'updated', formation: 'unit' },
+    ];
+
+    const next = mergeAnalysisCallsignInfoMap({ ветер: prev }, [incoming]);
+
+    expect(next['ветер'].networkHints).toEqual([
+      { id: 1, networkId: 10, position: 'first', formation: 'unit' },
+      { id: 2, networkId: 20, position: 'updated', formation: 'unit' },
+    ]);
   });
 });
 

@@ -21,7 +21,6 @@ import {
 import {
   formatCallsignHintTooltipData,
   getCallsignHintResult,
-  isCallsignRelatedToNetworks,
 } from '../../rer-analysis-neo/callsign-hints';
 import { renderLinkifiedText } from './message-card-linkify';
 import {
@@ -41,6 +40,12 @@ export const CALLSIGN_TOOLTIP_ITEM_SX = {
   wordBreak: 'break-word',
   minWidth: 0,
 } as const;
+
+const CALLSIGN_HINT_WRAPPER_STYLE: CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'baseline',
+  verticalAlign: 'baseline',
+};
 
 function collectPointEtalons(nodes: ContentNode[]): string[] {
   const etalons: string[] = [];
@@ -428,19 +433,12 @@ function CallsignWithHint({
   const href = `/rer-callsigns-neo?callsign=${encodeURIComponent(displayText)}`;
   const callsignInfo = callsignInfoMap?.[normalizeCallsignLookupValue(displayText)]?.res ?? null;
   const hasCatalogMatch = (callsignInfo?.length ?? 0) > 0;
-  const isNetworkRelated =
-    hasCatalogMatch &&
-    !!networks &&
-    !!unitsMap &&
-    isCallsignRelatedToNetworks(callsignInfo, networks, unitsMap);
   const hasMessageNetworks = (networkIds?.length ?? 0) > 0;
   const wrapSearchHighlighted = (node: ReactNode) =>
     searchHighlighted ? <SearchHighlightedCallsign>{node}</SearchHighlightedCallsign> : node;
 
-  // Behavior change: callsign highlighting is intentionally split into 4 UX states.
-  // States 1-3 stay clickable; state 4 is intentionally plain text.
-  // Exact network matches keep the badge/tooltip, catalog-only callsigns keep the badge/tooltip,
-  // and network-related non-exact callsigns remain clickable plain links.
+  // Exact network matches use network hints. Catalog hints are shown only
+  // without an explicit message-network scope.
 
   // If we don't have networks or unitsMap, just render as plain link
   if (!networks || !unitsMap) {
@@ -474,7 +472,8 @@ function CallsignWithHint({
 
   const tooltipText = formatCallsignHintTooltipData(hintResult);
   const isNetworkHint = hintResult.strategy === 'network';
-  const shouldLinkCallsign = linkCallsigns && (isPresent(tooltipText) || hasCatalogMatch);
+  const shouldLinkCallsign =
+    linkCallsigns && (isNetworkHint || isPresent(tooltipText) || hasCatalogMatch);
   const callsignDisplay = shouldLinkCallsign ? (
     <a
       href={href}
@@ -492,7 +491,7 @@ function CallsignWithHint({
 
   if (isNullOrUndefined(tooltipText)) {
     if (hasMessageNetworks) {
-      if (!hasCatalogMatch) {
+      if (!isNetworkHint && !hasCatalogMatch) {
         return wrapSearchHighlighted(
           renderPlainCallsign(displayText, { testId: 'callsign-hint-plain-missing' }),
         );
@@ -505,10 +504,7 @@ function CallsignWithHint({
   }
 
   return (
-    <Box
-      component="span"
-      sx={{ position: 'relative', display: 'inline-block', verticalAlign: 'baseline', pr: '8px' }}
-    >
+    <span style={CALLSIGN_HINT_WRAPPER_STYLE}>
       {wrapSearchHighlighted(callsignDisplay)}
       <Tooltip
         placement="top"
@@ -577,10 +573,8 @@ function CallsignWithHint({
           size="small"
           disableRipple
           sx={{
-            position: 'absolute',
-            right: 0,
-            top: 0,
-            transform: 'translate(45%, -35%)',
+            flex: '0 0 auto',
+            ml: 0.25,
             width: 18,
             height: 18,
             minWidth: 18,
@@ -600,7 +594,7 @@ function CallsignWithHint({
           )}
         </IconButton>
       </Tooltip>
-    </Box>
+    </span>
   );
 }
 

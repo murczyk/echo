@@ -312,6 +312,7 @@ mod m20260723_151016_add_full_name_to_sigint_network_callsign;
 mod m20260723_185734_sigint_unit_attachments;
 mod m20260724_080724_add_login_password_auth_enabled;
 mod m20260724_095619_add_report_generation_settings;
+mod m20260725_082926_index_network_callsign_lower;
 
 pub struct Migrator;
 
@@ -680,6 +681,9 @@ impl MigratorTrait for Migrator {
             ),
             Box::new(
                 m20260724_095619_add_report_generation_settings::Migration,
+            ),
+            Box::new(
+                m20260725_082926_index_network_callsign_lower::Migration,
             ),
         ]
     }

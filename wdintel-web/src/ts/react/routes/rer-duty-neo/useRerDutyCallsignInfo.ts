@@ -3,6 +3,7 @@ import { isNullOrUndefined } from '../../utils/misc';
 
 import type { CallsignInfoRes } from '../../../../Bindings';
 import { normalizeCallsignLookupValue } from '../../utils/callsign-normalization';
+import { mergeCallsignNetworkHints } from '../rer-analysis-neo/callsign-hints-utils';
 
 function normalizeDutyCallsignText(value: string | null | undefined): string {
   return typeof value === 'string' ? value : '';
@@ -19,6 +20,10 @@ function mergeDutyCallsignTextField(
   if (existingTrimmed === '') return incomingValue;
   if (incomingTrimmed === '') return existingValue;
   return incomingTrimmed.length > existingTrimmed.length ? incomingValue : existingValue;
+}
+
+export function hasResolvedDutyCallsignInfo(item: CallsignInfoRes): boolean {
+  return item.res.length > 0 || (item.networkHints?.length ?? 0) > 0;
 }
 
 export function mergeDutyCallsignInfoEntry(
@@ -53,6 +58,7 @@ export function mergeDutyCallsignInfoEntry(
   return {
     callsign: incoming.callsign || current.callsign,
     res: [...rowsById.values()],
+    networkHints: mergeCallsignNetworkHints(current.networkHints, incoming.networkHints),
   };
 }
 
@@ -98,7 +104,7 @@ export function updateDutyResolvedCallsignInfoMap(
   const next = { ...prev };
   items.forEach((item) => {
     const key = normalizeCallsignLookupValue(item.callsign);
-    if (item.res.length === 0) {
+    if (!hasResolvedDutyCallsignInfo(item)) {
       delete next[key];
       return;
     }
