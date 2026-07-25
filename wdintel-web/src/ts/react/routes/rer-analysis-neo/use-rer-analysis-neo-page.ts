@@ -52,6 +52,7 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
   );
   const [supportNonRerInterceptions, setSupportNonRerInterceptions] = useState(false);
   const [cyberEchoEnabled, setCyberEchoEnabled] = useState(false);
+  const [audioTranscriptionEnabled, setAudioTranscriptionEnabled] = useState(false);
   const [lastResetState, setLastResetState] = useState<AnalysisQueryState>(() =>
     hasMeaningfulUiFiltersBeyondDateRange(initialQueryState)
       ? createResetQueryState()
@@ -165,6 +166,7 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
         setUnitsExactMatchOnlyDefault(settings.rerAnalysisUnitsExactMatchOnlyDefault);
         setSupportNonRerInterceptions(settings.supportNonRerInterceptions);
         setCyberEchoEnabled(settings.devicesSectionEnabled);
+        setAudioTranscriptionEnabled(settings.enableAudioTranscription ?? false);
       })
       .catch(() => {
         if (abortController.signal.aborted) return;
@@ -516,6 +518,8 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
     profiles: data.profiles,
     queryState,
     tagsLayout: dutySettings.tagsLayout,
+    audioTranscriptionCollapsed: dutySettings.analysisAudioTranscriptionCollapsed,
+    audioTranscriptionEnabled,
     rightPanelOpen,
     rightSidebarTab,
     report: report.report,

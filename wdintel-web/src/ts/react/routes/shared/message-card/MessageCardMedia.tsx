@@ -9,6 +9,10 @@ import type { MessageMediaInfo } from '../../../../../Bindings';
 import { getMuiPaletteMode, useMuiPaletteMode } from '../../../mui-theme';
 import { MessageCardVideoPreviewDialog } from './MessageCardVideoPreviewDialog';
 import { MessageCardDisabledControlCursorWrapper } from './MessageCardDisabledControlCursorWrapper';
+import {
+  MessageCardAudioTranscription,
+  useAudioTranscriptionPreferences,
+} from './MessageCardAudioTranscription';
 
 const AUDIO_PLAYER_MIN_HEIGHT_PX = 72;
 const AUDIO_PLAYER_TOP_PADDING_PX = 0;
@@ -193,6 +197,8 @@ export function MessageMediaAudioPlayer({ attachment }: { attachment: MessageMed
   const paletteMode = useMuiPaletteMode();
   const displayName = mediaAttachmentDisplayName(attachment);
   const transcription = attachment.transcription?.trim() ?? '';
+  const { enabled: audioTranscriptionEnabled } = useAudioTranscriptionPreferences();
+  const showTranscription = audioTranscriptionEnabled && transcription !== '';
   const href = String(attachment.href ?? '');
   const mediaId = resolveMediaAttachmentId(attachment);
   const sizeBytes = mediaAttachmentSizeBytes(attachment);
@@ -241,7 +247,10 @@ export function MessageMediaAudioPlayer({ attachment }: { attachment: MessageMed
   if (href === '') return null;
 
   return (
-    <Box sx={{ mb: 0.5, width: '100%', maxWidth: 460, minWidth: 0 }}>
+    <Box
+      className={showTranscription ? 'audio-transcription-layout' : undefined}
+      sx={{ mb: 0.5, width: '100%', maxWidth: 460, minWidth: 0 }}
+    >
       <Box
         ref={hostRef}
         data-audio-player-host
@@ -261,14 +270,7 @@ export function MessageMediaAudioPlayer({ attachment }: { attachment: MessageMed
           overflow: 'hidden',
         }}
       />
-      {transcription !== '' ? (
-        <blockquote
-          data-audio-transcription
-          className="m-0 mt-0.5 mb-1 border-l-[3px] border-[var(--color-divider)] bg-[var(--color-bg-muted)] px-2 py-1.5 text-sm leading-[1.4] text-[var(--color-text-muted)] whitespace-pre-wrap wrap-break-word"
-        >
-          {transcription}
-        </blockquote>
-      ) : null}
+      {showTranscription ? <MessageCardAudioTranscription transcription={transcription} /> : null}
     </Box>
   );
 }

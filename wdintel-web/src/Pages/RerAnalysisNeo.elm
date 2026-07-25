@@ -1,9 +1,10 @@
 module Pages.RerAnalysisNeo exposing (Model, Msg, page)
 
 import Auth
+import Config
 import Effect as E exposing (Effect)
 import Html exposing (div, node)
-import Html.Attributes exposing (class)
+import Html.Attributes exposing (class, classList)
 import Layouts
 import Page exposing (Page)
 import Route exposing (Route)
@@ -61,7 +62,10 @@ view : Model -> View Msg
 view _ =
     { title = "РЕР-аналіз"
     , body =
-        [ div [ class "app-shell-fill-height box-border min-h-0 w-full flex flex-col overflow-visible lg:overflow-hidden" ]
+        [ div
+            [ class "app-shell-fill-height box-border min-h-0 w-full flex flex-col overflow-visible lg:overflow-hidden"
+            , classList [ ( "audio-transcription-beside-player", Config.featureAudioTranscriptionBesidePlayer ) ]
+            ]
             [ div [ class "flex-1 min-h-0 w-full" ]
                 [ node "rer-analysis-neo"
                     [ class "block w-full h-full" ]

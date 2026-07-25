@@ -20,6 +20,8 @@ export type DutySettingsHook = DutySettingsValue & {
   setTagsLayout: (value: TagsLayoutVariant) => void;
   setDisableAutoScroll: (value: boolean) => void;
   setAnalysisMapInSidebar: (value: boolean) => void;
+  setDutyAudioTranscriptionCollapsed: (value: boolean) => void;
+  setAnalysisAudioTranscriptionCollapsed: (value: boolean) => void;
   scheduleSave: (nextSettings: DutySettingsSaveRequest) => void;
 };
 
@@ -30,6 +32,8 @@ function normalizeDutySettings(
     tagsLayout: settings?.tagsLayout ?? DEFAULT_DUTY_TAGS_LAYOUT,
     disableAutoScroll: settings?.disableAutoScroll ?? false,
     analysisMapInSidebar: settings?.analysisMapInSidebar ?? false,
+    dutyAudioTranscriptionCollapsed: settings?.dutyAudioTranscriptionCollapsed ?? false,
+    analysisAudioTranscriptionCollapsed: settings?.analysisAudioTranscriptionCollapsed ?? false,
   };
 }
 
@@ -137,6 +141,10 @@ export function useDutySettings(): DutySettingsHook {
       setSettings((current) => ({ ...current, disableAutoScroll: value })),
     setAnalysisMapInSidebar: (value) =>
       setSettings((current) => ({ ...current, analysisMapInSidebar: value })),
+    setDutyAudioTranscriptionCollapsed: (value) =>
+      setSettings((current) => ({ ...current, dutyAudioTranscriptionCollapsed: value })),
+    setAnalysisAudioTranscriptionCollapsed: (value) =>
+      setSettings((current) => ({ ...current, analysisAudioTranscriptionCollapsed: value })),
     scheduleSave,
   };
 }

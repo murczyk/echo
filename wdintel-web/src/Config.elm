@@ -1,6 +1,7 @@
 module Config exposing
     ( adjacentFreqsRangeOptions
     , analysisHourAfterWhichWeTakeADayTomorrow
+    , featureAudioTranscriptionBesidePlayer
     , featureDisableRerDutyDedup
     , featureEnableTornado
     , featureHideDocuments
@@ -26,6 +27,11 @@ featureShowCallsignsMetadata =
 
 featureDisableRerDutyDedup : Bool
 featureDisableRerDutyDedup =
+    True
+
+
+featureAudioTranscriptionBesidePlayer : Bool
+featureAudioTranscriptionBesidePlayer =
     True
 
 
