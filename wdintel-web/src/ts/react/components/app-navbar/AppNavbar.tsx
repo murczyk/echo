@@ -34,7 +34,10 @@ export interface AppNavbarProps {
     userLoaded: boolean;
     changelogLastSeenLoaded: boolean;
     changelogLastSeen: string | null;
-    systemSettings?: { defaultNeoAnalysis: boolean } | null;
+    systemSettings?: {
+      defaultNeoAnalysis: boolean;
+      enableAudioTranscription: boolean;
+    } | null;
   };
   activeName: string;
   isNavbarVisible: boolean;
@@ -61,6 +64,9 @@ export function AppNavbar({
   const [loadedNeoAnalysis, setLoadedNeoAnalysis] = useState<boolean | null>(
     shared?.systemSettings ? shared.systemSettings.defaultNeoAnalysis : null,
   );
+  const [loadedAudioTranscription, setLoadedAudioTranscription] = useState<boolean | null>(
+    shared?.systemSettings ? shared.systemSettings.enableAudioTranscription : null,
+  );
   const navbarRef = useRef<HTMLElement>(null);
 
   useEffect(() => {
@@ -68,6 +74,7 @@ export function AppNavbar({
       setLoadedNeoAnalysis((prev) =>
         prev === null ? shared.systemSettings!.defaultNeoAnalysis : prev,
       );
+      setLoadedAudioTranscription(shared.systemSettings.enableAudioTranscription);
     }
   }, [shared?.systemSettings]);
 
@@ -79,6 +86,7 @@ export function AppNavbar({
         .then((settings) => {
           if (mounted) {
             setLoadedNeoAnalysis(settings.defaultNeoAnalysis);
+            setLoadedAudioTranscription(settings.enableAudioTranscription);
           }
         })
         .catch(() => {});
@@ -122,6 +130,12 @@ export function AppNavbar({
   const isRer = hasRole(user?.roles, 'Rer');
 
   const goiMenuIsVisible = serverModeIsLive && isRer && user.goiIntegrations?.length > 0;
+  const visibleAdminSubs = adminSubs.filter(
+    (item) =>
+      item.type !== 'item' ||
+      item.activeName !== 'transcription-settings' ||
+      loadedAudioTranscription === true,
+  );
 
   const openGoiSubs: Menu[] = (user.goiIntegrations || []).flatMap((integration) => {
     if (!integration.goiUrl) return [];
@@ -399,7 +413,7 @@ export function AppNavbar({
                 isBasic &&
                 renderDropdownMenu('other', 'Конвертери', converterSubs)}
 
-              {isAdminMenuVisible && renderDropdownMenu('admin', 'Адмін', adminSubs)}
+              {isAdminMenuVisible && renderDropdownMenu('admin', 'Адмін', visibleAdminSubs)}
             </ul>
           </div>
 

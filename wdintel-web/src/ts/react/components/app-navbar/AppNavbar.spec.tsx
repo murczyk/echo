@@ -3,8 +3,14 @@
  */
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AppNavbar } from './AppNavbar';
+
+const currentSettingsMock = vi.hoisted(() => vi.fn());
+
+vi.mock('../../services/api/system-settings', () => ({
+  currentSystemSettings: currentSettingsMock,
+}));
 
 type Rendered = {
   container: HTMLDivElement;
@@ -12,6 +18,13 @@ type Rendered = {
 };
 
 const rendered: Rendered[] = [];
+
+beforeEach(() => {
+  currentSettingsMock.mockReset().mockResolvedValue({
+    defaultNeoAnalysis: false,
+    enableAudioTranscription: false,
+  });
+});
 
 afterEach(() => {
   for (const item of rendered.splice(0)) {
@@ -96,6 +109,78 @@ describe('AppNavbar', () => {
       user: { ...defaultProps.user, roles: ['Admin'] },
     });
     expect(container.textContent).toContain('Адмін');
+  });
+
+  it('shows Echo GPU servers after API integrations only when transcription is enabled', () => {
+    const disabled = renderComponent({
+      ...defaultProps,
+      user: { ...defaultProps.user, roles: ['Admin'] },
+      shared: {
+        ...defaultProps.shared,
+        systemSettings: {
+          defaultNeoAnalysis: false,
+          enableAudioTranscription: false,
+        },
+      },
+    });
+    expect(disabled.container.textContent).not.toContain('Echo GPU Сервери');
+
+    currentSettingsMock.mockResolvedValue({
+      defaultNeoAnalysis: false,
+      enableAudioTranscription: true,
+    });
+    const enabled = renderComponent({
+      ...defaultProps,
+      user: { ...defaultProps.user, roles: ['Admin'] },
+      shared: {
+        ...defaultProps.shared,
+        systemSettings: {
+          defaultNeoAnalysis: false,
+          enableAudioTranscription: true,
+        },
+      },
+    });
+    const content = enabled.container.textContent ?? '';
+    expect(content).toContain('Echo GPU Сервери');
+    expect(content.indexOf('API інтеграції')).toBeLessThan(content.indexOf('Echo GPU Сервери'));
+  });
+
+  it('updates Echo GPU servers when shared transcription settings change', () => {
+    currentSettingsMock.mockReturnValue(new Promise(() => {}));
+    const props = {
+      ...defaultProps,
+      user: { ...defaultProps.user, roles: ['Admin'] },
+      shared: {
+        ...defaultProps.shared,
+        systemSettings: {
+          defaultNeoAnalysis: false,
+          enableAudioTranscription: false,
+        },
+      },
+    };
+    const { container, root } = renderComponent(props);
+    expect(container.textContent).not.toContain('Echo GPU Сервери');
+
+    act(() => {
+      root.render(
+        <AppNavbar
+          {...props}
+          shared={{
+            ...props.shared,
+            systemSettings: {
+              ...props.shared.systemSettings,
+              enableAudioTranscription: true,
+            },
+          }}
+        />,
+      );
+    });
+    expect(container.textContent).toContain('Echo GPU Сервери');
+
+    act(() => {
+      root.render(<AppNavbar {...props} />);
+    });
+    expect(container.textContent).not.toContain('Echo GPU Сервери');
   });
 
   it('toggles mobile menu on click', () => {

@@ -19,6 +19,12 @@ use sea_orm::{
     DatabaseConnection, EntityTrait, QueryFilter, QueryOrder, TransactionTrait,
 };
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ReportGenerationSettings {
+    pub chunking_hours: i64,
+    pub limit_big_reports: bool,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct PelengBounds {
     min_lat: f64,
@@ -93,6 +99,9 @@ fn map_system_settings_item(
             .do_not_store_duplicate_echoim_failures,
         goi_association_message_uid_worker_enabled: settings
             .goi_association_message_uid_worker_enabled,
+        report_chunking_hours: i64::from(settings.report_chunking_hours),
+        limit_big_reports: settings.limit_big_reports,
+        enable_audio_transcription: settings.enable_audio_transcription,
     })
 }
 
@@ -115,6 +124,26 @@ where
         .one(dbx)
         .await
         .c(h!())?)
+}
+
+pub async fn get_report_generation_settings<C>(
+    dbx: &C,
+) -> Result<ReportGenerationSettings, AppError>
+where
+    C: ConnectionTrait,
+{
+    Ok(get_active_system_settings(dbx)
+        .await
+        .c(h!())?
+        .map(|settings| ReportGenerationSettings {
+            chunking_hours: i64::from(settings.report_chunking_hours)
+                .max(crate::config::RER_REPORT_CHUNKING_HOURS_MIN),
+            limit_big_reports: settings.limit_big_reports,
+        })
+        .unwrap_or(ReportGenerationSettings {
+            chunking_hours: crate::config::RER_REPORT_CHUNKING_HOURS_DEFAULT,
+            limit_big_reports: false,
+        }))
 }
 
 pub async fn get_echo_im_sync_since<C>(
@@ -243,6 +272,32 @@ where
     Ok(settings
         .map(|settings| settings.goi_association_message_uid_worker_enabled)
         .unwrap_or(false))
+}
+
+pub async fn audio_transcription_enabled<C>(dbx: &C) -> Result<bool, AppError>
+where
+    C: ConnectionTrait,
+{
+    Ok(get_active_system_settings(dbx)
+        .await
+        .c(h!())?
+        .map(|settings| settings.enable_audio_transcription)
+        .unwrap_or(false))
+}
+
+pub async fn ensure_audio_transcription_enabled<C>(
+    dbx: &C,
+) -> Result<(), AppError>
+where
+    C: ConnectionTrait,
+{
+    if audio_transcription_enabled(dbx).await.c(h!())? {
+        Ok(())
+    } else {
+        Err(AppError::Forbidden(
+            "audio transcription is disabled".to_string(),
+        ))
+    }
 }
 
 pub async fn get_rer_analysis_units_exact_match_only_default<C>(
@@ -415,12 +470,31 @@ fn validate_peleng_bounds(
     Ok(())
 }
 
+fn validate_report_generation_settings(
+    req: &CreateSystemSettingsReq,
+) -> Result<(), AppError> {
+    if req.report_chunking_hours < crate::config::RER_REPORT_CHUNKING_HOURS_MIN
+    {
+        return Err(AppError::BL {
+            msg: "Вікно обробки звітів має бути не менше однієї години"
+                .to_string(),
+        });
+    }
+    if req.report_chunking_hours > crate::config::RER_REPORT_CHUNKING_HOURS_MAX
+    {
+        return Err(AppError::BL {
+            msg: "Вікно обробки звітів завелике".to_string(),
+        });
+    }
+    Ok(())
+}
+
 fn system_settings_active_model(
     login: &uuid::Uuid,
     req: &CreateSystemSettingsReq,
     echo_im_sync_cursor: EchoImSyncCursor,
-) -> system_settings::ActiveModel {
-    system_settings::ActiveModel {
+) -> Result<system_settings::ActiveModel, AppError> {
+    Ok(system_settings::ActiveModel {
         id: sea_orm::ActiveValue::NotSet,
         rer_analysis_units_exact_match_only_default: Set(
             req.rer_analysis_units_exact_match_only_default
@@ -464,7 +538,13 @@ fn system_settings_active_model(
         goi_association_message_uid_worker_enabled: Set(
             req.goi_association_message_uid_worker_enabled
         ),
-    }
+        report_chunking_hours: Set(req
+            .report_chunking_hours
+            .try_into()
+            .c(h!())?),
+        limit_big_reports: Set(req.limit_big_reports),
+        enable_audio_transcription: Set(req.enable_audio_transcription),
+    })
 }
 
 fn now_utc() -> chrono::NaiveDateTime {
@@ -501,13 +581,15 @@ async fn create_system_settings_for_login(
     req: &CreateSystemSettingsReq,
 ) -> Result<system_settings::Model, AppError> {
     validate_peleng_bounds(req)?;
+    validate_report_generation_settings(req)?;
     let txn = dbx.begin().await.c(h!())?;
     let echo_im_sync_cursor = get_echo_im_sync_cursor(&txn).await.c(h!())?;
     deactivate_active_settings(&txn, login).await.c(h!())?;
-    let created = system_settings_active_model(login, req, echo_im_sync_cursor)
-        .insert(&txn)
-        .await
-        .c(h!())?;
+    let created =
+        system_settings_active_model(login, req, echo_im_sync_cursor)?
+            .insert(&txn)
+            .await
+            .c(h!())?;
     if created.do_not_store_duplicate_echoim_failures {
         crate::messenger::missing_message::delete_duplicate_missing_messages(
             &txn,
@@ -593,6 +675,9 @@ pub async fn current_system_settings(
                 .do_not_store_duplicate_echoim_failures,
             goi_association_message_uid_worker_enabled: settings
                 .goi_association_message_uid_worker_enabled,
+            report_chunking_hours: i64::from(settings.report_chunking_hours),
+            limit_big_reports: settings.limit_big_reports,
+            enable_audio_transcription: settings.enable_audio_transcription,
         },
         None => SystemSettingsCurrentRsp {
             id: None,
@@ -615,6 +700,10 @@ pub async fn current_system_settings(
             sigint_comment_parsing_enabled: false,
             do_not_store_duplicate_echoim_failures: false,
             goi_association_message_uid_worker_enabled: false,
+            report_chunking_hours:
+                crate::config::RER_REPORT_CHUNKING_HOURS_DEFAULT,
+            limit_big_reports: false,
+            enable_audio_transcription: false,
         },
     }))
 }
@@ -686,6 +775,20 @@ mod tests {
         crate::users::login_id_by_name(&env.dbx, "Tester")
             .await
             .unwrap()
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn audio_transcription_is_default_disabled_and_uses_active_setting() {
+        let _guard = TEST_LOCK.lock().await;
+        let env = cleanup().await.unwrap();
+        assert!(!audio_transcription_enabled(&env.dbx).await.unwrap());
+
+        let settings = insert_settings(&env.dbx, old_ts(), false).await;
+        let mut settings: system_settings::ActiveModel = settings.into();
+        settings.enable_audio_transcription = Set(true);
+        settings.update(&env.dbx).await.unwrap();
+        assert!(audio_transcription_enabled(&env.dbx).await.unwrap());
     }
 
     #[tokio::test]
@@ -866,6 +969,24 @@ mod tests {
         );
     }
 
+    #[test]
+    fn report_generation_settings_require_positive_chunk_hours() {
+        let mut req = settings_req(false);
+        req.report_chunking_hours = 0;
+
+        assert!(matches!(
+            validate_report_generation_settings(&req),
+            Err(AppError::BL { .. })
+        ));
+
+        req.report_chunking_hours = 1;
+        assert!(validate_report_generation_settings(&req).is_ok());
+
+        req.report_chunking_hours =
+            crate::config::RER_REPORT_CHUNKING_HOURS_MAX + 1;
+        assert!(validate_report_generation_settings(&req).is_err());
+    }
+
     fn old_ts() -> chrono::NaiveDateTime {
         chrono::DateTime::<chrono::Utc>::from_timestamp_micros(
             Utc::now().timestamp_micros(),
@@ -897,6 +1018,10 @@ mod tests {
             sigint_comment_parsing_enabled: true,
             do_not_store_duplicate_echoim_failures: false,
             goi_association_message_uid_worker_enabled: false,
+            report_chunking_hours:
+                crate::config::RER_REPORT_CHUNKING_HOURS_DEFAULT,
+            limit_big_reports: false,
+            enable_audio_transcription: false,
         }
     }
 
@@ -951,6 +1076,11 @@ mod tests {
             sigint_comment_parsing_enabled: Set(true),
             do_not_store_duplicate_echoim_failures: Set(false),
             goi_association_message_uid_worker_enabled: Set(false),
+            report_chunking_hours: Set(
+                crate::config::RER_REPORT_CHUNKING_HOURS_DEFAULT as i32,
+            ),
+            limit_big_reports: Set(false),
+            enable_audio_transcription: Set(false),
         }
         .insert(dbx)
         .await

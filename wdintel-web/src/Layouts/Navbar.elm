@@ -268,7 +268,9 @@ view user activeName shared route { toContentMsg, model, content } =
                               , case shared.systemSettings of
                                     Just settings ->
                                         Encode.object
-                                            [ ( "defaultNeoAnalysis", Encode.bool settings.defaultNeoAnalysis ) ]
+                                            [ ( "defaultNeoAnalysis", Encode.bool settings.defaultNeoAnalysis )
+                                            , ( "enableAudioTranscription", Encode.bool settings.enableAudioTranscription )
+                                            ]
                                     Nothing ->
                                         Encode.null
                               )

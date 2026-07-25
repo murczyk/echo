@@ -20,6 +20,9 @@ type SystemSettingsItemRaw = {
   sigint_comment_parsing_enabled?: boolean;
   do_not_store_duplicate_echoim_failures?: boolean;
   goi_association_message_uid_worker_enabled?: boolean;
+  report_chunking_hours?: number;
+  limit_big_reports?: boolean;
+  enable_audio_transcription?: boolean;
   peleng_bounds_enabled?: boolean;
   peleng_bounds_top_left_lat?: number | null;
   peleng_bounds_top_left_lng?: number | null;
@@ -44,6 +47,9 @@ type SystemSettingsCurrentRspRaw = {
   sigint_comment_parsing_enabled?: boolean;
   do_not_store_duplicate_echoim_failures?: boolean;
   goi_association_message_uid_worker_enabled?: boolean;
+  report_chunking_hours?: number;
+  limit_big_reports?: boolean;
+  enable_audio_transcription?: boolean;
   peleng_bounds_enabled?: boolean;
   peleng_bounds_top_left_lat?: number | null;
   peleng_bounds_top_left_lng?: number | null;
@@ -70,6 +76,9 @@ type CreateSystemSettingsReqRaw = {
   sigint_comment_parsing_enabled: boolean;
   do_not_store_duplicate_echoim_failures: boolean;
   goi_association_message_uid_worker_enabled: boolean;
+  report_chunking_hours: number;
+  limit_big_reports: boolean;
+  enable_audio_transcription: boolean;
   peleng_bounds_enabled: boolean;
   peleng_bounds_top_left_lat: number | null;
   peleng_bounds_top_left_lng: number | null;
@@ -102,6 +111,9 @@ export type SystemSettingsItem = {
   sigintCommentParsingEnabled: boolean;
   doNotStoreDuplicateEchoimFailures: boolean;
   goiAssociationMessageUidWorkerEnabled: boolean;
+  reportChunkingHours: number;
+  limitBigReports: boolean;
+  enableAudioTranscription: boolean;
   pelengBoundsEnabled: boolean;
   pelengBoundsTopLeftLat: number | null;
   pelengBoundsTopLeftLng: number | null;
@@ -126,6 +138,9 @@ export type SystemSettingsCurrent = {
   sigintCommentParsingEnabled: boolean;
   doNotStoreDuplicateEchoimFailures: boolean;
   goiAssociationMessageUidWorkerEnabled: boolean;
+  reportChunkingHours: number;
+  limitBigReports: boolean;
+  enableAudioTranscription: boolean;
   pelengBoundsEnabled: boolean;
   pelengBoundsTopLeftLat: number | null;
   pelengBoundsTopLeftLng: number | null;
@@ -148,6 +163,9 @@ export type CreateSystemSettingsInput = {
   sigintCommentParsingEnabled: boolean;
   doNotStoreDuplicateEchoimFailures: boolean;
   goiAssociationMessageUidWorkerEnabled: boolean;
+  reportChunkingHours: number;
+  limitBigReports: boolean;
+  enableAudioTranscription: boolean;
   pelengBoundsEnabled: boolean;
   pelengBoundsTopLeftLat: number | null;
   pelengBoundsTopLeftLng: number | null;
@@ -177,6 +195,9 @@ function normalizeItem(raw: SystemSettingsItemRaw): SystemSettingsItem {
     sigintCommentParsingEnabled: raw.sigint_comment_parsing_enabled ?? false,
     doNotStoreDuplicateEchoimFailures: raw.do_not_store_duplicate_echoim_failures ?? false,
     goiAssociationMessageUidWorkerEnabled: raw.goi_association_message_uid_worker_enabled ?? false,
+    reportChunkingHours: raw.report_chunking_hours ?? 24,
+    limitBigReports: raw.limit_big_reports ?? false,
+    enableAudioTranscription: raw.enable_audio_transcription ?? false,
     pelengBoundsEnabled: raw.peleng_bounds_enabled ?? false,
     pelengBoundsTopLeftLat: raw.peleng_bounds_top_left_lat ?? null,
     pelengBoundsTopLeftLng: raw.peleng_bounds_top_left_lng ?? null,
@@ -203,6 +224,9 @@ function normalizeCurrent(raw: SystemSettingsCurrentRspRaw): SystemSettingsCurre
     sigintCommentParsingEnabled: raw.sigint_comment_parsing_enabled ?? false,
     doNotStoreDuplicateEchoimFailures: raw.do_not_store_duplicate_echoim_failures ?? false,
     goiAssociationMessageUidWorkerEnabled: raw.goi_association_message_uid_worker_enabled ?? false,
+    reportChunkingHours: raw.report_chunking_hours ?? 24,
+    limitBigReports: raw.limit_big_reports ?? false,
+    enableAudioTranscription: raw.enable_audio_transcription ?? false,
     pelengBoundsEnabled: raw.peleng_bounds_enabled ?? false,
     pelengBoundsTopLeftLat: raw.peleng_bounds_top_left_lat ?? null,
     pelengBoundsTopLeftLng: raw.peleng_bounds_top_left_lng ?? null,
@@ -234,6 +258,9 @@ export async function createSystemSettings(
     sigint_comment_parsing_enabled: input.sigintCommentParsingEnabled,
     do_not_store_duplicate_echoim_failures: input.doNotStoreDuplicateEchoimFailures,
     goi_association_message_uid_worker_enabled: input.goiAssociationMessageUidWorkerEnabled,
+    report_chunking_hours: input.reportChunkingHours,
+    limit_big_reports: input.limitBigReports,
+    enable_audio_transcription: input.enableAudioTranscription,
     peleng_bounds_enabled: input.pelengBoundsEnabled,
     peleng_bounds_top_left_lat: input.pelengBoundsTopLeftLat,
     peleng_bounds_top_left_lng: input.pelengBoundsTopLeftLng,

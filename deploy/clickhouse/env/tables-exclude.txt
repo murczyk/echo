@@ -33,6 +33,9 @@ public.palitra_highlight_worker_job
 public.tag_suggestion_worker_queue
 public.signal_message_queue
 public.signal_message_queue_attachment
+public.echo_gpu_transcription_queue
+public.gpu_config
+public.seaql_echo_gpu_migrations
 public.echo_whatsapp_queue
 public.echo_whatsapp_queue_attachment
 public.palitra_goi_sync_job

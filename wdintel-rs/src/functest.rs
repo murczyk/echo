@@ -63,6 +63,15 @@ pub mod tests {
             .await;
         let guard = CLEANUP.lock().await;
         let env = crate::server::new_env(Mode::Test).await.context(h!())?;
+        echo_gpu_transcription_queue::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .context(h!())?;
+        gpu_config::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .context(h!())?;
+        env.echo_gpu_client.reload_instances().await.context(h!())?;
         // Delete dependent entities first to avoid foreign key constraint violations
         secret_group_user::Entity::delete_many()
             .exec(&env.dbx)

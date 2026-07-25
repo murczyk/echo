@@ -1789,6 +1789,7 @@ export type MessageMediaInfo = {
   fileName: string | null;
   sizeBytes: number;
   href: string;
+  transcription: string | null;
 };
 
 export type SigintZone = {
@@ -3333,6 +3334,9 @@ export type SystemSettingsCurrentRsp = {
   sigintCommentParsingEnabled: boolean;
   doNotStoreDuplicateEchoimFailures: boolean;
   goiAssociationMessageUidWorkerEnabled: boolean;
+  reportChunkingHours: number;
+  limitBigReports: boolean;
+  enableAudioTranscription: boolean;
 };
 
 export type SystemSettingsItem = {
@@ -3361,6 +3365,9 @@ export type SystemSettingsItem = {
   sigintCommentParsingEnabled: boolean;
   doNotStoreDuplicateEchoimFailures: boolean;
   goiAssociationMessageUidWorkerEnabled: boolean;
+  reportChunkingHours: number;
+  limitBigReports: boolean;
+  enableAudioTranscription: boolean;
 };
 
 export type SystemSettingsListRsp = {
@@ -3388,6 +3395,9 @@ export type CreateSystemSettingsReq = {
   sigintCommentParsingEnabled: boolean;
   doNotStoreDuplicateEchoimFailures: boolean;
   goiAssociationMessageUidWorkerEnabled: boolean;
+  reportChunkingHours: number;
+  limitBigReports: boolean;
+  enableAudioTranscription: boolean;
 };
 
 export type ActivateSystemSettingsReq = {

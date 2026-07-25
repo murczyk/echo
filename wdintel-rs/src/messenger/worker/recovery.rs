@@ -2885,6 +2885,11 @@ mod tests {
             sigint_comment_parsing_enabled: Set(true),
             do_not_store_duplicate_echoim_failures: Set(false),
             goi_association_message_uid_worker_enabled: Set(false),
+            report_chunking_hours: Set(
+                crate::config::RER_REPORT_CHUNKING_HOURS_DEFAULT as i32,
+            ),
+            limit_big_reports: Set(false),
+            enable_audio_transcription: Set(false),
         }
         .insert(dbx)
         .await
