@@ -307,11 +307,8 @@ where
                         sigint_inbox_item_tag::Column::Confidence,
                     ))
                     .into_simple_expr(),
-                    Expr::col((
-                        sigint_inbox_item_tag::Entity,
-                        sigint_inbox_item_tag::Column::LoginId,
-                    ))
-                    .into_simple_expr(),
+                    Expr::col((login::Entity, login::Column::Login))
+                        .into_simple_expr(),
                     Expr::col((
                         sigint_inbox_item_tag::Entity,
                         sigint_inbox_item_tag::Column::Model,
