@@ -20,6 +20,8 @@ pub struct Model {
     pub position: Option<String>,
     #[sea_orm(column_type = "Text", nullable)]
     pub comment: Option<String>,
+    #[sea_orm(column_type = "Text", nullable)]
+    pub full_name: Option<String>,
     pub sigint_callsign_id: Option<i64>,
     pub source_id: Option<i64>,
     #[sea_orm(column_type = "Text", nullable)]

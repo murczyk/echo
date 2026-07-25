@@ -141,6 +141,7 @@ export function useRerNetworkDetailsNeoPageCallsignMutations({ state, setState }
             {
               networkId: networkCallsign.networkId,
               callsign: networkCallsign.callsign,
+              fullName: networkCallsign.fullName,
               position: networkCallsign.position,
               comment: networkCallsign.comment,
               sourceId: networkCallsign.sourceId,

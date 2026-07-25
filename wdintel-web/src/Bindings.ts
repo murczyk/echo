@@ -2386,6 +2386,7 @@ export type CreateNetworkCallsignReq = {
   callsign: string;
   position: string | null;
   comment: string | null;
+  fullName: string | null;
   sourceId: number | null;
   radioFreq: string | null;
   unitId: number | null;
@@ -2411,6 +2412,7 @@ export type NetworkCallsign = {
   knownCallsignId: number | null;
   position: string | null;
   comment: string | null;
+  fullName: string | null;
   unitId: number | null;
   unitName: string | null;
   sourceId: number | null;
@@ -2441,6 +2443,7 @@ export type UpdateNetworkCallsignReq = {
   callsign: string;
   position: string | null;
   comment: string | null;
+  fullName: string | null;
   sourceId: number | null;
   radioFreq: string | null;
   unitId: number | null;

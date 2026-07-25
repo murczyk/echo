@@ -26,6 +26,7 @@ export const NETWORK_STATUS_FILTER_ORDER: NetworkCallsignStatusFilter[] = [
 
 export const NETWORK_COLUMNS_VISIBILITY = {
   callsign: true,
+  fullName: true,
   position: true,
   unitName: true,
   lastDatetime: true,
@@ -36,6 +37,7 @@ export const NETWORK_COLUMNS_VISIBILITY = {
 
 export const NETWORK_CALLSIGN_COLUMN_SIZES = {
   callsign: 170,
+  fullName: 200,
   position: 150,
   unitName: 220,
   lastDatetime: 150,
@@ -121,6 +123,7 @@ export function buildNetworkLoadingRows(): NetworkCallsignRowView[] {
   return Array.from({ length: FULL_HEIGHT_LOADING_ROW_COUNT }, (_, index) => ({
     id: -(index + 1),
     callsign: '',
+    fullName: '',
     status: 'unknown',
     statusLabel: '',
     position: '',

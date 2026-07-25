@@ -216,6 +216,7 @@ pub struct NetworkCallsign {
     pub known_callsign_id: Option<i64>,
     pub position: Option<String>,
     pub comment: Option<String>,
+    pub full_name: Option<String>,
     pub unit_id: Option<i64>,
     pub unit_name: Option<String>,
     pub source_id: Option<i64>,
@@ -266,6 +267,7 @@ pub struct CreateNetworkCallsignReq {
     pub callsign: String,
     pub position: Option<String>,
     pub comment: Option<String>,
+    pub full_name: Option<String>,
     pub source_id: Option<i64>,
     pub radio_freq: Option<String>,
     pub unit_id: Option<i64>,
@@ -275,15 +277,16 @@ pub struct CreateNetworkCallsignReq {
     pub command_control: bool,
 }
 
-#[derive(
-    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
-)]
+#[derive(Elm, ElmEncode, ElmDecode, Debug, Serialize, PartialEq, Clone)]
 pub struct UpdateNetworkCallsignReq {
     pub id: i64,
     pub network_id: i64,
     pub callsign: String,
     pub position: Option<String>,
     pub comment: Option<String>,
+    pub full_name: Option<String>,
+    #[serde(skip)]
+    pub full_name_is_missing: bool,
     pub source_id: Option<i64>,
     pub radio_freq: Option<String>,
     pub unit_id: Option<i64>,
@@ -291,6 +294,52 @@ pub struct UpdateNetworkCallsignReq {
     pub developing: bool,
     pub main_radio_station: bool,
     pub command_control: bool,
+}
+
+#[derive(Debug, Deserialize)]
+struct UpdateNetworkCallsignReqRaw {
+    id: i64,
+    network_id: i64,
+    callsign: String,
+    position: Option<String>,
+    comment: Option<String>,
+    full_name: Option<String>,
+    source_id: Option<i64>,
+    radio_freq: Option<String>,
+    unit_id: Option<i64>,
+    unit_developing: bool,
+    developing: bool,
+    main_radio_station: bool,
+    command_control: bool,
+}
+
+impl<'de> Deserialize<'de> for UpdateNetworkCallsignReq {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = serde_json::Value::deserialize(deserializer)?;
+        let full_name_is_missing = value.get("full_name").is_none();
+        let raw = UpdateNetworkCallsignReqRaw::deserialize(value)
+            .map_err(serde::de::Error::custom)?;
+
+        Ok(Self {
+            id: raw.id,
+            network_id: raw.network_id,
+            callsign: raw.callsign,
+            position: raw.position,
+            comment: raw.comment,
+            full_name: raw.full_name,
+            full_name_is_missing,
+            source_id: raw.source_id,
+            radio_freq: raw.radio_freq,
+            unit_id: raw.unit_id,
+            unit_developing: raw.unit_developing,
+            developing: raw.developing,
+            main_radio_station: raw.main_radio_station,
+            command_control: raw.command_control,
+        })
+    }
 }
 
 #[derive(
