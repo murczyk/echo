@@ -9,6 +9,7 @@ use crate::session::{record_new_session, record_page_visit};
 use crate::types::*;
 use crate::utils::orm::ArrayColumnOps;
 use actix_identity::Identity;
+use actix_session::SessionExt;
 use actix_web::web::Json;
 use actix_web::{get, post, HttpMessage, HttpRequest, HttpResponse};
 use chrono::{Duration, Utc};
@@ -22,6 +23,37 @@ pub mod types;
 pub fn login_id_from_identity(user: &Identity) -> Result<Uuid, AppError> {
     let identity = user.id().map_err(|_| AppError::Unauthenticated)?;
     Uuid::parse_str(&identity).map_err(|_| AppError::Unauthenticated)
+}
+
+pub(crate) async fn start_user_session(
+    env: &actix_web::web::Data<Env>,
+    http_req: &HttpRequest,
+    login_id: Uuid,
+) -> Result<(), AppError> {
+    Identity::login(&http_req.extensions(), login_id.to_string()).c(h!())?;
+
+    let session_id = Uuid::now_v7();
+    http_req
+        .get_session()
+        .insert("id", session_id.to_string())
+        .c(h!())?;
+
+    crate::session::add_session(&mut env.redis.clone(), session_id, &login_id)
+        .await
+        .c(h!())?;
+    crate::event_stream::create_redis_stream(
+        &mut env.redis.clone(),
+        session_id,
+    )
+    .await
+    .c(h!())?;
+
+    update_last_active_at(&env.dbx, &login_id).await?;
+    record_new_session(&login_id, session_id, env)
+        .await
+        .c(h!())?;
+
+    Ok(())
 }
 
 pub async fn login_id_by_name<C>(
@@ -859,7 +891,6 @@ pub async fn user_test_api_login(
 #[post("/api/user/login")]
 pub async fn user_login(
     env: actix_web::web::Data<Env>,
-    session: actix_session::Session,
     http_req: HttpRequest,
     req: Json<LoginReq>,
 ) -> Result<Json<()>, AppError> {
@@ -922,30 +953,7 @@ pub async fn user_login(
         return Err(AppError::Form(errors));
     };
 
-    Identity::login(&http_req.extensions(), login_obj.id.to_string())
-        .c(h!())?;
-
-    let session_id = Uuid::now_v7();
-    session.insert("id", session_id.to_string()).c(h!())?;
-
-    let account_id = login_obj.id;
-    crate::session::add_session(
-        &mut env.redis.clone(),
-        session_id,
-        &account_id,
-    )
-    .await
-    .c(h!())?;
-    crate::event_stream::create_redis_stream(
-        &mut env.redis.clone(),
-        session_id,
-    )
-    .await
-    .c(h!())?;
-
-    update_last_active_at(&env.dbx, &account_id).await?;
-
-    record_new_session(&account_id, session_id, &env)
+    start_user_session(&env, &http_req, login_obj.id)
         .await
         .c(h!())?;
 
@@ -1766,8 +1774,14 @@ pub async fn update_last_active_at(
 mod tests {
     use super::*;
     use crate::functest::tests::{
-        cleanup, mk_login, mk_organism, mk_signal_group,
+        cleanup, find_test_login, mk_login, mk_organism, mk_signal_group,
     };
+    use actix_identity::IdentityMiddleware;
+    use actix_session::{
+        storage::RedisSessionStore, Session, SessionMiddleware,
+    };
+    use actix_web::{cookie::Key, test as actix_test, web, App};
+    use redis::AsyncCommands;
     use serial_test::serial;
 
     static TEST_LOCK: tokio::sync::Mutex<()> =
@@ -1782,6 +1796,117 @@ mod tests {
         assert!(has_update_login_description(&serde_json::json!({
             "description": "note"
         })));
+    }
+
+    async fn start_test_user_session(
+        env: web::Data<Env>,
+        req: HttpRequest,
+    ) -> Result<HttpResponse, AppError> {
+        let login = find_test_login(&env.dbx).await.c(h!())?;
+        start_user_session(&env, &req, login.id).await.c(h!())?;
+        Ok(HttpResponse::Ok().finish())
+    }
+
+    async fn get_test_user_session(
+        env: web::Data<Env>,
+        user: Identity,
+        session: Session,
+    ) -> Result<Json<(String, Uuid, String, bool)>, AppError> {
+        let identity = user.id().c(h!())?;
+        let session_id = crate::event_stream::get_session_id(&session)
+            .c(h!())?
+            .c(h!())?;
+        let redis_session = crate::session::get_session_by_id(
+            &mut env.redis.clone(),
+            session_id,
+        )
+        .await
+        .c(h!())?
+        .c(h!())?;
+        let stream_exists = env
+            .redis
+            .clone()
+            .exists(crate::event_stream::session_stream_id(session_id))
+            .await
+            .c(h!())?;
+        user.logout();
+        Ok(Json((
+            identity,
+            session_id,
+            redis_session.account_id,
+            stream_exists,
+        )))
+    }
+
+    #[actix_web::test]
+    #[serial]
+    async fn start_user_session_initializes_identity_and_event_stream() {
+        let env = cleanup().await.unwrap();
+        let login = find_test_login(&env.dbx).await.unwrap();
+        let session_store = RedisSessionStore::new(
+            crate::redis_conn_string(&env.config).unwrap(),
+        )
+        .await
+        .unwrap();
+        let app = actix_test::init_service(
+            App::new()
+                .wrap(IdentityMiddleware::default())
+                .wrap(SessionMiddleware::new(session_store, Key::generate()))
+                .app_data(web::Data::from(env.clone()))
+                .route(
+                    "/test/start-user-session",
+                    web::post().to(start_test_user_session),
+                )
+                .route(
+                    "/test/get-user-session",
+                    web::get().to(get_test_user_session),
+                ),
+        )
+        .await;
+
+        let response = actix_test::call_service(
+            &app,
+            actix_test::TestRequest::post()
+                .uri("/test/start-user-session")
+                .to_request(),
+        )
+        .await;
+        assert!(response.status().is_success());
+        let cookie = response.response().cookies().next().unwrap().into_owned();
+
+        let response = actix_test::call_service(
+            &app,
+            actix_test::TestRequest::get()
+                .uri("/test/get-user-session")
+                .cookie(cookie)
+                .to_request(),
+        )
+        .await;
+        assert!(response.status().is_success());
+        let (identity, session_id, account_id, stream_exists): (
+            String,
+            Uuid,
+            String,
+            bool,
+        ) = actix_test::read_body_json(response).await;
+
+        assert_eq!(identity, login.id.to_string());
+        assert_eq!(account_id, login.id.to_string());
+        assert!(stream_exists);
+
+        let mut redis = env.redis.clone();
+        redis
+            .del::<_, ()>(crate::event_stream::session_stream_id(session_id))
+            .await
+            .unwrap();
+        redis
+            .del::<_, ()>(crate::event_stream::get_sess_key(session_id))
+            .await
+            .unwrap();
+        redis
+            .srem::<_, _, ()>(REDIS_SESSIONS_KEY, session_id.to_string())
+            .await
+            .unwrap();
     }
 
     #[tokio::test]

@@ -1,13 +1,11 @@
 use crate::delta::login::oauth::build_auth_url;
 use crate::delta::login::types::UserInfo;
+use crate::entities::sea_orm_active_enums::DeactivationReasonEnum;
 use crate::entities::*;
 use crate::types::*;
 use crate::users::validate_login;
-use actix_identity::Identity;
-
-use crate::entities::sea_orm_active_enums::DeactivationReasonEnum;
 use actix_web::web::{Data, Json};
-use actix_web::{get, HttpMessage, HttpRequest, HttpResponse};
+use actix_web::{get, HttpRequest, HttpResponse};
 use echo_migration::Expr;
 use elm_rs::{Elm, ElmDecode, ElmEncode};
 use sea_orm::*;
@@ -131,8 +129,9 @@ async fn perform_login(
         return Err(err);
     }
     if let Some(login) = login_validation.login_model {
-        let extensions = req.extensions();
-        Identity::login(&extensions, login.id.to_string()).context(h!())?;
+        crate::users::start_user_session(env, req, login.id)
+            .await
+            .context(h!())?;
         return Ok(None);
     }
     let mut login_obfuscated = login.clone();
