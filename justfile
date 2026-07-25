@@ -144,6 +144,11 @@ gen-seaorm:
 
 gen-front: gen-elm gen-ts
 
+gen-transcriber mode="debug":
+    just migrate-all-up {{ mode }}
+    just gen-seaorm
+    just gen-front
+
 gen-elm:
     (cd wdintel-rs && cargo run -- --mode=debug gen-elm)
 
@@ -193,6 +198,18 @@ test-be:
     fi
 
 test: test-fe test-be
+
+test-transcriber:
+    cargo test -p wdintel-rs transcri -- --nocapture
+    cd wdintel-web && npm run test:ts -- src/ts/react/routes/admin-system-settings-neo src/ts/react/services/api
+
+verify-transcriber:
+    cargo fmt --all -- --check
+    cargo clippy -p wdintel-rs --all-targets --all-features -- -D warnings
+    cargo check -p wdintel-rs
+    cargo test -p wdintel-rs
+    cd wdintel-web && npm run test:ts
+    just build-front
 
 # CI commands
 ci-setup-cache clean="false":
@@ -1906,16 +1923,50 @@ oneoff-2026-02-13-bgworker-01-post-deploy server='':
     ssh {{ server }} 'set -x; sudo systemctl disable --now wdintel-rs.service'
     ssh {{ server }} 'set -x; systemctl --no-pager status wdintel-rs.socket wdintel-rs-bgworker.service --no-pager'
 
-# WARNING! ECHO-IM migrations are not applied here. To apply ECHO-IM migrations too, run `cargo run -p wdintel-rs -- --mode=debug migrate`
+# WARNING! ECHO-IM and ECHO-GPU-CLIENT migrations are not applied here. Use migrate-all-up for the production-order migration sequence.
 #
 
 # If you want to migrate test database, run `cargo run -p wdintel-rs -- --mode=test migrate`
+migrate-all-up mode="debug":
+    cargo run -p wdintel-rs -- --mode={{ mode }} migrate
+
 migrate-up:
     cd echo-migration && DATABASE_URL=postgresql://wd:fee_-_-_-FnoeKFBeebu87bf@localhost:5432/wd cargo run -- up
-    echo '⚠️ WARNING! ECHO-IM migrations are not applied here. To apply ECHO-IM migrations too, run `cargo run -p wdintel-rs -- --mode=debug migrate`'
+    echo '⚠️ WARNING! ECHO-IM and ECHO-GPU-CLIENT migrations are not applied here. Run `just migrate-all-up` for all schemas.'
 
 migrate-down:
     cd echo-migration && DATABASE_URL=postgresql://wd:fee_-_-_-FnoeKFBeebu87bf@localhost:5432/wd cargo run -- down
+    echo '⚠️ WARNING! This rolls back only the Echo application schema, not ECHO-IM or ECHO-GPU-CLIENT.'
+
+[arg('dry_run', long='dry-run', value='true')]
+[arg('mode', long='mode')]
+[arg('since_ts', long='since-ts')]
+backfill-audio-transcriber since_ts dry_run="false" mode="debug":
+    #!/bin/bash
+    set -euo pipefail
+    if [[ ! "{{ since_ts }}" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}$ ]] || \
+        ! parsed_since_ts="$(date -u -d "{{ since_ts }}" '+%Y-%m-%dT%H:%M:%S' 2>/dev/null)" || \
+        [[ "$parsed_since_ts" != "{{ since_ts }}" ]]; then
+        echo 'Use --since-ts=yyyy-MM-ddThh:mm:ss, for example --since-ts=2026-07-01T00:00:00' >&2
+        exit 2
+    fi
+    args=(--since-ts "{{ since_ts }}")
+    if [[ "{{ dry_run }}" == "true" ]]; then args+=(--dry-run); fi
+    cargo run -p wdintel-rs -- --mode={{ mode }} oneoff-backfill-audio-transcriber "${args[@]}"
+
+[arg('mode', long='mode')]
+[arg('reason', long='reason')]
+[arg('requester', long='requester')]
+[arg('source_id', long='source-id')]
+requeue-audio-transcriber source_id requester reason mode="debug":
+    cargo run -p wdintel-rs -- --mode={{ mode }} oneoff-requeue-audio-transcriber --source-id "{{ source_id }}" --requester "{{ requester }}" --reason "{{ reason }}"
+
+[arg('mode', long='mode')]
+[arg('reason', long='reason')]
+[arg('requester', long='requester')]
+[arg('source_id', long='source-id')]
+retranscribe-audio-transcriber source_id requester reason mode="debug":
+    cargo run -p wdintel-rs -- --mode={{ mode }} oneoff-retranscribe-audio-transcriber --source-id "{{ source_id }}" --requester "{{ requester }}" --reason "{{ reason }}"
 
 # puts deploy/vector/vector-echo.yaml into /etc/vector/vector.yaml of a corresponding server
 deploy-vector-conf:
@@ -2337,6 +2388,26 @@ deploy-stg: prepare-workspace
     scp echo-build-main:~/workspace/krab/echo-feature/echo/target/debian/wdintel-rs*.deb "echo-staging":/var/tmp
     ssh echo-build-main 'rm ~/workspace/krab/echo-feature/echo/target/debian/wdintel-rs*.deb'
     ssh "echo-staging" 'cd /var/tmp/ && sudo apt install -y --reinstall --allow-downgrades ./wdintel-rs*.deb'
+
+[arg('server', long='server')]
+transcriber-smoke server:
+    #!/bin/bash
+    set -euo pipefail
+    ssh "{{ server }}" 'sudo -u postgres psql -d wd -v ON_ERROR_STOP=1 -Atc "select uuid_generate_v7() is not null;" | grep -qx t'
+    ssh "{{ server }}" 'sudo -u postgres psql -d wd -v ON_ERROR_STOP=1 -Atc "select count(*) = 2 from seaql_echo_gpu_migrations where version in ('"'"'m20260721_000001_create_gpu_config'"'"', '"'"'m20260721_000002_create_transcription_queue'"'"');" | grep -qx t'
+    ssh "{{ server }}" 'sudo -u postgres psql -d wd -v ON_ERROR_STOP=1 -AtF "|" -c "select to_regclass('"'"'gpu_config'"'"'), to_regclass('"'"'echo_gpu_transcription_queue'"'"');" | grep -qx "gpu_config|echo_gpu_transcription_queue"'
+    ssh "{{ server }}" 'sudo -u postgres psql -d wd -v ON_ERROR_STOP=1 -Atc "select coalesce((select enable_audio_transcription from system_settings where not deleted order by updated_at desc limit 1), false);" | grep -Eq "^[tf]$"'
+    ssh "{{ server }}" 'sudo -u postgres psql -d wd -v ON_ERROR_STOP=1 -c "select state, count(*) from echo_gpu_transcription_queue group by state order by state;"'
+    ssh "{{ server }}" 'sudo -u postgres psql -d wd -v ON_ERROR_STOP=1 -c "select greatest(0, extract(epoch from ((now() at time zone '"'"'utc'"'"') - min(coalesce(next_retry_at, created_at)))))::bigint oldest_due_age_seconds from echo_gpu_transcription_queue where state in ('"'"'queued'"'"', '"'"'retrying'"'"');"'
+    ssh "{{ server }}" 'systemctl is-active wdintel-rs.socket wdintel-rs-bgworker.service'
+    ssh "{{ server }}" 'code=$(curl -sS -o /dev/null -w "%{http_code}" -X POST http://127.0.0.1:8081/api/admin/transcriber/status); echo "transcriber_status_http=$code"; test "$code" = 401'
+    ssh "{{ server }}" 'journalctl -u wdintel-rs-bgworker.service --since "10 minutes ago" --no-pager | grep -E "audio transcription (worker started|status).*worker_id="'
+
+[arg('branch', long='branch')]
+deploy-transcriber-stg branch:
+    just branch={{ branch }} deploy-stg
+    ssh "echo-staging" 'sudo /usr/bin/wdintel-rs --mode=live migrate'
+    just transcriber-smoke --server=echo-staging
 
 export-datasource-to-target:
     ssh {{ server }} -t 'wdintel-rs --mode=live oneoff-export-data-source --destination-path /tmp/ds_export_{{ dt1 }}.json --datasource-id {{ datasource_id }} --since-epoch-ms {{ since_ts }} --till-epoch-ms {{ till_ts }} '

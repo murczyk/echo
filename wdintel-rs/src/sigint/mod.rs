@@ -662,6 +662,7 @@ pub async fn save_attachment_restapi(
 ) -> Result<(), AppError> {
     if let Some(db_message_id) = m_db_message_id {
         if let Some(ref attachment_id) = attachment.id {
+            let txn = dbx.begin().await.c(h!())?;
             let file_path = crate::config::signal_api_attachment_path(config)?
                 .join(attachment_id);
             let path_str = file_path.display().to_string();
@@ -670,24 +671,38 @@ pub async fn save_attachment_restapi(
                 name: attachment.filename.clone(),
                 content_type: Some(attachment.content_type.clone()),
             }];
-            let deletion = if config
+            let delete_uploaded_attachment = config
                 .feature_delete_uploaded_attachment
-                .unwrap_or(FEATURE_DELETE_UPLOADED_ATTACHMENT_DEFAULT)
-            {
-                media::UploadedAttachmentDeletion::DeleteAfterStore
+                .unwrap_or(FEATURE_DELETE_UPLOADED_ATTACHMENT_DEFAULT);
+            let deletion = if delete_uploaded_attachment {
+                media::UploadedAttachmentDeletion::DeleteAfterCommit
             } else {
                 media::UploadedAttachmentDeletion::Preserve
             };
-            media::store_media_attachments(
+            let upload_result = media::store_media_attachments(
                 &uploads,
                 db_message_id,
                 config,
                 s3,
-                dbx,
+                &txn,
                 deletion,
             )
             .await
             .c(h!())?;
+            crate::transcriber::media_queue::reconcile_message(
+                &txn,
+                db_message_id,
+                &[],
+            )
+            .await
+            .c(h!())?;
+            txn.commit().await.c(h!())?;
+            if delete_uploaded_attachment {
+                media::delete_uploaded_attachment_files(
+                    &upload_result.uploaded_files_ready_for_deletion,
+                )
+                .await;
+            }
         }
     }
     Ok(())

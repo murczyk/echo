@@ -2,6 +2,7 @@ use crate::config::*;
 use crate::entities::*;
 use crate::error::AppError;
 use crate::rer_importer::analysis::*;
+use crate::rer_importer::report_chunking::ReportPeriodEnd;
 use crate::rer_importer::types::{
     AnalysisStatsReq, InboxMessagesReq, NewCallsignsRes,
 };
@@ -24,9 +25,10 @@ pub struct BabakReportData {
     pub new_callsigns: NewCallsignsRes,
     pub date_from: NaiveDateTime,
     pub date_to: NaiveDateTime,
+    pub without_comments: bool,
 }
 
-pub async fn bl_babak_report(
+pub async fn collect_babak_report_data(
     user_login: &uuid::Uuid,
     env: &Env,
     req: &super::types::ReportPreviewReq,
@@ -48,6 +50,10 @@ pub async fn bl_babak_report(
         req.report_tags_only_this_unit
     };
 
+    let report_settings =
+        crate::system_settings::get_report_generation_settings(&env.dbx)
+            .await
+            .c(h!())?;
     let units = get_inbox_messages_report_unit(user_login, env, &inbox_req)
         .await
         .c(h!())?;
@@ -88,17 +94,31 @@ pub async fn bl_babak_report(
         without_model_tags: inbox_req.without_model_tags,
         report_tags_only_this_unit: inbox_req.report_tags_only_this_unit,
     };
-    let new_callsigns_res =
-        bi_new_callsigns(user_login, env, &new_callsing_req)
-            .await
-            .context(h!())?;
+    let new_callsigns_res = bi_new_callsigns_chunked(
+        user_login,
+        env,
+        &new_callsing_req,
+        report_settings.chunking_hours,
+        ReportPeriodEnd::Inclusive,
+    )
+    .await
+    .context(h!())?;
 
     Ok(BabakReportData {
         units,
         new_callsigns: new_callsigns_res,
         date_from: date_from_dt,
         date_to: date_to_dt,
+        without_comments,
     })
+}
+
+pub async fn bl_babak_report(
+    user_login: &uuid::Uuid,
+    env: &Env,
+    req: &super::types::ReportPreviewReq,
+) -> Result<BabakReportData, AppError> {
+    collect_babak_report_data(user_login, env, req).await
 }
 
 pub async fn report_docx_kind_babak(
@@ -107,14 +127,22 @@ pub async fn report_docx_kind_babak(
     req: &super::types::ReportPreviewReq,
     outpath: &Path,
 ) -> Result<(), AppError> {
+    let data = collect_babak_report_data(user_login, env, req).await?;
+    build_babak_report(data, outpath)
+}
+
+pub fn build_babak_report(
+    data: BabakReportData,
+    outpath: &Path,
+) -> Result<(), AppError> {
     let BabakReportData {
         units,
         new_callsigns: new_callsigns_res,
         date_from,
         date_to,
-    } = bl_babak_report(user_login, env, req).await?;
+        without_comments,
+    } = data;
     let tz = crate::config::get_tz();
-    let without_comments = req.without_comments.unwrap_or(false);
     let date_from_dt_tz = Utc.from_utc_datetime(&date_from).with_timezone(&tz);
     let date_to_dt_tz = Utc.from_utc_datetime(&date_to).with_timezone(&tz);
 
@@ -829,9 +857,9 @@ pub async fn get_inbox_messages_report_unit(
     );
 
     if req.report_tags_only_this_unit == Some(true) {
-        q = q.filter(sigint_comment::Column::LoginId.eq_any(login_ids.clone()));
+        q = q.filter(sigint_comment::Column::LoginId.is_in(login_ids.clone()));
         q = q.filter(
-            sigint_inbox_item_tag::Column::LoginId.eq_any(login_ids.clone()),
+            sigint_inbox_item_tag::Column::LoginId.is_in(login_ids.clone()),
         );
     }
     if req.without_model_tags == Some(true) {
@@ -886,10 +914,8 @@ pub async fn get_inbox_messages_report_unit(
         );
     }
     if let Some(till_date_inclusive_ms) = req.till_date_inclusive_ms {
-        q = q.filter(
-            sigint_inbox_item::Column::Datetime
-                .lte(dt_from_millis(till_date_inclusive_ms)?),
-        );
+        let till = dt_from_millis(till_date_inclusive_ms)?;
+        q = q.filter(sigint_inbox_item::Column::Datetime.lte(till));
     }
     let q = filter_selected_locations(
         q,
@@ -1097,15 +1123,48 @@ mod tests {
     use crate::rer_importer::reports::types::ReportPreviewReq;
     use crate::rer_importer::types::InboxMessagesReq;
     use chrono::Utc;
+    use sea_orm::prelude::Expr;
     use sea_orm::ActiveValue::Set;
     use serde_json::json;
     use serial_test::serial;
+
+    async fn seed_babak_unit_report_data(
+        db: &DatabaseConnection,
+        login_id: uuid::Uuid,
+        message_id: i64,
+        tag_id: i64,
+        created_at: NaiveDateTime,
+        comment: &str,
+    ) -> Result<(), AppError> {
+        mk_sigint_comment(
+            db,
+            sigint_comment::ActiveModel {
+                login_id: Set(login_id),
+                signal_message_id: Set(message_id),
+                comment: Set(comment.to_string()),
+                created_at: Set(created_at),
+                ..Default::default()
+            },
+        )
+        .await?;
+        mk_sigint_inbox_item_tag(
+            db,
+            sigint_inbox_item_tag::ActiveModel {
+                sigint_inbox_item_id: Set(message_id),
+                tag_id: Set(tag_id),
+                login_id: Set(Some(login_id)),
+                ..Default::default()
+            },
+        )
+        .await?;
+        Ok(())
+    }
 
     #[serial]
     #[tokio::test]
     async fn test_bl_babak_report_returns_unit_stats() {
         let env = cleanup().await.unwrap();
-        let now = Utc::now().naive_utc();
+        let now = Utc::now().naive_utc() - chrono::Duration::hours(20);
 
         let login = find_test_login(&env.dbx).await.unwrap();
         let datasource_group =
@@ -1147,22 +1206,85 @@ mod tests {
         )
         .await
         .unwrap();
+        let second_datetime = now + chrono::Duration::hours(20);
+        let second_message = mk_signal_message(
+            &env.dbx,
+            signal_message::ActiveModel {
+                body: Set(Some("second test message".to_string())),
+                created_at: Set(second_datetime),
+                timestamp: Set(Some(second_datetime)),
+                sender: Set(Some("sender".to_string())),
+                message_uid: Set(Some("uid-2".to_string())),
+                datasource_group_id: Set(Some(datasource_group.id)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let second_inbox_item = mk_sigint_inbox_item(
+            &env.dbx,
+            sigint_inbox_item::ActiveModel {
+                id: Set(second_message.id),
+                freq: Set(Some("123.45".to_string())),
+                callsigns: Set(Some(json!(["Beta"]))),
+                lat: Set(Some(50.0)),
+                lng: Set(Some(30.0)),
+                tags: Set(Some(json!([bpla_tag.id]))),
+                date: Set(Some(second_datetime.date().to_string())),
+                time: Set(Some(
+                    second_datetime.time().format("%H:%M:%S").to_string(),
+                )),
+                unit_v2: Set(Some("TestUnit".to_string())),
+                checked: Set(Some(true)),
+                reviewed: Set(Some(true)),
+                parsed_unit_v2: Set(false),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        seed_babak_unit_report_data(
+            &env.dbx,
+            login.id,
+            message.id,
+            bpla_tag.id,
+            now,
+            "first comment",
+        )
+        .await
+        .unwrap();
+        seed_babak_unit_report_data(
+            &env.dbx,
+            login.id,
+            second_message.id,
+            bpla_tag.id,
+            second_datetime,
+            "second comment",
+        )
+        .await
+        .unwrap();
 
         let datetime = inbox_item
             .datetime
             .expect("expected auto-set datetime on sigint_inbox_item");
-        let ts = datetime.and_utc().timestamp_millis();
+        let second_datetime = second_inbox_item
+            .datetime
+            .expect("expected auto-set datetime on second sigint_inbox_item");
 
         let req = ReportPreviewReq {
             kind: "babak".to_string(),
             req: InboxMessagesReq {
-                since_date_inclusive_ms: Some(ts - 1_000),
-                till_date_inclusive_ms: Some(ts + 1_000),
+                since_date_inclusive_ms: Some(
+                    datetime.and_utc().timestamp_millis() - 1_000,
+                ),
+                till_date_inclusive_ms: Some(
+                    second_datetime.and_utc().timestamp_millis(),
+                ),
                 nolimit: Some(true),
                 ..Default::default()
             },
             report_type: None,
-            report_tags_only_this_unit: Some(false),
+            report_tags_only_this_unit: Some(true),
             tag_report_sort_by: None,
             report_1213_linked_networks_only: None,
             without_comments: Some(false),
@@ -1173,17 +1295,60 @@ mod tests {
             sposob_unit_name: None,
         };
 
+        set_report_chunking_hours(&env.dbx, 24).await;
+        let single = bl_babak_report(&login.id, &env, &req).await.unwrap();
+        set_report_chunking_hours(&env.dbx, 12).await;
         let res = bl_babak_report(&login.id, &env, &req).await.unwrap();
 
         assert_eq!(res.units.len(), 1);
         let unit = &res.units[0];
         assert_eq!(unit.unit.as_deref(), Some("TestUnit"));
-        assert_eq!(unit.count, 1);
+        assert_eq!(unit.count, 2);
+        let single_unit = &single.units[0];
+        assert_eq!(unit.unit, single_unit.unit);
+        assert_eq!(unit.count, single_unit.count);
+        assert_eq!(unit.bpla, single_unit.bpla);
+        assert_eq!(unit.reb, single_unit.reb);
+        assert_eq!(unit.arta, single_unit.arta);
+        assert_eq!(unit.software, single_unit.software);
+        assert_eq!(unit.losses, single_unit.losses);
+        assert_eq!(unit.comments, single_unit.comments);
+        assert_eq!(unit.others_comments, single_unit.others_comments);
+        assert_eq!(unit.losses_comments, single_unit.losses_comments);
+        assert_eq!(res.new_callsigns, single.new_callsigns);
         assert!(
             res.new_callsigns
                 .not_seen_7days
                 .contains(&"Alpha".to_string()),
             "expected Alpha to be reported as new callsign"
         );
+        assert!(
+            res.new_callsigns
+                .not_seen_7days
+                .contains(&"Beta".to_string()),
+            "expected the callsign at the inclusive end to be reported"
+        );
+    }
+
+    async fn set_report_chunking_hours(db: &DatabaseConnection, hours: i32) {
+        let result = system_settings::Entity::update_many()
+            .col_expr(
+                system_settings::Column::ReportChunkingHours,
+                Expr::value(hours),
+            )
+            .filter(system_settings::Column::Deleted.eq(false))
+            .exec(db)
+            .await
+            .unwrap();
+        if result.rows_affected == 0 {
+            system_settings::ActiveModel {
+                report_chunking_hours: Set(hours),
+                limit_big_reports: Set(false),
+                ..Default::default()
+            }
+            .insert(db)
+            .await
+            .unwrap();
+        }
     }
 }

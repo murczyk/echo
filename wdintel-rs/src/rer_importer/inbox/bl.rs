@@ -65,6 +65,28 @@ pub struct InboxMessageDesc {
     pub metadata: Option<serde_json::Value>,
 }
 
+async fn load_completed_audio_transcriptions(
+    dbx: &DatabaseConnection,
+    media: &[signal_message_media::Model],
+) -> Result<HashMap<Uuid, String>, AppError> {
+    let audio_media_ids = media
+        .iter()
+        .filter(|media| crate::messenger::media::is_audio_media(media))
+        .map(|media| media.id)
+        .collect::<Vec<_>>();
+    if audio_media_ids.is_empty() {
+        return Ok(HashMap::new());
+    }
+    if !crate::system_settings::audio_transcription_enabled(dbx)
+        .await
+        .c(h!())?
+    {
+        return Ok(HashMap::new());
+    }
+
+    crate::transcriber::completed_transcriptions(dbx, &audio_media_ids).await
+}
+
 pub async fn get_inbox_map_items(
     login: &uuid::Uuid,
     env: &Env,
@@ -207,6 +229,10 @@ pub async fn aggregate_to_inbox_messages(
         .all(&env.dbx)
         .await
         .c(h!())?;
+    let transcriptions_by_media =
+        load_completed_audio_transcriptions(&env.dbx, &media_entries)
+            .await
+            .c(h!())?;
     let mut media_by_message: HashMap<i64, Vec<signal_message_media::Model>> =
         HashMap::new();
     for media in media_entries {
@@ -279,6 +305,7 @@ pub async fn aggregate_to_inbox_messages(
                 file_name: m.file_name.clone(),
                 size_bytes: m.size_bytes,
                 href: mk_media_url(m),
+                transcription: transcriptions_by_media.get(&m.id).cloned(),
             })
             .collect_vec();
         let images = media

@@ -2,6 +2,9 @@ use super::super::types::*;
 use crate::config::*;
 use crate::entities::*;
 use crate::error::AppError;
+use crate::rer_importer::report_chunking::{
+    report_period_chunks, ReportPeriodChunk, ReportPeriodEnd,
+};
 use crate::rer_importer::reports::inbox_light::{
     blank_inbox_message, parse_optional_json_vec,
 };
@@ -93,17 +96,6 @@ async fn collect_mouse_report_data(
             .c(h!())?;
     let mut inbox_req = req.req.clone();
     inbox_req.report_tags_only_this_unit = req.report_tags_only_this_unit;
-    let messages = load_mouse_report_messages(
-        &read_db,
-        &login,
-        env,
-        &inbox_req,
-        true,
-        Some(RER_MOUSE_REPORT_MESSAGE_MAX + 1),
-    )
-    .await
-    .c(h!())?;
-    ensure_mouse_report_message_limit(&login, messages.len())?;
     let Some(since_date_inclusive_ms) = inbox_req.since_date_inclusive_ms
     else {
         return Err("Since date must be specified".into());
@@ -111,8 +103,51 @@ async fn collect_mouse_report_data(
     let Some(till_date_inclusive_ms) = inbox_req.till_date_inclusive_ms else {
         return Err("Until date must be specified".into());
     };
-    let date_from_dt = dt_zoned_from_millis(since_date_inclusive_ms)?;
-    let date_to_dt = dt_zoned_from_millis(till_date_inclusive_ms)?;
+    let report_settings =
+        crate::system_settings::get_report_generation_settings(&env.dbx)
+            .await
+            .c(h!())?;
+    let chunks = report_period_chunks(
+        since_date_inclusive_ms,
+        till_date_inclusive_ms,
+        report_settings.chunking_hours,
+        ReportPeriodEnd::Inclusive,
+    )?;
+    let mut messages_by_id = BTreeMap::new();
+    for (index, chunk) in chunks.iter().enumerate() {
+        info!(
+            "Mouse report chunk {}/{}: {}..{} ({:?})",
+            index + 1,
+            chunks.len(),
+            chunk.since_ms,
+            chunk.till_ms,
+            chunk.end
+        );
+        let mut chunk_req = inbox_req.clone();
+        chunk_req.since_date_inclusive_ms = Some(chunk.since_ms);
+        chunk_req.till_date_inclusive_ms = Some(chunk.till_ms);
+        let max_messages = report_settings
+            .limit_big_reports
+            .then_some(RER_MOUSE_REPORT_MESSAGE_MAX + 1);
+        let chunk_messages = load_mouse_report_messages_chunk(
+            &read_db,
+            &login,
+            env,
+            &chunk_req,
+            true,
+            max_messages,
+            chunk.end,
+        )
+        .await
+        .c(h!())?;
+        merge_mouse_report_message_chunk(
+            &mut messages_by_id,
+            chunk_messages,
+            &login,
+            report_settings.limit_big_reports,
+        )?;
+    }
+    let messages = messages_by_id.into_iter().collect::<Vec<_>>();
     let date_to: String = dt_zoned_from_millis(till_date_inclusive_ms)?
         .format("%H:%M %d.%m.%Y")
         .to_string();
@@ -186,62 +221,14 @@ async fn collect_mouse_report_data(
         crate::messenger::group::get_identity_sigint_groups(&read_db, &login)
             .await
             .context(h!())?;
-
-    let importants = sigint_important::Entity::find()
-        .filter(sigint_important::Column::LoginId.eq(login))
-        .join(
-            JoinType::InnerJoin,
-            sigint_important::Relation::SignalMessage.def(),
-        )
-        .join(
-            JoinType::InnerJoin,
-            signal_message::Relation::SigintInboxItem.def(),
-        )
-        .join(
-            JoinType::InnerJoin,
-            signal_message::Relation::DatasourceGroup.def(),
-        )
-        .filter(
-            sigint_inbox_item::Column::Datetime.gte(date_from_dt.naive_utc()),
-        )
-        .filter(signal_message::Column::Deleted.eq(false))
-        .filter(sigint_inbox_item::Column::Datetime.lte(date_to_dt.naive_utc()))
-        .filter(datasource_group::Column::GroupMasterKey.eq_any(groups.clone()))
-        .all(&read_db)
-        .await
-        .c(h!())?;
-    let important_ids: BTreeSet<i64> = importants
-        .iter()
-        .map(|important| important.signal_message_id)
-        .collect();
-
-    let bookmarks = sigint_bookmark::Entity::find()
-        .filter(sigint_bookmark::Column::LoginId.eq(login))
-        .join(
-            JoinType::InnerJoin,
-            sigint_bookmark::Relation::SignalMessage.def(),
-        )
-        .join(
-            JoinType::InnerJoin,
-            signal_message::Relation::SigintInboxItem.def(),
-        )
-        .join(
-            JoinType::InnerJoin,
-            signal_message::Relation::DatasourceGroup.def(),
-        )
-        .filter(
-            sigint_inbox_item::Column::Datetime.gte(date_from_dt.naive_utc()),
-        )
-        .filter(sigint_inbox_item::Column::Datetime.lte(date_to_dt.naive_utc()))
-        .filter(signal_message::Column::Deleted.eq(false))
-        .filter(datasource_group::Column::GroupMasterKey.eq_any(groups.clone()))
-        .all(&read_db)
-        .await
-        .c(h!())?;
-    let bookmark_ids: BTreeSet<i64> = bookmarks
-        .iter()
-        .map(|bookmark| bookmark.signal_message_id)
-        .collect();
+    let important_ids =
+        load_mouse_important_ids(&read_db, &login, &groups, &chunks)
+            .await
+            .c(h!())?;
+    let bookmark_ids =
+        load_mouse_bookmark_ids(&read_db, &login, &groups, &chunks)
+            .await
+            .c(h!())?;
 
     let all_message_ids: Vec<i64> =
         messages.iter().map(|(id, _)| *id).collect();
@@ -253,39 +240,10 @@ async fn collect_mouse_report_data(
             .into_iter()
             .map(|datasource| (datasource.id, datasource))
             .collect();
-    let message_map: BTreeMap<i64, signal_message::Model> =
-        signal_message::Entity::find()
-            .filter(signal_message::Column::Deleted.eq(false))
-            .filter(signal_message::Column::Id.eq_any(all_message_ids.clone()))
-            .all(&read_db)
+    let (message_map, inbox_map, comments_map) =
+        load_mouse_enrichment_maps(&read_db, &all_message_ids, &login_ids)
             .await
-            .context(h!())?
-            .into_iter()
-            .map(|item| (item.id, item))
-            .collect();
-    let inbox_map: BTreeMap<i64, sigint_inbox_item::Model> =
-        sigint_inbox_item::Entity::find()
-            .filter(
-                sigint_inbox_item::Column::Id.eq_any(all_message_ids.clone()),
-            )
-            .all(&read_db)
-            .await
-            .context(h!())?
-            .into_iter()
-            .map(|item| (item.id, item))
-            .collect();
-    let comments_map: BTreeMap<i64, sigint_comment::Model> =
-        sigint_comment::Entity::find()
-            .filter(
-                sigint_comment::Column::SignalMessageId.eq_any(all_message_ids),
-            )
-            .filter(sigint_comment::Column::LoginId.eq_any(login_ids))
-            .all(&read_db)
-            .await
-            .context(h!())?
-            .into_iter()
-            .map(|comment| (comment.signal_message_id, comment))
-            .collect();
+            .c(h!())?;
     let group_datasources_map: HashMap<i64, i64> =
         datasource_group::Entity::find()
             .select_only()
@@ -1145,6 +1103,161 @@ fn build_mouse_report(
     Ok(())
 }
 
+async fn load_mouse_important_ids(
+    dbx: &DatabaseConnection,
+    login: &uuid::Uuid,
+    groups: &[String],
+    chunks: &[ReportPeriodChunk],
+) -> Result<BTreeSet<i64>, AppError> {
+    let mut ids = BTreeSet::new();
+    for chunk in chunks {
+        let query = sigint_important::Entity::find()
+            .filter(sigint_important::Column::LoginId.eq(*login))
+            .join(
+                JoinType::InnerJoin,
+                sigint_important::Relation::SignalMessage.def(),
+            )
+            .join(
+                JoinType::InnerJoin,
+                signal_message::Relation::SigintInboxItem.def(),
+            )
+            .join(
+                JoinType::InnerJoin,
+                signal_message::Relation::DatasourceGroup.def(),
+            )
+            .filter(signal_message::Column::Deleted.eq(false))
+            .filter(
+                datasource_group::Column::GroupMasterKey
+                    .eq_any(groups.to_vec()),
+            );
+        let query = filter_mouse_time_chunk(query, *chunk)?;
+        ids.extend(
+            query
+                .all(dbx)
+                .await
+                .c(h!())?
+                .into_iter()
+                .map(|important| important.signal_message_id),
+        );
+    }
+    Ok(ids)
+}
+
+async fn load_mouse_bookmark_ids(
+    dbx: &DatabaseConnection,
+    login: &uuid::Uuid,
+    groups: &[String],
+    chunks: &[ReportPeriodChunk],
+) -> Result<BTreeSet<i64>, AppError> {
+    let mut ids = BTreeSet::new();
+    for chunk in chunks {
+        let query = sigint_bookmark::Entity::find()
+            .filter(sigint_bookmark::Column::LoginId.eq(*login))
+            .join(
+                JoinType::InnerJoin,
+                sigint_bookmark::Relation::SignalMessage.def(),
+            )
+            .join(
+                JoinType::InnerJoin,
+                signal_message::Relation::SigintInboxItem.def(),
+            )
+            .join(
+                JoinType::InnerJoin,
+                signal_message::Relation::DatasourceGroup.def(),
+            )
+            .filter(signal_message::Column::Deleted.eq(false))
+            .filter(
+                datasource_group::Column::GroupMasterKey
+                    .eq_any(groups.to_vec()),
+            );
+        let query = filter_mouse_time_chunk(query, *chunk)?;
+        ids.extend(
+            query
+                .all(dbx)
+                .await
+                .c(h!())?
+                .into_iter()
+                .map(|bookmark| bookmark.signal_message_id),
+        );
+    }
+    Ok(ids)
+}
+
+fn filter_mouse_time_chunk<Q>(
+    query: Q,
+    chunk: ReportPeriodChunk,
+) -> Result<Q, AppError>
+where
+    Q: QueryFilter,
+{
+    let query = query.filter(
+        sigint_inbox_item::Column::Datetime
+            .gte(dt_from_millis(chunk.since_ms)?),
+    );
+    let till = dt_from_millis(chunk.till_ms)?;
+    Ok(match chunk.end {
+        ReportPeriodEnd::Inclusive => {
+            query.filter(sigint_inbox_item::Column::Datetime.lte(till))
+        }
+        ReportPeriodEnd::NonInclusive => {
+            query.filter(sigint_inbox_item::Column::Datetime.lt(till))
+        }
+    })
+}
+
+type MouseEnrichmentMaps = (
+    BTreeMap<i64, signal_message::Model>,
+    BTreeMap<i64, sigint_inbox_item::Model>,
+    BTreeMap<i64, sigint_comment::Model>,
+);
+
+async fn load_mouse_enrichment_maps(
+    dbx: &DatabaseConnection,
+    message_ids: &[i64],
+    login_ids: &[uuid::Uuid],
+) -> Result<MouseEnrichmentMaps, AppError> {
+    let mut message_map = BTreeMap::new();
+    let mut inbox_map = BTreeMap::new();
+    let mut comments_map = BTreeMap::new();
+    for ids in message_ids.chunks(RER_REPORT_ENRICHMENT_ID_BATCH_SIZE) {
+        message_map.extend(
+            signal_message::Entity::find()
+                .filter(signal_message::Column::Deleted.eq(false))
+                .filter(signal_message::Column::Id.eq_any(ids.to_vec()))
+                .all(dbx)
+                .await
+                .c(h!())?
+                .into_iter()
+                .map(|message| (message.id, message)),
+        );
+        inbox_map.extend(
+            sigint_inbox_item::Entity::find()
+                .filter(sigint_inbox_item::Column::Id.eq_any(ids.to_vec()))
+                .all(dbx)
+                .await
+                .c(h!())?
+                .into_iter()
+                .map(|inbox| (inbox.id, inbox)),
+        );
+        comments_map.extend(
+            sigint_comment::Entity::find()
+                .filter(
+                    sigint_comment::Column::SignalMessageId
+                        .eq_any(ids.to_vec()),
+                )
+                .filter(
+                    sigint_comment::Column::LoginId.eq_any(login_ids.to_vec()),
+                )
+                .all(dbx)
+                .await
+                .c(h!())?
+                .into_iter()
+                .map(|comment| (comment.signal_message_id, comment)),
+        );
+    }
+    Ok((message_map, inbox_map, comments_map))
+}
+
 async fn load_mouse_report_messages(
     dbx: &DatabaseConnection,
     login: &uuid::Uuid,
@@ -1153,20 +1266,62 @@ async fn load_mouse_report_messages(
     include_tags: bool,
     max_messages: Option<usize>,
 ) -> Result<Vec<(i64, InboxMessage)>, AppError> {
-    let query = crate::rer_importer::inbox::query::build_filtered_inbox_query(
-        dbx, login, env, req,
+    load_mouse_report_messages_chunk(
+        dbx,
+        login,
+        env,
+        req,
+        include_tags,
+        max_messages,
+        ReportPeriodEnd::Inclusive,
     )
     .await
-    .c(h!())?
-    .select_only()
-    .column_as(signal_message::Column::Id, "id")
-    .column_as(signal_message::Column::Timestamp, "timestamp")
-    .column_as(sigint_inbox_item::Column::Freq, "freq")
-    .column_as(sigint_inbox_item::Column::Coords, "coords")
-    .column_as(sigint_inbox_item::Column::Callsigns, "callsigns")
-    .column_as(sigint_inbox_item::Column::Date, "date")
-    .column_as(sigint_inbox_item::Column::Time, "time")
-    .column_as(sigint_inbox_item::Column::UnitV2, "unit");
+}
+
+async fn load_mouse_report_messages_chunk(
+    dbx: &DatabaseConnection,
+    login: &uuid::Uuid,
+    env: &Env,
+    req: &InboxMessagesReq,
+    include_tags: bool,
+    max_messages: Option<usize>,
+    period_end: ReportPeriodEnd,
+) -> Result<Vec<(i64, InboxMessage)>, AppError> {
+    let mut query_req = req.clone();
+    if period_end == ReportPeriodEnd::NonInclusive {
+        query_req.till_date_inclusive_ms = None;
+    }
+    let query = crate::rer_importer::inbox::query::build_filtered_inbox_query(
+        dbx, login, env, &query_req,
+    )
+    .await
+    .c(h!())?;
+    let query = if period_end == ReportPeriodEnd::NonInclusive {
+        let till = req.till_date_inclusive_ms.ok_or_else(|| AppError::BL {
+            msg: "Until date must be specified".to_string(),
+        })?;
+        let till = dt_from_millis(till)?;
+        match req.sort_by.unwrap_or(InboxMessagesSortBy::IMSDatetime) {
+            InboxMessagesSortBy::IMSDatetime => {
+                query.filter(sigint_inbox_item::Column::Datetime.lt(till))
+            }
+            InboxMessagesSortBy::IMSTimestamp => {
+                query.filter(signal_message::Column::Timestamp.lt(till))
+            }
+        }
+    } else {
+        query
+    };
+    let query = query
+        .select_only()
+        .column_as(signal_message::Column::Id, "id")
+        .column_as(signal_message::Column::Timestamp, "timestamp")
+        .column_as(sigint_inbox_item::Column::Freq, "freq")
+        .column_as(sigint_inbox_item::Column::Coords, "coords")
+        .column_as(sigint_inbox_item::Column::Callsigns, "callsigns")
+        .column_as(sigint_inbox_item::Column::Date, "date")
+        .column_as(sigint_inbox_item::Column::Time, "time")
+        .column_as(sigint_inbox_item::Column::UnitV2, "unit");
     let query = match max_messages {
         Some(max_messages) => query.limit(max_messages as u64),
         None => query,
@@ -1217,6 +1372,19 @@ fn ensure_mouse_report_message_limit(
     })
 }
 
+fn merge_mouse_report_message_chunk(
+    messages_by_id: &mut BTreeMap<i64, InboxMessage>,
+    messages: Vec<(i64, InboxMessage)>,
+    user_login: &uuid::Uuid,
+    enforce_limit: bool,
+) -> Result<(), AppError> {
+    messages_by_id.extend(messages);
+    if enforce_limit {
+        ensure_mouse_report_message_limit(user_login, messages_by_id.len())?;
+    }
+    Ok(())
+}
+
 async fn load_mouse_inbox_tags(
     dbx: &DatabaseConnection,
     login: &uuid::Uuid,
@@ -1233,7 +1401,7 @@ async fn load_mouse_inbox_tags(
             .context(h!())?;
     let without_model_tags = req.without_model_tags.unwrap_or(false);
     let mut tags_by_message = BTreeMap::new();
-    for ids in message_ids.chunks(20000) {
+    for ids in message_ids.chunks(RER_REPORT_ENRICHMENT_ID_BATCH_SIZE) {
         let rows = sigint_inbox_item_tag::Entity::find()
             .select_only()
             .join(
@@ -1415,7 +1583,10 @@ fn message_full_text(
     datasource: &datasource::Model,
     m_comment: Option<&sigint_comment::Model>,
 ) -> Result<String, AppError> {
-    if datasource.kind == "signal" || datasource.kind == "whatsapp" {
+    if datasource.kind == "signal"
+        || datasource.kind == "whatsapp"
+        || datasource.kind == "echo_operator"
+    {
         let extended_form = m_comment.map(|x| x.comment.as_str());
         Ok(format!(
             "{}\n\n{}",
@@ -1462,6 +1633,14 @@ fn message_full_text(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::functest::tests::{
+        cleanup, find_test_datasource_group, find_test_login,
+        mk_sigint_inbox_item, mk_signal_message,
+    };
+    use crate::rer_importer::reports::types::ReportPreviewReq;
+    use sea_orm::prelude::Expr;
+    use sea_orm::ActiveValue::Set;
+    use serial_test::serial;
 
     #[test]
     fn mouse_report_message_limit_allows_maximum() {
@@ -1484,5 +1663,180 @@ mod tests {
             AppError::BL { msg }
                 if msg == RER_MOUSE_REPORT_MESSAGE_LIMIT_ERROR_CODE
         ));
+    }
+
+    #[test]
+    fn mouse_chunks_deduplicate_boundary_ids_and_keep_sorted_order() {
+        let mut first = blank_inbox_message();
+        first.freq = Some("111".to_string());
+        let mut boundary = blank_inbox_message();
+        boundary.freq = Some("222".to_string());
+        let mut messages = BTreeMap::new();
+
+        merge_mouse_report_message_chunk(
+            &mut messages,
+            vec![(2, first.clone()), (1, first)],
+            &uuid::Uuid::nil(),
+            true,
+        )
+        .unwrap();
+        merge_mouse_report_message_chunk(
+            &mut messages,
+            vec![(2, boundary)],
+            &uuid::Uuid::nil(),
+            true,
+        )
+        .unwrap();
+
+        assert_eq!(messages.keys().copied().collect::<Vec<_>>(), vec![1, 2]);
+        assert_eq!(
+            messages.get(&2).and_then(|message| message.freq.as_deref()),
+            Some("222")
+        );
+    }
+
+    #[test]
+    fn mouse_chunk_limit_can_be_disabled() {
+        let mut messages = BTreeMap::new();
+        let message = blank_inbox_message();
+        for id in 0..=RER_MOUSE_REPORT_MESSAGE_MAX as i64 {
+            messages.insert(id, message.clone());
+        }
+
+        assert!(merge_mouse_report_message_chunk(
+            &mut messages,
+            Vec::new(),
+            &uuid::Uuid::nil(),
+            false,
+        )
+        .is_ok());
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn mouse_chunked_collection_matches_single_window() {
+        let env = cleanup().await.unwrap();
+        let login = find_test_login(&env.dbx).await.unwrap();
+        let datasource_group =
+            find_test_datasource_group(&env.dbx).await.unwrap();
+        let first = Utc::now().naive_utc() - chrono::Duration::hours(2);
+        let second = first + chrono::Duration::hours(2);
+        for (index, datetime) in [first, second].into_iter().enumerate() {
+            let inbox_datetime = if index == 0 { second } else { datetime };
+            let message = mk_signal_message(
+                &env.dbx,
+                signal_message::ActiveModel {
+                    body: Set(Some(format!("mouse chunk {index}"))),
+                    created_at: Set(datetime),
+                    timestamp: Set(Some(datetime)),
+                    sender: Set(Some("sender".to_string())),
+                    message_uid: Set(Some(format!("mouse-chunk-{index}"))),
+                    datasource_group_id: Set(Some(datasource_group.id)),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+            mk_sigint_inbox_item(
+                &env.dbx,
+                sigint_inbox_item::ActiveModel {
+                    id: Set(message.id),
+                    freq: Set(Some(format!("12{index}.45"))),
+                    callsigns: Set(Some(serde_json::json!([format!(
+                        "Mouse{index}"
+                    )]))),
+                    date: Set(Some(inbox_datetime.date().to_string())),
+                    time: Set(Some(
+                        inbox_datetime.time().format("%H:%M:%S").to_string(),
+                    )),
+                    unit_v2: Set(Some(format!("MouseUnit{index}"))),
+                    checked: Set(Some(true)),
+                    reviewed: Set(Some(true)),
+                    parsed_unit_v2: Set(false),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+        }
+        let req = ReportPreviewReq {
+            kind: "mouse".to_string(),
+            req: InboxMessagesReq {
+                since_date_inclusive_ms: Some(
+                    (first - chrono::Duration::minutes(30))
+                        .and_utc()
+                        .timestamp_millis(),
+                ),
+                till_date_inclusive_ms: Some(
+                    (second + chrono::Duration::minutes(30))
+                        .and_utc()
+                        .timestamp_millis(),
+                ),
+                sort_by: Some(InboxMessagesSortBy::IMSTimestamp),
+                nolimit: Some(true),
+                ..Default::default()
+            },
+            report_type: None,
+            report_tags_only_this_unit: Some(false),
+            tag_report_sort_by: None,
+            report_1213_linked_networks_only: None,
+            without_comments: Some(false),
+            interception_keep_full_message: None,
+            interception_keep_old_colors: None,
+            digest_omit_exo_id: None,
+            digest_form_1_2_17: None,
+            sposob_unit_name: None,
+        };
+
+        set_report_chunking_hours(&env.dbx, 24).await;
+        let single = collect_mouse_report_data(&login.id, &env, &req)
+            .await
+            .unwrap();
+        set_report_chunking_hours(&env.dbx, 1).await;
+        let chunked = collect_mouse_report_data(&login.id, &env, &req)
+            .await
+            .unwrap();
+
+        assert_eq!(chunked.messages, single.messages);
+        assert_eq!(chunked.date_to, single.date_to);
+        assert_eq!(
+            chunked.highlighted_message_ids,
+            single.highlighted_message_ids
+        );
+        assert_eq!(chunked.uniq_freqs_sorted, single.uniq_freqs_sorted);
+        assert_eq!(chunked.freq_first_seen, single.freq_first_seen);
+        assert_eq!(
+            chunked.freq_callsign_first_seen,
+            single.freq_callsign_first_seen
+        );
+        assert_eq!(chunked.important_ids, single.important_ids);
+        assert_eq!(chunked.bookmark_ids, single.bookmark_ids);
+        assert_eq!(chunked.datasource_map, single.datasource_map);
+        assert_eq!(chunked.message_map, single.message_map);
+        assert_eq!(chunked.inbox_map, single.inbox_map);
+        assert_eq!(chunked.comments_map, single.comments_map);
+        assert_eq!(chunked.group_datasources_map, single.group_datasources_map);
+    }
+
+    async fn set_report_chunking_hours(db: &DatabaseConnection, hours: i32) {
+        let result = system_settings::Entity::update_many()
+            .col_expr(
+                system_settings::Column::ReportChunkingHours,
+                Expr::value(hours),
+            )
+            .filter(system_settings::Column::Deleted.eq(false))
+            .exec(db)
+            .await
+            .unwrap();
+        if result.rows_affected == 0 {
+            system_settings::ActiveModel {
+                report_chunking_hours: Set(hours),
+                limit_big_reports: Set(false),
+                ..Default::default()
+            }
+            .insert(db)
+            .await
+            .unwrap();
+        }
     }
 }
