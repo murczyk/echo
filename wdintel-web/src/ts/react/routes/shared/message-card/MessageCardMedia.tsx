@@ -192,6 +192,7 @@ export function MessageMediaAudioPlayer({ attachment }: { attachment: MessageMed
   const playerRef = useRef<HTMLElement | null>(null);
   const paletteMode = useMuiPaletteMode();
   const displayName = mediaAttachmentDisplayName(attachment);
+  const transcription = attachment.transcription?.trim() ?? '';
   const href = String(attachment.href ?? '');
   const mediaId = resolveMediaAttachmentId(attachment);
   const sizeBytes = mediaAttachmentSizeBytes(attachment);
@@ -260,6 +261,14 @@ export function MessageMediaAudioPlayer({ attachment }: { attachment: MessageMed
           overflow: 'hidden',
         }}
       />
+      {transcription !== '' ? (
+        <blockquote
+          data-audio-transcription
+          className="m-0 mt-0.5 mb-1 border-l-[3px] border-[var(--color-divider)] bg-[var(--color-bg-muted)] px-2 py-1.5 text-sm leading-[1.4] text-[var(--color-text-muted)] whitespace-pre-wrap wrap-break-word"
+        >
+          {transcription}
+        </blockquote>
+      ) : null}
     </Box>
   );
 }

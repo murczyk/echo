@@ -1035,6 +1035,26 @@ removeBotTags msgId tagId messages =
     messages |> updateV msgId updateMessage
 
 
+renderMediaTranscription : MessageMediaInfo -> List (Html msg)
+renderMediaTranscription attachment =
+    let
+        transcription =
+            attachment.transcription
+                |> Maybe.map String.trim
+                |> Maybe.withDefault ""
+    in
+    if String.isEmpty transcription then
+        []
+
+    else
+        [ blockquote
+            [ class "m-0 mt-0.5 border-l-[3px] border-[var(--color-divider)] bg-[var(--color-bg-muted)] px-2 py-1.5 text-sm leading-[1.4] text-[var(--color-text-muted)] whitespace-pre-wrap break-words"
+            , attribute "data-audio-transcription" ""
+            ]
+            [ text transcription ]
+        ]
+
+
 renderRow :
     ViewParams
     -> RenderParams
@@ -1092,15 +1112,18 @@ renderRow vps _ model ( i_, ( msgId, message ) ) =
                 displayFileName =
                     withDefault "<файл без назви>" attachment.fileName
             in
-            a
-                [ class "btn btn-outline-secondary btn-sm mb-2"
-                , href attachment.href
-                , download displayFileName
-                , target "_blank"
+            div [ class "mb-2 w-full max-w-[460px]" ] <|
+                [ a
+                    [ class "btn btn-outline-secondary btn-sm"
+                    , href attachment.href
+                    , download displayFileName
+                    , target "_blank"
+                    ]
+                    [ i [ class "bi bi-download me-2" ] []
+                    , text displayFileName
+                    ]
                 ]
-                [ i [ class "bi bi-download me-2" ] []
-                , text displayFileName
-                ]
+                    ++ renderMediaTranscription attachment
 
         renderMedia : MessageMediaInfo -> Maybe (Html msg)
         renderMedia attachment =

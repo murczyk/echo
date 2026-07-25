@@ -2337,6 +2337,41 @@ describe('MessageCard', () => {
     ).toBe(false);
   });
 
+  it('renders a non-empty transcription directly below its audio player', async () => {
+    const view = await renderCard({
+      msg: {
+        ...buildMessage(),
+        media: [
+          {
+            id: 'audio-transcribed',
+            href: '/api/messenger/media/audio-transcribed',
+            contentType: 'audio/mpeg',
+            fileName: 'transcribed.mp3',
+            sizeBytes: 1024,
+            transcription: '  Перший рядок.\nДругий рядок.  ',
+          },
+          {
+            id: 'audio-blank-transcription',
+            href: '/api/messenger/media/audio-blank-transcription',
+            contentType: 'audio/mpeg',
+            fileName: 'blank.mp3',
+            sizeBytes: 1024,
+            transcription: '   ',
+          },
+        ],
+      },
+    });
+    rendered.push(view);
+
+    const transcriptions = view.container.querySelectorAll('[data-audio-transcription]');
+    expect(transcriptions).toHaveLength(1);
+    expect(transcriptions[0]?.tagName).toBe('BLOCKQUOTE');
+    expect(transcriptions[0]?.textContent).toBe('Перший рядок.\nДругий рядок.');
+    expect(transcriptions[0]?.previousElementSibling?.hasAttribute('data-audio-player-host')).toBe(
+      true,
+    );
+  });
+
   it('does not request derived images for audio attachments larger than 100 MiB', async () => {
     const view = await renderCard({
       msg: {
