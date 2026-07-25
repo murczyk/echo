@@ -103,6 +103,31 @@ pub(crate) async fn submit_inbox_item_with_groups(
     item: InboxSubmitItem,
     allow_empty_content: bool,
 ) -> Result<SubmittedInboxItem, AppError> {
+    submit_inbox_item_with_groups_location_mode(
+        env,
+        txn,
+        datasource_id,
+        groups,
+        login,
+        logins,
+        item,
+        allow_empty_content,
+        super::InboxLocationSubmitMode::Parse,
+    )
+    .await
+}
+
+pub(crate) async fn submit_inbox_item_with_groups_location_mode(
+    env: &Env,
+    txn: &DatabaseTransaction,
+    datasource_id: i64,
+    groups: &[(String, i64)],
+    login: &uuid::Uuid,
+    logins: &Vec<uuid::Uuid>,
+    item: InboxSubmitItem,
+    allow_empty_content: bool,
+    location_mode: super::InboxLocationSubmitMode,
+) -> Result<SubmittedInboxItem, AppError> {
     submit_inbox_item_with_groups_inner(
         env,
         txn,
@@ -114,11 +139,12 @@ pub(crate) async fn submit_inbox_item_with_groups(
         None,
         allow_empty_content,
         false,
+        location_mode,
     )
     .await
 }
 
-pub(crate) async fn edit_inbox_item_with_groups(
+pub(crate) async fn edit_inbox_item_with_groups_location_mode(
     env: &Env,
     txn: &DatabaseTransaction,
     signal_message_id: i64,
@@ -129,6 +155,7 @@ pub(crate) async fn edit_inbox_item_with_groups(
     item: InboxSubmitItem,
     allow_empty_content: bool,
     keep_timestamp_missing: bool,
+    location_mode: super::InboxLocationSubmitMode,
 ) -> Result<SubmittedInboxItem, AppError> {
     submit_inbox_item_with_groups_inner(
         env,
@@ -141,6 +168,7 @@ pub(crate) async fn edit_inbox_item_with_groups(
         Some(signal_message_id),
         allow_empty_content,
         keep_timestamp_missing,
+        location_mode,
     )
     .await
 }
@@ -156,6 +184,7 @@ async fn submit_inbox_item_with_groups_inner(
     signal_message_id: Option<i64>,
     allow_empty_content: bool,
     keep_timestamp_missing: bool,
+    location_mode: super::InboxLocationSubmitMode,
 ) -> Result<SubmittedInboxItem, AppError> {
     let mut prepared = prepare_inbox_submit_item(
         txn,
@@ -209,7 +238,7 @@ async fn submit_inbox_item_with_groups_inner(
         &prepared.message,
         login,
         logins,
-        super::InboxLocationSubmitMode::Parse,
+        location_mode,
         item.parse_body_coordinates,
         signal_message_id.is_some(),
     )
