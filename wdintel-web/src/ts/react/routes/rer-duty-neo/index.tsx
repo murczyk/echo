@@ -24,6 +24,7 @@ import { fetchCurrentUser } from '../../services/api/user';
 import { currentSystemSettings } from '../../services/api/system-settings';
 import type { InboxMessage, User } from '../../../../Bindings';
 import { ManageMessageDrawer } from '../shared/manage-message/ManageMessageDrawer';
+import { AudioTranscriptionPreferencesProvider } from '../shared/message-card/MessageCardAudioTranscription';
 
 export type RerDutyNeoPageProps = {
   /** Auth user display name from the host page (avoids duplicate /api/user request). */
@@ -55,6 +56,8 @@ export function RerDutyNeoPage({
   const { notify } = usePowerSnackbar();
   const previousFeedCountRef = useRef(0);
   const [tagsLayout, setTagsLayout] = useState<TagsLayoutVariant>(DEFAULT_DUTY_TAGS_LAYOUT);
+  const [audioTranscriptionCollapsed, setAudioTranscriptionCollapsed] = useState(false);
+  const [audioTranscriptionEnabled, setAudioTranscriptionEnabled] = useState(false);
   useEffect(() => {
     let cancelled = false;
     const loadLayout = async () => {
@@ -62,9 +65,11 @@ export function RerDutyNeoPage({
         const prefs = await fetchUserSettings();
         if (cancelled) return;
         setTagsLayout(prefs.tagsLayout);
+        setAudioTranscriptionCollapsed(prefs.dutyAudioTranscriptionCollapsed ?? false);
       } catch {
         if (cancelled) return;
         setTagsLayout(DEFAULT_DUTY_TAGS_LAYOUT);
+        setAudioTranscriptionCollapsed(false);
       }
     };
     loadLayout();
@@ -74,9 +79,18 @@ export function RerDutyNeoPage({
   }, []);
   useEffect(() => {
     const onSettingsUpdated = (event: Event) => {
-      const detail = (event as CustomEvent<{ tagsLayout?: TagsLayoutVariant }>).detail;
-      if (!detail?.tagsLayout) return;
-      setTagsLayout(detail.tagsLayout);
+      const detail = (
+        event as CustomEvent<{
+          tagsLayout?: TagsLayoutVariant;
+          dutyAudioTranscriptionCollapsed?: boolean;
+        }>
+      ).detail;
+      if (detail?.tagsLayout) {
+        setTagsLayout(detail.tagsLayout);
+      }
+      if (typeof detail?.dutyAudioTranscriptionCollapsed === 'boolean') {
+        setAudioTranscriptionCollapsed(detail.dutyAudioTranscriptionCollapsed);
+      }
     };
 
     window.addEventListener(USER_SETTINGS_UPDATED_EVENT, onSettingsUpdated as EventListener);
@@ -91,10 +105,12 @@ export function RerDutyNeoPage({
       .then((settings) => {
         if (abortController.signal.aborted) return;
         setCyberEchoEnabled(settings.devicesSectionEnabled);
+        setAudioTranscriptionEnabled(settings.enableAudioTranscription ?? false);
       })
       .catch(() => {
         if (abortController.signal.aborted) return;
         setCyberEchoEnabled(false);
+        setAudioTranscriptionEnabled(false);
       });
 
     return () => {
@@ -482,18 +498,23 @@ export function RerDutyNeoPage({
         </PowerAlert>
       ) : null}
 
-      <RerDutyNeoWorkspace
-        activeFeedId={activeFeedIdSafe}
-        buildFeedColumnModel={buildFeedColumnModel}
-        columnRefsRef={columnRefsRef}
-        createMessageFeed={createMessageFeed}
-        openCreateMessageComposer={openCreateMessageComposer}
-        isInitialLoading={isInitialLoading}
-        messageFeeds={messageFeeds}
-        narrowScreen={narrowScreen}
-        onSelectFeed={setActiveFeedId}
-        showLoadingBackdrop={showLoadingBackdrop}
-      />
+      <AudioTranscriptionPreferencesProvider
+        collapsedByDefault={audioTranscriptionCollapsed}
+        enabled={audioTranscriptionEnabled}
+      >
+        <RerDutyNeoWorkspace
+          activeFeedId={activeFeedIdSafe}
+          buildFeedColumnModel={buildFeedColumnModel}
+          columnRefsRef={columnRefsRef}
+          createMessageFeed={createMessageFeed}
+          openCreateMessageComposer={openCreateMessageComposer}
+          isInitialLoading={isInitialLoading}
+          messageFeeds={messageFeeds}
+          narrowScreen={narrowScreen}
+          onSelectFeed={setActiveFeedId}
+          showLoadingBackdrop={showLoadingBackdrop}
+        />
+      </AudioTranscriptionPreferencesProvider>
 
       <ManageMessageDrawer
         open={createMessageOpen || isPresent(editTarget)}

@@ -38,6 +38,10 @@ pub struct UserDutySettingsDto {
     pub disable_auto_scroll: bool,
     #[serde(default)]
     pub analysis_map_in_sidebar: bool,
+    #[serde(default)]
+    pub duty_audio_transcription_collapsed: bool,
+    #[serde(default)]
+    pub analysis_audio_transcription_collapsed: bool,
 }
 
 impl Default for UserDutySettingsDto {
@@ -46,6 +50,8 @@ impl Default for UserDutySettingsDto {
             tags_layout: DutyTagsLayout::Compact,
             disable_auto_scroll: false,
             analysis_map_in_sidebar: false,
+            duty_audio_transcription_collapsed: false,
+            analysis_audio_transcription_collapsed: false,
         }
     }
 }

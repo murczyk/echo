@@ -204,6 +204,8 @@ type alias Model =
     , unitsExactMatchOnly : Bool
     , unitsExactMatchOnlyExplicit : Bool
     , systemSettingsLoaded : Bool
+    , audioTranscriptionEnabled : Bool
+    , analysisAudioTranscriptionCollapsed : Bool
     , withoutModelTags : Bool
     , editSidebar : Maybe Int
     , eventLastId : Maybe String

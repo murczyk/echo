@@ -292,6 +292,7 @@ describe('useRerAnalysisNeoPage', () => {
       rerDutyTestLimit: 1,
       rerDutyPollIntervalSec: 1,
       rerShortUrlEnabled: false,
+      enableAudioTranscription: true,
     });
 
     useAnalysisDataMock.mockReset();
@@ -582,6 +583,7 @@ describe('useRerAnalysisNeoPage', () => {
       rerDutyTestLimit: 1,
       rerDutyPollIntervalSec: 1,
       rerShortUrlEnabled: false,
+      enableAudioTranscription: true,
     });
 
     renderHook();

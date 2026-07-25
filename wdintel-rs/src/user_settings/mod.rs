@@ -26,6 +26,10 @@ fn model_to_dto(m: &user_settings::Model) -> UserDutySettingsDto {
         },
         disable_auto_scroll: m.disable_auto_scroll,
         analysis_map_in_sidebar: m.analysis_map_in_sidebar,
+        duty_audio_transcription_collapsed: m
+            .duty_audio_transcription_collapsed,
+        analysis_audio_transcription_collapsed: m
+            .analysis_audio_transcription_collapsed,
     }
 }
 
@@ -68,6 +72,12 @@ pub async fn user_settings_put(
         }),
         disable_auto_scroll: Set(dto.disable_auto_scroll),
         analysis_map_in_sidebar: Set(dto.analysis_map_in_sidebar),
+        duty_audio_transcription_collapsed: Set(
+            dto.duty_audio_transcription_collapsed
+        ),
+        analysis_audio_transcription_collapsed: Set(
+            dto.analysis_audio_transcription_collapsed
+        ),
         updated_at: Set(now),
     })
     .on_conflict(
@@ -76,6 +86,8 @@ pub async fn user_settings_put(
                 user_settings::Column::TagsLayout,
                 user_settings::Column::DisableAutoScroll,
                 user_settings::Column::AnalysisMapInSidebar,
+                user_settings::Column::DutyAudioTranscriptionCollapsed,
+                user_settings::Column::AnalysisAudioTranscriptionCollapsed,
                 user_settings::Column::UpdatedAt,
             ])
             .to_owned(),

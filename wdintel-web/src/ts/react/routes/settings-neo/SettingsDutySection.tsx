@@ -2,6 +2,7 @@ import { Box, FormControlLabel, Stack, Switch, Typography } from '@mui/material'
 
 import { PowerAlert } from '../../components/PowerAlert';
 import type { TagsLayoutVariant } from '../rer-duty-neo/utils';
+import { SettingsAudioTranscriptionCard } from './SettingsAudioTranscriptionCard';
 import { SettingsSharedTagsLayoutCard } from './SettingsSharedTagsLayoutCard';
 
 const cardSx = {
@@ -21,6 +22,9 @@ export type SettingsDutySectionProps = {
   /** When true, duty feed does not auto-scroll / follow new messages. */
   disableAutoScroll: boolean;
   onDisableAutoScrollChange: (value: boolean) => void;
+  audioTranscriptionCollapsed: boolean;
+  onAudioTranscriptionCollapsedChange: (value: boolean) => void;
+  showAudioTranscriptionSettings: boolean;
 };
 
 export function SettingsDutySection({
@@ -31,6 +35,9 @@ export function SettingsDutySection({
   onTagsLayoutChange,
   disableAutoScroll,
   onDisableAutoScrollChange,
+  audioTranscriptionCollapsed,
+  onAudioTranscriptionCollapsedChange,
+  showAudioTranscriptionSettings,
 }: SettingsDutySectionProps) {
   return (
     <Box
@@ -55,6 +62,14 @@ export function SettingsDutySection({
             onTagsLayoutChange={onTagsLayoutChange}
             loadInProgress={loadInProgress}
           />
+
+          {showAudioTranscriptionSettings ? (
+            <SettingsAudioTranscriptionCard
+              collapsedByDefault={audioTranscriptionCollapsed}
+              loadInProgress={loadInProgress}
+              onCollapsedByDefaultChange={onAudioTranscriptionCollapsedChange}
+            />
+          ) : null}
 
           <Box sx={cardSx}>
             <Stack spacing={1.5}>
