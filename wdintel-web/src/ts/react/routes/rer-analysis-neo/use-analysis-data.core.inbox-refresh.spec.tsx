@@ -299,6 +299,7 @@ function expectFetchMessagesByIdsCalledWith(messageIds: number[]) {
       highlightPoints: true,
       highlightSearchres: true,
     }),
+    expect.objectContaining({ signal: expect.any(AbortSignal) }),
   );
 }
 

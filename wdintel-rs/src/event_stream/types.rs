@@ -21,6 +21,8 @@ pub struct EventMsg {
     pub id: String,
     pub event_type: EventType,
     pub created_at: i64,
+    #[serde(default)]
+    pub origin: Option<String>,
 }
 
 impl EventMsg {
@@ -29,7 +31,13 @@ impl EventMsg {
             id: Uuid::now_v7().to_string(),
             event_type,
             created_at: Utc::now().timestamp_millis(),
+            origin: None,
         }
+    }
+
+    pub fn with_origin(mut self, origin: Option<String>) -> Self {
+        self.origin = origin;
+        self
     }
 }
 

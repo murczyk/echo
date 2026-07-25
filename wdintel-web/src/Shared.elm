@@ -29,10 +29,10 @@ import Shared.Components.Navbar
 import Shared.Components.Toast
 import Shared.Model
 import Shared.Msg exposing (Msg(..))
+import String
 import Task
 import TimeZone
 import Url
-import String
 import Utils.Api.ErrorHandling
 import Utils.Api.Temp exposing (leExpectJson)
 import Utils.RemoteData exposing (RemoteData(..))
@@ -513,8 +513,8 @@ update req msg model =
                 eventService =
                     model.eventService
 
-                inboxChangedMessageIds =
-                    extractInboxChangedMessageIds response.events
+                inboxChangedEvents =
+                    extractInboxChangedEvents response.events
 
                 newEventService =
                     { eventService
@@ -533,11 +533,11 @@ update req msg model =
             ( { model | eventService = newEventService }
             , E.batch
                 [ processEventsEffect
-                , if List.isEmpty inboxChangedMessageIds then
+                , if List.isEmpty inboxChangedEvents then
                     E.none
 
                   else
-                    E.sendCmd <| Ports.shared_dispatchInboxChanged inboxChangedMessageIds
+                    E.sendCmd <| Ports.shared_dispatchInboxChanged inboxChangedEvents
                 , E.sendCmd <| Task.perform (\_ -> EventServicePollEvents) (Process.sleep 100.0)
                 ]
             )
@@ -642,20 +642,26 @@ update req msg model =
             )
 
 
-extractInboxChangedMessageIds : List B.EventMsg -> List Int
-extractInboxChangedMessageIds events =
+extractInboxChangedEvents : List B.EventMsg -> List { messageId : Int, origin : Maybe String }
+extractInboxChangedEvents events =
     let
-        step event ( messageIds, seen ) =
+        step event ( inboxEvents, seen ) =
             case event.eventType of
                 B.EtInboxChanged messageId ->
-                    if Set.member messageId seen then
-                        ( messageIds, seen )
+                    let
+                        key =
+                            ( messageId, Maybe.withDefault "" event.origin )
+                    in
+                    if Set.member key seen then
+                        ( inboxEvents, seen )
 
                     else
-                        ( messageId :: messageIds, Set.insert messageId seen )
+                        ( { messageId = messageId, origin = event.origin } :: inboxEvents
+                        , Set.insert key seen
+                        )
 
                 _ ->
-                    ( messageIds, seen )
+                    ( inboxEvents, seen )
     in
     events
         |> List.foldl step ( [], Set.empty )

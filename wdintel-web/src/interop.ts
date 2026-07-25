@@ -790,13 +790,15 @@ export const onReady = ({ app, env }) => {
   }
 
   if (app.ports && app.ports.shared_dispatchInboxChanged) {
-    app.ports.shared_dispatchInboxChanged.subscribe((messageIds: number[]) => {
-      window.dispatchEvent(
-        new CustomEvent('echo-inbox-changed', {
-          detail: { messageIds },
-        }),
-      );
-    });
+    app.ports.shared_dispatchInboxChanged.subscribe(
+      (events: Array<{ messageId: number; origin: string | null }>) => {
+        window.dispatchEvent(
+          new CustomEvent('echo-inbox-changed', {
+            detail: { events },
+          }),
+        );
+      },
+    );
   }
 
   if (app.ports && app.ports.shared_getLocation && app.ports.shared_getLocationRes) {

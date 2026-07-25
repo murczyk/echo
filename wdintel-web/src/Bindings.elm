@@ -9107,6 +9107,7 @@ type alias EventMsg =
     { id : String
     , eventType : EventType
     , createdAt : Int
+    , origin : Maybe (String)
     }
 
 
@@ -9116,6 +9117,7 @@ eventMsgEncoder struct =
         [ ( "id", (Json.Encode.string) struct.id )
         , ( "event_type", (eventTypeEncoder) struct.eventType )
         , ( "created_at", (Json.Encode.int) struct.createdAt )
+        , ( "origin", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.origin )
         ]
 
 
@@ -15022,6 +15024,7 @@ eventMsgDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "event_type" (eventTypeDecoder)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "created_at" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.oneOf [ Json.Decode.field "origin" (Json.Decode.nullable (Json.Decode.string)), Json.Decode.succeed Nothing ]))
 
 
 longPollReqDecoder : Json.Decode.Decoder LongPollReq

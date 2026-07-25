@@ -105,6 +105,10 @@ function TestHarness(props: {
   onError?: ReturnType<typeof vi.fn>;
   reload?: ReturnType<typeof vi.fn>;
   refreshTagFacet?: ReturnType<typeof vi.fn>;
+  completeLocalInboxChangeOrigin?: ReturnType<typeof vi.fn>;
+  failLocalInboxChangeOrigin?: ReturnType<typeof vi.fn>;
+  reconcileTagMutation?: ReturnType<typeof vi.fn>;
+  registerLocalInboxChangeOrigin?: ReturnType<typeof vi.fn>;
   queryState?: ReturnType<typeof emptyQueryState>;
 }) {
   const [messages, setMessages] = useState<Array<[number, InboxMessage]>>(
@@ -125,6 +129,18 @@ function TestHarness(props: {
     [],
   );
   const [reload] = useState(() => props.reload ?? vi.fn(() => Promise.resolve()));
+  const [completeLocalInboxChangeOrigin] = useState(
+    () => props.completeLocalInboxChangeOrigin ?? vi.fn(),
+  );
+  const [failLocalInboxChangeOrigin] = useState(
+    () => props.failLocalInboxChangeOrigin ?? vi.fn(() => false),
+  );
+  const [reconcileTagMutation] = useState(
+    () => props.reconcileTagMutation ?? vi.fn(() => Promise.resolve()),
+  );
+  const [registerLocalInboxChangeOrigin] = useState(
+    () => props.registerLocalInboxChangeOrigin ?? vi.fn(() => 'test-origin'),
+  );
   const actions = useAnalysisDataMessageActions({
     authUserName: props.authUserName ?? currentUser?.name ?? null,
     currentUser,
@@ -140,6 +156,10 @@ function TestHarness(props: {
       toDateTimeStr: '2026-04-02T00:00',
       tags: [3],
     },
+    completeLocalInboxChangeOrigin,
+    failLocalInboxChangeOrigin,
+    reconcileTagMutation,
+    registerLocalInboxChangeOrigin,
     refreshTagFacet,
     reload,
     setMapOpenMessages,
@@ -191,6 +211,10 @@ describe('useAnalysisDataMessageActions', () => {
       currentUser?: User | null;
       reload?: ReturnType<typeof vi.fn>;
       refreshTagFacet?: ReturnType<typeof vi.fn>;
+      completeLocalInboxChangeOrigin?: ReturnType<typeof vi.fn>;
+      failLocalInboxChangeOrigin?: ReturnType<typeof vi.fn>;
+      reconcileTagMutation?: ReturnType<typeof vi.fn>;
+      registerLocalInboxChangeOrigin?: ReturnType<typeof vi.fn>;
       queryState?: ReturnType<typeof emptyQueryState>;
     } = {},
   ) {
@@ -204,6 +228,10 @@ describe('useAnalysisDataMessageActions', () => {
           currentUser={options.currentUser}
           reload={options.reload}
           refreshTagFacet={options.refreshTagFacet}
+          completeLocalInboxChangeOrigin={options.completeLocalInboxChangeOrigin}
+          failLocalInboxChangeOrigin={options.failLocalInboxChangeOrigin}
+          reconcileTagMutation={options.reconcileTagMutation}
+          registerLocalInboxChangeOrigin={options.registerLocalInboxChangeOrigin}
           queryState={options.queryState}
         />,
       );
@@ -228,7 +256,10 @@ describe('useAnalysisDataMessageActions', () => {
       await apiRef.current!.onToggleMessageTag(1, 3);
     });
 
-    expect(hoisted.inboxMessageTagsRm).toHaveBeenCalledWith({ messageId: 1, tagId: 3 });
+    expect(hoisted.inboxMessageTagsRm).toHaveBeenCalledWith(
+      { messageId: 1, tagId: 3 },
+      { eventOrigin: 'test-origin' },
+    );
     expect(hoisted.inboxMessageTagsAdd).not.toHaveBeenCalled();
     expect(apiRef.current!.botTagAction).toEqual({ messageId: 1, tagId: 3 });
     expect(apiRef.current!.messages[0]?.[1].inboxTags).toEqual([
@@ -251,36 +282,118 @@ describe('useAnalysisDataMessageActions', () => {
       await apiRef.current!.onToggleMessageTag(1, 3);
     });
 
-    expect(hoisted.inboxMessageTagsRm).toHaveBeenCalledWith({ messageId: 1, tagId: 3 });
+    expect(hoisted.inboxMessageTagsRm).toHaveBeenCalledWith(
+      { messageId: 1, tagId: 3 },
+      { eventOrigin: 'test-origin' },
+    );
     expect(apiRef.current!.messages[0]?.[1].inboxTags).toEqual([]);
     expect(apiRef.current!.messages[0]?.[1].tags).toEqual([4]);
   });
 
   it('confirms the bot error, clears the prompt, and removes bot rows locally', async () => {
-    const apiRef = await renderHarness([
+    const registerLocalInboxChangeOrigin = vi.fn(() => 'model-error-origin');
+    const completeLocalInboxChangeOrigin = vi.fn();
+    const apiRef = await renderHarness(
       [
-        1,
-        buildMessage({
-          inboxTags: [
-            buildTag(3, { login: 'tester', organismId: 1 }),
-            buildTag(3, { model: 'bot', confidence: 0.92 }),
-          ],
-        }),
+        [
+          1,
+          buildMessage({
+            inboxTags: [
+              buildTag(3, { login: 'tester', organismId: 1 }),
+              buildTag(3, { model: 'bot', confidence: 0.92 }),
+            ],
+          }),
+        ],
       ],
-    ]);
+      { completeLocalInboxChangeOrigin, registerLocalInboxChangeOrigin },
+    );
 
     await act(async () => {
       await apiRef.current!.onToggleMessageTag(1, 3);
     });
+    registerLocalInboxChangeOrigin.mockClear();
+    completeLocalInboxChangeOrigin.mockClear();
 
     await act(async () => {
       await apiRef.current!.onMarkBotTagWrong(1, 3);
     });
 
-    expect(hoisted.inboxMessageTagsModelError).toHaveBeenCalledWith({ messageId: 1, tagId: 3 });
+    expect(registerLocalInboxChangeOrigin).toHaveBeenCalledOnce();
+    expect(registerLocalInboxChangeOrigin.mock.invocationCallOrder[0]).toBeLessThan(
+      hoisted.inboxMessageTagsModelError.mock.invocationCallOrder[0]!,
+    );
+    expect(hoisted.inboxMessageTagsModelError).toHaveBeenCalledWith(
+      { messageId: 1, tagId: 3 },
+      { eventOrigin: 'model-error-origin' },
+    );
+    expect(completeLocalInboxChangeOrigin).toHaveBeenCalledWith('model-error-origin');
     expect(apiRef.current!.botTagAction).toBeNull();
     expect(apiRef.current!.messages[0]?.[1].inboxTags).toEqual([]);
     expect(apiRef.current!.messages[0]?.[1].tags).toEqual([4]);
+  });
+
+  it('keeps the bot prompt and message unchanged when marking the bot tag wrong fails', async () => {
+    const completeLocalInboxChangeOrigin = vi.fn();
+    const failLocalInboxChangeOrigin = vi.fn(() => false);
+    const reconcileTagMutation = vi.fn(() => Promise.resolve());
+    const apiRef = await renderHarness(
+      [
+        [
+          1,
+          buildMessage({
+            inboxTags: [
+              buildTag(3, { login: 'tester', organismId: 1 }),
+              buildTag(3, { model: 'bot', confidence: 0.92 }),
+            ],
+          }),
+        ],
+      ],
+      {
+        completeLocalInboxChangeOrigin,
+        failLocalInboxChangeOrigin,
+        reconcileTagMutation,
+      },
+    );
+    await act(async () => await apiRef.current!.onToggleMessageTag(1, 3));
+    completeLocalInboxChangeOrigin.mockClear();
+    hoisted.inboxMessageTagsModelError.mockRejectedValueOnce(new Error('response lost'));
+
+    await act(async () => await apiRef.current!.onMarkBotTagWrong(1, 3));
+
+    expect(failLocalInboxChangeOrigin).toHaveBeenCalledWith('test-origin');
+    expect(completeLocalInboxChangeOrigin).not.toHaveBeenCalled();
+    expect(apiRef.current!.onError).toHaveBeenCalledWith('response lost');
+    expect(reconcileTagMutation).not.toHaveBeenCalled();
+    expect(apiRef.current!.botTagAction).toEqual({ messageId: 1, tagId: 3 });
+    expect(apiRef.current!.messages[0]?.[1].inboxTags).toEqual([
+      expect.objectContaining({ tagId: 3, model: 'bot' }),
+    ]);
+  });
+
+  it('reconciles once when the model-error event arrived before a lost response', async () => {
+    const failLocalInboxChangeOrigin = vi.fn(() => true);
+    const reconcileTagMutation = vi.fn(() => Promise.resolve());
+    const apiRef = await renderHarness(
+      [
+        [
+          1,
+          buildMessage({
+            inboxTags: [
+              buildTag(3, { login: 'tester', organismId: 1 }),
+              buildTag(3, { model: 'bot', confidence: 0.92 }),
+            ],
+          }),
+        ],
+      ],
+      { failLocalInboxChangeOrigin, reconcileTagMutation },
+    );
+    await act(async () => await apiRef.current!.onToggleMessageTag(1, 3));
+    hoisted.inboxMessageTagsModelError.mockRejectedValueOnce(new Error('response lost'));
+
+    await act(async () => await apiRef.current!.onMarkBotTagWrong(1, 3));
+
+    expect(reconcileTagMutation).toHaveBeenCalledOnce();
+    expect(reconcileTagMutation).toHaveBeenCalledWith(1);
   });
 
   it('adds the human contribution when only a bot row exists', async () => {
@@ -292,7 +405,10 @@ describe('useAnalysisDataMessageActions', () => {
       await apiRef.current!.onToggleMessageTag(1, 3);
     });
 
-    expect(hoisted.inboxMessageTagsAdd).toHaveBeenCalledWith({ messageId: 1, tagId: 3 });
+    expect(hoisted.inboxMessageTagsAdd).toHaveBeenCalledWith(
+      { messageId: 1, tagId: 3 },
+      { eventOrigin: 'test-origin' },
+    );
     expect(hoisted.inboxMessageTagsRm).not.toHaveBeenCalled();
     expect(apiRef.current!.botTagAction).toBeNull();
     expect(apiRef.current!.messages[0]?.[1].inboxTags).toEqual([
@@ -347,6 +463,23 @@ describe('useAnalysisDataMessageActions', () => {
     expect(refreshTagFacet).not.toHaveBeenCalled();
   });
 
+  it('reconciles the message when its event arrived before the mutation failed', async () => {
+    hoisted.inboxMessageTagsRm.mockRejectedValueOnce(new Error('response lost'));
+    const failLocalInboxChangeOrigin = vi.fn(() => true);
+    const reconcileTagMutation = vi.fn(() => Promise.resolve());
+    const apiRef = await renderHarness(
+      [[1, buildMessage({ inboxTags: [buildTag(3, { login: 'tester', organismId: 1 })] })]],
+      { failLocalInboxChangeOrigin, reconcileTagMutation },
+    );
+
+    await act(async () => {
+      await apiRef.current!.onToggleMessageTag(1, 3);
+    });
+
+    expect(failLocalInboxChangeOrigin).toHaveBeenCalledWith('test-origin');
+    expect(reconcileTagMutation).toHaveBeenCalledWith(1);
+  });
+
   it('refreshes the tags facet without reloading messages after a successful toggle', async () => {
     const reload = vi.fn(() => Promise.resolve());
     const refreshTagFacet = vi.fn(() => Promise.resolve());
@@ -383,7 +516,10 @@ describe('useAnalysisDataMessageActions', () => {
       await fallbackRef.current!.onToggleMessageTag(1, 3);
     });
 
-    expect(hoisted.inboxMessageTagsRm).toHaveBeenCalledWith({ messageId: 1, tagId: 3 });
+    expect(hoisted.inboxMessageTagsRm).toHaveBeenCalledWith(
+      { messageId: 1, tagId: 3 },
+      { eventOrigin: 'test-origin' },
+    );
     expect(fallbackRef.current!.botTagAction).toEqual({ messageId: 1, tagId: 3 });
     expect(fallbackRef.current!.messages[0]?.[1].tags).toEqual([3, 4]);
   });

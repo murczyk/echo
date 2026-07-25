@@ -3516,6 +3516,7 @@ export type EventMsg = {
   id: string;
   eventType: EventType;
   createdAt: number;
+  origin: string | null;
 };
 
 export type LongPollReq = {

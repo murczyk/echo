@@ -4,6 +4,7 @@ use crate::types::*;
 use crate::users::{ensure_basic_role, login_id_from_identity};
 use actix_web::post;
 use actix_web::web::Json;
+use actix_web::HttpRequest;
 use chrono::prelude::*;
 use redis::aio::ConnectionManager;
 use redis::streams::{
@@ -37,6 +38,19 @@ pub fn get_session_id(
         }
         None => Ok(None),
     }
+}
+
+pub fn origin_from_request(req: &HttpRequest) -> Option<String> {
+    let origin = req
+        .headers()
+        .get(EVENT_STREAM_ORIGIN_HEADER)?
+        .to_str()
+        .ok()?;
+    if origin.trim().is_empty() || origin.len() > EVENT_STREAM_ORIGIN_MAX_BYTES
+    {
+        return None;
+    }
+    Some(origin.to_string())
 }
 
 #[post("/api/event-stream/long-poll")]
@@ -258,6 +272,7 @@ pub async fn create_redis_stream(
         id: "".to_string(),
         event_type: EventType::ETGeneric,
         created_at: Utc::now().timestamp(),
+        origin: None,
     };
     let val = serde_json::to_string(&val).c(h!())?.as_bytes().to_vec();
     redis
@@ -304,4 +319,44 @@ async fn update_redis_stream(
         .await
         .c(h!())?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn reads_valid_event_origin_header() {
+        let req = actix_web::test::TestRequest::default()
+            .insert_header((EVENT_STREAM_ORIGIN_HEADER, " local-mutation "))
+            .to_http_request();
+
+        assert_eq!(
+            origin_from_request(&req),
+            Some(" local-mutation ".to_string())
+        );
+    }
+
+    #[test]
+    fn ignores_invalid_event_origin_headers() {
+        let too_long = "x".repeat(EVENT_STREAM_ORIGIN_MAX_BYTES + 1);
+        let req = actix_web::test::TestRequest::default()
+            .insert_header((EVENT_STREAM_ORIGIN_HEADER, too_long))
+            .to_http_request();
+
+        assert_eq!(origin_from_request(&req), None);
+    }
+
+    #[test]
+    fn deserializes_events_created_before_origin_was_added() {
+        let event: EventMsg = serde_json::from_value(serde_json::json!({
+            "id": "event-id",
+            "event_type": { "ETInboxChanged": 7 },
+            "created_at": 1
+        }))
+        .expect("legacy event should deserialize");
+
+        assert_eq!(event.origin, None);
+        assert_eq!(event.event_type, EventType::ETInboxChanged(7));
+    }
 }

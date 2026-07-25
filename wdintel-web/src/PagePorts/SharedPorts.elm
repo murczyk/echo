@@ -3,6 +3,12 @@ port module PagePorts.SharedPorts exposing (shared_dispatchInboxChanged, shared_
 import Core.Types exposing (..)
 
 
+type alias InboxChangedEvent =
+    { messageId : Int
+    , origin : Maybe String
+    }
+
+
 port shared_toggleDarkMode :
     ()
     -> Cmd msg
@@ -23,7 +29,7 @@ port shared_loadScriptRes : (String -> msg) -> Sub msg
 port shared_triggerResize : () -> Cmd msg
 
 
-port shared_dispatchInboxChanged : List Int -> Cmd msg
+port shared_dispatchInboxChanged : List InboxChangedEvent -> Cmd msg
 
 
 port shared_saveThemeMode : String -> Cmd msg
