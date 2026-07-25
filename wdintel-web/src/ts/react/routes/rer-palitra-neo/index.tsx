@@ -368,20 +368,22 @@ function RerPalitraNeoPageBody() {
         onClose={page.closeHistory}
       />
 
-      <PalitraHighlightBlacklistDialog
-        palitra={page.highlightBlacklistPalitra}
-        data={page.highlightBlacklistData}
-        entries={page.highlightBlacklistEntries}
-        loading={page.highlightBlacklistLoading}
-        error={page.highlightBlacklistError}
-        mutationError={page.highlightBlacklistMutationError}
-        mutationBlocked={page.highlightBlacklistMutationBlocked}
-        pendingEntryIds={page.highlightBlacklistPendingIds}
-        pendingLabels={page.highlightBlacklistPendingLabels}
-        onRetry={page.loadHighlightBlacklist}
-        onToggle={page.toggleHighlightBlacklist}
-        onClose={page.closeHighlightBlacklist}
-      />
+      {page.highlightBlacklistPalitra ? (
+        <PalitraHighlightBlacklistDialog
+          palitra={page.highlightBlacklistPalitra}
+          data={page.highlightBlacklistData}
+          entries={page.highlightBlacklistEntries}
+          loading={page.highlightBlacklistLoading}
+          error={page.highlightBlacklistError}
+          mutationError={page.highlightBlacklistMutationError}
+          mutationBlocked={page.highlightBlacklistMutationBlocked}
+          pendingEntryIds={page.highlightBlacklistPendingIds}
+          pendingLabels={page.highlightBlacklistPendingLabels}
+          onRetry={page.loadHighlightBlacklist}
+          onToggle={page.toggleHighlightBlacklist}
+          onClose={page.closeHighlightBlacklist}
+        />
+      ) : null}
 
       <Dialog
         open={page.archiveDialogOpen}
