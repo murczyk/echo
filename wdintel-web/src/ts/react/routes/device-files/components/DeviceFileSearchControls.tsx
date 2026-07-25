@@ -19,6 +19,7 @@ type Props = {
   draft: DeviceFileSearchDraft;
   validationErrors: DeviceFileSearchValidationErrors;
   scopeSelected: boolean;
+  scopeLabel: string | null;
   searching: boolean;
   searchMode: boolean;
   onChange: (draft: DeviceFileSearchDraft) => void;
@@ -30,6 +31,7 @@ export function DeviceFileSearchControls({
   draft,
   validationErrors,
   scopeSelected,
+  scopeLabel,
   searching,
   searchMode,
   onChange,
@@ -39,6 +41,18 @@ export function DeviceFileSearchControls({
   return (
     <Box component="section" aria-label="Пошук файлів">
       <Stack spacing={1.5}>
+        <Typography variant="body2" color="text.secondary">
+          {scopeLabel === null ? (
+            'Оберіть каталог у файловому дереві.'
+          ) : (
+            <>
+              Область пошуку:{' '}
+              <Box component="span" sx={{ color: 'text.primary', overflowWrap: 'anywhere' }}>
+                {scopeLabel}
+              </Box>
+            </>
+          )}
+        </Typography>
         <Stack
           direction={{ xs: 'column', md: 'row' }}
           spacing={1.5}
@@ -139,7 +153,7 @@ export function DeviceFileSearchControls({
           </PowerButton>
           {searchMode ? (
             <PowerButton size="small" onClick={onBackToBrowse} disabled={searching}>
-              До перегляду
+              Сховати результати
             </PowerButton>
           ) : null}
           <PowerButton

@@ -96,10 +96,6 @@ export function buildSearchDeviceFilesReq(params: {
   };
 }
 
-export function buildBrowseFingerprint(deviceId: string, parentEntryId: string): string {
-  return JSON.stringify({ deviceId, parentEntryId });
-}
-
 export function buildSearchFingerprint(
   deviceId: string,
   scopeEntryId: string,

@@ -1,16 +1,21 @@
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import EditIcon from '@mui/icons-material/Edit';
-import { Box, Skeleton, Stack, Tooltip } from '@mui/material';
+import { Box, Skeleton, Stack, Tooltip, useMediaQuery } from '@mui/material';
+import { useTheme } from '@mui/material/styles';
+import { useState } from 'react';
 
 import { PageErrorState } from '../../components/PageErrorState';
 import { PageHeader } from '../../components/PageHeader';
 import { PowerAlert } from '../../components/PowerAlert';
 import { PowerIconButton } from '../../components/PowerIconButton';
 import { SectionLoadingOverlay } from '../../components/SectionLoadingOverlay';
+import { SidePanelToggleButton } from '../../components/SidePanelToggleButton';
 import { navigateWithinSpa } from '../../utils/browser';
 import { DeviceUpsertDrawer } from '../devices/components/DeviceUpsertDrawer';
-import { DeviceFilesPanel } from '../device-files';
+import { DeviceFileTree } from '../device-files/components/DeviceFileTree';
+import { useDeviceFiles } from '../device-files/use-device-files';
 import { DeviceDetailsLeftPanel } from './components/DeviceDetailsLeftPanel';
+import { DeviceDetailsTabPanel, type DeviceDetailsTab } from './components/DeviceDetailsTabPanel';
 import { formatDeviceLifecycleLabel } from './helpers';
 import { useDeviceDetailsPage } from './use-device-details-page';
 
@@ -76,6 +81,19 @@ export function DeviceDetailsPage({
   authUserRoles?: string[];
 }) {
   const page = useDeviceDetailsPage({ deviceId, authUserRoles });
+  const theme = useTheme();
+  const isMobileLayout = useMediaQuery(theme.breakpoints.down('sm'));
+  const [activeTab, setActiveTab] = useState<DeviceDetailsTab>('analytical');
+  const [leftPanelOpen, setLeftPanelOpen] = useState(true);
+  const device = page.device;
+  const canSyncFiles = page.permissions.canSyncFiles && device !== null && !device.archived;
+  const files = useDeviceFiles({
+    deviceId,
+    enabled: page.permissions.canRead && device !== null,
+    canSync: canSyncFiles,
+  });
+  const leftPanelVisible = isMobileLayout || leftPanelOpen;
+  const toggleSidePanelLabel = leftPanelVisible ? 'Згорнути ліву панель' : 'Розгорнути ліву панель';
 
   if (!page.permissions.canRead) {
     return <PageErrorState message="Немає доступу до пристроїв." minHeight="100%" />;
@@ -92,7 +110,6 @@ export function DeviceDetailsPage({
     );
   }
 
-  const device = page.device;
   const showEditAction = page.permissions.canEdit && device !== null && !device.archived;
 
   return (
@@ -113,6 +130,17 @@ export function DeviceDetailsPage({
             archived={device?.archived ?? false}
           />
         }
+        titleLeadingActions={
+          !isMobileLayout ? (
+            <SidePanelToggleButton
+              side="left"
+              active={leftPanelVisible}
+              label={toggleSidePanelLabel}
+              onClick={() => setLeftPanelOpen((current) => !current)}
+            />
+          ) : null
+        }
+        titleLeadingGap={2}
         actions={
           showEditAction ? (
             <Stack direction="row" spacing={1} alignItems="center">
@@ -147,7 +175,7 @@ export function DeviceDetailsPage({
           display: 'grid',
           gridTemplateColumns: {
             xs: 'minmax(0, 1fr)',
-            lg: 'minmax(320px, 0.8fr) minmax(0, 1.2fr)',
+            lg: leftPanelVisible ? 'minmax(360px, 420px) minmax(0, 1fr)' : 'minmax(0, 1fr)',
           },
           gridTemplateRows: { xs: 'auto minmax(420px, 1fr)', lg: 'minmax(0, 1fr)' },
           gap: 2,
@@ -155,19 +183,28 @@ export function DeviceDetailsPage({
         }}
       >
         {page.loading && device === null ? (
-          <Box sx={{ minHeight: 420, overflow: 'hidden' }}>
-            <DeviceDetailsLeftPanel device={null} loading={page.loading} />
-          </Box>
+          leftPanelVisible ? (
+            <Box sx={{ minHeight: 420, overflow: 'hidden' }}>
+              <DeviceDetailsLeftPanel device={null} loading={page.loading} />
+            </Box>
+          ) : null
         ) : device ? (
           <>
-            <Box sx={{ minHeight: 0, overflow: 'hidden' }}>
-              <DeviceDetailsLeftPanel device={device} loading={page.loading} />
-            </Box>
-            <Box sx={{ minHeight: 0, minWidth: 0, overflow: 'hidden' }}>
-              <DeviceFilesPanel
-                deviceId={device.id}
-                canRead={page.permissions.canRead}
-                canSync={page.permissions.canSyncFiles && !device.archived}
+            {leftPanelVisible ? (
+              <Box sx={{ minHeight: 0, overflow: 'hidden' }}>
+                {activeTab === 'files' ? (
+                  <DeviceFileTree files={files} canSync={canSyncFiles} />
+                ) : (
+                  <DeviceDetailsLeftPanel device={device} loading={page.loading} />
+                )}
+              </Box>
+            ) : null}
+            <Box sx={{ minHeight: 0, minWidth: 0, display: 'flex', overflow: 'hidden' }}>
+              <DeviceDetailsTabPanel
+                activeTab={activeTab}
+                files={files}
+                canSyncFiles={canSyncFiles}
+                onTabChange={setActiveTab}
               />
             </Box>
           </>

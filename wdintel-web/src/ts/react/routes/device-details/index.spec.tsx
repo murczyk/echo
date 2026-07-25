@@ -12,6 +12,7 @@ const DEVICE_ID = '018f0000-0000-7000-8000-000000000000';
 
 const pageMock = vi.hoisted(() => ({
   useDeviceDetailsPage: vi.fn(),
+  useDeviceFiles: vi.fn(),
 }));
 
 let container: HTMLDivElement | null = null;
@@ -21,10 +22,22 @@ vi.mock('./use-device-details-page', () => ({
   useDeviceDetailsPage: pageMock.useDeviceDetailsPage,
 }));
 
+vi.mock('../device-files/use-device-files', () => ({
+  useDeviceFiles: pageMock.useDeviceFiles,
+}));
+
 vi.mock('../device-files', () => ({
   DeviceFilesPanel: ({ canSync }: { canSync: boolean }) => (
     <div data-testid="device-files-panel" data-can-sync={String(canSync)}>
       Файли
+    </div>
+  ),
+}));
+
+vi.mock('../device-files/components/DeviceFileTree', () => ({
+  DeviceFileTree: ({ canSync }: { canSync: boolean }) => (
+    <div data-testid="device-files-tree-panel" data-can-sync={String(canSync)}>
+      Файлове дерево
     </div>
   ),
 }));
@@ -79,6 +92,7 @@ function buildPage(overrides: Record<string, unknown> = {}) {
 
 beforeEach(() => {
   pageMock.useDeviceDetailsPage.mockReturnValue(buildPage());
+  pageMock.useDeviceFiles.mockReturnValue({});
   container = document.createElement('div');
   document.body.appendChild(container);
   root = createRoot(container);
@@ -130,11 +144,30 @@ describe('DeviceDetailsPage layout', () => {
     expect(externalLink?.getAttribute('target')).toBe('_blank');
     expect(leftPanelText.indexOf('Основне')).toBeLessThan(leftPanelText.indexOf('Кастомні поля'));
     expect(leftPanelText.indexOf('Кастомні поля')).toBeLessThan(leftPanelText.indexOf('Додатково'));
-    expect(container?.querySelectorAll('[role="tab"]')).toHaveLength(0);
+    const tabs = Array.from(container?.querySelectorAll('[role="tab"]') ?? []);
+    expect(tabs).toHaveLength(2);
+    expect(tabs.map((tab) => tab.textContent)).toEqual(['Аналітичні відомості', 'Файли']);
+    expect(container?.querySelector('[data-testid="device-files-panel"]')).toBeNull();
+    expect(container?.querySelector('[data-testid="device-files-tree-panel"]')).toBeNull();
+    expect(container?.querySelector('button[aria-label="Згорнути ліву панель"]')).not.toBeNull();
+
+    const filesTab = tabs.find((tab) => tab.textContent === 'Файли');
+    act(() => filesTab?.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+
+    expect(container?.querySelector('[data-testid="device-details-left-panel"]')).toBeNull();
+    expect(container?.querySelector('[data-testid="device-files-tree-panel"]')).not.toBeNull();
     expect(container?.querySelector('[data-testid="device-files-panel"]')).not.toBeNull();
     expect(
       container?.querySelector('[data-testid="device-files-panel"]')?.getAttribute('data-can-sync'),
     ).toBe('true');
+
+    const collapseButton = container?.querySelector<HTMLButtonElement>(
+      'button[aria-label="Згорнути ліву панель"]',
+    );
+    act(() => collapseButton?.click());
+    expect(container?.querySelector('[data-testid="device-files-tree-panel"]')).toBeNull();
+    expect(container?.querySelector('[data-testid="device-files-panel"]')).not.toBeNull();
+    expect(container?.querySelector('button[aria-label="Розгорнути ліву панель"]')).not.toBeNull();
   });
 
   it('keeps archived devices read-only', () => {
@@ -154,6 +187,15 @@ describe('DeviceDetailsPage layout', () => {
     expect(container?.querySelector('button[aria-label="Редагувати пристрій"]')).toBeNull();
     expect(container?.textContent).not.toContain('Відновити');
     expect(container?.querySelector('[aria-label="Архівний"]')).not.toBeNull();
+    const filesTab = Array.from(container?.querySelectorAll('[role="tab"]') ?? []).find(
+      (tab) => tab.textContent === 'Файли',
+    );
+    act(() => filesTab?.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+    expect(
+      container
+        ?.querySelector('[data-testid="device-files-tree-panel"]')
+        ?.getAttribute('data-can-sync'),
+    ).toBe('false');
     expect(
       container?.querySelector('[data-testid="device-files-panel"]')?.getAttribute('data-can-sync'),
     ).toBe('false');

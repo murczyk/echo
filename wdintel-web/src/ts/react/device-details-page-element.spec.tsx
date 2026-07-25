@@ -88,6 +88,15 @@ describe('device-details-page custom element', () => {
     element.setAttribute('data-auth-user-roles', 'DeviceSource');
     await mount(element);
 
+    const filesTab = Array.from(document.body.querySelectorAll<HTMLElement>('[role="tab"]')).find(
+      (tab) => tab.textContent === 'Файли',
+    );
+    expect(filesTab).toBeDefined();
+    await act(async () => {
+      filesTab?.click();
+      await Promise.resolve();
+    });
+
     expect(
       Array.from(document.body.querySelectorAll('button')).some((button) =>
         button.textContent?.includes('Синхронізувати'),

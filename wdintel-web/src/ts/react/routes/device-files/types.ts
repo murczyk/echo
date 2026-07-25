@@ -15,6 +15,12 @@ export type DeviceFileLoadError = {
   status: number | null;
 };
 
+export type DeviceFileSearchScope = {
+  entryId: string;
+  rootEntryId: string;
+  label: string;
+};
+
 export type DeviceFileSearchDraft = {
   nameQuery: string;
   kinds: FileEntryKind[];
