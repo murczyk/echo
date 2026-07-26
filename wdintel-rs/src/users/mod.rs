@@ -30,14 +30,7 @@ pub(crate) async fn start_user_session(
     http_req: &HttpRequest,
     login_id: Uuid,
 ) -> Result<(), AppError> {
-    Identity::login(&http_req.extensions(), login_id.to_string()).c(h!())?;
-
     let session_id = Uuid::now_v7();
-    http_req
-        .get_session()
-        .insert("id", session_id.to_string())
-        .c(h!())?;
-
     crate::session::add_session(&mut env.redis.clone(), session_id, &login_id)
         .await
         .c(h!())?;
@@ -52,6 +45,12 @@ pub(crate) async fn start_user_session(
     record_new_session(&login_id, session_id, env)
         .await
         .c(h!())?;
+
+    http_req
+        .get_session()
+        .insert("id", session_id.to_string())
+        .c(h!())?;
+    Identity::login(&http_req.extensions(), login_id.to_string()).c(h!())?;
 
     Ok(())
 }
