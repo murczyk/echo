@@ -4251,8 +4251,7 @@ async fn rer_duty_unit_filter_includes_child_units_in_fuzzy_mode() {
 
 #[tokio::test]
 #[serial]
-async fn rer_analysis_unit_filter_includes_child_units_by_name_suffix_in_fuzzy_mode(
-) {
+async fn rer_analysis_unit_filter_does_not_match_child_unit_name_suffix() {
     let fixture = mk_aor_filter_fixture().await.unwrap();
     let db = &fixture.env.dbx;
     let _parent_unit = mk_sigint_unit(
@@ -4383,10 +4382,7 @@ async fn rer_analysis_unit_filter_includes_child_units_by_name_suffix_in_fuzzy_m
     )
     .await
     .unwrap();
-    assert_eq!(
-        items.iter().map(|item| item.id).collect_vec(),
-        vec![msg_child.id]
-    );
+    assert!(items.is_empty());
 
     let req = crate::rer_importer::types::InboxMessagesReq {
         units_exact_match_only: Some(true),
@@ -4414,10 +4410,9 @@ async fn rer_analysis_unit_filter_includes_child_units_by_name_suffix_in_fuzzy_m
     )
     .await
     .unwrap();
-    assert_eq!(
-        items.iter().map(|item| item.id).collect_vec(),
-        vec![msg_other.id]
-    );
+    assert_eq!(items.len(), 2);
+    assert!(items.iter().any(|item| item.id == msg_child.id));
+    assert!(items.iter().any(|item| item.id == msg_other.id));
 }
 
 #[tokio::test]

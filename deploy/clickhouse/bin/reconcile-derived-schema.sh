@@ -79,7 +79,7 @@ reconcile_query_index() {
       AND table_uuid = toUUID('$table_uuid')
       AND definition = '$expected_definition'
   ")
-  [[ "$state_exists" == 0 ]] || return
+  [[ "$state_exists" == 0 ]] || return 0
 
   log "Materializing query index $CLICKHOUSE_RAW_DB.$table.$index"
   clickhouse_admin \
