@@ -45,6 +45,18 @@ where
     let aors_map = get_networks_aor_ids(txn, &network_ids)
         .await
         .context(h!())?;
+    let updated_by_login_ids = networks
+        .iter()
+        .filter_map(|network| network.updated_by_login_id)
+        .unique()
+        .collect_vec();
+    let updated_by_logins = if updated_by_login_ids.is_empty() {
+        HashMap::new()
+    } else {
+        crate::users::login_names_by_ids(txn, updated_by_login_ids)
+            .await
+            .context(h!())?
+    };
 
     let mut networks_res = Vec::with_capacity(networks.len());
     for network in &networks {
@@ -67,9 +79,12 @@ where
             operation_type: network.operation_type.clone(),
             operation_period: network.operation_period.clone(),
             last_updated_at: network.updated_at.and_utc().timestamp_millis(),
-            last_updated_by: network
-                .updated_by_login_id
-                .map(|login_id| login_id.to_string()),
+            last_updated_by: network.updated_by_login_id.map(|login_id| {
+                updated_by_logins
+                    .get(&login_id)
+                    .cloned()
+                    .unwrap_or_else(|| login_id.to_string())
+            }),
             active_from: network
                 .active_from
                 .map(|d| d.and_utc().timestamp_millis()),
