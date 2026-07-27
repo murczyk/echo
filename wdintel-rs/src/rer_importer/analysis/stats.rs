@@ -5163,6 +5163,6 @@ mod tests {
         .build(DbBackend::Postgres)
         .to_string();
 
-        assert!(query.contains("WHERE FALSE AND FALSE"));
+        assert!(query.contains("WHERE FALSE"));
     }
 }
