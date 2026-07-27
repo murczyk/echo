@@ -103,74 +103,6 @@ where
     Ok(sender)
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::entities::delta_login;
-    use crate::functest::tests::{cleanup, mk_login};
-    use serial_test::serial;
-
-    #[tokio::test]
-    #[serial]
-    async fn current_user_sender_profile_uses_echo_login_name() {
-        let env = cleanup().await.unwrap();
-        let regular_login = mk_login(
-            &env.dbx,
-            login::ActiveModel {
-                login: Set("regular-sender".to_string()),
-                ..Default::default()
-            },
-        )
-        .await
-        .unwrap();
-        let delta_login = delta_login::ActiveModel {
-            id: NotSet,
-            login: Set("delta-auth-name".to_string()),
-            created_at: NotSet,
-        }
-        .insert(&env.dbx)
-        .await
-        .unwrap();
-        let delta_linked_login = mk_login(
-            &env.dbx,
-            login::ActiveModel {
-                login: Set("delta-linked-sender".to_string()),
-                delta_login_id: Set(Some(delta_login.id)),
-                ..Default::default()
-            },
-        )
-        .await
-        .unwrap();
-        signal_profile::ActiveModel {
-            uuid: Set(delta_linked_login.id.to_string()),
-            given_name: Set(Some(delta_linked_login.id.to_string())),
-            family_name: Set(None),
-            created_at: NotSet,
-        }
-        .insert(&env.dbx)
-        .await
-        .unwrap();
-
-        for login in [regular_login, delta_linked_login] {
-            let sender = ensure_current_user_sender(&env.dbx, &login.id)
-                .await
-                .unwrap();
-            let signal_profile =
-                signal_profile::Entity::find_by_id(sender.clone())
-                    .one(&env.dbx)
-                    .await
-                    .unwrap()
-                    .unwrap();
-
-            assert_eq!(sender, login.id.to_string());
-            assert_eq!(
-                signal_profile.given_name.as_deref(),
-                Some(login.login.as_str())
-            );
-        }
-    }
-}
-
 pub async fn validate_device_name_id<C>(
     dbx: &C,
     device_name_id: i64,
@@ -284,4 +216,72 @@ where
         .await
         .c(h!())?;
     Ok(media)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::entities::delta_login;
+    use crate::functest::tests::{cleanup, mk_login};
+    use serial_test::serial;
+
+    #[tokio::test]
+    #[serial]
+    async fn current_user_sender_profile_uses_echo_login_name() {
+        let env = cleanup().await.unwrap();
+        let regular_login = mk_login(
+            &env.dbx,
+            login::ActiveModel {
+                login: Set("regular-sender".to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let delta_login = delta_login::ActiveModel {
+            id: NotSet,
+            login: Set("delta-auth-name".to_string()),
+            created_at: NotSet,
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        let delta_linked_login = mk_login(
+            &env.dbx,
+            login::ActiveModel {
+                login: Set("delta-linked-sender".to_string()),
+                delta_login_id: Set(Some(delta_login.id)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        signal_profile::ActiveModel {
+            uuid: Set(delta_linked_login.id.to_string()),
+            given_name: Set(Some(delta_linked_login.id.to_string())),
+            family_name: Set(None),
+            created_at: NotSet,
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+
+        for login in [regular_login, delta_linked_login] {
+            let sender = ensure_current_user_sender(&env.dbx, &login.id)
+                .await
+                .unwrap();
+            let signal_profile =
+                signal_profile::Entity::find_by_id(sender.clone())
+                    .one(&env.dbx)
+                    .await
+                    .unwrap()
+                    .unwrap();
+
+            assert_eq!(sender, login.id.to_string());
+            assert_eq!(
+                signal_profile.given_name.as_deref(),
+                Some(login.login.as_str())
+            );
+        }
+    }
 }
