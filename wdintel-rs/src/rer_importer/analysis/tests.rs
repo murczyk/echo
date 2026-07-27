@@ -6135,6 +6135,9 @@ fn count_stats_analytics_supports_callsign_filters_but_rejects_search() {
 #[test]
 fn analytical_inbox_reads_support_callsign_filters_but_reject_search() {
     let mut req = InboxMessagesReq::default();
+    assert!(!analytics_inbox_request_supported(&req));
+
+    req.since_date_inclusive_ms = Some(1);
     assert!(analytics_inbox_request_supported(&req));
 
     req.search = Some("callsign".to_string());

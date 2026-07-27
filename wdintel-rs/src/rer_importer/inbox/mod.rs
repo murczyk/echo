@@ -691,12 +691,30 @@ async fn inbox_messages_count(
     let q = build_inbox_digest_query(&login, &env, &req)
         .await
         .context(h!())?;
-    let analytics_q = q.clone();
+    let analytics_env = env.clone();
+    let analytics_req = req.clone();
+    let analytics_login = login;
+    let freshness_max_age_ms = env
+        .config
+        .analytics
+        .as_ref()
+        .map(AnalyticsConfig::freshness_max_age_ms)
+        .unwrap_or(ANALYTICS_FRESHNESS_MAX_AGE_MS_DEFAULT);
     let (mut quantity, first_element_ts) = with_analytics_read_fallback(
         env.get_ref(),
         "inbox messages count",
         analytics_inbox_request_supported(&req),
-        |db| query_inbox_digest(db, analytics_q),
+        |db| async move {
+            let query = build_analytics_inbox_digest_query(
+                &analytics_login,
+                &analytics_env,
+                &analytics_req,
+                &db,
+                freshness_max_age_ms,
+            )
+            .await?;
+            query_inbox_digest(db, query).await
+        },
         |db| query_inbox_digest(db, q),
     )
     .await

@@ -53,8 +53,12 @@ fn message_has_media_exists() -> SimpleExpr {
     Expr::exists(media_query)
 }
 
-fn message_is_accessible_exists(sigint_groups: Vec<String>) -> SimpleExpr {
-    let access_query = Query::select()
+fn message_is_accessible_exists(
+    sigint_groups: Vec<String>,
+    scope: Option<&AnalyticsMessageIdScope>,
+) -> SimpleExpr {
+    let mut access_query = Query::select();
+    access_query
         .expr(Expr::value(1))
         .from(signal_message_group::Entity)
         .and_where(
@@ -66,10 +70,15 @@ fn message_is_accessible_exists(sigint_groups: Vec<String>) -> SimpleExpr {
         )
         .and_where(
             signal_message_group::Column::GroupMasterKey.eq_any(sigint_groups),
-        )
-        .to_owned();
+        );
+    if let Some(scope) = scope {
+        access_query.and_where(scope.condition((
+            signal_message_group::Entity,
+            signal_message_group::Column::SignalMessageId,
+        )));
+    }
 
-    Expr::exists(access_query)
+    Expr::exists(access_query.to_owned())
 }
 
 fn inbox_date_gte_expr(
@@ -109,6 +118,19 @@ pub(crate) async fn build_filtered_inbox_query<'a, 'async_trait, C>(
 where
     C: ConnectionTrait + 'async_trait,
 {
+    build_filtered_inbox_query_with_scope(dbx, login, env, req, None).await
+}
+
+async fn build_filtered_inbox_query_with_scope<'a, 'async_trait, C>(
+    dbx: &'a C,
+    login: &uuid::Uuid,
+    env: &Env,
+    req: &InboxMessagesReq,
+    scope: Option<&AnalyticsMessageIdScope>,
+) -> Result<Select<signal_message::Entity>, AppError>
+where
+    C: ConnectionTrait + 'async_trait,
+{
     let sigint_groups =
         crate::messenger::group::get_identity_sigint_groups(dbx, login)
             .await
@@ -138,7 +160,18 @@ where
 
     q = q
         .filter(signal_message::Column::Deleted.eq(false))
-        .filter(message_is_accessible_exists(sigint_groups.clone()));
+        .filter(message_is_accessible_exists(sigint_groups.clone(), scope));
+    if let Some(scope) = scope {
+        q = q
+            .filter(scope.condition((
+                signal_message::Entity,
+                signal_message::Column::Id,
+            )))
+            .filter(scope.condition((
+                sigint_inbox_item::Entity,
+                sigint_inbox_item::Column::Id,
+            )));
+    }
 
     if req.ignore_imported_coords.unwrap_or(false) {
         q = q.filter(signal_group::Column::IgnoreOperativny.eq(Some(false)));
@@ -150,18 +183,20 @@ where
     if req.checked_only == Some(true) {
         q = q.filter(sigint_inbox_item::Column::Checked.eq(Some(true)));
     }
-    let q = filter_selected_groups_and_senders_with_access(
+    let q = filter_selected_groups_and_senders_with_access_and_scope(
         q,
         &req.selected_groups,
         &req.selected_senders,
         &sigint_groups,
+        scope,
     )?;
-    let q = filter_denied_groups_with_access(
+    let q = filter_denied_groups_with_access_and_scope(
         q,
         &req.denied_groups,
         &sigint_groups,
+        scope,
     )?;
-    let q = filter_denied_senders(q, &req.denied_senders)?;
+    let q = filter_denied_senders_with_scope(q, &req.denied_senders, scope)?;
     let q = filter_selected_freqs(q, &req.selected_freqs)?;
     let q = filter_denied_freqs(q, &req.denied_freqs)?;
     let q = filter_selected_posts(q, &req.selected_posts)?;
@@ -241,6 +276,121 @@ pub(crate) async fn build_inbox_digest_query(
         );
 
     Ok(q.build(DatabaseBackend::Postgres).to_string())
+}
+
+pub(crate) async fn build_analytics_inbox_digest_query(
+    login: &uuid::Uuid,
+    env: &Env,
+    req: &InboxMessagesReq,
+    db: &DatabaseConnection,
+    freshness_max_age_ms: u64,
+) -> Result<String, AppError> {
+    let scope =
+        resolve_analytics_inbox_message_id_scope(req, db, freshness_max_age_ms)
+            .await?;
+    let q = build_filtered_inbox_query_with_scope(
+        &env.dbx,
+        login,
+        env,
+        req,
+        Some(&scope),
+    )
+    .await
+    .context(h!())?
+    .select_only()
+    .column_as(Expr::cust("COUNT(*)"), "count")
+    .column_as(
+        Expr::cust(r#"MIN("signal_message"."timestamp")"#),
+        "first_element_ts",
+    );
+
+    Ok(q.build(DatabaseBackend::Postgres).to_string())
+}
+
+async fn resolve_analytics_inbox_message_id_scope(
+    req: &InboxMessagesReq,
+    db: &DatabaseConnection,
+    freshness_max_age_ms: u64,
+) -> Result<AnalyticsMessageIdScope, AppError> {
+    #[derive(FromQueryResult)]
+    struct MessageIdBounds {
+        min_id: Option<i64>,
+        max_id: Option<i64>,
+    }
+
+    let since_date = req
+        .since_date_inclusive_ms
+        .map(dt_from_millis)
+        .transpose()
+        .context(h!())?;
+    let till_date = req
+        .till_date_inclusive_ms
+        .map(dt_from_millis)
+        .transpose()
+        .context(h!())?;
+
+    let bounds =
+        match req.sort_by.unwrap_or(InboxMessagesSortBy::IMSDatetime) {
+            InboxMessagesSortBy::IMSDatetime => {
+                let query = sigint_inbox_item::Entity::find()
+                    .select_only()
+                    .column_as(sigint_inbox_item::Column::Id.min(), "min_id")
+                    .column_as(sigint_inbox_item::Column::Id.max(), "max_id")
+                    .apply_if(since_date, |query, since_date| {
+                        query.filter(
+                            sigint_inbox_item::Column::Datetime.gte(since_date),
+                        )
+                    })
+                    .apply_if(till_date, |query, till_date| {
+                        query.filter(
+                            sigint_inbox_item::Column::Datetime.lte(till_date),
+                        )
+                    });
+                query
+                    .into_model::<MessageIdBounds>()
+                    .one(db)
+                    .await
+                    .context(h!())?
+            }
+            InboxMessagesSortBy::IMSTimestamp => {
+                let query = signal_message::Entity::find()
+                    .select_only()
+                    .column_as(signal_message::Column::Id.min(), "min_id")
+                    .column_as(signal_message::Column::Id.max(), "max_id")
+                    .apply_if(since_date, |query, since_date| {
+                        query.filter(
+                            signal_message::Column::Timestamp.gte(since_date),
+                        )
+                    })
+                    .apply_if(till_date, |query, till_date| {
+                        query.filter(
+                            signal_message::Column::Timestamp.lte(till_date),
+                        )
+                    });
+                query
+                    .into_model::<MessageIdBounds>()
+                    .one(db)
+                    .await
+                    .context(h!())?
+            }
+        }
+        .unwrap_or(MessageIdBounds {
+            min_id: None,
+            max_id: None,
+        });
+    let (Some(min_id), Some(max_id)) = (bounds.min_id, bounds.max_id) else {
+        return Ok(AnalyticsMessageIdScope::Empty);
+    };
+
+    let freshness_max_age_ms =
+        i64::try_from(freshness_max_age_ms).context(h!())?;
+    let closed_range_cutoff =
+        Utc::now().naive_utc() - Duration::milliseconds(freshness_max_age_ms);
+    if till_date.is_some_and(|till_date| till_date <= closed_range_cutoff) {
+        Ok(AnalyticsMessageIdScope::Inclusive { min_id, max_id })
+    } else {
+        Ok(AnalyticsMessageIdScope::From(min_id))
+    }
 }
 
 pub(crate) async fn build_inbox_query(
@@ -1009,7 +1159,8 @@ mod tests {
 
     #[test]
     fn message_access_filter_uses_correlated_exists() {
-        let expr = message_is_accessible_exists(vec!["test-group".to_string()]);
+        let expr =
+            message_is_accessible_exists(vec!["test-group".to_string()], None);
 
         let sql = Query::select().expr(expr).to_string(PostgresQueryBuilder);
 
@@ -1021,5 +1172,26 @@ mod tests {
             "{sql}"
         );
         assert!(!sql.contains(" IN (SELECT"), "{sql}");
+    }
+
+    #[test]
+    fn analytics_message_access_filter_applies_id_scope() {
+        let scope = AnalyticsMessageIdScope::Inclusive {
+            min_id: 12_000,
+            max_id: 13_000,
+        };
+        let expr = message_is_accessible_exists(
+            vec!["test-group".to_string()],
+            Some(&scope),
+        );
+
+        let sql = Query::select().expr(expr).to_string(PostgresQueryBuilder);
+
+        assert!(
+            sql.contains(
+                r#""signal_message_group"."signal_message_id" BETWEEN 12000 AND 13000"#
+            ),
+            "{sql}"
+        );
     }
 }

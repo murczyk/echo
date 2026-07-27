@@ -52,7 +52,7 @@ pub(super) enum AnalyticsMessageIdScope {
 }
 
 impl AnalyticsMessageIdScope {
-    fn condition<C>(self, column: C) -> SimpleExpr
+    pub(super) fn condition<C>(self, column: C) -> SimpleExpr
     where
         C: IntoColumnRef,
     {
@@ -115,6 +115,25 @@ pub fn filter_selected_groups_and_senders_with_access<Q>(
 where
     Q: QueryFilter,
 {
+    filter_selected_groups_and_senders_with_access_and_scope(
+        q,
+        selected_groups,
+        selected_senders,
+        allowed_groups,
+        None,
+    )
+}
+
+pub(super) fn filter_selected_groups_and_senders_with_access_and_scope<Q>(
+    q: Q,
+    selected_groups: &Option<Vec<String>>,
+    selected_senders: &Option<Vec<String>>,
+    allowed_groups: &[String],
+    scope: Option<&AnalyticsMessageIdScope>,
+) -> Result<Q, AppError>
+where
+    Q: QueryFilter,
+{
     let allowed: HashSet<&String> =
         allowed_groups.iter().collect::<HashSet<_>>();
     let selected_groups = selected_groups.as_ref().map(|groups| {
@@ -131,13 +150,19 @@ where
         .cloned();
 
     match (selected_groups, selected_senders) {
-        (Some(groups), Some(senders)) => Ok(
-            q.filter(message_in_groups_with_senders_exists(&groups, &senders))
-        ),
-        (Some(groups), None) => Ok(q.filter(message_in_groups_exists(groups))),
-        (None, Some(senders)) => Ok(q.filter(
-            message_has_sender_in_groups_exists(&senders, allowed_groups),
+        (Some(groups), Some(senders)) => Ok(q.filter(
+            message_in_groups_with_senders_exists(&groups, &senders, scope),
         )),
+        (Some(groups), None) => {
+            Ok(q.filter(message_in_groups_exists_with_scope(groups, scope)))
+        }
+        (None, Some(senders)) => {
+            Ok(q.filter(message_has_sender_in_groups_exists(
+                &senders,
+                allowed_groups,
+                scope,
+            )))
+        }
         (None, None) => Ok(q),
     }
 }
@@ -146,6 +171,23 @@ pub fn filter_denied_groups_with_access<Q>(
     q: Q,
     denied_groups: &Option<Vec<String>>,
     allowed_groups: &[String],
+) -> Result<Q, AppError>
+where
+    Q: QueryFilter,
+{
+    filter_denied_groups_with_access_and_scope(
+        q,
+        denied_groups,
+        allowed_groups,
+        None,
+    )
+}
+
+pub(super) fn filter_denied_groups_with_access_and_scope<Q>(
+    q: Q,
+    denied_groups: &Option<Vec<String>>,
+    allowed_groups: &[String],
+    scope: Option<&AnalyticsMessageIdScope>,
 ) -> Result<Q, AppError>
 where
     Q: QueryFilter,
@@ -168,7 +210,7 @@ where
         return Ok(q);
     }
 
-    Ok(q.filter(message_in_groups_exists(filtered).not()))
+    Ok(q.filter(message_in_groups_exists_with_scope(filtered, scope).not()))
 }
 
 pub fn message_in_groups_exists(keys: Vec<String>) -> SimpleExpr {
@@ -209,6 +251,7 @@ pub(super) fn message_in_groups_exists_with_scope(
 fn message_in_groups_with_senders_exists(
     keys: &[String],
     senders: &[String],
+    scope: Option<&AnalyticsMessageIdScope>,
 ) -> SimpleExpr {
     if keys.is_empty() || senders.is_empty() {
         return Expr::cust("FALSE");
@@ -227,8 +270,15 @@ fn message_in_groups_with_senders_exists(
         .filter(
             signal_message_group::Column::GroupMasterKey.eq_any(keys.to_vec()),
         )
-        .filter(signal_message_group::Column::Sender.eq_any(senders.to_vec()))
-        .into_query();
+        .filter(signal_message_group::Column::Sender.eq_any(senders.to_vec()));
+    let subquery = match scope {
+        Some(scope) => subquery.filter(scope.condition((
+            signal_message_group::Entity,
+            signal_message_group::Column::SignalMessageId,
+        ))),
+        None => subquery,
+    }
+    .into_query();
 
     Expr::exists(subquery)
 }
@@ -242,7 +292,9 @@ where
 {
     if let Some(selected_senders) = selected_senders.as_ref() {
         if !selected_senders.is_empty() {
-            return Ok(q.filter(message_has_sender_exists(selected_senders)));
+            return Ok(
+                q.filter(message_has_sender_exists(selected_senders, None))
+            );
         }
     }
     Ok(q)
@@ -255,11 +307,22 @@ pub fn filter_denied_senders<Q>(
 where
     Q: QueryFilter,
 {
+    filter_denied_senders_with_scope(q, denied_senders, None)
+}
+
+pub(super) fn filter_denied_senders_with_scope<Q>(
+    q: Q,
+    denied_senders: &Option<Vec<String>>,
+    scope: Option<&AnalyticsMessageIdScope>,
+) -> Result<Q, AppError>
+where
+    Q: QueryFilter,
+{
     if let Some(denied_senders) = denied_senders.as_ref() {
         if !denied_senders.is_empty() {
-            return Ok(
-                q.filter(message_has_sender_exists(denied_senders).not())
-            );
+            return Ok(q.filter(
+                message_has_sender_exists(denied_senders, scope).not(),
+            ));
         }
     }
     Ok(q)
@@ -268,6 +331,7 @@ where
 fn message_has_sender_in_groups_exists(
     senders: &[String],
     allowed_groups: &[String],
+    scope: Option<&AnalyticsMessageIdScope>,
 ) -> SimpleExpr {
     if senders.is_empty() || allowed_groups.is_empty() {
         return Expr::cust("FALSE");
@@ -287,13 +351,23 @@ fn message_has_sender_in_groups_exists(
             signal_message_group::Column::GroupMasterKey
                 .eq_any(allowed_groups.to_vec()),
         )
-        .filter(signal_message_group::Column::Sender.eq_any(senders.to_vec()))
-        .into_query();
+        .filter(signal_message_group::Column::Sender.eq_any(senders.to_vec()));
+    let subquery = match scope {
+        Some(scope) => subquery.filter(scope.condition((
+            signal_message_group::Entity,
+            signal_message_group::Column::SignalMessageId,
+        ))),
+        None => subquery,
+    }
+    .into_query();
 
     Expr::exists(subquery)
 }
 
-fn message_has_sender_exists(senders: &[String]) -> SimpleExpr {
+fn message_has_sender_exists(
+    senders: &[String],
+    scope: Option<&AnalyticsMessageIdScope>,
+) -> SimpleExpr {
     if senders.is_empty() {
         return Expr::cust("FALSE");
     }
@@ -308,8 +382,15 @@ fn message_has_sender_exists(senders: &[String]) -> SimpleExpr {
             ))
             .equals((signal_message::Entity, signal_message::Column::Id)),
         )
-        .filter(signal_message_group::Column::Sender.eq_any(senders.to_vec()))
-        .into_query();
+        .filter(signal_message_group::Column::Sender.eq_any(senders.to_vec()));
+    let subquery = match scope {
+        Some(scope) => subquery.filter(scope.condition((
+            signal_message_group::Entity,
+            signal_message_group::Column::SignalMessageId,
+        ))),
+        None => subquery,
+    }
+    .into_query();
 
     Expr::exists(subquery)
 }
@@ -5798,6 +5879,9 @@ pub(crate) fn analytics_inbox_request_supported(
     req.search
         .as_ref()
         .is_none_or(|search| search.trim().is_empty())
+        && req
+            .since_date_inclusive_ms
+            .is_some_and(|since_date| since_date > 0)
 }
 
 #[derive(Clone)]
