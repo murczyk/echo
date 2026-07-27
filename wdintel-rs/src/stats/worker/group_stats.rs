@@ -31,12 +31,9 @@ async fn worker_calculate_group_stats_inner(
     let now = Utc::now().naive_utc();
     let dbx = new_pg_pool_from_mode(mode).await.c(h!())?;
 
-    if crate::stats::process_pending_group_stats_recalculation_task(&dbx)
+    crate::stats::process_pending_group_stats_recalculation_task(&dbx)
         .await
-        .c(h!())?
-    {
-        return Ok(last_calculated);
-    }
+        .c(h!())?;
 
     let log_suffix = if last_calculated
         + chrono::Duration::minutes(

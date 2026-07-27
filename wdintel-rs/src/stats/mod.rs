@@ -187,24 +187,9 @@ where
         return Ok(false);
     };
 
-    if merge_pending_group_stats_task(dbx, master_key, since_ts, till_ts)
-        .await
-        .c(h!())?
-    {
-        return Ok(true);
-    }
-
-    group_stats_recalculation_task::ActiveModel {
-        id: NotSet,
-        group_master_key: Set(master_key.to_string()),
-        since_ts: Set(since_ts),
-        till_ts: Set(till_ts),
-        started_at: Set(None),
-        completed_at: Set(None),
-        created_at: NotSet,
-        reason: Set(reason),
-    }
-    .insert(dbx)
+    enqueue_pending_group_stats_task(
+        dbx, master_key, since_ts, till_ts, reason,
+    )
     .await
     .c(h!())?;
 
@@ -247,68 +232,78 @@ where
     let Some(raw_since_ts) = window.since_ts else {
         return Ok(None);
     };
-    let Some(_raw_till_ts) = window.till_ts else {
+    let Some(raw_till_ts) = window.till_ts else {
         return Ok(None);
     };
 
     let since_ts = start_of_day(get_local_date(raw_since_ts)).c(h!())?;
-    let till_ts = Utc::now().naive_utc();
+    let till_ts = start_of_day(get_local_date(raw_till_ts) + Duration::days(1))
+        .c(h!())?
+        .min(Utc::now().naive_utc());
     if till_ts <= since_ts {
         return Ok(None);
     }
     Ok(Some((since_ts, till_ts)))
 }
 
-async fn merge_pending_group_stats_task<'a, C>(
+async fn enqueue_pending_group_stats_task<'a, C>(
     dbx: &'a C,
     master_key: &str,
     since_ts: NaiveDateTime,
     till_ts: NaiveDateTime,
-) -> Result<bool, AppError>
+    reason: String,
+) -> Result<(), AppError>
 where
     C: ConnectionTrait + 'a,
 {
-    let task = group_stats_recalculation_task::Entity::find()
-        .filter(
-            group_stats_recalculation_task::Column::GroupMasterKey
-                .eq(master_key),
+    let sql = r#"
+        insert into group_stats_recalculation_task (
+            group_master_key,
+            since_ts,
+            till_ts,
+            reason
         )
-        .filter(group_stats_recalculation_task::Column::CompletedAt.is_null())
-        .filter(group_stats_recalculation_task::Column::StartedAt.is_null())
-        .order_by_asc(group_stats_recalculation_task::Column::SinceTs)
-        .one(dbx)
-        .await
-        .c(h!())?;
-
-    if let Some(task) = task {
-        let merged_since_ts = task.since_ts.min(since_ts);
-        let merged_till_ts = task.till_ts.max(till_ts);
-        if merged_since_ts != task.since_ts || merged_till_ts != task.till_ts {
-            let mut task = task.into_active_model();
-            task.since_ts = Set(merged_since_ts);
-            task.till_ts = Set(merged_till_ts);
-            task.update(dbx).await.c(h!())?;
-        }
-        return Ok(true);
-    }
-
-    Ok(group_stats_recalculation_task::Entity::find()
-        .filter(
-            group_stats_recalculation_task::Column::GroupMasterKey
-                .eq(master_key),
-        )
-        .filter(group_stats_recalculation_task::Column::CompletedAt.is_null())
-        .filter(group_stats_recalculation_task::Column::SinceTs.lte(since_ts))
-        .filter(group_stats_recalculation_task::Column::TillTs.gte(till_ts))
-        .one(dbx)
-        .await
-        .c(h!())?
-        .is_some())
+        values ($1, $2, $3, $4)
+        on conflict ((true))
+            where completed_at is null and started_at is null
+        do update set
+            group_master_key = excluded.group_master_key,
+            since_ts = least(
+                group_stats_recalculation_task.since_ts,
+                excluded.since_ts
+            ),
+            till_ts = greatest(
+                group_stats_recalculation_task.till_ts,
+                excluded.till_ts
+            ),
+            reason = excluded.reason
+    "#;
+    dbx.execute(Statement::from_sql_and_values(
+        DatabaseBackend::Postgres,
+        sql,
+        vec![
+            master_key.into(),
+            since_ts.into(),
+            till_ts.into(),
+            reason.into(),
+        ],
+    ))
+    .await
+    .c(h!())?;
+    Ok(())
 }
 
 pub async fn process_pending_group_stats_recalculation_task(
     dbx: &DatabaseConnection,
 ) -> Result<bool, AppError> {
+    group_stats_recalculation_task::Entity::delete_many()
+        .filter(
+            group_stats_recalculation_task::Column::CompletedAt.is_not_null(),
+        )
+        .exec(dbx)
+        .await
+        .c(h!())?;
+
     let Some(task) = claim_pending_group_stats_recalculation_task(dbx)
         .await
         .c(h!())?
@@ -391,6 +386,18 @@ async fn recalculate_group_stats_task_by_day(
             break;
         }
         recalculate_group_stats(dbx, since_ts, till_ts, true, true)
+            .await
+            .c(h!())?;
+        group_stats_recalculation_task::Entity::update_many()
+            .col_expr(
+                group_stats_recalculation_task::Column::StartedAt,
+                Expr::value(Some(Utc::now().naive_utc())),
+            )
+            .filter(group_stats_recalculation_task::Column::Id.eq(task.id))
+            .filter(
+                group_stats_recalculation_task::Column::CompletedAt.is_null(),
+            )
+            .exec(dbx)
             .await
             .c(h!())?;
         since_ts = till_ts;
@@ -3886,6 +3893,55 @@ mod tests {
         }
     }
 
+    async fn mk_group_with_stats_message(
+        txn: &DatabaseTransaction,
+        master_key: &str,
+        message_ts: NaiveDateTime,
+    ) -> signal_group::Model {
+        let group = mk_signal_group(
+            txn,
+            signal_group::ActiveModel {
+                master_key: Set(master_key.to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let message = mk_signal_message(
+            txn,
+            signal_message::ActiveModel {
+                created_at: Set(message_ts),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        mk_signal_message_group(
+            txn,
+            signal_message_group::ActiveModel {
+                signal_message_id: Set(message.id),
+                group_master_key: Set(Some(group.master_key.clone())),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let message_ts_kyiv =
+            message_ts.and_utc().with_timezone(&chrono_tz::Europe::Kyiv);
+        mk_sigint_inbox_item(
+            txn,
+            sigint_inbox_item::ActiveModel {
+                id: Set(message.id),
+                date: Set(Some(message_ts_kyiv.format("%Y-%m-%d").to_string())),
+                time: Set(Some(message_ts_kyiv.format("%H:%M:%S").to_string())),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        group
+    }
+
     #[test]
     fn test_get_local_date() {
         let utc_date = NaiveDate::from_ymd_opt(2025, 6, 6).unwrap();
@@ -4117,48 +4173,10 @@ mod tests {
         let env = cleanup().await.unwrap();
         let txn = env.dbx.begin().await.unwrap();
 
-        let group = mk_signal_group(
-            &txn,
-            signal_group::ActiveModel {
-                master_key: Set("stats-recalc-group".to_string()),
-                ..Default::default()
-            },
-        )
-        .await
-        .unwrap();
         let message_ts = Utc::now().naive_utc() - Duration::days(3);
-        let msg = mk_signal_message(
-            &txn,
-            signal_message::ActiveModel {
-                created_at: Set(message_ts),
-                ..Default::default()
-            },
-        )
-        .await
-        .unwrap();
-        mk_signal_message_group(
-            &txn,
-            signal_message_group::ActiveModel {
-                signal_message_id: Set(msg.id),
-                group_master_key: Set(Some(group.master_key.clone())),
-                ..Default::default()
-            },
-        )
-        .await
-        .unwrap();
-        let message_ts_kyiv =
-            message_ts.and_utc().with_timezone(&chrono_tz::Europe::Kyiv);
-        mk_sigint_inbox_item(
-            &txn,
-            sigint_inbox_item::ActiveModel {
-                id: Set(msg.id),
-                date: Set(Some(message_ts_kyiv.format("%Y-%m-%d").to_string())),
-                time: Set(Some(message_ts_kyiv.format("%H:%M:%S").to_string())),
-                ..Default::default()
-            },
-        )
-        .await
-        .unwrap();
+        let group =
+            mk_group_with_stats_message(&txn, "stats-recalc-group", message_ts)
+                .await;
 
         let enqueued = enqueue_group_stats_recalculation_for_group_history(
             &txn,
@@ -4182,9 +4200,220 @@ mod tests {
             task.since_ts,
             start_of_day(get_local_date(message_ts)).unwrap()
         );
-        assert!(task.till_ts > message_ts);
+        assert_eq!(
+            task.till_ts,
+            start_of_day(get_local_date(message_ts) + Duration::days(1))
+                .unwrap()
+        );
 
         txn.rollback().await.unwrap();
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn test_enqueue_group_stats_recalculation_skips_empty_history() {
+        let env = cleanup().await.unwrap();
+        let group = mk_signal_group(
+            &env.dbx,
+            signal_group::ActiveModel {
+                master_key: Set("stats-recalc-empty-group".to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+        let enqueued = enqueue_group_stats_recalculation_for_group_history(
+            &env.dbx,
+            &group.master_key,
+            "test empty group stats enqueue".to_string(),
+        )
+        .await
+        .unwrap();
+
+        assert!(!enqueued);
+        assert_eq!(
+            group_stats_recalculation_task::Entity::find()
+                .count(&env.dbx)
+                .await
+                .unwrap(),
+            0
+        );
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn test_enqueue_group_stats_recalculation_merges_global_window() {
+        let env = cleanup().await.unwrap();
+        let txn = env.dbx.begin().await.unwrap();
+        let old_message_ts = Utc::now().naive_utc() - Duration::days(4);
+        let recent_message_ts = Utc::now().naive_utc() - Duration::days(2);
+        let old_group = mk_group_with_stats_message(
+            &txn,
+            "stats-recalc-old-group",
+            old_message_ts,
+        )
+        .await;
+        let recent_group = mk_group_with_stats_message(
+            &txn,
+            "stats-recalc-recent-group",
+            recent_message_ts,
+        )
+        .await;
+
+        for group in [&old_group, &recent_group] {
+            assert!(enqueue_group_stats_recalculation_for_group_history(
+                &txn,
+                &group.master_key,
+                format!("test global merge for {}", group.master_key),
+            )
+            .await
+            .unwrap());
+        }
+
+        let tasks = group_stats_recalculation_task::Entity::find()
+            .all(&txn)
+            .await
+            .unwrap();
+        assert_eq!(tasks.len(), 1);
+        assert_eq!(
+            tasks[0].since_ts,
+            start_of_day(get_local_date(old_message_ts)).unwrap()
+        );
+        assert_eq!(
+            tasks[0].till_ts,
+            start_of_day(get_local_date(recent_message_ts) + Duration::days(1))
+                .unwrap()
+        );
+
+        txn.rollback().await.unwrap();
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn test_enqueue_group_stats_recalculation_follows_running_task() {
+        let env = cleanup().await.unwrap();
+        let txn = env.dbx.begin().await.unwrap();
+        let message_ts = Utc::now().naive_utc() - Duration::days(3);
+        let running_group = mk_group_with_stats_message(
+            &txn,
+            "stats-recalc-running-group",
+            message_ts,
+        )
+        .await;
+        let changed_group = mk_group_with_stats_message(
+            &txn,
+            "stats-recalc-changed-group",
+            message_ts,
+        )
+        .await;
+        let since_ts = start_of_day(get_local_date(message_ts)).unwrap();
+        let till_ts =
+            start_of_day(get_local_date(message_ts) + Duration::days(1))
+                .unwrap();
+        group_stats_recalculation_task::ActiveModel {
+            group_master_key: Set(running_group.master_key),
+            since_ts: Set(since_ts),
+            till_ts: Set(till_ts),
+            started_at: Set(Some(Utc::now().naive_utc())),
+            reason: Set("running task".to_string()),
+            ..Default::default()
+        }
+        .insert(&txn)
+        .await
+        .unwrap();
+
+        assert!(enqueue_group_stats_recalculation_for_group_history(
+            &txn,
+            &changed_group.master_key,
+            "change during running task".to_string(),
+        )
+        .await
+        .unwrap());
+
+        let tasks = group_stats_recalculation_task::Entity::find()
+            .all(&txn)
+            .await
+            .unwrap();
+        assert_eq!(tasks.len(), 2);
+        assert_eq!(
+            tasks
+                .iter()
+                .filter(|task| task.started_at.is_none())
+                .count(),
+            1
+        );
+
+        txn.rollback().await.unwrap();
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn test_process_group_stats_recalculation_completes_and_cleans_task()
+    {
+        let env = cleanup().await.unwrap();
+        let txn = env.dbx.begin().await.unwrap();
+        let message_ts = Utc::now().naive_utc() - Duration::days(3);
+        let group = mk_group_with_stats_message(
+            &txn,
+            "stats-recalc-process-group",
+            message_ts,
+        )
+        .await;
+        let aor = mk_aor(
+            &txn,
+            area_of_responsibility::ActiveModel {
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        mk_signal_group_aor(
+            &txn,
+            signal_group_aor::ActiveModel {
+                master_key: Set(group.master_key.clone()),
+                aor_id: Set(aor.id),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        assert!(enqueue_group_stats_recalculation_for_group_history(
+            &txn,
+            &group.master_key,
+            "test task processing".to_string(),
+        )
+        .await
+        .unwrap());
+        txn.commit().await.unwrap();
+
+        assert!(process_pending_group_stats_recalculation_task(&env.dbx)
+            .await
+            .unwrap());
+        let task = group_stats_recalculation_task::Entity::find()
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(task.completed_at.is_some());
+        let aor_stats = stats_group_aor_id_5min::Entity::find()
+            .filter(stats_group_aor_id_5min::Column::AorId.eq(aor.id))
+            .all(&env.dbx)
+            .await
+            .unwrap();
+        assert_eq!(aor_stats.len(), 1);
+        assert_eq!(aor_stats[0].quantity, 1);
+
+        assert!(!process_pending_group_stats_recalculation_task(&env.dbx)
+            .await
+            .unwrap());
+        assert_eq!(
+            group_stats_recalculation_task::Entity::find()
+                .count(&env.dbx)
+                .await
+                .unwrap(),
+            0
+        );
     }
 
     #[serial]

@@ -181,17 +181,6 @@ pub async fn zones_datasources_group_add(
     )
     .await
     .c(h!())?;
-    crate::stats::enqueue_group_stats_recalculation_for_group_history(
-        &txn,
-        &szd.group_master_key,
-        format!(
-            "added group {} to zone datasource {}",
-            szd.group_master_key, szd.id
-        ),
-    )
-    .await
-    .c(h!())?;
-
     let allowed_users = bl::collect_direct_secret_group_users(
         vec![szd.group_master_key.clone()],
         &txn,

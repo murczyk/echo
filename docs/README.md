@@ -222,6 +222,16 @@ flowchart TB
     class api_vault_worker,bg_vault_worker,configured_workers,startup_workers optional
 ```
 
+`worker_calculate_group_stats` also owns historical group-stat recalculation.
+Changes to a group's AOR assignments enqueue the affected activity window in
+the PostgreSQL `group_stats_recalculation_task` table. Pending windows are
+coalesced globally because each recalculation rebuilds global statistics. The
+worker claims one task at a time, rebuilds it one local day at a time, refreshes
+the task lease after every day, and marks it complete; failed tasks are
+released for retry, stale leases can be reclaimed, and completed rows are
+removed on the next pass. The regular recent-stat refresh still runs after the
+queued work in the same worker iteration.
+
 ## GOI integration
 
 GOI integration is optional and configured per GOI instance in Echo. The
