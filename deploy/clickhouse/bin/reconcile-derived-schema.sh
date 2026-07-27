@@ -146,6 +146,7 @@ while IFS='|' read -r table index expression type granularity; do
     "$granularity"
 done <<'QUERY_INDEXES'
 sigint_inbox_item|echo_datetime_minmax_v1|datetime|minmax|1
+signal_message|echo_timestamp_minmax_v1|timestamp|minmax|1
 signal_message_group|echo_signal_message_id_minmax_v1|signal_message_id|minmax|1
 sigint_inbox_item_tag|echo_inbox_item_id_minmax_v1|sigint_inbox_item_id|minmax|1
 sigint_inbox_item_network|echo_inbox_item_id_minmax_v1|sigint_inbox_item_id|minmax|1
