@@ -1052,9 +1052,7 @@ describe('ManageMessageDrawer edit mode', () => {
     ) as HTMLTextAreaElement;
     expect(bodyField?.value).toBe('existing body');
 
-    // Suggested callsign from callsignsAlg2 should be offered.
-    expect(container.textContent).toContain('Запропоновані позивні');
-    expect(container.textContent).toContain('BRAVO');
+    expect(container.textContent).not.toContain('Запропоновані позивні');
 
     // Add a callsign via Enter in the ported callsign editor.
     act(() => {

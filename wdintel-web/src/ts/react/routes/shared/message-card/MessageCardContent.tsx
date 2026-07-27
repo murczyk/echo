@@ -60,6 +60,7 @@ export function MessageCardMessageBody({
   onCancelBotTagAction,
   onMarkBotTagWrong,
   analysisCallsignActions,
+  showCallsignAddForm = false,
   callsignInfoMap,
   networks,
   unitsMap,
@@ -81,6 +82,7 @@ export function MessageCardMessageBody({
   onCancelBotTagAction?: () => void;
   onMarkBotTagWrong?: (messageId: number, tagId: number) => void | Promise<void>;
   analysisCallsignActions?: AnalysisCallsignActions;
+  showCallsignAddForm?: boolean;
   callsignInfoMap?: Record<string, CallsignInfoRes>;
   networks?: Network[];
   unitsMap?: Record<number, Unit>;
@@ -344,6 +346,7 @@ export function MessageCardMessageBody({
           msg={msg}
           actions={analysisCallsignActions}
           callsignInfoMap={callsignInfoMap}
+          showAddForm={showCallsignAddForm}
         />
       ) : null}
     </div>

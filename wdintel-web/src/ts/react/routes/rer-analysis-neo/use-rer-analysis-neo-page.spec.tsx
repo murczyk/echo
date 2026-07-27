@@ -102,6 +102,7 @@ const baseAnalysisData = {
   loadGroupsActivity: vi.fn(),
   loadNewCallsigns: vi.fn(),
   loadNextPage: vi.fn(),
+  loadMoreMessages: vi.fn(),
   loadPrevPage: vi.fn(),
   loadMessagesForMap: vi.fn(),
   mapAttrs: {
@@ -187,6 +188,7 @@ function buildAnalysisData() {
     loadGroupsActivity: vi.fn(),
     loadNewCallsigns: vi.fn(),
     loadNextPage: vi.fn(),
+    loadMoreMessages: vi.fn(),
     loadPrevPage: vi.fn(),
     loadMessagesForMap: vi.fn(),
     downloadGeojson: vi.fn(),

@@ -85,6 +85,7 @@ export type UseAnalysisDataResult = {
   loadFirstPage: () => Promise<void>;
   loadLastPage: () => Promise<void>;
   loadNextPage: () => Promise<void>;
+  loadMoreMessages: () => Promise<boolean>;
   loadPrevPage: () => Promise<void>;
   loadMessagesForMap: (messageIds: number[]) => Promise<boolean>;
   mapAttrs: AnalysisMapAttrs;

@@ -3871,5 +3871,6 @@ export type UserDutySettingsDto = {
   analysisMapInSidebar: boolean;
   dutyAudioTranscriptionCollapsed: boolean;
   analysisAudioTranscriptionCollapsed: boolean;
+  showAnalysisCallsignAddForm: boolean;
 };
 

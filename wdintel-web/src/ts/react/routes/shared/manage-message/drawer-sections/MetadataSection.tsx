@@ -1,5 +1,5 @@
 import React from 'react';
-import { Box, TextField, Autocomplete, Stack, Typography, Chip } from '@mui/material';
+import { Box, TextField, Autocomplete, Stack } from '@mui/material';
 import { useFormContext, Controller } from 'react-hook-form';
 import { TimePicker } from '@mui/x-date-pickers/TimePicker';
 import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs';
@@ -13,12 +13,9 @@ import {
 } from '../manage-message-drawer.schema';
 
 type Props = {
-  isEditMode: boolean;
   showAdvanced: boolean;
   busy: boolean;
   recentValues: any;
-  getProposedCallsigns: (current: string[]) => string[];
-  addSuggestedCallsign: (callsign: string) => void;
   callsignOptions: string[];
   callsignLoading: boolean;
   setCallsignInput: (val: string) => void;
@@ -33,12 +30,9 @@ type Props = {
 };
 
 export function MetadataSection({
-  isEditMode,
   showAdvanced,
   busy,
   recentValues,
-  getProposedCallsigns,
-  addSuggestedCallsign,
   callsignOptions,
   callsignLoading,
   setCallsignInput,
@@ -214,27 +208,6 @@ export function MetadataSection({
                 )}
                 disabled={busy}
               />
-              {isEditMode &&
-                (() => {
-                  const proposed = getProposedCallsigns(field.value ?? []);
-                  return proposed.length > 0 ? (
-                    <Stack spacing={0.75}>
-                      <Typography variant="caption" color="text.secondary">
-                        Запропоновані позивні
-                      </Typography>
-                      <Stack direction="row" gap={1} flexWrap="wrap">
-                        {proposed.map((callsign) => (
-                          <Chip
-                            key={callsign}
-                            label={callsign}
-                            onClick={busy ? undefined : () => addSuggestedCallsign(callsign)}
-                            variant="filled"
-                          />
-                        ))}
-                      </Stack>
-                    </Stack>
-                  ) : null;
-                })()}
             </Stack>
           )}
         />

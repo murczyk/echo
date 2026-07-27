@@ -15816,6 +15816,7 @@ type alias UserDutySettingsDto =
     , analysisMapInSidebar : Bool
     , dutyAudioTranscriptionCollapsed : Bool
     , analysisAudioTranscriptionCollapsed : Bool
+    , showAnalysisCallsignAddForm : Bool
     }
 
 
@@ -15827,3 +15828,4 @@ userDutySettingsDtoDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "analysisMapInSidebar" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "dutyAudioTranscriptionCollapsed" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "analysisAudioTranscriptionCollapsed" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "showAnalysisCallsignAddForm" (Json.Decode.bool)))

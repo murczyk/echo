@@ -141,6 +141,16 @@ describe('AnalysisPaginationControl', () => {
     expect(view.container.textContent).toContain('41-57 з 137');
   });
 
+  it('renders only the active page range when previous messages are retained', async () => {
+    const view = await renderComponent({
+      ...baseProps(),
+      pageIndex: 1,
+      messagesCount: 40,
+    });
+    rendered.push(view);
+    expect(view.container.textContent).toContain('21-40 з 137');
+  });
+
   it('falls back to em dash while totals are loading', async () => {
     const view = await renderComponent(
       baseProps() && { ...baseProps(), totalCount: null, totalLoading: true },

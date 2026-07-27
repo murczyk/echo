@@ -42,6 +42,8 @@ pub struct UserDutySettingsDto {
     pub duty_audio_transcription_collapsed: bool,
     #[serde(default)]
     pub analysis_audio_transcription_collapsed: bool,
+    #[serde(default)]
+    pub show_analysis_callsign_add_form: bool,
 }
 
 impl Default for UserDutySettingsDto {
@@ -52,6 +54,7 @@ impl Default for UserDutySettingsDto {
             analysis_map_in_sidebar: false,
             duty_audio_transcription_collapsed: false,
             analysis_audio_transcription_collapsed: false,
+            show_analysis_callsign_add_form: false,
         }
     }
 }

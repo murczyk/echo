@@ -165,7 +165,10 @@ export function AnalysisPaginationControl({
   const isMessagesTab = centerTab === 'messages';
   const totalUnknown = loading || totalLoading || totalCount === null;
   const start = pageIndex * pageSize + 1;
-  const end = pageIndex * pageSize + messagesCount;
+  const end =
+    totalCount === null
+      ? pageIndex * pageSize + Math.min(messagesCount, pageSize)
+      : Math.min(pageIndex * pageSize + Math.min(messagesCount, pageSize), totalCount);
   let rangeText = '';
   if (totalUnknown) {
     rangeText = '— з —';

@@ -197,8 +197,10 @@ function buildProps(
     messages: [],
     networkDisplayMap: {},
     pageIndex: 0,
+    noMoreToLoad: false,
     onDeleteMessage: vi.fn(),
     onOpenEditor: vi.fn(),
+    onLoadMoreMessages: vi.fn().mockResolvedValue(true),
     onSaveMessageUpdate: vi.fn().mockResolvedValue(true),
     onSaveMessageComment: vi.fn(),
     onToggleMessageBookmark: vi.fn(),
@@ -210,6 +212,7 @@ function buildProps(
     tagsOrder: [],
     tagsLoading: false,
     tagsLayout: 'full',
+    showCallsignAddForm: false,
     ...overrides,
   };
 }
@@ -555,5 +558,20 @@ describe('AnalysisMessagesPane', () => {
     });
 
     expect(scrollBox?.scrollTop).toBe(0);
+  });
+
+  it('loads more messages from the button at the bottom of the list', async () => {
+    const onLoadMoreMessages = vi.fn().mockResolvedValue(true);
+    const view = await renderComponent(
+      buildProps({
+        messages: [[7, buildMessage()]],
+        onLoadMoreMessages,
+      }),
+    );
+    rendered.push(view);
+
+    await click(getButton(view.container, 'Завантажити ще'));
+
+    expect(onLoadMoreMessages).toHaveBeenCalledTimes(1);
   });
 });

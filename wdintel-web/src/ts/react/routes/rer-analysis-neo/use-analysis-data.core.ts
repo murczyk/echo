@@ -608,6 +608,7 @@ export function useAnalysisData({
     loadFirstPage: messageList.loadFirstPage,
     loadLastPage: messageList.loadLastPage,
     loadNextPage: messageList.loadNextPage,
+    loadMoreMessages: messageList.loadMoreMessages,
     loadPrevPage: messageList.loadPrevPage,
     loadMessagesForMap: mapData.loadMessagesForMap,
     mapAttrs: mapData.mapAttrs,

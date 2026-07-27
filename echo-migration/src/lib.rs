@@ -318,6 +318,7 @@ mod m20260727_075435_add_ai_engines;
 mod m20260727_094537_add_ai_callsign_parsing;
 mod m20260727_101425_propagate_network_callsign_full_name;
 mod m20260727_102348_add_ai_callsign_worker;
+mod m20260727_162911_add_analysis_callsign_form_setting;
 
 pub struct Migrator;
 
@@ -699,6 +700,9 @@ impl MigratorTrait for Migrator {
                 m20260727_101425_propagate_network_callsign_full_name::Migration,
             ),
             Box::new(m20260727_102348_add_ai_callsign_worker::Migration),
+            Box::new(
+                m20260727_162911_add_analysis_callsign_form_setting::Migration,
+            ),
         ]
     }
 }

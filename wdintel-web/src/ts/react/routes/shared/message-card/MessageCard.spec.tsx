@@ -1429,13 +1429,12 @@ describe('MessageCard', () => {
   it('renders analysis actions without timer and with analysis-only callsign controls', async () => {
     const onAddCallsign = vi.fn().mockResolvedValue(true);
     const onRemoveCallsign = vi.fn().mockResolvedValue(true);
-    const onAddSuggestedCallsign = vi.fn().mockResolvedValue(true);
     const view = await renderCard({
       displayMode: 'analysis',
+      showCallsignAddForm: true,
       analysisCallsignActions: {
         onAddCallsign,
         onRemoveCallsign,
-        onAddSuggestedCallsign,
       },
     });
     rendered.push(view);
@@ -1451,15 +1450,10 @@ describe('MessageCard', () => {
     expect(view.container.querySelector('button[aria-label="Виключити"]')).toBeNull();
     expect(view.container.querySelector('button[aria-label="Мінус"]')).toBeNull();
     expect(view.container.querySelector(`button[aria-label="${NAVIGATE_TITLE}"]`)).not.toBeNull();
-    const proposedCallsignsLabel = getMuiTypographyElementByText(
-      view.container,
-      'Запропоновані позивні',
-    );
-    expect(proposedCallsignsLabel.getAttribute('data-mui-variant')).toBe('caption');
-    expect(view.container.textContent).toContain('Запропоновані позивні');
+    expect(view.container.textContent).not.toContain('Запропоновані позивні');
     expect(view.container.querySelector('input[placeholder="Позивний"]')).not.toBeNull();
     expect(view.container.textContent).toContain('ALPHA');
-    expect(view.container.textContent).toContain('BRAVO');
+    expect(view.container.textContent).not.toContain('BRAVO');
     expect(view.container.textContent).toContain('перевірки вузького макета');
 
     const input = view.container.querySelector('input');
@@ -1477,13 +1471,21 @@ describe('MessageCard', () => {
     if (removeButton == null) throw new Error('remove button not found');
     await click(removeButton);
     expect(onRemoveCallsign).toHaveBeenCalledWith('ALPHA');
+  });
 
-    const suggestedButton = Array.from(view.container.querySelectorAll('button')).find((button) =>
-      button.textContent?.includes('BRAVO'),
-    );
-    if (suggestedButton == null) throw new Error('suggested button not found');
-    await click(suggestedButton);
-    expect(onAddSuggestedCallsign).toHaveBeenCalledWith('BRAVO');
+  it('hides the inline callsign form by default', async () => {
+    const view = await renderCard({
+      displayMode: 'analysis',
+      analysisCallsignActions: {
+        onAddCallsign: vi.fn().mockResolvedValue(true),
+        onRemoveCallsign: vi.fn().mockResolvedValue(true),
+      },
+    });
+    rendered.push(view);
+
+    expect(view.container.querySelector('input[placeholder="Позивний"]')).toBeNull();
+    expect(view.container.querySelector('button[aria-label="Додати позивний"]')).toBeNull();
+    expect(view.container.textContent).toContain('ALPHA');
   });
 
   it('orders duty toolbar actions as comment, important, bookmark, copy, edit, navigate, minus', async () => {
@@ -2107,7 +2109,6 @@ describe('MessageCard', () => {
       analysisCallsignActions: {
         onAddCallsign: vi.fn().mockResolvedValue(true),
         onRemoveCallsign: vi.fn().mockResolvedValue(true),
-        onAddSuggestedCallsign: vi.fn().mockResolvedValue(true),
       },
     });
     rendered.push(view);

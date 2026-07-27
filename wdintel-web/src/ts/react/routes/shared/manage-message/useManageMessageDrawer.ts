@@ -27,7 +27,6 @@ import { isPresent } from '../../../utils/misc';
 import {
   makeMessageSchema,
   EMPTY_FORM_VALUES,
-  normalizeCallsign,
   type MessageFormData,
 } from './manage-message-drawer.schema';
 import { MAX_MESSAGE_ATTACHMENTS, useMessageUppy } from './useMessageUppy';
@@ -450,20 +449,6 @@ export function useManageMessageDrawer({
     closeDrawerAfterSubmit();
   };
 
-  const getProposedCallsigns = (current: string[]): string[] => {
-    const present = new Set(current.map(normalizeCallsign));
-    return (editTarget?.message.callsignsAlg2 ?? [])
-      .map(normalizeCallsign)
-      .filter((item) => item.length > 0 && item.length <= 12 && !present.has(item))
-      .filter((item, index, list) => list.indexOf(item) === index);
-  };
-
-  const addSuggestedCallsign = (callsign: string) => {
-    const current = getValues('callsigns') ?? [];
-    if (current.some((item) => normalizeCallsign(item) === callsign)) return;
-    setValue('callsigns', [...current, callsign], { shouldDirty: true });
-  };
-
   const { onSubmit } = useMessageSubmit({
     busy,
     isEditMode,
@@ -530,8 +515,6 @@ export function useManageMessageDrawer({
     canSubmit,
     handleParse,
     handleDrawerClose,
-    getProposedCallsigns,
-    addSuggestedCallsign,
     onSubmit,
     recentValues,
   };

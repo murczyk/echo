@@ -96,6 +96,7 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
       analysisMapInSidebar: dutySettings.analysisMapInSidebar,
       dutyAudioTranscriptionCollapsed: dutySettings.dutyAudioTranscriptionCollapsed,
       analysisAudioTranscriptionCollapsed: dutySettings.analysisAudioTranscriptionCollapsed,
+      showAnalysisCallsignAddForm: dutySettings.showAnalysisCallsignAddForm,
       ...overrides,
     });
   };
@@ -310,6 +311,49 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
                       }}
                     />
                   ) : null}
+                  <Box
+                    sx={{
+                      border: 1,
+                      borderColor: 'divider',
+                      borderRadius: 2,
+                      bgcolor: 'background.paper',
+                      p: { xs: 2, sm: 2.5 },
+                    }}
+                  >
+                    <Stack spacing={1.5}>
+                      <Typography
+                        variant="overline"
+                        sx={{ color: 'text.secondary', letterSpacing: 0.8 }}
+                      >
+                        Позивні
+                      </Typography>
+                      <FormControlLabel
+                        sx={{
+                          alignItems: 'flex-start',
+                          m: 0,
+                          gap: 1.5,
+                          '& .MuiFormControlLabel-label': { width: '100%' },
+                        }}
+                        control={
+                          <Switch
+                            checked={dutySettings.showAnalysisCallsignAddForm}
+                            onChange={(_, checked) => {
+                              dutySettings.setShowAnalysisCallsignAddForm(checked);
+                              scheduleDutySettingsSave({
+                                showAnalysisCallsignAddForm: checked,
+                              });
+                            }}
+                            disabled={globalSettings.loadInProgress || dutySettings.loadInProgress}
+                          />
+                        }
+                        label={
+                          <Typography variant="body1" sx={{ fontWeight: 600, lineHeight: 1.35 }}>
+                            Відображати форму додавання позивного
+                          </Typography>
+                        }
+                      />
+                    </Stack>
+                  </Box>
                   <Box
                     sx={{
                       border: 1,

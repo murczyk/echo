@@ -227,18 +227,34 @@ async fn complete_job(
         return Ok(false);
     };
     let current: Vec<String> = inbox_item
+        .callsigns
+        .clone()
+        .map(serde_json::from_value)
+        .transpose()
+        .c(h!())?
+        .unwrap_or_default();
+    let suggested: Vec<String> = inbox_item
         .callsigns_alg2
         .clone()
         .map(serde_json::from_value)
         .transpose()
         .c(h!())?
         .unwrap_or_default();
-    let merged = merge_callsigns(current.clone(), callsigns);
-    let changed = merged != current;
+    let callsigns = normalize_callsigns(callsigns);
+    let callsigns_changed = callsigns != current;
+    let changed = callsigns_changed || !suggested.is_empty();
     if changed {
         let mut inbox_item = inbox_item.into_active_model();
+        if callsigns_changed {
+            inbox_item.callsigns =
+                Set(Some(serde_json::to_value(callsigns).c(h!())?));
+            inbox_item.callsign_tokens = Set(Some(
+                serde_json::to_value(Vec::<serde_json::Value>::new())
+                    .c(h!())?,
+            ));
+        }
         inbox_item.callsigns_alg2 =
-            Set(Some(serde_json::to_value(merged).c(h!())?));
+            Set(Some(serde_json::to_value(Vec::<String>::new()).c(h!())?));
         inbox_item.update(&transaction).await.c(h!())?;
     }
     delete_job(&transaction, sigint_inbox_item_id).await?;
@@ -284,22 +300,16 @@ where
     Ok(())
 }
 
-fn merge_callsigns(
-    current: Vec<String>,
-    ai_callsigns: Vec<String>,
-) -> Vec<String> {
-    let mut seen: HashSet<String> = current
-        .iter()
-        .map(|callsign| callsign.trim().to_lowercase())
-        .collect();
-    let mut merged = current;
-    for callsign in ai_callsigns {
+fn normalize_callsigns(callsigns: Vec<String>) -> Vec<String> {
+    let mut seen = HashSet::new();
+    let mut normalized = Vec::new();
+    for callsign in callsigns {
         let callsign = callsign.trim().to_lowercase();
         if !callsign.is_empty() && seen.insert(callsign.clone()) {
-            merged.push(callsign);
+            normalized.push(callsign);
         }
     }
-    merged
+    normalized
 }
 
 fn retry_delay_secs(attempts: i32) -> i64 {
@@ -318,19 +328,17 @@ fn truncate_error(error: String) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{merge_callsigns, retry_delay_secs};
+    use super::{normalize_callsigns, retry_delay_secs};
 
     #[test]
-    fn merges_ai_callsigns_as_lowercase_suggestions() {
+    fn normalizes_ai_callsigns_for_replacement() {
         assert_eq!(
-            merge_callsigns(
-                vec!["alpha".to_string()],
-                vec![
-                    " ALPHA ".to_string(),
-                    "BRAVO".to_string(),
-                    "".to_string()
-                ]
-            ),
+            normalize_callsigns(vec![
+                " ALPHA ".to_string(),
+                "BRAVO".to_string(),
+                "alpha".to_string(),
+                "".to_string()
+            ]),
             vec!["alpha", "bravo"]
         );
     }

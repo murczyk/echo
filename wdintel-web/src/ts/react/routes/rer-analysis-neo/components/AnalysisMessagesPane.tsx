@@ -136,10 +136,12 @@ type Props = {
   messages: Array<[number, InboxMessage]>;
   networkDisplayMap: Record<number, string>;
   pageIndex: number;
+  noMoreToLoad: boolean;
   onDeleteMessage: (messageId: number) => void;
   onCancelBotTagAction?: () => void;
   onMarkBotTagWrong?: (messageId: number, tagId: number) => void;
   onOpenEditor: (messageId: number) => void;
+  onLoadMoreMessages: () => Promise<boolean>;
   onOpenPointsOnMap: (etalons: string[], message: InboxMessage) => void;
   onSaveMessageUpdate: (
     messageId: number,
@@ -155,6 +157,7 @@ type Props = {
   tagsOrder: number[];
   tagsLoading: boolean;
   tagsLayout: TagsLayoutVariant;
+  showCallsignAddForm: boolean;
   searchText?: string | null;
   callsignInfoMap?: Record<string, CallsignInfoRes>;
   networks?: Network[];
@@ -192,6 +195,7 @@ type AnalysisMessageCardItemProps = {
   tagsOrder: number[];
   tagsLoading: boolean;
   tagsLayout: TagsLayoutVariant;
+  showCallsignAddForm: boolean;
   searchText?: string | null;
   callsignInfoMap?: Record<string, CallsignInfoRes>;
   networks?: Network[];
@@ -226,6 +230,7 @@ const AnalysisMessageCardItem = memo(function AnalysisMessageCardItem({
   tagsOrder,
   tagsLoading,
   tagsLayout,
+  showCallsignAddForm,
   searchText,
   callsignInfoMap,
   networks,
@@ -352,16 +357,8 @@ const AnalysisMessageCardItem = memo(function AnalysisMessageCardItem({
             ),
           }));
         },
-        onAddSuggestedCallsign: async (callsign) => {
-          return saveCallsignPatch((current) => {
-            const currentCallsigns = current.callsigns ?? [];
-            const nextCallsign = normalizeCallsign(callsign);
-            if (currentCallsigns.some((item) => normalizeCallsign(item) === nextCallsign))
-              return current;
-            return { ...current, callsigns: [...currentCallsigns, nextCallsign] };
-          });
-        },
       }}
+      showCallsignAddForm={showCallsignAddForm}
     />
   );
 });
@@ -378,10 +375,12 @@ function AnalysisMessagesPaneComponent({
   messages,
   networkDisplayMap,
   pageIndex,
+  noMoreToLoad,
   onDeleteMessage,
   onCancelBotTagAction,
   onMarkBotTagWrong,
   onOpenEditor,
+  onLoadMoreMessages,
   onOpenPointsOnMap,
   onSaveMessageUpdate,
   onSaveMessageComment,
@@ -394,6 +393,7 @@ function AnalysisMessagesPaneComponent({
   tagsOrder,
   tagsLoading,
   tagsLayout,
+  showCallsignAddForm,
   searchText,
   callsignInfoMap,
   networks,
@@ -410,6 +410,7 @@ function AnalysisMessagesPaneComponent({
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const referenceTimeMsRef = useRef<number | null>(Date.now());
   const copyFeedbackTimerRef = useRef<number | null>(null);
+  const preserveScrollOnPageChangeRef = useRef(false);
   const currentUserLogin = authUserName?.trim() || currentUser?.name?.trim() || null;
 
   useEffect(() => {
@@ -421,10 +422,25 @@ function AnalysisMessagesPaneComponent({
   }, [messages]);
 
   useEffect(() => {
+    if (preserveScrollOnPageChangeRef.current) {
+      preserveScrollOnPageChangeRef.current = false;
+      return;
+    }
     if (scrollContainerRef.current) {
       scrollContainerRef.current.scrollTop = 0;
     }
   }, [pageIndex]);
+
+  const handleLoadMoreMessages = useCallback(async () => {
+    preserveScrollOnPageChangeRef.current = true;
+    try {
+      const loaded = await onLoadMoreMessages();
+      if (!loaded) preserveScrollOnPageChangeRef.current = false;
+    } catch (error) {
+      preserveScrollOnPageChangeRef.current = false;
+      throw error;
+    }
+  }, [onLoadMoreMessages]);
 
   useEffect(() => {
     return () => {
@@ -550,6 +566,7 @@ function AnalysisMessagesPaneComponent({
               tagsOrder={tagsOrder}
               tagsLoading={tagsLoading}
               tagsLayout={tagsLayout}
+              showCallsignAddForm={showCallsignAddForm}
               searchText={searchText}
               callsignInfoMap={callsignInfoMap}
               networks={networks}
@@ -557,6 +574,17 @@ function AnalysisMessagesPaneComponent({
             />
           ))}
         </Box>
+        {!noMoreToLoad && messages.length > 0 ? (
+          <Box sx={{ display: 'flex', justifyContent: 'center', mt: 2, mb: 2 }}>
+            <Button
+              variant="outlined"
+              onClick={() => void handleLoadMoreMessages()}
+              disabled={loading || paginationLoading}
+            >
+              Завантажити ще
+            </Button>
+          </Box>
+        ) : null}
       </Box>
 
       {loading ? (

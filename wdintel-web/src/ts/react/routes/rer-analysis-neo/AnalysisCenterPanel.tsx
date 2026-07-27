@@ -198,10 +198,12 @@ export function AnalysisCenterPanel({
             messages={page.messages}
             networkDisplayMap={page.networkDisplayMap}
             pageIndex={page.pageIndex}
+            noMoreToLoad={page.noMoreToLoad}
             onDeleteMessage={page.onDeleteMessage}
             onCancelBotTagAction={page.onCancelBotTagAction}
             onMarkBotTagWrong={page.onMarkBotTagWrong}
             onOpenEditor={page.openEditor}
+            onLoadMoreMessages={page.loadMoreMessages}
             onOpenPointsOnMap={page.openPointsOnMap}
             onSaveMessageUpdate={page.saveMessageUpdate}
             onSaveMessageComment={page.onSaveMessageComment}
@@ -214,6 +216,7 @@ export function AnalysisCenterPanel({
             tagsOrder={page.tagsOrder}
             tagsLoading={page.filtersLoading && Object.keys(page.tagsMap).length === 0}
             tagsLayout={page.tagsLayout}
+            showCallsignAddForm={page.showAnalysisCallsignAddForm}
             searchText={page.queryState.search}
             callsignInfoMap={page.summaryCallsignsInfo}
             networks={page.networks}

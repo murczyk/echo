@@ -12,6 +12,7 @@ export type UserDutySettings = {
   analysisMapInSidebar: boolean;
   dutyAudioTranscriptionCollapsed: boolean;
   analysisAudioTranscriptionCollapsed: boolean;
+  showAnalysisCallsignAddForm: boolean;
 };
 
 type DutyTagsLayoutWire = DutyTagsLayout | 'full' | 'compact' | 'hidden';
@@ -21,11 +22,13 @@ type UserDutySettingsWire = Omit<
   | 'analysisMapInSidebar'
   | 'dutyAudioTranscriptionCollapsed'
   | 'analysisAudioTranscriptionCollapsed'
+  | 'showAnalysisCallsignAddForm'
 > & {
   tagsLayout: DutyTagsLayoutWire;
   analysisMapInSidebar?: boolean | null;
   dutyAudioTranscriptionCollapsed?: boolean | null;
   analysisAudioTranscriptionCollapsed?: boolean | null;
+  showAnalysisCallsignAddForm?: boolean | null;
 };
 
 function normalizeTagsLayout(tagsLayout: DutyTagsLayoutWire | null | undefined): TagsLayoutVariant {
@@ -64,6 +67,7 @@ function normalizeUserDutySettings(raw: UserDutySettingsWire): UserDutySettings 
     analysisMapInSidebar: raw.analysisMapInSidebar ?? false,
     dutyAudioTranscriptionCollapsed: raw.dutyAudioTranscriptionCollapsed ?? false,
     analysisAudioTranscriptionCollapsed: raw.analysisAudioTranscriptionCollapsed ?? false,
+    showAnalysisCallsignAddForm: raw.showAnalysisCallsignAddForm ?? false,
   };
 }
 
@@ -84,6 +88,7 @@ export async function saveUserSettings(
       analysisMapInSidebar: body.analysisMapInSidebar,
       dutyAudioTranscriptionCollapsed: body.dutyAudioTranscriptionCollapsed,
       analysisAudioTranscriptionCollapsed: body.analysisAudioTranscriptionCollapsed,
+      showAnalysisCallsignAddForm: body.showAnalysisCallsignAddForm,
     },
     { signal },
   );

@@ -1,14 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import AddIcon from '@mui/icons-material/Add';
-import {
-  CircularProgress,
-  IconButton,
-  Stack,
-  TextField,
-  Tooltip,
-  Typography,
-  Chip,
-} from '@mui/material';
+import { CircularProgress, IconButton, Stack, TextField, Tooltip } from '@mui/material';
 
 import type { CallsignInfoRes, InboxMessage } from '../../../../../Bindings';
 import { PowerChip } from '../../../components/PowerChip';
@@ -27,21 +19,16 @@ function uniqueNormalizedCallsigns(values: string[]): string[] {
   }, []);
 }
 
-function buildSuggestedCallsigns(msg: InboxMessage): string[] {
-  const current = new Set(uniqueNormalizedCallsigns(msg.callsigns ?? []));
-  return uniqueNormalizedCallsigns(msg.callsignsAlg2 ?? []).filter(
-    (callsign) => callsign.length <= 12 && !current.has(callsign),
-  );
-}
-
 export function MessageCardCallsignsSection({
   msg,
   actions,
   callsignInfoMap,
+  showAddForm,
 }: {
   msg: InboxMessage;
   actions: AnalysisCallsignActions;
   callsignInfoMap?: Record<string, CallsignInfoRes>;
+  showAddForm: boolean;
 }) {
   const [callsignDraft, setCallsignDraft] = useState('');
   const [addingCallsign, setAddingCallsign] = useState(false);
@@ -53,7 +40,6 @@ export function MessageCardCallsignsSection({
     () => (callsignInfoMap ? currentCallsigns : currentCallsigns),
     [callsignInfoMap, currentCallsigns],
   );
-  const proposedCallsigns = useMemo(() => buildSuggestedCallsigns(msg), [msg]);
   const messageResetKey = msg.messageUid ?? `${msg.timestamp ?? ''}-${msg.text ?? ''}`;
 
   useEffect(() => {
@@ -103,63 +89,49 @@ export function MessageCardCallsignsSection({
               />
             ))
           : null}
-        <TextField
-          size="small"
-          value={callsignDraft}
-          placeholder="Позивний"
-          autoComplete="off"
-          onChange={(event) => setCallsignDraft(event.target.value.toUpperCase())}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter') {
-              event.preventDefault();
-              void addCallsign();
-            }
-          }}
-          inputProps={{ autoComplete: 'off', spellCheck: false, maxLength: 12 }}
-          sx={{
-            width: { xs: '100%', sm: 132 },
-            minWidth: 108,
-            flex: '0 1 132px',
-            '& .MuiInputBase-root': { height: 30, borderRadius: 1, fontSize: 12 },
-            '& .MuiInputBase-input': { py: 0, px: 1, lineHeight: '30px' },
-          }}
-        />
-        <Tooltip title="Додати позивний" enterDelay={300}>
-          <span>
-            <IconButton
-              aria-label="Додати позивний"
-              onClick={() => void addCallsign()}
-              disabled={normalizeCallsign(callsignDraft) === '' || addingCallsign}
+        {showAddForm ? (
+          <>
+            <TextField
               size="small"
-              sx={{ width: 30, height: 30, flexShrink: 0, ml: 0.25 }}
-            >
-              {addingCallsign ? (
-                <CircularProgress size={16} thickness={5} color="inherit" />
-              ) : (
-                <AddIcon fontSize="small" />
-              )}
-            </IconButton>
-          </span>
-        </Tooltip>
+              value={callsignDraft}
+              placeholder="Позивний"
+              autoComplete="off"
+              onChange={(event) => setCallsignDraft(event.target.value.toUpperCase())}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') {
+                  event.preventDefault();
+                  void addCallsign();
+                }
+              }}
+              inputProps={{ autoComplete: 'off', spellCheck: false, maxLength: 12 }}
+              sx={{
+                width: { xs: '100%', sm: 132 },
+                minWidth: 108,
+                flex: '0 1 132px',
+                '& .MuiInputBase-root': { height: 30, borderRadius: 1, fontSize: 12 },
+                '& .MuiInputBase-input': { py: 0, px: 1, lineHeight: '30px' },
+              }}
+            />
+            <Tooltip title="Додати позивний" enterDelay={300}>
+              <span>
+                <IconButton
+                  aria-label="Додати позивний"
+                  onClick={() => void addCallsign()}
+                  disabled={normalizeCallsign(callsignDraft) === '' || addingCallsign}
+                  size="small"
+                  sx={{ width: 30, height: 30, flexShrink: 0, ml: 0.25 }}
+                >
+                  {addingCallsign ? (
+                    <CircularProgress size={16} thickness={5} color="inherit" />
+                  ) : (
+                    <AddIcon fontSize="small" />
+                  )}
+                </IconButton>
+              </span>
+            </Tooltip>
+          </>
+        ) : null}
       </Stack>
-
-      {proposedCallsigns.length > 0 ? (
-        <Stack spacing={0.75}>
-          <Typography variant="caption" color="text.secondary">
-            Запропоновані позивні
-          </Typography>
-          <Stack direction="row" gap={1} flexWrap="wrap">
-            {proposedCallsigns.map((callsign) => (
-              <Chip
-                key={callsign}
-                label={callsign}
-                onClick={() => void actions.onAddSuggestedCallsign(callsign)}
-                variant="filled"
-              />
-            ))}
-          </Stack>
-        </Stack>
-      ) : null}
     </Stack>
   );
 }

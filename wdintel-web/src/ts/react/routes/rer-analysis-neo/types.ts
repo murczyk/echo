@@ -150,6 +150,7 @@ export type AnalysisPageState = {
   aorEntries: AnalysisAorEntry[];
   canResetFilters: boolean;
   analysisMapInSidebar: boolean;
+  showAnalysisCallsignAddForm: boolean;
   centerTab: AnalysisCenterTab;
   centerTabPending: boolean;
   counts: CountStatsRsp | null;
@@ -248,6 +249,7 @@ export type AnalysisPageActions = {
   loadFirstPage: () => Promise<void>;
   loadLastPage: () => Promise<void>;
   loadNextPage: () => Promise<void>;
+  loadMoreMessages: () => Promise<boolean>;
   loadPrevPage: () => Promise<void>;
   loadMessagesForMap: (messageIds: number[]) => Promise<boolean>;
   loadNewCallsigns: () => Promise<void>;
