@@ -11,6 +11,7 @@
 ## NEXT
 
 - [#2308](https://github.com/echoua/echo/issues/2308) 🐞👷 Аналіз: пришвидшено PostgreSQL fallback для статистики тегів із фільтром за підрозділом; на великих БД перед деплоєм створити індекс без блокування запису: `sudo -u postgres psql -d wd -v ON_ERROR_STOP=1 -c "create index concurrently if not exists sigint_inbox_item_unit_v2_datetime_idx on sigint_inbox_item (unit_v2, datetime) include (id) where unit_v2 is not null and unit_v2 <> '';"`.
+- [#1874](https://github.com/echoua/echo/issues/1874) 🛡️ Адмін, Месенджери: додано редагування та автоматичний підбір унікальної назви systemd unit під час прив’язування акаунту.
 - [#2866](https://github.com/echoua/echo/issues/2866) 🐞 Оперативний, Аналіз: виправлено відображення позивних в картці повідомлення.
 - [#2828](https://github.com/echoua/echo/issues/2828) 🐞 Мережа: додано пропущене поле ПІП на сторінці позивних.
 - [#2308](https://github.com/echoua/echo/issues/2308) ✅👷 Аналіз, Звіти: лічильник вхідних, лічильники й усі списки фільтрів аналізу, довгі таймлайни, історія звітів та великі вибірки звітів використовують ClickHouse з автоматичним fallback на PostgreSQL; перед деплоєм на інстанси з ClickHouse перебудувати та скопіювати артефакти з `deploy/clickhouse`, виконати `bin/install-artifacts.sh build/artifacts` на відповідному analytics LXC, перезапустити `postgresql@18-main.service`, а після деплою Echo виконати `/opt/echo-peerdb/bin/source-sync-exclusions.sh --yes`, щоб додати `report_history` до дзеркала.

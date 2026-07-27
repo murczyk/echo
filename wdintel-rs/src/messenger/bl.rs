@@ -156,11 +156,7 @@ pub async fn link_account(
     txn: &DatabaseTransaction,
     login: &Uuid,
 ) -> Result<EchoAccountF1, AppError> {
-    if !is_valid_service_name(system_service_name) {
-        return Err(AppError::BL {
-            msg: format!("Invalid system service name: {system_service_name}"),
-        });
-    }
+    validate_system_service_name(system_service_name)?;
     let source =
         EchoMessageSource::try_from_value(&source.to_string()).c(h!())?;
 
@@ -307,6 +303,7 @@ pub async fn available_system_service_name<C>(
 where
     C: ConnectionTrait,
 {
+    validate_system_service_name(system_service_name)?;
     let messenger = messenger.to_lowercase();
     let source = EchoMessageSource::try_from_value(&messenger).c(h!())?;
     for candidate_number in 1..=MESSENGER_SYSTEM_SERVICE_NAME_CANDIDATE_LIMIT {
@@ -520,7 +517,11 @@ async fn link_existing_datasource(
         .c(h!())?;
     let phone_number = datasource.signal_phone.c(h!())?;
     let process_name =
-        transliterate_and_slugify(&datasource.display_name.to_lowercase());
+        generated_system_service_name(&datasource.display_name, datasource.id);
+    let process_name =
+        available_system_service_name(&process_name, &datasource.kind, txn)
+            .await
+            .c(h!())?;
     let aor_id = match datasource.default_aor_id {
         Some(id) => id,
         None => load_default_aor(txn).await.c(h!())?.id,
@@ -734,16 +735,31 @@ where
     Ok(datasources)
 }
 
-fn is_valid_service_name(s: &str) -> bool {
-    if s.len() < 4 {
-        return false; // too short
+pub fn validate_system_service_name(
+    system_service_name: &str,
+) -> Result<(), AppError> {
+    if system_service_name.len() < 4 {
+        return Err(AppError::BL {
+            msg: "Назва systemd unit має бути мінімум 4 символи".to_string(),
+        });
     }
-    s.chars().all(|c| {
-        c.is_ascii_lowercase() || // Lowercase Latin symbols (a-z)
-            c.is_ascii_digit() ||    // Numbers (0-9)
-            c == '-' ||              // Dash (-)
-            c == '_' // Underscore (_)
-    })
+    if system_service_name.len() > MESSENGER_SYSTEM_SERVICE_NAME_MAX_LEN {
+        return Err(AppError::BL {
+            msg: format!(
+                "Назва systemd unit має бути максимум {MESSENGER_SYSTEM_SERVICE_NAME_MAX_LEN} символів"
+            ),
+        });
+    }
+    if !system_service_name
+        .chars()
+        .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+    {
+        return Err(AppError::BL {
+            msg: "Назва systemd unit може містити лише малі латинські літери, цифри та дефіс"
+                .to_string(),
+        });
+    }
+    Ok(())
 }
 
 fn parse_message_source(messenger: &str) -> anyhow::Result<MessageSource> {
@@ -979,6 +995,24 @@ pub fn transliterate_and_slugify(input: &str) -> String {
     result.trim().replace(' ', "-")
 }
 
+fn generated_system_service_name(
+    display_name: &str,
+    datasource_id: i64,
+) -> String {
+    let system_service_name =
+        transliterate_and_slugify(&display_name.to_lowercase());
+    let system_service_name = if system_service_name.len() < 4 {
+        format!("account-{datasource_id}")
+    } else {
+        system_service_name
+    };
+    system_service_name[..system_service_name
+        .len()
+        .min(MESSENGER_SYSTEM_SERVICE_NAME_MAX_LEN)]
+        .trim_end_matches('-')
+        .to_string()
+}
+
 pub async fn sync_signal_once(client_name: String, config: Config) {
     let db = match new_pg_pool_from_config(&config).await.c(h!()) {
         Ok(db) => db,
@@ -1019,5 +1053,30 @@ mod system_service_name_tests {
 
         assert_eq!(candidate.len(), MESSENGER_SYSTEM_SERVICE_NAME_MAX_LEN);
         assert!(candidate.ends_with("-2"));
+    }
+
+    #[test]
+    fn validates_system_service_name_format_and_length() {
+        assert!(validate_system_service_name("echo-kherson-2").is_ok());
+        assert!(validate_system_service_name("abc").is_err());
+        assert!(validate_system_service_name("Echo-kherson").is_err());
+        assert!(validate_system_service_name("echo_kherson").is_err());
+        assert!(validate_system_service_name(
+            &"a".repeat(MESSENGER_SYSTEM_SERVICE_NAME_MAX_LEN + 1)
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn normalizes_generated_system_service_names() {
+        assert_eq!(
+            generated_system_service_name("ЕХО Херсон", 42),
+            "ekho-kherson"
+        );
+        assert_eq!(generated_system_service_name("123", 42), "account-42");
+
+        let name = generated_system_service_name(&"а".repeat(100), 42);
+        assert_eq!(name.len(), MESSENGER_SYSTEM_SERVICE_NAME_MAX_LEN);
+        assert!(validate_system_service_name(&name).is_ok());
     }
 }

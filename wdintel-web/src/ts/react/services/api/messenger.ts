@@ -62,6 +62,11 @@ type SystemServiceNameAvailabilityReqBody = {
   system_service_name: string;
 };
 
+type SystemServiceNameAvailabilityRspBody = {
+  system_service_name: string;
+  exists: boolean;
+};
+
 type LinkEchoOperatorReqBody = {
   api_login: string;
   api_endpoint: string;
@@ -376,11 +381,15 @@ export async function getSystemServiceNameAvailability(
   req: SystemServiceNameAvailabilityReq,
   signal?: AbortSignal,
 ): Promise<SystemServiceNameAvailabilityRsp> {
-  return postJson<SystemServiceNameAvailabilityRsp>(
+  const rsp = await postJson<SystemServiceNameAvailabilityRspBody>(
     '/api/messenger/system-service-name-availability',
     toSystemServiceNameAvailabilityReqBody(req),
     { signal },
   );
+  return {
+    systemServiceName: rsp.system_service_name,
+    exists: rsp.exists,
+  };
 }
 
 export async function linkOperator(req: LinkEchoOperatorReq): Promise<LinkAccountRsp> {

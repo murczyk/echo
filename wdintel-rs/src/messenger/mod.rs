@@ -291,7 +291,7 @@ pub async fn link(
         .await?;
     let login = login_id_from_identity(&user)?;
     let txn = env.dbx.begin().await.cae(h!())?;
-    valid_system_service_name(&req.system_service_name)?;
+    bl::validate_system_service_name(&req.system_service_name)?;
     valid_phone_number(&req.phone)?;
     let signal_cli_mode = if req.messenger.eq_ignore_ascii_case("signal") {
         parse_signal_cli_mode(req.signal_cli_mode.as_deref())?
@@ -324,7 +324,7 @@ pub async fn system_service_name_availability(
 ) -> Result<Json<SystemServiceNameAvailabilityRsp>, AppError> {
     has_any_role(&env.dbx, &login_id_from_identity(&user)?, vec!["Admin"])
         .await?;
-    valid_system_service_name(&req.system_service_name)?;
+    bl::validate_system_service_name(&req.system_service_name)?;
     let system_service_name = bl::available_system_service_name(
         &req.system_service_name,
         &req.messenger,
@@ -376,32 +376,6 @@ pub async fn link_operator(
     let account = load_echo_account(new_datasource_id, &txn).await.c(h!())?;
     txn.commit().await.cae(h!())?;
     Ok(Json(LinkAccountRsp { account }))
-}
-
-fn valid_system_service_name(x: &str) -> Result<(), AppError> {
-    if x.len() < 4 {
-        return Err(AppError::BL {
-            msg: "Назва systemd unit має бути мінімум 4 символи".to_string(),
-        });
-    }
-    if x.len() > crate::config::MESSENGER_SYSTEM_SERVICE_NAME_MAX_LEN {
-        return Err(AppError::BL {
-            msg: format!(
-                "Назва systemd unit має бути максимум {} символів",
-                crate::config::MESSENGER_SYSTEM_SERVICE_NAME_MAX_LEN
-            ),
-        });
-    }
-    lazy_static! {
-        static ref RE: Regex = Regex::new(r"^[a-z0-9-]+$").unwrap();
-    }
-    if !RE.is_match(x) {
-        let msg =
-            "Назва systemd unit може містити лише малі латинські літери, цифри та дефіс"
-                .to_string();
-        return Err(AppError::BL { msg });
-    };
-    Ok(())
 }
 
 fn valid_phone_number(x: &str) -> Result<(), AppError> {
