@@ -916,6 +916,7 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::messenger::edit)
             .service(crate::messenger::unlink)
             .service(crate::messenger::link)
+            .service(crate::messenger::system_service_name_availability)
             .service(crate::messenger::link_operator)
             .service(crate::messenger::group_update)
             .service(crate::operator::message_submit)

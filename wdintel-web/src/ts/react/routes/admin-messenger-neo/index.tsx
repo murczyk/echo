@@ -13,6 +13,7 @@ import {
   DialogContent,
   DialogTitle,
   Drawer,
+  InputAdornment,
   MenuItem,
   Stack,
   Tab,
@@ -67,6 +68,7 @@ import {
   editAccount,
   getQrCode,
   fetchAccountStatsTimeline,
+  getSystemServiceNameAvailability,
   isLinked,
   linkAccount,
   linkOperator,
@@ -133,6 +135,7 @@ type PhoneForm = {
   signalCliMode: SignalCliMode;
   phoneNumber: string;
   name: string;
+  systemServiceName: string;
   description: string;
   aorId: number | null;
 };
@@ -217,6 +220,7 @@ const defaultPhoneForm: PhoneForm = {
   signalCliMode: 'Normal',
   phoneNumber: '',
   name: '',
+  systemServiceName: '',
   description: '',
   aorId: null,
 };
@@ -314,6 +318,19 @@ function validateDisplayName(name: string): string | null {
   if (name.trim().length < 2) return 'Назва акаунту має бути мінімум 2 символи';
   if (name.trim().length > 50) return 'Назва акаунту має бути максимум 50 символів';
   return null;
+}
+
+function validateSystemServiceName(name: string): string | null {
+  if (name.length < 4) return 'Назва systemd unit має бути мінімум 4 символи';
+  if (name.length > 50) return 'Назва systemd unit має бути максимум 50 символів';
+  if (!/^[a-z0-9-]+$/.test(name)) {
+    return 'Дозволені лише малі латинські літери, цифри та дефіс';
+  }
+  return null;
+}
+
+function getSystemServicePrefix(messengerType: string): string {
+  return messengerType === 'whatsapp' ? 'echo-whatsapp-bot@' : 'echo-signal-bot@';
 }
 
 function validateAorId(aorId: number | null): string | null {
@@ -827,6 +844,7 @@ function AdminMessengerAccountsSection() {
   const [linkStep, setLinkStep] = useState<LinkStep>('form');
   const [linkSidebarOpen, setLinkSidebarOpen] = useState(false);
   const [phoneForm, setPhoneForm] = useState<PhoneForm>(defaultPhoneForm);
+  const [isSystemServiceNameEdited, setIsSystemServiceNameEdited] = useState(false);
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
   const [qrData, setQrData] = useState<QrData | null>(null);
   const [linkSuccessAccount, setLinkSuccessAccount] = useState<EchoAccountF1 | null>(null);
@@ -903,6 +921,53 @@ function AdminMessengerAccountsSection() {
   }, []);
 
   useEffect(() => {
+    if (
+      !linkSidebarOpen ||
+      linkStep !== 'form' ||
+      isSystemServiceNameEdited ||
+      !phoneForm.name.trim()
+    ) {
+      return;
+    }
+
+    const abortController = new AbortController();
+    const timeoutId = window.setTimeout(async () => {
+      const systemServiceName = normalizeToSystemName(phoneForm.name);
+      try {
+        const availability = await getSystemServiceNameAvailability(
+          {
+            messenger: phoneForm.messengerType,
+            systemServiceName,
+          },
+          abortController.signal,
+        );
+        setPhoneForm((prev) => ({
+          ...prev,
+          systemServiceName: availability.systemServiceName,
+        }));
+        setFormErrors((prev) => ({ ...prev, systemServiceName: '' }));
+      } catch (error) {
+        if (abortController.signal.aborted) return;
+        setFormErrors((prev) => ({
+          ...prev,
+          systemServiceName: `Помилка перевірки назви: ${formatErrorMessage(error)}`,
+        }));
+      }
+    }, 250);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+      abortController.abort();
+    };
+  }, [
+    isSystemServiceNameEdited,
+    linkSidebarOpen,
+    linkStep,
+    phoneForm.messengerType,
+    phoneForm.name,
+  ]);
+
+  useEffect(() => {
     if (linkStep !== 'qr' || !qrData) return;
 
     const intervalId = window.setInterval(async () => {
@@ -930,6 +995,7 @@ function AdminMessengerAccountsSection() {
     setLinkStep('form');
     setLinkSidebarOpen(false);
     setPhoneForm(defaultPhoneForm);
+    setIsSystemServiceNameEdited(false);
     setFormErrors({});
     setQrData(null);
     setLinkSuccessAccount(null);
@@ -942,6 +1008,9 @@ function AdminMessengerAccountsSection() {
     setLinkStatus(null);
     setLinkSuccessAccount(null);
     setQrData(null);
+    setPhoneForm(defaultPhoneForm);
+    setFormErrors({});
+    setIsSystemServiceNameEdited(false);
   }
 
   function closeLinkSidebar() {
@@ -991,6 +1060,9 @@ function AdminMessengerAccountsSection() {
     const nameError = validateDisplayName(phoneForm.name);
     if (nameError) errors.displayName = nameError;
 
+    const systemServiceNameError = validateSystemServiceName(phoneForm.systemServiceName);
+    if (systemServiceNameError) errors.systemServiceName = systemServiceNameError;
+
     const aorError = validateAorId(phoneForm.aorId);
     if (aorError) errors.aorId = aorError;
 
@@ -1004,11 +1076,37 @@ function AdminMessengerAccountsSection() {
       return;
     }
 
+    setIsMutating(true);
+    setLinkStatus(null);
+
+    try {
+      const availability = await getSystemServiceNameAvailability({
+        messenger: phoneForm.messengerType,
+        systemServiceName: phoneForm.systemServiceName,
+      });
+      if (availability.exists) {
+        setFormErrors((prev) => ({
+          ...prev,
+          systemServiceName: `Systemd unit «${getSystemServicePrefix(phoneForm.messengerType)}${phoneForm.systemServiceName}» вже існує`,
+        }));
+        return;
+      }
+      setFormErrors((prev) => ({ ...prev, systemServiceName: '' }));
+    } catch (error) {
+      setFormErrors((prev) => ({
+        ...prev,
+        systemServiceName: `Помилка перевірки назви: ${formatErrorMessage(error)}`,
+      }));
+      return;
+    } finally {
+      setIsMutating(false);
+    }
+
     const request: LinkAccountReq = {
       messenger: phoneForm.messengerType,
       phone: phoneForm.phoneNumber,
       displayName: phoneForm.name.trim(),
-      systemServiceName: normalizeToSystemName(phoneForm.name),
+      systemServiceName: phoneForm.systemServiceName,
       signalCliMode: phoneForm.signalCliMode,
       description: normalizeDescription(phoneForm.description),
       aorId: phoneForm.aorId,
@@ -1028,10 +1126,15 @@ function AdminMessengerAccountsSection() {
       setLinkStep('qr');
       await fetchQrCode(rsp.account.id);
     } catch (error) {
-      setLinkStatus({
-        kind: 'error',
-        message: `Помилка прив'язування акаунту: ${formatErrorMessage(error)}`,
-      });
+      const message = formatErrorMessage(error);
+      if (message.toLowerCase().includes('systemd unit')) {
+        setFormErrors((prev) => ({ ...prev, systemServiceName: message }));
+      } else {
+        setLinkStatus({
+          kind: 'error',
+          message: `Помилка прив'язування акаунту: ${message}`,
+        });
+      }
     } finally {
       setIsMutating(false);
     }
@@ -1258,12 +1361,13 @@ function AdminMessengerAccountsSection() {
                   select
                   label="Тип месенджера"
                   value={phoneForm.messengerType}
-                  onChange={(event) =>
+                  onChange={(event) => {
                     setPhoneForm((prev) => ({
                       ...prev,
                       messengerType: event.target.value,
-                    }))
-                  }
+                    }));
+                    setFormErrors((prev) => ({ ...prev, systemServiceName: '' }));
+                  }}
                   fullWidth
                 >
                   <MenuItem value="signal">Signal</MenuItem>
@@ -1310,12 +1414,42 @@ function AdminMessengerAccountsSection() {
                       setPhoneForm((prev) => ({
                         ...prev,
                         name: event.target.value,
+                        systemServiceName: isSystemServiceNameEdited
+                          ? prev.systemServiceName
+                          : normalizeToSystemName(event.target.value),
                       }));
                       setFormErrors((prev) => ({ ...prev, displayName: '' }));
                     }}
                     error={Boolean(formErrors.displayName)}
                     helperText={formErrors.displayName}
                     fullWidth
+                  />
+                </div>
+                <div className="pt-6">
+                  <TextField
+                    label="Назва systemd unit"
+                    value={phoneForm.systemServiceName}
+                    onChange={(event) => {
+                      setIsSystemServiceNameEdited(true);
+                      setPhoneForm((prev) => ({
+                        ...prev,
+                        systemServiceName: event.target.value,
+                      }));
+                      setFormErrors((prev) => ({ ...prev, systemServiceName: '' }));
+                    }}
+                    error={Boolean(formErrors.systemServiceName)}
+                    helperText={formErrors.systemServiceName}
+                    fullWidth
+                    slotProps={{
+                      input: {
+                        startAdornment: (
+                          <InputAdornment position="start">
+                            {getSystemServicePrefix(phoneForm.messengerType)}
+                          </InputAdornment>
+                        ),
+                      },
+                      inputLabel: { shrink: true },
+                    }}
                   />
                 </div>
               </div>

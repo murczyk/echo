@@ -172,6 +172,11 @@ pub async fn link_account(
             (echo_im::types::MessageSource::Whatsapp, WHATSAPP_UNIT_NAME)
         }
     };
+    lock_system_service_name(system_service_name, txn)
+        .await
+        .c(h!())?;
+    ensure_system_service_name_available(system_service_name, &source, txn)
+        .await?;
     let unit_name = format!("{src_name}@{system_service_name}");
     let accounts = list_echo_accounts(None, txn).await.c(h!())?;
     let existing_account = accounts
@@ -292,6 +297,119 @@ pub async fn link_account(
     };
 
     load_echo_account(id, txn).await
+}
+
+pub async fn available_system_service_name<C>(
+    system_service_name: &str,
+    messenger: &str,
+    db: &C,
+) -> Result<String, AppError>
+where
+    C: ConnectionTrait,
+{
+    let messenger = messenger.to_lowercase();
+    let source = EchoMessageSource::try_from_value(&messenger).c(h!())?;
+    for candidate_number in 1..=MESSENGER_SYSTEM_SERVICE_NAME_CANDIDATE_LIMIT {
+        let candidate = system_service_name_with_suffix(
+            system_service_name,
+            candidate_number,
+        );
+        if !system_service_name_exists(&candidate, &source, db).await? {
+            return Ok(candidate);
+        }
+    }
+    Err(AppError::BL {
+        msg: "Не вдалося знайти вільну назву systemd unit".to_string(),
+    })
+}
+
+async fn ensure_system_service_name_available<C>(
+    system_service_name: &str,
+    source: &EchoMessageSource,
+    db: &C,
+) -> Result<(), AppError>
+where
+    C: ConnectionTrait,
+{
+    if system_service_name_exists(system_service_name, source, db).await? {
+        return Err(AppError::BL {
+            msg: format!(
+                "Systemd unit «{}» вже існує",
+                full_system_service_name(system_service_name, source)
+            ),
+        });
+    }
+    Ok(())
+}
+
+async fn system_service_name_exists<C>(
+    system_service_name: &str,
+    source: &EchoMessageSource,
+    db: &C,
+) -> Result<bool, AppError>
+where
+    C: ConnectionTrait,
+{
+    let unit_name = full_system_service_name(system_service_name, source);
+    let exists = echo_client_config::Entity::find()
+        .join(
+            JoinType::InnerJoin,
+            echo_client_config::Relation::EchoClient.def(),
+        )
+        .filter(
+            Condition::any()
+                .add(echo_client_config::Column::ProcessName.eq(unit_name))
+                .add(
+                    echo_client::Column::Name
+                        .eq(system_service_name.to_string()),
+                ),
+        )
+        .one(db)
+        .await
+        .c(h!())?
+        .is_some();
+    Ok(exists)
+}
+
+async fn lock_system_service_name(
+    system_service_name: &str,
+    txn: &DatabaseTransaction,
+) -> Result<(), AppError> {
+    txn.query_one(Statement::from_sql_and_values(
+        DatabaseBackend::Postgres,
+        "select pg_advisory_xact_lock(hashtextextended($1, 0))",
+        [system_service_name.to_string().into()],
+    ))
+    .await
+    .c(h!())?;
+    Ok(())
+}
+
+fn full_system_service_name(
+    system_service_name: &str,
+    source: &EchoMessageSource,
+) -> String {
+    let prefix = match source {
+        EchoMessageSource::Signal => SIGNAL_UNIT_NAME,
+        EchoMessageSource::Whatsapp => WHATSAPP_UNIT_NAME,
+    };
+    format!("{prefix}@{system_service_name}")
+}
+
+fn system_service_name_with_suffix(
+    system_service_name: &str,
+    candidate_number: usize,
+) -> String {
+    if candidate_number == 1 {
+        return system_service_name.to_string();
+    }
+    let suffix = format!("-{candidate_number}");
+    let base_len = MESSENGER_SYSTEM_SERVICE_NAME_MAX_LEN
+        .saturating_sub(suffix.len())
+        .min(system_service_name.len());
+    let system_service_name =
+        system_service_name[..base_len].trim_end_matches('-');
+    format!("{system_service_name}{suffix}")
 }
 
 async fn load_client_signal_port(
@@ -871,5 +989,35 @@ pub async fn sync_signal_once(client_name: String, config: Config) {
     };
     if let Err(e) = signal_worker_tick_once(&client_name, &db).await {
         error!("failed to perform initial signal sync, client '{client_name}': {:#?}", e);
+    }
+}
+
+#[cfg(test)]
+mod system_service_name_tests {
+    use super::*;
+
+    #[test]
+    fn appends_candidate_number_to_system_service_name() {
+        assert_eq!(
+            system_service_name_with_suffix("echo-kherson-whatsapp", 1),
+            "echo-kherson-whatsapp"
+        );
+        assert_eq!(
+            system_service_name_with_suffix("echo-kherson-whatsapp", 2),
+            "echo-kherson-whatsapp-2"
+        );
+        assert_eq!(
+            system_service_name_with_suffix("echo-kherson-whatsapp", 3),
+            "echo-kherson-whatsapp-3"
+        );
+    }
+
+    #[test]
+    fn keeps_suffixed_system_service_name_within_limit() {
+        let name = "a".repeat(MESSENGER_SYSTEM_SERVICE_NAME_MAX_LEN);
+        let candidate = system_service_name_with_suffix(&name, 2);
+
+        assert_eq!(candidate.len(), MESSENGER_SYSTEM_SERVICE_NAME_MAX_LEN);
+        assert!(candidate.ends_with("-2"));
     }
 }
