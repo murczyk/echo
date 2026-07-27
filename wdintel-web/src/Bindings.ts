@@ -3412,6 +3412,153 @@ export type ActivateSystemSettingsReq = {
   id: number;
 };
 
+export type AiEngineItem = {
+  id: string;
+  name: string;
+  url: string;
+  modelName: string;
+  enabled: boolean;
+  hasToken: boolean;
+  createdAt: number;
+  updatedAt: number;
+};
+
+export type AiEngineListRsp = {
+  items: Array<AiEngineItem>;
+};
+
+export type AiEngineIdReq = {
+  id: string;
+};
+
+export type CreateAiEngineReq = {
+  name: string;
+  url: string;
+  token: string | null;
+  modelName: string;
+  enabled: boolean;
+};
+
+export type UpdateAiEngineReq = {
+  id: string;
+  name: string;
+  url: string;
+  token: string | null;
+  clearToken: boolean;
+  modelName: string;
+  enabled: boolean;
+};
+
+export type AiChatSummary = {
+  id: string;
+  title: string;
+  createdBy: string;
+  createdAt: number;
+  updatedAt: number;
+};
+
+export type AiChatListReq = {
+  aiEngineId: string;
+};
+
+export type AiChatListRsp = {
+  items: Array<AiChatSummary>;
+};
+
+export type AiChatGetReq = {
+  aiEngineId: string;
+  chatId: string;
+};
+
+export type AiChatMessageItem = {
+  id: string;
+  role: string;
+  content: string;
+  createdAt: number;
+};
+
+export type AiChatDetail = {
+  id: string;
+  title: string;
+  createdBy: string;
+  createdAt: number;
+  updatedAt: number;
+  messages: Array<AiChatMessageItem>;
+};
+
+export type SendAiChatMessageReq = {
+  aiEngineId: string;
+  chatId: string | null;
+  prompt: string;
+};
+
+export type AiCallsignEngineItem = {
+  id: string;
+  name: string;
+  modelName: string;
+};
+
+export type AiCallsignParseResultItem = {
+  testMessageId: string;
+  aiEngineId: string;
+  callsigns: Array<string>;
+  error: string | null;
+  responseText: string;
+  updatedAt: number | null;
+};
+
+export type AiCallsignTestMessageItem = {
+  id: string;
+  message: string;
+  createdAt: number;
+  updatedAt: number;
+  results: Array<AiCallsignParseResultItem>;
+};
+
+export type AiCallsignWorkerSettingsItem = {
+  enabled: boolean;
+  aiEngineId: string | null;
+};
+
+export type AiCallsignPageRsp = {
+  prompt: string;
+  engines: Array<AiCallsignEngineItem>;
+  messages: Array<AiCallsignTestMessageItem>;
+  worker: AiCallsignWorkerSettingsItem;
+};
+
+export type CreateAiCallsignTestMessageReq = {
+  message: string;
+};
+
+export type UpdateAiCallsignTestMessageReq = {
+  id: string;
+  message: string;
+};
+
+export type AiCallsignTestMessageIdReq = {
+  id: string;
+};
+
+export type RunAiCallsignParsingReq = {
+  prompt: string;
+  aiEngineIds: Array<string>;
+};
+
+export type AiCallsignParsingRsp = {
+  results: Array<AiCallsignParseResultItem>;
+};
+
+export type SaveAiCallsignParsingReq = {
+  prompt: string;
+  results: Array<AiCallsignParseResultItem>;
+};
+
+export type SaveAiCallsignWorkerSettingsReq = {
+  enabled: boolean;
+  aiEngineId: string | null;
+};
+
 export type EchoMissingMessageRow = {
   id: number;
   messageId: number;

@@ -43,6 +43,7 @@ import './ts/react/messenger-neo-element';
 import './ts/react/organisms-neo-element';
 import './ts/react/organisms-neo-edit-element';
 import './ts/react/admin-all-reports-element';
+import './ts/react/admin-ai-callsigns-element';
 import './ts/react/my-reports-element';
 import './ts/react/admin-echo-missing-messages-element';
 import './ts/react/settings-neo-element';

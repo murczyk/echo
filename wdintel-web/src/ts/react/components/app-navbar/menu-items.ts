@@ -201,6 +201,12 @@ export const adminSubs: Menu[] = [
   },
   {
     type: 'item',
+    link: { type: 'internal', path: '/admin/ai-callsigns' },
+    activeName: 'ai-callsigns',
+    label: 'Позивні',
+  },
+  {
+    type: 'item',
     link: { type: 'internal', path: '/admin/goi-integrations-neo' },
     activeName: 'goi-integrations-neo',
     label: 'ГОІ',

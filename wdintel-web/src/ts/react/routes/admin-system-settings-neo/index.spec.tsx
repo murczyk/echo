@@ -42,6 +42,7 @@ vi.mock('../../components/PowerButton', () => ({
   ),
 }));
 vi.mock('../admin-control-panel-neo', () => ({ AdminControlPanelNeoSection: () => null }));
+vi.mock('./AiEnginesSection', () => ({ AiEnginesSection: () => <div>ШІ движки</div> }));
 
 import { AdminSystemSettingsNeoPage } from './index';
 
@@ -71,6 +72,7 @@ function audioSwitch(container: HTMLElement): HTMLInputElement | null {
 
 describe('AdminSystemSettingsNeoPage success notifications', () => {
   beforeEach(() => {
+    window.history.replaceState({}, '', '/admin/system-settings-neo');
     mocks.list.mockReset();
     mocks.save.mockReset();
     mocks.list.mockResolvedValue([]);
@@ -160,6 +162,24 @@ describe('AdminSystemSettingsNeoPage success notifications', () => {
     mocks.list.mockResolvedValueOnce([{ id: 1, deleted: false, enableAudioTranscription: true }]);
     const { container, root } = await renderPage();
     expect(button(container, 'Транскрибування')).toBeUndefined();
+    await act(async () => root.unmount());
+  });
+
+  it('reads the active tab from the anchor and replaces it on tab changes', async () => {
+    window.history.replaceState({}, '', '/admin/system-settings-neo#duty');
+    const replaceState = vi.spyOn(window.history, 'replaceState');
+    const pushState = vi.spyOn(window.history, 'pushState');
+    const { container, root } = await renderPage();
+    const tabs = Array.from(container.querySelectorAll<HTMLElement>('[role="tab"]'));
+    const dutyTab = tabs.find((tab) => tab.textContent?.includes('Оперативний'));
+    const aiTab = tabs.find((tab) => tab.textContent?.includes('ШІ'));
+
+    expect(dutyTab?.getAttribute('aria-selected')).toBe('true');
+    await act(async () => aiTab?.click());
+
+    expect(window.location.hash).toBe('#ai');
+    expect(replaceState).toHaveBeenCalledOnce();
+    expect(pushState).not.toHaveBeenCalled();
     await act(async () => root.unmount());
   });
 });

@@ -2,6 +2,13 @@
 
 pub mod prelude;
 
+pub mod ai_callsign_parse_result;
+pub mod ai_callsign_settings;
+pub mod ai_callsign_test_message;
+pub mod ai_callsign_worker_job;
+pub mod ai_chat;
+pub mod ai_chat_message;
+pub mod ai_engine;
 pub mod alert;
 pub mod aor_location_config;
 pub mod api_integration;
