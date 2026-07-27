@@ -788,116 +788,9 @@ async fn user_goi_state(
     })
 }
 
-pub async fn initialize_browser_session(
-    env: &actix_web::web::Data<Env>,
-    session: &actix_session::Session,
-    http_req: &HttpRequest,
-    account_id: &Uuid,
-) -> Result<(), AppError> {
-    let previous_session_id =
-        crate::event_stream::get_session_id(session).c(h!())?;
-    let next_session_id = Uuid::now_v7();
-    let mut redis = env.redis.clone();
-
-    let setup_result = async {
-        crate::session::add_session(&mut redis, next_session_id, account_id)
-            .await
-            .c(h!())?;
-        crate::event_stream::create_redis_stream(&mut redis, next_session_id)
-            .await
-            .c(h!())?;
-        update_last_active_at(&env.dbx, account_id).await?;
-        Ok::<(), AppError>(())
-    }
-    .await;
-    if let Err(error) = setup_result {
-        if let Err(cleanup_error) =
-            crate::session::remove_session(&mut redis, next_session_id).await
-        {
-            warn!(
-                "failed to clean up incomplete realtime session: {cleanup_error:?}"
-            );
-        }
-        return Err(error);
-    }
-
-    if let Err(error) =
-        session.insert("id", next_session_id.to_string()).c(h!())
-    {
-        if let Err(cleanup_error) =
-            crate::session::remove_session(&mut redis, next_session_id).await
-        {
-            warn!(
-                "failed to clean up unpublished realtime session: {cleanup_error:?}"
-            );
-        }
-        return Err(error.into());
-    }
-
-    let identity_result = {
-        let extensions = http_req.extensions();
-        Identity::login(&extensions, account_id.to_string()).c(h!())
-    };
-    if let Err(error) = identity_result {
-        if let Some(previous_session_id) = previous_session_id {
-            if let Err(restore_error) =
-                session.insert("id", previous_session_id.to_string())
-            {
-                warn!(
-                    "failed to restore browser session after identity error: {restore_error:?}"
-                );
-            }
-        } else {
-            session.remove("id");
-        }
-        if let Err(cleanup_error) =
-            crate::session::remove_session(&mut redis, next_session_id).await
-        {
-            warn!(
-                "failed to clean up unauthenticated realtime session: {cleanup_error:?}"
-            );
-        }
-        return Err(error.into());
-    }
-
-    record_new_session(account_id, next_session_id, env)
-        .await
-        .c(h!())?;
-
-    if let Some(previous_session_id) = previous_session_id {
-        if let Err(error) =
-            crate::session::remove_session(&mut redis, previous_session_id)
-                .await
-        {
-            warn!("failed to remove replaced realtime session: {error:?}");
-        }
-    }
-    Ok(())
-}
-
 #[get("/api/user/logout")]
-async fn user_logout(
-    user: Identity,
-    env: actix_web::web::Data<Env>,
-    session: actix_session::Session,
-) -> Result<HttpResponse, AppError> {
-    let session_id = match crate::event_stream::get_session_id(&session) {
-        Ok(session_id) => session_id,
-        Err(error) => {
-            warn!("failed to read realtime session id on logout: {error:?}");
-            None
-        }
-    };
+async fn user_logout(user: Identity) -> Result<HttpResponse, AppError> {
     user.logout();
-    session.purge();
-    if let Some(session_id) = session_id {
-        if let Err(error) =
-            crate::session::remove_session(&mut env.redis.clone(), session_id)
-                .await
-        {
-            warn!("failed to remove realtime session on logout: {error:?}");
-        }
-    }
     // todo call delta logout here
     Ok(HttpResponse::Found()
         .insert_header(("Location", "/login"))
@@ -1029,8 +922,32 @@ pub async fn user_login(
         return Err(AppError::Form(errors));
     };
 
+    Identity::login(&http_req.extensions(), login_obj.id.to_string())
+        .c(h!())?;
+
+    let session_id = Uuid::now_v7();
+    session.insert("id", session_id.to_string()).c(h!())?;
+
     let account_id = login_obj.id;
-    initialize_browser_session(&env, &session, &http_req, &account_id).await?;
+    crate::session::add_session(
+        &mut env.redis.clone(),
+        session_id,
+        &account_id,
+    )
+    .await
+    .c(h!())?;
+    crate::event_stream::create_redis_stream(
+        &mut env.redis.clone(),
+        session_id,
+    )
+    .await
+    .c(h!())?;
+
+    update_last_active_at(&env.dbx, &account_id).await?;
+
+    record_new_session(&account_id, session_id, &env)
+        .await
+        .c(h!())?;
 
     Ok(Json(()))
 }

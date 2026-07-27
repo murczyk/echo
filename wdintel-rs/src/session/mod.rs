@@ -442,27 +442,6 @@ pub async fn add_session(
     Ok(session)
 }
 
-pub async fn remove_session(
-    redis: &mut ConnectionManager,
-    session_id: Uuid,
-) -> Result<(), AppError> {
-    redis
-        .srem::<&str, String, redis::Value>(
-            REDIS_SESSIONS_KEY,
-            session_id.to_string(),
-        )
-        .await
-        .c(h!())?;
-    redis
-        .del::<Vec<String>, redis::Value>(vec![
-            crate::event_stream::get_sess_key(session_id),
-            crate::event_stream::session_stream_id(session_id),
-        ])
-        .await
-        .c(h!())?;
-    Ok(())
-}
-
 pub async fn update_heartbeat(
     redis: &mut ConnectionManager,
     mut session: RedisSession,

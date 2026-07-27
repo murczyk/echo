@@ -3,11 +3,11 @@ use crate::delta::login::types::UserInfo;
 use crate::entities::*;
 use crate::types::*;
 use crate::users::validate_login;
-use actix_session::Session;
+use actix_identity::Identity;
 
 use crate::entities::sea_orm_active_enums::DeactivationReasonEnum;
 use actix_web::web::{Data, Json};
-use actix_web::{get, HttpRequest, HttpResponse};
+use actix_web::{get, HttpMessage, HttpRequest, HttpResponse};
 use echo_migration::Expr;
 use elm_rs::{Elm, ElmDecode, ElmEncode};
 use sea_orm::*;
@@ -44,13 +44,12 @@ pub async fn fetch_redirect_url(
 pub async fn handle_redirect(
     req: HttpRequest,
     env: actix_web::web::Data<Env>,
-    session: Session,
 ) -> HttpResponse {
     let req_clone = req.clone();
     match oauth::handle_receive_code(env.clone(), req).await {
         Ok(user_info) => {
             let user_name = user_info.user_name.clone();
-            match perform_login(&env, &session, &req_clone, user_info).await {
+            match perform_login(&env, &req_clone, user_info).await {
                 Ok(reason) => {
                     if let Some(_reason) = reason {
                         HttpResponse::Found()
@@ -90,7 +89,6 @@ pub async fn handle_redirect(
 
 async fn perform_login(
     env: &Data<Env>,
-    session: &Session,
     req: &HttpRequest,
     user_info: UserInfo,
 ) -> Result<Option<DeactivationReasonEnum>, AppError> {
@@ -133,9 +131,8 @@ async fn perform_login(
         return Err(err);
     }
     if let Some(login) = login_validation.login_model {
-        crate::users::initialize_browser_session(env, session, req, &login.id)
-            .await
-            .context(h!())?;
+        let extensions = req.extensions();
+        Identity::login(&extensions, login.id.to_string()).context(h!())?;
         return Ok(None);
     }
     let mut login_obfuscated = login.clone();
