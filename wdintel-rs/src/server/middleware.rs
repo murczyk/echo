@@ -1,6 +1,7 @@
-use crate::config::FEATURE_ACCESS_LOG_DEFAULT;
+use crate::config::{FEATURE_ACCESS_LOG_DEFAULT, IDENTITY_SESSION_USER_ID_KEY};
 use crate::types::*;
 use crate::utils::worker_watch;
+use actix_session::SessionExt;
 use actix_web::{
     body::MessageBody,
     dev::{ServiceRequest, ServiceResponse},
@@ -12,6 +13,29 @@ use redis::{AsyncCommands, RedisResult};
 use std::future::Future;
 use std::pin::Pin;
 use std::time::Instant;
+use uuid::Uuid;
+
+fn identity_requires_logout(identity: Option<&str>) -> bool {
+    identity.is_some_and(|identity| Uuid::parse_str(identity).is_err())
+}
+
+pub async fn purge_legacy_identity_middleware<B>(
+    req: ServiceRequest,
+    next: Next<B>,
+) -> Result<ServiceResponse<B>, Error>
+where
+    B: MessageBody,
+{
+    let session = req.get_session();
+    let identity = session
+        .get::<String>(IDENTITY_SESSION_USER_ID_KEY)
+        .map_err(actix_web::error::ErrorInternalServerError)?;
+    if identity_requires_logout(identity.as_deref()) {
+        session.purge();
+        warn!("Purged a session containing a legacy non-UUID identity");
+    }
+    next.call(req).await
+}
 
 /// Prefixes of request paths that should not appear in the access log.
 const ACCESS_LOG_SKIP_PATTERNS: &[&str] = &[
@@ -586,5 +610,19 @@ pub async fn activity_details_worker(
                 trace!("Processed {} activity records", activities.len());
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::identity_requires_logout;
+
+    #[test]
+    fn legacy_identity_requires_logout() {
+        assert!(identity_requires_logout(Some("legacy-login")));
+        assert!(!identity_requires_logout(Some(
+            "019c42d7-499d-7e83-be43-62dc838ea42a"
+        )));
+        assert!(!identity_requires_logout(None));
     }
 }

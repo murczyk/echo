@@ -1019,6 +1019,9 @@ pub async fn main_server(
                     )))
                     .build(),
             )
+            .wrap(actix_web::middleware::from_fn(
+                middleware::purge_legacy_identity_middleware,
+            ))
             .wrap(SessionMiddleware::new(
                 redis_session_store.clone(),
                 Key::from(cookie_secret.as_bytes()),
