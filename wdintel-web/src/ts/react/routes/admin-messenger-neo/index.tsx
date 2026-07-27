@@ -259,7 +259,7 @@ function normalizeDescription(description: string): string | null {
 
 function normalizeToSystemName(displayName: string): string {
   const lower = displayName.toLowerCase();
-  const withHyphens = lower.replace(/\s+/g, '-');
+  const withHyphens = lower.replace(/[\s_]+/g, '-');
 
   const mapping: Record<string, string> = {
     а: 'a',
@@ -301,7 +301,7 @@ function normalizeToSystemName(displayName: string): string {
     .map((char) => mapping[char] ?? char)
     .join('');
 
-  const filtered = mapped.replace(/[^a-z0-9_-]/gi, '');
+  const filtered = mapped.replace(/[^a-z0-9-]/gi, '');
   const collapsed = filtered.replace(/-+/g, '-').replace(/^-+/, '').replace(/-+$/, '');
 
   if (collapsed.length < 4) {
