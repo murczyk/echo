@@ -299,6 +299,7 @@ function expectFetchMessagesByIdsCalledWith(messageIds: number[]) {
       highlightPoints: true,
       highlightSearchres: true,
     }),
+    expect.objectContaining({ signal: expect.any(AbortSignal) }),
   );
 }
 
@@ -566,9 +567,23 @@ describe('useAnalysisData inbox refreshes', () => {
     expect(hoisted.loadMessageComments).toHaveBeenCalledWith([[1, updatedMessage]], true);
   });
 
-  it('reloads instead of partially merging when server-only filters are active', async () => {
+  it('ignores invisible ids when server-only filters are active', async () => {
     hoisted.messages = [[1, inboxMessage({ text: 'current' })]];
-    hoisted.mapOpenMessages = [[1, inboxMessage({ text: 'map-current' })]];
+    hoisted.mapOpenMessages = [[2, inboxMessage({ text: 'map-current' })]];
+
+    renderHook({ search: 'needle' });
+    await act(async () => {
+      await hoisted.onInboxChangedMessageIds([9]);
+    });
+
+    expect(hoisted.reload).not.toHaveBeenCalled();
+    expect(hoisted.fetchMessagesByIds).not.toHaveBeenCalled();
+    expect(hoisted.loadMissingNetworksForMessages).not.toHaveBeenCalled();
+    expect(hoisted.loadMessageComments).not.toHaveBeenCalled();
+  });
+
+  it('reloads once for a list-visible id when server-only filters are active', async () => {
+    hoisted.messages = [[1, inboxMessage({ text: 'current' })]];
 
     renderHook({ search: 'needle' });
     await act(async () => {
@@ -576,6 +591,46 @@ describe('useAnalysisData inbox refreshes', () => {
     });
 
     expect(hoisted.reload).toHaveBeenCalledTimes(1);
+    expect(hoisted.fetchMessagesByIds).not.toHaveBeenCalled();
+    expect(hoisted.loadMissingNetworksForMessages).not.toHaveBeenCalled();
+    expect(hoisted.loadMessageComments).not.toHaveBeenCalled();
+  });
+
+  it('reloads once for a map-only visible id when server-only filters are active', async () => {
+    hoisted.mapOpenMessages = [[2, inboxMessage({ text: 'map-current' })]];
+
+    renderHook({ search: 'needle' });
+    await act(async () => {
+      await hoisted.onInboxChangedMessageIds([2]);
+    });
+
+    expect(hoisted.reload).toHaveBeenCalledTimes(1);
+    expect(hoisted.fetchMessagesByIds).not.toHaveBeenCalled();
+    expect(hoisted.loadMissingNetworksForMessages).not.toHaveBeenCalled();
+    expect(hoisted.loadMessageComments).not.toHaveBeenCalled();
+  });
+
+  it('reloads once for a mixed visible and invisible batch under server-only filters', async () => {
+    hoisted.messages = [[1, inboxMessage({ text: 'current' })]];
+
+    renderHook({ search: 'needle' });
+    await act(async () => {
+      await hoisted.onInboxChangedMessageIds([9, 1, 10]);
+    });
+
+    expect(hoisted.reload).toHaveBeenCalledTimes(1);
+    expect(hoisted.fetchMessagesByIds).not.toHaveBeenCalled();
+    expect(hoisted.loadMissingNetworksForMessages).not.toHaveBeenCalled();
+    expect(hoisted.loadMessageComments).not.toHaveBeenCalled();
+  });
+
+  it('ignores all incoming ids when both visible collections are empty', async () => {
+    renderHook({ search: 'needle' });
+    await act(async () => {
+      await hoisted.onInboxChangedMessageIds([1, 2, 3]);
+    });
+
+    expect(hoisted.reload).not.toHaveBeenCalled();
     expect(hoisted.fetchMessagesByIds).not.toHaveBeenCalled();
     expect(hoisted.loadMissingNetworksForMessages).not.toHaveBeenCalled();
     expect(hoisted.loadMessageComments).not.toHaveBeenCalled();

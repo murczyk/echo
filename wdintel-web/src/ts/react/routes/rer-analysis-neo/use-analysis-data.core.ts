@@ -20,6 +20,8 @@ import {
 import type { AnalysisQueryState, AnalysisReloadOptions } from './types';
 import type { UseAnalysisDataProps, UseAnalysisDataResult } from './use-analysis-data.types';
 import { useInboxChangedMessageIds } from '../shared/useInboxChangedMessageIds';
+import { useLocalInboxChangeOrigins } from './use-local-inbox-change-origins';
+import { useTargetedInboxReconciliation } from './use-targeted-inbox-reconciliation';
 
 export { mergeNetworksById, shouldSkipNewCallsignsLoad } from './use-analysis-data.support';
 
@@ -292,6 +294,7 @@ export function useAnalysisData({
   const reloadRef = useRef<(options?: AnalysisReloadOptions) => Promise<void>>(
     async () => undefined,
   );
+  const localInboxChangeOrigins = useLocalInboxChangeOrigins();
 
   const loadMissingNetworksForMessages = useLoadMissingNetworksForMessages({
     networksRef: referenceState.networksRef,
@@ -358,6 +361,111 @@ export function useAnalysisData({
     setSummaryCallsignsInfo: referenceState.setSummaryCallsignsInfo,
   });
 
+  const reconcileVisibleChangedMessagesBatch = useCallback(
+    async (
+      changedMessageIds: number[],
+      shouldApply: (messageId: number) => boolean,
+      signal: AbortSignal,
+    ) => {
+      const messageIds = collectVisibleChangedMessageIds(
+        changedMessageIds,
+        messageList.messages,
+        mapData.mapOpenMessages,
+      );
+      if (messageIds.length === 0) return;
+
+      try {
+        const refreshedMessageItems = await fetchMessagesByIds(
+          messageIds,
+          buildLiveRefreshInboxReq(queryState, optionsFreqValues),
+          { signal },
+        );
+        const applicableMessageIds = messageIds.filter(shouldApply);
+        if (applicableMessageIds.length === 0) return;
+        const refreshedMessages = new Map(
+          refreshedMessageItems
+            .filter(([messageId]) => shouldApply(messageId))
+            .map(([id, message]) => [id, message]),
+        );
+        const changedMessageIdSet = new Set(applicableMessageIds);
+        const shouldKeepRefreshedMessage = (message: InboxMessage) =>
+          messageMatchesLiveRefreshFilters(message, queryState, optionsFreqValues);
+        messageList.setMessages((currentMessages) =>
+          mergeRefreshedMessages(
+            currentMessages,
+            changedMessageIdSet,
+            refreshedMessages,
+            queryState.withoutModelTags,
+            shouldKeepRefreshedMessage,
+          ),
+        );
+        mapData.setMapOpenMessages((currentMessages) =>
+          mergeRefreshedMessages(
+            currentMessages,
+            changedMessageIdSet,
+            refreshedMessages,
+            queryState.withoutModelTags,
+            shouldKeepRefreshedMessage,
+          ),
+        );
+        const keptRefreshedMessageItems = refreshedMessageItems.filter(
+          ([messageId, message]) =>
+            shouldApply(messageId) &&
+            shouldKeepRefreshedMessage(applyModelTagFilter(message, queryState.withoutModelTags)),
+        );
+        if (signal.aborted) return;
+        await loadMissingNetworksForMessages(keptRefreshedMessageItems);
+        if (signal.aborted) return;
+        await messageList.loadMessageComments(keptRefreshedMessageItems, true);
+      } catch (loadError) {
+        if (signal.aborted) return;
+        if (!onUnauthorized(loadError)) onError(toErrorMessage(loadError));
+      }
+    },
+    [
+      loadMissingNetworksForMessages,
+      mapData,
+      messageList,
+      onError,
+      onUnauthorized,
+      optionsFreqValues,
+      queryState,
+    ],
+  );
+  const refreshVisibleChangedMessagesTargeted = useTargetedInboxReconciliation(
+    reconcileVisibleChangedMessagesBatch,
+  );
+
+  const refreshVisibleChangedMessages = useCallback(
+    async (changedMessageIds: number[]) => {
+      const visibleMessageIds = collectVisibleChangedMessageIds(
+        changedMessageIds,
+        messageList.messages,
+        mapData.mapOpenMessages,
+      );
+      if (visibleMessageIds.length === 0) return;
+
+      if (!requiresServerFilteredInboxRefresh(queryState)) {
+        await refreshVisibleChangedMessagesTargeted(changedMessageIds);
+        return;
+      }
+
+      try {
+        await reloadRef.current();
+      } catch (loadError) {
+        if (!onUnauthorized(loadError)) onError(toErrorMessage(loadError));
+      }
+    },
+    [
+      mapData.mapOpenMessages,
+      messageList.messages,
+      onError,
+      onUnauthorized,
+      queryState,
+      refreshVisibleChangedMessagesTargeted,
+    ],
+  );
+
   const { clearAnalysisResults, onUpdateLocalMessage, messageActionState } = useAnalysisActions(
     buildAnalysisActionsParams({
       authUserName,
@@ -366,6 +474,10 @@ export function useAnalysisData({
       onError,
       onUnauthorized,
       queryState,
+      completeLocalInboxChangeOrigin: localInboxChangeOrigins.completeOrigin,
+      failLocalInboxChangeOrigin: localInboxChangeOrigins.failOrigin,
+      reconcileTagMutation: (messageId) => refreshVisibleChangedMessagesTargeted([messageId]),
+      registerLocalInboxChangeOrigin: localInboxChangeOrigins.registerOrigin,
       refreshTagFacet,
       reloadRef,
       referenceState,
@@ -441,70 +553,17 @@ export function useAnalysisData({
     }),
   );
 
-  const refreshVisibleChangedMessages = useCallback(
-    async (changedMessageIds: number[]) => {
-      const messageIds = collectVisibleChangedMessageIds(
-        changedMessageIds,
-        messageList.messages,
-        mapData.mapOpenMessages,
-      );
-      if (messageIds.length === 0) return;
-
-      try {
-        if (requiresServerFilteredInboxRefresh(queryState)) {
-          await reloadRef.current();
-          return;
-        }
-
-        const refreshedMessageItems = await fetchMessagesByIds(
-          messageIds,
-          buildLiveRefreshInboxReq(queryState, optionsFreqValues),
-        );
-        const refreshedMessages = new Map(
-          refreshedMessageItems.map(([id, message]) => [id, message]),
-        );
-        const changedMessageIdSet = new Set(messageIds);
-        const shouldKeepRefreshedMessage = (message: InboxMessage) =>
-          messageMatchesLiveRefreshFilters(message, queryState, optionsFreqValues);
-        messageList.setMessages((currentMessages) =>
-          mergeRefreshedMessages(
-            currentMessages,
-            changedMessageIdSet,
-            refreshedMessages,
-            queryState.withoutModelTags,
-            shouldKeepRefreshedMessage,
-          ),
-        );
-        mapData.setMapOpenMessages((currentMessages) =>
-          mergeRefreshedMessages(
-            currentMessages,
-            changedMessageIdSet,
-            refreshedMessages,
-            queryState.withoutModelTags,
-            shouldKeepRefreshedMessage,
-          ),
-        );
-        const keptRefreshedMessageItems = refreshedMessageItems.filter(([, message]) =>
-          shouldKeepRefreshedMessage(applyModelTagFilter(message, queryState.withoutModelTags)),
-        );
-        await loadMissingNetworksForMessages(keptRefreshedMessageItems);
-        await messageList.loadMessageComments(keptRefreshedMessageItems, true);
-      } catch (loadError) {
-        if (!onUnauthorized(loadError)) onError(toErrorMessage(loadError));
+  useInboxChangedMessageIds({
+    ignoreEvent: (event) => {
+      if (event.origin == null) return false;
+      const disposition = localInboxChangeOrigins.classifyOrigin(event.origin);
+      if (disposition === 'reconcile') {
+        void refreshVisibleChangedMessagesTargeted([event.messageId]);
       }
+      return disposition !== 'unmatched';
     },
-    [
-      loadMissingNetworksForMessages,
-      mapData,
-      messageList,
-      onError,
-      onUnauthorized,
-      optionsFreqValues,
-      queryState,
-    ],
-  );
-
-  useInboxChangedMessageIds({ onMessageIds: refreshVisibleChangedMessages });
+    onMessageIds: refreshVisibleChangedMessages,
+  });
 
   reloadRef.current = reload;
 

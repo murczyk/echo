@@ -5,7 +5,12 @@ import { describe, expect, it, vi } from 'vitest';
 
 import type { InboxMessage, InboxMessagesReq } from '../../../../Bindings';
 import { postJson, postVoid } from './client';
-import { fetchMessagesByIds, submitAnalysisInboxMessages } from './analysis';
+import {
+  fetchMessagesByIds,
+  inboxMessageTagsModelError,
+  inboxMessageTagsRm,
+  submitAnalysisInboxMessages,
+} from './analysis';
 
 vi.mock('./client', () => ({
   postJson: vi.fn(),
@@ -55,6 +60,36 @@ describe('analysis API', () => {
       expect.objectContaining({
         messages: [[7, expect.objectContaining({ text_marked: [{ CNTextC: { text: 'hello' } }] })]],
       }),
+    );
+  });
+
+  it('sends a tag mutation origin without changing the request body', async () => {
+    await inboxMessageTagsRm({ messageId: 7, tagId: 3 }, { eventOrigin: 'local-mutation' });
+
+    expect(postVoidMock).toHaveBeenCalledWith(
+      '/api/tags/tags-rm',
+      { message_id: 7, tag_id: 3 },
+      { headers: { 'X-Echo-Event-Origin': 'local-mutation' } },
+    );
+  });
+
+  it('sends a model-error origin without changing the request body', async () => {
+    await inboxMessageTagsModelError({ messageId: 7, tagId: 3 }, { eventOrigin: 'local-mutation' });
+
+    expect(postVoidMock).toHaveBeenCalledWith(
+      '/api/tags/tag-model-error',
+      { message_id: 7, tag_id: 3 },
+      { headers: { 'X-Echo-Event-Origin': 'local-mutation' } },
+    );
+  });
+
+  it('keeps the model-error request compatible when no origin is provided', async () => {
+    await inboxMessageTagsModelError({ messageId: 7, tagId: 3 });
+
+    expect(postVoidMock).toHaveBeenCalledWith(
+      '/api/tags/tag-model-error',
+      { message_id: 7, tag_id: 3 },
+      undefined,
     );
   });
 });

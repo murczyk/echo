@@ -357,15 +357,20 @@ export async function fetchAnalysisMapPoints(
 export async function fetchMessagesByIds(
   messageIds: number[],
   inboxReq?: Partial<InboxMessagesReq> | null,
+  options?: RequestOptions,
 ): Promise<Array<[number, InboxMessage]>> {
   const req: MessageIdsReq = {
     messageIds,
     inboxReq: inboxReq == null ? null : (inboxReq as InboxMessagesReq),
   };
-  const raw = await postJson<unknown>(
-    '/api/rer-importer/messages-by-id',
-    transformCamelToSnake(req),
-  );
+  const raw =
+    options == null
+      ? await postJson<unknown>('/api/rer-importer/messages-by-id', transformCamelToSnake(req))
+      : await postJson<unknown>(
+          '/api/rer-importer/messages-by-id',
+          transformCamelToSnake(req),
+          options,
+        );
   return transformSnakeToCamel<MessageIdsRsp>(raw).messages ?? [];
 }
 

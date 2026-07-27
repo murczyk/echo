@@ -9,11 +9,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useInboxChangedMessageIds } from './useInboxChangedMessageIds';
 
 function Harness({
+  ignoreEvent,
   onMessageIds,
 }: {
+  ignoreEvent?: (event: { messageId: number; origin: string | null }) => boolean;
   onMessageIds: (messageIds: number[]) => void | Promise<void>;
 }) {
-  useInboxChangedMessageIds({ onMessageIds });
+  useInboxChangedMessageIds({ ignoreEvent, onMessageIds });
   return null;
 }
 
@@ -77,6 +79,34 @@ describe('useInboxChangedMessageIds', () => {
     });
 
     expect(onMessageIds).toHaveBeenCalledWith([8]);
+  });
+
+  it('ignores only correlated events and keeps unrelated updates for the same message', async () => {
+    const onMessageIds = vi.fn();
+    const ignoreEvent = vi.fn(
+      (event: { messageId: number; origin: string | null }) => event.origin === 'local-origin',
+    );
+
+    await act(async () => {
+      root.render(React.createElement(Harness, { ignoreEvent, onMessageIds }));
+    });
+
+    await act(async () => {
+      window.dispatchEvent(
+        new CustomEvent('echo-inbox-changed', {
+          detail: {
+            events: [
+              { messageId: 7, origin: 'local-origin' },
+              { messageId: 7, origin: 'remote-origin' },
+              { messageId: 8, origin: null },
+            ],
+          },
+        }),
+      );
+    });
+
+    expect(onMessageIds).toHaveBeenCalledWith([7, 8]);
+    expect(ignoreEvent).toHaveBeenCalledTimes(3);
   });
 
   it('removes the listener on unmount', async () => {

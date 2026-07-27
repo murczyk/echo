@@ -364,10 +364,19 @@ async fn update_tag_keyword(
     Ok(())
 }
 
+fn inbox_changed_event(
+    inbox_id: i64,
+    http_req: &actix_web::HttpRequest,
+) -> EventMsg {
+    EventMsg::new(EventType::ETInboxChanged(inbox_id))
+        .with_origin(crate::event_stream::origin_from_request(http_req))
+}
+
 #[post("/api/tags/tags-add")]
 async fn inbox_message_tags_add(
     user: actix_identity::Identity,
     env: actix_web::web::Data<Env>,
+    http_req: actix_web::HttpRequest,
     req: Json<InboxMessageTagsAddReq>,
 ) -> Result<Json<()>, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
@@ -420,7 +429,7 @@ async fn inbox_message_tags_add(
 
     txn.commit().await.c(h!())?;
 
-    let event = EventMsg::new(EventType::ETInboxChanged(inbox.id));
+    let event = inbox_changed_event(inbox.id, &http_req);
     fanout(&mut env.redis.clone(), event).await.c(h!())?;
     Ok(Json(()))
 }
@@ -429,6 +438,7 @@ async fn inbox_message_tags_add(
 async fn inbox_message_tags_rm(
     user: actix_identity::Identity,
     env: actix_web::web::Data<Env>,
+    http_req: actix_web::HttpRequest,
     req: Json<InboxMessageTagsRmReq>,
 ) -> Result<Json<()>, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
@@ -463,7 +473,7 @@ async fn inbox_message_tags_rm(
         attached_tag.delete(&txn).await.c(h!())?;
         txn.commit().await.c(h!())?;
 
-        let event = EventMsg::new(EventType::ETInboxChanged(inbox.id));
+        let event = inbox_changed_event(inbox.id, &http_req);
         fanout(&mut env.redis.clone(), event).await.c(h!())?;
 
         return Ok(Json(()));
@@ -558,6 +568,7 @@ async fn get_inbox_message_model_errors(
 async fn inbox_message_tags_model_error(
     user: actix_identity::Identity,
     env: actix_web::web::Data<Env>,
+    http_req: actix_web::HttpRequest,
     req: Json<InboxMessageTagModelErrorReq>,
 ) -> Result<Json<()>, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
@@ -620,7 +631,50 @@ async fn inbox_message_tags_model_error(
     }
 
     txn.commit().await.c(h!())?;
-    let event = EventMsg::new(EventType::ETInboxChanged(inbox.id));
+    let event = inbox_changed_event(inbox.id, &http_req);
     fanout(&mut env.redis.clone(), event).await.c(h!())?;
     Ok(Json(()))
+}
+
+#[cfg(test)]
+mod event_origin_tests {
+    use super::*;
+
+    #[test]
+    fn tag_event_copies_valid_origin() {
+        let req = actix_web::test::TestRequest::default()
+            .insert_header((EVENT_STREAM_ORIGIN_HEADER, "tab.mutation"))
+            .to_http_request();
+
+        let event = inbox_changed_event(42, &req);
+
+        assert_eq!(event.event_type, EventType::ETInboxChanged(42));
+        assert_eq!(event.origin.as_deref(), Some("tab.mutation"));
+    }
+
+    #[test]
+    fn tag_event_omits_missing_or_invalid_origin() {
+        let missing = actix_web::test::TestRequest::default().to_http_request();
+        let blank = actix_web::test::TestRequest::default()
+            .insert_header((EVENT_STREAM_ORIGIN_HEADER, " "))
+            .to_http_request();
+        let invalid = actix_web::test::TestRequest::default()
+            .insert_header((
+                EVENT_STREAM_ORIGIN_HEADER,
+                actix_web::http::header::HeaderValue::from_bytes(&[0xff])
+                    .expect("opaque header bytes"),
+            ))
+            .to_http_request();
+        let oversized = actix_web::test::TestRequest::default()
+            .insert_header((
+                EVENT_STREAM_ORIGIN_HEADER,
+                "x".repeat(EVENT_STREAM_ORIGIN_MAX_BYTES + 1),
+            ))
+            .to_http_request();
+
+        assert_eq!(inbox_changed_event(42, &missing).origin, None);
+        assert_eq!(inbox_changed_event(42, &blank).origin, None);
+        assert_eq!(inbox_changed_event(42, &invalid).origin, None);
+        assert_eq!(inbox_changed_event(42, &oversized).origin, None);
+    }
 }

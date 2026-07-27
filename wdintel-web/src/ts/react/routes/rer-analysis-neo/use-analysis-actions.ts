@@ -24,6 +24,10 @@ type Params = {
   onError: (message: string) => void;
   onUnauthorized: (error: unknown) => boolean;
   queryState: AnalysisQueryState;
+  completeLocalInboxChangeOrigin: (origin: string) => void;
+  failLocalInboxChangeOrigin: (origin: string) => boolean;
+  reconcileTagMutation: (messageId: number) => Promise<void>;
+  registerLocalInboxChangeOrigin: () => string;
   refreshTagFacet: () => Promise<void>;
   reload: () => Promise<void>;
   setMapOpenMessages: Setter<Array<[number, InboxMessage]>>;
@@ -127,6 +131,10 @@ export function useAnalysisActions(params: Params) {
     onUnauthorized: params.onUnauthorized,
     patchMessages: patchMessagesInternal,
     queryState: params.queryState,
+    completeLocalInboxChangeOrigin: params.completeLocalInboxChangeOrigin,
+    failLocalInboxChangeOrigin: params.failLocalInboxChangeOrigin,
+    reconcileTagMutation: params.reconcileTagMutation,
+    registerLocalInboxChangeOrigin: params.registerLocalInboxChangeOrigin,
     refreshTagFacet: params.refreshTagFacet,
     reload: params.reload,
     setMapOpenMessages: params.setMapOpenMessages,
