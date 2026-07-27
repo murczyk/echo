@@ -53,6 +53,25 @@ fn message_has_media_exists() -> SimpleExpr {
     Expr::exists(media_query)
 }
 
+fn message_is_accessible_exists(sigint_groups: Vec<String>) -> SimpleExpr {
+    let access_query = Query::select()
+        .expr(Expr::value(1))
+        .from(signal_message_group::Entity)
+        .and_where(
+            Expr::col((
+                signal_message_group::Entity,
+                signal_message_group::Column::SignalMessageId,
+            ))
+            .equals((signal_message::Entity, signal_message::Column::Id)),
+        )
+        .and_where(
+            signal_message_group::Column::GroupMasterKey.eq_any(sigint_groups),
+        )
+        .to_owned();
+
+    Expr::exists(access_query)
+}
+
 fn inbox_date_gte_expr(
     req_sort_by: InboxMessagesSortBy,
     rhs: SimpleExpr,
@@ -117,18 +136,9 @@ where
             sigint_inbox_item::Relation::DeviceName.def(),
         );
 
-    let access_subquery = Query::select()
-        .column(signal_message_group::Column::SignalMessageId)
-        .from(signal_message_group::Entity)
-        .and_where(
-            signal_message_group::Column::GroupMasterKey
-                .eq_any(sigint_groups.clone()),
-        )
-        .to_owned();
-
     q = q
         .filter(signal_message::Column::Deleted.eq(false))
-        .filter(signal_message::Column::Id.in_subquery(access_subquery));
+        .filter(message_is_accessible_exists(sigint_groups.clone()));
 
     if req.ignore_imported_coords.unwrap_or(false) {
         q = q.filter(signal_group::Column::IgnoreOperativny.eq(Some(false)));
@@ -995,5 +1005,21 @@ mod tests {
 
         assert!(sql.contains(r#"SELECT "timestamp" <= "#), "{sql}");
         assert!(!sql.contains(r#""datetime" <= "#), "{sql}");
+    }
+
+    #[test]
+    fn message_access_filter_uses_correlated_exists() {
+        let expr = message_is_accessible_exists(vec!["test-group".to_string()]);
+
+        let sql = Query::select().expr(expr).to_string(PostgresQueryBuilder);
+
+        assert!(sql.contains("EXISTS"), "{sql}");
+        assert!(
+            sql.contains(
+                r#""signal_message_group"."signal_message_id" = "signal_message"."id""#
+            ),
+            "{sql}"
+        );
+        assert!(!sql.contains(" IN (SELECT"), "{sql}");
     }
 }

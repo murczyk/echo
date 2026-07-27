@@ -10,9 +10,106 @@ load_analytics_config
 validate_runtime_identifiers
 
 derived_database="${CLICKHOUSE_CURRENT_DB}_derived"
+metadata_database="${CLICKHOUSE_CURRENT_DB}_meta"
 message_callsign_view=message_callsign_v1
 validate_identifier derived_database "$derived_database"
+validate_identifier metadata_database "$metadata_database"
 validate_identifier message_callsign_view "$message_callsign_view"
+
+reconcile_query_index() {
+  local table=$1
+  local index=$2
+  local expression=$3
+  local type=$4
+  local granularity=$5
+  local table_exists table_uuid actual_definition expected_definition state_exists
+
+  validate_identifier query_index_table "$table"
+  validate_identifier query_index_name "$index"
+  validate_identifier query_index_expression "$expression"
+  [[ "$type" == minmax ]] || die "unsupported query index type: $type"
+  [[ "$granularity" =~ ^[1-9][0-9]*$ ]] \
+    || die "query index granularity must be a positive integer"
+
+  table_exists=$(clickhouse_admin_http "
+    SELECT count()
+    FROM system.tables
+    WHERE database = '$CLICKHOUSE_RAW_DB'
+      AND name = '$table'
+  ")
+  if [[ "$table_exists" != 1 ]]; then
+    log "Skipping query index for missing raw table: $CLICKHOUSE_RAW_DB.$table"
+    return
+  fi
+
+  table_uuid=$(clickhouse_admin_http "
+    SELECT toString(uuid)
+    FROM system.tables
+    WHERE database = '$CLICKHOUSE_RAW_DB'
+      AND name = '$table'
+  ")
+  [[ "$table_uuid" =~ ^[0-9a-fA-F-]{36}$ ]] \
+    || die "could not resolve table UUID for $CLICKHOUSE_RAW_DB.$table"
+
+  expected_definition="$expression|$type|$granularity"
+  actual_definition=$(clickhouse_admin_http "
+    SELECT concat(expr, '|', type_full, '|', toString(granularity))
+    FROM system.data_skipping_indices
+    WHERE database = '$CLICKHOUSE_RAW_DB'
+      AND table = '$table'
+      AND name = '$index'
+  ")
+  if [[ -z "$actual_definition" ]]; then
+    clickhouse_admin_http "
+      ALTER TABLE \`$CLICKHOUSE_RAW_DB\`.\`$table\`
+      ADD INDEX IF NOT EXISTS \`$index\` \`$expression\`
+      TYPE $type GRANULARITY $granularity
+    "
+  elif [[ "$actual_definition" != "$expected_definition" ]]; then
+    die "query index definition drift for $CLICKHOUSE_RAW_DB.$table.$index: $actual_definition"
+  fi
+
+  state_exists=$(clickhouse_admin_http "
+    SELECT count()
+    FROM \`$metadata_database\`.\`query_index_reconciliation\`
+    FINAL
+    WHERE raw_database = '$CLICKHOUSE_RAW_DB'
+      AND table_name = '$table'
+      AND index_name = '$index'
+      AND table_uuid = toUUID('$table_uuid')
+      AND definition = '$expected_definition'
+  ")
+  [[ "$state_exists" == 0 ]] || return
+
+  log "Materializing query index $CLICKHOUSE_RAW_DB.$table.$index"
+  clickhouse_admin \
+    --receive_timeout 300 \
+    --query "
+      ALTER TABLE \`$CLICKHOUSE_RAW_DB\`.\`$table\`
+      MATERIALIZE INDEX \`$index\`
+      SETTINGS mutations_sync = 1
+    "
+  clickhouse_admin_http "
+    INSERT INTO \`$metadata_database\`.\`query_index_reconciliation\`
+    (
+      raw_database,
+      table_name,
+      index_name,
+      table_uuid,
+      definition,
+      reconciled_at
+    )
+    VALUES
+    (
+      '$CLICKHOUSE_RAW_DB',
+      '$table',
+      '$index',
+      toUUID('$table_uuid'),
+      '$expected_definition',
+      now64()
+    )
+  "
+}
 
 current_table_exists=$(clickhouse_admin_http "
   SELECT count()
@@ -22,6 +119,37 @@ current_table_exists=$(clickhouse_admin_http "
 ")
 [[ "$current_table_exists" == 1 ]] \
   || die "current-state ClickHouse view is missing: $CLICKHOUSE_CURRENT_DB.sigint_inbox_item"
+
+clickhouse_admin_http "CREATE DATABASE IF NOT EXISTS \`$metadata_database\`"
+clickhouse_admin_http "
+  CREATE TABLE IF NOT EXISTS
+  \`$metadata_database\`.\`query_index_reconciliation\`
+  (
+    raw_database String,
+    table_name String,
+    index_name String,
+    table_uuid UUID,
+    definition String,
+    reconciled_at DateTime64(9)
+  )
+  ENGINE = ReplacingMergeTree(reconciled_at)
+  ORDER BY (raw_database, table_name, index_name)
+"
+
+while IFS='|' read -r table index expression type granularity; do
+  [[ -n "$table" ]] || continue
+  reconcile_query_index \
+    "$table" \
+    "$index" \
+    "$expression" \
+    "$type" \
+    "$granularity"
+done <<'QUERY_INDEXES'
+sigint_inbox_item|echo_datetime_minmax_v1|datetime|minmax|1
+signal_message_group|echo_signal_message_id_minmax_v1|signal_message_id|minmax|1
+sigint_inbox_item_tag|echo_inbox_item_id_minmax_v1|sigint_inbox_item_id|minmax|1
+sigint_inbox_item_network|echo_inbox_item_id_minmax_v1|sigint_inbox_item_id|minmax|1
+QUERY_INDEXES
 
 clickhouse_admin_http "CREATE DATABASE IF NOT EXISTS \`$derived_database\`"
 clickhouse_admin_http "

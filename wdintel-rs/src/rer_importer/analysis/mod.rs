@@ -44,6 +44,28 @@ pub mod stats;
 #[cfg(test)]
 mod tests;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum AnalyticsMessageIdScope {
+    Empty,
+    From(i64),
+    Inclusive { min_id: i64, max_id: i64 },
+}
+
+impl AnalyticsMessageIdScope {
+    fn condition<C>(self, column: C) -> SimpleExpr
+    where
+        C: IntoColumnRef,
+    {
+        match self {
+            Self::Empty => Expr::cust("FALSE"),
+            Self::From(min_id) => Expr::col(column).gte(min_id),
+            Self::Inclusive { min_id, max_id } => {
+                Expr::col(column).between(min_id, max_id)
+            }
+        }
+    }
+}
+
 pub fn filter_selected_groups<Q>(
     q: Q,
     selected_groups: &Option<Vec<String>>,
@@ -150,6 +172,13 @@ where
 }
 
 pub fn message_in_groups_exists(keys: Vec<String>) -> SimpleExpr {
+    message_in_groups_exists_with_scope(keys, None)
+}
+
+pub(super) fn message_in_groups_exists_with_scope(
+    keys: Vec<String>,
+    scope: Option<&AnalyticsMessageIdScope>,
+) -> SimpleExpr {
     if keys.is_empty() {
         return Expr::cust("FALSE");
     }
@@ -164,8 +193,15 @@ pub fn message_in_groups_exists(keys: Vec<String>) -> SimpleExpr {
             ))
             .equals((signal_message::Entity, signal_message::Column::Id)),
         )
-        .filter(signal_message_group::Column::GroupMasterKey.eq_any(keys))
-        .into_query();
+        .filter(signal_message_group::Column::GroupMasterKey.eq_any(keys));
+    let subquery = match scope {
+        Some(scope) => subquery.filter(scope.condition((
+            signal_message_group::Entity,
+            signal_message_group::Column::SignalMessageId,
+        ))),
+        None => subquery,
+    }
+    .into_query();
 
     Expr::exists(subquery)
 }
@@ -5064,6 +5100,7 @@ async fn group_stats(
                 analytics_user,
                 &db,
                 analytics_master_keys,
+                None,
             )
             .await
         },
@@ -6138,11 +6175,18 @@ async fn query_count_stats_raw(
     freshness_max_age_ms: u64,
 ) -> Result<CountStatsRsp, AppError> {
     ensure_analytics_fresh(db, freshness_max_age_ms).await?;
+    let message_id_scope = stats::resolve_analytics_message_id_scope(
+        &req.0,
+        db,
+        freshness_max_age_ms,
+    )
+    .await?;
     let groups_count = query_count_stats_groups(
         req,
         user,
         db,
         access.master_keys_noimport.clone(),
+        Some(&message_id_scope),
     )
     .await?;
     let message_dimensions = query_count_stats_message_dimensions(
@@ -6150,8 +6194,19 @@ async fn query_count_stats_raw(
         user,
         db,
         access.master_keys.clone(),
+        &message_id_scope,
     )
     .await?;
+    let (count_overall, count_selected) = stats::fetch_counts_raw_with_db(
+        req,
+        user,
+        env,
+        db,
+        access.master_keys.clone(),
+        Some(&message_id_scope),
+    )
+    .await
+    .context(h!())?;
     let catalog_dimensions = query_count_stats_catalog_dimensions(
         req,
         user,
@@ -6159,12 +6214,10 @@ async fn query_count_stats_raw(
         db,
         access.master_keys.clone(),
         &analytics_tag_access,
+        &message_id_scope,
+        count_selected,
     )
     .await?;
-    let (count_overall, count_selected) =
-        stats::fetch_counts_raw_with_db(req, user, env, db, access.master_keys)
-            .await
-            .context(h!())?;
 
     Ok(CountStatsRsp {
         count_overall,
@@ -6222,11 +6275,17 @@ async fn query_count_stats_groups(
     user: &Identity,
     db: &DatabaseConnection,
     master_keys: Vec<String>,
+    message_id_scope: Option<&AnalyticsMessageIdScope>,
 ) -> Result<i64, AppError> {
-    let groups =
-        stats::fetch_groups_raw_with_db(req, user, db, master_keys.clone())
-            .await
-            .context(h!())?;
+    let groups = stats::fetch_groups_raw_with_db(
+        req,
+        user,
+        db,
+        master_keys.clone(),
+        message_id_scope,
+    )
+    .await
+    .context(h!())?;
     let groups = if should_include_missing_secret_groups(req) {
         include_missing_secret_groups(db, groups, &master_keys)
             .await
@@ -6268,21 +6327,44 @@ async fn query_count_stats_message_dimensions(
     user: &Identity,
     db: &DatabaseConnection,
     master_keys: Vec<String>,
+    message_id_scope: &AnalyticsMessageIdScope,
 ) -> Result<CountStatsMessageDimensions, AppError> {
-    let senders =
-        stats::count_senders_with_db(req, user, db, master_keys.clone())
-            .await
-            .context(h!())?;
-    let freqs = stats::count_freqs_with_db(req, user, db, master_keys.clone())
-        .await
-        .context(h!())?;
-    let posts = stats::count_posts_with_db(req, user, db, master_keys.clone())
-        .await
-        .context(h!())?;
-    let callsigns =
-        stats::count_callsigns_analytics_with_db(req, user, db, master_keys)
-            .await
-            .context(h!())?;
+    let senders = stats::count_senders_with_db(
+        req,
+        user,
+        db,
+        master_keys.clone(),
+        Some(message_id_scope),
+    )
+    .await
+    .context(h!())?;
+    let freqs = stats::count_freqs_with_db(
+        req,
+        user,
+        db,
+        master_keys.clone(),
+        Some(message_id_scope),
+    )
+    .await
+    .context(h!())?;
+    let posts = stats::count_posts_with_db(
+        req,
+        user,
+        db,
+        master_keys.clone(),
+        Some(message_id_scope),
+    )
+    .await
+    .context(h!())?;
+    let callsigns = stats::count_callsigns_analytics_with_db(
+        req,
+        user,
+        db,
+        master_keys,
+        Some(message_id_scope),
+    )
+    .await
+    .context(h!())?;
 
     Ok(CountStatsMessageDimensions {
         senders,
@@ -6336,43 +6418,72 @@ async fn query_count_stats_catalog_dimensions(
     db: &DatabaseConnection,
     master_keys: Vec<String>,
     analytics_tag_access: &stats::AnalyticsTagAccess,
+    message_id_scope: &AnalyticsMessageIdScope,
+    count_selected: i64,
 ) -> Result<CountStatsCatalogDimensions, AppError> {
-    let units = stats::count_units_with_db(req, user, db, master_keys.clone())
-        .await
-        .context(h!())?;
+    let units = stats::count_units_with_db(
+        req,
+        user,
+        db,
+        master_keys.clone(),
+        Some(message_id_scope),
+    )
+    .await
+    .context(h!())?;
+    let selected_units = req
+        .selected_units
+        .as_ref()
+        .filter(|selected_units| !selected_units.is_empty());
     let (units_exact_matches, units_non_exact_matches) =
-        stats::count_unit_exact_match_breakdown_raw_with_db(
-            req,
-            user,
-            env,
-            db,
-            master_keys.clone(),
-        )
-        .await
-        .context(h!())?;
-    let locations =
-        stats::count_locations_with_db(req, user, db, master_keys.clone())
+        if selected_units.is_none() {
+            (count_selected, 0)
+        } else {
+            stats::count_unit_exact_match_breakdown_raw_with_db(
+                req,
+                user,
+                env,
+                db,
+                master_keys.clone(),
+                Some(message_id_scope),
+            )
             .await
-            .context(h!())?;
+            .context(h!())?
+        };
+    let locations = stats::count_locations_with_db(
+        req,
+        user,
+        db,
+        master_keys.clone(),
+        Some(message_id_scope),
+    )
+    .await
+    .context(h!())?;
     let tags = stats::count_tags_analytics_with_db(
         req,
         user,
         db,
         master_keys.clone(),
         analytics_tag_access,
+        Some(message_id_scope),
     )
     .await
     .context(h!())?;
-    let aors =
-        stats::count_aors_raw_with_db(req, user, db, master_keys.clone())
-            .await
-            .context(h!())?;
+    let aors = stats::count_aors_raw_with_db(
+        req,
+        user,
+        db,
+        master_keys.clone(),
+        Some(message_id_scope),
+    )
+    .await
+    .context(h!())?;
     let networks = stats::count_networks_analytics_with_db(
         req,
         user,
         db,
         master_keys,
         analytics_tag_access,
+        Some(message_id_scope),
     )
     .await
     .context(h!())?;
@@ -6459,6 +6570,7 @@ async fn group_stats_count(
                 analytics_user,
                 &db,
                 analytics_master_keys,
+                None,
             )
             .await
         },
@@ -6504,6 +6616,7 @@ async fn sender_stats_count(
                 analytics_user,
                 &db,
                 analytics_master_keys,
+                None,
             )
             .await
         },
@@ -6550,6 +6663,7 @@ async fn post_stats_count(
                 analytics_user,
                 &db,
                 analytics_master_keys,
+                None,
             )
             .await
         },
@@ -6602,6 +6716,7 @@ async fn freq_stats_count(
                 analytics_user,
                 &db,
                 analytics_master_keys,
+                None,
             )
             .await
         },
@@ -6648,6 +6763,7 @@ async fn callsign_stats_count(
                 analytics_user,
                 &db,
                 analytics_master_keys,
+                None,
             )
             .await
         },
@@ -6697,6 +6813,7 @@ async fn tag_stats_count(
                 &db,
                 analytics_master_keys,
                 analytics_tag_access.as_ref().c(h!())?,
+                None,
             )
             .await
         },
@@ -6743,6 +6860,7 @@ async fn unit_stats_count(
                 analytics_user,
                 &db,
                 analytics_master_keys,
+                None,
             )
             .await
         },
@@ -6789,6 +6907,7 @@ async fn location_stats_count(
                 analytics_user,
                 &db,
                 analytics_master_keys,
+                None,
             )
             .await
         },
@@ -6849,6 +6968,7 @@ async fn aor_stats_count(
                 analytics_user,
                 &db,
                 analytics_master_keys,
+                None,
             )
             .await
         },
@@ -6911,6 +7031,7 @@ async fn network_stats_count(
                 &db,
                 analytics_master_keys,
                 analytics_tag_access.as_ref().c(h!())?,
+                None,
             )
             .await
         },

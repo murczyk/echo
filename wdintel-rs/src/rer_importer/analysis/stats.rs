@@ -4,7 +4,7 @@ use crate::types::{debug, warn};
 use crate::users::login_id_from_identity;
 use actix_identity::Identity;
 use actix_web::web::Json;
-use chrono::Duration;
+use chrono::{Duration, Utc};
 use echo_migration::{Expr, JoinType};
 use sea_orm::sea_query::{Order, SelectStatement, SimpleExpr, UnionType};
 use sea_orm::FromQueryResult;
@@ -78,6 +78,87 @@ pub(super) async fn resolve_analytics_tag_access(
     })
 }
 
+pub(super) async fn resolve_analytics_message_id_scope(
+    req: &AnalysisStatsReq,
+    db: &DatabaseConnection,
+    freshness_max_age_ms: u64,
+) -> Result<AnalyticsMessageIdScope, AppError> {
+    #[derive(FromQueryResult)]
+    struct MessageIdBounds {
+        min_id: Option<i64>,
+        max_id: Option<i64>,
+    }
+
+    let dt_since = dt_from_millis(req.since_date_inclusive_ms).context(h!())?;
+    let dt_till =
+        dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
+    let bounds = sigint_inbox_item::Entity::find()
+        .select_only()
+        .column_as(sigint_inbox_item::Column::Id.min(), "min_id")
+        .column_as(sigint_inbox_item::Column::Id.max(), "max_id")
+        .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
+        .filter(sigint_inbox_item::Column::Datetime.lt(dt_till))
+        .into_model::<MessageIdBounds>()
+        .one(db)
+        .await
+        .context(h!())?
+        .unwrap_or(MessageIdBounds {
+            min_id: None,
+            max_id: None,
+        });
+    let (Some(min_id), Some(max_id)) = (bounds.min_id, bounds.max_id) else {
+        return Ok(AnalyticsMessageIdScope::Empty);
+    };
+
+    let freshness_max_age_ms =
+        <i64 as std::convert::TryFrom<u64>>::try_from(freshness_max_age_ms)
+            .context(h!())?;
+    let closed_range_cutoff =
+        Utc::now().naive_utc() - Duration::milliseconds(freshness_max_age_ms);
+    if dt_till <= closed_range_cutoff {
+        Ok(AnalyticsMessageIdScope::Inclusive { min_id, max_id })
+    } else {
+        Ok(AnalyticsMessageIdScope::From(min_id))
+    }
+}
+
+fn apply_analytics_message_id_scope<E>(
+    query: Select<E>,
+    scope: Option<&AnalyticsMessageIdScope>,
+) -> Select<E>
+where
+    E: EntityTrait,
+{
+    match scope {
+        Some(scope) => query
+            .filter(scope.condition((
+                sigint_inbox_item::Entity,
+                sigint_inbox_item::Column::Id,
+            )))
+            .filter(scope.condition((
+                signal_message::Entity,
+                signal_message::Column::Id,
+            ))),
+        None => query,
+    }
+}
+
+fn apply_analytics_group_message_id_scope<E>(
+    query: Select<E>,
+    scope: Option<&AnalyticsMessageIdScope>,
+) -> Select<E>
+where
+    E: EntityTrait,
+{
+    match scope {
+        Some(scope) => query.filter(scope.condition((
+            signal_message_group::Entity,
+            signal_message_group::Column::SignalMessageId,
+        ))),
+        None => query,
+    }
+}
+
 async fn count_distinct_with_db<E>(
     query: Select<E>,
     expression: SimpleExpr,
@@ -148,6 +229,7 @@ pub async fn fetch_groups_for_login(
         master_keys,
         dt_since,
         dt_till,
+        None,
     )
     .await
 }
@@ -157,6 +239,7 @@ pub(super) async fn fetch_groups_raw_with_db(
     user: &Identity,
     db: &DatabaseConnection,
     master_keys: Vec<String>,
+    scope: Option<&AnalyticsMessageIdScope>,
 ) -> Result<Vec<AnalysisStatsGroup>, AppError> {
     let login_value = login_id_from_identity(user)?;
     let dt_since = dt_from_millis(req.since_date_inclusive_ms).c(h!())?;
@@ -168,6 +251,7 @@ pub(super) async fn fetch_groups_raw_with_db(
         master_keys,
         dt_since,
         dt_till,
+        scope,
     )
     .await
 }
@@ -179,6 +263,7 @@ async fn fetch_groups_for_login_with_db(
     master_keys: Vec<String>,
     dt_since: NaiveDateTime,
     dt_till: NaiveDateTime,
+    scope: Option<&AnalyticsMessageIdScope>,
 ) -> Result<Vec<AnalysisStatsGroup>, AppError> {
     let instant = std::time::Instant::now();
     trace!("get identity master keys op took: {:?}", instant.elapsed());
@@ -189,8 +274,14 @@ async fn fetch_groups_for_login_with_db(
     }
     let instant = std::time::Instant::now();
 
-    let groups_res =
-        build_groups_query(req, login_str, dt_since, dt_till, master_keys)?;
+    let groups_res = build_groups_query(
+        req,
+        login_str,
+        dt_since,
+        dt_till,
+        master_keys,
+        scope,
+    )?;
 
     let groups_res: Vec<GroupsRes> =
         groups_res.into_model::<GroupsRes>().all(db).await.c(h!())?;
@@ -302,6 +393,7 @@ pub async fn count_groups(
         dt_since,
         dt_till,
         master_keys,
+        None,
     )?;
     let count = groups_res.count(&read_db).await.c(h!())?;
     Ok(count as i64)
@@ -313,6 +405,7 @@ fn build_groups_query(
     dt_since: NaiveDateTime,
     dt_till: NaiveDateTime,
     master_keys: Vec<String>,
+    scope: Option<&AnalyticsMessageIdScope>,
 ) -> Result<Select<sigint_inbox_item::Entity>, AppError> {
     let include_peleng_locations =
         req.include_peleng_locations.unwrap_or(false);
@@ -351,6 +444,8 @@ fn build_groups_query(
             signal_message_group::Entity,
             signal_message_group::Column::GroupMasterKey,
         )));
+    let groups_res = apply_analytics_message_id_scope(groups_res, scope);
+    let groups_res = apply_analytics_group_message_id_scope(groups_res, scope);
     let groups_res = apply_joined_group_rows_filter(
         groups_res,
         &None,
@@ -481,23 +576,26 @@ async fn fetch_senders_for_login_with_db(
         "to_char(($1 AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Kyiv')::date, 'DD.MM.YYYY')",
         [Expr::col(sigint_inbox_item::Column::Datetime).into_simple_expr()],
     );
-    let breakdown_query =
-        build_join_for_sender_stats(&sender_stats_groups, &req.selected_aors)
-            .select_only()
-            .column_as(signal_message_group::Column::Sender, "uuid")
-            .column(sigint_inbox_item::Column::Freq)
-            .column(sigint_inbox_item::Column::PostId)
-            .column_as(per_day_expr.clone(), "date")
-            .column_as(
-                Expr::cust(r#"COUNT(DISTINCT "signal_message"."id")"#),
-                "count",
-            )
-            .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
-            .filter(sigint_inbox_item::Column::Datetime.lt(dt_till))
-            .group_by(signal_message_group::Column::Sender)
-            .group_by(sigint_inbox_item::Column::Freq)
-            .group_by(sigint_inbox_item::Column::PostId)
-            .group_by(per_day_expr);
+    let breakdown_query = build_join_for_sender_stats(
+        &sender_stats_groups,
+        &req.selected_aors,
+        None,
+    )
+    .select_only()
+    .column_as(signal_message_group::Column::Sender, "uuid")
+    .column(sigint_inbox_item::Column::Freq)
+    .column(sigint_inbox_item::Column::PostId)
+    .column_as(per_day_expr.clone(), "date")
+    .column_as(
+        Expr::cust(r#"COUNT(DISTINCT "signal_message"."id")"#),
+        "count",
+    )
+    .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
+    .filter(sigint_inbox_item::Column::Datetime.lt(dt_till))
+    .group_by(signal_message_group::Column::Sender)
+    .group_by(sigint_inbox_item::Column::Freq)
+    .group_by(sigint_inbox_item::Column::PostId)
+    .group_by(per_day_expr);
     let breakdown_query = apply_sender_dimension_filters(breakdown_query, req);
     let breakdown_query = apply_sender_filters_for_login(
         breakdown_query,
@@ -584,7 +682,7 @@ pub async fn count_senders(
     master_keys: Vec<String>,
 ) -> Result<i64, AppError> {
     let read_db = env.replica();
-    count_senders_with_db(req, user, &read_db, master_keys).await
+    count_senders_with_db(req, user, &read_db, master_keys, None).await
 }
 
 pub(super) async fn count_senders_with_db(
@@ -592,6 +690,7 @@ pub(super) async fn count_senders_with_db(
     user: &Identity,
     db: &DatabaseConnection,
     master_keys: Vec<String>,
+    scope: Option<&AnalyticsMessageIdScope>,
 ) -> Result<i64, AppError> {
     let dt_since = dt_from_millis(req.since_date_inclusive_ms).context(h!())?;
     let dt_till =
@@ -606,6 +705,7 @@ pub(super) async fn count_senders_with_db(
         dt_since,
         dt_till,
         master_keys,
+        scope,
     )?;
     count_distinct_with_db(
         senders_res,
@@ -625,15 +725,19 @@ fn build_senders_filtered_query(
     dt_since: NaiveDateTime,
     dt_till: NaiveDateTime,
     master_keys: Vec<String>,
+    scope: Option<&AnalyticsMessageIdScope>,
 ) -> Result<Select<sigint_inbox_item::Entity>, AppError> {
     let include_peleng_locations =
         req.include_peleng_locations.unwrap_or(false);
     let sender_stats_groups = sender_stats_groups(req, &master_keys);
-    let senders_res =
-        build_join_for_sender_stats(&sender_stats_groups, &req.selected_aors)
-            // .filter(signal_message::Column::DuplicateOf.is_null())
-            .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
-            .filter(sigint_inbox_item::Column::Datetime.lt(dt_till));
+    let senders_res = build_join_for_sender_stats(
+        &sender_stats_groups,
+        &req.selected_aors,
+        scope,
+    )
+    // .filter(signal_message::Column::DuplicateOf.is_null())
+    .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
+    .filter(sigint_inbox_item::Column::Datetime.lt(dt_till));
     let senders_res = apply_sender_dimension_filters(senders_res, req);
     let senders_res = filter_selected_groups_and_senders_with_access(
         senders_res,
@@ -698,6 +802,7 @@ fn sender_stats_groups(
 fn build_join_for_sender_stats(
     sender_stats_groups: &[String],
     selected_aors: &Option<Vec<i64>>,
+    scope: Option<&AnalyticsMessageIdScope>,
 ) -> Select<Entity> {
     let sender_stats_groups = sender_stats_groups.to_vec();
 
@@ -705,6 +810,9 @@ fn build_join_for_sender_stats(
         JoinType::InnerJoin,
         signal_message::Relation::SignalMessageGroup.def(),
     );
+
+    let query = apply_analytics_message_id_scope(query, scope);
+    let query = apply_analytics_group_message_id_scope(query, scope);
 
     if sender_stats_groups.is_empty() {
         query.filter(Expr::cust("FALSE"))
@@ -849,7 +957,7 @@ async fn fetch_posts_with_db(
         dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
     let instant = std::time::Instant::now();
     let post_res =
-        build_posts_query(&req, &user, master_keys, dt_since, dt_till)?;
+        build_posts_query(&req, &user, master_keys, dt_since, dt_till, None)?;
     let post_res: Vec<PostsRes> = post_res
         .into_model::<PostsRes>()
         .all(db)
@@ -873,7 +981,7 @@ pub async fn count_posts(
     master_keys: Vec<String>,
 ) -> Result<i64, AppError> {
     let read_db = env.replica();
-    count_posts_with_db(req, user, &read_db, master_keys).await
+    count_posts_with_db(req, user, &read_db, master_keys, None).await
 }
 
 pub(super) async fn count_posts_with_db(
@@ -881,6 +989,7 @@ pub(super) async fn count_posts_with_db(
     user: &Identity,
     db: &DatabaseConnection,
     master_keys: Vec<String>,
+    scope: Option<&AnalyticsMessageIdScope>,
 ) -> Result<i64, AppError> {
     let dt_since = dt_from_millis(req.since_date_inclusive_ms).context(h!())?;
     let dt_till =
@@ -894,6 +1003,7 @@ pub(super) async fn count_posts_with_db(
         master_keys,
         dt_since,
         dt_till,
+        scope,
     )?;
     count_distinct_with_db(
         posts_res,
@@ -909,21 +1019,26 @@ fn build_posts_query(
     master_keys: Vec<String>,
     dt_since: NaiveDateTime,
     dt_till: NaiveDateTime,
+    scope: Option<&AnalyticsMessageIdScope>,
 ) -> Result<Select<sigint_inbox_item::Entity>, AppError> {
-    Ok(
-        build_posts_filtered_query(req, user, master_keys, dt_since, dt_till)?
-            .select_only()
-            .column_as(
-                Expr::col((sigint_post::Entity, sigint_post::Column::Name))
-                    .if_null(""),
-                "post",
-            )
-            .column_as(
-                Expr::cust(r#"COUNT(DISTINCT "signal_message"."id")"#),
-                "count",
-            )
-            .group_by(Expr::cust("1")),
+    Ok(build_posts_filtered_query(
+        req,
+        user,
+        master_keys,
+        dt_since,
+        dt_till,
+        scope,
+    )?
+    .select_only()
+    .column_as(
+        Expr::col((sigint_post::Entity, sigint_post::Column::Name)).if_null(""),
+        "post",
     )
+    .column_as(
+        Expr::cust(r#"COUNT(DISTINCT "signal_message"."id")"#),
+        "count",
+    )
+    .group_by(Expr::cust("1")))
 }
 
 fn build_posts_filtered_query(
@@ -932,6 +1047,7 @@ fn build_posts_filtered_query(
     master_keys: Vec<String>,
     dt_since: NaiveDateTime,
     dt_till: NaiveDateTime,
+    scope: Option<&AnalyticsMessageIdScope>,
 ) -> Result<Select<sigint_inbox_item::Entity>, AppError> {
     let include_peleng_locations =
         req.include_peleng_locations.unwrap_or(false);
@@ -944,11 +1060,15 @@ fn build_posts_filtered_query(
             JoinType::InnerJoin,
             sigint_inbox_item::Relation::SigintPost.def(),
         )
-        .filter(message_in_groups_exists(master_keys.clone()))
+        .filter(message_in_groups_exists_with_scope(
+            master_keys.clone(),
+            scope,
+        ))
         .filter(signal_message::Column::Deleted.eq(false))
         // .filter(signal_message::Column::DuplicateOf.is_null())
         .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
         .filter(sigint_inbox_item::Column::Datetime.lt(dt_till));
+    let post_res = apply_analytics_message_id_scope(post_res, scope);
     let post_res = filter_selected_groups_and_senders_with_access(
         post_res,
         &req.selected_groups,
@@ -1067,8 +1187,14 @@ async fn fetch_freqs_for_login_with_db(
         freq: String,
         count: i64,
     }
-    let freqs_res =
-        build_freqs_query(req, login_str, dt_since, dt_till, master_keys)?;
+    let freqs_res = build_freqs_query(
+        req,
+        login_str,
+        dt_since,
+        dt_till,
+        master_keys,
+        None,
+    )?;
     // debug!(
     //     "> freqs_res: {}",
     //     freqs_res.build(DbBackend::Postgres).to_string()
@@ -1142,7 +1268,7 @@ pub async fn count_freqs(
     master_keys: Vec<String>,
 ) -> Result<i64, AppError> {
     let read_db = env.replica();
-    count_freqs_with_db(req, user, &read_db, master_keys).await
+    count_freqs_with_db(req, user, &read_db, master_keys, None).await
 }
 
 pub(super) async fn count_freqs_with_db(
@@ -1150,6 +1276,7 @@ pub(super) async fn count_freqs_with_db(
     user: &Identity,
     db: &DatabaseConnection,
     master_keys: Vec<String>,
+    scope: Option<&AnalyticsMessageIdScope>,
 ) -> Result<i64, AppError> {
     let dt_since = dt_from_millis(req.since_date_inclusive_ms).context(h!())?;
     let dt_till =
@@ -1164,6 +1291,7 @@ pub(super) async fn count_freqs_with_db(
         dt_since,
         dt_till,
         master_keys,
+        scope,
     )?;
     count_distinct_with_db(
         freqs_res,
@@ -1179,6 +1307,7 @@ fn build_freqs_query(
     dt_since: NaiveDateTime,
     dt_till: NaiveDateTime,
     master_keys: Vec<String>,
+    scope: Option<&AnalyticsMessageIdScope>,
 ) -> Result<Select<sigint_inbox_item::Entity>, AppError> {
     Ok(build_freqs_filtered_query(
         req,
@@ -1186,6 +1315,7 @@ fn build_freqs_query(
         dt_since,
         dt_till,
         master_keys,
+        scope,
     )?
     .select_only()
     .column_as(
@@ -1205,6 +1335,7 @@ fn build_freqs_filtered_query(
     dt_since: NaiveDateTime,
     dt_till: NaiveDateTime,
     master_keys: Vec<String>,
+    scope: Option<&AnalyticsMessageIdScope>,
 ) -> Result<Select<sigint_inbox_item::Entity>, AppError> {
     let include_peleng_locations =
         req.include_peleng_locations.unwrap_or(false);
@@ -1217,11 +1348,15 @@ fn build_freqs_filtered_query(
             JoinType::LeftJoin,
             sigint_inbox_item::Relation::SigintPost.def(),
         )
-        .filter(message_in_groups_exists(master_keys.clone()))
+        .filter(message_in_groups_exists_with_scope(
+            master_keys.clone(),
+            scope,
+        ))
         .filter(signal_message::Column::Deleted.eq(false))
         // .filter(signal_message::Column::DuplicateOf.is_null())
         .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
         .filter(sigint_inbox_item::Column::Datetime.lt(dt_till));
+    let freqs_res = apply_analytics_message_id_scope(freqs_res, scope);
     let freqs_res = filter_selected_groups_and_senders_with_access(
         freqs_res,
         &req.selected_groups,
@@ -1363,6 +1498,7 @@ pub(super) async fn fetch_callsigns_raw_with_db(
         dt_since,
         dt_till,
         master_keys,
+        None,
     )?;
     let callsign_alias = Alias::new("analytics_callsign");
     QuerySelect::query(&mut callsigns_res)
@@ -1447,6 +1583,7 @@ pub(super) async fn count_callsigns_analytics_with_db(
     user: &Identity,
     db: &DatabaseConnection,
     master_keys: Vec<String>,
+    scope: Option<&AnalyticsMessageIdScope>,
 ) -> Result<i64, AppError> {
     let login_value = login_id_from_identity(user)?;
     let dt_since = dt_from_millis(req.since_date_inclusive_ms).context(h!())?;
@@ -1458,6 +1595,7 @@ pub(super) async fn count_callsigns_analytics_with_db(
         dt_since,
         dt_till,
         master_keys,
+        scope,
     )?;
     let callsign_alias = Alias::new("analytics_callsign");
     QuerySelect::query(&mut callsigns_res)
@@ -1478,10 +1616,18 @@ pub(super) async fn count_callsigns_analytics_with_db(
         .expr_as(
             Expr::cust_with_expr(
                 "COUNT(DISTINCT $1)",
-                Expr::col((callsign_alias, Alias::new("callsign"))),
+                Expr::col((callsign_alias.clone(), Alias::new("callsign"))),
             ),
             Alias::new("count"),
         );
+    if let Some(scope) = scope {
+        QuerySelect::query(&mut callsigns_res).cond_where(
+            scope.condition((
+                callsign_alias,
+                Alias::new("sigint_inbox_item_id"),
+            )),
+        );
+    }
     let result = callsigns_res
         .into_model::<DistinctCountRes>()
         .one(db)
@@ -1767,6 +1913,7 @@ fn build_callsigns_query(
         dt_since,
         dt_till,
         master_keys,
+        None,
     )?
     .select_only()
     .column_as(
@@ -1786,6 +1933,7 @@ fn build_callsigns_filtered_query(
     dt_since: NaiveDateTime,
     dt_till: NaiveDateTime,
     master_keys: Vec<String>,
+    scope: Option<&AnalyticsMessageIdScope>,
 ) -> Result<Select<sigint_inbox_item::Entity>, AppError> {
     let include_peleng_locations =
         req.include_peleng_locations.unwrap_or(false);
@@ -1798,11 +1946,15 @@ fn build_callsigns_filtered_query(
             JoinType::LeftJoin,
             sigint_inbox_item::Relation::SigintPost.def(),
         )
-        .filter(message_in_groups_exists(master_keys.clone()))
+        .filter(message_in_groups_exists_with_scope(
+            master_keys.clone(),
+            scope,
+        ))
         .filter(signal_message::Column::Deleted.eq(false))
         // .filter(signal_message::Column::DuplicateOf.is_null())
         .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
         .filter(sigint_inbox_item::Column::Datetime.lt(dt_till));
+    let callsigns_res = apply_analytics_message_id_scope(callsigns_res, scope);
     let callsigns_res = filter_selected_groups_and_senders_with_access(
         callsigns_res,
         &req.selected_groups,
@@ -2009,12 +2161,13 @@ pub(super) async fn count_tags_analytics_with_db(
     db: &DatabaseConnection,
     master_keys: Vec<String>,
     tag_access: &AnalyticsTagAccess,
+    scope: Option<&AnalyticsMessageIdScope>,
 ) -> Result<i64, AppError> {
     let login_value = login_id_from_identity(user)?;
     let dt_since = dt_from_millis(req.since_date_inclusive_ms).context(h!())?;
     let dt_till =
         dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
-    let tags_res = build_tags_analytics_count_query(
+    let tags_res = build_tags_analytics_count_query_with_scope(
         &req.0,
         &login_value,
         &tag_access.accessible_tag_ids,
@@ -2022,6 +2175,7 @@ pub(super) async fn count_tags_analytics_with_db(
         dt_since,
         dt_till,
         master_keys,
+        scope,
     )?;
     let result = tags_res
         .into_model::<DistinctCountRes>()
@@ -2067,6 +2221,7 @@ fn build_tags_filtered_query(
         dt_since,
         dt_till,
         master_keys,
+        None,
     )
 }
 
@@ -2087,9 +2242,11 @@ pub(super) fn build_tags_analytics_filtered_query(
         dt_since,
         dt_till,
         master_keys,
+        None,
     )
 }
 
+#[cfg(test)]
 pub(super) fn build_tags_analytics_count_query(
     req: &AnalysisStatsReq,
     login_str: &uuid::Uuid,
@@ -2099,15 +2256,38 @@ pub(super) fn build_tags_analytics_count_query(
     dt_till: NaiveDateTime,
     master_keys: Vec<String>,
 ) -> Result<Select<sigint_inbox_item::Entity>, AppError> {
+    build_tags_analytics_count_query_with_scope(
+        req,
+        login_str,
+        accessible_tag_ids,
+        unit_login_ids,
+        dt_since,
+        dt_till,
+        master_keys,
+        None,
+    )
+}
+
+fn build_tags_analytics_count_query_with_scope(
+    req: &AnalysisStatsReq,
+    login_str: &uuid::Uuid,
+    accessible_tag_ids: &[i64],
+    unit_login_ids: &[uuid::Uuid],
+    dt_since: NaiveDateTime,
+    dt_till: NaiveDateTime,
+    master_keys: Vec<String>,
+    scope: Option<&AnalyticsMessageIdScope>,
+) -> Result<Select<sigint_inbox_item::Entity>, AppError> {
     Ok(build_distinct_count_query(
-        build_tags_analytics_filtered_query(
+        build_tags_filtered_query_with_owner_condition(
             req,
             login_str,
-            accessible_tag_ids,
-            unit_login_ids,
+            accessible_tag_ids_condition(accessible_tag_ids),
+            Some((accessible_tag_ids, unit_login_ids)),
             dt_since,
             dt_till,
             master_keys,
+            scope,
         )?,
         Expr::col(sigint_inbox_item_tag::Column::TagId).into(),
     ))
@@ -2121,6 +2301,7 @@ fn build_tags_filtered_query_with_owner_condition(
     dt_since: NaiveDateTime,
     dt_till: NaiveDateTime,
     master_keys: Vec<String>,
+    scope: Option<&AnalyticsMessageIdScope>,
 ) -> Result<Select<sigint_inbox_item::Entity>, AppError> {
     let include_peleng_locations =
         req.include_peleng_locations.unwrap_or(false);
@@ -2152,11 +2333,21 @@ fn build_tags_filtered_query_with_owner_condition(
             sigint_inbox_item_tag::Relation::Tag.def(),
         )
         .filter(owner_condition)
-        .filter(message_in_groups_exists(master_keys.clone()))
+        .filter(message_in_groups_exists_with_scope(
+            master_keys.clone(),
+            scope,
+        ))
         .filter(signal_message::Column::Deleted.eq(false))
         // .filter(signal_message::Column::DuplicateOf.is_null())
         .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
         .filter(sigint_inbox_item::Column::Datetime.lt(dt_till));
+    tags_res = apply_analytics_message_id_scope(tags_res, scope);
+    if let Some(scope) = scope {
+        tags_res = tags_res.filter(scope.condition((
+            sigint_inbox_item_tag::Entity,
+            sigint_inbox_item_tag::Column::SigintInboxItemId,
+        )));
+    }
     // .filter(sigint_inbox_item::Column::Checked.eq(Some(true)))
     if req.without_model_tags == Some(true) {
         tags_res =
@@ -2281,7 +2472,7 @@ async fn fetch_units_with_db(
         dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
     let instant = std::time::Instant::now();
     let units_res =
-        build_units_query(&req, &user, dt_since, dt_till, master_keys)?;
+        build_units_query(&req, &user, dt_since, dt_till, master_keys, None)?;
     // println!(
     //     "> units_res: {}",
     //     units_res.build(DbBackend::Postgres).to_string()
@@ -2313,7 +2504,7 @@ pub async fn count_units(
     master_keys: Vec<String>,
 ) -> Result<i64, AppError> {
     let read_db = env.replica();
-    count_units_with_db(req, user, &read_db, master_keys).await
+    count_units_with_db(req, user, &read_db, master_keys, None).await
 }
 
 pub(super) async fn count_units_with_db(
@@ -2321,6 +2512,7 @@ pub(super) async fn count_units_with_db(
     user: &Identity,
     db: &DatabaseConnection,
     master_keys: Vec<String>,
+    scope: Option<&AnalyticsMessageIdScope>,
 ) -> Result<i64, AppError> {
     let dt_since = dt_from_millis(req.since_date_inclusive_ms).context(h!())?;
     let dt_till =
@@ -2334,6 +2526,7 @@ pub(super) async fn count_units_with_db(
         dt_since,
         dt_till,
         master_keys,
+        scope,
     )?;
     count_distinct_with_db(
         units_res,
@@ -2375,6 +2568,7 @@ pub(super) async fn count_unit_exact_match_breakdown_raw_with_db(
     env: &Env,
     db: &DatabaseConnection,
     master_keys: Vec<String>,
+    scope: Option<&AnalyticsMessageIdScope>,
 ) -> Result<(i64, i64), AppError> {
     let login_value = login_id_from_identity(user)?;
     let mut exact_req = req.0.clone();
@@ -2386,6 +2580,7 @@ pub(super) async fn count_unit_exact_match_breakdown_raw_with_db(
         env,
         db,
         false,
+        scope,
     )
     .await?;
 
@@ -2398,6 +2593,7 @@ pub(super) async fn count_unit_exact_match_breakdown_raw_with_db(
         env,
         db,
         false,
+        scope,
     )
     .await?;
 
@@ -2413,20 +2609,26 @@ fn build_units_query(
     dt_since: NaiveDateTime,
     dt_till: NaiveDateTime,
     master_keys: Vec<String>,
+    scope: Option<&AnalyticsMessageIdScope>,
 ) -> Result<Select<sigint_inbox_item::Entity>, AppError> {
-    Ok(
-        build_units_filtered_query(req, user, dt_since, dt_till, master_keys)?
-            .select_only()
-            .column_as(
-                Expr::col(sigint_inbox_item::Column::UnitV2).if_null(""),
-                "unit",
-            )
-            .column_as(
-                Expr::cust(r#"COUNT(DISTINCT "signal_message"."id")"#),
-                "count",
-            )
-            .group_by(Expr::cust("1")),
+    Ok(build_units_filtered_query(
+        req,
+        user,
+        dt_since,
+        dt_till,
+        master_keys,
+        scope,
+    )?
+    .select_only()
+    .column_as(
+        Expr::col(sigint_inbox_item::Column::UnitV2).if_null(""),
+        "unit",
     )
+    .column_as(
+        Expr::cust(r#"COUNT(DISTINCT "signal_message"."id")"#),
+        "count",
+    )
+    .group_by(Expr::cust("1")))
 }
 
 fn build_units_filtered_query(
@@ -2435,6 +2637,7 @@ fn build_units_filtered_query(
     dt_since: NaiveDateTime,
     dt_till: NaiveDateTime,
     master_keys: Vec<String>,
+    scope: Option<&AnalyticsMessageIdScope>,
 ) -> Result<Select<sigint_inbox_item::Entity>, AppError> {
     let include_peleng_locations =
         req.include_peleng_locations.unwrap_or(false);
@@ -2447,11 +2650,15 @@ fn build_units_filtered_query(
             JoinType::LeftJoin,
             sigint_inbox_item::Relation::SigintPost.def(),
         )
-        .filter(message_in_groups_exists(master_keys.clone()))
+        .filter(message_in_groups_exists_with_scope(
+            master_keys.clone(),
+            scope,
+        ))
         .filter(signal_message::Column::Deleted.eq(false))
         // .filter(signal_message::Column::DuplicateOf.is_null())
         .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
         .filter(sigint_inbox_item::Column::Datetime.lt(dt_till));
+    let units_res = apply_analytics_message_id_scope(units_res, scope);
     let units_res = filter_selected_groups_and_senders_with_access(
         units_res,
         &req.selected_groups,
@@ -2601,7 +2808,7 @@ pub async fn count_locations(
     master_keys: Vec<String>,
 ) -> Result<i64, AppError> {
     let read_db = env.replica();
-    count_locations_with_db(req, user, &read_db, master_keys).await
+    count_locations_with_db(req, user, &read_db, master_keys, None).await
 }
 
 pub(super) async fn count_locations_with_db(
@@ -2609,6 +2816,7 @@ pub(super) async fn count_locations_with_db(
     user: &Identity,
     db: &DatabaseConnection,
     master_keys: Vec<String>,
+    scope: Option<&AnalyticsMessageIdScope>,
 ) -> Result<i64, AppError> {
     let dt_since = dt_from_millis(req.since_date_inclusive_ms).context(h!())?;
     let dt_till =
@@ -2622,6 +2830,7 @@ pub(super) async fn count_locations_with_db(
         dt_since,
         dt_till,
         master_keys,
+        scope,
     )?;
     count_distinct_with_db(
         locations_res,
@@ -2644,6 +2853,7 @@ fn build_locations_query_for_login(
         dt_since,
         dt_till,
         master_keys,
+        None,
     )?
     .select_only()
     .column_as(
@@ -2663,6 +2873,7 @@ fn build_locations_filtered_query(
     dt_since: NaiveDateTime,
     dt_till: NaiveDateTime,
     master_keys: Vec<String>,
+    scope: Option<&AnalyticsMessageIdScope>,
 ) -> Result<Select<sigint_inbox_item::Entity>, AppError> {
     let login_value = login_id_from_identity(user)?;
     build_locations_filtered_query_for_login(
@@ -2671,6 +2882,7 @@ fn build_locations_filtered_query(
         dt_since,
         dt_till,
         master_keys,
+        scope,
     )
 }
 
@@ -2680,6 +2892,7 @@ fn build_locations_filtered_query_for_login(
     dt_since: NaiveDateTime,
     dt_till: NaiveDateTime,
     master_keys: Vec<String>,
+    scope: Option<&AnalyticsMessageIdScope>,
 ) -> Result<Select<sigint_inbox_item::Entity>, AppError> {
     let locations_res = sigint_inbox_item::Entity::find()
         .join(
@@ -2690,11 +2903,15 @@ fn build_locations_filtered_query_for_login(
             JoinType::LeftJoin,
             sigint_inbox_item::Relation::SigintPost.def(),
         )
-        .filter(message_in_groups_exists(master_keys.clone()))
+        .filter(message_in_groups_exists_with_scope(
+            master_keys.clone(),
+            scope,
+        ))
         .filter(signal_message::Column::Deleted.eq(false))
         // .filter(signal_message::Column::DuplicateOf.is_null())
         .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
         .filter(sigint_inbox_item::Column::Datetime.lt(dt_till));
+    let locations_res = apply_analytics_message_id_scope(locations_res, scope);
     let locations_res = filter_selected_groups_and_senders_with_access(
         locations_res,
         &req.selected_groups,
@@ -2871,17 +3088,19 @@ pub(super) async fn count_aors_raw_with_db(
     user: &Identity,
     db: &DatabaseConnection,
     master_keys: Vec<String>,
+    scope: Option<&AnalyticsMessageIdScope>,
 ) -> Result<i64, AppError> {
     let dt_since = dt_from_millis(req.since_date_inclusive_ms).context(h!())?;
     let dt_till =
         dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
     let login_value = login_id_from_identity(user)?;
-    let stmt = build_aors_analytics_query(
+    let stmt = build_aors_analytics_query_with_scope(
         &req.0,
         &login_value,
         dt_since,
         dt_till,
         master_keys,
+        scope,
     )?;
     let count = AorsRes::find_by_statement(stmt)
         .all(db)
@@ -2923,6 +3142,7 @@ fn build_aors_query(
         dt_since,
         dt_till,
         &master_keys,
+        None,
     )?
     .select_only()
     .column_as(
@@ -2975,7 +3195,7 @@ fn build_aors_query(
                     signal_group_aor::Column::MasterKey,
                 ))
                 .equals((
-                    group_message_alias,
+                    group_message_alias.clone(),
                     signal_message_group::Column::GroupMasterKey,
                 )),
             ),
@@ -3044,7 +3264,7 @@ fn build_aors_query(
             Condition::all().add(
                 Expr::col((network_alias.clone(), sigint_network::Column::Id))
                     .equals((
-                        network_message_alias,
+                        network_message_alias.clone(),
                         sigint_inbox_item_network::Column::SigintNetworkId,
                     )),
             ),
@@ -3118,6 +3338,24 @@ pub(super) fn build_aors_analytics_query(
     dt_till: NaiveDateTime,
     master_keys: Vec<String>,
 ) -> Result<Statement, AppError> {
+    build_aors_analytics_query_with_scope(
+        req,
+        login_str,
+        dt_since,
+        dt_till,
+        master_keys,
+        None,
+    )
+}
+
+fn build_aors_analytics_query_with_scope(
+    req: &AnalysisStatsReq,
+    login_str: &uuid::Uuid,
+    dt_since: NaiveDateTime,
+    dt_till: NaiveDateTime,
+    master_keys: Vec<String>,
+    scope: Option<&AnalyticsMessageIdScope>,
+) -> Result<Statement, AppError> {
     let group_message_aors = build_aor_group_analytics_arm(
         build_aor_messages_query(
             req,
@@ -3125,8 +3363,10 @@ pub(super) fn build_aors_analytics_query(
             dt_since,
             dt_till,
             &master_keys,
+            scope,
         )?,
         &req.selected_aors,
+        scope,
     );
     let network_message_aors = build_aor_network_analytics_arm(
         build_aor_messages_query(
@@ -3135,8 +3375,10 @@ pub(super) fn build_aors_analytics_query(
             dt_since,
             dt_till,
             &master_keys,
+            scope,
         )?,
         &req.selected_aors,
+        scope,
     );
 
     let sql = format!(
@@ -3156,6 +3398,7 @@ fn build_aor_messages_query(
     dt_since: NaiveDateTime,
     dt_till: NaiveDateTime,
     master_keys: &[String],
+    scope: Option<&AnalyticsMessageIdScope>,
 ) -> Result<Select<sigint_inbox_item::Entity>, AppError> {
     let messages = sigint_inbox_item::Entity::find()
         .join(
@@ -3170,10 +3413,15 @@ fn build_aor_messages_query(
             JoinType::InnerJoin,
             signal_message::Relation::SignalMessageGroup.def(),
         )
-        .filter(message_in_groups_exists(master_keys.to_vec()))
+        .filter(message_in_groups_exists_with_scope(
+            master_keys.to_vec(),
+            scope,
+        ))
         .filter(signal_message::Column::Deleted.eq(false))
         .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
         .filter(sigint_inbox_item::Column::Datetime.lt(dt_till));
+    let messages = apply_analytics_message_id_scope(messages, scope);
+    let messages = apply_analytics_group_message_id_scope(messages, scope);
     let messages = apply_joined_group_rows_filter(
         messages,
         &req.selected_groups,
@@ -3216,6 +3464,7 @@ fn build_aor_messages_query(
 fn build_aor_group_analytics_arm(
     messages: Select<sigint_inbox_item::Entity>,
     selected_aors: &Option<Vec<i64>>,
+    scope: Option<&AnalyticsMessageIdScope>,
 ) -> SelectStatement {
     let group_message_alias = Alias::new("group_message_aor");
     let group_aor_alias = Alias::new("group_aor_link");
@@ -3253,7 +3502,7 @@ fn build_aor_group_analytics_arm(
                     signal_group_aor::Column::MasterKey,
                 ))
                 .equals((
-                    group_message_alias,
+                    group_message_alias.clone(),
                     signal_message_group::Column::GroupMasterKey,
                 )),
             ),
@@ -3282,6 +3531,12 @@ fn build_aor_group_analytics_arm(
             ))
             .eq(true),
         );
+    if let Some(scope) = scope {
+        QuerySelect::query(&mut messages).cond_where(scope.condition((
+            group_message_alias,
+            signal_message_group::Column::SignalMessageId,
+        )));
+    }
     if let Some(condition) =
         selected_aor_overlap_condition(group_value_alias, selected_aors)
     {
@@ -3293,6 +3548,7 @@ fn build_aor_group_analytics_arm(
 fn build_aor_network_analytics_arm(
     messages: Select<sigint_inbox_item::Entity>,
     selected_aors: &Option<Vec<i64>>,
+    scope: Option<&AnalyticsMessageIdScope>,
 ) -> SelectStatement {
     let network_message_alias = Alias::new("network_message_aor");
     let network_alias = Alias::new("network_aor");
@@ -3328,7 +3584,7 @@ fn build_aor_network_analytics_arm(
             Condition::all().add(
                 Expr::col((network_alias.clone(), sigint_network::Column::Id))
                     .equals((
-                        network_message_alias,
+                        network_message_alias.clone(),
                         sigint_inbox_item_network::Column::SigintNetworkId,
                     )),
             ),
@@ -3373,6 +3629,12 @@ fn build_aor_network_analytics_arm(
             ))
             .eq(true),
         );
+    if let Some(scope) = scope {
+        QuerySelect::query(&mut messages).cond_where(scope.condition((
+            network_message_alias,
+            sigint_inbox_item_network::Column::SigintInboxItemId,
+        )));
+    }
     if let Some(condition) =
         selected_aor_overlap_condition(network_value_alias, selected_aors)
     {
@@ -3486,12 +3748,13 @@ pub(super) async fn count_networks_analytics_with_db(
     db: &DatabaseConnection,
     master_keys: Vec<String>,
     tag_access: &AnalyticsTagAccess,
+    scope: Option<&AnalyticsMessageIdScope>,
 ) -> Result<i64, AppError> {
     let login_value = login_id_from_identity(user)?;
     let dt_since = dt_from_millis(req.since_date_inclusive_ms).context(h!())?;
     let dt_till =
         dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
-    let statement = build_networks_analytics_count_query(
+    let statement = build_networks_analytics_count_query_with_scope(
         &req.0,
         &login_value,
         &tag_access.accessible_tag_ids,
@@ -3499,6 +3762,7 @@ pub(super) async fn count_networks_analytics_with_db(
         dt_since,
         dt_till,
         master_keys,
+        scope,
     )?;
     let result = DistinctCountRes::find_by_statement(statement)
         .one(db)
@@ -3543,6 +3807,7 @@ pub(super) async fn fetch_networks_analytics_with_db(
         .collect())
 }
 
+#[cfg(test)]
 pub(super) fn build_networks_analytics_count_query(
     req: &AnalysisStatsReq,
     login_str: &uuid::Uuid,
@@ -3552,7 +3817,29 @@ pub(super) fn build_networks_analytics_count_query(
     dt_till: NaiveDateTime,
     master_keys: Vec<String>,
 ) -> Result<Statement, AppError> {
-    build_networks_analytics_query(
+    build_networks_analytics_count_query_with_scope(
+        req,
+        login_str,
+        accessible_tag_ids,
+        unit_login_ids,
+        dt_since,
+        dt_till,
+        master_keys,
+        None,
+    )
+}
+
+fn build_networks_analytics_count_query_with_scope(
+    req: &AnalysisStatsReq,
+    login_str: &uuid::Uuid,
+    accessible_tag_ids: &[i64],
+    unit_login_ids: &[uuid::Uuid],
+    dt_since: NaiveDateTime,
+    dt_till: NaiveDateTime,
+    master_keys: Vec<String>,
+    scope: Option<&AnalyticsMessageIdScope>,
+) -> Result<Statement, AppError> {
+    build_networks_analytics_query_with_scope(
         req,
         login_str,
         accessible_tag_ids,
@@ -3561,6 +3848,7 @@ pub(super) fn build_networks_analytics_count_query(
         dt_till,
         master_keys,
         true,
+        scope,
     )
 }
 
@@ -3574,6 +3862,31 @@ pub(super) fn build_networks_analytics_query(
     master_keys: Vec<String>,
     count_only: bool,
 ) -> Result<Statement, AppError> {
+    build_networks_analytics_query_with_scope(
+        req,
+        login_str,
+        accessible_tag_ids,
+        unit_login_ids,
+        dt_since,
+        dt_till,
+        master_keys,
+        count_only,
+        None,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn build_networks_analytics_query_with_scope(
+    req: &AnalysisStatsReq,
+    login_str: &uuid::Uuid,
+    accessible_tag_ids: &[i64],
+    unit_login_ids: &[uuid::Uuid],
+    dt_since: NaiveDateTime,
+    dt_till: NaiveDateTime,
+    master_keys: Vec<String>,
+    count_only: bool,
+    scope: Option<&AnalyticsMessageIdScope>,
+) -> Result<Statement, AppError> {
     let messages = build_network_analytics_messages_query(
         req,
         login_str,
@@ -3582,6 +3895,7 @@ pub(super) fn build_networks_analytics_query(
         dt_since,
         dt_till,
         &master_keys,
+        scope,
     )?;
     let groups =
         build_network_analytics_groups_query(req, master_keys.as_slice());
@@ -3594,6 +3908,7 @@ pub(super) fn build_networks_analytics_query(
         messages,
         groups,
         &req.selected_aors,
+        scope,
     );
     let (projection, group_by) = if count_only {
         ("COUNT(DISTINCT network_id) AS count", "")
@@ -3621,6 +3936,7 @@ fn build_network_analytics_messages_query(
     dt_since: NaiveDateTime,
     dt_till: NaiveDateTime,
     master_keys: &[String],
+    scope: Option<&AnalyticsMessageIdScope>,
 ) -> Result<Select<sigint_inbox_item::Entity>, AppError> {
     let messages = sigint_inbox_item::Entity::find()
         .join(
@@ -3636,9 +3952,14 @@ fn build_network_analytics_messages_query(
             signal_message::Relation::SignalMessageGroup.def(),
         )
         .filter(signal_message::Column::Deleted.eq(false))
-        .filter(message_in_groups_exists(master_keys.to_vec()))
+        .filter(message_in_groups_exists_with_scope(
+            master_keys.to_vec(),
+            scope,
+        ))
         .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
         .filter(sigint_inbox_item::Column::Datetime.lt(dt_till));
+    let messages = apply_analytics_message_id_scope(messages, scope);
+    let messages = apply_analytics_group_message_id_scope(messages, scope);
     let messages = apply_joined_group_rows_filter(
         messages,
         &req.selected_groups,
@@ -3897,6 +4218,7 @@ fn build_network_linked_analytics_arm(
     messages: Select<sigint_inbox_item::Entity>,
     groups: Select<signal_group::Entity>,
     selected_aors: &Option<Vec<i64>>,
+    scope: Option<&AnalyticsMessageIdScope>,
 ) -> SelectStatement {
     let message_alias = Alias::new("analytics_linked_message");
     let network_link_alias = Alias::new("analytics_linked_network_link");
@@ -3937,7 +4259,7 @@ fn build_network_linked_analytics_arm(
             network_alias.clone(),
             Expr::col((network_alias.clone(), sigint_network::Column::Id))
                 .equals((
-                    network_link_alias,
+                    network_link_alias.clone(),
                     sigint_inbox_item_network::Column::SigintNetworkId,
                 )),
         )
@@ -3984,6 +4306,12 @@ fn build_network_linked_analytics_arm(
             Expr::col((network_alias, sigint_network::Column::Deleted))
                 .eq(false),
         );
+    if let Some(scope) = scope {
+        matches.cond_where(scope.condition((
+            network_link_alias,
+            sigint_inbox_item_network::Column::SigintInboxItemId,
+        )));
+    }
     if let Some(condition) =
         selected_aor_overlap_condition(network_value_alias, selected_aors)
     {
@@ -4483,6 +4811,7 @@ pub async fn fetch_counts_for_login(
         env,
         &replica_conn,
         true,
+        None,
     )
     .await
     {
@@ -4501,6 +4830,7 @@ pub async fn fetch_counts_for_login(
                 env,
                 &env.dbx,
                 true,
+                None,
             )
             .await
         }
@@ -4515,6 +4845,7 @@ async fn fetch_counts_for_login_with_conn(
     env: &Env,
     db: &DatabaseConnection,
     allow_stats_aggregated: bool,
+    scope: Option<&AnalyticsMessageIdScope>,
 ) -> Result<(i64, i64), AppError> {
     let dt_since = dt_from_millis(req.since_date_inclusive_ms).context(h!())?;
     let dt_till =
@@ -4532,6 +4863,7 @@ async fn fetch_counts_for_login_with_conn(
         dt_till,
         master_keys.clone(),
         read_stats_aggregated,
+        scope,
     )
     .await
     .context(h!())?;
@@ -4570,10 +4902,15 @@ async fn fetch_counts_for_login_with_conn(
             "count",
         )
         .filter(signal_message::Column::Deleted.eq(false))
-        .filter(message_in_groups_exists(master_keys.clone()))
+        .filter(message_in_groups_exists_with_scope(
+            master_keys.clone(),
+            scope,
+        ))
         // .filter(signal_message::Column::DuplicateOf.is_null())
         .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
         .filter(sigint_inbox_item::Column::Datetime.lt(dt_till));
+    let selected_count_res =
+        apply_analytics_message_id_scope(selected_count_res, scope);
     // .filter(sigint_inbox_item::Column::Checked.eq(Some(true)));
     let selected_count_res = filter_selected_groups_and_senders_with_access(
         selected_count_res,
@@ -4661,6 +4998,7 @@ pub(super) async fn fetch_counts_raw_with_db(
     env: &Env,
     db: &DatabaseConnection,
     master_keys: Vec<String>,
+    scope: Option<&AnalyticsMessageIdScope>,
 ) -> Result<(i64, i64), AppError> {
     let login_value = login_id_from_identity(user)?;
     fetch_counts_for_login_with_conn(
@@ -4670,6 +5008,7 @@ pub(super) async fn fetch_counts_raw_with_db(
         env,
         db,
         false,
+        scope,
     )
     .await
 }
@@ -4680,6 +5019,7 @@ async fn fetch_count_overall(
     dt_till: NaiveDateTime,
     master_keys: Vec<String>,
     read_stats_aggregated: bool,
+    scope: Option<&AnalyticsMessageIdScope>,
 ) -> anyhow::Result<i64> {
     if read_stats_aggregated {
         return read_total_stats_aggregated(db, master_keys, dt_since, dt_till)
@@ -4706,10 +5046,15 @@ async fn fetch_count_overall(
             "count",
         )
         .filter(signal_message::Column::Deleted.eq(false))
-        .filter(message_in_groups_exists(master_keys.clone()))
+        .filter(message_in_groups_exists_with_scope(
+            master_keys.clone(),
+            scope,
+        ))
         // .filter(signal_message::Column::DuplicateOf.is_null())
         .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
         .filter(sigint_inbox_item::Column::Datetime.lt(dt_till));
+    let overall_count_res =
+        apply_analytics_message_id_scope(overall_count_res, scope);
     // .filter(sigint_inbox_item::Column::Checked.eq(Some(true)));
     // println!(
     //     "> overall count res sql: {}",
@@ -4768,5 +5113,56 @@ mod tests {
         assert!(query.contains("COUNT(DISTINCT"));
         assert!(query.contains(r#""freq""#));
         assert!(!query.contains("GROUP BY"));
+    }
+
+    #[test]
+    fn analytics_message_id_scope_bounds_fact_and_message_tables() {
+        let scope = AnalyticsMessageIdScope::Inclusive {
+            min_id: 10,
+            max_id: 20,
+        };
+        let query = apply_analytics_message_id_scope(
+            sigint_inbox_item::Entity::find().join(
+                JoinType::InnerJoin,
+                sigint_inbox_item::Relation::SignalMessage.def(),
+            ),
+            Some(&scope),
+        )
+        .build(DbBackend::Postgres)
+        .to_string();
+
+        assert!(query.contains(r#""sigint_inbox_item"."id" BETWEEN 10 AND 20"#));
+        assert!(query.contains(r#""signal_message"."id" BETWEEN 10 AND 20"#));
+    }
+
+    #[test]
+    fn analytics_message_id_scope_bounds_group_access_subquery() {
+        let scope = AnalyticsMessageIdScope::Inclusive {
+            min_id: 10,
+            max_id: 20,
+        };
+        let query = signal_message::Entity::find()
+            .filter(message_in_groups_exists_with_scope(
+                vec!["group".to_string()],
+                Some(&scope),
+            ))
+            .build(DbBackend::Postgres)
+            .to_string();
+
+        assert!(query.contains(
+            r#""signal_message_group"."signal_message_id" BETWEEN 10 AND 20"#
+        ));
+    }
+
+    #[test]
+    fn empty_analytics_message_id_scope_rejects_rows() {
+        let query = apply_analytics_message_id_scope(
+            sigint_inbox_item::Entity::find(),
+            Some(&AnalyticsMessageIdScope::Empty),
+        )
+        .build(DbBackend::Postgres)
+        .to_string();
+
+        assert!(query.contains("WHERE FALSE AND FALSE"));
     }
 }

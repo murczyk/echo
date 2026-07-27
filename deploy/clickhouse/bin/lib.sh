@@ -197,11 +197,9 @@ read_local_source_tables() {
   read_exclusions "$exclude_file"
 
   declare -ga SOURCE_TABLES=()
-  declare -gA DISCOVERED_TABLE_LOOKUP=()
   local table
   while IFS= read -r table; do
     [[ -n "$table" ]] || continue
-    DISCOVERED_TABLE_LOOKUP["$table"]=1
     [[ -z "${EXCLUDED_TABLE_LOOKUP[$table]:-}" ]] || continue
     [[ "$table" =~ ^[a-z_][a-z0-9_]*\.[a-z_][a-z0-9_]*$ ]] \
       || die "table requires quoted PeerDB mapping support: $table"
@@ -218,11 +216,6 @@ ORDER BY n.nspname, c.relname;
 SQL
   )
 
-  local excluded
-  for excluded in "${!EXCLUDED_TABLE_LOOKUP[@]}"; do
-    [[ -n "${DISCOVERED_TABLE_LOOKUP[$excluded]:-}" ]] \
-      || die "excluded table does not exist: $excluded"
-  done
   ((${#SOURCE_TABLES[@]} > 0)) || die "no source tables selected"
 }
 

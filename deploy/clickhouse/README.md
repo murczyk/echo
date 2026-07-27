@@ -141,6 +141,8 @@ PostgreSQL aggregates, the highly mutable GOI knowledge table, and transient
 worker queues. The repository file is canonical; deploy it before the first
 snapshot with `just setup-analytics-reconcile-tables`. The analytics copy of
 the same password stays in `echo-peerdb-<source-hostname>`.
+Exclusions may name optional tables that are absent on an instance; if such a
+table is created later, it remains excluded automatically.
 
 The source monitor installer records its invoking Unix account in a systemd
 drop-in. Automatic table reconciliation runs as that account so it can reuse
@@ -412,12 +414,15 @@ previous working gateway definitions.
 
 The health timer automatically compares the source publication, raw
 ClickHouse tables, current-state views, and gateway compatibility views after
-each successful replication probe. Once PeerDB propagates a simple added
-column, it refreshes stale current and gateway definitions without operator
-action. Normal and local package deploys do not wait for this asynchronous
-step; queries that use the new column fall back to PostgreSQL until analytics
-is reconciled. Columns added with a PostgreSQL default still require an
-explicit historical backfill or full mirror resync.
+each successful replication probe. Once PeerDB observes a post-DDL row change
+and propagates a simple added column, it refreshes stale current and gateway
+definitions without operator action. A quiet table therefore needs a reviewed,
+safe row touch in the migration or a table/mirror resync; deployment tooling
+must not issue generic no-op updates because tables may have mutating triggers.
+Normal and local package deploys do not wait for this asynchronous step;
+queries that use the new column fall back to PostgreSQL until analytics is
+reconciled. Columns added with a PostgreSQL default still require an explicit
+historical backfill or full mirror resync.
 
 The same reconciliation installs a versioned ClickHouse callsign-expansion
 view and exposes it privately as
@@ -427,6 +432,24 @@ the replicated-table gateway pattern so joins and distinct aggregation remain
 pushdown-safe. Existing objects are replaced only when upgrading from the
 earlier direct-foreign-table layout; periodic checks leave the compatibility
 view unchanged.
+
+The derived-schema reconciliation also owns the ClickHouse data-skipping
+indexes used by time-bounded analytical queries. PeerDB does not copy
+PostgreSQL indexes, and a mirror resync replaces raw tables, so the reconciler
+checks the raw table UUID, adds the expected `minmax` definitions, and
+materializes historical parts once per UUID. Its state is stored in
+`<CLICKHOUSE_CURRENT_DB>_meta.query_index_reconciliation`; a replacement table
+therefore automatically receives fresh indexes during gateway/health
+reconciliation.
+
+`/api/rer/analysis/stats/count` first resolves the minimum and maximum message
+ID visible inside its requested time interval, then keeps the timestamp
+predicate and adds that ID envelope to the message and large bridge-table
+queries. The envelope is only a pruning hint: the timestamp and all access
+filters remain authoritative. A range ending within the analytics freshness
+window uses only the lower ID bound so newly replicated messages cannot be
+excluded between the envelope query and the facet queries.
+
 Package deployments install the source and remote reconciliation scripts.
 For checkout-based development, `just dev-back` runs the repository copy as a
 bounded best-effort preflight when `/etc/echo-peerdb/source.env` exists; without
