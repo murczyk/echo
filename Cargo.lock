@@ -2445,7 +2445,7 @@ version = "0.1.1-rc.202607270721"
 [[package]]
 name = "echo-gpu-client"
 version = "0.1.0"
-source = "git+ssh://git@github.com/echoua/echo-gpu.git?rev=57f6ecf1d1106ed6ce5c016ae0b8b8d3030de73f#57f6ecf1d1106ed6ce5c016ae0b8b8d3030de73f"
+source = "git+ssh://git@github.com/echoua/echo-gpu.git?rev=9f00d77f1785df994d571c3fa200139467978ff9#9f00d77f1785df994d571c3fa200139467978ff9"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2457,6 +2457,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha256",
+ "tempfile",
  "thiserror 2.0.18",
  "tokio",
  "tokio-util",
@@ -2466,7 +2467,7 @@ dependencies = [
 [[package]]
 name = "echo-gpu-client-migration"
 version = "0.1.0"
-source = "git+ssh://git@github.com/echoua/echo-gpu.git?rev=57f6ecf1d1106ed6ce5c016ae0b8b8d3030de73f#57f6ecf1d1106ed6ce5c016ae0b8b8d3030de73f"
+source = "git+ssh://git@github.com/echoua/echo-gpu.git?rev=9f00d77f1785df994d571c3fa200139467978ff9#9f00d77f1785df994d571c3fa200139467978ff9"
 dependencies = [
  "sea-orm-migration",
  "tokio",
