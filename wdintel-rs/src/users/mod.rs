@@ -1033,7 +1033,30 @@ pub async fn user_sigint_groups(
         return Ok(Json(all_groups));
     };
     let ts = crate::utils::dt_from_millis(*since_ts).c(h!())?;
-    let recent_keys = signal_message_group::Entity::find()
+    let analytics_groups = all_groups.clone();
+    let recent_keys =
+        crate::rer_importer::analysis::with_analytics_read_fallback(
+            env.get_ref(),
+            "user sigint groups",
+            true,
+            |db| async move {
+                read_active_sigint_groups_since(&db, analytics_groups, ts).await
+            },
+            |db| async move {
+                read_active_sigint_groups_since(&db, all_groups, ts).await
+            },
+        )
+        .await
+        .c(h!())?;
+    Ok(Json(recent_keys))
+}
+
+async fn read_active_sigint_groups_since(
+    db: &DatabaseConnection,
+    groups: Vec<String>,
+    ts: chrono::NaiveDateTime,
+) -> Result<Vec<String>, AppError> {
+    Ok(signal_message_group::Entity::find()
         .join(
             JoinType::InnerJoin,
             signal_message_group::Relation::SignalMessage.def(),
@@ -1041,14 +1064,15 @@ pub async fn user_sigint_groups(
         .select_only()
         .column(signal_message_group::Column::GroupMasterKey)
         .filter(signal_message::Column::Timestamp.gt(ts))
-        .filter(signal_message_group::Column::GroupMasterKey.eq_any(all_groups))
+        .filter(signal_message_group::Column::GroupMasterKey.eq_any(groups))
         .group_by(signal_message_group::Column::GroupMasterKey)
         .into_tuple::<Option<String>>()
-        .all(&env.dbx)
+        .all(db)
         .await
-        .c(h!())?;
-    let res = recent_keys.into_iter().flatten().collect::<Vec<String>>();
-    Ok(Json(res))
+        .c(h!())?
+        .into_iter()
+        .flatten()
+        .collect())
 }
 
 #[post("/api/user/sigint-groups-detailed")]
