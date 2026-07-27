@@ -313,6 +313,7 @@ mod m20260724_080724_add_login_password_auth_enabled;
 mod m20260724_095619_add_report_generation_settings;
 mod m20260725_082926_index_network_callsign_lower;
 mod m20260725_110839_add_audio_transcription_collapse_preferences;
+mod m20260727_065339_fix_direct_submit_profile_names;
 
 pub struct Migrator;
 
@@ -687,6 +688,7 @@ impl MigratorTrait for Migrator {
             Box::new(
                 m20260725_110839_add_audio_transcription_collapse_preferences::Migration,
             ),
+            Box::new(m20260727_065339_fix_direct_submit_profile_names::Migration),
         ]
     }
 }
