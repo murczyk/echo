@@ -1286,40 +1286,64 @@ pub async fn latest_frequencies(
 ) -> Result<Json<Vec<String>>, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
     let login = login_id_from_identity(&user)?;
+    let groups =
+        crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
+            .await
+            .c(h!())?;
+    let analytics_groups = groups.clone();
+    let week_ago = Utc::now() - chrono::Duration::days(7);
+    let freqs_period =
+        crate::rer_importer::analysis::with_analytics_read_fallback(
+            env.get_ref(),
+            "latest frequencies",
+            true,
+            |db| async move {
+                read_latest_frequencies(
+                    &db,
+                    analytics_groups,
+                    week_ago,
+                )
+                .await
+            },
+            |db| async move {
+                read_latest_frequencies(&db, groups, week_ago).await
+            },
+        )
+        .await
+        .c(h!())?;
 
+    Ok(Json(freqs_period))
+}
+
+async fn read_latest_frequencies(
+    db: &DatabaseConnection,
+    groups: Vec<String>,
+    week_ago: DateTime<Utc>,
+) -> Result<Vec<String>, AppError> {
     #[derive(FromQueryResult)]
     struct FreqRes {
         freq: Option<String>,
     }
-    let now = Utc::now();
-    let week_ago = now - chrono::Duration::days(7);
-    let freqs_period = signal_message::Entity::find()
+
+    Ok(signal_message::Entity::find()
         .join(
             JoinType::InnerJoin,
             signal_message::Relation::SigintInboxItem.def(),
         )
         .select_only()
         .column_as(Expr::col(sigint_inbox_item::Column::Freq), "freq")
-        .filter(message_in_groups_exists(
-            crate::messenger::group::get_identity_sigint_groups(
-                &env.dbx, &login,
-            )
-            .await
-            .c(h!())?,
-        ))
+        .filter(message_in_groups_exists(groups))
         .filter(signal_message::Column::Deleted.eq(false))
         .filter(sigint_inbox_item::Column::Datetime.gte(week_ago))
         .group_by(sea_query::expr::SimpleExpr::Custom("freq".to_string()))
         .order_by_asc(sigint_inbox_item::Column::Freq)
         .into_model::<FreqRes>()
-        .all(&env.dbx)
+        .all(db)
         .await
         .c(h!())?
-        .iter()
-        .flat_map(|x| x.freq.clone())
-        .collect();
-
-    Ok(Json(freqs_period))
+        .into_iter()
+        .filter_map(|freq| freq.freq)
+        .collect())
 }
 
 #[post("/api/sigint/freq/unit-stats")]

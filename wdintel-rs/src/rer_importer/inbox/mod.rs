@@ -439,11 +439,8 @@ pub(crate) async fn messages_by_id_bl(
                         sigint_inbox_item_tag::Column::Confidence,
                     ))
                     .into_simple_expr(),
-                    Expr::col((
-                        sigint_inbox_item_tag::Entity,
-                        sigint_inbox_item_tag::Column::LoginId,
-                    ))
-                    .into_simple_expr(),
+                    Expr::col((login::Entity, login::Column::Login))
+                        .into_simple_expr(),
                     Expr::col((
                         sigint_inbox_item_tag::Entity,
                         sigint_inbox_item_tag::Column::Model,
@@ -3821,7 +3818,7 @@ mod tests {
             .expect("inbox tags must be present");
         let tag_entry = inbox_tags
             .iter()
-            .find(|t| t.login == Some(login.id.to_string()))
+            .find(|t| t.login.as_deref() == Some(login.login.as_str()))
             .expect("tag by login must be present");
         assert_eq!(tag_entry.organism_id, login.organism_id);
     }
@@ -3968,15 +3965,14 @@ mod tests {
         assert!(
             inbox_tags
                 .iter()
-                .any(|t| t.login == Some(login.id.to_string())
+                .any(|t| t.login.as_deref() == Some(login.login.as_str())
                     && t.organism_id == login.organism_id),
             "expected tag from primary login with organism id"
         );
         assert!(
-            inbox_tags
-                .iter()
-                .any(|t| t.login == Some(other_login.id.to_string())
-                    && t.organism_id == Some(other_org.id)),
+            inbox_tags.iter().any(|t| t.login.as_deref()
+                == Some(other_login.login.as_str())
+                && t.organism_id == Some(other_org.id)),
             "expected tag from other login with its organism id"
         );
     }

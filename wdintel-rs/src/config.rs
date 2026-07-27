@@ -297,6 +297,7 @@ pub const REDIS_SESSIONS_KEY: &str = "echo-sessions";
 pub const SESSION_STREAM_LIFETIME_SEC: i64 = 180;
 pub const EVENT_STREAM_ORIGIN_HEADER: &str = "x-echo-event-origin";
 pub const EVENT_STREAM_ORIGIN_MAX_BYTES: usize = 128;
+pub const IDENTITY_SESSION_USER_ID_KEY: &str = "actix_identity.user_id";
 pub const SESSION_ACTIVITY_QUEUE_CAPACITY_DEFAULT: usize = 2048;
 pub const SESSION_ACTIVITY_PAYLOAD_MAX_BYTES_DEFAULT: usize = 4096;
 pub const SESSION_ACTIVITY_GREPTIME_BATCH_SIZE: usize = 100;
