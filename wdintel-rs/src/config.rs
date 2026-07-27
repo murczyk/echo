@@ -497,6 +497,7 @@ pub const ANALYTICS_CONNECT_TIMEOUT_MS_DEFAULT: u64 = 5_000;
 pub const ANALYTICS_QUERY_TIMEOUT_MS_DEFAULT: u64 = 30_000;
 pub const ANALYTICS_FRESHNESS_MAX_AGE_MS_DEFAULT: u64 = 90_000;
 pub const ANALYTICS_RETRY_COOLDOWN_MS_DEFAULT: u64 = 30_000;
+pub const ANALYTICS_HEALTH_LOG_INTERVAL_SECS: u64 = 60;
 pub const ANALYTICS_SOURCE_CONFIG_PATH: &str = "/etc/echo-peerdb/source.env";
 pub const ANALYTICS_TABLE_RECONCILE_SERVICE: &str =
     "echo-peerdb-table-reconcile.service";

@@ -20,6 +20,9 @@ the deployment complete until the column is present in the raw ClickHouse
 table, current-state view, PostgreSQL gateway, and the analytics health check
 is green.
 
+Apply this review to schema migrations shipped by application dependencies
+such as `echo-im`, not only migrations in `echo-migration`.
+
 ## Architecture documentation
 
 Require changes to deployment topology, process or worker ownership, storage,

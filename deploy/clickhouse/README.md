@@ -697,7 +697,10 @@ external consumer:
 Monitor source slot WAL, ClickHouse/MinIO disk, systemd service health,
 Temporal workflows, mirror status, `echo_analytics_health` age, fallback
 count, and query latency. `status.sh` exits nonzero when the freshness record
-is unhealthy or older than the configured threshold.
+is unhealthy or older than the configured threshold. When analytics is
+configured, `wdintel-rs-bgworker` also checks this record immediately at
+startup and once per minute. It logs an error with the health detail and age
+while unhealthy, and one informational recovery message after health returns.
 
 ## Consistency and type limits
 

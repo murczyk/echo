@@ -18,6 +18,7 @@ use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
 
 mod admin;
+mod analytics_health;
 pub mod discord;
 mod healthcheck;
 pub mod middleware;
@@ -346,6 +347,18 @@ fn spawn_background_workers(
     spawn_named_worker("healthcheck_worker", bg_set, async move {
         healthcheck::healthcheck_worker(&dbx9, config1).await;
     });
+    if let (Some(analytics), Some(analytics_config)) =
+        (env.analytics.clone(), config.analytics.as_ref())
+    {
+        let freshness_max_age_ms = analytics_config.freshness_max_age_ms();
+        spawn_named_worker("analytics_health_log_worker", bg_set, async move {
+            analytics_health::analytics_health_log_worker(
+                analytics,
+                freshness_max_age_ms,
+            )
+            .await;
+        });
+    }
     if let Some(greptimedb) = env.greptime() {
         let redis = env.redis.clone();
         spawn_named_worker("activity_details_worker", bg_set, async move {
