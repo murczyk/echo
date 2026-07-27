@@ -277,20 +277,27 @@ where
                 excluded.till_ts
             ),
             reason = excluded.reason
+        where group_stats_recalculation_task.completed_at is null
+          and group_stats_recalculation_task.started_at is null
     "#;
-    dbx.execute(Statement::from_sql_and_values(
-        DatabaseBackend::Postgres,
-        sql,
-        vec![
-            master_key.into(),
-            since_ts.into(),
-            till_ts.into(),
-            reason.into(),
-        ],
-    ))
-    .await
-    .c(h!())?;
-    Ok(())
+    loop {
+        let result = dbx
+            .execute(Statement::from_sql_and_values(
+                DatabaseBackend::Postgres,
+                sql,
+                vec![
+                    master_key.into(),
+                    since_ts.into(),
+                    till_ts.into(),
+                    reason.clone().into(),
+                ],
+            ))
+            .await
+            .c(h!())?;
+        if result.rows_affected() > 0 {
+            return Ok(());
+        }
+    }
 }
 
 pub async fn process_pending_group_stats_recalculation_task(
@@ -315,7 +322,7 @@ pub async fn process_pending_group_stats_recalculation_task(
         "recalculating queued group stats task id={} group={} from={} till={} reason={}",
         task.id, task.group_master_key, task.since_ts, task.till_ts, task.reason
     );
-    let result = recalculate_group_stats_task_by_day(dbx, &task).await;
+    let result = recalculate_group_stats_task(dbx, &task).await;
     match result {
         Ok(()) => {
             let mut task = task.into_active_model();
@@ -324,8 +331,17 @@ pub async fn process_pending_group_stats_recalculation_task(
             Ok(true)
         }
         Err(e) => {
+            enqueue_pending_group_stats_task(
+                dbx,
+                &task.group_master_key,
+                task.since_ts,
+                task.till_ts,
+                task.reason.clone(),
+            )
+            .await
+            .c(h!())?;
             let mut task = task.into_active_model();
-            task.started_at = Set(None);
+            task.completed_at = Set(Some(Utc::now().naive_utc()));
             task.update(dbx).await.c(h!())?;
             Err(e)
         }
@@ -372,36 +388,13 @@ async fn claim_pending_group_stats_recalculation_task(
     .c(h!())?)
 }
 
-async fn recalculate_group_stats_task_by_day(
+async fn recalculate_group_stats_task(
     dbx: &DatabaseConnection,
     task: &group_stats_recalculation_task::Model,
 ) -> Result<(), AppError> {
-    let mut since_ts = task.since_ts;
-    while since_ts < task.till_ts {
-        let next_day =
-            start_of_day(get_local_date(since_ts) + Duration::days(1))
-                .c(h!())?;
-        let till_ts = next_day.min(task.till_ts);
-        if till_ts <= since_ts {
-            break;
-        }
-        recalculate_group_stats(dbx, since_ts, till_ts, true, true)
-            .await
-            .c(h!())?;
-        group_stats_recalculation_task::Entity::update_many()
-            .col_expr(
-                group_stats_recalculation_task::Column::StartedAt,
-                Expr::value(Some(Utc::now().naive_utc())),
-            )
-            .filter(group_stats_recalculation_task::Column::Id.eq(task.id))
-            .filter(
-                group_stats_recalculation_task::Column::CompletedAt.is_null(),
-            )
-            .exec(dbx)
-            .await
-            .c(h!())?;
-        since_ts = till_ts;
-    }
+    recalculate_group_stats(dbx, task.since_ts, task.till_ts, true, true)
+        .await
+        .c(h!())?;
     Ok(())
 }
 
