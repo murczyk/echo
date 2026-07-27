@@ -353,6 +353,10 @@ where
     .await
     .c(h!())?;
 
+    crate::ai_callsign::worker::enqueue_if_enabled(txn, message.id)
+        .await
+        .c(h!())?;
+
     crate::sigint::network::etalon_calc::calculate_sigint_inbox_item_networks(
         vec![result],
         txn,

@@ -15,6 +15,7 @@ const ENTRYPOINTS = [
   { modulePath: './unit-attachment-upload-element', tag: 'unit-attachment-upload' },
   { modulePath: './tags-neo-element', tag: 'tags-neo' },
   { modulePath: './admin-all-reports-element', tag: 'admin-all-reports' },
+  { modulePath: './admin-ai-callsigns-element', tag: 'admin-ai-callsigns' },
   { modulePath: './admin-echo-missing-messages-element', tag: 'admin-echo-missing-messages' },
   { modulePath: './admin-directions-neo-element', tag: 'admin-directions-neo' },
   { modulePath: './transcription-settings-element', tag: 'transcription-settings' },

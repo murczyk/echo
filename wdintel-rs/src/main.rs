@@ -15,6 +15,8 @@ use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
 use tokio::runtime::Handle;
 use tokio_util::sync::CancellationToken;
 
+pub mod ai_callsign;
+pub mod ai_engine;
 mod alpine;
 pub mod api_integrations;
 pub mod atak;

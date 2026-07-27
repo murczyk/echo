@@ -33,6 +33,7 @@ flowchart LR
     echo_operator["echo-operator<br/>optional external message source"]
     goi["GOI instance<br/>optional external system<br/>goi-echo-worker API + shared files"]
     echo_gpu["Echo GPU cluster<br/>optional audio transcription"]
+    ai_engine["AI engine<br/>OpenAI or OpenAI-compatible vLLM<br/>optional"]
 
     subgraph echo_lxc["LXC 1 · Echo application · required"]
         direction LR
@@ -100,6 +101,7 @@ flowchart LR
     bg <-->|palitra + folder sync| goi
     echo_im <-->|messenger bot integration| goi
     bg <-->|health · audio upload · transcription| echo_gpu
+    api <-->|Chat Completions HTTPS| ai_engine
 
     style echo_lxc stroke-width:2px
     style analytics_lxc stroke-width:2px,stroke-dasharray:8 5
@@ -108,7 +110,7 @@ flowchart LR
     classDef canonical stroke-width:3px
     classDef optional stroke-dasharray:6 4
     class postgres canonical
-    class nlp,iggy,signal,whatsapp,vector,greptime,signoz,promin,backblaze,echo_operator,goi,echo_gpu optional
+    class nlp,iggy,signal,whatsapp,vector,greptime,signoz,promin,backblaze,echo_operator,goi,echo_gpu,ai_engine optional
 ```
 
 The diagram focuses on the core web, worker, messenger, storage, observability,
@@ -117,6 +119,12 @@ independently.
 
 See [Echo GPU audio transcription](ECHO_GPU_TRANSCRIPTION.md) for its
 configuration, network requirements, queue, cache, retry, and REST API flow.
+
+## AI engine integration
+
+Admins configure OpenAI-compatible engines in `/admin/system-settings-neo`.
+`/admin/ai-callsigns` provides prompt testing and an optional sequential
+bgworker that adds AI callsign suggestions after regular inbox parsing.
 
 ## Echo LXC systemd graph
 

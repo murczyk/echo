@@ -59,6 +59,8 @@ pub struct Model {
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {
+    #[sea_orm(has_one = "super::ai_callsign_worker_job::Entity")]
+    AiCallsignWorkerJob,
     #[sea_orm(
         belongs_to = "super::device_name::Entity",
         from = "Column::DeviceNameId",
@@ -116,6 +118,12 @@ pub enum Relation {
         on_delete = "NoAction"
     )]
     SigintNetworkFreq,
+}
+
+impl Related<super::ai_callsign_worker_job::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::AiCallsignWorkerJob.def()
+    }
 }
 
 impl Related<super::device_name::Entity> for Entity {

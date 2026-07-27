@@ -8832,6 +8832,396 @@ activateSystemSettingsReqEncoder struct =
         ]
 
 
+type alias AiEngineItem =
+    { id : String
+    , name : String
+    , url : String
+    , modelName : String
+    , enabled : Bool
+    , hasToken : Bool
+    , createdAt : Int
+    , updatedAt : Int
+    }
+
+
+aiEngineItemEncoder : AiEngineItem -> Json.Encode.Value
+aiEngineItemEncoder struct =
+    Json.Encode.object
+        [ ( "id", (Json.Encode.string) struct.id )
+        , ( "name", (Json.Encode.string) struct.name )
+        , ( "url", (Json.Encode.string) struct.url )
+        , ( "modelName", (Json.Encode.string) struct.modelName )
+        , ( "enabled", (Json.Encode.bool) struct.enabled )
+        , ( "hasToken", (Json.Encode.bool) struct.hasToken )
+        , ( "createdAt", (Json.Encode.int) struct.createdAt )
+        , ( "updatedAt", (Json.Encode.int) struct.updatedAt )
+        ]
+
+
+type alias AiEngineListRsp =
+    { items : List (AiEngineItem)
+    }
+
+
+aiEngineListRspEncoder : AiEngineListRsp -> Json.Encode.Value
+aiEngineListRspEncoder struct =
+    Json.Encode.object
+        [ ( "items", (Json.Encode.list (aiEngineItemEncoder)) struct.items )
+        ]
+
+
+type alias AiEngineIdReq =
+    { id : String
+    }
+
+
+aiEngineIdReqEncoder : AiEngineIdReq -> Json.Encode.Value
+aiEngineIdReqEncoder struct =
+    Json.Encode.object
+        [ ( "id", (Json.Encode.string) struct.id )
+        ]
+
+
+type alias CreateAiEngineReq =
+    { name : String
+    , url : String
+    , token : Maybe (String)
+    , modelName : String
+    , enabled : Bool
+    }
+
+
+createAiEngineReqEncoder : CreateAiEngineReq -> Json.Encode.Value
+createAiEngineReqEncoder struct =
+    Json.Encode.object
+        [ ( "name", (Json.Encode.string) struct.name )
+        , ( "url", (Json.Encode.string) struct.url )
+        , ( "token", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.token )
+        , ( "modelName", (Json.Encode.string) struct.modelName )
+        , ( "enabled", (Json.Encode.bool) struct.enabled )
+        ]
+
+
+type alias UpdateAiEngineReq =
+    { id : String
+    , name : String
+    , url : String
+    , token : Maybe (String)
+    , clearToken : Bool
+    , modelName : String
+    , enabled : Bool
+    }
+
+
+updateAiEngineReqEncoder : UpdateAiEngineReq -> Json.Encode.Value
+updateAiEngineReqEncoder struct =
+    Json.Encode.object
+        [ ( "id", (Json.Encode.string) struct.id )
+        , ( "name", (Json.Encode.string) struct.name )
+        , ( "url", (Json.Encode.string) struct.url )
+        , ( "token", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.token )
+        , ( "clearToken", (Json.Encode.bool) struct.clearToken )
+        , ( "modelName", (Json.Encode.string) struct.modelName )
+        , ( "enabled", (Json.Encode.bool) struct.enabled )
+        ]
+
+
+type alias AiChatSummary =
+    { id : String
+    , title : String
+    , createdBy : String
+    , createdAt : Int
+    , updatedAt : Int
+    }
+
+
+aiChatSummaryEncoder : AiChatSummary -> Json.Encode.Value
+aiChatSummaryEncoder struct =
+    Json.Encode.object
+        [ ( "id", (Json.Encode.string) struct.id )
+        , ( "title", (Json.Encode.string) struct.title )
+        , ( "createdBy", (Json.Encode.string) struct.createdBy )
+        , ( "createdAt", (Json.Encode.int) struct.createdAt )
+        , ( "updatedAt", (Json.Encode.int) struct.updatedAt )
+        ]
+
+
+type alias AiChatListReq =
+    { aiEngineId : String
+    }
+
+
+aiChatListReqEncoder : AiChatListReq -> Json.Encode.Value
+aiChatListReqEncoder struct =
+    Json.Encode.object
+        [ ( "aiEngineId", (Json.Encode.string) struct.aiEngineId )
+        ]
+
+
+type alias AiChatListRsp =
+    { items : List (AiChatSummary)
+    }
+
+
+aiChatListRspEncoder : AiChatListRsp -> Json.Encode.Value
+aiChatListRspEncoder struct =
+    Json.Encode.object
+        [ ( "items", (Json.Encode.list (aiChatSummaryEncoder)) struct.items )
+        ]
+
+
+type alias AiChatGetReq =
+    { aiEngineId : String
+    , chatId : String
+    }
+
+
+aiChatGetReqEncoder : AiChatGetReq -> Json.Encode.Value
+aiChatGetReqEncoder struct =
+    Json.Encode.object
+        [ ( "aiEngineId", (Json.Encode.string) struct.aiEngineId )
+        , ( "chatId", (Json.Encode.string) struct.chatId )
+        ]
+
+
+type alias AiChatMessageItem =
+    { id : String
+    , role : String
+    , content : String
+    , createdAt : Int
+    }
+
+
+aiChatMessageItemEncoder : AiChatMessageItem -> Json.Encode.Value
+aiChatMessageItemEncoder struct =
+    Json.Encode.object
+        [ ( "id", (Json.Encode.string) struct.id )
+        , ( "role", (Json.Encode.string) struct.role )
+        , ( "content", (Json.Encode.string) struct.content )
+        , ( "createdAt", (Json.Encode.int) struct.createdAt )
+        ]
+
+
+type alias AiChatDetail =
+    { id : String
+    , title : String
+    , createdBy : String
+    , createdAt : Int
+    , updatedAt : Int
+    , messages : List (AiChatMessageItem)
+    }
+
+
+aiChatDetailEncoder : AiChatDetail -> Json.Encode.Value
+aiChatDetailEncoder struct =
+    Json.Encode.object
+        [ ( "id", (Json.Encode.string) struct.id )
+        , ( "title", (Json.Encode.string) struct.title )
+        , ( "createdBy", (Json.Encode.string) struct.createdBy )
+        , ( "createdAt", (Json.Encode.int) struct.createdAt )
+        , ( "updatedAt", (Json.Encode.int) struct.updatedAt )
+        , ( "messages", (Json.Encode.list (aiChatMessageItemEncoder)) struct.messages )
+        ]
+
+
+type alias SendAiChatMessageReq =
+    { aiEngineId : String
+    , chatId : Maybe (String)
+    , prompt : String
+    }
+
+
+sendAiChatMessageReqEncoder : SendAiChatMessageReq -> Json.Encode.Value
+sendAiChatMessageReqEncoder struct =
+    Json.Encode.object
+        [ ( "aiEngineId", (Json.Encode.string) struct.aiEngineId )
+        , ( "chatId", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.chatId )
+        , ( "prompt", (Json.Encode.string) struct.prompt )
+        ]
+
+
+type alias AiCallsignEngineItem =
+    { id : String
+    , name : String
+    , modelName : String
+    }
+
+
+aiCallsignEngineItemEncoder : AiCallsignEngineItem -> Json.Encode.Value
+aiCallsignEngineItemEncoder struct =
+    Json.Encode.object
+        [ ( "id", (Json.Encode.string) struct.id )
+        , ( "name", (Json.Encode.string) struct.name )
+        , ( "modelName", (Json.Encode.string) struct.modelName )
+        ]
+
+
+type alias AiCallsignParseResultItem =
+    { testMessageId : String
+    , aiEngineId : String
+    , callsigns : List (String)
+    , error : Maybe (String)
+    , responseText : String
+    , updatedAt : Maybe (Int)
+    }
+
+
+aiCallsignParseResultItemEncoder : AiCallsignParseResultItem -> Json.Encode.Value
+aiCallsignParseResultItemEncoder struct =
+    Json.Encode.object
+        [ ( "testMessageId", (Json.Encode.string) struct.testMessageId )
+        , ( "aiEngineId", (Json.Encode.string) struct.aiEngineId )
+        , ( "callsigns", (Json.Encode.list (Json.Encode.string)) struct.callsigns )
+        , ( "error", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.error )
+        , ( "responseText", (Json.Encode.string) struct.responseText )
+        , ( "updatedAt", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.updatedAt )
+        ]
+
+
+type alias AiCallsignTestMessageItem =
+    { id : String
+    , message : String
+    , createdAt : Int
+    , updatedAt : Int
+    , results : List (AiCallsignParseResultItem)
+    }
+
+
+aiCallsignTestMessageItemEncoder : AiCallsignTestMessageItem -> Json.Encode.Value
+aiCallsignTestMessageItemEncoder struct =
+    Json.Encode.object
+        [ ( "id", (Json.Encode.string) struct.id )
+        , ( "message", (Json.Encode.string) struct.message )
+        , ( "createdAt", (Json.Encode.int) struct.createdAt )
+        , ( "updatedAt", (Json.Encode.int) struct.updatedAt )
+        , ( "results", (Json.Encode.list (aiCallsignParseResultItemEncoder)) struct.results )
+        ]
+
+
+type alias AiCallsignWorkerSettingsItem =
+    { enabled : Bool
+    , aiEngineId : Maybe (String)
+    }
+
+
+aiCallsignWorkerSettingsItemEncoder : AiCallsignWorkerSettingsItem -> Json.Encode.Value
+aiCallsignWorkerSettingsItemEncoder struct =
+    Json.Encode.object
+        [ ( "enabled", (Json.Encode.bool) struct.enabled )
+        , ( "aiEngineId", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.aiEngineId )
+        ]
+
+
+type alias AiCallsignPageRsp =
+    { prompt : String
+    , engines : List (AiCallsignEngineItem)
+    , messages : List (AiCallsignTestMessageItem)
+    , worker : AiCallsignWorkerSettingsItem
+    }
+
+
+aiCallsignPageRspEncoder : AiCallsignPageRsp -> Json.Encode.Value
+aiCallsignPageRspEncoder struct =
+    Json.Encode.object
+        [ ( "prompt", (Json.Encode.string) struct.prompt )
+        , ( "engines", (Json.Encode.list (aiCallsignEngineItemEncoder)) struct.engines )
+        , ( "messages", (Json.Encode.list (aiCallsignTestMessageItemEncoder)) struct.messages )
+        , ( "worker", (aiCallsignWorkerSettingsItemEncoder) struct.worker )
+        ]
+
+
+type alias CreateAiCallsignTestMessageReq =
+    { message : String
+    }
+
+
+createAiCallsignTestMessageReqEncoder : CreateAiCallsignTestMessageReq -> Json.Encode.Value
+createAiCallsignTestMessageReqEncoder struct =
+    Json.Encode.object
+        [ ( "message", (Json.Encode.string) struct.message )
+        ]
+
+
+type alias UpdateAiCallsignTestMessageReq =
+    { id : String
+    , message : String
+    }
+
+
+updateAiCallsignTestMessageReqEncoder : UpdateAiCallsignTestMessageReq -> Json.Encode.Value
+updateAiCallsignTestMessageReqEncoder struct =
+    Json.Encode.object
+        [ ( "id", (Json.Encode.string) struct.id )
+        , ( "message", (Json.Encode.string) struct.message )
+        ]
+
+
+type alias AiCallsignTestMessageIdReq =
+    { id : String
+    }
+
+
+aiCallsignTestMessageIdReqEncoder : AiCallsignTestMessageIdReq -> Json.Encode.Value
+aiCallsignTestMessageIdReqEncoder struct =
+    Json.Encode.object
+        [ ( "id", (Json.Encode.string) struct.id )
+        ]
+
+
+type alias RunAiCallsignParsingReq =
+    { prompt : String
+    , aiEngineIds : List (String)
+    }
+
+
+runAiCallsignParsingReqEncoder : RunAiCallsignParsingReq -> Json.Encode.Value
+runAiCallsignParsingReqEncoder struct =
+    Json.Encode.object
+        [ ( "prompt", (Json.Encode.string) struct.prompt )
+        , ( "aiEngineIds", (Json.Encode.list (Json.Encode.string)) struct.aiEngineIds )
+        ]
+
+
+type alias AiCallsignParsingRsp =
+    { results : List (AiCallsignParseResultItem)
+    }
+
+
+aiCallsignParsingRspEncoder : AiCallsignParsingRsp -> Json.Encode.Value
+aiCallsignParsingRspEncoder struct =
+    Json.Encode.object
+        [ ( "results", (Json.Encode.list (aiCallsignParseResultItemEncoder)) struct.results )
+        ]
+
+
+type alias SaveAiCallsignParsingReq =
+    { prompt : String
+    , results : List (AiCallsignParseResultItem)
+    }
+
+
+saveAiCallsignParsingReqEncoder : SaveAiCallsignParsingReq -> Json.Encode.Value
+saveAiCallsignParsingReqEncoder struct =
+    Json.Encode.object
+        [ ( "prompt", (Json.Encode.string) struct.prompt )
+        , ( "results", (Json.Encode.list (aiCallsignParseResultItemEncoder)) struct.results )
+        ]
+
+
+type alias SaveAiCallsignWorkerSettingsReq =
+    { enabled : Bool
+    , aiEngineId : Maybe (String)
+    }
+
+
+saveAiCallsignWorkerSettingsReqEncoder : SaveAiCallsignWorkerSettingsReq -> Json.Encode.Value
+saveAiCallsignWorkerSettingsReqEncoder struct =
+    Json.Encode.object
+        [ ( "enabled", (Json.Encode.bool) struct.enabled )
+        , ( "aiEngineId", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.aiEngineId )
+        ]
+
+
 type alias EchoMissingMessageRow =
     { id : Int
     , messageId : Int
@@ -14706,6 +15096,201 @@ activateSystemSettingsReqDecoder : Json.Decode.Decoder ActivateSystemSettingsReq
 activateSystemSettingsReqDecoder =
     Json.Decode.succeed ActivateSystemSettingsReq
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.int)))
+
+
+aiEngineItemDecoder : Json.Decode.Decoder AiEngineItem
+aiEngineItemDecoder =
+    Json.Decode.succeed AiEngineItem
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "url" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "modelName" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "enabled" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "hasToken" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "createdAt" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "updatedAt" (Json.Decode.int)))
+
+
+aiEngineListRspDecoder : Json.Decode.Decoder AiEngineListRsp
+aiEngineListRspDecoder =
+    Json.Decode.succeed AiEngineListRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "items" (Json.Decode.list (aiEngineItemDecoder))))
+
+
+aiEngineIdReqDecoder : Json.Decode.Decoder AiEngineIdReq
+aiEngineIdReqDecoder =
+    Json.Decode.succeed AiEngineIdReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.string)))
+
+
+createAiEngineReqDecoder : Json.Decode.Decoder CreateAiEngineReq
+createAiEngineReqDecoder =
+    Json.Decode.succeed CreateAiEngineReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "url" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "token" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "modelName" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "enabled" (Json.Decode.bool)))
+
+
+updateAiEngineReqDecoder : Json.Decode.Decoder UpdateAiEngineReq
+updateAiEngineReqDecoder =
+    Json.Decode.succeed UpdateAiEngineReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "url" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "token" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "clearToken" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "modelName" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "enabled" (Json.Decode.bool)))
+
+
+aiChatSummaryDecoder : Json.Decode.Decoder AiChatSummary
+aiChatSummaryDecoder =
+    Json.Decode.succeed AiChatSummary
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "title" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "createdBy" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "createdAt" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "updatedAt" (Json.Decode.int)))
+
+
+aiChatListReqDecoder : Json.Decode.Decoder AiChatListReq
+aiChatListReqDecoder =
+    Json.Decode.succeed AiChatListReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "aiEngineId" (Json.Decode.string)))
+
+
+aiChatListRspDecoder : Json.Decode.Decoder AiChatListRsp
+aiChatListRspDecoder =
+    Json.Decode.succeed AiChatListRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "items" (Json.Decode.list (aiChatSummaryDecoder))))
+
+
+aiChatGetReqDecoder : Json.Decode.Decoder AiChatGetReq
+aiChatGetReqDecoder =
+    Json.Decode.succeed AiChatGetReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "aiEngineId" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "chatId" (Json.Decode.string)))
+
+
+aiChatMessageItemDecoder : Json.Decode.Decoder AiChatMessageItem
+aiChatMessageItemDecoder =
+    Json.Decode.succeed AiChatMessageItem
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "role" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "content" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "createdAt" (Json.Decode.int)))
+
+
+aiChatDetailDecoder : Json.Decode.Decoder AiChatDetail
+aiChatDetailDecoder =
+    Json.Decode.succeed AiChatDetail
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "title" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "createdBy" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "createdAt" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "updatedAt" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "messages" (Json.Decode.list (aiChatMessageItemDecoder))))
+
+
+sendAiChatMessageReqDecoder : Json.Decode.Decoder SendAiChatMessageReq
+sendAiChatMessageReqDecoder =
+    Json.Decode.succeed SendAiChatMessageReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "aiEngineId" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "chatId" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "prompt" (Json.Decode.string)))
+
+
+aiCallsignEngineItemDecoder : Json.Decode.Decoder AiCallsignEngineItem
+aiCallsignEngineItemDecoder =
+    Json.Decode.succeed AiCallsignEngineItem
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "modelName" (Json.Decode.string)))
+
+
+aiCallsignParseResultItemDecoder : Json.Decode.Decoder AiCallsignParseResultItem
+aiCallsignParseResultItemDecoder =
+    Json.Decode.succeed AiCallsignParseResultItem
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "testMessageId" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "aiEngineId" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "callsigns" (Json.Decode.list (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "error" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "responseText" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "updatedAt" (Json.Decode.nullable (Json.Decode.int))))
+
+
+aiCallsignTestMessageItemDecoder : Json.Decode.Decoder AiCallsignTestMessageItem
+aiCallsignTestMessageItemDecoder =
+    Json.Decode.succeed AiCallsignTestMessageItem
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "message" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "createdAt" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "updatedAt" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "results" (Json.Decode.list (aiCallsignParseResultItemDecoder))))
+
+
+aiCallsignWorkerSettingsItemDecoder : Json.Decode.Decoder AiCallsignWorkerSettingsItem
+aiCallsignWorkerSettingsItemDecoder =
+    Json.Decode.succeed AiCallsignWorkerSettingsItem
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "enabled" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "aiEngineId" (Json.Decode.nullable (Json.Decode.string))))
+
+
+aiCallsignPageRspDecoder : Json.Decode.Decoder AiCallsignPageRsp
+aiCallsignPageRspDecoder =
+    Json.Decode.succeed AiCallsignPageRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "prompt" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "engines" (Json.Decode.list (aiCallsignEngineItemDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "messages" (Json.Decode.list (aiCallsignTestMessageItemDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "worker" (aiCallsignWorkerSettingsItemDecoder)))
+
+
+createAiCallsignTestMessageReqDecoder : Json.Decode.Decoder CreateAiCallsignTestMessageReq
+createAiCallsignTestMessageReqDecoder =
+    Json.Decode.succeed CreateAiCallsignTestMessageReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "message" (Json.Decode.string)))
+
+
+updateAiCallsignTestMessageReqDecoder : Json.Decode.Decoder UpdateAiCallsignTestMessageReq
+updateAiCallsignTestMessageReqDecoder =
+    Json.Decode.succeed UpdateAiCallsignTestMessageReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "message" (Json.Decode.string)))
+
+
+aiCallsignTestMessageIdReqDecoder : Json.Decode.Decoder AiCallsignTestMessageIdReq
+aiCallsignTestMessageIdReqDecoder =
+    Json.Decode.succeed AiCallsignTestMessageIdReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.string)))
+
+
+runAiCallsignParsingReqDecoder : Json.Decode.Decoder RunAiCallsignParsingReq
+runAiCallsignParsingReqDecoder =
+    Json.Decode.succeed RunAiCallsignParsingReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "prompt" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "aiEngineIds" (Json.Decode.list (Json.Decode.string))))
+
+
+aiCallsignParsingRspDecoder : Json.Decode.Decoder AiCallsignParsingRsp
+aiCallsignParsingRspDecoder =
+    Json.Decode.succeed AiCallsignParsingRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "results" (Json.Decode.list (aiCallsignParseResultItemDecoder))))
+
+
+saveAiCallsignParsingReqDecoder : Json.Decode.Decoder SaveAiCallsignParsingReq
+saveAiCallsignParsingReqDecoder =
+    Json.Decode.succeed SaveAiCallsignParsingReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "prompt" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "results" (Json.Decode.list (aiCallsignParseResultItemDecoder))))
+
+
+saveAiCallsignWorkerSettingsReqDecoder : Json.Decode.Decoder SaveAiCallsignWorkerSettingsReq
+saveAiCallsignWorkerSettingsReqDecoder =
+    Json.Decode.succeed SaveAiCallsignWorkerSettingsReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "enabled" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "aiEngineId" (Json.Decode.nullable (Json.Decode.string))))
 
 
 echoMissingMessageRowDecoder : Json.Decode.Decoder EchoMissingMessageRow

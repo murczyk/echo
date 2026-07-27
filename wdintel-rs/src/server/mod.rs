@@ -476,6 +476,16 @@ fn spawn_background_workers(
         .await;
     });
 
+    let ai_callsign_env = env.clone();
+    let ai_callsign_cancellation_token = cancel_token.clone();
+    spawn_named_worker("ai_callsign_worker", bg_set, async move {
+        crate::ai_callsign::worker::run_nofail(
+            ai_callsign_env,
+            ai_callsign_cancellation_token,
+        )
+        .await;
+    });
+
     spawn_named_worker("signal_cli_verbose_logger", bg_set, async move {
         info!("Starting enable_signal_cli_verbose_logging");
         if let Err(err) = echo_im::enable_signal_cli_verbose_logging(
@@ -658,6 +668,22 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::system_settings::list_system_settings)
             .service(crate::system_settings::create_system_settings)
             .service(crate::system_settings::activate_system_settings)
+            .service(crate::ai_engine::list_ai_engines)
+            .service(crate::ai_engine::get_ai_engine)
+            .service(crate::ai_engine::create_ai_engine)
+            .service(crate::ai_engine::update_ai_engine)
+            .service(crate::ai_engine::delete_ai_engine)
+            .service(crate::ai_engine::list_ai_chats)
+            .service(crate::ai_engine::get_ai_chat)
+            .service(crate::ai_engine::send_ai_chat_message)
+            .service(crate::ai_callsign::get_ai_callsign_page)
+            .service(crate::ai_callsign::create_ai_callsign_test_message)
+            .service(crate::ai_callsign::update_ai_callsign_test_message)
+            .service(crate::ai_callsign::delete_ai_callsign_test_message)
+            .service(crate::ai_callsign::test_ai_callsign_parsing)
+            .service(crate::ai_callsign::save_ai_callsign_parsing)
+            .service(crate::ai_callsign::recalculate_ai_callsign_parsing)
+            .service(crate::ai_callsign::save_ai_callsign_worker_settings)
             .service(crate::transcriber::list_instances)
             .service(crate::transcriber::create_instance)
             .service(crate::transcriber::update_instance)

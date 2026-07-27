@@ -182,6 +182,7 @@ navBar user shared activeName props =
                     )
                     [ internalMenu Route.Path.Admin_TranscriptionSettings "transcription-settings" "Echo GPU Сервери" ]
                 , [ internalMenu Route.Path.Admin_AllReports "all-reports" "Всі звіти"
+                  , internalMenu Route.Path.Admin_AiCallsigns "ai-callsigns" "Позивні"
                   , internalMenu Route.Path.Admin_GoiIntegrationsNeo "goi-integrations-neo" "ГОІ"
                   , internalMenu Route.Path.Admin_KeysNeo "keys-neo" "Ключі"
                   , internalMenu Route.Path.Admin_LocationConfigsNeo "location-config-neo" "Населені пункти смуг"

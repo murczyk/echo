@@ -27,8 +27,12 @@ import {
   type SystemSettingsItem,
 } from '../../services/api/system-settings';
 import { AdminControlPanelNeoSection } from '../admin-control-panel-neo';
-
-type SystemSettingsTab = 'main' | 'duty' | 'control' | 'pelengs' | 'notifications';
+import { AiEnginesSection } from './AiEnginesSection';
+import {
+  readSystemSettingsTab,
+  replaceSystemSettingsTabUrl,
+  type SystemSettingsTab,
+} from './url-state';
 
 type SystemSettingsForm = {
   exactMatchOnlyDefault: boolean;
@@ -699,7 +703,7 @@ function NotificationsSettingsSection({
 }
 
 export function AdminSystemSettingsNeoPage() {
-  const [activeTab, setActiveTab] = useState<SystemSettingsTab>('main');
+  const [activeTab, setActiveTab] = useState<SystemSettingsTab>(readSystemSettingsTab);
   const [saved, setSaved] = useState<SystemSettingsForm>(EMPTY_FORM);
   const [form, setForm] = useState<SystemSettingsForm>(EMPTY_FORM);
   const [loadInProgress, setLoadInProgress] = useState(true);
@@ -707,6 +711,23 @@ export function AdminSystemSettingsNeoPage() {
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveInProgress, setSaveInProgress] = useState(false);
   const { notify } = usePowerSnackbar();
+
+  useEffect(() => {
+    if (!window.location.hash) {
+      replaceSystemSettingsTabUrl(readSystemSettingsTab());
+    }
+
+    const syncTabFromUrl = () => {
+      setActiveTab(readSystemSettingsTab());
+    };
+    window.addEventListener('popstate', syncTabFromUrl);
+    window.addEventListener('hashchange', syncTabFromUrl);
+
+    return () => {
+      window.removeEventListener('popstate', syncTabFromUrl);
+      window.removeEventListener('hashchange', syncTabFromUrl);
+    };
+  }, []);
 
   useEffect(() => {
     async function loadSystemSettings() {
@@ -793,7 +814,7 @@ export function AdminSystemSettingsNeoPage() {
   }
 
   return (
-    <Box className="w-full" sx={{ maxWidth: 980, mx: 'auto' }}>
+    <Box className="w-full">
       <Stack spacing={2} useFlexGap>
         <PageHeader title="Налаштування системи" />
 
@@ -802,7 +823,9 @@ export function AdminSystemSettingsNeoPage() {
             <Tabs
               value={activeTab}
               onChange={(_, value: SystemSettingsTab) => {
+                if (value === activeTab) return;
                 setActiveTab(value);
+                replaceSystemSettingsTabUrl(value);
               }}
               variant="scrollable"
               allowScrollButtonsMobile
@@ -847,87 +870,116 @@ export function AdminSystemSettingsNeoPage() {
                 id="system-settings-neo-tab-notifications"
                 aria-controls="system-settings-neo-panel-notifications"
               />
+              <Tab
+                value="ai"
+                label="ШІ"
+                id="system-settings-neo-tab-ai"
+                aria-controls="system-settings-neo-panel-ai"
+              />
             </Tabs>
 
             <CardContent sx={{ p: 3, '&:last-child': { pb: 3 } }}>
               <Stack spacing={3} sx={{ width: '100%' }}>
-                {loadError ? <PowerAlert severity="error">{loadError}</PowerAlert> : null}
-                {saveError ? <PowerAlert severity="error">{saveError}</PowerAlert> : null}
-                <Box
-                  id="system-settings-neo-panel-main"
-                  role="tabpanel"
-                  hidden={activeTab !== 'main'}
-                  aria-labelledby="system-settings-neo-tab-main"
-                >
-                  {activeTab === 'main' ? (
-                    <Stack spacing={3}>
-                      <MainSettingsSection
-                        form={form}
-                        patchForm={patchForm}
-                        audioTranscriptionSaved={saved.enableAudioTranscription}
-                      />
-                    </Stack>
-                  ) : null}
-                </Box>
-
-                <Box
-                  id="system-settings-neo-panel-duty"
-                  role="tabpanel"
-                  hidden={activeTab !== 'duty'}
-                  aria-labelledby="system-settings-neo-tab-duty"
-                >
-                  {activeTab === 'duty' ? (
-                    <Stack spacing={3}>
-                      <DutySettingsSection form={form} patchForm={patchForm} />
-                    </Stack>
-                  ) : null}
-                </Box>
-
-                <Box
-                  id="system-settings-neo-panel-control"
-                  role="tabpanel"
-                  hidden={activeTab !== 'control'}
-                  aria-labelledby="system-settings-neo-tab-control"
-                >
-                  {activeTab === 'control' ? <AdminControlPanelNeoSection /> : null}
-                </Box>
-
-                <Box
-                  id="system-settings-neo-panel-pelengs"
-                  role="tabpanel"
-                  hidden={activeTab !== 'pelengs'}
-                  aria-labelledby="system-settings-neo-tab-pelengs"
-                >
-                  {activeTab === 'pelengs' ? (
-                    <Stack spacing={3}>
-                      <PelengSettingsSection form={form} patchForm={patchForm} />
-                    </Stack>
-                  ) : null}
-                </Box>
-
-                <Box
-                  id="system-settings-neo-panel-notifications"
-                  role="tabpanel"
-                  hidden={activeTab !== 'notifications'}
-                  aria-labelledby="system-settings-neo-tab-notifications"
-                >
-                  {activeTab === 'notifications' ? (
-                    <Stack spacing={3}>
-                      <NotificationsSettingsSection form={form} patchForm={patchForm} />
-                    </Stack>
-                  ) : null}
-                </Box>
-
-                <Box sx={{ display: 'flex', justifyContent: 'flex-end', pt: 1 }}>
-                  <PowerButton
-                    variant="contained"
-                    type="submit"
-                    disabled={saveInProgress || loadInProgress || !isDirty}
-                    startIcon={saveInProgress ? <CircularProgress size={18} /> : undefined}
+                {loadError || saveError ? (
+                  <Stack spacing={1}>
+                    {loadError ? <PowerAlert severity="error">{loadError}</PowerAlert> : null}
+                    {saveError ? <PowerAlert severity="error">{saveError}</PowerAlert> : null}
+                  </Stack>
+                ) : null}
+                <Box>
+                  <Box
+                    id="system-settings-neo-panel-main"
+                    role="tabpanel"
+                    hidden={activeTab !== 'main'}
+                    aria-labelledby="system-settings-neo-tab-main"
                   >
-                    зберегти
-                  </PowerButton>
+                    {activeTab === 'main' ? (
+                      <Stack spacing={3}>
+                        <MainSettingsSection
+                          form={form}
+                          patchForm={patchForm}
+                          audioTranscriptionSaved={saved.enableAudioTranscription}
+                        />
+                      </Stack>
+                    ) : null}
+                  </Box>
+
+                  <Box
+                    id="system-settings-neo-panel-duty"
+                    role="tabpanel"
+                    hidden={activeTab !== 'duty'}
+                    aria-labelledby="system-settings-neo-tab-duty"
+                  >
+                    {activeTab === 'duty' ? (
+                      <Stack spacing={3}>
+                        <DutySettingsSection form={form} patchForm={patchForm} />
+                      </Stack>
+                    ) : null}
+                  </Box>
+
+                  <Box
+                    id="system-settings-neo-panel-control"
+                    role="tabpanel"
+                    hidden={activeTab !== 'control'}
+                    aria-labelledby="system-settings-neo-tab-control"
+                  >
+                    {activeTab === 'control' ? <AdminControlPanelNeoSection /> : null}
+                  </Box>
+
+                  <Box
+                    id="system-settings-neo-panel-pelengs"
+                    role="tabpanel"
+                    hidden={activeTab !== 'pelengs'}
+                    aria-labelledby="system-settings-neo-tab-pelengs"
+                  >
+                    {activeTab === 'pelengs' ? (
+                      <Stack spacing={3}>
+                        <PelengSettingsSection form={form} patchForm={patchForm} />
+                      </Stack>
+                    ) : null}
+                  </Box>
+
+                  <Box
+                    id="system-settings-neo-panel-notifications"
+                    role="tabpanel"
+                    hidden={activeTab !== 'notifications'}
+                    aria-labelledby="system-settings-neo-tab-notifications"
+                  >
+                    {activeTab === 'notifications' ? (
+                      <Stack spacing={3}>
+                        <NotificationsSettingsSection form={form} patchForm={patchForm} />
+                      </Stack>
+                    ) : null}
+                  </Box>
+
+                  <Box
+                    id="system-settings-neo-panel-ai"
+                    role="tabpanel"
+                    hidden={activeTab !== 'ai'}
+                    aria-labelledby="system-settings-neo-tab-ai"
+                  >
+                    {activeTab === 'ai' ? <AiEnginesSection /> : null}
+                  </Box>
                 </Box>
+
+                {activeTab !== 'ai' ? (
+                  <Box
+                    sx={{
+                      display: 'flex',
+                      justifyContent: 'flex-end',
+                      pt: 1,
+                    }}
+                  >
+                    <PowerButton
+                      variant="contained"
+                      type="submit"
+                      disabled={saveInProgress || loadInProgress || !isDirty}
+                      startIcon={saveInProgress ? <CircularProgress size={18} /> : undefined}
+                    >
+                      зберегти
+                    </PowerButton>
+                  </Box>
+                ) : null}
               </Stack>
             </CardContent>
           </Box>

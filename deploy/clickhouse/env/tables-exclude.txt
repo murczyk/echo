@@ -41,3 +41,12 @@ public.echo_whatsapp_queue_attachment
 public.palitra_goi_sync_job
 public.palitra_conversion_job
 public.goi_palitra_sync
+
+# AI engine secrets, admin-only history, callsign tests, and worker queue.
+public.ai_engine
+public.ai_chat
+public.ai_chat_message
+public.ai_callsign_settings
+public.ai_callsign_test_message
+public.ai_callsign_parse_result
+public.ai_callsign_worker_job
