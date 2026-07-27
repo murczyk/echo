@@ -33,7 +33,7 @@ flowchart LR
     echo_operator["echo-operator<br/>optional external message source"]
     goi["GOI instance<br/>optional external system<br/>goi-echo-worker API + shared files"]
     echo_gpu["Echo GPU cluster<br/>optional audio transcription"]
-    ai_engine["AI engine<br/>OpenAI or OpenAI-compatible vLLM<br/>optional"]
+    openai_engine["External OpenAI API<br/>optional"]
 
     subgraph echo_lxc["LXC 1 · Echo application · required"]
         direction LR
@@ -85,6 +85,16 @@ flowchart LR
         gateway -->|analytical SQL| clickhouse
     end
 
+    subgraph vllm_spark["echo-gpu-spark · Optional AI inference"]
+        direction TB
+        hf_cache[("Hugging Face cache<br/>Gemma 4 26B A4B")]
+        vllm["vLLM OpenAI API<br/>Docker · :8000"]
+        gb10["NVIDIA GB10"]
+
+        hf_cache -->|model weights| vllm
+        vllm -->|inference| gb10
+    end
+
     browser -->|HTTPS| web
     vault -.->|runtime secrets| api
     vault -.->|runtime secrets| bg
@@ -101,16 +111,18 @@ flowchart LR
     bg <-->|palitra + folder sync| goi
     echo_im <-->|messenger bot integration| goi
     bg <-->|health · audio upload · transcription| echo_gpu
-    api <-->|Chat Completions HTTPS| ai_engine
+    api -.->|Chat Completions HTTPS| openai_engine
+    api <-->|Chat Completions HTTP<br/>Tailscale| vllm
 
     style echo_lxc stroke-width:2px
     style analytics_lxc stroke-width:2px,stroke-dasharray:8 5
     style greptime_lxc stroke-width:2px,stroke-dasharray:8 5
     style signoz_lxc stroke-width:2px,stroke-dasharray:8 5
+    style vllm_spark stroke-width:2px,stroke-dasharray:8 5
     classDef canonical stroke-width:3px
     classDef optional stroke-dasharray:6 4
     class postgres canonical
-    class nlp,iggy,signal,whatsapp,vector,greptime,signoz,promin,backblaze,echo_operator,goi,echo_gpu,ai_engine optional
+    class nlp,iggy,signal,whatsapp,vector,greptime,signoz,promin,backblaze,echo_operator,goi,echo_gpu,openai_engine,vllm,hf_cache,gb10 optional
 ```
 
 The diagram focuses on the core web, worker, messenger, storage, observability,
@@ -124,7 +136,9 @@ configuration, network requirements, queue, cache, retry, and REST API flow.
 
 Admins configure OpenAI-compatible engines in `/admin/system-settings-neo`.
 `/admin/ai-callsigns` provides prompt testing and an optional sequential
-bgworker that adds AI callsign suggestions after regular inbox parsing.
+bgworker that replaces regular parsed callsigns with the AI result.
+See [Echo vLLM](../echo-vllm/README.md) for the `echo-gpu-spark` deployment,
+launch, verification, and shutdown commands.
 
 ## Echo LXC systemd graph
 
