@@ -32,7 +32,7 @@ featureDisableRerDutyDedup =
 
 featureAudioTranscriptionBesidePlayer : Bool
 featureAudioTranscriptionBesidePlayer =
-    True
+    False
 
 
 featureHideDocuments : Bool
