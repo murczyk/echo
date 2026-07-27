@@ -5300,6 +5300,6 @@ mod tests {
         .build(DbBackend::Postgres)
         .to_string();
 
-        assert!(query.contains("FALSE"));
+        assert!(query.contains("FALSE"), "{query}");
     }
 }
