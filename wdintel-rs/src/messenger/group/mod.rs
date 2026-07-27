@@ -319,16 +319,30 @@ where
         id: NotSet,
     };
     model.insert(dbx).await.context(h!())?;
+    let reason = format!("inserted aor {} for group {master_key}", aor.id);
     if let Err(e) =
     crate::sigint::network::etalon_calc::invalidate_network_inbox_for_group_with_key(
             dbx,
             &master_key,
-            format!("inserted aor {} for group {master_key}", aor.id)
+            reason.clone(),
         )
             .await
         {
             error!("invalidate_network_inbox_for_group failed: {:#?}", e)
         }
+    if let Err(e) =
+        crate::stats::enqueue_group_stats_recalculation_for_group_history(
+            dbx,
+            &master_key,
+            reason,
+        )
+        .await
+    {
+        error!(
+            "enqueue_group_stats_recalculation_for_group_history failed: {:#?}",
+            e
+        )
+    }
     Ok(Some(aor))
 }
 
@@ -484,6 +498,15 @@ pub async fn set_signal_group_archived(
     let mut signal_group = signal_group.into_active_model();
     signal_group.is_archived = Set(is_archived);
     let signal_group = signal_group.update(txn).await.c(h!())?;
+    if !is_archived {
+        crate::stats::enqueue_group_stats_recalculation_for_group_history(
+            txn,
+            &signal_group.master_key,
+            format!("unarchived group {}", signal_group.master_key),
+        )
+        .await
+        .c(h!())?;
+    }
     Ok(signal_group)
 }
 

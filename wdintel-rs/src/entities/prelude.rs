@@ -66,6 +66,7 @@ pub use super::goi_knowledge::Entity as GoiKnowledge;
 pub use super::goi_palitra_sync::Entity as GoiPalitraSync;
 pub use super::gpu_config::Entity as GpuConfig;
 pub use super::group_admin_data::Entity as GroupAdminData;
+pub use super::group_stats_recalculation_task::Entity as GroupStatsRecalculationTask;
 pub use super::log_users_report_generation::Entity as LogUsersReportGeneration;
 pub use super::login::Entity as Login;
 pub use super::modulation::Entity as Modulation;

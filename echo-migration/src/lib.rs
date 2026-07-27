@@ -313,6 +313,7 @@ mod m20260724_080724_add_login_password_auth_enabled;
 mod m20260724_095619_add_report_generation_settings;
 mod m20260725_082926_index_network_callsign_lower;
 mod m20260725_110839_add_audio_transcription_collapse_preferences;
+mod m20260725_120000_group_stats_recalculation_task;
 mod m20260727_065339_fix_direct_submit_profile_names;
 mod m20260727_075435_add_ai_engines;
 mod m20260727_094537_add_ai_callsign_parsing;
@@ -693,6 +694,9 @@ impl MigratorTrait for Migrator {
             ),
             Box::new(
                 m20260725_110839_add_audio_transcription_collapse_preferences::Migration,
+            ),
+            Box::new(
+                m20260725_120000_group_stats_recalculation_task::Migration,
             ),
             Box::new(m20260727_065339_fix_direct_submit_profile_names::Migration),
             Box::new(m20260727_075435_add_ai_engines::Migration),

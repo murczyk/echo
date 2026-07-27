@@ -20,6 +20,39 @@ async fn test_bl_group_update_add_second_aor() {
     )
     .await
     .unwrap();
+    let message_ts = chrono::Utc::now().naive_utc() - chrono::Duration::days(2);
+    let msg = mk_signal_message(
+        &txn,
+        signal_message::ActiveModel {
+            created_at: Set(message_ts),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    mk_signal_message_group(
+        &txn,
+        signal_message_group::ActiveModel {
+            signal_message_id: Set(msg.id),
+            group_master_key: Set(Some(group.master_key.clone())),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let message_ts_kyiv =
+        message_ts.and_utc().with_timezone(&chrono_tz::Europe::Kyiv);
+    mk_sigint_inbox_item(
+        &txn,
+        sigint_inbox_item::ActiveModel {
+            id: Set(msg.id),
+            date: Set(Some(message_ts_kyiv.format("%Y-%m-%d").to_string())),
+            time: Set(Some(message_ts_kyiv.format("%H:%M:%S").to_string())),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
 
     let aor1 = mk_aor(
         &txn,
@@ -63,6 +96,15 @@ async fn test_bl_group_update_add_second_aor() {
         .unwrap();
     assert_eq!(group_aors_after_first.len(), 1);
     assert_eq!(group_aors_after_first[0].aor_id, aor1.id);
+    let tasks_after_first = group_stats_recalculation_task::Entity::find()
+        .filter(
+            group_stats_recalculation_task::Column::GroupMasterKey
+                .eq(group.master_key.clone()),
+        )
+        .all(&txn)
+        .await
+        .unwrap();
+    assert_eq!(tasks_after_first.len(), 1);
 
     let req2 = GroupUpdateReq {
         master_key: group.master_key.clone(),
@@ -94,6 +136,15 @@ async fn test_bl_group_update_add_second_aor() {
         group_aors_after_second.iter().map(|ga| ga.aor_id).collect();
     assert!(db_aor_ids.contains(&aor1.id));
     assert!(db_aor_ids.contains(&aor2.id));
+    let tasks_after_second = group_stats_recalculation_task::Entity::find()
+        .filter(
+            group_stats_recalculation_task::Column::GroupMasterKey
+                .eq(group.master_key.clone()),
+        )
+        .all(&txn)
+        .await
+        .unwrap();
+    assert_eq!(tasks_after_second.len(), 1);
 
     assert_eq!(
         res2.group_data.short_note,
