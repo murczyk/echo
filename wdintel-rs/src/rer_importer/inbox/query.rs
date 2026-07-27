@@ -285,9 +285,13 @@ pub(crate) async fn build_analytics_inbox_digest_query(
     db: &DatabaseConnection,
     freshness_max_age_ms: u64,
 ) -> Result<String, AppError> {
-    let scope =
-        resolve_analytics_inbox_message_id_scope(req, db, freshness_max_age_ms)
-            .await?;
+    let scope = resolve_analytics_inbox_message_id_scope(
+        req,
+        &env.dbx,
+        db,
+        freshness_max_age_ms,
+    )
+    .await?;
     let q = build_filtered_inbox_query_with_scope(
         &env.dbx,
         login,
@@ -309,7 +313,8 @@ pub(crate) async fn build_analytics_inbox_digest_query(
 
 async fn resolve_analytics_inbox_message_id_scope(
     req: &InboxMessagesReq,
-    db: &DatabaseConnection,
+    source_db: &DatabaseConnection,
+    analytics_db: &DatabaseConnection,
     freshness_max_age_ms: u64,
 ) -> Result<AnalyticsMessageIdScope, AppError> {
     #[derive(FromQueryResult)]
@@ -318,16 +323,83 @@ async fn resolve_analytics_inbox_message_id_scope(
         max_id: Option<i64>,
     }
 
-    let since_date = req
+    let mut since_date = req
         .since_date_inclusive_ms
         .map(dt_from_millis)
         .transpose()
         .context(h!())?;
-    let till_date = req
+    let mut till_date = req
         .till_date_inclusive_ms
         .map(dt_from_millis)
         .transpose()
         .context(h!())?;
+
+    match req.sort_by.unwrap_or(InboxMessagesSortBy::IMSDatetime) {
+        InboxMessagesSortBy::IMSDatetime => {
+            if let Some(cursor_id) = req.since_id_noninclusive {
+                let cursor_date =
+                    sigint_inbox_item::Entity::find_by_id(cursor_id)
+                        .select_only()
+                        .column(sigint_inbox_item::Column::Datetime)
+                        .into_tuple::<Option<NaiveDateTime>>()
+                        .one(source_db)
+                        .await
+                        .context(h!())?
+                        .flatten()
+                        .context(h!())?;
+                since_date =
+                    Some(since_date.map_or(cursor_date, |since_date| {
+                        since_date.max(cursor_date)
+                    }));
+            }
+            if let Some(cursor_id) = req.before_id_noninclusive {
+                let cursor_date =
+                    sigint_inbox_item::Entity::find_by_id(cursor_id)
+                        .select_only()
+                        .column(sigint_inbox_item::Column::Datetime)
+                        .into_tuple::<Option<NaiveDateTime>>()
+                        .one(source_db)
+                        .await
+                        .context(h!())?
+                        .flatten()
+                        .context(h!())?;
+                till_date = Some(till_date.map_or(cursor_date, |till_date| {
+                    till_date.min(cursor_date)
+                }));
+            }
+        }
+        InboxMessagesSortBy::IMSTimestamp => {
+            if let Some(cursor_id) = req.since_id_noninclusive {
+                let cursor_date = signal_message::Entity::find_by_id(cursor_id)
+                    .select_only()
+                    .column(signal_message::Column::Timestamp)
+                    .into_tuple::<Option<NaiveDateTime>>()
+                    .one(source_db)
+                    .await
+                    .context(h!())?
+                    .flatten()
+                    .context(h!())?;
+                since_date =
+                    Some(since_date.map_or(cursor_date, |since_date| {
+                        since_date.max(cursor_date)
+                    }));
+            }
+            if let Some(cursor_id) = req.before_id_noninclusive {
+                let cursor_date = signal_message::Entity::find_by_id(cursor_id)
+                    .select_only()
+                    .column(signal_message::Column::Timestamp)
+                    .into_tuple::<Option<NaiveDateTime>>()
+                    .one(source_db)
+                    .await
+                    .context(h!())?
+                    .flatten()
+                    .context(h!())?;
+                till_date = Some(till_date.map_or(cursor_date, |till_date| {
+                    till_date.min(cursor_date)
+                }));
+            }
+        }
+    }
 
     let bounds =
         match req.sort_by.unwrap_or(InboxMessagesSortBy::IMSDatetime) {
@@ -348,7 +420,7 @@ async fn resolve_analytics_inbox_message_id_scope(
                     });
                 query
                     .into_model::<MessageIdBounds>()
-                    .one(db)
+                    .one(analytics_db)
                     .await
                     .context(h!())?
             }
@@ -369,7 +441,7 @@ async fn resolve_analytics_inbox_message_id_scope(
                     });
                 query
                     .into_model::<MessageIdBounds>()
-                    .one(db)
+                    .one(analytics_db)
                     .await
                     .context(h!())?
             }

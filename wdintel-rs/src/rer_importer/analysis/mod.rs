@@ -5879,9 +5879,10 @@ pub(crate) fn analytics_inbox_request_supported(
     req.search
         .as_ref()
         .is_none_or(|search| search.trim().is_empty())
-        && req
+        && (req
             .since_date_inclusive_ms
             .is_some_and(|since_date| since_date > 0)
+            || req.since_id_noninclusive.is_some())
 }
 
 #[derive(Clone)]

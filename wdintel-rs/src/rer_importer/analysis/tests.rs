@@ -6140,6 +6140,10 @@ fn analytical_inbox_reads_support_callsign_filters_but_reject_search() {
     req.since_date_inclusive_ms = Some(1);
     assert!(analytics_inbox_request_supported(&req));
 
+    req.since_date_inclusive_ms = None;
+    req.since_id_noninclusive = Some(1);
+    assert!(analytics_inbox_request_supported(&req));
+
     req.search = Some("callsign".to_string());
     assert!(!analytics_inbox_request_supported(&req));
 
