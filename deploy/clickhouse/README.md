@@ -424,14 +424,26 @@ queries that use the new column fall back to PostgreSQL until analytics is
 reconciled. Columns added with a PostgreSQL default still require an explicit
 historical backfill or full mirror resync.
 
-The same reconciliation installs a versioned ClickHouse callsign-expansion
-view and exposes it privately as
-`echo_clickhouse_derived.message_callsign` in the gateway. The gateway object
-is an owner-owned compatibility view over a private foreign table, matching
-the replicated-table gateway pattern so joins and distinct aggregation remain
-pushdown-safe. Existing objects are replaced only when upgrading from the
-earlier direct-foreign-table layout; periodic checks leave the compatibility
-view unchanged.
+The same reconciliation installs versioned ClickHouse derived views and
+exposes owner-owned compatibility views over private foreign tables in the
+gateway:
+
+- `echo_clickhouse_derived.message_callsign` expands JSON callsign arrays.
+- `echo_clickhouse_derived.message_aor_link` combines group and explicit
+  network AOR links into message ID and AOR-bound rows.
+
+The AOR relation lets analytical filters apply the resolved message-ID
+envelope before joining the large group and network link tables. This avoids
+correlated full-history scans while retaining the PostgreSQL overlap
+semantics. The compatibility-view layout matches replicated gateway tables so
+joins and distinct aggregation remain pushdown-safe.
+
+The network half reads a derived `ReplacingMergeTree` ordered by
+`(sigint_inbox_item_id, id)`. A materialized view copies every PeerDB version
+and deletion marker into it, so `FINAL` preserves current-state semantics
+while the message-ID envelope prunes by the primary key. Reconciliation records
+the PeerDB raw-table UUID and rebuilds the table plus ingestion view after a
+mirror resync replaces that UUID.
 
 The derived-schema reconciliation also owns the ClickHouse data-skipping
 indexes used by time-bounded analytical queries. PeerDB does not copy

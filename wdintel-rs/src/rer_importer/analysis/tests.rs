@@ -1727,6 +1727,53 @@ async fn rer_analysis_group_stats_hide_unrelated_and_secret_groups() {
 
 #[tokio::test]
 #[serial]
+async fn rer_analysis_facets_ignore_their_own_selected_values() {
+    let fixture = mk_rer_analysis_fixture().await.unwrap();
+    let req = analysis_stats_req0(&fixture);
+
+    let groups = fetch_group_counts_for_req(&fixture.env, &req)
+        .await
+        .unwrap();
+    let mut selected_req = req.clone();
+    selected_req.selected_groups =
+        groups.keys().next().cloned().map(|group| vec![group]);
+    assert_eq!(
+        fetch_group_counts_for_req(&fixture.env, &selected_req)
+            .await
+            .unwrap(),
+        groups
+    );
+
+    let sender_values = fetch_sender_counts_for_req(&fixture.env, &req)
+        .await
+        .unwrap();
+    let mut selected_req = req.clone();
+    selected_req.selected_senders = sender_values
+        .keys()
+        .next()
+        .cloned()
+        .map(|sender| vec![sender]);
+    assert_eq!(
+        fetch_sender_counts_for_req(&fixture.env, &selected_req)
+            .await
+            .unwrap(),
+        sender_values
+    );
+
+    let freqs = fetch_freq_counts_for_req(&fixture.env, &req).await.unwrap();
+    let mut selected_req = req;
+    selected_req.selected_freqs =
+        freqs.keys().next().cloned().map(|freq| vec![freq]);
+    assert_eq!(
+        fetch_freq_counts_for_req(&fixture.env, &selected_req)
+            .await
+            .unwrap(),
+        freqs
+    );
+}
+
+#[tokio::test]
+#[serial]
 async fn collect_group_names_prefers_signal_group_over_whatsapp_name() {
     let fixture = mk_rer_analysis_fixture().await.unwrap();
     let alpha_key = fixture.alpha.signal_group.master_key.clone();
@@ -5795,6 +5842,17 @@ async fn rer_analysis_aor_and_network_stats_render_only_relevant_values() {
         BTreeMap::from([(fixture.north_aor.id, 1), (fixture.wide_aor.id, 1),])
     );
 
+    let req = analysis_stats_req0(&fixture);
+    let expected = fetch_aor_counts_for_req(&fixture.env, &req).await.unwrap();
+    let mut selected_req = req;
+    selected_req.selected_aors = Some(vec![fixture.south_aor.id]);
+    assert_eq!(
+        fetch_aor_counts_for_req(&fixture.env, &selected_req)
+            .await
+            .unwrap(),
+        expected
+    );
+
     let test_identity = mk_test_identity().await.unwrap();
     let mut req = analysis_stats_req0(&fixture);
     req.selected_aors = Some(vec![fixture.south_aor.id]);
@@ -5820,6 +5878,20 @@ async fn rer_analysis_aor_and_network_stats_render_only_relevant_values() {
             (fixture.network_south.network.id, 1),
             (fixture.network_wide.network.id, 1),
         ])
+    );
+
+    let req = analysis_stats_req0(&fixture);
+    let expected = fetch_network_counts_for_req(&fixture.env, &req)
+        .await
+        .unwrap();
+    let mut selected_req = req;
+    selected_req.selected_networks =
+        Some(vec![fixture.network_south.network.id]);
+    assert_eq!(
+        fetch_network_counts_for_req(&fixture.env, &selected_req)
+            .await
+            .unwrap(),
+        expected
     );
 }
 

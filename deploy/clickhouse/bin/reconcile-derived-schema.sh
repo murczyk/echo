@@ -12,9 +12,15 @@ validate_runtime_identifiers
 derived_database="${CLICKHOUSE_CURRENT_DB}_derived"
 metadata_database="${CLICKHOUSE_CURRENT_DB}_meta"
 message_callsign_view=message_callsign_v1
+message_aor_link_view=message_aor_link_v1
+network_link_table=sigint_inbox_item_network_by_message_v1
+network_link_ingest_view=sigint_inbox_item_network_by_message_ingest_v1
 validate_identifier derived_database "$derived_database"
 validate_identifier metadata_database "$metadata_database"
 validate_identifier message_callsign_view "$message_callsign_view"
+validate_identifier message_aor_link_view "$message_aor_link_view"
+validate_identifier network_link_table "$network_link_table"
+validate_identifier network_link_ingest_view "$network_link_ingest_view"
 
 reconcile_query_index() {
   local table=$1
@@ -111,6 +117,120 @@ reconcile_query_index() {
   "
 }
 
+reconcile_network_link_table() {
+  local raw_table=sigint_inbox_item_network
+  local raw_uuid state_exists target_exists ingest_exists
+
+  raw_uuid=$(clickhouse_admin_http "
+    SELECT toString(uuid)
+    FROM system.tables
+    WHERE database = '$CLICKHOUSE_RAW_DB'
+      AND name = '$raw_table'
+  ")
+  [[ "$raw_uuid" =~ ^[0-9a-fA-F-]{36}$ ]] \
+    || die "could not resolve table UUID for $CLICKHOUSE_RAW_DB.$raw_table"
+
+  state_exists=$(clickhouse_admin_http "
+    SELECT count()
+    FROM \`$metadata_database\`.\`derived_table_reconciliation\`
+    FINAL
+    WHERE raw_database = '$CLICKHOUSE_RAW_DB'
+      AND raw_table = '$raw_table'
+      AND raw_table_uuid = toUUID('$raw_uuid')
+      AND derived_database = '$derived_database'
+      AND derived_table = '$network_link_table'
+  ")
+  target_exists=$(clickhouse_admin_http "
+    SELECT count()
+    FROM system.tables
+    WHERE database = '$derived_database'
+      AND name = '$network_link_table'
+      AND engine = 'ReplacingMergeTree'
+  ")
+  ingest_exists=$(clickhouse_admin_http "
+    SELECT count()
+    FROM system.tables
+    WHERE database = '$derived_database'
+      AND name = '$network_link_ingest_view'
+      AND engine = 'MaterializedView'
+  ")
+  if [[ "$state_exists" == 1 && "$target_exists" == 1 && "$ingest_exists" == 1 ]]; then
+    return
+  fi
+
+  log "Rebuilding message-ordered network links for raw table UUID $raw_uuid"
+  clickhouse_admin \
+    --receive_timeout 600 \
+    --multiquery \
+    --query "
+      DROP VIEW IF EXISTS
+        \`$derived_database\`.\`$message_aor_link_view\`;
+      DROP VIEW IF EXISTS
+        \`$derived_database\`.\`$network_link_ingest_view\`;
+      DROP TABLE IF EXISTS
+        \`$derived_database\`.\`$network_link_table\`;
+      CREATE TABLE
+        \`$derived_database\`.\`$network_link_table\`
+      (
+        id Int64,
+        sigint_inbox_item_id Int64,
+        sigint_network_id Int64,
+        created_at DateTime64(6),
+        _peerdb_synced_at DateTime64(9),
+        _peerdb_is_deleted UInt8,
+        _peerdb_version UInt64
+      )
+      ENGINE = ReplacingMergeTree(
+        _peerdb_version,
+        _peerdb_is_deleted
+      )
+      ORDER BY (sigint_inbox_item_id, id);
+      CREATE MATERIALIZED VIEW
+        \`$derived_database\`.\`$network_link_ingest_view\`
+      TO \`$derived_database\`.\`$network_link_table\`
+      AS
+      SELECT
+        id,
+        sigint_inbox_item_id,
+        sigint_network_id,
+        created_at,
+        _peerdb_synced_at,
+        _peerdb_is_deleted,
+        _peerdb_version
+      FROM \`$CLICKHOUSE_RAW_DB\`.\`$raw_table\`;
+      INSERT INTO \`$derived_database\`.\`$network_link_table\`
+      SELECT
+        id,
+        sigint_inbox_item_id,
+        sigint_network_id,
+        created_at,
+        _peerdb_synced_at,
+        _peerdb_is_deleted,
+        _peerdb_version
+      FROM \`$CLICKHOUSE_RAW_DB\`.\`$raw_table\`;
+    "
+  clickhouse_admin_http "
+    INSERT INTO \`$metadata_database\`.\`derived_table_reconciliation\`
+    (
+      raw_database,
+      raw_table,
+      raw_table_uuid,
+      derived_database,
+      derived_table,
+      reconciled_at
+    )
+    VALUES
+    (
+      '$CLICKHOUSE_RAW_DB',
+      '$raw_table',
+      toUUID('$raw_uuid'),
+      '$derived_database',
+      '$network_link_table',
+      now64()
+    )
+  "
+}
+
 current_table_exists=$(clickhouse_admin_http "
   SELECT count()
   FROM system.tables
@@ -135,6 +255,20 @@ clickhouse_admin_http "
   ENGINE = ReplacingMergeTree(reconciled_at)
   ORDER BY (raw_database, table_name, index_name)
 "
+clickhouse_admin_http "
+  CREATE TABLE IF NOT EXISTS
+  \`$metadata_database\`.\`derived_table_reconciliation\`
+  (
+    raw_database String,
+    raw_table String,
+    raw_table_uuid UUID,
+    derived_database String,
+    derived_table String,
+    reconciled_at DateTime64(9)
+  )
+  ENGINE = ReplacingMergeTree(reconciled_at)
+  ORDER BY (raw_database, raw_table, derived_database, derived_table)
+"
 
 while IFS='|' read -r table index expression type granularity; do
   [[ -n "$table" ]] || continue
@@ -153,6 +287,7 @@ sigint_inbox_item_network|echo_inbox_item_id_minmax_v1|sigint_inbox_item_id|minm
 QUERY_INDEXES
 
 clickhouse_admin_http "CREATE DATABASE IF NOT EXISTS \`$derived_database\`"
+reconcile_network_link_table
 clickhouse_admin_http "
   CREATE VIEW IF NOT EXISTS \`$derived_database\`.\`$message_callsign_view\` AS
   SELECT
@@ -167,6 +302,33 @@ clickhouse_admin_http "
   WHERE callsigns IS NOT NULL
 "
 clickhouse_admin_http "
+  CREATE VIEW IF NOT EXISTS \`$derived_database\`.\`$message_aor_link_view\` AS
+  SELECT
+    message_group.signal_message_id AS sigint_inbox_item_id,
+    group_aor.aor_id AS aor_id,
+    aor.left_bound AS left_bound,
+    aor.right_bound AS right_bound
+  FROM \`$CLICKHOUSE_CURRENT_DB\`.\`signal_message_group\` AS message_group
+  INNER JOIN \`$CLICKHOUSE_CURRENT_DB\`.\`signal_group_aor\` AS group_aor
+    ON group_aor.master_key = message_group.group_master_key
+  INNER JOIN \`$CLICKHOUSE_CURRENT_DB\`.\`area_of_responsibility\` AS aor
+    ON aor.id = group_aor.aor_id
+  UNION ALL
+  SELECT
+    inbox_network.sigint_inbox_item_id AS sigint_inbox_item_id,
+    network_aor.aor_id AS aor_id,
+    aor.left_bound AS left_bound,
+    aor.right_bound AS right_bound
+  FROM \`$derived_database\`.\`$network_link_table\` AS inbox_network FINAL
+  INNER JOIN \`$CLICKHOUSE_CURRENT_DB\`.\`sigint_network\` AS network
+    ON network.id = inbox_network.sigint_network_id
+  INNER JOIN \`$CLICKHOUSE_CURRENT_DB\`.\`sigint_network_aor\` AS network_aor
+    ON network_aor.network_id = network.id
+  INNER JOIN \`$CLICKHOUSE_CURRENT_DB\`.\`area_of_responsibility\` AS aor
+    ON aor.id = network_aor.aor_id
+  WHERE NOT network.deleted
+"
+clickhouse_admin_http "
   GRANT SELECT ON \`$derived_database\`.* TO \`$CLICKHOUSE_GATEWAY_USER\`
 "
 
@@ -175,6 +337,7 @@ postgres_psql --dbname "$GATEWAY_DB" \
   -v ON_ERROR_STOP=1 \
   -v derived_database="$derived_database" \
   -v message_callsign_view="$message_callsign_view" \
+  -v message_aor_link_view="$message_aor_link_view" \
   -v gateway_user="$GATEWAY_USER" <<'SQL'
 BEGIN;
 CREATE SCHEMA IF NOT EXISTS echo_clickhouse_derived AUTHORIZATION postgres;
@@ -226,12 +389,35 @@ BEGIN
 END
 $$;
 REVOKE ALL ON TABLE echo_clickhouse_derived.message_callsign FROM PUBLIC;
+CREATE FOREIGN TABLE IF NOT EXISTS
+echo_clickhouse_derived_foreign.message_aor_link (
+  sigint_inbox_item_id bigint NOT NULL,
+  aor_id bigint NOT NULL,
+  left_bound double precision NOT NULL,
+  right_bound double precision NOT NULL
+)
+SERVER echo_clickhouse
+OPTIONS (
+  database :'derived_database',
+  table_name :'message_aor_link_view',
+  engine 'View'
+);
+REVOKE ALL ON TABLE echo_clickhouse_derived_foreign.message_aor_link
+  FROM PUBLIC;
+CREATE OR REPLACE VIEW echo_clickhouse_derived.message_aor_link AS
+SELECT sigint_inbox_item_id, aor_id, left_bound, right_bound
+FROM echo_clickhouse_derived_foreign.message_aor_link;
+REVOKE ALL ON TABLE echo_clickhouse_derived.message_aor_link FROM PUBLIC;
 SELECT format(
   'GRANT USAGE ON SCHEMA echo_clickhouse_derived TO %I',
   :'gateway_user'
 ) \gexec
 SELECT format(
   'GRANT SELECT ON TABLE echo_clickhouse_derived.message_callsign TO %I',
+  :'gateway_user'
+) \gexec
+SELECT format(
+  'GRANT SELECT ON TABLE echo_clickhouse_derived.message_aor_link TO %I',
   :'gateway_user'
 ) \gexec
 COMMIT;

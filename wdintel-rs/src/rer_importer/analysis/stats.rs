@@ -37,6 +37,53 @@ pub(super) struct AnalyticsTagAccess {
     pub(super) unit_login_ids: Vec<uuid::Uuid>,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum AnalysisFacet {
+    Groups,
+    Senders,
+    Frequencies,
+    Posts,
+    Callsigns,
+    Units,
+    Locations,
+    Tags,
+    Aors,
+    Networks,
+}
+
+pub(super) fn request_without_facet_filter(
+    req: &AnalysisStatsReq,
+    facet: AnalysisFacet,
+) -> AnalysisStatsReq {
+    let mut req = req.clone();
+    match facet {
+        AnalysisFacet::Groups => req.selected_groups = None,
+        AnalysisFacet::Senders => req.selected_senders = None,
+        AnalysisFacet::Frequencies => req.selected_freqs = None,
+        AnalysisFacet::Posts => req.selected_posts = None,
+        AnalysisFacet::Callsigns => req.selected_callsigns = None,
+        AnalysisFacet::Units => {
+            req.selected_units = None;
+            req.units_exact_match_only = None;
+        }
+        AnalysisFacet::Locations => req.selected_locations = None,
+        AnalysisFacet::Tags => {
+            req.selected_tags = None;
+            req.denied_tags = None;
+            req.tag_presence = None;
+            req.filter_tags_option = None;
+            req.without_model_tags = None;
+            req.report_tags_only_this_unit = None;
+        }
+        AnalysisFacet::Aors => req.selected_aors = None,
+        AnalysisFacet::Networks => {
+            req.selected_networks = None;
+            req.without_network = None;
+        }
+    }
+    req
+}
+
 pub(super) async fn resolve_analytics_tag_access(
     db: &DatabaseConnection,
     login_id: &uuid::Uuid,
@@ -234,6 +281,68 @@ where
     } else {
         filter_selected_networks(query, selected_networks, without_network)
     }
+}
+
+fn filter_selected_aors_for_scope<E>(
+    mut query: Select<E>,
+    selected_aors: &Option<Vec<i64>>,
+    scope: Option<&AnalyticsMessageIdScope>,
+) -> Result<Select<E>, AppError>
+where
+    E: EntityTrait,
+{
+    let Some(selected_aors) =
+        selected_aors.as_ref().filter(|aors| !aors.is_empty())
+    else {
+        return Ok(query);
+    };
+    let Some(scope) = scope else {
+        return Ok(filter_selected_aors(query, &Some(selected_aors.clone()))
+            .context(h!())?);
+    };
+
+    let link_alias = Alias::new("analytics_message_aor_link");
+    let selected_aor_alias = Alias::new("analytics_selected_aor");
+    let matches_alias = Alias::new("analytics_selected_aor_message");
+    let mut matches = Query::select();
+    matches
+        .distinct()
+        .column((link_alias.clone(), Alias::new("sigint_inbox_item_id")))
+        .from_as(
+            (
+                Alias::new("echo_clickhouse_derived"),
+                Alias::new("message_aor_link"),
+            ),
+            link_alias.clone(),
+        )
+        .join_as(
+            JoinType::InnerJoin,
+            area_of_responsibility::Entity,
+            selected_aor_alias.clone(),
+            Condition::all()
+                .add(
+                    Expr::col((
+                        selected_aor_alias.clone(),
+                        area_of_responsibility::Column::Id,
+                    ))
+                    .is_in(selected_aors.clone()),
+                )
+                .add(aor_bounds_overlap_condition(
+                    link_alias.clone(),
+                    selected_aor_alias,
+                )),
+        )
+        .and_where(
+            scope.condition((link_alias, Alias::new("sigint_inbox_item_id"))),
+        );
+    QuerySelect::query(&mut query).join_subquery(
+        JoinType::InnerJoin,
+        matches.to_owned(),
+        matches_alias.clone(),
+        Expr::col((matches_alias, Alias::new("sigint_inbox_item_id")))
+            .equals((sigint_inbox_item::Entity, sigint_inbox_item::Column::Id)),
+    );
+    Ok(query)
 }
 
 async fn count_distinct_with_db<E>(
@@ -536,19 +645,6 @@ where
     }
 }
 
-fn apply_message_aor_scope<E>(
-    query: Select<E>,
-    selected_aors: &Option<Vec<i64>>,
-) -> Select<E>
-where
-    E: EntityTrait,
-{
-    match selected_aors_filter_condition(selected_aors) {
-        Some(condition) => query.filter(condition),
-        None => query,
-    }
-}
-
 pub async fn count_groups(
     req: &Json<AnalysisStatsReq>,
     user: &Identity,
@@ -579,6 +675,7 @@ pub(super) fn build_groups_query(
     master_keys: Vec<String>,
     scope: Option<&AnalyticsMessageIdScope>,
 ) -> Result<Select<sigint_inbox_item::Entity>, AppError> {
+    let req = request_without_facet_filter(req, AnalysisFacet::Groups);
     let include_peleng_locations =
         req.include_peleng_locations.unwrap_or(false);
     let accessible_groups = master_keys.clone();
@@ -650,10 +747,10 @@ pub(super) fn build_groups_query(
         scope,
     )
     .context(h!())?;
-    let groups_res = apply_metadata_filters(groups_res, req)?;
+    let groups_res = apply_metadata_filters(groups_res, &req)?;
     let groups_res = filter_search(groups_res, &req.search).context(h!())?;
     let groups_res =
-        filter_selected_aors(groups_res, &req.selected_aors).context(h!())?;
+        filter_selected_aors_for_scope(groups_res, &req.selected_aors, scope)?;
     let groups_res =
         match selected_aor_group_facet_condition(&req.selected_aors) {
             Some(condition) => groups_res.filter(condition),
@@ -851,35 +948,34 @@ pub(super) fn build_sender_breakdown_query(
     master_keys: Vec<String>,
     scope: Option<&AnalyticsMessageIdScope>,
 ) -> Result<Select<sigint_inbox_item::Entity>, AppError> {
-    let sender_stats_groups = sender_stats_groups(req, &master_keys);
+    let req =
+        Json(request_without_facet_filter(&req.0, AnalysisFacet::Senders));
+    let sender_stats_groups = sender_stats_groups(&req, &master_keys);
     let per_day_expr = Expr::cust_with_exprs(
         "to_char(($1 AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Kyiv')::date, 'DD.MM.YYYY')",
         [Expr::col(sigint_inbox_item::Column::Datetime).into_simple_expr()],
     );
-    let breakdown_query = build_join_for_sender_stats(
-        &sender_stats_groups,
-        &req.selected_aors,
-        scope,
-    )
-    .select_only()
-    .column_as(signal_message_group::Column::Sender, "uuid")
-    .column(sigint_inbox_item::Column::Freq)
-    .column(sigint_inbox_item::Column::PostId)
-    .column_as(per_day_expr.clone(), "date")
-    .column_as(
-        Expr::cust(r#"COUNT(DISTINCT "signal_message"."id")"#),
-        "count",
-    )
-    .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
-    .filter(sigint_inbox_item::Column::Datetime.lt(dt_till))
-    .group_by(signal_message_group::Column::Sender)
-    .group_by(sigint_inbox_item::Column::Freq)
-    .group_by(sigint_inbox_item::Column::PostId)
-    .group_by(per_day_expr);
-    let breakdown_query = apply_sender_dimension_filters(breakdown_query, req);
+    let breakdown_query =
+        build_join_for_sender_stats(&sender_stats_groups, scope)
+            .select_only()
+            .column_as(signal_message_group::Column::Sender, "uuid")
+            .column(sigint_inbox_item::Column::Freq)
+            .column(sigint_inbox_item::Column::PostId)
+            .column_as(per_day_expr.clone(), "date")
+            .column_as(
+                Expr::cust(r#"COUNT(DISTINCT "signal_message"."id")"#),
+                "count",
+            )
+            .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
+            .filter(sigint_inbox_item::Column::Datetime.lt(dt_till))
+            .group_by(signal_message_group::Column::Sender)
+            .group_by(sigint_inbox_item::Column::Freq)
+            .group_by(sigint_inbox_item::Column::PostId)
+            .group_by(per_day_expr);
+    let breakdown_query = apply_sender_dimension_filters(breakdown_query, &req);
     let breakdown_query = apply_sender_filters_for_login(
         breakdown_query,
-        req,
+        &req,
         login_str,
         master_keys,
         scope,
@@ -940,18 +1036,16 @@ fn build_senders_filtered_query(
     master_keys: Vec<String>,
     scope: Option<&AnalyticsMessageIdScope>,
 ) -> Result<Select<sigint_inbox_item::Entity>, AppError> {
+    let req =
+        Json(request_without_facet_filter(&req.0, AnalysisFacet::Senders));
     let include_peleng_locations =
         req.include_peleng_locations.unwrap_or(false);
-    let sender_stats_groups = sender_stats_groups(req, &master_keys);
-    let senders_res = build_join_for_sender_stats(
-        &sender_stats_groups,
-        &req.selected_aors,
-        scope,
-    )
-    // .filter(signal_message::Column::DuplicateOf.is_null())
-    .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
-    .filter(sigint_inbox_item::Column::Datetime.lt(dt_till));
-    let senders_res = apply_sender_dimension_filters(senders_res, req);
+    let sender_stats_groups = sender_stats_groups(&req, &master_keys);
+    let senders_res = build_join_for_sender_stats(&sender_stats_groups, scope)
+        // .filter(signal_message::Column::DuplicateOf.is_null())
+        .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
+        .filter(sigint_inbox_item::Column::Datetime.lt(dt_till));
+    let senders_res = apply_sender_dimension_filters(senders_res, &req);
     let senders_res = filter_selected_groups_and_senders_with_access(
         senders_res,
         &req.selected_groups,
@@ -1003,7 +1097,7 @@ fn build_senders_filtered_query(
     .context(h!())?;
     let senders_res = apply_metadata_filters(senders_res, &req.0)?;
     let senders_res = filter_search(senders_res, &req.search).context(h!())?;
-    Ok(senders_res)
+    filter_selected_aors_for_scope(senders_res, &req.selected_aors, scope)
 }
 
 fn sender_stats_groups(
@@ -1015,7 +1109,6 @@ fn sender_stats_groups(
 
 fn build_join_for_sender_stats(
     sender_stats_groups: &[String],
-    selected_aors: &Option<Vec<i64>>,
     scope: Option<&AnalyticsMessageIdScope>,
 ) -> Select<Entity> {
     let sender_stats_groups = sender_stats_groups.to_vec();
@@ -1031,11 +1124,10 @@ fn build_join_for_sender_stats(
     if sender_stats_groups.is_empty() {
         query.filter(Expr::cust("FALSE"))
     } else {
-        let query = query.filter(
+        query.filter(
             signal_message_group::Column::GroupMasterKey
                 .eq_any(sender_stats_groups),
-        );
-        apply_message_aor_scope(query, selected_aors)
+        )
     }
 }
 
@@ -1120,7 +1212,7 @@ where
     let query = apply_metadata_filters(query, &req.0)?;
     let query = filter_search(query, &req.search).context(h!())?;
     let query =
-        filter_selected_aors(query, &req.selected_aors).context(h!())?;
+        filter_selected_aors_for_scope(query, &req.selected_aors, scope)?;
     if group_access_already_filtered || master_keys.is_empty() {
         return Ok(query);
     }
@@ -1266,6 +1358,7 @@ fn build_posts_filtered_query(
     dt_till: NaiveDateTime,
     scope: Option<&AnalyticsMessageIdScope>,
 ) -> Result<Select<sigint_inbox_item::Entity>, AppError> {
+    let req = Json(request_without_facet_filter(&req.0, AnalysisFacet::Posts));
     let include_peleng_locations =
         req.include_peleng_locations.unwrap_or(false);
     let post_res = sigint_inbox_item::Entity::find()
@@ -1337,7 +1430,7 @@ fn build_posts_filtered_query(
     let post_res = apply_metadata_filters(post_res, &req.0)?;
     let post_res = filter_search(post_res, &req.search).context(h!())?;
     let post_res =
-        filter_selected_aors(post_res, &req.selected_aors).context(h!())?;
+        filter_selected_aors_for_scope(post_res, &req.selected_aors, scope)?;
     Ok(post_res)
 }
 
@@ -1605,6 +1698,7 @@ fn build_freqs_filtered_query(
     master_keys: Vec<String>,
     scope: Option<&AnalyticsMessageIdScope>,
 ) -> Result<Select<sigint_inbox_item::Entity>, AppError> {
+    let req = request_without_facet_filter(req, AnalysisFacet::Frequencies);
     let include_peleng_locations =
         req.include_peleng_locations.unwrap_or(false);
     let freqs_res = sigint_inbox_item::Entity::find()
@@ -1671,10 +1765,10 @@ fn build_freqs_filtered_query(
         scope,
     )
     .context(h!())?;
-    let freqs_res = apply_metadata_filters(freqs_res, req)?;
+    let freqs_res = apply_metadata_filters(freqs_res, &req)?;
     let freqs_res = filter_search(freqs_res, &req.search).context(h!())?;
     let freqs_res =
-        filter_selected_aors(freqs_res, &req.selected_aors).context(h!())?;
+        filter_selected_aors_for_scope(freqs_res, &req.selected_aors, scope)?;
     Ok(freqs_res)
 }
 
@@ -2211,6 +2305,7 @@ fn build_callsigns_filtered_query(
     master_keys: Vec<String>,
     scope: Option<&AnalyticsMessageIdScope>,
 ) -> Result<Select<sigint_inbox_item::Entity>, AppError> {
+    let req = request_without_facet_filter(req, AnalysisFacet::Callsigns);
     let include_peleng_locations =
         req.include_peleng_locations.unwrap_or(false);
     let callsigns_res = sigint_inbox_item::Entity::find()
@@ -2274,10 +2369,13 @@ fn build_callsigns_filtered_query(
         scope,
     )
     .context(h!())?;
-    let callsigns_res = apply_metadata_filters(callsigns_res, req)?;
+    let callsigns_res = apply_metadata_filters(callsigns_res, &req)?;
     let callsigns_res = filter_search(callsigns_res, &req.search)?;
-    let callsigns_res = filter_selected_aors(callsigns_res, &req.selected_aors)
-        .context(h!())?;
+    let callsigns_res = filter_selected_aors_for_scope(
+        callsigns_res,
+        &req.selected_aors,
+        scope,
+    )?;
     Ok(callsigns_res)
 }
 
@@ -2528,6 +2626,7 @@ fn build_tags_query_parts(
     ),
     AppError,
 > {
+    let req = request_without_facet_filter(req, AnalysisFacet::Tags);
     let mut ctes = Vec::new();
     let matching_network_ids_alias = Alias::new("matching_unit_network_ids");
     let matching_inbox_item_ids_alias =
@@ -2564,7 +2663,7 @@ fn build_tags_query_parts(
     }
     let filtered_inbox_items_alias = Alias::new("filtered_inbox_items");
     let filtered_inbox_items = build_tags_filtered_query_with_owner_condition(
-        req,
+        &req,
         login_str,
         accessible_tag_owner_condition(login_str),
         None,
@@ -2693,6 +2792,7 @@ fn build_tags_filtered_query_with_owner_condition(
     join_result_tags: bool,
     matching_inbox_item_ids_alias: Option<Alias>,
 ) -> Result<Select<sigint_inbox_item::Entity>, AppError> {
+    let req = request_without_facet_filter(req, AnalysisFacet::Tags);
     let include_peleng_locations =
         req.include_peleng_locations.unwrap_or(false);
     let mut tags_res = sigint_inbox_item::Entity::find()
@@ -2837,10 +2937,10 @@ fn build_tags_filtered_query_with_owner_condition(
         )
     }
     .context(h!())?;
-    let tags_res = apply_metadata_filters(tags_res, req)?;
+    let tags_res = apply_metadata_filters(tags_res, &req)?;
     let tags_res = filter_search(tags_res, &req.search)?;
     let tags_res =
-        filter_selected_aors(tags_res, &req.selected_aors).context(h!())?;
+        filter_selected_aors_for_scope(tags_res, &req.selected_aors, scope)?;
     Ok(tags_res)
 }
 
@@ -3058,6 +3158,7 @@ fn build_units_filtered_query(
     master_keys: Vec<String>,
     scope: Option<&AnalyticsMessageIdScope>,
 ) -> Result<Select<sigint_inbox_item::Entity>, AppError> {
+    let req = Json(request_without_facet_filter(&req.0, AnalysisFacet::Units));
     let include_peleng_locations =
         req.include_peleng_locations.unwrap_or(false);
     let units_res = sigint_inbox_item::Entity::find()
@@ -3124,7 +3225,7 @@ fn build_units_filtered_query(
     let units_res = apply_metadata_filters(units_res, &req.0)?;
     let units_res = filter_search(units_res, &req.search).context(h!())?;
     let units_res =
-        filter_selected_aors(units_res, &req.selected_aors).context(h!())?;
+        filter_selected_aors_for_scope(units_res, &req.selected_aors, scope)?;
     Ok(units_res)
 }
 
@@ -3314,6 +3415,7 @@ fn build_locations_filtered_query_for_login(
     master_keys: Vec<String>,
     scope: Option<&AnalyticsMessageIdScope>,
 ) -> Result<Select<sigint_inbox_item::Entity>, AppError> {
+    let req = request_without_facet_filter(req, AnalysisFacet::Locations);
     let locations_res = sigint_inbox_item::Entity::find()
         .join(
             JoinType::InnerJoin,
@@ -3383,12 +3485,14 @@ fn build_locations_filtered_query_for_login(
         scope,
     )
     .context(h!())?;
-    let locations_res = apply_metadata_filters(locations_res, req)?;
+    let locations_res = apply_metadata_filters(locations_res, &req)?;
     let locations_res =
         filter_search(locations_res, &req.search).context(h!())?;
-    let locations_res = filter_selected_aors(locations_res, &req.selected_aors)
-        .context(h!())
-        .context(h!())?;
+    let locations_res = filter_selected_aors_for_scope(
+        locations_res,
+        &req.selected_aors,
+        scope,
+    )?;
     Ok(locations_res)
 }
 
@@ -3557,8 +3661,9 @@ fn build_aors_query(
     dt_till: NaiveDateTime,
     master_keys: Vec<String>,
 ) -> Result<Statement, AppError> {
+    let req = request_without_facet_filter(req, AnalysisFacet::Aors);
     let messages_q = build_aor_messages_query(
-        req,
+        &req,
         login_str,
         dt_since,
         dt_till,
@@ -3777,9 +3882,10 @@ fn build_aors_analytics_query_with_scope(
     master_keys: Vec<String>,
     scope: Option<&AnalyticsMessageIdScope>,
 ) -> Result<Statement, AppError> {
+    let req = request_without_facet_filter(req, AnalysisFacet::Aors);
     let group_message_aors = build_aor_group_analytics_arm(
         build_aor_messages_query(
-            req,
+            &req,
             login_str,
             dt_since,
             dt_till,
@@ -3791,7 +3897,7 @@ fn build_aors_analytics_query_with_scope(
     );
     let network_message_aors = build_aor_network_analytics_arm(
         build_aor_messages_query(
-            req,
+            &req,
             login_str,
             dt_since,
             dt_till,
@@ -3879,7 +3985,7 @@ fn build_aor_messages_query(
     .context(h!())?;
     let messages = filter_search(messages, &req.search).context(h!())?;
     let messages = apply_metadata_filters(messages, req)?;
-    Ok(filter_selected_aors(messages, &req.selected_aors).context(h!())?)
+    filter_selected_aors_for_scope(messages, &req.selected_aors, scope)
 }
 
 fn build_aor_group_analytics_arm(
@@ -4311,8 +4417,9 @@ pub(super) fn build_networks_analytics_query_with_scope(
     count_only: bool,
     scope: Option<&AnalyticsMessageIdScope>,
 ) -> Result<Statement, AppError> {
+    let req = request_without_facet_filter(req, AnalysisFacet::Networks);
     let messages = build_network_analytics_messages_query(
-        req,
+        &req,
         login_str,
         accessible_tag_ids,
         unit_login_ids,
@@ -4322,10 +4429,10 @@ pub(super) fn build_networks_analytics_query_with_scope(
         scope,
     )?;
     let groups =
-        build_network_analytics_groups_query(req, master_keys.as_slice());
+        build_network_analytics_groups_query(&req, master_keys.as_slice());
     let frequency_matches = build_network_frequency_analytics_arm(
         messages.clone(),
-        build_network_analytics_catalog_query(req),
+        build_network_analytics_catalog_query(&req),
         groups.clone(),
     );
     let linked_matches = build_network_linked_analytics_arm(
@@ -4409,7 +4516,7 @@ fn build_network_analytics_messages_query(
     let messages = filter_selected_callsigns(messages, &req.selected_callsigns)
         .context(h!())?;
     let messages =
-        filter_selected_aors(messages, &req.selected_aors).context(h!())?;
+        filter_selected_aors_for_scope(messages, &req.selected_aors, scope)?;
     let messages = filter_selected_networks_for_scope(
         messages,
         &req.selected_networks,
@@ -4828,6 +4935,7 @@ fn build_networks_query_for_login(
     dt_till: NaiveDateTime,
     master_keys: Vec<String>,
 ) -> Result<WithQuery, AppError> {
+    let req = request_without_facet_filter(req, AnalysisFacet::Networks);
     let include_peleng_locations =
         req.include_peleng_locations.unwrap_or(false);
 
@@ -5007,7 +5115,7 @@ fn build_networks_query_for_login(
         &req.without_network,
     )
     .context(h!())?;
-    let messages_q = apply_metadata_filters(messages_q, req)?;
+    let messages_q = apply_metadata_filters(messages_q, &req)?;
     let messages_q = filter_search(messages_q, &req.search).context(h!())?;
     let messages_q = filter_selected_tags(
         messages_q,
@@ -5392,10 +5500,11 @@ async fn fetch_counts_for_login_with_conn(
         apply_metadata_filters(selected_count_res, &req.0)?;
     let selected_count_res =
         filter_search(selected_count_res, &req.search).context(h!())?;
-    let selected_count_res =
-        filter_selected_aors(selected_count_res, &req.selected_aors)
-            .context(h!())
-            .context(h!())?;
+    let selected_count_res = filter_selected_aors_for_scope(
+        selected_count_res,
+        &req.selected_aors,
+        scope,
+    )?;
     //println!(
     //    "> selected count res sql (login={}): {}",
     //    login_str,
@@ -5526,6 +5635,105 @@ fn build_join_for_sigint_inbox_item() -> Select<Entity> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn populated_analysis_stats_req() -> AnalysisStatsReq {
+        serde_json::from_value(serde_json::json!({
+            "since_date_inclusive_ms": 1,
+            "till_date_noninclusive_ms": 2,
+            "selected_groups": ["group"],
+            "selected_senders": ["sender"],
+            "selected_freqs": ["100"],
+            "selected_posts": ["post"],
+            "selected_callsigns": ["callsign"],
+            "selected_units": ["unit"],
+            "selected_locations": ["location"],
+            "selected_aors": [1],
+            "selected_tags": [2],
+            "denied_tags": [3],
+            "tag_presence": "WithTags",
+            "selected_networks": [4],
+            "without_network": true,
+            "units_exact_match_only": true,
+            "filter_tags_option": "AllTags",
+            "without_model_tags": true,
+            "report_tags_only_this_unit": true
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn facet_requests_remove_the_whole_own_filter_family() {
+        let req = populated_analysis_stats_req();
+
+        assert!(request_without_facet_filter(&req, AnalysisFacet::Groups)
+            .selected_groups
+            .is_none());
+        assert!(request_without_facet_filter(&req, AnalysisFacet::Senders)
+            .selected_senders
+            .is_none());
+        assert!(
+            request_without_facet_filter(&req, AnalysisFacet::Frequencies)
+                .selected_freqs
+                .is_none()
+        );
+        assert!(request_without_facet_filter(&req, AnalysisFacet::Posts)
+            .selected_posts
+            .is_none());
+        assert!(request_without_facet_filter(&req, AnalysisFacet::Callsigns)
+            .selected_callsigns
+            .is_none());
+        let units = request_without_facet_filter(&req, AnalysisFacet::Units);
+        assert!(units.selected_units.is_none());
+        assert!(units.units_exact_match_only.is_none());
+        assert!(request_without_facet_filter(&req, AnalysisFacet::Locations)
+            .selected_locations
+            .is_none());
+        assert!(request_without_facet_filter(&req, AnalysisFacet::Aors)
+            .selected_aors
+            .is_none());
+        let networks =
+            request_without_facet_filter(&req, AnalysisFacet::Networks);
+        assert!(networks.selected_networks.is_none());
+        assert!(networks.without_network.is_none());
+        let tags = request_without_facet_filter(&req, AnalysisFacet::Tags);
+        assert!(tags.selected_tags.is_none());
+        assert!(tags.denied_tags.is_none());
+        assert!(tags.tag_presence.is_none());
+        assert!(tags.filter_tags_option.is_none());
+        assert!(tags.without_model_tags.is_none());
+        assert!(tags.report_tags_only_this_unit.is_none());
+        assert_eq!(tags.selected_groups, req.selected_groups);
+    }
+
+    #[test]
+    fn analytics_aor_filter_uses_bounded_derived_message_ids() {
+        let scope = AnalyticsMessageIdScope::Inclusive {
+            min_id: 10,
+            max_id: 20,
+        };
+        let query = filter_selected_aors_for_scope(
+            sigint_inbox_item::Entity::find(),
+            &Some(vec![5]),
+            Some(&scope),
+        )
+        .unwrap()
+        .build(DbBackend::Postgres)
+        .to_string();
+
+        assert!(
+            query.contains(r#""echo_clickhouse_derived"."message_aor_link""#),
+            "{query}"
+        );
+        assert!(
+            query.contains(
+                r#""analytics_message_aor_link"."sigint_inbox_item_id" BETWEEN 10 AND 20"#
+            ),
+            "{query}"
+        );
+        assert!(query.contains("SELECT DISTINCT"), "{query}");
+        assert!(!query.contains("group_aor_filter"), "{query}");
+        assert!(!query.contains("inbox_network_aor_filter"), "{query}");
+    }
 
     #[test]
     fn distinct_count_query_aggregates_without_grouping() {

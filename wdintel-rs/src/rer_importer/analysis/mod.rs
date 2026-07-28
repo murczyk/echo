@@ -1848,66 +1848,74 @@ fn build_selected_aor_overlap_exists(
                     ))
                     .is_in(selected_aors.to_vec()),
                 )
-                .add(
-                    Cond::any()
-                        .add(
-                            Expr::col((
-                                linked_aor_alias.clone(),
-                                area_of_responsibility::Column::LeftBound,
-                            ))
-                            .between(
-                                Expr::col((
-                                    selected_aor_alias.clone(),
-                                    area_of_responsibility::Column::LeftBound,
-                                )),
-                                Expr::col((
-                                    selected_aor_alias.clone(),
-                                    area_of_responsibility::Column::RightBound,
-                                )),
-                            ),
-                        )
-                        .add(
-                            Expr::col((
-                                linked_aor_alias.clone(),
-                                area_of_responsibility::Column::RightBound,
-                            ))
-                            .between(
-                                Expr::col((
-                                    selected_aor_alias.clone(),
-                                    area_of_responsibility::Column::LeftBound,
-                                )),
-                                Expr::col((
-                                    selected_aor_alias.clone(),
-                                    area_of_responsibility::Column::RightBound,
-                                )),
-                            ),
-                        )
-                        .add(
-                            Cond::all()
-                                .add(
-                                    Expr::col((
-                                        linked_aor_alias.clone(),
-                                        area_of_responsibility::Column::LeftBound,
-                                    ))
-                                    .lte(Expr::col((
-                                        selected_aor_alias.clone(),
-                                        area_of_responsibility::Column::LeftBound,
-                                    ))),
-                                )
-                                .add(
-                                    Expr::col((
-                                        linked_aor_alias.clone(),
-                                        area_of_responsibility::Column::RightBound,
-                                    ))
-                                    .gte(Expr::col((
-                                        selected_aor_alias.clone(),
-                                        area_of_responsibility::Column::RightBound,
-                                    ))),
-                                ),
-                        ),
-                ),
+                .add(aor_bounds_overlap_condition(
+                    linked_aor_alias,
+                    selected_aor_alias,
+                )),
         )
         .to_owned()
+}
+
+pub(super) fn aor_bounds_overlap_condition(
+    linked_aor_alias: Alias,
+    selected_aor_alias: Alias,
+) -> Condition {
+    Cond::any()
+        .add(
+            Expr::col((
+                linked_aor_alias.clone(),
+                area_of_responsibility::Column::LeftBound,
+            ))
+            .between(
+                Expr::col((
+                    selected_aor_alias.clone(),
+                    area_of_responsibility::Column::LeftBound,
+                )),
+                Expr::col((
+                    selected_aor_alias.clone(),
+                    area_of_responsibility::Column::RightBound,
+                )),
+            ),
+        )
+        .add(
+            Expr::col((
+                linked_aor_alias.clone(),
+                area_of_responsibility::Column::RightBound,
+            ))
+            .between(
+                Expr::col((
+                    selected_aor_alias.clone(),
+                    area_of_responsibility::Column::LeftBound,
+                )),
+                Expr::col((
+                    selected_aor_alias.clone(),
+                    area_of_responsibility::Column::RightBound,
+                )),
+            ),
+        )
+        .add(
+            Cond::all()
+                .add(
+                    Expr::col((
+                        linked_aor_alias.clone(),
+                        area_of_responsibility::Column::LeftBound,
+                    ))
+                    .lte(Expr::col((
+                        selected_aor_alias.clone(),
+                        area_of_responsibility::Column::LeftBound,
+                    ))),
+                )
+                .add(
+                    Expr::col((
+                        linked_aor_alias,
+                        area_of_responsibility::Column::RightBound,
+                    ))
+                    .gte(Expr::col((
+                        selected_aor_alias,
+                        area_of_responsibility::Column::RightBound,
+                    ))),
+                ),
+        )
 }
 
 pub fn selected_aor_overlap_condition(
