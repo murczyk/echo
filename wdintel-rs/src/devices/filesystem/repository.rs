@@ -1,9 +1,10 @@
 use super::{
     classify_transaction_error, map_database_error, map_transaction_body_error,
     mutation, query, Breadcrumb, DirectoryScope, EntryQueryScope, EntrySortKey,
-    FileMutationResult, FileSearchFilters, FilesystemError, KeysetPage,
-    KeysetPageRequest, PreparedFileMutation, RootEntry, SearchEntry,
-    TransactionErrorClass, TreeEntry,
+    FileJournalEntry, FileJournalSortKey, FileMutationResult,
+    FileSearchFilters, FilesystemError, KeysetPage, KeysetPageRequest,
+    PreparedFileMutation, RootEntry, SearchEntry, TransactionErrorClass,
+    TreeEntry,
 };
 use crate::file_registry::FileRegistryDb;
 use crate::h;
@@ -140,6 +141,35 @@ impl<'db> FilesystemRepository<'db> {
         device_id: Uuid,
     ) -> Result<Vec<RootEntry>, FilesystemError> {
         query::list_roots(self.file_registry_db.connection(), device_id).await
+    }
+
+    #[allow(dead_code)]
+    pub(in crate::devices) async fn list_file_journal(
+        &self,
+        device_id: Uuid,
+        page: KeysetPageRequest<FileJournalSortKey>,
+    ) -> Result<KeysetPage<FileJournalEntry, FileJournalSortKey>, FilesystemError>
+    {
+        query::list_file_journal(
+            self.file_registry_db.connection(),
+            device_id,
+            page,
+        )
+        .await
+    }
+
+    #[allow(dead_code)]
+    pub(in crate::devices) async fn resolve_file_journal_cursor(
+        &self,
+        device_id: Uuid,
+        boundary_file_id: Uuid,
+    ) -> Result<FileJournalSortKey, FilesystemError> {
+        query::resolve_file_journal_cursor(
+            self.file_registry_db.connection(),
+            device_id,
+            boundary_file_id,
+        )
+        .await
     }
 
     #[allow(dead_code)]

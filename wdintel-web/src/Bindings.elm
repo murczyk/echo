@@ -4642,6 +4642,54 @@ searchDeviceFilesRspEncoder struct =
         ]
 
 
+type alias DeviceFileJournalEntry =
+    { fileId : String
+    , name : String
+    , absolutePath : String
+    , synchronizedAt : String
+    }
+
+
+deviceFileJournalEntryEncoder : DeviceFileJournalEntry -> Json.Encode.Value
+deviceFileJournalEntryEncoder struct =
+    Json.Encode.object
+        [ ( "file_id", (Json.Encode.string) struct.fileId )
+        , ( "name", (Json.Encode.string) struct.name )
+        , ( "absolute_path", (Json.Encode.string) struct.absolutePath )
+        , ( "synchronized_at", (Json.Encode.string) struct.synchronizedAt )
+        ]
+
+
+type alias JournalDeviceFilesReq =
+    { deviceId : String
+    , limit : Maybe (Int)
+    , cursor : Maybe (String)
+    }
+
+
+journalDeviceFilesReqEncoder : JournalDeviceFilesReq -> Json.Encode.Value
+journalDeviceFilesReqEncoder struct =
+    Json.Encode.object
+        [ ( "device_id", (Json.Encode.string) struct.deviceId )
+        , ( "limit", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.limit )
+        , ( "cursor", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.cursor )
+        ]
+
+
+type alias JournalDeviceFilesRsp =
+    { entries : List (DeviceFileJournalEntry)
+    , nextCursor : Maybe (String)
+    }
+
+
+journalDeviceFilesRspEncoder : JournalDeviceFilesRsp -> Json.Encode.Value
+journalDeviceFilesRspEncoder struct =
+    Json.Encode.object
+        [ ( "entries", (Json.Encode.list (deviceFileJournalEntryEncoder)) struct.entries )
+        , ( "next_cursor", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.nextCursor )
+        ]
+
+
 type alias SyncDeviceFileItem =
     { fileId : Maybe (String)
     , absolutePath : String
@@ -13302,6 +13350,30 @@ searchDeviceFilesRspDecoder : Json.Decode.Decoder SearchDeviceFilesRsp
 searchDeviceFilesRspDecoder =
     Json.Decode.succeed SearchDeviceFilesRsp
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "entries" (Json.Decode.list (deviceFileTreeEntryDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "next_cursor" (Json.Decode.nullable (Json.Decode.string))))
+
+
+deviceFileJournalEntryDecoder : Json.Decode.Decoder DeviceFileJournalEntry
+deviceFileJournalEntryDecoder =
+    Json.Decode.succeed DeviceFileJournalEntry
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "file_id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "absolute_path" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "synchronized_at" (Json.Decode.string)))
+
+
+journalDeviceFilesReqDecoder : Json.Decode.Decoder JournalDeviceFilesReq
+journalDeviceFilesReqDecoder =
+    Json.Decode.succeed JournalDeviceFilesReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "device_id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "limit" (Json.Decode.nullable (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "cursor" (Json.Decode.nullable (Json.Decode.string))))
+
+
+journalDeviceFilesRspDecoder : Json.Decode.Decoder JournalDeviceFilesRsp
+journalDeviceFilesRspDecoder =
+    Json.Decode.succeed JournalDeviceFilesRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "entries" (Json.Decode.list (deviceFileJournalEntryDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "next_cursor" (Json.Decode.nullable (Json.Decode.string))))
 
 

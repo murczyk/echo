@@ -32,10 +32,11 @@ pub(in crate::devices) use service::FileMetadataService;
 #[allow(unused_imports)]
 pub(in crate::devices) use types::{
     Breadcrumb, BrowseFilesCommand, BrowseFilesResult, DirectoryEntry,
-    DirectoryScope, EntryQueryScope, EntrySortKey, FileMutationResult,
-    FileSearchFilters, KeysetPage, KeysetPageRequest, NormalizedFileMetadata,
-    ParsedSourcePath, RawFileSearchFilters, RootEntry, SearchEntry,
-    SearchFilesCommand, SearchFilesResult, SyncFileItemCommand,
+    DirectoryScope, EntryQueryScope, EntrySortKey, FileJournalEntry,
+    FileJournalSortKey, FileMutationResult, FileSearchFilters,
+    JournalFilesCommand, JournalFilesResult, KeysetPage, KeysetPageRequest,
+    NormalizedFileMetadata, ParsedSourcePath, RawFileSearchFilters, RootEntry,
+    SearchEntry, SearchFilesCommand, SearchFilesResult, SyncFileItemCommand,
     SyncFileItemOutcome, SyncFileItemResult, SyncFileOperation,
     SyncFileRejectionKind, SyncFilesCommand, SyncFilesResult, TreeEntry,
 };

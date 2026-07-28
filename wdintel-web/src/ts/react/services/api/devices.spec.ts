@@ -8,6 +8,7 @@ import {
   createDevice,
   getDeviceDetail,
   getDeviceUnitStats,
+  journalDeviceFiles,
   listDeviceFileRoots,
   listDevices,
   searchDeviceFiles,
@@ -297,6 +298,46 @@ describe('device filesystem API service routes', () => {
       file_metadata_modified_to: UPDATED_AT,
       limit: 10,
       cursor: null,
+    });
+  });
+
+  it('loads the device-wide synchronization journal with keyset pagination', async () => {
+    fetchMock().mockResolvedValueOnce(
+      jsonResponse({
+        entries: [
+          {
+            file_id: FILE_ID,
+            name: 'report.log',
+            absolute_path: '/report.log',
+            synchronized_at: UPDATED_AT,
+          },
+        ],
+        next_cursor: 'next',
+      }),
+    );
+
+    const rsp = await journalDeviceFiles({
+      deviceId: DEVICE_ID,
+      limit: 100,
+      cursor: null,
+    });
+
+    expect(fetchMock()).toHaveBeenCalledWith('/api/device/files/journal', expect.any(Object));
+    expect(requestBody()).toEqual({
+      device_id: DEVICE_ID,
+      limit: 100,
+      cursor: null,
+    });
+    expect(rsp).toEqual({
+      entries: [
+        {
+          fileId: FILE_ID,
+          name: 'report.log',
+          absolutePath: '/report.log',
+          synchronizedAt: UPDATED_AT,
+        },
+      ],
+      nextCursor: 'next',
     });
   });
 

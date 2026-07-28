@@ -6,6 +6,7 @@ const WINDOWS_ROOT_ID = '018f0000-0000-7000-8000-000000000002';
 const DOCUMENTS_ID = '018f0000-0000-7000-8000-000000000003';
 const USERS_ID = '018f0000-0000-7000-8000-000000000004';
 const NOW = '2026-07-24T08:00:00Z';
+const JOURNAL_FILE_ID = '018f0000-0000-7000-8000-000000000005';
 
 function fulfillJson(route: Route, body: unknown) {
   return route.fulfill({
@@ -84,7 +85,12 @@ function systemSettings() {
   };
 }
 
-async function installMocks(page: Page) {
+type ApiTracker = {
+  journalRequestCount: number;
+};
+
+async function installMocks(page: Page): Promise<ApiTracker> {
+  const tracker: ApiTracker = { journalRequestCount: 0 };
   await page.route('**/api-public/server-info', (route) =>
     fulfillJson(route, {
       mode: '',
@@ -196,12 +202,28 @@ async function installMocks(page: Page) {
       await fulfillJson(route, { entries: [], next_cursor: null });
       return;
     }
+    if (pathname === '/api/device/files/journal') {
+      tracker.journalRequestCount += 1;
+      await fulfillJson(route, {
+        entries: [
+          {
+            file_id: JOURNAL_FILE_ID,
+            name: 'journal.log',
+            absolute_path: '/var/log/journal.log',
+            synchronized_at: '2026-07-28T08:15:30Z',
+          },
+        ],
+        next_cursor: null,
+      });
+      return;
+    }
 
     await fulfillJson(route, {});
   });
+  return tracker;
 }
 
-test('@smoke device details uses tabs, a collapsible network-width sidebar, and an all-roots file tree', async ({
+test('@smoke device details uses tabs, a synchronization journal, a collapsible network-width sidebar, and an all-roots file tree', async ({
   page,
 }) => {
   const browserFailures: string[] = [];
@@ -220,17 +242,42 @@ test('@smoke device details uses tabs, a collapsible network-width sidebar, and 
       browserFailures.push(`response: ${response.status()} ${response.url()}`);
     }
   });
-  await installMocks(page);
+  const tracker = await installMocks(page);
   await page.setViewportSize({ width: 1280, height: 900 });
   await page.goto(`/devices/${DEVICE_ID}`, { waitUntil: 'domcontentloaded' });
 
-  await expect(page.getByRole('tab', { name: 'Аналітичні відомості' })).toBeVisible();
+  await expect(page.getByRole('tab', { name: 'Аналітичні відомості' })).toBeVisible({
+    timeout: 30_000,
+  });
   await expect(page.getByRole('tab', { name: 'Файли' })).toBeVisible();
+  await expect(page.getByRole('tab', { name: 'Журнал' })).toBeVisible();
+  expect(tracker.journalRequestCount).toBe(0);
   const metadataPanel = page.getByTestId('device-details-left-panel');
   await expect(metadataPanel).toBeVisible();
   const metadataBox = await metadataPanel.boundingBox();
   expect(metadataBox?.width).toBeGreaterThanOrEqual(360);
   expect(metadataBox?.width).toBeLessThanOrEqual(420);
+
+  await page.getByRole('tab', { name: 'Журнал' }).click();
+  const journalTable = page.getByRole('table', {
+    name: 'Журнал синхронізації файлів',
+  });
+  await expect(journalTable).toBeVisible();
+  await expect(metadataPanel).toBeVisible();
+  await expect(journalTable.getByRole('columnheader')).toHaveText([
+    'Назва файлу',
+    'Шлях до файлу',
+    'Дата й час синхронізації',
+  ]);
+  const journalRow = journalTable.getByRole('row').filter({ hasText: 'journal.log' });
+  await expect(journalRow).toContainText('/var/log/journal.log');
+  await expect(journalRow.getByRole('cell').nth(2)).not.toHaveText('');
+  await expect.poll(() => tracker.journalRequestCount).toBe(1);
+
+  await page.getByRole('tab', { name: 'Аналітичні відомості' }).click();
+  await page.getByRole('tab', { name: 'Журнал' }).click();
+  await expect(journalTable).toBeVisible();
+  await expect.poll(() => tracker.journalRequestCount).toBe(2);
 
   await page.getByRole('tab', { name: 'Файли' }).click();
   const fileTree = page.getByTestId('device-files-tree-panel');
@@ -271,5 +318,8 @@ test('@smoke device details uses tabs, a collapsible network-width sidebar, and 
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(page.getByRole('button', { name: 'Розгорнути ліву панель' })).toBeHidden();
   await expect(fileTree).toBeVisible();
+  await page.getByRole('tab', { name: 'Журнал' }).click();
+  await expect(journalTable).toBeVisible();
+  await expect(metadataPanel).toBeVisible();
   expect(browserFailures).toEqual([]);
 });

@@ -1,15 +1,19 @@
-use super::mapping::{map_browse, map_roots, map_search, map_sync};
+use super::mapping::{
+    map_browse, map_journal, map_roots, map_search, map_sync,
+};
 use super::request::DeviceApiJson;
 use super::types::{
     parse_datetime, parse_uuid, BrowseDeviceFilesReq, BrowseDeviceFilesRsp,
-    FileEntryKind, ListDeviceFileRootsReq, ListDeviceFileRootsRsp, PathSyntax,
-    RequiredPatch, SearchDeviceFilesReq, SearchDeviceFilesRsp,
-    SyncDeviceFilesReq, SyncDeviceFilesRsp,
+    FileEntryKind, JournalDeviceFilesReq, JournalDeviceFilesRsp,
+    ListDeviceFileRootsReq, ListDeviceFileRootsRsp, PathSyntax, RequiredPatch,
+    SearchDeviceFilesReq, SearchDeviceFilesRsp, SyncDeviceFilesReq,
+    SyncDeviceFilesRsp,
 };
 use crate::devices::filesystem::{
     BrowseFilesCommand, FileEntryKind as DomainFileEntryKind,
-    FileMetadataService, PathSyntax as DomainPathSyntax, RawFileSearchFilters,
-    SearchFilesCommand, SyncFileItemCommand, SyncFilesCommand,
+    FileMetadataService, JournalFilesCommand, PathSyntax as DomainPathSyntax,
+    RawFileSearchFilters, SearchFilesCommand, SyncFileItemCommand,
+    SyncFilesCommand,
 };
 use crate::devices::main_db::MainDb;
 use crate::error::AppError;
@@ -89,6 +93,25 @@ pub(in crate::devices) async fn search(
     )
     .await?;
     Ok(Json(map_search(result)))
+}
+
+#[post("/api/device/files/journal")]
+pub(in crate::devices) async fn journal(
+    api: DeviceApiJson<JournalDeviceFilesReq>,
+) -> Result<Json<JournalDeviceFilesRsp>, AppError> {
+    let DeviceApiJson { actor, env, body } = api;
+    let result = FileMetadataService::journal(
+        MainDb::new(&env.dbx),
+        &env.file_registry_db,
+        &actor,
+        JournalFilesCommand {
+            device_id: parse_uuid(&body.device_id),
+            limit: body.limit,
+            cursor: body.cursor,
+        },
+    )
+    .await?;
+    Ok(Json(map_journal(result)))
 }
 
 #[post("/api/device/files/sync")]

@@ -309,6 +309,45 @@ async fn target_api_smoke_covers_all_routes_and_boundary_precedence() {
         r"D:\Counter-Strike Source v34 HD\cstrike\sound\weapons\csgo\c4\c4_plant.wav"
     );
 
+    let response = post_json!(
+        "/api/device/files/journal",
+        json!({"device_id": device_id, "limit": 2})
+    );
+    assert_eq!(response.status(), StatusCode::OK);
+    let journal: Value = test::read_body_json(response).await;
+    let journal_entries = journal["entries"].as_array().unwrap();
+    assert_eq!(journal_entries.len(), 2);
+    assert!(journal_entries
+        .iter()
+        .all(|entry| entry["synchronized_at"].as_str().is_some()));
+    let mut first_page_paths = journal_entries
+        .iter()
+        .map(|entry| entry["absolute_path"].as_str().unwrap())
+        .collect::<Vec<_>>();
+    first_page_paths.sort_unstable();
+    assert_eq!(
+        first_page_paths,
+        vec![
+            r"D:\Counter-Strike Source v34 HD\cstrike\sound\weapons\csgo\c4\c4_disarm.wav",
+            r"D:\Counter-Strike Source v34 HD\cstrike\sound\weapons\csgo\c4\c4_plant.wav",
+        ]
+    );
+    let journal_cursor = journal["next_cursor"].as_str().unwrap();
+
+    let response = post_json!(
+        "/api/device/files/journal",
+        json!({
+            "device_id": device_id,
+            "limit": 2,
+            "cursor": journal_cursor
+        })
+    );
+    assert_eq!(response.status(), StatusCode::OK);
+    let journal: Value = test::read_body_json(response).await;
+    assert_eq!(journal["entries"].as_array().unwrap().len(), 1);
+    assert_eq!(journal["entries"][0]["name"], "good.txt");
+    assert_eq!(journal["next_cursor"], Value::Null);
+
     let mut login = login.into_active_model();
     login.roles = Set(json!([ROLE_DEVICE_SOURCE]));
     login.update(&env.dbx).await.unwrap();
@@ -319,7 +358,7 @@ async fn target_api_smoke_covers_all_routes_and_boundary_precedence() {
     assert_eq!(response.status(), StatusCode::FORBIDDEN);
 }
 
-const TARGET_ROUTES: [&str; 9] = [
+const TARGET_ROUTES: [&str; 10] = [
     "/api/device/list",
     "/api/device/unit-stats",
     "/api/device/detail",
@@ -328,6 +367,7 @@ const TARGET_ROUTES: [&str; 9] = [
     "/api/device/files/roots",
     "/api/device/files/browse",
     "/api/device/files/search",
+    "/api/device/files/journal",
     "/api/device/files/sync",
 ];
 
@@ -343,7 +383,7 @@ const EXCLUDED_ROUTES: [&str; 8] = [
 ];
 
 #[actix_web::test]
-async fn target_route_matrix_has_only_nine_post_routes() {
+async fn target_route_matrix_has_only_ten_post_routes() {
     let config = crate::config::read_config(Mode::Test).unwrap();
     let redis_session_store =
         RedisSessionStore::new(crate::redis_conn_string(&config).unwrap())

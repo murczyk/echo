@@ -80,6 +80,7 @@ async fn assert_migration_versions(connection: &DatabaseConnection) {
             "m20260719_174625_create_file_registry_device_file".to_string(),
             "m20260721_124238_create_file_entry".to_string(),
             "m20260721_124518_drop_legacy_device_file".to_string(),
+            "m20260728_111013_add_file_entry_journal_index".to_string(),
         ]
     );
 }
@@ -366,6 +367,7 @@ async fn assert_file_entry_indexes(connection: &DatabaseConnection) {
             "file_entry_file_modified_idx".to_string(),
             "file_entry_hierarchy_gist_idx".to_string(),
             "file_entry_hierarchy_uidx".to_string(),
+            "file_entry_journal_idx".to_string(),
             "file_entry_name_trgm_idx".to_string(),
             "file_entry_pkey".to_string(),
             "file_entry_roots_uidx".to_string(),
@@ -399,6 +401,10 @@ async fn assert_file_entry_indexes(connection: &DatabaseConnection) {
         (
             "file_entry_file_modified_idx",
             "CREATE INDEX file_entry_file_modified_idx ON public.file_entry USING btree (device_id, file_metadata_modified_at, id) WHERE ((kind = 'file'::text) AND (file_metadata_modified_at IS NOT NULL))",
+        ),
+        (
+            "file_entry_journal_idx",
+            "CREATE INDEX file_entry_journal_idx ON public.file_entry USING btree (device_id, updated_at DESC, id DESC) WHERE (kind = 'file'::text)",
         ),
         (
             "file_entry_hierarchy_gist_idx",

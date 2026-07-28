@@ -13,6 +13,7 @@ const DEVICE_ID = '018f0000-0000-7000-8000-000000000000';
 const pageMock = vi.hoisted(() => ({
   useDeviceDetailsPage: vi.fn(),
   useDeviceFiles: vi.fn(),
+  useDeviceFileJournal: vi.fn(),
 }));
 
 let container: HTMLDivElement | null = null;
@@ -24,6 +25,10 @@ vi.mock('./use-device-details-page', () => ({
 
 vi.mock('../device-files/use-device-files', () => ({
   useDeviceFiles: pageMock.useDeviceFiles,
+}));
+
+vi.mock('../device-files/use-device-file-journal', () => ({
+  useDeviceFileJournal: pageMock.useDeviceFileJournal,
 }));
 
 vi.mock('../device-files', () => ({
@@ -40,6 +45,10 @@ vi.mock('../device-files/components/DeviceFileTree', () => ({
       Файлове дерево
     </div>
   ),
+}));
+
+vi.mock('../device-files/components/DeviceFileJournal', () => ({
+  DeviceFileJournal: () => <div data-testid="device-file-journal">Журнал синхронізації</div>,
 }));
 
 const activeDevice: DeviceDetails = {
@@ -93,6 +102,16 @@ function buildPage(overrides: Record<string, unknown> = {}) {
 beforeEach(() => {
   pageMock.useDeviceDetailsPage.mockReturnValue(buildPage());
   pageMock.useDeviceFiles.mockReturnValue({});
+  pageMock.useDeviceFileJournal.mockReturnValue({
+    entries: [],
+    nextCursor: null,
+    loading: false,
+    loadingMore: false,
+    error: null,
+    loadMoreError: null,
+    reload: vi.fn(),
+    loadMore: vi.fn(),
+  });
   container = document.createElement('div');
   document.body.appendChild(container);
   root = createRoot(container);
@@ -145,11 +164,22 @@ describe('DeviceDetailsPage layout', () => {
     expect(leftPanelText.indexOf('Основне')).toBeLessThan(leftPanelText.indexOf('Кастомні поля'));
     expect(leftPanelText.indexOf('Кастомні поля')).toBeLessThan(leftPanelText.indexOf('Додатково'));
     const tabs = Array.from(container?.querySelectorAll('[role="tab"]') ?? []);
-    expect(tabs).toHaveLength(2);
-    expect(tabs.map((tab) => tab.textContent)).toEqual(['Аналітичні відомості', 'Файли']);
+    expect(tabs).toHaveLength(3);
+    expect(tabs.map((tab) => tab.textContent)).toEqual(['Аналітичні відомості', 'Файли', 'Журнал']);
     expect(container?.querySelector('[data-testid="device-files-panel"]')).toBeNull();
     expect(container?.querySelector('[data-testid="device-files-tree-panel"]')).toBeNull();
     expect(container?.querySelector('button[aria-label="Згорнути ліву панель"]')).not.toBeNull();
+
+    const journalTab = tabs.find((tab) => tab.textContent === 'Журнал');
+    act(() => journalTab?.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+
+    expect(container?.querySelector('[data-testid="device-details-left-panel"]')).not.toBeNull();
+    expect(container?.querySelector('[data-testid="device-file-journal"]')).not.toBeNull();
+    expect(container?.querySelector('[data-testid="device-files-tree-panel"]')).toBeNull();
+    expect(pageMock.useDeviceFileJournal).toHaveBeenLastCalledWith({
+      deviceId: DEVICE_ID,
+      enabled: true,
+    });
 
     const filesTab = tabs.find((tab) => tab.textContent === 'Файли');
     act(() => filesTab?.dispatchEvent(new MouseEvent('click', { bubbles: true })));

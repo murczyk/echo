@@ -1,18 +1,22 @@
 import { Box, Paper, Tab, Tabs } from '@mui/material';
 
 import { DeviceFilesPanel } from '../../device-files';
+import { DeviceFileJournal } from '../../device-files/components/DeviceFileJournal';
+import type { DeviceFileJournalState } from '../../device-files/use-device-file-journal';
 import type { DeviceFilesState } from '../../device-files/use-device-files';
 
-export type DeviceDetailsTab = 'analytical' | 'files';
+export type DeviceDetailsTab = 'analytical' | 'files' | 'journal';
 
 export function DeviceDetailsTabPanel({
   activeTab,
   files,
+  journal,
   canSyncFiles,
   onTabChange,
 }: {
   activeTab: DeviceDetailsTab;
   files: DeviceFilesState;
+  journal: DeviceFileJournalState;
   canSyncFiles: boolean;
   onTabChange: (tab: DeviceDetailsTab) => void;
 }) {
@@ -35,6 +39,9 @@ export function DeviceDetailsTabPanel({
           value={activeTab}
           onChange={(_, nextTab: DeviceDetailsTab) => onTabChange(nextTab)}
           aria-label="Розділи пристрою"
+          variant="scrollable"
+          scrollButtons="auto"
+          allowScrollButtonsMobile
           sx={{ minHeight: 42, '& .MuiTabs-indicator': { height: 2 } }}
         >
           <Tab
@@ -49,6 +56,12 @@ export function DeviceDetailsTabPanel({
             value="files"
             label="Файли"
           />
+          <Tab
+            id="device-details-journal-tab"
+            aria-controls="device-details-journal-panel"
+            value="journal"
+            label="Журнал"
+          />
         </Tabs>
       </Box>
 
@@ -60,7 +73,8 @@ export function DeviceDetailsTabPanel({
             aria-labelledby="device-details-analytical-tab"
             sx={{ height: '100%', minHeight: 0 }}
           />
-        ) : (
+        ) : null}
+        {activeTab === 'files' ? (
           <Box
             id="device-details-files-panel"
             role="tabpanel"
@@ -69,7 +83,17 @@ export function DeviceDetailsTabPanel({
           >
             <DeviceFilesPanel files={files} canSync={canSyncFiles} />
           </Box>
-        )}
+        ) : null}
+        {activeTab === 'journal' ? (
+          <Box
+            id="device-details-journal-panel"
+            role="tabpanel"
+            aria-labelledby="device-details-journal-tab"
+            sx={{ height: '100%', minHeight: 0, minWidth: 0 }}
+          >
+            <DeviceFileJournal journal={journal} />
+          </Box>
+        ) : null}
       </Box>
     </Paper>
   );

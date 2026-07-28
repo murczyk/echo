@@ -7,6 +7,8 @@ import type {
   DeviceFile,
   DeviceFileRoot,
   DeviceUnitStat,
+  JournalDeviceFilesReq,
+  JournalDeviceFilesRsp,
   FileSyncError,
   FileSyncOperation,
   ListDeviceFileRootsReq,
@@ -199,6 +201,14 @@ export async function searchDeviceFiles(
 ): Promise<SearchDeviceFilesRsp> {
   const data = await postJson('/api/device/files/search', transformCamelToSnake(req), options);
   return transformSnakeToCamel<SearchDeviceFilesRsp>(data);
+}
+
+export async function journalDeviceFiles(
+  req: JournalDeviceFilesReq,
+  options?: RequestOptions,
+): Promise<JournalDeviceFilesRsp> {
+  const data = await postJson('/api/device/files/journal', transformCamelToSnake(req), options);
+  return transformSnakeToCamel<JournalDeviceFilesRsp>(data);
 }
 
 export async function syncDeviceFiles(

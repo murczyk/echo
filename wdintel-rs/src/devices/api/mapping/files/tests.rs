@@ -1,5 +1,8 @@
 use super::*;
-use crate::devices::filesystem::{FilesystemFieldError, SyncFileItemResult};
+use crate::devices::filesystem::{
+    FileJournalEntry, FilesystemFieldError, JournalFilesResult,
+    SyncFileItemResult,
+};
 use chrono::NaiveDate;
 use serde_json::json;
 use uuid::Uuid;
@@ -50,6 +53,37 @@ fn browse_rejects_misaligned_path_context() {
     })
     .unwrap_err();
     assert!(matches!(error, AppError::AnyhowError { .. }));
+}
+
+#[test]
+fn journal_maps_current_sync_timestamp_and_pagination_cursor() {
+    let synchronized_at = NaiveDate::from_ymd_opt(2026, 7, 28)
+        .unwrap()
+        .and_hms_opt(8, 15, 30)
+        .unwrap();
+    let result = JournalFilesResult {
+        entries: vec![FileJournalEntry {
+            file_id: Uuid::parse_str("018f0000-0000-7000-8000-000000000003")
+                .unwrap(),
+            name: "report.log".to_string(),
+            absolute_path: "/var/log/report.log".to_string(),
+            synchronized_at,
+        }],
+        next_cursor: Some("018f0000-0000-7000-8000-000000000003".to_string()),
+    };
+
+    assert_eq!(
+        serde_json::to_value(map_journal(result)).unwrap(),
+        json!({
+            "entries": [{
+                "file_id": "018f0000-0000-7000-8000-000000000003",
+                "name": "report.log",
+                "absolute_path": "/var/log/report.log",
+                "synchronized_at": "2026-07-28T08:15:30Z"
+            }],
+            "next_cursor": "018f0000-0000-7000-8000-000000000003"
+        }),
+    );
 }
 
 #[test]

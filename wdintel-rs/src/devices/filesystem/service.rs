@@ -3,8 +3,9 @@ use super::validation::{duplicate_file_ids, validate_sync_batch_size};
 use super::{
     BrowseFilesCommand, BrowseFilesResult, EntryQueryScope, FileCursorCodec,
     FileSearchFilters, FilesystemError, FilesystemFieldError,
-    FilesystemRepository, KeysetPageRequest, RootEntry, SearchFilesCommand,
-    SearchFilesResult, SyncFilesCommand, SyncFilesResult,
+    FilesystemRepository, JournalFilesCommand, JournalFilesResult,
+    KeysetPageRequest, RootEntry, SearchFilesCommand, SearchFilesResult,
+    SyncFilesCommand, SyncFilesResult,
 };
 use crate::devices::access::DeviceActor;
 use crate::devices::main_db::MainDb;
@@ -35,6 +36,56 @@ impl FileMetadataService {
             .list_roots(device_id)
             .await
             .map_err(map_read_error)
+    }
+
+    pub(in crate::devices) async fn journal(
+        main_db: MainDb<'_, DatabaseConnection>,
+        file_registry_db: &FileRegistryDb,
+        actor: &DeviceActor,
+        command: JournalFilesCommand,
+    ) -> Result<JournalFilesResult, AppError> {
+        let JournalFilesCommand {
+            device_id,
+            limit,
+            cursor,
+        } = command;
+        let device_id = DeviceVisibility::verify_file_registry_access(
+            main_db,
+            actor,
+            device_id,
+            FileRegistryDeviceAccess::Read,
+        )
+        .await?;
+        let repository = FilesystemRepository::new(file_registry_db);
+        let after = match cursor {
+            Some(cursor) => {
+                let boundary_file_id =
+                    FileCursorCodec::decode(&cursor).map_err(map_read_error)?;
+                Some(
+                    repository
+                        .resolve_file_journal_cursor(
+                            device_id,
+                            boundary_file_id,
+                        )
+                        .await
+                        .map_err(map_read_error)?,
+                )
+            }
+            None => None,
+        };
+        let page =
+            KeysetPageRequest::try_new(limit, after).map_err(map_read_error)?;
+        let page = repository
+            .list_file_journal(device_id, page)
+            .await
+            .map_err(map_read_error)?;
+
+        Ok(JournalFilesResult {
+            entries: page.entries,
+            next_cursor: page
+                .next
+                .map(|sort_key| FileCursorCodec::encode(sort_key.file_id())),
+        })
     }
 
     pub(in crate::devices) async fn browse(

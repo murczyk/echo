@@ -13,11 +13,13 @@ pub use device::{
 };
 #[allow(unused_imports)]
 pub use files::{
-    BrowseDeviceFilesReq, BrowseDeviceFilesRsp, DeviceFile, DeviceFileRoot,
-    DeviceFileTreeEntry, FileBreadcrumb, FileSyncError, FileSyncErrorKind,
-    FileSyncOperation, FileSyncResult, ListDeviceFileRootsReq,
-    ListDeviceFileRootsRsp, SearchDeviceFilesReq, SearchDeviceFilesRsp,
-    SyncDeviceFileItem, SyncDeviceFilesReq, SyncDeviceFilesRsp,
+    BrowseDeviceFilesReq, BrowseDeviceFilesRsp, DeviceFile,
+    DeviceFileJournalEntry, DeviceFileRoot, DeviceFileTreeEntry,
+    FileBreadcrumb, FileSyncError, FileSyncErrorKind, FileSyncOperation,
+    FileSyncResult, JournalDeviceFilesReq, JournalDeviceFilesRsp,
+    ListDeviceFileRootsReq, ListDeviceFileRootsRsp, SearchDeviceFilesReq,
+    SearchDeviceFilesRsp, SyncDeviceFileItem, SyncDeviceFilesReq,
+    SyncDeviceFilesRsp,
 };
 
 pub(in crate::devices) use common::{

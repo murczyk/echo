@@ -15,6 +15,7 @@ pub(crate) fn configure_routes(cfg: &mut web::ServiceConfig) {
         .service(files::roots)
         .service(files::browse)
         .service(files::search)
+        .service(files::journal)
         .service(files::sync);
 }
 

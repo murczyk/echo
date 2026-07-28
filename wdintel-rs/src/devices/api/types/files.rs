@@ -235,6 +235,61 @@ pub struct SearchDeviceFilesRsp {
     Clone,
 )]
 #[serde(deny_unknown_fields)]
+pub struct DeviceFileJournalEntry {
+    pub file_id: String,
+    pub name: String,
+    pub absolute_path: String,
+    pub synchronized_at: String,
+}
+
+#[derive(
+    Elm,
+    ElmEncode,
+    ElmDecode,
+    Debug,
+    Serialize,
+    Deserialize,
+    PartialEq,
+    Eq,
+    Clone,
+)]
+#[serde(deny_unknown_fields)]
+pub struct JournalDeviceFilesReq {
+    #[serde(deserialize_with = "deserialize_canonical_uuid")]
+    pub device_id: String,
+    pub limit: Option<u64>,
+    pub cursor: Option<String>,
+}
+
+#[derive(
+    Elm,
+    ElmEncode,
+    ElmDecode,
+    Debug,
+    Serialize,
+    Deserialize,
+    PartialEq,
+    Eq,
+    Clone,
+)]
+#[serde(deny_unknown_fields)]
+pub struct JournalDeviceFilesRsp {
+    pub entries: Vec<DeviceFileJournalEntry>,
+    pub next_cursor: Option<String>,
+}
+
+#[derive(
+    Elm,
+    ElmEncode,
+    ElmDecode,
+    Debug,
+    Serialize,
+    Deserialize,
+    PartialEq,
+    Eq,
+    Clone,
+)]
+#[serde(deny_unknown_fields)]
 pub struct SyncDeviceFileItem {
     #[serde(
         default,

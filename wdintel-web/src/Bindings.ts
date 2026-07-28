@@ -1788,6 +1788,24 @@ export type SearchDeviceFilesRsp = {
   nextCursor: string | null;
 };
 
+export type DeviceFileJournalEntry = {
+  fileId: string;
+  name: string;
+  absolutePath: string;
+  synchronizedAt: string;
+};
+
+export type JournalDeviceFilesReq = {
+  deviceId: string;
+  limit: number | null;
+  cursor: string | null;
+};
+
+export type JournalDeviceFilesRsp = {
+  entries: Array<DeviceFileJournalEntry>;
+  nextCursor: string | null;
+};
+
 export type SyncDeviceFileItem = {
   fileId: string | null;
   absolutePath: string;

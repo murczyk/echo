@@ -13,6 +13,7 @@ import { SidePanelToggleButton } from '../../components/SidePanelToggleButton';
 import { navigateWithinSpa } from '../../utils/browser';
 import { DeviceUpsertDrawer } from '../devices/components/DeviceUpsertDrawer';
 import { DeviceFileTree } from '../device-files/components/DeviceFileTree';
+import { useDeviceFileJournal } from '../device-files/use-device-file-journal';
 import { useDeviceFiles } from '../device-files/use-device-files';
 import { DeviceDetailsLeftPanel } from './components/DeviceDetailsLeftPanel';
 import { DeviceDetailsTabPanel, type DeviceDetailsTab } from './components/DeviceDetailsTabPanel';
@@ -91,6 +92,10 @@ export function DeviceDetailsPage({
     deviceId,
     enabled: page.permissions.canRead && device !== null,
     canSync: canSyncFiles,
+  });
+  const journal = useDeviceFileJournal({
+    deviceId,
+    enabled: activeTab === 'journal' && page.permissions.canRead && device !== null,
   });
   const leftPanelVisible = isMobileLayout || leftPanelOpen;
   const toggleSidePanelLabel = leftPanelVisible ? 'Згорнути ліву панель' : 'Розгорнути ліву панель';
@@ -202,6 +207,7 @@ export function DeviceDetailsPage({
             <Box sx={{ minHeight: 0, minWidth: 0, display: 'flex', overflow: 'hidden' }}>
               <DeviceDetailsTabPanel
                 activeTab={activeTab}
+                journal={journal}
                 files={files}
                 canSyncFiles={canSyncFiles}
                 onTabChange={setActiveTab}

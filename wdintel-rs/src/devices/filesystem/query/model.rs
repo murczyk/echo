@@ -1,6 +1,6 @@
 use crate::devices::filesystem::{
-    DirectoryEntry, DirectoryScope, FileEntry, FileEntryKind, FilesystemError,
-    PathSyntax, RootEntry, TreeEntry,
+    DirectoryEntry, DirectoryScope, FileEntry, FileEntryKind, FileJournalEntry,
+    FilesystemError, PathSyntax, RootEntry, TreeEntry,
 };
 use crate::file_registry::entities::file_entry;
 
@@ -92,6 +92,18 @@ pub(in crate::devices::filesystem) fn map_file_model(
         file_metadata_modified_at: entry.file_metadata_modified_at,
         created_at: entry.created_at,
         updated_at: entry.updated_at,
+    })
+}
+
+pub(in crate::devices::filesystem) fn map_file_journal_model(
+    entry: file_entry::Model,
+) -> Result<FileJournalEntry, FilesystemError> {
+    let file = map_file_model(entry)?;
+    Ok(FileJournalEntry {
+        file_id: file.file_id,
+        name: file.name,
+        absolute_path: file.absolute_path,
+        synchronized_at: file.updated_at,
     })
 }
 

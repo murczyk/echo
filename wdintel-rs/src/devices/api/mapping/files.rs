@@ -1,13 +1,14 @@
 use crate::devices::api::types::{
-    format_datetime, BrowseDeviceFilesRsp, DeviceFile, DeviceFileRoot,
-    DeviceFileTreeEntry, FileBreadcrumb, FileEntryKind as FileEntryKindDto,
-    FileSyncError, FileSyncErrorKind, FileSyncOperation, FileSyncResult,
+    format_datetime, BrowseDeviceFilesRsp, DeviceFile, DeviceFileJournalEntry,
+    DeviceFileRoot, DeviceFileTreeEntry, FileBreadcrumb,
+    FileEntryKind as FileEntryKindDto, FileSyncError, FileSyncErrorKind,
+    FileSyncOperation, FileSyncResult, JournalDeviceFilesRsp,
     ListDeviceFileRootsRsp, PathSyntax as PathSyntaxDto, SearchDeviceFilesRsp,
     SyncDeviceFilesRsp,
 };
 use crate::devices::filesystem::{
-    Breadcrumb, BrowseFilesResult, FileEntry, PathSyntax, RootEntry,
-    SearchFilesResult, SyncFileItemOutcome, SyncFileOperation,
+    Breadcrumb, BrowseFilesResult, FileEntry, JournalFilesResult, PathSyntax,
+    RootEntry, SearchFilesResult, SyncFileItemOutcome, SyncFileOperation,
     SyncFileRejectionKind, SyncFilesResult, TreeEntry,
 };
 use crate::error::AppError;
@@ -56,6 +57,24 @@ pub(in crate::devices) fn map_search(
             .entries
             .into_iter()
             .map(|entry| map_tree_entry(entry.entry, entry.path_components))
+            .collect(),
+        next_cursor: result.next_cursor,
+    }
+}
+
+pub(in crate::devices) fn map_journal(
+    result: JournalFilesResult,
+) -> JournalDeviceFilesRsp {
+    JournalDeviceFilesRsp {
+        entries: result
+            .entries
+            .into_iter()
+            .map(|entry| DeviceFileJournalEntry {
+                file_id: entry.file_id.hyphenated().to_string(),
+                name: entry.name,
+                absolute_path: entry.absolute_path,
+                synchronized_at: format_datetime(entry.synchronized_at),
+            })
             .collect(),
         next_cursor: result.next_cursor,
     }

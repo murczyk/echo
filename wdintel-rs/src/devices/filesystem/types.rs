@@ -149,6 +149,14 @@ pub(in crate::devices) struct FileEntry {
     pub(in crate::devices) updated_at: NaiveDateTime,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(in crate::devices) struct FileJournalEntry {
+    pub(in crate::devices) file_id: Uuid,
+    pub(in crate::devices) name: String,
+    pub(in crate::devices) absolute_path: String,
+    pub(in crate::devices) synchronized_at: NaiveDateTime,
+}
+
 #[allow(dead_code)]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(in crate::devices) enum TreeEntry {
@@ -202,6 +210,29 @@ impl EntrySortKey {
 
     pub(super) fn entry_id(&self) -> Uuid {
         self.entry_id
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(in crate::devices) struct FileJournalSortKey {
+    synchronized_at: NaiveDateTime,
+    file_id: Uuid,
+}
+
+impl FileJournalSortKey {
+    pub(super) fn new(synchronized_at: NaiveDateTime, file_id: Uuid) -> Self {
+        Self {
+            synchronized_at,
+            file_id,
+        }
+    }
+
+    pub(super) fn synchronized_at(&self) -> NaiveDateTime {
+        self.synchronized_at
+    }
+
+    pub(super) fn file_id(&self) -> Uuid {
+        self.file_id
     }
 }
 
@@ -293,6 +324,19 @@ pub(in crate::devices) struct SearchFilesCommand {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(in crate::devices) struct SearchFilesResult {
     pub(in crate::devices) entries: Vec<SearchEntry>,
+    pub(in crate::devices) next_cursor: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(in crate::devices) struct JournalFilesCommand {
+    pub(in crate::devices) device_id: Uuid,
+    pub(in crate::devices) limit: Option<u64>,
+    pub(in crate::devices) cursor: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(in crate::devices) struct JournalFilesResult {
+    pub(in crate::devices) entries: Vec<FileJournalEntry>,
     pub(in crate::devices) next_cursor: Option<String>,
 }
 
