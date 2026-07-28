@@ -1247,6 +1247,7 @@ function AdminMessengerAccountsSection() {
                     clearSystemServiceNameError();
                   }}
                   fullWidth
+                  disabled={isMutating}
                 >
                   <MenuItem value="signal">Signal</MenuItem>
                   <MenuItem value="whatsapp">WhatsApp</MenuItem>
@@ -1264,6 +1265,7 @@ function AdminMessengerAccountsSection() {
                         }))
                       }
                       fullWidth
+                      disabled={isMutating}
                     >
                       <MenuItem value="Normal">Normal (JVM)</MenuItem>
                       <MenuItem value="Native">Native</MenuItem>
@@ -1282,6 +1284,7 @@ function AdminMessengerAccountsSection() {
                     }
                     placeholder="+380XXXXXXXXX"
                     fullWidth
+                    disabled={isMutating}
                   />
                 </div>
                 <div className="pt-6">
@@ -1299,6 +1302,7 @@ function AdminMessengerAccountsSection() {
                     error={Boolean(formErrors.displayName)}
                     helperText={formErrors.displayName}
                     fullWidth
+                    disabled={isMutating}
                   />
                 </div>
                 <div className="pt-6">
@@ -1309,6 +1313,7 @@ function AdminMessengerAccountsSection() {
                     error={Boolean(systemServiceNameError)}
                     helperText={systemServiceNameError}
                     fullWidth
+                    disabled={isMutating}
                     slotProps={{
                       input: {
                         startAdornment: (
@@ -1335,7 +1340,7 @@ function AdminMessengerAccountsSection() {
                 fullWidth
                 error={Boolean(formErrors.aorId)}
                 helperText={formErrors.aorId || ' '}
-                disabled={aorsStatus === 'loading'}
+                disabled={isMutating || aorsStatus === 'loading'}
               >
                 {aorsStatus === 'loading' ? (
                   <MenuItem value="">Завантаження...</MenuItem>
@@ -1356,6 +1361,7 @@ function AdminMessengerAccountsSection() {
                 multiline
                 rows={3}
                 fullWidth
+                disabled={isMutating}
               />
             </div>
 

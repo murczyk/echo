@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { getSystemServiceNameAvailability } from '../../services/api/messenger';
 
@@ -93,11 +93,16 @@ export function useSystemServiceName({
   const [systemServiceName, setSystemServiceName] = useState('');
   const [systemServiceNameError, setSystemServiceNameError] = useState('');
   const [isEdited, setIsEdited] = useState(false);
+  const automaticAbortController = useRef<AbortController | null>(null);
+  const submissionAbortController = useRef<AbortController | null>(null);
 
   useEffect(() => {
+    automaticAbortController.current?.abort();
+    automaticAbortController.current = null;
     if (!active || isEdited || !displayName.trim()) return;
 
     const abortController = new AbortController();
+    automaticAbortController.current = abortController;
     const timeoutId = window.setTimeout(async () => {
       const normalizedSystemServiceName = normalizeToSystemName(displayName);
       try {
@@ -108,27 +113,45 @@ export function useSystemServiceName({
           },
           abortController.signal,
         );
+        if (abortController.signal.aborted) return;
         setSystemServiceName(availability.systemServiceName);
         setSystemServiceNameError('');
       } catch (error) {
         if (abortController.signal.aborted) return;
         setSystemServiceNameError(`Помилка перевірки назви: ${formatErrorMessage(error)}`);
+      } finally {
+        if (automaticAbortController.current === abortController) {
+          automaticAbortController.current = null;
+        }
       }
     }, SYSTEM_SERVICE_NAME_AVAILABILITY_DEBOUNCE_MS);
 
     return () => {
       window.clearTimeout(timeoutId);
       abortController.abort();
+      if (automaticAbortController.current === abortController) {
+        automaticAbortController.current = null;
+      }
     };
   }, [active, displayName, isEdited, messengerType]);
 
+  useEffect(
+    () => () => {
+      automaticAbortController.current?.abort();
+      submissionAbortController.current?.abort();
+    },
+    [],
+  );
+
   function updateFromDisplayName(nextDisplayName: string) {
     if (!isEdited) {
+      abortAutomaticAvailabilityCheck();
       setSystemServiceName(normalizeToSystemName(nextDisplayName));
     }
   }
 
   function editSystemServiceName(nextSystemServiceName: string) {
+    abortAutomaticAvailabilityCheck();
     setIsEdited(true);
     setSystemServiceName(nextSystemServiceName);
     setSystemServiceNameError('');
@@ -141,11 +164,19 @@ export function useSystemServiceName({
   }
 
   async function checkSystemServiceNameAvailability(): Promise<boolean> {
+    submissionAbortController.current?.abort();
+    const abortController = new AbortController();
+    submissionAbortController.current = abortController;
+
     try {
-      const availability = await getSystemServiceNameAvailability({
-        messenger: messengerType,
-        systemServiceName,
-      });
+      const availability = await getSystemServiceNameAvailability(
+        {
+          messenger: messengerType,
+          systemServiceName,
+        },
+        abortController.signal,
+      );
+      if (abortController.signal.aborted) return false;
       if (availability.exists) {
         setSystemServiceNameError(
           `Systemd unit «${getSystemServicePrefix(messengerType)}${systemServiceName}» вже існує`,
@@ -155,12 +186,18 @@ export function useSystemServiceName({
       setSystemServiceNameError('');
       return true;
     } catch (error) {
+      if (abortController.signal.aborted) return false;
       setSystemServiceNameError(`Помилка перевірки назви: ${formatErrorMessage(error)}`);
       return false;
+    } finally {
+      if (submissionAbortController.current === abortController) {
+        submissionAbortController.current = null;
+      }
     }
   }
 
   function clearSystemServiceNameError() {
+    abortAutomaticAvailabilityCheck();
     setSystemServiceNameError('');
   }
 
@@ -169,9 +206,17 @@ export function useSystemServiceName({
   }
 
   function resetSystemServiceName() {
+    abortAutomaticAvailabilityCheck();
+    submissionAbortController.current?.abort();
+    submissionAbortController.current = null;
     setSystemServiceName('');
     setSystemServiceNameError('');
     setIsEdited(false);
+  }
+
+  function abortAutomaticAvailabilityCheck() {
+    automaticAbortController.current?.abort();
+    automaticAbortController.current = null;
   }
 
   return {

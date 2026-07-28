@@ -306,14 +306,25 @@ where
     validate_system_service_name(system_service_name)?;
     let messenger = messenger.to_lowercase();
     let source = EchoMessageSource::try_from_value(&messenger).c(h!())?;
-    for candidate_number in 1..=MESSENGER_SYSTEM_SERVICE_NAME_CANDIDATE_LIMIT {
-        let candidate = system_service_name_with_suffix(
-            system_service_name,
-            candidate_number,
-        );
-        if !system_service_name_exists(&candidate, &source, db).await? {
-            return Ok(candidate);
-        }
+    let candidates = (1..=MESSENGER_SYSTEM_SERVICE_NAME_CANDIDATE_LIMIT)
+        .map(|candidate_number| {
+            system_service_name_with_suffix(
+                system_service_name,
+                candidate_number,
+            )
+        })
+        .collect_vec();
+    let (process_names, client_names) =
+        load_existing_system_service_names(&candidates, &source, db).await?;
+    if let Some(candidate) = candidates.into_iter().find(|candidate| {
+        is_system_service_name_available(
+            candidate,
+            &source,
+            &process_names,
+            &client_names,
+        )
+    }) {
+        return Ok(candidate);
     }
     Err(AppError::BL {
         msg: "Не вдалося знайти вільну назву systemd unit".to_string(),
@@ -347,25 +358,63 @@ async fn system_service_name_exists<C>(
 where
     C: ConnectionTrait,
 {
-    let unit_name = full_system_service_name(system_service_name, source);
-    let exists = echo_client_config::Entity::find()
+    let candidates = [system_service_name.to_string()];
+    let (process_names, client_names) =
+        load_existing_system_service_names(&candidates, source, db).await?;
+    Ok(!is_system_service_name_available(
+        system_service_name,
+        source,
+        &process_names,
+        &client_names,
+    ))
+}
+
+async fn load_existing_system_service_names<C>(
+    candidates: &[String],
+    source: &EchoMessageSource,
+    db: &C,
+) -> Result<(HashSet<String>, HashSet<String>), AppError>
+where
+    C: ConnectionTrait,
+{
+    let process_names = candidates
+        .iter()
+        .map(|candidate| full_system_service_name(candidate, source))
+        .collect_vec();
+    let existing_names = echo_client_config::Entity::find()
         .join(
             JoinType::InnerJoin,
             echo_client_config::Relation::EchoClient.def(),
         )
+        .select_only()
+        .column(echo_client_config::Column::ProcessName)
+        .column(echo_client::Column::Name)
         .filter(
             Condition::any()
-                .add(echo_client_config::Column::ProcessName.eq(unit_name))
                 .add(
-                    echo_client::Column::Name
-                        .eq(system_service_name.to_string()),
+                    echo_client_config::Column::ProcessName
+                        .is_in(process_names),
+                )
+                .add(
+                    echo_client::Column::Name.is_in(candidates.iter().cloned()),
                 ),
         )
-        .one(db)
+        .into_tuple::<(String, String)>()
+        .all(db)
         .await
-        .c(h!())?
-        .is_some();
-    Ok(exists)
+        .c(h!())?;
+    Ok(existing_names.into_iter().unzip())
+}
+
+fn is_system_service_name_available(
+    system_service_name: &str,
+    source: &EchoMessageSource,
+    process_names: &HashSet<String>,
+    client_names: &HashSet<String>,
+) -> bool {
+    !process_names
+        .contains(&full_system_service_name(system_service_name, source))
+        && !client_names.contains(system_service_name)
 }
 
 async fn lock_system_service_name(
@@ -1078,5 +1127,32 @@ mod system_service_name_tests {
         let name = generated_system_service_name(&"а".repeat(100), 42);
         assert_eq!(name.len(), MESSENGER_SYSTEM_SERVICE_NAME_MAX_LEN);
         assert!(validate_system_service_name(&name).is_ok());
+    }
+
+    #[test]
+    fn detects_process_and_client_name_collisions() {
+        let source = EchoMessageSource::Signal;
+        let process_names =
+            HashSet::from([full_system_service_name("echo-kherson", &source)]);
+        let client_names = HashSet::from(["echo-kherson-2".to_string()]);
+
+        assert!(!is_system_service_name_available(
+            "echo-kherson",
+            &source,
+            &process_names,
+            &client_names,
+        ));
+        assert!(!is_system_service_name_available(
+            "echo-kherson-2",
+            &source,
+            &process_names,
+            &client_names,
+        ));
+        assert!(is_system_service_name_available(
+            "echo-kherson-3",
+            &source,
+            &process_names,
+            &client_names,
+        ));
     }
 }
