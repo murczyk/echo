@@ -58,22 +58,35 @@ pub(crate) fn tokenize_search_text(search_text: &str) -> Vec<String> {
 }
 
 fn token_like_expr(column_sql: &str, token: &str) -> SimpleExpr {
-    let pattern = format!("%{}%", token);
-    Expr::cust_with_values(column_sql, vec![pattern])
+    let pattern = format!("%{}%", escape_like_token(token));
+    Expr::cust_with_values(
+        format!("{column_sql} escape E'\\\\'"),
+        vec![pattern],
+    )
 }
 
 fn token_like_expr_with_normalized_boundaries(
     column_sql: &str,
     token: &str,
 ) -> SimpleExpr {
-    let pattern = format!("% {} %", token);
+    let pattern = format!("% {} %", escape_like_token(token));
     let normalized_text = format!(
         "regexp_replace(lower({column_sql}), '[[:punct:][:space:]]+', ' ', 'g')"
     );
     Expr::cust_with_values(
-        format!("concat(' ', {}, ' ') ilike $1", normalized_text),
+        format!(
+            "concat(' ', {}, ' ') ilike $1 escape E'\\\\'",
+            normalized_text
+        ),
         vec![pattern],
     )
+}
+
+fn escape_like_token(token: &str) -> String {
+    token
+        .replace('\\', "\\\\")
+        .replace('%', "\\%")
+        .replace('_', "\\_")
 }
 
 fn column_matches_tokens(
@@ -134,6 +147,7 @@ fn network_unit_exists_for_tokens(
             sigint_network_unit::Relation::SigintUnit.def(),
             Alias::new("sigint_unit"),
         )
+        .filter(sigint_unit::Column::Deleted.eq(false))
         .filter(column_matches_tokens(
             column_sql,
             tokens,
@@ -611,4 +625,14 @@ pub(crate) fn apply_network_list_filters(
         include_status_filter,
         NetworkTextSearchMode::Substring,
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn like_tokens_escape_wildcards() {
+        assert_eq!(escape_like_token(r"50%_\\test"), r"50\%\_\\\\test");
+    }
 }
