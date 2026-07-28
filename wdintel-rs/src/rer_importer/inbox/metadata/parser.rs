@@ -91,7 +91,7 @@ fn is_metadata_only_line(line: &str) -> bool {
               | [iі]d\s*(?:➡️?)?\s*:?\s*(?:\d+(?:\s*\([^)]+\))?(?:\s*,\s*\d+(?:\s*\([^)]+\))?)*|нв|-)
               | [iі]d\s*:\s*[^;\r\n]+;
               | хеш\s+[iі]d\s*:\s*[0-9a-f]+
-              | 👥\s*:\s*[^🔐\r\n]+?\s*🔐
+              | 👥\s*:\s*[^🔐\r\n]+?\s*🔐(?:\s*[0-9a-f]+)?
               | ⬅️\s*:?\s*(?:\d+|нв|-)(?:\s*\([^)]+\))?
               | ➡️\s*:?\s*(?:\d+(?:\s*\([^)]+\))?(?:\s*,\s*\d+(?:\s*\([^)]+\))?)*|нв|-)
             )
@@ -359,7 +359,7 @@ pub fn parse_hash_id(line: &NormalizedLine) -> Option<MatchedValue> {
     }
     lazy_static! {
         static ref RE_HASH_ID_EMOJI: Regex =
-            Regex::new(r#"👥\s*:\s*([^🔐\r\n]+?)\s*🔐"#).unwrap();
+            Regex::new(r#"(?i)🔐\s*([0-9a-f]+)"#).unwrap();
     }
     parse_value_from_regexes(line, &[&RE_HASH_ID])
         .or_else(|| parse_value_from_regexes(line, &[&RE_HASH_ID_EMOJI]))
@@ -378,20 +378,19 @@ fn parse_metadata_line_grouped(line: &NormalizedLine) -> Vec<WorkingMetadata> {
         id_name: parse_mid_id(line).unwrap_or_default(),
         ..Default::default()
     };
+    let hash_id = parse_hash_id(line).unwrap_or_default();
     let mut result = if let Some(abonents) = parse_emoji_abonent_lists(line) {
         abonents
             .into_iter()
             .map(|(sender, receiver)| WorkingMetadata {
                 id: sender,
                 receiver,
+                hash_id: hash_id.clone(),
                 ..common.clone()
             })
             .collect()
     } else {
-        vec![WorkingMetadata {
-            hash_id: parse_hash_id(line).unwrap_or_default(),
-            ..common
-        }]
+        vec![WorkingMetadata { hash_id, ..common }]
     };
     let mut cg_parts = parse_cg_parts(line);
     cg_parts.sort_by_key(|(start, _)| *start);
@@ -443,13 +442,17 @@ fn attach_color_codes(
 fn parse_emoji_abonent_lists(
     line: &NormalizedLine,
 ) -> Option<Vec<(MatchedValue, MatchedValue)>> {
+    if line.text.matches('👥').count() > 2 {
+        return None;
+    }
+
     lazy_static! {
         static ref RE_ABONENT_LIST: Regex = Regex::new(
-            r#"👥\s*:\s*(?:\d{3}[.,]\d{3,4}\s*(?i:мгц)\s*)?((?:\d+\s*[,/]\s*)+\d+)\s*🔐"#
+            r#"👥\s*:\s*[,/]?\s*(?:\d{3}[.,]\d{3,4}\s*(?i:мгц)\s*)?((?:\d+\s*[,/]\s*)+\d+)\s*🔐"#
         )
         .unwrap();
         static ref RE_SEPARATE_ABONENT_LISTS: Regex = Regex::new(
-            r#"👥\s*:\s*(?:\d{3}[.,]\d{3,4}\s*(?i:мгц)\s*)?(\d+(?:\s*[,/]\s*\d+)*)\s*[,/]?\s*👥\s*:\s*(?:\d{3}[.,]\d{3,4}\s*(?i:мгц)\s*)?(\d+(?:\s*[,/]\s*\d+)*)\s*🔐"#
+            r#"👥\s*:\s*[,/]?\s*(?:\d{3}[.,]\d{3,4}\s*(?i:мгц)\s*)?(\d+(?:\s*[,/]\s*\d+)*)\s*[,/]?\s*👥\s*:\s*[,/]?\s*(?:\d{3}[.,]\d{3,4}\s*(?i:мгц)\s*)?(\d+(?:\s*[,/]\s*\d+)*)\s*🔐"#
         )
         .unwrap();
     }
