@@ -118,7 +118,7 @@ rev = "f6b8802562aa450f4a704e9b61cdab99536120f3"
 
 [dependencies.echo-gpu-client]
 git = "ssh://git@github.com/echoua/echo-gpu.git"
-rev = "fe7d1b974f4cf067a83d43bce7c000d1b068a8d1"
+rev = "99daf261e61bbb9d1b4ae1bce4ee8258aacff5f6"
 
 [dependencies.milgeo-rs]
 git = "ssh://git@github.com/echoua/milgeo-rs.git"
