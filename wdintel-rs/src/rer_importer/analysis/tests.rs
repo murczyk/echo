@@ -1331,6 +1331,241 @@ fn postgres_tags_selected_networks_keep_correlated_filter() {
 }
 
 #[test]
+fn analytics_freqs_selected_networks_use_scoped_flat_joins() {
+    let mut req = mk_analysis_stats_req(0, 1);
+    req.selected_networks = Some(vec![1, 2]);
+    let scope = AnalyticsMessageIdScope::Inclusive {
+        min_id: 10,
+        max_id: 20,
+    };
+    let query = stats::build_freqs_query(
+        &req,
+        &uuid::Uuid::nil(),
+        test_dt(2026, 1, 1, 0, 0),
+        test_dt(2026, 1, 2, 0, 0),
+        vec!["group".to_string()],
+        Some(&scope),
+    )
+    .unwrap();
+    let sql = query.build(DbBackend::Postgres).to_string();
+
+    assert!(
+        sql.contains(
+            "INNER JOIN \"sigint_inbox_item_network\" AS \
+             \"analytics_network_filter_link\""
+        ),
+        "{sql}"
+    );
+    assert!(
+        sql.contains(
+            "\"analytics_network_filter_link\".\"sigint_network_id\" IN (1, 2)"
+        ),
+        "{sql}"
+    );
+    assert!(sql.contains("\"sigint_inbox_item\".\"id\" BETWEEN 10 AND 20"));
+    assert!(sql.contains("\"signal_message\".\"id\" BETWEEN 10 AND 20"));
+    assert!(sql.contains(
+        "\"signal_message_group\".\"signal_message_id\" BETWEEN 10 AND 20"
+    ));
+    assert!(!sql.contains("\"iin_network_filter\""), "{sql}");
+}
+
+#[test]
+fn postgres_freqs_selected_networks_keep_correlated_filter() {
+    let mut req = mk_analysis_stats_req(0, 1);
+    req.selected_networks = Some(vec![1, 2]);
+    let query = stats::build_freqs_query(
+        &req,
+        &uuid::Uuid::nil(),
+        test_dt(2026, 1, 1, 0, 0),
+        test_dt(2026, 1, 2, 0, 0),
+        vec!["group".to_string()],
+        None,
+    )
+    .unwrap();
+    let sql = query.build(DbBackend::Postgres).to_string();
+
+    assert!(sql.contains("\"iin_network_filter\""), "{sql}");
+    assert!(!sql.contains("\"analytics_network_filter_link\""), "{sql}");
+}
+
+#[test]
+fn analytics_groups_selected_networks_use_scoped_flat_joins() {
+    let mut req = mk_analysis_stats_req(0, 1);
+    req.selected_networks = Some(vec![1, 2]);
+    let scope = AnalyticsMessageIdScope::Inclusive {
+        min_id: 10,
+        max_id: 20,
+    };
+    let query = stats::build_groups_query(
+        &req,
+        &uuid::Uuid::nil(),
+        test_dt(2026, 1, 1, 0, 0),
+        test_dt(2026, 1, 2, 0, 0),
+        vec!["group".to_string()],
+        Some(&scope),
+    )
+    .unwrap();
+    let sql = query.build(DbBackend::Postgres).to_string();
+
+    assert!(sql.contains(
+        "INNER JOIN \"sigint_inbox_item_network\" AS \
+         \"analytics_network_filter_link\""
+    ));
+    assert!(sql.contains(
+        "\"analytics_network_filter_link\".\"sigint_network_id\" IN (1, 2)"
+    ));
+    assert!(sql.contains("\"sigint_inbox_item\".\"id\" BETWEEN 10 AND 20"));
+    assert!(sql.contains("\"signal_message\".\"id\" BETWEEN 10 AND 20"));
+    assert!(sql.contains(
+        "\"signal_message_group\".\"signal_message_id\" BETWEEN 10 AND 20"
+    ));
+    assert!(!sql.contains("\"iin_network_filter\""), "{sql}");
+}
+
+#[test]
+fn postgres_groups_selected_networks_keep_correlated_filter() {
+    let mut req = mk_analysis_stats_req(0, 1);
+    req.selected_networks = Some(vec![1, 2]);
+    let query = stats::build_groups_query(
+        &req,
+        &uuid::Uuid::nil(),
+        test_dt(2026, 1, 1, 0, 0),
+        test_dt(2026, 1, 2, 0, 0),
+        vec!["group".to_string()],
+        None,
+    )
+    .unwrap();
+    let sql = query.build(DbBackend::Postgres).to_string();
+
+    assert!(sql.contains("\"iin_network_filter\""), "{sql}");
+    assert!(!sql.contains("\"analytics_network_filter_link\""), "{sql}");
+}
+
+#[test]
+fn analytics_networks_query_scopes_both_union_arms() {
+    let req = mk_analysis_stats_req(0, 1);
+    let scope = AnalyticsMessageIdScope::Inclusive {
+        min_id: 10,
+        max_id: 20,
+    };
+    let statement = stats::build_networks_analytics_query_with_scope(
+        &req,
+        &uuid::Uuid::nil(),
+        &[],
+        &[],
+        test_dt(2026, 1, 1, 0, 0),
+        test_dt(2026, 1, 2, 0, 0),
+        vec!["group".to_string()],
+        false,
+        Some(&scope),
+    )
+    .unwrap();
+    let sql = statement.sql;
+
+    assert!(sql.contains("UNION ALL"), "{sql}");
+    assert!(
+        sql.matches("\"sigint_inbox_item\".\"id\" BETWEEN 10 AND 20")
+            .count()
+            >= 2,
+        "{sql}"
+    );
+    assert!(
+        sql.matches("\"signal_message\".\"id\" BETWEEN 10 AND 20")
+            .count()
+            >= 2,
+        "{sql}"
+    );
+    assert!(
+        sql.matches(
+            "\"signal_message_group\".\"signal_message_id\" BETWEEN 10 AND 20"
+        )
+        .count()
+            >= 2,
+        "{sql}"
+    );
+    assert!(sql.contains(
+        "\"analytics_linked_network_link\".\"sigint_inbox_item_id\" \
+         BETWEEN 10 AND 20"
+    ));
+}
+
+#[test]
+fn analytics_group_activity_query_is_bounded_and_aggregated() {
+    let scope = AnalyticsMessageIdScope::From(10);
+    let query = stats::build_group_activity_stats_query(
+        vec!["group".to_string()],
+        test_dt(2026, 1, 7, 0, 0),
+        test_dt(2026, 1, 1, 0, 0),
+        &scope,
+    );
+    let sql = query.build(DbBackend::Postgres).to_string();
+
+    assert!(sql.contains("COUNT(*) FILTER (WHERE"), "{sql}");
+    assert!(sql.contains("\"sigint_inbox_item\".\"id\" >= 10"), "{sql}");
+    assert!(sql.contains("\"signal_message\".\"id\" >= 10"), "{sql}");
+    assert!(
+        sql.contains("\"signal_message_group\".\"signal_message_id\" >= 10"),
+        "{sql}"
+    );
+}
+
+#[test]
+fn analytics_senders_selected_networks_use_scoped_flat_joins() {
+    let mut req = mk_analysis_stats_req(0, 1);
+    req.selected_networks = Some(vec![1, 2]);
+    let scope = AnalyticsMessageIdScope::Inclusive {
+        min_id: 10,
+        max_id: 20,
+    };
+    let query = stats::build_sender_breakdown_query(
+        &Json(req),
+        &uuid::Uuid::nil(),
+        test_dt(2026, 1, 1, 0, 0),
+        test_dt(2026, 1, 2, 0, 0),
+        vec!["group".to_string()],
+        Some(&scope),
+    )
+    .unwrap();
+    let sql = query.build(DbBackend::Postgres).to_string();
+
+    assert!(sql.contains(
+        "INNER JOIN \"sigint_inbox_item_network\" AS \
+         \"analytics_network_filter_link\""
+    ));
+    assert!(sql.contains(
+        "\"analytics_network_filter_link\".\"sigint_network_id\" IN (1, 2)"
+    ));
+    assert!(sql.contains("\"sigint_inbox_item\".\"id\" BETWEEN 10 AND 20"));
+    assert!(sql.contains("\"signal_message\".\"id\" BETWEEN 10 AND 20"));
+    assert!(sql.contains(
+        "\"signal_message_group\".\"signal_message_id\" BETWEEN 10 AND 20"
+    ));
+    assert!(!sql.contains("\"iin_network_filter\""), "{sql}");
+    assert!(!sql.contains("FROM \"signal_message_group\""), "{sql}");
+}
+
+#[test]
+fn postgres_senders_selected_networks_keep_correlated_filter() {
+    let mut req = mk_analysis_stats_req(0, 1);
+    req.selected_networks = Some(vec![1, 2]);
+    let query = stats::build_sender_breakdown_query(
+        &Json(req),
+        &uuid::Uuid::nil(),
+        test_dt(2026, 1, 1, 0, 0),
+        test_dt(2026, 1, 2, 0, 0),
+        vec!["group".to_string()],
+        None,
+    )
+    .unwrap();
+    let sql = query.build(DbBackend::Postgres).to_string();
+
+    assert!(sql.contains("\"iin_network_filter\""), "{sql}");
+    assert!(!sql.contains("\"analytics_network_filter_link\""), "{sql}");
+    assert!(!sql.contains("FROM \"signal_message_group\""), "{sql}");
+}
+
+#[test]
 fn postgres_tags_exact_unit_query_only_uses_linked_candidates() {
     let mut req = mk_analysis_stats_req(0, 1);
     req.selected_units = Some(vec!["unit".to_string()]);
@@ -1545,9 +1780,10 @@ async fn collect_group_names_prefers_signal_group_over_whatsapp_name() {
             count: 1,
         },
     ];
-    let group_names = collect_group_names(&groups, &fixture.env.dbx, false)
-        .await
-        .unwrap();
+    let group_names =
+        collect_group_names(&groups, &fixture.env.dbx, false, None)
+            .await
+            .unwrap();
 
     let alpha_names = group_names
         .iter()

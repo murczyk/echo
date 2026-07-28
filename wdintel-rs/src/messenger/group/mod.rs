@@ -345,31 +345,57 @@ pub async fn collect_group_stats<'a, 'async_trait, C>(
 where
     C: ConnectionTrait + 'async_trait,
 {
-    let signal_message_counts_last_day =
-        count_group_messages(keys.clone(), txn, 1)
-            .await
-            .context(h!())?;
-    let signal_message_counts_last_week =
-        count_group_messages(keys.clone(), txn, 7)
-            .await
-            .context(h!())?;
-    let mut result = BTreeMap::new();
-    for k in keys {
-        let activity_last_day =
-            signal_message_counts_last_day.get(&k).cloned().unwrap_or(0);
-        let activity_last_week = signal_message_counts_last_week
-            .get(&k)
-            .cloned()
-            .unwrap_or(0);
-        result.insert(
-            k,
-            types::SignalGroupStats {
-                activity_last_day,
-                activity_last_week,
-            },
-        );
-    }
-    Ok(result)
+    let day_cutoff = Utc::now().naive_utc() - chrono::Duration::days(1);
+    let week_cutoff = Utc::now().naive_utc() - chrono::Duration::days(7);
+    let counts = signal_message_group::Entity::find()
+        .join(
+            JoinType::InnerJoin,
+            signal_message_group::Relation::SignalMessage.def(),
+        )
+        .join(
+            JoinType::InnerJoin,
+            signal_message::Relation::SigintInboxItem.def(),
+        )
+        .join(
+            JoinType::InnerJoin,
+            signal_message_group::Relation::SignalGroup.def(),
+        )
+        .select_only()
+        .column(signal_group::Column::MasterKey)
+        .column_as(
+            Expr::cust_with_expr(
+                "COUNT(*) FILTER (WHERE $1)",
+                Expr::col(signal_message::Column::Timestamp).gte(day_cutoff),
+            ),
+            "activity_last_day",
+        )
+        .column_as(Expr::cust("COUNT(*)"), "activity_last_week")
+        .group_by(signal_group::Column::MasterKey)
+        .filter(signal_group::Column::Deleted.eq(false))
+        .filter(signal_group::Column::MasterKey.eq_any(keys.clone()))
+        .filter(signal_message::Column::Timestamp.gte(week_cutoff))
+        .into_tuple::<(String, i64, i64)>()
+        .all(txn)
+        .await
+        .context(h!())?
+        .into_iter()
+        .map(|(master_key, activity_last_day, activity_last_week)| {
+            (
+                master_key,
+                types::SignalGroupStats {
+                    activity_last_day,
+                    activity_last_week,
+                },
+            )
+        })
+        .collect::<BTreeMap<_, _>>();
+    Ok(keys
+        .into_iter()
+        .map(|key| {
+            let stats = counts.get(&key).cloned().unwrap_or_default();
+            (key, stats)
+        })
+        .collect())
 }
 
 pub async fn ensure_datasource_group_id<'a, 'async_trait, C>(
@@ -518,44 +544,6 @@ where
         .flat_map(|(m_id, data)| m_id.map(|m_id| (m_id, data)))
         .collect::<BTreeMap<String, types::GroupAdminData>>();
     Ok(result)
-}
-
-pub async fn count_group_messages<'a, 'async_trait, C>(
-    keys: Vec<String>,
-    txn: &'a C,
-    num_days: i64,
-) -> Result<BTreeMap<String, i64>, AppError>
-where
-    C: ConnectionTrait + 'async_trait,
-{
-    let cutoff = Utc::now().naive_utc() - chrono::Duration::days(num_days);
-    let signal_message_counts = signal_message_group::Entity::find()
-        .join(
-            JoinType::InnerJoin,
-            signal_message_group::Relation::SignalMessage.def(),
-        )
-        .join(
-            JoinType::InnerJoin,
-            signal_message::Relation::SigintInboxItem.def(),
-        )
-        .join(
-            JoinType::InnerJoin,
-            signal_message_group::Relation::SignalGroup.def(),
-        )
-        .select_only()
-        .column(signal_group::Column::MasterKey)
-        .column_as(Expr::cust("count(*)"), "count")
-        .group_by(signal_group::Column::MasterKey)
-        .filter(signal_group::Column::Deleted.eq(false))
-        .filter(signal_group::Column::MasterKey.eq_any(keys))
-        .filter(signal_message::Column::Timestamp.gte(cutoff))
-        .into_tuple::<(String, i64)>()
-        .all(txn)
-        .await
-        .context(h!())?
-        .into_iter()
-        .collect();
-    Ok(signal_message_counts)
 }
 
 pub async fn get_identity_sigint_groups<'a, 'async_trait, C>(

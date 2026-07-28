@@ -5377,42 +5377,75 @@ async fn group_stats(
     let analytics_user = &user;
     let postgres_user = &user;
     let postgres_env = &env;
-    let groups = with_analytics_read_fallback(
+    let analytics_freshness_max_age_ms = env
+        .config
+        .analytics
+        .as_ref()
+        .map(AnalyticsConfig::freshness_max_age_ms)
+        .unwrap_or(ANALYTICS_FRESHNESS_MAX_AGE_MS_DEFAULT);
+    let include_missing_groups = should_include_missing_secret_groups(&req);
+    let (groups, analytics_group_stats) = with_analytics_read_fallback(
         env.get_ref(),
         "analysis stats groups",
         analytics_count_request_supported(&req),
         |db| async move {
-            stats::fetch_groups_raw_with_db(
+            let message_id_scope = stats::resolve_analytics_message_id_scope(
+                &analytics_req.0,
+                &db,
+                analytics_freshness_max_age_ms,
+            )
+            .await?;
+            let groups = stats::fetch_groups_raw_with_db(
                 analytics_req,
                 analytics_user,
                 &db,
-                analytics_master_keys,
-                None,
+                analytics_master_keys.clone(),
+                Some(&message_id_scope),
             )
-            .await
+            .await?;
+            let group_activity_keys = if include_missing_groups {
+                analytics_master_keys
+            } else {
+                groups
+                    .iter()
+                    .map(|group| group.master_key.clone())
+                    .collect()
+            };
+            let group_stats = stats::fetch_group_activity_stats_with_db(
+                &db,
+                group_activity_keys,
+            )
+            .await?;
+            Ok((groups, Some(group_stats)))
         },
         |_db| async move {
-            stats::fetch_groups(
+            let groups = stats::fetch_groups(
                 postgres_req,
                 postgres_user,
                 postgres_env,
                 postgres_master_keys,
             )
-            .await
+            .await?;
+            Ok((groups, None))
         },
     )
     .await
     .context(h!())?;
-    let groups = if should_include_missing_secret_groups(&req) {
+    let groups = if include_missing_groups {
         include_missing_secret_groups(&env.dbx, groups, &master_keys_noimport)
             .await
             .context(h!())?
     } else {
         groups
     };
-    let group_names = collect_group_names(&groups, &env.dbx, is_admin)
-        .await
-        .context(h!())?;
+    let group_names = collect_group_names(
+        &groups,
+        &env.dbx,
+        is_admin,
+        analytics_group_stats.as_ref(),
+    )
+    .await
+    .context(h!())?;
     debug!(
         "User: {} has groups num: master_keys - {master_keys_noimport_count}, via fetch_groups - {}, in group_names - {}; organism id: {:?}",
         &login,
@@ -5492,6 +5525,12 @@ async fn sender_stats(
     let postgres_user = &user;
     let analytics_env = env.get_ref();
     let postgres_env = &env;
+    let analytics_freshness_max_age_ms = env
+        .config
+        .analytics
+        .as_ref()
+        .map(AnalyticsConfig::freshness_max_age_ms)
+        .unwrap_or(ANALYTICS_FRESHNESS_MAX_AGE_MS_DEFAULT);
     let senders = with_analytics_read_fallback(
         env.get_ref(),
         "analysis stats senders",
@@ -5503,6 +5542,7 @@ async fn sender_stats(
                 analytics_env,
                 &db,
                 analytics_master_keys,
+                analytics_freshness_max_age_ms,
             )
             .await
         },
@@ -5597,6 +5637,12 @@ async fn freq_stats(
     let analytics_user = &user;
     let postgres_user = &user;
     let postgres_env = &env;
+    let analytics_freshness_max_age_ms = env
+        .config
+        .analytics
+        .as_ref()
+        .map(AnalyticsConfig::freshness_max_age_ms)
+        .unwrap_or(ANALYTICS_FRESHNESS_MAX_AGE_MS_DEFAULT);
     let freqs = with_analytics_read_fallback(
         env.get_ref(),
         "analysis stats freqs",
@@ -5607,6 +5653,7 @@ async fn freq_stats(
                 analytics_user,
                 &db,
                 analytics_master_keys,
+                analytics_freshness_max_age_ms,
             )
             .await
         },
@@ -5957,17 +6004,30 @@ async fn network_stats(
     let analytics_user = &user;
     let postgres_user = &user;
     let postgres_env = &env;
+    let analytics_freshness_max_age_ms = env
+        .config
+        .analytics
+        .as_ref()
+        .map(AnalyticsConfig::freshness_max_age_ms)
+        .unwrap_or(ANALYTICS_FRESHNESS_MAX_AGE_MS_DEFAULT);
     let networks = with_analytics_read_fallback(
         env.get_ref(),
         "analysis stats networks",
         analytics_count_request_supported(&req),
         |db| async move {
+            let message_id_scope = stats::resolve_analytics_message_id_scope(
+                &analytics_req.0,
+                &db,
+                analytics_freshness_max_age_ms,
+            )
+            .await?;
             stats::fetch_networks_analytics_with_db(
                 analytics_req,
                 analytics_user,
                 &db,
                 analytics_master_keys,
                 analytics_tag_access.as_ref().c(h!())?,
+                &message_id_scope,
             )
             .await
         },
@@ -6853,17 +6913,29 @@ async fn group_stats_count(
     let analytics_user = &user;
     let postgres_user = &user;
     let postgres_env = &env;
+    let analytics_freshness_max_age_ms = env
+        .config
+        .analytics
+        .as_ref()
+        .map(AnalyticsConfig::freshness_max_age_ms)
+        .unwrap_or(ANALYTICS_FRESHNESS_MAX_AGE_MS_DEFAULT);
     let groups_count = with_analytics_read_fallback(
         env.get_ref(),
         "analysis stats groups count",
         analytics_count_request_supported(&req),
         |db| async move {
+            let message_id_scope = stats::resolve_analytics_message_id_scope(
+                &analytics_req.0,
+                &db,
+                analytics_freshness_max_age_ms,
+            )
+            .await?;
             query_count_stats_groups(
                 analytics_req,
                 analytics_user,
                 &db,
                 analytics_master_keys,
-                None,
+                Some(&message_id_scope),
             )
             .await
         },
@@ -6899,17 +6971,29 @@ async fn sender_stats_count(
     let analytics_user = &user;
     let postgres_user = &user;
     let postgres_env = &env;
+    let analytics_freshness_max_age_ms = env
+        .config
+        .analytics
+        .as_ref()
+        .map(AnalyticsConfig::freshness_max_age_ms)
+        .unwrap_or(ANALYTICS_FRESHNESS_MAX_AGE_MS_DEFAULT);
     let senders_count = with_analytics_read_fallback(
         env.get_ref(),
         "analysis stats senders count",
         analytics_count_request_supported(&req),
         |db| async move {
+            let message_id_scope = stats::resolve_analytics_message_id_scope(
+                &analytics_req.0,
+                &db,
+                analytics_freshness_max_age_ms,
+            )
+            .await?;
             stats::count_senders_with_db(
                 analytics_req,
                 analytics_user,
                 &db,
                 analytics_master_keys,
-                None,
+                Some(&message_id_scope),
             )
             .await
         },
@@ -6999,17 +7083,29 @@ async fn freq_stats_count(
     let analytics_user = &user;
     let postgres_user = &user;
     let postgres_env = &env;
+    let analytics_freshness_max_age_ms = env
+        .config
+        .analytics
+        .as_ref()
+        .map(AnalyticsConfig::freshness_max_age_ms)
+        .unwrap_or(ANALYTICS_FRESHNESS_MAX_AGE_MS_DEFAULT);
     let freqs_count = with_analytics_read_fallback(
         env.get_ref(),
         "analysis stats freqs count",
         analytics_count_request_supported(&req),
         |db| async move {
+            let message_id_scope = stats::resolve_analytics_message_id_scope(
+                &analytics_req.0,
+                &db,
+                analytics_freshness_max_age_ms,
+            )
+            .await?;
             stats::count_freqs_with_db(
                 analytics_req,
                 analytics_user,
                 &db,
                 analytics_master_keys,
-                None,
+                Some(&message_id_scope),
             )
             .await
         },
@@ -7313,18 +7409,30 @@ async fn network_stats_count(
     let analytics_user = &user;
     let postgres_user = &user;
     let postgres_env = &env;
+    let analytics_freshness_max_age_ms = env
+        .config
+        .analytics
+        .as_ref()
+        .map(AnalyticsConfig::freshness_max_age_ms)
+        .unwrap_or(ANALYTICS_FRESHNESS_MAX_AGE_MS_DEFAULT);
     let networks_count = with_analytics_read_fallback(
         env.get_ref(),
         "analysis stats networks count",
         analytics_count_request_supported(&req),
         |db| async move {
+            let message_id_scope = stats::resolve_analytics_message_id_scope(
+                &analytics_req.0,
+                &db,
+                analytics_freshness_max_age_ms,
+            )
+            .await?;
             stats::count_networks_analytics_with_db(
                 analytics_req,
                 analytics_user,
                 &db,
                 analytics_master_keys,
                 analytics_tag_access.as_ref().c(h!())?,
-                None,
+                Some(&message_id_scope),
             )
             .await
         },
@@ -7450,6 +7558,7 @@ async fn collect_group_names(
     groups: &Vec<AnalysisStatsGroup>,
     txn: &DatabaseConnection,
     is_admin: bool,
+    analytics_group_stats: Option<&BTreeMap<String, SignalGroupStats>>,
 ) -> anyhow::Result<Vec<SignalGroupEntry>> {
     let mut result = vec![];
     let group_keys = groups.iter().map(|x| x.master_key.clone()).collect_vec();
@@ -7480,8 +7589,10 @@ async fn collect_group_names(
         .iter()
         .map(|(key, _, _, _, _)| key.clone())
         .collect();
-    let stats: BTreeMap<String, SignalGroupStats> =
-        collect_group_stats(keys.clone(), txn).await.context(h!())?;
+    let stats = match analytics_group_stats {
+        Some(analytics_group_stats) => analytics_group_stats.clone(),
+        None => collect_group_stats(keys.clone(), txn).await.context(h!())?,
+    };
 
     let group_aors = if is_admin {
         collect_group_aors(keys.clone(), txn).await.context(h!())?
