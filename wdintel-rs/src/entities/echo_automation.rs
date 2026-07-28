@@ -24,8 +24,6 @@ pub struct Model {
     pub coordinate_presence_mode: String,
     #[sea_orm(column_type = "Text")]
     pub polygon_filter_mode: String,
-    #[sea_orm(column_type = "JsonBinary", nullable)]
-    pub polygon_coordinates: Option<Json>,
     pub is_paused: bool,
     #[sea_orm(column_type = "Text")]
     pub status: String,
@@ -38,6 +36,7 @@ pub struct Model {
     pub checkpoint_at: DateTime,
     pub source_account_id: i32,
     pub target_account_id: i32,
+    pub polygon_id: Option<i64>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
@@ -60,6 +59,14 @@ pub enum Relation {
     EchoAccount1,
     #[sea_orm(has_many = "super::echo_automation_delivery::Entity")]
     EchoAutomationDelivery,
+    #[sea_orm(
+        belongs_to = "super::echo_automation_polygon::Entity",
+        from = "Column::PolygonId",
+        to = "super::echo_automation_polygon::Column::Id",
+        on_update = "NoAction",
+        on_delete = "NoAction"
+    )]
+    EchoAutomationPolygon,
     #[sea_orm(has_many = "super::echo_automation_warning::Entity")]
     EchoAutomationWarning,
     #[sea_orm(
@@ -83,6 +90,12 @@ pub enum Relation {
 impl Related<super::echo_automation_delivery::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::EchoAutomationDelivery.def()
+    }
+}
+
+impl Related<super::echo_automation_polygon::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::EchoAutomationPolygon.def()
     }
 }
 

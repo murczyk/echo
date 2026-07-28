@@ -18,8 +18,8 @@ pub struct Model {
     #[sea_orm(column_type = "Text", nullable)]
     pub file_name: Option<String>,
     pub size_bytes: i64,
-    pub is_encrypted: bool,
     pub created_at: DateTime,
+    pub is_encrypted: bool,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

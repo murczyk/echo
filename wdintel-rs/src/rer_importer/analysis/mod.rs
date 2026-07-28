@@ -6028,7 +6028,7 @@ async fn count_stats(
     let analytics = if analytics_count_request_supported(&req) {
         env.analytics.as_ref()
     } else {
-        debug!(
+        trace!(
             "analysis stats count uses PostgreSQL for an unsupported analytics filter"
         );
         None
@@ -6211,7 +6211,7 @@ where
                 if let Some(retry_attempt) = retry_attempt {
                     retry_attempt.record_success();
                 }
-                debug!(
+                trace!(
                     "analysis stats count used analytics in {:?}",
                     started.elapsed()
                 );
@@ -6278,7 +6278,7 @@ where
         match tokio::time::timeout(timeout, query).await {
             Ok(Ok(response)) => {
                 retry_attempt.record_success();
-                debug!("{operation} used analytics in {:?}", started.elapsed());
+                trace!("{operation} used analytics in {:?}", started.elapsed());
                 return Ok(response);
             }
             Ok(Err(err)) => warn!(
@@ -6298,14 +6298,14 @@ where
         );
         retry_attempt.record_failure(retry_cooldown);
     } else if env.analytics.is_some() && !analytics_supported {
-        debug!(
+        trace!(
             "{operation} uses PostgreSQL for an unsupported analytics query"
         );
     }
 
     let started = std::time::Instant::now();
     let response = postgres_query(env.replica()).await?;
-    debug!("{operation} used PostgreSQL in {:?}", started.elapsed());
+    trace!("{operation} used PostgreSQL in {:?}", started.elapsed());
     Ok(response)
 }
 
@@ -6392,7 +6392,7 @@ async fn query_count_stats_postgres(
         stats::fetch_counts(req, user, env, access.master_keys)
             .await
             .context(h!())?;
-    debug!(
+    trace!(
         "analysis stats count used PostgreSQL in {:?}",
         started.elapsed()
     );

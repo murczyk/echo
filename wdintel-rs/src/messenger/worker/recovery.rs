@@ -2568,6 +2568,7 @@ mod tests {
             name: Set(format!("test-client-{}", Uuid::new_v4())),
             created_at: Set(Utc::now().naive_utc()),
             deleted: Set(false),
+            display_name: Set(None),
         }
         .insert(dbx)
         .await
