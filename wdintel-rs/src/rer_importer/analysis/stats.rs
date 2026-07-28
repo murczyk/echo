@@ -6,7 +6,10 @@ use actix_identity::Identity;
 use actix_web::web::Json;
 use chrono::{Duration, Utc};
 use echo_migration::{Expr, JoinType};
-use sea_orm::sea_query::{Order, SelectStatement, SimpleExpr, UnionType};
+use sea_orm::sea_query::{
+    CommonTableExpression, Order, SelectStatement, SimpleExpr, UnionType,
+    WithQuery,
+};
 use sea_orm::FromQueryResult;
 use sea_orm::*;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
@@ -2061,7 +2064,7 @@ async fn fetch_tags_for_login_with_db(
     let dt_till =
         dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
     let instant = std::time::Instant::now();
-    let tags_res = if let Some(tag_access) = tag_access {
+    let tags_res: Vec<TagsRes> = if let Some(tag_access) = tag_access {
         build_tags_analytics_filtered_query(
             req,
             login_str,
@@ -2075,12 +2078,18 @@ async fn fetch_tags_for_login_with_db(
         .column(sigint_inbox_item_tag::Column::TagId)
         .column_as(Expr::count(Expr::val(1)), "count")
         .group_by(sigint_inbox_item_tag::Column::TagId)
+        .into_model::<TagsRes>()
+        .all(db)
+        .await
+        .c(h!())?
     } else {
-        build_tags_query(req, login_str, dt_since, dt_till, master_keys)?
+        let query =
+            build_tags_query(req, login_str, dt_since, dt_till, master_keys)?;
+        TagsRes::find_by_statement(DbBackend::Postgres.build(&query))
+            .all(db)
+            .await
+            .c(h!())?
     };
-
-    let tags_res: Vec<TagsRes> =
-        tags_res.into_model::<TagsRes>().all(db).await.c(h!())?;
 
     let tags: Vec<_> = tags_res
         .iter()
@@ -2140,19 +2149,21 @@ pub(super) async fn count_tags_with_db(
 
     let instant = std::time::Instant::now();
     trace!("get identity master keys op took: {:?}", instant.elapsed());
-    let tags_res = build_tags_filtered_query(
+    let tags_res = build_tags_count_query(
         &req.0,
         &login_value,
         dt_since,
         dt_till,
         master_keys,
     )?;
-    count_distinct_with_db(
-        tags_res,
-        Expr::col(sigint_inbox_item_tag::Column::TagId).into(),
-        db,
+    let result = DistinctCountRes::find_by_statement(
+        DbBackend::Postgres.build(&tags_res),
     )
+    .one(db)
     .await
+    .context(h!())?
+    .unwrap_or(DistinctCountRes { count: 0 });
+    Ok(result.count)
 }
 
 pub(super) async fn count_tags_analytics_with_db(
@@ -2186,34 +2197,83 @@ pub(super) async fn count_tags_analytics_with_db(
     Ok(result.count)
 }
 
-fn build_tags_query(
+pub(super) fn build_tags_query(
     req: &AnalysisStatsReq,
     login_str: &uuid::Uuid,
     dt_since: NaiveDateTime,
     dt_till: NaiveDateTime,
     master_keys: Vec<String>,
-) -> Result<Select<sigint_inbox_item::Entity>, AppError> {
-    Ok(build_tags_filtered_query(
-        req,
-        login_str,
-        dt_since,
-        dt_till,
-        master_keys,
-    )?
-    .select_only()
-    .column(sigint_inbox_item_tag::Column::TagId)
-    .column_as(Expr::count(Expr::val(1)), "count")
-    .group_by(sigint_inbox_item_tag::Column::TagId))
+) -> Result<WithQuery, AppError> {
+    let (ctes, tags_res) =
+        build_tags_query_parts(req, login_str, dt_since, dt_till, master_keys)?;
+    let tags_res = tags_res
+        .select_only()
+        .column(sigint_inbox_item_tag::Column::TagId)
+        .column_as(Expr::count(Expr::val(1)), "count")
+        .group_by(sigint_inbox_item_tag::Column::TagId);
+    Ok(build_tags_with_query(ctes, tags_res))
 }
 
-fn build_tags_filtered_query(
+fn build_tags_count_query(
     req: &AnalysisStatsReq,
     login_str: &uuid::Uuid,
     dt_since: NaiveDateTime,
     dt_till: NaiveDateTime,
     master_keys: Vec<String>,
-) -> Result<Select<sigint_inbox_item::Entity>, AppError> {
-    build_tags_filtered_query_with_owner_condition(
+) -> Result<WithQuery, AppError> {
+    let (ctes, tags_res) =
+        build_tags_query_parts(req, login_str, dt_since, dt_till, master_keys)?;
+    let tags_res = build_distinct_count_query(
+        tags_res,
+        Expr::col(sigint_inbox_item_tag::Column::TagId).into(),
+    );
+    Ok(build_tags_with_query(ctes, tags_res))
+}
+
+fn build_tags_with_query(
+    ctes: Vec<CommonTableExpression>,
+    tags_res: Select<sigint_inbox_item_tag::Entity>,
+) -> WithQuery {
+    let mut with_clause = Query::with();
+    for cte in ctes {
+        with_clause.cte(cte);
+    }
+    with_clause.query(tags_res.into_query()).to_owned()
+}
+
+fn build_tags_query_parts(
+    req: &AnalysisStatsReq,
+    login_str: &uuid::Uuid,
+    dt_since: NaiveDateTime,
+    dt_till: NaiveDateTime,
+    master_keys: Vec<String>,
+) -> Result<
+    (
+        Vec<CommonTableExpression>,
+        Select<sigint_inbox_item_tag::Entity>,
+    ),
+    AppError,
+> {
+    let mut ctes = Vec::new();
+    let matching_network_ids_alias = Alias::new("matching_unit_network_ids");
+    let matching_network_ids = selected_unit_network_ids_query(
+        &req.selected_units,
+        &req.units_exact_match_only,
+    );
+    let precomputed_network_ids_alias = matching_network_ids
+        .as_ref()
+        .map(|_| matching_network_ids_alias.clone());
+    if let Some(matching_network_ids) = matching_network_ids {
+        ctes.push(
+            CommonTableExpression::new()
+                .query(matching_network_ids)
+                .table_name(matching_network_ids_alias)
+                .materialized(true)
+                .to_owned(),
+        );
+    }
+    let filtered_inbox_items_alias = Alias::new("filtered_inbox_items");
+    let filtered_inbox_items = build_tags_filtered_query_with_owner_condition(
         req,
         login_str,
         accessible_tag_owner_condition(login_str),
@@ -2222,7 +2282,41 @@ fn build_tags_filtered_query(
         dt_till,
         master_keys,
         None,
-    )
+        false,
+        precomputed_network_ids_alias,
+    )?
+    .select_only()
+    .column(sigint_inbox_item::Column::Id)
+    .into_query();
+    let filtered_inbox_items = CommonTableExpression::new()
+        .query(filtered_inbox_items)
+        .table_name(filtered_inbox_items_alias.clone())
+        .materialized(true)
+        .to_owned();
+    ctes.push(filtered_inbox_items);
+    let filtered_inbox_item_ids = Query::select()
+        .column((filtered_inbox_items_alias.clone(), Alias::new("id")))
+        .from(filtered_inbox_items_alias)
+        .to_owned();
+    let mut tags_res = sigint_inbox_item_tag::Entity::find()
+        .join(
+            JoinType::InnerJoin,
+            sigint_inbox_item_tag::Relation::Tag.def(),
+        )
+        .filter(
+            sigint_inbox_item_tag::Column::Confidence
+                .gte(TAG_MINIMUM_CONFIDENCE),
+        )
+        .filter(accessible_tag_owner_condition(login_str))
+        .filter(
+            sigint_inbox_item_tag::Column::SigintInboxItemId
+                .in_subquery(filtered_inbox_item_ids),
+        );
+    if req.without_model_tags == Some(true) {
+        tags_res =
+            tags_res.filter(sigint_inbox_item_tag::Column::Model.is_null());
+    }
+    Ok((ctes, tags_res))
 }
 
 pub(super) fn build_tags_analytics_filtered_query(
@@ -2242,6 +2336,8 @@ pub(super) fn build_tags_analytics_filtered_query(
         dt_since,
         dt_till,
         master_keys,
+        None,
+        true,
         None,
     )
 }
@@ -2288,6 +2384,8 @@ fn build_tags_analytics_count_query_with_scope(
             dt_till,
             master_keys,
             scope,
+            true,
+            None,
         )?,
         Expr::col(sigint_inbox_item_tag::Column::TagId).into(),
     ))
@@ -2302,6 +2400,8 @@ fn build_tags_filtered_query_with_owner_condition(
     dt_till: NaiveDateTime,
     master_keys: Vec<String>,
     scope: Option<&AnalyticsMessageIdScope>,
+    join_result_tags: bool,
+    matching_network_ids_alias: Option<Alias>,
 ) -> Result<Select<sigint_inbox_item::Entity>, AppError> {
     let include_peleng_locations =
         req.include_peleng_locations.unwrap_or(false);
@@ -2313,26 +2413,30 @@ fn build_tags_filtered_query_with_owner_condition(
         .join(
             JoinType::LeftJoin,
             sigint_inbox_item::Relation::SigintPost.def(),
-        )
-        .join(
-            JoinType::InnerJoin,
-            sigint_inbox_item_tag::Relation::SigintInboxItem
-                .def()
-                .rev()
-                .on_condition(|_left, right| {
-                    Expr::col((
-                        right,
-                        sigint_inbox_item_tag::Column::Confidence,
-                    ))
-                    .gte(TAG_MINIMUM_CONFIDENCE)
-                    .into_condition()
-                }),
-        )
-        .join(
-            JoinType::InnerJoin,
-            sigint_inbox_item_tag::Relation::Tag.def(),
-        )
-        .filter(owner_condition)
+        );
+    if join_result_tags {
+        tags_res = tags_res
+            .join(
+                JoinType::InnerJoin,
+                sigint_inbox_item_tag::Relation::SigintInboxItem
+                    .def()
+                    .rev()
+                    .on_condition(|_left, right| {
+                        Expr::col((
+                            right,
+                            sigint_inbox_item_tag::Column::Confidence,
+                        ))
+                        .gte(TAG_MINIMUM_CONFIDENCE)
+                        .into_condition()
+                    }),
+            )
+            .join(
+                JoinType::InnerJoin,
+                sigint_inbox_item_tag::Relation::Tag.def(),
+            )
+            .filter(owner_condition);
+    }
+    tags_res = tags_res
         .filter(message_in_groups_exists_with_scope(
             master_keys.clone(),
             scope,
@@ -2342,14 +2446,16 @@ fn build_tags_filtered_query_with_owner_condition(
         .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
         .filter(sigint_inbox_item::Column::Datetime.lt(dt_till));
     tags_res = apply_analytics_message_id_scope(tags_res, scope);
-    if let Some(scope) = scope {
-        tags_res = tags_res.filter(scope.condition((
-            sigint_inbox_item_tag::Entity,
-            sigint_inbox_item_tag::Column::SigintInboxItemId,
-        )));
+    if join_result_tags {
+        if let Some(scope) = scope {
+            tags_res = tags_res.filter(scope.condition((
+                sigint_inbox_item_tag::Entity,
+                sigint_inbox_item_tag::Column::SigintInboxItemId,
+            )));
+        }
     }
     // .filter(sigint_inbox_item::Column::Checked.eq(Some(true)))
-    if req.without_model_tags == Some(true) {
+    if join_result_tags && req.without_model_tags == Some(true) {
         tags_res =
             tags_res.filter(sigint_inbox_item_tag::Column::Model.is_null());
     }
@@ -2361,11 +2467,21 @@ fn build_tags_filtered_query_with_owner_condition(
     )?;
     let tags_res = filter_selected_freqs(tags_res, &req.selected_freqs)?;
     let tags_res = filter_selected_posts(tags_res, &req.selected_posts)?;
-    let tags_res = filter_selected_units(
-        tags_res,
-        &req.selected_units,
-        &req.units_exact_match_only,
-    )?;
+    let tags_res =
+        if let Some(matching_network_ids_alias) = matching_network_ids_alias {
+            filter_selected_units_with_network_ids(
+                tags_res,
+                &req.selected_units,
+                &req.units_exact_match_only,
+                matching_network_ids_alias,
+            )?
+        } else {
+            filter_selected_units(
+                tags_res,
+                &req.selected_units,
+                &req.units_exact_match_only,
+            )?
+        };
     let tags_res = filter_selected_locations(
         tags_res,
         &req.selected_locations,

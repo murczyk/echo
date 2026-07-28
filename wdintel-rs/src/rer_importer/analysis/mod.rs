@@ -939,9 +939,75 @@ fn message_has_linked_unit(filter_expr: SimpleExpr) -> SimpleExpr {
     Expr::exists(select_sigint_units_by_names(filter_expr))
 }
 
+pub(super) fn selected_unit_network_ids_query(
+    selected_units: &Option<Vec<String>>,
+    units_exact_match_only: &Option<bool>,
+) -> Option<SelectStatement> {
+    let mut selected_units = selected_units
+        .as_ref()?
+        .iter()
+        .cloned()
+        .collect::<BTreeSet<_>>();
+    if selected_units.remove("Не визначено") || selected_units.remove("")
+    {
+        return None;
+    }
+    if selected_units.is_empty() {
+        return None;
+    }
+    let selected_units = selected_units.into_iter().collect_vec();
+    let exact_match_only = units_exact_match_only.unwrap_or(false);
+    Some(select_network_ids_by_unit(
+        linked_unit_matches_selected_units(selected_units, !exact_match_only),
+    ))
+}
+
+pub(super) fn filter_selected_units_with_network_ids<Q>(
+    q: Q,
+    selected_units: &Option<Vec<String>>,
+    units_exact_match_only: &Option<bool>,
+    matching_network_ids_alias: Alias,
+) -> Result<Q, AppError>
+where
+    Q: QueryFilter,
+{
+    let selected_units = selected_units
+        .as_ref()
+        .context(h!())?
+        .iter()
+        .cloned()
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect_vec();
+    let matching_network_ids = Query::select()
+        .column((
+            matching_network_ids_alias.clone(),
+            sigint_network_unit::Column::NetworkId,
+        ))
+        .from(matching_network_ids_alias)
+        .to_owned();
+    let linked_unit_match =
+        Expr::exists(select_sigint_units_by_network_ids(matching_network_ids));
+    if units_exact_match_only.unwrap_or(false) {
+        Ok(q.filter(linked_unit_match))
+    } else {
+        Ok(q.filter(
+            sigint_inbox_item::Column::UnitV2
+                .eq_any(selected_units)
+                .or(linked_unit_match),
+        ))
+    }
+}
+
 /// Ця функція обирає тільки ті повідомлення, для яких є активна мережа
 /// з прив'язаним підрозділом, який задовольняє `filter_expr`.
 fn select_sigint_units_by_names(filter_expr: SimpleExpr) -> SelectStatement {
+    select_sigint_units_by_network_ids(select_network_ids_by_unit(filter_expr))
+}
+
+fn select_sigint_units_by_network_ids(
+    matching_network_ids: SelectStatement,
+) -> SelectStatement {
     let inbox_network_alias = Alias::new("selected_unit_inbox_network");
     let network_alias = Alias::new("selected_unit_network");
     let network_freq_alias = Alias::new("selected_unit_network_freq");
@@ -949,7 +1015,6 @@ fn select_sigint_units_by_names(filter_expr: SimpleExpr) -> SelectStatement {
         sigint_inbox_item::Entity,
         sigint_inbox_item::Column::Datetime,
     ));
-    let matching_network_ids = select_network_ids_by_unit(filter_expr);
     Query::select()
         .expr(Expr::value(1))
         .from_as(

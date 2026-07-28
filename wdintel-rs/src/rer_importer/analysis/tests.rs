@@ -1205,6 +1205,63 @@ fn filter_selected_metadata_without_metadata_ignores_concrete_filters() {
     assert!(!sql.contains("sender_name"));
 }
 
+#[test]
+fn postgres_tags_query_filters_inbox_ids_before_joining_result_tags() {
+    let mut req = mk_analysis_stats_req(0, 1);
+    req.selected_units = Some(vec!["unit".to_string()]);
+    req.without_model_tags = Some(true);
+    let login_id = uuid::Uuid::nil();
+    let query = stats::build_tags_query(
+        &req,
+        &login_id,
+        test_dt(2026, 1, 1, 0, 0),
+        test_dt(2026, 1, 2, 0, 0),
+        vec!["group".to_string()],
+    )
+    .unwrap();
+    let sql = DbBackend::Postgres.build(&query).sql;
+    assert!(
+        sql.starts_with("WITH \"matching_unit_network_ids\""),
+        "{sql}"
+    );
+    assert!(sql.contains(", \"filtered_inbox_items\" AS"), "{sql}");
+    assert!(sql.contains("MATERIALIZED ("));
+    let filtered_ids_start = sql
+        .find("IN (SELECT \"filtered_inbox_items\".\"id\"")
+        .expect("missing materialized inbox-ID reference");
+    let filtered_ids_sql = &sql[filtered_ids_start..];
+
+    assert!(sql.contains("FROM \"sigint_inbox_item_tag\" INNER JOIN \"tag\""));
+    assert!(!filtered_ids_sql.contains("JOIN \"sigint_inbox_item_tag\""));
+    assert_eq!(
+        sql.matches("\"sigint_inbox_item_tag\".\"model\" IS NULL")
+            .count(),
+        1
+    );
+}
+
+#[test]
+fn analytics_tags_query_keeps_flat_result_tag_join() {
+    let mut req = mk_analysis_stats_req(0, 1);
+    req.selected_units = Some(vec!["unit".to_string()]);
+    let login_id = uuid::Uuid::nil();
+    let query = stats::build_tags_analytics_filtered_query(
+        &req,
+        &login_id,
+        &[1],
+        &[],
+        test_dt(2026, 1, 1, 0, 0),
+        test_dt(2026, 1, 2, 0, 0),
+        vec!["group".to_string()],
+    )
+    .unwrap();
+    let sql = query.build(DbBackend::Postgres).to_string();
+
+    assert!(sql.contains("INNER JOIN \"sigint_inbox_item_tag\""));
+    assert!(!sql.contains("WITH \"filtered_inbox_items\""));
+    assert!(!sql.contains("WITH \"matching_unit_network_ids\""));
+}
+
 #[tokio::test]
 #[serial]
 async fn rer_analysis_search_matches_plain_prefix() {
