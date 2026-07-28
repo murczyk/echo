@@ -1176,11 +1176,62 @@ _collect-ip:
     rm ~/ips/{{ server }}-ip.txt
 
 _update-nginx:
-    #!/bin/bash
+    #!/usr/bin/env bash
+    set -euo pipefail
     scp ./deploy/nginx/{{ server }} {{ server }}:~
     ssh -t {{ server }}  'cd /etc/nginx/sites-enabled && sudo cp {{ server }} ~/_{{ server }}-nginx-bkp'
-    ssh -t {{ server }}  'sudo mv ~/{{ server }} /etc/nginx/sites-enabled && sudo systemctl restart nginx'
+    ssh -t {{ server }}  'sudo mv ~/{{ server }} /etc/nginx/sites-enabled'
+    just setup-nginx-limits --server="{{ server }}"
     ssh -t {{ server }}  'sudo rm ~/_{{ server }}-nginx-bkp'
+
+[arg('server', long='server')]
+setup-nginx-limits server:
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    limits_file="deploy/nginx/nginx.service.d/limits.conf"
+    expected_limit=$(awk -F= '$1 == "LimitNOFILE" { print $2 }' "$limits_file")
+    remote_tmp="/tmp/echo-nginx-limits-$$.conf"
+
+    scp "$limits_file" "{{ server }}:$remote_tmp"
+    ssh "{{ server }}" bash -se -- "$remote_tmp" "$expected_limit" <<'EOF'
+    remote_tmp="$1"
+    expected_limit="$2"
+    trap 'rm -f "$remote_tmp"' EXIT
+
+    sudo install -D -m 0644 \
+        "$remote_tmp" \
+        /etc/systemd/system/nginx.service.d/limits.conf
+    sudo systemctl daemon-reload
+    sudo nginx -t
+    sudo systemctl restart nginx.service
+    systemctl is-active --quiet nginx.service
+
+    verify_process_limit() {
+        local process_kind="$1"
+        local process_pid="$2"
+        local live_limit
+        live_limit=$(sudo awk '/Max open files/ { print $4 }' \
+            "/proc/$process_pid/limits")
+        if [[ "$live_limit" != "$expected_limit" ]]; then
+            echo "nginx $process_kind $process_pid nofile limit is $live_limit; expected $expected_limit" >&2
+            return 1
+        fi
+    }
+
+    main_pid=$(systemctl show nginx.service -P MainPID)
+    verify_process_limit master "$main_pid"
+    mapfile -t worker_pids < <(pgrep -P "$main_pid" -x nginx)
+    if (( ${#worker_pids[@]} == 0 )); then
+        echo "nginx has no worker processes" >&2
+        exit 1
+    fi
+    for worker_pid in "${worker_pids[@]}"; do
+        verify_process_limit worker "$worker_pid"
+    done
+
+    echo "nginx master and worker nofile limit: $expected_limit"
+    EOF
 
 [arg('server', long='server')]
 copy-db server:

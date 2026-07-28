@@ -168,10 +168,16 @@ just deploy-proj-db --server=$SERVER
 
 ## Nginx
 
+Run the setup recipe to install the nginx systemd file limit and restart nginx:
+
+```
+just setup-nginx-limits --server=$SERVER
+```
+
 **Edit /etc/nginx/nginx.conf**
 
 ```
-worker_rlimit_nofile 65535;
+worker_rlimit_nofile 524288;
 
 ...
 
