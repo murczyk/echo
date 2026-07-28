@@ -68,6 +68,7 @@ pub mod goi_knowledge;
 pub mod goi_palitra_sync;
 pub mod gpu_config;
 pub mod group_admin_data;
+pub mod group_stats_recalculation_task;
 pub mod log_users_report_generation;
 pub mod login;
 pub mod modulation;

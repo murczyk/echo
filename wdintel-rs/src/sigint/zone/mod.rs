@@ -181,7 +181,6 @@ pub async fn zones_datasources_group_add(
     )
     .await
     .c(h!())?;
-
     let allowed_users = bl::collect_direct_secret_group_users(
         vec![szd.group_master_key.clone()],
         &txn,

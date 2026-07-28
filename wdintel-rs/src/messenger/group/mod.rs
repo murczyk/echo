@@ -227,9 +227,7 @@ where
         .c(h!())?
         .c(h!())?;
 
-    if let Err(e) = insert_group_aor(dbx, &new_group).await {
-        error!("failed to insert group's area of responsibility: {:?}", e)
-    }
+    insert_group_aor(dbx, &new_group).await.context(h!())?;
     Ok(new_group)
 }
 
@@ -319,16 +317,24 @@ where
         id: NotSet,
     };
     model.insert(dbx).await.context(h!())?;
+    let reason = format!("inserted aor {} for group {master_key}", aor.id);
     if let Err(e) =
     crate::sigint::network::etalon_calc::invalidate_network_inbox_for_group_with_key(
             dbx,
             &master_key,
-            format!("inserted aor {} for group {master_key}", aor.id)
+            reason.clone(),
         )
             .await
         {
             error!("invalidate_network_inbox_for_group failed: {:#?}", e)
         }
+    crate::stats::enqueue_group_stats_recalculation_for_group_history(
+        dbx,
+        &master_key,
+        reason,
+    )
+    .await
+    .context(h!())?;
     Ok(Some(aor))
 }
 

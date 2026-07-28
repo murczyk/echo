@@ -825,6 +825,23 @@ pub async fn upsert_group_area_of_responsibility(
     master_key: &str,
     aor_ids: Option<Vec<i64>>,
 ) -> Result<Vec<Model>, AppError> {
+    let existing_aor_ids = signal_group_aor::Entity::find()
+        .filter(signal_group_aor::Column::MasterKey.eq(master_key))
+        .select_only()
+        .column(signal_group_aor::Column::AorId)
+        .into_tuple::<i64>()
+        .all(txn)
+        .await
+        .c(h!())?
+        .into_iter()
+        .collect::<BTreeSet<_>>();
+    let next_aor_ids = aor_ids
+        .clone()
+        .unwrap_or_default()
+        .into_iter()
+        .collect::<BTreeSet<_>>();
+    let aor_ids_changed = existing_aor_ids != next_aor_ids;
+
     let res = match aor_ids {
         None => {
             signal_group_aor::Entity::delete_many()
@@ -870,6 +887,15 @@ pub async fn upsert_group_area_of_responsibility(
             models
         }
     };
+    if aor_ids_changed {
+        crate::stats::enqueue_group_stats_recalculation_for_group_history(
+            txn,
+            master_key,
+            format!("updated aors for group {master_key}"),
+        )
+        .await
+        .c(h!())?;
+    }
     Ok(res)
 }
 

@@ -320,6 +320,8 @@ mod m20260727_101425_propagate_network_callsign_full_name;
 mod m20260727_102348_add_ai_callsign_worker;
 mod m20260727_162911_add_analysis_callsign_form_setting;
 mod m20260728_084158_index_inbox_item_unit_datetime;
+mod m20260728_085448_group_stats_recalculation_task;
+mod m20260728_085449_group_stats_recalculation_task_pending_unique;
 
 pub struct Migrator;
 
@@ -706,6 +708,12 @@ impl MigratorTrait for Migrator {
             ),
             Box::new(
                 m20260728_084158_index_inbox_item_unit_datetime::Migration,
+            ),
+            Box::new(
+                m20260728_085448_group_stats_recalculation_task::Migration,
+            ),
+            Box::new(
+                m20260728_085449_group_stats_recalculation_task_pending_unique::Migration,
             ),
         ]
     }

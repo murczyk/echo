@@ -27,6 +27,7 @@ public.goi_knowledge
 # Transient operational state.
 public.bgtask
 public.bgtask_res
+public.group_stats_recalculation_task
 public.network_invalidation_task
 public.network_invalidation_worker
 public.palitra_highlight_worker_job
