@@ -21,7 +21,16 @@ import { DevicesToolbar } from './components/DevicesToolbar';
 import { useDevicesPage } from './use-devices-page';
 
 const columnOrder = buildDefaultColumnOrder({
-  dataColumnIds: ['name', 'sourceLabel', 'aors', 'unit', 'createdAt', 'updatedAt', 'lifecycle'],
+  dataColumnIds: [
+    'name',
+    'sourceLabel',
+    'aors',
+    'unit',
+    'createdBy',
+    'createdAt',
+    'updatedAt',
+    'lifecycle',
+  ],
   withRowNumbers: true,
   withRowActions: true,
 });
@@ -32,6 +41,7 @@ const defaultColumnVisibility = {
   aors: true,
   unit: true,
   updatedAt: true,
+  createdBy: true,
   createdAt: true,
   lifecycle: true,
 };

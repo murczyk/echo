@@ -110,17 +110,28 @@ afterEach(() => {
 describe('DevicesTable', () => {
   it('exposes only approved list data columns', () => {
     renderTable();
-    const columns = capturedOptions?.columns as Array<{ id: string; header: string }>;
+    const columns = capturedOptions?.columns as Array<{
+      id: string;
+      header: string;
+      accessorKey?: string;
+      enableSorting?: boolean;
+    }>;
 
     expect(columns.map((column) => column.id)).toEqual([
       'name',
       'sourceLabel',
       'aors',
       'unit',
+      'createdBy',
       'createdAt',
       'updatedAt',
       'lifecycle',
     ]);
+    expect(columns.find((column) => column.id === 'createdBy')).toMatchObject({
+      accessorKey: 'createdBy',
+      header: 'Створив',
+      enableSorting: false,
+    });
     expect(columns.map((column) => column.header)).not.toEqual(
       expect.arrayContaining(['ID', 'Посилання', 'Архівовано', 'AOR ID', 'Unit ID']),
     );

@@ -120,6 +120,13 @@ function useDevicesTableColumns(): MRT_ColumnDef<DeviceRowView>[] {
         ),
       },
       {
+        id: 'createdBy',
+        accessorKey: 'createdBy',
+        header: 'Створив',
+        size: 170,
+        enableSorting: false,
+      },
+      {
         id: 'createdAt',
         accessorKey: 'createdAt',
         header: 'Створено',

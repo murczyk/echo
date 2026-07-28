@@ -194,7 +194,22 @@ describe('DevicesPage layout', () => {
       root?.render(<DevicesPage authUserRoles={['DeviceSource']} />);
     });
 
-    expect(capturedTableStateProviderProps).toMatchObject({ tableId: 'devices' });
+    expect(capturedTableStateProviderProps).toMatchObject({
+      tableId: 'devices',
+      defaultColumnVisibility: expect.objectContaining({ createdBy: true }),
+      defaultColumnOrder: [
+        'mrt-row-numbers',
+        'mrt-row-actions',
+        'name',
+        'sourceLabel',
+        'aors',
+        'unit',
+        'createdBy',
+        'createdAt',
+        'updatedAt',
+        'lifecycle',
+      ],
+    });
     expect(capturedPageToolbarProps).toMatchObject({
       title: 'Пристрої',
       internalActionsHidden: true,
