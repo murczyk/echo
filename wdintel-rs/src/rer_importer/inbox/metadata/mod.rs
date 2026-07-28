@@ -369,7 +369,7 @@ ID(CG)⬅️:50📣",
     }
 
     #[test]
-    fn parse_metadata_drops_abonents_after_more_than_two_emoji_markers() {
+    fn parse_metadata_drops_dot_separated_emoji_abonent_fragments() {
         let body = r#"Отримано з поста "35"
 --------------------------------------
 28.07.2026, 10:31:48
@@ -608,38 +608,34 @@ ID(CG)⬅️:50📣",
     }
 
     #[test]
-    fn parse_metadata_handles_multiple_complete_emoji_abonent_groups() {
+    fn parse_metadata_ignores_content_after_first_of_multiple_locks() {
         let metadata = parse_metadata_asserting_spans(
             "🎨:5 👥:111,222🔐 🎨:1 👥:333,444🔐",
         );
         assert_eq!(
             metadata,
-            vec![
-                InboxMetadata {
-                    cc: Some("5".to_string()),
-                    cg: Some("222".to_string()),
-                    id: Some("111".to_string()),
-                    ..Default::default()
-                },
-                InboxMetadata {
-                    cc: Some("1".to_string()),
-                    cg: Some("222".to_string()),
-                    id: Some("111".to_string()),
-                    ..Default::default()
-                },
-                InboxMetadata {
-                    cc: Some("5".to_string()),
-                    cg: Some("444".to_string()),
-                    id: Some("333".to_string()),
-                    ..Default::default()
-                },
-                InboxMetadata {
-                    cc: Some("1".to_string()),
-                    cg: Some("444".to_string()),
-                    id: Some("333".to_string()),
-                    ..Default::default()
-                },
-            ]
+            vec![InboxMetadata {
+                cc: Some("5".to_string()),
+                cg: Some("222".to_string()),
+                id: Some("111".to_string()),
+                ..Default::default()
+            }]
+        );
+    }
+
+    #[test]
+    fn parse_metadata_ignores_emoji_abonent_groups_after_second() {
+        let metadata =
+            parse_metadata_asserting_spans("👥:111, 👥:222, 👥:555🔐 2324D327");
+
+        assert_eq!(
+            metadata,
+            vec![InboxMetadata {
+                cg: Some("222".to_string()),
+                id: Some("111".to_string()),
+                hash_id: Some("2324d327".to_string()),
+                ..Default::default()
+            }]
         );
     }
 
