@@ -66,13 +66,6 @@ pub async fn network_list(
     env: actix_web::web::Data<Env>,
     req: Json<ListNetworksReq>,
 ) -> Result<Json<ListNetworksRsp>, AppError> {
-    #[derive(FromQueryResult)]
-    struct Row {
-        active: i64,
-        inactive: i64,
-        archived: i64,
-    }
-
     has_any_role(
         &env.dbx,
         &login_id_from_identity(&user)?,
@@ -96,23 +89,11 @@ pub async fn network_list(
         .await
         .context(h!())?;
 
-    let row = build_networks_counts_query_with_text_search_mode(
-        &req,
-        text_search_mode,
-    )
-    .into_model::<Row>()
-    .one(&env.dbx)
-    .await
-    .context(h!())?
-    .context(h!())?;
+    let status_counts = load_network_status_counts(&env.dbx, &req).await?;
 
     Ok(Json(ListNetworksRsp {
         list: res,
-        status_counts: ListNetworksStatusCountsRsp {
-            active: row.active,
-            inactive: row.inactive,
-            archived: row.archived,
-        },
+        status_counts,
     }))
 }
 
@@ -241,7 +222,7 @@ fn build_network_text_search_probe_query(
     apply_network_list_filters_with_text_search_mode(
         sigint_network::Entity::find(),
         req,
-        false,
+        true,
         text_search_mode,
     )
     .select_only()
@@ -272,6 +253,81 @@ pub(crate) async fn resolve_network_text_search_mode(
     } else {
         Ok(NetworkTextSearchMode::Substring)
     }
+}
+
+async fn count_networks_for_status(
+    db: &DatabaseConnection,
+    req: &ListNetworksReq,
+    status_filter: ListNetworksStatusFilter,
+) -> Result<i64, AppError> {
+    let mut req = req.clone();
+    req.status_filter = Some(status_filter);
+    let text_search_mode = resolve_network_text_search_mode(db, &req).await?;
+    let count = apply_network_list_filters_with_text_search_mode(
+        sigint_network::Entity::find(),
+        &req,
+        true,
+        text_search_mode,
+    )
+    .count(db)
+    .await
+    .c(h!())?;
+
+    Ok(<i64 as TryFrom<u64>>::try_from(count).c(h!())?)
+}
+
+async fn load_network_status_counts(
+    db: &DatabaseConnection,
+    req: &ListNetworksReq,
+) -> Result<ListNetworksStatusCountsRsp, AppError> {
+    if !has_network_global_text_filter(req) {
+        #[derive(FromQueryResult)]
+        struct Row {
+            active: i64,
+            inactive: i64,
+            archived: i64,
+        }
+
+        let row = build_networks_counts_query_with_text_search_mode(
+            req,
+            NetworkTextSearchMode::Substring,
+        )
+        .into_model::<Row>()
+        .one(db)
+        .await
+        .c(h!())?
+        .c(h!())?;
+
+        return Ok(ListNetworksStatusCountsRsp {
+            active: row.active,
+            inactive: row.inactive,
+            archived: row.archived,
+        });
+    }
+
+    let (active, inactive, archived) = tokio::try_join!(
+        count_networks_for_status(
+            db,
+            req,
+            ListNetworksStatusFilter::ListNetworksActive,
+        ),
+        count_networks_for_status(
+            db,
+            req,
+            ListNetworksStatusFilter::ListNetworksInactive,
+        ),
+        count_networks_for_status(
+            db,
+            req,
+            ListNetworksStatusFilter::ListNetworksArchived,
+        ),
+    )?;
+
+    Ok(ListNetworksStatusCountsRsp {
+        active,
+        inactive,
+        archived,
+    })
 }
 
 #[post("/api/sigint/restore-network")]
@@ -5092,7 +5148,66 @@ mod tests {
 
     #[tokio::test]
     #[serial]
-    async fn global_text_search_mode_is_independent_of_status_filter() {
+    async fn global_text_search_mode_respects_status_filter() {
+        let env = cleanup().await.unwrap();
+        let active_network = mk_network_with_unit_name(
+            &env.dbx,
+            "активна мережа",
+            "2 мсб 164 омсбр 25 А",
+        )
+        .await;
+        let archived_network = mk_network_with_unit(
+            &env.dbx,
+            sigint_network::ActiveModel {
+                name: Set("архівна мережа".to_string()),
+                deleted: Set(true),
+                ..Default::default()
+            },
+            sigint_unit::ActiveModel {
+                name: Set("6 омсбр 3 А".to_string()),
+                ..Default::default()
+            },
+        )
+        .await;
+        let mut req = empty_list_networks_req();
+        req.filter_text = Some("6 омсбр".to_string());
+
+        let text_search_mode = resolve_network_text_search_mode(&env.dbx, &req)
+            .await
+            .unwrap();
+        let networks = build_networks_query_with_text_search_mode(
+            &req,
+            NetworkQueryKind::List,
+            text_search_mode,
+        )
+        .all(&env.dbx)
+        .await
+        .unwrap();
+
+        assert_eq!(text_search_mode, NetworkTextSearchMode::Substring);
+        assert_eq!(networks, vec![active_network]);
+
+        req.status_filter =
+            Some(ListNetworksStatusFilter::ListNetworksArchived);
+        let text_search_mode = resolve_network_text_search_mode(&env.dbx, &req)
+            .await
+            .unwrap();
+        let networks = build_networks_query_with_text_search_mode(
+            &req,
+            NetworkQueryKind::List,
+            text_search_mode,
+        )
+        .all(&env.dbx)
+        .await
+        .unwrap();
+
+        assert_eq!(text_search_mode, NetworkTextSearchMode::ExactWord);
+        assert_eq!(networks, vec![archived_network]);
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn status_counts_resolve_text_search_mode_per_status() {
         let env = cleanup().await.unwrap();
         mk_network_with_unit_name(
             &env.dbx,
@@ -5108,6 +5223,19 @@ mod tests {
                 ..Default::default()
             },
             sigint_unit::ActiveModel {
+                name: Set("2 мсб 264 омсбр 25 А".to_string()),
+                ..Default::default()
+            },
+        )
+        .await;
+        mk_network_with_unit(
+            &env.dbx,
+            sigint_network::ActiveModel {
+                name: Set("архівна мережа".to_string()),
+                deleted: Set(true),
+                ..Default::default()
+            },
+            sigint_unit::ActiveModel {
                 name: Set("6 омсбр 3 А".to_string()),
                 ..Default::default()
             },
@@ -5115,13 +5243,23 @@ mod tests {
         .await;
         let mut req = empty_list_networks_req();
         req.filter_text = Some("6 омсбр".to_string());
-        req.status_filter = Some(ListNetworksStatusFilter::ListNetworksActive);
 
-        let text_search_mode = resolve_network_text_search_mode(&env.dbx, &req)
-            .await
-            .unwrap();
+        let active_tab_counts =
+            load_network_status_counts(&env.dbx, &req).await.unwrap();
+        req.status_filter =
+            Some(ListNetworksStatusFilter::ListNetworksArchived);
+        let archived_tab_counts =
+            load_network_status_counts(&env.dbx, &req).await.unwrap();
 
-        assert_eq!(text_search_mode, NetworkTextSearchMode::ExactWord);
+        assert_eq!(
+            active_tab_counts,
+            ListNetworksStatusCountsRsp {
+                active: 1,
+                inactive: 1,
+                archived: 1,
+            }
+        );
+        assert_eq!(archived_tab_counts, active_tab_counts);
     }
 
     #[tokio::test]
