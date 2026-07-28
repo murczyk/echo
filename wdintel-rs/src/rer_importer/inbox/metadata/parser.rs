@@ -91,7 +91,7 @@ fn is_metadata_only_line(line: &str) -> bool {
               | [iі]d\s*(?:➡️?)?\s*:?\s*(?:\d+(?:\s*\([^)]+\))?(?:\s*,\s*\d+(?:\s*\([^)]+\))?)*|нв|-)
               | [iі]d\s*:\s*[^;\r\n]+;
               | хеш\s+[iі]d\s*:\s*[0-9a-f]+
-              | 👥\s*:\s*[^🔐\r\n]+?\s*🔐
+              | 👥\s*:\s*[^🔐\r\n]+?\s*🔐(?:\s*[0-9a-f]+)?
               | ⬅️\s*:?\s*(?:\d+|нв|-)(?:\s*\([^)]+\))?
               | ➡️\s*:?\s*(?:\d+(?:\s*\([^)]+\))?(?:\s*,\s*\d+(?:\s*\([^)]+\))?)*|нв|-)
             )
@@ -359,7 +359,7 @@ pub fn parse_hash_id(line: &NormalizedLine) -> Option<MatchedValue> {
     }
     lazy_static! {
         static ref RE_HASH_ID_EMOJI: Regex =
-            Regex::new(r#"👥\s*:\s*([^🔐\r\n]+?)\s*🔐"#).unwrap();
+            Regex::new(r#"(?i)🔐\s*([0-9a-f]+)"#).unwrap();
     }
     parse_value_from_regexes(line, &[&RE_HASH_ID])
         .or_else(|| parse_value_from_regexes(line, &[&RE_HASH_ID_EMOJI]))
@@ -373,32 +373,44 @@ pub fn parse_metadata_line(line: &NormalizedLine) -> Vec<WorkingMetadata> {
 }
 
 fn parse_metadata_line_grouped(line: &NormalizedLine) -> Vec<WorkingMetadata> {
+    let line = line_through_first_repeated_lock(line);
     let common = WorkingMetadata {
-        id: parse_mid(line).unwrap_or_default(),
-        id_name: parse_mid_id(line).unwrap_or_default(),
+        id: parse_mid(&line).unwrap_or_default(),
+        id_name: parse_mid_id(&line).unwrap_or_default(),
         ..Default::default()
     };
-    let mut result = if let Some(abonents) = parse_emoji_abonent_lists(line) {
+    let hash_id = parse_hash_id(&line).unwrap_or_default();
+    let mut result = if let Some(abonents) = parse_emoji_abonent_lists(&line) {
         abonents
             .into_iter()
             .map(|(sender, receiver)| WorkingMetadata {
                 id: sender,
                 receiver,
+                hash_id: hash_id.clone(),
                 ..common.clone()
             })
             .collect()
     } else {
-        vec![WorkingMetadata {
-            hash_id: parse_hash_id(line).unwrap_or_default(),
-            ..common
-        }]
+        vec![WorkingMetadata { hash_id, ..common }]
     };
-    let mut cg_parts = parse_cg_parts(line);
+    let mut cg_parts = parse_cg_parts(&line);
     cg_parts.sort_by_key(|(start, _)| *start);
     result = apply_cg_parts(result, cg_parts);
-    result = attach_color_codes(result, parse_color_codes(line));
+    result = attach_color_codes(result, parse_color_codes(&line));
 
     result
+}
+
+fn line_through_first_repeated_lock(line: &NormalizedLine) -> NormalizedLine {
+    let mut locks = line.raw_text.match_indices('🔐');
+    let Some((first_lock_index, first_lock)) = locks.next() else {
+        return line.clone();
+    };
+    if locks.next().is_none() {
+        return line.clone();
+    }
+    let first_lock_end = first_lock_index + first_lock.len();
+    NormalizedLine::new(line.raw_text[..first_lock_end].to_string())
 }
 
 fn apply_cg_parts(
@@ -443,19 +455,21 @@ fn attach_color_codes(
 fn parse_emoji_abonent_lists(
     line: &NormalizedLine,
 ) -> Option<Vec<(MatchedValue, MatchedValue)>> {
+    let line = line_with_at_most_two_emoji_abonent_markers(line);
+
     lazy_static! {
         static ref RE_ABONENT_LIST: Regex = Regex::new(
-            r#"👥\s*:\s*(?:\d{3}[.,]\d{3,4}\s*(?i:мгц)\s*)?((?:\d+\s*[,/]\s*)+\d+)\s*🔐"#
+            r#"👥\s*:\s*[,/]?\s*(?:\d{3}[.,]\d{3,4}\s*(?i:мгц)\s*)?((?:\d+\s*[,/]\s*)+\d+)\s*🔐"#
         )
         .unwrap();
         static ref RE_SEPARATE_ABONENT_LISTS: Regex = Regex::new(
-            r#"👥\s*:\s*(?:\d{3}[.,]\d{3,4}\s*(?i:мгц)\s*)?(\d+(?:\s*[,/]\s*\d+)*)\s*[,/]?\s*👥\s*:\s*(?:\d{3}[.,]\d{3,4}\s*(?i:мгц)\s*)?(\d+(?:\s*[,/]\s*\d+)*)\s*🔐"#
+            r#"👥\s*:\s*[,/]?\s*(?:\d{3}[.,]\d{3,4}\s*(?i:мгц)\s*)?(\d+(?:\s*[,/]\s*\d+)*)\s*[,/]?\s*👥\s*:\s*[,/]?\s*(?:\d{3}[.,]\d{3,4}\s*(?i:мгц)\s*)?(\d+(?:\s*[,/]\s*\d+)*)\s*🔐"#
         )
         .unwrap();
     }
 
     let separate_groups =
-        parse_separate_emoji_abonent_groups(line, &RE_SEPARATE_ABONENT_LISTS);
+        parse_separate_emoji_abonent_groups(&line, &RE_SEPARATE_ABONENT_LISTS);
     let separate_spans = separate_groups
         .iter()
         .map(|(start, end, _)| (*start, *end))
@@ -465,7 +479,7 @@ fn parse_emoji_abonent_lists(
         .map(|(start, _, abonents)| (start, abonents))
         .collect::<Vec<_>>();
     groups.extend(parse_single_emoji_abonent_groups(
-        line,
+        &line,
         &RE_ABONENT_LIST,
         &separate_spans,
     ));
@@ -475,6 +489,25 @@ fn parse_emoji_abonent_lists(
         .flat_map(|(_, abonents)| abonents)
         .collect::<Vec<_>>();
     (!abonents.is_empty()).then_some(abonents)
+}
+
+fn line_with_at_most_two_emoji_abonent_markers(
+    line: &NormalizedLine,
+) -> NormalizedLine {
+    let Some((third_marker_index, _)) =
+        line.raw_text.match_indices('👥').nth(2)
+    else {
+        return line.clone();
+    };
+    let mut prefix = line.raw_text[..third_marker_index]
+        .trim_end_matches(|ch: char| {
+            ch.is_whitespace() || matches!(ch, ',' | '/')
+        })
+        .to_string();
+    if line.raw_text[third_marker_index..].contains('🔐') {
+        prefix.push('🔐');
+    }
+    NormalizedLine::new(prefix)
 }
 
 fn parse_separate_emoji_abonent_groups(
