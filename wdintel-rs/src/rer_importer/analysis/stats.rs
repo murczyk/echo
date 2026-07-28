@@ -162,6 +162,26 @@ where
     }
 }
 
+fn filter_selected_networks_for_scope<E>(
+    query: Select<E>,
+    selected_networks: &Option<Vec<i64>>,
+    without_network: &Option<bool>,
+    scope: Option<&AnalyticsMessageIdScope>,
+) -> Result<Select<E>, AppError>
+where
+    E: EntityTrait,
+{
+    if scope.is_some() {
+        filter_selected_networks_analytics(
+            query,
+            selected_networks,
+            without_network,
+        )
+    } else {
+        filter_selected_networks(query, selected_networks, without_network)
+    }
+}
+
 async fn count_distinct_with_db<E>(
     query: Select<E>,
     expression: SimpleExpr,
@@ -474,10 +494,11 @@ fn build_groups_query(
     let groups_res =
         filter_selected_callsigns(groups_res, &req.selected_callsigns)
             .context(h!())?;
-    let groups_res = filter_selected_networks(
+    let groups_res = filter_selected_networks_for_scope(
         groups_res,
         &req.selected_networks,
         &req.without_network,
+        scope,
     )
     .context(h!())?;
     let groups_res = apply_metadata_filters(groups_res, req)?;
@@ -784,10 +805,11 @@ fn build_senders_filtered_query(
         req.report_tags_only_this_unit.unwrap_or(false),
     )
     .context(h!())?;
-    let senders_res = filter_selected_networks(
+    let senders_res = filter_selected_networks_for_scope(
         senders_res,
         &req.selected_networks,
         &req.without_network,
+        scope,
     )
     .context(h!())?;
     let senders_res = apply_metadata_filters(senders_res, &req.0)?;
@@ -1113,10 +1135,11 @@ fn build_posts_filtered_query(
         req.report_tags_only_this_unit.unwrap_or(false),
     )
     .context(h!())?;
-    let post_res = filter_selected_networks(
+    let post_res = filter_selected_networks_for_scope(
         post_res,
         &req.selected_networks,
         &req.without_network,
+        scope,
     )
     .context(h!())?;
     let post_res = apply_metadata_filters(post_res, &req.0)?;
@@ -1399,10 +1422,11 @@ fn build_freqs_filtered_query(
         req.report_tags_only_this_unit.unwrap_or(false),
     )
     .context(h!())?;
-    let freqs_res = filter_selected_networks(
+    let freqs_res = filter_selected_networks_for_scope(
         freqs_res,
         &req.selected_networks,
         &req.without_network,
+        scope,
     )
     .context(h!())?;
     let freqs_res = apply_metadata_filters(freqs_res, req)?;
@@ -1994,10 +2018,11 @@ fn build_callsigns_filtered_query(
         req.report_tags_only_this_unit.unwrap_or(false),
     )
     .context(h!())?;
-    let callsigns_res = filter_selected_networks(
+    let callsigns_res = filter_selected_networks_for_scope(
         callsigns_res,
         &req.selected_networks,
         &req.without_network,
+        scope,
     )
     .context(h!())?;
     let callsigns_res = apply_metadata_filters(callsigns_res, req)?;
@@ -2549,11 +2574,19 @@ fn build_tags_filtered_query_with_owner_condition(
             report_tags_only_this_unit,
         )?
     };
-    let tags_res = filter_selected_networks(
-        tags_res,
-        &req.selected_networks,
-        &req.without_network,
-    )
+    let tags_res = if analytics_tag_access.is_some() {
+        filter_selected_networks_analytics(
+            tags_res,
+            &req.selected_networks,
+            &req.without_network,
+        )
+    } else {
+        filter_selected_networks(
+            tags_res,
+            &req.selected_networks,
+            &req.without_network,
+        )
+    }
     .context(h!())?;
     let tags_res = apply_metadata_filters(tags_res, req)?;
     let tags_res = filter_search(tags_res, &req.search)?;
@@ -2832,10 +2865,11 @@ fn build_units_filtered_query(
         req.report_tags_only_this_unit.unwrap_or(false),
     )
     .context(h!())?;
-    let units_res = filter_selected_networks(
+    let units_res = filter_selected_networks_for_scope(
         units_res,
         &req.selected_networks,
         &req.without_network,
+        scope,
     )
     .context(h!())?;
     let units_res = apply_metadata_filters(units_res, &req.0)?;
@@ -3093,10 +3127,11 @@ fn build_locations_filtered_query_for_login(
         req.report_tags_only_this_unit.unwrap_or(false),
     )
     .context(h!())?;
-    let locations_res = filter_selected_networks(
+    let locations_res = filter_selected_networks_for_scope(
         locations_res,
         &req.selected_networks,
         &req.without_network,
+        scope,
     )
     .context(h!())?;
     let locations_res = apply_metadata_filters(locations_res, req)?;
@@ -4123,10 +4158,11 @@ fn build_network_analytics_messages_query(
         .context(h!())?;
     let messages =
         filter_selected_aors(messages, &req.selected_aors).context(h!())?;
-    let messages = filter_selected_networks(
+    let messages = filter_selected_networks_for_scope(
         messages,
         &req.selected_networks,
         &req.without_network,
+        scope,
     )
     .context(h!())?;
     let messages = apply_metadata_filters(messages, req)?;
@@ -5093,10 +5129,11 @@ async fn fetch_counts_for_login_with_conn(
         req.report_tags_only_this_unit.unwrap_or(false),
     )
     .context(h!())?;
-    let selected_count_res = filter_selected_networks(
+    let selected_count_res = filter_selected_networks_for_scope(
         selected_count_res,
         &req.selected_networks,
         &req.without_network,
+        scope,
     )
     .context(h!())?;
     let selected_count_res =

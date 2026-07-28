@@ -2113,6 +2113,46 @@ where
     Ok(q)
 }
 
+pub fn filter_selected_networks_analytics<E>(
+    q: Select<E>,
+    selected_networks: &Option<Vec<i64>>,
+    without_network: &Option<bool>,
+) -> Result<Select<E>, AppError>
+where
+    E: EntityTrait,
+{
+    let selected_network_ids =
+        selected_networks.as_ref().filter(|ids| !ids.is_empty());
+    if without_network.unwrap_or(false) || selected_network_ids.is_none() {
+        return filter_selected_networks(q, selected_networks, without_network);
+    }
+
+    let inbox_network_alias = Alias::new("analytics_network_filter_link");
+    let network_alias = Alias::new("analytics_network_filter");
+    Ok(q.join_as(
+        JoinType::InnerJoin,
+        sigint_inbox_item::Relation::SigintInboxItemNetwork.def(),
+        inbox_network_alias.clone(),
+    )
+    .join_as(
+        JoinType::InnerJoin,
+        sigint_inbox_item_network::Relation::SigintNetwork
+            .def()
+            .from_alias(inbox_network_alias.clone()),
+        network_alias.clone(),
+    )
+    .filter(
+        Expr::col((
+            inbox_network_alias,
+            sigint_inbox_item_network::Column::SigintNetworkId,
+        ))
+        .is_in(selected_network_ids.cloned().unwrap_or_default()),
+    )
+    .filter(
+        Expr::col((network_alias, sigint_network::Column::Deleted)).eq(false),
+    ))
+}
+
 pub fn filter_selected_networks_stmt(
     mut q: SelectStatement,
     selected_networks: &Option<Vec<i64>>,
@@ -6114,6 +6154,8 @@ pub(crate) fn analytics_inbox_request_supported(
     req.search
         .as_ref()
         .is_none_or(|search| search.trim().is_empty())
+        && req.selected_units.as_ref().is_none_or(Vec::is_empty)
+        && req.denied_units.as_ref().is_none_or(Vec::is_empty)
         && (req
             .since_date_inclusive_ms
             .is_some_and(|since_date| since_date > 0)

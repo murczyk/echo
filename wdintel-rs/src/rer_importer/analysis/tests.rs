@@ -1275,6 +1275,62 @@ fn analytics_tags_query_keeps_flat_result_tag_join() {
 }
 
 #[test]
+fn analytics_tags_selected_networks_use_flat_joins() {
+    let mut req = mk_analysis_stats_req(0, 1);
+    req.selected_networks = Some(vec![1, 2]);
+    let query = stats::build_tags_analytics_filtered_query(
+        &req,
+        &uuid::Uuid::nil(),
+        &[1],
+        &[],
+        test_dt(2026, 1, 1, 0, 0),
+        test_dt(2026, 1, 2, 0, 0),
+        vec!["group".to_string()],
+    )
+    .unwrap();
+    let sql = query.build(DbBackend::Postgres).to_string();
+
+    assert!(
+        sql.contains(
+            "INNER JOIN \"sigint_inbox_item_network\" AS \
+             \"analytics_network_filter_link\""
+        ),
+        "{sql}"
+    );
+    assert!(
+        sql.contains(
+            "INNER JOIN \"sigint_network\" AS \"analytics_network_filter\""
+        ),
+        "{sql}"
+    );
+    assert!(
+        sql.contains(
+            "\"analytics_network_filter_link\".\"sigint_network_id\" IN (1, 2)"
+        ),
+        "{sql}"
+    );
+    assert!(!sql.contains("\"iin_network_filter\""), "{sql}");
+}
+
+#[test]
+fn postgres_tags_selected_networks_keep_correlated_filter() {
+    let mut req = mk_analysis_stats_req(0, 1);
+    req.selected_networks = Some(vec![1, 2]);
+    let query = stats::build_tags_query(
+        &req,
+        &uuid::Uuid::nil(),
+        test_dt(2026, 1, 1, 0, 0),
+        test_dt(2026, 1, 2, 0, 0),
+        vec!["group".to_string()],
+    )
+    .unwrap();
+    let sql = query.to_string(PostgresQueryBuilder);
+
+    assert!(sql.contains("\"iin_network_filter\""), "{sql}");
+    assert!(!sql.contains("\"analytics_network_filter_link\""), "{sql}");
+}
+
+#[test]
 fn postgres_tags_exact_unit_query_only_uses_linked_candidates() {
     let mut req = mk_analysis_stats_req(0, 1);
     req.selected_units = Some(vec!["unit".to_string()]);
@@ -6293,6 +6349,20 @@ fn analytical_inbox_reads_support_callsign_filters_but_reject_search() {
     req.search = None;
     req.selected_callsigns = Some(vec!["ALPHA".to_string()]);
     assert!(analytics_inbox_request_supported(&req));
+}
+
+#[test]
+fn analytical_inbox_reads_reject_unit_filters() {
+    let mut req = InboxMessagesReq {
+        since_date_inclusive_ms: Some(1),
+        ..Default::default()
+    };
+    req.selected_units = Some(vec!["unit".to_string()]);
+    assert!(!analytics_inbox_request_supported(&req));
+
+    req.selected_units = None;
+    req.denied_units = Some(vec!["unit".to_string()]);
+    assert!(!analytics_inbox_request_supported(&req));
 }
 
 #[tokio::test]
