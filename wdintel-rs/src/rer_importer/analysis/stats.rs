@@ -2256,18 +2256,34 @@ fn build_tags_query_parts(
 > {
     let mut ctes = Vec::new();
     let matching_network_ids_alias = Alias::new("matching_unit_network_ids");
+    let matching_inbox_item_ids_alias =
+        Alias::new("matching_unit_inbox_item_ids");
     let matching_network_ids = selected_unit_network_ids_query(
         &req.selected_units,
         &req.units_exact_match_only,
     );
-    let precomputed_network_ids_alias = matching_network_ids
+    let precomputed_inbox_item_ids_alias = matching_network_ids
         .as_ref()
-        .map(|_| matching_network_ids_alias.clone());
+        .map(|_| matching_inbox_item_ids_alias.clone());
     if let Some(matching_network_ids) = matching_network_ids {
         ctes.push(
             CommonTableExpression::new()
                 .query(matching_network_ids)
-                .table_name(matching_network_ids_alias)
+                .table_name(matching_network_ids_alias.clone())
+                .materialized(true)
+                .to_owned(),
+        );
+        let matching_inbox_item_ids = selected_unit_inbox_item_ids_query(
+            &req.selected_units,
+            &req.units_exact_match_only,
+            matching_network_ids_alias,
+            dt_since,
+            dt_till,
+        )?;
+        ctes.push(
+            CommonTableExpression::new()
+                .query(matching_inbox_item_ids)
+                .table_name(matching_inbox_item_ids_alias)
                 .materialized(true)
                 .to_owned(),
         );
@@ -2283,7 +2299,7 @@ fn build_tags_query_parts(
         master_keys,
         None,
         false,
-        precomputed_network_ids_alias,
+        precomputed_inbox_item_ids_alias,
     )?
     .select_only()
     .column(sigint_inbox_item::Column::Id)
@@ -2401,7 +2417,7 @@ fn build_tags_filtered_query_with_owner_condition(
     master_keys: Vec<String>,
     scope: Option<&AnalyticsMessageIdScope>,
     join_result_tags: bool,
-    matching_network_ids_alias: Option<Alias>,
+    matching_inbox_item_ids_alias: Option<Alias>,
 ) -> Result<Select<sigint_inbox_item::Entity>, AppError> {
     let include_peleng_locations =
         req.include_peleng_locations.unwrap_or(false);
@@ -2467,21 +2483,26 @@ fn build_tags_filtered_query_with_owner_condition(
     )?;
     let tags_res = filter_selected_freqs(tags_res, &req.selected_freqs)?;
     let tags_res = filter_selected_posts(tags_res, &req.selected_posts)?;
-    let tags_res =
-        if let Some(matching_network_ids_alias) = matching_network_ids_alias {
-            filter_selected_units_with_network_ids(
-                tags_res,
-                &req.selected_units,
-                &req.units_exact_match_only,
-                matching_network_ids_alias,
-            )?
-        } else {
-            filter_selected_units(
-                tags_res,
-                &req.selected_units,
-                &req.units_exact_match_only,
-            )?
-        };
+    let tags_res = if let Some(matching_inbox_item_ids_alias) =
+        matching_inbox_item_ids_alias
+    {
+        let matching_inbox_item_ids = Query::select()
+            .column((
+                matching_inbox_item_ids_alias.clone(),
+                sigint_inbox_item::Column::Id,
+            ))
+            .from(matching_inbox_item_ids_alias)
+            .to_owned();
+        tags_res.filter(
+            sigint_inbox_item::Column::Id.in_subquery(matching_inbox_item_ids),
+        )
+    } else {
+        filter_selected_units(
+            tags_res,
+            &req.selected_units,
+            &req.units_exact_match_only,
+        )?
+    };
     let tags_res = filter_selected_locations(
         tags_res,
         &req.selected_locations,

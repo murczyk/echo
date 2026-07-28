@@ -1224,6 +1224,12 @@ fn postgres_tags_query_filters_inbox_ids_before_joining_result_tags() {
         sql.starts_with("WITH \"matching_unit_network_ids\""),
         "{sql}"
     );
+    assert!(
+        sql.contains(", \"matching_unit_inbox_item_ids\" AS"),
+        "{sql}"
+    );
+    assert_eq!(sql.matches("MATERIALIZED").count(), 3, "{sql}");
+    assert!(sql.contains(" UNION ALL "), "{sql}");
     assert!(sql.contains(", \"filtered_inbox_items\" AS"), "{sql}");
     assert!(sql.contains("MATERIALIZED ("));
     let filtered_ids_start = sql
@@ -1233,6 +1239,10 @@ fn postgres_tags_query_filters_inbox_ids_before_joining_result_tags() {
 
     assert!(sql.contains("FROM \"sigint_inbox_item_tag\" INNER JOIN \"tag\""));
     assert!(!filtered_ids_sql.contains("JOIN \"sigint_inbox_item_tag\""));
+    assert!(
+        !filtered_ids_sql.contains("\"selected_unit_inbox_network\""),
+        "{filtered_ids_sql}"
+    );
     assert_eq!(
         sql.matches("\"sigint_inbox_item_tag\".\"model\" IS NULL")
             .count(),
@@ -1260,6 +1270,44 @@ fn analytics_tags_query_keeps_flat_result_tag_join() {
     assert!(sql.contains("INNER JOIN \"sigint_inbox_item_tag\""));
     assert!(!sql.contains("WITH \"filtered_inbox_items\""));
     assert!(!sql.contains("WITH \"matching_unit_network_ids\""));
+    assert!(!sql.contains("WITH \"matching_unit_inbox_item_ids\""));
+    assert!(sql.contains("\"selected_unit_inbox_network\""), "{sql}");
+}
+
+#[test]
+fn postgres_tags_exact_unit_query_only_uses_linked_candidates() {
+    let mut req = mk_analysis_stats_req(0, 1);
+    req.selected_units = Some(vec!["unit".to_string()]);
+    req.units_exact_match_only = Some(true);
+    let query = stats::build_tags_query(
+        &req,
+        &uuid::Uuid::nil(),
+        test_dt(2026, 1, 1, 0, 0),
+        test_dt(2026, 1, 2, 0, 0),
+        vec!["group".to_string()],
+    )
+    .unwrap();
+    let sql = DbBackend::Postgres.build(&query).sql;
+    let matching_ids_start = sql
+        .find("\"matching_unit_inbox_item_ids\" AS")
+        .expect("missing matching inbox-ID CTE");
+    let filtered_ids_start = sql
+        .find(", \"filtered_inbox_items\" AS")
+        .expect("missing filtered inbox-ID CTE");
+    let matching_ids_sql = &sql[matching_ids_start..filtered_ids_start];
+
+    assert!(
+        matching_ids_sql.contains("\"selected_linked_unit_inbox_item\""),
+        "{matching_ids_sql}"
+    );
+    assert!(
+        !matching_ids_sql.contains("\"selected_header_unit_inbox_item\""),
+        "{matching_ids_sql}"
+    );
+    assert!(
+        !matching_ids_sql.contains("UNION ALL"),
+        "{matching_ids_sql}"
+    );
 }
 
 #[tokio::test]
@@ -3803,7 +3851,7 @@ async fn rer_analysis_units_exact_and_undefined_filters_work() {
         .await
         .unwrap();
 
-    mk_analysis_message(
+    let msg_unknown = mk_analysis_message(
         db,
         "msg-unit-unknown",
         "944.3",
@@ -3814,6 +3862,28 @@ async fn rer_analysis_units_exact_and_undefined_filters_work() {
     )
     .await
     .unwrap();
+    let unit_tag = mk_tag(
+        db,
+        tag::ActiveModel {
+            label: Set("Unit filter tag".to_string()),
+            enabled: Set(true),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    for message_id in [msg_etalon.id, msg_header_only.id, msg_unknown.id] {
+        mk_sigint_inbox_item_tag(
+            db,
+            sigint_inbox_item_tag::ActiveModel {
+                sigint_inbox_item_id: Set(message_id),
+                tag_id: Set(unit_tag.id),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+    }
 
     let mut req = analysis_stats_req_for_aor_fixture(&fixture);
     req.selected_units = Some(vec!["Header Unit".to_string()]);
@@ -3828,6 +3898,10 @@ async fn rer_analysis_units_exact_and_undefined_filters_work() {
         fetch_freq_counts_for_req(&fixture.env, &req).await.unwrap(),
         BTreeMap::from([("944.2".to_string(), 1)])
     );
+    assert_eq!(
+        fetch_tag_counts_for_req(&fixture.env, &req).await.unwrap(),
+        BTreeMap::from([(unit_tag.id, 1)])
+    );
 
     req.units_exact_match_only = Some(true);
     assert_eq!(
@@ -3837,6 +3911,10 @@ async fn rer_analysis_units_exact_and_undefined_filters_work() {
         0
     );
     assert!(fetch_freq_counts_for_req(&fixture.env, &req)
+        .await
+        .unwrap()
+        .is_empty());
+    assert!(fetch_tag_counts_for_req(&fixture.env, &req)
         .await
         .unwrap()
         .is_empty());
@@ -3854,6 +3932,10 @@ async fn rer_analysis_units_exact_and_undefined_filters_work() {
         fetch_freq_counts_for_req(&fixture.env, &req).await.unwrap(),
         BTreeMap::from([("944.1".to_string(), 1)])
     );
+    assert_eq!(
+        fetch_tag_counts_for_req(&fixture.env, &req).await.unwrap(),
+        BTreeMap::from([(unit_tag.id, 1)])
+    );
 
     let mut req = analysis_stats_req_for_aor_fixture(&fixture);
     req.selected_units = Some(vec!["Не визначено".to_string()]);
@@ -3866,6 +3948,10 @@ async fn rer_analysis_units_exact_and_undefined_filters_work() {
     assert_eq!(
         fetch_freq_counts_for_req(&fixture.env, &req).await.unwrap(),
         BTreeMap::from([("944.3".to_string(), 1)])
+    );
+    assert_eq!(
+        fetch_tag_counts_for_req(&fixture.env, &req).await.unwrap(),
+        BTreeMap::from([(unit_tag.id, 1)])
     );
 }
 
