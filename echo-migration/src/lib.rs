@@ -313,15 +313,15 @@ mod m20260724_080724_add_login_password_auth_enabled;
 mod m20260724_095619_add_report_generation_settings;
 mod m20260725_082926_index_network_callsign_lower;
 mod m20260725_110839_add_audio_transcription_collapse_preferences;
-mod m20260725_120000_group_stats_recalculation_task;
 mod m20260727_065339_fix_direct_submit_profile_names;
 mod m20260727_075435_add_ai_engines;
-mod m20260727_080639_group_stats_recalculation_task_pending_unique;
 mod m20260727_094537_add_ai_callsign_parsing;
 mod m20260727_101425_propagate_network_callsign_full_name;
 mod m20260727_102348_add_ai_callsign_worker;
 mod m20260727_162911_add_analysis_callsign_form_setting;
 mod m20260728_084158_index_inbox_item_unit_datetime;
+mod m20260728_085448_group_stats_recalculation_task;
+mod m20260728_085449_group_stats_recalculation_task_pending_unique;
 
 pub struct Migrator;
 
@@ -696,14 +696,8 @@ impl MigratorTrait for Migrator {
             Box::new(
                 m20260725_110839_add_audio_transcription_collapse_preferences::Migration,
             ),
-            Box::new(
-                m20260725_120000_group_stats_recalculation_task::Migration,
-            ),
             Box::new(m20260727_065339_fix_direct_submit_profile_names::Migration),
             Box::new(m20260727_075435_add_ai_engines::Migration),
-            Box::new(
-                m20260727_080639_group_stats_recalculation_task_pending_unique::Migration,
-            ),
             Box::new(m20260727_094537_add_ai_callsign_parsing::Migration),
             Box::new(
                 m20260727_101425_propagate_network_callsign_full_name::Migration,
@@ -714,6 +708,12 @@ impl MigratorTrait for Migrator {
             ),
             Box::new(
                 m20260728_084158_index_inbox_item_unit_datetime::Migration,
+            ),
+            Box::new(
+                m20260728_085448_group_stats_recalculation_task::Migration,
+            ),
+            Box::new(
+                m20260728_085449_group_stats_recalculation_task_pending_unique::Migration,
             ),
         ]
     }

@@ -226,11 +226,11 @@ flowchart TB
 Changes to a group's AOR assignments enqueue the affected activity window in
 the PostgreSQL `group_stats_recalculation_task` table. Pending windows are
 coalesced globally because each recalculation rebuilds global statistics. The
-worker claims one task at a time, rebuilds the coalesced window once, and marks
-it complete. Changes arriving after a task starts are stored in a follow-up
-task; failed work is requeued, stale tasks can be reclaimed, and completed rows
-are removed on the next pass. The regular recent-stat refresh still runs after
-the queued work in the same worker iteration.
+worker claims one task at a time, rebuilds at most one day, and requeues any
+remaining window. Changes arriving after a task starts are stored in a
+follow-up task; failed work is requeued, stale tasks can be reclaimed, and
+completed rows are removed on the next pass. The regular recent-stat refresh
+still runs after each historical chunk in the same worker iteration.
 
 ## GOI integration
 

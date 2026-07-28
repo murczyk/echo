@@ -318,13 +318,32 @@ pub async fn process_pending_group_stats_recalculation_task(
         return Ok(false);
     };
 
+    let chunk_till_ts = (task.since_ts
+        + Duration::days(GROUP_STATS_RECALCULATION_TASK_CHUNK_DAYS))
+    .min(task.till_ts);
     info!(
-        "recalculating queued group stats task id={} group={} from={} till={} reason={}",
-        task.id, task.group_master_key, task.since_ts, task.till_ts, task.reason
+        "recalculating queued group stats task id={} group={} from={} till={} remaining_till={} reason={}",
+        task.id,
+        task.group_master_key,
+        task.since_ts,
+        chunk_till_ts,
+        task.till_ts,
+        task.reason
     );
-    let result = recalculate_group_stats_task(dbx, &task).await;
+    let result = recalculate_group_stats_task(dbx, &task, chunk_till_ts).await;
     match result {
         Ok(()) => {
+            if chunk_till_ts < task.till_ts {
+                enqueue_pending_group_stats_task(
+                    dbx,
+                    &task.group_master_key,
+                    chunk_till_ts,
+                    task.till_ts,
+                    task.reason.clone(),
+                )
+                .await
+                .c(h!())?;
+            }
             let mut task = task.into_active_model();
             task.completed_at = Set(Some(Utc::now().naive_utc()));
             task.update(dbx).await.c(h!())?;
@@ -391,8 +410,9 @@ async fn claim_pending_group_stats_recalculation_task(
 async fn recalculate_group_stats_task(
     dbx: &DatabaseConnection,
     task: &group_stats_recalculation_task::Model,
+    chunk_till_ts: NaiveDateTime,
 ) -> Result<(), AppError> {
-    recalculate_group_stats(dbx, task.since_ts, task.till_ts, true, true)
+    recalculate_group_stats(dbx, task.since_ts, chunk_till_ts, true, true)
         .await
         .c(h!())?;
     Ok(())
@@ -4407,6 +4427,55 @@ mod tests {
                 .unwrap(),
             0
         );
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn test_process_group_stats_recalculation_requeues_after_daily_chunk()
+    {
+        let env = cleanup().await.unwrap();
+        let group = mk_signal_group(
+            &env.dbx,
+            signal_group::ActiveModel {
+                master_key: Set("stats-recalc-chunked-group".to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let since_ts =
+            round_to_5min(Utc::now().naive_utc()).unwrap() - Duration::days(3);
+        let till_ts = since_ts + Duration::days(3);
+        group_stats_recalculation_task::ActiveModel {
+            group_master_key: Set(group.master_key),
+            since_ts: Set(since_ts),
+            till_ts: Set(till_ts),
+            reason: Set("test daily chunk".to_string()),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+
+        assert!(process_pending_group_stats_recalculation_task(&env.dbx)
+            .await
+            .unwrap());
+
+        let tasks = group_stats_recalculation_task::Entity::find()
+            .order_by_asc(group_stats_recalculation_task::Column::Id)
+            .all(&env.dbx)
+            .await
+            .unwrap();
+        assert_eq!(tasks.len(), 2);
+        assert!(tasks[0].completed_at.is_some());
+        assert_eq!(
+            tasks[1].since_ts,
+            since_ts
+                + Duration::days(GROUP_STATS_RECALCULATION_TASK_CHUNK_DAYS)
+        );
+        assert_eq!(tasks[1].till_ts, till_ts);
+        assert!(tasks[1].started_at.is_none());
+        assert!(tasks[1].completed_at.is_none());
     }
 
     #[serial]

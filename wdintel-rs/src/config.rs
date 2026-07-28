@@ -316,6 +316,7 @@ pub const WORKER_CALCULATE_GROUP_STATS_SLEEP_SEC: u64 = 10;
 pub const GROUP_STATS_5MIN_TTL_DAYS: i64 = 14;
 pub const GROUP_STATS_DAY_TTL_DAYS: i64 = 365;
 pub const GROUP_STATS_RECALCULATION_TASK_STALE_MINUTES: i64 = 120;
+pub const GROUP_STATS_RECALCULATION_TASK_CHUNK_DAYS: i64 = 1;
 /// Minimum time to keep a long-poll request open to accumulate events
 pub const LONG_POLL_MIN_RESPONSE_TIME_MS: u64 = 500;
 pub const REDIS_MAXLEN: usize = 1000;
