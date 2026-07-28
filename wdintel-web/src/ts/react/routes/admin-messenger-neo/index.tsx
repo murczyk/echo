@@ -13,6 +13,7 @@ import {
   DialogContent,
   DialogTitle,
   Drawer,
+  InputAdornment,
   MenuItem,
   Stack,
   Tab,
@@ -77,6 +78,7 @@ import { PowerAlert } from '../../components/PowerAlert';
 import { GroupStatsTimelineCell } from '../admin-directions-neo/GroupStatsTimelineCell';
 import { AdminEchoMissingMessagesSection } from '../admin-echo-missing-messages';
 import { RestApiErrorsSection } from './RestApiErrorsSection';
+import { getSystemServicePrefix, useSystemServiceName } from './use-system-service-name';
 
 type LoadingStatus = 'idle' | 'loading' | 'success' | 'error';
 type AdminMessengerTab = 'accounts' | 'missingEchoIm' | 'restApiErrors';
@@ -251,63 +253,6 @@ function wait(ms: number): Promise<void> {
 function normalizeDescription(description: string): string | null {
   if (!description.trim()) return null;
   return description.trim();
-}
-
-function normalizeToSystemName(displayName: string): string {
-  const lower = displayName.toLowerCase();
-  const withHyphens = lower.replace(/\s+/g, '-');
-
-  const mapping: Record<string, string> = {
-    а: 'a',
-    б: 'b',
-    в: 'v',
-    г: 'h',
-    ґ: 'g',
-    д: 'd',
-    е: 'e',
-    є: 'ye',
-    ж: 'zh',
-    з: 'z',
-    и: 'y',
-    і: 'i',
-    ї: 'yi',
-    й: 'y',
-    к: 'k',
-    л: 'l',
-    м: 'm',
-    н: 'n',
-    о: 'o',
-    п: 'p',
-    р: 'r',
-    с: 's',
-    т: 't',
-    у: 'u',
-    ф: 'f',
-    х: 'kh',
-    ц: 'ts',
-    ч: 'ch',
-    ш: 'sh',
-    щ: 'shch',
-    ь: '',
-    ю: 'yu',
-    я: 'ya',
-  };
-
-  const mapped = Array.from(withHyphens)
-    .map((char) => mapping[char] ?? char)
-    .join('');
-
-  const filtered = mapped.replace(/[^a-z0-9_-]/gi, '');
-  const collapsed = filtered.replace(/-+/g, '-').replace(/^-+/, '').replace(/-+$/, '');
-
-  if (collapsed.length < 4) {
-    if (collapsed.length === 0) return 'account';
-    return `${collapsed}-${(collapsed.length + 1) % 1000}`;
-  }
-
-  if (collapsed.length > 50) return collapsed.slice(0, 50);
-
-  return collapsed;
 }
 
 function validateDisplayName(name: string): string | null {
@@ -827,6 +772,21 @@ function AdminMessengerAccountsSection() {
   const [linkStep, setLinkStep] = useState<LinkStep>('form');
   const [linkSidebarOpen, setLinkSidebarOpen] = useState(false);
   const [phoneForm, setPhoneForm] = useState<PhoneForm>(defaultPhoneForm);
+  const {
+    systemServiceName,
+    systemServiceNameError,
+    checkSystemServiceNameAvailability,
+    clearSystemServiceNameError,
+    editSystemServiceName,
+    resetSystemServiceName,
+    showSystemServiceNameError,
+    updateFromDisplayName,
+    validateSystemServiceNameInput,
+  } = useSystemServiceName({
+    active: linkSidebarOpen && linkStep === 'form',
+    displayName: phoneForm.name,
+    messengerType: phoneForm.messengerType,
+  });
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
   const [qrData, setQrData] = useState<QrData | null>(null);
   const [linkSuccessAccount, setLinkSuccessAccount] = useState<EchoAccountF1 | null>(null);
@@ -930,6 +890,7 @@ function AdminMessengerAccountsSection() {
     setLinkStep('form');
     setLinkSidebarOpen(false);
     setPhoneForm(defaultPhoneForm);
+    resetSystemServiceName();
     setFormErrors({});
     setQrData(null);
     setLinkSuccessAccount(null);
@@ -942,6 +903,9 @@ function AdminMessengerAccountsSection() {
     setLinkStatus(null);
     setLinkSuccessAccount(null);
     setQrData(null);
+    setPhoneForm(defaultPhoneForm);
+    setFormErrors({});
+    resetSystemServiceName();
   }
 
   function closeLinkSidebar() {
@@ -991,10 +955,12 @@ function AdminMessengerAccountsSection() {
     const nameError = validateDisplayName(phoneForm.name);
     if (nameError) errors.displayName = nameError;
 
+    const isSystemServiceNameValid = validateSystemServiceNameInput();
+
     const aorError = validateAorId(phoneForm.aorId);
     if (aorError) errors.aorId = aorError;
 
-    if (Object.keys(errors).length > 0) {
+    if (Object.keys(errors).length > 0 || !isSystemServiceNameValid) {
       setFormErrors(errors);
       return;
     }
@@ -1004,11 +970,21 @@ function AdminMessengerAccountsSection() {
       return;
     }
 
+    setIsMutating(true);
+    setLinkStatus(null);
+
+    try {
+      const isSystemServiceNameAvailable = await checkSystemServiceNameAvailability();
+      if (!isSystemServiceNameAvailable) return;
+    } finally {
+      setIsMutating(false);
+    }
+
     const request: LinkAccountReq = {
       messenger: phoneForm.messengerType,
       phone: phoneForm.phoneNumber,
       displayName: phoneForm.name.trim(),
-      systemServiceName: normalizeToSystemName(phoneForm.name),
+      systemServiceName,
       signalCliMode: phoneForm.signalCliMode,
       description: normalizeDescription(phoneForm.description),
       aorId: phoneForm.aorId,
@@ -1028,10 +1004,15 @@ function AdminMessengerAccountsSection() {
       setLinkStep('qr');
       await fetchQrCode(rsp.account.id);
     } catch (error) {
-      setLinkStatus({
-        kind: 'error',
-        message: `Помилка прив'язування акаунту: ${formatErrorMessage(error)}`,
-      });
+      const message = formatErrorMessage(error);
+      if (message.toLowerCase().includes('systemd unit')) {
+        showSystemServiceNameError(message);
+      } else {
+        setLinkStatus({
+          kind: 'error',
+          message: `Помилка прив'язування акаунту: ${message}`,
+        });
+      }
     } finally {
       setIsMutating(false);
     }
@@ -1258,13 +1239,15 @@ function AdminMessengerAccountsSection() {
                   select
                   label="Тип месенджера"
                   value={phoneForm.messengerType}
-                  onChange={(event) =>
+                  onChange={(event) => {
                     setPhoneForm((prev) => ({
                       ...prev,
                       messengerType: event.target.value,
-                    }))
-                  }
+                    }));
+                    clearSystemServiceNameError();
+                  }}
                   fullWidth
+                  disabled={isMutating}
                 >
                   <MenuItem value="signal">Signal</MenuItem>
                   <MenuItem value="whatsapp">WhatsApp</MenuItem>
@@ -1282,6 +1265,7 @@ function AdminMessengerAccountsSection() {
                         }))
                       }
                       fullWidth
+                      disabled={isMutating}
                     >
                       <MenuItem value="Normal">Normal (JVM)</MenuItem>
                       <MenuItem value="Native">Native</MenuItem>
@@ -1300,6 +1284,7 @@ function AdminMessengerAccountsSection() {
                     }
                     placeholder="+380XXXXXXXXX"
                     fullWidth
+                    disabled={isMutating}
                   />
                 </div>
                 <div className="pt-6">
@@ -1307,6 +1292,7 @@ function AdminMessengerAccountsSection() {
                     label="Назва акаунту"
                     value={phoneForm.name}
                     onChange={(event) => {
+                      updateFromDisplayName(event.target.value);
                       setPhoneForm((prev) => ({
                         ...prev,
                         name: event.target.value,
@@ -1316,6 +1302,28 @@ function AdminMessengerAccountsSection() {
                     error={Boolean(formErrors.displayName)}
                     helperText={formErrors.displayName}
                     fullWidth
+                    disabled={isMutating}
+                  />
+                </div>
+                <div className="pt-6">
+                  <TextField
+                    label="Назва systemd unit"
+                    value={systemServiceName}
+                    onChange={(event) => editSystemServiceName(event.target.value)}
+                    error={Boolean(systemServiceNameError)}
+                    helperText={systemServiceNameError}
+                    fullWidth
+                    disabled={isMutating}
+                    slotProps={{
+                      input: {
+                        startAdornment: (
+                          <InputAdornment position="start">
+                            {getSystemServicePrefix(phoneForm.messengerType)}
+                          </InputAdornment>
+                        ),
+                      },
+                      inputLabel: { shrink: true },
+                    }}
                   />
                 </div>
               </div>
@@ -1332,7 +1340,7 @@ function AdminMessengerAccountsSection() {
                 fullWidth
                 error={Boolean(formErrors.aorId)}
                 helperText={formErrors.aorId || ' '}
-                disabled={aorsStatus === 'loading'}
+                disabled={isMutating || aorsStatus === 'loading'}
               >
                 {aorsStatus === 'loading' ? (
                   <MenuItem value="">Завантаження...</MenuItem>
@@ -1353,6 +1361,7 @@ function AdminMessengerAccountsSection() {
                 multiline
                 rows={3}
                 fullWidth
+                disabled={isMutating}
               />
             </div>
 

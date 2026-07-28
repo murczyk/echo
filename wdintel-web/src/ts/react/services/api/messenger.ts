@@ -9,6 +9,8 @@ import {
   LinkAccountReq,
   LinkAccountRsp,
   LinkEchoOperatorReq,
+  SystemServiceNameAvailabilityReq,
+  SystemServiceNameAvailabilityRsp,
   GroupEntryF1,
   GroupUpdateReq,
   InterseptionKind,
@@ -53,6 +55,16 @@ type LinkAccountReqBody = {
   signal_cli_mode: string | null;
   description: string | null;
   aor_id: number;
+};
+
+type SystemServiceNameAvailabilityReqBody = {
+  messenger: string;
+  system_service_name: string;
+};
+
+type SystemServiceNameAvailabilityRspBody = {
+  system_service_name: string;
+  exists: boolean;
 };
 
 type LinkEchoOperatorReqBody = {
@@ -244,6 +256,15 @@ function toLinkAccountReqBody(req: LinkAccountReq): LinkAccountReqBody {
   };
 }
 
+function toSystemServiceNameAvailabilityReqBody(
+  req: SystemServiceNameAvailabilityReq,
+): SystemServiceNameAvailabilityReqBody {
+  return {
+    messenger: req.messenger,
+    system_service_name: req.systemServiceName,
+  };
+}
+
 function toLinkEchoOperatorReqBody(req: LinkEchoOperatorReq): LinkEchoOperatorReqBody {
   return {
     api_login: req.apiLogin,
@@ -354,6 +375,21 @@ export async function unlinkAccount(req: DeleteAccountReq): Promise<void> {
 
 export async function linkAccount(req: LinkAccountReq): Promise<LinkAccountRsp> {
   return postJson<LinkAccountRsp>('/api/messenger/link', toLinkAccountReqBody(req));
+}
+
+export async function getSystemServiceNameAvailability(
+  req: SystemServiceNameAvailabilityReq,
+  signal?: AbortSignal,
+): Promise<SystemServiceNameAvailabilityRsp> {
+  const rsp = await postJson<SystemServiceNameAvailabilityRspBody>(
+    '/api/messenger/system-service-name-availability',
+    toSystemServiceNameAvailabilityReqBody(req),
+    { signal },
+  );
+  return {
+    systemServiceName: rsp.system_service_name,
+    exists: rsp.exists,
+  };
 }
 
 export async function linkOperator(req: LinkEchoOperatorReq): Promise<LinkAccountRsp> {

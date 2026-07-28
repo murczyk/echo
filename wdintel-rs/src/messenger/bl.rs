@@ -156,11 +156,7 @@ pub async fn link_account(
     txn: &DatabaseTransaction,
     login: &Uuid,
 ) -> Result<EchoAccountF1, AppError> {
-    if !is_valid_service_name(system_service_name) {
-        return Err(AppError::BL {
-            msg: format!("Invalid system service name: {system_service_name}"),
-        });
-    }
+    validate_system_service_name(system_service_name)?;
     let source =
         EchoMessageSource::try_from_value(&source.to_string()).c(h!())?;
 
@@ -172,6 +168,11 @@ pub async fn link_account(
             (echo_im::types::MessageSource::Whatsapp, WHATSAPP_UNIT_NAME)
         }
     };
+    lock_system_service_name(system_service_name, txn)
+        .await
+        .c(h!())?;
+    ensure_system_service_name_available(system_service_name, &source, txn)
+        .await?;
     let unit_name = format!("{src_name}@{system_service_name}");
     let accounts = list_echo_accounts(None, txn).await.c(h!())?;
     let existing_account = accounts
@@ -294,6 +295,169 @@ pub async fn link_account(
     load_echo_account(id, txn).await
 }
 
+pub async fn available_system_service_name<C>(
+    system_service_name: &str,
+    messenger: &str,
+    db: &C,
+) -> Result<String, AppError>
+where
+    C: ConnectionTrait,
+{
+    validate_system_service_name(system_service_name)?;
+    let messenger = messenger.to_lowercase();
+    let source = EchoMessageSource::try_from_value(&messenger).c(h!())?;
+    let candidates = (1..=MESSENGER_SYSTEM_SERVICE_NAME_CANDIDATE_LIMIT)
+        .map(|candidate_number| {
+            system_service_name_with_suffix(
+                system_service_name,
+                candidate_number,
+            )
+        })
+        .collect_vec();
+    let (process_names, client_names) =
+        load_existing_system_service_names(&candidates, &source, db).await?;
+    if let Some(candidate) = candidates.into_iter().find(|candidate| {
+        is_system_service_name_available(
+            candidate,
+            &source,
+            &process_names,
+            &client_names,
+        )
+    }) {
+        return Ok(candidate);
+    }
+    Err(AppError::BL {
+        msg: "Не вдалося знайти вільну назву systemd unit".to_string(),
+    })
+}
+
+async fn ensure_system_service_name_available<C>(
+    system_service_name: &str,
+    source: &EchoMessageSource,
+    db: &C,
+) -> Result<(), AppError>
+where
+    C: ConnectionTrait,
+{
+    if system_service_name_exists(system_service_name, source, db).await? {
+        return Err(AppError::BL {
+            msg: format!(
+                "Systemd unit «{}» вже існує",
+                full_system_service_name(system_service_name, source)
+            ),
+        });
+    }
+    Ok(())
+}
+
+async fn system_service_name_exists<C>(
+    system_service_name: &str,
+    source: &EchoMessageSource,
+    db: &C,
+) -> Result<bool, AppError>
+where
+    C: ConnectionTrait,
+{
+    let candidates = [system_service_name.to_string()];
+    let (process_names, client_names) =
+        load_existing_system_service_names(&candidates, source, db).await?;
+    Ok(!is_system_service_name_available(
+        system_service_name,
+        source,
+        &process_names,
+        &client_names,
+    ))
+}
+
+async fn load_existing_system_service_names<C>(
+    candidates: &[String],
+    source: &EchoMessageSource,
+    db: &C,
+) -> Result<(HashSet<String>, HashSet<String>), AppError>
+where
+    C: ConnectionTrait,
+{
+    let process_names = candidates
+        .iter()
+        .map(|candidate| full_system_service_name(candidate, source))
+        .collect_vec();
+    let existing_names = echo_client_config::Entity::find()
+        .join(
+            JoinType::InnerJoin,
+            echo_client_config::Relation::EchoClient.def(),
+        )
+        .select_only()
+        .column(echo_client_config::Column::ProcessName)
+        .column(echo_client::Column::Name)
+        .filter(
+            Condition::any()
+                .add(
+                    echo_client_config::Column::ProcessName
+                        .is_in(process_names),
+                )
+                .add(
+                    echo_client::Column::Name.is_in(candidates.iter().cloned()),
+                ),
+        )
+        .into_tuple::<(String, String)>()
+        .all(db)
+        .await
+        .c(h!())?;
+    Ok(existing_names.into_iter().unzip())
+}
+
+fn is_system_service_name_available(
+    system_service_name: &str,
+    source: &EchoMessageSource,
+    process_names: &HashSet<String>,
+    client_names: &HashSet<String>,
+) -> bool {
+    !process_names
+        .contains(&full_system_service_name(system_service_name, source))
+        && !client_names.contains(system_service_name)
+}
+
+async fn lock_system_service_name(
+    system_service_name: &str,
+    txn: &DatabaseTransaction,
+) -> Result<(), AppError> {
+    txn.query_one(Statement::from_sql_and_values(
+        DatabaseBackend::Postgres,
+        "select pg_advisory_xact_lock(hashtextextended($1, 0))",
+        [system_service_name.to_string().into()],
+    ))
+    .await
+    .c(h!())?;
+    Ok(())
+}
+
+fn full_system_service_name(
+    system_service_name: &str,
+    source: &EchoMessageSource,
+) -> String {
+    let prefix = match source {
+        EchoMessageSource::Signal => SIGNAL_UNIT_NAME,
+        EchoMessageSource::Whatsapp => WHATSAPP_UNIT_NAME,
+    };
+    format!("{prefix}@{system_service_name}")
+}
+
+fn system_service_name_with_suffix(
+    system_service_name: &str,
+    candidate_number: usize,
+) -> String {
+    if candidate_number == 1 {
+        return system_service_name.to_string();
+    }
+    let suffix = format!("-{candidate_number}");
+    let base_len = MESSENGER_SYSTEM_SERVICE_NAME_MAX_LEN
+        .saturating_sub(suffix.len())
+        .min(system_service_name.len());
+    let system_service_name =
+        system_service_name[..base_len].trim_end_matches('-');
+    format!("{system_service_name}{suffix}")
+}
+
 async fn load_client_signal_port(
     client_name: &str,
     txn: &DatabaseTransaction,
@@ -402,7 +566,11 @@ async fn link_existing_datasource(
         .c(h!())?;
     let phone_number = datasource.signal_phone.c(h!())?;
     let process_name =
-        transliterate_and_slugify(&datasource.display_name.to_lowercase());
+        generated_system_service_name(&datasource.display_name, datasource.id);
+    let process_name =
+        available_system_service_name(&process_name, &datasource.kind, txn)
+            .await
+            .c(h!())?;
     let aor_id = match datasource.default_aor_id {
         Some(id) => id,
         None => load_default_aor(txn).await.c(h!())?.id,
@@ -616,16 +784,31 @@ where
     Ok(datasources)
 }
 
-fn is_valid_service_name(s: &str) -> bool {
-    if s.len() < 4 {
-        return false; // too short
+pub fn validate_system_service_name(
+    system_service_name: &str,
+) -> Result<(), AppError> {
+    if system_service_name.len() < 4 {
+        return Err(AppError::BL {
+            msg: "Назва systemd unit має бути мінімум 4 символи".to_string(),
+        });
     }
-    s.chars().all(|c| {
-        c.is_ascii_lowercase() || // Lowercase Latin symbols (a-z)
-            c.is_ascii_digit() ||    // Numbers (0-9)
-            c == '-' ||              // Dash (-)
-            c == '_' // Underscore (_)
-    })
+    if system_service_name.len() > MESSENGER_SYSTEM_SERVICE_NAME_MAX_LEN {
+        return Err(AppError::BL {
+            msg: format!(
+                "Назва systemd unit має бути максимум {MESSENGER_SYSTEM_SERVICE_NAME_MAX_LEN} символів"
+            ),
+        });
+    }
+    if !system_service_name
+        .chars()
+        .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+    {
+        return Err(AppError::BL {
+            msg: "Назва systemd unit може містити лише малі латинські літери, цифри та дефіс"
+                .to_string(),
+        });
+    }
+    Ok(())
 }
 
 fn parse_message_source(messenger: &str) -> anyhow::Result<MessageSource> {
@@ -861,6 +1044,24 @@ pub fn transliterate_and_slugify(input: &str) -> String {
     result.trim().replace(' ', "-")
 }
 
+fn generated_system_service_name(
+    display_name: &str,
+    datasource_id: i64,
+) -> String {
+    let system_service_name =
+        transliterate_and_slugify(&display_name.to_lowercase());
+    let system_service_name = if system_service_name.len() < 4 {
+        format!("account-{datasource_id}")
+    } else {
+        system_service_name
+    };
+    system_service_name[..system_service_name
+        .len()
+        .min(MESSENGER_SYSTEM_SERVICE_NAME_MAX_LEN)]
+        .trim_end_matches('-')
+        .to_string()
+}
+
 pub async fn sync_signal_once(client_name: String, config: Config) {
     let db = match new_pg_pool_from_config(&config).await.c(h!()) {
         Ok(db) => db,
@@ -871,5 +1072,87 @@ pub async fn sync_signal_once(client_name: String, config: Config) {
     };
     if let Err(e) = signal_worker_tick_once(&client_name, &db).await {
         error!("failed to perform initial signal sync, client '{client_name}': {:#?}", e);
+    }
+}
+
+#[cfg(test)]
+mod system_service_name_tests {
+    use super::*;
+
+    #[test]
+    fn appends_candidate_number_to_system_service_name() {
+        assert_eq!(
+            system_service_name_with_suffix("echo-kherson-whatsapp", 1),
+            "echo-kherson-whatsapp"
+        );
+        assert_eq!(
+            system_service_name_with_suffix("echo-kherson-whatsapp", 2),
+            "echo-kherson-whatsapp-2"
+        );
+        assert_eq!(
+            system_service_name_with_suffix("echo-kherson-whatsapp", 3),
+            "echo-kherson-whatsapp-3"
+        );
+    }
+
+    #[test]
+    fn keeps_suffixed_system_service_name_within_limit() {
+        let name = "a".repeat(MESSENGER_SYSTEM_SERVICE_NAME_MAX_LEN);
+        let candidate = system_service_name_with_suffix(&name, 2);
+
+        assert_eq!(candidate.len(), MESSENGER_SYSTEM_SERVICE_NAME_MAX_LEN);
+        assert!(candidate.ends_with("-2"));
+    }
+
+    #[test]
+    fn validates_system_service_name_format_and_length() {
+        assert!(validate_system_service_name("echo-kherson-2").is_ok());
+        assert!(validate_system_service_name("abc").is_err());
+        assert!(validate_system_service_name("Echo-kherson").is_err());
+        assert!(validate_system_service_name("echo_kherson").is_err());
+        assert!(validate_system_service_name(
+            &"a".repeat(MESSENGER_SYSTEM_SERVICE_NAME_MAX_LEN + 1)
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn normalizes_generated_system_service_names() {
+        assert_eq!(
+            generated_system_service_name("ЕХО Херсон", 42),
+            "ekho-kherson"
+        );
+        assert_eq!(generated_system_service_name("123", 42), "account-42");
+
+        let name = generated_system_service_name(&"а".repeat(100), 42);
+        assert_eq!(name.len(), MESSENGER_SYSTEM_SERVICE_NAME_MAX_LEN);
+        assert!(validate_system_service_name(&name).is_ok());
+    }
+
+    #[test]
+    fn detects_process_and_client_name_collisions() {
+        let source = EchoMessageSource::Signal;
+        let process_names =
+            HashSet::from([full_system_service_name("echo-kherson", &source)]);
+        let client_names = HashSet::from(["echo-kherson-2".to_string()]);
+
+        assert!(!is_system_service_name_available(
+            "echo-kherson",
+            &source,
+            &process_names,
+            &client_names,
+        ));
+        assert!(!is_system_service_name_available(
+            "echo-kherson-2",
+            &source,
+            &process_names,
+            &client_names,
+        ));
+        assert!(is_system_service_name_available(
+            "echo-kherson-3",
+            &source,
+            &process_names,
+            &client_names,
+        ));
     }
 }

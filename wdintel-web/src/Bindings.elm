@@ -9761,6 +9761,34 @@ linkAccountRspEncoder struct =
         ]
 
 
+type alias SystemServiceNameAvailabilityReq =
+    { messenger : String
+    , systemServiceName : String
+    }
+
+
+systemServiceNameAvailabilityReqEncoder : SystemServiceNameAvailabilityReq -> Json.Encode.Value
+systemServiceNameAvailabilityReqEncoder struct =
+    Json.Encode.object
+        [ ( "messenger", (Json.Encode.string) struct.messenger )
+        , ( "system_service_name", (Json.Encode.string) struct.systemServiceName )
+        ]
+
+
+type alias SystemServiceNameAvailabilityRsp =
+    { systemServiceName : String
+    , exists : Bool
+    }
+
+
+systemServiceNameAvailabilityRspEncoder : SystemServiceNameAvailabilityRsp -> Json.Encode.Value
+systemServiceNameAvailabilityRspEncoder struct =
+    Json.Encode.object
+        [ ( "system_service_name", (Json.Encode.string) struct.systemServiceName )
+        , ( "exists", (Json.Encode.bool) struct.exists )
+        ]
+
+
 type alias LinkEchoOperatorReq =
     { apiLogin : String
     , apiEndpoint : String
@@ -15735,6 +15763,20 @@ linkAccountRspDecoder : Json.Decode.Decoder LinkAccountRsp
 linkAccountRspDecoder =
     Json.Decode.succeed LinkAccountRsp
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "account" (echoAccountF1Decoder)))
+
+
+systemServiceNameAvailabilityReqDecoder : Json.Decode.Decoder SystemServiceNameAvailabilityReq
+systemServiceNameAvailabilityReqDecoder =
+    Json.Decode.succeed SystemServiceNameAvailabilityReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "messenger" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "system_service_name" (Json.Decode.string)))
+
+
+systemServiceNameAvailabilityRspDecoder : Json.Decode.Decoder SystemServiceNameAvailabilityRsp
+systemServiceNameAvailabilityRspDecoder =
+    Json.Decode.succeed SystemServiceNameAvailabilityRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "system_service_name" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "exists" (Json.Decode.bool)))
 
 
 linkEchoOperatorReqDecoder : Json.Decode.Decoder LinkEchoOperatorReq

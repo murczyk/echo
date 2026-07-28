@@ -3761,6 +3761,16 @@ export type LinkAccountRsp = {
   account: EchoAccountF1;
 };
 
+export type SystemServiceNameAvailabilityReq = {
+  messenger: string;
+  systemServiceName: string;
+};
+
+export type SystemServiceNameAvailabilityRsp = {
+  systemServiceName: string;
+  exists: boolean;
+};
+
 export type LinkEchoOperatorReq = {
   apiLogin: string;
   apiEndpoint: string;
