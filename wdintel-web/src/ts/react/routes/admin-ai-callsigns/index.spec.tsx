@@ -102,12 +102,14 @@ describe('AdminAiCallsignsPage', () => {
       aiEngineIds: ['engine-a'],
     });
     expect(container.textContent).toContain('ALFA');
+    expect(container.textContent).toContain('ТЕСТ:');
 
     await act(async () => button(container, 'Зберегти')?.click());
     expect(mocks.save).toHaveBeenCalledWith({
       prompt: 'Find callsigns',
       results: [testResult],
     });
+    expect(container.textContent).not.toContain('ТЕСТ:');
     expect(mocks.notify).toHaveBeenCalledWith({
       severity: 'success',
       message: 'Промпт і результати збережено.',

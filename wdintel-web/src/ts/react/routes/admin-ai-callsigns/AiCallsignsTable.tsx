@@ -136,43 +136,28 @@ export function AiCallsignsTable({
       },
       ...engines.map((engine): MRT_ColumnDef<AiCallsignTestMessageItem> => ({
         id: `engine-${engine.id}`,
-        header: engine.name,
-        Header: () => (
-          <Box sx={{ textAlign: 'center', width: '100%' }}>
-            <Typography variant="subtitle2">{engine.name}</Typography>
-            <Typography variant="caption" color="text.secondary">
-              {engine.modelName}
-            </Typography>
-          </Box>
-        ),
-        columns: [
-          {
-            id: `saved-${engine.id}`,
-            header: 'Позивні',
-            size: 180,
-            enableColumnFilter: false,
-            enableGlobalFilter: false,
-            enableSorting: false,
-            Cell: ({ row }) => (
-              <AiCallsignResultCell
-                result={savedResults.get(resultKey(row.original.id, engine.id))}
-              />
-            ),
-          },
-          {
-            id: `test-${engine.id}`,
-            header: 'Тест',
-            size: 180,
-            enableColumnFilter: false,
-            enableGlobalFilter: false,
-            enableSorting: false,
-            Cell: ({ row }) => (
-              <AiCallsignResultCell
-                result={currentTestResults.get(resultKey(row.original.id, engine.id))}
-              />
-            ),
-          },
-        ],
+        header: `${engine.modelName}: Позивні`,
+        size: 220,
+        enableColumnFilter: false,
+        enableGlobalFilter: false,
+        enableSorting: false,
+        Cell: ({ row }) => {
+          const key = resultKey(row.original.id, engine.id);
+          const testResult = currentTestResults.get(key);
+          return (
+            <Stack spacing={0.75}>
+              <AiCallsignResultCell result={savedResults.get(key)} />
+              {testResult ? (
+                <Stack direction="row" spacing={0.5} alignItems="center" useFlexGap flexWrap="wrap">
+                  <Typography variant="caption" color="text.secondary">
+                    ТЕСТ:
+                  </Typography>
+                  <AiCallsignResultCell result={testResult} />
+                </Stack>
+              ) : null}
+            </Stack>
+          );
+        },
       })),
     ],
     [currentTestResults, engines, savedResults],

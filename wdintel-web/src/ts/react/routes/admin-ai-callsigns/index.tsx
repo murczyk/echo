@@ -123,6 +123,7 @@ export function AdminAiCallsignsPage() {
 
   async function runTest() {
     if (!canRun || action) return;
+    setTestResults([]);
     setAction('test');
     setError(null);
     try {
@@ -140,6 +141,7 @@ export function AdminAiCallsignsPage() {
 
   async function save() {
     if (!prompt.trim() || action) return;
+    setTestResults([]);
     setAction('save');
     setError(null);
     try {
@@ -160,6 +162,7 @@ export function AdminAiCallsignsPage() {
 
   async function recalculate() {
     if (!canRun || action) return;
+    setTestResults([]);
     setAction('recalculate');
     setError(null);
     try {
@@ -284,9 +287,18 @@ export function AdminAiCallsignsPage() {
                 engines={engines.filter((engine) => selectedEngineIds.includes(engine.id))}
                 messages={messages}
                 testResults={testResults}
-                onCreate={() => setScreen({ kind: 'create' })}
-                onDelete={setDeleteTarget}
-                onEdit={(message) => setScreen({ kind: 'edit', message })}
+                onCreate={() => {
+                  setTestResults([]);
+                  setScreen({ kind: 'create' });
+                }}
+                onDelete={(message) => {
+                  setTestResults([]);
+                  setDeleteTarget(message);
+                }}
+                onEdit={(message) => {
+                  setTestResults([]);
+                  setScreen({ kind: 'edit', message });
+                }}
               />
             ) : null}
           </Box>

@@ -60,7 +60,7 @@ afterEach(() => {
 });
 
 describe('AiCallsignsTable', () => {
-  it('renders one saved and test column for every selected engine', async () => {
+  it('renders saved and temporary test results in one column per selected model', async () => {
     const container = document.createElement('div');
     document.body.appendChild(container);
     const root = createRoot(container);
@@ -77,15 +77,23 @@ describe('AiCallsignsTable', () => {
       ),
     );
 
-    expect(container.textContent).toContain('Engine A');
-    expect(container.textContent).toContain('Engine B');
+    expect(container.textContent).toContain('model-a: Позивні');
+    expect(container.textContent).toContain('model-b: Позивні');
+    expect(container.textContent).not.toContain('Engine A');
+    expect(container.textContent).not.toContain('Engine B');
     expect(container.textContent).toContain('ALFA');
     expect(container.textContent).toContain('BRAVO');
+    expect(container.textContent).toContain('ТЕСТ:');
     expect(container.textContent).not.toContain('01981...1b72f');
     expect(container.textContent).not.toContain(messageId);
     expect(
-      Array.from(container.querySelectorAll('th')).filter((cell) => cell.textContent === 'Тест'),
-    ).toHaveLength(2);
+      Array.from(container.querySelectorAll('th')).filter(
+        (cell) => cell.textContent === 'model-a: Позивні',
+      ),
+    ).toHaveLength(1);
+    expect(
+      Array.from(container.querySelectorAll('th')).some((cell) => cell.textContent === 'Тест'),
+    ).toBe(false);
 
     await act(async () =>
       container.querySelector<HTMLButtonElement>('button[aria-label="Копіювати UUID"]')?.click(),
@@ -104,7 +112,7 @@ describe('AiCallsignsTable', () => {
         />,
       ),
     );
-    expect(container.textContent).not.toContain('Engine B');
+    expect(container.textContent).not.toContain('model-b: Позивні');
     await act(async () => root.unmount());
   });
 });
