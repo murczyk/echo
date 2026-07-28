@@ -8,7 +8,10 @@ use crate::rer_importer::analysis::{
 };
 use crate::sigint::callsign::bl_network_callsign::get_callsigns_activity_info;
 use crate::sigint::etalonka::types::*;
-use crate::sigint::network::filter::apply_network_list_filters;
+use crate::sigint::network::filter::{
+    apply_network_list_filters_with_text_search_mode, NetworkTextSearchMode,
+};
+use crate::sigint::network::resolve_network_text_search_mode;
 use crate::sigint::network::sort as network_sort;
 use crate::sigint::network::types::ListNetworksReq;
 use crate::sigint::signal::types::Signal;
@@ -2030,6 +2033,7 @@ fn build_etalonka_networks_query(
     join_type: JoinType,
     id_filter: Option<&Vec<i64>>,
     deleted_only: Option<bool>,
+    text_search_mode: NetworkTextSearchMode,
 ) -> Select<sigint_network::Entity> {
     let filter_unit = req.filter_unit.clone();
     let filter_unit_army = req.filter_unit_army.clone();
@@ -2087,7 +2091,12 @@ fn build_etalonka_networks_query(
         networks =
             networks.filter(sigint_network::Column::Deleted.eq(deleted_only));
     } else if id_filter.is_none() {
-        networks = apply_network_list_filters(networks, &report_req, true);
+        networks = apply_network_list_filters_with_text_search_mode(
+            networks,
+            &report_req,
+            true,
+            text_search_mode,
+        );
     }
 
     if let Some(id_filter) = id_filter {
@@ -2135,11 +2144,14 @@ pub async fn load_networks(
     BTreeMap<NetworkEtalonkaUnitKey, Vec<NetworkEtalonkaResult>>,
     AppError,
 > {
+    let text_search_mode =
+        resolve_network_text_search_mode(db, &req.req).await?;
     let networks = build_etalonka_networks_query(
         &req.req,
         JoinType::InnerJoin,
         None,
         None,
+        text_search_mode,
     );
     let networks = networks
         .clone()
@@ -2202,6 +2214,7 @@ pub async fn load_networks_by_id(
         JoinType::LeftJoin,
         Some(&req.network_ids),
         None,
+        NetworkTextSearchMode::Substring,
     );
     let networks = networks
         .clone()
@@ -2235,7 +2248,11 @@ pub async fn load_networks_by_id(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::functest::tests::{
+        cleanup, mk_sigint_network, mk_sigint_network_unit, mk_sigint_unit,
+    };
     use crate::sigint::network::types::ListNetworksSortBy;
+    use serial_test::serial;
 
     fn empty_list_networks_req() -> ListNetworksReq {
         ListNetworksReq {
@@ -2288,6 +2305,79 @@ mod tests {
         }
     }
 
+    async fn mk_network_with_unit(
+        db: &DatabaseConnection,
+        network_name: &str,
+        unit_name: &str,
+    ) -> sigint_network::Model {
+        let unit = mk_sigint_unit(
+            db,
+            sigint_unit::ActiveModel {
+                name: Set(unit_name.to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let network = mk_sigint_network(
+            db,
+            sigint_network::ActiveModel {
+                name: Set(network_name.to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        mk_sigint_network_unit(
+            db,
+            sigint_network_unit::ActiveModel {
+                network_id: Set(network.id),
+                unit_id: Set(unit.id),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        network
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn etalonka_networks_use_resolved_text_search_mode() {
+        let env = cleanup().await.unwrap();
+        let exact_network =
+            mk_network_with_unit(&env.dbx, "точна мережа", "6 омсбр 3 А").await;
+        let substring_network = mk_network_with_unit(
+            &env.dbx,
+            "підрядкова мережа",
+            "2 мсб 164 омсбр 25 А",
+        )
+        .await;
+        let mut network_req = empty_list_networks_req();
+        network_req.filter_text = Some("6 омсбр".to_string());
+        let req = EtalonkaJimForksReq {
+            req: network_req,
+            etalonka_type: EtalonkaReportType::AccordingToTheForm(
+                EtalonkaSettings {
+                    active_freqs_only: false,
+                    include_sigint_signs: false,
+                    include_confirmation: false,
+                    include_headings_and_freqs: false,
+                },
+            ),
+        };
+
+        let networks = load_networks(&env.dbx, &req).await.unwrap();
+        let ids = networks
+            .values()
+            .flatten()
+            .map(|network| network.id)
+            .collect::<HashSet<_>>();
+
+        assert!(ids.contains(&exact_network.id));
+        assert!(!ids.contains(&substring_network.id));
+    }
+
     #[test]
     fn build_network_freq_join_condition_uses_noninclusive_upper_bound() {
         let filter = NetworkFreqFilter {
@@ -2321,6 +2411,7 @@ mod tests {
             JoinType::InnerJoin,
             None,
             None,
+            NetworkTextSearchMode::Substring,
         )
         .build(DbBackend::Postgres)
         .to_string();
@@ -2331,6 +2422,7 @@ mod tests {
             JoinType::InnerJoin,
             Some(&empty_ids),
             None,
+            NetworkTextSearchMode::Substring,
         )
         .build(DbBackend::Postgres)
         .to_string();
@@ -2348,6 +2440,7 @@ mod tests {
             JoinType::InnerJoin,
             None,
             None,
+            NetworkTextSearchMode::Substring,
         )
         .build(DbBackend::Postgres)
         .to_string();
@@ -2366,6 +2459,7 @@ mod tests {
             JoinType::InnerJoin,
             None,
             None,
+            NetworkTextSearchMode::Substring,
         )
         .build(DbBackend::Postgres)
         .to_string();
@@ -2381,6 +2475,7 @@ mod tests {
             JoinType::InnerJoin,
             None,
             None,
+            NetworkTextSearchMode::Substring,
         )
         .build(DbBackend::Postgres)
         .to_string();
@@ -2396,6 +2491,7 @@ mod tests {
             JoinType::InnerJoin,
             None,
             None,
+            NetworkTextSearchMode::Substring,
         )
         .build(DbBackend::Postgres)
         .to_string();

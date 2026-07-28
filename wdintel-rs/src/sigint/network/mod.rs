@@ -249,7 +249,7 @@ fn build_network_text_search_probe_query(
     .limit(1)
 }
 
-async fn resolve_network_text_search_mode(
+pub(crate) async fn resolve_network_text_search_mode(
     db: &DatabaseConnection,
     req: &ListNetworksReq,
 ) -> Result<NetworkTextSearchMode, AppError> {

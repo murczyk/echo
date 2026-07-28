@@ -614,19 +614,6 @@ pub(crate) fn apply_network_list_filters_with_text_search_mode(
     network_freq_filter(query, req.filter_freq.as_deref())
 }
 
-pub(crate) fn apply_network_list_filters(
-    query: Select<sigint_network::Entity>,
-    req: &ListNetworksReq,
-    include_status_filter: bool,
-) -> Select<sigint_network::Entity> {
-    apply_network_list_filters_with_text_search_mode(
-        query,
-        req,
-        include_status_filter,
-        NetworkTextSearchMode::Substring,
-    )
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
