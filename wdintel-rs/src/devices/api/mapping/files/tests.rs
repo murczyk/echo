@@ -42,6 +42,39 @@ fn roots_use_canonical_wire_fields_and_utc_timestamps() {
         }),
     );
 }
+#[test]
+fn subtree_counts_preserve_request_order() {
+    let first =
+        Uuid::parse_str("018f0000-0000-7000-8000-000000000001").unwrap();
+    let second =
+        Uuid::parse_str("018f0000-0000-7000-8000-000000000002").unwrap();
+
+    assert_eq!(
+        serde_json::to_value(map_subtree_counts(vec![
+            SubtreeFileCount {
+                entry_id: first,
+                file_count: 7,
+            },
+            SubtreeFileCount {
+                entry_id: second,
+                file_count: 0,
+            },
+        ]))
+        .unwrap(),
+        json!({
+            "counts": [
+                {
+                    "entry_id": "018f0000-0000-7000-8000-000000000001",
+                    "file_count": 7
+                },
+                {
+                    "entry_id": "018f0000-0000-7000-8000-000000000002",
+                    "file_count": 0
+                }
+            ]
+        }),
+    );
+}
 
 #[test]
 fn browse_rejects_misaligned_path_context() {
@@ -70,6 +103,7 @@ fn journal_maps_current_sync_timestamp_and_pagination_cursor() {
             synchronized_at,
         }],
         next_cursor: Some("018f0000-0000-7000-8000-000000000003".to_string()),
+        total_count: 27,
     };
 
     assert_eq!(
@@ -81,6 +115,7 @@ fn journal_maps_current_sync_timestamp_and_pagination_cursor() {
                 "absolute_path": "/var/log/report.log",
                 "synchronized_at": "2026-07-28T08:15:30Z"
             }],
+            "total_count": 27,
             "next_cursor": "018f0000-0000-7000-8000-000000000003"
         }),
     );

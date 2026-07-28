@@ -3,15 +3,15 @@ use super::{
     mutation, query, Breadcrumb, DirectoryScope, EntryQueryScope, EntrySortKey,
     FileJournalEntry, FileJournalSortKey, FileMutationResult,
     FileSearchFilters, FilesystemError, KeysetPage, KeysetPageRequest,
-    PreparedFileMutation, RootEntry, SearchEntry, TransactionErrorClass,
-    TreeEntry,
+    PreparedFileMutation, RootEntry, SearchEntry, SubtreeFileCount,
+    TransactionErrorClass, TreeEntry,
 };
 use crate::file_registry::FileRegistryDb;
 use crate::h;
 use crate::types::ShortContext;
 use sea_orm::{
-    ConnectionTrait, DatabaseTransaction, DbBackend, Statement,
-    TransactionTrait,
+    AccessMode, ConnectionTrait, DatabaseTransaction, DbBackend,
+    IsolationLevel, Statement, TransactionTrait,
 };
 use uuid::Uuid;
 
@@ -73,6 +73,29 @@ impl<'db> FilesystemRepository<'db> {
         file_registry_db: &'db FileRegistryDb,
     ) -> Self {
         Self { file_registry_db }
+    }
+
+    async fn begin_read_snapshot(
+        &self,
+    ) -> Result<DatabaseTransaction, FilesystemError> {
+        self.file_registry_db
+            .connection()
+            .begin_with_config(
+                Some(IsolationLevel::RepeatableRead),
+                Some(AccessMode::ReadOnly),
+            )
+            .await
+            .map_err(|error| {
+                map_database_error(anyhow::Error::new(error).context(h!()))
+            })
+    }
+
+    async fn commit_read_snapshot(
+        transaction: DatabaseTransaction,
+    ) -> Result<(), FilesystemError> {
+        transaction.commit().await.map_err(|error| {
+            map_database_error(anyhow::Error::new(error).context(h!()))
+        })
     }
 
     #[allow(dead_code)]
@@ -142,6 +165,27 @@ impl<'db> FilesystemRepository<'db> {
     ) -> Result<Vec<RootEntry>, FilesystemError> {
         query::list_roots(self.file_registry_db.connection(), device_id).await
     }
+    #[allow(dead_code)]
+    pub(in crate::devices) async fn count_file_subtrees(
+        &self,
+        device_id: Uuid,
+        parent_entry_id: Option<Uuid>,
+        directory_entry_ids: &[Uuid],
+    ) -> Result<Vec<SubtreeFileCount>, FilesystemError> {
+        let transaction = self.begin_read_snapshot().await?;
+        let counts = query::count_file_subtrees(
+            &transaction,
+            device_id,
+            parent_entry_id,
+            directory_entry_ids,
+        )
+        .await?;
+        if counts.len() != directory_entry_ids.len() {
+            return Err(FilesystemError::NotFound);
+        }
+        Self::commit_read_snapshot(transaction).await?;
+        Ok(counts)
+    }
 
     #[allow(dead_code)]
     pub(in crate::devices) async fn list_file_journal(
@@ -156,6 +200,24 @@ impl<'db> FilesystemRepository<'db> {
             page,
         )
         .await
+    }
+
+    #[allow(dead_code)]
+    pub(in crate::devices) async fn list_file_journal_with_total(
+        &self,
+        device_id: Uuid,
+        page: KeysetPageRequest<FileJournalSortKey>,
+    ) -> Result<
+        (KeysetPage<FileJournalEntry, FileJournalSortKey>, u64),
+        FilesystemError,
+    > {
+        let transaction = self.begin_read_snapshot().await?;
+        let total_count =
+            query::count_device_files(&transaction, device_id).await?;
+        let page =
+            query::list_file_journal(&transaction, device_id, page).await?;
+        Self::commit_read_snapshot(transaction).await?;
+        Ok((page, total_count))
     }
 
     #[allow(dead_code)]

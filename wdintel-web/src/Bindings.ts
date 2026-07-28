@@ -1756,6 +1756,21 @@ export type ListDeviceFileRootsRsp = {
   roots: Array<DeviceFileRoot>;
 };
 
+export type DeviceFileSubtreeCount = {
+  entryId: string;
+  fileCount: number;
+};
+
+export type CountDeviceFileSubtreesReq = {
+  deviceId: string;
+  parentEntryId: string | null;
+  directoryEntryIds: Array<string>;
+};
+
+export type CountDeviceFileSubtreesRsp = {
+  counts: Array<DeviceFileSubtreeCount>;
+};
+
 export type BrowseDeviceFilesReq = {
   deviceId: string;
   parentEntryId: string;
@@ -1803,6 +1818,7 @@ export type JournalDeviceFilesReq = {
 
 export type JournalDeviceFilesRsp = {
   entries: Array<DeviceFileJournalEntry>;
+  totalCount: number;
   nextCursor: string | null;
 };
 

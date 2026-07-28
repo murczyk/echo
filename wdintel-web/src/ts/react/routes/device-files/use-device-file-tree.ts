@@ -48,11 +48,13 @@ export function useDeviceFileTree({
   enabled,
   roots,
   onDirectoryMissing,
+  onDirectoriesLoaded,
 }: {
   deviceId: string;
   enabled: boolean;
   roots: DeviceFileRoot[];
   onDirectoryMissing: (entryId: string) => void;
+  onDirectoriesLoaded: (parentEntryId: string, directoryEntryIds: string[]) => void;
 }) {
   const [branches, setBranches] = useState<Record<string, DeviceFileTreeBranch>>({});
   const [expandedEntryIds, setExpandedEntryIds] = useState<Set<string>>(new Set());
@@ -60,11 +62,13 @@ export function useDeviceFileTree({
   const expandedEntryIdsRef = useRef<Set<string>>(new Set());
   const rootsRef = useRef(roots);
   const onDirectoryMissingRef = useRef(onDirectoryMissing);
+  const onDirectoriesLoadedRef = useRef(onDirectoriesLoaded);
   const requestsRef = useRef(new Map<string, BranchRequest>());
   const requestIdRef = useRef(0);
 
   rootsRef.current = roots;
   onDirectoryMissingRef.current = onDirectoryMissing;
+  onDirectoriesLoadedRef.current = onDirectoriesLoaded;
 
   const updateBranch = useCallback(
     (entryId: string, update: (branch: DeviceFileTreeBranch) => DeviceFileTreeBranch) => {
@@ -179,6 +183,18 @@ export function useDeviceFileTree({
     ]);
     await Promise.all([...entryIds].map((entryId) => loadBranch(entryId, { preserve: true })));
   }, [enabled, loadBranch]);
+
+  useEffect(() => {
+    if (!enabled) return;
+    for (const [parentEntryId, branch] of Object.entries(branches)) {
+      const directoryEntryIds = branch.entries
+        .filter((entry) => entry.kind === 'directory')
+        .map((entry) => entry.entryId);
+      if (directoryEntryIds.length > 0) {
+        onDirectoriesLoadedRef.current(parentEntryId, directoryEntryIds);
+      }
+    }
+  }, [branches, enabled]);
 
   const rootsKey = roots.map((root) => root.entryId).join('|');
   useEffect(() => {

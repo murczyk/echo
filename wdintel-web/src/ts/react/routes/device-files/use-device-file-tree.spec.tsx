@@ -75,6 +75,7 @@ function browseResponse(
 
 const roots = [buildRoot(ROOT_ONE_ID, '/'), buildRoot(ROOT_TWO_ID, '/srv')];
 const onDirectoryMissing = vi.fn();
+const onDirectoriesLoaded = vi.fn();
 let container: HTMLDivElement | null = null;
 let root: Root | null = null;
 let latest: ReturnType<typeof useDeviceFileTree> | null = null;
@@ -85,6 +86,7 @@ function Harness() {
     enabled: true,
     roots,
     onDirectoryMissing,
+    onDirectoriesLoaded,
   });
   return null;
 }
@@ -137,6 +139,7 @@ describe('useDeviceFileTree', () => {
     expect(latest?.expandedEntryIds).toEqual(new Set([ROOT_ONE_ID, ROOT_TWO_ID]));
     expect(latest?.branches[ROOT_ONE_ID].entries[0].entryId).toBe(DIRECTORY_ID);
     expect(latest?.branches[ROOT_TWO_ID].entries).toEqual([]);
+    expect(onDirectoriesLoaded).toHaveBeenCalledWith(ROOT_ONE_ID, [DIRECTORY_ID]);
   });
 
   it('loads a nested directory only when it is expanded', async () => {

@@ -22,9 +22,12 @@ import {
 import type { DeviceFileRoot, DeviceFileTreeEntry, PathSyntax } from '../../../../../Bindings';
 import { PowerAlert } from '../../../components/PowerAlert';
 import { PowerButton } from '../../../components/PowerButton';
+import { PowerChip } from '../../../components/PowerChip';
 import { PowerIconButton } from '../../../components/PowerIconButton';
 import type { DeviceFilesState } from '../use-device-files';
 import type { DeviceFileTreeBranch } from '../use-device-file-tree';
+
+const fileCountFormatter = new Intl.NumberFormat('uk-UA');
 
 type DirectoryNode = {
   entryId: string;
@@ -45,6 +48,30 @@ type DirectoryProps = {
 function joinScopeLabel(parent: string, name: string, pathSyntax: PathSyntax): string {
   const separator = pathSyntax === 'windows' ? '\\' : '/';
   return parent.endsWith(separator) ? `${parent}${name}` : `${parent}${separator}${name}`;
+}
+
+function fileCountDescription(fileCount: number): string {
+  return `Файлів у каталозі та вкладених каталогах: ${fileCountFormatter.format(fileCount)}`;
+}
+
+function DirectoryFileCount({ fileCount }: { fileCount: number | null }) {
+  if (fileCount === null) return null;
+  const description = fileCountDescription(fileCount);
+
+  return (
+    <Tooltip title="Файлів у каталозі та вкладених каталогах">
+      <Box aria-label={description} sx={{ flexShrink: 0, ml: 1, display: 'inline-flex' }}>
+        <PowerChip
+          label={fileCountFormatter.format(fileCount)}
+          color="default"
+          interactive={false}
+          minWidth={32}
+          fontSize="0.75rem"
+          sx={{ height: 22, fontVariantNumeric: 'tabular-nums' }}
+        />
+      </Box>
+    </Tooltip>
+  );
 }
 
 function toDirectoryNode(entry: DeviceFileTreeEntry, parent: DirectoryNode): DirectoryNode {
@@ -165,6 +192,9 @@ function DeviceFileDirectory({ node, depth, files, canSync }: DirectoryProps) {
   const expanded = files.tree.expandedEntryIds.has(node.entryId);
   const selected = files.searchScope?.entryId === node.entryId;
   const childrenId = `device-file-tree-${node.entryId}-children`;
+  const subtreeFileCount = files.counts.countsByEntryId[node.entryId] ?? null;
+  const subtreeFileCountDescription =
+    subtreeFileCount === null ? null : fileCountDescription(subtreeFileCount);
 
   return (
     <Box component="li" sx={{ minWidth: 0 }}>
@@ -182,7 +212,9 @@ function DeviceFileDirectory({ node, depth, files, canSync }: DirectoryProps) {
         <ListItemButton
           selected={selected}
           aria-pressed={selected}
-          aria-label={`Вибрати каталог ${node.name} як область пошуку`}
+          aria-label={`Вибрати каталог ${node.name} як область пошуку${
+            subtreeFileCountDescription === null ? '' : `; ${subtreeFileCountDescription}`
+          }`}
           onClick={() =>
             files.selectSearchScope({
               entryId: node.entryId,
@@ -206,6 +238,7 @@ function DeviceFileDirectory({ node, depth, files, canSync }: DirectoryProps) {
             secondaryTypographyProps={{ noWrap: true, title: node.secondary ?? undefined }}
             sx={{ minWidth: 0, my: 0 }}
           />
+          <DirectoryFileCount fileCount={subtreeFileCount} />
           {branch?.refreshing ? (
             <CircularProgress size={16} aria-label="Оновлення каталогу" />
           ) : null}
@@ -306,18 +339,23 @@ export function DeviceFileTree({ files, canSync }: { files: DeviceFilesState; ca
         <Typography id="device-files-tree-title" variant="subtitle1" fontWeight={600}>
           Файлова система
         </Typography>
-        <Tooltip title="Оновити файлове дерево">
-          <span>
-            <PowerIconButton
-              size="small"
-              aria-label="Оновити файлове дерево"
-              disabled={files.rootsLoading || files.rootsRefreshing || files.tree.refreshing}
-              onClick={() => void files.refreshVisible()}
-            >
-              <RefreshIcon fontSize="small" />
-            </PowerIconButton>
-          </span>
-        </Tooltip>
+        <Stack direction="row" spacing={1} alignItems="center">
+          {files.counts.loading ? (
+            <CircularProgress size={16} aria-label="Завантаження кількості файлів" />
+          ) : null}
+          <Tooltip title="Оновити файлове дерево">
+            <span>
+              <PowerIconButton
+                size="small"
+                aria-label="Оновити файлове дерево"
+                disabled={files.rootsLoading || files.rootsRefreshing || files.tree.refreshing}
+                onClick={() => void files.refreshVisible()}
+              >
+                <RefreshIcon fontSize="small" />
+              </PowerIconButton>
+            </span>
+          </Tooltip>
+        </Stack>
       </Stack>
 
       <Box sx={{ flex: 1, minHeight: 0, overflow: 'auto', py: 0.5 }} aria-busy={files.rootsLoading}>
@@ -333,6 +371,21 @@ export function DeviceFileTree({ files, canSync }: { files: DeviceFilesState; ca
               }
             >
               {files.rootsError.message}
+            </PowerAlert>
+          </Box>
+        ) : null}
+        {files.counts.error ? (
+          <Box sx={{ px: 1, pb: 1 }}>
+            <PowerAlert
+              severity="warning"
+              autoHideDuration={null}
+              action={
+                <PowerButton size="small" onClick={files.counts.retry}>
+                  Повторити
+                </PowerButton>
+              }
+            >
+              {files.counts.error.message}
             </PowerAlert>
           </Box>
         ) : null}

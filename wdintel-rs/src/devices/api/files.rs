@@ -1,19 +1,20 @@
 use super::mapping::{
-    map_browse, map_journal, map_roots, map_search, map_sync,
+    map_browse, map_journal, map_roots, map_search, map_subtree_counts,
+    map_sync,
 };
 use super::request::DeviceApiJson;
 use super::types::{
     parse_datetime, parse_uuid, BrowseDeviceFilesReq, BrowseDeviceFilesRsp,
-    FileEntryKind, JournalDeviceFilesReq, JournalDeviceFilesRsp,
-    ListDeviceFileRootsReq, ListDeviceFileRootsRsp, PathSyntax, RequiredPatch,
-    SearchDeviceFilesReq, SearchDeviceFilesRsp, SyncDeviceFilesReq,
-    SyncDeviceFilesRsp,
+    CountDeviceFileSubtreesReq, CountDeviceFileSubtreesRsp, FileEntryKind,
+    JournalDeviceFilesReq, JournalDeviceFilesRsp, ListDeviceFileRootsReq,
+    ListDeviceFileRootsRsp, PathSyntax, RequiredPatch, SearchDeviceFilesReq,
+    SearchDeviceFilesRsp, SyncDeviceFilesReq, SyncDeviceFilesRsp,
 };
 use crate::devices::filesystem::{
     BrowseFilesCommand, FileEntryKind as DomainFileEntryKind,
     FileMetadataService, JournalFilesCommand, PathSyntax as DomainPathSyntax,
-    RawFileSearchFilters, SearchFilesCommand, SyncFileItemCommand,
-    SyncFilesCommand,
+    RawFileSearchFilters, SearchFilesCommand, SubtreeFileCountsCommand,
+    SyncFileItemCommand, SyncFilesCommand,
 };
 use crate::devices::main_db::MainDb;
 use crate::error::AppError;
@@ -33,6 +34,28 @@ pub(in crate::devices) async fn roots(
     )
     .await?;
     Ok(Json(map_roots(roots)))
+}
+#[post("/api/device/files/subtree-counts")]
+pub(in crate::devices) async fn subtree_counts(
+    api: DeviceApiJson<CountDeviceFileSubtreesReq>,
+) -> Result<Json<CountDeviceFileSubtreesRsp>, AppError> {
+    let DeviceApiJson { actor, env, body } = api;
+    let counts = FileMetadataService::count_subtrees(
+        MainDb::new(&env.dbx),
+        &env.file_registry_db,
+        &actor,
+        SubtreeFileCountsCommand {
+            device_id: parse_uuid(&body.device_id),
+            parent_entry_id: body.parent_entry_id.as_deref().map(parse_uuid),
+            directory_entry_ids: body
+                .directory_entry_ids
+                .iter()
+                .map(|entry_id| parse_uuid(entry_id))
+                .collect(),
+        },
+    )
+    .await?;
+    Ok(Json(map_subtree_counts(counts)))
 }
 
 #[post("/api/device/files/browse")]

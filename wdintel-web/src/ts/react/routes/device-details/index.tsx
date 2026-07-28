@@ -90,7 +90,7 @@ export function DeviceDetailsPage({
   const canSyncFiles = page.permissions.canSyncFiles && device !== null && !device.archived;
   const files = useDeviceFiles({
     deviceId,
-    enabled: page.permissions.canRead && device !== null,
+    enabled: activeTab === 'files' && page.permissions.canRead && device !== null,
     canSync: canSyncFiles,
   });
   const journal = useDeviceFileJournal({

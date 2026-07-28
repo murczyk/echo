@@ -1,6 +1,8 @@
 import type {
   BrowseDeviceFilesReq,
   BrowseDeviceFilesRsp,
+  CountDeviceFileSubtreesReq,
+  CountDeviceFileSubtreesRsp,
   CreateDeviceReq,
   DeviceDetailReq,
   DeviceDetails,
@@ -185,6 +187,17 @@ export async function listDeviceFileRoots(
 ): Promise<ListDeviceFileRootsRsp> {
   const data = await postJson('/api/device/files/roots', transformCamelToSnake(req), options);
   return transformSnakeToCamel<ListDeviceFileRootsRsp>(data);
+}
+export async function countDeviceFileSubtrees(
+  req: CountDeviceFileSubtreesReq,
+  options?: RequestOptions,
+): Promise<CountDeviceFileSubtreesRsp> {
+  const data = await postJson(
+    '/api/device/files/subtree-counts',
+    transformCamelToSnake(req),
+    options,
+  );
+  return transformSnakeToCamel<CountDeviceFileSubtreesRsp>(data);
 }
 
 export async function browseDeviceFiles(

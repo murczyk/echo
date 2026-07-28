@@ -13,6 +13,7 @@ pub(crate) fn configure_routes(cfg: &mut web::ServiceConfig) {
         .service(device::create)
         .service(device::update)
         .service(files::roots)
+        .service(files::subtree_counts)
         .service(files::browse)
         .service(files::search)
         .service(files::journal)

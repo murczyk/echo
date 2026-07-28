@@ -1,15 +1,15 @@
 use crate::devices::api::types::{
-    format_datetime, BrowseDeviceFilesRsp, DeviceFile, DeviceFileJournalEntry,
-    DeviceFileRoot, DeviceFileTreeEntry, FileBreadcrumb,
-    FileEntryKind as FileEntryKindDto, FileSyncError, FileSyncErrorKind,
-    FileSyncOperation, FileSyncResult, JournalDeviceFilesRsp,
-    ListDeviceFileRootsRsp, PathSyntax as PathSyntaxDto, SearchDeviceFilesRsp,
-    SyncDeviceFilesRsp,
+    format_datetime, BrowseDeviceFilesRsp, CountDeviceFileSubtreesRsp,
+    DeviceFile, DeviceFileJournalEntry, DeviceFileRoot, DeviceFileSubtreeCount,
+    DeviceFileTreeEntry, FileBreadcrumb, FileEntryKind as FileEntryKindDto,
+    FileSyncError, FileSyncErrorKind, FileSyncOperation, FileSyncResult,
+    JournalDeviceFilesRsp, ListDeviceFileRootsRsp, PathSyntax as PathSyntaxDto,
+    SearchDeviceFilesRsp, SyncDeviceFilesRsp,
 };
 use crate::devices::filesystem::{
     Breadcrumb, BrowseFilesResult, FileEntry, JournalFilesResult, PathSyntax,
-    RootEntry, SearchFilesResult, SyncFileItemOutcome, SyncFileOperation,
-    SyncFileRejectionKind, SyncFilesResult, TreeEntry,
+    RootEntry, SearchFilesResult, SubtreeFileCount, SyncFileItemOutcome,
+    SyncFileOperation, SyncFileRejectionKind, SyncFilesResult, TreeEntry,
 };
 use crate::error::AppError;
 
@@ -21,13 +21,27 @@ pub(in crate::devices) fn map_roots(
     }
 }
 
+pub(in crate::devices) fn map_subtree_counts(
+    counts: Vec<SubtreeFileCount>,
+) -> CountDeviceFileSubtreesRsp {
+    CountDeviceFileSubtreesRsp {
+        counts: counts
+            .into_iter()
+            .map(|count| DeviceFileSubtreeCount {
+                entry_id: count.entry_id.hyphenated().to_string(),
+                file_count: count.file_count,
+            })
+            .collect(),
+    }
+}
+
 pub(in crate::devices) fn map_browse(
     result: BrowseFilesResult,
 ) -> Result<BrowseDeviceFilesRsp, AppError> {
     if result.entries.len() != result.entry_path_components.len() {
         return Err(AppError::AnyhowError {
             source: anyhow::anyhow!(
-                "browse result path context does not match entries"
+                "browse result context does not match entries"
             ),
         });
     }
@@ -76,6 +90,7 @@ pub(in crate::devices) fn map_journal(
                 synchronized_at: format_datetime(entry.synchronized_at),
             })
             .collect(),
+        total_count: result.total_count,
         next_cursor: result.next_cursor,
     }
 }

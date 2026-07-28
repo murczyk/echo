@@ -89,6 +89,7 @@ const entry: DeviceFileJournalEntry = {
 function journalState(overrides: Partial<DeviceFileJournalState> = {}): DeviceFileJournalState {
   return {
     entries: [entry],
+    totalCount: 12_345,
     nextCursor: null,
     loading: false,
     loadingMore: false,
@@ -134,10 +135,15 @@ describe('DeviceFileJournal', () => {
     expect(container?.textContent).toContain('report.log');
     expect(container?.textContent).toContain('/var/log/report.log');
     expect(container?.textContent).not.toContain(entry.synchronizedAt);
+    const countStatus = container?.querySelector('[role="status"]');
+    expect(countStatus?.getAttribute('aria-label')?.replace(/\s/g, ' ')).toBe(
+      'Показано 1 з 12 345 файлів',
+    );
+    expect(countStatus?.textContent?.replace(/\s/g, ' ')).toContain('1 з 12 345 файлів');
   });
 
   it('shows the empty state when no files have been synchronized', () => {
-    renderJournal(journalState({ entries: [] }));
+    renderJournal(journalState({ entries: [], totalCount: 0 }));
 
     expect(container?.textContent).toContain('Синхронізованих файлів ще немає');
   });
@@ -147,6 +153,7 @@ describe('DeviceFileJournal', () => {
     renderJournal(
       journalState({
         entries: [],
+        totalCount: null,
         error: { message: 'Журнал недоступний', status: 500 },
         reload,
       }),
@@ -162,7 +169,7 @@ describe('DeviceFileJournal', () => {
 
   it('loads the next journal page on demand', () => {
     const loadMore = vi.fn().mockResolvedValue(undefined);
-    renderJournal(journalState({ nextCursor: 'next', loadMore }));
+    renderJournal(journalState({ totalCount: 2, nextCursor: 'next', loadMore }));
 
     const loadMoreButton = Array.from(container?.querySelectorAll('button') ?? []).find(
       (button) => button.textContent === 'Завантажити ще',

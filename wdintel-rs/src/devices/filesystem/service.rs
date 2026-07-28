@@ -1,11 +1,15 @@
 use super::sync::sync_files;
-use super::validation::{duplicate_file_ids, validate_sync_batch_size};
+use super::validation::{
+    duplicate_file_ids, validate_subtree_count_directories,
+    validate_sync_batch_size,
+};
 use super::{
     BrowseFilesCommand, BrowseFilesResult, EntryQueryScope, FileCursorCodec,
     FileSearchFilters, FilesystemError, FilesystemFieldError,
     FilesystemRepository, JournalFilesCommand, JournalFilesResult,
     KeysetPageRequest, RootEntry, SearchFilesCommand, SearchFilesResult,
-    SyncFilesCommand, SyncFilesResult,
+    SubtreeFileCount, SubtreeFileCountsCommand, SyncFilesCommand,
+    SyncFilesResult,
 };
 use crate::devices::access::DeviceActor;
 use crate::devices::main_db::MainDb;
@@ -34,6 +38,36 @@ impl FileMetadataService {
 
         FilesystemRepository::new(file_registry_db)
             .list_roots(device_id)
+            .await
+            .map_err(map_read_error)
+    }
+    pub(in crate::devices) async fn count_subtrees(
+        main_db: MainDb<'_, DatabaseConnection>,
+        file_registry_db: &FileRegistryDb,
+        actor: &DeviceActor,
+        command: SubtreeFileCountsCommand,
+    ) -> Result<Vec<SubtreeFileCount>, AppError> {
+        let SubtreeFileCountsCommand {
+            device_id,
+            parent_entry_id,
+            directory_entry_ids,
+        } = command;
+        let device_id = DeviceVisibility::verify_file_registry_access(
+            main_db,
+            actor,
+            device_id,
+            FileRegistryDeviceAccess::Read,
+        )
+        .await?;
+        validate_subtree_count_directories(&directory_entry_ids)
+            .map_err(map_read_error)?;
+
+        FilesystemRepository::new(file_registry_db)
+            .count_file_subtrees(
+                device_id,
+                parent_entry_id,
+                &directory_entry_ids,
+            )
             .await
             .map_err(map_read_error)
     }
@@ -75,12 +109,13 @@ impl FileMetadataService {
         };
         let page =
             KeysetPageRequest::try_new(limit, after).map_err(map_read_error)?;
-        let page = repository
-            .list_file_journal(device_id, page)
+        let (page, total_count) = repository
+            .list_file_journal_with_total(device_id, page)
             .await
             .map_err(map_read_error)?;
 
         Ok(JournalFilesResult {
+            total_count,
             entries: page.entries,
             next_cursor: page
                 .next

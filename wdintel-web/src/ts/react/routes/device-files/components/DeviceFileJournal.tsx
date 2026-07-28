@@ -6,6 +6,7 @@ import { useMemo } from 'react';
 import type { DeviceFileJournalEntry } from '../../../../../Bindings';
 import { PowerAlert } from '../../../components/PowerAlert';
 import { PowerButton } from '../../../components/PowerButton';
+import { PowerChip } from '../../../components/PowerChip';
 import {
   getDefaultMrtContainerProps,
   getDefaultMrtPaperProps,
@@ -17,6 +18,7 @@ import {
 import type { DeviceFileJournalState } from '../use-device-file-journal';
 
 const defaultMrtOptions = getDefaultMRTOptions<DeviceFileJournalEntry>();
+const fileCountFormatter = new Intl.NumberFormat('uk-UA');
 const synchronizedAtFormatter = new Intl.DateTimeFormat('uk-UA', {
   dateStyle: 'short',
   timeStyle: 'medium',
@@ -64,6 +66,12 @@ function useJournalColumns(): MRT_ColumnDef<DeviceFileJournalEntry>[] {
 export function DeviceFileJournal({ journal }: { journal: DeviceFileJournalState }) {
   const columns = useJournalColumns();
   const isInitialLoading = journal.loading && journal.entries.length === 0;
+  const countLabel =
+    journal.totalCount === null
+      ? null
+      : `${fileCountFormatter.format(journal.entries.length)} з ${fileCountFormatter.format(
+          journal.totalCount,
+        )} файлів`;
   const table = useMaterialReactTable({
     ...defaultMrtOptions,
     columns,
@@ -146,6 +154,30 @@ export function DeviceFileJournal({ journal }: { journal: DeviceFileJournalState
         overflow: 'hidden',
       }}
     >
+      {countLabel !== null ? (
+        <Box
+          role="status"
+          aria-label={`Показано ${countLabel}`}
+          sx={{
+            flexShrink: 0,
+            display: 'flex',
+            alignItems: 'center',
+            px: 2,
+            py: 1,
+            borderBottom: 1,
+            borderColor: 'divider',
+          }}
+        >
+          <PowerChip
+            label={countLabel}
+            color="default"
+            interactive={false}
+            fontSize="0.75rem"
+            sx={{ fontVariantNumeric: 'tabular-nums' }}
+          />
+        </Box>
+      ) : null}
+
       <Box sx={{ flex: 1, minHeight: 0, minWidth: 0, display: 'flex' }}>
         <MaterialReactTable table={table} />
       </Box>

@@ -36,9 +36,10 @@ pub(in crate::devices) use types::{
     FileJournalSortKey, FileMutationResult, FileSearchFilters,
     JournalFilesCommand, JournalFilesResult, KeysetPage, KeysetPageRequest,
     NormalizedFileMetadata, ParsedSourcePath, RawFileSearchFilters, RootEntry,
-    SearchEntry, SearchFilesCommand, SearchFilesResult, SyncFileItemCommand,
-    SyncFileItemOutcome, SyncFileItemResult, SyncFileOperation,
-    SyncFileRejectionKind, SyncFilesCommand, SyncFilesResult, TreeEntry,
+    SearchEntry, SearchFilesCommand, SearchFilesResult, SubtreeFileCount,
+    SubtreeFileCountsCommand, SyncFileItemCommand, SyncFileItemOutcome,
+    SyncFileItemResult, SyncFileOperation, SyncFileRejectionKind,
+    SyncFilesCommand, SyncFilesResult, TreeEntry,
 };
 pub(in crate::devices) use types::{
     FileEntry, FileEntryKind, PathSyntax, PreparedFileMutation,

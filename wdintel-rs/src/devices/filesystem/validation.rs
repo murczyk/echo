@@ -8,7 +8,9 @@ use crate::config::{
     DEVICE_FILE_PATH_COMPONENT_MAX_CHARS, DEVICE_FILE_PATH_COMPONENT_MAX_COUNT,
     DEVICE_FILE_SEARCH_FILTER_MAX_VALUES,
     DEVICE_FILE_SEARCH_NAME_QUERY_MAX_CHARS,
-    DEVICE_FILE_SEARCH_NAME_QUERY_MIN_CHARS, DEVICE_FILE_SYNC_BATCH_MAX_COUNT,
+    DEVICE_FILE_SEARCH_NAME_QUERY_MIN_CHARS,
+    DEVICE_FILE_SUBTREE_COUNT_MAX_DIRECTORIES,
+    DEVICE_FILE_SYNC_BATCH_MAX_COUNT,
 };
 use std::collections::HashSet;
 use uuid::Uuid;
@@ -87,6 +89,31 @@ pub(super) fn validate_sync_batch_size(
             format!(
                 "must contain between 1 and {DEVICE_FILE_SYNC_BATCH_MAX_COUNT} items"
             ),
+        ));
+    }
+
+    Ok(())
+}
+pub(super) fn validate_subtree_count_directories(
+    directory_entry_ids: &[Uuid],
+) -> Result<(), FilesystemError> {
+    if !(1..=DEVICE_FILE_SUBTREE_COUNT_MAX_DIRECTORIES)
+        .contains(&directory_entry_ids.len())
+    {
+        return Err(validation_error(
+            "directory_entry_ids",
+            format!(
+                "must contain between 1 and {DEVICE_FILE_SUBTREE_COUNT_MAX_DIRECTORIES} items"
+            ),
+        ));
+    }
+
+    if directory_entry_ids.iter().collect::<HashSet<_>>().len()
+        != directory_entry_ids.len()
+    {
+        return Err(validation_error(
+            "directory_entry_ids",
+            "must not contain duplicate values".to_string(),
         ));
     }
 

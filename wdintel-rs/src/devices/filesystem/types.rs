@@ -68,6 +68,18 @@ pub(in crate::devices) struct RootEntry {
     pub(in crate::devices) created_at: NaiveDateTime,
     pub(in crate::devices) updated_at: NaiveDateTime,
 }
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(in crate::devices) struct SubtreeFileCountsCommand {
+    pub(in crate::devices) device_id: Uuid,
+    pub(in crate::devices) parent_entry_id: Option<Uuid>,
+    pub(in crate::devices) directory_entry_ids: Vec<Uuid>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(in crate::devices) struct SubtreeFileCount {
+    pub(in crate::devices) entry_id: Uuid,
+    pub(in crate::devices) file_count: u64,
+}
 
 #[allow(dead_code)]
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -338,6 +350,7 @@ pub(in crate::devices) struct JournalFilesCommand {
 pub(in crate::devices) struct JournalFilesResult {
     pub(in crate::devices) entries: Vec<FileJournalEntry>,
     pub(in crate::devices) next_cursor: Option<String>,
+    pub(in crate::devices) total_count: u64,
 }
 
 #[allow(dead_code)]

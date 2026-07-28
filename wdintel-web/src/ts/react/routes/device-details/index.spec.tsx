@@ -104,6 +104,7 @@ beforeEach(() => {
   pageMock.useDeviceFiles.mockReturnValue({});
   pageMock.useDeviceFileJournal.mockReturnValue({
     entries: [],
+    totalCount: null,
     nextCursor: null,
     loading: false,
     loadingMore: false,

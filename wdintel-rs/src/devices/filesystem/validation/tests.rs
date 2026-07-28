@@ -3,6 +3,7 @@ use crate::config::{
     DEVICE_FILE_ABSOLUTE_PATH_MAX_BYTES, DEVICE_FILE_ABSOLUTE_PATH_MAX_CHARS,
     DEVICE_FILE_PATH_COMPONENTS_MAX_CHARS,
     DEVICE_FILE_PATH_COMPONENT_MAX_CHARS,
+    DEVICE_FILE_SUBTREE_COUNT_MAX_DIRECTORIES,
 };
 use crate::devices::filesystem::types::{
     EntrySortKey, FileEntryKind, KeysetPageRequest,
@@ -257,6 +258,41 @@ fn sync_batch_size_enforces_configured_boundaries() {
             }]
         );
     }
+}
+#[test]
+fn subtree_count_batch_enforces_size_and_uniqueness() {
+    for item_count in [1, DEVICE_FILE_SUBTREE_COUNT_MAX_DIRECTORIES] {
+        let entry_ids = (1..=item_count)
+            .map(|value| Uuid::from_u128(value as u128))
+            .collect::<Vec<_>>();
+        validate_subtree_count_directories(&entry_ids).unwrap();
+    }
+
+    for item_count in [0, DEVICE_FILE_SUBTREE_COUNT_MAX_DIRECTORIES + 1] {
+        let entry_ids = (1..=item_count)
+            .map(|value| Uuid::from_u128(value as u128))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            path_validation_errors(validate_subtree_count_directories(&entry_ids)),
+            vec![FilesystemFieldError {
+                path: "directory_entry_ids".to_string(),
+                message: format!(
+                    "must contain between 1 and {DEVICE_FILE_SUBTREE_COUNT_MAX_DIRECTORIES} items"
+                ),
+            }]
+        );
+    }
+
+    let duplicate = Uuid::from_u128(1);
+    assert_eq!(
+        path_validation_errors(validate_subtree_count_directories(&[
+            duplicate, duplicate,
+        ])),
+        vec![FilesystemFieldError {
+            path: "directory_entry_ids".to_string(),
+            message: "must not contain duplicate values".to_string(),
+        }]
+    );
 }
 
 #[test]

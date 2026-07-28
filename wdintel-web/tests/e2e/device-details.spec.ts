@@ -87,10 +87,22 @@ function systemSettings() {
 
 type ApiTracker = {
   journalRequestCount: number;
+  rootsRequestCount: number;
+  subtreeCountRequestCount: number;
+  releaseSubtreeCounts: () => void;
 };
 
 async function installMocks(page: Page): Promise<ApiTracker> {
-  const tracker: ApiTracker = { journalRequestCount: 0 };
+  let releaseSubtreeCounts = () => undefined;
+  const subtreeCountsReady = new Promise<void>((resolve) => {
+    releaseSubtreeCounts = resolve;
+  });
+  const tracker: ApiTracker = {
+    journalRequestCount: 0,
+    rootsRequestCount: 0,
+    subtreeCountRequestCount: 0,
+    releaseSubtreeCounts,
+  };
   await page.route('**/api-public/server-info', (route) =>
     fulfillJson(route, {
       mode: '',
@@ -149,8 +161,29 @@ async function installMocks(page: Page): Promise<ApiTracker> {
       return;
     }
     if (pathname === '/api/device/files/roots') {
+      tracker.rootsRequestCount += 1;
       await fulfillJson(route, {
         roots: [root(POSIX_ROOT_ID, '/', 'posix'), root(WINDOWS_ROOT_ID, 'C:\\', 'windows')],
+      });
+      return;
+    }
+    if (pathname === '/api/device/files/subtree-counts') {
+      tracker.subtreeCountRequestCount += 1;
+      const request = route.request().postDataJSON() as {
+        directory_entry_ids: string[];
+      };
+      const countsByEntryId: Record<string, number> = {
+        [POSIX_ROOT_ID]: 2,
+        [WINDOWS_ROOT_ID]: 0,
+        [DOCUMENTS_ID]: 1,
+        [USERS_ID]: 0,
+      };
+      await subtreeCountsReady;
+      await fulfillJson(route, {
+        counts: request.directory_entry_ids.map((entryId) => ({
+          entry_id: entryId,
+          file_count: countsByEntryId[entryId],
+        })),
       });
       return;
     }
@@ -213,6 +246,7 @@ async function installMocks(page: Page): Promise<ApiTracker> {
             synchronized_at: '2026-07-28T08:15:30Z',
           },
         ],
+        total_count: 1,
         next_cursor: null,
       });
       return;
@@ -252,6 +286,7 @@ test('@smoke device details uses tabs, a synchronization journal, a collapsible 
   await expect(page.getByRole('tab', { name: 'Файли' })).toBeVisible();
   await expect(page.getByRole('tab', { name: 'Журнал' })).toBeVisible();
   expect(tracker.journalRequestCount).toBe(0);
+  expect(tracker.rootsRequestCount).toBe(0);
   const metadataPanel = page.getByTestId('device-details-left-panel');
   await expect(metadataPanel).toBeVisible();
   const metadataBox = await metadataPanel.boundingBox();
@@ -273,19 +308,50 @@ test('@smoke device details uses tabs, a synchronization journal, a collapsible 
   await expect(journalRow).toContainText('/var/log/journal.log');
   await expect(journalRow.getByRole('cell').nth(2)).not.toHaveText('');
   await expect.poll(() => tracker.journalRequestCount).toBe(1);
+  await expect(page.getByRole('status', { name: 'Показано 1 з 1 файлів' })).toBeVisible();
 
   await page.getByRole('tab', { name: 'Аналітичні відомості' }).click();
   await page.getByRole('tab', { name: 'Журнал' }).click();
   await expect(journalTable).toBeVisible();
   await expect.poll(() => tracker.journalRequestCount).toBe(2);
+  expect(tracker.rootsRequestCount).toBe(0);
 
   await page.getByRole('tab', { name: 'Файли' }).click();
   const fileTree = page.getByTestId('device-files-tree-panel');
   await expect(fileTree).toBeVisible();
+  await expect.poll(() => tracker.rootsRequestCount).toBe(1);
   await expect(page.getByLabel('Вибрати каталог / як область пошуку')).toBeVisible();
   await expect(page.getByLabel('Вибрати каталог C:\\ як область пошуку')).toBeVisible();
   await expect(page.getByText('root.log', { exact: true })).toBeVisible();
   await expect(page.getByLabel('Вибрати каталог Users як область пошуку')).toBeVisible();
+  await expect(page.getByLabel('Завантаження кількості файлів')).toBeVisible();
+  await expect.poll(() => tracker.subtreeCountRequestCount).toBe(1);
+  await expect(
+    page.getByLabel(
+      'Вибрати каталог / як область пошуку; Файлів у каталозі та вкладених каталогах: 2',
+      { exact: true },
+    ),
+  ).toHaveCount(0);
+  tracker.releaseSubtreeCounts();
+  await expect(page.getByLabel('Завантаження кількості файлів')).toBeHidden();
+  await expect(
+    page.getByLabel(
+      'Вибрати каталог / як область пошуку; Файлів у каталозі та вкладених каталогах: 2',
+      { exact: true },
+    ),
+  ).toBeVisible();
+  await expect(
+    page.getByLabel(
+      'Вибрати каталог C:\\ як область пошуку; Файлів у каталозі та вкладених каталогах: 0',
+      { exact: true },
+    ),
+  ).toBeVisible();
+  await expect(
+    page.getByLabel(
+      'Вибрати каталог Users як область пошуку; Файлів у каталозі та вкладених каталогах: 0',
+      { exact: true },
+    ),
+  ).toBeVisible();
   await expect(page.getByLabel('Назва містить')).toBeVisible();
   await expect(page.getByLabel('MIME-типи')).toBeVisible();
   await expect(page.getByLabel('Розширення')).toBeVisible();
@@ -297,6 +363,12 @@ test('@smoke device details uses tabs, a synchronization journal, a collapsible 
 
   await page.getByLabel('Розгорнути каталог documents').click();
   await expect(page.getByText('report.txt', { exact: true })).toBeVisible();
+  await expect(
+    page.getByLabel(
+      'Вибрати каталог documents як область пошуку; Файлів у каталозі та вкладених каталогах: 1',
+      { exact: true },
+    ),
+  ).toBeVisible();
 
   const mainPanel = page.getByTestId('device-details-tab-panel');
   const mainBeforeCollapse = await mainPanel.boundingBox();

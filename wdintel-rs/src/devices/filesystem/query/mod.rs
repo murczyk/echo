@@ -1,6 +1,7 @@
 mod ancestors;
 mod browse;
 pub(super) mod core;
+mod counts;
 mod journal;
 mod model;
 mod roots;
@@ -12,6 +13,9 @@ pub(in crate::devices::filesystem) use ancestors::{
 pub(in crate::devices::filesystem) use browse::list_children;
 pub(in crate::devices::filesystem) use core::{
     find_directory_scope, resolve_cursor_entry_sort_key,
+};
+pub(in crate::devices::filesystem) use counts::{
+    count_device_files, count_file_subtrees,
 };
 pub(in crate::devices::filesystem) use journal::{
     list_file_journal, resolve_file_journal_cursor,

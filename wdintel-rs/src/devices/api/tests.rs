@@ -239,6 +239,7 @@ async fn target_api_smoke_covers_all_routes_and_boundary_precedence() {
     let roots: Value = test::read_body_json(response).await;
     assert_eq!(roots["roots"].as_array().unwrap().len(), 1);
     assert_eq!(roots["roots"][0]["entry_id"], root_id);
+    assert!(roots["roots"][0].get("subtree_file_count").is_none());
 
     let response = post_json!(
         "/api/device/files/browse",
@@ -253,6 +254,33 @@ async fn target_api_smoke_covers_all_routes_and_boundary_precedence() {
     assert_eq!(browse["entries"][0]["name"], "reports");
     assert_eq!(browse["entries"][0]["kind"], "directory");
     assert!(browse["entries"][0].get("path_components").is_some());
+    assert!(browse["entries"][0].get("subtree_file_count").is_none());
+    let reports_id = browse["entries"][0]["entry_id"].as_str().unwrap();
+    let response = post_json!(
+        "/api/device/files/subtree-counts",
+        json!({
+            "device_id": device_id,
+            "parent_entry_id": null,
+            "directory_entry_ids": [root_id]
+        })
+    );
+    assert_eq!(response.status(), StatusCode::OK);
+    let root_counts: Value = test::read_body_json(response).await;
+    assert_eq!(root_counts["counts"][0]["entry_id"], root_id);
+    assert_eq!(root_counts["counts"][0]["file_count"], 1);
+
+    let response = post_json!(
+        "/api/device/files/subtree-counts",
+        json!({
+            "device_id": device_id,
+            "parent_entry_id": root_id,
+            "directory_entry_ids": [reports_id]
+        })
+    );
+    assert_eq!(response.status(), StatusCode::OK);
+    let directory_counts: Value = test::read_body_json(response).await;
+    assert_eq!(directory_counts["counts"][0]["entry_id"], reports_id);
+    assert_eq!(directory_counts["counts"][0]["file_count"], 1);
 
     let response = post_json!(
         "/api/device/files/search",
@@ -317,6 +345,7 @@ async fn target_api_smoke_covers_all_routes_and_boundary_precedence() {
     let journal: Value = test::read_body_json(response).await;
     let journal_entries = journal["entries"].as_array().unwrap();
     assert_eq!(journal_entries.len(), 2);
+    assert_eq!(journal["total_count"], 3);
     assert!(journal_entries
         .iter()
         .all(|entry| entry["synchronized_at"].as_str().is_some()));
@@ -345,6 +374,7 @@ async fn target_api_smoke_covers_all_routes_and_boundary_precedence() {
     assert_eq!(response.status(), StatusCode::OK);
     let journal: Value = test::read_body_json(response).await;
     assert_eq!(journal["entries"].as_array().unwrap().len(), 1);
+    assert_eq!(journal["total_count"], 3);
     assert_eq!(journal["entries"][0]["name"], "good.txt");
     assert_eq!(journal["next_cursor"], Value::Null);
 

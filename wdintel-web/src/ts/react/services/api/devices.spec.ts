@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   browseDeviceFiles,
+  countDeviceFileSubtrees,
   createDevice,
   getDeviceDetail,
   getDeviceUnitStats,
@@ -223,7 +224,34 @@ describe('device filesystem API service routes', () => {
 
     expect(fetchMock()).toHaveBeenCalledWith('/api/device/files/roots', expect.any(Object));
     expect(requestBody()).toEqual({ device_id: DEVICE_ID });
-    expect(rsp.roots[0]).toMatchObject({ entryId: ROOT_ID, pathSyntax: 'posix' });
+    expect(rsp.roots[0]).toMatchObject({
+      entryId: ROOT_ID,
+      pathSyntax: 'posix',
+    });
+  });
+  it('loads subtree counts separately from tree payloads', async () => {
+    fetchMock().mockResolvedValueOnce(
+      jsonResponse({
+        counts: [{ entry_id: ROOT_ID, file_count: 12_345 }],
+      }),
+    );
+
+    const rsp = await countDeviceFileSubtrees({
+      deviceId: DEVICE_ID,
+      parentEntryId: null,
+      directoryEntryIds: [ROOT_ID],
+    });
+
+    expect(fetchMock()).toHaveBeenCalledWith(
+      '/api/device/files/subtree-counts',
+      expect.any(Object),
+    );
+    expect(requestBody()).toEqual({
+      device_id: DEVICE_ID,
+      parent_entry_id: null,
+      directory_entry_ids: [ROOT_ID],
+    });
+    expect(rsp.counts).toEqual([{ entryId: ROOT_ID, fileCount: 12_345 }]);
   });
 
   it('browses a directory with keyset pagination', async () => {
@@ -312,6 +340,7 @@ describe('device filesystem API service routes', () => {
             synchronized_at: UPDATED_AT,
           },
         ],
+        total_count: 12_345,
         next_cursor: 'next',
       }),
     );
@@ -337,6 +366,7 @@ describe('device filesystem API service routes', () => {
           synchronizedAt: UPDATED_AT,
         },
       ],
+      totalCount: 12_345,
       nextCursor: 'next',
     });
   });

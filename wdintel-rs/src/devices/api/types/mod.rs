@@ -13,8 +13,9 @@ pub use device::{
 };
 #[allow(unused_imports)]
 pub use files::{
-    BrowseDeviceFilesReq, BrowseDeviceFilesRsp, DeviceFile,
-    DeviceFileJournalEntry, DeviceFileRoot, DeviceFileTreeEntry,
+    BrowseDeviceFilesReq, BrowseDeviceFilesRsp, CountDeviceFileSubtreesReq,
+    CountDeviceFileSubtreesRsp, DeviceFile, DeviceFileJournalEntry,
+    DeviceFileRoot, DeviceFileSubtreeCount, DeviceFileTreeEntry,
     FileBreadcrumb, FileSyncError, FileSyncErrorKind, FileSyncOperation,
     FileSyncResult, JournalDeviceFilesReq, JournalDeviceFilesRsp,
     ListDeviceFileRootsReq, ListDeviceFileRootsRsp, SearchDeviceFilesReq,

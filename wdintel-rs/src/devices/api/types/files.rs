@@ -1,5 +1,6 @@
 use super::common::{
-    deserialize_canonical_uuid, deserialize_optional_canonical_uuid,
+    deserialize_canonical_uuid, deserialize_canonical_uuid_vec,
+    deserialize_nullable_canonical_uuid, deserialize_optional_canonical_uuid,
     deserialize_optional_datetime, FieldError, FileEntryKind, PathSyntax,
     RequiredPatch,
 };
@@ -135,6 +136,59 @@ pub struct ListDeviceFileRootsReq {
 #[serde(deny_unknown_fields)]
 pub struct ListDeviceFileRootsRsp {
     pub roots: Vec<DeviceFileRoot>,
+}
+#[derive(
+    Elm,
+    ElmEncode,
+    ElmDecode,
+    Debug,
+    Serialize,
+    Deserialize,
+    PartialEq,
+    Eq,
+    Clone,
+)]
+#[serde(deny_unknown_fields)]
+pub struct CountDeviceFileSubtreesReq {
+    #[serde(deserialize_with = "deserialize_canonical_uuid")]
+    pub device_id: String,
+    #[serde(deserialize_with = "deserialize_nullable_canonical_uuid")]
+    pub parent_entry_id: Option<String>,
+    #[serde(deserialize_with = "deserialize_canonical_uuid_vec")]
+    pub directory_entry_ids: Vec<String>,
+}
+
+#[derive(
+    Elm,
+    ElmEncode,
+    ElmDecode,
+    Debug,
+    Serialize,
+    Deserialize,
+    PartialEq,
+    Eq,
+    Clone,
+)]
+#[serde(deny_unknown_fields)]
+pub struct DeviceFileSubtreeCount {
+    pub entry_id: String,
+    pub file_count: u64,
+}
+
+#[derive(
+    Elm,
+    ElmEncode,
+    ElmDecode,
+    Debug,
+    Serialize,
+    Deserialize,
+    PartialEq,
+    Eq,
+    Clone,
+)]
+#[serde(deny_unknown_fields)]
+pub struct CountDeviceFileSubtreesRsp {
+    pub counts: Vec<DeviceFileSubtreeCount>,
 }
 
 #[derive(
@@ -275,6 +329,7 @@ pub struct JournalDeviceFilesReq {
 #[serde(deny_unknown_fields)]
 pub struct JournalDeviceFilesRsp {
     pub entries: Vec<DeviceFileJournalEntry>,
+    pub total_count: u64,
     pub next_cursor: Option<String>,
 }
 

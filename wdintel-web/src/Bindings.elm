@@ -4562,6 +4562,48 @@ listDeviceFileRootsRspEncoder struct =
         ]
 
 
+type alias DeviceFileSubtreeCount =
+    { entryId : String
+    , fileCount : Int
+    }
+
+
+deviceFileSubtreeCountEncoder : DeviceFileSubtreeCount -> Json.Encode.Value
+deviceFileSubtreeCountEncoder struct =
+    Json.Encode.object
+        [ ( "entry_id", (Json.Encode.string) struct.entryId )
+        , ( "file_count", (Json.Encode.int) struct.fileCount )
+        ]
+
+
+type alias CountDeviceFileSubtreesReq =
+    { deviceId : String
+    , parentEntryId : Maybe (String)
+    , directoryEntryIds : List (String)
+    }
+
+
+countDeviceFileSubtreesReqEncoder : CountDeviceFileSubtreesReq -> Json.Encode.Value
+countDeviceFileSubtreesReqEncoder struct =
+    Json.Encode.object
+        [ ( "device_id", (Json.Encode.string) struct.deviceId )
+        , ( "parent_entry_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.parentEntryId )
+        , ( "directory_entry_ids", (Json.Encode.list (Json.Encode.string)) struct.directoryEntryIds )
+        ]
+
+
+type alias CountDeviceFileSubtreesRsp =
+    { counts : List (DeviceFileSubtreeCount)
+    }
+
+
+countDeviceFileSubtreesRspEncoder : CountDeviceFileSubtreesRsp -> Json.Encode.Value
+countDeviceFileSubtreesRspEncoder struct =
+    Json.Encode.object
+        [ ( "counts", (Json.Encode.list (deviceFileSubtreeCountEncoder)) struct.counts )
+        ]
+
+
 type alias BrowseDeviceFilesReq =
     { deviceId : String
     , parentEntryId : String
@@ -4678,6 +4720,7 @@ journalDeviceFilesReqEncoder struct =
 
 type alias JournalDeviceFilesRsp =
     { entries : List (DeviceFileJournalEntry)
+    , totalCount : Int
     , nextCursor : Maybe (String)
     }
 
@@ -4686,6 +4729,7 @@ journalDeviceFilesRspEncoder : JournalDeviceFilesRsp -> Json.Encode.Value
 journalDeviceFilesRspEncoder struct =
     Json.Encode.object
         [ ( "entries", (Json.Encode.list (deviceFileJournalEntryEncoder)) struct.entries )
+        , ( "total_count", (Json.Encode.int) struct.totalCount )
         , ( "next_cursor", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.nextCursor )
         ]
 
@@ -13374,6 +13418,7 @@ journalDeviceFilesRspDecoder : Json.Decode.Decoder JournalDeviceFilesRsp
 journalDeviceFilesRspDecoder =
     Json.Decode.succeed JournalDeviceFilesRsp
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "entries" (Json.Decode.list (deviceFileJournalEntryDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "total_count" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "next_cursor" (Json.Decode.nullable (Json.Decode.string))))
 
 

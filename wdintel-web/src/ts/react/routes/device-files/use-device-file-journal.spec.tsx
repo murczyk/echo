@@ -35,8 +35,9 @@ function journalEntry(
 function journalResponse(
   entries: DeviceFileJournalEntry[],
   nextCursor: string | null = null,
+  totalCount = entries.length,
 ): JournalDeviceFilesRsp {
-  return { entries, nextCursor };
+  return { entries, totalCount, nextCursor };
 }
 
 let container: HTMLDivElement | null = null;
@@ -91,10 +92,12 @@ describe('useDeviceFileJournal', () => {
     await renderHook();
     expect(apiMock.journalDeviceFiles).toHaveBeenCalledTimes(1);
     expect(latest?.entries.map((entry) => entry.name)).toEqual(['first.log']);
+    expect(latest?.totalCount).toBe(1);
 
     enabled = false;
     await renderHook();
     expect(latest?.entries).toEqual([]);
+    expect(latest?.totalCount).toBeNull();
 
     apiMock.journalDeviceFiles.mockResolvedValueOnce(
       journalResponse([journalEntry(FILE_TWO_ID, 'second.log')]),
@@ -108,12 +111,15 @@ describe('useDeviceFileJournal', () => {
 
   it('appends keyset pages and ignores a repeated file row', async () => {
     apiMock.journalDeviceFiles
-      .mockResolvedValueOnce(journalResponse([journalEntry(FILE_ONE_ID, 'first.log')], 'next-page'))
       .mockResolvedValueOnce(
-        journalResponse([
-          journalEntry(FILE_ONE_ID, 'first.log'),
-          journalEntry(FILE_TWO_ID, 'second.log'),
-        ]),
+        journalResponse([journalEntry(FILE_ONE_ID, 'first.log')], 'next-page', 2),
+      )
+      .mockResolvedValueOnce(
+        journalResponse(
+          [journalEntry(FILE_ONE_ID, 'first.log'), journalEntry(FILE_TWO_ID, 'second.log')],
+          null,
+          2,
+        ),
       );
     enabled = true;
     await renderHook();
@@ -128,6 +134,7 @@ describe('useDeviceFileJournal', () => {
     });
     expect(latest?.entries.map((entry) => entry.fileId)).toEqual([FILE_ONE_ID, FILE_TWO_ID]);
     expect(latest?.nextCursor).toBeNull();
+    expect(latest?.totalCount).toBe(2);
   });
 
   it('keeps load failures visible and supports retry', async () => {
@@ -138,6 +145,7 @@ describe('useDeviceFileJournal', () => {
     await renderHook();
 
     expect(latest?.error?.status).toBe(500);
+    expect(latest?.totalCount).toBeNull();
     expect(latest?.error?.message).toContain('Помилка завантаження журналу синхронізації');
 
     apiMock.journalDeviceFiles.mockResolvedValueOnce(

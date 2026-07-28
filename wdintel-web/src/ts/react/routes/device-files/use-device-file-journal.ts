@@ -9,6 +9,7 @@ import { DEVICE_FILE_PAGE_SIZE, type DeviceFileLoadError } from './types';
 
 export type DeviceFileJournalState = {
   entries: DeviceFileJournalEntry[];
+  totalCount: number | null;
   nextCursor: string | null;
   loading: boolean;
   loadingMore: boolean;
@@ -34,6 +35,7 @@ export function useDeviceFileJournal({
   enabled: boolean;
 }): DeviceFileJournalState {
   const [entries, setEntries] = useState<DeviceFileJournalEntry[]>([]);
+  const [totalCount, setTotalCount] = useState<number | null>(null);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -63,6 +65,7 @@ export function useDeviceFileJournal({
         nextCursorRef.current = null;
         setNextCursor(null);
         setEntries([]);
+        setTotalCount(null);
       }
 
       try {
@@ -81,6 +84,7 @@ export function useDeviceFileJournal({
         );
         nextCursorRef.current = rsp.nextCursor;
         setNextCursor(rsp.nextCursor);
+        setTotalCount(rsp.totalCount);
       } catch (loadError) {
         if (requestSeqRef.current !== seq || controller.signal.aborted || isAbortError(loadError)) {
           return;
@@ -113,6 +117,7 @@ export function useDeviceFileJournal({
     nextCursorRef.current = null;
     setEntries([]);
     setNextCursor(null);
+    setTotalCount(null);
     setLoading(false);
     setLoadingMore(false);
     setError(null);
@@ -127,6 +132,7 @@ export function useDeviceFileJournal({
 
   return {
     entries,
+    totalCount,
     nextCursor,
     loading,
     loadingMore,

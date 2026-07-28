@@ -9,6 +9,7 @@ import type {
 } from '../../../../Bindings';
 
 export const DEVICE_FILE_PAGE_SIZE = 100;
+export const DEVICE_FILE_SUBTREE_COUNT_BATCH_SIZE = 100;
 
 export type DeviceFileLoadError = {
   message: string;

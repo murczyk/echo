@@ -223,22 +223,46 @@ impl<'de, T: Deserialize<'de>> Deserialize<'de> for NullablePatch<T> {
     }
 }
 
+fn validate_canonical_uuid<E: DeError>(value: String) -> Result<String, E> {
+    let uuid = Uuid::parse_str(&value).map_err(|_| {
+        E::custom("must be a canonical lowercase hyphenated UUID")
+    })?;
+    if uuid.hyphenated().to_string() != value {
+        return Err(E::custom("must be a canonical lowercase hyphenated UUID"));
+    }
+    Ok(value)
+}
+
 pub(super) fn deserialize_canonical_uuid<'de, D>(
     deserializer: D,
 ) -> Result<String, D::Error>
 where
     D: Deserializer<'de>,
 {
-    let value = String::deserialize(deserializer)?;
-    let uuid = Uuid::parse_str(&value).map_err(|_| {
-        D::Error::custom("must be a canonical lowercase hyphenated UUID")
-    })?;
-    if uuid.hyphenated().to_string() != value {
-        return Err(D::Error::custom(
-            "must be a canonical lowercase hyphenated UUID",
-        ));
-    }
-    Ok(value)
+    validate_canonical_uuid(String::deserialize(deserializer)?)
+}
+
+pub(super) fn deserialize_canonical_uuid_vec<'de, D>(
+    deserializer: D,
+) -> Result<Vec<String>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    Vec::<String>::deserialize(deserializer)?
+        .into_iter()
+        .map(validate_canonical_uuid)
+        .collect()
+}
+
+pub(super) fn deserialize_nullable_canonical_uuid<'de, D>(
+    deserializer: D,
+) -> Result<Option<String>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    Option::<String>::deserialize(deserializer)?
+        .map(validate_canonical_uuid)
+        .transpose()
 }
 
 pub(super) fn deserialize_optional_canonical_uuid<'de, D>(
@@ -247,17 +271,11 @@ pub(super) fn deserialize_optional_canonical_uuid<'de, D>(
 where
     D: Deserializer<'de>,
 {
-    let value = Option::<String>::deserialize(deserializer)?
-        .ok_or_else(|| D::Error::custom("field cannot be null"))?;
-    let uuid = Uuid::parse_str(&value).map_err(|_| {
-        D::Error::custom("must be a canonical lowercase hyphenated UUID")
-    })?;
-    if uuid.hyphenated().to_string() != value {
-        return Err(D::Error::custom(
-            "must be a canonical lowercase hyphenated UUID",
-        ));
-    }
-    Ok(RequiredPatch::Value(value))
+    Option::<String>::deserialize(deserializer)?
+        .map(validate_canonical_uuid)
+        .transpose()?
+        .map(RequiredPatch::Value)
+        .ok_or_else(|| D::Error::custom("field cannot be null"))
 }
 
 pub(super) fn deserialize_optional_datetime<'de, D>(
