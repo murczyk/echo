@@ -280,21 +280,24 @@ async fn fill_organism_association_message_uids(
     work_items: Vec<AssociationMessageWorkItem>,
     stats: &mut BackfillStats,
 ) -> Result<(), AppError> {
-    let Some(window_start) =
-        work_items.iter().map(|item| item.window_start).min()
+    let Some(group_keys) =
+        work_items.first().map(|item| item.group_keys.clone())
     else {
         return Ok(());
     };
-    let Some(window_end) = work_items.iter().map(|item| item.window_end).max()
-    else {
-        return Ok(());
-    };
-    let group_keys = work_items[0].group_keys.clone();
-    let candidates =
-        load_message_candidates(db, &group_keys, window_start, window_end)
-            .await
-            .c(h!())?;
+    let datasource_group_ids =
+        load_datasource_group_ids(db, &group_keys).await.c(h!())?;
     for work_item in work_items {
+        let candidates = load_message_candidates(
+            db,
+            &datasource_group_ids,
+            &group_keys,
+            &work_item.probe,
+            work_item.window_start,
+            work_item.window_end,
+        )
+        .await
+        .c(h!())?;
         let Some(message_uid) = select_matching_original_message_uid(
             &work_item.association_message,
             &work_item.probe,
@@ -371,15 +374,16 @@ async fn load_association_batch(
 
 async fn load_message_candidates(
     db: &DatabaseConnection,
+    datasource_group_ids: &[i64],
     group_keys: &[String],
+    probe: &str,
     window_start: NaiveDateTime,
     window_end: NaiveDateTime,
 ) -> Result<Vec<PreparedMessageCandidate>, AppError> {
-    let datasource_group_ids =
-        load_datasource_group_ids(db, group_keys).await.c(h!())?;
     let mut candidates = load_datasource_group_message_candidate_rows(
         db,
-        &datasource_group_ids,
+        datasource_group_ids,
+        probe,
         window_start,
         window_end,
     )
@@ -389,6 +393,7 @@ async fn load_message_candidates(
         load_linked_message_candidate_rows(
             db,
             group_keys,
+            probe,
             window_start,
             window_end,
         )
@@ -418,6 +423,7 @@ async fn load_datasource_group_ids(
 async fn load_datasource_group_message_candidate_rows(
     db: &DatabaseConnection,
     datasource_group_ids: &[i64],
+    probe: &str,
     window_start: NaiveDateTime,
     window_end: NaiveDateTime,
 ) -> Result<Vec<MessageCandidate>, AppError> {
@@ -426,6 +432,7 @@ async fn load_datasource_group_message_candidate_rows(
     }
     Ok(datasource_group_message_candidate_query(
         datasource_group_ids,
+        probe,
         window_start,
         window_end,
     )
@@ -438,24 +445,29 @@ async fn load_datasource_group_message_candidate_rows(
 async fn load_linked_message_candidate_rows(
     db: &DatabaseConnection,
     group_keys: &[String],
+    probe: &str,
     window_start: NaiveDateTime,
     window_end: NaiveDateTime,
 ) -> Result<Vec<MessageCandidate>, AppError> {
-    Ok(
-        linked_message_candidate_query(group_keys, window_start, window_end)
-            .into_model::<MessageCandidate>()
-            .all(db)
-            .await
-            .c(h!())?,
+    Ok(linked_message_candidate_query(
+        group_keys,
+        probe,
+        window_start,
+        window_end,
     )
+    .into_model::<MessageCandidate>()
+    .all(db)
+    .await
+    .c(h!())?)
 }
 
 fn datasource_group_message_candidate_query(
     datasource_group_ids: &[i64],
+    probe: &str,
     window_start: NaiveDateTime,
     window_end: NaiveDateTime,
 ) -> Select<signal_message::Entity> {
-    message_candidate_base_query(window_start, window_end).filter(
+    message_candidate_base_query(probe, window_start, window_end).filter(
         signal_message::Column::DatasourceGroupId
             .eq_any(datasource_group_ids.to_vec()),
     )
@@ -463,10 +475,12 @@ fn datasource_group_message_candidate_query(
 
 fn linked_message_candidate_query(
     group_keys: &[String],
+    probe: &str,
     window_start: NaiveDateTime,
     window_end: NaiveDateTime,
 ) -> Select<signal_message::Entity> {
-    message_candidate_base_query(window_start, window_end)
+    message_candidate_base_query(probe, window_start, window_end)
+        .distinct()
         .join(
             JoinType::InnerJoin,
             signal_message::Relation::SignalMessageGroup.def(),
@@ -478,6 +492,7 @@ fn linked_message_candidate_query(
 }
 
 fn message_candidate_base_query(
+    probe: &str,
     window_start: NaiveDateTime,
     window_end: NaiveDateTime,
 ) -> Select<signal_message::Entity> {
@@ -491,6 +506,10 @@ fn message_candidate_base_query(
         .filter(signal_message::Column::Timestamp.lte(window_end))
         .filter(signal_message::Column::MessageUid.is_not_null())
         .filter(signal_message::Column::MessageUid.ne(""))
+        .filter(
+            Expr::col(signal_message::Column::Body)
+                .like(format!("%{}%", escape_like(probe))),
+        )
         .order_by_desc(signal_message::Column::Timestamp)
         .order_by_desc(signal_message::Column::Id)
 }
@@ -554,10 +573,9 @@ fn normalize_message_body(message: &str) -> String {
 }
 
 fn message_probe(message: &str) -> Option<String> {
-    let message = message.trim();
-    if message.is_empty() {
-        return None;
-    }
+    let message = message
+        .split_whitespace()
+        .max_by_key(|part| part.chars().count())?;
     let characters = message.chars().collect::<Vec<_>>();
     if characters.len() <= ORGANISM_GOI_MESSAGE_UID_PROBE_CHARS {
         return Some(message.to_string());
@@ -568,6 +586,13 @@ fn message_probe(message: &str) -> Option<String> {
             .iter()
             .collect(),
     )
+}
+
+fn escape_like(value: &str) -> String {
+    value
+        .replace('\\', "\\\\")
+        .replace('%', "\\%")
+        .replace('_', "\\_")
 }
 
 fn signal_message_window(
@@ -665,10 +690,11 @@ mod tests {
     }
 
     #[test]
-    fn candidate_queries_scope_to_organism_signal_groups() {
+    fn candidate_queries_scope_to_organism_groups_window_and_probe() {
         let (window_start, window_end) = test_window();
         let linked_sql = linked_message_candidate_query(
             &["allowed-group".to_string()],
+            "matching-probe",
             window_start,
             window_end,
         )
@@ -676,6 +702,7 @@ mod tests {
         .to_string();
         let direct_sql = datasource_group_message_candidate_query(
             &[1],
+            "matching-probe",
             window_start,
             window_end,
         )
@@ -684,7 +711,13 @@ mod tests {
 
         assert!(linked_sql.contains("signal_message_group"));
         assert!(linked_sql.contains("group_master_key"));
+        assert!(linked_sql.starts_with("SELECT DISTINCT"));
         assert!(direct_sql.contains("datasource_group_id"));
+        for sql in [linked_sql, direct_sql] {
+            assert!(sql.contains("\"signal_message\".\"timestamp\" >="));
+            assert!(sql.contains("\"signal_message\".\"timestamp\" <="));
+            assert!(sql.contains("LIKE '%matching-probe%'"));
+        }
     }
 
     #[test]
@@ -730,6 +763,21 @@ mod tests {
         assert_eq!(probe.chars().count(), 20);
         assert!(message.contains(&probe));
         assert_eq!(message_probe("коротке"), Some("коротке".to_string()));
+    }
+
+    #[test]
+    fn message_probe_does_not_span_normalized_whitespace() {
+        let message = normalize_message_body("short_x000d_distinctive-message");
+
+        assert_eq!(
+            message_probe(&message),
+            Some("distinctive-message".to_string())
+        );
+    }
+
+    #[test]
+    fn message_probe_escapes_like_wildcards() {
+        assert_eq!(escape_like(r"a\\b%c_d"), r"a\\\\b\%c\_d");
     }
 
     #[test]
