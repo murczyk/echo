@@ -426,7 +426,7 @@ async fn update_network_callsign_linked(
     txn: &DatabaseTransaction,
     network_callsign: sigint_network_callsign::Model,
     known_callsign: sigint_callsign::Model,
-    clear_position_comment: bool,
+    clear_catalog_overrides: bool,
 ) -> Result<i64, AppError> {
     let callsign_additional_sources =
         list_callsign_additional_source_ids(txn, known_callsign.id)
@@ -473,10 +473,8 @@ async fn update_network_callsign_linked(
     network_callsign_record.command_control = Set(req.command_control);
     network_callsign_record.unit_developing = Set(req.unit_developing);
     network_callsign_record.developing = Set(req.developing);
-    if clear_position_comment {
-        network_callsign_record.position = Set(None);
-        network_callsign_record.comment = Set(None);
-        network_callsign_record.full_name = Set(None);
+    if clear_catalog_overrides {
+        clear_network_callsign_catalog_overrides(&mut network_callsign_record);
     }
     let network_callsign =
         network_callsign_record.update(txn).await.context(h!())?;
@@ -497,6 +495,17 @@ async fn update_network_callsign_linked(
     .context(h!())?;
 
     Ok(network_callsign.id)
+}
+
+fn clear_network_callsign_catalog_overrides(
+    network_callsign: &mut sigint_network_callsign::ActiveModel,
+) {
+    network_callsign.position = Set(None);
+    network_callsign.comment = Set(None);
+    network_callsign.full_name = Set(None);
+    network_callsign.source_id = Set(None);
+    network_callsign.radio_freq = Set(None);
+    network_callsign.unit_id = Set(None);
 }
 
 async fn update_network_callsign_not_linked(
@@ -1264,6 +1273,27 @@ mod tests {
             ),
             None
         );
+    }
+
+    #[test]
+    fn linking_clears_network_callsign_catalog_overrides() {
+        let mut network_callsign =
+            network_callsign_for_link_check(None).into_active_model();
+        network_callsign.position = Set(Some("position".to_string()));
+        network_callsign.comment = Set(Some("comment".to_string()));
+        network_callsign.full_name = Set(Some("full name".to_string()));
+        network_callsign.source_id = Set(Some(3));
+        network_callsign.radio_freq = Set(Some("123.45".to_string()));
+        network_callsign.unit_id = Set(Some(5));
+
+        clear_network_callsign_catalog_overrides(&mut network_callsign);
+
+        assert_eq!(network_callsign.position, Set(None));
+        assert_eq!(network_callsign.comment, Set(None));
+        assert_eq!(network_callsign.full_name, Set(None));
+        assert_eq!(network_callsign.source_id, Set(None));
+        assert_eq!(network_callsign.radio_freq, Set(None));
+        assert_eq!(network_callsign.unit_id, Set(None));
     }
 
     #[test]
