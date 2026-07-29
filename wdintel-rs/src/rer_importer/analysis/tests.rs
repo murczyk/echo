@@ -5716,19 +5716,37 @@ async fn rer_analysis_count_uses_aggregated_count_for_open_filters() {
     let fixture = mk_rer_analysis_fixture().await.unwrap();
     let test_identity = mk_test_identity().await.unwrap();
     let mut req = analysis_stats_req0(&fixture);
+    let date = crate::stats::get_local_date(test_dt(2026, 3, 1, 10, 0));
+    req.since_date_inclusive_ms = crate::stats::start_of_day(date)
+        .unwrap()
+        .and_utc()
+        .timestamp_millis();
     req.till_date_noninclusive_ms =
-        req.since_date_inclusive_ms + 30 * 60 * 1000;
+        crate::stats::start_of_day(date + chrono::Duration::days(2))
+            .unwrap()
+            .and_utc()
+            .timestamp_millis();
     let dt_since = dt_from_millis(req.since_date_inclusive_ms).unwrap();
     let dt_till = dt_from_millis(req.till_date_noninclusive_ms).unwrap();
+    let stats_redis = crate::stats::redis::GroupStatsRedis::new(
+        fixture.env.stats_redis.clone(),
+    );
     crate::stats::recalculate_group_stats(
         &fixture.env.dbx,
+        &stats_redis,
         dt_since,
         dt_till,
-        false,
+        true,
         true,
     )
     .await
     .unwrap();
+    assert!(crate::stats::should_read_stats_aggregated_for_config(
+        &req,
+        &fixture.env.config,
+        dt_since,
+        dt_till,
+    ));
     mk_analysis_message(
         &fixture.env.dbx,
         "msg-after-stats",

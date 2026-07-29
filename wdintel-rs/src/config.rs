@@ -313,6 +313,14 @@ pub const ONEOFF_REPROCESS_INBOX_METADATA_DEFAULT_DAYS: i64 = 60;
 pub const WORKER_CALCULATE_GROUP_STATS_EVERY_MINUTES_NUM: i64 = 2;
 pub const WORKER_CALCULATE_GROUP_STATS_SINCE_MINS: i64 = 60;
 pub const WORKER_CALCULATE_GROUP_STATS_SLEEP_SEC: u64 = 10;
+pub const GROUP_STATS_REDIS_DB_DEFAULT: u8 = 1;
+pub const GROUP_STATS_REDIS_KEY_PREFIX: &str = "echo:group-stats:v2";
+pub const GROUP_STATS_REDIS_NETWORK_COMPLETE_FIELD: &str = "__complete";
+pub const GROUP_STATS_REDIS_DETAIL_5MIN_TTL_DAYS: i64 = 16;
+pub const GROUP_STATS_REDIS_GROUP_5MIN_TTL_DAYS: i64 = 91;
+pub const GROUP_STATS_REDIS_DAY_TTL_DAYS: i64 = 367;
+pub const GROUP_STATS_REDIS_ZSTD_LEVEL: i32 = 3;
+pub const GROUP_STATS_REDIS_FINE_BUCKET_MAX_DAYS: i64 = 2;
 pub const GROUP_STATS_5MIN_TTL_DAYS: i64 = 14;
 pub const GROUP_STATS_DAY_TTL_DAYS: i64 = 365;
 pub const GROUP_STATS_RECALCULATION_TASK_STALE_MINUTES: i64 = 120;
@@ -360,7 +368,6 @@ pub const MESSENGER_WORKER_POOL_DEFAULT_CAPACITY: usize = 10;
 /// Jun 1st 2024
 pub const STATS_MIN_DATETIME_DAYS: i64 = 366;
 pub const STATS_READ_FROM_TABLE_MINIMUM_MIN: i64 = 15;
-pub const STATS_5MIN_MAX_NUM_DAYS: i64 = 2000; // FIXME change to 2
 pub const FEATURE_GROUP_STATS_AGGREGATED_DEFAULT: bool = true;
 pub const FEATURE_DELETE_UPLOADED_ATTACHMENT_DEFAULT: bool = true;
 pub const FEATURE_ACCESS_LOG_DEFAULT: bool = false;
@@ -541,6 +548,7 @@ pub struct Config {
     pub sleep_before_backup_mins: Option<u64>,
     pub redis_host: Option<String>,
     pub redis_port: Option<u16>,
+    pub group_stats_redis_db: Option<u8>,
     pub greptime_host: Option<String>,
     pub greptime_port: Option<u16>,
     pub greptime_user: Option<String>,
@@ -641,6 +649,11 @@ impl AnalyticsConfig {
 }
 
 impl Config {
+    pub fn group_stats_redis_db(&self) -> u8 {
+        self.group_stats_redis_db
+            .unwrap_or(GROUP_STATS_REDIS_DB_DEFAULT)
+    }
+
     pub fn secret_config(&self) -> Option<SecretConfig> {
         match &self.secret_config {
             Some(config) => Some(config.clone()),

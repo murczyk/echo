@@ -395,11 +395,11 @@ pub async fn fetch_groups_for_login(
     let dt_till = dt_from_millis(req.till_date_noninclusive_ms).c(h!())?;
     let req_json = Json(req.clone());
 
-    if should_read_stats_aggregated(&req_json, env, dt_since, dt_till)
-        .c(h!())?
+    if let Some((dt_since, dt_till)) =
+        stats_aggregated_range(&req_json, env, dt_since, dt_till).c(h!())?
     {
-        let result = read_group_stats_aggregated(
-            &env.dbx,
+        let result = read_group_stats_aggregated_for_env(
+            env,
             master_keys,
             dt_since,
             dt_till,
@@ -796,7 +796,9 @@ pub async fn fetch_senders_for_login(
     let dt_till =
         dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
 
-    if should_read_stats_aggregated(&req, env, dt_since, dt_till).c(h!())? {
+    if let Some((dt_since, dt_till)) =
+        stats_aggregated_range(&req, env, dt_since, dt_till).c(h!())?
+    {
         let result =
             read_sender_stats_aggregated(env, master_keys, dt_since, dt_till)
                 .await
@@ -1235,7 +1237,9 @@ pub async fn fetch_posts(
     let dt_till =
         dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
 
-    if should_read_stats_aggregated(req, env, dt_since, dt_till).c(h!())? {
+    if let Some((dt_since, dt_till)) =
+        stats_aggregated_range(req, env, dt_since, dt_till).c(h!())?
+    {
         let result =
             read_post_stats_aggregated(env, master_keys, dt_since, dt_till)
                 .await
@@ -1501,8 +1505,8 @@ pub async fn fetch_freqs_for_login(
         dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
     let req_json = Json(req.clone());
 
-    if should_read_stats_aggregated(&req_json, env, dt_since, dt_till)
-        .c(h!())?
+    if let Some((dt_since, dt_till)) =
+        stats_aggregated_range(&req_json, env, dt_since, dt_till).c(h!())?
     {
         let result = read_frequency_stats_aggregated(
             env,
@@ -1845,7 +1849,9 @@ pub async fn fetch_callsigns_for_login(
     let dt_till =
         dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
 
-    if should_read_stats_aggregated(&req, env, dt_since, dt_till).c(h!())? {
+    if let Some((dt_since, dt_till)) =
+        stats_aggregated_range(&req, env, dt_since, dt_till).c(h!())?
+    {
         let result =
             read_callsign_stats_aggregated(env, master_keys, dt_since, dt_till)
                 .await
@@ -2452,8 +2458,10 @@ pub async fn fetch_tags_for_login(
     let dt_till =
         dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
 
-    if req.without_model_tags != Some(true)
-        && should_read_stats_aggregated(&req, env, dt_since, dt_till).c(h!())?
+    if let Some((dt_since, dt_till)) =
+        stats_aggregated_range(&req, env, dt_since, dt_till)
+            .c(h!())?
+            .filter(|_| req.without_model_tags != Some(true))
     {
         let result = read_tag_stats_aggregated(
             env,
@@ -3006,7 +3014,9 @@ pub async fn fetch_units(
     let dt_till =
         dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
 
-    if should_read_stats_aggregated(req, env, dt_since, dt_till).c(h!())? {
+    if let Some((dt_since, dt_till)) =
+        stats_aggregated_range(req, env, dt_since, dt_till).c(h!())?
+    {
         let result =
             read_unit_stats_aggregated(env, master_keys, dt_since, dt_till)
                 .await
@@ -3302,7 +3312,9 @@ pub async fn fetch_locations_for_login(
     let dt_till =
         dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
 
-    if should_read_stats_aggregated(&req, env, dt_since, dt_till).c(h!())? {
+    if let Some((dt_since, dt_till)) =
+        stats_aggregated_range(&req, env, dt_since, dt_till).c(h!())?
+    {
         let result =
             read_location_stats_aggregated(env, master_keys, dt_since, dt_till)
                 .await
@@ -3563,8 +3575,8 @@ pub async fn fetch_aors_for_login(
         dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
     let req_json = Json(req.clone());
 
-    if should_read_stats_aggregated(&req_json, env, dt_since, dt_till)
-        .c(h!())?
+    if let Some((dt_since, dt_till)) =
+        stats_aggregated_range(&req_json, env, dt_since, dt_till).c(h!())?
     {
         let result =
             read_aor_stats_aggregated(env, master_keys, dt_since, dt_till)
@@ -3642,7 +3654,9 @@ pub async fn count_aors(
         dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
     let read_db = env.replica();
 
-    if should_read_stats_aggregated(req, env, dt_since, dt_till).c(h!())? {
+    if let Some((dt_since, dt_till)) =
+        stats_aggregated_range(req, env, dt_since, dt_till).c(h!())?
+    {
         let aors =
             read_aor_stats_aggregated(env, master_keys, dt_since, dt_till)
                 .await
@@ -5441,6 +5455,7 @@ async fn fetch_counts_for_login_with_conn(
         dt_since,
         dt_till,
         master_keys.clone(),
+        env,
         read_stats_aggregated,
         scope,
     )
@@ -5599,13 +5614,19 @@ async fn fetch_count_overall(
     dt_since: NaiveDateTime,
     dt_till: NaiveDateTime,
     master_keys: Vec<String>,
+    env: &Env,
     read_stats_aggregated: bool,
     scope: Option<&AnalyticsMessageIdScope>,
 ) -> anyhow::Result<i64> {
     if read_stats_aggregated {
-        return read_total_stats_aggregated(db, master_keys, dt_since, dt_till)
-            .await
-            .context(h!());
+        return read_total_stats_aggregated_for_env(
+            env,
+            master_keys,
+            dt_since,
+            dt_till,
+        )
+        .await
+        .context(h!());
     }
 
     #[derive(FromQueryResult)]

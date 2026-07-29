@@ -5395,7 +5395,7 @@ async fn group_stats(
     let (groups, analytics_group_stats) = with_analytics_read_fallback(
         env.get_ref(),
         "analysis stats groups",
-        analytics_count_request_supported(&req),
+        analytics_stats_request_supported(&req, env.get_ref()),
         |db| async move {
             let message_id_scope = stats::resolve_analytics_message_id_scope(
                 &analytics_req.0,
@@ -5542,7 +5542,7 @@ async fn sender_stats(
     let senders = with_analytics_read_fallback(
         env.get_ref(),
         "analysis stats senders",
-        analytics_count_request_supported(&req),
+        analytics_stats_request_supported(&req, env.get_ref()),
         |db| async move {
             stats::fetch_senders_raw_with_db(
                 analytics_req,
@@ -5596,7 +5596,7 @@ async fn post_stats(
     let posts = with_analytics_read_fallback(
         env.get_ref(),
         "analysis stats posts",
-        analytics_count_request_supported(&req),
+        analytics_stats_request_supported(&req, env.get_ref()),
         |db| async move {
             stats::fetch_posts_raw_with_db(
                 analytics_req,
@@ -5654,7 +5654,7 @@ async fn freq_stats(
     let freqs = with_analytics_read_fallback(
         env.get_ref(),
         "analysis stats freqs",
-        analytics_count_request_supported(&req),
+        analytics_stats_request_supported(&req, env.get_ref()),
         |db| async move {
             stats::fetch_freqs_raw_with_db(
                 analytics_req,
@@ -5701,7 +5701,7 @@ async fn callsign_stats(
     let callsigns = with_analytics_read_fallback(
         env.get_ref(),
         "analysis stats callsigns",
-        analytics_count_request_supported(&req),
+        analytics_stats_request_supported(&req, env.get_ref()),
         |db| async move {
             stats::fetch_callsigns_raw_with_db(
                 analytics_req,
@@ -5767,7 +5767,7 @@ async fn tag_stats(
     let tags = with_analytics_read_fallback(
         env.get_ref(),
         "analysis stats tags",
-        analytics_count_request_supported(&req),
+        analytics_stats_request_supported(&req, env.get_ref()),
         |db| async move {
             stats::fetch_tags_raw_with_db(
                 analytics_req,
@@ -5814,7 +5814,7 @@ async fn unit_stats(
     let units = with_analytics_read_fallback(
         env.get_ref(),
         "analysis stats units",
-        analytics_count_request_supported(&req),
+        analytics_stats_request_supported(&req, env.get_ref()),
         |db| async move {
             stats::fetch_units_raw_with_db(
                 analytics_req,
@@ -5860,7 +5860,7 @@ async fn location_stats(
     let locations = with_analytics_read_fallback(
         env.get_ref(),
         "analysis stats locations",
-        analytics_count_request_supported(&req),
+        analytics_stats_request_supported(&req, env.get_ref()),
         |db| async move {
             stats::fetch_locations_raw_with_db(
                 analytics_req,
@@ -5922,7 +5922,7 @@ async fn aor_stats(
     let aors = with_analytics_read_fallback(
         env.get_ref(),
         "analysis stats aors",
-        analytics_count_request_supported(&req),
+        analytics_stats_request_supported(&req, env.get_ref()),
         |db| async move {
             stats::fetch_aors_raw_with_db(
                 analytics_req,
@@ -6021,7 +6021,7 @@ async fn network_stats(
     let networks = with_analytics_read_fallback(
         env.get_ref(),
         "analysis stats networks",
-        analytics_count_request_supported(&req),
+        analytics_stats_request_supported(&req, env.get_ref()),
         |db| async move {
             let message_id_scope = stats::resolve_analytics_message_id_scope(
                 &analytics_req.0,
@@ -6196,6 +6196,14 @@ fn analytics_count_request_supported(req: &AnalysisStatsReq) -> bool {
     req.search
         .as_ref()
         .is_none_or(|search| search.trim().is_empty())
+}
+
+fn analytics_stats_request_supported(
+    req: &AnalysisStatsReq,
+    env: &Env,
+) -> bool {
+    analytics_count_request_supported(req)
+        && !crate::stats::should_prefer_redis_stats(req, &env.config)
 }
 
 async fn resolve_analytics_tag_access_if_enabled(

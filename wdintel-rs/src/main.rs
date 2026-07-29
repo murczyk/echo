@@ -777,7 +777,7 @@ enum Cmd {
     OneoffFixEchoimGroups(OneoffFixEchoimGroupsPs),
     OneoffUnlinkReserveGroupDupes,
     OneoffCalculateStats(OneoffCalculateStatsPs),
-    /// Calculates all group stats for last year (no recalculation).
+    /// Refreshes Redis group statistics for the full retention window.
     OneoffCalculateHistoricStats(OneoffCalculateHistoricStatsPs),
     OneoffDisableIm,
     OneoffDisableImAndGoi,
@@ -988,6 +988,13 @@ fn mk_analytics_conn_string(analytics: &AnalyticsConfig) -> String {
 }
 
 pub fn redis_conn_string(config: &Config) -> anyhow::Result<String> {
+    redis_conn_string_for_db(config, 0)
+}
+
+pub fn redis_conn_string_for_db(
+    config: &Config,
+    database: u8,
+) -> anyhow::Result<String> {
     let host = match &config.redis_host {
         Some(host) => host.clone(),
         None => REDIS_HOST.to_string(),
@@ -996,12 +1003,19 @@ pub fn redis_conn_string(config: &Config) -> anyhow::Result<String> {
         Some(port) => *port,
         None => REDIS_PORT,
     };
-    let redis_url = format!("redis://{host}:{port}/");
+    let redis_url = format!("redis://{host}:{port}/{database}");
     Ok(redis_url)
 }
 
 pub async fn new_redis(config: &Config) -> anyhow::Result<ConnectionManager> {
-    let redis_url = redis_conn_string(config).context(h!())?;
+    new_redis_for_db(config, 0).await
+}
+
+pub async fn new_redis_for_db(
+    config: &Config,
+    database: u8,
+) -> anyhow::Result<ConnectionManager> {
+    let redis_url = redis_conn_string_for_db(config, database).context(h!())?;
     let mut redis_cli = redis::Client::open(redis_url).context(h!())?;
     let is_ok = redis_cli.check_connection();
     if !is_ok {

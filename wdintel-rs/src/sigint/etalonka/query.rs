@@ -1,5 +1,6 @@
 use crate::config::{
     ENCRYPTION_KEY_PLACEHOLDER, ETALONKA_GEO_SCREENSHOT_CONCURRENCY,
+    STATS_MIN_DATETIME_DAYS,
 };
 use crate::entities::*;
 use crate::error::AppError;
@@ -869,10 +870,11 @@ async fn load_exact_network_freq_counts(
 }
 
 pub async fn load_network_freqs_counts_from_stats(
-    dbx: &DatabaseConnection,
+    env: &actix_web::web::Data<Env>,
     groups: &Vec<String>,
     network_id: i64,
 ) -> Result<HashMap<i64, i64>, AppError> {
+    let dbx = &env.dbx;
     let batches =
         crate::stats::collect_signal_group_batches(groups.clone(), dbx)
             .await
@@ -905,22 +907,52 @@ pub async fn load_network_freqs_counts_from_stats(
             .push(network_freq);
     }
 
-    let rows = stats_group_network_freq_day::Entity::find()
-        .select_only()
-        .column(stats_group_network_freq_day::Column::Frequency)
-        .column(stats_group_network_freq_day::Column::Dt)
-        .expr_as(Expr::cust("SUM(quantity)"), "quantity")
-        .filter(
-            stats_group_network_freq_day::Column::SignalGroupBatchId
-                .eq_any(batch_ids),
+    let rows = {
+        let batch_ids = batch_ids.into_iter().collect::<HashSet<_>>();
+        let till_date = crate::stats::get_local_date(Utc::now().naive_utc());
+        let since_date =
+            till_date - chrono::Duration::days(STATS_MIN_DATETIME_DAYS);
+        let network_ids = HashSet::from([network_id]);
+        crate::stats::read_redis_network_days(
+            env,
+            since_date,
+            till_date,
+            &network_ids,
         )
-        .filter(stats_group_network_freq_day::Column::NetworkId.eq(network_id))
-        .group_by(stats_group_network_freq_day::Column::Dt)
-        .group_by(stats_group_network_freq_day::Column::Frequency)
-        .into_model::<NetworkFreqStatsDayRow>()
-        .all(dbx)
         .await
-        .c(h!())?;
+        .c(h!())?
+        .into_iter()
+        .flat_map(|(dt, bucket)| {
+            let batch_ids = &batch_ids;
+            bucket
+                .frequencies
+                .into_iter()
+                .filter(move |row| {
+                    row.network_id == network_id
+                        && batch_ids.contains(&row.signal_group_batch_id)
+                })
+                .map(move |row| NetworkFreqStatsDayRow {
+                    frequency: row.value,
+                    dt,
+                    quantity: row.quantity as i64,
+                })
+        })
+        .fold(
+            HashMap::<(NaiveDate, String), i64>::new(),
+            |mut result, row| {
+                *result.entry((row.dt, row.frequency)).or_default() +=
+                    row.quantity;
+                result
+            },
+        )
+        .into_iter()
+        .map(|((dt, frequency), quantity)| NetworkFreqStatsDayRow {
+            frequency,
+            dt,
+            quantity,
+        })
+        .collect::<Vec<NetworkFreqStatsDayRow>>()
+    };
 
     let mut network_freq_counts: HashMap<i64, i64> = HashMap::new();
     let mut exact_count_requests = vec![];

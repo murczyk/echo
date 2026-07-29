@@ -199,6 +199,7 @@ pub async fn group_stats_timeline(
 
     let analytics_master_keys = master_keys.clone();
     let postgres_master_keys = master_keys.clone();
+    let postgres_env = env.clone();
     let mut data = crate::rer_importer::analysis::with_analytics_read_fallback(
         env.get_ref(),
         "group stats timeline",
@@ -212,9 +213,9 @@ pub async fn group_stats_timeline(
             )
             .await?)
         },
-        |db| async move {
+        |_db| async move {
             Ok(crate::stats::read_group_stats_timeline_cached(
-                &db,
+                &postgres_env,
                 postgres_master_keys,
                 dt_since,
                 dt_till,

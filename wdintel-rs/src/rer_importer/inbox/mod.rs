@@ -622,7 +622,7 @@ async fn inbox_group_stats(
     .await
     .c(h!())?;
     let batch_ids = batches.iter().map(|b| b.id).collect::<Vec<i64>>();
-    let stats = crate::stats::get_last_hour_stats(&env.dbx, batch_ids)
+    let stats = crate::stats::get_last_hour_stats(&env, batch_ids)
         .await
         .c(h!())?;
     let mut result = vec![];
@@ -714,6 +714,7 @@ async fn inbox_messages_count(
     let q = build_inbox_digest_query(&login, &env, &req)
         .await
         .context(h!())?;
+    let analytics_lag_fallback_q = q.clone();
     let analytics_env = env.clone();
     let analytics_req = req.clone();
     let analytics_login = login;
@@ -736,7 +737,19 @@ async fn inbox_messages_count(
                 freshness_max_age_ms,
             )
             .await?;
-            query_inbox_digest(db, query).await
+            match query {
+                Some(query) => query_inbox_digest(db, query).await,
+                None => {
+                    debug!(
+                        "inbox messages count cursor is newer than analytics; using PostgreSQL"
+                    );
+                    query_inbox_digest(
+                        analytics_env.replica(),
+                        analytics_lag_fallback_q,
+                    )
+                    .await
+                }
+            }
         },
         |db| query_inbox_digest(db, q),
     )

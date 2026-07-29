@@ -1,7 +1,7 @@
 use crate::config::*;
 use crate::types::*;
 use crate::utils::worker_watch::spawn_named_worker;
-use crate::{mk_conn_string, new_redis, new_redisb, storage};
+use crate::{mk_conn_string, new_redis, new_redis_for_db, new_redisb, storage};
 use actix_identity::IdentityMiddleware;
 use actix_session::{storage::RedisSessionStore, SessionMiddleware};
 use actix_web::cookie::Key;
@@ -53,6 +53,9 @@ fn systemd_listener() -> Result<Option<TcpListener>, AppError> {
 pub async fn new_env(mode: Mode) -> Result<Arc<Env>, AppError> {
     let config = read_config(mode).c(h!())?;
     let redis = new_redis(&config).await.c(h!())?;
+    let stats_redis = new_redis_for_db(&config, config.group_stats_redis_db())
+        .await
+        .c(h!())?;
     let redisb = new_redisb(&config).await.c(h!())?;
     let s3_config = mk_s3_config(&config).c(h!())?;
     let s3 = if let Some(s3_config) = &s3_config {
@@ -167,6 +170,7 @@ pub async fn new_env(mode: Mode) -> Result<Arc<Env>, AppError> {
     let env = Env {
         mode,
         redis: redis.clone(),
+        stats_redis,
         redisb: redisb.clone(),
         s3,
         s3_config,

@@ -1033,6 +1033,23 @@ pub async fn user_sigint_groups(
         return Ok(Json(all_groups));
     };
     let ts = crate::utils::dt_from_millis(*since_ts).c(h!())?;
+    {
+        let since = crate::stats::round_up_to_5min(ts).c(h!())?;
+        let till =
+            crate::stats::round_up_to_5min(Utc::now().naive_utc()).c(h!())?;
+        if crate::stats::can_read_stats_aggregated(&env.config, since, till) {
+            let recent_keys =
+                crate::stats::read_group_stats_aggregated_for_env(
+                    &env, all_groups, since, till,
+                )
+                .await
+                .c(h!())?
+                .into_iter()
+                .map(|group| group.master_key)
+                .collect();
+            return Ok(Json(recent_keys));
+        }
+    }
     let analytics_groups = all_groups.clone();
     let recent_keys =
         crate::rer_importer::analysis::with_analytics_read_fallback(

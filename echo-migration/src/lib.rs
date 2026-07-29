@@ -325,6 +325,7 @@ mod m20260728_084158_index_inbox_item_unit_datetime;
 mod m20260728_163700_add_echo_client_display_name;
 mod m20260728_203332_propagate_echo_client_display_name;
 mod m20260729_062653_add_classic_menu_visibility_settings;
+mod m20260729_121823_drop_postgres_group_stats;
 
 pub struct Migrator;
 
@@ -725,6 +726,7 @@ impl MigratorTrait for Migrator {
             Box::new(
                 m20260729_062653_add_classic_menu_visibility_settings::Migration,
             ),
+            Box::new(m20260729_121823_drop_postgres_group_stats::Migration),
         ]
     }
 }

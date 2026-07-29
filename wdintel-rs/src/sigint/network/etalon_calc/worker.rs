@@ -5,7 +5,7 @@ use crate::entities::*;
 use crate::types::{debug, error, info, warn};
 use crate::types::{Mode, ShortContext};
 use crate::utils::worker_watch;
-use crate::{h, new_pg_pool_from_mode};
+use crate::{h, new_pg_pool_from_mode, new_redis_for_db};
 use chrono::{NaiveDateTime, Timelike, Utc};
 use echo_migration::Expr;
 use sea_orm::*;
@@ -220,6 +220,10 @@ async fn run_inbox_network_worker_once(
     is_for_old_worker: bool,
     config: &Config,
 ) -> anyhow::Result<()> {
+    let stats_redis = new_redis_for_db(config, config.group_stats_redis_db())
+        .await
+        .c(h!())?;
+    let stats_redis = crate::stats::redis::GroupStatsRedis::new(stats_redis);
     let (tag, cutoff_days) = if is_for_old_worker {
         (
             NETWORK_INVALIDATION_TASK_TAG_OLD,
@@ -311,6 +315,7 @@ async fn run_inbox_network_worker_once(
             &signal_group_aors,
             &mut processed_items,
             db,
+            &stats_redis,
         )
         .await
         .c(h!())?;
@@ -710,6 +715,7 @@ async fn run_network_invalidation_tasks(
     signal_group_aors: &HashMap<i64, Vec<String>>,
     processed_items: &mut HashSet<i64>,
     dbx: &DatabaseConnection,
+    stats_redis: &crate::stats::redis::GroupStatsRedis,
 ) -> anyhow::Result<()> {
     let mut started_tasks = vec![];
     let mut task_filters = Vec::new();
@@ -757,6 +763,7 @@ async fn run_network_invalidation_tasks(
         };
         crate::stats::recalculate_network_stats(
             dbx,
+            stats_redis,
             since_ts,
             till_ts,
             network_ids,

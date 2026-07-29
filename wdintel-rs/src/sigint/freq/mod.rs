@@ -1290,28 +1290,21 @@ pub async fn latest_frequencies(
         crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
             .await
             .c(h!())?;
-    let analytics_groups = groups.clone();
     let now = Utc::now();
-    let week_ago = now - chrono::Duration::days(7);
-    let freqs_period =
-        crate::rer_importer::analysis::with_analytics_read_fallback(
-            env.get_ref(),
-            "latest frequencies",
-            true,
-            |db| async move {
-                read_latest_frequencies(&db, analytics_groups, week_ago, now)
-                    .await
-            },
-            |db| async move {
-                read_latest_frequencies(&db, groups, week_ago, now).await
-            },
-        )
-        .await
-        .c(h!())?;
-
-    Ok(Json(freqs_period))
+    let since = crate::stats::round_up_to_5min(
+        (now - chrono::Duration::days(7)).naive_utc(),
+    )
+    .c(h!())?;
+    let till = crate::stats::round_up_to_5min(now.naive_utc()).c(h!())?;
+    let frequencies = crate::stats::read_latest_frequencies_aggregated(
+        &env, groups, since, till,
+    )
+    .await
+    .c(h!())?;
+    Ok(Json(frequencies))
 }
 
+#[cfg(test)]
 async fn read_latest_frequencies(
     db: &DatabaseConnection,
     groups: Vec<String>,

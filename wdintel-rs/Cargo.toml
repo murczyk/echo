@@ -11,6 +11,8 @@ echo-migration = { version = "*", path = "../echo-migration" }
 serde = { workspace = true }
 serde_ignored = "0.1.14"
 serde_json = { workspace = true }
+postcard = { workspace = true }
+zstd = { workspace = true }
 quick-xml = { version = "0.38.4", features = ["serialize", "overlapped-lists"] }
 actix-web = { workspace = true }
 goi-echo-worker = { path = "../goi-echo-worker" }

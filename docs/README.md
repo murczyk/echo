@@ -232,6 +232,8 @@ follow-up task; failed work is requeued, stale tasks can be reclaimed, and
 completed rows are removed on the next pass. The regular recent-stat refresh
 still runs after each historical chunk in the same worker iteration.
 
+See the [Redis group-statistics note](../archive/2026-07-29-redis-group-stats/README.md) for derived-statistics storage and retention.
+
 ## GOI integration
 
 GOI integration is optional and configured per GOI instance in Echo. The

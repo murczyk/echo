@@ -294,14 +294,17 @@ pub(crate) async fn build_analytics_inbox_digest_query(
     req: &InboxMessagesReq,
     db: &DatabaseConnection,
     freshness_max_age_ms: u64,
-) -> Result<String, AppError> {
-    let scope = resolve_analytics_inbox_message_id_scope(
+) -> Result<Option<String>, AppError> {
+    let Some(scope) = resolve_analytics_inbox_message_id_scope(
         req,
         &env.dbx,
         db,
         freshness_max_age_ms,
     )
-    .await?;
+    .await?
+    else {
+        return Ok(None);
+    };
     let q = build_filtered_inbox_query_with_scope(
         &env.dbx,
         login,
@@ -318,7 +321,7 @@ pub(crate) async fn build_analytics_inbox_digest_query(
         "first_element_ts",
     );
 
-    Ok(q.build(DatabaseBackend::Postgres).to_string())
+    Ok(Some(q.build(DatabaseBackend::Postgres).to_string()))
 }
 
 async fn resolve_analytics_inbox_message_id_scope(
@@ -326,7 +329,7 @@ async fn resolve_analytics_inbox_message_id_scope(
     source_db: &DatabaseConnection,
     analytics_db: &DatabaseConnection,
     freshness_max_age_ms: u64,
-) -> Result<AnalyticsMessageIdScope, AppError> {
+) -> Result<Option<AnalyticsMessageIdScope>, AppError> {
     #[derive(FromQueryResult)]
     struct MessageIdBounds {
         min_id: Option<i64>,
@@ -461,17 +464,20 @@ async fn resolve_analytics_inbox_message_id_scope(
             max_id: None,
         });
     let (Some(min_id), Some(max_id)) = (bounds.min_id, bounds.max_id) else {
-        return Ok(AnalyticsMessageIdScope::Empty);
+        return Ok(None);
     };
+    if min_id <= 0 || max_id <= 0 {
+        return Ok(None);
+    }
 
     let freshness_max_age_ms =
         i64::try_from(freshness_max_age_ms).context(h!())?;
     let closed_range_cutoff =
         Utc::now().naive_utc() - Duration::milliseconds(freshness_max_age_ms);
     if till_date.is_some_and(|till_date| till_date <= closed_range_cutoff) {
-        Ok(AnalyticsMessageIdScope::Inclusive { min_id, max_id })
+        Ok(Some(AnalyticsMessageIdScope::Inclusive { min_id, max_id }))
     } else {
-        Ok(AnalyticsMessageIdScope::From(min_id))
+        Ok(Some(AnalyticsMessageIdScope::From(min_id)))
     }
 }
 

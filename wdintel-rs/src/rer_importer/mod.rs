@@ -5,7 +5,6 @@ use crate::entities::*;
 use crate::error::AppError;
 use crate::location::peleng::reset_inbox_pelengs;
 use crate::location::utils;
-use crate::sigint::sender::preferred_sender_expr;
 use crate::types::*;
 use crate::users::{
     ensure_rer_role, has_any_role, has_role, login_id_from_identity,
@@ -1427,39 +1426,30 @@ pub async fn latest_senders(
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
     let login = login_id_from_identity(&user)?;
     let now = Utc::now();
-    #[derive(FromQueryResult)]
-    struct Res {
-        sender: Option<String>,
-    }
-    let txn = env.dbx.begin().await.c(h!())?;
     let master_keys =
-        crate::messenger::group::get_identity_sigint_groups(&txn, &login)
+        crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
             .await
             .c(h!())?;
-    let sender_expr = preferred_sender_expr(None);
-    let sender_uuids: Vec<String> = signal_message::Entity::find()
-        .join(
-            JoinType::InnerJoin,
-            signal_message::Relation::DatasourceGroup.def(),
-        )
-        .select_only()
-        .column_as(sender_expr.clone(), "sender")
-        .filter(signal_message::Column::Deleted.eq(false))
-        .filter(datasource_group::Column::GroupMasterKey.eq_any(master_keys))
-        .filter(
-            signal_message::Column::CreatedAt
-                .gt(now - chrono::Duration::days(2)),
-        )
-        .group_by(sender_expr)
-        .into_model::<Res>()
-        .all(&txn)
+    let since = crate::stats::round_up_to_5min(
+        (now - chrono::Duration::days(2)).naive_utc(),
+    )
+    .c(h!())?;
+    let till = crate::stats::round_up_to_5min(now.naive_utc()).c(h!())?;
+    let sender_uuids = crate::stats::read_sender_stats_aggregated(
+        &env,
+        master_keys,
+        since,
+        till,
+    )
+    .await
+    .c(h!())?
+    .into_iter()
+    .map(|sender| sender.uuid)
+    .filter(|sender| !sender.is_empty())
+    .collect();
+    let data = collect_profiles_data(&env.dbx, sender_uuids)
         .await
-        .c(h!())?
-        .iter()
-        .filter_map(|x| x.sender.clone())
-        .collect();
-    let data = collect_profiles_data(&txn, sender_uuids).await.c(h!())?;
-    txn.commit().await.c(h!())?;
+        .c(h!())?;
     Ok(Json(SignalProfilesRsp { data }))
 }
 

@@ -1,26 +1,3 @@
-# PostgreSQL aggregates replaced by raw ClickHouse queries.
-public.stats_group_5min
-public.stats_group_day
-public.stats_group_aor_id_5min
-public.stats_group_aor_id_day
-public.stats_group_callsign_5min
-public.stats_group_callsign_day
-public.stats_group_freq_5min
-public.stats_group_freq_day
-public.stats_group_location_5min
-public.stats_group_location_day
-public.stats_group_network_callsign_day
-public.stats_group_network_day
-public.stats_group_network_freq_day
-public.stats_group_post_id_5min
-public.stats_group_post_id_day
-public.stats_group_sender_5min
-public.stats_group_sender_day
-public.stats_group_tag_5min
-public.stats_group_tag_day
-public.stats_group_unit_5min
-public.stats_group_unit_day
-
 # Large, highly mutable GOI dataset; unused by the RER counter.
 public.goi_knowledge
 

@@ -115,6 +115,7 @@ pub struct Env {
     pub rq_goi_associations: reqwest::Client,
     pub mil_geo: MilGeo,
     pub redis: redis::aio::ConnectionManager,
+    pub stats_redis: redis::aio::ConnectionManager,
     /// Used when you need to explicitly create a connection and block on it, like for streams.
     pub redisb: redis::Client,
     pub settlements: Arc<RwLock<crate::location::SettlementsDataConfig>>,
