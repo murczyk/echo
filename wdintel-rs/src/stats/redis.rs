@@ -9,6 +9,8 @@ use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::hash::Hash;
 use std::io::Cursor;
+use tokio::time::{sleep, Duration as TokioDuration, Instant as TokioInstant};
+use uuid::Uuid;
 
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
 pub struct GroupCount {
@@ -603,6 +605,19 @@ pub struct GroupStatsRedis {
     redis: ConnectionManager,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum RepairBucket {
+    FiveMinute(NaiveDateTime),
+    GeneralDay(NaiveDate),
+    NetworkDay(NaiveDate),
+}
+
+pub(super) struct RepairLock {
+    redis: ConnectionManager,
+    key: String,
+    token: String,
+}
+
 impl GroupStatsRedis {
     pub fn new(redis: ConnectionManager) -> Self {
         Self { redis }
@@ -716,43 +731,32 @@ impl GroupStatsRedis {
             return Ok(Vec::new());
         }
         let network_ids = network_ids.iter().copied().sorted().collect_vec();
+        let values = self.read_network_day_values(dates, &network_ids).await?;
+        dates
+            .iter()
+            .zip(values)
+            .map(|(date, values)| {
+                decode_network_day(*date, &network_ids, values)
+            })
+            .collect()
+    }
+
+    async fn read_network_day_values(
+        &self,
+        dates: &[NaiveDate],
+        network_ids: &[i64],
+    ) -> anyhow::Result<Vec<Vec<Option<Vec<u8>>>>> {
         let mut pipe = redis::pipe();
         for date in dates {
             pipe.cmd("HMGET")
                 .arg(network_day_key(*date))
                 .arg(GROUP_STATS_REDIS_NETWORK_COMPLETE_FIELD)
-                .arg(&network_ids);
+                .arg(network_ids);
         }
         let mut redis = self.redis.clone();
-        let values = pipe
-            .query_async::<Vec<Vec<Option<Vec<u8>>>>>(&mut redis)
+        pipe.query_async::<Vec<Vec<Option<Vec<u8>>>>>(&mut redis)
             .await
-            .context("read Redis network statistics")?;
-        let mut result = Vec::with_capacity(dates.len());
-        for (date, mut values) in dates.iter().zip(values) {
-            if values.first().and_then(Option::as_ref).is_none() {
-                bail!("missing Redis network stats bucket for {date}");
-            }
-            values.remove(0);
-            let mut bucket = NetworkDayBucket::default();
-            for (network_id, value) in network_ids.iter().copied().zip(values) {
-                let Some(value) = value else {
-                    continue;
-                };
-                let value: NetworkDayBucket = decode(&value).with_context(
-                    || {
-                        format!(
-                            "decode Redis network stats for {date}, network {network_id}"
-                        )
-                    },
-                )?;
-                bucket.networks.extend(value.networks);
-                bucket.frequencies.extend(value.frequencies);
-                bucket.callsigns.extend(value.callsigns);
-            }
-            result.push(bucket);
-        }
-        Ok(result)
+            .context("read Redis network statistics")
     }
 
     pub async fn is_network_day_complete(
@@ -767,6 +771,187 @@ impl GroupStatsRedis {
             .query_async::<bool>(&mut redis)
             .await
             .with_context(|| format!("check Redis network stats key {key}"))
+    }
+
+    pub(super) async fn missing_five_minute_buckets(
+        &self,
+        timestamps: &[NaiveDateTime],
+    ) -> anyhow::Result<Vec<NaiveDateTime>> {
+        let timestamps = timestamps.iter().copied().unique().collect_vec();
+        let keys = timestamps
+            .iter()
+            .flat_map(|timestamp| {
+                [group_5min_key(*timestamp), detail_5min_key(*timestamp)]
+            })
+            .collect_vec();
+        let values = self.read_optional(keys).await?;
+        Ok(timestamps
+            .into_iter()
+            .zip(values.chunks_exact(2))
+            .filter_map(|(timestamp, values)| {
+                let valid = matches!(
+                    values,
+                    [Some(groups), Some(details)]
+                        if decode::<GroupBucket>(groups).is_ok()
+                            && decode::<DetailBucket>(details).is_ok()
+                );
+                (!valid).then_some(timestamp)
+            })
+            .collect())
+    }
+
+    pub(super) async fn missing_general_days(
+        &self,
+        dates: &[NaiveDate],
+    ) -> anyhow::Result<Vec<NaiveDate>> {
+        let dates = dates.iter().copied().unique().collect_vec();
+        let values = self
+            .read_optional(dates.iter().copied().map(general_day_key).collect())
+            .await?;
+        Ok(dates
+            .into_iter()
+            .zip(values)
+            .filter_map(|(date, value)| {
+                let valid = value.as_deref().is_some_and(|value| {
+                    decode::<GeneralDayBucket>(value).is_ok()
+                });
+                (!valid).then_some(date)
+            })
+            .collect())
+    }
+
+    pub(super) async fn missing_network_days(
+        &self,
+        dates: &[NaiveDate],
+        network_ids: &HashSet<i64>,
+    ) -> anyhow::Result<Vec<NaiveDate>> {
+        let dates = dates.iter().copied().unique().collect_vec();
+        let network_ids = network_ids.iter().copied().sorted().collect_vec();
+        let values = self.read_network_day_values(&dates, &network_ids).await?;
+        Ok(dates
+            .into_iter()
+            .zip(values)
+            .filter_map(|(date, values)| {
+                decode_network_day(date, &network_ids, values)
+                    .is_err()
+                    .then_some(date)
+            })
+            .collect())
+    }
+
+    pub(super) async fn try_acquire_repair_lock(
+        &self,
+        bucket: RepairBucket,
+    ) -> anyhow::Result<Option<RepairLock>> {
+        let key = repair_lock_key(bucket);
+        let token = Uuid::new_v4().to_string();
+        let mut redis = self.redis.clone();
+        let acquired = redis::cmd("SET")
+            .arg(&key)
+            .arg(&token)
+            .arg("NX")
+            .arg("EX")
+            .arg(GROUP_STATS_REDIS_REPAIR_LOCK_TTL_SECS)
+            .query_async::<Option<String>>(&mut redis)
+            .await
+            .with_context(|| format!("acquire Redis stats repair lock {key}"))?
+            .is_some();
+        Ok(acquired.then_some(RepairLock {
+            redis: self.redis.clone(),
+            key,
+            token,
+        }))
+    }
+
+    pub(super) async fn repair_is_complete(
+        &self,
+        bucket: RepairBucket,
+    ) -> anyhow::Result<bool> {
+        match bucket {
+            RepairBucket::FiveMinute(timestamp) => Ok(self
+                .missing_five_minute_buckets(&[timestamp])
+                .await?
+                .is_empty()),
+            RepairBucket::GeneralDay(date) => {
+                Ok(self.missing_general_days(&[date]).await?.is_empty())
+            }
+            RepairBucket::NetworkDay(date) => {
+                self.is_network_day_complete(date).await
+            }
+        }
+    }
+
+    pub(super) async fn wait_for_repair(
+        &self,
+        bucket: RepairBucket,
+    ) -> anyhow::Result<()> {
+        let deadline = TokioInstant::now()
+            + TokioDuration::from_secs(
+                GROUP_STATS_REDIS_REPAIR_WAIT_TIMEOUT_SECS,
+            );
+        loop {
+            if self.repair_is_complete(bucket).await? {
+                return Ok(());
+            }
+            if TokioInstant::now() >= deadline {
+                bail!("timed out waiting for Redis stats repair {bucket:?}");
+            }
+            sleep(TokioDuration::from_millis(
+                GROUP_STATS_REDIS_REPAIR_WAIT_INTERVAL_MS,
+            ))
+            .await;
+        }
+    }
+
+    pub(super) async fn network_day_is_readable(
+        &self,
+        date: NaiveDate,
+        network_ids: &HashSet<i64>,
+    ) -> anyhow::Result<bool> {
+        let network_ids = network_ids.iter().copied().sorted().collect_vec();
+        let mut values =
+            self.read_network_day_values(&[date], &network_ids).await?;
+        Ok(decode_network_day(date, &network_ids, values.remove(0)).is_ok())
+    }
+
+    pub(super) async fn wait_for_network_repair(
+        &self,
+        date: NaiveDate,
+        network_ids: &HashSet<i64>,
+    ) -> anyhow::Result<()> {
+        let deadline = TokioInstant::now()
+            + TokioDuration::from_secs(
+                GROUP_STATS_REDIS_REPAIR_WAIT_TIMEOUT_SECS,
+            );
+        loop {
+            if self.network_day_is_readable(date, network_ids).await? {
+                return Ok(());
+            }
+            if TokioInstant::now() >= deadline {
+                bail!(
+                    "timed out waiting for Redis network stats repair {date}"
+                );
+            }
+            sleep(TokioDuration::from_millis(
+                GROUP_STATS_REDIS_REPAIR_WAIT_INTERVAL_MS,
+            ))
+            .await;
+        }
+    }
+
+    async fn read_optional(
+        &self,
+        keys: Vec<String>,
+    ) -> anyhow::Result<Vec<Option<Vec<u8>>>> {
+        if keys.is_empty() {
+            return Ok(Vec::new());
+        }
+        let mut redis = self.redis.clone();
+        redis::cmd("MGET")
+            .arg(keys)
+            .query_async(&mut redis)
+            .await
+            .context("read optional Redis group stats buckets")
     }
 
     async fn read_required<T>(
@@ -795,6 +980,51 @@ impl GroupStatsRedis {
         }
         Ok(result)
     }
+}
+
+impl RepairLock {
+    pub(super) async fn release(mut self) -> anyhow::Result<()> {
+        redis::cmd("EVAL")
+            .arg(
+                "if redis.call('GET', KEYS[1]) == ARGV[1] then \
+                 return redis.call('DEL', KEYS[1]) else return 0 end",
+            )
+            .arg(1)
+            .arg(&self.key)
+            .arg(&self.token)
+            .query_async::<i64>(&mut self.redis)
+            .await
+            .with_context(|| {
+                format!("release Redis stats repair lock {}", self.key)
+            })?;
+        Ok(())
+    }
+}
+
+fn decode_network_day(
+    date: NaiveDate,
+    network_ids: &[i64],
+    mut values: Vec<Option<Vec<u8>>>,
+) -> anyhow::Result<NetworkDayBucket> {
+    if values.first().and_then(Option::as_ref).is_none() {
+        bail!("missing Redis network stats bucket for {date}");
+    }
+    values.remove(0);
+    let mut bucket = NetworkDayBucket::default();
+    for (network_id, value) in network_ids.iter().copied().zip(values) {
+        let Some(value) = value else {
+            continue;
+        };
+        let value: NetworkDayBucket = decode(&value).with_context(|| {
+            format!(
+                "decode Redis network stats for {date}, network {network_id}"
+            )
+        })?;
+        bucket.networks.extend(value.networks);
+        bucket.frequencies.extend(value.frequencies);
+        bucket.callsigns.extend(value.callsigns);
+    }
+    Ok(bucket)
 }
 
 async fn replace_expiring_network_hash(
@@ -982,6 +1212,21 @@ fn network_day_key(date: NaiveDate) -> String {
     format!("{GROUP_STATS_REDIS_KEY_PREFIX}:day:network:{date}")
 }
 
+fn repair_lock_key(bucket: RepairBucket) -> String {
+    match bucket {
+        RepairBucket::FiveMinute(timestamp) => format!(
+            "{GROUP_STATS_REDIS_KEY_PREFIX}:repair-lock:5m:{}",
+            timestamp.and_utc().timestamp()
+        ),
+        RepairBucket::GeneralDay(date) => {
+            format!("{GROUP_STATS_REDIS_KEY_PREFIX}:repair-lock:day:{date}")
+        }
+        RepairBucket::NetworkDay(date) => format!(
+            "{GROUP_STATS_REDIS_KEY_PREFIX}:repair-lock:network-day:{date}"
+        ),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1069,6 +1314,55 @@ mod tests {
         assert!(buckets[&20].frequencies.is_empty());
     }
 
+    #[test]
+    fn repair_locks_are_scoped_to_their_bucket() {
+        let timestamp = timestamp();
+        let date = timestamp.date();
+
+        assert_ne!(
+            repair_lock_key(RepairBucket::FiveMinute(timestamp)),
+            repair_lock_key(RepairBucket::GeneralDay(date))
+        );
+        assert_ne!(
+            repair_lock_key(RepairBucket::GeneralDay(date)),
+            repair_lock_key(RepairBucket::NetworkDay(date))
+        );
+    }
+
+    #[tokio::test]
+    #[ignore = "requires local Redis database 15"]
+    async fn redis_repair_lock_is_single_flight() {
+        let client = redis::Client::open("redis://127.0.0.1/15").unwrap();
+        let redis = client.get_connection_manager().await.unwrap();
+        let stats_redis = GroupStatsRedis::new(redis.clone());
+        let bucket = RepairBucket::FiveMinute(timestamp());
+        let key = repair_lock_key(bucket);
+        let mut cleanup_redis = redis.clone();
+        redis::cmd("DEL")
+            .arg(&key)
+            .query_async::<()>(&mut cleanup_redis)
+            .await
+            .unwrap();
+
+        let repair_lock = stats_redis
+            .try_acquire_repair_lock(bucket)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(stats_redis
+            .try_acquire_repair_lock(bucket)
+            .await
+            .unwrap()
+            .is_none());
+        repair_lock.release().await.unwrap();
+        let repair_lock = stats_redis
+            .try_acquire_repair_lock(bucket)
+            .await
+            .unwrap()
+            .unwrap();
+        repair_lock.release().await.unwrap();
+    }
+
     #[tokio::test]
     #[ignore = "requires local Redis database 15"]
     async fn redis_storage_round_trip() {
@@ -1098,12 +1392,35 @@ mod tests {
             .unwrap();
         assert_eq!(
             stats_redis.read_group_5min(&[timestamp]).await.unwrap(),
-            vec![groups]
+            vec![groups.clone()]
         );
         assert_eq!(
             stats_redis.read_detail_5min(&[timestamp]).await.unwrap(),
-            vec![details]
+            vec![details.clone()]
         );
+        assert!(stats_redis
+            .missing_five_minute_buckets(&[timestamp])
+            .await
+            .unwrap()
+            .is_empty());
+        let mut redis = redis.clone();
+        redis::cmd("SET")
+            .arg(detail_5min_key(timestamp))
+            .arg("invalid")
+            .query_async::<()>(&mut redis)
+            .await
+            .unwrap();
+        assert_eq!(
+            stats_redis
+                .missing_five_minute_buckets(&[timestamp])
+                .await
+                .unwrap(),
+            vec![timestamp]
+        );
+        stats_redis
+            .write_5min(timestamp, &groups, &details)
+            .await
+            .unwrap();
 
         let network_bucket = NetworkDayBucket {
             networks: vec![
@@ -1132,6 +1449,24 @@ mod tests {
             selected[0].networks,
             vec![network_bucket.networks[0].clone()]
         );
+        redis::cmd("HSET")
+            .arg(network_day_key(date))
+            .arg(10)
+            .arg("invalid")
+            .query_async::<()>(&mut redis)
+            .await
+            .unwrap();
+        assert_eq!(
+            stats_redis
+                .missing_network_days(&[date], &HashSet::from([10]))
+                .await
+                .unwrap(),
+            vec![date]
+        );
+        stats_redis
+            .replace_network_day(date, &network_bucket)
+            .await
+            .unwrap();
 
         stats_redis
             .update_network_day(date, &HashSet::from([10]), &Default::default())
@@ -1146,7 +1481,6 @@ mod tests {
             vec![network_bucket.networks[1].clone()]
         );
 
-        let mut redis = redis.clone();
         redis::cmd("DEL")
             .arg(&[
                 group_5min_key(timestamp),

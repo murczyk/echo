@@ -16,7 +16,7 @@ use chrono::*;
 use echo_migration::{Expr, IntoCondition};
 use itertools::Itertools;
 use sea_orm::*;
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use tokio::time::sleep;
 
 pub mod redis;
@@ -955,6 +955,22 @@ async fn repair_redis_general_stats(
     intervals_5min: &[(NaiveDateTime, NaiveDateTime)],
     days: &[NaiveDate],
 ) -> anyhow::Result<()> {
+    let stats_redis = group_stats_redis(env);
+    let timestamps = intervals_5min
+        .iter()
+        .flat_map(|(since, till)| five_minute_timestamps(*since, *till))
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect_vec();
+    let missing_timestamps = stats_redis
+        .missing_five_minute_buckets(&timestamps)
+        .await
+        .c(h!())?;
+    let missing_days = stats_redis.missing_general_days(days).await.c(h!())?;
+    if missing_timestamps.is_empty() && missing_days.is_empty() {
+        return Ok(());
+    }
+
     let batches = signal_group_batch::Entity::find()
         .all(&env.dbx)
         .await
@@ -963,44 +979,145 @@ async fn repair_redis_general_stats(
         .into_iter()
         .map(|batch| (batch.group_master_keys, batch.id))
         .collect::<HashMap<_, _>>();
-    let stats_redis = group_stats_redis(env);
-    for (since, till) in intervals_5min.iter().copied() {
-        write_redis_5min_range(
-            &env.dbx,
-            &stats_redis,
-            since,
-            till,
-            &mut batches_map,
-        )
-        .await
-        .c(h!())?;
-    }
-    for date in days {
-        let since = start_of_day(*date).c(h!())?;
-        let till = start_of_day(*date + Duration::days(1)).c(h!())?;
-        let buckets =
-            calculate_redis_5min_range(&env.dbx, since, till, &mut batches_map)
-                .await
-                .c(h!())?;
-        write_redis_5min_buckets(&stats_redis, &buckets)
-            .await
-            .c(h!())?;
-        let bucket = redis::aggregate_general_day(
-            buckets
-                .values()
-                .map(|(groups, _)| groups.clone())
-                .collect_vec(),
-            buckets
-                .into_values()
-                .map(|(_, details)| details)
-                .collect_vec(),
-        );
-        stats_redis
-            .write_general_day(*date, &bucket)
-            .await
-            .c(h!())?;
+    repair_redis_five_minute_buckets(
+        env,
+        &stats_redis,
+        &missing_timestamps,
+        &mut batches_map,
+    )
+    .await?;
+    for date in missing_days {
+        repair_redis_general_day(env, &stats_redis, date, &mut batches_map)
+            .await?;
     }
     Ok(())
+}
+
+async fn repair_redis_five_minute_buckets(
+    env: &Env,
+    stats_redis: &redis::GroupStatsRedis,
+    timestamps: &[NaiveDateTime],
+    batches_map: &mut HashMap<String, i64>,
+) -> anyhow::Result<()> {
+    let mut owned = Vec::new();
+    let mut contended = Vec::new();
+    for timestamp in timestamps.iter().copied() {
+        let bucket = redis::RepairBucket::FiveMinute(timestamp);
+        if stats_redis.repair_is_complete(bucket).await? {
+            continue;
+        }
+        match stats_redis.try_acquire_repair_lock(bucket).await? {
+            Some(repair_lock) => owned.push((timestamp, repair_lock)),
+            None => contended.push(bucket),
+        }
+    }
+
+    let owned_timestamps =
+        owned.iter().map(|(timestamp, _)| *timestamp).collect_vec();
+    let missing_owned_timestamps = stats_redis
+        .missing_five_minute_buckets(&owned_timestamps)
+        .await?;
+    let repair_result: anyhow::Result<()> = async {
+        for (since, till) in
+            consecutive_five_minute_ranges(&missing_owned_timestamps)
+        {
+            write_redis_5min_range(
+                &env.dbx,
+                stats_redis,
+                since,
+                till,
+                batches_map,
+            )
+            .await
+            .c(h!())?;
+        }
+        Ok(())
+    }
+    .await;
+    let release_result =
+        release_redis_repair_locks(owned.into_iter().map(|(_, lock)| lock))
+            .await;
+    repair_result?;
+    release_result?;
+
+    for bucket in contended {
+        stats_redis.wait_for_repair(bucket).await?;
+    }
+    Ok(())
+}
+
+fn consecutive_five_minute_ranges(
+    timestamps: &[NaiveDateTime],
+) -> Vec<(NaiveDateTime, NaiveDateTime)> {
+    let Some(first) = timestamps.first().copied() else {
+        return Vec::new();
+    };
+    let mut result = Vec::new();
+    let mut since = first;
+    let mut till = first + Duration::minutes(5);
+    for timestamp in timestamps.iter().copied().skip(1) {
+        if timestamp == till {
+            till += Duration::minutes(5);
+        } else {
+            result.push((since, till));
+            since = timestamp;
+            till = timestamp + Duration::minutes(5);
+        }
+    }
+    result.push((since, till));
+    result
+}
+
+async fn release_redis_repair_locks(
+    locks: impl IntoIterator<Item = redis::RepairLock>,
+) -> anyhow::Result<()> {
+    let mut result = Ok(());
+    for lock in locks {
+        if let Err(error) = lock.release().await {
+            if result.is_ok() {
+                result = Err(error);
+            }
+        }
+    }
+    result
+}
+
+async fn repair_redis_general_day(
+    env: &Env,
+    stats_redis: &redis::GroupStatsRedis,
+    date: NaiveDate,
+    batches_map: &mut HashMap<String, i64>,
+) -> anyhow::Result<()> {
+    let repair_bucket = redis::RepairBucket::GeneralDay(date);
+    if stats_redis.repair_is_complete(repair_bucket).await? {
+        return Ok(());
+    }
+    let Some(repair_lock) =
+        stats_redis.try_acquire_repair_lock(repair_bucket).await?
+    else {
+        return stats_redis.wait_for_repair(repair_bucket).await;
+    };
+    let repair_result = async {
+        if stats_redis.repair_is_complete(repair_bucket).await? {
+            return Ok(());
+        }
+        let since = start_of_day(date).c(h!())?;
+        let till = start_of_day(date + Duration::days(1)).c(h!())?;
+        write_redis_general_days(
+            &env.dbx,
+            stats_redis,
+            since,
+            till,
+            None,
+            batches_map,
+        )
+        .await
+        .c(h!())
+    }
+    .await;
+    let release_result = repair_lock.release().await;
+    repair_result?;
+    release_result
 }
 
 #[derive(Copy, Clone)]
@@ -1096,6 +1213,10 @@ pub async fn read_redis_network_days(
             warn!(
                 "Redis network stats read missed a bucket; rebuilding from PostgreSQL: {error:#}"
             );
+            let missing_dates = stats_redis
+                .missing_network_days(&dates, network_ids)
+                .await
+                .c(h!())?;
             let batches = signal_group_batch::Entity::find()
                 .all(&env.dbx)
                 .await
@@ -1104,16 +1225,16 @@ pub async fn read_redis_network_days(
                 .into_iter()
                 .map(|batch| (batch.group_master_keys, batch.id))
                 .collect::<HashMap<_, _>>();
-            recalculate_network_stats_redis(
-                &env.dbx,
-                &stats_redis,
-                start_of_day(since_date).c(h!())?,
-                start_of_day(till_date + Duration::days(1)).c(h!())?,
-                None,
-                &mut batches_map,
-            )
-            .await
-            .c(h!())?;
+            for date in missing_dates {
+                repair_redis_network_day(
+                    env,
+                    &stats_redis,
+                    date,
+                    network_ids,
+                    &mut batches_map,
+                )
+                .await?;
+            }
             stats_redis
                 .read_network_days(&dates, network_ids)
                 .await
@@ -1121,6 +1242,49 @@ pub async fn read_redis_network_days(
         }
     };
     Ok(dates.into_iter().zip(buckets).collect())
+}
+
+async fn repair_redis_network_day(
+    env: &Env,
+    stats_redis: &redis::GroupStatsRedis,
+    date: NaiveDate,
+    network_ids: &HashSet<i64>,
+    batches_map: &mut HashMap<String, i64>,
+) -> anyhow::Result<()> {
+    let repair_bucket = redis::RepairBucket::NetworkDay(date);
+    if stats_redis
+        .network_day_is_readable(date, network_ids)
+        .await?
+    {
+        return Ok(());
+    }
+    let Some(repair_lock) =
+        stats_redis.try_acquire_repair_lock(repair_bucket).await?
+    else {
+        return stats_redis.wait_for_network_repair(date, network_ids).await;
+    };
+    let repair_result = async {
+        if stats_redis
+            .network_day_is_readable(date, network_ids)
+            .await?
+        {
+            return Ok(());
+        }
+        recalculate_network_stats_redis(
+            &env.dbx,
+            stats_redis,
+            start_of_day(date).c(h!())?,
+            start_of_day(date + Duration::days(1)).c(h!())?,
+            None,
+            batches_map,
+        )
+        .await
+        .c(h!())
+    }
+    .await;
+    let release_result = repair_lock.release().await;
+    repair_result?;
+    release_result
 }
 
 async fn load_network_aor_map(
@@ -2547,6 +2711,22 @@ fn batch_key_to_group_keys(batch_key: String) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn consecutive_five_minute_buckets_are_batched() {
+        let first = ndt(2026, 7, 29, 12, 0);
+        assert_eq!(
+            consecutive_five_minute_ranges(&[
+                first,
+                first + Duration::minutes(5),
+                first + Duration::minutes(15),
+            ]),
+            vec![
+                (first, first + Duration::minutes(10)),
+                (first + Duration::minutes(15), first + Duration::minutes(20),),
+            ]
+        );
+    }
     use crate::functest::tests::*;
     use sea_orm::ActiveValue::Set;
     use serial_test::serial;
