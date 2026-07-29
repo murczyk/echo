@@ -526,6 +526,26 @@ async fn inbox_messages(
         .await
         .context(h!())?;
     let test_limit = apply_test_inbox_settings(&env, &mut req).await?;
+    if test_limit.is_none()
+        && inbox_request_is_unbounded(&req)
+        && req.load_latest != Some(true)
+    {
+        error!(
+            "rejecting unbounded get-inbox request without load_latest; page_id={page_id:?}"
+        );
+        return Ok(Json(InboxMessagesRsp {
+            inbox_items: vec![],
+            callsigns: vec![],
+            signal_profiles: BTreeMap::new(),
+            signal_groups: vec![],
+            freq_pelengs_summary: None,
+            page_limit: if req.nolimit == Some(true) {
+                None
+            } else {
+                Some(20)
+            },
+        }));
+    }
     let inbox_items = if let Some(limit) = test_limit {
         get_inbox_messages_limited(&login, &logins, &env, &req, limit)
             .await
@@ -682,11 +702,14 @@ async fn inbox_messages_count(
     let login = user_id;
 
     let test_limit = apply_test_inbox_settings(&env, &mut req).await?;
-    if test_limit.is_none()
-        && req.since_id_noninclusive.is_none()
-        && req.since_date_inclusive_ms.is_none()
-    {
-        req.since_date_inclusive_ms = Some(0);
+    if test_limit.is_none() && inbox_request_is_unbounded(&req) {
+        error!(
+            "rejecting unbounded get-inbox-count request; page_id={page_id:?}"
+        );
+        return Ok(Json(InboxMessagesDigestRsp {
+            quantity: 0,
+            first_element_ts: None,
+        }));
     }
     let q = build_inbox_digest_query(&login, &env, &req)
         .await

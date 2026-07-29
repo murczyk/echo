@@ -1291,22 +1291,19 @@ pub async fn latest_frequencies(
             .await
             .c(h!())?;
     let analytics_groups = groups.clone();
-    let week_ago = Utc::now() - chrono::Duration::days(7);
+    let now = Utc::now();
+    let week_ago = now - chrono::Duration::days(7);
     let freqs_period =
         crate::rer_importer::analysis::with_analytics_read_fallback(
             env.get_ref(),
             "latest frequencies",
             true,
             |db| async move {
-                read_latest_frequencies(
-                    &db,
-                    analytics_groups,
-                    week_ago,
-                )
-                .await
+                read_latest_frequencies(&db, analytics_groups, week_ago, now)
+                    .await
             },
             |db| async move {
-                read_latest_frequencies(&db, groups, week_ago).await
+                read_latest_frequencies(&db, groups, week_ago, now).await
             },
         )
         .await
@@ -1319,6 +1316,7 @@ async fn read_latest_frequencies(
     db: &DatabaseConnection,
     groups: Vec<String>,
     week_ago: DateTime<Utc>,
+    now: DateTime<Utc>,
 ) -> Result<Vec<String>, AppError> {
     #[derive(FromQueryResult)]
     struct FreqRes {
@@ -1330,6 +1328,7 @@ async fn read_latest_frequencies(
             select id, freq
             from sigint_inbox_item
             where datetime >= $1
+              and datetime <= $2
         ),
         recent_bounds as materialized (
             select min(id) as min_id
@@ -1346,7 +1345,7 @@ async fn read_latest_frequencies(
           -- Keep datetime authoritative while bounding the existing
           -- (signal_message_id, group_master_key) index by recent IDs.
           and smg.signal_message_id >= rb.min_id
-          and smg.group_master_key = any($2::text[])
+          and smg.group_master_key = any($3::text[])
         group by ri.freq
         order by ri.freq
     "#;
@@ -1354,7 +1353,7 @@ async fn read_latest_frequencies(
         FreqRes::find_by_statement(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             sql,
-            vec![week_ago.into(), groups.into()],
+            vec![week_ago.into(), now.into(), groups.into()],
         ))
         .all(db)
         .await
@@ -1770,11 +1769,20 @@ mod tests {
             false,
         )
         .await;
+        create_frequency_message(
+            &env.dbx,
+            "latest-frequencies-allowed",
+            cutoff + Duration::days(30),
+            Some("future"),
+            false,
+        )
+        .await;
 
         let frequencies = read_latest_frequencies(
             &env.dbx,
             vec!["latest-frequencies-allowed".to_string()],
             cutoff.and_utc(),
+            (cutoff + Duration::days(1)).and_utc(),
         )
         .await
         .unwrap();

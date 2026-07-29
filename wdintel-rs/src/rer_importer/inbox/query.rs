@@ -1,4 +1,4 @@
-use crate::config::{RER_DUTY_MAX_DAYS, TAG_MINIMUM_CONFIDENCE};
+use crate::config::TAG_MINIMUM_CONFIDENCE;
 use crate::entities::{prelude::*, *};
 use crate::error::AppError;
 use crate::rer_importer::analysis::*;
@@ -121,6 +121,19 @@ where
     build_filtered_inbox_query_with_scope(dbx, login, env, req, None).await
 }
 
+pub(crate) fn inbox_request_is_unbounded(req: &InboxMessagesReq) -> bool {
+    req.since_id_noninclusive.is_none()
+        && req.before_id_noninclusive.is_none()
+        && req.since_date_inclusive_ms.is_none()
+        && req.till_date_inclusive_ms.is_none()
+}
+
+pub(crate) fn inbox_request_is_unbounded_latest(
+    req: &InboxMessagesReq,
+) -> bool {
+    inbox_request_is_unbounded(req) && req.load_latest == Some(true)
+}
+
 async fn build_filtered_inbox_query_with_scope<'a, 'async_trait, C>(
     dbx: &'a C,
     login: &uuid::Uuid,
@@ -131,11 +144,6 @@ async fn build_filtered_inbox_query_with_scope<'a, 'async_trait, C>(
 where
     C: ConnectionTrait + 'async_trait,
 {
-    let sigint_groups =
-        crate::messenger::group::get_identity_sigint_groups(dbx, login)
-            .await
-            .c(h!())?;
-
     let mut q = SignalMessage::find()
         .join(
             JoinType::LeftJoin,
@@ -157,6 +165,18 @@ where
             JoinType::LeftJoin,
             sigint_inbox_item::Relation::DeviceName.def(),
         );
+    if inbox_request_is_unbounded(req) && req.load_latest != Some(true) {
+        error!(
+            "rejecting unbounded inbox query without load_latest; page_id={:?}",
+            req.page_id
+        );
+        return Ok(q.filter(Expr::cust("FALSE")));
+    }
+
+    let sigint_groups =
+        crate::messenger::group::get_identity_sigint_groups(dbx, login)
+            .await
+            .c(h!())?;
 
     q = q
         .filter(signal_message::Column::Deleted.eq(false))
@@ -242,16 +262,6 @@ where
     q = filter_selected_metadata_for_inbox_messages(q, req)?;
     if req.only_with_media == Some(true) {
         q = q.filter(message_has_media_exists());
-    }
-
-    if req.since_id_noninclusive.is_none()
-        && req.since_date_inclusive_ms.is_none()
-    {
-        // TODO FIXME filter by 1 days
-        q =
-            q.filter(signal_message::Column::Timestamp.gte(
-                Utc::now().naive_utc() - Duration::days(RER_DUTY_MAX_DAYS),
-            ));
     }
 
     q = get_pagination_filters_with_conn(dbx, env, req, q)
@@ -922,7 +932,12 @@ where
 
     let req_sort_by = req.sort_by.unwrap_or(InboxMessagesSortBy::IMSDatetime);
     let mut m_order_asc: Option<bool> = None;
-    if let Some(true) = req.load_latest {
+    if inbox_request_is_unbounded_latest(req) {
+        m_order_asc = Some(false);
+        q = q
+            .order_by_desc(signal_message::Column::CreatedAt)
+            .order_by_desc(signal_message::Column::Id);
+    } else if let Some(true) = req.load_latest {
         m_order_asc = Some(false);
         match req_sort_by {
             InboxMessagesSortBy::IMSDatetime => {
@@ -984,7 +999,11 @@ pub async fn get_bl_ordering_stmt(
 
     let req_sort_by = req.sort_by.unwrap_or(InboxMessagesSortBy::IMSDatetime);
     let mut m_order_asc: Option<bool> = None;
-    if let Some(true) = req.load_latest {
+    if inbox_request_is_unbounded_latest(req) {
+        m_order_asc = Some(false);
+        q.order_by(signal_message::Column::CreatedAt, Order::Desc)
+            .order_by(signal_message::Column::Id, Order::Desc);
+    } else if let Some(true) = req.load_latest {
         m_order_asc = Some(false);
         match req_sort_by {
             InboxMessagesSortBy::IMSDatetime => {
@@ -1264,6 +1283,46 @@ mod tests {
                 r#""signal_message_group"."signal_message_id" BETWEEN 12000 AND 13000"#
             ),
             "{sql}"
+        );
+    }
+
+    #[test]
+    fn only_explicit_latest_request_allows_no_bounds() {
+        let unbounded = InboxMessagesReq::default();
+        assert!(inbox_request_is_unbounded(&unbounded));
+        assert!(!inbox_request_is_unbounded_latest(&unbounded));
+
+        let latest = InboxMessagesReq {
+            load_latest: Some(true),
+            ..Default::default()
+        };
+        assert!(inbox_request_is_unbounded_latest(&latest));
+
+        let bounded = InboxMessagesReq {
+            since_id_noninclusive: Some(TEST_CURSOR_ID),
+            ..latest
+        };
+        assert!(!inbox_request_is_unbounded(&bounded));
+        assert!(!inbox_request_is_unbounded_latest(&bounded));
+    }
+
+    #[tokio::test]
+    async fn unbounded_latest_orders_by_created_at_index_columns() {
+        let req = InboxMessagesReq {
+            load_latest: Some(true),
+            ..Default::default()
+        };
+        let query = get_bl_ordering_select(&req, SignalMessage::find())
+            .await
+            .unwrap()
+            .build(DatabaseBackend::Postgres)
+            .to_string();
+
+        assert!(
+            query.contains(
+                r#"ORDER BY "signal_message"."created_at" DESC, "signal_message"."id" DESC"#
+            ),
+            "{query}"
         );
     }
 }

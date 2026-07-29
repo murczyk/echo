@@ -5,6 +5,7 @@ use crate::event_stream::types::EventMsg;
 use crate::event_stream::types::EventType;
 use crate::types::*;
 use chrono::prelude::*;
+use chrono::Duration;
 use chrono_tz::Tz;
 use sea_orm::*;
 
@@ -416,27 +417,72 @@ fn extract_message_datetime(
     ),
     AppError,
 > {
-    if allow_kraken_audio {
+    let (datetime, meow_format) = if allow_kraken_audio {
         if let Some(kraken_audio) =
             crate::rer_importer::meow_format::parse_kraken_audio(body)
         {
-            return Ok((
-                Some(kraken_audio.datetime),
-                Some(kraken_audio.clone()),
-            ));
+            (Some(kraken_audio.datetime), Some(kraken_audio.clone()))
+        } else {
+            extract_regular_message_datetime(lnow, body)?
         }
     } else if crate::rer_importer::meow_format::parse_kraken_audio(body)
         .is_some()
     {
-        return Ok((None, None));
-    }
+        (None, None)
+    } else {
+        extract_regular_message_datetime(lnow, body)?
+    };
 
+    Ok((
+        datetime
+            .map(|datetime| normalize_future_message_datetime(lnow, datetime)),
+        meow_format,
+    ))
+}
+
+fn extract_regular_message_datetime(
+    lnow: DateTime<Tz>,
+    body: &str,
+) -> Result<
+    (
+        Option<DateTime<Tz>>,
+        Option<crate::rer_importer::meow_format::MeowFormat>,
+    ),
+    AppError,
+> {
     let meow_format = crate::rer_importer::meow_format::parse(lnow, body);
     if let Some(meow_format) = &meow_format {
         return Ok((Some(meow_format.datetime), Some(meow_format.clone())));
     }
 
     Ok((extract_generic_body_datetime(lnow, body)?, None))
+}
+
+fn normalize_future_message_datetime(
+    lnow: DateTime<Tz>,
+    datetime: DateTime<Tz>,
+) -> DateTime<Tz> {
+    if datetime
+        <= lnow + Duration::hours(RER_INBOX_PARSED_DATETIME_MAX_FUTURE_HOURS)
+    {
+        return datetime;
+    }
+
+    let current_date_with_parsed_time =
+        lnow.date_naive().and_time(datetime.time());
+    let normalized = match lnow
+        .timezone()
+        .from_local_datetime(&current_date_with_parsed_time)
+    {
+        chrono::offset::LocalResult::Single(datetime) => datetime,
+        chrono::offset::LocalResult::Ambiguous(datetime, _) => datetime,
+        chrono::offset::LocalResult::None => lnow,
+    };
+    warn!(
+        "parsed inbox datetime {datetime} is more than {} hours in the future; using {normalized}",
+        RER_INBOX_PARSED_DATETIME_MAX_FUTURE_HOURS
+    );
+    normalized
 }
 
 fn extract_generic_body_datetime(
@@ -796,6 +842,32 @@ mod tests {
         assert_eq!(
             meow_format.unwrap().body_noheader.body,
             "Перехоплення о 08:30\nрядок 2"
+        );
+    }
+
+    #[test]
+    fn extract_message_datetime_replaces_far_future_date_with_current_date() {
+        let now = Kyiv.with_ymd_and_hms(2026, 7, 29, 12, 0, 0).unwrap();
+        let body = "Дата та час: 18.08.2032 08:18:41";
+
+        let (datetime, _) = extract_message_datetime(now, body, false).unwrap();
+
+        assert_eq!(
+            datetime,
+            Some(Kyiv.with_ymd_and_hms(2026, 7, 29, 8, 18, 41).unwrap())
+        );
+    }
+
+    #[test]
+    fn extract_message_datetime_allows_up_to_24_hours_in_future() {
+        let now = Kyiv.with_ymd_and_hms(2026, 7, 29, 12, 0, 0).unwrap();
+        let body = "Дата та час: 30.07.2026 11:59:59";
+
+        let (datetime, _) = extract_message_datetime(now, body, false).unwrap();
+
+        assert_eq!(
+            datetime,
+            Some(Kyiv.with_ymd_and_hms(2026, 7, 30, 11, 59, 59).unwrap())
         );
     }
 

@@ -3,11 +3,10 @@
 ## Scope and safety
 
 This follow-up investigated the pure PostgreSQL path after the optional
-PeerDB/ClickHouse rollout. Production inspection on `echo-pivnich` was
-read-only. No production configuration, schema, data, service, or statistics
-state was changed. Diagnostic queries used `default_transaction_read_only`,
-short `statement_timeout` values, and plan-only `EXPLAIN`; no production
-`EXPLAIN ANALYZE` was run.
+PeerDB/ClickHouse rollout. Diagnostic production queries used short
+`statement_timeout` values; no production `EXPLAIN ANALYZE` was run. After the
+root cause was confirmed, an explicitly authorized guarded update corrected
+one malformed Pivnich inbox datetime.
 
 The initial example was:
 
@@ -28,6 +27,50 @@ POST /api/rer/analysis/stats/posts
 The post-stats request covered
 `2026-07-15 05:04:29.911 UTC` through
 `2026-07-30 05:04:29.911 UTC`, with no effective facet filters.
+
+## Production anomaly and guarded reapplication
+
+The apparent Pivnich ID/time disorder came from one malformed future date, not
+from general ID disorder. Inbox item `7808006` belonged to a message created
+on `2025-12-08`, but its body contained `18.08.2032 08:18:41`. The body-first
+parser stored that value as the inbox datetime. A lower-only seven-day
+predicate therefore included it and reduced the ID bound from about 23.2
+million to 7.8 million.
+
+With future values excluded, the inspected seven-day Pivnich window contained
+about 490 thousand rows and IDs from about 23.2 million through 24.1 million.
+There were no bounded-recent IDs below 23 million. The malformed row was
+updated to the source message's creation datetime.
+
+The optimization is reapplied with two guards:
+
+- parsed datetimes more than 24 hours in the future retain their parsed time
+  but use the current local date;
+- `latest-frequencies` now has an explicit upper bound captured with its lower
+  bound, so future source data cannot widen the ID range.
+
+The unfiltered post facet already has both lower and upper datetime bounds, so
+its materialized recent-ID range is also restored.
+
+Using existing group aggregates as an immediate replacement was also rejected.
+Their generator inner-joins `signal_group_aor`, while these endpoints authorize
+by signal group alone. Production messages from groups without an AOR were
+present in the raw result but absent from `stats_group_freq_5min` and
+`stats_group_post_id_5min`. Routing these endpoints to the aggregates would
+silently return incomplete frequencies and post counts.
+
+The same commit's `/api/user/sigint-groups` optimization was checked
+independently and retained. `signal_message.timestamp` remained tightly
+correlated with message IDs on both inspected servers, and the bounded
+production query completed in under one second during the investigation.
+
+Separate all-history inbox-count requests were identified by
+`timestamp >= '1970-01-01'`. Pivnich contains no inbox or message timestamps
+from 1970; the backend generated this predicate by replacing a missing cursor
+and missing start date with epoch zero. Unbounded count requests now return
+zero and emit an error. The only allowed unbounded inbox read is an explicit
+`load_latest` request, ordered by `signal_message.created_at DESC` so the
+existing creation-time index can satisfy it.
 
 ## Production evidence
 
