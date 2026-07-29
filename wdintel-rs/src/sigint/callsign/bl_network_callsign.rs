@@ -306,36 +306,9 @@ pub async fn bl_update_network_callsign(
                 let known_callsign = find_callsign(txn, sigint_callsign_id)
                     .await
                     .context(h!())?;
-                if known_callsign.developing {
-                    let additional_sources =
-                        list_callsign_additional_source_ids(
-                            txn,
-                            known_callsign.id,
-                        )
-                        .await
-                        .context(h!())?;
-                    let known_callsign_req = UpdateCallsignReq {
-                        id: known_callsign.id,
-                        callsign: known_callsign.callsign.clone(),
-                        position: known_callsign.position.clone(),
-                        comment: known_callsign.comment.clone(),
-                        full_name: Some(known_callsign.full_name.clone()),
-                        full_name_is_missing: false,
-                        unit_id: known_callsign.unit_id,
-                        active: known_callsign.deleted,
-                        source_id: known_callsign.source_id,
-                        callsign_additional_sources: additional_sources,
-                        created_at: known_callsign
-                            .created_at
-                            .and_utc()
-                            .timestamp_millis(),
-                        developing: false,
-                        radio_freq: Some(known_callsign.radio_freq.clone()),
-                    };
-                    bl_callsign_update(&known_callsign_req, user_id, txn)
-                        .await
-                        .context(h!())?;
-                }
+                update_callsign_developing(known_callsign, false, user_id, txn)
+                    .await
+                    .context(h!())?;
             }
         }
         return update_network_callsign_not_linked(req, user_id, txn).await;
@@ -416,6 +389,14 @@ async fn ensure_callsign_preserving_catalog(
         find_or_create_callsign(req, user_id, txn, network_callsign, unit_id)
             .await
             .c(h!())?;
+    let known_callsign = update_callsign_developing(
+        known_callsign,
+        req.developing,
+        user_id,
+        txn,
+    )
+    .await
+    .c(h!())?;
 
     link_network_callsign(
         req,
@@ -471,6 +452,41 @@ async fn find_or_create_callsign(
     };
 
     Ok(known_callsign)
+}
+
+async fn update_callsign_developing(
+    known_callsign: sigint_callsign::Model,
+    developing: bool,
+    user_id: &uuid::Uuid,
+    txn: &DatabaseTransaction,
+) -> Result<sigint_callsign::Model, AppError> {
+    if known_callsign.developing == developing {
+        return Ok(known_callsign);
+    }
+
+    let callsign_additional_sources =
+        list_callsign_additional_source_ids(txn, known_callsign.id)
+            .await
+            .context(h!())?;
+    let known_callsign_req = UpdateCallsignReq {
+        id: known_callsign.id,
+        callsign: known_callsign.callsign.clone(),
+        position: known_callsign.position.clone(),
+        comment: known_callsign.comment.clone(),
+        full_name: Some(known_callsign.full_name.clone()),
+        full_name_is_missing: false,
+        unit_id: known_callsign.unit_id,
+        active: known_callsign.deleted,
+        source_id: known_callsign.source_id,
+        callsign_additional_sources,
+        created_at: known_callsign.created_at.and_utc().timestamp_millis(),
+        developing,
+        radio_freq: Some(known_callsign.radio_freq.clone()),
+    };
+
+    Ok(bl_callsign_update(&known_callsign_req, user_id, txn)
+        .await
+        .context(h!())?)
 }
 
 async fn update_network_callsign_linked(
@@ -1351,7 +1367,7 @@ mod tests {
 
     #[serial]
     #[tokio::test]
-    async fn auto_link_preserves_existing_catalog_metadata() {
+    async fn auto_link_preserves_catalog_metadata_and_clears_developing() {
         let env = cleanup().await.unwrap();
         let login = find_test_login(&env.dbx).await.unwrap();
         let unit = mk_sigint_unit(
@@ -1381,7 +1397,7 @@ mod tests {
             deleted: Set(false),
             created_at: Set(Utc::now().naive_utc()),
             source_id: Set(None),
-            developing: Set(false),
+            developing: Set(true),
             radio_freq: Set("123.45".to_string()),
             sigint_origin_id: Set(None),
             original_id: Set(None),
@@ -1452,6 +1468,7 @@ mod tests {
         assert_eq!(known_callsign_after.comment, "catalog comment");
         assert_eq!(known_callsign_after.full_name, "catalog full name");
         assert_eq!(known_callsign_after.radio_freq, "123.45");
+        assert!(!known_callsign_after.developing);
         assert_eq!(
             network_callsign_after.sigint_callsign_id,
             Some(known_callsign.id)
