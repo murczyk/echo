@@ -243,6 +243,54 @@ Regression tests cover:
 - null and duplicate frequencies;
 - multiple allowed group links for one message without double-counting posts.
 
+### Skhid deployment follow-up
+
+After deploying the upper-bounded `latest-frequencies` query, two observed
+Skhid requests still took `14.721` and `13.231` seconds. The query was using
+the expected indexes:
+
+- `sigint_inbox_item_datetime_idx` for the seven-day inbox range;
+- `signal_message_group_signal_message_id_group_master_key_idx` for group
+  membership;
+- `signal_message_pkey` for deleted-message checks.
+
+This was not a missing-index failure. PostgreSQL estimated only 1,773 rows in
+the seven-day `recent_inbox` CTE, while a read-only count found 363,437 rows
+with IDs from 33,545,547 through 34,081,697. Based on the underestimated CTE,
+the planner chose nested-loop index probes into `signal_message_group` and
+`signal_message` for the recent messages. The indexes avoid full-table scans,
+but hundreds of thousands of individual probes still produce high latency.
+
+The estimate came from an insufficiently current tail of the datetime
+statistics:
+
+- `sigint_inbox_item` had about 25.5 million live rows;
+- the last automatic analyze was `2026-07-25 03:17 UTC`;
+- the datetime histogram ended at `2026-07-25 03:08:52`;
+- `n_mod_since_analyze` was 235,252, still below the configured automatic
+  analyze trigger of approximately 265 thousand rows
+  (`10000 + 0.01 * n_live_tup`).
+
+The deployment also started the existing
+`sigint_network_freq.last_seen_dt` rebuild and concurrent latest-network
+datetime lookups. They caused additional I/O contention during the first
+measurements, but the rebuild finished and does not explain the planner's
+205-fold row-estimate error. `pg_stat_statements` was unavailable on Skhid
+because it was not configured in `shared_preload_libraries`.
+
+The correct follow-up is:
+
+1. refresh the production statistics in an approved maintenance window and
+   increase the statistics detail for `sigint_inbox_item.datetime`;
+2. make automatic analyze react sooner to the actively inserted tail;
+3. rewrite the authorization stage to scan a bounded minimum/maximum message-ID
+   envelope and join it to `recent_inbox` in bulk, so the query does not depend
+   on PostgreSQL choosing hundreds of thousands of nested-loop probes;
+4. evaluate a covering datetime index only if the bounded bulk-join plan shows
+   that heap fetches from `recent_inbox` remain dominant.
+
+No production `EXPLAIN ANALYZE` was run during this follow-up.
+
 ## Rejected shortcut: `signal_message_group.created_at`
 
 Filtering and indexing `signal_message_group.created_at` would remove the join,
