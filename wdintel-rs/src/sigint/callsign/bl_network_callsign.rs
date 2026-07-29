@@ -12,7 +12,7 @@ use crate::types::*;
 use crate::utils::orm::ArrayColumnOps;
 use chrono::*;
 use sea_orm::*;
-use sea_query::{Alias, Expr, JoinType, PgFunc};
+use sea_query::{Alias, Expr, Func, JoinType, PgFunc};
 use std::collections::HashMap;
 
 #[derive(Debug, FromQueryResult)]
@@ -421,7 +421,13 @@ async fn find_or_create_callsign(
 
     let existing_known_callsign = sigint_callsign::Entity::find()
         .filter(sigint_callsign::Column::UnitId.eq(unit_id))
-        .filter(sigint_callsign::Column::Callsign.eq(callsign_value.clone()))
+        .filter(
+            Expr::expr(Func::lower(Expr::col((
+                sigint_callsign::Entity,
+                sigint_callsign::Column::Callsign,
+            ))))
+            .eq(callsign_value),
+        )
         .filter(sigint_callsign::Column::Deleted.eq(false))
         .one(txn)
         .await
@@ -1389,7 +1395,7 @@ mod tests {
         .await
         .unwrap();
         let known_callsign = sigint_callsign::ActiveModel {
-            callsign: Set("сокіл-1".to_string()),
+            callsign: Set("Сокіл-1".to_string()),
             position: Set("catalog position".to_string()),
             comment: Set("catalog comment".to_string()),
             full_name: Set("catalog full name".to_string()),
