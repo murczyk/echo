@@ -18,7 +18,7 @@ use chrono::{
     DateTime, Duration as ChronoDuration, FixedOffset, NaiveDateTime, Utc,
 };
 use sea_orm::*;
-use sea_query::{Expr, Query};
+use sea_query::Expr;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
@@ -32,8 +32,40 @@ struct BackfillStats {
 #[derive(Debug, FromQueryResult)]
 struct MessageCandidate {
     id: i64,
+    timestamp: Option<NaiveDateTime>,
     body: Option<String>,
     message_uid: Option<String>,
+}
+
+#[derive(Debug)]
+struct PreparedMessageCandidate {
+    id: i64,
+    timestamp: NaiveDateTime,
+    body: String,
+    message_uid: String,
+}
+
+#[derive(Debug, Default)]
+struct MessageCandidateSelection {
+    newest_original: Option<SelectedMessageCandidate>,
+    newest_duplicate: Option<SelectedMessageCandidate>,
+}
+
+#[derive(Debug)]
+struct SelectedMessageCandidate {
+    id: i64,
+    timestamp: NaiveDateTime,
+    message_uid: String,
+}
+
+#[derive(Debug)]
+struct AssociationMessageWorkItem {
+    association: goi_association::Model,
+    association_message: String,
+    probe: String,
+    window_start: NaiveDateTime,
+    window_end: NaiveDateTime,
+    group_keys: Arc<Vec<String>>,
 }
 
 type OrganismGroupCache = HashMap<i64, Arc<Vec<String>>>;
@@ -143,6 +175,10 @@ async fn backfill_goi_association_message_uids(
         )
         .await
         .c(h!())?;
+        info!(
+            "GOI association message UID backfill progress: last_id={}, scanned={}, filled={}",
+            after_id, stats.scanned, stats.filled
+        );
     }
     Ok(stats)
 }
@@ -179,40 +215,134 @@ async fn fill_association_message_uids(
     stats: &mut BackfillStats,
 ) -> Result<(), AppError> {
     stats.scanned += associations.len() as u64;
+    let work_items =
+        prepare_association_message_work_items(db, associations, group_cache)
+            .await
+            .c(h!())?;
+    for work_items in work_items.into_values() {
+        fill_organism_association_message_uids(db, work_items, stats)
+            .await
+            .c(h!())?;
+    }
+    Ok(())
+}
+
+async fn prepare_association_message_work_items(
+    db: &DatabaseConnection,
+    associations: Vec<goi_association::Model>,
+    group_cache: &mut OrganismGroupCache,
+) -> Result<HashMap<i64, Vec<AssociationMessageWorkItem>>, AppError> {
+    let mut work_items = HashMap::new();
     for association in associations {
-        if association.message_uid.is_some() {
-            continue;
-        }
-        let group_keys = organism_signal_group_keys(
-            db,
-            association.organism_id,
-            group_cache,
-        )
-        .await
-        .c(h!())?;
-        if group_keys.is_empty() {
-            continue;
-        }
-        let Some(message_uid) =
-            find_association_message_uid(db, &association, &group_keys)
+        let Some(work_item) =
+            prepare_association_message_work_item(db, association, group_cache)
                 .await
                 .c(h!())?
         else {
             continue;
         };
-        let update = goi_association::Entity::update_many()
-            .col_expr(
-                goi_association::Column::MessageUid,
-                Expr::value(message_uid),
-            )
-            .filter(goi_association::Column::Id.eq(association.id))
-            .filter(goi_association::Column::MessageUid.is_null())
-            .exec(db)
+        work_items
+            .entry(work_item.association.organism_id)
+            .or_insert_with(Vec::new)
+            .push(work_item);
+    }
+    Ok(work_items)
+}
+
+async fn prepare_association_message_work_item(
+    db: &DatabaseConnection,
+    association: goi_association::Model,
+    group_cache: &mut OrganismGroupCache,
+) -> Result<Option<AssociationMessageWorkItem>, AppError> {
+    if association.message_uid.is_some() {
+        return Ok(None);
+    }
+    let Some(association_message) =
+        association_original_message(&association.row)
+            .map(normalize_message_body)
+            .filter(|message| !message.is_empty())
+    else {
+        return Ok(None);
+    };
+    let Some(probe) = message_probe(&association_message) else {
+        return Ok(None);
+    };
+    let group_keys =
+        organism_signal_group_keys(db, association.organism_id, group_cache)
             .await
             .c(h!())?;
-        stats.filled += update.rows_affected;
+    if group_keys.is_empty() {
+        return Ok(None);
+    }
+    let window_anchor = message_window_anchor(
+        association.source_date.as_ref(),
+        &association.source_created_at,
+    );
+    let (window_start, window_end) = signal_message_window(window_anchor);
+    Ok(Some(AssociationMessageWorkItem {
+        association,
+        association_message,
+        probe,
+        window_start,
+        window_end,
+        group_keys,
+    }))
+}
+
+async fn fill_organism_association_message_uids(
+    db: &DatabaseConnection,
+    work_items: Vec<AssociationMessageWorkItem>,
+    stats: &mut BackfillStats,
+) -> Result<(), AppError> {
+    let Some(group_keys) =
+        work_items.first().map(|item| item.group_keys.clone())
+    else {
+        return Ok(());
+    };
+    let datasource_group_ids =
+        load_datasource_group_ids(db, &group_keys).await.c(h!())?;
+    for work_item in work_items {
+        let Some(message_uid) = find_matching_message_uid(
+            db,
+            &datasource_group_ids,
+            &group_keys,
+            &work_item.association_message,
+            &work_item.probe,
+            work_item.window_start,
+            work_item.window_end,
+        )
+        .await
+        .c(h!())?
+        else {
+            continue;
+        };
+        stats.filled += update_association_message_uid(
+            db,
+            work_item.association.id,
+            message_uid,
+        )
+        .await
+        .c(h!())?;
     }
     Ok(())
+}
+
+async fn update_association_message_uid(
+    db: &DatabaseConnection,
+    association_id: i64,
+    message_uid: String,
+) -> Result<u64, AppError> {
+    let update = goi_association::Entity::update_many()
+        .col_expr(
+            goi_association::Column::MessageUid,
+            Expr::value(message_uid),
+        )
+        .filter(goi_association::Column::Id.eq(association_id))
+        .filter(goi_association::Column::MessageUid.is_null())
+        .exec(db)
+        .await
+        .c(h!())?;
+    Ok(update.rows_affected)
 }
 
 async fn organism_signal_group_keys(
@@ -251,108 +381,268 @@ async fn load_association_batch(
     Ok(query.all(db).await.c(h!())?)
 }
 
-async fn find_association_message_uid(
+async fn find_matching_message_uid(
     db: &DatabaseConnection,
-    association: &goi_association::Model,
+    datasource_group_ids: &[i64],
     group_keys: &[String],
-) -> Result<Option<String>, AppError> {
-    let Some(association_message) =
-        association_original_message(&association.row)
-    else {
-        return Ok(None);
-    };
-    let Some(probe) = message_probe(association_message) else {
-        return Ok(None);
-    };
-    let window_anchor = message_window_anchor(
-        association.source_date.as_ref(),
-        &association.source_created_at,
-    );
-    let (window_start, window_end) = signal_message_window(window_anchor);
-    let mut offset = 0;
-    let mut newest_duplicate_uid = None;
-    loop {
-        let candidates = load_message_candidate_batch(
-            db,
-            &probe,
-            window_start,
-            window_end,
-            group_keys,
-            offset,
-        )
-        .await
-        .c(h!())?;
-        let candidate_count = candidates.len() as u64;
-        if let Some(message_uid) = select_matching_original_message_uid(
-            association_message,
-            candidates,
-            &mut newest_duplicate_uid,
-        ) {
-            return Ok(Some(message_uid));
-        }
-        if candidate_count < ORGANISM_GOI_MESSAGE_UID_CANDIDATE_BATCH_SIZE {
-            return Ok(newest_duplicate_uid);
-        }
-        offset += candidate_count;
-    }
-}
-
-async fn load_message_candidate_batch(
-    db: &DatabaseConnection,
+    association_message: &str,
     probe: &str,
     window_start: NaiveDateTime,
     window_end: NaiveDateTime,
+) -> Result<Option<String>, AppError> {
+    let mut selection = MessageCandidateSelection::default();
+    if !datasource_group_ids.is_empty() {
+        let candidate_selection = scan_message_candidate_pages(
+            db,
+            |cursor| {
+                datasource_group_message_candidate_query(
+                    datasource_group_ids,
+                    probe,
+                    window_start,
+                    window_end,
+                    cursor,
+                )
+            },
+            association_message,
+            probe,
+            window_start,
+            window_end,
+        )
+        .await
+        .c(h!())?;
+        selection.merge(candidate_selection);
+    }
+    let candidate_selection = scan_message_candidate_pages(
+        db,
+        |cursor| {
+            linked_message_candidate_query(
+                group_keys,
+                probe,
+                window_start,
+                window_end,
+                cursor,
+            )
+        },
+        association_message,
+        probe,
+        window_start,
+        window_end,
+    )
+    .await
+    .c(h!())?;
+    selection.merge(candidate_selection);
+    Ok(selection.message_uid())
+}
+
+async fn load_datasource_group_ids(
+    db: &DatabaseConnection,
     group_keys: &[String],
-    offset: u64,
-) -> Result<Vec<MessageCandidate>, AppError> {
-    Ok(signal_message::Entity::find()
+) -> Result<Vec<i64>, AppError> {
+    Ok(datasource_group::Entity::find()
+        .select_only()
+        .column(datasource_group::Column::Id)
+        .filter(
+            datasource_group::Column::GroupMasterKey
+                .eq_any(group_keys.to_vec()),
+        )
+        .into_tuple::<i64>()
+        .all(db)
+        .await
+        .c(h!())?)
+}
+
+async fn scan_message_candidate_pages<F>(
+    db: &DatabaseConnection,
+    mut query_page: F,
+    association_message: &str,
+    probe: &str,
+    window_start: NaiveDateTime,
+    window_end: NaiveDateTime,
+) -> Result<MessageCandidateSelection, AppError>
+where
+    F: FnMut(Option<(NaiveDateTime, i64)>) -> Select<signal_message::Entity>,
+{
+    let mut cursor = None;
+    let mut selection = MessageCandidateSelection::default();
+    loop {
+        let rows = query_page(cursor)
+            .into_model::<MessageCandidate>()
+            .all(db)
+            .await
+            .c(h!())?;
+        let row_count = rows.len() as u64;
+        cursor = message_candidate_page_cursor(&rows);
+        let candidates = prepare_message_candidates(rows);
+        selection.merge(select_matching_message_candidates(
+            association_message,
+            probe,
+            window_start,
+            window_end,
+            &candidates,
+        ));
+        if selection.newest_original.is_some()
+            || row_count < ORGANISM_GOI_MESSAGE_UID_CANDIDATE_BATCH_SIZE
+            || cursor.is_none()
+        {
+            return Ok(selection);
+        }
+    }
+}
+
+fn datasource_group_message_candidate_query(
+    datasource_group_ids: &[i64],
+    probe: &str,
+    window_start: NaiveDateTime,
+    window_end: NaiveDateTime,
+    cursor: Option<(NaiveDateTime, i64)>,
+) -> Select<signal_message::Entity> {
+    message_candidate_base_query(probe, window_start, window_end, cursor)
+        .filter(
+            signal_message::Column::DatasourceGroupId
+                .eq_any(datasource_group_ids.to_vec()),
+        )
+}
+
+fn linked_message_candidate_query(
+    group_keys: &[String],
+    probe: &str,
+    window_start: NaiveDateTime,
+    window_end: NaiveDateTime,
+    cursor: Option<(NaiveDateTime, i64)>,
+) -> Select<signal_message::Entity> {
+    message_candidate_base_query(probe, window_start, window_end, cursor)
+        .distinct()
+        .join(
+            JoinType::InnerJoin,
+            signal_message::Relation::SignalMessageGroup.def(),
+        )
+        .filter(
+            signal_message_group::Column::GroupMasterKey
+                .eq_any(group_keys.to_vec()),
+        )
+}
+
+fn message_candidate_base_query(
+    probe: &str,
+    window_start: NaiveDateTime,
+    window_end: NaiveDateTime,
+    cursor: Option<(NaiveDateTime, i64)>,
+) -> Select<signal_message::Entity> {
+    signal_message::Entity::find()
         .select_only()
         .column(signal_message::Column::Id)
+        .column(signal_message::Column::Timestamp)
         .column(signal_message::Column::Body)
         .column(signal_message::Column::MessageUid)
         .filter(signal_message::Column::Timestamp.gte(window_start))
         .filter(signal_message::Column::Timestamp.lte(window_end))
         .filter(signal_message::Column::MessageUid.is_not_null())
         .filter(signal_message::Column::MessageUid.ne(""))
-        .filter(message_in_organism_groups(group_keys))
         .filter(
             Expr::col(signal_message::Column::Body)
                 .like(format!("%{}%", escape_like(probe))),
         )
+        .apply_if(cursor, |query, (timestamp, id)| {
+            query.filter(
+                Condition::any()
+                    .add(signal_message::Column::Timestamp.lt(timestamp))
+                    .add(
+                        signal_message::Column::Timestamp
+                            .eq(timestamp)
+                            .and(signal_message::Column::Id.lt(id)),
+                    ),
+            )
+        })
         .order_by_desc(signal_message::Column::Timestamp)
         .order_by_desc(signal_message::Column::Id)
         .limit(ORGANISM_GOI_MESSAGE_UID_CANDIDATE_BATCH_SIZE)
-        .offset(offset)
-        .into_model::<MessageCandidate>()
-        .all(db)
-        .await
-        .c(h!())?)
 }
 
-fn message_in_organism_groups(group_keys: &[String]) -> Condition {
-    let linked_message_ids = Query::select()
-        .column(signal_message_group::Column::SignalMessageId)
-        .from(signal_message_group::Entity)
-        .and_where(
-            signal_message_group::Column::GroupMasterKey
-                .eq_any(group_keys.to_vec()),
-        )
-        .to_owned();
-    let datasource_group_ids = Query::select()
-        .column(datasource_group::Column::Id)
-        .from(datasource_group::Entity)
-        .and_where(
-            datasource_group::Column::GroupMasterKey
-                .eq_any(group_keys.to_vec()),
-        )
-        .to_owned();
+fn message_candidate_page_cursor(
+    rows: &[MessageCandidate],
+) -> Option<(NaiveDateTime, i64)> {
+    let row = rows.last()?;
+    Some((row.timestamp?, row.id))
+}
 
-    Condition::any()
-        .add(signal_message::Column::Id.in_subquery(linked_message_ids))
-        .add(
-            signal_message::Column::DatasourceGroupId
-                .in_subquery(datasource_group_ids),
-        )
+fn prepare_message_candidates(
+    rows: Vec<MessageCandidate>,
+) -> Vec<PreparedMessageCandidate> {
+    let mut candidates_by_id = HashMap::new();
+    for row in rows {
+        let Some(candidate) = prepare_message_candidate(row) else {
+            continue;
+        };
+        candidates_by_id.entry(candidate.id).or_insert(candidate);
+    }
+    let mut candidates = candidates_by_id.into_values().collect::<Vec<_>>();
+    candidates.sort_by(|left, right| {
+        right
+            .timestamp
+            .cmp(&left.timestamp)
+            .then_with(|| right.id.cmp(&left.id))
+    });
+    candidates
+}
+
+fn prepare_message_candidate(
+    row: MessageCandidate,
+) -> Option<PreparedMessageCandidate> {
+    let timestamp = row.timestamp?;
+    let body = normalize_message_body(row.body.as_deref()?);
+    if body.is_empty() {
+        return None;
+    }
+    let message_uid = row
+        .message_uid
+        .filter(|message_uid| !message_uid.is_empty())?;
+    Some(PreparedMessageCandidate {
+        id: row.id,
+        timestamp,
+        body,
+        message_uid,
+    })
+}
+
+impl MessageCandidateSelection {
+    fn consider(&mut self, candidate: &PreparedMessageCandidate) {
+        let selected = SelectedMessageCandidate {
+            id: candidate.id,
+            timestamp: candidate.timestamp,
+            message_uid: candidate.message_uid.clone(),
+        };
+        if is_duplicate_trace(candidate.id, &candidate.message_uid) {
+            replace_with_newer_candidate(&mut self.newest_duplicate, selected);
+        } else {
+            replace_with_newer_candidate(&mut self.newest_original, selected);
+        }
+    }
+
+    fn merge(&mut self, selection: Self) {
+        if let Some(candidate) = selection.newest_original {
+            replace_with_newer_candidate(&mut self.newest_original, candidate);
+        }
+        if let Some(candidate) = selection.newest_duplicate {
+            replace_with_newer_candidate(&mut self.newest_duplicate, candidate);
+        }
+    }
+
+    fn message_uid(self) -> Option<String> {
+        self.newest_original
+            .or(self.newest_duplicate)
+            .map(|candidate| candidate.message_uid)
+    }
+}
+
+fn replace_with_newer_candidate(
+    selected: &mut Option<SelectedMessageCandidate>,
+    candidate: SelectedMessageCandidate,
+) {
+    if selected.as_ref().is_none_or(|selected| {
+        (candidate.timestamp, candidate.id) > (selected.timestamp, selected.id)
+    }) {
+        *selected = Some(candidate);
+    }
 }
 
 fn association_original_message(row: &serde_json::Value) -> Option<&str> {
@@ -364,11 +654,20 @@ fn association_original_message(row: &serde_json::Value) -> Option<&str> {
         .filter(|message| !message.is_empty())
 }
 
+fn normalize_message_body(message: &str) -> String {
+    message
+        .replace("_x000d_", "\n")
+        .replace("\r\n", "\n")
+        .replace('\r', "\n")
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
 fn message_probe(message: &str) -> Option<String> {
-    let message = message.trim();
-    if message.is_empty() {
-        return None;
-    }
+    let message = message
+        .split_whitespace()
+        .max_by_key(|part| part.chars().count())?;
     let characters = message.chars().collect::<Vec<_>>();
     if characters.len() <= ORGANISM_GOI_MESSAGE_UID_PROBE_CHARS {
         return Some(message.to_string());
@@ -404,34 +703,59 @@ fn message_window_anchor<'a>(
     source_date.unwrap_or(source_created_at)
 }
 
-fn select_matching_original_message_uid(
+fn select_matching_message_candidates(
     association_message: &str,
-    candidates: Vec<MessageCandidate>,
-    newest_duplicate_uid: &mut Option<String>,
-) -> Option<String> {
+    probe: &str,
+    window_start: NaiveDateTime,
+    window_end: NaiveDateTime,
+    candidates: &[PreparedMessageCandidate],
+) -> MessageCandidateSelection {
+    let mut selection = MessageCandidateSelection::default();
     for candidate in candidates {
-        let Some(candidate_body) = candidate.body.as_deref() else {
-            continue;
-        };
-        if !message_bodies_match(association_message, candidate_body) {
+        if candidate.timestamp < window_start
+            || candidate.timestamp > window_end
+        {
             continue;
         }
-        let Some(message_uid) = candidate.message_uid else {
+        if !candidate.body.contains(probe)
+            || !normalized_message_bodies_match(
+                association_message,
+                &candidate.body,
+            )
+        {
             continue;
-        };
-        if !is_duplicate_trace(candidate.id, &message_uid) {
-            return Some(message_uid);
         }
-        if newest_duplicate_uid.is_none() {
-            *newest_duplicate_uid = Some(message_uid);
-        }
+        selection.consider(candidate);
     }
-    None
+    selection
 }
 
+#[cfg(test)]
+fn select_matching_original_message_uid(
+    association_message: &str,
+    probe: &str,
+    window_start: NaiveDateTime,
+    window_end: NaiveDateTime,
+    candidates: &[PreparedMessageCandidate],
+) -> Option<String> {
+    select_matching_message_candidates(
+        association_message,
+        probe,
+        window_start,
+        window_end,
+        candidates,
+    )
+    .message_uid()
+}
+
+#[cfg(test)]
 fn message_bodies_match(left: &str, right: &str) -> bool {
-    let left = left.trim();
-    let right = right.trim();
+    let left = normalize_message_body(left);
+    let right = normalize_message_body(right);
+    normalized_message_bodies_match(&left, &right)
+}
+
+fn normalized_message_bodies_match(left: &str, right: &str) -> bool {
     !left.is_empty()
         && !right.is_empty()
         && (left.contains(right) || right.contains(left))
@@ -471,15 +795,54 @@ mod tests {
     }
 
     #[test]
-    fn candidate_scope_uses_organism_signal_groups() {
-        let sql = signal_message::Entity::find()
-            .filter(message_in_organism_groups(&["allowed-group".to_string()]))
-            .build(DbBackend::Postgres)
-            .to_string();
+    fn candidate_queries_scope_to_organism_groups_window_and_probe() {
+        let (window_start, window_end) = test_window();
+        let linked_sql = linked_message_candidate_query(
+            &["allowed-group".to_string()],
+            "matching-probe",
+            window_start,
+            window_end,
+            None,
+        )
+        .build(DbBackend::Postgres)
+        .to_string();
+        let direct_sql = datasource_group_message_candidate_query(
+            &[1],
+            "matching-probe",
+            window_start,
+            window_end,
+            None,
+        )
+        .build(DbBackend::Postgres)
+        .to_string();
 
-        assert!(sql.contains("signal_message_group"));
-        assert!(sql.contains("datasource_group"));
-        assert!(sql.contains("group_master_key"));
+        assert!(linked_sql.contains("signal_message_group"));
+        assert!(linked_sql.contains("group_master_key"));
+        assert!(linked_sql.starts_with("SELECT DISTINCT"));
+        assert!(direct_sql.contains("datasource_group_id"));
+        for sql in [linked_sql, direct_sql] {
+            assert!(sql.contains("\"signal_message\".\"timestamp\" >="));
+            assert!(sql.contains("\"signal_message\".\"timestamp\" <="));
+            assert!(sql.contains("LIKE '%matching-probe%'"));
+            assert!(sql.contains("LIMIT 1000"));
+        }
+    }
+
+    #[test]
+    fn candidate_query_uses_keyset_pagination() {
+        let (window_start, window_end) = test_window();
+        let sql = datasource_group_message_candidate_query(
+            &[1],
+            "matching-probe",
+            window_start,
+            window_end,
+            Some((test_timestamp(), 42)),
+        )
+        .build(DbBackend::Postgres)
+        .to_string();
+
+        assert!(sql.contains("\"signal_message\".\"timestamp\" <"));
+        assert!(sql.contains("\"signal_message\".\"id\" < 42"));
     }
 
     #[test]
@@ -506,8 +869,15 @@ mod tests {
     }
 
     #[test]
-    fn message_probe_escapes_like_wildcards() {
-        assert_eq!(escape_like(r"a\\b%c_d"), r"a\\\\b\%c\_d");
+    fn message_body_normalization_handles_excel_carriage_returns() {
+        assert_eq!(
+            normalize_message_body("first_x000d_\r\n second\tthird"),
+            "first second third"
+        );
+        assert!(message_bodies_match(
+            "prefix_x000d_message",
+            "prefix message"
+        ));
     }
 
     #[test]
@@ -518,6 +888,21 @@ mod tests {
         assert_eq!(probe.chars().count(), 20);
         assert!(message.contains(&probe));
         assert_eq!(message_probe("коротке"), Some("коротке".to_string()));
+    }
+
+    #[test]
+    fn message_probe_does_not_span_normalized_whitespace() {
+        let message = normalize_message_body("short_x000d_distinctive-message");
+
+        assert_eq!(
+            message_probe(&message),
+            Some("distinctive-message".to_string())
+        );
+    }
+
+    #[test]
+    fn message_probe_escapes_like_wildcards() {
+        assert_eq!(escape_like(r"a\\b%c_d"), r"a\\\\b\%c\_d");
     }
 
     #[test]
@@ -565,42 +950,59 @@ mod tests {
 
     #[test]
     fn matching_prefers_original_then_falls_back_to_newest_duplicate() {
+        let (window_start, window_end) = test_window();
         let duplicate = test_message(3, "duplicate-trace-3", "message");
         let original = test_message(2, "original-uid", "prefix message suffix");
         let older_duplicate =
             test_message(1, "duplicate-trace-1", "prefix message suffix");
 
-        let mut newest_duplicate_uid = None;
         let selected = select_matching_original_message_uid(
             "message",
-            vec![duplicate, original, older_duplicate],
-            &mut newest_duplicate_uid,
+            "message",
+            window_start,
+            window_end,
+            &[duplicate, original, older_duplicate],
         )
         .unwrap();
         assert_eq!(selected, "original-uid");
 
-        let mut newest_duplicate_uid = None;
         let selected = select_matching_original_message_uid(
             "message",
-            vec![
+            "message",
+            window_start,
+            window_end,
+            &[
                 test_message(3, "duplicate-trace-3", "message"),
                 test_message(1, "duplicate-trace-1", "prefix message suffix"),
             ],
-            &mut newest_duplicate_uid,
         );
-        assert_eq!(selected, None);
-        assert_eq!(newest_duplicate_uid.as_deref(), Some("duplicate-trace-3"));
+        assert_eq!(selected.as_deref(), Some("duplicate-trace-3"));
+    }
+
+    fn test_window() -> (NaiveDateTime, NaiveDateTime) {
+        let timestamp = test_timestamp();
+        (
+            timestamp - ChronoDuration::minutes(1),
+            timestamp + ChronoDuration::minutes(1),
+        )
+    }
+
+    fn test_timestamp() -> NaiveDateTime {
+        Utc.with_ymd_and_hms(2026, 7, 21, 10, 0, 0)
+            .unwrap()
+            .naive_utc()
     }
 
     fn test_message(
         id: i64,
         message_uid: &str,
         body: &str,
-    ) -> MessageCandidate {
-        MessageCandidate {
+    ) -> PreparedMessageCandidate {
+        PreparedMessageCandidate {
             id,
-            body: Some(body.to_string()),
-            message_uid: Some(message_uid.to_string()),
+            timestamp: test_timestamp(),
+            body: normalize_message_body(body),
+            message_uid: message_uid.to_string(),
         }
     }
 }

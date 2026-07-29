@@ -3532,6 +3532,7 @@ mod tests {
         let logins = vec![login.id];
         let base_req = InboxMessagesReq {
             nolimit: Some(true),
+            load_latest: Some(true),
             ..Default::default()
         };
 
@@ -3762,6 +3763,7 @@ mod tests {
 
         let req = InboxMessagesReq {
             nolimit: Some(true),
+            load_latest: Some(true),
             ..Default::default()
         };
         let initial_items =
@@ -3989,6 +3991,7 @@ mod tests {
 
         let req = InboxMessagesReq {
             nolimit: Some(true),
+            load_latest: Some(true),
             ..Default::default()
         };
         let logins = vec![login.id];
@@ -4172,6 +4175,7 @@ mod tests {
         let logins = vec![login.id, peer_login.id];
         let req = InboxMessagesReq {
             nolimit: Some(true),
+            load_latest: Some(true),
             ..Default::default()
         };
         let messages = get_inbox_messages(&login.id, &logins, &env, &req)
@@ -4389,6 +4393,7 @@ mod tests {
         let logins = vec![login.id];
         let wrong_sender_req = InboxMessagesReq {
             nolimit: Some(true),
+            load_latest: Some(true),
             selected_groups: Some(vec![datasource_group
                 .group_master_key
                 .clone()]),
@@ -4406,6 +4411,7 @@ mod tests {
 
         let matching_sender_req = InboxMessagesReq {
             nolimit: Some(true),
+            load_latest: Some(true),
             selected_groups: Some(vec![datasource_group
                 .group_master_key
                 .clone()]),
