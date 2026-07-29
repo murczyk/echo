@@ -271,6 +271,16 @@ pub async fn bl_update_network_callsign(
         }
     }
 
+    if let Some(unit_id) =
+        confirmed_unlinked_network_callsign_unit_id(req, &network_callsign)
+    {
+        let callsign_id =
+            ensure_callsign(req, user_id, txn, &network_callsign, unit_id)
+                .await
+                .c(h!())?;
+        return Ok(callsign_id);
+    }
+
     // If unit_developing is true, we should not link to any known sigint_callsign, just update a network callsign.
     // However, if developing is being turned off and a linked catalog callsign still has developing=true,
     // we must sync it — otherwise sc_developing keeps the callsign displayed as "в дорозвідці".
@@ -341,6 +351,20 @@ pub async fn bl_update_network_callsign(
         };
 
     Ok(network_callsign_id)
+}
+
+fn confirmed_unlinked_network_callsign_unit_id(
+    req: &UpdateNetworkCallsignReq,
+    network_callsign: &sigint_network_callsign::Model,
+) -> Option<i64> {
+    if network_callsign.sigint_callsign_id.is_some()
+        || req.developing
+        || req.unit_developing
+    {
+        return None;
+    }
+
+    req.unit_id
 }
 
 pub(crate) async fn ensure_callsign(
@@ -1133,6 +1157,114 @@ pub async fn bl_get_network_callsigns_activity(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn network_callsign_for_link_check(
+        sigint_callsign_id: Option<i64>,
+    ) -> sigint_network_callsign::Model {
+        sigint_network_callsign::Model {
+            id: 1,
+            sigint_network_id: 2,
+            deleted: false,
+            created_at: Default::default(),
+            sigint_callsign: "сокіл-1".to_string(),
+            sigint_origin_id: None,
+            position: None,
+            comment: None,
+            sigint_callsign_id,
+            source_id: None,
+            radio_freq: None,
+            developing: true,
+            unit_developing: false,
+            unit_id: None,
+            main_radio_station: false,
+            original_id: None,
+            command_control: false,
+            full_name: None,
+        }
+    }
+
+    fn update_req_for_link_check(
+        unit_id: Option<i64>,
+        developing: bool,
+        unit_developing: bool,
+    ) -> UpdateNetworkCallsignReq {
+        UpdateNetworkCallsignReq {
+            id: 1,
+            network_id: 2,
+            callsign: "сокіл-1".to_string(),
+            position: None,
+            comment: None,
+            full_name: None,
+            full_name_is_missing: false,
+            source_id: None,
+            radio_freq: None,
+            unit_id,
+            unit_developing,
+            developing,
+            main_radio_station: false,
+            command_control: false,
+        }
+    }
+
+    #[test]
+    fn confirmed_unlinked_network_callsign_with_unit_is_linked() {
+        let req = update_req_for_link_check(Some(7), false, false);
+        let network_callsign = network_callsign_for_link_check(None);
+
+        assert_eq!(
+            confirmed_unlinked_network_callsign_unit_id(
+                &req,
+                &network_callsign
+            ),
+            Some(7)
+        );
+    }
+
+    #[test]
+    fn confirmed_unlinked_network_callsign_without_unit_is_not_linked() {
+        let req = update_req_for_link_check(None, false, false);
+        let network_callsign = network_callsign_for_link_check(None);
+
+        assert_eq!(
+            confirmed_unlinked_network_callsign_unit_id(
+                &req,
+                &network_callsign
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn developing_or_linked_network_callsign_is_not_relinked() {
+        let developing_req = update_req_for_link_check(Some(7), true, false);
+        let unit_developing_req =
+            update_req_for_link_check(Some(7), false, true);
+        let linked_req = update_req_for_link_check(Some(7), false, false);
+        let unlinked_callsign = network_callsign_for_link_check(None);
+        let linked_callsign = network_callsign_for_link_check(Some(9));
+
+        assert_eq!(
+            confirmed_unlinked_network_callsign_unit_id(
+                &developing_req,
+                &unlinked_callsign
+            ),
+            None
+        );
+        assert_eq!(
+            confirmed_unlinked_network_callsign_unit_id(
+                &unit_developing_req,
+                &unlinked_callsign
+            ),
+            None
+        );
+        assert_eq!(
+            confirmed_unlinked_network_callsign_unit_id(
+                &linked_req,
+                &linked_callsign
+            ),
+            None
+        );
+    }
 
     #[test]
     fn linked_network_callsign_reload_uses_updated_catalog_full_name() {
