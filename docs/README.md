@@ -1,9 +1,12 @@
 # Echo architecture
 
 Echo is a SIGINT analytical web application deployed as one application
-container per installation. PostgreSQL 18 is the system of record. An
-installation may also have one paired analytics container that maintains a
-derived ClickHouse copy for expensive counters and reports.
+container per installation. PostgreSQL 18 stores authoritative data in two
+required databases: the main `wd` database and the independent `wd_files`
+device file registry. They use separate connections and may share one
+PostgreSQL instance. An installation may also have one paired analytics
+container that maintains a derived ClickHouse copy for expensive counters and
+reports.
 
 The analytics container is optional: omitting the `[analytics]` section from
 Echo configuration leaves the application on its existing PostgreSQL path.
@@ -40,7 +43,8 @@ flowchart LR
         web["Web application<br/>wdintel-web + nginx"]
         api["Echo API<br/>wdintel-rs"]
         bg["Background workers<br/>wdintel-rs-bgworker"]
-        postgres[("PostgreSQL 18<br/>system of record")]
+        postgres[("PostgreSQL 18 · wd<br/>main system of record")]
+        file_registry[("PostgreSQL 18 · wd_files<br/>required device file registry")]
         redis[("Redis<br/>sessions + transient state")]
         nlp["wdintel-py<br/>optional NLP API"]
         iggy["Iggy<br/>optional event streaming"]
@@ -51,6 +55,7 @@ flowchart LR
 
         web --> api
         api -->|transactions and queries| postgres
+        api -->|device file metadata| file_registry
         bg -->|queues and message state| postgres
         api --> redis
         bg --> redis
@@ -132,13 +137,19 @@ flowchart LR
     style vllm_spark stroke-width:2px,stroke-dasharray:8 5
     classDef canonical stroke-width:3px
     classDef optional stroke-dasharray:6 4
-    class postgres canonical
+    class postgres,file_registry canonical
     class nlp,iggy,signal,whatsapp,vector,greptime,signoz,promin,backblaze,echo_operator,goi,echo_gpu,openai_engine,vllm_router,vllm_otel,vllm,hf_cache,gb10 optional
 ```
 
 The diagram focuses on the core web, worker, messenger, storage, observability,
 and analytics paths. Other instance-specific integrations are configured
 independently.
+
+The server requires the `wd_files` database at startup. Its connection uses the
+independent `pg_wdfile_*` settings, and operators must provision the database
+before the first start; startup applies its schema migrations automatically.
+See [File registry database](../deploy/README.md#file-registry-database) for
+configuration and provisioning.
 
 See [Echo GPU audio transcription](ECHO_GPU_TRANSCRIPTION.md) for its
 configuration, network requirements, queue, cache, retry, and REST API flow.

@@ -132,6 +132,18 @@ async fn device_schema_enforces_target_fields() {
         Some(Utc::now().naive_utc()),
     )
     .await;
+
+    let renamed_login = format!("device-schema-renamed-{}", Uuid::now_v7());
+    let mut login: login::ActiveModel = login.into();
+    login.login = Set(renamed_login.clone());
+    login.update(&env.dbx).await.unwrap();
+
+    let renamed_device = device::Entity::find_by_id(saved.id)
+        .one(&env.dbx)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(renamed_device.created_by, renamed_login);
 }
 
 async fn assert_exact_device_columns(dbx: &DatabaseConnection) {

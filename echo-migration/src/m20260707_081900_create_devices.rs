@@ -13,7 +13,7 @@ impl MigrationTrait for Migration {
                 create table device (
                     id uuid primary key,
                     name text not null,
-                    created_by text not null references login(login),
+                    created_by text not null references login(login) on update cascade,
                     aor_id bigint references area_of_responsibility(id) on delete set null,
                     unit_id bigint references sigint_unit(id) on delete set null,
                     custom_fields jsonb not null default '[]'::jsonb,
