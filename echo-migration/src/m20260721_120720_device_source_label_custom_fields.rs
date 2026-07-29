@@ -10,8 +10,6 @@ impl MigrationTrait for Migration {
             .get_connection()
             .execute_unprepared(
                 r#"
-                lock table device in share row exclusive mode;
-
                 alter table device
                     add column source_label text,
                     add column custom_fields jsonb;
@@ -48,8 +46,6 @@ impl MigrationTrait for Migration {
             .get_connection()
             .execute_unprepared(
                 r#"
-                lock table device in share row exclusive mode;
-
                 do $$
                 begin
                     if exists (

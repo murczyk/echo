@@ -10,9 +10,6 @@ impl MigrationTrait for Migration {
             .get_connection()
             .execute_unprepared(
                 r#"
-                lock table device in share row exclusive mode;
-                lock table login in share mode;
-
                 alter table device
                     add column organism_id bigint;
 
