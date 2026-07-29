@@ -1056,22 +1056,43 @@ async fn read_active_sigint_groups_since(
     groups: Vec<String>,
     ts: chrono::NaiveDateTime,
 ) -> Result<Vec<String>, AppError> {
-    Ok(signal_message_group::Entity::find()
-        .join(
-            JoinType::InnerJoin,
-            signal_message_group::Relation::SignalMessage.def(),
+    #[derive(FromQueryResult)]
+    struct ActiveSigintGroup {
+        group_master_key: String,
+    }
+
+    let sql = r#"
+        with recent_messages as materialized (
+            select id
+            from signal_message
+            where "timestamp" > $1
         )
-        .select_only()
-        .column(signal_message_group::Column::GroupMasterKey)
-        .filter(signal_message::Column::Timestamp.gt(ts))
-        .filter(signal_message_group::Column::GroupMasterKey.eq_any(groups))
-        .group_by(signal_message_group::Column::GroupMasterKey)
-        .into_tuple::<Option<String>>()
+        select smg.group_master_key
+        from recent_messages sm
+        inner join signal_message_group smg
+            on smg.signal_message_id = sm.id
+        -- This exact lower bound lets PostgreSQL use the leading index column
+        -- without assuming that message IDs and timestamps are correlated.
+        where smg.signal_message_id >= (
+            select min(id)
+            from recent_messages
+        )
+          and smg.group_master_key = any($2::text[])
+        group by smg.group_master_key
+    "#;
+    let active_groups =
+        ActiveSigintGroup::find_by_statement(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            sql,
+            vec![ts.into(), groups.into()],
+        ))
         .all(db)
         .await
-        .c(h!())?
+        .c(h!())?;
+
+    Ok(active_groups
         .into_iter()
-        .flatten()
+        .map(|group| group.group_master_key)
         .collect())
 }
 
@@ -1798,6 +1819,7 @@ mod tests {
     use super::*;
     use crate::functest::tests::{
         cleanup, find_test_login, mk_login, mk_organism, mk_signal_group,
+        mk_signal_message, mk_signal_message_group,
     };
     use actix_identity::IdentityMiddleware;
     use actix_session::{
@@ -1819,6 +1841,119 @@ mod tests {
         assert!(has_update_login_description(&serde_json::json!({
             "description": "note"
         })));
+    }
+
+    async fn create_grouped_message(
+        dbx: &DatabaseConnection,
+        group_master_key: &str,
+        timestamp: chrono::NaiveDateTime,
+    ) {
+        let message = mk_signal_message(
+            dbx,
+            signal_message::ActiveModel {
+                created_at: Set(timestamp),
+                timestamp: Set(Some(timestamp)),
+                datasource_group_id: Set(None),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        mk_signal_message_group(
+            dbx,
+            signal_message_group::ActiveModel {
+                signal_message_id: Set(message.id),
+                group_master_key: Set(Some(group_master_key.to_string())),
+                datasource_group_id: Set(None),
+                created_at: Set(timestamp),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn active_sigint_groups_use_exact_message_timestamp() {
+        let _guard = TEST_LOCK.lock().await;
+        let env = cleanup().await.unwrap();
+        let cutoff = Utc::now().naive_utc() - Duration::days(1);
+        let group_keys = [
+            "active-groups-old",
+            "active-groups-recent-a",
+            "active-groups-recent-b",
+            "active-groups-denied",
+        ];
+        for group_master_key in group_keys {
+            mk_signal_group(
+                &env.dbx,
+                signal_group::ActiveModel {
+                    master_key: Set(group_master_key.to_string()),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+        }
+
+        create_grouped_message(
+            &env.dbx,
+            "active-groups-old",
+            cutoff - Duration::hours(1),
+        )
+        .await;
+        create_grouped_message(
+            &env.dbx,
+            "active-groups-recent-a",
+            cutoff + Duration::hours(1),
+        )
+        .await;
+        create_grouped_message(
+            &env.dbx,
+            "active-groups-old",
+            cutoff - Duration::hours(2),
+        )
+        .await;
+        create_grouped_message(
+            &env.dbx,
+            "active-groups-recent-b",
+            cutoff + Duration::hours(2),
+        )
+        .await;
+        create_grouped_message(
+            &env.dbx,
+            "active-groups-recent-a",
+            cutoff + Duration::hours(3),
+        )
+        .await;
+        create_grouped_message(
+            &env.dbx,
+            "active-groups-denied",
+            cutoff + Duration::hours(4),
+        )
+        .await;
+
+        let mut active_groups = read_active_sigint_groups_since(
+            &env.dbx,
+            vec![
+                "active-groups-old".to_string(),
+                "active-groups-recent-a".to_string(),
+                "active-groups-recent-b".to_string(),
+            ],
+            cutoff,
+        )
+        .await
+        .unwrap();
+        active_groups.sort();
+
+        assert_eq!(
+            active_groups,
+            vec![
+                "active-groups-recent-a".to_string(),
+                "active-groups-recent-b".to_string(),
+            ]
+        );
     }
 
     async fn start_test_user_session(

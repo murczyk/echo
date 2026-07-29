@@ -457,7 +457,7 @@ pub fn should_read_stats_aggregated_for_config(
         && req_allows_stats_aggregated(req)
 }
 
-fn req_allows_stats_aggregated(req: &AnalysisStatsReq) -> bool {
+pub(crate) fn req_allows_stats_aggregated(req: &AnalysisStatsReq) -> bool {
     if !is_filter_empty(&req.selected_groups) {
         return false;
     }

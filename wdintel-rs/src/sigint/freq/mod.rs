@@ -1322,27 +1322,47 @@ async fn read_latest_frequencies(
 ) -> Result<Vec<String>, AppError> {
     #[derive(FromQueryResult)]
     struct FreqRes {
-        freq: Option<String>,
+        freq: String,
     }
 
-    Ok(signal_message::Entity::find()
-        .join(
-            JoinType::InnerJoin,
-            signal_message::Relation::SigintInboxItem.def(),
+    let sql = r#"
+        with recent_inbox as materialized (
+            select id, freq
+            from sigint_inbox_item
+            where datetime >= $1
+        ),
+        recent_bounds as materialized (
+            select min(id) as min_id
+            from recent_inbox
         )
-        .select_only()
-        .column_as(Expr::col(sigint_inbox_item::Column::Freq), "freq")
-        .filter(message_in_groups_exists(groups))
-        .filter(signal_message::Column::Deleted.eq(false))
-        .filter(sigint_inbox_item::Column::Datetime.gte(week_ago))
-        .group_by(sea_query::expr::SimpleExpr::Custom("freq".to_string()))
-        .order_by_asc(sigint_inbox_item::Column::Freq)
-        .into_model::<FreqRes>()
+        select ri.freq
+        from recent_inbox ri
+        inner join signal_message sm on sm.id = ri.id
+        inner join signal_message_group smg
+            on smg.signal_message_id = ri.id
+        cross join recent_bounds rb
+        where ri.freq is not null
+          and sm.deleted = false
+          -- Keep datetime authoritative while bounding the existing
+          -- (signal_message_id, group_master_key) index by recent IDs.
+          and smg.signal_message_id >= rb.min_id
+          and smg.group_master_key = any($2::text[])
+        group by ri.freq
+        order by ri.freq
+    "#;
+    let frequencies =
+        FreqRes::find_by_statement(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            sql,
+            vec![week_ago.into(), groups.into()],
+        ))
         .all(db)
         .await
-        .c(h!())?
+        .c(h!())?;
+
+    Ok(frequencies
         .into_iter()
-        .filter_map(|freq| freq.freq)
+        .map(|frequency| frequency.freq)
         .collect())
 }
 
@@ -1627,6 +1647,140 @@ pub async fn freq_search(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::functest::tests::{
+        cleanup, mk_sigint_inbox_item, mk_signal_group, mk_signal_message,
+        mk_signal_message_group,
+    };
+    use chrono::Duration;
+    use serial_test::serial;
+
+    async fn create_frequency_message(
+        db: &DatabaseConnection,
+        group_master_key: &str,
+        datetime: NaiveDateTime,
+        freq: Option<&str>,
+        deleted: bool,
+    ) {
+        let message = mk_signal_message(
+            db,
+            signal_message::ActiveModel {
+                created_at: Set(datetime),
+                timestamp: Set(Some(datetime)),
+                deleted: Set(deleted),
+                datasource_group_id: Set(None),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let local_datetime =
+            datetime.and_utc().with_timezone(&crate::config::get_tz());
+        mk_sigint_inbox_item(
+            db,
+            sigint_inbox_item::ActiveModel {
+                id: Set(message.id),
+                freq: Set(freq.map(str::to_string)),
+                date: Set(Some(local_datetime.date_naive().to_string())),
+                time: Set(Some(
+                    local_datetime.time().format("%H:%M:%S").to_string(),
+                )),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        mk_signal_message_group(
+            db,
+            signal_message_group::ActiveModel {
+                signal_message_id: Set(message.id),
+                group_master_key: Set(Some(group_master_key.to_string())),
+                datasource_group_id: Set(None),
+                created_at: Set(datetime),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn latest_frequencies_keep_datetime_and_access_semantics() {
+        let env = cleanup().await.unwrap();
+        let cutoff = Utc::now().naive_utc() - Duration::days(1);
+        for group_master_key in
+            ["latest-frequencies-allowed", "latest-frequencies-denied"]
+        {
+            mk_signal_group(
+                &env.dbx,
+                signal_group::ActiveModel {
+                    master_key: Set(group_master_key.to_string()),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+        }
+
+        create_frequency_message(
+            &env.dbx,
+            "latest-frequencies-allowed",
+            cutoff + Duration::hours(1),
+            Some("100.1"),
+            false,
+        )
+        .await;
+        create_frequency_message(
+            &env.dbx,
+            "latest-frequencies-allowed",
+            cutoff - Duration::hours(1),
+            Some("old-higher-id"),
+            false,
+        )
+        .await;
+        create_frequency_message(
+            &env.dbx,
+            "latest-frequencies-allowed",
+            cutoff + Duration::hours(2),
+            Some("100.1"),
+            false,
+        )
+        .await;
+        create_frequency_message(
+            &env.dbx,
+            "latest-frequencies-denied",
+            cutoff + Duration::hours(3),
+            Some("denied"),
+            false,
+        )
+        .await;
+        create_frequency_message(
+            &env.dbx,
+            "latest-frequencies-allowed",
+            cutoff + Duration::hours(4),
+            Some("deleted"),
+            true,
+        )
+        .await;
+        create_frequency_message(
+            &env.dbx,
+            "latest-frequencies-allowed",
+            cutoff + Duration::hours(5),
+            None,
+            false,
+        )
+        .await;
+
+        let frequencies = read_latest_frequencies(
+            &env.dbx,
+            vec!["latest-frequencies-allowed".to_string()],
+            cutoff.and_utc(),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(frequencies, vec!["100.1".to_string()]);
+    }
 
     #[test]
     fn validate_callsigns_all_valid() {

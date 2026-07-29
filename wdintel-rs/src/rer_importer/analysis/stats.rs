@@ -1265,13 +1265,15 @@ async fn fetch_posts_with_db(
     let dt_till =
         dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
     let instant = std::time::Instant::now();
-    let post_res =
-        build_posts_query(&req, &user, master_keys, dt_since, dt_till, None)?;
-    let post_res: Vec<PostsRes> = post_res
-        .into_model::<PostsRes>()
-        .all(db)
-        .await
-        .context(h!())?;
+    let post_res = if req_allows_stats_aggregated(&req.0) {
+        read_unfiltered_post_stats(db, master_keys, dt_since, dt_till).await?
+    } else {
+        build_posts_query(&req, &user, master_keys, dt_since, dt_till, None)?
+            .into_model::<PostsRes>()
+            .all(db)
+            .await
+            .context(h!())?
+    };
     let mut posts = vec![];
     for x in post_res {
         posts.push(AnalysisStatsPost {
@@ -1281,6 +1283,50 @@ async fn fetch_posts_with_db(
     }
     debug!("posts op took: {:?}", instant.elapsed());
     Ok(posts)
+}
+
+async fn read_unfiltered_post_stats(
+    db: &DatabaseConnection,
+    master_keys: Vec<String>,
+    dt_since: NaiveDateTime,
+    dt_till: NaiveDateTime,
+) -> Result<Vec<PostsRes>, AppError> {
+    let sql = r#"
+        with recent_inbox as materialized (
+            select id, post_id
+            from sigint_inbox_item
+            where datetime >= $1
+              and datetime < $2
+        ),
+        recent_bounds as materialized (
+            select min(id) as min_id
+            from recent_inbox
+        )
+        select
+            coalesce(sp.name, '') as post,
+            count(distinct ri.id) as count
+        from recent_inbox ri
+        inner join signal_message sm on sm.id = ri.id
+        inner join signal_message_group smg
+            on smg.signal_message_id = ri.id
+        inner join sigint_post sp on sp.id = ri.post_id
+        cross join recent_bounds rb
+        where sm.deleted = false
+          -- Keep datetime authoritative while bounding the existing
+          -- (signal_message_id, group_master_key) index by recent IDs.
+          and smg.signal_message_id >= rb.min_id
+          and smg.group_master_key = any($3::text[])
+        group by 1
+    "#;
+
+    Ok(PostsRes::find_by_statement(Statement::from_sql_and_values(
+        DatabaseBackend::Postgres,
+        sql,
+        vec![dt_since.into(), dt_till.into(), master_keys.into()],
+    ))
+    .all(db)
+    .await
+    .context(h!())?)
 }
 
 pub async fn count_posts(
@@ -5635,6 +5681,178 @@ fn build_join_for_sigint_inbox_item() -> Select<Entity> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::functest::tests::{
+        cleanup, mk_sigint_inbox_item, mk_signal_group, mk_signal_message,
+        mk_signal_message_group,
+    };
+    use serial_test::serial;
+
+    async fn create_post_stats_message(
+        db: &DatabaseConnection,
+        group_master_keys: &[&str],
+        datetime: NaiveDateTime,
+        post_id: i64,
+        deleted: bool,
+    ) {
+        let message = mk_signal_message(
+            db,
+            signal_message::ActiveModel {
+                created_at: Set(datetime),
+                timestamp: Set(Some(datetime)),
+                deleted: Set(deleted),
+                datasource_group_id: Set(None),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let local_datetime =
+            datetime.and_utc().with_timezone(&crate::config::get_tz());
+        mk_sigint_inbox_item(
+            db,
+            sigint_inbox_item::ActiveModel {
+                id: Set(message.id),
+                date: Set(Some(local_datetime.date_naive().to_string())),
+                time: Set(Some(
+                    local_datetime.time().format("%H:%M:%S").to_string(),
+                )),
+                post_id: Set(Some(post_id)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        for group_master_key in group_master_keys {
+            mk_signal_message_group(
+                db,
+                signal_message_group::ActiveModel {
+                    signal_message_id: Set(message.id),
+                    group_master_key: Set(Some(
+                        (*group_master_key).to_string(),
+                    )),
+                    datasource_group_id: Set(None),
+                    created_at: Set(datetime),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+        }
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn unfiltered_post_stats_keep_datetime_access_and_count_semantics() {
+        let env = cleanup().await.unwrap();
+        let dt_since = Utc::now().naive_utc() - Duration::days(1);
+        let dt_till = dt_since + Duration::days(1);
+        for group_master_key in [
+            "post-stats-allowed-a",
+            "post-stats-allowed-b",
+            "post-stats-denied",
+        ] {
+            mk_signal_group(
+                &env.dbx,
+                signal_group::ActiveModel {
+                    master_key: Set(group_master_key.to_string()),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+        }
+        let post_a = sigint_post::ActiveModel {
+            name: Set("post-stats-a".to_string()),
+            deleted: Set(false),
+            created_at: Set(dt_since),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        let post_b = sigint_post::ActiveModel {
+            name: Set("post-stats-b".to_string()),
+            deleted: Set(false),
+            created_at: Set(dt_since),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+
+        create_post_stats_message(
+            &env.dbx,
+            &["post-stats-allowed-a", "post-stats-allowed-b"],
+            dt_since + Duration::hours(1),
+            post_a.id,
+            false,
+        )
+        .await;
+        create_post_stats_message(
+            &env.dbx,
+            &["post-stats-allowed-a"],
+            dt_since - Duration::hours(1),
+            post_a.id,
+            false,
+        )
+        .await;
+        create_post_stats_message(
+            &env.dbx,
+            &["post-stats-allowed-a"],
+            dt_since + Duration::hours(2),
+            post_a.id,
+            false,
+        )
+        .await;
+        create_post_stats_message(
+            &env.dbx,
+            &["post-stats-allowed-a"],
+            dt_since + Duration::hours(3),
+            post_b.id,
+            false,
+        )
+        .await;
+        create_post_stats_message(
+            &env.dbx,
+            &["post-stats-denied"],
+            dt_since + Duration::hours(4),
+            post_b.id,
+            false,
+        )
+        .await;
+        create_post_stats_message(
+            &env.dbx,
+            &["post-stats-allowed-a"],
+            dt_since + Duration::hours(5),
+            post_b.id,
+            true,
+        )
+        .await;
+
+        let mut posts = read_unfiltered_post_stats(
+            &env.dbx,
+            vec![
+                "post-stats-allowed-a".to_string(),
+                "post-stats-allowed-b".to_string(),
+            ],
+            dt_since,
+            dt_till,
+        )
+        .await
+        .unwrap();
+        posts.sort_by(|left, right| left.post.cmp(&right.post));
+
+        assert_eq!(
+            posts
+                .into_iter()
+                .map(|post| (post.post, post.count))
+                .collect::<Vec<_>>(),
+            vec![
+                ("post-stats-a".to_string(), 2),
+                ("post-stats-b".to_string(), 1),
+            ]
+        );
+    }
 
     fn populated_analysis_stats_req() -> AnalysisStatsReq {
         serde_json::from_value(serde_json::json!({
