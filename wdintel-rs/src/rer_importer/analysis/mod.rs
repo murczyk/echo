@@ -6447,10 +6447,7 @@ async fn count_stats(
     let master_keys = get_identity_sigint_groups(&env.dbx, &login)
         .await
         .context(h!())?;
-    let master_keys_noimport =
-        get_identity_sigint_groups_noimport(&env.dbx, &user, &env.config)
-            .await
-            .context(h!())?;
+    let master_keys_noimport = master_keys.clone();
 
     let access = CountStatsAccess {
         master_keys,
@@ -7880,10 +7877,7 @@ async fn stats_deprecated(
     let master_keys = get_identity_sigint_groups(&env.dbx, &login)
         .await
         .context(h!())?;
-    let master_keys_noimport =
-        get_identity_sigint_groups_noimport(&env.dbx, &user, &env.config)
-            .await
-            .context(h!())?;
+    let master_keys_noimport = master_keys.clone();
 
     let groups = stats::fetch_groups(&req, &user, &env, master_keys_noimport)
         .await
