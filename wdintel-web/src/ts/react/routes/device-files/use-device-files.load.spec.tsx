@@ -48,6 +48,7 @@ function buildEntry(entryId: string, parentEntryId: string): DeviceFileTreeEntry
     pathComponents: ['duplicate.log'],
     pathSyntax: 'posix',
     absolutePath: '/duplicate.log',
+    hasContent: false,
     mimeType: 'text/plain',
     extension: 'log',
     fileMetadataCreatedAt: null,

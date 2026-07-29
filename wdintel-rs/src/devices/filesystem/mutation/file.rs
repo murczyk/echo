@@ -230,6 +230,7 @@ async fn insert_file(
             .file_metadata_modified_at),
         created_at: Set(now),
         updated_at: Set(now),
+        content_path: Set(None),
     }
     .insert(transaction)
     .await

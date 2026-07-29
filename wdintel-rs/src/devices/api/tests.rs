@@ -3,6 +3,7 @@ use crate::config::{
     IDENTITY_DURATION_HOURS, ROLE_DEVICE_ANALYST, ROLE_DEVICE_SOURCE,
 };
 use crate::entities::{login, organism, system_settings};
+use crate::file_registry::entities::file_entry;
 use crate::functest::tests::{cleanup_locked, mk_login, mk_organism};
 use crate::types::Mode;
 use actix_identity::{Identity, IdentityMiddleware};
@@ -12,7 +13,9 @@ use actix_web::cookie::{Cookie, Key};
 use actix_web::{
     http::StatusCode, test, web, App, HttpMessage, HttpRequest, HttpResponse,
 };
-use sea_orm::{ActiveModelTrait, ActiveValue::Set, IntoActiveModel};
+use sea_orm::{
+    ActiveModelTrait, ActiveValue::Set, EntityTrait, IntoActiveModel,
+};
 use serde_json::{json, Value};
 use uuid::Uuid;
 
@@ -228,6 +231,24 @@ async fn target_api_smoke_covers_all_routes_and_boundary_precedence() {
     assert_eq!(sync["results"][0]["status"], "rejected");
     assert_eq!(sync["results"][0]["error"]["kind"], "validation");
     assert_eq!(sync["results"][1]["status"], "accepted");
+    assert_eq!(sync["results"][1]["file"]["has_content"], false);
+    assert!(sync["results"][1]["file"].get("content_path").is_none());
+    let good_file_id = Uuid::parse_str(
+        sync["results"][1]["file"]["file_id"].as_str().unwrap(),
+    )
+    .unwrap();
+    let mut good_file = file_entry::Entity::find_by_id(good_file_id)
+        .one(env.file_registry_db.connection())
+        .await
+        .unwrap()
+        .unwrap()
+        .into_active_model();
+    good_file.content_path =
+        Set(Some(format!("devices/{device_id}/content/good.txt")));
+    good_file
+        .update(env.file_registry_db.connection())
+        .await
+        .unwrap();
     let root_id = sync["results"][1]["root"]["entry_id"]
         .as_str()
         .unwrap()
@@ -255,6 +276,8 @@ async fn target_api_smoke_covers_all_routes_and_boundary_precedence() {
     assert_eq!(browse["entries"][0]["kind"], "directory");
     assert!(browse["entries"][0].get("path_components").is_some());
     assert!(browse["entries"][0].get("subtree_file_count").is_none());
+    assert_eq!(browse["entries"][0]["has_content"], false);
+    assert!(browse["entries"][0].get("content_path").is_none());
     let reports_id = browse["entries"][0]["entry_id"].as_str().unwrap();
     let response = post_json!(
         "/api/device/files/subtree-counts",
@@ -308,6 +331,8 @@ async fn target_api_smoke_covers_all_routes_and_boundary_precedence() {
     assert_eq!(search["entries"].as_array().unwrap().len(), 1);
     assert_eq!(search["entries"][0]["name"], "good.txt");
     assert!(search["entries"][0].get("path_components").is_some());
+    assert_eq!(search["entries"][0]["has_content"], true);
+    assert!(search["entries"][0].get("content_path").is_none());
 
     let response = post_json!(
         "/api/device/files/sync",
@@ -328,6 +353,10 @@ async fn target_api_smoke_covers_all_routes_and_boundary_precedence() {
     let sync: Value = test::read_body_json(response).await;
     assert_eq!(sync["results"][0]["status"], "accepted");
     assert_eq!(sync["results"][1]["status"], "accepted");
+    assert_eq!(sync["results"][0]["file"]["has_content"], false);
+    assert_eq!(sync["results"][1]["file"]["has_content"], false);
+    assert!(sync["results"][0]["file"].get("content_path").is_none());
+    assert!(sync["results"][1]["file"].get("content_path").is_none());
     assert_eq!(
         sync["results"][0]["file"]["absolute_path"],
         r"D:\Counter-Strike Source v34 HD\cstrike\sound\weapons\csgo\c4\c4_disarm.wav"
@@ -349,6 +378,12 @@ async fn target_api_smoke_covers_all_routes_and_boundary_precedence() {
     assert!(journal_entries
         .iter()
         .all(|entry| entry["synchronized_at"].as_str().is_some()));
+    assert!(journal_entries
+        .iter()
+        .all(|entry| entry["has_content"] == false));
+    assert!(journal_entries
+        .iter()
+        .all(|entry| entry.get("content_path").is_none()));
     let mut first_page_paths = journal_entries
         .iter()
         .map(|entry| entry["absolute_path"].as_str().unwrap())
@@ -376,6 +411,8 @@ async fn target_api_smoke_covers_all_routes_and_boundary_precedence() {
     assert_eq!(journal["entries"].as_array().unwrap().len(), 1);
     assert_eq!(journal["total_count"], 3);
     assert_eq!(journal["entries"][0]["name"], "good.txt");
+    assert_eq!(journal["entries"][0]["has_content"], true);
+    assert!(journal["entries"][0].get("content_path").is_none());
     assert_eq!(journal["next_cursor"], Value::Null);
 
     let mut login = login.into_active_model();

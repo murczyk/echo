@@ -68,6 +68,7 @@ pub struct DeviceFileTreeEntry {
     pub path_components: Vec<String>,
     pub path_syntax: Option<PathSyntax>,
     pub absolute_path: Option<String>,
+    pub has_content: bool,
     pub mime_type: Option<String>,
     pub extension: Option<String>,
     pub file_metadata_created_at: Option<String>,
@@ -95,6 +96,7 @@ pub struct DeviceFile {
     pub root_entry_id: String,
     pub path_syntax: PathSyntax,
     pub absolute_path: String,
+    pub has_content: bool,
     pub name: String,
     pub path_components: Vec<String>,
     pub mime_type: Option<String>,
@@ -293,6 +295,7 @@ pub struct DeviceFileJournalEntry {
     pub file_id: String,
     pub name: String,
     pub absolute_path: String,
+    pub has_content: bool,
     pub synchronized_at: String,
 }
 

@@ -1723,6 +1723,7 @@ export type DeviceFileTreeEntry = {
   pathComponents: Array<string>;
   pathSyntax: PathSyntax | null;
   absolutePath: string | null;
+  hasContent: boolean;
   mimeType: string | null;
   extension: string | null;
   fileMetadataCreatedAt: string | null;
@@ -1738,6 +1739,7 @@ export type DeviceFile = {
   rootEntryId: string;
   pathSyntax: PathSyntax;
   absolutePath: string;
+  hasContent: boolean;
   name: string;
   pathComponents: Array<string>;
   mimeType: string | null;
@@ -1807,6 +1809,7 @@ export type DeviceFileJournalEntry = {
   fileId: string;
   name: string;
   absolutePath: string;
+  hasContent: boolean;
   synchronizedAt: string;
 };
 

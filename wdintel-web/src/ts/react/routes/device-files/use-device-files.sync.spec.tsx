@@ -38,6 +38,7 @@ function buildFile(absolutePath: string): DeviceFile {
     rootEntryId: ROOT_ID,
     pathSyntax: 'posix',
     absolutePath,
+    hasContent: false,
     name: absolutePath.split('/').at(-1) ?? absolutePath,
     pathComponents: [absolutePath],
     mimeType: null,

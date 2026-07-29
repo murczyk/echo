@@ -86,6 +86,7 @@ pub(in crate::devices::filesystem) fn map_file_model(
         path_syntax,
         absolute_path,
         hierarchy_path: entry.hierarchy_path,
+        has_content: entry.content_path.is_some(),
         mime_type: entry.mime_type,
         extension: entry.extension,
         file_metadata_created_at: entry.file_metadata_created_at,
@@ -103,6 +104,7 @@ pub(in crate::devices::filesystem) fn map_file_journal_model(
         file_id: file.file_id,
         name: file.name,
         absolute_path: file.absolute_path,
+        has_content: file.has_content,
         synchronized_at: file.updated_at,
     })
 }
@@ -178,6 +180,7 @@ fn ensure_directory_metadata_absent(
         && entry.extension.is_none()
         && entry.file_metadata_created_at.is_none()
         && entry.file_metadata_modified_at.is_none()
+        && entry.content_path.is_none()
     {
         Ok(())
     } else {

@@ -44,6 +44,7 @@ pub(super) async fn ensure_target_root(
         file_metadata_modified_at: Set(None),
         created_at: Set(now),
         updated_at: Set(now),
+        content_path: Set(None),
     })
     .on_conflict(
         OnConflict::columns([
@@ -175,6 +176,7 @@ pub(super) async fn ensure_directory_chain(
             file_metadata_modified_at: Set(None),
             created_at: Set(now),
             updated_at: Set(now),
+            content_path: Set(None),
         })
         .on_conflict(
             OnConflict::columns([

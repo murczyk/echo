@@ -4,6 +4,7 @@ mod m20260719_174625_create_file_registry_device_file;
 mod m20260721_124238_create_file_entry;
 mod m20260721_124518_drop_legacy_device_file;
 mod m20260728_111013_add_file_entry_journal_index;
+mod m20260728_182132_add_file_entry_content_path;
 
 pub struct Migrator;
 
@@ -17,6 +18,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260721_124238_create_file_entry::Migration),
             Box::new(m20260721_124518_drop_legacy_device_file::Migration),
             Box::new(m20260728_111013_add_file_entry_journal_index::Migration),
+            Box::new(m20260728_182132_add_file_entry_content_path::Migration),
         ]
     }
 }

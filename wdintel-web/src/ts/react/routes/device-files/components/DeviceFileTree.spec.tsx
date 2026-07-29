@@ -5,7 +5,7 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { DeviceFileRoot } from '../../../../../Bindings';
+import type { DeviceFileRoot, DeviceFileTreeEntry } from '../../../../../Bindings';
 import type { DeviceFilesState } from '../use-device-files';
 import { DeviceFileTree } from './DeviceFileTree';
 
@@ -24,9 +24,32 @@ const rootEntry: DeviceFileRoot = {
   updatedAt: NOW,
 };
 
+function buildFileEntry(entryId: string, name: string, hasContent: boolean): DeviceFileTreeEntry {
+  return {
+    entryId,
+    parentEntryId: ROOT_ID,
+    kind: 'file',
+    fileId: entryId,
+    name,
+    pathComponents: [name],
+    pathSyntax: 'posix',
+    absolutePath: `/${name}`,
+    hasContent,
+    mimeType: null,
+    extension: null,
+    fileMetadataCreatedAt: null,
+    fileMetadataModifiedAt: null,
+    createdAt: NOW,
+    updatedAt: NOW,
+  };
+}
+
 const retryCounts = vi.fn();
 
-function buildFiles(counts: Partial<DeviceFilesState['counts']> = {}): DeviceFilesState {
+function buildFiles(
+  counts: Partial<DeviceFilesState['counts']> = {},
+  entries: DeviceFileTreeEntry[] = [],
+): DeviceFilesState {
   return {
     roots: [rootEntry],
     rootsLoading: false,
@@ -49,7 +72,7 @@ function buildFiles(counts: Partial<DeviceFilesState['counts']> = {}): DeviceFil
     tree: {
       branches: {
         [ROOT_ID]: {
-          entries: [],
+          entries,
           nextCursor: null,
           loading: false,
           refreshing: false,
@@ -89,7 +112,7 @@ afterEach(() => {
 describe('DeviceFileTree counters', () => {
   it('keeps the tree usable while counts load and exposes a nonblocking retry', () => {
     act(() => {
-      root?.render(<DeviceFileTree files={buildFiles({ loading: true })} canSync={false} />);
+      root?.render(<DeviceFileTree files={buildFiles({ loading: true })} />);
     });
 
     expect(container?.textContent).toContain('Файлова система');
@@ -105,7 +128,6 @@ describe('DeviceFileTree counters', () => {
             countsByEntryId: { [ROOT_ID]: 12_345 },
             error: { message: 'Каунтери недоступні', status: 500 },
           })}
-          canSync={false}
         />,
       );
     });
@@ -121,5 +143,22 @@ describe('DeviceFileTree counters', () => {
     );
     act(() => retryButton?.click());
     expect(retryCounts).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows content presence markers instead of file sync actions', () => {
+    act(() => {
+      root?.render(
+        <DeviceFileTree
+          files={buildFiles({}, [
+            buildFileEntry('018f0000-0000-7000-8000-000000000002', 'available.log', true),
+            buildFileEntry('018f0000-0000-7000-8000-000000000003', 'missing.log', false),
+          ])}
+        />,
+      );
+    });
+
+    expect(container?.querySelector('[aria-label="Контент файлу наявний"]')).not.toBeNull();
+    expect(container?.querySelector('[aria-label="Контент файлу відсутній"]')).not.toBeNull();
+    expect(container?.querySelector('[aria-label^="Синхронізувати файл"]')).toBeNull();
   });
 });

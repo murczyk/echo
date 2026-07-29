@@ -40,11 +40,7 @@ vi.mock('../device-files', () => ({
 }));
 
 vi.mock('../device-files/components/DeviceFileTree', () => ({
-  DeviceFileTree: ({ canSync }: { canSync: boolean }) => (
-    <div data-testid="device-files-tree-panel" data-can-sync={String(canSync)}>
-      Файлове дерево
-    </div>
-  ),
+  DeviceFileTree: () => <div data-testid="device-files-tree-panel">Файлове дерево</div>,
 }));
 
 vi.mock('../device-files/components/DeviceFileJournal', () => ({
@@ -222,11 +218,7 @@ describe('DeviceDetailsPage layout', () => {
       (tab) => tab.textContent === 'Файли',
     );
     act(() => filesTab?.dispatchEvent(new MouseEvent('click', { bubbles: true })));
-    expect(
-      container
-        ?.querySelector('[data-testid="device-files-tree-panel"]')
-        ?.getAttribute('data-can-sync'),
-    ).toBe('false');
+    expect(container?.querySelector('[data-testid="device-files-tree-panel"]')).not.toBeNull();
     expect(
       container?.querySelector('[data-testid="device-files-panel"]')?.getAttribute('data-can-sync'),
     ).toBe('false');

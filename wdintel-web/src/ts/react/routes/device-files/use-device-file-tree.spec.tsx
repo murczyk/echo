@@ -52,6 +52,7 @@ function buildEntry(
     pathComponents: [kind === 'directory' ? 'documents' : 'duplicate.log'],
     pathSyntax: kind === 'file' ? 'posix' : null,
     absolutePath: kind === 'file' ? '/duplicate.log' : null,
+    hasContent: false,
     mimeType: kind === 'file' ? 'text/plain' : null,
     extension: kind === 'file' ? 'log' : null,
     fileMetadataCreatedAt: null,

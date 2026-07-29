@@ -15,6 +15,7 @@ import {
   getDefaultMRTOptions,
   renderDefaultMrtEmptyRowsFallback,
 } from '../../../components/mui-customized/table/get-default-table-options';
+import { DeviceFileContentMarker } from './DeviceFileContentMarker';
 import type { DeviceFileJournalState } from '../use-device-file-journal';
 
 const defaultMrtOptions = getDefaultMRTOptions<DeviceFileJournalEntry>();
@@ -51,6 +52,18 @@ function useJournalColumns(): MRT_ColumnDef<DeviceFileJournalEntry>[] {
             {cell.getValue<string>()}
           </Typography>
         ),
+      },
+      {
+        accessorKey: 'hasContent',
+        header: 'Контент',
+        size: 110,
+        Cell: ({ cell }) => (
+          <Box sx={{ display: 'flex', justifyContent: 'center' }}>
+            <DeviceFileContentMarker hasContent={cell.getValue<boolean>()} />
+          </Box>
+        ),
+        muiTableHeadCellProps: { align: 'center' },
+        muiTableBodyCellProps: { align: 'center' },
       },
       {
         accessorKey: 'synchronizedAt',

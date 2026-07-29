@@ -163,6 +163,7 @@ fn base_file_entry(
         file_metadata_modified_at: Set(None),
         created_at: Set(timestamp),
         updated_at: Set(timestamp),
+        content_path: Set(None),
     }
 }
 
@@ -3470,6 +3471,18 @@ async fn stage_ten_sync_service_rejects_duplicates_and_isolates_item_failures()
         ))
         .await
         .unwrap();
+    let content_path = format!("devices/{target_device_id}/content/README");
+    let mut updated_file = file_entry::Entity::find_by_id(updated.file.file_id)
+        .one(env.file_registry_db.connection())
+        .await
+        .unwrap()
+        .unwrap()
+        .into_active_model();
+    updated_file.content_path = Set(Some(content_path.clone()));
+    updated_file
+        .update(env.file_registry_db.connection())
+        .await
+        .unwrap();
     let omitted = repository
         .mutate_file(&stage_nine_mutation(
             target_device_id,
@@ -3580,6 +3593,7 @@ async fn stage_ten_sync_service_rejects_duplicates_and_isolates_item_failures()
         &["new", "created.txt"],
     );
     let created_file_id = created.file_id;
+    assert!(!created.has_content);
     assert_stage_ten_rejected(
         &result.results[2],
         2,
@@ -3617,6 +3631,7 @@ async fn stage_ten_sync_service_rejects_duplicates_and_isolates_item_failures()
     assert_eq!(moved.extension, None);
     assert_eq!(moved.file_metadata_created_at, None);
     assert_eq!(moved.file_metadata_modified_at, None);
+    assert!(moved.has_content);
     let moved_updated_at = moved.updated_at;
     assert_stage_ten_rejected(
         &result.results[5],
@@ -3648,6 +3663,7 @@ async fn stage_ten_sync_service_rejects_duplicates_and_isolates_item_failures()
     assert!(target_after.iter().any(|entry| {
         entry.id == updated.file.file_id
             && entry.absolute_path.as_deref() == Some(r"D:\moved\README")
+            && entry.content_path.as_deref() == Some(content_path.as_str())
     }));
     assert_eq!(
         stage_nine_entries(env.file_registry_db.connection(), other_device_id)
@@ -3691,6 +3707,7 @@ async fn stage_ten_sync_service_rejects_duplicates_and_isolates_item_failures()
     assert_eq!(repeated.file_id, updated.file.file_id);
     assert_eq!(repeated.created_at, updated.file.created_at);
     assert!(repeated.updated_at > moved_updated_at);
+    assert!(repeated.has_content);
 }
 
 #[tokio::test]

@@ -153,6 +153,7 @@ pub(in crate::devices) struct FileEntry {
     pub(in crate::devices) path_syntax: PathSyntax,
     pub(in crate::devices) absolute_path: String,
     pub(in crate::devices) hierarchy_path: String,
+    pub(in crate::devices) has_content: bool,
     pub(in crate::devices) mime_type: Option<String>,
     pub(in crate::devices) extension: Option<String>,
     pub(in crate::devices) file_metadata_created_at: Option<NaiveDateTime>,
@@ -166,6 +167,7 @@ pub(in crate::devices) struct FileJournalEntry {
     pub(in crate::devices) file_id: Uuid,
     pub(in crate::devices) name: String,
     pub(in crate::devices) absolute_path: String,
+    pub(in crate::devices) has_content: bool,
     pub(in crate::devices) synchronized_at: NaiveDateTime,
 }
 

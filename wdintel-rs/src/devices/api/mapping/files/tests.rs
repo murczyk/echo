@@ -100,6 +100,7 @@ fn journal_maps_current_sync_timestamp_and_pagination_cursor() {
                 .unwrap(),
             name: "report.log".to_string(),
             absolute_path: "/var/log/report.log".to_string(),
+            has_content: true,
             synchronized_at,
         }],
         next_cursor: Some("018f0000-0000-7000-8000-000000000003".to_string()),
@@ -113,6 +114,7 @@ fn journal_maps_current_sync_timestamp_and_pagination_cursor() {
                 "file_id": "018f0000-0000-7000-8000-000000000003",
                 "name": "report.log",
                 "absolute_path": "/var/log/report.log",
+                "has_content": true,
                 "synchronized_at": "2026-07-28T08:15:30Z"
             }],
             "total_count": 27,

@@ -22,6 +22,7 @@ function buildEntry(entryId: string, kind: 'directory' | 'file'): DeviceFileTree
     pathComponents: [kind === 'file' ? 'duplicate.log' : 'nested'],
     pathSyntax: kind === 'file' ? 'posix' : null,
     absolutePath: kind === 'file' ? '/duplicate.log' : null,
+    hasContent: false,
     mimeType: kind === 'file' ? 'text/plain' : null,
     extension: kind === 'file' ? 'log' : null,
     fileMetadataCreatedAt: null,

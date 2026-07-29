@@ -36,6 +36,8 @@ pub struct Model {
     pub file_metadata_modified_at: Option<DateTime>,
     pub created_at: DateTime,
     pub updated_at: DateTime,
+    #[sea_orm(column_type = "Text", nullable)]
+    pub content_path: Option<String>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

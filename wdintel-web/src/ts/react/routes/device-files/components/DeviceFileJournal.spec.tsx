@@ -83,6 +83,7 @@ const entry: DeviceFileJournalEntry = {
   fileId: '018f0000-0000-7000-8000-000000000001',
   name: 'report.log',
   absolutePath: '/var/log/report.log',
+  hasContent: true,
   synchronizedAt: '2026-07-28T08:15:30Z',
 };
 
@@ -131,7 +132,12 @@ describe('DeviceFileJournal', () => {
     const headers = Array.from(container?.querySelectorAll('th') ?? []).map(
       (header) => header.textContent,
     );
-    expect(headers).toEqual(['Назва файлу', 'Шлях до файлу', 'Дата й час синхронізації']);
+    expect(headers).toEqual([
+      'Назва файлу',
+      'Шлях до файлу',
+      'Контент',
+      'Дата й час синхронізації',
+    ]);
     expect(container?.textContent).toContain('report.log');
     expect(container?.textContent).toContain('/var/log/report.log');
     expect(container?.textContent).not.toContain(entry.synchronizedAt);
@@ -140,8 +146,28 @@ describe('DeviceFileJournal', () => {
       'Показано 1 з 12 345 файлів',
     );
     expect(countStatus?.textContent?.replace(/\s/g, ' ')).toContain('1 з 12 345 файлів');
+    expect(container?.querySelector('[aria-label="Контент файлу наявний"]')).not.toBeNull();
   });
 
+  it('distinguishes files without stored content', () => {
+    renderJournal(
+      journalState({
+        entries: [
+          entry,
+          {
+            ...entry,
+            fileId: '018f0000-0000-7000-8000-000000000002',
+            name: 'missing.log',
+            hasContent: false,
+          },
+        ],
+        totalCount: 2,
+      }),
+    );
+
+    expect(container?.querySelector('[aria-label="Контент файлу наявний"]')).not.toBeNull();
+    expect(container?.querySelector('[aria-label="Контент файлу відсутній"]')).not.toBeNull();
+  });
   it('shows the empty state when no files have been synchronized', () => {
     renderJournal(journalState({ entries: [], totalCount: 0 }));
 

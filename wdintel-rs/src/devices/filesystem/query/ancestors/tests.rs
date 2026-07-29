@@ -340,6 +340,7 @@ fn root_model(device_id: Uuid, root_id: Uuid) -> file_entry::Model {
         file_metadata_modified_at: None,
         created_at: timestamp(),
         updated_at: timestamp(),
+        content_path: None,
     }
 }
 
@@ -365,6 +366,7 @@ fn directory_model(
         file_metadata_modified_at: None,
         created_at: timestamp(),
         updated_at: timestamp(),
+        content_path: None,
     }
 }
 
@@ -404,6 +406,7 @@ fn file_model(
         file_metadata_modified_at: None,
         created_at: timestamp(),
         updated_at: timestamp(),
+        content_path: None,
     }
 }
 

@@ -4471,6 +4471,7 @@ type alias DeviceFileTreeEntry =
     , pathComponents : List (String)
     , pathSyntax : Maybe (PathSyntax)
     , absolutePath : Maybe (String)
+    , hasContent : Bool
     , mimeType : Maybe (String)
     , extension : Maybe (String)
     , fileMetadataCreatedAt : Maybe (String)
@@ -4491,6 +4492,7 @@ deviceFileTreeEntryEncoder struct =
         , ( "path_components", (Json.Encode.list (Json.Encode.string)) struct.pathComponents )
         , ( "path_syntax", (Maybe.withDefault Json.Encode.null << Maybe.map (pathSyntaxEncoder)) struct.pathSyntax )
         , ( "absolute_path", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.absolutePath )
+        , ( "has_content", (Json.Encode.bool) struct.hasContent )
         , ( "mime_type", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.mimeType )
         , ( "extension", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.extension )
         , ( "file_metadata_created_at", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.fileMetadataCreatedAt )
@@ -4507,6 +4509,7 @@ type alias DeviceFile =
     , rootEntryId : String
     , pathSyntax : PathSyntax
     , absolutePath : String
+    , hasContent : Bool
     , name : String
     , pathComponents : List (String)
     , mimeType : Maybe (String)
@@ -4527,6 +4530,7 @@ deviceFileEncoder struct =
         , ( "root_entry_id", (Json.Encode.string) struct.rootEntryId )
         , ( "path_syntax", (pathSyntaxEncoder) struct.pathSyntax )
         , ( "absolute_path", (Json.Encode.string) struct.absolutePath )
+        , ( "has_content", (Json.Encode.bool) struct.hasContent )
         , ( "name", (Json.Encode.string) struct.name )
         , ( "path_components", (Json.Encode.list (Json.Encode.string)) struct.pathComponents )
         , ( "mime_type", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.mimeType )
@@ -4688,6 +4692,7 @@ type alias DeviceFileJournalEntry =
     { fileId : String
     , name : String
     , absolutePath : String
+    , hasContent : Bool
     , synchronizedAt : String
     }
 
@@ -4698,6 +4703,7 @@ deviceFileJournalEntryEncoder struct =
         [ ( "file_id", (Json.Encode.string) struct.fileId )
         , ( "name", (Json.Encode.string) struct.name )
         , ( "absolute_path", (Json.Encode.string) struct.absolutePath )
+        , ( "has_content", (Json.Encode.bool) struct.hasContent )
         , ( "synchronized_at", (Json.Encode.string) struct.synchronizedAt )
         ]
 
@@ -13318,6 +13324,7 @@ deviceFileTreeEntryDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "path_components" (Json.Decode.list (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "path_syntax" (Json.Decode.nullable (pathSyntaxDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "absolute_path" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "has_content" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "mime_type" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "extension" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "file_metadata_created_at" (Json.Decode.nullable (Json.Decode.string))))
@@ -13335,6 +13342,7 @@ deviceFileDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "root_entry_id" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "path_syntax" (pathSyntaxDecoder)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "absolute_path" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "has_content" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "path_components" (Json.Decode.list (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "mime_type" (Json.Decode.nullable (Json.Decode.string))))
@@ -13403,6 +13411,7 @@ deviceFileJournalEntryDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "file_id" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "absolute_path" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "has_content" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "synchronized_at" (Json.Decode.string)))
 
 

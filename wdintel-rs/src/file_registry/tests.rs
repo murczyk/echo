@@ -81,6 +81,7 @@ async fn assert_migration_versions(connection: &DatabaseConnection) {
             "m20260721_124238_create_file_entry".to_string(),
             "m20260721_124518_drop_legacy_device_file".to_string(),
             "m20260728_111013_add_file_entry_journal_index".to_string(),
+            "m20260728_182132_add_file_entry_content_path".to_string(),
         ]
     );
 }
@@ -177,6 +178,7 @@ async fn assert_file_entry_schema(connection: &DatabaseConnection) {
                 "timestamp without time zone",
                 "timestamp",
             ),
+            ("content_path", "YES", None, "text", "text"),
         ],
     )
     .await;
@@ -267,6 +269,7 @@ async fn assert_file_entry_constraints(connection: &DatabaseConnection) {
         constraint_names(connection, "file_entry", 'c').await,
         vec![
             "file_entry_absolute_path_length_check".to_string(),
+            "file_entry_directory_content_path_null_check".to_string(),
             "file_entry_directory_metadata_null_check".to_string(),
             "file_entry_extension_check".to_string(),
             "file_entry_kind_check".to_string(),
@@ -458,7 +461,7 @@ async fn assert_file_entry_entity_round_trip(connection: &DatabaseConnection) {
     assert_eq!(hierarchy_path, tree.file_hierarchy_path);
 
     let second_file_id = Uuid::new_v4();
-    let second_file = file_entry_row(
+    let mut second_file = file_entry_row(
         second_file_id,
         tree.device_id,
         tree.directory_id,
@@ -467,14 +470,18 @@ async fn assert_file_entry_entity_round_trip(connection: &DatabaseConnection) {
         "/var/app.log",
         "posix",
         tree.created_at,
-    )
-    .insert(&transaction)
-    .await
-    .unwrap();
+    );
+    second_file.content_path =
+        Set(Some("devices/018f0000/report.log".to_string()));
+    let second_file = second_file.insert(&transaction).await.unwrap();
     assert_eq!(second_file.id, second_file_id);
     assert_eq!(second_file.name, "app.log");
     assert_eq!(second_file.name_key, b"app.log");
     assert_eq!(second_file.absolute_path.as_deref(), Some("/var/app.log"));
+    assert_eq!(
+        second_file.content_path.as_deref(),
+        Some("devices/018f0000/report.log")
+    );
 
     assert_file_entry_rejections(&transaction, &tree).await;
 
@@ -655,6 +662,21 @@ async fn assert_file_entry_rejections(
         directory_metadata.insert(transaction),
     )
     .await;
+    let mut directory_content = directory_entry(
+        Uuid::new_v4(),
+        tree.device_id,
+        tree.root_id,
+        &tree.root_hierarchy_path,
+        "content-directory",
+        tree.created_at,
+    );
+    directory_content.content_path =
+        Set(Some("devices/018f0000/directory".to_string()));
+    assert_file_entry_operation_rejected(
+        transaction,
+        directory_content.insert(transaction),
+    )
+    .await;
 
     let mut wrong_path_syntax = file_entry_row(
         Uuid::new_v4(),
@@ -826,6 +848,7 @@ fn base_file_entry(
         file_metadata_modified_at: Set(None),
         created_at: Set(created_at),
         updated_at: Set(created_at),
+        content_path: Set(None),
     }
 }
 

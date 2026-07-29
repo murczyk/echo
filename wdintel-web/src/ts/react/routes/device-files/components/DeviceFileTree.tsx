@@ -4,7 +4,6 @@ import FolderOpenOutlinedIcon from '@mui/icons-material/FolderOpenOutlined';
 import FolderOutlinedIcon from '@mui/icons-material/FolderOutlined';
 import InsertDriveFileOutlinedIcon from '@mui/icons-material/InsertDriveFileOutlined';
 import RefreshIcon from '@mui/icons-material/Refresh';
-import SyncOutlinedIcon from '@mui/icons-material/SyncOutlined';
 import {
   Box,
   CircularProgress,
@@ -24,6 +23,7 @@ import { PowerAlert } from '../../../components/PowerAlert';
 import { PowerButton } from '../../../components/PowerButton';
 import { PowerChip } from '../../../components/PowerChip';
 import { PowerIconButton } from '../../../components/PowerIconButton';
+import { DeviceFileContentMarker } from './DeviceFileContentMarker';
 import type { DeviceFilesState } from '../use-device-files';
 import type { DeviceFileTreeBranch } from '../use-device-file-tree';
 
@@ -42,7 +42,6 @@ type DirectoryProps = {
   node: DirectoryNode;
   depth: number;
   files: DeviceFilesState;
-  canSync: boolean;
 };
 
 function joinScopeLabel(parent: string, name: string, pathSyntax: PathSyntax): string {
@@ -85,17 +84,7 @@ function toDirectoryNode(entry: DeviceFileTreeEntry, parent: DirectoryNode): Dir
   };
 }
 
-function DeviceFileRow({
-  entry,
-  depth,
-  canSync,
-  onSyncFile,
-}: {
-  entry: DeviceFileTreeEntry;
-  depth: number;
-  canSync: boolean;
-  onSyncFile: (entry: DeviceFileTreeEntry) => void;
-}) {
+function DeviceFileRow({ entry, depth }: { entry: DeviceFileTreeEntry; depth: number }) {
   const metadata = entry.mimeType ?? (entry.extension ? `.${entry.extension}` : null);
 
   return (
@@ -119,17 +108,9 @@ function DeviceFileRow({
         secondaryTypographyProps={{ noWrap: true, title: metadata ?? undefined }}
         sx={{ minWidth: 0, my: 0 }}
       />
-      {canSync ? (
-        <Tooltip title="Синхронізувати файл">
-          <PowerIconButton
-            size="small"
-            aria-label={`Синхронізувати файл ${entry.name}`}
-            onClick={() => onSyncFile(entry)}
-          >
-            <SyncOutlinedIcon fontSize="small" />
-          </PowerIconButton>
-        </Tooltip>
-      ) : null}
+      <Box sx={{ ml: 1, display: 'inline-flex' }}>
+        <DeviceFileContentMarker hasContent={entry.hasContent} />
+      </Box>
     </Box>
   );
 }
@@ -187,7 +168,7 @@ function BranchStatus({
   return null;
 }
 
-function DeviceFileDirectory({ node, depth, files, canSync }: DirectoryProps) {
+function DeviceFileDirectory({ node, depth, files }: DirectoryProps) {
   const branch = files.tree.branches[node.entryId];
   const expanded = files.tree.expandedEntryIds.has(node.entryId);
   const selected = files.searchScope?.entryId === node.entryId;
@@ -255,16 +236,9 @@ function DeviceFileDirectory({ node, depth, files, canSync }: DirectoryProps) {
                 node={toDirectoryNode(entry, node)}
                 depth={depth + 1}
                 files={files}
-                canSync={canSync}
               />
             ) : (
-              <DeviceFileRow
-                key={entry.entryId}
-                entry={entry}
-                depth={depth + 1}
-                canSync={canSync}
-                onSyncFile={files.sync.openSyncForEntry}
-              />
+              <DeviceFileRow key={entry.entryId} entry={entry} depth={depth + 1} />
             ),
           )}
           {branch?.loadMoreError ? (
@@ -314,7 +288,7 @@ function rootToNode(root: DeviceFileRoot): DirectoryNode {
   };
 }
 
-export function DeviceFileTree({ files, canSync }: { files: DeviceFilesState; canSync: boolean }) {
+export function DeviceFileTree({ files }: { files: DeviceFilesState }) {
   return (
     <Paper
       component="aside"
@@ -416,7 +390,6 @@ export function DeviceFileTree({ files, canSync }: { files: DeviceFilesState; ca
                 node={rootToNode(root)}
                 depth={0}
                 files={files}
-                canSync={canSync}
               />
             ))}
           </List>

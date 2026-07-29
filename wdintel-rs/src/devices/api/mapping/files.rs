@@ -87,6 +87,7 @@ pub(in crate::devices) fn map_journal(
                 file_id: entry.file_id.hyphenated().to_string(),
                 name: entry.name,
                 absolute_path: entry.absolute_path,
+                has_content: entry.has_content,
                 synchronized_at: format_datetime(entry.synchronized_at),
             })
             .collect(),
@@ -178,6 +179,7 @@ fn map_tree_entry(
             path_components,
             path_syntax: None,
             absolute_path: None,
+            has_content: false,
             mime_type: None,
             extension: None,
             file_metadata_created_at: None,
@@ -194,6 +196,7 @@ fn map_tree_entry(
             path_components,
             path_syntax: Some(map_path_syntax(file.path_syntax)),
             absolute_path: Some(file.absolute_path),
+            has_content: file.has_content,
             mime_type: file.mime_type,
             extension: file.extension,
             file_metadata_created_at: file
@@ -220,6 +223,7 @@ fn map_file(
         root_entry_id: root_entry_id.hyphenated().to_string(),
         path_syntax: map_path_syntax(file.path_syntax),
         absolute_path: file.absolute_path,
+        has_content: file.has_content,
         name: file.name,
         path_components,
         mime_type: file.mime_type,

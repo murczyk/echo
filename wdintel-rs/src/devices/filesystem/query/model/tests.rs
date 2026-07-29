@@ -27,6 +27,7 @@ fn root_model() -> file_entry::Model {
         file_metadata_modified_at: None,
         created_at: timestamp,
         updated_at: timestamp,
+        content_path: None,
     }
 }
 
@@ -56,6 +57,7 @@ fn file_model() -> file_entry::Model {
     entry.extension = Some("pdf".to_string());
     entry.file_metadata_created_at = Some(timestamp());
     entry.file_metadata_modified_at = Some(timestamp());
+    entry.content_path = Some("devices/018f0000/report.pdf".to_string());
     entry
 }
 
@@ -82,6 +84,7 @@ fn mappers_preserve_all_valid_row_shapes() {
     let file = map_file_model(file_model()).unwrap();
     assert_eq!(file.file_id, Uuid::from_u128(4));
     assert_eq!(file.absolute_path, "/reports/report.pdf");
+    assert!(file.has_content);
 
     assert!(matches!(
         map_tree_model(directory_model()),
@@ -156,6 +159,13 @@ fn mappers_reject_invalid_shapes_with_stable_invariants() {
     directory_with_metadata.extension = Some("tmp".to_string());
     assert_invariant(
         map_directory_model(directory_with_metadata),
+        "directory_file_metadata_present",
+    );
+    let mut directory_with_content = directory_model();
+    directory_with_content.content_path =
+        Some("devices/018f0000/reports".to_string());
+    assert_invariant(
+        map_directory_model(directory_with_content),
         "directory_file_metadata_present",
     );
 

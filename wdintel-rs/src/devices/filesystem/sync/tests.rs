@@ -248,6 +248,7 @@ fn mutation_result(
             path_syntax: mutation.source_path.path_syntax,
             absolute_path: mutation.source_path.absolute_path.clone(),
             hierarchy_path: file_path,
+            has_content: false,
             mime_type: mutation.metadata.mime_type.clone(),
             extension: mutation.metadata.extension.clone(),
             file_metadata_created_at: mutation

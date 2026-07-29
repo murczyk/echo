@@ -85,6 +85,7 @@ function mockFileResponse() {
     root_entry_id: ROOT_ID,
     path_syntax: 'posix',
     absolute_path: '/report.log',
+    has_content: false,
     name: 'report.log',
     path_components: ['report.log'],
     mime_type: 'text/plain',
@@ -268,6 +269,7 @@ describe('device filesystem API service routes', () => {
             path_components: ['report.log'],
             path_syntax: 'posix',
             absolute_path: '/report.log',
+            has_content: true,
             mime_type: 'text/plain',
             extension: 'log',
             file_metadata_created_at: CREATED_AT,
@@ -296,6 +298,7 @@ describe('device filesystem API service routes', () => {
       cursor: null,
     });
     expect(rsp.entries[0].fileId).toBe(FILE_ID);
+    expect(rsp.entries[0].hasContent).toBe(true);
     expect(rsp.nextCursor).toBe('next');
   });
 
@@ -337,6 +340,7 @@ describe('device filesystem API service routes', () => {
             file_id: FILE_ID,
             name: 'report.log',
             absolute_path: '/report.log',
+            has_content: true,
             synchronized_at: UPDATED_AT,
           },
         ],
@@ -363,6 +367,7 @@ describe('device filesystem API service routes', () => {
           fileId: FILE_ID,
           name: 'report.log',
           absolutePath: '/report.log',
+          hasContent: true,
           synchronizedAt: UPDATED_AT,
         },
       ],
@@ -445,7 +450,7 @@ describe('device filesystem API service routes', () => {
           index: 0,
           operation: 'created',
           root: expect.objectContaining({ entryId: ROOT_ID }),
-          file: expect.objectContaining({ fileId: FILE_ID }),
+          file: expect.objectContaining({ fileId: FILE_ID, hasContent: false }),
         },
       },
       {

@@ -28,6 +28,7 @@ function journalEntry(
     fileId,
     name,
     absolutePath: `/var/log/${name}`,
+    hasContent: false,
     synchronizedAt,
   };
 }

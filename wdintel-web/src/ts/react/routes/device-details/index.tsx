@@ -198,7 +198,7 @@ export function DeviceDetailsPage({
             {leftPanelVisible ? (
               <Box sx={{ minHeight: 0, overflow: 'hidden' }}>
                 {activeTab === 'files' ? (
-                  <DeviceFileTree files={files} canSync={canSyncFiles} />
+                  <DeviceFileTree files={files} />
                 ) : (
                   <DeviceDetailsLeftPanel device={device} loading={page.loading} />
                 )}
