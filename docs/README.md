@@ -333,7 +333,7 @@ flowchart LR
     health["echo-analytics-health.service"]
 
     postgres_store[("PostgreSQL 18<br/>peerdb_catalog · temporal · temporal_visibility<br/>echo_analytics_gateway + pg_clickhouse")]
-    clickhouse_store[("ClickHouse<br/>echo_cdc raw tables · echo_analytics current views<br/>derived callsign expansion")]
+    clickhouse_store[("ClickHouse<br/>echo_cdc raw tables · echo_analytics current views<br/>derived callsign and message-ordered network/AOR relations")]
     minio_store[("MinIO<br/>echo-peerdb-stage transient bucket")]
 
     target -.-> postgres
@@ -410,9 +410,19 @@ receives its own analytics container, credentials, publication, replication
 slot, ClickHouse data, and recovery lifecycle.
 
 When configured and fresh, ClickHouse serves the expensive analysis count,
-group, sender, and frequency facets plus the replicated-data scans used by the
-interception, sender, posts, REO, digest, RER, Sposob, 1.2.5, and 1.2.13
-reports. PostgreSQL remains responsible for transactions, authoritative
-catalog and comment lookups, mutable caches, PostGIS processing, and
-repeatable-read report snapshots. Each analytical operation falls back as a
-whole, preventing mixed partial results.
+facet lists and dedicated facet counts plus the replicated-data scans used by
+the interception, sender, posts, REO, digest, RER, Sposob, 1.2.5, and 1.2.13
+reports. Every analytical facet resolves one message-ID scope from its
+authoritative time range. The same lower/upper bounds must constrain every
+large message and message-link relation. Group/sender access must be one
+bounded, flat message-group join unless the joined group relation itself
+supplies the facet dimension. Open ranges retain only the safe lower bound,
+and an empty scope returns an empty result without querying the large
+relations. Time and access predicates remain authoritative; ID bounds are
+only ClickHouse pruning hints.
+
+PostgreSQL remains responsible for transactions, authoritative catalog and
+comment lookups, mutable caches, PostGIS processing, repeatable-read report
+snapshots, and analysis filters whose ClickHouse shape is not a single flat
+query. Each analytical operation falls back as a whole, preventing mixed
+partial results.

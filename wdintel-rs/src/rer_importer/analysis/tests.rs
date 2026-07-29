@@ -904,6 +904,39 @@ async fn fetch_analytics_aor_counts_for_req(
         count: i64,
     }
 
+    env.dbx
+        .execute_unprepared(
+            r#"
+CREATE SCHEMA IF NOT EXISTS echo_clickhouse_derived;
+CREATE OR REPLACE VIEW echo_clickhouse_derived.message_aor_link AS
+SELECT
+  message_group.signal_message_id AS sigint_inbox_item_id,
+  group_aor.aor_id,
+  aor.left_bound,
+  aor.right_bound
+FROM signal_message_group AS message_group
+INNER JOIN signal_group_aor AS group_aor
+  ON group_aor.master_key = message_group.group_master_key
+INNER JOIN area_of_responsibility AS aor
+  ON aor.id = group_aor.aor_id
+UNION ALL
+SELECT
+  inbox_network.sigint_inbox_item_id,
+  network_aor.aor_id,
+  aor.left_bound,
+  aor.right_bound
+FROM sigint_inbox_item_network AS inbox_network
+INNER JOIN sigint_network AS network
+  ON network.id = inbox_network.sigint_network_id
+INNER JOIN sigint_network_aor AS network_aor
+  ON network_aor.network_id = network.id
+INNER JOIN area_of_responsibility AS aor
+  ON aor.id = network_aor.aor_id
+WHERE NOT network.deleted
+"#,
+        )
+        .await
+        .context(h!())?;
     let (login, master_keys) = analysis_login_and_master_keys(env).await?;
     let statement = stats::build_aors_analytics_query(
         req,
@@ -1488,6 +1521,22 @@ fn analytics_networks_query_scopes_both_union_arms() {
         "\"analytics_linked_network_link\".\"sigint_inbox_item_id\" \
          BETWEEN 10 AND 20"
     ));
+    assert!(
+        sql.contains(
+            "\"echo_clickhouse_derived\".\"message_network_link\" \
+             AS \"analytics_linked_network_link\""
+        ),
+        "{sql}"
+    );
+    assert!(
+        sql.contains("JOIN \"signal_group\" AS \"analytics_frequency_group\""),
+        "{sql}"
+    );
+    assert!(
+        sql.contains("JOIN \"signal_group\" AS \"analytics_linked_group\""),
+        "{sql}"
+    );
+    assert!(!sql.contains("JOIN (SELECT \"signal_group\""), "{sql}");
 }
 
 #[test]

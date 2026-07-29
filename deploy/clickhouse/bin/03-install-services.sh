@@ -39,7 +39,8 @@ for wrapper in \
   reconcile-derived-schema.sh \
   reconcile-table-selection.sh \
   refresh-current-views.sh \
-  refresh-gateway.sh
+  refresh-gateway.sh \
+  query-performance-report.sh
 do
   sudo install -m 0755 "$SCRIPT_DIR/$wrapper" "/opt/echo-analytics/bin/$wrapper"
 done

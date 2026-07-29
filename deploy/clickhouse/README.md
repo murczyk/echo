@@ -431,6 +431,8 @@ gateway:
 - `echo_clickhouse_derived.message_callsign` expands JSON callsign arrays.
 - `echo_clickhouse_derived.message_aor_link` combines group and explicit
   network AOR links into message ID and AOR-bound rows.
+- `echo_clickhouse_derived.message_network_link` exposes current network links
+  ordered by message ID for bounded analytical joins.
 
 The AOR relation lets analytical filters apply the resolved message-ID
 envelope before joining the large group and network link tables. This avoids
@@ -438,7 +440,8 @@ correlated full-history scans while retaining the PostgreSQL overlap
 semantics. The compatibility-view layout matches replicated gateway tables so
 joins and distinct aggregation remain pushdown-safe.
 
-The network half reads a derived `ReplacingMergeTree` ordered by
+The network and AOR compatibility relations read a derived
+`ReplacingMergeTree` ordered by
 `(sigint_inbox_item_id, id)`. A materialized view copies every PeerDB version
 and deletion marker into it, so `FINAL` preserves current-state semantics
 while the message-ID envelope prunes by the primary key. Reconciliation records
@@ -454,13 +457,22 @@ materializes historical parts once per UUID. Its state is stored in
 therefore automatically receives fresh indexes during gateway/health
 reconciliation.
 
-`/api/rer/analysis/stats/count` first resolves the minimum and maximum message
-ID visible inside its requested time interval, then keeps the timestamp
-predicate and adds that ID envelope to the message and large bridge-table
-queries. The envelope is only a pruning hint: the timestamp and all access
-filters remain authoritative. A range ending within the analytics freshness
-window uses only the lower ID bound so newly replicated messages cannot be
-excluded between the envelope query and the facet queries.
+Every analysis facet and dedicated facet count first resolves one shared
+minimum/maximum message-ID scope for its requested time interval. Concurrent
+requests for the same unresolved range share that lookup, but completed
+results are not cached. The timestamp predicate stays authoritative, while
+the same ID bounds constrain `signal_message`, `sigint_inbox_item`, every
+message-group relation, and tag, network, callsign, and AOR message links.
+Group authorization, selected groups, and sender filtering use one bounded,
+flat message-group join unless the joined group relation supplies the facet
+dimension. An empty scope returns an empty facet or zero count without
+scanning the large relations.
+
+The envelope is only a pruning hint: timestamps and all access filters remain
+authoritative. A range ending within the analytics freshness window uses only
+the lower ID bound so newly replicated messages cannot be excluded between
+the envelope query and the facet queries. Selected or denied unit filters stay
+on PostgreSQL until they can be represented by one flat ClickHouse query.
 
 Package deployments install the source and remote reconciliation scripts.
 For checkout-based development, `just dev-back` runs the repository copy as a
@@ -708,11 +720,24 @@ external consumer:
 
 Monitor source slot WAL, ClickHouse/MinIO disk, systemd service health,
 Temporal workflows, mirror status, `echo_analytics_health` age, fallback
-count, and query latency. `status.sh` exits nonzero when the freshness record
-is unhealthy or older than the configured threshold. When analytics is
-configured, `wdintel-rs-bgworker` also checks this record immediately at
-startup and once per minute. It logs an error with the health detail and age
-while unhealthy, and one informational recovery message after health returns.
+count, and query latency. The gateway preloads `pg_stat_statements`, and
+`bin/query-performance-report.sh [minutes] [limit]` prints read-only summaries
+of normalized gateway parent queries and ClickHouse fragments. It flags a
+shape above 100 remote executions per minute, a fragment returning more than
+100,000 rows to the gateway, and a bounded facet reading more than 10 million
+rows. The report never resets either statistics source.
+
+`status.sh` exits nonzero when the freshness record is unhealthy or older than
+the configured threshold. When analytics is configured,
+`wdintel-rs-bgworker` also checks this record immediately at startup and once
+per minute. It logs an error with the health detail and age while unhealthy,
+and one informational recovery message after health returns.
+
+Roll out facet changes one pair at a time in this order:
+`echo-kharkiv2`, `echo-siversk`, then `echo-zp2`. After every deployment,
+confirm health/freshness, compare PostgreSQL and ClickHouse results, replay the
+representative facet requests, and inspect the performance report before
+continuing.
 
 ## Consistency and type limits
 

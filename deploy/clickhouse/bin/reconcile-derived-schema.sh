@@ -13,12 +13,14 @@ derived_database="${CLICKHOUSE_CURRENT_DB}_derived"
 metadata_database="${CLICKHOUSE_CURRENT_DB}_meta"
 message_callsign_view=message_callsign_v1
 message_aor_link_view=message_aor_link_v1
+message_network_link_view=message_network_link_v1
 network_link_table=sigint_inbox_item_network_by_message_v1
 network_link_ingest_view=sigint_inbox_item_network_by_message_ingest_v1
 validate_identifier derived_database "$derived_database"
 validate_identifier metadata_database "$metadata_database"
 validate_identifier message_callsign_view "$message_callsign_view"
 validate_identifier message_aor_link_view "$message_aor_link_view"
+validate_identifier message_network_link_view "$message_network_link_view"
 validate_identifier network_link_table "$network_link_table"
 validate_identifier network_link_ingest_view "$network_link_ingest_view"
 
@@ -166,6 +168,8 @@ reconcile_network_link_table() {
       DROP VIEW IF EXISTS
         \`$derived_database\`.\`$message_aor_link_view\`;
       DROP VIEW IF EXISTS
+        \`$derived_database\`.\`$message_network_link_view\`;
+      DROP VIEW IF EXISTS
         \`$derived_database\`.\`$network_link_ingest_view\`;
       DROP TABLE IF EXISTS
         \`$derived_database\`.\`$network_link_table\`;
@@ -289,6 +293,13 @@ QUERY_INDEXES
 clickhouse_admin_http "CREATE DATABASE IF NOT EXISTS \`$derived_database\`"
 reconcile_network_link_table
 clickhouse_admin_http "
+  CREATE VIEW IF NOT EXISTS \`$derived_database\`.\`$message_network_link_view\` AS
+  SELECT
+    sigint_inbox_item_id,
+    sigint_network_id
+  FROM \`$derived_database\`.\`$network_link_table\` FINAL
+"
+clickhouse_admin_http "
   CREATE VIEW IF NOT EXISTS \`$derived_database\`.\`$message_callsign_view\` AS
   SELECT
     id AS sigint_inbox_item_id,
@@ -338,6 +349,7 @@ postgres_psql --dbname "$GATEWAY_DB" \
   -v derived_database="$derived_database" \
   -v message_callsign_view="$message_callsign_view" \
   -v message_aor_link_view="$message_aor_link_view" \
+  -v message_network_link_view="$message_network_link_view" \
   -v gateway_user="$GATEWAY_USER" <<'SQL'
 BEGIN;
 CREATE SCHEMA IF NOT EXISTS echo_clickhouse_derived AUTHORIZATION postgres;
@@ -408,6 +420,23 @@ CREATE OR REPLACE VIEW echo_clickhouse_derived.message_aor_link AS
 SELECT sigint_inbox_item_id, aor_id, left_bound, right_bound
 FROM echo_clickhouse_derived_foreign.message_aor_link;
 REVOKE ALL ON TABLE echo_clickhouse_derived.message_aor_link FROM PUBLIC;
+CREATE FOREIGN TABLE IF NOT EXISTS
+echo_clickhouse_derived_foreign.message_network_link (
+  sigint_inbox_item_id bigint NOT NULL,
+  sigint_network_id bigint NOT NULL
+)
+SERVER echo_clickhouse
+OPTIONS (
+  database :'derived_database',
+  table_name :'message_network_link_view',
+  engine 'View'
+);
+REVOKE ALL ON TABLE echo_clickhouse_derived_foreign.message_network_link
+  FROM PUBLIC;
+CREATE OR REPLACE VIEW echo_clickhouse_derived.message_network_link AS
+SELECT sigint_inbox_item_id, sigint_network_id
+FROM echo_clickhouse_derived_foreign.message_network_link;
+REVOKE ALL ON TABLE echo_clickhouse_derived.message_network_link FROM PUBLIC;
 SELECT format(
   'GRANT USAGE ON SCHEMA echo_clickhouse_derived TO %I',
   :'gateway_user'
@@ -418,6 +447,10 @@ SELECT format(
 ) \gexec
 SELECT format(
   'GRANT SELECT ON TABLE echo_clickhouse_derived.message_aor_link TO %I',
+  :'gateway_user'
+) \gexec
+SELECT format(
+  'GRANT SELECT ON TABLE echo_clickhouse_derived.message_network_link TO %I',
   :'gateway_user'
 ) \gexec
 COMMIT;

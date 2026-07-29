@@ -360,6 +360,29 @@ instance of this approach. A later pass can carry the exact recent-ID envelope
 through the generic filtered post-stats query and the other dominant facet
 queries.
 
+That later ClickHouse pass is now implemented. Posts, callsigns, tags, units,
+locations, AORs, and their dedicated counts resolve the same analytical
+message-ID scope already used by count, group, sender, frequency, and network
+routes. Every large message/link relation receives explicit bounds.
+Authorization, selected groups, and selected senders are combined in one
+bounded, flat message-group join unless the joined group relation supplies
+the facet dimension, instead of duplicate authorization and selected-group
+`EXISTS` clauses. Empty scopes short-circuit; selected/denied unit filters
+remain on PostgreSQL.
+
+On ZP2, applying the envelope to the observed selected-group tag query reduced
+it from 1.94 seconds, 34 million rows, and 1.32 GiB read to 145 ms, 5.17
+million rows, and 214 MiB read. Existing ordering and projections therefore
+remain the first optimization. No additional skip indexes are introduced in
+this pass, following the
+[ClickHouse query optimization guidance](https://clickhouse.com/resources/engineering/clickhouse-query-optimisation-definitive-guide).
+
+Concurrent scope resolution for identical ranges is coalesced only while the
+lookup is in flight; completed scopes are not cached. The gateway now enables
+`pg_stat_statements`, and its read-only performance report flags remote
+execution amplification, large intermediate results, and bounded facets that
+still scan excessive rows.
+
 ### 4. Batch statistics writes
 
 One statistics insert shape executed about 168 million times. Replace
@@ -402,3 +425,10 @@ After deployment:
 4. compare old and new results on a non-production snapshot;
 5. verify that generic filtered post stats still uses its original path;
 6. reset statistics only in a separately approved measurement window.
+
+Deploy the bounded-facet change to `echo-kharkiv2` first, verify health,
+results, pushdown, and the representative request batch, then repeat for
+`echo-siversk` and finally `echo-zp2`. Do not continue to the next pair when a
+bounded query returns more than 100,000 intermediate rows, reads more than 6
+million rows without an explicit exception, exceeds 500 ms warm, or the
+concurrent batch exceeds two seconds.

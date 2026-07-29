@@ -65,6 +65,9 @@ FROM information_schema.columns columns
 JOIN information_schema.views views
   ON views.table_schema = columns.table_schema
  AND views.table_name = columns.table_name
+JOIN information_schema.foreign_tables foreign_tables
+  ON foreign_tables.foreign_table_schema = 'echo_clickhouse_foreign'
+ AND foreign_tables.foreign_table_name = views.table_name
 WHERE columns.table_schema = 'public'
 ORDER BY columns.table_name, columns.column_name;
 SQL
