@@ -57,6 +57,7 @@ impl DeviceService {
                 source_label: Set(source_label),
                 name: Set(None),
                 created_by: Set(actor.login().to_string()),
+                organism_id: Set(actor.organism_id()),
                 unit_id: Set(None),
                 tags: Set(serde_json::json!([])),
                 external_url: Set(external_url),

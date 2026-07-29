@@ -27,6 +27,7 @@ pub struct Model {
     pub source_label: String,
     #[sea_orm(column_type = "JsonBinary")]
     pub custom_fields: Json,
+    pub organism_id: i64,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
@@ -41,6 +42,14 @@ pub enum Relation {
         on_delete = "NoAction"
     )]
     Login,
+    #[sea_orm(
+        belongs_to = "super::organism::Entity",
+        from = "Column::OrganismId",
+        to = "super::organism::Column::Id",
+        on_update = "NoAction",
+        on_delete = "NoAction"
+    )]
+    Organism,
     #[sea_orm(
         belongs_to = "super::sigint_unit::Entity",
         from = "Column::UnitId",
@@ -60,6 +69,12 @@ impl Related<super::device_aor::Entity> for Entity {
 impl Related<super::login::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::Login.def()
+    }
+}
+
+impl Related<super::organism::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::Organism.def()
     }
 }
 

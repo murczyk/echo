@@ -14,6 +14,7 @@ use serial_test::serial;
 fn actor(roles: &[&str]) -> DeviceActor {
     crate::devices::access::test_support::device_actor(
         "device-actor-test",
+        1,
         roles,
     )
 }
@@ -165,13 +166,28 @@ async fn resolver_uses_current_roles_and_rejects_disabled_or_missing_login() {
 
     let analyst = resolve_current_login(&main_db, &login_id).await.unwrap();
     assert_eq!(capabilities(&analyst), (true, true, true));
+    assert_eq!(analyst.organism_id(), organism.id);
 
     let mut login = login.into_active_model();
     login.roles = Set(json!([ROLE_DEVICE_SOURCE]));
-    login.update(&env.dbx).await.unwrap();
+    let login = login.update(&env.dbx).await.unwrap();
 
     let source = resolve_current_login(&main_db, &login_id).await.unwrap();
     assert_eq!(capabilities(&source), (true, true, false));
+
+    let mut login = login.into_active_model();
+    login.organism_id = Set(None);
+    let login = login.update(&env.dbx).await.unwrap();
+    let missing_organism_error =
+        match resolve_current_login(&main_db, &login_id).await {
+            Err(error) => error,
+            Ok(_) => panic!("expected missing-organism error"),
+        };
+    assert!(matches!(missing_organism_error, AppError::Unauthenticated));
+
+    let mut login = login.into_active_model();
+    login.organism_id = Set(Some(organism.id));
+    login.update(&env.dbx).await.unwrap();
 
     let missing_login_id = Uuid::now_v7();
     let missing_login_error =

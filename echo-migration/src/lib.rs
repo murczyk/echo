@@ -334,6 +334,7 @@ mod m20260728_163700_add_echo_client_display_name;
 mod m20260728_203332_propagate_echo_client_display_name;
 mod m20260729_062653_add_classic_menu_visibility_settings;
 mod m20260729_121823_drop_postgres_group_stats;
+mod m20260729_143549_add_device_organism;
 mod m20260729_170544_orbit_units;
 mod m20260730_125429_orbit_unit_grouping_many_to_many;
 mod m20260730_134741_orbit_unit_sigint_unit;
@@ -777,6 +778,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260716_134601_device_aor_id_uuid::Migration),
             Box::new(m20260721_120720_device_source_label_custom_fields::Migration),
             Box::new(m20260721_124518_drop_legacy_device_file::Migration),
+            Box::new(m20260729_143549_add_device_organism::Migration),
             Box::new(m20260802_174927_rer_duty_test_replay::Migration),
             Box::new(m20260803_093803_echo_automation_send_log::Migration),
         ]

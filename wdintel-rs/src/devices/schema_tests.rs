@@ -1,5 +1,5 @@
-use crate::entities::{device, login};
-use crate::functest::tests::{cleanup_locked, mk_login};
+use crate::entities::{device, login, organism};
+use crate::functest::tests::{cleanup_locked, mk_login, mk_organism};
 use crate::types::Uuid;
 use chrono::{NaiveDateTime, Utc};
 use sea_orm::{
@@ -19,10 +19,19 @@ async fn device_schema_enforces_target_fields() {
     assert_device_aor_schema(&env.dbx).await;
 
     assert_legacy_device_file_table_is_absent(&env.dbx).await;
+    let organism = mk_organism(
+        &env.dbx,
+        organism::ActiveModel {
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
     let login = mk_login(
         &env.dbx,
         login::ActiveModel {
             login: Set(format!("device-schema-{}", Uuid::now_v7())),
+            organism_id: Set(Some(organism.id)),
             ..Default::default()
         },
     )
@@ -31,6 +40,7 @@ async fn device_schema_enforces_target_fields() {
     let custom_fields = json!({"inventory_id": "node-1", "transport": "ssh"});
     let saved = device_active_model(
         &login.login,
+        organism.id,
         "shared-source-label",
         Some("Analytical name"),
         custom_fields.clone(),
@@ -52,6 +62,7 @@ async fn device_schema_enforces_target_fields() {
 
     let duplicate_source_label = device_active_model(
         &login.login,
+        organism.id,
         "shared-source-label",
         Some("Different name"),
         json!({}),
@@ -65,6 +76,7 @@ async fn device_schema_enforces_target_fields() {
 
     let nullable_name = device_active_model(
         &login.login,
+        organism.id,
         "source-without-name",
         None,
         json!({}),
@@ -79,6 +91,7 @@ async fn device_schema_enforces_target_fields() {
     assert_device_check_fails(
         &env.dbx,
         &login.login,
+        organism.id,
         "   ",
         Some("Valid name"),
         json!({}),
@@ -89,6 +102,7 @@ async fn device_schema_enforces_target_fields() {
     assert_device_check_fails(
         &env.dbx,
         &login.login,
+        organism.id,
         "valid-source-label",
         Some("   "),
         json!({}),
@@ -99,6 +113,7 @@ async fn device_schema_enforces_target_fields() {
     assert_device_check_fails(
         &env.dbx,
         &login.login,
+        organism.id,
         "valid-source-label",
         Some("Valid name"),
         json!([]),
@@ -109,6 +124,7 @@ async fn device_schema_enforces_target_fields() {
     assert_device_check_fails(
         &env.dbx,
         &login.login,
+        organism.id,
         "valid-source-label",
         Some("Valid name"),
         json!({}),
@@ -165,6 +181,7 @@ order by ordinal_position
         ),
         ("source_label", "NO", None, "text"),
         ("custom_fields", "NO", None, "jsonb"),
+        ("organism_id", "NO", None, "bigint"),
     ]
     .into_iter()
     .map(|(name, nullable, default, data_type)| {
@@ -304,6 +321,7 @@ order by indexname
 async fn assert_device_check_fails(
     dbx: &DatabaseConnection,
     created_by: &str,
+    organism_id: i64,
     source_label: &str,
     name: Option<&str>,
     custom_fields: Value,
@@ -313,6 +331,7 @@ async fn assert_device_check_fails(
     let transaction = dbx.begin().await.unwrap();
     let error = device_active_model(
         created_by,
+        organism_id,
         source_label,
         name,
         custom_fields,
@@ -331,6 +350,7 @@ async fn assert_device_check_fails(
 
 pub(in crate::devices) fn device_active_model(
     created_by: &str,
+    organism_id: i64,
     source_label: &str,
     name: Option<&str>,
     custom_fields: Value,
@@ -341,6 +361,7 @@ pub(in crate::devices) fn device_active_model(
         id: Set(Uuid::now_v7()),
         name: Set(name.map(str::to_owned)),
         created_by: Set(created_by.to_string()),
+        organism_id: Set(organism_id),
         unit_id: Set(None),
         tags: Set(json!([])),
         external_url: Set(None),

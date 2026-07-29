@@ -1,9 +1,13 @@
 use super::access::DeviceActor;
 use super::main_db::MainDb;
-use crate::entities::device;
+use crate::entities::{device, organism};
 use crate::error::AppError;
 use crate::h;
 use crate::types::ShortContext;
+use sea_orm::sea_query::{
+    Alias, CommonTableExpression, Expr, JoinType, Query, SelectStatement,
+    UnionType, WithClause,
+};
 use sea_orm::{
     ColumnTrait, ConnectionTrait, DatabaseConnection, DatabaseTransaction,
     EntityTrait, QueryFilter, QuerySelect, Select,
@@ -34,7 +38,10 @@ impl DeviceVisibility {
     ) -> Result<Select<device::Entity>, AppError> {
         actor.require_read()?;
 
-        let query = device::Entity::find();
+        let query = device::Entity::find().filter(
+            device::Column::OrganismId
+                .in_subquery(visible_organism_ids_query(actor.organism_id())),
+        );
         match scope {
             DeviceReadScope::ActiveOnly => {
                 Ok(query.filter(device::Column::Archived.eq(false)))
@@ -127,6 +134,43 @@ impl DeviceVisibility {
 
         Ok(device_id)
     }
+}
+
+fn visible_organism_ids_query(organism_id: i64) -> SelectStatement {
+    let visible_organism = Alias::new("visible_organism");
+    let visible_organism_id = Alias::new("id");
+    let descendants = Query::select()
+        .column((organism::Entity, organism::Column::Id))
+        .from(organism::Entity)
+        .join(
+            JoinType::InnerJoin,
+            visible_organism.clone(),
+            Expr::col((organism::Entity, organism::Column::ParentId)).equals((
+                visible_organism.clone(),
+                visible_organism_id.clone(),
+            )),
+        )
+        .and_where(
+            Expr::col((organism::Entity, organism::Column::DeletedPermanently))
+                .eq(false),
+        )
+        .to_owned();
+    let cte = CommonTableExpression::new()
+        .table_name(visible_organism.clone())
+        .column(visible_organism_id.clone())
+        .query(
+            Query::select()
+                .expr(Expr::value(organism_id))
+                .union(UnionType::Distinct, descendants)
+                .to_owned(),
+        )
+        .to_owned();
+
+    Query::select()
+        .column((visible_organism.clone(), visible_organism_id))
+        .from(visible_organism)
+        .with_cte(WithClause::new().recursive(true).cte(cte).to_owned())
+        .to_owned()
 }
 
 fn archived_device_error() -> AppError {

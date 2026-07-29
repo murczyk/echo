@@ -10,10 +10,10 @@ use crate::devices::main_db::MainDb;
 use crate::devices::schema_tests::device_active_model;
 use crate::devices::visibility::DeviceReadScope;
 use crate::entities::{
-    area_of_responsibility, device, device_aor, login, sigint_unit,
+    area_of_responsibility, device, device_aor, login, organism, sigint_unit,
 };
 use crate::functest::tests::{
-    cleanup_locked, mk_aor, mk_login, mk_sigint_unit,
+    cleanup_locked, mk_aor, mk_login, mk_organism, mk_sigint_unit,
 };
 use crate::types::{AppError, BTreeMap};
 use chrono::Utc;
@@ -36,8 +36,14 @@ fn update_command(device_id: Uuid) -> UpdateDeviceCommand {
     }
 }
 
-fn actor(login: &str, roles: &[&str]) -> DeviceActor {
-    crate::devices::access::test_support::device_actor(login, roles)
+fn actor(login: &login::Model, roles: &[&str]) -> DeviceActor {
+    crate::devices::access::test_support::device_actor(
+        &login.login,
+        login
+            .organism_id
+            .expect("device service test login must have an organism"),
+        roles,
+    )
 }
 
 fn list_command() -> ListDevicesCommand {
@@ -57,11 +63,31 @@ async fn insert_login(
     dbx: &DatabaseConnection,
     roles: &[&str],
 ) -> login::Model {
+    let organism_id = match organism::Entity::find()
+        .order_by_asc(organism::Column::Id)
+        .one(dbx)
+        .await
+        .unwrap()
+    {
+        Some(organism) => organism.id,
+        None => {
+            mk_organism(
+                dbx,
+                organism::ActiveModel {
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap()
+            .id
+        }
+    };
     mk_login(
         dbx,
         login::ActiveModel {
             login: Set(format!("device-service-{}", Uuid::now_v7())),
             roles: Set(json!(roles)),
+            organism_id: Set(Some(organism_id)),
             ..Default::default()
         },
     )
@@ -119,20 +145,8 @@ fn assert_forbidden(error: AppError) {
 #[serial_test::serial]
 async fn batch_hydration_preserves_input_order_and_current_references() {
     let (env, _guard) = cleanup_locked().await.unwrap();
-    let source_login = mk_login(
-        &env.dbx,
-        login::ActiveModel {
-            login: Set(format!("device-service-source-{}", Uuid::now_v7())),
-            roles: Set(json!([ROLE_DEVICE_SOURCE])),
-            ..Default::default()
-        },
-    )
-    .await
-    .unwrap();
-    let actor = crate::devices::access::test_support::device_actor(
-        &source_login.login,
-        &[ROLE_DEVICE_SOURCE],
-    );
+    let source_login = insert_login(&env.dbx, &[ROLE_DEVICE_SOURCE]).await;
+    let actor = actor(&source_login, &[ROLE_DEVICE_SOURCE]);
     let first_aor = mk_aor(
         &env.dbx,
         area_of_responsibility::ActiveModel {
@@ -164,6 +178,7 @@ async fn batch_hydration_preserves_input_order_and_current_references() {
 
     let mut first_device = device_active_model(
         &source_login.login,
+        source_login.organism_id.unwrap(),
         "source-first",
         Some("First device"),
         json!({"inventory_id": "one"}),
@@ -176,6 +191,7 @@ async fn batch_hydration_preserves_input_order_and_current_references() {
     let first_device = first_device.insert(&env.dbx).await.unwrap();
     let second_device = device_active_model(
         &source_login.login,
+        source_login.organism_id.unwrap(),
         "source-second",
         None,
         json!({}),
@@ -243,20 +259,8 @@ async fn batch_hydration_preserves_input_order_and_current_references() {
 #[serial_test::serial]
 async fn source_create_persists_only_normalized_source_state() {
     let (env, _guard) = cleanup_locked().await.unwrap();
-    let source_login = mk_login(
-        &env.dbx,
-        login::ActiveModel {
-            login: Set(format!("device-service-source-{}", Uuid::now_v7())),
-            roles: Set(json!([ROLE_DEVICE_SOURCE])),
-            ..Default::default()
-        },
-    )
-    .await
-    .unwrap();
-    let actor = crate::devices::access::test_support::device_actor(
-        &source_login.login,
-        &[ROLE_DEVICE_SOURCE],
-    );
+    let source_login = insert_login(&env.dbx, &[ROLE_DEVICE_SOURCE]).await;
+    let actor = actor(&source_login, &[ROLE_DEVICE_SOURCE]);
     let main_db = MainDb::new(&env.dbx);
 
     let state = DeviceService::create(
@@ -307,6 +311,7 @@ async fn source_create_persists_only_normalized_source_state() {
     assert_eq!(device.name, None);
     assert_eq!(device.unit_id, None);
     assert_eq!(device.tags, json!([]));
+    assert_eq!(device.organism_id, source_login.organism_id.unwrap());
     assert_eq!(device.archived_at, None);
 }
 
@@ -314,34 +319,10 @@ async fn source_create_persists_only_normalized_source_state() {
 #[serial_test::serial]
 async fn analyst_mixed_update_is_atomic_and_source_cannot_change_analysis() {
     let (env, _guard) = cleanup_locked().await.unwrap();
-    let source_login = mk_login(
-        &env.dbx,
-        login::ActiveModel {
-            login: Set(format!("device-service-source-{}", Uuid::now_v7())),
-            roles: Set(json!([ROLE_DEVICE_SOURCE])),
-            ..Default::default()
-        },
-    )
-    .await
-    .unwrap();
-    let analyst_login = mk_login(
-        &env.dbx,
-        login::ActiveModel {
-            login: Set(format!("device-service-analyst-{}", Uuid::now_v7())),
-            roles: Set(json!([ROLE_DEVICE_ANALYST])),
-            ..Default::default()
-        },
-    )
-    .await
-    .unwrap();
-    let source = crate::devices::access::test_support::device_actor(
-        &source_login.login,
-        &[ROLE_DEVICE_SOURCE],
-    );
-    let analyst = crate::devices::access::test_support::device_actor(
-        &analyst_login.login,
-        &[ROLE_DEVICE_ANALYST],
-    );
+    let source_login = insert_login(&env.dbx, &[ROLE_DEVICE_SOURCE]).await;
+    let analyst_login = insert_login(&env.dbx, &[ROLE_DEVICE_ANALYST]).await;
+    let source = actor(&source_login, &[ROLE_DEVICE_SOURCE]);
+    let analyst = actor(&analyst_login, &[ROLE_DEVICE_ANALYST]);
     let main_db = MainDb::new(&env.dbx);
     let created = DeviceService::create(
         &main_db,
@@ -442,10 +423,10 @@ async fn create_allows_source_analyst_and_admin_but_not_cyber() {
     let analyst_login = insert_login(&env.dbx, &[ROLE_DEVICE_ANALYST]).await;
     let admin_login = insert_login(&env.dbx, &[ROLE_ADMIN]).await;
     let cyber_login = insert_login(&env.dbx, &[ROLE_CYBER]).await;
-    let source = actor(&source_login.login, &[ROLE_DEVICE_SOURCE]);
-    let analyst = actor(&analyst_login.login, &[ROLE_DEVICE_ANALYST]);
-    let admin = actor(&admin_login.login, &[ROLE_ADMIN]);
-    let cyber = actor(&cyber_login.login, &[ROLE_CYBER]);
+    let source = actor(&source_login, &[ROLE_DEVICE_SOURCE]);
+    let analyst = actor(&analyst_login, &[ROLE_DEVICE_ANALYST]);
+    let admin = actor(&admin_login, &[ROLE_ADMIN]);
+    let cyber = actor(&cyber_login, &[ROLE_CYBER]);
     let main_db = MainDb::new(&env.dbx);
 
     for (login, actor) in [
@@ -518,9 +499,9 @@ async fn patch_presence_and_clears_follow_the_internal_contract() {
     let source_login = insert_login(&env.dbx, &[ROLE_DEVICE_SOURCE]).await;
     let analyst_login = insert_login(&env.dbx, &[ROLE_DEVICE_ANALYST]).await;
     let cyber_login = insert_login(&env.dbx, &[ROLE_CYBER]).await;
-    let source = actor(&source_login.login, &[ROLE_DEVICE_SOURCE]);
-    let analyst = actor(&analyst_login.login, &[ROLE_DEVICE_ANALYST]);
-    let cyber = actor(&cyber_login.login, &[ROLE_CYBER]);
+    let source = actor(&source_login, &[ROLE_DEVICE_SOURCE]);
+    let analyst = actor(&analyst_login, &[ROLE_DEVICE_ANALYST]);
+    let cyber = actor(&cyber_login, &[ROLE_CYBER]);
     let main_db = MainDb::new(&env.dbx);
     let created = DeviceService::create(
         &main_db,
@@ -642,8 +623,8 @@ async fn invalid_references_roll_back_mixed_patches_and_reject_deleted_rows() {
     let (env, _guard) = cleanup_locked().await.unwrap();
     let source_login = insert_login(&env.dbx, &[ROLE_DEVICE_SOURCE]).await;
     let analyst_login = insert_login(&env.dbx, &[ROLE_DEVICE_ANALYST]).await;
-    let source = actor(&source_login.login, &[ROLE_DEVICE_SOURCE]);
-    let analyst = actor(&analyst_login.login, &[ROLE_DEVICE_ANALYST]);
+    let source = actor(&source_login, &[ROLE_DEVICE_SOURCE]);
+    let analyst = actor(&analyst_login, &[ROLE_DEVICE_ANALYST]);
     let main_db = MainDb::new(&env.dbx);
     let created = DeviceService::create(
         &main_db,
@@ -817,8 +798,8 @@ async fn custom_field_patches_and_effective_no_ops_preserve_state() {
     let (env, _guard) = cleanup_locked().await.unwrap();
     let source_login = insert_login(&env.dbx, &[ROLE_DEVICE_SOURCE]).await;
     let analyst_login = insert_login(&env.dbx, &[ROLE_DEVICE_ANALYST]).await;
-    let source = actor(&source_login.login, &[ROLE_DEVICE_SOURCE]);
-    let analyst = actor(&analyst_login.login, &[ROLE_DEVICE_ANALYST]);
+    let source = actor(&source_login, &[ROLE_DEVICE_SOURCE]);
+    let analyst = actor(&analyst_login, &[ROLE_DEVICE_ANALYST]);
     let main_db = MainDb::new(&env.dbx);
     let created = DeviceService::create(
         &main_db,
@@ -956,8 +937,8 @@ async fn read_handles_archives_nullable_names_and_deleted_references() {
     let (env, _guard) = cleanup_locked().await.unwrap();
     let source_login = insert_login(&env.dbx, &[ROLE_DEVICE_SOURCE]).await;
     let analyst_login = insert_login(&env.dbx, &[ROLE_DEVICE_ANALYST]).await;
-    let source = actor(&source_login.login, &[ROLE_DEVICE_SOURCE]);
-    let analyst = actor(&analyst_login.login, &[ROLE_DEVICE_ANALYST]);
+    let source = actor(&source_login, &[ROLE_DEVICE_SOURCE]);
+    let analyst = actor(&analyst_login, &[ROLE_DEVICE_ANALYST]);
     let main_db = MainDb::new(&env.dbx);
     let created = DeviceService::create(
         &main_db,
@@ -1090,7 +1071,7 @@ async fn read_handles_archives_nullable_names_and_deleted_references() {
 async fn list_and_unit_stats_follow_target_filters_sorts_and_counts() {
     let (env, _guard) = cleanup_locked().await.unwrap();
     let reader = insert_login(&env.dbx, &[ROLE_CYBER]).await;
-    let actor = actor(&reader.login, &[ROLE_CYBER]);
+    let actor = actor(&reader, &[ROLE_CYBER]);
     let active_unit = mk_sigint_unit(
         &env.dbx,
         sigint_unit::ActiveModel {
@@ -1124,10 +1105,29 @@ async fn list_and_unit_stats_follow_target_filters_sorts_and_counts() {
     )
     .await
     .unwrap();
+    let other_organism = mk_organism(
+        &env.dbx,
+        organism::ActiveModel {
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let other_login = mk_login(
+        &env.dbx,
+        login::ActiveModel {
+            login: Set(format!("device-service-other-{}", Uuid::now_v7())),
+            organism_id: Set(Some(other_organism.id)),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
     let now = Utc::now().naive_utc();
 
     let mut missing_name = device_active_model(
         &reader.login,
+        reader.organism_id.unwrap(),
         "literal%source",
         None,
         json!({}),
@@ -1142,6 +1142,7 @@ async fn list_and_unit_stats_follow_target_filters_sorts_and_counts() {
 
     let mut named = device_active_model(
         &reader.login,
+        reader.organism_id.unwrap(),
         "ordinary-source",
         Some("Needle Alpha"),
         json!({}),
@@ -1155,6 +1156,7 @@ async fn list_and_unit_stats_follow_target_filters_sorts_and_counts() {
 
     let mut uuid_match = device_active_model(
         &reader.login,
+        reader.organism_id.unwrap(),
         "uuid-source",
         Some("UUID device"),
         json!({}),
@@ -1167,6 +1169,7 @@ async fn list_and_unit_stats_follow_target_filters_sorts_and_counts() {
 
     let mut archived = device_active_model(
         &reader.login,
+        reader.organism_id.unwrap(),
         "archived-source",
         Some("Archived device"),
         json!({}),
@@ -1177,6 +1180,18 @@ async fn list_and_unit_stats_follow_target_filters_sorts_and_counts() {
     archived.created_at = Set(now - chrono::Duration::hours(1));
     archived.updated_at = Set(now - chrono::Duration::hours(1));
     archived.insert(&env.dbx).await.unwrap();
+
+    let mut other_device = device_active_model(
+        &other_login.login,
+        other_organism.id,
+        "literal%source",
+        None,
+        json!({}),
+        false,
+        None,
+    );
+    other_device.unit_id = Set(Some(active_unit.id));
+    other_device.insert(&env.dbx).await.unwrap();
 
     let main_db = MainDb::new(&env.dbx);
     let mut command = list_command();
@@ -1201,6 +1216,7 @@ async fn list_and_unit_stats_follow_target_filters_sorts_and_counts() {
         .unwrap();
     assert_eq!(result.status_counts.active, 3);
     assert_eq!(result.status_counts.archived, 1);
+    assert_eq!(result.total, 3);
 
     for (filter_text, expected_id) in [
         ("%".to_string(), missing_name.id),

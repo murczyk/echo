@@ -19,15 +19,17 @@ pub(in crate::devices) struct DeviceFieldGroups {
 
 pub(in crate::devices) struct DeviceActor {
     login: String,
+    organism_id: i64,
     can_read: bool,
     can_write_source_data: bool,
     can_write_analytical_data: bool,
 }
 
 impl DeviceActor {
-    fn from_roles(login: String, roles: &[String]) -> Self {
+    fn from_roles(login: String, organism_id: i64, roles: &[String]) -> Self {
         let mut actor = Self {
             login,
+            organism_id,
             can_read: false,
             can_write_source_data: false,
             can_write_analytical_data: false,
@@ -60,6 +62,10 @@ impl DeviceActor {
     #[allow(dead_code)]
     pub(in crate::devices) fn login(&self) -> &str {
         &self.login
+    }
+
+    pub(in crate::devices) fn organism_id(&self) -> i64 {
+        self.organism_id
     }
 
     #[allow(dead_code)]
@@ -156,8 +162,10 @@ async fn resolve_current_login(
 
     ensure_devices_section_enabled(main_db.connection()).await?;
 
+    let organism_id =
+        login.organism_id.ok_or_else(forbidden_device_operation)?;
     let roles: Vec<String> = serde_json::from_value(login.roles).c(h!())?;
-    Ok(DeviceActor::from_roles(login.login, &roles))
+    Ok(DeviceActor::from_roles(login.login, organism_id, &roles))
 }
 
 #[cfg(test)]

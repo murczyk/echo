@@ -16,10 +16,10 @@ use crate::config::{
 };
 use crate::devices::access::DeviceActor;
 use crate::devices::main_db::MainDb;
-use crate::entities::{device, login};
+use crate::entities::{device, login, organism};
 use crate::file_registry::entities::file_entry;
 use crate::file_registry::{connect_runtime, run_migrations, FileRegistryDb};
-use crate::functest::tests::{cleanup_locked, mk_login};
+use crate::functest::tests::{cleanup_locked, mk_login, mk_organism};
 use crate::h;
 use crate::types::{AppError, Mode, ShortContext, Uuid};
 use chrono::{Duration, NaiveDate, NaiveDateTime};
@@ -40,14 +40,15 @@ use std::sync::{
 async fn insert_device(
     db: &DatabaseConnection,
     id: Uuid,
-    created_by: &str,
+    owner: &login::Model,
     source_label: &str,
     timestamp: NaiveDateTime,
 ) {
     device::ActiveModel {
         id: Set(id),
         name: Set(Some("Filesystem fixture device".to_string())),
-        created_by: Set(created_by.to_string()),
+        created_by: Set(owner.login.clone()),
+        organism_id: Set(owner.organism_id.unwrap()),
         unit_id: Set(None),
         tags: Set(json!([])),
         external_url: Set(None),
@@ -61,6 +62,30 @@ async fn insert_device(
     .insert(db)
     .await
     .unwrap();
+}
+
+async fn insert_device_owner(
+    db: &DatabaseConnection,
+    prefix: &str,
+) -> login::Model {
+    let organism = mk_organism(
+        db,
+        organism::ActiveModel {
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    mk_login(
+        db,
+        login::ActiveModel {
+            login: Set(format!("{prefix}-{}", Uuid::now_v7())),
+            organism_id: Set(Some(organism.id)),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap()
 }
 
 async fn insert_file_entry(
@@ -279,15 +304,7 @@ async fn stage_eight_read_service_authorizes_and_composes_roots_browse_search()
 {
     let (env, _guard) = cleanup_locked().await.unwrap();
     let timestamp = stage_eight_timestamp();
-    let owner = mk_login(
-        &env.dbx,
-        login::ActiveModel {
-            login: Set(format!("filesystem-stage-eight-{}", Uuid::now_v7())),
-            ..Default::default()
-        },
-    )
-    .await
-    .unwrap();
+    let owner = insert_device_owner(&env.dbx, "filesystem-stage-eight").await;
     let forest =
         insert_stage_three_forest(env.file_registry_db.connection(), timestamp)
             .await;
@@ -297,7 +314,7 @@ async fn stage_eight_read_service_authorizes_and_composes_roots_browse_search()
     insert_device(
         &env.dbx,
         forest.target_device_id,
-        &owner.login,
+        &owner,
         "stage-eight-active",
         timestamp,
     )
@@ -305,7 +322,7 @@ async fn stage_eight_read_service_authorizes_and_composes_roots_browse_search()
     insert_device(
         &env.dbx,
         tree.device_id,
-        &owner.login,
+        &owner,
         "stage-eight-archived",
         timestamp,
     )
@@ -318,8 +335,11 @@ async fn stage_eight_read_service_authorizes_and_composes_roots_browse_search()
         ("stage-eight-analyst", &[ROLE_DEVICE_ANALYST][..]),
         ("stage-eight-admin", &[ROLE_ADMIN][..]),
     ] {
-        let actor =
-            crate::devices::access::test_support::device_actor(login, roles);
+        let actor = crate::devices::access::test_support::device_actor(
+            login,
+            owner.organism_id.unwrap(),
+            roles,
+        );
         assert_stage_eight_actor_reads(
             &env.dbx,
             &env.file_registry_db,
@@ -332,6 +352,7 @@ async fn stage_eight_read_service_authorizes_and_composes_roots_browse_search()
 
     let admin = crate::devices::access::test_support::device_actor(
         "stage-eight-admin",
+        owner.organism_id.unwrap(),
         &[ROLE_ADMIN],
     );
     assert_stage_eight_browse_composition(
@@ -365,15 +386,7 @@ async fn stage_eight_read_service_authorizes_and_composes_roots_browse_search()
 async fn stage_eight_read_service_short_circuits_and_preserves_safe_errors() {
     let (env, _guard) = cleanup_locked().await.unwrap();
     let timestamp = stage_eight_timestamp();
-    let owner = mk_login(
-        &env.dbx,
-        login::ActiveModel {
-            login: Set(format!("filesystem-stage-eight-{}", Uuid::now_v7())),
-            ..Default::default()
-        },
-    )
-    .await
-    .unwrap();
+    let owner = insert_device_owner(&env.dbx, "filesystem-stage-eight").await;
     let tree =
         insert_stage_two_tree(env.file_registry_db.connection(), timestamp)
             .await;
@@ -383,7 +396,7 @@ async fn stage_eight_read_service_short_circuits_and_preserves_safe_errors() {
     insert_device(
         &env.dbx,
         tree.device_id,
-        &owner.login,
+        &owner,
         "stage-eight-visible",
         timestamp,
     )
@@ -391,7 +404,7 @@ async fn stage_eight_read_service_short_circuits_and_preserves_safe_errors() {
     insert_device(
         &env.dbx,
         tree.other_device_id,
-        &owner.login,
+        &owner,
         "stage-eight-other",
         timestamp,
     )
@@ -399,6 +412,7 @@ async fn stage_eight_read_service_short_circuits_and_preserves_safe_errors() {
 
     let actor = crate::devices::access::test_support::device_actor(
         "stage-eight-admin",
+        owner.organism_id.unwrap(),
         &[ROLE_ADMIN],
     );
     assert_stage_eight_live_scope_errors(
@@ -413,6 +427,7 @@ async fn stage_eight_read_service_short_circuits_and_preserves_safe_errors() {
     outage_db.connection().clone().close().await.unwrap();
     let unauthorized = crate::devices::access::test_support::device_actor(
         "stage-eight-none",
+        owner.organism_id.unwrap(),
         &[],
     );
     assert_stage_eight_outage_short_circuits(
@@ -3300,26 +3315,19 @@ async fn stage_ten_registry_snapshot(
 async fn stage_ten_sync_service_returns_ordered_partial_results() {
     let (env, _guard) = cleanup_locked().await.unwrap();
     let timestamp = stage_eight_timestamp();
-    let owner = mk_login(
-        &env.dbx,
-        login::ActiveModel {
-            login: Set(format!("filesystem-stage-ten-{}", Uuid::now_v7())),
-            ..Default::default()
-        },
-    )
-    .await
-    .unwrap();
+    let owner = insert_device_owner(&env.dbx, "filesystem-stage-ten").await;
     let device_id = Uuid::now_v7();
     insert_device(
         &env.dbx,
         device_id,
-        &owner.login,
+        &owner,
         "stage-ten-ordered-results",
         timestamp,
     )
     .await;
     let actor = crate::devices::access::test_support::device_actor(
         &owner.login,
+        owner.organism_id.unwrap(),
         &[ROLE_DEVICE_SOURCE],
     );
     let result = FileMetadataService::sync(
@@ -3411,21 +3419,13 @@ async fn stage_ten_sync_service_rejects_duplicates_and_isolates_item_failures()
 {
     let (env, _guard) = cleanup_locked().await.unwrap();
     let timestamp = stage_eight_timestamp();
-    let owner = mk_login(
-        &env.dbx,
-        login::ActiveModel {
-            login: Set(format!("filesystem-stage-ten-{}", Uuid::now_v7())),
-            ..Default::default()
-        },
-    )
-    .await
-    .unwrap();
+    let owner = insert_device_owner(&env.dbx, "filesystem-stage-ten").await;
     let target_device_id = Uuid::now_v7();
     let other_device_id = Uuid::now_v7();
     insert_device(
         &env.dbx,
         target_device_id,
-        &owner.login,
+        &owner,
         "stage-ten-target",
         timestamp,
     )
@@ -3433,13 +3433,14 @@ async fn stage_ten_sync_service_rejects_duplicates_and_isolates_item_failures()
     insert_device(
         &env.dbx,
         other_device_id,
-        &owner.login,
+        &owner,
         "stage-ten-other",
         timestamp,
     )
     .await;
     let actor = crate::devices::access::test_support::device_actor(
         &owner.login,
+        owner.organism_id.unwrap(),
         &[ROLE_DEVICE_SOURCE],
     );
     let repository = FilesystemRepository::new(&env.file_registry_db);
@@ -3715,29 +3716,15 @@ async fn stage_ten_sync_service_rejects_duplicates_and_isolates_item_failures()
 async fn stage_ten_sync_service_gates_registry_writes() {
     let (env, _guard) = cleanup_locked().await.unwrap();
     let timestamp = stage_eight_timestamp();
-    let owner = mk_login(
-        &env.dbx,
-        login::ActiveModel {
-            login: Set(format!("filesystem-stage-ten-{}", Uuid::now_v7())),
-            ..Default::default()
-        },
-    )
-    .await
-    .unwrap();
+    let owner = insert_device_owner(&env.dbx, "filesystem-stage-ten").await;
     let device_id = Uuid::now_v7();
     let archived_device_id = Uuid::now_v7();
-    insert_device(
-        &env.dbx,
-        device_id,
-        &owner.login,
-        "stage-ten-active",
-        timestamp,
-    )
-    .await;
+    insert_device(&env.dbx, device_id, &owner, "stage-ten-active", timestamp)
+        .await;
     insert_device(
         &env.dbx,
         archived_device_id,
-        &owner.login,
+        &owner,
         "stage-ten-archived",
         timestamp,
     )
@@ -3745,10 +3732,12 @@ async fn stage_ten_sync_service_gates_registry_writes() {
     archive_device(&env.dbx, archived_device_id, timestamp).await;
     let source = crate::devices::access::test_support::device_actor(
         &owner.login,
+        owner.organism_id.unwrap(),
         &[ROLE_DEVICE_SOURCE],
     );
     let unauthorized = crate::devices::access::test_support::device_actor(
         "stage-ten-none",
+        owner.organism_id.unwrap(),
         &[],
     );
     let outage_db = connect_runtime(&env.config, Mode::Test).await.unwrap();
@@ -3848,26 +3837,19 @@ async fn stage_ten_sync_service_gates_registry_writes() {
 async fn stage_ten_sync_service_main_db_outage_short_circuits_registry() {
     let (env, _guard) = cleanup_locked().await.unwrap();
     let timestamp = stage_eight_timestamp();
-    let owner = mk_login(
-        &env.dbx,
-        login::ActiveModel {
-            login: Set(format!("filesystem-stage-ten-{}", Uuid::now_v7())),
-            ..Default::default()
-        },
-    )
-    .await
-    .unwrap();
+    let owner = insert_device_owner(&env.dbx, "filesystem-stage-ten").await;
     let device_id = Uuid::now_v7();
     insert_device(
         &env.dbx,
         device_id,
-        &owner.login,
+        &owner,
         "stage-ten-main-outage",
         timestamp,
     )
     .await;
     let source = crate::devices::access::test_support::device_actor(
         &owner.login,
+        owner.organism_id.unwrap(),
         &[ROLE_DEVICE_SOURCE],
     );
     let outage_main =

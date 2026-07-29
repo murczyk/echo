@@ -2,6 +2,7 @@ use super::configure_routes;
 use crate::config::{
     IDENTITY_DURATION_HOURS, ROLE_DEVICE_ANALYST, ROLE_DEVICE_SOURCE,
 };
+use crate::devices::schema_tests::device_active_model;
 use crate::entities::{login, organism, system_settings};
 use crate::file_registry::entities::file_entry;
 use crate::functest::tests::{cleanup_locked, mk_login, mk_organism};
@@ -55,6 +56,37 @@ async fn target_api_smoke_covers_all_routes_and_boundary_precedence() {
     )
     .await
     .unwrap();
+    let login_id = login.id;
+    let other_organism = mk_organism(
+        &env.dbx,
+        organism::ActiveModel {
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let other_login = mk_login(
+        &env.dbx,
+        login::ActiveModel {
+            login: Set(format!("device-api-other-{}", Uuid::now_v7())),
+            organism_id: Set(Some(other_organism.id)),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let other_device = device_active_model(
+        &other_login.login,
+        other_organism.id,
+        "Other organism API source",
+        None,
+        json!({}),
+        false,
+        None,
+    )
+    .insert(&env.dbx)
+    .await
+    .unwrap();
 
     let config = crate::config::read_config(Mode::Test).unwrap();
     let redis_session_store =
@@ -80,7 +112,7 @@ async fn target_api_smoke_covers_all_routes_and_boundary_precedence() {
     let login_response = test::call_service(
         &app,
         test::TestRequest::post()
-            .uri(&format!("/test/login/{login_name}"))
+            .uri(&format!("/test/login/{login_id}"))
             .to_request(),
     )
     .await;
@@ -206,6 +238,10 @@ async fn target_api_smoke_covers_all_routes_and_boundary_precedence() {
     assert_eq!(response.status(), StatusCode::OK);
     let detail: Value = test::read_body_json(response).await;
     assert_eq!(detail["name"], "API analytical name");
+
+    let response =
+        post_json!("/api/device/detail", json!({"device_id": other_device.id}));
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
 
     let response = post_json!(
         "/api/device/files/sync",
@@ -414,6 +450,51 @@ async fn target_api_smoke_covers_all_routes_and_boundary_precedence() {
     assert_eq!(journal["entries"][0]["has_content"], true);
     assert!(journal["entries"][0].get("content_path").is_none());
     assert_eq!(journal["next_cursor"], Value::Null);
+
+    let child_organism = mk_organism(
+        &env.dbx,
+        organism::ActiveModel {
+            parent_id: Set(Some(organism.id)),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let child_login = mk_login(
+        &env.dbx,
+        login::ActiveModel {
+            login: Set(format!("device-api-child-{}", Uuid::now_v7())),
+            organism_id: Set(Some(child_organism.id)),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let child_device = device_active_model(
+        &child_login.login,
+        child_organism.id,
+        "Child organism API source",
+        None,
+        json!({}),
+        false,
+        None,
+    )
+    .insert(&env.dbx)
+    .await
+    .unwrap();
+
+    let response =
+        post_json!("/api/device/detail", json!({"device_id": child_device.id}));
+    assert_eq!(response.status(), StatusCode::OK);
+    let response = post_json!("/api/device/list", json!({}));
+    assert_eq!(response.status(), StatusCode::OK);
+    let list: Value = test::read_body_json(response).await;
+    assert_eq!(list["total"], 2);
+    assert!(list["list"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|device| device["id"] == child_device.id.to_string()));
 
     let mut login = login.into_active_model();
     login.roles = Set(json!([ROLE_DEVICE_SOURCE]));
