@@ -1246,7 +1246,7 @@ fn postgres_tags_query_filters_inbox_ids_before_joining_result_tags() {
     assert_eq!(
         sql.matches("\"sigint_inbox_item_tag\".\"model\" IS NULL")
             .count(),
-        1
+        0
     );
 }
 
@@ -2236,7 +2236,7 @@ async fn rer_analysis_network_aor_match_does_not_show_group_option() {
 
 #[tokio::test]
 #[serial]
-async fn rer_analysis_without_network_filters_remove_networked_values() {
+async fn rer_analysis_without_network_filters_messages_but_not_network_facet() {
     let fixture = mk_aor_filter_fixture().await.unwrap();
     let db = &fixture.env.dbx;
 
@@ -2290,6 +2290,14 @@ async fn rer_analysis_without_network_filters_remove_networked_values() {
 
     let mut req = analysis_stats_req_for_aor_fixture(&fixture);
     req.selected_aors = Some(vec![fixture.aor_a.id]);
+    let network_counts = fetch_network_counts_for_req(&fixture.env, &req)
+        .await
+        .unwrap();
+    assert_eq!(
+        network_counts,
+        BTreeMap::from([(fixture.network_k.network.id, 1)])
+    );
+
     req.without_network = Some(true);
 
     assert_eq!(
@@ -2302,10 +2310,12 @@ async fn rer_analysis_without_network_filters_remove_networked_values() {
         fetch_freq_counts_for_req(&fixture.env, &req).await.unwrap(),
         BTreeMap::from([("906.1".to_string(), 1)])
     );
-    assert!(fetch_network_counts_for_req(&fixture.env, &req)
-        .await
-        .unwrap()
-        .is_empty());
+    assert_eq!(
+        fetch_network_counts_for_req(&fixture.env, &req)
+            .await
+            .unwrap(),
+        network_counts
+    );
 
     req.selected_networks = Some(vec![fixture.network_k.network.id]);
     assert_eq!(
@@ -2322,10 +2332,12 @@ async fn rer_analysis_without_network_filters_remove_networked_values() {
         .await
         .unwrap()
         .is_empty());
-    assert!(fetch_network_counts_for_req(&fixture.env, &req)
-        .await
-        .unwrap()
-        .is_empty());
+    assert_eq!(
+        fetch_network_counts_for_req(&fixture.env, &req)
+            .await
+            .unwrap(),
+        network_counts
+    );
 }
 
 #[tokio::test]
@@ -2536,8 +2548,7 @@ async fn rer_analysis_aor_dropdown_includes_group_and_network_aors() {
 
 #[tokio::test]
 #[serial]
-async fn rer_analysis_peleng_locations_filter_does_not_leak_unrelated_locations(
-) {
+async fn rer_analysis_peleng_location_filter_does_not_narrow_location_facet() {
     let fixture = mk_rer_analysis_fixture().await.unwrap();
     let db = &fixture.env.dbx;
 
@@ -2566,6 +2577,11 @@ async fn rer_analysis_peleng_locations_filter_does_not_leak_unrelated_locations(
     .unwrap();
 
     let mut req = analysis_stats_req0(&fixture);
+    let location_counts = fetch_location_counts_for_req(&fixture.env, &req)
+        .await
+        .unwrap();
+    assert!(location_counts.contains_key("Unrelated Town"));
+
     req.selected_locations = Some(vec!["Peleng Town".to_string()]);
     assert_eq!(
         fetch_selected_count_for_req(&fixture.env, &req)
@@ -2573,10 +2589,12 @@ async fn rer_analysis_peleng_locations_filter_does_not_leak_unrelated_locations(
             .unwrap(),
         0
     );
-    assert!(fetch_location_counts_for_req(&fixture.env, &req)
-        .await
-        .unwrap()
-        .is_empty());
+    assert_eq!(
+        fetch_location_counts_for_req(&fixture.env, &req)
+            .await
+            .unwrap(),
+        location_counts
+    );
 
     req.include_peleng_locations = Some(true);
 
@@ -2586,15 +2604,17 @@ async fn rer_analysis_peleng_locations_filter_does_not_leak_unrelated_locations(
             .unwrap(),
         1
     );
-    let location_counts = fetch_location_counts_for_req(&fixture.env, &req)
-        .await
-        .unwrap();
-    assert!(!location_counts.contains_key("Unrelated Town"));
+    assert_eq!(
+        fetch_location_counts_for_req(&fixture.env, &req)
+            .await
+            .unwrap(),
+        location_counts
+    );
 }
 
 #[tokio::test]
 #[serial]
-async fn rer_analysis_location_filter_recalculates_values() {
+async fn rer_analysis_location_filter_does_not_narrow_location_facet() {
     let fixture = mk_rer_analysis_fixture().await.unwrap();
     let db = &fixture.env.dbx;
     let location_a = crate::location::utils::format_location("Location A");
@@ -2626,6 +2646,10 @@ async fn rer_analysis_location_filter_recalculates_values() {
     .unwrap();
 
     let mut req = analysis_stats_req0(&fixture);
+    let location_counts = fetch_location_counts_for_req(&fixture.env, &req)
+        .await
+        .unwrap();
+
     req.selected_locations = Some(vec!["Location A".to_string()]);
 
     assert_eq!(
@@ -2642,7 +2666,7 @@ async fn rer_analysis_location_filter_recalculates_values() {
         fetch_location_counts_for_req(&fixture.env, &req)
             .await
             .unwrap(),
-        BTreeMap::from([("LOCATION A".to_string(), 1)])
+        location_counts
     );
 }
 
