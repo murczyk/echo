@@ -278,6 +278,15 @@ pub async fn bl_update_network_callsign(
             ensure_callsign(req, user_id, txn, &network_callsign, unit_id)
                 .await
                 .c(h!())?;
+
+        let network = find_network(txn, network_callsign.sigint_network_id)
+            .await
+            .c(h!())?;
+        let mut network = network.into_active_model();
+        network.updated_at = Set(Utc::now().naive_utc());
+        network.updated_by_login_id = Set(Some(*user_id));
+        network.update(txn).await.c(h!())?;
+
         return Ok(callsign_id);
     }
 
