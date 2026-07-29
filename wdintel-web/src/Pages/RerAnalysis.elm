@@ -21,6 +21,7 @@ import List.Extra as ListX
 import Page exposing (Page)
 import PagePorts.RerAnalysisPorts as Ports
 import Pages_.RerAnalysis.Constants exposing (..)
+import Pages_.RerAnalysis.EventRefresh as EventRefresh
 import Pages_.RerAnalysis.FiltersReloading as FiltersReloading exposing (FilterDataState(..), FilterInteraction(..), invalidateFiltersState)
 import Pages_.RerAnalysis.MainBody
 import Pages_.RerAnalysis.Model exposing (..)
@@ -1214,17 +1215,11 @@ update user shared route msg model =
                     ( m2, E.none )
 
         InboxEvents events ->
-            events
-                |> List.filterMap
-                    (\event ->
-                        case event.eventType of
-                            B.EtInboxChanged messageId ->
-                                Just messageId
-
-                            _ ->
-                                Nothing
-                    )
-                |> ListX.unique
+            EventRefresh.messageIdsToRefresh
+                { messagesRendered = not model.unfoldMapBlock
+                , renderedMessageIds = List.map Tuple.first model.messages
+                }
+                events
                 |> (\ids ->
                         if List.isEmpty ids then
                             ( model, E.none )
