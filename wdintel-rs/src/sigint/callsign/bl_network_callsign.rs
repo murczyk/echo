@@ -561,7 +561,7 @@ async fn link_network_callsign(
     // Keep network callsign in sync with known callsign
     let mut network_callsign_record = network_callsign.into_active_model();
     network_callsign_record.sigint_callsign =
-        Set(known_callsign.callsign.clone());
+        Set(known_callsign.callsign.trim().to_lowercase());
     network_callsign_record.sigint_callsign_id = Set(Some(known_callsign.id));
     network_callsign_record.main_radio_station = Set(req.main_radio_station);
     network_callsign_record.command_control = Set(req.command_control);
@@ -1371,9 +1371,7 @@ mod tests {
         );
     }
 
-    #[serial]
-    #[tokio::test]
-    async fn auto_link_preserves_catalog_metadata_and_clears_developing() {
+    async fn assert_auto_link_preserves_catalog(catalog_developing: bool) {
         let env = cleanup().await.unwrap();
         let login = find_test_login(&env.dbx).await.unwrap();
         let unit = mk_sigint_unit(
@@ -1403,7 +1401,7 @@ mod tests {
             deleted: Set(false),
             created_at: Set(Utc::now().naive_utc()),
             source_id: Set(None),
-            developing: Set(true),
+            developing: Set(catalog_developing),
             radio_freq: Set("123.45".to_string()),
             sigint_origin_id: Set(None),
             original_id: Set(None),
@@ -1475,6 +1473,7 @@ mod tests {
         assert_eq!(known_callsign_after.full_name, "catalog full name");
         assert_eq!(known_callsign_after.radio_freq, "123.45");
         assert!(!known_callsign_after.developing);
+        assert_eq!(network_callsign_after.sigint_callsign, "сокіл-1");
         assert_eq!(
             network_callsign_after.sigint_callsign_id,
             Some(known_callsign.id)
@@ -1482,6 +1481,18 @@ mod tests {
         assert!(network_callsign_after.main_radio_station);
 
         txn.rollback().await.unwrap();
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn auto_link_preserves_catalog_metadata_and_clears_developing() {
+        assert_auto_link_preserves_catalog(true).await;
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn auto_link_normalizes_confirmed_mixed_case_catalog_callsign() {
+        assert_auto_link_preserves_catalog(false).await;
     }
 
     #[test]
