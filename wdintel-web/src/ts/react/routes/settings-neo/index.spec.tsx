@@ -211,6 +211,8 @@ vi.mock('../../services/api/user-settings', () => ({
     dutyAudioTranscriptionCollapsed: false,
     analysisAudioTranscriptionCollapsed: false,
     showAnalysisCallsignAddForm: false,
+    showClassicDuty: false,
+    showClassicAnalysis: false,
   }),
   saveUserSettings: saveUserDutySettings,
 }));
@@ -346,6 +348,8 @@ describe('SettingsNeoPage', () => {
       dutyAudioTranscriptionCollapsed: false,
       analysisAudioTranscriptionCollapsed: false,
       showAnalysisCallsignAddForm: false,
+      showClassicDuty: false,
+      showClassicAnalysis: false,
     });
 
     await act(async () => {
@@ -385,6 +389,8 @@ describe('SettingsNeoPage', () => {
       dutyAudioTranscriptionCollapsed: false,
       analysisAudioTranscriptionCollapsed: false,
       showAnalysisCallsignAddForm: false,
+      showClassicDuty: false,
+      showClassicAnalysis: false,
     });
   });
 
@@ -414,6 +420,8 @@ describe('SettingsNeoPage', () => {
       dutyAudioTranscriptionCollapsed: false,
       analysisAudioTranscriptionCollapsed: false,
       showAnalysisCallsignAddForm: true,
+      showClassicDuty: false,
+      showClassicAnalysis: false,
     });
   });
 
@@ -443,6 +451,8 @@ describe('SettingsNeoPage', () => {
       dutyAudioTranscriptionCollapsed: true,
       analysisAudioTranscriptionCollapsed: false,
       showAnalysisCallsignAddForm: false,
+      showClassicDuty: false,
+      showClassicAnalysis: false,
     });
 
     saveUserDutySettings.mockClear();
@@ -469,6 +479,8 @@ describe('SettingsNeoPage', () => {
       dutyAudioTranscriptionCollapsed: true,
       analysisAudioTranscriptionCollapsed: true,
       showAnalysisCallsignAddForm: false,
+      showClassicDuty: false,
+      showClassicAnalysis: false,
     });
   });
 

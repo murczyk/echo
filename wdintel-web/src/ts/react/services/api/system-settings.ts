@@ -15,6 +15,8 @@ type SystemSettingsItemRaw = {
   short_url_enabled: boolean;
   support_non_rer_interceptions?: boolean;
   default_neo_analysis?: boolean;
+  show_classic_duty?: boolean;
+  show_classic_analysis?: boolean;
   autofix_echoim_missing_messages?: boolean;
   devices_section_enabled?: boolean;
   sigint_comment_parsing_enabled?: boolean;
@@ -42,6 +44,8 @@ type SystemSettingsCurrentRspRaw = {
   short_url_enabled: boolean;
   support_non_rer_interceptions?: boolean;
   default_neo_analysis?: boolean;
+  show_classic_duty?: boolean;
+  show_classic_analysis?: boolean;
   autofix_echoim_missing_messages?: boolean;
   devices_section_enabled?: boolean;
   sigint_comment_parsing_enabled?: boolean;
@@ -71,6 +75,8 @@ type CreateSystemSettingsReqRaw = {
   short_url_enabled: boolean;
   support_non_rer_interceptions: boolean;
   default_neo_analysis: boolean;
+  show_classic_duty: boolean;
+  show_classic_analysis: boolean;
   autofix_echoim_missing_messages: boolean;
   devices_section_enabled: boolean;
   sigint_comment_parsing_enabled: boolean;
@@ -106,6 +112,8 @@ export type SystemSettingsItem = {
   rerShortUrlEnabled: boolean;
   supportNonRerInterceptions: boolean;
   defaultNeoAnalysis: boolean;
+  showClassicDuty: boolean;
+  showClassicAnalysis: boolean;
   autofixEchoimMissingMessages: boolean;
   devicesSectionEnabled: boolean;
   sigintCommentParsingEnabled: boolean;
@@ -133,6 +141,8 @@ export type SystemSettingsCurrent = {
   rerShortUrlEnabled: boolean;
   supportNonRerInterceptions: boolean;
   defaultNeoAnalysis: boolean;
+  showClassicDuty: boolean;
+  showClassicAnalysis: boolean;
   autofixEchoimMissingMessages: boolean;
   devicesSectionEnabled: boolean;
   sigintCommentParsingEnabled: boolean;
@@ -158,6 +168,8 @@ export type CreateSystemSettingsInput = {
   rerDutyShortUrl: boolean;
   supportNonRerInterceptions: boolean;
   defaultNeoAnalysis: boolean;
+  showClassicDuty: boolean;
+  showClassicAnalysis: boolean;
   autofixEchoimMissingMessages: boolean;
   devicesSectionEnabled: boolean;
   sigintCommentParsingEnabled: boolean;
@@ -190,6 +202,8 @@ function normalizeItem(raw: SystemSettingsItemRaw): SystemSettingsItem {
     rerShortUrlEnabled: raw.short_url_enabled,
     supportNonRerInterceptions: raw.support_non_rer_interceptions ?? false,
     defaultNeoAnalysis: raw.default_neo_analysis ?? false,
+    showClassicDuty: raw.show_classic_duty ?? true,
+    showClassicAnalysis: raw.show_classic_analysis ?? true,
     autofixEchoimMissingMessages: raw.autofix_echoim_missing_messages ?? false,
     devicesSectionEnabled: raw.devices_section_enabled ?? false,
     sigintCommentParsingEnabled: raw.sigint_comment_parsing_enabled ?? false,
@@ -219,6 +233,8 @@ function normalizeCurrent(raw: SystemSettingsCurrentRspRaw): SystemSettingsCurre
     rerShortUrlEnabled: raw.short_url_enabled,
     supportNonRerInterceptions: raw.support_non_rer_interceptions ?? false,
     defaultNeoAnalysis: raw.default_neo_analysis ?? false,
+    showClassicDuty: raw.show_classic_duty ?? true,
+    showClassicAnalysis: raw.show_classic_analysis ?? true,
     autofixEchoimMissingMessages: raw.autofix_echoim_missing_messages ?? false,
     devicesSectionEnabled: raw.devices_section_enabled ?? false,
     sigintCommentParsingEnabled: raw.sigint_comment_parsing_enabled ?? false,
@@ -253,6 +269,8 @@ export async function createSystemSettings(
     short_url_enabled: input.rerDutyShortUrl,
     support_non_rer_interceptions: input.supportNonRerInterceptions,
     default_neo_analysis: input.defaultNeoAnalysis,
+    show_classic_duty: input.showClassicDuty,
+    show_classic_analysis: input.showClassicAnalysis,
     autofix_echoim_missing_messages: input.autofixEchoimMissingMessages,
     devices_section_enabled: input.devicesSectionEnabled,
     sigint_comment_parsing_enabled: input.sigintCommentParsingEnabled,

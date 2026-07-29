@@ -270,6 +270,8 @@ view user activeName shared route { toContentMsg, model, content } =
                                         Encode.object
                                             [ ( "defaultNeoAnalysis", Encode.bool settings.defaultNeoAnalysis )
                                             , ( "enableAudioTranscription", Encode.bool settings.enableAudioTranscription )
+                                            , ( "showClassicDuty", Encode.bool settings.showClassicDuty )
+                                            , ( "showClassicAnalysis", Encode.bool settings.showClassicAnalysis )
                                             ]
                                     Nothing ->
                                         Encode.null

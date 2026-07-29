@@ -44,6 +44,8 @@ pub struct Model {
     pub enable_audio_transcription: bool,
     pub report_chunking_hours: i32,
     pub limit_big_reports: bool,
+    pub show_classic_duty: bool,
+    pub show_classic_analysis: bool,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

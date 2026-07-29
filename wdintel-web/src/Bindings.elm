@@ -8654,6 +8654,8 @@ type alias SystemSettingsCurrentRsp =
     , reportChunkingHours : Int
     , limitBigReports : Bool
     , enableAudioTranscription : Bool
+    , showClassicDuty : Bool
+    , showClassicAnalysis : Bool
     }
 
 
@@ -8683,6 +8685,8 @@ systemSettingsCurrentRspEncoder struct =
         , ( "report_chunking_hours", (Json.Encode.int) struct.reportChunkingHours )
         , ( "limit_big_reports", (Json.Encode.bool) struct.limitBigReports )
         , ( "enable_audio_transcription", (Json.Encode.bool) struct.enableAudioTranscription )
+        , ( "show_classic_duty", (Json.Encode.bool) struct.showClassicDuty )
+        , ( "show_classic_analysis", (Json.Encode.bool) struct.showClassicAnalysis )
         ]
 
 
@@ -8715,6 +8719,8 @@ type alias SystemSettingsItem =
     , reportChunkingHours : Int
     , limitBigReports : Bool
     , enableAudioTranscription : Bool
+    , showClassicDuty : Bool
+    , showClassicAnalysis : Bool
     }
 
 
@@ -8749,6 +8755,8 @@ systemSettingsItemEncoder struct =
         , ( "report_chunking_hours", (Json.Encode.int) struct.reportChunkingHours )
         , ( "limit_big_reports", (Json.Encode.bool) struct.limitBigReports )
         , ( "enable_audio_transcription", (Json.Encode.bool) struct.enableAudioTranscription )
+        , ( "show_classic_duty", (Json.Encode.bool) struct.showClassicDuty )
+        , ( "show_classic_analysis", (Json.Encode.bool) struct.showClassicAnalysis )
         ]
 
 
@@ -8788,6 +8796,8 @@ type alias CreateSystemSettingsReq =
     , reportChunkingHours : Int
     , limitBigReports : Bool
     , enableAudioTranscription : Bool
+    , showClassicDuty : Bool
+    , showClassicAnalysis : Bool
     }
 
 
@@ -8817,6 +8827,8 @@ createSystemSettingsReqEncoder struct =
         , ( "report_chunking_hours", (Json.Encode.int) struct.reportChunkingHours )
         , ( "limit_big_reports", (Json.Encode.bool) struct.limitBigReports )
         , ( "enable_audio_transcription", (Json.Encode.bool) struct.enableAudioTranscription )
+        , ( "show_classic_duty", (Json.Encode.bool) struct.showClassicDuty )
+        , ( "show_classic_analysis", (Json.Encode.bool) struct.showClassicAnalysis )
         ]
 
 
@@ -15051,6 +15063,8 @@ systemSettingsCurrentRspDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "report_chunking_hours" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "limit_big_reports" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "enable_audio_transcription" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "show_classic_duty" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "show_classic_analysis" (Json.Decode.bool)))
 
 
 systemSettingsItemDecoder : Json.Decode.Decoder SystemSettingsItem
@@ -15084,6 +15098,8 @@ systemSettingsItemDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "report_chunking_hours" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "limit_big_reports" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "enable_audio_transcription" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "show_classic_duty" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "show_classic_analysis" (Json.Decode.bool)))
 
 
 systemSettingsListRspDecoder : Json.Decode.Decoder SystemSettingsListRsp
@@ -15118,6 +15134,8 @@ createSystemSettingsReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "report_chunking_hours" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "limit_big_reports" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "enable_audio_transcription" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "show_classic_duty" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "show_classic_analysis" (Json.Decode.bool)))
 
 
 activateSystemSettingsReqDecoder : Json.Decode.Decoder ActivateSystemSettingsReq
@@ -15859,6 +15877,8 @@ type alias UserDutySettingsDto =
     , dutyAudioTranscriptionCollapsed : Bool
     , analysisAudioTranscriptionCollapsed : Bool
     , showAnalysisCallsignAddForm : Bool
+    , showClassicDuty : Bool
+    , showClassicAnalysis : Bool
     }
 
 
@@ -15871,3 +15891,5 @@ userDutySettingsDtoDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "dutyAudioTranscriptionCollapsed" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "analysisAudioTranscriptionCollapsed" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "showAnalysisCallsignAddForm" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "showClassicDuty" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "showClassicAnalysis" (Json.Decode.bool)))

@@ -28,6 +28,8 @@ pub struct SystemSettingsCurrentRsp {
     pub report_chunking_hours: i64,
     pub limit_big_reports: bool,
     pub enable_audio_transcription: bool,
+    pub show_classic_duty: bool,
+    pub show_classic_analysis: bool,
 }
 
 #[derive(
@@ -62,6 +64,8 @@ pub struct SystemSettingsItem {
     pub report_chunking_hours: i64,
     pub limit_big_reports: bool,
     pub enable_audio_transcription: bool,
+    pub show_classic_duty: bool,
+    pub show_classic_analysis: bool,
 }
 
 #[derive(
@@ -110,6 +114,14 @@ pub struct CreateSystemSettingsReq {
     pub limit_big_reports: bool,
     #[serde(default)]
     pub enable_audio_transcription: bool,
+    #[serde(default = "default_true")]
+    pub show_classic_duty: bool,
+    #[serde(default = "default_true")]
+    pub show_classic_analysis: bool,
+}
+
+fn default_true() -> bool {
+    true
 }
 
 fn default_sigint_comment_parsing_enabled() -> bool {

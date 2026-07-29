@@ -19,6 +19,8 @@ pub struct Model {
     pub duty_audio_transcription_collapsed: bool,
     pub analysis_audio_transcription_collapsed: bool,
     pub show_analysis_callsign_add_form: bool,
+    pub show_classic_duty: bool,
+    pub show_classic_analysis: bool,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

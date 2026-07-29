@@ -7,9 +7,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AppNavbar } from './AppNavbar';
 
 const currentSettingsMock = vi.hoisted(() => vi.fn());
+const fetchUserSettingsMock = vi.hoisted(() => vi.fn());
 
 vi.mock('../../services/api/system-settings', () => ({
   currentSystemSettings: currentSettingsMock,
+}));
+vi.mock('../../services/api/user-settings', () => ({
+  USER_SETTINGS_UPDATED_EVENT: 'user-settings-updated',
+  fetchUserSettings: fetchUserSettingsMock,
 }));
 
 type Rendered = {
@@ -23,6 +28,12 @@ beforeEach(() => {
   currentSettingsMock.mockReset().mockResolvedValue({
     defaultNeoAnalysis: false,
     enableAudioTranscription: false,
+    showClassicDuty: true,
+    showClassicAnalysis: true,
+  });
+  fetchUserSettingsMock.mockReset().mockResolvedValue({
+    showClassicDuty: false,
+    showClassicAnalysis: false,
   });
 });
 
@@ -101,6 +112,31 @@ describe('AppNavbar', () => {
     expect(content).toContain('Конвертери');
     // Admin should not be present
     expect(content).not.toContain('Адмін');
+  });
+
+  it('hides globally disabled classic menus and applies the user override', async () => {
+    currentSettingsMock.mockResolvedValue({
+      defaultNeoAnalysis: false,
+      enableAudioTranscription: false,
+      showClassicDuty: false,
+      showClassicAnalysis: false,
+    });
+    fetchUserSettingsMock.mockResolvedValue({
+      showClassicDuty: true,
+      showClassicAnalysis: false,
+    });
+
+    const { container } = renderComponent({
+      ...defaultProps,
+      user: { ...defaultProps.user, roles: ['Rer'] },
+    });
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(container.querySelector('a[href="/rer-duty"]')).not.toBeNull();
+    expect(container.querySelector('a[href="/rer-analysis"]')).toBeNull();
   });
 
   it('renders Admin menu when user has Admin role', () => {

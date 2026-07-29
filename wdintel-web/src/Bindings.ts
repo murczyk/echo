@@ -3345,6 +3345,8 @@ export type SystemSettingsCurrentRsp = {
   reportChunkingHours: number;
   limitBigReports: boolean;
   enableAudioTranscription: boolean;
+  showClassicDuty: boolean;
+  showClassicAnalysis: boolean;
 };
 
 export type SystemSettingsItem = {
@@ -3376,6 +3378,8 @@ export type SystemSettingsItem = {
   reportChunkingHours: number;
   limitBigReports: boolean;
   enableAudioTranscription: boolean;
+  showClassicDuty: boolean;
+  showClassicAnalysis: boolean;
 };
 
 export type SystemSettingsListRsp = {
@@ -3406,6 +3410,8 @@ export type CreateSystemSettingsReq = {
   reportChunkingHours: number;
   limitBigReports: boolean;
   enableAudioTranscription: boolean;
+  showClassicDuty: boolean;
+  showClassicAnalysis: boolean;
 };
 
 export type ActivateSystemSettingsReq = {
@@ -3882,5 +3888,7 @@ export type UserDutySettingsDto = {
   dutyAudioTranscriptionCollapsed: boolean;
   analysisAudioTranscriptionCollapsed: boolean;
   showAnalysisCallsignAddForm: boolean;
+  showClassicDuty: boolean;
+  showClassicAnalysis: boolean;
 };
 

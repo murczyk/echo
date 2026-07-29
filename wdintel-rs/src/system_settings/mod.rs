@@ -102,6 +102,8 @@ fn map_system_settings_item(
         report_chunking_hours: i64::from(settings.report_chunking_hours),
         limit_big_reports: settings.limit_big_reports,
         enable_audio_transcription: settings.enable_audio_transcription,
+        show_classic_duty: settings.show_classic_duty,
+        show_classic_analysis: settings.show_classic_analysis,
     })
 }
 
@@ -517,6 +519,8 @@ fn system_settings_active_model(
         short_url_enabled: Set(req.short_url_enabled),
         support_non_rer_interceptions: Set(req.support_non_rer_interceptions),
         default_neo_analysis: Set(req.default_neo_analysis),
+        show_classic_duty: Set(req.show_classic_duty),
+        show_classic_analysis: Set(req.show_classic_analysis),
         autofix_echoim_missing_messages: Set(
             req.autofix_echoim_missing_messages
         ),
@@ -678,6 +682,8 @@ pub async fn current_system_settings(
             report_chunking_hours: i64::from(settings.report_chunking_hours),
             limit_big_reports: settings.limit_big_reports,
             enable_audio_transcription: settings.enable_audio_transcription,
+            show_classic_duty: settings.show_classic_duty,
+            show_classic_analysis: settings.show_classic_analysis,
         },
         None => SystemSettingsCurrentRsp {
             id: None,
@@ -704,6 +710,8 @@ pub async fn current_system_settings(
                 crate::config::RER_REPORT_CHUNKING_HOURS_DEFAULT,
             limit_big_reports: false,
             enable_audio_transcription: false,
+            show_classic_duty: true,
+            show_classic_analysis: true,
         },
     }))
 }
@@ -1022,6 +1030,8 @@ mod tests {
                 crate::config::RER_REPORT_CHUNKING_HOURS_DEFAULT,
             limit_big_reports: false,
             enable_audio_transcription: false,
+            show_classic_duty: true,
+            show_classic_analysis: true,
         }
     }
 
@@ -1081,6 +1091,8 @@ mod tests {
             ),
             limit_big_reports: Set(false),
             enable_audio_transcription: Set(false),
+            show_classic_duty: Set(true),
+            show_classic_analysis: Set(true),
         }
         .insert(dbx)
         .await

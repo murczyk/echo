@@ -23,6 +23,8 @@ export type DutySettingsHook = DutySettingsValue & {
   setDutyAudioTranscriptionCollapsed: (value: boolean) => void;
   setAnalysisAudioTranscriptionCollapsed: (value: boolean) => void;
   setShowAnalysisCallsignAddForm: (value: boolean) => void;
+  setShowClassicDuty: (value: boolean) => void;
+  setShowClassicAnalysis: (value: boolean) => void;
   scheduleSave: (nextSettings: DutySettingsSaveRequest) => void;
 };
 
@@ -36,6 +38,8 @@ function normalizeDutySettings(
     dutyAudioTranscriptionCollapsed: settings?.dutyAudioTranscriptionCollapsed ?? false,
     analysisAudioTranscriptionCollapsed: settings?.analysisAudioTranscriptionCollapsed ?? false,
     showAnalysisCallsignAddForm: settings?.showAnalysisCallsignAddForm ?? false,
+    showClassicDuty: settings?.showClassicDuty ?? false,
+    showClassicAnalysis: settings?.showClassicAnalysis ?? false,
   };
 }
 
@@ -149,6 +153,10 @@ export function useDutySettings(): DutySettingsHook {
       setSettings((current) => ({ ...current, analysisAudioTranscriptionCollapsed: value })),
     setShowAnalysisCallsignAddForm: (value) =>
       setSettings((current) => ({ ...current, showAnalysisCallsignAddForm: value })),
+    setShowClassicDuty: (value) =>
+      setSettings((current) => ({ ...current, showClassicDuty: value })),
+    setShowClassicAnalysis: (value) =>
+      setSettings((current) => ({ ...current, showClassicAnalysis: value })),
     scheduleSave,
   };
 }

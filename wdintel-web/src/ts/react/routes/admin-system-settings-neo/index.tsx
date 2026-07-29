@@ -38,6 +38,8 @@ type SystemSettingsForm = {
   exactMatchOnlyDefault: boolean;
   supportNonRerInterceptions: boolean;
   defaultNeoAnalysis: boolean;
+  showClassicDuty: boolean;
+  showClassicAnalysis: boolean;
   dutyTestEnabled: boolean;
   dutyInsertHistoricalInterceptions: boolean;
   dutyTestSinceMs: number;
@@ -66,6 +68,8 @@ type SystemSettingsPayload = {
   exactMatchOnlyDefault: boolean;
   supportNonRerInterceptions: boolean;
   defaultNeoAnalysis: boolean;
+  showClassicDuty: boolean;
+  showClassicAnalysis: boolean;
   dutyTestEnabled: boolean;
   dutyInsertHistoricalInterceptions: boolean;
   dutyTestSinceMs: number;
@@ -92,6 +96,8 @@ const EMPTY_FORM: SystemSettingsForm = {
   exactMatchOnlyDefault: true,
   supportNonRerInterceptions: false,
   defaultNeoAnalysis: false,
+  showClassicDuty: true,
+  showClassicAnalysis: true,
   dutyTestEnabled: false,
   dutyInsertHistoricalInterceptions: false,
   dutyTestSinceMs: 0,
@@ -136,6 +142,8 @@ function formFromSettings(item: SystemSettingsItem | undefined): SystemSettingsF
     exactMatchOnlyDefault: item?.rerAnalysisUnitsExactMatchOnlyDefault ?? true,
     supportNonRerInterceptions: item?.supportNonRerInterceptions ?? false,
     defaultNeoAnalysis: item?.defaultNeoAnalysis ?? false,
+    showClassicDuty: item?.showClassicDuty ?? true,
+    showClassicAnalysis: item?.showClassicAnalysis ?? true,
     dutyTestEnabled: item?.rerDutyTestEnabled ?? false,
     dutyInsertHistoricalInterceptions: item?.rerDutyInsertHistoricalInterceptions ?? false,
     dutyTestSinceMs: item?.rerDutyTestSinceMs ?? 0,
@@ -164,6 +172,8 @@ function formsEqual(a: SystemSettingsForm, b: SystemSettingsForm): boolean {
     a.exactMatchOnlyDefault === b.exactMatchOnlyDefault &&
     a.supportNonRerInterceptions === b.supportNonRerInterceptions &&
     a.defaultNeoAnalysis === b.defaultNeoAnalysis &&
+    a.showClassicDuty === b.showClassicDuty &&
+    a.showClassicAnalysis === b.showClassicAnalysis &&
     a.dutyTestEnabled === b.dutyTestEnabled &&
     a.dutyInsertHistoricalInterceptions === b.dutyInsertHistoricalInterceptions &&
     a.dutyTestSinceMs === b.dutyTestSinceMs &&
@@ -244,6 +254,8 @@ function formToPayload(form: SystemSettingsForm): SystemSettingsPayload {
     exactMatchOnlyDefault: form.exactMatchOnlyDefault,
     supportNonRerInterceptions: form.supportNonRerInterceptions,
     defaultNeoAnalysis: form.defaultNeoAnalysis,
+    showClassicDuty: form.showClassicDuty,
+    showClassicAnalysis: form.showClassicAnalysis,
     dutyTestEnabled: form.dutyTestEnabled,
     dutyInsertHistoricalInterceptions: form.dutyInsertHistoricalInterceptions,
     dutyTestSinceMs: form.dutyTestSinceMs,
@@ -494,6 +506,32 @@ function DutySettingsSection({
 }) {
   return (
     <>
+      <Typography component="h2" variant="subtitle1" sx={{ m: 0, fontWeight: 600 }}>
+        Меню
+      </Typography>
+      <FormControlLabel
+        control={
+          <Switch
+            checked={form.showClassicDuty}
+            onChange={(_, checked) => {
+              patchForm({ showClassicDuty: checked });
+            }}
+          />
+        }
+        label="Показувати класичний оперативний"
+      />
+      <FormControlLabel
+        control={
+          <Switch
+            checked={form.showClassicAnalysis}
+            onChange={(_, checked) => {
+              patchForm({ showClassicAnalysis: checked });
+            }}
+          />
+        }
+        label="Показувати класичний аналіз"
+      />
+
       <Typography component="h2" variant="subtitle1" sx={{ m: 0, fontWeight: 600 }}>
         Тестові повідомлення
       </Typography>
@@ -784,6 +822,8 @@ export function AdminSystemSettingsNeoPage() {
         rerDutyShortUrl: payload.shortUrlEnabled,
         supportNonRerInterceptions: payload.supportNonRerInterceptions,
         defaultNeoAnalysis: payload.defaultNeoAnalysis,
+        showClassicDuty: payload.showClassicDuty,
+        showClassicAnalysis: payload.showClassicAnalysis,
         autofixEchoimMissingMessages: payload.autofixEchoimMissingMessages,
         devicesSectionEnabled: payload.devicesSectionEnabled,
         sigintCommentParsingEnabled: payload.sigintCommentParsingEnabled,

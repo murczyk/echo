@@ -324,6 +324,7 @@ mod m20260727_162911_add_analysis_callsign_form_setting;
 mod m20260728_084158_index_inbox_item_unit_datetime;
 mod m20260728_163700_add_echo_client_display_name;
 mod m20260728_203332_propagate_echo_client_display_name;
+mod m20260729_062653_add_classic_menu_visibility_settings;
 
 pub struct Migrator;
 
@@ -720,6 +721,9 @@ impl MigratorTrait for Migrator {
             Box::new(m20260728_163700_add_echo_client_display_name::Migration),
             Box::new(
                 m20260728_203332_propagate_echo_client_display_name::Migration,
+            ),
+            Box::new(
+                m20260729_062653_add_classic_menu_visibility_settings::Migration,
             ),
         ]
     }

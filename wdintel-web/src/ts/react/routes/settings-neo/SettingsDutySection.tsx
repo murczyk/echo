@@ -25,6 +25,9 @@ export type SettingsDutySectionProps = {
   audioTranscriptionCollapsed: boolean;
   onAudioTranscriptionCollapsedChange: (value: boolean) => void;
   showAudioTranscriptionSettings: boolean;
+  showClassicDutySetting: boolean;
+  showClassicDuty: boolean;
+  onShowClassicDutyChange: (value: boolean) => void;
 };
 
 export function SettingsDutySection({
@@ -38,6 +41,9 @@ export function SettingsDutySection({
   audioTranscriptionCollapsed,
   onAudioTranscriptionCollapsedChange,
   showAudioTranscriptionSettings,
+  showClassicDutySetting,
+  showClassicDuty,
+  onShowClassicDutyChange,
 }: SettingsDutySectionProps) {
   return (
     <Box
@@ -57,6 +63,22 @@ export function SettingsDutySection({
         {prefsLoadError ? <PowerAlert severity="warning">{prefsLoadError}</PowerAlert> : null}
         {saveError ? <PowerAlert severity="error">{saveError}</PowerAlert> : null}
         <Stack spacing={3} sx={{ minWidth: 0 }}>
+          {showClassicDutySetting ? (
+            <Box sx={cardSx}>
+              <FormControlLabel
+                sx={{ m: 0 }}
+                control={
+                  <Switch
+                    checked={showClassicDuty}
+                    onChange={(_, checked) => onShowClassicDutyChange(checked)}
+                    disabled={loadInProgress}
+                  />
+                }
+                label="Показувати класичний оперативний"
+              />
+            </Box>
+          ) : null}
+
           <SettingsSharedTagsLayoutCard
             tagsLayout={tagsLayout}
             onTagsLayoutChange={onTagsLayoutChange}

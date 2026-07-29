@@ -20,6 +20,8 @@ export type GlobalSettingsHook = {
   versionText: string;
   featureMyAdminGroupsEdit: boolean;
   audioTranscriptionEnabled: boolean;
+  showClassicDuty: boolean;
+  showClassicAnalysis: boolean;
   userRoles: string[];
   isDirty: boolean;
   setZoneId: (value: number | null) => void;
@@ -43,6 +45,8 @@ export function useGlobalSetting(): GlobalSettingsHook {
   const [versionText, setVersionText] = useState<string>('невідома версія');
   const [featureMyAdminGroupsEdit, setFeatureMyAdminGroupsEdit] = useState(false);
   const [audioTranscriptionEnabled, setAudioTranscriptionEnabled] = useState(false);
+  const [showClassicDuty, setShowClassicDuty] = useState(true);
+  const [showClassicAnalysis, setShowClassicAnalysis] = useState(true);
   const [userRoles, setUserRoles] = useState<string[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [loadInProgress, setLoadInProgress] = useState(true);
@@ -91,10 +95,14 @@ export function useGlobalSetting(): GlobalSettingsHook {
           .then((systemSettings) => {
             if (abortController.signal.aborted) return;
             setAudioTranscriptionEnabled(systemSettings.enableAudioTranscription ?? false);
+            setShowClassicDuty(systemSettings.showClassicDuty ?? true);
+            setShowClassicAnalysis(systemSettings.showClassicAnalysis ?? true);
           })
           .catch(() => {
             if (abortController.signal.aborted) return;
             setAudioTranscriptionEnabled(false);
+            setShowClassicDuty(true);
+            setShowClassicAnalysis(true);
           });
       } catch (error) {
         if (abortController.signal.aborted) return;
@@ -146,6 +154,8 @@ export function useGlobalSetting(): GlobalSettingsHook {
     versionText,
     featureMyAdminGroupsEdit,
     audioTranscriptionEnabled,
+    showClassicDuty,
+    showClassicAnalysis,
     userRoles,
     isDirty,
     setZoneId,

@@ -14,6 +14,7 @@ import {
 import { ChangelogDropdown } from './ChangelogDropdown';
 import { ProfileDropdown } from './ProfileDropdown';
 import { currentSystemSettings } from '../../services/api/system-settings';
+import { fetchUserSettings, USER_SETTINGS_UPDATED_EVENT } from '../../services/api/user-settings';
 import { hasRole } from '../../utils/roles';
 
 export interface AppNavbarProps {
@@ -37,6 +38,8 @@ export interface AppNavbarProps {
     systemSettings?: {
       defaultNeoAnalysis: boolean;
       enableAudioTranscription: boolean;
+      showClassicDuty: boolean;
+      showClassicAnalysis: boolean;
     } | null;
   };
   activeName: string;
@@ -67,6 +70,14 @@ export function AppNavbar({
   const [loadedAudioTranscription, setLoadedAudioTranscription] = useState<boolean | null>(
     shared?.systemSettings ? shared.systemSettings.enableAudioTranscription : null,
   );
+  const [loadedShowClassicDuty, setLoadedShowClassicDuty] = useState<boolean | null>(
+    shared?.systemSettings ? shared.systemSettings.showClassicDuty : null,
+  );
+  const [loadedShowClassicAnalysis, setLoadedShowClassicAnalysis] = useState<boolean | null>(
+    shared?.systemSettings ? shared.systemSettings.showClassicAnalysis : null,
+  );
+  const [userShowClassicDuty, setUserShowClassicDuty] = useState(false);
+  const [userShowClassicAnalysis, setUserShowClassicAnalysis] = useState(false);
   const navbarRef = useRef<HTMLElement>(null);
 
   useEffect(() => {
@@ -75,6 +86,8 @@ export function AppNavbar({
         prev === null ? shared.systemSettings!.defaultNeoAnalysis : prev,
       );
       setLoadedAudioTranscription(shared.systemSettings.enableAudioTranscription);
+      setLoadedShowClassicDuty(shared.systemSettings.showClassicDuty);
+      setLoadedShowClassicAnalysis(shared.systemSettings.showClassicAnalysis);
     }
   }, [shared?.systemSettings]);
 
@@ -87,6 +100,8 @@ export function AppNavbar({
           if (mounted) {
             setLoadedNeoAnalysis(settings.defaultNeoAnalysis);
             setLoadedAudioTranscription(settings.enableAudioTranscription);
+            setLoadedShowClassicDuty(settings.showClassicDuty);
+            setLoadedShowClassicAnalysis(settings.showClassicAnalysis);
           }
         })
         .catch(() => {});
@@ -98,6 +113,29 @@ export function AppNavbar({
     return () => {
       mounted = false;
       window.removeEventListener('system-settings-saved', fetchSettings);
+    };
+  }, []);
+
+  useEffect(() => {
+    let mounted = true;
+
+    const fetchSettings = () => {
+      fetchUserSettings()
+        .then((settings) => {
+          if (mounted) {
+            setUserShowClassicDuty(settings.showClassicDuty);
+            setUserShowClassicAnalysis(settings.showClassicAnalysis);
+          }
+        })
+        .catch(() => {});
+    };
+
+    fetchSettings();
+    window.addEventListener(USER_SETTINGS_UPDATED_EVENT, fetchSettings);
+
+    return () => {
+      mounted = false;
+      window.removeEventListener(USER_SETTINGS_UPDATED_EVENT, fetchSettings);
     };
   }, []);
 
@@ -135,6 +173,14 @@ export function AppNavbar({
       item.type !== 'item' ||
       item.activeName !== 'transcription-settings' ||
       loadedAudioTranscription === true,
+  );
+  const showClassicDuty = loadedShowClassicDuty !== false || userShowClassicDuty;
+  const showClassicAnalysis = loadedShowClassicAnalysis !== false || userShowClassicAnalysis;
+  const visibleOperationalSubs = operationalSubs.filter(
+    (item) => item.type !== 'item' || item.activeName !== 'rer-duty' || showClassicDuty,
+  );
+  const visibleAnalysisSubs = analysisSubs.filter(
+    (item) => item.type !== 'item' || item.activeName !== 'analysis' || showClassicAnalysis,
   );
 
   const openGoiSubs: Menu[] = (user.goiIntegrations || []).flatMap((integration) => {
@@ -392,16 +438,21 @@ export function AppNavbar({
             <ul className="app-navbar-links-list flex min-w-0 w-full flex-col gap-y-1 lg:flex-row lg:flex-wrap lg:items-center lg:gap-x-4 lg:gap-y-1">
               {serverModeIsLive &&
                 isRer &&
-                renderDropdownMenu('operational', 'Оперативний', operationalSubs, '/rer-duty-neo')}
+                renderDropdownMenu(
+                  'operational',
+                  'Оперативний',
+                  visibleOperationalSubs,
+                  '/rer-duty-neo',
+                )}
               {serverModeIsLive &&
                 isRer &&
                 renderDropdownMenu(
                   'analysis',
                   'Аналіз',
-                  analysisSubs,
+                  visibleAnalysisSubs,
                   loadedNeoAnalysis === null
                     ? undefined
-                    : loadedNeoAnalysis
+                    : loadedNeoAnalysis || !showClassicAnalysis
                       ? '/rer-analysis-neo'
                       : '/rer-analysis',
                 )}

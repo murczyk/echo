@@ -13,6 +13,8 @@ export type UserDutySettings = {
   dutyAudioTranscriptionCollapsed: boolean;
   analysisAudioTranscriptionCollapsed: boolean;
   showAnalysisCallsignAddForm: boolean;
+  showClassicDuty: boolean;
+  showClassicAnalysis: boolean;
 };
 
 type DutyTagsLayoutWire = DutyTagsLayout | 'full' | 'compact' | 'hidden';
@@ -23,12 +25,16 @@ type UserDutySettingsWire = Omit<
   | 'dutyAudioTranscriptionCollapsed'
   | 'analysisAudioTranscriptionCollapsed'
   | 'showAnalysisCallsignAddForm'
+  | 'showClassicDuty'
+  | 'showClassicAnalysis'
 > & {
   tagsLayout: DutyTagsLayoutWire;
   analysisMapInSidebar?: boolean | null;
   dutyAudioTranscriptionCollapsed?: boolean | null;
   analysisAudioTranscriptionCollapsed?: boolean | null;
   showAnalysisCallsignAddForm?: boolean | null;
+  showClassicDuty?: boolean | null;
+  showClassicAnalysis?: boolean | null;
 };
 
 function normalizeTagsLayout(tagsLayout: DutyTagsLayoutWire | null | undefined): TagsLayoutVariant {
@@ -68,6 +74,8 @@ function normalizeUserDutySettings(raw: UserDutySettingsWire): UserDutySettings 
     dutyAudioTranscriptionCollapsed: raw.dutyAudioTranscriptionCollapsed ?? false,
     analysisAudioTranscriptionCollapsed: raw.analysisAudioTranscriptionCollapsed ?? false,
     showAnalysisCallsignAddForm: raw.showAnalysisCallsignAddForm ?? false,
+    showClassicDuty: raw.showClassicDuty ?? false,
+    showClassicAnalysis: raw.showClassicAnalysis ?? false,
   };
 }
 
@@ -89,6 +97,8 @@ export async function saveUserSettings(
       dutyAudioTranscriptionCollapsed: body.dutyAudioTranscriptionCollapsed,
       analysisAudioTranscriptionCollapsed: body.analysisAudioTranscriptionCollapsed,
       showAnalysisCallsignAddForm: body.showAnalysisCallsignAddForm,
+      showClassicDuty: body.showClassicDuty,
+      showClassicAnalysis: body.showClassicAnalysis,
     },
     { signal },
   );

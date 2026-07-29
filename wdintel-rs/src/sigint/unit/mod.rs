@@ -1027,6 +1027,8 @@ mod tests {
             ),
             limit_big_reports: Set(false),
             enable_audio_transcription: Set(false),
+            show_classic_duty: Set(true),
+            show_classic_analysis: Set(true),
         }
         .insert(dbx)
         .await
