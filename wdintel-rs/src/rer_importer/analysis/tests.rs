@@ -1398,7 +1398,7 @@ fn analytics_freqs_selected_networks_use_scoped_flat_joins() {
     assert!(sql.contains("\"sigint_inbox_item\".\"id\" BETWEEN 10 AND 20"));
     assert!(sql.contains("\"signal_message\".\"id\" BETWEEN 10 AND 20"));
     assert!(sql.contains(
-        "\"signal_message_group\".\"signal_message_id\" BETWEEN 10 AND 20"
+        "\"analytics_message_access\".\"signal_message_id\" BETWEEN 10 AND 20"
     ));
     assert!(!sql.contains("\"iin_network_filter\""), "{sql}");
 }
