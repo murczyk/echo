@@ -619,6 +619,9 @@ fn prepare_body_for_coords(body: &str) -> String {
 }
 
 fn is_non_coordinate_header_line(line: &str) -> bool {
+    if crate::rer_importer::callsigns::is_callsign_details_line(line) {
+        return true;
+    }
     if line_mentions_coordinates(line) {
         return false;
     }
@@ -708,6 +711,34 @@ ID⬅️(CG) 1871040, 3106946, 2122380, 1139383, 443796, 3102387, 2626603, 47047
             .await
             .is_empty());
         assert!(extract_coords(body).await.is_empty());
+    }
+
+    #[tokio::test]
+    async fn extract_coords_ignores_callsign_mgrs_details() {
+        for details in [
+            "КОСМОС (MGRS: 37TBN8304188110)\nДЮРАСЕЛ (MGRS: —)",
+            "БУРЯТ (MGRS: 37TBN9194296930)\nТАДЖИК (MGRS: —)",
+            "НВ (MGRS: 37TBN9224596386)\nНВ (MGRS: —)",
+        ] {
+            let body = format!(
+                r#"Отримано з поста "ІНТЕРСЕПТОР Х"
+--------------------------------------
+29.07.2026, 16:27:27
+146.0750
+УКХ р/м 2 бмп 155 пмп 55 дмп (ЦВІТКОВЕ, ВЕРХНЯ ТЕРСА)
+{details}
+
+1 — Перевірка зв'язку."#
+            );
+
+            assert!(extract_coords(&body).await.is_empty());
+
+            let body_noheader =
+                body_noheader_for_reprocess_coords(&body).unwrap();
+            assert!(extract_inbox_coords(&body, &body_noheader)
+                .await
+                .is_empty());
+        }
     }
 
     #[tokio::test]
