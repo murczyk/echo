@@ -1,5 +1,6 @@
 use crate::config::{
     ORGANISM_GOI_MESSAGE_UID_BATCH_SIZE,
+    ORGANISM_GOI_MESSAGE_UID_CANDIDATE_BATCH_SIZE,
     ORGANISM_GOI_MESSAGE_UID_LOOKBACK_HOURS,
     ORGANISM_GOI_MESSAGE_UID_ONEOFF_DEFAULT_LIMIT,
     ORGANISM_GOI_MESSAGE_UID_PROBE_CHARS,
@@ -41,6 +42,19 @@ struct PreparedMessageCandidate {
     id: i64,
     timestamp: NaiveDateTime,
     body: String,
+    message_uid: String,
+}
+
+#[derive(Debug, Default)]
+struct MessageCandidateSelection {
+    newest_original: Option<SelectedMessageCandidate>,
+    newest_duplicate: Option<SelectedMessageCandidate>,
+}
+
+#[derive(Debug)]
+struct SelectedMessageCandidate {
+    id: i64,
+    timestamp: NaiveDateTime,
     message_uid: String,
 }
 
@@ -288,23 +302,18 @@ async fn fill_organism_association_message_uids(
     let datasource_group_ids =
         load_datasource_group_ids(db, &group_keys).await.c(h!())?;
     for work_item in work_items {
-        let candidates = load_message_candidates(
+        let Some(message_uid) = find_matching_message_uid(
             db,
             &datasource_group_ids,
             &group_keys,
+            &work_item.association_message,
             &work_item.probe,
             work_item.window_start,
             work_item.window_end,
         )
         .await
-        .c(h!())?;
-        let Some(message_uid) = select_matching_original_message_uid(
-            &work_item.association_message,
-            &work_item.probe,
-            work_item.window_start,
-            work_item.window_end,
-            &candidates,
-        ) else {
+        .c(h!())?
+        else {
             continue;
         };
         stats.filled += update_association_message_uid(
@@ -372,35 +381,57 @@ async fn load_association_batch(
     Ok(query.all(db).await.c(h!())?)
 }
 
-async fn load_message_candidates(
+async fn find_matching_message_uid(
     db: &DatabaseConnection,
     datasource_group_ids: &[i64],
     group_keys: &[String],
+    association_message: &str,
     probe: &str,
     window_start: NaiveDateTime,
     window_end: NaiveDateTime,
-) -> Result<Vec<PreparedMessageCandidate>, AppError> {
-    let mut candidates = load_datasource_group_message_candidate_rows(
+) -> Result<Option<String>, AppError> {
+    let mut selection = MessageCandidateSelection::default();
+    if !datasource_group_ids.is_empty() {
+        let candidate_selection = scan_message_candidate_pages(
+            db,
+            |cursor| {
+                datasource_group_message_candidate_query(
+                    datasource_group_ids,
+                    probe,
+                    window_start,
+                    window_end,
+                    cursor,
+                )
+            },
+            association_message,
+            probe,
+            window_start,
+            window_end,
+        )
+        .await
+        .c(h!())?;
+        selection.merge(candidate_selection);
+    }
+    let candidate_selection = scan_message_candidate_pages(
         db,
-        datasource_group_ids,
+        |cursor| {
+            linked_message_candidate_query(
+                group_keys,
+                probe,
+                window_start,
+                window_end,
+                cursor,
+            )
+        },
+        association_message,
         probe,
         window_start,
         window_end,
     )
     .await
     .c(h!())?;
-    candidates.extend(
-        load_linked_message_candidate_rows(
-            db,
-            group_keys,
-            probe,
-            window_start,
-            window_end,
-        )
-        .await
-        .c(h!())?,
-    );
-    Ok(prepare_message_candidates(candidates))
+    selection.merge(candidate_selection);
+    Ok(selection.message_uid())
 }
 
 async fn load_datasource_group_ids(
@@ -420,45 +451,42 @@ async fn load_datasource_group_ids(
         .c(h!())?)
 }
 
-async fn load_datasource_group_message_candidate_rows(
+async fn scan_message_candidate_pages<F>(
     db: &DatabaseConnection,
-    datasource_group_ids: &[i64],
+    mut query_page: F,
+    association_message: &str,
     probe: &str,
     window_start: NaiveDateTime,
     window_end: NaiveDateTime,
-) -> Result<Vec<MessageCandidate>, AppError> {
-    if datasource_group_ids.is_empty() {
-        return Ok(vec![]);
+) -> Result<MessageCandidateSelection, AppError>
+where
+    F: FnMut(Option<(NaiveDateTime, i64)>) -> Select<signal_message::Entity>,
+{
+    let mut cursor = None;
+    let mut selection = MessageCandidateSelection::default();
+    loop {
+        let rows = query_page(cursor)
+            .into_model::<MessageCandidate>()
+            .all(db)
+            .await
+            .c(h!())?;
+        let row_count = rows.len() as u64;
+        cursor = message_candidate_page_cursor(&rows);
+        let candidates = prepare_message_candidates(rows);
+        selection.merge(select_matching_message_candidates(
+            association_message,
+            probe,
+            window_start,
+            window_end,
+            &candidates,
+        ));
+        if selection.newest_original.is_some()
+            || row_count < ORGANISM_GOI_MESSAGE_UID_CANDIDATE_BATCH_SIZE
+            || cursor.is_none()
+        {
+            return Ok(selection);
+        }
     }
-    Ok(datasource_group_message_candidate_query(
-        datasource_group_ids,
-        probe,
-        window_start,
-        window_end,
-    )
-    .into_model::<MessageCandidate>()
-    .all(db)
-    .await
-    .c(h!())?)
-}
-
-async fn load_linked_message_candidate_rows(
-    db: &DatabaseConnection,
-    group_keys: &[String],
-    probe: &str,
-    window_start: NaiveDateTime,
-    window_end: NaiveDateTime,
-) -> Result<Vec<MessageCandidate>, AppError> {
-    Ok(linked_message_candidate_query(
-        group_keys,
-        probe,
-        window_start,
-        window_end,
-    )
-    .into_model::<MessageCandidate>()
-    .all(db)
-    .await
-    .c(h!())?)
 }
 
 fn datasource_group_message_candidate_query(
@@ -466,11 +494,13 @@ fn datasource_group_message_candidate_query(
     probe: &str,
     window_start: NaiveDateTime,
     window_end: NaiveDateTime,
+    cursor: Option<(NaiveDateTime, i64)>,
 ) -> Select<signal_message::Entity> {
-    message_candidate_base_query(probe, window_start, window_end).filter(
-        signal_message::Column::DatasourceGroupId
-            .eq_any(datasource_group_ids.to_vec()),
-    )
+    message_candidate_base_query(probe, window_start, window_end, cursor)
+        .filter(
+            signal_message::Column::DatasourceGroupId
+                .eq_any(datasource_group_ids.to_vec()),
+        )
 }
 
 fn linked_message_candidate_query(
@@ -478,8 +508,9 @@ fn linked_message_candidate_query(
     probe: &str,
     window_start: NaiveDateTime,
     window_end: NaiveDateTime,
+    cursor: Option<(NaiveDateTime, i64)>,
 ) -> Select<signal_message::Entity> {
-    message_candidate_base_query(probe, window_start, window_end)
+    message_candidate_base_query(probe, window_start, window_end, cursor)
         .distinct()
         .join(
             JoinType::InnerJoin,
@@ -495,6 +526,7 @@ fn message_candidate_base_query(
     probe: &str,
     window_start: NaiveDateTime,
     window_end: NaiveDateTime,
+    cursor: Option<(NaiveDateTime, i64)>,
 ) -> Select<signal_message::Entity> {
     signal_message::Entity::find()
         .select_only()
@@ -510,8 +542,27 @@ fn message_candidate_base_query(
             Expr::col(signal_message::Column::Body)
                 .like(format!("%{}%", escape_like(probe))),
         )
+        .apply_if(cursor, |query, (timestamp, id)| {
+            query.filter(
+                Condition::any()
+                    .add(signal_message::Column::Timestamp.lt(timestamp))
+                    .add(
+                        signal_message::Column::Timestamp
+                            .eq(timestamp)
+                            .and(signal_message::Column::Id.lt(id)),
+                    ),
+            )
+        })
         .order_by_desc(signal_message::Column::Timestamp)
         .order_by_desc(signal_message::Column::Id)
+        .limit(ORGANISM_GOI_MESSAGE_UID_CANDIDATE_BATCH_SIZE)
+}
+
+fn message_candidate_page_cursor(
+    rows: &[MessageCandidate],
+) -> Option<(NaiveDateTime, i64)> {
+    let row = rows.last()?;
+    Some((row.timestamp?, row.id))
 }
 
 fn prepare_message_candidates(
@@ -551,6 +602,47 @@ fn prepare_message_candidate(
         body,
         message_uid,
     })
+}
+
+impl MessageCandidateSelection {
+    fn consider(&mut self, candidate: &PreparedMessageCandidate) {
+        let selected = SelectedMessageCandidate {
+            id: candidate.id,
+            timestamp: candidate.timestamp,
+            message_uid: candidate.message_uid.clone(),
+        };
+        if is_duplicate_trace(candidate.id, &candidate.message_uid) {
+            replace_with_newer_candidate(&mut self.newest_duplicate, selected);
+        } else {
+            replace_with_newer_candidate(&mut self.newest_original, selected);
+        }
+    }
+
+    fn merge(&mut self, selection: Self) {
+        if let Some(candidate) = selection.newest_original {
+            replace_with_newer_candidate(&mut self.newest_original, candidate);
+        }
+        if let Some(candidate) = selection.newest_duplicate {
+            replace_with_newer_candidate(&mut self.newest_duplicate, candidate);
+        }
+    }
+
+    fn message_uid(self) -> Option<String> {
+        self.newest_original
+            .or(self.newest_duplicate)
+            .map(|candidate| candidate.message_uid)
+    }
+}
+
+fn replace_with_newer_candidate(
+    selected: &mut Option<SelectedMessageCandidate>,
+    candidate: SelectedMessageCandidate,
+) {
+    if selected.as_ref().is_none_or(|selected| {
+        (candidate.timestamp, candidate.id) > (selected.timestamp, selected.id)
+    }) {
+        *selected = Some(candidate);
+    }
 }
 
 fn association_original_message(row: &serde_json::Value) -> Option<&str> {
@@ -611,14 +703,14 @@ fn message_window_anchor<'a>(
     source_date.unwrap_or(source_created_at)
 }
 
-fn select_matching_original_message_uid(
+fn select_matching_message_candidates(
     association_message: &str,
     probe: &str,
     window_start: NaiveDateTime,
     window_end: NaiveDateTime,
     candidates: &[PreparedMessageCandidate],
-) -> Option<String> {
-    let mut newest_duplicate_uid = None;
+) -> MessageCandidateSelection {
+    let mut selection = MessageCandidateSelection::default();
     for candidate in candidates {
         if candidate.timestamp < window_start
             || candidate.timestamp > window_end
@@ -633,14 +725,27 @@ fn select_matching_original_message_uid(
         {
             continue;
         }
-        if !is_duplicate_trace(candidate.id, &candidate.message_uid) {
-            return Some(candidate.message_uid.clone());
-        }
-        if newest_duplicate_uid.is_none() {
-            newest_duplicate_uid = Some(candidate.message_uid.clone());
-        }
+        selection.consider(candidate);
     }
-    newest_duplicate_uid
+    selection
+}
+
+#[cfg(test)]
+fn select_matching_original_message_uid(
+    association_message: &str,
+    probe: &str,
+    window_start: NaiveDateTime,
+    window_end: NaiveDateTime,
+    candidates: &[PreparedMessageCandidate],
+) -> Option<String> {
+    select_matching_message_candidates(
+        association_message,
+        probe,
+        window_start,
+        window_end,
+        candidates,
+    )
+    .message_uid()
 }
 
 #[cfg(test)]
@@ -697,6 +802,7 @@ mod tests {
             "matching-probe",
             window_start,
             window_end,
+            None,
         )
         .build(DbBackend::Postgres)
         .to_string();
@@ -705,6 +811,7 @@ mod tests {
             "matching-probe",
             window_start,
             window_end,
+            None,
         )
         .build(DbBackend::Postgres)
         .to_string();
@@ -717,7 +824,25 @@ mod tests {
             assert!(sql.contains("\"signal_message\".\"timestamp\" >="));
             assert!(sql.contains("\"signal_message\".\"timestamp\" <="));
             assert!(sql.contains("LIKE '%matching-probe%'"));
+            assert!(sql.contains("LIMIT 1000"));
         }
+    }
+
+    #[test]
+    fn candidate_query_uses_keyset_pagination() {
+        let (window_start, window_end) = test_window();
+        let sql = datasource_group_message_candidate_query(
+            &[1],
+            "matching-probe",
+            window_start,
+            window_end,
+            Some((test_timestamp(), 42)),
+        )
+        .build(DbBackend::Postgres)
+        .to_string();
+
+        assert!(sql.contains("\"signal_message\".\"timestamp\" <"));
+        assert!(sql.contains("\"signal_message\".\"id\" < 42"));
     }
 
     #[test]

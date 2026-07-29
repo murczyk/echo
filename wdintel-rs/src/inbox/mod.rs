@@ -443,7 +443,9 @@ fn extract_generic_body_datetime(
     lnow: DateTime<Tz>,
     body: &str,
 ) -> Result<Option<DateTime<Tz>>, AppError> {
-    let Some(dt) = crate::rer_importer::datetime::extract_datetime(lnow, body)?
+    let datetime = crate::rer_importer::datetime::extract_datetime(lnow, body)?;
+    let Some(dt) = datetime
+        .or_else(|| extract_far_future_datetime_with_current_date(lnow, body))
     else {
         return Ok(None);
     };
@@ -459,6 +461,42 @@ fn extract_generic_body_datetime(
             None
         }
     })
+}
+
+fn extract_far_future_datetime_with_current_date(
+    lnow: DateTime<Tz>,
+    body: &str,
+) -> Option<NaiveDateTime> {
+    lazy_static::lazy_static! {
+        static ref DATETIME_REGEX: regex::Regex = regex::Regex::new(
+            r"(?P<day>\d{2})\.(?P<mon>\d{2})\.(?P<year>\d{4})[ \t]+(?P<hour>\d{1,2})[ \t]*:[ \t]*(?P<minute>\d{2})[ \t]*:[ \t]*(?P<second>\d{2})"
+        )
+        .unwrap();
+    }
+
+    let captures = DATETIME_REGEX.captures(body)?;
+    let datetime = NaiveDate::from_ymd_opt(
+        captures.name("year")?.as_str().parse().ok()?,
+        captures.name("mon")?.as_str().parse().ok()?,
+        captures.name("day")?.as_str().parse().ok()?,
+    )?
+    .and_hms_opt(
+        captures.name("hour")?.as_str().parse().ok()?,
+        captures.name("minute")?.as_str().parse().ok()?,
+        captures.name("second")?.as_str().parse().ok()?,
+    )?;
+    let parsed_datetime =
+        lnow.timezone().from_local_datetime(&datetime).earliest()?;
+    if parsed_datetime
+        <= lnow
+            + chrono::Duration::hours(
+                RER_INBOX_PARSED_DATETIME_MAX_FUTURE_HOURS,
+            )
+    {
+        return None;
+    }
+
+    Some(lnow.date_naive().and_time(datetime.time()))
 }
 
 async fn message_has_other_interseption_group<'a, 'async_trait, C>(
@@ -950,6 +988,23 @@ mod tests {
         assert_eq!(
             meow_format.unwrap().body_noheader.body,
             "Перехоплення о 08:30\n(Коментар: передмова)"
+        );
+    }
+
+    #[test]
+    fn extract_message_datetime_recovers_time_from_rejected_future_date() {
+        let now = Kyiv.with_ymd_and_hms(2026, 7, 29, 12, 0, 0).unwrap();
+
+        let (datetime, _) = extract_message_datetime(
+            now,
+            "Дата та час: 18.08.2032 08:18:41",
+            false,
+        )
+        .unwrap();
+
+        assert_eq!(
+            datetime,
+            Some(Kyiv.with_ymd_and_hms(2026, 7, 29, 8, 18, 41).unwrap())
         );
     }
 }
