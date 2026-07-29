@@ -148,6 +148,9 @@ pub(crate) fn extract_callsigns(
     for callsign in extract_kazhanchik_callsigns(body)? {
         push_if_unique_callsign(&callsign, &mut res);
     }
+    for callsign in extract_callsign_details_callsigns(body)? {
+        push_if_unique_callsign(&callsign, &mut res);
+    }
     for callsign in extract_buran_callsigns(body)? {
         push_if_unique_callsign(&callsign, &mut res);
     }
@@ -496,6 +499,35 @@ pub async fn highlight_callsigns(
 /// Lines like "УКХ р/м управління БТГр 70 мсп 42 мсд 58 А ((РОБОТИНЕ))"
 fn is_unit_line(l: &str) -> bool {
     l.contains("УКХ радіомережа") || l.contains("управління")
+}
+
+fn callsign_details_captures(line: &str) -> Option<regex::Captures<'_>> {
+    lazy_static! {
+        static ref RE: Regex = Regex::new(
+            r"^\s*(?P<callsign>[A-ZА-ЯЁІЇЄҐ0-9]+(?:[ \t—-]+[A-ZА-ЯЁІЇЄҐ0-9]+)*)\s*\(\s*(?i:MGRS)\s*:\s*(?:—|-|(?i:\d{1,2}[C-HJ-NP-X]\s*[A-HJ-NP-Z]{2}(?:\s+\d{1,5}\s+\d{1,5}|\s*\d{2,10})))\s*\)\s*$"
+        )
+        .unwrap();
+    }
+
+    RE.captures(line)
+}
+
+pub(crate) fn is_callsign_details_line(line: &str) -> bool {
+    callsign_details_captures(line).is_some()
+}
+
+fn extract_callsign_details_callsigns(
+    input: &str,
+) -> Result<Vec<CNCallsign>, AppError> {
+    let mut res = vec![];
+    let mut msg_pos = 0;
+    for line in input.lines() {
+        if let Some(capts) = callsign_details_captures(line) {
+            add_callsign(&capts, "callsign", line, msg_pos, true, &mut res);
+        }
+        msg_pos += cline_len(line) + 1;
+    }
+    Ok(res)
 }
 
 fn extract_kharkiv_callsigns(input: &str) -> Result<Vec<CNCallsign>, AppError> {
@@ -2237,6 +2269,41 @@ mod tests {
         let expected: Vec<String> = vec![];
         let ress: Vec<String> = res.into_iter().map(|x| x.text).collect();
         assert_eq!(ress, expected)
+    }
+
+    #[test]
+    fn extract_callsigns_from_mgrs_details_lines() {
+        let cases = [
+            (
+                "КОСМОС (MGRS: 37TBN8304188110)\nДЮРАСЕЛ (MGRS: —)",
+                vec!["КОСМОС", "ДЮРАСЕЛ"],
+            ),
+            (
+                "БУРЯТ (MGRS: 37TBN9194296930)\nТАДЖИК (MGRS: —)",
+                vec!["БУРЯТ", "ТАДЖИК"],
+            ),
+            ("НВ (MGRS: 37TBN9224596386)\nНВ (MGRS: —)", vec![]),
+        ];
+
+        for (details, expected) in cases {
+            let body = format!(
+                r#"Отримано з поста "ІНТЕРСЕПТОР Х"
+--------------------------------------
+29.07.2026, 16:27:27
+146.0750
+УКХ р/м 2 бмп 155 пмп 55 дмп (ЦВІТКОВЕ, ВЕРХНЯ ТЕРСА)
+{details}
+
+1 — Перевірка зв'язку."#
+            );
+            let callsigns = extract_callsigns(&body).unwrap();
+            let callsigns = callsigns
+                .into_iter()
+                .map(|callsign| callsign.text)
+                .collect::<Vec<_>>();
+
+            assert_eq!(callsigns, expected);
+        }
     }
 
     #[test]
