@@ -5,7 +5,7 @@ use crate::config::{
 use crate::error::AppError;
 use crate::h;
 use crate::system_settings::ensure_devices_section_enabled;
-use crate::types::ShortContext;
+use crate::types::{ShortContext, Uuid};
 use actix_identity::Identity;
 use sea_orm::DatabaseConnection;
 
@@ -136,17 +136,17 @@ impl DeviceActorResolver {
         main_db: &MainDb<'_, DatabaseConnection>,
         identity: &Identity,
     ) -> Result<DeviceActor, AppError> {
-        let login = identity.id().map_err(|_| AppError::Unauthenticated)?;
-        resolve_current_login(main_db, &login).await
+        let login_id = crate::users::login_id_from_identity(identity)?;
+        resolve_current_login(main_db, &login_id).await
     }
 }
 
 async fn resolve_current_login(
     main_db: &MainDb<'_, DatabaseConnection>,
-    login: &str,
+    login_id: &Uuid,
 ) -> Result<DeviceActor, AppError> {
     let login_validation =
-        crate::users::validate_login(main_db.connection(), login).await?;
+        crate::users::validate_login_id(main_db.connection(), login_id).await?;
     if let Some(error) = login_validation.validation_error {
         return Err(error);
     }

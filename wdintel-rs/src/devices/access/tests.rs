@@ -161,19 +161,21 @@ async fn resolver_uses_current_roles_and_rejects_disabled_or_missing_login() {
     .await
     .unwrap();
     let main_db = MainDb::new(&env.dbx);
+    let login_id = login.id;
 
-    let analyst = resolve_current_login(&main_db, &login_name).await.unwrap();
+    let analyst = resolve_current_login(&main_db, &login_id).await.unwrap();
     assert_eq!(capabilities(&analyst), (true, true, true));
 
     let mut login = login.into_active_model();
     login.roles = Set(json!([ROLE_DEVICE_SOURCE]));
     login.update(&env.dbx).await.unwrap();
 
-    let source = resolve_current_login(&main_db, &login_name).await.unwrap();
+    let source = resolve_current_login(&main_db, &login_id).await.unwrap();
     assert_eq!(capabilities(&source), (true, true, false));
 
+    let missing_login_id = Uuid::now_v7();
     let missing_login_error =
-        match resolve_current_login(&main_db, "missing-device-actor").await {
+        match resolve_current_login(&main_db, &missing_login_id).await {
             Err(error) => error,
             Ok(_) => panic!("expected missing-login error"),
         };
@@ -184,7 +186,7 @@ async fn resolver_uses_current_roles_and_rejects_disabled_or_missing_login() {
     settings.update(&env.dbx).await.unwrap();
 
     let disabled_section_error =
-        match resolve_current_login(&main_db, &login_name).await {
+        match resolve_current_login(&main_db, &login_id).await {
             Err(error) => error,
             Ok(_) => panic!("expected disabled-section error"),
         };

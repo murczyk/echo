@@ -154,7 +154,7 @@ async fn batch_hydration_preserves_input_order_and_current_references() {
     let unit = mk_sigint_unit(
         &env.dbx,
         sigint_unit::ActiveModel {
-            created_by: Set(source_login.login.clone()),
+            created_by_login_id: Set(source_login.id),
             name: Set("Current unit".to_string()),
             ..Default::default()
         },
@@ -366,7 +366,7 @@ async fn analyst_mixed_update_is_atomic_and_source_cannot_change_analysis() {
     let unit = mk_sigint_unit(
         &env.dbx,
         sigint_unit::ActiveModel {
-            created_by: Set(analyst_login.login.clone()),
+            created_by_login_id: Set(analyst_login.id),
             name: Set("Update unit".to_string()),
             ..Default::default()
         },
@@ -557,7 +557,7 @@ async fn patch_presence_and_clears_follow_the_internal_contract() {
     let unit = mk_sigint_unit(
         &env.dbx,
         sigint_unit::ActiveModel {
-            created_by: Set(analyst_login.login.clone()),
+            created_by_login_id: Set(analyst_login.id),
             name: Set("Presence unit".to_string()),
             ..Default::default()
         },
@@ -671,7 +671,7 @@ async fn invalid_references_roll_back_mixed_patches_and_reject_deleted_rows() {
     let active_unit = mk_sigint_unit(
         &env.dbx,
         sigint_unit::ActiveModel {
-            created_by: Set(analyst_login.login.clone()),
+            created_by_login_id: Set(analyst_login.id),
             name: Set("Active rollback unit".to_string()),
             ..Default::default()
         },
@@ -785,7 +785,7 @@ async fn invalid_references_roll_back_mixed_patches_and_reject_deleted_rows() {
     let deleted_unit = mk_sigint_unit(
         &env.dbx,
         sigint_unit::ActiveModel {
-            created_by: Set(analyst_login.login.clone()),
+            created_by_login_id: Set(analyst_login.id),
             name: Set("Deleted rollback unit".to_string()),
             ..Default::default()
         },
@@ -994,7 +994,7 @@ async fn read_handles_archives_nullable_names_and_deleted_references() {
     let unit = mk_sigint_unit(
         &env.dbx,
         sigint_unit::ActiveModel {
-            created_by: Set(analyst_login.login.clone()),
+            created_by_login_id: Set(analyst_login.id),
             name: Set("Deleted read unit".to_string()),
             ..Default::default()
         },
@@ -1094,7 +1094,7 @@ async fn list_and_unit_stats_follow_target_filters_sorts_and_counts() {
     let active_unit = mk_sigint_unit(
         &env.dbx,
         sigint_unit::ActiveModel {
-            created_by: Set(reader.login.clone()),
+            created_by_login_id: Set(reader.id),
             name: Set("Active target unit".to_string()),
             active: Set(true),
             deleted: Set(false),
@@ -1106,7 +1106,7 @@ async fn list_and_unit_stats_follow_target_filters_sorts_and_counts() {
     let inactive_unit = mk_sigint_unit(
         &env.dbx,
         sigint_unit::ActiveModel {
-            created_by: Set(reader.login.clone()),
+            created_by_login_id: Set(reader.id),
             name: Set("Inactive target unit".to_string()),
             active: Set(false),
             deleted: Set(false),
