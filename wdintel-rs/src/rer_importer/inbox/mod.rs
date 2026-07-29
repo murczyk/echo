@@ -23,8 +23,12 @@ use actix_web::{get, post};
 use chrono::*;
 use echo_migration::{Expr, Order, PostgresQueryBuilder};
 use itertools::Itertools;
+use once_cell::sync::Lazy;
 use sea_orm::*;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::future::Future;
+use std::time::Instant;
+use tokio::sync::Mutex;
 
 pub(crate) mod bl;
 pub mod metadata;
@@ -32,6 +36,18 @@ pub mod query;
 pub(crate) mod submit_bl;
 
 use submit_bl::*;
+
+type InboxDigest = (i64, Option<NaiveDateTime>);
+
+struct InboxCountSingleflightEntry {
+    gate: Arc<Mutex<()>>,
+    cached: Option<(Instant, InboxDigest)>,
+    last_used: Instant,
+}
+
+static INBOX_COUNT_SINGLEFLIGHT: Lazy<
+    Mutex<HashMap<String, InboxCountSingleflightEntry>>,
+> = Lazy::new(|| Mutex::new(HashMap::new()));
 
 async fn apply_test_inbox_settings(
     env: &Env,
@@ -666,7 +682,7 @@ fn print_ts(ts: NaiveDateTime) -> String {
 async fn query_inbox_digest(
     db: DatabaseConnection,
     query: String,
-) -> Result<(i64, Option<NaiveDateTime>), AppError> {
+) -> Result<InboxDigest, AppError> {
     let query_res = db
         .query_one(Statement::from_string(DatabaseBackend::Postgres, query))
         .await
@@ -676,6 +692,154 @@ async fn query_inbox_digest(
         query_res.try_get("", "count")?,
         query_res.try_get("", "first_element_ts")?,
     ))
+}
+
+async fn query_inbox_digest_singleflight<F, Fut>(
+    key: String,
+    query: F,
+) -> Result<InboxDigest, AppError>
+where
+    F: FnOnce() -> Fut,
+    Fut: Future<Output = Result<InboxDigest, AppError>>,
+{
+    let now = Instant::now();
+    let gate = {
+        let mut entries = INBOX_COUNT_SINGLEFLIGHT.lock().await;
+        entries.retain(|_, entry| {
+            let age = now.duration_since(entry.last_used);
+            entry.cached.as_ref().is_some_and(|(completed_at, _)| {
+                now.duration_since(*completed_at).as_millis()
+                    <= u128::from(INBOX_COUNT_SINGLEFLIGHT_SUCCESS_TTL_MS)
+            }) || age.as_secs() <= INBOX_COUNT_SINGLEFLIGHT_STALE_SECS
+                || entry.gate.try_lock().is_err()
+        });
+        let has_capacity =
+            if entries.len() >= INBOX_COUNT_SINGLEFLIGHT_MAX_ENTRIES {
+                if let Some(oldest_key) = entries
+                    .iter()
+                    .filter(|(_, entry)| entry.cached.is_some())
+                    .min_by_key(|(_, entry)| entry.last_used)
+                    .map(|(key, _)| key.clone())
+                {
+                    entries.remove(&oldest_key);
+                    true
+                } else {
+                    false
+                }
+            } else {
+                true
+            };
+        has_capacity.then(|| {
+            let entry = entries.entry(key.clone()).or_insert_with(|| {
+                InboxCountSingleflightEntry {
+                    gate: Arc::new(Mutex::new(())),
+                    cached: None,
+                    last_used: now,
+                }
+            });
+            entry.last_used = now;
+            entry.gate.clone()
+        })
+    };
+    let Some(gate) = gate else {
+        return query().await;
+    };
+
+    let _permit = gate.lock().await;
+    let now = Instant::now();
+    let (attached, cached) = {
+        let mut entries = INBOX_COUNT_SINGLEFLIGHT.lock().await;
+        if let Some(entry) = entries
+            .get_mut(&key)
+            .filter(|entry| Arc::ptr_eq(&entry.gate, &gate))
+        {
+            entry.last_used = now;
+            let cached =
+                entry.cached.as_ref().and_then(|(completed_at, result)| {
+                    (now.duration_since(*completed_at).as_millis()
+                        <= u128::from(INBOX_COUNT_SINGLEFLIGHT_SUCCESS_TTL_MS))
+                    .then_some(*result)
+                });
+            (true, cached)
+        } else {
+            (false, None)
+        }
+    };
+    if let Some(cached) = cached {
+        return Ok(cached);
+    }
+    if !attached {
+        return query().await;
+    }
+
+    let result = query().await;
+    let mut entries = INBOX_COUNT_SINGLEFLIGHT.lock().await;
+    let remove = if let Some(entry) = entries
+        .get_mut(&key)
+        .filter(|entry| Arc::ptr_eq(&entry.gate, &gate))
+    {
+        entry.last_used = Instant::now();
+        match &result {
+            Ok(result) => {
+                entry.cached = Some((Instant::now(), *result));
+                false
+            }
+            Err(_) => true,
+        }
+    } else {
+        false
+    };
+    if remove {
+        entries.remove(&key);
+    }
+    result
+}
+
+async fn query_inbox_digest_with_analytics(
+    login: uuid::Uuid,
+    env: actix_web::web::Data<Env>,
+    req: InboxMessagesReq,
+    postgres_query: String,
+) -> Result<InboxDigest, AppError> {
+    let analytics_lag_fallback_q = postgres_query.clone();
+    let analytics_env = env.clone();
+    let analytics_req = req.clone();
+    let freshness_max_age_ms = env
+        .config
+        .analytics
+        .as_ref()
+        .map(AnalyticsConfig::freshness_max_age_ms)
+        .unwrap_or(ANALYTICS_FRESHNESS_MAX_AGE_MS_DEFAULT);
+    with_analytics_read_fallback(
+        env.get_ref(),
+        "inbox messages count",
+        analytics_inbox_request_supported(&req),
+        |db| async move {
+            let query = build_analytics_inbox_digest_query(
+                &login,
+                &analytics_env,
+                &analytics_req,
+                &db,
+                freshness_max_age_ms,
+            )
+            .await?;
+            match query {
+                Some(query) => query_inbox_digest(db, query).await,
+                None => {
+                    debug!(
+                        "inbox messages count cursor is newer than analytics; using PostgreSQL"
+                    );
+                    query_inbox_digest(
+                        analytics_env.replica(),
+                        analytics_lag_fallback_q,
+                    )
+                    .await
+                }
+            }
+        },
+        |db| query_inbox_digest(db, postgres_query),
+    )
+    .await
 }
 
 #[post("/api/rer-importer/get-inbox-count")]
@@ -714,47 +878,15 @@ async fn inbox_messages_count(
     let q = build_inbox_digest_query(&login, &env, &req)
         .await
         .context(h!())?;
-    let analytics_lag_fallback_q = q.clone();
-    let analytics_env = env.clone();
-    let analytics_req = req.clone();
-    let analytics_login = login;
-    let freshness_max_age_ms = env
-        .config
-        .analytics
-        .as_ref()
-        .map(AnalyticsConfig::freshness_max_age_ms)
-        .unwrap_or(ANALYTICS_FRESHNESS_MAX_AGE_MS_DEFAULT);
-    let (mut quantity, first_element_ts) = with_analytics_read_fallback(
-        env.get_ref(),
-        "inbox messages count",
-        analytics_inbox_request_supported(&req),
-        |db| async move {
-            let query = build_analytics_inbox_digest_query(
-                &analytics_login,
-                &analytics_env,
-                &analytics_req,
-                &db,
-                freshness_max_age_ms,
-            )
-            .await?;
-            match query {
-                Some(query) => query_inbox_digest(db, query).await,
-                None => {
-                    debug!(
-                        "inbox messages count cursor is newer than analytics; using PostgreSQL"
-                    );
-                    query_inbox_digest(
-                        analytics_env.replica(),
-                        analytics_lag_fallback_q,
-                    )
-                    .await
-                }
-            }
-        },
-        |db| query_inbox_digest(db, q),
-    )
-    .await
-    .context(h!())?;
+    let singleflight_key = format!("{:p}\n{q}", env.get_ref());
+    let query_env = env.clone();
+    let query_req = req.clone();
+    let (mut quantity, first_element_ts) =
+        query_inbox_digest_singleflight(singleflight_key, move || {
+            query_inbox_digest_with_analytics(login, query_env, query_req, q)
+        })
+        .await
+        .context(h!())?;
     if let Some(limit) = test_limit {
         quantity = quantity.min(limit);
     }
@@ -2270,8 +2402,43 @@ mod tests {
     use sea_orm::ActiveValue::Set;
     use serde_json::json;
     use serial_test::serial;
+    use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Arc;
     use uuid::Uuid;
+
+    #[tokio::test]
+    async fn inbox_count_singleflight_coalesces_and_caches_successes() {
+        let key = format!("singleflight-test-{}", Uuid::new_v4());
+        let calls = Arc::new(AtomicUsize::new(0));
+        let first_calls = calls.clone();
+        let second_calls = calls.clone();
+        let first = query_inbox_digest_singleflight(key.clone(), move || {
+            let calls = first_calls.clone();
+            async move {
+                calls.fetch_add(1, Ordering::SeqCst);
+                tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+                Ok((7, None))
+            }
+        });
+        let second = query_inbox_digest_singleflight(key.clone(), move || {
+            let calls = second_calls.clone();
+            async move {
+                calls.fetch_add(1, Ordering::SeqCst);
+                Ok((8, None))
+            }
+        });
+
+        let (first, second) = tokio::join!(first, second);
+        assert_eq!(first.unwrap(), (7, None));
+        assert_eq!(second.unwrap(), (7, None));
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+
+        let cached =
+            query_inbox_digest_singleflight(key, || async { Ok((9, None)) })
+                .await
+                .unwrap();
+        assert_eq!(cached, (7, None));
+    }
 
     fn submit_dmr_metadata(cc: Option<i32>) -> SubmitDmrMetadata {
         SubmitDmrMetadata {

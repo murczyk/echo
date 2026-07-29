@@ -6682,6 +6682,14 @@ fn count_stats_analytics_supports_callsign_filters_but_rejects_search() {
 }
 
 #[test]
+fn count_stats_analytics_rejects_unit_filters() {
+    let mut req = mk_analysis_stats_req(0, 1);
+    req.selected_units = Some(vec!["unit".to_string()]);
+
+    assert!(!analytics_count_request_supported(&req));
+}
+
+#[test]
 fn analytical_inbox_reads_support_callsign_filters_but_reject_search() {
     let mut req = InboxMessagesReq::default();
     assert!(!analytics_inbox_request_supported(&req));

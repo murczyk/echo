@@ -804,6 +804,54 @@ mod unit_filter_query_tests {
             r#"INNER JOIN "sigint_network_unit" AS "selected_unit_network_unit" ON "selected_unit_network_unit"."network_id" = "selected_unit_network"."id""#
         ), "{sql}");
     }
+
+    #[test]
+    fn period_unit_filter_materializes_bounded_matching_ids() {
+        let dt_since = NaiveDate::from_ymd_opt(2026, 7, 28)
+            .unwrap()
+            .and_hms_opt(0, 0, 0)
+            .unwrap();
+        let dt_till = dt_since + chrono::Duration::days(1);
+        let query = filter_selected_units_for_period(
+            sigint_inbox_item::Entity::find(),
+            &Some(vec!["100 pbr".to_string()]),
+            &Some(false),
+            dt_since,
+            dt_till,
+        )
+        .unwrap();
+        let sql = query.build(DbBackend::Postgres).to_string();
+
+        assert_eq!(sql.matches("MATERIALIZED").count(), 2, "{sql}");
+        assert!(sql.contains("matching_unit_network_ids"), "{sql}");
+        assert!(sql.contains("matching_unit_inbox_item_ids"), "{sql}");
+        assert!(sql.contains(" UNION ALL "), "{sql}");
+        assert!(sql.contains("2026-07-28 00:00:00"), "{sql}");
+        assert!(sql.contains("2026-07-29 00:00:00"), "{sql}");
+    }
+
+    #[test]
+    fn denied_period_unit_filter_excludes_bounded_matching_ids() {
+        let dt_since = NaiveDate::from_ymd_opt(2026, 7, 28)
+            .unwrap()
+            .and_hms_opt(0, 0, 0)
+            .unwrap();
+        let query = filter_denied_units_for_period(
+            sigint_inbox_item::Entity::find(),
+            &Some(vec!["100 pbr".to_string()]),
+            &Some(false),
+            dt_since,
+            dt_since + chrono::Duration::days(1),
+        )
+        .unwrap();
+        let sql = query.build(DbBackend::Postgres).to_string();
+
+        assert!(
+            sql.contains(r#""sigint_inbox_item"."id" NOT IN ("#),
+            "{sql}"
+        );
+        assert_eq!(sql.matches("MATERIALIZED").count(), 2, "{sql}");
+    }
 }
 
 fn unresolved_hierarchy_column_matches_selected_units(
@@ -991,6 +1039,108 @@ pub(super) fn selected_unit_inbox_item_ids_query(
         select_header_unit_inbox_item_ids(selected_units, dt_since, dt_till);
     inbox_item_ids.union(UnionType::All, linked_inbox_item_ids);
     Ok(inbox_item_ids)
+}
+
+pub(super) fn filter_selected_units_for_period<Q>(
+    q: Q,
+    selected_units: &Option<Vec<String>>,
+    units_exact_match_only: &Option<bool>,
+    dt_since: NaiveDateTime,
+    dt_till: NaiveDateTime,
+) -> Result<Q, AppError>
+where
+    Q: QueryFilter,
+{
+    let Some(matching_ids) = unit_match_ids_for_period(
+        selected_units,
+        units_exact_match_only,
+        dt_since,
+        dt_till,
+    )?
+    else {
+        return filter_selected_units(
+            q,
+            selected_units,
+            units_exact_match_only,
+        );
+    };
+    Ok(q.filter(Expr::cust(format!(
+        r#""sigint_inbox_item"."id" IN ({matching_ids})"#
+    ))))
+}
+
+pub(super) fn filter_denied_units_for_period<Q>(
+    q: Q,
+    denied_units: &Option<Vec<String>>,
+    units_exact_match_only: &Option<bool>,
+    dt_since: NaiveDateTime,
+    dt_till: NaiveDateTime,
+) -> Result<Q, AppError>
+where
+    Q: QueryFilter,
+{
+    let Some(matching_ids) = unit_match_ids_for_period(
+        denied_units,
+        units_exact_match_only,
+        dt_since,
+        dt_till,
+    )?
+    else {
+        return filter_denied_units(q, denied_units, units_exact_match_only);
+    };
+    Ok(q.filter(Expr::cust(format!(
+        r#""sigint_inbox_item"."id" NOT IN ({matching_ids})"#
+    ))))
+}
+
+fn unit_match_ids_for_period(
+    units: &Option<Vec<String>>,
+    units_exact_match_only: &Option<bool>,
+    dt_since: NaiveDateTime,
+    dt_till: NaiveDateTime,
+) -> Result<Option<String>, AppError> {
+    let matching_network_ids_alias = Alias::new("matching_unit_network_ids");
+    let matching_inbox_item_ids_alias =
+        Alias::new("matching_unit_inbox_item_ids");
+    let Some(matching_network_ids) =
+        selected_unit_network_ids_query(units, units_exact_match_only)
+    else {
+        return Ok(None);
+    };
+    let matching_inbox_item_ids = selected_unit_inbox_item_ids_query(
+        units,
+        units_exact_match_only,
+        matching_network_ids_alias.clone(),
+        dt_since,
+        dt_till,
+    )?;
+    let matching_ids = Query::select()
+        .column((
+            matching_inbox_item_ids_alias.clone(),
+            sigint_inbox_item::Column::Id,
+        ))
+        .from(matching_inbox_item_ids_alias.clone())
+        .to_owned();
+    let mut with_clause = Query::with();
+    with_clause
+        .cte(
+            CommonTableExpression::new()
+                .query(matching_network_ids)
+                .table_name(matching_network_ids_alias)
+                .materialized(true)
+                .to_owned(),
+        )
+        .cte(
+            CommonTableExpression::new()
+                .query(matching_inbox_item_ids)
+                .table_name(matching_inbox_item_ids_alias)
+                .materialized(true)
+                .to_owned(),
+        );
+    let matching_ids = with_clause
+        .query(matching_ids)
+        .to_string(PostgresQueryBuilder);
+    Ok(Some(matching_ids))
 }
 
 fn select_header_unit_inbox_item_ids(
@@ -6196,6 +6346,7 @@ fn analytics_count_request_supported(req: &AnalysisStatsReq) -> bool {
     req.search
         .as_ref()
         .is_none_or(|search| search.trim().is_empty())
+        && req.selected_units.as_ref().is_none_or(Vec::is_empty)
 }
 
 fn analytics_stats_request_supported(

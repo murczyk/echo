@@ -725,10 +725,12 @@ pub(super) fn build_groups_query(
         filter_selected_freqs(groups_res, &req.selected_freqs).context(h!())?;
     let groups_res =
         filter_selected_posts(groups_res, &req.selected_posts).context(h!())?;
-    let groups_res = filter_selected_units(
+    let groups_res = filter_selected_units_for_period(
         groups_res,
         &req.selected_units,
         &req.units_exact_match_only,
+        dt_since,
+        dt_till,
     )
     .context(h!())?;
     let groups_res = filter_selected_locations(
@@ -978,6 +980,8 @@ pub(super) fn build_sender_breakdown_query(
     let breakdown_query = apply_sender_filters_for_login(
         breakdown_query,
         &req,
+        dt_since,
+        dt_till,
         login_str,
         master_keys,
         scope,
@@ -1059,10 +1063,12 @@ fn build_senders_filtered_query(
         .context(h!())?;
     let senders_res = filter_selected_posts(senders_res, &req.selected_posts)
         .context(h!())?;
-    let senders_res = filter_selected_units(
+    let senders_res = filter_selected_units_for_period(
         senders_res,
         &req.selected_units,
         &req.units_exact_match_only,
+        dt_since,
+        dt_till,
     )
     .context(h!())?;
     let senders_res = filter_selected_locations(
@@ -1153,6 +1159,8 @@ fn apply_sender_dimension_filters(
 fn apply_sender_filters_for_login<E>(
     query: Select<E>,
     req: &Json<AnalysisStatsReq>,
+    dt_since: NaiveDateTime,
+    dt_till: NaiveDateTime,
     login_str: &uuid::Uuid,
     master_keys: Vec<String>,
     scope: Option<&AnalyticsMessageIdScope>,
@@ -1174,10 +1182,12 @@ where
         filter_selected_freqs(query, &req.selected_freqs).context(h!())?;
     let query =
         filter_selected_posts(query, &req.selected_posts).context(h!())?;
-    let query = filter_selected_units(
+    let query = filter_selected_units_for_period(
         query,
         &req.selected_units,
         &req.units_exact_match_only,
+        dt_since,
+        dt_till,
     )
     .context(h!())?;
     let query = filter_selected_locations(
@@ -1436,10 +1446,12 @@ fn build_posts_filtered_query(
         &master_keys,
     )
     .context(h!())?;
-    let post_res = filter_selected_units(
+    let post_res = filter_selected_units_for_period(
         post_res,
         &req.selected_units,
         &req.units_exact_match_only,
+        dt_since,
+        dt_till,
     )
     .context(h!())?;
     let post_res =
@@ -1776,10 +1788,12 @@ fn build_freqs_filtered_query(
         &master_keys,
     )
     .context(h!())?;
-    let freqs_res = filter_selected_units(
+    let freqs_res = filter_selected_units_for_period(
         freqs_res,
         &req.selected_units,
         &req.units_exact_match_only,
+        dt_since,
+        dt_till,
     )
     .context(h!())?;
     let freqs_res = filter_selected_posts(freqs_res, &req.selected_posts)?;
@@ -2138,6 +2152,8 @@ fn build_metadata_messages_query(
     apply_sender_filters_for_login(
         messages_q,
         req,
+        dt_since,
+        dt_till,
         login_str,
         master_keys,
         None,
@@ -2388,10 +2404,12 @@ fn build_callsigns_filtered_query(
         filter_selected_freqs(callsigns_res, &req.selected_freqs)?;
     let callsigns_res =
         filter_selected_posts(callsigns_res, &req.selected_posts)?;
-    let callsigns_res = filter_selected_units(
+    let callsigns_res = filter_selected_units_for_period(
         callsigns_res,
         &req.selected_units,
         &req.units_exact_match_only,
+        dt_since,
+        dt_till,
     )?;
     let callsigns_res = filter_selected_locations(
         callsigns_res,
@@ -3499,10 +3517,12 @@ fn build_locations_filtered_query_for_login(
         &master_keys,
     )
     .context(h!())?;
-    let locations_res = filter_selected_units(
+    let locations_res = filter_selected_units_for_period(
         locations_res,
         &req.selected_units,
         &req.units_exact_match_only,
+        dt_since,
+        dt_till,
     )
     .context(h!())?;
     let locations_res =
@@ -4561,10 +4581,12 @@ fn build_network_analytics_messages_query(
         filter_selected_freqs(messages, &req.selected_freqs).context(h!())?;
     let messages =
         filter_selected_posts(messages, &req.selected_posts).context(h!())?;
-    let messages = filter_selected_units(
+    let messages = filter_selected_units_for_period(
         messages,
         &req.selected_units,
         &req.units_exact_match_only,
+        dt_since,
+        dt_till,
     )
     .context(h!())?;
     let messages = filter_selected_locations(
@@ -5152,10 +5174,12 @@ fn build_networks_query_for_login(
         filter_selected_freqs(messages_q, &req.selected_freqs).context(h!())?;
     let messages_q =
         filter_selected_posts(messages_q, &req.selected_posts).context(h!())?;
-    let messages_q = filter_selected_units(
+    let messages_q = filter_selected_units_for_period(
         messages_q,
         &req.selected_units,
         &req.units_exact_match_only,
+        dt_since,
+        dt_till,
     )
     .context(h!())?;
     let messages_q = filter_selected_locations(
@@ -5519,10 +5543,12 @@ async fn fetch_counts_for_login_with_conn(
     let selected_count_res =
         filter_selected_posts(selected_count_res, &req.selected_posts)
             .context(h!())?;
-    let selected_count_res = filter_selected_units(
+    let selected_count_res = filter_selected_units_for_period(
         selected_count_res,
         &req.selected_units,
         &req.units_exact_match_only,
+        dt_since,
+        dt_till,
     )
     .context(h!())?;
     let selected_count_res = filter_selected_locations(
