@@ -1669,10 +1669,19 @@ fn matches_any_token(
     frequency_tokens: &[String],
 ) -> bool {
     let body = normalize_text(body);
-    keyword_tokens
-        .iter()
-        .chain(frequency_tokens.iter())
-        .any(|token| body.contains(token))
+    keyword_tokens.iter().any(|token| body.contains(token))
+        || frequency_tokens
+            .iter()
+            .any(|token| contains_word_starting_with(&body, token))
+}
+
+fn contains_word_starting_with(body: &str, prefix: &str) -> bool {
+    body.match_indices(prefix).any(|(start, _)| {
+        body[..start]
+            .chars()
+            .next_back()
+            .is_none_or(|ch| !ch.is_alphanumeric() && ch != '_')
+    })
 }
 
 async fn extract_points(body: &str) -> Vec<Point> {
@@ -2479,6 +2488,44 @@ mod tests {
             &[],
         );
         assert_eq!(decision, MatchDecision::Send);
+    }
+
+    #[test]
+    fn matches_frequency_at_start_of_word() {
+        let automation = AutomationFilter {
+            keyword_tokens: vec![],
+            frequency_tokens: vec!["134.50".to_string()],
+            ..filter()
+        };
+        let now = Utc::now().naive_utc();
+
+        for body in ["134.5005", "Frequency: 134.509999", "(134.500)"] {
+            let decision =
+                message_matches_filters(&automation, body, now, now, &[]);
+            assert_eq!(decision, MatchDecision::Send, "{body}");
+        }
+    }
+
+    #[test]
+    fn skips_frequency_inside_word() {
+        let automation = AutomationFilter {
+            keyword_tokens: vec![],
+            frequency_tokens: vec!["134.50".to_string()],
+            ..filter()
+        };
+        let now = Utc::now().naive_utc();
+        let decision = message_matches_filters(
+            &automation,
+            "Frequency: 1134.5005",
+            now,
+            now,
+            &[],
+        );
+
+        assert_eq!(
+            decision,
+            MatchDecision::Skip("keyword/frequency filters did not match")
+        );
     }
 
     #[test]
