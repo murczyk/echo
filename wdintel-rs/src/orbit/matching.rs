@@ -1,3 +1,4 @@
+use crate::config::ORBIT_MATCHING_SIGINT_NAME_BLACKLIST;
 use crate::entities::sigint_unit;
 use crate::orbit::types::SourceUnit;
 use std::collections::{BTreeSet, HashMap, HashSet};
@@ -63,7 +64,7 @@ fn match_score(
         return None;
     };
     let (sigint_echelon, sigint_name) = sigint_unit_identity(sigint_unit)?;
-    if !path.root_names.contains(&sigint_name) {
+    if !names_match(sigint_echelon, &path.root_names, &sigint_name) {
         return None;
     }
     let mut matched_names = 0;
@@ -76,11 +77,11 @@ fn match_score(
     ]
     .into_iter()
     .all(|(echelon, echo_name)| {
-        let echo_name = normalize_name(echo_name);
+        let echo_name = normalize_sigint_name_for_echelon(echelon, echo_name);
         if echo_name.is_empty() {
             return true;
         }
-        if path.all_names.contains(&echo_name) {
+        if names_match(echelon, &path.all_names, &echo_name) {
             matched_names += 1;
             return true;
         }
@@ -128,6 +129,67 @@ pub fn matching_sigint_unit_ids(
             })
         })
         .collect()
+}
+
+pub fn closest_orbit_matches<'a>(
+    orbit_units: &'a [SourceUnit],
+    sigint_unit: &sigint_unit::Model,
+) -> Vec<&'a SourceUnit> {
+    let Some((sigint_echelon, _)) = sigint_unit_identity(sigint_unit) else {
+        return Vec::new();
+    };
+    let mut candidates = orbit_units
+        .iter()
+        .filter_map(|orbit_unit| {
+            search_score(orbit_unit, sigint_unit, sigint_echelon)
+                .map(|score| (orbit_unit, score))
+        })
+        .collect::<Vec<_>>();
+    candidates.sort_by_key(|(orbit_unit, score)| {
+        (
+            std::cmp::Reverse(score.matched_names),
+            score.echelon_distance.unwrap_or(usize::MAX),
+            orbit_unit.unit_id,
+        )
+    });
+    let Some((_, best_score)) = candidates.first() else {
+        return Vec::new();
+    };
+    let best_quality = (best_score.matched_names, best_score.echelon_distance);
+    candidates
+        .into_iter()
+        .take_while(|(_, score)| {
+            (score.matched_names, score.echelon_distance) == best_quality
+        })
+        .map(|(orbit_unit, _)| orbit_unit)
+        .collect()
+}
+
+fn search_score(
+    orbit_unit: &SourceUnit,
+    sigint_unit: &sigint_unit::Model,
+    sigint_echelon: EchoEchelon,
+) -> Option<MatchScore> {
+    let path = comparable_path(orbit_unit).ok()?;
+    let matched_names = [
+        (EchoEchelon::Company, sigint_unit.company.as_str()),
+        (EchoEchelon::Battalion, sigint_unit.battalion.as_str()),
+        (EchoEchelon::Regiment, sigint_unit.regiment.as_str()),
+        (EchoEchelon::Division, sigint_unit.division.as_str()),
+        (EchoEchelon::Army, sigint_unit.army.as_str()),
+    ]
+    .into_iter()
+    .filter(|(echelon, name)| {
+        let name = normalize_sigint_name_for_echelon(*echelon, name);
+        !name.is_empty() && names_match(*echelon, &path.all_names, &name)
+    })
+    .count();
+    (matched_names > 0).then_some(MatchScore {
+        echelon_distance: path
+            .root_echelon
+            .map(|orbit| orbit.index().abs_diff(sigint_echelon.index())),
+        matched_names,
+    })
 }
 
 fn best_matching_sigint_unit(
@@ -295,21 +357,36 @@ fn descriptor_names(unit: &SourceUnit) -> HashSet<String> {
 }
 
 fn comparable_path(unit: &SourceUnit) -> anyhow::Result<ComparablePath> {
-    let full_name =
+    let operational_full_name =
         unit.operational_unit_name_full.as_deref().ok_or_else(|| {
             anyhow::anyhow!("operational_unit_name_full is missing")
         })?;
-    let segments = split_path(full_name);
+    let operational_segments = split_path(operational_full_name);
+    let generative_segments = unit
+        .generative_unit_name_full
+        .as_deref()
+        .map(split_path)
+        .unwrap_or_default();
     let mut root_names = descriptor_names(unit);
-    if let Some(root_segment) = segments.first() {
+    if let Some(root_segment) = operational_segments.first() {
+        root_names.insert(root_segment.clone());
+    }
+    if let Some(root_segment) = generative_segments.first() {
         root_names.insert(root_segment.clone());
     }
     let mut descriptors = vec![unit];
-    let mut parents = unit.operational_parent_units.iter().collect::<Vec<_>>();
+    let mut parents = unit
+        .operational_parent_units
+        .iter()
+        .chain(&unit.generative_parent_units)
+        .collect::<Vec<_>>();
     parents.sort_by_key(|parent| std::cmp::Reverse(parent.path_level));
     descriptors.extend(parents);
     let mut result = HashMap::<EchoEchelon, HashSet<String>>::new();
-    let mut all_names = segments.into_iter().collect::<HashSet<_>>();
+    let mut all_names = operational_segments
+        .into_iter()
+        .chain(generative_segments)
+        .collect::<HashSet<_>>();
     for descriptor in descriptors {
         let descriptor_names = descriptor_names(descriptor);
         all_names.extend(descriptor_names.iter().cloned());
@@ -354,7 +431,7 @@ fn sigint_unit_identity(
     ]
     .into_iter()
     .find_map(|(echelon, name)| {
-        let name = normalize_name(name);
+        let name = normalize_sigint_name_for_echelon(echelon, name);
         (!name.is_empty()).then_some((echelon, name))
     })
 }
@@ -372,10 +449,12 @@ fn parent_signature(unit: &sigint_unit::Model) -> Vec<(EchoEchelon, String)> {
     .filter(|(echelon, name)| {
         unit_echelon.is_some_and(|unit_echelon| {
             echelon.index() > unit_echelon.index()
-                && !normalize_name(name).is_empty()
+                && !normalize_sigint_name_for_echelon(*echelon, name).is_empty()
         })
     })
-    .map(|(echelon, name)| (echelon, normalize_name(name)))
+    .map(|(echelon, name)| {
+        (echelon, normalize_sigint_name_for_echelon(echelon, name))
+    })
     .collect()
 }
 
@@ -411,13 +490,27 @@ fn split_path(value: &str) -> Vec<String> {
 }
 
 fn orbit_parent_signature(unit: &SourceUnit) -> Vec<String> {
-    unit.operational_unit_name_full
-        .as_deref()
-        .map(split_path)
-        .unwrap_or_default()
-        .into_iter()
-        .skip(1)
-        .collect()
+    let mut signature = vec!["operational".to_string()];
+    signature.extend(
+        unit.operational_unit_name_full
+            .as_deref()
+            .map(split_path)
+            .unwrap_or_default()
+            .into_iter()
+            .skip(1)
+            .map(|name| normalize_army_name(&name)),
+    );
+    signature.push("generative".to_string());
+    signature.extend(
+        unit.generative_unit_name_full
+            .as_deref()
+            .map(split_path)
+            .unwrap_or_default()
+            .into_iter()
+            .skip(1)
+            .map(|name| normalize_army_name(&name)),
+    );
+    signature
 }
 
 fn normalize_name(value: &str) -> String {
@@ -426,6 +519,54 @@ fn normalize_name(value: &str) -> String {
         .collect::<Vec<_>>()
         .join(" ")
         .to_lowercase()
+}
+
+fn normalize_sigint_name(value: &str) -> String {
+    let mut value = normalize_name(value);
+    for blacklisted in ORBIT_MATCHING_SIGINT_NAME_BLACKLIST {
+        value = value.replace(&normalize_name(blacklisted), "");
+    }
+    normalize_name(&value)
+}
+
+fn normalize_sigint_name_for_echelon(
+    echelon: EchoEchelon,
+    value: &str,
+) -> String {
+    let value = normalize_sigint_name(value);
+    if echelon == EchoEchelon::Army {
+        normalize_army_name(&value)
+    } else {
+        value
+    }
+}
+
+fn normalize_army_name(value: &str) -> String {
+    let value = normalize_name(value);
+    let Some((number, suffix)) = value.split_once(' ') else {
+        return value;
+    };
+    if number.chars().all(|character| character.is_ascii_digit())
+        && suffix.ends_with('а')
+    {
+        format!("{number} а")
+    } else {
+        value
+    }
+}
+
+fn names_match(
+    echelon: EchoEchelon,
+    names: &HashSet<String>,
+    candidate: &str,
+) -> bool {
+    if echelon == EchoEchelon::Army {
+        names
+            .iter()
+            .any(|name| normalize_army_name(name) == candidate)
+    } else {
+        names.contains(candidate)
+    }
 }
 
 #[cfg(test)]
@@ -552,6 +693,108 @@ mod tests {
             &unit,
             &echo_unit("1 рота", "", "1111 бр", "", "")
         ));
+    }
+
+    #[test]
+    fn sigint_name_blacklist_is_removed_case_insensitively() {
+        let unit = source_unit(
+            "1 рота / 1111 бр",
+            vec![("company", "1 рота", 1), ("brigade", "1111 бр", 0)],
+        );
+        assert!(matches_sigint_unit(
+            &unit,
+            &echo_unit("1 рота (АТ)", "", "1111 бр ТерО", "", "")
+        ));
+        assert!(matches_sigint_unit(
+            &unit,
+            &echo_unit("1 рота", "", "1111 бр ТрО", "", "")
+        ));
+    }
+
+    #[test]
+    fn generative_parent_names_participate_in_matching() {
+        let mut unit = source_unit(
+            "1 мсб / 4 омсбр / УВ(с) \"Дзержинск\"",
+            vec![
+                ("battalion", "1 мсб", 2),
+                ("brigade", "4 омсбр", 1),
+                ("corps", "УВ(с) \"Дзержинск\"", 0),
+            ],
+        );
+        unit.generative_unit_name_full =
+            Some("1 мсб / 4 омсбр / 3 ЗВА / ПдВО".to_string());
+        unit.generative_parent_units = vec![
+            parent_unit("militaryDistrict", "ПдВО", 0),
+            parent_unit("fieldArmy", "3 ЗВА", 1),
+            parent_unit("brigade", "4 омсбр", 2),
+        ];
+        assert!(matches_sigint_unit(
+            &unit,
+            &echo_unit("", "1 мсб ТрО", "4 омсбр", "", "3 ЗВА")
+        ));
+    }
+
+    #[test]
+    fn army_suffix_variants_match_by_number() {
+        let unit = source_unit(
+            "1111 бр / 58 ЗВА",
+            vec![("brigade", "1111 бр", 1), ("fieldArmy", "58 ЗВА", 0)],
+        );
+        assert!(matches_sigint_unit(
+            &unit,
+            &echo_unit("", "", "1111 бр", "", "58 А")
+        ));
+        assert!(matches_sigint_unit(
+            &unit,
+            &echo_unit("", "", "1111 бр", "", "58 гв. ОА")
+        ));
+        assert!(!matches_sigint_unit(
+            &unit,
+            &echo_unit("", "", "1111 бр", "", "59 А")
+        ));
+    }
+
+    #[test]
+    fn army_root_suffix_variants_match_by_number() {
+        let unit = source_unit("58 ЗВА", vec![("fieldArmy", "58 ЗВА", 0)]);
+        assert!(matches_sigint_unit(
+            &unit,
+            &echo_unit("", "", "", "", "58 ОА")
+        ));
+    }
+
+    #[test]
+    fn manual_search_returns_every_equally_close_match() {
+        let mut first = source_unit(
+            "1 мсб / 4 омсбр / 3 ЗВА",
+            vec![
+                ("battalion", "1 мсб", 2),
+                ("brigade", "4 омсбр", 1),
+                ("fieldArmy", "3 ЗВА", 0),
+            ],
+        );
+        first.unit_id = Uuid::from_u128(1);
+        let mut second = first.clone();
+        second.unit_id = Uuid::from_u128(2);
+        let weaker = source_unit(
+            "2 мсб / 4 омсбр / 3 ЗВА",
+            vec![
+                ("battalion", "2 мсб", 2),
+                ("brigade", "4 омсбр", 1),
+                ("fieldArmy", "3 ЗВА", 0),
+            ],
+        );
+        let sigint_unit = echo_unit("", "1 мсб", "4 омсбр", "", "3 А");
+        assert_eq!(
+            closest_orbit_matches(
+                &[second.clone(), weaker, first.clone()],
+                &sigint_unit
+            )
+            .into_iter()
+            .map(|unit| unit.unit_id)
+            .collect::<Vec<_>>(),
+            vec![first.unit_id, second.unit_id]
+        );
     }
 
     #[test]
@@ -718,6 +961,26 @@ mod tests {
         DictionaryValue {
             key: json!(key),
             name: json!(key),
+        }
+    }
+
+    fn parent_unit(key: &str, name: &str, path_level: i32) -> SourceUnit {
+        SourceUnit {
+            unit_id: Uuid::new_v4(),
+            unit_name: Some(name.to_string()),
+            unit_name_original: None,
+            unit_name_short: Some(name.to_string()),
+            operational_unit_name_full: None,
+            generative_unit_name_full: None,
+            unit_number: None,
+            unit_alternate_names: None,
+            unit_alternate_numbers: None,
+            unit_echelon: Some(dictionary(key)),
+            combat_unit_type: None,
+            grouping_of_forces: None,
+            operational_parent_units: vec![],
+            generative_parent_units: vec![],
+            path_level: Some(path_level),
         }
     }
 

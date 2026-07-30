@@ -446,6 +446,35 @@ pub async fn replace_sigint_unit_links(
     Ok(())
 }
 
+pub async fn replace_sigint_unit_link(
+    db: &DatabaseConnection,
+    sigint_unit_id: i64,
+    orbit_unit_id: Uuid,
+) -> Result<(), AppError> {
+    let transaction = db.begin().await.c(h!())?;
+    orbit_unit_sigint_unit::Entity::delete_many()
+        .filter(orbit_unit_sigint_unit::Column::SigintUnitId.eq(sigint_unit_id))
+        .exec(&transaction)
+        .await
+        .c(h!())?;
+    orbit_unit_sigint_unit::Entity::delete_many()
+        .filter(orbit_unit_sigint_unit::Column::OrbitUnitId.eq(orbit_unit_id))
+        .exec(&transaction)
+        .await
+        .c(h!())?;
+    orbit_unit_sigint_unit::Entity::insert(
+        orbit_unit_sigint_unit::ActiveModel {
+            orbit_unit_id: Set(orbit_unit_id),
+            sigint_unit_id: Set(sigint_unit_id),
+        },
+    )
+    .exec(&transaction)
+    .await
+    .c(h!())?;
+    transaction.commit().await.c(h!())?;
+    Ok(())
+}
+
 pub fn diff_lines(
     unit: &ImportUnit,
     existing: Option<&ExistingUnit>,

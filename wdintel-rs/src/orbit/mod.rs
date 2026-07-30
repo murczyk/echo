@@ -19,7 +19,15 @@ mod tui;
 mod types;
 
 pub async fn run_import_tui(mode: Mode) -> Result<(), AppError> {
-    Ok(run_import(mode).await.c(h!())?)
+    Ok(run_selected_action(mode).await.c(h!())?)
+}
+
+async fn run_selected_action(mode: Mode) -> anyhow::Result<()> {
+    match tui::prompt_start_action()? {
+        Some(tui::StartAction::Import) => run_import(mode).await,
+        Some(tui::StartAction::FindMatch) => run_match_search(mode).await,
+        None => Ok(()),
+    }
 }
 
 async fn run_import(mode: Mode) -> anyhow::Result<()> {
@@ -80,6 +88,151 @@ async fn run_import(mode: Mode) -> anyhow::Result<()> {
     }
     review_stale_units(&db, started_at).await?;
     persistence::replace_sigint_unit_links(&db, &sigint_unit_ids_by_orbit_unit)
+        .await?;
+    Ok(())
+}
+
+async fn run_match_search(mode: Mode) -> anyhow::Result<()> {
+    let Some(search_term) = tui::prompt_sigint_unit_name()? else {
+        return Ok(());
+    };
+    let db = new_pg_pool_from_mode(mode).await?;
+    let sigint_units = sigint_unit::Entity::find()
+        .filter(sigint_unit::Column::Deleted.eq(false))
+        .filter(sigint_unit::Column::Active.eq(true))
+        .all(&db)
+        .await?;
+    let Some(sigint_unit) =
+        find_sigint_unit_by_full_name(sigint_units, &search_term)
+    else {
+        println!("No active SIGINT unit has full name: {search_term}");
+        return Ok(());
+    };
+    let Some(path) = tui::prompt_path()? else {
+        return Ok(());
+    };
+    let input = fs::read_to_string(&path).await?;
+    let (units, unknown_paths) = types::parse_units(&input)?;
+    confirm_unknown_paths(&path.display().to_string(), &unknown_paths)?;
+    matching::validate_source(&units)?;
+    let candidates = matching::closest_orbit_matches(&units, &sigint_unit);
+    if candidates.is_empty() {
+        println!("No ORBIT matches found for: {search_term}");
+        return Ok(());
+    }
+    let options = candidates
+        .iter()
+        .map(|unit| tui::MatchOption {
+            operational_full_name: unit
+                .operational_unit_name_full
+                .clone()
+                .unwrap_or_else(|| "-".to_string()),
+            generative_full_name: unit
+                .generative_unit_name_full
+                .clone()
+                .unwrap_or_else(|| "-".to_string()),
+            original_name: unit
+                .unit_name_original
+                .clone()
+                .unwrap_or_else(|| "-".to_string()),
+        })
+        .collect::<Vec<_>>();
+    let Some(selected) = tui::select_match(&options)? else {
+        return Ok(());
+    };
+    let selected = candidates[selected];
+    import_selected_match(&db, &units, selected, sigint_unit.id).await?;
+    println!(
+        "Linked SIGINT unit {} to ORBIT unit {}",
+        sigint_unit.id, selected.unit_id
+    );
+    Ok(())
+}
+
+fn find_sigint_unit_by_full_name(
+    mut units: Vec<sigint_unit::Model>,
+    search_term: &str,
+) -> Option<sigint_unit::Model> {
+    let search_term = normalize_full_name(search_term);
+    units.sort_by_key(|unit| unit.id);
+    units.into_iter().find(|unit| {
+        normalize_full_name(&sigint_unit_full_name(unit)) == search_term
+    })
+}
+
+fn sigint_unit_full_name(unit: &sigint_unit::Model) -> String {
+    [
+        unit.company.as_str(),
+        unit.battalion.as_str(),
+        unit.regiment.as_str(),
+        unit.division.as_str(),
+        unit.army.as_str(),
+    ]
+    .into_iter()
+    .filter(|part| !part.is_empty())
+    .collect::<Vec<_>>()
+    .join(" ")
+}
+
+fn normalize_full_name(value: &str) -> String {
+    value
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .to_lowercase()
+}
+
+async fn import_selected_match(
+    db: &sea_orm::DatabaseConnection,
+    units: &[types::SourceUnit],
+    selected: &types::SourceUnit,
+    sigint_unit_id: i64,
+) -> anyhow::Result<()> {
+    let dictionaries = DictionaryMaps::load(db).await?;
+    let missing = dictionary::missing_dictionary_values(
+        std::slice::from_ref(selected),
+        &dictionaries,
+    )?;
+    if !missing.is_empty() {
+        dictionary::print_dictionary_migration(
+            &missing,
+            Utc::now().naive_utc(),
+        );
+        anyhow::bail!(
+            "selected ORBIT hierarchy contains missing dictionary values"
+        );
+    }
+    let hierarchy = hierarchy::build_import_hierarchy(
+        units,
+        &HashSet::from([selected.unit_id]),
+    )?;
+    let mut import_units = hierarchy
+        .into_iter()
+        .map(|unit| ImportUnit::from_hierarchy(unit, &dictionaries))
+        .collect::<anyhow::Result<Vec<_>>>()?;
+    let mut existing = persistence::load_existing(db).await?;
+    for unit in &mut import_units {
+        unit.preserve_existing_partial_fields(existing.get(&unit.unit_id));
+    }
+    let started_at = Utc::now().naive_utc();
+    for unit in &import_units {
+        let row = match persistence::classify(unit, existing.get(&unit.unit_id))
+        {
+            ImportState::New => {
+                persistence::insert_unit(db, unit, started_at).await?
+            }
+            ImportState::Unchanged(mut row) => {
+                persistence::touch_unit(db, unit.unit_id, started_at).await?;
+                row.updated_at = started_at;
+                row
+            }
+            ImportState::Changed(row) | ImportState::Deleted(row) => {
+                persistence::update_unit(db, row, unit, started_at).await?
+            }
+        };
+        existing.insert(unit.unit_id, row);
+    }
+    persistence::replace_sigint_unit_link(db, sigint_unit_id, selected.unit_id)
         .await?;
     Ok(())
 }
@@ -451,6 +604,50 @@ mod tests {
             ),
             1
         );
+    }
+
+    #[test]
+    fn finds_sigint_unit_by_normalized_full_name() {
+        let mut higher_id = sigint_unit();
+        higher_id.id = 2;
+        let mut lower_id = higher_id.clone();
+        lower_id.id = 1;
+        assert_eq!(
+            find_sigint_unit_by_full_name(
+                vec![higher_id, lower_id],
+                "  1 МСБ   ТрО 4 ОМСБР 3 ЗВА ",
+            )
+            .map(|unit| unit.id),
+            Some(1)
+        );
+    }
+
+    #[test]
+    fn missing_sigint_full_name_is_not_found() {
+        assert!(find_sigint_unit_by_full_name(
+            vec![sigint_unit()],
+            "2 мсб 4 омсбр 3 ЗВА",
+        )
+        .is_none());
+    }
+
+    fn sigint_unit() -> sigint_unit::Model {
+        sigint_unit::Model {
+            id: 1,
+            company: String::new(),
+            battalion: "1 мсб ТрО".to_string(),
+            regiment: "4 омсбр".to_string(),
+            division: String::new(),
+            army: "3 ЗВА".to_string(),
+            active: true,
+            deleted: false,
+            created_at: Utc::now().naive_utc(),
+            created_by_login_id: Uuid::new_v4(),
+            name: "1 мсб ТрО 4 омсбр 3 ЗВА".to_string(),
+            comment: String::new(),
+            sigint_origin_id: None,
+            original_id: None,
+        }
     }
 
     fn import_unit(operational_parent_unit_id: Option<Uuid>) -> ImportUnit {

@@ -12,13 +12,29 @@ use crossterm::terminal::{
 use crossterm::{cursor, execute};
 use ratatui::backend::CrosstermBackend;
 use ratatui::layout::{Constraint, Direction, Layout};
-use ratatui::widgets::{Block, Borders, Paragraph, Wrap};
+use ratatui::style::{Color, Modifier, Style};
+use ratatui::widgets::{
+    Block, Borders, List, ListItem, ListState, Paragraph, Wrap,
+};
 use ratatui::{Frame, Terminal};
 use std::io::{self, Stdout};
 use std::path::PathBuf;
 use std::time::Duration;
 
 pub type OrbitTerminal = Terminal<CrosstermBackend<Stdout>>;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StartAction {
+    Import,
+    FindMatch,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MatchOption {
+    pub operational_full_name: String,
+    pub generative_full_name: String,
+    pub original_name: String,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Decision {
@@ -56,9 +72,39 @@ impl Action {
     }
 }
 
+pub fn prompt_start_action() -> Result<Option<StartAction>, AppError> {
+    let mut terminal = setup_terminal().c(h!())?;
+    let result = run_start_menu(&mut terminal);
+    restore_terminal(&mut terminal).c(h!())?;
+    result
+}
+
+pub fn prompt_sigint_unit_name() -> Result<Option<String>, AppError> {
+    let mut terminal = setup_terminal().c(h!())?;
+    let result = run_text_prompt(
+        &mut terminal,
+        "Exact SIGINT unit full name (Enter: continue, Esc: quit)",
+    );
+    restore_terminal(&mut terminal).c(h!())?;
+    result
+}
+
 pub fn prompt_path() -> Result<Option<PathBuf>, AppError> {
     let mut terminal = setup_terminal().c(h!())?;
-    let result = run_path_prompt(&mut terminal);
+    let result = run_text_prompt(
+        &mut terminal,
+        "ORBIT JSON path (Enter: continue, Esc: quit)",
+    )
+    .map(|path| path.map(PathBuf::from));
+    restore_terminal(&mut terminal).c(h!())?;
+    result
+}
+
+pub fn select_match(
+    options: &[MatchOption],
+) -> Result<Option<usize>, AppError> {
+    let mut terminal = setup_terminal().c(h!())?;
+    let result = run_match_selector(&mut terminal, options);
     restore_terminal(&mut terminal).c(h!())?;
     result
 }
@@ -120,14 +166,55 @@ pub fn review(
     }
 }
 
-fn run_path_prompt(
+fn run_start_menu(
     terminal: &mut OrbitTerminal,
-) -> Result<Option<PathBuf>, AppError> {
+) -> Result<Option<StartAction>, AppError> {
+    let poll = Duration::from_millis(ORBIT_TUI_EVENT_POLL_MS);
+    let actions = [StartAction::Import, StartAction::FindMatch];
+    let mut selected = 0;
+    loop {
+        terminal
+            .draw(|frame| draw_start_menu(frame, selected))
+            .c(h!())?;
+        if !event::poll(poll).c(h!())? {
+            continue;
+        }
+        let Event::Key(key) = event::read().c(h!())? else {
+            continue;
+        };
+        if key.kind != KeyEventKind::Press {
+            continue;
+        }
+        match key.code {
+            KeyCode::Esc => return Ok(None),
+            KeyCode::Char('c')
+                if key.modifiers.contains(KeyModifiers::CONTROL) =>
+            {
+                return Ok(None);
+            }
+            KeyCode::Enter if key.modifiers.is_empty() => {
+                return Ok(Some(actions[selected]))
+            }
+            KeyCode::Up if key.modifiers.is_empty() => {
+                selected = selected.saturating_sub(1)
+            }
+            KeyCode::Down if key.modifiers.is_empty() => {
+                selected = (selected + 1).min(actions.len() - 1)
+            }
+            _ => {}
+        }
+    }
+}
+
+fn run_text_prompt(
+    terminal: &mut OrbitTerminal,
+    title: &str,
+) -> Result<Option<String>, AppError> {
     let poll = Duration::from_millis(ORBIT_TUI_EVENT_POLL_MS);
     let mut input = String::new();
     loop {
         terminal
-            .draw(|frame| draw_path_prompt(frame, &input))
+            .draw(|frame| draw_text_prompt(frame, title, &input))
             .c(h!())?;
         if !event::poll(poll).c(h!())? {
             continue;
@@ -148,7 +235,7 @@ fn run_path_prompt(
             KeyCode::Enter
                 if key.modifiers.is_empty() && !input.trim().is_empty() =>
             {
-                return Ok(Some(PathBuf::from(input.trim())))
+                return Ok(Some(input.trim().to_string()))
             }
             KeyCode::Backspace if key.modifiers.is_empty() => {
                 input.pop();
@@ -164,16 +251,126 @@ fn run_path_prompt(
     }
 }
 
-fn draw_path_prompt(frame: &mut Frame<'_>, input: &str) {
-    let area = centered_area(frame, 80, 5);
-    let paragraph = Paragraph::new(input)
+fn run_match_selector(
+    terminal: &mut OrbitTerminal,
+    options: &[MatchOption],
+) -> Result<Option<usize>, AppError> {
+    if options.is_empty() {
+        return Ok(None);
+    }
+    let poll = Duration::from_millis(ORBIT_TUI_EVENT_POLL_MS);
+    let mut selected = 0;
+    loop {
+        terminal
+            .draw(|frame| draw_match_selector(frame, options, selected))
+            .c(h!())?;
+        if !event::poll(poll).c(h!())? {
+            continue;
+        }
+        let Event::Key(key) = event::read().c(h!())? else {
+            continue;
+        };
+        if key.kind != KeyEventKind::Press {
+            continue;
+        }
+        match key.code {
+            KeyCode::Esc => return Ok(None),
+            KeyCode::Char('c')
+                if key.modifiers.contains(KeyModifiers::CONTROL) =>
+            {
+                return Ok(None);
+            }
+            KeyCode::Enter if key.modifiers.is_empty() => {
+                return Ok(Some(selected))
+            }
+            KeyCode::Up if key.modifiers.is_empty() => {
+                selected = selected.saturating_sub(1)
+            }
+            KeyCode::Down if key.modifiers.is_empty() => {
+                selected = (selected + 1).min(options.len() - 1)
+            }
+            KeyCode::Home if key.modifiers.is_empty() => selected = 0,
+            KeyCode::End if key.modifiers.is_empty() => {
+                selected = options.len() - 1
+            }
+            _ => {}
+        }
+    }
+}
+
+fn draw_start_menu(frame: &mut Frame<'_>, selected: usize) {
+    let area = centered_area(frame, 70, 6);
+    let options = [
+        "Import new ORBIT units from a JSON file",
+        "Search an ORBIT unit by SIGINT unit name",
+    ];
+    let items = options.into_iter().map(ListItem::new);
+    let list = List::new(items)
         .block(
             Block::default()
                 .borders(Borders::ALL)
-                .title("ORBIT JSON path (Enter: continue, Esc: quit)"),
+                .title("Choose an action (↑/↓, Enter, Esc: quit)"),
         )
+        .highlight_style(
+            Style::default()
+                .fg(Color::Black)
+                .bg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        )
+        .highlight_symbol("> ");
+    let mut state = ListState::default();
+    state.select(Some(selected));
+    frame.render_stateful_widget(list, area, &mut state);
+}
+
+fn draw_text_prompt(frame: &mut Frame<'_>, title: &str, input: &str) {
+    let area = centered_area(frame, 80, 5);
+    let paragraph = Paragraph::new(input)
+        .block(Block::default().borders(Borders::ALL).title(title))
         .wrap(Wrap { trim: false });
     frame.render_widget(paragraph, area);
+}
+
+fn draw_match_selector(
+    frame: &mut Frame<'_>,
+    options: &[MatchOption],
+    selected: usize,
+) {
+    let root = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Min(1), Constraint::Length(2)])
+        .split(frame.size());
+    let items = options.iter().enumerate().map(|(index, option)| {
+        ListItem::new(format!(
+            "{}. Operational full name: {}\n   Generative full name: {}\n   Original name: {}",
+            index + 1,
+            option.operational_full_name,
+            option.generative_full_name,
+            option.original_name,
+        ))
+    });
+    let list = List::new(items)
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title(format!("Closest ORBIT matches ({})", options.len())),
+        )
+        .highlight_style(
+            Style::default()
+                .fg(Color::Black)
+                .bg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        )
+        .highlight_symbol("> ");
+    let mut state = ListState::default();
+    state.select(Some(selected));
+    frame.render_stateful_widget(list, root[0], &mut state);
+    frame.render_widget(
+        Paragraph::new(
+            "↑/↓/Home/End: select | Enter: import and link | Esc: quit",
+        ),
+        root[1],
+    );
 }
 
 fn draw_review(

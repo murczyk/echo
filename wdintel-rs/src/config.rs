@@ -508,6 +508,8 @@ pub const SIGINT_INBOX_TUI_REFRESH_MS: u64 = 2000;
 pub const SIGINT_INBOX_TUI_EVENT_POLL_MS: u64 = 250;
 pub const ORBIT_TUI_EVENT_POLL_MS: u64 = 250;
 pub const ORBIT_STALE_GRACE_SECONDS: i64 = 5;
+pub const ORBIT_MATCHING_SIGINT_NAME_BLACKLIST: &[&str] =
+    &["ТерО", "ТрО", "(ат)"];
 pub const SIGINT_INBOX_TUI_CHUNK_COUNT: usize = 10;
 pub const SIGINT_INBOX_TUI_BUCKET_GAP: usize = 2;
 pub const NETWORK_INBOX_OLD_WORKER_START_HOUR: u32 = 2;

@@ -428,11 +428,11 @@ orbitUnitDetails shared index orbitUnit =
             [ ( "border-top pt-4", index > 0 )
             ]
         ]
-        [ div [ class "d-flex align-items-center justify-content-between gap-3 mb-4" ]
+        [ div [ class "d-flex align-items-center justify-content-between gap-3 mb-4 flex-wrap" ]
             [ h3 [ class "h5 mb-0" ]
                 [ text (orbitUnitTitle orbitUnit) ]
             , a
-                [ class "btn btn-outline-primary btn-sm d-inline-flex align-items-center"
+                [ class "btn btn-outline-primary d-inline-flex align-items-center"
                 , href
                     ("https://delta.mil.gov.ua/orbit/units/"
                         ++ orbitUnit.unitId
@@ -440,11 +440,13 @@ orbitUnitDetails shared index orbitUnit =
                     )
                 , target "_blank"
                 , rel "noopener noreferrer"
+                , style "font-size" "1rem"
+                , style "padding" "0.5rem 1rem"
                 ]
                 [ img
                     [ src "/img/delta-icon.webp"
                     , class "me-2 inline-block"
-                    , style "height" "18px"
+                    , style "height" "36px"
                     ]
                     []
                 , text "Відкрити в Orbit"
@@ -452,11 +454,11 @@ orbitUnitDetails shared index orbitUnit =
             ]
         , div [ class "row g-4" ]
             [ overviewField "ID підрозділу" orbitUnit.unitId
-            , overviewMaybeField "Назва" orbitUnit.unitName
             , overviewMaybeField "Оригінальна назва" orbitUnit.unitNameOriginal
-            , overviewMaybeField "Скорочена назва" orbitUnit.unitNameShort
-            , overviewMaybeField "Повна оперативна назва" orbitUnit.operationalUnitNameFull
-            , overviewMaybeField "Повна генеративна назва" orbitUnit.generativeUnitNameFull
+            , overviewMaybeField "Повна назва" orbitUnit.generativeUnitNameFull
+            , overviewMaybeField
+                "Підпорядкування"
+                (Maybe.map orbitParentPath orbitUnit.operationalUnitNameFull)
             , overviewMaybeField "Номер підрозділу" orbitUnit.unitNumber
             , overviewMaybeListField "Альтернативні назви" orbitUnit.unitAlternateNames
             , overviewMaybeListField "Альтернативні номери" orbitUnit.unitAlternateNumbers
@@ -467,16 +469,6 @@ orbitUnitDetails shared index orbitUnit =
                 (orbitUnit.groupingOfForces
                     |> List.map orbitDictionaryDetails
                     |> String.join "\n"
-                )
-            , overviewMaybeField "ID генеративного батьківського підрозділу" orbitUnit.generativeParentUnitId
-            , overviewMaybeField "ID оперативного батьківського підрозділу" orbitUnit.operationalParentUnitId
-            , overviewField
-                "Видалено"
-                (if orbitUnit.deleted then
-                    "Так"
-
-                 else
-                    "Ні"
                 )
             , overviewField
                 "Дата створення"
@@ -494,12 +486,12 @@ orbitUnitDetails shared index orbitUnit =
 
 orbitUnitTitle : B.OrbitUnitDetails -> String
 orbitUnitTitle orbitUnit =
-    case orbitUnit.unitNameShort of
+    case orbitUnit.unitName of
         Just name ->
             name
 
         Nothing ->
-            Maybe.withDefault orbitUnit.unitId orbitUnit.unitName
+            Maybe.withDefault orbitUnit.unitId orbitUnit.unitNameShort
 
 
 overviewMaybeField : String -> Maybe String -> Html Msg
@@ -519,8 +511,16 @@ overviewMaybeListField labelText values =
 orbitDictionaryValue : Maybe B.OrbitDictionaryValue -> String
 orbitDictionaryValue value =
     value
-        |> Maybe.map orbitDictionaryDetails
+        |> Maybe.map .name
         |> Maybe.withDefault ""
+
+
+orbitParentPath : String -> String
+orbitParentPath value =
+    value
+        |> String.split " / "
+        |> List.drop 1
+        |> String.join " / "
 
 
 orbitDictionaryDetails : B.OrbitDictionaryValue -> String
