@@ -1,4 +1,5 @@
 import type {
+  AreaOfResponsibility,
   BrowseDeviceFilesReq,
   BrowseDeviceFilesRsp,
   CountDeviceFileSubtreesReq,
@@ -17,10 +18,12 @@ import type {
   ListDeviceFileRootsRsp,
   ListDevicesReq,
   ListDevicesRsp,
+  ListUnitsRsp,
   SearchDeviceFilesReq,
   SearchDeviceFilesRsp,
   SyncDeviceFilesReq,
   SyncDeviceFilesRsp,
+  Unit,
   UpdateDeviceReq,
 } from '../../../../Bindings';
 import { transformCamelToSnake, transformSnakeToCamel } from '../../../snake-to-camel';
@@ -151,6 +154,16 @@ export async function listDevices(
 export async function getDeviceUnitStats(options?: RequestOptions): Promise<DeviceUnitStat[]> {
   const data = await postJson('/api/device/unit-stats', undefined, options);
   return transformSnakeToCamel<{ units: DeviceUnitStat[] }>(data).units;
+}
+
+export async function listDeviceAors(options?: RequestOptions): Promise<AreaOfResponsibility[]> {
+  const data = await postJson('/api/device/aors', undefined, options);
+  return transformSnakeToCamel<AreaOfResponsibility[]>(data);
+}
+
+export async function listDeviceUnits(options?: RequestOptions): Promise<Unit[]> {
+  const data = await postJson('/api/device/units', undefined, options);
+  return transformSnakeToCamel<ListUnitsRsp>(data).units;
 }
 
 export async function getDeviceDetail(

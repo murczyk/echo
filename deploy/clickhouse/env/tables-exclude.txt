@@ -38,3 +38,7 @@ public.ai_callsign_settings
 public.ai_callsign_test_message
 public.ai_callsign_parse_result
 public.ai_callsign_worker_job
+
+# Operational Devices registry; unused by ClickHouse analytics.
+public.device
+public.device_aor

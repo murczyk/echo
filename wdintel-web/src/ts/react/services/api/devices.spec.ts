@@ -9,6 +9,8 @@ import {
   createDevice,
   getDeviceDetail,
   getDeviceUnitStats,
+  listDeviceAors,
+  listDeviceUnits,
   journalDeviceFiles,
   listDeviceFileRoots,
   listDevices,
@@ -171,6 +173,26 @@ describe('devices API service routes', () => {
 
     expect(requestBody()).toBeUndefined();
     expect(rsp).toEqual([{ unit: { id: 7, name: 'Unit' }, count: 3 }]);
+  });
+
+  it('loads device-authorized AOR and unit lookups without request bodies', async () => {
+    fetchMock()
+      .mockResolvedValueOnce(jsonResponse([{ id: 4, name: 'AOR', is_top_level: true }]))
+      .mockResolvedValueOnce(
+        jsonResponse({
+          units: [{ id: 7, name: 'Unit', created_by_login_id: 'analyst' }],
+        }),
+      );
+
+    const aors = await listDeviceAors();
+    const units = await listDeviceUnits();
+
+    expect(fetchMock()).toHaveBeenNthCalledWith(1, '/api/device/aors', expect.any(Object));
+    expect(fetchMock()).toHaveBeenNthCalledWith(2, '/api/device/units', expect.any(Object));
+    expect(requestBody(0)).toBeUndefined();
+    expect(requestBody(1)).toBeUndefined();
+    expect(aors[0]).toMatchObject({ id: 4, name: 'AOR', isTopLevel: true });
+    expect(units[0]).toMatchObject({ id: 7, name: 'Unit', createdByLoginId: 'analyst' });
   });
 
   it('normalizes details while preserving arbitrary custom-field keys', async () => {

@@ -14,6 +14,10 @@ use crate::devices::service::{
 };
 use crate::devices::visibility::DeviceReadScope;
 use crate::error::AppError;
+use crate::sigint::aor::types::{
+    AreaOfResponsibility, ListAreasOfResponsibilityReq,
+};
+use crate::sigint::unit::types::{ListUnitsReq, ListUnitsRsp};
 use actix_web::post;
 use actix_web::web::Json;
 
@@ -54,6 +58,30 @@ pub(in crate::devices) async fn unit_stats(
     let main_db = MainDb::new(&env.dbx);
     let result = DeviceService::unit_stats(&main_db, &actor).await?;
     Ok(Json(map_device_unit_stats(result)))
+}
+
+#[post("/api/device/aors")]
+pub(in crate::devices) async fn aors(
+    api: DeviceApiNoBody,
+) -> Result<Json<Vec<AreaOfResponsibility>>, AppError> {
+    let DeviceApiNoBody { actor, env } = api;
+    actor.require_read()?;
+    let req = ListAreasOfResponsibilityReq { sort_by: None };
+    Ok(Json(crate::sigint::aor::read_aors(&env.dbx, &req).await?))
+}
+
+#[post("/api/device/units")]
+pub(in crate::devices) async fn units(
+    api: DeviceApiNoBody,
+) -> Result<Json<ListUnitsRsp>, AppError> {
+    let DeviceApiNoBody { actor, env } = api;
+    actor.require_read()?;
+    let req = ListUnitsReq {
+        sort_by: None,
+        after_unit_id: None,
+        before_unit_id: None,
+    };
+    Ok(Json(crate::sigint::unit::read_units(&env.dbx, &req).await?))
 }
 
 #[post("/api/device/detail")]

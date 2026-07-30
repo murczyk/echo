@@ -9,6 +9,8 @@ pub mod types;
 pub(crate) fn configure_routes(cfg: &mut web::ServiceConfig) {
     cfg.service(device::list)
         .service(device::unit_stats)
+        .service(device::aors)
+        .service(device::units)
         .service(device::detail)
         .service(device::create)
         .service(device::update)

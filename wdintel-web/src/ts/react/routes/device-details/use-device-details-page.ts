@@ -1,10 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import type { AreaOfResponsibility, DeviceDetails, Unit } from '../../../../Bindings';
-import { listAors } from '../../services/api/aor';
-import { getDeviceDetail, updateDevice } from '../../services/api/devices';
+import {
+  getDeviceDetail,
+  listDeviceAors,
+  listDeviceUnits,
+  updateDevice,
+} from '../../services/api/devices';
 import { isNetworkRequestError } from '../../services/api/client';
-import { getUnitsList } from '../../services/api/units';
 import { resolveDevicesCapabilities } from '../../utils/roles';
 import {
   buildUpdateDevicePatch,
@@ -148,7 +151,7 @@ export function useDeviceDetailsPage({
 
     setLookupsLoading(true);
     try {
-      const [nextAors, nextUnits] = await Promise.all([listAors({ sortBy: null }), getUnitsList()]);
+      const [nextAors, nextUnits] = await Promise.all([listDeviceAors(), listDeviceUnits()]);
       setAors(nextAors);
       setUnits(nextUnits);
       setLookupsLoaded(true);

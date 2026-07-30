@@ -73,6 +73,20 @@ pub async fn list_units(
         .c(h!())?;
     let can_view_orbit =
         orbit::can_view_orbit_data(&env.dbx, &login_id).await?;
+    let mut response = read_units(&env.dbx, &req).await?;
+    if can_view_orbit {
+        let orbit_unit_ids = orbit::unit_ids_with_orbit(&env.dbx).await?;
+        for unit in &mut response.units {
+            unit.has_orbit = orbit_unit_ids.contains(&unit.id);
+        }
+    }
+    Ok(Json(response))
+}
+
+pub(crate) async fn read_units(
+    dbx: &DatabaseConnection,
+    req: &ListUnitsReq,
+) -> Result<ListUnitsRsp, AppError> {
     const LIMIT: u64 = 100000;
     let mut units = sigint_unit::Entity::find()
         .filter(sigint_unit::Column::Deleted.eq(false));
@@ -84,7 +98,7 @@ pub async fn list_units(
         ListUnitsSortBy::CreatedAtDesc => {
             if let Some(before_unit_id) = &req.before_unit_id {
                 let before_unit =
-                    find_unit(&env.dbx, *before_unit_id).await.c(h!())?;
+                    find_unit(dbx, *before_unit_id).await.c(h!())?;
                 units = units.filter(
                     Expr::tuple([
                         sigint_unit::Column::CreatedAt.into_column_ref().into(),
@@ -103,7 +117,7 @@ pub async fn list_units(
         ListUnitsSortBy::CreatedAtAsc => {
             if let Some(after_unit_id) = &req.after_unit_id {
                 let after_unit =
-                    find_unit(&env.dbx, *after_unit_id).await.c(h!())?;
+                    find_unit(dbx, *after_unit_id).await.c(h!())?;
                 units = units.filter(
                     Expr::tuple([
                         sigint_unit::Column::CreatedAt.into_column_ref().into(),
@@ -122,7 +136,7 @@ pub async fn list_units(
         ListUnitsSortBy::NaturalMilitarySortAsc => {
             if let Some(after_unit_id) = &req.after_unit_id {
                 let after_unit =
-                    find_unit(&env.dbx, *after_unit_id).await.c(h!())?;
+                    find_unit(dbx, *after_unit_id).await.c(h!())?;
                 units = units.filter(
                     Expr::tuple([
                         sigint_unit::Column::Army.into_column_ref().into(),
@@ -150,22 +164,15 @@ pub async fn list_units(
             units = units.order_by_asc(sigint_unit::Column::Id);
         }
     }
-    let units = units.limit(LIMIT).all(&env.dbx).await.c(h!())?;
-    let orbit_unit_ids = if can_view_orbit {
-        orbit::unit_ids_with_orbit(&env.dbx).await?
-    } else {
-        Default::default()
-    };
+    let units = units.limit(LIMIT).all(dbx).await.c(h!())?;
     let mut res = vec![];
     for unit in units {
-        let mut rendered = render_unit(&unit)?;
-        rendered.has_orbit = orbit_unit_ids.contains(&unit.id);
-        res.push(rendered);
+        res.push(render_unit(&unit)?);
     }
-    Ok(Json(ListUnitsRsp {
+    Ok(ListUnitsRsp {
         show_load_more: res.len() as u64 == LIMIT,
         units: res,
-    }))
+    })
 }
 
 #[post("/api/sigint/units-by-id")]

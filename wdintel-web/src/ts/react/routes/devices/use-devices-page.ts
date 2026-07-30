@@ -9,14 +9,18 @@ import type {
 } from '../../../../Bindings';
 import { useTableStateContext } from '../../components/mui-customized/table/table-state-provider';
 import { redirectToLogin } from '../../auth-redirect';
-import { listAors } from '../../services/api/aor';
 import {
   isAbortError,
   isNetworkRequestError,
   isUnauthorizedError,
 } from '../../services/api/client';
-import { getUnitsList } from '../../services/api/units';
-import { createDevice, getDeviceDetail, updateDevice } from '../../services/api/devices';
+import {
+  createDevice,
+  getDeviceDetail,
+  listDeviceAors,
+  listDeviceUnits,
+  updateDevice,
+} from '../../services/api/devices';
 import { navigateWithinSpa } from '../../utils/browser';
 import { resolveDevicesCapabilities } from '../../utils/roles';
 import {
@@ -327,8 +331,8 @@ export function useDevicesPage({ authUserRoles = [] }: { authUserRoles?: string[
 
     try {
       const [nextAors, nextUnits] = await Promise.all([
-        listAors({ sortBy: null }, controller.signal),
-        getUnitsList({ signal: controller.signal }),
+        listDeviceAors({ signal: controller.signal }),
+        listDeviceUnits({ signal: controller.signal }),
       ]);
       if (controller.signal.aborted) return null;
 

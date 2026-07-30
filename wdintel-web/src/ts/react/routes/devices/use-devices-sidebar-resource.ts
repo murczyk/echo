@@ -3,8 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { DeviceUnitStat, Unit } from '../../../../Bindings';
 import { redirectToLogin } from '../../auth-redirect';
 import { isAbortError, isUnauthorizedError } from '../../services/api/client';
-import { getDeviceUnitStats } from '../../services/api/devices';
-import { getUnitsList } from '../../services/api/units';
+import { getDeviceUnitStats, listDeviceUnits } from '../../services/api/devices';
 import { formatDeviceErrorMessage } from './helpers';
 
 export function useDevicesSidebarResource(enabled: boolean) {
@@ -29,7 +28,7 @@ export function useDevicesSidebarResource(enabled: boolean) {
 
       try {
         const [nextUnits, nextUnitStats] = await Promise.all([
-          getUnitsList({ signal: controller.signal }),
+          listDeviceUnits({ signal: controller.signal }),
           getDeviceUnitStats({ signal: controller.signal }),
         ]);
         if (requestSeqRef.current !== seq || controller.signal.aborted) return;

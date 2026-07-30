@@ -3,9 +3,13 @@ use crate::config::{
     IDENTITY_DURATION_HOURS, ROLE_DEVICE_ANALYST, ROLE_DEVICE_SOURCE,
 };
 use crate::devices::schema_tests::device_active_model;
-use crate::entities::{login, organism, system_settings};
+use crate::entities::{
+    area_of_responsibility, login, organism, sigint_unit, system_settings,
+};
 use crate::file_registry::entities::file_entry;
-use crate::functest::tests::{cleanup_locked, mk_login, mk_organism};
+use crate::functest::tests::{
+    cleanup_locked, mk_aor, mk_login, mk_organism, mk_sigint_unit,
+};
 use crate::types::Mode;
 use actix_identity::{Identity, IdentityMiddleware};
 use actix_session::storage::RedisSessionStore;
@@ -57,6 +61,25 @@ async fn target_api_smoke_covers_all_routes_and_boundary_precedence() {
     .await
     .unwrap();
     let login_id = login.id;
+    let lookup_aor = mk_aor(
+        &env.dbx,
+        area_of_responsibility::ActiveModel {
+            name: Set("Device API lookup AOR".to_string()),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let lookup_unit = mk_sigint_unit(
+        &env.dbx,
+        sigint_unit::ActiveModel {
+            created_by_login_id: Set(login_id),
+            name: Set("Device API lookup unit".to_string()),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
     let other_organism = mk_organism(
         &env.dbx,
         organism::ActiveModel {
@@ -191,6 +214,36 @@ async fn target_api_smoke_covers_all_routes_and_boundary_precedence() {
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
     let body: Value = test::read_body_json(response).await;
     assert_eq!(body[0][0], "body");
+
+    let response = test::call_service(
+        &app,
+        test::TestRequest::post()
+            .uri("/api/device/aors")
+            .cookie(session_cookie.clone())
+            .to_request(),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let aors: Value = test::read_body_json(response).await;
+    assert!(aors.as_array().unwrap().iter().any(|aor| {
+        aor["id"].as_i64() == Some(lookup_aor.id)
+            && aor["name"].as_str() == Some(lookup_aor.name.as_str())
+    }));
+
+    let response = test::call_service(
+        &app,
+        test::TestRequest::post()
+            .uri("/api/device/units")
+            .cookie(session_cookie.clone())
+            .to_request(),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let units: Value = test::read_body_json(response).await;
+    assert!(units["units"].as_array().unwrap().iter().any(|unit| {
+        unit["id"].as_i64() == Some(lookup_unit.id)
+            && unit["name"].as_str() == Some(lookup_unit.name.as_str())
+    }));
 
     let response = post_json!(
         "/api/device/create",
@@ -506,9 +559,11 @@ async fn target_api_smoke_covers_all_routes_and_boundary_precedence() {
     assert_eq!(response.status(), StatusCode::FORBIDDEN);
 }
 
-const TARGET_ROUTES: [&str; 10] = [
+const TARGET_ROUTES: [&str; 12] = [
     "/api/device/list",
     "/api/device/unit-stats",
+    "/api/device/aors",
+    "/api/device/units",
     "/api/device/detail",
     "/api/device/create",
     "/api/device/update",
@@ -531,7 +586,7 @@ const EXCLUDED_ROUTES: [&str; 8] = [
 ];
 
 #[actix_web::test]
-async fn target_route_matrix_has_only_ten_post_routes() {
+async fn target_route_matrix_has_only_twelve_post_routes() {
     let config = crate::config::read_config(Mode::Test).unwrap();
     let redis_session_store =
         RedisSessionStore::new(crate::redis_conn_string(&config).unwrap())

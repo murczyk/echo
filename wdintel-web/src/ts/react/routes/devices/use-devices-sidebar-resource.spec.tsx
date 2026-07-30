@@ -7,10 +7,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { useDevicesSidebarResource } from './use-devices-sidebar-resource';
 
-const devicesApiMock = vi.hoisted(() => ({ getDeviceUnitStats: vi.fn() }));
-const unitsApiMock = vi.hoisted(() => ({ getUnitsList: vi.fn() }));
+const devicesApiMock = vi.hoisted(() => ({
+  getDeviceUnitStats: vi.fn(),
+  listDeviceUnits: vi.fn(),
+}));
 vi.mock('../../services/api/devices', () => devicesApiMock);
-vi.mock('../../services/api/units', () => unitsApiMock);
 
 let container: HTMLDivElement | null = null;
 let root: Root | null = null;
@@ -29,7 +30,7 @@ async function flush() {
 }
 
 beforeEach(() => {
-  unitsApiMock.getUnitsList.mockResolvedValue([]);
+  devicesApiMock.listDeviceUnits.mockResolvedValue([]);
   devicesApiMock.getDeviceUnitStats.mockResolvedValue([]);
   container = document.createElement('div');
   document.body.appendChild(container);
