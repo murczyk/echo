@@ -1,6 +1,7 @@
 use super::configure_routes;
 use crate::config::{
-    IDENTITY_DURATION_HOURS, ROLE_DEVICE_ANALYST, ROLE_DEVICE_SOURCE,
+    IDENTITY_DURATION_HOURS, ROLE_CYBER, ROLE_DEVICE_ANALYST,
+    ROLE_DEVICE_SOURCE,
 };
 use crate::devices::schema_tests::device_active_model;
 use crate::entities::{
@@ -497,12 +498,39 @@ async fn target_api_smoke_covers_all_routes() {
 
     let mut login = login.into_active_model();
     login.roles = Set(json!([ROLE_DEVICE_SOURCE]));
-    login.update(&env.dbx).await.unwrap();
+    let login = login.update(&env.dbx).await.unwrap();
     let response = post_json!(
         "/api/device/update",
         json!({"device_id": device_id, "name": "Forbidden rename"})
     );
     assert_eq!(response.status(), StatusCode::FORBIDDEN);
+
+    for path in ["/api/device/aors", "/api/device/units"] {
+        let response = test::call_service(
+            &app,
+            test::TestRequest::post()
+                .uri(path)
+                .cookie(session_cookie.clone())
+                .to_request(),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    }
+
+    let mut login = login.into_active_model();
+    login.roles = Set(json!([ROLE_CYBER]));
+    login.update(&env.dbx).await.unwrap();
+    for path in ["/api/device/aors", "/api/device/units"] {
+        let response = test::call_service(
+            &app,
+            test::TestRequest::post()
+                .uri(path)
+                .cookie(session_cookie.clone())
+                .to_request(),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    }
 }
 
 const TARGET_ROUTES: [&str; 12] = [

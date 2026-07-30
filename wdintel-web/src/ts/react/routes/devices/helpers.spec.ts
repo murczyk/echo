@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import type { Unit } from '../../../../Bindings';
+import type { DeviceUnitStat, Unit } from '../../../../Bindings';
 import {
   buildDevicesColumnFilters,
   buildDevicesListReq,
@@ -8,6 +8,7 @@ import {
   createDefaultDevicesFilterState,
   formatAorsLabel,
   hasActiveDevicesFilters,
+  mergeDeviceUnitStatsWithUnits,
   resolveDevicesColumnFilters,
   sanitizeDevicesColumnFilters,
   resolveDeviceSidebarUnitIds,
@@ -118,6 +119,22 @@ describe('devices list query mapping', () => {
     expect(buildDevicesSortBy([{ id: 'updatedAt', desc: false }])).toEqual(['updated_at_asc']);
     expect(buildDevicesSortBy([{ id: 'createdAt', desc: true }])).toEqual(['created_at_desc']);
     expect(buildDevicesSortBy([{ id: 'createdBy', desc: true }])).toEqual(['updated_at_desc']);
+  });
+
+  it('keeps device-scoped unit stats without the full unit catalog', () => {
+    const unitStats: DeviceUnitStat[] = [{ unit: { id: 7, name: 'Visible unit' }, count: 3 }];
+
+    expect(mergeDeviceUnitStatsWithUnits(unitStats, new Map<number, Unit>())).toEqual([
+      {
+        unitId: 7,
+        unitName: 'Visible unit',
+        army: '',
+        division: '',
+        regiment: '',
+        battalion: '',
+        count: 3,
+      },
+    ]);
   });
 
   it('resolves sidebar leaf and hierarchy filters to deterministic unit ids', () => {

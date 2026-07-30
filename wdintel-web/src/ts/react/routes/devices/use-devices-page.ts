@@ -74,7 +74,10 @@ export function useDevicesPage({ authUserRoles = [] }: { authUserRoles?: string[
     }),
     [capabilities],
   );
-  const sidebarResource = useDevicesSidebarResource(permissions.canRead);
+  const sidebarResource = useDevicesSidebarResource(
+    permissions.canRead,
+    permissions.fieldPermissions.analyticalData,
+  );
 
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);

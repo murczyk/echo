@@ -17,8 +17,8 @@ let container: HTMLDivElement | null = null;
 let root: Root | null = null;
 let latest: ReturnType<typeof useDevicesSidebarResource> | null = null;
 
-function Harness() {
-  latest = useDevicesSidebarResource(true);
+function Harness({ canReadUnitCatalog = true }: { canReadUnitCatalog?: boolean }) {
+  latest = useDevicesSidebarResource(true, canReadUnitCatalog);
   return null;
 }
 
@@ -67,5 +67,20 @@ describe('useDevicesSidebarResource', () => {
     expect(latest?.loaded).toBe(true);
     expect(latest?.error).toBeNull();
     expect(latest?.unitStats).toEqual([{ unit: { id: 7, name: 'Unit' }, count: 3 }]);
+  });
+
+  it('does not load the full unit catalog without analytical write access', async () => {
+    const unitStats = [{ unit: { id: 7, name: 'Visible unit' }, count: 3 }];
+    devicesApiMock.getDeviceUnitStats.mockResolvedValue(unitStats);
+
+    await act(async () => {
+      root?.render(<Harness canReadUnitCatalog={false} />);
+    });
+    await flush();
+
+    expect(devicesApiMock.listDeviceUnits).not.toHaveBeenCalled();
+    expect(devicesApiMock.getDeviceUnitStats).toHaveBeenCalledTimes(1);
+    expect(latest?.units).toEqual([]);
+    expect(latest?.unitStats).toEqual(unitStats);
   });
 });

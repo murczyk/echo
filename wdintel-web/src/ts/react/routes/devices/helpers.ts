@@ -215,19 +215,16 @@ export function mergeDeviceUnitStatsWithUnits(
   return unitStats
     .map((stat) => {
       const unit = unitsById.get(stat.unit.id);
-      if (!unit) return null;
-
       return {
         unitId: stat.unit.id,
         unitName: stat.unit.name,
-        army: unit.army,
-        division: unit.division,
-        regiment: unit.regiment,
-        battalion: unit.battalion,
+        army: unit?.army ?? '',
+        division: unit?.division ?? '',
+        regiment: unit?.regiment ?? '',
+        battalion: unit?.battalion ?? '',
         count: stat.count,
       };
     })
-    .filter((row): row is DeviceUnitStatView => row !== null)
     .sort(
       (left, right) =>
         right.count - left.count || left.unitName.localeCompare(right.unitName, 'uk'),

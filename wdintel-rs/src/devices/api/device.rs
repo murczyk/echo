@@ -72,7 +72,7 @@ pub(in crate::devices) async fn aors(
 ) -> Result<Json<Vec<AreaOfResponsibility>>, AppError> {
     let main_db = MainDb::new(&env.dbx);
     let actor = DeviceActorResolver::resolve(&main_db, &user).await?;
-    actor.require_read()?;
+    actor.require_analytical_write()?;
     let req = ListAreasOfResponsibilityReq { sort_by: None };
     Ok(Json(crate::sigint::aor::read_aors(&env.dbx, &req).await?))
 }
@@ -84,7 +84,7 @@ pub(in crate::devices) async fn units(
 ) -> Result<Json<ListUnitsRsp>, AppError> {
     let main_db = MainDb::new(&env.dbx);
     let actor = DeviceActorResolver::resolve(&main_db, &user).await?;
-    actor.require_read()?;
+    actor.require_analytical_write()?;
     let req = ListUnitsReq {
         sort_by: None,
         after_unit_id: None,
