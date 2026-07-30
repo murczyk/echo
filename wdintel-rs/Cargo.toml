@@ -12,7 +12,6 @@ wdfiles-migration = { version = "*", path = "../wdfiles-migration" }
 serde = { workspace = true }
 serde_ignored = "0.1.14"
 serde_json = { workspace = true }
-serde_path_to_error = "0.1.20"
 postcard = { workspace = true }
 zstd = { workspace = true }
 quick-xml = { version = "0.38.4", features = ["serialize", "overlapped-lists"] }

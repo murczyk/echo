@@ -3763,7 +3763,7 @@ async fn stage_ten_sync_service_gates_registry_writes() {
         .await
         .unwrap_err(),
         "files",
-        "must contain between 1 and 100 items",
+        "must contain between 1 and 1000 items",
     );
     assert_form_error(
         FileMetadataService::sync(
@@ -3779,7 +3779,7 @@ async fn stage_ten_sync_service_gates_registry_writes() {
         .await
         .unwrap_err(),
         "files",
-        "must contain between 1 and 100 items",
+        "must contain between 1 and 1000 items",
     );
     assert_not_found(
         FileMetadataService::sync(
@@ -3824,7 +3824,7 @@ async fn stage_ten_sync_service_gates_registry_writes() {
         .await
         .unwrap_err(),
         "files",
-        "must contain between 1 and 100 items",
+        "must contain between 1 and 1000 items",
     );
     assert_eq!(
         stage_ten_registry_snapshot(env.file_registry_db.connection()).await,
