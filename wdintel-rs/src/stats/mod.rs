@@ -492,6 +492,19 @@ pub fn stats_aggregated_range(
     )
 }
 
+pub fn stats_aggregated_time_range(
+    config: &Config,
+    dt_since: NaiveDateTime,
+    dt_till: NaiveDateTime,
+) -> anyhow::Result<Option<(NaiveDateTime, NaiveDateTime)>> {
+    stats_aggregated_time_range_for_config(
+        config,
+        dt_since,
+        dt_till,
+        Utc::now().naive_utc(),
+    )
+}
+
 pub fn should_read_stats_aggregated_for_config(
     req: &AnalysisStatsReq,
     config: &Config,
@@ -528,13 +541,21 @@ fn stats_aggregated_range_for_config(
     dt_till: NaiveDateTime,
     now: NaiveDateTime,
 ) -> anyhow::Result<Option<(NaiveDateTime, NaiveDateTime)>> {
+    let range =
+        stats_aggregated_time_range_for_config(config, dt_since, dt_till, now)?;
+    Ok(range.filter(|_| req_allows_stats_aggregated(req)))
+}
+
+fn stats_aggregated_time_range_for_config(
+    config: &Config,
+    dt_since: NaiveDateTime,
+    dt_till: NaiveDateTime,
+    now: NaiveDateTime,
+) -> anyhow::Result<Option<(NaiveDateTime, NaiveDateTime)>> {
     let dt_since = round_up_to_5min(dt_since)?;
     let dt_till = round_up_to_5min(dt_till.min(now))?;
-    Ok(
-        (can_read_stats_aggregated_at(config, dt_since, dt_till, now)
-            && req_allows_stats_aggregated(req))
-        .then_some((dt_since, dt_till)),
-    )
+    Ok(can_read_stats_aggregated_at(config, dt_since, dt_till, now)
+        .then_some((dt_since, dt_till)))
 }
 
 pub(crate) fn req_allows_stats_aggregated(req: &AnalysisStatsReq) -> bool {
@@ -1551,6 +1572,10 @@ pub async fn read_frequency_stats_day(
     dt_since: NaiveDateTime,
     dt_till: NaiveDateTime,
 ) -> anyhow::Result<Vec<FreqGroupsMessageCountByDay>> {
+    anyhow::ensure!(
+        is_5min_stats_bucket_range_aligned(dt_since, dt_till),
+        "frequency stats range must be aligned to five-minute buckets"
+    );
     let (intervals_5min, days) =
         collect_time_intervals_for_stats(dt_since, dt_till).c(h!())?;
 
@@ -2956,6 +2981,41 @@ mod tests {
     }
 
     #[test]
+    fn test_stats_aggregated_time_range_rounds_production_timestamp() {
+        let mut config = stats_aggregated_config();
+        let dt_since = ndt(2026, 7, 20, 8, 44) + Duration::seconds(27);
+        let dt_till = ndt(2026, 7, 30, 8, 44) + Duration::seconds(27);
+        let now = ndt(2026, 7, 30, 9, 0);
+
+        assert_eq!(
+            stats_aggregated_time_range_for_config(
+                &config, dt_since, dt_till, now,
+            )
+            .unwrap(),
+            Some((ndt(2026, 7, 20, 8, 45), ndt(2026, 7, 30, 8, 45),))
+        );
+        assert_eq!(
+            stats_aggregated_time_range_for_config(
+                &config,
+                ndt(2026, 7, 20, 8, 45),
+                ndt(2026, 7, 30, 8, 45),
+                now,
+            )
+            .unwrap(),
+            Some((ndt(2026, 7, 20, 8, 45), ndt(2026, 7, 30, 8, 45),))
+        );
+
+        config.feature_group_stats_aggregated = Some(false);
+        assert_eq!(
+            stats_aggregated_time_range_for_config(
+                &config, dt_since, dt_till, now,
+            )
+            .unwrap(),
+            None
+        );
+    }
+
+    #[test]
     fn test_collect_time_intervals_for_stats_short_duration_if_branch() {
         // 2 days and 1 second
         let dt_since = ndt(2025, 10, 10, 10, 0);
@@ -3033,6 +3093,10 @@ mod tests {
         assert!(!is_5min_stats_bucket_range_aligned(
             ndt(2025, 10, 10, 10, 0),
             ndt(2025, 10, 10, 10, 16),
+        ));
+        assert!(!is_5min_stats_bucket_range_aligned(
+            ndt(2025, 10, 10, 10, 0) + Duration::seconds(27),
+            ndt(2025, 10, 10, 10, 15),
         ));
     }
 

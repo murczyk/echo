@@ -275,27 +275,30 @@ pub async fn list_groups_by_freqs_per_day(
         .await
         .c(h!())?;
 
-    let rows = if crate::stats::can_read_stats_aggregated(
+    let aggregated_range = crate::stats::stats_aggregated_time_range(
         &env.config,
         dt_since,
         dt_till,
-    ) {
-        crate::stats::read_frequency_stats_day(
-            &env,
-            master_keys,
-            dt_since,
-            dt_till,
-        )
-        .await
-        .c(h!())?
-        .into_iter()
-        .filter(|x| freqs.contains(&x.freq))
-        .collect()
-    } else {
-        collect_freq_counts(&env, dt_till, dt_since, freqs, master_keys)
+    )
+    .c(h!())?;
+    let rows =
+        if let Some((aggregated_since, aggregated_till)) = aggregated_range {
+            crate::stats::read_frequency_stats_day(
+                &env,
+                master_keys,
+                aggregated_since,
+                aggregated_till,
+            )
             .await
             .c(h!())?
-    };
+            .into_iter()
+            .filter(|x| freqs.contains(&x.freq))
+            .collect()
+        } else {
+            collect_freq_counts(&env, dt_till, dt_since, freqs, master_keys)
+                .await
+                .c(h!())?
+        };
 
     let mut res = HashMap::new();
     for row in rows {
