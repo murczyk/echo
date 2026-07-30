@@ -1002,3 +1002,17 @@ deploy-many-all:
 
 deploy-all:
     just deploy-many-all
+
+knowledge-tables-all:
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    if ! command -v echo-install-utils >/dev/null 2>&1; then
+      echo "missing echo-install-utils in PATH (install it or deploy it first)" >&2
+      exit 1
+    fi
+
+    echo-install-utils run-many \
+      --values "{{ goi_servers }}" \
+      --cwd "{{ goi_dir }}" \
+      -- ssh {} "sudo -u postgres psql goi -c '\dt+' | grep knowledge"
