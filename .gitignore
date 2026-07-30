@@ -8,7 +8,6 @@ wdintel
 .DS_Store
 /TAGS
 **/__pycache__
-deploy/2026-07-29-orbit-dictionaries/__pycache__/
 *.pyc
 .vscode
 .codex

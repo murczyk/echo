@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any
 
 
-DICTIONARIES_FILE = Path("dictionaries.json")
+DICTIONARIES_FILE = Path(__file__).resolve().with_name("dictionaries.json")
 DICTIONARY_FIELDS = (
     "grouping_of_forces",
     "combat_unit_type",

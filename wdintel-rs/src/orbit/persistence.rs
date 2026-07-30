@@ -77,6 +77,7 @@ impl ImportUnit {
         self.unit_name_short
             .clone()
             .or_else(|| self.unit_name.clone())
+            .or_else(|| self.unit_name_original.clone())
             .unwrap_or_else(|| self.unit_id.to_string())
     }
 
@@ -91,6 +92,64 @@ impl ImportUnit {
         .into_iter()
         .flatten()
         .any(|parent_id| rejected.contains(&parent_id))
+    }
+
+    pub fn preserve_existing_partial_fields(
+        &mut self,
+        existing: Option<&orbit_unit::Model>,
+    ) {
+        if !self.partial {
+            return;
+        }
+        let Some(existing) = existing else {
+            return;
+        };
+        preserve_missing(&mut self.unit_name, &existing.unit_name);
+        preserve_missing(
+            &mut self.unit_name_original,
+            &existing.unit_name_original,
+        );
+        preserve_missing(&mut self.unit_name_short, &existing.unit_name_short);
+        preserve_missing(
+            &mut self.operational_unit_name_full,
+            &existing.operational_unit_name_full,
+        );
+        preserve_missing(
+            &mut self.generative_unit_name_full,
+            &existing.generative_unit_name_full,
+        );
+        preserve_missing(&mut self.unit_number, &existing.unit_number);
+        preserve_missing(
+            &mut self.unit_alternate_names,
+            &existing.unit_alternate_names,
+        );
+        preserve_missing(
+            &mut self.unit_alternate_numbers,
+            &existing.unit_alternate_numbers,
+        );
+        preserve_missing(&mut self.unit_echelon_id, &existing.unit_echelon_id);
+        preserve_missing(
+            &mut self.combat_unit_type_id,
+            &existing.combat_unit_type_id,
+        );
+        preserve_missing(
+            &mut self.grouping_of_forces_id,
+            &existing.grouping_of_forces_id,
+        );
+        preserve_missing(
+            &mut self.generative_parent_unit_id,
+            &existing.generative_parent_unit_id,
+        );
+        preserve_missing(
+            &mut self.operational_parent_unit_id,
+            &existing.operational_parent_unit_id,
+        );
+    }
+}
+
+fn preserve_missing<T: Clone>(value: &mut Option<T>, existing: &Option<T>) {
+    if value.is_none() {
+        value.clone_from(existing);
     }
 }
 
@@ -435,6 +494,38 @@ mod tests {
     }
 
     #[test]
+    fn partial_units_preserve_omitted_existing_fields() {
+        let complete = import_unit();
+        let existing = model(&complete, false);
+        let mut partial = ImportUnit {
+            unit_id: complete.unit_id,
+            unit_name: None,
+            unit_name_original: None,
+            unit_name_short: Some("updated".to_string()),
+            operational_unit_name_full: None,
+            generative_unit_name_full: None,
+            unit_number: None,
+            unit_alternate_names: None,
+            unit_alternate_numbers: None,
+            unit_echelon_id: None,
+            combat_unit_type_id: None,
+            grouping_of_forces_id: None,
+            generative_parent_unit_id: None,
+            operational_parent_unit_id: None,
+            partial: true,
+        };
+
+        partial.preserve_existing_partial_fields(Some(&existing));
+
+        assert_eq!(partial.unit_name, complete.unit_name);
+        assert_eq!(partial.unit_name_short.as_deref(), Some("updated"));
+        assert_eq!(
+            partial.operational_unit_name_full,
+            complete.operational_unit_name_full
+        );
+    }
+
+    #[test]
     fn stale_cutoff_is_five_seconds_before_start() {
         let started_at = Utc::now().naive_utc();
         let started_at = started_at
@@ -489,6 +580,16 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(child_row.updated_at, touched_at);
+        let stale = load_stale(&db, touched_at + Duration::seconds(5))
+            .await
+            .unwrap();
+        assert_eq!(
+            stale
+                .into_iter()
+                .map(|unit| unit.unit_id)
+                .collect::<Vec<_>>(),
+            vec![parent.unit_id]
+        );
 
         soft_delete(&db, child_row, touched_at).await.unwrap();
         let child_row = orbit_unit::Entity::find_by_id(child.unit_id)

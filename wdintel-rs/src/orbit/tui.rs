@@ -1,8 +1,10 @@
-use crate::config::SIGINT_INBOX_TUI_EVENT_POLL_MS;
+use crate::config::ORBIT_TUI_EVENT_POLL_MS;
 use crate::error::AppError;
 use crate::h;
 use crate::types::ShortContext;
-use crossterm::event::{self, Event, KeyCode};
+use crossterm::event::{
+    self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers,
+};
 use crossterm::terminal::{
     disable_raw_mode, enable_raw_mode, EnterAlternateScreen,
     LeaveAlternateScreen,
@@ -24,6 +26,34 @@ pub enum Decision {
     Skip,
     SkipAll,
     Quit,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Action {
+    Create,
+    Update,
+    Reactivate,
+    Delete,
+}
+
+impl Action {
+    fn key(self) -> char {
+        match self {
+            Self::Create => 'c',
+            Self::Update => 'u',
+            Self::Reactivate => 'r',
+            Self::Delete => 'd',
+        }
+    }
+
+    fn label(self) -> &'static str {
+        match self {
+            Self::Create => "create",
+            Self::Update => "update",
+            Self::Reactivate => "reactivate",
+            Self::Delete => "delete",
+        }
+    }
 }
 
 pub fn prompt_path() -> Result<Option<PathBuf>, AppError> {
@@ -51,15 +81,23 @@ pub fn review(
     title: &str,
     lines: &[String],
     progress: &str,
-    actions: &str,
+    action: Action,
     allow_skip_all: bool,
 ) -> Result<Decision, AppError> {
-    let poll = Duration::from_millis(SIGINT_INBOX_TUI_EVENT_POLL_MS);
+    let poll = Duration::from_millis(ORBIT_TUI_EVENT_POLL_MS);
     let mut scroll = 0_u16;
     loop {
         terminal
             .draw(|frame| {
-                draw_review(frame, title, lines, progress, actions, scroll)
+                draw_review(
+                    frame,
+                    title,
+                    lines,
+                    progress,
+                    action,
+                    allow_skip_all,
+                    scroll,
+                )
             })
             .c(h!())?;
         if !event::poll(poll).c(h!())? {
@@ -68,17 +106,10 @@ pub fn review(
         let Event::Key(key) = event::read().c(h!())? else {
             continue;
         };
+        if let Some(decision) = decision_for_key(key, action, allow_skip_all) {
+            return Ok(decision);
+        }
         match key.code {
-            KeyCode::Esc | KeyCode::Char('q') => return Ok(Decision::Quit),
-            KeyCode::Enter
-            | KeyCode::Char('c')
-            | KeyCode::Char('u')
-            | KeyCode::Char('r')
-            | KeyCode::Char('d') => return Ok(Decision::Accept),
-            KeyCode::Char('s') => return Ok(Decision::Skip),
-            KeyCode::Char('a') if allow_skip_all => {
-                return Ok(Decision::SkipAll)
-            }
             KeyCode::Up => scroll = scroll.saturating_sub(1),
             KeyCode::Down => scroll = scroll.saturating_add(1),
             KeyCode::PageUp => scroll = scroll.saturating_sub(10),
@@ -92,7 +123,7 @@ pub fn review(
 fn run_path_prompt(
     terminal: &mut OrbitTerminal,
 ) -> Result<Option<PathBuf>, AppError> {
-    let poll = Duration::from_millis(SIGINT_INBOX_TUI_EVENT_POLL_MS);
+    let poll = Duration::from_millis(ORBIT_TUI_EVENT_POLL_MS);
     let mut input = String::new();
     loop {
         terminal
@@ -104,15 +135,30 @@ fn run_path_prompt(
         let Event::Key(key) = event::read().c(h!())? else {
             continue;
         };
+        if key.kind != KeyEventKind::Press {
+            continue;
+        }
         match key.code {
             KeyCode::Esc => return Ok(None),
-            KeyCode::Enter if !input.trim().is_empty() => {
+            KeyCode::Char('c')
+                if key.modifiers.contains(KeyModifiers::CONTROL) =>
+            {
+                return Ok(None);
+            }
+            KeyCode::Enter
+                if key.modifiers.is_empty() && !input.trim().is_empty() =>
+            {
                 return Ok(Some(PathBuf::from(input.trim())))
             }
-            KeyCode::Backspace => {
+            KeyCode::Backspace if key.modifiers.is_empty() => {
                 input.pop();
             }
-            KeyCode::Char(character) => input.push(character),
+            KeyCode::Char(character)
+                if key.modifiers.is_empty()
+                    || key.modifiers == KeyModifiers::SHIFT =>
+            {
+                input.push(character)
+            }
             _ => {}
         }
     }
@@ -135,7 +181,8 @@ fn draw_review(
     title: &str,
     lines: &[String],
     progress: &str,
-    actions: &str,
+    action: Action,
+    allow_skip_all: bool,
     scroll: u16,
 ) {
     let root = Layout::default()
@@ -155,12 +202,44 @@ fn draw_review(
             .wrap(Wrap { trim: false }),
         root[1],
     );
+    let skip_all = if allow_skip_all { " | a: skip all" } else { "" };
     frame.render_widget(
         Paragraph::new(format!(
-            "{actions} | ↑/↓/PgUp/PgDn: scroll | q/Esc: quit"
+            "Enter/{}: {} | s: skip{skip_all} | ↑/↓/PgUp/PgDn: scroll | q/Esc: quit",
+            action.key(),
+            action.label(),
         )),
         root[2],
     );
+}
+
+fn decision_for_key(
+    key: KeyEvent,
+    action: Action,
+    allow_skip_all: bool,
+) -> Option<Decision> {
+    if key.kind != KeyEventKind::Press {
+        return None;
+    }
+    if key.code == KeyCode::Esc
+        || key.code == KeyCode::Char('c')
+            && key.modifiers.contains(KeyModifiers::CONTROL)
+    {
+        return Some(Decision::Quit);
+    }
+    if !key.modifiers.is_empty() {
+        return None;
+    }
+    match key.code {
+        KeyCode::Char('q') => Some(Decision::Quit),
+        KeyCode::Enter => Some(Decision::Accept),
+        KeyCode::Char(character) if character == action.key() => {
+            Some(Decision::Accept)
+        }
+        KeyCode::Char('s') => Some(Decision::Skip),
+        KeyCode::Char('a') if allow_skip_all => Some(Decision::SkipAll),
+        _ => None,
+    }
 }
 
 fn centered_area(
@@ -184,4 +263,38 @@ fn centered_area(
             Constraint::Percentage((100 - percent_x) / 2),
         ])
         .split(vertical[1])[1]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn review_keys_only_accept_the_current_action() {
+        let plain = KeyModifiers::NONE;
+        assert_eq!(
+            decision_for_key(
+                KeyEvent::new(KeyCode::Char('d'), plain),
+                Action::Delete,
+                true
+            ),
+            Some(Decision::Accept)
+        );
+        assert_eq!(
+            decision_for_key(
+                KeyEvent::new(KeyCode::Char('c'), plain),
+                Action::Delete,
+                true
+            ),
+            None
+        );
+        assert_eq!(
+            decision_for_key(
+                KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL),
+                Action::Create,
+                false
+            ),
+            Some(Decision::Quit)
+        );
+    }
 }

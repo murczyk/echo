@@ -17,14 +17,17 @@ it prints a timestamped reversible migration and the required
 units. Add and apply that migration before rerunning the command.
 
 Only ORBIT roots that match an active Echo SIGINT unit by
-`operationalUnitNameFull` are retained. Matching compares normalized names by
+`operational_unit_name_full` are retained. Matching compares normalized names by
 echelon: platoon/company → company, battalion → battalion, regiment/brigade →
 regiment, division → division, and corps/fieldArmy → army. Unsupported ORBIT
-echelons are ignored, and an absent comparable level on either side is
-compatible. Generative and operational ancestors of matched roots are included.
+echelons are ignored. Matching requires at least one populated comparable level
+on both sides; other absent comparable levels are compatible. Generative and
+operational ancestors of matched roots are included.
 
 Partial embedded ancestors are listed once for confirmation and then reviewed
-parent-first. Rejecting an ancestor rejects dependent descendants. The review
+parent-first. When a partial ancestor already exists, omitted source fields
+preserve their stored values. Skipping a new ancestor, or declining to
+reactivate a deleted ancestor, also skips dependent descendants. The review
 offers:
 
 - create or skip for new units;
@@ -37,3 +40,17 @@ updating only `updated_at`. After review, active rows older than the import
 start minus the five-second grace period are offered for soft deletion.
 Confirmed changes are persisted immediately; quitting stops future work and
 does not roll back earlier decisions.
+
+## Preparing dictionary migrations
+
+The version-controlled `dictionaries.json` is a developer aid, not a runtime
+input. To collect new values while preparing a migration, run this from the
+current directory:
+
+```sh
+just collect /path/to/orbit-export.json
+```
+
+Review the resulting dictionary diff and add the values through an
+`echo-migration` migration. Runtime imports resolve dictionaries from
+PostgreSQL.

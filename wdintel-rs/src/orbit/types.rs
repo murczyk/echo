@@ -81,6 +81,7 @@ impl SourceUnitData {
         self.unit_name_short
             .clone()
             .or_else(|| self.unit_name.clone())
+            .or_else(|| self.unit_name_original.clone())
             .unwrap_or_else(|| self.unit_id.to_string())
     }
 
@@ -182,17 +183,31 @@ where
     let value = Option::<Value>::deserialize(deserializer)?;
     match value {
         None | Some(Value::Null) => Ok(None),
-        Some(Value::String(value)) => Ok(Some(vec![value])),
+        Some(Value::String(value)) => {
+            let values = value
+                .split(',')
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(str::to_string)
+                .collect::<Vec<_>>();
+            Ok((!values.is_empty()).then_some(values))
+        }
         Some(Value::Array(values)) => values
             .into_iter()
             .map(|value| match value {
-                Value::String(value) => Ok(value),
+                Value::String(value) => Ok(value.trim().to_string()),
                 other => Err(serde::de::Error::custom(format!(
                     "expected string in array, got {other}"
                 ))),
             })
             .collect::<Result<Vec<_>, _>>()
-            .map(Some),
+            .map(|values| {
+                values
+                    .into_iter()
+                    .filter(|value| !value.is_empty())
+                    .collect::<Vec<_>>()
+            })
+            .map(|values| (!values.is_empty()).then_some(values)),
         Some(other) => Err(serde::de::Error::custom(format!(
             "expected string or array of strings, got {other}"
         ))),
@@ -207,6 +222,7 @@ pub fn parse_units(
     let units = serde_ignored::deserialize(&mut deserializer, |path| {
         unknown_paths.push(path.to_string())
     })?;
+    deserializer.end()?;
     unknown_paths.sort();
     unknown_paths.dedup();
     Ok((units, unknown_paths))
@@ -240,7 +256,7 @@ mod tests {
         let (units, _) = parse_units(&input).unwrap();
         assert_eq!(
             units[0].unit_alternate_numbers,
-            Some(vec!["1, 2".to_string()])
+            Some(vec!["1".to_string(), "2".to_string()])
         );
     }
 
@@ -271,6 +287,12 @@ mod tests {
             r#"[{{"unit_id":"{}","unit_alternate_names":[1]}}]"#,
             Uuid::new_v4()
         );
+        assert!(parse_units(&input).is_err());
+    }
+
+    #[test]
+    fn rejects_trailing_json_data() {
+        let input = format!(r#"[{{"unit_id":"{}"}}] true"#, Uuid::new_v4());
         assert!(parse_units(&input).is_err());
     }
 }

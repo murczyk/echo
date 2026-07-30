@@ -24,7 +24,15 @@ pub fn build_import_hierarchy(
     for unit in units {
         builder.add_unit(unit)?;
     }
-    builder.finish(selected_ids)
+    let selected_ids_in_source_order = units
+        .iter()
+        .filter(|unit| selected_ids.contains(&unit.unit_id))
+        .map(|unit| unit.unit_id)
+        .collect::<Vec<_>>();
+    if selected_ids_in_source_order.len() != selected_ids.len() {
+        anyhow::bail!("ORBIT hierarchy selection contains an unknown unit");
+    }
+    builder.finish(&selected_ids_in_source_order)
 }
 
 struct HierarchyBuilder {
@@ -109,7 +117,7 @@ impl HierarchyBuilder {
 
     fn finish(
         self,
-        selected_ids: &HashSet<Uuid>,
+        selected_ids: &[Uuid],
     ) -> anyhow::Result<Vec<HierarchyUnit>> {
         let mut ordered = Vec::new();
         let mut completed = HashSet::new();
@@ -218,5 +226,29 @@ mod tests {
         units.push(duplicate);
         let selected = HashSet::from([units[1].unit_id]);
         assert!(build_import_hierarchy(&units, &selected).is_err());
+    }
+
+    #[test]
+    fn selected_roots_follow_source_order() {
+        let sample = include_str!(
+            "../../../deploy/2026-07-29-orbit-dictionaries/orbit_sample.json"
+        );
+        let (mut units, _) = parse_units(sample).unwrap();
+        let mut second = units[0].clone();
+        second.unit_id = Uuid::new_v4();
+        units.push(second);
+        let selected = HashSet::from([units[1].unit_id, units[0].unit_id]);
+
+        let hierarchy = build_import_hierarchy(&units, &selected).unwrap();
+        let first_index = hierarchy
+            .iter()
+            .position(|unit| unit.data.unit_id == units[0].unit_id)
+            .unwrap();
+        let second_index = hierarchy
+            .iter()
+            .position(|unit| unit.data.unit_id == units[1].unit_id)
+            .unwrap();
+
+        assert!(first_index < second_index);
     }
 }

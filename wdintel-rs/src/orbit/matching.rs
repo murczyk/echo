@@ -12,10 +12,16 @@ enum EchoEchelon {
 }
 
 pub fn validate_source(units: &[SourceUnit]) -> anyhow::Result<()> {
+    if units.is_empty() {
+        anyhow::bail!("ORBIT export contains no units");
+    }
     let mut ids = HashSet::new();
     for (index, unit) in units.iter().enumerate() {
         if unit.path_level.is_some() {
             anyhow::bail!("$[{index}].path_level is only valid for a parent");
+        }
+        if unit.operational_unit_name_full.is_none() {
+            anyhow::bail!("$[{index}].operational_unit_name_full is required");
         }
         if !ids.insert(unit.unit_id) {
             anyhow::bail!(
@@ -35,7 +41,8 @@ pub fn matches_sigint_unit(
     let Ok(path) = comparable_path(orbit_unit) else {
         return false;
     };
-    [
+    let mut compared = false;
+    let matches = [
         (EchoEchelon::Company, sigint_unit.company.as_str()),
         (EchoEchelon::Battalion, sigint_unit.battalion.as_str()),
         (EchoEchelon::Regiment, sigint_unit.regiment.as_str()),
@@ -46,12 +53,16 @@ pub fn matches_sigint_unit(
     .all(|(echelon, echo_name)| {
         let echo_name = normalize_name(echo_name);
         let orbit_names = path.get(&echelon);
-        echo_name.is_empty()
+        if echo_name.is_empty()
             || orbit_names.is_none_or(|names| names.is_empty())
-            || orbit_names.is_some_and(|names| {
-                names.iter().any(|name| name == &echo_name)
-            })
-    })
+        {
+            return true;
+        }
+        compared = true;
+        orbit_names
+            .is_some_and(|names| names.iter().any(|name| name == &echo_name))
+    });
+    matches && compared
 }
 
 pub fn matching_unit_ids(
@@ -161,6 +172,7 @@ fn descriptor_names(unit: &SourceUnit) -> HashSet<String> {
     unit.unit_name_short
         .iter()
         .chain(&unit.unit_name)
+        .chain(&unit.unit_name_original)
         .chain(unit.unit_alternate_names.iter().flatten())
         .map(|name| normalize_name(name))
         .collect()
@@ -253,7 +265,7 @@ mod tests {
             "взвод / округ",
             vec![("platoon", "взвод", 1), ("militaryDistrict", "округ", 0)],
         );
-        assert!(matches_sigint_unit(&unit, &echo_unit("", "", "", "", "")));
+        assert!(!matches_sigint_unit(&unit, &echo_unit("", "", "", "", "")));
         assert!(matches_sigint_unit(
             &unit,
             &echo_unit("взвод", "", "", "", "невідомо")
@@ -290,6 +302,22 @@ mod tests {
             vec![("company", "1 рота", 1), ("regiment", "1 полк", 0)],
         );
         unit.operational_parent_units[0].path_level = Some(2);
+        assert!(validate_source(&[unit]).is_err());
+    }
+
+    #[test]
+    fn original_names_are_valid_path_segments() {
+        let mut unit =
+            source_unit("original", vec![("company", "translated", 0)]);
+        unit.unit_name_original = Some("original".to_string());
+        validate_source(&[unit]).unwrap();
+    }
+
+    #[test]
+    fn empty_exports_and_missing_operational_paths_are_rejected() {
+        assert!(validate_source(&[]).is_err());
+        let mut unit = source_unit("1 рота", vec![("company", "1 рота", 0)]);
+        unit.operational_unit_name_full = None;
         assert!(validate_source(&[unit]).is_err());
     }
 

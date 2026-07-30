@@ -23,7 +23,6 @@ pub async fn run_import_tui(mode: Mode) -> Result<(), AppError> {
 }
 
 async fn run_import(mode: Mode) -> anyhow::Result<()> {
-    let started_at = Utc::now().naive_utc();
     let Some(path) = tui::prompt_path()? else {
         return Ok(());
     };
@@ -36,7 +35,10 @@ async fn run_import(mode: Mode) -> anyhow::Result<()> {
     let dictionaries = DictionaryMaps::load(&db).await?;
     let missing = dictionary::missing_dictionary_values(&units, &dictionaries)?;
     if !missing.is_empty() {
-        dictionary::print_dictionary_migration(&missing, started_at);
+        dictionary::print_dictionary_migration(
+            &missing,
+            Utc::now().naive_utc(),
+        );
         return Ok(());
     }
 
@@ -48,11 +50,15 @@ async fn run_import(mode: Mode) -> anyhow::Result<()> {
     let selected_ids = matching::matching_unit_ids(&units, &sigint_units);
     let hierarchy = hierarchy::build_import_hierarchy(&units, &selected_ids)?;
     confirm_partial_units(&hierarchy)?;
-    let import_units = hierarchy
+    let started_at = Utc::now().naive_utc();
+    let mut import_units = hierarchy
         .into_iter()
         .map(|unit| ImportUnit::from_hierarchy(unit, &dictionaries))
         .collect::<anyhow::Result<Vec<_>>>()?;
     let mut existing = persistence::load_existing(&db).await?;
+    for unit in &mut import_units {
+        unit.preserve_existing_partial_fields(existing.get(&unit.unit_id));
+    }
     let unit_names = build_unit_names(&import_units, &existing);
 
     let completed = review_import_units(
@@ -231,7 +237,7 @@ impl ImportReview<'_> {
             *self.reviewed + 1,
             *self.reviewed + remaining
         );
-        let (title, actions, old_row) = review_metadata(unit, state);
+        let (title, action, old_row) = review_metadata(unit, state);
         let mut lines = persistence::diff_lines(
             unit,
             old_row,
@@ -248,7 +254,7 @@ impl ImportReview<'_> {
             &title,
             &lines,
             &progress,
-            actions,
+            action,
             false,
         )
         .map_err(Into::into)
@@ -258,7 +264,7 @@ impl ImportReview<'_> {
 fn review_metadata<'a>(
     unit: &ImportUnit,
     state: &'a ImportState,
-) -> (String, &'static str, Option<&'a orbit_unit::Model>) {
+) -> (String, tui::Action, Option<&'a orbit_unit::Model>) {
     let partial = if unit.partial {
         "partial ancestor "
     } else {
@@ -267,20 +273,22 @@ fn review_metadata<'a>(
     match state {
         ImportState::New => (
             format!("Create {partial}{}?", unit.display_name()),
-            "Enter/c: create | s: skip",
+            tui::Action::Create,
             None,
         ),
         ImportState::Changed(row) => (
             format!("Update {partial}{}?", unit.display_name()),
-            "Enter/u: update | s: skip",
+            tui::Action::Update,
             Some(row),
         ),
         ImportState::Deleted(row) => (
             format!("Reactivate {partial}{}?", unit.display_name()),
-            "Enter/r: reactivate | s: skip",
+            tui::Action::Reactivate,
             Some(row),
         ),
-        ImportState::Unchanged(row) => (unit.display_name(), "", Some(row)),
+        ImportState::Unchanged(row) => {
+            (unit.display_name(), tui::Action::Update, Some(row))
+        }
     }
 }
 
@@ -350,6 +358,7 @@ async fn review_stale_units_inner(
             .unit_name_short
             .clone()
             .or_else(|| unit.unit_name.clone())
+            .or_else(|| unit.unit_name_original.clone())
             .unwrap_or_else(|| unit.unit_id.to_string());
         let lines = serde_json::to_string_pretty(&unit)?
             .lines()
@@ -360,7 +369,7 @@ async fn review_stale_units_inner(
             &format!("Delete stale ORBIT unit {name}?"),
             &lines,
             &format!("Stale unit {}/{}", index + 1, total),
-            "Enter/d: delete | s: skip | a: skip all stale",
+            tui::Action::Delete,
             true,
         )?;
         match decision {
@@ -413,6 +422,7 @@ fn build_unit_names(
                 unit.unit_name_short
                     .clone()
                     .or_else(|| unit.unit_name.clone())
+                    .or_else(|| unit.unit_name_original.clone())
                     .unwrap_or_else(|| "?".to_string()),
             )
         })
