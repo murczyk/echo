@@ -285,6 +285,10 @@ pub async fn aggregate_to_inbox_messages(
         crate::system_settings::sigint_comment_parsing_enabled(&env.dbx)
             .await
             .c(h!())?;
+    let mut normalized_callsigns =
+        crate::inbox::callsigns::load_by_item_ids(&env.dbx, &message_ids)
+            .await
+            .c(h!())?;
 
     for message in messages {
         // for message in messages {
@@ -321,9 +325,14 @@ pub async fn aggregate_to_inbox_messages(
         };
         let freq = message.freq.clone();
         let coords = message.coords.clone();
-        let callsigns = match message.callsigns.as_ref() {
-            Some(v) => serde_json::from_value(v.clone()).context(h!())?,
-            None => vec![],
+        let normalized_callsigns = normalized_callsigns.remove(&message.id);
+        let callsigns = match normalized_callsigns.as_ref() {
+            Some(callsigns) => callsigns.primary.clone(),
+            None => from_m_val_vec(message.callsigns.clone())?,
+        };
+        let callsigns_alg2 = match normalized_callsigns {
+            Some(callsigns) => callsigns.alg2,
+            None => from_m_val_vec(message.callsigns_alg2.clone())?,
         };
         let group_entry = groups_map.get(&message.id).and_then(|entries| {
             entries.iter().min_by_key(|(entry, _)| entry.id).cloned()
@@ -462,7 +471,7 @@ pub async fn aggregate_to_inbox_messages(
                     .map(|dg| dg.datasource_id),
                 location,
                 tags: inbox_tag_ids,
-                callsigns_alg2: from_m_val_vec(message.callsigns_alg2.clone())?,
+                callsigns_alg2,
                 network_ids,
                 network_name: message.network,
                 device_name: message.device_name,
@@ -1171,6 +1180,10 @@ pub async fn submit_upsert_inbox_item(
         .one(txn)
         .await
         .c(h!())?
+        .c(h!())?;
+    let callsigns = crate::inbox::callsigns::from_legacy(&new_item)?;
+    crate::inbox::callsigns::sync(txn, inbox_id, callsigns, *login)
+        .await
         .c(h!())?;
     crate::sigint::network::etalon_calc::calculate_sigint_inbox_item_networks(
         vec![new_item],
