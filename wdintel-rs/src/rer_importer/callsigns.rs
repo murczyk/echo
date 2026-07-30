@@ -1332,7 +1332,6 @@ pub async fn oneoff_reprocess_callsign_tokens(
             start_shifted
         };
         let txn = dbx.begin().await.c(h!())?;
-
         let inbox_items: Vec<(
             sigint_inbox_item::Model,
             Option<signal_message::Model>,
@@ -1401,6 +1400,8 @@ pub async fn oneoff_reprocess_callsigns(
             start_shifted
         };
         let txn = dbx.begin().await.c(h!())?;
+        let system_login_id =
+            crate::users::system_login_id(&txn).await.c(h!())?;
 
         let inbox_items: Vec<(
             sigint_inbox_item::Model,
@@ -1444,13 +1445,32 @@ pub async fn oneoff_reprocess_callsigns(
                 crate::utils::uniq_via_btreeset(&callsigns);
             let callsign_tokens =
                 highlight_callsigns(&rq, &body, &callsigns).await.c(h!())?;
+            let inbox_item_id = inbox_item.id;
+            let alg2: Vec<String> = inbox_item
+                .callsigns_alg2
+                .clone()
+                .map(serde_json::from_value)
+                .transpose()
+                .c(h!())?
+                .unwrap_or_default();
             let mut inbox_item: sigint_inbox_item::ActiveModel =
                 inbox_item.clone().into();
             inbox_item.callsigns =
-                Set(Some(serde_json::to_value(callsigns).c(h!())?));
+                Set(Some(serde_json::to_value(&callsigns).c(h!())?));
             inbox_item.callsign_tokens =
                 Set(Some(serde_json::to_value(callsign_tokens).c(h!())?));
             inbox_item.update(&txn).await.c(h!())?;
+            crate::inbox::callsigns::sync(
+                &txn,
+                inbox_item_id,
+                crate::inbox::callsigns::InboxItemCallsigns {
+                    primary: callsigns,
+                    alg2,
+                },
+                system_login_id,
+            )
+            .await
+            .c(h!())?;
         }
         pb.finish_with_message("done");
 
@@ -1637,7 +1657,12 @@ pub async fn callsigns_graph(
         )
         .select_only()
         .column_as(sigint_inbox_item::Column::Freq, "freq")
-        .column_as(sigint_inbox_item::Column::Callsigns, "callsigns")
+        .column_as(
+            Expr::cust(crate::inbox::callsigns::sql_json_expression(
+                "sigint_inbox_item",
+            )),
+            "callsigns",
+        )
         .filter(signal_message::Column::Deleted.eq(false))
         .filter(
             datasource_group::Column::GroupMasterKey
