@@ -167,6 +167,20 @@ deployment, verification, and rollback commands. Echo uses the router as its
 normal OpenAI-compatible endpoint; direct Spark access is retained only as a
 fallback.
 
+## Inbox callsign storage
+
+Parsed inbox callsigns are stored as ordered, source-specific rows in
+`sigint_inbox_item_callsign`. Active `primary` and `alg2` rows are the
+authoritative representation; the legacy JSONB columns remain dual-written as
+a compatibility fallback until a later cleanup rollout. Callsign replacement,
+soft deletion, reactivation, ordering, and login attribution are committed in
+the same PostgreSQL transaction as the inbox-item change.
+
+Historical rows are populated online with
+`oneoff-backfill-inbox-item-callsigns`. The command processes short,
+restartable keyset batches so the API and background workers can continue
+using the database during backfill.
+
 ## Echo LXC systemd graph
 
 ```mermaid

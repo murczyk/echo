@@ -146,6 +146,12 @@ password stays in `echo-peerdb-<source-hostname>`.
 Exclusions may name optional tables that are absent on an instance; if such a
 table is created later, it remains excluded automatically.
 
+Durable normalized domain tables, including
+`sigint_inbox_item_callsign`, are intentionally not excluded. The automatic
+table reconciler adds them to PeerDB after the source migration; verify the raw
+ClickHouse table and current-state gateway view before considering the
+deployment complete.
+
 The source monitor installer records its invoking Unix account in a systemd
 drop-in. Automatic table reconciliation runs as that account so it can reuse
 the same SSH identity and known-hosts file as manual reconciliation. Run the
