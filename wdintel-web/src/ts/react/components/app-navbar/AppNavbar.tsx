@@ -346,7 +346,7 @@ export function AppNavbar({
           </div>
         ) : (
           <button
-            className={`inline-flex w-full cursor-pointer items-center rounded px-2 py-2 text-white transition-all duration-200 hover:bg-black/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/70 focus-visible:ring-offset-1 lg:w-auto ${active ? 'font-medium' : ''}`}
+            className={`inline-flex w-full cursor-pointer items-center rounded px-3 py-2 text-white transition-all duration-200 hover:bg-black/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/70 focus-visible:ring-offset-1 lg:w-auto lg:px-2 ${active ? 'font-medium' : ''}`}
             onClick={(e) => handleDropdownToggle(e, activeNameExp)}
             aria-haspopup="true"
             aria-controls={dropdownMenuId}
@@ -433,7 +433,7 @@ export function AppNavbar({
 
           <div
             id="app-navbar-links-panel"
-            className={`app-navbar-links w-full min-w-0 basis-full border-t border-[var(--color-border)] lg:mt-0 lg:w-auto lg:min-w-0 lg:flex-none lg:border-t-0 lg:pt-0 ${mobileNavOpen ? 'flex' : 'hidden lg:flex'}`}
+            className={`app-navbar-links w-full min-w-0 basis-full lg:mt-0 lg:w-auto lg:min-w-0 lg:flex-none lg:pt-0 ${mobileNavOpen ? 'flex' : 'hidden lg:flex'}`}
           >
             <ul className="app-navbar-links-list flex min-w-0 w-full flex-col gap-y-1 lg:flex-row lg:flex-wrap lg:items-center lg:gap-x-4 lg:gap-y-1">
               {serverModeIsLive &&

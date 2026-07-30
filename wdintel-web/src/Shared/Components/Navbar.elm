@@ -256,8 +256,6 @@ navBar user shared activeName props =
             , internalMenu Route.Path.CoordsConverter "coords-converter" "Координати"
             ]
 
-
-
         menuItems =
             let
                 menuWithSubs =
@@ -279,7 +277,6 @@ navBar user shared activeName props =
                     [ menuWithSubs "import" "Імпорт" importSubs ]
                 , ifOrEmpty (serverModeIs "live" shared.serverInfo && hasRole "Basic" user)
                     [ menuWithSubs "other" "Конвертери" converterSubs ]
-
                 , ifOrEmpty (hasRole "Basic" user)
                     [ menuRoute { path = Route.Path.SettingsNeo, query = Dict.fromList [ ( "section", "my-groups" ) ], hash = Nothing } "settings-neo" "Налаштування" ]
                 , ifOrEmpty (adminMenuIsVisible user)
@@ -403,8 +400,8 @@ navBar user shared activeName props =
                     [ id "app-navbar-links-panel"
                     , class <|
                         String.join " "
-                            [ "app-navbar-links w-full min-w-0 basis-full border-t border-[var(--color-border)]"
-                            , "lg:mt-0 lg:flex lg:w-auto lg:min-w-0 lg:flex-1 lg:basis-0 lg:border-t-0 lg:pt-0"
+                            [ "app-navbar-links w-full min-w-0 basis-full"
+                            , "lg:mt-0 lg:flex lg:w-auto lg:min-w-0 lg:flex-1 lg:basis-0 lg:pt-0"
                             , if props.mobileNavOpen then
                                 "flex"
 

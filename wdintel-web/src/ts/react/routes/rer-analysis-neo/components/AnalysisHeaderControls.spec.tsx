@@ -159,6 +159,9 @@ describe('AnalysisHeaderControls', () => {
     rendered.push(view);
 
     expect(view.container.querySelector('input[aria-label="Пошук"]')).toBeNull();
+    expect(
+      view.container.querySelector('button[aria-label="Інтервал: 27.03 21:52 — 28.03 09:52"]'),
+    ).not.toBeNull();
     await click(
       view.container.querySelector('button[aria-label="Відкрити пошук"]') as HTMLButtonElement,
     );

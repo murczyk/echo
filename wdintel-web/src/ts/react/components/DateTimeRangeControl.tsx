@@ -1,5 +1,5 @@
 import CalendarMonthOutlinedIcon from '@mui/icons-material/CalendarMonthOutlined';
-import { Box, Button, Paper, Popover, Stack, TextField } from '@mui/material';
+import { Box, Button, IconButton, Paper, Popover, Stack, TextField, Tooltip } from '@mui/material';
 import dayjs from 'dayjs';
 import type { Dayjs } from 'dayjs';
 import { useCallback, useEffect, useId, useRef, useState } from 'react';
@@ -20,6 +20,7 @@ export type DateTimeRangeControlProps = {
   className?: string;
   disabled?: boolean;
   now?: Date;
+  displayMode?: 'date-time' | 'icon';
 };
 
 type DisplayDateTimeParts = {
@@ -123,6 +124,7 @@ export function DateTimeRangeControl({
   className,
   disabled = false,
   now,
+  displayMode = 'date-time',
 }: DateTimeRangeControlProps) {
   const anchorId = useId().replace(/:/g, '-');
   const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null);
@@ -190,36 +192,68 @@ export function DateTimeRangeControl({
     });
   }, []);
 
-  const intervalLabel = formatDateTimeRangeDisplayValue(value, now);
+  const fullIntervalLabel = formatDateTimeRangeDisplayValue(value, now);
+  const intervalAriaLabel = `Інтервал: ${fullIntervalLabel}`;
 
   return (
     <Stack className={className} direction="row" spacing={0} sx={{ minWidth: 0, width: '100%' }}>
-      <TextField
-        id={anchorId}
-        value={intervalLabel}
-        onMouseDown={(event) => event.preventDefault()}
-        onClick={openPopover}
-        aria-haspopup="dialog"
-        aria-expanded={open ? 'true' : 'false'}
-        disabled={disabled}
-        fullWidth
-        size="small"
-        placeholder="Інтервал"
-        inputProps={{
-          readOnly: true,
-        }}
-        InputProps={{
-          endAdornment: (
-            <Box
-              component="span"
-              sx={{ display: 'inline-flex', alignItems: 'center', mx: 1.5, color: 'primary.main' }}
+      {displayMode === 'icon' ? (
+        <Tooltip title={fullIntervalLabel} arrow>
+          <span>
+            <IconButton
+              id={anchorId}
+              aria-label={intervalAriaLabel}
+              aria-haspopup="dialog"
+              aria-expanded={open ? 'true' : 'false'}
+              disabled={disabled}
+              onClick={openPopover}
+              sx={{
+                width: 40,
+                height: 40,
+                borderRadius: 1,
+                border: '1px solid',
+                borderColor: open ? 'primary.main' : 'divider',
+                color: 'primary.main',
+              }}
             >
-              <CalendarMonthOutlinedIcon sx={{ fontSize: 16 }} />
-            </Box>
-          ),
-        }}
-        sx={getDateTimeRangeControlTextFieldSx(open)}
-      />
+              <CalendarMonthOutlinedIcon sx={{ fontSize: 18 }} />
+            </IconButton>
+          </span>
+        </Tooltip>
+      ) : (
+        <TextField
+          id={anchorId}
+          value={fullIntervalLabel}
+          onMouseDown={(event) => event.preventDefault()}
+          onClick={openPopover}
+          aria-haspopup="dialog"
+          aria-expanded={open ? 'true' : 'false'}
+          disabled={disabled}
+          fullWidth
+          size="small"
+          placeholder="Інтервал"
+          inputProps={{
+            readOnly: true,
+            'aria-label': intervalAriaLabel,
+          }}
+          InputProps={{
+            endAdornment: (
+              <Box
+                component="span"
+                sx={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  mx: 1.5,
+                  color: 'primary.main',
+                }}
+              >
+                <CalendarMonthOutlinedIcon sx={{ fontSize: 16 }} />
+              </Box>
+            ),
+          }}
+          sx={getDateTimeRangeControlTextFieldSx(open)}
+        />
+      )}
       <Popover
         open={open}
         anchorEl={anchorEl}

@@ -122,6 +122,34 @@ describe('DateTimeRangeControl', () => {
     ).toBe('01.01.2027 00:00 — 02.01.2027 00:00');
   });
 
+  it('renders an icon-only trigger with the full interval as its accessible label', () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    act(() => {
+      root.render(
+        <DateTimeRangeControl
+          value={{ fromDateTimeStr: '2026-05-05T10:00', toDateTimeStr: '2026-05-06T10:00' }}
+          onChange={vi.fn()}
+          now={fixedNow}
+          displayMode="icon"
+        />,
+      );
+    });
+
+    expect(container.querySelector('input')).toBeNull();
+    const trigger = container.querySelector<HTMLButtonElement>(
+      '[aria-label="Інтервал: 05.05 10:00 — 06.05 10:00"]',
+    );
+    expect(trigger).not.toBeNull();
+
+    act(() => trigger?.click());
+    expect(trigger?.getAttribute('aria-expanded')).toBe('true');
+
+    act(() => root.unmount());
+  });
+
   it('propagates valid picker changes immediately', () => {
     const container = document.createElement('div');
     document.body.appendChild(container);

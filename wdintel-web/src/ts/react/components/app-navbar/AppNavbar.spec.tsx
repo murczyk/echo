@@ -114,6 +114,18 @@ describe('AppNavbar', () => {
     expect(content).not.toContain('Адмін');
   });
 
+  it('uses the same mobile left padding for linked and button menu entries', () => {
+    const { container } = renderComponent({
+      ...defaultProps,
+      user: { ...defaultProps.user, roles: ['Rer'] },
+    });
+
+    expect(container.querySelector('a[href="/rer-duty-neo"]')?.className).toContain('px-3');
+    expect(
+      container.querySelector('button[aria-controls="navbar-dropdown-menu-database"]')?.className,
+    ).toContain('px-3');
+  });
+
   it('hides globally disabled classic menus and applies the user override', async () => {
     currentSettingsMock.mockResolvedValue({
       defaultNeoAnalysis: false,
@@ -226,6 +238,7 @@ describe('AppNavbar', () => {
     // Initially hidden on mobile (hidden class present on the panel)
     const panel = container.querySelector('#app-navbar-links-panel');
     expect(panel?.className).toContain('hidden');
+    expect(panel?.className.split(/\s+/)).not.toContain('border-t');
 
     act(() => {
       mobileButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));

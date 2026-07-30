@@ -180,7 +180,7 @@ export function AnalysisHeaderControls({
       <Box
         sx={{
           width: isCompactLayout
-            ? { xs: 200, sm: getAnalysisDateTimeRangeWidth(dateTimeRangeValue) }
+            ? 40
             : { xs: '100%', sm: getAnalysisDateTimeRangeWidth(dateTimeRangeValue) },
           minWidth: 0,
           flexShrink: 0,
@@ -191,6 +191,7 @@ export function AnalysisHeaderControls({
         <DateTimeRangeControl
           value={dateTimeRangeValue}
           onChange={(value) => updateQueryState(value)}
+          displayMode={isCompactLayout ? 'icon' : 'date-time'}
         />
       </Box>
     </Stack>
