@@ -28,14 +28,6 @@ create table sigint_inbox_item_callsign (
     unique (sigint_inbox_item_id, source, callsign)
 );
 
-create unique index sigint_inbox_item_callsign_active_ordering_idx
-    on sigint_inbox_item_callsign (
-        sigint_inbox_item_id,
-        source,
-        ordering
-    )
-    where not deleted;
-
 create index sigint_inbox_item_callsign_active_callsign_idx
     on sigint_inbox_item_callsign (callsign, sigint_inbox_item_id)
     where not deleted;

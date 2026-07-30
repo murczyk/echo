@@ -214,6 +214,22 @@ pub struct OneoffBackfillInboxNetworksPs {
 }
 
 #[derive(clap::Parser, Debug)]
+pub struct OneoffBackfillInboxItemCallsignsPs {
+    /// Continue after this sigint_inbox_item ID.
+    #[arg(long)]
+    pub after_id: Option<i64>,
+    /// Stop at this sigint_inbox_item ID (inclusive).
+    #[arg(long)]
+    pub through_id: Option<i64>,
+    /// Number of inbox items committed per transaction.
+    #[arg(long)]
+    pub batch_size: Option<u64>,
+    /// Validate legacy values and print totals without writing.
+    #[arg(long, action)]
+    pub dry_run: bool,
+}
+
+#[derive(clap::Parser, Debug)]
 #[command(
     after_help = "Example:\n  wdintel-rs --mode=live oneoff-backfill-inbox-network-units-tui --start 2026-07-01"
 )]
@@ -844,6 +860,7 @@ enum Cmd {
     OneoffImportSignalsCallsignsCsv(OneoffImportSignalsCallsignsCsvPs),
     OneoffFixWhatsappSenders,
     OneoffBackfillInboxNetworks(OneoffBackfillInboxNetworksPs),
+    OneoffBackfillInboxItemCallsigns(OneoffBackfillInboxItemCallsignsPs),
     OneoffBackfillInboxNetworkUnitsTui(OneoffBackfillInboxNetworkUnitsTuiPs),
     OneoffBackfillPalitraPointLexemes,
     OneoffReprocessInboxMetadata(OneoffReprocessInboxMetadataPs),
@@ -1462,6 +1479,9 @@ async fn async_main(
                 mode, &ps,
             )
             .await
+        }
+        Cmd::OneoffBackfillInboxItemCallsigns(ps) => {
+            inbox::callsigns::oneoff_backfill(mode, &ps).await
         }
         Cmd::OneoffReprocessInboxMetadata(ps) => {
             rer_importer::inbox::metadata::oneoff::oneoff_reprocess_inbox_metadata(
