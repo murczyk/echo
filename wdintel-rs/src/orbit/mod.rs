@@ -1,7 +1,7 @@
-use crate::entities::{orbit_unit, sigint_unit};
+use crate::entities::sigint_unit;
 use crate::error::AppError;
 use crate::orbit::dictionary::DictionaryMaps;
-use crate::orbit::persistence::{ImportState, ImportUnit};
+use crate::orbit::persistence::{ExistingUnit, ImportState, ImportUnit};
 use crate::types::{Mode, ShortContext};
 use crate::{h, new_pg_pool_from_mode};
 use chrono::Utc;
@@ -128,7 +128,7 @@ async fn review_import_units(
     db: &sea_orm::DatabaseConnection,
     dictionaries: &DictionaryMaps,
     import_units: &[ImportUnit],
-    existing: &mut HashMap<Uuid, orbit_unit::Model>,
+    existing: &mut HashMap<Uuid, ExistingUnit>,
     unit_names: &HashMap<Uuid, String>,
     started_at: chrono::NaiveDateTime,
 ) -> anyhow::Result<bool> {
@@ -163,7 +163,7 @@ struct ImportReview<'a> {
     db: &'a sea_orm::DatabaseConnection,
     dictionaries: &'a DictionaryMaps,
     import_units: &'a [ImportUnit],
-    existing: &'a mut HashMap<Uuid, orbit_unit::Model>,
+    existing: &'a mut HashMap<Uuid, ExistingUnit>,
     unit_names: &'a HashMap<Uuid, String>,
     started_at: chrono::NaiveDateTime,
     rejected: &'a mut HashSet<Uuid>,
@@ -264,7 +264,7 @@ impl ImportReview<'_> {
 fn review_metadata<'a>(
     unit: &ImportUnit,
     state: &'a ImportState,
-) -> (String, tui::Action, Option<&'a orbit_unit::Model>) {
+) -> (String, tui::Action, Option<&'a ExistingUnit>) {
     let partial = if unit.partial {
         "partial ancestor "
     } else {
@@ -298,7 +298,7 @@ async fn apply_import_decision(
     state: ImportState,
     decision: tui::Decision,
     started_at: chrono::NaiveDateTime,
-    existing: &mut HashMap<Uuid, orbit_unit::Model>,
+    existing: &mut HashMap<Uuid, ExistingUnit>,
     rejected: &mut HashSet<Uuid>,
 ) -> anyhow::Result<()> {
     match (state, decision) {
@@ -349,7 +349,7 @@ async fn review_stale_units(
 async fn review_stale_units_inner(
     db: &sea_orm::DatabaseConnection,
     terminal: &mut tui::OrbitTerminal,
-    stale: Vec<orbit_unit::Model>,
+    stale: Vec<ExistingUnit>,
     started_at: chrono::NaiveDateTime,
 ) -> anyhow::Result<()> {
     let total = stale.len();
@@ -385,7 +385,7 @@ async fn review_stale_units_inner(
 
 fn remaining_review_count(
     units: &[ImportUnit],
-    existing: &HashMap<Uuid, orbit_unit::Model>,
+    existing: &HashMap<Uuid, ExistingUnit>,
     rejected: &HashSet<Uuid>,
 ) -> usize {
     let mut rejected = rejected.clone();
@@ -400,10 +400,7 @@ fn remaining_review_count(
     count
 }
 
-fn requires_review(
-    unit: &ImportUnit,
-    existing: Option<&orbit_unit::Model>,
-) -> bool {
+fn requires_review(unit: &ImportUnit, existing: Option<&ExistingUnit>) -> bool {
     !matches!(
         persistence::classify(unit, existing),
         ImportState::Unchanged(_)
@@ -412,7 +409,7 @@ fn requires_review(
 
 fn build_unit_names(
     import_units: &[ImportUnit],
-    existing: &HashMap<Uuid, orbit_unit::Model>,
+    existing: &HashMap<Uuid, ExistingUnit>,
 ) -> HashMap<Uuid, String> {
     let mut names = existing
         .values()

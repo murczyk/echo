@@ -26,7 +26,6 @@ pub struct Model {
     pub unit_alternate_numbers: Option<Vec<String>>,
     pub unit_echelon_id: Option<Uuid>,
     pub combat_unit_type_id: Option<Uuid>,
-    pub grouping_of_forces_id: Option<Uuid>,
     pub generative_parent_unit_id: Option<Uuid>,
     pub operational_parent_unit_id: Option<Uuid>,
     pub deleted: bool,
@@ -44,14 +43,6 @@ pub enum Relation {
         on_delete = "NoAction"
     )]
     OrbitCombatUnitType,
-    #[sea_orm(
-        belongs_to = "super::orbit_grouping_of_forces::Entity",
-        from = "Column::GroupingOfForcesId",
-        to = "super::orbit_grouping_of_forces::Column::Id",
-        on_update = "NoAction",
-        on_delete = "NoAction"
-    )]
-    OrbitGroupingOfForces,
     #[sea_orm(
         belongs_to = "Entity",
         from = "Column::GenerativeParentUnitId",
@@ -76,6 +67,8 @@ pub enum Relation {
         on_delete = "NoAction"
     )]
     OrbitUnitEchelon,
+    #[sea_orm(has_many = "super::orbit_unit_grouping_of_forces::Entity")]
+    OrbitUnitGroupingOfForces,
 }
 
 impl Related<super::orbit_combat_unit_type::Entity> for Entity {
@@ -84,15 +77,29 @@ impl Related<super::orbit_combat_unit_type::Entity> for Entity {
     }
 }
 
-impl Related<super::orbit_grouping_of_forces::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::OrbitGroupingOfForces.def()
-    }
-}
-
 impl Related<super::orbit_unit_echelon::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::OrbitUnitEchelon.def()
+    }
+}
+
+impl Related<super::orbit_unit_grouping_of_forces::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::OrbitUnitGroupingOfForces.def()
+    }
+}
+
+impl Related<super::orbit_grouping_of_forces::Entity> for Entity {
+    fn to() -> RelationDef {
+        super::orbit_unit_grouping_of_forces::Relation::OrbitGroupingOfForces
+            .def()
+    }
+    fn via() -> Option<RelationDef> {
+        Some(
+            super::orbit_unit_grouping_of_forces::Relation::OrbitUnit
+                .def()
+                .rev(),
+        )
     }
 }
 

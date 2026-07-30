@@ -336,10 +336,11 @@ ORBIT unit exports are imported manually with
 JSON and its dictionaries, filters roots by echelon-aware matching against
 active `sigint_unit` rows, expands both ancestor chains, and presents
 create/update/reactivate/delete decisions in a terminal UI. Confirmed decisions
-are written immediately to the PostgreSQL `orbit_unit` table; dictionary rows
-are supplied by migrations. No persistent ORBIT-to-SIGINT relation is created.
+are written immediately to the PostgreSQL `orbit_unit` table and its
+many-to-many force-grouping links; dictionary rows are supplied by migrations.
+No persistent ORBIT-to-SIGINT relation is created.
 
-The four ORBIT tables are authoritative operational data in PostgreSQL and are
+The five ORBIT tables are authoritative operational data in PostgreSQL and are
 excluded from PeerDB replication. See the
 [ORBIT import runbook](../deploy/2026-07-29-orbit-dictionaries/README.md) for
 dictionary preflight, matching, review, quit, and stale-row semantics.

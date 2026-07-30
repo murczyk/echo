@@ -84,6 +84,7 @@ pub mod orbit_combat_unit_type;
 pub mod orbit_grouping_of_forces;
 pub mod orbit_unit;
 pub mod orbit_unit_echelon;
+pub mod orbit_unit_grouping_of_forces;
 pub mod organism;
 pub mod organism_aor;
 pub mod organism_group;

@@ -20,13 +20,26 @@ pub struct Model {
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {
-    #[sea_orm(has_many = "super::orbit_unit::Entity")]
-    OrbitUnit,
+    #[sea_orm(has_many = "super::orbit_unit_grouping_of_forces::Entity")]
+    OrbitUnitGroupingOfForces,
+}
+
+impl Related<super::orbit_unit_grouping_of_forces::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::OrbitUnitGroupingOfForces.def()
+    }
 }
 
 impl Related<super::orbit_unit::Entity> for Entity {
     fn to() -> RelationDef {
-        Relation::OrbitUnit.def()
+        super::orbit_unit_grouping_of_forces::Relation::OrbitUnit.def()
+    }
+    fn via() -> Option<RelationDef> {
+        Some(
+            super::orbit_unit_grouping_of_forces::Relation::OrbitGroupingOfForces
+                .def()
+                .rev(),
+        )
     }
 }
 

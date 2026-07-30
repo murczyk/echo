@@ -115,9 +115,45 @@ impl DictionaryMaps {
         })
     }
 
+    pub fn resolve_all(
+        &self,
+        kind: DictionaryKind,
+        values: Option<&[DictionaryValue]>,
+    ) -> anyhow::Result<Option<BTreeSet<Uuid>>> {
+        values
+            .map(|values| {
+                values
+                    .iter()
+                    .map(|value| {
+                        self.resolve(kind, Some(value))?.ok_or_else(|| {
+                            anyhow::anyhow!(
+                                "missing ORBIT {} dictionary value",
+                                kind.table_name()
+                            )
+                        })
+                    })
+                    .collect()
+            })
+            .transpose()
+    }
+
     pub fn summary(&self, id: Option<Uuid>) -> String {
         id.and_then(|id| self.summaries.get(&id).cloned())
             .unwrap_or_else(|| "-".to_string())
+    }
+
+    pub fn summaries(&self, ids: Option<&BTreeSet<Uuid>>) -> String {
+        let mut summaries = ids
+            .into_iter()
+            .flatten()
+            .filter_map(|id| self.summaries.get(id).cloned())
+            .collect::<Vec<_>>();
+        summaries.sort();
+        if summaries.is_empty() {
+            "-".to_string()
+        } else {
+            summaries.join(", ")
+        }
     }
 
     fn contains(&self, kind: DictionaryKind, key: &DictionaryKey) -> bool {
@@ -239,10 +275,10 @@ fn collect_unit_dictionary_values(
     unit: &SourceUnit,
     values: &mut BTreeMap<DictionaryKind, BTreeSet<DictionaryKey>>,
 ) -> anyhow::Result<()> {
-    add_value(
+    add_values(
         values,
         DictionaryKind::GroupingOfForces,
-        unit.grouping_of_forces.as_ref(),
+        unit.grouping_of_forces.as_deref(),
     )?;
     add_value(
         values,
@@ -260,6 +296,19 @@ fn collect_unit_dictionary_values(
         .chain(&unit.operational_parent_units)
     {
         collect_unit_dictionary_values(parent, values)?;
+    }
+    Ok(())
+}
+
+fn add_values(
+    values: &mut BTreeMap<DictionaryKind, BTreeSet<DictionaryKey>>,
+    kind: DictionaryKind,
+    dictionary_values: Option<&[DictionaryValue]>,
+) -> anyhow::Result<()> {
+    if let Some(dictionary_values) = dictionary_values {
+        for value in dictionary_values {
+            add_value(values, kind, Some(value))?;
+        }
     }
     Ok(())
 }

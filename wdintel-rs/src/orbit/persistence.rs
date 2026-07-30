@@ -1,5 +1,5 @@
 use crate::config::ORBIT_STALE_GRACE_SECONDS;
-use crate::entities::orbit_unit;
+use crate::entities::{orbit_unit, orbit_unit_grouping_of_forces};
 use crate::error::AppError;
 use crate::h;
 use crate::orbit::dictionary::{DictionaryKind, DictionaryMaps};
@@ -7,10 +7,13 @@ use crate::orbit::hierarchy::HierarchyUnit;
 use crate::types::ShortContext;
 use chrono::{Duration, NaiveDateTime};
 use sea_orm::{
-    ActiveModelTrait, ActiveValue::Set, ColumnTrait, DatabaseConnection,
-    EntityTrait, IntoActiveModel, QueryFilter,
+    ActiveModelTrait, ActiveValue::Set, ColumnTrait, ConnectionTrait,
+    DatabaseConnection, EntityTrait, IntoActiveModel, QueryFilter,
+    TransactionTrait,
 };
-use std::collections::{BTreeMap, HashMap};
+use serde::Serialize;
+use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::ops::{Deref, DerefMut};
 use uuid::Uuid;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -26,7 +29,7 @@ pub struct ImportUnit {
     pub unit_alternate_numbers: Option<Vec<String>>,
     pub unit_echelon_id: Option<Uuid>,
     pub combat_unit_type_id: Option<Uuid>,
-    pub grouping_of_forces_id: Option<Uuid>,
+    pub grouping_of_forces_ids: Option<BTreeSet<Uuid>>,
     pub generative_parent_unit_id: Option<Uuid>,
     pub operational_parent_unit_id: Option<Uuid>,
     pub partial: bool,
@@ -35,9 +38,30 @@ pub struct ImportUnit {
 #[derive(Debug, Clone)]
 pub enum ImportState {
     New,
-    Unchanged(orbit_unit::Model),
-    Changed(orbit_unit::Model),
-    Deleted(orbit_unit::Model),
+    Unchanged(ExistingUnit),
+    Changed(ExistingUnit),
+    Deleted(ExistingUnit),
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ExistingUnit {
+    #[serde(flatten)]
+    pub unit: orbit_unit::Model,
+    pub grouping_of_forces_ids: BTreeSet<Uuid>,
+}
+
+impl Deref for ExistingUnit {
+    type Target = orbit_unit::Model;
+
+    fn deref(&self) -> &Self::Target {
+        &self.unit
+    }
+}
+
+impl DerefMut for ExistingUnit {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.unit
+    }
 }
 
 impl ImportUnit {
@@ -63,9 +87,9 @@ impl ImportUnit {
                 DictionaryKind::CombatUnitType,
                 unit.data.combat_unit_type.as_ref(),
             )?,
-            grouping_of_forces_id: dictionaries.resolve(
+            grouping_of_forces_ids: dictionaries.resolve_all(
                 DictionaryKind::GroupingOfForces,
-                unit.data.grouping_of_forces.as_ref(),
+                unit.data.grouping_of_forces.as_deref(),
             )?,
             generative_parent_unit_id: unit.generative_parent_unit_id,
             operational_parent_unit_id: unit.operational_parent_unit_id,
@@ -96,7 +120,7 @@ impl ImportUnit {
 
     pub fn preserve_existing_partial_fields(
         &mut self,
-        existing: Option<&orbit_unit::Model>,
+        existing: Option<&ExistingUnit>,
     ) {
         if !self.partial {
             return;
@@ -132,10 +156,10 @@ impl ImportUnit {
             &mut self.combat_unit_type_id,
             &existing.combat_unit_type_id,
         );
-        preserve_missing(
-            &mut self.grouping_of_forces_id,
-            &existing.grouping_of_forces_id,
-        );
+        if self.grouping_of_forces_ids.is_none() {
+            self.grouping_of_forces_ids =
+                Some(existing.grouping_of_forces_ids.clone());
+        }
         preserve_missing(
             &mut self.generative_parent_unit_id,
             &existing.generative_parent_unit_id,
@@ -155,7 +179,7 @@ fn preserve_missing<T: Clone>(value: &mut Option<T>, existing: &Option<T>) {
 
 pub fn classify(
     unit: &ImportUnit,
-    existing: Option<&orbit_unit::Model>,
+    existing: Option<&ExistingUnit>,
 ) -> ImportState {
     let Some(existing) = existing else {
         return ImportState::New;
@@ -172,13 +196,50 @@ pub fn classify(
 
 pub async fn load_existing(
     db: &DatabaseConnection,
-) -> Result<HashMap<Uuid, orbit_unit::Model>, AppError> {
-    Ok(orbit_unit::Entity::find()
-        .all(db)
-        .await
-        .c(h!())?
+) -> Result<HashMap<Uuid, ExistingUnit>, AppError> {
+    Ok(
+        attach_groupings(db, orbit_unit::Entity::find().all(db).await.c(h!())?)
+            .await?
+            .into_iter()
+            .map(|unit| (unit.unit_id, unit))
+            .collect(),
+    )
+}
+
+async fn attach_groupings<C>(
+    db: &C,
+    units: Vec<orbit_unit::Model>,
+) -> Result<Vec<ExistingUnit>, AppError>
+where
+    C: ConnectionTrait,
+{
+    let unit_ids = units.iter().map(|unit| unit.unit_id).collect::<Vec<_>>();
+    let links = if unit_ids.is_empty() {
+        Vec::new()
+    } else {
+        orbit_unit_grouping_of_forces::Entity::find()
+            .filter(
+                orbit_unit_grouping_of_forces::Column::UnitId.is_in(unit_ids),
+            )
+            .all(db)
+            .await
+            .c(h!())?
+    };
+    let mut grouping_ids_by_unit = HashMap::<Uuid, BTreeSet<Uuid>>::new();
+    for link in links {
+        grouping_ids_by_unit
+            .entry(link.unit_id)
+            .or_default()
+            .insert(link.grouping_of_forces_id);
+    }
+    Ok(units
         .into_iter()
-        .map(|unit| (unit.unit_id, unit))
+        .map(|unit| ExistingUnit {
+            grouping_of_forces_ids: grouping_ids_by_unit
+                .remove(&unit.unit_id)
+                .unwrap_or_default(),
+            unit,
+        })
         .collect())
 }
 
@@ -186,8 +247,9 @@ pub async fn insert_unit(
     db: &DatabaseConnection,
     unit: &ImportUnit,
     started_at: NaiveDateTime,
-) -> Result<orbit_unit::Model, AppError> {
-    orbit_unit::ActiveModel {
+) -> Result<ExistingUnit, AppError> {
+    let transaction = db.begin().await.c(h!())?;
+    let inserted = orbit_unit::ActiveModel {
         unit_id: Set(unit.unit_id),
         unit_name: Set(unit.unit_name.clone()),
         unit_name_original: Set(unit.unit_name_original.clone()),
@@ -201,26 +263,34 @@ pub async fn insert_unit(
         unit_alternate_numbers: Set(unit.unit_alternate_numbers.clone()),
         unit_echelon_id: Set(unit.unit_echelon_id),
         combat_unit_type_id: Set(unit.combat_unit_type_id),
-        grouping_of_forces_id: Set(unit.grouping_of_forces_id),
         generative_parent_unit_id: Set(unit.generative_parent_unit_id),
         operational_parent_unit_id: Set(unit.operational_parent_unit_id),
         deleted: Set(false),
         created_at: Set(started_at),
         updated_at: Set(started_at),
     }
-    .insert(db)
+    .insert(&transaction)
     .await
-    .c(h!())
-    .map_err(Into::into)
+    .c(h!())?;
+    let grouping_of_forces_ids =
+        unit.grouping_of_forces_ids.clone().unwrap_or_default();
+    replace_groupings(&transaction, unit.unit_id, &grouping_of_forces_ids)
+        .await?;
+    transaction.commit().await.c(h!())?;
+    Ok(ExistingUnit {
+        unit: inserted,
+        grouping_of_forces_ids,
+    })
 }
 
 pub async fn update_unit(
     db: &DatabaseConnection,
-    existing: orbit_unit::Model,
+    existing: ExistingUnit,
     unit: &ImportUnit,
     started_at: NaiveDateTime,
-) -> Result<orbit_unit::Model, AppError> {
-    let mut existing = existing.into_active_model();
+) -> Result<ExistingUnit, AppError> {
+    let transaction = db.begin().await.c(h!())?;
+    let mut existing = existing.unit.into_active_model();
     existing.unit_name = Set(unit.unit_name.clone());
     existing.unit_name_original = Set(unit.unit_name_original.clone());
     existing.unit_name_short = Set(unit.unit_name_short.clone());
@@ -233,12 +303,50 @@ pub async fn update_unit(
     existing.unit_alternate_numbers = Set(unit.unit_alternate_numbers.clone());
     existing.unit_echelon_id = Set(unit.unit_echelon_id);
     existing.combat_unit_type_id = Set(unit.combat_unit_type_id);
-    existing.grouping_of_forces_id = Set(unit.grouping_of_forces_id);
     existing.generative_parent_unit_id = Set(unit.generative_parent_unit_id);
     existing.operational_parent_unit_id = Set(unit.operational_parent_unit_id);
     existing.deleted = Set(false);
     existing.updated_at = Set(started_at);
-    existing.update(db).await.c(h!()).map_err(Into::into)
+    let updated = existing.update(&transaction).await.c(h!())?;
+    let grouping_of_forces_ids =
+        unit.grouping_of_forces_ids.clone().unwrap_or_default();
+    replace_groupings(&transaction, unit.unit_id, &grouping_of_forces_ids)
+        .await?;
+    transaction.commit().await.c(h!())?;
+    Ok(ExistingUnit {
+        unit: updated,
+        grouping_of_forces_ids,
+    })
+}
+
+async fn replace_groupings<C>(
+    db: &C,
+    unit_id: Uuid,
+    grouping_of_forces_ids: &BTreeSet<Uuid>,
+) -> Result<(), AppError>
+where
+    C: ConnectionTrait,
+{
+    orbit_unit_grouping_of_forces::Entity::delete_many()
+        .filter(orbit_unit_grouping_of_forces::Column::UnitId.eq(unit_id))
+        .exec(db)
+        .await
+        .c(h!())?;
+    if grouping_of_forces_ids.is_empty() {
+        return Ok(());
+    }
+    orbit_unit_grouping_of_forces::Entity::insert_many(
+        grouping_of_forces_ids.iter().map(|grouping_of_forces_id| {
+            orbit_unit_grouping_of_forces::ActiveModel {
+                unit_id: Set(unit_id),
+                grouping_of_forces_id: Set(*grouping_of_forces_id),
+            }
+        }),
+    )
+    .exec(db)
+    .await
+    .c(h!())?;
+    Ok(())
 }
 
 pub async fn touch_unit(
@@ -261,24 +369,24 @@ pub async fn touch_unit(
 pub async fn load_stale(
     db: &DatabaseConnection,
     started_at: NaiveDateTime,
-) -> Result<Vec<orbit_unit::Model>, AppError> {
+) -> Result<Vec<ExistingUnit>, AppError> {
     let stale_before =
         started_at - Duration::seconds(ORBIT_STALE_GRACE_SECONDS);
-    orbit_unit::Entity::find()
+    let units = orbit_unit::Entity::find()
         .filter(orbit_unit::Column::Deleted.eq(false))
         .filter(orbit_unit::Column::UpdatedAt.lt(stale_before))
         .all(db)
         .await
-        .c(h!())
-        .map_err(Into::into)
+        .c(h!())?;
+    attach_groupings(db, units).await
 }
 
 pub async fn soft_delete(
     db: &DatabaseConnection,
-    unit: orbit_unit::Model,
+    unit: ExistingUnit,
     started_at: NaiveDateTime,
 ) -> Result<(), AppError> {
-    let mut unit = unit.into_active_model();
+    let mut unit = unit.unit.into_active_model();
     unit.deleted = Set(true);
     unit.updated_at = Set(started_at);
     unit.update(db).await.c(h!())?;
@@ -287,7 +395,7 @@ pub async fn soft_delete(
 
 pub fn diff_lines(
     unit: &ImportUnit,
-    existing: Option<&orbit_unit::Model>,
+    existing: Option<&ExistingUnit>,
     dictionaries: &DictionaryMaps,
     unit_names: &HashMap<Uuid, String>,
 ) -> Vec<String> {
@@ -308,7 +416,7 @@ pub fn diff_lines(
         .collect()
 }
 
-fn same_data(unit: &ImportUnit, existing: &orbit_unit::Model) -> bool {
+fn same_data(unit: &ImportUnit, existing: &ExistingUnit) -> bool {
     unit.unit_name == existing.unit_name
         && unit.unit_name_original == existing.unit_name_original
         && unit.unit_name_short == existing.unit_name_short
@@ -320,7 +428,8 @@ fn same_data(unit: &ImportUnit, existing: &orbit_unit::Model) -> bool {
         && unit.unit_alternate_numbers == existing.unit_alternate_numbers
         && unit.unit_echelon_id == existing.unit_echelon_id
         && unit.combat_unit_type_id == existing.combat_unit_type_id
-        && unit.grouping_of_forces_id == existing.grouping_of_forces_id
+        && unit.grouping_of_forces_ids.clone().unwrap_or_default()
+            == existing.grouping_of_forces_ids
         && unit.generative_parent_unit_id == existing.generative_parent_unit_id
         && unit.operational_parent_unit_id
             == existing.operational_parent_unit_id
@@ -343,7 +452,8 @@ fn import_details(
         unit_alternate_numbers: unit.unit_alternate_numbers.as_deref(),
         unit_echelon: dictionaries.summary(unit.unit_echelon_id),
         combat_unit_type: dictionaries.summary(unit.combat_unit_type_id),
-        grouping_of_forces: dictionaries.summary(unit.grouping_of_forces_id),
+        grouping_of_forces: dictionaries
+            .summaries(unit.grouping_of_forces_ids.as_ref()),
         generative_parent: parent_summary(
             unit.generative_parent_unit_id,
             unit_names,
@@ -357,7 +467,7 @@ fn import_details(
 }
 
 fn model_details(
-    unit: &orbit_unit::Model,
+    unit: &ExistingUnit,
     dictionaries: &DictionaryMaps,
     unit_names: &HashMap<Uuid, String>,
 ) -> BTreeMap<String, String> {
@@ -373,7 +483,8 @@ fn model_details(
         unit_alternate_numbers: unit.unit_alternate_numbers.as_deref(),
         unit_echelon: dictionaries.summary(unit.unit_echelon_id),
         combat_unit_type: dictionaries.summary(unit.combat_unit_type_id),
-        grouping_of_forces: dictionaries.summary(unit.grouping_of_forces_id),
+        grouping_of_forces: dictionaries
+            .summaries(Some(&unit.grouping_of_forces_ids)),
         generative_parent: parent_summary(
             unit.generative_parent_unit_id,
             unit_names,
@@ -467,6 +578,7 @@ fn show_list(value: Option<&[String]>) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::entities::orbit_grouping_of_forces;
     use crate::orbit::types::DictionaryValue;
     use crate::types::Mode;
     use chrono::{Timelike, Utc};
@@ -509,7 +621,7 @@ mod tests {
             unit_alternate_numbers: None,
             unit_echelon_id: None,
             combat_unit_type_id: None,
-            grouping_of_forces_id: None,
+            grouping_of_forces_ids: None,
             generative_parent_unit_id: None,
             operational_parent_unit_id: None,
             partial: true,
@@ -554,6 +666,15 @@ mod tests {
             )
             .unwrap()
             .unwrap();
+        let grouping_of_forces_ids = orbit_grouping_of_forces::Entity::find()
+            .all(&db)
+            .await
+            .unwrap()
+            .into_iter()
+            .take(2)
+            .map(|grouping| grouping.id)
+            .collect::<BTreeSet<_>>();
+        assert_eq!(grouping_of_forces_ids.len(), 2);
 
         let started_at = Utc::now().naive_utc();
         let started_at = started_at
@@ -563,6 +684,7 @@ mod tests {
         let mut child = import_unit();
         child.generative_parent_unit_id = Some(parent.unit_id);
         child.unit_echelon_id = Some(echelon_id);
+        child.grouping_of_forces_ids = Some(grouping_of_forces_ids.clone());
         insert_unit(&db, &parent, started_at).await.unwrap();
         let child_row = insert_unit(&db, &child, started_at).await.unwrap();
         assert_eq!(child_row.created_at, started_at);
@@ -571,6 +693,30 @@ mod tests {
             classify(&child, Some(&child_row)),
             ImportState::Unchanged(_)
         ));
+        let persisted_grouping_ids =
+            orbit_unit_grouping_of_forces::Entity::find()
+                .filter(
+                    orbit_unit_grouping_of_forces::Column::UnitId
+                        .eq(child.unit_id),
+                )
+                .all(&db)
+                .await
+                .unwrap()
+                .into_iter()
+                .map(|link| link.grouping_of_forces_id)
+                .collect::<BTreeSet<_>>();
+        assert_eq!(persisted_grouping_ids, grouping_of_forces_ids);
+        let retained_grouping_id =
+            *grouping_of_forces_ids.iter().next().unwrap();
+        child.grouping_of_forces_ids =
+            Some(BTreeSet::from([retained_grouping_id]));
+        let child_row = update_unit(&db, child_row, &child, started_at)
+            .await
+            .unwrap();
+        assert_eq!(
+            child_row.grouping_of_forces_ids,
+            BTreeSet::from([retained_grouping_id])
+        );
 
         let touched_at = started_at + Duration::seconds(1);
         touch_unit(&db, child.unit_id, touched_at).await.unwrap();
@@ -591,6 +737,11 @@ mod tests {
             vec![parent.unit_id]
         );
 
+        let child_row = load_existing(&db)
+            .await
+            .unwrap()
+            .remove(&child.unit_id)
+            .unwrap();
         soft_delete(&db, child_row, touched_at).await.unwrap();
         let child_row = orbit_unit::Entity::find_by_id(child.unit_id)
             .one(&db)
@@ -598,6 +749,11 @@ mod tests {
             .unwrap()
             .unwrap();
         assert!(child_row.deleted);
+        let child_row = load_existing(&db)
+            .await
+            .unwrap()
+            .remove(&child.unit_id)
+            .unwrap();
         let child_row = update_unit(&db, child_row, &child, touched_at)
             .await
             .unwrap();
@@ -630,32 +786,41 @@ mod tests {
             unit_alternate_numbers: None,
             unit_echelon_id: None,
             combat_unit_type_id: None,
-            grouping_of_forces_id: None,
+            grouping_of_forces_ids: None,
             generative_parent_unit_id: None,
             operational_parent_unit_id: None,
             partial: false,
         }
     }
 
-    fn model(unit: &ImportUnit, deleted: bool) -> orbit_unit::Model {
-        orbit_unit::Model {
-            unit_id: unit.unit_id,
-            unit_name: unit.unit_name.clone(),
-            unit_name_original: unit.unit_name_original.clone(),
-            unit_name_short: unit.unit_name_short.clone(),
-            operational_unit_name_full: unit.operational_unit_name_full.clone(),
-            generative_unit_name_full: unit.generative_unit_name_full.clone(),
-            unit_number: unit.unit_number.clone(),
-            unit_alternate_names: unit.unit_alternate_names.clone(),
-            unit_alternate_numbers: unit.unit_alternate_numbers.clone(),
-            unit_echelon_id: unit.unit_echelon_id,
-            combat_unit_type_id: unit.combat_unit_type_id,
-            grouping_of_forces_id: unit.grouping_of_forces_id,
-            generative_parent_unit_id: unit.generative_parent_unit_id,
-            operational_parent_unit_id: unit.operational_parent_unit_id,
-            deleted,
-            created_at: Utc::now().naive_utc(),
-            updated_at: Utc::now().naive_utc(),
+    fn model(unit: &ImportUnit, deleted: bool) -> ExistingUnit {
+        ExistingUnit {
+            unit: orbit_unit::Model {
+                unit_id: unit.unit_id,
+                unit_name: unit.unit_name.clone(),
+                unit_name_original: unit.unit_name_original.clone(),
+                unit_name_short: unit.unit_name_short.clone(),
+                operational_unit_name_full: unit
+                    .operational_unit_name_full
+                    .clone(),
+                generative_unit_name_full: unit
+                    .generative_unit_name_full
+                    .clone(),
+                unit_number: unit.unit_number.clone(),
+                unit_alternate_names: unit.unit_alternate_names.clone(),
+                unit_alternate_numbers: unit.unit_alternate_numbers.clone(),
+                unit_echelon_id: unit.unit_echelon_id,
+                combat_unit_type_id: unit.combat_unit_type_id,
+                generative_parent_unit_id: unit.generative_parent_unit_id,
+                operational_parent_unit_id: unit.operational_parent_unit_id,
+                deleted,
+                created_at: Utc::now().naive_utc(),
+                updated_at: Utc::now().naive_utc(),
+            },
+            grouping_of_forces_ids: unit
+                .grouping_of_forces_ids
+                .clone()
+                .unwrap_or_default(),
         }
     }
 }

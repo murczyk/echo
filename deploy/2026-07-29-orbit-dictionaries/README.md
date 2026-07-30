@@ -15,6 +15,8 @@ parents. If a `(key, name)` value is absent from an `orbit_*` dictionary table,
 it prints a timestamped reversible migration and the required
 `echo-migration/src/lib.rs` registration snippets, then exits without importing
 units. Add and apply that migration before rerunning the command.
+Every value in a unit's `grouping_of_forces` array is retained through the
+`orbit_unit_grouping_of_forces` many-to-many relation.
 
 Only ORBIT roots that match an active Echo SIGINT unit by
 `operational_unit_name_full` are retained. Matching compares normalized names by

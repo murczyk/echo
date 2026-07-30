@@ -31,8 +31,11 @@ pub struct SourceUnit {
     pub unit_echelon: Option<DictionaryValue>,
     #[serde(default)]
     pub combat_unit_type: Option<DictionaryValue>,
-    #[serde(default)]
-    pub grouping_of_forces: Option<DictionaryValue>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_dictionary_value"
+    )]
+    pub grouping_of_forces: Option<Vec<DictionaryValue>>,
     #[serde(default)]
     pub operational_parent_units: Vec<SourceUnit>,
     #[serde(default)]
@@ -54,7 +57,7 @@ pub struct SourceUnitData {
     pub unit_alternate_numbers: Option<Vec<String>>,
     pub unit_echelon: Option<DictionaryValue>,
     pub combat_unit_type: Option<DictionaryValue>,
-    pub grouping_of_forces: Option<DictionaryValue>,
+    pub grouping_of_forces: Option<Vec<DictionaryValue>>,
 }
 
 impl From<&SourceUnit> for SourceUnitData {
@@ -146,12 +149,11 @@ impl SourceUnitData {
             &mut self.combat_unit_type,
             &other.combat_unit_type,
         )?;
-        merge_field(
-            self.unit_id,
-            "grouping_of_forces",
+        merge_dictionary_values(
             &mut self.grouping_of_forces,
             &other.grouping_of_forces,
-        )
+        );
+        Ok(())
     }
 }
 
@@ -172,6 +174,46 @@ where
         _ => {}
     }
     Ok(())
+}
+
+fn merge_dictionary_values(
+    current: &mut Option<Vec<DictionaryValue>>,
+    other: &Option<Vec<DictionaryValue>>,
+) {
+    let Some(other) = other else {
+        return;
+    };
+    let current = current.get_or_insert_with(Vec::new);
+    for value in other {
+        if !current.contains(value) {
+            current.push(value.clone());
+        }
+    }
+}
+
+fn deserialize_optional_dictionary_value<'de, D>(
+    deserializer: D,
+) -> Result<Option<Vec<DictionaryValue>>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let value = Option::<Value>::deserialize(deserializer)?;
+    match value {
+        None | Some(Value::Null) => Ok(None),
+        Some(value @ Value::Object(_)) => serde_json::from_value(value)
+            .map(|value| Some(vec![value]))
+            .map_err(serde::de::Error::custom),
+        Some(Value::Array(values)) => values
+            .into_iter()
+            .map(|value| {
+                serde_json::from_value(value).map_err(serde::de::Error::custom)
+            })
+            .collect::<Result<Vec<_>, _>>()
+            .map(Some),
+        Some(other) => Err(serde::de::Error::custom(format!(
+            "expected dictionary object or array, got {other}"
+        ))),
+    }
 }
 
 fn deserialize_optional_string_list<'de, D>(
@@ -258,6 +300,50 @@ mod tests {
             units[0].unit_alternate_numbers,
             Some(vec!["1".to_string(), "2".to_string()])
         );
+    }
+
+    #[test]
+    fn accepts_singleton_grouping_of_forces_array() {
+        let input = format!(
+            r#"[{{
+                "unit_id":"{}",
+                "grouping_of_forces":[{{
+                    "key":"dnepr",
+                    "name":"Днепр"
+                }}]
+            }}]"#,
+            Uuid::new_v4()
+        );
+
+        let (units, unknown) = parse_units(&input).unwrap();
+
+        assert!(unknown.is_empty());
+        assert_eq!(
+            units[0].grouping_of_forces,
+            Some(vec![DictionaryValue {
+                key: Value::String("dnepr".to_string()),
+                name: Value::String("Днепр".to_string()),
+            }])
+        );
+    }
+
+    #[test]
+    fn accepts_multiple_grouping_of_forces_values() {
+        let input = format!(
+            r#"[{{
+                "unit_id":"{}",
+                "grouping_of_forces":[
+                    {{"key":"dnepr","name":"Днепр"}},
+                    {{"key":"east","name":"Схід"}}
+                ]
+            }}]"#,
+            Uuid::new_v4()
+        );
+
+        let (units, unknown) = parse_units(&input).unwrap();
+
+        assert!(unknown.is_empty());
+        assert_eq!(units[0].grouping_of_forces.as_ref().unwrap().len(), 2);
     }
 
     #[test]
