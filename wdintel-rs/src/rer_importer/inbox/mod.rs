@@ -874,7 +874,7 @@ async fn inbox_messages_count(
 
     let test_limit = apply_test_inbox_settings(&env, &mut req).await?;
     if test_limit.is_none() && inbox_request_is_unbounded(&req) {
-        error!(
+        warn!(
             "rejecting unbounded get-inbox-count request; page_id={page_id:?}"
         );
         return Ok(Json(InboxMessagesDigestRsp {
