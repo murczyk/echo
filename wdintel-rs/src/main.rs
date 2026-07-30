@@ -47,6 +47,7 @@ pub mod ml;
 pub mod nlp;
 pub mod oneoff;
 pub mod operator;
+pub mod orbit;
 pub mod organism;
 pub mod palitra;
 pub mod report_history;
@@ -720,6 +721,8 @@ enum Cmd {
     #[command(visible_alias = "migration")]
     Migrate,
     NetworkInvalidationTui,
+    /// Import ORBIT units from a JSON file in an interactive terminal UI.
+    TuiImportOrbitUnits,
     TuiImportUnit(ImportTuiPs),
     TuiImportNetwork(ImportTuiPs),
     OneoffImportNetworkDetails(ImportTuiPs),
@@ -1365,6 +1368,7 @@ async fn async_main(
         Cmd::NetworkInvalidationTui => {
            sigint::network::etalon_calc::tui::run_network_invalidation_tui(mode).await
         }
+        Cmd::TuiImportOrbitUnits => orbit::run_import_tui(mode).await,
         Cmd::OneoffRestartEcho(ps) => {
             oneoff::oneoff_restart_echo(mode, &ps).await
         }

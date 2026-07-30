@@ -20,6 +20,12 @@ public.palitra_goi_sync_job
 public.palitra_conversion_job
 public.goi_palitra_sync
 
+# ORBIT unit catalog remains PostgreSQL-only.
+public.orbit_grouping_of_forces
+public.orbit_combat_unit_type
+public.orbit_unit_echelon
+public.orbit_unit
+
 # AI engine secrets, admin-only history, callsign tests, and worker queue.
 public.ai_engine
 public.ai_chat
