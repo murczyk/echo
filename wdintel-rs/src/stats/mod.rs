@@ -19,6 +19,7 @@ use sea_orm::*;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use tokio::time::sleep;
 
+pub mod cache_backfill;
 pub mod redis;
 pub mod worker;
 
@@ -1792,10 +1793,19 @@ pub async fn read_unit_stats_aggregated(
     )
     .await
     .c(h!())?;
-    Ok(stats
+    Ok(unit_stats_from_counts(stats))
+}
+
+fn unit_stats_from_counts(
+    stats: HashMap<String, i64>,
+) -> Vec<AnalysisStatsUnit> {
+    stats
         .into_iter()
-        .map(|(unit, count)| AnalysisStatsUnit { unit, count })
-        .collect())
+        .map(|(unit, count)| AnalysisStatsUnit {
+            unit: m_unit_to_unidenfitied(Some(unit)),
+            count,
+        })
+        .collect()
 }
 
 pub async fn read_location_stats_aggregated(
@@ -2736,6 +2746,23 @@ fn batch_key_to_group_keys(batch_key: String) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn aggregated_unit_stats_normalize_the_unknown_bucket() {
+        let units = unit_stats_from_counts(HashMap::from([
+            (String::new(), 13),
+            ("4 зБпС 50 обрБпС".to_string(), 11),
+        ]));
+
+        assert!(units.contains(&AnalysisStatsUnit {
+            unit: "Не визначено".to_string(),
+            count: 13,
+        }));
+        assert!(units.contains(&AnalysisStatsUnit {
+            unit: "4 зБпС 50 обрБпС".to_string(),
+            count: 11,
+        }));
+    }
 
     #[test]
     fn consecutive_five_minute_buckets_are_batched() {

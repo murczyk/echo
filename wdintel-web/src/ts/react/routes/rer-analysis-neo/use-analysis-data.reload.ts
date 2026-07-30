@@ -226,6 +226,39 @@ export function buildHydratedNetworkFilterOptions(
     }));
 }
 
+export function buildNetworkStatsFilterOptions(
+  networkStats: Awaited<ReturnType<typeof fetchAnalysisNetworks>>,
+  networks: Network[],
+  unitsMap: Record<number, Unit>,
+): AnalysisFilterOption[] {
+  const networkNamesById = new Map(
+    networkStats.networkNames.map((network) => [network.id, network.name]),
+  );
+  const networksById = new Map(networks.map((network) => [network.id, network]));
+
+  return networkStats.networks.map((networkStat) => {
+    const value = String(networkStat.networkId);
+    const statsOption = {
+      value,
+      label: normalizeFilterLabel(
+        networkNamesById.get(networkStat.networkId) ?? `Network ${networkStat.networkId}`,
+      ),
+      count: networkStat.count,
+    };
+    const network = networksById.get(networkStat.networkId);
+    if (network == null) return statsOption;
+
+    const hydratedOption = {
+      ...statsOption,
+      label: normalizeFilterLabel(networkLabelWithUnits(network, unitsMap)),
+    };
+    return {
+      ...statsOption,
+      label: preferCompleteNetworkLabel(statsOption, hydratedOption),
+    };
+  });
+}
+
 export function mergeSignalProfiles(
   current: Record<string, SignalProfileEntry | null>,
   next: Record<string, SignalProfileEntry | null>,
@@ -981,17 +1014,30 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
         params.setNetworks((current) => {
           return mergeNetworks(current, networksByAnalysisIds);
         });
-        const hydratedNetworkOptions = buildHydratedNetworkFilterOptions(
+        const hydratedSelectedNetworkOptions = buildHydratedNetworkFilterOptions(
           networksByAnalysisIds,
           selectedNetworkIds,
           unitsMap,
         );
-        if (hydratedNetworkOptions.length > 0) {
-          params.setOptions((current) => ({
+        const networkStatsOptions = buildNetworkStatsFilterOptions(
+          networksStatsRsp,
+          networksByAnalysisIds,
+          unitsMap,
+        );
+        params.setOptions((current) => {
+          const hydratedOptions = mergeHydratedNetworkFilterOptions(
+            current.networks,
+            hydratedSelectedNetworkOptions,
+          );
+          return {
             ...current,
-            networks: mergeHydratedNetworkFilterOptions(current.networks, hydratedNetworkOptions),
-          }));
-        }
+            networks: replaceNetworkFilterOptionsPreservingSelectedLabels(
+              hydratedOptions,
+              networkStatsOptions,
+              params.queryState.networksSelected,
+            ),
+          };
+        });
       } catch (loadError) {
         if (isStaleReload() || isAbortError(loadError) || params.signal?.aborted) return;
         if (!params.onUnauthorized(loadError)) params.onError(toErrorMessage(loadError));

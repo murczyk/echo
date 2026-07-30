@@ -4,8 +4,11 @@ import { PowerChip } from '../../components/PowerChip';
 import { NO_DATA_LABEL } from '../../utils/misc';
 import { AnalysisMapPane } from './components/AnalysisMapPane';
 import { AnalysisMessagesPane } from './components/AnalysisMessagesPane';
+import { AnalysisPaginationControl } from './components/AnalysisPaginationControl';
 import { AnalysisSummaryTableCard } from './components/AnalysisSummaryTableCard';
 import { ANALYSIS_CENTER_TAB_META } from './analysis-center-tabs';
+import { analysisCompactTabsSx } from './analysis-tab-styles';
+import { ANALYSIS_MESSAGES_PAGE_SIZE } from './helpers';
 import type { AnalysisCenterTab, AnalysisPageViewModel } from './types';
 
 type Props = {
@@ -60,10 +63,10 @@ export function AnalysisCenterPanel({
       }
     >
       <Stack
-        direction={{ xs: 'column', lg: 'row' }}
-        alignItems={{ xs: 'stretch', lg: 'center' }}
+        direction={isNarrowLayout ? 'row' : { xs: 'column', lg: 'row' }}
+        alignItems={isNarrowLayout ? 'center' : { xs: 'stretch', lg: 'center' }}
         justifyContent="space-between"
-        spacing={1}
+        spacing={isCompactLayout ? 0.5 : 1}
         sx={{ px: { xs: 1, lg: 2 }, pt: 0, mb: 0, flexShrink: 0 }}
       >
         <Box sx={{ flex: 1, minWidth: 0 }}>
@@ -73,13 +76,23 @@ export function AnalysisCenterPanel({
             variant="scrollable"
             scrollButtons={isCompactLayout ? false : 'auto'}
             sx={{
-              minHeight: 0,
+              ...analysisCompactTabsSx,
               flex: 1,
               minWidth: 0,
               ml: 0,
-              '& .MuiTabs-flexContainer': { gap: 1 },
-              '& .MuiTab-root': { minHeight: 40, px: 1, py: 0.5, whiteSpace: 'nowrap' },
-              '& .MuiTab-iconWrapper': { mr: 0.75, mb: 0 },
+              ...(isCompactLayout
+                ? {
+                    '& .MuiTabs-flexContainer': { gap: 0.25 },
+                    '& .MuiTab-root': {
+                      width: 34,
+                      minWidth: 34,
+                      minHeight: 34,
+                      px: 0.5,
+                      py: 0.25,
+                    },
+                    '& .MuiTab-iconWrapper': { mr: 0, mb: 0 },
+                  }
+                : {}),
             }}
             aria-label="Центральна панель аналізу"
           >
@@ -95,7 +108,9 @@ export function AnalysisCenterPanel({
                     value="messages"
                     icon={<Icon />}
                     iconPosition="start"
-                    label={meta.label}
+                    label={isCompactLayout ? undefined : meta.label}
+                    aria-label={isCompactLayout ? meta.label : undefined}
+                    title={isCompactLayout ? meta.label : undefined}
                   />
                 );
               }
@@ -106,9 +121,11 @@ export function AnalysisCenterPanel({
                     id={summaryTabId}
                     aria-controls={summaryPanelId}
                     value="summary"
-                    icon={<Icon sx={{ fontSize: 20 }} />}
+                    icon={<Icon />}
                     iconPosition="start"
-                    label={meta.label}
+                    label={isCompactLayout ? undefined : meta.label}
+                    aria-label={isCompactLayout ? meta.label : undefined}
+                    title={isCompactLayout ? meta.label : undefined}
                   />
                 );
               }
@@ -120,34 +137,67 @@ export function AnalysisCenterPanel({
                   value="map"
                   icon={<Icon />}
                   iconPosition="start"
-                  label={meta.label}
+                  label={isCompactLayout ? undefined : meta.label}
+                  aria-label={isCompactLayout ? meta.label : undefined}
+                  title={isCompactLayout ? meta.label : undefined}
                 />
               );
             })}
           </Tabs>
         </Box>
-        {centerTab === 'messages' && !isNarrowLayout ? (
+        {isNarrowLayout && centerTab === 'messages' ? (
+          <AnalysisPaginationControl
+            centerTab={centerTab}
+            pageIndex={page.pageIndex}
+            pageSize={ANALYSIS_MESSAGES_PAGE_SIZE}
+            messagesCount={page.messages.length}
+            totalCount={page.messagesTotalCount}
+            totalLoading={page.messagesTotalLoading}
+            loading={page.messagesLoading}
+            noMoreToLoad={page.noMoreToLoad}
+            busy={page.messagesPaging || page.messagesLoading}
+            onFirstPage={page.loadFirstPage}
+            onLastPage={page.loadLastPage}
+            onPrevPage={page.loadPrevPage}
+            onNextPage={page.loadNextPage}
+          />
+        ) : null}
+        {!isNarrowLayout ? (
           <FormControlLabel
             control={
               <Switch
                 size="small"
                 checked={page.newestFirst}
                 onChange={(_event, value) => page.setNewestFirst(value)}
+                sx={{
+                  width: 34,
+                  height: 20,
+                  p: 0,
+                  mr: 0.5,
+                  '& .MuiSwitch-switchBase': {
+                    p: '2px',
+                    '&.Mui-checked': { transform: 'translateX(14px)' },
+                  },
+                  '& .MuiSwitch-thumb': { width: 16, height: 16 },
+                  '& .MuiSwitch-track': { borderRadius: 10 },
+                }}
               />
             }
             label="спочатку нові"
             sx={{
-              height: 40,
-              mt: -0.25, // slight nudge to align baselines visually
-              mr: 0,
+              width: 110,
+              height: 34,
+              m: 0,
               flexShrink: 0,
+              justifyContent: 'flex-end',
               whiteSpace: 'nowrap',
+              visibility: centerTab === 'messages' ? 'visible' : 'hidden',
+              pointerEvents: centerTab === 'messages' ? 'auto' : 'none',
               '& .MuiFormControlLabel-label': {
-                fontSize: { xs: 12.5, sm: 13 },
+                fontSize: 11.5,
                 fontWeight: 500,
                 lineHeight: 1.2,
               },
-              alignSelf: { xs: 'flex-end', lg: 'auto' },
             }}
           />
         ) : null}

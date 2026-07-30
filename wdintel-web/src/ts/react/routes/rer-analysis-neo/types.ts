@@ -44,6 +44,7 @@ export type AnalysisReportTaskRun = {
 export type AnalysisCountItem = {
   key: string;
   count: number;
+  value?: string;
 };
 
 export type AnalysisFilterOption = {

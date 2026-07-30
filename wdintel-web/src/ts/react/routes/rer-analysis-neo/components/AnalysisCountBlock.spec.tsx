@@ -8,18 +8,73 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 vi.mock('@mui/material', () => ({
   Box: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  ButtonBase: ({
+    children,
+    onClick,
+    'aria-label': ariaLabel,
+    'aria-pressed': ariaPressed,
+  }: {
+    children: ReactNode;
+    onClick?: () => void;
+    'aria-label'?: string;
+    'aria-pressed'?: boolean;
+  }) => (
+    <button type="button" onClick={onClick} aria-label={ariaLabel} aria-pressed={ariaPressed}>
+      {children}
+    </button>
+  ),
   Button: ({ children, onClick }: { children: ReactNode; onClick?: () => void }) => (
     <button type="button" onClick={onClick}>
       {children}
     </button>
   ),
   CircularProgress: () => <div>loading-spinner</div>,
+  Collapse: ({ children, in: open }: { children: ReactNode; in: boolean }) =>
+    open ? <div>{children}</div> : null,
+  IconButton: ({
+    children,
+    onClick,
+    'aria-label': ariaLabel,
+    'aria-expanded': ariaExpanded,
+  }: {
+    children: ReactNode;
+    onClick?: () => void;
+    'aria-label'?: string;
+    'aria-expanded'?: boolean;
+  }) => (
+    <button type="button" onClick={onClick} aria-label={ariaLabel} aria-expanded={ariaExpanded}>
+      {children}
+    </button>
+  ),
   List: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   ListItem: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   Paper: ({ children }: { children: ReactNode }) => <section>{children}</section>,
   Skeleton: () => <div>loading-skeleton</div>,
+  InputBase: ({
+    value,
+    onChange,
+    placeholder,
+    inputProps,
+  }: {
+    value: string;
+    onChange: (event: { target: { value: string } }) => void;
+    placeholder?: string;
+    inputProps?: { 'aria-label'?: string };
+  }) => (
+    <input
+      value={value}
+      onChange={onChange}
+      placeholder={placeholder}
+      aria-label={inputProps?.['aria-label']}
+    />
+  ),
   Typography: ({ children }: { children: ReactNode }) => <div>{children}</div>,
 }));
+
+vi.mock('@mui/icons-material/Close', () => ({ default: () => <span>close</span> }));
+vi.mock('@mui/icons-material/ExpandLess', () => ({ default: () => <span>up</span> }));
+vi.mock('@mui/icons-material/ExpandMore', () => ({ default: () => <span>down</span> }));
+vi.mock('@mui/icons-material/Search', () => ({ default: () => <span>search</span> }));
 
 import { vi } from 'vitest';
 
@@ -46,6 +101,14 @@ async function renderComponent(items: AnalysisCountItem[], loading = false): Pro
 async function click(element: HTMLElement): Promise<void> {
   await act(async () => {
     element.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  });
+}
+
+async function typeInInput(input: HTMLInputElement, value: string): Promise<void> {
+  await act(async () => {
+    const valueSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+    valueSetter?.call(input, value);
+    input.dispatchEvent(new Event('input', { bubbles: true }));
   });
 }
 
@@ -98,6 +161,60 @@ describe('AnalysisCountBlock', () => {
 
     expect(view.container.textContent).not.toContain('Показати ще');
     expect(view.container.textContent).not.toContain('Згорнути');
+  });
+
+  it('opens inline search and filters items case-insensitively', async () => {
+    const view = await renderComponent([
+      { key: 'ВАСИЛІВКА', count: 8 },
+      { key: 'Кам’янське', count: 5 },
+    ]);
+    rendered.push(view);
+
+    const searchButton = view.container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Пошук у Локації"]',
+    );
+    expect(view.container.querySelector('input')).toBeNull();
+
+    await click(searchButton as HTMLButtonElement);
+
+    const input = view.container.querySelector<HTMLInputElement>(
+      'input[aria-label="Пошук у Локації"]',
+    );
+    expect(input).not.toBeNull();
+    await typeInInput(input as HTMLInputElement, 'васил');
+
+    expect(view.container.textContent).toContain('ВАСИЛІВКА');
+    expect(view.container.textContent).not.toContain('Кам’янське');
+
+    const closeButton = view.container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Закрити пошук у Локації"]',
+    );
+    await click(closeButton as HTMLButtonElement);
+
+    expect(view.container.querySelector('input')).toBeNull();
+    expect(view.container.textContent).toContain('Кам’янське');
+  });
+
+  it('collapses and restores the section from the header control', async () => {
+    const view = await renderComponent([{ key: 'Unit A', count: 11 }]);
+    rendered.push(view);
+
+    const collapseButton = view.container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Згорнути Локації"]',
+    );
+    expect(collapseButton?.getAttribute('aria-expanded')).toBe('true');
+    expect(view.container.textContent).toContain('Unit A');
+
+    await click(collapseButton as HTMLButtonElement);
+
+    const expandButton = view.container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Розгорнути Локації"]',
+    );
+    expect(expandButton?.getAttribute('aria-expanded')).toBe('false');
+    expect(view.container.textContent).not.toContain('Unit A');
+
+    await click(expandButton as HTMLButtonElement);
+    expect(view.container.textContent).toContain('Unit A');
   });
 
   it('does not render an empty primary row for blank metric labels', async () => {
@@ -162,5 +279,90 @@ describe('AnalysisCountBlock', () => {
     await click(getButton(container, 'У фільтр'));
 
     expect(onItemAction).toHaveBeenCalledWith('143.5750');
+  });
+
+  it('toggles selectable rows and marks selected items with a remove control', async () => {
+    const onItemAdd = vi.fn();
+    const onItemToggle = vi.fn();
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    rendered.push({ container, root });
+
+    await act(async () => {
+      root.render(
+        <AnalysisCountBlock
+          title="Підрозділи"
+          items={[
+            { key: 'Unit A', count: 11 },
+            { key: 'Unit B', count: 5 },
+          ]}
+          onItemAdd={onItemAdd}
+          onItemToggle={onItemToggle}
+          selectedItemKeys={['Unit A']}
+        />,
+      );
+    });
+
+    const selected = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Прибрати Unit A з фільтра"]',
+    );
+    const unselected = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Вибрати лише Unit B"]',
+    );
+    const add = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Додати Unit B до поточного фільтра"]',
+    );
+    expect(selected?.getAttribute('aria-pressed')).toBe('true');
+    expect(selected?.textContent).toContain('×');
+    expect(unselected?.getAttribute('aria-pressed')).toBe('false');
+    expect(unselected?.textContent).not.toContain('×');
+    expect(add?.textContent).toContain('+');
+
+    await click(selected as HTMLButtonElement);
+    await click(unselected as HTMLButtonElement);
+    await click(add as HTMLButtonElement);
+
+    expect(onItemToggle).toHaveBeenNthCalledWith(1, 'Unit A');
+    expect(onItemToggle).toHaveBeenNthCalledWith(2, 'Unit B');
+    expect(onItemAdd).toHaveBeenCalledWith('Unit B');
+  });
+
+  it('uses a separate filter value while keeping the display label', async () => {
+    const onItemAdd = vi.fn();
+    const onItemToggle = vi.fn();
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    rendered.push({ container, root });
+
+    await act(async () => {
+      root.render(
+        <AnalysisCountBlock
+          title="Мережі"
+          items={[
+            { key: '💻 4 зБпС 50 обрБпС', value: '5', count: 11 },
+            { key: 'інша мережа', value: '7', count: 3 },
+          ]}
+          onItemAdd={onItemAdd}
+          onItemToggle={onItemToggle}
+          selectedItemKeys={['5']}
+        />,
+      );
+    });
+
+    const selected = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Прибрати 💻 4 зБпС 50 обрБпС з фільтра"]',
+    );
+    const add = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Додати інша мережа до поточного фільтра"]',
+    );
+
+    expect(selected?.getAttribute('aria-pressed')).toBe('true');
+    await click(selected as HTMLButtonElement);
+    await click(add as HTMLButtonElement);
+
+    expect(onItemToggle).toHaveBeenCalledWith('5');
+    expect(onItemAdd).toHaveBeenCalledWith('7');
   });
 });

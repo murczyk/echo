@@ -1,3 +1,8 @@
+import {
+  addAnalysisSelection,
+  toggleExclusiveAnalysisSelection,
+} from './analysis-filter-selection';
+
 export const UNKNOWN_UNIT_FILTER_LABEL = '<Не вказано>';
 export const UNKNOWN_UNIT_FILTER_VALUE = '';
 
@@ -23,6 +28,18 @@ export function normalizeUnknownUnitSelections(values: string[]): string[] {
   }
 
   return normalized;
+}
+
+export function toggleExclusiveUnitSelection(values: string[], value: string): string[] {
+  const normalizedValues = normalizeUnknownUnitSelections(values);
+  const normalizedValue = normalizeUnknownUnitFilterValue(value);
+  return toggleExclusiveAnalysisSelection(normalizedValues, normalizedValue);
+}
+
+export function addUnitSelection(values: string[], value: string): string[] {
+  const normalizedValues = normalizeUnknownUnitSelections(values);
+  const normalizedValue = normalizeUnknownUnitFilterValue(value);
+  return addAnalysisSelection(normalizedValues, normalizedValue);
 }
 
 export function normalizeUnknownUnitDisplayValue(value: string | null | undefined): string {

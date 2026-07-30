@@ -28,6 +28,7 @@ import {
 } from '../../services/api/system-settings';
 import { AdminControlPanelNeoSection } from '../admin-control-panel-neo';
 import { AiEnginesSection } from './AiEnginesSection';
+import { CacheBackfillSection } from './CacheBackfillSection';
 import {
   readSystemSettingsTab,
   replaceSystemSettingsTabUrl,
@@ -933,6 +934,12 @@ export function AdminSystemSettingsNeoPage() {
                 aria-controls="system-settings-neo-panel-notifications"
               />
               <Tab
+                value="cache"
+                label="КЕШ"
+                id="system-settings-neo-tab-cache"
+                aria-controls="system-settings-neo-panel-cache"
+              />
+              <Tab
                 value="ai"
                 label="ШІ"
                 id="system-settings-neo-tab-ai"
@@ -964,6 +971,15 @@ export function AdminSystemSettingsNeoPage() {
                         />
                       </Stack>
                     ) : null}
+                  </Box>
+
+                  <Box
+                    id="system-settings-neo-panel-cache"
+                    role="tabpanel"
+                    hidden={activeTab !== 'cache'}
+                    aria-labelledby="system-settings-neo-tab-cache"
+                  >
+                    {activeTab === 'cache' ? <CacheBackfillSection /> : null}
                   </Box>
 
                   <Box
@@ -1037,7 +1053,7 @@ export function AdminSystemSettingsNeoPage() {
                   </Box>
                 </Box>
 
-                {activeTab !== 'ai' ? (
+                {activeTab !== 'ai' && activeTab !== 'cache' ? (
                   <Box
                     sx={{
                       display: 'flex',

@@ -9,6 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { emptyQueryState } from './helpers';
 
 const useRerAnalysisNeoPageMock = vi.hoisted(() => vi.fn());
+const useMediaQueryMock = vi.hoisted(() => vi.fn(() => false));
 const notifyMock = vi.hoisted(() => vi.fn());
 const createMessageFabPropsHistory = vi.hoisted(() => [] as Array<{ onClick?: () => void }>);
 const manageMessageDrawerPropsHistory = vi.hoisted(
@@ -49,6 +50,31 @@ vi.mock('@mui/material', () => ({
   Chip: ({ label }: { label?: ReactNode }) => <div>{label}</div>,
   CircularProgress: () => <div data-testid="circular-progress" />,
   ClickAwayListener: ({ children }: { children: ReactNode }) => children,
+  Drawer: ({
+    anchor,
+    open,
+    children,
+    slotProps,
+  }: {
+    anchor: 'left' | 'right';
+    open: boolean;
+    children: ReactNode;
+    slotProps?: {
+      paper?: {
+        sx?: {
+          width?: unknown;
+        };
+      };
+    };
+  }) =>
+    open ? (
+      <div
+        data-testid={`analysis-drawer-${anchor}`}
+        data-width={JSON.stringify(slotProps?.paper?.sx?.width)}
+      >
+        {children}
+      </div>
+    ) : null,
   FormControlLabel: ({ control, label }: { control: ReactNode; label: ReactNode }) => (
     <div>
       {control}
@@ -70,7 +96,25 @@ vi.mock('@mui/material', () => ({
       {children}
     </button>
   ),
-  MenuItem: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  ListItemIcon: ({ children }: { children: ReactNode }) => <span>{children}</span>,
+  ListItemText: ({ children }: { children: ReactNode }) => <span>{children}</span>,
+  Menu: ({ children, open }: { children: ReactNode; open?: boolean }) =>
+    open ? <div role="menu">{children}</div> : null,
+  MenuItem: ({
+    children,
+    disabled,
+    onClick,
+    role,
+  }: {
+    children: ReactNode;
+    disabled?: boolean;
+    onClick?: () => void;
+    role?: string;
+  }) => (
+    <button type="button" disabled={disabled} onClick={onClick} role={role ?? 'menuitem'}>
+      {children}
+    </button>
+  ),
   MenuList: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   Paper: ({ children }: { children: ReactNode }) => <section>{children}</section>,
   Popper: ({ children, open }: { children: ReactNode; open: boolean }) =>
@@ -92,11 +136,11 @@ vi.mock('@mui/material', () => ({
   Tabs: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   Tooltip: ({ children }: { children: ReactNode }) => <>{children}</>,
   Typography: ({ children }: { children: ReactNode }) => <span>{children}</span>,
-  useMediaQuery: () => false,
+  useMediaQuery: useMediaQueryMock,
 }));
 
 vi.mock('@mui/material/styles', () => ({
-  useTheme: () => ({ breakpoints: { down: () => '(max-width: 600px)' } }),
+  useTheme: () => ({ breakpoints: { down: (key: string) => key } }),
 }));
 
 vi.mock('./use-rer-analysis-neo-page', () => ({
@@ -220,6 +264,7 @@ vi.mock('./use-min-duration-busy', () => ({
 vi.mock('@mui/icons-material/BarChartOutlined', () => ({ default: () => <span /> }));
 vi.mock('@mui/icons-material/ChevronLeftOutlined', () => ({ default: () => <span /> }));
 vi.mock('@mui/icons-material/ChevronRightOutlined', () => ({ default: () => <span /> }));
+vi.mock('@mui/icons-material/Close', () => ({ default: () => <span /> }));
 vi.mock('@mui/icons-material/DescriptionOutlined', () => ({ default: () => <span /> }));
 vi.mock('@mui/icons-material/FirstPageOutlined', () => ({ default: () => <span /> }));
 vi.mock('@mui/icons-material/FilterAltOutlined', () => ({ default: () => <span /> }));
@@ -397,6 +442,8 @@ describe('RerAnalysisNeoPage', () => {
 
   beforeEach(() => {
     useRerAnalysisNeoPageMock.mockReset();
+    useMediaQueryMock.mockReset();
+    useMediaQueryMock.mockReturnValue(false);
     notifyMock.mockReset();
     useRerAnalysisNeoPageMock.mockReturnValue(buildPage());
     createMessageFabPropsHistory.splice(0);
@@ -440,35 +487,33 @@ describe('RerAnalysisNeoPage', () => {
     await act(async () => root.unmount());
   });
 
-  it('reveals the opened narrow right panel exactly once', async () => {
-    const originalWidth = window.innerWidth;
-    const originalScrollIntoView = HTMLElement.prototype.scrollIntoView;
-    const scrollIntoView = vi.fn();
-    Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
-      configurable: true,
-      value: scrollIntoView,
-    });
-    window.innerWidth = 768;
-
+  it('renders narrow panels in responsive drawers without replacing the center content', async () => {
     const container = document.createElement('div');
     document.body.appendChild(container);
     rendered.push(container);
     const root = createRoot(container);
     const page = buildPage();
+    useMediaQueryMock.mockImplementation((query) => query === 'lg');
     useRerAnalysisNeoPageMock.mockReturnValue(page);
 
     await act(async () => root.render(<RerAnalysisNeoPage />));
+    const leftDrawer = container.querySelector('[data-testid="analysis-drawer-left"]');
+    expect(leftDrawer?.querySelector('[data-testid="filters-panel"]')).not.toBeNull();
+    expect(leftDrawer?.getAttribute('data-width')).toBe('{"xs":"100vw","sm":400}');
+    expect(container.querySelector('[data-testid="messages-pane"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="analysis-drawer-right"]')).toBeNull();
+
+    page.leftPanelOpen = false;
     page.rightPanelOpen = true;
     await act(async () => root.render(<RerAnalysisNeoPage />));
 
-    expect(scrollIntoView).toHaveBeenCalledTimes(1);
+    const rightDrawer = container.querySelector('[data-testid="analysis-drawer-right"]');
+    expect(container.querySelector('[data-testid="analysis-drawer-left"]')).toBeNull();
+    expect(rightDrawer?.querySelector('[data-testid="sidebar"]')).not.toBeNull();
+    expect(rightDrawer?.getAttribute('data-width')).toBe('"100vw"');
+    expect(container.querySelector('[data-testid="messages-pane"]')).not.toBeNull();
 
     await act(async () => root.unmount());
-    window.innerWidth = originalWidth;
-    Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
-      configurable: true,
-      value: originalScrollIntoView,
-    });
   });
 
   it('wires the header toggle buttons to the existing panel handlers', async () => {

@@ -6,6 +6,7 @@ import { buildAnalysisReq, emptyQueryState } from './helpers';
 import {
   buildAnalysisReqForFilterSection,
   buildHydratedNetworkFilterOptions,
+  buildNetworkStatsFilterOptions,
   filterSectionsForInitialLoad,
   loadFilterSectionData,
   mergeSignalProfiles,
@@ -643,6 +644,28 @@ describe('reloadAnalysisData', () => {
     ).toEqual([{ value: '2852', label: 'управління 23 сб', count: 0 }]);
   });
 
+  it('builds counted network options with hydrated unit labels', () => {
+    expect(
+      buildNetworkStatsFilterOptions(
+        {
+          networks: [
+            { networkId: 5, count: 11 },
+            { networkId: 7, count: 3 },
+          ],
+          networkNames: [
+            { id: 5, name: '💻' },
+            { id: 7, name: 'Network 7' },
+          ],
+        },
+        [{ id: 5, name: '💻', unitIds: [23] }] as unknown as Network[],
+        { 23: { id: 23, name: '4 зБпС 50 обрБпС' } } as unknown as Record<number, Unit>,
+      ),
+    ).toEqual([
+      { value: '5', label: '💻 4 зБпС 50 обрБпС', count: 11 },
+      { value: '7', label: 'Network 7', count: 3 },
+    ]);
+  });
+
   it('keeps stats labels when hydration provides a shorter real label', () => {
     expect(
       mergeHydratedNetworkFilterOptions(
@@ -956,6 +979,7 @@ describe('reloadAnalysisData', () => {
 
   it('reuses networks stats between the networks section and reference data loading in one reload', async () => {
     const queryState = buildQueryState();
+    let currentOptions = structuredClone(emptyOptions);
     mocks.fetchInboxMessages.mockResolvedValue({
       inboxItems: [[1, { networkIds: [] }]],
       callsigns: [{ callsign: 'alpha', res: [] }],
@@ -994,6 +1018,9 @@ describe('reloadAnalysisData', () => {
         unitsMap: {},
       });
     });
+    const setOptions = vi.fn((update) => {
+      currentOptions = typeof update === 'function' ? update(currentOptions) : update;
+    });
 
     await reloadAnalysisData({
       clearAnalysisResults: vi.fn(),
@@ -1027,7 +1054,7 @@ describe('reloadAnalysisData', () => {
       shouldLoadNewCallsigns: false,
       setNoMoreToLoad: vi.fn(),
       setNolimitShown: vi.fn(),
-      setOptions: vi.fn(),
+      setOptions,
       setProfiles: vi.fn(),
       setSummaryCallsignsInfo: vi.fn(),
       setSummaryLoading: vi.fn(),
@@ -1042,6 +1069,9 @@ describe('reloadAnalysisData', () => {
     });
 
     expect(mocks.fetchAnalysisNetworks).toHaveBeenCalledTimes(1);
+    await vi.waitFor(() => {
+      expect(currentOptions.networks).toEqual([{ value: '11', label: 'Network 11', count: 2 }]);
+    });
   });
 
   it('seeds sender profiles from inbox results before the sender filter section loads', async () => {

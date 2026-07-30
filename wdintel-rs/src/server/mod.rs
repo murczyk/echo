@@ -558,6 +558,9 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             // .service(api_logout)
             .service(crate::server::admin::restart_echo)
             .service(crate::server::admin::restart_datasource)
+            .service(
+                crate::stats::cache_backfill::start_group_stats_cache_backfill,
+            )
             .service(crate::kml::operatyvka)
             .service(crate::kml::operatyvka_download)
             .service(crate::kml::api_fix_kmz)

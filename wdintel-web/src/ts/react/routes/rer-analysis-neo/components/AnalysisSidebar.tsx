@@ -3,14 +3,27 @@ import MapOutlinedIcon from '@mui/icons-material/MapOutlined';
 import PeopleOutlineOutlinedIcon from '@mui/icons-material/PeopleOutlineOutlined';
 import PersonAddOutlinedIcon from '@mui/icons-material/PersonAddOutlined';
 import { Box, Tab, Tabs } from '@mui/material';
+import { useMemo } from 'react';
 
 import type { AnalysisPageActions, AnalysisPageState } from '../types';
+import { sortAndTakeTopAnalysisCountItems } from '../count-items';
 import { getAnalysisSidebarTabs } from '../types';
 import { AnalysisCallsignsPane } from './AnalysisCallsignsPane';
 import { AnalysisMapPane } from './AnalysisMapPane';
 import { AnalysisStatsPane } from './AnalysisStatsPane';
 import { AnalysisNewCallsignsCard } from './AnalysisNewCallsignsCard';
 import { AnalysisRightPanelToggle } from './AnalysisRightPanelToggle';
+import {
+  addUnitSelection,
+  normalizeUnknownUnitFilterValue,
+  normalizeUnknownUnitSelections,
+  toggleExclusiveUnitSelection,
+} from '../../shared/analysis-unit-filter';
+import {
+  addAnalysisSelection,
+  toggleExclusiveAnalysisSelection,
+} from '../../shared/analysis-filter-selection';
+import { analysisCompactTabsSx } from '../analysis-tab-styles';
 
 type Props = Pick<
   AnalysisPageState,
@@ -30,6 +43,7 @@ type Props = Pick<
   | 'analysisMapInSidebar'
   | 'newCallsigns'
   | 'newCallsignsLoading'
+  | 'options'
   | 'rightSidebarLoading'
   | 'queryState'
   | 'rightSidebarTab'
@@ -51,7 +65,8 @@ type Props = Pick<
     | 'toggleCallsignGraphNolimit'
     | 'toggleUnitFromMap'
     | 'toggleRightPanel'
-  > & { isCompactLayout?: boolean };
+    | 'updateQueryState'
+  > & { isCompactLayout?: boolean; showNarrowCloseButton?: boolean };
 
 export const analysisSidebarRootSx = {
   minHeight: 0,
@@ -88,6 +103,7 @@ export function AnalysisSidebar({
   loadMessagesForMap,
   newCallsigns,
   newCallsignsLoading,
+  options,
   rightSidebarLoading,
   queryState,
   rightPanelOpen,
@@ -102,12 +118,74 @@ export function AnalysisSidebar({
   toggleCallsignGraphNolimit,
   toggleUnitFromMap,
   toggleRightPanel,
+  updateQueryState,
   isCompactLayout = false,
+  showNarrowCloseButton = true,
 }: Props) {
   const isSidebarVisible = rightPanelOpen;
   const sidebarTabs = getAnalysisSidebarTabs(analysisMapInSidebar);
   const sidebarTab = analysisMapInSidebar || rightSidebarTab !== 'map' ? rightSidebarTab : 'stats';
   const keepMapPaneMounted = analysisMapInSidebar && isSidebarVisible;
+  const selectUnit = (unit: string) => {
+    const normalizedUnits = normalizeUnknownUnitSelections(queryState.unitsSelected);
+    const normalizedUnit = normalizeUnknownUnitFilterValue(unit);
+    const wasSelected = normalizedUnits.includes(normalizedUnit);
+    const unitsSelected = toggleExclusiveUnitSelection(normalizedUnits, normalizedUnit);
+    updateQueryState({
+      unitsExactMatchOnly:
+        unitsSelected.length === 0 ? null : wasSelected ? queryState.unitsExactMatchOnly : false,
+      unitsSelected,
+    });
+  };
+  const addUnit = (unit: string) => {
+    updateQueryState({
+      unitsExactMatchOnly: false,
+      unitsSelected: addUnitSelection(queryState.unitsSelected, unit),
+    });
+  };
+  const selectFreq = (freq: string) => {
+    updateQueryState({
+      freqsSelected: toggleExclusiveAnalysisSelection(queryState.freqsSelected, freq),
+      includeOnlyNewFreqs: false,
+    });
+  };
+  const addFreq = (freq: string) => {
+    updateQueryState({
+      freqsSelected: addAnalysisSelection(queryState.freqsSelected, freq),
+      includeOnlyNewFreqs: false,
+    });
+  };
+  const topNetworks = useMemo(
+    () =>
+      sortAndTakeTopAnalysisCountItems(
+        options.networks.map((network) => ({
+          key: network.label,
+          value: network.value,
+          count: network.count,
+        })),
+      ),
+    [options.networks],
+  );
+  const selectNetwork = (networkId: string) => {
+    updateQueryState({
+      networksSelected: toggleExclusiveAnalysisSelection(queryState.networksSelected, networkId),
+    });
+  };
+  const addNetwork = (networkId: string) => {
+    updateQueryState({
+      networksSelected: addAnalysisSelection(queryState.networksSelected, networkId),
+    });
+  };
+  const selectLocation = (location: string) => {
+    updateQueryState({
+      locationsSelected: toggleExclusiveAnalysisSelection(queryState.locationsSelected, location),
+    });
+  };
+  const addLocation = (location: string) => {
+    updateQueryState({
+      locationsSelected: addAnalysisSelection(queryState.locationsSelected, location),
+    });
+  };
 
   return (
     <Box
@@ -121,7 +199,7 @@ export function AnalysisSidebar({
     >
       <Box
         data-analysis-sidebar-tabs
-        sx={{ pt: 1, display: 'flex', alignItems: 'center', flexShrink: 0 }}
+        sx={{ pt: 0.5, display: 'flex', alignItems: 'center', flexShrink: 0 }}
       >
         <Tabs
           value={sidebarTab ?? false}
@@ -130,33 +208,24 @@ export function AnalysisSidebar({
           scrollButtons={isCompactLayout ? false : 'auto'}
           aria-label="Вкладки правої панелі аналізу"
           sx={{
-            minHeight: 0,
+            ...analysisCompactTabsSx,
             flex: 1,
             minWidth: 0,
-            px: { xs: 0.5, sm: 1, md: 1.5 },
+            px: { xs: 0.5, sm: 1 },
             '& .MuiTabs-flexContainer': {
-              gap: 1,
+              gap: 0.5,
               alignItems: 'stretch',
             },
             '& .MuiTabs-scroller': {
               px: 0,
             },
-            '& .MuiTabs-scrollButtons': {
-              width: 32,
-              flexShrink: 0,
-            },
             '& .MuiTab-root': {
-              minHeight: 44,
-              px: 1.25,
-              py: 0,
-              whiteSpace: 'nowrap',
+              ...analysisCompactTabsSx['& .MuiTab-root'],
               alignItems: 'center',
               justifyContent: 'center',
-              lineHeight: 1.1,
             },
             '& .MuiTab-iconWrapper': {
-              mr: 1,
-              mb: 0,
+              ...analysisCompactTabsSx['& .MuiTab-iconWrapper'],
               alignItems: 'center',
             },
           }}
@@ -167,7 +236,7 @@ export function AnalysisSidebar({
                 <Tab
                   key={tab}
                   value={tab}
-                  icon={<MapOutlinedIcon sx={{ fontSize: 20 }} />}
+                  icon={<MapOutlinedIcon />}
                   iconPosition="start"
                   label="Мапа"
                 />
@@ -178,7 +247,7 @@ export function AnalysisSidebar({
                 <Tab
                   key={tab}
                   value={tab}
-                  icon={<BarChartOutlinedIcon sx={{ fontSize: 20 }} />}
+                  icon={<BarChartOutlinedIcon />}
                   iconPosition="start"
                   label="Зведення"
                 />
@@ -189,7 +258,7 @@ export function AnalysisSidebar({
                 <Tab
                   key={tab}
                   value={tab}
-                  icon={<PeopleOutlineOutlinedIcon sx={{ fontSize: 20 }} />}
+                  icon={<PeopleOutlineOutlinedIcon />}
                   iconPosition="start"
                   label="Позивні"
                 />
@@ -199,18 +268,20 @@ export function AnalysisSidebar({
               <Tab
                 key={tab}
                 value={tab}
-                icon={<PersonAddOutlinedIcon sx={{ fontSize: 20 }} />}
+                icon={<PersonAddOutlinedIcon />}
                 iconPosition="start"
                 label="Нові"
               />
             );
           })}
         </Tabs>
-        <AnalysisRightPanelToggle
-          expanded
-          onClick={toggleRightPanel}
-          sx={{ display: { xs: 'inline-flex', lg: 'none' }, mr: { xs: 1, lg: 0 } }}
-        />
+        {showNarrowCloseButton ? (
+          <AnalysisRightPanelToggle
+            expanded
+            onClick={toggleRightPanel}
+            sx={{ display: { xs: 'inline-flex', lg: 'none' }, mr: { xs: 1, lg: 0 } }}
+          />
+        ) : null}
       </Box>
       <Box
         sx={{
@@ -264,11 +335,24 @@ export function AnalysisSidebar({
                 groupsActivityLoading={groupsActivityLoading}
                 onLoadCorrelatedFreqs={loadCorrelatedFreqs}
                 onLoadGroupsActivity={loadGroupsActivity}
+                onAddFreq={addFreq}
+                onAddLocation={addLocation}
                 onSelectFreq={selectOnlyFreq}
+                onAddNetwork={addNetwork}
+                onAddUnit={addUnit}
+                onToggleFreq={selectFreq}
+                onToggleLocation={selectLocation}
+                onToggleNetwork={selectNetwork}
+                onToggleUnit={selectUnit}
                 selectedFreq={queryState.freqsSelected[0] ?? null}
+                selectedFreqs={queryState.freqsSelected}
+                selectedLocations={queryState.locationsSelected}
+                selectedNetworks={queryState.networksSelected}
+                selectedUnits={queryState.unitsSelected}
                 rightSidebarLoading={rightSidebarLoading}
                 topFreqs={topFreqs}
                 topLocations={topLocations}
+                topNetworks={topNetworks}
                 topUnits={topUnits}
               />
             </Box>

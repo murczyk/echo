@@ -2,7 +2,7 @@ import CalendarMonthOutlinedIcon from '@mui/icons-material/CalendarMonthOutlined
 import { Box, Button, Paper, Popover, Stack, TextField } from '@mui/material';
 import dayjs from 'dayjs';
 import type { Dayjs } from 'dayjs';
-import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import type { MouseEvent } from 'react';
 
 import { APP_DATETIME_INPUT_MAX, APP_DATETIME_INPUT_MIN, APP_TIME_ZONE } from '../utils/misc';
@@ -22,13 +22,51 @@ export type DateTimeRangeControlProps = {
   now?: Date;
 };
 
-function formatDisplayValue(value: string): string {
-  if (!value) return '—';
-  const [datePart = '', timePart = ''] = value.split('T');
-  if (datePart === '' || timePart === '') return value;
+type DisplayDateTimeParts = {
+  year: string;
+  month: string;
+  day: string;
+  time: string;
+};
+
+function parseDisplayDateTime(value: string): DisplayDateTimeParts | null {
+  if (!value) return null;
+  const [datePart = '', time = ''] = value.split('T');
+  if (datePart === '' || time === '') return null;
   const [year = '', month = '', day = ''] = datePart.split('-');
-  if (year === '' || month === '' || day === '') return value;
-  return `${day}.${month}.${year} ${timePart}`;
+  if (year === '' || month === '' || day === '') return null;
+  return { year, month, day, time };
+}
+
+function formatDisplayValue(value: string, currentYear: string): string {
+  if (!value) return '—';
+  const parts = parseDisplayDateTime(value);
+  if (!parts) return value;
+  const date =
+    parts.year === currentYear
+      ? `${parts.day}.${parts.month}`
+      : `${parts.day}.${parts.month}.${parts.year}`;
+  return `${date} ${parts.time}`;
+}
+
+export function dateTimeRangeDisplaysYear(
+  value: DateTimeRangeValue,
+  now: Date = new Date(),
+): boolean {
+  const currentYear = dayjs(now).tz(APP_TIME_ZONE).format('YYYY');
+  return [value.fromDateTimeStr, value.toDateTimeStr].some((dateTime) => {
+    if (!dateTime) return false;
+    const parts = parseDisplayDateTime(dateTime);
+    return parts === null || parts.year !== currentYear;
+  });
+}
+
+export function formatDateTimeRangeDisplayValue(
+  value: DateTimeRangeValue,
+  now: Date = new Date(),
+): string {
+  const currentYear = dayjs(now).tz(APP_TIME_ZONE).format('YYYY');
+  return `${formatDisplayValue(value.fromDateTimeStr, currentYear)} — ${formatDisplayValue(value.toDateTimeStr, currentYear)}`;
 }
 
 function parseDateTimeInAppTimeZone(value: string): Dayjs | null {
@@ -152,11 +190,7 @@ export function DateTimeRangeControl({
     });
   }, []);
 
-  const intervalLabel = useMemo(
-    () =>
-      `${formatDisplayValue(value.fromDateTimeStr)} — ${formatDisplayValue(value.toDateTimeStr)}`,
-    [value.fromDateTimeStr, value.toDateTimeStr],
-  );
+  const intervalLabel = formatDateTimeRangeDisplayValue(value, now);
 
   return (
     <Stack className={className} direction="row" spacing={0} sx={{ minWidth: 0, width: '100%' }}>

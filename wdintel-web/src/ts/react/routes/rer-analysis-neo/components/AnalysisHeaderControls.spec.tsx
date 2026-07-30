@@ -19,6 +19,19 @@ vi.mock('@mui/material', () => ({
     </button>
   ),
   InputAdornment: ({ children }: { children?: ReactNode }) => <span>{children}</span>,
+  InputBase: (props: {
+    placeholder?: string;
+    value?: string;
+    onChange?: (event: { target: { value: string } }) => void;
+    inputProps?: { 'aria-label'?: string };
+  }) => (
+    <input
+      aria-label={props.inputProps?.['aria-label']}
+      placeholder={props.placeholder}
+      value={props.value ?? ''}
+      onChange={(event) => props.onChange?.({ target: { value: event.currentTarget.value } })}
+    />
+  ),
   Paper: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
   Popover: (props: { open?: boolean; children: ReactNode }) =>
     props.open ? <div>{props.children}</div> : null,
@@ -51,7 +64,7 @@ vi.mock('@mui/material', () => ({
   ),
 }));
 
-import { AnalysisHeaderControls } from './AnalysisHeaderControls';
+import { AnalysisHeaderControls, getAnalysisDateTimeRangeWidth } from './AnalysisHeaderControls';
 
 type Rendered = {
   container: HTMLDivElement;
@@ -113,9 +126,7 @@ describe('AnalysisHeaderControls', () => {
     rendered.push(view);
 
     expect(view.container.querySelector('input[value="uid-1"]')).toBeTruthy();
-    expect(
-      view.container.querySelector('input[value="27.03.2026 21:52 — 28.03.2026 09:52"]'),
-    ).toBeTruthy();
+    expect(view.container.querySelector('input[value="27.03 21:52 — 28.03 09:52"]')).toBeTruthy();
     expect(view.container.querySelector('button[aria-label="Очистити пошук"]')).toBeTruthy();
   });
 
@@ -132,12 +143,43 @@ describe('AnalysisHeaderControls', () => {
     expect(updateQueryState).toHaveBeenCalledWith({ search: '' });
   });
 
+  it('expands compact search from an icon and clears it when closed', async () => {
+    const updateQueryState = vi.fn();
+    const view = await renderComponent(
+      buildProps({
+        isCompactLayout: true,
+        updateQueryState,
+        queryState: {
+          search: '',
+          fromDateTimeStr: '2026-03-27T21:52',
+          toDateTimeStr: '2026-03-28T09:52',
+        },
+      }),
+    );
+    rendered.push(view);
+
+    expect(view.container.querySelector('input[aria-label="Пошук"]')).toBeNull();
+    await click(
+      view.container.querySelector('button[aria-label="Відкрити пошук"]') as HTMLButtonElement,
+    );
+    expect(view.container.querySelector('input[aria-label="Пошук"]')).not.toBeNull();
+
+    await click(
+      view.container.querySelector(
+        'button[aria-label="Очистити й закрити пошук"]',
+      ) as HTMLButtonElement,
+    );
+
+    expect(updateQueryState).toHaveBeenCalledWith({ search: '' });
+    expect(view.container.querySelector('input[aria-label="Пошук"]')).toBeNull();
+  });
+
   it('opens the datetime popover with split from/to inputs', async () => {
     const view = await renderComponent(buildProps());
     rendered.push(view);
 
     const field = Array.from(view.container.querySelectorAll('input')).find((item) =>
-      item.value.includes('27.03.2026 21:52 — 28.03.2026 09:52'),
+      item.value.includes('27.03 21:52 — 28.03 09:52'),
     );
     expect(field).toBeTruthy();
 
@@ -154,7 +196,7 @@ describe('AnalysisHeaderControls', () => {
     rendered.push(view);
 
     const field = Array.from(view.container.querySelectorAll('input')).find((item) =>
-      item.value.includes('27.03.2026 21:52 — 28.03.2026 09:52'),
+      item.value.includes('27.03 21:52 — 28.03 09:52'),
     );
     expect(field).toBeTruthy();
 
@@ -170,5 +212,21 @@ describe('AnalysisHeaderControls', () => {
       fromDateTimeStr: '2026-05-10T17:42',
       toDateTimeStr: '2026-05-13T17:42',
     });
+  });
+
+  it('uses a narrower current-year interval field and preserves width for other years', () => {
+    const now = new Date('2026-05-13T14:42:00Z');
+    expect(
+      getAnalysisDateTimeRangeWidth(
+        { fromDateTimeStr: '2026-03-27T21:52', toDateTimeStr: '2026-03-28T09:52' },
+        now,
+      ),
+    ).toBe(220);
+    expect(
+      getAnalysisDateTimeRangeWidth(
+        { fromDateTimeStr: '2025-12-31T21:52', toDateTimeStr: '2026-01-01T09:52' },
+        now,
+      ),
+    ).toBe(280);
   });
 });

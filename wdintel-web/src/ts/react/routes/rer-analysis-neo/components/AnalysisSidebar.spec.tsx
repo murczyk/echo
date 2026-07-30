@@ -114,10 +114,16 @@ function buildProps(
     loadMessagesForMap: vi.fn(),
     newCallsigns: [],
     newCallsignsLoading: false,
+    options: {
+      networks: [],
+    } as ComponentProps<typeof AnalysisSidebar>['options'],
     rightSidebarLoading: false,
     queryState: {
       freqsSelected: [],
+      locationsSelected: [],
+      networksSelected: [],
       search: '',
+      unitsSelected: [],
     } as ComponentProps<typeof AnalysisSidebar>['queryState'],
     rightPanelOpen: true,
     rightSidebarTab: 'stats',
@@ -131,6 +137,7 @@ function buildProps(
     toggleCallsignGraphNolimit: vi.fn(),
     toggleUnitFromMap: vi.fn(),
     toggleRightPanel: vi.fn(),
+    updateQueryState: vi.fn(),
     ...overrides,
   };
 }

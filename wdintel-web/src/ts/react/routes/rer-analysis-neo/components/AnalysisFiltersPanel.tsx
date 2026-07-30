@@ -34,7 +34,11 @@ export const analysisFiltersPaperSx = {
   flexDirection: 'column',
 } as const;
 
-export function AnalysisFiltersPanel({ page, isCompactLayout = false }: AnalysisFiltersPanelProps) {
+export function AnalysisFiltersPanel({
+  page,
+  isCompactLayout = false,
+  fullHeight = false,
+}: AnalysisFiltersPanelProps) {
   const {
     isDirty,
     counts,
@@ -106,6 +110,7 @@ export function AnalysisFiltersPanel({ page, isCompactLayout = false }: Analysis
         borderRadius: 0,
         boxShadow: 'none',
         backgroundColor: 'transparent',
+        ...(fullHeight ? { height: '100%', overflow: 'auto' } : {}),
       }}
       data-analysis-filters-scroll-container
     >
@@ -147,7 +152,7 @@ export function AnalysisFiltersPanel({ page, isCompactLayout = false }: Analysis
             >
               Фільтри
             </Button>
-          ) : (
+          ) : fullHeight ? null : (
             <Typography variant="subtitle1" sx={{ fontWeight: 600, lineHeight: 1.2 }}>
               Фільтри
             </Typography>

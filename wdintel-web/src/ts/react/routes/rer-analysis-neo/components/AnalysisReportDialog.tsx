@@ -34,6 +34,7 @@ import { ELLIPSIS } from '../../../utils/misc';
 import { hasAnyRole } from '../../../utils/roles';
 import { STANDARD_DIALOG_ACTIONS_SX } from '../../../components/dialogStyles';
 import { parseUtcDateTime } from '../../../services/api/report-history';
+import { analysisCompactTabsSx } from '../analysis-tab-styles';
 import {
   describeAppliedReportFilters,
   REPORT_ADJACENT_FREQS_OPTIONS,
@@ -374,6 +375,7 @@ export function AnalysisReportDialog({
               }
               variant="scrollable"
               allowScrollButtonsMobile
+              sx={analysisCompactTabsSx}
             >
               <Tab value="reports" label="Звіти" />
               <Tab value="exports" label="Експорт" />

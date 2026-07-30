@@ -43,6 +43,9 @@ vi.mock('../../components/PowerButton', () => ({
 }));
 vi.mock('../admin-control-panel-neo', () => ({ AdminControlPanelNeoSection: () => null }));
 vi.mock('./AiEnginesSection', () => ({ AiEnginesSection: () => <div>ШІ движки</div> }));
+vi.mock('./CacheBackfillSection', () => ({
+  CacheBackfillSection: () => <div>Перерахунок кешу</div>,
+}));
 
 import { AdminSystemSettingsNeoPage } from './index';
 
@@ -195,6 +198,15 @@ describe('AdminSystemSettingsNeoPage success notifications', () => {
     expect(window.location.hash).toBe('#ai');
     expect(replaceState).toHaveBeenCalledOnce();
     expect(pushState).not.toHaveBeenCalled();
+    await act(async () => root.unmount());
+  });
+
+  it('shows cache maintenance without the settings save button', async () => {
+    window.history.replaceState({}, '', '/admin/system-settings-neo#cache');
+    const { container, root } = await renderPage();
+
+    expect(container.textContent).toContain('Перерахунок кешу');
+    expect(button(container, 'зберегти')).toBeUndefined();
     await act(async () => root.unmount());
   });
 });

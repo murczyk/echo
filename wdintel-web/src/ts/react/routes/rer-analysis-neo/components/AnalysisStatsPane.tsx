@@ -8,6 +8,7 @@ import { AnalysisCorrelatedFreqsCard } from './AnalysisCorrelatedFreqsCard';
 import { AnalysisGroupsActivityCard } from './AnalysisGroupsActivityCard';
 import { PowerAlert } from '../../../components/PowerAlert';
 import { CompactText } from '../../../components/CompactTypography';
+import { normalizeUnknownUnitDisplayValue } from '../../shared/analysis-unit-filter';
 
 type Props = {
   correlatedFreqs: CorrelatedFreq[];
@@ -20,10 +21,23 @@ type Props = {
   groupsActivityPeriod: AnalysisGroupsActivityPeriod;
   onLoadCorrelatedFreqs: () => void;
   onLoadGroupsActivity: (period?: AnalysisGroupsActivityPeriod) => void;
+  onAddFreq: (freq: string) => void;
+  onAddLocation: (location: string) => void;
+  onAddNetwork: (networkId: string) => void;
+  onAddUnit: (unit: string) => void;
   onSelectFreq: (freq: string) => void;
+  onToggleFreq: (freq: string) => void;
+  onToggleLocation: (location: string) => void;
+  onToggleNetwork: (networkId: string) => void;
+  onToggleUnit: (unit: string) => void;
   selectedFreq: string | null;
+  selectedFreqs: readonly string[];
+  selectedLocations: readonly string[];
+  selectedNetworks: readonly string[];
+  selectedUnits: readonly string[];
   topFreqs: AnalysisCountItem[];
   topLocations: AnalysisCountItem[];
+  topNetworks: AnalysisCountItem[];
   topUnits: AnalysisCountItem[];
 };
 
@@ -37,17 +51,31 @@ export function AnalysisStatsPane({
   groupsActivityPeriod,
   onLoadCorrelatedFreqs,
   onLoadGroupsActivity,
+  onAddFreq,
+  onAddLocation,
+  onAddNetwork,
+  onAddUnit,
   onSelectFreq,
+  onToggleFreq,
+  onToggleLocation,
+  onToggleNetwork,
+  onToggleUnit,
   selectedFreq,
+  selectedFreqs,
+  selectedLocations,
+  selectedNetworks,
+  selectedUnits,
   rightSidebarLoading,
   topFreqs,
   topLocations,
+  topNetworks,
   topUnits,
 }: Props) {
   const suggestedFreqs = topFreqs
     .filter((item) => item.key.trim().length > 0)
     .map((item) => item.key)
     .slice(0, 6);
+  const selectedUnitKeys = selectedUnits.map(normalizeUnknownUnitDisplayValue);
 
   useEffect(() => {
     if (!selectedFreq) return;
@@ -99,15 +127,40 @@ export function AnalysisStatsPane({
           title="Частоти"
           items={topFreqs}
           loading={rightSidebarLoading}
-          onItemAction={onSelectFreq}
-          itemActionLabel="У фільтр"
+          onItemAdd={onAddFreq}
+          onItemToggle={onToggleFreq}
+          selectedItemKeys={selectedFreqs}
         />
       </Box>
       <Box sx={{ borderBottom: '1px solid', borderColor: 'divider' }}>
-        <AnalysisCountBlock title="Підрозділи" items={topUnits} loading={rightSidebarLoading} />
+        <AnalysisCountBlock
+          title="Мережі"
+          items={topNetworks}
+          loading={rightSidebarLoading}
+          onItemAdd={onAddNetwork}
+          onItemToggle={onToggleNetwork}
+          selectedItemKeys={selectedNetworks}
+        />
       </Box>
       <Box sx={{ borderBottom: '1px solid', borderColor: 'divider' }}>
-        <AnalysisCountBlock title="Локації" items={topLocations} loading={rightSidebarLoading} />
+        <AnalysisCountBlock
+          title="Підрозділи"
+          items={topUnits}
+          loading={rightSidebarLoading}
+          onItemAdd={onAddUnit}
+          onItemToggle={onToggleUnit}
+          selectedItemKeys={selectedUnitKeys}
+        />
+      </Box>
+      <Box sx={{ borderBottom: '1px solid', borderColor: 'divider' }}>
+        <AnalysisCountBlock
+          title="Локації"
+          items={topLocations}
+          loading={rightSidebarLoading}
+          onItemAdd={onAddLocation}
+          onItemToggle={onToggleLocation}
+          selectedItemKeys={selectedLocations}
+        />
       </Box>
       <Box>
         <AnalysisGroupsActivityCard

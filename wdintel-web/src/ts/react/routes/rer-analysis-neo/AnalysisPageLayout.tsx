@@ -1,5 +1,5 @@
 import { Box } from '@mui/material';
-import { useEffect, useId, useRef, useState } from 'react';
+import { useId, useState } from 'react';
 import { useMediaQuery } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
 
@@ -10,6 +10,7 @@ import { AnalysisPageHeader } from './AnalysisPageHeader';
 import { AnalysisLeftPanel } from './AnalysisLeftPanel';
 import { AnalysisLoadingSkeletons } from './AnalysisLoadingSkeletons';
 import { AnalysisCenterPanel } from './AnalysisCenterPanel';
+import { AnalysisFullscreenPanelDrawer } from './AnalysisFullscreenPanelDrawer';
 import { AnalysisRightPanel } from './AnalysisRightPanel';
 import { AnalysisReportDialog } from './components/AnalysisReportDialog';
 import { CreateMessageFab } from '../shared/manage-message/CreateMessageFab';
@@ -39,8 +40,10 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
   const mapPanelId = `${centerTabsId}-map-panel`;
   const showLoadingSkeletons =
     !page.hasLoadedInitialMessages && page.error == null && page.messages.length === 0;
-  const leftPanelVisible = isAnalysisCompactLayout || page.leftPanelOpen;
+  const leftPanelVisible = page.leftPanelOpen;
   const rightPanelVisible = page.rightPanelOpen;
+  const inlineLeftPanelVisible = !isNarrowLayout && leftPanelVisible;
+  const inlineRightPanelVisible = !isNarrowLayout && rightPanelVisible;
   const centerTabs = getAnalysisCenterTabs(page.analysisMapInSidebar);
   const centerTab =
     page.analysisMapInSidebar && page.centerTab === 'map' ? 'messages' : page.centerTab;
@@ -48,22 +51,6 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
     centerTab === 'map' ||
     (page.analysisMapInSidebar && rightPanelVisible && page.rightSidebarTab === 'map');
   const messagesPaneLoading = useMinDurationBusy(page.messagesLoading, 450);
-  const previousRightPanelOpenRef = useRef(page.rightPanelOpen);
-
-  useEffect(() => {
-    const wasOpen = previousRightPanelOpenRef.current;
-    previousRightPanelOpenRef.current = rightPanelVisible;
-    if (wasOpen || !rightPanelVisible || window.innerWidth >= 1200) return;
-
-    const rightPanel = document.querySelector<HTMLElement>('[data-analysis-right-panel]');
-    if (!rightPanel) return;
-    const prefersReducedMotion =
-      window.matchMedia?.('(prefers-reduced-motion: no-preference)')?.matches === true;
-    rightPanel.scrollIntoView({
-      behavior: prefersReducedMotion ? 'smooth' : 'auto',
-      block: 'start',
-    });
-  }, [rightPanelVisible]);
 
   return (
     <Box
@@ -82,7 +69,6 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
           page={page}
           centerTab={centerTab}
           isCompactLayout={isAnalysisCompactLayout}
-          isInitialLoading={showLoadingSkeletons}
           isNarrowLayout={isNarrowLayout}
           leftPanelVisible={leftPanelVisible}
           rightPanelVisible={rightPanelVisible}
@@ -124,35 +110,28 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
             gap: 0,
             overflow: 'hidden',
             alignItems: 'stretch',
-            gridTemplateRows: {
-              xs: [
-                leftPanelVisible ? 'auto' : null,
-                'minmax(0,1fr)',
-                rightPanelVisible ? 'minmax(0,1fr)' : null,
-              ]
-                .filter(Boolean)
-                .join(' '),
-              lg: '1fr',
-            },
+            gridTemplateRows: 'minmax(0,1fr)',
             gridTemplateColumns: {
               xs: 'minmax(0,1fr)',
               lg: [
-                leftPanelVisible ? '400px' : null,
+                inlineLeftPanelVisible ? '400px' : null,
                 'minmax(0,1fr)',
-                rightPanelVisible ? 'minmax(0,1fr)' : null,
+                inlineRightPanelVisible ? 'minmax(0,1fr)' : null,
               ]
                 .filter(Boolean)
                 .join(' '),
             },
           }}
         >
-          <AnalysisLeftPanel
-            page={page}
-            leftPanelVisible={leftPanelVisible}
-            isCompactLayout={isAnalysisCompactLayout}
-          />
+          {inlineLeftPanelVisible ? (
+            <AnalysisLeftPanel
+              page={page}
+              leftPanelVisible
+              isCompactLayout={isAnalysisCompactLayout}
+            />
+          ) : null}
           {showLoadingSkeletons ? (
-            <AnalysisLoadingSkeletons rightPanelVisible={rightPanelVisible} />
+            <AnalysisLoadingSkeletons rightPanelVisible={inlineRightPanelVisible} />
           ) : (
             <AudioTranscriptionPreferencesProvider
               collapsedByDefault={page.audioTranscriptionCollapsed}
@@ -164,7 +143,7 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
                 centerTabs={centerTabs}
                 isCompactLayout={isAnalysisCompactLayout}
                 isNarrowLayout={isNarrowLayout}
-                rightPanelVisible={rightPanelVisible}
+                rightPanelVisible={inlineRightPanelVisible}
                 messagesPaneLoading={messagesPaneLoading}
                 messagesPanelId={messagesPanelId}
                 messagesTabId={messagesTabId}
@@ -175,15 +154,43 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
               />
             </AudioTranscriptionPreferencesProvider>
           )}
-          {!showLoadingSkeletons ? (
+          {!showLoadingSkeletons && inlineRightPanelVisible ? (
             <AnalysisRightPanel
               page={page}
-              rightPanelVisible={rightPanelVisible}
+              rightPanelVisible
               isCompactLayout={isAnalysisCompactLayout}
             />
           ) : null}
         </Box>
       </Box>
+
+      <AnalysisFullscreenPanelDrawer
+        anchor="left"
+        title="Фільтри"
+        open={isNarrowLayout && leftPanelVisible}
+        onClose={page.toggleLeftPanel}
+        maxPanelWidth={400}
+      >
+        <AnalysisLeftPanel page={page} leftPanelVisible isCompactLayout={false} fullHeight />
+      </AnalysisFullscreenPanelDrawer>
+
+      <AnalysisFullscreenPanelDrawer
+        anchor="right"
+        title="Аналітична панель"
+        open={isNarrowLayout && rightPanelVisible}
+        onClose={page.toggleRightPanel}
+      >
+        {showLoadingSkeletons ? (
+          <AnalysisLoadingSkeletons centerVisible={false} rightPanelVisible />
+        ) : (
+          <AnalysisRightPanel
+            page={page}
+            rightPanelVisible
+            isCompactLayout={isAnalysisCompactLayout}
+            showNarrowCloseButton={false}
+          />
+        )}
+      </AnalysisFullscreenPanelDrawer>
 
       <AnalysisReportDialog
         aors={page.aorEntries}

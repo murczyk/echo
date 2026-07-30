@@ -51,6 +51,7 @@ export type AnalysisFiltersPanelPage = Pick<
 export type AnalysisFiltersPanelProps = {
   page: AnalysisFiltersPanelPage;
   isCompactLayout?: boolean;
+  fullHeight?: boolean;
 };
 
 export type FilterSectionId =
