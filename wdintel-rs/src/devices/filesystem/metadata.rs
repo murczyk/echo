@@ -7,7 +7,6 @@ use crate::config::{
 };
 use chrono::{DateTime, FixedOffset, NaiveDateTime, Utc};
 
-#[allow(dead_code)]
 pub(in crate::devices) fn normalize_file_metadata(
     file_name: &str,
     mime_type: Option<String>,

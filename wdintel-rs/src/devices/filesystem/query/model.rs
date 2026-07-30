@@ -109,7 +109,6 @@ pub(in crate::devices::filesystem) fn map_file_journal_model(
     })
 }
 
-#[allow(dead_code)]
 pub(super) fn map_tree_model(
     entry: file_entry::Model,
 ) -> Result<TreeEntry, FilesystemError> {

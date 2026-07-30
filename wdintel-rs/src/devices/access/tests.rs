@@ -21,9 +21,9 @@ fn actor(roles: &[&str]) -> DeviceActor {
 
 fn capabilities(actor: &DeviceActor) -> (bool, bool, bool) {
     (
-        actor.can_read(),
-        actor.can_write_source_data(),
-        actor.can_write_analytical_data(),
+        actor.require_read().is_ok(),
+        actor.require_source_write().is_ok(),
+        actor.require_analytical_write().is_ok(),
     )
 }
 

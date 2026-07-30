@@ -2,7 +2,6 @@ use anyhow::Error as AnyhowError;
 use sea_orm::{ConnAcquireErr, DbErr};
 use thiserror::Error;
 
-#[allow(dead_code)]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(in crate::devices) struct FilesystemFieldError {
     pub(in crate::devices) path: String,
@@ -116,23 +115,22 @@ fn has_outcome_uncertain_transaction_error(error: &AnyhowError) -> bool {
 
 #[derive(Debug, Error)]
 pub(in crate::devices) enum FilesystemError {
-    #[allow(dead_code)]
     #[error("filesystem validation failed")]
     Validation(Vec<FilesystemFieldError>),
-    #[allow(dead_code)]
+
     #[error("filesystem entry not found")]
     NotFound,
-    #[allow(dead_code)]
+
     #[error("filesystem conflict")]
     Conflict,
-    #[allow(dead_code)]
+
     #[error("filesystem dependency failed")]
     Dependency(#[source] anyhow::Error),
     #[error("filesystem invariant failed: {0}")]
     Invariant(&'static str),
     #[error("filesystem internal failure")]
     Internal(#[source] anyhow::Error),
-    #[allow(dead_code)]
+
     #[error("filesystem commit outcome uncertain")]
     CommitUncertain(#[source] anyhow::Error),
 }

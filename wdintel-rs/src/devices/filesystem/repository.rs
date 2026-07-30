@@ -98,7 +98,6 @@ impl<'db> FilesystemRepository<'db> {
         })
     }
 
-    #[allow(dead_code)]
     pub(in crate::devices) async fn mutate_file(
         &self,
         mutation: &PreparedFileMutation,
@@ -158,14 +157,13 @@ impl<'db> FilesystemRepository<'db> {
         rollback_error.unwrap_or(error)
     }
 
-    #[allow(dead_code)]
     pub(in crate::devices) async fn list_roots(
         &self,
         device_id: Uuid,
     ) -> Result<Vec<RootEntry>, FilesystemError> {
         query::list_roots(self.file_registry_db.connection(), device_id).await
     }
-    #[allow(dead_code)]
+
     pub(in crate::devices) async fn count_file_subtrees(
         &self,
         device_id: Uuid,
@@ -187,22 +185,6 @@ impl<'db> FilesystemRepository<'db> {
         Ok(counts)
     }
 
-    #[allow(dead_code)]
-    pub(in crate::devices) async fn list_file_journal(
-        &self,
-        device_id: Uuid,
-        page: KeysetPageRequest<FileJournalSortKey>,
-    ) -> Result<KeysetPage<FileJournalEntry, FileJournalSortKey>, FilesystemError>
-    {
-        query::list_file_journal(
-            self.file_registry_db.connection(),
-            device_id,
-            page,
-        )
-        .await
-    }
-
-    #[allow(dead_code)]
     pub(in crate::devices) async fn list_file_journal_with_total(
         &self,
         device_id: Uuid,
@@ -220,7 +202,6 @@ impl<'db> FilesystemRepository<'db> {
         Ok((page, total_count))
     }
 
-    #[allow(dead_code)]
     pub(in crate::devices) async fn resolve_file_journal_cursor(
         &self,
         device_id: Uuid,
@@ -234,7 +215,6 @@ impl<'db> FilesystemRepository<'db> {
         .await
     }
 
-    #[allow(dead_code)]
     pub(in crate::devices) async fn list_children(
         &self,
         scope: &DirectoryScope,
@@ -244,7 +224,6 @@ impl<'db> FilesystemRepository<'db> {
             .await
     }
 
-    #[allow(dead_code)]
     pub(in crate::devices) async fn load_path_components(
         &self,
         entries: &[TreeEntry],
@@ -253,7 +232,6 @@ impl<'db> FilesystemRepository<'db> {
             .await
     }
 
-    #[allow(dead_code)]
     pub(in crate::devices) async fn search_entries(
         &self,
         scope: &DirectoryScope,
@@ -269,7 +247,6 @@ impl<'db> FilesystemRepository<'db> {
         .await
     }
 
-    #[allow(dead_code)]
     pub(in crate::devices) async fn list_breadcrumbs(
         &self,
         scope: &DirectoryScope,
@@ -277,7 +254,6 @@ impl<'db> FilesystemRepository<'db> {
         query::list_breadcrumbs(self.file_registry_db.connection(), scope).await
     }
 
-    #[allow(dead_code)]
     pub(in crate::devices) async fn find_directory_scope(
         &self,
         device_id: Uuid,
@@ -291,7 +267,6 @@ impl<'db> FilesystemRepository<'db> {
         .await
     }
 
-    #[allow(dead_code)]
     pub(in crate::devices) async fn resolve_cursor_entry_sort_key(
         &self,
         boundary_entry_id: Uuid,

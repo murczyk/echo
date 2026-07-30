@@ -102,9 +102,7 @@ fn directory_and_query_scopes_preserve_one_navigation_scope() {
 
     let browse = EntryQueryScope::Browse(&root_scope);
     assert_eq!(browse.device_id(), device_id);
-    assert_eq!(browse.entry_id(), root_id);
     assert_eq!(browse.directory(), &root_scope);
-    assert_eq!(browse.filters(), None);
     assert_eq!(
         root_scope.hierarchy_path(),
         "n00000000000000000000000000000002"
@@ -115,13 +113,9 @@ fn directory_and_query_scopes_preserve_one_navigation_scope() {
         filters: &filters,
     };
     assert_eq!(search.device_id(), device_id);
-    assert_eq!(search.entry_id(), directory_id);
     assert_eq!(search.directory(), &directory_scope);
-    assert_eq!(search.filters(), Some(&filters));
     assert_eq!(
         directory_scope.hierarchy_path(),
         "n00000000000000000000000000000002.n00000000000000000000000000000003"
     );
-    assert_eq!(directory_scope.root_id(), root_id);
-    assert_eq!(directory_scope.path_syntax(), PathSyntax::Posix);
 }

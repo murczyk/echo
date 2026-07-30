@@ -14,7 +14,6 @@ use sea_orm::{
 };
 use uuid::Uuid;
 
-#[allow(dead_code)]
 pub(in crate::devices::filesystem) async fn find_directory_scope(
     db: &impl ConnectionTrait,
     device_id: Uuid,
@@ -90,7 +89,6 @@ pub(super) fn root_context_query(
         .filter(ltree::ancestor_expr(target_hierarchy_path))
 }
 
-#[allow(dead_code)]
 pub(in crate::devices::filesystem) fn apply_entry_scope(
     query: Select<file_entry::Entity>,
     scope: &EntryQueryScope<'_>,
@@ -167,7 +165,6 @@ pub(super) fn apply_search_filters(
     query
 }
 
-#[allow(dead_code)]
 pub(super) fn literal_name_pattern(name_query: &str) -> String {
     let mut pattern = String::with_capacity(
         name_query.len().saturating_mul(2).saturating_add(2),
@@ -183,7 +180,6 @@ pub(super) fn literal_name_pattern(name_query: &str) -> String {
     pattern
 }
 
-#[allow(dead_code)]
 pub(super) fn apply_root_order(
     query: Select<file_entry::Entity>,
 ) -> Select<file_entry::Entity> {
@@ -193,7 +189,6 @@ pub(super) fn apply_root_order(
         .order_by_asc(file_entry::Column::Id)
 }
 
-#[allow(dead_code)]
 pub(in crate::devices::filesystem) fn apply_entry_order(
     query: Select<file_entry::Entity>,
 ) -> Select<file_entry::Entity> {
@@ -203,7 +198,6 @@ pub(in crate::devices::filesystem) fn apply_entry_order(
         .order_by_asc(file_entry::Column::Id)
 }
 
-#[allow(dead_code)]
 pub(in crate::devices::filesystem) fn entry_strict_after_condition(
     after: &EntrySortKey,
 ) -> Condition {
@@ -221,7 +215,6 @@ pub(in crate::devices::filesystem) fn entry_strict_after_condition(
     )
 }
 
-#[allow(dead_code)]
 pub(super) fn finalize_page<T, K>(
     mut rows: Vec<T>,
     limit: u64,
@@ -244,7 +237,6 @@ pub(super) fn finalize_page<T, K>(
     }
 }
 
-#[allow(dead_code)]
 pub(in crate::devices::filesystem) async fn resolve_cursor_entry_sort_key(
     db: &impl ConnectionTrait,
     boundary_entry_id: Uuid,

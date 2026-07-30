@@ -6,10 +6,8 @@ use super::{
     },
 };
 
-#[allow(dead_code)]
 pub(in crate::devices) struct SourcePathParser;
 
-#[allow(dead_code)]
 impl SourcePathParser {
     pub(in crate::devices) fn parse(
         path_syntax: PathSyntax,
@@ -36,7 +34,6 @@ impl SourcePathParser {
     }
 }
 
-#[allow(dead_code)]
 pub(super) fn name_key(name: &str) -> Vec<u8> {
     name.as_bytes().to_vec()
 }

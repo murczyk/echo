@@ -6,7 +6,7 @@ mod mutation;
 mod path;
 mod query;
 mod repository;
-#[allow(dead_code)]
+
 mod service;
 mod sync;
 

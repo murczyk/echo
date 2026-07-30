@@ -7,7 +7,6 @@ use sea_orm::sea_query::{
 use std::fmt::Write;
 use uuid::Uuid;
 
-#[allow(dead_code)]
 pub(super) fn uuid_label(entry_id: Uuid) -> String {
     let mut label = String::with_capacity(33);
     label.push('n');
@@ -16,12 +15,10 @@ pub(super) fn uuid_label(entry_id: Uuid) -> String {
     label
 }
 
-#[allow(dead_code)]
 pub(super) fn root_hierarchy_path(entry_id: Uuid) -> String {
     uuid_label(entry_id)
 }
 
-#[allow(dead_code)]
 pub(super) fn child_hierarchy_path(
     parent_path: &str,
     entry_id: Uuid,
@@ -35,7 +32,6 @@ pub(super) fn child_hierarchy_path(
     hierarchy_path
 }
 
-#[allow(dead_code)]
 pub(super) fn expected_hierarchy_path(
     ordered_entry_ids: &[Uuid],
 ) -> Result<String, FilesystemError> {
@@ -60,7 +56,6 @@ pub(super) fn expected_hierarchy_path(
     Ok(hierarchy_path)
 }
 
-#[allow(dead_code)]
 pub(super) fn verify_hierarchy_path(
     ordered_entry_ids: &[Uuid],
     hierarchy_path: &str,
@@ -72,7 +67,6 @@ pub(super) fn verify_hierarchy_path(
     }
 }
 
-#[allow(dead_code)]
 pub(super) fn hierarchy_entry_ids(
     hierarchy_path: &str,
 ) -> Result<Vec<Uuid>, FilesystemError> {
@@ -110,13 +104,11 @@ pub(super) fn hierarchy_entry_ids(
     Ok(entry_ids)
 }
 
-#[allow(dead_code)]
 pub(super) fn descendant_expr(hierarchy_path: &str) -> SimpleExpr {
     Expr::col((file_entry::Entity, file_entry::Column::HierarchyPath))
         .contained(Expr::val(hierarchy_path.to_string()).cast_as(PgLTree))
 }
 
-#[allow(dead_code)]
 pub(super) fn ancestor_expr(hierarchy_path: &str) -> SimpleExpr {
     Expr::col((file_entry::Entity, file_entry::Column::HierarchyPath))
         .contains(Expr::val(hierarchy_path.to_string()).cast_as(PgLTree))

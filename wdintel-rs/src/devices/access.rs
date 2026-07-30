@@ -11,7 +11,6 @@ use sea_orm::DatabaseConnection;
 
 const DEVICE_OPERATION_FORBIDDEN: &str = "device operation is forbidden";
 
-#[allow(dead_code)]
 pub(in crate::devices) struct DeviceFieldGroups {
     pub source_data: bool,
     pub analytical_data: bool,
@@ -59,7 +58,6 @@ impl DeviceActor {
         actor
     }
 
-    #[allow(dead_code)]
     pub(in crate::devices) fn login(&self) -> &str {
         &self.login
     }
@@ -68,22 +66,6 @@ impl DeviceActor {
         self.organism_id
     }
 
-    #[allow(dead_code)]
-    pub(in crate::devices) fn can_read(&self) -> bool {
-        self.can_read
-    }
-
-    #[allow(dead_code)]
-    pub(in crate::devices) fn can_write_source_data(&self) -> bool {
-        self.can_write_source_data
-    }
-
-    #[allow(dead_code)]
-    pub(in crate::devices) fn can_write_analytical_data(&self) -> bool {
-        self.can_write_analytical_data
-    }
-
-    #[allow(dead_code)]
     pub(in crate::devices) fn require_read(&self) -> Result<(), AppError> {
         if self.can_read {
             Ok(())
@@ -92,7 +74,6 @@ impl DeviceActor {
         }
     }
 
-    #[allow(dead_code)]
     pub(in crate::devices) fn require_source_write(
         &self,
     ) -> Result<(), AppError> {
@@ -103,7 +84,6 @@ impl DeviceActor {
         }
     }
 
-    #[allow(dead_code)]
     pub(in crate::devices) fn require_analytical_write(
         &self,
     ) -> Result<(), AppError> {
@@ -114,7 +94,6 @@ impl DeviceActor {
         }
     }
 
-    #[allow(dead_code)]
     pub(in crate::devices) fn require_field_groups(
         &self,
         groups: DeviceFieldGroups,
@@ -133,11 +112,9 @@ fn forbidden_device_operation() -> AppError {
     AppError::Forbidden(DEVICE_OPERATION_FORBIDDEN.to_string())
 }
 
-#[allow(dead_code)]
 pub(in crate::devices) struct DeviceActorResolver;
 
 impl DeviceActorResolver {
-    #[allow(dead_code)]
     pub(in crate::devices) async fn resolve(
         main_db: &MainDb<'_, DatabaseConnection>,
         identity: &Identity,

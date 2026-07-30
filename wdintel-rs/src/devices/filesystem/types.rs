@@ -56,7 +56,6 @@ impl TryFrom<&str> for FileEntryKind {
     }
 }
 
-#[allow(dead_code)]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(in crate::devices) struct RootEntry {
     pub(in crate::devices) entry_id: Uuid,
@@ -81,7 +80,6 @@ pub(in crate::devices) struct SubtreeFileCount {
     pub(in crate::devices) file_count: u64,
 }
 
-#[allow(dead_code)]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(in crate::devices) struct DirectoryEntry {
     pub(in crate::devices) entry_id: Uuid,
@@ -94,7 +92,6 @@ pub(in crate::devices) struct DirectoryEntry {
     pub(in crate::devices) updated_at: NaiveDateTime,
 }
 
-#[allow(dead_code)]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(in crate::devices) enum DirectoryScope {
     Root(RootEntry),
@@ -105,7 +102,6 @@ pub(in crate::devices) enum DirectoryScope {
     },
 }
 
-#[allow(dead_code)]
 impl DirectoryScope {
     pub(in crate::devices) fn device_id(&self) -> Uuid {
         match self {
@@ -118,20 +114,6 @@ impl DirectoryScope {
         match self {
             Self::Root(root) => root.entry_id,
             Self::Directory { entry, .. } => entry.entry_id,
-        }
-    }
-
-    pub(in crate::devices) fn root_id(&self) -> Uuid {
-        match self {
-            Self::Root(root) => root.entry_id,
-            Self::Directory { root_id, .. } => *root_id,
-        }
-    }
-
-    pub(in crate::devices) fn path_syntax(&self) -> PathSyntax {
-        match self {
-            Self::Root(root) => root.path_syntax,
-            Self::Directory { path_syntax, .. } => *path_syntax,
         }
     }
 
@@ -171,28 +153,24 @@ pub(in crate::devices) struct FileJournalEntry {
     pub(in crate::devices) synchronized_at: NaiveDateTime,
 }
 
-#[allow(dead_code)]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(in crate::devices) enum TreeEntry {
     Directory(DirectoryEntry),
     File(FileEntry),
 }
 
-#[allow(dead_code)]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(in crate::devices) struct SearchEntry {
     pub(in crate::devices) entry: TreeEntry,
     pub(in crate::devices) path_components: Vec<String>,
 }
 
-#[allow(dead_code)]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(in crate::devices) struct Breadcrumb {
     pub(in crate::devices) entry_id: Uuid,
     pub(in crate::devices) name: String,
 }
 
-#[allow(dead_code)]
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub(in crate::devices) struct EntrySortKey {
     kind: FileEntryKind,
@@ -200,7 +178,6 @@ pub(in crate::devices) struct EntrySortKey {
     entry_id: Uuid,
 }
 
-#[allow(dead_code)]
 impl EntrySortKey {
     pub(super) fn new(
         kind: FileEntryKind,
@@ -250,14 +227,12 @@ impl FileJournalSortKey {
     }
 }
 
-#[allow(dead_code)]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(in crate::devices) struct KeysetPageRequest<K> {
     limit: u64,
     after: Option<K>,
 }
 
-#[allow(dead_code)]
 impl<K> KeysetPageRequest<K> {
     pub(in crate::devices) fn try_new(
         limit: Option<u64>,
@@ -288,14 +263,12 @@ impl<K> KeysetPageRequest<K> {
     }
 }
 
-#[allow(dead_code)]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(in crate::devices) struct KeysetPage<T, K> {
     pub(in crate::devices) entries: Vec<T>,
     pub(in crate::devices) next: Option<K>,
 }
 
-#[allow(dead_code)]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(in crate::devices) struct RawFileSearchFilters {
     pub(in crate::devices) kinds: Vec<FileEntryKind>,
@@ -305,7 +278,7 @@ pub(in crate::devices) struct RawFileSearchFilters {
     pub(in crate::devices) file_metadata_modified_from: Option<NaiveDateTime>,
     pub(in crate::devices) file_metadata_modified_to: Option<NaiveDateTime>,
 }
-#[allow(dead_code)]
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(in crate::devices) struct BrowseFilesCommand {
     pub(in crate::devices) device_id: Uuid,
@@ -315,7 +288,6 @@ pub(in crate::devices) struct BrowseFilesCommand {
     pub(in crate::devices) cursor: Option<String>,
 }
 
-#[allow(dead_code)]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(in crate::devices) struct BrowseFilesResult {
     pub(in crate::devices) breadcrumbs: Vec<Breadcrumb>,
@@ -324,7 +296,6 @@ pub(in crate::devices) struct BrowseFilesResult {
     pub(in crate::devices) next_cursor: Option<String>,
 }
 
-#[allow(dead_code)]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(in crate::devices) struct SearchFilesCommand {
     pub(in crate::devices) device_id: Uuid,
@@ -334,7 +305,6 @@ pub(in crate::devices) struct SearchFilesCommand {
     pub(in crate::devices) cursor: Option<String>,
 }
 
-#[allow(dead_code)]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(in crate::devices) struct SearchFilesResult {
     pub(in crate::devices) entries: Vec<SearchEntry>,
@@ -355,7 +325,6 @@ pub(in crate::devices) struct JournalFilesResult {
     pub(in crate::devices) total_count: u64,
 }
 
-#[allow(dead_code)]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(in crate::devices) struct FileSearchFilters {
     kinds: Vec<FileEntryKind>,
@@ -366,7 +335,6 @@ pub(in crate::devices) struct FileSearchFilters {
     file_metadata_modified_to: Option<NaiveDateTime>,
 }
 
-#[allow(dead_code)]
 impl FileSearchFilters {
     pub(super) fn from_validated_parts(
         kinds: Vec<FileEntryKind>,
@@ -418,7 +386,6 @@ impl FileSearchFilters {
     }
 }
 
-#[allow(dead_code)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(in crate::devices) enum EntryQueryScope<'a> {
     Browse(&'a DirectoryScope),
@@ -428,7 +395,6 @@ pub(in crate::devices) enum EntryQueryScope<'a> {
     },
 }
 
-#[allow(dead_code)]
 impl EntryQueryScope<'_> {
     pub(super) fn directory(&self) -> &DirectoryScope {
         match self {
@@ -441,20 +407,8 @@ impl EntryQueryScope<'_> {
     pub(super) fn device_id(&self) -> Uuid {
         self.directory().device_id()
     }
-
-    pub(super) fn entry_id(&self) -> Uuid {
-        self.directory().entry_id()
-    }
-
-    pub(super) fn filters(&self) -> Option<&FileSearchFilters> {
-        match self {
-            Self::Browse(_) => None,
-            Self::Search { filters, .. } => Some(filters),
-        }
-    }
 }
 
-#[allow(dead_code)]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(in crate::devices) struct ParsedSourcePath {
     pub(in crate::devices) path_syntax: PathSyntax,
@@ -463,7 +417,6 @@ pub(in crate::devices) struct ParsedSourcePath {
     pub(in crate::devices) components: Vec<String>,
 }
 
-#[allow(dead_code)]
 impl ParsedSourcePath {
     pub(in crate::devices) fn file_name(&self) -> &str {
         self.components
@@ -472,7 +425,6 @@ impl ParsedSourcePath {
     }
 }
 
-#[allow(dead_code)]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(in crate::devices) struct SyncFilesCommand {
     pub(in crate::devices) device_id: Uuid,
@@ -480,13 +432,11 @@ pub(in crate::devices) struct SyncFilesCommand {
     pub(in crate::devices) files: Vec<SyncFileItemCommand>,
 }
 
-#[allow(dead_code)]
 #[derive(Clone, Debug, PartialEq)]
 pub(in crate::devices) struct SyncFilesResult {
     pub(in crate::devices) results: Vec<SyncFileItemResult>,
 }
 
-#[allow(dead_code)]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(in crate::devices) struct SyncFileItemCommand {
     pub(in crate::devices) file_id: Option<Uuid>,
@@ -497,7 +447,6 @@ pub(in crate::devices) struct SyncFileItemCommand {
     pub(in crate::devices) file_metadata_modified_at: Option<String>,
 }
 
-#[allow(dead_code)]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(in crate::devices) struct NormalizedFileMetadata {
     pub(in crate::devices) mime_type: Option<String>,
@@ -506,14 +455,12 @@ pub(in crate::devices) struct NormalizedFileMetadata {
     pub(in crate::devices) file_metadata_modified_at: Option<NaiveDateTime>,
 }
 
-#[allow(dead_code)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(in crate::devices) enum SyncFileOperation {
     Created,
     Updated,
 }
 
-#[allow(dead_code)]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(in crate::devices) struct PreparedFileMutation {
     pub(super) device_id: Uuid,
@@ -525,7 +472,6 @@ pub(in crate::devices) struct PreparedFileMutation {
     pub(super) metadata: NormalizedFileMetadata,
 }
 
-#[allow(dead_code)]
 impl PreparedFileMutation {
     pub(in crate::devices) fn for_create(
         device_id: Uuid,
@@ -583,7 +529,6 @@ impl PreparedFileMutation {
     }
 }
 
-#[allow(dead_code)]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(in crate::devices) struct FileMutationResult {
     pub(in crate::devices) operation: SyncFileOperation,
@@ -592,7 +537,6 @@ pub(in crate::devices) struct FileMutationResult {
     pub(in crate::devices) path_components: Vec<String>,
 }
 
-#[allow(dead_code)]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(in crate::devices) struct SyncFileItemResult {
     pub(in crate::devices) index: usize,
@@ -600,7 +544,6 @@ pub(in crate::devices) struct SyncFileItemResult {
 }
 
 #[allow(clippy::large_enum_variant)]
-#[allow(dead_code)]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(in crate::devices) enum SyncFileItemOutcome {
     Accepted {
@@ -617,7 +560,6 @@ pub(in crate::devices) enum SyncFileItemOutcome {
     },
 }
 
-#[allow(dead_code)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(in crate::devices) enum SyncFileRejectionKind {
     Validation,

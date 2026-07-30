@@ -15,23 +15,19 @@ use sea_orm::{
 use std::collections::BTreeMap;
 use uuid::Uuid;
 
-#[allow(dead_code)]
 pub(in crate::devices) enum DeviceReadScope {
     ActiveOnly,
     IncludeArchived,
 }
 
-#[allow(dead_code)]
 pub(in crate::devices) enum FileRegistryDeviceAccess {
     Read,
     SourceWrite,
 }
 
-#[allow(dead_code)]
 pub(in crate::devices) struct DeviceVisibility;
 
 impl DeviceVisibility {
-    #[allow(dead_code)]
     pub(in crate::devices) fn query(
         actor: &DeviceActor,
         scope: DeviceReadScope,
@@ -50,7 +46,6 @@ impl DeviceVisibility {
         }
     }
 
-    #[allow(dead_code)]
     pub(in crate::devices) async fn find_for_read<C>(
         main_db: &MainDb<'_, C>,
         actor: &DeviceActor,
@@ -68,7 +63,6 @@ impl DeviceVisibility {
             .ok_or(AppError::NotFound)
     }
 
-    #[allow(dead_code)]
     pub(in crate::devices) async fn find_active_for_write<C>(
         main_db: &MainDb<'_, C>,
         actor: &DeviceActor,
@@ -90,7 +84,6 @@ impl DeviceVisibility {
         Ok(device)
     }
 
-    #[allow(dead_code)]
     pub(in crate::devices) async fn find_active_for_update(
         main_db: &MainDb<'_, DatabaseTransaction>,
         actor: &DeviceActor,
@@ -109,7 +102,6 @@ impl DeviceVisibility {
         Ok(device)
     }
 
-    #[allow(dead_code)]
     pub(in crate::devices) async fn verify_file_registry_access(
         main_db: MainDb<'_, DatabaseConnection>,
         actor: &DeviceActor,
