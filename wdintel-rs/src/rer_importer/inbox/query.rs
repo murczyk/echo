@@ -567,7 +567,11 @@ fn build_period_unit_filtered_inbox_digest(
         Expr::cust(r#"MIN("signal_message"."timestamp")"#),
         "first_element_ts",
     );
-    Ok(query.build(DatabaseBackend::Postgres).to_string())
+    Ok(render_inbox_digest_query(query))
+}
+
+fn render_inbox_digest_query(query: Select<signal_message::Entity>) -> String {
+    query.into_query().to_string(PostgresQueryBuilder)
 }
 
 async fn build_unit_filtered_inbox_digest_query(
@@ -633,7 +637,7 @@ pub(crate) async fn build_inbox_digest_query(
         "first_element_ts",
     );
 
-    Ok(q.build(DatabaseBackend::Postgres).to_string())
+    Ok(render_inbox_digest_query(q))
 }
 
 pub(crate) async fn build_analytics_inbox_digest_query(
@@ -670,7 +674,7 @@ pub(crate) async fn build_analytics_inbox_digest_query(
         "first_element_ts",
     );
 
-    Ok(Some(q.build(DatabaseBackend::Postgres).to_string()))
+    Ok(Some(render_inbox_digest_query(q)))
 }
 
 async fn resolve_analytics_inbox_message_id_scope(
@@ -1675,6 +1679,33 @@ mod tests {
     }
 
     #[test]
+    fn digest_query_inlines_postgres_values() {
+        let since = chrono::NaiveDate::from_ymd_opt(2026, 7, 30)
+            .unwrap()
+            .and_hms_opt(16, 0, 0)
+            .unwrap();
+        let till = since + Duration::hours(1);
+        let query = build_inbox_query_base(
+            &InboxMessagesReq::default(),
+            InboxQueryPurpose::Digest,
+        )
+        .filter(sigint_inbox_item::Column::Datetime.gte(since))
+        .filter(sigint_inbox_item::Column::Datetime.lte(till))
+        .select_only()
+        .column_as(Expr::cust("COUNT(*)"), "count")
+        .column_as(
+            Expr::cust(r#"MIN("signal_message"."timestamp")"#),
+            "first_element_ts",
+        );
+
+        let sql = render_inbox_digest_query(query);
+
+        assert!(sql.contains("2026-07-30 16:00:00"), "{sql}");
+        assert!(sql.contains("2026-07-30 17:00:00"), "{sql}");
+        assert!(!sql.contains('$'), "digest SQL must inline values: {sql}");
+    }
+
+    #[test]
     fn indexed_digest_base_uses_lateral_message_lookup() {
         let sql = build_inbox_query_base(
             &InboxMessagesReq::default(),
@@ -1788,6 +1819,10 @@ mod tests {
         assert_eq!(sql.matches("MATERIALIZED").count(), 2, "{sql}");
         assert!(sql.contains("matching_unit_network_ids"), "{sql}");
         assert!(sql.contains("matching_unit_inbox_item_ids"), "{sql}");
+        assert!(
+            !sql.contains('$'),
+            "digest SQL must inline PostgreSQL values: {sql}"
+        );
     }
 
     #[test]
