@@ -1,6 +1,6 @@
 use crate::entities::sigint_unit;
 use crate::orbit::types::SourceUnit;
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 enum EchoEchelon {
@@ -9,6 +9,18 @@ enum EchoEchelon {
     Regiment,
     Division,
     Army,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct MatchScore {
+    echelon_distance: Option<usize>,
+    matched_names: usize,
+}
+
+struct ComparablePath {
+    names_by_echelon: HashMap<EchoEchelon, HashSet<String>>,
+    all_names: HashSet<String>,
+    root_echelon: Option<EchoEchelon>,
 }
 
 pub fn validate_source(units: &[SourceUnit]) -> anyhow::Result<()> {
@@ -34,14 +46,22 @@ pub fn validate_source(units: &[SourceUnit]) -> anyhow::Result<()> {
     Ok(())
 }
 
-pub fn matches_sigint_unit(
+#[cfg(test)]
+fn matches_sigint_unit(
     orbit_unit: &SourceUnit,
     sigint_unit: &sigint_unit::Model,
 ) -> bool {
+    match_score(orbit_unit, sigint_unit).is_some()
+}
+
+fn match_score(
+    orbit_unit: &SourceUnit,
+    sigint_unit: &sigint_unit::Model,
+) -> Option<MatchScore> {
     let Ok(path) = comparable_path(orbit_unit) else {
-        return false;
+        return None;
     };
-    let mut compared = false;
+    let mut matched_names = 0;
     let matches = [
         (EchoEchelon::Company, sigint_unit.company.as_str()),
         (EchoEchelon::Battalion, sigint_unit.battalion.as_str()),
@@ -52,32 +72,79 @@ pub fn matches_sigint_unit(
     .into_iter()
     .all(|(echelon, echo_name)| {
         let echo_name = normalize_name(echo_name);
-        let orbit_names = path.get(&echelon);
-        if echo_name.is_empty()
-            || orbit_names.is_none_or(|names| names.is_empty())
-        {
+        if echo_name.is_empty() {
             return true;
         }
-        compared = true;
-        orbit_names
-            .is_some_and(|names| names.iter().any(|name| name == &echo_name))
+        if path.all_names.contains(&echo_name) {
+            matched_names += 1;
+            return true;
+        }
+        path.names_by_echelon
+            .get(&echelon)
+            .is_none_or(HashSet::is_empty)
     });
-    matches && compared
+    if !matches || matched_names == 0 {
+        return None;
+    }
+    Some(MatchScore {
+        echelon_distance: path
+            .root_echelon
+            .zip(sigint_unit_echelon(sigint_unit))
+            .map(|(orbit, sigint)| orbit.index().abs_diff(sigint.index())),
+        matched_names,
+    })
 }
 
-pub fn matching_unit_ids(
+pub fn matching_sigint_unit_ids(
     orbit_units: &[SourceUnit],
     sigint_units: &[sigint_unit::Model],
-) -> HashSet<uuid::Uuid> {
+) -> HashMap<uuid::Uuid, BTreeSet<i64>> {
     orbit_units
         .iter()
-        .filter(|orbit_unit| {
-            sigint_units
-                .iter()
-                .any(|sigint_unit| matches_sigint_unit(orbit_unit, sigint_unit))
+        .filter_map(|orbit_unit| {
+            best_matching_sigint_unit(orbit_unit, sigint_units).map(
+                |sigint_unit_id| {
+                    (orbit_unit.unit_id, BTreeSet::from([sigint_unit_id]))
+                },
+            )
         })
-        .map(|orbit_unit| orbit_unit.unit_id)
         .collect()
+}
+
+fn best_matching_sigint_unit(
+    orbit_unit: &SourceUnit,
+    sigint_units: &[sigint_unit::Model],
+) -> Option<i64> {
+    let mut candidates = sigint_units
+        .iter()
+        .filter_map(|sigint_unit| {
+            match_score(orbit_unit, sigint_unit)
+                .map(|score| (sigint_unit, score))
+        })
+        .collect::<Vec<_>>();
+    candidates.sort_by_key(|(sigint_unit, score)| {
+        (
+            score.echelon_distance.unwrap_or(usize::MAX),
+            std::cmp::Reverse(score.matched_names),
+            sigint_unit.id,
+        )
+    });
+    let (_, best_score) = candidates.first()?;
+    let best_quality = (best_score.echelon_distance, best_score.matched_names);
+    let closest = candidates
+        .iter()
+        .take_while(|(_, score)| {
+            (score.echelon_distance, score.matched_names) == best_quality
+        })
+        .map(|(sigint_unit, _)| *sigint_unit)
+        .collect::<Vec<_>>();
+    let closest_parent_signature = parent_signature(closest[0]);
+    if closest.iter().skip(1).any(|sigint_unit| {
+        parent_signature(sigint_unit) != closest_parent_signature
+    }) {
+        return None;
+    }
+    closest.first().map(|sigint_unit| sigint_unit.id)
 }
 
 fn validate_unit(unit: &SourceUnit, path: &str) -> anyhow::Result<()> {
@@ -144,26 +211,26 @@ fn validate_parent_chain(
         return Ok(());
     };
     let segments = split_path(full_name);
-    if segments.len() != parents.len() + 1 {
-        anyhow::bail!(
-            "{path} has {} parents but its full name has {} segments",
-            parents.len(),
-            segments.len()
-        );
-    }
-    let mut units = vec![unit];
+    let mut descriptors = vec![unit];
     let mut parents = parents.iter().collect::<Vec<_>>();
     parents.sort_by_key(|parent| std::cmp::Reverse(parent.path_level));
-    units.extend(parents);
-    for (index, (segment, descriptor)) in segments.iter().zip(units).enumerate()
-    {
+    descriptors.extend(parents);
+    let mut segment_offset = 0;
+    for (index, descriptor) in descriptors.into_iter().enumerate() {
         let names = descriptor_names(descriptor);
-        if !names.is_empty() && !names.contains(segment) {
+        if names.is_empty() {
+            continue;
+        }
+        let Some(relative_index) = segments[segment_offset..]
+            .iter()
+            .position(|segment| names.contains(segment))
+        else {
             anyhow::bail!(
-                "{path} segment {index} does not match unit {} names",
+                "{path} descriptor {index} for unit {} is absent from its full name",
                 descriptor.unit_id
             );
-        }
+        };
+        segment_offset += relative_index + 1;
     }
     Ok(())
 }
@@ -178,9 +245,7 @@ fn descriptor_names(unit: &SourceUnit) -> HashSet<String> {
         .collect()
 }
 
-fn comparable_path(
-    unit: &SourceUnit,
-) -> anyhow::Result<HashMap<EchoEchelon, HashSet<String>>> {
+fn comparable_path(unit: &SourceUnit) -> anyhow::Result<ComparablePath> {
     let full_name =
         unit.operational_unit_name_full.as_deref().ok_or_else(|| {
             anyhow::anyhow!("operational_unit_name_full is missing")
@@ -190,14 +255,11 @@ fn comparable_path(
     let mut parents = unit.operational_parent_units.iter().collect::<Vec<_>>();
     parents.sort_by_key(|parent| std::cmp::Reverse(parent.path_level));
     descriptors.extend(parents);
-    if segments.len() != descriptors.len() {
-        anyhow::bail!(
-            "operational path segment count does not match hierarchy"
-        );
-    }
-
     let mut result = HashMap::<EchoEchelon, HashSet<String>>::new();
-    for (segment, descriptor) in segments.into_iter().zip(descriptors) {
+    let mut all_names = segments.into_iter().collect::<HashSet<_>>();
+    for descriptor in descriptors {
+        let descriptor_names = descriptor_names(descriptor);
+        all_names.extend(descriptor_names.iter().cloned());
         let Some(key) = descriptor
             .unit_echelon
             .as_ref()
@@ -209,10 +271,63 @@ fn comparable_path(
             continue;
         };
         let names = result.entry(echelon).or_default();
-        names.insert(segment);
-        names.extend(descriptor_names(descriptor));
+        names.extend(descriptor_names);
     }
-    Ok(result)
+    Ok(ComparablePath {
+        names_by_echelon: result,
+        all_names,
+        root_echelon: unit
+            .unit_echelon
+            .as_ref()
+            .and_then(|value| value.key.as_str())
+            .and_then(map_echelon),
+    })
+}
+
+fn sigint_unit_echelon(unit: &sigint_unit::Model) -> Option<EchoEchelon> {
+    [
+        (EchoEchelon::Company, unit.company.as_str()),
+        (EchoEchelon::Battalion, unit.battalion.as_str()),
+        (EchoEchelon::Regiment, unit.regiment.as_str()),
+        (EchoEchelon::Division, unit.division.as_str()),
+        (EchoEchelon::Army, unit.army.as_str()),
+    ]
+    .into_iter()
+    .find_map(|(echelon, name)| {
+        (!normalize_name(name).is_empty()).then_some(echelon)
+    })
+}
+
+fn parent_signature(unit: &sigint_unit::Model) -> Vec<(EchoEchelon, String)> {
+    let unit_echelon = sigint_unit_echelon(unit);
+    [
+        (EchoEchelon::Company, unit.company.as_str()),
+        (EchoEchelon::Battalion, unit.battalion.as_str()),
+        (EchoEchelon::Regiment, unit.regiment.as_str()),
+        (EchoEchelon::Division, unit.division.as_str()),
+        (EchoEchelon::Army, unit.army.as_str()),
+    ]
+    .into_iter()
+    .filter(|(echelon, name)| {
+        unit_echelon.is_some_and(|unit_echelon| {
+            echelon.index() > unit_echelon.index()
+                && !normalize_name(name).is_empty()
+        })
+    })
+    .map(|(echelon, name)| (echelon, normalize_name(name)))
+    .collect()
+}
+
+impl EchoEchelon {
+    fn index(self) -> usize {
+        match self {
+            Self::Company => 0,
+            Self::Battalion => 1,
+            Self::Regiment => 2,
+            Self::Division => 3,
+            Self::Army => 4,
+        }
+    }
 }
 
 fn map_echelon(key: &str) -> Option<EchoEchelon> {
@@ -228,7 +343,7 @@ fn map_echelon(key: &str) -> Option<EchoEchelon> {
 
 fn split_path(value: &str) -> Vec<String> {
     value
-        .split('/')
+        .split(" / ")
         .map(normalize_name)
         .filter(|segment| !segment.is_empty())
         .collect()
@@ -295,17 +410,83 @@ mod tests {
     }
 
     #[test]
-    fn multi_match_filter_retains_each_matching_orbit_unit_once() {
+    fn duplicate_matches_with_same_parents_pick_lowest_id() {
         let first = source_unit("1 рота", vec![("company", "1 рота", 0)]);
         let second = source_unit("2 рота", vec![("company", "2 рота", 0)]);
-        let sigint_units = vec![
-            echo_unit("1 рота", "", "", "", ""),
-            echo_unit("1 рота", "", "", "", ""),
-            echo_unit("3 рота", "", "", "", ""),
-        ];
-        let selected =
-            matching_unit_ids(&[first.clone(), second], &sigint_units);
-        assert_eq!(selected, HashSet::from([first.unit_id]));
+        let mut first_match = echo_unit("1 рота", "", "", "", "");
+        first_match.id = 1;
+        let mut second_match = echo_unit("1 рота", "", "", "", "");
+        second_match.id = 2;
+        let mut no_match = echo_unit("3 рота", "", "", "", "");
+        no_match.id = 3;
+        let matches = matching_sigint_unit_ids(
+            &[first.clone(), second],
+            &[first_match, second_match, no_match],
+        );
+        assert_eq!(
+            matches,
+            HashMap::from([(first.unit_id, BTreeSet::from([1]))])
+        );
+    }
+
+    #[test]
+    fn root_echelon_breaks_ties_between_matching_units() {
+        let unit = source_unit(
+            "1111 бр / 45 д / 56 А",
+            vec![
+                ("brigade", "1111 бр", 2),
+                ("division", "45 д", 1),
+                ("fieldArmy", "56 А", 0),
+            ],
+        );
+        let mut battalion = echo_unit("", "2 бат", "1111 бр", "", "56 А");
+        battalion.id = 1;
+        let mut brigade = echo_unit("", "", "1111 бр", "", "56 А");
+        brigade.id = 2;
+        assert_eq!(
+            matching_sigint_unit_ids(&[unit.clone()], &[battalion, brigade]),
+            HashMap::from([(unit.unit_id, BTreeSet::from([2]))])
+        );
+    }
+
+    #[test]
+    fn equally_close_matches_with_different_parents_are_skipped() {
+        let unit = source_unit("1111 бр", vec![("brigade", "1111 бр", 0)]);
+        let mut first = echo_unit("", "", "1111 бр", "45 д", "");
+        first.id = 1;
+        let mut second = echo_unit("", "", "1111 бр", "46 д", "");
+        second.id = 2;
+        assert!(matching_sigint_unit_ids(&[unit], &[first, second]).is_empty());
+    }
+
+    #[test]
+    fn matching_names_override_incorrect_echelon_metadata() {
+        let unit = source_unit("1111 бр", vec![("battalion", "1111 бр", 0)]);
+        assert!(matches_sigint_unit(
+            &unit,
+            &echo_unit("", "", "1111 бр", "", "")
+        ));
+    }
+
+    #[test]
+    fn omitted_descriptors_are_allowed_in_full_paths() {
+        let unit = source_unit(
+            "1111 бр / пропущений 1 / пропущений 2 / 56 А",
+            vec![("brigade", "1111 бр", 1), ("fieldArmy", "56 А", 0)],
+        );
+        validate_source(&[unit]).unwrap();
+    }
+
+    #[test]
+    fn slashes_inside_unit_names_are_not_path_delimiters() {
+        let unit = source_unit(
+            "2 р/ст Р-149БМРГ / 1 вз",
+            vec![
+                ("teamOrCrew", "2 р/ст Р-149БМРГ", 1),
+                ("platoon", "1 вз", 0),
+            ],
+        );
+        validate_source(&[unit]).unwrap();
     }
 
     #[test]

@@ -80,14 +80,6 @@ impl From<&SourceUnit> for SourceUnitData {
 }
 
 impl SourceUnitData {
-    pub fn display_name(&self) -> String {
-        self.unit_name_short
-            .clone()
-            .or_else(|| self.unit_name.clone())
-            .or_else(|| self.unit_name_original.clone())
-            .unwrap_or_else(|| self.unit_id.to_string())
-    }
-
     pub fn merge(&mut self, other: &Self) -> anyhow::Result<()> {
         merge_field(
             self.unit_id,

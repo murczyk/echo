@@ -42,6 +42,8 @@ pub enum Relation {
         on_delete = "NoAction"
     )]
     Login,
+    #[sea_orm(has_many = "super::orbit_unit_sigint_unit::Entity")]
+    OrbitUnitSigintUnit,
     #[sea_orm(has_many = "super::sigint_callsign::Entity")]
     SigintCallsign,
     #[sea_orm(has_many = "super::sigint_network_callsign::Entity")]
@@ -67,6 +69,12 @@ pub enum Relation {
 impl Related<super::login::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::Login.def()
+    }
+}
+
+impl Related<super::orbit_unit_sigint_unit::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::OrbitUnitSigintUnit.def()
     }
 }
 
@@ -109,6 +117,19 @@ impl Related<super::sigint_unit_attachment::Entity> for Entity {
 impl Related<super::sigint_unit_changelog::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::SigintUnitChangelog.def()
+    }
+}
+
+impl Related<super::orbit_unit::Entity> for Entity {
+    fn to() -> RelationDef {
+        super::orbit_unit_sigint_unit::Relation::OrbitUnit.def()
+    }
+    fn via() -> Option<RelationDef> {
+        Some(
+            super::orbit_unit_sigint_unit::Relation::SigintUnit
+                .def()
+                .rev(),
+        )
     }
 }
 

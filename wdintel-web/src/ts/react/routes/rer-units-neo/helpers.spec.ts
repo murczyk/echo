@@ -22,6 +22,7 @@ function unit(overrides: Partial<Unit>): Unit {
     active: true,
     createdAt: 0,
     createdByLoginId: '',
+    hasOrbit: false,
     ...overrides,
   };
 }

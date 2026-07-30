@@ -32,6 +32,7 @@ function createSyntheticUnsetUnit(): Unit {
     active: true,
     createdAt: 0,
     createdByLoginId: '',
+    hasOrbit: false,
   };
 }
 

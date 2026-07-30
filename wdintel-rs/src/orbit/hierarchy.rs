@@ -18,11 +18,11 @@ pub fn build_import_hierarchy(
     let mut builder = HierarchyBuilder {
         nodes: HashMap::new(),
         top_level_ids,
-        generative_parents: HashMap::new(),
-        operational_parents: HashMap::new(),
+        generative_parents: ParentLinks::default(),
+        operational_parents: ParentLinks::default(),
     };
     for unit in units {
-        builder.add_unit(unit)?;
+        builder.add_unit(unit, true)?;
     }
     let selected_ids_in_source_order = units
         .iter()
@@ -38,29 +38,41 @@ pub fn build_import_hierarchy(
 struct HierarchyBuilder {
     nodes: HashMap<Uuid, SourceUnitData>,
     top_level_ids: HashSet<Uuid>,
-    generative_parents: HashMap<Uuid, Uuid>,
-    operational_parents: HashMap<Uuid, Uuid>,
+    generative_parents: ParentLinks,
+    operational_parents: ParentLinks,
+}
+
+#[derive(Default)]
+struct ParentLinks {
+    authoritative: HashMap<Uuid, Option<Uuid>>,
+    embedded: HashMap<Uuid, HashSet<Uuid>>,
 }
 
 impl HierarchyBuilder {
-    fn add_unit(&mut self, unit: &SourceUnit) -> anyhow::Result<()> {
+    fn add_unit(
+        &mut self,
+        unit: &SourceUnit,
+        top_level: bool,
+    ) -> anyhow::Result<()> {
         self.add_node(unit)?;
         self.add_chain(
             unit.unit_id,
             &unit.generative_parent_units,
             HierarchyKind::Generative,
+            top_level,
         )?;
         self.add_chain(
             unit.unit_id,
             &unit.operational_parent_units,
             HierarchyKind::Operational,
+            top_level,
         )?;
         for parent in unit
             .generative_parent_units
             .iter()
             .chain(&unit.operational_parent_units)
         {
-            self.add_unit(parent)?;
+            self.add_unit(parent, false)?;
         }
         Ok(())
     }
@@ -81,8 +93,12 @@ impl HierarchyBuilder {
         unit_id: Uuid,
         parents: &[SourceUnit],
         kind: HierarchyKind,
+        top_level: bool,
     ) -> anyhow::Result<()> {
         if parents.is_empty() {
+            if top_level {
+                self.add_authoritative_parent(unit_id, None, kind)?;
+            }
             return Ok(());
         }
         let mut parents = parents.iter().collect::<Vec<_>>();
@@ -91,28 +107,47 @@ impl HierarchyBuilder {
             self.add_node(parent)?;
         }
         for pair in parents.windows(2) {
-            self.add_parent(pair[1].unit_id, pair[0].unit_id, kind)?;
+            self.add_embedded_parent(pair[1].unit_id, pair[0].unit_id, kind);
         }
-        self.add_parent(unit_id, parents.last().unwrap().unit_id, kind)
+        let parent_id = parents.last().unwrap().unit_id;
+        if top_level {
+            self.add_authoritative_parent(unit_id, Some(parent_id), kind)
+        } else {
+            self.add_embedded_parent(unit_id, parent_id, kind);
+            Ok(())
+        }
     }
 
-    fn add_parent(
+    fn add_authoritative_parent(
+        &mut self,
+        unit_id: Uuid,
+        parent_id: Option<Uuid>,
+        kind: HierarchyKind,
+    ) -> anyhow::Result<()> {
+        let links = match kind {
+            HierarchyKind::Generative => &mut self.generative_parents,
+            HierarchyKind::Operational => &mut self.operational_parents,
+        };
+        match links.authoritative.insert(unit_id, parent_id) {
+            Some(existing) if existing != parent_id => anyhow::bail!(
+                "ORBIT unit {unit_id} has conflicting {} top-level parents: {existing:?} and {parent_id:?}",
+                kind.name(),
+            ),
+            _ => Ok(()),
+        }
+    }
+
+    fn add_embedded_parent(
         &mut self,
         unit_id: Uuid,
         parent_id: Uuid,
         kind: HierarchyKind,
-    ) -> anyhow::Result<()> {
-        let parents = match kind {
+    ) {
+        let links = match kind {
             HierarchyKind::Generative => &mut self.generative_parents,
             HierarchyKind::Operational => &mut self.operational_parents,
         };
-        match parents.insert(unit_id, parent_id) {
-            Some(existing) if existing != parent_id => anyhow::bail!(
-                "ORBIT unit {unit_id} has conflicting {} parents: {existing} and {parent_id}",
-                kind.name()
-            ),
-            _ => Ok(()),
-        }
+        links.embedded.entry(unit_id).or_default().insert(parent_id);
     }
 
     fn finish(
@@ -144,10 +179,12 @@ impl HierarchyBuilder {
         let data = self.nodes.get(&unit_id).ok_or_else(|| {
             anyhow::anyhow!("ORBIT hierarchy references missing unit {unit_id}")
         })?;
-        let generative_parent_unit_id =
-            self.generative_parents.get(&unit_id).copied();
-        let operational_parent_unit_id =
-            self.operational_parents.get(&unit_id).copied();
+        let generative_parent_unit_id = self
+            .generative_parents
+            .resolve(unit_id, HierarchyKind::Generative)?;
+        let operational_parent_unit_id = self
+            .operational_parents
+            .resolve(unit_id, HierarchyKind::Operational)?;
         for parent_id in [generative_parent_unit_id, operational_parent_unit_id]
             .into_iter()
             .flatten()
@@ -163,6 +200,35 @@ impl HierarchyBuilder {
             partial: !self.top_level_ids.contains(&unit_id),
         });
         Ok(())
+    }
+}
+
+impl ParentLinks {
+    fn resolve(
+        &self,
+        unit_id: Uuid,
+        kind: HierarchyKind,
+    ) -> anyhow::Result<Option<Uuid>> {
+        if let Some(parent_id) = self.authoritative.get(&unit_id) {
+            return Ok(*parent_id);
+        }
+        let Some(parent_ids) = self.embedded.get(&unit_id) else {
+            return Ok(None);
+        };
+        if parent_ids.len() > 1 {
+            let mut parent_ids = parent_ids.iter().copied().collect::<Vec<_>>();
+            parent_ids.sort_unstable();
+            anyhow::bail!(
+                "ORBIT unit {unit_id} has conflicting embedded {} parents: {}",
+                kind.name(),
+                parent_ids
+                    .into_iter()
+                    .map(|parent_id| parent_id.to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            );
+        }
+        Ok(parent_ids.iter().next().copied())
     }
 }
 
@@ -226,6 +292,56 @@ mod tests {
         units.push(duplicate);
         let selected = HashSet::from([units[1].unit_id]);
         assert!(build_import_hierarchy(&units, &selected).is_err());
+    }
+
+    #[test]
+    fn top_level_parent_overrides_conflicting_embedded_path() {
+        let sample = include_str!(
+            "../../../deploy/2026-07-29-orbit-dictionaries/orbit_sample.json"
+        );
+        let (mut units, _) = parse_units(sample).unwrap();
+        let target = units[0].clone();
+        let authoritative_parent_id = target
+            .operational_parent_units
+            .iter()
+            .max_by_key(|parent| parent.path_level)
+            .unwrap()
+            .unit_id;
+        let mut alternate_parent =
+            target.operational_parent_units.first().unwrap().clone();
+        alternate_parent.path_level = Some(0);
+        alternate_parent.operational_parent_units.clear();
+        alternate_parent.generative_parent_units.clear();
+        let mut embedded_target = target.clone();
+        embedded_target.path_level = Some(1);
+        embedded_target.operational_unit_name_full = None;
+        embedded_target.generative_unit_name_full = None;
+        embedded_target.operational_parent_units.clear();
+        embedded_target.generative_parent_units.clear();
+        let mut child = target;
+        child.unit_id = Uuid::new_v4();
+        child.unit_name = Some("child".to_string());
+        child.unit_name_short = Some("child".to_string());
+        child.operational_unit_name_full =
+            Some("child / батрурлр / ОУВ(с)".to_string());
+        child.generative_unit_name_full = None;
+        child.operational_parent_units =
+            vec![alternate_parent, embedded_target];
+        child.generative_parent_units.clear();
+        let child_id = child.unit_id;
+        units.push(child);
+
+        let hierarchy =
+            build_import_hierarchy(&units, &HashSet::from([child_id])).unwrap();
+        let target = hierarchy
+            .iter()
+            .find(|unit| unit.data.unit_id == units[0].unit_id)
+            .unwrap();
+
+        assert_eq!(
+            target.operational_parent_unit_id,
+            Some(authoritative_parent_id)
+        );
     }
 
     #[test]

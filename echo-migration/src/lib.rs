@@ -328,6 +328,7 @@ mod m20260729_062653_add_classic_menu_visibility_settings;
 mod m20260729_121823_drop_postgres_group_stats;
 mod m20260729_170544_orbit_units;
 mod m20260730_125429_orbit_unit_grouping_many_to_many;
+mod m20260730_134741_orbit_unit_sigint_unit;
 mod m20260731_121431_add_pelengation_object;
 
 pub struct Migrator;
@@ -734,6 +735,7 @@ impl MigratorTrait for Migrator {
             Box::new(
                 m20260730_125429_orbit_unit_grouping_many_to_many::Migration,
             ),
+            Box::new(m20260730_134741_orbit_unit_sigint_unit::Migration),
             Box::new(m20260731_121431_add_pelengation_object::Migration),
         ]
     }

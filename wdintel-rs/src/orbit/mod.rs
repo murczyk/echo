@@ -47,9 +47,13 @@ async fn run_import(mode: Mode) -> anyhow::Result<()> {
         .filter(sigint_unit::Column::Active.eq(true))
         .all(&db)
         .await?;
-    let selected_ids = matching::matching_unit_ids(&units, &sigint_units);
+    let sigint_unit_ids_by_orbit_unit =
+        matching::matching_sigint_unit_ids(&units, &sigint_units);
+    let selected_ids = sigint_unit_ids_by_orbit_unit
+        .keys()
+        .copied()
+        .collect::<HashSet<_>>();
     let hierarchy = hierarchy::build_import_hierarchy(&units, &selected_ids)?;
-    confirm_partial_units(&hierarchy)?;
     let started_at = Utc::now().naive_utc();
     let mut import_units = hierarchy
         .into_iter()
@@ -67,6 +71,7 @@ async fn run_import(mode: Mode) -> anyhow::Result<()> {
         &import_units,
         &mut existing,
         &unit_names,
+        &selected_ids,
         started_at,
     )
     .await?;
@@ -74,6 +79,8 @@ async fn run_import(mode: Mode) -> anyhow::Result<()> {
         return Ok(());
     }
     review_stale_units(&db, started_at).await?;
+    persistence::replace_sigint_unit_links(&db, &sigint_unit_ids_by_orbit_unit)
+        .await?;
     Ok(())
 }
 
@@ -98,45 +105,21 @@ fn confirm_unknown_paths(
     Ok(())
 }
 
-fn confirm_partial_units(
-    hierarchy: &[hierarchy::HierarchyUnit],
-) -> anyhow::Result<()> {
-    let partial = hierarchy
-        .iter()
-        .filter(|unit| unit.partial)
-        .collect::<Vec<_>>();
-    if partial.is_empty() {
-        return Ok(());
-    }
-    println!(
-        "WARNING: these ORBIT ancestors exist only as partial embedded records:"
-    );
-    for unit in partial {
-        println!("  - {}: {}", unit.data.unit_id, unit.data.display_name());
-    }
-    let proceed = Confirm::with_theme(&ColorfulTheme::default())
-        .with_prompt("Review and import these partial ancestors?")
-        .default(false)
-        .interact()?;
-    if !proceed {
-        anyhow::bail!("ORBIT import cancelled because of partial ancestors");
-    }
-    Ok(())
-}
-
 async fn review_import_units(
     db: &sea_orm::DatabaseConnection,
     dictionaries: &DictionaryMaps,
     import_units: &[ImportUnit],
     existing: &mut HashMap<Uuid, ExistingUnit>,
     unit_names: &HashMap<Uuid, String>,
+    review_unit_ids: &HashSet<Uuid>,
     started_at: chrono::NaiveDateTime,
 ) -> anyhow::Result<bool> {
     let mut rejected = HashSet::new();
     let mut reviewed = 0_usize;
-    let needs_terminal = import_units
-        .iter()
-        .any(|unit| requires_review(unit, existing.get(&unit.unit_id)));
+    let needs_terminal = import_units.iter().any(|unit| {
+        review_unit_ids.contains(&unit.unit_id)
+            && requires_review(unit, existing.get(&unit.unit_id))
+    });
     let mut terminal = if needs_terminal {
         Some(tui::setup_terminal()?)
     } else {
@@ -148,6 +131,7 @@ async fn review_import_units(
         import_units,
         existing,
         unit_names,
+        review_unit_ids,
         started_at,
         rejected: &mut rejected,
         reviewed: &mut reviewed,
@@ -165,6 +149,7 @@ struct ImportReview<'a> {
     import_units: &'a [ImportUnit],
     existing: &'a mut HashMap<Uuid, ExistingUnit>,
     unit_names: &'a HashMap<Uuid, String>,
+    review_unit_ids: &'a HashSet<Uuid>,
     started_at: chrono::NaiveDateTime,
     rejected: &'a mut HashSet<Uuid>,
     reviewed: &'a mut usize,
@@ -194,6 +179,19 @@ impl ImportReview<'_> {
                     self.existing.insert(unit.unit_id, row);
                 }
                 state => {
+                    if !self.review_unit_ids.contains(&unit.unit_id) {
+                        apply_import_decision(
+                            self.db,
+                            unit,
+                            state,
+                            tui::Decision::Accept,
+                            self.started_at,
+                            self.existing,
+                            self.rejected,
+                        )
+                        .await?;
+                        continue;
+                    }
                     let decision = self.review_decision(
                         index,
                         unit,
@@ -231,6 +229,7 @@ impl ImportReview<'_> {
             &self.import_units[index..],
             self.existing,
             self.rejected,
+            self.review_unit_ids,
         );
         let progress = format!(
             "Decision {}/{}",
@@ -387,13 +386,16 @@ fn remaining_review_count(
     units: &[ImportUnit],
     existing: &HashMap<Uuid, ExistingUnit>,
     rejected: &HashSet<Uuid>,
+    review_unit_ids: &HashSet<Uuid>,
 ) -> usize {
     let mut rejected = rejected.clone();
     let mut count = 0;
     for unit in units {
         if unit.has_rejected_parent(&rejected) {
             rejected.insert(unit.unit_id);
-        } else if requires_review(unit, existing.get(&unit.unit_id)) {
+        } else if review_unit_ids.contains(&unit.unit_id)
+            && requires_review(unit, existing.get(&unit.unit_id))
+        {
             count += 1;
         }
     }
@@ -428,4 +430,46 @@ fn build_unit_names(
         names.insert(unit.unit_id, unit.display_name());
     }
     names
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn review_count_excludes_unmatched_ancestors() {
+        let parent = import_unit(None);
+        let child = import_unit(Some(parent.unit_id));
+        let units = vec![parent.clone(), child.clone()];
+
+        assert_eq!(
+            remaining_review_count(
+                &units,
+                &HashMap::new(),
+                &HashSet::new(),
+                &HashSet::from([child.unit_id]),
+            ),
+            1
+        );
+    }
+
+    fn import_unit(operational_parent_unit_id: Option<Uuid>) -> ImportUnit {
+        ImportUnit {
+            unit_id: Uuid::new_v4(),
+            unit_name: Some("unit".to_string()),
+            unit_name_original: None,
+            unit_name_short: Some("u".to_string()),
+            operational_unit_name_full: Some("u".to_string()),
+            generative_unit_name_full: None,
+            unit_number: None,
+            unit_alternate_names: None,
+            unit_alternate_numbers: None,
+            unit_echelon_id: None,
+            combat_unit_type_id: None,
+            grouping_of_forces_ids: None,
+            generative_parent_unit_id: None,
+            operational_parent_unit_id,
+            partial: operational_parent_unit_id.is_none(),
+        }
+    }
 }

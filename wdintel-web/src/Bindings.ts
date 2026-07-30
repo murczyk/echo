@@ -2114,6 +2114,7 @@ export type Unit = {
   active: boolean;
   createdAt: number;
   createdByLoginId: string;
+  hasOrbit: boolean;
 };
 
 export type ListUnitsReq = {
@@ -2187,9 +2188,36 @@ export type UnitAttachment = {
   createdAt: number;
 };
 
+export type OrbitDictionaryValue = {
+  id: string;
+  key: string;
+  name: string;
+};
+
+export type OrbitUnitDetails = {
+  unitId: string;
+  unitName: string | null;
+  unitNameOriginal: string | null;
+  unitNameShort: string | null;
+  operationalUnitNameFull: string | null;
+  generativeUnitNameFull: string | null;
+  unitNumber: string | null;
+  unitAlternateNames: Array<string> | null;
+  unitAlternateNumbers: Array<string> | null;
+  unitEchelon: OrbitDictionaryValue | null;
+  combatUnitType: OrbitDictionaryValue | null;
+  groupingOfForces: Array<OrbitDictionaryValue>;
+  generativeParentUnitId: string | null;
+  operationalParentUnitId: string | null;
+  deleted: boolean;
+  createdAt: number;
+  updatedAt: number;
+};
+
 export type UnitDetailsRsp = {
   unit: Unit;
   attachments: Array<UnitAttachment>;
+  orbitUnits: Array<OrbitUnitDetails>;
 };
 
 export type UnitAttachmentUnitIdsRsp = {

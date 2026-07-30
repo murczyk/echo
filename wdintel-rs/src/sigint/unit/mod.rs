@@ -17,6 +17,7 @@ use sea_query::types::IntoColumnRef;
 use sea_query::{Expr, SimpleExpr};
 
 pub mod attachment;
+pub mod orbit;
 pub mod types;
 
 pub fn unit_name(unit: &Unit) -> String {
@@ -65,13 +66,12 @@ pub async fn list_units(
     env: actix_web::web::Data<Env>,
     req: Json<ListUnitsReq>,
 ) -> Result<Json<ListUnitsRsp>, AppError> {
-    has_any_role(
-        &env.dbx,
-        &login_id_from_identity(&user)?,
-        vec!["Rer", "Api"],
-    )
-    .await
-    .c(h!())?;
+    let login_id = login_id_from_identity(&user)?;
+    has_any_role(&env.dbx, &login_id, vec!["Rer", "Api"])
+        .await
+        .c(h!())?;
+    let can_view_orbit =
+        orbit::can_view_orbit_data(&env.dbx, &login_id).await?;
     const LIMIT: u64 = 100000;
     let mut units = sigint_unit::Entity::find()
         .filter(sigint_unit::Column::Deleted.eq(false));
@@ -150,9 +150,16 @@ pub async fn list_units(
         }
     }
     let units = units.limit(LIMIT).all(&env.dbx).await.c(h!())?;
+    let orbit_unit_ids = if can_view_orbit {
+        orbit::unit_ids_with_orbit(&env.dbx).await?
+    } else {
+        Default::default()
+    };
     let mut res = vec![];
     for unit in units {
-        res.push(render_unit(&unit)?);
+        let mut rendered = render_unit(&unit)?;
+        rendered.has_orbit = orbit_unit_ids.contains(&unit.id);
+        res.push(rendered);
     }
     Ok(Json(ListUnitsRsp {
         show_load_more: res.len() as u64 == LIMIT,
@@ -659,6 +666,7 @@ pub fn render_unit(unit: &sigint_unit::Model) -> Result<Unit, AppError> {
         name: unit.name.clone(),
         created_at: unit.created_at.and_utc().timestamp_millis(),
         created_by_login_id: unit.created_by_login_id.to_string(),
+        has_orbit: false,
     })
 }
 

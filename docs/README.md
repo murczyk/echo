@@ -335,12 +335,16 @@ ORBIT unit exports are imported manually with
 `wdintel-rs --mode=live tui-import-orbit-units`. The one-off flow validates the
 JSON and its dictionaries, filters roots by echelon-aware matching against
 active `sigint_unit` rows, expands both ancestor chains, and presents
-create/update/reactivate/delete decisions in a terminal UI. Confirmed decisions
-are written immediately to the PostgreSQL `orbit_unit` table and its
-many-to-many force-grouping links; dictionary rows are supplied by migrations.
-No persistent ORBIT-to-SIGINT relation is created.
+create/update/reactivate decisions for matched roots in a terminal UI.
+Ancestors are persisted automatically in parent-first order; stale deletion
+decisions remain interactive. Confirmed decisions are written immediately to
+the PostgreSQL `orbit_unit` table and its many-to-many force-grouping links;
+dictionary rows are supplied by migrations.
+After a completed import, matched ORBIT roots are linked to their active Echo
+SIGINT units for access-controlled display in the RER unit list and details
+page.
 
-The five ORBIT tables are authoritative operational data in PostgreSQL and are
+The six ORBIT tables are authoritative operational data in PostgreSQL and are
 excluded from PeerDB replication. See the
 [ORBIT import runbook](../deploy/2026-07-29-orbit-dictionaries/README.md) for
 dictionary preflight, matching, review, quit, and stale-row semantics.

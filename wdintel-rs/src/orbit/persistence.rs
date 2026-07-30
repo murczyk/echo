@@ -1,5 +1,7 @@
 use crate::config::ORBIT_STALE_GRACE_SECONDS;
-use crate::entities::{orbit_unit, orbit_unit_grouping_of_forces};
+use crate::entities::{
+    orbit_unit, orbit_unit_grouping_of_forces, orbit_unit_sigint_unit,
+};
 use crate::error::AppError;
 use crate::h;
 use crate::orbit::dictionary::{DictionaryKind, DictionaryMaps};
@@ -390,6 +392,57 @@ pub async fn soft_delete(
     unit.deleted = Set(true);
     unit.updated_at = Set(started_at);
     unit.update(db).await.c(h!())?;
+    Ok(())
+}
+
+pub async fn replace_sigint_unit_links(
+    db: &DatabaseConnection,
+    sigint_unit_ids_by_orbit_unit: &HashMap<Uuid, BTreeSet<i64>>,
+) -> Result<(), AppError> {
+    let transaction = db.begin().await.c(h!())?;
+    orbit_unit_sigint_unit::Entity::delete_many()
+        .exec(&transaction)
+        .await
+        .c(h!())?;
+
+    let orbit_unit_ids = sigint_unit_ids_by_orbit_unit
+        .keys()
+        .copied()
+        .collect::<Vec<_>>();
+    let active_orbit_unit_ids = if orbit_unit_ids.is_empty() {
+        BTreeSet::new()
+    } else {
+        orbit_unit::Entity::find()
+            .filter(orbit_unit::Column::UnitId.is_in(orbit_unit_ids))
+            .filter(orbit_unit::Column::Deleted.eq(false))
+            .all(&transaction)
+            .await
+            .c(h!())?
+            .into_iter()
+            .map(|unit| unit.unit_id)
+            .collect::<BTreeSet<_>>()
+    };
+    let links = sigint_unit_ids_by_orbit_unit
+        .iter()
+        .filter(|(orbit_unit_id, _)| {
+            active_orbit_unit_ids.contains(orbit_unit_id)
+        })
+        .flat_map(|(orbit_unit_id, sigint_unit_ids)| {
+            sigint_unit_ids.iter().map(|sigint_unit_id| {
+                orbit_unit_sigint_unit::ActiveModel {
+                    orbit_unit_id: Set(*orbit_unit_id),
+                    sigint_unit_id: Set(*sigint_unit_id),
+                }
+            })
+        })
+        .collect::<Vec<_>>();
+    if !links.is_empty() {
+        orbit_unit_sigint_unit::Entity::insert_many(links)
+            .exec(&transaction)
+            .await
+            .c(h!())?;
+    }
+    transaction.commit().await.c(h!())?;
     Ok(())
 }
 

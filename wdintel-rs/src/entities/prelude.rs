@@ -83,6 +83,7 @@ pub use super::orbit_grouping_of_forces::Entity as OrbitGroupingOfForces;
 pub use super::orbit_unit::Entity as OrbitUnit;
 pub use super::orbit_unit_echelon::Entity as OrbitUnitEchelon;
 pub use super::orbit_unit_grouping_of_forces::Entity as OrbitUnitGroupingOfForces;
+pub use super::orbit_unit_sigint_unit::Entity as OrbitUnitSigintUnit;
 pub use super::organism::Entity as Organism;
 pub use super::organism_aor::Entity as OrganismAor;
 pub use super::organism_group::Entity as OrganismGroup;

@@ -69,6 +69,8 @@ pub enum Relation {
     OrbitUnitEchelon,
     #[sea_orm(has_many = "super::orbit_unit_grouping_of_forces::Entity")]
     OrbitUnitGroupingOfForces,
+    #[sea_orm(has_many = "super::orbit_unit_sigint_unit::Entity")]
+    OrbitUnitSigintUnit,
 }
 
 impl Related<super::orbit_combat_unit_type::Entity> for Entity {
@@ -89,6 +91,12 @@ impl Related<super::orbit_unit_grouping_of_forces::Entity> for Entity {
     }
 }
 
+impl Related<super::orbit_unit_sigint_unit::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::OrbitUnitSigintUnit.def()
+    }
+}
+
 impl Related<super::orbit_grouping_of_forces::Entity> for Entity {
     fn to() -> RelationDef {
         super::orbit_unit_grouping_of_forces::Relation::OrbitGroupingOfForces
@@ -97,6 +105,19 @@ impl Related<super::orbit_grouping_of_forces::Entity> for Entity {
     fn via() -> Option<RelationDef> {
         Some(
             super::orbit_unit_grouping_of_forces::Relation::OrbitUnit
+                .def()
+                .rev(),
+        )
+    }
+}
+
+impl Related<super::sigint_unit::Entity> for Entity {
+    fn to() -> RelationDef {
+        super::orbit_unit_sigint_unit::Relation::SigintUnit.def()
+    }
+    fn via() -> Option<RelationDef> {
+        Some(
+            super::orbit_unit_sigint_unit::Relation::OrbitUnit
                 .def()
                 .rev(),
         )

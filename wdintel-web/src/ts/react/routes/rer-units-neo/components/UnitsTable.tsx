@@ -55,6 +55,16 @@ function useUnitColumns(attachmentUnitIds: Set<number>): MRT_ColumnDef<Unit>[] {
                 onClick={(event) => handleNavigateWithinSpaClick(event, detailsHref)}
               >
                 {row.original.name}
+                {row.original.hasOrbit ? (
+                  <Tooltip title="Є дані із Orbit">
+                    <Box
+                      component="img"
+                      src="/img/delta-icon.webp"
+                      alt="Orbit"
+                      sx={{ height: 18, ml: 0.75, verticalAlign: 'text-bottom' }}
+                    />
+                  </Tooltip>
+                ) : null}
               </Link>
               {attachmentUnitIds.has(row.original.id) ? (
                 <Tooltip title="Відкрити файли підрозділу">

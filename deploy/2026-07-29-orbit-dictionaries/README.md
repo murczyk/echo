@@ -19,18 +19,28 @@ Every value in a unit's `grouping_of_forces` array is retained through the
 `orbit_unit_grouping_of_forces` many-to-many relation.
 
 Only ORBIT roots that match an active Echo SIGINT unit by
-`operational_unit_name_full` are retained. Matching compares normalized names by
-echelon: platoon/company → company, battalion → battalion, regiment/brigade →
-regiment, division → division, and corps/fieldArmy → army. Unsupported ORBIT
-echelons are ignored. Matching requires at least one populated comparable level
-on both sides; other absent comparable levels are compatible. Generative and
-operational ancestors of matched roots are included.
+`operational_unit_name_full` are retained. Matching uses normalized names from
+the full path and known aliases even when an ORBIT descriptor has the wrong
+echelon. Known echelon conflicts still reject a candidate. Extra full-name
+segments without descriptors are allowed when the supplied descriptors remain
+in hierarchy order. When several SIGINT units match, an exact root-echelon
+match wins, followed by the candidate with the most matching names. An
+unresolved tie with different parent paths is treated as fuzzy and skipped;
+same-parent duplicates select the lowest ID. Generative and operational
+ancestors of matched roots are included. After a completed review, active
+imported roots are linked to the selected active Echo SIGINT unit. These links
+drive the admin-only ORBIT indicator and unit-details card.
+When a unit also appears inside another unit's path with a different parent,
+the unit's own top-level parent chain is authoritative. Conflicting
+embedded-only paths still fail when the ambiguous unit is selected.
 
-Partial embedded ancestors are listed once for confirmation and then reviewed
-parent-first. When a partial ancestor already exists, omitted source fields
-preserve their stored values. Skipping a new ancestor, or declining to
-reactivate a deleted ancestor, also skips dependent descendants. The review
-offers:
+Ancestors are imported parent-first without confirmation so the complete parent
+tree exists before matched children are reviewed. New ancestors are created,
+changed ancestors are updated, and deleted ancestors are reactivated
+automatically. When a partial ancestor already exists, omitted source fields
+preserve their stored values. Interactive create/update/reactivate prompts are
+shown only for ORBIT roots selected by SIGINT matching. Rejecting a selected
+parent also skips dependent descendants. The review offers:
 
 - create or skip for new units;
 - update or skip for changed units;
