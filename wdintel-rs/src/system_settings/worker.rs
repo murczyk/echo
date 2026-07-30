@@ -631,6 +631,16 @@ where
     .insert(dbx)
     .await
     .c(h!())?;
+    let callsigns = crate::inbox::callsigns::from_legacy(&source.inbox_item)?;
+    let system_login_id = crate::users::system_login_id(&txn).await.c(h!())?;
+    crate::inbox::callsigns::sync(
+        &txn,
+        inserted.id,
+        callsigns,
+        system_login_id,
+    )
+    .await
+    .c(h!())?;
 
     for metadata in &source.metadata {
         sigint_inbox_item_metadata::ActiveModel {
