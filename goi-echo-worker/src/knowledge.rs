@@ -7,6 +7,10 @@ use std::path::Path;
 
 pub const KNOWLEDGE_KIND_CALL_SIGN: &str = "CALL_SIGN";
 pub const KNOWLEDGE_WORKER_AUTHOR: &str = "EXO";
+pub const KNOWLEDGE_WORKER_ID_PREFIX: &str = "EXO ID ";
+pub const KNOWLEDGE_WORKER_DEDUPE_KEY_PREFIX: &str = "CALL_SIGN\nEXO\n";
+
+const KNOWLEDGE_WORKER_ID_CELL_IDX: usize = 8;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct KnowledgeCell {
@@ -48,6 +52,11 @@ impl KnowledgeRow {
         if !self.is_meaningful() {
             return None;
         }
+        if let Some(worker_callsign_id) = self.worker_callsign_id() {
+            return Some(format!(
+                "{KNOWLEDGE_WORKER_DEDUPE_KEY_PREFIX}{worker_callsign_id}"
+            ));
+        }
         Some(format!(
             "{}\n{}\n{}\n{}\n{}\n{}\n{}",
             self.name.clone().unwrap_or_default(),
@@ -58,6 +67,21 @@ impl KnowledgeRow {
             self.source_date_raw.clone().unwrap_or_default(),
             self.formation.clone().unwrap_or_default(),
         ))
+    }
+
+    fn worker_callsign_id(&self) -> Option<i64> {
+        if !self.is_worker_managed_callsign() {
+            return None;
+        }
+        self.cells
+            .get(KNOWLEDGE_WORKER_ID_CELL_IDX)?
+            .value
+            .as_str()?
+            .trim()
+            .strip_prefix(KNOWLEDGE_WORKER_ID_PREFIX)?
+            .trim()
+            .parse()
+            .ok()
     }
 
     pub fn source_date(&self) -> Option<DateTime<Utc>> {
@@ -153,6 +177,45 @@ impl From<&Data> for KnowledgeCell {
         Self {
             kind: kind.to_string(),
             value,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn worker_callsign_dedupe_key_is_stable_across_edits() {
+        let first = worker_callsign_row("alpha", "17.03.2026 12:00:00");
+        let edited = worker_callsign_row("bravo", "18.03.2026 12:00:00");
+
+        assert_eq!(first.dedupe_key(), edited.dedupe_key());
+    }
+
+    fn worker_callsign_row(note: &str, source_date_raw: &str) -> KnowledgeRow {
+        let mut cells = vec![
+            KnowledgeCell {
+                kind: "empty".to_string(),
+                value: Value::Null,
+            };
+            KNOWLEDGE_WORKER_ID_CELL_IDX + 1
+        ];
+        cells[KNOWLEDGE_WORKER_ID_CELL_IDX] = KnowledgeCell {
+            kind: "string".to_string(),
+            value: Value::String(format!("{KNOWLEDGE_WORKER_ID_PREFIX}42")),
+        };
+        KnowledgeRow {
+            sheet_name: "Sheet1".to_string(),
+            row_num: 1,
+            cells,
+            name: Some("callsign".to_string()),
+            key: Some("100.0".to_string()),
+            knowledge_type: Some(KNOWLEDGE_KIND_CALL_SIGN.to_string()),
+            author: Some(KNOWLEDGE_WORKER_AUTHOR.to_string()),
+            note: Some(note.to_string()),
+            source_date_raw: Some(source_date_raw.to_string()),
+            formation: None,
         }
     }
 }

@@ -1,15 +1,18 @@
 use crate::config::Config;
 use crate::entities::{association, knowledge};
 use anyhow::{Context, Result};
-use goi_echo_worker::knowledge::{read_knowledge_rows, KnowledgeRow};
+use goi_echo_worker::knowledge::{
+    read_knowledge_rows, KnowledgeRow, KNOWLEDGE_WORKER_DEDUPE_KEY_PREFIX,
+};
 use goi_echo_worker::row::{read_association_rows, AssociationRow};
 use goi_echo_worker::xlsx::empty_xlsx_buffer;
 use sea_orm::sea_query::{
     Alias, BinOper, Condition, Expr, OnConflict, SimpleExpr,
 };
 use sea_orm::{
-    ColumnTrait, DatabaseConnection, DatabaseTransaction, EntityTrait, NotSet,
-    QueryFilter, Set, TransactionTrait, TryInsertResult,
+    ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseConnection,
+    EntityTrait, IntoActiveModel, NotSet, PaginatorTrait, QueryFilter, Set,
+    TransactionTrait, TryInsertResult,
 };
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -133,7 +136,6 @@ async fn knowledge_worker_step(
     );
 
     sync_knowledge_rows(db, rows).await?;
-    prune_old_deleted_knowledge_rows(db).await?;
     state.last_fingerprint = Some(fingerprint);
     state.last_refresh_bucket = Some(refresh_bucket);
     state.missing_logged = false;
@@ -298,8 +300,8 @@ async fn sync_knowledge_rows(
     let dedupe_keys = deduped_rows.keys().cloned().collect::<Vec<_>>();
     let tx = db.begin().await.context("beginning knowledge sync tx")?;
 
-    mark_missing_knowledge_rows_deleted(&tx, &dedupe_keys, now.fixed_offset())
-        .await?;
+    rekey_existing_worker_knowledge_rows(&tx, &deduped_rows).await?;
+    delete_missing_knowledge_rows(&tx, &dedupe_keys).await?;
     if deduped_rows.is_empty() {
         tx.commit().await.context("committing knowledge sync tx")?;
         log::info!("GOI knowledge worker detected no active rows in workbook");
@@ -315,7 +317,6 @@ async fn sync_knowledge_rows(
                     row: Set(knowledge_row),
                     created_at: NotSet,
                     updated_at: Set(now.fixed_offset()),
-                    deleted: Set(false),
                     dedupe_key: Set(dedupe_key),
                 }
             })
@@ -328,7 +329,6 @@ async fn sync_knowledge_rows(
                 .update_columns([
                     knowledge::Column::Row,
                     knowledge::Column::UpdatedAt,
-                    knowledge::Column::Deleted,
                 ])
                 .action_cond_where(knowledge_upsert_has_changes())
                 .to_owned(),
@@ -345,28 +345,108 @@ async fn sync_knowledge_rows(
     Ok(())
 }
 
-fn knowledge_upsert_has_changes() -> Condition {
-    Condition::any()
-        .add(knowledge_column_is_distinct(knowledge::Column::Row))
-        .add(knowledge_column_is_distinct(knowledge::Column::Deleted))
+async fn rekey_existing_worker_knowledge_rows<C>(
+    db: &C,
+    desired_rows: &BTreeMap<String, KnowledgeRow>,
+) -> Result<()>
+where
+    C: ConnectionTrait,
+{
+    let desired_keys = desired_rows
+        .keys()
+        .filter(|key| key.starts_with(KNOWLEDGE_WORKER_DEDUPE_KEY_PREFIX))
+        .cloned()
+        .collect::<Vec<_>>();
+    if desired_keys.is_empty() {
+        return Ok(());
+    }
+    let existing_key_count = knowledge::Entity::find()
+        .filter(knowledge::Column::DedupeKey.is_in(desired_keys.clone()))
+        .count(db)
+        .await
+        .context("counting stable worker knowledge keys")?;
+    if existing_key_count == desired_keys.len() as u64 {
+        return Ok(());
+    }
+
+    let existing_rows = knowledge::Entity::find()
+        .all(db)
+        .await
+        .context("loading existing knowledge keys")?;
+    let key_updates = plan_worker_knowledge_rekey(existing_rows, desired_rows)?;
+
+    for (knowledge, dedupe_key) in key_updates {
+        let knowledge_id = knowledge.id;
+        let mut knowledge = knowledge.into_active_model();
+        knowledge.dedupe_key = Set(dedupe_key);
+        knowledge.update(db).await.with_context(|| {
+            format!("rekeying worker knowledge row {knowledge_id}")
+        })?;
+    }
+    Ok(())
 }
 
-fn knowledge_column_is_distinct(column: knowledge::Column) -> SimpleExpr {
-    Expr::col((knowledge::Entity, column)).binary(
+fn plan_worker_knowledge_rekey(
+    mut existing_rows: Vec<knowledge::Model>,
+    desired_rows: &BTreeMap<String, KnowledgeRow>,
+) -> Result<Vec<(knowledge::Model, String)>> {
+    let mut occupied_keys = existing_rows
+        .iter()
+        .map(|knowledge| knowledge.dedupe_key.clone())
+        .collect::<std::collections::BTreeSet<_>>();
+    existing_rows.sort_by(|left, right| right.id.cmp(&left.id));
+    let mut key_updates = Vec::new();
+    for knowledge in existing_rows {
+        let knowledge_row =
+            serde_json::from_value::<KnowledgeRow>(knowledge.row.clone())
+                .with_context(|| {
+                    format!(
+                        "deserializing stored knowledge row {}",
+                        knowledge.id
+                    )
+                })?;
+        let Some(next_key) = knowledge_row.dedupe_key() else {
+            continue;
+        };
+        if knowledge.dedupe_key != next_key
+            && desired_rows.contains_key(&next_key)
+            && occupied_keys.insert(next_key.clone())
+        {
+            key_updates.push((knowledge, next_key));
+        }
+    }
+    Ok(key_updates)
+}
+
+fn knowledge_upsert_has_changes() -> Condition {
+    Condition::any().add(knowledge_row_contents_are_distinct())
+}
+
+fn knowledge_row_contents_are_distinct() -> SimpleExpr {
+    knowledge_row_without_layout(
+        Expr::col((knowledge::Entity, knowledge::Column::Row)).into(),
+    )
+    .binary(
         BinOper::Custom("IS DISTINCT FROM"),
-        Expr::col((Alias::new("excluded"), column)),
+        knowledge_row_without_layout(
+            Expr::col((Alias::new("excluded"), knowledge::Column::Row)).into(),
+        ),
     )
 }
 
-async fn mark_missing_knowledge_rows_deleted(
-    db: &DatabaseTransaction,
+fn knowledge_row_without_layout(row: SimpleExpr) -> SimpleExpr {
+    row.binary(BinOper::Custom("-"), Expr::value("sheet_name"))
+        .binary(BinOper::Custom("-"), Expr::value("row_num"))
+}
+
+async fn delete_missing_knowledge_rows<C>(
+    db: &C,
     dedupe_keys: &[String],
-    now: chrono::DateTime<chrono::FixedOffset>,
-) -> Result<()> {
-    let mut query = knowledge::Entity::update_many()
-        .col_expr(knowledge::Column::Deleted, Expr::value(true))
-        .col_expr(knowledge::Column::UpdatedAt, Expr::value(now))
-        .filter(knowledge::Column::Deleted.eq(false));
+) -> Result<()>
+where
+    C: ConnectionTrait,
+{
+    let mut query = knowledge::Entity::delete_many();
     if !dedupe_keys.is_empty() {
         query = query.filter(
             knowledge::Column::DedupeKey.is_not_in(dedupe_keys.iter().cloned()),
@@ -375,23 +455,7 @@ async fn mark_missing_knowledge_rows_deleted(
     query
         .exec(db)
         .await
-        .context("marking missing knowledge rows deleted")?;
-    Ok(())
-}
-
-async fn prune_old_deleted_knowledge_rows(
-    db: &DatabaseConnection,
-) -> Result<()> {
-    let cutoff = chrono::Utc::now()
-        - chrono::Duration::days(
-            crate::config::GOI_KNOWLEDGE_SYNC_MAX_AGE_DAYS,
-        );
-    knowledge::Entity::delete_many()
-        .filter(knowledge::Column::Deleted.eq(true))
-        .filter(knowledge::Column::UpdatedAt.lt(cutoff.fixed_offset()))
-        .exec(db)
-        .await
-        .context("deleting stale knowledge rows")?;
+        .context("deleting missing knowledge rows")?;
     Ok(())
 }
 
@@ -454,9 +518,32 @@ fn log_insert_result(
 mod tests {
     use super::*;
     use goi_echo_worker::knowledge::{
-        read_knowledge_rows, KNOWLEDGE_KIND_CALL_SIGN, KNOWLEDGE_WORKER_AUTHOR,
+        read_knowledge_rows, KnowledgeCell, KNOWLEDGE_KIND_CALL_SIGN,
+        KNOWLEDGE_WORKER_AUTHOR, KNOWLEDGE_WORKER_ID_PREFIX,
     };
     use goi_echo_worker::row::read_association_rows;
+    use serde_json::Value;
+
+    #[test]
+    fn worker_callsign_rekey_keeps_latest_existing_row_id() {
+        let previous = worker_callsign_row(42, "previous");
+        let desired =
+            dedupe_knowledge_rows(vec![worker_callsign_row(42, "next")]);
+        let existing_rows = vec![
+            stored_knowledge(7, "legacy-key-a", &previous),
+            stored_knowledge(9, "legacy-key-b", &previous),
+        ];
+
+        let key_updates = plan_worker_knowledge_rekey(existing_rows, &desired)
+            .expect("plan rekey");
+
+        assert_eq!(key_updates.len(), 1);
+        assert_eq!(key_updates[0].0.id, 9);
+        assert_eq!(
+            key_updates[0].1,
+            format!("{KNOWLEDGE_WORKER_DEDUPE_KEY_PREFIX}42")
+        );
+    }
 
     #[test]
     fn worker_managed_callsigns_ignore_knowledge_age_cutoff() {
@@ -502,6 +589,47 @@ mod tests {
             .is_empty());
 
         std::fs::remove_dir_all(dir).ok();
+    }
+
+    fn worker_callsign_row(id: i64, note: &str) -> KnowledgeRow {
+        let mut cells = vec![
+            KnowledgeCell {
+                kind: "empty".to_string(),
+                value: Value::Null,
+            };
+            9
+        ];
+        cells[8] = KnowledgeCell {
+            kind: "string".to_string(),
+            value: Value::String(format!("{KNOWLEDGE_WORKER_ID_PREFIX}{id}")),
+        };
+        KnowledgeRow {
+            sheet_name: "Knowledge".to_string(),
+            row_num: 1,
+            cells,
+            name: Some("BARS".to_string()),
+            key: None,
+            knowledge_type: Some(KNOWLEDGE_KIND_CALL_SIGN.to_string()),
+            author: Some(KNOWLEDGE_WORKER_AUTHOR.to_string()),
+            note: Some(note.to_string()),
+            source_date_raw: None,
+            formation: None,
+        }
+    }
+
+    fn stored_knowledge(
+        id: i64,
+        dedupe_key: &str,
+        knowledge_row: &KnowledgeRow,
+    ) -> knowledge::Model {
+        let now = chrono::Utc::now().fixed_offset();
+        knowledge::Model {
+            id,
+            row: serde_json::to_value(knowledge_row).expect("serialize row"),
+            created_at: now,
+            updated_at: now,
+            dedupe_key: dedupe_key.to_string(),
+        }
     }
 
     fn temp_dir(prefix: &str) -> PathBuf {
