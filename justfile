@@ -2550,7 +2550,6 @@ deploy-cbr-stg: prepare-workspace
         npx npm ci && \
         npm run build && \
         cd .. && \
-        # just prepare-workspace && \
         touch wdintel-rs/build.rs && \
         \$HOME/.cargo/bin/cargo deb -p wdintel-rs --fast"
     scp echo-build-main:~/workspace/krab/echo-feature/echo/target/debian/wdintel-rs*.deb "echo-staging":/var/tmp
