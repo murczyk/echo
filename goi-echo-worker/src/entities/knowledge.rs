@@ -12,7 +12,6 @@ pub struct Model {
     pub row: Json,
     pub created_at: DateTimeWithTimeZone,
     pub updated_at: DateTimeWithTimeZone,
-    pub deleted: bool,
     #[sea_orm(column_type = "Text")]
     pub dedupe_key: String,
 }

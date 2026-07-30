@@ -36,6 +36,7 @@ use serde::{Deserialize, Serialize};
 use std::path::Path;
 use uuid::Uuid;
 
+pub(crate) mod aor_scope;
 mod callsigns_sync;
 pub mod goi_api;
 mod goi_ssh;
