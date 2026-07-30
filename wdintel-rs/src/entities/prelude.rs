@@ -29,6 +29,7 @@ pub use super::echo_attachment::Entity as EchoAttachment;
 pub use super::echo_automation::Entity as EchoAutomation;
 pub use super::echo_automation_delivery::Entity as EchoAutomationDelivery;
 pub use super::echo_automation_polygon::Entity as EchoAutomationPolygon;
+pub use super::echo_automation_send_log::Entity as EchoAutomationSendLog;
 pub use super::echo_automation_warning::Entity as EchoAutomationWarning;
 pub use super::echo_client::Entity as EchoClient;
 pub use super::echo_client_config::Entity as EchoClientConfig;

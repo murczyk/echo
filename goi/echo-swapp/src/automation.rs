@@ -1,3 +1,4 @@
+use crate::config::AUTOMATION_SEND_LOG_RETENTION_DAYS;
 use crate::error::ShortContext;
 use crate::h;
 use crate::messenger::{self, MessengerKind};
@@ -514,6 +515,7 @@ pub async fn ensure_schema(db: &DatabaseConnection) -> Result<()> {
     ensure_automation_columns(db).await.c(h!())?;
     ensure_automation_polygon_schema(db).await.c(h!())?;
     ensure_automation_delivery_schema(db).await.c(h!())?;
+    ensure_automation_send_log_schema(db).await.c(h!())?;
     drop_legacy_automation_schema(db).await.c(h!())?;
     Ok(())
 }
@@ -688,6 +690,47 @@ async fn ensure_automation_delivery_schema(
 
         create index if not exists echo_automation_delivery_source_at_idx
             on echo_automation_delivery (automation_id, source_message_at);
+        "#,
+    )
+    .await
+    .c(h!())?;
+    Ok(())
+}
+
+async fn ensure_automation_send_log_schema(
+    db: &DatabaseConnection,
+) -> Result<()> {
+    db.execute_unprepared(
+        r#"
+        create table if not exists echo_automation_send_log (
+            id bigserial primary key,
+            automation_id bigint not null,
+            source_inbox_message_id integer not null,
+            source_internal_id text,
+            source_group_id integer not null,
+            target_group_id integer not null,
+            planned_at timestamp without time zone default (now() at time zone 'utc') not null,
+            sent_at timestamp without time zone,
+            created_at timestamp without time zone default (now() at time zone 'utc') not null
+        );
+
+        create unique index if not exists echo_automation_send_log_route_message_uq
+            on echo_automation_send_log (
+                source_group_id,
+                target_group_id,
+                source_inbox_message_id
+            );
+
+        create unique index if not exists echo_automation_send_log_route_internal_uq
+            on echo_automation_send_log (
+                source_group_id,
+                target_group_id,
+                source_internal_id
+            )
+            where source_internal_id is not null;
+
+        create index if not exists echo_automation_send_log_created_at_idx
+            on echo_automation_send_log (created_at desc);
         "#,
     )
     .await
@@ -1193,6 +1236,28 @@ async fn send_matching_message(
             warning: None,
         }
     };
+    let Some(send_log_id) = plan_send(
+        db,
+        automation.id,
+        automation.source_group_id,
+        automation.target_group_id,
+        message,
+    )
+    .await
+    .c(h!())?
+    else {
+        record_delivery(
+            db,
+            automation.id,
+            message,
+            "skipped",
+            Some("message is already planned for this target group"),
+            false,
+        )
+        .await
+        .c(h!())?;
+        return Ok(());
+    };
     messenger::send(
         db,
         &public_client_name(&target.client_name),
@@ -1204,6 +1269,7 @@ async fn send_matching_message(
     )
     .await
     .c(h!())?;
+    mark_send_sent(db, send_log_id).await.c(h!())?;
     record_delivery(
         db,
         automation.id,
@@ -1220,6 +1286,76 @@ async fn send_matching_message(
             .c(h!())?;
     }
     Ok(())
+}
+
+async fn plan_send(
+    db: &DatabaseConnection,
+    automation_id: i64,
+    source_group_id: i32,
+    target_group_id: i32,
+    message: &InboxMessageRow,
+) -> Result<Option<i64>> {
+    let row = db
+        .query_one(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            r#"
+            insert into echo_automation_send_log (
+                automation_id,
+                source_inbox_message_id,
+                source_internal_id,
+                source_group_id,
+                target_group_id
+            )
+            values ($1, $2, $3, $4, $5)
+            on conflict do nothing
+            returning id
+            "#,
+            vec![
+                automation_id.into(),
+                message.id.into(),
+                message.internal_id.clone().into(),
+                source_group_id.into(),
+                target_group_id.into(),
+            ],
+        ))
+        .await
+        .c(h!())?;
+    let Some(row) = row else {
+        return Ok(None);
+    };
+    Ok(Some(row.try_get("", "id").c(h!())?))
+}
+
+async fn mark_send_sent(
+    db: &DatabaseConnection,
+    send_log_id: i64,
+) -> Result<()> {
+    db.execute(Statement::from_sql_and_values(
+        DatabaseBackend::Postgres,
+        r#"
+        update echo_automation_send_log
+        set sent_at = now() at time zone 'utc'
+        where id = $1
+        "#,
+        [send_log_id.into()],
+    ))
+    .await
+    .c(h!())?;
+    Ok(())
+}
+
+pub async fn delete_expired_send_log(db: &DatabaseConnection) -> Result<u64> {
+    let cutoff = Utc::now().naive_utc()
+        - ChronoDuration::days(AUTOMATION_SEND_LOG_RETENTION_DAYS);
+    let result = db
+        .execute(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            "delete from echo_automation_send_log where created_at < $1",
+            [cutoff.into()],
+        ))
+        .await
+        .c(h!())?;
+    Ok(result.rows_affected())
 }
 
 async fn load_candidate_messages(
@@ -2047,6 +2183,17 @@ mod tests {
         automation_id: i64,
     }
 
+    #[derive(FromQueryResult)]
+    struct TestSendLogRow {
+        automation_id: i64,
+        source_inbox_message_id: i32,
+        source_group_id: i32,
+        target_group_id: i32,
+        planned_at: NaiveDateTime,
+        sent_at: Option<NaiveDateTime>,
+        created_at: NaiveDateTime,
+    }
+
     fn filter() -> AutomationFilter {
         AutomationFilter {
             keyword_tokens: vec!["alpha".to_string()],
@@ -2100,6 +2247,19 @@ mod tests {
         namespace: &str,
         phone_number: &str,
     ) -> Result<()> {
+        execute_test_sql(
+            db,
+            r#"
+            delete from echo_automation_send_log
+            where automation_id in (
+                select id from echo_automation where name = $1
+            )
+                or source_internal_id like ($1 || ':%')
+            "#,
+            vec![namespace.to_string().into()],
+        )
+        .await
+        .c(h!())?;
         execute_test_sql(
             db,
             "delete from echo_automation where name = $1",
@@ -2288,6 +2448,142 @@ mod tests {
             target_group_id,
             automation_id,
         })
+    }
+
+    async fn insert_test_automation(
+        db: &DatabaseConnection,
+        fixture: &TestFixture,
+    ) -> Result<i64> {
+        query_i64(
+            db,
+            r#"
+            insert into echo_automation (
+                name,
+                source_account_id,
+                source_group_id,
+                target_account_id,
+                target_group_id,
+                keyword_tokens,
+                frequency_tokens,
+                stale_message_cutoff_minutes,
+                resend_attachments,
+                coordinate_presence_mode,
+                polygon_filter_mode,
+                polygon_id
+            )
+            values ($1, $2, $3, $2, $4, '["alpha"]'::jsonb, '[]'::jsonb, 60, false, 'any', 'none', null)
+            returning id
+            "#,
+            vec![
+                fixture.namespace.clone().into(),
+                fixture.account_id.into(),
+                fixture.source_group_id.into(),
+                fixture.target_group_id.into(),
+            ],
+        )
+        .await
+        .c(h!())
+    }
+
+    async fn send_log_exists(
+        db: &DatabaseConnection,
+        send_log_id: i64,
+    ) -> Result<bool> {
+        let row = db
+            .query_one(Statement::from_sql_and_values(
+                DatabaseBackend::Postgres,
+                r#"
+                select exists (
+                    select 1
+                    from echo_automation_send_log
+                    where id = $1
+                ) as value
+                "#,
+                [send_log_id.into()],
+            ))
+            .await
+            .c(h!())?
+            .context("send-log existence query did not return a row")
+            .c(h!())?;
+        row.try_get("", "value").c(h!())
+    }
+
+    async fn load_test_send_log(
+        db: &DatabaseConnection,
+        send_log_id: i64,
+    ) -> Result<TestSendLogRow> {
+        TestSendLogRow::find_by_statement(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            r#"
+            select
+                automation_id,
+                source_inbox_message_id,
+                source_group_id,
+                target_group_id,
+                planned_at,
+                sent_at,
+                created_at
+            from echo_automation_send_log
+            where id = $1
+            "#,
+            [send_log_id.into()],
+        ))
+        .one(db)
+        .await
+        .c(h!())?
+        .context("send log was not found")
+        .c(h!())
+    }
+
+    async fn plan_fixture_send(
+        db: &DatabaseConnection,
+        fixture: &TestFixture,
+        message: &InboxMessageRow,
+    ) -> Result<i64> {
+        plan_send(
+            db,
+            fixture.automation_id,
+            fixture.source_group_id,
+            fixture.target_group_id,
+            message,
+        )
+        .await
+        .c(h!())?
+        .context("send log was not planned")
+        .c(h!())
+    }
+
+    async fn claim_send_once(
+        db: &DatabaseConnection,
+        fixture: &TestFixture,
+        second_automation_id: i64,
+        message: &InboxMessageRow,
+    ) -> Result<(i64, i64)> {
+        let (first, second) = tokio::join!(
+            plan_send(
+                db,
+                fixture.automation_id,
+                fixture.source_group_id,
+                fixture.target_group_id,
+                message,
+            ),
+            plan_send(
+                db,
+                second_automation_id,
+                fixture.source_group_id,
+                fixture.target_group_id,
+                message,
+            ),
+        );
+        match (first.c(h!())?, second.c(h!())?) {
+            (Some(send_log_id), None) => {
+                Ok((send_log_id, fixture.automation_id))
+            }
+            (None, Some(send_log_id)) => {
+                Ok((send_log_id, second_automation_id))
+            }
+            claims => bail!("expected exactly one send claim: {claims:?}"),
+        }
     }
 
     async fn insert_group(
@@ -2622,6 +2918,94 @@ mod tests {
             &[Point { lat: 5.0, lng: 5.0 }],
         );
         assert_eq!(decision, MatchDecision::Send);
+    }
+
+    #[tokio::test]
+    async fn send_plan_is_claimed_once_across_automations() -> Result<()> {
+        let _guard = DB_TEST_LOCK.lock().await;
+        let db = test_db().await.c(h!())?;
+        let fixture = create_fixture(&db).await.c(h!())?;
+        let result = async {
+            let second_automation_id =
+                insert_test_automation(&db, &fixture).await.c(h!())?;
+            let message =
+                insert_message(&db, &fixture, "shared", Utc::now().naive_utc())
+                    .await
+                    .c(h!())?;
+            let (send_log_id, automation_id) =
+                claim_send_once(&db, &fixture, second_automation_id, &message)
+                    .await
+                    .c(h!())?;
+            let send_log =
+                load_test_send_log(&db, send_log_id).await.c(h!())?;
+            assert_eq!(send_log.automation_id, automation_id);
+            assert_eq!(send_log.source_inbox_message_id, message.id);
+            assert_eq!(send_log.source_group_id, fixture.source_group_id);
+            assert_eq!(send_log.target_group_id, fixture.target_group_id);
+            assert!(send_log.planned_at <= Utc::now().naive_utc());
+            assert!(send_log.created_at <= Utc::now().naive_utc());
+            assert_eq!(send_log.sent_at, None);
+
+            mark_send_sent(&db, send_log_id).await.c(h!())?;
+            assert!(load_test_send_log(&db, send_log_id)
+                .await
+                .c(h!())?
+                .sent_at
+                .is_some());
+            Ok(())
+        }
+        .await;
+        cleanup_test_namespace(&db, &fixture.namespace, &fixture.phone_number)
+            .await
+            .c(h!())?;
+        result
+    }
+
+    #[tokio::test]
+    async fn send_log_retention_hard_deletes_only_expired_rows() -> Result<()> {
+        let _guard = DB_TEST_LOCK.lock().await;
+        let db = test_db().await.c(h!())?;
+        let fixture = create_fixture(&db).await.c(h!())?;
+        let result = async {
+            let now = Utc::now().naive_utc();
+            let old_message =
+                insert_message(&db, &fixture, "old-send-log", now)
+                    .await
+                    .c(h!())?;
+            let current_message =
+                insert_message(&db, &fixture, "current-send-log", now)
+                    .await
+                    .c(h!())?;
+            let old_send_log_id =
+                plan_fixture_send(&db, &fixture, &old_message)
+                    .await
+                    .c(h!())?;
+            let current_send_log_id =
+                plan_fixture_send(&db, &fixture, &current_message)
+                    .await
+                    .c(h!())?;
+            execute_test_sql(
+                &db,
+                r#"
+                update echo_automation_send_log
+                set created_at = (now() at time zone 'utc') - interval '31 days'
+                where id = $1
+                "#,
+                vec![old_send_log_id.into()],
+            )
+            .await
+            .c(h!())?;
+
+            assert!(delete_expired_send_log(&db).await.c(h!())? >= 1);
+            assert!(!send_log_exists(&db, old_send_log_id).await.c(h!())?);
+            assert!(send_log_exists(&db, current_send_log_id).await.c(h!())?);
+            Ok(())
+        }
+        .await;
+        cleanup_test_namespace(&db, &fixture.namespace, &fixture.phone_number)
+            .await
+            .c(h!())?;
+        result
     }
 
     #[tokio::test]
