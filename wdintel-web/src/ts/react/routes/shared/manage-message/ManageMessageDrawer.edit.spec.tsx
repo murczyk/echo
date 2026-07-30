@@ -17,6 +17,13 @@ const directSubmitMocks = vi.hoisted(() => ({
   editDirectSubmit: vi.fn(),
   createDeviceName: vi.fn().mockResolvedValue({ id: 1 }),
   parseDirectSubmit: vi.fn(),
+  searchNetworkNames: vi.fn().mockResolvedValue([]),
+}));
+const networkMocks = vi.hoisted(() => ({
+  getNetworksByIds: vi.fn().mockResolvedValue([]),
+}));
+const unitMocks = vi.hoisted(() => ({
+  getUnitsByIds: vi.fn().mockResolvedValue([]),
 }));
 const uppyMocks = vi.hoisted(() => ({
   latest: null as {
@@ -35,7 +42,7 @@ vi.mock('../../../services/api/direct-submit', () => ({
   searchDeviceNames: vi.fn().mockResolvedValue([]),
   searchPostNames: vi.fn().mockResolvedValue([]),
   searchUnitNames: vi.fn().mockResolvedValue([]),
-  searchNetworkNames: vi.fn().mockResolvedValue([]),
+  searchNetworkNames: directSubmitMocks.searchNetworkNames,
   searchSignalNames: vi.fn().mockResolvedValue([]),
   searchCallsignNames: vi.fn().mockResolvedValue([]),
   searchFreqs: vi.fn().mockResolvedValue([]),
@@ -47,7 +54,10 @@ vi.mock('../../../services/api/direct-submit', () => ({
     error instanceof Error ? error.message : 'save failed',
 }));
 vi.mock('../../../services/api/networks', () => ({
-  getNetworksByIds: vi.fn().mockResolvedValue([]),
+  getNetworksByIds: networkMocks.getNetworksByIds,
+}));
+vi.mock('../../../services/api/units', () => ({
+  getUnitsByIds: unitMocks.getUnitsByIds,
 }));
 vi.mock('@uppy/core', () => {
   class FakeUppy {
@@ -167,6 +177,8 @@ type TextFieldMockProps = {
 const textFieldPropsByLabel = new Map<string | undefined, TextFieldMockProps>();
 const autocompleteOnChangeByLabel = new Map<string, (event: unknown, value: unknown) => void>();
 const autocompleteValuesByLabel = new Map<string, unknown>();
+const autocompleteInputValuesByLabel = new Map<string, string>();
+const autocompleteOptionLabelsByLabel = new Map<string, string[]>();
 const pickerValuesByLabel = new Map<string, unknown>();
 
 function setRecentValues(values: Record<string, unknown>) {
@@ -314,14 +326,18 @@ vi.mock('@mui/material', () => ({
   Autocomplete: ({
     renderInput,
     value,
+    inputValue,
     onChange,
     options,
+    getOptionLabel,
     loading: _loading,
   }: {
     renderInput?: (params: unknown) => ReactNode;
     value?: unknown;
+    inputValue?: string;
     onChange?: (event: unknown, value: unknown) => void;
     options?: unknown[];
+    getOptionLabel?: (option: unknown) => string;
     loading?: boolean;
   }) => {
     const input = renderInput?.({ InputProps: {} } as never);
@@ -330,6 +346,12 @@ vi.mock('@mui/material', () => ({
       autocompleteOnChangeByLabel.set(label, onChange);
     }
     if (typeof label === 'string') autocompleteValuesByLabel.set(label, value);
+    if (typeof label === 'string' && inputValue != null) {
+      autocompleteInputValuesByLabel.set(label, inputValue);
+    }
+    if (typeof label === 'string' && getOptionLabel) {
+      autocompleteOptionLabelsByLabel.set(label, (options ?? []).map(getOptionLabel));
+    }
     return (
       <div data-testid="autocomplete" data-value={JSON.stringify(value)}>
         {Array.isArray(value) ? value.map((v) => <span key={String(v)}>{String(v)}</span>) : null}
@@ -386,6 +408,8 @@ describe('ManageMessageDrawer edit mode', () => {
     textFieldPropsByLabel.clear();
     autocompleteOnChangeByLabel.clear();
     autocompleteValuesByLabel.clear();
+    autocompleteInputValuesByLabel.clear();
+    autocompleteOptionLabelsByLabel.clear();
     pickerValuesByLabel.clear();
     directSubmitMocks.submitDirect.mockReset();
     directSubmitMocks.submitDirect.mockResolvedValue({ signal_message_id: 1 });
@@ -393,6 +417,12 @@ describe('ManageMessageDrawer edit mode', () => {
     directSubmitMocks.createDeviceName.mockReset();
     directSubmitMocks.createDeviceName.mockResolvedValue({ id: 1 });
     directSubmitMocks.parseDirectSubmit.mockReset();
+    directSubmitMocks.searchNetworkNames.mockReset();
+    directSubmitMocks.searchNetworkNames.mockResolvedValue([]);
+    networkMocks.getNetworksByIds.mockReset();
+    networkMocks.getNetworksByIds.mockResolvedValue([]);
+    unitMocks.getUnitsByIds.mockReset();
+    unitMocks.getUnitsByIds.mockResolvedValue([]);
     document.body.innerHTML = '';
     referenceDataMocks.getTagsForDisplay.mockResolvedValue({ tagsMap: {}, tagsOrder: [] });
     referenceDataMocks.getUserSigintGroups.mockReset();
@@ -1086,6 +1116,55 @@ describe('ManageMessageDrawer edit mode', () => {
         },
       }),
     );
+
+    root.unmount();
+  });
+
+  it('hydrates a calculated network and its units when stored fields are empty', async () => {
+    networkMocks.getNetworksByIds.mockResolvedValue([
+      {
+        id: 5,
+        name: '💻',
+        unitIds: [51],
+      },
+    ]);
+    unitMocks.getUnitsByIds.mockResolvedValue([
+      {
+        id: 51,
+        name: '4 зБпС 50 обрБпС',
+      },
+    ]);
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <ManageMessageDrawer
+          open
+          cyberEchoEnabled={false}
+          currentUser={null}
+          onClose={vi.fn()}
+          editTarget={{
+            id: 3008768,
+            message: buildMessage({
+              networkIds: [5],
+              networkName: 'stale freeform network',
+              unit: null,
+            }),
+          }}
+          onSubmitEdit={vi.fn()}
+        />,
+      );
+      for (let index = 0; index < 8; index += 1) await Promise.resolve();
+    });
+
+    expect(networkMocks.getNetworksByIds).toHaveBeenCalledWith([5]);
+    expect(unitMocks.getUnitsByIds).toHaveBeenCalledWith([51]);
+    expect(autocompleteValuesByLabel.get('Мережа')).toMatchObject({ id: 5, name: '💻' });
+    expect(autocompleteInputValuesByLabel.get('Мережа')).toBe('💻 — 4 зБпС 50 обрБпС');
+    expect(autocompleteOptionLabelsByLabel.get('Мережа')).toContain('💻 — 4 зБпС 50 обрБпС');
+    expect(autocompleteValuesByLabel.get('Підрозділ')).toBe('4 зБпС 50 обрБпС');
 
     root.unmount();
   });

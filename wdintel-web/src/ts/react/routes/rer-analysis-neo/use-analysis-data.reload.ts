@@ -39,6 +39,7 @@ import {
   buildInboxReq,
   shouldRebuildAnalysisRequests,
 } from './helpers';
+import { createMasterUnitText } from '../rer-duty-neo/utils';
 import { buildSummaryCallsignsInfo } from './use-analysis-data.callsigns';
 import {
   emptyNewCallsigns,
@@ -103,6 +104,37 @@ function isFallbackNetworkLabel(option: AnalysisFilterOption): boolean {
   return option.label === `Network ${option.value}`;
 }
 
+function networkLabelWithUnits(network: Network, unitsMap: Record<number, Unit>): string {
+  return createMasterUnitText(network, unitsMap).replace(/^р\/м\s*/, '');
+}
+
+function preferCompleteNetworkLabel(
+  current: AnalysisFilterOption,
+  next: AnalysisFilterOption,
+): string {
+  const currentIsFallback = isFallbackNetworkLabel(current);
+  const nextIsFallback = isFallbackNetworkLabel(next);
+  if (currentIsFallback && !nextIsFallback) return next.label;
+  if (!currentIsFallback && nextIsFallback) return current.label;
+  const currentLabel = normalizeFilterLabel(current.label);
+  const nextLabel = normalizeFilterLabel(next.label);
+  return nextLabel.length > currentLabel.length && nextLabel.includes(currentLabel)
+    ? next.label
+    : current.label;
+}
+
+function preferFreshNetworkLabel(
+  current: AnalysisFilterOption,
+  next: AnalysisFilterOption,
+): string {
+  if (isFallbackNetworkLabel(next) && !isFallbackNetworkLabel(current)) return current.label;
+  const currentLabel = normalizeFilterLabel(current.label);
+  const nextLabel = normalizeFilterLabel(next.label);
+  return currentLabel.length > nextLabel.length && currentLabel.includes(nextLabel)
+    ? current.label
+    : next.label;
+}
+
 function mergeNetworkOptionValues(
   existing: AnalysisFilterOption,
   next: AnalysisFilterOption,
@@ -130,13 +162,9 @@ export function mergeHydratedNetworkFilterOptions(
       continue;
     }
 
-    const currentIsFallback = isFallbackNetworkLabel(current);
-    const nextIsFallback = isFallbackNetworkLabel(option);
-    const label = currentIsFallback && !nextIsFallback ? option.label : current.label;
-
     merged.set(option.value, {
       value: option.value,
-      label,
+      label: preferCompleteNetworkLabel(current, option),
       count: Math.max(current.count, option.count),
       values: mergeNetworkOptionValues(current, option),
     });
@@ -162,18 +190,9 @@ export function replaceNetworkFilterOptionsPreservingSelectedLabels(
       return option;
     }
 
-    const currentIsFallback = isFallbackNetworkLabel(currentOption);
-    const nextIsFallback = isFallbackNetworkLabel(option);
-    const label =
-      currentIsFallback && !nextIsFallback
-        ? option.label
-        : !currentIsFallback && nextIsFallback
-          ? currentOption.label
-          : option.label;
-
     return {
       value: option.value,
-      label,
+      label: preferFreshNetworkLabel(currentOption, option),
       count: option.count,
       values: mergeNetworkOptionValues(currentOption, option),
     };
@@ -195,13 +214,14 @@ export function replaceNetworkFilterOptionsPreservingSelectedLabels(
 export function buildHydratedNetworkFilterOptions(
   networks: Network[],
   selectedNetworkIds: number[],
+  unitsMap: Record<number, Unit>,
 ): AnalysisFilterOption[] {
   const selectedNetworkIdSet = new Set(selectedNetworkIds);
   return networks
     .filter((network) => selectedNetworkIdSet.has(network.id))
     .map((network) => ({
       value: String(network.id),
-      label: normalizeFilterLabel(network.name ?? `Network ${network.id}`),
+      label: normalizeFilterLabel(networkLabelWithUnits(network, unitsMap)),
       count: 0,
     }));
 }
@@ -487,6 +507,7 @@ export async function loadFilterSectionData(
       const networkNamesById = Object.fromEntries(
         networksStatsRsp.networkNames.map((network) => [network.id, network.name]),
       );
+      const hydratedNetworksById = new Map(networksById.map((network) => [network.id, network]));
       context.setNetworks((current) => mergeNetworks(current, networksById));
       context.setOptions((current) => ({
         ...current,
@@ -495,8 +516,14 @@ export async function loadFilterSectionData(
           toFilterOptions(
             networksStatsRsp.networks,
             (item) => String(item.networkId),
-            (item) =>
-              normalizeFilterLabel(networkNamesById[item.networkId] ?? `Network ${item.networkId}`),
+            (item) => {
+              const network = hydratedNetworksById.get(item.networkId);
+              return normalizeFilterLabel(
+                network
+                  ? networkLabelWithUnits(network, context.unitsMap)
+                  : (networkNamesById[item.networkId] ?? `Network ${item.networkId}`),
+              );
+            },
             (item) => item.count,
           ),
           context.queryState.networksSelected,
@@ -957,6 +984,7 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
         const hydratedNetworkOptions = buildHydratedNetworkFilterOptions(
           networksByAnalysisIds,
           selectedNetworkIds,
+          unitsMap,
         );
         if (hydratedNetworkOptions.length > 0) {
           params.setOptions((current) => ({

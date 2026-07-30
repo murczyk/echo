@@ -210,6 +210,19 @@ pub struct OneoffBackfillInboxNetworksPs {
 }
 
 #[derive(clap::Parser, Debug)]
+#[command(
+    after_help = "Example:\n  wdintel-rs --mode=live oneoff-backfill-inbox-network-units-tui --start 2026-07-01"
+)]
+pub struct OneoffBackfillInboxNetworkUnitsTuiPs {
+    /// Start date (inclusive). Format: `YYYY-MM-DD`.
+    #[arg(long, value_name = "YYYY-MM-DD")]
+    pub start: String,
+    /// Page size for each DB fetch.
+    #[arg(long)]
+    pub limit: Option<u64>,
+}
+
+#[derive(clap::Parser, Debug)]
 pub struct OneoffReprocessInboxMetadataPs {
     /// Start datetime (inclusive). Example: `2023-04-17T00:00:00`
     #[arg(long)]
@@ -791,6 +804,7 @@ enum Cmd {
     OneoffImportSignalsCallsignsCsv(OneoffImportSignalsCallsignsCsvPs),
     OneoffFixWhatsappSenders,
     OneoffBackfillInboxNetworks(OneoffBackfillInboxNetworksPs),
+    OneoffBackfillInboxNetworkUnitsTui(OneoffBackfillInboxNetworkUnitsTuiPs),
     OneoffBackfillPalitraPointLexemes,
     OneoffReprocessInboxMetadata(OneoffReprocessInboxMetadataPs),
     OneoffAuditMissingEchoImMessages(OneoffAuditMissingEchoImMessagesPs),
@@ -1322,6 +1336,12 @@ async fn async_main(
         Cmd::OneoffBackfillInboxNetworks(ps) => {
             sigint::network::etalon_calc::oneoff::oneoff_backfill_inbox_networks(mode, ps)
                 .await
+        }
+        Cmd::OneoffBackfillInboxNetworkUnitsTui(ps) => {
+            sigint::network::inbox_backfill_tui::run_inbox_network_unit_backfill_tui(
+                mode, &ps,
+            )
+            .await
         }
         Cmd::OneoffReprocessInboxMetadata(ps) => {
             rer_importer::inbox::metadata::oneoff::oneoff_reprocess_inbox_metadata(

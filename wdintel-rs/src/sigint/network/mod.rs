@@ -38,6 +38,7 @@ pub mod bl;
 pub mod etalon_calc;
 pub mod filter;
 pub mod goi;
+pub mod inbox_backfill_tui;
 pub mod merge;
 pub mod oneoff;
 pub mod relations;

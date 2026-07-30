@@ -241,6 +241,9 @@ export function ManageMessageDrawer(props: Props) {
                   networkNameOptions={drawerState.networkNameOptions}
                   networkNameLoading={drawerState.networkNameLoading}
                   setNetworkNameInput={drawerState.setNetworkNameInput}
+                  networkUnitNamesById={drawerState.networkUnitNamesById}
+                  selectedNetwork={drawerState.selectedNetwork}
+                  setSelectedNetwork={drawerState.setSelectedNetwork}
                   freqOptions={drawerState.freqOptions}
                   freqLoading={drawerState.freqLoading}
                   setFreqInput={drawerState.setFreqInput}

@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type { Network, Unit } from '../../../../Bindings';
 import type { AnalysisFilterSectionId } from './types';
 import { buildAnalysisReq, emptyQueryState } from './helpers';
 import {
@@ -633,12 +634,13 @@ describe('reloadAnalysisData', () => {
     expect(
       buildHydratedNetworkFilterOptions(
         [
-          { id: 2852, name: 'управління' },
+          { id: 2852, name: 'управління', unitIds: [23] },
           { id: 11, name: 'Network 11' },
-        ] as Array<{ id: number; name: string | null }>,
+        ] as unknown as Network[],
         [2852],
+        { 23: { id: 23, name: '23 сб' } } as unknown as Record<number, Unit>,
       ),
-    ).toEqual([{ value: '2852', label: 'управління', count: 0 }]);
+    ).toEqual([{ value: '2852', label: 'управління 23 сб', count: 0 }]);
   });
 
   it('keeps stats labels when hydration provides a shorter real label', () => {
@@ -659,6 +661,22 @@ describe('reloadAnalysisData', () => {
         [{ value: '2852', label: 'управління', count: 0 }],
       ),
     ).toEqual([{ value: '2852', label: 'управління', count: 293, values: ['2852'] }]);
+  });
+
+  it('prefers a hydrated label that adds network units', () => {
+    expect(
+      mergeHydratedNetworkFilterOptions(
+        [{ value: '5', label: '💻', count: 293 }],
+        [{ value: '5', label: '💻 4 зБпС 50 обрБпС', count: 0 }],
+      ),
+    ).toEqual([
+      {
+        value: '5',
+        label: '💻 4 зБпС 50 обрБпС',
+        count: 293,
+        values: ['5'],
+      },
+    ]);
   });
 
   it('adds an absent hydrated network option', () => {
