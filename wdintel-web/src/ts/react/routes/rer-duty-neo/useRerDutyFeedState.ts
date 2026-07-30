@@ -591,14 +591,21 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
         const { feedId } = entry;
         const currentFeed = messageFeedsRef.current.find((feed) => feed.id === feedId);
         if (!currentFeed || currentFeed.loading) return;
-        if (currentFeed.items.length > 0) {
-          const quantity = entry.quantity ?? 0;
-          const nextUnread = Math.max(currentFeed.unreadCount, quantity);
-          if (nextUnread !== currentFeed.unreadCount) {
-            setMessageFeeds((prev) =>
-              prev.map((f) => (f.id === feedId ? { ...f, unreadCount: nextUnread } : f)),
+        if (currentFeed.items.length === 0) {
+          if (entry.quantity > 0) {
+            markFeedReloadRequested(feedId);
+            setMessageFeeds((previous) =>
+              previous.map((feed) => (feed.id === feedId ? { ...feed, loading: true } : feed)),
             );
           }
+          return;
+        }
+        const quantity = entry.quantity ?? 0;
+        const nextUnread = Math.max(currentFeed.unreadCount, quantity);
+        if (nextUnread !== currentFeed.unreadCount) {
+          setMessageFeeds((prev) =>
+            prev.map((f) => (f.id === feedId ? { ...f, unreadCount: nextUnread } : f)),
+          );
         }
         if (entry.quantity <= 0) {
           invalidateTailPreview(feedId);
@@ -706,6 +713,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
     isFollowTailValid,
     setConfirmedTailPreview,
     invalidateTailPreview,
+    markFeedReloadRequested,
   ]);
 
   const feedIds = useMemo(() => messageFeeds.map((w) => w.id).join(','), [messageFeeds]);

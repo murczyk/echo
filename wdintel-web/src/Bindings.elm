@@ -2854,6 +2854,7 @@ batchSignalProfileReqEncoder struct =
 
 type alias InboxMessagesRsp =
     { inboxItems : List (( Int, InboxMessage ))
+    , pollCursorId : Maybe (Int)
     , callsigns : List (CallsignInfoRes)
     , signalProfiles : Dict String (Maybe (SignalProfileEntry))
     , signalGroups : List (SignalGroupEntry)
@@ -2866,6 +2867,7 @@ inboxMessagesRspEncoder : InboxMessagesRsp -> Json.Encode.Value
 inboxMessagesRspEncoder struct =
     Json.Encode.object
         [ ( "inbox_items", (Json.Encode.list (\( a, b) -> Json.Encode.list identity [ Json.Encode.int a, inboxMessageEncoder b ])) struct.inboxItems )
+        , ( "poll_cursor_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.pollCursorId )
         , ( "callsigns", (Json.Encode.list (callsignInfoResEncoder)) struct.callsigns )
         , ( "signal_profiles", (Json.Encode.dict identity (Maybe.withDefault Json.Encode.null << Maybe.map (signalProfileEntryEncoder))) struct.signalProfiles )
         , ( "signal_groups", (Json.Encode.list (signalGroupEntryEncoder)) struct.signalGroups )
@@ -11468,6 +11470,7 @@ inboxMessagesRspDecoder : Json.Decode.Decoder InboxMessagesRsp
 inboxMessagesRspDecoder =
     Json.Decode.succeed InboxMessagesRsp
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "inbox_items" (Json.Decode.list (Json.Decode.map2 (\a b -> ( a, b )) (Json.Decode.index 0 (Json.Decode.int)) (Json.Decode.index 1 (inboxMessageDecoder))))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "poll_cursor_id" (Json.Decode.nullable (Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "callsigns" (Json.Decode.list (callsignInfoResDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "signal_profiles" (Json.Decode.dict (Json.Decode.nullable (signalProfileEntryDecoder)))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "signal_groups" (Json.Decode.list (signalGroupEntryDecoder))))

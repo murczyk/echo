@@ -551,6 +551,7 @@ async fn inbox_messages(
         );
         return Ok(Json(InboxMessagesRsp {
             inbox_items: vec![],
+            poll_cursor_id: None,
             callsigns: vec![],
             signal_profiles: BTreeMap::new(),
             signal_groups: vec![],
@@ -562,6 +563,11 @@ async fn inbox_messages(
             },
         }));
     }
+    let poll_cursor_id = if inbox_request_is_unbounded_latest(&req) {
+        latest_inbox_poll_cursor_id(&env.dbx, &req).await?
+    } else {
+        None
+    };
     let inbox_items = if let Some(limit) = test_limit {
         get_inbox_messages_limited(&login, &logins, &env, &req, limit)
             .await
@@ -604,6 +610,7 @@ async fn inbox_messages(
 
     Ok(Json(InboxMessagesRsp {
         inbox_items,
+        poll_cursor_id,
         callsigns,
         signal_profiles,
         signal_groups,

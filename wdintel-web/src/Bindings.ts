@@ -1100,6 +1100,7 @@ export type BatchSignalProfileReq = {
 
 export type InboxMessagesRsp = {
   inboxItems: Array<[number, InboxMessage]>;
+  pollCursorId: number | null;
   callsigns: Array<CallsignInfoRes>;
   signalProfiles: Record<string, SignalProfileEntry | null>;
   signalGroups: Array<SignalGroupEntry>;

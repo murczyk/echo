@@ -47,9 +47,13 @@ vi.mock('../../services/api/units', () => ({
   getUnitsList: vi.fn(() => Promise.resolve([])),
 }));
 
-function inboxRsp(items: Array<[number, InboxMessage]>): InboxMessagesRsp {
+function inboxRsp(
+  items: Array<[number, InboxMessage]>,
+  pollCursorId: number | null = items.at(-1)?.[0] ?? 1,
+): InboxMessagesRsp {
   return {
     inboxItems: items,
+    pollCursorId,
     callsigns: [],
     signalProfiles: {},
     signalGroups: [],
@@ -1863,7 +1867,7 @@ describe('useRerDutyFeedState — loading', () => {
   });
 
   it('keeps empty feeds from notifying even when count responses are positive', async () => {
-    hoisted.fetchInboxMessages.mockResolvedValueOnce(inboxRsp([]));
+    hoisted.fetchInboxMessages.mockResolvedValue(inboxRsp([]));
 
     const apiRef: React.MutableRefObject<ReturnType<typeof useRerDutyFeedState> | null> = {
       current: null,
@@ -3053,8 +3057,10 @@ describe('useRerDutyFeedState — loading', () => {
     expect(feed.readIds.has(60)).toBe(true);
   });
 
-  it('does not call get-inbox for newer when column has no items (loadFeedNewerMessages no-op)', async () => {
-    hoisted.fetchInboxMessages.mockResolvedValue(inboxRsp([]));
+  it('uses the server poll cursor and reloads an empty feed when matching messages arrive', async () => {
+    hoisted.fetchInboxMessages
+      .mockResolvedValueOnce(inboxRsp([], 80))
+      .mockResolvedValueOnce(inboxRsp([[81, minimalInboxMessage({ timestamp: 8100 })]], 81));
 
     const apiRef: React.MutableRefObject<ReturnType<typeof useRerDutyFeedState> | null> = {
       current: null,
@@ -3069,11 +3075,7 @@ describe('useRerDutyFeedState — loading', () => {
     expect(apiRef.current?.messageFeeds[0]?.items).toHaveLength(0);
     expect(hoisted.fetchInboxMessages).toHaveBeenCalledTimes(1);
 
-    hoisted.fetchInboxCount.mockResolvedValue({ quantity: 9, firstElementTs: null });
-
-    await act(async () => {
-      apiRef.current!.nearBottomByFeedIdRef.current['mf-0'] = true;
-    });
+    hoisted.fetchInboxCount.mockResolvedValue({ quantity: 1, firstElementTs: 8100 });
 
     await act(async () => {
       await vi.advanceTimersByTimeAsync(1000);
@@ -3082,7 +3084,11 @@ describe('useRerDutyFeedState — loading', () => {
       await flushMicrotasks();
     });
 
-    expect(hoisted.fetchInboxMessages).toHaveBeenCalledTimes(1);
+    expect(hoisted.fetchInboxCount).toHaveBeenCalledWith(
+      expect.objectContaining({ sinceIdNoninclusive: 80, nolimit: true }),
+    );
+    expect(hoisted.fetchInboxMessages).toHaveBeenCalledTimes(2);
+    expect(apiRef.current?.messageFeeds[0]?.items.map(([id]) => id)).toEqual([81]);
   });
 
   it('suppresses automatic newer get-inbox after the current newest cursor is exhausted', async () => {

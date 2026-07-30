@@ -169,6 +169,40 @@ pub(crate) fn inbox_request_is_unbounded_latest(
     inbox_request_is_unbounded(req) && req.load_latest == Some(true)
 }
 
+pub(crate) async fn latest_inbox_poll_cursor_id<C>(
+    dbx: &C,
+    req: &InboxMessagesReq,
+) -> Result<Option<i64>, AppError>
+where
+    C: ConnectionTrait,
+{
+    let cursor_id =
+        match req.sort_by.unwrap_or(InboxMessagesSortBy::IMSDatetime) {
+            InboxMessagesSortBy::IMSDatetime => SigintInboxItem::find()
+                .select_only()
+                .column(sigint_inbox_item::Column::Id)
+                .filter(sigint_inbox_item::Column::Datetime.is_not_null())
+                .order_by_desc(sigint_inbox_item::Column::Datetime)
+                .order_by_desc(sigint_inbox_item::Column::Id)
+                .into_tuple::<i64>()
+                .one(dbx)
+                .await
+                .c(h!())?,
+            InboxMessagesSortBy::IMSTimestamp => SignalMessage::find()
+                .select_only()
+                .column(signal_message::Column::Id)
+                .filter(signal_message::Column::Deleted.eq(false))
+                .filter(signal_message::Column::Timestamp.is_not_null())
+                .order_by_desc(signal_message::Column::Timestamp)
+                .order_by_desc(signal_message::Column::Id)
+                .into_tuple::<i64>()
+                .one(dbx)
+                .await
+                .c(h!())?,
+        };
+    Ok(cursor_id)
+}
+
 #[derive(Clone, Copy, Eq, PartialEq)]
 enum InboxQueryPurpose {
     Messages,

@@ -449,6 +449,7 @@ pub struct InboxItemContextRsp {
 )]
 pub struct InboxMessagesRsp {
     pub inbox_items: Vec<(i64, InboxMessage)>,
+    pub poll_cursor_id: Option<i64>,
     pub callsigns: Vec<CallsignInfoRes>,
     pub signal_profiles: BTreeMap<String, Option<SignalProfileEntry>>,
     pub signal_groups: Vec<SignalGroupEntry>,

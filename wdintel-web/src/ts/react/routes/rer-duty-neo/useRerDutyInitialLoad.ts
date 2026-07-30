@@ -115,14 +115,16 @@ export function useRerDutyInitialLoad(params: Params) {
         const previousFeed = current.messageFeedsRef.current.find(
           (candidate) => candidate.id === feedId,
         );
+        const pollCursor =
+          response.pollCursorId == null ? null : { id: response.pollCursorId, timestamp: null };
         if (preserveUnread) {
-          current.setFeedUnreadCursor(feedId, null);
+          current.setFeedUnreadCursor(feedId, items.length === 0 ? pollCursor : null);
         } else {
           current.clearFeedUnreadBaselines(feedId);
           const tail = items.at(-1);
           current.setFeedUnreadCursor(
             feedId,
-            tail ? { id: tail[0], timestamp: tail[1].timestamp } : null,
+            tail ? { id: tail[0], timestamp: tail[1].timestamp } : pollCursor,
           );
         }
         current.setMessageFeeds((previous) =>
