@@ -294,10 +294,19 @@ async fn load_reo_inbox_messages(
         load_reo_group_master_keys(dbx, login, req, &message_ids)
             .await
             .context(h!())?;
+    let mut normalized_callsigns =
+        crate::inbox::callsigns::load_by_item_ids(dbx, &message_ids).await?;
 
     rows.into_iter()
         .map(|row| {
             let id = row.id;
+            let callsigns = match normalized_callsigns.remove(&id) {
+                Some(callsigns) => callsigns,
+                None => crate::inbox::callsigns::from_legacy_values(
+                    row.callsigns,
+                    row.callsigns_alg2,
+                )?,
+            };
             Ok((
                 id,
                 ReoInboxMessage {
@@ -306,10 +315,8 @@ async fn load_reo_inbox_messages(
                     }),
                     freq: row.freq,
                     coords: row.coords,
-                    callsigns: parse_optional_json_vec(row.callsigns)?,
-                    callsigns_alg2: parse_optional_json_vec(
-                        row.callsigns_alg2,
-                    )?,
+                    callsigns: callsigns.primary,
+                    callsigns_alg2: callsigns.alg2,
                     callsign_tokens: parse_optional_json_vec(
                         row.callsign_tokens,
                     )?,

@@ -259,9 +259,20 @@ pub async fn get_inbox_messages_report(
         "[get_inbox_messages_report] {}: query completed",
         Utc::now()
     );
+    let callsign_item_ids = items_map.keys().copied().collect_vec();
+    let mut normalized_callsigns =
+        crate::inbox::callsigns::load_by_item_ids(&read_db, &callsign_item_ids)
+            .await?;
 
     let mut res: Vec<(i64, Option<(f64, f64)>, InboxMessage)> = vec![];
     for (id, m) in items_map {
+        let callsigns = match normalized_callsigns.remove(&id) {
+            Some(callsigns) => callsigns.primary,
+            None => {
+                serde_json::from_value(m.callsigns.clone().unwrap_or_default())
+                    .unwrap_or_else(|_| vec![])
+            }
+        };
         let locations_w_coords = match pelengs_map.get(&id) {
             None => vec![(m.location.clone(), None, None)],
             Some(pelengs) => {
@@ -289,10 +300,7 @@ pub async fn get_inbox_messages_report(
                     date: m.date.clone(),
                     time: m.time.clone(),
                     freq: m.freq.clone(),
-                    callsigns: serde_json::from_value(
-                        m.callsigns.clone().unwrap_or_default(),
-                    )
-                    .unwrap_or_else(|_| vec![]),
+                    callsigns: callsigns.clone(),
                     checked: m.checked.unwrap_or(false),
                     important: false,
                     bookmarked: false,

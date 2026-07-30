@@ -1337,16 +1337,22 @@ async fn load_mouse_report_messages_chunk(
     } else {
         BTreeMap::new()
     };
+    let mut normalized_callsigns =
+        crate::inbox::callsigns::load_by_item_ids(dbx, &message_ids).await?;
 
     rows.into_iter()
         .map(|row| {
+            let callsigns = match normalized_callsigns.remove(&row.id) {
+                Some(callsigns) => callsigns.primary,
+                None => parse_optional_json_vec(row.callsigns)?,
+            };
             let mut message = blank_inbox_message();
             message.timestamp = row
                 .timestamp
                 .map(|timestamp| timestamp.and_utc().timestamp_millis());
             message.freq = row.freq;
             message.coords = row.coords;
-            message.callsigns = parse_optional_json_vec(row.callsigns)?;
+            message.callsigns = callsigns;
             message.date = row.date;
             message.time = row.time;
             message.unit = row.unit;

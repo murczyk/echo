@@ -435,7 +435,11 @@ async fn build_inbox_messages_report_sql(
             ),
             "inbox_tags",
         )
-        .column_as(sigint_inbox_item::Column::CallsignsAlg1, "callsigns")
+        .column_as(sigint_inbox_item::Column::Id, "inbox_item_id")
+        .column_as(
+            sigint_inbox_item::Column::Callsigns,
+            "legacy_callsigns",
+        )
         .column_as(
             Expr::col((
                 signal_message::Entity,
@@ -606,11 +610,60 @@ async fn build_inbox_messages_report_sql(
         .table_name(inbox_cte_alias.clone())
         .to_owned();
 
+    let inbox_item_id_alias = Alias::new("inbox_item_id");
+    let callsigns_alias = Alias::new("callsigns");
+    let primary_callsigns_cte_alias = Alias::new("primary_callsigns_cte");
+    let mut filtered_inbox_item_ids = Query::select();
+    filtered_inbox_item_ids
+        .column((inbox_cte_alias.clone(), inbox_item_id_alias.clone()))
+        .from(inbox_cte_alias.clone());
+    let mut primary_callsigns_q = Query::select();
+    primary_callsigns_q
+        .column(sigint_inbox_item_callsign::Column::SigintInboxItemId)
+        .expr_as(
+            Expr::cust(
+                "jsonb_agg(sigint_inbox_item_callsign.callsign order by \
+                 sigint_inbox_item_callsign.ordering, \
+                 sigint_inbox_item_callsign.id)",
+            ),
+            callsigns_alias.clone(),
+        )
+        .from(sigint_inbox_item_callsign::Entity)
+        .and_where(
+            Expr::col(sigint_inbox_item_callsign::Column::Deleted).eq(false),
+        )
+        .and_where(Expr::cust("sigint_inbox_item_callsign.source = 'primary'"))
+        .and_where(
+            Expr::col(sigint_inbox_item_callsign::Column::SigintInboxItemId)
+                .in_subquery(filtered_inbox_item_ids),
+        )
+        .group_by_col(sigint_inbox_item_callsign::Column::SigintInboxItemId);
+    let primary_callsigns_cte = CommonTableExpression::new()
+        .query(primary_callsigns_q)
+        .table_name(primary_callsigns_cte_alias.clone())
+        .to_owned();
+
     // Step 2: Build deduplication CTE using DISTINCT ON (dedup_key)
     let dedup_key_alias = Alias::new("dedup_key");
     let mut dedup_q = Query::select()
-        .column(ColumnRef::Asterisk)
+        .column((inbox_cte_alias.clone(), Asterisk))
+        .expr_as(
+            Expr::cust(
+                "coalesce(primary_callsigns_cte.callsigns, \
+                 inbox_items_cte.legacy_callsigns)",
+            ),
+            callsigns_alias,
+        )
         .from(inbox_cte_alias.clone())
+        .join(
+            JoinType::LeftJoin,
+            primary_callsigns_cte_alias.clone(),
+            Expr::col((
+                primary_callsigns_cte_alias,
+                sigint_inbox_item_callsign::Column::SigintInboxItemId,
+            ))
+            .equals((inbox_cte_alias.clone(), inbox_item_id_alias)),
+        )
         .distinct_on([dedup_key_alias.clone()])
         .order_by(dedup_key_alias.clone(), Order::Asc)
         // emulate NULLS FIRST: order nulls before non-nulls
@@ -626,6 +679,7 @@ async fn build_inbox_messages_report_sql(
     // Step 3: Combine CTEs and main query, add filter by initial window values and business logic ordering
     let combined_query = Query::with()
         .cte(inbox_cte)
+        .cte(primary_callsigns_cte)
         .clone()
         .query(dedup_q)
         .to_string(PostgresQueryBuilder);

@@ -338,9 +338,18 @@ async fn load_digest_messages(
         load_message_group_info(dbx, login, req, &message_ids)
             .await
             .context(h!())?;
+    let mut normalized_callsigns =
+        crate::inbox::callsigns::load_by_item_ids(dbx, &message_ids).await?;
 
     rows.into_iter()
         .map(|row| {
+            let callsigns = match normalized_callsigns.remove(&row.id) {
+                Some(callsigns) => callsigns,
+                None => crate::inbox::callsigns::from_legacy_values(
+                    row.callsigns,
+                    row.callsigns_alg2,
+                )?,
+            };
             let group_info = groups_by_message.remove(&row.id);
             let mut message = blank_inbox_message();
             message.message_uid = row.message_uid;
@@ -350,9 +359,8 @@ async fn load_digest_messages(
                 .map(|timestamp| timestamp.and_utc().timestamp_millis());
             message.freq = row.freq;
             message.coords = row.coords;
-            message.callsigns = parse_optional_json_vec(row.callsigns)?;
-            message.callsigns_alg2 =
-                parse_optional_json_vec(row.callsigns_alg2)?;
+            message.callsigns = callsigns.primary;
+            message.callsigns_alg2 = callsigns.alg2;
             message.callsign_tokens =
                 Some(parse_optional_json_vec(row.callsign_tokens)?);
             message.location =
