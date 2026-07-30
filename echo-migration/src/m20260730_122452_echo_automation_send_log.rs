@@ -58,7 +58,7 @@ impl MigrationTrait for Migration {
                         automation.target_group_id,
                         delivery.created_at,
                         delivery.sent_at,
-                        delivery.created_at
+                        delivery.sent_at
                     from echo_automation_delivery delivery
                     join echo_automation automation
                         on automation.id = delivery.automation_id

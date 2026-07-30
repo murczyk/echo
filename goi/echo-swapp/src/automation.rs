@@ -8,7 +8,7 @@ use chrono::{Duration as ChronoDuration, NaiveDateTime, Utc};
 use regex::Regex;
 use sea_orm::{
     prelude::Json, ConnectionTrait, DatabaseBackend, DatabaseConnection,
-    FromQueryResult, Statement,
+    FromQueryResult, Statement, TransactionTrait,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
@@ -1236,8 +1236,10 @@ async fn send_matching_message(
             warning: None,
         }
     };
+    let client_name = public_client_name(&target.client_name);
+    let txn = db.begin().await.c(h!())?;
     let Some(send_log_id) = plan_send(
-        db,
+        &txn,
         automation.id,
         automation.source_group_id,
         automation.target_group_id,
@@ -1246,6 +1248,7 @@ async fn send_matching_message(
     .await
     .c(h!())?
     else {
+        txn.rollback().await.c(h!())?;
         record_delivery(
             db,
             automation.id,
@@ -1258,9 +1261,9 @@ async fn send_matching_message(
         .c(h!())?;
         return Ok(());
     };
-    messenger::send(
-        db,
-        &public_client_name(&target.client_name),
+    messenger::enqueue(
+        &txn,
+        &client_name,
         kind,
         vec![target.group_id],
         vec![],
@@ -1269,9 +1272,9 @@ async fn send_matching_message(
     )
     .await
     .c(h!())?;
-    mark_send_sent(db, send_log_id).await.c(h!())?;
+    mark_send_sent(&txn, send_log_id).await.c(h!())?;
     record_delivery(
-        db,
+        &txn,
         automation.id,
         message,
         "sent",
@@ -1280,6 +1283,10 @@ async fn send_matching_message(
     )
     .await
     .c(h!())?;
+    txn.commit().await.c(h!())?;
+    messenger::tick_after_send(db, &client_name, kind)
+        .await
+        .c(h!())?;
     if let Some(warning) = attachments.warning {
         set_status(db, automation.id, "warning", Some(&warning))
             .await
@@ -1289,7 +1296,7 @@ async fn send_matching_message(
 }
 
 async fn plan_send(
-    db: &DatabaseConnection,
+    db: &impl ConnectionTrait,
     automation_id: i64,
     source_group_id: i32,
     target_group_id: i32,
@@ -1327,7 +1334,7 @@ async fn plan_send(
 }
 
 async fn mark_send_sent(
-    db: &DatabaseConnection,
+    db: &impl ConnectionTrait,
     send_log_id: i64,
 ) -> Result<()> {
     db.execute(Statement::from_sql_and_values(
@@ -1570,7 +1577,7 @@ async fn record_edit_warnings(
 }
 
 async fn record_delivery(
-    db: &DatabaseConnection,
+    db: &impl ConnectionTrait,
     automation_id: i64,
     message: &InboxMessageRow,
     status: &str,
@@ -2952,6 +2959,92 @@ mod tests {
                 .c(h!())?
                 .sent_at
                 .is_some());
+            Ok(())
+        }
+        .await;
+        cleanup_test_namespace(&db, &fixture.namespace, &fixture.phone_number)
+            .await
+            .c(h!())?;
+        result
+    }
+
+    #[tokio::test]
+    async fn rolled_back_send_plan_can_be_reclaimed() -> Result<()> {
+        let _guard = DB_TEST_LOCK.lock().await;
+        let db = test_db().await.c(h!())?;
+        let fixture = create_fixture(&db).await.c(h!())?;
+        let result = async {
+            let message = insert_message(
+                &db,
+                &fixture,
+                "rollback",
+                Utc::now().naive_utc(),
+            )
+            .await
+            .c(h!())?;
+            let txn = db.begin().await.c(h!())?;
+            assert!(plan_send(
+                &txn,
+                fixture.automation_id,
+                fixture.source_group_id,
+                fixture.target_group_id,
+                &message,
+            )
+            .await
+            .c(h!())?
+            .is_some());
+            txn.rollback().await.c(h!())?;
+
+            assert!(plan_send(
+                &db,
+                fixture.automation_id,
+                fixture.source_group_id,
+                fixture.target_group_id,
+                &message,
+            )
+            .await
+            .c(h!())?
+            .is_some());
+            Ok(())
+        }
+        .await;
+        cleanup_test_namespace(&db, &fixture.namespace, &fixture.phone_number)
+            .await
+            .c(h!())?;
+        result
+    }
+
+    #[tokio::test]
+    async fn send_plan_deduplicates_stable_internal_id() -> Result<()> {
+        let _guard = DB_TEST_LOCK.lock().await;
+        let db = test_db().await.c(h!())?;
+        let fixture = create_fixture(&db).await.c(h!())?;
+        let result = async {
+            let second_automation_id =
+                insert_test_automation(&db, &fixture).await.c(h!())?;
+            let now = Utc::now().naive_utc();
+            let original =
+                insert_message(&db, &fixture, "stable-internal-id", now)
+                    .await
+                    .c(h!())?;
+            let duplicate =
+                insert_message(&db, &fixture, "stable-internal-id", now)
+                    .await
+                    .c(h!())?;
+            assert_ne!(original.id, duplicate.id);
+            assert!(
+                plan_fixture_send(&db, &fixture, &original).await.c(h!())? > 0
+            );
+            assert!(plan_send(
+                &db,
+                second_automation_id,
+                fixture.source_group_id,
+                fixture.target_group_id,
+                &duplicate,
+            )
+            .await
+            .c(h!())?
+            .is_none());
             Ok(())
         }
         .await;

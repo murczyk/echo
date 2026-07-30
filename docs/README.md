@@ -267,7 +267,7 @@ flowchart LR
         report["report_history_worker_goi<br/>generate requested GOI reports"]
         echo_im["Echo IM<br/>Signal + WhatsApp bot integration"]
 
-        echo_pg[("PostgreSQL 18 · wd<br/>goi_integration · goi_association · goi_knowledge<br/>goi_palitra_sync · source blobs · converted geometry<br/>palitra sync/conversion queues")]
+        echo_pg[("PostgreSQL 18 · wd<br/>goi_integration · goi_association · goi_knowledge<br/>goi_palitra_sync · source blobs · converted geometry<br/>palitra sync/conversion queues · automation send log")]
         report_store[("Backblaze B2 / S3<br/>generated GOI reports · optional")]
 
         api --> routes
@@ -290,6 +290,7 @@ flowchart LR
         goi_app["GOI application"]
         goi_worker["goi-echo-worker.service<br/>HTTP API · :8088"]
         goi_watchers["Internal workers<br/>associations_worker_nofail<br/>knowledge_worker_nofail"]
+        echo_swapp["echo-swapp.service<br/>messenger UI/API<br/>automation + cleanup workers"]
         goi_postgres["postgresql.service"]
         goi_pg[("PostgreSQL · goi<br/>association · knowledge · sync_lock")]
         goi_files[("GOI filesystem<br/>/etc/goi/data/xlsx/<br/>associations · knowledge · frequencies<br/>/etc/goi/data/palettes/")]
@@ -306,7 +307,8 @@ flowchart LR
     sync <-->|Basic-auth HTTP<br/>associations · knowledge · signed frequencies| goi_worker
     sync <-->|SSH · knowledge workbook + palette files| goi_files
     sync -.->|SSH · remote sync lock| goi_pg
-    goi_app <-->|messenger bot integration| echo_im
+    goi_app <-->|messenger bot integration| echo_swapp
+    echo_swapp -->|Echo IM + automation tables| echo_pg
 
     style echo_lxc stroke-width:2px
     style goi_lxc stroke-width:2px,stroke-dasharray:8 5
@@ -319,6 +321,12 @@ conversion workers run beside it. `wdintel-rs.service` exposes GOI request
 routes but does not start GOI background workers in live mode. Debug/test
 server mode can still run the general worker set for local development, with
 the GOI pool disabled.
+
+`echo-swapp.service` runs automation forwarding and Echo IM cleanup on the GOI
+LXC while using the Echo PostgreSQL database as its system of record.
+Cross-automation send reservations, outbound queue rows, and delivery records
+commit atomically. `echo_automation_send_log` retains route-level
+deduplication state for 30 days; the cleanup worker hard-deletes older rows.
 
 Each full GOI integration is scoped to its owner organism. Signed-frequency
 reports and worker-managed callsign rows include only live networks whose

@@ -16,8 +16,8 @@ use std::time::Duration;
 
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseBackend,
-    DatabaseConnection, EntityTrait, JoinType, QueryFilter, QuerySelect,
-    RelationTrait, Set, Statement, TransactionTrait,
+    DatabaseConnection, DatabaseTransaction, EntityTrait, JoinType,
+    QueryFilter, QuerySelect, RelationTrait, Set, Statement, TransactionTrait,
 };
 use serde::{Deserialize, Serialize};
 
@@ -386,12 +386,35 @@ pub async fn send(
     text: String,
     attachments: Vec<String>,
 ) -> Result<()> {
+    let txn = db.begin().await.c(h!())?;
+    enqueue(
+        &txn,
+        name,
+        kind,
+        group_ids,
+        recipient_phone_numbers,
+        text,
+        attachments,
+    )
+    .await
+    .c(h!())?;
+    txn.commit().await.c(h!())?;
+    tick_after_send(db, name, kind).await.c(h!())
+}
+
+pub(crate) async fn enqueue(
+    txn: &DatabaseTransaction,
+    name: &str,
+    kind: MessengerKind,
+    group_ids: Vec<String>,
+    recipient_phone_numbers: Vec<String>,
+    text: String,
+    attachments: Vec<String>,
+) -> Result<()> {
     if text.trim().is_empty() && attachments.is_empty() {
         bail!("message or attachment is required");
     }
     let client_name = owned_client_name(name);
-    let txn = db.begin().await.c(h!())?;
-    let should_tick_after_send = kind == MessengerKind::Signal;
     echo_im::send_message(
         SendMessageReq {
             text,
@@ -404,13 +427,23 @@ pub async fn send(
                 .collect(),
         },
         &client_name,
-        &txn,
+        txn,
         None,
     )
     .await
+    .c(h!())?
+    .context("messenger account is not linked")
     .c(h!())?;
-    txn.commit().await.c(h!())?;
-    if should_tick_after_send
+    Ok(())
+}
+
+pub(crate) async fn tick_after_send(
+    db: &DatabaseConnection,
+    name: &str,
+    kind: MessengerKind,
+) -> Result<()> {
+    let client_name = owned_client_name(name);
+    if kind == MessengerKind::Signal
         && !sync_is_paused(db, &client_name).await.c(h!())?
     {
         echo_im::worker::signal_worker_tick_once(&client_name, db)
