@@ -842,7 +842,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn coordinate_extraction_keeps_standard_header_but_not_comments() {
+    async fn coordinate_extraction_keeps_standard_header_and_comments() {
         let body = "36T VS 89904 14667\n01.07.2026, 02:55:19\n155.0250\nКоординати: 36U XB 66512 50880\nУКХ р/м\n\n— репліка";
 
         assert!(!crate::rer_importer::coordinates::extract_coords(body)
@@ -860,8 +860,9 @@ mod tests {
         )
         .await;
 
-        assert_eq!(coords.len(), 1);
-        assert_eq!(coords[0].mgrs, "36UXB6651250880");
+        assert_eq!(coords.len(), 2);
+        assert!(coords.iter().any(|coord| coord.mgrs == "36TVS8990414667"));
+        assert!(coords.iter().any(|coord| coord.mgrs == "36UXB6651250880"));
     }
 
     #[test]
