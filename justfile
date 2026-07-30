@@ -2536,6 +2536,27 @@ deploy-stg: prepare-workspace
     ssh echo-build-main 'rm ~/workspace/krab/echo-feature/echo/target/debian/wdintel-rs*.deb'
     ssh "echo-staging" 'cd /var/tmp/ && sudo apt install -y --reinstall --allow-downgrades ./wdintel-rs*.deb'
 
+deploy-cbr-stg: prepare-workspace
+    #!/bin/bash
+    set -euxo pipefail
+    ssh echo-build-main "cd ~/workspace/krab/echo-feature/echo && \
+        git fetch origin && \
+        git checkout main && \
+        git checkout {{ branch }} && \
+        git pull && \
+        cd wdintel-web && \
+        git pull && \
+        . ~/.nvm/nvm.sh && \
+        npx npm ci && \
+        npm run build && \
+        cd .. && \
+        just prepare-workspace && \
+        touch wdintel-rs/build.rs && \
+        \$HOME/.cargo/bin/cargo deb -p wdintel-rs --fast"
+    scp echo-build-main:~/workspace/krab/echo-feature/echo/target/debian/wdintel-rs*.deb "echo-staging":/var/tmp
+    ssh echo-build-main 'rm ~/workspace/krab/echo-feature/echo/target/debian/wdintel-rs*.deb'
+    ssh "echo-cbr-staging" 'cd /var/tmp/ && sudo apt install -y --reinstall --allow-downgrades ./wdintel-rs*.deb'
+
 [arg('server', long='server')]
 transcriber-smoke server:
     #!/bin/bash
