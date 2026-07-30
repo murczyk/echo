@@ -12,7 +12,7 @@ use crate::types::*;
 use crate::utils::orm::ArrayColumnOps;
 use chrono::*;
 use sea_orm::*;
-use sea_query::{Alias, Expr, JoinType, PgFunc};
+use sea_query::{Alias, Expr, Func, JoinType, PgFunc};
 use std::collections::HashMap;
 
 #[derive(Debug, FromQueryResult)]
@@ -271,6 +271,28 @@ pub async fn bl_update_network_callsign(
         }
     }
 
+    if let Some(unit_id) =
+        confirmed_unlinked_network_callsign_unit_id(req, &network_callsign)
+    {
+        let callsign_id = ensure_callsign_preserving_catalog(
+            req,
+            user_id,
+            txn,
+            &network_callsign,
+            unit_id,
+        )
+        .await
+        .c(h!())?;
+
+        let network = find_network(txn, req.network_id).await.c(h!())?;
+        let mut network = network.into_active_model();
+        network.updated_at = Set(Utc::now().naive_utc());
+        network.updated_by_login_id = Set(Some(*user_id));
+        network.update(txn).await.c(h!())?;
+
+        return Ok(callsign_id);
+    }
+
     // If unit_developing is true, we should not link to any known sigint_callsign, just update a network callsign.
     // However, if developing is being turned off and a linked catalog callsign still has developing=true,
     // we must sync it — otherwise sc_developing keeps the callsign displayed as "в дорозвідці".
@@ -282,36 +304,9 @@ pub async fn bl_update_network_callsign(
                 let known_callsign = find_callsign(txn, sigint_callsign_id)
                     .await
                     .context(h!())?;
-                if known_callsign.developing {
-                    let additional_sources =
-                        list_callsign_additional_source_ids(
-                            txn,
-                            known_callsign.id,
-                        )
-                        .await
-                        .context(h!())?;
-                    let known_callsign_req = UpdateCallsignReq {
-                        id: known_callsign.id,
-                        callsign: known_callsign.callsign.clone(),
-                        position: known_callsign.position.clone(),
-                        comment: known_callsign.comment.clone(),
-                        full_name: Some(known_callsign.full_name.clone()),
-                        full_name_is_missing: false,
-                        unit_id: known_callsign.unit_id,
-                        active: known_callsign.deleted,
-                        source_id: known_callsign.source_id,
-                        callsign_additional_sources: additional_sources,
-                        created_at: known_callsign
-                            .created_at
-                            .and_utc()
-                            .timestamp_millis(),
-                        developing: false,
-                        radio_freq: Some(known_callsign.radio_freq.clone()),
-                    };
-                    bl_callsign_update(&known_callsign_req, user_id, txn)
-                        .await
-                        .context(h!())?;
-                }
+                update_callsign_developing(known_callsign, false, user_id, txn)
+                    .await
+                    .context(h!())?;
             }
         }
         return update_network_callsign_not_linked(req, user_id, txn).await;
@@ -329,7 +324,7 @@ pub async fn bl_update_network_callsign(
                 txn,
                 network_callsign,
                 known_callsign,
-                false,
+                CatalogOverridesUpdate::Keep,
             )
             .await?
         } else
@@ -343,6 +338,20 @@ pub async fn bl_update_network_callsign(
     Ok(network_callsign_id)
 }
 
+fn confirmed_unlinked_network_callsign_unit_id(
+    req: &UpdateNetworkCallsignReq,
+    network_callsign: &sigint_network_callsign::Model,
+) -> Option<i64> {
+    if network_callsign.sigint_callsign_id.is_some()
+        || req.developing
+        || req.unit_developing
+    {
+        return None;
+    }
+
+    req.unit_id
+}
+
 pub(crate) async fn ensure_callsign(
     req: &UpdateNetworkCallsignReq,
     user_id: &uuid::Uuid,
@@ -350,39 +359,11 @@ pub(crate) async fn ensure_callsign(
     network_callsign: &sigint_network_callsign::Model,
     unit_id: i64,
 ) -> anyhow::Result<i64> {
-    let callsign_value = req.callsign.clone().trim().to_lowercase();
-
-    let existing_known_callsign = sigint_callsign::Entity::find()
-        .filter(sigint_callsign::Column::UnitId.eq(unit_id))
-        .filter(sigint_callsign::Column::Callsign.eq(callsign_value.clone()))
-        .filter(sigint_callsign::Column::Deleted.eq(false))
-        .one(txn)
-        .await
-        .context(h!())?;
-
-    let known_callsign = if let Some(known) = existing_known_callsign {
-        known
-    } else {
-        let known_callsign_req = CreateCallsignReq {
-            callsign: req.callsign.clone(),
-            position: req.position.clone().unwrap_or_default(),
-            comment: req.comment.clone().unwrap_or_default(),
-            full_name: if req.full_name_is_missing {
-                network_callsign.full_name.clone().unwrap_or_default()
-            } else {
-                req.full_name.clone().unwrap_or_default()
-            },
-            unit_id,
-            source_id: req.source_id.map(|v| v as i32),
-            callsign_additional_sources: vec![],
-            radio_freq: req.radio_freq.clone(),
-            developing: req.developing,
-        };
-
-        bl_callsign_create(&known_callsign_req, user_id, txn)
+    let known_callsign =
+        find_or_create_callsign(req, user_id, txn, network_callsign, unit_id)
             .await
-            .context(h!())?
-    };
+            .c(h!())?
+            .callsign;
 
     update_network_callsign_linked(
         req,
@@ -390,10 +371,144 @@ pub(crate) async fn ensure_callsign(
         txn,
         network_callsign.clone(),
         known_callsign,
-        true,
+        CatalogOverridesUpdate::Clear,
     )
     .await
     .c(h!())
+}
+
+async fn ensure_callsign_preserving_catalog(
+    req: &UpdateNetworkCallsignReq,
+    user_id: &uuid::Uuid,
+    txn: &DatabaseTransaction,
+    network_callsign: &sigint_network_callsign::Model,
+    unit_id: i64,
+) -> anyhow::Result<i64> {
+    let ensured_callsign =
+        find_or_create_callsign(req, user_id, txn, network_callsign, unit_id)
+            .await
+            .c(h!())?;
+    let catalog_overrides_update = if ensured_callsign.reused_catalog {
+        CatalogOverridesUpdate::SetFromRequest
+    } else {
+        CatalogOverridesUpdate::Clear
+    };
+    let known_callsign = update_callsign_developing(
+        ensured_callsign.callsign,
+        req.developing,
+        user_id,
+        txn,
+    )
+    .await
+    .c(h!())?;
+
+    link_network_callsign(
+        req,
+        user_id,
+        txn,
+        network_callsign.clone(),
+        known_callsign,
+        catalog_overrides_update,
+    )
+    .await
+    .c(h!())
+}
+
+struct EnsuredCallsign {
+    callsign: sigint_callsign::Model,
+    reused_catalog: bool,
+}
+
+async fn find_or_create_callsign(
+    req: &UpdateNetworkCallsignReq,
+    user_id: &uuid::Uuid,
+    txn: &DatabaseTransaction,
+    network_callsign: &sigint_network_callsign::Model,
+    unit_id: i64,
+) -> anyhow::Result<EnsuredCallsign> {
+    let callsign_value = req.callsign.clone().trim().to_lowercase();
+
+    let existing_known_callsign = sigint_callsign::Entity::find()
+        .filter(sigint_callsign::Column::UnitId.eq(unit_id))
+        .filter(
+            Expr::expr(Func::lower(Expr::col((
+                sigint_callsign::Entity,
+                sigint_callsign::Column::Callsign,
+            ))))
+            .eq(callsign_value),
+        )
+        .filter(sigint_callsign::Column::Deleted.eq(false))
+        .one(txn)
+        .await
+        .context(h!())?;
+
+    let (known_callsign, reused_catalog) =
+        if let Some(known_callsign) = existing_known_callsign {
+            (known_callsign, true)
+        } else {
+            let known_callsign_req = CreateCallsignReq {
+                callsign: req.callsign.clone(),
+                position: req.position.clone().unwrap_or_default(),
+                comment: req.comment.clone().unwrap_or_default(),
+                full_name: if req.full_name_is_missing {
+                    network_callsign.full_name.clone().unwrap_or_default()
+                } else {
+                    req.full_name.clone().unwrap_or_default()
+                },
+                unit_id,
+                source_id: req.source_id.map(|v| v as i32),
+                callsign_additional_sources: vec![],
+                radio_freq: req.radio_freq.clone(),
+                developing: req.developing,
+            };
+
+            (
+                bl_callsign_create(&known_callsign_req, user_id, txn)
+                    .await
+                    .context(h!())?,
+                false,
+            )
+        };
+
+    Ok(EnsuredCallsign {
+        callsign: known_callsign,
+        reused_catalog,
+    })
+}
+
+async fn update_callsign_developing(
+    known_callsign: sigint_callsign::Model,
+    developing: bool,
+    user_id: &uuid::Uuid,
+    txn: &DatabaseTransaction,
+) -> Result<sigint_callsign::Model, AppError> {
+    if known_callsign.developing == developing {
+        return Ok(known_callsign);
+    }
+
+    let callsign_additional_sources =
+        list_callsign_additional_source_ids(txn, known_callsign.id)
+            .await
+            .context(h!())?;
+    let known_callsign_req = UpdateCallsignReq {
+        id: known_callsign.id,
+        callsign: known_callsign.callsign.clone(),
+        position: known_callsign.position.clone(),
+        comment: known_callsign.comment.clone(),
+        full_name: Some(known_callsign.full_name.clone()),
+        full_name_is_missing: false,
+        unit_id: known_callsign.unit_id,
+        active: known_callsign.deleted,
+        source_id: known_callsign.source_id,
+        callsign_additional_sources,
+        created_at: known_callsign.created_at.and_utc().timestamp_millis(),
+        developing,
+        radio_freq: Some(known_callsign.radio_freq.clone()),
+    };
+
+    Ok(bl_callsign_update(&known_callsign_req, user_id, txn)
+        .await
+        .context(h!())?)
 }
 
 async fn update_network_callsign_linked(
@@ -402,7 +517,7 @@ async fn update_network_callsign_linked(
     txn: &DatabaseTransaction,
     network_callsign: sigint_network_callsign::Model,
     known_callsign: sigint_callsign::Model,
-    clear_position_comment: bool,
+    catalog_overrides_update: CatalogOverridesUpdate,
 ) -> Result<i64, AppError> {
     let callsign_additional_sources =
         list_callsign_additional_source_ids(txn, known_callsign.id)
@@ -436,23 +551,58 @@ async fn update_network_callsign_linked(
         .await
         .context(h!())?;
 
+    link_network_callsign(
+        req,
+        user_id,
+        txn,
+        network_callsign,
+        known_callsign,
+        catalog_overrides_update,
+    )
+    .await
+}
+
+enum CatalogOverridesUpdate {
+    Keep,
+    Clear,
+    SetFromRequest,
+}
+
+async fn link_network_callsign(
+    req: &UpdateNetworkCallsignReq,
+    user_id: &uuid::Uuid,
+    txn: &DatabaseTransaction,
+    network_callsign: sigint_network_callsign::Model,
+    known_callsign: sigint_callsign::Model,
+    catalog_overrides_update: CatalogOverridesUpdate,
+) -> Result<i64, AppError> {
     let network_callsign_json_old = get_network_callsign_rec_json(req.id, txn)
         .await
         .context(h!())?;
 
     // Keep network callsign in sync with known callsign
     let mut network_callsign_record = network_callsign.into_active_model();
+    network_callsign_record.sigint_network_id = Set(req.network_id);
     network_callsign_record.sigint_callsign =
-        Set(known_callsign.callsign.clone());
+        Set(known_callsign.callsign.trim().to_lowercase());
     network_callsign_record.sigint_callsign_id = Set(Some(known_callsign.id));
     network_callsign_record.main_radio_station = Set(req.main_radio_station);
     network_callsign_record.command_control = Set(req.command_control);
     network_callsign_record.unit_developing = Set(req.unit_developing);
     network_callsign_record.developing = Set(req.developing);
-    if clear_position_comment {
-        network_callsign_record.position = Set(None);
-        network_callsign_record.comment = Set(None);
-        network_callsign_record.full_name = Set(None);
+    match catalog_overrides_update {
+        CatalogOverridesUpdate::Keep => {}
+        CatalogOverridesUpdate::Clear => {
+            clear_network_callsign_catalog_overrides(
+                &mut network_callsign_record,
+            );
+        }
+        CatalogOverridesUpdate::SetFromRequest => {
+            set_network_callsign_catalog_overrides(
+                &mut network_callsign_record,
+                req,
+            );
+        }
     }
     let network_callsign =
         network_callsign_record.update(txn).await.context(h!())?;
@@ -473,6 +623,31 @@ async fn update_network_callsign_linked(
     .context(h!())?;
 
     Ok(network_callsign.id)
+}
+
+fn set_network_callsign_catalog_overrides(
+    network_callsign: &mut sigint_network_callsign::ActiveModel,
+    req: &UpdateNetworkCallsignReq,
+) {
+    network_callsign.position = Set(req.position.clone());
+    network_callsign.comment = Set(req.comment.clone());
+    if !req.full_name_is_missing {
+        network_callsign.full_name = Set(req.full_name.clone());
+    }
+    network_callsign.source_id = Set(req.source_id);
+    network_callsign.radio_freq = Set(req.radio_freq.clone());
+    network_callsign.unit_id = Set(None);
+}
+
+fn clear_network_callsign_catalog_overrides(
+    network_callsign: &mut sigint_network_callsign::ActiveModel,
+) {
+    network_callsign.position = Set(None);
+    network_callsign.comment = Set(None);
+    network_callsign.full_name = Set(None);
+    network_callsign.source_id = Set(None);
+    network_callsign.radio_freq = Set(None);
+    network_callsign.unit_id = Set(None);
 }
 
 async fn update_network_callsign_not_linked(
@@ -1133,6 +1308,315 @@ pub async fn bl_get_network_callsigns_activity(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::functest::tests::*;
+    use serial_test::serial;
+
+    fn network_callsign_for_link_check(
+        sigint_callsign_id: Option<i64>,
+    ) -> sigint_network_callsign::Model {
+        sigint_network_callsign::Model {
+            id: 1,
+            sigint_network_id: 2,
+            deleted: false,
+            created_at: Default::default(),
+            sigint_callsign: "сокіл-1".to_string(),
+            sigint_origin_id: None,
+            position: None,
+            comment: None,
+            sigint_callsign_id,
+            source_id: None,
+            radio_freq: None,
+            developing: true,
+            unit_developing: false,
+            unit_id: None,
+            main_radio_station: false,
+            original_id: None,
+            command_control: false,
+            full_name: None,
+        }
+    }
+
+    fn update_req_for_link_check(
+        unit_id: Option<i64>,
+        developing: bool,
+        unit_developing: bool,
+    ) -> UpdateNetworkCallsignReq {
+        UpdateNetworkCallsignReq {
+            id: 1,
+            network_id: 2,
+            callsign: "сокіл-1".to_string(),
+            position: None,
+            comment: None,
+            full_name: None,
+            full_name_is_missing: false,
+            source_id: None,
+            radio_freq: None,
+            unit_id,
+            unit_developing,
+            developing,
+            main_radio_station: false,
+            command_control: false,
+        }
+    }
+
+    #[test]
+    fn confirmed_unlinked_network_callsign_with_unit_is_linked() {
+        let req = update_req_for_link_check(Some(7), false, false);
+        let network_callsign = network_callsign_for_link_check(None);
+
+        assert_eq!(
+            confirmed_unlinked_network_callsign_unit_id(
+                &req,
+                &network_callsign
+            ),
+            Some(7)
+        );
+    }
+
+    #[test]
+    fn confirmed_unlinked_network_callsign_without_unit_is_not_linked() {
+        let req = update_req_for_link_check(None, false, false);
+        let network_callsign = network_callsign_for_link_check(None);
+
+        assert_eq!(
+            confirmed_unlinked_network_callsign_unit_id(
+                &req,
+                &network_callsign
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn developing_or_linked_network_callsign_is_not_relinked() {
+        let developing_req = update_req_for_link_check(Some(7), true, false);
+        let unit_developing_req =
+            update_req_for_link_check(Some(7), false, true);
+        let linked_req = update_req_for_link_check(Some(7), false, false);
+        let unlinked_callsign = network_callsign_for_link_check(None);
+        let linked_callsign = network_callsign_for_link_check(Some(9));
+
+        assert_eq!(
+            confirmed_unlinked_network_callsign_unit_id(
+                &developing_req,
+                &unlinked_callsign
+            ),
+            None
+        );
+        assert_eq!(
+            confirmed_unlinked_network_callsign_unit_id(
+                &unit_developing_req,
+                &unlinked_callsign
+            ),
+            None
+        );
+        assert_eq!(
+            confirmed_unlinked_network_callsign_unit_id(
+                &linked_req,
+                &linked_callsign
+            ),
+            None
+        );
+    }
+
+    async fn assert_auto_link_preserves_catalog(catalog_developing: bool) {
+        let env = cleanup().await.unwrap();
+        let login = find_test_login(&env.dbx).await.unwrap();
+        let unit = mk_sigint_unit(
+            &env.dbx,
+            sigint_unit::ActiveModel {
+                name: Set("Catalog metadata unit".to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let network = mk_sigint_network(
+            &env.dbx,
+            sigint_network::ActiveModel {
+                name: Set("Catalog metadata network".to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let requested_network = mk_sigint_network(
+            &env.dbx,
+            sigint_network::ActiveModel {
+                name: Set("Requested catalog metadata network".to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let source = source::ActiveModel {
+            name: Set("Network callsign override source".to_string()),
+            deleted: Set(false),
+            created_at: Set(Utc::now().naive_utc()),
+            sigint_origin_id: Set(None),
+            original_id: Set(None),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        let known_callsign = sigint_callsign::ActiveModel {
+            callsign: Set("Сокіл-1".to_string()),
+            position: Set("catalog position".to_string()),
+            comment: Set("catalog comment".to_string()),
+            full_name: Set("catalog full name".to_string()),
+            unit_id: Set(unit.id),
+            deleted: Set(false),
+            created_at: Set(Utc::now().naive_utc()),
+            source_id: Set(None),
+            developing: Set(catalog_developing),
+            radio_freq: Set("123.45".to_string()),
+            sigint_origin_id: Set(None),
+            original_id: Set(None),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        let network_callsign = sigint_network_callsign::ActiveModel {
+            sigint_network_id: Set(network.id),
+            deleted: Set(false),
+            created_at: Set(Utc::now().naive_utc()),
+            sigint_callsign: Set("сокіл-1".to_string()),
+            sigint_callsign_id: Set(None),
+            position: Set(None),
+            comment: Set(None),
+            full_name: Set(None),
+            source_id: Set(None),
+            radio_freq: Set(None),
+            developing: Set(false),
+            unit_developing: Set(false),
+            unit_id: Set(Some(unit.id)),
+            sigint_origin_id: Set(None),
+            main_radio_station: Set(false),
+            command_control: Set(false),
+            original_id: Set(None),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        let req = UpdateNetworkCallsignReq {
+            id: network_callsign.id,
+            network_id: requested_network.id,
+            callsign: network_callsign.sigint_callsign.clone(),
+            position: Some("network position".to_string()),
+            comment: Some("network comment".to_string()),
+            full_name: Some("network full name".to_string()),
+            full_name_is_missing: false,
+            source_id: Some(source.id),
+            radio_freq: Some("543.21".to_string()),
+            unit_id: Some(unit.id),
+            unit_developing: false,
+            developing: false,
+            main_radio_station: true,
+            command_control: false,
+        };
+        let txn = env.dbx.begin().await.unwrap();
+
+        bl_update_network_callsign(&req, &login.id, &txn)
+            .await
+            .unwrap();
+
+        let known_callsign_after =
+            sigint_callsign::Entity::find_by_id(known_callsign.id)
+                .one(&txn)
+                .await
+                .unwrap()
+                .unwrap();
+        let network_callsign_after =
+            sigint_network_callsign::Entity::find_by_id(network_callsign.id)
+                .one(&txn)
+                .await
+                .unwrap()
+                .unwrap();
+        let network_after = sigint_network::Entity::find_by_id(network.id)
+            .one(&txn)
+            .await
+            .unwrap()
+            .unwrap();
+        let requested_network_after =
+            sigint_network::Entity::find_by_id(requested_network.id)
+                .one(&txn)
+                .await
+                .unwrap()
+                .unwrap();
+
+        assert_eq!(known_callsign_after.position, "catalog position");
+        assert_eq!(known_callsign_after.comment, "catalog comment");
+        assert_eq!(known_callsign_after.full_name, "catalog full name");
+        assert_eq!(known_callsign_after.radio_freq, "123.45");
+        assert!(!known_callsign_after.developing);
+        assert_eq!(network_callsign_after.sigint_callsign, "сокіл-1");
+        assert_eq!(
+            network_callsign_after.sigint_callsign_id,
+            Some(known_callsign.id)
+        );
+        assert_eq!(
+            network_callsign_after.sigint_network_id,
+            requested_network.id
+        );
+        assert_eq!(
+            network_callsign_after.position.as_deref(),
+            Some("network position")
+        );
+        assert_eq!(
+            network_callsign_after.comment.as_deref(),
+            Some("network comment")
+        );
+        assert_eq!(
+            network_callsign_after.full_name.as_deref(),
+            Some("network full name")
+        );
+        assert_eq!(network_callsign_after.source_id, Some(source.id));
+        assert_eq!(
+            network_callsign_after.radio_freq.as_deref(),
+            Some("543.21")
+        );
+        assert!(network_callsign_after.main_radio_station);
+        assert_eq!(network_after.updated_by_login_id, None);
+        assert_eq!(requested_network_after.updated_by_login_id, Some(login.id));
+
+        txn.rollback().await.unwrap();
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn auto_link_preserves_catalog_metadata_and_clears_developing() {
+        assert_auto_link_preserves_catalog(true).await;
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn auto_link_normalizes_confirmed_mixed_case_catalog_callsign() {
+        assert_auto_link_preserves_catalog(false).await;
+    }
+
+    #[test]
+    fn linking_clears_network_callsign_catalog_overrides() {
+        let mut network_callsign =
+            network_callsign_for_link_check(None).into_active_model();
+        network_callsign.position = Set(Some("position".to_string()));
+        network_callsign.comment = Set(Some("comment".to_string()));
+        network_callsign.full_name = Set(Some("full name".to_string()));
+        network_callsign.source_id = Set(Some(3));
+        network_callsign.radio_freq = Set(Some("123.45".to_string()));
+        network_callsign.unit_id = Set(Some(5));
+
+        clear_network_callsign_catalog_overrides(&mut network_callsign);
+
+        assert_eq!(network_callsign.position, Set(None));
+        assert_eq!(network_callsign.comment, Set(None));
+        assert_eq!(network_callsign.full_name, Set(None));
+        assert_eq!(network_callsign.source_id, Set(None));
+        assert_eq!(network_callsign.radio_freq, Set(None));
+        assert_eq!(network_callsign.unit_id, Set(None));
+    }
 
     #[test]
     fn linked_network_callsign_reload_uses_updated_catalog_full_name() {
