@@ -180,7 +180,7 @@ fn descriptor_names(unit: &SourceUnit) -> HashSet<String> {
 
 fn comparable_path(
     unit: &SourceUnit,
-) -> anyhow::Result<HashMap<EchoEchelon, Vec<String>>> {
+) -> anyhow::Result<HashMap<EchoEchelon, HashSet<String>>> {
     let full_name =
         unit.operational_unit_name_full.as_deref().ok_or_else(|| {
             anyhow::anyhow!("operational_unit_name_full is missing")
@@ -196,7 +196,7 @@ fn comparable_path(
         );
     }
 
-    let mut result = HashMap::<EchoEchelon, Vec<String>>::new();
+    let mut result = HashMap::<EchoEchelon, HashSet<String>>::new();
     for (segment, descriptor) in segments.into_iter().zip(descriptors) {
         let Some(key) = descriptor
             .unit_echelon
@@ -208,7 +208,9 @@ fn comparable_path(
         let Some(echelon) = map_echelon(key) else {
             continue;
         };
-        result.entry(echelon).or_default().push(segment);
+        let names = result.entry(echelon).or_default();
+        names.insert(segment);
+        names.extend(descriptor_names(descriptor));
     }
     Ok(result)
 }
@@ -256,6 +258,17 @@ mod tests {
         let (units, _) = crate::orbit::types::parse_units(sample).unwrap();
         validate_source(&units).unwrap();
         let sigint_unit = echo_unit("", "батрурлр", "53 зрбр", "", "20 ЗВА");
+        assert!(matches_sigint_unit(&units[0], &sigint_unit));
+    }
+
+    #[test]
+    fn sample_matches_operational_aliases() {
+        let sample = include_str!(
+            "../../../deploy/2026-07-29-orbit-dictionaries/orbit_sample.json"
+        );
+        let (units, _) = crate::orbit::types::parse_units(sample).unwrap();
+        validate_source(&units).unwrap();
+        let sigint_unit = echo_unit("", "батрурлр", "53 зрбр", "", "20 ОА");
         assert!(matches_sigint_unit(&units[0], &sigint_unit));
     }
 
