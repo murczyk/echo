@@ -342,14 +342,24 @@ async fn sync_knowledge_rows(
 }
 
 fn knowledge_upsert_has_changes() -> Condition {
-    Condition::any().add(knowledge_column_is_distinct(knowledge::Column::Row))
+    Condition::any().add(knowledge_row_contents_are_distinct())
 }
 
-fn knowledge_column_is_distinct(column: knowledge::Column) -> SimpleExpr {
-    Expr::col((knowledge::Entity, column)).binary(
-        BinOper::Custom("IS DISTINCT FROM"),
-        Expr::col((Alias::new("excluded"), column)),
+fn knowledge_row_contents_are_distinct() -> SimpleExpr {
+    knowledge_row_without_layout(
+        Expr::col((knowledge::Entity, knowledge::Column::Row)).into(),
     )
+    .binary(
+        BinOper::Custom("IS DISTINCT FROM"),
+        knowledge_row_without_layout(
+            Expr::col((Alias::new("excluded"), knowledge::Column::Row)).into(),
+        ),
+    )
+}
+
+fn knowledge_row_without_layout(row: SimpleExpr) -> SimpleExpr {
+    row.binary(BinOper::Custom("-"), Expr::value("sheet_name"))
+        .binary(BinOper::Custom("-"), Expr::value("row_num"))
 }
 
 async fn delete_missing_knowledge_rows<C>(

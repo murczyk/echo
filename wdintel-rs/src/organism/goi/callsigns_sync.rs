@@ -13,6 +13,7 @@ use calamine::{Data, Reader, Xlsx};
 use chrono::{NaiveDateTime, TimeZone, Utc};
 use goi_echo_worker::knowledge::{
     KNOWLEDGE_KIND_CALL_SIGN, KNOWLEDGE_WORKER_AUTHOR,
+    KNOWLEDGE_WORKER_ID_PREFIX,
 };
 use goi_echo_worker::xlsx::empty_xlsx_buffer;
 use quick_xml::events::Event;
@@ -26,7 +27,6 @@ use std::io::{Cursor, Read, Write};
 use zip::write::FileOptions;
 use zip::{CompressionMethod, ZipArchive, ZipWriter};
 
-const KNOWLEDGE_WORKER_ID_PREFIX: &str = "EXO ID ";
 const KNOWLEDGE_COMMENT_COL_IDX: usize = 4;
 const KNOWLEDGE_SOURCE_DATE_COL_IDX: usize = 5;
 const KNOWLEDGE_UNIT_COL_IDX: usize = 6;

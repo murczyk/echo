@@ -1,5 +1,6 @@
 use crate::config::Config;
 use crate::entities::{association, knowledge};
+use crate::xlsx_sync::replace_xlsx_file;
 use actix_web::error::{
     ErrorBadRequest, ErrorInternalServerError, ErrorUnauthorized,
 };
@@ -18,8 +19,6 @@ use goi_echo_worker::row::AssociationRow;
 use sea_orm::{
     ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder,
 };
-use std::path::{Path, PathBuf};
-use std::time::{SystemTime, UNIX_EPOCH};
 
 #[derive(Clone)]
 pub struct AppState {
@@ -136,14 +135,14 @@ pub async fn import_signed_frequencies(
     validate_xlsx_body(body.as_ref())?;
 
     let path = state.config.preferred_frequencies_xlsx_path();
-    replace_xlsx_file(&path, body.as_ref())
+    let replaced = replace_xlsx_file(&path, body.as_ref())
         .await
         .with_context(|| format!("replacing {}", path.display()))
         .map_err(ErrorInternalServerError)?;
 
     Ok(HttpResponse::Ok().json(ImportSignedFrequenciesRsp {
         path: path.display().to_string(),
-        bytes_written: body.len(),
+        bytes_written: if replaced { body.len() } else { 0 },
     }))
 }
 
@@ -229,45 +228,16 @@ fn validate_xlsx_body(body: &[u8]) -> Result<(), Error> {
     Ok(())
 }
 
-async fn replace_xlsx_file(path: &Path, body: &[u8]) -> anyhow::Result<()> {
-    let parent = path.parent().context("XLSX path has no parent directory")?;
-    tokio::fs::create_dir_all(parent).await?;
-
-    let tmp_path = temp_xlsx_path(path);
-    tokio::fs::write(&tmp_path, body).await?;
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-
-        tokio::fs::set_permissions(
-            &tmp_path,
-            std::fs::Permissions::from_mode(0o644),
-        )
-        .await?;
-    }
-    tokio::fs::rename(&tmp_path, path).await?;
-    Ok(())
-}
-
-fn temp_xlsx_path(path: &Path) -> PathBuf {
-    let file_name = path
-        .file_name()
-        .and_then(|value| value.to_str())
-        .unwrap_or("upload.xlsx");
-    let suffix = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_nanos();
-    path.with_file_name(format!(".{file_name}.tmp-{suffix}"))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use actix_web::{http::StatusCode, test, App};
     use goi_echo_worker::xlsx::empty_xlsx_buffer;
+    use rust_xlsxwriter::Workbook;
     use sea_orm::DatabaseConnection;
     use std::fs;
+    use std::path::PathBuf;
+    use std::time::{SystemTime, UNIX_EPOCH};
 
     #[actix_web::test]
     async fn import_signed_frequencies_writes_readonly_sibling_when_present() {
@@ -276,7 +246,7 @@ mod tests {
         let frequencies_path = dir.join("frequencies.xlsx");
         let readonly_path = dir.join("frequencies-readonly.xlsx");
         let original_frequencies = empty_xlsx_buffer().expect("regular xlsx");
-        let original_readonly = empty_xlsx_buffer().expect("readonly xlsx");
+        let original_readonly = xlsx_buffer_with_value("original");
         fs::write(&frequencies_path, &original_frequencies)
             .expect("write regular xlsx");
         fs::write(&readonly_path, &original_readonly)
@@ -340,5 +310,14 @@ mod tests {
             .as_nanos();
         std::env::temp_dir()
             .join(format!("{prefix}-{}-{suffix}", std::process::id()))
+    }
+
+    fn xlsx_buffer_with_value(value: &str) -> Vec<u8> {
+        let mut workbook = Workbook::new();
+        workbook
+            .add_worksheet()
+            .write_string(0, 0, value)
+            .expect("write cell");
+        workbook.save_to_buffer().expect("save workbook")
     }
 }

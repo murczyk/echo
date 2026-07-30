@@ -3,6 +3,7 @@ use crate::config::{
     SYNC_LOCK_LIVE_TTL_SECS,
 };
 use crate::http_api::{require_basic_auth, AppState};
+use crate::xlsx_sync::replace_xlsx_file;
 use actix_web::error::{
     ErrorBadRequest, ErrorConflict, ErrorInternalServerError, ErrorNotFound,
 };
@@ -203,7 +204,7 @@ pub async fn upload_knowledge_workbook(
     require_basic_auth(&http_req, &state.config)?;
     validate_xlsx(body.as_ref())?;
     let path = state.config.preferred_knowledge_xlsx_path();
-    replace_file(&path, body.as_ref())
+    replace_xlsx_file(&path, body.as_ref())
         .await
         .with_context(|| format!("replacing {}", path.display()))
         .map_err(ErrorInternalServerError)?;

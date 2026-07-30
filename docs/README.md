@@ -316,6 +316,12 @@ organism without selected AORs receives no networks through these exports.
 Association and knowledge sync attempts are limited to once per minute.
 Knowledge failures delay the next attempt for ten minutes, while
 signed-frequency and callsign-workbook exports run at ten-minute intervals.
+Knowledge and signed-frequency XLSX uploads are written to
+`_sync_<original_filename>` beside the live workbook, then atomically renamed
+over it so GOI readers cannot observe a partially written file. Byte-identical
+uploads are skipped. Worker-managed callsigns use their stable Echo ID for
+upserts, while workbook row positions are ignored when detecting content
+changes.
 
 The GOI knowledge table is an active snapshot of the knowledge workbook.
 `knowledge_worker_nofail` hard-deletes rows missing from the current snapshot,

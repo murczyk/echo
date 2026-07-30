@@ -759,8 +759,6 @@ async fn upsert_goi_knowledge_snapshot(
 
 fn goi_knowledge_upsert_has_changes() -> Condition {
     [
-        goi_knowledge::Column::SourceCreatedAt,
-        goi_knowledge::Column::Row,
         goi_knowledge::Column::Deleted,
         goi_knowledge::Column::DeletedAt,
         goi_knowledge::Column::Name,
