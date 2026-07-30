@@ -31,6 +31,16 @@ create table sigint_inbox_item_callsign (
 create index sigint_inbox_item_callsign_active_callsign_idx
     on sigint_inbox_item_callsign (callsign, sigint_inbox_item_id)
     where not deleted;
+
+create index sigint_inbox_item_callsign_active_item_source_ordering_idx
+    on sigint_inbox_item_callsign (
+        sigint_inbox_item_id,
+        source,
+        ordering,
+        id
+    )
+    include (callsign)
+    where not deleted;
                 "#,
             )
             .await?;
