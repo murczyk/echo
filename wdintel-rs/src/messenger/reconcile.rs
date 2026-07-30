@@ -1947,6 +1947,13 @@ async fn reset_machine_derived_inbox_data(
     signal_message_id: i64,
 ) -> anyhow::Result<()> {
     let system_login_id = crate::users::system_login_id(txn).await?;
+    crate::inbox::callsigns::sync(
+        txn,
+        signal_message_id,
+        crate::inbox::callsigns::InboxItemCallsigns::default(),
+        system_login_id,
+    )
+    .await?;
     sigint_search::Entity::delete_by_id(signal_message_id)
         .exec(txn)
         .await
