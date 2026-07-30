@@ -20,6 +20,7 @@ struct MatchScore {
 struct ComparablePath {
     names_by_echelon: HashMap<EchoEchelon, HashSet<String>>,
     all_names: HashSet<String>,
+    root_names: HashSet<String>,
     root_echelon: Option<EchoEchelon>,
 }
 
@@ -61,6 +62,10 @@ fn match_score(
     let Ok(path) = comparable_path(orbit_unit) else {
         return None;
     };
+    let (sigint_echelon, sigint_name) = sigint_unit_identity(sigint_unit)?;
+    if !path.root_names.contains(&sigint_name) {
+        return None;
+    }
     let mut matched_names = 0;
     let matches = [
         (EchoEchelon::Company, sigint_unit.company.as_str()),
@@ -89,8 +94,7 @@ fn match_score(
     Some(MatchScore {
         echelon_distance: path
             .root_echelon
-            .zip(sigint_unit_echelon(sigint_unit))
-            .map(|(orbit, sigint)| orbit.index().abs_diff(sigint.index())),
+            .map(|orbit| orbit.index().abs_diff(sigint_echelon.index())),
         matched_names,
     })
 }
@@ -251,6 +255,10 @@ fn comparable_path(unit: &SourceUnit) -> anyhow::Result<ComparablePath> {
             anyhow::anyhow!("operational_unit_name_full is missing")
         })?;
     let segments = split_path(full_name);
+    let mut root_names = descriptor_names(unit);
+    if let Some(root_segment) = segments.first() {
+        root_names.insert(root_segment.clone());
+    }
     let mut descriptors = vec![unit];
     let mut parents = unit.operational_parent_units.iter().collect::<Vec<_>>();
     parents.sort_by_key(|parent| std::cmp::Reverse(parent.path_level));
@@ -276,6 +284,7 @@ fn comparable_path(unit: &SourceUnit) -> anyhow::Result<ComparablePath> {
     Ok(ComparablePath {
         names_by_echelon: result,
         all_names,
+        root_names,
         root_echelon: unit
             .unit_echelon
             .as_ref()
@@ -285,6 +294,12 @@ fn comparable_path(unit: &SourceUnit) -> anyhow::Result<ComparablePath> {
 }
 
 fn sigint_unit_echelon(unit: &sigint_unit::Model) -> Option<EchoEchelon> {
+    sigint_unit_identity(unit).map(|(echelon, _)| echelon)
+}
+
+fn sigint_unit_identity(
+    unit: &sigint_unit::Model,
+) -> Option<(EchoEchelon, String)> {
     [
         (EchoEchelon::Company, unit.company.as_str()),
         (EchoEchelon::Battalion, unit.battalion.as_str()),
@@ -294,7 +309,8 @@ fn sigint_unit_echelon(unit: &sigint_unit::Model) -> Option<EchoEchelon> {
     ]
     .into_iter()
     .find_map(|(echelon, name)| {
-        (!normalize_name(name).is_empty()).then_some(echelon)
+        let name = normalize_name(name);
+        (!name.is_empty()).then_some((echelon, name))
     })
 }
 
@@ -463,6 +479,18 @@ mod tests {
     fn matching_names_override_incorrect_echelon_metadata() {
         let unit = source_unit("1111 бр", vec![("battalion", "1111 бр", 0)]);
         assert!(matches_sigint_unit(
+            &unit,
+            &echo_unit("", "", "1111 бр", "", "")
+        ));
+    }
+
+    #[test]
+    fn parent_path_name_does_not_match_descendant_as_root() {
+        let unit = source_unit(
+            "2 мсб / 1111 бр",
+            vec![("battalion", "2 мсб", 1), ("brigade", "1111 бр", 0)],
+        );
+        assert!(!matches_sigint_unit(
             &unit,
             &echo_unit("", "", "1111 бр", "", "")
         ));

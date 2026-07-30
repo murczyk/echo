@@ -18,14 +18,14 @@ units. Add and apply that migration before rerunning the command.
 Every value in a unit's `grouping_of_forces` array is retained through the
 `orbit_unit_grouping_of_forces` many-to-many relation.
 
-Only ORBIT roots that match an active Echo SIGINT unit by
-`operational_unit_name_full` are retained. Matching uses normalized names from
-the full path and known aliases even when an ORBIT descriptor has the wrong
-echelon. Known echelon conflicts still reject a candidate. Extra full-name
-segments without descriptors are allowed when the supplied descriptors remain
-in hierarchy order. When several SIGINT units match, an exact root-echelon
-match wins, followed by the candidate with the most matching names. An
-unresolved tie with different parent paths is treated as fuzzy and skipped;
+Only ORBIT roots whose own name or alias matches the active Echo SIGINT unit's
+lowest populated echelon are retained. Remaining normalized full-path names are
+used only to compare parents and score candidates, even when an ORBIT descriptor
+has the wrong echelon. Known echelon conflicts still reject a candidate. Extra
+full-name segments without descriptors are allowed when the supplied descriptors
+remain in hierarchy order. When several SIGINT units match, an exact
+root-echelon match wins, followed by the candidate with the most matching names.
+An unresolved tie with different parent paths is treated as fuzzy and skipped;
 same-parent duplicates select the lowest ID. Generative and operational
 ancestors of matched roots are included. After a completed review, active
 imported roots are linked to the selected active Echo SIGINT unit. These links
