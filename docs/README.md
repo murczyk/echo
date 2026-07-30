@@ -309,6 +309,20 @@ routes but does not start GOI background workers in live mode. Debug/test
 server mode can still run the general worker set for local development, with
 the GOI pool disabled.
 
+Each full GOI integration is scoped to its owner organism. Signed-frequency
+reports and worker-managed callsign rows include only live networks whose
+non-deleted AOR overlaps a non-deleted AOR selected for that organism; an
+organism without selected AORs receives no networks through these exports.
+Association and knowledge sync attempts are limited to once per minute.
+Knowledge failures delay the next attempt for ten minutes, while
+signed-frequency and callsign-workbook exports run at ten-minute intervals.
+
+The GOI knowledge table is an active snapshot of the knowledge workbook.
+`knowledge_worker_nofail` hard-deletes rows missing from the current snapshot,
+and the API returns only the remaining rows. On the next successful snapshot
+pull, Echo marks missing `goi_knowledge` rows deleted and retains them until
+the configured cleanup period expires.
+
 ## Optional analytics LXC systemd graph
 
 `echo-analytics.target` groups the native services below. Dotted arrows show
