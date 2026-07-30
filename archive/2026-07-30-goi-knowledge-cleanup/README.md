@@ -10,9 +10,15 @@ Soft-deleted rows were physically removed from `public.knowledge` on:
 | --- | ---: | ---: | ---: | ---: |
 | `goi-jf` | 97 GB | 6,089 | 0 | 9,672 kB |
 | `goi-159ombr` | 18 GB | 5,661 | 0 | 9,272 kB |
+| `goi-tsur` | 50 GB | 5,661 | 0 | 9,456 kB |
+| `goi-prod-10` | 10 GB | 0 | 0 | 24 kB |
+| `goi-prod-07` | 8,295 MB | 5,661 | 0 | 8,616 kB |
+| `goi-prod-02` | 4,438 MB | 582 | 0 | 944 kB |
+| `goi-prod-01` | 4,324 MB | 582 | 0 | 936 kB |
+| `goi-prod-06` | 7,955 MB | 5,661 | 0 | 9,448 kB |
 
-In both databases, nearly every row had `deleted = true`. The table had no
-referencing foreign keys or user triggers. Copying the small active set,
+On all inspected databases, nearly every row had `deleted = true`. The table
+had no referencing foreign keys or user triggers. Copying the small active set,
 truncating the table, and restoring the active rows avoided deleting millions
 of rows individually and reclaimed the table space immediately.
 
@@ -88,6 +94,31 @@ If validation fails, use `ROLLBACK` instead of `COMMIT`.
 - Restored and validated 5,661 rows before committing.
 - Restarted all eight previously running application units and verified they
   were active.
+
+### Additional hosts
+
+The same procedure was run on `goi-tsur`, `goi-prod-10`, `goi-prod-07`,
+`goi-prod-02`, `goi-prod-01`, and `goi-prod-06`.
+
+- Each host had `goi.service`, `goi-echo-worker.service`, and
+  `echo-swapp.service` running before maintenance.
+- All three services were stopped before cleanup and verified active afterward.
+- Every table had the expected schema with no referencing foreign keys or user
+  triggers.
+- `goi-prod-10` contained no active rows, so its table was empty after cleanup.
+- `goi-prod-07` and `goi-prod-06` each had an `idle in transaction` writer
+  dating from 2026-07-11. Service shutdown cleared those old sessions.
+- A disconnected application cleanup query remained active after stopping
+  `goi-prod-07`; its backend was terminated before the maintenance transaction.
+- The first restart on `goi-prod-07` and `goi-prod-06` reconciled their old
+  5,447-row active sets with the current 5,661-row set, marking the old rows
+  deleted. A second cleanup pass removed those rows. Both hosts remained at
+  5,661 active rows and zero deleted rows after another restart and settling
+  interval.
+- `goi-prod-07` and `goi-prod-06` were first-use SSH connections. Their new
+  ED25519 keys were accepted without disabling changed-key protection:
+  - `goi-prod-07`: `SHA256:UrsuawHmxwPH3VncYnNpV5L0L9CYN1OdBDlTLYLp4Lw`
+  - `goi-prod-06`: `SHA256:aEAW7qGOSrAbPOxj71cPW3J2s5nXav5xkqtF9ZmG/4o`
 
 ## Safety Notes
 
