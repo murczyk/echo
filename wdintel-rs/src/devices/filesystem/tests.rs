@@ -12,7 +12,8 @@ use super::{
 };
 use crate::config::{
     read_config, DEVICE_FILE_CURSOR_MAX_BYTES, DEVICE_FILE_PAGE_MAX_LIMIT,
-    ROLE_ADMIN, ROLE_CYBER, ROLE_DEVICE_ANALYST, ROLE_DEVICE_SOURCE,
+    DEVICE_FILE_SYNC_BATCH_MAX_COUNT, ROLE_ADMIN, ROLE_CYBER,
+    ROLE_DEVICE_ANALYST, ROLE_DEVICE_SOURCE,
 };
 use crate::devices::access::DeviceActor;
 use crate::devices::main_db::MainDb;
@@ -3773,13 +3774,18 @@ async fn stage_ten_sync_service_gates_registry_writes() {
             stage_ten_command(
                 device_id,
                 PathSyntax::Windows,
-                vec![stage_ten_file(None, r"C:\logs\a.log"); 101],
+                vec![
+                    stage_ten_file(None, r"C:\logs\a.log");
+                    DEVICE_FILE_SYNC_BATCH_MAX_COUNT + 1
+                ],
             ),
         )
         .await
         .unwrap_err(),
         "files",
-        "must contain between 1 and 1000 items",
+        &format!(
+            "must contain between 1 and {DEVICE_FILE_SYNC_BATCH_MAX_COUNT} items"
+        ),
     );
     assert_not_found(
         FileMetadataService::sync(

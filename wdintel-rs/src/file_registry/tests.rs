@@ -59,7 +59,6 @@ async fn file_registry_schema_and_entity_round_trip() {
     assert_legacy_file_table_is_absent(connection).await;
     assert_file_entry_schema(connection).await;
     assert_file_entry_entity_round_trip(connection).await;
-    assert_file_entry_is_empty(connection).await;
 }
 
 async fn assert_migration_versions(connection: &DatabaseConnection) {
@@ -486,6 +485,21 @@ async fn assert_file_entry_entity_round_trip(connection: &DatabaseConnection) {
     assert_file_entry_rejections(&transaction, &tree).await;
 
     transaction.rollback().await.unwrap();
+    for id in [
+        tree.root_id,
+        tree.directory_id,
+        tree.file_id,
+        second_file_id,
+    ] {
+        assert!(
+            file_entry::Entity::find_by_id(id)
+                .one(connection)
+                .await
+                .unwrap()
+                .is_none(),
+            "rolled-back file entry {id} still exists"
+        );
+    }
 }
 
 async fn insert_file_entry_tree(
@@ -737,20 +751,6 @@ async fn assert_file_entry_operation_rejected<T, Operation>(
         .execute_unprepared("release savepoint file_entry_rejection")
         .await
         .unwrap();
-}
-
-async fn assert_file_entry_is_empty(connection: &DatabaseConnection) {
-    let count: i64 = connection
-        .query_one(Statement::from_string(
-            DbBackend::Postgres,
-            "select count(*) as count from public.file_entry".to_string(),
-        ))
-        .await
-        .unwrap()
-        .unwrap()
-        .try_get("", "count")
-        .unwrap();
-    assert_eq!(count, 0);
 }
 
 fn root_entry(
