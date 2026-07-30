@@ -117,6 +117,7 @@ pub mod sigint_comment;
 pub mod sigint_comment_blacklist;
 pub mod sigint_important;
 pub mod sigint_inbox_item;
+pub mod sigint_inbox_item_callsign;
 pub mod sigint_inbox_item_metadata;
 pub mod sigint_inbox_item_network;
 pub mod sigint_inbox_item_point_token;
