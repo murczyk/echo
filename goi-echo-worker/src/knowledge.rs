@@ -8,6 +8,7 @@ use std::path::Path;
 pub const KNOWLEDGE_KIND_CALL_SIGN: &str = "CALL_SIGN";
 pub const KNOWLEDGE_WORKER_AUTHOR: &str = "EXO";
 pub const KNOWLEDGE_WORKER_ID_PREFIX: &str = "EXO ID ";
+pub const KNOWLEDGE_WORKER_DEDUPE_KEY_PREFIX: &str = "CALL_SIGN\nEXO\n";
 
 const KNOWLEDGE_WORKER_ID_CELL_IDX: usize = 8;
 
@@ -53,7 +54,7 @@ impl KnowledgeRow {
         }
         if let Some(worker_callsign_id) = self.worker_callsign_id() {
             return Some(format!(
-                "{KNOWLEDGE_KIND_CALL_SIGN}\n{KNOWLEDGE_WORKER_AUTHOR}\n{worker_callsign_id}"
+                "{KNOWLEDGE_WORKER_DEDUPE_KEY_PREFIX}{worker_callsign_id}"
             ));
         }
         Some(format!(

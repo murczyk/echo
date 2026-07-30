@@ -10,21 +10,10 @@ impl MigrationTrait for Migration {
             .get_connection()
             .execute_unprepared(
                 r#"
-                    do $$
-                    begin
-                        if exists (
-                            select 1
-                            from information_schema.columns
-                            where table_name = 'knowledge'
-                                and column_name = 'deleted'
-                        ) then
-                            delete from knowledge
-                            where deleted = true;
-                        end if;
-                    end $$;
-
+                    delete from knowledge
+                    where deleted = true;
                     alter table knowledge
-                        drop column if exists deleted;
+                        drop column deleted;
                 "#,
             )
             .await?;
@@ -37,7 +26,7 @@ impl MigrationTrait for Migration {
             .execute_unprepared(
                 r#"
                     alter table knowledge
-                        add column if not exists deleted bool not null default false;
+                        add column deleted bool not null default false;
                 "#,
             )
             .await?;
