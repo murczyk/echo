@@ -12,7 +12,7 @@ import { useAnalysisData } from './use-analysis-data.core';
 
 const api = vi.hoisted(() => ({
   fetchAnalysisAors: vi.fn(),
-  fetchAnalysisCallsignGraph: vi.fn(),
+  fetchAnalysisCallsignRelations: vi.fn(),
   fetchAnalysisCallsignInfos: vi.fn(),
   fetchAnalysisCallsigns: vi.fn(),
   fetchAnalysisCount: vi.fn(),
@@ -150,7 +150,7 @@ describe('useAnalysisData tag pagination', () => {
     document.body.appendChild(container);
     current = null;
     api.fetchAnalysisAors.mockResolvedValue({ aors: [] });
-    api.fetchAnalysisCallsignGraph.mockResolvedValue({ nodes: [], links: [] });
+    api.fetchAnalysisCallsignRelations.mockResolvedValue({ nodes: [], edges: [], freqs: [] });
     api.fetchAnalysisCallsignInfos.mockResolvedValue([]);
     api.fetchAnalysisCallsigns.mockResolvedValue({ callsigns: [] });
     api.fetchAnalysisCount.mockResolvedValue({});

@@ -32,6 +32,7 @@ type Props = {
   selectedMessages: NetworkCallsignRelationMessage[];
   selectedMessagesLoading: boolean;
   selectedMessagesError: string | null;
+  showMessages?: boolean;
   selectedEdgeId: string | null;
   onBackToNode: () => void;
   onSelectNodeId: (nodeId: string | null) => void;
@@ -47,6 +48,7 @@ export function NetworkCallsignRelationsGraphDetails({
   selectedMessages,
   selectedMessagesLoading,
   selectedMessagesError,
+  showMessages = true,
   selectedEdgeId,
   onBackToNode,
   onSelectNodeId,
@@ -264,7 +266,7 @@ export function NetworkCallsignRelationsGraphDetails({
               </Stack>
             ) : null}
 
-            {selectedEdge || selectedNode ? (
+            {showMessages && (selectedEdge || selectedNode) ? (
               <Stack spacing={1.5} sx={{ mt: 1.5 }}>
                 <Divider sx={{ borderColor: graphTheme.overlayBorder }} />
                 <Stack spacing={0.75}>

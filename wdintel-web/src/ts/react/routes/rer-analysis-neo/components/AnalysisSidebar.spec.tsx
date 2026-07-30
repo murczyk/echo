@@ -56,7 +56,15 @@ vi.mock('@mui/icons-material/KeyboardArrowUp', () => ({ default: () => <span /> 
 vi.mock('@mui/icons-material/KeyboardArrowDown', () => ({ default: () => <span /> }));
 
 vi.mock('./AnalysisStatsPane', () => ({
-  AnalysisStatsPane: () => <div>charts-panel</div>,
+  AnalysisStatsPane: (props: Record<string, unknown>) => (
+    <div>{`charts-panel${'groupsActivity' in props ? '-with-activity' : ''}`}</div>
+  ),
+}));
+
+vi.mock('./AnalysisFrequenciesPane', () => ({
+  AnalysisFrequenciesPane: (props: Record<string, unknown>) => (
+    <div>{`frequencies-pane${'groupsActivity' in props ? '-with-activity' : ''}`}</div>
+  ),
 }));
 
 vi.mock('./AnalysisMapPane', () => ({
@@ -65,6 +73,10 @@ vi.mock('./AnalysisMapPane', () => ({
 
 vi.mock('./AnalysisCallsignsPane', () => ({
   AnalysisCallsignsPane: () => <div>callsigns-pane</div>,
+}));
+
+vi.mock('./AnalysisCallsignGraphPane', () => ({
+  AnalysisCallsignGraphPane: () => <div>graph-pane</div>,
 }));
 
 vi.mock('./AnalysisNewCallsignsCard', () => ({
@@ -88,9 +100,8 @@ function buildProps(
   return {
     callsignGraph: null,
     callsignGraphLoading: false,
-    callsignGraphLoadVersion: 0,
-    callsignGraphNolimit: false,
     correlatedFreqs: [],
+    correlatedFreqsLoaded: false,
     correlatedFreqsLoading: false,
     groupsActivity: null,
     groupsActivityLoadedFreq: null,
@@ -108,6 +119,7 @@ function buildProps(
       points: '',
       selectedUnits: '',
     },
+    findCallsignFrequencyMatches: vi.fn(),
     loadCallsignGraph: vi.fn(),
     loadCorrelatedFreqs: vi.fn(),
     loadGroupsActivity: vi.fn(),
@@ -115,10 +127,13 @@ function buildProps(
     newCallsigns: [],
     newCallsignsLoading: false,
     options: {
+      callsigns: [],
+      groups: [],
       networks: [],
     } as ComponentProps<typeof AnalysisSidebar>['options'],
     rightSidebarLoading: false,
     queryState: {
+      callsignsSelected: [],
       freqsSelected: [],
       locationsSelected: [],
       networksSelected: [],
@@ -127,14 +142,12 @@ function buildProps(
     } as ComponentProps<typeof AnalysisSidebar>['queryState'],
     rightPanelOpen: true,
     rightSidebarTab: 'stats',
-    selectOnlyFreq: vi.fn(),
     setRightSidebarTab: vi.fn(),
     topCallsigns: [],
     topFreqs: [],
     topLocations: [],
     topUnits: [],
     refreshMapDateRange: vi.fn(),
-    toggleCallsignGraphNolimit: vi.fn(),
     toggleUnitFromMap: vi.fn(),
     toggleRightPanel: vi.fn(),
     updateQueryState: vi.fn(),
@@ -188,6 +201,17 @@ describe('AnalysisSidebar', () => {
     expect(view.container.textContent).not.toContain('charts-panel');
   });
 
+  it('renders adjacent frequencies only in the frequencies tab', async () => {
+    const statsView = await renderComponent(buildProps({ rightSidebarTab: 'stats' }));
+    const frequenciesView = await renderComponent(buildProps({ rightSidebarTab: 'frequencies' }));
+    rendered.push(statsView, frequenciesView);
+
+    expect(statsView.container.textContent).not.toContain('frequencies-pane');
+    expect(statsView.container.textContent).not.toContain('with-activity');
+    expect(frequenciesView.container.textContent).toContain('frequencies-pane-with-activity');
+    expect(frequenciesView.container.textContent).not.toContain('charts-panel');
+  });
+
   it('hides the map tab when the map is not in the sidebar', async () => {
     const view = await renderComponent(buildProps({ analysisMapInSidebar: false }));
     rendered.push(view);
@@ -215,7 +239,16 @@ describe('AnalysisSidebar', () => {
     rendered.push(view);
 
     expect(view.container.textContent).toContain('callsigns-pane');
+    expect(view.container.textContent).not.toContain('graph-pane');
     expect(view.container.textContent).not.toContain('overview-card');
+  });
+
+  it('renders the relations graph only in the graph tab', async () => {
+    const view = await renderComponent(buildProps({ rightSidebarTab: 'graph' }));
+    rendered.push(view);
+
+    expect(view.container.textContent).toContain('graph-pane');
+    expect(view.container.textContent).not.toContain('callsigns-pane');
   });
 
   it('keeps the sidebar tab order without the summary table', async () => {
@@ -226,7 +259,7 @@ describe('AnalysisSidebar', () => {
       .map((button) => button.textContent?.trim())
       .filter((label): label is string => Boolean(label));
 
-    expect(tabLabels.slice(0, 3)).toEqual(['Зведення', 'Позивні', 'Нові']);
+    expect(tabLabels.slice(0, 5)).toEqual(['Зведення', 'Частоти', 'Позивні', 'Граф', 'Нові']);
     expect(tabLabels.some((label) => label.includes('Зведена таблиця'))).toBe(false);
   });
 

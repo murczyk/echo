@@ -17,12 +17,13 @@ import {
   parseQueryStateFromWindow,
   pushQueryStateToUrl,
   normalizeQueryState,
+  parseAnalysisPanelQueryStateFromWindow,
   queryStateUiComparisonKey,
   shouldOpenAnalysisMapFromSearchParams,
   parseNewestFirstFromWindow,
 } from './helpers';
-import type { InboxMessage, User } from '../../../../Bindings';
-import type { AnalysisPageViewModel, AnalysisQueryState } from './types';
+import type { AnalysisCallsignFrequencyMatchesRsp, InboxMessage, User } from '../../../../Bindings';
+import type { AnalysisFilterSectionId, AnalysisPageViewModel, AnalysisQueryState } from './types';
 import { useAnalysisData } from './use-analysis-data';
 import { useAnalysisMessageEditor } from './use-analysis-message-editor';
 import { useAnalysisReport } from './use-analysis-report';
@@ -30,6 +31,8 @@ import { useAnalysisSavedFilters } from './use-analysis-saved-filters';
 import { useDutySettings } from '../../hooks/use-duty-settings';
 import { uniquePointEtalonsForMapSearch } from '../rer-duty-neo/utils';
 import { getAnalysisSidebarTabs, type AnalysisCenterTab, type AnalysisSidebarTab } from './types';
+import { fetchAnalysisCallsignFrequencyMatches } from '../../services/api/analysis';
+import { toErrorMessage } from './use-analysis-data.shared';
 
 function initState(): AnalysisQueryState {
   return createInitialQueryState(parseQueryStateFromWindow());
@@ -43,6 +46,7 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
   const theme = useTheme();
   const isMobileLayout = useMediaQuery(theme.breakpoints.down('sm'));
   const isStackedFiltersLayout = useMediaQuery(theme.breakpoints.down('lg'));
+  const [initialPanelQueryState] = useState(parseAnalysisPanelQueryStateFromWindow);
   const [initialQueryState] = useState<AnalysisQueryState>(initState);
   const [queryState, setQueryState] = useState<AnalysisQueryState>(initialQueryState);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
@@ -60,11 +64,17 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
   );
   const [centerTab, setCenterTabState] = useState<AnalysisCenterTab>('messages');
   const [error, setError] = useState<string | null>(null);
-  const [leftPanelOpen, setLeftPanelOpen] = useState(() => !isStackedFiltersLayout);
-  const leftPanelTouchedRef = useRef(false);
+  const [leftPanelOpen, setLeftPanelOpen] = useState(
+    () => initialPanelQueryState.leftPanelOpen ?? !isStackedFiltersLayout,
+  );
+  const leftPanelTouchedRef = useRef(initialPanelQueryState.leftPanelOpen != null);
   const [newestFirst, setNewestFirst] = useState(parseNewestFirstFromWindow);
-  const [rightPanelOpen, setRightPanelOpen] = useState(false);
-  const [rightSidebarTab, setRightSidebarTab] = useState<AnalysisSidebarTab | null>(null);
+  const [rightPanelOpen, setRightPanelOpen] = useState(
+    () => initialPanelQueryState.rightPanelOpen ?? false,
+  );
+  const [rightSidebarTab, setRightSidebarTab] = useState<AnalysisSidebarTab | null>(() =>
+    initialPanelQueryState.rightPanelOpen ? 'stats' : null,
+  );
   const [centerTabPending, startCenterTabTransition] = useTransition();
   const setPageError = useCallback((message: string) => setError(message || null), []);
   const dutySettings = useDutySettings();
@@ -77,6 +87,7 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
     authUserName,
     currentUser,
     deferInitialLoad: !systemSettingsLoaded,
+    leftPanelOpen,
     centerTab,
     newestFirst,
     onError: setPageError,
@@ -130,6 +141,30 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
         ? 'Перевірте дату та час. Дата раніше 2022-01-01 не допускається.'
         : null,
     [analysisReq],
+  );
+
+  const findCallsignFrequencyMatches = useCallback(
+    async (
+      callsigns: string[],
+      minMatches: number,
+    ): Promise<AnalysisCallsignFrequencyMatchesRsp | null> => {
+      if (isNullOrUndefined(analysisReq)) {
+        setPageError('Перевірте дату та час перед пошуком частот.');
+        return null;
+      }
+
+      try {
+        return await fetchAnalysisCallsignFrequencyMatches({
+          req: analysisReq,
+          callsigns,
+          minMatches,
+        });
+      } catch (loadError) {
+        if (!handleUnauthorized(loadError)) setPageError(toErrorMessage(loadError));
+        return null;
+      }
+    },
+    [analysisReq, handleUnauthorized, setPageError],
   );
 
   const setCenterTab = useCallback((tab: AnalysisCenterTab) => {
@@ -201,14 +236,15 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
   }, []);
 
   useEffect(() => {
+    if (rightPanelOpen && isNullOrUndefined(rightSidebarTab)) {
+      setRightSidebarTab(getAnalysisSidebarTabs(dutySettings.analysisMapInSidebar)[0]);
+    }
+
     if (dutySettings.analysisMapInSidebar) {
       if (centerTab === 'map') {
         setCenterTab('messages');
         setRightPanelOpen(true);
         setRightSidebarTab('map');
-      }
-      if (rightPanelOpen && isNullOrUndefined(rightSidebarTab)) {
-        setRightSidebarTab(getAnalysisSidebarTabs(true)[0]);
       }
       return;
     }
@@ -247,8 +283,8 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
 
   useEffect(() => {
     if (!systemSettingsLoaded) return;
-    pushQueryStateToUrl(queryState, newestFirst);
-  }, [queryState, systemSettingsLoaded, newestFirst]);
+    pushQueryStateToUrl(queryState, newestFirst, { leftPanelOpen, rightPanelOpen });
+  }, [leftPanelOpen, newestFirst, queryState, rightPanelOpen, systemSettingsLoaded]);
 
   const toggleUnitFromMap = useCallback(
     (unitName: string | null) => {
@@ -440,6 +476,17 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
     void data.loadNewCallsigns();
   }, [data.loadNewCallsigns, isMobileLayout, rightPanelOpen, rightSidebarTab]);
 
+  useEffect(() => {
+    const sections = new Set<AnalysisFilterSectionId>();
+    if (leftPanelOpen) {
+      (['tags', 'groups', 'senders'] as const).forEach((section) => sections.add(section));
+    }
+    if (rightPanelOpen && rightSidebarTab === 'stats') sections.add('groups');
+    if (rightPanelOpen && rightSidebarTab === 'callsigns') sections.add('callsigns');
+    if (sections.size === 0) return;
+    void Promise.all(Array.from(sections, (section) => data.loadFilterSection(section)));
+  }, [data.loadFilterSection, leftPanelOpen, rightPanelOpen, rightSidebarTab]);
+
   const canResetFilters = useMemo(() => {
     const queryStateKey = queryStateUiComparisonKey(queryState);
     const lastResetStateKey = queryStateUiComparisonKey(lastResetState);
@@ -459,11 +506,11 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
     callsignGraphLoading: data.callsignGraphLoading,
     callsignGraphLoadVersion: data.callsignGraphLoadVersion,
     callsignGraphLoadError: data.callsignGraphLoadError,
-    callsignGraphNolimit: data.callsignGraphNolimit,
     centerTab,
     centerTabPending,
     copiedFeedbackId: null,
     correlatedFreqs: data.correlatedFreqs,
+    correlatedFreqsLoaded: data.correlatedFreqsLoaded,
     correlatedFreqsLoading: data.correlatedFreqsLoading,
     counts: data.counts,
     countsLoading: data.countsLoading,
@@ -547,6 +594,7 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
     applySavedFilter,
     deleteLoadedSavedFilter: savedFilters.deleteLoadedSavedFilter,
     renameExistingSavedFilter: savedFilters.renameExisting,
+    findCallsignFrequencyMatches,
     loadCallsignGraph: data.loadCallsignGraph,
     loadAllMessages: data.loadAllMessages,
     loadFilterSection: data.loadFilterSection,
@@ -559,7 +607,6 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
     loadMoreMessages: data.loadMoreMessages,
     loadPrevPage: data.loadPrevPage,
     loadMessagesForMap: data.loadMessagesForMap,
-    toggleCallsignGraphNolimit: data.toggleCallsignGraphNolimit,
     closeReport: report.closeReport,
     closeEditor: editor.closeEditor,
     downloadGeojson: data.downloadGeojson,

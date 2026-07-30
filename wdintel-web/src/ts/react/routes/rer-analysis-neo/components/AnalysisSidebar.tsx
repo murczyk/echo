@@ -1,4 +1,6 @@
 import BarChartOutlinedIcon from '@mui/icons-material/BarChartOutlined';
+import GraphicEqOutlinedIcon from '@mui/icons-material/GraphicEqOutlined';
+import HubOutlinedIcon from '@mui/icons-material/HubOutlined';
 import MapOutlinedIcon from '@mui/icons-material/MapOutlined';
 import PeopleOutlineOutlinedIcon from '@mui/icons-material/PeopleOutlineOutlined';
 import PersonAddOutlinedIcon from '@mui/icons-material/PersonAddOutlined';
@@ -8,7 +10,9 @@ import { useMemo } from 'react';
 import type { AnalysisPageActions, AnalysisPageState } from '../types';
 import { sortAndTakeTopAnalysisCountItems } from '../count-items';
 import { getAnalysisSidebarTabs } from '../types';
+import { AnalysisCallsignGraphPane } from './AnalysisCallsignGraphPane';
 import { AnalysisCallsignsPane } from './AnalysisCallsignsPane';
+import { AnalysisFrequenciesPane } from './AnalysisFrequenciesPane';
 import { AnalysisMapPane } from './AnalysisMapPane';
 import { AnalysisStatsPane } from './AnalysisStatsPane';
 import { AnalysisNewCallsignsCard } from './AnalysisNewCallsignsCard';
@@ -29,16 +33,16 @@ type Props = Pick<
   AnalysisPageState,
   | 'callsignGraph'
   | 'callsignGraphLoading'
-  | 'callsignGraphLoadVersion'
   | 'callsignGraphLoadError'
-  | 'callsignGraphNolimit'
   | 'correlatedFreqs'
+  | 'correlatedFreqsLoaded'
   | 'correlatedFreqsLoading'
   | 'groupsActivity'
   | 'groupsActivityLoadedFreq'
   | 'groupsActivityLoadedPeriod'
   | 'groupsActivityPeriod'
   | 'groupsActivityLoading'
+  | 'isFilterSectionLoading'
   | 'mapAttrs'
   | 'analysisMapInSidebar'
   | 'newCallsigns'
@@ -55,14 +59,13 @@ type Props = Pick<
 > &
   Pick<
     AnalysisPageActions,
+    | 'findCallsignFrequencyMatches'
     | 'loadCallsignGraph'
     | 'loadCorrelatedFreqs'
     | 'loadGroupsActivity'
     | 'loadMessagesForMap'
-    | 'selectOnlyFreq'
     | 'setRightSidebarTab'
     | 'refreshMapDateRange'
-    | 'toggleCallsignGraphNolimit'
     | 'toggleUnitFromMap'
     | 'toggleRightPanel'
     | 'updateQueryState'
@@ -85,18 +88,19 @@ export const analysisSidebarContentSx = {
 export function AnalysisSidebar({
   callsignGraph,
   callsignGraphLoading,
-  callsignGraphLoadVersion,
   callsignGraphLoadError,
-  callsignGraphNolimit,
   correlatedFreqs,
+  correlatedFreqsLoaded,
   correlatedFreqsLoading,
   groupsActivity,
   groupsActivityLoadedFreq,
   groupsActivityLoadedPeriod,
   groupsActivityPeriod,
   groupsActivityLoading,
+  isFilterSectionLoading,
   mapAttrs,
   analysisMapInSidebar,
+  findCallsignFrequencyMatches,
   loadCallsignGraph,
   loadCorrelatedFreqs,
   loadGroupsActivity,
@@ -108,14 +112,12 @@ export function AnalysisSidebar({
   queryState,
   rightPanelOpen,
   rightSidebarTab,
-  selectOnlyFreq,
   setRightSidebarTab,
   topCallsigns,
   topFreqs,
   topLocations,
   topUnits,
   refreshMapDateRange,
-  toggleCallsignGraphNolimit,
   toggleUnitFromMap,
   toggleRightPanel,
   updateQueryState,
@@ -125,6 +127,7 @@ export function AnalysisSidebar({
   const isSidebarVisible = rightPanelOpen;
   const sidebarTabs = getAnalysisSidebarTabs(analysisMapInSidebar);
   const sidebarTab = analysisMapInSidebar || rightSidebarTab !== 'map' ? rightSidebarTab : 'stats';
+  const selectedFreq = queryState.freqsSelected[0] ?? null;
   const keepMapPaneMounted = analysisMapInSidebar && isSidebarVisible;
   const selectUnit = (unit: string) => {
     const normalizedUnits = normalizeUnknownUnitSelections(queryState.unitsSelected);
@@ -155,6 +158,26 @@ export function AnalysisSidebar({
       includeOnlyNewFreqs: false,
     });
   };
+  const selectGroup = (groupKey: string) => {
+    updateQueryState({
+      groupsSelected: toggleExclusiveAnalysisSelection(queryState.groupsSelected, groupKey),
+    });
+  };
+  const addGroup = (groupKey: string) => {
+    updateQueryState({
+      groupsSelected: addAnalysisSelection(queryState.groupsSelected, groupKey),
+    });
+  };
+  const selectCallsign = (callsign: string) => {
+    updateQueryState({
+      callsignsSelected: toggleExclusiveAnalysisSelection(queryState.callsignsSelected, callsign),
+    });
+  };
+  const addCallsign = (callsign: string) => {
+    updateQueryState({
+      callsignsSelected: addAnalysisSelection(queryState.callsignsSelected, callsign),
+    });
+  };
   const topNetworks = useMemo(
     () =>
       sortAndTakeTopAnalysisCountItems(
@@ -165,6 +188,43 @@ export function AnalysisSidebar({
         })),
       ),
     [options.networks],
+  );
+  const topGroups = useMemo(
+    () =>
+      sortAndTakeTopAnalysisCountItems(
+        options.groups.map((group) => ({
+          key: group.label,
+          value: group.value,
+          count: group.count,
+        })),
+      ),
+    [options.groups],
+  );
+  const callsignSearchOptions = useMemo(() => {
+    const callsigns = new Map(options.callsigns.map((option) => [option.value, option]));
+    for (const callsign of topCallsigns) {
+      const value = callsign.value ?? callsign.key;
+      if (value.trim().length === 0 || callsigns.has(value)) continue;
+      callsigns.set(value, {
+        value,
+        label: callsign.key,
+        count: callsign.count,
+      });
+    }
+    return Array.from(callsigns.values());
+  }, [options.callsigns, topCallsigns]);
+  const callsignNavigationItems = useMemo(
+    () =>
+      options.callsigns.length > 0
+        ? sortAndTakeTopAnalysisCountItems(
+            options.callsigns.map((callsign) => ({
+              key: callsign.label,
+              value: callsign.value,
+              count: callsign.count,
+            })),
+          )
+        : topCallsigns,
+    [options.callsigns, topCallsigns],
   );
   const selectNetwork = (networkId: string) => {
     updateQueryState({
@@ -264,6 +324,28 @@ export function AnalysisSidebar({
                 />
               );
             }
+            if (tab === 'graph') {
+              return (
+                <Tab
+                  key={tab}
+                  value={tab}
+                  icon={<HubOutlinedIcon />}
+                  iconPosition="start"
+                  label="Граф"
+                />
+              );
+            }
+            if (tab === 'frequencies') {
+              return (
+                <Tab
+                  key={tab}
+                  value={tab}
+                  icon={<GraphicEqOutlinedIcon />}
+                  iconPosition="start"
+                  label="Частоти"
+                />
+              );
+            }
             return (
               <Tab
                 key={tab}
@@ -326,31 +408,25 @@ export function AnalysisSidebar({
           <>
             <Box>
               <AnalysisStatsPane
-                correlatedFreqs={correlatedFreqs}
-                correlatedFreqsLoading={correlatedFreqsLoading}
-                groupsActivity={groupsActivity}
-                groupsActivityLoadedFreq={groupsActivityLoadedFreq}
-                groupsActivityLoadedPeriod={groupsActivityLoadedPeriod}
-                groupsActivityPeriod={groupsActivityPeriod}
-                groupsActivityLoading={groupsActivityLoading}
-                onLoadCorrelatedFreqs={loadCorrelatedFreqs}
-                onLoadGroupsActivity={loadGroupsActivity}
+                groupsLoading={isFilterSectionLoading?.('groups') ?? false}
                 onAddFreq={addFreq}
+                onAddGroup={addGroup}
                 onAddLocation={addLocation}
-                onSelectFreq={selectOnlyFreq}
                 onAddNetwork={addNetwork}
                 onAddUnit={addUnit}
                 onToggleFreq={selectFreq}
+                onToggleGroup={selectGroup}
                 onToggleLocation={selectLocation}
                 onToggleNetwork={selectNetwork}
                 onToggleUnit={selectUnit}
-                selectedFreq={queryState.freqsSelected[0] ?? null}
                 selectedFreqs={queryState.freqsSelected}
+                selectedGroups={queryState.groupsSelected}
                 selectedLocations={queryState.locationsSelected}
                 selectedNetworks={queryState.networksSelected}
                 selectedUnits={queryState.unitsSelected}
                 rightSidebarLoading={rightSidebarLoading}
                 topFreqs={topFreqs}
+                topGroups={topGroups}
                 topLocations={topLocations}
                 topNetworks={topNetworks}
                 topUnits={topUnits}
@@ -358,18 +434,45 @@ export function AnalysisSidebar({
             </Box>
           </>
         ) : null}
+        {sidebarTab === 'frequencies' ? (
+          <AnalysisFrequenciesPane
+            correlatedFreqs={correlatedFreqs}
+            correlatedFreqsLoaded={correlatedFreqsLoaded}
+            correlatedFreqsLoading={correlatedFreqsLoading}
+            groupsActivity={groupsActivity}
+            groupsActivityLoadedFreq={groupsActivityLoadedFreq}
+            groupsActivityLoadedPeriod={groupsActivityLoadedPeriod}
+            groupsActivityLoading={groupsActivityLoading}
+            groupsActivityPeriod={groupsActivityPeriod}
+            onLoadCorrelatedFreqs={loadCorrelatedFreqs}
+            onLoadGroupsActivity={loadGroupsActivity}
+            onAddFreq={addFreq}
+            onToggleFreq={selectFreq}
+            selectedFreq={selectedFreq}
+            selectedFreqs={queryState.freqsSelected}
+            topFreqs={topFreqs}
+          />
+        ) : null}
         {sidebarTab === 'callsigns' ? (
           <AnalysisCallsignsPane
+            callsignOptions={callsignSearchOptions}
+            loading={rightSidebarLoading}
+            onAddFreq={addFreq}
+            selectedCallsigns={queryState.callsignsSelected}
+            selectedFreqs={queryState.freqsSelected}
+            topCallsigns={callsignNavigationItems}
+            onAddCallsign={addCallsign}
+            onSearchFrequencyMatches={findCallsignFrequencyMatches}
+            onToggleCallsign={selectCallsign}
+            onToggleFreq={selectFreq}
+          />
+        ) : null}
+        {sidebarTab === 'graph' ? (
+          <AnalysisCallsignGraphPane
             callsignGraph={callsignGraph}
             callsignGraphLoading={callsignGraphLoading}
-            callsignGraphLoadVersion={callsignGraphLoadVersion}
             callsignGraphLoadError={callsignGraphLoadError}
-            callsignGraphNolimit={callsignGraphNolimit}
-            visible={isSidebarVisible}
             onLoadCallsignGraph={loadCallsignGraph}
-            onToggleNolimit={toggleCallsignGraphNolimit}
-            rightSidebarLoading={rightSidebarLoading}
-            topCallsigns={topCallsigns}
           />
         ) : null}
         {sidebarTab === 'newCallsigns' ? (

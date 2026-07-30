@@ -60,7 +60,6 @@ function renderLoaderHook(overrides: Partial<Parameters<typeof useAnalysisDataLo
 
   const Harness = () => {
     latest = useAnalysisDataLoaders({
-      callsignGraphNolimit: false,
       callsignGraphRequestRef: { current: 0 },
       groupsActivityPeriod: 'selected',
       mapDateRangeLoadVersionRef: { current: 0 },
@@ -74,7 +73,6 @@ function renderLoaderHook(overrides: Partial<Parameters<typeof useAnalysisDataLo
       setCallsignGraph: vi.fn(),
       setCallsignGraphLoading: vi.fn(),
       setCallsignGraphLoadVersion: vi.fn(),
-      setCallsignGraphNolimit: vi.fn(),
       setCorrelatedFreqs: vi.fn(),
       setCorrelatedFreqsLoading: vi.fn(),
       setGroupsActivity: vi.fn(),

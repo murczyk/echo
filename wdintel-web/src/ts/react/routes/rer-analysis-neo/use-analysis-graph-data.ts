@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-import type { CorrelatedFreq, NetJsonGraphAndMeta } from '../../../../Bindings';
+import type { CorrelatedFreq, NetworkCallsignRelationsRsp } from '../../../../Bindings';
 import {
-  fetchAnalysisCallsignGraph,
+  fetchAnalysisCallsignRelations,
   fetchAnalysisCorrelatedFreqs,
 } from '../../services/api/analysis';
 import { isAbortError } from '../../services/api/client';
@@ -29,11 +29,11 @@ export function useAnalysisGraphData({
   queryState,
 }: Params) {
   const [correlatedFreqs, setCorrelatedFreqs] = useState<CorrelatedFreq[]>([]);
+  const [correlatedFreqsLoaded, setCorrelatedFreqsLoaded] = useState(false);
   const [correlatedFreqsLoading, setCorrelatedFreqsLoading] = useState(false);
-  const [callsignGraph, setCallsignGraph] = useState<NetJsonGraphAndMeta | null>(null);
+  const [callsignGraph, setCallsignGraph] = useState<NetworkCallsignRelationsRsp | null>(null);
   const [callsignGraphLoading, setCallsignGraphLoading] = useState(false);
   const [callsignGraphLoadVersion, setCallsignGraphLoadVersion] = useState(0);
-  const [callsignGraphNolimit, setCallsignGraphNolimit] = useState(false);
   const [callsignGraphLoadError, setCallsignGraphLoadError] = useState<string | null>(null);
 
   const correlatedFreqsRequestRef = useRef(0);
@@ -47,6 +47,7 @@ export function useAnalysisGraphData({
     correlatedFreqsAbortControllerRef.current = null;
     correlatedFreqsRequestRef.current += 1;
     correlatedFreqsRequestKeyRef.current = null;
+    setCorrelatedFreqsLoaded(false);
     setCorrelatedFreqsLoading(false);
   }, []);
 
@@ -69,6 +70,7 @@ export function useAnalysisGraphData({
       correlatedFreqsRequestRef.current += 1;
       correlatedFreqsRequestKeyRef.current = null;
       setCorrelatedFreqs([]);
+      setCorrelatedFreqsLoaded(false);
       setCorrelatedFreqsLoading(false);
       return;
     }
@@ -82,6 +84,7 @@ export function useAnalysisGraphData({
     const requestId = correlatedFreqsRequestRef.current + 1;
     correlatedFreqsRequestRef.current = requestId;
     correlatedFreqsRequestKeyRef.current = requestKey;
+    setCorrelatedFreqsLoaded(false);
     setCorrelatedFreqsLoading(true);
     try {
       const rsp = await fetchAnalysisCorrelatedFreqs(analysisReq, {
@@ -89,6 +92,7 @@ export function useAnalysisGraphData({
       });
       if (requestId !== correlatedFreqsRequestRef.current || abortController.signal.aborted) return;
       setCorrelatedFreqs(rsp.freqs ?? []);
+      setCorrelatedFreqsLoaded(true);
     } catch (loadError) {
       if (
         requestId !== correlatedFreqsRequestRef.current ||
@@ -119,10 +123,9 @@ export function useAnalysisGraphData({
     setCallsignGraphLoading(true);
     setCallsignGraphLoadError(null);
     try {
-      const rsp = await fetchAnalysisCallsignGraph(
-        { ...analysisReq, nolimit: callsignGraphNolimit },
-        { signal: abortController.signal },
-      );
+      const rsp = await fetchAnalysisCallsignRelations(analysisReq, {
+        signal: abortController.signal,
+      });
       if (requestId !== callsignGraphRequestRef.current || abortController.signal.aborted) return;
       setCallsignGraph(rsp);
       setCallsignGraphLoadError(null);
@@ -143,12 +146,7 @@ export function useAnalysisGraphData({
         callsignGraphAbortControllerRef.current = null;
       }
     }
-  }, [callsignGraphNolimit, onError, onUnauthorized, optionsFreqValues, queryState]);
-
-  const toggleCallsignGraphNolimit = useCallback(() => {
-    invalidateCallsignGraph();
-    setCallsignGraphNolimit((current) => !current);
-  }, [invalidateCallsignGraph]);
+  }, [onError, onUnauthorized, optionsFreqValues, queryState]);
 
   useEffect(() => {
     return () => {
@@ -161,12 +159,12 @@ export function useAnalysisGraphData({
 
   return {
     correlatedFreqs,
+    correlatedFreqsLoaded,
     correlatedFreqsLoading,
     callsignGraph,
     callsignGraphLoading,
     callsignGraphLoadVersion,
     callsignGraphLoadError,
-    callsignGraphNolimit,
     correlatedFreqsRequestRef,
     correlatedFreqsRequestKeyRef,
     callsignGraphRequestRef,
@@ -174,11 +172,9 @@ export function useAnalysisGraphData({
     invalidateCallsignGraph,
     loadCorrelatedFreqs,
     loadCallsignGraph,
-    toggleCallsignGraphNolimit,
     setCallsignGraph,
     setCallsignGraphLoading,
     setCallsignGraphLoadVersion,
-    setCallsignGraphNolimit,
     setCorrelatedFreqs,
     setCorrelatedFreqsLoading,
   };

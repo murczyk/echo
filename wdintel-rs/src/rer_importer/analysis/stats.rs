@@ -1,10 +1,12 @@
+use crate::config::ANALYSIS_CALLSIGN_FREQUENCY_MATCH_LIMIT;
 use crate::rer_importer::types::SenderFrequencyBreakdown;
+use crate::sigint::network::types::NetworkCallsignRelationMessage;
 use crate::types::ShortContext;
 use crate::types::{debug, warn};
 use crate::users::login_id_from_identity;
 use actix_identity::Identity;
 use actix_web::web::Json;
-use chrono::{Duration, Utc};
+use chrono::{Duration, NaiveDate, Utc};
 use echo_migration::{Expr, JoinType};
 use once_cell::sync::Lazy;
 use sea_orm::sea_query::{
@@ -104,6 +106,13 @@ pub(super) fn request_without_facet_filter(
         }
     }
     req
+}
+
+pub(super) fn callsign_frequency_match_search_req(
+    req: &AnalysisStatsReq,
+) -> AnalysisStatsReq {
+    let req = request_without_facet_filter(req, AnalysisFacet::Callsigns);
+    request_without_facet_filter(&req, AnalysisFacet::Frequencies)
 }
 
 pub(super) async fn resolve_analytics_tag_access(
@@ -859,8 +868,6 @@ pub(super) fn build_groups_query(
     scope: Option<&AnalyticsMessageIdScope>,
 ) -> Result<Select<sigint_inbox_item::Entity>, AppError> {
     let req = request_without_facet_filter(req, AnalysisFacet::Groups);
-    let include_peleng_locations =
-        req.include_peleng_locations.unwrap_or(false);
     let accessible_groups = master_keys.clone();
     let groups_res = sigint_inbox_item::Entity::find()
         .join(
@@ -896,53 +903,77 @@ pub(super) fn build_groups_query(
             signal_message_group::Entity,
             signal_message_group::Column::GroupMasterKey,
         )));
-    let groups_res = apply_analytics_message_id_scope(groups_res, scope);
-    let groups_res = apply_analytics_group_message_id_scope(groups_res, scope);
-    let groups_res = apply_joined_group_rows_filter(
+    apply_group_stats_filters(
         groups_res,
         &None,
         &req.selected_senders,
+        &req,
+        login_str,
+        accessible_groups,
+        dt_since,
+        dt_till,
+        scope,
+    )
+}
+
+fn apply_group_stats_filters(
+    query: Select<sigint_inbox_item::Entity>,
+    selected_groups: &Option<Vec<String>>,
+    selected_senders: &Option<Vec<String>>,
+    req: &AnalysisStatsReq,
+    login_str: &uuid::Uuid,
+    accessible_groups: Vec<String>,
+    dt_since: NaiveDateTime,
+    dt_till: NaiveDateTime,
+    scope: Option<&AnalyticsMessageIdScope>,
+) -> Result<Select<sigint_inbox_item::Entity>, AppError> {
+    let include_peleng_locations =
+        req.include_peleng_locations.unwrap_or(false);
+    let query = apply_analytics_message_id_scope(query, scope);
+    let query = apply_analytics_group_message_id_scope(query, scope);
+    let query = apply_joined_group_rows_filter(
+        query,
+        selected_groups,
+        selected_senders,
         &accessible_groups,
     );
-    let groups_res =
-        filter_selected_freqs(groups_res, &req.selected_freqs).context(h!())?;
-    let groups_res =
-        filter_selected_posts(groups_res, &req.selected_posts).context(h!())?;
-    let groups_res = filter_selected_units_for_period(
-        groups_res,
+    let query =
+        filter_selected_freqs(query, &req.selected_freqs).context(h!())?;
+    let query =
+        filter_selected_posts(query, &req.selected_posts).context(h!())?;
+    let query = filter_selected_units_for_period(
+        query,
         &req.selected_units,
         &req.units_exact_match_only,
         dt_since,
         dt_till,
     )
     .context(h!())?;
-    let groups_res = filter_selected_locations(
-        groups_res,
+    let query = filter_selected_locations(
+        query,
         &req.selected_locations,
         include_peleng_locations,
     )
     .context(h!())?;
-    let groups_res =
-        filter_selected_callsigns(groups_res, &req.selected_callsigns)
-            .context(h!())?;
-    let groups_res = filter_selected_networks_for_scope(
-        groups_res,
+    let query = filter_selected_callsigns(query, &req.selected_callsigns)
+        .context(h!())?;
+    let query = filter_selected_networks_for_scope(
+        query,
         &req.selected_networks,
         &req.without_network,
         scope,
     )
     .context(h!())?;
-    let groups_res = apply_metadata_filters(groups_res, &req)?;
-    let groups_res = filter_search(groups_res, &req.search).context(h!())?;
-    let groups_res =
-        filter_selected_aors_for_scope(groups_res, &req.selected_aors, scope)?;
-    let groups_res =
-        match selected_aor_group_facet_condition(&req.selected_aors) {
-            Some(condition) => groups_res.filter(condition),
-            None => groups_res,
-        };
-    let groups_res = filter_selected_tags_with_scope(
-        groups_res,
+    let query = apply_metadata_filters(query, req)?;
+    let query = filter_search(query, &req.search).context(h!())?;
+    let query =
+        filter_selected_aors_for_scope(query, &req.selected_aors, scope)?;
+    let query = match selected_aor_group_facet_condition(&req.selected_aors) {
+        Some(condition) => query.filter(condition),
+        None => query,
+    };
+    Ok(filter_selected_tags_with_scope(
+        query,
         &req.selected_tags,
         &req.denied_tags,
         &req.tag_presence,
@@ -957,8 +988,321 @@ pub(super) fn build_groups_query(
         req.report_tags_only_this_unit.unwrap_or(false),
         scope,
     )
-    .context(h!())?;
-    Ok(groups_res)
+    .context(h!())?)
+}
+
+#[derive(FromQueryResult)]
+pub(super) struct AnalysisDailyGroupActivity {
+    pub(super) msg_date: NaiveDate,
+    pub(super) group: String,
+    pub(super) value: i64,
+}
+
+pub(super) async fn fetch_daily_group_activity_with_db(
+    req: &AnalysisStatsReq,
+    user: &Identity,
+    db: &DatabaseConnection,
+    accessible_groups: Vec<String>,
+    scope: Option<&AnalyticsMessageIdScope>,
+) -> Result<Vec<AnalysisDailyGroupActivity>, AppError> {
+    let login = login_id_from_identity(user)?;
+    let dt_since = dt_from_millis(req.since_date_inclusive_ms).context(h!())?;
+    let dt_till =
+        dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
+    let query = sigint_inbox_item::Entity::find()
+        .join(
+            JoinType::InnerJoin,
+            sigint_inbox_item::Relation::SignalMessage.def(),
+        )
+        .join(
+            JoinType::LeftJoin,
+            sigint_inbox_item::Relation::SigintPost.def(),
+        )
+        .join(
+            JoinType::InnerJoin,
+            signal_message::Relation::SignalMessageGroup.def(),
+        )
+        .join(
+            JoinType::LeftJoin,
+            signal_message_group::Relation::SignalGroup.def(),
+        )
+        .select_only()
+        .column_as(
+            Expr::cust(
+                "(sigint_inbox_item.datetime AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Kyiv')::date",
+            ),
+            "msg_date",
+        )
+        .column_as(
+            Expr::cust(
+                "coalesce(signal_group.name, signal_message_group.group_master_key)",
+            ),
+            "group",
+        )
+        .column_as(
+            Expr::cust(
+                r#"COUNT(DISTINCT "signal_message_group"."signal_message_id")"#,
+            ),
+            "value",
+        )
+        .filter(signal_message::Column::Deleted.eq(false))
+        .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
+        .filter(sigint_inbox_item::Column::Datetime.lt(dt_till))
+        .group_by(Expr::cust("1, 2"))
+        .order_by_desc(Expr::cust("1"));
+    let query = apply_group_stats_filters(
+        query,
+        &req.selected_groups,
+        &req.selected_senders,
+        req,
+        &login,
+        accessible_groups,
+        dt_since,
+        dt_till,
+        scope,
+    )?;
+    Ok(query
+        .into_model::<AnalysisDailyGroupActivity>()
+        .all(db)
+        .await
+        .context(h!())?)
+}
+
+#[derive(FromQueryResult)]
+struct AnalysisCallsignRelationMessageRow {
+    message_id: i64,
+    freq: Option<String>,
+    callsigns: serde_json::Value,
+}
+
+fn callsign_relation_messages_query(
+    req: &AnalysisStatsReq,
+    required_callsigns: Option<&[String]>,
+    user: &Identity,
+    accessible_groups: Vec<String>,
+    scope: Option<&AnalyticsMessageIdScope>,
+) -> Result<Select<sigint_inbox_item::Entity>, AppError> {
+    let login = login_id_from_identity(user)?;
+    let dt_since = dt_from_millis(req.since_date_inclusive_ms).context(h!())?;
+    let dt_till =
+        dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
+    let query = sigint_inbox_item::Entity::find()
+        .join(
+            JoinType::InnerJoin,
+            sigint_inbox_item::Relation::SignalMessage.def(),
+        )
+        .join(
+            JoinType::LeftJoin,
+            sigint_inbox_item::Relation::SigintPost.def(),
+        )
+        .join(
+            JoinType::InnerJoin,
+            signal_message::Relation::SignalMessageGroup.def(),
+        )
+        .select_only()
+        .column_as(signal_message::Column::Id, "message_id")
+        .column_as(sigint_inbox_item::Column::Freq, "freq")
+        .column_as(sigint_inbox_item::Column::Callsigns, "callsigns")
+        .filter(signal_message::Column::Deleted.eq(false))
+        .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
+        .filter(sigint_inbox_item::Column::Datetime.lt(dt_till))
+        .filter(sigint_inbox_item::Column::Callsigns.is_not_null())
+        .distinct();
+    let query = if let Some(required_callsigns) = required_callsigns {
+        let required_callsigns = required_callsigns
+            .iter()
+            .map(|callsign| callsign.trim())
+            .filter(|callsign| !callsign.is_empty())
+            .collect::<Vec<_>>();
+        if required_callsigns.is_empty() {
+            query.filter(Expr::cust("FALSE"))
+        } else {
+            let condition = required_callsigns.into_iter().fold(
+                Condition::any(),
+                |condition, callsign| {
+                    condition.add(Expr::cust_with_values(
+                        "sigint_inbox_item.callsigns::jsonb ? $1",
+                        vec![callsign],
+                    ))
+                },
+            );
+            query.filter(condition)
+        }
+    } else {
+        query
+    };
+    apply_group_stats_filters(
+        query,
+        &req.selected_groups,
+        &req.selected_senders,
+        req,
+        &login,
+        accessible_groups,
+        dt_since,
+        dt_till,
+        scope,
+    )
+}
+
+pub(super) async fn fetch_callsign_relation_messages_with_db(
+    req: &AnalysisStatsReq,
+    required_callsigns: Option<&[String]>,
+    user: &Identity,
+    db: &DatabaseConnection,
+    accessible_groups: Vec<String>,
+    scope: Option<&AnalyticsMessageIdScope>,
+    row_limit: Option<u64>,
+) -> Result<Vec<NetworkCallsignRelationMessage>, AppError> {
+    let query = callsign_relation_messages_query(
+        req,
+        required_callsigns,
+        user,
+        accessible_groups,
+        scope,
+    )?;
+    let query = match row_limit {
+        Some(row_limit) => query.limit(row_limit),
+        None => query,
+    };
+    let rows = query
+        .into_model::<AnalysisCallsignRelationMessageRow>()
+        .all(db)
+        .await
+        .context(h!())?;
+
+    rows.into_iter()
+        .map(|row| {
+            Ok(NetworkCallsignRelationMessage {
+                id: row.message_id,
+                timestamp: None,
+                freq: row.freq,
+                text: String::new(),
+                callsigns: serde_json::from_value(row.callsigns)
+                    .context(h!())?,
+            })
+        })
+        .collect()
+}
+
+#[derive(FromQueryResult)]
+struct AnalysisCallsignFrequencyMatchRow {
+    freq: String,
+    callsigns: serde_json::Value,
+    message_count: i64,
+}
+
+fn callsign_frequency_matches_statement(
+    filtered_messages: Select<sigint_inbox_item::Entity>,
+    required_callsigns: Vec<String>,
+    min_matches: i64,
+) -> Statement {
+    let filtered_messages = filtered_messages.into_query().to_owned();
+    let filtered_alias = Alias::new("filtered_callsign_messages");
+    let filtered_cte = CommonTableExpression::new()
+        .query(filtered_messages)
+        .table_name(filtered_alias.clone())
+        .to_owned();
+
+    let message_id_alias = Alias::new("message_id");
+    let freq_alias = Alias::new("freq");
+    let callsigns_alias = Alias::new("callsigns");
+    let callsign_alias = Alias::new("callsign");
+    let expanded_alias = Alias::new("expanded_callsign_messages");
+    let expanded_query = Query::select()
+        .column((filtered_alias.clone(), message_id_alias.clone()))
+        .column((filtered_alias.clone(), freq_alias.clone()))
+        .expr_as(
+            Expr::cust("jsonb_array_elements_text(callsigns)"),
+            callsign_alias.clone(),
+        )
+        .from(filtered_alias)
+        .to_owned();
+    let expanded_cte = CommonTableExpression::new()
+        .query(expanded_query)
+        .table_name(expanded_alias.clone())
+        .to_owned();
+
+    let mut matches_query = Query::select()
+        .column((expanded_alias.clone(), freq_alias.clone()))
+        .expr_as(
+            Expr::cust("jsonb_agg(DISTINCT callsign ORDER BY callsign)"),
+            callsigns_alias,
+        )
+        .expr_as(
+            Expr::cust("COUNT(DISTINCT message_id)"),
+            Alias::new("message_count"),
+        )
+        .from(expanded_alias)
+        .and_where(Expr::col(freq_alias.clone()).is_not_null())
+        .and_where(Expr::cust("btrim(freq) <> ''"))
+        .and_where(Expr::cust_with_values(
+            "callsign = ANY($1)",
+            vec![required_callsigns],
+        ))
+        .add_group_by([Expr::col(freq_alias.clone()).into()])
+        .and_having(Expr::cust_with_values(
+            "COUNT(DISTINCT callsign) >= $1",
+            vec![min_matches.max(1)],
+        ))
+        .order_by_expr(Expr::cust("COUNT(DISTINCT callsign)"), Order::Desc)
+        .order_by_expr(Expr::cust("message_count"), Order::Desc)
+        .order_by_expr(Expr::col(freq_alias).into(), Order::Asc)
+        .to_owned();
+    matches_query.limit(ANALYSIS_CALLSIGN_FREQUENCY_MATCH_LIMIT);
+    let matches_query = Query::with()
+        .cte(filtered_cte)
+        .cte(expanded_cte)
+        .clone()
+        .query(matches_query);
+    DbBackend::Postgres.build(&matches_query)
+}
+
+pub(super) async fn fetch_callsign_frequency_matches_with_db(
+    req: &AnalysisStatsReq,
+    required_callsigns: &[String],
+    min_matches: i64,
+    user: &Identity,
+    db: &DatabaseConnection,
+    accessible_groups: Vec<String>,
+    scope: Option<&AnalyticsMessageIdScope>,
+) -> Result<Vec<AnalysisCallsignFrequencyMatch>, AppError> {
+    let required_callsigns = required_callsigns
+        .iter()
+        .map(|callsign| callsign.trim())
+        .filter(|callsign| !callsign.is_empty())
+        .map(ToOwned::to_owned)
+        .collect::<Vec<_>>();
+    if required_callsigns.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let filtered_messages = callsign_relation_messages_query(
+        req,
+        Some(&required_callsigns),
+        user,
+        accessible_groups,
+        scope,
+    )?;
+    let statement = callsign_frequency_matches_statement(
+        filtered_messages,
+        required_callsigns,
+        min_matches,
+    );
+    let rows = AnalysisCallsignFrequencyMatchRow::find_by_statement(statement)
+        .all(db)
+        .await
+        .context(h!())?;
+
+    rows.into_iter()
+        .map(|row| {
+            Ok(AnalysisCallsignFrequencyMatch {
+                freq: row.freq,
+                callsigns: serde_json::from_value(row.callsigns)
+                    .context(h!())?,
+                message_count: row.message_count,
+            })
+        })
+        .collect()
 }
 
 pub async fn fetch_senders(
@@ -6223,6 +6567,56 @@ mod tests {
         );
     }
 
+    #[tokio::test]
+    #[serial]
+    async fn callsign_frequency_matches_are_aggregated_in_the_database() {
+        let env = cleanup().await.unwrap();
+        let mut message_ids = Vec::new();
+        for (freq, callsigns) in [
+            ("123.45", serde_json::json!(["ALPHA", "BRAVO"])),
+            ("123.45", serde_json::json!(["ALPHA"])),
+            ("456.78", serde_json::json!(["ALPHA"])),
+        ] {
+            let inbox_item = mk_sigint_inbox_item(
+                &env.dbx,
+                sigint_inbox_item::ActiveModel {
+                    freq: Set(Some(freq.to_string())),
+                    callsigns: Set(Some(callsigns)),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+            message_ids.push(inbox_item.id);
+        }
+        let filtered_messages = sigint_inbox_item::Entity::find()
+            .select_only()
+            .column_as(sigint_inbox_item::Column::Id, "message_id")
+            .column_as(sigint_inbox_item::Column::Freq, "freq")
+            .column_as(sigint_inbox_item::Column::Callsigns, "callsigns")
+            .filter(sigint_inbox_item::Column::Id.is_in(message_ids));
+        let statement = callsign_frequency_matches_statement(
+            filtered_messages,
+            vec!["ALPHA".to_string(), "BRAVO".to_string()],
+            2,
+        );
+
+        let rows =
+            AnalysisCallsignFrequencyMatchRow::find_by_statement(statement)
+                .all(&env.dbx)
+                .await
+                .unwrap();
+
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].freq, "123.45");
+        assert_eq!(
+            serde_json::from_value::<Vec<String>>(rows[0].callsigns.clone())
+                .unwrap(),
+            vec!["ALPHA", "BRAVO"]
+        );
+        assert_eq!(rows[0].message_count, 2);
+    }
+
     fn populated_analysis_stats_req() -> AnalysisStatsReq {
         serde_json::from_value(serde_json::json!({
             "since_date_inclusive_ms": 1,
@@ -6574,6 +6968,16 @@ mod tests {
         assert!(tags.without_model_tags.is_none());
         assert!(tags.report_tags_only_this_unit.is_none());
         assert_eq!(tags.selected_groups, req.selected_groups);
+    }
+
+    #[test]
+    fn callsign_frequency_search_replaces_callsign_and_frequency_facets() {
+        let req = populated_analysis_stats_req();
+        let search_req = callsign_frequency_match_search_req(&req);
+
+        assert!(search_req.selected_freqs.is_none());
+        assert!(search_req.selected_callsigns.is_none());
+        assert_eq!(search_req.selected_groups, req.selected_groups);
     }
 
     #[test]

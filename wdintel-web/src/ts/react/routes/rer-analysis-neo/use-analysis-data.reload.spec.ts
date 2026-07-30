@@ -254,6 +254,19 @@ describe('filterSectionsForInitialLoad', () => {
     expect(sections).toEqual(expect.arrayContaining(['tags', 'units', 'networks']));
     expect(sections).toEqual(expect.arrayContaining(['groups', 'senders']));
   });
+
+  it('loads only selected sections while the filter panel is closed', () => {
+    const sections = filterSectionsForInitialLoad(
+      {
+        ...buildQueryState(),
+        unitsSelected: ['u1'],
+        networksSelected: ['n1'],
+      },
+      false,
+    );
+
+    expect(sections).toEqual(['units', 'networks']);
+  });
 });
 
 describe('reloadAnalysisData', () => {
@@ -845,7 +858,7 @@ describe('reloadAnalysisData', () => {
     ]);
   });
 
-  it('does not load map points when the map is hidden', async () => {
+  it('does not load secondary data owned by visibility effects', async () => {
     mocks.fetchInboxMessages.mockResolvedValue({
       inboxItems: [[1, { networkIds: [] }]],
       callsigns: [{ callsign: 'alpha', res: [] }],
@@ -890,7 +903,7 @@ describe('reloadAnalysisData', () => {
       setHasLoadedInitialMessages: vi.fn(),
       setNewCallsignsLoading: vi.fn(),
       setNewCallsignsLoadedKey: vi.fn(),
-      shouldLoadNewCallsigns: false,
+      shouldLoadNewCallsigns: true,
       setNoMoreToLoad: vi.fn(),
       setNolimitShown: vi.fn(),
       setOptions: vi.fn(),
@@ -908,6 +921,7 @@ describe('reloadAnalysisData', () => {
     });
 
     expect(mocks.fetchAnalysisMapPoints).not.toHaveBeenCalled();
+    expect(mocks.fetchAnalysisNewCallsigns).not.toHaveBeenCalled();
   });
 
   it('loads map points when the map center tab is visible', async () => {

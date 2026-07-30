@@ -114,6 +114,7 @@ export function buildAnalysisActionsParams({
 type BuildReloadParamsInput = {
   centerTab: UseAnalysisDataProps['centerTab'];
   deferInitialLoad: boolean;
+  leftPanelOpen: boolean;
   newestFirst: boolean;
   onError: (message: string) => void;
   onUnauthorized: (error: unknown) => boolean;
@@ -135,7 +136,7 @@ type BuildReloadParamsInput = {
     networkStatsCache?: Map<string, ReturnType<FetchAnalysisNetworks>>,
     signal?: AbortSignal,
   ) => Promise<void>;
-  invalidateCallsignGraph: () => void;
+  invalidateCallsignGraph: (options?: { clearGraph?: boolean }) => void;
   invalidateCorrelatedFreqsCache: () => void;
   invalidateRightSidebarData: () => void;
   invalidateSummaryData: (keepLoading?: boolean) => void;
@@ -189,6 +190,7 @@ export function buildReloadOrchestratorParams(input: BuildReloadParamsInput) {
   return {
     centerTab: input.centerTab,
     deferInitialLoad: input.deferInitialLoad,
+    leftPanelOpen: input.leftPanelOpen,
     newestFirst: input.newestFirst,
     onError: input.onError,
     onUnauthorized: input.onUnauthorized,

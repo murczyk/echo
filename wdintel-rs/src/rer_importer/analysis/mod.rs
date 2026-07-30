@@ -4425,6 +4425,9 @@ async fn correlated_freqs(
     let Some(selected_freqs) = req.selected_freqs.clone() else {
         return Ok(Json(empty));
     };
+    if selected_freqs.is_empty() {
+        return Ok(Json(empty));
+    }
     let dt_since = dt_from_millis(req.since_date_inclusive_ms)?;
     let dt_till = dt_from_millis(req.till_date_noninclusive_ms)?;
 
@@ -4437,11 +4440,19 @@ async fn correlated_freqs(
         dt_since
     };
 
-    let mut freqs = vec![];
     #[derive(FromQueryResult)]
-    struct Res {
+    struct CallsignRow {
         callsign: Option<String>,
     }
+    #[derive(FromQueryResult)]
+    struct CorrelatedFreqCallsign {
+        freq: Option<String>,
+        callsign: Option<String>,
+    }
+    let accessible_groups =
+        crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
+            .await
+            .c(h!())?;
     let q = signal_message::Entity::find()
         .join(
             JoinType::InnerJoin,
@@ -4452,13 +4463,8 @@ async fn correlated_freqs(
             signal_message::Relation::DatasourceGroup.def(),
         )
         .filter(
-            datasource_group::Column::GroupMasterKey.eq_any(
-                crate::messenger::group::get_identity_sigint_groups(
-                    &env.dbx, &login,
-                )
-                .await
-                .c(h!())?,
-            ),
+            datasource_group::Column::GroupMasterKey
+                .eq_any(accessible_groups.clone()),
         )
         .select_only()
         .column_as(
@@ -4467,77 +4473,80 @@ async fn correlated_freqs(
         )
         .filter(signal_message::Column::Deleted.eq(false))
         .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
-        .filter(sigint_inbox_item::Column::Datetime.lt(dt_till));
+        .filter(sigint_inbox_item::Column::Datetime.lt(dt_till))
+        .distinct();
     let q = filter_selected_freqs(q, &req.selected_freqs)?;
     let q = filter_selected_metadata_for_analysis_stats(q, &req)?;
-    let q = q.into_model::<Res>().all(&env.dbx).await.c(h!())?;
-    let mut selected_freq_callsigns: Vec<String> = vec![];
-    for x in q.iter() {
-        if let Some(ref callsign) = x.callsign {
-            selected_freq_callsigns.push(callsign.clone());
-        }
-    }
+    let q = q.into_model::<CallsignRow>().all(&env.dbx).await.c(h!())?;
+    let selected_freq_callsigns = q
+        .into_iter()
+        .filter_map(|row| row.callsign)
+        .collect::<Vec<_>>();
     let selected_freq_callsigns = uniq_via_btreeset(&selected_freq_callsigns);
+    if selected_freq_callsigns.is_empty() {
+        return Ok(Json(empty));
+    }
+    let selected_freq_callsign_set = selected_freq_callsigns
+        .iter()
+        .cloned()
+        .collect::<HashSet<_>>();
 
-    let mut freq_common_callsigns: BTreeMap<String, Vec<String>> =
-        BTreeMap::new();
-    for callsign in selected_freq_callsigns.iter() {
-        #[derive(FromQueryResult)]
-        struct Res2 {
-            freq: Option<String>,
+    let q = signal_message::Entity::find()
+        .join(
+            JoinType::InnerJoin,
+            signal_message::Relation::SigintInboxItem.def(),
+        )
+        .join(
+            JoinType::InnerJoin,
+            signal_message::Relation::DatasourceGroup.def(),
+        )
+        .filter(
+            datasource_group::Column::GroupMasterKey.eq_any(accessible_groups),
+        )
+        .filter(signal_message::Column::Deleted.eq(false))
+        .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
+        .filter(sigint_inbox_item::Column::Datetime.lt(dt_till))
+        .filter(Expr::cust_with_values(
+            "sigint_inbox_item.callsigns::jsonb ?| $1",
+            vec![selected_freq_callsigns],
+        ))
+        .select_only()
+        .column_as(sigint_inbox_item::Column::Freq, "freq")
+        .column_as(
+            Expr::cust(
+                "jsonb_array_elements_text(sigint_inbox_item.callsigns)",
+            ),
+            "callsign",
+        )
+        .distinct();
+    let q = filter_selected_metadata_for_analysis_stats(q, &req)?;
+    let rows = q
+        .into_model::<CorrelatedFreqCallsign>()
+        .all(&env.dbx)
+        .await
+        .c(h!())?;
+    let mut freq_common_callsigns = BTreeMap::<String, BTreeSet<String>>::new();
+    for row in rows {
+        let (Some(freq), Some(callsign)) = (row.freq, row.callsign) else {
+            continue;
+        };
+        if selected_freqs.contains(&freq)
+            || !selected_freq_callsign_set.contains(&callsign)
+        {
+            continue;
         }
-        let q = signal_message::Entity::find()
-            .join(
-                JoinType::InnerJoin,
-                signal_message::Relation::SigintInboxItem.def(),
-            )
-            .join(
-                JoinType::InnerJoin,
-                signal_message::Relation::DatasourceGroup.def(),
-            )
-            .filter(
-                datasource_group::Column::GroupMasterKey.eq_any(
-                    crate::messenger::group::get_identity_sigint_groups(
-                        &env.dbx, &login,
-                    )
-                    .await
-                    .c(h!())?,
-                ),
-            )
-            .filter(signal_message::Column::Deleted.eq(false))
-            .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
-            .filter(sigint_inbox_item::Column::Datetime.lt(dt_till))
-            .filter(Expr::cust_with_values(
-                "sigint_inbox_item.callsigns::jsonb ? $1",
-                vec![callsign],
-            ))
-            .select_only()
-            .column_as(sigint_inbox_item::Column::Freq, "freq");
-        let q = filter_selected_metadata_for_analysis_stats(q, &req)?;
-        let res = q.into_model::<Res2>().all(&env.dbx).await.c(h!())?;
-        for r in res {
-            let Some(freq): Option<String> = r.freq else {
-                continue;
-            };
-            freq_common_callsigns
-                .entry(freq.clone())
-                .and_modify(|xs| {
-                    if !xs.contains(callsign) {
-                        xs.push(callsign.clone())
-                    }
-                })
-                .or_insert(vec![callsign.clone()]);
-        }
+        freq_common_callsigns
+            .entry(freq)
+            .or_default()
+            .insert(callsign);
     }
-    for (freq, callsigns) in freq_common_callsigns.iter() {
-        if !selected_freqs.contains(freq) {
-            freqs.push(CorrelatedFreq {
-                freq: freq.clone(),
-                common_callsigns: callsigns.clone(),
-            });
-        }
-    }
-    let mut freqs = freqs.clone();
+    let mut freqs = freq_common_callsigns
+        .into_iter()
+        .map(|(freq, callsigns)| CorrelatedFreq {
+            freq,
+            common_callsigns: callsigns.into_iter().collect(),
+        })
+        .collect::<Vec<_>>();
     freqs.sort_by(|a, b| {
         b.common_callsigns
             .len()
@@ -5598,6 +5607,269 @@ pub async fn message_draft_events(
     }
 
     Ok(HttpResponse::Ok().finish())
+}
+
+/// STATS
+#[post("/api/rer/analysis/activity-daily")]
+pub async fn activity_daily(
+    user: Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<AnalysisStatsReq>,
+) -> Result<Json<crate::sigint::freq::types::FreqDailyActivityCount>, AppError>
+{
+    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    let login = login_id_from_identity(&user)?;
+    let accessible_groups =
+        get_identity_sigint_groups_noimport(&env.dbx, &user, &env.config)
+            .await
+            .context(h!())?;
+    let analytics_groups = accessible_groups.clone();
+    let postgres_groups = accessible_groups;
+    let analytics_req = &req;
+    let postgres_req = &req;
+    let analytics_user = &user;
+    let postgres_user = &user;
+    let postgres_db = &env.dbx;
+    let freshness_max_age_ms = env
+        .config
+        .analytics
+        .as_ref()
+        .map(AnalyticsConfig::freshness_max_age_ms)
+        .unwrap_or(ANALYTICS_FRESHNESS_MAX_AGE_MS_DEFAULT);
+    let rows = with_analytics_read_fallback(
+        env.get_ref(),
+        "analysis activity daily",
+        analytics_stats_request_supported(&req, env.get_ref()),
+        |db| async move {
+            let scope = stats::resolve_analytics_message_id_scope(
+                &analytics_req.0,
+                &db,
+                freshness_max_age_ms,
+            )
+            .await?;
+            stats::fetch_daily_group_activity_with_db(
+                &analytics_req.0,
+                analytics_user,
+                &db,
+                analytics_groups,
+                Some(&scope),
+            )
+            .await
+        },
+        |_db| async move {
+            stats::fetch_daily_group_activity_with_db(
+                &postgres_req.0,
+                postgres_user,
+                postgres_db,
+                postgres_groups,
+                None,
+            )
+            .await
+        },
+    )
+    .await
+    .context(h!())?;
+
+    let mut data_per_date = BTreeMap::new();
+    for row in rows {
+        let date = row.msg_date.to_string();
+        let mut activity = data_per_date.remove(&date).unwrap_or(
+            crate::sigint::freq::types::FreqDailyGroupActivityCount {
+                count_by_group_name: BTreeMap::new(),
+            },
+        );
+        activity.count_by_group_name.insert(row.group, row.value);
+        data_per_date.insert(date, activity);
+    }
+
+    trace!("analysis activity daily requested by {login}");
+    Ok(Json(crate::sigint::freq::types::FreqDailyActivityCount {
+        data_per_date,
+    }))
+}
+
+#[post("/api/rer/analysis/callsign-relations")]
+pub async fn callsign_relations(
+    user: Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<AnalysisStatsReq>,
+) -> Result<
+    Json<crate::sigint::network::types::NetworkCallsignRelationsRsp>,
+    AppError,
+> {
+    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    let dt_since = dt_from_millis(req.since_date_inclusive_ms).context(h!())?;
+    let dt_till =
+        dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
+    if dt_till - dt_since
+        > chrono::Duration::days(ANALYSIS_CALLSIGN_GRAPH_MAX_DAYS)
+    {
+        return Err(AppError::BL {
+            msg: format!(
+                "Для графа оберіть період не довший за {ANALYSIS_CALLSIGN_GRAPH_MAX_DAYS} днів."
+            ),
+        });
+    }
+    let accessible_groups =
+        get_identity_sigint_groups_noimport(&env.dbx, &user, &env.config)
+            .await
+            .context(h!())?;
+    let analytics_groups = accessible_groups.clone();
+    let postgres_groups = accessible_groups;
+    let analytics_req = &req;
+    let postgres_req = &req;
+    let analytics_user = &user;
+    let postgres_user = &user;
+    let postgres_db = &env.dbx;
+    let freshness_max_age_ms = env
+        .config
+        .analytics
+        .as_ref()
+        .map(AnalyticsConfig::freshness_max_age_ms)
+        .unwrap_or(ANALYTICS_FRESHNESS_MAX_AGE_MS_DEFAULT);
+    let messages = with_analytics_read_fallback(
+        env.get_ref(),
+        "analysis callsign relations",
+        analytics_stats_request_supported(&req, env.get_ref()),
+        |db| async move {
+            let scope = stats::resolve_analytics_message_id_scope(
+                &analytics_req.0,
+                &db,
+                freshness_max_age_ms,
+            )
+            .await?;
+            stats::fetch_callsign_relation_messages_with_db(
+                &analytics_req.0,
+                None,
+                analytics_user,
+                &db,
+                analytics_groups,
+                Some(&scope),
+                Some(ANALYSIS_CALLSIGN_GRAPH_MESSAGE_LIMIT + 1),
+            )
+            .await
+        },
+        |_db| async move {
+            stats::fetch_callsign_relation_messages_with_db(
+                &postgres_req.0,
+                None,
+                postgres_user,
+                postgres_db,
+                postgres_groups,
+                None,
+                Some(ANALYSIS_CALLSIGN_GRAPH_MESSAGE_LIMIT + 1),
+            )
+            .await
+        },
+    )
+    .await
+    .context(h!())?;
+
+    if messages.len() > ANALYSIS_CALLSIGN_GRAPH_MESSAGE_LIMIT as usize {
+        return Err(AppError::BL {
+            msg: format!(
+                "Граф містить понад {ANALYSIS_CALLSIGN_GRAPH_MESSAGE_LIMIT} повідомлень. Звузьте період або додайте фільтри."
+            ),
+        });
+    }
+    let relations =
+        crate::sigint::network::relations::aggregate_unenriched_callsign_relations(
+            messages,
+        );
+    if relations.nodes.len() > ANALYSIS_CALLSIGN_GRAPH_NODE_LIMIT
+        || relations.edges.len() > ANALYSIS_CALLSIGN_GRAPH_EDGE_LIMIT
+    {
+        return Err(AppError::BL {
+            msg: format!(
+                "Граф перевищує безпечний розмір: максимум {ANALYSIS_CALLSIGN_GRAPH_NODE_LIMIT} позивних і {ANALYSIS_CALLSIGN_GRAPH_EDGE_LIMIT} зв'язків. Додайте фільтри."
+            ),
+        });
+    }
+
+    Ok(Json(relations))
+}
+
+#[post("/api/rer/analysis/callsign-frequency-matches")]
+pub async fn callsign_frequency_matches(
+    user: Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<AnalysisCallsignFrequencyMatchesReq>,
+) -> Result<Json<AnalysisCallsignFrequencyMatchesRsp>, AppError> {
+    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    let selected_callsign_count = req
+        .callsigns
+        .iter()
+        .map(|callsign| callsign.trim().to_uppercase())
+        .filter(|callsign| !callsign.is_empty())
+        .collect::<HashSet<_>>()
+        .len();
+    if selected_callsign_count == 0
+        || req.min_matches.max(1) as usize > selected_callsign_count
+    {
+        return Ok(Json(AnalysisCallsignFrequencyMatchesRsp {
+            frequencies: Vec::new(),
+        }));
+    }
+    let search_req = stats::callsign_frequency_match_search_req(&req.req);
+    let accessible_groups =
+        get_identity_sigint_groups_noimport(&env.dbx, &user, &env.config)
+            .await
+            .context(h!())?;
+    let analytics_groups = accessible_groups.clone();
+    let postgres_groups = accessible_groups;
+    let analytics_req = &search_req;
+    let postgres_req = &search_req;
+    let analytics_callsigns = &req.callsigns;
+    let postgres_callsigns = &req.callsigns;
+    let min_matches = req.min_matches;
+    let analytics_user = &user;
+    let postgres_user = &user;
+    let postgres_db = &env.dbx;
+    let freshness_max_age_ms = env
+        .config
+        .analytics
+        .as_ref()
+        .map(AnalyticsConfig::freshness_max_age_ms)
+        .unwrap_or(ANALYTICS_FRESHNESS_MAX_AGE_MS_DEFAULT);
+    let frequencies = with_analytics_read_fallback(
+        env.get_ref(),
+        "analysis callsign frequency matches",
+        analytics_stats_request_supported(&search_req, env.get_ref()),
+        |db| async move {
+            let scope = stats::resolve_analytics_message_id_scope(
+                analytics_req,
+                &db,
+                freshness_max_age_ms,
+            )
+            .await?;
+            stats::fetch_callsign_frequency_matches_with_db(
+                analytics_req,
+                analytics_callsigns,
+                min_matches,
+                analytics_user,
+                &db,
+                analytics_groups,
+                Some(&scope),
+            )
+            .await
+        },
+        |_db| async move {
+            stats::fetch_callsign_frequency_matches_with_db(
+                postgres_req,
+                postgres_callsigns,
+                min_matches,
+                postgres_user,
+                postgres_db,
+                postgres_groups,
+                None,
+            )
+            .await
+        },
+    )
+    .await
+    .context(h!())?;
+
+    Ok(Json(AnalysisCallsignFrequencyMatchesRsp { frequencies }))
 }
 
 /// STATS

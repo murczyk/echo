@@ -2,11 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 import type { AnalysisCountItem } from './types';
 import type { NewCallsignsRes } from '../../../../Bindings';
-import {
-  fetchAnalysisCallsigns,
-  fetchAnalysisLocations,
-  fetchAnalysisUnits,
-} from '../../services/api/analysis';
+import { fetchAnalysisLocations, fetchAnalysisUnits } from '../../services/api/analysis';
 import { isAbortError } from '../../services/api/client';
 import { isNullOrUndefined } from '../../utils/misc';
 import { buildAnalysisReq } from './helpers';
@@ -75,19 +71,11 @@ export function useAnalysisTopSidebarData({
     setRightSidebarLoading(true);
 
     try {
-      const [callsignsRsp, unitsRsp, locationsRsp] = await Promise.all([
-        fetchAnalysisCallsigns(analysisReq, { signal: abortController.signal }),
+      const [unitsRsp, locationsRsp] = await Promise.all([
         fetchAnalysisUnits(analysisReq, { signal: abortController.signal }),
         fetchAnalysisLocations(analysisReq, { signal: abortController.signal }),
       ]);
       if (requestId !== rightSidebarRequestRef.current || abortController.signal.aborted) return;
-      setTopCallsigns(
-        topItems(
-          callsignsRsp.callsigns,
-          (item) => item.callsign,
-          (item) => item.count,
-        ),
-      );
       setTopUnits(
         topItems(
           unitsRsp.units,

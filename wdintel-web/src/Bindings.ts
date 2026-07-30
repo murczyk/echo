@@ -738,6 +738,22 @@ export type AnalysisStatsReq = {
   reportTagsOnlyThisUnit: boolean | null;
 };
 
+export type AnalysisCallsignFrequencyMatchesReq = {
+  req: AnalysisStatsReq;
+  callsigns: Array<string>;
+  minMatches: number;
+};
+
+export type AnalysisCallsignFrequencyMatch = {
+  freq: string;
+  callsigns: Array<string>;
+  messageCount: number;
+};
+
+export type AnalysisCallsignFrequencyMatchesRsp = {
+  frequencies: Array<AnalysisCallsignFrequencyMatch>;
+};
+
 export type AnalysisStatsRsp = {
   countOverall: number;
   countSelected: number;

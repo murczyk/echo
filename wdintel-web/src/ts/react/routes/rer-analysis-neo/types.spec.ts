@@ -9,7 +9,20 @@ describe('rer-analysis-neo tabs', () => {
   });
 
   it('keeps the sidebar free of the summary tab', () => {
-    expect(getAnalysisSidebarTabs(false)).toEqual(['stats', 'callsigns', 'newCallsigns']);
-    expect(getAnalysisSidebarTabs(true)).toEqual(['map', 'stats', 'callsigns', 'newCallsigns']);
+    expect(getAnalysisSidebarTabs(false)).toEqual([
+      'stats',
+      'frequencies',
+      'callsigns',
+      'graph',
+      'newCallsigns',
+    ]);
+    expect(getAnalysisSidebarTabs(true)).toEqual([
+      'map',
+      'stats',
+      'frequencies',
+      'callsigns',
+      'graph',
+      'newCallsigns',
+    ]);
   });
 });

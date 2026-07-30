@@ -56,6 +56,12 @@ export const analysisReportDialogHintSx = {
   minWidth: 0,
 } as const;
 
+export const analysisReportTemplateGridSx = {
+  display: 'grid',
+  gridTemplateColumns: { xs: '1fr', md: 'repeat(3, minmax(0, 1fr))' },
+  gap: 1.5,
+} as const;
+
 type Props = {
   aors: AnalysisAorEntry[];
   downloadInFlight: boolean;
@@ -397,7 +403,7 @@ export function AnalysisReportDialog({
 
             {builderMode === 'reports' ? (
               <Stack spacing={1}>
-                <Stack direction={{ xs: 'column', md: 'row' }} flexWrap="wrap" gap={1.5}>
+                <Box sx={analysisReportTemplateGridSx}>
                   {visibleReportTemplateOptions.map((option) => (
                     <Button
                       key={option.id}
@@ -413,7 +419,8 @@ export function AnalysisReportDialog({
                         textAlign: 'left',
                         p: 2,
                         minWidth: 0,
-                        width: 'fit-content',
+                        width: '100%',
+                        height: '100%',
                       }}
                     >
                       <Stack alignItems="flex-start" spacing={0.75}>
@@ -424,10 +431,10 @@ export function AnalysisReportDialog({
                       </Stack>
                     </Button>
                   ))}
-                </Stack>
+                </Box>
               </Stack>
             ) : (
-              <Stack direction={{ xs: 'column', md: 'row' }} flexWrap="wrap" gap={1.5}>
+              <Box sx={analysisReportTemplateGridSx}>
                 {exportTemplateOptions.map((option) => (
                   <Button
                     key={option.id}
@@ -439,7 +446,8 @@ export function AnalysisReportDialog({
                       textAlign: 'left',
                       p: 2,
                       minWidth: 0,
-                      width: 'fit-content',
+                      width: '100%',
+                      height: '100%',
                     }}
                   >
                     <Stack alignItems="flex-start" spacing={0.75}>
@@ -450,7 +458,7 @@ export function AnalysisReportDialog({
                     </Stack>
                   </Button>
                 ))}
-              </Stack>
+              </Box>
             )}
           </Stack>
 

@@ -234,13 +234,20 @@ export function AnalysisPageHeader({
                 </span>
               </Tooltip>
               <Button
-                variant="contained"
-                color="primary"
+                variant="outlined"
+                color="inherit"
                 onClick={page.openReport}
                 title="Відкрити конструктор звітів"
-                sx={{ height: 40, px: 2, display: { xs: 'none', md: 'inline-flex' }, ml: 1 }}
+                sx={{
+                  height: 40,
+                  px: 2,
+                  display: { xs: 'none', md: 'inline-flex' },
+                  ml: 1,
+                  borderColor: 'divider',
+                  '&:hover': { borderColor: 'text.secondary' },
+                }}
               >
-                Конструктор звітів
+                ЗВІТИ
               </Button>
               <SidePanelToggleButton
                 side="right"

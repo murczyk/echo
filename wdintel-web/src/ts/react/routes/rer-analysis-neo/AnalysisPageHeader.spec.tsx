@@ -9,8 +9,26 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 const useMediaQueryMock = vi.hoisted(() => vi.fn());
 
 vi.mock('@mui/material', () => ({
-  Button: ({ children, onClick }: { children: ReactNode; onClick?: () => void }) => (
-    <button type="button" onClick={onClick}>
+  Button: ({
+    children,
+    color,
+    onClick,
+    sx,
+    variant,
+  }: {
+    children: ReactNode;
+    color?: string;
+    onClick?: () => void;
+    sx?: { borderColor?: string };
+    variant?: string;
+  }) => (
+    <button
+      type="button"
+      data-border-color={sx?.borderColor}
+      data-color={color}
+      data-variant={variant}
+      onClick={onClick}
+    >
       {children}
     </button>
   ),
@@ -328,6 +346,19 @@ describe('AnalysisPageHeader', () => {
     expect(view.container.querySelector('header')?.dataset.fullWidthActions).toBe('false');
     expect(view.container.querySelector('[aria-label="Згорнути праву панель"]')).not.toBeNull();
     expect(view.container.querySelector('[aria-label="Розгорнути праву панель"]')).toBeNull();
+  });
+
+  it('renders the report action as a neutral grey outlined button', () => {
+    const view = renderHeader(buildPage(), false, false);
+    rendered.push(view);
+
+    const reportButton = Array.from(
+      view.container.querySelectorAll<HTMLButtonElement>('[data-testid="header-actions"] button'),
+    ).find((button) => button.textContent?.trim() === 'ЗВІТИ');
+
+    expect(reportButton?.dataset.variant).toBe('outlined');
+    expect(reportButton?.dataset.color).toBe('inherit');
+    expect(reportButton?.dataset.borderColor).toBe('divider');
   });
 
   it('keeps the narrow right-panel toggle in the title row', () => {

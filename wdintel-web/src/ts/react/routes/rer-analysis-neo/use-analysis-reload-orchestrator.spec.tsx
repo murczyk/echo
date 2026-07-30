@@ -209,6 +209,32 @@ describe('useAnalysisReloadOrchestrator', () => {
     expect(params.loadMapPalitras).toHaveBeenCalledTimes(1);
   });
 
+  it('loads all top sidebar facets only for the summary tab', async () => {
+    const loadTopSidebarData = vi.fn().mockResolvedValue(undefined);
+    const params = buildParams({
+      loadTopSidebarData,
+      rightSidebarVisible: true,
+      rightSidebarTab: 'stats',
+    });
+
+    await renderHook(params);
+
+    expect(loadTopSidebarData).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not load unrelated top facets for the callsigns tab', async () => {
+    const loadTopSidebarData = vi.fn().mockResolvedValue(undefined);
+    const params = buildParams({
+      loadTopSidebarData,
+      rightSidebarVisible: true,
+      rightSidebarTab: 'callsigns',
+    });
+
+    await renderHook(params);
+
+    expect(loadTopSidebarData).not.toHaveBeenCalled();
+  });
+
   it('does not reload map palitras when only the search query changes', async () => {
     const params = buildParams();
 

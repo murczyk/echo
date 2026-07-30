@@ -838,6 +838,31 @@ pub struct AnalysisStatsReq {
 #[derive(
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
+pub struct AnalysisCallsignFrequencyMatchesReq {
+    pub req: AnalysisStatsReq,
+    pub callsigns: Vec<String>,
+    pub min_matches: i64,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct AnalysisCallsignFrequencyMatch {
+    pub freq: String,
+    pub callsigns: Vec<String>,
+    pub message_count: i64,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct AnalysisCallsignFrequencyMatchesRsp {
+    pub frequencies: Vec<AnalysisCallsignFrequencyMatch>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
 pub struct CallsignsGraphReq {
     pub since_date_inclusive_ms: i64,
     pub till_date_noninclusive_ms: i64,

@@ -637,6 +637,11 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::rer_importer::analysis::post_stats)
             .service(crate::rer_importer::analysis::sender_stats)
             .service(crate::rer_importer::analysis::group_stats)
+            .service(crate::rer_importer::analysis::activity_daily)
+            .service(crate::rer_importer::analysis::callsign_relations)
+            .service(
+                crate::rer_importer::analysis::callsign_frequency_matches,
+            )
             .service(crate::rer_importer::analysis::location_stats_count)
             .service(crate::rer_importer::analysis::unit_stats_count)
             .service(crate::rer_importer::analysis::tag_stats_count)

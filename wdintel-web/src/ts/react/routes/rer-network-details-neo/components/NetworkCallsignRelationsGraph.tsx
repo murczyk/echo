@@ -61,6 +61,10 @@ type Props = {
   relationsTill: string;
   networkId: number | null;
   relationsLoading: boolean;
+  contextDescription?: string;
+  defaultMinIntensity?: number;
+  showDateFilters?: boolean;
+  showMessages?: boolean;
   onReload: () => void;
   onSearchChange: (value: string) => void;
   onEnabledFreqsChange: (freqs: string[]) => void;
@@ -99,6 +103,10 @@ export function NetworkCallsignRelationsGraph({
   relationsTill,
   networkId,
   relationsLoading,
+  contextDescription = "Позивні, зв'язки та перехоплення у вибраних мережі, періоді, інтенсивності й частотах.",
+  defaultMinIntensity = NETWORK_RELATIONS_DEFAULT_MIN_INTENSITY,
+  showDateFilters = true,
+  showMessages = true,
   onReload,
   onSearchChange,
   onEnabledFreqsChange,
@@ -238,7 +246,7 @@ export function NetworkCallsignRelationsGraph({
   const hasRenderableGraph = renderGraphView.nodes.length > 0 && renderGraphView.edges.length > 0;
   const totalIntensity = summaryEdges.reduce((total, edge) => total + edge.visibleWeight, 0);
   const maxIntensity = Math.max(1, ...summaryEdges.map((edge) => edge.visibleWeight));
-  const intensitySliderMax = Math.max(maxIntensity, NETWORK_RELATIONS_DEFAULT_MIN_INTENSITY);
+  const intensitySliderMax = Math.max(maxIntensity, defaultMinIntensity);
   const denseGraph =
     renderGraphView.nodes.length > 40 ||
     renderGraphView.edges.length > 90 ||
@@ -261,6 +269,7 @@ export function NetworkCallsignRelationsGraph({
     const tillDateNoninclusiveMs = parseDateInputExclusiveEndInTimeZone(relationsTill);
 
     if (
+      !showMessages ||
       networkId === null ||
       selection === null ||
       sinceDateInclusiveMs === null ||
@@ -314,6 +323,7 @@ export function NetworkCallsignRelationsGraph({
     selectedMessageSelection?.callsign,
     selectedMessageSelection?.source,
     selectedMessageSelection?.target,
+    showMessages,
   ]);
   const visibleEdgeIdsForRender = useMemo(() => {
     if (!hasRenderableGraph) return new Set<string>();
@@ -512,8 +522,7 @@ export function NetworkCallsignRelationsGraph({
               {totalIntensity} перехоплень
             </Typography>
             <Typography variant="caption" color="text.secondary">
-              Позивні, зв&apos;язки та перехоплення у вибраних мережі, періоді, інтенсивності й
-              частотах.
+              {contextDescription}
             </Typography>
           </Stack>
         </Stack>
@@ -576,24 +585,28 @@ export function NetworkCallsignRelationsGraph({
                   ) : undefined,
               }}
             />
-            <NetworkDatePickerField
-              label="Від"
-              value={relationsSince}
-              onChange={onRelationsSinceChange}
-              minDate={relationsDateMin}
-              maxDate={relationsSinceMax}
-              allowEmpty={false}
-              width={148}
-            />
-            <NetworkDatePickerField
-              label="До"
-              value={relationsTill}
-              onChange={onRelationsTillChange}
-              minDate={relationsTillMin}
-              maxDate={relationsDateMax}
-              allowEmpty={false}
-              width={148}
-            />
+            {showDateFilters ? (
+              <>
+                <NetworkDatePickerField
+                  label="Від"
+                  value={relationsSince}
+                  onChange={onRelationsSinceChange}
+                  minDate={relationsDateMin}
+                  maxDate={relationsSinceMax}
+                  allowEmpty={false}
+                  width={148}
+                />
+                <NetworkDatePickerField
+                  label="До"
+                  value={relationsTill}
+                  onChange={onRelationsTillChange}
+                  minDate={relationsTillMin}
+                  maxDate={relationsDateMax}
+                  allowEmpty={false}
+                  width={148}
+                />
+              </>
+            ) : null}
             <Stack direction="row" alignItems="center" spacing={2} sx={{ flexShrink: 0 }}>
               <FormControlLabel
                 control={
@@ -672,6 +685,7 @@ export function NetworkCallsignRelationsGraph({
           selectedMessages={selectedMessages}
           selectedMessagesLoading={selectedMessagesLoading}
           selectedMessagesError={selectedMessagesError}
+          showMessages={showMessages}
           selectedNeighborIds={selectedNeighborIds}
           visibleEdgeIdsForRender={visibleEdgeIdsForRender}
           visibleNodeIdsForRender={visibleNodeIdsForRender}
@@ -683,6 +697,7 @@ export function NetworkCallsignRelationsGraph({
           legendFreqs={legendFreqs}
           relationFreqState={relationFreqState}
           relationsMinIntensity={relationsMinIntensity}
+          defaultMinIntensity={defaultMinIntensity}
           intensityAnchorEl={intensityAnchorEl}
           filterPopoverId={filterPopoverId}
           onSearchChange={onSearchChange}

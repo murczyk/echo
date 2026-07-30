@@ -5,7 +5,7 @@ import type {
   CallsignInfoRes,
   CorrelatedFreq,
   FreqDailyActivityCount,
-  NetJsonGraphAndMeta,
+  NetworkCallsignRelationsRsp,
   NewCallsignsRes,
   SummaryTableFreqRow,
 } from '../../../../Bindings';
@@ -33,12 +33,12 @@ type Params = {
 
 export type UseAnalysisSidebarDataResult = {
   correlatedFreqs: CorrelatedFreq[];
+  correlatedFreqsLoaded: boolean;
   correlatedFreqsLoading: boolean;
-  callsignGraph: NetJsonGraphAndMeta | null;
+  callsignGraph: NetworkCallsignRelationsRsp | null;
   callsignGraphLoading: boolean;
   callsignGraphLoadVersion: number;
   callsignGraphLoadError?: string | null;
-  callsignGraphNolimit: boolean;
   groupsActivity: FreqDailyActivityCount | null;
   groupsActivityLoadedFreq: string | null;
   groupsActivityLoadedPeriod: AnalysisGroupsActivityPeriod | null;
@@ -66,7 +66,6 @@ export type UseAnalysisSidebarDataResult = {
   invalidateRightSidebarData: () => void;
   loadCorrelatedFreqs: () => Promise<void>;
   loadCallsignGraph: () => Promise<void>;
-  toggleCallsignGraphNolimit: () => void;
   loadGroupsActivity: (period?: AnalysisGroupsActivityPeriod) => Promise<void>;
   loadSummaryData: () => Promise<void>;
   loadTopSidebarData: () => Promise<void>;
@@ -74,10 +73,9 @@ export type UseAnalysisSidebarDataResult = {
   downloadGeojson: () => Promise<void>;
   downloadKmz: () => Promise<void>;
   downloadSummaryXlsx: () => Promise<void>;
-  setCallsignGraph: Setter<NetJsonGraphAndMeta | null>;
+  setCallsignGraph: Setter<NetworkCallsignRelationsRsp | null>;
   setCallsignGraphLoading: Setter<boolean>;
   setCallsignGraphLoadVersion: Setter<number>;
-  setCallsignGraphNolimit: Setter<boolean>;
   setCorrelatedFreqs: Setter<CorrelatedFreq[]>;
   setCorrelatedFreqsLoading: Setter<boolean>;
   setGroupsActivity: Setter<FreqDailyActivityCount | null>;

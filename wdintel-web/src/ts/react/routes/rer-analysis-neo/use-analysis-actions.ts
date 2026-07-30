@@ -35,7 +35,7 @@ type Params = {
   setSummaryRows: Setter<SummaryTableFreqRow[]>;
   emptyNewCallsigns: NewCallsignsRes;
   emptyOptions: import('./types').AnalysisFilterOptions;
-  invalidateCallsignGraph: () => void;
+  invalidateCallsignGraph: (options?: { clearGraph?: boolean }) => void;
   optionsFreqsRef: React.MutableRefObject<string[]>;
   setAorEntries: Setter<import('./types').AnalysisAorEntry[]>;
   setCounts: Setter<import('../../../../Bindings').CountStatsRsp | null>;

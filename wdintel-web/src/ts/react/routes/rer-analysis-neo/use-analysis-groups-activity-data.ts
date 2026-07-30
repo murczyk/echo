@@ -1,7 +1,7 @@
 import { useCallback, useState } from 'react';
 
 import type { FreqDailyActivityCount } from '../../../../Bindings';
-import { fetchFreqActivityDaily } from '../../services/api/analysis';
+import { fetchAnalysisActivityDaily, fetchFreqActivityDaily } from '../../services/api/analysis';
 import { isNullOrUndefined } from '../../utils/misc';
 import { buildAnalysisReq } from './helpers';
 import { toErrorMessage } from './use-analysis-data.shared';
@@ -32,7 +32,7 @@ export function useAnalysisGroupsActivityData({
     async (period?: AnalysisGroupsActivityPeriod) => {
       const analysisReq = buildAnalysisReq(queryState, optionsFreqValues);
       const firstFreq = queryState.freqsSelected[0];
-      if (isNullOrUndefined(analysisReq) || !firstFreq) {
+      if (isNullOrUndefined(analysisReq)) {
         setGroupsActivity(null);
         setGroupsActivityLoadedFreq(null);
         setGroupsActivityLoadedPeriod(null);
@@ -54,13 +54,19 @@ export function useAnalysisGroupsActivityData({
       setGroupsActivityLoading(true);
       setGroupsActivityPeriod(nextPeriod);
       try {
-        const rsp = await fetchFreqActivityDaily({
-          freq: firstFreq,
-          sinceDateInclusiveMs,
-          tillDateInclusiveMs,
-        });
+        const rsp = firstFreq
+          ? await fetchFreqActivityDaily({
+              freq: firstFreq,
+              sinceDateInclusiveMs,
+              tillDateInclusiveMs,
+            })
+          : await fetchAnalysisActivityDaily({
+              ...analysisReq,
+              sinceDateInclusiveMs,
+              tillDateNoninclusiveMs: tillDateInclusiveMs,
+            });
         setGroupsActivity(rsp);
-        setGroupsActivityLoadedFreq(firstFreq);
+        setGroupsActivityLoadedFreq(firstFreq ?? null);
         setGroupsActivityLoadedPeriod(nextPeriod);
       } catch (loadError) {
         if (!onUnauthorized(loadError)) onError(toErrorMessage(loadError));

@@ -1928,6 +1928,50 @@ analysisStatsReqEncoder struct =
         ]
 
 
+type alias AnalysisCallsignFrequencyMatchesReq =
+    { req : AnalysisStatsReq
+    , callsigns : List (String)
+    , minMatches : Int
+    }
+
+
+analysisCallsignFrequencyMatchesReqEncoder : AnalysisCallsignFrequencyMatchesReq -> Json.Encode.Value
+analysisCallsignFrequencyMatchesReqEncoder struct =
+    Json.Encode.object
+        [ ( "req", (analysisStatsReqEncoder) struct.req )
+        , ( "callsigns", (Json.Encode.list (Json.Encode.string)) struct.callsigns )
+        , ( "min_matches", (Json.Encode.int) struct.minMatches )
+        ]
+
+
+type alias AnalysisCallsignFrequencyMatch =
+    { freq : String
+    , callsigns : List (String)
+    , messageCount : Int
+    }
+
+
+analysisCallsignFrequencyMatchEncoder : AnalysisCallsignFrequencyMatch -> Json.Encode.Value
+analysisCallsignFrequencyMatchEncoder struct =
+    Json.Encode.object
+        [ ( "freq", (Json.Encode.string) struct.freq )
+        , ( "callsigns", (Json.Encode.list (Json.Encode.string)) struct.callsigns )
+        , ( "message_count", (Json.Encode.int) struct.messageCount )
+        ]
+
+
+type alias AnalysisCallsignFrequencyMatchesRsp =
+    { frequencies : List (AnalysisCallsignFrequencyMatch)
+    }
+
+
+analysisCallsignFrequencyMatchesRspEncoder : AnalysisCallsignFrequencyMatchesRsp -> Json.Encode.Value
+analysisCallsignFrequencyMatchesRspEncoder struct =
+    Json.Encode.object
+        [ ( "frequencies", (Json.Encode.list (analysisCallsignFrequencyMatchEncoder)) struct.frequencies )
+        ]
+
+
 type alias AnalysisStatsRsp =
     { countOverall : Int
     , countSelected : Int
@@ -10950,6 +10994,28 @@ analysisStatsReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.oneOf [ Json.Decode.field "filter_tags_option" (Json.Decode.nullable (tagFilterOptionDecoder)), Json.Decode.succeed Nothing ]))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "without_model_tags" (Json.Decode.nullable (Json.Decode.bool))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "report_tags_only_this_unit" (Json.Decode.nullable (Json.Decode.bool))))
+
+
+analysisCallsignFrequencyMatchesReqDecoder : Json.Decode.Decoder AnalysisCallsignFrequencyMatchesReq
+analysisCallsignFrequencyMatchesReqDecoder =
+    Json.Decode.succeed AnalysisCallsignFrequencyMatchesReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "req" (analysisStatsReqDecoder)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "callsigns" (Json.Decode.list (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "min_matches" (Json.Decode.int)))
+
+
+analysisCallsignFrequencyMatchDecoder : Json.Decode.Decoder AnalysisCallsignFrequencyMatch
+analysisCallsignFrequencyMatchDecoder =
+    Json.Decode.succeed AnalysisCallsignFrequencyMatch
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "freq" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "callsigns" (Json.Decode.list (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "message_count" (Json.Decode.int)))
+
+
+analysisCallsignFrequencyMatchesRspDecoder : Json.Decode.Decoder AnalysisCallsignFrequencyMatchesRsp
+analysisCallsignFrequencyMatchesRspDecoder =
+    Json.Decode.succeed AnalysisCallsignFrequencyMatchesRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "frequencies" (Json.Decode.list (analysisCallsignFrequencyMatchDecoder))))
 
 
 analysisStatsRspDecoder : Json.Decode.Decoder AnalysisStatsRsp

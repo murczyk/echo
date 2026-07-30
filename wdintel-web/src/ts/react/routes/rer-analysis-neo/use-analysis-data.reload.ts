@@ -20,7 +20,6 @@ import {
   fetchAnalysisLocations,
   fetchAnalysisMetadata,
   fetchAnalysisNetworks,
-  fetchAnalysisNewCallsigns,
   fetchAnalysisPosts,
   fetchAnalysisSenders,
   fetchAnalysisTags,
@@ -319,11 +318,16 @@ export function filterSectionsForQueryState(
 
 export function filterSectionsForInitialLoad(
   queryState: AnalysisQueryState,
+  includeDefaultSections = true,
+  additionalSections: AnalysisFilterSectionId[] = [],
 ): AnalysisFilterSectionId[] {
-  const sections = new Set<AnalysisFilterSectionId>(['tags', 'groups', 'senders']);
+  const sections = new Set<AnalysisFilterSectionId>(
+    includeDefaultSections ? ['tags', 'groups', 'senders'] : [],
+  );
   filterSectionsForQueryState(queryState).forEach((section) => {
     sections.add(section);
   });
+  additionalSections.forEach((section) => sections.add(section));
   return Array.from(sections);
 }
 
@@ -617,8 +621,9 @@ export function transformMessagePageResponse<
 type ReloadParams = {
   clearAnalysisResults: () => void;
   invalidateCorrelatedFreqsCache: () => void;
-  invalidateCallsignGraph: () => void;
+  invalidateCallsignGraph: (options?: { clearGraph?: boolean }) => void;
   invalidateMessagePaging: () => void;
+  includeDefaultFilterSections?: boolean;
   messagePageCursor?: AnalysisMessagePageCursor;
   centerTab?: import('./types').AnalysisCenterTab;
   rightSidebarVisible?: boolean;
@@ -699,8 +704,6 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
   params.setCountsLoading(true);
   params.setMessagesLoading(true);
   params.setFiltersLoading(true);
-  params.setNewCallsignsLoading(true);
-  params.setNewCallsignsLoadedKey(null);
   params.setMapLoading(shouldLoadMap);
   params.setNoMoreToLoad(false);
   params.setNolimitShown(false);
@@ -910,8 +913,19 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
         targetedReloadSections == null
           ? {
               mode: 'full' as const,
-              sectionsToReload: filterSectionsForInitialLoad(params.queryState),
-              loadedSections: params.getLoadedFilterSections?.() ?? [],
+              sectionsToReload: filterSectionsForInitialLoad(
+                params.queryState,
+                params.includeDefaultFilterSections !== false,
+                params.rightSidebarVisible && params.rightSidebarTab === 'stats'
+                  ? ['groups']
+                  : params.rightSidebarVisible && params.rightSidebarTab === 'callsigns'
+                    ? ['callsigns']
+                    : [],
+              ),
+              loadedSections:
+                params.includeDefaultFilterSections !== false
+                  ? (params.getLoadedFilterSections?.() ?? [])
+                  : [],
               selectedSections: filterSectionsForQueryState(params.queryState),
             }
           : {
@@ -935,7 +949,7 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
         startDate: resolvedInboxReq.sinceDateInclusiveMs ?? 0,
         endDate: resolvedInboxReq.tillDateInclusiveMs ?? 0,
       });
-      params.invalidateCallsignGraph();
+      params.invalidateCallsignGraph({ clearGraph: true });
       return {
         originalAnalysisReq: analysisReq,
         countsPromise,
@@ -1073,26 +1087,7 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
     if (shouldLoadMap) {
       secondaryLoads.push(loadMapData());
     }
-    if (params.shouldLoadNewCallsigns) {
-      secondaryLoads.push(
-        (async () => {
-          try {
-            const newCallsignsRsp = await fetchAnalysisNewCallsigns(
-              criticalData.resolvedAnalysisReq,
-              params.signal ? { signal: params.signal } : undefined,
-            );
-            if (isStaleReload() || params.signal?.aborted) return;
-            params.setNewCallsigns(newCallsignsRsp);
-            params.setNewCallsignsLoadedKey(JSON.stringify(criticalData.resolvedAnalysisReq));
-          } catch (loadError) {
-            if (isStaleReload() || isAbortError(loadError) || params.signal?.aborted) return;
-            if (!params.onUnauthorized(loadError)) params.onError(toErrorMessage(loadError));
-          } finally {
-            if (!isStaleReload() && !params.signal?.aborted) params.setNewCallsignsLoading(false);
-          }
-        })(),
-      );
-    } else {
+    if (!params.shouldLoadNewCallsigns) {
       params.setNewCallsigns(emptyNewCallsigns);
       params.setNewCallsignsLoading(false);
       params.setNewCallsignsLoadedKey(null);

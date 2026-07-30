@@ -3,9 +3,10 @@
  */
 import { describe, expect, it, vi } from 'vitest';
 
-import type { InboxMessage, InboxMessagesReq } from '../../../../Bindings';
+import type { AnalysisStatsReq, InboxMessage, InboxMessagesReq } from '../../../../Bindings';
 import { postJson, postVoid } from './client';
 import {
+  fetchAnalysisCallsignFrequencyMatches,
   fetchMessagesByIds,
   inboxMessageTagsModelError,
   inboxMessageTagsRm,
@@ -21,6 +22,36 @@ const postVoidMock = vi.mocked(postVoid);
 const postJsonMock = vi.mocked(postJson);
 
 describe('analysis API', () => {
+  it('sends callsign frequency search criteria with the normalized analysis request', async () => {
+    postJsonMock.mockResolvedValueOnce({ frequencies: [] });
+
+    await fetchAnalysisCallsignFrequencyMatches({
+      req: {
+        sinceDateInclusiveMs: 1,
+        tillDateNoninclusiveMs: 2,
+        selectedGroups: [],
+        selectedCallsigns: [],
+      } as AnalysisStatsReq,
+      callsigns: ['ALPHA', 'BRAVO'],
+      minMatches: 2,
+    });
+
+    expect(postJsonMock).toHaveBeenCalledWith(
+      '/api/rer/analysis/callsign-frequency-matches',
+      expect.objectContaining({
+        callsigns: ['ALPHA', 'BRAVO'],
+        min_matches: 2,
+        req: expect.objectContaining({
+          since_date_inclusive_ms: 1,
+          till_date_noninclusive_ms: 2,
+          selected_groups: null,
+          selected_callsigns: null,
+        }),
+      }),
+      undefined,
+    );
+  });
+
   it('sends highlight context when fetching messages by id', async () => {
     postJsonMock.mockResolvedValueOnce({ messages: [] });
 

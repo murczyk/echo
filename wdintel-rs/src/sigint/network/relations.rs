@@ -1043,6 +1043,16 @@ fn aggregate_network_callsign_relations(
     }
 }
 
+pub(crate) fn aggregate_unenriched_callsign_relations(
+    messages: Vec<NetworkCallsignRelationMessage>,
+) -> NetworkCallsignRelationsRsp {
+    aggregate_network_callsign_relations(
+        messages,
+        &HashMap::new(),
+        &HashMap::new(),
+    )
+}
+
 #[derive(Debug, Default)]
 struct NodeStats {
     activity_count: i64,

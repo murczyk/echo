@@ -24,7 +24,6 @@ import { createPortal } from 'react-dom';
 import type { NetworkCallsignRelationMessage } from '../../../../../Bindings';
 
 import { ELLIPSIS } from '../../../utils/misc';
-import { NETWORK_RELATIONS_DEFAULT_MIN_INTENSITY } from '../use-rer-network-details-neo-page.shared';
 import { NetworkCallsignRelationsGraphCanvas } from './NetworkCallsignRelationsGraphCanvas';
 import { NetworkCallsignRelationsGraphDetails } from './NetworkCallsignRelationsGraphDetails';
 import {
@@ -59,6 +58,7 @@ type Props = {
   selectedMessages: NetworkCallsignRelationMessage[];
   selectedMessagesLoading: boolean;
   selectedMessagesError: string | null;
+  showMessages?: boolean;
   selectedNeighborIds: Set<string>;
   visibleEdgeIdsForRender: Set<string>;
   visibleNodeIdsForRender: Set<string>;
@@ -70,6 +70,7 @@ type Props = {
   legendFreqs: NetworkCallsignRelationFreqView[];
   relationFreqState: NetworkCallsignRelationFreqState;
   relationsMinIntensity: number;
+  defaultMinIntensity: number;
   relationsLoading: boolean;
   intensityAnchorEl: HTMLElement | null;
   filterPopoverId: string;
@@ -117,6 +118,7 @@ export function NetworkCallsignRelationsGraphStage({
   selectedMessages,
   selectedMessagesLoading,
   selectedMessagesError,
+  showMessages = true,
   selectedNeighborIds,
   visibleEdgeIdsForRender,
   visibleNodeIdsForRender,
@@ -128,6 +130,7 @@ export function NetworkCallsignRelationsGraphStage({
   legendFreqs,
   relationFreqState,
   relationsMinIntensity,
+  defaultMinIntensity,
   relationsLoading,
   intensityAnchorEl,
   filterPopoverId,
@@ -156,7 +159,7 @@ export function NetworkCallsignRelationsGraphStage({
   const { defaultEnabledFreqs, resolvedEnabledFreqs } = relationFreqState;
   const hasResettableGraphFilters =
     relationsSearch.trim() !== '' ||
-    relationsMinIntensity !== NETWORK_RELATIONS_DEFAULT_MIN_INTENSITY ||
+    relationsMinIntensity !== defaultMinIntensity ||
     !sameFreqs(resolvedEnabledFreqs, defaultEnabledFreqs);
   const graphHasNoData = graphNodeCount === 0 && graphEdgeCount === 0;
   const graphHasNodesButNoEdges = graphNodeCount > 0 && graphEdgeCount === 0;
@@ -528,7 +531,7 @@ export function NetworkCallsignRelationsGraphStage({
                 onClick={() => {
                   onSearchChange('');
                   onEnabledFreqsChange(defaultEnabledFreqs);
-                  onMinIntensityChange(NETWORK_RELATIONS_DEFAULT_MIN_INTENSITY);
+                  onMinIntensityChange(defaultMinIntensity);
                 }}
                 data-testid="clear-empty-filters"
                 sx={{
@@ -671,6 +674,7 @@ export function NetworkCallsignRelationsGraphStage({
             selectedMessages={selectedMessages}
             selectedMessagesLoading={selectedMessagesLoading}
             selectedMessagesError={selectedMessagesError}
+            showMessages={showMessages}
             selectedEdgeId={selectedEdgeId}
             onBackToNode={handleBackToNode}
             onSelectNodeId={handleSelectNodeId}

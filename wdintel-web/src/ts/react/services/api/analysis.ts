@@ -1,4 +1,6 @@
 import type {
+  AnalysisCallsignFrequencyMatchesReq,
+  AnalysisCallsignFrequencyMatchesRsp,
   AnalysisStatsReq,
   EditFreqUnitNameReq,
   BatchMessageCommentsReq,
@@ -19,7 +21,6 @@ import type {
   AnalysisStatsUnit,
   AreaOfResponsibilityEntry,
   CallsignInfoRes,
-  CallsignsGraphReq,
   CountStatsRsp,
   CorrelatedFreqsRsp,
   FreqDetailedPoint,
@@ -32,7 +33,7 @@ import type {
   MessageIdsRsp,
   MapPointsRsp,
   MetadataStatsRsp,
-  NetJsonGraphAndMeta,
+  NetworkCallsignRelationsRsp,
   Network,
   NetworkUnit,
   NewCallsignsRes,
@@ -321,16 +322,43 @@ export async function fetchAnalysisCorrelatedFreqs(
   return postAnalysisStats<CorrelatedFreqsRsp>('/api/rer/analysis/correlated-freqs', req, options);
 }
 
-export async function fetchAnalysisCallsignGraph(
-  req: CallsignsGraphReq,
+export async function fetchAnalysisActivityDaily(
+  req: AnalysisStatsReq,
   options?: RequestOptions,
-): Promise<NetJsonGraphAndMeta> {
-  const raw = await postJson<unknown>(
-    '/api/rer/analysis/callsigns-graph',
-    transformCamelToSnake(req),
+): Promise<FreqDailyActivityCount> {
+  return postAnalysisStats<FreqDailyActivityCount>(
+    '/api/rer/analysis/activity-daily',
+    req,
     options,
   );
-  return transformSnakeToCamel<NetJsonGraphAndMeta>(raw);
+}
+
+export async function fetchAnalysisCallsignRelations(
+  req: AnalysisStatsReq,
+  options?: RequestOptions,
+): Promise<NetworkCallsignRelationsRsp> {
+  return postAnalysisStats<NetworkCallsignRelationsRsp>(
+    '/api/rer/analysis/callsign-relations',
+    req,
+    options,
+  );
+}
+
+export async function fetchAnalysisCallsignFrequencyMatches(
+  req: AnalysisCallsignFrequencyMatchesReq,
+  options?: RequestOptions,
+): Promise<AnalysisCallsignFrequencyMatchesRsp> {
+  const body = {
+    req: analysisStatsReqBody(req.req),
+    callsigns: req.callsigns,
+    min_matches: req.minMatches,
+  };
+  const raw = await postJson<unknown>(
+    '/api/rer/analysis/callsign-frequency-matches',
+    body as JsonValue,
+    options,
+  );
+  return transformSnakeToCamel<AnalysisCallsignFrequencyMatchesRsp>(raw);
 }
 
 export async function fetchFreqActivityDaily(req: FreqStatsReq): Promise<FreqDailyActivityCount> {
