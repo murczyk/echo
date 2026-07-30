@@ -24,6 +24,10 @@ server_id = 37
 # signoz_logs_enabled = true
 # signoz_logs_endpoint = "http://signoz-echo.eagle-atria.ts.net:8082"
 
+# Enable device metrics to Signoz (OTLP gRPC).
+# signoz_metrics_enabled = true
+# signoz_metrics_endpoint = "http://signoz-echo.eagle-atria.ts.net:4317"
+
 [secret_config]
 token_endpoint = ""
 userinfo_endpoint = ""

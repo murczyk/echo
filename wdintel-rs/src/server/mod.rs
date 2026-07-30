@@ -51,6 +51,7 @@ fn systemd_listener() -> Result<Option<TcpListener>, AppError> {
 
 pub async fn new_env(mode: Mode) -> Result<Arc<Env>, AppError> {
     let config = read_config(mode).c(h!())?;
+    let metrics = crate::telemetry::Metrics::from_config(&config);
     let redis = new_redis(&config).await.c(h!())?;
     let stats_redis = new_redis_for_db(&config, config.group_stats_redis_db())
         .await
@@ -183,6 +184,7 @@ pub async fn new_env(mode: Mode) -> Result<Arc<Env>, AppError> {
         rq,
         rq_goi_associations,
         config: config.clone(),
+        metrics,
         greptimedb: Arc::new(RwLock::new(m_greptimedb.clone())),
         settlements: settlements.clone(),
         callsigns_whitelist: callsigns_whitelist.clone(),
@@ -1098,7 +1100,7 @@ pub async fn main_server(
     let mut sigterm = signal(SignalKind::terminate())
         .expect("Failed to register SIGTERM handler");
 
-    shutdown_handle.spawn(async move {
+    let server_result = shutdown_handle.spawn(async move {
         tokio::select! {
             _ = sigint.recv() => {
                 println!("\n[SIGINT / CTRL+C] detected. Signaling shutdown.");
@@ -1124,7 +1126,11 @@ pub async fn main_server(
                 cancel_token.cancel();
             }
         }
-    }).await.c(h!())?;
+    }).await.c(h!());
+    if let Some(metrics) = &env.metrics {
+        metrics.shutdown();
+    }
+    server_result?;
     Ok(())
 }
 

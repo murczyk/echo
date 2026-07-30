@@ -136,6 +136,7 @@ pub struct Env {
     pub session_activity_dropped: Arc<std::sync::atomic::AtomicU64>,
     pub session_activity_enqueued: Arc<std::sync::atomic::AtomicU64>,
     pub palitra_worker_context: Arc<PalitraWorkerContext>,
+    pub metrics: Option<crate::telemetry::Metrics>,
 }
 
 #[derive(Clone)]

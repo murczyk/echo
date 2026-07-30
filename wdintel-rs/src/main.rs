@@ -62,6 +62,7 @@ mod stats;
 pub mod storage;
 pub mod system_settings;
 pub mod tags;
+pub mod telemetry;
 pub mod terminal;
 pub mod tests;
 pub mod transcriber;

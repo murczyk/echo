@@ -416,6 +416,9 @@ pub const GENERATE_MESSAGE_UID_TILL_MAX_DAYS: i64 = 20;
 pub const UNKNOWN_GROUP_MASTER_KEY: &str = "undefined_group";
 pub const OPERATOR_INBOX_WORKER_LOOKBACK_HOURS: i64 = 3;
 pub const REDIS_MGS_ID_TTL: i32 = 3600;
+pub const SIGNOZ_METRICS_EXPORT_INTERVAL_SECS: u64 = 60;
+pub const SIGNOZ_METRICS_SERVICE_NAME: &str = "wdintel-rs";
+pub const SIGNOZ_METRICS_SERVICE_NAMESPACE: &str = "echo";
 // for xlsx import
 pub const MESSENGER_WORKER_POOL_DEFAULT_CAPACITY: usize = 10;
 /// Jun 1st 2024
@@ -642,6 +645,10 @@ pub struct Config {
     pub signoz_logs_enabled: Option<bool>,
     /// Signoz JSON receiver endpoint, e.g. http://signoz-echo.eagle-atria.ts.net:8082.
     pub signoz_logs_endpoint: Option<String>,
+    /// Enable device metrics export to Signoz over OTLP gRPC.
+    pub signoz_metrics_enabled: Option<bool>,
+    /// Signoz OTLP gRPC endpoint, e.g. http://signoz-echo.eagle-atria.ts.net:4317.
+    pub signoz_metrics_endpoint: Option<String>,
     pub session_activity_queue_capacity: Option<usize>,
     pub session_activity_payload_max_bytes: Option<usize>,
     pub session_activity_greptime_get_timeout_ms: Option<u64>,

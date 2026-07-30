@@ -33,7 +33,7 @@ async fn login(request: HttpRequest, login: web::Path<String>) -> HttpResponse {
 #[actix_web::test]
 #[serial_test::serial]
 async fn target_api_smoke_covers_all_routes() {
-    let (env, _guard) = cleanup_locked().await.unwrap();
+    let (mut env, _guard) = cleanup_locked().await.unwrap();
     system_settings::ActiveModel {
         devices_section_enabled: Set(true),
         ..Default::default()
@@ -112,7 +112,10 @@ async fn target_api_smoke_covers_all_routes() {
     .await
     .unwrap();
 
-    let config = crate::config::read_config(Mode::Test).unwrap();
+    let config = env.config.clone();
+    let (metrics, metrics_recorder) =
+        crate::telemetry::Metrics::recording(&config);
+    std::sync::Arc::get_mut(&mut env).unwrap().metrics = Some(metrics);
     let redis_session_store =
         RedisSessionStore::new(crate::redis_conn_string(&config).unwrap())
             .await
@@ -267,6 +270,14 @@ async fn target_api_smoke_covers_all_routes() {
     assert_eq!(sync["results"][0]["status"], "rejected");
     assert_eq!(sync["results"][0]["error"]["kind"], "validation");
     assert_eq!(sync["results"][1]["status"], "accepted");
+    env.metrics.as_ref().unwrap().force_flush_for_test();
+    assert_eq!(
+        metrics_recorder.counter_value(
+            "echo.device_files.synchronized.count",
+            &[("operation", "created")],
+        ),
+        Some(1)
+    );
     assert_eq!(sync["results"][1]["file"]["has_content"], false);
     assert!(sync["results"][1]["file"].get("content_path").is_none());
     let good_file_id = Uuid::parse_str(

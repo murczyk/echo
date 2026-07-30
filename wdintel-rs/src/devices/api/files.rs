@@ -1,3 +1,5 @@
+use std::time::Instant;
+
 use super::mapping::{
     map_browse, map_journal, map_roots, map_search, map_subtree_counts,
     map_sync,
@@ -14,7 +16,8 @@ use crate::devices::filesystem::{
     BrowseFilesCommand, FileEntryKind as DomainFileEntryKind,
     FileMetadataService, JournalFilesCommand, PathSyntax as DomainPathSyntax,
     RawFileSearchFilters, SearchFilesCommand, SubtreeFileCountsCommand,
-    SyncFileItemCommand, SyncFilesCommand,
+    SyncFileItemCommand, SyncFileItemOutcome, SyncFileOperation,
+    SyncFilesCommand, SyncFilesResult,
 };
 use crate::devices::main_db::MainDb;
 use crate::error::AppError;
@@ -160,9 +163,27 @@ pub(in crate::devices) async fn sync(
     user: Identity,
     Json(body): Json<SyncDeviceFilesReq>,
 ) -> Result<Json<SyncDeviceFilesRsp>, AppError> {
+    let started_at = Instant::now();
+    let result = sync_files(&env, &user, body).await?;
+    let (created, updated) = synchronized_file_counts(&result);
+    if let Some(metrics) = &env.metrics {
+        metrics.record_device_files_sync(
+            created,
+            updated,
+            started_at.elapsed(),
+        );
+    }
+    Ok(Json(map_sync(result)))
+}
+
+async fn sync_files(
+    env: &Env,
+    user: &Identity,
+    body: SyncDeviceFilesReq,
+) -> Result<SyncFilesResult, AppError> {
     let main_db = MainDb::new(&env.dbx);
-    let actor = DeviceActorResolver::resolve(&main_db, &user).await?;
-    let result = FileMetadataService::sync(
+    let actor = DeviceActorResolver::resolve(&main_db, user).await?;
+    FileMetadataService::sync(
         main_db,
         &env.file_registry_db,
         &actor,
@@ -188,8 +209,22 @@ pub(in crate::devices) async fn sync(
                 .collect(),
         },
     )
-    .await?;
-    Ok(Json(map_sync(result)))
+    .await
+}
+
+fn synchronized_file_counts(result: &SyncFilesResult) -> (u64, u64) {
+    result
+        .results
+        .iter()
+        .fold((0, 0), |(created, updated), result| match &result.outcome {
+            SyncFileItemOutcome::Accepted { operation, .. } => {
+                match operation {
+                    SyncFileOperation::Created => (created + 1, updated),
+                    SyncFileOperation::Updated => (created, updated + 1),
+                }
+            }
+            SyncFileItemOutcome::Rejected { .. } => (created, updated),
+        })
 }
 
 fn map_entry_kind(kind: FileEntryKind) -> DomainFileEntryKind {
