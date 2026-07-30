@@ -1,8 +1,10 @@
 use crate::config::{
     ORGANISM_GOI_API_TIMEOUT_SEC, ORGANISM_GOI_ASSOCIATIONS_INSERT_BATCH_SIZE,
+    ORGANISM_GOI_ASSOCIATIONS_SYNC_INTERVAL_SEC,
     ORGANISM_GOI_ASSOCIATION_WORKER_SLEEP_MS,
     ORGANISM_GOI_INTEGRATION_TYPE_FULL,
     ORGANISM_GOI_KNOWLEDGE_PRUNE_BATCH_SIZE,
+    ORGANISM_GOI_KNOWLEDGE_SYNC_FAILURE_BACKOFF_SEC,
     ORGANISM_GOI_KNOWLEDGE_SYNC_INTERVAL_SEC,
     ORGANISM_GOI_KNOWLEDGE_SYNC_MAX_AGE_DAYS,
     ORGANISM_GOI_KNOWLEDGE_UPSERT_BATCH_SIZE,
@@ -36,7 +38,9 @@ const GOI_XLSX_CONTENT_TYPE: &str =
 
 #[derive(Default)]
 struct GoiWorkerState {
+    last_association_sync_attempt_at: HashMap<i64, Instant>,
     last_knowledge_sync_attempt_at: HashMap<i64, Instant>,
+    last_knowledge_sync_failure_at: HashMap<i64, Instant>,
     last_report_push_attempt_at: HashMap<i64, Instant>,
     last_palitra_folder_sync_attempt_at: HashMap<i64, Instant>,
     last_integration_sync_attempt_at: HashMap<i64, Instant>,
@@ -52,9 +56,15 @@ pub struct GoiSyncWorkerCoordinator {
 
 struct GoiApiJob {
     integration: goi_integration::Model,
+    sync_associations: bool,
     sync_knowledge: bool,
     push_report: bool,
     sync_palitra_folders: bool,
+}
+
+#[derive(Default)]
+struct GoiApiJobResult {
+    knowledge_sync_success: Option<bool>,
 }
 
 pub async fn goi_sync_worker_nofail(
@@ -90,7 +100,8 @@ async fn goi_sync_worker_step(
         return Ok(());
     };
     let integration_id = job.integration.id;
-    run_goi_api_job(env.as_ref(), job).await;
+    let result = run_goi_api_job(env.as_ref(), job).await;
+    record_goi_api_job_result(coordinator, integration_id, result).await;
     release_goi_integration(coordinator, integration_id).await;
     tokio::time::sleep(goi_worker_sleep_duration()).await;
     Ok(())
@@ -165,6 +176,7 @@ fn claim_goi_api_job(
         .into_iter()
         .filter(|integration| {
             !state.integrations_in_progress.contains(&integration.id)
+                && goi_api_job_has_due_work(state, integration.id)
         })
         .min_by_key(|integration| {
             state
@@ -192,10 +204,27 @@ async fn release_goi_integration(
         .remove(&integration_id);
 }
 
+fn goi_api_job_has_due_work(
+    state: &GoiWorkerState,
+    integration_id: i64,
+) -> bool {
+    goi_association_sync_is_due(state, integration_id)
+        || goi_knowledge_sync_is_due(state, integration_id)
+        || goi_report_push_is_due(state, integration_id)
+        || goi_palitra_folder_sync_is_due(state, integration_id)
+}
+
 fn plan_goi_api_job(
     state: &mut GoiWorkerState,
     integration: goi_integration::Model,
 ) -> GoiApiJob {
+    let sync_associations = goi_association_sync_is_due(state, integration.id);
+    if sync_associations {
+        state
+            .last_association_sync_attempt_at
+            .insert(integration.id, Instant::now());
+    }
+
     let sync_knowledge = goi_knowledge_sync_is_due(state, integration.id);
     if sync_knowledge {
         state
@@ -220,24 +249,32 @@ fn plan_goi_api_job(
 
     GoiApiJob {
         integration,
+        sync_associations,
         sync_knowledge,
         push_report,
         sync_palitra_folders,
     }
 }
 
-async fn run_goi_api_job(env: &Env, job: GoiApiJob) {
-    if let Err(err) = sync_goi_associations(env, &job.integration).await {
-        let label = job.integration.server_label.clone();
-        warn!(
-            "[goi_association_worker] Skipping GOI association sync for {label}: {:#?}",
-            err
-        );
+async fn run_goi_api_job(env: &Env, job: GoiApiJob) -> GoiApiJobResult {
+    let mut result = GoiApiJobResult::default();
+    if job.sync_associations {
+        if let Err(err) = sync_goi_associations(env, &job.integration).await {
+            let label = job.integration.server_label.clone();
+            warn!(
+                "[goi_association_worker] Skipping GOI association sync for {label}: {:#?}",
+                err
+            );
+        }
     }
     if job.sync_knowledge {
-        if let Err(err) = sync_goi_knowledge(env, &job.integration).await {
-            let label = job.integration.server_label.clone();
-            warn!("[goi_association_worker] Skipping GOI knowledge sync for {label}: {:#?}", err);
+        match sync_goi_knowledge(env, &job.integration).await {
+            Ok(()) => result.knowledge_sync_success = Some(true),
+            Err(err) => {
+                result.knowledge_sync_success = Some(false);
+                let label = job.integration.server_label.clone();
+                warn!("[goi_association_worker] Skipping GOI knowledge sync for {label}: {:#?}", err);
+            }
         }
     }
     if job.push_report {
@@ -270,6 +307,26 @@ async fn run_goi_api_job(env: &Env, job: GoiApiJob) {
                 err
             );
         }
+    }
+    result
+}
+
+async fn record_goi_api_job_result(
+    coordinator: &GoiSyncWorkerCoordinator,
+    integration_id: i64,
+    result: GoiApiJobResult,
+) {
+    let mut state = coordinator.state.lock().await;
+    match result.knowledge_sync_success {
+        Some(true) => {
+            state.last_knowledge_sync_failure_at.remove(&integration_id);
+        }
+        Some(false) => {
+            state
+                .last_knowledge_sync_failure_at
+                .insert(integration_id, Instant::now());
+        }
+        None => {}
     }
 }
 
@@ -483,8 +540,20 @@ async fn push_goi_report(
         .c(h!())?)
 }
 
-fn goi_report_push_is_due(state: &GoiWorkerState, organism_id: i64) -> bool {
-    match state.last_report_push_attempt_at.get(&organism_id) {
+fn goi_association_sync_is_due(
+    state: &GoiWorkerState,
+    integration_id: i64,
+) -> bool {
+    match state.last_association_sync_attempt_at.get(&integration_id) {
+        None => true,
+        Some(last_attempt) => {
+            last_attempt.elapsed() >= goi_association_sync_interval()
+        }
+    }
+}
+
+fn goi_report_push_is_due(state: &GoiWorkerState, integration_id: i64) -> bool {
+    match state.last_report_push_attempt_at.get(&integration_id) {
         None => true,
         Some(last_attempt) => {
             last_attempt.elapsed() >= goi_report_push_interval()
@@ -492,8 +561,18 @@ fn goi_report_push_is_due(state: &GoiWorkerState, organism_id: i64) -> bool {
     }
 }
 
-fn goi_knowledge_sync_is_due(state: &GoiWorkerState, organism_id: i64) -> bool {
-    match state.last_knowledge_sync_attempt_at.get(&organism_id) {
+fn goi_knowledge_sync_is_due(
+    state: &GoiWorkerState,
+    integration_id: i64,
+) -> bool {
+    if let Some(last_failure) =
+        state.last_knowledge_sync_failure_at.get(&integration_id)
+    {
+        if last_failure.elapsed() < goi_knowledge_failure_backoff() {
+            return false;
+        }
+    }
+    match state.last_knowledge_sync_attempt_at.get(&integration_id) {
         None => true,
         Some(last_attempt) => {
             last_attempt.elapsed() >= goi_knowledge_sync_interval()
@@ -872,12 +951,20 @@ fn goi_worker_sleep_duration() -> Duration {
     Duration::from_millis(ORGANISM_GOI_ASSOCIATION_WORKER_SLEEP_MS)
 }
 
+fn goi_association_sync_interval() -> Duration {
+    Duration::from_secs(ORGANISM_GOI_ASSOCIATIONS_SYNC_INTERVAL_SEC)
+}
+
 fn goi_report_push_interval() -> Duration {
     Duration::from_secs(ORGANISM_GOI_REPORT_PUSH_INTERVAL_SEC)
 }
 
 fn goi_knowledge_sync_interval() -> Duration {
     Duration::from_secs(ORGANISM_GOI_KNOWLEDGE_SYNC_INTERVAL_SEC)
+}
+
+fn goi_knowledge_failure_backoff() -> Duration {
+    Duration::from_secs(ORGANISM_GOI_KNOWLEDGE_SYNC_FAILURE_BACKOFF_SEC)
 }
 
 fn goi_palitra_folder_sync_interval() -> Duration {
@@ -925,9 +1012,32 @@ mod tests {
         assert!(claim_goi_api_job(&mut state, integrations.clone()).is_none());
 
         state.integrations_in_progress.remove(&first.integration.id);
+        assert!(claim_goi_api_job(&mut state, integrations.clone()).is_none());
+
+        state
+            .last_association_sync_attempt_at
+            .remove(&first.integration.id);
         let reclaimed =
             claim_goi_api_job(&mut state, integrations).expect("reclaimed");
         assert_eq!(reclaimed.integration.id, first.integration.id);
+    }
+
+    #[test]
+    fn goi_knowledge_failure_backoff_defers_retry() {
+        let integration_id = 7;
+        let mut state = GoiWorkerState::default();
+        assert!(goi_knowledge_sync_is_due(&state, integration_id));
+
+        state
+            .last_knowledge_sync_failure_at
+            .insert(integration_id, Instant::now());
+        assert!(!goi_knowledge_sync_is_due(&state, integration_id));
+
+        state.last_knowledge_sync_failure_at.insert(
+            integration_id,
+            Instant::now() - goi_knowledge_failure_backoff(),
+        );
+        assert!(goi_knowledge_sync_is_due(&state, integration_id));
     }
 
     #[test]

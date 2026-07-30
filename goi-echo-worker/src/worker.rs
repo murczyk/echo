@@ -8,7 +8,7 @@ use sea_orm::sea_query::{
     Alias, BinOper, Condition, Expr, OnConflict, SimpleExpr,
 };
 use sea_orm::{
-    ColumnTrait, DatabaseConnection, DatabaseTransaction, EntityTrait, NotSet,
+    ColumnTrait, ConnectionTrait, DatabaseConnection, EntityTrait, NotSet,
     QueryFilter, Set, TransactionTrait, TryInsertResult,
 };
 use std::collections::BTreeMap;
@@ -133,7 +133,6 @@ async fn knowledge_worker_step(
     );
 
     sync_knowledge_rows(db, rows).await?;
-    prune_old_deleted_knowledge_rows(db).await?;
     state.last_fingerprint = Some(fingerprint);
     state.last_refresh_bucket = Some(refresh_bucket);
     state.missing_logged = false;
@@ -298,8 +297,7 @@ async fn sync_knowledge_rows(
     let dedupe_keys = deduped_rows.keys().cloned().collect::<Vec<_>>();
     let tx = db.begin().await.context("beginning knowledge sync tx")?;
 
-    mark_missing_knowledge_rows_deleted(&tx, &dedupe_keys, now.fixed_offset())
-        .await?;
+    delete_missing_knowledge_rows(&tx, &dedupe_keys).await?;
     if deduped_rows.is_empty() {
         tx.commit().await.context("committing knowledge sync tx")?;
         log::info!("GOI knowledge worker detected no active rows in workbook");
@@ -315,7 +313,6 @@ async fn sync_knowledge_rows(
                     row: Set(knowledge_row),
                     created_at: NotSet,
                     updated_at: Set(now.fixed_offset()),
-                    deleted: Set(false),
                     dedupe_key: Set(dedupe_key),
                 }
             })
@@ -328,7 +325,6 @@ async fn sync_knowledge_rows(
                 .update_columns([
                     knowledge::Column::Row,
                     knowledge::Column::UpdatedAt,
-                    knowledge::Column::Deleted,
                 ])
                 .action_cond_where(knowledge_upsert_has_changes())
                 .to_owned(),
@@ -346,9 +342,7 @@ async fn sync_knowledge_rows(
 }
 
 fn knowledge_upsert_has_changes() -> Condition {
-    Condition::any()
-        .add(knowledge_column_is_distinct(knowledge::Column::Row))
-        .add(knowledge_column_is_distinct(knowledge::Column::Deleted))
+    Condition::any().add(knowledge_column_is_distinct(knowledge::Column::Row))
 }
 
 fn knowledge_column_is_distinct(column: knowledge::Column) -> SimpleExpr {
@@ -358,15 +352,14 @@ fn knowledge_column_is_distinct(column: knowledge::Column) -> SimpleExpr {
     )
 }
 
-async fn mark_missing_knowledge_rows_deleted(
-    db: &DatabaseTransaction,
+async fn delete_missing_knowledge_rows<C>(
+    db: &C,
     dedupe_keys: &[String],
-    now: chrono::DateTime<chrono::FixedOffset>,
-) -> Result<()> {
-    let mut query = knowledge::Entity::update_many()
-        .col_expr(knowledge::Column::Deleted, Expr::value(true))
-        .col_expr(knowledge::Column::UpdatedAt, Expr::value(now))
-        .filter(knowledge::Column::Deleted.eq(false));
+) -> Result<()>
+where
+    C: ConnectionTrait,
+{
+    let mut query = knowledge::Entity::delete_many();
     if !dedupe_keys.is_empty() {
         query = query.filter(
             knowledge::Column::DedupeKey.is_not_in(dedupe_keys.iter().cloned()),
@@ -375,23 +368,7 @@ async fn mark_missing_knowledge_rows_deleted(
     query
         .exec(db)
         .await
-        .context("marking missing knowledge rows deleted")?;
-    Ok(())
-}
-
-async fn prune_old_deleted_knowledge_rows(
-    db: &DatabaseConnection,
-) -> Result<()> {
-    let cutoff = chrono::Utc::now()
-        - chrono::Duration::days(
-            crate::config::GOI_KNOWLEDGE_SYNC_MAX_AGE_DAYS,
-        );
-    knowledge::Entity::delete_many()
-        .filter(knowledge::Column::Deleted.eq(true))
-        .filter(knowledge::Column::UpdatedAt.lt(cutoff.fixed_offset()))
-        .exec(db)
-        .await
-        .context("deleting stale knowledge rows")?;
+        .context("deleting missing knowledge rows")?;
     Ok(())
 }
 

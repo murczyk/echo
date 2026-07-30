@@ -5,6 +5,7 @@ use crate::entities::{
 };
 use crate::error::AppError;
 use crate::h;
+use crate::organism::goi::aor_scope::goi_network_visible_for_organism;
 use crate::organism::goi::goi_api::GoiApiTarget;
 use crate::types::{info, warn, Env, ShortContext};
 use crate::utils::string::normalize_optional_trimmed;
@@ -134,7 +135,10 @@ pub(super) async fn sync_goi_callsigns_knowledge(
         knowledge_source
     );
 
-    let current_callsigns = load_live_goi_callsigns(&env.dbx).await.c(h!())?;
+    let current_callsigns =
+        load_live_goi_callsigns(&env.dbx, integration.owner_organism_id)
+            .await
+            .c(h!())?;
     info!(
         "[goi-sync] Prepared {} live GOI callsigns for {integration_label}",
         current_callsigns.len()
@@ -267,10 +271,12 @@ fn goi_download_error_is_missing_file(err: &anyhow::Error) -> bool {
 
 async fn load_live_goi_callsigns(
     db: &DatabaseConnection,
+    organism_id: i64,
 ) -> Result<Vec<GoiCallsignState>, AppError> {
     let source_names = load_source_names(db).await.c(h!())?;
-    let network_freqs = load_live_network_freqs(db).await.c(h!())?;
-    let callsigns = load_live_callsign_rows(db).await.c(h!())?;
+    let network_freqs =
+        load_live_network_freqs(db, organism_id).await.c(h!())?;
+    let callsigns = load_live_callsign_rows(db, organism_id).await.c(h!())?;
     info!(
         "[goi-sync] Loaded GOI callsign sync source data: {} source names, {} active network frequency groups, {} candidate callsign rows",
         source_names.len(),
@@ -356,6 +362,7 @@ async fn load_source_names(
 
 async fn load_live_network_freqs(
     db: &DatabaseConnection,
+    organism_id: i64,
 ) -> Result<BTreeMap<i64, String>, AppError> {
     #[derive(Debug, FromQueryResult)]
     struct NetworkFreqRow {
@@ -373,6 +380,7 @@ async fn load_live_network_freqs(
         .column_as(sigint_network::Column::Id, "network_id")
         .column(sigint_network_freq::Column::Freq)
         .filter(sigint_network::Column::Deleted.eq(false))
+        .filter(goi_network_visible_for_organism(organism_id))
         .filter(goi_live_network_condition(today_start))
         .filter(sigint_network_freq::Column::Deleted.eq(false))
         .filter(goi_live_network_freq_condition(today_start))
@@ -403,6 +411,7 @@ async fn load_live_network_freqs(
 
 async fn load_live_callsign_rows(
     db: &DatabaseConnection,
+    organism_id: i64,
 ) -> Result<Vec<LiveCallsignRow>, AppError> {
     let today_start = goi_live_cutoff_datetime();
     Ok(sigint_network_callsign::Entity::find()
@@ -480,6 +489,7 @@ async fn load_live_callsign_rows(
         )
         .filter(sigint_network_callsign::Column::Deleted.eq(false))
         .filter(sigint_network::Column::Deleted.eq(false))
+        .filter(goi_network_visible_for_organism(organism_id))
         .filter(goi_live_network_condition(today_start))
         .order_by_asc(sigint_network_callsign::Column::Id)
         .into_model::<LiveCallsignRow>()

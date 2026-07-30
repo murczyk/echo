@@ -114,7 +114,6 @@ pub async fn list_knowledge(
     require_basic_auth(&http_req, &state.config)?;
 
     let items = knowledge::Entity::find()
-        .filter(knowledge::Column::Deleted.eq(false))
         .order_by_asc(knowledge::Column::Id)
         .all(&state.db)
         .await
@@ -172,7 +171,7 @@ fn to_knowledge_api_item(
         id: knowledge.id,
         row,
         created_at: knowledge.created_at.with_timezone(&chrono::Utc),
-        deleted: knowledge.deleted,
+        deleted: false,
     })
 }
 

@@ -1,6 +1,7 @@
 use crate::config::get_tz;
 use crate::entities::*;
 use crate::error::AppError;
+use crate::organism::goi::aor_scope::goi_joined_aor_visible_for_organism;
 use crate::sigint::aor::report_order;
 use crate::types::*;
 use chrono::prelude::*;
@@ -125,7 +126,7 @@ async fn get_goi_report_freqs(
         .context(h!())?
         .with_timezone(&Utc)
         .naive_utc();
-    let q = sigint_network::Entity::find()
+    let mut q = sigint_network::Entity::find()
         .join(
             JoinType::InnerJoin,
             sigint_network::Relation::SigintNetworkFreq.def(),
@@ -193,6 +194,10 @@ async fn get_goi_report_freqs(
         )
         .order_by_asc(sigint_network_aor::Column::Id)
         .order_by_asc(sigint_network_freq::Column::Id);
+
+    if let Some(organism_id) = organism_id {
+        q = q.filter(goi_joined_aor_visible_for_organism(organism_id));
+    }
 
     // debug!(
     //     "GOI report SQL: {}",
