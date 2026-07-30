@@ -23,7 +23,7 @@ toml = "0.9.12"
 
 [dependencies.echo-im]
 git = "ssh://git@github.com/echoua/echo-im.git"
-rev = "c665004baa1a4a11e216354a57e703c9848b5f20"
+rev = "6351b2f70be5ad75dbb8b48da5b923c01e3f1ecf"
 
 [package.metadata.deb]
 maintainer-scripts = "debian/"
