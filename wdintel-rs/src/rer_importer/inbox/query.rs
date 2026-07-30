@@ -10,10 +10,7 @@ use crate::utils::*;
 use chrono::{Duration, NaiveDateTime, Utc};
 use sea_orm::{sea_query::PostgresQueryBuilder, *};
 use sea_query::types::IntoColumnRef;
-use sea_query::{
-    Alias, CommonTableExpression, Expr, ExprTrait, Query, SelectStatement,
-    SimpleExpr,
-};
+use sea_query::{Alias, Expr, ExprTrait, Query, SelectStatement, SimpleExpr};
 
 fn since_id_null_bucket_filter(
     since_id_noninclusive: i64,
@@ -480,67 +477,6 @@ where
     Ok(q)
 }
 
-fn build_unit_filtered_inbox_digest_from_candidates(
-    req: &InboxMessagesReq,
-    candidates: SelectStatement,
-) -> Result<String, AppError> {
-    let candidates_alias = Alias::new("inbox_count_candidates");
-    let inbox_lookup = SigintInboxItem::find()
-        .select_only()
-        .columns([
-            sigint_inbox_item::Column::Id,
-            sigint_inbox_item::Column::UnitV2,
-            sigint_inbox_item::Column::Freq,
-            sigint_inbox_item::Column::Datetime,
-        ])
-        .filter(
-            Expr::col((
-                sigint_inbox_item::Entity,
-                sigint_inbox_item::Column::Id,
-            ))
-            .equals((signal_message::Entity, signal_message::Column::Id)),
-        )
-        .offset(0)
-        .into_query();
-    let mut query = SignalMessage::find();
-    QueryTrait::query(&mut query)
-        .from_clear()
-        .from_as(candidates_alias.clone(), signal_message::Entity)
-        .join_lateral(
-            JoinType::LeftJoin,
-            inbox_lookup,
-            Alias::new("sigint_inbox_item"),
-            Expr::value(true),
-        );
-    let query = filter_selected_units(
-        query,
-        &req.selected_units,
-        &req.units_exact_match_only,
-    )?;
-    let query = filter_denied_units(
-        query,
-        &req.denied_units,
-        &req.units_exact_match_only,
-    )?
-    .select_only()
-    .column_as(Expr::cust("COUNT(*)"), "count")
-    .column_as(
-        Expr::cust(r#"MIN("signal_message"."timestamp")"#),
-        "first_element_ts",
-    );
-    let mut with_clause = Query::with();
-    with_clause.cte(
-        CommonTableExpression::new()
-            .query(candidates)
-            .table_name(candidates_alias)
-            .materialized(true)
-            .to_owned(),
-    );
-    let query = with_clause.query(query.into_query()).to_owned();
-
-    Ok(query.to_string(PostgresQueryBuilder))
-}
-
 fn build_period_unit_filtered_inbox_digest(
     req: &InboxMessagesReq,
     query: Select<signal_message::Entity>,
@@ -579,37 +515,43 @@ async fn build_unit_filtered_inbox_digest_query(
     env: &Env,
     req: &InboxMessagesReq,
 ) -> Result<String, AppError> {
-    let mut candidate_req = req.clone();
-    candidate_req.selected_units = None;
-    candidate_req.denied_units = None;
-    let purpose = if inbox_count_uses_indexed_query(&candidate_req) {
+    let purpose = if inbox_count_uses_indexed_query(req) {
         InboxQueryPurpose::IndexedDigest
     } else {
         InboxQueryPurpose::Digest
     };
-    let candidates = build_filtered_inbox_query_with_scope(
-        &env.dbx,
-        login,
-        env,
-        &candidate_req,
-        None,
-        purpose,
-    )
-    .await
-    .context(h!())?;
     if inbox_period_unit_filters_supported(req) {
         if let Some((dt_since, dt_till)) = inbox_unit_filter_period(req)? {
+            let mut candidate_req = req.clone();
+            candidate_req.selected_units = None;
+            candidate_req.denied_units = None;
+            let candidates = build_filtered_inbox_query_with_scope(
+                &env.dbx,
+                login,
+                env,
+                &candidate_req,
+                None,
+                purpose,
+            )
+            .await
+            .context(h!())?;
             return build_period_unit_filtered_inbox_digest(
                 req, candidates, dt_since, dt_till,
             );
         }
     }
-    let candidates = candidates
-        .select_only()
-        .column(signal_message::Column::Id)
-        .column(signal_message::Column::Timestamp)
-        .into_query();
-    build_unit_filtered_inbox_digest_from_candidates(req, candidates)
+    let query = build_filtered_inbox_query_with_scope(
+        &env.dbx, login, env, req, None, purpose,
+    )
+    .await
+    .context(h!())?
+    .select_only()
+    .column_as(Expr::cust("COUNT(*)"), "count")
+    .column_as(
+        Expr::cust(r#"MIN("signal_message"."timestamp")"#),
+        "first_element_ts",
+    );
+    Ok(render_inbox_digest_query(query))
 }
 
 pub(crate) async fn build_inbox_digest_query(
@@ -1758,42 +1700,44 @@ mod tests {
     }
 
     #[test]
-    fn unit_filtered_digest_materializes_candidates_before_unit_lookup() {
-        let candidates = Query::select()
-            .expr_as(Expr::value(1_i64), Alias::new("id"))
-            .expr_as(
-                Expr::value(
-                    chrono::NaiveDate::from_ymd_opt(2026, 7, 29)
-                        .unwrap()
-                        .and_hms_opt(0, 0, 0)
-                        .unwrap(),
-                ),
-                Alias::new("timestamp"),
-            )
-            .to_owned();
+    fn unit_filtered_digest_uses_flat_joined_query() {
         let req = InboxMessagesReq {
             selected_units: Some(vec!["100 pbr".to_string()]),
+            denied_units: Some(vec!["200 pbr".to_string()]),
             ..Default::default()
         };
+        let query = build_inbox_query_base(&req, InboxQueryPurpose::Digest);
+        let query = filter_selected_units(
+            query,
+            &req.selected_units,
+            &req.units_exact_match_only,
+        )
+        .unwrap();
+        let query = filter_denied_units(
+            query,
+            &req.denied_units,
+            &req.units_exact_match_only,
+        )
+        .unwrap()
+        .select_only()
+        .column_as(Expr::cust("COUNT(*)"), "count")
+        .column_as(
+            Expr::cust(r#"MIN("signal_message"."timestamp")"#),
+            "first_element_ts",
+        );
+        let sql = render_inbox_digest_query(query);
 
-        let sql =
-            build_unit_filtered_inbox_digest_from_candidates(&req, candidates)
-                .unwrap();
-
+        assert!(sql.contains(r#"LEFT JOIN "sigint_inbox_item""#), "{sql}");
+        assert!(!sql.contains("inbox_count_candidates"), "{sql}");
+        assert!(!sql.contains("LATERAL"), "{sql}");
         assert!(
-            sql.starts_with(r#"WITH "inbox_count_candidates" AS "#)
-                && sql.contains("MATERIALIZED"),
+            sql.contains(r#""unit_v2" = ANY(ARRAY ['100 pbr'])"#),
             "{sql}"
         );
         assert!(
-            sql.contains(
-                r#"FROM "inbox_count_candidates" AS "signal_message" LEFT JOIN LATERAL"#
-            ),
+            sql.contains(r#""unit_v2" <> ALL(ARRAY ['200 pbr'])"#),
             "{sql}"
         );
-        assert_eq!(sql.matches("OFFSET 0").count(), 1, "{sql}");
-        assert_eq!(sql.matches("MATERIALIZED").count(), 1, "{sql}");
-        assert!(sql.contains(r#""selected_unit"."name" IN ('100 pbr')"#));
     }
 
     #[test]
