@@ -429,6 +429,11 @@ environment files by deployment commands. Each participating Echo instance
 receives its own analytics container, credentials, publication, replication
 slot, ClickHouse data, and recovery lifecycle.
 
+GOI deployments build the `echo-swapp` and messenger Debian artifacts on the
+builder configured by `goi_builder` in `goi/justfile`, using its
+`~/workspace/echo` checkout. The operator workstation only transfers the
+artifacts to the target GOI instance, so deployments can be started from macOS.
+
 When configured and fresh, ClickHouse serves the expensive analysis count,
 facet lists and dedicated facet counts plus the replicated-data scans used by
 the interception, sender, posts, REO, digest, RER, Sposob, 1.2.5, and 1.2.13

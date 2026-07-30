@@ -1,6 +1,8 @@
 # GOI
 
-deploy with `just deploy --server <server>`. 
+Deploy with `just deploy --server <server>`. Linux deploy artifacts are built
+on `goi_builder` from `~/workspace/echo`; change the variable at the top of the
+justfile or override it with `just deploy --server <server> --builder <builder>`.
 
 it deploys 3 units:
 - port 4000: process goi, data a /etc/goi
