@@ -1,4 +1,5 @@
-export type SystemSettingsTab = 'main' | 'duty' | 'control' | 'pelengs' | 'notifications' | 'ai';
+export type SystemSettingsTab =
+  'main' | 'duty' | 'analysis' | 'control' | 'pelengs' | 'notifications' | 'ai';
 
 export type AiEngineUrlScreen =
   { kind: 'list' } | { kind: 'details'; aiEngineId: string } | { kind: 'edit'; aiEngineId: string };
@@ -6,6 +7,7 @@ export type AiEngineUrlScreen =
 const SYSTEM_SETTINGS_TABS = new Set<SystemSettingsTab>([
   'main',
   'duty',
+  'analysis',
   'control',
   'pelengs',
   'notifications',

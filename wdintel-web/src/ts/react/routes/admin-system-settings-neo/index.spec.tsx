@@ -165,6 +165,21 @@ describe('AdminSystemSettingsNeoPage success notifications', () => {
     await act(async () => root.unmount());
   });
 
+  it('keeps classic menu toggles in their respective tabs', async () => {
+    window.history.replaceState({}, '', '/admin/system-settings-neo#duty');
+    const { container, root } = await renderPage();
+    const tabs = Array.from(container.querySelectorAll<HTMLElement>('[role="tab"]'));
+
+    expect(container.textContent).toContain('Показувати класичний оперативний');
+    expect(container.textContent).not.toContain('Показувати класичний аналіз');
+
+    await act(async () => tabs.find((tab) => tab.textContent === 'Аналіз')?.click());
+
+    expect(container.textContent).not.toContain('Показувати класичний оперативний');
+    expect(container.textContent).toContain('Показувати класичний аналіз');
+    await act(async () => root.unmount());
+  });
+
   it('reads the active tab from the anchor and replaces it on tab changes', async () => {
     window.history.replaceState({}, '', '/admin/system-settings-neo#duty');
     const replaceState = vi.spyOn(window.history, 'replaceState');

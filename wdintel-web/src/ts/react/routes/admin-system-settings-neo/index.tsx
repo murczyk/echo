@@ -520,17 +520,6 @@ function DutySettingsSection({
         }
         label="Показувати класичний оперативний"
       />
-      <FormControlLabel
-        control={
-          <Switch
-            checked={form.showClassicAnalysis}
-            onChange={(_, checked) => {
-              patchForm({ showClassicAnalysis: checked });
-            }}
-          />
-        }
-        label="Показувати класичний аналіз"
-      />
 
       <Typography component="h2" variant="subtitle1" sx={{ m: 0, fontWeight: 600 }}>
         Тестові повідомлення
@@ -621,6 +610,33 @@ function DutySettingsSection({
           />
         }
         label="Увімкнути которкий URL для оперативного"
+      />
+    </>
+  );
+}
+
+function AnalysisSettingsSection({
+  form,
+  patchForm,
+}: {
+  form: SystemSettingsForm;
+  patchForm: PatchSystemSettingsForm;
+}) {
+  return (
+    <>
+      <Typography component="h2" variant="subtitle1" sx={{ m: 0, fontWeight: 600 }}>
+        Меню
+      </Typography>
+      <FormControlLabel
+        control={
+          <Switch
+            checked={form.showClassicAnalysis}
+            onChange={(_, checked) => {
+              patchForm({ showClassicAnalysis: checked });
+            }}
+          />
+        }
+        label="Показувати класичний аналіз"
       />
     </>
   );
@@ -893,6 +909,12 @@ export function AdminSystemSettingsNeoPage() {
                 aria-controls="system-settings-neo-panel-duty"
               />
               <Tab
+                value="analysis"
+                label="Аналіз"
+                id="system-settings-neo-tab-analysis"
+                aria-controls="system-settings-neo-panel-analysis"
+              />
+              <Tab
                 value="control"
                 label="Керування"
                 id="system-settings-neo-tab-control"
@@ -953,6 +975,19 @@ export function AdminSystemSettingsNeoPage() {
                     {activeTab === 'duty' ? (
                       <Stack spacing={3}>
                         <DutySettingsSection form={form} patchForm={patchForm} />
+                      </Stack>
+                    ) : null}
+                  </Box>
+
+                  <Box
+                    id="system-settings-neo-panel-analysis"
+                    role="tabpanel"
+                    hidden={activeTab !== 'analysis'}
+                    aria-labelledby="system-settings-neo-tab-analysis"
+                  >
+                    {activeTab === 'analysis' ? (
+                      <Stack spacing={3}>
+                        <AnalysisSettingsSection form={form} patchForm={patchForm} />
                       </Stack>
                     ) : null}
                   </Box>

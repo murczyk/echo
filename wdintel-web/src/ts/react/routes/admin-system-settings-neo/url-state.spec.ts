@@ -17,6 +17,7 @@ describe('system settings URL state', () => {
 
   it('reads tabs and AI engine screens from anchors', () => {
     expect(readSystemSettingsTab('#notifications')).toBe('notifications');
+    expect(readSystemSettingsTab('#analysis')).toBe('analysis');
     expect(readSystemSettingsTab('#ai/engines/engine-id')).toBe('ai');
     expect(readSystemSettingsTab('#unknown')).toBe('main');
     expect(readAiEngineUrlScreen('#ai')).toEqual({ kind: 'list' });
