@@ -702,6 +702,13 @@ async fn apply_backfill_entry(
         item.parsed_unit_v2 = Set(true);
     }
     item.update(&txn).await.c(h!())?;
+    crate::stats::enqueue_group_stats_recalculation_for_message(
+        &txn,
+        expected.id,
+        format!("updated network/unit for inbox message {}", expected.id),
+    )
+    .await
+    .c(h!())?;
     txn.commit().await.c(h!())?;
     Ok(ApplyEntryOutcome::Applied)
 }

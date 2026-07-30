@@ -1118,6 +1118,26 @@ pub async fn oneoff_round_freq(mode: Mode) -> Result<(), AppError> {
     let res = dbx.execute(q).await.c(h!())?;
 
     println!("> rounded {} freqs", res.rows_affected());
+    if res.rows_affected() > 0 {
+        let master_keys = signal_group::Entity::find()
+            .filter(signal_group::Column::Name.eq(group))
+            .filter(signal_group::Column::Deleted.eq(false))
+            .select_only()
+            .column(signal_group::Column::MasterKey)
+            .into_tuple::<String>()
+            .all(&dbx)
+            .await
+            .c(h!())?;
+        for master_key in master_keys {
+            crate::stats::enqueue_group_stats_recalculation_for_group_history(
+                &dbx,
+                &master_key,
+                "rounded frequencies".to_string(),
+            )
+            .await
+            .c(h!())?;
+        }
+    }
 
     Ok(())
 }
@@ -1141,9 +1161,17 @@ pub async fn oneoff_nominalize_freq(mode: Mode) -> Result<(), AppError> {
         if let Some(freq) = item.freq.as_ref() {
             let freq2 = self::frequency::etalon(freq);
             if &freq2 != freq {
+                let item_id = item.id;
                 let mut item: sigint_inbox_item::ActiveModel = item.into();
                 item.freq = Set(Some(freq2));
                 item.update(&dbx).await.c(h!())?;
+                crate::stats::enqueue_group_stats_recalculation_for_message(
+                    &dbx,
+                    item_id,
+                    "nominalized frequency".to_string(),
+                )
+                .await
+                .c(h!())?;
             }
         }
     }
@@ -1212,6 +1240,13 @@ pub async fn oneoff_reprocess_inbox_posts(
             crate::sigint::network::etalon_calc::calculate_sigint_inbox_item_networks(
                 vec![inbox_item],
                 &dbx,
+            )
+            .await
+            .c(h!())?;
+            crate::stats::enqueue_group_stats_recalculation_for_message(
+                &dbx,
+                row.id,
+                format!("reprocessed post for inbox message {}", row.id),
             )
             .await
             .c(h!())?;
@@ -1364,6 +1399,13 @@ pub async fn oneoff_reprocess_unit_names(
             item.location_v2 = Set(location_v2);
             item.parsed_unit_v2 = Set(false);
             item.update(&dbx).await.c(h!())?;
+            crate::stats::enqueue_group_stats_recalculation_for_message(
+                &dbx,
+                id,
+                format!("reprocessed unit for inbox message {id}"),
+            )
+            .await
+            .c(h!())?;
             reset_inbox_pelengs(id, &dbx).await.c(h!())?;
         }
     }

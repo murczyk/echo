@@ -175,6 +175,12 @@ struct GroupStatsActivityWindow {
     till_ts: Option<NaiveDateTime>,
 }
 
+#[derive(FromQueryResult)]
+struct GroupStatsMessageRow {
+    master_key: String,
+    message_ts: NaiveDateTime,
+}
+
 pub async fn enqueue_group_stats_recalculation_for_group_history<'a, C>(
     dbx: &'a C,
     master_key: &str,
@@ -200,6 +206,65 @@ where
     .c(h!())?;
 
     Ok(true)
+}
+
+pub async fn enqueue_group_stats_recalculation_for_message<'a, C>(
+    dbx: &'a C,
+    message_id: i64,
+    reason: String,
+) -> Result<bool, AppError>
+where
+    C: ConnectionTrait + 'a,
+{
+    let min_since_ts =
+        Utc::now().naive_utc() - Duration::days(STATS_MIN_DATETIME_DAYS);
+    let message_rows = GroupStatsMessageRow::find_by_statement(
+        Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            r#"
+                select
+                    smg.group_master_key as master_key,
+                    coalesce(sii.datetime, sm.created_at) as message_ts
+                from signal_message_group smg
+                inner join signal_message sm on sm.id = smg.signal_message_id
+                inner join sigint_inbox_item sii on sii.id = sm.id
+                where smg.signal_message_id = $1
+                  and smg.group_master_key is not null
+                  and sm.deleted = false
+                  and coalesce(sii.datetime, sm.created_at) >= $2
+            "#,
+            vec![message_id.into(), min_since_ts.into()],
+        ),
+    )
+    .all(dbx)
+    .await
+    .c(h!())?;
+    let message_rows = message_rows
+        .into_iter()
+        .unique_by(|row| row.master_key.clone());
+    let now = Utc::now().naive_utc();
+    let mut enqueued = false;
+    for row in message_rows {
+        let since_ts = start_of_day(get_local_date(row.message_ts)).c(h!())?;
+        let till_ts =
+            start_of_day(get_local_date(row.message_ts) + Duration::days(1))
+                .c(h!())?
+                .min(now);
+        if till_ts <= since_ts {
+            continue;
+        }
+        enqueue_pending_group_stats_task(
+            dbx,
+            &row.master_key,
+            since_ts,
+            till_ts,
+            reason.clone(),
+        )
+        .await
+        .c(h!())?;
+        enqueued = true;
+    }
+    Ok(enqueued)
 }
 
 async fn load_group_stats_activity_window<'a, C>(
@@ -3165,6 +3230,104 @@ mod tests {
             task.till_ts,
             start_of_day(get_local_date(message_ts) + Duration::days(1))
                 .unwrap()
+        );
+
+        txn.rollback().await.unwrap();
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn test_enqueue_group_stats_recalculation_for_message() {
+        let env = cleanup().await.unwrap();
+        let txn = env.dbx.begin().await.unwrap();
+        let message_ts = Utc::now().naive_utc() - Duration::days(3);
+        let group = mk_group_with_stats_message(
+            &txn,
+            "stats-recalc-message",
+            message_ts,
+        )
+        .await;
+        let message_id = signal_message_group::Entity::find()
+            .filter(
+                signal_message_group::Column::GroupMasterKey
+                    .eq(group.master_key.clone()),
+            )
+            .select_only()
+            .column(signal_message_group::Column::SignalMessageId)
+            .into_tuple::<i64>()
+            .one(&txn)
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert!(enqueue_group_stats_recalculation_for_message(
+            &txn,
+            message_id,
+            "test message stats enqueue".to_string(),
+        )
+        .await
+        .unwrap());
+        let task = group_stats_recalculation_task::Entity::find()
+            .filter(
+                group_stats_recalculation_task::Column::GroupMasterKey
+                    .eq(group.master_key),
+            )
+            .one(&txn)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            task.since_ts,
+            start_of_day(get_local_date(message_ts)).unwrap()
+        );
+        assert_eq!(
+            task.till_ts,
+            start_of_day(get_local_date(message_ts) + Duration::days(1))
+                .unwrap()
+        );
+
+        txn.rollback().await.unwrap();
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn test_enqueue_group_stats_recalculation_for_expired_message() {
+        let env = cleanup().await.unwrap();
+        let txn = env.dbx.begin().await.unwrap();
+        let message_ts = Utc::now().naive_utc()
+            - Duration::days(STATS_MIN_DATETIME_DAYS + 1);
+        let group = mk_group_with_stats_message(
+            &txn,
+            "stats-recalc-expired-message",
+            message_ts,
+        )
+        .await;
+        let message_id = signal_message_group::Entity::find()
+            .filter(
+                signal_message_group::Column::GroupMasterKey
+                    .eq(group.master_key),
+            )
+            .select_only()
+            .column(signal_message_group::Column::SignalMessageId)
+            .into_tuple::<i64>()
+            .one(&txn)
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert!(!enqueue_group_stats_recalculation_for_message(
+            &txn,
+            message_id,
+            "test expired message stats enqueue".to_string(),
+        )
+        .await
+        .unwrap());
+        assert_eq!(
+            group_stats_recalculation_task::Entity::find()
+                .count(&txn)
+                .await
+                .unwrap(),
+            0
         );
 
         txn.rollback().await.unwrap();

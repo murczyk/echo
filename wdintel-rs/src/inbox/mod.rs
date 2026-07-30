@@ -62,6 +62,11 @@ where
         .await
         .c(h!())?
         .ok_or(format!("Couldn't find a message id={message_id}"))?;
+    let existing_inbox_item = sigint_inbox_item::Entity::find_by_id(message_id)
+        .one(txn)
+        .await
+        .c(h!())?
+        .is_some();
     let m_aor_ids = resolve_message_aor_ids_by_group(txn, message_id)
         .await
         .c(h!())?;
@@ -364,6 +369,15 @@ where
     )
     .await
     .c(h!())?;
+    if existing_inbox_item {
+        crate::stats::enqueue_group_stats_recalculation_for_message(
+            txn,
+            message_id,
+            format!("reprocessed inbox message {message_id}"),
+        )
+        .await
+        .c(h!())?;
+    }
 
     palitra_highlight_worker_job::Entity::insert(
         palitra_highlight_worker_job::ActiveModel {

@@ -989,6 +989,7 @@ pub async fn submit_upsert_inbox_item(
     invalidate_body_derived_fields: bool,
 ) -> Result<i64, AppError> {
     let m_existing = SigintInboxItem::find_by_id(id).one(txn).await.c(h!())?;
+    let existing_message = m_existing.is_some();
     if let Some(existing) = m_existing {
         // cleanup before logging
         let mut existing = existing.clone();
@@ -1176,6 +1177,15 @@ pub async fn submit_upsert_inbox_item(
     )
     .await
     .c(h!())?;
+    if existing_message {
+        crate::stats::enqueue_group_stats_recalculation_for_message(
+            txn,
+            id,
+            format!("updated inbox message {id}"),
+        )
+        .await
+        .c(h!())?;
+    }
     Ok(inbox_id)
 }
 

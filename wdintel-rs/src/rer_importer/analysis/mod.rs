@@ -4666,6 +4666,13 @@ pub async fn edit_freq_unit_name(
             row.unit_v2 = Set(Some(req.unit_new.clone()));
             row.parsed_unit_v2 = Set(true);
             row.update(&txn).await.c(h!())?;
+            crate::stats::enqueue_group_stats_recalculation_for_message(
+                &txn,
+                id,
+                format!("updated unit for inbox message {id}"),
+            )
+            .await
+            .c(h!())?;
         }
     }
 
