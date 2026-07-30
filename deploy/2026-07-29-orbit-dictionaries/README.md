@@ -21,15 +21,20 @@ Every value in a unit's `grouping_of_forces` array is retained through the
 Only ORBIT roots whose own name or alias matches the active Echo SIGINT unit's
 lowest populated echelon are retained. Remaining normalized full-path names are
 used only to compare parents and score candidates, even when an ORBIT descriptor
-has the wrong echelon. Known echelon conflicts still reject a candidate. Extra
-full-name segments without descriptors are allowed when the supplied descriptors
-remain in hierarchy order. When several SIGINT units match, an exact
-root-echelon match wins, followed by the candidate with the most matching names.
-An unresolved tie with different parent paths is treated as fuzzy and skipped;
+has the wrong echelon. If the SIGINT unit has a parent path, at least one parent
+name or alias must also appear in the ORBIT path. Known echelon conflicts still
+reject a candidate. Extra full-name segments without descriptors are allowed
+when the supplied descriptors remain in hierarchy order. When several SIGINT
+units match, an exact root-echelon match wins, followed by the candidate with the
+most matching names. An unresolved tie with different parent paths is skipped;
 same-parent duplicates select the lowest ID. Generative and operational
 ancestors of matched roots are included. After a completed review, active
 imported roots are linked to the selected active Echo SIGINT unit. These links
-drive the admin-only ORBIT indicator and unit-details card.
+are one-to-one from the SIGINT side: the closest ORBIT root wins, equally close
+roots with different parent paths are skipped, and same-path duplicates select
+the lowest ORBIT UUID. A completed import replaces all existing links, including
+links produced by older matching rules. These links drive the admin-only ORBIT
+indicator and unit-details card.
 When a unit also appears inside another unit's path with a different parent,
 the unit's own top-level parent chain is authoritative. Conflicting
 embedded-only paths still fail when the ambiguous unit is selected.

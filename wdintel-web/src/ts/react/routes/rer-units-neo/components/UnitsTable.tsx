@@ -53,6 +53,7 @@ function useUnitColumns(attachmentUnitIds: Set<number>): MRT_ColumnDef<Unit>[] {
               <Link
                 href={detailsHref}
                 onClick={(event) => handleNavigateWithinSpaClick(event, detailsHref)}
+                sx={{ display: 'inline-flex', alignItems: 'center', whiteSpace: 'nowrap' }}
               >
                 {row.original.name}
                 {row.original.hasOrbit ? (
@@ -61,7 +62,7 @@ function useUnitColumns(attachmentUnitIds: Set<number>): MRT_ColumnDef<Unit>[] {
                       component="img"
                       src="/img/delta-icon.webp"
                       alt="Orbit"
-                      sx={{ height: 18, ml: 0.75, verticalAlign: 'text-bottom' }}
+                      sx={{ display: 'inline-block', height: 18, ml: 0.75, flexShrink: 0 }}
                     />
                   </Tooltip>
                 ) : null}

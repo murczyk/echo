@@ -88,7 +88,12 @@ fn match_score(
             .get(&echelon)
             .is_none_or(HashSet::is_empty)
     });
-    if !matches || matched_names == 0 {
+    let required_matches = if parent_signature(sigint_unit).is_empty() {
+        1
+    } else {
+        2
+    };
+    if !matches || matched_names < required_matches {
         return None;
     }
     Some(MatchScore {
@@ -103,14 +108,24 @@ pub fn matching_sigint_unit_ids(
     orbit_units: &[SourceUnit],
     sigint_units: &[sigint_unit::Model],
 ) -> HashMap<uuid::Uuid, BTreeSet<i64>> {
-    orbit_units
-        .iter()
-        .filter_map(|orbit_unit| {
-            best_matching_sigint_unit(orbit_unit, sigint_units).map(
-                |sigint_unit_id| {
-                    (orbit_unit.unit_id, BTreeSet::from([sigint_unit_id]))
-                },
-            )
+    let mut matches_by_sigint_unit =
+        HashMap::<i64, Vec<(&SourceUnit, MatchScore)>>::new();
+    for orbit_unit in orbit_units {
+        if let Some((sigint_unit_id, score)) =
+            best_matching_sigint_unit(orbit_unit, sigint_units)
+        {
+            matches_by_sigint_unit
+                .entry(sigint_unit_id)
+                .or_default()
+                .push((orbit_unit, score));
+        }
+    }
+    matches_by_sigint_unit
+        .into_iter()
+        .filter_map(|(sigint_unit_id, matches)| {
+            best_matching_orbit_unit(matches).map(|orbit_unit_id| {
+                (orbit_unit_id, BTreeSet::from([sigint_unit_id]))
+            })
         })
         .collect()
 }
@@ -118,7 +133,7 @@ pub fn matching_sigint_unit_ids(
 fn best_matching_sigint_unit(
     orbit_unit: &SourceUnit,
     sigint_units: &[sigint_unit::Model],
-) -> Option<i64> {
+) -> Option<(i64, MatchScore)> {
     let mut candidates = sigint_units
         .iter()
         .filter_map(|sigint_unit| {
@@ -148,7 +163,37 @@ fn best_matching_sigint_unit(
     }) {
         return None;
     }
-    closest.first().map(|sigint_unit| sigint_unit.id)
+    closest
+        .first()
+        .map(|sigint_unit| (sigint_unit.id, *best_score))
+}
+
+fn best_matching_orbit_unit(
+    mut matches: Vec<(&SourceUnit, MatchScore)>,
+) -> Option<uuid::Uuid> {
+    matches.sort_by_key(|(orbit_unit, score)| {
+        (
+            score.echelon_distance.unwrap_or(usize::MAX),
+            std::cmp::Reverse(score.matched_names),
+            orbit_unit.unit_id,
+        )
+    });
+    let (_, best_score) = matches.first()?;
+    let best_quality = (best_score.echelon_distance, best_score.matched_names);
+    let closest = matches
+        .iter()
+        .take_while(|(_, score)| {
+            (score.echelon_distance, score.matched_names) == best_quality
+        })
+        .map(|(orbit_unit, _)| *orbit_unit)
+        .collect::<Vec<_>>();
+    let closest_parent_signature = orbit_parent_signature(closest[0]);
+    if closest.iter().skip(1).any(|orbit_unit| {
+        orbit_parent_signature(orbit_unit) != closest_parent_signature
+    }) {
+        return None;
+    }
+    closest.first().map(|orbit_unit| orbit_unit.unit_id)
 }
 
 fn validate_unit(unit: &SourceUnit, path: &str) -> anyhow::Result<()> {
@@ -365,6 +410,16 @@ fn split_path(value: &str) -> Vec<String> {
         .collect()
 }
 
+fn orbit_parent_signature(unit: &SourceUnit) -> Vec<String> {
+    unit.operational_unit_name_full
+        .as_deref()
+        .map(split_path)
+        .unwrap_or_default()
+        .into_iter()
+        .skip(1)
+        .collect()
+}
+
 fn normalize_name(value: &str) -> String {
     value
         .split_whitespace()
@@ -404,13 +459,13 @@ mod tests {
     }
 
     #[test]
-    fn missing_and_unsupported_levels_are_compatible() {
+    fn missing_parent_name_evidence_is_rejected() {
         let unit = source_unit(
             "взвод / округ",
             vec![("platoon", "взвод", 1), ("militaryDistrict", "округ", 0)],
         );
         assert!(!matches_sigint_unit(&unit, &echo_unit("", "", "", "", "")));
-        assert!(matches_sigint_unit(
+        assert!(!matches_sigint_unit(
             &unit,
             &echo_unit("взвод", "", "", "", "невідомо")
         ));
@@ -460,7 +515,10 @@ mod tests {
         let mut brigade = echo_unit("", "", "1111 бр", "", "56 А");
         brigade.id = 2;
         assert_eq!(
-            matching_sigint_unit_ids(&[unit.clone()], &[battalion, brigade]),
+            matching_sigint_unit_ids(
+                std::slice::from_ref(&unit),
+                &[battalion, brigade],
+            ),
             HashMap::from([(unit.unit_id, BTreeSet::from([2]))])
         );
     }
@@ -485,6 +543,18 @@ mod tests {
     }
 
     #[test]
+    fn matching_parent_names_override_incorrect_echelon_metadata() {
+        let unit = source_unit(
+            "1 рота / 1111 бр",
+            vec![("company", "1 рота", 1), ("battalion", "1111 бр", 0)],
+        );
+        assert!(matches_sigint_unit(
+            &unit,
+            &echo_unit("1 рота", "", "1111 бр", "", "")
+        ));
+    }
+
+    #[test]
     fn parent_path_name_does_not_match_descendant_as_root() {
         let unit = source_unit(
             "2 мсб / 1111 бр",
@@ -494,6 +564,61 @@ mod tests {
             &unit,
             &echo_unit("", "", "1111 бр", "", "")
         ));
+    }
+
+    #[test]
+    fn closest_orbit_unit_wins_when_multiple_match_one_sigint_unit() {
+        let less_specific = source_unit(
+            "1111 бр / 45 д",
+            vec![("brigade", "1111 бр", 1), ("division", "45 д", 0)],
+        );
+        let closest = source_unit(
+            "1111 бр / 45 д / 56 А",
+            vec![
+                ("brigade", "1111 бр", 2),
+                ("division", "45 д", 1),
+                ("fieldArmy", "56 А", 0),
+            ],
+        );
+        let sigint_unit = echo_unit("", "", "1111 бр", "45 д", "56 А");
+        assert_eq!(
+            matching_sigint_unit_ids(
+                &[less_specific, closest.clone()],
+                &[sigint_unit]
+            ),
+            HashMap::from([(closest.unit_id, BTreeSet::from([1]))])
+        );
+    }
+
+    #[test]
+    fn equally_close_orbit_units_with_different_parents_are_skipped() {
+        let first = source_unit(
+            "1111 бр / 45 д",
+            vec![("brigade", "1111 бр", 1), ("division", "45 д", 0)],
+        );
+        let second = source_unit(
+            "1111 бр / 46 д",
+            vec![("brigade", "1111 бр", 1), ("division", "46 д", 0)],
+        );
+        let sigint_unit = echo_unit("", "", "1111 бр", "", "");
+        assert!(matching_sigint_unit_ids(&[first, second], &[sigint_unit])
+            .is_empty());
+    }
+
+    #[test]
+    fn equally_close_orbit_units_with_same_parents_pick_lowest_id() {
+        let mut first = source_unit(
+            "1111 бр / 45 д",
+            vec![("brigade", "1111 бр", 1), ("division", "45 д", 0)],
+        );
+        first.unit_id = Uuid::from_u128(1);
+        let mut second = first.clone();
+        second.unit_id = Uuid::from_u128(2);
+        let sigint_unit = echo_unit("", "", "1111 бр", "45 д", "");
+        assert_eq!(
+            matching_sigint_unit_ids(&[second, first.clone()], &[sigint_unit]),
+            HashMap::from([(first.unit_id, BTreeSet::from([1]))])
+        );
     }
 
     #[test]

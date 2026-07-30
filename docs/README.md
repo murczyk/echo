@@ -342,7 +342,9 @@ the PostgreSQL `orbit_unit` table and its many-to-many force-grouping links;
 dictionary rows are supplied by migrations.
 After a completed import, matched ORBIT roots are linked to their active Echo
 SIGINT units for access-controlled display in the RER unit list and details
-page.
+page. `orbit_unit_sigint_unit` permits at most one ORBIT link per SIGINT unit;
+matching requires root identity plus parent evidence for hierarchical SIGINT
+units, retains the closest root, and skips unresolved parent-path ties.
 
 The six ORBIT tables are authoritative operational data in PostgreSQL and are
 excluded from PeerDB replication. See the
