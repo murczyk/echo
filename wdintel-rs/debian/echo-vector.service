@@ -4,6 +4,7 @@ Description=echo-vector
 [Service]
 ExecStart=/bin/bash -c "export SIGNOZ_LOGS_ENABLED=$(grep '^signoz_logs_enabled' /etc/echo/config.toml | cut -d'=' -f2 | tr -d '[:space:]'); export SIGNOZ_LOGS_ENDPOINT=$(grep '^signoz_logs_endpoint' /etc/echo/config.toml | cut -d'\"' -f2); if [ -z \"$SIGNOZ_LOGS_ENABLED\" ]; then export SIGNOZ_LOGS_ENABLED=false; fi; exec /usr/bin/vector -c /etc/echo/vector.yaml"
 Restart=always
+LimitNOFILE=65536
 User=root
 Group=root
 RestartSec=5s
