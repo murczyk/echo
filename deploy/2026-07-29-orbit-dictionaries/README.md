@@ -8,7 +8,7 @@ sudo wdintel-rs --mode=live oneoff-prepare-orbit-import \
 ```
 
 Live mode uploads the timestamped ZIP to
-`orbit-import/` in the bucket configured by
+`orbit-import/` inside `ai_models_config.prefix` in the bucket configured by
 `ai_models_config.s3_config`. Before reading the JSON, it downloads the latest
 existing snapshot and reuses its dictionary UUIDs. Every snapshot contains
 `orbit_units.parquet` and one Apache Parquet file for each ORBIT dictionary.

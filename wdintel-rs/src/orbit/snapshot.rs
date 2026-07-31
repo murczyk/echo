@@ -41,6 +41,8 @@ pub struct OrbitSnapshot {
 struct SnapshotStore {
     operator: Operator,
     location: String,
+    snapshot_prefix: String,
+    create_missing_directory: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -80,7 +82,7 @@ pub async fn prepare_snapshot(
         merge_dictionary_entries(&units, previous_dictionaries).c(h!())?;
     let bytes = create_archive(&units, &dictionaries).c(h!())?;
     let filename = format!("{}.zip", Utc::now().format("%Y%m%d_%H%M%S_%6f"));
-    let key = format!("{ORBIT_IMPORT_STORAGE_PREFIX}/{filename}");
+    let key = store.snapshot_key(&filename);
     log::info!("writing ORBIT import snapshot to {}/{key}", store.location);
     store.operator.write(&key, bytes).await.c(h!())?;
     let location = format!("{}/{}", store.location.trim_end_matches('/'), key);
@@ -95,7 +97,7 @@ pub async fn load_latest_snapshot(mode: Mode) -> Result<OrbitSnapshot> {
             anyhow::anyhow!(
                 "no ORBIT import snapshot exists at {}/{}",
                 store.location,
-                ORBIT_IMPORT_STORAGE_PREFIX
+                store.snapshot_prefix
             )
         })?;
     log::info!("loading ORBIT import snapshot {key}");
@@ -113,11 +115,18 @@ impl SnapshotStore {
             })?;
             let s3_config = storage::S3Config::with_prefix(
                 &models_config.s3_config,
-                String::new(),
+                models_config.prefix,
             );
             let location = format!("s3://{}", s3_config.bucket);
+            let snapshot_prefix =
+                s3_config.prefixed_key(ORBIT_IMPORT_STORAGE_PREFIX);
             let operator = storage::build_s3_operator(&s3_config).c(h!())?;
-            return Ok(Self { operator, location });
+            return Ok(Self {
+                operator,
+                location,
+                snapshot_prefix,
+                create_missing_directory: false,
+            });
         }
 
         let root = PathBuf::from(&config.storage_dir);
@@ -128,17 +137,29 @@ impl SnapshotStore {
         Ok(Self {
             operator,
             location: root.display().to_string(),
+            snapshot_prefix: ORBIT_IMPORT_STORAGE_PREFIX.to_string(),
+            create_missing_directory: true,
         })
     }
 
+    fn snapshot_directory(&self) -> String {
+        format!("{}/", self.snapshot_prefix.trim_matches('/'))
+    }
+
+    fn snapshot_key(&self, filename: &str) -> String {
+        storage::join_paths(&self.snapshot_prefix, filename)
+    }
+
     async fn latest_bytes(&self) -> Result<Option<(String, Vec<u8>)>> {
-        let directory = format!("{ORBIT_IMPORT_STORAGE_PREFIX}/");
+        let directory = self.snapshot_directory();
         log::info!(
             "checking for ORBIT import snapshots at {}/{}",
             self.location,
-            ORBIT_IMPORT_STORAGE_PREFIX
+            directory.trim_end_matches('/')
         );
-        self.operator.create_dir(&directory).await.c(h!())?;
+        if self.create_missing_directory {
+            self.operator.create_dir(&directory).await.c(h!())?;
+        }
         let entries = self.operator.list(&directory).await.c(h!())?;
         let latest = entries
             .into_iter()
@@ -892,6 +913,8 @@ mod tests {
         let store = SnapshotStore {
             operator: Operator::new(builder).unwrap().finish(),
             location: temp_dir.path().display().to_string(),
+            snapshot_prefix: ORBIT_IMPORT_STORAGE_PREFIX.to_string(),
+            create_missing_directory: true,
         };
         assert!(store.latest_bytes().await.unwrap().is_none());
 
@@ -919,6 +942,27 @@ mod tests {
         let (key, bytes) = store.latest_bytes().await.unwrap().unwrap();
         assert_eq!(key, "orbit-import/20260731_100000_000000.zip");
         assert_eq!(bytes, b"latest snapshot");
+    }
+
+    #[test]
+    fn snapshot_store_applies_configured_prefix_to_keys() {
+        let store = SnapshotStore {
+            operator: Operator::new(opendal::services::Memory::default())
+                .unwrap()
+                .finish(),
+            location: "s3://bucket".to_string(),
+            snapshot_prefix: "lfs/echo-ai/models-v2/orbit-import".to_string(),
+            create_missing_directory: false,
+        };
+
+        assert_eq!(
+            store.snapshot_directory(),
+            "lfs/echo-ai/models-v2/orbit-import/"
+        );
+        assert_eq!(
+            store.snapshot_key("20260731_100000_000000.zip"),
+            "lfs/echo-ai/models-v2/orbit-import/20260731_100000_000000.zip"
+        );
     }
 
     #[tokio::test]
