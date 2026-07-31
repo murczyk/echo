@@ -37,7 +37,7 @@ export type NetworkCallsignRelationsGraphView = {
   adjacencyByNodeId: Map<string, Set<string>>;
 };
 
-type NetworkCallsignRelationsRenderLimits = {
+export type NetworkCallsignRelationsRenderLimits = {
   maxRenderNodes: number;
   maxRenderEdges: number;
   softLimitMultiplier: number;
@@ -243,6 +243,39 @@ export function buildNetworkCallsignRelationsGraphView(
     visibleEdgeIds: filteredVisibleEdgeIds,
     adjacencyByNodeId,
   };
+}
+
+export function findMinimumRenderableNetworkCallsignRelationsIntensity(
+  graph: NetworkCallsignRelationsRsp | null,
+  searchText: string,
+  enabledFreqs: string[],
+  renderLimits: NetworkCallsignRelationsRenderLimits = NETWORK_RELATIONS_RENDER_LIMITS,
+): number | null {
+  const graphAtMinimum = buildNetworkCallsignRelationsGraphView(graph, searchText, enabledFreqs, 1);
+  const intensityThresholds = [
+    ...new Set([
+      1,
+      ...graphAtMinimum.edges.map((edge) => Math.max(1, Math.floor(edge.visibleWeight) + 1)),
+    ]),
+  ].sort((left, right) => left - right);
+
+  for (const intensity of intensityThresholds) {
+    const graphView =
+      intensity === 1
+        ? graphAtMinimum
+        : buildNetworkCallsignRelationsGraphView(graph, searchText, enabledFreqs, intensity);
+    const visibleNodeCount = graphView.nodes.filter((node) => node.visible).length;
+    if (
+      graphView.edges.length > 0 &&
+      visibleNodeCount > 0 &&
+      visibleNodeCount <= renderLimits.maxRenderNodes &&
+      graphView.edges.length <= renderLimits.maxRenderEdges
+    ) {
+      return intensity;
+    }
+  }
+
+  return null;
 }
 
 export function normalizeNetworkCallsignRelationSearch(value: string): string {

@@ -1,10 +1,11 @@
 import { Box, Button, CircularProgress, Stack } from '@mui/material';
-import { useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 import type { NetworkCallsignRelationsRsp } from '../../../../../Bindings';
 import { PowerAlert } from '../../../components/PowerAlert';
 import { CompactText } from '../../../components/CompactTypography';
 import { NetworkCallsignRelationsGraph } from '../../rer-network-details-neo/components/NetworkCallsignRelationsGraph';
+import { findMinimumRenderableNetworkCallsignRelationsIntensity } from '../../rer-network-details-neo/network-relations';
 
 type Props = {
   callsignGraph: NetworkCallsignRelationsRsp | null;
@@ -21,14 +22,31 @@ export function AnalysisCallsignGraphPane({
   callsignGraphLoadError,
   onLoadCallsignGraph,
 }: Props) {
+  const loadedGraphRef = useRef(callsignGraph);
+  const defaultMinIntensity = useMemo(
+    () => getSafeIntensity(callsignGraph, '', []),
+    [callsignGraph],
+  );
   const [relationsSearch, setRelationsSearch] = useState('');
   const [relationsEnabledFreqs, setRelationsEnabledFreqs] = useState<string[]>([]);
-  const [relationsMinIntensity, setRelationsMinIntensity] = useState(
-    ANALYSIS_RELATIONS_DEFAULT_MIN_INTENSITY,
-  );
+  const [relationsMinIntensity, setRelationsMinIntensity] = useState(defaultMinIntensity);
   const [relationsShowLabels, setRelationsShowLabels] = useState(true);
   const [relationsSelectedNodeId, setRelationsSelectedNodeId] = useState<string | null>(null);
   const [relationsSelectedEdgeId, setRelationsSelectedEdgeId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (callsignGraph === loadedGraphRef.current) return;
+    loadedGraphRef.current = callsignGraph;
+    if (callsignGraph === null) return;
+
+    setRelationsSearch('');
+    setRelationsEnabledFreqs([]);
+    setRelationsMinIntensity(defaultMinIntensity);
+    setRelationsShowLabels(true);
+    setRelationsSelectedNodeId(null);
+    setRelationsSelectedEdgeId(null);
+  }, [callsignGraph, defaultMinIntensity]);
+
   if (!callsignGraph) {
     return (
       <Stack spacing={2} alignItems="center" justifyContent="center" sx={{ minHeight: 360, p: 2 }}>
@@ -89,13 +107,27 @@ export function AnalysisCallsignGraphPane({
         relationsTill=""
         relationsLoading={callsignGraphLoading}
         contextDescription="Позивні, зв'язки та перехоплення за параметрами аналізу, інтенсивністю й частотами."
-        defaultMinIntensity={ANALYSIS_RELATIONS_DEFAULT_MIN_INTENSITY}
+        defaultMinIntensity={defaultMinIntensity}
         showDateFilters={false}
         showMessages={false}
         onReload={onLoadCallsignGraph}
-        onSearchChange={setRelationsSearch}
-        onEnabledFreqsChange={setRelationsEnabledFreqs}
-        onMinIntensityChange={setRelationsMinIntensity}
+        onSearchChange={(search) => {
+          setRelationsSearch(search);
+          setRelationsMinIntensity((intensity) =>
+            clampIntensity(callsignGraph, search, relationsEnabledFreqs, intensity),
+          );
+        }}
+        onEnabledFreqsChange={(enabledFreqs) => {
+          setRelationsEnabledFreqs(enabledFreqs);
+          setRelationsMinIntensity((intensity) =>
+            clampIntensity(callsignGraph, relationsSearch, enabledFreqs, intensity),
+          );
+        }}
+        onMinIntensityChange={(intensity) =>
+          setRelationsMinIntensity(
+            clampIntensity(callsignGraph, relationsSearch, relationsEnabledFreqs, intensity),
+          )
+        }
         onShowLabelsChange={setRelationsShowLabels}
         onSelectNodeId={(nodeId) => {
           setRelationsSelectedNodeId(nodeId);
@@ -110,4 +142,29 @@ export function AnalysisCallsignGraphPane({
       />
     </Box>
   );
+}
+
+function getSafeIntensity(
+  callsignGraph: NetworkCallsignRelationsRsp | null,
+  search: string,
+  enabledFreqs: string[],
+): number {
+  return (
+    findMinimumRenderableNetworkCallsignRelationsIntensity(callsignGraph, search, enabledFreqs) ??
+    ANALYSIS_RELATIONS_DEFAULT_MIN_INTENSITY
+  );
+}
+
+function clampIntensity(
+  callsignGraph: NetworkCallsignRelationsRsp,
+  search: string,
+  enabledFreqs: string[],
+  intensity: number,
+): number {
+  const safeIntensity = findMinimumRenderableNetworkCallsignRelationsIntensity(
+    callsignGraph,
+    search,
+    enabledFreqs,
+  );
+  return safeIntensity === null ? intensity : Math.max(intensity, safeIntensity);
 }

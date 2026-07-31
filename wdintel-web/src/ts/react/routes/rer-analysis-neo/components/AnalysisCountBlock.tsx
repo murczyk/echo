@@ -15,8 +15,8 @@ import {
   Paper,
   Skeleton,
 } from '@mui/material';
-import { alpha } from '@mui/material/styles';
-import { useEffect, useId, useMemo, useState } from 'react';
+import { alpha, useTheme } from '@mui/material/styles';
+import { useEffect, useId, useLayoutEffect, useMemo, useState } from 'react';
 import { isNullOrUndefined } from '../../../utils/misc';
 
 import type { AnalysisCountItem } from '../types';
@@ -61,7 +61,9 @@ export function AnalysisCountBlock({
   onClearSelection,
   selectedItemKeys = [],
 }: Props) {
+  const theme = useTheme();
   const headingId = useId().replace(/:/g, '-');
+  const contentId = `${headingId}-content`;
   const [collapsed, setCollapsed] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
@@ -91,6 +93,30 @@ export function AnalysisCountBlock({
       setExpanded(false);
     }
   }, [expanded, hasHiddenItems]);
+
+  useLayoutEffect(() => {
+    const contentRoot = document.getElementById(contentId);
+    const content = contentRoot?.firstElementChild;
+    if (collapsed || contentRoot == null || !(content instanceof HTMLElement)) return;
+
+    let previousHeight = content.getBoundingClientRect().height;
+    const resizeObserver = new ResizeObserver(() => {
+      const nextHeight = content.getBoundingClientRect().height;
+      if (Math.abs(nextHeight - previousHeight) < 1) return;
+      contentRoot.animate([{ height: `${previousHeight}px` }, { height: `${nextHeight}px` }], {
+        duration: theme.transitions.duration.shortest,
+        easing: theme.transitions.easing.easeInOut,
+      });
+      previousHeight = nextHeight;
+    });
+    resizeObserver.observe(content);
+    return () => resizeObserver.disconnect();
+  }, [
+    collapsed,
+    contentId,
+    theme.transitions.duration.shortest,
+    theme.transitions.easing.easeInOut,
+  ]);
 
   const toggleSearch = () => {
     if (searchOpen) {
@@ -216,7 +242,7 @@ export function AnalysisCountBlock({
           </IconButton>
         </Box>
       </Box>
-      <Collapse in={!collapsed} unmountOnExit>
+      <Collapse id={contentId} in={!collapsed} unmountOnExit>
         <List
           dense
           disablePadding

@@ -8,6 +8,7 @@ import {
   buildNetworkCallsignRelationFreqState,
   buildNetworkCallsignRelationsGraphView,
   buildRenderableNetworkCallsignRelationsGraphView,
+  findMinimumRenderableNetworkCallsignRelationsIntensity,
   limitGraphEdgesByWeight,
   normalizeNetworkCallsignRelationSearch,
   NETWORK_RELATIONS_RENDER_LIMITS,
@@ -247,6 +248,161 @@ describe('network relations helpers', () => {
     expect(graph.edges).toHaveLength(1);
     expect(graph.edges[0].visibleWeight).toBe(3);
     expect(graph.visibleEdgeIds.has('ALPHA__BRAVO')).toBe(true);
+  });
+
+  it('keeps small graphs at the minimum intensity', () => {
+    expect(findMinimumRenderableNetworkCallsignRelationsIntensity(createGraph(), '', [])).toBe(1);
+  });
+
+  it('selects the first complete weight threshold within exact render limits', () => {
+    const graph = {
+      nodes: Array.from({ length: 5 }, (_, index) =>
+        relationNode({ id: `NODE_${index}`, label: `NODE_${index}` }),
+      ),
+      edges: [
+        {
+          id: 'EDGE_1',
+          source: 'NODE_0',
+          target: 'NODE_1',
+          weight: 1,
+          byFreq: [{ freq: '100.1', weight: 1 }],
+        },
+        {
+          id: 'EDGE_2',
+          source: 'NODE_1',
+          target: 'NODE_2',
+          weight: 2,
+          byFreq: [{ freq: '100.1', weight: 2 }],
+        },
+        {
+          id: 'EDGE_3',
+          source: 'NODE_2',
+          target: 'NODE_3',
+          weight: 2,
+          byFreq: [{ freq: '100.1', weight: 2 }],
+        },
+        {
+          id: 'EDGE_4',
+          source: 'NODE_3',
+          target: 'NODE_4',
+          weight: 3,
+          byFreq: [{ freq: '100.1', weight: 3 }],
+        },
+      ],
+      freqs: [{ freq: '100.1', enabledByDefault: true }],
+    };
+
+    expect(
+      findMinimumRenderableNetworkCallsignRelationsIntensity(graph, '', [], {
+        maxRenderNodes: 4,
+        maxRenderEdges: 3,
+        softLimitMultiplier: 2,
+      }),
+    ).toBe(2);
+  });
+
+  it('accounts for frequency and search filters when finding a safe threshold', () => {
+    const graph = {
+      ...createGraph(),
+      nodes: [
+        ...createGraph().nodes,
+        relationNode({ id: 'DELTA', label: 'DELTA' }),
+        relationNode({ id: 'ECHO', label: 'ECHO' }),
+      ],
+      edges: [
+        {
+          id: 'ALPHA__BRAVO',
+          source: 'ALPHA',
+          target: 'BRAVO',
+          weight: 3,
+          byFreq: [{ freq: '100.1', weight: 3 }],
+        },
+        {
+          id: 'BRAVO__DELTA',
+          source: 'BRAVO',
+          target: 'DELTA',
+          weight: 2,
+          byFreq: [{ freq: '200.2', weight: 2 }],
+        },
+        {
+          id: 'DELTA__ECHO',
+          source: 'DELTA',
+          target: 'ECHO',
+          weight: 2,
+          byFreq: [{ freq: '200.2', weight: 2 }],
+        },
+      ],
+      freqs: [
+        { freq: '100.1', enabledByDefault: true },
+        { freq: '200.2', enabledByDefault: true },
+      ],
+    };
+    const limits = { maxRenderNodes: 2, maxRenderEdges: 1, softLimitMultiplier: 2 };
+
+    expect(
+      findMinimumRenderableNetworkCallsignRelationsIntensity(graph, '', ['200.2'], limits),
+    ).toBeNull();
+    expect(findMinimumRenderableNetworkCallsignRelationsIntensity(graph, 'alpha', [], limits)).toBe(
+      1,
+    );
+  });
+
+  it('raises the safe threshold when search matches add too many nodes', () => {
+    const graph = {
+      nodes: [
+        relationNode({ id: 'MATCH_1', label: 'MATCH 1' }),
+        relationNode({ id: 'MATCH_2', label: 'MATCH 2' }),
+        relationNode({ id: 'MATCH_3', label: 'MATCH 3' }),
+        relationNode({ id: 'OTHER', label: 'OTHER' }),
+      ],
+      edges: [
+        {
+          id: 'STRONG',
+          source: 'MATCH_1',
+          target: 'MATCH_2',
+          weight: 2,
+          byFreq: [{ freq: '100.1', weight: 2 }],
+        },
+        {
+          id: 'WEAK',
+          source: 'MATCH_1',
+          target: 'OTHER',
+          weight: 1,
+          byFreq: [{ freq: '100.1', weight: 1 }],
+        },
+      ],
+      freqs: [{ freq: '100.1', enabledByDefault: true }],
+    };
+    const limits = { maxRenderNodes: 3, maxRenderEdges: 2, softLimitMultiplier: 2 };
+
+    expect(findMinimumRenderableNetworkCallsignRelationsIntensity(graph, '', [], limits)).toBe(1);
+    expect(findMinimumRenderableNetworkCallsignRelationsIntensity(graph, 'match', [], limits)).toBe(
+      2,
+    );
+  });
+
+  it('returns null when equal top-weight relationships cannot fit', () => {
+    const graph = {
+      nodes: Array.from({ length: 4 }, (_, index) =>
+        relationNode({ id: `NODE_${index}`, label: `NODE_${index}` }),
+      ),
+      edges: Array.from({ length: 3 }, (_, index) => ({
+        id: `EDGE_${index}`,
+        source: `NODE_${index}`,
+        target: `NODE_${index + 1}`,
+        weight: 5,
+        byFreq: [{ freq: '100.1', weight: 5 }],
+      })),
+      freqs: [{ freq: '100.1', enabledByDefault: true }],
+    };
+
+    expect(
+      findMinimumRenderableNetworkCallsignRelationsIntensity(graph, '', [], {
+        maxRenderNodes: 3,
+        maxRenderEdges: 2,
+        softLimitMultiplier: 2,
+      }),
+    ).toBeNull();
   });
 
   it('limits edges by visible weight deterministically', () => {
