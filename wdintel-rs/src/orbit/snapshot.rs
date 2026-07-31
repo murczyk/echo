@@ -15,8 +15,9 @@ use anyhow::{Context, Result};
 use arrow_array::{Array, ArrayRef, Int32Array, RecordBatch, StringArray};
 use arrow_schema::{DataType, Field, Schema};
 use chrono::{NaiveDateTime, Utc};
+use dialoguer::{theme::ColorfulTheme, Input, Password};
 use md5::{Digest, Md5};
-use opendal::{EntryMode, Operator};
+use opendal::{EntryMode, ErrorKind, Operator};
 use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
 use parquet::arrow::arrow_writer::ArrowWriter;
 use serde::{Deserialize, Serialize};
@@ -42,6 +43,7 @@ struct SnapshotStore {
     operator: Operator,
     location: String,
     snapshot_prefix: String,
+    s3_config: Option<storage::S3Config>,
     create_missing_directory: bool,
 }
 
@@ -84,7 +86,7 @@ pub async fn prepare_snapshot(
     let filename = format!("{}.zip", Utc::now().format("%Y%m%d_%H%M%S_%6f"));
     let key = store.snapshot_key(&filename);
     log::info!("writing ORBIT import snapshot to {}/{key}", store.location);
-    store.operator.write(&key, bytes).await.c(h!())?;
+    store.write_snapshot(&key, bytes).await.c(h!())?;
     let location = format!("{}/{}", store.location.trim_end_matches('/'), key);
     log::info!("stored ORBIT import snapshot at {location}");
     Ok(location)
@@ -125,6 +127,7 @@ impl SnapshotStore {
                 operator,
                 location,
                 snapshot_prefix,
+                s3_config: Some(s3_config),
                 create_missing_directory: false,
             });
         }
@@ -138,6 +141,7 @@ impl SnapshotStore {
             operator,
             location: root.display().to_string(),
             snapshot_prefix: ORBIT_IMPORT_STORAGE_PREFIX.to_string(),
+            s3_config: None,
             create_missing_directory: true,
         })
     }
@@ -176,6 +180,64 @@ impl SnapshotStore {
         let bytes = self.operator.read(&key).await.c(h!())?.to_vec();
         Ok(Some((key, bytes)))
     }
+
+    async fn write_snapshot(&self, key: &str, bytes: Vec<u8>) -> Result<()> {
+        match self.operator.write(key, bytes.clone()).await {
+            Ok(_) => Ok(()),
+            Err(error) if error.kind() == ErrorKind::PermissionDenied => {
+                let Some(s3_config) = &self.s3_config else {
+                    return Err(error).c(h!());
+                };
+                eprintln!(
+                    "Configured S3 credentials cannot write ORBIT import snapshot to {}/{}.",
+                    self.location, key
+                );
+                eprintln!(
+                    "Enter temporary S3 credentials with write access. They will not be saved."
+                );
+                let s3_config = prompt_s3_write_config(s3_config).c(h!())?;
+                let operator =
+                    storage::build_s3_operator(&s3_config).c(h!())?;
+                operator.write(key, bytes).await.c(h!())?;
+                Ok(())
+            }
+            Err(error) => Err(error).c(h!()),
+        }
+    }
+}
+
+fn prompt_s3_write_config(
+    s3_config: &storage::S3Config,
+) -> Result<storage::S3Config> {
+    let theme = ColorfulTheme::default();
+    let access_key_id: String = Input::with_theme(&theme)
+        .with_prompt("S3 keyId")
+        .interact_text()
+        .c(h!())?;
+    let secret_access_key: String = Password::with_theme(&theme)
+        .with_prompt("S3 applicationKey")
+        .interact()
+        .c(h!())?;
+    s3_write_config(s3_config, access_key_id, secret_access_key).c(h!())
+}
+
+fn s3_write_config(
+    s3_config: &storage::S3Config,
+    access_key_id: String,
+    secret_access_key: String,
+) -> Result<storage::S3Config> {
+    anyhow::ensure!(
+        !access_key_id.trim().is_empty(),
+        "S3 keyId cannot be empty"
+    );
+    anyhow::ensure!(
+        !secret_access_key.trim().is_empty(),
+        "S3 applicationKey cannot be empty"
+    );
+    let mut s3_config = s3_config.clone();
+    s3_config.access_key_id = access_key_id.trim().to_string();
+    s3_config.secret_access_key = secret_access_key;
+    Ok(s3_config)
 }
 
 fn snapshot_timestamp(path: &str) -> Option<NaiveDateTime> {
@@ -914,6 +976,7 @@ mod tests {
             operator: Operator::new(builder).unwrap().finish(),
             location: temp_dir.path().display().to_string(),
             snapshot_prefix: ORBIT_IMPORT_STORAGE_PREFIX.to_string(),
+            s3_config: None,
             create_missing_directory: true,
         };
         assert!(store.latest_bytes().await.unwrap().is_none());
@@ -945,6 +1008,32 @@ mod tests {
     }
 
     #[test]
+    fn s3_write_config_replaces_only_credentials() {
+        let s3_config = storage::S3Config {
+            bucket: "bucket".to_string(),
+            region: "eu-central-003".to_string(),
+            endpoint: "https://s3.example.com".to_string(),
+            access_key_id: "old-key".to_string(),
+            secret_access_key: "old-secret".to_string(),
+            prefix: "lfs/echo-ai/models-v2".to_string(),
+        };
+
+        let s3_config = s3_write_config(
+            &s3_config,
+            "  new-key  ".to_string(),
+            "new-secret".to_string(),
+        )
+        .unwrap();
+
+        assert_eq!(s3_config.bucket, "bucket");
+        assert_eq!(s3_config.region, "eu-central-003");
+        assert_eq!(s3_config.endpoint, "https://s3.example.com");
+        assert_eq!(s3_config.access_key_id, "new-key");
+        assert_eq!(s3_config.secret_access_key, "new-secret");
+        assert_eq!(s3_config.prefix, "lfs/echo-ai/models-v2");
+    }
+
+    #[test]
     fn snapshot_store_applies_configured_prefix_to_keys() {
         let store = SnapshotStore {
             operator: Operator::new(opendal::services::Memory::default())
@@ -952,6 +1041,7 @@ mod tests {
                 .finish(),
             location: "s3://bucket".to_string(),
             snapshot_prefix: "lfs/echo-ai/models-v2/orbit-import".to_string(),
+            s3_config: None,
             create_missing_directory: false,
         };
 
