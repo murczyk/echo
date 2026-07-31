@@ -638,7 +638,7 @@ mod tests {
     #[serial]
     async fn collect_report_125_data_expands_active_pelengs_and_raw_unit_fields(
     ) {
-        let env = cleanup().await.unwrap();
+        let (env, _cleanup_guard) = cleanup_locked().await.unwrap();
         let login = find_test_login(&env.dbx).await.unwrap();
         let datasource_group =
             find_test_datasource_group(&env.dbx).await.unwrap();
@@ -768,7 +768,7 @@ mod tests {
     #[tokio::test]
     #[serial]
     async fn collect_report_125_data_can_be_empty_without_pelengs() {
-        let env = cleanup().await.unwrap();
+        let (env, _cleanup_guard) = cleanup_locked().await.unwrap();
         let login = find_test_login(&env.dbx).await.unwrap();
         let datasource_group =
             find_test_datasource_group(&env.dbx).await.unwrap();
@@ -889,7 +889,7 @@ mod tests {
     #[tokio::test]
     #[serial]
     async fn report_125_message_scope_respects_report_tags_only_this_unit() {
-        let env = cleanup().await.unwrap();
+        let (env, _cleanup_guard) = cleanup_locked().await.unwrap();
         let login = find_test_login(&env.dbx).await.unwrap();
         let datasource_group =
             find_test_datasource_group(&env.dbx).await.unwrap();

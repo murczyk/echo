@@ -830,7 +830,7 @@ where
 mod tests {
     use super::*;
     use crate::functest::tests::{
-        cleanup, find_test_datasource_group, mk_signal_message,
+        cleanup_locked, find_test_datasource_group, mk_signal_message,
     };
 
     #[test]
@@ -944,7 +944,7 @@ mod tests {
     #[tokio::test]
     #[serial]
     async fn construct_inbox_item_imports_extended_peleng_format() {
-        let env = cleanup().await.unwrap();
+        let (env, _cleanup_guard) = cleanup_locked().await.unwrap();
         let datasource_group =
             find_test_datasource_group(&env.dbx).await.unwrap();
         let body = "пост Фокстрот-Наутілус-Дракар\n446.300 TYT назва: ретранслятор\nр-н Верхній Рогачик\nx:52-41410\ny:65-99914\nУКХ радіомережа ППО смуга 49 А\nНВ\nНВ\n\n— Кольцо 22, я техас, прием.\n23:59 31.07.2026";
@@ -1010,7 +1010,7 @@ mod tests {
     #[serial]
     async fn construct_inbox_item_imports_report_125_sample_and_replaces_pelengs(
     ) {
-        let env = cleanup().await.unwrap();
+        let (env, _cleanup_guard) = cleanup_locked().await.unwrap();
         let datasource_group =
             find_test_datasource_group(&env.dbx).await.unwrap();
         let created_at = NaiveDate::from_ymd_opt(2026, 7, 16)

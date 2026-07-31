@@ -278,14 +278,34 @@ fn no_headers_body_at(
     body: String,
 ) -> Option<NoHeadersBody> {
     let normalized_input = position_input.replace("\r\n", "\n");
-    let start_byte = normalized_input.rfind(&body)?;
-    let start_normalized = normalized_input[..start_byte].chars().count();
-    let end_normalized = start_normalized + body.chars().count();
+    let body_range = normalized_body_range(&normalized_input, &body)?;
+    let start_normalized = normalized_input[..body_range.start].chars().count();
+    let end_normalized = normalized_input[..body_range.end].chars().count();
     Some(NoHeadersBody {
         body,
         start: original_char_index(position_input, start_normalized),
         end: original_char_index(position_input, end_normalized),
     })
+}
+
+fn normalized_body_range(
+    input: &str,
+    body: &str,
+) -> Option<std::ops::Range<usize>> {
+    if let Some(start) = input.rfind(body) {
+        return Some(start..start + body.len());
+    }
+
+    let body_pattern = body
+        .split_whitespace()
+        .map(regex::escape)
+        .collect::<Vec<_>>()
+        .join(r"\s+");
+    Regex::new(&body_pattern)
+        .ok()?
+        .find_iter(input)
+        .last()
+        .map(|body_match| body_match.range())
 }
 
 fn original_char_index(input: &str, normalized_index: usize) -> usize {
@@ -476,6 +496,18 @@ mod tests {
         let end_byte = start_byte + "НВ".len();
 
         assert_eq!(res.body, "НВ");
+        assert_eq!(res.start, body[..start_byte].chars().count());
+        assert_eq!(res.end, body[..end_byte].chars().count());
+    }
+
+    #[test]
+    fn extract_text_exact_peleng_locates_normalized_mgrs_whitespace() {
+        let body = "Пост Shark 4\n447.450\nр-н. Шевченка\n36T  VS\t89904   14667\n01.07.2026 03:07:42";
+        let res = extract_text(body).unwrap();
+        let start_byte = body.find("36T").unwrap();
+        let end_byte = body.find("14667").unwrap() + "14667".len();
+
+        assert_eq!(res.body, "36T VS 89904 14667");
         assert_eq!(res.start, body[..start_byte].chars().count());
         assert_eq!(res.end, body[..end_byte].chars().count());
     }
