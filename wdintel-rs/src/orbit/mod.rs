@@ -58,6 +58,7 @@ async fn run_import(mode: Mode) -> anyhow::Result<()> {
         .await
         .c("failed to load ORBIT dictionaries")?;
     let units = snapshot.units;
+    let snapshot_unit_ids = hierarchy::source_unit_ids(&units);
 
     let sigint_units = sigint_unit::Entity::find()
         .filter(sigint_unit::Column::Deleted.eq(false))
@@ -110,7 +111,7 @@ async fn run_import(mode: Mode) -> anyhow::Result<()> {
     if !completed {
         return Ok(());
     }
-    review_stale_units(&db, started_at)
+    review_stale_units(&db, started_at, &snapshot_unit_ids)
         .await
         .context("failed while reviewing stale ORBIT units")?;
     persistence::replace_sigint_unit_links(&db, &sigint_unit_ids_by_orbit_unit)
@@ -577,8 +578,10 @@ async fn apply_import_decision(
 async fn review_stale_units(
     db: &sea_orm::DatabaseConnection,
     started_at: chrono::NaiveDateTime,
+    snapshot_unit_ids: &HashSet<Uuid>,
 ) -> anyhow::Result<()> {
-    let stale = persistence::load_stale(db, started_at).await?;
+    let stale =
+        persistence::load_stale(db, started_at, snapshot_unit_ids).await?;
     if stale.is_empty() {
         return Ok(());
     }

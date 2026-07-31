@@ -14,7 +14,7 @@ use sea_orm::{
     TransactionTrait,
 };
 use serde::Serialize;
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::ops::{Deref, DerefMut};
 use uuid::Uuid;
 
@@ -371,6 +371,7 @@ pub async fn touch_unit(
 pub async fn load_stale(
     db: &DatabaseConnection,
     started_at: NaiveDateTime,
+    snapshot_unit_ids: &HashSet<Uuid>,
 ) -> Result<Vec<ExistingUnit>, AppError> {
     let stale_before =
         started_at - Duration::seconds(ORBIT_STALE_GRACE_SECONDS);
@@ -379,7 +380,10 @@ pub async fn load_stale(
         .filter(orbit_unit::Column::UpdatedAt.lt(stale_before))
         .all(db)
         .await
-        .c(h!())?;
+        .c(h!())?
+        .into_iter()
+        .filter(|unit| !snapshot_unit_ids.contains(&unit.unit_id))
+        .collect();
     attach_groupings(db, units).await
 }
 
@@ -660,6 +664,7 @@ mod tests {
     use crate::types::Mode;
     use chrono::{Timelike, Utc};
     use serde_json::json;
+    use serial_test::serial;
 
     #[test]
     fn classifies_equal_changed_and_deleted_rows() {
@@ -729,6 +734,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial]
     async fn persists_hierarchy_touches_reactivation_and_soft_delete() {
         crate::tests::test::init().await;
         let db = crate::new_pg_pool_from_mode(Mode::Test).await.unwrap();
@@ -803,9 +809,10 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(child_row.updated_at, touched_at);
-        let stale = load_stale(&db, touched_at + Duration::seconds(5))
-            .await
-            .unwrap();
+        let stale =
+            load_stale(&db, touched_at + Duration::seconds(5), &HashSet::new())
+                .await
+                .unwrap();
         assert_eq!(
             stale
                 .into_iter()
@@ -813,6 +820,14 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec![parent.unit_id]
         );
+        let stale = load_stale(
+            &db,
+            touched_at + Duration::seconds(5),
+            &HashSet::from([parent.unit_id]),
+        )
+        .await
+        .unwrap();
+        assert!(stale.is_empty());
 
         let child_row = load_existing(&db)
             .await
@@ -851,6 +866,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial]
     async fn replacing_sigint_link_preserves_other_links() {
         crate::tests::test::init().await;
         let db = crate::new_pg_pool_from_mode(Mode::Test).await.unwrap();

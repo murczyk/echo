@@ -10,6 +10,25 @@ pub struct HierarchyUnit {
     pub partial: bool,
 }
 
+pub fn source_unit_ids(units: &[SourceUnit]) -> HashSet<Uuid> {
+    let mut unit_ids = HashSet::new();
+    for unit in units {
+        collect_source_unit_ids(unit, &mut unit_ids);
+    }
+    unit_ids
+}
+
+fn collect_source_unit_ids(unit: &SourceUnit, unit_ids: &mut HashSet<Uuid>) {
+    unit_ids.insert(unit.unit_id);
+    for parent in unit
+        .generative_parent_units
+        .iter()
+        .chain(&unit.operational_parent_units)
+    {
+        collect_source_unit_ids(parent, unit_ids);
+    }
+}
+
 pub fn build_import_hierarchy(
     units: &[SourceUnit],
     selected_ids: &HashSet<Uuid>,
