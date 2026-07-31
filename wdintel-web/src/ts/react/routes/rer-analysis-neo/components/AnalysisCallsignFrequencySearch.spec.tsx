@@ -106,4 +106,38 @@ describe('AnalysisCallsignFrequencySearch', () => {
     });
     expect(onAddFreq).toHaveBeenCalledWith('456.78');
   });
+
+  it('searches with the original callsign values behind uppercase labels', async () => {
+    const container = document.createElement('div');
+    root = createRoot(container);
+    const onSearch = vi.fn().mockResolvedValue({ frequencies: [] });
+
+    await act(async () => {
+      root?.render(
+        <AnalysisCallsignFrequencySearch
+          callsignOptions={[
+            { value: 'КОМЕТА', label: 'КОМЕТА', count: 4, values: ['комета'] },
+            { value: 'КОТ', label: 'КОТ', count: 3, values: ['кот'] },
+          ]}
+          onAddFreq={vi.fn()}
+          onSearch={onSearch}
+          onToggleFreq={vi.fn()}
+          selectedFreqs={[]}
+        />,
+      );
+    });
+
+    await act(async () => {
+      Array.from(container.querySelectorAll('button'))
+        .find((button) => button.textContent === 'Обрати позивні')
+        ?.click();
+    });
+    await act(async () => {
+      Array.from(container.querySelectorAll('button'))
+        .find((button) => button.textContent?.includes('Знайти'))
+        ?.click();
+    });
+
+    expect(onSearch).toHaveBeenCalledWith(['комета', 'кот'], 2);
+  });
 });
