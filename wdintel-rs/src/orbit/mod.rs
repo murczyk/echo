@@ -76,6 +76,9 @@ pub async fn link_sigint_unit_if_unlinked_with_lock(
     orbit_unit_id: Uuid,
 ) -> Result<(), AppError> {
     let _import_lock = acquire_import_lock(db).await.c(h!())?;
+    if !active_orbit_unit_exists(db, orbit_unit_id).await? {
+        return Err(AppError::NotFound);
+    }
     if sigint_unit_has_active_orbit_link(db, sigint_unit_id).await? {
         return Err(AppError::BL {
             msg: "SIGINT unit already has a linked ORBIT unit".to_string(),
@@ -83,6 +86,21 @@ pub async fn link_sigint_unit_if_unlinked_with_lock(
     }
     persistence::replace_sigint_unit_link(db, sigint_unit_id, orbit_unit_id)
         .await
+}
+
+async fn active_orbit_unit_exists<C>(
+    db: &C,
+    orbit_unit_id: Uuid,
+) -> Result<bool, AppError>
+where
+    C: ConnectionTrait,
+{
+    Ok(orbit_unit::Entity::find_by_id(orbit_unit_id)
+        .filter(orbit_unit::Column::Deleted.eq(false))
+        .one(db)
+        .await
+        .c(h!())?
+        .is_some())
 }
 
 async fn sigint_unit_has_active_orbit_link<C>(

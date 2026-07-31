@@ -11,9 +11,9 @@ use crate::types::{Env, ShortContext};
 use crate::users::{ensure_rer_role, has_role, login_id_from_identity};
 use actix_web::post;
 use actix_web::web::{Data, Json};
+use sea_orm::sea_query::extension::postgres::PgExpr;
+use sea_orm::sea_query::Expr;
 use sea_orm::*;
-use sea_query::extension::postgres::PgExpr;
-use sea_query::Expr;
 use std::collections::HashSet;
 use uuid::Uuid;
 
@@ -207,8 +207,7 @@ pub async fn link_orbit_unit(
         req.sigint_unit_id,
         orbit_unit_id,
     )
-    .await
-    .c(h!())?;
+    .await?;
     Ok(Json(()))
 }
 
