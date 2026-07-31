@@ -14,6 +14,7 @@ SOURCE_TABLE_EXCLUDE_REPO_FILE=$BUNDLE_DIR/env/tables-exclude.txt
 SOURCE_RECONCILE_STATE_DIR=${ECHO_PEERDB_RECONCILE_STATE_DIR:-/var/lib/echo-peerdb}
 SOURCE_RECONCILE_FINGERPRINT_FILE=$SOURCE_RECONCILE_STATE_DIR/table-selection.sha256
 SOURCE_RECONCILE_LOCK_FILE=$SOURCE_RECONCILE_STATE_DIR/table-selection.lock
+SOURCE_RECONCILE_DDL_LOCK_TIMEOUT=2s
 ANALYTICS_HEARTBEAT_SOURCE_SCHEMA=echo_analytics
 ANALYTICS_HEARTBEAT_SOURCE_TABLE=heartbeat
 ANALYTICS_HEARTBEAT_TARGET_TABLE=echo_analytics__heartbeat
@@ -550,7 +551,10 @@ reconcile_source_publication() {
     -q \
     -v ON_ERROR_STOP=1 \
     -v publication="$SOURCE_PUBLICATION" \
-    -v table_list="$table_list" <<'SQL'
+    -v table_list="$table_list" \
+    -v ddl_lock_timeout="$SOURCE_RECONCILE_DDL_LOCK_TIMEOUT" <<'SQL'
+SELECT set_config('lock_timeout', :'ddl_lock_timeout', false);
+
 SELECT CASE
   WHEN EXISTS (SELECT FROM pg_publication WHERE pubname = :'publication')
     THEN format('ALTER PUBLICATION %I SET TABLE %s', :'publication', :'table_list')
@@ -568,7 +572,14 @@ SELECT format(
   publication_table.tablename
 )
 FROM pg_publication_tables publication_table
+JOIN pg_namespace namespace
+  ON namespace.nspname = publication_table.schemaname
+JOIN pg_class relation
+  ON relation.relnamespace = namespace.oid
+  AND relation.relname = publication_table.tablename
 WHERE publication_table.pubname = :'publication'
+  AND relation.relkind IN ('r', 'p')
+  AND relation.relreplident <> 'f'
 \gexec
 SQL
 }

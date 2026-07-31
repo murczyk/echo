@@ -225,6 +225,9 @@ systemd WAL monitor and a one-minute table-selection reconciliation timer.
 After a successful migration, `wdintel-rs-bgworker` also requests the same
 reconciliation asynchronously. New non-excluded tables are therefore added to
 the publication and existing PeerDB mirror without blocking Echo startup.
+Replica-identity reconciliation alters only selected tables that are not
+already `FULL` and uses a two-second DDL lock timeout, so a busy table is
+retried later without queueing application reads behind an exclusive lock.
 Changing the exclusion file remains the explicit day-two operation below;
 rerunning only `source-configure.sh` does not update an existing PeerDB mirror
 mapping.
