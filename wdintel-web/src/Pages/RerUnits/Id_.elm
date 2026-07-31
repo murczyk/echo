@@ -408,21 +408,24 @@ overviewField labelText value =
 
 filesTab : Auth.User -> Shared.Model -> Model -> List B.UnitAttachment -> Html Msg
 filesTab user shared model attachments =
+    let
+        isAdmin =
+            Core.Auth.hasRole "Admin" user
+    in
     div
         [ class "flex flex-col gap-4"
         , attribute "role" "tabpanel"
         ]
-        [ if Core.Auth.hasRole "Admin" user then
-            uploadForm model
+        [ if isAdmin then
+            adminFiles model
 
           else
-            text ""
-        , attachmentsTable shared model attachments
+            attachmentsTable shared model attachments
         ]
 
 
-uploadForm : Model -> Html Msg
-uploadForm model =
+adminFiles : Model -> Html Msg
+adminFiles model =
     case model.unitId of
         Nothing ->
             text ""
@@ -449,7 +452,6 @@ attachmentsTable shared model attachments =
                         [ th [ scope "col" ] [ text "Файл" ]
                         , th [ scope "col" ] [ text "Короткий опис" ]
                         , th [ scope "col" ] [ text "Повний опис" ]
-                        , th [ scope "col" ] [ text "Смуги (AOR)" ]
                         , th [ scope "col", class "text-nowrap" ] [ text "Дата внесення" ]
                         ]
                     ]
@@ -468,10 +470,6 @@ attachmentRow shared model attachment =
         anyDownloadInProgress =
             model.downloadInProgress /= Nothing
 
-        aorNames =
-            attachment.aors
-                |> List.map .name
-                |> String.join "\n"
     in
     tr [ style "height" "96px" ]
         [ td tallCellAttributes
@@ -497,7 +495,6 @@ attachmentRow shared model attachment =
             ]
         , descriptionCell attachment.shortDescription
         , descriptionCell attachment.fullDescription
-        , descriptionCell aorNames
         , td tallCellAttributes
             [ text <|
                 Utils.Time.renderDateTimeF1 shared.timeZone

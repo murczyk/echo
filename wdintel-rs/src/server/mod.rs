@@ -809,6 +809,8 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
                 crate::sigint::unit::attachment::unit_attachment_unit_ids,
             )
             .service(crate::sigint::unit::attachment::upload_unit_attachment)
+            .service(crate::sigint::unit::attachment::update_unit_attachment)
+            .service(crate::sigint::unit::attachment::delete_unit_attachment)
             .service(crate::sigint::unit::attachment::download_unit_attachment)
             .service(crate::sigint::callsign::list_callsigns)
             .service(crate::sigint::callsign::callsign_name_search)

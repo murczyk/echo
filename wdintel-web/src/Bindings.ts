@@ -2183,7 +2183,7 @@ export type UnitAttachment = {
   sizeBytes: number;
   shortDescription: string;
   fullDescription: string;
-  aors: Array<UnitAttachmentAor>;
+  aors: Array<UnitAttachmentAor> | null;
   createdAt: number;
 };
 
@@ -2194,6 +2194,21 @@ export type UnitDetailsRsp = {
 
 export type UnitAttachmentUnitIdsRsp = {
   unitIds: Array<number>;
+};
+
+export type UpdateUnitAttachmentReq = {
+  attachmentId: number;
+  shortDescription: string;
+  fullDescription: string;
+  aorIds: Array<number>;
+};
+
+export type DeleteUnitAttachmentReq = {
+  attachmentId: number;
+};
+
+export type DeleteUnitAttachmentRsp = {
+  attachmentId: number;
 };
 
 export type UnitAttachmentDownloadReq = {

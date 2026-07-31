@@ -5665,7 +5665,7 @@ type alias UnitAttachment =
     , sizeBytes : Int
     , shortDescription : String
     , fullDescription : String
-    , aors : List (UnitAttachmentAor)
+    , aors : Maybe (List (UnitAttachmentAor))
     , createdAt : Int
     }
 
@@ -5680,7 +5680,7 @@ unitAttachmentEncoder struct =
         , ( "size_bytes", (Json.Encode.int) struct.sizeBytes )
         , ( "short_description", (Json.Encode.string) struct.shortDescription )
         , ( "full_description", (Json.Encode.string) struct.fullDescription )
-        , ( "aors", (Json.Encode.list (unitAttachmentAorEncoder)) struct.aors )
+        , ( "aors", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (unitAttachmentAorEncoder))) struct.aors )
         , ( "created_at", (Json.Encode.int) struct.createdAt )
         ]
 
@@ -5708,6 +5708,48 @@ unitAttachmentUnitIdsRspEncoder : UnitAttachmentUnitIdsRsp -> Json.Encode.Value
 unitAttachmentUnitIdsRspEncoder struct =
     Json.Encode.object
         [ ( "unit_ids", (Json.Encode.list (Json.Encode.int)) struct.unitIds )
+        ]
+
+
+type alias UpdateUnitAttachmentReq =
+    { attachmentId : Int
+    , shortDescription : String
+    , fullDescription : String
+    , aorIds : List (Int)
+    }
+
+
+updateUnitAttachmentReqEncoder : UpdateUnitAttachmentReq -> Json.Encode.Value
+updateUnitAttachmentReqEncoder struct =
+    Json.Encode.object
+        [ ( "attachment_id", (Json.Encode.int) struct.attachmentId )
+        , ( "short_description", (Json.Encode.string) struct.shortDescription )
+        , ( "full_description", (Json.Encode.string) struct.fullDescription )
+        , ( "aor_ids", (Json.Encode.list (Json.Encode.int)) struct.aorIds )
+        ]
+
+
+type alias DeleteUnitAttachmentReq =
+    { attachmentId : Int
+    }
+
+
+deleteUnitAttachmentReqEncoder : DeleteUnitAttachmentReq -> Json.Encode.Value
+deleteUnitAttachmentReqEncoder struct =
+    Json.Encode.object
+        [ ( "attachment_id", (Json.Encode.int) struct.attachmentId )
+        ]
+
+
+type alias DeleteUnitAttachmentRsp =
+    { attachmentId : Int
+    }
+
+
+deleteUnitAttachmentRspEncoder : DeleteUnitAttachmentRsp -> Json.Encode.Value
+deleteUnitAttachmentRspEncoder struct =
+    Json.Encode.object
+        [ ( "attachment_id", (Json.Encode.int) struct.attachmentId )
         ]
 
 
@@ -13278,7 +13320,7 @@ unitAttachmentDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "size_bytes" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "short_description" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "full_description" (Json.Decode.string)))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "aors" (Json.Decode.list (unitAttachmentAorDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "aors" (Json.Decode.nullable (Json.Decode.list (unitAttachmentAorDecoder)))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "created_at" (Json.Decode.int)))
 
 
@@ -13293,6 +13335,27 @@ unitAttachmentUnitIdsRspDecoder : Json.Decode.Decoder UnitAttachmentUnitIdsRsp
 unitAttachmentUnitIdsRspDecoder =
     Json.Decode.succeed UnitAttachmentUnitIdsRsp
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unit_ids" (Json.Decode.list (Json.Decode.int))))
+
+
+updateUnitAttachmentReqDecoder : Json.Decode.Decoder UpdateUnitAttachmentReq
+updateUnitAttachmentReqDecoder =
+    Json.Decode.succeed UpdateUnitAttachmentReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "attachment_id" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "short_description" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "full_description" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "aor_ids" (Json.Decode.list (Json.Decode.int))))
+
+
+deleteUnitAttachmentReqDecoder : Json.Decode.Decoder DeleteUnitAttachmentReq
+deleteUnitAttachmentReqDecoder =
+    Json.Decode.succeed DeleteUnitAttachmentReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "attachment_id" (Json.Decode.int)))
+
+
+deleteUnitAttachmentRspDecoder : Json.Decode.Decoder DeleteUnitAttachmentRsp
+deleteUnitAttachmentRspDecoder =
+    Json.Decode.succeed DeleteUnitAttachmentRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "attachment_id" (Json.Decode.int)))
 
 
 unitAttachmentDownloadReqDecoder : Json.Decode.Decoder UnitAttachmentDownloadReq

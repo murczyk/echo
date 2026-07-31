@@ -2,6 +2,8 @@ import type {
   CreateUnitReq,
   CreateUnitWithAutoNetworkReq,
   CreateUnitWithAutoNetworkRsp,
+  DeleteUnitAttachmentReq,
+  DeleteUnitAttachmentRsp,
   DeleteUnitDuplicateReq,
   ListUnitsByIdRsp,
   ListUnitsReq,
@@ -9,9 +11,11 @@ import type {
   Unit,
   UnitAttachment,
   UnitAttachmentUnitIdsRsp,
+  UnitDetailsRsp,
+  UpdateUnitAttachmentReq,
 } from '../../../../Bindings';
 import { emitUnauthorizedEvent } from '../../auth-redirect';
-import { HttpRequestError, postJson } from './client';
+import { HttpRequestError, postBytes, postJson } from './client';
 import type { RequestOptions } from './client';
 import { transformCamelToSnake, transformSnakeToCamel } from '../../../snake-to-camel';
 
@@ -77,6 +81,32 @@ export async function mergeDuplicateUnit(req: DeleteUnitDuplicateReq): Promise<U
 export async function getUnitIdsWithVisibleAttachments(): Promise<number[]> {
   const raw = await postJson<unknown>('/api/sigint/unit/attachment-unit-ids');
   return transformSnakeToCamel<UnitAttachmentUnitIdsRsp>(raw).unitIds;
+}
+
+export async function getUnitDetails(unitId: number): Promise<UnitDetailsRsp> {
+  const raw = await postJson<unknown>('/api/sigint/unit/details', { unit_id: unitId });
+  return transformSnakeToCamel<UnitDetailsRsp>(raw);
+}
+
+export async function updateUnitAttachment(req: UpdateUnitAttachmentReq): Promise<UnitAttachment> {
+  const raw = await postJson<unknown>(
+    '/api/sigint/unit/attachment/update',
+    transformCamelToSnake(req),
+  );
+  return transformSnakeToCamel<UnitAttachment>(raw);
+}
+
+export async function deleteUnitAttachment(attachmentId: number): Promise<number> {
+  const req: DeleteUnitAttachmentReq = { attachmentId };
+  const raw = await postJson<unknown>(
+    '/api/sigint/unit/attachment/delete',
+    transformCamelToSnake(req),
+  );
+  return transformSnakeToCamel<DeleteUnitAttachmentRsp>(raw).attachmentId;
+}
+
+export async function downloadUnitAttachment(attachmentId: number): Promise<Blob> {
+  return postBytes('/api/sigint/unit/attachment/download', { attachment_id: attachmentId });
 }
 
 export type UploadUnitAttachmentParams = {

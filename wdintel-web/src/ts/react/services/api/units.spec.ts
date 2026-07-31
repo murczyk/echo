@@ -3,7 +3,14 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { getUnitIdsWithVisibleAttachments, getUnitsList, uploadUnitAttachment } from './units';
+import {
+  deleteUnitAttachment,
+  getUnitDetails,
+  getUnitIdsWithVisibleAttachments,
+  getUnitsList,
+  updateUnitAttachment,
+  uploadUnitAttachment,
+} from './units';
 
 function jsonResponse(value: unknown): Response {
   return new Response(JSON.stringify(value), {
@@ -51,6 +58,57 @@ describe('units API', () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({ unit_ids: [7, 11] })));
 
     await expect(getUnitIdsWithVisibleAttachments()).resolves.toEqual([7, 11]);
+  });
+
+  it('loads unit details without AOR metadata for non-admins', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        jsonResponse({
+          unit: { id: 7 },
+          attachments: [{ id: 19, unit_id: 7, aors: null }],
+        }),
+      ),
+    );
+
+    await expect(getUnitDetails(7)).resolves.toMatchObject({
+      unit: { id: 7 },
+      attachments: [{ id: 19, unitId: 7, aors: null }],
+    });
+  });
+
+  it('updates and deletes attachment metadata', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        jsonResponse({
+          id: 19,
+          unit_id: 7,
+          short_description: 'Новий короткий опис',
+          full_description: 'Новий повний опис',
+          aors: [{ id: 2, name: 'Смуга 2' }],
+        }),
+      )
+      .mockResolvedValueOnce(jsonResponse({ attachment_id: 19 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(
+      updateUnitAttachment({
+        attachmentId: 19,
+        shortDescription: 'Новий короткий опис',
+        fullDescription: 'Новий повний опис',
+        aorIds: [2],
+      }),
+    ).resolves.toMatchObject({ id: 19, unitId: 7, aors: [{ id: 2, name: 'Смуга 2' }] });
+    await expect(deleteUnitAttachment(19)).resolves.toBe(19);
+
+    expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toMatchObject({
+      attachment_id: 19,
+      short_description: 'Новий короткий опис',
+      full_description: 'Новий повний опис',
+      aor_ids: [2],
+    });
+    expect(JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body))).toEqual({ attachment_id: 19 });
   });
 
   it('uploads a unit attachment as multipart data and normalizes the response', async () => {

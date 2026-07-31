@@ -130,7 +130,7 @@ pub struct UnitAttachment {
     pub size_bytes: i64,
     pub short_description: String,
     pub full_description: String,
-    pub aors: Vec<UnitAttachmentAor>,
+    pub aors: Option<Vec<UnitAttachmentAor>>,
     pub created_at: i64,
 }
 
@@ -147,6 +147,30 @@ pub struct UnitDetailsRsp {
 )]
 pub struct UnitAttachmentUnitIdsRsp {
     pub unit_ids: Vec<i64>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct UpdateUnitAttachmentReq {
+    pub attachment_id: i64,
+    pub short_description: String,
+    pub full_description: String,
+    pub aor_ids: Vec<i64>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct DeleteUnitAttachmentReq {
+    pub attachment_id: i64,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct DeleteUnitAttachmentRsp {
+    pub attachment_id: i64,
 }
 
 #[derive(
