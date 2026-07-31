@@ -160,7 +160,8 @@ const reportTemplateOptions: Array<{ id: ReportTemplateId; title: string; descri
   {
     id: 'report_125',
     title: 'Звіт 1.2.5',
-    description: "Таблиця пеленгів із опційним вказанням об'єктів пеленгації, згідно форми 1.2.5",
+    description:
+      'Таблиця пеленгів із необов’язковим зазначенням об’єктів пеленгації за формою 1.2.5',
   },
   {
     id: 'active_networks',

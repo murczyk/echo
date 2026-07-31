@@ -39,7 +39,7 @@ pub fn parse(body: &str) -> Option<ZpPelengExtendedFormat> {
         )
         .unwrap();
         static ref NETWORK_RE: Regex = Regex::new(
-            r#"^\s*(?P<signal_type>\S+)\s+(?P<unit_name>\S(?:.*\S)?)\s*$"#
+            r#"(?iu)^\s*(?P<signal_type>УКХ|КХ|DMRE?|NFM|AM|TETRA|ЦИФРА)\s+(?P<unit_name>\S(?:.*\S)?)\s*$"#
         )
         .unwrap();
     }
@@ -128,6 +128,13 @@ mod tests {
     #[test]
     fn rejects_message_without_interception() {
         let body = "пост Фокстрот\n446.300 TYT назва: ретранслятор\nр-н Верхній Рогачик\n37U DR 25041 12982\nУКХ радіомережа ППО\n23:59 31.07.2026";
+
+        assert!(parse(body).is_none());
+    }
+
+    #[test]
+    fn rejects_message_without_network_line() {
+        let body = "пост Фокстрот\n446.300 TYT назва: ретранслятор\nр-н Верхній Рогачик\n37U DR 25041 12982\n— Кольцо 22, я техас, прием.\n— Прийняв.\n23:59 31.07.2026";
 
         assert!(parse(body).is_none());
     }
