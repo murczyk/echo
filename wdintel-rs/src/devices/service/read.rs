@@ -4,13 +4,12 @@ use super::{
     DeviceUnitStat, ListDevicesCommand, ListDevicesResult,
 };
 use crate::config::DEVICE_SOURCE_LABEL_MAX_CHARS;
-use crate::devices::access::DeviceActor;
 use crate::devices::custom_fields::custom_fields_from_json;
 use crate::devices::main_db::MainDb;
 use crate::devices::validation::normalize_device_list_pagination;
-use crate::devices::visibility::{DeviceReadScope, DeviceVisibility};
+use crate::devices::visibility::{self, DeviceReadScope};
 use crate::entities::{
-    area_of_responsibility, device, device_aor, sigint_unit,
+    area_of_responsibility, device, device_aor, login, sigint_unit,
 };
 use crate::error::AppError;
 use crate::h;
@@ -27,12 +26,12 @@ use sea_orm::{
 impl DeviceService {
     pub(in crate::devices) async fn read(
         main_db: &MainDb<'_, DatabaseConnection>,
-        actor: &DeviceActor,
+        login: &login::Model,
         device_id: Uuid,
         scope: DeviceReadScope,
     ) -> Result<DeviceCurrentState, AppError> {
         let device =
-            DeviceVisibility::find_for_read(main_db, actor, device_id, scope)
+            visibility::find_visible_device(main_db, login, device_id, scope)
                 .await?;
         let mut devices = hydrate_devices(main_db, vec![device]).await?;
         Ok(devices
@@ -43,12 +42,15 @@ impl DeviceService {
 
     pub(in crate::devices) async fn list(
         main_db: &MainDb<'_, DatabaseConnection>,
-        actor: &DeviceActor,
+        login: &login::Model,
         command: ListDevicesCommand,
     ) -> Result<ListDevicesResult, AppError> {
         let command = normalize_list_command(command)?;
         let query = apply_list_filters(
-            DeviceVisibility::query(actor, DeviceReadScope::IncludeArchived)?,
+            visibility::visible_devices_query(
+                login,
+                DeviceReadScope::IncludeArchived,
+            )?,
             &command,
         );
         let status_counts = load_status_counts(main_db, query.clone()).await?;
@@ -74,43 +76,45 @@ impl DeviceService {
 
     pub(in crate::devices) async fn unit_stats(
         main_db: &MainDb<'_, DatabaseConnection>,
-        actor: &DeviceActor,
+        login: &login::Model,
     ) -> Result<Vec<DeviceUnitStat>, AppError> {
-        let units =
-            DeviceVisibility::query(actor, DeviceReadScope::ActiveOnly)?
-                .join(JoinType::InnerJoin, device::Relation::SigintUnit.def())
-                .filter(sigint_unit::Column::Active.eq(true))
-                .filter(sigint_unit::Column::Deleted.eq(false))
-                .select_only()
-                .column_as(sigint_unit::Column::Id, "unit_id")
-                .column_as(sigint_unit::Column::Name, "unit_name")
-                .column_as(device::Column::Id.count(), "count")
-                .group_by(sigint_unit::Column::Id)
-                .group_by(sigint_unit::Column::Name)
-                .group_by(sigint_unit::Column::Army)
-                .group_by(sigint_unit::Column::Division)
-                .group_by(sigint_unit::Column::Regiment)
-                .group_by(sigint_unit::Column::Battalion)
-                .group_by(sigint_unit::Column::Company)
-                .order_by_asc(sigint_unit::Column::Army)
-                .order_by_asc(sigint_unit::Column::Division)
-                .order_by_asc(sigint_unit::Column::Regiment)
-                .order_by_asc(sigint_unit::Column::Battalion)
-                .order_by_asc(sigint_unit::Column::Company)
-                .order_by_asc(sigint_unit::Column::Id)
-                .into_model::<DeviceUnitStatRow>()
-                .all(main_db.connection())
-                .await
-                .c(h!())?
-                .into_iter()
-                .map(|row| DeviceUnitStat {
-                    unit: DeviceUnitReference {
-                        id: row.unit_id,
-                        name: row.unit_name,
-                    },
-                    count: row.count,
-                })
-                .collect();
+        let units = visibility::visible_devices_query(
+            login,
+            DeviceReadScope::ActiveOnly,
+        )?
+        .join(JoinType::InnerJoin, device::Relation::SigintUnit.def())
+        .filter(sigint_unit::Column::Active.eq(true))
+        .filter(sigint_unit::Column::Deleted.eq(false))
+        .select_only()
+        .column_as(sigint_unit::Column::Id, "unit_id")
+        .column_as(sigint_unit::Column::Name, "unit_name")
+        .column_as(device::Column::Id.count(), "count")
+        .group_by(sigint_unit::Column::Id)
+        .group_by(sigint_unit::Column::Name)
+        .group_by(sigint_unit::Column::Army)
+        .group_by(sigint_unit::Column::Division)
+        .group_by(sigint_unit::Column::Regiment)
+        .group_by(sigint_unit::Column::Battalion)
+        .group_by(sigint_unit::Column::Company)
+        .order_by_asc(sigint_unit::Column::Army)
+        .order_by_asc(sigint_unit::Column::Division)
+        .order_by_asc(sigint_unit::Column::Regiment)
+        .order_by_asc(sigint_unit::Column::Battalion)
+        .order_by_asc(sigint_unit::Column::Company)
+        .order_by_asc(sigint_unit::Column::Id)
+        .into_model::<DeviceUnitStatRow>()
+        .all(main_db.connection())
+        .await
+        .c(h!())?
+        .into_iter()
+        .map(|row| DeviceUnitStat {
+            unit: DeviceUnitReference {
+                id: row.unit_id,
+                name: row.unit_name,
+            },
+            count: row.count,
+        })
+        .collect();
         Ok(units)
     }
 }

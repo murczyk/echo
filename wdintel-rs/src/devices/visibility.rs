@@ -1,6 +1,6 @@
-use super::access::DeviceActor;
+use super::access;
 use super::main_db::MainDb;
-use crate::entities::{device, organism};
+use crate::entities::{device, login, organism};
 use crate::error::AppError;
 use crate::h;
 use crate::types::ShortContext;
@@ -25,107 +25,105 @@ pub(in crate::devices) enum FileRegistryDeviceAccess {
     SourceWrite,
 }
 
-pub(in crate::devices) struct DeviceVisibility;
+pub(in crate::devices) fn visible_devices_query(
+    login: &login::Model,
+    scope: DeviceReadScope,
+) -> Result<Select<device::Entity>, AppError> {
+    access::require_read(&login.roles)?;
+    let organism_id = access::organism_id(login)?;
 
-impl DeviceVisibility {
-    pub(in crate::devices) fn query(
-        actor: &DeviceActor,
-        scope: DeviceReadScope,
-    ) -> Result<Select<device::Entity>, AppError> {
-        actor.require_read()?;
-
-        let query = device::Entity::find().filter(
-            device::Column::OrganismId
-                .in_subquery(visible_organism_ids_query(actor.organism_id())),
-        );
-        match scope {
-            DeviceReadScope::ActiveOnly => {
-                Ok(query.filter(device::Column::Archived.eq(false)))
-            }
-            DeviceReadScope::IncludeArchived => Ok(query),
+    let query = device::Entity::find().filter(
+        device::Column::OrganismId
+            .in_subquery(visible_organism_ids_query(organism_id)),
+    );
+    match scope {
+        DeviceReadScope::ActiveOnly => {
+            Ok(query.filter(device::Column::Archived.eq(false)))
         }
+        DeviceReadScope::IncludeArchived => Ok(query),
     }
+}
 
-    pub(in crate::devices) async fn find_for_read<C>(
-        main_db: &MainDb<'_, C>,
-        actor: &DeviceActor,
-        device_id: Uuid,
-        scope: DeviceReadScope,
-    ) -> Result<device::Model, AppError>
-    where
-        C: ConnectionTrait,
-    {
-        Self::query(actor, scope)?
-            .filter(device::Column::Id.eq(device_id))
-            .one(main_db.connection())
-            .await
-            .c(h!())?
-            .ok_or(AppError::NotFound)
+pub(in crate::devices) async fn find_visible_device<C>(
+    main_db: &MainDb<'_, C>,
+    login: &login::Model,
+    device_id: Uuid,
+    scope: DeviceReadScope,
+) -> Result<device::Model, AppError>
+where
+    C: ConnectionTrait,
+{
+    visible_devices_query(login, scope)?
+        .filter(device::Column::Id.eq(device_id))
+        .one(main_db.connection())
+        .await
+        .c(h!())?
+        .ok_or(AppError::NotFound)
+}
+
+pub(in crate::devices) async fn find_active_visible_device<C>(
+    main_db: &MainDb<'_, C>,
+    login: &login::Model,
+    device_id: Uuid,
+) -> Result<device::Model, AppError>
+where
+    C: ConnectionTrait,
+{
+    let device = find_visible_device(
+        main_db,
+        login,
+        device_id,
+        DeviceReadScope::IncludeArchived,
+    )
+    .await?;
+    if device.archived {
+        return Err(archived_device_error());
     }
+    Ok(device)
+}
 
-    pub(in crate::devices) async fn find_active_for_write<C>(
-        main_db: &MainDb<'_, C>,
-        actor: &DeviceActor,
-        device_id: Uuid,
-    ) -> Result<device::Model, AppError>
-    where
-        C: ConnectionTrait,
-    {
-        let device = Self::find_for_read(
-            main_db,
-            actor,
-            device_id,
-            DeviceReadScope::IncludeArchived,
-        )
-        .await?;
-        if device.archived {
-            return Err(archived_device_error());
-        }
-        Ok(device)
-    }
-
-    pub(in crate::devices) async fn find_active_for_update(
-        main_db: &MainDb<'_, DatabaseTransaction>,
-        actor: &DeviceActor,
-        device_id: Uuid,
-    ) -> Result<device::Model, AppError> {
-        let device = Self::query(actor, DeviceReadScope::IncludeArchived)?
+pub(in crate::devices) async fn lock_active_visible_device(
+    main_db: &MainDb<'_, DatabaseTransaction>,
+    login: &login::Model,
+    device_id: Uuid,
+) -> Result<device::Model, AppError> {
+    let device =
+        visible_devices_query(login, DeviceReadScope::IncludeArchived)?
             .filter(device::Column::Id.eq(device_id))
             .lock_exclusive()
             .one(main_db.connection())
             .await
             .c(h!())?
             .ok_or(AppError::NotFound)?;
-        if device.archived {
-            return Err(archived_device_error());
+    if device.archived {
+        return Err(archived_device_error());
+    }
+    Ok(device)
+}
+
+pub(in crate::devices) async fn authorize_file_registry_access(
+    main_db: MainDb<'_, DatabaseConnection>,
+    login: &login::Model,
+    device_id: Uuid,
+    access_kind: FileRegistryDeviceAccess,
+) -> Result<Uuid, AppError> {
+    match access_kind {
+        FileRegistryDeviceAccess::Read => {
+            find_visible_device(
+                &main_db,
+                login,
+                device_id,
+                DeviceReadScope::IncludeArchived,
+            )
+            .await?;
         }
-        Ok(device)
+        FileRegistryDeviceAccess::SourceWrite => {
+            access::require_source_write(&login.roles)?;
+            find_active_visible_device(&main_db, login, device_id).await?;
+        }
     }
 
-    pub(in crate::devices) async fn verify_file_registry_access(
-        main_db: MainDb<'_, DatabaseConnection>,
-        actor: &DeviceActor,
-        device_id: Uuid,
-        access: FileRegistryDeviceAccess,
-    ) -> Result<Uuid, AppError> {
-        match access {
-            FileRegistryDeviceAccess::Read => {
-                Self::find_for_read(
-                    &main_db,
-                    actor,
-                    device_id,
-                    DeviceReadScope::IncludeArchived,
-                )
-                .await?;
-            }
-            FileRegistryDeviceAccess::SourceWrite => {
-                actor.require_source_write()?;
-                Self::find_active_for_write(&main_db, actor, device_id).await?;
-            }
-        }
-
-        Ok(device_id)
-    }
+    Ok(device_id)
 }
 
 fn visible_organism_ids_query(organism_id: i64) -> SelectStatement {
@@ -201,12 +199,8 @@ mod tests {
         .unwrap();
     }
 
-    fn actor(login: &str, organism_id: i64, roles: &[&str]) -> DeviceActor {
-        crate::devices::access::test_support::device_actor(
-            login,
-            organism_id,
-            roles,
-        )
+    fn login_with_roles(login: &login::Model, roles: &[&str]) -> login::Model {
+        access::login_with_roles(login, roles)
     }
 
     async fn insert_login(
@@ -328,12 +322,12 @@ mod tests {
             false,
         )
         .await;
-        let actor = actor(&reader.login, reader_organism.id, &[ROLE_CYBER]);
+        let actor = login_with_roles(&reader, &[ROLE_CYBER]);
         let main_db = MainDb::new(&env.dbx);
 
         assert_ne!(active.created_by, reader.login);
         assert_eq!(
-            DeviceVisibility::find_for_read(
+            find_visible_device(
                 &main_db,
                 &actor,
                 active.id,
@@ -345,7 +339,7 @@ mod tests {
             active.id,
         );
         assert_eq!(
-            DeviceVisibility::find_for_read(
+            find_visible_device(
                 &main_db,
                 &actor,
                 archived.id,
@@ -358,7 +352,7 @@ mod tests {
         );
 
         assert_not_found(
-            DeviceVisibility::find_for_read(
+            find_visible_device(
                 &main_db,
                 &actor,
                 archived.id,
@@ -367,7 +361,7 @@ mod tests {
             .await,
         );
         assert_not_found(
-            DeviceVisibility::find_for_read(
+            find_visible_device(
                 &main_db,
                 &actor,
                 other_device.id,
@@ -376,7 +370,7 @@ mod tests {
             .await,
         );
         assert_not_found(
-            DeviceVisibility::find_for_read(
+            find_visible_device(
                 &main_db,
                 &actor,
                 Uuid::now_v7(),
@@ -385,7 +379,7 @@ mod tests {
             .await,
         );
         assert_eq!(
-            DeviceVisibility::verify_file_registry_access(
+            authorize_file_registry_access(
                 MainDb::new(&env.dbx),
                 &actor,
                 archived.id,
@@ -396,7 +390,7 @@ mod tests {
             archived.id,
         );
         assert!(matches!(
-            DeviceVisibility::verify_file_registry_access(
+            authorize_file_registry_access(
                 MainDb::new(&env.dbx),
                 &actor,
                 other_device.id,
@@ -445,9 +439,9 @@ mod tests {
         )
         .await;
 
-        let root_actor = actor("root-reader", root.id, &[ROLE_CYBER]);
-        let child_actor = actor("child-reader", child.id, &[ROLE_CYBER]);
-        let root_visible_ids = DeviceVisibility::query(
+        let root_actor = login_with_roles(&root_owner, &[ROLE_CYBER]);
+        let child_actor = login_with_roles(&child_owner, &[ROLE_CYBER]);
+        let root_visible_ids = visible_devices_query(
             &root_actor,
             DeviceReadScope::IncludeArchived,
         )
@@ -468,7 +462,7 @@ mod tests {
             ]),
         );
 
-        let child_visible_ids = DeviceVisibility::query(
+        let child_visible_ids = visible_devices_query(
             &child_actor,
             DeviceReadScope::IncludeArchived,
         )
@@ -486,7 +480,7 @@ mod tests {
         assert!(!root_visible_ids.contains(&unrelated_device.id));
 
         assert_eq!(
-            DeviceVisibility::verify_file_registry_access(
+            authorize_file_registry_access(
                 MainDb::new(&env.dbx),
                 &root_actor,
                 grandchild_device.id,
@@ -497,7 +491,7 @@ mod tests {
             grandchild_device.id,
         );
         assert_not_found(
-            DeviceVisibility::find_for_read(
+            find_visible_device(
                 &MainDb::new(&env.dbx),
                 &child_actor,
                 root_device.id,
@@ -519,25 +513,25 @@ mod tests {
             insert_device(&env.dbx, &owner.login, organism.id, false).await;
         let archived =
             insert_device(&env.dbx, &owner.login, organism.id, true).await;
-        let cyber = actor("cyber", organism.id, &[ROLE_CYBER]);
-        let source = actor("source", organism.id, &[ROLE_DEVICE_SOURCE]);
-        let analyst = actor("analyst", organism.id, &[ROLE_DEVICE_ANALYST]);
+        let cyber = login_with_roles(&owner, &[ROLE_CYBER]);
+        let source = login_with_roles(&owner, &[ROLE_DEVICE_SOURCE]);
+        let analyst = login_with_roles(&owner, &[ROLE_DEVICE_ANALYST]);
 
         assert_device_operation_forbidden(
-            cyber.require_source_write().unwrap_err(),
+            access::require_source_write(&cyber.roles).unwrap_err(),
         );
         assert_device_operation_forbidden(
-            cyber.require_analytical_write().unwrap_err(),
+            access::require_analytical_write(&cyber.roles).unwrap_err(),
         );
-        source.require_source_write().unwrap();
+        access::require_source_write(&source.roles).unwrap();
         assert_device_operation_forbidden(
-            source.require_analytical_write().unwrap_err(),
+            access::require_analytical_write(&source.roles).unwrap_err(),
         );
-        analyst.require_source_write().unwrap();
-        analyst.require_analytical_write().unwrap();
+        access::require_source_write(&analyst.roles).unwrap();
+        access::require_analytical_write(&analyst.roles).unwrap();
 
         assert_device_operation_forbidden(
-            DeviceVisibility::verify_file_registry_access(
+            authorize_file_registry_access(
                 MainDb::new(&env.dbx),
                 &cyber,
                 active.id,
@@ -547,7 +541,7 @@ mod tests {
             .unwrap_err(),
         );
         assert_eq!(
-            DeviceVisibility::verify_file_registry_access(
+            authorize_file_registry_access(
                 MainDb::new(&env.dbx),
                 &source,
                 active.id,
@@ -560,18 +554,14 @@ mod tests {
 
         let main_db = MainDb::new(&env.dbx);
         assert_archived_device_error(
-            DeviceVisibility::find_active_for_write(
-                &main_db,
-                &source,
-                archived.id,
-            )
-            .await
-            .unwrap_err(),
+            find_active_visible_device(&main_db, &source, archived.id)
+                .await
+                .unwrap_err(),
         );
 
         let transaction = env.dbx.begin().await.unwrap();
         assert_eq!(
-            DeviceVisibility::find_active_for_update(
+            lock_active_visible_device(
                 &MainDb::new(&transaction),
                 &analyst,
                 active.id,
@@ -593,7 +583,7 @@ mod tests {
         let owner = insert_login(&env.dbx, organism.id, &[]).await;
         let device =
             insert_device(&env.dbx, &owner.login, organism.id, false).await;
-        let actor = actor("source", organism.id, &[ROLE_DEVICE_SOURCE]);
+        let actor = login_with_roles(&owner, &[ROLE_DEVICE_SOURCE]);
         let main_pool =
             crate::new_pg_pool_from_conn_string_with_max_connections(
                 crate::mk_conn_string(&env.config),
@@ -602,7 +592,7 @@ mod tests {
             .await
             .unwrap();
 
-        let verified_device_id = DeviceVisibility::verify_file_registry_access(
+        let verified_device_id = authorize_file_registry_access(
             MainDb::new(&main_pool),
             &actor,
             device.id,

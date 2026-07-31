@@ -11,7 +11,7 @@ use super::types::{
     ListDeviceFileRootsRsp, PathSyntax, RequiredPatch, SearchDeviceFilesReq,
     SearchDeviceFilesRsp, SyncDeviceFilesReq, SyncDeviceFilesRsp,
 };
-use crate::devices::access::DeviceActorResolver;
+use crate::devices::access;
 use crate::devices::filesystem::{
     BrowseFilesCommand, FileEntryKind as DomainFileEntryKind,
     FileMetadataService, JournalFilesCommand, PathSyntax as DomainPathSyntax,
@@ -33,11 +33,11 @@ pub(in crate::devices) async fn roots(
     Json(body): Json<ListDeviceFileRootsReq>,
 ) -> Result<Json<ListDeviceFileRootsRsp>, AppError> {
     let main_db = MainDb::new(&env.dbx);
-    let actor = DeviceActorResolver::resolve(&main_db, &user).await?;
+    let login = access::resolve_current_login(&main_db, &user).await?;
     let roots = FileMetadataService::list_roots(
         main_db,
         &env.file_registry_db,
-        &actor,
+        &login,
         parse_uuid(&body.device_id),
     )
     .await?;
@@ -50,11 +50,11 @@ pub(in crate::devices) async fn subtree_counts(
     Json(body): Json<CountDeviceFileSubtreesReq>,
 ) -> Result<Json<CountDeviceFileSubtreesRsp>, AppError> {
     let main_db = MainDb::new(&env.dbx);
-    let actor = DeviceActorResolver::resolve(&main_db, &user).await?;
+    let login = access::resolve_current_login(&main_db, &user).await?;
     let counts = FileMetadataService::count_subtrees(
         main_db,
         &env.file_registry_db,
-        &actor,
+        &login,
         SubtreeFileCountsCommand {
             device_id: parse_uuid(&body.device_id),
             parent_entry_id: body.parent_entry_id.as_deref().map(parse_uuid),
@@ -76,11 +76,11 @@ pub(in crate::devices) async fn browse(
     Json(body): Json<BrowseDeviceFilesReq>,
 ) -> Result<Json<BrowseDeviceFilesRsp>, AppError> {
     let main_db = MainDb::new(&env.dbx);
-    let actor = DeviceActorResolver::resolve(&main_db, &user).await?;
+    let login = access::resolve_current_login(&main_db, &user).await?;
     let result = FileMetadataService::browse(
         main_db,
         &env.file_registry_db,
-        &actor,
+        &login,
         BrowseFilesCommand {
             device_id: parse_uuid(&body.device_id),
             parent_entry_id: parse_uuid(&body.parent_entry_id),
@@ -100,11 +100,11 @@ pub(in crate::devices) async fn search(
     Json(body): Json<SearchDeviceFilesReq>,
 ) -> Result<Json<SearchDeviceFilesRsp>, AppError> {
     let main_db = MainDb::new(&env.dbx);
-    let actor = DeviceActorResolver::resolve(&main_db, &user).await?;
+    let login = access::resolve_current_login(&main_db, &user).await?;
     let result = FileMetadataService::search(
         main_db,
         &env.file_registry_db,
-        &actor,
+        &login,
         SearchFilesCommand {
             device_id: parse_uuid(&body.device_id),
             scope_entry_id: parse_uuid(&body.scope_entry_id),
@@ -142,11 +142,11 @@ pub(in crate::devices) async fn journal(
     Json(body): Json<JournalDeviceFilesReq>,
 ) -> Result<Json<JournalDeviceFilesRsp>, AppError> {
     let main_db = MainDb::new(&env.dbx);
-    let actor = DeviceActorResolver::resolve(&main_db, &user).await?;
+    let login = access::resolve_current_login(&main_db, &user).await?;
     let result = FileMetadataService::journal(
         main_db,
         &env.file_registry_db,
-        &actor,
+        &login,
         JournalFilesCommand {
             device_id: parse_uuid(&body.device_id),
             limit: body.limit,
@@ -182,11 +182,11 @@ async fn sync_files(
     body: SyncDeviceFilesReq,
 ) -> Result<SyncFilesResult, AppError> {
     let main_db = MainDb::new(&env.dbx);
-    let actor = DeviceActorResolver::resolve(&main_db, user).await?;
+    let login = access::resolve_current_login(&main_db, user).await?;
     FileMetadataService::sync(
         main_db,
         &env.file_registry_db,
-        &actor,
+        &login,
         SyncFilesCommand {
             device_id: parse_uuid(&body.device_id),
             path_syntax: map_path_syntax(body.path_syntax),

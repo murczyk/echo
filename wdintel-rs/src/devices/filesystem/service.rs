@@ -11,9 +11,10 @@ use super::{
     SubtreeFileCount, SubtreeFileCountsCommand, SyncFilesCommand,
     SyncFilesResult,
 };
-use crate::devices::access::DeviceActor;
+use crate::devices::access;
 use crate::devices::main_db::MainDb;
-use crate::devices::visibility::{DeviceVisibility, FileRegistryDeviceAccess};
+use crate::devices::visibility::{self, FileRegistryDeviceAccess};
+use crate::entities::login;
 use crate::error::AppError;
 use crate::file_registry::FileRegistryDb;
 use sea_orm::DatabaseConnection;
@@ -25,12 +26,12 @@ impl FileMetadataService {
     pub(in crate::devices) async fn list_roots(
         main_db: MainDb<'_, DatabaseConnection>,
         file_registry_db: &FileRegistryDb,
-        actor: &DeviceActor,
+        login: &login::Model,
         device_id: Uuid,
     ) -> Result<Vec<RootEntry>, AppError> {
-        let device_id = DeviceVisibility::verify_file_registry_access(
+        let device_id = visibility::authorize_file_registry_access(
             main_db,
-            actor,
+            login,
             device_id,
             FileRegistryDeviceAccess::Read,
         )
@@ -44,7 +45,7 @@ impl FileMetadataService {
     pub(in crate::devices) async fn count_subtrees(
         main_db: MainDb<'_, DatabaseConnection>,
         file_registry_db: &FileRegistryDb,
-        actor: &DeviceActor,
+        login: &login::Model,
         command: SubtreeFileCountsCommand,
     ) -> Result<Vec<SubtreeFileCount>, AppError> {
         let SubtreeFileCountsCommand {
@@ -52,9 +53,9 @@ impl FileMetadataService {
             parent_entry_id,
             directory_entry_ids,
         } = command;
-        let device_id = DeviceVisibility::verify_file_registry_access(
+        let device_id = visibility::authorize_file_registry_access(
             main_db,
-            actor,
+            login,
             device_id,
             FileRegistryDeviceAccess::Read,
         )
@@ -75,7 +76,7 @@ impl FileMetadataService {
     pub(in crate::devices) async fn journal(
         main_db: MainDb<'_, DatabaseConnection>,
         file_registry_db: &FileRegistryDb,
-        actor: &DeviceActor,
+        login: &login::Model,
         command: JournalFilesCommand,
     ) -> Result<JournalFilesResult, AppError> {
         let JournalFilesCommand {
@@ -83,9 +84,9 @@ impl FileMetadataService {
             limit,
             cursor,
         } = command;
-        let device_id = DeviceVisibility::verify_file_registry_access(
+        let device_id = visibility::authorize_file_registry_access(
             main_db,
-            actor,
+            login,
             device_id,
             FileRegistryDeviceAccess::Read,
         )
@@ -126,7 +127,7 @@ impl FileMetadataService {
     pub(in crate::devices) async fn browse(
         main_db: MainDb<'_, DatabaseConnection>,
         file_registry_db: &FileRegistryDb,
-        actor: &DeviceActor,
+        login: &login::Model,
         command: BrowseFilesCommand,
     ) -> Result<BrowseFilesResult, AppError> {
         let BrowseFilesCommand {
@@ -136,9 +137,9 @@ impl FileMetadataService {
             limit,
             cursor,
         } = command;
-        let device_id = DeviceVisibility::verify_file_registry_access(
+        let device_id = visibility::authorize_file_registry_access(
             main_db,
-            actor,
+            login,
             device_id,
             FileRegistryDeviceAccess::Read,
         )
@@ -197,7 +198,7 @@ impl FileMetadataService {
     pub(in crate::devices) async fn search(
         main_db: MainDb<'_, DatabaseConnection>,
         file_registry_db: &FileRegistryDb,
-        actor: &DeviceActor,
+        login: &login::Model,
         command: SearchFilesCommand,
     ) -> Result<SearchFilesResult, AppError> {
         let SearchFilesCommand {
@@ -207,9 +208,9 @@ impl FileMetadataService {
             limit,
             cursor,
         } = command;
-        let device_id = DeviceVisibility::verify_file_registry_access(
+        let device_id = visibility::authorize_file_registry_access(
             main_db,
-            actor,
+            login,
             device_id,
             FileRegistryDeviceAccess::Read,
         )
@@ -258,10 +259,10 @@ impl FileMetadataService {
     pub(in crate::devices) async fn sync(
         main_db: MainDb<'_, DatabaseConnection>,
         file_registry_db: &FileRegistryDb,
-        actor: &DeviceActor,
+        login: &login::Model,
         command: SyncFilesCommand,
     ) -> Result<SyncFilesResult, AppError> {
-        actor.require_source_write()?;
+        access::require_source_write(&login.roles)?;
         validate_sync_batch_size(command.files.len())
             .map_err(map_sync_error)?;
         let duplicate_file_ids = duplicate_file_ids(&command.files);
@@ -270,9 +271,9 @@ impl FileMetadataService {
             path_syntax,
             files,
         } = command;
-        let device_id = DeviceVisibility::verify_file_registry_access(
+        let device_id = visibility::authorize_file_registry_access(
             main_db,
-            actor,
+            login,
             device_id,
             FileRegistryDeviceAccess::SourceWrite,
         )

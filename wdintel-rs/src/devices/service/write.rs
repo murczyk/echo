@@ -3,7 +3,7 @@ use super::{
     CreateDeviceCommand, DeviceCurrentState, DevicePatchField, DeviceService,
     UpdateDeviceCommand,
 };
-use crate::devices::access::DeviceActor;
+use crate::devices::access;
 use crate::devices::custom_fields::{
     apply_custom_fields_patch, custom_fields_from_json, custom_fields_to_json,
 };
@@ -14,9 +14,9 @@ use crate::devices::validation::{
     normalize_source_label, normalize_unique_aor_ids,
     validate_custom_fields_count,
 };
-use crate::devices::visibility::DeviceVisibility;
+use crate::devices::visibility;
 use crate::entities::{
-    area_of_responsibility, device, device_aor, sigint_unit,
+    area_of_responsibility, device, device_aor, login, sigint_unit,
 };
 use crate::error::AppError;
 use crate::h;
@@ -30,10 +30,10 @@ use sea_orm::{
 impl DeviceService {
     pub(in crate::devices) async fn create(
         main_db: &MainDb<'_, DatabaseConnection>,
-        actor: &DeviceActor,
+        login: &login::Model,
         command: CreateDeviceCommand,
     ) -> Result<DeviceCurrentState, AppError> {
-        actor.require_source_write()?;
+        access::require_source_write(&login.roles)?;
 
         let CreateDeviceCommand {
             source_label,
@@ -56,8 +56,8 @@ impl DeviceService {
                 id: Set(device_id),
                 source_label: Set(source_label),
                 name: Set(None),
-                created_by: Set(actor.login().to_string()),
-                organism_id: Set(actor.organism_id()),
+                created_by: Set(login.login.clone()),
+                organism_id: Set(access::organism_id(login)?),
                 unit_id: Set(None),
                 tags: Set(serde_json::json!([])),
                 external_url: Set(external_url),
@@ -87,11 +87,11 @@ impl DeviceService {
 impl DeviceService {
     pub(in crate::devices) async fn update(
         main_db: &MainDb<'_, DatabaseConnection>,
-        actor: &DeviceActor,
+        login: &login::Model,
         command: UpdateDeviceCommand,
     ) -> Result<DeviceCurrentState, AppError> {
         let field_groups = command.field_groups();
-        actor.require_field_groups(field_groups)?;
+        access::require_field_groups(&login.roles, field_groups)?;
         if command.is_structurally_empty() {
             return Err(empty_patch_error());
         }
@@ -100,9 +100,9 @@ impl DeviceService {
         let transaction = main_db.connection().begin().await.c(h!())?;
         let state = {
             let transaction_db = MainDb::new(&transaction);
-            let device = DeviceVisibility::find_active_for_update(
+            let device = visibility::lock_active_visible_device(
                 &transaction_db,
-                actor,
+                login,
                 command.device_id,
             )
             .await?;

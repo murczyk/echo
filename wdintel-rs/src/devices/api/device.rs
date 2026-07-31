@@ -6,7 +6,7 @@ use super::types::{
     DeviceDetails, DeviceListSortBy, DeviceUnitStatsRsp, ListDevicesReq,
     ListDevicesRsp, NullablePatch, RequiredPatch, UpdateDeviceReq,
 };
-use crate::devices::access::DeviceActorResolver;
+use crate::devices::access;
 use crate::devices::main_db::MainDb;
 use crate::devices::service::{
     CreateDeviceCommand, DeviceArchivedScope, DeviceListSort, DevicePatchField,
@@ -49,8 +49,8 @@ pub(in crate::devices) async fn list(
         sort_by: body.sort_by.into_iter().map(map_list_sort).collect(),
     };
     let main_db = MainDb::new(&env.dbx);
-    let actor = DeviceActorResolver::resolve(&main_db, &user).await?;
-    let result = DeviceService::list(&main_db, &actor, command).await?;
+    let login = access::resolve_current_login(&main_db, &user).await?;
+    let result = DeviceService::list(&main_db, &login, command).await?;
     Ok(Json(map_device_list(result)))
 }
 
@@ -60,8 +60,8 @@ pub(in crate::devices) async fn unit_stats(
     user: Identity,
 ) -> Result<Json<DeviceUnitStatsRsp>, AppError> {
     let main_db = MainDb::new(&env.dbx);
-    let actor = DeviceActorResolver::resolve(&main_db, &user).await?;
-    let result = DeviceService::unit_stats(&main_db, &actor).await?;
+    let login = access::resolve_current_login(&main_db, &user).await?;
+    let result = DeviceService::unit_stats(&main_db, &login).await?;
     Ok(Json(map_device_unit_stats(result)))
 }
 
@@ -71,8 +71,8 @@ pub(in crate::devices) async fn aors(
     user: Identity,
 ) -> Result<Json<Vec<AreaOfResponsibility>>, AppError> {
     let main_db = MainDb::new(&env.dbx);
-    let actor = DeviceActorResolver::resolve(&main_db, &user).await?;
-    actor.require_analytical_write()?;
+    let login = access::resolve_current_login(&main_db, &user).await?;
+    access::require_analytical_write(&login.roles)?;
     let req = ListAreasOfResponsibilityReq { sort_by: None };
     Ok(Json(crate::sigint::aor::read_aors(&env.dbx, &req).await?))
 }
@@ -83,8 +83,8 @@ pub(in crate::devices) async fn units(
     user: Identity,
 ) -> Result<Json<ListUnitsRsp>, AppError> {
     let main_db = MainDb::new(&env.dbx);
-    let actor = DeviceActorResolver::resolve(&main_db, &user).await?;
-    actor.require_analytical_write()?;
+    let login = access::resolve_current_login(&main_db, &user).await?;
+    access::require_analytical_write(&login.roles)?;
     let req = ListUnitsReq {
         sort_by: None,
         after_unit_id: None,
@@ -105,10 +105,10 @@ pub(in crate::devices) async fn detail(
         DeviceReadScope::ActiveOnly
     };
     let main_db = MainDb::new(&env.dbx);
-    let actor = DeviceActorResolver::resolve(&main_db, &user).await?;
+    let login = access::resolve_current_login(&main_db, &user).await?;
     let device = DeviceService::read(
         &main_db,
-        &actor,
+        &login,
         parse_uuid(&body.device_id),
         scope,
     )
@@ -128,8 +128,8 @@ pub(in crate::devices) async fn create(
         custom_fields: body.custom_fields.into_option(),
     };
     let main_db = MainDb::new(&env.dbx);
-    let actor = DeviceActorResolver::resolve(&main_db, &user).await?;
-    let device = DeviceService::create(&main_db, &actor, command).await?;
+    let login = access::resolve_current_login(&main_db, &user).await?;
+    let device = DeviceService::create(&main_db, &login, command).await?;
     Ok(Json(map_device_details(device)))
 }
 
@@ -149,8 +149,8 @@ pub(in crate::devices) async fn update(
         unit_id: map_nullable_patch(body.unit_id),
     };
     let main_db = MainDb::new(&env.dbx);
-    let actor = DeviceActorResolver::resolve(&main_db, &user).await?;
-    let device = DeviceService::update(&main_db, &actor, command).await?;
+    let login = access::resolve_current_login(&main_db, &user).await?;
+    let device = DeviceService::update(&main_db, &login, command).await?;
     Ok(Json(map_device_details(device)))
 }
 

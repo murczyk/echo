@@ -15,7 +15,7 @@ use crate::config::{
     DEVICE_FILE_SYNC_BATCH_MAX_COUNT, ROLE_ADMIN, ROLE_CYBER,
     ROLE_DEVICE_ANALYST, ROLE_DEVICE_SOURCE,
 };
-use crate::devices::access::DeviceActor;
+use crate::devices::access;
 use crate::devices::main_db::MainDb;
 use crate::entities::{device, login, organism};
 use crate::file_registry::entities::file_entry;
@@ -330,17 +330,13 @@ async fn stage_eight_read_service_authorizes_and_composes_roots_browse_search()
     .await;
     archive_device(&env.dbx, tree.device_id, timestamp).await;
 
-    for (login, roles) in [
-        ("stage-eight-cyber", &[ROLE_CYBER][..]),
-        ("stage-eight-source", &[ROLE_DEVICE_SOURCE][..]),
-        ("stage-eight-analyst", &[ROLE_DEVICE_ANALYST][..]),
-        ("stage-eight-admin", &[ROLE_ADMIN][..]),
+    for roles in [
+        &[ROLE_CYBER][..],
+        &[ROLE_DEVICE_SOURCE][..],
+        &[ROLE_DEVICE_ANALYST][..],
+        &[ROLE_ADMIN][..],
     ] {
-        let actor = crate::devices::access::test_support::device_actor(
-            login,
-            owner.organism_id.unwrap(),
-            roles,
-        );
+        let actor = access::login_with_roles(&owner, roles);
         assert_stage_eight_actor_reads(
             &env.dbx,
             &env.file_registry_db,
@@ -351,11 +347,7 @@ async fn stage_eight_read_service_authorizes_and_composes_roots_browse_search()
         .await;
     }
 
-    let admin = crate::devices::access::test_support::device_actor(
-        "stage-eight-admin",
-        owner.organism_id.unwrap(),
-        &[ROLE_ADMIN],
-    );
+    let admin = access::login_with_roles(&owner, &[ROLE_ADMIN]);
     assert_stage_eight_browse_composition(
         &env.dbx,
         &env.file_registry_db,
@@ -411,11 +403,7 @@ async fn stage_eight_read_service_short_circuits_and_preserves_safe_errors() {
     )
     .await;
 
-    let actor = crate::devices::access::test_support::device_actor(
-        "stage-eight-admin",
-        owner.organism_id.unwrap(),
-        &[ROLE_ADMIN],
-    );
+    let actor = access::login_with_roles(&owner, &[ROLE_ADMIN]);
     assert_stage_eight_live_scope_errors(
         &env.dbx,
         &env.file_registry_db,
@@ -426,11 +414,7 @@ async fn stage_eight_read_service_short_circuits_and_preserves_safe_errors() {
 
     let outage_db = connect_runtime(&env.config, Mode::Test).await.unwrap();
     outage_db.connection().clone().close().await.unwrap();
-    let unauthorized = crate::devices::access::test_support::device_actor(
-        "stage-eight-none",
-        owner.organism_id.unwrap(),
-        &[],
-    );
+    let unauthorized = access::login_with_roles(&owner, &[]);
     assert_stage_eight_outage_short_circuits(
         &env.dbx,
         &outage_db,
@@ -1852,7 +1836,7 @@ async fn archive_device(
 async fn assert_stage_eight_actor_reads(
     main_db: &DatabaseConnection,
     file_registry_db: &FileRegistryDb,
-    actor: &DeviceActor,
+    actor: &login::Model,
     forest: &StageThreeForest,
     tree: &StageTwoTree,
 ) {
@@ -1977,7 +1961,7 @@ async fn assert_stage_eight_actor_reads(
 async fn assert_stage_eight_browse_composition(
     main_db: &DatabaseConnection,
     file_registry_db: &FileRegistryDb,
-    actor: &DeviceActor,
+    actor: &login::Model,
     forest: &StageThreeForest,
 ) {
     let default_page = FileMetadataService::browse(
@@ -2133,7 +2117,7 @@ async fn assert_stage_eight_browse_composition(
 async fn assert_stage_eight_search_composition(
     main_db: &DatabaseConnection,
     file_registry_db: &FileRegistryDb,
-    actor: &DeviceActor,
+    actor: &login::Model,
     tree: &StageTwoTree,
 ) -> String {
     let scoped_search = FileMetadataService::search(
@@ -2277,7 +2261,7 @@ async fn assert_stage_eight_search_composition(
 async fn assert_stage_eight_validation_contract(
     main_db: &DatabaseConnection,
     file_registry_db: &FileRegistryDb,
-    actor: &DeviceActor,
+    actor: &login::Model,
     forest: &StageThreeForest,
     tree: &StageTwoTree,
     duplicate_cursor: &str,
@@ -2414,7 +2398,7 @@ async fn assert_stage_eight_validation_contract(
 async fn assert_stage_eight_live_scope_errors(
     main_db: &DatabaseConnection,
     file_registry_db: &FileRegistryDb,
-    actor: &DeviceActor,
+    actor: &login::Model,
     tree: &StageTwoTree,
 ) {
     assert_not_found(
@@ -2472,8 +2456,8 @@ async fn assert_stage_eight_live_scope_errors(
 async fn assert_stage_eight_outage_short_circuits(
     main_db: &DatabaseConnection,
     outage_db: &FileRegistryDb,
-    unauthorized: &DeviceActor,
-    actor: &DeviceActor,
+    unauthorized: &login::Model,
+    actor: &login::Model,
     tree: &StageTwoTree,
     forest: &StageThreeForest,
 ) {
@@ -3326,11 +3310,7 @@ async fn stage_ten_sync_service_returns_ordered_partial_results() {
         timestamp,
     )
     .await;
-    let actor = crate::devices::access::test_support::device_actor(
-        &owner.login,
-        owner.organism_id.unwrap(),
-        &[ROLE_DEVICE_SOURCE],
-    );
+    let actor = access::login_with_roles(&owner, &[ROLE_DEVICE_SOURCE]);
     let result = FileMetadataService::sync(
         MainDb::new(&env.dbx),
         &env.file_registry_db,
@@ -3439,11 +3419,7 @@ async fn stage_ten_sync_service_rejects_duplicates_and_isolates_item_failures()
         timestamp,
     )
     .await;
-    let actor = crate::devices::access::test_support::device_actor(
-        &owner.login,
-        owner.organism_id.unwrap(),
-        &[ROLE_DEVICE_SOURCE],
-    );
+    let actor = access::login_with_roles(&owner, &[ROLE_DEVICE_SOURCE]);
     let repository = FilesystemRepository::new(&env.file_registry_db);
     let metadata_created_at = timestamp - Duration::hours(2);
     let metadata_modified_at = timestamp - Duration::hours(1);
@@ -3731,16 +3707,8 @@ async fn stage_ten_sync_service_gates_registry_writes() {
     )
     .await;
     archive_device(&env.dbx, archived_device_id, timestamp).await;
-    let source = crate::devices::access::test_support::device_actor(
-        &owner.login,
-        owner.organism_id.unwrap(),
-        &[ROLE_DEVICE_SOURCE],
-    );
-    let unauthorized = crate::devices::access::test_support::device_actor(
-        "stage-ten-none",
-        owner.organism_id.unwrap(),
-        &[],
-    );
+    let source = access::login_with_roles(&owner, &[ROLE_DEVICE_SOURCE]);
+    let unauthorized = access::login_with_roles(&owner, &[]);
     let outage_db = connect_runtime(&env.config, Mode::Test).await.unwrap();
     outage_db.connection().clone().close().await.unwrap();
 
@@ -3853,11 +3821,7 @@ async fn stage_ten_sync_service_main_db_outage_short_circuits_registry() {
         timestamp,
     )
     .await;
-    let source = crate::devices::access::test_support::device_actor(
-        &owner.login,
-        owner.organism_id.unwrap(),
-        &[ROLE_DEVICE_SOURCE],
-    );
+    let source = access::login_with_roles(&owner, &[ROLE_DEVICE_SOURCE]);
     let outage_main =
         crate::new_pg_pool_from_config(&env.config).await.unwrap();
     outage_main.clone().close().await.unwrap();

@@ -5,7 +5,7 @@ use crate::config::{
     DEVICE_CUSTOM_FIELDS_MAX_COUNT, ROLE_ADMIN, ROLE_CYBER,
     ROLE_DEVICE_ANALYST, ROLE_DEVICE_SOURCE,
 };
-use crate::devices::access::DeviceActor;
+use crate::devices::access;
 use crate::devices::main_db::MainDb;
 use crate::devices::schema_tests::device_active_model;
 use crate::devices::visibility::DeviceReadScope;
@@ -36,14 +36,8 @@ fn update_command(device_id: Uuid) -> UpdateDeviceCommand {
     }
 }
 
-fn actor(login: &login::Model, roles: &[&str]) -> DeviceActor {
-    crate::devices::access::test_support::device_actor(
-        &login.login,
-        login
-            .organism_id
-            .expect("device service test login must have an organism"),
-        roles,
-    )
+fn login_with_roles(login: &login::Model, roles: &[&str]) -> login::Model {
+    access::login_with_roles(login, roles)
 }
 
 fn list_command() -> ListDevicesCommand {
@@ -146,7 +140,7 @@ fn assert_forbidden(error: AppError) {
 async fn batch_hydration_preserves_input_order_and_current_references() {
     let (env, _guard) = cleanup_locked().await.unwrap();
     let source_login = insert_login(&env.dbx, &[ROLE_DEVICE_SOURCE]).await;
-    let actor = actor(&source_login, &[ROLE_DEVICE_SOURCE]);
+    let actor = login_with_roles(&source_login, &[ROLE_DEVICE_SOURCE]);
     let first_aor = mk_aor(
         &env.dbx,
         area_of_responsibility::ActiveModel {
@@ -260,7 +254,7 @@ async fn batch_hydration_preserves_input_order_and_current_references() {
 async fn source_create_persists_only_normalized_source_state() {
     let (env, _guard) = cleanup_locked().await.unwrap();
     let source_login = insert_login(&env.dbx, &[ROLE_DEVICE_SOURCE]).await;
-    let actor = actor(&source_login, &[ROLE_DEVICE_SOURCE]);
+    let actor = login_with_roles(&source_login, &[ROLE_DEVICE_SOURCE]);
     let main_db = MainDb::new(&env.dbx);
 
     let state = DeviceService::create(
@@ -321,8 +315,8 @@ async fn analyst_mixed_update_is_atomic_and_source_cannot_change_analysis() {
     let (env, _guard) = cleanup_locked().await.unwrap();
     let source_login = insert_login(&env.dbx, &[ROLE_DEVICE_SOURCE]).await;
     let analyst_login = insert_login(&env.dbx, &[ROLE_DEVICE_ANALYST]).await;
-    let source = actor(&source_login, &[ROLE_DEVICE_SOURCE]);
-    let analyst = actor(&analyst_login, &[ROLE_DEVICE_ANALYST]);
+    let source = login_with_roles(&source_login, &[ROLE_DEVICE_SOURCE]);
+    let analyst = login_with_roles(&analyst_login, &[ROLE_DEVICE_ANALYST]);
     let main_db = MainDb::new(&env.dbx);
     let created = DeviceService::create(
         &main_db,
@@ -423,10 +417,10 @@ async fn create_allows_source_analyst_and_admin_but_not_cyber() {
     let analyst_login = insert_login(&env.dbx, &[ROLE_DEVICE_ANALYST]).await;
     let admin_login = insert_login(&env.dbx, &[ROLE_ADMIN]).await;
     let cyber_login = insert_login(&env.dbx, &[ROLE_CYBER]).await;
-    let source = actor(&source_login, &[ROLE_DEVICE_SOURCE]);
-    let analyst = actor(&analyst_login, &[ROLE_DEVICE_ANALYST]);
-    let admin = actor(&admin_login, &[ROLE_ADMIN]);
-    let cyber = actor(&cyber_login, &[ROLE_CYBER]);
+    let source = login_with_roles(&source_login, &[ROLE_DEVICE_SOURCE]);
+    let analyst = login_with_roles(&analyst_login, &[ROLE_DEVICE_ANALYST]);
+    let admin = login_with_roles(&admin_login, &[ROLE_ADMIN]);
+    let cyber = login_with_roles(&cyber_login, &[ROLE_CYBER]);
     let main_db = MainDb::new(&env.dbx);
 
     for (login, actor) in [
@@ -499,9 +493,9 @@ async fn patch_presence_and_clears_follow_the_internal_contract() {
     let source_login = insert_login(&env.dbx, &[ROLE_DEVICE_SOURCE]).await;
     let analyst_login = insert_login(&env.dbx, &[ROLE_DEVICE_ANALYST]).await;
     let cyber_login = insert_login(&env.dbx, &[ROLE_CYBER]).await;
-    let source = actor(&source_login, &[ROLE_DEVICE_SOURCE]);
-    let analyst = actor(&analyst_login, &[ROLE_DEVICE_ANALYST]);
-    let cyber = actor(&cyber_login, &[ROLE_CYBER]);
+    let source = login_with_roles(&source_login, &[ROLE_DEVICE_SOURCE]);
+    let analyst = login_with_roles(&analyst_login, &[ROLE_DEVICE_ANALYST]);
+    let cyber = login_with_roles(&cyber_login, &[ROLE_CYBER]);
     let main_db = MainDb::new(&env.dbx);
     let created = DeviceService::create(
         &main_db,
@@ -623,8 +617,8 @@ async fn invalid_references_roll_back_mixed_patches_and_reject_deleted_rows() {
     let (env, _guard) = cleanup_locked().await.unwrap();
     let source_login = insert_login(&env.dbx, &[ROLE_DEVICE_SOURCE]).await;
     let analyst_login = insert_login(&env.dbx, &[ROLE_DEVICE_ANALYST]).await;
-    let source = actor(&source_login, &[ROLE_DEVICE_SOURCE]);
-    let analyst = actor(&analyst_login, &[ROLE_DEVICE_ANALYST]);
+    let source = login_with_roles(&source_login, &[ROLE_DEVICE_SOURCE]);
+    let analyst = login_with_roles(&analyst_login, &[ROLE_DEVICE_ANALYST]);
     let main_db = MainDb::new(&env.dbx);
     let created = DeviceService::create(
         &main_db,
@@ -798,8 +792,8 @@ async fn custom_field_patches_and_effective_no_ops_preserve_state() {
     let (env, _guard) = cleanup_locked().await.unwrap();
     let source_login = insert_login(&env.dbx, &[ROLE_DEVICE_SOURCE]).await;
     let analyst_login = insert_login(&env.dbx, &[ROLE_DEVICE_ANALYST]).await;
-    let source = actor(&source_login, &[ROLE_DEVICE_SOURCE]);
-    let analyst = actor(&analyst_login, &[ROLE_DEVICE_ANALYST]);
+    let source = login_with_roles(&source_login, &[ROLE_DEVICE_SOURCE]);
+    let analyst = login_with_roles(&analyst_login, &[ROLE_DEVICE_ANALYST]);
     let main_db = MainDb::new(&env.dbx);
     let created = DeviceService::create(
         &main_db,
@@ -937,8 +931,8 @@ async fn read_handles_archives_nullable_names_and_deleted_references() {
     let (env, _guard) = cleanup_locked().await.unwrap();
     let source_login = insert_login(&env.dbx, &[ROLE_DEVICE_SOURCE]).await;
     let analyst_login = insert_login(&env.dbx, &[ROLE_DEVICE_ANALYST]).await;
-    let source = actor(&source_login, &[ROLE_DEVICE_SOURCE]);
-    let analyst = actor(&analyst_login, &[ROLE_DEVICE_ANALYST]);
+    let source = login_with_roles(&source_login, &[ROLE_DEVICE_SOURCE]);
+    let analyst = login_with_roles(&analyst_login, &[ROLE_DEVICE_ANALYST]);
     let main_db = MainDb::new(&env.dbx);
     let created = DeviceService::create(
         &main_db,
@@ -1071,7 +1065,7 @@ async fn read_handles_archives_nullable_names_and_deleted_references() {
 async fn list_and_unit_stats_follow_target_filters_sorts_and_counts() {
     let (env, _guard) = cleanup_locked().await.unwrap();
     let reader = insert_login(&env.dbx, &[ROLE_CYBER]).await;
-    let actor = actor(&reader, &[ROLE_CYBER]);
+    let actor = login_with_roles(&reader, &[ROLE_CYBER]);
     let active_unit = mk_sigint_unit(
         &env.dbx,
         sigint_unit::ActiveModel {
