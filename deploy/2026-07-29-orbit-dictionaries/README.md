@@ -6,6 +6,15 @@ Run the one-off importer on the target Echo instance:
 sudo wdintel-rs --mode=live tui-import-orbit-units
 ```
 
+From a development checkout, use `--mode=debug` so the command reads
+`deploy/config.toml`:
+
+```sh
+cargo run -p wdintel-rs -- --mode=debug tui-import-orbit-units
+```
+
+`--mode=live` reads `/etc/echo/config.toml` unless `ECHO_CONFIG_PATH` is set.
+
 The first TUI screen offers:
 
 - import new ORBIT units from a JSON file;
@@ -20,10 +29,11 @@ The search option asks for the SIGINT full name first. If no active,
 non-deleted `sigint_unit` has that normalized full name, it prints the result
 without asking for or searching a JSON file. Otherwise it asks for the export,
 ranks ORBIT roots by matching hierarchy segments and root-echelon distance, and
-shows all equally closest results with operational full, generative full, and
-original names. Use Up/Down and Enter to select a result. The selected root and
-both parent chains are imported parent-first without the regular review or stale
-deletion pass, then only its one-to-one SIGINT link is replaced.
+shows all equally closest results with their ORBIT unit IDs, operational full,
+generative full, and original names. Use Up/Down and Enter to select a result.
+The selected root and both parent chains are imported parent-first without the
+regular review or stale deletion pass. This manual selection replaces any
+existing ORBIT links for that SIGINT unit with the selected root.
 
 The importer discovers dictionary values in both root units and embedded
 parents. If a `(key, name)` value is absent from an `orbit_*` dictionary table,
@@ -46,15 +56,15 @@ compared as `<number> А`, so variants such as `58 А`, `58 ОА`, and `58 ЗВ�
 equivalent. Extra full-name segments without descriptors are allowed when the
 supplied descriptors remain in hierarchy order. When several SIGINT units
 match, an exact root-echelon match wins, followed by the candidate with the most
-matching names. An unresolved tie with different parent paths is skipped;
-same-parent duplicates select the lowest ID. Generative and operational
-ancestors of matched roots are included. After a completed review, active
-imported roots are linked to the selected active Echo SIGINT unit. These links
-are one-to-one from the SIGINT side: the closest ORBIT root wins, equally close
-roots with different parent paths are skipped, and same-path duplicates select
-the lowest ORBIT UUID. A completed import replaces all existing links, including
-links produced by older matching rules. These links drive the admin-only ORBIT
-indicator and unit-details card.
+matching names. An unresolved tie with divergent parent paths is skipped; equal
+matches whose parent paths are ordered extensions of one another are all
+retained, while same-path duplicates select the lowest ID. Generative and
+operational ancestors of matched roots are included. After a completed review,
+active imported roots are linked to the selected active Echo SIGINT unit. One
+SIGINT unit can therefore link to multiple equally close ORBIT roots when one
+hierarchy contains additional intermediate parents. A completed import replaces
+all existing links, including links produced by older matching rules. These
+links drive the admin-only ORBIT indicator and separate unit-details cards.
 When a unit also appears inside another unit's path with a different parent,
 the unit's own top-level parent chain is authoritative. Conflicting
 embedded-only paths still fail when the ambiguous unit is selected.
@@ -65,7 +75,9 @@ changed ancestors are updated, and deleted ancestors are reactivated
 automatically. When a partial ancestor already exists, omitted source fields
 preserve their stored values. Interactive create/update/reactivate prompts are
 shown only for ORBIT roots selected by SIGINT matching. Rejecting a selected
-parent also skips dependent descendants. The review offers:
+parent also skips dependent descendants. Review headers show the ORBIT
+generative full path without ` / ` separators and the corresponding SIGINT full
+name. The review offers:
 
 - create or skip for new units;
 - update or skip for changed units;

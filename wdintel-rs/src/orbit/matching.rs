@@ -1,7 +1,7 @@
 use crate::config::ORBIT_MATCHING_SIGINT_NAME_BLACKLIST;
 use crate::entities::sigint_unit;
 use crate::orbit::types::SourceUnit;
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 enum EchoEchelon {
@@ -121,14 +121,16 @@ pub fn matching_sigint_unit_ids(
                 .push((orbit_unit, score));
         }
     }
-    matches_by_sigint_unit
-        .into_iter()
-        .filter_map(|(sigint_unit_id, matches)| {
-            best_matching_orbit_unit(matches).map(|orbit_unit_id| {
-                (orbit_unit_id, BTreeSet::from([sigint_unit_id]))
-            })
-        })
-        .collect()
+    let mut result = HashMap::<uuid::Uuid, BTreeSet<i64>>::new();
+    for (sigint_unit_id, matches) in matches_by_sigint_unit {
+        for orbit_unit_id in best_matching_orbit_units(matches) {
+            result
+                .entry(orbit_unit_id)
+                .or_default()
+                .insert(sigint_unit_id);
+        }
+    }
+    result
 }
 
 pub fn closest_orbit_matches<'a>(
@@ -230,9 +232,9 @@ fn best_matching_sigint_unit(
         .map(|sigint_unit| (sigint_unit.id, *best_score))
 }
 
-fn best_matching_orbit_unit(
+fn best_matching_orbit_units(
     mut matches: Vec<(&SourceUnit, MatchScore)>,
-) -> Option<uuid::Uuid> {
+) -> Vec<uuid::Uuid> {
     matches.sort_by_key(|(orbit_unit, score)| {
         (
             score.echelon_distance.unwrap_or(usize::MAX),
@@ -240,22 +242,33 @@ fn best_matching_orbit_unit(
             orbit_unit.unit_id,
         )
     });
-    let (_, best_score) = matches.first()?;
+    let Some((_, best_score)) = matches.first() else {
+        return Vec::new();
+    };
     let best_quality = (best_score.echelon_distance, best_score.matched_names);
     let closest = matches
-        .iter()
+        .into_iter()
         .take_while(|(_, score)| {
             (score.echelon_distance, score.matched_names) == best_quality
         })
-        .map(|(orbit_unit, _)| *orbit_unit)
+        .map(|(orbit_unit, _)| orbit_unit)
         .collect::<Vec<_>>();
-    let closest_parent_signature = orbit_parent_signature(closest[0]);
-    if closest.iter().skip(1).any(|orbit_unit| {
-        orbit_parent_signature(orbit_unit) != closest_parent_signature
-    }) {
-        return None;
+    let mut units_by_parent_signature = BTreeMap::new();
+    for orbit_unit in closest {
+        units_by_parent_signature
+            .entry(orbit_parent_signature(orbit_unit))
+            .or_insert(orbit_unit.unit_id);
     }
-    closest.first().map(|orbit_unit| orbit_unit.unit_id)
+    let signatures = units_by_parent_signature.keys().collect::<Vec<_>>();
+    if signatures.iter().enumerate().any(|(index, left)| {
+        signatures
+            .iter()
+            .skip(index + 1)
+            .any(|right| !parent_signatures_are_extensions(left, right))
+    }) {
+        return Vec::new();
+    }
+    units_by_parent_signature.into_values().collect()
 }
 
 fn validate_unit(unit: &SourceUnit, path: &str) -> anyhow::Result<()> {
@@ -489,28 +502,52 @@ fn split_path(value: &str) -> Vec<String> {
         .collect()
 }
 
-fn orbit_parent_signature(unit: &SourceUnit) -> Vec<String> {
-    let mut signature = vec!["operational".to_string()];
-    signature.extend(
-        unit.operational_unit_name_full
-            .as_deref()
-            .map(split_path)
-            .unwrap_or_default()
-            .into_iter()
-            .skip(1)
-            .map(|name| normalize_army_name(&name)),
-    );
-    signature.push("generative".to_string());
-    signature.extend(
-        unit.generative_unit_name_full
-            .as_deref()
-            .map(split_path)
-            .unwrap_or_default()
-            .into_iter()
-            .skip(1)
-            .map(|name| normalize_army_name(&name)),
-    );
-    signature
+fn orbit_parent_signature(unit: &SourceUnit) -> (Vec<String>, Vec<String>) {
+    let operational = unit
+        .operational_unit_name_full
+        .as_deref()
+        .map(split_path)
+        .unwrap_or_default()
+        .into_iter()
+        .skip(1)
+        .map(|name| normalize_army_name(&name))
+        .collect();
+    let generative = unit
+        .generative_unit_name_full
+        .as_deref()
+        .map(split_path)
+        .unwrap_or_default()
+        .into_iter()
+        .skip(1)
+        .map(|name| normalize_army_name(&name))
+        .collect();
+    (operational, generative)
+}
+
+fn parent_signatures_are_extensions(
+    left: &(Vec<String>, Vec<String>),
+    right: &(Vec<String>, Vec<String>),
+) -> bool {
+    signature_is_extension(left, right) || signature_is_extension(right, left)
+}
+
+fn signature_is_extension(
+    shorter: &(Vec<String>, Vec<String>),
+    longer: &(Vec<String>, Vec<String>),
+) -> bool {
+    is_subsequence(&shorter.0, &longer.0)
+        && is_subsequence(&shorter.1, &longer.1)
+}
+
+fn is_subsequence(shorter: &[String], longer: &[String]) -> bool {
+    let mut shorter = shorter.iter();
+    let mut expected = shorter.next();
+    for value in longer {
+        if expected == Some(value) {
+            expected = shorter.next();
+        }
+    }
+    expected.is_none()
 }
 
 fn normalize_name(value: &str) -> String {
@@ -846,6 +883,43 @@ mod tests {
         let sigint_unit = echo_unit("", "", "1111 бр", "", "");
         assert!(matching_sigint_unit_ids(&[first, second], &[sigint_unit])
             .is_empty());
+    }
+
+    #[test]
+    fn equally_close_orbit_units_with_extended_paths_are_all_linked() {
+        let mut direct = source_unit(
+            "1 мсб / 4 омсбр / 3 ЗВА",
+            vec![
+                ("battalion", "1 мсб", 2),
+                ("brigade", "4 омсбр", 1),
+                ("fieldArmy", "3 ЗВА", 0),
+            ],
+        );
+        direct.generative_unit_name_full =
+            Some("1 мсб / 4 омсбр / 3 ЗВА / ПдВО".to_string());
+        let mut extended = source_unit(
+            "1 мсб / 1194 мсп / 4 омсбр / 3 ЗВА",
+            vec![
+                ("battalion", "1 мсб", 3),
+                ("regiment", "1194 мсп", 2),
+                ("brigade", "4 омсбр", 1),
+                ("fieldArmy", "3 ЗВА", 0),
+            ],
+        );
+        extended.generative_unit_name_full =
+            Some("1 мсб / 1194 мсп / 4 омсбр / 3 ЗВА / ПдВО".to_string());
+        let sigint_unit = echo_unit("", "1 мсб", "4 омсбр", "", "3 ЗВА");
+
+        assert_eq!(
+            matching_sigint_unit_ids(
+                &[direct.clone(), extended.clone()],
+                &[sigint_unit],
+            ),
+            HashMap::from([
+                (direct.unit_id, BTreeSet::from([1])),
+                (extended.unit_id, BTreeSet::from([1])),
+            ])
+        );
     }
 
     #[test]

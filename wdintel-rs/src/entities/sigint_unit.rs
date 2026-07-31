@@ -42,7 +42,7 @@ pub enum Relation {
         on_delete = "NoAction"
     )]
     Login,
-    #[sea_orm(has_one = "super::orbit_unit_sigint_unit::Entity")]
+    #[sea_orm(has_many = "super::orbit_unit_sigint_unit::Entity")]
     OrbitUnitSigintUnit,
     #[sea_orm(has_many = "super::sigint_callsign::Entity")]
     SigintCallsign,

@@ -4,10 +4,12 @@ use crate::orbit::dictionary::DictionaryMaps;
 use crate::orbit::persistence::{ExistingUnit, ImportState, ImportUnit};
 use crate::types::{Mode, ShortContext};
 use crate::{h, new_pg_pool_from_mode};
+use anyhow::Context;
 use chrono::Utc;
 use dialoguer::{theme::ColorfulTheme, Confirm};
 use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
+use std::path::Path;
 use tokio::fs;
 use uuid::Uuid;
 
@@ -24,8 +26,12 @@ pub async fn run_import_tui(mode: Mode) -> Result<(), AppError> {
 
 async fn run_selected_action(mode: Mode) -> anyhow::Result<()> {
     match tui::prompt_start_action()? {
-        Some(tui::StartAction::Import) => run_import(mode).await,
-        Some(tui::StartAction::FindMatch) => run_match_search(mode).await,
+        Some(tui::StartAction::Import) => {
+            run_import(mode).await.context("ORBIT file import failed")
+        }
+        Some(tui::StartAction::FindMatch) => run_match_search(mode)
+            .await
+            .context("ORBIT match search failed"),
         None => Ok(()),
     }
 }
@@ -34,14 +40,14 @@ async fn run_import(mode: Mode) -> anyhow::Result<()> {
     let Some(path) = tui::prompt_path()? else {
         return Ok(());
     };
-    let input = fs::read_to_string(&path).await?;
-    let (units, unknown_paths) = types::parse_units(&input)?;
-    confirm_unknown_paths(&path.display().to_string(), &unknown_paths)?;
-    matching::validate_source(&units)?;
+    let units = load_source(&path).await?;
 
-    let db = new_pg_pool_from_mode(mode).await?;
-    let dictionaries = DictionaryMaps::load(&db).await?;
-    let missing = dictionary::missing_dictionary_values(&units, &dictionaries)?;
+    let db = connect_database(mode).await?;
+    let dictionaries = DictionaryMaps::load(&db)
+        .await
+        .c("failed to load ORBIT dictionaries")?;
+    let missing = dictionary::missing_dictionary_values(&units, &dictionaries)
+        .context("failed to validate ORBIT dictionary values")?;
     if !missing.is_empty() {
         dictionary::print_dictionary_migration(
             &missing,
@@ -54,20 +60,33 @@ async fn run_import(mode: Mode) -> anyhow::Result<()> {
         .filter(sigint_unit::Column::Deleted.eq(false))
         .filter(sigint_unit::Column::Active.eq(true))
         .all(&db)
-        .await?;
+        .await
+        .c("failed to load active SIGINT units for ORBIT matching")?;
     let sigint_unit_ids_by_orbit_unit =
         matching::matching_sigint_unit_ids(&units, &sigint_units);
+    let sigint_unit_names_by_orbit_unit = build_sigint_unit_names_by_orbit_unit(
+        &sigint_unit_ids_by_orbit_unit,
+        &sigint_units,
+    );
+    log::info!(
+        "matched {} ORBIT roots to active SIGINT units",
+        sigint_unit_ids_by_orbit_unit.len()
+    );
     let selected_ids = sigint_unit_ids_by_orbit_unit
         .keys()
         .copied()
         .collect::<HashSet<_>>();
-    let hierarchy = hierarchy::build_import_hierarchy(&units, &selected_ids)?;
+    let hierarchy = hierarchy::build_import_hierarchy(&units, &selected_ids)
+        .context("failed to build the selected ORBIT hierarchy")?;
     let started_at = Utc::now().naive_utc();
     let mut import_units = hierarchy
         .into_iter()
         .map(|unit| ImportUnit::from_hierarchy(unit, &dictionaries))
-        .collect::<anyhow::Result<Vec<_>>>()?;
-    let mut existing = persistence::load_existing(&db).await?;
+        .collect::<anyhow::Result<Vec<_>>>()
+        .context("failed to resolve dictionaries for the ORBIT hierarchy")?;
+    let mut existing = persistence::load_existing(&db)
+        .await
+        .c("failed to load existing ORBIT units")?;
     for unit in &mut import_units {
         unit.preserve_existing_partial_fields(existing.get(&unit.unit_id));
     }
@@ -80,15 +99,20 @@ async fn run_import(mode: Mode) -> anyhow::Result<()> {
         &mut existing,
         &unit_names,
         &selected_ids,
+        &sigint_unit_names_by_orbit_unit,
         started_at,
     )
-    .await?;
+    .await
+    .context("failed while reviewing or persisting ORBIT units")?;
     if !completed {
         return Ok(());
     }
-    review_stale_units(&db, started_at).await?;
+    review_stale_units(&db, started_at)
+        .await
+        .context("failed while reviewing stale ORBIT units")?;
     persistence::replace_sigint_unit_links(&db, &sigint_unit_ids_by_orbit_unit)
-        .await?;
+        .await
+        .c("failed to replace ORBIT-to-SIGINT links")?;
     Ok(())
 }
 
@@ -96,12 +120,13 @@ async fn run_match_search(mode: Mode) -> anyhow::Result<()> {
     let Some(search_term) = tui::prompt_sigint_unit_name()? else {
         return Ok(());
     };
-    let db = new_pg_pool_from_mode(mode).await?;
+    let db = connect_database(mode).await?;
     let sigint_units = sigint_unit::Entity::find()
         .filter(sigint_unit::Column::Deleted.eq(false))
         .filter(sigint_unit::Column::Active.eq(true))
         .all(&db)
-        .await?;
+        .await
+        .c("failed to load active SIGINT units for ORBIT search")?;
     let Some(sigint_unit) =
         find_sigint_unit_by_full_name(sigint_units, &search_term)
     else {
@@ -111,10 +136,7 @@ async fn run_match_search(mode: Mode) -> anyhow::Result<()> {
     let Some(path) = tui::prompt_path()? else {
         return Ok(());
     };
-    let input = fs::read_to_string(&path).await?;
-    let (units, unknown_paths) = types::parse_units(&input)?;
-    confirm_unknown_paths(&path.display().to_string(), &unknown_paths)?;
-    matching::validate_source(&units)?;
+    let units = load_source(&path).await?;
     let candidates = matching::closest_orbit_matches(&units, &sigint_unit);
     if candidates.is_empty() {
         println!("No ORBIT matches found for: {search_term}");
@@ -123,6 +145,7 @@ async fn run_match_search(mode: Mode) -> anyhow::Result<()> {
     let options = candidates
         .iter()
         .map(|unit| tui::MatchOption {
+            unit_id: unit.unit_id,
             operational_full_name: unit
                 .operational_unit_name_full
                 .clone()
@@ -147,6 +170,42 @@ async fn run_match_search(mode: Mode) -> anyhow::Result<()> {
         sigint_unit.id, selected.unit_id
     );
     Ok(())
+}
+
+async fn load_source(path: &Path) -> anyhow::Result<Vec<types::SourceUnit>> {
+    log::info!("reading ORBIT export from {}", path.display());
+    let input = fs::read_to_string(path).await.with_context(|| {
+        format!("failed to read ORBIT export {}", path.display())
+    })?;
+    let (units, unknown_paths) =
+        types::parse_units(&input).with_context(|| {
+            format!("failed to parse ORBIT export {}", path.display())
+        })?;
+    confirm_unknown_paths(&path.display().to_string(), &unknown_paths)
+        .with_context(|| {
+            format!(
+                "failed to confirm unknown fields in ORBIT export {}",
+                path.display()
+            )
+        })?;
+    matching::validate_source(&units).with_context(|| {
+        format!("failed to validate ORBIT export {}", path.display())
+    })?;
+    log::info!(
+        "validated {} top-level ORBIT units from {}",
+        units.len(),
+        path.display()
+    );
+    Ok(units)
+}
+
+async fn connect_database(
+    mode: Mode,
+) -> anyhow::Result<sea_orm::DatabaseConnection> {
+    log::info!("connecting ORBIT importer to PostgreSQL in {mode:?} mode");
+    new_pg_pool_from_mode(mode).await.c(format!(
+        "failed to initialize the ORBIT importer database connection in {mode:?} mode"
+    ))
 }
 
 fn find_sigint_unit_by_full_name(
@@ -182,17 +241,41 @@ fn normalize_full_name(value: &str) -> String {
         .to_lowercase()
 }
 
+fn build_sigint_unit_names_by_orbit_unit(
+    sigint_unit_ids_by_orbit_unit: &HashMap<Uuid, BTreeSet<i64>>,
+    sigint_units: &[sigint_unit::Model],
+) -> HashMap<Uuid, String> {
+    let names_by_id = sigint_units
+        .iter()
+        .map(|unit| (unit.id, sigint_unit_full_name(unit)))
+        .collect::<HashMap<_, _>>();
+    sigint_unit_ids_by_orbit_unit
+        .iter()
+        .filter_map(|(orbit_unit_id, sigint_unit_ids)| {
+            let names = sigint_unit_ids
+                .iter()
+                .filter_map(|sigint_unit_id| names_by_id.get(sigint_unit_id))
+                .cloned()
+                .collect::<Vec<_>>();
+            (!names.is_empty()).then(|| (*orbit_unit_id, names.join("; ")))
+        })
+        .collect()
+}
+
 async fn import_selected_match(
     db: &sea_orm::DatabaseConnection,
     units: &[types::SourceUnit],
     selected: &types::SourceUnit,
     sigint_unit_id: i64,
 ) -> anyhow::Result<()> {
-    let dictionaries = DictionaryMaps::load(db).await?;
+    let dictionaries = DictionaryMaps::load(db)
+        .await
+        .c("failed to load ORBIT dictionaries")?;
     let missing = dictionary::missing_dictionary_values(
         std::slice::from_ref(selected),
         &dictionaries,
-    )?;
+    )
+    .context("failed to validate the selected ORBIT hierarchy dictionaries")?;
     if !missing.is_empty() {
         dictionary::print_dictionary_migration(
             &missing,
@@ -205,12 +288,26 @@ async fn import_selected_match(
     let hierarchy = hierarchy::build_import_hierarchy(
         units,
         &HashSet::from([selected.unit_id]),
-    )?;
+    )
+    .with_context(|| {
+        format!(
+            "failed to build hierarchy for selected ORBIT unit {}",
+            selected.unit_id
+        )
+    })?;
     let mut import_units = hierarchy
         .into_iter()
         .map(|unit| ImportUnit::from_hierarchy(unit, &dictionaries))
-        .collect::<anyhow::Result<Vec<_>>>()?;
-    let mut existing = persistence::load_existing(db).await?;
+        .collect::<anyhow::Result<Vec<_>>>()
+        .with_context(|| {
+            format!(
+                "failed to resolve dictionaries for selected ORBIT unit {}",
+                selected.unit_id
+            )
+        })?;
+    let mut existing = persistence::load_existing(db)
+        .await
+        .c("failed to load existing ORBIT units")?;
     for unit in &mut import_units {
         unit.preserve_existing_partial_fields(existing.get(&unit.unit_id));
     }
@@ -218,22 +315,36 @@ async fn import_selected_match(
     for unit in &import_units {
         let row = match persistence::classify(unit, existing.get(&unit.unit_id))
         {
-            ImportState::New => {
-                persistence::insert_unit(db, unit, started_at).await?
-            }
+            ImportState::New => persistence::insert_unit(db, unit, started_at)
+                .await
+                .c(format!("failed to insert ORBIT unit {}", unit.unit_id))?,
             ImportState::Unchanged(mut row) => {
-                persistence::touch_unit(db, unit.unit_id, started_at).await?;
+                persistence::touch_unit(db, unit.unit_id, started_at)
+                    .await
+                    .c(format!(
+                        "failed to touch ORBIT unit {}",
+                        unit.unit_id
+                    ))?;
                 row.updated_at = started_at;
                 row
             }
             ImportState::Changed(row) | ImportState::Deleted(row) => {
-                persistence::update_unit(db, row, unit, started_at).await?
+                persistence::update_unit(db, row, unit, started_at)
+                    .await
+                    .c(format!(
+                        "failed to update ORBIT unit {}",
+                        unit.unit_id
+                    ))?
             }
         };
         existing.insert(unit.unit_id, row);
     }
     persistence::replace_sigint_unit_link(db, sigint_unit_id, selected.unit_id)
-        .await?;
+        .await
+        .c(format!(
+            "failed to link SIGINT unit {sigint_unit_id} to ORBIT unit {}",
+            selected.unit_id
+        ))?;
     Ok(())
 }
 
@@ -265,6 +376,7 @@ async fn review_import_units(
     existing: &mut HashMap<Uuid, ExistingUnit>,
     unit_names: &HashMap<Uuid, String>,
     review_unit_ids: &HashSet<Uuid>,
+    sigint_unit_names_by_orbit_unit: &HashMap<Uuid, String>,
     started_at: chrono::NaiveDateTime,
 ) -> anyhow::Result<bool> {
     let mut rejected = HashSet::new();
@@ -285,6 +397,7 @@ async fn review_import_units(
         existing,
         unit_names,
         review_unit_ids,
+        sigint_unit_names_by_orbit_unit,
         started_at,
         rejected: &mut rejected,
         reviewed: &mut reviewed,
@@ -303,6 +416,7 @@ struct ImportReview<'a> {
     existing: &'a mut HashMap<Uuid, ExistingUnit>,
     unit_names: &'a HashMap<Uuid, String>,
     review_unit_ids: &'a HashSet<Uuid>,
+    sigint_unit_names_by_orbit_unit: &'a HashMap<Uuid, String>,
     started_at: chrono::NaiveDateTime,
     rejected: &'a mut HashSet<Uuid>,
     reviewed: &'a mut usize,
@@ -399,11 +513,16 @@ impl ImportReview<'_> {
         if matches!(state, ImportState::Deleted(_)) {
             lines.insert(0, "deleted: true -> false".to_string());
         }
+        let sigint_unit_context = self
+            .sigint_unit_names_by_orbit_unit
+            .get(&unit.unit_id)
+            .map(|name| format!("Corresponding SIGINT unit: {name}"));
         tui::review(
             terminal
                 .as_deref_mut()
                 .ok_or_else(|| anyhow::anyhow!("terminal is missing"))?,
             &title,
+            sigint_unit_context.as_deref(),
             &lines,
             &progress,
             action,
@@ -422,26 +541,35 @@ fn review_metadata<'a>(
     } else {
         ""
     };
+    let unit_name = review_unit_name(unit);
     match state {
         ImportState::New => (
-            format!("Create {partial}{}?", unit.display_name()),
+            format!("Create {partial}{unit_name}?"),
             tui::Action::Create,
             None,
         ),
         ImportState::Changed(row) => (
-            format!("Update {partial}{}?", unit.display_name()),
+            format!("Update {partial}{unit_name}?"),
             tui::Action::Update,
             Some(row),
         ),
         ImportState::Deleted(row) => (
-            format!("Reactivate {partial}{}?", unit.display_name()),
+            format!("Reactivate {partial}{unit_name}?"),
             tui::Action::Reactivate,
             Some(row),
         ),
         ImportState::Unchanged(row) => {
-            (unit.display_name(), tui::Action::Update, Some(row))
+            (unit_name, tui::Action::Update, Some(row))
         }
     }
+}
+
+fn review_unit_name(unit: &ImportUnit) -> String {
+    unit.generative_unit_name_full
+        .as_deref()
+        .map(|name| name.split(" / ").collect::<Vec<_>>().join(" "))
+        .filter(|name| !name.is_empty())
+        .unwrap_or_else(|| unit.display_name())
 }
 
 async fn apply_import_decision(
@@ -519,6 +647,7 @@ async fn review_stale_units_inner(
         let decision = tui::review(
             terminal,
             &format!("Delete stale ORBIT unit {name}?"),
+            None,
             &lines,
             &format!("Stale unit {}/{}", index + 1, total),
             tui::Action::Delete,
@@ -629,6 +758,33 @@ mod tests {
             "2 мсб 4 омсбр 3 ЗВА",
         )
         .is_none());
+    }
+
+    #[test]
+    fn maps_sigint_full_name_to_each_matching_orbit_unit() {
+        let first_orbit_unit_id = Uuid::new_v4();
+        let second_orbit_unit_id = Uuid::new_v4();
+        let links = HashMap::from([
+            (first_orbit_unit_id, BTreeSet::from([1])),
+            (second_orbit_unit_id, BTreeSet::from([1])),
+        ]);
+
+        assert_eq!(
+            build_sigint_unit_names_by_orbit_unit(&links, &[sigint_unit()]),
+            HashMap::from([
+                (first_orbit_unit_id, "1 мсб ТрО 4 омсбр 3 ЗВА".to_string(),),
+                (second_orbit_unit_id, "1 мсб ТрО 4 омсбр 3 ЗВА".to_string(),),
+            ])
+        );
+    }
+
+    #[test]
+    fn review_name_uses_generative_path_without_splitters() {
+        let mut unit = import_unit(None);
+        unit.generative_unit_name_full =
+            Some("габатр / 392 мсп / 19 мсд / 58 а / ЮВО".to_string());
+
+        assert_eq!(review_unit_name(&unit), "габатр 392 мсп 19 мсд 58 а ЮВО");
     }
 
     fn sigint_unit() -> sigint_unit::Model {

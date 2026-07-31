@@ -795,7 +795,9 @@ pub fn read_from_path<T>(path: PathBuf) -> Result<T, AppError>
 where
     T: for<'a> Deserialize<'a>,
 {
-    let config = std::fs::read_to_string(&path)?;
+    let config = std::fs::read_to_string(&path).with_context(|| {
+        format!("failed to read configuration file {}", path.display())
+    })?;
     let (config, unused_keys) = deserialize_config(&config).context(h!())?;
     warn_about_unused_config_keys(&path, &unused_keys);
     Ok(config)
@@ -1006,6 +1008,17 @@ migrated = "database"
         assert!(warning.contains("WARNING: UNUSED CONFIG KEYS"));
         assert!(warning.contains("  - removed"));
         assert!(warning.contains("removed or migrated to the database"));
+    }
+
+    #[test]
+    fn missing_config_error_includes_its_path() {
+        let path = PathBuf::from(format!(
+            "/tmp/missing-echo-config-{}.toml",
+            Uuid::new_v4()
+        ));
+        let error = read_from_path::<TestConfig>(path.clone()).unwrap_err();
+
+        assert!(format!("{error:?}").contains(&path.display().to_string()));
     }
 
     #[test]

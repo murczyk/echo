@@ -31,6 +31,7 @@ pub enum StartAction {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MatchOption {
+    pub unit_id: uuid::Uuid,
     pub operational_full_name: String,
     pub generative_full_name: String,
     pub original_name: String,
@@ -125,6 +126,7 @@ pub fn restore_terminal(terminal: &mut OrbitTerminal) -> io::Result<()> {
 pub fn review(
     terminal: &mut OrbitTerminal,
     title: &str,
+    context: Option<&str>,
     lines: &[String],
     progress: &str,
     action: Action,
@@ -138,6 +140,7 @@ pub fn review(
                 draw_review(
                     frame,
                     title,
+                    context,
                     lines,
                     progress,
                     action,
@@ -342,8 +345,9 @@ fn draw_match_selector(
         .split(frame.size());
     let items = options.iter().enumerate().map(|(index, option)| {
         ListItem::new(format!(
-            "{}. Operational full name: {}\n   Generative full name: {}\n   Original name: {}",
+            "{}. ORBIT unit ID: {}\n   Operational full name: {}\n   Generative full name: {}\n   Original name: {}",
             index + 1,
+            option.unit_id,
             option.operational_full_name,
             option.generative_full_name,
             option.original_name,
@@ -376,6 +380,7 @@ fn draw_match_selector(
 fn draw_review(
     frame: &mut Frame<'_>,
     title: &str,
+    context: Option<&str>,
     lines: &[String],
     progress: &str,
     action: Action,
@@ -385,13 +390,16 @@ fn draw_review(
     let root = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(2),
+            Constraint::Length(if context.is_some() { 3 } else { 2 }),
             Constraint::Min(1),
             Constraint::Length(2),
         ])
         .split(frame.size());
-    frame
-        .render_widget(Paragraph::new(format!("{progress}\n{title}")), root[0]);
+    let header = context.map_or_else(
+        || format!("{progress}\n{title}"),
+        |context| format!("{progress}\n{title}\n{context}"),
+    );
+    frame.render_widget(Paragraph::new(header), root[0]);
     frame.render_widget(
         Paragraph::new(lines.join("\n"))
             .block(Block::default().borders(Borders::ALL).title("Details"))

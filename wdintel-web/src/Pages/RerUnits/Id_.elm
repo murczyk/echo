@@ -366,12 +366,7 @@ overviewTab shared unit orbitUnits =
         , attribute "role" "tabpanel"
         ]
         (unitOverviewCard shared unit
-            :: (if List.isEmpty orbitUnits then
-                    []
-
-                else
-                    [ orbitDataCard shared orbitUnits ]
-               )
+            :: List.map (orbitDataCard shared) orbitUnits
         )
 
 
@@ -412,22 +407,17 @@ unitOverviewCard shared unit =
         ]
 
 
-orbitDataCard : Shared.Model -> List B.OrbitUnitDetails -> Html Msg
-orbitDataCard shared orbitUnits =
+orbitDataCard : Shared.Model -> B.OrbitUnitDetails -> Html Msg
+orbitDataCard shared orbitUnit =
     div [ class "border rounded p-4 bg-card" ]
         [ h2 [ class "h4 mb-4" ] [ text "Дані із Orbit" ]
-        , div [ class "flex flex-col gap-5" ]
-            (List.indexedMap (orbitUnitDetails shared) orbitUnits)
+        , orbitUnitDetails shared orbitUnit
         ]
 
 
-orbitUnitDetails : Shared.Model -> Int -> B.OrbitUnitDetails -> Html Msg
-orbitUnitDetails shared index orbitUnit =
-    div
-        [ classList
-            [ ( "border-top pt-4", index > 0 )
-            ]
-        ]
+orbitUnitDetails : Shared.Model -> B.OrbitUnitDetails -> Html Msg
+orbitUnitDetails shared orbitUnit =
+    div []
         [ div [ class "d-flex align-items-center justify-content-between gap-3 mb-4 flex-wrap" ]
             [ h3 [ class "h5 mb-0" ]
                 [ text (orbitUnitTitle orbitUnit) ]
