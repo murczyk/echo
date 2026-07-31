@@ -1,4 +1,4 @@
-use crate::entities::sigint_unit;
+use crate::entities::{orbit_unit, orbit_unit_sigint_unit, sigint_unit};
 use crate::error::AppError;
 use crate::orbit::dictionary::DictionaryMaps;
 use crate::orbit::persistence::{ExistingUnit, ImportState, ImportUnit};
@@ -8,7 +8,8 @@ use anyhow::Context;
 use chrono::Utc;
 use sea_orm::{
     ColumnTrait, ConnectionTrait, DatabaseTransaction, DbBackend, EntityTrait,
-    QueryFilter, Statement, TransactionTrait,
+    JoinType, QueryFilter, QuerySelect, RelationTrait, Statement,
+    TransactionTrait,
 };
 use std::collections::HashSet;
 use std::path::PathBuf;
@@ -69,14 +70,39 @@ pub async fn closest_orbit_matches_for_sigint_unit(
         .collect())
 }
 
-pub async fn replace_sigint_unit_link_with_lock(
+pub async fn link_sigint_unit_if_unlinked_with_lock(
     db: &sea_orm::DatabaseConnection,
     sigint_unit_id: i64,
     orbit_unit_id: Uuid,
 ) -> Result<(), AppError> {
     let _import_lock = acquire_import_lock(db).await.c(h!())?;
+    if sigint_unit_has_active_orbit_link(db, sigint_unit_id).await? {
+        return Err(AppError::BL {
+            msg: "SIGINT unit already has a linked ORBIT unit".to_string(),
+        });
+    }
     persistence::replace_sigint_unit_link(db, sigint_unit_id, orbit_unit_id)
         .await
+}
+
+async fn sigint_unit_has_active_orbit_link<C>(
+    db: &C,
+    sigint_unit_id: i64,
+) -> Result<bool, AppError>
+where
+    C: ConnectionTrait,
+{
+    Ok(orbit_unit_sigint_unit::Entity::find()
+        .join(
+            JoinType::InnerJoin,
+            orbit_unit_sigint_unit::Relation::OrbitUnit.def(),
+        )
+        .filter(orbit_unit_sigint_unit::Column::SigintUnitId.eq(sigint_unit_id))
+        .filter(orbit_unit::Column::Deleted.eq(false))
+        .one(db)
+        .await
+        .c(h!())?
+        .is_some())
 }
 
 async fn run_selected_action(mode: Mode) -> anyhow::Result<()> {

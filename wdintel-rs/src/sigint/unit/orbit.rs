@@ -202,12 +202,7 @@ pub async fn link_orbit_unit(
         })?;
     find_available_sigint_unit(&env.dbx, req.sigint_unit_id).await?;
     find_available_orbit_unit(&env.dbx, orbit_unit_id).await?;
-    if unit_has_orbit(&env.dbx, req.sigint_unit_id).await? {
-        return Err(AppError::BL {
-            msg: "SIGINT unit already has a linked ORBIT unit".to_string(),
-        });
-    }
-    crate::orbit::replace_sigint_unit_link_with_lock(
+    crate::orbit::link_sigint_unit_if_unlinked_with_lock(
         &env.dbx,
         req.sigint_unit_id,
         orbit_unit_id,

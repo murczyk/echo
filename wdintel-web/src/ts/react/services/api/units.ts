@@ -3,11 +3,15 @@ import type {
   CreateUnitWithAutoNetworkReq,
   CreateUnitWithAutoNetworkRsp,
   DeleteUnitAttachmentReq,
+  LinkOrbitUnitReq,
   DeleteUnitAttachmentRsp,
   DeleteUnitDuplicateReq,
   ListUnitsByIdRsp,
   ListUnitsReq,
   ListUnitsRsp,
+  OrbitUnitLinkCandidate,
+  OrbitUnitLinkCandidatesReq,
+  OrbitUnitLinkCandidatesRsp,
   Unit,
   UnitAttachment,
   UnitAttachmentUnitIdsRsp,
@@ -15,7 +19,7 @@ import type {
   UpdateUnitAttachmentReq,
 } from '../../../../Bindings';
 import { emitUnauthorizedEvent } from '../../auth-redirect';
-import { HttpRequestError, postBytes, postJson } from './client';
+import { HttpRequestError, postBytes, postJson, postVoid } from './client';
 import type { RequestOptions } from './client';
 import { transformCamelToSnake, transformSnakeToCamel } from '../../../snake-to-camel';
 
@@ -86,6 +90,28 @@ export async function getUnitIdsWithVisibleAttachments(): Promise<number[]> {
 export async function getUnitDetails(unitId: number): Promise<UnitDetailsRsp> {
   const raw = await postJson<unknown>('/api/sigint/unit/details', { unit_id: unitId });
   return transformSnakeToCamel<UnitDetailsRsp>(raw);
+}
+
+export async function getOrbitUnitLinkCandidates(
+  req: OrbitUnitLinkCandidatesReq,
+  options?: RequestOptions,
+): Promise<OrbitUnitLinkCandidate[]> {
+  const raw =
+    options == null
+      ? await postJson<unknown>(
+          '/api/sigint/unit/orbit-link-candidates',
+          transformCamelToSnake(req),
+        )
+      : await postJson<unknown>(
+          '/api/sigint/unit/orbit-link-candidates',
+          transformCamelToSnake(req),
+          options,
+        );
+  return transformSnakeToCamel<OrbitUnitLinkCandidatesRsp>(raw).units ?? [];
+}
+
+export async function linkOrbitUnit(req: LinkOrbitUnitReq): Promise<void> {
+  await postVoid('/api/sigint/unit/orbit-link', transformCamelToSnake(req));
 }
 
 export async function updateUnitAttachment(req: UpdateUnitAttachmentReq): Promise<UnitAttachment> {
