@@ -193,7 +193,6 @@ pub(crate) async fn rer_analysis_geojson_bytes(
     struct CallsignInboxItem {
         id: i64,
         freq: Option<String>,
-        callsigns: Option<serde_json::Value>,
     }
 
     let callsign_inbox_items = signal_message::Entity::find()
@@ -204,7 +203,6 @@ pub(crate) async fn rer_analysis_geojson_bytes(
         .select_only()
         .column_as(sigint_inbox_item::Column::Id, "id")
         .column_as(sigint_inbox_item::Column::Freq, "freq")
-        .column_as(sigint_inbox_item::Column::Callsigns, "callsigns")
         .filter(sigint_inbox_item::Column::Freq.eq_any(unique_freqs.clone()))
         .filter(sigint_inbox_item::Column::Datetime.gte(dt_since_minus_24h))
         .filter(sigint_inbox_item::Column::Datetime.lt(dt_till))
@@ -227,18 +225,10 @@ pub(crate) async fn rer_analysis_geojson_bytes(
         let Some(freq) = inbox_item.freq else {
             continue;
         };
-        let primary = match normalized_callsigns.remove(&inbox_item.id) {
-            Some(callsigns) if !callsigns.primary.is_empty() => {
-                callsigns.primary
-            }
-            _ => {
-                crate::inbox::callsigns::from_legacy_values(
-                    inbox_item.callsigns,
-                    None,
-                )?
-                .primary
-            }
-        };
+        let primary = normalized_callsigns
+            .remove(&inbox_item.id)
+            .unwrap_or_default()
+            .primary;
         let freq_callsigns = callsigns.entry(freq).or_default();
         for callsign in primary {
             if freq_callsigns.len() == 10 {

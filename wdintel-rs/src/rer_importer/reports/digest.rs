@@ -89,8 +89,6 @@ struct DigestMessageRow {
     timestamp: Option<NaiveDateTime>,
     freq: Option<String>,
     coords: Option<String>,
-    callsigns: Option<serde_json::Value>,
-    callsigns_alg2: Option<serde_json::Value>,
     callsign_tokens: Option<serde_json::Value>,
     location: Option<String>,
     location_v2: Option<String>,
@@ -321,8 +319,6 @@ async fn load_digest_messages(
     .column_as(signal_message::Column::Timestamp, "timestamp")
     .column_as(sigint_inbox_item::Column::Freq, "freq")
     .column_as(sigint_inbox_item::Column::Coords, "coords")
-    .column_as(sigint_inbox_item::Column::Callsigns, "callsigns")
-    .column_as(sigint_inbox_item::Column::CallsignsAlg2, "callsigns_alg2")
     .column_as(sigint_inbox_item::Column::CallsignTokens, "callsign_tokens")
     .column_as(sigint_inbox_item::Column::Location, "location")
     .column_as(sigint_inbox_item::Column::LocationV2, "location_v2")
@@ -343,13 +339,8 @@ async fn load_digest_messages(
 
     rows.into_iter()
         .map(|row| {
-            let callsigns = match normalized_callsigns.remove(&row.id) {
-                Some(callsigns) => callsigns,
-                None => crate::inbox::callsigns::from_legacy_values(
-                    row.callsigns,
-                    row.callsigns_alg2,
-                )?,
-            };
+            let callsigns =
+                normalized_callsigns.remove(&row.id).unwrap_or_default();
             let group_info = groups_by_message.remove(&row.id);
             let mut message = blank_inbox_message();
             message.message_uid = row.message_uid;

@@ -1367,8 +1367,6 @@ where
         .column_as(preferred_sender_expr(None), "sender")
         .column_as(sigint_inbox_item::Column::Freq, "freq")
         .column_as(sigint_inbox_item::Column::Coords, "coords")
-        .column_as(sigint_inbox_item::Column::Callsigns, "callsigns")
-        .column_as(sigint_inbox_item::Column::CallsignsAlg2, "callsigns_alg2")
         .column_as(sigint_inbox_item::Column::CallsignTokens, "callsign_tokens")
         .column_as(sigint_inbox_item::Column::SignalTokens, "signal_tokens")
         .column_as(sigint_inbox_item::Column::KeywordTokens, "keyword_tokens")

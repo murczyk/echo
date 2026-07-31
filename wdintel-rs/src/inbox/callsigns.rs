@@ -127,6 +127,13 @@ pub struct InboxItemCallsigns {
     pub alg2: Vec<String>,
 }
 
+#[derive(FromQueryResult)]
+struct LegacyInboxItemCallsigns {
+    id: i64,
+    callsigns: Option<Json>,
+    callsigns_alg2: Option<Json>,
+}
+
 impl InboxItemCallsigns {
     fn normalized(mut self) -> Self {
         self.primary = crate::utils::uniq_via_btreeset(&self.primary);
@@ -288,6 +295,7 @@ where
     if item_ids.is_empty() {
         return Ok(HashMap::new());
     }
+    let item_ids = crate::utils::uniq_via_btreeset(item_ids);
     let mut result = HashMap::new();
     for item_ids in
         item_ids.chunks(crate::config::INBOX_ITEM_CALLSIGN_LOAD_BATCH_SIZE)
@@ -305,6 +313,10 @@ where
             .all(dbx)
             .await
             .c(h!())?;
+        let normalized_item_ids = rows
+            .iter()
+            .map(|row| row.sigint_inbox_item_id)
+            .collect::<HashSet<_>>();
         for row in rows {
             let callsigns: &mut InboxItemCallsigns =
                 result.entry(row.sigint_inbox_item_id).or_default();
@@ -317,8 +329,44 @@ where
                 }
             }
         }
+        let fallback_item_ids = item_ids
+            .iter()
+            .filter(|item_id| !normalized_item_ids.contains(item_id))
+            .copied()
+            .collect::<Vec<_>>();
+        load_legacy_by_item_ids(dbx, &fallback_item_ids, &mut result).await?;
     }
     Ok(result)
+}
+
+async fn load_legacy_by_item_ids<C>(
+    dbx: &C,
+    item_ids: &[i64],
+    result: &mut HashMap<i64, InboxItemCallsigns>,
+) -> Result<(), AppError>
+where
+    C: ConnectionTrait,
+{
+    if item_ids.is_empty() {
+        return Ok(());
+    }
+    let rows = sigint_inbox_item::Entity::find()
+        .select_only()
+        .column(sigint_inbox_item::Column::Id)
+        .column(sigint_inbox_item::Column::Callsigns)
+        .column(sigint_inbox_item::Column::CallsignsAlg2)
+        .filter(sigint_inbox_item::Column::Id.is_in(item_ids.to_vec()))
+        .into_model::<LegacyInboxItemCallsigns>()
+        .all(dbx)
+        .await
+        .c(h!())?;
+    for row in rows {
+        result.insert(
+            row.id,
+            from_legacy_values(row.callsigns, row.callsigns_alg2)?,
+        );
+    }
+    Ok(())
 }
 
 async fn lock_parent<C>(
