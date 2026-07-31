@@ -2666,13 +2666,45 @@ bump-version:
     ROOT="$(pwd)"
     MAIN_TOML="$ROOT/Cargo.toml"  # workspace file
 
-    # Extract current [workspace.package] version (BSD/macOS compatible)
-    CUR=$(sed -n '/^\[workspace\.package\]/,/^\[/p' "$MAIN_TOML" | sed -n -E 's/^[[:space:]]*version[[:space:]]*=[[:space:]]*"([^"]+)".*/\1/p' | head -1)
+    CUR=$(tq -r -f "$MAIN_TOML" workspace.package.version)
     BASE=${CUR%-rc.*}
     if [[ -z "${BASE:-}" ]]; then echo "Cannot determine base version from $MAIN_TOML" >&2; exit 1; fi
     TS=$(date -u +%Y%m%d%H%M)
     NEW_VER="${BASE}-rc.${TS}"
     echo "✅ Bumping to $NEW_VER"
+
+    LOCKFILE="$ROOT/Cargo.lock"
+    LOCKFILE_TMP=$(mktemp "$LOCKFILE.XXXXXX")
+    trap 'rm -f "$LOCKFILE_TMP"' EXIT
+    if ! awk -v oldver="$CUR" -v newver="$NEW_VER" '
+      BEGIN {
+        split("echo-docs echo-install echo-swapp goi-echo-worker wdintel-rs", packages, " ")
+        for (i in packages) expected[packages[i]] = 1
+      }
+      /^\[\[package\]\]$/ { package = "" }
+      /^name = "/ {
+        package = $0
+        sub(/^name = "/, "", package)
+        sub(/"$/, "", package)
+      }
+      package in expected && $0 == "version = \"" oldver "\"" {
+        print "version = \"" newver "\""
+        updated[package]++
+        next
+      }
+      { print }
+      END {
+        for (package in expected) {
+          if (updated[package] != 1) {
+            printf "Expected exactly one Cargo.lock entry for %s at version %s, found %d\\n", package, oldver, updated[package] > "/dev/stderr"
+            failed = 1
+          }
+        }
+        exit failed
+      }
+    ' "$LOCKFILE" > "$LOCKFILE_TMP"; then
+      exit 1
+    fi
 
     # Update workspace version in [workspace.package]
     awk -v newver="$NEW_VER" '
@@ -2685,7 +2717,7 @@ bump-version:
       {print}
     ' "$MAIN_TOML" > "$MAIN_TOML.tmp" && mv "$MAIN_TOML.tmp" "$MAIN_TOML"
 
-    # Update standalone crates that are not in the workspace
+    # Update workspace crates that keep an explicit package version.
     PFILES=(
       "$ROOT/docs/echo-docs/Cargo.toml"
     )
@@ -2703,8 +2735,9 @@ bump-version:
       fi
     done
 
-    # Update lockfile
-    cargo check
+    mv "$LOCKFILE_TMP" "$LOCKFILE"
+    trap - EXIT
+    echo "✅ Updated Cargo.lock without running Cargo"
 
 # Commit bumped versions (includes Cargo.lock)
 bump-version-commit:
@@ -2712,7 +2745,7 @@ bump-version-commit:
     set -euo pipefail
     just bump-version
     MAIN_TOML="Cargo.toml"
-    new_ver=$(sed -n '/^\[workspace\.package\]/,/^\[/p' "$MAIN_TOML" | sed -n -E 's/^[[:space:]]*version[[:space:]]*=[[:space:]]*"([^"]+)".*/\1/p' | head -1)
+    new_ver=$(tq -r -f "$MAIN_TOML" workspace.package.version)
     msg="bump: ${new_ver}{{ message }}"
     git add Cargo.lock Cargo.toml docs/echo-docs/Cargo.toml 2>/dev/null || true
     if git diff --cached --quiet; then
