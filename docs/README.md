@@ -331,6 +331,9 @@ the configured cleanup period expires.
 
 ## ORBIT unit import
 
+See [Working with ORBIT data](ORBIT.md) for the complete operator and developer
+guide.
+
 ORBIT ingestion is split into normalization and review. The
 `oneoff-prepare-orbit-import --path <export.json>` command validates the source,
 normalizes dictionary references to stable UUIDs, writes one Apache Parquet file

@@ -1,0 +1,202 @@
+# Working with ORBIT data
+
+ORBIT unit ingestion has two separate stages:
+
+1. Normalize an ORBIT JSON export into a timestamped ZIP of Apache Parquet
+   files.
+2. Review and import the latest normalized snapshot through the interactive
+   TUI.
+
+Do not run the TUI directly against a JSON export. It always reads the latest
+normalized snapshot from configured storage.
+
+## Source JSON
+
+The source must be a top-level array of ORBIT unit objects. Every unit requires
+a UUID `unit_id`; all other supported fields are optional:
+
+- names: `unit_name`, `unit_name_original`, `unit_name_short`,
+  `operational_unit_name_full`, and `generative_unit_name_full`;
+- identifiers: `unit_number`, `unit_alternate_names`, and
+  `unit_alternate_numbers`;
+- dictionaries: `unit_echelon`, `combat_unit_type`, and
+  `grouping_of_forces`;
+- hierarchy: `operational_parent_units`, `generative_parent_units`, and
+  `path_level` on embedded parent objects.
+
+`unit_echelon` and `combat_unit_type` are either `null` or one object containing
+`key` and `name`. `grouping_of_forces` accepts `null`, one such object, or an
+array because a unit can belong to multiple force groupings. Alternate names
+and numbers accept either an array of strings or a comma-separated string.
+
+Unknown object properties are rejected so upstream schema changes cannot be
+silently discarded. Repeated appearances of the same unit UUID must not contain
+conflicting non-null unit details.
+
+For each top-level unit object, that object's operational and generative parent
+arrays are authoritative. A conflicting claim made only by embedding the same
+unit in another object's parent chain is ignored when an authoritative
+top-level object exists. Conflicting embedded parent claims still fail when the
+unit has no top-level object. Cycles and references to missing hierarchy units
+also fail.
+
+## Prepare a snapshot
+
+From a development checkout:
+
+```sh
+cargo run -p wdintel-rs -- --mode=debug oneoff-prepare-orbit-import \
+  --path /absolute/path/to/orbit-export.json
+```
+
+In production:
+
+```sh
+sudo wdintel-rs --mode=live oneoff-prepare-orbit-import \
+  --path /absolute/path/to/orbit-export.json
+```
+
+The path is read by the process running `wdintel-rs`. Use an absolute path and
+make sure that user can read the file. The command validates the JSON and its
+hierarchies, collects dictionary values, writes the archive, and prints its
+final storage location.
+
+Each archive is named `orbit-import/YYYYMMDD_HHMMSS_microseconds.zip` and
+contains:
+
+- `orbit_units.parquet`;
+- `orbit_grouping_of_forces.parquet`;
+- `orbit_combat_unit_type.parquet`;
+- `orbit_unit_echelon.parquet`.
+
+Before normalizing a new export, the command reads the latest existing snapshot.
+It reuses dictionary UUIDs by `(key, name)` and retains older dictionary entries
+that are absent from the new export. Do not delete the latest snapshot or edit
+dictionary UUIDs unless deliberately starting a new dictionary identity set.
+
+In live mode, archives are stored under `orbit-import/` in the S3 bucket from
+`ai_models_config.s3_config`. In debug and test modes, they are stored under
+`<storage_dir>/orbit-import/`. Live mode reads `/etc/echo/config.toml` by
+default; set `ECHO_CONFIG_PATH` to use another configuration file.
+
+## Import through the TUI
+
+From a development checkout:
+
+```sh
+cargo run -p wdintel-rs -- --mode=debug tui-import-orbit-units
+```
+
+In production:
+
+```sh
+sudo wdintel-rs --mode=live tui-import-orbit-units
+```
+
+The importer downloads and unpacks the newest timestamped snapshot. It fails
+before starting if no snapshot exists. The first screen offers two workflows.
+
+### Import new ORBIT units
+
+This workflow matches active, non-deleted `sigint_unit` rows against ORBIT
+roots. Both generative and operational full paths contribute parent evidence.
+Root echelon, normalized army abbreviations, configured SIGINT-only name
+fragments, and hierarchy distance are considered when ranking candidates.
+Ambiguous candidates with divergent parent paths are skipped. Equally close
+candidates whose paths are ordered extensions are retained, which intentionally
+allows one SIGINT unit to link to multiple ORBIT units.
+
+All required operational and generative ancestors are written parent-first and
+do not require confirmation. The TUI asks only about matched root units:
+
+- create a new unit;
+- update a changed unit;
+- reactivate a previously deleted unit;
+- skip the proposed change.
+
+The prompt shows the ORBIT generative full path without `/` separators and the
+corresponding SIGINT full name. After the root review, active ORBIT rows not seen
+in the snapshot are offered for soft deletion. Stale deletion can be accepted,
+skipped, or skipped for all remaining rows.
+
+Confirmed changes are persisted immediately. Quitting does not roll back
+earlier decisions. ORBIT-to-SIGINT links are replaced only after the regular
+review finishes; quitting early leaves the previous links intact.
+
+### Search by SIGINT unit name
+
+Enter the exact full name assembled from the SIGINT unit's populated company,
+battalion, regiment, division, and army fields. If no active SIGINT unit has
+that normalized full name, the command reports it without searching ORBIT.
+
+The TUI displays all equally closest candidates with their ORBIT UUID,
+operational full name, generative full name, and original name. Select a result
+with Up/Down and Enter. Its ancestors and selected root are imported
+parent-first without the regular review or stale-deletion pass, and that SIGINT
+unit's existing ORBIT links are replaced with the selected root.
+
+Common controls are:
+
+- Up/Down, Home/End: select an item;
+- Enter: accept or import;
+- `s`: skip;
+- `a`: skip all remaining stale deletions when offered;
+- Page Up/Page Down: scroll details;
+- `q`, Escape, or Ctrl-C: quit.
+
+## PostgreSQL data model
+
+Imported data is stored in six tables:
+
+- `orbit_unit`: unit attributes, soft-deletion state, and operational and
+  generative parent UUIDs;
+- `orbit_unit_echelon`: echelon dictionary;
+- `orbit_combat_unit_type`: combat-unit-type dictionary;
+- `orbit_grouping_of_forces`: force-grouping dictionary;
+- `orbit_unit_grouping_of_forces`: many-to-many unit/grouping links;
+- `orbit_unit_sigint_unit`: many-to-many links between ORBIT and Echo SIGINT
+  units.
+
+The TUI inserts dictionary rows missing from PostgreSQL. An existing database
+row with the same `(key, name)` remains authoritative locally. Units are soft
+deleted through `orbit_unit.deleted`; relations are not inferred from names
+after import.
+
+These tables are operational PostgreSQL data and are excluded from PeerDB
+replication.
+
+## Application behavior
+
+ORBIT information is currently visible only when
+`can_view_orbit_data` permits it, which currently means the user has the admin
+role. Other users always receive `has_orbit: false` in the RER units response
+and no ORBIT detail cards.
+
+For permitted users, a Delta icon marks linked rows in the RER unit list. The
+unit details page renders one separate `Дані із Orbit` card for every active
+linked ORBIT unit and provides a link to:
+
+```text
+https://delta.mil.gov.ua/orbit/units/{unit_id}/organizational-structure
+```
+
+Soft-deleted ORBIT units are neither marked nor rendered.
+
+## Troubleshooting
+
+- `No such file or directory`: verify the absolute JSON path on the host where
+  the preparation command runs and its read permissions.
+- `no ORBIT import snapshot exists`: prepare a snapshot in the same mode and
+  with the same configuration used by the TUI.
+- `unknown properties`: update the importer for the new source schema or remove
+  unintended fields; do not silently ignore them.
+- dictionary decoding errors: verify that dictionary values use `{ "key":
+  ..., "name": ... }`; `grouping_of_forces` may be an object or an array.
+- conflicting unit values or parents: inspect every occurrence of the reported
+  UUID. A unit's own top-level object resolves conflicting embedded parent
+  claims, but conflicting top-level objects are invalid.
+- unexpected matches: use the search workflow to inspect candidate UUIDs and
+  full paths before linking one manually.
+
+The deployment-oriented checklist is in the
+[ORBIT import runbook](../deploy/2026-07-29-orbit-dictionaries/README.md).
