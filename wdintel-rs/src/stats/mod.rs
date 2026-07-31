@@ -2469,10 +2469,12 @@ async fn load_generic_stats(
         generic_stats_by_datetime(dbx, since_ts, till_ts).await?;
     let stats_by_created_at =
         generic_stats_by_created_at(dbx, since_ts, till_ts).await?;
-    Ok(stats_by_datetime
+    let mut stats = stats_by_datetime
         .into_iter()
         .chain(stats_by_created_at)
-        .collect_vec())
+        .collect_vec();
+    enrich_stats_callsigns(dbx, &mut stats).await?;
+    Ok(stats)
 }
 
 async fn generic_stats_by_datetime(
@@ -2545,7 +2547,7 @@ fn generic_stats_base_select() -> Select<signal_message::Entity> {
         .column(sigint_inbox_item::Column::Datetime)
         .column(signal_message_group::Column::GroupMasterKey)
         .column(sigint_inbox_item::Column::Freq)
-        .column(sigint_inbox_item::Column::Callsigns)
+        .column_as(Expr::cust("'[]'::jsonb"), "callsigns")
         .column(sigint_inbox_item::Column::LocationV2)
         .column(sigint_inbox_item::Column::UnitV2)
         .column(sigint_inbox_item::Column::PostId)
@@ -2576,10 +2578,12 @@ async fn load_network_stats(
     let stats_by_created_at =
         network_stats_by_created_at(dbx, since_ts, till_ts, network_ids)
             .await?;
-    Ok(stats_by_datetime
+    let mut stats = stats_by_datetime
         .into_iter()
         .chain(stats_by_created_at)
-        .collect_vec())
+        .collect_vec();
+    enrich_network_stats_callsigns(dbx, &mut stats).await?;
+    Ok(stats)
 }
 
 async fn network_stats_by_datetime(
@@ -2667,7 +2671,7 @@ fn network_stats_base_select() -> Select<signal_message::Entity> {
         .column(sigint_inbox_item::Column::Datetime)
         .column(signal_message_group::Column::GroupMasterKey)
         .column(sigint_inbox_item::Column::Freq)
-        .column(sigint_inbox_item::Column::Callsigns)
+        .column_as(Expr::cust("'[]'::jsonb"), "callsigns")
         .column_as(
             sigint_inbox_item_network::Column::SigintNetworkId,
             "network_id",
@@ -2678,6 +2682,57 @@ fn network_stats_base_select() -> Select<signal_message::Entity> {
         .group_by(sigint_inbox_item::Column::Id)
         .group_by(signal_message_group::Column::GroupMasterKey)
         .group_by(sigint_inbox_item_network::Column::SigintNetworkId)
+}
+
+async fn enrich_stats_callsigns(
+    dbx: &DatabaseConnection,
+    stats: &mut [StatsRow],
+) -> Result<(), AppError> {
+    let callsigns = load_stats_callsigns(
+        dbx,
+        &stats.iter().map(|row| row.id).collect_vec(),
+    )
+    .await?;
+    for row in stats {
+        if let Some(callsigns) = callsigns.get(&row.id) {
+            row.callsigns = Some(callsigns.clone());
+        }
+    }
+    Ok(())
+}
+
+async fn enrich_network_stats_callsigns(
+    dbx: &DatabaseConnection,
+    stats: &mut [NetworkStatsRow],
+) -> Result<(), AppError> {
+    let callsigns = load_stats_callsigns(
+        dbx,
+        &stats.iter().map(|row| row.id).collect_vec(),
+    )
+    .await?;
+    for row in stats {
+        if let Some(callsigns) = callsigns.get(&row.id) {
+            row.callsigns = Some(callsigns.clone());
+        }
+    }
+    Ok(())
+}
+
+async fn load_stats_callsigns(
+    dbx: &DatabaseConnection,
+    inbox_item_ids: &[i64],
+) -> Result<HashMap<i64, sea_orm::prelude::Json>, AppError> {
+    let callsigns =
+        crate::inbox::callsigns::load_by_item_ids(dbx, inbox_item_ids).await?;
+    callsigns
+        .into_iter()
+        .map(|(inbox_item_id, callsigns)| {
+            Ok((
+                inbox_item_id,
+                serde_json::to_value(callsigns.effective()).c(h!())?,
+            ))
+        })
+        .collect()
 }
 
 fn collect_time_intervals_for_stats(
