@@ -9145,6 +9145,7 @@ dependencies = [
  "lazy_static",
  "levenshtein",
  "log",
+ "md-5",
  "milgeo-audio-wave",
  "milgeo-rs",
  "mime_guess",

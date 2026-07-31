@@ -27,6 +27,7 @@ public.orbit_unit_echelon
 public.orbit_unit
 public.orbit_unit_grouping_of_forces
 public.orbit_unit_sigint_unit
+public.orbit_sync
 
 # AI engine secrets, admin-only history, callsign tests, and worker queue.
 public.ai_engine

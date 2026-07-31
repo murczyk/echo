@@ -32,23 +32,26 @@ cargo run -p wdintel-rs -- --mode=debug tui-import-orbit-units
 
 The first TUI screen offers:
 
-- import new ORBIT units from the latest normalized snapshot;
+- synchronize ORBIT units and rebuild SIGINT links;
 - search an ORBIT unit by an exact Echo SIGINT unit full name.
 
-Both actions use the latest timestamped ZIP and never ask for a JSON path. The
-TUI fails with a storage location when no snapshot exists. JSON parsing,
-unknown-field rejection, hierarchy validation, dictionary collection, and
-stable-ID assignment happen in `oneoff-prepare-orbit-import`.
+The synchronization action uses the latest timestamped ZIP and never asks for
+a JSON path. The TUI fails with a storage location when no snapshot exists.
+JSON parsing, unknown-field rejection, hierarchy validation, dictionary
+collection, and stable-ID assignment happen in `oneoff-prepare-orbit-import`.
+It creates, updates, reactivates, or touches every root and embedded ancestor
+before matching. `orbit_sync` records the archive MD5 and synchronization
+timestamp. When the latest archive has the same MD5, the TUI warns the operator
+and asks whether to proceed with database-only link rebuilding.
 
 The search option asks for the SIGINT full name first. If no active,
 non-deleted `sigint_unit` has that normalized full name, it prints the result
-without loading a snapshot. Otherwise it ranks roots from the latest snapshot
-by matching hierarchy segments and root-echelon distance, and shows all equally
-closest results with their ORBIT unit IDs, operational full, generative full,
-and original names. Use Up/Down and Enter to select a result. The selected root
-and both parent chains are imported parent-first without the regular review or
-stale deletion pass. This manual selection replaces any existing ORBIT links
-for that SIGINT unit with the selected root.
+without loading ORBIT data. Otherwise it ranks roots from the latest recorded
+database synchronization by matching hierarchy segments and root-echelon
+distance, and shows all equally closest results with their ORBIT unit IDs,
+operational full, generative full, and original names. Use Up/Down and Enter to
+select a result. This manual selection replaces any existing ORBIT links for
+that SIGINT unit with the selected root without changing ORBIT unit data.
 
 The normalizer discovers dictionary values in both root units and embedded
 parents. It retains prior dictionary entries, reuses IDs by `(key, name)`, and
@@ -72,35 +75,22 @@ equivalent. Extra full-name segments without descriptors are allowed when the
 supplied descriptors remain in hierarchy order. When several SIGINT units
 match, an exact root-echelon match wins, followed by the candidate with the most
 matching names. An unresolved tie with divergent parent paths is skipped; equal
-matches whose parent paths are ordered extensions of one another are all
-retained, while same-path duplicates select the lowest ID. Generative and
-operational ancestors of matched roots are included. After a completed review,
-active imported roots are linked to the selected active Echo SIGINT unit. One
-SIGINT unit can therefore link to multiple equally close ORBIT roots when one
-hierarchy contains additional intermediate parents. A completed import replaces
-all existing links, including links produced by older matching rules. These
-links drive the admin-only ORBIT indicator and separate unit-details cards.
+matches whose parent paths are ordered extensions select only the shortest
+path, while same-path duplicates select the lowest ID. A longer path wins when
+SIGINT parent evidence ranks it higher. After synchronization, matching loads
+top-level roots and parent chains exclusively from PostgreSQL. The rebuilt link
+set replaces all existing links, including links produced by older matching
+rules. These links drive the admin-only ORBIT indicator and separate
+unit-details cards.
 When a unit also appears inside another unit's path with a different parent,
 the unit's own top-level parent chain is authoritative. Conflicting
 embedded-only paths still fail when the ambiguous unit is selected.
 
-Ancestors are imported parent-first without confirmation so the complete parent
-tree exists before matched children are reviewed. New ancestors are created,
-changed ancestors are updated, and deleted ancestors are reactivated
-automatically. When a partial ancestor already exists, omitted source fields
-preserve their stored values. Interactive create/update/reactivate prompts are
-shown only for ORBIT roots selected by SIGINT matching. Rejecting a selected
-parent also skips dependent descendants. Review headers show the ORBIT
-generative full path without ` / ` separators and the corresponding SIGINT full
-name. The review offers:
-
-- create or skip for new units;
-- update or skip for changed units;
-- reactivate or skip for deleted units;
-- delete, skip, or skip all for stale active units.
-
-Unchanged units and skipped changed/reactivation units are marked seen by
-updating only `updated_at`. After review, active rows older than the import
-start minus the five-second grace period are offered for soft deletion.
-Confirmed changes are persisted immediately; quitting stops future work and
-does not roll back earlier decisions.
+Ancestors are synchronized parent-first so complete parent trees exist before
+link rebuilding. When a partial ancestor already exists, omitted source fields
+preserve their stored values. Top-level rows are marked with
+`is_snapshot_root`; this prevents embedded-only ancestors from becoming link
+candidates. After every current snapshot row has been synchronized, older
+active rows are offered for soft deletion. Quitting stale deletion preserves
+the completed data synchronization and still rebuilds links from the current
+database snapshot.

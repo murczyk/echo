@@ -80,6 +80,7 @@ pub use super::network_invalidation_worker::Entity as NetworkInvalidationWorker;
 pub use super::nominatimres::Entity as Nominatimres;
 pub use super::orbit_combat_unit_type::Entity as OrbitCombatUnitType;
 pub use super::orbit_grouping_of_forces::Entity as OrbitGroupingOfForces;
+pub use super::orbit_sync::Entity as OrbitSync;
 pub use super::orbit_unit::Entity as OrbitUnit;
 pub use super::orbit_unit_echelon::Entity as OrbitUnitEchelon;
 pub use super::orbit_unit_grouping_of_forces::Entity as OrbitUnitGroupingOfForces;

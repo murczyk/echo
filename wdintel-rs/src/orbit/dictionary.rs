@@ -36,7 +36,7 @@ pub struct DictionaryMaps {
     grouping_of_forces: HashMap<DictionaryKey, Uuid>,
     combat_unit_type: HashMap<DictionaryKey, Uuid>,
     unit_echelon: HashMap<DictionaryKey, Uuid>,
-    summaries: HashMap<Uuid, String>,
+    unit_echelon_values: HashMap<Uuid, DictionaryValue>,
 }
 
 impl DictionaryMaps {
@@ -51,11 +51,9 @@ impl DictionaryMaps {
             .c(h!())?;
         let echelon =
             orbit_unit_echelon::Entity::find().all(db).await.c(h!())?;
-        let mut summaries = HashMap::new();
         let grouping_of_forces = grouping
             .into_iter()
             .map(|row| {
-                summaries.insert(row.id, format!("{} ({})", row.name, row.key));
                 (
                     DictionaryKey {
                         key: row.key,
@@ -68,7 +66,6 @@ impl DictionaryMaps {
         let combat_unit_type = combat
             .into_iter()
             .map(|row| {
-                summaries.insert(row.id, format!("{} ({})", row.name, row.key));
                 (
                     DictionaryKey {
                         key: row.key,
@@ -78,10 +75,17 @@ impl DictionaryMaps {
                 )
             })
             .collect();
+        let mut unit_echelon_values = HashMap::new();
         let unit_echelon = echelon
             .into_iter()
             .map(|row| {
-                summaries.insert(row.id, format!("{} ({})", row.name, row.key));
+                unit_echelon_values.insert(
+                    row.id,
+                    DictionaryValue {
+                        key: Value::String(row.key.clone()),
+                        name: Value::String(row.name.clone()),
+                    },
+                );
                 (
                     DictionaryKey {
                         key: row.key,
@@ -95,8 +99,15 @@ impl DictionaryMaps {
             grouping_of_forces,
             combat_unit_type,
             unit_echelon,
-            summaries,
+            unit_echelon_values,
         })
+    }
+
+    pub fn unit_echelon_value(
+        &self,
+        id: Option<Uuid>,
+    ) -> Option<DictionaryValue> {
+        id.and_then(|id| self.unit_echelon_values.get(&id)).cloned()
     }
 
     pub fn resolve(
@@ -143,25 +154,6 @@ impl DictionaryMaps {
                     .collect()
             })
             .transpose()
-    }
-
-    pub fn summary(&self, id: Option<Uuid>) -> String {
-        id.and_then(|id| self.summaries.get(&id).cloned())
-            .unwrap_or_else(|| "-".to_string())
-    }
-
-    pub fn summaries(&self, ids: Option<&BTreeSet<Uuid>>) -> String {
-        let mut summaries = ids
-            .into_iter()
-            .flatten()
-            .filter_map(|id| self.summaries.get(id).cloned())
-            .collect::<Vec<_>>();
-        summaries.sort();
-        if summaries.is_empty() {
-            "-".to_string()
-        } else {
-            summaries.join(", ")
-        }
     }
 }
 

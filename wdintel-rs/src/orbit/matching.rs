@@ -276,7 +276,17 @@ fn best_matching_orbit_units(
     }) {
         return Vec::new();
     }
-    units_by_parent_signature.into_values().collect()
+    signatures
+        .iter()
+        .find(|candidate| {
+            signatures
+                .iter()
+                .all(|signature| signature_is_extension(candidate, signature))
+        })
+        .and_then(|signature| units_by_parent_signature.get(*signature))
+        .copied()
+        .into_iter()
+        .collect()
 }
 
 fn validate_unit(unit: &SourceUnit, path: &str) -> anyhow::Result<()> {
@@ -894,7 +904,7 @@ mod tests {
     }
 
     #[test]
-    fn equally_close_orbit_units_with_extended_paths_are_all_linked() {
+    fn equally_close_orbit_units_with_extended_paths_pick_shortest() {
         let mut direct = source_unit(
             "1 мсб / 4 омсбр / 3 ЗВА",
             vec![
@@ -923,10 +933,37 @@ mod tests {
                 &[direct.clone(), extended.clone()],
                 &[sigint_unit],
             ),
-            HashMap::from([
-                (direct.unit_id, BTreeSet::from([1])),
-                (extended.unit_id, BTreeSet::from([1])),
-            ])
+            HashMap::from([(direct.unit_id, BTreeSet::from([1]))])
+        );
+    }
+
+    #[test]
+    fn intermediate_parent_selects_extended_path() {
+        let direct = source_unit(
+            "1 мсб / 4 омсбр / 3 ЗВА",
+            vec![
+                ("battalion", "1 мсб", 2),
+                ("brigade", "4 омсбр", 1),
+                ("fieldArmy", "3 ЗВА", 0),
+            ],
+        );
+        let extended = source_unit(
+            "1 мсб / 1194 мсп / 4 омсбр / 3 ЗВА",
+            vec![
+                ("battalion", "1 мсб", 3),
+                ("regiment", "1194 мсп", 2),
+                ("brigade", "4 омсбр", 1),
+                ("fieldArmy", "3 ЗВА", 0),
+            ],
+        );
+        let sigint_unit = echo_unit("", "1 мсб", "1194 мсп", "", "3 ЗВА");
+
+        assert_eq!(
+            matching_sigint_unit_ids(
+                &[direct, extended.clone()],
+                &[sigint_unit],
+            ),
+            HashMap::from([(extended.unit_id, BTreeSet::from([1]))])
         );
     }
 

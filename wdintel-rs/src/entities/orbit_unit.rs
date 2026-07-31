@@ -31,6 +31,7 @@ pub struct Model {
     pub deleted: bool,
     pub created_at: DateTime,
     pub updated_at: DateTime,
+    pub is_snapshot_root: bool,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

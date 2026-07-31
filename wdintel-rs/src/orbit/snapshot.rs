@@ -15,6 +15,7 @@ use anyhow::{Context, Result};
 use arrow_array::{Array, ArrayRef, Int32Array, RecordBatch, StringArray};
 use arrow_schema::{DataType, Field, Schema};
 use chrono::{NaiveDateTime, Utc};
+use md5::{Digest, Md5};
 use opendal::{EntryMode, Operator};
 use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
 use parquet::arrow::arrow_writer::ArrowWriter;
@@ -33,6 +34,7 @@ use walkdir::WalkDir;
 pub struct OrbitSnapshot {
     pub units: Vec<SourceUnit>,
     pub dictionaries: DictionaryEntries,
+    pub archive_md5: String,
 }
 
 #[derive(Debug)]
@@ -282,6 +284,7 @@ fn create_archive(
 }
 
 fn read_archive(bytes: &[u8]) -> Result<OrbitSnapshot> {
+    let archive_md5 = format!("{:x}", Md5::digest(bytes));
     let temp_dir = extract_archive(bytes).c(h!())?;
     let dictionaries = read_dictionaries(temp_dir.path()).c(h!())?;
     let normalized =
@@ -297,6 +300,7 @@ fn read_archive(bytes: &[u8]) -> Result<OrbitSnapshot> {
     Ok(OrbitSnapshot {
         units,
         dictionaries,
+        archive_md5,
     })
 }
 
@@ -845,6 +849,7 @@ mod tests {
 
         assert_eq!(snapshot.units, units);
         assert_eq!(snapshot.dictionaries, dictionaries);
+        assert_eq!(snapshot.archive_md5, format!("{:x}", Md5::digest(&bytes)));
     }
 
     #[test]

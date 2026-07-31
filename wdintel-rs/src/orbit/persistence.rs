@@ -1,20 +1,22 @@
 use crate::config::ORBIT_STALE_GRACE_SECONDS;
 use crate::entities::{
-    orbit_unit, orbit_unit_grouping_of_forces, orbit_unit_sigint_unit,
+    orbit_sync, orbit_unit, orbit_unit_grouping_of_forces,
+    orbit_unit_sigint_unit,
 };
 use crate::error::AppError;
 use crate::h;
 use crate::orbit::dictionary::{DictionaryKind, DictionaryMaps};
 use crate::orbit::hierarchy::HierarchyUnit;
+use crate::orbit::types::SourceUnit;
 use crate::types::ShortContext;
 use chrono::{Duration, NaiveDateTime};
 use sea_orm::{
     ActiveModelTrait, ActiveValue::Set, ColumnTrait, ConnectionTrait,
-    DatabaseConnection, EntityTrait, IntoActiveModel, QueryFilter,
+    DatabaseConnection, EntityTrait, IntoActiveModel, QueryFilter, QueryOrder,
     TransactionTrait,
 };
 use serde::Serialize;
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::ops::{Deref, DerefMut};
 use uuid::Uuid;
 
@@ -40,7 +42,7 @@ pub struct ImportUnit {
 #[derive(Debug, Clone)]
 pub enum ImportState {
     New,
-    Unchanged(ExistingUnit),
+    Unchanged,
     Changed(ExistingUnit),
     Deleted(ExistingUnit),
 }
@@ -97,27 +99,6 @@ impl ImportUnit {
             operational_parent_unit_id: unit.operational_parent_unit_id,
             partial: unit.partial,
         })
-    }
-
-    pub fn display_name(&self) -> String {
-        self.unit_name_short
-            .clone()
-            .or_else(|| self.unit_name.clone())
-            .or_else(|| self.unit_name_original.clone())
-            .unwrap_or_else(|| self.unit_id.to_string())
-    }
-
-    pub fn has_rejected_parent(
-        &self,
-        rejected: &std::collections::HashSet<Uuid>,
-    ) -> bool {
-        [
-            self.generative_parent_unit_id,
-            self.operational_parent_unit_id,
-        ]
-        .into_iter()
-        .flatten()
-        .any(|parent_id| rejected.contains(&parent_id))
     }
 
     pub fn preserve_existing_partial_fields(
@@ -190,7 +171,7 @@ pub fn classify(
         return ImportState::Deleted(existing.clone());
     }
     if same_data(unit, existing) {
-        ImportState::Unchanged(existing.clone())
+        ImportState::Unchanged
     } else {
         ImportState::Changed(existing.clone())
     }
@@ -206,6 +187,165 @@ pub async fn load_existing(
             .map(|unit| (unit.unit_id, unit))
             .collect(),
     )
+}
+
+pub async fn load_latest_sync(
+    db: &DatabaseConnection,
+) -> Result<Option<orbit_sync::Model>, AppError> {
+    Ok(orbit_sync::Entity::find()
+        .order_by_desc(orbit_sync::Column::SyncedAt)
+        .order_by_desc(orbit_sync::Column::Id)
+        .one(db)
+        .await
+        .c(h!())?)
+}
+
+pub async fn record_sync(
+    db: &DatabaseConnection,
+    archive_md5: &str,
+    synced_at: NaiveDateTime,
+) -> Result<orbit_sync::Model, AppError> {
+    Ok(orbit_sync::ActiveModel {
+        synced_at: Set(synced_at),
+        archive_md5: Set(archive_md5.to_string()),
+        ..Default::default()
+    }
+    .insert(db)
+    .await
+    .c(h!())?)
+}
+
+pub async fn load_latest_synced_source_units(
+    db: &DatabaseConnection,
+) -> anyhow::Result<Vec<SourceUnit>> {
+    let sync = load_latest_sync(db).await.c(h!())?.ok_or_else(|| {
+        anyhow::anyhow!("ORBIT data has not been synchronized")
+    })?;
+    let units = orbit_unit::Entity::find()
+        .filter(orbit_unit::Column::Deleted.eq(false))
+        .filter(orbit_unit::Column::UpdatedAt.eq(sync.synced_at))
+        .all(db)
+        .await
+        .c(h!())?;
+    let dictionaries = DictionaryMaps::load(db).await.c(h!())?;
+    source_units_from_models(units, &dictionaries)
+}
+
+fn source_units_from_models(
+    units: Vec<orbit_unit::Model>,
+    dictionaries: &DictionaryMaps,
+) -> anyhow::Result<Vec<SourceUnit>> {
+    let units = units
+        .into_iter()
+        .map(|unit| (unit.unit_id, unit))
+        .collect::<HashMap<_, _>>();
+    let mut roots = units
+        .values()
+        .filter(|unit| unit.is_snapshot_root)
+        .collect::<Vec<_>>();
+    roots.sort_by_key(|unit| unit.unit_id);
+    roots
+        .into_iter()
+        .map(|unit| source_unit_from_model(unit, &units, dictionaries))
+        .collect()
+}
+
+fn source_unit_from_model(
+    unit: &orbit_unit::Model,
+    units: &HashMap<Uuid, orbit_unit::Model>,
+    dictionaries: &DictionaryMaps,
+) -> anyhow::Result<SourceUnit> {
+    let mut source = source_descriptor(unit, None, dictionaries);
+    source.generative_parent_units =
+        parent_chain(unit, ParentKind::Generative, units, dictionaries)?;
+    source.operational_parent_units =
+        parent_chain(unit, ParentKind::Operational, units, dictionaries)?;
+    Ok(source)
+}
+
+#[derive(Clone, Copy)]
+enum ParentKind {
+    Generative,
+    Operational,
+}
+
+impl ParentKind {
+    fn parent_id(self, unit: &orbit_unit::Model) -> Option<Uuid> {
+        match self {
+            Self::Generative => unit.generative_parent_unit_id,
+            Self::Operational => unit.operational_parent_unit_id,
+        }
+    }
+
+    fn label(self) -> &'static str {
+        match self {
+            Self::Generative => "generative",
+            Self::Operational => "operational",
+        }
+    }
+}
+
+fn parent_chain(
+    root: &orbit_unit::Model,
+    kind: ParentKind,
+    units: &HashMap<Uuid, orbit_unit::Model>,
+    dictionaries: &DictionaryMaps,
+) -> anyhow::Result<Vec<SourceUnit>> {
+    let mut parents = Vec::new();
+    let mut seen = HashSet::from([root.unit_id]);
+    let mut parent_id = kind.parent_id(root);
+    while let Some(id) = parent_id {
+        anyhow::ensure!(
+            seen.insert(id),
+            "ORBIT {} parent cycle includes unit {id}",
+            kind.label()
+        );
+        let parent = units.get(&id).ok_or_else(|| {
+            anyhow::anyhow!(
+                "ORBIT unit {} references {} parent {id} outside the latest sync",
+                root.unit_id,
+                kind.label()
+            )
+        })?;
+        parent_id = kind.parent_id(parent);
+        parents.push(parent);
+    }
+    let count = parents.len();
+    Ok(parents
+        .into_iter()
+        .enumerate()
+        .map(|(index, parent)| {
+            source_descriptor(
+                parent,
+                Some((count - index - 1) as i32),
+                dictionaries,
+            )
+        })
+        .collect())
+}
+
+fn source_descriptor(
+    unit: &orbit_unit::Model,
+    path_level: Option<i32>,
+    dictionaries: &DictionaryMaps,
+) -> SourceUnit {
+    SourceUnit {
+        unit_id: unit.unit_id,
+        unit_name: unit.unit_name.clone(),
+        unit_name_original: unit.unit_name_original.clone(),
+        unit_name_short: unit.unit_name_short.clone(),
+        operational_unit_name_full: unit.operational_unit_name_full.clone(),
+        generative_unit_name_full: unit.generative_unit_name_full.clone(),
+        unit_number: unit.unit_number.clone(),
+        unit_alternate_names: unit.unit_alternate_names.clone(),
+        unit_alternate_numbers: unit.unit_alternate_numbers.clone(),
+        unit_echelon: dictionaries.unit_echelon_value(unit.unit_echelon_id),
+        combat_unit_type: None,
+        grouping_of_forces: None,
+        operational_parent_units: Vec::new(),
+        generative_parent_units: Vec::new(),
+        path_level,
+    }
 }
 
 async fn attach_groupings<C>(
@@ -267,6 +407,7 @@ pub async fn insert_unit(
         combat_unit_type_id: Set(unit.combat_unit_type_id),
         generative_parent_unit_id: Set(unit.generative_parent_unit_id),
         operational_parent_unit_id: Set(unit.operational_parent_unit_id),
+        is_snapshot_root: Set(!unit.partial),
         deleted: Set(false),
         created_at: Set(started_at),
         updated_at: Set(started_at),
@@ -307,6 +448,7 @@ pub async fn update_unit(
     existing.combat_unit_type_id = Set(unit.combat_unit_type_id);
     existing.generative_parent_unit_id = Set(unit.generative_parent_unit_id);
     existing.operational_parent_unit_id = Set(unit.operational_parent_unit_id);
+    existing.is_snapshot_root = Set(!unit.partial);
     existing.deleted = Set(false);
     existing.updated_at = Set(started_at);
     let updated = existing.update(&transaction).await.c(h!())?;
@@ -474,29 +616,6 @@ pub async fn replace_sigint_unit_link(
     Ok(())
 }
 
-pub fn diff_lines(
-    unit: &ImportUnit,
-    existing: Option<&ExistingUnit>,
-    dictionaries: &DictionaryMaps,
-    unit_names: &HashMap<Uuid, String>,
-) -> Vec<String> {
-    let new_values = import_details(unit, dictionaries, unit_names);
-    let Some(existing) = existing else {
-        return new_values
-            .into_iter()
-            .map(|(key, value)| format!("{key}: {value}"))
-            .collect();
-    };
-    let old_values = model_details(existing, dictionaries, unit_names);
-    new_values
-        .into_iter()
-        .filter_map(|(key, new)| {
-            let old = old_values.get(&key).cloned().unwrap_or_default();
-            (old != new).then(|| format!("{key}: {old} -> {new}"))
-        })
-        .collect()
-}
-
 fn same_data(unit: &ImportUnit, existing: &ExistingUnit) -> bool {
     unit.unit_name == existing.unit_name
         && unit.unit_name_original == existing.unit_name_original
@@ -514,146 +633,7 @@ fn same_data(unit: &ImportUnit, existing: &ExistingUnit) -> bool {
         && unit.generative_parent_unit_id == existing.generative_parent_unit_id
         && unit.operational_parent_unit_id
             == existing.operational_parent_unit_id
-}
-
-fn import_details(
-    unit: &ImportUnit,
-    dictionaries: &DictionaryMaps,
-    unit_names: &HashMap<Uuid, String>,
-) -> BTreeMap<String, String> {
-    DetailValues {
-        unit_id: unit.unit_id,
-        unit_name: unit.unit_name.as_deref(),
-        unit_name_original: unit.unit_name_original.as_deref(),
-        unit_name_short: unit.unit_name_short.as_deref(),
-        operational_unit_name_full: unit.operational_unit_name_full.as_deref(),
-        generative_unit_name_full: unit.generative_unit_name_full.as_deref(),
-        unit_number: unit.unit_number.as_deref(),
-        unit_alternate_names: unit.unit_alternate_names.as_deref(),
-        unit_alternate_numbers: unit.unit_alternate_numbers.as_deref(),
-        unit_echelon: dictionaries.summary(unit.unit_echelon_id),
-        combat_unit_type: dictionaries.summary(unit.combat_unit_type_id),
-        grouping_of_forces: dictionaries
-            .summaries(unit.grouping_of_forces_ids.as_ref()),
-        generative_parent: parent_summary(
-            unit.generative_parent_unit_id,
-            unit_names,
-        ),
-        operational_parent: parent_summary(
-            unit.operational_parent_unit_id,
-            unit_names,
-        ),
-    }
-    .into_map()
-}
-
-fn model_details(
-    unit: &ExistingUnit,
-    dictionaries: &DictionaryMaps,
-    unit_names: &HashMap<Uuid, String>,
-) -> BTreeMap<String, String> {
-    DetailValues {
-        unit_id: unit.unit_id,
-        unit_name: unit.unit_name.as_deref(),
-        unit_name_original: unit.unit_name_original.as_deref(),
-        unit_name_short: unit.unit_name_short.as_deref(),
-        operational_unit_name_full: unit.operational_unit_name_full.as_deref(),
-        generative_unit_name_full: unit.generative_unit_name_full.as_deref(),
-        unit_number: unit.unit_number.as_deref(),
-        unit_alternate_names: unit.unit_alternate_names.as_deref(),
-        unit_alternate_numbers: unit.unit_alternate_numbers.as_deref(),
-        unit_echelon: dictionaries.summary(unit.unit_echelon_id),
-        combat_unit_type: dictionaries.summary(unit.combat_unit_type_id),
-        grouping_of_forces: dictionaries
-            .summaries(Some(&unit.grouping_of_forces_ids)),
-        generative_parent: parent_summary(
-            unit.generative_parent_unit_id,
-            unit_names,
-        ),
-        operational_parent: parent_summary(
-            unit.operational_parent_unit_id,
-            unit_names,
-        ),
-    }
-    .into_map()
-}
-
-struct DetailValues<'a> {
-    unit_id: Uuid,
-    unit_name: Option<&'a str>,
-    unit_name_original: Option<&'a str>,
-    unit_name_short: Option<&'a str>,
-    operational_unit_name_full: Option<&'a str>,
-    generative_unit_name_full: Option<&'a str>,
-    unit_number: Option<&'a str>,
-    unit_alternate_names: Option<&'a [String]>,
-    unit_alternate_numbers: Option<&'a [String]>,
-    unit_echelon: String,
-    combat_unit_type: String,
-    grouping_of_forces: String,
-    generative_parent: String,
-    operational_parent: String,
-}
-
-impl DetailValues<'_> {
-    fn into_map(self) -> BTreeMap<String, String> {
-        BTreeMap::from([
-            ("unit_id".to_string(), self.unit_id.to_string()),
-            ("unit_name".to_string(), show(self.unit_name)),
-            (
-                "unit_name_original".to_string(),
-                show(self.unit_name_original),
-            ),
-            ("unit_name_short".to_string(), show(self.unit_name_short)),
-            (
-                "operational_unit_name_full".to_string(),
-                show(self.operational_unit_name_full),
-            ),
-            (
-                "generative_unit_name_full".to_string(),
-                show(self.generative_unit_name_full),
-            ),
-            ("unit_number".to_string(), show(self.unit_number)),
-            (
-                "unit_alternate_names".to_string(),
-                show_list(self.unit_alternate_names),
-            ),
-            (
-                "unit_alternate_numbers".to_string(),
-                show_list(self.unit_alternate_numbers),
-            ),
-            ("unit_echelon".to_string(), self.unit_echelon),
-            ("combat_unit_type".to_string(), self.combat_unit_type),
-            ("grouping_of_forces".to_string(), self.grouping_of_forces),
-            ("generative_parent".to_string(), self.generative_parent),
-            ("operational_parent".to_string(), self.operational_parent),
-        ])
-    }
-}
-
-fn parent_summary(
-    unit_id: Option<Uuid>,
-    unit_names: &HashMap<Uuid, String>,
-) -> String {
-    unit_id
-        .map(|unit_id| {
-            let name = unit_names
-                .get(&unit_id)
-                .cloned()
-                .unwrap_or_else(|| "?".to_string());
-            format!("{name} ({unit_id})")
-        })
-        .unwrap_or_else(|| "-".to_string())
-}
-
-fn show(value: Option<&str>) -> String {
-    value.unwrap_or("-").to_string()
-}
-
-fn show_list(value: Option<&[String]>) -> String {
-    value
-        .map(|values| values.join(", "))
-        .unwrap_or_else(|| "-".to_string())
+        && !unit.partial == existing.is_snapshot_root
 }
 
 #[cfg(test)]
@@ -672,7 +652,7 @@ mod tests {
         let existing = model(&import, false);
         assert!(matches!(
             classify(&import, Some(&existing)),
-            ImportState::Unchanged(_)
+            ImportState::Unchanged
         ));
         let mut changed = import.clone();
         changed.unit_name = Some("changed".to_string());
@@ -774,7 +754,7 @@ mod tests {
         assert_eq!(child_row.updated_at, started_at);
         assert!(matches!(
             classify(&child, Some(&child_row)),
-            ImportState::Unchanged(_)
+            ImportState::Unchanged
         ));
         let persisted_grouping_ids =
             orbit_unit_grouping_of_forces::Entity::find()
@@ -856,6 +836,48 @@ mod tests {
             .await
             .unwrap();
         orbit_unit::Entity::delete_by_id(child.unit_id)
+            .exec(&db)
+            .await
+            .unwrap();
+        orbit_unit::Entity::delete_by_id(parent.unit_id)
+            .exec(&db)
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn latest_sync_loads_snapshot_roots_with_database_parent_chains() {
+        crate::tests::test::init().await;
+        let db = crate::new_pg_pool_from_mode(Mode::Test).await.unwrap();
+        let synced_at = Utc::now().naive_utc();
+        let synced_at = synced_at
+            .with_nanosecond(synced_at.nanosecond() / 1_000 * 1_000)
+            .unwrap();
+        let mut parent = import_unit();
+        parent.partial = true;
+        let mut root = import_unit();
+        root.generative_parent_unit_id = Some(parent.unit_id);
+        insert_unit(&db, &parent, synced_at).await.unwrap();
+        insert_unit(&db, &root, synced_at).await.unwrap();
+        let sync =
+            record_sync(&db, "0123456789abcdef0123456789abcdef", synced_at)
+                .await
+                .unwrap();
+
+        let units = load_latest_synced_source_units(&db).await.unwrap();
+
+        assert_eq!(units.len(), 1);
+        assert_eq!(units[0].unit_id, root.unit_id);
+        assert_eq!(units[0].generative_parent_units.len(), 1);
+        assert_eq!(units[0].generative_parent_units[0].unit_id, parent.unit_id);
+        assert_eq!(units[0].generative_parent_units[0].path_level, Some(0));
+
+        orbit_sync::Entity::delete_by_id(sync.id)
+            .exec(&db)
+            .await
+            .unwrap();
+        orbit_unit::Entity::delete_by_id(root.unit_id)
             .exec(&db)
             .await
             .unwrap();
@@ -1015,6 +1037,7 @@ mod tests {
                 combat_unit_type_id: unit.combat_unit_type_id,
                 generative_parent_unit_id: unit.generative_parent_unit_id,
                 operational_parent_unit_id: unit.operational_parent_unit_id,
+                is_snapshot_root: !unit.partial,
                 deleted,
                 created_at: Utc::now().naive_utc(),
                 updated_at: Utc::now().naive_utc(),

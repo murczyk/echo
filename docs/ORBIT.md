@@ -4,8 +4,8 @@ ORBIT unit ingestion has two separate stages:
 
 1. Normalize an ORBIT JSON export into a timestamped ZIP of Apache Parquet
    files.
-2. Review and import the latest normalized snapshot through the interactive
-   TUI.
+2. Synchronize the latest normalized snapshot into PostgreSQL, then rebuild
+   SIGINT links from the synchronized database rows through the TUI.
 
 Do not run the TUI directly against a JSON export. It always reads the latest
 normalized snapshot from configured storage.
@@ -99,33 +99,30 @@ before starting if no snapshot exists. Database-mutating import sessions are
 serialized, so a second importer waits until the active import releases its
 PostgreSQL advisory lock. The first screen offers two workflows.
 
-### Import new ORBIT units
+### Sync ORBIT units and rebuild links
 
-This workflow matches active, non-deleted `sigint_unit` rows against ORBIT
-roots. Both generative and operational full paths contribute parent evidence.
+This workflow first creates, updates, or reactivates every unit represented by
+the Parquet snapshot. Top-level roots and embedded ancestors are persisted
+parent-first, and `is_snapshot_root` distinguishes matchable roots from parent
+descriptors. Active rows absent from the snapshot are then offered for soft
+deletion.
+
+Each completed data phase writes the archive MD5 and its synchronization time
+to `orbit_sync`. When the latest archive MD5 is already recorded, the TUI warns
+the operator and asks whether to proceed. Proceeding skips all Parquet-to-table
+work and only rebuilds links from PostgreSQL; cancelling leaves data and links
+unchanged.
+
+After synchronization, active `sigint_unit` rows are matched only against roots
+from the latest recorded database sync. Both generative and operational full
+paths contribute parent evidence.
 Root echelon, normalized army abbreviations, configured SIGINT-only name
 fragments, and hierarchy distance are considered when ranking candidates.
-Ambiguous candidates with divergent parent paths are skipped. Equally close
-candidates whose paths are ordered extensions are retained, which intentionally
-allows one SIGINT unit to link to multiple ORBIT units.
-
-All required operational and generative ancestors are written parent-first and
-do not require confirmation. The TUI asks only about matched root units:
-
-- create a new unit;
-- update a changed unit;
-- reactivate a previously deleted unit;
-- skip the proposed change.
-
-The prompt shows the ORBIT generative full path without `/` separators and the
-corresponding SIGINT full name. After the root review, active ORBIT rows not seen
-in the snapshot are offered for soft deletion. Stale deletion can be accepted,
-skipped, or skipped for all remaining rows.
-
-Confirmed changes are persisted immediately. Quitting does not roll back
-earlier decisions. ORBIT-to-SIGINT links are replaced after the regular review
-finishes, including when the stale-deletion review is quit. Quitting during the
-regular review leaves the previous links intact.
+Ambiguous candidates with divergent parent paths are skipped. Among equally
+close candidates whose paths are ordered extensions, only the shortest path is
+selected unless SIGINT parent evidence ranks a longer path higher.
+ORBIT-to-SIGINT links are replaced from those database-derived matches even
+when the stale-deletion review is quit.
 
 ### Search by SIGINT unit name
 
@@ -133,16 +130,16 @@ Enter the exact full name assembled from the SIGINT unit's populated company,
 battalion, regiment, division, and army fields. If no active SIGINT unit has
 that normalized full name, the command reports it without searching ORBIT.
 
-The TUI displays all equally closest candidates with their ORBIT UUID,
-operational full name, generative full name, and original name. Select a result
-with Up/Down and Enter. Its ancestors and selected root are imported
-parent-first without the regular review or stale-deletion pass, and that SIGINT
-unit's existing ORBIT links are replaced with the selected root.
+The search reads roots and parent chains from the latest recorded database sync
+instead of reopening Parquet. The TUI displays all equally closest candidates
+with their ORBIT UUID, operational full name, generative full name, and original
+name. Select a result with Up/Down and Enter. That SIGINT unit's existing ORBIT
+links are replaced with the selected root; ORBIT unit data is not changed.
 
 Common controls are:
 
 - Up/Down, Home/End: select an item;
-- Enter: accept or import;
+- Enter: accept or link;
 - `s`: skip;
 - `a`: skip all remaining stale deletions when offered;
 - Page Up/Page Down: scroll details;
@@ -150,21 +147,22 @@ Common controls are:
 
 ## PostgreSQL data model
 
-Imported data is stored in six tables:
+Imported data is stored in seven tables:
 
-- `orbit_unit`: unit attributes, soft-deletion state, and operational and
-  generative parent UUIDs;
+- `orbit_unit`: unit attributes, snapshot-root marker, soft-deletion state, and
+  operational and generative parent UUIDs;
 - `orbit_unit_echelon`: echelon dictionary;
 - `orbit_combat_unit_type`: combat-unit-type dictionary;
 - `orbit_grouping_of_forces`: force-grouping dictionary;
 - `orbit_unit_grouping_of_forces`: many-to-many unit/grouping links;
 - `orbit_unit_sigint_unit`: many-to-many links between ORBIT and Echo SIGINT
-  units.
+  units;
+- `orbit_sync`: synchronization timestamp and MD5 of each applied archive.
 
 The TUI inserts dictionary rows missing from PostgreSQL. An existing database
 row with the same `(key, name)` remains authoritative locally. Units are soft
-deleted through `orbit_unit.deleted`; relations are not inferred from names
-after import.
+deleted through `orbit_unit.deleted`; link matching reconstructs hierarchy from
+the latest synchronized PostgreSQL rows.
 
 These tables are operational PostgreSQL data and are excluded from PeerDB
 replication.

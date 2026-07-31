@@ -16,7 +16,33 @@ pub struct Unit {
     pub active: bool,
     pub created_at: i64,
     pub created_by_login_id: String,
+    #[serde(default, skip_deserializing)]
     pub has_orbit: bool,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn unit_without_has_orbit_deserializes() {
+        let unit: Unit = serde_json::from_value(serde_json::json!({
+            "id": 1,
+            "company": "",
+            "battalion": "",
+            "regiment": "",
+            "division": "",
+            "army": "",
+            "comment": "",
+            "name": "unit",
+            "active": true,
+            "created_at": 0,
+            "created_by_login_id": ""
+        }))
+        .unwrap();
+
+        assert!(!unit.has_orbit);
+    }
 }
 
 #[derive(

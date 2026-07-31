@@ -82,6 +82,7 @@ pub mod network_invalidation_worker;
 pub mod nominatimres;
 pub mod orbit_combat_unit_type;
 pub mod orbit_grouping_of_forces;
+pub mod orbit_sync;
 pub mod orbit_unit;
 pub mod orbit_unit_echelon;
 pub mod orbit_unit_grouping_of_forces;

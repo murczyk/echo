@@ -85,27 +85,18 @@ pub enum Decision {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Action {
-    Create,
-    Update,
-    Reactivate,
     Delete,
 }
 
 impl Action {
     fn key(self) -> char {
         match self {
-            Self::Create => 'c',
-            Self::Update => 'u',
-            Self::Reactivate => 'r',
             Self::Delete => 'd',
         }
     }
 
     fn label(self) -> &'static str {
         match self {
-            Self::Create => "create",
-            Self::Update => "update",
-            Self::Reactivate => "reactivate",
             Self::Delete => "delete",
         }
     }
@@ -133,6 +124,20 @@ pub fn select_match(
 ) -> Result<Option<usize>, AppError> {
     let mut terminal = setup_terminal().c(h!())?;
     let result = run_match_selector(&mut terminal, options);
+    restore_terminal(&mut terminal).c(h!())?;
+    result
+}
+
+pub fn confirm_unchanged_archive(
+    archive_md5: &str,
+    synced_at: chrono::NaiveDateTime,
+) -> Result<bool, AppError> {
+    let mut terminal = setup_terminal().c(h!())?;
+    let result = run_unchanged_archive_confirmation(
+        &mut terminal,
+        archive_md5,
+        synced_at,
+    );
     restore_terminal(&mut terminal).c(h!())?;
     result
 }
@@ -382,10 +387,48 @@ fn run_match_selector(
     }
 }
 
+fn run_unchanged_archive_confirmation(
+    terminal: &mut OrbitTerminal,
+    archive_md5: &str,
+    synced_at: chrono::NaiveDateTime,
+) -> Result<bool, AppError> {
+    let poll = Duration::from_millis(ORBIT_TUI_EVENT_POLL_MS);
+    loop {
+        terminal
+            .draw(|frame| {
+                draw_unchanged_archive_warning(frame, archive_md5, synced_at)
+            })
+            .c(h!())?;
+        if !event::poll(poll).c(h!())? {
+            continue;
+        }
+        let Event::Key(key) = event::read().c(h!())? else {
+            continue;
+        };
+        if key.kind != KeyEventKind::Press {
+            continue;
+        }
+        match key.code {
+            KeyCode::Enter | KeyCode::Char('y') if key.modifiers.is_empty() => {
+                return Ok(true)
+            }
+            KeyCode::Esc | KeyCode::Char('n') if key.modifiers.is_empty() => {
+                return Ok(false)
+            }
+            KeyCode::Char('c')
+                if key.modifiers.contains(KeyModifiers::CONTROL) =>
+            {
+                return Ok(false)
+            }
+            _ => {}
+        }
+    }
+}
+
 fn draw_start_menu(frame: &mut Frame<'_>, selected: usize) {
     let area = centered_area(frame, 70, 6);
     let options = [
-        "Import new ORBIT units from the latest snapshot",
+        "Sync ORBIT units and rebuild SIGINT links",
         "Search an ORBIT unit by SIGINT unit name",
     ];
     let items = options.into_iter().map(ListItem::new);
@@ -405,6 +448,21 @@ fn draw_start_menu(frame: &mut Frame<'_>, selected: usize) {
     let mut state = ListState::default();
     state.select(Some(selected));
     frame.render_stateful_widget(list, area, &mut state);
+}
+
+fn draw_unchanged_archive_warning(
+    frame: &mut Frame<'_>,
+    archive_md5: &str,
+    synced_at: chrono::NaiveDateTime,
+) {
+    let area = centered_area(frame, 80, 9);
+    let warning = Paragraph::new(format!(
+        "The latest ORBIT archive has not changed.\n\nMD5: {archive_md5}\nLast synchronized: {synced_at}\n\nProceed with database-only SIGINT linking? (Enter/y: proceed, n/Esc: cancel)"
+    ))
+    .style(Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))
+    .block(Block::default().borders(Borders::ALL).title("Warning"))
+    .wrap(Wrap { trim: false });
+    frame.render_widget(warning, area);
 }
 
 fn draw_text_prompt(frame: &mut Frame<'_>, title: &str, input: &str) {
@@ -451,9 +509,7 @@ fn draw_match_selector(
     state.select(Some(selected));
     frame.render_stateful_widget(list, root[0], &mut state);
     frame.render_widget(
-        Paragraph::new(
-            "↑/↓/Home/End: select | Enter: import and link | Esc: quit",
-        ),
+        Paragraph::new("↑/↓/Home/End: select | Enter: link | Esc: quit"),
         root[1],
     );
 }
@@ -577,7 +633,7 @@ mod tests {
         assert_eq!(
             decision_for_key(
                 KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL),
-                Action::Create,
+                Action::Delete,
                 false
             ),
             Some(Decision::Quit)
