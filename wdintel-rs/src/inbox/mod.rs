@@ -309,9 +309,17 @@ where
     crate::location::peleng::delete_inbox_pelengs(result.id, txn)
         .await
         .c(h!())?;
-    crate::location::peleng::insert_pelengs(coords_vec, result.id, ts, txn)
-        .await
-        .c(h!())?;
+    let pelengation_object =
+        crate::rer_importer::pelengation_object::extract(&body);
+    crate::location::peleng::insert_pelengs(
+        coords_vec,
+        result.id,
+        ts,
+        pelengation_object,
+        txn,
+    )
+    .await
+    .c(h!())?;
 
     // In case then some coords exists, change signal_group for this message grom RER Import
     // to MPORT_DIRECTION_FINDING
@@ -822,7 +830,7 @@ where
 mod tests {
     use super::*;
     use crate::functest::tests::{
-        cleanup, find_test_datasource_group, mk_signal_message,
+        cleanup_locked, find_test_datasource_group, mk_signal_message,
     };
 
     #[test]
@@ -935,9 +943,74 @@ mod tests {
 
     #[tokio::test]
     #[serial]
+    async fn construct_inbox_item_imports_extended_peleng_format() {
+        let (env, _cleanup_guard) = cleanup_locked().await.unwrap();
+        let datasource_group =
+            find_test_datasource_group(&env.dbx).await.unwrap();
+        let body = "пост Фокстрот-Наутілус-Дракар\n446.300 TYT назва: ретранслятор\nр-н Верхній Рогачик\nx:52-41410\ny:65-99914\nУКХ радіомережа ППО смуга 49 А\nНВ\nНВ\n\n— Кольцо 22, я техас, прием.\n23:59 31.07.2026";
+        let message = mk_signal_message(
+            &env.dbx,
+            signal_message::ActiveModel {
+                body: Set(Some(body.to_string())),
+                created_at: Set(Utc::now().naive_utc()),
+                timestamp: Set(None),
+                message_uid: Set(Some(format!(
+                    "extended-peleng-format-{}",
+                    Uuid::new_v4()
+                ))),
+                datasource_group_id: Set(Some(datasource_group.id)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let mut cache = TopKCache::<String, String>::new(64);
+
+        construct_inbox_item(
+            env.settlements.clone(),
+            &env.dbx,
+            &env.rq,
+            &env.config,
+            message.id,
+            &mut cache,
+            None,
+        )
+        .await
+        .unwrap();
+
+        let inbox_item = sigint_inbox_item::Entity::find_by_id(message.id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        let post = sigint_post::Entity::find_by_id(inbox_item.post_id.unwrap())
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        let pelengs = active_pelengs(message.id, &env.dbx).await;
+
+        assert_eq!(inbox_item.freq.as_deref(), Some("446.3000"));
+        assert_eq!(
+            inbox_item.unit.as_deref(),
+            Some("УКХ радіомережа ППО смуга 49 А")
+        );
+        assert_eq!(inbox_item.location.as_deref(), Some("р-н Верхній Рогачик"));
+        assert_eq!(inbox_item.date.as_deref(), Some("2026-07-31"));
+        assert_eq!(inbox_item.time.as_deref(), Some("23:59:00"));
+        assert_eq!(post.name, "Фокстрот-Наутілус-Дракар");
+        assert_eq!(pelengs.len(), 1);
+        assert_eq!(
+            pelengs[0].pelengation_object.as_deref(),
+            Some("TYT назва: ретранслятор")
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
     async fn construct_inbox_item_imports_report_125_sample_and_replaces_pelengs(
     ) {
-        let env = cleanup().await.unwrap();
+        let (env, _cleanup_guard) = cleanup_locked().await.unwrap();
         let datasource_group =
             find_test_datasource_group(&env.dbx).await.unwrap();
         let created_at = NaiveDate::from_ymd_opt(2026, 7, 16)
@@ -995,7 +1068,12 @@ mod tests {
                     .unwrap()
             )
         );
-        assert_eq!(active_pelengs(message.id, &env.dbx).await.len(), 1);
+        let pelengs = active_pelengs(message.id, &env.dbx).await;
+        assert_eq!(pelengs.len(), 1);
+        assert_eq!(
+            pelengs[0].pelengation_object.as_deref(),
+            Some("А-50 (А-50У) РЛС з РТК «Шмєль-М»")
+        );
 
         let mut message = message.into_active_model();
         message.body = Set(Some(report_125_sample_body("37U DR 32615 05605")));
@@ -1020,6 +1098,10 @@ mod tests {
             .unwrap();
         let pelengs = active_pelengs(message.id, &env.dbx).await;
         assert_eq!(pelengs.len(), 1);
+        assert_eq!(
+            pelengs[0].pelengation_object.as_deref(),
+            Some("А-50 (А-50У) РЛС з РТК «Шмєль-М»")
+        );
         assert_eq!(inbox_item.lat, Some(pelengs[0].lat));
         assert_eq!(inbox_item.lng, Some(pelengs[0].lng));
     }

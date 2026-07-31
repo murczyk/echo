@@ -266,7 +266,7 @@ fn build_report_125_data(
         let Some(datetime) = report_125_datetime(&message)? else {
             continue;
         };
-        let rls_type = report_125_rls_type(&message);
+        let fallback_rls_type = report_125_rls_type(&message);
         for peleng in pelengs_by_message.get(&message.id).into_iter().flatten()
         {
             let Some(mgrs) = report_125_mgrs(peleng) else {
@@ -280,7 +280,13 @@ fn build_report_125_data(
                 peleng_id: peleng.id,
                 datetime,
                 mgrs,
-                rls_type: rls_type.clone(),
+                rls_type: peleng
+                    .pelengation_object
+                    .as_deref()
+                    .map(str::trim)
+                    .filter(|object| !object.is_empty())
+                    .unwrap_or(&fallback_rls_type)
+                    .to_string(),
             });
         }
     }
@@ -632,7 +638,7 @@ mod tests {
     #[serial]
     async fn collect_report_125_data_expands_active_pelengs_and_raw_unit_fields(
     ) {
-        let env = cleanup().await.unwrap();
+        let (env, _cleanup_guard) = cleanup_locked().await.unwrap();
         let login = find_test_login(&env.dbx).await.unwrap();
         let datasource_group =
             find_test_datasource_group(&env.dbx).await.unwrap();
@@ -738,10 +744,31 @@ mod tests {
         assert_eq!(report_data.rows[0].peleng_id, 1118866);
     }
 
+    #[test]
+    fn build_report_125_data_prefers_pelengation_object() {
+        let messages = vec![Report125Message {
+            id: 1,
+            timestamp: None,
+            date: Some("2026-07-16".to_string()),
+            time: Some("12:14:31".to_string()),
+            datetime: None,
+            unit: Some("fallback unit".to_string()),
+            datasource_id: None,
+        }];
+        let mut peleng = test_peleng(1118866, 49.43, 37.83);
+        peleng.pelengation_object = Some("РЛС 9С35М ЗРК “Бук-М1”".to_string());
+        let pelengs_by_message = BTreeMap::from([(1, vec![peleng])]);
+
+        let report_data =
+            build_report_125_data(messages, &pelengs_by_message).unwrap();
+
+        assert_eq!(report_data.rows[0].rls_type, "РЛС 9С35М ЗРК “Бук-М1”");
+    }
+
     #[tokio::test]
     #[serial]
     async fn collect_report_125_data_can_be_empty_without_pelengs() {
-        let env = cleanup().await.unwrap();
+        let (env, _cleanup_guard) = cleanup_locked().await.unwrap();
         let login = find_test_login(&env.dbx).await.unwrap();
         let datasource_group =
             find_test_datasource_group(&env.dbx).await.unwrap();
@@ -814,6 +841,7 @@ mod tests {
             locality_direction: None,
             distance_m: None,
             country_code: None,
+            pelengation_object: None,
             deleted: false,
             created_at: test_dt(16, 12, 14, 31),
             updated_at: None,
@@ -861,7 +889,7 @@ mod tests {
     #[tokio::test]
     #[serial]
     async fn report_125_message_scope_respects_report_tags_only_this_unit() {
-        let env = cleanup().await.unwrap();
+        let (env, _cleanup_guard) = cleanup_locked().await.unwrap();
         let login = find_test_login(&env.dbx).await.unwrap();
         let datasource_group =
             find_test_datasource_group(&env.dbx).await.unwrap();

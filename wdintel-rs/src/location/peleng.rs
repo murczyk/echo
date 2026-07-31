@@ -86,6 +86,7 @@ pub async fn insert_pelengs<'a, 'async_trait, C>(
     coords: Vec<Coords>,
     inbox_item_id: i64,
     ts: NaiveDateTime,
+    pelengation_object: Option<String>,
     txn: &'a C,
 ) -> Result<(), AppError>
 where
@@ -103,6 +104,7 @@ where
             locality_direction: NotSet,
             distance_m: NotSet,
             country_code: NotSet,
+            pelengation_object: Set(pelengation_object.clone()),
             deleted: NotSet,
             created_at: Set(ts),
             updated_at: NotSet,

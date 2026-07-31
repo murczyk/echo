@@ -5,6 +5,11 @@ use regex::Regex;
 
 pub fn extract_location(inp: &str) -> Result<Option<String>, AppError> {
     if let Some(zp_peleng) =
+        crate::rer_importer::zp_peleng_extended_format::parse(inp)
+    {
+        return Ok(Some(zp_peleng.location));
+    }
+    if let Some(zp_peleng) =
         crate::rer_importer::zp_peleng_vorony_odina_format::parse(inp)
     {
         return Ok(Some(zp_peleng.location));

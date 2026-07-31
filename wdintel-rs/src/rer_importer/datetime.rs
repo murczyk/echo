@@ -15,6 +15,11 @@ pub fn extract_datetime(
     lnow: DateTime<Tz>,
     body: &str,
 ) -> Result<Option<NaiveDateTime>, AppError> {
+    if let Some(timestamp) = trailing_datetime(body) {
+        if let Ok(timestamp) = validate_datetime(lnow, timestamp) {
+            return Ok(Some(timestamp));
+        }
+    }
     if let Some(zp_peleng) =
         crate::rer_importer::zp_peleng_vorony_odina_format::parse(body)
     {
@@ -188,6 +193,51 @@ pub fn extract_datetime(
     };
 
     Ok(None)
+}
+
+pub fn without_trailing_datetime(body: &str) -> &str {
+    let body = body.trim_end_matches(['\r', '\n']);
+    let Some(last_line_start) = body.rfind('\n') else {
+        return body;
+    };
+    let last_line = body[last_line_start + 1..].trim_end_matches('\r').trim();
+    if parse_full_datetime_line(last_line).is_none() {
+        return body;
+    }
+    body[..last_line_start].trim_end_matches(['\r', '\n'])
+}
+
+pub fn trailing_datetime(body: &str) -> Option<NaiveDateTime> {
+    let body = body.trim_end_matches(['\r', '\n']);
+    let last_line = body.rsplit('\n').next()?.trim_end_matches('\r').trim();
+    parse_full_datetime_line(last_line)
+}
+
+pub fn parse_full_datetime_line(line: &str) -> Option<NaiveDateTime> {
+    lazy_static! {
+        static ref TIME_DATE_RE: Regex = Regex::new(
+            r"^(?P<hour>\d{1,2})\s*:\s*(?P<minute>\d{2})(?:\s*:\s*(?P<second>\d{2}))?\s+(?P<day>\d{2})\.(?P<mon>\d{2})\.(?P<year>\d{4})$"
+        )
+        .unwrap();
+        static ref DATE_TIME_RE: Regex = Regex::new(
+            r"^(?P<day>\d{2})\.(?P<mon>\d{2})\.(?P<year>\d{4})(?:\s*,\s*|\s+)(?P<hour>\d{1,2})\s*:\s*(?P<minute>\d{2})(?:\s*:\s*(?P<second>\d{2}))?$"
+        )
+        .unwrap();
+    }
+
+    let captures = TIME_DATE_RE
+        .captures(line)
+        .or_else(|| DATE_TIME_RE.captures(line))?;
+    let year = captures.name("year")?.as_str().parse().ok()?;
+    let month = captures.name("mon")?.as_str().parse().ok()?;
+    let day = captures.name("day")?.as_str().parse().ok()?;
+    let hour = captures.name("hour")?.as_str().parse().ok()?;
+    let minute = captures.name("minute")?.as_str().parse().ok()?;
+    let second = captures
+        .name("second")
+        .map_or(Ok(0), |second| second.as_str().parse())
+        .ok()?;
+    NaiveDate::from_ymd_opt(year, month, day)?.and_hms_opt(hour, minute, second)
 }
 
 fn validate_datetime(
@@ -415,6 +465,30 @@ mod tests {
                 .unwrap(),
         );
         assert_eq!(res, expected);
+    }
+
+    #[test]
+    fn extract_datetime_prefers_trailing_timestamp() {
+        let input =
+            "01.07.2026 03:07:42\nнестандартне повідомлення\n23:59 31.07.2026";
+        let tz = crate::config::get_tz();
+        let lnow = tz.with_ymd_and_hms(2026, 8, 1, 10, 15, 30).unwrap();
+
+        let res = extract_datetime(lnow, input).unwrap();
+
+        assert_eq!(
+            res,
+            Some(
+                NaiveDate::from_ymd_opt(2026, 7, 31)
+                    .unwrap()
+                    .and_hms_opt(23, 59, 0)
+                    .unwrap()
+            )
+        );
+        assert_eq!(
+            without_trailing_datetime(input),
+            "01.07.2026 03:07:42\nнестандартне повідомлення"
+        );
     }
 
     #[test]

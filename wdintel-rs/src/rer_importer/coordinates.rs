@@ -35,6 +35,10 @@ pub async fn extract_inbox_coords(
     body: &str,
     body_noheader: &crate::rer_importer::body_noheader::NoHeadersBody,
 ) -> Vec<Coords> {
+    if crate::rer_importer::zp_peleng_extended_format::parse(body).is_some() {
+        return extract_coords(body).await;
+    }
+
     // Do not scan the raw message as one blob because unit/network headers can
     // contain reference locations. Use the parsed body, extracted comments,
     // and standard coordinate metadata stripped by body_noheader.
@@ -43,6 +47,14 @@ pub async fn extract_inbox_coords(
 }
 
 pub async fn extract_coords(body: &str) -> Vec<Coords> {
+    if let Some(zp_peleng) =
+        crate::rer_importer::zp_peleng_extended_format::parse(body)
+    {
+        return milgeo_rs::coordinates::rer_extract_coords(
+            &zp_peleng.coordinate_text,
+        )
+        .await;
+    }
     if let Some(zp_peleng) =
         crate::rer_importer::zp_peleng_vorony_odina_format::parse(body)
     {

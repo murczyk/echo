@@ -199,6 +199,15 @@ fn join_block(lines: &[&str]) -> Option<String> {
 }
 
 pub fn parse_comments(body: &str) -> ParsedComments {
+    if crate::rer_importer::zp_peleng_extended_format::parse(body).is_some() {
+        return ParsedComments::default();
+    }
+
+    let body = if has_zp_peleng_vorony_odina_suffix(body) {
+        body
+    } else {
+        crate::rer_importer::datetime::without_trailing_datetime(body)
+    };
     let lines = normalized_body_lines(body);
     let lines: Vec<&str> = lines.iter().map(String::as_str).collect();
 
@@ -222,12 +231,20 @@ pub fn parse_comments(body: &str) -> ParsedComments {
 pub fn extract_text_without_top_comment(
     body: &str,
 ) -> Result<NoHeadersBody, AppError> {
-    if crate::rer_importer::zp_peleng_vorony_odina_format::parse(body).is_some()
+    if crate::rer_importer::zp_peleng_extended_format::parse(body).is_some()
+        || crate::rer_importer::zp_peleng_vorony_odina_format::parse(body)
+            .is_some()
         || crate::rer_importer::zp_digital_post_alt_format::parse(body)
             .is_some()
     {
         return crate::rer_importer::body_noheader::extract_text(body);
     }
+
+    let body = if has_zp_peleng_vorony_odina_suffix(body) {
+        body
+    } else {
+        crate::rer_importer::datetime::without_trailing_datetime(body)
+    };
 
     let lines = normalized_body_lines(body);
     let lines: Vec<&str> = lines.iter().map(String::as_str).collect();
@@ -254,6 +271,17 @@ fn normalized_body_lines(body: &str) -> Vec<String> {
                 .unwrap_or_else(|| line.to_string())
         })
         .collect()
+}
+
+fn has_zp_peleng_vorony_odina_suffix(body: &str) -> bool {
+    let lines = normalized_body_lines(body);
+    let lines = lines.iter().map(String::as_str).collect::<Vec<_>>();
+    lines
+        .iter()
+        .position(|line| is_datetime_header_line(line))
+        .is_some_and(|anchor| {
+            zp_peleng_vorony_odina_suffix_start(&lines, anchor).is_some()
+        })
 }
 
 fn scan_marker_comment(lines: &[&str]) -> Option<MarkerComment> {
@@ -326,6 +354,15 @@ fn parse_top(
         .map(|(_, l)| *l)
         .collect();
     join_block(&kept)
+        .filter(|comment| !is_whole_message_body_comment(lines, comment))
+}
+
+fn is_whole_message_body_comment(lines: &[&str], comment: &str) -> bool {
+    let body = lines.join("\n");
+    crate::rer_importer::body_noheader::extract_text(&body)
+        .ok()
+        .and_then(|body| join_block(&body.body.lines().collect::<Vec<_>>()))
+        .is_some_and(|body| body == clean(comment))
 }
 
 fn top_comment_line_indices(lines: &[&str]) -> BTreeSet<usize> {
@@ -350,6 +387,7 @@ fn top_comment_line_indices(lines: &[&str]) -> BTreeSet<usize> {
         .collect();
     let kept: Vec<&str> = indices.iter().map(|i| lines[*i]).collect();
     join_block(&kept)
+        .filter(|comment| !is_whole_message_body_comment(lines, comment))
         .map(|_| indices.into_iter().collect())
         .unwrap_or_default()
 }
@@ -1061,5 +1099,27 @@ mod tests {
         let body = "коментар зверху\n\n⚠️20.12, 13:45:21\n430.000\nУКХ р/м\nНВ\nНВ\n\n1 - Батарейки заряжені?";
         let res = parse_comments(body);
         assert_eq!(res.top.as_deref(), Some("коментар зверху"));
+    }
+
+    #[test]
+    fn trailing_timestamp_leaves_unfamiliar_message_as_body_not_comment() {
+        let body = "нестандартний перший рядок\nнестандартний другий рядок\n23:59 31.07.2026";
+
+        assert!(parse_comments(body).is_empty());
+        assert_eq!(
+            extract_text_without_top_comment(body).unwrap().body,
+            "нестандартний перший рядок\nнестандартний другий рядок"
+        );
+    }
+
+    #[test]
+    fn extended_peleng_format_has_no_comment() {
+        let body = "пост Фокстрот-Наутілус-Дракар\n446.300 TYT назва: ретранслятор\nр-н Верхній Рогачик\nx:52-41410\ny:65-99914\nУКХ радіомережа ППО смуга 49 А\nНВ\nНВ\n\n— Кольцо 22, я техас, прием.\n23:59 31.07.2026";
+
+        assert!(parse_comments(body).is_empty());
+        assert_eq!(
+            extract_text_without_top_comment(body).unwrap().body,
+            "НВ\nНВ\n\n— Кольцо 22, я техас, прием."
+        );
     }
 }

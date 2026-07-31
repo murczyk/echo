@@ -1162,6 +1162,7 @@ pub async fn submit_upsert_inbox_item(
         coords_vec,
         inbox_id,
         Utc::now().naive_utc(),
+        crate::rer_importer::pelengation_object::extract(&message.text),
         txn,
     )
     .await

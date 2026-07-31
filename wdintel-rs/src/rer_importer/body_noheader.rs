@@ -243,30 +243,86 @@ fn extract_exact_format_text(
     position_input: &str,
 ) -> Option<NoHeadersBody> {
     if let Some(zp_peleng) =
+        crate::rer_importer::zp_peleng_extended_format::parse(input)
+    {
+        if let Some(body) =
+            no_headers_body_at(position_input, zp_peleng.interception_text)
+        {
+            return Some(body);
+        }
+    }
+    if let Some(zp_peleng) =
         crate::rer_importer::zp_peleng_vorony_odina_format::parse(input)
     {
-        return Some(no_headers_body_at(
-            position_input,
-            zp_peleng.coordinate_text,
-        ));
+        if let Some(body) =
+            no_headers_body_at(position_input, zp_peleng.coordinate_text)
+        {
+            return Some(body);
+        }
     }
     if let Some(zp_digital_post_alt) =
         crate::rer_importer::zp_digital_post_alt_format::parse(input)
     {
-        return Some(no_headers_body_at(
-            position_input,
-            zp_digital_post_alt.network_line,
-        ));
+        if let Some(body) =
+            no_headers_body_at(position_input, zp_digital_post_alt.network_line)
+        {
+            return Some(body);
+        }
     }
 
     None
 }
 
-fn no_headers_body_at(position_input: &str, body: String) -> NoHeadersBody {
-    let start_byte = position_input.find(&body).unwrap_or(0);
-    let start = position_input[..start_byte].chars().count();
-    let end = start + body.chars().count();
-    NoHeadersBody { body, start, end }
+fn no_headers_body_at(
+    position_input: &str,
+    body: String,
+) -> Option<NoHeadersBody> {
+    let normalized_input = position_input.replace("\r\n", "\n");
+    let body_range = normalized_body_range(&normalized_input, &body)?;
+    let start_normalized = normalized_input[..body_range.start].chars().count();
+    let end_normalized = normalized_input[..body_range.end].chars().count();
+    Some(NoHeadersBody {
+        body,
+        start: original_char_index(position_input, start_normalized),
+        end: original_char_index(position_input, end_normalized),
+    })
+}
+
+fn normalized_body_range(
+    input: &str,
+    body: &str,
+) -> Option<std::ops::Range<usize>> {
+    if let Some(start) = input.rfind(body) {
+        return Some(start..start + body.len());
+    }
+
+    let body_pattern = body
+        .split_whitespace()
+        .map(regex::escape)
+        .collect::<Vec<_>>()
+        .join(r"\s+");
+    Regex::new(&body_pattern)
+        .ok()?
+        .find_iter(input)
+        .last()
+        .map(|body_match| body_match.range())
+}
+
+fn original_char_index(input: &str, normalized_index: usize) -> usize {
+    let mut chars = input.chars().peekable();
+    let mut original_index = 0;
+    let mut current_normalized_index = 0;
+    while current_normalized_index < normalized_index {
+        let Some(ch) = chars.next() else {
+            break;
+        };
+        original_index += 1;
+        if ch == '\r' && chars.peek() == Some(&'\n') {
+            continue;
+        }
+        current_normalized_index += 1;
+    }
+    original_index
 }
 
 pub(crate) fn extract_text_excluding_lines(
@@ -428,6 +484,30 @@ mod tests {
         let end_byte = start_byte + body_original.len();
 
         assert_eq!(res.body, "НВ\n— репліка");
+        assert_eq!(res.start, body[..start_byte].chars().count());
+        assert_eq!(res.end, body[..end_byte].chars().count());
+    }
+
+    #[test]
+    fn extract_text_extended_peleng_crlf_uses_last_body_match() {
+        let body = "пост Фокстрот\r\n446.300 TYT назва: ретранслятор\r\nр-н Верхній Рогачик\r\n37U DR 25041 12982\r\nУКХ НВ\r\nНВ\r\n23:59 31.07.2026";
+        let res = extract_text(body).unwrap();
+        let start_byte = body.rfind("\r\nНВ\r\n").unwrap() + 2;
+        let end_byte = start_byte + "НВ".len();
+
+        assert_eq!(res.body, "НВ");
+        assert_eq!(res.start, body[..start_byte].chars().count());
+        assert_eq!(res.end, body[..end_byte].chars().count());
+    }
+
+    #[test]
+    fn extract_text_exact_peleng_locates_normalized_mgrs_whitespace() {
+        let body = "Пост Shark 4\n447.450\nр-н. Шевченка\n36T  VS\t89904   14667\n01.07.2026 03:07:42";
+        let res = extract_text(body).unwrap();
+        let start_byte = body.find("36T").unwrap();
+        let end_byte = body.find("14667").unwrap() + "14667".len();
+
+        assert_eq!(res.body, "36T VS 89904 14667");
         assert_eq!(res.start, body[..start_byte].chars().count());
         assert_eq!(res.end, body[..end_byte].chars().count());
     }
