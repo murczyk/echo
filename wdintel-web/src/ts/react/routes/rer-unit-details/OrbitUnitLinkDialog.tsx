@@ -20,7 +20,7 @@ import {
   MaterialReactTable,
   useMaterialReactTable,
 } from 'material-react-table';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import type { OrbitUnitLinkCandidate } from '../../../../Bindings';
 import {
@@ -170,9 +170,11 @@ function OrbitUnitLinkDialogBody({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [linkingUnitId, setLinkingUnitId] = useState<string | null>(null);
+  const automaticRequestControllerRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     const controller = new AbortController();
+    automaticRequestControllerRef.current = controller;
 
     async function loadAutomaticCandidates() {
       setLoading(true);
@@ -189,11 +191,19 @@ function OrbitUnitLinkDialogBody({
         if (!isAbortError(error)) setError(formatError(error));
       } finally {
         if (!controller.signal.aborted) setLoading(false);
+        if (automaticRequestControllerRef.current === controller) {
+          automaticRequestControllerRef.current = null;
+        }
       }
     }
 
     loadAutomaticCandidates();
-    return () => controller.abort();
+    return () => {
+      controller.abort();
+      if (automaticRequestControllerRef.current === controller) {
+        automaticRequestControllerRef.current = null;
+      }
+    };
   }, [unitId]);
 
   useEffect(() => {
@@ -304,6 +314,8 @@ function OrbitUnitLinkDialogBody({
   }, [table]);
 
   function startAdvancedSearch() {
+    automaticRequestControllerRef.current?.abort();
+    automaticRequestControllerRef.current = null;
     setAdvancedSearch(true);
     setSearch('');
     setUnits([]);
