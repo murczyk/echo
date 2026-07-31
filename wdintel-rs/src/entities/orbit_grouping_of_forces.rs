@@ -35,7 +35,11 @@ impl Related<super::orbit_unit::Entity> for Entity {
         super::orbit_unit_grouping_of_forces::Relation::OrbitUnit.def()
     }
     fn via() -> Option<RelationDef> {
-        Some (super :: orbit_unit_grouping_of_forces :: Relation :: OrbitGroupingOfForces . def () . rev ())
+        Some(
+            super::orbit_unit_grouping_of_forces::Relation::OrbitGroupingOfForces
+                .def()
+                .rev(),
+        )
     }
 }
 

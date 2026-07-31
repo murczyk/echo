@@ -12,6 +12,7 @@ pub struct Model {
     pub orbit_unit_id: Uuid,
     #[sea_orm(primary_key, auto_increment = false)]
     pub sigint_unit_id: i64,
+    pub is_manual: bool,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

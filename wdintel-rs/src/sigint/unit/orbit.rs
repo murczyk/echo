@@ -259,6 +259,10 @@ async fn manual_orbit_link_candidates(
         condition = condition.add(
             Condition::any()
                 .add(
+                    Expr::col(orbit_unit::Column::UnitName)
+                        .ilike(pattern.clone()),
+                )
+                .add(
                     Expr::col(orbit_unit::Column::GenerativeUnitNameFull)
                         .ilike(pattern.clone()),
                 )

@@ -333,6 +333,7 @@ mod m20260730_151706_unique_orbit_link_per_sigint_unit;
 mod m20260731_080107_allow_multiple_orbit_links_per_sigint_unit;
 mod m20260731_121431_add_pelengation_object;
 mod m20260731_145031_orbit_sync;
+mod m20260731_220945_persist_manual_orbit_links;
 mod m20260731_234500_orbit_unit_search_indexes;
 
 pub struct Migrator;
@@ -748,6 +749,9 @@ impl MigratorTrait for Migrator {
             ),
             Box::new(m20260731_121431_add_pelengation_object::Migration),
             Box::new(m20260731_145031_orbit_sync::Migration),
+            Box::new(
+                m20260731_220945_persist_manual_orbit_links::Migration,
+            ),
             Box::new(m20260731_234500_orbit_unit_search_indexes::Migration),
         ]
     }
