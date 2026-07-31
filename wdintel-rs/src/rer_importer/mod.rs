@@ -45,6 +45,7 @@ pub mod inbox;
 pub mod location;
 pub mod meow_format;
 pub mod multimessage;
+pub mod pelengation_object;
 pub mod points;
 pub mod post;
 pub mod report_chunking;
@@ -54,6 +55,7 @@ pub mod signals;
 pub mod types;
 pub mod unit;
 pub mod zp_digital_post_alt_format;
+pub mod zp_peleng_extended_format;
 pub mod zp_peleng_vorony_odina_format;
 
 fn media_inline_content_disposition(

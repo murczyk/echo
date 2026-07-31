@@ -615,7 +615,7 @@ view user model shared route =
                     (model.reportTemplate == RTReport125)
                     (ReportTemplateSelect RTReport125)
                     "Звіт 1.2.5"
-                    "Таблиця пеленгів у форматі форми 1.2.5"
+                    "Таблиця пеленгів із опційним вказанням об'єктів пеленгації, згідно форми 1.2.5"
                 , templateCard
                     (model.reportTemplate == RTReport1213)
                     (ReportTemplateSelect RTReport1213)

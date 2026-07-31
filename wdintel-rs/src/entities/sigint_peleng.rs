@@ -25,6 +25,8 @@ pub struct Model {
     pub deleted: bool,
     pub created_at: DateTime,
     pub updated_at: Option<DateTime>,
+    #[sea_orm(column_type = "Text", nullable)]
+    pub pelengation_object: Option<String>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

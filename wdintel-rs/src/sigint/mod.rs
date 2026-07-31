@@ -213,6 +213,7 @@ pub async fn oneoff_reprocess_coords(
             coords_vec.clone(),
             item_id,
             ts,
+            crate::rer_importer::pelengation_object::extract(body),
             &dbx,
         )
         .await

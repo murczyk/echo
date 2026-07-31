@@ -24,6 +24,19 @@ pub fn extract_unit_with_aor(
     m_aor_id: Option<i64>,
 ) -> Result<UnitAndLoc, AppError> {
     // trace!("> extract_unit: inp={inp}");
+    if let Some(zp_peleng) =
+        crate::rer_importer::zp_peleng_extended_format::parse(inp)
+    {
+        return Ok(UnitAndLoc {
+            unit: Some(format!(
+                "{} {}",
+                zp_peleng.signal_type, zp_peleng.unit_name
+            )),
+            locality: Some(zp_peleng.location),
+            locality_v2: None,
+        });
+    }
+
     if let Some(unit) = try_extract_report_125_unit(inp) {
         return Ok(UnitAndLoc {
             unit: Some(unit),
@@ -802,7 +815,7 @@ fn try_extract_pu_fsb_rf_unit_and_location(
     }))
 }
 
-fn try_extract_report_125_unit(inp: &str) -> Option<String> {
+pub(crate) fn try_extract_report_125_unit(inp: &str) -> Option<String> {
     if !looks_like_report_125_unit_body(inp) {
         return None;
     }

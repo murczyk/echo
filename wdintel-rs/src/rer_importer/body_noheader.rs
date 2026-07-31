@@ -243,6 +243,14 @@ fn extract_exact_format_text(
     position_input: &str,
 ) -> Option<NoHeadersBody> {
     if let Some(zp_peleng) =
+        crate::rer_importer::zp_peleng_extended_format::parse(input)
+    {
+        return Some(no_headers_body_at(
+            position_input,
+            zp_peleng.interception_text,
+        ));
+    }
+    if let Some(zp_peleng) =
         crate::rer_importer::zp_peleng_vorony_odina_format::parse(input)
     {
         return Some(no_headers_body_at(
