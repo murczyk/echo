@@ -208,6 +208,7 @@ pub async fn link_orbit_unit(
         orbit_unit_id,
     )
     .await?;
+    super::fanout_unit_changed(&env).await?;
     Ok(Json(()))
 }
 
