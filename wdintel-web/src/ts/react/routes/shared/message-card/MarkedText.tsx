@@ -115,6 +115,27 @@ function tokenPillBaseStyle(isInteractive: boolean): CSSProperties {
   };
 }
 
+function pointTokenSx(theme: Theme): CSSProperties {
+  return {
+    display: 'inline',
+    backgroundColor:
+      theme.palette.mode === 'dark' ? 'rgba(253, 136, 79, 0.22)' : 'rgba(253, 136, 79, 0.18)',
+    boxShadow:
+      theme.palette.mode === 'dark'
+        ? 'inset 0 0 0 1px rgba(253, 136, 79, 0.58)'
+        : 'inset 0 0 0 1px rgba(221, 91, 34, 0.48)',
+    color: 'inherit',
+    borderRadius: '2px',
+    padding: '1px 3px',
+    fontSize: 'inherit',
+    fontWeight: 500,
+    lineHeight: 'inherit',
+    cursor: 'pointer',
+    WebkitBoxDecorationBreak: 'clone',
+    boxDecorationBreak: 'clone',
+  };
+}
+
 function tokenInteractiveResetStyle(cursor: CSSProperties['cursor']): CSSProperties {
   return {
     color: 'inherit',
@@ -218,9 +239,10 @@ function PointToken({
 
   return (
     <>
-      <span
+      <Box
+        component="span"
         className="content-token--point"
-        style={tokenPillBaseStyle(true)}
+        sx={pointTokenSx}
         title={title}
         role="button"
         tabIndex={0}
@@ -231,34 +253,8 @@ function PointToken({
           }
         }}
       >
-        <span className="content-token--point-link" style={tokenInteractiveResetStyle('pointer')}>
-          {text}
-        </span>
-        <IconButton
-          size="small"
-          aria-label="Показати на мапі"
-          aria-controls={menuAnchorEl ? menuId : undefined}
-          aria-haspopup="menu"
-          aria-expanded={menuAnchorEl ? 'true' : undefined}
-          title={title}
-          onClick={openMenu}
-          sx={{
-            color: ORANGE_TOKEN_FG,
-            fontWeight: 600,
-            padding: 0,
-            ml: 0,
-            cursor: 'pointer',
-            '&:hover': { backgroundColor: 'transparent' },
-          }}
-        >
-          <span
-            aria-hidden
-            style={{ lineHeight: 1, fontSize: '1em', fontWeight: 'inherit', margin: '0 2px' }}
-          >
-            ⋮
-          </span>
-        </IconButton>
-      </span>
+        <span className="content-token--point-link">{text}</span>
+      </Box>
       <Menu
         id={menuId}
         anchorEl={menuAnchorEl}

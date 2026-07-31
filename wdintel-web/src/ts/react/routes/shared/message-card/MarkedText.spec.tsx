@@ -324,13 +324,11 @@ describe('MarkedText', () => {
       );
     });
 
-    const openMenuButton = container.querySelector(
-      'button[aria-label="Показати на мапі"]',
-    ) as HTMLButtonElement | null;
-    expect(openMenuButton).not.toBeNull();
+    const pointToken = container.querySelector('.content-token--point') as HTMLElement | null;
+    expect(pointToken).not.toBeNull();
 
     await act(async () => {
-      openMenuButton?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+      pointToken?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
       await Promise.resolve();
     });
 
@@ -357,13 +355,13 @@ describe('MarkedText', () => {
       );
     });
 
-    const fallbackOpenMenuButton = container.querySelector(
-      'button[aria-label="Показати на мапі"]',
-    ) as HTMLButtonElement | null;
-    expect(fallbackOpenMenuButton).not.toBeNull();
+    const fallbackPointToken = container.querySelector(
+      '.content-token--point',
+    ) as HTMLElement | null;
+    expect(fallbackPointToken).not.toBeNull();
 
     await act(async () => {
-      fallbackOpenMenuButton?.dispatchEvent(
+      fallbackPointToken?.dispatchEvent(
         new MouseEvent('click', { bubbles: true, cancelable: true }),
       );
       await Promise.resolve();
@@ -853,10 +851,10 @@ describe('MarkedText', () => {
     const title = 'Відкрити на мапі аналізу: P-1, P-2';
     const badge = container.querySelector('.content-token--point');
     const textNode = container.querySelector('.content-token--point-link');
-    const button = container.querySelector('button[aria-label="Показати на мапі"]');
     expect(badge?.getAttribute('title')).toBe(title);
-    expect(button?.getAttribute('title')).toBe(title);
     expect(textNode?.textContent).toBe('P-1');
+    expect(badge?.textContent).toBe('P-1');
+    expect(container.querySelector('button[aria-label="Показати на мапі"]')).toBeNull();
 
     await act(async () => {
       badge?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
