@@ -508,6 +508,8 @@ pub const SIGINT_INBOX_TUI_REFRESH_MS: u64 = 2000;
 pub const SIGINT_INBOX_TUI_EVENT_POLL_MS: u64 = 250;
 pub const ORBIT_TUI_EVENT_POLL_MS: u64 = 250;
 pub const ORBIT_STALE_GRACE_SECONDS: i64 = 5;
+pub const ORBIT_IMPORT_ADVISORY_LOCK_KEY: i64 =
+    i64::from_be_bytes(*b"ORBITIMP");
 pub const ORBIT_IMPORT_STORAGE_PREFIX: &str = "orbit-import";
 pub const ORBIT_IMPORT_UNITS_FILE_NAME: &str = "orbit_units.parquet";
 pub const ORBIT_IMPORT_GROUPING_OF_FORCES_FILE_NAME: &str =

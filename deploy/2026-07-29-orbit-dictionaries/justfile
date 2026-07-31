@@ -1,2 +1,0 @@
-collect data_file:
-	@python3 app.py "{{data_file}}"

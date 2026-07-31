@@ -11,7 +11,7 @@ use crate::orbit::dictionary::{
 use crate::orbit::types::{DictionaryValue, SourceUnit};
 use crate::storage;
 use crate::types::{Mode, ShortContext};
-use anyhow::Result;
+use anyhow::{Context, Result};
 use arrow_array::{Array, ArrayRef, Int32Array, RecordBatch, StringArray};
 use arrow_schema::{DataType, Field, Schema};
 use chrono::{NaiveDateTime, Utc};
@@ -163,7 +163,9 @@ fn snapshot_timestamp(path: &str) -> Option<NaiveDateTime> {
 
 async fn read_json_source(path: &Path) -> Result<Vec<SourceUnit>> {
     log::info!("reading ORBIT JSON export from {}", path.display());
-    let input = fs::read_to_string(path).await.c(h!())?;
+    let input = fs::read_to_string(path).await.with_context(|| {
+        format!("failed to read ORBIT JSON export {}", path.display())
+    })?;
     let (units, unknown_paths) =
         crate::orbit::types::parse_units(&input).c(h!())?;
     anyhow::ensure!(
@@ -912,6 +914,15 @@ mod tests {
         let (key, bytes) = store.latest_bytes().await.unwrap().unwrap();
         assert_eq!(key, "orbit-import/20260731_100000_000000.zip");
         assert_eq!(bytes, b"latest snapshot");
+    }
+
+    #[tokio::test]
+    async fn json_read_errors_include_the_source_path() {
+        let temp_dir = tempdir().unwrap();
+        let path = temp_dir.path().join("missing-orbit-export.json");
+        let error = read_json_source(&path).await.unwrap_err();
+
+        assert!(format!("{error:#}").contains(&path.display().to_string()));
     }
 
     fn sample_unit() -> SourceUnit {

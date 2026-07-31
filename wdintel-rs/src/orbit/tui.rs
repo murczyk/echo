@@ -18,9 +18,48 @@ use ratatui::widgets::{
 };
 use ratatui::{Frame, Terminal};
 use std::io::{self, Stdout};
+use std::ops::{Deref, DerefMut};
 use std::time::Duration;
 
-pub type OrbitTerminal = Terminal<CrosstermBackend<Stdout>>;
+type RatatuiTerminal = Terminal<CrosstermBackend<Stdout>>;
+
+pub struct OrbitTerminal {
+    terminal: RatatuiTerminal,
+    restored: bool,
+}
+
+impl OrbitTerminal {
+    fn restore(&mut self) -> io::Result<()> {
+        if self.restored {
+            return Ok(());
+        }
+        let result = restore_terminal_state(&mut self.terminal);
+        self.restored = result.is_ok();
+        result
+    }
+}
+
+impl Deref for OrbitTerminal {
+    type Target = RatatuiTerminal;
+
+    fn deref(&self) -> &Self::Target {
+        &self.terminal
+    }
+}
+
+impl DerefMut for OrbitTerminal {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.terminal
+    }
+}
+
+impl Drop for OrbitTerminal {
+    fn drop(&mut self) {
+        if let Err(error) = self.restore() {
+            log::error!("failed to restore ORBIT terminal: {error}");
+        }
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StartAction {
@@ -101,14 +140,68 @@ pub fn select_match(
 pub fn setup_terminal() -> io::Result<OrbitTerminal> {
     enable_raw_mode()?;
     let mut stdout = io::stdout();
-    execute!(stdout, EnterAlternateScreen, cursor::Hide)?;
-    Terminal::new(CrosstermBackend::new(stdout))
+    if let Err(error) = execute!(stdout, EnterAlternateScreen, cursor::Hide) {
+        if let Err(cleanup_error) = restore_stdout_state() {
+            log::error!(
+                "failed to restore ORBIT terminal after setup error: {cleanup_error}"
+            );
+        }
+        return Err(error);
+    }
+    let terminal = match Terminal::new(CrosstermBackend::new(stdout)) {
+        Ok(terminal) => terminal,
+        Err(error) => {
+            if let Err(cleanup_error) = restore_stdout_state() {
+                log::error!(
+                    "failed to restore ORBIT terminal after setup error: {cleanup_error}"
+                );
+            }
+            return Err(error);
+        }
+    };
+    Ok(OrbitTerminal {
+        terminal,
+        restored: false,
+    })
 }
 
 pub fn restore_terminal(terminal: &mut OrbitTerminal) -> io::Result<()> {
-    disable_raw_mode()?;
-    execute!(terminal.backend_mut(), LeaveAlternateScreen, cursor::Show)?;
-    terminal.show_cursor()
+    terminal.restore()
+}
+
+fn restore_stdout_state() -> io::Result<()> {
+    let mut first_error = None;
+    record_cleanup_error(&mut first_error, disable_raw_mode());
+    let mut stdout = io::stdout();
+    record_cleanup_error(
+        &mut first_error,
+        execute!(stdout, LeaveAlternateScreen, cursor::Show),
+    );
+    cleanup_result(first_error)
+}
+
+fn restore_terminal_state(terminal: &mut RatatuiTerminal) -> io::Result<()> {
+    let mut first_error = None;
+    record_cleanup_error(&mut first_error, disable_raw_mode());
+    record_cleanup_error(
+        &mut first_error,
+        execute!(terminal.backend_mut(), LeaveAlternateScreen, cursor::Show),
+    );
+    record_cleanup_error(&mut first_error, terminal.show_cursor());
+    cleanup_result(first_error)
+}
+
+fn record_cleanup_error(
+    first_error: &mut Option<io::Error>,
+    result: io::Result<()>,
+) {
+    if first_error.is_none() {
+        *first_error = result.err();
+    }
+}
+
+fn cleanup_result(first_error: Option<io::Error>) -> io::Result<()> {
+    first_error.map_or(Ok(()), Err)
 }
 
 pub fn review(

@@ -6,7 +6,10 @@ use crate::types::{Mode, ShortContext};
 use crate::{h, new_pg_pool_from_mode};
 use anyhow::Context;
 use chrono::Utc;
-use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
+use sea_orm::{
+    ColumnTrait, ConnectionTrait, DatabaseTransaction, DbBackend, EntityTrait,
+    QueryFilter, Statement, TransactionTrait,
+};
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::path::PathBuf;
 use uuid::Uuid;
@@ -47,6 +50,7 @@ async fn run_selected_action(mode: Mode) -> anyhow::Result<()> {
 async fn run_import(mode: Mode) -> anyhow::Result<()> {
     let snapshot = snapshot::load_latest_snapshot(mode).await?;
     let db = connect_database(mode).await?;
+    let _import_lock = acquire_import_lock(&db).await?;
     dictionary::ensure_dictionary_entries(&db, &snapshot.dictionaries)
         .await
         .c(h!())?;
@@ -106,9 +110,12 @@ async fn run_import(mode: Mode) -> anyhow::Result<()> {
     if !completed {
         return Ok(());
     }
-    review_stale_units(&db, started_at)
+    let completed = review_stale_units(&db, started_at)
         .await
         .context("failed while reviewing stale ORBIT units")?;
+    if !completed {
+        return Ok(());
+    }
     persistence::replace_sigint_unit_links(&db, &sigint_unit_ids_by_orbit_unit)
         .await
         .c("failed to replace ORBIT-to-SIGINT links")?;
@@ -161,6 +168,7 @@ async fn run_match_search(mode: Mode) -> anyhow::Result<()> {
         return Ok(());
     };
     let selected = candidates[selected];
+    let _import_lock = acquire_import_lock(&db).await?;
     dictionary::ensure_dictionary_entries(&db, &snapshot.dictionaries)
         .await
         .c(h!())?;
@@ -179,6 +187,26 @@ async fn connect_database(
     new_pg_pool_from_mode(mode).await.c(format!(
         "failed to initialize the ORBIT importer database connection in {mode:?} mode"
     ))
+}
+
+async fn acquire_import_lock(
+    db: &sea_orm::DatabaseConnection,
+) -> anyhow::Result<DatabaseTransaction> {
+    log::info!("waiting for the ORBIT import advisory lock");
+    let transaction = db
+        .begin()
+        .await
+        .c("failed to begin the ORBIT import lock transaction")?;
+    transaction
+        .query_one(Statement::from_sql_and_values(
+            DbBackend::Postgres,
+            "select pg_advisory_xact_lock($1)",
+            [crate::config::ORBIT_IMPORT_ADVISORY_LOCK_KEY.into()],
+        ))
+        .await
+        .c("failed to acquire the ORBIT import advisory lock")?;
+    log::info!("acquired the ORBIT import advisory lock");
+    Ok(transaction)
 }
 
 fn find_sigint_unit_by_full_name(
@@ -552,10 +580,10 @@ async fn apply_import_decision(
 async fn review_stale_units(
     db: &sea_orm::DatabaseConnection,
     started_at: chrono::NaiveDateTime,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<bool> {
     let stale = persistence::load_stale(db, started_at).await?;
     if stale.is_empty() {
-        return Ok(());
+        return Ok(true);
     }
     let mut terminal = tui::setup_terminal()?;
     let result =
@@ -569,7 +597,7 @@ async fn review_stale_units_inner(
     terminal: &mut tui::OrbitTerminal,
     stale: Vec<ExistingUnit>,
     started_at: chrono::NaiveDateTime,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<bool> {
     let total = stale.len();
     for (index, unit) in stale.into_iter().enumerate() {
         let name = unit
@@ -596,10 +624,11 @@ async fn review_stale_units_inner(
                 persistence::soft_delete(db, unit, started_at).await?
             }
             tui::Decision::Skip => {}
-            tui::Decision::SkipAll | tui::Decision::Quit => break,
+            tui::Decision::SkipAll => break,
+            tui::Decision::Quit => return Ok(false),
         }
     }
-    Ok(())
+    Ok(true)
 }
 
 fn remaining_review_count(
@@ -723,6 +752,38 @@ mod tests {
             Some("габатр / 392 мсп / 19 мсд / 58 а / ЮВО".to_string());
 
         assert_eq!(review_unit_name(&unit), "габатр 392 мсп 19 мсд 58 а ЮВО");
+    }
+
+    #[tokio::test]
+    async fn import_lock_serializes_database_sessions() {
+        crate::tests::test::init().await;
+        let first_db = connect_database(Mode::Test).await.unwrap();
+        let second_db = connect_database(Mode::Test).await.unwrap();
+        let first_lock = acquire_import_lock(&first_db).await.unwrap();
+        let second_transaction = second_db.begin().await.unwrap();
+        let statement = || {
+            Statement::from_sql_and_values(
+                DbBackend::Postgres,
+                "select pg_try_advisory_xact_lock($1) as acquired",
+                [crate::config::ORBIT_IMPORT_ADVISORY_LOCK_KEY.into()],
+            )
+        };
+
+        let row = second_transaction
+            .query_one(statement())
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(!row.try_get::<bool>("", "acquired").unwrap());
+
+        first_lock.rollback().await.unwrap();
+        let row = second_transaction
+            .query_one(statement())
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(row.try_get::<bool>("", "acquired").unwrap());
+        second_transaction.rollback().await.unwrap();
     }
 
     fn sigint_unit() -> sigint_unit::Model {

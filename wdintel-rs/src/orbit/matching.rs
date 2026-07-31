@@ -34,8 +34,16 @@ pub fn validate_source(units: &[SourceUnit]) -> anyhow::Result<()> {
         if unit.path_level.is_some() {
             anyhow::bail!("$[{index}].path_level is only valid for a parent");
         }
-        if unit.operational_unit_name_full.is_none() {
-            anyhow::bail!("$[{index}].operational_unit_name_full is required");
+        if unit
+            .operational_unit_name_full
+            .as_deref()
+            .map(str::trim)
+            .filter(|name| !name.is_empty())
+            .is_none()
+        {
+            anyhow::bail!(
+                "$[{index}].operational_unit_name_full is required and cannot be blank"
+            );
         }
         if !ids.insert(unit.unit_id) {
             anyhow::bail!(
@@ -978,10 +986,14 @@ mod tests {
     }
 
     #[test]
-    fn empty_exports_and_missing_operational_paths_are_rejected() {
+    fn empty_exports_and_invalid_operational_paths_are_rejected() {
         assert!(validate_source(&[]).is_err());
         let mut unit = source_unit("1 рота", vec![("company", "1 рота", 0)]);
         unit.operational_unit_name_full = None;
+        assert!(validate_source(&[unit]).is_err());
+
+        let mut unit = source_unit("1 рота", vec![("company", "1 рота", 0)]);
+        unit.operational_unit_name_full = Some(" \t\n".to_string());
         assert!(validate_source(&[unit]).is_err());
     }
 

@@ -13,10 +13,11 @@ normalized snapshot from configured storage.
 ## Source JSON
 
 The source must be a top-level array of ORBIT unit objects. Every unit requires
-a UUID `unit_id`; all other supported fields are optional:
+a UUID `unit_id`, and every top-level unit requires a non-blank
+`operational_unit_name_full`. All other supported fields are optional:
 
-- names: `unit_name`, `unit_name_original`, `unit_name_short`,
-  `operational_unit_name_full`, and `generative_unit_name_full`;
+- names: `unit_name`, `unit_name_original`, `unit_name_short`, and
+  `generative_unit_name_full`;
 - identifiers: `unit_number`, `unit_alternate_names`, and
   `unit_alternate_numbers`;
 - dictionaries: `unit_echelon`, `combat_unit_type`, and
@@ -94,7 +95,9 @@ sudo wdintel-rs --mode=live tui-import-orbit-units
 ```
 
 The importer downloads and unpacks the newest timestamped snapshot. It fails
-before starting if no snapshot exists. The first screen offers two workflows.
+before starting if no snapshot exists. Database-mutating import sessions are
+serialized, so a second importer waits until the active import releases its
+PostgreSQL advisory lock. The first screen offers two workflows.
 
 ### Import new ORBIT units
 
