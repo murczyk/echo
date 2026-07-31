@@ -3,11 +3,8 @@ use crate::error::AppError;
 use crate::rer_importer::analysis::message_in_groups_exists;
 use crate::types::*;
 use crate::utils::*;
-use sea_orm::{
-    sea_query::{extension::postgres::PgExpr, PostgresQueryBuilder},
-    *,
-};
-use sea_query::{Alias, CommonTableExpression, Expr, Query};
+use sea_orm::{sea_query::extension::postgres::PgExpr, *};
+use sea_query::{Expr, Query};
 
 use super::types::*;
 
@@ -24,70 +21,72 @@ pub async fn bl_callsigns_for_filter(
             .await
             .c(h!())?;
 
-    let callsign_alias = Alias::new("callsign");
-    let mut q = Query::select();
-    q.expr_as(
-        Expr::cust("jsonb_array_elements_text(sigint_inbox_item.callsigns)"),
-        callsign_alias.clone(),
-    )
-    .from(sigint_inbox_item::Entity)
-    .inner_join(
-        signal_message::Entity,
-        Expr::col((sigint_inbox_item::Entity, sigint_inbox_item::Column::Id))
-            .equals((signal_message::Entity, signal_message::Column::Id)),
-    )
-    .and_where(message_in_groups_exists(master_keys))
-    .and_where(signal_message::Column::Deleted.eq(false))
-    .and_where(sigint_inbox_item::Column::Callsigns.is_not_null())
-    .and_where(sigint_inbox_item::Column::Datetime.gte(dt_since))
-    .and_where(sigint_inbox_item::Column::Datetime.lt(dt_till));
+    let mut query = sigint_inbox_item::Entity::find()
+        .select_only()
+        .distinct()
+        .column(sigint_inbox_item::Column::Id)
+        .join(
+            JoinType::InnerJoin,
+            sigint_inbox_item::Relation::SignalMessage.def(),
+        )
+        .filter(message_in_groups_exists(master_keys))
+        .filter(signal_message::Column::Deleted.eq(false))
+        .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
+        .filter(sigint_inbox_item::Column::Datetime.lt(dt_till))
+        .filter(Expr::exists(
+            Query::select()
+                .expr(Expr::value(1))
+                .from(sigint_inbox_item_callsign::Entity)
+                .and_where(
+                    Expr::col((
+                        sigint_inbox_item_callsign::Entity,
+                        sigint_inbox_item_callsign::Column::SigintInboxItemId,
+                    ))
+                    .equals((
+                        sigint_inbox_item::Entity,
+                        sigint_inbox_item::Column::Id,
+                    )),
+                )
+                .and_where(
+                    sigint_inbox_item_callsign::Column::Deleted.eq(false),
+                )
+                .to_owned(),
+        ));
     if let Some(freq) = &req.freq {
-        q.and_where(sigint_inbox_item::Column::Freq.like(format!("{freq}%")));
+        query = query
+            .filter(sigint_inbox_item::Column::Freq.like(format!("{freq}%")));
     };
 
     if let Some(unit) = &req.unit {
-        q.and_where(
+        query = query.filter(
             Expr::col(sigint_inbox_item::Column::UnitV2)
                 .ilike(format!("{unit}%")),
         );
     };
-
-    let cte_alias = Alias::new("callsigns_cte");
-    let callsigns_cte = CommonTableExpression::new()
-        .query(q.to_owned())
-        .table_name(cte_alias.clone())
-        .to_owned();
-
-    let mut main_query = Query::select();
-    main_query
-        .distinct()
-        .from(cte_alias.clone())
-        .column(callsign_alias.clone())
-        .order_by(callsign_alias.clone(), Order::Asc);
-    if let Some(callsign) = &req.callsign {
-        main_query.and_where(
-            Expr::col(Alias::new("callsign"))
-                .like(format!("{}%", callsign.trim().to_lowercase())),
-        );
-    }
-
-    let combined_query =
-        Query::with().cte(callsigns_cte).clone().query(main_query);
-
-    let stmt = combined_query.to_string(PostgresQueryBuilder);
-
-    // debug!("callsigns filter sql: {stmt}");
-
-    let res = dbx
-        .query_all(Statement::from_string(DbBackend::Postgres, stmt))
-        .await
-        .c(h!())?
+    let inbox_item_ids = query.into_tuple::<i64>().all(dbx).await.c(h!())?;
+    let callsigns =
+        crate::inbox::callsigns::load_by_item_ids(dbx, &inbox_item_ids).await?;
+    let callsign_prefix = req
+        .callsign
+        .as_deref()
+        .map(str::trim)
+        .map(str::to_lowercase);
+    let mut callsigns = inbox_item_ids
         .into_iter()
-        .map(|r| FreqCallsign {
-            callsign: r.try_get("", "callsign").unwrap_or_default(),
+        .filter_map(|inbox_item_id| callsigns.get(&inbox_item_id))
+        .flat_map(|callsigns| callsigns.effective())
+        .filter(|callsign| !callsign.is_empty())
+        .filter(|callsign| {
+            callsign_prefix
+                .as_ref()
+                .is_none_or(|prefix| callsign.starts_with(prefix))
         })
-        .filter(|r| !r.callsign.is_empty())
-        .collect();
-
-    Ok(res)
+        .collect::<std::collections::HashSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>();
+    callsigns.sort();
+    Ok(callsigns
+        .into_iter()
+        .map(|callsign| FreqCallsign { callsign })
+        .collect())
 }

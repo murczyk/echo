@@ -17,10 +17,10 @@ use sea_orm::{
     ColumnTrait, Condition, EntityTrait, QueryFilter, QuerySelect, Statement,
 };
 use sea_query::{
-    extension::postgres::PgExpr, Alias, CommonTableExpression, Expr,
-    IntoCondition, Order, Query, SimpleExpr,
+    extension::postgres::PgExpr, Alias, Expr, IntoCondition, Order, Query,
+    SimpleExpr,
 };
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeSet, HashMap, HashSet};
 
 use self::bl::*;
 use self::types::*;
@@ -393,24 +393,22 @@ pub async fn list_callsigns_by_freqs(
     let dt_since = dt_from_millis(req.since_date_inclusive_ms)?;
     let dt_till = dt_from_millis(req.till_date_noninclusive_ms)?;
 
-    let callsigns = signal_message::Entity::find()
+    #[derive(FromQueryResult)]
+    struct InboxItemFreq {
+        id: i64,
+        freq: String,
+    }
+
+    let inbox_items = signal_message::Entity::find()
         .join_as(
             JoinType::InnerJoin,
             signal_message::Relation::SigintInboxItem.def(),
             Alias::new("sigint_inbox_item"),
         )
         .select_only()
-        .column_as(
-            Expr::cust(
-                "jsonb_array_elements_text(sigint_inbox_item.callsigns)",
-            ),
-            "callsign",
-        )
+        .distinct()
+        .column_as(signal_message::Column::Id, "id")
         .column_as(sigint_inbox_item::Column::Freq, "freq")
-        .group_by(Expr::cust(
-            "jsonb_array_elements_text(sigint_inbox_item.callsigns)",
-        ))
-        .group_by(sigint_inbox_item::Column::Freq)
         .filter(message_in_groups_exists(
             crate::messenger::group::get_identity_sigint_groups_noimport(
                 &env.dbx,
@@ -423,30 +421,54 @@ pub async fn list_callsigns_by_freqs(
         .filter(signal_message::Column::Deleted.eq(false))
         .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
         .filter(sigint_inbox_item::Column::Datetime.lt(dt_till))
-        .filter(sigint_inbox_item::Column::Freq.eq_any(req.freqs.clone()));
-
-    // println!(
-    //     "> sql: {}",
-    //     callsigns.clone().build(DbBackend::Postgres).to_string()
-    // );
-    let res_callsigns = callsigns
-        .into_model::<FreqCallsignsMessage>()
+        .filter(sigint_inbox_item::Column::Freq.eq_any(req.freqs.clone()))
+        .filter(active_inbox_item_callsign_exists())
+        .into_model::<InboxItemFreq>()
         .all(&env.dbx)
         .await
         .c(h!())?;
-
-    let mut res = HashMap::new();
-    for row in res_callsigns {
-        if !res.contains_key(&row.freq) {
-            res.insert(row.freq.clone(), Vec::new());
-        }
-        let val = res.get_mut(&row.freq).context(h!())?;
-        if !(val.contains(&row.callsign)) {
-            val.push(row.callsign);
-        }
+    let inbox_item_ids =
+        inbox_items.iter().map(|row| row.id).collect::<Vec<_>>();
+    let callsigns =
+        crate::inbox::callsigns::load_by_item_ids(&env.dbx, &inbox_item_ids)
+            .await?;
+    let mut callsigns_by_freq = HashMap::<String, BTreeSet<String>>::new();
+    for inbox_item in inbox_items {
+        let Some(inbox_item_callsigns) = callsigns.get(&inbox_item.id) else {
+            continue;
+        };
+        callsigns_by_freq
+            .entry(inbox_item.freq)
+            .or_default()
+            .extend(inbox_item_callsigns.effective());
     }
 
-    Ok(Json(res))
+    Ok(Json(
+        callsigns_by_freq
+            .into_iter()
+            .map(|(freq, callsigns)| (freq, callsigns.into_iter().collect()))
+            .collect(),
+    ))
+}
+
+fn active_inbox_item_callsign_exists() -> SimpleExpr {
+    Expr::exists(
+        Query::select()
+            .expr(Expr::value(1))
+            .from(sigint_inbox_item_callsign::Entity)
+            .and_where(
+                Expr::col((
+                    sigint_inbox_item_callsign::Entity,
+                    sigint_inbox_item_callsign::Column::SigintInboxItemId,
+                ))
+                .equals((
+                    sigint_inbox_item::Entity,
+                    sigint_inbox_item::Column::Id,
+                )),
+            )
+            .and_where(sigint_inbox_item_callsign::Column::Deleted.eq(false))
+            .to_owned(),
+    )
 }
 
 /// Lists frequencies which were active (active in 14-day period, can include non-actives if checked), their assigned units if any.
@@ -478,22 +500,29 @@ pub async fn list_freqs(
         location_v2: Option<String>,
     }
 
+    enum FreqPeriodSource {
+        Rows(Vec<(String, i64, Option<String>)>),
+        Sql(String),
+    }
+
     let dedup_key_alias = Alias::new("dedup_key");
     let freqs_period = match &req.filter_callsigns {
+        Some(filter_callsigns) if filter_callsigns.is_empty() => {
+            FreqPeriodSource::Rows(Vec::new())
+        }
         Some(filter_callsigns) => {
             if let Err(ref e) = validate_callsigns(filter_callsigns) {
                 println!("> error validating collsings for filter: {e}");
                 return Err(AppError::BL { msg: e.to_string() });
             }
 
-            let callsings_postgres_array = format!(
-                "ARRAY[{}]",
-                filter_callsigns
-                    .iter()
-                    .map(|s| format!("'{}'", s.replace('\'', "''")))
-                    .collect::<Vec<_>>()
-                    .join(",")
-            );
+            #[derive(FromQueryResult)]
+            struct InboxItemFreq {
+                id: i64,
+                freq: Option<String>,
+                location_v2: Option<String>,
+            }
+
             let mut dedup_subquery = signal_message::Entity::find()
                 .join_as(
                     JoinType::InnerJoin,
@@ -501,10 +530,10 @@ pub async fn list_freqs(
                     Alias::new("sigint_inbox_item"),
                 )
                 .select_only()
+                .column_as(signal_message::Column::Id, "id")
                 .columns([
                     sigint_inbox_item::Column::Freq,
                     sigint_inbox_item::Column::LocationV2,
-                    sigint_inbox_item::Column::Callsigns,
                     sigint_inbox_item::Column::Datetime,
                 ])
                 .column_as(
@@ -531,81 +560,74 @@ pub async fn list_freqs(
             .await
             .c(h!())?;
 
-            dedup_subquery = dedup_subquery.filter(Expr::cust(format!(
-                "\"sigint_inbox_item\".\"callsigns\" ?| {callsings_postgres_array}"
-            )));
+            dedup_subquery = dedup_subquery.filter(Expr::cust(
+                crate::inbox::callsigns::sql_filter_condition(filter_callsigns),
+            ));
+            dedup_subquery =
+                dedup_subquery.filter(active_inbox_item_callsign_exists());
+
+            if req.filter_unknown_network.unwrap_or(false) {
+                dedup_subquery = dedup_subquery.filter(
+                    unknown_network_freq_filter("sigint_inbox_item.freq"),
+                );
+            }
 
             dedup_subquery = dedup_subquery
                 .order_by(Expr::cust("dedup_key"), Order::Asc)
                 // emulate NULLS FIRST: order nulls before non-nulls
                 .order_by(sigint_inbox_item::Column::Datetime, Order::Asc);
 
-            let dedup_cte_alias = Alias::new("deduped");
-            let dedup_cte = CommonTableExpression::new()
-                .query(dedup_subquery.into_query().to_owned())
-                .table_name(dedup_cte_alias.clone())
-                .to_owned();
-
-            let callsigns_subquery = Query::select()
-                .expr_as(Expr::col("freq"), "freq")
-                .expr_as(
-                    Expr::cust("string_agg(DISTINCT location_v2, '')"),
-                    "location_v2",
-                )
-                .expr_as(
-                    Expr::cust("jsonb_array_elements_text(callsigns)"),
-                    "callsign",
-                )
-                .from(dedup_cte_alias.clone())
-                .add_group_by([
-                    Expr::col("freq").into(),
-                    Expr::col("callsign").into(),
-                ])
-                .to_owned();
-
-            let callsigns_cte_alias = Alias::new("unique_callsigns");
-            let callsigns_cte = CommonTableExpression::new()
-                .query(callsigns_subquery.to_owned())
-                .table_name(callsigns_cte_alias.clone())
-                .to_owned();
-
-            let mut main_query = Query::select()
-                .expr_as(
-                    Expr::cust("unique_callsigns.freq".to_string()),
-                    Alias::new("freq"),
-                )
-                .expr_as(
-                    Expr::cust(
-                        "string_agg(DISTINCT unique_callsigns.location_v2, '')"
-                            .to_string(),
-                    ),
-                    Alias::new("location_v2"),
-                )
-                .expr_as(
-                    Expr::cust("count(*)".to_string()),
-                    Alias::new("message_count"),
-                )
-                .from(Alias::new("unique_callsigns"))
-                .and_where(Expr::cust(format!(
-                    "unique_callsigns.callsign = ANY({callsings_postgres_array})"
-                )))
-                .add_group_by(vec![Expr::cust("freq")])
-                .order_by_expr(Expr::cust("message_count"), Order::Desc)
-                .to_owned();
-
-            if req.filter_unknown_network.unwrap_or(false) {
-                main_query.and_where(unknown_network_freq_filter(
-                    "unique_callsigns.freq",
-                ));
+            let inbox_items = dedup_subquery
+                .into_model::<InboxItemFreq>()
+                .all(&env.dbx)
+                .await
+                .c(h!())?;
+            let inbox_item_ids =
+                inbox_items.iter().map(|row| row.id).collect::<Vec<_>>();
+            let callsigns = crate::inbox::callsigns::load_by_item_ids(
+                &env.dbx,
+                &inbox_item_ids,
+            )
+            .await?;
+            let selected_callsigns =
+                filter_callsigns.iter().cloned().collect::<HashSet<_>>();
+            let mut aggregated =
+                HashMap::<String, (HashSet<String>, BTreeSet<String>)>::new();
+            for inbox_item in inbox_items {
+                let Some(freq) = inbox_item.freq else {
+                    continue;
+                };
+                let Some(inbox_item_callsigns) = callsigns.get(&inbox_item.id)
+                else {
+                    continue;
+                };
+                let matched_callsigns = inbox_item_callsigns
+                    .effective()
+                    .into_iter()
+                    .filter(|callsign| selected_callsigns.contains(callsign))
+                    .collect::<Vec<_>>();
+                if matched_callsigns.is_empty() {
+                    continue;
+                }
+                let entry = aggregated.entry(freq).or_default();
+                entry.0.extend(matched_callsigns);
+                if let Some(location_v2) = inbox_item.location_v2 {
+                    entry.1.insert(location_v2);
+                }
             }
-
-            let combined_query = Query::with()
-                .cte(dedup_cte)
-                .cte(callsigns_cte)
-                .clone()
-                .query(main_query);
-
-            &combined_query.to_string(PostgresQueryBuilder)
+            let mut rows = aggregated
+                .into_iter()
+                .map(|(freq, (callsigns, locations))| {
+                    let location_v2 = if locations.is_empty() {
+                        None
+                    } else {
+                        Some(locations.into_iter().collect::<String>())
+                    };
+                    (freq, callsigns.len() as i64, location_v2)
+                })
+                .collect::<Vec<_>>();
+            rows.sort_by(|left, right| right.1.cmp(&left.1));
+            FreqPeriodSource::Rows(rows)
         }
         None => {
             let mut dedup_freq_per = signal_message::Entity::find()
@@ -686,7 +708,7 @@ pub async fn list_freqs(
                 let expr = Expr::cust("freq");
                 main_query.order_by_expr(expr, Order::Asc);
             }
-            &main_query.to_string(PostgresQueryBuilder)
+            FreqPeriodSource::Sql(main_query.to_string(PostgresQueryBuilder))
         }
     };
 
@@ -696,22 +718,22 @@ pub async fn list_freqs(
     // freqs_period = freqs_period.limit(LIMIT);
     // debug!("> freqs sql: {freqs_period}");
 
-    let freqs_period: Vec<(String, i64, Option<String>)> = env
-        .dbx
-        .query_all(Statement::from_string(
-            DatabaseBackend::Postgres,
-            freqs_period.to_string(),
-        ))
-        .await
-        .c(h!())?
-        .iter()
-        .flat_map(|row| {
-            let freq_res = FreqRes::from_query_result(row, "").unwrap();
-            freq_res.freq.clone().map(|f| {
-                (f, freq_res.message_count, freq_res.location_v2.clone())
+    let freqs_period = match freqs_period {
+        FreqPeriodSource::Rows(rows) => rows,
+        FreqPeriodSource::Sql(sql) => env
+            .dbx
+            .query_all(Statement::from_string(DatabaseBackend::Postgres, sql))
+            .await
+            .c(h!())?
+            .iter()
+            .flat_map(|row| {
+                let freq_res = FreqRes::from_query_result(row, "").unwrap();
+                freq_res.freq.clone().map(|freq| {
+                    (freq, freq_res.message_count, freq_res.location_v2.clone())
+                })
             })
-        })
-        .collect();
+            .collect(),
+    };
     // println!("> freqs in period count: {}", freqs_period.len());
 
     #[derive(FromQueryResult)]
@@ -865,21 +887,28 @@ pub async fn list_freqs_v2(
         location_v2: Option<String>,
     }
 
+    enum FreqPeriodSource {
+        Rows(Vec<(String, i64, Option<String>, Option<i64>)>),
+        Sql(String),
+    }
+
     let freqs_period = match &req.filter_callsigns {
+        Some(filter_callsigns) if filter_callsigns.is_empty() => {
+            FreqPeriodSource::Rows(Vec::new())
+        }
         Some(filter_callsigns) => {
             if let Err(ref e) = validate_callsigns(filter_callsigns) {
                 println!("> error validating collsings for filter: {e}");
                 return Err(AppError::BL { msg: e.to_string() });
             }
 
-            let callsings_postgres_array = format!(
-                "ARRAY[{}]",
-                filter_callsigns
-                    .iter()
-                    .map(|s| format!("'{}'", s.replace('\'', "''")))
-                    .collect::<Vec<_>>()
-                    .join(",")
-            );
+            #[derive(FromQueryResult)]
+            struct InboxItemFreq {
+                id: i64,
+                post_id: Option<i64>,
+                freq: Option<String>,
+                location_v2: Option<String>,
+            }
 
             let mut subquery = signal_message::Entity::find()
                 .join_as(
@@ -888,26 +917,11 @@ pub async fn list_freqs_v2(
                     Alias::new("sigint_inbox_item"),
                 )
                 .select_only()
-                // .column_as(signal_message::Column::Id.count(), "message_count")
+                .distinct()
+                .column_as(signal_message::Column::Id, "id")
                 .column(sigint_inbox_item::Column::PostId)
-                .column_as(
-                    SimpleExpr::Custom("sigint_inbox_item.freq".to_string()),
-                    "freq",
-                )
-                .column_as(
-                    SimpleExpr::Custom(
-                        "string_agg(sigint_inbox_item.location_v2, '')"
-                            .to_string(),
-                    ),
-                    "location_v2",
-                )
-                .column_as(
-                    SimpleExpr::Custom(
-                        "jsonb_array_elements_text(sigint_inbox_item.callsigns)"
-                            .to_string(),
-                    ),
-                    "callsign",
-                );
+                .column(sigint_inbox_item::Column::Freq)
+                .column(sigint_inbox_item::Column::LocationV2);
 
             subquery = filters_list_freq_search(
                 subquery,
@@ -924,50 +938,65 @@ pub async fn list_freqs_v2(
             .await
             .c(h!())?;
 
-            subquery = subquery.filter(Expr::cust(format!(
-                "\"sigint_inbox_item\".\"callsigns\" ?| {callsings_postgres_array}"
-            )));
+            subquery = subquery.filter(Expr::cust(
+                crate::inbox::callsigns::sql_filter_condition(filter_callsigns),
+            ));
+            subquery = subquery.filter(active_inbox_item_callsign_exists());
 
-            subquery = subquery.group_by(sigint_inbox_item::Column::Freq);
-            subquery = subquery.group_by(Expr::cust("callsign".to_string()));
-
-            let cte_alias = Alias::new("unique_callsigns");
-
-            let unique_callsigns_cte = CommonTableExpression::new()
-                .query(subquery.into_query().to_owned())
-                .table_name(cte_alias.clone())
-                .to_owned();
-
-            let main_query = Query::select()
-                .expr_as(
-                    Expr::cust("unique_callsigns.freq".to_string()),
-                    Alias::new("freq"),
-                )
-                .expr_as(
-                    Expr::cust(
-                        "string_agg(unique_callsigns.location_v2, '')"
-                            .to_string(),
-                    ),
-                    Alias::new("location_v2"),
-                )
-                .expr_as(
-                    Expr::cust("count(*)".to_string()),
-                    Alias::new("message_count"),
-                )
-                .from(Alias::new("unique_callsigns"))
-                .and_where(Expr::cust(format!(
-                    "unique_callsigns.callsign = ANY({callsings_postgres_array})"
-                )))
-                .add_group_by(vec![Expr::cust("freq"), Expr::cust("post_id")])
-                .order_by_expr(Expr::cust("message_count"), Order::Desc)
-                .to_owned();
-
-            let combined_query = Query::with()
-                .cte(unique_callsigns_cte)
-                .clone()
-                .query(main_query);
-
-            &combined_query.to_string(PostgresQueryBuilder)
+            let inbox_items = subquery
+                .into_model::<InboxItemFreq>()
+                .all(&env.dbx)
+                .await
+                .c(h!())?;
+            let inbox_item_ids =
+                inbox_items.iter().map(|row| row.id).collect::<Vec<_>>();
+            let callsigns = crate::inbox::callsigns::load_by_item_ids(
+                &env.dbx,
+                &inbox_item_ids,
+            )
+            .await?;
+            let selected_callsigns =
+                filter_callsigns.iter().cloned().collect::<HashSet<_>>();
+            let mut aggregated = HashMap::<
+                (String, Option<i64>),
+                (HashSet<String>, BTreeSet<String>),
+            >::new();
+            for inbox_item in inbox_items {
+                let Some(freq) = inbox_item.freq else {
+                    continue;
+                };
+                let Some(inbox_item_callsigns) = callsigns.get(&inbox_item.id)
+                else {
+                    continue;
+                };
+                let matched_callsigns = inbox_item_callsigns
+                    .effective()
+                    .into_iter()
+                    .filter(|callsign| selected_callsigns.contains(callsign))
+                    .collect::<Vec<_>>();
+                if matched_callsigns.is_empty() {
+                    continue;
+                }
+                let entry =
+                    aggregated.entry((freq, inbox_item.post_id)).or_default();
+                entry.0.extend(matched_callsigns);
+                if let Some(location_v2) = inbox_item.location_v2 {
+                    entry.1.insert(location_v2);
+                }
+            }
+            let mut rows = aggregated
+                .into_iter()
+                .map(|((freq, post_id), (callsigns, locations))| {
+                    let location_v2 = if locations.is_empty() {
+                        None
+                    } else {
+                        Some(locations.into_iter().collect::<String>())
+                    };
+                    (freq, callsigns.len() as i64, location_v2, post_id)
+                })
+                .collect::<Vec<_>>();
+            rows.sort_by(|left, right| right.1.cmp(&left.1));
+            FreqPeriodSource::Rows(rows)
         }
         None => {
             let mut freqs_per = signal_message::Entity::find()
@@ -1024,7 +1053,9 @@ pub async fn list_freqs_v2(
             } else {
                 freqs_per.order_by_asc(sigint_inbox_item::Column::Freq)
             };
-            &freqs_per.build(DbBackend::Postgres).to_string()
+            FreqPeriodSource::Sql(
+                freqs_per.build(DbBackend::Postgres).to_string(),
+            )
         }
     };
 
@@ -1032,29 +1063,32 @@ pub async fn list_freqs_v2(
     //     freqs_period.clone().count(&env.dbx).await.c(h!())?;
     // println!("> freqs in period count: {}", freqs_period_count);
     // freqs_period = freqs_period.limit(LIMIT);
-    trace!("> freqs sql: {freqs_period}");
-
-    let freqs_period: Vec<(String, i64, Option<String>, Option<i64>)> = env
-        .dbx
-        .query_all(Statement::from_string(
-            DatabaseBackend::Postgres,
-            freqs_period.to_string(),
-        ))
-        .await
-        .c(h!())?
-        .iter()
-        .flat_map(|row| {
-            let freq_res = FreqRes::from_query_result(row, "").unwrap();
-            freq_res.freq.clone().map(|f| {
-                (
-                    f,
-                    freq_res.message_count,
-                    freq_res.location_v2.clone(),
-                    freq_res.post_id,
-                )
-            })
-        })
-        .collect();
+    let freqs_period = match freqs_period {
+        FreqPeriodSource::Rows(rows) => rows,
+        FreqPeriodSource::Sql(sql) => {
+            trace!("> freqs sql: {sql}");
+            env.dbx
+                .query_all(Statement::from_string(
+                    DatabaseBackend::Postgres,
+                    sql,
+                ))
+                .await
+                .c(h!())?
+                .iter()
+                .flat_map(|row| {
+                    let freq_res = FreqRes::from_query_result(row, "").unwrap();
+                    freq_res.freq.clone().map(|freq| {
+                        (
+                            freq,
+                            freq_res.message_count,
+                            freq_res.location_v2.clone(),
+                            freq_res.post_id,
+                        )
+                    })
+                })
+                .collect()
+        }
+    };
     // println!("> freqs in period count: {}", freqs_period.len());
 
     #[derive(FromQueryResult)]
