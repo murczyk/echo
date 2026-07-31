@@ -288,29 +288,33 @@ where
     if item_ids.is_empty() {
         return Ok(HashMap::new());
     }
-    let rows = sigint_inbox_item_callsign::Entity::find()
-        .filter(
-            sigint_inbox_item_callsign::Column::SigintInboxItemId
-                .is_in(item_ids.to_vec()),
-        )
-        .filter(sigint_inbox_item_callsign::Column::Deleted.eq(false))
-        .order_by_asc(sigint_inbox_item_callsign::Column::SigintInboxItemId)
-        .order_by_asc(sigint_inbox_item_callsign::Column::Source)
-        .order_by_asc(sigint_inbox_item_callsign::Column::Ordering)
-        .order_by_asc(sigint_inbox_item_callsign::Column::Id)
-        .all(dbx)
-        .await
-        .c(h!())?;
     let mut result = HashMap::new();
-    for row in rows {
-        let callsigns: &mut InboxItemCallsigns =
-            result.entry(row.sigint_inbox_item_id).or_default();
-        match row.source {
-            SigintInboxItemCallsignSource::Primary => {
-                callsigns.primary.push(row.callsign)
-            }
-            SigintInboxItemCallsignSource::Alg2 => {
-                callsigns.alg2.push(row.callsign)
+    for item_ids in
+        item_ids.chunks(crate::config::INBOX_ITEM_CALLSIGN_LOAD_BATCH_SIZE)
+    {
+        let rows = sigint_inbox_item_callsign::Entity::find()
+            .filter(
+                sigint_inbox_item_callsign::Column::SigintInboxItemId
+                    .is_in(item_ids.to_vec()),
+            )
+            .filter(sigint_inbox_item_callsign::Column::Deleted.eq(false))
+            .order_by_asc(sigint_inbox_item_callsign::Column::SigintInboxItemId)
+            .order_by_asc(sigint_inbox_item_callsign::Column::Source)
+            .order_by_asc(sigint_inbox_item_callsign::Column::Ordering)
+            .order_by_asc(sigint_inbox_item_callsign::Column::Id)
+            .all(dbx)
+            .await
+            .c(h!())?;
+        for row in rows {
+            let callsigns: &mut InboxItemCallsigns =
+                result.entry(row.sigint_inbox_item_id).or_default();
+            match row.source {
+                SigintInboxItemCallsignSource::Primary => {
+                    callsigns.primary.push(row.callsign)
+                }
+                SigintInboxItemCallsignSource::Alg2 => {
+                    callsigns.alg2.push(row.callsign)
+                }
             }
         }
     }
