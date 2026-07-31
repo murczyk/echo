@@ -7,6 +7,11 @@ import { normalizeUnknownUnitDisplayValue } from '../../shared/analysis-unit-fil
 type Props = {
   groupsLoading: boolean;
   rightSidebarLoading: boolean;
+  onClearFreq: () => void;
+  onClearGroup: () => void;
+  onClearLocation: () => void;
+  onClearNetwork: () => void;
+  onClearUnit: () => void;
   onAddFreq: (freq: string) => void;
   onAddGroup: (groupKey: string) => void;
   onAddLocation: (location: string) => void;
@@ -31,6 +36,11 @@ type Props = {
 
 export function AnalysisStatsPane({
   groupsLoading,
+  onClearFreq,
+  onClearGroup,
+  onClearLocation,
+  onClearNetwork,
+  onClearUnit,
   onAddFreq,
   onAddGroup,
   onAddLocation,
@@ -62,6 +72,7 @@ export function AnalysisStatsPane({
           title="Групи"
           items={topGroups}
           loading={groupsLoading}
+          onClearSelection={onClearGroup}
           onItemAdd={onAddGroup}
           onItemToggle={onToggleGroup}
           selectedItemKeys={selectedGroups}
@@ -72,6 +83,7 @@ export function AnalysisStatsPane({
           title="Частоти"
           items={topFreqs}
           loading={rightSidebarLoading}
+          onClearSelection={onClearFreq}
           onItemAdd={onAddFreq}
           onItemToggle={onToggleFreq}
           selectedItemKeys={selectedFreqs}
@@ -82,6 +94,7 @@ export function AnalysisStatsPane({
           title="Мережі"
           items={topNetworks}
           loading={rightSidebarLoading}
+          onClearSelection={onClearNetwork}
           onItemAdd={onAddNetwork}
           onItemToggle={onToggleNetwork}
           selectedItemKeys={selectedNetworks}
@@ -92,6 +105,7 @@ export function AnalysisStatsPane({
           title="Підрозділи"
           items={topUnits}
           loading={rightSidebarLoading}
+          onClearSelection={onClearUnit}
           onItemAdd={onAddUnit}
           onItemToggle={onToggleUnit}
           selectedItemKeys={selectedUnitKeys}
@@ -102,6 +116,7 @@ export function AnalysisStatsPane({
           title="Локації"
           items={topLocations}
           loading={rightSidebarLoading}
+          onClearSelection={onClearLocation}
           onItemAdd={onAddLocation}
           onItemToggle={onToggleLocation}
           selectedItemKeys={selectedLocations}

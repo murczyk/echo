@@ -30,6 +30,7 @@ describe('AnalysisCallsignsPane', () => {
     const root = createRoot(container);
     const onAddCallsign = vi.fn();
     const onAddFreq = vi.fn();
+    const onClearCallsign = vi.fn();
     const onSearchFrequencyMatches = vi.fn();
     const onToggleCallsign = vi.fn();
     const onToggleFreq = vi.fn();
@@ -39,6 +40,7 @@ describe('AnalysisCallsignsPane', () => {
         <AnalysisCallsignsPane
           callsignOptions={[]}
           loading={false}
+          onClearCallsign={onClearCallsign}
           onAddFreq={onAddFreq}
           selectedCallsigns={['ALPHA']}
           selectedFreqs={[]}
@@ -57,6 +59,7 @@ describe('AnalysisCallsignsPane', () => {
       selectedItemKeys: ['ALPHA'],
       onItemAdd: onAddCallsign,
       onItemToggle: onToggleCallsign,
+      onClearSelection: onClearCallsign,
     });
     expect(latestFrequencySearchProps).toMatchObject({
       callsignOptions: [],

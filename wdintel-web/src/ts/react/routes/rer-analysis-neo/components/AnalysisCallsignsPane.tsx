@@ -7,6 +7,7 @@ import { Box, Stack } from '@mui/material';
 type Props = {
   callsignOptions: AnalysisFilterOption[];
   loading: boolean;
+  onClearCallsign: () => void;
   onAddFreq: (freq: string) => void;
   selectedCallsigns: readonly string[];
   selectedFreqs: readonly string[];
@@ -23,6 +24,7 @@ type Props = {
 export function AnalysisCallsignsPane({
   callsignOptions,
   loading,
+  onClearCallsign,
   onAddFreq,
   selectedCallsigns,
   selectedFreqs,
@@ -38,6 +40,7 @@ export function AnalysisCallsignsPane({
         title="Позивні"
         items={topCallsigns}
         loading={loading}
+        onClearSelection={onClearCallsign}
         onItemAdd={onAddCallsign}
         onItemToggle={onToggleCallsign}
         selectedItemKeys={selectedCallsigns}

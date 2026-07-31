@@ -15,6 +15,7 @@ type Props = {
   groupsActivityLoadedPeriod: AnalysisGroupsActivityPeriod | null;
   groupsActivityLoading: boolean;
   groupsActivityPeriod: AnalysisGroupsActivityPeriod;
+  onClearFreq: () => void;
   onAddFreq: (freq: string) => void;
   onLoadCorrelatedFreqs: () => void;
   onLoadGroupsActivity: (period?: AnalysisGroupsActivityPeriod) => void;
@@ -33,6 +34,7 @@ export function AnalysisFrequenciesPane({
   groupsActivityLoadedPeriod,
   groupsActivityLoading,
   groupsActivityPeriod,
+  onClearFreq,
   onAddFreq,
   onLoadCorrelatedFreqs,
   onLoadGroupsActivity,
@@ -46,6 +48,7 @@ export function AnalysisFrequenciesPane({
       <AnalysisCountBlock
         title="Частоти"
         items={topFreqs}
+        onClearSelection={onClearFreq}
         onItemAdd={onAddFreq}
         onItemToggle={onToggleFreq}
         selectedItemKeys={selectedFreqs}

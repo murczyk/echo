@@ -146,6 +146,9 @@ export function AnalysisSidebar({
       unitsSelected: addUnitSelection(queryState.unitsSelected, unit),
     });
   };
+  const clearUnit = () => {
+    updateQueryState({ unitsExactMatchOnly: null, unitsSelected: [] });
+  };
   const selectFreq = (freq: string) => {
     updateQueryState({
       freqsSelected: toggleExclusiveAnalysisSelection(queryState.freqsSelected, freq),
@@ -158,6 +161,9 @@ export function AnalysisSidebar({
       includeOnlyNewFreqs: false,
     });
   };
+  const clearFreq = () => {
+    updateQueryState({ freqsSelected: [] });
+  };
   const selectGroup = (groupKey: string) => {
     updateQueryState({
       groupsSelected: toggleExclusiveAnalysisSelection(queryState.groupsSelected, groupKey),
@@ -168,6 +174,9 @@ export function AnalysisSidebar({
       groupsSelected: addAnalysisSelection(queryState.groupsSelected, groupKey),
     });
   };
+  const clearGroup = () => {
+    updateQueryState({ groupsSelected: [] });
+  };
   const selectCallsign = (callsign: string) => {
     updateQueryState({
       callsignsSelected: toggleExclusiveAnalysisSelection(queryState.callsignsSelected, callsign),
@@ -177,6 +186,9 @@ export function AnalysisSidebar({
     updateQueryState({
       callsignsSelected: addAnalysisSelection(queryState.callsignsSelected, callsign),
     });
+  };
+  const clearCallsign = () => {
+    updateQueryState({ callsignsSelected: [] });
   };
   const topNetworks = useMemo(
     () =>
@@ -236,6 +248,9 @@ export function AnalysisSidebar({
       networksSelected: addAnalysisSelection(queryState.networksSelected, networkId),
     });
   };
+  const clearNetwork = () => {
+    updateQueryState({ networksSelected: [] });
+  };
   const selectLocation = (location: string) => {
     updateQueryState({
       locationsSelected: toggleExclusiveAnalysisSelection(queryState.locationsSelected, location),
@@ -245,6 +260,9 @@ export function AnalysisSidebar({
     updateQueryState({
       locationsSelected: addAnalysisSelection(queryState.locationsSelected, location),
     });
+  };
+  const clearLocation = () => {
+    updateQueryState({ locationsSelected: [] });
   };
 
   return (
@@ -409,6 +427,11 @@ export function AnalysisSidebar({
             <Box>
               <AnalysisStatsPane
                 groupsLoading={isFilterSectionLoading?.('groups') ?? false}
+                onClearFreq={clearFreq}
+                onClearGroup={clearGroup}
+                onClearLocation={clearLocation}
+                onClearNetwork={clearNetwork}
+                onClearUnit={clearUnit}
                 onAddFreq={addFreq}
                 onAddGroup={addGroup}
                 onAddLocation={addLocation}
@@ -444,6 +467,7 @@ export function AnalysisSidebar({
             groupsActivityLoadedPeriod={groupsActivityLoadedPeriod}
             groupsActivityLoading={groupsActivityLoading}
             groupsActivityPeriod={groupsActivityPeriod}
+            onClearFreq={clearFreq}
             onLoadCorrelatedFreqs={loadCorrelatedFreqs}
             onLoadGroupsActivity={loadGroupsActivity}
             onAddFreq={addFreq}
@@ -457,6 +481,7 @@ export function AnalysisSidebar({
           <AnalysisCallsignsPane
             callsignOptions={callsignSearchOptions}
             loading={rightSidebarLoading}
+            onClearCallsign={clearCallsign}
             onAddFreq={addFreq}
             selectedCallsigns={queryState.callsignsSelected}
             selectedFreqs={queryState.freqsSelected}

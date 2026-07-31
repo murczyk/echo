@@ -284,6 +284,7 @@ describe('AnalysisCountBlock', () => {
   it('toggles selectable rows and marks selected items with a remove control', async () => {
     const onItemAdd = vi.fn();
     const onItemToggle = vi.fn();
+    const onClearSelection = vi.fn();
     const container = document.createElement('div');
     document.body.appendChild(container);
     const root = createRoot(container);
@@ -299,6 +300,7 @@ describe('AnalysisCountBlock', () => {
           ]}
           onItemAdd={onItemAdd}
           onItemToggle={onItemToggle}
+          onClearSelection={onClearSelection}
           selectedItemKeys={['Unit A']}
         />,
       );
@@ -315,6 +317,9 @@ describe('AnalysisCountBlock', () => {
     );
     expect(selected?.getAttribute('aria-pressed')).toBe('true');
     expect(selected?.textContent).toContain('×');
+    expect(
+      container.querySelector('button[aria-label="Скинути фільтр Підрозділи"]'),
+    ).not.toBeNull();
     expect(unselected?.getAttribute('aria-pressed')).toBe('false');
     expect(unselected?.textContent).not.toContain('×');
     expect(add?.textContent).toContain('+');
@@ -326,6 +331,46 @@ describe('AnalysisCountBlock', () => {
     expect(onItemToggle).toHaveBeenNthCalledWith(1, 'Unit A');
     expect(onItemToggle).toHaveBeenNthCalledWith(2, 'Unit B');
     expect(onItemAdd).toHaveBeenCalledWith('Unit B');
+  });
+
+  it('keeps the selection pill visible when the selected item is folded away', async () => {
+    const onClearSelection = vi.fn();
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const view = { container, root: createRoot(container) };
+    rendered.push(view);
+
+    await act(async () => {
+      view.root.render(
+        <AnalysisCountBlock
+          title="Підрозділи"
+          items={Array.from({ length: 13 }, (_value, index) => ({
+            key: `Unit ${index + 1}`,
+            count: 20 - index,
+          }))}
+          onClearSelection={onClearSelection}
+          onItemToggle={vi.fn()}
+          selectedItemKeys={['Unit 13']}
+        />,
+      );
+    });
+
+    const clearButton = view.container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Скинути фільтр Підрозділи"]',
+    );
+    expect(clearButton).not.toBeNull();
+    expect(view.container.textContent).not.toContain('Unit 13');
+
+    const collapseButton = view.container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Згорнути Підрозділи"]',
+    );
+    await click(collapseButton as HTMLButtonElement);
+    expect(
+      view.container.querySelector('button[aria-label="Скинути фільтр Підрозділи"]'),
+    ).not.toBeNull();
+
+    await click(clearButton as HTMLButtonElement);
+    expect(onClearSelection).toHaveBeenCalledOnce();
   });
 
   it('uses a separate filter value while keeping the display label', async () => {

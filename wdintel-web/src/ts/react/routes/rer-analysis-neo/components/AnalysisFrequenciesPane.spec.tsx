@@ -35,6 +35,7 @@ describe('AnalysisFrequenciesPane', () => {
     const container = document.createElement('div');
     const root = createRoot(container);
     const onAddFreq = vi.fn();
+    const onClearFreq = vi.fn();
     const onToggleFreq = vi.fn();
 
     act(() => {
@@ -48,6 +49,7 @@ describe('AnalysisFrequenciesPane', () => {
           groupsActivityLoadedPeriod={null}
           groupsActivityLoading={false}
           groupsActivityPeriod="selected"
+          onClearFreq={onClearFreq}
           onAddFreq={onAddFreq}
           onLoadCorrelatedFreqs={vi.fn()}
           onLoadGroupsActivity={vi.fn()}
@@ -68,6 +70,7 @@ describe('AnalysisFrequenciesPane', () => {
       selectedItemKeys: ['123.45'],
       onItemAdd: onAddFreq,
       onItemToggle: onToggleFreq,
+      onClearSelection: onClearFreq,
     });
 
     act(() => root.unmount());

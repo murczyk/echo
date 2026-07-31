@@ -30,6 +30,7 @@ type Props = {
   itemActionLabel?: string;
   onItemAdd?: (key: string) => void;
   onItemToggle?: (key: string) => void;
+  onClearSelection?: () => void;
   selectedItemKeys?: readonly string[];
 };
 
@@ -41,6 +42,7 @@ export function AnalysisCountBlock({
   itemActionLabel,
   onItemAdd,
   onItemToggle,
+  onClearSelection,
   selectedItemKeys = [],
 }: Props) {
   const headingId = useId().replace(/:/g, '-');
@@ -66,6 +68,7 @@ export function AnalysisCountBlock({
   const visibleItems =
     expanded || !hasHiddenItems ? filteredDetailItems : filteredDetailItems.slice(0, 12);
   const hiddenItemsCount = filteredDetailItems.length - visibleItems.length;
+  const hasSelectedItems = selectedItemKeys.length > 0 && onClearSelection != null;
 
   useEffect(() => {
     if (!hasHiddenItems && expanded) {
@@ -99,6 +102,40 @@ export function AnalysisCountBlock({
           <CompactTitle id={headingId} component="h2">
             {title}
           </CompactTitle>
+          {hasSelectedItems ? (
+            <Box
+              component="span"
+              sx={(theme) => ({
+                display: 'inline-flex',
+                alignItems: 'center',
+                minHeight: 24,
+                pl: 1,
+                pr: 0.25,
+                border: '1px solid',
+                borderColor: alpha(theme.palette.primary.main, 0.45),
+                borderRadius: 999,
+                backgroundColor: alpha(theme.palette.primary.main, 0.08),
+                color: theme.palette.primary.main,
+              })}
+            >
+              <CompactText
+                component="span"
+                color="inherit"
+                sx={{ fontSize: '0.75rem', fontWeight: 600, lineHeight: 1 }}
+              >
+                {selectedItemKeys.length}
+              </CompactText>
+              <IconButton
+                size="small"
+                aria-label={`Скинути фільтр ${title}`}
+                title={`Скинути фільтр ${title}`}
+                onClick={onClearSelection}
+                sx={{ p: 0.25, ml: 0.25, color: 'inherit' }}
+              >
+                <CloseIcon fontSize="small" />
+              </IconButton>
+            </Box>
+          ) : null}
           {detailItems.length > 0 || searchOpen ? (
             <Box
               sx={(theme) => ({
