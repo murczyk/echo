@@ -778,7 +778,7 @@ fn log_network_mismatches(
     );
     let head = mismatches.len().min(10);
     for (msg, expected, actual) in mismatches.iter().take(head) {
-        error!(
+        warn!(
             "sigint inbox networks mismatch for message {}: expected={:?} actual={:?} freq={:?} timestamp={:?}",
             msg.id, expected, actual, msg.freq, msg.timestamp
         );
