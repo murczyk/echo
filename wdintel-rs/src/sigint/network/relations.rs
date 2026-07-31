@@ -22,7 +22,6 @@ struct NetworkCallsignRelationMessageRow {
     timestamp: Option<NaiveDateTime>,
     freq: Option<String>,
     text: String,
-    callsign: String,
 }
 
 #[derive(Debug, FromQueryResult)]
@@ -246,7 +245,7 @@ async fn load_network_relation_messages(
         .await
         .context(h!())?;
 
-    Ok(aggregate_relation_messages(rows))
+    aggregate_relation_messages(dbx, rows).await
 }
 
 async fn load_network_relation_message_rows(
@@ -259,12 +258,6 @@ async fn load_network_relation_message_rows(
         .column_as(sigint_inbox_item::Column::Datetime, "timestamp")
         .column_as(sigint_inbox_item::Column::Freq, "freq")
         .column_as(Expr::cust("coalesce(signal_message.body, '')"), "text")
-        .column_as(
-            Expr::cust(
-                "jsonb_array_elements_text(coalesce(sigint_inbox_item.callsigns, '[]'::jsonb))",
-            ),
-            "callsign",
-        )
         .join(
             JoinType::InnerJoin,
             signal_message::Relation::SigintInboxItem.def(),
@@ -298,7 +291,7 @@ async fn load_network_relation_messages_for_graph(
     .await
     .context(h!())?;
 
-    Ok(aggregate_relation_messages(rows))
+    aggregate_relation_messages(dbx, rows).await
 }
 
 async fn load_network_relation_message_rows_for_graph(
@@ -314,12 +307,6 @@ async fn load_network_relation_message_rows_for_graph(
         .column_as(sigint_inbox_item::Column::Datetime, "timestamp")
         .column_as(sigint_inbox_item::Column::Freq, "freq")
         .column_as(Expr::cust("coalesce(signal_message.body, '')"), "text")
-        .column_as(
-            Expr::cust(
-                "jsonb_array_elements_text(coalesce(sigint_inbox_item.callsigns, '[]'::jsonb))",
-            ),
-            "callsign",
-        )
         .join(
             JoinType::InnerJoin,
             signal_message::Relation::SigintInboxItem.def(),
@@ -745,56 +732,46 @@ fn is_better_catalog_rank(
                     && next.unit_id < current.unit_id)))
 }
 
-fn aggregate_relation_messages(
+async fn aggregate_relation_messages(
+    dbx: &DatabaseConnection,
     rows: Vec<NetworkCallsignRelationMessageRow>,
-) -> Vec<NetworkCallsignRelationMessage> {
+) -> Result<Vec<NetworkCallsignRelationMessage>, AppError> {
+    let message_ids = rows.iter().map(|row| row.message_id).collect::<Vec<_>>();
+    let callsigns_by_message =
+        crate::inbox::callsigns::load_by_item_ids(dbx, &message_ids).await?;
     let mut messages_by_id: HashMap<i64, NetworkCallsignRelationMessage> =
-        HashMap::new();
-    let mut seen_callsigns_by_id: HashMap<i64, HashSet<String>> =
         HashMap::new();
 
     for row in rows {
-        let callsign = normalize_callsign(&row.callsign);
-        if callsign.is_empty() {
+        let Some(callsigns) = callsigns_by_message.get(&row.message_id) else {
+            continue;
+        };
+        let callsigns = callsigns
+            .primary
+            .iter()
+            .chain(&callsigns.alg2)
+            .map(|callsign| normalize_callsign(callsign))
+            .filter(|callsign| !callsign.is_empty())
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect::<Vec<_>>();
+        if callsigns.is_empty() {
             continue;
         }
-
-        let message =
-            messages_by_id.entry(row.message_id).or_insert_with(|| {
-                NetworkCallsignRelationMessage {
-                    id: row.message_id,
-                    timestamp: row.timestamp.map(|timestamp| {
-                        timestamp.and_utc().timestamp_millis()
-                    }),
-                    freq: row.freq.clone(),
-                    text: row.text.trim().to_string(),
-                    callsigns: Vec::new(),
-                }
-            });
-
-        if message.text.is_empty() {
-            message.text = row.text.trim().to_string();
-        }
-        if message.freq.is_none() {
-            message.freq = row.freq.clone();
-        }
-        if message.timestamp.is_none() {
-            message.timestamp = row
-                .timestamp
-                .map(|timestamp| timestamp.and_utc().timestamp_millis());
-        }
-
-        let seen_callsigns =
-            seen_callsigns_by_id.entry(row.message_id).or_default();
-        if seen_callsigns.insert(callsign.clone()) {
-            message.callsigns.push(callsign);
-        }
+        messages_by_id.entry(row.message_id).or_insert_with(|| {
+            NetworkCallsignRelationMessage {
+                id: row.message_id,
+                timestamp: row
+                    .timestamp
+                    .map(|timestamp| timestamp.and_utc().timestamp_millis()),
+                freq: row.freq,
+                text: row.text.trim().to_string(),
+                callsigns,
+            }
+        });
     }
 
     let mut messages = messages_by_id.into_values().collect::<Vec<_>>();
-    for message in &mut messages {
-        message.callsigns.sort();
-    }
     messages.sort_by(|left, right| {
         right
             .timestamp
@@ -802,7 +779,7 @@ fn aggregate_relation_messages(
             .cmp(&left.timestamp.unwrap_or_default())
             .then_with(|| right.id.cmp(&left.id))
     });
-    messages
+    Ok(messages)
 }
 
 fn build_network_relation_message_selection_condition(
@@ -814,10 +791,7 @@ fn build_network_relation_message_selection_condition(
         .map(normalize_callsign)
         .filter(|value| !value.is_empty())
     {
-        return Some(Condition::all().add(Expr::cust_with_values(
-            "exists (select 1 from jsonb_array_elements_text(coalesce(sigint_inbox_item.callsigns, '[]'::jsonb)) as callsign where upper(callsign) = $1)",
-            vec![callsign],
-        )));
+        return Some(Condition::all().add(callsign_exists_condition(callsign)));
     }
 
     let source = req
@@ -834,17 +808,50 @@ fn build_network_relation_message_selection_condition(
     match (source, target) {
         (Some(source), Some(target)) => Some(
             Condition::all()
-                .add(Expr::cust_with_values(
-                    "exists (select 1 from jsonb_array_elements_text(coalesce(sigint_inbox_item.callsigns, '[]'::jsonb)) as callsign where upper(callsign) = $1)",
-                    vec![source],
-                ))
-                .add(Expr::cust_with_values(
-                    "exists (select 1 from jsonb_array_elements_text(coalesce(sigint_inbox_item.callsigns, '[]'::jsonb)) as callsign where upper(callsign) = $1)",
-                    vec![target],
-                )),
+                .add(callsign_exists_condition(source))
+                .add(callsign_exists_condition(target)),
         ),
         _ => None,
     }
+}
+
+fn callsign_exists_condition(callsign: String) -> SimpleExpr {
+    Expr::cust_with_values(
+        r#"(
+            exists (
+                select 1
+                from sigint_inbox_item_callsign siic
+                where siic.sigint_inbox_item_id = sigint_inbox_item.id
+                  and not siic.deleted
+                  and upper(siic.callsign) = $1
+            )
+            or (
+                not exists (
+                    select 1
+                    from sigint_inbox_item_callsign siic
+                    where siic.sigint_inbox_item_id = sigint_inbox_item.id
+                      and not siic.deleted
+                )
+                and (
+                    exists (
+                        select 1
+                        from jsonb_array_elements_text(
+                            coalesce(sigint_inbox_item.callsigns, '[]'::jsonb)
+                        ) legacy_callsign(value)
+                        where upper(legacy_callsign.value) = $1
+                    )
+                    or exists (
+                        select 1
+                        from jsonb_array_elements_text(
+                            coalesce(sigint_inbox_item.callsigns_alg2, '[]'::jsonb)
+                        ) legacy_callsign(value)
+                        where upper(legacy_callsign.value) = $1
+                    )
+                )
+            )
+        )"#,
+        [callsign],
+    )
 }
 
 fn build_network_relation_message_freq_condition(
