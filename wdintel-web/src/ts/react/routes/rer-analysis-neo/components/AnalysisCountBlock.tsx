@@ -34,6 +34,22 @@ type Props = {
   selectedItemKeys?: readonly string[];
 };
 
+export const analysisCountStatusSx = {
+  position: 'relative',
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'flex-end',
+  minWidth: 104,
+} as const;
+
+export const analysisCountHeaderSx = {
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'space-between',
+  gap: 2,
+  flexWrap: 'wrap',
+} as const;
+
 export function AnalysisCountBlock({
   title,
   items,
@@ -90,12 +106,8 @@ export function AnalysisCountBlock({
     <Paper variant="outlined" component="section" aria-labelledby={headingId} sx={{ p: 2 }}>
       <Box
         sx={{
-          display: 'flex',
-          alignItems: 'baseline',
-          justifyContent: 'space-between',
-          gap: 2,
+          ...analysisCountHeaderSx,
           mb: collapsed ? 0 : 1.5,
-          flexWrap: 'wrap',
         }}
       >
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
@@ -183,11 +195,17 @@ export function AnalysisCountBlock({
           ) : null}
         </Box>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-          {loading && !showLoadingSkeletons ? (
-            <CircularProgress size={16} />
-          ) : summaryItem ? (
-            <CompactText color="text.secondary">{`Повідомлень: ${summaryItem.count}`}</CompactText>
-          ) : null}
+          <Box sx={analysisCountStatusSx}>
+            {summaryItem ? (
+              <CompactText color="text.secondary">{`Повідомлень: ${summaryItem.count}`}</CompactText>
+            ) : null}
+            {loading && !showLoadingSkeletons ? (
+              <CircularProgress
+                size={16}
+                sx={summaryItem ? { position: 'absolute', left: -20 } : undefined}
+              />
+            ) : null}
+          </Box>
           <IconButton
             size="small"
             aria-expanded={!collapsed}

@@ -79,7 +79,11 @@ vi.mock('@mui/icons-material/Search', () => ({ default: () => <span>search</span
 import { vi } from 'vitest';
 
 import type { AnalysisCountItem } from '../types';
-import { AnalysisCountBlock } from './AnalysisCountBlock';
+import {
+  AnalysisCountBlock,
+  analysisCountHeaderSx,
+  analysisCountStatusSx,
+} from './AnalysisCountBlock';
 
 type Rendered = {
   container: HTMLDivElement;
@@ -256,6 +260,29 @@ describe('AnalysisCountBlock', () => {
     expect(view.container.textContent).toContain('147.3750');
     expect(view.container.textContent).toContain('loading-spinner');
     expect(view.container.textContent).not.toContain('loading-skeleton');
+  });
+
+  it('keeps the summary count visible during a background refresh', async () => {
+    const view = await renderComponent(
+      [
+        { key: '', count: 23 },
+        { key: '147.3750', count: 23 },
+      ],
+      true,
+    );
+    rendered.push(view);
+
+    expect(view.container.textContent).toContain('Повідомлень: 23');
+    expect(view.container.textContent).toContain('loading-spinner');
+  });
+
+  it('reserves stable space for the summary and loading status', () => {
+    expect(analysisCountStatusSx.minWidth).toBe(104);
+    expect(analysisCountStatusSx.justifyContent).toBe('flex-end');
+  });
+
+  it('centers the header controls independently of the loading indicator baseline', () => {
+    expect(analysisCountHeaderSx.alignItems).toBe('center');
   });
 
   it('renders an item action and wires it to the clicked metric', async () => {
