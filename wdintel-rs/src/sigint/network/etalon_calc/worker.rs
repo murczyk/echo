@@ -800,6 +800,13 @@ impl NetworkStatsInvalidation {
     ) -> anyhow::Result<()> {
         let mut date = crate::stats::get_local_date(task.since_ts);
         let till_date = crate::stats::get_local_date(task.till_ts);
+        if date > till_date {
+            warn!(
+                "skip stats invalidation for task {} with inverted interval: since_ts={} till_ts={}",
+                task.id, task.since_ts, task.till_ts
+            );
+            return Ok(());
+        }
         loop {
             self.scopes_by_date
                 .entry(date)
@@ -1167,5 +1174,25 @@ mod tests {
             invalidation.scopes_by_date.get(&date).unwrap(),
             NetworkStatsScope::All
         ));
+    }
+
+    #[test]
+    fn network_stats_invalidation_skips_inverted_interval() {
+        let mut invalidation = NetworkStatsInvalidation::default();
+        let task = task(
+            NaiveDate::from_ymd_opt(2026, 7, 27)
+                .unwrap()
+                .and_hms_opt(0, 0, 0)
+                .unwrap(),
+            NaiveDate::from_ymd_opt(2026, 6, 22)
+                .unwrap()
+                .and_hms_opt(7, 12, 3)
+                .unwrap(),
+            Some(644),
+        );
+
+        invalidation.add_task(&task).unwrap();
+
+        assert!(invalidation.scopes_by_date.is_empty());
     }
 }
