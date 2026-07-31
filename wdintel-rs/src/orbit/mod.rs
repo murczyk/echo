@@ -22,6 +22,25 @@ mod snapshot;
 mod tui;
 mod types;
 
+#[derive(Debug, Clone)]
+pub struct OrbitMatchCandidate {
+    pub unit_id: Uuid,
+    pub unit_name: Option<String>,
+    pub generative_unit_name_full: Option<String>,
+    pub operational_unit_name_full: Option<String>,
+}
+
+impl From<&types::SourceUnit> for OrbitMatchCandidate {
+    fn from(unit: &types::SourceUnit) -> Self {
+        Self {
+            unit_id: unit.unit_id,
+            unit_name: unit.unit_name.clone(),
+            generative_unit_name_full: unit.generative_unit_name_full.clone(),
+            operational_unit_name_full: unit.operational_unit_name_full.clone(),
+        }
+    }
+}
+
 pub async fn prepare_import_snapshot(
     mode: Mode,
     source_path: PathBuf,
@@ -35,6 +54,29 @@ pub async fn prepare_import_snapshot(
 
 pub async fn run_import_tui(mode: Mode) -> Result<(), AppError> {
     Ok(run_selected_action(mode).await.c(h!())?)
+}
+
+pub async fn closest_orbit_matches_for_sigint_unit(
+    db: &sea_orm::DatabaseConnection,
+    sigint_unit: &sigint_unit::Model,
+) -> anyhow::Result<Vec<OrbitMatchCandidate>> {
+    let units = persistence::load_latest_synced_source_units(db)
+        .await
+        .c("failed to load synchronized ORBIT units for search")?;
+    Ok(matching::closest_orbit_matches(&units, sigint_unit)
+        .into_iter()
+        .map(OrbitMatchCandidate::from)
+        .collect())
+}
+
+pub async fn replace_sigint_unit_link_with_lock(
+    db: &sea_orm::DatabaseConnection,
+    sigint_unit_id: i64,
+    orbit_unit_id: Uuid,
+) -> Result<(), AppError> {
+    let _import_lock = acquire_import_lock(db).await.c(h!())?;
+    persistence::replace_sigint_unit_link(db, sigint_unit_id, orbit_unit_id)
+        .await
 }
 
 async fn run_selected_action(mode: Mode) -> anyhow::Result<()> {

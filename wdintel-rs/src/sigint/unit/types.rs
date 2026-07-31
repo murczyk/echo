@@ -168,6 +168,8 @@ pub struct UnitDetailsRsp {
     pub unit: Unit,
     pub attachments: Vec<UnitAttachment>,
     pub orbit_units: Vec<OrbitUnitDetails>,
+    #[serde(default)]
+    pub can_link_orbit_unit: bool,
 }
 
 #[derive(
@@ -200,6 +202,39 @@ pub struct OrbitUnitDetails {
     pub deleted: bool,
     pub created_at: i64,
     pub updated_at: i64,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct OrbitUnitLinkCandidate {
+    pub unit_id: String,
+    pub full_name: String,
+    pub generative_unit_name_full: String,
+    pub operational_unit_name_full: String,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct OrbitUnitLinkCandidatesReq {
+    pub unit_id: i64,
+    pub search: Option<String>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct OrbitUnitLinkCandidatesRsp {
+    pub units: Vec<OrbitUnitLinkCandidate>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct LinkOrbitUnitReq {
+    pub sigint_unit_id: i64,
+    pub orbit_unit_id: String,
 }
 
 #[derive(
