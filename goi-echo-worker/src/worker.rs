@@ -394,7 +394,7 @@ fn plan_worker_knowledge_rekey(
         .iter()
         .map(|knowledge| knowledge.dedupe_key.clone())
         .collect::<std::collections::BTreeSet<_>>();
-    existing_rows.sort_by(|left, right| right.id.cmp(&left.id));
+    existing_rows.sort_by_key(|row| std::cmp::Reverse(row.id));
     let mut key_updates = Vec::new();
     for knowledge in existing_rows {
         let knowledge_row =

@@ -874,13 +874,7 @@ where
             owner_organism_id,
         ))
         .apply_if(
-            req.without_model_tags.and_then(|flag| {
-                if flag {
-                    Some(flag)
-                } else {
-                    None
-                }
-            }),
+            req.without_model_tags.filter(|&flag| flag),
             |q, _| q.filter(sigint_inbox_item_tag::Column::Model.is_null()),
         )
         .group_by(sigint_inbox_item_tag::Column::SigintInboxItemId)

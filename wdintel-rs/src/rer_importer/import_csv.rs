@@ -220,9 +220,9 @@ pub async fn rer_csv_import(
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
     let (field, val) = multipart::extract(&mut payload).await.c(h!())?;
     let tmp_dir = TempDir::new()?;
-    println!("> tmp_dir {}", &tmp_dir.path().display());
+    println!("> tmp_dir {}", tmp_dir.path().display());
     let csv_file = tmp_dir.path().join(field.name().c(h!())?);
-    println!("> csv_file: {}", &csv_file.display());
+    println!("> csv_file: {}", csv_file.display());
     std::fs::write(&csv_file, val)?;
     crate::utils::backup_tmp_dir(tmp_dir.path())?;
 
@@ -282,9 +282,9 @@ pub async fn rer_delta_csv_import(
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
     let (field, val) = multipart::extract(&mut payload).await.c(h!())?;
     let tmp_dir = TempDir::new()?;
-    println!("> tmp_dir {}", &tmp_dir.path().display());
+    println!("> tmp_dir {}", tmp_dir.path().display());
     let csv_file = tmp_dir.path().join(field.name().c(h!())?);
-    println!("> csv_file: {}", &csv_file.display());
+    println!("> csv_file: {}", csv_file.display());
     std::fs::write(&csv_file, val)?;
     crate::utils::backup_tmp_dir(tmp_dir.path())?;
 

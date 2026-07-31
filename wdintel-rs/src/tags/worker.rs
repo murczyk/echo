@@ -205,7 +205,7 @@ pub async fn process_messages<C: ConnectionTrait>(
     let mut message_tags: Vec<sigint_inbox_item_tag::ActiveModel> = vec![];
     let mut message_ids_for_events: BTreeSet<i64> = BTreeSet::new();
 
-    for (_tag_label, &tag_id) in tags_to_predict.iter() {
+    for &tag_id in tags_to_predict.values() {
         let cache_item =
             get_regex_sets_for_tag(tag_id, dbx, tag_keyword_regex_cache)
                 .await
@@ -250,7 +250,7 @@ pub async fn process_messages<C: ConnectionTrait>(
                 let confidence: f64 = res.probability;
                 let login = Some(system_login_id);
                 let model =
-                    format!("{}{}", NLP_MODEL_NAME_PREFIX, &res.model_version);
+                    format!("{}{}", NLP_MODEL_NAME_PREFIX, res.model_version);
                 let model = sigint_inbox_item_tag::ActiveModel {
                     tag_id: Set(tag_id),
                     sigint_inbox_item_id: Set(message_id),

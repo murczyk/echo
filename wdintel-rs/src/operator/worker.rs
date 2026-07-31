@@ -126,7 +126,7 @@ async fn load_echo_operator_queue(
             .c(h!())?,
         );
     }
-    rows.sort_by(|(_, left), (_, right)| left.cmp(right));
+    rows.sort_by_key(|(_, left)| *left);
     rows.truncate(50);
 
     Ok(rows.into_iter().map(|(id, _)| id).collect())

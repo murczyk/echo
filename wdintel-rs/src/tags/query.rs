@@ -85,7 +85,7 @@ where
         .c(h!())?;
     let keywords = tags.load_many(tag_keyword::Entity, db).await.c(h!())?;
 
-    Ok(tags.into_iter().zip(keywords.into_iter()).collect())
+    Ok(tags.into_iter().zip(keywords).collect())
 }
 
 pub async fn insert_global_tag<C>(
@@ -164,7 +164,7 @@ where
         .c(h!())?;
     let keywords = tags.load_many(tag_keyword::Entity, db).await.c(h!())?;
 
-    Ok(tags.into_iter().zip(keywords.into_iter()).collect())
+    Ok(tags.into_iter().zip(keywords).collect())
 }
 
 pub async fn insert_organism_tag<C>(

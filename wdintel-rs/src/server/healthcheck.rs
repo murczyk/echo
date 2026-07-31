@@ -51,7 +51,7 @@ pub async fn run_healthcheck_worker(
         .await
         .c(h!())?;
     if timeouts > 4 {
-        let content = format!("Почалися таймаути на спробах отримати повідомлення, переприв'яжіть Signal на сервері {}", &config.public_host);
+        let content = format!("Почалися таймаути на спробах отримати повідомлення, переприв'яжіть Signal на сервері {}", config.public_host);
         crate::server::discord::discord_notify(
             config,
             crate::config::DISCORD_WEBHOOK_ALERT,

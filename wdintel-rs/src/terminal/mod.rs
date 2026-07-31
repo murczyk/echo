@@ -484,7 +484,7 @@ pub async fn upload_pdf(
     let tmp_dir = Arc::new(TempDir::new()?);
     let tmp_dir2 = tmp_dir.clone();
     let input_pdf = tmp_dir.path().join("input.pdf");
-    println!("> upload_pdf writing into {}", &input_pdf.display());
+    println!("> upload_pdf writing into {}", input_pdf.display());
     std::fs::write(&input_pdf, val)?;
     println!("> beginning pdf_to_text");
     let txt: String =

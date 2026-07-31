@@ -611,7 +611,7 @@ pub fn load_from_file(
         if !path.exists() {
             return Err(anyhow!(
                 "[{}] cannot load settlements source at {}",
-                &source,
+                source,
                 path.display()
             ));
         }

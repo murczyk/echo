@@ -261,7 +261,7 @@ async fn operatyvka_download(
                     } else {
                         println!(
                             "warning: style map not found for url: {}",
-                            &style_url.body
+                            style_url.body
                         );
                     }
                 }
@@ -454,7 +454,7 @@ pub async fn oneoff_radio_by_freq() -> Result<(), AppError> {
     > = BTreeMap::new();
     for folder in rer.iter() {
         let folder_name = folder.name_s();
-        println!("> rer folder: {}", &folder_name);
+        println!("> rer folder: {}", folder_name);
         lazy_static! {
             static ref RE_DATE: Regex =
                 Regex::new(r"(?P<date>\d\d\d\d-\d\d-\d\d)").unwrap();
@@ -673,7 +673,7 @@ pub async fn oneoff_fix_kml(
 
     // copy icons into kmz output directory
     let style_map = extract_style_maps(&kml.nodes.clone())?;
-    for (_style_name, icon) in style_map.iter() {
+    for icon in style_map.values() {
         // let icon: String = icon.chars().skip(1).collect();
         let mut icon = base_path.join(icon);
         if !icon.exists() {
@@ -692,8 +692,8 @@ pub async fn oneoff_fix_kml(
             eprintln!(
                 "> error {:?} on cp {} {}",
                 e,
-                &icon.display(),
-                &icon_dist.display()
+                icon.display(),
+                icon_dist.display()
             );
         }
     }
@@ -1046,9 +1046,9 @@ pub async fn api_fix_kmz(
         }
     }
     let tmp_dir = TempDir::new()?;
-    println!("> tmp_dir {}", &tmp_dir.path().display());
+    println!("> tmp_dir {}", tmp_dir.path().display());
     let kmz_file = tmp_dir.path().join(filename);
-    println!("> kmz_file: {}", &kmz_file.display());
+    println!("> kmz_file: {}", kmz_file.display());
     std::fs::write(&kmz_file, val)?;
     crate::utils::backup_tmp_dir(tmp_dir.path())?;
 
@@ -1064,7 +1064,7 @@ pub async fn api_fix_kmz(
     )
     .await
     .c(h!())?;
-    println!("> output: {}", &output);
+    println!("> output: {}", output);
 
     let file = actix_files::NamedFile::open_async(&output).await.c(h!())?;
     Ok(file.into_response(&http_req))
@@ -1655,10 +1655,10 @@ pub fn build_style_maps_per_app6d(
         );
     }
     let mut styles: Vec<Style> = vec![];
-    for (_, style) in styles_normal.iter() {
+    for style in styles_normal.values() {
         styles.push(style.clone());
     }
-    for (_, style) in styles_highlight.iter() {
+    for style in styles_highlight.values() {
         styles.push(style.clone());
     }
     let mut style_maps = vec![];

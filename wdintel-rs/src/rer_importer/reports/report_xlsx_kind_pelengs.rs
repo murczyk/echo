@@ -498,7 +498,7 @@ pub async fn report_xlsx_kind_pelengs1(
             .write_string(
                 i,
                 3,
-                format!("{}, {}", &time, &date.format("%d.%m.%y")),
+                format!("{}, {}", time, date.format("%d.%m.%y")),
             )
             .context(h!())?;
         // Resolve human-readable sender name (written as the last column)

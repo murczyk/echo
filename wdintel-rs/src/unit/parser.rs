@@ -104,7 +104,7 @@ pub fn extract_unit_with_aor(
 
             let locality = locality
                 .map(|x| x.trim_matches(['-', ' ']).trim().to_string())
-                .and_then(|x| if !x.is_empty() { Some(x) } else { None });
+                .filter(|x| !x.is_empty());
 
             let (mut locality, mut locality_v2) =
                 extract_locality(settlements.clone(), line, locality, m_aor_id)

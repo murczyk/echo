@@ -256,7 +256,7 @@ pub(crate) async fn rer_analysis_geojson_bytes(
         comments.push(format!("Позивні: {callsigns_s}"));
 
         let mut comments_one: String = comments.join("\n");
-        comments_one.push_str(&format!("\n\nГрупа: {}", &item.group_name));
+        comments_one.push_str(&format!("\n\nГрупа: {}", item.group_name));
         if let Some(body) = item.body.as_ref().filter(|body| !body.is_empty()) {
             comments_one.push_str(&format!("\n\nПовідомлення: {body}"));
         }

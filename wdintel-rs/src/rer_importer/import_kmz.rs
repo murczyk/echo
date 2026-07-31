@@ -24,12 +24,12 @@ pub async fn rer_delta_kmz_import(
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
     let (field, val) = multipart::extract(&mut payload).await.c(h!())?;
     let tmp_dir = TempDir::new()?;
-    println!("> tmp_dir {}", &tmp_dir.path().display());
+    println!("> tmp_dir {}", tmp_dir.path().display());
     let kmz_file = tmp_dir.path().join(field.name().c(h!())?);
     let original_path = kmz_file.clone();
-    println!("> kmz_file: {}", &original_path.display());
+    println!("> kmz_file: {}", original_path.display());
     std::fs::write(&kmz_file, val)?;
-    println!("> running unzip {}", &original_path.display());
+    println!("> running unzip {}", original_path.display());
     crate::utils::zip::unzip(&kmz_file)?;
     println!("> unzip done");
     let mut doc_kml = tmp_dir.path().join("doc.kml");
@@ -52,7 +52,7 @@ pub async fn rer_delta_kmz_import(
             }
         }
     }
-    println!("> doc_kml: {}", &doc_kml.display());
+    println!("> doc_kml: {}", doc_kml.display());
     crate::utils::backup_tmp_dir(tmp_dir.path())?;
 
     let loglines: Vec<String> = vec![];

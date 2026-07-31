@@ -499,7 +499,7 @@ impl TusHandler {
         self.add_expires_header(&metadata, &mut builder)?;
         builder.insert_header((
             header::LOCATION,
-            format!("{}{}", &self.prefix, &file_name),
+            format!("{}{}", self.prefix, file_name),
         ));
         Ok(builder.finish())
     }
