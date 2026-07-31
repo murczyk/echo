@@ -1,4 +1,6 @@
-use super::orbit::{can_view_orbit_data, unit_orbit_details};
+use super::orbit::{
+    can_view_orbit_data, has_any_orbit_unit, unit_orbit_details,
+};
 use super::render_unit;
 use super::types::{
     DeleteUnitAttachmentReq, DeleteUnitAttachmentRsp, UnitAttachment,
@@ -55,17 +57,22 @@ pub async fn unit_details(
     let unit = find_available_unit(&env.dbx, req.unit_id).await?;
     let attachments =
         list_visible_attachments(&env.dbx, &login, unit.id).await?;
-    let orbit_units = if can_view_orbit_data(&env.dbx, &login).await? {
+    let can_view_orbit = can_view_orbit_data(&env.dbx, &login).await?;
+    let orbit_units = if can_view_orbit {
         unit_orbit_details(&env.dbx, unit.id).await?
     } else {
         Vec::new()
     };
+    let can_link_orbit_unit = can_view_orbit
+        && orbit_units.is_empty()
+        && has_any_orbit_unit(&env.dbx).await?;
     let mut unit = render_unit(&unit)?;
     unit.has_orbit = !orbit_units.is_empty();
     Ok(Json(UnitDetailsRsp {
         unit,
         attachments,
         orbit_units,
+        can_link_orbit_unit,
     }))
 }
 

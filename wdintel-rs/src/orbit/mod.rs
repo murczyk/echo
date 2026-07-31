@@ -1,4 +1,4 @@
-use crate::entities::sigint_unit;
+use crate::entities::{orbit_unit, orbit_unit_sigint_unit, sigint_unit};
 use crate::error::AppError;
 use crate::orbit::dictionary::DictionaryMaps;
 use crate::orbit::persistence::{ExistingUnit, ImportState, ImportUnit};
@@ -8,7 +8,8 @@ use anyhow::Context;
 use chrono::Utc;
 use sea_orm::{
     ColumnTrait, ConnectionTrait, DatabaseTransaction, DbBackend, EntityTrait,
-    QueryFilter, Statement, TransactionTrait,
+    JoinType, QueryFilter, QuerySelect, RelationTrait, Statement,
+    TransactionTrait,
 };
 use std::collections::HashSet;
 use std::path::PathBuf;
@@ -21,6 +22,25 @@ mod persistence;
 mod snapshot;
 mod tui;
 mod types;
+
+#[derive(Debug, Clone)]
+pub struct OrbitMatchCandidate {
+    pub unit_id: Uuid,
+    pub unit_name: Option<String>,
+    pub generative_unit_name_full: Option<String>,
+    pub operational_unit_name_full: Option<String>,
+}
+
+impl From<&types::SourceUnit> for OrbitMatchCandidate {
+    fn from(unit: &types::SourceUnit) -> Self {
+        Self {
+            unit_id: unit.unit_id,
+            unit_name: unit.unit_name.clone(),
+            generative_unit_name_full: unit.generative_unit_name_full.clone(),
+            operational_unit_name_full: unit.operational_unit_name_full.clone(),
+        }
+    }
+}
 
 pub async fn prepare_import_snapshot(
     mode: Mode,
@@ -35,6 +55,72 @@ pub async fn prepare_import_snapshot(
 
 pub async fn run_import_tui(mode: Mode) -> Result<(), AppError> {
     Ok(run_selected_action(mode).await.c(h!())?)
+}
+
+pub async fn closest_orbit_matches_for_sigint_unit(
+    db: &sea_orm::DatabaseConnection,
+    sigint_unit: &sigint_unit::Model,
+) -> anyhow::Result<Vec<OrbitMatchCandidate>> {
+    let units = persistence::load_latest_synced_source_units(db)
+        .await
+        .c("failed to load synchronized ORBIT units for search")?;
+    Ok(matching::closest_orbit_matches(&units, sigint_unit)
+        .into_iter()
+        .map(OrbitMatchCandidate::from)
+        .collect())
+}
+
+pub async fn link_sigint_unit_if_unlinked_with_lock(
+    db: &sea_orm::DatabaseConnection,
+    sigint_unit_id: i64,
+    orbit_unit_id: Uuid,
+) -> Result<(), AppError> {
+    let _import_lock = acquire_import_lock(db).await.c(h!())?;
+    if !active_orbit_unit_exists(db, orbit_unit_id).await? {
+        return Err(AppError::NotFound);
+    }
+    if sigint_unit_has_active_orbit_link(db, sigint_unit_id).await? {
+        return Err(AppError::BL {
+            msg: "SIGINT unit already has a linked ORBIT unit".to_string(),
+        });
+    }
+    persistence::replace_sigint_unit_link(db, sigint_unit_id, orbit_unit_id)
+        .await
+}
+
+async fn active_orbit_unit_exists<C>(
+    db: &C,
+    orbit_unit_id: Uuid,
+) -> Result<bool, AppError>
+where
+    C: ConnectionTrait,
+{
+    Ok(orbit_unit::Entity::find_by_id(orbit_unit_id)
+        .filter(orbit_unit::Column::Deleted.eq(false))
+        .one(db)
+        .await
+        .c(h!())?
+        .is_some())
+}
+
+async fn sigint_unit_has_active_orbit_link<C>(
+    db: &C,
+    sigint_unit_id: i64,
+) -> Result<bool, AppError>
+where
+    C: ConnectionTrait,
+{
+    Ok(orbit_unit_sigint_unit::Entity::find()
+        .join(
+            JoinType::InnerJoin,
+            orbit_unit_sigint_unit::Relation::OrbitUnit.def(),
+        )
+        .filter(orbit_unit_sigint_unit::Column::SigintUnitId.eq(sigint_unit_id))
+        .filter(orbit_unit::Column::Deleted.eq(false))
+        .one(db)
+        .await
+        .c(h!())?
+        .is_some())
 }
 
 async fn run_selected_action(mode: Mode) -> anyhow::Result<()> {

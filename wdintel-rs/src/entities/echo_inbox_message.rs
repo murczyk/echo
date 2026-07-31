@@ -96,10 +96,6 @@ pub enum Relation {
         on_delete = "NoAction"
     )]
     EchoSender,
-    #[sea_orm(has_many = "super::echo_swapp_automation_delivery::Entity")]
-    EchoSwappAutomationDelivery,
-    #[sea_orm(has_many = "super::echo_swapp_automation_warning::Entity")]
-    EchoSwappAutomationWarning,
 }
 
 impl Related<super::echo_account::Entity> for Entity {
@@ -159,18 +155,6 @@ impl Related<super::echo_outbox_message_instance::Entity> for Entity {
 impl Related<super::echo_sender::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::EchoSender.def()
-    }
-}
-
-impl Related<super::echo_swapp_automation_delivery::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::EchoSwappAutomationDelivery.def()
-    }
-}
-
-impl Related<super::echo_swapp_automation_warning::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::EchoSwappAutomationWarning.def()
     }
 }
 

@@ -2214,10 +2214,32 @@ export type OrbitUnitDetails = {
   updatedAt: number;
 };
 
+export type OrbitUnitLinkCandidate = {
+  unitId: string;
+  fullName: string;
+  generativeUnitNameFull: string;
+  operationalUnitNameFull: string;
+};
+
+export type OrbitUnitLinkCandidatesReq = {
+  unitId: number;
+  search: string | null;
+};
+
+export type OrbitUnitLinkCandidatesRsp = {
+  units: Array<OrbitUnitLinkCandidate>;
+};
+
+export type LinkOrbitUnitReq = {
+  sigintUnitId: number;
+  orbitUnitId: string;
+};
+
 export type UnitDetailsRsp = {
   unit: Unit;
   attachments: Array<UnitAttachment>;
   orbitUnits: Array<OrbitUnitDetails>;
+  canLinkOrbitUnit: boolean;
 };
 
 export type UnitAttachmentUnitIdsRsp = {

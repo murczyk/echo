@@ -56,6 +56,7 @@ type alias Model =
     , detailsLoadFailed : Bool
     , activeTab : Tab
     , downloadInProgress : Maybe Int
+    , orbitLinkDialogOpen : Bool
     }
 
 
@@ -86,6 +87,7 @@ init _ route _ =
             else
                 Overview
       , downloadInProgress = Nothing
+      , orbitLinkDialogOpen = False
       }
     , E.batch initialEffects
     )
@@ -115,6 +117,9 @@ type Msg
     | AttachmentsUploaded
     | DownloadAttachment B.UnitAttachment
     | AttachmentDownloaded B.UnitAttachment (Result ApiError Bytes)
+    | OpenOrbitLinkDialog
+    | CloseOrbitLinkDialog
+    | OrbitUnitLinked
 
 
 update : Msg -> Model -> ( Model, Effect Msg )
@@ -137,6 +142,15 @@ update msg model =
 
         AttachmentDownloaded attachment result ->
             attachmentDownloaded attachment result model
+
+        OpenOrbitLinkDialog ->
+            ( { model | orbitLinkDialogOpen = True }, E.none )
+
+        CloseOrbitLinkDialog ->
+            ( { model | orbitLinkDialogOpen = False }, E.none )
+
+        OrbitUnitLinked ->
+            orbitUnitLinked model
 
 
 updateDetails : Result ApiError B.UnitDetailsRsp -> Model -> ( Model, Effect Msg )
@@ -236,6 +250,21 @@ downloadContentType attachment =
         attachment.contentType
 
 
+orbitUnitLinked : Model -> ( Model, Effect Msg )
+orbitUnitLinked model =
+    case model.unitId of
+        Nothing ->
+            ( { model | orbitLinkDialogOpen = False }, E.none )
+
+        Just unitId ->
+            ( { model
+                | orbitLinkDialogOpen = False
+                , detailsLoading = True
+              }
+            , loadDetails unitId
+            )
+
+
 subscriptions : Model -> Sub Msg
 subscriptions _ =
     Sub.none
@@ -298,7 +327,7 @@ detailsErrorView loadFailed =
 detailsView : Auth.User -> Shared.Model -> Model -> B.UnitDetailsRsp -> Html Msg
 detailsView user shared model details =
     div [ class "flex flex-col gap-4" ]
-        [ detailsHeader details.unit
+        [ detailsHeader details
         , tabsView model.activeTab
         , case model.activeTab of
             Overview ->
@@ -306,25 +335,69 @@ detailsView user shared model details =
 
             Files ->
                 filesTab user shared model details.attachments
+        , orbitLinkDialog model
         ]
 
 
-detailsHeader : B.Unit -> Html Msg
-detailsHeader unit =
-    div [ class "d-flex align-items-center gap-3" ]
-        [ a
-            [ class "btn btn-outline-secondary btn-sm"
-            , Route.href
-                { path = Route.Path.RerUnits
-                , query = Dict.empty
-                , hash = Nothing
-                }
+detailsHeader : B.UnitDetailsRsp -> Html Msg
+detailsHeader details =
+    div
+        [ class "d-flex align-items-center justify-content-between gap-3 flex-wrap" ]
+        ([ div [ class "d-flex align-items-center gap-3 flex-wrap" ]
+            [ a
+                [ class "btn btn-outline-secondary btn-sm"
+                , Route.href
+                    { path = Route.Path.RerUnits
+                    , query = Dict.empty
+                    , hash = Nothing
+                    }
+                ]
+                [ i [ class "bi bi-arrow-left me-2" ] []
+                , text "До підрозділів"
+                ]
+            , h1 [ class "mb-0" ] [ text details.unit.name ]
             ]
-            [ i [ class "bi bi-arrow-left me-2" ] []
-            , text "До підрозділів"
+         ]
+            ++ orbitLinkHeaderActions details.canLinkOrbitUnit
+        )
+
+
+orbitLinkHeaderActions : Bool -> List (Html Msg)
+orbitLinkHeaderActions canLinkOrbitUnit =
+    if canLinkOrbitUnit then
+        [ button
+            [ class "btn btn-outline-primary btn-sm d-inline-flex align-items-center gap-2 text-nowrap"
+            , type_ "button"
+            , onClick OpenOrbitLinkDialog
             ]
-        , h1 [ class "mb-0" ] [ text unit.name ]
+            [ img
+                [ src "/img/delta-icon.webp"
+                , alt ""
+                , style "height" "22px"
+                , style "width" "22px"
+                ]
+                []
+            , text "Прив'язати Orbit підрозділ"
+            ]
         ]
+
+    else
+        []
+
+
+orbitLinkDialog : Model -> Html Msg
+orbitLinkDialog model =
+    case ( model.orbitLinkDialogOpen, model.unitId ) of
+        ( True, Just unitId ) ->
+            node "orbit-unit-link-dialog"
+                [ attribute "data-unit-id" (String.fromInt unitId)
+                , on "orbit-unit-link-close" (Decode.succeed CloseOrbitLinkDialog)
+                , on "orbit-unit-linked" (Decode.succeed OrbitUnitLinked)
+                ]
+                []
+
+        _ ->
+            text ""
 
 
 tabsView : Tab -> Html Msg

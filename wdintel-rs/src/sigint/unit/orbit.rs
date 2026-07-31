@@ -1,12 +1,24 @@
-use super::types::{OrbitDictionaryValue, OrbitUnitDetails};
+use super::types::{
+    LinkOrbitUnitReq, OrbitDictionaryValue, OrbitUnitDetails,
+    OrbitUnitLinkCandidate, OrbitUnitLinkCandidatesReq,
+    OrbitUnitLinkCandidatesRsp,
+};
 use crate::config::ROLE_ADMIN;
 use crate::entities::*;
 use crate::error::AppError;
-use crate::users::has_role;
-use crate::{h, types::ShortContext};
+use crate::h;
+use crate::types::{Env, ShortContext};
+use crate::users::{ensure_rer_role, has_role, login_id_from_identity};
+use actix_web::post;
+use actix_web::web::{Data, Json};
+use sea_orm::sea_query::extension::postgres::PgExpr;
+use sea_orm::sea_query::Expr;
 use sea_orm::*;
 use std::collections::HashSet;
 use uuid::Uuid;
+
+const ORBIT_LINK_CANDIDATE_LIMIT: u64 = 100;
+const ORBIT_LINK_SEARCH_WORD_LIMIT: usize = 8;
 
 pub async fn can_view_orbit_data(
     dbx: &DatabaseConnection,
@@ -153,5 +165,206 @@ fn render_dictionary(
         id: id.to_string(),
         key,
         name,
+    }
+}
+
+#[post("/api/sigint/unit/orbit-link-candidates")]
+pub async fn orbit_link_candidates(
+    user: actix_identity::Identity,
+    env: Data<Env>,
+    req: Json<OrbitUnitLinkCandidatesReq>,
+) -> Result<Json<OrbitUnitLinkCandidatesRsp>, AppError> {
+    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    let login = login_id_from_identity(&user)?;
+    ensure_orbit_access(&env.dbx, &login).await?;
+    let req = req.into_inner();
+    let unit = find_available_sigint_unit(&env.dbx, req.unit_id).await?;
+    let units = match req.search.as_deref() {
+        Some(search) => manual_orbit_link_candidates(&env.dbx, search).await?,
+        None => automatic_orbit_link_candidates(&env.dbx, &unit).await?,
+    };
+    Ok(Json(OrbitUnitLinkCandidatesRsp { units }))
+}
+
+#[post("/api/sigint/unit/orbit-link")]
+pub async fn link_orbit_unit(
+    user: actix_identity::Identity,
+    env: Data<Env>,
+    req: Json<LinkOrbitUnitReq>,
+) -> Result<Json<()>, AppError> {
+    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    let login = login_id_from_identity(&user)?;
+    ensure_orbit_access(&env.dbx, &login).await?;
+    let req = req.into_inner();
+    let orbit_unit_id =
+        Uuid::parse_str(&req.orbit_unit_id).map_err(|_| AppError::BL {
+            msg: "Invalid ORBIT unit ID".to_string(),
+        })?;
+    find_available_sigint_unit(&env.dbx, req.sigint_unit_id).await?;
+    find_available_orbit_unit(&env.dbx, orbit_unit_id).await?;
+    crate::orbit::link_sigint_unit_if_unlinked_with_lock(
+        &env.dbx,
+        req.sigint_unit_id,
+        orbit_unit_id,
+    )
+    .await?;
+    super::fanout_unit_changed(&env).await?;
+    Ok(Json(()))
+}
+
+async fn ensure_orbit_access(
+    dbx: &DatabaseConnection,
+    login: &Uuid,
+) -> Result<(), AppError> {
+    if can_view_orbit_data(dbx, login).await? {
+        Ok(())
+    } else {
+        Err(AppError::Forbidden("ORBIT data access denied".to_string()))
+    }
+}
+
+pub async fn has_any_orbit_unit(
+    dbx: &DatabaseConnection,
+) -> Result<bool, AppError> {
+    Ok(orbit_unit::Entity::find()
+        .filter(orbit_unit::Column::Deleted.eq(false))
+        .one(dbx)
+        .await
+        .c(h!())?
+        .is_some())
+}
+
+async fn automatic_orbit_link_candidates(
+    dbx: &DatabaseConnection,
+    sigint_unit: &sigint_unit::Model,
+) -> Result<Vec<OrbitUnitLinkCandidate>, AppError> {
+    let candidates =
+        crate::orbit::closest_orbit_matches_for_sigint_unit(dbx, sigint_unit)
+            .await
+            .c(h!())?;
+    Ok(candidates.into_iter().map(render_match_candidate).collect())
+}
+
+async fn manual_orbit_link_candidates(
+    dbx: &DatabaseConnection,
+    search: &str,
+) -> Result<Vec<OrbitUnitLinkCandidate>, AppError> {
+    let words = orbit_search_words(search);
+    if words.is_empty() {
+        return Ok(Vec::new());
+    }
+    let mut condition =
+        Condition::all().add(orbit_unit::Column::Deleted.eq(false));
+    for word in words {
+        let pattern = format!("%{word}%");
+        condition = condition.add(
+            Condition::any()
+                .add(
+                    Expr::col(orbit_unit::Column::UnitName)
+                        .ilike(pattern.clone()),
+                )
+                .add(
+                    Expr::col(orbit_unit::Column::GenerativeUnitNameFull)
+                        .ilike(pattern.clone()),
+                )
+                .add(
+                    Expr::col(orbit_unit::Column::OperationalUnitNameFull)
+                        .ilike(pattern),
+                ),
+        );
+    }
+    let units = orbit_unit::Entity::find()
+        .filter(condition)
+        .order_by_asc(orbit_unit::Column::GenerativeUnitNameFull)
+        .order_by_asc(orbit_unit::Column::OperationalUnitNameFull)
+        .order_by_asc(orbit_unit::Column::UnitId)
+        .limit(ORBIT_LINK_CANDIDATE_LIMIT)
+        .all(dbx)
+        .await
+        .c(h!())?;
+    Ok(units.into_iter().map(render_orbit_unit_candidate).collect())
+}
+
+fn orbit_search_words(search: &str) -> Vec<String> {
+    search
+        .split(|character: char| !character.is_alphanumeric())
+        .filter(|word| !word.is_empty())
+        .take(ORBIT_LINK_SEARCH_WORD_LIMIT)
+        .map(ToString::to_string)
+        .collect()
+}
+
+async fn find_available_sigint_unit<C>(
+    dbx: &C,
+    sigint_unit_id: i64,
+) -> Result<sigint_unit::Model, AppError>
+where
+    C: ConnectionTrait,
+{
+    sigint_unit::Entity::find_by_id(sigint_unit_id)
+        .filter(sigint_unit::Column::Deleted.eq(false))
+        .one(dbx)
+        .await
+        .c(h!())?
+        .ok_or(AppError::NotFound)
+}
+
+async fn find_available_orbit_unit<C>(
+    dbx: &C,
+    orbit_unit_id: Uuid,
+) -> Result<orbit_unit::Model, AppError>
+where
+    C: ConnectionTrait,
+{
+    orbit_unit::Entity::find_by_id(orbit_unit_id)
+        .filter(orbit_unit::Column::Deleted.eq(false))
+        .one(dbx)
+        .await
+        .c(h!())?
+        .ok_or(AppError::NotFound)
+}
+
+fn render_match_candidate(
+    unit: crate::orbit::OrbitMatchCandidate,
+) -> OrbitUnitLinkCandidate {
+    OrbitUnitLinkCandidate {
+        unit_id: unit.unit_id.to_string(),
+        full_name: unit.unit_name.unwrap_or_default(),
+        generative_unit_name_full: unit
+            .generative_unit_name_full
+            .unwrap_or_default(),
+        operational_unit_name_full: unit
+            .operational_unit_name_full
+            .unwrap_or_default(),
+    }
+}
+
+fn render_orbit_unit_candidate(
+    unit: orbit_unit::Model,
+) -> OrbitUnitLinkCandidate {
+    OrbitUnitLinkCandidate {
+        unit_id: unit.unit_id.to_string(),
+        full_name: unit.unit_name.unwrap_or_default(),
+        generative_unit_name_full: unit
+            .generative_unit_name_full
+            .unwrap_or_default(),
+        operational_unit_name_full: unit
+            .operational_unit_name_full
+            .unwrap_or_default(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn orbit_search_words_splits_text_and_limits_terms() {
+        assert_eq!(
+            orbit_search_words("  53-зрбр / 20 ЗВА, МВО; extra words ignored"),
+            vec![
+                "53", "зрбр", "20", "ЗВА", "МВО", "extra", "words", "ignored"
+            ]
+        );
     }
 }

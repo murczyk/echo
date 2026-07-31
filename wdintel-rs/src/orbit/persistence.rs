@@ -12,8 +12,8 @@ use crate::types::ShortContext;
 use chrono::{Duration, NaiveDateTime};
 use sea_orm::{
     ActiveModelTrait, ActiveValue::Set, ColumnTrait, ConnectionTrait,
-    DatabaseConnection, EntityTrait, IntoActiveModel, QueryFilter, QueryOrder,
-    TransactionTrait,
+    DatabaseConnection, EntityTrait, IntoActiveModel, JoinType, QueryFilter,
+    QueryOrder, QuerySelect, RelationTrait, TransactionTrait,
 };
 use serde::Serialize;
 use std::collections::{BTreeSet, HashMap, HashSet};
@@ -546,7 +546,10 @@ pub async fn replace_sigint_unit_links(
     sigint_unit_ids_by_orbit_unit: &HashMap<Uuid, BTreeSet<i64>>,
 ) -> Result<(), AppError> {
     let transaction = db.begin().await.c(h!())?;
+    let manually_linked_sigint_unit_ids =
+        active_manually_linked_sigint_unit_ids(&transaction).await?;
     orbit_unit_sigint_unit::Entity::delete_many()
+        .filter(orbit_unit_sigint_unit::Column::IsManual.eq(false))
         .exec(&transaction)
         .await
         .c(h!())?;
@@ -555,33 +558,13 @@ pub async fn replace_sigint_unit_links(
         .keys()
         .copied()
         .collect::<Vec<_>>();
-    let active_orbit_unit_ids = if orbit_unit_ids.is_empty() {
-        BTreeSet::new()
-    } else {
-        orbit_unit::Entity::find()
-            .filter(orbit_unit::Column::UnitId.is_in(orbit_unit_ids))
-            .filter(orbit_unit::Column::Deleted.eq(false))
-            .all(&transaction)
-            .await
-            .c(h!())?
-            .into_iter()
-            .map(|unit| unit.unit_id)
-            .collect::<BTreeSet<_>>()
-    };
-    let links = sigint_unit_ids_by_orbit_unit
-        .iter()
-        .filter(|(orbit_unit_id, _)| {
-            active_orbit_unit_ids.contains(orbit_unit_id)
-        })
-        .flat_map(|(orbit_unit_id, sigint_unit_ids)| {
-            sigint_unit_ids.iter().map(|sigint_unit_id| {
-                orbit_unit_sigint_unit::ActiveModel {
-                    orbit_unit_id: Set(*orbit_unit_id),
-                    sigint_unit_id: Set(*sigint_unit_id),
-                }
-            })
-        })
-        .collect::<Vec<_>>();
+    let active_orbit_unit_ids =
+        active_orbit_unit_ids(&transaction, &orbit_unit_ids).await?;
+    let links = automatic_sigint_unit_links(
+        sigint_unit_ids_by_orbit_unit,
+        &active_orbit_unit_ids,
+        &manually_linked_sigint_unit_ids,
+    );
     if !links.is_empty() {
         orbit_unit_sigint_unit::Entity::insert_many(links)
             .exec(&transaction)
@@ -590,6 +573,73 @@ pub async fn replace_sigint_unit_links(
     }
     transaction.commit().await.c(h!())?;
     Ok(())
+}
+
+async fn active_manually_linked_sigint_unit_ids<C>(
+    db: &C,
+) -> Result<BTreeSet<i64>, AppError>
+where
+    C: ConnectionTrait,
+{
+    Ok(orbit_unit_sigint_unit::Entity::find()
+        .join(
+            JoinType::InnerJoin,
+            orbit_unit_sigint_unit::Relation::OrbitUnit.def(),
+        )
+        .filter(orbit_unit_sigint_unit::Column::IsManual.eq(true))
+        .filter(orbit_unit::Column::Deleted.eq(false))
+        .all(db)
+        .await
+        .c(h!())?
+        .into_iter()
+        .map(|link| link.sigint_unit_id)
+        .collect())
+}
+
+async fn active_orbit_unit_ids<C>(
+    db: &C,
+    orbit_unit_ids: &[Uuid],
+) -> Result<BTreeSet<Uuid>, AppError>
+where
+    C: ConnectionTrait,
+{
+    if orbit_unit_ids.is_empty() {
+        return Ok(BTreeSet::new());
+    }
+    Ok(orbit_unit::Entity::find()
+        .filter(orbit_unit::Column::UnitId.is_in(orbit_unit_ids.to_vec()))
+        .filter(orbit_unit::Column::Deleted.eq(false))
+        .all(db)
+        .await
+        .c(h!())?
+        .into_iter()
+        .map(|unit| unit.unit_id)
+        .collect())
+}
+
+fn automatic_sigint_unit_links(
+    sigint_unit_ids_by_orbit_unit: &HashMap<Uuid, BTreeSet<i64>>,
+    active_orbit_unit_ids: &BTreeSet<Uuid>,
+    manually_linked_sigint_unit_ids: &BTreeSet<i64>,
+) -> Vec<orbit_unit_sigint_unit::ActiveModel> {
+    sigint_unit_ids_by_orbit_unit
+        .iter()
+        .filter(|(orbit_unit_id, _)| {
+            active_orbit_unit_ids.contains(orbit_unit_id)
+        })
+        .flat_map(|(orbit_unit_id, sigint_unit_ids)| {
+            sigint_unit_ids
+                .iter()
+                .filter(|sigint_unit_id| {
+                    !manually_linked_sigint_unit_ids.contains(sigint_unit_id)
+                })
+                .map(|sigint_unit_id| orbit_unit_sigint_unit::ActiveModel {
+                    orbit_unit_id: Set(*orbit_unit_id),
+                    sigint_unit_id: Set(*sigint_unit_id),
+                    is_manual: Set(false),
+                })
+        })
+        .collect()
 }
 
 pub async fn replace_sigint_unit_link(
@@ -607,6 +657,7 @@ pub async fn replace_sigint_unit_link(
         orbit_unit_sigint_unit::ActiveModel {
             orbit_unit_id: Set(orbit_unit_id),
             sigint_unit_id: Set(sigint_unit_id),
+            is_manual: Set(true),
         },
     )
     .exec(&transaction)
@@ -889,7 +940,7 @@ mod tests {
 
     #[tokio::test]
     #[serial]
-    async fn replacing_sigint_link_preserves_other_links() {
+    async fn manual_sigint_links_survive_automatic_rebuild() {
         crate::tests::test::init().await;
         let db = crate::new_pg_pool_from_mode(Mode::Test).await.unwrap();
         let first_orbit_unit = import_unit();
@@ -948,21 +999,33 @@ mod tests {
         .await
         .unwrap();
 
-        let linked_sigint_unit_ids = orbit_unit_sigint_unit::Entity::find()
+        replace_sigint_unit_links(
+            &db,
+            &HashMap::from([(
+                second_orbit_unit.unit_id,
+                BTreeSet::from([first_sigint_unit.id, second_sigint_unit.id]),
+            )]),
+        )
+        .await
+        .unwrap();
+
+        let links = orbit_unit_sigint_unit::Entity::find()
             .filter(
                 orbit_unit_sigint_unit::Column::OrbitUnitId
                     .eq(first_orbit_unit.unit_id),
             )
             .all(&db)
             .await
-            .unwrap()
-            .into_iter()
+            .unwrap();
+        let linked_sigint_unit_ids = links
+            .iter()
             .map(|link| link.sigint_unit_id)
             .collect::<BTreeSet<_>>();
         assert_eq!(
             linked_sigint_unit_ids,
             BTreeSet::from([first_sigint_unit.id, second_sigint_unit.id])
         );
+        assert!(links.iter().all(|link| link.is_manual));
         assert!(crate::sigint::unit::orbit::unit_has_orbit(
             &db,
             first_sigint_unit.id,

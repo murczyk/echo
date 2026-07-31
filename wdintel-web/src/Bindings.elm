@@ -5747,10 +5747,69 @@ orbitUnitDetailsEncoder struct =
         ]
 
 
+type alias OrbitUnitLinkCandidate =
+    { unitId : String
+    , fullName : String
+    , generativeUnitNameFull : String
+    , operationalUnitNameFull : String
+    }
+
+
+orbitUnitLinkCandidateEncoder : OrbitUnitLinkCandidate -> Json.Encode.Value
+orbitUnitLinkCandidateEncoder struct =
+    Json.Encode.object
+        [ ( "unit_id", (Json.Encode.string) struct.unitId )
+        , ( "full_name", (Json.Encode.string) struct.fullName )
+        , ( "generative_unit_name_full", (Json.Encode.string) struct.generativeUnitNameFull )
+        , ( "operational_unit_name_full", (Json.Encode.string) struct.operationalUnitNameFull )
+        ]
+
+
+type alias OrbitUnitLinkCandidatesReq =
+    { unitId : Int
+    , search : Maybe (String)
+    }
+
+
+orbitUnitLinkCandidatesReqEncoder : OrbitUnitLinkCandidatesReq -> Json.Encode.Value
+orbitUnitLinkCandidatesReqEncoder struct =
+    Json.Encode.object
+        [ ( "unit_id", (Json.Encode.int) struct.unitId )
+        , ( "search", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.search )
+        ]
+
+
+type alias OrbitUnitLinkCandidatesRsp =
+    { units : List (OrbitUnitLinkCandidate)
+    }
+
+
+orbitUnitLinkCandidatesRspEncoder : OrbitUnitLinkCandidatesRsp -> Json.Encode.Value
+orbitUnitLinkCandidatesRspEncoder struct =
+    Json.Encode.object
+        [ ( "units", (Json.Encode.list (orbitUnitLinkCandidateEncoder)) struct.units )
+        ]
+
+
+type alias LinkOrbitUnitReq =
+    { sigintUnitId : Int
+    , orbitUnitId : String
+    }
+
+
+linkOrbitUnitReqEncoder : LinkOrbitUnitReq -> Json.Encode.Value
+linkOrbitUnitReqEncoder struct =
+    Json.Encode.object
+        [ ( "sigint_unit_id", (Json.Encode.int) struct.sigintUnitId )
+        , ( "orbit_unit_id", (Json.Encode.string) struct.orbitUnitId )
+        ]
+
+
 type alias UnitDetailsRsp =
     { unit : Unit
     , attachments : List (UnitAttachment)
     , orbitUnits : List (OrbitUnitDetails)
+    , canLinkOrbitUnit : Bool
     }
 
 
@@ -5760,6 +5819,7 @@ unitDetailsRspEncoder struct =
         [ ( "unit", (unitEncoder) struct.unit )
         , ( "attachments", (Json.Encode.list (unitAttachmentEncoder)) struct.attachments )
         , ( "orbit_units", (Json.Encode.list (orbitUnitDetailsEncoder)) struct.orbitUnits )
+        , ( "can_link_orbit_unit", (Json.Encode.bool) struct.canLinkOrbitUnit )
         ]
 
 
@@ -13419,12 +13479,42 @@ orbitUnitDetailsDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "updated_at" (Json.Decode.int)))
 
 
+orbitUnitLinkCandidateDecoder : Json.Decode.Decoder OrbitUnitLinkCandidate
+orbitUnitLinkCandidateDecoder =
+    Json.Decode.succeed OrbitUnitLinkCandidate
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unit_id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "full_name" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "generative_unit_name_full" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "operational_unit_name_full" (Json.Decode.string)))
+
+
+orbitUnitLinkCandidatesReqDecoder : Json.Decode.Decoder OrbitUnitLinkCandidatesReq
+orbitUnitLinkCandidatesReqDecoder =
+    Json.Decode.succeed OrbitUnitLinkCandidatesReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unit_id" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "search" (Json.Decode.nullable (Json.Decode.string))))
+
+
+orbitUnitLinkCandidatesRspDecoder : Json.Decode.Decoder OrbitUnitLinkCandidatesRsp
+orbitUnitLinkCandidatesRspDecoder =
+    Json.Decode.succeed OrbitUnitLinkCandidatesRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "units" (Json.Decode.list (orbitUnitLinkCandidateDecoder))))
+
+
+linkOrbitUnitReqDecoder : Json.Decode.Decoder LinkOrbitUnitReq
+linkOrbitUnitReqDecoder =
+    Json.Decode.succeed LinkOrbitUnitReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sigint_unit_id" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "orbit_unit_id" (Json.Decode.string)))
+
+
 unitDetailsRspDecoder : Json.Decode.Decoder UnitDetailsRsp
 unitDetailsRspDecoder =
     Json.Decode.succeed UnitDetailsRsp
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unit" (unitDecoder)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "attachments" (Json.Decode.list (unitAttachmentDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "orbit_units" (Json.Decode.list (orbitUnitDetailsDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "can_link_orbit_unit" (Json.Decode.bool)))
 
 
 unitAttachmentUnitIdsRspDecoder : Json.Decode.Decoder UnitAttachmentUnitIdsRsp
