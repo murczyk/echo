@@ -469,9 +469,8 @@ pub async fn update_unit(
     req: Json<Unit>,
 ) -> Result<Json<Unit>, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
-    has_role(&env.dbx, &login_id_from_identity(&user)?, "UnitsEditor")
-        .await
-        .c(h!())?;
+    let login = login_id_from_identity(&user)?;
+    has_role(&env.dbx, &login, "UnitsEditor").await.c(h!())?;
     let unit = find_unit(&env.dbx, req.id).await.context(h!())?;
     let unit_json_old = sigint_unit::Entity::find_by_id(req.id)
         .into_json()
@@ -498,7 +497,7 @@ pub async fn update_unit(
     let _changelog = sigint_unit_changelog::ActiveModel {
         id: NotSet,
         sigint_unit_id: Set(req.id),
-        login_id: Set(login_id_from_identity(&user)?),
+        login_id: Set(login),
         action: Set("update".to_string()),
         created_at: NotSet,
         new_value: Set(Some(unit_json_new)),
@@ -516,7 +515,11 @@ pub async fn update_unit(
     let event = EventMsg::new(EventType::ETUnitChanged);
     fanout(&mut env.redis.clone(), event).await.context(h!())?;
 
-    Ok(Json(render_unit(&unit)?))
+    let mut unit = render_unit(&unit)?;
+    if orbit::can_view_orbit_data(&env.dbx, &login).await? {
+        unit.has_orbit = orbit::unit_has_orbit(&env.dbx, unit.id).await?;
+    }
+    Ok(Json(unit))
 }
 
 #[post("/api/sigint/unit/delete")]

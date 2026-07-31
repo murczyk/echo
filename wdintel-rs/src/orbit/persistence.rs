@@ -457,11 +457,6 @@ pub async fn replace_sigint_unit_link(
         .exec(&transaction)
         .await
         .c(h!())?;
-    orbit_unit_sigint_unit::Entity::delete_many()
-        .filter(orbit_unit_sigint_unit::Column::OrbitUnitId.eq(orbit_unit_id))
-        .exec(&transaction)
-        .await
-        .c(h!())?;
     orbit_unit_sigint_unit::Entity::insert(
         orbit_unit_sigint_unit::ActiveModel {
             orbit_unit_id: Set(orbit_unit_id),
@@ -660,7 +655,7 @@ fn show_list(value: Option<&[String]>) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::entities::orbit_grouping_of_forces;
+    use crate::entities::{orbit_grouping_of_forces, sigint_unit};
     use crate::orbit::types::DictionaryValue;
     use crate::types::Mode;
     use chrono::{Timelike, Utc};
@@ -850,6 +845,115 @@ mod tests {
             .await
             .unwrap();
         orbit_unit::Entity::delete_by_id(parent.unit_id)
+            .exec(&db)
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn replacing_sigint_link_preserves_other_links() {
+        crate::tests::test::init().await;
+        let db = crate::new_pg_pool_from_mode(Mode::Test).await.unwrap();
+        let first_orbit_unit = import_unit();
+        let second_orbit_unit = import_unit();
+        let inserted_at = Utc::now().naive_utc();
+        insert_unit(&db, &first_orbit_unit, inserted_at)
+            .await
+            .unwrap();
+        insert_unit(&db, &second_orbit_unit, inserted_at)
+            .await
+            .unwrap();
+        let login_id = crate::users::login_id_by_name(
+            &db,
+            crate::config::SYSTEM_LOGIN_NAME,
+        )
+        .await
+        .unwrap();
+        let first_sigint_unit = crate::functest::tests::mk_sigint_unit(
+            &db,
+            sigint_unit::ActiveModel {
+                created_by_login_id: Set(login_id),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let second_sigint_unit = crate::functest::tests::mk_sigint_unit(
+            &db,
+            sigint_unit::ActiveModel {
+                created_by_login_id: Set(login_id),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+        replace_sigint_unit_link(
+            &db,
+            first_sigint_unit.id,
+            first_orbit_unit.unit_id,
+        )
+        .await
+        .unwrap();
+        replace_sigint_unit_link(
+            &db,
+            second_sigint_unit.id,
+            second_orbit_unit.unit_id,
+        )
+        .await
+        .unwrap();
+        replace_sigint_unit_link(
+            &db,
+            second_sigint_unit.id,
+            first_orbit_unit.unit_id,
+        )
+        .await
+        .unwrap();
+
+        let linked_sigint_unit_ids = orbit_unit_sigint_unit::Entity::find()
+            .filter(
+                orbit_unit_sigint_unit::Column::OrbitUnitId
+                    .eq(first_orbit_unit.unit_id),
+            )
+            .all(&db)
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|link| link.sigint_unit_id)
+            .collect::<BTreeSet<_>>();
+        assert_eq!(
+            linked_sigint_unit_ids,
+            BTreeSet::from([first_sigint_unit.id, second_sigint_unit.id])
+        );
+        assert!(crate::sigint::unit::orbit::unit_has_orbit(
+            &db,
+            first_sigint_unit.id,
+        )
+        .await
+        .unwrap());
+        assert!(orbit_unit_sigint_unit::Entity::find()
+            .filter(
+                orbit_unit_sigint_unit::Column::OrbitUnitId
+                    .eq(second_orbit_unit.unit_id),
+            )
+            .one(&db)
+            .await
+            .unwrap()
+            .is_none());
+
+        sigint_unit::Entity::delete_by_id(first_sigint_unit.id)
+            .exec(&db)
+            .await
+            .unwrap();
+        sigint_unit::Entity::delete_by_id(second_sigint_unit.id)
+            .exec(&db)
+            .await
+            .unwrap();
+        orbit_unit::Entity::delete_by_id(first_orbit_unit.unit_id)
+            .exec(&db)
+            .await
+            .unwrap();
+        orbit_unit::Entity::delete_by_id(second_orbit_unit.unit_id)
             .exec(&db)
             .await
             .unwrap();

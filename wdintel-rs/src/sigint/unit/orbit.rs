@@ -36,6 +36,23 @@ pub async fn unit_ids_with_orbit(
         .collect())
 }
 
+pub async fn unit_has_orbit(
+    dbx: &DatabaseConnection,
+    sigint_unit_id: i64,
+) -> Result<bool, AppError> {
+    Ok(orbit_unit_sigint_unit::Entity::find()
+        .join(
+            JoinType::InnerJoin,
+            orbit_unit_sigint_unit::Relation::OrbitUnit.def(),
+        )
+        .filter(orbit_unit_sigint_unit::Column::SigintUnitId.eq(sigint_unit_id))
+        .filter(orbit_unit::Column::Deleted.eq(false))
+        .one(dbx)
+        .await
+        .c(h!())?
+        .is_some())
+}
+
 pub async fn unit_orbit_details(
     dbx: &DatabaseConnection,
     sigint_unit_id: i64,
