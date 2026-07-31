@@ -14,9 +14,10 @@ use actix_web::post;
 use actix_web::web::Json;
 use sea_orm::*;
 use sea_query::types::IntoColumnRef;
-use sea_query::{Expr, SimpleExpr};
+use sea_query::{Expr, OnConflict, SimpleExpr};
 
 pub mod attachment;
+pub mod orbit;
 pub mod types;
 
 pub fn unit_name(unit: &Unit) -> String {
@@ -65,13 +66,12 @@ pub async fn list_units(
     env: actix_web::web::Data<Env>,
     req: Json<ListUnitsReq>,
 ) -> Result<Json<ListUnitsRsp>, AppError> {
-    has_any_role(
-        &env.dbx,
-        &login_id_from_identity(&user)?,
-        vec!["Rer", "Api"],
-    )
-    .await
-    .c(h!())?;
+    let login_id = login_id_from_identity(&user)?;
+    has_any_role(&env.dbx, &login_id, vec!["Rer", "Api"])
+        .await
+        .c(h!())?;
+    let can_view_orbit =
+        orbit::can_view_orbit_data(&env.dbx, &login_id).await?;
     const LIMIT: u64 = 100000;
     let mut units = sigint_unit::Entity::find()
         .filter(sigint_unit::Column::Deleted.eq(false));
@@ -150,9 +150,16 @@ pub async fn list_units(
         }
     }
     let units = units.limit(LIMIT).all(&env.dbx).await.c(h!())?;
+    let orbit_unit_ids = if can_view_orbit {
+        orbit::unit_ids_with_orbit(&env.dbx).await?
+    } else {
+        Default::default()
+    };
     let mut res = vec![];
     for unit in units {
-        res.push(render_unit(&unit)?);
+        let mut rendered = render_unit(&unit)?;
+        rendered.has_orbit = orbit_unit_ids.contains(&unit.id);
+        res.push(rendered);
     }
     Ok(Json(ListUnitsRsp {
         show_load_more: res.len() as u64 == LIMIT,
@@ -462,9 +469,8 @@ pub async fn update_unit(
     req: Json<Unit>,
 ) -> Result<Json<Unit>, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
-    has_role(&env.dbx, &login_id_from_identity(&user)?, "UnitsEditor")
-        .await
-        .c(h!())?;
+    let login = login_id_from_identity(&user)?;
+    has_role(&env.dbx, &login, "UnitsEditor").await.c(h!())?;
     let unit = find_unit(&env.dbx, req.id).await.context(h!())?;
     let unit_json_old = sigint_unit::Entity::find_by_id(req.id)
         .into_json()
@@ -491,7 +497,7 @@ pub async fn update_unit(
     let _changelog = sigint_unit_changelog::ActiveModel {
         id: NotSet,
         sigint_unit_id: Set(req.id),
-        login_id: Set(login_id_from_identity(&user)?),
+        login_id: Set(login),
         action: Set("update".to_string()),
         created_at: NotSet,
         new_value: Set(Some(unit_json_new)),
@@ -509,7 +515,11 @@ pub async fn update_unit(
     let event = EventMsg::new(EventType::ETUnitChanged);
     fanout(&mut env.redis.clone(), event).await.context(h!())?;
 
-    Ok(Json(render_unit(&unit)?))
+    let mut unit = render_unit(&unit)?;
+    if orbit::can_view_orbit_data(&env.dbx, &login).await? {
+        unit.has_orbit = orbit::unit_has_orbit(&env.dbx, unit.id).await?;
+    }
+    Ok(Json(unit))
 }
 
 #[post("/api/sigint/unit/delete")]
@@ -581,7 +591,11 @@ pub async fn delete_unit_duplicate(
     let event = EventMsg::new(EventType::ETUnitChanged);
     fanout(&mut env.redis.clone(), event).await.context(h!())?;
 
-    Ok(Json(render_unit(&unit)?))
+    let mut unit = render_unit(&unit)?;
+    if orbit::can_view_orbit_data(dbx, &login).await? {
+        unit.has_orbit = orbit::unit_has_orbit(dbx, unit.id).await?;
+    }
+    Ok(Json(unit))
 }
 
 pub async fn merge_units(
@@ -593,9 +607,10 @@ pub async fn merge_units(
     let unit_to_delete =
         find_unit(dbx, unit_to_delete_id).await.context(h!())?;
     let unit_original = find_unit(dbx, original_id).await.context(h!())?;
-    update_original_unit(unit_original, &unit_to_delete, dbx)
-        .await
-        .context(h!())?;
+    let unit_original =
+        update_original_unit(unit_original, &unit_to_delete, dbx)
+            .await
+            .context(h!())?;
 
     swap_units(unit_to_delete_id, original_id, login, dbx)
         .await
@@ -616,7 +631,7 @@ pub async fn merge_units(
 
     let mut unit = unit_to_delete.into_active_model();
     unit.deleted = Set(true);
-    let unit = unit.update(dbx).await.context(h!())?;
+    unit.update(dbx).await.context(h!())?;
 
     let _changelog = sigint_unit_changelog::ActiveModel {
         id: NotSet,
@@ -631,7 +646,7 @@ pub async fn merge_units(
     .insert(dbx)
     .await
     .context(h!())?;
-    Ok(unit)
+    Ok(unit_original)
 }
 
 pub async fn find_unit(
@@ -659,6 +674,7 @@ pub fn render_unit(unit: &sigint_unit::Model) -> Result<Unit, AppError> {
         name: unit.name.clone(),
         created_at: unit.created_at.and_utc().timestamp_millis(),
         created_by_login_id: unit.created_by_login_id.to_string(),
+        has_orbit: false,
     })
 }
 
@@ -797,6 +813,53 @@ async fn swap_units(
         .await
         .context(h!())?;
 
+    move_orbit_unit_links(old_unit_id, new_unit_id, dbx).await?;
+
+    Ok(())
+}
+
+async fn move_orbit_unit_links(
+    old_unit_id: i64,
+    new_unit_id: i64,
+    dbx: &DatabaseConnection,
+) -> anyhow::Result<()> {
+    if old_unit_id == new_unit_id {
+        return Ok(());
+    }
+    let transaction = dbx.begin().await.context(h!())?;
+    let links = orbit_unit_sigint_unit::Entity::find()
+        .filter(orbit_unit_sigint_unit::Column::SigintUnitId.eq(old_unit_id))
+        .all(&transaction)
+        .await
+        .context(h!())?;
+    if !links.is_empty() {
+        let links =
+            links
+                .into_iter()
+                .map(|link| orbit_unit_sigint_unit::ActiveModel {
+                    orbit_unit_id: Set(link.orbit_unit_id),
+                    sigint_unit_id: Set(new_unit_id),
+                });
+        orbit_unit_sigint_unit::Entity::insert_many(links)
+            .on_conflict(
+                OnConflict::columns([
+                    orbit_unit_sigint_unit::Column::OrbitUnitId,
+                    orbit_unit_sigint_unit::Column::SigintUnitId,
+                ])
+                .do_nothing()
+                .to_owned(),
+            )
+            .do_nothing()
+            .exec_without_returning(&transaction)
+            .await
+            .context(h!())?;
+    }
+    orbit_unit_sigint_unit::Entity::delete_many()
+        .filter(orbit_unit_sigint_unit::Column::SigintUnitId.eq(old_unit_id))
+        .exec(&transaction)
+        .await
+        .context(h!())?;
+    transaction.commit().await.context(h!())?;
     Ok(())
 }
 
@@ -804,7 +867,7 @@ async fn update_original_unit(
     unit_original: sigint_unit::Model,
     unit_to_merge: &sigint_unit::Model,
     dbx: &DatabaseConnection,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<sigint_unit::Model> {
     let mut unit = unit_original.clone().into_active_model();
 
     if unit_original.company.is_empty() && !unit_to_merge.company.is_empty() {
@@ -830,8 +893,7 @@ async fn update_original_unit(
         unit.deleted = Set(false);
     }
 
-    unit.update(dbx).await.context(h!())?;
-    Ok(())
+    unit.update(dbx).await.context(h!())
 }
 
 /// Oneoff function to reprocess the search index for units.
@@ -958,6 +1020,7 @@ mod tests {
         PaginatorTrait, QueryFilter, Set,
     };
     use serial_test::serial;
+    use std::collections::BTreeSet;
 
     const TEST_LOGIN: &str = "Tester";
 
@@ -1164,5 +1227,107 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(relation.unit_id, rsp.unit.id);
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn merge_units_moves_orbit_links_and_returns_surviving_unit() {
+        let env = cleanup().await.unwrap();
+        let login_id = test_login_id(&env).await;
+        let duplicate = crate::functest::tests::mk_sigint_unit(
+            &env.dbx,
+            sigint_unit::ActiveModel {
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let surviving = crate::functest::tests::mk_sigint_unit(
+            &env.dbx,
+            sigint_unit::ActiveModel {
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let first_orbit_unit_id = uuid::Uuid::new_v4();
+        let second_orbit_unit_id = uuid::Uuid::new_v4();
+        orbit_unit::Entity::insert_many([
+            orbit_unit::ActiveModel {
+                unit_id: Set(first_orbit_unit_id),
+                ..Default::default()
+            },
+            orbit_unit::ActiveModel {
+                unit_id: Set(second_orbit_unit_id),
+                ..Default::default()
+            },
+        ])
+        .exec(&env.dbx)
+        .await
+        .unwrap();
+        orbit_unit_sigint_unit::Entity::insert_many([
+            orbit_unit_sigint_unit::ActiveModel {
+                orbit_unit_id: Set(first_orbit_unit_id),
+                sigint_unit_id: Set(duplicate.id),
+            },
+            orbit_unit_sigint_unit::ActiveModel {
+                orbit_unit_id: Set(second_orbit_unit_id),
+                sigint_unit_id: Set(duplicate.id),
+            },
+            orbit_unit_sigint_unit::ActiveModel {
+                orbit_unit_id: Set(second_orbit_unit_id),
+                sigint_unit_id: Set(surviving.id),
+            },
+        ])
+        .exec(&env.dbx)
+        .await
+        .unwrap();
+
+        let merged =
+            merge_units(login_id, &env.dbx, duplicate.id, surviving.id)
+                .await
+                .unwrap();
+
+        assert_eq!(merged.id, surviving.id);
+        assert!(!merged.deleted);
+        assert!(orbit_unit_sigint_unit::Entity::find()
+            .filter(
+                orbit_unit_sigint_unit::Column::SigintUnitId.eq(duplicate.id)
+            )
+            .all(&env.dbx)
+            .await
+            .unwrap()
+            .is_empty());
+        let surviving_orbit_unit_ids = orbit_unit_sigint_unit::Entity::find()
+            .filter(
+                orbit_unit_sigint_unit::Column::SigintUnitId.eq(surviving.id),
+            )
+            .all(&env.dbx)
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|link| link.orbit_unit_id)
+            .collect::<BTreeSet<_>>();
+        assert_eq!(
+            surviving_orbit_unit_ids,
+            BTreeSet::from([first_orbit_unit_id, second_orbit_unit_id])
+        );
+        assert!(
+            sigint_unit::Entity::find_by_id(duplicate.id)
+                .one(&env.dbx)
+                .await
+                .unwrap()
+                .unwrap()
+                .deleted
+        );
+
+        orbit_unit::Entity::delete_many()
+            .filter(
+                orbit_unit::Column::UnitId
+                    .is_in([first_orbit_unit_id, second_orbit_unit_id]),
+            )
+            .exec(&env.dbx)
+            .await
+            .unwrap();
     }
 }

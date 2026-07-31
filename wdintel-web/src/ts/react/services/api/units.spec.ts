@@ -43,6 +43,7 @@ describe('units API', () => {
               active: true,
               created_at: 1234,
               created_by_login_id: 'login-id',
+              has_orbit: true,
             },
           ],
         }),
@@ -50,7 +51,12 @@ describe('units API', () => {
     );
 
     await expect(getUnitsList()).resolves.toMatchObject([
-      { id: 7, createdAt: 1234, createdByLoginId: 'login-id' },
+      {
+        id: 7,
+        createdAt: 1234,
+        createdByLoginId: 'login-id',
+        hasOrbit: true,
+      },
     ]);
   });
 

@@ -506,6 +506,20 @@ pub const WORKER_NIGHT_SHIFT_WAIT_BEFORE_START_SECS: u64 = 60;
 pub const NETWORK_INBOX_OLD_WORKER_ACTIVE_REST_SECS: u64 = 2;
 pub const SIGINT_INBOX_TUI_REFRESH_MS: u64 = 2000;
 pub const SIGINT_INBOX_TUI_EVENT_POLL_MS: u64 = 250;
+pub const ORBIT_TUI_EVENT_POLL_MS: u64 = 250;
+pub const ORBIT_STALE_GRACE_SECONDS: i64 = 5;
+pub const ORBIT_IMPORT_ADVISORY_LOCK_KEY: i64 =
+    i64::from_be_bytes(*b"ORBITIMP");
+pub const ORBIT_IMPORT_STORAGE_PREFIX: &str = "orbit-import";
+pub const ORBIT_IMPORT_UNITS_FILE_NAME: &str = "orbit_units.parquet";
+pub const ORBIT_IMPORT_GROUPING_OF_FORCES_FILE_NAME: &str =
+    "orbit_grouping_of_forces.parquet";
+pub const ORBIT_IMPORT_COMBAT_UNIT_TYPE_FILE_NAME: &str =
+    "orbit_combat_unit_type.parquet";
+pub const ORBIT_IMPORT_UNIT_ECHELON_FILE_NAME: &str =
+    "orbit_unit_echelon.parquet";
+pub const ORBIT_MATCHING_SIGINT_NAME_BLACKLIST: &[&str] =
+    &["ТерО", "ТрО", "(ат)"];
 pub const SIGINT_INBOX_TUI_CHUNK_COUNT: usize = 10;
 pub const SIGINT_INBOX_TUI_BUCKET_GAP: usize = 2;
 pub const NETWORK_INBOX_OLD_WORKER_START_HOUR: u32 = 2;
@@ -791,7 +805,9 @@ pub fn read_from_path<T>(path: PathBuf) -> Result<T, AppError>
 where
     T: for<'a> Deserialize<'a>,
 {
-    let config = std::fs::read_to_string(&path)?;
+    let config = std::fs::read_to_string(&path).with_context(|| {
+        format!("failed to read configuration file {}", path.display())
+    })?;
     let (config, unused_keys) = deserialize_config(&config).context(h!())?;
     warn_about_unused_config_keys(&path, &unused_keys);
     Ok(config)
@@ -1002,6 +1018,17 @@ migrated = "database"
         assert!(warning.contains("WARNING: UNUSED CONFIG KEYS"));
         assert!(warning.contains("  - removed"));
         assert!(warning.contains("removed or migrated to the database"));
+    }
+
+    #[test]
+    fn missing_config_error_includes_its_path() {
+        let path = PathBuf::from(format!(
+            "/tmp/missing-echo-config-{}.toml",
+            Uuid::new_v4()
+        ));
+        let error = read_from_path::<TestConfig>(path.clone()).unwrap_err();
+
+        assert!(format!("{error:?}").contains(&path.display().to_string()));
     }
 
     #[test]

@@ -138,9 +138,11 @@ file as `/etc/echo-peerdb/tables-exclude.txt`. If the exclusion file is absent,
 `source-configure.sh` installs the shipped
 [default exclusions](env/tables-exclude.txt), which omit superseded
 PostgreSQL aggregates, the highly mutable GOI knowledge table, and transient
-worker queues. The repository file is canonical; deploy it before the first
-snapshot with `just setup-analytics-reconcile-tables`. The analytics copy of
-the same password stays in `echo-peerdb-<source-hostname>`.
+worker queues, along with the PostgreSQL-only ORBIT unit catalog and
+force-grouping links. The repository file is canonical; deploy it before the
+first snapshot with
+`just setup-analytics-reconcile-tables`. The analytics copy of the same password
+stays in `echo-peerdb-<source-hostname>`.
 Exclusions may name optional tables that are absent on an instance; if such a
 table is created later, it remains excluded automatically.
 

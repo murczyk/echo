@@ -16,6 +16,33 @@ pub struct Unit {
     pub active: bool,
     pub created_at: i64,
     pub created_by_login_id: String,
+    #[serde(default, skip_deserializing)]
+    pub has_orbit: bool,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn unit_without_has_orbit_deserializes() {
+        let unit: Unit = serde_json::from_value(serde_json::json!({
+            "id": 1,
+            "company": "",
+            "battalion": "",
+            "regiment": "",
+            "division": "",
+            "army": "",
+            "comment": "",
+            "name": "unit",
+            "active": true,
+            "created_at": 0,
+            "created_by_login_id": ""
+        }))
+        .unwrap();
+
+        assert!(!unit.has_orbit);
+    }
 }
 
 #[derive(
@@ -140,6 +167,39 @@ pub struct UnitAttachment {
 pub struct UnitDetailsRsp {
     pub unit: Unit,
     pub attachments: Vec<UnitAttachment>,
+    pub orbit_units: Vec<OrbitUnitDetails>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct OrbitDictionaryValue {
+    pub id: String,
+    pub key: String,
+    pub name: String,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct OrbitUnitDetails {
+    pub unit_id: String,
+    pub unit_name: Option<String>,
+    pub unit_name_original: Option<String>,
+    pub unit_name_short: Option<String>,
+    pub operational_unit_name_full: Option<String>,
+    pub generative_unit_name_full: Option<String>,
+    pub unit_number: Option<String>,
+    pub unit_alternate_names: Option<Vec<String>>,
+    pub unit_alternate_numbers: Option<Vec<String>>,
+    pub unit_echelon: Option<OrbitDictionaryValue>,
+    pub combat_unit_type: Option<OrbitDictionaryValue>,
+    pub grouping_of_forces: Vec<OrbitDictionaryValue>,
+    pub generative_parent_unit_id: Option<String>,
+    pub operational_parent_unit_id: Option<String>,
+    pub deleted: bool,
+    pub created_at: i64,
+    pub updated_at: i64,
 }
 
 #[derive(

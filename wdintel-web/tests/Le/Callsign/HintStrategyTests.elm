@@ -22,6 +22,7 @@ createUnit id army division regiment battalion company name =
     , active = True
     , createdAt = 0
     , createdByLoginId = ""
+    , hasOrbit = False
     }
 
 

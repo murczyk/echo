@@ -45,6 +45,15 @@ function useUnitColumns(attachmentUnitIds: Set<number>): MRT_ColumnDef<Unit>[] {
         header: 'Назва',
         accessorKey: 'name',
         size: 240,
+        muiTableBodyCellProps: {
+          sx: {
+            ...CUSTOM_STYLES.muiTableBodyCellProps.sx,
+            position: 'relative',
+            overflow: 'hidden',
+            verticalAlign: 'middle',
+            paddingRight: '32px!important',
+          },
+        },
         Cell: ({ row }) => {
           const detailsHref = `/rer-units/${row.original.id}`;
           const filesHref = `${detailsHref}?tab=files`;
@@ -53,6 +62,7 @@ function useUnitColumns(attachmentUnitIds: Set<number>): MRT_ColumnDef<Unit>[] {
               <Link
                 href={detailsHref}
                 onClick={(event) => handleNavigateWithinSpaClick(event, detailsHref)}
+                sx={{ display: 'inline-flex', alignItems: 'center', whiteSpace: 'nowrap' }}
               >
                 {row.original.name}
               </Link>
@@ -72,6 +82,26 @@ function useUnitColumns(attachmentUnitIds: Set<number>): MRT_ColumnDef<Unit>[] {
                       variant="outlined"
                       clickable
                     />
+                  </Link>
+                </Tooltip>
+              ) : null}
+              {row.original.hasOrbit ? (
+                <Tooltip title="Є дані із Orbit">
+                  <Link
+                    href={detailsHref}
+                    underline="none"
+                    aria-label={`Відкрити дані Orbit підрозділу ${row.original.name}`}
+                    onClick={(event) => handleNavigateWithinSpaClick(event, detailsHref)}
+                    sx={{
+                      position: 'absolute',
+                      top: '50%',
+                      right: 8,
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      transform: 'translateY(-50%)',
+                    }}
+                  >
+                    <Box component="img" src="/img/delta-icon.webp" alt="" sx={{ height: 13.2 }} />
                   </Link>
                 </Tooltip>
               ) : null}

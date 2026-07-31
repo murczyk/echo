@@ -5475,6 +5475,7 @@ type alias Unit =
     , active : Bool
     , createdAt : Int
     , createdByLoginId : String
+    , hasOrbit : Bool
     }
 
 
@@ -5492,6 +5493,7 @@ unitEncoder struct =
         , ( "active", (Json.Encode.bool) struct.active )
         , ( "created_at", (Json.Encode.int) struct.createdAt )
         , ( "created_by_login_id", (Json.Encode.string) struct.createdByLoginId )
+        , ( "has_orbit", (Json.Encode.bool) struct.hasOrbit )
         ]
 
 
@@ -5685,9 +5687,70 @@ unitAttachmentEncoder struct =
         ]
 
 
+type alias OrbitDictionaryValue =
+    { id : String
+    , key : String
+    , name : String
+    }
+
+
+orbitDictionaryValueEncoder : OrbitDictionaryValue -> Json.Encode.Value
+orbitDictionaryValueEncoder struct =
+    Json.Encode.object
+        [ ( "id", (Json.Encode.string) struct.id )
+        , ( "key", (Json.Encode.string) struct.key )
+        , ( "name", (Json.Encode.string) struct.name )
+        ]
+
+
+type alias OrbitUnitDetails =
+    { unitId : String
+    , unitName : Maybe (String)
+    , unitNameOriginal : Maybe (String)
+    , unitNameShort : Maybe (String)
+    , operationalUnitNameFull : Maybe (String)
+    , generativeUnitNameFull : Maybe (String)
+    , unitNumber : Maybe (String)
+    , unitAlternateNames : Maybe (List (String))
+    , unitAlternateNumbers : Maybe (List (String))
+    , unitEchelon : Maybe (OrbitDictionaryValue)
+    , combatUnitType : Maybe (OrbitDictionaryValue)
+    , groupingOfForces : List (OrbitDictionaryValue)
+    , generativeParentUnitId : Maybe (String)
+    , operationalParentUnitId : Maybe (String)
+    , deleted : Bool
+    , createdAt : Int
+    , updatedAt : Int
+    }
+
+
+orbitUnitDetailsEncoder : OrbitUnitDetails -> Json.Encode.Value
+orbitUnitDetailsEncoder struct =
+    Json.Encode.object
+        [ ( "unit_id", (Json.Encode.string) struct.unitId )
+        , ( "unit_name", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.unitName )
+        , ( "unit_name_original", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.unitNameOriginal )
+        , ( "unit_name_short", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.unitNameShort )
+        , ( "operational_unit_name_full", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.operationalUnitNameFull )
+        , ( "generative_unit_name_full", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.generativeUnitNameFull )
+        , ( "unit_number", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.unitNumber )
+        , ( "unit_alternate_names", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.string))) struct.unitAlternateNames )
+        , ( "unit_alternate_numbers", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.string))) struct.unitAlternateNumbers )
+        , ( "unit_echelon", (Maybe.withDefault Json.Encode.null << Maybe.map (orbitDictionaryValueEncoder)) struct.unitEchelon )
+        , ( "combat_unit_type", (Maybe.withDefault Json.Encode.null << Maybe.map (orbitDictionaryValueEncoder)) struct.combatUnitType )
+        , ( "grouping_of_forces", (Json.Encode.list (orbitDictionaryValueEncoder)) struct.groupingOfForces )
+        , ( "generative_parent_unit_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.generativeParentUnitId )
+        , ( "operational_parent_unit_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.operationalParentUnitId )
+        , ( "deleted", (Json.Encode.bool) struct.deleted )
+        , ( "created_at", (Json.Encode.int) struct.createdAt )
+        , ( "updated_at", (Json.Encode.int) struct.updatedAt )
+        ]
+
+
 type alias UnitDetailsRsp =
     { unit : Unit
     , attachments : List (UnitAttachment)
+    , orbitUnits : List (OrbitUnitDetails)
     }
 
 
@@ -5696,6 +5759,7 @@ unitDetailsRspEncoder struct =
     Json.Encode.object
         [ ( "unit", (unitEncoder) struct.unit )
         , ( "attachments", (Json.Encode.list (unitAttachmentEncoder)) struct.attachments )
+        , ( "orbit_units", (Json.Encode.list (orbitUnitDetailsEncoder)) struct.orbitUnits )
         ]
 
 
@@ -13234,6 +13298,7 @@ unitDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "active" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "created_at" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "created_by_login_id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "has_orbit" (Json.Decode.bool)))
 
 
 listUnitsReqDecoder : Json.Decode.Decoder ListUnitsReq
@@ -13324,11 +13389,42 @@ unitAttachmentDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "created_at" (Json.Decode.int)))
 
 
+orbitDictionaryValueDecoder : Json.Decode.Decoder OrbitDictionaryValue
+orbitDictionaryValueDecoder =
+    Json.Decode.succeed OrbitDictionaryValue
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "key" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" (Json.Decode.string)))
+
+
+orbitUnitDetailsDecoder : Json.Decode.Decoder OrbitUnitDetails
+orbitUnitDetailsDecoder =
+    Json.Decode.succeed OrbitUnitDetails
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unit_id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unit_name" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unit_name_original" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unit_name_short" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "operational_unit_name_full" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "generative_unit_name_full" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unit_number" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unit_alternate_names" (Json.Decode.nullable (Json.Decode.list (Json.Decode.string)))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unit_alternate_numbers" (Json.Decode.nullable (Json.Decode.list (Json.Decode.string)))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unit_echelon" (Json.Decode.nullable (orbitDictionaryValueDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "combat_unit_type" (Json.Decode.nullable (orbitDictionaryValueDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "grouping_of_forces" (Json.Decode.list (orbitDictionaryValueDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "generative_parent_unit_id" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "operational_parent_unit_id" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "deleted" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "created_at" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "updated_at" (Json.Decode.int)))
+
+
 unitDetailsRspDecoder : Json.Decode.Decoder UnitDetailsRsp
 unitDetailsRspDecoder =
     Json.Decode.succeed UnitDetailsRsp
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unit" (unitDecoder)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "attachments" (Json.Decode.list (unitAttachmentDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "orbit_units" (Json.Decode.list (orbitUnitDetailsDecoder))))
 
 
 unitAttachmentUnitIdsRspDecoder : Json.Decode.Decoder UnitAttachmentUnitIdsRsp

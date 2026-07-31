@@ -75,8 +75,10 @@
 ## Fail fast
 
 - Don't overly-obsess yourself with failing via AppError::BL with clear error messages. Most of the time, fail fast via `.c(h!())?`, let the developer see the line where the error happened
+- Prefer `anyhow::Result<T>` for fallible internal functions. Keep `AppError` or other typed errors at external boundaries instead of carrying them through application code
+- Convert concrete library and infrastructure errors immediately with `.c(h!())?`, then propagate `anyhow::Error`
 - add context with data value when needed but only in rare cases
-- when writing function that must not fail (like infinite loop workers), move out inner loop body in regular AppError-Result function, and call it from the no-fail one, use `.c(h!())?` in AppError one for errors, don't fill the code with too many `match ... Err ...` blocks
+- when writing function that must not fail (like infinite loop workers), move out inner loop body into a regular `anyhow::Result` function, and call it from the no-fail one; use `.c(h!())?` for errors and don't fill the code with too many `match ... Err ...` blocks
 
 ## Frontend (Elm)
 

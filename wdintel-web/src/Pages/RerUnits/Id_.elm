@@ -302,7 +302,7 @@ detailsView user shared model details =
         , tabsView model.activeTab
         , case model.activeTab of
             Overview ->
-                overviewTab shared details.unit
+                overviewTab shared details.unit details.orbitUnits
 
             Files ->
                 filesTab user shared model details.attachments
@@ -359,12 +359,21 @@ tabsView activeTab =
         ]
 
 
-overviewTab : Shared.Model -> B.Unit -> Html Msg
-overviewTab shared unit =
+overviewTab : Shared.Model -> B.Unit -> List B.OrbitUnitDetails -> Html Msg
+overviewTab shared unit orbitUnits =
     div
-        [ class "border rounded p-4 bg-card"
+        [ class "flex flex-col gap-4"
         , attribute "role" "tabpanel"
         ]
+        (unitOverviewCard shared unit
+            :: List.map (orbitDataCard shared) orbitUnits
+        )
+
+
+unitOverviewCard : Shared.Model -> B.Unit -> Html Msg
+unitOverviewCard shared unit =
+    div
+        [ class "border rounded p-4 bg-card" ]
         [ div [ class "row g-4" ]
             [ overviewField "Рота, взвод" unit.company
             , overviewField "Батальйон" unit.battalion
@@ -398,11 +407,127 @@ overviewTab shared unit =
         ]
 
 
+orbitDataCard : Shared.Model -> B.OrbitUnitDetails -> Html Msg
+orbitDataCard shared orbitUnit =
+    div [ class "border rounded p-4 bg-card" ]
+        [ h2 [ class "h4 mb-4" ] [ text "Дані із Orbit" ]
+        , orbitUnitDetails shared orbitUnit
+        ]
+
+
+orbitUnitDetails : Shared.Model -> B.OrbitUnitDetails -> Html Msg
+orbitUnitDetails shared orbitUnit =
+    div []
+        [ div [ class "d-flex align-items-center justify-content-between gap-3 mb-4 flex-wrap" ]
+            [ h3 [ class "h5 mb-0" ]
+                [ text (orbitUnitTitle orbitUnit) ]
+            , a
+                [ class "btn btn-outline-primary d-inline-flex align-items-center"
+                , href
+                    ("https://delta.mil.gov.ua/orbit/units/"
+                        ++ orbitUnit.unitId
+                        ++ "/organizational-structure"
+                    )
+                , target "_blank"
+                , rel "noopener noreferrer"
+                , style "font-size" "1rem"
+                , style "padding" "0.5rem 1rem"
+                ]
+                [ img
+                    [ src "/img/delta-icon.webp"
+                    , class "me-2 inline-block"
+                    , style "height" "36px"
+                    ]
+                    []
+                , text "Відкрити в Orbit"
+                ]
+            ]
+        , div [ class "row g-4" ]
+            [ overviewField "ID підрозділу" orbitUnit.unitId
+            , overviewMaybeField "Оригінальна назва" orbitUnit.unitNameOriginal
+            , overviewMaybeField "Повна назва" orbitUnit.generativeUnitNameFull
+            , overviewMaybeField
+                "Підпорядкування"
+                (Maybe.map orbitParentPath orbitUnit.operationalUnitNameFull)
+            , overviewMaybeField "Номер підрозділу" orbitUnit.unitNumber
+            , overviewMaybeListField "Альтернативні назви" orbitUnit.unitAlternateNames
+            , overviewMaybeListField "Альтернативні номери" orbitUnit.unitAlternateNumbers
+            , overviewField "Ешелон" (orbitDictionaryValue orbitUnit.unitEchelon)
+            , overviewField "Тип бойового підрозділу" (orbitDictionaryValue orbitUnit.combatUnitType)
+            , overviewField
+                "Угруповання військ"
+                (orbitUnit.groupingOfForces
+                    |> List.map orbitDictionaryDetails
+                    |> String.join "\n"
+                )
+            , overviewField
+                "Дата створення"
+                (Utils.Time.renderDateTimeF1 shared.timeZone
+                    (Time.millisToPosix orbitUnit.createdAt)
+                )
+            , overviewField
+                "Дата оновлення"
+                (Utils.Time.renderDateTimeF1 shared.timeZone
+                    (Time.millisToPosix orbitUnit.updatedAt)
+                )
+            ]
+        ]
+
+
+orbitUnitTitle : B.OrbitUnitDetails -> String
+orbitUnitTitle orbitUnit =
+    case orbitUnit.unitName of
+        Just name ->
+            name
+
+        Nothing ->
+            Maybe.withDefault orbitUnit.unitId orbitUnit.unitNameShort
+
+
+overviewMaybeField : String -> Maybe String -> Html Msg
+overviewMaybeField labelText value =
+    overviewField labelText (Maybe.withDefault "" value)
+
+
+overviewMaybeListField : String -> Maybe (List String) -> Html Msg
+overviewMaybeListField labelText values =
+    overviewField labelText
+        (values
+            |> Maybe.withDefault []
+            |> String.join "\n"
+        )
+
+
+orbitDictionaryValue : Maybe B.OrbitDictionaryValue -> String
+orbitDictionaryValue value =
+    value
+        |> Maybe.map .name
+        |> Maybe.withDefault ""
+
+
+orbitParentPath : String -> String
+orbitParentPath value =
+    value
+        |> String.split " / "
+        |> List.drop 1
+        |> String.join " / "
+
+
+orbitDictionaryDetails : B.OrbitDictionaryValue -> String
+orbitDictionaryDetails value =
+    value.name ++ " (" ++ value.key ++ "; " ++ value.id ++ ")"
+
+
 overviewField : String -> String -> Html Msg
 overviewField labelText value =
     div [ class "col-md-6" ]
         [ div [ class "text-secondary text-sm mb-1" ] [ text labelText ]
-        , div [ class "fw-semibold" ] [ text (textOrDash value) ]
+        , div
+            [ class "fw-semibold"
+            , style "white-space" "pre-wrap"
+            , style "overflow-wrap" "anywhere"
+            ]
+            [ text (textOrDash value) ]
         ]
 
 

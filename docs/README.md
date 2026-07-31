@@ -329,6 +329,43 @@ and the API returns only the remaining rows. On the next successful snapshot
 pull, Echo marks missing `goi_knowledge` rows deleted and retains them until
 the configured cleanup period expires.
 
+## ORBIT unit import
+
+See [Working with ORBIT data](ORBIT.md) for the complete operator and developer
+guide.
+
+ORBIT ingestion is split into normalization, database synchronization, and
+database-only linking. The `oneoff-prepare-orbit-import --path <export.json>`
+command validates the source, normalizes dictionary references to stable UUIDs,
+writes one Apache Parquet file per dictionary plus `orbit_units.parquet`, and
+packages them as a timestamped ZIP. Live mode keeps snapshots under
+`orbit-import/` in the
+`ai_models_config.s3_config` bucket; debug and test modes keep them under
+`<storage_dir>/orbit-import/`. A new snapshot reuses dictionary UUIDs from the
+latest previous snapshot and retains old dictionary entries.
+
+`wdintel-rs --mode=live tui-import-orbit-units` downloads and unpacks the latest
+snapshot, synchronizes every root and ancestor to PostgreSQL parent-first, and
+then matches using only rows from the latest recorded database sync. The
+`orbit_sync` table records the archive MD5 and sync timestamp; an unchanged MD5
+skips data synchronization after explicit operator confirmation. Stale deletion
+decisions remain interactive. Manual lookup by exact SIGINT full name also reads
+ORBIT roots and parent chains only from PostgreSQL.
+After synchronization, matched ORBIT roots are linked to their active Echo
+SIGINT units for access-controlled display in the RER unit list and details
+page. `orbit_unit_sigint_unit` permits multiple ORBIT links per SIGINT unit.
+Matching requires root identity plus parent evidence for hierarchical SIGINT
+units, compares both operational and generative ORBIT paths, ignores configured
+SIGINT-only name fragments, selects the shortest equally close hierarchy
+extension unless a deeper parent is evidenced, normalizes numbered army
+abbreviations by army number, and skips divergent parent-path ties. Retained
+ORBIT roots are rendered as separate cards.
+
+The seven ORBIT tables are authoritative operational data in PostgreSQL and are
+excluded from PeerDB replication. See the
+[ORBIT import runbook](../deploy/2026-07-29-orbit-dictionaries/README.md) for
+snapshot preparation, matching, review, quit, and stale-row semantics.
+
 ## Optional analytics LXC systemd graph
 
 `echo-analytics.target` groups the native services below. Dotted arrows show
