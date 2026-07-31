@@ -2552,7 +2552,7 @@ deploy-cbr-stg: prepare-workspace
         cd .. && \
         touch wdintel-rs/build.rs && \
         \$HOME/.cargo/bin/cargo deb -p wdintel-rs --fast"
-    scp echo-build-main:~/workspace/krab/echo-feature/echo/target/debian/wdintel-rs*.deb "echo-staging":/var/tmp
+    scp echo-build-main:~/workspace/krab/echo-feature/echo/target/debian/wdintel-rs*.deb "echo-cbr-staging":/var/tmp
     ssh echo-build-main 'rm ~/workspace/krab/echo-feature/echo/target/debian/wdintel-rs*.deb'
     ssh "echo-cbr-staging" 'cd /var/tmp/ && sudo apt install -y --reinstall --allow-downgrades ./wdintel-rs*.deb'
 
