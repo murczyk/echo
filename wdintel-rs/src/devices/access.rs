@@ -4,8 +4,9 @@ use crate::config::{
 };
 use crate::entities::login;
 use crate::error::AppError;
+use crate::h;
 use crate::system_settings::ensure_devices_section_enabled;
-use crate::types::Uuid;
+use crate::types::{ShortContext, Uuid};
 use actix_identity::Identity;
 use sea_orm::DatabaseConnection;
 
@@ -56,10 +57,10 @@ pub(in crate::devices) fn require_field_groups(
     groups: DeviceFieldGroups,
 ) -> Result<(), AppError> {
     if groups.source_data {
-        require_source_write(roles)?;
+        require_source_write(roles).c(h!())?;
     }
     if groups.analytical_data {
-        require_analytical_write(roles)?;
+        require_analytical_write(roles).c(h!())?;
     }
     Ok(())
 }
@@ -90,7 +91,7 @@ pub(in crate::devices) async fn resolve_current_login(
     main_db: &MainDb<'_, DatabaseConnection>,
     identity: &Identity,
 ) -> Result<login::Model, AppError> {
-    let login_id = crate::users::login_id_from_identity(identity)?;
+    let login_id = crate::users::login_id_from_identity(identity).c(h!())?;
     resolve_login_by_id(main_db, &login_id).await
 }
 
@@ -99,17 +100,25 @@ async fn resolve_login_by_id(
     login_id: &Uuid,
 ) -> Result<login::Model, AppError> {
     let login_validation =
-        crate::users::validate_login_id(main_db.connection(), login_id).await?;
+        crate::users::validate_login_id(main_db.connection(), login_id)
+            .await
+            .c(h!())?;
     if let Some(error) = login_validation.validation_error {
         return Err(error);
     }
     let login = login_validation
         .login_model
-        .ok_or(AppError::Unauthenticated)?;
+        .ok_or(AppError::Unauthenticated)
+        .c(h!())?;
 
-    ensure_devices_section_enabled(main_db.connection()).await?;
+    ensure_devices_section_enabled(main_db.connection())
+        .await
+        .c(h!())?;
 
-    login.organism_id.ok_or_else(forbidden_device_operation)?;
+    login
+        .organism_id
+        .ok_or_else(forbidden_device_operation)
+        .c(h!())?;
     Ok(login)
 }
 

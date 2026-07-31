@@ -2631,7 +2631,9 @@ fn assert_dependency_filesystem_error(error: AppError) {
     let AppError::AnyhowError { source } = error else {
         panic!("expected dependency application error");
     };
-    assert_eq!(source.to_string(), "failed to read device filesystem");
+    assert!(source
+        .chain()
+        .any(|error| error.to_string() == "failed to read device filesystem"));
     assert!(source.chain().any(|error| matches!(
         error.downcast_ref::<FilesystemError>(),
         Some(FilesystemError::Dependency(_))

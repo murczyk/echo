@@ -21,7 +21,8 @@ use crate::devices::filesystem::{
 };
 use crate::devices::main_db::MainDb;
 use crate::error::AppError;
-use crate::types::Env;
+use crate::h;
+use crate::types::{Env, ShortContext};
 use actix_identity::Identity;
 use actix_web::post;
 use actix_web::web::{Data, Json};
@@ -33,14 +34,17 @@ pub(in crate::devices) async fn roots(
     Json(body): Json<ListDeviceFileRootsReq>,
 ) -> Result<Json<ListDeviceFileRootsRsp>, AppError> {
     let main_db = MainDb::new(&env.dbx);
-    let login = access::resolve_current_login(&main_db, &user).await?;
+    let login = access::resolve_current_login(&main_db, &user)
+        .await
+        .c(h!())?;
     let roots = FileMetadataService::list_roots(
         main_db,
         &env.file_registry_db,
         &login,
         parse_uuid(&body.device_id),
     )
-    .await?;
+    .await
+    .c(h!())?;
     Ok(Json(map_roots(roots)))
 }
 #[post("/api/device/files/subtree-counts")]
@@ -50,7 +54,9 @@ pub(in crate::devices) async fn subtree_counts(
     Json(body): Json<CountDeviceFileSubtreesReq>,
 ) -> Result<Json<CountDeviceFileSubtreesRsp>, AppError> {
     let main_db = MainDb::new(&env.dbx);
-    let login = access::resolve_current_login(&main_db, &user).await?;
+    let login = access::resolve_current_login(&main_db, &user)
+        .await
+        .c(h!())?;
     let counts = FileMetadataService::count_subtrees(
         main_db,
         &env.file_registry_db,
@@ -65,7 +71,8 @@ pub(in crate::devices) async fn subtree_counts(
                 .collect(),
         },
     )
-    .await?;
+    .await
+    .c(h!())?;
     Ok(Json(map_subtree_counts(counts)))
 }
 
@@ -76,7 +83,9 @@ pub(in crate::devices) async fn browse(
     Json(body): Json<BrowseDeviceFilesReq>,
 ) -> Result<Json<BrowseDeviceFilesRsp>, AppError> {
     let main_db = MainDb::new(&env.dbx);
-    let login = access::resolve_current_login(&main_db, &user).await?;
+    let login = access::resolve_current_login(&main_db, &user)
+        .await
+        .c(h!())?;
     let result = FileMetadataService::browse(
         main_db,
         &env.file_registry_db,
@@ -89,8 +98,9 @@ pub(in crate::devices) async fn browse(
             cursor: body.cursor,
         },
     )
-    .await?;
-    Ok(Json(map_browse(result)?))
+    .await
+    .c(h!())?;
+    Ok(Json(map_browse(result).c(h!())?))
 }
 
 #[post("/api/device/files/search")]
@@ -100,7 +110,9 @@ pub(in crate::devices) async fn search(
     Json(body): Json<SearchDeviceFilesReq>,
 ) -> Result<Json<SearchDeviceFilesRsp>, AppError> {
     let main_db = MainDb::new(&env.dbx);
-    let login = access::resolve_current_login(&main_db, &user).await?;
+    let login = access::resolve_current_login(&main_db, &user)
+        .await
+        .c(h!())?;
     let result = FileMetadataService::search(
         main_db,
         &env.file_registry_db,
@@ -131,7 +143,8 @@ pub(in crate::devices) async fn search(
             cursor: body.cursor,
         },
     )
-    .await?;
+    .await
+    .c(h!())?;
     Ok(Json(map_search(result)))
 }
 
@@ -142,7 +155,9 @@ pub(in crate::devices) async fn journal(
     Json(body): Json<JournalDeviceFilesReq>,
 ) -> Result<Json<JournalDeviceFilesRsp>, AppError> {
     let main_db = MainDb::new(&env.dbx);
-    let login = access::resolve_current_login(&main_db, &user).await?;
+    let login = access::resolve_current_login(&main_db, &user)
+        .await
+        .c(h!())?;
     let result = FileMetadataService::journal(
         main_db,
         &env.file_registry_db,
@@ -153,7 +168,8 @@ pub(in crate::devices) async fn journal(
             cursor: body.cursor,
         },
     )
-    .await?;
+    .await
+    .c(h!())?;
     Ok(Json(map_journal(result)))
 }
 
@@ -164,7 +180,7 @@ pub(in crate::devices) async fn sync(
     Json(body): Json<SyncDeviceFilesReq>,
 ) -> Result<Json<SyncDeviceFilesRsp>, AppError> {
     let started_at = Instant::now();
-    let result = sync_files(&env, &user, body).await?;
+    let result = sync_files(&env, &user, body).await.c(h!())?;
     let (created, updated) = synchronized_file_counts(&result);
     if let Some(metrics) = &env.metrics {
         metrics.record_device_files_sync(
@@ -182,7 +198,9 @@ async fn sync_files(
     body: SyncDeviceFilesReq,
 ) -> Result<SyncFilesResult, AppError> {
     let main_db = MainDb::new(&env.dbx);
-    let login = access::resolve_current_login(&main_db, user).await?;
+    let login = access::resolve_current_login(&main_db, user)
+        .await
+        .c(h!())?;
     FileMetadataService::sync(
         main_db,
         &env.file_registry_db,

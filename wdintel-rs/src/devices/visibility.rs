@@ -29,8 +29,8 @@ pub(in crate::devices) fn visible_devices_query(
     login: &login::Model,
     scope: DeviceReadScope,
 ) -> Result<Select<device::Entity>, AppError> {
-    access::require_read(&login.roles)?;
-    let organism_id = access::organism_id(login)?;
+    access::require_read(&login.roles).c(h!())?;
+    let organism_id = access::organism_id(login).c(h!())?;
 
     let query = device::Entity::find().filter(
         device::Column::OrganismId
@@ -53,7 +53,8 @@ pub(in crate::devices) async fn find_visible_device<C>(
 where
     C: ConnectionTrait,
 {
-    visible_devices_query(login, scope)?
+    visible_devices_query(login, scope)
+        .c(h!())?
         .filter(device::Column::Id.eq(device_id))
         .one(main_db.connection())
         .await
@@ -75,7 +76,8 @@ where
         device_id,
         DeviceReadScope::IncludeArchived,
     )
-    .await?;
+    .await
+    .c(h!())?;
     if device.archived {
         return Err(archived_device_error());
     }
@@ -87,14 +89,15 @@ pub(in crate::devices) async fn lock_active_visible_device(
     login: &login::Model,
     device_id: Uuid,
 ) -> Result<device::Model, AppError> {
-    let device =
-        visible_devices_query(login, DeviceReadScope::IncludeArchived)?
-            .filter(device::Column::Id.eq(device_id))
-            .lock_exclusive()
-            .one(main_db.connection())
-            .await
-            .c(h!())?
-            .ok_or(AppError::NotFound)?;
+    let device = visible_devices_query(login, DeviceReadScope::IncludeArchived)
+        .c(h!())?
+        .filter(device::Column::Id.eq(device_id))
+        .lock_exclusive()
+        .one(main_db.connection())
+        .await
+        .c(h!())?
+        .ok_or(AppError::NotFound)
+        .c(h!())?;
     if device.archived {
         return Err(archived_device_error());
     }
@@ -115,11 +118,14 @@ pub(in crate::devices) async fn authorize_file_registry_access(
                 device_id,
                 DeviceReadScope::IncludeArchived,
             )
-            .await?;
+            .await
+            .c(h!())?;
         }
         FileRegistryDeviceAccess::SourceWrite => {
-            access::require_source_write(&login.roles)?;
-            find_active_visible_device(&main_db, login, device_id).await?;
+            access::require_source_write(&login.roles).c(h!())?;
+            find_active_visible_device(&main_db, login, device_id)
+                .await
+                .c(h!())?;
         }
     }
 

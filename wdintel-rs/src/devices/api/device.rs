@@ -14,11 +14,12 @@ use crate::devices::service::{
 };
 use crate::devices::visibility::DeviceReadScope;
 use crate::error::AppError;
+use crate::h;
 use crate::sigint::aor::types::{
     AreaOfResponsibility, ListAreasOfResponsibilityReq,
 };
 use crate::sigint::unit::types::{ListUnitsReq, ListUnitsRsp};
-use crate::types::Env;
+use crate::types::{Env, ShortContext};
 use actix_identity::Identity;
 use actix_web::post;
 use actix_web::web::{Data, Json};
@@ -49,8 +50,12 @@ pub(in crate::devices) async fn list(
         sort_by: body.sort_by.into_iter().map(map_list_sort).collect(),
     };
     let main_db = MainDb::new(&env.dbx);
-    let login = access::resolve_current_login(&main_db, &user).await?;
-    let result = DeviceService::list(&main_db, &login, command).await?;
+    let login = access::resolve_current_login(&main_db, &user)
+        .await
+        .c(h!())?;
+    let result = DeviceService::list(&main_db, &login, command)
+        .await
+        .c(h!())?;
     Ok(Json(map_device_list(result)))
 }
 
@@ -60,8 +65,10 @@ pub(in crate::devices) async fn unit_stats(
     user: Identity,
 ) -> Result<Json<DeviceUnitStatsRsp>, AppError> {
     let main_db = MainDb::new(&env.dbx);
-    let login = access::resolve_current_login(&main_db, &user).await?;
-    let result = DeviceService::unit_stats(&main_db, &login).await?;
+    let login = access::resolve_current_login(&main_db, &user)
+        .await
+        .c(h!())?;
+    let result = DeviceService::unit_stats(&main_db, &login).await.c(h!())?;
     Ok(Json(map_device_unit_stats(result)))
 }
 
@@ -71,10 +78,16 @@ pub(in crate::devices) async fn aors(
     user: Identity,
 ) -> Result<Json<Vec<AreaOfResponsibility>>, AppError> {
     let main_db = MainDb::new(&env.dbx);
-    let login = access::resolve_current_login(&main_db, &user).await?;
-    access::require_analytical_write(&login.roles)?;
+    let login = access::resolve_current_login(&main_db, &user)
+        .await
+        .c(h!())?;
+    access::require_analytical_write(&login.roles).c(h!())?;
     let req = ListAreasOfResponsibilityReq { sort_by: None };
-    Ok(Json(crate::sigint::aor::read_aors(&env.dbx, &req).await?))
+    Ok(Json(
+        crate::sigint::aor::read_aors(&env.dbx, &req)
+            .await
+            .c(h!())?,
+    ))
 }
 
 #[post("/api/device/units")]
@@ -83,14 +96,20 @@ pub(in crate::devices) async fn units(
     user: Identity,
 ) -> Result<Json<ListUnitsRsp>, AppError> {
     let main_db = MainDb::new(&env.dbx);
-    let login = access::resolve_current_login(&main_db, &user).await?;
-    access::require_analytical_write(&login.roles)?;
+    let login = access::resolve_current_login(&main_db, &user)
+        .await
+        .c(h!())?;
+    access::require_analytical_write(&login.roles).c(h!())?;
     let req = ListUnitsReq {
         sort_by: None,
         after_unit_id: None,
         before_unit_id: None,
     };
-    Ok(Json(crate::sigint::unit::read_units(&env.dbx, &req).await?))
+    Ok(Json(
+        crate::sigint::unit::read_units(&env.dbx, &req)
+            .await
+            .c(h!())?,
+    ))
 }
 
 #[post("/api/device/detail")]
@@ -105,14 +124,17 @@ pub(in crate::devices) async fn detail(
         DeviceReadScope::ActiveOnly
     };
     let main_db = MainDb::new(&env.dbx);
-    let login = access::resolve_current_login(&main_db, &user).await?;
+    let login = access::resolve_current_login(&main_db, &user)
+        .await
+        .c(h!())?;
     let device = DeviceService::read(
         &main_db,
         &login,
         parse_uuid(&body.device_id),
         scope,
     )
-    .await?;
+    .await
+    .c(h!())?;
     Ok(Json(map_device_details(device)))
 }
 
@@ -128,8 +150,12 @@ pub(in crate::devices) async fn create(
         custom_fields: body.custom_fields.into_option(),
     };
     let main_db = MainDb::new(&env.dbx);
-    let login = access::resolve_current_login(&main_db, &user).await?;
-    let device = DeviceService::create(&main_db, &login, command).await?;
+    let login = access::resolve_current_login(&main_db, &user)
+        .await
+        .c(h!())?;
+    let device = DeviceService::create(&main_db, &login, command)
+        .await
+        .c(h!())?;
     Ok(Json(map_device_details(device)))
 }
 
@@ -149,8 +175,12 @@ pub(in crate::devices) async fn update(
         unit_id: map_nullable_patch(body.unit_id),
     };
     let main_db = MainDb::new(&env.dbx);
-    let login = access::resolve_current_login(&main_db, &user).await?;
-    let device = DeviceService::update(&main_db, &login, command).await?;
+    let login = access::resolve_current_login(&main_db, &user)
+        .await
+        .c(h!())?;
+    let device = DeviceService::update(&main_db, &login, command)
+        .await
+        .c(h!())?;
     Ok(Json(map_device_details(device)))
 }
 

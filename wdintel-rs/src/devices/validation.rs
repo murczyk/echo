@@ -4,7 +4,8 @@ use crate::config::{
     DEVICE_LIST_DEFAULT_LIMIT, DEVICE_LIST_MAX_LIMIT, DEVICE_NAME_MAX_CHARS,
     DEVICE_SOURCE_LABEL_MAX_CHARS,
 };
-use crate::types::{AppError, BTreeMap, BTreeSet};
+use crate::h;
+use crate::types::{AppError, BTreeMap, BTreeSet, ShortContext};
 use url::Url;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -36,7 +37,7 @@ pub fn normalize_device_name(name: &str) -> Result<String, AppError> {
     if name.is_empty() {
         return Err(form_error("name", "Назва не може бути порожньою"));
     }
-    validate_max_chars("name", &name, DEVICE_NAME_MAX_CHARS)?;
+    validate_max_chars("name", &name, DEVICE_NAME_MAX_CHARS).c(h!())?;
     Ok(name)
 }
 
@@ -52,7 +53,8 @@ pub fn normalize_source_label(source_label: &str) -> Result<String, AppError> {
         "source_label",
         &source_label,
         DEVICE_SOURCE_LABEL_MAX_CHARS,
-    )?;
+    )
+    .c(h!())?;
     Ok(source_label)
 }
 
@@ -68,16 +70,17 @@ pub(in crate::devices) fn validate_custom_fields_count(
 pub fn normalize_custom_fields(
     custom_fields: BTreeMap<String, String>,
 ) -> Result<BTreeMap<String, String>, AppError> {
-    validate_custom_fields_count(&custom_fields)?;
+    validate_custom_fields_count(&custom_fields).c(h!())?;
 
     let mut normalized = BTreeMap::new();
     for (key, value) in custom_fields {
-        let key = normalize_custom_field_key(&key)?;
+        let key = normalize_custom_field_key(&key).c(h!())?;
         validate_max_chars(
             "custom_fields",
             &value,
             DEVICE_CUSTOM_FIELD_VALUE_MAX_CHARS,
-        )?;
+        )
+        .c(h!())?;
         if normalized.insert(key, value).is_some() {
             return Err(form_error(
                 "custom_fields",
@@ -97,13 +100,14 @@ pub fn normalize_custom_fields_patch(
 
     let mut normalized = BTreeMap::new();
     for (key, value) in custom_fields {
-        let key = normalize_custom_field_key(&key)?;
+        let key = normalize_custom_field_key(&key).c(h!())?;
         if let Some(value) = &value {
             validate_max_chars(
                 "custom_fields",
                 value,
                 DEVICE_CUSTOM_FIELD_VALUE_MAX_CHARS,
-            )?;
+            )
+            .c(h!())?;
         }
         if normalized.insert(key, value).is_some() {
             return Err(form_error(
@@ -127,7 +131,8 @@ fn normalize_custom_field_key(key: &str) -> Result<String, AppError> {
         "custom_fields",
         &key,
         DEVICE_CUSTOM_FIELD_KEY_MAX_CHARS,
-    )?;
+    )
+    .c(h!())?;
     Ok(key)
 }
 
@@ -151,11 +156,14 @@ fn normalize_nonempty_external_url(
         "external_url",
         external_url,
         DEVICE_EXTERNAL_URL_MAX_CHARS,
-    )?;
+    )
+    .c(h!())?;
 
-    let external_url = Url::parse(external_url).map_err(|_| {
-        form_error("external_url", "Посилання має бути абсолютним URL")
-    })?;
+    let external_url = Url::parse(external_url)
+        .map_err(|_| {
+            form_error("external_url", "Посилання має бути абсолютним URL")
+        })
+        .c(h!())?;
     if !matches!(external_url.scheme(), "http" | "https")
         || external_url.host_str().is_none()
     {
@@ -170,7 +178,8 @@ fn normalize_nonempty_external_url(
         "external_url",
         &external_url,
         DEVICE_EXTERNAL_URL_MAX_CHARS,
-    )?;
+    )
+    .c(h!())?;
     Ok(external_url)
 }
 

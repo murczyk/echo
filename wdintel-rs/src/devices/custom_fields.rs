@@ -1,4 +1,5 @@
-use crate::types::{AppError, BTreeMap};
+use crate::h;
+use crate::types::{AppError, BTreeMap, ShortContext};
 use serde_json::{Map, Value};
 
 pub(super) fn custom_fields_to_json(
@@ -15,20 +16,26 @@ pub(super) fn custom_fields_to_json(
 pub(super) fn custom_fields_from_json(
     custom_fields: &Value,
 ) -> Result<BTreeMap<String, String>, AppError> {
-    let custom_fields = custom_fields.as_object().ok_or_else(|| {
-        AppError::from(anyhow::anyhow!(
-            "device custom_fields must be a JSON object"
-        ))
-    })?;
+    let custom_fields = custom_fields
+        .as_object()
+        .ok_or_else(|| {
+            AppError::from(anyhow::anyhow!(
+                "device custom_fields must be a JSON object"
+            ))
+        })
+        .c(h!())?;
 
     custom_fields
         .iter()
         .map(|(key, value)| {
-            let value = value.as_str().ok_or_else(|| {
-                AppError::from(anyhow::anyhow!(
-                    "device custom_fields value for {key:?} must be a string"
-                ))
-            })?;
+            let value = value
+                .as_str()
+                .ok_or_else(|| {
+                    AppError::from(anyhow::anyhow!(
+                        "device custom_fields value for {key:?} must be a string"
+                    ))
+                })
+                .c(h!())?;
             Ok((key.clone(), value.to_owned()))
         })
         .collect()
@@ -38,7 +45,7 @@ pub(super) fn apply_custom_fields_patch(
     current: &Value,
     patch: BTreeMap<String, Option<String>>,
 ) -> Result<Value, AppError> {
-    let mut custom_fields = custom_fields_from_json(current)?;
+    let mut custom_fields = custom_fields_from_json(current).c(h!())?;
     for (key, value) in patch {
         match value {
             Some(value) => {

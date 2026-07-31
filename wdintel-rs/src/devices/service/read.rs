@@ -32,8 +32,10 @@ impl DeviceService {
     ) -> Result<DeviceCurrentState, AppError> {
         let device =
             visibility::find_visible_device(main_db, login, device_id, scope)
-                .await?;
-        let mut devices = hydrate_devices(main_db, vec![device]).await?;
+                .await
+                .c(h!())?;
+        let mut devices =
+            hydrate_devices(main_db, vec![device]).await.c(h!())?;
         Ok(devices
             .pop()
             .ok_or_else(|| anyhow::anyhow!("device hydrator lost its input"))
@@ -45,15 +47,17 @@ impl DeviceService {
         login: &login::Model,
         command: ListDevicesCommand,
     ) -> Result<ListDevicesResult, AppError> {
-        let command = normalize_list_command(command)?;
+        let command = normalize_list_command(command).c(h!())?;
         let query = apply_list_filters(
             visibility::visible_devices_query(
                 login,
                 DeviceReadScope::IncludeArchived,
-            )?,
+            )
+            .c(h!())?,
             &command,
         );
-        let status_counts = load_status_counts(main_db, query.clone()).await?;
+        let status_counts =
+            load_status_counts(main_db, query.clone()).await.c(h!())?;
         let query = apply_archived_scope(query, command.archived_scope);
         let total = query.clone().count(main_db.connection()).await.c(h!())?;
         let devices = apply_list_sort(query, &command.sort_by)
@@ -64,7 +68,7 @@ impl DeviceService {
             .c(h!())?;
         let has_more =
             command.offset.saturating_add(devices.len() as u64) < total;
-        let devices = hydrate_devices(main_db, devices).await?;
+        let devices = hydrate_devices(main_db, devices).await.c(h!())?;
 
         Ok(ListDevicesResult {
             devices,
@@ -81,7 +85,8 @@ impl DeviceService {
         let units = visibility::visible_devices_query(
             login,
             DeviceReadScope::ActiveOnly,
-        )?
+        )
+        .c(h!())?
         .join(JoinType::InnerJoin, device::Relation::SigintUnit.def())
         .filter(sigint_unit::Column::Active.eq(true))
         .filter(sigint_unit::Column::Deleted.eq(false))
@@ -132,8 +137,9 @@ where
 
     let device_ids = devices.iter().map(|device| device.id).collect();
     let unit_ids = devices.iter().filter_map(|device| device.unit_id).collect();
-    let mut aors_by_device = load_device_aors(main_db, device_ids).await?;
-    let unit_names = load_unit_names(main_db, unit_ids).await?;
+    let mut aors_by_device =
+        load_device_aors(main_db, device_ids).await.c(h!())?;
+    let unit_names = load_unit_names(main_db, unit_ids).await.c(h!())?;
 
     devices
         .into_iter()
@@ -207,7 +213,8 @@ fn hydrate_device(
     unit_names: &BTreeMap<i64, String>,
 ) -> Result<DeviceCurrentState, AppError> {
     let device_id = device.id;
-    let custom_fields = custom_fields_from_json(&device.custom_fields)?;
+    let custom_fields =
+        custom_fields_from_json(&device.custom_fields).c(h!())?;
     let unit = match device.unit_id {
         Some(unit_id) => Some(DeviceUnitReference {
             id: unit_id,
@@ -275,7 +282,8 @@ fn normalize_list_command(
     command: ListDevicesCommand,
 ) -> Result<NormalizedListDevicesCommand, AppError> {
     let pagination =
-        normalize_device_list_pagination(command.limit, command.offset)?;
+        normalize_device_list_pagination(command.limit, command.offset)
+            .c(h!())?;
     let filter_text = command
         .filter_text
         .map(|value| value.trim().to_string())
@@ -304,7 +312,7 @@ fn normalize_list_command(
             .collect(),
         limit: pagination.limit,
         offset: pagination.offset,
-        sort_by: normalize_list_sort(command.sort_by)?,
+        sort_by: normalize_list_sort(command.sort_by).c(h!())?,
     })
 }
 

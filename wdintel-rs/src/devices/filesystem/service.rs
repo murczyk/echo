@@ -17,6 +17,8 @@ use crate::devices::visibility::{self, FileRegistryDeviceAccess};
 use crate::entities::login;
 use crate::error::AppError;
 use crate::file_registry::FileRegistryDb;
+use crate::h;
+use crate::types::ShortContext;
 use sea_orm::DatabaseConnection;
 use uuid::Uuid;
 
@@ -35,7 +37,8 @@ impl FileMetadataService {
             device_id,
             FileRegistryDeviceAccess::Read,
         )
-        .await?;
+        .await
+        .c(h!())?;
 
         FilesystemRepository::new(file_registry_db)
             .list_roots(device_id)
@@ -59,9 +62,11 @@ impl FileMetadataService {
             device_id,
             FileRegistryDeviceAccess::Read,
         )
-        .await?;
+        .await
+        .c(h!())?;
         validate_subtree_count_directories(&directory_entry_ids)
-            .map_err(map_read_error)?;
+            .map_err(map_read_error)
+            .c(h!())?;
 
         FilesystemRepository::new(file_registry_db)
             .count_file_subtrees(
@@ -90,12 +95,14 @@ impl FileMetadataService {
             device_id,
             FileRegistryDeviceAccess::Read,
         )
-        .await?;
+        .await
+        .c(h!())?;
         let repository = FilesystemRepository::new(file_registry_db);
         let after = match cursor {
             Some(cursor) => {
-                let boundary_file_id =
-                    FileCursorCodec::decode(&cursor).map_err(map_read_error)?;
+                let boundary_file_id = FileCursorCodec::decode(&cursor)
+                    .map_err(map_read_error)
+                    .c(h!())?;
                 Some(
                     repository
                         .resolve_file_journal_cursor(
@@ -103,17 +110,20 @@ impl FileMetadataService {
                             boundary_file_id,
                         )
                         .await
-                        .map_err(map_read_error)?,
+                        .map_err(map_read_error)
+                        .c(h!())?,
                 )
             }
             None => None,
         };
-        let page =
-            KeysetPageRequest::try_new(limit, after).map_err(map_read_error)?;
+        let page = KeysetPageRequest::try_new(limit, after)
+            .map_err(map_read_error)
+            .c(h!())?;
         let (page, total_count) = repository
             .list_file_journal_with_total(device_id, page)
             .await
-            .map_err(map_read_error)?;
+            .map_err(map_read_error)
+            .c(h!())?;
 
         Ok(JournalFilesResult {
             total_count,
@@ -143,16 +153,19 @@ impl FileMetadataService {
             device_id,
             FileRegistryDeviceAccess::Read,
         )
-        .await?;
+        .await
+        .c(h!())?;
         let repository = FilesystemRepository::new(file_registry_db);
         let scope = repository
             .find_directory_scope(device_id, parent_entry_id)
             .await
-            .map_err(map_read_error)?;
+            .map_err(map_read_error)
+            .c(h!())?;
         let after = match cursor {
             Some(cursor) => {
-                let boundary_entry_id =
-                    FileCursorCodec::decode(&cursor).map_err(map_read_error)?;
+                let boundary_entry_id = FileCursorCodec::decode(&cursor)
+                    .map_err(map_read_error)
+                    .c(h!())?;
                 let query_scope = EntryQueryScope::Browse(&scope);
                 Some(
                     repository
@@ -161,26 +174,31 @@ impl FileMetadataService {
                             &query_scope,
                         )
                         .await
-                        .map_err(map_read_error)?,
+                        .map_err(map_read_error)
+                        .c(h!())?,
                 )
             }
             None => None,
         };
-        let page =
-            KeysetPageRequest::try_new(limit, after).map_err(map_read_error)?;
+        let page = KeysetPageRequest::try_new(limit, after)
+            .map_err(map_read_error)
+            .c(h!())?;
         let page = repository
             .list_children(&scope, page)
             .await
-            .map_err(map_read_error)?;
+            .map_err(map_read_error)
+            .c(h!())?;
         let entry_path_components = repository
             .load_path_components(&page.entries)
             .await
-            .map_err(map_read_error)?;
+            .map_err(map_read_error)
+            .c(h!())?;
         let breadcrumbs = if include_breadcrumbs {
             repository
                 .list_breadcrumbs(&scope)
                 .await
-                .map_err(map_read_error)?
+                .map_err(map_read_error)
+                .c(h!())?
         } else {
             Vec::new()
         };
@@ -214,18 +232,22 @@ impl FileMetadataService {
             device_id,
             FileRegistryDeviceAccess::Read,
         )
-        .await?;
-        let filters =
-            FileSearchFilters::try_from(filters).map_err(map_read_error)?;
+        .await
+        .c(h!())?;
+        let filters = FileSearchFilters::try_from(filters)
+            .map_err(map_read_error)
+            .c(h!())?;
         let repository = FilesystemRepository::new(file_registry_db);
         let scope = repository
             .find_directory_scope(device_id, scope_entry_id)
             .await
-            .map_err(map_read_error)?;
+            .map_err(map_read_error)
+            .c(h!())?;
         let after = match cursor {
             Some(cursor) => {
-                let boundary_entry_id =
-                    FileCursorCodec::decode(&cursor).map_err(map_read_error)?;
+                let boundary_entry_id = FileCursorCodec::decode(&cursor)
+                    .map_err(map_read_error)
+                    .c(h!())?;
                 let query_scope = EntryQueryScope::Search {
                     directory: &scope,
                     filters: &filters,
@@ -237,17 +259,20 @@ impl FileMetadataService {
                             &query_scope,
                         )
                         .await
-                        .map_err(map_read_error)?,
+                        .map_err(map_read_error)
+                        .c(h!())?,
                 )
             }
             None => None,
         };
-        let page =
-            KeysetPageRequest::try_new(limit, after).map_err(map_read_error)?;
+        let page = KeysetPageRequest::try_new(limit, after)
+            .map_err(map_read_error)
+            .c(h!())?;
         let page = repository
             .search_entries(&scope, &filters, page)
             .await
-            .map_err(map_read_error)?;
+            .map_err(map_read_error)
+            .c(h!())?;
 
         Ok(SearchFilesResult {
             entries: page.entries,
@@ -262,9 +287,10 @@ impl FileMetadataService {
         login: &login::Model,
         command: SyncFilesCommand,
     ) -> Result<SyncFilesResult, AppError> {
-        access::require_source_write(&login.roles)?;
+        access::require_source_write(&login.roles).c(h!())?;
         validate_sync_batch_size(command.files.len())
-            .map_err(map_sync_error)?;
+            .map_err(map_sync_error)
+            .c(h!())?;
         let duplicate_file_ids = duplicate_file_ids(&command.files);
         let SyncFilesCommand {
             device_id,
@@ -277,7 +303,8 @@ impl FileMetadataService {
             device_id,
             FileRegistryDeviceAccess::SourceWrite,
         )
-        .await?;
+        .await
+        .c(h!())?;
 
         let repository = FilesystemRepository::new(file_registry_db);
         sync_files(

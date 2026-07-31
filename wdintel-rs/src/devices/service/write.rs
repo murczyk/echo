@@ -33,19 +33,21 @@ impl DeviceService {
         login: &login::Model,
         command: CreateDeviceCommand,
     ) -> Result<DeviceCurrentState, AppError> {
-        access::require_source_write(&login.roles)?;
+        access::require_source_write(&login.roles).c(h!())?;
 
         let CreateDeviceCommand {
             source_label,
             external_url,
             custom_fields,
         } = command;
-        let source_label = normalize_source_label(&source_label)?;
+        let source_label = normalize_source_label(&source_label).c(h!())?;
         let external_url = external_url
             .map(normalize_present_external_url)
-            .transpose()?;
+            .transpose()
+            .c(h!())?;
         let custom_fields =
-            normalize_custom_fields(custom_fields.unwrap_or_default())?;
+            normalize_custom_fields(custom_fields.unwrap_or_default())
+                .c(h!())?;
         let device_id = Uuid::now_v7();
         let now = Utc::now().naive_utc();
 
@@ -57,7 +59,7 @@ impl DeviceService {
                 source_label: Set(source_label),
                 name: Set(None),
                 created_by: Set(login.login.clone()),
-                organism_id: Set(access::organism_id(login)?),
+                organism_id: Set(access::organism_id(login).c(h!())?),
                 unit_id: Set(None),
                 tags: Set(serde_json::json!([])),
                 external_url: Set(external_url),
@@ -70,8 +72,9 @@ impl DeviceService {
             .insert(transaction_db.connection())
             .await
             .c(h!())?;
-            let mut states =
-                hydrate_devices(&transaction_db, vec![device]).await?;
+            let mut states = hydrate_devices(&transaction_db, vec![device])
+                .await
+                .c(h!())?;
             states
                 .pop()
                 .ok_or_else(|| {
@@ -91,11 +94,11 @@ impl DeviceService {
         command: UpdateDeviceCommand,
     ) -> Result<DeviceCurrentState, AppError> {
         let field_groups = command.field_groups();
-        access::require_field_groups(&login.roles, field_groups)?;
+        access::require_field_groups(&login.roles, field_groups).c(h!())?;
         if command.is_structurally_empty() {
             return Err(empty_patch_error());
         }
-        let command = normalize_update_command(command)?;
+        let command = normalize_update_command(command).c(h!())?;
 
         let transaction = main_db.connection().begin().await.c(h!())?;
         let state = {
@@ -105,12 +108,16 @@ impl DeviceService {
                 login,
                 command.device_id,
             )
-            .await?;
-            lock_references(&transaction_db, &command).await?;
+            .await
+            .c(h!())?;
+            lock_references(&transaction_db, &command).await.c(h!())?;
             let current_aor_ids =
-                load_current_aor_ids(&transaction_db, device.id).await?;
+                load_current_aor_ids(&transaction_db, device.id)
+                    .await
+                    .c(h!())?;
             let changes =
-                collect_device_changes(&device, current_aor_ids, command)?;
+                collect_device_changes(&device, current_aor_ids, command)
+                    .c(h!())?;
 
             let next_device = if changes.is_empty() {
                 device
@@ -123,13 +130,17 @@ impl DeviceService {
                         aor_ids,
                         now,
                     )
-                    .await?;
+                    .await
+                    .c(h!())?;
                 }
                 apply_device_changes(&transaction_db, device.id, changes, now)
-                    .await?
+                    .await
+                    .c(h!())?
             };
             let mut states =
-                hydrate_devices(&transaction_db, vec![next_device]).await?;
+                hydrate_devices(&transaction_db, vec![next_device])
+                    .await
+                    .c(h!())?;
             states
                 .pop()
                 .ok_or_else(|| {
@@ -180,24 +191,29 @@ fn normalize_update_command(
         source_label: normalize_patch_field(
             command.source_label,
             |source_label| normalize_source_label(&source_label),
-        )?,
+        )
+        .c(h!())?,
         external_url: normalize_patch_field(
             command.external_url,
             |external_url| {
                 external_url.map(normalize_present_external_url).transpose()
             },
-        )?,
+        )
+        .c(h!())?,
         custom_fields: normalize_patch_field(
             command.custom_fields,
             normalize_custom_fields_patch,
-        )?,
+        )
+        .c(h!())?,
         name: normalize_patch_field(command.name, |name| {
             name.map(|name| normalize_device_name(&name)).transpose()
-        })?,
+        })
+        .c(h!())?,
         aor_ids: normalize_patch_field(
             command.aor_ids,
             normalize_unique_aor_ids,
-        )?,
+        )
+        .c(h!())?,
         unit_id: command.unit_id,
     })
 }
@@ -209,7 +225,7 @@ fn normalize_patch_field<T, U>(
     match field {
         DevicePatchField::Missing => Ok(DevicePatchField::Missing),
         DevicePatchField::Value(value) => {
-            Ok(DevicePatchField::Value(normalize(value)?))
+            Ok(DevicePatchField::Value(normalize(value).c(h!())?))
         }
     }
 }
@@ -302,12 +318,12 @@ fn collect_device_changes(
     };
     let custom_fields = match command.custom_fields {
         DevicePatchField::Value(custom_fields) => {
-            let custom_fields = apply_custom_fields_patch(
-                &device.custom_fields,
-                custom_fields,
-            )?;
-            let final_custom_fields = custom_fields_from_json(&custom_fields)?;
-            validate_custom_fields_count(&final_custom_fields)?;
+            let custom_fields =
+                apply_custom_fields_patch(&device.custom_fields, custom_fields)
+                    .c(h!())?;
+            let final_custom_fields =
+                custom_fields_from_json(&custom_fields).c(h!())?;
+            validate_custom_fields_count(&final_custom_fields).c(h!())?;
             (custom_fields != device.custom_fields).then_some(custom_fields)
         }
         DevicePatchField::Missing => None,
