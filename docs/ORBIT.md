@@ -76,7 +76,8 @@ that are absent from the new export. Do not delete the latest snapshot or edit
 dictionary UUIDs unless deliberately starting a new dictionary identity set.
 
 In live mode, archives are stored under `orbit-import/` inside
-`ai_models_config.prefix` in the S3 bucket from `ai_models_config.s3_config`. In debug and test modes, they are stored under
+`ai_models_config.prefix` in the S3 bucket from `ai_models_config.s3_config`.
+In debug and test modes, they are stored under
 `<storage_dir>/orbit-import/`. Live mode reads `/etc/echo/config.toml` by
 default; set `ECHO_CONFIG_PATH` to use another configuration file.
 
