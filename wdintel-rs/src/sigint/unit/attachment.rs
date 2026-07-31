@@ -79,7 +79,10 @@ pub async fn upload_unit_attachment(
     ensure_admin(&env.dbx, &user).await.c(h!())?;
     ensure_attachment_storage_configured(&env)?;
     let login = login_id_from_identity(&user)?;
-    let upload = parse_attachment_upload(payload).await?;
+    let upload = parse_attachment_upload(payload).await.map_err(|err| {
+        error!("failed to parse unit attachment upload: {err:#?}");
+        err
+    })?;
     validate_upload_target(&env.dbx, upload.unit_id, &upload.aor_ids).await?;
 
     let storage_key = crate::messenger::media::store_asset(
@@ -89,11 +92,23 @@ pub async fn upload_unit_attachment(
         Some(&upload.file.content_type),
     )
     .await
-    .c(h!())?;
+    .c(h!())
+    .map_err(|err| {
+        error!(
+            "failed to store unit attachment: unit_id={} file_name={:?} size_bytes={}: {err:#?}",
+            upload.unit_id,
+            upload.file.file_name,
+            upload.file.bytes.len(),
+        );
+        err
+    })?;
 
     match insert_attachment(&env, &login, upload, storage_key.clone()).await {
         Ok(attachment) => Ok(Json(attachment)),
         Err(err) => {
+            error!(
+                "failed to save unit attachment metadata: storage_key={storage_key}: {err:#?}"
+            );
             delete_stored_asset_best_effort(&env, &storage_key).await;
             Err(err)
         }
