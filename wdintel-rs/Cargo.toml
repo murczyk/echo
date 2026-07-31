@@ -37,6 +37,9 @@ tempfile = "3.27.0"
 walkdir = "^2.5.0"
 zip = "4.6.1"
 opendal = { version = "0.54", features = ["services-s3", "services-fs"] }
+arrow-array = "59.1.0"
+arrow-schema = "59.1.0"
+parquet = { version = "59.1.0", features = ["arrow"] }
 tokio = { workspace = true }
 tokio-util = { version = "0.7.18", features = ["io"] }
 nipper = "0.1"

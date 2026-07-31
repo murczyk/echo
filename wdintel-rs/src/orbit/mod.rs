@@ -6,19 +6,29 @@ use crate::types::{Mode, ShortContext};
 use crate::{h, new_pg_pool_from_mode};
 use anyhow::Context;
 use chrono::Utc;
-use dialoguer::{theme::ColorfulTheme, Confirm};
 use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
 use std::collections::{BTreeSet, HashMap, HashSet};
-use std::path::Path;
-use tokio::fs;
+use std::path::PathBuf;
 use uuid::Uuid;
 
 mod dictionary;
 mod hierarchy;
 mod matching;
 mod persistence;
+mod snapshot;
 mod tui;
 mod types;
+
+pub async fn prepare_import_snapshot(
+    mode: Mode,
+    source_path: PathBuf,
+) -> anyhow::Result<()> {
+    let location = snapshot::prepare_snapshot(mode, &source_path)
+        .await
+        .c(h!())?;
+    println!("{location}");
+    Ok(())
+}
 
 pub async fn run_import_tui(mode: Mode) -> Result<(), AppError> {
     Ok(run_selected_action(mode).await.c(h!())?)
@@ -26,35 +36,24 @@ pub async fn run_import_tui(mode: Mode) -> Result<(), AppError> {
 
 async fn run_selected_action(mode: Mode) -> anyhow::Result<()> {
     match tui::prompt_start_action()? {
-        Some(tui::StartAction::Import) => {
-            run_import(mode).await.context("ORBIT file import failed")
+        Some(tui::StartAction::Import) => run_import(mode).await.c(h!()),
+        Some(tui::StartAction::FindMatch) => {
+            run_match_search(mode).await.c(h!())
         }
-        Some(tui::StartAction::FindMatch) => run_match_search(mode)
-            .await
-            .context("ORBIT match search failed"),
         None => Ok(()),
     }
 }
 
 async fn run_import(mode: Mode) -> anyhow::Result<()> {
-    let Some(path) = tui::prompt_path()? else {
-        return Ok(());
-    };
-    let units = load_source(&path).await?;
-
+    let snapshot = snapshot::load_latest_snapshot(mode).await?;
     let db = connect_database(mode).await?;
+    dictionary::ensure_dictionary_entries(&db, &snapshot.dictionaries)
+        .await
+        .c(h!())?;
     let dictionaries = DictionaryMaps::load(&db)
         .await
         .c("failed to load ORBIT dictionaries")?;
-    let missing = dictionary::missing_dictionary_values(&units, &dictionaries)
-        .context("failed to validate ORBIT dictionary values")?;
-    if !missing.is_empty() {
-        dictionary::print_dictionary_migration(
-            &missing,
-            Utc::now().naive_utc(),
-        );
-        return Ok(());
-    }
+    let units = snapshot.units;
 
     let sigint_units = sigint_unit::Entity::find()
         .filter(sigint_unit::Column::Deleted.eq(false))
@@ -133,10 +132,8 @@ async fn run_match_search(mode: Mode) -> anyhow::Result<()> {
         println!("No active SIGINT unit has full name: {search_term}");
         return Ok(());
     };
-    let Some(path) = tui::prompt_path()? else {
-        return Ok(());
-    };
-    let units = load_source(&path).await?;
+    let snapshot = snapshot::load_latest_snapshot(mode).await?;
+    let units = snapshot.units;
     let candidates = matching::closest_orbit_matches(&units, &sigint_unit);
     if candidates.is_empty() {
         println!("No ORBIT matches found for: {search_term}");
@@ -164,39 +161,15 @@ async fn run_match_search(mode: Mode) -> anyhow::Result<()> {
         return Ok(());
     };
     let selected = candidates[selected];
+    dictionary::ensure_dictionary_entries(&db, &snapshot.dictionaries)
+        .await
+        .c(h!())?;
     import_selected_match(&db, &units, selected, sigint_unit.id).await?;
     println!(
         "Linked SIGINT unit {} to ORBIT unit {}",
         sigint_unit.id, selected.unit_id
     );
     Ok(())
-}
-
-async fn load_source(path: &Path) -> anyhow::Result<Vec<types::SourceUnit>> {
-    log::info!("reading ORBIT export from {}", path.display());
-    let input = fs::read_to_string(path).await.with_context(|| {
-        format!("failed to read ORBIT export {}", path.display())
-    })?;
-    let (units, unknown_paths) =
-        types::parse_units(&input).with_context(|| {
-            format!("failed to parse ORBIT export {}", path.display())
-        })?;
-    confirm_unknown_paths(&path.display().to_string(), &unknown_paths)
-        .with_context(|| {
-            format!(
-                "failed to confirm unknown fields in ORBIT export {}",
-                path.display()
-            )
-        })?;
-    matching::validate_source(&units).with_context(|| {
-        format!("failed to validate ORBIT export {}", path.display())
-    })?;
-    log::info!(
-        "validated {} top-level ORBIT units from {}",
-        units.len(),
-        path.display()
-    );
-    Ok(units)
 }
 
 async fn connect_database(
@@ -271,20 +244,6 @@ async fn import_selected_match(
     let dictionaries = DictionaryMaps::load(db)
         .await
         .c("failed to load ORBIT dictionaries")?;
-    let missing = dictionary::missing_dictionary_values(
-        std::slice::from_ref(selected),
-        &dictionaries,
-    )
-    .context("failed to validate the selected ORBIT hierarchy dictionaries")?;
-    if !missing.is_empty() {
-        dictionary::print_dictionary_migration(
-            &missing,
-            Utc::now().naive_utc(),
-        );
-        anyhow::bail!(
-            "selected ORBIT hierarchy contains missing dictionary values"
-        );
-    }
     let hierarchy = hierarchy::build_import_hierarchy(
         units,
         &HashSet::from([selected.unit_id]),
@@ -345,27 +304,6 @@ async fn import_selected_match(
             "failed to link SIGINT unit {sigint_unit_id} to ORBIT unit {}",
             selected.unit_id
         ))?;
-    Ok(())
-}
-
-fn confirm_unknown_paths(
-    source_path: &str,
-    unknown_paths: &[String],
-) -> anyhow::Result<()> {
-    if unknown_paths.is_empty() {
-        return Ok(());
-    }
-    println!("WARNING: unknown properties in {source_path}:");
-    for path in unknown_paths {
-        println!("  - {path}");
-    }
-    let proceed = Confirm::with_theme(&ColorfulTheme::default())
-        .with_prompt("Continue while ignoring these properties?")
-        .default(false)
-        .interact()?;
-    if !proceed {
-        anyhow::bail!("ORBIT import cancelled because of unknown properties");
-    }
     Ok(())
 }
 

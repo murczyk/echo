@@ -4,8 +4,7 @@ use crate::entities::{
 use crate::orbit::types::{DictionaryValue, SourceUnit};
 use crate::types::ShortContext;
 use crate::{h, AppError};
-use chrono::NaiveDateTime;
-use sea_orm::{DatabaseConnection, EntityTrait};
+use sea_orm::{ActiveValue::Set, DatabaseConnection, EntityTrait};
 use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use uuid::Uuid;
@@ -22,6 +21,15 @@ pub enum DictionaryKind {
     CombatUnitType,
     UnitEchelon,
 }
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DictionaryEntry {
+    pub id: Uuid,
+    pub key: String,
+    pub name: String,
+}
+
+pub type DictionaryEntries = BTreeMap<DictionaryKind, Vec<DictionaryEntry>>;
 
 #[derive(Debug, Clone)]
 pub struct DictionaryMaps {
@@ -155,18 +163,6 @@ impl DictionaryMaps {
             summaries.join(", ")
         }
     }
-
-    fn contains(&self, kind: DictionaryKind, key: &DictionaryKey) -> bool {
-        match kind {
-            DictionaryKind::GroupingOfForces => {
-                self.grouping_of_forces.contains_key(key)
-            }
-            DictionaryKind::CombatUnitType => {
-                self.combat_unit_type.contains_key(key)
-            }
-            DictionaryKind::UnitEchelon => self.unit_echelon.contains_key(key),
-        }
-    }
 }
 
 impl DictionaryKind {
@@ -175,6 +171,202 @@ impl DictionaryKind {
             Self::GroupingOfForces => "orbit_grouping_of_forces",
             Self::CombatUnitType => "orbit_combat_unit_type",
             Self::UnitEchelon => "orbit_unit_echelon",
+        }
+    }
+
+    pub fn all() -> [Self; 3] {
+        [
+            Self::GroupingOfForces,
+            Self::CombatUnitType,
+            Self::UnitEchelon,
+        ]
+    }
+}
+
+pub async fn ensure_dictionary_entries(
+    db: &DatabaseConnection,
+    entries: &DictionaryEntries,
+) -> anyhow::Result<()> {
+    ensure_grouping_of_forces(
+        db,
+        entries
+            .get(&DictionaryKind::GroupingOfForces)
+            .map(Vec::as_slice)
+            .unwrap_or_default(),
+    )
+    .await
+    .c(h!())?;
+    ensure_combat_unit_types(
+        db,
+        entries
+            .get(&DictionaryKind::CombatUnitType)
+            .map(Vec::as_slice)
+            .unwrap_or_default(),
+    )
+    .await
+    .c(h!())?;
+    ensure_unit_echelons(
+        db,
+        entries
+            .get(&DictionaryKind::UnitEchelon)
+            .map(Vec::as_slice)
+            .unwrap_or_default(),
+    )
+    .await
+    .c(h!())?;
+    Ok(())
+}
+
+async fn ensure_grouping_of_forces(
+    db: &DatabaseConnection,
+    entries: &[DictionaryEntry],
+) -> anyhow::Result<()> {
+    let existing = orbit_grouping_of_forces::Entity::find()
+        .all(db)
+        .await
+        .c(h!())?;
+    validate_dictionary_ids(
+        DictionaryKind::GroupingOfForces,
+        entries,
+        existing.iter().map(|row| (row.id, &row.key, &row.name)),
+    )?;
+    let existing_keys = existing
+        .into_iter()
+        .map(|row| DictionaryKey {
+            key: row.key,
+            name: row.name,
+        })
+        .collect::<BTreeSet<_>>();
+    for entry in entries {
+        if existing_keys.contains(&entry.key_value()) {
+            continue;
+        }
+        orbit_grouping_of_forces::Entity::insert(
+            orbit_grouping_of_forces::ActiveModel {
+                id: Set(entry.id),
+                key: Set(entry.key.clone()),
+                name: Set(entry.name.clone()),
+                ..Default::default()
+            },
+        )
+        .exec(db)
+        .await
+        .c(h!())?;
+    }
+    Ok(())
+}
+
+async fn ensure_combat_unit_types(
+    db: &DatabaseConnection,
+    entries: &[DictionaryEntry],
+) -> anyhow::Result<()> {
+    let existing = orbit_combat_unit_type::Entity::find()
+        .all(db)
+        .await
+        .c(h!())?;
+    validate_dictionary_ids(
+        DictionaryKind::CombatUnitType,
+        entries,
+        existing.iter().map(|row| (row.id, &row.key, &row.name)),
+    )?;
+    let existing_keys = existing
+        .into_iter()
+        .map(|row| DictionaryKey {
+            key: row.key,
+            name: row.name,
+        })
+        .collect::<BTreeSet<_>>();
+    for entry in entries {
+        if existing_keys.contains(&entry.key_value()) {
+            continue;
+        }
+        orbit_combat_unit_type::Entity::insert(
+            orbit_combat_unit_type::ActiveModel {
+                id: Set(entry.id),
+                key: Set(entry.key.clone()),
+                name: Set(entry.name.clone()),
+                ..Default::default()
+            },
+        )
+        .exec(db)
+        .await
+        .c(h!())?;
+    }
+    Ok(())
+}
+
+async fn ensure_unit_echelons(
+    db: &DatabaseConnection,
+    entries: &[DictionaryEntry],
+) -> anyhow::Result<()> {
+    let existing = orbit_unit_echelon::Entity::find().all(db).await.c(h!())?;
+    validate_dictionary_ids(
+        DictionaryKind::UnitEchelon,
+        entries,
+        existing.iter().map(|row| (row.id, &row.key, &row.name)),
+    )?;
+    let existing_keys = existing
+        .into_iter()
+        .map(|row| DictionaryKey {
+            key: row.key,
+            name: row.name,
+        })
+        .collect::<BTreeSet<_>>();
+    for entry in entries {
+        if existing_keys.contains(&entry.key_value()) {
+            continue;
+        }
+        orbit_unit_echelon::Entity::insert(orbit_unit_echelon::ActiveModel {
+            id: Set(entry.id),
+            key: Set(entry.key.clone()),
+            name: Set(entry.name.clone()),
+            ..Default::default()
+        })
+        .exec(db)
+        .await
+        .c(h!())?;
+    }
+    Ok(())
+}
+
+fn validate_dictionary_ids<'a>(
+    kind: DictionaryKind,
+    entries: &[DictionaryEntry],
+    existing: impl Iterator<Item = (Uuid, &'a String, &'a String)>,
+) -> anyhow::Result<()> {
+    let existing = existing
+        .map(|(id, key, name)| {
+            (
+                id,
+                DictionaryKey {
+                    key: key.clone(),
+                    name: name.clone(),
+                },
+            )
+        })
+        .collect::<HashMap<_, _>>();
+    for entry in entries {
+        if let Some(value) = existing.get(&entry.id) {
+            anyhow::ensure!(
+                value == &entry.key_value(),
+                "ORBIT {} dictionary ID {} belongs to ({}, {}), not ({}, {})",
+                kind.table_name(),
+                entry.id,
+                value.key,
+                value.name,
+                entry.key,
+                entry.name
+            );
+        }
+    }
+    Ok(())
+}
+
+impl DictionaryEntry {
+    pub(crate) fn key_value(&self) -> DictionaryKey {
+        DictionaryKey {
+            key: self.key.clone(),
+            name: self.name.clone(),
         }
     }
 }
@@ -187,88 +379,6 @@ pub fn collect_dictionary_values(
         collect_unit_dictionary_values(unit, &mut result)?;
     }
     Ok(result)
-}
-
-pub fn missing_dictionary_values(
-    units: &[SourceUnit],
-    dictionaries: &DictionaryMaps,
-) -> anyhow::Result<BTreeMap<DictionaryKind, Vec<DictionaryKey>>> {
-    let values = collect_dictionary_values(units)?;
-    Ok(values
-        .into_iter()
-        .filter_map(|(kind, values)| {
-            let missing = values
-                .into_iter()
-                .filter(|value| !dictionaries.contains(kind, value))
-                .collect::<Vec<_>>();
-            (!missing.is_empty()).then_some((kind, missing))
-        })
-        .collect())
-}
-
-pub fn print_dictionary_migration(
-    missing: &BTreeMap<DictionaryKind, Vec<DictionaryKey>>,
-    started_at: NaiveDateTime,
-) {
-    println!("{}", format_dictionary_migration(missing, started_at));
-}
-
-fn format_dictionary_migration(
-    missing: &BTreeMap<DictionaryKind, Vec<DictionaryKey>>,
-    started_at: NaiveDateTime,
-) -> String {
-    let timestamp = started_at.format("%Y%m%d_%H%M%S");
-    let module = format!("m{timestamp}_add_orbit_dictionary_values");
-    let mut up_sql = String::new();
-    let mut inserted = Vec::new();
-    for (kind, values) in missing {
-        for value in values {
-            let id = Uuid::new_v4();
-            up_sql.push_str(&format!(
-                "insert into {} (id, key, name) values ('{}', '{}', '{}');\n",
-                kind.table_name(),
-                id,
-                escape_sql(&value.key),
-                escape_sql(&value.name),
-            ));
-            inserted.push((kind.table_name(), id));
-        }
-    }
-    let down_sql = inserted
-        .into_iter()
-        .rev()
-        .map(|(table, id)| format!("delete from {table} where id = '{id}';\n"))
-        .collect::<String>();
-    format!(
-        r###"
-New ORBIT dictionary values were found. Add this file as
-echo-migration/src/{module}.rs, register it, apply migrations, and rerun:
-
-use sea_orm_migration::prelude::*;
-
-#[derive(DeriveMigrationName)]
-pub struct Migration;
-
-#[async_trait::async_trait]
-impl MigrationTrait for Migration {{
-    async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {{
-        manager.get_connection().execute_unprepared(r##"
-{up_sql}"##).await?;
-        Ok(())
-    }}
-
-    async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {{
-        manager.get_connection().execute_unprepared(r##"
-{down_sql}"##).await?;
-        Ok(())
-    }}
-}}
-
-echo-migration/src/lib.rs:
-mod {module};
-Box::new({module}::Migration),
-"###
-    )
 }
 
 fn collect_unit_dictionary_values(
@@ -327,7 +437,7 @@ fn add_value(
     Ok(())
 }
 
-fn normalize_dictionary(
+pub fn normalize_dictionary(
     value: &DictionaryValue,
 ) -> anyhow::Result<DictionaryKey> {
     Ok(DictionaryKey {
@@ -387,15 +497,10 @@ fn canonicalize(value: &Value) -> Value {
     }
 }
 
-fn escape_sql(value: &str) -> String {
-    value.replace('\'', "''")
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::orbit::types::parse_units;
-    use chrono::NaiveDate;
     use serde_json::json;
 
     #[test]
@@ -428,24 +533,5 @@ mod tests {
                 name: "7".to_string(),
             }
         );
-    }
-
-    #[test]
-    fn migration_escapes_sql_and_includes_registration() {
-        let missing = BTreeMap::from([(
-            DictionaryKind::UnitEchelon,
-            vec![DictionaryKey {
-                key: "new'key".to_string(),
-                name: "New name".to_string(),
-            }],
-        )]);
-        let started_at = NaiveDate::from_ymd_opt(2026, 7, 29)
-            .unwrap()
-            .and_hms_opt(17, 5, 44)
-            .unwrap();
-        let output = format_dictionary_migration(&missing, started_at);
-        assert!(output.contains("new''key"));
-        assert!(output.contains("m20260729_170544_add_orbit_dictionary_values"));
-        assert!(output.contains("delete from orbit_unit_echelon where id ="));
     }
 }

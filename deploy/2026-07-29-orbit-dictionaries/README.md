@@ -1,15 +1,30 @@
 # ORBIT unit import
 
-Run the one-off importer on the target Echo instance:
+Prepare the normalized import snapshot from the ORBIT JSON export:
+
+```sh
+sudo wdintel-rs --mode=live oneoff-prepare-orbit-import \
+  --path /path/to/orbit-export.json
+```
+
+Live mode uploads the timestamped ZIP to
+`orbit-import/` in the bucket configured by
+`ai_models_config.s3_config`. Before reading the JSON, it downloads the latest
+existing snapshot and reuses its dictionary UUIDs. Every snapshot contains
+`orbit_units.parquet` and one Apache Parquet file for each ORBIT dictionary.
+
+Then run the TUI on the target Echo instance:
 
 ```sh
 sudo wdintel-rs --mode=live tui-import-orbit-units
 ```
 
-From a development checkout, use `--mode=debug` so the command reads
-`deploy/config.toml`:
+From a development checkout, use `--mode=debug`; snapshots are written to and
+read from `<storage_dir>/orbit-import/`:
 
 ```sh
+cargo run -p wdintel-rs -- --mode=debug oneoff-prepare-orbit-import \
+  --path /path/to/orbit-export.json
 cargo run -p wdintel-rs -- --mode=debug tui-import-orbit-units
 ```
 
@@ -17,29 +32,29 @@ cargo run -p wdintel-rs -- --mode=debug tui-import-orbit-units
 
 The first TUI screen offers:
 
-- import new ORBIT units from a JSON file;
+- import new ORBIT units from the latest normalized snapshot;
 - search an ORBIT unit by an exact Echo SIGINT unit full name.
 
-The import option then asks for the ORBIT JSON path and retains the existing
-review flow. The importer validates known fields and hierarchy paths before
-writing anything. Unknown properties are listed and require explicit
-confirmation.
+Both actions use the latest timestamped ZIP and never ask for a JSON path. The
+TUI fails with a storage location when no snapshot exists. JSON parsing,
+unknown-field rejection, hierarchy validation, dictionary collection, and
+stable-ID assignment happen in `oneoff-prepare-orbit-import`.
 
 The search option asks for the SIGINT full name first. If no active,
 non-deleted `sigint_unit` has that normalized full name, it prints the result
-without asking for or searching a JSON file. Otherwise it asks for the export,
-ranks ORBIT roots by matching hierarchy segments and root-echelon distance, and
-shows all equally closest results with their ORBIT unit IDs, operational full,
-generative full, and original names. Use Up/Down and Enter to select a result.
-The selected root and both parent chains are imported parent-first without the
-regular review or stale deletion pass. This manual selection replaces any
-existing ORBIT links for that SIGINT unit with the selected root.
+without loading a snapshot. Otherwise it ranks roots from the latest snapshot
+by matching hierarchy segments and root-echelon distance, and shows all equally
+closest results with their ORBIT unit IDs, operational full, generative full,
+and original names. Use Up/Down and Enter to select a result. The selected root
+and both parent chains are imported parent-first without the regular review or
+stale deletion pass. This manual selection replaces any existing ORBIT links
+for that SIGINT unit with the selected root.
 
-The importer discovers dictionary values in both root units and embedded
-parents. If a `(key, name)` value is absent from an `orbit_*` dictionary table,
-it prints a timestamped reversible migration and the required
-`echo-migration/src/lib.rs` registration snippets, then exits without importing
-units. Add and apply that migration before rerunning the command.
+The normalizer discovers dictionary values in both root units and embedded
+parents. It retains prior dictionary entries, reuses IDs by `(key, name)`, and
+generates UUIDs only for new entries. The TUI inserts missing snapshot
+dictionary rows before resolving units; existing PostgreSQL rows with the same
+`(key, name)` remain authoritative locally.
 Every value in a unit's `grouping_of_forces` array is retained through the
 `orbit_unit_grouping_of_forces` many-to-many relation.
 
@@ -89,17 +104,3 @@ updating only `updated_at`. After review, active rows older than the import
 start minus the five-second grace period are offered for soft deletion.
 Confirmed changes are persisted immediately; quitting stops future work and
 does not roll back earlier decisions.
-
-## Preparing dictionary migrations
-
-The version-controlled `dictionaries.json` is a developer aid, not a runtime
-input. To collect new values while preparing a migration, run this from the
-current directory:
-
-```sh
-just collect /path/to/orbit-export.json
-```
-
-Review the resulting dictionary diff and add the values through an
-`echo-migration` migration. Runtime imports resolve dictionaries from
-PostgreSQL.

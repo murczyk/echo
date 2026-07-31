@@ -18,7 +18,6 @@ use ratatui::widgets::{
 };
 use ratatui::{Frame, Terminal};
 use std::io::{self, Stdout};
-use std::path::PathBuf;
 use std::time::Duration;
 
 pub type OrbitTerminal = Terminal<CrosstermBackend<Stdout>>;
@@ -86,17 +85,6 @@ pub fn prompt_sigint_unit_name() -> Result<Option<String>, AppError> {
         &mut terminal,
         "Exact SIGINT unit full name (Enter: continue, Esc: quit)",
     );
-    restore_terminal(&mut terminal).c(h!())?;
-    result
-}
-
-pub fn prompt_path() -> Result<Option<PathBuf>, AppError> {
-    let mut terminal = setup_terminal().c(h!())?;
-    let result = run_text_prompt(
-        &mut terminal,
-        "ORBIT JSON path (Enter: continue, Esc: quit)",
-    )
-    .map(|path| path.map(PathBuf::from));
     restore_terminal(&mut terminal).c(h!())?;
     result
 }
@@ -304,7 +292,7 @@ fn run_match_selector(
 fn draw_start_menu(frame: &mut Frame<'_>, selected: usize) {
     let area = centered_area(frame, 70, 6);
     let options = [
-        "Import new ORBIT units from a JSON file",
+        "Import new ORBIT units from the latest snapshot",
         "Search an ORBIT unit by SIGINT unit name",
     ];
     let items = options.into_iter().map(ListItem::new);

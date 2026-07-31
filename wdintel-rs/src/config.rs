@@ -508,6 +508,14 @@ pub const SIGINT_INBOX_TUI_REFRESH_MS: u64 = 2000;
 pub const SIGINT_INBOX_TUI_EVENT_POLL_MS: u64 = 250;
 pub const ORBIT_TUI_EVENT_POLL_MS: u64 = 250;
 pub const ORBIT_STALE_GRACE_SECONDS: i64 = 5;
+pub const ORBIT_IMPORT_STORAGE_PREFIX: &str = "orbit-import";
+pub const ORBIT_IMPORT_UNITS_FILE_NAME: &str = "orbit_units.parquet";
+pub const ORBIT_IMPORT_GROUPING_OF_FORCES_FILE_NAME: &str =
+    "orbit_grouping_of_forces.parquet";
+pub const ORBIT_IMPORT_COMBAT_UNIT_TYPE_FILE_NAME: &str =
+    "orbit_combat_unit_type.parquet";
+pub const ORBIT_IMPORT_UNIT_ECHELON_FILE_NAME: &str =
+    "orbit_unit_echelon.parquet";
 pub const ORBIT_MATCHING_SIGINT_NAME_BLACKLIST: &[&str] =
     &["ТерО", "ТрО", "(ат)"];
 pub const SIGINT_INBOX_TUI_CHUNK_COUNT: usize = 10;

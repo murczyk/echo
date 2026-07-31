@@ -331,17 +331,25 @@ the configured cleanup period expires.
 
 ## ORBIT unit import
 
-ORBIT unit exports are imported manually with
-`wdintel-rs --mode=live tui-import-orbit-units`. Its startup menu offers the
-regular reviewed file import and manual lookup by exact SIGINT full name. The
-one-off flow validates the JSON and its dictionaries, filters roots by
+ORBIT ingestion is split into normalization and review. The
+`oneoff-prepare-orbit-import --path <export.json>` command validates the source,
+normalizes dictionary references to stable UUIDs, writes one Apache Parquet file
+per dictionary plus `orbit_units.parquet`, and packages them as a timestamped
+ZIP. Live mode keeps snapshots under `orbit-import/` in the
+`ai_models_config.s3_config` bucket; debug and test modes keep them under
+`<storage_dir>/orbit-import/`. A new snapshot reuses dictionary UUIDs from the
+latest previous snapshot and retains old dictionary entries.
+
+`wdintel-rs --mode=live tui-import-orbit-units` downloads and unpacks the latest
+snapshot, synchronizes its dictionary rows to PostgreSQL, and offers the regular
+reviewed import or manual lookup by exact SIGINT full name. It fails before
+opening the import flow when no snapshot exists. The TUI filters roots by
 echelon-aware matching against active `sigint_unit` rows, expands both ancestor
-chains, and presents create/update/reactivate decisions for matched roots in a
-terminal UI.
+chains, and presents create/update/reactivate decisions for matched roots.
 Ancestors are persisted automatically in parent-first order; stale deletion
 decisions remain interactive. Confirmed decisions are written immediately to
 the PostgreSQL `orbit_unit` table and its many-to-many force-grouping links;
-dictionary rows are supplied by migrations.
+dictionary rows are supplied by the normalized snapshot.
 After a completed import, matched ORBIT roots are linked to their active Echo
 SIGINT units for access-controlled display in the RER unit list and details
 page. `orbit_unit_sigint_unit` permits multiple ORBIT links per SIGINT unit.
@@ -354,7 +362,7 @@ parent-path ties. Retained ORBIT roots are rendered as separate cards.
 The six ORBIT tables are authoritative operational data in PostgreSQL and are
 excluded from PeerDB replication. See the
 [ORBIT import runbook](../deploy/2026-07-29-orbit-dictionaries/README.md) for
-dictionary preflight, matching, review, quit, and stale-row semantics.
+snapshot preparation, matching, review, quit, and stale-row semantics.
 
 ## Optional analytics LXC systemd graph
 

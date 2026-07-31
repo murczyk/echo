@@ -703,6 +703,12 @@ pub struct ImportTuiPs {
     pub path: String,
 }
 
+#[derive(clap::Args, Debug, Clone)]
+pub struct OneoffPrepareOrbitImportPs {
+    #[arg(long)]
+    pub path: std::path::PathBuf,
+}
+
 #[derive(clap::Parser, Debug, Clone)]
 pub struct OneoffMergeDatasourceGroupPs {
     #[arg(long)]
@@ -721,7 +727,9 @@ enum Cmd {
     #[command(visible_alias = "migration")]
     Migrate,
     NetworkInvalidationTui,
-    /// Import ORBIT units from a JSON file in an interactive terminal UI.
+    /// Prepare a normalized ORBIT Parquet snapshot from a JSON export.
+    OneoffPrepareOrbitImport(OneoffPrepareOrbitImportPs),
+    /// Import ORBIT units from the latest snapshot in an interactive TUI.
     TuiImportOrbitUnits,
     TuiImportUnit(ImportTuiPs),
     TuiImportNetwork(ImportTuiPs),
@@ -1367,6 +1375,11 @@ async fn async_main(
         }
         Cmd::NetworkInvalidationTui => {
            sigint::network::etalon_calc::tui::run_network_invalidation_tui(mode).await
+        }
+        Cmd::OneoffPrepareOrbitImport(ps) => {
+            Ok(orbit::prepare_import_snapshot(mode, ps.path)
+                .await
+                .c(h!())?)
         }
         Cmd::TuiImportOrbitUnits => orbit::run_import_tui(mode).await,
         Cmd::OneoffRestartEcho(ps) => {
