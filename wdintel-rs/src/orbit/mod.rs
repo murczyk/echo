@@ -110,12 +110,9 @@ async fn run_import(mode: Mode) -> anyhow::Result<()> {
     if !completed {
         return Ok(());
     }
-    let completed = review_stale_units(&db, started_at)
+    review_stale_units(&db, started_at)
         .await
         .context("failed while reviewing stale ORBIT units")?;
-    if !completed {
-        return Ok(());
-    }
     persistence::replace_sigint_unit_links(&db, &sigint_unit_ids_by_orbit_unit)
         .await
         .c("failed to replace ORBIT-to-SIGINT links")?;
@@ -580,10 +577,10 @@ async fn apply_import_decision(
 async fn review_stale_units(
     db: &sea_orm::DatabaseConnection,
     started_at: chrono::NaiveDateTime,
-) -> anyhow::Result<bool> {
+) -> anyhow::Result<()> {
     let stale = persistence::load_stale(db, started_at).await?;
     if stale.is_empty() {
-        return Ok(true);
+        return Ok(());
     }
     let mut terminal = tui::setup_terminal()?;
     let result =
@@ -597,7 +594,7 @@ async fn review_stale_units_inner(
     terminal: &mut tui::OrbitTerminal,
     stale: Vec<ExistingUnit>,
     started_at: chrono::NaiveDateTime,
-) -> anyhow::Result<bool> {
+) -> anyhow::Result<()> {
     let total = stale.len();
     for (index, unit) in stale.into_iter().enumerate() {
         let name = unit
@@ -624,11 +621,10 @@ async fn review_stale_units_inner(
                 persistence::soft_delete(db, unit, started_at).await?
             }
             tui::Decision::Skip => {}
-            tui::Decision::SkipAll => break,
-            tui::Decision::Quit => return Ok(false),
+            tui::Decision::SkipAll | tui::Decision::Quit => break,
         }
     }
-    Ok(true)
+    Ok(())
 }
 
 fn remaining_review_count(

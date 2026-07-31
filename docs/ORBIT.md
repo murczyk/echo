@@ -123,8 +123,9 @@ in the snapshot are offered for soft deletion. Stale deletion can be accepted,
 skipped, or skipped for all remaining rows.
 
 Confirmed changes are persisted immediately. Quitting does not roll back
-earlier decisions. ORBIT-to-SIGINT links are replaced only after the regular
-review finishes; quitting early leaves the previous links intact.
+earlier decisions. ORBIT-to-SIGINT links are replaced after the regular review
+finishes, including when the stale-deletion review is quit. Quitting during the
+regular review leaves the previous links intact.
 
 ### Search by SIGINT unit name
 
