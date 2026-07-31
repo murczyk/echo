@@ -1230,22 +1230,25 @@ async fn load_redis_id_stats(
     batch_ids: &HashSet<i64>,
     facet: RedisIdFacet,
 ) -> anyhow::Result<HashMap<i64, i64>> {
-    let mut result = HashMap::new();
+    let mut result = HashMap::<i64, redis::HllSketch>::new();
     for mut bucket in
         load_redis_detail_buckets(env, intervals_5min, days).await?
     {
         let rows = match facet {
-            RedisIdFacet::Aor => std::mem::take(&mut bucket.aors),
-            RedisIdFacet::Post => std::mem::take(&mut bucket.posts),
-            RedisIdFacet::Tag => std::mem::take(&mut bucket.tags),
+            RedisIdFacet::Aor => std::mem::take(&mut bucket.aor_hlls),
+            RedisIdFacet::Post => std::mem::take(&mut bucket.post_hlls),
+            RedisIdFacet::Tag => std::mem::take(&mut bucket.tag_hlls),
         };
         for row in rows {
             if batch_ids.contains(&row.signal_group_batch_id) {
-                *result.entry(row.value).or_default() += row.quantity as i64;
+                result.entry(row.value).or_default().merge(&row.sketch);
             }
         }
     }
-    Ok(result)
+    Ok(result
+        .into_iter()
+        .map(|(value, sketch)| (value, sketch.estimate()))
+        .collect())
 }
 
 async fn load_redis_string_stats(
@@ -1255,26 +1258,33 @@ async fn load_redis_string_stats(
     batch_ids: &HashSet<i64>,
     facet: RedisStringFacet,
 ) -> anyhow::Result<HashMap<String, i64>> {
-    let mut result = HashMap::new();
+    let mut result = HashMap::<String, redis::HllSketch>::new();
     for mut bucket in
         load_redis_detail_buckets(env, intervals_5min, days).await?
     {
         let rows = match facet {
-            RedisStringFacet::Sender => std::mem::take(&mut bucket.senders),
+            RedisStringFacet::Sender => std::mem::take(&mut bucket.sender_hlls),
             RedisStringFacet::Frequency => {
-                std::mem::take(&mut bucket.frequencies)
+                std::mem::take(&mut bucket.frequency_hlls)
             }
-            RedisStringFacet::Callsign => std::mem::take(&mut bucket.callsigns),
-            RedisStringFacet::Unit => std::mem::take(&mut bucket.units),
-            RedisStringFacet::Location => std::mem::take(&mut bucket.locations),
+            RedisStringFacet::Callsign => {
+                std::mem::take(&mut bucket.callsign_hlls)
+            }
+            RedisStringFacet::Unit => std::mem::take(&mut bucket.unit_hlls),
+            RedisStringFacet::Location => {
+                std::mem::take(&mut bucket.location_hlls)
+            }
         };
         for row in rows {
             if batch_ids.contains(&row.signal_group_batch_id) {
-                *result.entry(row.value).or_default() += row.quantity as i64;
+                result.entry(row.value).or_default().merge(&row.sketch);
             }
         }
     }
-    Ok(result)
+    Ok(result
+        .into_iter()
+        .map(|(value, sketch)| (value, sketch.estimate()))
+        .collect())
 }
 
 pub async fn read_redis_network_days(

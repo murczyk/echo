@@ -32,6 +32,125 @@ pub struct StringCount {
     pub quantity: i32,
 }
 
+const HLL_PRECISION: u32 = 14;
+const HLL_REGISTERS: usize = 1 << HLL_PRECISION;
+const HLL_SPARSE_MAX: usize = 2_048;
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+pub enum HllSketch {
+    Sparse(Vec<u64>),
+    Dense(Vec<u8>),
+}
+
+impl Default for HllSketch {
+    fn default() -> Self {
+        Self::Sparse(Vec::new())
+    }
+}
+
+impl HllSketch {
+    pub fn insert_message_id(&mut self, message_id: i64) {
+        self.insert_hash(mix_message_id(message_id as u64));
+    }
+
+    pub fn merge(&mut self, other: &Self) {
+        match other {
+            Self::Sparse(hashes) => {
+                for hash in hashes {
+                    self.insert_hash(*hash);
+                }
+            }
+            Self::Dense(other_registers) => match self {
+                Self::Dense(registers) => {
+                    for (register, other_register) in
+                        registers.iter_mut().zip(other_registers)
+                    {
+                        *register = (*register).max(*other_register);
+                    }
+                }
+                Self::Sparse(hashes) => {
+                    let hashes = std::mem::take(hashes);
+                    let mut registers = other_registers.clone();
+                    for hash in hashes {
+                        update_hll_register(&mut registers, hash);
+                    }
+                    *self = Self::Dense(registers);
+                }
+            },
+        }
+    }
+
+    pub fn estimate(&self) -> i64 {
+        match self {
+            Self::Sparse(hashes) => hashes.len() as i64,
+            Self::Dense(registers) => {
+                let zeros =
+                    registers.iter().filter(|register| **register == 0).count();
+                if zeros > 0 {
+                    let estimate = HLL_REGISTERS as f64
+                        * (HLL_REGISTERS as f64 / zeros as f64).ln();
+                    return estimate.round() as i64;
+                }
+                let harmonic_sum = registers
+                    .iter()
+                    .map(|register| 2f64.powi(-i32::from(*register)))
+                    .sum::<f64>();
+                let m = HLL_REGISTERS as f64;
+                let alpha = 0.7213 / (1.0 + 1.079 / m);
+                (alpha * m * m / harmonic_sum).round() as i64
+            }
+        }
+    }
+
+    fn insert_hash(&mut self, hash: u64) {
+        match self {
+            Self::Sparse(hashes) => match hashes.binary_search(&hash) {
+                Ok(_) => {}
+                Err(index) => {
+                    hashes.insert(index, hash);
+                    if hashes.len() > HLL_SPARSE_MAX {
+                        let hashes = std::mem::take(hashes);
+                        let mut registers = vec![0; HLL_REGISTERS];
+                        for hash in hashes {
+                            update_hll_register(&mut registers, hash);
+                        }
+                        *self = Self::Dense(registers);
+                    }
+                }
+            },
+            Self::Dense(registers) => update_hll_register(registers, hash),
+        }
+    }
+}
+
+fn mix_message_id(value: u64) -> u64 {
+    let mut value = value.wrapping_add(0x9e37_79b9_7f4a_7c15);
+    value = (value ^ (value >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
+    value = (value ^ (value >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
+    value ^ (value >> 31)
+}
+
+fn update_hll_register(registers: &mut [u8], hash: u64) {
+    let index = (hash as usize) & (HLL_REGISTERS - 1);
+    let rank =
+        ((hash >> HLL_PRECISION).leading_zeros() + 1 - HLL_PRECISION) as u8;
+    registers[index] = registers[index].max(rank);
+}
+
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
+pub struct IdHll {
+    pub signal_group_batch_id: i64,
+    pub value: i64,
+    pub sketch: HllSketch,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
+pub struct StringHll {
+    pub signal_group_batch_id: i64,
+    pub value: String,
+    pub sketch: HllSketch,
+}
+
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
 pub struct GroupBucket {
     pub groups: Vec<GroupCount>,
@@ -47,6 +166,14 @@ pub struct DetailBucket {
     pub callsigns: Vec<StringCount>,
     pub units: Vec<StringCount>,
     pub locations: Vec<StringCount>,
+    pub aor_hlls: Vec<IdHll>,
+    pub post_hlls: Vec<IdHll>,
+    pub tag_hlls: Vec<IdHll>,
+    pub sender_hlls: Vec<StringHll>,
+    pub frequency_hlls: Vec<StringHll>,
+    pub callsign_hlls: Vec<StringHll>,
+    pub unit_hlls: Vec<StringHll>,
+    pub location_hlls: Vec<StringHll>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
@@ -187,26 +314,103 @@ pub(super) async fn build_5min_buckets(
             )
         })
     });
-    let network_aors = network_rows.iter().flat_map(|row| {
-        network_aors
-            .get(&row.network_id)
-            .cloned()
+    let network_aor_counts = network_aor_values(network_rows, network_aors);
+    let aor_counts = count_group_values(group_aors.chain(network_aor_counts));
+    let sender_hlls = hll_group_values(rows.iter().map(|row| {
+        (
+            bucket_timestamp(row.datetime.unwrap_or(row.created_at)),
+            row.id,
+            row.sender.clone().unwrap_or_default(),
+            row.group_master_key.clone(),
+        )
+    }));
+    let frequency_hlls = hll_group_values(rows.iter().map(|row| {
+        (
+            bucket_timestamp(row.datetime.unwrap_or(row.created_at)),
+            row.id,
+            row.freq.clone().unwrap_or_default(),
+            row.group_master_key.clone(),
+        )
+    }));
+    let unit_hlls = hll_group_values(rows.iter().map(|row| {
+        (
+            bucket_timestamp(row.datetime.unwrap_or(row.created_at)),
+            row.id,
+            row.unit_v2.clone().unwrap_or_default(),
+            row.group_master_key.clone(),
+        )
+    }));
+    let post_hlls = hll_group_values(rows.iter().filter_map(|row| {
+        row.post_id.map(|post_id| {
+            (
+                bucket_timestamp(row.datetime.unwrap_or(row.created_at)),
+                row.id,
+                post_id,
+                row.group_master_key.clone(),
+            )
+        })
+    }));
+    let tag_hlls = hll_group_values(rows.iter().flat_map(|row| {
+        row.tags
+            .clone()
             .unwrap_or_default()
             .into_iter()
-            .map(|aor_id| {
+            .map(|tag_id| {
                 (
-                    bucket_timestamp(
-                        row.datetime
-                            .or(row.timestamp)
-                            .unwrap_or(row.created_at),
-                    ),
+                    bucket_timestamp(row.datetime.unwrap_or(row.created_at)),
                     row.id,
-                    aor_id,
+                    tag_id,
                     row.group_master_key.clone(),
                 )
             })
+    }));
+    let callsign_hlls = hll_group_values(rows.iter().flat_map(|row| {
+        let callsigns: Vec<String> = row
+            .callsigns
+            .clone()
+            .and_then(|value| serde_json::from_value(value).ok())
+            .unwrap_or_default();
+        callsigns.into_iter().map(|callsign| {
+            (
+                bucket_timestamp(row.datetime.unwrap_or(row.created_at)),
+                row.id,
+                callsign,
+                row.group_master_key.clone(),
+            )
+        })
+    }));
+    let location_hlls = hll_group_values(rows.iter().flat_map(|row| {
+        row.location_v2
+            .clone()
+            .map(|value| {
+                value
+                    .split('|')
+                    .map(|value| value.trim().to_string())
+                    .collect::<HashSet<_>>()
+            })
+            .unwrap_or_default()
+            .into_iter()
+            .map(|location| {
+                (
+                    bucket_timestamp(row.datetime.unwrap_or(row.created_at)),
+                    row.id,
+                    location,
+                    row.group_master_key.clone(),
+                )
+            })
+    }));
+    let group_aor_hlls = rows.iter().filter_map(|row| {
+        row.aor_id.map(|aor_id| {
+            (
+                bucket_timestamp(row.datetime.unwrap_or(row.created_at)),
+                row.id,
+                aor_id,
+                row.group_master_key.clone(),
+            )
+        })
     });
-    let aor_counts = count_group_values(group_aors.chain(network_aors));
+    let network_aor_hlls = network_aor_values(network_rows, network_aors);
+    let aor_hlls = hll_group_values(group_aor_hlls.chain(network_aor_hlls));
 
     let batch_keys = group_counts
         .keys()
@@ -249,7 +453,56 @@ pub(super) async fn build_5min_buckets(
     append_id_counts(&mut result, aor_counts, batches, |details| {
         &mut details.aors
     })?;
+    append_string_hlls(&mut result, sender_hlls, batches, |details| {
+        &mut details.sender_hlls
+    })?;
+    append_string_hlls(&mut result, frequency_hlls, batches, |details| {
+        &mut details.frequency_hlls
+    })?;
+    append_string_hlls(&mut result, unit_hlls, batches, |details| {
+        &mut details.unit_hlls
+    })?;
+    append_id_hlls(&mut result, post_hlls, batches, |details| {
+        &mut details.post_hlls
+    })?;
+    append_id_hlls(&mut result, tag_hlls, batches, |details| {
+        &mut details.tag_hlls
+    })?;
+    append_string_hlls(&mut result, callsign_hlls, batches, |details| {
+        &mut details.callsign_hlls
+    })?;
+    append_string_hlls(&mut result, location_hlls, batches, |details| {
+        &mut details.location_hlls
+    })?;
+    append_id_hlls(&mut result, aor_hlls, batches, |details| {
+        &mut details.aor_hlls
+    })?;
     Ok(result)
+}
+
+fn network_aor_values<'a>(
+    network_rows: &'a [super::NetworkStatsRow],
+    network_aors: &'a HashMap<i64, Vec<i64>>,
+) -> impl Iterator<Item = (NaiveDateTime, i64, i64, String)> + 'a {
+    network_rows.iter().flat_map(|row| {
+        network_aors
+            .get(&row.network_id)
+            .cloned()
+            .unwrap_or_default()
+            .into_iter()
+            .map(|aor_id| {
+                (
+                    bucket_timestamp(
+                        row.datetime
+                            .or(row.timestamp)
+                            .unwrap_or(row.created_at),
+                    ),
+                    row.id,
+                    aor_id,
+                    row.group_master_key.clone(),
+                )
+            })
+    })
 }
 
 pub(super) fn aggregate_general_day(
@@ -415,6 +668,34 @@ where
     )
 }
 
+fn hll_group_values<V>(
+    rows: impl IntoIterator<Item = (NaiveDateTime, i64, V, String)>,
+) -> HashMap<(NaiveDateTime, String, V), HllSketch>
+where
+    V: Clone + Eq + Hash,
+{
+    let grouped = rows.into_iter().fold(
+        HashMap::<(NaiveDateTime, i64, V), HashSet<String>>::new(),
+        |mut result, (timestamp, id, value, group)| {
+            result
+                .entry((timestamp, id, value))
+                .or_default()
+                .insert(group);
+            result
+        },
+    );
+    grouped.into_iter().fold(
+        HashMap::new(),
+        |mut result, ((timestamp, id, value), groups)| {
+            result
+                .entry((timestamp, super::all_to_batch_key(groups), value))
+                .or_insert_with(HllSketch::default)
+                .insert_message_id(id);
+            result
+        },
+    )
+}
+
 async fn ensure_batch_keys(
     dbx: &DatabaseConnection,
     batches: &mut HashMap<String, i64>,
@@ -510,6 +791,56 @@ fn append_string_counts(
     Ok(())
 }
 
+fn append_id_hlls(
+    result: &mut BTreeMap<NaiveDateTime, (GroupBucket, DetailBucket)>,
+    hlls: HashMap<(NaiveDateTime, String, i64), HllSketch>,
+    batches: &HashMap<String, i64>,
+    select: impl Fn(&mut DetailBucket) -> &mut Vec<IdHll>,
+) -> anyhow::Result<()> {
+    for ((timestamp, batch_key, value), sketch) in hlls {
+        select(
+            &mut result
+                .get_mut(&timestamp)
+                .context("HLL ID statistic is outside requested bucket range")?
+                .1,
+        )
+        .push(IdHll {
+            signal_group_batch_id: *batches
+                .get(&batch_key)
+                .context("missing group batch")?,
+            value,
+            sketch,
+        });
+    }
+    Ok(())
+}
+
+fn append_string_hlls(
+    result: &mut BTreeMap<NaiveDateTime, (GroupBucket, DetailBucket)>,
+    hlls: HashMap<(NaiveDateTime, String, String), HllSketch>,
+    batches: &HashMap<String, i64>,
+    select: impl Fn(&mut DetailBucket) -> &mut Vec<StringHll>,
+) -> anyhow::Result<()> {
+    for ((timestamp, batch_key, value), sketch) in hlls {
+        select(
+            &mut result
+                .get_mut(&timestamp)
+                .context(
+                    "HLL string statistic is outside requested bucket range",
+                )?
+                .1,
+        )
+        .push(StringHll {
+            signal_group_batch_id: *batches
+                .get(&batch_key)
+                .context("missing group batch")?,
+            value,
+            sketch,
+        });
+    }
+    Ok(())
+}
+
 fn aggregate_group_counts(
     counts: impl IntoIterator<Item = GroupCount>,
 ) -> Vec<GroupCount> {
@@ -557,6 +888,36 @@ fn aggregate_detail_buckets(
         locations: aggregate_string_counts(
             buckets.iter().flat_map(|bucket| bucket.locations.clone()),
         ),
+        aor_hlls: aggregate_id_hlls(
+            buckets.iter().flat_map(|bucket| bucket.aor_hlls.clone()),
+        ),
+        post_hlls: aggregate_id_hlls(
+            buckets.iter().flat_map(|bucket| bucket.post_hlls.clone()),
+        ),
+        tag_hlls: aggregate_id_hlls(
+            buckets.iter().flat_map(|bucket| bucket.tag_hlls.clone()),
+        ),
+        sender_hlls: aggregate_string_hlls(
+            buckets.iter().flat_map(|bucket| bucket.sender_hlls.clone()),
+        ),
+        frequency_hlls: aggregate_string_hlls(
+            buckets
+                .iter()
+                .flat_map(|bucket| bucket.frequency_hlls.clone()),
+        ),
+        callsign_hlls: aggregate_string_hlls(
+            buckets
+                .iter()
+                .flat_map(|bucket| bucket.callsign_hlls.clone()),
+        ),
+        unit_hlls: aggregate_string_hlls(
+            buckets.iter().flat_map(|bucket| bucket.unit_hlls.clone()),
+        ),
+        location_hlls: aggregate_string_hlls(
+            buckets
+                .iter()
+                .flat_map(|bucket| bucket.location_hlls.clone()),
+        ),
     }
 }
 
@@ -596,6 +957,50 @@ fn aggregate_string_counts(
             signal_group_batch_id,
             value,
             quantity,
+        })
+        .collect()
+}
+
+fn aggregate_id_hlls(hlls: impl IntoIterator<Item = IdHll>) -> Vec<IdHll> {
+    hlls.into_iter()
+        .fold(
+            HashMap::<(i64, i64), HllSketch>::new(),
+            |mut result, hll| {
+                result
+                    .entry((hll.signal_group_batch_id, hll.value))
+                    .or_default()
+                    .merge(&hll.sketch);
+                result
+            },
+        )
+        .into_iter()
+        .map(|((signal_group_batch_id, value), sketch)| IdHll {
+            signal_group_batch_id,
+            value,
+            sketch,
+        })
+        .collect()
+}
+
+fn aggregate_string_hlls(
+    hlls: impl IntoIterator<Item = StringHll>,
+) -> Vec<StringHll> {
+    hlls.into_iter()
+        .fold(
+            HashMap::<(i64, String), HllSketch>::new(),
+            |mut result, hll| {
+                result
+                    .entry((hll.signal_group_batch_id, hll.value))
+                    .or_default()
+                    .merge(&hll.sketch);
+                result
+            },
+        )
+        .into_iter()
+        .map(|((signal_group_batch_id, value), sketch)| StringHll {
+            signal_group_batch_id,
+            value,
+            sketch,
         })
         .collect()
 }
@@ -1280,6 +1685,92 @@ mod tests {
             counts.get(&(timestamp, "|a|".to_string(), "freq".to_string())),
             Some(&1)
         );
+    }
+
+    #[test]
+    fn hll_unions_a_message_across_groups_and_buckets_once() {
+        let timestamp = timestamp();
+        let first = hll_group_values([
+            (timestamp, 1, "unit".to_string(), "a".to_string()),
+            (timestamp, 1, "unit".to_string(), "b".to_string()),
+            (timestamp, 2, "unit".to_string(), "a".to_string()),
+        ]);
+        let second = hll_group_values([(
+            timestamp + Duration::minutes(5),
+            1,
+            "unit".to_string(),
+            "a".to_string(),
+        )]);
+
+        let mut sketch = first
+            .get(&(timestamp, "|a|b|".to_string(), "unit".to_string()))
+            .cloned()
+            .unwrap();
+        sketch.merge(
+            first
+                .get(&(timestamp, "|a|".to_string(), "unit".to_string()))
+                .unwrap(),
+        );
+        sketch.merge(
+            second
+                .get(&(
+                    timestamp + Duration::minutes(5),
+                    "|a|".to_string(),
+                    "unit".to_string(),
+                ))
+                .unwrap(),
+        );
+
+        assert_eq!(sketch.estimate(), 2);
+    }
+
+    #[test]
+    fn hll_sparse_counts_are_exact() {
+        let mut sketch = HllSketch::default();
+        for message_id in 1..=87 {
+            sketch.insert_message_id(message_id);
+        }
+        sketch.insert_message_id(1);
+
+        assert_eq!(sketch.estimate(), 87);
+    }
+
+    #[test]
+    fn network_aors_are_included_in_hll_stats() {
+        let timestamp = timestamp();
+        let network_rows = vec![super::super::NetworkStatsRow {
+            id: 7,
+            created_at: timestamp,
+            timestamp: None,
+            datetime: Some(timestamp),
+            group_master_key: "group".to_string(),
+            network_id: 42,
+            freq: None,
+            callsigns: None,
+        }];
+        let network_aors = HashMap::from([(42, vec![10, 11])]);
+        let hlls =
+            hll_group_values(network_aor_values(&network_rows, &network_aors));
+
+        for aor_id in [10, 11] {
+            assert_eq!(
+                hlls.get(&(timestamp, "|group|".to_string(), aor_id))
+                    .unwrap()
+                    .estimate(),
+                1
+            );
+        }
+    }
+
+    #[test]
+    fn hll_dense_count_stays_within_expected_error() {
+        let mut sketch = HllSketch::default();
+        for message_id in 1..=100_000 {
+            sketch.insert_message_id(message_id);
+        }
+
+        assert!(matches!(sketch, HllSketch::Dense(_)));
+        assert!((sketch.estimate() - 100_000).abs() < 2_000);
     }
 
     #[test]

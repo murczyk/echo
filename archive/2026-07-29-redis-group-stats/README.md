@@ -26,11 +26,13 @@ Statistics default to logical database 1.
 
 ## Bucket layout
 
-Keys use the `echo:group-stats:v2` prefix. Values are postcard records
+Keys use the `echo:group-stats:v3` prefix. Values are postcard records
 compressed with zstd level 3. Completed empty buckets are stored explicitly,
-so absence means incomplete data rather than a zero count. The v2 namespace
-separates postcard data from the unmaintained bincode format used during the
-rollout trial; old v1 keys expire through their existing native TTLs.
+so absence means incomplete data rather than a zero count. The v3 namespace
+separates HLL-backed facet buckets from v2 integer counters; old v2 keys expire
+through their existing native TTLs. After installing a v3 binary, run
+`sudo wdintel-rs --mode=live oneoff-calculate-historic-stats` before deploying
+Echo so historical requests do not synchronously rebuild their cache.
 Network days are Redis hashes with one compressed field per active network and
 a completion marker, allowing readers and invalidation tasks to touch only the
 requested networks.
@@ -38,13 +40,21 @@ requested networks.
 | Key family | Resolution | Contents | Retention |
 |---|---:|---|---:|
 | `5m:group` | 5 minutes | group-batch counts for timelines and totals | 91 days |
-| `5m:detail` | 5 minutes | AOR, post, tag, sender, frequency, callsign, unit, and location counts | 16 days |
-| `day:general` | local day | group and detailed facets | 367 days |
+| `5m:detail` | 5 minutes | AOR, post, tag, sender, frequency, callsign, unit, and location HLL sketches | 16 days |
+| `day:general` | local day | group counts and merged detailed-facet HLL sketches | 367 days |
 | `day:network` | local day | network, network-frequency, and network-callsign counts | 367 days |
 
 Every write atomically sets the value and an absolute native Redis expiry.
 There is no cleanup worker. Historical five-minute results outside their
 retention are aggregated in memory into daily values and then discarded.
+
+Detailed facets hash `signal_message.id`, not message-group rows. A sparse
+sketch stores the complete message-ID set until 2,048 IDs; it then promotes to
+a precision-14 HLL register array (about 0.8% relative standard error).
+Readers union sketches over the selected groups and time buckets, which counts
+a message that appears in several groups or buckets once. HLLs are never
+incrementally corrected: historical changes rebuild and replace their complete
+buckets.
 
 The worker keeps its existing five-minute calculation semantics. The regular
 two-minute pass refreshes the last hour and affected local days; the ten-second
@@ -86,18 +96,20 @@ responsive on `sigint_inbox_item.datetime`.
 ## Memory
 
 The initial row-count estimate treated PostgreSQL row volume too much like
-Redis payload volume. Production backfills measured approximately 6–169 MiB
+Redis payload volume. Production v2 backfills measured approximately 6–169 MiB
 of total Redis memory across the rollout hosts, including pre-existing Redis
-data. Bucket-level zstd compression removes most repeated strings and record
-overhead. Allow 256 MiB steady-state on the largest observed installation and
-512 MiB during a format-namespace transition or RDB copy-on-write.
+data. V3 adds a sparse exact-ID representation for small facet buckets and a
+16 KiB dense HLL register array for each high-cardinality facet/group/bucket;
+the payload therefore must be measured after every full backfill. Budget 512
+MiB steady-state and 1 GiB during a v2→v3 transition or RDB copy-on-write;
+increase the Redis limit before backfill if the measured peak approaches it.
 
 Measure the actual result after backfill with:
 
 ```sh
 redis-cli -n 1 DBSIZE
 redis-cli -n 1 INFO memory
-redis-cli -n 1 --scan --pattern 'echo:group-stats:v2:*' |
+redis-cli -n 1 --scan --pattern 'echo:group-stats:v3:*' |
   head
 ```
 
