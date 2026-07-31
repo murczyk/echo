@@ -591,7 +591,11 @@ pub async fn delete_unit_duplicate(
     let event = EventMsg::new(EventType::ETUnitChanged);
     fanout(&mut env.redis.clone(), event).await.context(h!())?;
 
-    Ok(Json(render_unit(&unit)?))
+    let mut unit = render_unit(&unit)?;
+    if orbit::can_view_orbit_data(dbx, &login).await? {
+        unit.has_orbit = orbit::unit_has_orbit(dbx, unit.id).await?;
+    }
+    Ok(Json(unit))
 }
 
 pub async fn merge_units(
@@ -603,9 +607,10 @@ pub async fn merge_units(
     let unit_to_delete =
         find_unit(dbx, unit_to_delete_id).await.context(h!())?;
     let unit_original = find_unit(dbx, original_id).await.context(h!())?;
-    update_original_unit(unit_original, &unit_to_delete, dbx)
-        .await
-        .context(h!())?;
+    let unit_original =
+        update_original_unit(unit_original, &unit_to_delete, dbx)
+            .await
+            .context(h!())?;
 
     swap_units(unit_to_delete_id, original_id, login, dbx)
         .await
@@ -626,7 +631,7 @@ pub async fn merge_units(
 
     let mut unit = unit_to_delete.into_active_model();
     unit.deleted = Set(true);
-    let unit = unit.update(dbx).await.context(h!())?;
+    unit.update(dbx).await.context(h!())?;
 
     let _changelog = sigint_unit_changelog::ActiveModel {
         id: NotSet,
@@ -641,7 +646,7 @@ pub async fn merge_units(
     .insert(dbx)
     .await
     .context(h!())?;
-    Ok(unit)
+    Ok(unit_original)
 }
 
 pub async fn find_unit(
@@ -862,7 +867,7 @@ async fn update_original_unit(
     unit_original: sigint_unit::Model,
     unit_to_merge: &sigint_unit::Model,
     dbx: &DatabaseConnection,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<sigint_unit::Model> {
     let mut unit = unit_original.clone().into_active_model();
 
     if unit_original.company.is_empty() && !unit_to_merge.company.is_empty() {
@@ -888,8 +893,7 @@ async fn update_original_unit(
         unit.deleted = Set(false);
     }
 
-    unit.update(dbx).await.context(h!())?;
-    Ok(())
+    unit.update(dbx).await.context(h!())
 }
 
 /// Oneoff function to reprocess the search index for units.
@@ -1227,7 +1231,7 @@ mod tests {
 
     #[tokio::test]
     #[serial]
-    async fn merge_units_moves_orbit_links_to_surviving_unit() {
+    async fn merge_units_moves_orbit_links_and_returns_surviving_unit() {
         let env = cleanup().await.unwrap();
         let login_id = test_login_id(&env).await;
         let duplicate = crate::functest::tests::mk_sigint_unit(
@@ -1279,10 +1283,13 @@ mod tests {
         .await
         .unwrap();
 
-        merge_units(login_id, &env.dbx, duplicate.id, surviving.id)
-            .await
-            .unwrap();
+        let merged =
+            merge_units(login_id, &env.dbx, duplicate.id, surviving.id)
+                .await
+                .unwrap();
 
+        assert_eq!(merged.id, surviving.id);
+        assert!(!merged.deleted);
         assert!(orbit_unit_sigint_unit::Entity::find()
             .filter(
                 orbit_unit_sigint_unit::Column::SigintUnitId.eq(duplicate.id)
