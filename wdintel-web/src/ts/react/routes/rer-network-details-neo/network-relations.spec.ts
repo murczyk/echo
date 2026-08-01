@@ -9,9 +9,11 @@ import {
   buildNetworkCallsignRelationsGraphView,
   buildRenderableNetworkCallsignRelationsGraphView,
   findMinimumRenderableNetworkCallsignRelationsIntensity,
+  getRelationGraphPointFromViewport,
   limitGraphEdgesByWeight,
   normalizeNetworkCallsignRelationSearch,
   NETWORK_RELATIONS_RENDER_LIMITS,
+  zoomRelationGraphViewBox,
 } from './network-relations';
 
 function relationNode(
@@ -85,6 +87,27 @@ function createGraph(): NetworkCallsignRelationsRsp {
 }
 
 describe('network relations helpers', () => {
+  it('keeps the graph point under the cursor fixed while zooming', () => {
+    const viewBox = { x: 0, y: 0, width: 2000, height: 1000 };
+    const focalPoint = getRelationGraphPointFromViewport(viewBox, 250, 100, 1000, 500);
+    const zoomedViewBox = zoomRelationGraphViewBox(viewBox, 0.8, focalPoint);
+
+    expect(focalPoint).toEqual({ x: 500, y: 200 });
+    expect(zoomedViewBox).toEqual({ x: 100, y: 40, width: 1600, height: 800 });
+  });
+
+  it('accounts for SVG letterboxing when locating the zoom cursor', () => {
+    expect(
+      getRelationGraphPointFromViewport(
+        { x: 0, y: 0, width: 1000, height: 1000 },
+        250,
+        0,
+        1000,
+        500,
+      ),
+    ).toEqual({ x: 0, y: 0 });
+  });
+
   it('normalizes search text for case-insensitive matching', () => {
     expect(normalizeNetworkCallsignRelationSearch('  сокіл-1 ')).toBe('СОКІЛ-1');
   });

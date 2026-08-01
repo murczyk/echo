@@ -39,6 +39,7 @@ import {
   buildNetworkCallsignRelationFreqState,
   buildRenderableNetworkCallsignRelationsGraphView,
   createRelationGraphLayout,
+  getRelationGraphPointFromViewport,
   getRelationEdgeBounds,
   NETWORK_RELATIONS_RENDER_LIMITS,
   intersectsRelationViewBox,
@@ -488,8 +489,23 @@ export function NetworkCallsignRelationsGraph({
   const handleWheel = (event: WheelEvent) => {
     if (!hasRenderableGraph) return;
     event.preventDefault();
+    const svg = svgRef.current;
+    if (!svg) return;
+    const viewport = svg.getBoundingClientRect();
     const factor = event.deltaY > 0 ? GRAPH_WHEEL_ZOOM_OUT_FACTOR : GRAPH_WHEEL_ZOOM_IN_FACTOR;
-    setViewBox((current) => zoomRelationGraphViewBox(current, factor));
+    setViewBox((current) =>
+      zoomRelationGraphViewBox(
+        current,
+        factor,
+        getRelationGraphPointFromViewport(
+          current,
+          event.clientX - viewport.left,
+          event.clientY - viewport.top,
+          viewport.width,
+          viewport.height,
+        ),
+      ),
+    );
   };
 
   return (

@@ -149,6 +149,41 @@ describe('AppNavbar', () => {
 
     expect(container.querySelector('a[href="/rer-duty"]')).not.toBeNull();
     expect(container.querySelector('a[href="/rer-analysis"]')).toBeNull();
+    expect(
+      container.querySelector('#navbar-dropdown-menu-operational a[href="/rer-duty-neo"]')
+        ?.textContent,
+    ).toBe('Новий');
+    expect(
+      container.querySelector('#navbar-dropdown-menu-analysis a[href="/rer-analysis-neo"]')
+        ?.textContent,
+    ).toBe('Аналіз');
+  });
+
+  it('uses section names for the only visible operative and analysis versions', async () => {
+    currentSettingsMock.mockResolvedValue({
+      defaultNeoAnalysis: true,
+      enableAudioTranscription: false,
+      showClassicDuty: false,
+      showClassicAnalysis: false,
+    });
+
+    const { container } = renderComponent({
+      ...defaultProps,
+      user: { ...defaultProps.user, roles: ['Rer'] },
+    });
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(
+      container.querySelector('#navbar-dropdown-menu-operational a[href="/rer-duty-neo"]')
+        ?.textContent,
+    ).toBe('Оперативний');
+    expect(
+      container.querySelector('#navbar-dropdown-menu-analysis a[href="/rer-analysis-neo"]')
+        ?.textContent,
+    ).toBe('Аналіз');
   });
 
   it('renders Admin menu when user has Admin role', () => {

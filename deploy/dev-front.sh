@@ -2,6 +2,31 @@
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "$0")/.." && pwd)"
+elm_land_default_port=1234
+
+stop_default_port_listener() {
+    local -a pids=()
+
+    mapfile -t pids < <(lsof -tiTCP:"${elm_land_default_port}" -sTCP:LISTEN 2>/dev/null || true)
+    if (( ${#pids[@]} == 0 )); then
+        return
+    fi
+
+    echo "Stopping process(es) listening on port ${elm_land_default_port}: ${pids[*]}"
+    kill "${pids[@]}" 2>/dev/null || true
+
+    for _ in $(seq 1 50); do
+        pids=()
+        mapfile -t pids < <(lsof -tiTCP:"${elm_land_default_port}" -sTCP:LISTEN 2>/dev/null || true)
+        if (( ${#pids[@]} == 0 )); then
+            return
+        fi
+        sleep 0.1
+    done
+
+    echo "Force-stopping process(es) still listening on port ${elm_land_default_port}: ${pids[*]}"
+    kill -KILL "${pids[@]}" 2>/dev/null || true
+}
 
 log_file="$(mktemp)"
 log_pipe="$(mktemp -u)"
@@ -25,6 +50,7 @@ extract_port_from_log() {
 
 cd "${repo_root}/wdintel-web"
 
+stop_default_port_listener
 npx elm-land server >"${log_pipe}" 2>&1 &
 server_pid=$!
 

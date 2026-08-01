@@ -176,12 +176,20 @@ export function AppNavbar({
   );
   const showClassicDuty = loadedShowClassicDuty !== false || userShowClassicDuty;
   const showClassicAnalysis = loadedShowClassicAnalysis !== false || userShowClassicAnalysis;
-  const visibleOperationalSubs = operationalSubs.filter(
-    (item) => item.type !== 'item' || item.activeName !== 'rer-duty' || showClassicDuty,
-  );
-  const visibleAnalysisSubs = analysisSubs.filter(
-    (item) => item.type !== 'item' || item.activeName !== 'analysis' || showClassicAnalysis,
-  );
+  const visibleOperationalSubs = operationalSubs
+    .filter((item) => item.type !== 'item' || item.activeName !== 'rer-duty' || showClassicDuty)
+    .map((item) =>
+      !showClassicDuty && item.type === 'item' && item.activeName === 'rer-duty-neo'
+        ? { ...item, label: 'Оперативний' }
+        : item,
+    );
+  const visibleAnalysisSubs = analysisSubs
+    .filter((item) => item.type !== 'item' || item.activeName !== 'analysis' || showClassicAnalysis)
+    .map((item) =>
+      !showClassicAnalysis && item.type === 'item' && item.activeName === 'rer-analysis-neo'
+        ? { ...item, label: 'Аналіз' }
+        : item,
+    );
 
   const openGoiSubs: Menu[] = (user.goiIntegrations || []).flatMap((integration) => {
     if (!integration.goiUrl) return [];
