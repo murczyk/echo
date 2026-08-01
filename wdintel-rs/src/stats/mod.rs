@@ -2393,26 +2393,6 @@ fn is_network_freq_active_at(
     freq.active_from <= ts && freq.active_to.map(|dt| dt >= ts).unwrap_or(true)
 }
 
-pub async fn recalculate_last_seen_for_active_network_freqs_on_startup(
-    dbx: &DatabaseConnection,
-) -> Result<(), AppError> {
-    let network_ids = sigint_network::Entity::find()
-        .select_only()
-        .column(sigint_network::Column::Id)
-        .filter(sigint_network::Column::Deleted.eq(false))
-        .filter(sigint_network::Column::ActiveTo.is_null())
-        .into_tuple::<i64>()
-        .all(dbx)
-        .await
-        .c(h!())?;
-    if network_ids.is_empty() {
-        return Ok(());
-    }
-
-    let network_ids = network_ids.into_iter().collect::<HashSet<_>>();
-    recalculate_last_seen_for_networks_exact(dbx, &network_ids, true).await
-}
-
 pub async fn recalculate_last_seen_for_networks_exact(
     dbx: &DatabaseConnection,
     network_ids: &HashSet<i64>,

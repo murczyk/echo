@@ -35,20 +35,6 @@ async fn worker_calculate_group_stats_inner(
         .c(h!())?;
     let stats_redis = crate::stats::redis::GroupStatsRedis::new(stats_redis);
 
-    if let Err(e) =
-        crate::stats::process_pending_group_stats_recalculation_task(
-            &dbx,
-            &stats_redis,
-        )
-        .await
-        .c(h!())
-    {
-        error!(
-            "process_pending_group_stats_recalculation_task encountered an error: {:#?}",
-            e
-        );
-    }
-
     let log_suffix = if last_calculated
         + chrono::Duration::minutes(
             WORKER_CALCULATE_GROUP_STATS_EVERY_MINUTES_NUM,
@@ -89,5 +75,20 @@ async fn worker_calculate_group_stats_inner(
     };
     let duration = (Utc::now().naive_utc() - now).num_seconds();
     info!("worker_calculate_group_stats took {duration}s ({log_suffix})");
+
+    if let Err(e) =
+        crate::stats::process_pending_group_stats_recalculation_task(
+            &dbx,
+            &stats_redis,
+        )
+        .await
+        .c(h!())
+    {
+        error!(
+            "process_pending_group_stats_recalculation_task encountered an error: {:#?}",
+            e
+        );
+    }
+
     Ok(last_calculated)
 }

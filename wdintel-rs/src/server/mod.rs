@@ -9,7 +9,6 @@ use actix_web::{web, App, HttpServer};
 
 use crate::types::Mode::Live;
 use milgeo_rs::MilGeo;
-use sea_orm::DatabaseConnection;
 use std::net::TcpListener;
 use std::os::unix::io::FromRawFd;
 use tokio::runtime::Handle;
@@ -294,33 +293,6 @@ fn spawn_palitra_conversion_worker(bg_set: &mut JoinSet<()>, env: Arc<Env>) {
         )
         .await;
     });
-}
-
-fn spawn_group_stats_worker_after_startup_recalc(
-    bg_set: &mut JoinSet<()>,
-    dbx: DatabaseConnection,
-    mode: Mode,
-) -> tokio::sync::oneshot::Receiver<Result<(), String>> {
-    let (startup_tx, startup_rx) = tokio::sync::oneshot::channel();
-    spawn_named_worker("worker_calculate_group_stats", bg_set, async move {
-        info!(
-            "recalculating network freq last_seen_dt for active networks before starting worker_calculate_group_stats"
-        );
-        let startup_result =
-            crate::stats::recalculate_last_seen_for_active_network_freqs_on_startup(
-                &dbx,
-            )
-            .await
-            .map_err(|err| format!("{err:#?}"));
-        let startup_ok = startup_result.is_ok();
-        let _ = startup_tx.send(startup_result);
-        if !startup_ok {
-            return;
-        }
-        crate::stats::worker::group_stats::worker_calculate_group_stats(mode)
-            .await;
-    });
-    startup_rx
 }
 
 fn spawn_background_workers(
@@ -1157,7 +1129,6 @@ pub async fn main_bgworker(
     crate::use_bgworker_pg_pool_limits();
     let env = init_runtime_env(mode).await.c(h!())?;
     crate::migration::request_analytics_table_reconciliation().await;
-    let group_stats_dbx = env.dbx.clone();
     let report_history_env = env.clone();
     let mut background_tasks: JoinSet<()> = JoinSet::new();
     let mut transcriber_tasks: JoinSet<()> = JoinSet::new();
@@ -1174,7 +1145,7 @@ pub async fn main_bgworker(
         env.clone(),
         cancel_token.clone(),
         shutdown_handle.clone(),
-        false,
+        true,
         true,
         &mut background_tasks,
     );
@@ -1198,30 +1169,9 @@ pub async fn main_bgworker(
             },
         );
     }
-    let group_stats_startup_rx = spawn_group_stats_worker_after_startup_recalc(
-        &mut background_tasks,
-        group_stats_dbx,
-        mode,
-    );
-
     let task_completion_future = async move {
         while background_tasks.join_next().await.is_some() {}
         info!("[Background] All tasks in JoinSet completed on their own.");
-    };
-    let group_stats_startup_failure = async move {
-        match group_stats_startup_rx.await {
-            Ok(Ok(())) => std::future::pending::<()>().await,
-            Ok(Err(err)) => {
-                error!(
-                    "failed to recalculate network freq last_seen_dt for active networks on bgworker startup: {err}"
-                );
-            }
-            Err(err) => {
-                error!(
-                    "worker_calculate_group_stats startup task ended before signaling readiness: {err}"
-                );
-            }
-        }
     };
 
     let mut sigint = signal(SignalKind::interrupt())
@@ -1244,9 +1194,6 @@ pub async fn main_bgworker(
                     info!("\n[CTRL+C] detected. Starting graceful shutdown...");
                     cancel_token.cancel();
                 },
-                _ = group_stats_startup_failure => {
-                    cancel_token.cancel();
-                }
                 _ = task_completion_future => {
                     info!("[Bgworker] All background tasks finished.");
                 }
