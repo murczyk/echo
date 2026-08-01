@@ -68,6 +68,16 @@ describe('AnalysisMapSearchElement', () => {
   });
 
   describe('search input handling', () => {
+    it('compacts disabled status text and exposes the full text as a native hint', async () => {
+      const el = createElement();
+      el.setAttribute('disabled', 'true');
+      el.setAttribute('placeholder', 'Оновлення інтервалу...');
+      await connectElement(el, container);
+
+      expect(getInput(el).placeholder).toBe('Оновле…');
+      expect(el.title).toBe('Оновлення інтервалу...');
+    });
+
     it('fires multiple events when symbols are entered with a gap greater than debounce', async () => {
       vi.useFakeTimers();
       const el = createElement();

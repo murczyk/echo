@@ -128,6 +128,7 @@ export function AnalysisPageHeader({
   rightPanelVisible,
 }: Props) {
   const loading = page.countsLoading || page.messagesLoading || page.summaryLoading;
+  const dateRangeLoading = page.mapAttrs?.daterangeLoading === 'true';
   const showPagination = !isNarrowLayout;
   return (
     <PageHeader
@@ -225,7 +226,7 @@ export function AnalysisPageHeader({
                       borderColor: 'divider',
                     }}
                   >
-                    {loading ? (
+                    {loading && !dateRangeLoading ? (
                       <CircularProgress size={20} color="inherit" />
                     ) : (
                       <RefreshOutlinedIcon sx={{ fontSize: 20 }} />

@@ -121,6 +121,7 @@ export function NetworkCallsignRelationsGraph({
   const headingId = useId().replace(/:/g, '-');
   const filterButtonId = `${headingId}-filters`;
   const filterPopoverId = `${headingId}-filters-popover`;
+  const intensityPopoverId = `${headingId}-intensity-popover`;
   const svgRef = useRef<SVGSVGElement>(null);
   const dragRef = useRef<{ x: number; y: number; viewBox: RelationGraphViewBox } | null>(null);
   const labelsAutoDisabledRef = useRef(false);
@@ -623,17 +624,40 @@ export function NetworkCallsignRelationsGraph({
                 />
               </>
             ) : null}
-            <Stack direction="row" alignItems="center" spacing={2} sx={{ flexShrink: 0 }}>
+            <Stack direction="row" alignItems="center" spacing={1} sx={{ flexShrink: 0 }}>
               <FormControlLabel
                 control={
                   <Switch
+                    size="small"
                     checked={relationsShowLabels}
                     onChange={(_, checked) => onShowLabelsChange(checked)}
                     disabled={renderGraphView.warning || denseGraph}
+                    sx={{
+                      width: 34,
+                      height: 20,
+                      p: 0,
+                      mr: 0.5,
+                      '& .MuiSwitch-switchBase': {
+                        p: '2px',
+                        '&.Mui-checked': { transform: 'translateX(14px)' },
+                      },
+                      '& .MuiSwitch-thumb': { width: 16, height: 16 },
+                      '& .MuiSwitch-track': { borderRadius: 10 },
+                    }}
                   />
                 }
                 label="Підписи"
-                sx={{ m: 0, flexShrink: 0 }}
+                sx={{
+                  height: 34,
+                  m: 0,
+                  flexShrink: 0,
+                  whiteSpace: 'nowrap',
+                  '& .MuiFormControlLabel-label': {
+                    fontSize: 11.5,
+                    fontWeight: 500,
+                    lineHeight: 1.2,
+                  },
+                }}
               />
               {graphLabelsHintVisible ? (
                 <Tooltip title="Підписи приховано для збереження швидкодії. Звузьте період або підніміть інтенсивність.">
@@ -655,32 +679,81 @@ export function NetworkCallsignRelationsGraph({
                   </IconButton>
                 </Tooltip>
               ) : null}
-              <Button
-                id={filterButtonId}
-                type="button"
-                variant="outlined"
-                onClick={(event) => setFilterAnchorEl(event.currentTarget)}
-                startIcon={<TuneOutlinedIcon />}
-                sx={{
-                  borderRadius: 2,
-                  px: 1.6,
-                  py: 0.8,
-                  minWidth: 0,
-                  height: 40,
-                  textTransform: 'none',
-                  fontWeight: 700,
-                }}
-              >
-                {formatRelationFreqButtonLabel(
-                  resolvedEnabledFreqs,
-                  availableFreqs.map((freq) => freq.freq),
-                )}
-              </Button>
+              {!isFullscreen ? (
+                <>
+                  <Button
+                    type="button"
+                    variant="outlined"
+                    size="small"
+                    onClick={(event) => handleOpenIntensitySettings(event.currentTarget)}
+                    aria-label={`Налаштувати інтенсивність: ${relationsMinIntensity}`}
+                    aria-haspopup="dialog"
+                    aria-expanded={intensityAnchorEl !== null}
+                    aria-controls={intensityAnchorEl !== null ? intensityPopoverId : undefined}
+                    endIcon={
+                      <Tooltip title="Мінімум перехоплень для видимого ребра або вузла.">
+                        <Box component="span" sx={{ display: 'inline-flex' }}>
+                          <InfoOutlinedIcon sx={{ fontSize: 16 }} />
+                        </Box>
+                      </Tooltip>
+                    }
+                    sx={{
+                      borderRadius: 2,
+                      px: 1.1,
+                      py: 0.4,
+                      minWidth: 0,
+                      height: 32,
+                      textTransform: 'none',
+                      fontSize: '0.75rem',
+                      fontWeight: 600,
+                      color: 'text.secondary',
+                      borderColor: 'divider',
+                      '& .MuiButton-endIcon': { ml: 0.5 },
+                      '&:hover': {
+                        color: 'text.primary',
+                        borderColor: 'text.secondary',
+                        bgcolor: 'action.hover',
+                      },
+                    }}
+                  >
+                    Інтенсивність: {relationsMinIntensity}
+                  </Button>
+                  <Button
+                    id={filterButtonId}
+                    type="button"
+                    variant="outlined"
+                    size="small"
+                    onClick={(event) => setFilterAnchorEl(event.currentTarget)}
+                    startIcon={<TuneOutlinedIcon />}
+                    sx={{
+                      borderRadius: 2,
+                      px: 1.1,
+                      py: 0.4,
+                      minWidth: 0,
+                      height: 32,
+                      textTransform: 'none',
+                      fontSize: '0.75rem',
+                      fontWeight: 600,
+                      color: 'text.secondary',
+                      borderColor: 'divider',
+                      '& .MuiButton-startIcon': { mr: 0.5 },
+                      '& .MuiSvgIcon-root': { fontSize: 16 },
+                      '&:hover': {
+                        color: 'text.primary',
+                        borderColor: 'text.secondary',
+                        bgcolor: 'action.hover',
+                      },
+                    }}
+                  >
+                    {formatRelationFreqButtonLabel(
+                      resolvedEnabledFreqs,
+                      availableFreqs.map((freq) => freq.freq),
+                    )}
+                  </Button>
+                </>
+              ) : null}
             </Stack>
           </Stack>
-          <Typography variant="caption" color="text.secondary" sx={{ maxWidth: 720 }}>
-            Поточний граф оновлюється без втрати вже завантажених зв&apos;язків.
-          </Typography>
         </Stack>
 
         <NetworkCallsignRelationsGraphStage
@@ -749,7 +822,7 @@ export function NetworkCallsignRelationsGraph({
 
       <NetworkCallsignRelationsIntensityPopover
         anchorEl={intensityAnchorEl}
-        popoverId={`${headingId}-intensity-popover`}
+        popoverId={intensityPopoverId}
         minIntensity={relationsMinIntensity}
         intensitySliderMax={intensitySliderMax}
         isFullscreen={isFullscreen}

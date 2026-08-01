@@ -5,8 +5,8 @@
 }
 
 #analysis-map .layer-switch-control.collapsed {
-  max-height: 48px;
-  max-width: 48px;
+  max-height: 36px;
+  max-width: 36px;
 }
 
 #analysis-map .layer-switch-list {
@@ -36,6 +36,7 @@
 }
 
 #analysis-map .layer-switch-label {
+  font-size: 11.5px !important;
   line-height: 1.25;
 }
 
@@ -97,6 +98,7 @@
 }
 
 #analysis-map .map-settings-control .map-settings-label {
+  font-size: 11.5px !important;
   line-height: 1.25;
 }
 

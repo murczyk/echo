@@ -8,6 +8,8 @@ const ATTR_INITIAL_QUERY = 'initial-query';
 const ATTR_DISABLED = 'disabled';
 const ATTR_PLACEHOLDER = 'placeholder';
 const DEFAULT_PLACEHOLDER = 'Точка, лісосмуга або координати';
+const COMPACT_STATUS_CHARACTER_LIMIT = 6;
+const COMPACT_STATUS_INPUT_WIDTH = 112;
 
 class AnalysisMapSearchElement extends HTMLElement {
   static observedAttributes = [
@@ -57,16 +59,25 @@ class AnalysisMapSearchElement extends HTMLElement {
       this.dispatchSearchEvent('search-submit', value);
     };
 
+    const showCompactStatus = this.isDisabled && this.placeholder !== DEFAULT_PLACEHOLDER;
+    const visiblePlaceholder = showCompactStatus
+      ? `${Array.from(this.placeholder).slice(0, COMPACT_STATUS_CHARACTER_LIMIT).join('')}…`
+      : this.placeholder;
+    this.title = showCompactStatus ? this.placeholder : '';
+
     this.root.render(
       <MapSearchInput
-        placeholder={this.placeholder}
+        placeholder={visiblePlaceholder}
         onSearch={onSearch}
         onSubmit={onSubmit}
         resultsCount={this.resultsCount}
         isSearchLoading={this.isSearchLoading}
         isInputLoading={this.isDisabled}
         disabled={this.isDisabled}
-        minWidth="min(320px, calc(100vw - 20px))"
+        minWidth={showCompactStatus ? COMPACT_STATUS_INPUT_WIDTH : 'min(320px, calc(100vw - 20px))'}
+        width={showCompactStatus ? COMPACT_STATUS_INPUT_WIDTH : undefined}
+        showWildcardHelp={!showCompactStatus}
+        compact
         initialValue={this.initialQuery}
       />,
     );

@@ -1,4 +1,7 @@
 import AddIcon from '@mui/icons-material/Add';
+import ClearOutlinedIcon from '@mui/icons-material/ClearOutlined';
+import ExpandLessIcon from '@mui/icons-material/ExpandLess';
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import RemoveIcon from '@mui/icons-material/Remove';
 import TuneOutlinedIcon from '@mui/icons-material/TuneOutlined';
@@ -8,8 +11,10 @@ import {
   ButtonBase,
   CircularProgress,
   IconButton,
+  InputAdornment,
   Paper,
   Stack,
+  TextField,
   Tooltip,
   Typography,
 } from '@mui/material';
@@ -156,7 +161,15 @@ export function NetworkCallsignRelationsGraphStage({
   const isDarkMode = theme.palette.mode === 'dark';
   const graphTheme = getNetworkRelationsGraphTheme(theme);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [legendExpanded, setLegendExpanded] = useState(false);
+  const [legendSearch, setLegendSearch] = useState('');
   const { defaultEnabledFreqs, resolvedEnabledFreqs } = relationFreqState;
+  const normalizedLegendSearch = legendSearch.trim().toLocaleLowerCase();
+  const visibleLegendFreqs = legendFreqs.filter(
+    (freq) =>
+      normalizedLegendSearch === '' ||
+      freq.freq.toLocaleLowerCase().includes(normalizedLegendSearch),
+  );
   const hasResettableGraphFilters =
     relationsSearch.trim() !== '' ||
     relationsMinIntensity !== defaultMinIntensity ||
@@ -270,7 +283,7 @@ export function NetworkCallsignRelationsGraphStage({
           sx={{
             display: 'flex',
             overflow: 'hidden',
-            borderRadius: '8px',
+            borderRadius: '6px',
             bgcolor: graphTheme.zoomControlBg,
             border: `1px solid ${graphTheme.zoomControlBorder}`,
             boxShadow:
@@ -286,12 +299,12 @@ export function NetworkCallsignRelationsGraphStage({
             onClick={() => handleZoom(zoomInFactor)}
             aria-label="Збільшити"
             sx={{
-              width: 44,
-              height: 44,
+              width: 36,
+              height: 36,
               borderRadius: 0,
               color: graphTheme.zoomControlText,
-              flex: '0 0 44px',
-              minWidth: 44,
+              flex: '0 0 36px',
+              minWidth: 36,
               bgcolor: 'transparent',
               '&:hover': {
                 bgcolor: graphTheme.zoomControlHoverBg,
@@ -310,18 +323,18 @@ export function NetworkCallsignRelationsGraphStage({
               },
             }}
           >
-            <AddIcon sx={{ fontSize: 24 }} />
+            <AddIcon sx={{ fontSize: 20 }} />
           </IconButton>
           <IconButton
             onClick={() => handleZoom(zoomOutFactor)}
             aria-label="Зменшити"
             sx={{
-              width: 44,
-              height: 44,
+              width: 36,
+              height: 36,
               borderRadius: 0,
               color: graphTheme.zoomControlText,
-              flex: '0 0 44px',
-              minWidth: 44,
+              flex: '0 0 36px',
+              minWidth: 36,
               bgcolor: 'transparent',
               '&:hover': {
                 bgcolor: graphTheme.zoomControlHoverBg,
@@ -340,19 +353,19 @@ export function NetworkCallsignRelationsGraphStage({
               },
             }}
           >
-            <RemoveIcon sx={{ fontSize: 24 }} />
+            <RemoveIcon sx={{ fontSize: 20 }} />
           </IconButton>
           <IconButton
             onClick={() => setIsFullscreen((current) => !current)}
             aria-label={isFullscreen ? 'Згорнути граф' : 'Розгорнути граф'}
             title={isFullscreen ? 'Згорнути граф' : 'Розгорнути граф'}
             sx={{
-              width: 44,
-              height: 44,
+              width: 36,
+              height: 36,
               borderRadius: 0,
               color: graphTheme.zoomControlText,
-              flex: '0 0 44px',
-              minWidth: 44,
+              flex: '0 0 36px',
+              minWidth: 36,
               bgcolor: 'transparent',
               '&:hover': {
                 bgcolor: graphTheme.zoomControlHoverBg,
@@ -368,7 +381,7 @@ export function NetworkCallsignRelationsGraphStage({
               },
               '& i': {
                 color: 'inherit',
-                fontSize: 18,
+                fontSize: 16,
                 lineHeight: 1,
               },
             }}
@@ -379,41 +392,66 @@ export function NetworkCallsignRelationsGraphStage({
               aria-hidden="true"
             />
           </IconButton>
-          {isFullscreen ? (
-            <IconButton
-              onClick={(event) => onOpenFrequencySettings(event.currentTarget)}
-              aria-label="Налаштувати частоти"
-              aria-controls={filterPopoverId}
-              sx={{
-                width: 44,
-                height: 44,
-                borderRadius: 0,
-                color: graphTheme.zoomControlText,
-                flex: '0 0 44px',
-                minWidth: 44,
-                bgcolor: 'transparent',
-                '&:hover': {
-                  bgcolor: graphTheme.zoomControlHoverBg,
-                  color: graphTheme.zoomControlText,
-                },
-                '&:focus-visible': {
-                  outline: `2px solid ${alpha(theme.palette.primary.main, 0.75)}`,
-                  outlineOffset: -3,
-                },
-                '&:active': {
-                  bgcolor: graphTheme.zoomControlHoverBg,
-                  color: graphTheme.zoomControlText,
-                },
-                '& .MuiSvgIcon-root': {
-                  color: 'inherit',
-                },
-              }}
-            >
-              <TuneOutlinedIcon sx={{ fontSize: 22 }} />
-            </IconButton>
-          ) : null}
         </Box>
       </Box>
+
+      {isFullscreen ? (
+        <Stack
+          direction="row"
+          spacing={1}
+          sx={{ position: 'absolute', top: 16, left: 16, zIndex: 2 }}
+        >
+          <Button
+            variant="outlined"
+            size="small"
+            onClick={(event) => onOpenIntensitySettings(event.currentTarget)}
+            aria-label={`Налаштувати інтенсивність: ${relationsMinIntensity}`}
+            aria-haspopup="dialog"
+            aria-expanded={intensityAnchorEl !== null}
+            aria-controls={
+              intensityAnchorEl !== null ? `${headingId}-intensity-popover` : undefined
+            }
+            endIcon={<InfoOutlinedIcon sx={{ fontSize: 16 }} />}
+            title="Мінімум перехоплень для видимого ребра або вузла."
+            sx={{
+              height: 32,
+              px: 1.1,
+              color: graphTheme.overlayTextSecondary,
+              borderColor: graphTheme.overlayBorder,
+              bgcolor: graphTheme.overlayBg,
+              textTransform: 'none',
+              fontSize: '0.75rem',
+              fontWeight: 600,
+              '& .MuiButton-endIcon': { ml: 0.5 },
+              '&:hover': { borderColor: graphTheme.overlayTextSecondary },
+            }}
+          >
+            Інтенсивність: {relationsMinIntensity}
+          </Button>
+          <Button
+            variant="outlined"
+            size="small"
+            onClick={(event) => onOpenFrequencySettings(event.currentTarget)}
+            aria-label="Налаштувати частоти"
+            aria-controls={filterPopoverId}
+            startIcon={<TuneOutlinedIcon sx={{ fontSize: 16 }} />}
+            sx={{
+              height: 32,
+              px: 1.1,
+              color: graphTheme.overlayTextSecondary,
+              borderColor: graphTheme.overlayBorder,
+              bgcolor: graphTheme.overlayBg,
+              textTransform: 'none',
+              fontSize: '0.75rem',
+              fontWeight: 600,
+              '& .MuiButton-startIcon': { mr: 0.5 },
+              '&:hover': { borderColor: graphTheme.overlayTextSecondary },
+            }}
+          >
+            Частоти
+          </Button>
+        </Stack>
+      ) : null}
 
       {graphWarning ? (
         <Box
@@ -553,117 +591,126 @@ export function NetworkCallsignRelationsGraphStage({
           <Box
             sx={{
               position: 'absolute',
-              top: 16,
-              left: 16,
-              zIndex: 2,
-            }}
-          >
-            <ButtonBase
-              type="button"
-              onClick={(event) => onOpenIntensitySettings(event.currentTarget)}
-              aria-label={`Налаштувати інтенсивність: ${relationsMinIntensity}`}
-              aria-haspopup="dialog"
-              aria-expanded={intensityAnchorEl !== null}
-              aria-controls={
-                intensityAnchorEl !== null ? `${headingId}-intensity-popover` : undefined
-              }
-              sx={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 1,
-                px: 1.25,
-                py: 0.75,
-                borderRadius: 2,
-                bgcolor: graphTheme.overlayBg,
-                border: `1px solid ${graphTheme.overlayBorder}`,
-                color: graphTheme.overlayText,
-                cursor: 'pointer',
-                font: 'inherit',
-                textAlign: 'left',
-                boxShadow: 'none',
-                '&:hover': {
-                  bgcolor: theme.palette.action.hover,
-                },
-                '&:focus-visible': {
-                  outline: `2px solid ${alpha(theme.palette.primary.main, 0.78)}`,
-                  outlineOffset: 2,
-                },
-              }}
-            >
-              <Stack spacing={0.15}>
-                <Typography
-                  variant="caption"
-                  sx={{ color: graphTheme.overlayTextSecondary, lineHeight: 1.1 }}
-                >
-                  Інтенсивність
-                </Typography>
-                <Typography variant="body2" sx={{ fontWeight: 700, lineHeight: 1.2 }}>
-                  {relationsMinIntensity}
-                </Typography>
-              </Stack>
-              <Tooltip title="Мінімальна кількість перехоплень для видимого ребра або вузла.">
-                <Box
-                  component="span"
-                  sx={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    color: graphTheme.overlayTextSecondary,
-                  }}
-                >
-                  <InfoOutlinedIcon sx={{ fontSize: 16 }} />
-                </Box>
-              </Tooltip>
-            </ButtonBase>
-          </Box>
-
-          <Box
-            sx={{
-              position: 'absolute',
               left: 16,
               bottom: 16,
               zIndex: 2,
-              px: 1.5,
+              px: 1,
               py: 1.25,
-              minWidth: 150,
-              borderRadius: 2,
-              bgcolor: graphTheme.overlayBg,
-              border: `1px solid ${graphTheme.overlayBorder}`,
+              borderRadius: 1,
+              bgcolor: alpha(theme.palette.background.paper, isDarkMode ? 0.82 : 0.92),
+              border: `1px solid ${alpha(theme.palette.text.primary, isDarkMode ? 0.14 : 0.12)}`,
               color: graphTheme.overlayText,
             }}
           >
-            <Typography
-              variant="overline"
-              sx={{ color: graphTheme.overlayTextSecondary, letterSpacing: 1 }}
+            <ButtonBase
+              onClick={() => setLegendExpanded((expanded) => !expanded)}
+              aria-expanded={legendExpanded}
+              aria-label={legendExpanded ? 'Згорнути частоти' : 'Розгорнути частоти'}
+              sx={{
+                width: '100%',
+                minHeight: 24,
+                display: 'flex',
+                justifyContent: 'space-between',
+                gap: 0.5,
+                color: 'inherit',
+                borderRadius: 0.5,
+              }}
             >
-              Частоти
-            </Typography>
-            <Stack spacing={0.8} sx={{ mt: 0.5 }}>
-              {legendFreqs.map((freq) => {
-                const enabled = resolvedEnabledFreqs.includes(freq.freq);
-                return (
-                  <Stack
-                    key={freq.freq}
-                    direction="row"
-                    spacing={1}
-                    alignItems="center"
-                    sx={{ opacity: enabled ? 1 : 0.35 }}
-                  >
-                    <Box
-                      sx={{
-                        width: 18,
-                        height: 3,
-                        borderRadius: 999,
-                        bgcolor: freq.color,
-                        flexShrink: 0,
-                      }}
-                    />
-                    <Typography variant="body2" sx={{ fontVariantNumeric: 'tabular-nums' }}>
-                      {freq.freq}
+              <Stack direction="row" spacing={0.5} alignItems="center">
+                <Typography variant="caption" sx={{ fontWeight: 600 }}>
+                  Частоти
+                </Typography>
+                <Box
+                  component="span"
+                  sx={{
+                    minWidth: 18,
+                    height: 18,
+                    px: 0.5,
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    borderRadius: 999,
+                    bgcolor: alpha(theme.palette.text.primary, isDarkMode ? 0.12 : 0.08),
+                    color: graphTheme.overlayTextSecondary,
+                    fontSize: 10,
+                    fontWeight: 700,
+                  }}
+                >
+                  {legendFreqs.length}
+                </Box>
+              </Stack>
+              {legendExpanded ? (
+                <ExpandLessIcon sx={{ fontSize: 17 }} />
+              ) : (
+                <ExpandMoreIcon sx={{ fontSize: 17 }} />
+              )}
+            </ButtonBase>
+            {legendExpanded ? (
+              <>
+                <TextField
+                  size="small"
+                  value={legendSearch}
+                  onChange={(event) => setLegendSearch(event.target.value)}
+                  placeholder="Частота"
+                  InputProps={{
+                    endAdornment:
+                      legendSearch !== '' ? (
+                        <InputAdornment position="end">
+                          <IconButton
+                            aria-label="Очистити пошук частот у легенді"
+                            size="small"
+                            onClick={() => setLegendSearch('')}
+                            sx={{ p: 0.125 }}
+                          >
+                            <ClearOutlinedIcon sx={{ fontSize: 15 }} />
+                          </IconButton>
+                        </InputAdornment>
+                      ) : undefined,
+                  }}
+                  sx={{
+                    width: 96,
+                    mt: 0.5,
+                    '& .MuiOutlinedInput-root': { height: 30 },
+                    '& .MuiInputBase-input': { py: 0.25, fontSize: '0.75rem' },
+                  }}
+                />
+                <Stack sx={{ mt: 0.5, maxHeight: 130, overflowY: 'auto' }}>
+                  {visibleLegendFreqs.map((freq) => {
+                    const enabled = resolvedEnabledFreqs.includes(freq.freq);
+                    return (
+                      <Stack
+                        key={freq.freq}
+                        direction="row"
+                        spacing={1}
+                        alignItems="center"
+                        sx={{ opacity: enabled ? 1 : 0.35, minHeight: 26, flexShrink: 0 }}
+                      >
+                        <Box
+                          sx={{
+                            width: 18,
+                            height: 3,
+                            borderRadius: 999,
+                            bgcolor: freq.color,
+                            flexShrink: 0,
+                          }}
+                        />
+                        <Typography variant="body2" sx={{ fontVariantNumeric: 'tabular-nums' }}>
+                          {freq.freq}
+                        </Typography>
+                      </Stack>
+                    );
+                  })}
+                  {visibleLegendFreqs.length === 0 ? (
+                    <Typography
+                      variant="caption"
+                      sx={{ py: 0.5, color: graphTheme.overlayTextSecondary }}
+                    >
+                      Частот не знайдено
                     </Typography>
-                  </Stack>
-                );
-              })}
-            </Stack>
+                  ) : null}
+                </Stack>
+              </>
+            ) : null}
           </Box>
 
           <NetworkCallsignRelationsGraphDetails

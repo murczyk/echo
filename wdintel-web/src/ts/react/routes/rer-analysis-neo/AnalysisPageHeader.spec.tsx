@@ -32,7 +32,7 @@ vi.mock('@mui/material', () => ({
       {children}
     </button>
   ),
-  CircularProgress: () => <span />,
+  CircularProgress: () => <span data-testid="loading-spinner" />,
   FormControlLabel: (props: { control: ReactNode; label: ReactNode }) => (
     <label>
       {props.control}
@@ -327,6 +327,19 @@ describe('AnalysisPageHeader', () => {
     ).find((button) => button.textContent?.includes('Звіти'));
     act(() => reportButton?.click());
     expect(page.openReport).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not duplicate the map date-range loading indicator in the desktop header', () => {
+    const page = buildPage();
+    page.messagesLoading = true;
+    page.mapAttrs = {
+      daterangeLoading: 'true',
+    } as AnalysisPageViewModel['mapAttrs'];
+    const view = renderHeader(page, false, false, 'map', false);
+    rendered.push(view);
+
+    const refreshButton = view.container.querySelector('[aria-label="Оновити"]');
+    expect(refreshButton?.querySelector('[data-testid="loading-spinner"]')).toBeNull();
   });
 
   it('keeps the desktop right-panel toggle and omits the mobile opening control', () => {

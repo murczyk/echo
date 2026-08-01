@@ -22,8 +22,10 @@ export type SearchInputProps = {
   disabled?: boolean;
   debounceMs?: number;
   minWidth?: number | string;
+  width?: number | string;
   clearOnEscape?: boolean;
   emptyEndAdornment?: ReactNode;
+  compact?: boolean;
 };
 
 export function SearchInput(props: SearchInputProps) {
@@ -39,8 +41,10 @@ export function SearchInput(props: SearchInputProps) {
     disabled = false,
     debounceMs = DEFAULT_DEBOUNCE_MS,
     minWidth = 300,
+    width,
     clearOnEscape = true,
     emptyEndAdornment,
+    compact = false,
   } = props;
 
   const [value, setValue] = useState(initialValue ?? '');
@@ -145,12 +149,18 @@ export function SearchInput(props: SearchInputProps) {
             disabled={disabled}
             sx={{
               minWidth,
+              width,
               '& .MuiOutlinedInput-root': {
-                minHeight: 48,
-                height: 48,
-                borderRadius: 2,
-                backgroundColor: 'background.paper',
-                boxShadow: '0 2px 8px rgba(0, 0, 0, 0.15)',
+                minHeight: compact ? 36 : 48,
+                height: compact ? 36 : 48,
+                borderRadius: compact ? 0.75 : 2,
+                backgroundColor: (theme) =>
+                  compact
+                    ? `rgba(${theme.palette.mode === 'dark' ? '18, 18, 18' : '255, 255, 255'}, 0.86)`
+                    : theme.palette.background.paper,
+                boxShadow: compact
+                  ? '0 2px 8px rgba(0, 0, 0, 0.1)'
+                  : '0 2px 8px rgba(0, 0, 0, 0.15)',
                 '& input:-webkit-autofill, & input:-webkit-autofill:hover, & input:-webkit-autofill:focus':
                   {
                     WebkitTextFillColor: 'var(--bs-body-color)',
@@ -194,15 +204,15 @@ export function SearchInput(props: SearchInputProps) {
               input: {
                 autoComplete: 'new-password',
                 sx: {
-                  height: 48,
+                  height: compact ? 36 : 48,
                   '& .MuiInputBase-input': {
-                    fontSize: 14,
+                    fontSize: compact ? 13 : 14,
                     lineHeight: '20px',
                     boxSizing: 'border-box',
-                    padding: '13px 8px 13px 0 !important',
+                    padding: compact ? '8px 6px 8px 0 !important' : '13px 8px 13px 0 !important',
                   },
                   '& .MuiInputAdornment-root': {
-                    maxHeight: 48,
+                    maxHeight: compact ? 36 : 48,
                   },
                 },
                 startAdornment: (
@@ -210,7 +220,12 @@ export function SearchInput(props: SearchInputProps) {
                     {isInputLoading ? (
                       <CircularProgress size={16} thickness={5} />
                     ) : (
-                      <SearchIcon sx={{ color: value ? 'text.primary' : 'text.secondary' }} />
+                      <SearchIcon
+                        sx={{
+                          color: value ? 'text.primary' : 'text.secondary',
+                          fontSize: compact ? 19 : undefined,
+                        }}
+                      />
                     )}
                   </InputAdornment>
                 ),

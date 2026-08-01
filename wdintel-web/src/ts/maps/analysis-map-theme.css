@@ -5,8 +5,8 @@
 #analysis-map .layer-switch-control,
 #analysis-map .layer-switch-header,
 :is(#analysis-map, .palitra-map-surface) .analysis-map-window-control {
-  background: #ffffff !important;
-  border-color: #dee2e6 !important;
+  background: color-mix(in srgb, #ffffff 86%, transparent) !important;
+  border-color: rgba(33, 37, 41, 0.16) !important;
 }
 
 .palitras-control-header h3,
@@ -44,8 +44,8 @@ html[data-bs-theme='dark'] .palitras-control-header,
 html[data-bs-theme='dark'] #analysis-map .layer-switch-control,
 html[data-bs-theme='dark'] #analysis-map .layer-switch-header,
 html[data-bs-theme='dark'] :is(#analysis-map, .palitra-map-surface) .analysis-map-window-control {
-  background: #212529 !important;
-  border-color: #495057 !important;
+  background: color-mix(in srgb, #212529 86%, transparent) !important;
+  border-color: rgba(222, 226, 230, 0.16) !important;
 }
 
 html[data-bs-theme='dark'] .palitras-control-header h3,
