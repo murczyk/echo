@@ -751,6 +751,18 @@ sigint_unit_details toMsg req =
         }
 
 
+sigint_unit_orbit_unlink :
+    (Result ApiError () -> msg)
+    -> LinkOrbitUnitReq
+    -> Cmd msg
+sigint_unit_orbit_unlink toMsg req =
+    Http.post
+        { url = "/api/sigint/unit/orbit-unlink"
+        , body = Http.jsonBody (linkOrbitUnitReqEncoder req)
+        , expect = leExpectJson toMsg (Decode.succeed ())
+        }
+
+
 type alias UnitAttachmentUploadForm =
     { unitId : Int
     , shortDescription : String

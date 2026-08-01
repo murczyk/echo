@@ -39,6 +39,7 @@ pub async fn unit_ids_with_orbit(
             JoinType::InnerJoin,
             orbit_unit_sigint_unit::Relation::OrbitUnit.def(),
         )
+        .filter(orbit_unit_sigint_unit::Column::IsSuppressed.eq(false))
         .filter(orbit_unit::Column::Deleted.eq(false))
         .all(dbx)
         .await
@@ -58,6 +59,7 @@ pub async fn unit_has_orbit(
             orbit_unit_sigint_unit::Relation::OrbitUnit.def(),
         )
         .filter(orbit_unit_sigint_unit::Column::SigintUnitId.eq(sigint_unit_id))
+        .filter(orbit_unit_sigint_unit::Column::IsSuppressed.eq(false))
         .filter(orbit_unit::Column::Deleted.eq(false))
         .one(dbx)
         .await
@@ -75,6 +77,7 @@ pub async fn unit_orbit_details(
             orbit_unit::Relation::OrbitUnitSigintUnit.def(),
         )
         .filter(orbit_unit_sigint_unit::Column::SigintUnitId.eq(sigint_unit_id))
+        .filter(orbit_unit_sigint_unit::Column::IsSuppressed.eq(false))
         .filter(orbit_unit::Column::Deleted.eq(false))
         .order_by_asc(orbit_unit::Column::OperationalUnitNameFull)
         .order_by_asc(orbit_unit::Column::UnitId)
@@ -203,6 +206,32 @@ pub async fn link_orbit_unit(
     find_available_sigint_unit(&env.dbx, req.sigint_unit_id).await?;
     find_available_orbit_unit(&env.dbx, orbit_unit_id).await?;
     crate::orbit::link_sigint_unit_if_unlinked_with_lock(
+        &env.dbx,
+        req.sigint_unit_id,
+        orbit_unit_id,
+    )
+    .await?;
+    super::fanout_unit_changed(&env).await?;
+    Ok(Json(()))
+}
+
+#[post("/api/sigint/unit/orbit-unlink")]
+pub async fn unlink_orbit_unit(
+    user: actix_identity::Identity,
+    env: Data<Env>,
+    req: Json<LinkOrbitUnitReq>,
+) -> Result<Json<()>, AppError> {
+    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    let login = login_id_from_identity(&user)?;
+    ensure_orbit_access(&env.dbx, &login).await?;
+    let req = req.into_inner();
+    let orbit_unit_id =
+        Uuid::parse_str(&req.orbit_unit_id).map_err(|_| AppError::BL {
+            msg: "Invalid ORBIT unit ID".to_string(),
+        })?;
+    find_available_sigint_unit(&env.dbx, req.sigint_unit_id).await?;
+    find_available_orbit_unit(&env.dbx, orbit_unit_id).await?;
+    crate::orbit::unlink_sigint_unit_with_lock(
         &env.dbx,
         req.sigint_unit_id,
         orbit_unit_id,

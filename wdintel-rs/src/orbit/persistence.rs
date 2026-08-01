@@ -10,10 +10,12 @@ use crate::orbit::hierarchy::HierarchyUnit;
 use crate::orbit::types::SourceUnit;
 use crate::types::ShortContext;
 use chrono::{Duration, NaiveDateTime};
+use sea_orm::sea_query::Expr;
 use sea_orm::{
-    ActiveModelTrait, ActiveValue::Set, ColumnTrait, ConnectionTrait,
-    DatabaseConnection, EntityTrait, IntoActiveModel, JoinType, QueryFilter,
-    QueryOrder, QuerySelect, RelationTrait, TransactionTrait,
+    ActiveModelTrait, ActiveValue::Set, ColumnTrait, Condition,
+    ConnectionTrait, DatabaseConnection, EntityTrait, IntoActiveModel,
+    JoinType, QueryFilter, QueryOrder, QuerySelect, RelationTrait,
+    TransactionTrait,
 };
 use serde::Serialize;
 use std::collections::{BTreeSet, HashMap, HashSet};
@@ -548,8 +550,10 @@ pub async fn replace_sigint_unit_links(
     let transaction = db.begin().await.c(h!())?;
     let manually_linked_sigint_unit_ids =
         active_manually_linked_sigint_unit_ids(&transaction).await?;
+    let suppressed_links = suppressed_sigint_unit_links(&transaction).await?;
     orbit_unit_sigint_unit::Entity::delete_many()
         .filter(orbit_unit_sigint_unit::Column::IsManual.eq(false))
+        .filter(orbit_unit_sigint_unit::Column::IsSuppressed.eq(false))
         .exec(&transaction)
         .await
         .c(h!())?;
@@ -564,12 +568,66 @@ pub async fn replace_sigint_unit_links(
         sigint_unit_ids_by_orbit_unit,
         &active_orbit_unit_ids,
         &manually_linked_sigint_unit_ids,
+        &suppressed_links,
     );
     if !links.is_empty() {
         orbit_unit_sigint_unit::Entity::insert_many(links)
             .exec(&transaction)
             .await
             .c(h!())?;
+    }
+    transaction.commit().await.c(h!())?;
+    Ok(())
+}
+
+pub async fn replace_automatic_sigint_unit_links(
+    db: &DatabaseConnection,
+    sigint_unit_id: i64,
+    orbit_unit_ids: &BTreeSet<Uuid>,
+) -> Result<(), AppError> {
+    let transaction = db.begin().await.c(h!())?;
+    let manually_linked_sigint_unit_ids =
+        active_manually_linked_sigint_unit_ids(&transaction).await?;
+    let mut active_orbit_unit_ids = active_orbit_unit_ids(
+        &transaction,
+        &orbit_unit_ids.iter().copied().collect::<Vec<_>>(),
+    )
+    .await?;
+    let suppressed_links = suppressed_sigint_unit_links(&transaction).await?;
+    active_orbit_unit_ids.retain(|orbit_unit_id| {
+        !suppressed_links.contains(&(*orbit_unit_id, sigint_unit_id))
+    });
+    let can_link_automatically =
+        !manually_linked_sigint_unit_ids.contains(&sigint_unit_id);
+    let mut links_to_delete = Condition::any()
+        .add(orbit_unit_sigint_unit::Column::SigintUnitId.eq(sigint_unit_id));
+    if can_link_automatically && !active_orbit_unit_ids.is_empty() {
+        links_to_delete = links_to_delete.add(
+            orbit_unit_sigint_unit::Column::OrbitUnitId
+                .is_in(active_orbit_unit_ids.iter().copied()),
+        );
+    }
+    orbit_unit_sigint_unit::Entity::delete_many()
+        .filter(orbit_unit_sigint_unit::Column::IsManual.eq(false))
+        .filter(orbit_unit_sigint_unit::Column::IsSuppressed.eq(false))
+        .filter(links_to_delete)
+        .exec(&transaction)
+        .await
+        .c(h!())?;
+    if can_link_automatically && !active_orbit_unit_ids.is_empty() {
+        orbit_unit_sigint_unit::Entity::insert_many(
+            active_orbit_unit_ids.into_iter().map(|orbit_unit_id| {
+                orbit_unit_sigint_unit::ActiveModel {
+                    orbit_unit_id: Set(orbit_unit_id),
+                    sigint_unit_id: Set(sigint_unit_id),
+                    is_manual: Set(false),
+                    is_suppressed: Set(false),
+                }
+            }),
+        )
+        .exec(&transaction)
+        .await
+        .c(h!())?;
     }
     transaction.commit().await.c(h!())?;
     Ok(())
@@ -587,12 +645,29 @@ where
             orbit_unit_sigint_unit::Relation::OrbitUnit.def(),
         )
         .filter(orbit_unit_sigint_unit::Column::IsManual.eq(true))
+        .filter(orbit_unit_sigint_unit::Column::IsSuppressed.eq(false))
         .filter(orbit_unit::Column::Deleted.eq(false))
         .all(db)
         .await
         .c(h!())?
         .into_iter()
         .map(|link| link.sigint_unit_id)
+        .collect())
+}
+
+async fn suppressed_sigint_unit_links<C>(
+    db: &C,
+) -> Result<BTreeSet<(Uuid, i64)>, AppError>
+where
+    C: ConnectionTrait,
+{
+    Ok(orbit_unit_sigint_unit::Entity::find()
+        .filter(orbit_unit_sigint_unit::Column::IsSuppressed.eq(true))
+        .all(db)
+        .await
+        .c(h!())?
+        .into_iter()
+        .map(|link| (link.orbit_unit_id, link.sigint_unit_id))
         .collect())
 }
 
@@ -621,6 +696,7 @@ fn automatic_sigint_unit_links(
     sigint_unit_ids_by_orbit_unit: &HashMap<Uuid, BTreeSet<i64>>,
     active_orbit_unit_ids: &BTreeSet<Uuid>,
     manually_linked_sigint_unit_ids: &BTreeSet<i64>,
+    suppressed_links: &BTreeSet<(Uuid, i64)>,
 ) -> Vec<orbit_unit_sigint_unit::ActiveModel> {
     sigint_unit_ids_by_orbit_unit
         .iter()
@@ -632,11 +708,14 @@ fn automatic_sigint_unit_links(
                 .iter()
                 .filter(|sigint_unit_id| {
                     !manually_linked_sigint_unit_ids.contains(sigint_unit_id)
+                        && !suppressed_links
+                            .contains(&(*orbit_unit_id, **sigint_unit_id))
                 })
                 .map(|sigint_unit_id| orbit_unit_sigint_unit::ActiveModel {
                     orbit_unit_id: Set(*orbit_unit_id),
                     sigint_unit_id: Set(*sigint_unit_id),
                     is_manual: Set(false),
+                    is_suppressed: Set(false),
                 })
         })
         .collect()
@@ -650,6 +729,14 @@ pub async fn replace_sigint_unit_link(
     let transaction = db.begin().await.c(h!())?;
     orbit_unit_sigint_unit::Entity::delete_many()
         .filter(orbit_unit_sigint_unit::Column::SigintUnitId.eq(sigint_unit_id))
+        .filter(
+            Condition::any()
+                .add(orbit_unit_sigint_unit::Column::IsSuppressed.eq(false))
+                .add(
+                    orbit_unit_sigint_unit::Column::OrbitUnitId
+                        .eq(orbit_unit_id),
+                ),
+        )
         .exec(&transaction)
         .await
         .c(h!())?;
@@ -658,6 +745,7 @@ pub async fn replace_sigint_unit_link(
             orbit_unit_id: Set(orbit_unit_id),
             sigint_unit_id: Set(sigint_unit_id),
             is_manual: Set(true),
+            is_suppressed: Set(false),
         },
     )
     .exec(&transaction)
@@ -665,6 +753,27 @@ pub async fn replace_sigint_unit_link(
     .c(h!())?;
     transaction.commit().await.c(h!())?;
     Ok(())
+}
+
+pub async fn delete_sigint_unit_link(
+    db: &DatabaseConnection,
+    sigint_unit_id: i64,
+    orbit_unit_id: Uuid,
+) -> Result<bool, AppError> {
+    Ok(orbit_unit_sigint_unit::Entity::update_many()
+        .col_expr(orbit_unit_sigint_unit::Column::IsManual, Expr::value(false))
+        .col_expr(
+            orbit_unit_sigint_unit::Column::IsSuppressed,
+            Expr::value(true),
+        )
+        .filter(orbit_unit_sigint_unit::Column::SigintUnitId.eq(sigint_unit_id))
+        .filter(orbit_unit_sigint_unit::Column::OrbitUnitId.eq(orbit_unit_id))
+        .filter(orbit_unit_sigint_unit::Column::IsSuppressed.eq(false))
+        .exec(db)
+        .await
+        .c(h!())?
+        .rows_affected
+        > 0)
 }
 
 fn same_data(unit: &ImportUnit, existing: &ExistingUnit) -> bool {
@@ -1055,6 +1164,129 @@ mod tests {
             .await
             .unwrap();
         orbit_unit::Entity::delete_by_id(second_orbit_unit.unit_id)
+            .exec(&db)
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn deleted_automatic_link_stays_suppressed_after_rebuild() {
+        crate::tests::test::init().await;
+        let db = crate::new_pg_pool_from_mode(Mode::Test).await.unwrap();
+        let orbit_unit = import_unit();
+        insert_unit(&db, &orbit_unit, Utc::now().naive_utc())
+            .await
+            .unwrap();
+        let login_id = crate::users::login_id_by_name(
+            &db,
+            crate::config::SYSTEM_LOGIN_NAME,
+        )
+        .await
+        .unwrap();
+        let first_sigint_unit = crate::functest::tests::mk_sigint_unit(
+            &db,
+            sigint_unit::ActiveModel {
+                created_by_login_id: Set(login_id),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let second_sigint_unit = crate::functest::tests::mk_sigint_unit(
+            &db,
+            sigint_unit::ActiveModel {
+                created_by_login_id: Set(login_id),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        orbit_unit_sigint_unit::Entity::insert(
+            orbit_unit_sigint_unit::ActiveModel {
+                orbit_unit_id: Set(orbit_unit.unit_id),
+                sigint_unit_id: Set(first_sigint_unit.id),
+                is_manual: Set(false),
+                is_suppressed: Set(false),
+            },
+        )
+        .exec(&db)
+        .await
+        .unwrap();
+
+        replace_automatic_sigint_unit_links(
+            &db,
+            second_sigint_unit.id,
+            &BTreeSet::from([orbit_unit.unit_id]),
+        )
+        .await
+        .unwrap();
+
+        let link = orbit_unit_sigint_unit::Entity::find()
+            .filter(
+                orbit_unit_sigint_unit::Column::OrbitUnitId
+                    .eq(orbit_unit.unit_id),
+            )
+            .one(&db)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(link.sigint_unit_id, second_sigint_unit.id);
+        assert!(!link.is_manual);
+        assert!(delete_sigint_unit_link(
+            &db,
+            second_sigint_unit.id,
+            orbit_unit.unit_id,
+        )
+        .await
+        .unwrap());
+        assert!(!delete_sigint_unit_link(
+            &db,
+            second_sigint_unit.id,
+            orbit_unit.unit_id,
+        )
+        .await
+        .unwrap());
+        replace_sigint_unit_links(
+            &db,
+            &HashMap::from([(
+                orbit_unit.unit_id,
+                BTreeSet::from([second_sigint_unit.id]),
+            )]),
+        )
+        .await
+        .unwrap();
+
+        let suppressed_link = orbit_unit_sigint_unit::Entity::find()
+            .filter(
+                orbit_unit_sigint_unit::Column::OrbitUnitId
+                    .eq(orbit_unit.unit_id),
+            )
+            .filter(
+                orbit_unit_sigint_unit::Column::SigintUnitId
+                    .eq(second_sigint_unit.id),
+            )
+            .one(&db)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(suppressed_link.is_suppressed);
+        assert!(!crate::sigint::unit::orbit::unit_has_orbit(
+            &db,
+            second_sigint_unit.id,
+        )
+        .await
+        .unwrap());
+
+        sigint_unit::Entity::delete_by_id(first_sigint_unit.id)
+            .exec(&db)
+            .await
+            .unwrap();
+        sigint_unit::Entity::delete_by_id(second_sigint_unit.id)
+            .exec(&db)
+            .await
+            .unwrap();
+        orbit_unit::Entity::delete_by_id(orbit_unit.unit_id)
             .exec(&db)
             .await
             .unwrap();

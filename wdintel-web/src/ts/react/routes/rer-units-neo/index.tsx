@@ -153,8 +153,13 @@ function RerUnitsNeoPageBody({ authUserRoles }: { authUserRoles: string[] }) {
         devicesSectionEnabled={page.devicesSectionEnabled}
         submitting={page.submitting}
         error={page.dialogError}
+        orbitUnits={[]}
+        orbitLinksLoading={false}
+        orbitLinksError={null}
+        unlinkingOrbitUnitId={null}
         onClose={page.closeDialogs}
         onSubmit={(value) => void page.submitUnit(value)}
+        onUnlinkOrbitUnit={() => undefined}
       />
       <UnitFormDialog
         open={page.editUnit !== null}
@@ -163,8 +168,13 @@ function RerUnitsNeoPageBody({ authUserRoles }: { authUserRoles: string[] }) {
         devicesSectionEnabled={false}
         submitting={page.submitting}
         error={page.dialogError}
+        orbitUnits={page.editOrbitUnits}
+        orbitLinksLoading={page.orbitLinksLoading}
+        orbitLinksError={page.orbitLinksError}
+        unlinkingOrbitUnitId={page.unlinkingOrbitUnitId}
         onClose={page.closeDialogs}
         onSubmit={(value) => void page.submitUnit(value)}
+        onUnlinkOrbitUnit={(orbitUnit) => void page.unlinkEditOrbitUnit(orbitUnit)}
       />
       <DeleteUnitDialog
         unit={page.deleteTarget}

@@ -15,7 +15,7 @@ use actix_web::web::Json;
 use sea_orm::*;
 use sea_query::types::IntoColumnRef;
 use sea_query::{Expr, OnConflict, SimpleExpr};
-use std::collections::HashSet;
+use std::collections::HashMap;
 
 pub mod attachment;
 pub mod orbit;
@@ -210,9 +210,19 @@ pub async fn create_unit(
     let req = req.into_inner();
     let unit = insert_unit_with_changelog(&env.dbx, &login, &req).await?;
 
+    if unit.active {
+        crate::orbit::link_new_sigint_unit_with_lock(&env.dbx, unit.id)
+            .await
+            .c(h!())?;
+    }
+
     fanout_unit_changed(&env).await?;
 
-    Ok(Json(render_unit(&unit)?))
+    let mut unit = render_unit(&unit)?;
+    if orbit::can_view_orbit_data(&env.dbx, &login).await? {
+        unit.has_orbit = orbit::unit_has_orbit(&env.dbx, unit.id).await?;
+    }
+    Ok(Json(unit))
 }
 
 #[post("/api/sigint/unit/create-with-auto-network")]
@@ -264,6 +274,12 @@ pub async fn create_unit_with_auto_network_for_login(
     };
     txn.commit().await.context(h!())?;
 
+    if unit.active {
+        crate::orbit::link_new_sigint_unit_with_lock(&env.dbx, unit.id)
+            .await
+            .c(h!())?;
+    }
+
     fanout_unit_changed_data(env).await?;
 
     if let Some(network) = network.clone() {
@@ -287,8 +303,12 @@ pub async fn create_unit_with_auto_network_for_login(
         }
     }
 
+    let mut unit = render_unit(&unit)?;
+    if orbit::can_view_orbit_data(&env.dbx, login).await? {
+        unit.has_orbit = orbit::unit_has_orbit(&env.dbx, unit.id).await?;
+    }
     Ok(CreateUnitWithAutoNetworkRsp {
-        unit: render_unit(&unit)?,
+        unit,
         network_id: network.map(|network| network.id),
     })
 }
@@ -834,36 +854,40 @@ async fn move_orbit_unit_links(
         .await
         .context(h!())?;
     if !links.is_empty() {
-        let manually_linked_orbit_unit_ids =
-            orbit_unit_sigint_unit::Entity::find()
-                .filter(
-                    orbit_unit_sigint_unit::Column::SigintUnitId
-                        .eq(new_unit_id),
-                )
-                .filter(orbit_unit_sigint_unit::Column::IsManual.eq(true))
-                .all(&transaction)
-                .await
-                .context(h!())?
-                .into_iter()
-                .map(|link| link.orbit_unit_id)
-                .collect::<HashSet<_>>();
-        let links =
-            links
-                .into_iter()
-                .map(|link| orbit_unit_sigint_unit::ActiveModel {
-                    orbit_unit_id: Set(link.orbit_unit_id),
-                    sigint_unit_id: Set(new_unit_id),
-                    is_manual: Set(link.is_manual
-                        || manually_linked_orbit_unit_ids
-                            .contains(&link.orbit_unit_id)),
-                });
+        let existing_links = orbit_unit_sigint_unit::Entity::find()
+            .filter(
+                orbit_unit_sigint_unit::Column::SigintUnitId.eq(new_unit_id),
+            )
+            .all(&transaction)
+            .await
+            .context(h!())?
+            .into_iter()
+            .map(|link| (link.orbit_unit_id, link))
+            .collect::<HashMap<_, _>>();
+        let links = links.into_iter().map(|link| {
+            let existing_link = existing_links.get(&link.orbit_unit_id);
+            let is_manual = link.is_manual
+                || existing_link.is_some_and(|link| link.is_manual);
+            orbit_unit_sigint_unit::ActiveModel {
+                orbit_unit_id: Set(link.orbit_unit_id),
+                sigint_unit_id: Set(new_unit_id),
+                is_manual: Set(is_manual),
+                is_suppressed: Set(!is_manual
+                    && (link.is_suppressed
+                        || existing_link
+                            .is_some_and(|link| link.is_suppressed))),
+            }
+        });
         orbit_unit_sigint_unit::Entity::insert_many(links)
             .on_conflict(
                 OnConflict::columns([
                     orbit_unit_sigint_unit::Column::OrbitUnitId,
                     orbit_unit_sigint_unit::Column::SigintUnitId,
                 ])
-                .update_column(orbit_unit_sigint_unit::Column::IsManual)
+                .update_columns([
+                    orbit_unit_sigint_unit::Column::IsManual,
+                    orbit_unit_sigint_unit::Column::IsSuppressed,
+                ])
                 .to_owned(),
             )
             .do_nothing()
@@ -1287,16 +1311,19 @@ mod tests {
                 orbit_unit_id: Set(first_orbit_unit_id),
                 sigint_unit_id: Set(duplicate.id),
                 is_manual: Set(true),
+                is_suppressed: Set(false),
             },
             orbit_unit_sigint_unit::ActiveModel {
                 orbit_unit_id: Set(second_orbit_unit_id),
                 sigint_unit_id: Set(duplicate.id),
                 is_manual: Set(false),
+                is_suppressed: Set(false),
             },
             orbit_unit_sigint_unit::ActiveModel {
                 orbit_unit_id: Set(second_orbit_unit_id),
                 sigint_unit_id: Set(surviving.id),
                 is_manual: Set(true),
+                is_suppressed: Set(false),
             },
         ])
         .exec(&env.dbx)
