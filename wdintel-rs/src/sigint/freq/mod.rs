@@ -626,7 +626,7 @@ pub async fn list_freqs(
                     (freq, callsigns.len() as i64, location_v2)
                 })
                 .collect::<Vec<_>>();
-            rows.sort_by(|left, right| right.1.cmp(&left.1));
+            rows.sort_by_key(|row| std::cmp::Reverse(row.1));
             FreqPeriodSource::Rows(rows)
         }
         None => {
@@ -995,7 +995,7 @@ pub async fn list_freqs_v2(
                     (freq, callsigns.len() as i64, location_v2, post_id)
                 })
                 .collect::<Vec<_>>();
-            rows.sort_by(|left, right| right.1.cmp(&left.1));
+            rows.sort_by_key(|row| std::cmp::Reverse(row.1));
             FreqPeriodSource::Rows(rows)
         }
         None => {
