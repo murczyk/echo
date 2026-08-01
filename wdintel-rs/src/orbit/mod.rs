@@ -168,6 +168,7 @@ where
             orbit_unit_sigint_unit::Relation::OrbitUnit.def(),
         )
         .filter(orbit_unit_sigint_unit::Column::SigintUnitId.eq(sigint_unit_id))
+        .filter(orbit_unit_sigint_unit::Column::IsSuppressed.eq(false))
         .filter(orbit_unit::Column::Deleted.eq(false))
         .one(db)
         .await

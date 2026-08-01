@@ -39,6 +39,7 @@ pub async fn unit_ids_with_orbit(
             JoinType::InnerJoin,
             orbit_unit_sigint_unit::Relation::OrbitUnit.def(),
         )
+        .filter(orbit_unit_sigint_unit::Column::IsSuppressed.eq(false))
         .filter(orbit_unit::Column::Deleted.eq(false))
         .all(dbx)
         .await
@@ -58,6 +59,7 @@ pub async fn unit_has_orbit(
             orbit_unit_sigint_unit::Relation::OrbitUnit.def(),
         )
         .filter(orbit_unit_sigint_unit::Column::SigintUnitId.eq(sigint_unit_id))
+        .filter(orbit_unit_sigint_unit::Column::IsSuppressed.eq(false))
         .filter(orbit_unit::Column::Deleted.eq(false))
         .one(dbx)
         .await
@@ -75,6 +77,7 @@ pub async fn unit_orbit_details(
             orbit_unit::Relation::OrbitUnitSigintUnit.def(),
         )
         .filter(orbit_unit_sigint_unit::Column::SigintUnitId.eq(sigint_unit_id))
+        .filter(orbit_unit_sigint_unit::Column::IsSuppressed.eq(false))
         .filter(orbit_unit::Column::Deleted.eq(false))
         .order_by_asc(orbit_unit::Column::OperationalUnitNameFull)
         .order_by_asc(orbit_unit::Column::UnitId)
