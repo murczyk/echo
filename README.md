@@ -36,10 +36,12 @@ Back-end:
 just dev-back
 ```
 
-If report generation does not start locally, run the worker in a second terminal:
+Background and report workers run as separate processes. Start them in two
+additional terminals when working with report generation:
 
 ```
 just dev-bgworker
+cargo run -p wdintel-rs -- --mode=debug report-worker
 ```
 
 Python service (optional, for NLP stuff only):

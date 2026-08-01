@@ -38,9 +38,9 @@ struct DistinctCountRes {
 }
 
 #[derive(Clone)]
-pub(super) struct AnalyticsTagAccess {
-    pub(super) accessible_tag_ids: Vec<i64>,
-    pub(super) unit_login_ids: Vec<uuid::Uuid>,
+pub(in crate::rer_importer) struct AnalyticsTagAccess {
+    pub(in crate::rer_importer) accessible_tag_ids: Vec<i64>,
+    pub(in crate::rer_importer) unit_login_ids: Vec<uuid::Uuid>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -115,7 +115,7 @@ pub(super) fn callsign_frequency_match_search_req(
     request_without_facet_filter(&req, AnalysisFacet::Frequencies)
 }
 
-pub(super) async fn resolve_analytics_tag_access(
+pub(in crate::rer_importer) async fn resolve_analytics_tag_access(
     db: &DatabaseConnection,
     login_id: &uuid::Uuid,
     report_tags_only_this_unit: bool,
@@ -176,7 +176,7 @@ pub(super) async fn resolve_analytics_message_id_scope(
     .await
 }
 
-async fn resolve_analytics_message_id_scope_for_range(
+pub(in crate::rer_importer) async fn resolve_analytics_message_id_scope_for_range(
     dt_since: NaiveDateTime,
     dt_till: NaiveDateTime,
     db: &DatabaseConnection,
@@ -410,7 +410,7 @@ where
     }
 }
 
-fn filter_selected_aors_for_scope<E>(
+pub(in crate::rer_importer) fn filter_selected_aors_for_scope<E>(
     mut query: Select<E>,
     selected_aors: &Option<Vec<i64>>,
     scope: Option<&AnalyticsMessageIdScope>,

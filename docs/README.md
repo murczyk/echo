@@ -149,6 +149,7 @@ flowchart LR
     socket["wdintel-rs.socket<br/>optional socket activation"] -.-> api
     api --> postgres["postgresql@18-main.service"]
     bg["wdintel-rs-bgworker.service"] --> postgres
+    reports["wdintel-rs-report-worker.service"] --> postgres
     api --> redis["redis-server.service"]
     bg --> redis
     api -.-> nlp["wdintel-py.service<br/>127.0.0.1:5000"]
@@ -181,7 +182,8 @@ flowchart LR
     whatsapp --> whatsapp_data[("WhatsApp client state<br/>/etc/echo/whatsapp-cli-data/%i/client_data/")]
     api --> app_storage[("Echo application storage<br/>configured storage_dir<br/>media cache · uploads · generated assets")]
     bg --> app_storage
-    bg -.->|optional durable media upload| s3[("S3-compatible object storage<br/>optional")]
+    reports --> app_storage
+    reports -.->|encrypted generated reports| s3[("S3-compatible object storage<br/>optional")]
 
     classDef optional stroke-dasharray:6 4
     class socket,nlp,iggy,promin,signal,whatsapp,vector,signoz,greptime,s3,wal_timer,wal_check,table_timer,table_reconcile,analytics optional
@@ -190,16 +192,17 @@ flowchart LR
 ## Bgworkers
 
 In a packaged live deployment, the API process owns only request-adjacent
-workers and the optional Vault secret worker. Long-running application, GOI,
-and report workers belong to the dedicated bgworker process. Solid arrows show
-tasks that are always spawned in that process; dotted arrows show tasks gated
-by configuration or used only during startup. Each process also starts its own
-`worker_metrics_logger`.
+workers and the optional Vault secret worker. Long-running application and GOI
+workers belong to the bgworker process; report-history workers run in the
+separately memory-capped report-worker process. Solid arrows show tasks that
+are always spawned; dotted arrows show tasks gated by configuration or used
+only during startup. Each process also starts its own `worker_metrics_logger`.
 
 ```mermaid
 flowchart TB
     api["wdintel-rs.service"]
     bg["wdintel-rs-bgworker.service"]
+    reports["wdintel-rs-report-worker.service"]
 
     api --> api_workers["Request-adjacent workers<br/>session_activity_worker<br/>messenger_media_cache_cleanup_worker<br/>messenger_media_thumbnail_worker"]
     api -.-> api_vault_worker["secret_worker<br/>when Vault is configured"]
@@ -214,15 +217,22 @@ flowchart TB
     bg -.-> configured_workers["Configuration-gated workers<br/>analytics_health_log_worker · analytics gateway<br/>activity_details_worker · GreptimeDB<br/>cleanup_networks_worker<br/>fill_comp_freq_worker<br/>inactive_users_worker<br/>location_v2_worker<br/>suggest_message_tags_worker<br/>refresh_models_worker · AI models<br/>cleanup_tmp_worker · in-memory tmp"]
     bg -.-> startup_workers["Startup task<br/>signal_cli_verbose_logger"]
 
-    bg --> report_workers_a["Report-history workers<br/>report_history_worker_tags<br/>report_history_worker_interception<br/>report_history_worker_babak<br/>report_history_worker_mouse<br/>report_history_worker_pelengs<br/>report_history_worker_senders<br/>report_history_worker_posts<br/>report_history_worker_naushnom<br/>report_history_worker_reo<br/>report_history_worker_digest"]
-    bg --> report_workers_b["Report-history workers<br/>report_history_worker_rer_report<br/>report_history_worker_sposob<br/>report_history_worker_posts_docx<br/>report_history_worker_active_networks<br/>report_history_worker_network_frequencies<br/>report_history_worker_report_125<br/>report_history_worker_report_1213<br/>report_history_worker_summary_table"]
-    bg --> report_workers_c["Report-history workers<br/>report_history_worker_kmz<br/>report_history_worker_geojson<br/>report_history_worker_etalonka<br/>report_history_worker_etalonka_1<br/>report_history_worker_goi<br/>report_history_worker_unknown<br/>report_history_timeout_worker"]
+    reports --> report_workers_a["Report-history workers<br/>report_history_worker_tags<br/>report_history_worker_interception<br/>report_history_worker_babak<br/>report_history_worker_mouse<br/>report_history_worker_pelengs<br/>report_history_worker_senders<br/>report_history_worker_posts<br/>report_history_worker_naushnom<br/>report_history_worker_reo<br/>report_history_worker_digest"]
+    reports --> report_workers_b["Report-history workers<br/>report_history_worker_rer_report<br/>report_history_worker_sposob<br/>report_history_worker_posts_docx<br/>report_history_worker_active_networks<br/>report_history_worker_network_frequencies<br/>report_history_worker_report_125<br/>report_history_worker_report_1213<br/>report_history_worker_summary_table"]
+    reports --> report_workers_c["Report-history workers<br/>report_history_worker_kmz<br/>report_history_worker_geojson<br/>report_history_worker_etalonka<br/>report_history_worker_etalonka_1<br/>report_history_worker_goi<br/>report_history_worker_unknown<br/>report_history_timeout_worker"]
 
     classDef optional stroke-dasharray:6 4
     class api_vault_worker,bg_vault_worker,configured_workers,startup_workers optional
 ```
 
 `worker_calculate_group_stats` also owns historical group-stat recalculation.
+
+Report generation is isolated in `wdintel-rs-report-worker.service`. At most
+four reports run concurrently across the per-kind queues. The unit has a fixed
+12 GiB memory-high threshold and 16 GiB hard limit; an OOM kills and immediately
+restarts only report processing, leaving ingestion and other background work
+running in `wdintel-rs-bgworker.service`.
+
 Changes to a group's AOR assignments enqueue the affected activity window in
 the PostgreSQL `group_stats_recalculation_task` table. Pending windows are
 coalesced globally because each recalculation rebuilds global statistics. The
@@ -248,6 +258,7 @@ flowchart LR
         direction TB
         api["wdintel-rs.service"]
         bg["wdintel-rs-bgworker.service"]
+        reports["wdintel-rs-report-worker.service"]
 
         routes["GOI API routes<br/>setup · configuration · pause controls"]
         sync["goi_sync_worker_0..N<br/>associations + knowledge<br/>signed-frequency reports<br/>callsign workbooks<br/>palette reconcile + transfer"]
@@ -263,7 +274,7 @@ flowchart LR
         bg --> sync
         bg --> message_uid
         bg --> conversion
-        bg --> report
+        reports --> report
 
         routes --> echo_pg
         sync --> echo_pg

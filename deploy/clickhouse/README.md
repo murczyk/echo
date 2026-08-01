@@ -754,6 +754,13 @@ conversion prevents those expressions from being pushed into ClickHouse, so
 measure those filters separately; ordinary relational filters and aggregates
 can still be pushed down.
 
+The dedicated `wdintel-rs-report-worker` uses the same freshness-gated
+gateway for supported report candidate scans. Babak scans page by
+`(datetime, id)` in 5,000-row batches; any gateway error discards the partial
+candidate list and reruns the complete scan on PostgreSQL. Message bodies,
+comments, tags, and authoritative message-network unit links are enriched from
+PostgreSQL in bounded batches rather than transferred through the gateway.
+
 The initial publication includes sensitive, binary, spatial, JSONB, array,
 enum, tsvector, and audit data. Network and filesystem access must therefore
 be treated like production database access. Replication support and

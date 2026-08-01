@@ -1,7 +1,7 @@
 use crate::config::{
     DISCORD_WEBHOOK_ALERT, REPORT_HISTORY_DISCORD_ALERT_TIMEOUT_SEC,
     REPORT_HISTORY_ETALONKA_IN_PROGRESS_TIMEOUT_SECS,
-    REPORT_HISTORY_ETALONKA_WORKER_COUNT,
+    REPORT_HISTORY_ETALONKA_WORKER_COUNT, REPORT_HISTORY_GLOBAL_WORKER_COUNT,
     REPORT_HISTORY_IN_PROGRESS_TIMEOUT_SECS, REPORT_HISTORY_LIST_LIMIT,
     REPORT_HISTORY_TIMEOUT_WORKER_SLEEP_SECS,
 };
@@ -39,7 +39,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
+use std::sync::LazyLock;
 use std::time::Duration as StdDuration;
+use tokio::sync::Semaphore;
 use tokio::task::JoinSet;
 use uuid::Uuid;
 
@@ -61,6 +63,9 @@ const WORKER_IDLE_SLEEP_SECS: u64 = 5;
 const REPORT_OBJECT_PREFIX: &str = "reports";
 const REPORT_TIMEOUT_LOGIN: &str = "system";
 const REPORT_CRASH_RECOVERY_LOGIN: &str = "system";
+
+static REPORT_HISTORY_GLOBAL_GATE: LazyLock<Semaphore> =
+    LazyLock::new(|| Semaphore::new(REPORT_HISTORY_GLOBAL_WORKER_COUNT));
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "source", rename_all = "snake_case")]
@@ -1986,7 +1991,7 @@ async fn recover_interrupted_reports(env: &Env) -> Result<(), AppError> {
             end,
             bgtask_id = null,
             last_error = format(
-                'Report generation was interrupted while in progress; recorded attempt %s/%s during bgworker startup recovery',
+                'Report generation was interrupted while in progress; recorded attempt %s/%s during report worker startup recovery',
                 recovered_report.attempt_count,
                 $1
             ),
@@ -1998,7 +2003,7 @@ async fn recover_interrupted_reports(env: &Env) -> Result<(), AppError> {
                     now() at time zone 'utc',
                     'message',
                     format(
-                        'Report generation was interrupted while in progress; recorded attempt %s/%s during bgworker startup recovery',
+                        'Report generation was interrupted while in progress; recorded attempt %s/%s during report worker startup recovery',
                         recovered_report.attempt_count,
                         $1
                     )
@@ -2075,21 +2080,42 @@ async fn run_report_history_worker_nofail(
     report_kind: String,
 ) {
     loop {
+        let permit = match REPORT_HISTORY_GLOBAL_GATE.acquire().await {
+            Ok(permit) => permit,
+            Err(err) => {
+                error!("report history global gate closed: {err:?}");
+                return;
+            }
+        };
         match take_next_report(&env.dbx, &report_kind).await {
             Ok(Some(report_history)) => {
+                let report_id = report_history.id;
+                let rss_before = report_worker_rss_kib();
+                log::info!(
+                    "report history job starting: id={report_id}, kind={report_kind}, rss_kib={rss_before:?}"
+                );
                 if let Err(err) =
                     process_report(env.as_ref(), report_history).await
                 {
                     error!("report history worker failed: {err:?}");
                 }
+                drop(permit);
+                let rss_before_trim = report_worker_rss_kib();
+                let trim_result = report_worker_malloc_trim();
+                let rss_after_trim = report_worker_rss_kib();
+                log::info!(
+                    "report history job released memory: id={report_id}, kind={report_kind}, rss_before_kib={rss_before:?}, rss_before_trim_kib={rss_before_trim:?}, rss_after_trim_kib={rss_after_trim:?}, malloc_trim={trim_result:?}"
+                );
             }
             Ok(None) => {
+                drop(permit);
                 tokio::time::sleep(std::time::Duration::from_secs(
                     WORKER_IDLE_SLEEP_SECS,
                 ))
                 .await;
             }
             Err(err) => {
+                drop(permit);
                 error!("failed to take next report history row: {err:?}");
                 tokio::time::sleep(std::time::Duration::from_secs(
                     WORKER_IDLE_SLEEP_SECS,
@@ -2098,6 +2124,30 @@ async fn run_report_history_worker_nofail(
             }
         }
     }
+}
+
+fn report_worker_rss_kib() -> Option<u64> {
+    let status = std::fs::read_to_string("/proc/self/status").ok()?;
+    status.lines().find_map(|line| {
+        line.strip_prefix("VmRSS:")?
+            .split_whitespace()
+            .next()?
+            .parse()
+            .ok()
+    })
+}
+
+#[cfg(all(target_os = "linux", target_env = "gnu"))]
+fn report_worker_malloc_trim() -> Option<bool> {
+    unsafe extern "C" {
+        fn malloc_trim(pad: usize) -> i32;
+    }
+    Some(unsafe { malloc_trim(0) != 0 })
+}
+
+#[cfg(not(all(target_os = "linux", target_env = "gnu")))]
+fn report_worker_malloc_trim() -> Option<bool> {
+    None
 }
 
 async fn run_unknown_report_history_worker_nofail(env: std::sync::Arc<Env>) {
@@ -2429,9 +2479,23 @@ async fn generate_and_store_report(
     bgtask_log_progress(bgtask_id, 10, "[1/3] Формування звіту", &env.dbx)
         .await;
     let generated = generate_report(env, report_history, bgtask_id).await?;
+    log::info!(
+        "report history stage complete: id={}, kind={}, stage=generated, bytes={}, rss_kib={:?}",
+        report_history.id,
+        report_history.report_kind,
+        generated.bytes.len(),
+        report_worker_rss_kib()
+    );
     bgtask_log_progress(bgtask_id, 85, "[2/3] Збереження звіту", &env.dbx)
         .await;
     let s3_id = upload_report_bytes(env, &generated).await?;
+    log::info!(
+        "report history stage complete: id={}, kind={}, stage=uploaded, bytes={}, rss_kib={:?}",
+        report_history.id,
+        report_history.report_kind,
+        generated.bytes.len(),
+        report_worker_rss_kib()
+    );
     let res = ReportHistory::update_many()
         .col_expr(
             report_history::Column::Status,

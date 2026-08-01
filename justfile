@@ -791,23 +791,25 @@ deploy _server_pos="" server:
       echo "Java preflight OK: $(java -version 2>&1 | head -1)"
     '
     ssh "$SERVER" 'set -euo pipefail
-      if systemctl cat wdintel-rs-bgworker.service >/dev/null 2>&1; then
-        echo "Stopping wdintel-rs-bgworker.service and waiting up to 120 seconds..."
-        sudo systemctl stop wdintel-rs-bgworker.service || true
-        for i in $(seq 1 120); do
-          if ! systemctl is-active --quiet wdintel-rs-bgworker.service; then
-            echo "wdintel-rs-bgworker.service is stopped."
-            break
-          fi
-          if [ "$i" -eq 120 ]; then
-            echo "wdintel-rs-bgworker.service did not stop within 120 seconds." >&2
-            exit 1
-          fi
-          sleep 1
-        done
-      else
-        echo "wdintel-rs-bgworker.service is not installed; skipping stop wait."
-      fi'
+      for service in wdintel-rs-report-worker.service wdintel-rs-bgworker.service; do
+        if systemctl cat "$service" >/dev/null 2>&1; then
+          echo "Stopping $service and waiting up to 120 seconds..."
+          sudo systemctl stop "$service" || true
+          for i in $(seq 1 120); do
+            if ! systemctl is-active --quiet "$service"; then
+              echo "$service is stopped."
+              break
+            fi
+            if [ "$i" -eq 120 ]; then
+              echo "$service did not stop within 120 seconds." >&2
+              exit 1
+            fi
+            sleep 1
+          done
+        else
+          echo "$service is not installed; skipping stop wait."
+        fi
+      done'
     # Keep apt mostly quiet, but print the command before running it and fail on timeouts.
     ssh "$SERVER" 'set -euo pipefail
       run_logged() {
@@ -859,9 +861,10 @@ deploy _server_pos="" server:
 
       sudo systemctl enable --now wdintel-rs.socket
       sudo systemctl enable --now wdintel-rs-bgworker.service
+      sudo systemctl enable --now wdintel-rs-report-worker.service
       sudo systemctl enable --now wdintel-py.service
 
-      for unit in wdintel-rs.socket wdintel-rs-bgworker.service wdintel-py.service; do
+      for unit in wdintel-rs.socket wdintel-rs-bgworker.service wdintel-rs-report-worker.service wdintel-py.service; do
         if ! systemctl is-enabled --quiet "$unit"; then
           echo "ERROR: $unit is not enabled after deploy." >&2
           systemctl is-enabled "$unit" || true
@@ -872,6 +875,11 @@ deploy _server_pos="" server:
       if ! systemctl is-active --quiet wdintel-rs-bgworker.service; then
         echo "ERROR: wdintel-rs-bgworker.service is not active after deploy." >&2
         systemctl status --no-pager wdintel-rs-bgworker.service || true
+        exit 1
+      fi
+      if ! systemctl is-active --quiet wdintel-rs-report-worker.service; then
+        echo "ERROR: wdintel-rs-report-worker.service is not active after deploy." >&2
+        systemctl status --no-pager wdintel-rs-report-worker.service || true
         exit 1
       fi
       if ! systemctl is-active --quiet wdintel-py.service; then
@@ -898,7 +906,7 @@ deploy _server_pos="" server:
       fi
     '
     printf "\n⚠️⚠️⚠️ docs were not deployed. Run: just deploy-docs --server %s ⚠️⚠️⚠️\n" "$SERVER"
-    echo "✅✅✅ deploy OK on $SERVER: wdintel-rs.socket, wdintel-rs-bgworker.service, wdintel-py.service, 8081 via systemd ✅✅✅"
+    echo "✅✅✅ deploy OK on $SERVER: wdintel-rs.socket, wdintel-rs-bgworker.service, wdintel-rs-report-worker.service, wdintel-py.service, 8081 via systemd ✅✅✅"
 
     # Success notification
     curl -sS -X POST \
@@ -945,7 +953,7 @@ deploy-from-local _server_pos="" server:
     DEB_NAME="$(basename "$DEB_PATH")"
     REMOTE_DEB_NAME="${DEB_NAME%.deb}-local-$(date -u +%Y%m%d%H%M%S)-$$.deb"
     REMOTE_DEB_PATH="/var/tmp/${REMOTE_DEB_NAME}"
-    RESTART_BGWORKER_ON_FAILURE=0
+    RESTART_WORKERS_ON_FAILURE=0
 
     cleanup() {
       local status=$?
@@ -954,10 +962,10 @@ deploy-from-local _server_pos="" server:
       if [[ -n "$REMOTE_DEB_PATH" ]]; then
         ssh "$SERVER" "rm -f -- '$REMOTE_DEB_PATH'" >/dev/null 2>&1 || true
       fi
-      if [[ $status -ne 0 && $RESTART_BGWORKER_ON_FAILURE -eq 1 ]]; then
-        echo "Deployment failed; restarting wdintel-rs-bgworker.service..." >&2
-        if ! ssh "$SERVER" 'sudo systemctl start wdintel-rs-bgworker.service'; then
-          echo "Failed to restart wdintel-rs-bgworker.service after deployment failure." >&2
+      if [[ $status -ne 0 && $RESTART_WORKERS_ON_FAILURE -eq 1 ]]; then
+        echo "Deployment failed; restarting worker services..." >&2
+        if ! ssh "$SERVER" 'sudo systemctl start wdintel-rs-bgworker.service wdintel-rs-report-worker.service'; then
+          echo "Failed to restart worker services after deployment failure." >&2
         fi
       fi
 
@@ -968,7 +976,7 @@ deploy-from-local _server_pos="" server:
     echo "Uploading ${DEB_NAME} to ${SERVER}:${REMOTE_DEB_PATH}..."
     scp "$DEB_PATH" "${SERVER}:${REMOTE_DEB_PATH}"
 
-    RESTART_BGWORKER_ON_FAILURE=1
+    RESTART_WORKERS_ON_FAILURE=1
     ssh "$SERVER" 'set -euo pipefail
       if ! command -v java >/dev/null 2>&1; then
         echo "ERROR: Java is required for Signal normal mode, but java is not installed." >&2
@@ -983,23 +991,25 @@ deploy-from-local _server_pos="" server:
       echo "Java preflight OK: $(java -version 2>&1 | head -1)"
     '
     ssh "$SERVER" 'set -euo pipefail
-      if systemctl cat wdintel-rs-bgworker.service >/dev/null 2>&1; then
-        echo "Stopping wdintel-rs-bgworker.service and waiting up to 120 seconds..."
-        sudo systemctl stop wdintel-rs-bgworker.service || true
-        for i in $(seq 1 120); do
-          if ! systemctl is-active --quiet wdintel-rs-bgworker.service; then
-            echo "wdintel-rs-bgworker.service is stopped."
-            break
-          fi
-          if [ "$i" -eq 120 ]; then
-            echo "wdintel-rs-bgworker.service did not stop within 120 seconds." >&2
-            exit 1
-          fi
-          sleep 1
-        done
-      else
-        echo "wdintel-rs-bgworker.service is not installed; skipping stop wait."
-      fi'
+      for service in wdintel-rs-report-worker.service wdintel-rs-bgworker.service; do
+        if systemctl cat "$service" >/dev/null 2>&1; then
+          echo "Stopping $service and waiting up to 120 seconds..."
+          sudo systemctl stop "$service" || true
+          for i in $(seq 1 120); do
+            if ! systemctl is-active --quiet "$service"; then
+              echo "$service is stopped."
+              break
+            fi
+            if [ "$i" -eq 120 ]; then
+              echo "$service did not stop within 120 seconds." >&2
+              exit 1
+            fi
+            sleep 1
+          done
+        else
+          echo "$service is not installed; skipping stop wait."
+        fi
+      done'
 
     echo "Installing ${DEB_NAME} on ${SERVER}..."
     ssh "$SERVER" "set -euo pipefail
@@ -1031,8 +1041,9 @@ deploy-from-local _server_pos="" server:
 
       sudo systemctl enable --now wdintel-rs.socket
       sudo systemctl enable --now wdintel-rs-bgworker.service
+      sudo systemctl enable --now wdintel-rs-report-worker.service
 
-      for unit in wdintel-rs.socket wdintel-rs-bgworker.service; do
+      for unit in wdintel-rs.socket wdintel-rs-bgworker.service wdintel-rs-report-worker.service; do
         if ! systemctl is-enabled --quiet "$unit"; then
           echo "ERROR: $unit is not enabled after deploy." >&2
           systemctl is-enabled "$unit" || true
@@ -1043,6 +1054,11 @@ deploy-from-local _server_pos="" server:
       if ! systemctl is-active --quiet wdintel-rs-bgworker.service; then
         echo "ERROR: wdintel-rs-bgworker.service is not active after deploy." >&2
         systemctl status --no-pager wdintel-rs-bgworker.service || true
+        exit 1
+      fi
+      if ! systemctl is-active --quiet wdintel-rs-report-worker.service; then
+        echo "ERROR: wdintel-rs-report-worker.service is not active after deploy." >&2
+        systemctl status --no-pager wdintel-rs-report-worker.service || true
         exit 1
       fi
       if ! systemctl is-active --quiet wdintel-rs.socket; then
@@ -1063,9 +1079,9 @@ deploy-from-local _server_pos="" server:
         exit 1
       fi
 
-      echo "✅✅✅ deploy OK on $HOSTNAME: wdintel-rs.socket, wdintel-rs-bgworker.service, 8081 via systemd ✅✅✅"
+      echo "✅✅✅ deploy OK on $HOSTNAME: wdintel-rs.socket, wdintel-rs-bgworker.service, wdintel-rs-report-worker.service, 8081 via systemd ✅✅✅"
     '
-    RESTART_BGWORKER_ON_FAILURE=0
+    RESTART_WORKERS_ON_FAILURE=0
 
 [arg('server', long='server')]
 deploy-docs-from-local _server_pos="" server:

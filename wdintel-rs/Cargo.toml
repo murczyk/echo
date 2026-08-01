@@ -159,6 +159,7 @@ maintainer-scripts = "debian/"
 systemd-units = [
 	{ unit-name = "wdintel-rs" },
 	{ unit-name = "wdintel-rs-bgworker" },
+	{ unit-name = "wdintel-rs-report-worker" },
 	{ unit-name = "wdintel-py" },
 	{ unit-name = "echo-vector" },
 	{ unit-name = "echo-signal-bot@" },

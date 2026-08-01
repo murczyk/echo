@@ -6967,6 +6967,61 @@ where
     P: FnOnce(DatabaseConnection) -> PFut,
     PFut: std::future::Future<Output = Result<T, AppError>>,
 {
+    with_analytics_read_fallback_inner(
+        env,
+        operation,
+        analytics_supported,
+        true,
+        analytics_query,
+        postgres_query,
+    )
+    .await
+}
+
+pub(crate) async fn with_internally_timed_analytics_read_fallback<
+    T,
+    A,
+    AFut,
+    P,
+    PFut,
+>(
+    env: &Env,
+    operation: &str,
+    analytics_supported: bool,
+    analytics_query: A,
+    postgres_query: P,
+) -> Result<T, AppError>
+where
+    A: FnOnce(DatabaseConnection) -> AFut,
+    AFut: std::future::Future<Output = Result<T, AppError>>,
+    P: FnOnce(DatabaseConnection) -> PFut,
+    PFut: std::future::Future<Output = Result<T, AppError>>,
+{
+    with_analytics_read_fallback_inner(
+        env,
+        operation,
+        analytics_supported,
+        false,
+        analytics_query,
+        postgres_query,
+    )
+    .await
+}
+
+async fn with_analytics_read_fallback_inner<T, A, AFut, P, PFut>(
+    env: &Env,
+    operation: &str,
+    analytics_supported: bool,
+    use_configured_timeout: bool,
+    analytics_query: A,
+    postgres_query: P,
+) -> Result<T, AppError>
+where
+    A: FnOnce(DatabaseConnection) -> AFut,
+    AFut: std::future::Future<Output = Result<T, AppError>>,
+    P: FnOnce(DatabaseConnection) -> PFut,
+    PFut: std::future::Future<Output = Result<T, AppError>>,
+{
     let analytics_attempt = analytics_supported
         .then_some(env.analytics.as_ref())
         .flatten()
@@ -6994,18 +7049,23 @@ where
             analytics_query(analytics_conn).await
         };
 
-        match tokio::time::timeout(timeout, query).await {
-            Ok(Ok(response)) => {
+        let response = if use_configured_timeout {
+            tokio::time::timeout(timeout, query).await.ok()
+        } else {
+            Some(query.await)
+        };
+        match response {
+            Some(Ok(response)) => {
                 retry_attempt.record_success();
                 trace!("{operation} used analytics in {:?}", started.elapsed());
                 return Ok(response);
             }
-            Ok(Err(err)) => warn!(
+            Some(Err(err)) => warn!(
                 "{operation} analytics query failed after {:?}, retrying via PostgreSQL: {:?}",
                 started.elapsed(),
                 err
             ),
-            Err(_) => warn!(
+            None => warn!(
                 "{operation} analytics query timed out after {:?}, retrying via PostgreSQL",
                 started.elapsed()
             ),

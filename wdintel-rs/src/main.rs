@@ -722,6 +722,7 @@ pub struct OneoffMergeDatasourceGroupPs {
 enum Cmd {
     Server(ServerPs),
     Bgworker,
+    ReportWorker,
     GenElm,
     GenTs,
     #[command(visible_alias = "migration")]
@@ -1116,6 +1117,10 @@ async fn async_main(
         }
         Cmd::Bgworker => {
             server::main_bgworker(mode, token, shutdown_handle.clone()).await
+        }
+        Cmd::ReportWorker => {
+            server::main_report_worker(mode, token, shutdown_handle.clone())
+                .await
         }
         Cmd::OneoffEnsureTagsOrdering => {
             tags::ordering::oneoff_ensure_tags_ordering(mode).await

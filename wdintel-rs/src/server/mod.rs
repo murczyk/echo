@@ -1130,17 +1130,8 @@ pub async fn main_bgworker(
     crate::use_bgworker_pg_pool_limits();
     let env = init_runtime_env(mode).await.c(h!())?;
     crate::migration::request_analytics_table_reconciliation().await;
-    let report_history_env = env.clone();
     let mut background_tasks: JoinSet<()> = JoinSet::new();
     let mut transcriber_tasks: JoinSet<()> = JoinSet::new();
-    crate::report_history::reset_in_progress_nofail(
-        report_history_env.as_ref(),
-    )
-    .await;
-    crate::report_history::spawn_report_history_workers(
-        &mut background_tasks,
-        report_history_env,
-    );
     spawn_background_workers(
         mode,
         env.clone(),
@@ -1218,6 +1209,50 @@ pub async fn main_bgworker(
                     ECHO_AUDIO_TRANSCRIPTION_SHUTDOWN_GRACE_SECS
                 );
             }
+        })
+        .await
+        .c(h!())?;
+    Ok(())
+}
+
+pub async fn main_report_worker(
+    mode: Mode,
+    cancel_token: CancellationToken,
+    shutdown_handle: Handle,
+) -> Result<(), AppError> {
+    crate::use_bgworker_pg_pool_limits();
+    let env = new_env(mode).await.c(h!())?;
+    crate::report_history::reset_in_progress_nofail(env.as_ref()).await;
+
+    let mut report_tasks = JoinSet::new();
+    crate::report_history::spawn_report_history_workers(&mut report_tasks, env);
+    let task_completion_future = async move {
+        while report_tasks.join_next().await.is_some() {}
+        info!("[Report worker] All report tasks finished.");
+    };
+
+    let mut sigint = signal(SignalKind::interrupt())
+        .expect("Failed to register SIGINT handler");
+    let mut sigterm = signal(SignalKind::terminate())
+        .expect("Failed to register SIGTERM handler");
+
+    shutdown_handle
+        .spawn(async move {
+            tokio::select! {
+                _ = sigint.recv() => {
+                    info!("[Report worker] SIGINT detected.");
+                },
+                _ = sigterm.recv() => {
+                    info!("[Report worker] SIGTERM detected.");
+                },
+                _ = tokio::signal::ctrl_c() => {
+                    info!("[Report worker] CTRL+C detected.");
+                },
+                _ = task_completion_future => {
+                    info!("[Report worker] All background tasks finished.");
+                }
+            }
+            cancel_token.cancel();
         })
         .await
         .c(h!())?;
