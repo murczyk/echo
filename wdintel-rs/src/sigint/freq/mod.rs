@@ -452,30 +452,8 @@ pub async fn list_callsigns_by_freqs(
 }
 
 fn inbox_item_callsign_exists() -> SimpleExpr {
-    Expr::exists(
-        Query::select()
-            .expr(Expr::value(1))
-            .from(sigint_inbox_item_callsign::Entity)
-            .and_where(
-                Expr::col((
-                    sigint_inbox_item_callsign::Entity,
-                    sigint_inbox_item_callsign::Column::SigintInboxItemId,
-                ))
-                .equals((
-                    sigint_inbox_item::Entity,
-                    sigint_inbox_item::Column::Id,
-                )),
-            )
-            .and_where(sigint_inbox_item_callsign::Column::Deleted.eq(false))
-            .to_owned(),
-    )
-    .or(Expr::cust(
-        r#"(
-            (jsonb_typeof(sigint_inbox_item.callsigns) = 'array'
-                and sigint_inbox_item.callsigns <> '[]'::jsonb)
-            or (jsonb_typeof(sigint_inbox_item.callsigns_alg2) = 'array'
-                and sigint_inbox_item.callsigns_alg2 <> '[]'::jsonb)
-        )"#,
+    Expr::cust(crate::inbox::callsigns::sql_exists_condition(
+        "sigint_inbox_item",
     ))
 }
 

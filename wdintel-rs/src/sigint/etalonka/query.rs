@@ -1479,25 +1479,9 @@ pub async fn get_active_callsigns(
                 .add(sigint_network_freq::Column::Deleted.eq(false))
                 .add(sigint_network_freq::Column::ActiveTo.is_not_null()),
         )
-        .filter(Expr::exists(
-            Query::select()
-                .expr(Expr::value(1))
-                .from(sigint_inbox_item_callsign::Entity)
-                .and_where(
-                    Expr::col((
-                        sigint_inbox_item_callsign::Entity,
-                        sigint_inbox_item_callsign::Column::SigintInboxItemId,
-                    ))
-                    .equals((
-                        sigint_inbox_item::Entity,
-                        sigint_inbox_item::Column::Id,
-                    )),
-                )
-                .and_where(
-                    sigint_inbox_item_callsign::Column::Deleted.eq(false),
-                )
-                .to_owned(),
-        ))
+        .filter(Expr::cust(crate::inbox::callsigns::sql_exists_condition(
+            "sigint_inbox_item",
+        )))
         .filter(build_datetime_filter(filter)?);
     let inbox_item_ids =
         query.into_tuple::<i64>().all(db).await.context(h!())?;
@@ -1721,22 +1705,9 @@ pub async fn get_callsigns_for_network_freq_batch(
             Expr::col((nf.clone(), SigintNetworkFreq::Id))
                 .is_in(network_freq_ids.to_vec()),
         )
-        .and_where(Expr::exists(
-            Query::select()
-                .expr(Expr::value(1))
-                .from(sigint_inbox_item_callsign::Entity)
-                .and_where(
-                    Expr::col((
-                        sigint_inbox_item_callsign::Entity,
-                        sigint_inbox_item_callsign::Column::SigintInboxItemId,
-                    ))
-                    .equals((SigintInboxItem::Table, SigintInboxItem::Id)),
-                )
-                .and_where(
-                    sigint_inbox_item_callsign::Column::Deleted.eq(false),
-                )
-                .to_owned(),
-        ))
+        .and_where(Expr::cust(crate::inbox::callsigns::sql_exists_condition(
+            "sigint_inbox_item",
+        )))
         .order_by_expr(
             Expr::col((nf.clone(), SigintNetworkFreq::Id)).into(),
             Order::Asc,

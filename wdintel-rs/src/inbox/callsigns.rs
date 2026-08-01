@@ -203,43 +203,21 @@ or (
     )
 }
 
-pub fn sql_json_expression(inbox_alias: &str) -> String {
+pub fn sql_exists_condition(inbox_alias: &str) -> String {
     format!(
-        r#"coalesce(
-(
-    select jsonb_agg(active.callsign order by active.source_order, active.ordering, active.id)
-    from (
-        select distinct on (siic.callsign)
-            siic.callsign,
-            case siic.source
-                when 'primary' then 0
-                when 'alg2' then 1
-            end as source_order,
-            siic.ordering,
-            siic.id
-        from sigint_inbox_item_callsign siic
-        where siic.sigint_inbox_item_id = {inbox_alias}.id
-          and not siic.deleted
-        order by siic.callsign, source_order, siic.ordering, siic.id
-    ) active
-),
-coalesce({inbox_alias}.callsigns, '[]'::jsonb)
-    || coalesce({inbox_alias}.callsigns_alg2, '[]'::jsonb)
-)"#
-    )
-}
-
-pub fn sql_primary_json_expression(inbox_alias: &str) -> String {
-    format!(
-        r#"coalesce(
-(
-    select jsonb_agg(siic.callsign order by siic.ordering, siic.id)
+        r#"(
+exists (
+    select 1
     from sigint_inbox_item_callsign siic
     where siic.sigint_inbox_item_id = {inbox_alias}.id
       and not siic.deleted
-      and siic.source = 'primary'
-),
-coalesce({inbox_alias}.callsigns, '[]'::jsonb)
+)
+or (
+    (jsonb_typeof({inbox_alias}.callsigns) = 'array'
+        and {inbox_alias}.callsigns <> '[]'::jsonb)
+    or (jsonb_typeof({inbox_alias}.callsigns_alg2) = 'array'
+        and {inbox_alias}.callsigns_alg2 <> '[]'::jsonb)
+)
 )"#
     )
 }

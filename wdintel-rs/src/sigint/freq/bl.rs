@@ -4,7 +4,7 @@ use crate::rer_importer::analysis::message_in_groups_exists;
 use crate::types::*;
 use crate::utils::*;
 use sea_orm::{sea_query::extension::postgres::PgExpr, *};
-use sea_query::{Expr, Query};
+use sea_query::Expr;
 
 use super::types::*;
 
@@ -33,25 +33,9 @@ pub async fn bl_callsigns_for_filter(
         .filter(signal_message::Column::Deleted.eq(false))
         .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
         .filter(sigint_inbox_item::Column::Datetime.lt(dt_till))
-        .filter(Expr::exists(
-            Query::select()
-                .expr(Expr::value(1))
-                .from(sigint_inbox_item_callsign::Entity)
-                .and_where(
-                    Expr::col((
-                        sigint_inbox_item_callsign::Entity,
-                        sigint_inbox_item_callsign::Column::SigintInboxItemId,
-                    ))
-                    .equals((
-                        sigint_inbox_item::Entity,
-                        sigint_inbox_item::Column::Id,
-                    )),
-                )
-                .and_where(
-                    sigint_inbox_item_callsign::Column::Deleted.eq(false),
-                )
-                .to_owned(),
-        ));
+        .filter(Expr::cust(crate::inbox::callsigns::sql_exists_condition(
+            "sigint_inbox_item",
+        )));
     if let Some(freq) = &req.freq {
         query = query
             .filter(sigint_inbox_item::Column::Freq.like(format!("{freq}%")));
