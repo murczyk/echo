@@ -7,47 +7,57 @@ analytical metadata, and synchronizing file metadata.
 
 ## Architecture
 
-Devices is implemented as a vertical backend module with separate API, access,
-domain-service, and persistence layers:
+The `devices` domain follows the same module layout as the established backend
+domains:
 
-- `devices::api` owns the authenticated Actix routes, strict request decoding,
-  DTO mapping, and generated binding types;
-- `DeviceActorResolver` and `DeviceVisibility` combine session identity, role
-  capabilities, the Devices feature flag, and organism hierarchy visibility;
-- `DeviceService` coordinates device reads and atomic source/analytical writes
-  in the main database;
-- `FileMetadataService` coordinates file browsing, search, journal, subtree
-  counts, and synchronization through `FilesystemRepository`;
-- `MainDb` and `FileRegistryDb` make the database boundary explicit in function
-  signatures.
+- `devices::devices` owns device routes in `mod.rs`, business logic in `bl.rs`,
+  main-database access in `query.rs`, wire and domain types in `types.rs`, and
+  its tests in `tests.rs`;
+- `devices::files` owns file routes in `mod.rs`, business logic in `bl.rs`,
+  file-registry access through `query.rs`, file types in `types.rs`, and its
+  tests in `tests.rs`;
+- the shared `devices::access` module validates the current login, Devices
+  feature flag, roles, organism scope, device lifecycle, and permitted field
+  groups for both subdomains;
+- the root `types.rs` contains only wire helpers shared by both subdomains, and
+  the root `tests.rs` covers shared access, schema, and route contracts.
+
+The files business logic keeps cohesive filesystem helpers in `cursor.rs`,
+`path.rs`, `metadata.rs`, `validation.rs`, `sync_pipeline.rs`, and `ltree.rs`.
+Its `query.rs` remains the database boundary; the modules under `query/` only
+split the file-registry queries into manageable logical groups. The code uses
+ordinary functions rather than empty service, repository, parser, or codec
+method-holder structures.
+
+The `API` component in the diagrams is the HTTP boundary; its route handlers
+remain in the `mod.rs` of the corresponding `devices` or `files` subdomain.
 
 ```mermaid
 flowchart LR
     Browser["Browser"]
-    Elm["Elm routes<br/>/devices and /devices/:id"]
-    React["React custom elements<br/>devices-page and device-details-page"]
-    ApiClient["Generated DTOs<br/>typed Devices API client"]
-    API["Actix devices::api"]
-    Access["DeviceActorResolver<br/>DeviceVisibility"]
-    DeviceService["DeviceService"]
-    FileService["FileMetadataService<br/>FilesystemRepository"]
-    MainDb[("Main PostgreSQL<br/>device and relations")]
-    FileDb[("wd_files PostgreSQL<br/>file_entry and journal")]
-    Users["users + session identity"]
-    Settings["system_settings"]
-    Organisms["organism hierarchy"]
-    Sigint["sigint::aor<br/>sigint::unit"]
+    ExternalSource["External device source"]
 
-    Browser --> Elm --> React --> ApiClient --> API
-    API --> Access
-    Access --> Users
-    Access --> Settings
-    Access --> Organisms
-    API --> DeviceService --> MainDb
-    API --> FileService --> FileDb
-    Access --> MainDb
-    DeviceService --> Sigint
-    Sigint --> MainDb
+    subgraph Backend["Echo backend"]
+        direction LR
+        API["/api/device/*"]
+
+        subgraph DevicesDomain["Devices domain"]
+            direction TB
+            Devices["devices<br/>"]
+            Files["files<br/>"]
+        end
+
+        API -->|"device requests"| Devices
+        API -->|"file requests"| Files
+    end
+
+    MainDatabase[("Main DB")]
+    FileRegistryDatabase[("Files DB")]
+
+    Browser --> API
+    ExternalSource --> API
+    Devices -->|"device state and access data"| MainDatabase
+    Files -->|"file metadata"| FileRegistryDatabase
 ```
 
 The module reuses authentication and login validation from `users`, reads the
@@ -55,8 +65,8 @@ organism tree for visibility, and uses the existing SIGINT AOR and unit models
 for analytical classification. Device-authorized `/api/device/aors` and
 `/api/device/units` routes expose those reference values without broadening the
 permissions of the legacy SIGINT endpoints. The `file_registry` module owns the
-second connection, generated entities, provisioning, and migrations; the
-Devices filesystem layer owns the file metadata behavior built on top of it.
+second connection, generated entities, provisioning, and migrations;
+`devices::files` owns the file metadata behavior built on top of it.
 
 Elm remains responsible for routing and authenticated page composition. It
 mounts React through the `devices-page` and `device-details-page` custom
@@ -69,24 +79,33 @@ without a cross-database transaction:
 
 ```mermaid
 sequenceDiagram
-    actor Client
-    participant API as Devices file API
-    participant Resolver as DeviceActorResolver
-    participant Main as MainDb / DeviceVisibility
-    participant Files as FileMetadataService
-    participant Registry as FileRegistryDb
+    actor Browser
+    actor Source as External device source
+    participant API as Devices API
+    participant Files as files
+    participant Devices as devices
+    participant Main as Main PostgreSQL
+    participant Registry as wd_files PostgreSQL
 
-    Client->>API: authenticated file request
-    API->>Resolver: resolve login and capabilities
-    Resolver->>Main: load login, roles, and organism
-    Main-->>Resolver: DeviceActor
-    API->>Main: verify visible device and access mode
-    Main-->>API: authorized device ID
-    API->>Files: execute validated file command
-    Files->>Registry: query or transaction
+    alt Browser reads file metadata
+        Browser->>API: roots, subtree-counts, browse, search, or journal
+    else External source synchronizes metadata
+        Source->>API: sync batch
+    end
+    API->>Devices: authorize selected device
+    Devices->>Main: validate login, feature, roles, organism, and lifecycle
+    Main-->>Devices: authorized device
+    Devices-->>API: authorized device ID
+    API->>Files: execute parsed file request for the authorized device
+    Files->>Registry: query, snapshot, or isolated transaction on file_entry
     Registry-->>Files: file metadata result
-    Files-->>API: domain result
-    API-->>Client: mapped DTO
+    Files-->>API: mapped response
+    alt Browser read
+        API-->>Browser: file metadata
+    else External source sync
+        API-->>Source: ordered per-item results
+    end
+    Note over Main,Registry: No cross-database transaction or foreign key
 ```
 
 ## Storage boundaries
@@ -99,15 +118,103 @@ databases:
 - the independent `wd_files` database stores the `file_entry` hierarchy and
   file synchronization history.
 
-Backend services use typed `MainDb` and `FileRegistryDb` wrappers so a query
-cannot accidentally run against the wrong connection. There are no cross-
-database foreign keys or transactions. A file-registry request first validates
-the device and the actor against the main database, then performs the isolated
-file-registry operation.
+Main-database query functions accept a `DatabaseConnection`, while
+file-registry query functions accept `FileRegistryDb`; each stays inside its
+subdomain's `query.rs` boundary. There are no cross-database foreign keys or
+transactions. A file-registry request first validates the device and actor
+against the main database, then performs the isolated file-registry operation.
 
 Both databases have independent migration histories. Main migrations do not
 create `wd_files`; its schema migrations run automatically during backend
 startup after the database has been provisioned.
+
+## Database model (SQL UML)
+
+The Devices feature owns `device` and `device_aor` in the main database, and
+`file_entry` in `wd_files`. The `main.` and `wd_files.` prefixes below identify
+the target database rather than PostgreSQL schemas. Existing main-database
+tables are included only as relationship targets.
+
+```mermaid
+classDiagram
+    direction LR
+
+    class device["main.device"] {
+        uuid id PK
+        text name NULL
+        text created_by FK
+        bigint unit_id FK NULL
+        jsonb tags
+        text external_url NULL
+        boolean archived
+        timestamp archived_at NULL
+        timestamp created_at
+        timestamp updated_at
+        text source_label
+        jsonb custom_fields
+        bigint organism_id FK
+    }
+
+    class device_aor["main.device_aor"] {
+        uuid id PK
+        uuid device_id FK
+        bigint aor_id FK
+        timestamp created_at
+    }
+
+    class file_entry["wd_files.file_entry"] {
+        uuid id PK
+        uuid device_id
+        uuid parent_id FK NULL
+        text kind
+        text name
+        bytea name_key
+        text path_syntax NULL
+        text absolute_path NULL
+        ltree hierarchy_path
+        text mime_type NULL
+        text extension NULL
+        timestamp file_metadata_created_at NULL
+        timestamp file_metadata_modified_at NULL
+        timestamp created_at
+        timestamp updated_at
+        text content_path NULL
+    }
+
+    class login["main.login (existing)"] {
+        text login PK
+    }
+
+    class organism["main.organism (existing)"] {
+        bigint id PK
+    }
+
+    class sigint_unit["main.sigint_unit (existing)"] {
+        bigint id PK
+    }
+
+    class area_of_responsibility["main.area_of_responsibility (existing)"] {
+        bigint id PK
+    }
+
+    note for device "Stores source identity, analytical metadata, ownership, and lifecycle."
+    note for device_aor "Joins devices to AORs; (device_id, aor_id) is unique."
+    note for file_entry "Stores filesystem roots, hierarchy, source metadata, and journal state."
+
+    device "0..*" --> "1" login : created_by FK
+    device "0..*" --> "1" organism : organism_id FK
+    device "0..*" --> "0..1" sigint_unit : unit_id FK
+    device_aor "0..*" --> "1" device : device_id FK
+    device_aor "0..*" --> "1" area_of_responsibility : aor_id FK
+    file_entry "0..*" --> "0..1" file_entry : composite parent FK
+    file_entry "0..*" ..> "1" device : device_id logical reference
+```
+
+Solid arrows are SQL foreign keys within one database. The self-reference on
+`file_entry` is the composite foreign key `(device_id, parent_id)` to
+`(device_id, id)`. The dotted `file_entry.device_id` relationship identifies
+the owning device but intentionally has no cross-database foreign key or
+cascade.
 
 ## Deployment
 
@@ -187,7 +294,7 @@ uniqueness only for roots and virtual sibling directories; file paths are not
 unique and do not identify file objects.
 
 Directories are virtual metadata derived from synchronized paths. Public sync
-requests submit files, and the service creates or reuses their virtual
+requests submit files, and the business logic creates or reuses their virtual
 directory chains. An item without `file_id` inserts a file leaf with a new
 UUIDv7; an item with a known `file_id` updates or moves that existing leaf.
 Directory mutation is not a public API.

@@ -1,11 +1,8 @@
-pub(crate) mod api;
-
 mod access;
-mod custom_fields;
-mod filesystem;
-mod main_db;
+
+#[allow(clippy::module_inception)]
+pub(crate) mod devices;
+pub(crate) mod files;
 #[cfg(test)]
-mod schema_tests;
-mod service;
-mod validation;
-mod visibility;
+mod tests;
+pub(crate) mod types;
