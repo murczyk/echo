@@ -1,7 +1,7 @@
 use crate::users::{
     ensure_rer_role, has_any_role, has_role, login_id_from_identity,
 };
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 
 use self::bl::*;
 use self::types::*;
@@ -10,12 +10,12 @@ use crate::event_stream::fanout;
 use crate::event_stream::types::*;
 use crate::types::*;
 use crate::utils::dt_from_millis;
+use crate::utils::orm::ArrayColumnOps;
 use actix_web::post;
 use actix_web::web::Json;
 use itertools::Itertools;
 use rust_xlsxwriter::{Format, Workbook};
 use sea_orm::*;
-use sea_orm::{DbBackend, Statement};
 use sea_query::types::IntoColumnRef;
 use sea_query::Alias;
 use sea_query::{extension::postgres::PgExpr, Expr, SimpleExpr};
@@ -885,38 +885,9 @@ pub async fn get_callsigns_with_units_from_inbox(
 
     #[derive(FromQueryResult, Debug)]
     struct Row {
-        callsign: String,
+        id: i64,
         unit: String,
     }
-
-    // Build the IN clause for the query
-    let callsigns_in_clause = sanitizied_callsigns
-        .iter()
-        .map(|callsign| format!("'{callsign}'"))
-        .collect::<Vec<String>>()
-        .join(", ");
-
-    // Use DISTINCT ON with LATERAL join to get unique callsign-unit pairs efficiently
-    let sql = format!(
-        r#"
-        SELECT DISTINCT ON (sii.unit_v2, cs.value)
-            cs.value as callsign,
-            sii.unit_v2 as unit
-        FROM signal_message sm
-        INNER JOIN datasource_group dg ON sm.datasource_group_id = dg.id
-        INNER JOIN sigint_inbox_item sii ON sm.id = sii.id,
-        LATERAL jsonb_array_elements_text(sii.callsigns) AS cs(value)
-        WHERE dg.group_master_key = ANY($1)
-          AND sm.deleted = false
-          AND sii.checked = true
-          AND sii.unit_v2 IS NOT NULL
-          AND sii.datetime >= $2
-          AND sii.datetime < $3
-          AND sii.callsigns ? ANY($4)
-          AND cs.value IN ({callsigns_in_clause})
-        ORDER BY sii.unit_v2, cs.value
-        "#
-    );
 
     let groups =
         crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
@@ -924,38 +895,57 @@ pub async fn get_callsigns_with_units_from_inbox(
             .c(h!())?;
     let callsigns_array: Vec<String> =
         sanitizied_callsigns.iter().cloned().collect();
-
-    let rows: Vec<Row> =
-        Row::find_by_statement(Statement::from_sql_and_values(
-            DbBackend::Postgres,
-            &sql,
-            vec![
-                groups.into(),
-                dt_since.into(),
-                dt_till.into(),
-                callsigns_array.into(),
-            ],
-        ))
+    let rows = signal_message::Entity::find()
+        .join(
+            JoinType::InnerJoin,
+            signal_message::Relation::DatasourceGroup.def(),
+        )
+        .join(
+            JoinType::InnerJoin,
+            signal_message::Relation::SigintInboxItem.def(),
+        )
+        .select_only()
+        .column_as(sigint_inbox_item::Column::Id, "id")
+        .column_as(sigint_inbox_item::Column::UnitV2, "unit")
+        .distinct()
+        .filter(datasource_group::Column::GroupMasterKey.eq_any(groups))
+        .filter(signal_message::Column::Deleted.eq(false))
+        .filter(sigint_inbox_item::Column::Checked.eq(true))
+        .filter(sigint_inbox_item::Column::UnitV2.is_not_null())
+        .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
+        .filter(sigint_inbox_item::Column::Datetime.lt(dt_till))
+        .filter(Expr::cust(crate::inbox::callsigns::sql_filter_condition(
+            &callsigns_array,
+        )))
+        .into_model::<Row>()
         .all(&env.dbx)
         .await
         .c(h!())?;
+    let inbox_item_ids = rows.iter().map(|row| row.id).collect_vec();
+    let callsigns_by_item_id =
+        crate::inbox::callsigns::load_by_item_ids(&env.dbx, &inbox_item_ids)
+            .await?;
 
-    // Group results by callsign
-    let mut callsign_units_map: std::collections::HashMap<String, Vec<String>> =
-        std::collections::HashMap::new();
-
+    let mut callsign_units_map = HashMap::<String, BTreeSet<String>>::new();
     for row in rows {
-        callsign_units_map
-            .entry(row.callsign)
-            .or_default()
-            .push(row.unit);
+        let Some(callsigns) = callsigns_by_item_id.get(&row.id) else {
+            continue;
+        };
+        for callsign in callsigns.effective() {
+            if sanitizied_callsigns.contains(&callsign) {
+                callsign_units_map
+                    .entry(callsign)
+                    .or_default()
+                    .insert(row.unit.clone());
+            }
+        }
     }
 
     let mut callsigns_with_units = vec![];
     for callsign in sanitizied_callsigns {
         let units = callsign_units_map
             .get(&callsign)
-            .cloned()
+            .map(|units| units.iter().cloned().collect())
             .unwrap_or_default();
         callsigns_with_units.push((callsign, units));
     }

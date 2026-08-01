@@ -26,7 +26,6 @@ use actix_web::post;
 use actix_web::web::Json;
 use actix_web::HttpResponse;
 use chrono::prelude::*;
-use futures_util::TryStreamExt;
 use itertools::Itertools;
 use redis::AsyncCommands;
 use rust_xlsxwriter::{Format, Workbook};
@@ -1530,10 +1529,11 @@ where
 {
     if let Some(selected_callsigns) = selected_callsigns.as_ref() {
         if !selected_callsigns.is_empty() {
-            return Ok(q.filter(SimpleExpr::Custom(cond_json_contains_oneof(
-                "callsigns",
-                selected_callsigns,
-            ))));
+            return Ok(q.filter(SimpleExpr::Custom(
+                crate::inbox::callsigns::sql_filter_condition(
+                    selected_callsigns,
+                ),
+            )));
         }
     }
     Ok(q)
@@ -3125,7 +3125,16 @@ async fn summary_table_freq_by_login_with_coordinate_loading(
 struct SummaryTableFreqQueryRow {
     freq: Option<String>,
     count: i64,
-    callsigns: Vec<serde_json::Value>,
+    callsigns: Vec<String>,
+    units: Vec<String>,
+    locations: Vec<String>,
+}
+
+#[derive(FromQueryResult)]
+struct SummaryTableFreqDbRow {
+    freq: Option<String>,
+    count: i64,
+    inbox_item_ids: Vec<i64>,
     units: Vec<String>,
     locations: Vec<String>,
 }
@@ -3370,7 +3379,10 @@ async fn query_summary_table_freq_rows(
         )?
         .select_only()
         .column_as(Expr::col(sigint_inbox_item::Column::Freq), "freq")
-        .column_as(Expr::col(sigint_inbox_item::Column::Callsigns), "callsigns")
+        .column_as(
+            Expr::col((signal_message::Entity, signal_message::Column::Id)),
+            "inbox_item_id",
+        )
         .column_as(Expr::col(sigint_inbox_item::Column::UnitV2), "unit_v2")
         .column_as(
             Expr::col(sigint_inbox_item::Column::LocationV2),
@@ -3394,8 +3406,8 @@ async fn query_summary_table_freq_rows(
     let main_query: SelectStatement = Query::select()
         .column((uniq_alias.clone(), "freq"))
         .expr_as(
-            Expr::cust("array_agg(distinct uniq.callsigns)"),
-            "callsigns",
+            Expr::cust("array_agg(distinct uniq.inbox_item_id)"),
+            "inbox_item_ids",
         )
         .expr_as(
             Expr::cust("array_agg(distinct coalesce(uniq.unit_v2, ''))"),
@@ -3418,11 +3430,36 @@ async fn query_summary_table_freq_rows(
         .await
         .c(h!())?;
 
-    Ok(main_query_res
+    let rows = main_query_res
         .into_iter()
-        .map(|qr| SummaryTableFreqQueryRow::from_query_result(&qr, ""))
+        .map(|qr| SummaryTableFreqDbRow::from_query_result(&qr, ""))
         .collect::<Result<Vec<_>, sea_orm::DbErr>>()
-        .c(h!())?)
+        .c(h!())?;
+    let inbox_item_ids = rows
+        .iter()
+        .flat_map(|row| row.inbox_item_ids.iter().copied())
+        .collect_vec();
+    let callsigns_by_item_id =
+        crate::inbox::callsigns::load_by_item_ids(db, &inbox_item_ids).await?;
+    Ok(rows
+        .into_iter()
+        .map(|row| SummaryTableFreqQueryRow {
+            freq: row.freq,
+            count: row.count,
+            callsigns: row
+                .inbox_item_ids
+                .iter()
+                .filter_map(|inbox_item_id| {
+                    callsigns_by_item_id.get(inbox_item_id)
+                })
+                .flat_map(|callsigns| callsigns.effective())
+                .collect::<BTreeSet<_>>()
+                .into_iter()
+                .collect(),
+            units: row.units,
+            locations: row.locations,
+        })
+        .collect())
 }
 
 fn build_summary_table_freq(
@@ -3480,19 +3517,15 @@ fn build_summary_table_freq(
                     .collect(),
             );
 
-        for callsigns_j in row.callsigns.iter() {
-            let callsigns: Vec<String> =
-                serde_json::from_value(callsigns_j.clone()).context(h!())?;
-            for callsign in callsigns {
-                callsigns_per_freq
-                    .entry(freq.clone())
-                    .and_modify(|xs| {
-                        if !xs.contains(&callsign) {
-                            xs.push(callsign.clone())
-                        }
-                    })
-                    .or_insert(vec![callsign.clone()]);
-            }
+        for callsign in &row.callsigns {
+            callsigns_per_freq
+                .entry(freq.clone())
+                .and_modify(|xs| {
+                    if !xs.contains(callsign) {
+                        xs.push(callsign.clone())
+                    }
+                })
+                .or_insert(vec![callsign.clone()]);
         }
     }
 
@@ -4441,13 +4474,9 @@ async fn correlated_freqs(
     };
 
     #[derive(FromQueryResult)]
-    struct CallsignRow {
-        callsign: Option<String>,
-    }
-    #[derive(FromQueryResult)]
-    struct CorrelatedFreqCallsign {
+    struct CorrelatedFreqInboxItem {
+        id: i64,
         freq: Option<String>,
-        callsign: Option<String>,
     }
     let accessible_groups =
         crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
@@ -4463,85 +4492,60 @@ async fn correlated_freqs(
             signal_message::Relation::DatasourceGroup.def(),
         )
         .filter(
-            datasource_group::Column::GroupMasterKey
-                .eq_any(accessible_groups.clone()),
-        )
-        .select_only()
-        .column_as(
-            Expr::cust("jsonb_array_elements_text(callsigns)"),
-            "callsign",
-        )
-        .filter(signal_message::Column::Deleted.eq(false))
-        .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
-        .filter(sigint_inbox_item::Column::Datetime.lt(dt_till))
-        .distinct();
-    let q = filter_selected_freqs(q, &req.selected_freqs)?;
-    let q = filter_selected_metadata_for_analysis_stats(q, &req)?;
-    let q = q.into_model::<CallsignRow>().all(&env.dbx).await.c(h!())?;
-    let selected_freq_callsigns = q
-        .into_iter()
-        .filter_map(|row| row.callsign)
-        .collect::<Vec<_>>();
-    let selected_freq_callsigns = uniq_via_btreeset(&selected_freq_callsigns);
-    if selected_freq_callsigns.is_empty() {
-        return Ok(Json(empty));
-    }
-    let selected_freq_callsign_set = selected_freq_callsigns
-        .iter()
-        .cloned()
-        .collect::<HashSet<_>>();
-
-    let q = signal_message::Entity::find()
-        .join(
-            JoinType::InnerJoin,
-            signal_message::Relation::SigintInboxItem.def(),
-        )
-        .join(
-            JoinType::InnerJoin,
-            signal_message::Relation::DatasourceGroup.def(),
-        )
-        .filter(
             datasource_group::Column::GroupMasterKey.eq_any(accessible_groups),
         )
+        .select_only()
+        .column_as(sigint_inbox_item::Column::Id, "id")
+        .column_as(sigint_inbox_item::Column::Freq, "freq")
+        .distinct()
         .filter(signal_message::Column::Deleted.eq(false))
         .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
-        .filter(sigint_inbox_item::Column::Datetime.lt(dt_till))
-        .filter(Expr::cust_with_values(
-            "sigint_inbox_item.callsigns::jsonb ?| $1",
-            vec![selected_freq_callsigns],
-        ))
-        .select_only()
-        .column_as(sigint_inbox_item::Column::Freq, "freq")
-        .column_as(
-            Expr::cust(
-                "jsonb_array_elements_text(sigint_inbox_item.callsigns)",
-            ),
-            "callsign",
-        )
-        .distinct();
+        .filter(sigint_inbox_item::Column::Datetime.lt(dt_till));
     let q = filter_selected_metadata_for_analysis_stats(q, &req)?;
-    let rows = q
-        .into_model::<CorrelatedFreqCallsign>()
+    let inbox_items = q
+        .into_model::<CorrelatedFreqInboxItem>()
         .all(&env.dbx)
         .await
         .c(h!())?;
-    let mut freq_common_callsigns = BTreeMap::<String, BTreeSet<String>>::new();
-    for row in rows {
-        let (Some(freq), Some(callsign)) = (row.freq, row.callsign) else {
-            continue;
-        };
-        if selected_freqs.contains(&freq)
-            || !selected_freq_callsign_set.contains(&callsign)
-        {
+    let inbox_item_ids = inbox_items
+        .iter()
+        .map(|inbox_item| inbox_item.id)
+        .collect_vec();
+    let callsigns_by_item_id =
+        crate::inbox::callsigns::load_by_item_ids(&env.dbx, &inbox_item_ids)
+            .await?;
+    let mut selected_freq_callsigns = BTreeSet::new();
+    for inbox_item in &inbox_items {
+        if !analysis_freq_is_selected(
+            inbox_item.freq.as_deref(),
+            &selected_freqs,
+        ) {
             continue;
         }
-        freq_common_callsigns
-            .entry(freq)
-            .or_default()
-            .insert(callsign);
+        if let Some(callsigns) = callsigns_by_item_id.get(&inbox_item.id) {
+            selected_freq_callsigns.extend(callsigns.effective());
+        }
+    }
+    let mut freq_common_callsigns = BTreeMap::<String, BTreeSet<String>>::new();
+    for inbox_item in inbox_items {
+        let Some(freq) = inbox_item.freq else {
+            continue;
+        };
+        let Some(callsigns) = callsigns_by_item_id.get(&inbox_item.id) else {
+            continue;
+        };
+        for callsign in callsigns.effective() {
+            if selected_freq_callsigns.contains(&callsign) {
+                freq_common_callsigns
+                    .entry(freq.clone())
+                    .or_default()
+                    .insert(callsign);
+            }
+        }
     }
     let mut freqs = freq_common_callsigns
         .into_iter()
+        .filter(|(freq, _)| !selected_freqs.contains(freq))
         .map(|(freq, callsigns)| CorrelatedFreq {
             freq,
             common_callsigns: callsigns.into_iter().collect(),
@@ -4555,6 +4559,20 @@ async fn correlated_freqs(
     });
 
     Ok(Json(CorrelatedFreqsRsp { freqs }))
+}
+
+fn analysis_freq_is_selected(
+    freq: Option<&str>,
+    selected_freqs: &[String],
+) -> bool {
+    selected_freqs.is_empty()
+        || selected_freqs.iter().any(|selected_freq| {
+            if selected_freq.is_empty() {
+                freq.is_none_or(str::is_empty)
+            } else {
+                freq == Some(selected_freq)
+            }
+        })
 }
 
 #[post("/api/rer/analysis/freq-edit-unit-name")]
@@ -4941,238 +4959,70 @@ pub async fn bi_new_callsigns(
     req: &AnalysisStatsReq,
 ) -> Result<NewCallsignsRes, AppError> {
     ensure_rer_role_by_id(&env.dbx, user_id).await.c(h!())?;
-
-    let dt_since = dt_from_millis(req.since_date_inclusive_ms)?;
-    let dt_till = dt_from_millis(req.till_date_noninclusive_ms)?;
-    let include_peleng_locations =
-        req.include_peleng_locations.unwrap_or(false);
-
-    #[derive(FromQueryResult)]
-    struct Row {
-        callsigns: Option<serde_json::Value>,
-        timestamp: Option<NaiveDateTime>,
-    }
-    let rows_res = signal_message::Entity::find()
-        .join(
-            JoinType::InnerJoin,
-            signal_message::Relation::SigintInboxItem.def(),
-        )
-        .join(
-            JoinType::InnerJoin,
-            signal_message::Relation::DatasourceGroup.def(),
-        )
-        .join(
-            JoinType::LeftJoin,
-            sigint_inbox_item::Relation::SigintPost.def(),
-        )
-        .select_only()
-        .column_as(sigint_inbox_item::Column::Callsigns, "callsigns")
-        .column_as(sigint_inbox_item::Column::Datetime, "timestamp")
-        .filter(
-            datasource_group::Column::GroupMasterKey.eq_any(
-                get_identity_sigint_groups(&env.dbx, user_id)
-                    .await
-                    .c(h!())?,
-            ),
-        )
-        .filter(signal_message::Column::Deleted.eq(false))
-        .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
-        .filter(sigint_inbox_item::Column::Datetime.lt(dt_till));
-    let rows_res = filter_selected_senders(rows_res, &req.selected_senders)?;
-    let rows_res = filter_selected_freqs(rows_res, &req.selected_freqs)?;
-    let rows_res = filter_selected_posts(rows_res, &req.selected_posts)?;
-    let rows_res = filter_selected_units(
-        rows_res,
-        &req.selected_units,
-        &req.units_exact_match_only,
-    )?;
-    let rows_res = filter_selected_locations(
-        rows_res,
-        &req.selected_locations,
-        include_peleng_locations,
-    )?;
-    let rows_res =
-        filter_selected_callsigns(rows_res, &req.selected_callsigns)?;
-    let rows_res = filter_search(rows_res, &req.search)?;
-    let rows_res = filter_selected_tags(
-        rows_res,
-        &req.selected_tags,
-        &req.denied_tags,
-        &req.tag_presence,
-        &req.or_bookmarked,
-        &req.or_important,
-        &req.or_with_coords,
-        &req.or_without_coords,
-        &req.or_with_extended_form,
-        &req.filter_tags_option,
-        &req.without_model_tags,
-        user_id,
-        req.report_tags_only_this_unit.unwrap_or(false),
-    )?;
-    let rows_res =
-        filter_selected_aors(rows_res, &req.selected_aors).context(h!())?;
-    let rows_res = filter_selected_networks(
-        rows_res,
-        &req.selected_networks,
-        &req.without_network,
-    )
-    .context(h!())?;
-    let rows_res = filter_selected_metadata_for_analysis_stats(rows_res, req)?;
-    let mut rows_res = rows_res
-        .into_model::<Row>()
-        .stream(&env.dbx)
+    let group_master_keys = get_identity_sigint_groups(&env.dbx, user_id)
         .await
         .c(h!())?;
-
-    let mut callsigns_in_period = BTreeSet::new();
-    while let Some(item) = rows_res.try_next().await.c(h!())? {
-        let Some(callsigns) = item.callsigns else {
-            continue;
-        };
-        let callsigns: Vec<String> =
-            serde_json::from_value(callsigns).context(h!())?;
-        for callsign in callsigns {
-            callsigns_in_period.insert(callsign);
-        }
-    }
-
-    // go back 30 days
-    let dt_till = dt_since;
-    let dt_since = dt_since - chrono::Duration::days(30);
-    let rows_res = signal_message::Entity::find()
-        .join(
-            JoinType::InnerJoin,
-            signal_message::Relation::SigintInboxItem.def(),
-        )
-        .join(
-            JoinType::InnerJoin,
-            signal_message::Relation::DatasourceGroup.def(),
-        )
-        .join(
-            JoinType::LeftJoin,
-            sigint_inbox_item::Relation::SigintPost.def(),
-        )
-        .select_only()
-        .column_as(sigint_inbox_item::Column::Callsigns, "callsigns")
-        .column_as(sigint_inbox_item::Column::Datetime, "timestamp")
-        .filter(
-            datasource_group::Column::GroupMasterKey.eq_any(
-                get_identity_sigint_groups(&env.dbx, user_id)
-                    .await
-                    .c(h!())?,
-            ),
-        )
-        .filter(signal_message::Column::Deleted.eq(false))
-        .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
-        .filter(sigint_inbox_item::Column::Datetime.lt(dt_till));
-    let rows_res = filter_selected_senders(rows_res, &req.selected_senders)?;
-    let rows_res = filter_selected_freqs(rows_res, &req.selected_freqs)?;
-    let rows_res = filter_selected_posts(rows_res, &req.selected_posts)?;
-    let rows_res = filter_selected_units(
-        rows_res,
-        &req.selected_units,
-        &req.units_exact_match_only,
-    )?;
-    let rows_res = filter_selected_locations(
-        rows_res,
-        &req.selected_locations,
-        include_peleng_locations,
-    )?;
-    let rows_res =
-        filter_selected_callsigns(rows_res, &req.selected_callsigns)?;
-    let rows_res = filter_search(rows_res, &req.search)?;
-    let rows_res = filter_selected_tags(
-        rows_res,
-        &req.selected_tags,
-        &req.denied_tags,
-        &req.tag_presence,
-        &req.or_bookmarked,
-        &req.or_important,
-        &req.or_with_coords,
-        &req.or_without_coords,
-        &req.or_with_extended_form,
-        &req.filter_tags_option,
-        &req.without_model_tags,
+    let rows = load_new_callsign_rows(
         user_id,
-        req.report_tags_only_this_unit.unwrap_or(false),
-    )?;
-    let rows_res = filter_selected_networks(
-        rows_res,
-        &req.selected_networks,
-        &req.without_network,
+        env,
+        req,
+        req.since_date_inclusive_ms,
+        req.till_date_noninclusive_ms,
+        ReportPeriodEnd::NonInclusive,
+        &group_master_keys,
+        true,
     )
-    .context(h!())?;
-    let rows_res = filter_selected_metadata_for_analysis_stats(rows_res, req)?;
-    let mut rows_res = rows_res
-        .into_model::<Row>()
-        .stream(&env.dbx)
-        .await
-        .c(h!())?;
-
-    let mut callsign_last_seen: BTreeMap<String, NaiveDateTime> =
-        BTreeMap::new();
-    while let Some(item) = rows_res.try_next().await.c(h!())? {
-        let Some(callsigns) = item.callsigns else {
+    .await?;
+    let callsigns_in_period = rows
+        .into_iter()
+        .flat_map(|row| row.callsigns)
+        .collect::<BTreeSet<_>>();
+    let lookback_since = req
+        .since_date_inclusive_ms
+        .checked_sub(chrono::Duration::days(30).num_milliseconds())
+        .context(h!())?;
+    let rows = load_new_callsign_rows(
+        user_id,
+        env,
+        req,
+        lookback_since,
+        req.since_date_inclusive_ms,
+        ReportPeriodEnd::NonInclusive,
+        &group_master_keys,
+        false,
+    )
+    .await?;
+    let mut callsign_last_seen = BTreeMap::new();
+    for row in rows {
+        let Some(timestamp) = row.timestamp else {
             continue;
         };
-        let callsigns: Vec<String> =
-            serde_json::from_value(callsigns).context(h!())?;
-        let Some(timestamp) = item.timestamp else {
-            continue;
-        };
-        for callsign in callsigns {
+        for callsign in row.callsigns {
             callsign_last_seen
                 .entry(callsign)
-                .and_modify(|e| {
-                    if *e < timestamp {
-                        *e = timestamp;
+                .and_modify(|last_seen| {
+                    if *last_seen < timestamp {
+                        *last_seen = timestamp;
                     }
                 })
                 .or_insert(timestamp);
         }
     }
+    Ok(classify_new_callsigns(
+        callsigns_in_period,
+        &callsign_last_seen,
+        dt_from_millis(req.since_date_inclusive_ms)?,
+    ))
+}
 
-    let seen_24h = callsign_last_seen
-        .iter()
-        .filter(|(_, v)| **v > dt_till - chrono::Duration::hours(24))
-        .map(|(k, _)| k.clone())
-        .collect::<Vec<_>>();
-    let seen_7days = callsign_last_seen
-        .iter()
-        .filter(|(_, v)| **v > dt_till - chrono::Duration::days(7))
-        .map(|(k, _)| k.clone())
-        .collect::<Vec<_>>();
-    let seen_30days = callsign_last_seen
-        .iter()
-        .filter(|(_, v)| **v > dt_till - chrono::Duration::days(30))
-        .map(|(k, _)| k.clone())
-        .collect::<Vec<_>>();
-    let not_seen_24h = callsigns_in_period
-        .iter()
-        .filter(|k| !seen_24h.contains(k))
-        .cloned()
-        .collect::<Vec<_>>();
-    let not_seen_7days = callsigns_in_period
-        .iter()
-        .filter(|k| !seen_7days.contains(k))
-        .cloned()
-        .collect::<Vec<_>>();
-    let not_seen_30days = callsigns_in_period
-        .iter()
-        .filter(|k| !seen_30days.contains(k))
-        .cloned()
-        .collect::<Vec<_>>();
-
-    Ok(NewCallsignsRes {
-        not_seen_24h,
-        not_seen_7days,
-        not_seen_30days,
-    })
+struct NewCallsignQueryRow {
+    callsigns: Vec<String>,
+    timestamp: Option<NaiveDateTime>,
 }
 
 #[derive(FromQueryResult)]
-struct NewCallsignQueryRow {
-    callsigns: Option<serde_json::Value>,
+struct NewCallsignDbRow {
+    id: i64,
     timestamp: Option<NaiveDateTime>,
 }
 
@@ -5214,12 +5064,7 @@ pub async fn bi_new_callsigns_chunked(
         )
         .await?
         {
-            let Some(callsigns) = row.callsigns else {
-                continue;
-            };
-            callsigns_in_period.extend(
-                serde_json::from_value::<Vec<String>>(callsigns).c(h!())?,
-            );
+            callsigns_in_period.extend(row.callsigns);
         }
     }
 
@@ -5256,14 +5101,10 @@ pub async fn bi_new_callsigns_chunked(
         )
         .await?
         {
-            let (Some(callsigns), Some(timestamp)) =
-                (row.callsigns, row.timestamp)
-            else {
+            let Some(timestamp) = row.timestamp else {
                 continue;
             };
-            for callsign in
-                serde_json::from_value::<Vec<String>>(callsigns).c(h!())?
-            {
+            for callsign in row.callsigns {
                 callsign_last_seen
                     .entry(callsign)
                     .and_modify(|last_seen| {
@@ -5310,7 +5151,7 @@ async fn load_new_callsign_rows(
             sigint_inbox_item::Relation::SigintPost.def(),
         )
         .select_only()
-        .column_as(sigint_inbox_item::Column::Callsigns, "callsigns")
+        .column_as(sigint_inbox_item::Column::Id, "id")
         .column_as(sigint_inbox_item::Column::Datetime, "timestamp")
         .filter(
             datasource_group::Column::GroupMasterKey
@@ -5369,11 +5210,26 @@ async fn load_new_callsign_rows(
     )
     .c(h!())?;
     let rows = filter_selected_metadata_for_analysis_stats(rows, req)?;
-    Ok(rows
-        .into_model::<NewCallsignQueryRow>()
+    let rows = rows
+        .distinct()
+        .into_model::<NewCallsignDbRow>()
         .all(&env.dbx)
         .await
-        .c(h!())?)
+        .c(h!())?;
+    let inbox_item_ids = rows.iter().map(|row| row.id).collect_vec();
+    let callsigns_by_item_id =
+        crate::inbox::callsigns::load_by_item_ids(&env.dbx, &inbox_item_ids)
+            .await?;
+    Ok(rows
+        .into_iter()
+        .map(|row| NewCallsignQueryRow {
+            callsigns: callsigns_by_item_id
+                .get(&row.id)
+                .map(|callsigns| callsigns.effective())
+                .unwrap_or_default(),
+            timestamp: row.timestamp,
+        })
+        .collect())
 }
 
 fn classify_new_callsigns(
