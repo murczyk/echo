@@ -93,7 +93,7 @@ function useOrbitUnitLinkColumns({
         ),
       },
       {
-        header: 'Ген. назва',
+        header: 'Приналежність',
         accessorKey: 'generativeUnitNameFull',
         size: 320,
         Cell: ({ cell }) => (
@@ -103,7 +103,7 @@ function useOrbitUnitLinkColumns({
         ),
       },
       {
-        header: 'Опер. назва',
+        header: 'Підпорядкування',
         accessorKey: 'operationalUnitNameFull',
         size: 320,
         Cell: ({ cell }) => (
@@ -113,7 +113,7 @@ function useOrbitUnitLinkColumns({
         ),
       },
       {
-        header: 'UUID',
+        header: 'ID',
         accessorKey: 'unitId',
         size: 280,
         Cell: ({ cell }) => (
@@ -355,7 +355,7 @@ function OrbitUnitLinkDialogBody({
             fullWidth
             size="small"
             label="Пошук"
-            placeholder="Повна, ген. або опер. назва"
+            placeholder="Повна назва, приналежність або підпорядкування"
             value={search}
             onChange={(event) => setSearch(event.target.value)}
             InputProps={{

@@ -114,6 +114,10 @@ export async function linkOrbitUnit(req: LinkOrbitUnitReq): Promise<void> {
   await postVoid('/api/sigint/unit/orbit-link', transformCamelToSnake(req));
 }
 
+export async function unlinkOrbitUnit(req: LinkOrbitUnitReq): Promise<void> {
+  await postVoid('/api/sigint/unit/orbit-unlink', transformCamelToSnake(req));
+}
+
 export async function updateUnitAttachment(req: UpdateUnitAttachmentReq): Promise<UnitAttachment> {
   const raw = await postJson<unknown>(
     '/api/sigint/unit/attachment/update',

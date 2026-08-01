@@ -57,6 +57,7 @@ type alias Model =
     , activeTab : Tab
     , downloadInProgress : Maybe Int
     , orbitLinkDialogOpen : Bool
+    , orbitUnitUnlinking : Maybe String
     }
 
 
@@ -88,6 +89,7 @@ init _ route _ =
                 Overview
       , downloadInProgress = Nothing
       , orbitLinkDialogOpen = False
+      , orbitUnitUnlinking = Nothing
       }
     , E.batch initialEffects
     )
@@ -120,6 +122,8 @@ type Msg
     | OpenOrbitLinkDialog
     | CloseOrbitLinkDialog
     | OrbitUnitLinked
+    | UnlinkOrbitUnit B.OrbitUnitDetails
+    | OrbitUnitUnlinked String (Result ApiError ())
 
 
 update : Msg -> Model -> ( Model, Effect Msg )
@@ -151,6 +155,12 @@ update msg model =
 
         OrbitUnitLinked ->
             orbitUnitLinked model
+
+        UnlinkOrbitUnit orbitUnit ->
+            unlinkOrbitUnit orbitUnit model
+
+        OrbitUnitUnlinked orbitUnitId result ->
+            orbitUnitUnlinked orbitUnitId result model
 
 
 updateDetails : Result ApiError B.UnitDetailsRsp -> Model -> ( Model, Effect Msg )
@@ -265,6 +275,45 @@ orbitUnitLinked model =
             )
 
 
+unlinkOrbitUnit : B.OrbitUnitDetails -> Model -> ( Model, Effect Msg )
+unlinkOrbitUnit orbitUnit model =
+    case model.unitId of
+        Nothing ->
+            ( model, E.none )
+
+        Just unitId ->
+            ( { model | orbitUnitUnlinking = Just orbitUnit.unitId }
+            , E.sendCmd <|
+                Api.sigint_unit_orbit_unlink
+                    (OrbitUnitUnlinked orbitUnit.unitId)
+                    { sigintUnitId = unitId
+                    , orbitUnitId = orbitUnit.unitId
+                    }
+            )
+
+
+orbitUnitUnlinked : String -> Result ApiError () -> Model -> ( Model, Effect Msg )
+orbitUnitUnlinked _ result model =
+    case result of
+        Err err ->
+            ( { model | orbitUnitUnlinking = Nothing }
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка видалення прив’язки Orbit" err
+            )
+
+        Ok () ->
+            case model.unitId of
+                Nothing ->
+                    ( { model | orbitUnitUnlinking = Nothing }, E.none )
+
+                Just unitId ->
+                    ( { model
+                        | orbitUnitUnlinking = Nothing
+                        , detailsLoading = True
+                      }
+                    , loadDetails unitId
+                    )
+
+
 subscriptions : Model -> Sub Msg
 subscriptions _ =
     Sub.none
@@ -331,7 +380,7 @@ detailsView user shared model details =
         , tabsView model.activeTab
         , case model.activeTab of
             Overview ->
-                overviewTab shared details.unit details.orbitUnits
+                overviewTab shared model details.unit details.orbitUnits
 
             Files ->
                 filesTab user shared model details.attachments
@@ -432,14 +481,14 @@ tabsView activeTab =
         ]
 
 
-overviewTab : Shared.Model -> B.Unit -> List B.OrbitUnitDetails -> Html Msg
-overviewTab shared unit orbitUnits =
+overviewTab : Shared.Model -> Model -> B.Unit -> List B.OrbitUnitDetails -> Html Msg
+overviewTab shared model unit orbitUnits =
     div
         [ class "flex flex-col gap-4"
         , attribute "role" "tabpanel"
         ]
         (unitOverviewCard shared unit
-            :: List.map (orbitDataCard shared) orbitUnits
+            :: List.map (orbitDataCard shared model.orbitUnitUnlinking) orbitUnits
         )
 
 
@@ -480,11 +529,28 @@ unitOverviewCard shared unit =
         ]
 
 
-orbitDataCard : Shared.Model -> B.OrbitUnitDetails -> Html Msg
-orbitDataCard shared orbitUnit =
+orbitDataCard : Shared.Model -> Maybe String -> B.OrbitUnitDetails -> Html Msg
+orbitDataCard shared orbitUnitUnlinking orbitUnit =
     div [ class "border rounded p-4 bg-card" ]
         [ h2 [ class "h4 mb-4" ] [ text "Дані із Orbit" ]
         , orbitUnitDetails shared orbitUnit
+        , div [ class "d-flex justify-content-end mt-4" ]
+            [ button
+                [ class "btn btn-danger"
+                , type_ "button"
+                , disabled (orbitUnitUnlinking /= Nothing)
+                , onClick (UnlinkOrbitUnit orbitUnit)
+                ]
+                [ i [ class "bi bi-trash me-2" ] []
+                , text
+                    (if orbitUnitUnlinking == Just orbitUnit.unitId then
+                        "Видалення…"
+
+                     else
+                        "Видалити"
+                    )
+                ]
+            ]
         ]
 
 

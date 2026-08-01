@@ -11,7 +11,7 @@ use sea_orm::{
     JoinType, QueryFilter, QuerySelect, RelationTrait, Statement,
     TransactionTrait,
 };
-use std::collections::HashSet;
+use std::collections::{BTreeSet, HashSet};
 use std::path::PathBuf;
 use uuid::Uuid;
 
@@ -86,6 +86,58 @@ pub async fn link_sigint_unit_if_unlinked_with_lock(
     }
     persistence::replace_sigint_unit_link(db, sigint_unit_id, orbit_unit_id)
         .await
+}
+
+pub async fn unlink_sigint_unit_with_lock(
+    db: &sea_orm::DatabaseConnection,
+    sigint_unit_id: i64,
+    orbit_unit_id: Uuid,
+) -> Result<(), AppError> {
+    let _import_lock = acquire_import_lock(db).await.c(h!())?;
+    if persistence::delete_sigint_unit_link(db, sigint_unit_id, orbit_unit_id)
+        .await?
+    {
+        Ok(())
+    } else {
+        Err(AppError::NotFound)
+    }
+}
+
+pub async fn link_new_sigint_unit_with_lock(
+    db: &sea_orm::DatabaseConnection,
+    sigint_unit_id: i64,
+) -> anyhow::Result<()> {
+    let _import_lock = acquire_import_lock(db).await?;
+    if persistence::load_latest_sync(db).await.c(h!())?.is_none() {
+        return Ok(());
+    }
+    let units = persistence::load_latest_synced_source_units(db)
+        .await
+        .c("failed to load the latest synchronized ORBIT units")?;
+    let sigint_units = sigint_unit::Entity::find()
+        .filter(sigint_unit::Column::Deleted.eq(false))
+        .filter(sigint_unit::Column::Active.eq(true))
+        .all(db)
+        .await
+        .c("failed to load active SIGINT units for ORBIT matching")?;
+    let sigint_unit_ids_by_orbit_unit =
+        matching::matching_sigint_unit_ids(&units, &sigint_units);
+    let orbit_unit_ids = sigint_unit_ids_by_orbit_unit
+        .into_iter()
+        .filter_map(|(orbit_unit_id, sigint_unit_ids)| {
+            sigint_unit_ids
+                .contains(&sigint_unit_id)
+                .then_some(orbit_unit_id)
+        })
+        .collect::<BTreeSet<_>>();
+    persistence::replace_automatic_sigint_unit_links(
+        db,
+        sigint_unit_id,
+        &orbit_unit_ids,
+    )
+    .await
+    .c("failed to link the new SIGINT unit to ORBIT")?;
+    Ok(())
 }
 
 async fn active_orbit_unit_exists<C>(
@@ -220,6 +272,9 @@ async fn sync_snapshot_units(
 async fn rebuild_sigint_unit_links(
     db: &sea_orm::DatabaseConnection,
 ) -> anyhow::Result<()> {
+    if persistence::load_latest_sync(db).await.c(h!())?.is_none() {
+        return Ok(());
+    }
     let units = persistence::load_latest_synced_source_units(db)
         .await
         .c("failed to load the latest synchronized ORBIT units")?;

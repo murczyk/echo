@@ -1,4 +1,5 @@
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
+import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import {
   Autocomplete,
   Button,
@@ -22,7 +23,7 @@ import {
 } from '@mui/material';
 import { useEffect, useMemo, useState } from 'react';
 
-import type { CreateUnitReq, Unit } from '../../../../../Bindings';
+import type { CreateUnitReq, OrbitUnitDetails, Unit } from '../../../../../Bindings';
 import { PowerAlert } from '../../../components/PowerAlert';
 import { STANDARD_DIALOG_ACTIONS_SX } from '../../../components/dialogStyles';
 import { handleNavigateWithinSpaClick } from '../../../utils/browser';
@@ -56,8 +57,13 @@ type Props = {
   devicesSectionEnabled: boolean;
   submitting: boolean;
   error: string | null;
+  orbitUnits: OrbitUnitDetails[];
+  orbitLinksLoading: boolean;
+  orbitLinksError: string | null;
+  unlinkingOrbitUnitId: string | null;
   onClose: () => void;
   onSubmit: (value: UnitFormSubmit) => void;
+  onUnlinkOrbitUnit: (orbitUnit: OrbitUnitDetails) => void;
 };
 
 const HIERARCHY_FIELDS: Array<{
@@ -268,6 +274,80 @@ function NetworkFields({
   );
 }
 
+function orbitUnitTitle(orbitUnit: OrbitUnitDetails): string {
+  return (
+    orbitUnit.unitName?.trim() ||
+    orbitUnit.unitNameShort?.trim() ||
+    orbitUnit.generativeUnitNameFull?.trim() ||
+    orbitUnit.unitId
+  );
+}
+
+function OrbitUnitLinks({
+  orbitUnits,
+  loading,
+  error,
+  unlinkingOrbitUnitId,
+  onUnlink,
+}: {
+  orbitUnits: OrbitUnitDetails[];
+  loading: boolean;
+  error: string | null;
+  unlinkingOrbitUnitId: string | null;
+  onUnlink: (orbitUnit: OrbitUnitDetails) => void;
+}) {
+  if (!loading && error === null && orbitUnits.length === 0) return null;
+
+  return (
+    <Stack spacing={1.5}>
+      <Typography variant="h6">Прив’язані Orbit підрозділи</Typography>
+      {error ? <PowerAlert severity="error">{error}</PowerAlert> : null}
+      {loading ? <CircularProgress size={24} /> : null}
+      {orbitUnits.map((orbitUnit) => (
+        <Stack
+          key={orbitUnit.unitId}
+          direction={{ xs: 'column', sm: 'row' }}
+          spacing={2}
+          alignItems={{ xs: 'stretch', sm: 'center' }}
+          justifyContent="space-between"
+          sx={{ border: 1, borderColor: 'divider', borderRadius: 1, p: 2 }}
+        >
+          <Stack spacing={0.5} sx={{ minWidth: 0 }}>
+            <Link
+              href={`https://delta.mil.gov.ua/orbit/units/${orbitUnit.unitId}/organizational-structure`}
+              target="_blank"
+              rel="noopener noreferrer"
+              fontWeight={600}
+              sx={{ overflowWrap: 'anywhere' }}
+            >
+              {orbitUnitTitle(orbitUnit)}
+            </Link>
+            <Typography variant="body2" color="text.secondary" sx={{ overflowWrap: 'anywhere' }}>
+              ID: {orbitUnit.unitId}
+            </Typography>
+          </Stack>
+          <Button
+            color="error"
+            variant="outlined"
+            startIcon={
+              unlinkingOrbitUnitId === orbitUnit.unitId ? (
+                <CircularProgress size={16} color="inherit" />
+              ) : (
+                <DeleteOutlineIcon />
+              )
+            }
+            disabled={unlinkingOrbitUnitId !== null}
+            onClick={() => onUnlink(orbitUnit)}
+            sx={{ whiteSpace: 'nowrap' }}
+          >
+            Видалити
+          </Button>
+        </Stack>
+      ))}
+    </Stack>
+  );
+}
+
 export function UnitFormDialog({
   open,
   unit,
@@ -275,8 +355,13 @@ export function UnitFormDialog({
   devicesSectionEnabled,
   submitting,
   error,
+  orbitUnits,
+  orbitLinksLoading,
+  orbitLinksError,
+  unlinkingOrbitUnitId,
   onClose,
   onSubmit,
+  onUnlinkOrbitUnit,
 }: Props) {
   const [form, setForm] = useState<UnitForm>(EMPTY_UNIT_FORM);
   const [networkStep, setNetworkStep] = useState(false);
@@ -322,7 +407,7 @@ export function UnitFormDialog({
   return (
     <Dialog
       open={open}
-      onClose={submitting ? undefined : onClose}
+      onClose={submitting || unlinkingOrbitUnitId !== null ? undefined : onClose}
       fullWidth
       maxWidth={networkStep ? 'sm' : 'lg'}
     >
@@ -349,7 +434,17 @@ export function UnitFormDialog({
           ) : (
             <>
               <UnitDetailsFields form={form} disabled={submitting} onChange={setForm} />
-              {!editing ? <DuplicateHint units={units} form={form} /> : null}
+              {editing ? (
+                <OrbitUnitLinks
+                  orbitUnits={orbitUnits}
+                  loading={orbitLinksLoading}
+                  error={orbitLinksError}
+                  unlinkingOrbitUnitId={unlinkingOrbitUnitId}
+                  onUnlink={onUnlinkOrbitUnit}
+                />
+              ) : (
+                <DuplicateHint units={units} form={form} />
+              )}
             </>
           )}
           {error ? <PowerAlert severity="error">{error}</PowerAlert> : null}
@@ -366,13 +461,13 @@ export function UnitFormDialog({
             Назад
           </Button>
         ) : null}
-        <Button onClick={onClose} disabled={submitting}>
+        <Button onClick={onClose} disabled={submitting || unlinkingOrbitUnitId !== null}>
           Скасувати
         </Button>
         <Button
           onClick={networkStep ? submitNetworkStep : continueFromDetails}
           variant="contained"
-          disabled={confirmDisabled}
+          disabled={confirmDisabled || unlinkingOrbitUnitId !== null}
           startIcon={submitting ? <CircularProgress size={16} color="inherit" /> : null}
         >
           {!editing && devicesSectionEnabled && !networkStep

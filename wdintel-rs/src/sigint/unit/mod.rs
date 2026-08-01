@@ -210,9 +210,19 @@ pub async fn create_unit(
     let req = req.into_inner();
     let unit = insert_unit_with_changelog(&env.dbx, &login, &req).await?;
 
+    if unit.active {
+        crate::orbit::link_new_sigint_unit_with_lock(&env.dbx, unit.id)
+            .await
+            .c(h!())?;
+    }
+
     fanout_unit_changed(&env).await?;
 
-    Ok(Json(render_unit(&unit)?))
+    let mut unit = render_unit(&unit)?;
+    if orbit::can_view_orbit_data(&env.dbx, &login).await? {
+        unit.has_orbit = orbit::unit_has_orbit(&env.dbx, unit.id).await?;
+    }
+    Ok(Json(unit))
 }
 
 #[post("/api/sigint/unit/create-with-auto-network")]
@@ -264,6 +274,12 @@ pub async fn create_unit_with_auto_network_for_login(
     };
     txn.commit().await.context(h!())?;
 
+    if unit.active {
+        crate::orbit::link_new_sigint_unit_with_lock(&env.dbx, unit.id)
+            .await
+            .c(h!())?;
+    }
+
     fanout_unit_changed_data(env).await?;
 
     if let Some(network) = network.clone() {
@@ -287,8 +303,12 @@ pub async fn create_unit_with_auto_network_for_login(
         }
     }
 
+    let mut unit = render_unit(&unit)?;
+    if orbit::can_view_orbit_data(&env.dbx, login).await? {
+        unit.has_orbit = orbit::unit_has_orbit(&env.dbx, unit.id).await?;
+    }
     Ok(CreateUnitWithAutoNetworkRsp {
-        unit: render_unit(&unit)?,
+        unit,
         network_id: network.map(|network| network.id),
     })
 }

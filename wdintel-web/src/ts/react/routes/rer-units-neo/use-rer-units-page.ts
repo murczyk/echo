@@ -1,15 +1,17 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import type { AlertColor } from '@mui/material';
-import type { Unit } from '../../../../Bindings';
+import type { OrbitUnitDetails, Unit } from '../../../../Bindings';
 import {
   createUnit,
   createUnitWithAutoNetwork,
   deleteUnit,
+  getUnitDetails,
   getUnitsList,
   getUnitIdsWithVisibleAttachments,
   mergeDuplicateUnit,
   updateUnit,
+  unlinkOrbitUnit,
   uploadUnitsKmz,
 } from '../../services/api/units';
 import { fetchBgtaskStatusAndLogs, getBgtaskProgressFromPercent } from '../../services/api/bgtask';
@@ -53,6 +55,10 @@ export function useRerUnitsPage(authUserRoles: string[]) {
   const [status, setStatus] = useState<Status>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [editUnit, setEditUnit] = useState<Unit | null>(null);
+  const [editOrbitUnits, setEditOrbitUnits] = useState<OrbitUnitDetails[]>([]);
+  const [orbitLinksLoading, setOrbitLinksLoading] = useState(false);
+  const [orbitLinksError, setOrbitLinksError] = useState<string | null>(null);
+  const [unlinkingOrbitUnitId, setUnlinkingOrbitUnitId] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Unit | null>(null);
   const [mergeTarget, setMergeTarget] = useState<Unit | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -89,6 +95,34 @@ export function useRerUnitsPage(authUserRoles: string[]) {
   useEffect(() => {
     void loadUnits();
   }, [loadUnits]);
+
+  useEffect(() => {
+    if (editUnit === null || !editUnit.hasOrbit) {
+      setEditOrbitUnits([]);
+      setOrbitLinksLoading(false);
+      setOrbitLinksError(null);
+      return;
+    }
+
+    let active = true;
+    setEditOrbitUnits([]);
+    setOrbitLinksLoading(true);
+    setOrbitLinksError(null);
+    void getUnitDetails(editUnit.id)
+      .then((details) => {
+        if (active) setEditOrbitUnits(details.orbitUnits);
+      })
+      .catch((error) => {
+        if (active) setOrbitLinksError(formatUnitError(error));
+      })
+      .finally(() => {
+        if (active) setOrbitLinksLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [editUnit?.hasOrbit, editUnit?.id]);
 
   useEffect(() => {
     if (!canEdit) {
@@ -197,12 +231,36 @@ export function useRerUnitsPage(authUserRoles: string[]) {
   }
 
   function closeDialogs() {
-    if (submitting) return;
+    if (submitting || unlinkingOrbitUnitId !== null) return;
     setCreateOpen(false);
     setEditUnit(null);
     setDeleteTarget(null);
     setMergeTarget(null);
     setDialogError(null);
+  }
+
+  async function unlinkEditOrbitUnit(orbitUnit: OrbitUnitDetails) {
+    if (editUnit === null || unlinkingOrbitUnitId !== null) return;
+    const sigintUnit = editUnit;
+    setUnlinkingOrbitUnitId(orbitUnit.unitId);
+    setOrbitLinksError(null);
+    try {
+      await unlinkOrbitUnit({ sigintUnitId: sigintUnit.id, orbitUnitId: orbitUnit.unitId });
+      const remainingOrbitUnits = editOrbitUnits.filter(
+        (candidate) => candidate.unitId !== orbitUnit.unitId,
+      );
+      const updatedUnit = { ...sigintUnit, hasOrbit: remainingOrbitUnits.length > 0 };
+      setEditOrbitUnits(remainingOrbitUnits);
+      setUnits((current) => replaceUnit(current, updatedUnit));
+      setStatus({
+        severity: 'success',
+        text: `Прив’язку підрозділу «${sigintUnit.name}» до Orbit видалено.`,
+      });
+    } catch (error) {
+      setOrbitLinksError(formatUnitError(error));
+    } finally {
+      setUnlinkingOrbitUnitId(null);
+    }
   }
 
   async function submitUnit(value: UnitFormSubmit) {
@@ -332,6 +390,10 @@ export function useRerUnitsPage(authUserRoles: string[]) {
     status,
     createOpen,
     editUnit,
+    editOrbitUnits,
+    orbitLinksLoading,
+    orbitLinksError,
+    unlinkingOrbitUnitId,
     deleteTarget,
     mergeTarget,
     submitting,
@@ -343,6 +405,7 @@ export function useRerUnitsPage(authUserRoles: string[]) {
     openDeleteDialog,
     openMergeDialog,
     closeDialogs,
+    unlinkEditOrbitUnit,
     submitUnit,
     confirmDelete,
     confirmMerge,

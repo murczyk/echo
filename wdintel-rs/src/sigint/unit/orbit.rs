@@ -212,6 +212,32 @@ pub async fn link_orbit_unit(
     Ok(Json(()))
 }
 
+#[post("/api/sigint/unit/orbit-unlink")]
+pub async fn unlink_orbit_unit(
+    user: actix_identity::Identity,
+    env: Data<Env>,
+    req: Json<LinkOrbitUnitReq>,
+) -> Result<Json<()>, AppError> {
+    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    let login = login_id_from_identity(&user)?;
+    ensure_orbit_access(&env.dbx, &login).await?;
+    let req = req.into_inner();
+    let orbit_unit_id =
+        Uuid::parse_str(&req.orbit_unit_id).map_err(|_| AppError::BL {
+            msg: "Invalid ORBIT unit ID".to_string(),
+        })?;
+    find_available_sigint_unit(&env.dbx, req.sigint_unit_id).await?;
+    find_available_orbit_unit(&env.dbx, orbit_unit_id).await?;
+    crate::orbit::unlink_sigint_unit_with_lock(
+        &env.dbx,
+        req.sigint_unit_id,
+        orbit_unit_id,
+    )
+    .await?;
+    super::fanout_unit_changed(&env).await?;
+    Ok(Json(()))
+}
+
 async fn ensure_orbit_access(
     dbx: &DatabaseConnection,
     login: &Uuid,
