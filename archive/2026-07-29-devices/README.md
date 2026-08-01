@@ -37,27 +37,35 @@ flowchart LR
     Browser["Browser"]
     ExternalSource["External device source"]
 
-    subgraph Backend["Echo backend"]
-        direction LR
-        API["/api/device/*"]
+    subgraph Host["Echo server"]
+        subgraph Backend["Echo backend"]
+            API["Devices HTTP API<br/>/api/device/*"]
+            Devices["devices<br/>device operations and access checks"]
+            Files["files<br/>file navigation and synchronization"]
+        end
 
-        subgraph DevicesDomain["Devices domain"]
-            direction TB
-            Devices["devices<br/>"]
-            Files["files<br/>"]
+        subgraph MainPostgreSQL["Main PostgreSQL"]
+            DeviceTable[("device<br/>source, analytical, ownership, and lifecycle state")]
+            DeviceAorTable[("device_aor<br/>device-to-AOR assignments")]
+            AccessTables[("login · organism · system_settings<br/>authentication and visibility")]
+            SigintTables[("area_of_responsibility · sigint_unit<br/>analytical references")]
+        end
+
+        subgraph FileRegistryPostgreSQL["wd_files PostgreSQL"]
+            FileEntryTable[("file_entry<br/>filesystem hierarchy, metadata, and journal")]
         end
 
         API -->|"device requests"| Devices
         API -->|"file requests"| Files
+        Devices <--> DeviceTable
+        Devices <--> DeviceAorTable
+        Devices -->|"resolve access"| AccessTables
+        Devices -->|"load references"| SigintTables
+        Files <--> FileEntryTable
     end
-
-    MainDatabase[("Main DB")]
-    FileRegistryDatabase[("Files DB")]
 
     Browser --> API
     ExternalSource --> API
-    Devices -->|"device state and access data"| MainDatabase
-    Files -->|"file metadata"| FileRegistryDatabase
 ```
 
 The module reuses authentication and login validation from `users`, reads the
@@ -199,22 +207,21 @@ classDiagram
 
     note for device "Stores source identity, analytical metadata, ownership, and lifecycle."
     note for device_aor "Joins devices to AORs; (device_id, aor_id) is unique."
-    note for file_entry "Stores filesystem roots, hierarchy, source metadata, and journal state."
+    note for file_entry "Stores filesystem hierarchy and metadata; parent_id uses a composite self-FK."
 
     device "0..*" --> "1" login : created_by FK
     device "0..*" --> "1" organism : organism_id FK
     device "0..*" --> "0..1" sigint_unit : unit_id FK
     device_aor "0..*" --> "1" device : device_id FK
     device_aor "0..*" --> "1" area_of_responsibility : aor_id FK
-    file_entry "0..*" --> "0..1" file_entry : composite parent FK
-    file_entry "0..*" ..> "1" device : device_id logical reference
+    file_entry ..> device : device_id logical ownership (no FK)
 ```
 
-Solid arrows are SQL foreign keys within one database. The self-reference on
-`file_entry` is the composite foreign key `(device_id, parent_id)` to
-`(device_id, id)`. The dotted `file_entry.device_id` relationship identifies
-the owning device but intentionally has no cross-database foreign key or
-cascade.
+Solid arrows are SQL foreign keys in the main database. Within `wd_files`,
+`file_entry` uses the composite foreign key `(device_id, parent_id)` to
+`(device_id, id)` for its parent/child hierarchy. The dotted arrow represents
+logical device ownership through `file_entry.device_id`; it intentionally has
+no cross-database foreign key or cascade.
 
 ## Deployment
 
